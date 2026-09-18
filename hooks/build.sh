@@ -56,6 +56,18 @@ case " $SRCS " in
     ;;
 esac
 
+# The console hook replaces the engine's own action check at the one call site that gates
+# Console::Toggle, and reads its combo from the ini through the engine's own reader.
+case " $SRCS " in
+*" tes3xconsole.c "*)
+    INI_GET=${INI_GET:-0x001933E0}
+    INI_PATH=${INI_PATH:-0x0035E364}
+    CONSOLE_SITE=${CONSOLE_SITE:-0x00098430}
+    echo "console hook: gate $CONSOLE_SITE, ini reader $INI_GET, ini path $INI_PATH"
+    EXTRA_CFLAGS="$EXTRA_CFLAGS -DTES3X_INI_GET_STRING=$INI_GET -DTES3X_INI_PATH=$INI_PATH"
+    ;;
+esac
+
 WOUT=$(cygpath -w "$OUT")
 OBJS=""
 for src in $SRCS; do
@@ -88,6 +100,12 @@ if [ -n "$RUN_FUNCTION" ]; then
     SHOOK=$(sym_va _tes3x_script_hook)
     [ -n "$SHOOK" ] || { echo "could not find _tes3x_script_hook in the link map" >&2; exit 1; }
     HOOKS="$HOOKS script_dispatch=0x$SHOOK opcode_base=$OPCODE_BASE opcode_ceil=$OPCODE_CEIL"
+fi
+if [ -n "$CONSOLE_SITE" ]; then
+    CHOOK=$(sym_va @tes3x_console_hook@12)
+    [ -n "$CHOOK" ] || CHOOK=$(sym_va _tes3x_console_hook)
+    [ -n "$CHOOK" ] || { echo "could not find tes3x_console_hook in the link map" >&2; exit 1; }
+    HOOKS="$HOOKS console_gate=0x$CHOOK"
 fi
 
 # Hook addresses beside the blob, so tes3x_patch.py can apply it without a toolchain or a map.

@@ -1,13 +1,4 @@
-"""Apply modular patches to a retail Morrowind XBE.
-
-Every patch locates its targets by content - a unique literal, or a push/call pair keyed on the
-address of a string - never by a bare file offset. A build that does not match fails loudly
-instead of corrupting an image quietly, and the same patch keeps working if offsets move.
-
-    tes3x_patch.py morrowind.xbe --out patched.xbe \\
-        --apply drive-letters=T --apply boot-media \\
-        --apply payload=build/archhook/tes3xhook.pe --apply multi-bsa
-"""
+"""Apply content-located patches to a retail Morrowind XBE."""
 
 import argparse
 import json
@@ -21,8 +12,7 @@ import tes3x_inject  # noqa: E402
 
 TITLE_ID = 0x42530005
 
-# Asset paths the engine opens by literal name. Retail splits them across two drives; a build
-# needs them all pointing wherever Data Files actually lives.
+# Literal asset paths that must share the Data Files drive.
 ASSET_PATHS = [
     b"Data Files\\Fonts",
     b"Data Files\\",
@@ -43,15 +33,11 @@ SAVE_STAGING = [b"tempsave.ess", b"vv.dat"]
 RUNFN_DISPATCH = bytes([0x8D, 0x91, 0x00, 0xF0, 0xFF, 0xFF, 0x81, 0xFA, 0xBC, 0x01, 0x00, 0x00])
 RUNFN_PROLOGUE = bytes([0x55, 0x8B, 0xEC, 0x83, 0xE4, 0xF8])
 
-# Six sites bound a script opcode to [0x1000, 0x11BD) purely to decide an instruction length -
-# three bytes on a hit, one on a miss. They are what actually blocks a new opcode: an unknown one
-# is not rejected, it is mis-measured, and the rest of the bytecode line desyncs. Five compare a
-# 16-bit register, one a 32-bit one; matching the pair keeps the backreference honest about which.
+# Six parsers infer instruction length from [0x1000, 0x11BD); unknown opcodes desync bytecode.
+# Five compare 16-bit registers and one compares 32 bits.
 OPCODE_LO = 0x1000
 OPCODE_HI = 0x11BD
-# `cmp ax,imm16` is 66 3D; any other 16-bit register is 66 81 /7, one ModRM byte apiece. The
-# backreference makes each pair agree on the register, so an unrelated 0x1000 nearby cannot pair
-# up with an unrelated 0x11BD.
+# Backreferences require both bounds to compare the same 16-bit register.
 BOUND16 = re.compile(rb"(?P<cmp>\x66\x3d|\x66\x81[\xf8-\xff])\x00\x10.{0,12}?(?P=cmp)\xbd\x11",
                      re.S)
 BOUND32 = re.compile(rb"\x3d\x00\x10\x00\x00.{0,12}?\x3d\xbd\x11\x00\x00", re.S)
@@ -95,9 +81,7 @@ def _drive_letters(x, value, ctx):
     """Point every Data Files asset path at one drive."""
     letter = drive_letter(value, "drive-letters")
     edits = []
-    # Retail splits these across Z: and D:, and some appear on both, so every occurrence is
-    # rewritten. The NUL terminator in the pattern keeps a shorter path from matching inside a
-    # longer one.
+    # Rewrite every occurrence; the NUL keeps short paths from matching longer ones.
     for tail in ASSET_PATHS:
         hits = [m.start() for m in re.finditer(rb"[A-Za-z]:\\" + re.escape(tail) + rb"\x00", x.data)]
         if not hits:
@@ -129,8 +113,7 @@ def _save_staging(x, value, ctx):
             edits.append((off, 1, "%s -> %s" % (label, want)))
             x.data[off] = ord(want)
 
-    # The .ess literal, the bare drive prefix the writer joins with a name, and the bare
-    # filename all sit in one run; matching them together keeps the prefix unambiguous.
+    # Match the adjacent path, drive prefix, and filename as one unambiguous block.
     hits = list(re.finditer(
         rb"[A-Za-z]:\\tempsave\.ess\x00[A-Za-z]:\\\x00tempsave\.ess\x00", x.data))
     if len(hits) != 1:
@@ -211,12 +194,7 @@ def text_section(x):
 
 
 def find_run_function(x):
-    """Locate Script::RunFunction: find its dispatch, then walk up to the function entry.
-
-    The dispatch sequence is unique in the image, and the entry is the first byte after the
-    int3 padding above it. The prologue is checked rather than assumed, so a build that puts
-    something else there fails instead of hooking the wrong address.
-    """
+    """Find RunFunction from its unique dispatch and checked prologue."""
     off = find_unique(x.data, RUNFN_DISPATCH, "RunFunction dispatch")
     i = off
     limit = max(0, off - 0x400)
@@ -231,34 +209,26 @@ def find_run_function(x):
     return va
 
 
-# The command table's last entry is a placeholder whose name says what it is for. Nothing else
-# in the image carries that string, which makes it the anchor for finding the table.
+# The unique placeholder at the end anchors the command table.
 COMMAND_SENTINEL = b"ADD NEW FUNCTIONS BEFORE THIS ONE!!!\x00"
 COMMAND_STRIDE = 12  # const char *name; const char *shortName; u32 opcode
 FIRST_OPCODE = 0x0100
 
 
 def find_command_table(x):
-    """Locate the script command table: find its sentinel entry, then walk back to entry 0.
-
-    Walking rather than subtracting a count keeps this independent of how many commands a
-    build carries; the array is preceded by a zero word, which is what stops the walk.
-    """
+    """Find the sentinel and walk back to the first command-table entry."""
     off = find_unique(x.data, COMMAND_SENTINEL, "command table sentinel")
     va = x.off_to_va(off)
     if va is None:
         raise PatchError("command table: the sentinel string is outside any section")
-    # The string is also referenced from code, so keep only the match that looks like a table
-    # entry: a resolvable short-name pointer and an opcode in the range the table uses.
+    # Require a valid short-name pointer and opcode to exclude code references.
     hits = [m.start() for m in re.finditer(re.escape(struct.pack("<I", va)), x.data)
             if x.va_to_off(struct.unpack_from("<I", x.data, m.start() + 4)[0]) is not None
             and FIRST_OPCODE <= struct.unpack_from("<I", x.data, m.start() + 8)[0] < 0x2000]
     if len(hits) != 1:
         raise PatchError("command table: %d sentinel entry candidate(s), expected 1" % len(hits))
     entry = hits[0]
-    # Walk back while the opcodes stay consecutive. A pointer check alone is not enough: an
-    # array of error-message pointers sits directly above the table and every one of them
-    # resolves. The table runs in two blocks, so one step down is allowed to cross that gap.
+    # Consecutive opcodes exclude the error-pointer array above the two command blocks.
     opcode = struct.unpack_from("<I", x.data, entry + 8)[0]
     while entry >= COMMAND_STRIDE:
         prev = entry - COMMAND_STRIDE
@@ -335,6 +305,37 @@ def _script_ext(x, value, ctx):
         was, off = x.patch_call(site, target)
         edits.append((off, 5, "RunFunction call 0x%08X: 0x%08X -> 0x%08X" % (site, was, target)))
     return edits
+
+
+CONSOLE_GATE_SIG = bytes([
+    0x6A, 0x02,              # push 2            ; mode
+    0x6A, 0x19,              # push 0x19         ; the console action
+    0xE8,                    # call rel32        ; the action check this replaces
+])
+
+
+def find_console_gate(x):
+    """The one `call` that gates Console::Toggle, found by its push/push/call shape."""
+    text = text_section(x)
+    blob = bytes(x.data[text.raw:text.raw + text.rsize])
+    hits = [m.start() for m in re.finditer(re.escape(CONSOLE_GATE_SIG), blob)]
+    if len(hits) != 1:
+        raise PatchError("console: %d site(s) matching `push 2; push 0x19; call`, expected 1"
+                         % len(hits))
+    return text.va + hits[0] + 4
+
+
+@patch("console")
+def _console(x, value, ctx):
+    """Make the in-game console reachable, by replacing its input gate."""
+    target = ctx.get("hooks", {}).get("console_gate")
+    if not target:
+        raise PatchError("console: needs `payload` first, with a console_gate hook in its "
+                         "manifest")
+    target = int(str(target), 16)
+    site = find_console_gate(x)
+    was, off = x.patch_call(site, target)
+    return [(off, 5, "console gate 0x%08X: 0x%08X -> 0x%08X" % (site, was, target))]
 
 
 def main():
