@@ -27,6 +27,40 @@ def digest(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
+BASE_MASTERS = ('morrowind.esm', 'tribunal.esm', 'bloodmoon.esm')
+
+
+def dependency_order(files, mtime=True):
+    """Order plugins so every master precedes what depends on it.
+
+    Sorting by mtime alone cannot do this: two masters can carry a dependency between them
+    and nothing about their timestamps reflects it. This is a stable topological sort, with
+    the retail masters pinned first and (esm before esp, mtime, name) as the tiebreak, so a
+    set with no dependencies between its masters keeps the order it had.
+    """
+    names = list(files)
+    known = set(names)
+    masters = {n: {m.lower() for m in plugin_masters(str(files[n]))} & known - {n}
+               for n in names}
+
+    def rank(n):
+        base = BASE_MASTERS.index(n) if n in BASE_MASTERS else len(BASE_MASTERS)
+        stamp = files[n].stat().st_mtime if mtime else 0
+        return (base, not n.endswith('.esm'), stamp, n)
+
+    ordered, placed, remaining = [], set(), set(names)
+    while remaining:
+        ready = [n for n in remaining if masters[n] <= placed]
+        if not ready:
+            raise ValueError('circular master references among: %s'
+                             % ', '.join(sorted(remaining)))
+        pick = min(ready, key=rank)
+        ordered.append(pick)
+        placed.add(pick)
+        remaining.discard(pick)
+    return ordered
+
+
 def validate_order(names, files):
     names = [n.lower() for n in names]
     if len(names) != len(set(names)) or set(names) != set(files):
@@ -78,10 +112,7 @@ def stage(files, names, work):
 
 def run_order(built, vanilla, executable, rules, work, output):
     files = collect(built, vanilla)
-    base = ['morrowind.esm', 'tribunal.esm', 'bloodmoon.esm']
-    initial = base + sorted(set(files) - set(base), key=lambda n: (
-        not n.endswith('.esm'), files[n].stat().st_mtime, n))
-    work = stage(files, initial, work)
+    work = stage(files, dependency_order(files), work)
     # Legacy mlox identifies a Morrowind directory solely by this filename.
     # This zero-byte marker is never executable and never leaves the workspace.
     (work / 'Morrowind.exe').write_bytes(b'')

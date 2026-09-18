@@ -226,9 +226,8 @@ def main():
         import json
         names = json.loads(Path(args.load_order).read_text(encoding='utf-8'))['plugins']
     else:
-        base_names = ['morrowind.esm', 'tribunal.esm', 'bloodmoon.esm']
-        names = base_names + sorted(set(plugins) - set(base_names), key=lambda n: (
-            not n.endswith('.esm'), plugins[n].stat().st_mtime, n))
+        from tes3x_plugins import dependency_order
+        names = dependency_order(plugins)
     names = validate_order(names, plugins)
     for index, name in enumerate(names):
         os.utime(plugins[name], (STAMP_BASE + index * STAMP_STEP,) * 2)
