@@ -16,3 +16,6 @@ cache/
 
 __pycache__/
 *.pyc
+
+# saves pulled off the console for analysis
+42530005/
