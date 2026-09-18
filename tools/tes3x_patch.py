@@ -231,6 +231,51 @@ def find_run_function(x):
     return va
 
 
+# The command table's last entry is a placeholder whose name says what it is for. Nothing else
+# in the image carries that string, which makes it the anchor for finding the table.
+COMMAND_SENTINEL = b"ADD NEW FUNCTIONS BEFORE THIS ONE!!!\x00"
+COMMAND_STRIDE = 12  # const char *name; const char *shortName; u32 opcode
+FIRST_OPCODE = 0x0100
+
+
+def find_command_table(x):
+    """Locate the script command table: find its sentinel entry, then walk back to entry 0.
+
+    Walking rather than subtracting a count keeps this independent of how many commands a
+    build carries; the array is preceded by a zero word, which is what stops the walk.
+    """
+    off = find_unique(x.data, COMMAND_SENTINEL, "command table sentinel")
+    va = x.off_to_va(off)
+    if va is None:
+        raise PatchError("command table: the sentinel string is outside any section")
+    # The string is also referenced from code, so keep only the match that looks like a table
+    # entry: a resolvable short-name pointer and an opcode in the range the table uses.
+    hits = [m.start() for m in re.finditer(re.escape(struct.pack("<I", va)), x.data)
+            if x.va_to_off(struct.unpack_from("<I", x.data, m.start() + 4)[0]) is not None
+            and FIRST_OPCODE <= struct.unpack_from("<I", x.data, m.start() + 8)[0] < 0x2000]
+    if len(hits) != 1:
+        raise PatchError("command table: %d sentinel entry candidate(s), expected 1" % len(hits))
+    entry = hits[0]
+    # Walk back while the opcodes stay consecutive. A pointer check alone is not enough: an
+    # array of error-message pointers sits directly above the table and every one of them
+    # resolves. The table runs in two blocks, so one step down is allowed to cross that gap.
+    opcode = struct.unpack_from("<I", x.data, entry + 8)[0]
+    while entry >= COMMAND_STRIDE:
+        prev = entry - COMMAND_STRIDE
+        name = struct.unpack_from("<I", x.data, prev)[0]
+        prev_op = struct.unpack_from("<I", x.data, prev + 8)[0]
+        if not name or x.va_to_off(name) is None:
+            break
+        if prev_op != opcode - 1 and not (opcode == 0x1000 and FIRST_OPCODE <= prev_op < 0x1000):
+            break
+        entry, opcode = prev, prev_op
+    first = x.data[x.va_to_off(struct.unpack_from("<I", x.data, entry)[0]):][:6]
+    if opcode != FIRST_OPCODE or not first.startswith(b"Begin\x00"):
+        raise PatchError("command table: entry 0 is %r opcode 0x%04X, expected Begin 0x%04X"
+                         % (bytes(first), opcode, FIRST_OPCODE))
+    return x.off_to_va(entry)
+
+
 def find_call_sites(x, target_va):
     """Every `call rel32` in .text that reaches target_va."""
     sec = text_section(x)
@@ -300,7 +345,7 @@ def main():
     ap.add_argument("--apply", action="append", default=[], metavar="NAME[=VALUE]")
     ap.add_argument("--section", default=".tes3xhk")
     ap.add_argument("--list", action="store_true", help="list available patches and exit")
-    ap.add_argument("--locate", choices=["run-function"],
+    ap.add_argument("--locate", choices=["run-function", "command-table"],
                     help="print a content-located engine address and exit")
     a = ap.parse_args()
 
@@ -315,7 +360,8 @@ def main():
     raw = open(a.xbe, "rb").read()
     x = tes3x_inject.Xbe(raw)
     if a.locate:
-        print("0x%08X" % find_run_function(x))
+        finder = {"run-function": find_run_function, "command-table": find_command_table}
+        print("0x%08X" % finder[a.locate](x))
         return
     cert = struct.unpack_from("<I", x.data, 0x118)[0]
     title = struct.unpack_from("<I", x.data, cert - x.base + 8)[0]

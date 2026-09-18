@@ -47,10 +47,12 @@ esac
 case " $SRCS " in
 *" tes3xscript.c "*)
     RUN_FUNCTION=$(python "$ROOT/tools/tes3x_patch.py" "$XBE" --locate run-function | tail -1)
+    COMMAND_TABLE=$(python "$ROOT/tools/tes3x_patch.py" "$XBE" --locate command-table | tail -1)
     OPCODE_BASE=$(sed -n 's/^#define TES3X_OPCODE_BASE  *//p' "$HERE/tes3xscript.c")
     OPCODE_CEIL=$(sed -n 's/^#define TES3X_OPCODE_CEIL  *//p' "$HERE/tes3xscript.c")
-    echo "script hook: Script::RunFunction $RUN_FUNCTION, opcodes [$OPCODE_BASE, $OPCODE_CEIL)"
+    echo "script hook: RunFunction $RUN_FUNCTION, table $COMMAND_TABLE, opcodes [$OPCODE_BASE, $OPCODE_CEIL)"
     EXTRA_CFLAGS="$EXTRA_CFLAGS -DTES3X_RUN_FUNCTION=$RUN_FUNCTION"
+    EXTRA_CFLAGS="$EXTRA_CFLAGS -DTES3X_COMMAND_TABLE=$COMMAND_TABLE"
     ;;
 esac
 
