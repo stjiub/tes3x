@@ -38,6 +38,26 @@ INLINE_DRIVE = bytes([0xC7, 0x44, 0x24, 0x0C]) + b"%c:\\\x00"
 
 SAVE_STAGING = [b"tempsave.ess", b"vv.dat"]
 
+# Script::RunFunction's dispatch: `lea edx,[ecx-0x1000]; cmp edx,0x1BC`, then an indirect jump
+# through a 445-entry table. Unique in the image, and it anchors the function's own address.
+RUNFN_DISPATCH = bytes([0x8D, 0x91, 0x00, 0xF0, 0xFF, 0xFF, 0x81, 0xFA, 0xBC, 0x01, 0x00, 0x00])
+RUNFN_PROLOGUE = bytes([0x55, 0x8B, 0xEC, 0x83, 0xE4, 0xF8])
+
+# Six sites bound a script opcode to [0x1000, 0x11BD) purely to decide an instruction length -
+# three bytes on a hit, one on a miss. They are what actually blocks a new opcode: an unknown one
+# is not rejected, it is mis-measured, and the rest of the bytecode line desyncs. Five compare a
+# 16-bit register, one a 32-bit one; matching the pair keeps the backreference honest about which.
+OPCODE_LO = 0x1000
+OPCODE_HI = 0x11BD
+# `cmp ax,imm16` is 66 3D; any other 16-bit register is 66 81 /7, one ModRM byte apiece. The
+# backreference makes each pair agree on the register, so an unrelated 0x1000 nearby cannot pair
+# up with an unrelated 0x11BD.
+BOUND16 = re.compile(rb"(?P<cmp>\x66\x3d|\x66\x81[\xf8-\xff])\x00\x10.{0,12}?(?P=cmp)\xbd\x11",
+                     re.S)
+BOUND32 = re.compile(rb"\x3d\x00\x10\x00\x00.{0,12}?\x3d\xbd\x11\x00\x00", re.S)
+BOUND16_COUNT = 5
+BOUND32_COUNT = 1
+
 CERT_ALLOWED_MEDIA = 0x220
 CERT_GAME_REGION = 0x224
 MEDIA_ANY = 0xC00001FF
@@ -183,6 +203,95 @@ def _multi_bsa(x, value, ctx):
     return [(call_off, 5, "Archive::Load call 0x%08X: 0x%08X -> 0x%08X" % (site_va, was, target))]
 
 
+def text_section(x):
+    for s in x.sections:
+        if s.name == ".text":
+            return s
+    raise PatchError("no .text section")
+
+
+def find_run_function(x):
+    """Locate Script::RunFunction: find its dispatch, then walk up to the function entry.
+
+    The dispatch sequence is unique in the image, and the entry is the first byte after the
+    int3 padding above it. The prologue is checked rather than assumed, so a build that puts
+    something else there fails instead of hooking the wrong address.
+    """
+    off = find_unique(x.data, RUNFN_DISPATCH, "RunFunction dispatch")
+    i = off
+    limit = max(0, off - 0x400)
+    while i > limit and not (x.data[i - 1] == 0xCC and x.data[i - 2] == 0xCC):
+        i -= 1
+    if bytes(x.data[i:i + len(RUNFN_PROLOGUE)]) != RUNFN_PROLOGUE:
+        raise PatchError("RunFunction: no prologue above the dispatch at 0x%08X"
+                         % (x.off_to_va(off) or 0))
+    va = x.off_to_va(i)
+    if va is None:
+        raise PatchError("RunFunction: entry is outside any section")
+    return va
+
+
+def find_call_sites(x, target_va):
+    """Every `call rel32` in .text that reaches target_va."""
+    sec = text_section(x)
+    body = bytes(x.data[sec.raw:sec.raw + sec.rsize])
+    sites = []
+    for m in re.finditer(b"\xE8", body):
+        i = m.start()
+        if i + 5 > len(body):
+            continue
+        site = sec.va + i
+        if site + 5 + struct.unpack_from("<i", body, i + 1)[0] == target_va:
+            sites.append(site)
+    return sites
+
+
+def widen_opcode_bounds(x, ceiling):
+    """Raise the six instruction-length bounds from 0x11BD to `ceiling`."""
+    sec = text_section(x)
+    body = bytes(x.data[sec.raw:sec.raw + sec.rsize])
+    found = []
+    for rx, width, count in ((BOUND16, 2, BOUND16_COUNT), (BOUND32, 4, BOUND32_COUNT)):
+        hits = list(rx.finditer(body))
+        if len(hits) != count:
+            raise PatchError("script-ext: %d of the %d-bit opcode bounds, expected %d"
+                             % (len(hits), width * 8, count))
+        for m in hits:
+            found.append((sec.raw + m.end() - width, width))
+    edits = []
+    for off, width in sorted(found):
+        struct.pack_into("<H" if width == 2 else "<I", x.data, off, ceiling)
+        edits.append((off, width, "opcode bound 0x%08X: 0x%04X -> 0x%04X"
+                      % (x.off_to_va(off), OPCODE_HI, ceiling)))
+    return edits
+
+
+@patch("script-ext")
+def _script_ext(x, value, ctx):
+    """Add script opcodes: widen the length bounds and hook Script::RunFunction."""
+    target = ctx.get("hooks", {}).get("script_dispatch")
+    if not target:
+        raise PatchError("script-ext: needs `payload` first, with a script_dispatch hook in its "
+                         "manifest")
+    target = int(str(target), 16)
+    ceiling = int(str(ctx.get("hooks", {}).get("opcode_ceil") or value or 0x4000), 0)
+    if not OPCODE_HI < ceiling <= 0x7FFF:
+        raise PatchError("script-ext: ceiling 0x%X must be above 0x%04X and below 0x8000 - the "
+                         "bound comparisons are signed" % (ceiling, OPCODE_HI))
+
+    edits = widen_opcode_bounds(x, ceiling)
+
+    runfn = find_run_function(x)
+    sites = find_call_sites(x, runfn)
+    if len(sites) != 3:
+        raise PatchError("script-ext: %d call site(s) for RunFunction 0x%08X, expected 3"
+                         % (len(sites), runfn))
+    for site in sites:
+        was, off = x.patch_call(site, target)
+        edits.append((off, 5, "RunFunction call 0x%08X: 0x%08X -> 0x%08X" % (site, was, target)))
+    return edits
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -191,6 +300,8 @@ def main():
     ap.add_argument("--apply", action="append", default=[], metavar="NAME[=VALUE]")
     ap.add_argument("--section", default=".tes3xhk")
     ap.add_argument("--list", action="store_true", help="list available patches and exit")
+    ap.add_argument("--locate", choices=["run-function"],
+                    help="print a content-located engine address and exit")
     a = ap.parse_args()
 
     if a.list or not a.xbe:
@@ -203,6 +314,9 @@ def main():
 
     raw = open(a.xbe, "rb").read()
     x = tes3x_inject.Xbe(raw)
+    if a.locate:
+        print("0x%08X" % find_run_function(x))
+        return
     cert = struct.unpack_from("<I", x.data, 0x118)[0]
     title = struct.unpack_from("<I", x.data, cert - x.base + 8)[0]
     print("%s: %d bytes, title 0x%08X, %d sections" % (a.xbe, len(raw), title, len(x.sections)))
