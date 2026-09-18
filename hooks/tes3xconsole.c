@@ -25,12 +25,15 @@
 #define COMBO_DEFAULT_A 7
 #define COMBO_DEFAULT_B 9
 
-typedef int(__stdcall *fn_ini_get_string)(const char *section, const char *key, const char *dflt,
-                                          char *buf, int size, const char *file);
+/* __cdecl: 0x001933E0 ends `mov esp,ebp; pop ebp; ret`, so the caller clears the arguments. */
+typedef int(__cdecl *fn_ini_get_string)(const char *section, const char *key, const char *dflt,
+                                        char *buf, int size, const char *file);
 
 static int combo_a = COMBO_DEFAULT_A;
 static int combo_b = COMBO_DEFAULT_B;
 static int combo_ready;
+static int seen_first;
+static int was_held;
 
 /* "7,9". Anything unparseable leaves the defaults. */
 static int parse_combo(const char *s)
@@ -91,6 +94,12 @@ unsigned int __attribute__((thiscall)) tes3x_console_hook(void *ctrl, int action
     (void)action;
     (void)mode;
 
+    /* Once, before anything else: separates "hook never ran" from "hook ran and died". */
+    if (!seen_first) {
+        seen_first = 1;
+        tes3x_log("console.hook_first", (u32)(unsigned int)ctrl);
+    }
+
     if (!combo_ready)
         load_combo();
 
@@ -104,12 +113,19 @@ unsigned int __attribute__((thiscall)) tes3x_console_hook(void *ctrl, int action
         return 0;
 
     in = (short *)(base + port * PORT_STRIDE + INPUT_BASE);
-    if (!in[combo_a] || !in[combo_b])
+    if (!in[combo_a] || !in[combo_b]) {
+        was_held = 0;
         return 0;
+    }
 
     /* Consume both, so their own actions do not also fire. The array is rebuilt each poll. */
     in[combo_a] = 0;
     in[combo_b] = 0;
+
+    /* Rising edge only - the array is level, so without this it toggles every frame held. */
+    if (was_held)
+        return 0;
+    was_held = 1;
     tes3x_log("console.toggle", (u32)port);
     return 1;
 }
