@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Pack a built Data Files tree into a rebuilt Morrowind.bsa and stage a deploy tree.
-
-Assets the engine resolves by exact path go into the archive. Anything it discovers by
-directory glob (plugins, Splash, Music) must stay loose, since globs cannot see inside a BSA.
-"""
+"""Pack exact-path assets into BSA and stage globbed files loose for deployment."""
 
 import argparse
 import os
@@ -56,11 +52,7 @@ def set_ini_key(text, section, key, value):
 
 
 def write_invalidation(path, names):
-    """Retail reader uses fgets(260), then unconditionally removes the last byte.
-
-    Write Data Files-relative paths, one per line, including the final newline.
-    No comments or blank lines: the engine passes every line to archive lookup.
-    """
+    """Write validated relative paths with the final newline retail requires."""
     paths = sorted({name.lower().replace('/', '\\') for name in names})
     for name in paths:
         if (not name or name.startswith('\\') or ':' in name or
@@ -86,6 +78,14 @@ def main():
                          "missing (auto), fail if absent (require), or always generate (force)")
     ap.add_argument("--archive-only", action="store_true",
                     help="set TryArchiveFirst=1 (skips loose lookups entirely)")
+    ap.add_argument("--ini-set", action="append", default=[], metavar="SECTION:KEY=VALUE",
+                    help="set a key in the staged Morrowind.ini (repeatable). "
+                         "tools/tes3x_ini.py lists every key the engine actually reads")
+    ap.add_argument("--quickstart", nargs="?", const=True, metavar="CELL",
+                    help="[General] QuickStart=1, with Starting Cell=CELL if given - boots "
+                         "straight into a game instead of the menu, for unattended test cycles")
+    ap.add_argument("--show-fps", action="store_true",
+                    help="[General] Show FPS=1 - the engine's own frame counter, no hook needed")
     ap.add_argument("--loose-asset", action="append", default=[], metavar="GLOB",
                     help="also stage matching packed assets loose and invalidate their archive entries")
     ap.add_argument("--load-order", help="tes3x_plugins order/patch JSON; stamp all shipped plugins")
@@ -107,10 +107,7 @@ def main():
             rel = os.path.relpath(full, args.built).replace("/", "\\")
             (pack if classify(rel) == "pack" else loose).append((rel, full))
 
-    # Expansion stubs: 4-byte TES3 files that satisfy Tribunal/Bloodmoon master references.
-    # Without them the engine hunts for missing masters and the load crawls. The Xbox release
-    # merges the expansion content into Morrowind.esm, so a placeholder is all the master
-    # reference needs - a source of None means this tool writes one.
+    # Four-byte TES3 stubs satisfy expansion masters; Xbox merges their content into Morrowind.esm.
     for stub in EXPANSION_STUBS:
         if any(r.lower() == stub.lower() for r, _ in loose):
             continue
@@ -187,9 +184,7 @@ def main():
 
     out_bsa = os.path.join(out_df, "Morrowind.bsa")
     if args.delta_archive:
-        # Vanilla ships byte-identical and the mod assets go in their own archive. The hook
-        # loads that one second, and Archive::Load prepends, so it is searched first and its
-        # entries override vanilla without either file being rewritten.
+        # The hook loads the mod archive second; prepending makes its entries override vanilla.
         shutil.copyfile(base_bsa, out_bsa)
         delta_path = os.path.join(out_df, args.delta_archive)
         count, total = write_bsa(delta_path, pack, progress=prog)
@@ -241,9 +236,28 @@ def main():
             text = set_ini_key(text, "General", "TryArchiveFirst", 1)
         elif invalidated:
             text = set_ini_key(text, "General", "TryArchiveFirst", 0)
+        edits = []
+        if args.quickstart:
+            text = set_ini_key(text, "General", "QuickStart", 1)
+            edits.append("QuickStart=1")
+            if args.quickstart is not True:
+                text = set_ini_key(text, "General", "Starting Cell", args.quickstart)
+                edits.append(f"Starting Cell={args.quickstart}")
+        if args.show_fps:
+            text = set_ini_key(text, "General", "Show FPS", 1)
+            edits.append("Show FPS=1")
+        for item in args.ini_set:
+            section, _, rest = item.partition(":")
+            key, eq, value = rest.partition("=")
+            if not section or not key or not eq:
+                raise SystemExit(f"--ini-set wants SECTION:KEY=VALUE, got {item!r}")
+            text = set_ini_key(text, section.strip(), key.strip(), value)
+            edits.append(f"[{section.strip()}] {key.strip()}={value}")
         open(os.path.join(args.out, "Morrowind.ini"), "w", encoding="latin-1").write(text)
         print(f"  Morrowind.ini staged"
               f"{' with TryArchiveFirst=1' if args.archive_only else ''}")
+        for e in edits:
+            print(f"    {e}")
     else:
         print(f"  WARNING: no Morrowind.ini found at {ini_src}")
 
