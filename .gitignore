@@ -1,0 +1,18 @@
+# Build outputs and emulator artifacts: multi-GB HDD images, ISOs, captures
+build/
+cache/
+
+*.img
+*.iso
+*.xbe
+*.bsa
+*.esm
+*.esp
+*.ess
+
+# Screenshots and run logs
+*.png
+*.log
+
+__pycache__/
+*.pyc
