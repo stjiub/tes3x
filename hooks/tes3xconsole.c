@@ -23,6 +23,30 @@
 #ifndef TES3X_CONSOLE_MENU_ID
 #error "define TES3X_CONSOLE_MENU_ID to the VA of the console menu's id global"
 #endif
+#ifndef TES3X_GET_PROP
+#error "define TES3X_GET_PROP to the VA of the widget getProperty"
+#endif
+#ifndef TES3X_COMPILE_RUN
+#error "define TES3X_COMPILE_RUN to the VA of CompileAndRun"
+#endif
+#ifndef TES3X_VK_MENU_ID
+#error "define TES3X_VK_MENU_ID to the VA of the keyboard menu's id global"
+#endif
+#ifndef TES3X_VK_TEXT_ID
+#error "define TES3X_VK_TEXT_ID to the VA of MenuVirtualKeyboard_TextSpace's id global"
+#endif
+#ifndef TES3X_GAME_PTR
+#error "define TES3X_GAME_PTR to the VA of the game object pointer"
+#endif
+#ifndef TES3X_WIDGET_TEXT
+#error "define TES3X_WIDGET_TEXT to the VA of the widget text getter"
+#endif
+
+#define MENU_VISIBLE 0x7E   /* the byte Console::Toggle flips */
+#define GAME_SCRIPT 0x54    /* the compiler CompileAndRun is a method on */
+#define GAME_MENUMGR 0x2C0  /* the menu manager */
+#define MENUMGR_CTX 0x20    /* its script scratch object, which CompileAndRun writes into */
+#define CMD_MAX 96
 
 /* Per-port block: 22 bytes of XINPUT_STATE, then 30 derived words. A held button reads 0x7FFF. */
 #define CTRL_PORT 0x804
@@ -37,6 +61,11 @@
 /* __cdecl: 0x001933E0 ends `mov esp,ebp; pop ebp; ret`, so the caller clears the arguments. */
 typedef void *(__cdecl *fn_find_menu)(unsigned int id);
 typedef void(__cdecl *fn_open_vk)(void *return_menu, const char *initial);
+typedef void *(__attribute__((thiscall)) *fn_get_prop)(void *self, void *out, unsigned int id,
+                                                       int type, int a3, int a4);
+typedef const char *(__attribute__((thiscall)) *fn_widget_text)(void *widget);
+typedef int(__attribute__((thiscall)) *fn_compile_run)(void *self, void *ref, const char *text,
+                                                       int a2, int a3, int a4, int a5, int a6);
 
 typedef int(__cdecl *fn_ini_get_string)(const char *section, const char *key, const char *dflt,
                                         char *buf, int size, const char *file);
@@ -48,6 +77,9 @@ static int seen_first;
 static int was_held;
 static int console_open;
 static int pending_raise;
+static int vk_watch;
+static char cmd[CMD_MAX];
+static int run_delay;
 
 /* "7,9". Anything unparseable leaves the defaults. */
 static int parse_combo(const char *s)
@@ -98,6 +130,79 @@ static void load_combo(void)
         tes3x_log("console.combo_default", (u32)((combo_a << 8) | combo_b));
 }
 
+
+/* a0 is a scratch script object owned by the menu manager - CompileAndRun zeroes 52 bytes at
+ * a0+0xC and writes a0+0x478. The console loads it at 0x001C4DA1, well after the console menu it
+ * held in the same register earlier. a3 is the optional reference, and 0 is what the console's
+ * simple call site passes. */
+static void run_command(const char *text)
+{
+    unsigned char *game = *(unsigned char **)TES3X_GAME_PTR;
+    unsigned char *mgr;
+    void *ctx, *script;
+
+    if (!game) {
+        tes3x_log("console.no_game", 0);
+        return;
+    }
+    mgr = *(unsigned char **)(game + GAME_MENUMGR);
+    script = *(void **)(game + GAME_SCRIPT);
+    ctx = mgr ? *(void **)(mgr + MENUMGR_CTX) : 0;
+    if (!script || !ctx) {
+        tes3x_log("console.no_ctx", (u32)(unsigned int)ctx);
+        return;
+    }
+    ((fn_compile_run)TES3X_COMPILE_RUN)(script, ctx, text, 1, 0, 0, 0, 0);
+}
+
+/* The keyboard's text, while it is still on screen. Returns 0 when there is nothing readable. */
+static const char *keyboard_text(void *vk)
+{
+    fn_get_prop get = (fn_get_prop)TES3X_GET_PROP;
+    unsigned int out[8];
+    void **slot;
+    int i;
+
+    for (i = 0; i < 8; i++)
+        out[i] = 0;
+    slot = (void **)get(vk, out, *(unsigned short *)TES3X_VK_TEXT_ID, 8, 0, 0);
+    if (!slot || !*slot)
+        return 0;
+    /* The property yields the widget, not the string. */
+    return ((fn_widget_text)TES3X_WIDGET_TEXT)(*slot);
+}
+
+static void watch_keyboard(void)
+{
+    fn_find_menu find = (fn_find_menu)TES3X_FIND_MENU;
+    void *vk = find(*(unsigned short *)TES3X_VK_MENU_ID);
+    const char *text;
+    int i;
+
+    if (vk && *((unsigned char *)vk + MENU_VISIBLE)) {
+        text = keyboard_text(vk);
+        if (text) {
+            for (i = 0; i < CMD_MAX - 1 && text[i] >= 0x20 && text[i] < 0x7F; i++)
+                cmd[i] = text[i];
+            cmd[i] = 0;
+        }
+        return;
+    }
+
+    vk_watch = 0;
+    if (!cmd[0]) {
+        tes3x_log("console.cmd_empty", 0);
+        return;
+    }
+    for (i = 0; cmd[i]; i++)
+        ;
+    tes3x_log_raw("console> ", 9);
+    tes3x_log_raw(cmd, (u32)i);
+    tes3x_log_raw("\n", 1);
+    /* Not from here: this runs inside the input gate while the keyboard is being torn down. */
+    run_delay = 8;
+}
+
 /* Replaces the engine's action check at its console call site; ret 8 matches the original. */
 unsigned int __attribute__((thiscall)) tes3x_console_hook(void *ctrl, int action, int mode)
 {
@@ -122,9 +227,24 @@ unsigned int __attribute__((thiscall)) tes3x_console_hook(void *ctrl, int action
         fn_find_menu find = (fn_find_menu)TES3X_FIND_MENU;
         void *menu = find(*(unsigned short *)TES3X_CONSOLE_MENU_ID);
         pending_raise = 0;
-        if (menu)
+        if (menu) {
             ((fn_open_vk)TES3X_OPEN_VK)(menu, 0);
+            vk_watch = 1;
+            cmd[0] = 0;
+        }
         tes3x_log("console.vk_raise", (u32)(unsigned int)menu);
+    }
+
+    /* The keyboard delivers only to four hardcoded menus and the console is not one, so take the
+     * text ourselves: cache it while the keyboard is up, and run it once the keyboard goes away. */
+    if (vk_watch)
+        watch_keyboard();
+
+    if (run_delay && !--run_delay && cmd[0]) {
+        tes3x_log("console.run_begin", 0);
+        run_command(cmd);
+        tes3x_log("console.run_done", 0);
+        cmd[0] = 0;
     }
 
     if (!base) {
