@@ -12,7 +12,9 @@ from collections import defaultdict
 from tes3x_paths import DEFAULT_REMOTE_ROOT, require_paths
 
 FATX_NAME_MAX = 42
-TEXTURE_MAX = 512
+# Retail includes a 1024x512 texture; on 64 MB hardware, total texture size is the useful limit.
+RETAIL_TEXTURE_MB = 40.1
+TEXTURE_SUSPECT = 1024
 PLUGIN_EXT = (".esm", ".esp")
 MTIME_STEP = 4
 EXPANSION_STUBS = ("Tribunal.esm", "Bloodmoon.esm")
@@ -134,9 +136,28 @@ def check(filemap):
             problems["filename over 42 chars"].append((key, mod.name, len(name)))
         if key.startswith("textures/") or key.endswith((".dds", ".tga", ".bmp")):
             dims = texture_dims(src)
-            if dims and max(dims) > TEXTURE_MAX:
-                problems["texture over 512 (crashes)"].append((key, mod.name, f"{dims[0]}x{dims[1]}"))
+            if dims and max(dims) > TEXTURE_SUSPECT:
+                problems["texture larger than any retail ships"].append(
+                    (key, mod.name, f"{dims[0]}x{dims[1]}"))
     return problems
+
+
+def texture_budget(filemap):
+    """Total texture bytes and a histogram by longest side."""
+    total = 0
+    hist = defaultdict(int)
+    for key, (_mod, src) in filemap.items():
+        if not (key.startswith("textures/") or key.endswith((".dds", ".tga", ".bmp"))):
+            continue
+        dims = texture_dims(src)
+        if not dims:
+            continue
+        try:
+            total += os.path.getsize(src)
+        except OSError:
+            continue
+        hist[max(dims)] += 1
+    return total, hist
 
 
 def report(mods, filemap, conflicts, problems):
@@ -150,6 +171,16 @@ def report(mods, filemap, conflicts, problems):
     for mod in sorted(mods, key=lambda m: m.order):
         n_plug = sum(1 for k in mod.files if k.endswith(PLUGIN_EXT))
         print(f"  {mod.order:>4}  {mod.name:<34} {len(mod.files):>6} files  {n_plug} plugin(s)")
+
+    tex_bytes, hist = texture_budget(filemap)
+    if tex_bytes:
+        mb = tex_bytes / 1048576
+        print(f"\n== TEXTURE BUDGET (source bytes, before conversion) ==")
+        print(f"  {sum(hist.values())} textures, {mb:.1f} MB "
+              f"({mb / RETAIL_TEXTURE_MB:.1f}x retail's {RETAIL_TEXTURE_MB} MB) on a 64 MB console")
+        print("  conversion shrinks this; the packed archive is the figure that counts")
+        print("  by longest side: "
+              + "  ".join(f"{k}:{hist[k]}" for k in sorted(hist)))
 
     if conflicts:
         print(f"\n== CONFLICTS ({len(conflicts)}) ==")
@@ -205,9 +236,10 @@ def materialize(filemap, mods, out, rules, cache="cache/tex", load_order=None, s
     """Write the resolved tree, converting textures and stamping load order."""
     from tes3x_convert import convert_cached
 
-    cap = rules.get("max_texture_size", TEXTURE_MAX)
+    # This is a budget target; retail proves larger textures are valid.
+    cap = rules.get("max_texture_size", 512)
     name_max = rules.get("max_filename", FATX_NAME_MAX)
-    if not 4 <= cap <= TEXTURE_MAX or not 1 <= name_max <= FATX_NAME_MAX:
+    if not 4 <= cap <= TEXTURE_SUSPECT or not 1 <= name_max <= FATX_NAME_MAX:
         raise ValueError('profile constraints must fit Xbox texture and filename limits')
     convert_all = rules.get("convert_all_textures", False)
     order_of = {m.name: m.order for m in mods}
@@ -272,6 +304,14 @@ def main():
     ap.add_argument("--vanilla", help="clean Xbox Data Files, for reachability roots and archive replacements")
     ap.add_argument("--reachability-json", help="write pruning decisions and missing references")
     ap.add_argument("--load-order", help="validated tes3x_plugins order JSON; requires --vanilla")
+    ap.add_argument("--max-texture-size", type=int, metavar="N",
+                    help="downscale target for mod textures (profile: max_texture_size)")
+    ap.add_argument("--convert-all-textures", dest="convert_all", action="store_true",
+                    default=None,
+                    help="convert every mod texture, not only oversized ones; vanilla is "
+                         "untouched either way, it is merged later by tes3x_pack")
+    ap.add_argument("--no-convert-all-textures", dest="convert_all", action="store_false",
+                    help="only convert mod textures above the size cap")
     ap.add_argument("--sox", help="SoX executable for opt-in sound conversion")
     ap.add_argument("--sound-rate", type=int, help="cap mod WAV sample rate; requires --sox")
     ap.add_argument("--remote-root", help=f"Xbox game folder (default: {DEFAULT_REMOTE_ROOT})")
@@ -282,7 +322,11 @@ def main():
     prof = load_profile(args.profile)
     library = prof["profile"]["library"]
 
-    rules = prof.get("rules", {})
+    rules = dict(prof.get("rules", {}))
+    if args.max_texture_size is not None:
+        rules["max_texture_size"] = args.max_texture_size
+    if args.convert_all is not None:
+        rules["convert_all_textures"] = args.convert_all
     exclude = rules.get("exclude", DEFAULT_EXCLUDE)
 
     mods = []

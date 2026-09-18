@@ -21,6 +21,10 @@ LOOSE_DIRS = ("splash", "video", "music", "fonts")
 LOOSE_EXT = (".esm", ".esp", ".bsa", ".map", ".ini", ".txt")
 
 
+EXPANSION_STUBS = ("Tribunal.esm", "Bloodmoon.esm")
+TES3_STUB = b"TES3"
+
+
 def classify(rel):
     low = rel.lower().replace("\\", "/")
     top = low.split("/")[0]
@@ -74,6 +78,12 @@ def main():
     ap.add_argument("--vanilla", required=True, help="clean Data Files with Morrowind.bsa/.esm/.map")
     ap.add_argument("--out", required=True, help="deploy tree to stage")
     ap.add_argument("--ini", help="Morrowind.ini to adapt (default: alongside vanilla)")
+    ap.add_argument("--delta-archive", metavar="NAME", nargs="?", const="tes3xmods.bsa",
+                    help="leave vanilla Morrowind.bsa untouched and put mod assets in their own "
+                         "archive, listed in tes3xarch.txt (needs the multi-BSA hook)")
+    ap.add_argument("--stubs", choices=("auto", "require", "force"), default="auto",
+                    help="expansion master placeholders: use vanilla's and generate what is "
+                         "missing (auto), fail if absent (require), or always generate (force)")
     ap.add_argument("--archive-only", action="store_true",
                     help="set TryArchiveFirst=1 (skips loose lookups entirely)")
     ap.add_argument("--loose-asset", action="append", default=[], metavar="GLOB",
@@ -98,13 +108,20 @@ def main():
             (pack if classify(rel) == "pack" else loose).append((rel, full))
 
     # Expansion stubs: 4-byte TES3 files that satisfy Tribunal/Bloodmoon master references.
-    # Without them the engine hunts for missing masters and the load crawls.
-    for stub in ("Tribunal.esm", "Bloodmoon.esm"):
+    # Without them the engine hunts for missing masters and the load crawls. The Xbox release
+    # merges the expansion content into Morrowind.esm, so a placeholder is all the master
+    # reference needs - a source of None means this tool writes one.
+    for stub in EXPANSION_STUBS:
+        if any(r.lower() == stub.lower() for r, _ in loose):
+            continue
         src = os.path.join(args.vanilla, stub)
-        if os.path.isfile(src) and not any(r.lower() == stub.lower() for r, _ in loose):
+        if args.stubs != "force" and os.path.isfile(src):
             loose.append((stub, src))
-        elif not os.path.isfile(src):
+        elif args.stubs == "require":
             ap.error(f"required expansion stub missing: {src}")
+        else:
+            loose.append((stub, None))
+            print(f"  generating placeholder {stub}")
 
     # vanilla loose files the engine globs or opens directly
     for name in os.listdir(args.vanilla):
@@ -158,6 +175,8 @@ def main():
 
     paths = ['Data Files/' + rel.replace('\\', '/') for rel, _ in loose]
     paths += ['Data Files/Morrowind.bsa', 'Morrowind.ini']
+    if args.delta_archive:
+        paths += ['Data Files/' + args.delta_archive, 'Data Files/tes3xarch.txt']
     if invalidated:
         paths.append('ArchiveInvalidationList.txt')
     require_paths(paths, args.remote_root)
@@ -167,14 +186,33 @@ def main():
         print(f"\r  writing {i}/{n}", end="", flush=True)
 
     out_bsa = os.path.join(out_df, "Morrowind.bsa")
-    count, total = write_bsa(out_bsa, pack, base=base, progress=prog)
-    print(f"\r  Morrowind.bsa: {count} entries, {total/1048576:.1f} MB content, "
-          f"{os.path.getsize(out_bsa)/1048576:.1f} MB on disk")
+    if args.delta_archive:
+        # Vanilla ships byte-identical and the mod assets go in their own archive. The hook
+        # loads that one second, and Archive::Load prepends, so it is searched first and its
+        # entries override vanilla without either file being rewritten.
+        shutil.copyfile(base_bsa, out_bsa)
+        delta_path = os.path.join(out_df, args.delta_archive)
+        count, total = write_bsa(delta_path, pack, progress=prog)
+        with open(os.path.join(out_df, "tes3xarch.txt"), "w", newline="\r\n") as f:
+            f.write("# extra archives, loaded in order; later lines win\n")
+            f.write(args.delta_archive + "\n")
+        print(f"\r  Morrowind.bsa: vanilla unchanged, "
+              f"{os.path.getsize(out_bsa)/1048576:.1f} MB")
+        print(f"  {args.delta_archive}: {count} entries, {total/1048576:.1f} MB content, "
+              f"{os.path.getsize(delta_path)/1048576:.1f} MB on disk")
+    else:
+        count, total = write_bsa(out_bsa, pack, base=base, progress=prog)
+        print(f"\r  Morrowind.bsa: {count} entries, {total/1048576:.1f} MB content, "
+              f"{os.path.getsize(out_bsa)/1048576:.1f} MB on disk")
 
     copied = 0
     for rel, full in loose:
         dst = os.path.join(out_df, rel)
         os.makedirs(os.path.dirname(dst), exist_ok=True)
+        if full is None:
+            with open(dst, "wb") as f:
+                f.write(TES3_STUB)
+            continue
         shutil.copyfile(full, dst)
         st = os.stat(full)
         os.utime(dst, (st.st_atime, st.st_mtime))
