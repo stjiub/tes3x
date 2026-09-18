@@ -1,0 +1,70 @@
+/* Injected into the retail morrowind.xbe as a new section.
+ *
+ * Freestanding: no CRT, no nxdk libraries. Every kernel call goes through a thunk slot in
+ * the host XBE's own import table, whose addresses tes3x_inject.py emits into tes3x_thunks.h.
+ */
+
+#include "tes3x_thunks.h"
+#include "tes3xlog.h"
+
+#ifndef TES3X_ORIG_ENTRY
+#error "define TES3X_ORIG_ENTRY to the XBE's original entry point"
+#endif
+
+#define TES3X_STR_(x) #x
+#define TES3X_STR(x) TES3X_STR_(x)
+
+/* A thunk slot holds the resolved function pointer once the kernel has fixed up imports. */
+#define KFN(slot, type) (*(type *)(slot))
+
+typedef u32(__cdecl *fn_DbgPrint)(const char *, ...);
+typedef void(__stdcall *fn_KeQuerySystemTime)(u64 *);
+typedef u32(__stdcall *fn_MmQueryStatistics)(void *);
+
+#define DbgPrint KFN(THUNK_DbgPrint, fn_DbgPrint)
+#define KeQuerySystemTime KFN(THUNK_KeQuerySystemTime, fn_KeQuerySystemTime)
+#define MmQueryStatistics KFN(THUNK_MmQueryStatistics, fn_MmQueryStatistics)
+
+/* MM_STATISTICS, XDK layout. Only the page counts matter here. */
+typedef struct {
+    u32 Length;
+    u32 TotalPhysicalPages;
+    u32 AvailablePages;
+    u32 VirtualMemoryBytesCommitted;
+    u32 VirtualMemoryBytesReserved;
+    u32 CachePagesCommitted;
+    u32 PoolPagesCommitted;
+    u32 StackPagesCommitted;
+    u32 ImagePagesCommitted;
+} MM_STATISTICS;
+
+u64 tes3x_boot_time;
+
+static u32 tes3x_free_kb(void)
+{
+    MM_STATISTICS st;
+    st.Length = sizeof(st);
+    if (MmQueryStatistics(&st) != 0)
+        return 0;
+    return st.AvailablePages * 4;
+}
+
+/* Called with all registers saved; must not disturb the host's startup state. */
+void tes3x_init(void)
+{
+    KeQuerySystemTime(&tes3x_boot_time);
+    DbgPrint("tes3x: hook alive, section at 0x%08x\n", (u32)&tes3x_init);
+    tes3x_log("entry.free_kb", tes3x_free_kb());
+}
+
+__attribute__((naked)) void tes3x_entry(void)
+{
+    __asm__ volatile(
+        "pushal\n\t"
+        "pushfl\n\t"
+        "call _tes3x_init\n\t"  /* i386 COFF prefixes cdecl symbols with an underscore */
+        "popfl\n\t"
+        "popal\n\t"
+        "pushl $" TES3X_STR(TES3X_ORIG_ENTRY) "\n\t"
+        "ret\n\t");
+}
