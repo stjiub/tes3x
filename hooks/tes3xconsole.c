@@ -1,18 +1,8 @@
-/* Make the in-game console reachable on a retail pad.
+/* Make the in-game console reachable.
  *
- * The console is not missing from this build - Console::Toggle, the menu builder, the print path
- * and its exemption from the bulk menu-close are all intact, and the toggle is already called
- * from the main update loop. It is only unreachable: the call is gated on input action 25, and
- * action 25 waits on a latch bit nothing in the image ever sets, while the keyboard path bounds
- * actions below 25. It was switched off in data, not removed from code.
- *
- * So this replaces the gate rather than the console. The engine's own check at that one call site
- * becomes this predicate, which reads two inputs straight out of the active port's block and
- * returns whether both are held.
- *
- * Nothing here touches the binding table at 0x003C69C8 or t:\controls.dat. That file is the
- * player's own control scheme - the engine writes it as well as reads it - so binding the console
- * through it would both spend a button that play needs and be overwritten by any in-game rebind.
+ * Console::Toggle is already called from the update loop, gated on an input action that waits on
+ * a latch bit nothing sets. This replaces that gate with a two-button check. The binding table
+ * and t:\controls.dat are deliberately untouched - that file is the player's own control scheme.
  */
 
 #include "tes3x_thunks.h"
@@ -25,17 +15,13 @@
 #error "define TES3X_INI_PATH to the VA of the engine's ini filename string"
 #endif
 
-/* Input controller layout, from the poll that expands XINPUT_STATE into the indexed array.
- * Each port block is 0x200 bytes: 22 bytes of XINPUT_STATE, then 30 derived words. A digital
- * button reads 0x7FFF while held and 0 otherwise. */
-#define CTRL_PORT 0x804   /* the active port, 0..3 */
-#define PORT_STRIDE 0x200 /* per-port block */
-#define INPUT_BASE 0x16   /* the derived array, index i at INPUT_BASE + i*2 */
+/* Per-port block: 22 bytes of XINPUT_STATE, then 30 derived words. A held button reads 0x7FFF. */
+#define CTRL_PORT 0x804
+#define PORT_STRIDE 0x200
+#define INPUT_BASE 0x16
 #define INPUT_COUNT 30
 
-/* Index 7 is Back and index 9 is the right thumb click. Back is the secondary binding for the
- * menu-open action; index 9 appears in no binding at all, which makes this the quietest pair of
- * buttons available. [Xbox] ConsoleCombo overrides it without a rebuild. */
+/* 7 is Back, 9 is the right thumb click - the only index bound to nothing. */
 #define COMBO_DEFAULT_A 7
 #define COMBO_DEFAULT_B 9
 
@@ -46,7 +32,7 @@ static int combo_a = COMBO_DEFAULT_A;
 static int combo_b = COMBO_DEFAULT_B;
 static int combo_ready;
 
-/* "7,9" - two small decimal indices. Anything unparseable leaves the defaults alone. */
+/* "7,9". Anything unparseable leaves the defaults. */
 static int parse_combo(const char *s)
 {
     int v[2] = {-1, -1};
@@ -68,18 +54,16 @@ static int parse_combo(const char *s)
         if (*s == 0)
             break;
     }
-    if (n != 2)
+    if (n != 2 || v[0] == v[1])
         return 0;
     if (v[0] < 0 || v[0] >= INPUT_COUNT || v[1] < 0 || v[1] >= INPUT_COUNT)
-        return 0;
-    if (v[0] == v[1])
         return 0;
     combo_a = v[0];
     combo_b = v[1];
     return 1;
 }
 
-/* Deferred to the first call: the ini lives on D:, which is not mounted at the XBE entry point. */
+/* Deferred: D: is not mounted at the XBE entry point. */
 static void load_combo(void)
 {
     fn_ini_get_string get = (fn_ini_get_string)TES3X_INI_GET_STRING;
@@ -97,9 +81,7 @@ static void load_combo(void)
         tes3x_log("console.combo_default", (u32)((combo_a << 8) | combo_b));
 }
 
-/* Stands in for the engine's action check at its console call site. __thiscall with two stack
- * arguments, so the callee clears 8 bytes, matching the function it replaces. The action and mode
- * are ignored: this call site only ever asks about the console. */
+/* Replaces the engine's action check at its console call site; ret 8 matches the original. */
 unsigned int __attribute__((thiscall)) tes3x_console_hook(void *ctrl, int action, int mode)
 {
     unsigned char *base = (unsigned char *)ctrl;
@@ -125,8 +107,7 @@ unsigned int __attribute__((thiscall)) tes3x_console_hook(void *ctrl, int action
     if (!in[combo_a] || !in[combo_b])
         return 0;
 
-    /* Consume both, so the actions they are otherwise bound to do not also fire this frame. The
-     * array is rebuilt from XINPUT_STATE on every poll, so clearing it here carries no state. */
+    /* Consume both, so their own actions do not also fire. The array is rebuilt each poll. */
     in[combo_a] = 0;
     in[combo_b] = 0;
     tes3x_log("console.toggle", (u32)port);
