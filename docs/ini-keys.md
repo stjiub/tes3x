@@ -17,7 +17,7 @@ Regenerate with `python tools/tes3x_ini.py <xbe> --all`.
 
 | key | why |
 |---|---|
-| `[General] QuickStart` + `Starting Cell` / `Starting Grid X`,`Y` / `Starting Offset X`,`Y` | boot into a game instead of the menu; this is what makes an unattended xemu cycle possible. Retail ships `;Starting Cell=Magic Test` commented out, so the path is real |
+| `[General] QuickStart` + `Starting Cell` / `Starting Grid X`,`Y` / `Starting Offset X`,`Y` | **adds a button to the menu, it does not skip it** - measured. `0x00200D41` reads it, then `0x00200D64` creates a widget. Still one press instead of navigating; where that button lands you is presumably the `Starting Cell` family, untested |
 | `[General] Show FPS`, `Max FPS` | the engine's own frame counter and cap - no injected code |
 | `[General] DontThreadLoad`, `ThreadPriority`, `ThreadSleepTime` | loading behaviour, on a console where loading is the complaint |
 | `[General] Exterior Cell Buffer`, `Interior Cell Buffer` | cell cache sizing against 64 MB |
