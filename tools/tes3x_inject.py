@@ -90,6 +90,14 @@ class Xbe:
             return va - self.base
         return None
 
+    def off_to_va(self, off):
+        for s in self.sections:
+            if s.raw <= off < s.raw + s.rsize:
+                return s.va + (off - s.raw)
+        if off < self.sizeof_headers:
+            return self.base + off
+        return None
+
     def add_section(self, name, payload, vsize, flags):
         va = self.next_va()
         raw = (len(self.data) + PAGE - 1) & ~(PAGE - 1)
@@ -212,8 +220,31 @@ class Xbe:
     def set_entry(self, va):
         struct.pack_into("<I", self.data, HDR_ENTRY, va ^ ENTRY_XOR[self.kind])
 
+    def patch_call(self, va, target):
+        """Retarget an existing 5-byte `call rel32`. Returns the VA it used to reach.
 
-def verify(orig, new):
+        A call is a fixed width, so redirecting one needs no instruction-length decoding -
+        which is why a call-site hook is reachable without general trampoline support.
+        """
+        off = self.va_to_off(va)
+        if off is None:
+            raise ValueError("VA 0x%08X is not in any section" % va)
+        if self.data[off] != 0xE8:
+            raise ValueError("no call at 0x%08X (found opcode 0x%02X)" % (va, self.data[off]))
+        was = va + 5 + struct.unpack_from("<i", self.data, off + 1)[0]
+        struct.pack_into("<i", self.data, off + 1, target - (va + 5))
+        return was, off
+
+
+def _mask(buf, ranges):
+    b = bytearray(buf)
+    for off, n in ranges:
+        b[off:off + n] = b"\0" * n
+    return bytes(b)
+
+
+def verify(orig, new, patched=()):
+    """patched: (offset, length) byte ranges this build deliberately rewrote."""
     """Every header structure that is not the section table must survive byte-identical.
 
     Re-laying the header page silently destroyed the library versions the first time; the
@@ -264,7 +295,9 @@ def verify(orig, new):
         share_b.setdefault(t.head_ref, []).append(t.name)
     if sorted(sorted(v) for v in share_a.values()) != sorted(sorted(v) for v in share_b.values()):
         problems.append("shared-page refcount grouping changed")
-    if orig[0x1000:] != new[0x1000:len(orig)]:
+    # Deliberate patches are masked out; everything else must be untouched.
+    ranges = list(patched)
+    if _mask(orig, ranges)[0x1000:] != _mask(new[:len(orig)], ranges)[0x1000:]:
         problems.append("existing section data changed")
     return problems
 
@@ -330,6 +363,10 @@ def main():
                     help="write a C header of kernel thunk slot addresses")
     ap.add_argument("--next-va", action="store_true",
                     help="print the VA a new section would land at, then exit")
+    ap.add_argument("--patch-call", action="append", default=[], metavar="VA=TARGET",
+                    help="retarget an existing `call rel32` at VA (repeatable)")
+    ap.add_argument("--print-call", metavar="VA",
+                    help="print the VA an existing `call rel32` reaches, then exit")
     a = ap.parse_args()
 
     x = Xbe(open(a.xbe, "rb").read())
@@ -338,6 +375,13 @@ def main():
 
     if a.next_va:
         print("0x%08X" % x.next_va())
+        return
+    if a.print_call:
+        va = int(a.print_call, 16)
+        off = x.va_to_off(va)
+        if off is None or x.data[off] != 0xE8:
+            raise SystemExit("no call rel32 at 0x%08X" % va)
+        print("0x%08X" % (va + 5 + struct.unpack_from("<i", x.data, off + 1)[0]))
         return
     if a.dump_thunks:
         write_thunks(x, a.dump_thunks)
@@ -359,10 +403,20 @@ def main():
         print("  entry 0x%08X -> 0x%08X (payload must tail-jump back)"
               % (orig_entry, imgbase + entry_rva))
 
+    patched = []
+    for spec in a.patch_call:
+        site, _, target = spec.partition("=")
+        if not target:
+            ap.error("--patch-call wants VA=TARGET, got %r" % spec)
+        site, target = int(site, 16), int(target, 16)
+        was, off = x.patch_call(site, target)
+        patched.append((off, 5))
+        print("  call at 0x%08X: 0x%08X -> 0x%08X" % (site, was, target))
+
     x.rebuild_headers()
     out = a.out or a.xbe
     blob_out = bytes(x.data)
-    problems = verify(open(a.xbe, "rb").read(), blob_out)
+    problems = verify(open(a.xbe, "rb").read(), blob_out, patched)
     if problems:
         for p in problems:
             print("  FAIL: %s" % p)
