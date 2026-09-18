@@ -14,6 +14,15 @@
 #ifndef TES3X_INI_PATH
 #error "define TES3X_INI_PATH to the VA of the engine's ini filename string"
 #endif
+#ifndef TES3X_FIND_MENU
+#error "define TES3X_FIND_MENU to the VA of findMenuById"
+#endif
+#ifndef TES3X_OPEN_VK
+#error "define TES3X_OPEN_VK to the VA of the virtual keyboard open"
+#endif
+#ifndef TES3X_CONSOLE_MENU_ID
+#error "define TES3X_CONSOLE_MENU_ID to the VA of the console menu's id global"
+#endif
 
 /* Per-port block: 22 bytes of XINPUT_STATE, then 30 derived words. A held button reads 0x7FFF. */
 #define CTRL_PORT 0x804
@@ -26,6 +35,9 @@
 #define COMBO_DEFAULT_B 9
 
 /* __cdecl: 0x001933E0 ends `mov esp,ebp; pop ebp; ret`, so the caller clears the arguments. */
+typedef void *(__cdecl *fn_find_menu)(unsigned int id);
+typedef void(__cdecl *fn_open_vk)(void *return_menu, const char *initial);
+
 typedef int(__cdecl *fn_ini_get_string)(const char *section, const char *key, const char *dflt,
                                         char *buf, int size, const char *file);
 
@@ -34,6 +46,8 @@ static int combo_b = COMBO_DEFAULT_B;
 static int combo_ready;
 static int seen_first;
 static int was_held;
+static int console_open;
+static int pending_raise;
 
 /* "7,9". Anything unparseable leaves the defaults. */
 static int parse_combo(const char *s)
@@ -103,6 +117,16 @@ unsigned int __attribute__((thiscall)) tes3x_console_hook(void *ctrl, int action
     if (!combo_ready)
         load_combo();
 
+    /* Raised a frame late, so the console is already up when the keyboard attaches to it. */
+    if (pending_raise) {
+        fn_find_menu find = (fn_find_menu)TES3X_FIND_MENU;
+        void *menu = find(*(unsigned short *)TES3X_CONSOLE_MENU_ID);
+        pending_raise = 0;
+        if (menu)
+            ((fn_open_vk)TES3X_OPEN_VK)(menu, 0);
+        tes3x_log("console.vk_raise", (u32)(unsigned int)menu);
+    }
+
     if (!base) {
         tes3x_log("console.no_ctrl", 0);
         return 0;
@@ -126,6 +150,9 @@ unsigned int __attribute__((thiscall)) tes3x_console_hook(void *ctrl, int action
     if (was_held)
         return 0;
     was_held = 1;
-    tes3x_log("console.toggle", (u32)port);
+    console_open = !console_open;
+    if (console_open)
+        pending_raise = 1;
+    tes3x_log("console.toggle", (u32)console_open);
     return 1;
 }
