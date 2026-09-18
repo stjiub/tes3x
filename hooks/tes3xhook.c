@@ -1,7 +1,5 @@
-/* Injected into the retail morrowind.xbe as a new section.
- *
- * Freestanding: no CRT, no nxdk libraries. Every kernel call goes through a thunk slot in
- * the host XBE's own import table, whose addresses tes3x_inject.py emits into tes3x_thunks.h.
+/* Freestanding XBE payload.
+ * Kernel calls use host import thunks emitted by tes3x_inject.py.
  */
 
 #include "tes3x_thunks.h"
@@ -40,6 +38,10 @@ typedef struct {
 
 u64 tes3x_boot_time;
 
+#ifdef TES3X_FRAG_PROBE
+void tes3x_frag_probe(void);
+#endif
+
 static u32 tes3x_free_kb(void)
 {
     MM_STATISTICS st;
@@ -55,6 +57,9 @@ void tes3x_init(void)
     KeQuerySystemTime(&tes3x_boot_time);
     DbgPrint("tes3x: hook alive, section at 0x%08x\n", (u32)&tes3x_init);
     tes3x_log("entry.free_kb", tes3x_free_kb());
+#ifdef TES3X_FRAG_PROBE
+    tes3x_frag_probe();
+#endif
 }
 
 __attribute__((naked)) void tes3x_entry(void)
