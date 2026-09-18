@@ -1,14 +1,9 @@
-"""Break down what a Morrowind .ess save is actually made of.
-
-The scene's avoidance ritual - close doors, do not open containers, dump loot on corpses - is a
-theory about *what* grows a save. This attributes bytes to record types and counts the two
-things that theory is about: changed references (FRMR inside CELL) and persisted actor
-inventories (NPCO inside NPCC/CREC).
-"""
+"""Measure Morrowind save records, changed references, and inventories."""
 
 import argparse
 import collections
 import os
+import struct
 import sys
 
 sys.path.insert(0, __file__.rsplit("\\", 1)[0].rsplit("/", 1)[0])
@@ -39,12 +34,60 @@ def analyse(path):
                 + subs[(b"CNTC", b"NPCO")])
 
 
+def bindings(path):
+    """Return the MAST list and changed-reference binding histogram."""
+    masters = []
+    hist = collections.Counter()
+    for tag, _flags, data in records(path):
+        if tag == b"TES3":
+            for stag, sdata in subrecords(data):
+                if stag == b"MAST":
+                    masters.append(sdata.rstrip(bytes(1)).decode("latin-1"))
+        elif tag == b"CELL":
+            for stag, sdata in subrecords(data):
+                if stag == b"FRMR" and len(sdata) >= 4:
+                    hist[struct.unpack("<I", sdata[:4])[0] >> 24] += 1
+    return masters, hist
+
+
+def report_bindings(paths):
+    total = collections.Counter()
+    orders = {}
+    for path in paths:
+        masters, hist = bindings(path)
+        total.update(hist)
+        orders.setdefault(tuple(masters), []).append(path)
+        n = sum(hist.values())
+        print(f"  {os.path.basename(path)[:34]:<34} {len(masters):>4} MAST {n:>6} FRMR "
+              f"{hist[0]:>6} idx0")
+
+    print()
+    print(f"  {len(orders)} distinct MAST order(s) across {len(paths)} save(s)")
+    order = max(orders, key=lambda k: len(orders[k]))
+    n = sum(total.values())
+    print()
+    print(f"  {'index':>5} {'count':>8} {'share':>7}  plugin")
+    for idx, count in sorted(total.items(), key=lambda kv: -kv[1]):
+        if idx == 0:
+            who = "created at runtime (or orphaned - indistinguishable)"
+        elif idx <= len(order):
+            who = order[idx - 1]
+        else:
+            who = "OUT OF RANGE for this MAST list"
+        print(f"  {idx:>5} {count:>8} {100 * count / n:>6.1f}%  {who}")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("saves", nargs="+")
     ap.add_argument("--detail", action="store_true", help="per-record-type breakdown")
+    ap.add_argument("--bindings", action="store_true",
+                    help="MAST list and what changed refs are bound to")
     a = ap.parse_args()
+
+    if a.bindings:
+        return report_bindings(sorted(a.saves))
 
     rows = []
     for path in sorted(a.saves):
