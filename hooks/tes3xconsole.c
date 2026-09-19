@@ -1,8 +1,5 @@
-/* Make the in-game console reachable.
- *
- * Console::Toggle is already called from the update loop, gated on an input action that waits on
- * a latch bit nothing sets. This replaces that gate with a two-button check. The binding table
- * and t:\controls.dat are deliberately untouched - that file is the player's own control scheme.
+/* Replace the unreachable console action with a two-button check.
+ * Leave the binding table and player controls untouched.
  */
 
 #include "tes3x_thunks.h"
@@ -41,12 +38,23 @@
 #ifndef TES3X_WIDGET_TEXT
 #error "define TES3X_WIDGET_TEXT to the VA of the widget text getter"
 #endif
+#ifndef TES3X_WIDGET_SET_TEXT
+#error "define TES3X_WIDGET_SET_TEXT to the VA of the widget text setter"
+#endif
+#ifndef TES3X_WIDGET_DIRTY
+#error "define TES3X_WIDGET_DIRTY to the VA of the widget redraw flag setter"
+#endif
 
 #define MENU_VISIBLE 0x7E   /* the byte Console::Toggle flips */
 #define GAME_SCRIPT 0x54    /* the compiler CompileAndRun is a method on */
 #define GAME_MENUMGR 0x2C0  /* the menu manager */
 #define MENUMGR_CTX 0x20    /* its script scratch object, which CompileAndRun writes into */
 #define CMD_MAX 96
+#define HIST_MAX 8
+
+/* While the console is up: Start raises the keyboard, Black steps further back through history. */
+#define KEY_RAISE 6
+#define KEY_BACK_HIST 14
 
 /* Per-port block: 22 bytes of XINPUT_STATE, then 30 derived words. A held button reads 0x7FFF. */
 #define CTRL_PORT 0x804
@@ -64,6 +72,8 @@ typedef void(__cdecl *fn_open_vk)(void *return_menu, const char *initial);
 typedef void *(__attribute__((thiscall)) *fn_get_prop)(void *self, void *out, unsigned int id,
                                                        int type, int a3, int a4);
 typedef const char *(__attribute__((thiscall)) *fn_widget_text)(void *widget);
+typedef void(__attribute__((thiscall)) *fn_widget_set_text)(void *widget, const char *text);
+typedef void(__attribute__((thiscall)) *fn_widget_dirty)(void *widget);
 typedef int(__attribute__((thiscall)) *fn_compile_run)(void *self, void *ref, const char *text,
                                                        int a2, int a3, int a4, int a5, int a6);
 
@@ -76,10 +86,16 @@ static int combo_ready;
 static int seen_first;
 static int was_held;
 static int console_open;
-static int pending_raise;
 static int vk_watch;
 static char cmd[CMD_MAX];
 static int run_delay;
+static char hist[HIST_MAX][CMD_MAX];
+static int hist_count;
+static int hist_sel;
+static int held_raise;
+static int held_hist;
+static int seed_pending;
+static int hist_armed;   /* Black was pressed, so the next raise is seeded */
 
 /* "7,9". Anything unparseable leaves the defaults. */
 static int parse_combo(const char *s)
@@ -131,10 +147,46 @@ static void load_combo(void)
 }
 
 
-/* a0 is a scratch script object owned by the menu manager - CompileAndRun zeroes 52 bytes at
- * a0+0xC and writes a0+0x478. The console loads it at 0x001C4DA1, well after the console menu it
- * held in the same register earlier. a3 is the optional reference, and 0 is what the console's
- * simple call site passes. */
+static void hist_push(const char *text)
+{
+    int i, j;
+
+    for (i = 0; i < CMD_MAX && hist[0][i] == text[i]; i++)
+        if (!text[i])
+            return; /* same as the last one */
+    for (i = HIST_MAX - 1; i > 0; i--)
+        for (j = 0; j < CMD_MAX; j++)
+            hist[i][j] = hist[i - 1][j];
+    for (i = 0; i < CMD_MAX - 1 && text[i]; i++)
+        hist[0][i] = text[i];
+    hist[0][i] = 0;
+    if (hist_count < HIST_MAX)
+        hist_count++;
+    hist_sel = 0;
+}
+
+/* seed_pending selects a command-history entry. */
+static void raise_keyboard(int seed)
+{
+    fn_find_menu find = (fn_find_menu)TES3X_FIND_MENU;
+    void *menu = find(*(unsigned short *)TES3X_CONSOLE_MENU_ID);
+    const char *initial = 0;
+
+    if (!menu) {
+        tes3x_log("console.vk_no_menu", 0);
+        return;
+    }
+    /* Passing initial text here prevents the keyboard from appearing; seed it later. */
+    (void)initial;
+    ((fn_open_vk)TES3X_OPEN_VK)(menu, 0);
+    vk_watch = 1;
+    cmd[0] = 0;
+    seed_pending = (seed && hist_count) ? 1 : 0;
+    hist_armed = 0;
+    tes3x_log("console.vk_raise", (u32)(seed_pending ? hist_sel + 1 : 0));
+}
+
+/* a0 is the menu manager's scratch script object; a3 is an optional reference. */
 static void run_command(const char *text)
 {
     unsigned char *game = *(unsigned char **)TES3X_GAME_PTR;
@@ -156,7 +208,7 @@ static void run_command(const char *text)
 }
 
 /* The keyboard's text, while it is still on screen. Returns 0 when there is nothing readable. */
-static const char *keyboard_text(void *vk)
+static void *keyboard_field(void *vk)
 {
     fn_get_prop get = (fn_get_prop)TES3X_GET_PROP;
     unsigned int out[8];
@@ -165,11 +217,16 @@ static const char *keyboard_text(void *vk)
 
     for (i = 0; i < 8; i++)
         out[i] = 0;
-    slot = (void **)get(vk, out, *(unsigned short *)TES3X_VK_TEXT_ID, 8, 0, 0);
-    if (!slot || !*slot)
-        return 0;
     /* The property yields the widget, not the string. */
-    return ((fn_widget_text)TES3X_WIDGET_TEXT)(*slot);
+    slot = (void **)get(vk, out, *(unsigned short *)TES3X_VK_TEXT_ID, 8, 0, 0);
+    return (slot && *slot) ? *slot : 0;
+}
+
+static const char *keyboard_text(void *vk)
+{
+    void *field = keyboard_field(vk);
+
+    return field ? ((fn_widget_text)TES3X_WIDGET_TEXT)(field) : 0;
 }
 
 static void watch_keyboard(void)
@@ -180,6 +237,18 @@ static void watch_keyboard(void)
     int i;
 
     if (vk && *((unsigned char *)vk + MENU_VISIBLE)) {
+        if (seed_pending) {
+            void *field = keyboard_field(vk);
+
+            seed_pending = 0;
+            if (field) {
+                ((fn_widget_set_text)TES3X_WIDGET_SET_TEXT)(field, hist[hist_sel]);
+                tes3x_log("console.seeded", (u32)(hist_sel + 1));
+            } else {
+                tes3x_log("console.seed_no_field", 0);
+            }
+            return; /* let it take effect before reading back */
+        }
         text = keyboard_text(vk);
         if (text) {
             for (i = 0; i < CMD_MAX - 1 && text[i] >= 0x20 && text[i] < 0x7F; i++)
@@ -190,8 +259,12 @@ static void watch_keyboard(void)
     }
 
     vk_watch = 0;
+    seed_pending = 0;
+    /* Require release after confirmation so the keyboard does not reopen. */
+    held_raise = 1;
+    held_hist = 1;
     if (!cmd[0]) {
-        tes3x_log("console.cmd_empty", 0);
+        tes3x_log("console.cancelled", 0);
         return;
     }
     for (i = 0; cmd[i]; i++)
@@ -199,6 +272,7 @@ static void watch_keyboard(void)
     tes3x_log_raw("console> ", 9);
     tes3x_log_raw(cmd, (u32)i);
     tes3x_log_raw("\n", 1);
+    hist_push(cmd);
     /* Not from here: this runs inside the input gate while the keyboard is being torn down. */
     run_delay = 8;
 }
@@ -213,7 +287,7 @@ unsigned int __attribute__((thiscall)) tes3x_console_hook(void *ctrl, int action
     (void)action;
     (void)mode;
 
-    /* Once, before anything else: separates "hook never ran" from "hook ran and died". */
+    /* Log first entry so startup failures remain diagnosable. */
     if (!seen_first) {
         seen_first = 1;
         tes3x_log("console.hook_first", (u32)(unsigned int)ctrl);
@@ -222,21 +296,8 @@ unsigned int __attribute__((thiscall)) tes3x_console_hook(void *ctrl, int action
     if (!combo_ready)
         load_combo();
 
-    /* Raised a frame late, so the console is already up when the keyboard attaches to it. */
-    if (pending_raise) {
-        fn_find_menu find = (fn_find_menu)TES3X_FIND_MENU;
-        void *menu = find(*(unsigned short *)TES3X_CONSOLE_MENU_ID);
-        pending_raise = 0;
-        if (menu) {
-            ((fn_open_vk)TES3X_OPEN_VK)(menu, 0);
-            vk_watch = 1;
-            cmd[0] = 0;
-        }
-        tes3x_log("console.vk_raise", (u32)(unsigned int)menu);
-    }
 
-    /* The keyboard delivers only to four hardcoded menus and the console is not one, so take the
-     * text ourselves: cache it while the keyboard is up, and run it once the keyboard goes away. */
+    /* Cache text because the keyboard has no delivery path for the console. */
     if (vk_watch)
         watch_keyboard();
 
@@ -257,6 +318,43 @@ unsigned int __attribute__((thiscall)) tes3x_console_hook(void *ctrl, int action
         return 0;
 
     in = (short *)(base + port * PORT_STRIDE + INPUT_BASE);
+
+    /* Start opens the keyboard; Black selects command history. */
+    if (console_open && !vk_watch && !run_delay) {
+        /* Each Black press selects an older command. */
+        if (in[KEY_BACK_HIST]) {
+            in[KEY_BACK_HIST] = 0;
+            if (!held_hist) {
+                held_hist = 1;
+                if (!hist_count) {
+                    tes3x_log("console.no_history", 0);
+                } else {
+                    if (!hist_armed) {
+                        hist_armed = 1;
+                        hist_sel = 0;
+                    } else if (++hist_sel >= hist_count) {
+                        hist_sel = 0;
+                    }
+                    tes3x_log("console.hist_sel", (u32)(hist_sel + 1));
+                }
+            }
+        } else {
+            held_hist = 0;
+        }
+        if (in[KEY_RAISE]) {
+            in[KEY_RAISE] = 0;
+            if (!held_raise) {
+                held_raise = 1;
+                raise_keyboard(hist_armed);
+            }
+        } else {
+            held_raise = 0;
+        }
+    } else {
+        held_raise = 0;
+        held_hist = 0;
+    }
+
     if (!in[combo_a] || !in[combo_b]) {
         was_held = 0;
         return 0;
@@ -271,8 +369,10 @@ unsigned int __attribute__((thiscall)) tes3x_console_hook(void *ctrl, int action
         return 0;
     was_held = 1;
     console_open = !console_open;
-    if (console_open)
-        pending_raise = 1;
+    if (!console_open) {
+        vk_watch = 0;
+        hist_armed = 0;
+    }
     tes3x_log("console.toggle", (u32)console_open);
     return 1;
 }
