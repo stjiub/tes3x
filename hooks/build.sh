@@ -10,15 +10,16 @@ ROOT=$(dirname "$HERE")
 OUT=${OUT:-$ROOT/build/hooks}
 CLANG=${CLANG:-/c/msys64/mingw64/bin/clang.exe}
 LLD=${LLD:-/c/msys64/mingw64/bin/lld-link.exe}
-SRCS=${SRCS:-"tes3xhook.c tes3xlog.c"}
+PYTHON=${PYTHON:-python}
+SRCS=${SRCS:-"tes3xhook.c tes3xlog.c tes3xdiag.c"}
 
 XBE=${1:?usage: build.sh <input.xbe> [output.xbe]}
 DEST=${2:-$OUT/morrowind.xbe}
 
 mkdir -p "$OUT"
 
-VA=$(python "$ROOT/tools/tes3x_inject.py" "$XBE" --next-va | tail -1)
-ENTRY=$(python - "$XBE" <<'PY'
+VA=$($PYTHON "$ROOT/tools/tes3x_inject.py" "$XBE" --next-va | tail -1)
+ENTRY=$($PYTHON - "$XBE" <<'PY'
 import sys, struct
 d = open(sys.argv[1], 'rb').read()
 print("0x%08X" % (struct.unpack_from('<I', d, 0x128)[0] ^ 0xA8FC57AB))
@@ -27,7 +28,25 @@ PY
 
 echo "section VA $VA   original entry $ENTRY"
 
-python "$ROOT/tools/tes3x_inject.py" "$XBE" --dump-thunks "$HERE/tes3x_thunks.h" >/dev/null
+$PYTHON "$ROOT/tools/tes3x_inject.py" "$XBE" --dump-thunks "$HERE/tes3x_thunks.h" >/dev/null
+
+BUILD_ID=$($PYTHON - "$HERE" "$EXTRA_CFLAGS" $SRCS <<'PY'
+import hashlib, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+flags = sys.argv[2]
+names = set(sys.argv[3:] + ["build.sh", "tes3xdiag.h", "tes3xlog.h", "tes3xnt.h",
+                             "tes3x_thunks.h"])
+h = hashlib.sha256()
+h.update(b"flags\0" + flags.encode("utf-8") + b"\0")
+for name in sorted(names):
+    path = root / name
+    if path.exists():
+        h.update(name.encode("ascii") + b"\0" + path.read_bytes())
+print("0x" + h.hexdigest()[:8])
+PY
+)
+echo "payload build id $BUILD_ID"
+EXTRA_CFLAGS="$EXTRA_CFLAGS -DTES3X_BUILD_ID=$BUILD_ID"
 
 # The archive hook stands in for Archive::Load at its one call site, so it needs that
 # function's address; read it out of the binary rather than hardcoding it here.
@@ -35,7 +54,7 @@ INJECT_EXTRA=""
 case " $SRCS " in
 *" tes3xarch.c "*)
     ARCH_SITE=${ARCH_SITE:-0x000D4E06}
-    ARCH_LOAD=$(python "$ROOT/tools/tes3x_inject.py" "$XBE" --print-call "$ARCH_SITE" | tail -1)
+    ARCH_LOAD=$($PYTHON "$ROOT/tools/tes3x_inject.py" "$XBE" --print-call "$ARCH_SITE" | tail -1)
     echo "archive hook: call site $ARCH_SITE -> Archive::Load $ARCH_LOAD"
     EXTRA_CFLAGS="$EXTRA_CFLAGS -DTES3X_ARCHIVE_LOAD=$ARCH_LOAD"
     ;;
@@ -46,8 +65,8 @@ esac
 # patcher uses, so the payload and the patch cannot disagree about which function it is.
 case " $SRCS " in
 *" tes3xscript.c "*)
-    RUN_FUNCTION=$(python "$ROOT/tools/tes3x_patch.py" "$XBE" --locate run-function | tail -1)
-    COMMAND_TABLE=$(python "$ROOT/tools/tes3x_patch.py" "$XBE" --locate command-table | tail -1)
+    RUN_FUNCTION=$($PYTHON "$ROOT/tools/tes3x_patch.py" "$XBE" --locate run-function | tail -1)
+    COMMAND_TABLE=$($PYTHON "$ROOT/tools/tes3x_patch.py" "$XBE" --locate command-table | tail -1)
     OPCODE_BASE=$(sed -n 's/^#define TES3X_OPCODE_BASE  *//p' "$HERE/tes3xscript.c")
     OPCODE_CEIL=$(sed -n 's/^#define TES3X_OPCODE_CEIL  *//p' "$HERE/tes3xscript.c")
     echo "script hook: RunFunction $RUN_FUNCTION, table $COMMAND_TABLE, opcodes [$OPCODE_BASE, $OPCODE_CEIL)"
@@ -59,7 +78,7 @@ esac
 # Settings come from Morrowind.ini through the engine's own reader, so any hook that takes
 # one needs its address and the filename string.
 case " $SRCS " in
-*" tes3xconsole.c "*|*" tes3xrefs.c "*)
+*" tes3xconsole.c "*|*" tes3xrefs.c "*|*" tes3xdiag.c "*)
     INI_GET=${INI_GET:-0x001933E0}
     INI_PATH=${INI_PATH:-0x0035E364}
     echo "ini reader $INI_GET, ini path $INI_PATH"
@@ -67,12 +86,21 @@ case " $SRCS " in
     ;;
 esac
 
+# Diagnostics stands in for the sole call to the once-per-frame update function.
+case " $SRCS " in
+*" tes3xdiag.c "*)
+    DIAG_UPDATE=$($PYTHON "$ROOT/tools/tes3x_patch.py" "$XBE" --locate diagnostics-update | tail -1)
+    echo "diagnostics hook: Game::Update $DIAG_UPDATE"
+    EXTRA_CFLAGS="$EXTRA_CFLAGS -DTES3X_DIAGNOSTICS -DTES3X_DIAG_UPDATE=$DIAG_UPDATE"
+    ;;
+esac
+
 # MCP id=1 lands on the restamp fallback all four paths share. Both addresses come from the
 # same signature search the patcher uses, so the payload and the patch cannot disagree.
 case " $SRCS " in
 *" tes3xrefs.c "*)
-    REF_LOAD=$(python "$ROOT/tools/tes3x_patch.py" "$XBE" --locate ref-load | tail -1)
-    REF_SKIP=$(python "$ROOT/tools/tes3x_patch.py" "$XBE" --locate ref-skip | tail -1)
+    REF_LOAD=$($PYTHON "$ROOT/tools/tes3x_patch.py" "$XBE" --locate ref-load | tail -1)
+    REF_SKIP=$($PYTHON "$ROOT/tools/tes3x_patch.py" "$XBE" --locate ref-skip | tail -1)
     REF_RESUME=$(printf '0x%08X' $((REF_LOAD + 6)))
     echo "refs hook: fallback $REF_LOAD, resume $REF_RESUME, skip $REF_SKIP"
     EXTRA_CFLAGS="$EXTRA_CFLAGS -DTES3X_REF_RESUME=$REF_RESUME -DTES3X_REF_SKIP=$REF_SKIP"
@@ -143,14 +171,23 @@ if [ -n "$CONSOLE_SITE" ]; then
     [ -n "$CHOOK" ] || { echo "could not find tes3x_console_hook in the link map" >&2; exit 1; }
     HOOKS="$HOOKS console_gate=0x$CHOOK"
 fi
+if [ -n "$DIAG_UPDATE" ]; then
+    DHOOK=$(sym_va _tes3x_diag_update_hook)
+    [ -n "$DHOOK" ] || { echo "could not find _tes3x_diag_update_hook in the link map" >&2; exit 1; }
+    DFLAG=$(sym_va _tes3x_diag_installed)
+    [ -n "$DFLAG" ] || { echo "could not find _tes3x_diag_installed in the link map" >&2; exit 1; }
+    DMASK=$(sym_va _tes3x_patch_mask)
+    [ -n "$DMASK" ] || { echo "could not find _tes3x_patch_mask in the link map" >&2; exit 1; }
+    HOOKS="$HOOKS diagnostics_update=0x$DHOOK diagnostics_flag=0x$DFLAG patch_mask=0x$DMASK"
+fi
 
 # Hook addresses beside the blob, so tes3x_patch.py can apply it without a toolchain or a map.
-python - "$OUT/tes3xhook.json" "$VA" $HOOKS <<'MANIFEST'
+$PYTHON - "$OUT/tes3xhook.json" "$VA" $HOOKS <<'MANIFEST'
 import json, sys
 out, base = sys.argv[1], sys.argv[2]
 doc = {"base": base, "hooks": dict(a.split("=", 1) for a in sys.argv[3:])}
 json.dump(doc, open(out, "w", encoding="utf-8"), indent=2)
 MANIFEST
 
-python "$ROOT/tools/tes3x_inject.py" "$XBE" \
+$PYTHON "$ROOT/tools/tes3x_inject.py" "$XBE" \
     --payload "$OUT/tes3xhook.pe" --hook-entry $INJECT_EXTRA --out "$DEST"

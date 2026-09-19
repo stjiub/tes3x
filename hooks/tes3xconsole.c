@@ -4,6 +4,9 @@
 
 #include "tes3x_thunks.h"
 #include "tes3xlog.h"
+#ifdef TES3X_DIAGNOSTICS
+#include "tes3xdiag.h"
+#endif
 
 #ifndef TES3X_INI_GET_STRING
 #error "define TES3X_INI_GET_STRING to the VA of the ini string reader"
@@ -193,6 +196,10 @@ static void run_command(const char *text)
     unsigned char *mgr;
     void *ctx, *script;
 
+#ifdef TES3X_DIAGNOSTICS
+    if (tes3x_diag_command(text))
+        return;
+#endif
     if (!game) {
         tes3x_log("console.no_game", 0);
         return;
@@ -374,5 +381,8 @@ unsigned int __attribute__((thiscall)) tes3x_console_hook(void *ctrl, int action
         hist_armed = 0;
     }
     tes3x_log("console.toggle", (u32)console_open);
+#ifdef TES3X_DIAGNOSTICS
+    tes3x_diag_note(TES3X_DIAG_NOTE_CONSOLE, (u32)console_open);
+#endif
     return 1;
 }

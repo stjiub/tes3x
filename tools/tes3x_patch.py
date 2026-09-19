@@ -51,6 +51,17 @@ REGION_ANY = 0x00000007
 
 PATCHES = {}
 
+PATCH_BITS = {
+    "drive-letters": 1 << 0,
+    "save-staging": 1 << 1,
+    "boot-media": 1 << 2,
+    "multi-bsa": 1 << 3,
+    "script-ext": 1 << 4,
+    "mcp-1": 1 << 5,
+    "diagnostics": 1 << 6,
+    "console": 1 << 7,
+}
+
 
 class PatchError(Exception):
     pass
@@ -368,6 +379,51 @@ CONSOLE_GATE_SIG = bytes([
     0xE8,                    # call rel32        ; the action check this replaces
 ])
 
+# Game::Update is the 43-call once-per-frame function containing the console gate.
+DIAGNOSTICS_UPDATE_SIG = bytes([
+    0x55, 0x8B, 0xEC,             # push ebp; mov ebp,esp
+    0x83, 0xE4, 0xF8,             # and esp,-8
+    0x83, 0xEC, 0x58,             # sub esp,0x58
+    0x53, 0x55, 0x56, 0x57,       # save registers
+    0x8B, 0xE9,                   # mov ebp,ecx
+])
+
+
+def find_diagnostics_update(x):
+    """The once-per-frame update function, found by its checked prologue."""
+    off = find_unique(x.data, DIAGNOSTICS_UPDATE_SIG, "Game::Update")
+    va = x.off_to_va(off)
+    if va is None:
+        raise PatchError("diagnostics: Game::Update is outside any section")
+    return va
+
+
+@patch("diagnostics")
+def _diagnostics(x, value, ctx):
+    """Enable INI-controlled crash records, snapshots and a hang watchdog."""
+    hooks = ctx.get("hooks", {})
+    target = hooks.get("diagnostics_update")
+    flag = hooks.get("diagnostics_flag")
+    if not target or not flag:
+        raise PatchError("diagnostics: needs `payload` first, with diagnostics_update and flag in "
+                         "its manifest")
+    target = int(str(target), 16)
+    flag = int(str(flag), 16)
+    flag_off = x.va_to_off(flag)
+    if flag_off is None:
+        raise PatchError("diagnostics: installed flag is outside the payload section")
+    struct.pack_into("<I", x.data, flag_off, 1)
+    update = find_diagnostics_update(x)
+    sites = find_call_sites(x, update)
+    if len(sites) != 1:
+        raise PatchError("diagnostics: %d call site(s) for Game::Update 0x%08X, expected 1"
+                         % (len(sites), update))
+    site = sites[0]
+    was, off = x.patch_call(site, target)
+    return [(None, 4, "diagnostics installed flag at 0x%08X" % flag),
+            (off, 5, "Game::Update call 0x%08X: 0x%08X -> 0x%08X"
+             % (site, was, target))]
+
 
 def find_console_gate(x):
     """The one `call` that gates Console::Toggle, found by its push/push/call shape."""
@@ -401,7 +457,8 @@ def main():
     ap.add_argument("--apply", action="append", default=[], metavar="NAME[=VALUE]")
     ap.add_argument("--section", default=".tes3xhk")
     ap.add_argument("--list", action="store_true", help="list available patches and exit")
-    ap.add_argument("--locate", choices=["run-function", "command-table", "ref-load", "ref-skip"],
+    ap.add_argument("--locate", choices=["run-function", "command-table", "ref-load", "ref-skip",
+                                               "diagnostics-update"],
                     help="print a content-located engine address and exit")
     a = ap.parse_args()
 
@@ -417,7 +474,8 @@ def main():
     x = tes3x_inject.Xbe(raw)
     if a.locate:
         finder = {"run-function": find_run_function, "command-table": find_command_table,
-                  "ref-load": find_ref_load, "ref-skip": find_ref_skip}
+                  "ref-load": find_ref_load, "ref-skip": find_ref_skip,
+                  "diagnostics-update": find_diagnostics_update}
         print("0x%08X" % finder[a.locate](x))
         return
     cert = struct.unpack_from("<I", x.data, 0x118)[0]
@@ -430,6 +488,7 @@ def main():
 
     ctx = {"section": a.section}
     touched = []
+    applied = []
     for spec in a.apply:
         name, _, value = spec.partition("=")
         if name not in PATCHES:
@@ -443,8 +502,21 @@ def main():
                 print("    %s" % label)
                 if off is not None:
                     touched.append((off, length))
+            applied.append(name)
         except PatchError as exc:
             raise SystemExit("  FAILED: %s" % exc)
+
+    mask_va = ctx.get("hooks", {}).get("patch_mask")
+    if mask_va:
+        mask_va = int(str(mask_va), 16)
+        mask_off = x.va_to_off(mask_va)
+        if mask_off is None:
+            raise SystemExit("payload patch mask is outside the injected section")
+        mask = 0
+        for name in applied:
+            mask |= PATCH_BITS.get(name, 0)
+        struct.pack_into("<I", x.data, mask_off, mask)
+        print("\n  payload patch mask 0x%08X at 0x%08X" % (mask, mask_va))
 
     x.rebuild_headers()
     out = bytes(x.data)

@@ -27,6 +27,7 @@ typedef u32(__stdcall *fn_NtWriteFile)(void *, void *, void *, void *, IO_STATUS
                                        const void *, u32, u64 *);
 typedef u32(__stdcall *fn_NtReadFile)(void *, void *, void *, void *, IO_STATUS_BLOCK *,
                                       void *, u32, u64 *);
+typedef u32(__stdcall *fn_NtQueryInformationFile)(void *, IO_STATUS_BLOCK *, void *, u32, u32);
 typedef u32(__stdcall *fn_NtSetInformationFile)(void *, IO_STATUS_BLOCK *, void *, u32, u32);
 typedef u32(__stdcall *fn_NtFlushBuffersFile)(void *, IO_STATUS_BLOCK *);
 typedef u32(__stdcall *fn_NtClose)(void *);
@@ -49,6 +50,7 @@ typedef void(__stdcall *fn_KeQuerySystemTime)(u64 *);
 #define OB_DOS_DEVICES ((void *)-3) /* ObpDosDevicesDirectoryObject, as XAPI uses it */
 #define FileEndOfFileInformation 20u
 #define FileDispositionInformation 13u
+#define FileStandardInformation 5u
 #define FILE_WRITE_TO_END_OF_FILE 0xFFFFFFFFFFFFFFFFull
 
 /* A thunk slot holds the resolved function pointer once the kernel has fixed up imports. */

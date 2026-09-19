@@ -22,6 +22,10 @@ other key. They do nothing without the patch that installs the hook.
 |---|---|---|---|
 | `[Xbox] ConsoleCombo` | `--apply console` | two input indices, `A,B` | `7,9` - Back + right thumb click |
 | `[Xbox] DropReplacedRefs` | `--apply mcp-1` | `0` or `1` | `1` - drop a reference whose plugin no longer resolves |
+| `[Xbox] Diagnostics` | `--apply diagnostics` | `0`, `1` or `2` | `0` - disabled; nonzero enables diagnostics at that level |
+| `[Xbox] DiagnosticsLevel` | `--apply diagnostics` | `0`, `1` or `2` | value of `Diagnostics`; `2` adds periodic snapshots and notes |
+| `[Xbox] HangWatchdog` | `--apply diagnostics` | `0` or `1` | `1` when diagnostics are enabled |
+| `[Xbox] HangTimeoutSeconds` | `--apply diagnostics` | `10` through `600` | `60` |
 
 ## The ones that matter for this project
 
@@ -676,4 +680,3 @@ other key. They do nothing without the patch that installs the hook.
 | key | type | default |
 |---|---|---|
 | `Cell 0` | flt |  |
-
