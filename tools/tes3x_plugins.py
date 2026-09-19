@@ -1,11 +1,4 @@
-"""Run mlox in an isolated PC-side plugin workspace.
-
-Xbox dependency stubs are expanded to empty TES3 headers only in this workspace.
-
-TES3Merge support was removed: its `Merged Objects.esp` hangs the Xbox loading screen
-indefinitely, isolated against an otherwise identical build. See the Ruled out section of
-research before reintroducing it.
-"""
+"""Run mlox with expanded Xbox stubs in an isolated workspace."""
 import argparse
 import hashlib
 import json
@@ -31,13 +24,7 @@ BASE_MASTERS = ('morrowind.esm', 'tribunal.esm', 'bloodmoon.esm')
 
 
 def dependency_order(files, mtime=True):
-    """Order plugins so every master precedes what depends on it.
-
-    Sorting by mtime alone cannot do this: two masters can carry a dependency between them
-    and nothing about their timestamps reflects it. This is a stable topological sort, with
-    the retail masters pinned first and (esm before esp, mtime, name) as the tiebreak, so a
-    set with no dependencies between its masters keeps the order it had.
-    """
+    """Stable dependency order with retail masters first and mtime/name tiebreaks."""
     names = list(files)
     known = set(names)
     masters = {n: {m.lower() for m in plugin_masters(str(files[n]))} & known - {n}

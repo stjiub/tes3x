@@ -1,0 +1,13 @@
+[profile]
+name = "example"
+library = "C:/path/to/mod-library"
+
+[rules]
+max_texture_size = 512
+max_filename = 42
+clear_cache_partitions = true
+
+[[mods]]
+name = "Example Mod"
+enabled = true
+order = 10

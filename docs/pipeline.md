@@ -24,7 +24,7 @@ not a filename or directory component exceeding 42 characters.
 ## Reachability
 
 ```powershell
-python tools/tes3x_build.py profiles/console.toml --prune `
+python tools/tes3x_build.py examples/profile.toml --prune `
   --vanilla "build/vanilla/Data Files" `
   --out build/pruned-tree --reachability-json build/reachability.json `
   --remote-root "F:/Games/MorrowindTest"

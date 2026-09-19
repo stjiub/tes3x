@@ -1,11 +1,7 @@
-"""Inject a code section into a retail XBE and retarget its entry point.
-
-The retail header is fully packed - the shared-page refcount words sit directly after the
-section table and the name block directly after those - so making room for another section
-header means re-emitting both into the free space before the first section's raw data.
-"""
+"""Inject an XBE section and rebuild its packed header tail."""
 
 import argparse
+import os
 import re
 import struct
 
@@ -25,7 +21,9 @@ HDR_THUNK = 0x158
 SECHDR_SIZE = 56
 PAGE = 0x1000
 
-KRNL_DEF = "<nxdk checkout>/lib/xboxkrnl/xboxkrnl.exe.def"
+DEFAULT_KRNL_DEF = (os.path.join(os.environ["NXDK_DIR"], "lib", "xboxkrnl",
+                                 "xboxkrnl.exe.def")
+                    if "NXDK_DIR" in os.environ else None)
 
 
 def _u32(b, o):
@@ -106,9 +104,7 @@ class Xbe:
         s = Section()
         s.flags, s.va, s.vsize, s.raw, s.rsize = flags, va, vsize, raw, len(payload)
         s.name, s.digest = name, b"\0" * 20
-        # XeLoadSection dereferences both refcount words when it loads a section, so they
-        # must not be NULL - every retail section has a pair. Sentinels here; rebuild_headers
-        # keys allocation on this value and hands back two fresh words.
+        # XeLoadSection requires both refcount pointers; sentinels request fresh words below.
         s.head_ref, s.tail_ref = -1, -2
         self.sections.append(s)
         return va
@@ -126,13 +122,7 @@ class Xbe:
         return bytes(self.data[o:e + 1])
 
     def rebuild_headers(self):
-        """Re-lay the header tail: section table, then everything that shared the page.
-
-        Growing the table by one entry runs into the refcount words that sit immediately
-        after it, so the whole tail gets re-emitted. The library versions, debug strings
-        and logo bitmap live in that same page and the kernel reads them at load time, so
-        they have to be carried across rather than treated as free space.
-        """
+        """Rebuild the section table and preserve the shared header-page tail."""
         d = self.data
         base = self.base
         n = len(self.sections)
@@ -162,8 +152,7 @@ class Xbe:
             alloc += size
             return at
 
-        # sections straddling a page share a refcount word; key relocation on the old
-        # address so that sharing survives
+        # Preserve shared refcount words by their old address.
         ref_map = {}
         for s in self.sections:
             for old in (s.head_ref, s.tail_ref):
@@ -221,11 +210,7 @@ class Xbe:
         struct.pack_into("<I", self.data, HDR_ENTRY, va ^ ENTRY_XOR[self.kind])
 
     def patch_call(self, va, target):
-        """Retarget an existing 5-byte `call rel32`. Returns the VA it used to reach.
-
-        A call is a fixed width, so redirecting one needs no instruction-length decoding -
-        which is why a call-site hook is reachable without general trampoline support.
-        """
+        """Retarget a 5-byte call and return its old target."""
         off = self.va_to_off(va)
         if off is None:
             raise ValueError("VA 0x%08X is not in any section" % va)
@@ -244,12 +229,7 @@ def _mask(buf, ranges):
 
 
 def verify(orig, new, patched=()):
-    """patched: (offset, length) byte ranges this build deliberately rewrote."""
-    """Every header structure that is not the section table must survive byte-identical.
-
-    Re-laying the header page silently destroyed the library versions the first time; the
-    image then failed to load with no output at all, so this is checked on every build.
-    """
+    """Verify unpatched bytes and non-section-table header structures."""
     a, b = Xbe(orig), Xbe(new)
     problems = []
 
@@ -327,14 +307,13 @@ def load_pe(path):
     for va, body in parts:
         blob[va:va + len(body)] = body
     assert len(blob) == end
-    # keep the blob at full virtual size so bss is backed by real zeroes in the file
-    # rather than depending on the loader zero-filling the tail
+    # Back bss with file zeroes instead of relying on the loader.
     return bytes(blob), end, entry_rva, imgbase
 
 
-def write_thunks(x, path):
+def write_thunks(x, path, kernel_def):
     names = {}
-    for line in open(KRNL_DEF, encoding="utf-8", errors="replace"):
+    for line in open(kernel_def, encoding="utf-8", errors="replace"):
         m = re.match(r"\s+(\w+)(?:@\d+)?\s+@\s+(\d+)", line)
         if m:
             names[int(m.group(2))] = m.group(1)
@@ -361,6 +340,8 @@ def main():
                     help="retarget the XBE entry point at the payload")
     ap.add_argument("--dump-thunks", metavar="HEADER",
                     help="write a C header of kernel thunk slot addresses")
+    ap.add_argument("--kernel-def", default=DEFAULT_KRNL_DEF,
+                    help="xboxkrnl.exe.def path (default: NXDK_DIR/lib/xboxkrnl/xboxkrnl.exe.def)")
     ap.add_argument("--next-va", action="store_true",
                     help="print the VA a new section would land at, then exit")
     ap.add_argument("--patch-call", action="append", default=[], metavar="VA=TARGET",
@@ -384,7 +365,9 @@ def main():
         print("0x%08X" % (va + 5 + struct.unpack_from("<i", x.data, off + 1)[0]))
         return
     if a.dump_thunks:
-        write_thunks(x, a.dump_thunks)
+        if not a.kernel_def:
+            ap.error("--dump-thunks requires --kernel-def or NXDK_DIR")
+        write_thunks(x, a.dump_thunks, a.kernel_def)
     if not a.payload:
         return
 
