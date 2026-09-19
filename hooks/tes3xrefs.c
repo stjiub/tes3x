@@ -74,6 +74,12 @@ static void load_drop(void)
     }
 }
 
+/* Record the first legitimate reference load. */
+void tes3x_ref_first(void)
+{
+    tes3x_log("refs.first", tes3x_ref_legit);
+}
+
 void tes3x_ref_orphan(void)
 {
     if (!drop_ready)
@@ -96,6 +102,13 @@ __attribute__((naked)) void tes3x_ref_load_hook(void)
         "testb %bl, %bl\n\t"
         "jnz 2f\n\t"
         "incl _tes3x_ref_legit\n\t"
+        "cmpl $1, _tes3x_ref_legit\n\t"
+        "jne 1f\n\t"
+        "pushal\n\t"
+        "pushfl\n\t"
+        "call _tes3x_ref_first\n\t"
+        "popfl\n\t"
+        "popal\n\t"
         "1:\n\t"
         "movl 0x4dc(%ebp), %eax\n\t" /* the instruction the patch replaced */
         "pushl $" TES3X_STR(TES3X_REF_RESUME) "\n\t"

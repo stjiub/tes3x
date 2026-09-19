@@ -26,14 +26,18 @@ def local_tree(root):
 
 
 def remote_tree(ftp, base):
+    # `LIST <path>` on this console's FTP server ignores the argument and lists the
+    # drive root instead of erroring, which sends a path that doesn't exist yet into
+    # unbounded recursion. cwd + bare LIST is the form it actually honors.
     out = {}
 
     def walk(path):
-        entries = []
         try:
-            ftp.retrlines(f"LIST {path}", entries.append)
+            ftp.cwd(path)
         except ftplib.error_perm:
             return
+        entries = []
+        ftp.retrlines("LIST", entries.append)
         for line in entries:
             parts = line.split(maxsplit=8)
             if len(parts) < 9:
@@ -44,6 +48,7 @@ def remote_tree(ftp, base):
             child = posixpath.join(path, name)
             if line[0] == "d":
                 walk(child)
+                ftp.cwd(path)
             else:
                 rel = posixpath.relpath(child, base)
                 try:
@@ -60,10 +65,16 @@ def ensure_dirs(ftp, path, made):
     parts = path.split("/")
     for i in range(1, len(parts)):
         d = "/".join(parts[:i])
+        # A bare drive letter ("F:") is the partition root, not something to create,
+        # and this server answers a create attempt on it with a 450 rather than a
+        # clean "exists" error.
+        if len(parts[:i]) == 1 and d.endswith(":"):
+            made.add(d)
+            continue
         if d and d not in made:
             try:
                 ftp.mkd(d)
-            except ftplib.error_perm:
+            except (ftplib.error_perm, ftplib.error_temp):
                 pass
             made.add(d)
 

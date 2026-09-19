@@ -50,6 +50,74 @@ def bindings(path):
     return masters, hist
 
 
+def poison_references(path, out, cell_name=None, from_index=1, to_index=0xFF):
+    """Copy a save while making selected references fail master-index resolution."""
+    if os.path.abspath(path) == os.path.abspath(out):
+        raise ValueError("output must differ from the source save")
+    if not 0 <= from_index <= 0xFF or not 0 <= to_index <= 0xFF:
+        raise ValueError("reference indices must fit one byte")
+
+    data = bytearray(open(path, "rb").read())
+    record_off = 0
+    cells = 0
+    patched = 0
+    while record_off < len(data):
+        if record_off + HEADER > len(data):
+            raise ValueError(f"truncated record header at {record_off}")
+        tag, size, _unknown, _flags = struct.unpack_from("<4sIII", data, record_off)
+        body = record_off + HEADER
+        end = body + size
+        if end > len(data):
+            raise ValueError(f"{tag!r} exceeds file at {record_off}")
+        if tag == b"CELL":
+            cells += 1
+            wanted = cell_name is None
+            if cell_name is not None:
+                for stag, sdata in subrecords(bytes(data[body:end])):
+                    if (stag == b"NAME"
+                            and sdata.rstrip(bytes(1)).decode("latin-1").casefold()
+                            == cell_name.casefold()):
+                        wanted = True
+                        break
+            if not wanted:
+                record_off = end
+                continue
+            sub_off = body
+            while sub_off < end:
+                if sub_off + 8 > end:
+                    raise ValueError(f"truncated CELL subrecord at {sub_off}")
+                stag, ssize = struct.unpack_from("<4sI", data, sub_off)
+                value_off = sub_off + 8
+                sub_end = value_off + ssize
+                if sub_end > end:
+                    raise ValueError(f"{stag!r} exceeds CELL at {sub_off}")
+                if stag == b"FRMR" and ssize >= 4:
+                    value = struct.unpack_from("<I", data, value_off)[0]
+                    if value >> 24 == from_index:
+                        value = (value & 0x00FFFFFF) | (to_index << 24)
+                        struct.pack_into("<I", data, value_off, value)
+                        patched += 1
+                        break
+                sub_off = sub_end
+        record_off = end
+
+    if not patched:
+        where = f" in CELL {cell_name!r}" if cell_name is not None else ""
+        raise ValueError(f"no CELL reference used mod index {from_index}{where}")
+    with open(out, "wb") as stream:
+        stream.write(data)
+    return cells, patched
+
+
+def poison_first_per_cell(path, out, from_index=1, to_index=0xFF):
+    return poison_references(path, out, from_index=from_index, to_index=to_index)
+
+
+def poison_first_in_cell(path, out, cell_name, from_index=1, to_index=0xFF):
+    return poison_references(path, out, cell_name=cell_name,
+                             from_index=from_index, to_index=to_index)
+
+
 def report_bindings(paths):
     total = collections.Counter()
     orders = {}
@@ -84,7 +152,26 @@ def main():
     ap.add_argument("--detail", action="store_true", help="per-record-type breakdown")
     ap.add_argument("--bindings", action="store_true",
                     help="MAST list and what changed refs are bound to")
+    ap.add_argument("--poison-first-per-cell", metavar="OUT",
+                    help="copy one save, changing its first index-1 CELL reference to index 255")
+    ap.add_argument("--poison-first-in-cell", nargs=2, metavar=("CELL", "OUT"),
+                    help="copy one save, poisoning one reference in the named CELL")
     a = ap.parse_args()
+
+    if a.poison_first_per_cell or a.poison_first_in_cell:
+        if len(a.saves) != 1:
+            raise SystemExit("poisoning requires exactly one input save")
+        try:
+            if a.poison_first_in_cell:
+                cell_name, out = a.poison_first_in_cell
+                cells, patched = poison_first_in_cell(a.saves[0], out, cell_name)
+            else:
+                out = a.poison_first_per_cell
+                cells, patched = poison_first_per_cell(a.saves[0], out)
+        except ValueError as exc:
+            raise SystemExit(str(exc))
+        print(f"  {out}: {patched}/{cells} CELL records poisoned")
+        return
 
     if a.bindings:
         return report_bindings(sorted(a.saves))
