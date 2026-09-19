@@ -34,7 +34,7 @@ def remote_tree(ftp, base):
     def walk(path):
         try:
             ftp.cwd(path)
-        except ftplib.error_perm:
+        except (ftplib.error_perm, ftplib.error_temp):
             return
         entries = []
         ftp.retrlines("LIST", entries.append)
@@ -62,21 +62,30 @@ def remote_tree(ftp, base):
 
 
 def ensure_dirs(ftp, path, made):
-    parts = path.split("/")
-    for i in range(1, len(parts)):
-        d = "/".join(parts[:i])
-        # A bare drive letter ("F:") is the partition root, not something to create,
-        # and this server answers a create attempt on it with a 450 rather than a
-        # clean "exists" error.
-        if len(parts[:i]) == 1 and d.endswith(":"):
-            made.add(d)
-            continue
-        if d and d not in made:
-            try:
-                ftp.mkd(d)
-            except (ftplib.error_perm, ftplib.error_temp):
-                pass
-            made.add(d)
+    parent = posixpath.dirname(path)
+    if parent in made:
+        ftp.cwd(parent)
+        return
+
+    parts = parent.split("/")
+    ftp.cwd(parts[0])
+    current = parts[0]
+    made.add(current)
+    for part in parts[1:]:
+        current = posixpath.join(current, part)
+        try:
+            ftp.cwd(part)
+        except (ftplib.error_perm, ftplib.error_temp):
+            ftp.mkd(part)
+            ftp.cwd(part)
+        made.add(current)
+
+
+def ftp_basename(ftp, path):
+    """Enter a file's directory and return the relative name this server accepts."""
+    parent, name = posixpath.split(path)
+    ftp.cwd(parent)
+    return name
 
 
 def human(n):
@@ -110,7 +119,7 @@ def main():
     print(f"staged tree: {len(local)} files, {human(total)}")
 
     base = args.remote.replace("\\", "/").rstrip("/")
-    ftp = ftplib.FTP()
+    ftp = ftplib.FTP(encoding="latin-1")
     ftp.connect(args.host, args.port, timeout=30)
     ftp.login(args.user, args.password)
     print(f"connected to {args.host}:{args.port} as {args.user}")
@@ -146,7 +155,8 @@ def main():
 
     for r in sorted(delete):
         try:
-            ftp.delete(posixpath.join(base, r))
+            dst = posixpath.join(base, r)
+            ftp.delete(ftp_basename(ftp, dst))
         except ftplib.all_errors as e:
             print(f"    delete failed {r}: {e}")
 
@@ -161,12 +171,13 @@ def main():
         dst = posixpath.join(base, r)
         ensure_dirs(ftp, dst, made)
         with open(local[r][2], "rb") as f:
-            ftp.storbinary(f"STOR {dst}", f, blocksize=64 * 1024)
+            name = ftp_basename(ftp, dst)
+            ftp.storbinary(f"STOR {name}", f, blocksize=64 * 1024)
         sent += local[r][0]
         if has_mfmt:
             stamp = time.strftime("%Y%m%d%H%M%S", time.gmtime(local[r][1]))
             try:
-                ftp.sendcmd(f"MFMT {stamp} {dst}")
+                ftp.sendcmd(f"MFMT {stamp} {name}")
             except ftplib.all_errors:
                 has_mfmt = False
         elif r in set(plugins):
