@@ -307,6 +307,61 @@ def _script_ext(x, value, ctx):
     return edits
 
 
+# `mov [esp+0x1c],bl` then the restamp fallback's landing instruction. `mov eax,[ebp+0x4DC]`
+# occurs three times in the image; with the store above it the site is unique.
+REF_LOAD_SIG = bytes([
+    0x88, 0x5C, 0x24, 0x1C,              # mov [esp+0x1c], bl
+    0x8B, 0x85, 0xDC, 0x04, 0x00, 0x00,  # mov eax, [ebp+0x4DC]   <- the six bytes replaced
+    0x8B, 0x74, 0x24, 0x14,              # mov esi, [esp+0x14]
+])
+REF_LOAD_OFF = 4
+
+# The loader's own skip tail, where a dropped reference rejoins: it consumes the reference's
+# remaining subrecords and returns to the per-reference loop.
+REF_SKIP_SIG = re.compile(rb"\x8a\x44\x24\x13\x84\xc0\x74.\x8d\x4c\x24\x2c\x51\x8b\xcf", re.S)
+
+# `mov eax,[esp+0x14]; sar eax,0x18` - the mod index, extracted arithmetically, so 0x80 and above
+# come out negative and never resolve. `sar eax,0x18` occurs once in the whole image.
+REF_INDEX_SIG = bytes([0x8B, 0x44, 0x24, 0x14, 0xC1, 0xF8, 0x18, 0x85, 0xC0, 0x74])
+REF_INDEX_OFF = 5  # the /7 sar modrm byte; /5 is shr
+
+
+def find_ref_load(x):
+    """The restamp fallback the three failed resolutions share with the legitimate path."""
+    off = find_unique(x.data, REF_LOAD_SIG, "restamp fallback") + REF_LOAD_OFF
+    va = x.off_to_va(off)
+    if va is None:
+        raise PatchError("mcp-1: the restamp fallback is outside any section")
+    return va
+
+
+def find_ref_skip(x):
+    """The skip tail a dropped reference rejoins."""
+    hits = [m.start() for m in REF_SKIP_SIG.finditer(bytes(x.data))]
+    if len(hits) != 1:
+        raise PatchError("mcp-1: %d skip tail(s), expected 1" % len(hits))
+    return x.off_to_va(hits[0])
+
+
+@patch("mcp-1")
+def _mcp_1(x, value, ctx):
+    """Stop an unresolvable reference being restamped as created at runtime."""
+    target = ctx.get("hooks", {}).get("ref_load")
+    if not target:
+        raise PatchError("mcp-1: needs `payload` first, with a ref_load hook in its manifest")
+    target = int(str(target), 16)
+    site = find_ref_load(x)
+    off = x.va_to_off(site)
+    # jmp rel32 plus one pad; the replaced instruction is six bytes and the payload repeats it.
+    x.data[off:off + 6] = b"\xe9" + struct.pack("<i", target - (site + 5)) + b"\x90"
+    edits = [(off, 6, "restamp fallback 0x%08X -> 0x%08X" % (site, target))]
+
+    shift = find_unique(x.data, REF_INDEX_SIG, "mod index shift") + REF_INDEX_OFF
+    x.data[shift] = 0xE8
+    edits.append((shift, 1, "mod index 0x%08X: sar -> shr" % x.off_to_va(shift - 1)))
+    return edits
+
+
 CONSOLE_GATE_SIG = bytes([
     0x6A, 0x02,              # push 2            ; mode
     0x6A, 0x19,              # push 0x19         ; the console action
@@ -346,7 +401,7 @@ def main():
     ap.add_argument("--apply", action="append", default=[], metavar="NAME[=VALUE]")
     ap.add_argument("--section", default=".tes3xhk")
     ap.add_argument("--list", action="store_true", help="list available patches and exit")
-    ap.add_argument("--locate", choices=["run-function", "command-table"],
+    ap.add_argument("--locate", choices=["run-function", "command-table", "ref-load", "ref-skip"],
                     help="print a content-located engine address and exit")
     a = ap.parse_args()
 
@@ -361,7 +416,8 @@ def main():
     raw = open(a.xbe, "rb").read()
     x = tes3x_inject.Xbe(raw)
     if a.locate:
-        finder = {"run-function": find_run_function, "command-table": find_command_table}
+        finder = {"run-function": find_run_function, "command-table": find_command_table,
+                  "ref-load": find_ref_load, "ref-skip": find_ref_skip}
         print("0x%08X" % finder[a.locate](x))
         return
     cert = struct.unpack_from("<I", x.data, 0x118)[0]

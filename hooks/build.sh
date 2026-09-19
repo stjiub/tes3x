@@ -56,15 +56,35 @@ case " $SRCS " in
     ;;
 esac
 
-# The console hook replaces the engine's own action check at the one call site that gates
-# Console::Toggle, and reads its combo from the ini through the engine's own reader.
+# Settings come from Morrowind.ini through the engine's own reader, so any hook that takes
+# one needs its address and the filename string.
 case " $SRCS " in
-*" tes3xconsole.c "*)
+*" tes3xconsole.c "*|*" tes3xrefs.c "*)
     INI_GET=${INI_GET:-0x001933E0}
     INI_PATH=${INI_PATH:-0x0035E364}
-    CONSOLE_SITE=${CONSOLE_SITE:-0x00098430}
-    echo "console hook: gate $CONSOLE_SITE, ini reader $INI_GET, ini path $INI_PATH"
+    echo "ini reader $INI_GET, ini path $INI_PATH"
     EXTRA_CFLAGS="$EXTRA_CFLAGS -DTES3X_INI_GET_STRING=$INI_GET -DTES3X_INI_PATH=$INI_PATH"
+    ;;
+esac
+
+# MCP id=1 lands on the restamp fallback all four paths share. Both addresses come from the
+# same signature search the patcher uses, so the payload and the patch cannot disagree.
+case " $SRCS " in
+*" tes3xrefs.c "*)
+    REF_LOAD=$(python "$ROOT/tools/tes3x_patch.py" "$XBE" --locate ref-load | tail -1)
+    REF_SKIP=$(python "$ROOT/tools/tes3x_patch.py" "$XBE" --locate ref-skip | tail -1)
+    REF_RESUME=$(printf '0x%08X' $((REF_LOAD + 6)))
+    echo "refs hook: fallback $REF_LOAD, resume $REF_RESUME, skip $REF_SKIP"
+    EXTRA_CFLAGS="$EXTRA_CFLAGS -DTES3X_REF_RESUME=$REF_RESUME -DTES3X_REF_SKIP=$REF_SKIP"
+    ;;
+esac
+
+# The console hook replaces the engine's own action check at the one call site that gates
+# Console::Toggle.
+case " $SRCS " in
+*" tes3xconsole.c "*)
+    CONSOLE_SITE=${CONSOLE_SITE:-0x00098430}
+    echo "console hook: gate $CONSOLE_SITE"
     EXTRA_CFLAGS="$EXTRA_CFLAGS -DTES3X_FIND_MENU=${FIND_MENU:-0x001AD340}"
     EXTRA_CFLAGS="$EXTRA_CFLAGS -DTES3X_OPEN_VK=${OPEN_VK:-0x0022D210}"
     EXTRA_CFLAGS="$EXTRA_CFLAGS -DTES3X_CONSOLE_MENU_ID=${CONSOLE_MENU_ID:-0x003D816C}"
@@ -111,6 +131,11 @@ if [ -n "$RUN_FUNCTION" ]; then
     SHOOK=$(sym_va _tes3x_script_hook)
     [ -n "$SHOOK" ] || { echo "could not find _tes3x_script_hook in the link map" >&2; exit 1; }
     HOOKS="$HOOKS script_dispatch=0x$SHOOK opcode_base=$OPCODE_BASE opcode_ceil=$OPCODE_CEIL"
+fi
+if [ -n "$REF_LOAD" ]; then
+    RHOOK=$(sym_va _tes3x_ref_load_hook)
+    [ -n "$RHOOK" ] || { echo "could not find _tes3x_ref_load_hook in the link map" >&2; exit 1; }
+    HOOKS="$HOOKS ref_load=0x$RHOOK"
 fi
 if [ -n "$CONSOLE_SITE" ]; then
     CHOOK=$(sym_va @tes3x_console_hook@12)
