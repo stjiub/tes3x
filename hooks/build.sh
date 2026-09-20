@@ -139,6 +139,23 @@ case " $SRCS " in
     ;;
 esac
 
+# MCP id=140 replaces MenuLoading's update call and owns the following redraw call.
+case " $SRCS " in
+*" tes3xmcp140.c "*)
+    MCP140_REDRAW=$($PYTHON "$ROOT/tools/tes3x_patch.py" "$XBE" --locate mcp-140-redraw | tail -1)
+    MCP140_UPDATE=$($PYTHON "$ROOT/tools/tes3x_inject.py" "$XBE" --print-call "$MCP140_REDRAW" | tail -1)
+    MCP140_PRESENT_SITE=$(printf '0x%08X' $((MCP140_REDRAW + 9)))
+    MCP140_PRESENT=$($PYTHON "$ROOT/tools/tes3x_inject.py" "$XBE" --print-call "$MCP140_PRESENT_SITE" | tail -1)
+    MCP140_TRUE=$(printf '0x%08X' $((MCP140_REDRAW + 14)))
+    MCP140_FALSE=$(printf '0x%08X' $((MCP140_REDRAW + 20)))
+    echo "mcp-140 hook: redraw $MCP140_REDRAW, update $MCP140_UPDATE, present $MCP140_PRESENT"
+    EXTRA_CFLAGS="$EXTRA_CFLAGS -DTES3X_MCP140_UPDATE=$MCP140_UPDATE"
+    EXTRA_CFLAGS="$EXTRA_CFLAGS -DTES3X_MCP140_PRESENT=$MCP140_PRESENT"
+    EXTRA_CFLAGS="$EXTRA_CFLAGS -DTES3X_MCP140_TRUE=$MCP140_TRUE"
+    EXTRA_CFLAGS="$EXTRA_CFLAGS -DTES3X_MCP140_FALSE=$MCP140_FALSE"
+    ;;
+esac
+
 # The console hook replaces the engine's own action check at the one call site that gates
 # Console::Toggle.
 case " $SRCS " in
@@ -208,6 +225,11 @@ if [ -n "$MCP154_LOAD" ]; then
     [ -n "$M154LOAD" ] || { echo "could not find _tes3x_mcp154_load_hook in the link map" >&2; exit 1; }
     [ -n "$M154RELOAD" ] || { echo "could not find _tes3x_mcp154_reload_hook in the link map" >&2; exit 1; }
     HOOKS="$HOOKS mcp154_load=0x$M154LOAD mcp154_reload=0x$M154RELOAD"
+fi
+if [ -n "$MCP140_REDRAW" ]; then
+    M140HOOK=$(sym_va _tes3x_mcp140_redraw_hook)
+    [ -n "$M140HOOK" ] || { echo "could not find _tes3x_mcp140_redraw_hook in the link map" >&2; exit 1; }
+    HOOKS="$HOOKS mcp140_redraw=0x$M140HOOK"
 fi
 if [ -n "$CONSOLE_SITE" ]; then
     CHOOK=$(sym_va @tes3x_console_hook@12)

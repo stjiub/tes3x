@@ -21,6 +21,7 @@ PATCHES = {
     "mcp-1": {"category": "core", "status": "implemented", "source": "tes3xrefs.c"},
     "mcp-97": {"category": "core", "status": "implemented", "source": "tes3xmcp97.c"},
     "mcp-154": {"category": "core", "status": "implemented", "source": "tes3xmcp154.c"},
+    "mcp-140": {"category": "performance", "status": "implemented", "source": "tes3xmcp140.c"},
     "script-ext": {"category": "compat", "status": "verified-xemu", "source": "tes3xscript.c"},
     "diagnostics": {
         "category": "instrumentation", "status": "verified-xemu", "source": "tes3xdiag.c"
@@ -34,7 +35,7 @@ HOOK_SOURCES = {
     "multi-bsa": "tes3xarch.c",
     **{name: meta["source"] for name, meta in PATCHES.items()},
 }
-PATCH_ORDER = ("multi-bsa", "script-ext", "mcp-1", "mcp-97", "mcp-154",
+PATCH_ORDER = ("multi-bsa", "script-ext", "mcp-1", "mcp-97", "mcp-154", "mcp-140",
                "rotating-autosaves", "diagnostics", "console")
 CATEGORIES = {"core", "correctness", "compat", "performance", "instrumentation", "qol", "balance"}
 VERIFIED = {"verified-xemu", "verified-hardware"}

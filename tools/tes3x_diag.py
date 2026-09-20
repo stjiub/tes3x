@@ -33,6 +33,7 @@ PATCH_BITS = {
     8: "rotating-autosaves",
     9: "mcp-97",
     10: "mcp-154",
+    11: "mcp-140",
 }
 
 

@@ -63,6 +63,7 @@ PATCH_BITS = {
     "rotating-autosaves": 1 << 8,
     "mcp-97": 1 << 9,
     "mcp-154": 1 << 10,
+    "mcp-140": 1 << 11,
 }
 
 
@@ -366,6 +367,22 @@ MCP154_RELOAD_SIG = re.compile(
 )
 MCP154_REPLACED = 6
 
+# MenuLoading's progress callback updates the fill value, then calls the menu update and redraw
+# routines whenever the float changes. MCP throttles those last two calls to one per 50 ms.
+MCP140_REDRAW_SIG = re.compile(
+    rb"\xd9\x44\x24\x18\x8b\xd8\xe8....\xd9\x03\x8b\xe8\xe8...."
+    rb"\x3b\xe8\x5d\x5b\x74.\x8b\x4c\x24\x10\x33\xc0\x66\xa1...."
+    rb"\x6a\x02\x8b\xd1\x52\x89\x4c\x24\x10\x8b\xcf\x50\xe8...."
+    rb"\x8b\xce(?P<site>\xe8....)\x6a\x01\x8b\xce\xe8....\x5f\xb0\x01",
+    re.S,
+)
+MCP140_STATUS_SIG = re.compile(
+    rb"\x85\xf6\x74.(?P<update>\x8b\xce)\xe8....\x33\xd2\x66\x8b\x15...."
+    rb"\x8b\xce\x52\xe8....\x85\xc0\x74.\x8b\x4c\x24\x08\x51\x8b\xc8\xe8...."
+    rb"(?P<mode>\x6a\x01)\x8b\xce\xe8",
+    re.S,
+)
+
 
 def find_ref_load(x):
     """The restamp fallback the three failed resolutions share with the legitimate path."""
@@ -413,6 +430,29 @@ def find_mcp154_load(x):
 def find_mcp154_reload(x):
     """Find the reloaded script-data allocation size load."""
     return _find_mcp154_site(x, MCP154_RELOAD_SIG, "reload")
+
+
+def find_mcp140_redraw(x):
+    """Find MenuLoading's update call immediately before its unconditional redraw."""
+    hits = list(MCP140_REDRAW_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("mcp-140: %d loading redraw site(s), expected 1" % len(hits))
+    va = x.off_to_va(hits[0].start("site"))
+    if va is None:
+        raise PatchError("mcp-140: loading redraw is outside any section")
+    return va
+
+
+def find_mcp140_status(x):
+    """Find MenuLoading's status-label update and redraw mode."""
+    hits = list(MCP140_STATUS_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("mcp-140: %d loading status site(s), expected 1" % len(hits))
+    update = x.off_to_va(hits[0].start("update"))
+    mode = x.off_to_va(hits[0].start("mode") + 1)
+    if update is None or mode is None:
+        raise PatchError("mcp-140: loading status is outside any section")
+    return update, mode
 
 
 AUTOSAVE_NAME_SIG = b"autosave\x00\x00\x00\x00%d %s %s%s"
@@ -548,6 +588,31 @@ def _mcp_154(x, value, ctx):
     return edits
 
 
+@patch("mcp-140")
+def _mcp_140(x, value, ctx):
+    """Throttle loading-screen redraws to one every 50 milliseconds."""
+    target = ctx.get("hooks", {}).get("mcp140_redraw")
+    if not target:
+        raise PatchError("mcp-140: needs `payload` first, with an mcp140_redraw hook in its "
+                         "manifest")
+    target = int(str(target), 16)
+    site = find_mcp140_redraw(x)
+    status_update, status_mode = find_mcp140_status(x)
+    off = x.va_to_off(site)
+    status_off = x.va_to_off(status_update)
+    mode_off = x.va_to_off(status_mode)
+    # The hook owns both following calls and rejoins at the existing true/false cleanup tails.
+    x.data[off:off + 5] = b"\xe9" + struct.pack("<i", target - (site + 5))
+    # Match MCP's status-label path: skip its redundant update and use redraw mode zero.
+    x.data[status_off:status_off + 2] = b"\xeb\x05"
+    x.data[mode_off] = 0
+    return [
+        (status_off, 2, "loading status update 0x%08X: skipped" % status_update),
+        (mode_off, 1, "loading status redraw mode 0x%08X: 1 -> 0" % status_mode),
+        (off, 5, "loading progress redraw 0x%08X -> 0x%08X" % (site, target)),
+    ]
+
+
 CONSOLE_GATE_SIG = bytes([
     0x6A, 0x02,              # push 2            ; mode
     0x6A, 0x19,              # push 0x19         ; the console action
@@ -634,6 +699,7 @@ def main():
     ap.add_argument("--list", action="store_true", help="list available patches and exit")
     ap.add_argument("--locate", choices=["run-function", "command-table", "ref-load", "ref-skip",
                                                "mcp-97-scan", "mcp-154-load", "mcp-154-reload",
+                                               "mcp-140-redraw",
                                                "save-game", "diagnostics-update"],
                     help="print a content-located engine address and exit")
     a = ap.parse_args()
@@ -654,6 +720,7 @@ def main():
                   "mcp-97-scan": find_mcp97_scan,
                   "mcp-154-load": find_mcp154_load,
                   "mcp-154-reload": find_mcp154_reload,
+                  "mcp-140-redraw": find_mcp140_redraw,
                   "save-game": lambda image: find_autosave_calls(image)[0],
                   "diagnostics-update": find_diagnostics_update}
         print("0x%08X" % finder[a.locate](x))
