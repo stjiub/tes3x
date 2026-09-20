@@ -126,6 +126,19 @@ case " $SRCS " in
     ;;
 esac
 
+# MCP id=154 pads initial and reload script-data allocations by one dword.
+case " $SRCS " in
+*" tes3xmcp154.c "*)
+    MCP154_LOAD=$($PYTHON "$ROOT/tools/tes3x_patch.py" "$XBE" --locate mcp-154-load | tail -1)
+    MCP154_RELOAD=$($PYTHON "$ROOT/tools/tes3x_patch.py" "$XBE" --locate mcp-154-reload | tail -1)
+    MCP154_LOAD_RESUME=$(printf '0x%08X' $((MCP154_LOAD + 6)))
+    MCP154_RELOAD_RESUME=$(printf '0x%08X' $((MCP154_RELOAD + 6)))
+    echo "mcp-154 hooks: load $MCP154_LOAD, reload $MCP154_RELOAD"
+    EXTRA_CFLAGS="$EXTRA_CFLAGS -DTES3X_MCP154_LOAD_RESUME=$MCP154_LOAD_RESUME"
+    EXTRA_CFLAGS="$EXTRA_CFLAGS -DTES3X_MCP154_RELOAD_RESUME=$MCP154_RELOAD_RESUME"
+    ;;
+esac
+
 # The console hook replaces the engine's own action check at the one call site that gates
 # Console::Toggle.
 case " $SRCS " in
@@ -188,6 +201,13 @@ if [ -n "$MCP97_SCAN" ]; then
     M97HOOK=$(sym_va _tes3x_mcp97_scan_hook)
     [ -n "$M97HOOK" ] || { echo "could not find _tes3x_mcp97_scan_hook in the link map" >&2; exit 1; }
     HOOKS="$HOOKS mcp97_scan=0x$M97HOOK"
+fi
+if [ -n "$MCP154_LOAD" ]; then
+    M154LOAD=$(sym_va _tes3x_mcp154_load_hook)
+    M154RELOAD=$(sym_va _tes3x_mcp154_reload_hook)
+    [ -n "$M154LOAD" ] || { echo "could not find _tes3x_mcp154_load_hook in the link map" >&2; exit 1; }
+    [ -n "$M154RELOAD" ] || { echo "could not find _tes3x_mcp154_reload_hook in the link map" >&2; exit 1; }
+    HOOKS="$HOOKS mcp154_load=0x$M154LOAD mcp154_reload=0x$M154RELOAD"
 fi
 if [ -n "$CONSOLE_SITE" ]; then
     CHOOK=$(sym_va @tes3x_console_hook@12)

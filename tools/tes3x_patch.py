@@ -62,6 +62,7 @@ PATCH_BITS = {
     "console": 1 << 7,
     "rotating-autosaves": 1 << 8,
     "mcp-97": 1 << 9,
+    "mcp-154": 1 << 10,
 }
 
 
@@ -351,6 +352,20 @@ MCP97_FIXED_IMM = 16
 MCP97_LENGTH_CASE = 19
 MCP97_LENGTH_REPLACED = 6
 
+# Script data is allocated from the SCDT chunk length on both initial load and reload. The
+# reader can touch one dword beyond that data, so MCP pads both allocations by four bytes.
+MCP154_LOAD_SIG = re.compile(
+    rb"\x2dACDT\x74.\x83\xe8\x12\x75.(?P<site>\x8b\x87\x40\x02\x00\x00)"
+    rb"\x68....\x68....\x50\x6a\x01\xe8",
+    re.S,
+)
+MCP154_RELOAD_SIG = re.compile(
+    rb"\x3dSCDT\x75.\x8b\x45\x58\x85\xc0(?P<site>\x8b\xbe\x40\x02\x00\x00)"
+    rb"\x74.\x50\xe8....\x83\xc4\x04\x68",
+    re.S,
+)
+MCP154_REPLACED = 6
+
 
 def find_ref_load(x):
     """The restamp fallback the three failed resolutions share with the legitimate path."""
@@ -378,6 +393,26 @@ def find_mcp97_scan(x):
     if va is None:
         raise PatchError("mcp-97: bytecode scan is outside any section")
     return va
+
+
+def _find_mcp154_site(x, signature, label):
+    hits = list(signature.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("mcp-154: %d %s allocation site(s), expected 1" % (len(hits), label))
+    va = x.off_to_va(hits[0].start("site"))
+    if va is None:
+        raise PatchError("mcp-154: %s allocation is outside any section" % label)
+    return va
+
+
+def find_mcp154_load(x):
+    """Find the initial script-data allocation size load."""
+    return _find_mcp154_site(x, MCP154_LOAD_SIG, "initial")
+
+
+def find_mcp154_reload(x):
+    """Find the reloaded script-data allocation size load."""
+    return _find_mcp154_site(x, MCP154_RELOAD_SIG, "reload")
 
 
 AUTOSAVE_NAME_SIG = b"autosave\x00\x00\x00\x00%d %s %s%s"
@@ -488,6 +523,31 @@ def _mcp_97(x, value, ctx):
     ]
 
 
+@patch("mcp-154")
+def _mcp_154(x, value, ctx):
+    """Pad compiled script-data allocations to keep dword reads in bounds."""
+    hooks = ctx.get("hooks", {})
+    targets = (hooks.get("mcp154_load"), hooks.get("mcp154_reload"))
+    if not all(targets):
+        raise PatchError("mcp-154: needs `payload` first, with mcp154_load and mcp154_reload "
+                         "hooks in its manifest")
+    sites = (find_mcp154_load(x), find_mcp154_reload(x))
+    expected = (b"\x8b\x87\x40\x02\x00\x00", b"\x8b\xbe\x40\x02\x00\x00")
+    labels = ("initial", "reload")
+    edits = []
+    for site, target, want, label in zip(sites, targets, expected, labels):
+        target = int(str(target), 16)
+        off = x.va_to_off(site)
+        if bytes(x.data[off:off + MCP154_REPLACED]) != want:
+            raise PatchError("mcp-154: %s allocation does not match expected instruction" % label)
+        x.data[off:off + MCP154_REPLACED] = (
+            b"\xe9" + struct.pack("<i", target - (site + 5)) + b"\x90"
+        )
+        edits.append((off, MCP154_REPLACED,
+                      "%s allocation 0x%08X -> 0x%08X" % (label, site, target)))
+    return edits
+
+
 CONSOLE_GATE_SIG = bytes([
     0x6A, 0x02,              # push 2            ; mode
     0x6A, 0x19,              # push 0x19         ; the console action
@@ -573,7 +633,8 @@ def main():
     ap.add_argument("--section", default=".tes3xhk")
     ap.add_argument("--list", action="store_true", help="list available patches and exit")
     ap.add_argument("--locate", choices=["run-function", "command-table", "ref-load", "ref-skip",
-                                               "mcp-97-scan", "save-game", "diagnostics-update"],
+                                               "mcp-97-scan", "mcp-154-load", "mcp-154-reload",
+                                               "save-game", "diagnostics-update"],
                     help="print a content-located engine address and exit")
     a = ap.parse_args()
 
@@ -591,6 +652,8 @@ def main():
         finder = {"run-function": find_run_function, "command-table": find_command_table,
                   "ref-load": find_ref_load, "ref-skip": find_ref_skip,
                   "mcp-97-scan": find_mcp97_scan,
+                  "mcp-154-load": find_mcp154_load,
+                  "mcp-154-reload": find_mcp154_reload,
                   "save-game": lambda image: find_autosave_calls(image)[0],
                   "diagnostics-update": find_diagnostics_update}
         print("0x%08X" % finder[a.locate](x))

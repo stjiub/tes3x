@@ -9,7 +9,7 @@ from tes3x_paths import check_paths, require_paths
 from tes3x_pack import write_invalidation
 from tes3x_build import materialize, plugin_masters
 from tes3x_pipeline import PipelineError, resolve_patch_plan
-from tes3x_patch import _mcp_97
+from tes3x_patch import _mcp_97, _mcp_154
 from tes3x_plugins import validate_order
 from test_reach import rec, sub
 
@@ -168,6 +168,50 @@ class PipelinePlanTests(unittest.TestCase):
         self.assertEqual(image.off_to_va(site) + 5 + rel, target)
         self.assertEqual([(offset, length) for offset, length, _label in edits],
                          [(block + 16, 1), (site, 6)])
+
+    def test_mcp_154_pads_both_script_data_allocations(self):
+        load = bytes.fromhex(
+            '2d41434454740583e81275288b874002000068551b00006864913700506a01e811223344'
+        )
+        reload = bytes.fromhex(
+            '3d5343445475328b455885c08bbe40020000740b50e81122334483c40468551c0000'
+        )
+
+        class Image:
+            base = 0x100000
+
+            def __init__(self):
+                self.data = bytearray(b'\x90' * 32 + load + b'\x90' * 16 + reload + b'\x90' * 32)
+
+            def off_to_va(self, offset):
+                return self.base + offset
+
+            def va_to_off(self, va):
+                return va - self.base
+
+        image = Image()
+        load_site = 32 + load.index(bytes.fromhex('8b8740020000'))
+        reload_base = 32 + len(load) + 16
+        reload_site = reload_base + reload.index(bytes.fromhex('8bbe40020000'))
+        load_target, reload_target = 0x200000, 0x200020
+        edits = _mcp_154(image, '', {'hooks': {
+            'mcp154_load': hex(load_target), 'mcp154_reload': hex(reload_target),
+        }})
+        for site, target in ((load_site, load_target), (reload_site, reload_target)):
+            self.assertEqual(image.data[site], 0xE9)
+            self.assertEqual(image.data[site + 5], 0x90)
+            rel = struct.unpack_from('<i', image.data, site + 1)[0]
+            self.assertEqual(image.off_to_va(site) + 5 + rel, target)
+        self.assertEqual([(offset, length) for offset, length, _label in edits],
+                         [(load_site, 6), (reload_site, 6)])
+
+    def test_mcp_154_adds_its_hook_source(self):
+        plan = resolve_patch_plan({
+            'patches': {'preset': 'minimal', 'enable': ['mcp-154']},
+            'package': {'mode': 'merged-bsa'},
+        })
+        self.assertEqual(plan['applied'], ['mcp-154'])
+        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xmcp154.c'])
 
     def test_development_adds_tools_but_allows_overrides(self):
         profile = {'patches': {'preset': 'development', 'disable': ['diagnostics']},
