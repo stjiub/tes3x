@@ -28,6 +28,7 @@ typedef int(__cdecl *fn_ini_get_string)(const char *, const char *, const char *
 typedef unsigned char(__attribute__((thiscall)) *fn_save_game)(void *, const char *, const char *);
 
 static char state_path[] = "T:\\tes3x-autosave.dat";
+static u32 rotation_enabled = 1;
 static u32 slot_count = AUTOSAVE_DEFAULT_SLOTS;
 static u32 next_slot;
 static int settings_ready;
@@ -48,6 +49,15 @@ static u32 parse_slots(const char *s)
     return value;
 }
 
+static u32 parse_toggle(const char *s)
+{
+    while (*s == ' ' || *s == '\t')
+        s++;
+    if (*s == '0' || *s == '1')
+        return (u32)(*s - '0');
+    return 1;
+}
+
 static void load_settings(void)
 {
     fn_ini_get_string get = (fn_ini_get_string)TES3X_INI_GET_STRING;
@@ -63,9 +73,20 @@ static void load_settings(void)
     settings_ready = 1;
     for (i = 0; i < (int)sizeof(buf); i++)
         buf[i] = 0;
+    get("Xbox", "RotatingAutosaves", "1", buf, (int)sizeof(buf) - 1,
+        (const char *)TES3X_INI_PATH);
+    rotation_enabled = parse_toggle(buf);
+
+    for (i = 0; i < (int)sizeof(buf); i++)
+        buf[i] = 0;
     get("Xbox", "AutosaveSlots", "3", buf, (int)sizeof(buf) - 1,
         (const char *)TES3X_INI_PATH);
     slot_count = parse_slots(buf);
+
+    tes3x_log("autosave.enabled", rotation_enabled);
+    tes3x_log("autosave.slots", slot_count);
+    if (!rotation_enabled || slot_count <= 1)
+        return;
 
     tes3x_dos_attributes(&oa, &name, state_path);
     if (NtCreateFile(&h, GENERIC_READ | SYNCHRONIZE, &oa, &iosb, 0,
@@ -76,7 +97,6 @@ static void load_settings(void)
             next_slot = (u32)stored % slot_count;
         NtClose(h);
     }
-    tes3x_log("autosave.slots", slot_count);
     tes3x_log("autosave.next", next_slot + 1);
 }
 
@@ -128,7 +148,7 @@ tes3x_autosave_hook(void *game, const char *filename, const char *display)
 
     if (!settings_ready)
         load_settings();
-    if (slot_count <= 1)
+    if (!rotation_enabled || slot_count <= 1)
         return save(game, filename, display);
 
     slot = next_slot;
