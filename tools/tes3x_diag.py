@@ -30,6 +30,7 @@ PATCH_BITS = {
     5: "mcp-1",
     6: "diagnostics",
     7: "console",
+    8: "rotating-autosaves",
 }
 
 

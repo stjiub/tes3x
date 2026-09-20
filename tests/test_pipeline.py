@@ -121,6 +121,14 @@ class PipelinePlanTests(unittest.TestCase):
         self.assertEqual(plan['applied'], [])
         self.assertFalse(plan['needs_payload'])
 
+    def test_rotating_autosaves_adds_its_hook_source(self):
+        plan = resolve_patch_plan({
+            'patches': {'preset': 'minimal', 'enable': ['rotating-autosaves']},
+            'package': {'mode': 'merged-bsa'},
+        })
+        self.assertEqual(plan['applied'], ['rotating-autosaves'])
+        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xsaves.c'])
+
     def test_development_adds_tools_but_allows_overrides(self):
         profile = {'patches': {'preset': 'development', 'disable': ['diagnostics']},
                    'package': {'mode': 'merged-bsa'}}

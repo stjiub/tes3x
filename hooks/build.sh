@@ -78,11 +78,20 @@ esac
 # Settings come from Morrowind.ini through the engine's own reader, so any hook that takes
 # one needs its address and the filename string.
 case " $SRCS " in
-*" tes3xconsole.c "*|*" tes3xrefs.c "*|*" tes3xdiag.c "*)
+*" tes3xconsole.c "*|*" tes3xrefs.c "*|*" tes3xdiag.c "*|*" tes3xsaves.c "*)
     INI_GET=${INI_GET:-0x001933E0}
     INI_PATH=${INI_PATH:-0x0035E364}
     echo "ini reader $INI_GET, ini path $INI_PATH"
     EXTRA_CFLAGS="$EXTRA_CFLAGS -DTES3X_INI_GET_STRING=$INI_GET -DTES3X_INI_PATH=$INI_PATH"
+    ;;
+esac
+
+# The autosave hook replaces the three automatic-save calls and invokes the original routine.
+case " $SRCS " in
+*" tes3xsaves.c "*)
+    SAVE_GAME=$($PYTHON "$ROOT/tools/tes3x_patch.py" "$XBE" --locate save-game | tail -1)
+    echo "autosave hook: SaveGame $SAVE_GAME"
+    EXTRA_CFLAGS="$EXTRA_CFLAGS -DTES3X_SAVE_GAME=$SAVE_GAME"
     ;;
 esac
 
@@ -179,6 +188,12 @@ if [ -n "$DIAG_UPDATE" ]; then
     DMASK=$(sym_va _tes3x_patch_mask)
     [ -n "$DMASK" ] || { echo "could not find _tes3x_patch_mask in the link map" >&2; exit 1; }
     HOOKS="$HOOKS diagnostics_update=0x$DHOOK diagnostics_flag=0x$DFLAG patch_mask=0x$DMASK"
+fi
+if [ -n "$SAVE_GAME" ]; then
+    AHOOK=$(sym_va @tes3x_autosave_hook@12)
+    [ -n "$AHOOK" ] || AHOOK=$(sym_va _tes3x_autosave_hook)
+    [ -n "$AHOOK" ] || { echo "could not find tes3x_autosave_hook in the link map" >&2; exit 1; }
+    HOOKS="$HOOKS autosave=0x$AHOOK"
 fi
 
 # Hook addresses beside the blob, so tes3x_patch.py can apply it without a toolchain or a map.

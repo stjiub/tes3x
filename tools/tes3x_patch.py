@@ -60,6 +60,7 @@ PATCH_BITS = {
     "mcp-1": 1 << 5,
     "diagnostics": 1 << 6,
     "console": 1 << 7,
+    "rotating-autosaves": 1 << 8,
 }
 
 
@@ -354,6 +355,66 @@ def find_ref_skip(x):
     return x.off_to_va(hits[0])
 
 
+AUTOSAVE_NAME_SIG = b"autosave\x00\x00\x00\x00%d %s %s%s"
+
+
+def find_autosave_calls(x):
+    """Find the save routine and the three callers that pass the autosave name buffer."""
+    name_off = find_unique(x.data, AUTOSAVE_NAME_SIG, "autosave name")
+    name_va = x.off_to_va(name_off)
+    if name_va is None:
+        raise PatchError("rotating-autosaves: autosave name is outside any section")
+
+    # The lazy [SaveNames] lookup passes one writable buffer and the same autosave string as
+    # both key and default. Extract the buffer address rather than pinning its .bss VA.
+    init_sig = re.compile(
+        rb"\x68(?P<buf>....)\x68" + re.escape(struct.pack("<I", name_va))
+        + rb"\x68" + re.escape(struct.pack("<I", name_va)) + rb"\x68....\xe8",
+        re.S,
+    )
+    text = text_section(x)
+    body = bytes(x.data[text.raw:text.raw + text.rsize])
+    init = list(init_sig.finditer(body))
+    if len(init) != 1:
+        raise PatchError("rotating-autosaves: %d autosave name initializers, expected 1"
+                         % len(init))
+    buf_va = struct.unpack("<I", init[0].group("buf"))[0]
+
+    call_sig = re.compile(
+        re.escape(b"\x68" + struct.pack("<I", buf_va)) * 2 + rb"\xe8(?P<rel>....)", re.S)
+    calls = []
+    targets = set()
+    for match in call_sig.finditer(body):
+        site = text.va + match.start() + 10
+        rel = struct.unpack("<i", match.group("rel"))[0]
+        calls.append(site)
+        targets.add(site + 5 + rel)
+    if len(calls) != 3 or len(targets) != 1:
+        raise PatchError("rotating-autosaves: found %d call(s) to %d save target(s), expected 3/1"
+                         % (len(calls), len(targets)))
+    return targets.pop(), calls
+
+
+@patch("rotating-autosaves")
+def _rotating_autosaves(x, value, ctx):
+    """Rotate automatic saves through INI-configurable slots."""
+    target = ctx.get("hooks", {}).get("autosave")
+    if not target:
+        raise PatchError("rotating-autosaves: needs `payload` first, with an autosave hook in "
+                         "its manifest")
+    target = int(str(target), 16)
+    save_game, sites = find_autosave_calls(x)
+    edits = []
+    for site in sites:
+        was, off = x.patch_call(site, target)
+        if was != save_game:
+            raise PatchError("rotating-autosaves: call 0x%08X targets 0x%08X, expected 0x%08X"
+                             % (site, was, save_game))
+        edits.append((off, 5, "autosave call 0x%08X: 0x%08X -> 0x%08X"
+                      % (site, was, target)))
+    return edits
+
+
 @patch("mcp-1")
 def _mcp_1(x, value, ctx):
     """Stop an unresolvable reference being restamped as created at runtime."""
@@ -458,7 +519,7 @@ def main():
     ap.add_argument("--section", default=".tes3xhk")
     ap.add_argument("--list", action="store_true", help="list available patches and exit")
     ap.add_argument("--locate", choices=["run-function", "command-table", "ref-load", "ref-skip",
-                                               "diagnostics-update"],
+                                               "save-game", "diagnostics-update"],
                     help="print a content-located engine address and exit")
     a = ap.parse_args()
 
@@ -475,6 +536,7 @@ def main():
     if a.locate:
         finder = {"run-function": find_run_function, "command-table": find_command_table,
                   "ref-load": find_ref_load, "ref-skip": find_ref_skip,
+                  "save-game": lambda image: find_autosave_calls(image)[0],
                   "diagnostics-update": find_diagnostics_update}
         print("0x%08X" % finder[a.locate](x))
         return
