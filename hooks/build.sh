@@ -116,6 +116,16 @@ case " $SRCS " in
     ;;
 esac
 
+# MCP id=97 replaces one six-byte cursor update in Script::ReplaceGlobalsInData.
+case " $SRCS " in
+*" tes3xmcp97.c "*)
+    MCP97_SCAN=$($PYTHON "$ROOT/tools/tes3x_patch.py" "$XBE" --locate mcp-97-scan | tail -1)
+    MCP97_RESUME=$(printf '0x%08X' $((MCP97_SCAN + 6)))
+    echo "mcp-97 hook: scan $MCP97_SCAN, resume $MCP97_RESUME"
+    EXTRA_CFLAGS="$EXTRA_CFLAGS -DTES3X_MCP97_RESUME=$MCP97_RESUME"
+    ;;
+esac
+
 # The console hook replaces the engine's own action check at the one call site that gates
 # Console::Toggle.
 case " $SRCS " in
@@ -173,6 +183,11 @@ if [ -n "$REF_LOAD" ]; then
     RHOOK=$(sym_va _tes3x_ref_load_hook)
     [ -n "$RHOOK" ] || { echo "could not find _tes3x_ref_load_hook in the link map" >&2; exit 1; }
     HOOKS="$HOOKS ref_load=0x$RHOOK"
+fi
+if [ -n "$MCP97_SCAN" ]; then
+    M97HOOK=$(sym_va _tes3x_mcp97_scan_hook)
+    [ -n "$M97HOOK" ] || { echo "could not find _tes3x_mcp97_scan_hook in the link map" >&2; exit 1; }
+    HOOKS="$HOOKS mcp97_scan=0x$M97HOOK"
 fi
 if [ -n "$CONSOLE_SITE" ]; then
     CHOOK=$(sym_va @tes3x_console_hook@12)

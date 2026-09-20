@@ -1,3 +1,4 @@
+import struct
 import sys
 import tempfile
 import unittest
@@ -8,6 +9,7 @@ from tes3x_paths import check_paths, require_paths
 from tes3x_pack import write_invalidation
 from tes3x_build import materialize, plugin_masters
 from tes3x_pipeline import PipelineError, resolve_patch_plan
+from tes3x_patch import _mcp_97
 from tes3x_plugins import validate_order
 from test_reach import rec, sub
 
@@ -128,6 +130,44 @@ class PipelinePlanTests(unittest.TestCase):
         })
         self.assertEqual(plan['applied'], ['rotating-autosaves'])
         self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xsaves.c'])
+
+    def test_mcp_97_adds_its_hook_source(self):
+        plan = resolve_patch_plan({
+            'patches': {'preset': 'minimal', 'enable': ['mcp-97']},
+            'package': {'mode': 'merged-bsa'},
+        })
+        self.assertEqual(plan['applied'], ['mcp-97'])
+        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xmcp97.c'])
+
+    def test_mcp_97_patches_both_cursor_advances(self):
+        scan = bytes.fromhex(
+            '0fb69200100000ff24950020000083c103eb0a0fbe400103c8eb028be84185ed'
+        )
+
+        class Image:
+            base = 0x100000
+
+            def __init__(self):
+                self.data = bytearray(b'\x90' * 32 + scan + b'\x90' * 32)
+
+            def off_to_va(self, offset):
+                return self.base + offset
+
+            def va_to_off(self, va):
+                return va - self.base
+
+        image = Image()
+        target = 0x200000
+        edits = _mcp_97(image, '', {'hooks': {'mcp97_scan': hex(target)}})
+        block = 32
+        site = block + 19
+        self.assertEqual(image.data[block + 16], 2)
+        self.assertEqual(image.data[site], 0xE9)
+        self.assertEqual(image.data[site + 5], 0x90)
+        rel = struct.unpack_from('<i', image.data, site + 1)[0]
+        self.assertEqual(image.off_to_va(site) + 5 + rel, target)
+        self.assertEqual([(offset, length) for offset, length, _label in edits],
+                         [(block + 16, 1), (site, 6)])
 
     def test_development_adds_tools_but_allows_overrides(self):
         profile = {'patches': {'preset': 'development', 'disable': ['diagnostics']},

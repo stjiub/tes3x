@@ -61,6 +61,7 @@ PATCH_BITS = {
     "diagnostics": 1 << 6,
     "console": 1 << 7,
     "rotating-autosaves": 1 << 8,
+    "mcp-97": 1 << 9,
 }
 
 
@@ -337,6 +338,19 @@ REF_SKIP_SIG = re.compile(rb"\x8a\x44\x24\x13\x84\xc0\x74.\x8d\x4c\x24\x2c\x51\x
 REF_INDEX_SIG = bytes([0x8B, 0x44, 0x24, 0x14, 0xC1, 0xF8, 0x18, 0x85, 0xC0, 0x74])
 REF_INDEX_OFF = 5  # the /7 sar modrm byte; /5 is shr
 
+# Script::ReplaceGlobalsInData scans compiled bytecode before replacing identifiers. Two
+# operand forms advance the scan cursor incorrectly: the fixed-width form skips one byte too
+# many, while the length-prefixed form skips one too few. Absolute table addresses vary with
+# the image, so leave them wildcarded and anchor the complete dispatch tail.
+MCP97_SCAN_SIG = re.compile(
+    rb"\x0f\xb6\x92....\xff\x24\x95....\x83\xc1\x03\xeb."
+    rb"\x0f\xbe\x40\x01\x03\xc8\xeb.\x8b\xe8\x41\x85\xed",
+    re.S,
+)
+MCP97_FIXED_IMM = 16
+MCP97_LENGTH_CASE = 19
+MCP97_LENGTH_REPLACED = 6
+
 
 def find_ref_load(x):
     """The restamp fallback the three failed resolutions share with the legitimate path."""
@@ -353,6 +367,17 @@ def find_ref_skip(x):
     if len(hits) != 1:
         raise PatchError("mcp-1: %d skip tail(s), expected 1" % len(hits))
     return x.off_to_va(hits[0])
+
+
+def find_mcp97_scan(x):
+    """Find the length-prefixed operand case in ReplaceGlobalsInData's bytecode scan."""
+    hits = list(MCP97_SCAN_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("mcp-97: %d bytecode scan(s), expected 1" % len(hits))
+    va = x.off_to_va(hits[0].start() + MCP97_LENGTH_CASE)
+    if va is None:
+        raise PatchError("mcp-97: bytecode scan is outside any section")
+    return va
 
 
 AUTOSAVE_NAME_SIG = b"autosave\x00\x00\x00\x00%d %s %s%s"
@@ -432,6 +457,35 @@ def _mcp_1(x, value, ctx):
     x.data[shift] = 0xE8
     edits.append((shift, 1, "mod index 0x%08X: sar -> shr" % x.off_to_va(shift - 1)))
     return edits
+
+
+@patch("mcp-97")
+def _mcp_97(x, value, ctx):
+    """Advance the script parser correctly while initializing saved data."""
+    target = ctx.get("hooks", {}).get("mcp97_scan")
+    if not target:
+        raise PatchError("mcp-97: needs `payload` first, with an mcp97_scan hook in its "
+                         "manifest")
+    target = int(str(target), 16)
+    site = find_mcp97_scan(x)
+    off = x.va_to_off(site)
+
+    fixed = off - MCP97_LENGTH_CASE + MCP97_FIXED_IMM
+    if x.data[fixed] != 3:
+        raise PatchError("mcp-97: fixed-width advance is %d, expected 3" % x.data[fixed])
+    x.data[fixed] = 2
+
+    expected = b"\x0f\xbe\x40\x01\x03\xc8"
+    if bytes(x.data[off:off + MCP97_LENGTH_REPLACED]) != expected:
+        raise PatchError("mcp-97: length-prefixed case does not match expected instructions")
+    x.data[off:off + MCP97_LENGTH_REPLACED] = (
+        b"\xe9" + struct.pack("<i", target - (site + 5)) + b"\x90"
+    )
+    return [
+        (fixed, 1, "fixed-width cursor 0x%08X: 3 -> 2" % x.off_to_va(fixed)),
+        (off, MCP97_LENGTH_REPLACED,
+         "length-prefixed cursor 0x%08X -> 0x%08X" % (site, target)),
+    ]
 
 
 CONSOLE_GATE_SIG = bytes([
@@ -519,7 +573,7 @@ def main():
     ap.add_argument("--section", default=".tes3xhk")
     ap.add_argument("--list", action="store_true", help="list available patches and exit")
     ap.add_argument("--locate", choices=["run-function", "command-table", "ref-load", "ref-skip",
-                                               "save-game", "diagnostics-update"],
+                                               "mcp-97-scan", "save-game", "diagnostics-update"],
                     help="print a content-located engine address and exit")
     a = ap.parse_args()
 
@@ -536,6 +590,7 @@ def main():
     if a.locate:
         finder = {"run-function": find_run_function, "command-table": find_command_table,
                   "ref-load": find_ref_load, "ref-skip": find_ref_skip,
+                  "mcp-97-scan": find_mcp97_scan,
                   "save-game": lambda image: find_autosave_calls(image)[0],
                   "diagnostics-update": find_diagnostics_update}
         print("0x%08X" % finder[a.locate](x))
