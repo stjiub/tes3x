@@ -7,6 +7,16 @@ max_texture_size = 512
 max_filename = 42
 clear_cache_partitions = true
 
+[patches]
+# Standard contains verified core/correctness fixes. Compatibility, diagnostics,
+# QoL and balance changes remain explicit.
+preset = "standard"
+
+[package]
+mode = "delta-bsa"
+archive_only = false
+drive_letter = "D"
+
 [[mods]]
 name = "Example Mod"
 enabled = true

@@ -1,0 +1,10 @@
+# Machine and console paths stay separate from portable mod profiles.
+[paths]
+vanilla_root = "C:/path/to/clean-retail-game"
+nxdk_dir = "C:/path/to/nxdk"
+build_root = "build/pipeline"
+bash = "C:/msys64/usr/bin/bash.exe"
+
+[deploy]
+host = "192.0.2.2"
+remote_root = "F:/Games/MorrowindTest"

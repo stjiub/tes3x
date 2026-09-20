@@ -1,5 +1,49 @@
 # Pipeline options
 
+## Complete builds
+
+`tes3x_pipeline.py` is the normal entry point. It composes the existing build,
+hook, patch, pack and deploy tools; those tools remain independently usable.
+
+Machine-specific paths belong in a local config (see `examples/local.toml`). Mod
+selection and build policy remain in the profile:
+
+```toml
+[patches]
+preset = "standard"                 # minimal, standard or development
+enable = ["script-ext"]             # optional individual overrides
+disable = []
+
+[package]
+mode = "delta-bsa"                  # or merged-bsa
+archive_name = "tes3xmods.bsa"
+archive_only = false
+drive_letter = "D"
+```
+
+`standard` admits verified default `core` and `correctness` patches.
+`development` adds instrumentation and the console. `compat`, `performance`,
+`qol` and `balance` remain explicit. Candidate or merely implemented catalogue
+entries do not enter `standard`; they can still be explicitly enabled while
+being tested.
+
+Delta-BSA packaging derives the `multi-bsa` infrastructure patch. Any selected
+hook derives the payload sources it needs, and the pipeline applies the payload
+before dependent patches. A successful build stages `Default.xbe`, the patched
+`morrowind.xbe`, `Morrowind.ini` and `Data Files` together.
+
+```powershell
+python tools/tes3x_pipeline.py examples/profile.toml --plan
+python tools/tes3x_pipeline.py examples/profile.toml --dry-run
+python tools/tes3x_pipeline.py examples/profile.toml --deploy
+```
+
+The default output is `BUILD_ROOT/PROFILE_NAME`. Only an empty directory or an
+output carrying the pipeline marker can be replaced. Work from a failed stage is
+kept and reported for inspection. The deploy command creates missing destination
+directories; `--dry-run` reports uploads and orphan removals without applying
+them.
+
 ## Xbox destination paths
 
 Build and pack accept `--remote-root "F:/Games/MorrowindTest"`. Default:

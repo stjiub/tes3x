@@ -19,7 +19,33 @@ Install the Python dependency:
 python -m pip install Pillow
 ```
 
-## Build a mod tree
+## Build a complete install
+
+Copy `examples/local.toml` to `tes3x.local.toml` and set the clean retail game,
+nxdk and Xbox paths. Keep machine-specific paths in that file and mod selection in
+the profile.
+
+```powershell
+python tools/tes3x_pipeline.py examples/profile.toml --plan
+python tools/tes3x_pipeline.py examples/profile.toml --dry-run
+python tools/tes3x_pipeline.py examples/profile.toml --deploy
+```
+
+The pipeline resolves the mod tree, builds the selected hook payload, patches a
+clean `morrowind.xbe`, packs assets, stages both XBEs, and optionally synchronizes
+the complete install. Its output is replaced only when the preceding stages all
+succeed. `--dry-run` builds normally but only reports the console changes.
+
+Patch presets provide a starting policy. `standard` contains verified default
+engine fixes, while `development` also enables diagnostics and the in-game
+console. Profile `patches.enable` and `patches.disable` entries take precedence.
+Packaging requirements such as the multi-BSA hook are selected automatically.
+
+## Individual tools
+
+The component commands remain available for custom builds and investigation.
+
+### Build a mod tree
 
 Copy `examples/profile.toml`, set `library` to a folder containing one directory per mod,
 then list the mods you want to include.
@@ -37,7 +63,7 @@ python tools/tes3x_pack.py build/tree `
   --out build/deploy
 ```
 
-## Patch an XBE
+### Patch an XBE
 
 List the available patches, then apply only the ones you want:
 

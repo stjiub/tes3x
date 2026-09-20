@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from tes3x_paths import check_paths, require_paths
 from tes3x_pack import write_invalidation
 from tes3x_build import materialize, plugin_masters
+from tes3x_pipeline import PipelineError, resolve_patch_plan
 from tes3x_plugins import validate_order
 from test_reach import rec, sub
 
@@ -97,6 +98,40 @@ class PipelineTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 main()
             ftp.assert_not_called()
+
+
+class PipelinePlanTests(unittest.TestCase):
+    def test_pipeline_derives_archive_hook_and_payload_sources(self):
+        profile = {
+            'patches': {'preset': 'minimal', 'enable': ['mcp-1', 'script-ext']},
+            'package': {'mode': 'delta-bsa'},
+        }
+        plan = resolve_patch_plan(profile)
+        self.assertEqual(plan['applied'], ['multi-bsa', 'script-ext', 'mcp-1'])
+        self.assertEqual(plan['sources'], [
+            'tes3xhook.c', 'tes3xlog.c', 'tes3xarch.c', 'tes3xscript.c', 'tes3xrefs.c'
+        ])
+        self.assertTrue(plan['needs_payload'])
+
+    def test_standard_only_selects_verified_default_fixes(self):
+        plan = resolve_patch_plan({'patches': {'preset': 'standard'},
+                                   'package': {'mode': 'merged-bsa'}})
+        # mcp-1 remains explicit until its failed-resolution branch is verified.
+        self.assertEqual(plan['selected'], [])
+        self.assertEqual(plan['applied'], [])
+        self.assertFalse(plan['needs_payload'])
+
+    def test_development_adds_tools_but_allows_overrides(self):
+        profile = {'patches': {'preset': 'development', 'disable': ['diagnostics']},
+                   'package': {'mode': 'merged-bsa'}}
+        plan = resolve_patch_plan(profile)
+        self.assertEqual(plan['selected'], ['console'])
+
+    def test_pipeline_rejects_unknown_categories_and_patches(self):
+        with self.assertRaises(PipelineError):
+            resolve_patch_plan({'patches': {'categories': ['external']}})
+        with self.assertRaises(PipelineError):
+            resolve_patch_plan({'patches': {'enable': ['not-a-patch']}})
 
 
 if __name__ == '__main__':
