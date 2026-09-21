@@ -9,7 +9,7 @@ from tes3x_paths import check_paths, require_paths
 from tes3x_pack import write_invalidation
 from tes3x_build import materialize, plugin_masters
 from tes3x_pipeline import PipelineError, copy_retail_root, resolve_patch_plan
-from tes3x_patch import _mcp_97, _mcp_140, _mcp_154
+from tes3x_patch import _mcp_97, _mcp_102, _mcp_140, _mcp_154
 from tes3x_plugins import validate_order
 from test_reach import rec, sub
 
@@ -239,6 +239,44 @@ class PipelinePlanTests(unittest.TestCase):
         })
         self.assertEqual(plan['applied'], ['mcp-154'])
         self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xmcp154.c'])
+
+    def test_mcp_102_forces_active_bit_in_both_actn_paths(self):
+        setter = bytes.fromhex(
+            '8b414485c0740c83380974168b400485c075f4e808ffffff'
+            '8b542404895008c204008b4c2404894808c20400'
+        )
+
+        class Image:
+            base = 0x100000
+
+            def __init__(self):
+                self.data = bytearray(b'\x90' * 32 + setter + b'\xcc' * 16)
+
+            def off_to_va(self, offset):
+                return self.base + offset
+
+            def va_to_off(self, va):
+                return va - self.base
+
+        image = Image()
+        edits = _mcp_102(image, '', {})
+        block = 32
+        store = block + 24
+        self.assertEqual(image.data[block + 11], 0x0c)
+        self.assertEqual(
+            image.data[store:store + 20],
+            bytes.fromhex('8b54240483ca01895008c20400') + b'\x90' * 7,
+        )
+        self.assertEqual([(offset, length) for offset, length, _label in edits],
+                         [(block + 11, 1), (store, 20)])
+
+    def test_mcp_102_needs_no_dedicated_hook_source(self):
+        plan = resolve_patch_plan({
+            'patches': {'preset': 'minimal', 'enable': ['mcp-102']},
+            'package': {'mode': 'merged-bsa'},
+        })
+        self.assertEqual(plan['applied'], ['mcp-102'])
+        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c'])
 
     def test_mcp_140_replaces_loading_redraw_tail(self):
         status = bytes.fromhex(

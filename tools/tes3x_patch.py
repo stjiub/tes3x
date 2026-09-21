@@ -64,6 +64,7 @@ PATCH_BITS = {
     "mcp-97": 1 << 9,
     "mcp-154": 1 << 10,
     "mcp-140": 1 << 11,
+    "mcp-102": 1 << 12,
 }
 
 
@@ -367,6 +368,19 @@ MCP154_RELOAD_SIG = re.compile(
 )
 MCP154_REPLACED = 6
 
+# The ACTN save subrecord is loaded through this sole setter. When the object has no action
+# state yet it allocates one, then both paths store the serialized flags at +8. MCP keeps bit
+# zero set so an object cannot remain inactive after the script which triggered it is removed.
+MCP102_ACTN_SIG = re.compile(
+    rb"\x8b\x41\x44\x85\xc0\x74\x0c\x83\x38\x09\x74\x16"
+    rb"\x8b\x40\x04\x85\xc0\x75\xf4\xe8...."
+    rb"(?P<missing>\x8b\x54\x24\x04\x89\x50\x08\xc2\x04\x00)"
+    rb"\x8b\x4c\x24\x04\x89\x48\x08\xc2\x04\x00",
+    re.S,
+)
+MCP102_FOUND_JUMP = 11
+MCP102_STORE = bytes.fromhex("8b54240483ca01895008c20400")
+
 # MenuLoading's progress callback updates the fill value, then calls the menu update and redraw
 # routines whenever the float changes. MCP throttles those last two calls to one per 50 ms.
 MCP140_REDRAW_SIG = re.compile(
@@ -430,6 +444,17 @@ def find_mcp154_load(x):
 def find_mcp154_reload(x):
     """Find the reloaded script-data allocation size load."""
     return _find_mcp154_site(x, MCP154_RELOAD_SIG, "reload")
+
+
+def find_mcp102_actn(x):
+    """Find the ACTN flag setter used by the save-reference loader."""
+    hits = list(MCP102_ACTN_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("mcp-102: %d ACTN setter(s), expected 1" % len(hits))
+    va = x.off_to_va(hits[0].start())
+    if va is None:
+        raise PatchError("mcp-102: ACTN setter is outside any section")
+    return va
 
 
 def find_mcp140_redraw(x):
@@ -613,6 +638,27 @@ def _mcp_140(x, value, ctx):
     ]
 
 
+@patch("mcp-102")
+def _mcp_102(x, value, ctx):
+    """Reactivate script-triggered objects after their script mod is removed."""
+    site = find_mcp102_actn(x)
+    off = x.va_to_off(site)
+    match = MCP102_ACTN_SIG.match(bytes(x.data), off)
+    store = match.start("missing")
+
+    # Both the existing-state path and the newly-allocated path now share one store of
+    # `serialized_flags | 1`; seven trailing padding bytes keep the function boundary fixed.
+    x.data[off + MCP102_FOUND_JUMP] = store - (off + MCP102_FOUND_JUMP + 1)
+    replaced = match.end() - store
+    x.data[store:match.end()] = MCP102_STORE + b"\x90" * (replaced - len(MCP102_STORE))
+    return [
+        (off + MCP102_FOUND_JUMP, 1,
+         "ACTN existing-state path 0x%08X -> shared store" % (site + 10)),
+        (store, replaced,
+         "ACTN flags 0x%08X: force active bit" % x.off_to_va(store)),
+    ]
+
+
 CONSOLE_GATE_SIG = bytes([
     0x6A, 0x02,              # push 2            ; mode
     0x6A, 0x19,              # push 0x19         ; the console action
@@ -699,7 +745,7 @@ def main():
     ap.add_argument("--list", action="store_true", help="list available patches and exit")
     ap.add_argument("--locate", choices=["run-function", "command-table", "ref-load", "ref-skip",
                                                "mcp-97-scan", "mcp-154-load", "mcp-154-reload",
-                                               "mcp-140-redraw",
+                                               "mcp-140-redraw", "mcp-102-actn",
                                                "save-game", "diagnostics-update"],
                     help="print a content-located engine address and exit")
     a = ap.parse_args()
@@ -721,6 +767,7 @@ def main():
                   "mcp-154-load": find_mcp154_load,
                   "mcp-154-reload": find_mcp154_reload,
                   "mcp-140-redraw": find_mcp140_redraw,
+                  "mcp-102-actn": find_mcp102_actn,
                   "save-game": lambda image: find_autosave_calls(image)[0],
                   "diagnostics-update": find_diagnostics_update}
         print("0x%08X" % finder[a.locate](x))
