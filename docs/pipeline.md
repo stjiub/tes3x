@@ -29,8 +29,9 @@ being tested.
 
 Delta-BSA packaging derives the `multi-bsa` infrastructure patch. Any selected
 hook derives the payload sources it needs, and the pipeline applies the payload
-before dependent patches. A successful build stages `Default.xbe`, the patched
-`morrowind.xbe`, `Morrowind.ini` and `Data Files` together.
+before dependent patches. A successful build carries the retail Xbox root payload
+and stages `Default.xbe`, the patched `morrowind.xbe`, `Morrowind.ini` and generated
+`Data Files` together. Disc-image and scene-release artifacts are excluded.
 
 ```powershell
 python tools/tes3x_pipeline.py examples/profile.toml --plan

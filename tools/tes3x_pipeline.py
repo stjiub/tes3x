@@ -11,11 +11,15 @@ import sys
 import tempfile
 import tomllib
 
+from tes3x_paths import DEFAULT_REMOTE_ROOT, require_paths
+
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "tools"
 HOOKS = ROOT / "hooks"
 MARKER = ".tes3x-pipeline.json"
+REPLACED_RETAIL_ENTRIES = {"data files", "default.xbe", "morrowind.xbe", "morrowind.ini"}
+RELEASE_ARTIFACT_SUFFIXES = {".iso", ".nfo", ".rar", ".sfv"}
 
 PATCHES = {
     "mcp-1": {"category": "core", "status": "implemented", "source": "tes3xrefs.c"},
@@ -148,6 +152,27 @@ def find_bash(value=None):
     if not found:
         raise PipelineError("bash not found; set paths.bash or pass --bash")
     return found
+
+
+def copy_retail_root(vanilla, staged):
+    """Carry the Xbox disc-root payload without copying release or generated files."""
+    copied = []
+    for source in sorted(vanilla.iterdir(), key=lambda path: path.name.lower()):
+        suffix = source.suffix.lower()
+        release_part = len(suffix) == 4 and suffix[1] == "r" and suffix[2:].isdigit()
+        if (source.name.lower() in REPLACED_RETAIL_ENTRIES
+                or suffix in RELEASE_ARTIFACT_SUFFIXES or release_part):
+            continue
+        target = staged / source.name
+        if source.is_dir():
+            shutil.copytree(source, target)
+            copied.extend(path for path in source.rglob("*") if path.is_file())
+        elif source.is_file():
+            shutil.copy2(source, target)
+            copied.append(source)
+        else:
+            raise PipelineError(f"unsupported retail root entry: {source}")
+    return len(copied), sum(path.stat().st_size for path in copied)
 
 
 def validate_output(path):
@@ -307,8 +332,13 @@ def main(argv=None):
             pack_cmd += ["--remote-root", remote]
         run(pack_cmd)
 
+        retail_files, retail_bytes = copy_retail_root(vanilla, staged)
         shutil.copy2(launcher, staged / "Default.xbe")
         shutil.copy2(patched, staged / "morrowind.xbe")
+        staged_paths = [path.relative_to(staged).as_posix()
+                        for path in staged.rglob("*") if path.is_file()]
+        require_paths(staged_paths, remote or DEFAULT_REMOTE_ROOT)
+        print(f"  retail root payload: {retail_files} files, {retail_bytes / 1048576:.1f} MB")
         record = {
             "profile": profile_name,
             "profile_path": str(profile_path),

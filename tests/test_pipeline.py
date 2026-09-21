@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from tes3x_paths import check_paths, require_paths
 from tes3x_pack import write_invalidation
 from tes3x_build import materialize, plugin_masters
-from tes3x_pipeline import PipelineError, resolve_patch_plan
+from tes3x_pipeline import PipelineError, copy_retail_root, resolve_patch_plan
 from tes3x_patch import _mcp_97, _mcp_140, _mcp_154
 from tes3x_plugins import validate_order
 from test_reach import rec, sub
@@ -100,6 +100,33 @@ class PipelineTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 main()
             ftp.assert_not_called()
+
+    def test_complete_install_carries_retail_root_payload(self):
+        vanilla = self.root / 'vanilla'
+        staged = self.root / 'staged'
+        (vanilla / 'Data Files').mkdir(parents=True)
+        (vanilla / 'sound-cache').mkdir()
+        staged.mkdir()
+        (staged / 'Data Files').mkdir()
+        (staged / 'Data Files' / 'generated.bsa').write_bytes(b'generated')
+        for name in ('Default.xbe', 'morrowind.xbe', 'Morrowind.ini'):
+            (vanilla / name).write_bytes(b'retail')
+        (vanilla / 'Data Files' / 'retail.bsa').write_bytes(b'retail')
+        (vanilla / 'sound-cache' / 'voice.wav').write_bytes(b'voice')
+        (vanilla / 'FullMap').write_bytes(b'map')
+        for name in ('disc.iso', 'release.nfo', 'release.rar', 'release.r00', 'release.r12',
+                     'release.sfv'):
+            (vanilla / name).write_bytes(b'artifact')
+
+        count, size = copy_retail_root(vanilla, staged)
+
+        self.assertEqual((count, size), (2, 8))
+        self.assertEqual((staged / 'sound-cache' / 'voice.wav').read_bytes(), b'voice')
+        self.assertEqual((staged / 'FullMap').read_bytes(), b'map')
+        self.assertEqual((staged / 'Data Files' / 'generated.bsa').read_bytes(), b'generated')
+        self.assertFalse((staged / 'Data Files' / 'retail.bsa').exists())
+        for name in ('Default.xbe', 'morrowind.xbe', 'Morrowind.ini', 'disc.iso', 'release.r00'):
+            self.assertFalse((staged / name).exists())
 
 
 class PipelinePlanTests(unittest.TestCase):
