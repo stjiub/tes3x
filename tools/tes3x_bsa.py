@@ -55,8 +55,9 @@ class Bsa:
         return tes3_hash(name) in self.by_hash
 
 
-def write_bsa(out_path, files, base=None, progress=None):
-    """Build an Xbox BSA, optionally overriding entries from a base archive."""
+def write_bsa(out_path, files, base=None, progress=None, drop=()):
+    """Build an Xbox BSA, optionally overriding entries from a base archive.
+    Base entries whose hash is in `drop` are left out."""
     new = {}
     for name, src in files:
         new[tes3_hash(name)] = ("file", src, os.path.getsize(src))
@@ -64,7 +65,7 @@ def write_bsa(out_path, files, base=None, progress=None):
     recs = []
     if base:
         for e in base.entries:
-            if e["hash"] not in new:
+            if e["hash"] not in new and e["hash"] not in drop:
                 recs.append((e["hash"], "base", e["offset"], e["size"]))
     for h, (_, src, size) in new.items():
         recs.append((h, "file", src, size))

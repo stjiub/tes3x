@@ -2,6 +2,7 @@
 """Pack exact-path assets into BSA and stage globbed files loose for deployment."""
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -87,12 +88,18 @@ def main():
     ap.add_argument("--show-fps", action="store_true",
                     help="[General] Show FPS=1 - the engine's own frame counter, no hook needed")
     ap.add_argument("--loose-asset", action="append", default=[], metavar="GLOB",
-                    help="also stage matching packed assets loose and invalidate their archive entries")
+                    help="stage matching assets loose instead of packing them (repeatable)")
+    ap.add_argument("--loose-mod", action="append", default=[], metavar="NAME",
+                    help="stage every asset this mod won loose instead of packing it (repeatable); "
+                         "needs --manifest")
+    ap.add_argument("--manifest", help="tes3x_build --json output, mapping assets to mods")
     ap.add_argument("--load-order", help="tes3x_plugins order/patch JSON; stamp all shipped plugins")
     ap.add_argument("--remote-root", default=DEFAULT_REMOTE_ROOT, help="Xbox game folder for physical path checks")
     args = ap.parse_args()
-    if args.archive_only and args.loose_asset:
-        ap.error('--loose-asset requires TryArchiveFirst=0; archive-only fallback is not verified')
+    if args.archive_only and (args.loose_asset or args.loose_mod):
+        ap.error('loose assets require TryArchiveFirst=0; archive-only skips loose lookups')
+    if args.loose_mod and not args.manifest:
+        ap.error('--loose-mod needs --manifest')
     if os.path.isdir(args.out) and os.listdir(args.out):
         ap.error("output must be new or empty; stale files would invalidate the deployment")
 
@@ -137,16 +144,34 @@ def main():
                 if not any(r.lower() == rel.lower() for r, _ in loose):
                     loose.append((rel, full))
 
-    invalidated = []
-    for pattern in args.loose_asset:
-        matches = [(rel, src) for rel, src in pack
-                   if fnmatch.fnmatchcase(rel.lower().replace('\\', '/'), pattern.lower().replace('\\', '/'))]
-        if not matches:
+    # Loose assets leave the archives entirely. A retail entry they replace is dropped from a
+    # merged archive, or named in ArchiveInvalidationList.txt when retail ships unchanged: the
+    # engine invalidates a listed name only in the first chained archive that holds it.
+    owner = {}
+    if args.manifest:
+        with open(args.manifest, encoding="utf-8") as stream:
+            owner = {k.lower(): v["mod"].lower() for k, v in json.load(stream).items()}
+    for mod in args.loose_mod:
+        if mod.lower() not in owner.values():
+            ap.error(f"--loose-mod {mod}: no asset in the manifest belongs to it")
+    loose_mods = {m.lower() for m in args.loose_mod}
+    globs = [p.lower().replace('\\', '/') for p in args.loose_asset]
+
+    def key(rel):
+        return rel.lower().replace('\\', '/')
+
+    for pattern in globs:
+        if not any(fnmatch.fnmatchcase(key(rel), pattern) for rel, _ in pack):
             ap.error(f"--loose-asset matched nothing: {pattern}")
-        for rel, src in matches:
-            if (rel, src) not in invalidated:
-                invalidated.append((rel, src))
-    loose.extend(invalidated)
+    staged_loose = [(rel, src) for rel, src in pack
+                    if owner.get(key(rel)) in loose_mods
+                    or any(fnmatch.fnmatchcase(key(rel), p) for p in globs)]
+    moved = {rel for rel, _ in staged_loose}
+    pack = [(rel, src) for rel, src in pack if rel not in moved]
+    loose.extend(staged_loose)
+    invalidated = [(rel, src) for rel, src in staged_loose if tes3_hash(rel) in base.by_hash]
+    if staged_loose:
+        print(f"  {len(staged_loose)} assets staged loose, {len(invalidated)} replace retail entries")
 
     # TES3Merge output hangs the Xbox loading screen indefinitely; keep it out of builds
     for rel, _src in loose:
@@ -174,7 +199,7 @@ def main():
     paths += ['Data Files/Morrowind.bsa', 'Morrowind.ini']
     if args.delta_archive:
         paths += ['Data Files/' + args.delta_archive, 'Data Files/tes3xarch.txt']
-    if invalidated:
+    if invalidated and args.delta_archive:
         paths.append('ArchiveInvalidationList.txt')
     require_paths(paths, args.remote_root)
     os.makedirs(out_df, exist_ok=True)
@@ -196,7 +221,8 @@ def main():
         print(f"  {args.delta_archive}: {count} entries, {total/1048576:.1f} MB content, "
               f"{os.path.getsize(delta_path)/1048576:.1f} MB on disk")
     else:
-        count, total = write_bsa(out_bsa, pack, base=base, progress=prog)
+        count, total = write_bsa(out_bsa, pack, base=base, progress=prog,
+                                 drop={tes3_hash(rel) for rel, _ in invalidated})
         print(f"\r  Morrowind.bsa: {count} entries, {total/1048576:.1f} MB content, "
               f"{os.path.getsize(out_bsa)/1048576:.1f} MB on disk")
 
@@ -218,7 +244,6 @@ def main():
     plugins = {Path(rel).name.lower(): Path(out_df) / rel for rel, _ in loose
                if rel.lower().endswith(('.esm', '.esp'))}
     if args.load_order:
-        import json
         names = json.loads(Path(args.load_order).read_text(encoding='utf-8'))['plugins']
     else:
         from tes3x_plugins import dependency_order
@@ -226,7 +251,7 @@ def main():
     names = validate_order(names, plugins)
     for index, name in enumerate(names):
         os.utime(plugins[name], (STAMP_BASE + index * STAMP_STEP,) * 2)
-    if invalidated:
+    if invalidated and args.delta_archive:
         write_invalidation(Path(args.out) / 'ArchiveInvalidationList.txt', [rel for rel, _ in invalidated])
 
     ini_src = args.ini or os.path.join(os.path.dirname(args.vanilla.rstrip("/\\")), "Morrowind.ini")
@@ -234,7 +259,7 @@ def main():
         text = open(ini_src, encoding="latin-1").read()
         if args.archive_only:
             text = set_ini_key(text, "General", "TryArchiveFirst", 1)
-        elif invalidated:
+        elif staged_loose:
             text = set_ini_key(text, "General", "TryArchiveFirst", 0)
         edits = []
         if args.quickstart:

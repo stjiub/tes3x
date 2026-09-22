@@ -26,6 +26,12 @@ drive_letter = "D"
 
 `--ini-set` on the command line is applied after `[ini]`, so it overrides a profile key.
 
+A mod entry with `loose = true` ships every asset it wins as a loose file instead of packing
+it. A retail asset it replaces is dropped from a merged archive, or listed in
+`ArchiveInvalidationList.txt` in the game folder when the delta archive leaves retail unchanged.
+Loose assets need `TryArchiveFirst=0`, which the build sets, and are incompatible with
+`archive_only`.
+
 `standard` admits verified default `core` and `correctness` patches.
 `development` adds instrumentation and the console. `compat`, `performance`,
 `qol` and `balance` remain explicit. Candidate or merely implemented catalogue
