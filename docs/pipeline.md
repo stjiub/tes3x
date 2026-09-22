@@ -60,6 +60,11 @@ The full-path boundary has unit coverage; it has not been probed on this console
 including dry-run. A different destination is therefore checked again at deploy
 time.
 
+Deploy keeps `tes3xdeploy.json` in the remote folder: each file's size and SHA-1
+as last sent. A file is resent when its size or hash differs; without an entry,
+same-size `.xbe`, `.ini`, `.txt` and `.xml` files are always resent. If any
+plugin is sent, all plugins are resent in load order.
+
 Build validates the prospective loose Data Files tree. Pack validates only actual
 loose output paths, including `Morrowind.bsa`; names inside the BSA do not consume
 FATX directory entries. No automatic renaming: references must be rewritten along

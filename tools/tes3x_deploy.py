@@ -4,6 +4,9 @@
 import argparse
 import fnmatch
 import ftplib
+import hashlib
+import io
+import json
 import os
 import posixpath
 import sys
@@ -13,6 +16,31 @@ from tes3x_paths import require_paths
 PLUGIN_EXT = (".esm", ".esp")
 MTIME_SLACK = 3
 CACHE_DRIVES = ("X:", "Y:", "Z:")
+MANIFEST = "tes3xdeploy.json"
+# Edited in place at the same size; without a manifest entry these always go.
+IN_PLACE_EXT = (".xbe", ".ini", ".txt", ".xml")
+
+
+def sha1(path):
+    h = hashlib.sha1()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def read_manifest(ftp, base):
+    buf = io.BytesIO()
+    try:
+        ftp.retrbinary(f"RETR {ftp_basename(ftp, posixpath.join(base, MANIFEST))}", buf.write)
+        return {k.lower(): v for k, v in json.loads(buf.getvalue()).items()}
+    except ftplib.all_errors + (ValueError,):
+        return {}
+
+
+def write_manifest(ftp, base, entries):
+    data = json.dumps(dict(sorted(entries.items())), indent=0).encode()
+    ftp.storbinary(f"STOR {ftp_basename(ftp, posixpath.join(base, MANIFEST))}", io.BytesIO(data))
 
 
 def local_tree(root):
@@ -147,17 +175,35 @@ def main():
     print(f"  MFMT (set mtime): {'yes' if has_mfmt else 'no - will pace plugin uploads'}")
 
     remote = remote_tree(ftp, base)
-    print(f"  console has {len(remote)} files under {base}")
+    remote.pop(MANIFEST, None)
+    manifest = read_manifest(ftp, base)
+    print(f"  console has {len(remote)} files under {base}, "
+          f"manifest {'with %d entries' % len(manifest) if manifest else 'missing'}")
+
+    hashes = {r: sha1(v[2]) for r, v in local.items()}
 
     # FATX is case-insensitive, so a tree carrying both music/Battle and music/battle
     # matches one remote directory. Comparing case-sensitively made every sync delete
     # one spelling and upload the other, for ever.
     remote_ci = {r.lower(): sz for r, sz in remote.items()}
     local_ci = {r.lower() for r in local}
-    # A named selection goes whether or not the size matches: an XBE edited in place is
-    # the normal case, and it is exactly the same size as the one it replaces.
-    upload = [r for r, (sz, _, _) in local.items()
-              if args.only or remote_ci.get(r.lower()) != sz]
+
+    def stale(r):
+        sz = local[r][0]
+        have = remote_ci.get(r.lower())
+        if have != sz:
+            return True
+        # A manifest entry only vouches for the file if the size still agrees with it.
+        known = manifest.get(r.lower())
+        if known and known[0] == have:
+            return known[1] != hashes[r]
+        return r.lower().endswith(IN_PLACE_EXT)
+
+    # A named selection goes regardless: an XBE edited in place is the normal case.
+    upload = [r for r in local if args.only or stale(r)]
+    # Load order is upload order without MFMT, so one changed plugin resends them all.
+    if not has_mfmt and any(r.lower().endswith(PLUGIN_EXT) for r in upload):
+        upload += [r for r in local if r.lower().endswith(PLUGIN_EXT) and r not in upload]
     # A selected send says nothing about what else belongs on the console.
     delete = [] if args.only else [r for r in remote if r.lower() not in local_ci]
     up_bytes = sum(local[r][0] for r in upload)
@@ -209,6 +255,11 @@ def main():
         print(f"\r  {human(sent)}/{human(up_bytes)}  {human(sent/max(el,1))}/s   ", end="", flush=True)
 
     print(f"\n  uploaded in {time.time()-t0:.0f}s")
+
+    entries = {} if not args.only else dict(manifest)
+    for r in local:
+        entries[r.lower()] = [local[r][0], hashes[r]]
+    write_manifest(ftp, base, entries)
 
     if args.clear_cache:
         for drive in CACHE_DRIVES:
