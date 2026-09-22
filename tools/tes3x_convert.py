@@ -62,7 +62,9 @@ def convert_texture(src, max_size=512, force_fourcc=None):
         img = img.convert("RGBA")
 
     w, h = target_size(img.width, img.height, max_size)
-    fourcc = force_fourcc or ("DXT5" if has_alpha(img) else "DXT1")
+    # Retail Xbox ships DXT1 and DXT3 only - 4,623 and 1,410 entries in Morrowind.bsa,
+    # and not one DXT5. Alpha goes to DXT3 to stay inside what the build is known to read.
+    fourcc = force_fourcc or ("DXT3" if has_alpha(img) else "DXT1")
 
     if (w, h) != img.size:
         img = img.resize((w, h), Image.LANCZOS)
@@ -79,12 +81,17 @@ def convert_texture(src, max_size=512, force_fourcc=None):
     return header + b"".join(levels), f"{w}x{h} {fourcc} {len(levels)} mips"
 
 
+# Bumped whenever the encoder's output changes for the same inputs, so entries written
+# by an older policy are not served. 2: alpha moved from DXT5 to DXT3.
+FORMAT_POLICY = 2
+
+
 def cache_key(src, max_size, fourcc):
     h = hashlib.blake2b(digest_size=16)
     with open(src, "rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
-    h.update(f"{max_size}:{fourcc}".encode())
+    h.update(f"{max_size}:{fourcc}:v{FORMAT_POLICY}".encode())
     return h.hexdigest()
 
 
