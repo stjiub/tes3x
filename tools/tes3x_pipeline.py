@@ -87,16 +87,22 @@ def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), pac
         raise PipelineError("unknown patch categories: " + ", ".join(sorted(unknown_categories)))
     selected.update(name for name, meta in PATCHES.items() if meta["category"] in categories)
 
-    enabled = set(string_list(config.get("enable"), "patches.enable")) | set(enable)
-    disabled = set(string_list(config.get("disable"), "patches.disable")) | set(disable)
-    unknown = (enabled | disabled) - PATCHES.keys()
+    enabled = set(string_list(config.get("enable"), "patches.enable"))
+    disabled = set(string_list(config.get("disable"), "patches.disable"))
+    unknown = (enabled | disabled | set(enable) | set(disable)) - PATCHES.keys()
     if unknown:
         raise PipelineError("unknown selectable patches: " + ", ".join(sorted(unknown)))
-    overlap = enabled & disabled
-    if overlap:
-        raise PipelineError("patches both enabled and disabled: " + ", ".join(sorted(overlap)))
+    for both, where in ((enabled & disabled, "the profile"),
+                        (set(enable) & set(disable), "the command line")):
+        if both:
+            raise PipelineError("patches both enabled and disabled in %s: %s"
+                                % (where, ", ".join(sorted(both))))
     selected.update(enabled)
     selected.difference_update(disabled)
+    # The command line is the later word, so --disable overrides a profile's enable.
+    # Bisecting a profile is not a contradiction.
+    selected.update(enable)
+    selected.difference_update(disable)
 
     mode = package_mode or profile.get("package", {}).get("mode", "delta-bsa")
     if mode not in {"delta-bsa", "merged-bsa"}:
