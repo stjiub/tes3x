@@ -149,11 +149,17 @@ def main():
     remote = remote_tree(ftp, base)
     print(f"  console has {len(remote)} files under {base}")
 
+    # FATX is case-insensitive, so a tree carrying both music/Battle and music/battle
+    # matches one remote directory. Comparing case-sensitively made every sync delete
+    # one spelling and upload the other, for ever.
+    remote_ci = {r.lower(): sz for r, sz in remote.items()}
+    local_ci = {r.lower() for r in local}
     # A named selection goes whether or not the size matches: an XBE edited in place is
     # the normal case, and it is exactly the same size as the one it replaces.
-    upload = [r for r, (sz, _, _) in local.items() if args.only or remote.get(r) != sz]
+    upload = [r for r, (sz, _, _) in local.items()
+              if args.only or remote_ci.get(r.lower()) != sz]
     # A selected send says nothing about what else belongs on the console.
-    delete = [] if args.only else [r for r in remote if r not in local]
+    delete = [] if args.only else [r for r in remote if r.lower() not in local_ci]
     up_bytes = sum(local[r][0] for r in upload)
     print(f"\n  upload {len(upload)} files ({human(up_bytes)})")
     print(f"  delete {len(delete)} orphaned files")
