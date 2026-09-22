@@ -35,6 +35,7 @@ PATCH_BITS = {
     10: "mcp-154",
     11: "mcp-140",
     12: "mcp-102",
+    13: "profile",
 }
 
 
