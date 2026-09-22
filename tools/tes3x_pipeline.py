@@ -362,7 +362,9 @@ def main(argv=None):
             pack_cmd += ["--delta-archive", package.get("archive_name", "tes3xmods.bsa")]
         if package.get("archive_only", False):
             pack_cmd.append("--archive-only")
-        for item in args.ini_set:
+        # Profile keys first, so the command line overrides them.
+        profile_ini = [f"{k}={v}" for k, v in profile.get("ini", {}).items()]
+        for item in profile_ini + args.ini_set:
             pack_cmd += ["--ini-set", item]
         if remote:
             pack_cmd += ["--remote-root", remote]

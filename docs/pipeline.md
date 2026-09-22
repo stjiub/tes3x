@@ -19,7 +19,12 @@ mode = "delta-bsa"                  # or merged-bsa
 archive_name = "tes3xmods.bsa"
 archive_only = false
 drive_letter = "D"
+
+[ini]                               # optional Morrowind.ini keys, "SECTION:KEY" = value
+"General:Show FPS" = 1
 ```
+
+`--ini-set` on the command line is applied after `[ini]`, so it overrides a profile key.
 
 `standard` admits verified default `core` and `correctness` patches.
 `development` adds instrumentation and the console. `compat`, `performance`,
