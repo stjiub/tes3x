@@ -35,7 +35,7 @@ import hashlib, pathlib, sys
 root = pathlib.Path(sys.argv[1])
 flags = sys.argv[2]
 names = set(sys.argv[3:] + ["build.sh", "tes3xdiag.h", "tes3xlog.h", "tes3xnt.h",
-                             "tes3x_thunks.h"])
+                             "tes3xprof.h", "tes3x_thunks.h"])
 h = hashlib.sha256()
 h.update(b"flags\0" + flags.encode("utf-8") + b"\0")
 for name in sorted(names):
@@ -78,7 +78,7 @@ esac
 # Settings come from Morrowind.ini through the engine's own reader, so any hook that takes
 # one needs its address and the filename string.
 case " $SRCS " in
-*" tes3xconsole.c "*|*" tes3xrefs.c "*|*" tes3xdiag.c "*|*" tes3xsaves.c "*)
+*" tes3xconsole.c "*|*" tes3xrefs.c "*|*" tes3xdiag.c "*|*" tes3xsaves.c "*|*" tes3xprof.c "*)
     INI_GET=${INI_GET:-0x001933E0}
     INI_PATH=${INI_PATH:-0x0035E364}
     echo "ini reader $INI_GET, ini path $INI_PATH"
@@ -92,6 +92,15 @@ case " $SRCS " in
     SAVE_GAME=$($PYTHON "$ROOT/tools/tes3x_patch.py" "$XBE" --locate save-game | tail -1)
     echo "autosave hook: SaveGame $SAVE_GAME"
     EXTRA_CFLAGS="$EXTRA_CFLAGS -DTES3X_SAVE_GAME=$SAVE_GAME"
+    ;;
+esac
+
+# The profiler needs no engine address: the patcher picks its targets and fills the table.
+case " $SRCS " in
+*" tes3xprof.c "*)
+    PROFILE=1
+    echo "profiler: RDTSC region timing, targets chosen at patch time"
+    EXTRA_CFLAGS="$EXTRA_CFLAGS -DTES3X_PROFILE"
     ;;
 esac
 
@@ -245,6 +254,14 @@ if [ -n "$DIAG_UPDATE" ]; then
     DMASK=$(sym_va _tes3x_patch_mask)
     [ -n "$DMASK" ] || { echo "could not find _tes3x_patch_mask in the link map" >&2; exit 1; }
     HOOKS="$HOOKS diagnostics_update=0x$DHOOK diagnostics_flag=0x$DFLAG patch_mask=0x$DMASK"
+fi
+if [ -n "$PROFILE" ]; then
+    PTARGET=$(sym_va _tes3x_prof_target)
+    PSTUBS=$(sym_va _tes3x_prof_stubs)
+    [ -n "$PTARGET" ] || { echo "could not find _tes3x_prof_target in the link map" >&2; exit 1; }
+    [ -n "$PSTUBS" ] || { echo "could not find _tes3x_prof_stubs in the link map" >&2; exit 1; }
+    PCOUNT=$(sed -n 's/^#define TES3X_PROF_SLOTS  *//p' "$HERE/tes3xprof.c")
+    HOOKS="$HOOKS prof_target=0x$PTARGET prof_stubs=0x$PSTUBS prof_count=$PCOUNT"
 fi
 if [ -n "$SAVE_GAME" ]; then
     AHOOK=$(sym_va @tes3x_autosave_hook@12)

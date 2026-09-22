@@ -7,6 +7,9 @@
 #ifdef TES3X_DIAGNOSTICS
 #include "tes3xdiag.h"
 #endif
+#ifdef TES3X_PROFILE
+#include "tes3xprof.h"
+#endif
 
 #ifndef TES3X_INI_GET_STRING
 #error "define TES3X_INI_GET_STRING to the VA of the ini string reader"
@@ -196,6 +199,10 @@ static void run_command(const char *text)
     unsigned char *mgr;
     void *ctx, *script;
 
+#ifdef TES3X_PROFILE
+    if (tes3x_prof_command(text))
+        return;
+#endif
 #ifdef TES3X_DIAGNOSTICS
     if (tes3x_diag_command(text))
         return;

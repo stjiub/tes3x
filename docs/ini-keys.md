@@ -26,6 +26,7 @@ other key. They do nothing without the patch that installs the hook.
 | `[Xbox] DiagnosticsLevel` | `--apply diagnostics` | `0`, `1` or `2` | value of `Diagnostics`; `2` adds periodic snapshots and notes |
 | `[Xbox] HangWatchdog` | `--apply diagnostics` | `0` or `1` | `1` when diagnostics are enabled |
 | `[Xbox] HangTimeoutSeconds` | `--apply diagnostics` | `10` through `600` | `60` |
+| `[Xbox] ProfileDumpFrames` | `--apply profile` | frames between automatic dumps | `0` - dump only on the console command |
 
 ## The ones that matter for this project
 

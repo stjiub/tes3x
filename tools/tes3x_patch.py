@@ -65,6 +65,7 @@ PATCH_BITS = {
     "mcp-154": 1 << 10,
     "mcp-140": 1 << 11,
     "mcp-102": 1 << 12,
+    "profile": 1 << 13,
 }
 
 
@@ -711,6 +712,62 @@ def _diagnostics(x, value, ctx):
              % (site, was, target))]
 
 
+PROFILE_LIST_SITES = 8
+
+
+@patch("profile", takes="VA[,VA...]")
+def _profile(x, value, ctx):
+    """Time listed functions with RDTSC at every direct call site."""
+    hooks = ctx.get("hooks", {})
+    table, stubs = hooks.get("prof_target"), hooks.get("prof_stubs")
+    if not table or not stubs:
+        raise PatchError("profile: needs `payload` first, built with tes3xprof.c in SRCS")
+    table_off = x.va_to_off(int(str(table), 16))
+    stubs_off = x.va_to_off(int(str(stubs), 16))
+    if table_off is None or stubs_off is None:
+        raise PatchError("profile: the payload tables are outside the injected section")
+    count = int(str(hooks.get("prof_count", 0)), 0)
+
+    targets = []
+    for item in value.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        # `@name` names a payload hook, so an installed hook can be timed in its own right.
+        if item.startswith("@"):
+            if item[1:] not in hooks:
+                raise PatchError("profile: no %r in the payload manifest" % item[1:])
+            targets.append((item, int(str(hooks[item[1:]]), 16)))
+        else:
+            targets.append((item, int(item, 0)))
+    if not targets:
+        raise PatchError("profile: no targets")
+    if len(targets) > count:
+        raise PatchError("profile: %d target(s), the payload carries %d slot(s)"
+                         % (len(targets), count))
+
+    seen = set()
+    edits = []
+    for k, (item, va) in enumerate(targets):
+        if va in seen:
+            raise PatchError("profile: 0x%08X listed twice" % va)
+        seen.add(va)
+        # Virtual dispatch is invisible to call-site hooking; say so rather than time nothing.
+        label = "%s " % item if item.startswith("@") else ""
+        sites = find_call_sites(x, va)
+        if not sites:
+            raise PatchError("profile: no direct call site reaches %s0x%08X" % (label, va))
+        stub = struct.unpack_from("<I", x.data, stubs_off + 4 * k)[0]
+        struct.pack_into("<I", x.data, table_off + 4 * k, va)
+        edits.append((None, 4, "slot %d = %s0x%08X, stub 0x%08X, %d call site(s)"
+                      % (k, label, va, stub, len(sites))))
+        for site in sites:
+            was, off = x.patch_call(site, stub)
+            edits.append((off, 5, "  call 0x%08X: 0x%08X -> slot %d" % (site, was, k)
+                          if len(sites) <= PROFILE_LIST_SITES else None))
+    return edits
+
+
 def find_console_gate(x):
     """The one `call` that gates Console::Toggle, found by its push/push/call shape."""
     text = text_section(x)
@@ -793,7 +850,9 @@ def main():
         print("\n  %s" % spec)
         try:
             for off, length, label in fn(x, value, ctx):
-                print("    %s" % label)
+                # A patch with hundreds of identical edits reports them as one line.
+                if label:
+                    print("    %s" % label)
                 if off is not None:
                     touched.append((off, length))
             applied.append(name)
