@@ -221,6 +221,13 @@ def main(argv=None):
     ap.add_argument("--disable", action="append", default=[], metavar="PATCH")
     ap.add_argument("--drive", help="game-directory drive letter (default: D)")
     ap.add_argument("--bash", help="MSYS/Git Bash used for hooks/build.sh")
+    ap.add_argument("--profile-target", action="append", default=[], metavar="VA",
+                    help="time this function with RDTSC at its direct call sites "
+                         "(repeatable, or comma-separated). Instrumentation only: the "
+                         "stubs stay installed whether or not anything reads them, so "
+                         "this never comes from a profile or a preset")
+    ap.add_argument("--ini-set", action="append", default=[], metavar="SECTION:KEY=VALUE",
+                    help="set a key in the staged Morrowind.ini (repeatable)")
     action = ap.add_mutually_exclusive_group()
     action.add_argument("--deploy", action="store_true", help="build and deploy to the configured Xbox")
     action.add_argument("--dry-run", action="store_true", help="build, then show the Xbox deployment diff")
@@ -259,6 +266,12 @@ def main(argv=None):
         raise PipelineError(f"retail Data Files not found: {data_files}")
 
     plan = resolve_patch_plan(profile, args.preset, args.enable, args.disable)
+    prof_targets = [item.strip() for value in args.profile_target
+                    for item in value.split(",") if item.strip()]
+    if prof_targets:
+        if "tes3xprof.c" not in plan["sources"]:
+            plan["sources"].append("tes3xprof.c")
+        plan["needs_payload"] = True
     package = profile.get("package", {})
     drive = (args.drive or package.get("drive_letter", "D")).upper()
     if len(drive) != 1 or not drive.isalpha():
@@ -272,6 +285,8 @@ def main(argv=None):
     print(f"profile: {profile_name}")
     print(f"preset: {plan['preset']}")
     print("patches: " + (", ".join(plan["applied"]) or "none"))
+    if prof_targets:
+        print("profiler: " + ", ".join(prof_targets))
     print(f"assets: {plan['package_mode']}")
     print(f"output: {output}")
     if args.deploy or args.dry_run:
@@ -317,6 +332,8 @@ def main(argv=None):
             patch_specs.append(f"payload={payload}")
         patch_specs.extend(("boot-media", f"drive-letters={drive}"))
         patch_specs.extend(plan["applied"])
+        if prof_targets:
+            patch_specs.append("profile=" + ",".join(prof_targets))
         patch_cmd = [sys.executable, TOOLS / "tes3x_patch.py", retail_xbe]
         for spec in patch_specs:
             patch_cmd += ["--apply", spec]
@@ -329,6 +346,8 @@ def main(argv=None):
             pack_cmd += ["--delta-archive", package.get("archive_name", "tes3xmods.bsa")]
         if package.get("archive_only", False):
             pack_cmd.append("--archive-only")
+        for item in args.ini_set:
+            pack_cmd += ["--ini-set", item]
         if remote:
             pack_cmd += ["--remote-root", remote]
         run(pack_cmd)
