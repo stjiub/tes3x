@@ -46,6 +46,9 @@ BOUND32_COUNT = 1
 
 CERT_ALLOWED_MEDIA = 0x220
 CERT_GAME_REGION = 0x224
+# wszTitleName, 40 UTF-16 characters. This is the name a dashboard lists.
+CERT_TITLE_NAME = 0x190
+CERT_TITLE_CHARS = 40
 MEDIA_ANY = 0xC00001FF
 REGION_ANY = 0x00000007
 
@@ -157,6 +160,21 @@ def _boot_media(x, value, ctx):
             struct.pack_into("<I", x.data, off, want)
             edits.append((off, 4, "%s = 0x%08X" % (label, want)))
     return edits
+
+
+@patch("title", takes="NAME")
+def _title(x, value, ctx):
+    """Rename the image, so parallel installs are told apart in a dashboard."""
+    name = value.strip()
+    if not name:
+        raise PatchError("title: needs a name")
+    if len(name) > CERT_TITLE_CHARS - 1:
+        raise PatchError("title: %r is %d characters, the certificate holds %d"
+                         % (name, len(name), CERT_TITLE_CHARS - 1))
+    size = CERT_TITLE_CHARS * 2
+    was = bytes(x.data[CERT_TITLE_NAME:CERT_TITLE_NAME + size]).decode("utf-16-le")
+    x.data[CERT_TITLE_NAME:CERT_TITLE_NAME + size] = name.encode("utf-16-le").ljust(size, b"\0")
+    return [(CERT_TITLE_NAME, size, "title %r -> %r" % (was.split("\x00")[0], name))]
 
 
 @patch("payload", takes="FILE.pe")

@@ -220,6 +220,8 @@ def main(argv=None):
     ap.add_argument("--enable", action="append", default=[], metavar="PATCH")
     ap.add_argument("--disable", action="append", default=[], metavar="PATCH")
     ap.add_argument("--drive", help="game-directory drive letter (default: D)")
+    ap.add_argument("--title", help="name both XBEs carry, so parallel installs are told "
+                                    "apart in a dashboard (default: profile.title)")
     ap.add_argument("--bash", help="MSYS/Git Bash used for hooks/build.sh")
     ap.add_argument("--profile-target", action="append", default=[], metavar="VA",
                     help="time this function with RDTSC at its direct call sites "
@@ -276,6 +278,7 @@ def main(argv=None):
     drive = (args.drive or package.get("drive_letter", "D")).upper()
     if len(drive) != 1 or not drive.isalpha():
         raise PipelineError("package.drive_letter must be one letter")
+    title = args.title or profile.get("profile", {}).get("title")
     remote = deploy.get("remote_root") or profile.get("profile", {}).get("remote_root")
     build_value = args.build_root or paths.get("build_root", "build")
     build_root = config_path(build_value, base).resolve()
@@ -285,6 +288,8 @@ def main(argv=None):
     print(f"profile: {profile_name}")
     print(f"preset: {plan['preset']}")
     print("patches: " + (", ".join(plan["applied"]) or "none"))
+    if title:
+        print(f"title: {title}")
     if prof_targets:
         print("profiler: " + ", ".join(prof_targets))
     print(f"assets: {plan['package_mode']}")
@@ -331,6 +336,8 @@ def main(argv=None):
         if plan["needs_payload"]:
             patch_specs.append(f"payload={payload}")
         patch_specs.extend(("boot-media", f"drive-letters={drive}"))
+        if title:
+            patch_specs.append(f"title={title}")
         patch_specs.extend(plan["applied"])
         if prof_targets:
             patch_specs.append("profile=" + ",".join(prof_targets))
@@ -353,7 +360,12 @@ def main(argv=None):
         run(pack_cmd)
 
         retail_files, retail_bytes = copy_retail_root(vanilla, staged)
-        shutil.copy2(launcher, staged / "Default.xbe")
+        if title:
+            # A dashboard lists the launcher, so that is the XBE the name has to reach.
+            run([sys.executable, TOOLS / "tes3x_patch.py", launcher,
+                 "--apply", f"title={title}", "--out", staged / "Default.xbe"])
+        else:
+            shutil.copy2(launcher, staged / "Default.xbe")
         shutil.copy2(patched, staged / "morrowind.xbe")
         staged_paths = [path.relative_to(staged).as_posix()
                         for path in staged.rglob("*") if path.is_file()]

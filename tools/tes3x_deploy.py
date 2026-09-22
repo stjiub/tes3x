@@ -149,7 +149,9 @@ def main():
     remote = remote_tree(ftp, base)
     print(f"  console has {len(remote)} files under {base}")
 
-    upload = [r for r, (sz, _, _) in local.items() if remote.get(r) != sz]
+    # A named selection goes whether or not the size matches: an XBE edited in place is
+    # the normal case, and it is exactly the same size as the one it replaces.
+    upload = [r for r, (sz, _, _) in local.items() if args.only or remote.get(r) != sz]
     # A selected send says nothing about what else belongs on the console.
     delete = [] if args.only else [r for r in remote if r not in local]
     up_bytes = sum(local[r][0] for r in upload)
