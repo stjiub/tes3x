@@ -225,6 +225,8 @@ def main(argv=None):
     ap.add_argument("--preset", choices=PRESETS)
     ap.add_argument("--enable", action="append", default=[], metavar="PATCH")
     ap.add_argument("--disable", action="append", default=[], metavar="PATCH")
+    ap.add_argument("--package-mode", choices=("delta-bsa", "merged-bsa"),
+                    help="override package.mode (default: the profile's)")
     ap.add_argument("--drive", help="game-directory drive letter (default: D)")
     ap.add_argument("--title", help="name both XBEs carry, so parallel installs are told "
                                     "apart in a dashboard (default: profile.title)")
@@ -273,7 +275,8 @@ def main(argv=None):
     if not data_files.is_dir():
         raise PipelineError(f"retail Data Files not found: {data_files}")
 
-    plan = resolve_patch_plan(profile, args.preset, args.enable, args.disable)
+    plan = resolve_patch_plan(profile, args.preset, args.enable, args.disable,
+                              args.package_mode)
     prof_targets = [item.strip() for value in args.profile_target
                     for item in value.split(",") if item.strip()]
     if prof_targets:
