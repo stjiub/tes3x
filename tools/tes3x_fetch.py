@@ -110,6 +110,10 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
+    # Remote names are latin-1; the console encoding usually is not. Never let one
+    # unprintable name kill a listing.
+    sys.stdout.reconfigure(errors="replace")
+
     ftp = connect(args)
     print("connected to %s:%d as %s" % (args.host, args.port, args.user))
 
