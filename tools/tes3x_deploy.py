@@ -2,6 +2,7 @@
 """Sync an authoritative deploy tree to Xbox FTP and preserve plugin load order."""
 
 import argparse
+import fnmatch
 import ftplib
 import os
 import posixpath
@@ -103,6 +104,10 @@ def main():
     ap.add_argument("--user", default="xbox")
     ap.add_argument("--password", default="xbox")
     ap.add_argument("--remote", required=True, help='e.g. "E:/Games/Morrowind"')
+    ap.add_argument("--only", action="append", default=[], metavar="PATH",
+                    help="send just these tree-relative paths, wildcards allowed "
+                         "(repeatable). Nothing is deleted: the rest of the console's "
+                         "tree is left as it stands")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--clear-cache", action="store_true", help="empty X:/Y:/Z: cache partitions")
     ap.add_argument("--plugin-delay", type=float, default=2.5,
@@ -113,10 +118,19 @@ def main():
         sys.exit(f"not a directory: {args.tree}")
 
     local = local_tree(args.tree)
+    if args.only:
+        matched = {r for r in local
+                   for pat in args.only if r == pat or fnmatch.fnmatch(r, pat)}
+        unused = [p for p in args.only
+                  if not any(r == p or fnmatch.fnmatch(r, p) for r in local)]
+        if unused:
+            sys.exit("not in the staged tree: " + ", ".join(unused))
+        local = {r: v for r, v in local.items() if r in matched}
     # Check the actual destination before opening FTP, including dry-run.
     require_paths(local, args.remote)
     total = sum(v[0] for v in local.values())
-    print(f"staged tree: {len(local)} files, {human(total)}")
+    print(f"staged tree: {len(local)} files, {human(total)}"
+          + (" (selected)" if args.only else ""))
 
     base = args.remote.replace("\\", "/").rstrip("/")
     ftp = ftplib.FTP(encoding="latin-1")
@@ -136,7 +150,8 @@ def main():
     print(f"  console has {len(remote)} files under {base}")
 
     upload = [r for r, (sz, _, _) in local.items() if remote.get(r) != sz]
-    delete = [r for r in remote if r not in local]
+    # A selected send says nothing about what else belongs on the console.
+    delete = [] if args.only else [r for r in remote if r not in local]
     up_bytes = sum(local[r][0] for r in upload)
     print(f"\n  upload {len(upload)} files ({human(up_bytes)})")
     print(f"  delete {len(delete)} orphaned files")
