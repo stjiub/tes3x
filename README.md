@@ -76,5 +76,16 @@ python tools/tes3x_patch.py morrowind.xbe --out patched.xbe `
 The input XBE is never modified in place. Patch matching fails if the input does not match
 the expected retail code.
 
+### Copy files back off the console
+
+```powershell
+python tools/tes3x_fetch.py "E:/UDATA/42530005" --host 192.0.2.10 --out build/saves
+python tools/tes3x_fetch.py "E:/" --host 192.0.2.10 --list
+```
+
+Takes a file, a directory or a wildcard. Directories are copied whole. `T:` and `U:` are mapped
+only while a title runs and the FTP server refuses them; their contents live under
+`E:/TDATA/<title id>` and `E:/UDATA/<title id>`.
+
 More pipeline options are recorded in [docs/pipeline.md](docs/pipeline.md). The MCP porting
 work is tracked in [docs/mcp-port.md](docs/mcp-port.md).
