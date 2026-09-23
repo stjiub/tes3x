@@ -6,6 +6,7 @@
 [profile]
 name = "patches-only"          # also the output folder name: build/pipeline/patches-only
 # title = "Morrowind Patched"  # optional: the name the Xbox dashboard shows
+# remote_root = "F:/Games/MorrowindPatched"  # optional: this build's own folder on the Xbox
 
 [patches]
 # minimal     - no engine fixes; only the patches every build needs

@@ -185,6 +185,21 @@ class PipelinePlanTests(unittest.TestCase):
             local.write_text('[paths]\nvanilla_root = "missing"\n', encoding='utf-8')
             self.assertEqual(pipeline_main([str(profile), '--config', str(local), '--plan']), 0)
 
+    def test_profile_remote_root_wins_over_local_config(self):
+        import contextlib
+        import io
+        with tempfile.TemporaryDirectory() as tmp:
+            profile = Path(tmp) / 'p.toml'
+            profile.write_text('[profile]\nname = "p"\nremote_root = "F:/Games/Profile"\n',
+                               encoding='utf-8')
+            local = Path(tmp) / 'local.toml'
+            local.write_text('[deploy]\nhost = "x"\nremote_root = "F:/Games/Local"\n',
+                             encoding='utf-8')
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                pipeline_main([str(profile), '--config', str(local), '--plan', '--dry-run'])
+            self.assertIn('target: x F:/Games/Profile', out.getvalue())
+
     def test_rotating_autosaves_adds_its_hook_source(self):
         plan = resolve_patch_plan({
             'patches': {'preset': 'minimal', 'enable': ['rotating-autosaves']},

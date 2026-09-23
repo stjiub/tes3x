@@ -145,7 +145,9 @@ python tools/tes3x_pipeline.py my-mods.toml --deploy
 
 ## Putting a build on the Xbox
 
-With `--deploy`, TES3X makes the Xbox folder in `remote_root` match the build:
+With `--deploy`, TES3X makes the Xbox folder match the build. The folder is the profile's
+`remote_root`, or the local config's `remote_root` if the profile has none, so each profile can
+have its own install:
 
 - **Anything in that folder that is not part of the build is deleted.** Point `remote_root` at a
   new folder, not at an install you want to keep. Saves are stored elsewhere and are not touched.
@@ -188,6 +190,7 @@ adds `multi-bsa`, which lets the game load the extra archive.
 [profile]
 name = "my-mods"            # required; also the output folder name
 title = "Morrowind Modded"  # optional; the name shown in the Xbox dashboard
+remote_root = "F:/Games/MorrowindModded"  # optional; overrides the local config's folder
 library = "D:/Morrowind Mods"    # required when there are mods
 
 [rules]

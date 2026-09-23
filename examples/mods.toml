@@ -5,6 +5,7 @@
 [profile]
 name = "my-mods"                   # also the output folder name: build/pipeline/my-mods
 # title = "Morrowind Modded"       # optional: the name the Xbox dashboard shows
+# remote_root = "F:/Games/MorrowindModded"  # optional: this build's own folder on the Xbox
 library = "C:/path/to/mod-library" # a folder holding one folder per mod
 
 [rules]

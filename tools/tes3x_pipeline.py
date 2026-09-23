@@ -281,7 +281,8 @@ def main(argv=None):
     if len(drive) != 1 or not drive.isalpha():
         raise PipelineError("package.drive_letter must be one letter")
     title = args.title or profile.get("profile", {}).get("title")
-    remote = deploy.get("remote_root") or profile.get("profile", {}).get("remote_root")
+    # A profile names its own install folder; the local config supplies the fallback.
+    remote = profile.get("profile", {}).get("remote_root") or deploy.get("remote_root")
     build_value = args.build_root or paths.get("build_root", "build")
     build_root = config_path(build_value, base).resolve()
     output = Path(args.out).resolve() if args.out else build_root / profile_name
@@ -327,7 +328,8 @@ def main(argv=None):
         find_tool("clang", llvm)
         find_tool("lld-link", llvm)
     if (args.deploy or args.dry_run) and (not deploy.get("host") or not remote):
-        raise PipelineError("deployment requires deploy.host and deploy.remote_root")
+        raise PipelineError("deployment requires deploy.host, and profile.remote_root or "
+                            "deploy.remote_root")
 
     # Beside the output, so publishing is a rename on one volume.
     output.parent.mkdir(parents=True, exist_ok=True)
