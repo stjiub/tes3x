@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import time
 import subprocess
 import sys
 import tempfile
@@ -363,6 +364,18 @@ def validate_output(path):
             raise PipelineError(f"existing output is not owned by tes3x_pipeline: {path}")
 
 
+def rename_dir(src, dst, tries=10):
+    """os.replace, retried: Windows refuses a directory rename while a scanner holds a file in it."""
+    for attempt in range(tries):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if attempt == tries - 1:
+                raise
+            time.sleep(0.5 * (attempt + 1))
+
+
 def publish(work, output):
     """Replace only an empty or pipeline-owned output after a complete build."""
     validate_output(output)
@@ -375,7 +388,7 @@ def publish(work, output):
     if output.exists():
         os.replace(output, backup)
     try:
-        os.replace(work, output)
+        rename_dir(work, output)
     except Exception:
         if backup.exists() and not output.exists():
             os.replace(backup, output)
