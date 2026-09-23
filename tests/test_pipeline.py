@@ -8,7 +8,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from tes3x_paths import check_paths, require_paths
 from tes3x_pack import write_invalidation
 from tes3x_build import materialize, plugin_masters
-from tes3x_pipeline import PipelineError, copy_retail_root, link_or_copy, resolve_patch_plan
+from tes3x_pipeline import (PipelineError, copy_retail_root, link_or_copy, resolve_patch_plan,
+                            validate_local_config, validate_profile)
 from tes3x_pipeline import main as pipeline_main
 from tes3x_patch import _mcp_97, _mcp_102, _mcp_140, _mcp_154
 from tes3x_plugins import validate_order
@@ -218,13 +219,13 @@ class PipelinePlanTests(unittest.TestCase):
         self.assertEqual(plan['package_mode'], 'retail')
         self.assertNotIn('multi-bsa', plan['applied'])
 
-    def test_plan_needs_no_retail_files(self):
+    def test_check_needs_no_retail_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             profile = Path(tmp) / 'p.toml'
             profile.write_text('[profile]\nname = "p"\n', encoding='utf-8')
             local = Path(tmp) / 'local.toml'
             local.write_text('[paths]\nvanilla_root = "missing"\n', encoding='utf-8')
-            self.assertEqual(pipeline_main([str(profile), '--config', str(local), '--plan']), 0)
+            self.assertEqual(pipeline_main([str(profile), '--config', str(local), '--check']), 0)
 
     def test_profile_remote_root_wins_over_local_config(self):
         import contextlib
@@ -238,8 +239,26 @@ class PipelinePlanTests(unittest.TestCase):
                              encoding='utf-8')
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
-                pipeline_main([str(profile), '--config', str(local), '--plan', '--dry-run'])
+                pipeline_main([str(profile), '--config', str(local), '--check', '--dry-run'])
             self.assertIn('target: x F:/Games/Profile', out.getvalue())
+
+    def test_profile_validation_rejects_unknown_and_ill_typed_fields(self):
+        with self.assertRaisesRegex(PipelineError, 'unknown profile keys: nmae'):
+            validate_profile({'profile': {'name': 'p', 'nmae': 'typo'}})
+        with self.assertRaisesRegex(PipelineError, r'mods\[1\]\.order must be an integer'):
+            validate_profile({'profile': {'name': 'p', 'library': 'mods'},
+                              'mods': [{'name': 'm', 'order': 'first'}]})
+        with self.assertRaisesRegex(PipelineError, 'profile.library is required'):
+            validate_profile({'profile': {'name': 'p'}, 'mods': [{'name': 'm'}]})
+
+    def test_local_validation_checks_public_tables_and_allows_extensions(self):
+        validate_local_config({'paths': {'build_root': 'build'},
+                               'deploy': {'port': 21},
+                               'xemu': {'exe': 'private-extension'}})
+        with self.assertRaisesRegex(PipelineError, 'unknown paths keys: build_rooot'):
+            validate_local_config({'paths': {'build_rooot': 'build'}})
+        with self.assertRaisesRegex(PipelineError, 'unknown local config sections: path'):
+            validate_local_config({'path': {'build_root': 'build'}})
 
     def test_rotating_autosaves_adds_its_hook_source(self):
         plan = resolve_patch_plan({

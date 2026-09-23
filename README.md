@@ -1,10 +1,8 @@
 # TES3X
 
-TES3X builds modded *Morrowind Game of the Year Edition* installs for the original Xbox. It
-collects mods, packs assets, applies selected engine fixes and can deploy the finished game over
-FTP. The original game files are never modified.
-
-The project is in active development; commands and file formats may change.
+TES3X is a patching toolkit for *Morrowind Game of the Year Edition* on the original Xbox. It
+applies engine fixes to the retail XBE, and can also assemble and deploy a complete modded game
+folder.
 
 ## Requirements
 
@@ -13,19 +11,22 @@ The project is in active development; commands and file formats may change.
   `Data Files`
 - [LLVM](https://releases.llvm.org) for engine fixes and `delta-bsa` packaging; set `paths.llvm`
   if `clang` and `lld-link` are not on `PATH`
-- An Xbox FTP server only if using `--deploy`
+- A softmodded or hardmodded Xbox, or xemu
+- An FTP server running on the Xbox (only if using `--deploy`)
 
 ## Setup
 
-Run commands from the repository root.
+Copy the example TOML files to the repository root.
 
-```powershell
-Copy-Item examples/local.toml tes3x.local.toml
-Copy-Item examples/profile.toml profile.toml
+```
+cp examples/local.toml tes3x.local.toml
+cp examples/profile.toml profile.toml
 ```
 
-In `tes3x.local.toml`, set `vanilla_root` and, if needed, the LLVM and Xbox connection settings.
+In `tes3x.local.toml`, set `vanilla_root` to your unmodified Morrowind GOTY Xbox files and, if
+needed, add the LLVM and Xbox connection settings.
 In `profile.toml`, set the build name and select its mods and patches.
+Use a separate profile file for each build.
 
 The mod library contains one directory per mod, with the layout each mod would use under
 `Data Files`. Wrapper directories from extracted archives are detected automatically.
@@ -38,12 +39,12 @@ The same profile format covers every build:
 
 ## Build
 
-```powershell
-python tools/tes3x_pipeline.py profile.toml --plan
+```
+python tools/tes3x_pipeline.py profile.toml --check
 python tools/tes3x_pipeline.py profile.toml
 ```
 
-`--plan` resolves the profile without building. A normal build is written to
+`--check` validates and resolves the profile without building. A normal build is written to
 `build/pipeline/<name>/deploy`. Add `--dry-run` to preview an FTP sync or `--deploy` to apply it.
 
 ## Deploy
@@ -83,14 +84,15 @@ LLVM. `merged-bsa` needs no compiler and rebuilds `Morrowind.bsa`.
 The annotated [example profile](examples/profile.toml) covers the common options. Command-line
 values override it:
 
-```powershell
+```
 python tools/tes3x_pipeline.py profile.toml --preset development --enable console
 python tools/tes3x_pipeline.py profile.toml --ini-set "General:Show FPS=1"
 ```
 
 Set `hardlink_retail = true` in the local config to avoid duplicating unchanged retail files when
-the source and build are on the same NTFS volume. See `--help` and [pipeline options](docs/pipeline.md)
-for the remaining settings.
+the source and build are on the same NTFS volume. See the
+[configuration reference](docs/configuration.md) for every TOML option and
+[pipeline options](docs/pipeline.md) for advanced workflows.
 
 ## Other tools
 

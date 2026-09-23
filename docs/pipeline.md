@@ -2,27 +2,9 @@
 
 ## Complete builds
 
-`tes3x_pipeline.py` is the normal entry point. It composes the existing build,
-hook, patch, pack and deploy tools; those tools remain independently usable.
-
-Machine-specific paths belong in a local config (see `examples/local.toml`). Mod
-selection and build policy remain in the profile:
-
-```toml
-[patches]
-preset = "standard"                 # minimal, standard or development
-enable = ["script-ext"]             # optional individual overrides
-disable = []
-
-[package]
-mode = "delta-bsa"                  # or merged-bsa
-archive_name = "tes3xmods.bsa"
-archive_only = false
-drive_letter = "D"
-
-[ini]                               # optional Morrowind.ini keys, "SECTION:KEY" = value
-"General:Show FPS" = 1
-```
+`tes3x_pipeline.py` is the normal entry point. It composes the existing build, hook, patch, pack
+and deploy tools; those tools remain independently usable. The
+[configuration reference](configuration.md) lists every local-config and profile key.
 
 `--ini-set` on the command line is applied after `[ini]`, so it overrides a profile key.
 
@@ -48,7 +30,7 @@ A profile without enabled mods skips collection and packing: the retail `Data Fi
 unchanged, `[ini]` keys are still applied, and no `multi-bsa` is derived.
 
 ```powershell
-python tools/tes3x_pipeline.py examples/profile.toml --plan
+python tools/tes3x_pipeline.py examples/profile.toml --check
 python tools/tes3x_pipeline.py examples/profile.toml --dry-run
 python tools/tes3x_pipeline.py examples/profile.toml --deploy
 ```

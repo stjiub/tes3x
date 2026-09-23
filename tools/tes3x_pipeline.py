@@ -51,6 +51,129 @@ def string_list(value, field):
     return value
 
 
+def validate_profile(profile):
+    """Reject unknown or ill-typed profile fields before resolving a build."""
+    if not isinstance(profile, dict):
+        raise PipelineError("profile must be a TOML table")
+
+    allowed_sections = {"profile", "rules", "patches", "package", "ini", "mods"}
+    unknown = set(profile) - allowed_sections
+    if unknown:
+        raise PipelineError("unknown profile sections: " + ", ".join(sorted(unknown)))
+
+    def table(name):
+        value = profile.get(name, {})
+        if not isinstance(value, dict):
+            raise PipelineError(f"{name} must be a table")
+        return value
+
+    def known(values, allowed, field):
+        extra = set(values) - set(allowed)
+        if extra:
+            raise PipelineError(f"unknown {field} keys: " + ", ".join(sorted(extra)))
+
+    def typed(values, key, expected, parent):
+        if key in values and type(values[key]) not in expected:
+            labels = {str: "a string", int: "an integer", bool: "a boolean"}
+            names = " or ".join(labels.get(kind, kind.__name__) for kind in expected)
+            raise PipelineError(f"{parent}.{key} must be {names}")
+
+    identity = table("profile")
+    known(identity, {"name", "title", "remote_root", "library", "dashboards"}, "profile")
+    for key in ("name", "title", "remote_root", "library"):
+        typed(identity, key, (str,), "profile")
+    if not identity.get("name"):
+        raise PipelineError("profile.name is required")
+    string_list(identity.get("dashboards"), "profile.dashboards")
+
+    rules = table("rules")
+    known(rules, {"max_texture_size", "max_filename", "convert_all_textures", "exclude",
+                  "keep_assets", "clear_cache_partitions"}, "rules")
+    for key in ("max_texture_size", "max_filename"):
+        typed(rules, key, (int,), "rules")
+        if key in rules and rules[key] <= 0:
+            raise PipelineError(f"rules.{key} must be greater than zero")
+    if rules.get("max_filename", 42) > 42:
+        raise PipelineError("rules.max_filename cannot exceed the FATX limit of 42")
+    for key in ("convert_all_textures", "clear_cache_partitions"):
+        typed(rules, key, (bool,), "rules")
+    string_list(rules.get("exclude"), "rules.exclude")
+    string_list(rules.get("keep_assets"), "rules.keep_assets")
+
+    patches = table("patches")
+    known(patches, {"preset", "categories", "enable", "disable"}, "patches")
+    typed(patches, "preset", (str,), "patches")
+    for key in ("categories", "enable", "disable"):
+        string_list(patches.get(key), f"patches.{key}")
+
+    package = table("package")
+    known(package, {"mode", "archive_name", "archive_only", "drive_letter", "loose_assets"},
+          "package")
+    for key in ("mode", "archive_name", "drive_letter"):
+        typed(package, key, (str,), "package")
+    if package.get("mode", "delta-bsa") not in {"delta-bsa", "merged-bsa"}:
+        raise PipelineError("package.mode must be 'delta-bsa' or 'merged-bsa'")
+    typed(package, "archive_only", (bool,), "package")
+    string_list(package.get("loose_assets"), "package.loose_assets")
+
+    ini = table("ini")
+    for key, value in ini.items():
+        section, separator, setting = key.partition(":")
+        if not separator or not section.strip() or not setting.strip():
+            raise PipelineError(f"ini key must be SECTION:KEY, got {key!r}")
+        if type(value) not in (str, int, float, bool):
+            raise PipelineError(f"ini.{key} must be a string, number or boolean")
+
+    mods = profile.get("mods", [])
+    if not isinstance(mods, list):
+        raise PipelineError("mods must be an array of tables")
+    for index, mod in enumerate(mods, 1):
+        field = f"mods[{index}]"
+        if not isinstance(mod, dict):
+            raise PipelineError(f"{field} must be a table")
+        known(mod, {"name", "order", "enabled", "optional", "plugins", "loose"}, field)
+        typed(mod, "name", (str,), field)
+        if not mod.get("name"):
+            raise PipelineError(f"{field}.name is required")
+        typed(mod, "order", (int,), field)
+        for key in ("enabled", "optional", "loose"):
+            typed(mod, key, (bool,), field)
+        string_list(mod.get("plugins"), f"{field}.plugins")
+    if enabled_mods(profile) and not identity.get("library"):
+        raise PipelineError("profile.library is required when mods are enabled")
+
+
+def validate_local_config(local):
+    """Validate the public tables while leaving private extension tables alone."""
+    unknown = set(local) - {"paths", "deploy", "xemu"}
+    if unknown:
+        raise PipelineError("unknown local config sections: " + ", ".join(sorted(unknown)))
+    for section in ("paths", "deploy"):
+        if section in local and not isinstance(local[section], dict):
+            raise PipelineError(f"{section} must be a table")
+
+    paths = local.get("paths", {})
+    extra = set(paths) - {"vanilla_root", "build_root", "llvm", "hardlink_retail"}
+    if extra:
+        raise PipelineError("unknown paths keys: " + ", ".join(sorted(extra)))
+    for key in ("vanilla_root", "build_root", "llvm"):
+        if key in paths and type(paths[key]) is not str:
+            raise PipelineError(f"paths.{key} must be a string")
+    if "hardlink_retail" in paths and type(paths["hardlink_retail"]) is not bool:
+        raise PipelineError("paths.hardlink_retail must be a boolean")
+
+    deploy = local.get("deploy", {})
+    extra = set(deploy) - {"host", "port", "user", "password", "remote_root"}
+    if extra:
+        raise PipelineError("unknown deploy keys: " + ", ".join(sorted(extra)))
+    for key in ("host", "user", "password", "remote_root"):
+        if key in deploy and type(deploy[key]) is not str:
+            raise PipelineError(f"deploy.{key} must be a string")
+    if "port" in deploy and (type(deploy["port"]) is not int
+                             or not 1 <= deploy["port"] <= 65535):
+        raise PipelineError("deploy.port must be an integer from 1 to 65535")
+
+
 def enabled_mods(profile):
     return [mod for mod in profile.get("mods", []) if mod.get("enabled", True)]
 
@@ -297,17 +420,15 @@ def main(argv=None):
     ap.add_argument("--ask-password", action="store_true",
                     help="type the Xbox FTP password at a prompt instead of reading it from "
                          "the local config")
-    ap.add_argument("--plan", action="store_true",
-                    help="print which patches and mods would be used, then stop; reads only "
-                         "the profile and local config")
+    ap.add_argument("--check", action="store_true",
+                    help="validate and resolve the profile, print the build summary, then stop")
     args = ap.parse_args(argv)
 
     profile_path = Path(args.profile).resolve()
     require_file(profile_path, "profile")
     profile = read_toml(profile_path)
-    profile_name = profile.get("profile", {}).get("name")
-    if not profile_name or not isinstance(profile_name, str):
-        raise PipelineError("profile.name is required")
+    validate_profile(profile)
+    profile_name = profile["profile"]["name"]
 
     if args.config:
         local_path = Path(args.config).resolve()
@@ -315,6 +436,7 @@ def main(argv=None):
         candidate = Path.cwd() / "tes3x.local.toml"
         local_path = candidate if candidate.is_file() else None
     local = read_toml(local_path) if local_path else {}
+    validate_local_config(local)
     base = local_path.parent if local_path else Path.cwd()
     paths = local.get("paths", {})
     deploy = local.get("deploy", {})
@@ -354,7 +476,7 @@ def main(argv=None):
     print(f"output: {output}")
     if args.deploy or args.dry_run:
         print(f"target: {deploy.get('host', '<missing>')} {remote or '<missing>'}")
-    if args.plan:
+    if args.check:
         return 0
 
     vanilla_value = args.vanilla or paths.get("vanilla_root")
