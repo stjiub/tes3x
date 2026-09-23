@@ -27,6 +27,7 @@ other key. They do nothing without the patch that installs the hook.
 | `[Xbox] HangWatchdog` | `--apply diagnostics` | `0` or `1` | `1` when diagnostics are enabled |
 | `[Xbox] HangTimeoutSeconds` | `--apply diagnostics` | `10` through `600` | `60` |
 | `[Xbox] ProfileDumpFrames` | `--apply profile` | frames between automatic dumps | `0` - dump only on the console command |
+| `[Xbox] ProfileDumpSeconds` | `--apply profile` | minimum seconds between periodic checkpoints at instrumented call entries; `0` disables periodic checkpoints, while bounded startup, early-entry and first-return checkpoints remain | `30` |
 
 ## The ones that matter for this project
 

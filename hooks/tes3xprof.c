@@ -22,7 +22,6 @@
 #ifndef TES3X_BUILD_ID
 #define TES3X_BUILD_ID 0
 #endif
-
 #define TES3X_PROF_SLOTS 16
 #define TES3X_PROF_CALIB TES3X_PROF_SLOTS /* the extra slot, an empty instrumented call */
 #define TES3X_PROF_TOTAL (TES3X_PROF_SLOTS + 1)
@@ -32,7 +31,19 @@
 #define TES3X_PROF_CALIB_RUNS 1024 /* a power of two; the mean is a shift */
 #define TES3X_PROF_CALIB_SHIFT 10
 #define TES3X_PROF_MAGIC 0x50583354u /* "T3XP" */
-#define TES3X_PROF_VERSION 1
+#define TES3X_PROF_VERSION 2
+#define TES3X_PROF_PREMENU_SECONDS 30
+#define TES3X_PROF_SECONDS_MIN 5
+#define TES3X_PROF_SECONDS_MAX 3600
+
+#define TES3X_PROF_DUMP_CONSOLE 1
+#define TES3X_PROF_DUMP_FRAME 2
+#define TES3X_PROF_DUMP_INTERVAL 3
+#define TES3X_PROF_DUMP_MARK 4
+#define TES3X_PROF_DUMP_PREMENU 5
+#define TES3X_PROF_DUMP_FIRST_RETURN 6
+#define TES3X_PROF_DUMP_FIRST_ENTRY 7
+#define TES3X_PROF_DUMP_SECOND_ENTRY 8
 
 /* Nominal 733 MHz. Only the frame histogram uses it; the reader derives the real rate
  * from the system-time and TSC pairs in the header. */
@@ -42,9 +53,23 @@
 #define NtWriteFile KFN(THUNK_NtWriteFile, fn_NtWriteFile)
 #define NtClose KFN(THUNK_NtClose, fn_NtClose)
 #define KeQuerySystemTime KFN(THUNK_KeQuerySystemTime, fn_KeQuerySystemTime)
+#define MmQueryStatistics KFN(THUNK_MmQueryStatistics, fn_MmQueryStatistics)
 
 typedef int(__cdecl *fn_ini_get_string)(const char *, const char *, const char *,
                                         char *, int, const char *);
+typedef u32(__stdcall *fn_MmQueryStatistics)(void *);
+
+typedef struct {
+    u32 Length;
+    u32 TotalPhysicalPages;
+    u32 AvailablePages;
+    u32 VirtualMemoryBytesCommitted;
+    u32 VirtualMemoryBytesReserved;
+    u32 CachePagesCommitted;
+    u32 PoolPagesCommitted;
+    u32 StackPagesCommitted;
+    u32 ImagePagesCommitted;
+} MM_STATISTICS;
 
 typedef struct {
     u32 calls;
@@ -59,7 +84,7 @@ typedef struct {
     u32 ret;   /* the caller's real return address */
     u32 slot;
     u32 frame; /* address of the return-address slot, so a dead frame is detectable */
-    u32 reserved;
+    u32 self;  /* ecx at the call site */
     u64 start;
     u64 child; /* time spent in instrumented callees */
 } prof_entry;
@@ -99,7 +124,23 @@ typedef struct {
     u32 patch_mask;
     u32 build_id;
     u32 reserved;
+    u32 free_kb;
+    u32 active;
+    u32 active_record;
+    u32 reason;
 } prof_header;
+
+typedef struct {
+    u32 thread;
+    u32 depth;
+    u32 slot;
+    u32 target;
+    u32 caller;
+    u32 self;
+    u32 arg0;
+    u32 arg1;
+    u64 elapsed;
+} prof_active;
 
 extern volatile u32 tes3x_patch_mask;
 
@@ -110,13 +151,21 @@ prof_slot tes3x_prof_slots[TES3X_PROF_TOTAL];
 void tes3x_prof_exit(void);
 
 static prof_ctx prof_threads[TES3X_PROF_THREADS];
+static prof_active prof_active_frames[TES3X_PROF_THREADS * TES3X_PROF_DEPTH];
 static u32 stat_foreign, stat_overflow, stat_stale, stat_underflow, stat_depth_max;
 static u64 prof_session, prof_tsc_init, prof_reset_time, prof_reset_tsc;
 static u64 frame_last, frame_total, frame_lo, frame_hi;
 static u32 frame_count, frame_hist[TES3X_PROF_BUCKETS];
 static u32 prof_dump_frames, prof_dump_seq;
+static u32 prof_enters[TES3X_PROF_TOTAL];
+static volatile u32 prof_dump_seconds = TES3X_PROF_PREMENU_SECONDS;
+static volatile u32 prof_dump_lock;
+static volatile u32 prof_premenu_dumped;
+static u64 prof_dump_tsc;
 static int prof_ready;
 static char prof_path[] = "\\Device\\Harddisk0\\Partition1\\tes3xprof.bin";
+
+static void prof_dump(u32 reason);
 
 static inline u64 prof_tsc(void)
 {
@@ -146,6 +195,16 @@ static inline u32 prof_claim(volatile u32 *slot, u32 want)
     return prev;
 }
 
+static u32 prof_free_kb(void)
+{
+    MM_STATISTICS st;
+
+    st.Length = sizeof(st);
+    if (MmQueryStatistics(&st) != 0)
+        return 0;
+    return st.AvailablePages * 4;
+}
+
 /* The context for this thread, claiming a free one on first sight. Two threads racing
  * for the same free slot would share a shadow stack and swap return addresses. */
 static prof_ctx *prof_context(int claim)
@@ -170,10 +229,12 @@ static prof_ctx *prof_context(int claim)
 
 /* Entered from a stub with every register saved. ret_slot points at the caller's return
  * address on the stack; replacing it routes the return through tes3x_prof_exit. */
-void __cdecl tes3x_prof_enter(u32 slot, u32 *ret_slot)
+void __cdecl tes3x_prof_enter(u32 slot, u32 *ret_slot, u32 self)
 {
     prof_ctx *c = prof_context(1);
     prof_entry *f;
+    u32 entered;
+    int checkpoint = 0;
 
     if (!c) {
         tes3x_prof_slots[slot].foreign++;
@@ -198,9 +259,34 @@ void __cdecl tes3x_prof_enter(u32 slot, u32 *ret_slot)
     f->ret = *ret_slot;
     f->slot = slot;
     f->frame = (u32)ret_slot;
+    f->self = self;
     f->child = 0;
     *ret_slot = (u32)(unsigned int)&tes3x_prof_exit;
     f->start = prof_tsc();
+
+    if (slot != TES3X_PROF_CALIB) {
+        entered = ++prof_enters[slot];
+        /* Persist bounded active-frame snapshots before a malformed or oversized master can
+         * enter a path that masks scheduler ticks. */
+        if (prof_claim(&prof_premenu_dumped, 1) == 0) {
+            prof_dump(TES3X_PROF_DUMP_PREMENU);
+            checkpoint = 1;
+        } else if (entered <= 2) {
+            prof_dump(entered == 1 ? TES3X_PROF_DUMP_FIRST_ENTRY
+                                   : TES3X_PROF_DUMP_SECOND_ENTRY);
+            checkpoint = 1;
+        } else if (prof_dump_seconds && prof_dump_tsc && f->start >= prof_dump_tsc &&
+                 f->start - prof_dump_tsc >=
+                     (u64)prof_dump_seconds * 1000u * PROF_CYCLES_PER_MS) {
+            prof_dump(TES3X_PROF_DUMP_INTERVAL);
+            checkpoint = 1;
+        }
+        if (checkpoint) {
+            /* The checkpoint itself is instrumentation, not time spent in the target. */
+            f->start = prof_tsc();
+            f->child = 0;
+        }
+    }
 }
 
 /* Returns the caller's real return address. */
@@ -211,16 +297,19 @@ u32 __cdecl tes3x_prof_leave(void)
     prof_entry *f;
     prof_slot *s;
     u64 elapsed;
+    u32 ret, slot;
 
     if (!c || !c->depth) {
         stat_underflow++;
         return 0;
     }
     f = &c->stack[--c->depth];
+    ret = f->ret;
+    slot = f->slot;
     elapsed = now - f->start;
     /* Slot counters are shared and unlocked. Two threads in the same target can lose an
      * update; a lock would cost more than the error it prevents. */
-    s = &tes3x_prof_slots[f->slot];
+    s = &tes3x_prof_slots[slot];
     s->calls++;
     s->inclusive += elapsed;
     s->exclusive += elapsed - f->child;
@@ -230,7 +319,11 @@ u32 __cdecl tes3x_prof_leave(void)
         s->hi = elapsed;
     if (c->depth)
         c->stack[c->depth - 1].child += elapsed;
-    return f->ret;
+    /* One post-return checkpoint per selected target distinguishes a call that never
+     * returns from a stall immediately after it, without turning every return into I/O. */
+    if (slot != TES3X_PROF_CALIB && s->calls == 1)
+        prof_dump(TES3X_PROF_DUMP_FIRST_RETURN);
+    return ret;
 }
 
 /* eax and edx carry the callee's return value; st(0) is untouched. */
@@ -260,10 +353,12 @@ __attribute__((naked)) void tes3x_prof_exit(void)
             "pushfl\n\t"                                         \
             "pushal\n\t"                                         \
             "leal 36(%esp), %eax\n\t"                            \
+            "movl 24(%esp), %edx\n\t"                            \
+            "pushl %edx\n\t"                                    \
             "pushl %eax\n\t"                                     \
             "pushl $" #k "\n\t"                                  \
             "call _tes3x_prof_enter\n\t"                         \
-            "addl $8, %esp\n\t"                                  \
+            "addl $12, %esp\n\t"                                 \
             "popal\n\t"                                          \
             "popfl\n\t"                                          \
             "jmpl *_tes3x_prof_target+" #k "*4\n\t");            \
@@ -328,7 +423,43 @@ static int prof_write(void *h, const void *buf, u32 len)
     return NtWriteFile(h, 0, 0, 0, &iosb, buf, len, &append) == 0;
 }
 
-static void prof_dump(void)
+static u32 prof_snapshot_active(u64 now)
+{
+    u32 count = 0, i, j;
+
+    for (i = 0; i < TES3X_PROF_THREADS; i++) {
+        u32 depth = prof_threads[i].depth;
+
+        if (!prof_threads[i].base)
+            continue;
+        if (depth > TES3X_PROF_DEPTH)
+            depth = TES3X_PROF_DEPTH;
+        for (j = 0; j < depth; j++) {
+            prof_entry *frame = &prof_threads[i].stack[j];
+            prof_active *active;
+            u32 slot = frame->slot;
+            u64 start = frame->start;
+
+            /* Entry publishes depth before the remaining fields. A timer interrupting
+             * those few instructions should omit the partial frame, not invent one. */
+            if (slot >= TES3X_PROF_TOTAL || !start || start > now)
+                continue;
+            active = &prof_active_frames[count++];
+            active->thread = prof_threads[i].base;
+            active->depth = j;
+            active->slot = slot;
+            active->target = tes3x_prof_target[slot];
+            active->caller = frame->ret;
+            active->self = frame->self;
+            active->arg0 = ((u32 *)frame->frame)[1];
+            active->arg1 = ((u32 *)frame->frame)[2];
+            active->elapsed = now - start;
+        }
+    }
+    return count;
+}
+
+static void prof_dump(u32 reason)
 {
     ANSI_STRING name;
     OBJECT_ATTRIBUTES oa;
@@ -336,6 +467,13 @@ static void prof_dump(void)
     prof_header hdr;
     void *h = 0;
     u32 i;
+
+    /* A timer, a frame trigger and the console may coincide. Never make the loader
+     * wait behind diagnostic I/O, and never interleave two append records. */
+    if (prof_claim(&prof_dump_lock, 1) != 0) {
+        tes3x_log("prof.dump_busy", reason);
+        return;
+    }
 
     hdr.overhead = prof_calibrate();
     hdr.magic = TES3X_PROF_MAGIC;
@@ -348,6 +486,7 @@ static void prof_dump(void)
     hdr.reset_tsc = prof_reset_tsc;
     KeQuerySystemTime(&hdr.dump_time);
     hdr.tsc_now = prof_tsc();
+    prof_dump_tsc = hdr.tsc_now;
     hdr.frames = frame_count;
     hdr.buckets = TES3X_PROF_BUCKETS;
     hdr.frame_total = frame_total;
@@ -368,6 +507,10 @@ static void prof_dump(void)
     hdr.patch_mask = tes3x_patch_mask;
     hdr.build_id = TES3X_BUILD_ID;
     hdr.reserved = 0;
+    hdr.free_kb = prof_free_kb();
+    hdr.active = prof_snapshot_active(hdr.tsc_now);
+    hdr.active_record = sizeof(prof_active);
+    hdr.reason = reason;
 
     tes3x_object_attributes(&oa, &name, prof_path);
     /* The first dump of a session starts the file; later ones append blocks. */
@@ -376,15 +519,18 @@ static void prof_dump(void)
                      prof_dump_seq ? FILE_OPEN_IF : FILE_OVERWRITE_IF,
                      FILE_SYNCHRONOUS_IO_NONALERT) != 0) {
         tes3x_log("prof.dump_open_failed", prof_dump_seq);
+        prof_dump_lock = 0;
         return;
     }
     if (prof_write(h, &hdr, sizeof(hdr)) &&
         prof_write(h, tes3x_prof_target, sizeof(tes3x_prof_target)) &&
-        prof_write(h, tes3x_prof_slots, sizeof(tes3x_prof_slots)))
+        prof_write(h, tes3x_prof_slots, sizeof(tes3x_prof_slots)) &&
+        (!hdr.active || prof_write(h, prof_active_frames, hdr.active * sizeof(prof_active))))
         prof_dump_seq++;
     NtClose(h);
     tes3x_log("prof.dump", prof_dump_seq);
     tes3x_log("prof.overhead_cycles", hdr.overhead);
+    prof_dump_lock = 0;
 }
 
 static void prof_reset(void)
@@ -454,7 +600,16 @@ void tes3x_prof_frame(void)
     u64 now = prof_tsc();
 
     if (!prof_ready) {
+        u32 seconds;
+
         prof_dump_frames = (u32)prof_uint("ProfileDumpFrames", 0);
+        seconds = (u32)prof_uint("ProfileDumpSeconds", TES3X_PROF_PREMENU_SECONDS);
+        if (seconds && seconds < TES3X_PROF_SECONDS_MIN)
+            seconds = TES3X_PROF_SECONDS_MIN;
+        if (seconds > TES3X_PROF_SECONDS_MAX)
+            seconds = TES3X_PROF_SECONDS_MAX;
+        prof_dump_seconds = seconds;
+        tes3x_log("prof.dump_seconds", seconds);
         prof_ready = 1;
     }
     if (frame_last) {
@@ -476,7 +631,7 @@ void tes3x_prof_frame(void)
     frame_last = now;
 
     if (prof_dump_frames && frame_count && frame_count % prof_dump_frames == 0)
-        prof_dump();
+        prof_dump(TES3X_PROF_DUMP_FRAME);
 }
 
 static int prof_text_equal(const char *a, const char *b)
@@ -497,7 +652,7 @@ static int prof_text_equal(const char *a, const char *b)
 int tes3x_prof_command(const char *text)
 {
     if (prof_text_equal(text, "tes3xprof")) {
-        prof_dump();
+        prof_dump(TES3X_PROF_DUMP_CONSOLE);
         return 1;
     }
     if (prof_text_equal(text, "tes3xprof reset")) {
@@ -506,7 +661,7 @@ int tes3x_prof_command(const char *text)
         return 1;
     }
     if (prof_text_equal(text, "tes3xprof mark")) {
-        prof_dump();
+        prof_dump(TES3X_PROF_DUMP_MARK);
         prof_reset();
         return 1;
     }
