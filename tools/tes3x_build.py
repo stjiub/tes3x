@@ -320,7 +320,9 @@ def main():
         ap.error("--sound-rate requires --sox")
 
     prof = load_profile(args.profile)
-    library = prof["profile"]["library"]
+    library = prof.get("profile", {}).get("library")
+    if not library:
+        sys.exit("profile.library is required: the folder holding one directory per mod")
 
     rules = dict(prof.get("rules", {}))
     if args.max_texture_size is not None:
@@ -329,16 +331,23 @@ def main():
         rules["convert_all_textures"] = args.convert_all
     exclude = rules.get("exclude", DEFAULT_EXCLUDE)
 
-    mods = []
+    mods, missing = [], []
     for entry in prof.get("mods", []):
         if not entry.get("enabled", True):
             continue
         path = os.path.join(library, entry["name"])
         if not os.path.exists(path):
-            print(f"  missing: {entry['name']}", file=sys.stderr)
+            if entry.get("optional", False):
+                print(f"  optional mod not found, skipped: {entry['name']}", file=sys.stderr)
+            else:
+                missing.append(entry["name"])
             continue
         mods.append(Mod(entry["name"], path, entry.get("order", 0),
                         entry.get("plugins"), exclude))
+    if missing:
+        # A deploy mirrors the build, so a silently omitted mod would be deleted from the Xbox.
+        sys.exit(f"mods not found in {library}: {', '.join(missing)}\n"
+                 "fix the name, set enabled = false, or mark the mod optional = true")
 
     if not mods:
         sys.exit("no enabled mods resolved")
