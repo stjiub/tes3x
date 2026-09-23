@@ -842,6 +842,22 @@ def _console(x, value, ctx):
     return edits
 
 
+# Content-located engine addresses, shared with the payload build so the two cannot disagree.
+LOCATORS = {
+    "run-function": find_run_function,
+    "command-table": find_command_table,
+    "ref-load": find_ref_load,
+    "ref-skip": find_ref_skip,
+    "mcp-97-scan": find_mcp97_scan,
+    "mcp-154-load": find_mcp154_load,
+    "mcp-154-reload": find_mcp154_reload,
+    "mcp-140-redraw": find_mcp140_redraw,
+    "mcp-102-actn": find_mcp102_actn,
+    "save-game": lambda image: find_autosave_calls(image)[0],
+    "diagnostics-update": find_diagnostics_update,
+}
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -850,10 +866,7 @@ def main():
     ap.add_argument("--apply", action="append", default=[], metavar="NAME[=VALUE]")
     ap.add_argument("--section", default=".tes3xhk")
     ap.add_argument("--list", action="store_true", help="list available patches and exit")
-    ap.add_argument("--locate", choices=["run-function", "command-table", "ref-load", "ref-skip",
-                                               "mcp-97-scan", "mcp-154-load", "mcp-154-reload",
-                                               "mcp-140-redraw", "mcp-102-actn",
-                                               "save-game", "diagnostics-update"],
+    ap.add_argument("--locate", choices=list(LOCATORS),
                     help="print a content-located engine address and exit")
     a = ap.parse_args()
 
@@ -868,16 +881,7 @@ def main():
     raw = open(a.xbe, "rb").read()
     x = tes3x_inject.Xbe(raw)
     if a.locate:
-        finder = {"run-function": find_run_function, "command-table": find_command_table,
-                  "ref-load": find_ref_load, "ref-skip": find_ref_skip,
-                  "mcp-97-scan": find_mcp97_scan,
-                  "mcp-154-load": find_mcp154_load,
-                  "mcp-154-reload": find_mcp154_reload,
-                  "mcp-140-redraw": find_mcp140_redraw,
-                  "mcp-102-actn": find_mcp102_actn,
-                  "save-game": lambda image: find_autosave_calls(image)[0],
-                  "diagnostics-update": find_diagnostics_update}
-        print("0x%08X" % finder[a.locate](x))
+        print("0x%08X" % LOCATORS[a.locate](x))
         return
     cert = struct.unpack_from("<I", x.data, 0x118)[0]
     title = struct.unpack_from("<I", x.data, cert - x.base + 8)[0]

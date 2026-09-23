@@ -21,9 +21,8 @@ HDR_THUNK = 0x158
 SECHDR_SIZE = 56
 PAGE = 0x1000
 
-DEFAULT_KRNL_DEF = (os.path.join(os.environ["NXDK_DIR"], "lib", "xboxkrnl",
-                                 "xboxkrnl.exe.def")
-                    if "NXDK_DIR" in os.environ else None)
+DEFAULT_KRNL_DEF = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                "hooks", "xboxkrnl.exe.def")
 
 
 def _u32(b, o):
@@ -329,6 +328,51 @@ def write_thunks(x, path, kernel_def):
     print("  wrote %s (%d thunks)" % (path, len(ords)))
 
 
+def call_target(x, va):
+    """The VA an existing `call rel32` at va reaches."""
+    off = x.va_to_off(va)
+    if off is None or x.data[off] != 0xE8:
+        raise ValueError("no call rel32 at 0x%08X" % va)
+    return va + 5 + struct.unpack_from("<i", x.data, off + 1)[0]
+
+
+def inject(xbe, payload, out, name=".tes3xhk", hook_entry=False, patch_calls=()):
+    """Add a linked payload as a new section of xbe and write the result to out."""
+    raw = open(xbe, "rb").read()
+    x = Xbe(raw)
+    blob, vsize, entry_rva, imgbase = load_pe(payload)
+    va = x.next_va()
+    if imgbase != va:
+        raise ValueError("payload linked at 0x%08X but the section lands at 0x%08X; "
+                         "relink with /base:0x%X" % (imgbase, va, va))
+
+    orig_entry = x.entry
+    x.add_section(name, blob, vsize, SEC_PRELOAD | SEC_EXECUTABLE | SEC_WRITABLE)
+    print("  + section %s VA 0x%08X vsize 0x%X raw 0x%X" % (name, va, vsize, len(blob)))
+
+    if hook_entry:
+        x.set_entry(imgbase + entry_rva)
+        print("  entry 0x%08X -> 0x%08X (payload must tail-jump back)"
+              % (orig_entry, imgbase + entry_rva))
+
+    patched = []
+    for site, target in patch_calls:
+        was, off = x.patch_call(site, target)
+        patched.append((off, 5))
+        print("  call at 0x%08X: 0x%08X -> 0x%08X" % (site, was, target))
+
+    x.rebuild_headers()
+    blob_out = bytes(x.data)
+    problems = verify(raw, blob_out, patched)
+    if problems:
+        for p in problems:
+            print("  FAIL: %s" % p)
+        raise ValueError("refusing to write a corrupted XBE")
+    print("  verified: headers, section data and refcount sharing preserved")
+    open(out, "wb").write(blob_out)
+    print("  wrote %s (%d bytes)" % (out, len(blob_out)))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -341,7 +385,7 @@ def main():
     ap.add_argument("--dump-thunks", metavar="HEADER",
                     help="write a C header of kernel thunk slot addresses")
     ap.add_argument("--kernel-def", default=DEFAULT_KRNL_DEF,
-                    help="xboxkrnl.exe.def path (default: NXDK_DIR/lib/xboxkrnl/xboxkrnl.exe.def)")
+                    help="kernel export names (default: hooks/xboxkrnl.exe.def)")
     ap.add_argument("--next-va", action="store_true",
                     help="print the VA a new section would land at, then exit")
     ap.add_argument("--patch-call", action="append", default=[], metavar="VA=TARGET",
@@ -358,55 +402,26 @@ def main():
         print("0x%08X" % x.next_va())
         return
     if a.print_call:
-        va = int(a.print_call, 16)
-        off = x.va_to_off(va)
-        if off is None or x.data[off] != 0xE8:
-            raise SystemExit("no call rel32 at 0x%08X" % va)
-        print("0x%08X" % (va + 5 + struct.unpack_from("<i", x.data, off + 1)[0]))
+        try:
+            print("0x%08X" % call_target(x, int(a.print_call, 16)))
+        except ValueError as exc:
+            raise SystemExit(str(exc))
         return
     if a.dump_thunks:
-        if not a.kernel_def:
-            ap.error("--dump-thunks requires --kernel-def or NXDK_DIR")
         write_thunks(x, a.dump_thunks, a.kernel_def)
     if not a.payload:
         return
 
-    blob, vsize, entry_rva, imgbase = load_pe(a.payload)
-    va = x.next_va()
-    if imgbase != va:
-        ap.error("payload linked at 0x%08X but the section lands at 0x%08X; "
-                 "relink with /base:0x%X" % (imgbase, va, va))
-
-    orig_entry = x.entry
-    x.add_section(a.name, blob, vsize, SEC_PRELOAD | SEC_EXECUTABLE | SEC_WRITABLE)
-    print("  + section %s VA 0x%08X vsize 0x%X raw 0x%X" % (a.name, va, vsize, len(blob)))
-
-    if a.hook_entry:
-        x.set_entry(imgbase + entry_rva)
-        print("  entry 0x%08X -> 0x%08X (payload must tail-jump back)"
-              % (orig_entry, imgbase + entry_rva))
-
-    patched = []
+    calls = []
     for spec in a.patch_call:
         site, _, target = spec.partition("=")
         if not target:
             ap.error("--patch-call wants VA=TARGET, got %r" % spec)
-        site, target = int(site, 16), int(target, 16)
-        was, off = x.patch_call(site, target)
-        patched.append((off, 5))
-        print("  call at 0x%08X: 0x%08X -> 0x%08X" % (site, was, target))
-
-    x.rebuild_headers()
-    out = a.out or a.xbe
-    blob_out = bytes(x.data)
-    problems = verify(open(a.xbe, "rb").read(), blob_out, patched)
-    if problems:
-        for p in problems:
-            print("  FAIL: %s" % p)
-        raise SystemExit("refusing to write a corrupted XBE")
-    print("  verified: headers, section data and refcount sharing preserved")
-    open(out, "wb").write(blob_out)
-    print("  wrote %s (%d bytes)" % (out, len(blob_out)))
+        calls.append((int(site, 16), int(target, 16)))
+    try:
+        inject(a.xbe, a.payload, a.out or a.xbe, a.name, a.hook_entry, calls)
+    except ValueError as exc:
+        raise SystemExit(str(exc))
 
 
 if __name__ == "__main__":

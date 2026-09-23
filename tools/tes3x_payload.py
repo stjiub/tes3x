@@ -1,0 +1,268 @@
+#!/usr/bin/env python3
+"""Compile the injected payload for one retail XBE and write its hook manifest.
+
+The payload is linked at the exact VA the new XBE section will land at, so absolute references
+resolve without relocations. Needs clang and lld-link from any LLVM install.
+"""
+
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+
+import tes3x_inject
+from tes3x_patch import LOCATORS
+
+ROOT = Path(__file__).resolve().parents[1]
+HOOKS = ROOT / "hooks"
+HEADERS = ("tes3xdiag.h", "tes3xlog.h", "tes3xnt.h", "tes3xprof.h", "tes3x_thunks.h")
+DEFAULT_SOURCES = ("tes3xhook.c", "tes3xlog.c", "tes3xdiag.c")
+LLVM_DIRS = (Path("C:/Program Files/LLVM/bin"), Path("C:/msys64/clang64/bin"),
+             Path("C:/msys64/mingw64/bin"))
+CFLAGS = ("-target", "i386-pc-win32", "-march=pentium3", "-Os", "-ffreestanding", "-nostdlib",
+          "-fno-builtin", "-fno-stack-protector", "-fno-asynchronous-unwind-tables")
+
+# The archive hook replaces the call to Archive::Load at this site.
+ARCH_SITE = 0x000D4E06
+INI_GET = 0x001933E0
+INI_PATH = 0x0035E364
+CONSOLE_SITE = 0x00098430
+CONSOLE_ADDRESSES = (
+    ("FIND_MENU", 0x001AD340), ("OPEN_VK", 0x0022D210), ("CONSOLE_MENU_ID", 0x003D816C),
+    ("GET_PROP", 0x0019A770), ("COMPILE_RUN", 0x0014B3C0), ("VK_MENU_ID", 0x003DC710),
+    ("VK_TEXT_ID", 0x003DC75C), ("GAME_PTR", 0x003CB5F4), ("WIDGET_TEXT", 0x0019B350),
+    ("WIDGET_SET_TEXT", 0x0012F3A0), ("WIDGET_DIRTY", 0x00199660),
+    ("PERFORM_LAYOUT", 0x001A6280), ("SET_PROP", 0x001A6C00), ("SET_AUTO_WIDTH", 0x00197710),
+    ("SET_AUTO_HEIGHT", 0x00197740), ("FIND_CHILD", 0x0019A170), ("UI_ID", 0x001A7B50),
+    ("VK_CASE_ID", 0x003DC810), ("VK_DONE_ID", 0x003DC834), ("TRIGGER_EVENT", 0x0019DCD0),
+    ("CREATE_WIDGET", 0x001A6E00), ("VK_BUTTON", 0x0022E290), ("NAV_RIGHT_ID", 0x003D7328),
+    ("NAV_LEFT_ID", 0x003D72F4), ("NAV_UP_ID", 0x003D7350), ("VK_ROW_NUM_ID", 0x003DC74C),
+    ("VK_COL_NUM_ID", 0x003DC788), ("VK_CAPS_ID", 0x003DC714),
+    ("VK_BACKSPACE_ID", 0x003DC774), ("VK_SPACE_ID", 0x003DC7E8), ("VK_CAPS", 0x0022C240),
+    ("CREATE_IMAGE", 0x001A7080), ("BUTTON_HINT", 0x001F8630),
+)
+INI_USERS = {"tes3xconsole.c", "tes3xrefs.c", "tes3xdiag.c", "tes3xsaves.c", "tes3xprof.c"}
+
+
+class PayloadError(RuntimeError):
+    pass
+
+
+def hexva(value):
+    return "0x%08X" % value
+
+
+def address(name, default):
+    """A fixed engine address, overridable from the environment for research builds."""
+    return os.environ.get(name, hexva(default))
+
+
+def find_tool(name, llvm_dir=None):
+    exe = name + (".exe" if os.name == "nt" else "")
+    if llvm_dir:
+        path = Path(llvm_dir) / exe
+        if not path.is_file():
+            raise PayloadError(f"{exe} not found in {llvm_dir}")
+        return str(path)
+    found = shutil.which(name)
+    if found:
+        return found
+    for folder in LLVM_DIRS:
+        if (folder / exe).is_file():
+            return str(folder / exe)
+    raise PayloadError(f"{name} not found. Install LLVM (https://releases.llvm.org) and put its "
+                       "bin folder on PATH, or set paths.llvm in the local config")
+
+
+def source_path(name):
+    path = Path(name)
+    return path if path.is_absolute() or path.parent != Path(".") else HOOKS / name
+
+
+def define_value(source, name):
+    match = re.search(r"^#define %s +(.*)$" % name, source_path(source).read_text(), re.M)
+    if not match:
+        raise PayloadError(f"{source} does not define {name}")
+    return match.group(1)
+
+
+def build_id(sources, user_flags):
+    digest = hashlib.sha256()
+    digest.update(b"flags\0" + user_flags.encode("utf-8") + b"\0")
+    files = {Path(s).name: source_path(s) for s in sources}
+    files.update({name: HOOKS / name for name in HEADERS})
+    files[Path(__file__).name] = Path(__file__)
+    for name in sorted(files):
+        if files[name].exists():
+            digest.update(name.encode("ascii") + b"\0" + files[name].read_bytes())
+    return "0x" + digest.hexdigest()[:8]
+
+
+def link_symbol(link_map, *names):
+    """A symbol's address from the lld-link map, 16 hex digits, trying each spelling in turn."""
+    for name in names:
+        for line in link_map:
+            fields = line.split()
+            if len(fields) >= 3 and fields[1] == name:
+                return "0x" + fields[-2]
+    raise PayloadError(f"could not find {names[0]} in the link map")
+
+
+def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "hooks",
+                  user_flags="", llvm_dir=None, check_xbe=None, forced_build_id=None):
+    """Compile and link sources against xbe. Returns the paths of the payload and its manifest."""
+    xbe, out = Path(xbe), Path(out)
+    sources = list(sources)
+    names = {Path(s).name for s in sources}
+    clang, lld = (os.environ.get("CLANG") or find_tool("clang", llvm_dir),
+                  os.environ.get("LLD") or find_tool("lld-link", llvm_dir))
+    out.mkdir(parents=True, exist_ok=True)
+
+    image = tes3x_inject.Xbe(xbe.read_bytes())
+    va = hexva(image.next_va())
+    entry = hexva(image.entry)
+    print(f"section VA {va}   original entry {entry}")
+    tes3x_inject.write_thunks(image, HOOKS / "tes3x_thunks.h", tes3x_inject.DEFAULT_KRNL_DEF)
+
+    ident = forced_build_id or build_id(sources, user_flags)
+    print(f"payload build id {ident}")
+    flags = user_flags.split() + [f"-DTES3X_BUILD_ID={ident}"]
+
+    def define(name, value):
+        flags.append(f"-DTES3X_{name}={value}")
+
+    def locate(name):
+        return LOCATORS[name](image)
+
+    wanted, extra = {}, {}
+    arch_site = int(address("ARCH_SITE", ARCH_SITE), 16)
+    if "tes3xarch.c" in names:
+        load = tes3x_inject.call_target(image, arch_site)
+        print(f"archive hook: call site {hexva(arch_site)} -> Archive::Load {hexva(load)}")
+        define("ARCHIVE_LOAD", hexva(load))
+        wanted["archive_load"] = ("_tes3x_archive_hook",)
+    if "tes3xscript.c" in names:
+        run_function, table = hexva(locate("run-function")), hexva(locate("command-table"))
+        base = define_value("tes3xscript.c", "TES3X_OPCODE_BASE")
+        ceil = define_value("tes3xscript.c", "TES3X_OPCODE_CEIL")
+        print(f"script hook: RunFunction {run_function}, table {table}, opcodes [{base}, {ceil})")
+        define("RUN_FUNCTION", run_function)
+        define("COMMAND_TABLE", table)
+        wanted["script_dispatch"] = ("_tes3x_script_hook",)
+        extra["script_dispatch"] = {"opcode_base": base, "opcode_ceil": ceil}
+    if names & INI_USERS:
+        ini_get, ini_path = address("INI_GET", INI_GET), address("INI_PATH", INI_PATH)
+        print(f"ini reader {ini_get}, ini path {ini_path}")
+        define("INI_GET_STRING", ini_get)
+        define("INI_PATH", ini_path)
+    if "tes3xsaves.c" in names:
+        save_game = hexva(locate("save-game"))
+        print(f"autosave hook: SaveGame {save_game}")
+        define("SAVE_GAME", save_game)
+    if "tes3xprof.c" in names:
+        print("profiler: RDTSC region timing, targets chosen at patch time")
+        flags.append("-DTES3X_PROFILE")
+    if "tes3xdiag.c" in names:
+        update = hexva(locate("diagnostics-update"))
+        print(f"diagnostics hook: Game::Update {update}")
+        flags.append("-DTES3X_DIAGNOSTICS")
+        define("DIAG_UPDATE", update)
+    if "tes3xrefs.c" in names:
+        load, skip = locate("ref-load"), hexva(locate("ref-skip"))
+        print(f"refs hook: fallback {hexva(load)}, resume {hexva(load + 6)}, skip {skip}")
+        define("REF_RESUME", hexva(load + 6))
+        define("REF_SKIP", skip)
+        wanted["ref_load"] = ("_tes3x_ref_load_hook",)
+    if "tes3xmcp97.c" in names:
+        scan = locate("mcp-97-scan")
+        print(f"mcp-97 hook: scan {hexva(scan)}, resume {hexva(scan + 6)}")
+        define("MCP97_RESUME", hexva(scan + 6))
+        wanted["mcp97_scan"] = ("_tes3x_mcp97_scan_hook",)
+    if "tes3xmcp154.c" in names:
+        load, reload = locate("mcp-154-load"), locate("mcp-154-reload")
+        print(f"mcp-154 hooks: load {hexva(load)}, reload {hexva(reload)}")
+        define("MCP154_LOAD_RESUME", hexva(load + 6))
+        define("MCP154_RELOAD_RESUME", hexva(reload + 6))
+        wanted["mcp154_load"] = ("_tes3x_mcp154_load_hook",)
+        wanted["mcp154_reload"] = ("_tes3x_mcp154_reload_hook",)
+    if "tes3xmcp140.c" in names:
+        redraw = locate("mcp-140-redraw")
+        update = hexva(tes3x_inject.call_target(image, redraw))
+        present = hexva(tes3x_inject.call_target(image, redraw + 9))
+        print(f"mcp-140 hook: redraw {hexva(redraw)}, update {update}, present {present}")
+        define("MCP140_UPDATE", update)
+        define("MCP140_PRESENT", present)
+        define("MCP140_TRUE", hexva(redraw + 14))
+        define("MCP140_FALSE", hexva(redraw + 20))
+        wanted["mcp140_redraw"] = ("_tes3x_mcp140_redraw_hook",)
+    if "tes3xconsole.c" in names:
+        print(f"console hook: gate {address('CONSOLE_SITE', CONSOLE_SITE)}")
+        for name, default in CONSOLE_ADDRESSES:
+            define(name, address(name, default))
+        wanted["console_gate"] = ("@tes3x_console_hook@12", "_tes3x_console_hook")
+        wanted["console_vk_key"] = ("_tes3x_vk_key_limit",)
+        wanted["console_vk_space"] = ("_tes3x_vk_space_limit",)
+    if "tes3xdiag.c" in names:
+        wanted["diagnostics_update"] = ("_tes3x_diag_update_hook",)
+        wanted["diagnostics_flag"] = ("_tes3x_diag_installed",)
+        wanted["patch_mask"] = ("_tes3x_patch_mask",)
+    if "tes3xprof.c" in names:
+        wanted["prof_target"] = ("_tes3x_prof_target",)
+        wanted["prof_stubs"] = ("_tes3x_prof_stubs",)
+        extra["prof_stubs"] = {"prof_count": define_value("tes3xprof.c", "TES3X_PROF_SLOTS")}
+    if "tes3xsaves.c" in names:
+        wanted["autosave"] = ("@tes3x_autosave_hook@12", "_tes3x_autosave_hook")
+
+    objects = []
+    for source in sources:
+        obj = out / (Path(source).stem + ".obj")
+        subprocess.run([clang, *CFLAGS, f"-DTES3X_ORIG_ENTRY={entry}", *flags, f"-I{HOOKS}",
+                        "-c", str(source_path(source)), "-o", str(obj)], check=True)
+        objects.append(str(obj))
+    payload, map_path = out / "tes3xhook.pe", out / "tes3xhook.map"
+    subprocess.run([lld, "/nologo", "/subsystem:native", "/entry:tes3x_entry", "/fixed",
+                    "/nodefaultlib", f"/base:{va}", f"/map:{map_path}", f"/out:{payload}",
+                    *objects], check=True)
+
+    link_map = map_path.read_text(errors="replace").splitlines()
+    hooks = {}
+    for key, symbols in wanted.items():
+        hooks[key] = link_symbol(link_map, *symbols)
+        hooks.update(extra.get(key, {}))
+    # Beside the payload, so tes3x_patch.py can apply it without a toolchain or the map.
+    manifest = out / "tes3xhook.json"
+    with open(manifest, "w", encoding="utf-8") as stream:
+        json.dump({"base": va, "hooks": hooks}, stream, indent=2)
+
+    if check_xbe:
+        calls = [(arch_site, int(hooks["archive_load"], 16))] if "archive_load" in hooks else []
+        tes3x_inject.inject(xbe, payload, check_xbe, hook_entry=True, patch_calls=calls)
+    return payload, manifest
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("xbe", help="clean retail morrowind.xbe")
+    ap.add_argument("--src", action="append", metavar="FILE.c",
+                    help="payload source, in hooks/ or a path (repeatable; default: %s)"
+                         % " ".join(DEFAULT_SOURCES))
+    ap.add_argument("--out", default=str(ROOT / "build" / "hooks"), help="output folder")
+    ap.add_argument("--cflags", default=os.environ.get("EXTRA_CFLAGS", ""),
+                    help="extra compiler flags, such as -DNAME=VALUE")
+    ap.add_argument("--llvm", help="folder holding clang and lld-link (default: search PATH)")
+    ap.add_argument("--check", metavar="OUT.xbe",
+                    help="also inject the payload into a copy of the XBE, as a structural check")
+    a = ap.parse_args(argv)
+    try:
+        build_payload(a.xbe, a.src or DEFAULT_SOURCES, a.out, a.cflags, a.llvm, a.check)
+    except (PayloadError, ValueError, subprocess.CalledProcessError) as exc:
+        raise SystemExit(str(exc))
+
+
+if __name__ == "__main__":
+    main()

@@ -12,12 +12,12 @@ import tempfile
 import tomllib
 
 from tes3x_pack import set_ini_key
+from tes3x_payload import PayloadError, build_payload, find_tool
 from tes3x_paths import DEFAULT_REMOTE_ROOT, require_paths
 
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "tools"
-HOOKS = ROOT / "hooks"
 MARKER = ".tes3x-pipeline.json"
 REPLACED_RETAIL_ENTRIES = {"data files", "default.xbe", "morrowind.xbe", "morrowind.ini"}
 RELEASE_ARTIFACT_SUFFIXES = {".iso", ".nfo", ".rar", ".sfv"}
@@ -144,29 +144,10 @@ def require_file(path, label):
         raise PipelineError(f"{label} not found: {path}")
 
 
-def run(command, env=None, display=None):
+def run(command, display=None):
     shown = display if display is not None else command
     print("\n== " + " ".join(str(part) for part in shown), flush=True)
-    subprocess.run([str(part) for part in command], check=True, env=env)
-
-
-def find_bash(value=None):
-    if value:
-        path = Path(value)
-        if path.is_file():
-            return str(path)
-        found = shutil.which(value)
-        if found:
-            return found
-        raise PipelineError(f"bash not found: {value}")
-    if os.name == "nt":
-        for candidate in (Path("C:/msys64/usr/bin/bash.exe"), Path("C:/Program Files/Git/bin/bash.exe")):
-            if candidate.is_file():
-                return str(candidate)
-    found = shutil.which("bash")
-    if not found:
-        raise PipelineError("bash not found; set paths.bash or pass --bash")
-    return found
+    subprocess.run([str(part) for part in command], check=True)
 
 
 def copy_retail_root(vanilla, staged):
@@ -241,7 +222,8 @@ def main(argv=None):
     ap.add_argument("profile")
     ap.add_argument("--config", help="local paths and Xbox settings (default: ./tes3x.local.toml if present)")
     ap.add_argument("--vanilla", help="clean retail game root containing Data Files and both XBEs")
-    ap.add_argument("--nxdk", help="nxdk checkout (required while payloads are built locally)")
+    ap.add_argument("--llvm", help="folder holding clang and lld-link, for engine fixes "
+                                   "(default: paths.llvm, then PATH)")
     ap.add_argument("--build-root", help="parent for profile outputs")
     ap.add_argument("--out", help="complete pipeline output (default: BUILD_ROOT/PROFILE_NAME)")
     ap.add_argument("--preset", choices=PRESETS)
@@ -252,7 +234,6 @@ def main(argv=None):
     ap.add_argument("--drive", help="game-directory drive letter (default: D)")
     ap.add_argument("--title", help="name both XBEs carry, so parallel installs are told "
                                     "apart in a dashboard (default: profile.title)")
-    ap.add_argument("--bash", help="MSYS/Git Bash used for hooks/build.sh")
     ap.add_argument("--profile-target", action="append", default=[], metavar="VA",
                     help="time this function with RDTSC at its direct call sites "
                          "(repeatable, or comma-separated). Instrumentation only: the "
@@ -338,13 +319,12 @@ def main(argv=None):
     if not data_files.is_dir():
         raise PipelineError(f"retail Data Files not found: {data_files}")
 
-    nxdk_value = args.nxdk or paths.get("nxdk_dir")
-    if plan["needs_payload"] and not nxdk_value:
-        raise PipelineError("selected patches require paths.nxdk_dir or --nxdk")
-    nxdk = config_path(nxdk_value, base).resolve() if nxdk_value else None
-    if nxdk and not nxdk.is_dir():
-        raise PipelineError(f"nxdk checkout not found: {nxdk}")
-    bash = find_bash(args.bash or paths.get("bash")) if plan["needs_payload"] else None
+    llvm_value = args.llvm or paths.get("llvm")
+    llvm = config_path(llvm_value, base).resolve() if llvm_value else None
+    if plan["needs_payload"]:
+        # Fail before any copying, not halfway through the build.
+        find_tool("clang", llvm)
+        find_tool("lld-link", llvm)
     if (args.deploy or args.dry_run) and (not deploy.get("host") or not remote):
         raise PipelineError("deployment requires deploy.host and deploy.remote_root")
 
@@ -369,12 +349,9 @@ def main(argv=None):
 
         payload = hook_out / "tes3xhook.pe"
         if plan["needs_payload"]:
-            env = os.environ.copy()
-            env.update({"NXDK_DIR": str(nxdk), "OUT": str(hook_out),
-                        "SRCS": " ".join(plan["sources"])})
-            if os.name == "nt":
-                env["PATH"] = str(Path(bash).parent) + os.pathsep + env.get("PATH", "")
-            run([bash, HOOKS / "build.sh", retail_xbe, hook_out / "injected-check.xbe"], env)
+            print("\n== payload: " + " ".join(plan["sources"]), flush=True)
+            build_payload(retail_xbe, plan["sources"], hook_out, llvm_dir=llvm,
+                          check_xbe=hook_out / "injected-check.xbe")
 
         patch_specs = []
         if plan["needs_payload"]:
@@ -461,5 +438,5 @@ def main(argv=None):
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except (PipelineError, subprocess.CalledProcessError) as exc:
+    except (PipelineError, PayloadError, subprocess.CalledProcessError) as exc:
         raise SystemExit(str(exc))
