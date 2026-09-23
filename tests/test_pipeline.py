@@ -139,6 +139,24 @@ class PipelineTests(unittest.TestCase):
         self.assertTrue((staged / 'sound-cache' / 'voice.wav').samefile(
             vanilla / 'sound-cache' / 'voice.wav'))
 
+    def test_patches_only_stages_retail_data_and_ini_keys(self):
+        from tes3x_pipeline import stage_retail
+        data = self.root / 'Data Files'
+        data.mkdir()
+        (data / 'Morrowind.bsa').write_bytes(b'retail')
+        ini = self.root / 'Morrowind.ini'
+        ini.write_text('[General]\nShow FPS=0\n', encoding='latin-1')
+        staged = self.root / 'staged'
+        staged.mkdir()
+        stage_retail(data, ini, staged, ['General:Show FPS=1', 'Xbox:Diagnostics=1'])
+        self.assertEqual((staged / 'Data Files' / 'Morrowind.bsa').read_bytes(), b'retail')
+        text = (staged / 'Morrowind.ini').read_text(encoding='latin-1')
+        self.assertIn('Show FPS=1', text)
+        self.assertIn('[Xbox]', text)
+        self.assertIn('Diagnostics=1', text)
+        with self.assertRaises(PipelineError):
+            stage_retail(data, ini, self.root / 'again', ['no-section'])
+
     def test_link_falls_back_to_copy(self):
         from unittest.mock import patch
         source = self.root / 'a'

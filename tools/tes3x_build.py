@@ -55,7 +55,7 @@ def texture_dims(path):
             head = f.read(32)
     except OSError:
         return None
-    if head[:4] == b"DDS ":
+    if head[:4] == b"DDS " and len(head) >= 20:
         h, w = struct.unpack_from("<II", head, 12)
         return w, h
     if path.lower().endswith(".tga") and len(head) >= 16:
