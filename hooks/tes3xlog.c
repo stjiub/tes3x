@@ -19,15 +19,6 @@ static u64 tes3x_t0;
 static u32 tes3x_log_bytes;
 static int tes3x_log_size_known;
 
-typedef struct {
-    u64 AllocationSize;
-    u64 EndOfFile;
-    u32 NumberOfLinks;
-    unsigned char DeletePending;
-    unsigned char Directory;
-    unsigned char Reserved[2];
-} __attribute__((packed)) FILE_STANDARD_INFORMATION;
-
 static void tes3x_log_truncate(void)
 {
     ANSI_STRING name;
@@ -155,7 +146,7 @@ void tes3x_log_prepare(void)
     ANSI_STRING name;
     OBJECT_ATTRIBUTES oa;
     IO_STATUS_BLOCK iosb;
-    FILE_STANDARD_INFORMATION st;
+    FILE_NETWORK_OPEN_INFORMATION st;
     void *h = 0;
 
     tes3x_object_attributes(&oa, &name, tes3x_path);
@@ -163,7 +154,7 @@ void tes3x_log_prepare(void)
                      FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, FILE_OPEN_IF,
                      FILE_SYNCHRONOUS_IO_NONALERT) != 0)
         return;
-    if (NtQueryInformationFile(h, &iosb, &st, sizeof(st), FileStandardInformation) == 0) {
+    if (NtQueryInformationFile(h, &iosb, &st, sizeof(st), FileNetworkOpenInformation) == 0) {
         tes3x_log_bytes = (u32)st.EndOfFile;
         tes3x_log_size_known = 1;
     }
