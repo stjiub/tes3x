@@ -12,7 +12,9 @@ pad, adds a way to type, and runs commands from a file for testing without input
 - Every call to the console's printf (`0x0008BB90`, 216 sites) goes through the payload, which
   logs the first lines of a command's output as `console< ...` and then prints as before.
 - `tes3xexec.txt` in `E:\` or beside `default.xbe` runs through `CompileAndRun` once per launch;
-  see the [README](../../README.md#in-game-console).
+  see [testing and debugging](../../docs/testing.md).
+- At the XBE entry, an `@start` line puts the engine's own relaunch data (`'BXWM'`, New Game or a
+  save path) in the kernel's launch data page, so the game starts without the main menu.
 
 ## Testing it
 

@@ -81,20 +81,17 @@ python tools/tes3x_patch.py --list
 With `console` enabled, Back + right thumb click opens the console and A raises the on-screen
 keyboard. `[Xbox] ConsoleCombo` changes the combination.
 
-To run commands without typing, put a `tes3xexec.txt` in `E:\` or next to `default.xbe`; `E:\`
-is checked first. Each launch runs its lines once, one per frame:
+To run commands without typing, put a `tes3xexec.txt` in `E:\` or next to `default.xbe`. It can
+start a New Game or load a save straight from boot, and each command and its output is recorded
+in `E:\tes3xlog.txt`:
 
 ```
-# lines starting with @menu run while the main menu is up
-@menu click MenuOptions MenuOptions_New_container
+@start new
 wait 30
-player->getpos x
 coc "Balmora"
 ```
 
-Other lines start once the game is running. `wait N` pauses for N frames, `click MENU WIDGET`
-presses a menu widget, and `exit` turns the Xbox off. Every command and the first lines of its
-output are recorded in `E:\tes3xlog.txt`. A file in `E:\` runs on every launch until you delete it.
+See [testing and debugging](docs/testing.md) for the file format, the log, and the profiler.
 
 ## Packaging and overrides
 
