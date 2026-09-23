@@ -797,6 +797,27 @@ def find_console_gate(x):
     return text.va + hits[0] + 4
 
 
+# The on-screen keyboard's key and space handlers cap its text at 31 characters with a
+# `cmp dword [esp+N], 0x1F`. A second keyboard has identical handlers, so each signature is
+# anchored on the text-entry id global only this keyboard's handler reads beforehand.
+VK_KEY_LIMIT_SIG = re.compile(
+    re.escape(bytes.fromhex("668b0d68c73d00b801000000505051 8bce e8".replace(" ", "")))
+    + b".{4}" + re.escape(bytes.fromhex("837c24241f")), re.S)
+VK_SPACE_LIMIT_SIG = re.compile(
+    re.escape(bytes.fromhex("668b155cc73d00")) + b".{67}"
+    + re.escape(bytes.fromhex("837c242c1f")), re.S)
+
+
+def find_vk_limit(x, sig, what):
+    """The 5-byte length compare at the end of a keyboard-handler signature."""
+    text = text_section(x)
+    blob = bytes(x.data[text.raw:text.raw + text.rsize])
+    hits = [m.end() - 5 for m in sig.finditer(blob)]
+    if len(hits) != 1:
+        raise PatchError("console: %d keyboard %s length check(s), expected 1" % (len(hits), what))
+    return text.va + hits[0]
+
+
 @patch("console")
 def _console(x, value, ctx):
     """Make the in-game console reachable, by replacing its input gate."""
@@ -807,7 +828,18 @@ def _console(x, value, ctx):
     target = int(str(target), 16)
     site = find_console_gate(x)
     was, off = x.patch_call(site, target)
-    return [(off, 5, "console gate 0x%08X: 0x%08X -> 0x%08X" % (site, was, target))]
+    edits = [(off, 5, "console gate 0x%08X: 0x%08X -> 0x%08X" % (site, was, target))]
+    for what, sig, hook in (("key", VK_KEY_LIMIT_SIG, "console_vk_key"),
+                            ("space", VK_SPACE_LIMIT_SIG, "console_vk_space")):
+        stub = ctx["hooks"].get(hook)
+        if not stub:
+            continue
+        stub = int(str(stub), 16)
+        site = find_vk_limit(x, sig, what)
+        off = x.va_to_off(site)
+        x.data[off:off + 5] = b"\xe8" + struct.pack("<i", stub - (site + 5))
+        edits.append((off, 5, "keyboard %s length check 0x%08X -> 0x%08X" % (what, site, stub)))
+    return edits
 
 
 def main():

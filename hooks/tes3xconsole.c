@@ -50,6 +50,72 @@
 #ifndef TES3X_WIDGET_DIRTY
 #error "define TES3X_WIDGET_DIRTY to the VA of the widget redraw flag setter"
 #endif
+#ifndef TES3X_PERFORM_LAYOUT
+#error "define TES3X_PERFORM_LAYOUT to the VA of the widget layout pass"
+#endif
+#ifndef TES3X_SET_PROP
+#error "define TES3X_SET_PROP to the VA of the widget setProperty"
+#endif
+#ifndef TES3X_SET_AUTO_WIDTH
+#error "define TES3X_SET_AUTO_WIDTH to the VA of the widget autoWidth setter"
+#endif
+#ifndef TES3X_SET_AUTO_HEIGHT
+#error "define TES3X_SET_AUTO_HEIGHT to the VA of the widget autoHeight setter"
+#endif
+#ifndef TES3X_FIND_CHILD
+#error "define TES3X_FIND_CHILD to the VA of findChild"
+#endif
+#ifndef TES3X_UI_ID
+#error "define TES3X_UI_ID to the VA of the UI name-to-id lookup"
+#endif
+#ifndef TES3X_VK_CASE_ID
+#error "define TES3X_VK_CASE_ID to the VA of the keyboard's case-state property id global"
+#endif
+#ifndef TES3X_VK_DONE_ID
+#error "define TES3X_VK_DONE_ID to the VA of the keyboard's Done button id global"
+#endif
+#ifndef TES3X_TRIGGER_EVENT
+#error "define TES3X_TRIGGER_EVENT to the VA of the widget event dispatch"
+#endif
+#ifndef TES3X_CREATE_WIDGET
+#error "define TES3X_CREATE_WIDGET to the VA of createWidget"
+#endif
+#ifndef TES3X_VK_BUTTON
+#error "define TES3X_VK_BUTTON to the VA of the keyboard's button factory"
+#endif
+#ifndef TES3X_NAV_RIGHT_ID
+#error "define TES3X_NAV_RIGHT_ID to the VA of the focus-right property id global"
+#endif
+#ifndef TES3X_NAV_LEFT_ID
+#error "define TES3X_NAV_LEFT_ID to the VA of the focus-left property id global"
+#endif
+#ifndef TES3X_NAV_UP_ID
+#error "define TES3X_NAV_UP_ID to the VA of the focus-up property id global"
+#endif
+#ifndef TES3X_VK_ROW_NUM_ID
+#error "define TES3X_VK_ROW_NUM_ID to the VA of MenuVirtualKeyboard_RowNum's id global"
+#endif
+#ifndef TES3X_VK_COL_NUM_ID
+#error "define TES3X_VK_COL_NUM_ID to the VA of MenuVirtualKeyboard_ColNum's id global"
+#endif
+#ifndef TES3X_VK_CAPS_ID
+#error "define TES3X_VK_CAPS_ID to the VA of the keyboard's Caps button id global"
+#endif
+#ifndef TES3X_VK_SPACE_ID
+#error "define TES3X_VK_SPACE_ID to the VA of the keyboard's space bar id global"
+#endif
+#ifndef TES3X_VK_BACKSPACE_ID
+#error "define TES3X_VK_BACKSPACE_ID to the VA of the keyboard's Backspace button id global"
+#endif
+#ifndef TES3X_VK_CAPS
+#error "define TES3X_VK_CAPS to the VA of the keyboard's Caps click handler"
+#endif
+#ifndef TES3X_CREATE_IMAGE
+#error "define TES3X_CREATE_IMAGE to the VA of createImage"
+#endif
+#ifndef TES3X_BUTTON_HINT
+#error "define TES3X_BUTTON_HINT to the VA of the button-hint strip setter"
+#endif
 
 #define MENU_VISIBLE 0x7E   /* the byte Console::Toggle flips */
 #define GAME_SCRIPT 0x54    /* the compiler CompileAndRun is a method on */
@@ -58,9 +124,54 @@
 #define CMD_MAX 96
 #define HIST_MAX 8
 
-/* While the console is up: Start raises the keyboard, Black steps further back through history. */
-#define KEY_RAISE 6
-#define KEY_BACK_HIST 14
+/* Console up: A raises the keyboard. Keyboard up: Y confirms, B cancels, X is backspace, Black is
+ * space, the left stick click is caps, White swaps the letter keys for symbols, and the triggers
+ * step through earlier commands. */
+#define KEY_CAPS 8
+#define KEY_A 10
+#define KEY_B 11
+#define KEY_SPACE 14
+#define KEY_SYMBOLS 15
+#define KEY_HIST_OLDER 16
+#define KEY_HIST_NEWER 17
+
+/* Element fields and property ids, as the engine's own menu builders use them. */
+#define EL_PARENT 0x34
+#define EL_CHILDREN 0x28    /* vector: begin, then end at +4 */
+#define EL_X 0xE4            /* relative to the parent */
+#define EL_WIDTH 0xF4
+#define EL_HEIGHT 0xF8
+#define EL_ALIGN_X 0x128
+#define EL_ALIGN_Y 0x12C
+#define PROP_WIDTH 0xFFFF802B
+#define PROP_HEIGHT 0xFFFF802C
+#define PROP_MIN_WIDTH 0xFFFF802D
+#define PROP_MIN_HEIGHT 0xFFFF802E
+#define PROP_MAX_WIDTH 0xFFFF802F
+#define PROP_MAX_HEIGHT 0xFFFF8030
+#define PROP_INT 1
+#define PROP_PTR 8
+#define PROP_HANDLER 0x20
+#define CASE_LOWER 0x80BE
+#define EVENT_CLICK 0xFFFF8035
+#define EVENT_PAD_Y 0xFFFF8083
+#define ID_GENERIC 0xFFFF80B4  /* ids in the engine's anonymous range are not registered */
+#define HINT_MODE 0xFFFF80D1
+#define VK_TEXT_LIMIT 0x1F     /* the keyboard's own cap, which names and saves rely on */
+
+/* Float bit patterns, so the payload needs no float runtime. */
+#define F_ZERO 0x00000000
+#define F_HALF 0x3F000000
+#define F_ONE 0x3F800000
+
+#define KEY_ROWS 4
+#define KEY_COLS 10
+#define KEY_COUNT 36        /* 0-9, then A-Z; row 4 ends in the space bar */
+#define KEYBOARD_PAD 64     /* the keyboard's frame, when a row cannot be measured */
+#define KEY_GAP 2           /* the key frame draws slightly outside its width */
+#define VK_APPEAR_FRAMES 30 /* a new keyboard is not visible on the frame after it is raised */
+#define VK_RETRY_FRAME 8    /* the first open only builds the menu; a second shows it */
+#define BOTTOM_BUTTONS 6
 
 /* Per-port block: 22 bytes of XINPUT_STATE, then 30 derived words. A held button reads 0x7FFF. */
 #define CTRL_PORT 0x804
@@ -80,6 +191,20 @@ typedef void *(__attribute__((thiscall)) *fn_get_prop)(void *self, void *out, un
 typedef const char *(__attribute__((thiscall)) *fn_widget_text)(void *widget);
 typedef void(__attribute__((thiscall)) *fn_widget_set_text)(void *widget, const char *text);
 typedef void(__attribute__((thiscall)) *fn_widget_dirty)(void *widget);
+typedef void(__attribute__((thiscall)) *fn_perform_layout)(void *widget, int a0);
+typedef void(__attribute__((thiscall)) *fn_set_prop)(void *widget, unsigned int id, int value,
+                                                     int type);
+typedef void(__attribute__((thiscall)) *fn_set_auto)(void *widget, int on);
+typedef void *(__attribute__((thiscall)) *fn_find_child)(void *widget, unsigned int id);
+typedef unsigned int(__cdecl *fn_ui_id)(const char *name);
+typedef void(__attribute__((thiscall)) *fn_trigger_event)(void *widget, unsigned int id, int d0,
+                                                          int d1, void *source);
+typedef void *(__attribute__((thiscall)) *fn_create_widget)(void *parent, unsigned int id,
+                                                            unsigned int factory, int a0);
+typedef void *(__attribute__((thiscall)) *fn_create_image)(void *parent, unsigned int id,
+                                                           const char *path, int reuse);
+typedef char(__cdecl *fn_handler)(void *owner, unsigned int id, int d0, int d1, void *source);
+typedef void(__cdecl *fn_button_hint)(int button, unsigned int label, unsigned int mode);
 typedef int(__attribute__((thiscall)) *fn_compile_run)(void *self, void *ref, const char *text,
                                                        int a2, int a3, int a4, int a5, int a6);
 
@@ -97,11 +222,34 @@ static char cmd[CMD_MAX];
 static int run_delay;
 static char hist[HIST_MAX][CMD_MAX];
 static int hist_count;
-static int hist_sel;
+static int hist_sel;      /* -1 is the empty field */
 static int held_raise;
-static int held_hist;
-static int seed_pending;
-static int hist_armed;   /* Black was pressed, so the next raise is seeded */
+static int held_older;
+static int held_newer;
+static int held_symbols;
+static int held_space;
+static int held_caps;
+static int held_a;        /* the press that raised the keyboard, withheld from it */
+static int vk_fresh;      /* raised, not yet laid out */
+static int vk_seen;
+static int vk_wait;
+static int vk_cancel;     /* B was seen while the keyboard was up */
+static int symbols_on;
+static int console_layout;
+static unsigned int row_id[KEY_ROWS];
+static unsigned int symbols_id;
+static unsigned int older_id;
+static unsigned int newer_id;
+
+/* Read by the length-check stubs the patch puts in the keyboard's key and space handlers. */
+u32 tes3x_vk_limit = VK_TEXT_LIMIT;
+
+static const char *const symbol_keys[KEY_COUNT] = {
+    "!", "@", "#", "$", "%", "^", "&", "*", "(", ")",
+    "-", "_", "=", "+", "[", "]", "{", "}", "\\", "|",
+    ";", ":", "'", "\"", ",", ".", "<", ">", "/", "?",
+    "->", "~", "`", "<=", ">=", "!=",
+};
 
 /* "7,9". Anything unparseable leaves the defaults. */
 static int parse_combo(const char *s)
@@ -171,25 +319,401 @@ static void hist_push(const char *text)
     hist_sel = 0;
 }
 
-/* seed_pending selects a command-history entry. */
-static void raise_keyboard(int seed)
+/* The engine's own key handlers follow a text change with these two, on the menu. */
+static void relayout(void *menu)
+{
+    ((fn_widget_dirty)TES3X_WIDGET_DIRTY)(menu);
+    ((fn_perform_layout)TES3X_PERFORM_LAYOUT)(menu, 1);
+}
+
+static void set_prop(void *el, unsigned int id, int value)
+{
+    ((fn_set_prop)TES3X_SET_PROP)(el, id, value, PROP_INT);
+}
+
+static void fix_size(void *el, int w, int h)
+{
+    set_prop(el, PROP_MIN_WIDTH, w);
+    set_prop(el, PROP_MAX_WIDTH, w);
+    set_prop(el, PROP_MIN_HEIGHT, h);
+    set_prop(el, PROP_MAX_HEIGHT, h);
+    set_prop(el, PROP_WIDTH, w);
+    set_prop(el, PROP_HEIGHT, h);
+}
+
+/* The console takes the top half of the screen and the keyboard the bottom, both full width. */
+static int place_half(void *menu, int bottom)
+{
+    unsigned char *m = (unsigned char *)menu;
+    unsigned char *root = *(unsigned char **)(m + EL_PARENT);
+    int w = root ? *(int *)(root + EL_WIDTH) : 0;
+    int h = root ? *(int *)(root + EL_HEIGHT) : 0;
+
+    if (w < 320 || w > 4096 || h < 240 || h > 4096) {
+        tes3x_log("console.no_screen", (u32)((w << 16) | (h & 0xFFFF)));
+        w = 640;
+        h = 480;
+    }
+    ((fn_set_auto)TES3X_SET_AUTO_WIDTH)(menu, 0);
+    ((fn_set_auto)TES3X_SET_AUTO_HEIGHT)(menu, 0);
+    fix_size(menu, w, h / 2);
+    *(u32 *)(m + EL_ALIGN_X) = F_HALF;
+    *(u32 *)(m + EL_ALIGN_Y) = bottom ? F_ONE : F_ZERO;
+    return w;
+}
+
+static void **row_keys(void *vk, int row, int *count)
+{
+    unsigned char *el = ((fn_find_child)TES3X_FIND_CHILD)(vk, row_id[row]);
+    void **begin, **end;
+
+    *count = 0;
+    if (!el)
+        return 0;
+    begin = *(void ***)(el + EL_CHILDREN);
+    end = *(void ***)(el + EL_CHILDREN + 4);
+    if (!begin || end < begin)
+        return 0;
+    *count = (int)(end - begin);
+    return begin;
+}
+
+static void load_row_ids(void)
+{
+    static char name[] = "MenuVirtualKeyboard_Row1";
+    int i;
+
+    if (row_id[0])
+        return;
+    symbols_id = ((fn_ui_id)TES3X_UI_ID)("MenuVirtualKeyboard_SymbolsButton");
+    older_id = ((fn_ui_id)TES3X_UI_ID)("MenuVirtualKeyboard_OlderButton");
+    newer_id = ((fn_ui_id)TES3X_UI_ID)("MenuVirtualKeyboard_NewerButton");
+    for (i = 0; i < KEY_ROWS; i++) {
+        name[sizeof(name) - 2] = (char)('1' + i);
+        row_id[i] = ((fn_ui_id)TES3X_UI_ID)(name);
+    }
+}
+
+static void set_ptr(void *el, unsigned int id_global, void *value)
+{
+    ((fn_set_prop)TES3X_SET_PROP)(el, *(unsigned short *)id_global, (int)value, PROP_PTR);
+}
+
+/* A key types its own label, so a symbol layer is only a relabel. */
+static void label_keys(void *vk, int symbols)
+{
+    fn_widget_set_text set = (fn_widget_set_text)TES3X_WIDGET_SET_TEXT;
+    fn_get_prop get = (fn_get_prop)TES3X_GET_PROP;
+    unsigned int out[8] = {0};
+    unsigned short *state;
+    char letter = 'A';
+    char buf[2];
+    void **keys, *button;
+    int row, col, n, k;
+
+    state = (unsigned short *)get(vk, out, *(unsigned short *)TES3X_VK_CASE_ID, 0x10, 0, 0);
+    if (state && *state == CASE_LOWER)
+        letter = 'a';
+    buf[1] = 0;
+    for (row = 0; row < KEY_ROWS; row++) {
+        keys = row_keys(vk, row, &n);
+        for (col = 0; col < KEY_COLS && col < n; col++) {
+            k = row * KEY_COLS + col;
+            if (k >= KEY_COUNT || !keys[col])
+                break;
+            if (symbols) {
+                set(keys[col], symbol_keys[k]);
+                continue;
+            }
+            buf[0] = k < 10 ? (char)('0' + k) : (char)(letter + k - 10);
+            set(keys[col], buf);
+        }
+    }
+    button = ((fn_find_child)TES3X_FIND_CHILD)(vk, symbols_id);
+    if (button)
+        set(button, symbols ? "ABC" : "!?#");
+    relayout(vk);
+}
+
+static void toggle_symbols(void *vk)
+{
+    symbols_on = !symbols_on;
+    label_keys(vk, symbols_on);
+    tes3x_log("console.symbols", (u32)symbols_on);
+}
+
+static void *keyboard_menu(void)
+{
+    return ((fn_find_menu)TES3X_FIND_MENU)(*(unsigned short *)TES3X_VK_MENU_ID);
+}
+
+static void *vk_child(void *vk, unsigned int id)
+{
+    return ((fn_find_child)TES3X_FIND_CHILD)(vk, id);
+}
+
+static void recall(void *vk, int step);
+static void confirm(void *vk);
+
+/* Engine event handlers are __cdecl, and true means handled. */
+static char __cdecl symbols_clicked(void *owner, unsigned int id, int d0, int d1, void *source)
+{
+    void *vk = keyboard_menu();
+
+    (void)owner, (void)id, (void)d0, (void)d1, (void)source;
+    if (vk)
+        toggle_symbols(vk);
+    return 1;
+}
+
+static char __cdecl older_clicked(void *owner, unsigned int id, int d0, int d1, void *source)
+{
+    void *vk = keyboard_menu();
+
+    (void)owner, (void)id, (void)d0, (void)d1, (void)source;
+    if (vk)
+        recall(vk, 1);
+    return 1;
+}
+
+static char __cdecl newer_clicked(void *owner, unsigned int id, int d0, int d1, void *source)
+{
+    void *vk = keyboard_menu();
+
+    (void)owner, (void)id, (void)d0, (void)d1, (void)source;
+    if (vk)
+        recall(vk, -1);
+    return 1;
+}
+
+static char __cdecl y_pressed(void *owner, unsigned int id, int d0, int d1, void *source)
+{
+    void *vk = keyboard_menu();
+
+    (void)owner, (void)id, (void)d0, (void)d1, (void)source;
+    if (vk)
+        confirm(vk);
+    return 1;
+}
+
+/* Caps relabels every key as letters, so the symbol layer is off afterwards. */
+static char __cdecl caps_clicked(void *owner, unsigned int id, int d0, int d1, void *source)
+{
+    char r = ((fn_handler)TES3X_VK_CAPS)(owner, id, d0, d1, source);
+    void *vk = keyboard_menu();
+    void *button;
+
+    symbols_on = 0;
+    button = vk ? vk_child(vk, symbols_id) : 0;
+    if (button)
+        ((fn_widget_set_text)TES3X_WIDGET_SET_TEXT)(button, "!?#");
+    return r;
+}
+
+static void add_icon(void *button, const char *path)
+{
+    if (button)
+        ((fn_create_image)TES3X_CREATE_IMAGE)(button, ID_GENERIC, path, 0);
+}
+
+static void *add_button(void *block, unsigned int id, const char *label, fn_handler handler)
+{
+    void *btn = ((fn_create_widget)TES3X_CREATE_WIDGET)(block, id, TES3X_VK_BUTTON, 0);
+
+    if (!btn)
+        return 0;
+    ((fn_widget_set_text)TES3X_WIDGET_SET_TEXT)(btn, label);
+    set_prop(btn, *(unsigned short *)TES3X_VK_ROW_NUM_ID, 4);
+    set_prop(btn, *(unsigned short *)TES3X_VK_COL_NUM_ID, -1);
+    ((fn_set_prop)TES3X_SET_PROP)(btn, EVENT_CLICK, (int)handler, PROP_HANDLER);
+    return btn;
+}
+
+static void hint(int button, const char *label)
+{
+    ((fn_button_hint)TES3X_BUTTON_HINT)(button, ((fn_ui_id)TES3X_UI_ID)(label), HINT_MODE);
+}
+
+/* Symbols, older and newer join the bottom row, and Done moves to its end. The engine links only
+ * the row's wrap - Done right to the first button - and siblings navigate in child order. */
+/* The width a row actually gets inside the keyboard's frame, split between n items. */
+static int share(void *row, int fallback, int n)
+{
+    int w = row ? *(int *)((unsigned char *)row + EL_WIDTH) : 0;
+
+    if (w < 100 || w > fallback)
+        w = fallback - KEYBOARD_PAD;
+    return w / n - KEY_GAP;
+}
+
+static int item_gap = KEY_GAP;  /* the spacing the last refit measured */
+
+static int el_int(void *el, int field)
+{
+    return *(int *)((unsigned char *)el + field);
+}
+
+/* Items are laid out wider apart than their width. Measure the pitch the layout produced for
+ * `width` and return the width that makes n items end inside the row. */
+static int refit(void *row, void **items, int n, int width)
+{
+    int row_w, first, last, extra, fitted;
+
+    if (!row || !items || n < 2 || !items[0] || !items[n - 1])
+        return width;
+    row_w = el_int(row, EL_WIDTH);
+    first = el_int(items[0], EL_X);
+    last = el_int(items[n - 1], EL_X);
+    extra = (last - first) / (n - 1) - width;
+    tes3x_log("console.vk_measure", (u32)((row_w << 16) | ((last - first) & 0xFFFF)));
+    if (row_w < 100 || extra < 0 || extra > 64 || first < 0 || first > 64)
+        return width;
+    item_gap = extra;
+    fitted = (row_w - 2 * first - (n - 1) * extra) / n;
+    return fitted > 8 && fitted < width ? fitted : width;
+}
+
+static void set_width(void **items, int n, int width)
+{
+    int i;
+
+    for (i = 0; i < n; i++) {
+        if (!items[i])
+            continue;
+        set_prop(items[i], PROP_MIN_WIDTH, width);
+        set_prop(items[i], PROP_MAX_WIDTH, width);
+    }
+}
+
+static void extend_bottom_row(void *vk, void **last_row, int last_count)
+{
+    unsigned char *done = vk_child(vk, *(unsigned short *)TES3X_VK_DONE_ID);
+    void *caps = vk_child(vk, *(unsigned short *)TES3X_VK_CAPS_ID);
+    unsigned char *block;
+    void **begin, **end, *added[3];
+    int i, n, bw;
+
+    if (!done || !caps || vk_child(vk, symbols_id))
+        return;
+    block = *(unsigned char **)(done + EL_PARENT);
+    if (!block)
+        return;
+    added[0] = add_button(block, symbols_id, "!?#", symbols_clicked);
+    added[1] = add_button(block, older_id, "Older", older_clicked);
+    added[2] = add_button(block, newer_id, "Newer", newer_clicked);
+
+    begin = *(void ***)(block + EL_CHILDREN);
+    end = *(void ***)(block + EL_CHILDREN + 4);
+    n = (int)(end - begin);
+    for (i = 0; i < n && begin[i] != done; i++)
+        ;
+    for (; i + 1 < n; i++)
+        begin[i] = begin[i + 1];
+    if (n)
+        begin[n - 1] = done;
+
+    bw = share(block, *(int *)((unsigned char *)vk + EL_WIDTH), BOTTOM_BUTTONS);
+    set_width(begin, n, bw);
+    relayout(vk);
+    set_width(begin, n, refit(block, begin, n, bw));
+    for (i = 0; i < 3 && last_row && last_count; i++)
+        if (added[i])
+            set_ptr(added[i], TES3X_NAV_UP_ID, last_row[last_count - 1]);
+
+    ((fn_set_prop)TES3X_SET_PROP)(caps, EVENT_CLICK, (int)caps_clicked, PROP_HANDLER);
+    ((fn_set_prop)TES3X_SET_PROP)(vk, EVENT_PAD_Y, (int)y_pressed, PROP_HANDLER);
+
+    add_icon(vk_child(vk, *(unsigned short *)TES3X_VK_BACKSPACE_ID), "Textures\\xbox_button_x.tga");
+    add_icon(added[0], "Textures\\xbox_button_white.tga");
+    add_icon(added[1], "Textures\\xbox_button_left.tga");
+    add_icon(added[2], "Textures\\xbox_button_right.tga");
+    add_icon(done, "Textures\\xbox_button_y.tga");
+    add_icon(caps, "Textures\\xbox_button_lthumb.tga");
+    add_icon(vk_child(vk, *(unsigned short *)TES3X_VK_SPACE_ID), "Textures\\xbox_button_black.tga");
+
+    hint('Y', ((fn_widget_text)TES3X_WIDGET_TEXT)(done));
+    hint('W', "Symbols");
+    hint('K', "Space");
+    hint('L', "Older");
+    hint('R', "Newer");
+}
+
+static void layout_keyboard(void *vk)
+{
+    void **keys;
+    int w, kw, row, col, n, k;
+
+    load_row_ids();
+    w = place_half(vk, 1);
+    relayout(vk);
+    kw = share(vk_child(vk, row_id[0]), w, KEY_COLS);
+    keys = row_keys(vk, 0, &n);
+    if (n >= KEY_COLS) {
+        set_width(keys, KEY_COLS, kw);
+        relayout(vk);
+        kw = refit(vk_child(vk, row_id[0]), keys, KEY_COLS, kw);
+    }
+    for (row = 0; row < KEY_ROWS; row++) {
+        keys = row_keys(vk, row, &n);
+        for (col = 0; col < n; col++) {
+            if (!keys[col])
+                continue;
+            k = row * KEY_COLS + col;
+            if (k < KEY_COUNT) {
+                set_prop(keys[col], PROP_MIN_WIDTH, kw);
+                set_prop(keys[col], PROP_MAX_WIDTH, kw);
+            } else {
+                /* the space bar fills the rest of the last row */
+                set_prop(keys[col], PROP_MIN_WIDTH,
+                         (kw + item_gap) * (KEY_ROWS * KEY_COLS - KEY_COUNT) - item_gap);
+            }
+        }
+    }
+    extend_bottom_row(vk, keys, n);
+    relayout(vk);
+    tes3x_log("console.vk_layout", (u32)kw);
+}
+
+static void layout_console(void)
 {
     fn_find_menu find = (fn_find_menu)TES3X_FIND_MENU;
-    void *menu = find(*(unsigned short *)TES3X_CONSOLE_MENU_ID);
-    const char *initial = 0;
+    unsigned char *menu = find(*(unsigned short *)TES3X_CONSOLE_MENU_ID);
+
+    if (!menu || !menu[MENU_VISIBLE])
+        return;
+    console_layout = 0;
+    place_half(menu, 0);
+    relayout(menu);
+    tes3x_log("console.layout", 0);
+}
+
+static int open_keyboard(void)
+{
+    void *menu = ((fn_find_menu)TES3X_FIND_MENU)(*(unsigned short *)TES3X_CONSOLE_MENU_ID);
 
     if (!menu) {
         tes3x_log("console.vk_no_menu", 0);
-        return;
+        return 0;
     }
-    /* Passing initial text here prevents the keyboard from appearing; seed it later. */
-    (void)initial;
+    /* Passing initial text here prevents the keyboard from appearing. */
     ((fn_open_vk)TES3X_OPEN_VK)(menu, 0);
+    return 1;
+}
+
+static void raise_keyboard(void)
+{
+    if (!open_keyboard())
+        return;
     vk_watch = 1;
+    vk_fresh = 1;
+    vk_seen = 0;
+    vk_wait = 0;
+    vk_cancel = 0;
+    symbols_on = 0;
+    hist_sel = -1;
     cmd[0] = 0;
-    seed_pending = (seed && hist_count) ? 1 : 0;
-    hist_armed = 0;
-    tes3x_log("console.vk_raise", (u32)(seed_pending ? hist_sel + 1 : 0));
+    tes3x_vk_limit = CMD_MAX - 1;
+    tes3x_log("console.vk_raise", 0);
 }
 
 /* a0 is the menu manager's scratch script object; a3 is an optional reference. */
@@ -243,7 +767,49 @@ static const char *keyboard_text(void *vk)
     return field ? ((fn_widget_text)TES3X_WIDGET_TEXT)(field) : 0;
 }
 
-static void watch_keyboard(void)
+/* Rising edge of a button while the keyboard is up; the press is consumed either way. */
+static int pressed(short *in, int key, int *held)
+{
+    int down = in[key] != 0;
+    int edge = down && !*held;
+
+    in[key] = 0;
+    *held = down;
+    return edge;
+}
+
+/* step 1 is older, -1 newer; the empty field sits between the newest and the oldest. */
+static void recall(void *vk, int step)
+{
+    void *field = keyboard_field(vk);
+
+    if (!hist_count || !field)
+        return;
+    hist_sel += step;
+    if (hist_sel >= hist_count)
+        hist_sel = -1;
+    else if (hist_sel < -1)
+        hist_sel = hist_count - 1;
+    ((fn_widget_set_text)TES3X_WIDGET_SET_TEXT)(field, hist_sel < 0 ? "" : hist[hist_sel]);
+    relayout(vk);
+    tes3x_log("console.recall", (u32)(hist_sel + 1));
+}
+
+/* Press a keyboard button the way A does on the focused one. */
+static void click(void *vk, unsigned int id_global)
+{
+    void *button = vk_child(vk, *(unsigned short *)id_global);
+
+    if (button)
+        ((fn_trigger_event)TES3X_TRIGGER_EVENT)(button, EVENT_CLICK, 0, 0, button);
+}
+
+static void confirm(void *vk)
+{
+    click(vk, TES3X_VK_DONE_ID);
+}
+
+static void watch_keyboard(short *in)
 {
     fn_find_menu find = (fn_find_menu)TES3X_FIND_MENU;
     void *vk = find(*(unsigned short *)TES3X_VK_MENU_ID);
@@ -251,17 +817,11 @@ static void watch_keyboard(void)
     int i;
 
     if (vk && *((unsigned char *)vk + MENU_VISIBLE)) {
-        if (seed_pending) {
-            void *field = keyboard_field(vk);
-
-            seed_pending = 0;
-            if (field) {
-                ((fn_widget_set_text)TES3X_WIDGET_SET_TEXT)(field, hist[hist_sel]);
-                tes3x_log("console.seeded", (u32)(hist_sel + 1));
-            } else {
-                tes3x_log("console.seed_no_field", 0);
-            }
-            return; /* let it take effect before reading back */
+        vk_seen = 1;
+        if (vk_fresh) {
+            vk_fresh = 0;
+            layout_keyboard(vk);
+            return;
         }
         text = keyboard_text(vk);
         if (text) {
@@ -269,16 +829,34 @@ static void watch_keyboard(void)
                 cmd[i] = text[i];
             cmd[i] = 0;
         }
+        if (in) {
+            if (in[KEY_B])
+                vk_cancel = 1;
+            if (pressed(in, KEY_HIST_OLDER, &held_older))
+                recall(vk, 1);
+            if (pressed(in, KEY_HIST_NEWER, &held_newer))
+                recall(vk, -1);
+            if (pressed(in, KEY_SYMBOLS, &held_symbols))
+                toggle_symbols(vk);
+            if (pressed(in, KEY_SPACE, &held_space))
+                click(vk, TES3X_VK_SPACE_ID);
+            if (pressed(in, KEY_CAPS, &held_caps))
+                click(vk, TES3X_VK_CAPS_ID);
+        }
+        return;
+    }
+    if (!vk_seen && ++vk_wait < VK_APPEAR_FRAMES) {
+        if (vk_wait == VK_RETRY_FRAME && open_keyboard())
+            tes3x_log("console.vk_retry", 0);
         return;
     }
 
     vk_watch = 0;
-    seed_pending = 0;
-    /* Require release after confirmation so the keyboard does not reopen. */
-    held_raise = 1;
-    held_hist = 1;
-    if (!cmd[0]) {
-        tes3x_log("console.cancelled", 0);
+    vk_fresh = 0;
+    tes3x_vk_limit = VK_TEXT_LIMIT;
+    if (vk_cancel || !cmd[0]) {
+        tes3x_log("console.cancelled", (u32)vk_cancel);
+        cmd[0] = 0;
         return;
     }
     for (i = 0; cmd[i]; i++)
@@ -311,9 +889,16 @@ unsigned int __attribute__((thiscall)) tes3x_console_hook(void *ctrl, int action
         load_combo();
 
 
+    in = 0;
+    if (base) {
+        port = *(int *)(base + CTRL_PORT);
+        if (port >= 0 && port <= 3)
+            in = (short *)(base + port * PORT_STRIDE + INPUT_BASE);
+    }
+
     /* Cache text because the keyboard has no delivery path for the console. */
     if (vk_watch)
-        watch_keyboard();
+        watch_keyboard(in);
 
     if (run_delay && !--run_delay && cmd[0]) {
         tes3x_log("console.run_begin", 0);
@@ -322,52 +907,30 @@ unsigned int __attribute__((thiscall)) tes3x_console_hook(void *ctrl, int action
         cmd[0] = 0;
     }
 
-    if (!base) {
-        tes3x_log("console.no_ctrl", 0);
+    if (!in) {
+        if (!base)
+            tes3x_log("console.no_ctrl", 0);
         return 0;
     }
 
-    port = *(int *)(base + CTRL_PORT);
-    if (port < 0 || port > 3)
-        return 0;
+    if (console_open && console_layout)
+        layout_console();
 
-    in = (short *)(base + port * PORT_STRIDE + INPUT_BASE);
-
-    /* Start opens the keyboard; Black selects command history. */
-    if (console_open && !vk_watch && !run_delay) {
-        /* Each Black press selects an older command. */
-        if (in[KEY_BACK_HIST]) {
-            in[KEY_BACK_HIST] = 0;
-            if (!held_hist) {
-                held_hist = 1;
-                if (!hist_count) {
-                    tes3x_log("console.no_history", 0);
-                } else {
-                    if (!hist_armed) {
-                        hist_armed = 1;
-                        hist_sel = 0;
-                    } else if (++hist_sel >= hist_count) {
-                        hist_sel = 0;
-                    }
-                    tes3x_log("console.hist_sel", (u32)(hist_sel + 1));
-                }
-            }
-        } else {
-            held_hist = 0;
-        }
-        if (in[KEY_RAISE]) {
-            in[KEY_RAISE] = 0;
-            if (!held_raise) {
-                held_raise = 1;
-                raise_keyboard(hist_armed);
-            }
-        } else {
-            held_raise = 0;
-        }
-    } else {
-        held_raise = 0;
-        held_hist = 0;
+    /* The A that raised the keyboard stays down into its first frames; the keys must not see it. */
+    if (held_a) {
+        if (in[KEY_A])
+            in[KEY_A] = 0;
+        else
+            held_a = 0;
     }
+
+    /* After Done, A is still down; a raise needs a fresh press. */
+    if (console_open && !vk_watch && !run_delay && in[KEY_A] && !held_raise) {
+        in[KEY_A] = 0;
+        held_a = 1;
+        raise_keyboard();
+    }
+    held_raise = in[KEY_A] != 0 || held_a;
 
     if (!in[combo_a] || !in[combo_b]) {
         was_held = 0;
@@ -383,13 +946,36 @@ unsigned int __attribute__((thiscall)) tes3x_console_hook(void *ctrl, int action
         return 0;
     was_held = 1;
     console_open = !console_open;
+    console_layout = console_open;
     if (!console_open) {
         vk_watch = 0;
-        hist_armed = 0;
+        tes3x_vk_limit = VK_TEXT_LIMIT;
     }
     tes3x_log("console.toggle", (u32)console_open);
 #ifdef TES3X_DIAGNOSTICS
     tes3x_diag_note(TES3X_DIAG_NOTE_CONSOLE, (u32)console_open);
 #endif
     return 1;
+}
+
+/* Stand in for `cmp dword [esp+N], 0x1F` in the keyboard's key and space handlers. The call and
+ * the saved eax move the operand 8 bytes further up; the flags survive pop and ret. */
+__attribute__((naked)) void tes3x_vk_key_limit(void)
+{
+    __asm__ volatile(
+        "pushl %eax\n\t"
+        "movl _tes3x_vk_limit, %eax\n\t"
+        "cmpl %eax, 0x2C(%esp)\n\t"
+        "popl %eax\n\t"
+        "ret\n\t");
+}
+
+__attribute__((naked)) void tes3x_vk_space_limit(void)
+{
+    __asm__ volatile(
+        "pushl %eax\n\t"
+        "movl _tes3x_vk_limit, %eax\n\t"
+        "cmpl %eax, 0x34(%esp)\n\t"
+        "popl %eax\n\t"
+        "ret\n\t");
 }
