@@ -19,5 +19,7 @@ host = "192.168.1.50"              # the Xbox's IP address, shown by its dashboa
 # Anything in it that is not part of the build is deleted, so use a new folder, not an install
 # you want to keep.
 remote_root = "F:/Games/MorrowindModded"
+# FTP login. The default is xbox/xbox. Instead of a password here, you can set the
+# TES3X_FTP_PASSWORD environment variable or pass --ask-password.
 # user = "xbox"
 # password = "xbox"

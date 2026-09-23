@@ -2,13 +2,13 @@
 """Pull and summarize a TES3X hardware diagnostics log."""
 
 import argparse
-import ftplib
 import os
 import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from tes3x_inject import Xbe  # noqa: E402
+import tes3x_ftp  # noqa: E402
 import tes3x_patches as registry  # noqa: E402
 
 LINE = re.compile(r"^(\d+) ms ([^ ]+)(?: (.*))?$")
@@ -170,9 +170,8 @@ def report(records, xbe=None, show_all=False, stream=sys.stdout):
 
 
 def pull(args):
-    ftp = ftplib.FTP()
-    ftp.connect(args.host, args.port, timeout=30)
-    ftp.login(args.user, args.password)
+    tes3x_ftp.resolve(args)
+    ftp = tes3x_ftp.connect(args)
     data = bytearray()
     ftp.retrbinary("RETR " + args.remote, data.extend, blocksize=64 * 1024)
     ftp.quit()
@@ -188,10 +187,7 @@ def main():
     sub = ap.add_subparsers(dest="command", required=True)
 
     get = sub.add_parser("pull", help="download the log over Xbox FTP and summarize it")
-    get.add_argument("--host", default="192.0.2.10")
-    get.add_argument("--port", type=int, default=21)
-    get.add_argument("--user", default="xbox")
-    get.add_argument("--password", default="xbox")
+    tes3x_ftp.add_arguments(get)
     get.add_argument("--remote", default="E:/tes3xlog.txt")
     get.add_argument("--out", default="tes3xlog.txt")
     get.add_argument("--xbe", help="patched XBE used for offline address resolution")

@@ -10,13 +10,7 @@ import sys
 import time
 
 from tes3x_deploy import ftp_basename, human, remote_tree
-
-
-def connect(args):
-    ftp = ftplib.FTP(encoding="latin-1")
-    ftp.connect(args.host, args.port, timeout=30)
-    ftp.login(args.user, args.password)
-    return ftp
+import tes3x_ftp
 
 
 def normalize(path):
@@ -99,10 +93,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("remote", nargs="+",
                     help='file, directory or wildcard, e.g. "E:/tes3xprof.bin" or "E:/tes3x*"')
-    ap.add_argument("--host", required=True)
-    ap.add_argument("--port", type=int, default=21)
-    ap.add_argument("--user", default="xbox")
-    ap.add_argument("--password", default="xbox")
+    tes3x_ftp.add_arguments(ap)
     ap.add_argument("--out", default=".", help="local destination directory")
     ap.add_argument("--tree", action="store_true",
                     help="keep the full remote path under --out, not just the basename")
@@ -114,7 +105,8 @@ def main():
     # unprintable name kill a listing.
     sys.stdout.reconfigure(errors="replace")
 
-    ftp = connect(args)
+    tes3x_ftp.resolve(args)
+    ftp = tes3x_ftp.connect(args)
     print("connected to %s:%d as %s" % (args.host, args.port, args.user))
 
     if args.list:
