@@ -164,6 +164,16 @@ class PipelineTests(unittest.TestCase):
         self.assertIn('<foldername>MorrowindModded</foldername>', text)
         self.assertIn('<titleid>42530005</titleid>', text)
 
+    def test_dashboard_files_are_chosen_per_profile(self):
+        from tes3x_pipeline import dashboard_list, write_dashboard_files
+        self.assertEqual(dashboard_list({}), ['xbmc4gamers'])
+        self.assertEqual(dashboard_list({'profile': {'dashboards': []}}), [])
+        with self.assertRaises(PipelineError):
+            dashboard_list({'profile': {'dashboards': ['unleashx']}})
+        write_dashboard_files(self.root, ['xbmc4gamers'], 'Name', 'Folder')
+        self.assertIn(b'<title>Name</title>\r\n',
+                      (self.root / '_resources' / 'default.xml').read_bytes())
+
     def test_deploy_never_deletes_the_dashboard_folder(self):
         from tes3x_deploy import orphans
         remote = {'_resources/default.xml': 1, '_Resources/artwork/x.jpg': 2, 'old.esp': 3,

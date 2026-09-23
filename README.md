@@ -232,9 +232,11 @@ plugins = ["Better Bodies.esp"]  # optional: ship only these plugins
 rebuilds `Morrowind.bsa` with the mods inside it; it needs no compiler, but the whole archive is
 uploaded again after every change.
 
-**Dashboard name.** With `title` set, the build renames both XBEs and writes
-`_resources/default.xml`, which is where XBMC4Gamers reads a game's name from. The dashboard
-caches names when it scans, so rescan the games list after deploying.
+**Dashboard name.** With `title` set, the build renames both XBEs, which is the name any
+dashboard can fall back to. Some dashboards read the name from their own file instead; the
+profile's `dashboards` list says which of those files to write. It defaults to
+`["xbmc4gamers"]`, which writes `_resources/default.xml`; set `dashboards = []` to write none.
+Dashboards cache names when they scan, so rescan the games list after deploying.
 
 **Load order.** Morrowind on the Xbox loads plugins in file-date order. TES3X stamps each plugin's
 date so masters load before the plugins that need them.

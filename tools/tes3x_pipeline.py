@@ -205,6 +205,30 @@ def dashboard_xml(title, folder):
             "</synopsis>\n")
 
 
+# Files a dashboard reads a game's name from, beyond the XBE title every dashboard falls back to.
+DASHBOARDS = {
+    "xbmc4gamers": ("_resources/default.xml", dashboard_xml),
+}
+
+
+def dashboard_list(profile):
+    names = string_list(profile.get("profile", {}).get("dashboards", ["xbmc4gamers"]),
+                        "profile.dashboards")
+    unknown = set(names) - DASHBOARDS.keys()
+    if unknown:
+        raise PipelineError("unknown dashboards: " + ", ".join(sorted(unknown))
+                            + "; choose from " + ", ".join(DASHBOARDS))
+    return names
+
+
+def write_dashboard_files(staged, names, title, folder):
+    for name in names:
+        path, render = DASHBOARDS[name]
+        target = staged / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(render(title, folder), encoding="utf-8", newline="\r\n")
+
+
 def validate_output(path):
     resolved = path.resolve()
     if resolved == Path(resolved.anchor) or resolved == Path.cwd().resolve():
@@ -308,6 +332,7 @@ def main(argv=None):
     if len(drive) != 1 or not drive.isalpha():
         raise PipelineError("package.drive_letter must be one letter")
     title = args.title or profile.get("profile", {}).get("title")
+    dashboards = dashboard_list(profile)
     # A profile names its own install folder; the local config supplies the fallback.
     remote = profile.get("profile", {}).get("remote_root") or deploy.get("remote_root")
     build_value = args.build_root or paths.get("build_root", "build")
@@ -319,7 +344,7 @@ def main(argv=None):
     print(f"preset: {plan['preset']}")
     print("patches: " + ", ".join(["boot-media", f"drive-letters={drive}"] + plan["applied"]))
     if title:
-        print(f"title: {title}")
+        print(f"title: {title}; dashboard files: {', '.join(dashboards) or 'none'}")
     if prof_targets:
         print("profiler: " + ", ".join(prof_targets))
     if plan["package_mode"] == "retail":
@@ -426,9 +451,7 @@ def main(argv=None):
             run([sys.executable, TOOLS / "tes3x_patch.py", launcher,
                  "--apply", f"title={title}", "--out", staged / "Default.xbe"])
             folder = (remote or DEFAULT_REMOTE_ROOT).replace("\\", "/").rstrip("/")
-            (staged / "_resources").mkdir()
-            (staged / "_resources" / "default.xml").write_text(
-                dashboard_xml(title, folder.rsplit("/", 1)[-1]), encoding="utf-8", newline="\r\n")
+            write_dashboard_files(staged, dashboards, title, folder.rsplit("/", 1)[-1])
         else:
             shutil.copy2(launcher, staged / "Default.xbe")
         shutil.copy2(patched, staged / "morrowind.xbe")
