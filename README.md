@@ -60,7 +60,7 @@ Run every command from this folder (the one containing this README).
    # hardlink_retail = true                   # see "Saving disk space" below
 
    [deploy]
-   host = "192.168.1.50"                      # the Xbox's IP address
+   host = "192.168.1.20"                      # the Xbox's IP address
    remote_root = "F:/Games/MorrowindModded"   # where the build goes on the Xbox
    # user = "xbox"                            # FTP login, if not the default xbox/xbox
    # password = "xbox"
@@ -73,7 +73,7 @@ Run every command from this folder (the one containing this README).
    files. An extra wrapper folder from unzipping is fine.
 
    ```text
-   D:/Morrowind Mods/
+   C:/Games/Morrowind-mods/
      Better Bodies/
        meshes/  textures/  Better Bodies.esp
      Atlas/
@@ -93,7 +93,7 @@ Copy `examples/mods.toml` to, for example, `my-mods.toml`. Set `library`, list y
 ```toml
 [profile]
 name = "my-mods"
-library = "D:/Morrowind Mods"
+library = "C:/Games/Morrowind-mods"
 
 [patches]
 preset = "minimal"
@@ -201,7 +201,7 @@ adds `multi-bsa`, which lets the game load the extra archive.
 name = "my-mods"            # required; also the output folder name
 title = "Morrowind Modded"  # optional; the name shown in the Xbox dashboard (see below)
 remote_root = "F:/Games/MorrowindModded"  # optional; overrides the local config's folder
-library = "D:/Morrowind Mods"    # required when there are mods
+library = "C:/Games/Morrowind-mods"    # required when there are mods
 
 [rules]
 max_texture_size = 512      # longest texture side; larger ones are shrunk
@@ -278,7 +278,7 @@ The pipeline runs these for you. They can also be used on their own:
 Copy saves off the Xbox:
 
 ```powershell
-python tools/tes3x_fetch.py "E:/UDATA/42530005" --host 192.168.1.50 --out build/saves
+python tools/tes3x_fetch.py "E:/UDATA/42530005" --host 192.168.1.20 --out build/saves
 ```
 
 The Xbox FTP server cannot open the `T:` and `U:` drives; their contents are under

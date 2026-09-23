@@ -14,7 +14,7 @@ build_root = "build/pipeline"
 # hardlink_retail = true
 
 [deploy]
-host = "192.168.1.50"              # the Xbox's IP address, shown by its dashboard
+host = "192.168.1.20"              # the Xbox's IP address, shown by its dashboard
 # The game folder --deploy writes to, for profiles that do not set their own remote_root.
 # Anything in it that is not part of the build is deleted, so use a new folder, not an install
 # you want to keep.
