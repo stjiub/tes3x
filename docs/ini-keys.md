@@ -38,8 +38,8 @@ other key. They do nothing without the patch that installs the hook.
 | `[General] DontThreadLoad`, `ThreadPriority`, `ThreadSleepTime` | loading behaviour, on a console where loading is the complaint |
 | `[General] Exterior Cell Buffer`, `Interior Cell Buffer` | cell cache sizing against 64 MB |
 | `[General] TryArchiveFirst` | already set by `tes3x_pack`; confirmed a real read, not scene lore |
-| `[General] SkipProgramFlows`, `[Movies] Morrowind Logo`, `New Game` | boot-time video and flow skipping |
-| `[Debug] No Reboot On New Game`, `No Reboot On Load Game` | the title relaunch; Xbox-only, absent from the PC ini |
+| `[General] SkipProgramFlows`, `[Movies] Morrowind Logo`, `New Game` | boot-time video and flow skipping. A movie name that does not exist is skipped with a warning (`0x0009E246`); pointing both movies at one skips them |
+| `[Debug] No Reboot On New Game`, `No Reboot On Load Game` | the title relaunch; Xbox-only, absent from the PC ini. Set to `1`, New Game continues in the main menu's process instead of relaunching and loading every master again - measured. Load untested |
 | `[Xbox] MenuDeadZone`, `RunZone` | the only two keys in the platform's own section |
 | `[PreLoad] Cell 0` | preloaded cell list |
 
