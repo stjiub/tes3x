@@ -15,7 +15,7 @@ import shutil
 import subprocess
 
 import tes3x_inject
-from tes3x_patch import LOCATORS
+from tes3x_patch import CONSOLE_PRINT_VSPRINTF, LOCATORS
 
 ROOT = Path(__file__).resolve().parents[1]
 HOOKS = ROOT / "hooks"
@@ -203,9 +203,15 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         print(f"console hook: gate {address('CONSOLE_SITE', CONSOLE_SITE)}")
         for name, default in CONSOLE_ADDRESSES:
             define(name, address(name, default))
+        console_print = locate("console-print")
+        vsprintf = tes3x_inject.call_target(image, console_print + CONSOLE_PRINT_VSPRINTF)
+        print(f"console output: printf {hexva(console_print)}, vsprintf {hexva(vsprintf)}")
+        define("CONSOLE_PRINT", hexva(console_print))
+        define("VSPRINTF", hexva(vsprintf))
         wanted["console_gate"] = ("@tes3x_console_hook@12", "_tes3x_console_hook")
         wanted["console_vk_key"] = ("_tes3x_vk_key_limit",)
         wanted["console_vk_space"] = ("_tes3x_vk_space_limit",)
+        wanted["console_print"] = ("_tes3x_console_print",)
     if "tes3xdiag.c" in names:
         wanted["diagnostics_update"] = ("_tes3x_diag_update_hook",)
         wanted["diagnostics_flag"] = ("_tes3x_diag_installed",)

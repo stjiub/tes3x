@@ -807,6 +807,22 @@ def find_vk_limit(x, sig, what):
     return text.va + hits[0]
 
 
+# The console's printf: find the console menu, vsprintf into a 0x104-byte buffer, append the line.
+CONSOLE_PRINT_SIG = bytes([
+    0x33, 0xC0,                                # xor eax,eax
+    0x66, 0xA1,                                # mov ax, [console menu id]
+]) + b"\x6C\x81\x3D\x00" + bytes([
+    0x81, 0xEC, 0x04, 0x01, 0x00, 0x00,        # sub esp,0x104
+    0x50,                                      # push eax
+])
+CONSOLE_PRINT_VSPRINTF = 0x30                  # offset of its `call vsprintf`
+
+
+def find_console_print(x):
+    off = find_unique(x.data, CONSOLE_PRINT_SIG, "console printf")
+    return x.off_to_va(off)
+
+
 @patch("console")
 def _console(x, value, ctx):
     """Make the in-game console reachable, by replacing its input gate."""
@@ -828,6 +844,16 @@ def _console(x, value, ctx):
         off = x.va_to_off(site)
         x.data[off:off + 5] = b"\xe8" + struct.pack("<i", stub - (site + 5))
         edits.append((off, 5, "keyboard %s length check 0x%08X -> 0x%08X" % (what, site, stub)))
+    printer = ctx["hooks"].get("console_print")
+    if printer:
+        printer = int(str(printer), 16)
+        target = find_console_print(x)
+        sites = find_call_sites(x, target)
+        for site in sites:
+            was, off = x.patch_call(site, printer)
+            edits.append((off, 5, None))
+        edits.append((None, 0, "console printf 0x%08X: %d call site(s) -> 0x%08X"
+                      % (target, len(sites), printer)))
     return edits
 
 
@@ -844,6 +870,7 @@ LOCATORS = {
     "mcp-102-actn": find_mcp102_actn,
     "save-game": lambda image: find_autosave_calls(image)[0],
     "diagnostics-update": find_diagnostics_update,
+    "console-print": find_console_print,
 }
 
 

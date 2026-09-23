@@ -117,6 +117,12 @@
 #ifndef TES3X_BUTTON_HINT
 #error "define TES3X_BUTTON_HINT to the VA of the button-hint strip setter"
 #endif
+#ifndef TES3X_CONSOLE_PRINT
+#error "define TES3X_CONSOLE_PRINT to the VA of the console's printf"
+#endif
+#ifndef TES3X_VSPRINTF
+#error "define TES3X_VSPRINTF to the VA of the engine's vsprintf"
+#endif
 
 #define MENU_VISIBLE 0x7E   /* the byte Console::Toggle flips */
 #define GAME_SCRIPT 0x54    /* the compiler CompileAndRun is a method on */
@@ -184,8 +190,9 @@
 #define COMBO_DEFAULT_A 7
 #define COMBO_DEFAULT_B 9
 
-/* D:\tes3xexec.txt runs without input. `@menu` lines run while the main menu is up, the rest once
- * it has been gone EXEC_SETTLE frames; the main menu and a New Game are separate processes. */
+/* E:\tes3xexec.txt, else D:\tes3xexec.txt, runs without input. `@menu` lines run while the main
+ * menu is up, the rest once it has been gone EXEC_SETTLE frames; the main menu and a New Game are
+ * separate processes unless the relaunch is disabled. */
 #define EXEC_MAX 4096
 #define EXEC_SETTLE 150
 #define EXEC_CLICK_FRAMES 600
@@ -193,6 +200,9 @@
 #define NtCreateFile KFN(THUNK_NtCreateFile, fn_NtCreateFile)
 #define NtReadFile KFN(THUNK_NtReadFile, fn_NtReadFile)
 #define NtClose KFN(THUNK_NtClose, fn_NtClose)
+#define HalInitiateShutdown KFN(THUNK_HalInitiateShutdown, fn_HalInitiateShutdown)
+
+typedef void(__stdcall *fn_HalInitiateShutdown)(void);
 
 /* __cdecl: 0x001933E0 ends `mov esp,ebp; pop ebp; ret`, so the caller clears the arguments. */
 typedef void *(__cdecl *fn_find_menu)(unsigned int id);
@@ -216,6 +226,8 @@ typedef void *(__attribute__((thiscall)) *fn_create_image)(void *parent, unsigne
                                                            const char *path, int reuse);
 typedef char(__cdecl *fn_handler)(void *owner, unsigned int id, int d0, int d1, void *source);
 typedef void(__cdecl *fn_button_hint)(int button, unsigned int label, unsigned int mode);
+typedef void(__cdecl *fn_console_print)(void *game, const char *fmt, ...);
+typedef int(__cdecl *fn_vsprintf)(char *buf, const char *fmt, __builtin_va_list args);
 typedef int(__attribute__((thiscall)) *fn_compile_run)(void *self, void *ref, const char *text,
                                                        int a2, int a3, int a4, int a5, int a6);
 
@@ -231,6 +243,9 @@ static int console_open;
 static int vk_watch;
 static char cmd[CMD_MAX];
 static int run_delay;
+static int running;         /* output belongs to a command being run */
+static int output_lines;
+#define OUTPUT_MAX 8        /* a cell load inside a command runs scripts that print too */
 static char hist[HIST_MAX][CMD_MAX];
 static int hist_count;
 static int hist_sel;      /* -1 is the empty field */
@@ -753,10 +768,16 @@ static void run_command(const char *text)
         tes3x_log("console.no_ctx", (u32)(unsigned int)ctx);
         return;
     }
+    running = 1;
+    output_lines = 0;
     ((fn_compile_run)TES3X_COMPILE_RUN)(script, ctx, text, 1, 0, 0, 0, 0);
+    running = 0;
+    if (output_lines > OUTPUT_MAX)
+        tes3x_log("console.more", (u32)(output_lines - OUTPUT_MAX));
 }
 
-static char exec_path[] = "D:\\tes3xexec.txt";
+static char exec_hdd[] = "\\Device\\Harddisk0\\Partition1\\tes3xexec.txt";
+static char exec_disc[] = "D:\\tes3xexec.txt";
 static char exec_buf[EXEC_MAX];
 static u32 exec_len;
 static u32 exec_pos[2];   /* next unread offset: menu lines, then game lines */
@@ -765,24 +786,38 @@ static int exec_quiet;    /* frames since the main menu was last up */
 static int exec_tries;
 static unsigned int options_id;
 
-static void exec_load(void)
+static int exec_open(void **h, char *path, int dos)
 {
     ANSI_STRING name;
     OBJECT_ATTRIBUTES oa;
     IO_STATUS_BLOCK iosb;
+
+    if (dos)
+        tes3x_dos_attributes(&oa, &name, path);
+    else
+        tes3x_object_attributes(&oa, &name, path);
+    return NtCreateFile(h, GENERIC_READ | SYNCHRONIZE, &oa, &iosb, 0, FILE_ATTRIBUTE_NORMAL,
+                        FILE_SHARE_READ, FILE_OPEN, FILE_SYNCHRONOUS_IO_NONALERT) == 0;
+}
+
+static void exec_load(void)
+{
+    IO_STATUS_BLOCK iosb;
     u64 zero = 0;
     void *h = 0;
+    int disc = 0;
 
-    tes3x_dos_attributes(&oa, &name, exec_path);
-    if (NtCreateFile(&h, GENERIC_READ | SYNCHRONIZE, &oa, &iosb, 0, FILE_ATTRIBUTE_NORMAL,
-                     FILE_SHARE_READ, FILE_OPEN, FILE_SYNCHRONOUS_IO_NONALERT) != 0)
-        return;
+    if (!exec_open(&h, exec_hdd, 0)) {
+        if (!exec_open(&h, exec_disc, 1))
+            return;
+        disc = 1;
+    }
     iosb.Information = 0;
     if (NtReadFile(h, 0, 0, 0, &iosb, exec_buf, EXEC_MAX - 1, &zero) == 0)
         exec_len = iosb.Information;
     NtClose(h);
     options_id = ((fn_ui_id)TES3X_UI_ID)("MenuOptions");
-    tes3x_log("exec.loaded", exec_len);
+    tes3x_log(disc ? "exec.loaded_disc" : "exec.loaded", exec_len);
 }
 
 static int starts_with(const char *s, const char *prefix)
@@ -887,6 +922,9 @@ static void exec_step(void)
         ;
     if (starts_with(line, "wait ")) {
         exec_wait = exec_number(line + 5);
+    } else if (starts_with(line, "exit") && !line[4]) {
+        tes3x_log("exec.exit", 0);
+        HalInitiateShutdown();
     } else if (starts_with(line, "click ")) {
         if (!exec_click(line + 6) && ++exec_tries < EXEC_CLICK_FRAMES)
             return;
@@ -900,6 +938,28 @@ static void exec_step(void)
         run_command(line);
     }
     exec_pos[phase] = pos;
+}
+
+/* Every engine call to the console's printf comes here, so console output reaches the log whether
+ * or not the console menu exists. Only a running command's first lines are logged: the engine can
+ * leave printing on, and every script then reports its checks. The buffer matches the original's. */
+void __cdecl tes3x_console_print(void *game, const char *fmt, ...)
+{
+    char buf[0x104];
+    __builtin_va_list args;
+    int n;
+
+    __builtin_va_start(args, fmt);
+    n = ((fn_vsprintf)TES3X_VSPRINTF)(buf, fmt, args);
+    __builtin_va_end(args);
+    if (n < 0 || n >= (int)sizeof(buf))
+        n = 0;
+    if (running && ++output_lines <= OUTPUT_MAX) {
+        tes3x_log_raw("console< ", 9);
+        tes3x_log_raw(buf, (u32)n);
+        tes3x_log_raw("\n", 1);
+    }
+    ((fn_console_print)TES3X_CONSOLE_PRINT)(game, "%s", buf);
 }
 
 /* The keyboard's text, while it is still on screen. Returns 0 when there is nothing readable. */
