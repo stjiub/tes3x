@@ -1,0 +1,22 @@
+# Patch the game without adding any mods.
+#
+# The build copies your retail Data Files unchanged and patches morrowind.xbe.
+# Copy this file, change the name, and pick the fixes you want below.
+
+[profile]
+name = "patches-only"          # also the output folder name: build/pipeline/patches-only
+# title = "Morrowind Patched"  # optional: the name the Xbox dashboard shows
+
+[patches]
+# minimal     - no engine fixes; only the patches every build needs
+# standard    - the engine fixes that have been tested and are safe to leave on
+# development - standard plus crash logging and the in-game console
+preset = "standard"
+
+# Add or remove individual patches. `python tools/tes3x_patch.py --list` shows them all.
+enable = []
+disable = []
+
+# Optional Morrowind.ini changes, written as "Section:Key" = value.
+[ini]
+# "General:Show FPS" = 1

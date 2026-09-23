@@ -1,10 +1,22 @@
-# Machine and console paths stay separate from portable mod profiles.
+# Paths on this PC and the Xbox address. Copy to tes3x.local.toml in the folder you run
+# the commands from; profiles stay free of machine-specific paths.
 [paths]
+# Your own clean, unmodified copy of the game folder: it holds Default.xbe, morrowind.xbe,
+# Morrowind.ini and Data Files.
 vanilla_root = "C:/path/to/clean-retail-game"
-nxdk_dir = "C:/path/to/nxdk"
+# Where finished builds go. Each profile gets its own folder inside.
 build_root = "build/pipeline"
-bash = "C:/msys64/usr/bin/bash.exe"
+# Folder holding clang and lld-link, for engine fixes and delta-bsa packing. Only needed when
+# LLVM is not on PATH.
+# llvm = "C:/Program Files/LLVM/bin"
+# Hardlink unchanged retail files into builds instead of copying them. Needs the build folder
+# and the retail folder on the same NTFS drive; otherwise files are copied.
+# hardlink_retail = true
 
 [deploy]
-host = "192.0.2.2"
-remote_root = "F:/Games/MorrowindTest"
+host = "192.168.1.50"              # the Xbox's IP address, shown by its dashboard
+# The game folder --deploy writes to. Anything in it that is not part of the build is deleted,
+# so use a new folder, not an install you want to keep.
+remote_root = "F:/Games/MorrowindModded"
+# user = "xbox"
+# password = "xbox"
