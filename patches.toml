@@ -96,7 +96,7 @@ category = "infrastructure"
 status = "implemented"
 selection = "option"
 takes = "NAME"
-summary = "Rename the image, so parallel installs are told apart in a dashboard."
+summary = "Rename the XBE's certificate title, the name a dashboard falls back to."
 
 [[patch]]
 name = "multi-bsa"

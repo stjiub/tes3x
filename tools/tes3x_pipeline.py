@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import tomllib
+from xml.sax.saxutils import escape
 
 from tes3x_pack import set_ini_key
 import tes3x_patches as registry
@@ -129,9 +130,8 @@ def require_file(path, label):
         raise PipelineError(f"{label} not found: {path}")
 
 
-def run(command, display=None):
-    shown = display if display is not None else command
-    print("\n== " + " ".join(str(part) for part in shown), flush=True)
+def run(command):
+    print("\n== " + " ".join(str(part) for part in command), flush=True)
     subprocess.run([str(part) for part in command], check=True)
 
 
@@ -193,6 +193,16 @@ def stage_retail(data_files, ini, staged, ini_items, copy=shutil.copy2):
         text = set_ini_key(text, section.strip(), key.strip(), value)
     (staged / "Morrowind.ini").write_text(text, encoding="latin-1")
     print(f"  retail Data Files staged unchanged; Morrowind.ini with {len(ini_items)} key(s) set")
+
+
+def dashboard_xml(title, folder):
+    """XBMC4Gamers lists a game by _resources/default.xml; the XBE title is only its fallback."""
+    return ("<synopsis>\n"
+            f"<sourcename>{escape(folder)}</sourcename>\n"
+            f"<foldername>{escape(folder)}</foldername>\n"
+            f"<title>{escape(title)}</title>\n"
+            "<titleid>42530005</titleid>\n"
+            "</synopsis>\n")
 
 
 def validate_output(path):
@@ -260,6 +270,9 @@ def main(argv=None):
     action.add_argument("--dry-run", action="store_true",
                         help="build normally, then list what --deploy would upload or delete "
                              "on the Xbox without changing it")
+    ap.add_argument("--ask-password", action="store_true",
+                    help="type the Xbox FTP password at a prompt instead of reading it from "
+                         "the local config")
     ap.add_argument("--plan", action="store_true",
                     help="print which patches and mods would be used, then stop; reads only "
                          "the profile and local config")
@@ -412,6 +425,10 @@ def main(argv=None):
             # A dashboard lists the launcher, so that is the XBE the name has to reach.
             run([sys.executable, TOOLS / "tes3x_patch.py", launcher,
                  "--apply", f"title={title}", "--out", staged / "Default.xbe"])
+            folder = (remote or DEFAULT_REMOTE_ROOT).replace("\\", "/").rstrip("/")
+            (staged / "_resources").mkdir()
+            (staged / "_resources" / "default.xml").write_text(
+                dashboard_xml(title, folder.rsplit("/", 1)[-1]), encoding="utf-8", newline="\r\n")
         else:
             shutil.copy2(launcher, staged / "Default.xbe")
         shutil.copy2(patched, staged / "morrowind.xbe")
@@ -438,19 +455,17 @@ def main(argv=None):
 
     print(f"\ncomplete install staged at {output / 'deploy'}")
     if args.deploy or args.dry_run:
+        # The deploy tool reads the login from the config itself, keeping the password off
+        # the command line.
         deploy_cmd = [sys.executable, TOOLS / "tes3x_deploy.py", output / "deploy",
-                      "--host", deploy["host"], "--remote", remote]
-        for key, flag in (("port", "--port"), ("user", "--user"), ("password", "--password")):
-            if key in deploy:
-                deploy_cmd += [flag, str(deploy[key])]
+                      "--config", local_path, "--remote", remote]
+        if args.ask_password:
+            deploy_cmd.append("--ask-password")
         if args.dry_run:
             deploy_cmd.append("--dry-run")
         if profile.get("rules", {}).get("clear_cache_partitions", False) and args.deploy:
             deploy_cmd.append("--clear-cache")
-        shown = list(deploy_cmd)
-        if "--password" in shown:
-            shown[shown.index("--password") + 1] = "***"
-        run(deploy_cmd, display=shown)
+        run(deploy_cmd)
     return 0
 
 

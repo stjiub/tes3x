@@ -21,7 +21,7 @@ with it, and their logs. See `tools/tes3x_proof.py`.
 | `boot-media` | Permit booting from any media and region, not just a retail DVD. | TES3X | infrastructure | verified-xemu | every build | findings log, no record yet |
 | `drive-letters=LETTER` | Point every Data Files asset path at one drive. | TES3X | infrastructure | verified-xemu | every build | findings log, no record yet |
 | `save-staging=LETTER` | Stage saves on one volume with UDATA so the commit renames instead of copying. | TES3X | infrastructure | implemented | command line |  |
-| `title=NAME` | Rename the image, so parallel installs are told apart in a dashboard. | TES3X | infrastructure | implemented | command line |  |
+| `title=NAME` | Rename the XBE's certificate title, the name a dashboard falls back to. | TES3X | infrastructure | implemented | command line |  |
 | `multi-bsa` | Load every archive listed in tes3xarch.txt, not just Morrowind.bsa. | TES3X | infrastructure | verified-xemu | delta-bsa packing | findings log, no record yet |
 | `script-ext` | Add script opcodes: widen the length bounds and hook Script::RunFunction. | TES3X | compat | verified-xemu | by name | findings log, no record yet |
 | `mcp-1` | Stop an unresolvable reference being restamped as created at runtime. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #1 | core | implemented | by name |  |

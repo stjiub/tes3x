@@ -62,6 +62,8 @@ Run every command from this folder (the one containing this README).
    [deploy]
    host = "192.168.1.50"                      # the Xbox's IP address
    remote_root = "F:/Games/MorrowindModded"   # where the build goes on the Xbox
+   # user = "xbox"                            # FTP login, if not the default xbox/xbox
+   # password = "xbox"
    ```
 
    Use forward slashes in paths.
@@ -150,11 +152,18 @@ With `--deploy`, TES3X makes the Xbox folder match the build. The folder is the 
 have its own install:
 
 - **Anything in that folder that is not part of the build is deleted.** Point `remote_root` at a
-  new folder, not at an install you want to keep. Saves are stored elsewhere and are not touched.
+  new folder, not at an install you want to keep. Saves are stored elsewhere and are not touched,
+  and neither is the dashboard's `_resources` folder (its name, artwork and screenshots).
 - The first upload sends everything and can take a long time over a slow network. Later uploads
   send only files that changed.
 - It clears the Xbox's cache partitions when `clear_cache_partitions = true`, so the game does not
   keep using old copies of changed files.
+
+**FTP login.** Every tool that talks to the Xbox (`--deploy`, `tes3x_deploy.py`,
+`tes3x_fetch.py`, `tes3x_diag.py pull`) finds the address and login the same way: the command
+line (`--host`, `--user`, `--password`) first, then the `[deploy]` section of `tes3x.local.toml`,
+then the dashboard default `xbox`/`xbox`. To keep the password out of files, set the
+`TES3X_FTP_PASSWORD` environment variable, or add `--ask-password` to be asked each time.
 
 To copy by hand instead, upload the contents of `build/pipeline/<name>/deploy` to a folder on the
 Xbox with any FTP client.
@@ -189,7 +198,7 @@ adds `multi-bsa`, which lets the game load the extra archive.
 ```toml
 [profile]
 name = "my-mods"            # required; also the output folder name
-title = "Morrowind Modded"  # optional; the name shown in the Xbox dashboard
+title = "Morrowind Modded"  # optional; the name shown in the Xbox dashboard (see below)
 remote_root = "F:/Games/MorrowindModded"  # optional; overrides the local config's folder
 library = "D:/Morrowind Mods"    # required when there are mods
 
@@ -221,6 +230,10 @@ plugins = ["Better Bodies.esp"]  # optional: ship only these plugins
 `Morrowind.bsa`, so rebuilds and uploads are small; it needs the compiler setup. `merged-bsa`
 rebuilds `Morrowind.bsa` with the mods inside it; it needs no compiler, but the whole archive is
 uploaded again after every change.
+
+**Dashboard name.** With `title` set, the build renames both XBEs and writes
+`_resources/default.xml`, which is where XBMC4Gamers reads a game's name from. The dashboard
+caches names when it scans, so rescan the games list after deploying.
 
 **Load order.** Morrowind on the Xbox loads plugins in file-date order. TES3X stamps each plugin's
 date so masters load before the plugins that need them.

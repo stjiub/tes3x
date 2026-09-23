@@ -157,6 +157,19 @@ class PipelineTests(unittest.TestCase):
         with self.assertRaises(PipelineError):
             stage_retail(data, ini, self.root / 'again', ['no-section'])
 
+    def test_dashboard_xml_names_the_folder_and_escapes_the_title(self):
+        from tes3x_pipeline import dashboard_xml
+        text = dashboard_xml('Morrowind & Mods', 'MorrowindModded')
+        self.assertIn('<title>Morrowind &amp; Mods</title>', text)
+        self.assertIn('<foldername>MorrowindModded</foldername>', text)
+        self.assertIn('<titleid>42530005</titleid>', text)
+
+    def test_deploy_never_deletes_the_dashboard_folder(self):
+        from tes3x_deploy import orphans
+        remote = {'_resources/default.xml': 1, '_Resources/artwork/x.jpg': 2, 'old.esp': 3,
+                  'morrowind.xbe': 4}
+        self.assertEqual(orphans(remote, {'morrowind.xbe'}), ['old.esp'])
+
     def test_link_falls_back_to_copy(self):
         from unittest.mock import patch
         source = self.root / 'a'

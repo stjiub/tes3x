@@ -11,12 +11,15 @@ import os
 import posixpath
 import sys
 import time
+import tes3x_ftp
 from tes3x_paths import require_paths
 
 PLUGIN_EXT = (".esm", ".esp")
 MTIME_SLACK = 3
 CACHE_DRIVES = ("X:", "Y:", "Z:")
 MANIFEST = "tes3xdeploy.json"
+# The dashboard keeps its metadata and artwork here. A build may add to it but never owns it.
+DASHBOARD_DIR = "_resources/"
 # Edited in place at the same size; without a manifest entry these always go.
 IN_PLACE_EXT = (".xbe", ".ini", ".txt", ".xml")
 
@@ -124,13 +127,16 @@ def human(n):
         n /= 1024
 
 
+def orphans(remote, local_ci):
+    """Console files the build does not contain, other than the dashboard's own."""
+    return [r for r in remote
+            if r.lower() not in local_ci and not r.lower().startswith(DASHBOARD_DIR)]
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("tree", help="staged deploy tree (tes3x_pack --out)")
-    ap.add_argument("--host", required=True)
-    ap.add_argument("--port", type=int, default=21)
-    ap.add_argument("--user", default="xbox")
-    ap.add_argument("--password", default="xbox")
+    tes3x_ftp.add_arguments(ap)
     ap.add_argument("--remote", required=True, help='e.g. "E:/Games/Morrowind"')
     ap.add_argument("--only", action="append", default=[], metavar="PATH",
                     help="send just these tree-relative paths, wildcards allowed "
@@ -161,9 +167,8 @@ def main():
           + (" (selected)" if args.only else ""))
 
     base = args.remote.replace("\\", "/").rstrip("/")
-    ftp = ftplib.FTP(encoding="latin-1")
-    ftp.connect(args.host, args.port, timeout=30)
-    ftp.login(args.user, args.password)
+    tes3x_ftp.resolve(args)
+    ftp = tes3x_ftp.connect(args)
     print(f"connected to {args.host}:{args.port} as {args.user}")
 
     feats = ""
@@ -205,7 +210,7 @@ def main():
     if not has_mfmt and any(r.lower().endswith(PLUGIN_EXT) for r in upload):
         upload += [r for r in local if r.lower().endswith(PLUGIN_EXT) and r not in upload]
     # A selected send says nothing about what else belongs on the console.
-    delete = [] if args.only else [r for r in remote if r.lower() not in local_ci]
+    delete = [] if args.only else orphans(remote, local_ci)
     up_bytes = sum(local[r][0] for r in upload)
     print(f"\n  upload {len(upload)} files ({human(up_bytes)})")
     print(f"  delete {len(delete)} orphaned files")
