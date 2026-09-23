@@ -2,6 +2,7 @@
 """Build, patch, pack and optionally deploy one TES3X profile."""
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -132,6 +133,19 @@ def run(command, display=None):
     shown = display if display is not None else command
     print("\n== " + " ".join(str(part) for part in shown), flush=True)
     subprocess.run([str(part) for part in command], check=True)
+
+
+def source_revision():
+    """The TES3X commit a build came from, marked dirty when files differ from it."""
+    try:
+        commit = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--short=12", "HEAD"],
+                                capture_output=True, text=True, check=True).stdout.strip()
+        dirty = subprocess.run(["git", "-C", str(ROOT), "status", "--porcelain",
+                                "--untracked-files=no"],
+                               capture_output=True, text=True, check=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return commit + ("-dirty" if dirty else "")
 
 
 def link_or_copy(source, target):
@@ -413,6 +427,8 @@ def main(argv=None):
                         for spec in patch_specs],
             "package_mode": plan["package_mode"],
             "deploy_tree": "deploy",
+            "tes3x": source_revision(),
+            "retail_xbe_sha1": hashlib.sha1(retail_xbe.read_bytes()).hexdigest(),
         }
         (work / MARKER).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
         publish(work, output)

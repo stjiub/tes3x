@@ -16,7 +16,8 @@
 # source     payload C file the patch needs, if any
 # takes      the value it needs, as NAME=VALUE
 # summary    one line, shown by --list and in docs/patches.md
-# evidence   where the verification for its status is recorded
+# evidence   proof records under verification/ (tools/tes3x_proof.py); "findings: ..." marks
+#            older evidence not yet converted to a record
 # origin     the project a fix comes from, when not TES3X: { source = "MCP", id = "97" }
 #
 # [[candidate]] entries record fixes that have no code: reviewed but not ported yet, or not at
@@ -136,7 +137,7 @@ status = "verified-xemu"
 selection = "preset"
 source = "tes3xmcp97.c"
 summary = "Advance the script parser correctly while initializing saved data."
-evidence = ["findings: 2026-09-21 - MCP-97 control versus patched confirmed"]
+evidence = ["verification/mcp-97/2026-09-21-xemu.toml"]
 
 [[patch]]
 name = "mcp-154"
@@ -156,7 +157,7 @@ category = "correctness"
 status = "verified-xemu"
 selection = "preset"
 summary = "Reactivate script-triggered objects after their script mod is removed."
-evidence = ["findings: 2026-09-21 - MCP-102 control versus patched confirmed"]
+evidence = ["verification/mcp-102/2026-09-21-xemu.toml"]
 
 [[patch]]
 name = "mcp-140"

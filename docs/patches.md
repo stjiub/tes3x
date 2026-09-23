@@ -12,24 +12,27 @@ means it was shown to work on an original Xbox.
 **Selected by**: `standard` and `development` are presets; a patch marked `standard` is
 also in `development`. Anything else is enabled by name in a profile.
 
-| patch | what it does | from | category | status | selected by |
-|---|---|---|---|---|---|
-| `payload=FILE.pe` | Inject a code section and run it from the entry point. | TES3X | infrastructure | verified-xemu | command line |
-| `boot-media` | Permit booting from any media and region, not just a retail DVD. | TES3X | infrastructure | verified-xemu | every build |
-| `drive-letters=LETTER` | Point every Data Files asset path at one drive. | TES3X | infrastructure | verified-xemu | every build |
-| `save-staging=LETTER` | Stage saves on one volume with UDATA so the commit renames instead of copying. | TES3X | infrastructure | implemented | command line |
-| `title=NAME` | Rename the image, so parallel installs are told apart in a dashboard. | TES3X | infrastructure | implemented | command line |
-| `multi-bsa` | Load every archive listed in tes3xarch.txt, not just Morrowind.bsa. | TES3X | infrastructure | verified-xemu | delta-bsa packing |
-| `script-ext` | Add script opcodes: widen the length bounds and hook Script::RunFunction. | TES3X | compat | verified-xemu | by name |
-| `mcp-1` | Stop an unresolvable reference being restamped as created at runtime. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #1 | core | implemented | by name |
-| `mcp-97` | Advance the script parser correctly while initializing saved data. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #97 | core | verified-xemu | standard |
-| `mcp-154` | Pad compiled script-data allocations to keep dword reads in bounds. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #154 | core | implemented | by name |
-| `mcp-102` | Reactivate script-triggered objects after their script mod is removed. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #102 | correctness | verified-xemu | standard |
-| `mcp-140` | Throttle loading-screen redraws to one every 50 milliseconds. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #140 | performance | implemented | by name |
-| `rotating-autosaves` | Rotate automatic saves through INI-configurable slots. | [OpenMW](https://openmw.org) | qol | implemented | by name |
-| `diagnostics` | Enable INI-controlled crash records, snapshots and a hang watchdog. | TES3X | instrumentation | verified-xemu | development |
-| `console` | Make the in-game console reachable, by replacing its input gate. | TES3X | qol | verified-xemu | development |
-| `profile=VA[,VA...]` | Time listed functions with RDTSC at every direct call site. | TES3X | instrumentation | implemented | command line |
+**Evidence**: the proof record behind a status: a control run without the patch, a run
+with it, and their logs. See `tools/tes3x_proof.py`.
+
+| patch | what it does | from | category | status | selected by | evidence |
+|---|---|---|---|---|---|---|
+| `payload=FILE.pe` | Inject a code section and run it from the entry point. | TES3X | infrastructure | verified-xemu | command line | findings log, no record yet |
+| `boot-media` | Permit booting from any media and region, not just a retail DVD. | TES3X | infrastructure | verified-xemu | every build | findings log, no record yet |
+| `drive-letters=LETTER` | Point every Data Files asset path at one drive. | TES3X | infrastructure | verified-xemu | every build | findings log, no record yet |
+| `save-staging=LETTER` | Stage saves on one volume with UDATA so the commit renames instead of copying. | TES3X | infrastructure | implemented | command line |  |
+| `title=NAME` | Rename the image, so parallel installs are told apart in a dashboard. | TES3X | infrastructure | implemented | command line |  |
+| `multi-bsa` | Load every archive listed in tes3xarch.txt, not just Morrowind.bsa. | TES3X | infrastructure | verified-xemu | delta-bsa packing | findings log, no record yet |
+| `script-ext` | Add script opcodes: widen the length bounds and hook Script::RunFunction. | TES3X | compat | verified-xemu | by name | findings log, no record yet |
+| `mcp-1` | Stop an unresolvable reference being restamped as created at runtime. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #1 | core | implemented | by name |  |
+| `mcp-97` | Advance the script parser correctly while initializing saved data. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #97 | core | verified-xemu | standard | [2026-09-21-xemu](../verification/mcp-97/2026-09-21-xemu.toml) |
+| `mcp-154` | Pad compiled script-data allocations to keep dword reads in bounds. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #154 | core | implemented | by name |  |
+| `mcp-102` | Reactivate script-triggered objects after their script mod is removed. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #102 | correctness | verified-xemu | standard | [2026-09-21-xemu](../verification/mcp-102/2026-09-21-xemu.toml) |
+| `mcp-140` | Throttle loading-screen redraws to one every 50 milliseconds. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #140 | performance | implemented | by name |  |
+| `rotating-autosaves` | Rotate automatic saves through INI-configurable slots. | [OpenMW](https://openmw.org) | qol | implemented | by name |  |
+| `diagnostics` | Enable INI-controlled crash records, snapshots and a hang watchdog. | TES3X | instrumentation | verified-xemu | development | findings log, no record yet |
+| `console` | Make the in-game console reachable, by replacing its input gate. | TES3X | qol | verified-xemu | development | findings log, no record yet |
+| `profile=VA[,VA...]` | Time listed functions with RDTSC at every direct call site. | TES3X | instrumentation | implemented | command line |  |
 
 ## Not implemented
 

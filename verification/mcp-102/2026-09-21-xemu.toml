@@ -1,0 +1,25 @@
+patch = "mcp-102"
+date = 2026-09-21
+environment = "xemu"
+platform = "xemu 0.8.136"
+result = "pass"
+claim = "Loading an object whose saved action flags are 0 restores its active bit on the patched build and leaves it cleared on the control."
+method = "Both builds load the same 34-master save with Graphic Herbalism removed (256 ACTN=0 objects). A probe wraps the action-state setter, logs the first zero-valued saved dword, then reads the flags back; the console enters the cell holding that reference with `coe 0, -1`, so both builds exercise the same object."
+not_established = "Hardware behaviour. The raw logs and build hashes were not retained; the observed lines are copied from the findings log."
+converted_from = "findings 2026-09-21: MCP-102 control-versus-patched confirmed"
+
+[[run]]
+role = "control"
+observed = [
+    "25566 ms mcp102.saved 0",
+    "25570 ms mcp102.loaded 0",
+    "41420 ms mcp102.coe 1",
+]
+
+[[run]]
+role = "patched"
+observed = [
+    "22692 ms mcp102.saved 0",
+    "22695 ms mcp102.loaded 1",
+    "36752 ms mcp102.coe 1",
+]

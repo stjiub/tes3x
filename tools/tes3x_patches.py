@@ -97,6 +97,17 @@ def origin_text(entry):
     return text + (f" #{origin['id']}" if "id" in origin else "")
 
 
+def evidence_text(entry):
+    links = []
+    for evidence in entry.get("evidence", []):
+        if evidence.startswith("verification/"):
+            label = Path(evidence).stem
+            links.append(f"[{label}](../{evidence})")
+        else:
+            links.append("findings log, no record yet")
+    return ", ".join(links)
+
+
 def cell(text):
     return text.replace("|", "\\|")
 
@@ -127,14 +138,18 @@ def render():
         "**Selected by**: `standard` and `development` are presets; a patch marked `standard` is",
         "also in `development`. Anything else is enabled by name in a profile.",
         "",
-        "| patch | what it does | from | category | status | selected by |",
-        "|---|---|---|---|---|---|",
+        "**Evidence**: the proof record behind a status: a control run without the patch, a run",
+        "with it, and their logs. See `tools/tes3x_proof.py`.",
+        "",
+        "| patch | what it does | from | category | status | selected by | evidence |",
+        "|---|---|---|---|---|---|---|",
     ]
     for entry in PATCHES:
         name = entry["name"] + (f"={entry['takes']}" if "takes" in entry else "")
         chosen = selection.get(entry["selection"]) or presets.get(entry["name"], "by name")
         lines.append(f"| `{name}` | {cell(entry['summary'])} | {origin_text(entry)} | "
-                     f"{entry['category']} | {entry['status']} | {chosen} |")
+                     f"{entry['category']} | {entry['status']} | {chosen} | "
+                     f"{evidence_text(entry)} |")
     lines += [
         "",
         "## Not implemented",
