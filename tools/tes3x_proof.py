@@ -34,6 +34,8 @@ ROLES = ("control", "patched")
 RECORD_FIELDS = (("patch", "date", "environment", "platform", "result", "claim", "method", "run"),
                  ("not_established", "retail_xbe_sha1", "tes3x", "converted_from"))
 RUN_FIELDS = (("role", "observed"), ("build", "patches", "log", "log_sha256"))
+SCENARIO = "scenario.toml"
+SCENARIO_FIELDS = ("claim", "method", "watch", "script", "expect")
 
 
 class ProofError(ValueError):
@@ -84,10 +86,37 @@ def load_record(path):
     return record
 
 
+def check_scenario(path):
+    """A scenario is the script and expectations a control and a patched run are checked against."""
+    where = path.relative_to(ROOT).as_posix()
+    try:
+        with open(path, "rb") as f:
+            spec = tomllib.load(f)
+    except tomllib.TOMLDecodeError as exc:
+        return [f"{where}: {exc}"]
+    missing = [key for key in SCENARIO_FIELDS if key not in spec]
+    if missing:
+        return [f"{where}: missing {missing}"]
+    problems = []
+    for role, items in spec["expect"].items():
+        if role not in ROLES:
+            problems.append(f"{where}: expect.{role} is not one of {list(ROLES)}")
+            continue
+        for item in items:
+            try:
+                re.compile(item.removeprefix("!"))
+            except re.error as exc:
+                problems.append(f"{where}: expect.{role} {item!r}: {exc}")
+    return problems
+
+
 def check_all():
     """Every problem with the records and with the table's evidence for its statuses."""
     problems, records = [], {}
     for path in sorted(PATCH_DIRS.rglob("*.toml")) if PATCH_DIRS.is_dir() else []:
+        if path.name == SCENARIO:
+            problems += check_scenario(path)
+            continue
         try:
             records[path.relative_to(ROOT).as_posix()] = load_record(path)
         except (ProofError, tomllib.TOMLDecodeError) as exc:

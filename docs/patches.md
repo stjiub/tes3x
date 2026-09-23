@@ -30,5 +30,5 @@ with it, and their logs. A linked patch name opens its folder of notes and recor
 | [`mcp-140`](../patches/mcp-140/) | Throttle loading-screen redraws to one every 50 milliseconds. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #140 | performance | implemented | by name |  |
 | [`rotating-autosaves`](../patches/rotating-autosaves/) | Rotate automatic saves through INI-configurable slots. | [OpenMW](https://openmw.org) | qol | implemented | by name |  |
 | [`diagnostics`](../patches/diagnostics/) | Enable INI-controlled crash records, snapshots and a hang watchdog. | TES3X | instrumentation | verified-xemu | development | findings log, no record yet |
-| `console` | Make the in-game console reachable, by replacing its input gate. | TES3X | qol | verified-xemu | development | findings log, no record yet |
+| [`console`](../patches/console/) | Make the in-game console reachable, by replacing its input gate. | TES3X | qol | verified-xemu | development | findings log, no record yet |
 | [`profile=VA[,VA...]`](../patches/profile/) | Time listed functions with RDTSC at every direct call site. | TES3X | instrumentation | implemented | command line |  |
