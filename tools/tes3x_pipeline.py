@@ -12,6 +12,7 @@ import tempfile
 import tomllib
 
 from tes3x_pack import set_ini_key
+import tes3x_patches as registry
 from tes3x_payload import PayloadError, build_payload, find_tool
 from tes3x_paths import DEFAULT_REMOTE_ROOT, require_paths
 
@@ -22,29 +23,12 @@ MARKER = ".tes3x-pipeline.json"
 REPLACED_RETAIL_ENTRIES = {"data files", "default.xbe", "morrowind.xbe", "morrowind.ini"}
 RELEASE_ARTIFACT_SUFFIXES = {".iso", ".nfo", ".rar", ".sfv"}
 
-PATCHES = {
-    "mcp-1": {"category": "core", "status": "implemented", "source": "tes3xrefs.c"},
-    "mcp-97": {"category": "core", "status": "verified-xemu", "source": "tes3xmcp97.c"},
-    "mcp-154": {"category": "core", "status": "implemented", "source": "tes3xmcp154.c"},
-    "mcp-140": {"category": "performance", "status": "implemented", "source": "tes3xmcp140.c"},
-    "mcp-102": {"category": "correctness", "status": "verified-xemu", "source": None},
-    "script-ext": {"category": "compat", "status": "verified-xemu", "source": "tes3xscript.c"},
-    "diagnostics": {
-        "category": "instrumentation", "status": "verified-xemu", "source": "tes3xdiag.c"
-    },
-    "console": {"category": "qol", "status": "verified-xemu", "source": "tes3xconsole.c"},
-    "rotating-autosaves": {
-        "category": "qol", "status": "implemented", "source": "tes3xsaves.c"
-    },
-}
-HOOK_SOURCES = {
-    "multi-bsa": "tes3xarch.c",
-    **{name: meta["source"] for name, meta in PATCHES.items()},
-}
-PATCH_ORDER = ("multi-bsa", "script-ext", "mcp-1", "mcp-97", "mcp-154", "mcp-102", "mcp-140",
-               "rotating-autosaves", "diagnostics", "console")
-CATEGORIES = {"core", "correctness", "compat", "performance", "instrumentation", "qol", "balance"}
-VERIFIED = {"verified-xemu", "verified-hardware"}
+PATCHES = {entry["name"]: entry for entry in registry.PATCHES if entry["selection"] == "preset"}
+PATCH_ORDER = tuple(entry["name"] for entry in registry.PATCHES
+                    if entry["selection"] in ("packaging", "preset"))
+HOOK_SOURCES = {entry["name"]: entry.get("source") for entry in registry.PATCHES}
+CATEGORIES = set(registry.CATEGORIES)
+VERIFIED = set(registry.VERIFIED)
 PRESETS = ("minimal", "standard", "development")
 
 

@@ -9,6 +9,7 @@ import sys
 
 sys.path.insert(0, __file__.rsplit("\\", 1)[0].rsplit("/", 1)[0])
 import tes3x_inject  # noqa: E402
+import tes3x_patches as registry  # noqa: E402
 
 TITLE_ID = 0x42530005
 
@@ -54,31 +55,19 @@ REGION_ANY = 0x00000007
 
 PATCHES = {}
 
-PATCH_BITS = {
-    "drive-letters": 1 << 0,
-    "save-staging": 1 << 1,
-    "boot-media": 1 << 2,
-    "multi-bsa": 1 << 3,
-    "script-ext": 1 << 4,
-    "mcp-1": 1 << 5,
-    "diagnostics": 1 << 6,
-    "console": 1 << 7,
-    "rotating-autosaves": 1 << 8,
-    "mcp-97": 1 << 9,
-    "mcp-154": 1 << 10,
-    "mcp-140": 1 << 11,
-    "mcp-102": 1 << 12,
-    "profile": 1 << 13,
-}
+PATCH_BITS = {entry["name"]: 1 << entry["bit"] for entry in registry.PATCHES if "bit" in entry}
 
 
 class PatchError(Exception):
     pass
 
 
-def patch(name, takes=None):
+def patch(name):
+    """Register fn as the patch patches.toml calls name, with its value and summary from there."""
+    entry = registry.BY_NAME[name]
+
     def register(fn):
-        PATCHES[name] = (fn, takes, (fn.__doc__ or "").strip().splitlines()[0])
+        PATCHES[name] = (fn, entry.get("takes"), entry["summary"])
         return fn
     return register
 
@@ -96,7 +85,7 @@ def drive_letter(value, what):
     return value.upper()
 
 
-@patch("drive-letters", takes="LETTER")
+@patch("drive-letters")
 def _drive_letters(x, value, ctx):
     """Point every Data Files asset path at one drive."""
     letter = drive_letter(value, "drive-letters")
@@ -121,7 +110,7 @@ def _drive_letters(x, value, ctx):
     return edits
 
 
-@patch("save-staging", takes="LETTER")
+@patch("save-staging")
 def _save_staging(x, value, ctx):
     """Stage saves on one volume with UDATA so the commit renames instead of copying."""
     letter = drive_letter(value, "save-staging")
@@ -162,7 +151,7 @@ def _boot_media(x, value, ctx):
     return edits
 
 
-@patch("title", takes="NAME")
+@patch("title")
 def _title(x, value, ctx):
     """Rename the image, so parallel installs are told apart in a dashboard."""
     name = value.strip()
@@ -177,7 +166,7 @@ def _title(x, value, ctx):
     return [(CERT_TITLE_NAME, size, "title %r -> %r" % (was.split("\x00")[0], name))]
 
 
-@patch("payload", takes="FILE.pe")
+@patch("payload")
 def _payload(x, value, ctx):
     """Inject a code section and run it from the entry point."""
     if not value:
@@ -733,7 +722,7 @@ def _diagnostics(x, value, ctx):
 PROFILE_LIST_SITES = 8
 
 
-@patch("profile", takes="VA[,VA...]")
+@patch("profile")
 def _profile(x, value, ctx):
     """Time listed functions with RDTSC at every direct call site."""
     hooks = ctx.get("hooks", {})
@@ -872,7 +861,9 @@ def main():
 
     if a.list or not a.xbe:
         print("\n  available patches:\n")
-        for name, (_fn, takes, help_text) in PATCHES.items():
+        for entry in registry.PATCHES:
+            name = entry["name"]
+            _fn, takes, help_text = PATCHES[name]
             spec = "%s=%s" % (name, takes) if takes else name
             print("    %-26s %s" % (spec, help_text))
         print()

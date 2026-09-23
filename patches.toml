@@ -1,0 +1,169 @@
+# Every XBE patch TES3X can apply, in the order it applies them.
+#
+# tes3x_patch.py, the pipeline and the diagnostics log reader all read this file, so a patch's
+# name, bit, category and status are set here and nowhere else. docs/patches.md is generated
+# from it: run `python tools/tes3x_patches.py --write` after editing.
+#
+# name       what --apply and profiles call it
+# bit        its bit in the patch mask the payload logs (diag.patches); fixed forever once used
+# category   core, correctness, compat, performance, qol, balance, instrumentation, infrastructure
+# status     implemented, verified-xemu or verified-hardware
+# selection  how a build gets it:
+#              always    - every pipeline build
+#              packaging - chosen by the package mode
+#              preset    - by preset, or by name in a profile's enable/disable
+#              option    - by a command-line option or research use only
+# source     payload C file the patch needs, if any
+# takes      the value it needs, as NAME=VALUE
+# summary    one line, shown by --list and in docs/patches.md
+# evidence   where the verification for its status is recorded
+
+[[patch]]
+name = "payload"
+category = "infrastructure"
+status = "verified-xemu"
+selection = "option"
+takes = "FILE.pe"
+summary = "Inject a code section and run it from the entry point."
+evidence = ["findings: every hooked xemu run"]
+
+[[patch]]
+name = "boot-media"
+bit = 2
+category = "infrastructure"
+status = "verified-xemu"
+selection = "always"
+summary = "Permit booting from any media and region, not just a retail DVD."
+evidence = ["findings: every xemu run"]
+
+[[patch]]
+name = "drive-letters"
+bit = 0
+category = "infrastructure"
+status = "verified-xemu"
+selection = "always"
+takes = "LETTER"
+summary = "Point every Data Files asset path at one drive."
+evidence = ["findings: every xemu run"]
+
+[[patch]]
+name = "save-staging"
+bit = 1
+category = "infrastructure"
+status = "implemented"
+selection = "option"
+takes = "LETTER"
+summary = "Stage saves on one volume with UDATA so the commit renames instead of copying."
+
+[[patch]]
+name = "title"
+category = "infrastructure"
+status = "implemented"
+selection = "option"
+takes = "NAME"
+summary = "Rename the image, so parallel installs are told apart in a dashboard."
+
+[[patch]]
+name = "multi-bsa"
+bit = 3
+category = "infrastructure"
+status = "verified-xemu"
+selection = "packaging"
+source = "tes3xarch.c"
+summary = "Load every archive listed in tes3xarch.txt, not just Morrowind.bsa."
+evidence = ["findings: delta archive served in xemu"]
+
+[[patch]]
+name = "script-ext"
+bit = 4
+category = "compat"
+status = "verified-xemu"
+selection = "preset"
+source = "tes3xscript.c"
+summary = "Add script opcodes: widen the length bounds and hook Script::RunFunction."
+evidence = ["findings: new opcode runs in-engine from a plugin's compiled bytecode"]
+
+[[patch]]
+name = "mcp-1"
+bit = 5
+category = "core"
+status = "implemented"
+selection = "preset"
+source = "tes3xrefs.c"
+summary = "Stop an unresolvable reference being restamped as created at runtime."
+
+[[patch]]
+name = "mcp-97"
+bit = 9
+category = "core"
+status = "verified-xemu"
+selection = "preset"
+source = "tes3xmcp97.c"
+summary = "Advance the script parser correctly while initializing saved data."
+evidence = ["findings: 2026-09-21 - MCP-97 control versus patched confirmed"]
+
+[[patch]]
+name = "mcp-154"
+bit = 10
+category = "core"
+status = "implemented"
+selection = "preset"
+source = "tes3xmcp154.c"
+summary = "Pad compiled script-data allocations to keep dword reads in bounds."
+
+[[patch]]
+name = "mcp-102"
+bit = 12
+category = "correctness"
+status = "verified-xemu"
+selection = "preset"
+summary = "Reactivate script-triggered objects after their script mod is removed."
+evidence = ["findings: 2026-09-21 - MCP-102 control versus patched confirmed"]
+
+[[patch]]
+name = "mcp-140"
+bit = 11
+category = "performance"
+status = "implemented"
+selection = "preset"
+source = "tes3xmcp140.c"
+summary = "Throttle loading-screen redraws to one every 50 milliseconds."
+
+[[patch]]
+name = "rotating-autosaves"
+bit = 8
+category = "qol"
+status = "implemented"
+selection = "preset"
+source = "tes3xsaves.c"
+summary = "Rotate automatic saves through INI-configurable slots."
+
+[[patch]]
+name = "diagnostics"
+bit = 6
+category = "instrumentation"
+status = "verified-xemu"
+selection = "preset"
+source = "tes3xdiag.c"
+summary = "Enable INI-controlled crash records, snapshots and a hang watchdog."
+evidence = ["findings: watchdog recorded and recovered from a 15-second stall"]
+
+[[patch]]
+name = "console"
+bit = 7
+category = "qol"
+status = "verified-xemu"
+selection = "preset"
+source = "tes3xconsole.c"
+summary = "Make the in-game console reachable, by replacing its input gate."
+evidence = ["findings: the on-screen keyboard, reworked for the console"]
+
+[[patch]]
+name = "profile"
+bit = 13
+category = "instrumentation"
+status = "implemented"
+selection = "option"
+source = "tes3xprof.c"
+takes = "VA[,VA...]"
+summary = "Time listed functions with RDTSC at every direct call site."

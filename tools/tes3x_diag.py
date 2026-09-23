@@ -9,6 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from tes3x_inject import Xbe  # noqa: E402
+import tes3x_patches as registry  # noqa: E402
 
 LINE = re.compile(r"^(\d+) ms ([^ ]+)(?: (.*))?$")
 EXCEPTIONS = {
@@ -21,22 +22,7 @@ EXCEPTIONS = {
     0xC0000094: "integer divide by zero",
     0xC00000FD: "stack overflow",
 }
-PATCH_BITS = {
-    0: "drive-letters",
-    1: "save-staging",
-    2: "boot-media",
-    3: "multi-bsa",
-    4: "script-ext",
-    5: "mcp-1",
-    6: "diagnostics",
-    7: "console",
-    8: "rotating-autosaves",
-    9: "mcp-97",
-    10: "mcp-154",
-    11: "mcp-140",
-    12: "mcp-102",
-    13: "profile",
-}
+PATCH_BITS = {entry["bit"]: entry["name"] for entry in registry.PATCHES if "bit" in entry}
 
 
 def parse_value(text):

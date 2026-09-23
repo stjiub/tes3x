@@ -171,8 +171,9 @@ backup of the originals.
 | `standard` | Engine fixes that are tested and safe to leave on. |
 | `development` | `standard` plus crash logging and the in-game console. |
 
-Then add or remove single patches by name with `enable` and `disable`. To see every patch with a
-one-line description:
+Then add or remove single patches by name with `enable` and `disable`.
+[docs/patches.md](docs/patches.md) lists every patch, what it does and which preset includes it.
+The same list is printed by:
 
 ```powershell
 python tools/tes3x_patch.py --list
