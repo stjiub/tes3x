@@ -193,7 +193,8 @@
 /* E:\tes3xexec.txt, else D:\tes3xexec.txt, runs without input. `@menu` lines run while the main
  * menu is up, the rest once it has been gone EXEC_SETTLE frames; the main menu and a New Game are
  * separate processes unless the relaunch is disabled. */
-#define EXEC_MAX 4096
+#define EXEC_MAX (1024 * 1024)
+#define EXEC_PAD 16
 #define EXEC_SETTLE 150
 #define EXEC_CLICK_FRAMES 600
 
@@ -201,6 +202,25 @@
 #define NtReadFile KFN(THUNK_NtReadFile, fn_NtReadFile)
 #define NtClose KFN(THUNK_NtClose, fn_NtClose)
 #define HalInitiateShutdown KFN(THUNK_HalInitiateShutdown, fn_HalInitiateShutdown)
+#define NtQueryInformationFile KFN(THUNK_NtQueryInformationFile, fn_NtQueryInformationFile)
+#define MmAllocateSystemMemory KFN(THUNK_MmAllocateSystemMemory, fn_MmAllocateSystemMemory)
+#define MmFreeSystemMemory KFN(THUNK_MmFreeSystemMemory, fn_MmFreeSystemMemory)
+#define MmQueryStatistics KFN(THUNK_MmQueryStatistics, fn_MmQueryStatistics)
+
+typedef u32(__stdcall *fn_MmQueryStatistics)(void *);
+
+/* MM_STATISTICS, XDK layout: only the page counts are read. */
+typedef struct {
+    u32 Length;
+    u32 TotalPhysicalPages;
+    u32 AvailablePages;
+    u32 VirtualMemoryBytesCommitted;
+    u32 VirtualMemoryBytesReserved;
+    u32 CachePagesCommitted;
+    u32 PoolPagesCommitted;
+    u32 StackPagesCommitted;
+    u32 ImagePagesCommitted;
+} MM_STATS;
 
 typedef void(__stdcall *fn_HalInitiateShutdown)(void);
 
@@ -796,8 +816,9 @@ static void run_command(const char *text)
 
 static char exec_hdd[] = "\\Device\\Harddisk0\\Partition1\\tes3xexec.txt";
 static char exec_disc[] = "D:\\tes3xexec.txt";
-static char exec_buf[EXEC_MAX];
+static char *exec_buf;
 static u32 exec_len;
+static u32 exec_alloc;
 static u32 exec_pos[2];   /* next unread offset: menu lines, then game lines */
 static int exec_wait;
 static int exec_quiet;    /* frames since the main menu was last up */
@@ -818,23 +839,55 @@ static int exec_open(void **h, char *path, int dos)
                         FILE_SHARE_READ, FILE_OPEN, FILE_SYNCHRONOUS_IO_NONALERT) == 0;
 }
 
+/* Sized to the file, so a long script costs memory only while it runs. The zeroed tail lets a
+ * prefix test run past the last line. */
 static void exec_load(void)
 {
     IO_STATUS_BLOCK iosb;
+    FILE_NETWORK_OPEN_INFORMATION st;
     u64 zero = 0;
     void *h = 0;
     int disc = 0;
+    u32 size, i, status;
 
     if (!exec_open(&h, exec_hdd, 0)) {
         if (!exec_open(&h, exec_disc, 1))
             return;
         disc = 1;
     }
-    iosb.Information = 0;
-    if (NtReadFile(h, 0, 0, 0, &iosb, exec_buf, EXEC_MAX - 1, &zero) == 0)
-        exec_len = iosb.Information;
+    size = 0;
+    status = NtQueryInformationFile(h, &iosb, &st, sizeof(st), FileNetworkOpenInformation);
+    if (status == 0)
+        size = (u32)st.EndOfFile;
+    else
+        tes3x_log_hex("exec.size_status", status);
+    if (size > EXEC_MAX)
+        size = EXEC_MAX;
+    exec_alloc = size + EXEC_PAD;
+    exec_buf = size ? MmAllocateSystemMemory(exec_alloc, PAGE_READWRITE) : 0;
+    if (size && !exec_buf)
+        tes3x_log("exec.no_buffer", exec_alloc);
+    if (exec_buf) {
+        for (i = 0; i < exec_alloc; i++)
+            exec_buf[i] = 0;
+        iosb.Information = 0;
+        status = NtReadFile(h, 0, 0, 0, &iosb, exec_buf, size, &zero);
+        if (status == 0)
+            exec_len = iosb.Information;
+        else
+            tes3x_log_hex("exec.read_status", status);
+    }
     NtClose(h);
     tes3x_log(disc ? "exec.loaded_disc" : "exec.loaded", exec_len);
+}
+
+static void exec_free(void)
+{
+    if (exec_buf)
+        MmFreeSystemMemory(exec_buf, exec_alloc);
+    exec_buf = 0;
+    exec_len = 0;
+    tes3x_log("exec.done", 0);
 }
 
 static int starts_with(const char *s, const char *prefix)
@@ -978,6 +1031,26 @@ static int exec_number(const char *s)
     return v;
 }
 
+/* `mark LABEL`: free physical memory now, as `mem.LABEL <KB>`. */
+static void exec_mark(const char *label)
+{
+    MM_STATS st;
+    char tag[64];
+    u32 n;
+
+    tag[0] = 'm';
+    tag[1] = 'e';
+    tag[2] = 'm';
+    tag[3] = '.';
+    for (n = 4; *label && n < sizeof(tag) - 1; n++)
+        tag[n] = *label++;
+    tag[n] = 0;
+    st.Length = sizeof(st);
+    if (MmQueryStatistics(&st) != 0)
+        st.AvailablePages = 0;
+    tes3x_log(tag, st.AvailablePages * 4);
+}
+
 /* One line per frame at most, so each command sees the frame the last one left. */
 static void exec_step(void)
 {
@@ -997,12 +1070,17 @@ static void exec_step(void)
     if (!up && exec_quiet < EXEC_SETTLE)
         return;
     pos = exec_pos[phase];
-    if (!exec_line(phase == 0, &pos, line))
+    if (!exec_line(phase == 0, &pos, line)) {
+        if (phase == 1)
+            exec_free();
         return;
+    }
     for (n = 0; line[n]; n++)
         ;
     if (starts_with(line, "wait ")) {
         exec_wait = exec_number(line + 5);
+    } else if (starts_with(line, "mark ")) {
+        exec_mark(line + 5);
     } else if (starts_with(line, "exit") && !line[4]) {
         tes3x_log("exec.exit", 0);
         HalInitiateShutdown();

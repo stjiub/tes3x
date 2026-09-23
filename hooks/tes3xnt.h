@@ -50,8 +50,20 @@ typedef void(__stdcall *fn_KeQuerySystemTime)(u64 *);
 #define OB_DOS_DEVICES ((void *)-3) /* ObpDosDevicesDirectoryObject, as XAPI uses it */
 #define FileEndOfFileInformation 20u
 #define FileDispositionInformation 13u
-#define FileStandardInformation 5u
+#define FileNetworkOpenInformation 34u
 #define FILE_WRITE_TO_END_OF_FILE 0xFFFFFFFFFFFFFFFFull
+
+/* FATX rejects FileStandardInformation with STATUS_INVALID_PARAMETER; XAPI sizes files this way. */
+typedef struct {
+    u64 CreationTime;
+    u64 LastAccessTime;
+    u64 LastWriteTime;
+    u64 ChangeTime;
+    u64 AllocationSize;
+    u64 EndOfFile;
+    u32 FileAttributes;
+    u32 Pad;
+} FILE_NETWORK_OPEN_INFORMATION;
 
 /* A thunk slot holds the resolved function pointer once the kernel has fixed up imports. */
 #define KFN(slot, type) (*(type *)(slot))

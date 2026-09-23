@@ -122,4 +122,5 @@ The pipeline uses these commands internally; they can also be run directly:
 | `tes3x_pack.py` | Pack a collected mod tree into a game folder. |
 | `tes3x_deploy.py` | Upload a game folder to the Xbox. |
 | `tes3x_fetch.py` | Copy files back off the Xbox, such as saves or logs. |
+| `tes3x_tour.py` | Write a script that walks through a plugin's cells logging free memory; summarize the log. |
 | `tes3x_audit.py` | Check any `Data Files` folder for long names, junk files and duplicates. |
