@@ -150,7 +150,19 @@ def run(command, display=None):
     subprocess.run([str(part) for part in command], check=True)
 
 
-def copy_retail_root(vanilla, staged):
+def link_or_copy(source, target):
+    """Hardlink a retail file into the build, or copy it where the volume cannot link.
+
+    A staged retail file must never be modified in place: through a link, the write would
+    reach the clean retail folder."""
+    try:
+        os.link(source, target)
+    except OSError:
+        shutil.copy2(source, target)
+    return target
+
+
+def copy_retail_root(vanilla, staged, copy=shutil.copy2):
     """Carry the Xbox disc-root payload without copying release or generated files."""
     copied = []
     for source in sorted(vanilla.iterdir(), key=lambda path: path.name.lower()):
@@ -161,19 +173,19 @@ def copy_retail_root(vanilla, staged):
             continue
         target = staged / source.name
         if source.is_dir():
-            shutil.copytree(source, target)
+            shutil.copytree(source, target, copy_function=copy)
             copied.extend(path for path in source.rglob("*") if path.is_file())
         elif source.is_file():
-            shutil.copy2(source, target)
+            copy(source, target)
             copied.append(source)
         else:
             raise PipelineError(f"unsupported retail root entry: {source}")
     return len(copied), sum(path.stat().st_size for path in copied)
 
 
-def stage_retail(data_files, ini, staged, ini_items):
+def stage_retail(data_files, ini, staged, ini_items, copy=shutil.copy2):
     """Stage unchanged retail Data Files and an adapted Morrowind.ini, for a build without mods."""
-    shutil.copytree(data_files, staged / "Data Files")
+    shutil.copytree(data_files, staged / "Data Files", copy_function=copy)
     text = ini.read_text(encoding="latin-1")
     for item in ini_items:
         section, _, rest = item.partition(":")
@@ -239,6 +251,9 @@ def main(argv=None):
                          "(repeatable, or comma-separated). Instrumentation only: the "
                          "stubs stay installed whether or not anything reads them, so "
                          "this never comes from a profile or a preset")
+    ap.add_argument("--hardlink", action=argparse.BooleanOptionalAction,
+                    help="hardlink unchanged retail files into the build instead of copying "
+                         "them, where the volume allows (default: paths.hardlink_retail)")
     ap.add_argument("--ini-set", action="append", default=[], metavar="SECTION:KEY=VALUE",
                     help="set a key in the staged Morrowind.ini (repeatable)")
     action = ap.add_mutually_exclusive_group()
@@ -319,6 +334,8 @@ def main(argv=None):
     if not data_files.is_dir():
         raise PipelineError(f"retail Data Files not found: {data_files}")
 
+    hardlink = args.hardlink if args.hardlink is not None else paths.get("hardlink_retail", False)
+    copy = link_or_copy if hardlink else shutil.copy2
     llvm_value = args.llvm or paths.get("llvm")
     llvm = config_path(llvm_value, base).resolve() if llvm_value else None
     if plan["needs_payload"]:
@@ -388,9 +405,9 @@ def main(argv=None):
                 pack_cmd += ["--remote-root", remote]
             run(pack_cmd)
         else:
-            stage_retail(data_files, ini, staged, ini_items)
+            stage_retail(data_files, ini, staged, ini_items, copy)
 
-        retail_files, retail_bytes = copy_retail_root(vanilla, staged)
+        retail_files, retail_bytes = copy_retail_root(vanilla, staged, copy)
         if title:
             # A dashboard lists the launcher, so that is the XBE the name has to reach.
             run([sys.executable, TOOLS / "tes3x_patch.py", launcher,

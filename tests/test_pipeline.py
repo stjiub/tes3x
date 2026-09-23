@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from tes3x_paths import check_paths, require_paths
 from tes3x_pack import write_invalidation
 from tes3x_build import materialize, plugin_masters
-from tes3x_pipeline import PipelineError, copy_retail_root, resolve_patch_plan
+from tes3x_pipeline import PipelineError, copy_retail_root, link_or_copy, resolve_patch_plan
 from tes3x_pipeline import main as pipeline_main
 from tes3x_patch import _mcp_97, _mcp_102, _mcp_140, _mcp_154
 from tes3x_plugins import validate_order
@@ -128,6 +128,25 @@ class PipelineTests(unittest.TestCase):
         self.assertFalse((staged / 'Data Files' / 'retail.bsa').exists())
         for name in ('Default.xbe', 'morrowind.xbe', 'Morrowind.ini', 'disc.iso', 'release.r00'):
             self.assertFalse((staged / name).exists())
+
+    def test_hardlinked_retail_files_share_the_source(self):
+        vanilla = self.root / 'vanilla'
+        staged = self.root / 'staged'
+        (vanilla / 'sound-cache').mkdir(parents=True)
+        (vanilla / 'sound-cache' / 'voice.wav').write_bytes(b'voice')
+        staged.mkdir()
+        copy_retail_root(vanilla, staged, link_or_copy)
+        self.assertTrue((staged / 'sound-cache' / 'voice.wav').samefile(
+            vanilla / 'sound-cache' / 'voice.wav'))
+
+    def test_link_falls_back_to_copy(self):
+        from unittest.mock import patch
+        source = self.root / 'a'
+        source.write_bytes(b'x')
+        with patch('os.link', side_effect=OSError('cross-device')):
+            target = link_or_copy(source, self.root / 'b')
+        self.assertFalse(target.samefile(source))
+        self.assertEqual(target.read_bytes(), b'x')
 
 
 class PipelinePlanTests(unittest.TestCase):
