@@ -204,6 +204,24 @@
 
 typedef void(__stdcall *fn_HalInitiateShutdown)(void);
 
+/* LAUNCH_DATA_PAGE: a header, then the title's launch data at 0x400. XGetLaunchInfo copies the
+ * data out and frees the page. */
+#define MmAllocateContiguousMemory \
+    KFN(THUNK_MmAllocateContiguousMemory, fn_MmAllocateContiguousMemory)
+typedef void *(__stdcall *fn_MmAllocateContiguousMemory)(u32 bytes);
+#define LAUNCH_PAGE 0x1000
+#define LAUNCH_DATA 0x400
+#define LDT_TITLE 0
+#define XBE_CERT_PTR 0x00010118
+
+/* The engine's relaunch data: magic, pad port, a value it adds to a setting, mode, then the save
+ * path to load (0x00092A93, 0x000959EC, 0x00095DCB read it). */
+#define BXWM_MAGIC 0x4D575842
+#define BXWM_NEW_GAME 0
+#define BXWM_LOAD 1
+#define BXWM_NAME 0x10
+#define BXWM_NAME_MAX 0x100
+
 /* __cdecl: 0x001933E0 ends `mov esp,ebp; pop ebp; ret`, so the caller clears the arguments. */
 typedef void *(__cdecl *fn_find_menu)(unsigned int id);
 typedef void(__cdecl *fn_open_vk)(void *return_menu, const char *initial);
@@ -816,7 +834,6 @@ static void exec_load(void)
     if (NtReadFile(h, 0, 0, 0, &iosb, exec_buf, EXEC_MAX - 1, &zero) == 0)
         exec_len = iosb.Information;
     NtClose(h);
-    options_id = ((fn_ui_id)TES3X_UI_ID)("MenuOptions");
     tes3x_log(disc ? "exec.loaded_disc" : "exec.loaded", exec_len);
 }
 
@@ -845,7 +862,7 @@ static int exec_line(int menu, u32 *pos, char *line)
             start++;
         while (end > start && (exec_buf[end - 1] == '\r' || exec_buf[end - 1] == ' '))
             end--;
-        if (start == end || exec_buf[start] == '#')
+        if (start == end || exec_buf[start] == '#' || starts_with(exec_buf + start, "@start "))
             continue;
         is_menu = end - start > 6 && starts_with(exec_buf + start, "@menu ");
         if (is_menu != menu)
@@ -860,6 +877,67 @@ static int exec_line(int menu, u32 *pos, char *line)
     }
     *pos = p;
     return 0;
+}
+
+/* `@start new` or `@start load U:\DIR\NAME.ess`, run at the XBE entry. Hands the engine the same
+ * launch data its own New Game and Load relaunches pass (built at 0x001FFD79 and 0x00201AC8), so
+ * it starts the game without drawing the main menu. Only when nothing launched the title with data
+ * of its own. */
+void tes3x_console_start(void)
+{
+    void **page_var = *(void ***)THUNK_LaunchDataPage;
+    char line[CMD_MAX];
+    const char *name;
+    u32 p = 0, start = 0, n, mode;
+    unsigned char *page, *data;
+    int found = 0;
+
+    exec_load();
+    while (p < exec_len && !found) {
+        start = p;
+        while (p < exec_len && exec_buf[p] != '\n')
+            p++;
+        found = starts_with(exec_buf + start, "@start ");
+        if (!found)
+            p++;
+    }
+    if (!found)
+        return;
+    start += 7;
+    for (n = 0; start + n < p && n < CMD_MAX - 1 && exec_buf[start + n] != '\r'; n++)
+        line[n] = exec_buf[start + n];
+    line[n] = 0;
+    if (starts_with(line, "new") && !line[3]) {
+        mode = BXWM_NEW_GAME;
+        name = "";
+    } else if (starts_with(line, "load ") && line[5]) {
+        mode = BXWM_LOAD;
+        name = line + 5;
+    } else {
+        tes3x_log("exec.start_unknown", 0);
+        return;
+    }
+    if (*page_var) {
+        tes3x_log("exec.start_launched", 0);
+        return;
+    }
+    page = MmAllocateContiguousMemory(LAUNCH_PAGE);
+    if (!page) {
+        tes3x_log("exec.start_no_page", 0);
+        return;
+    }
+    for (p = 0; p < LAUNCH_PAGE; p++)
+        page[p] = 0;
+    /* XGetLaunchInfo takes title data only for this title: the id at XBE certificate + 8. */
+    ((u32 *)page)[0] = LDT_TITLE;
+    ((u32 *)page)[1] = *(u32 *)(*(u32 *)XBE_CERT_PTR + 8);
+    data = page + LAUNCH_DATA;
+    ((u32 *)data)[0] = BXWM_MAGIC;
+    ((u32 *)data)[3] = mode;
+    for (p = 0; name[p] && p < BXWM_NAME_MAX - 1; p++)
+        data[BXWM_NAME + p] = name[p];
+    *page_var = page;
+    tes3x_log(mode == BXWM_LOAD ? "exec.start_load" : "exec.start_new", p);
 }
 
 static int menu_up(void *menu)
@@ -904,10 +982,13 @@ static int exec_number(const char *s)
 static void exec_step(void)
 {
     char line[CMD_MAX];
-    int up = menu_up(((fn_find_menu)TES3X_FIND_MENU)(options_id));
-    int phase = up ? 0 : 1;
+    int up, phase;
     u32 pos, n;
 
+    if (!options_id)
+        options_id = ((fn_ui_id)TES3X_UI_ID)("MenuOptions");
+    up = menu_up(((fn_find_menu)TES3X_FIND_MENU)(options_id));
+    phase = up ? 0 : 1;
     exec_quiet = up ? 0 : exec_quiet + 1;
     if (exec_wait) {
         exec_wait--;
@@ -1100,7 +1181,8 @@ unsigned int __attribute__((thiscall)) tes3x_console_hook(void *ctrl, int action
     if (!seen_first) {
         seen_first = 1;
         tes3x_log("console.hook_first", (u32)(unsigned int)ctrl);
-        exec_load();
+        if (!exec_len)
+            exec_load();
     }
 
     if (!combo_ready)

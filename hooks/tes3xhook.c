@@ -47,6 +47,9 @@ u64 tes3x_boot_time;
 #ifdef TES3X_FRAG_PROBE
 void tes3x_frag_probe(void);
 #endif
+#ifdef TES3X_CONSOLE
+void tes3x_console_start(void);
+#endif
 
 static u32 tes3x_free_kb(void)
 {
@@ -73,6 +76,9 @@ void tes3x_init(void)
 #endif
 #ifdef TES3X_FRAG_PROBE
     tes3x_frag_probe();
+#endif
+#ifdef TES3X_CONSOLE
+    tes3x_console_start();
 #endif
 }
 

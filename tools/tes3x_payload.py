@@ -203,6 +203,7 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         print(f"console hook: gate {address('CONSOLE_SITE', CONSOLE_SITE)}")
         for name, default in CONSOLE_ADDRESSES:
             define(name, address(name, default))
+        flags.append("-DTES3X_CONSOLE")
         console_print = locate("console-print")
         vsprintf = tes3x_inject.call_target(image, console_print + CONSOLE_PRINT_VSPRINTF)
         print(f"console output: printf {hexva(console_print)}, vsprintf {hexva(vsprintf)}")
