@@ -146,9 +146,8 @@ class PipelinePlanTests(unittest.TestCase):
         plan = resolve_patch_plan({'patches': {'preset': 'standard'},
                                    'package': {'mode': 'merged-bsa'}})
         # mcp-1 remains explicit until its failed-resolution branch is verified.
-        self.assertEqual(plan['selected'], [])
-        self.assertEqual(plan['applied'], [])
-        self.assertFalse(plan['needs_payload'])
+        self.assertEqual(plan['selected'], ['mcp-97', 'mcp-102'])
+        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xmcp97.c'])
 
     def test_rotating_autosaves_adds_its_hook_source(self):
         plan = resolve_patch_plan({
@@ -331,7 +330,7 @@ class PipelinePlanTests(unittest.TestCase):
         profile = {'patches': {'preset': 'development', 'disable': ['diagnostics']},
                    'package': {'mode': 'merged-bsa'}}
         plan = resolve_patch_plan(profile)
-        self.assertEqual(plan['selected'], ['console'])
+        self.assertEqual(plan['selected'], ['mcp-97', 'mcp-102', 'console'])
 
     def test_pipeline_rejects_unknown_categories_and_patches(self):
         with self.assertRaises(PipelineError):

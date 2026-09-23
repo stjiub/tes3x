@@ -23,10 +23,10 @@ RELEASE_ARTIFACT_SUFFIXES = {".iso", ".nfo", ".rar", ".sfv"}
 
 PATCHES = {
     "mcp-1": {"category": "core", "status": "implemented", "source": "tes3xrefs.c"},
-    "mcp-97": {"category": "core", "status": "implemented", "source": "tes3xmcp97.c"},
+    "mcp-97": {"category": "core", "status": "verified-xemu", "source": "tes3xmcp97.c"},
     "mcp-154": {"category": "core", "status": "implemented", "source": "tes3xmcp154.c"},
     "mcp-140": {"category": "performance", "status": "implemented", "source": "tes3xmcp140.c"},
-    "mcp-102": {"category": "correctness", "status": "implemented", "source": None},
+    "mcp-102": {"category": "correctness", "status": "verified-xemu", "source": None},
     "script-ext": {"category": "compat", "status": "verified-xemu", "source": "tes3xscript.c"},
     "diagnostics": {
         "category": "instrumentation", "status": "verified-xemu", "source": "tes3xdiag.c"
