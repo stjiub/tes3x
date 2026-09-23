@@ -3,6 +3,7 @@
  */
 
 #include "tes3x_thunks.h"
+#include "tes3xnt.h"
 #include "tes3xlog.h"
 #ifdef TES3X_DIAGNOSTICS
 #include "tes3xdiag.h"
@@ -182,6 +183,16 @@
 /* 7 is Back, 9 is the right thumb click - the only index bound to nothing. */
 #define COMBO_DEFAULT_A 7
 #define COMBO_DEFAULT_B 9
+
+/* D:\tes3xexec.txt runs without input. `@menu` lines run while the main menu is up, the rest once
+ * it has been gone EXEC_SETTLE frames; the main menu and a New Game are separate processes. */
+#define EXEC_MAX 4096
+#define EXEC_SETTLE 150
+#define EXEC_CLICK_FRAMES 600
+
+#define NtCreateFile KFN(THUNK_NtCreateFile, fn_NtCreateFile)
+#define NtReadFile KFN(THUNK_NtReadFile, fn_NtReadFile)
+#define NtClose KFN(THUNK_NtClose, fn_NtClose)
 
 /* __cdecl: 0x001933E0 ends `mov esp,ebp; pop ebp; ret`, so the caller clears the arguments. */
 typedef void *(__cdecl *fn_find_menu)(unsigned int id);
@@ -745,6 +756,152 @@ static void run_command(const char *text)
     ((fn_compile_run)TES3X_COMPILE_RUN)(script, ctx, text, 1, 0, 0, 0, 0);
 }
 
+static char exec_path[] = "D:\\tes3xexec.txt";
+static char exec_buf[EXEC_MAX];
+static u32 exec_len;
+static u32 exec_pos[2];   /* next unread offset: menu lines, then game lines */
+static int exec_wait;
+static int exec_quiet;    /* frames since the main menu was last up */
+static int exec_tries;
+static unsigned int options_id;
+
+static void exec_load(void)
+{
+    ANSI_STRING name;
+    OBJECT_ATTRIBUTES oa;
+    IO_STATUS_BLOCK iosb;
+    u64 zero = 0;
+    void *h = 0;
+
+    tes3x_dos_attributes(&oa, &name, exec_path);
+    if (NtCreateFile(&h, GENERIC_READ | SYNCHRONIZE, &oa, &iosb, 0, FILE_ATTRIBUTE_NORMAL,
+                     FILE_SHARE_READ, FILE_OPEN, FILE_SYNCHRONOUS_IO_NONALERT) != 0)
+        return;
+    iosb.Information = 0;
+    if (NtReadFile(h, 0, 0, 0, &iosb, exec_buf, EXEC_MAX - 1, &zero) == 0)
+        exec_len = iosb.Information;
+    NtClose(h);
+    options_id = ((fn_ui_id)TES3X_UI_ID)("MenuOptions");
+    tes3x_log("exec.loaded", exec_len);
+}
+
+static int starts_with(const char *s, const char *prefix)
+{
+    while (*prefix)
+        if (*s++ != *prefix++)
+            return 0;
+    return 1;
+}
+
+/* The next line of this phase from *pos, trimmed, into line. Returns 0 at the end. */
+static int exec_line(int menu, u32 *pos, char *line)
+{
+    u32 p = *pos, start, end, n;
+    int is_menu;
+
+    while (p < exec_len) {
+        start = p;
+        while (p < exec_len && exec_buf[p] != '\n')
+            p++;
+        end = p;
+        if (p < exec_len)
+            p++;
+        while (start < end && (exec_buf[start] == ' ' || exec_buf[start] == '\t'))
+            start++;
+        while (end > start && (exec_buf[end - 1] == '\r' || exec_buf[end - 1] == ' '))
+            end--;
+        if (start == end || exec_buf[start] == '#')
+            continue;
+        is_menu = end - start > 6 && starts_with(exec_buf + start, "@menu ");
+        if (is_menu != menu)
+            continue;
+        if (is_menu)
+            start += 6;
+        for (n = 0; start < end && n < CMD_MAX - 1; n++)
+            line[n] = exec_buf[start++];
+        line[n] = 0;
+        *pos = p;
+        return 1;
+    }
+    *pos = p;
+    return 0;
+}
+
+static int menu_up(void *menu)
+{
+    return menu && *((unsigned char *)menu + MENU_VISIBLE);
+}
+
+/* "MENU WIDGET". Returns 0 while the widget is not on screen yet. */
+static int exec_click(char *args)
+{
+    fn_ui_id ui_id = (fn_ui_id)TES3X_UI_ID;
+    char *widget = args;
+    void *menu, *el;
+
+    while (*widget && *widget != ' ')
+        widget++;
+    if (!*widget)
+        return 1;
+    *widget++ = 0;
+    while (*widget == ' ')
+        widget++;
+    menu = ((fn_find_menu)TES3X_FIND_MENU)(ui_id(args));
+    if (!menu_up(menu))
+        return 0;
+    el = ((fn_find_child)TES3X_FIND_CHILD)(menu, ui_id(widget));
+    if (!el)
+        return 0;
+    ((fn_trigger_event)TES3X_TRIGGER_EVENT)(el, EVENT_CLICK, 0, 0, el);
+    return 1;
+}
+
+static int exec_number(const char *s)
+{
+    int v = 0;
+
+    while (*s >= '0' && *s <= '9')
+        v = v * 10 + (*s++ - '0');
+    return v;
+}
+
+/* One line per frame at most, so each command sees the frame the last one left. */
+static void exec_step(void)
+{
+    char line[CMD_MAX];
+    int up = menu_up(((fn_find_menu)TES3X_FIND_MENU)(options_id));
+    int phase = up ? 0 : 1;
+    u32 pos, n;
+
+    exec_quiet = up ? 0 : exec_quiet + 1;
+    if (exec_wait) {
+        exec_wait--;
+        return;
+    }
+    if (!up && exec_quiet < EXEC_SETTLE)
+        return;
+    pos = exec_pos[phase];
+    if (!exec_line(phase == 0, &pos, line))
+        return;
+    for (n = 0; line[n]; n++)
+        ;
+    if (starts_with(line, "wait ")) {
+        exec_wait = exec_number(line + 5);
+    } else if (starts_with(line, "click ")) {
+        if (!exec_click(line + 6) && ++exec_tries < EXEC_CLICK_FRAMES)
+            return;
+        tes3x_log(exec_tries < EXEC_CLICK_FRAMES ? "exec.clicked" : "exec.click_missing",
+                  (u32)exec_tries);
+        exec_tries = 0;
+    } else {
+        tes3x_log_raw("exec> ", 6);
+        tes3x_log_raw(line, n);
+        tes3x_log_raw("\n", 1);
+        run_command(line);
+    }
+    exec_pos[phase] = pos;
+}
+
 /* The keyboard's text, while it is still on screen. Returns 0 when there is nothing readable. */
 static void *keyboard_field(void *vk)
 {
@@ -883,6 +1040,7 @@ unsigned int __attribute__((thiscall)) tes3x_console_hook(void *ctrl, int action
     if (!seen_first) {
         seen_first = 1;
         tes3x_log("console.hook_first", (u32)(unsigned int)ctrl);
+        exec_load();
     }
 
     if (!combo_ready)
@@ -906,6 +1064,9 @@ unsigned int __attribute__((thiscall)) tes3x_console_hook(void *ctrl, int action
         tes3x_log("console.run_done", 0);
         cmd[0] = 0;
     }
+
+    if (exec_len && !vk_watch && !run_delay)
+        exec_step();
 
     if (!in) {
         if (!base)

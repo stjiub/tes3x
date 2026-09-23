@@ -76,6 +76,24 @@ Use `enable` and `disable` for individual patches. See [available patches](docs/
 python tools/tes3x_patch.py --list
 ```
 
+## In-game console
+
+With `console` enabled, Back + right thumb click opens the console and A raises the on-screen
+keyboard. `[Xbox] ConsoleCombo` changes the combination.
+
+To run commands without typing, put a `tes3xexec.txt` next to `default.xbe`. Each launch runs
+its lines once, one per frame:
+
+```
+# lines starting with @menu run while the main menu is up
+@menu click MenuOptions MenuOptions_New_container
+wait 30
+coc "Balmora"
+```
+
+Other lines start once the game is running. `wait N` pauses for N frames, and
+`click MENU WIDGET` presses a menu widget. Every line is recorded in `E:\tes3xlog.txt`.
+
 ## Packaging and overrides
 
 `delta-bsa` keeps mod assets in a separate archive for smaller rebuilds and uploads, but requires
