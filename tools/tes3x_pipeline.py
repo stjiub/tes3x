@@ -11,6 +11,7 @@ import sys
 import tempfile
 import tomllib
 
+from tes3x_pack import set_ini_key
 from tes3x_paths import DEFAULT_REMOTE_ROOT, require_paths
 
 
@@ -64,6 +65,10 @@ def string_list(value, field):
     return value
 
 
+def enabled_mods(profile):
+    return [mod for mod in profile.get("mods", []) if mod.get("enabled", True)]
+
+
 def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), package_mode=None):
     """Resolve user-facing patches and packaging-derived infrastructure."""
     config = profile.get("patches", {})
@@ -104,9 +109,12 @@ def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), pac
     selected.update(enable)
     selected.difference_update(disable)
 
-    mode = package_mode or profile.get("package", {}).get("mode", "delta-bsa")
-    if mode not in {"delta-bsa", "merged-bsa"}:
-        raise PipelineError("package.mode must be 'delta-bsa' or 'merged-bsa'")
+    if enabled_mods(profile):
+        mode = package_mode or profile.get("package", {}).get("mode", "delta-bsa")
+        if mode not in {"delta-bsa", "merged-bsa"}:
+            raise PipelineError("package.mode must be 'delta-bsa' or 'merged-bsa'")
+    else:
+        mode = "retail"
     applied = set(selected)
     if mode == "delta-bsa":
         applied.add("multi-bsa")
@@ -182,6 +190,20 @@ def copy_retail_root(vanilla, staged):
     return len(copied), sum(path.stat().st_size for path in copied)
 
 
+def stage_retail(data_files, ini, staged, ini_items):
+    """Stage unchanged retail Data Files and an adapted Morrowind.ini, for a build without mods."""
+    shutil.copytree(data_files, staged / "Data Files")
+    text = ini.read_text(encoding="latin-1")
+    for item in ini_items:
+        section, _, rest = item.partition(":")
+        key, eq, value = rest.partition("=")
+        if not section or not key or not eq:
+            raise PipelineError(f"ini keys want SECTION:KEY=VALUE, got {item!r}")
+        text = set_ini_key(text, section.strip(), key.strip(), value)
+    (staged / "Morrowind.ini").write_text(text, encoding="latin-1")
+    print(f"  retail Data Files staged unchanged; Morrowind.ini with {len(ini_items)} key(s) set")
+
+
 def validate_output(path):
     resolved = path.resolve()
     if resolved == Path(resolved.anchor) or resolved == Path.cwd().resolve():
@@ -239,9 +261,14 @@ def main(argv=None):
     ap.add_argument("--ini-set", action="append", default=[], metavar="SECTION:KEY=VALUE",
                     help="set a key in the staged Morrowind.ini (repeatable)")
     action = ap.add_mutually_exclusive_group()
-    action.add_argument("--deploy", action="store_true", help="build and deploy to the configured Xbox")
-    action.add_argument("--dry-run", action="store_true", help="build, then show the Xbox deployment diff")
-    ap.add_argument("--plan", action="store_true", help="show resolved work without building")
+    action.add_argument("--deploy", action="store_true",
+                        help="build, then upload the changes to the configured Xbox over FTP")
+    action.add_argument("--dry-run", action="store_true",
+                        help="build normally, then list what --deploy would upload or delete "
+                             "on the Xbox without changing it")
+    ap.add_argument("--plan", action="store_true",
+                    help="print which patches and mods would be used, then stop; reads only "
+                         "the profile and local config")
     args = ap.parse_args(argv)
 
     profile_path = Path(args.profile).resolve()
@@ -260,20 +287,6 @@ def main(argv=None):
     base = local_path.parent if local_path else Path.cwd()
     paths = local.get("paths", {})
     deploy = local.get("deploy", {})
-
-    vanilla_value = args.vanilla or paths.get("vanilla_root")
-    if not vanilla_value:
-        raise PipelineError("set paths.vanilla_root in local config or pass --vanilla")
-    vanilla = config_path(vanilla_value, base).resolve()
-    data_files = vanilla / "Data Files"
-    retail_xbe = vanilla / "morrowind.xbe"
-    launcher = vanilla / "Default.xbe"
-    ini = vanilla / "Morrowind.ini"
-    for path, label in ((retail_xbe, "retail morrowind.xbe"), (launcher, "retail Default.xbe"),
-                        (ini, "retail Morrowind.ini")):
-        require_file(path, label)
-    if not data_files.is_dir():
-        raise PipelineError(f"retail Data Files not found: {data_files}")
 
     plan = resolve_patch_plan(profile, args.preset, args.enable, args.disable,
                               args.package_mode)
@@ -296,17 +309,34 @@ def main(argv=None):
 
     print(f"profile: {profile_name}")
     print(f"preset: {plan['preset']}")
-    print("patches: " + (", ".join(plan["applied"]) or "none"))
+    print("patches: " + ", ".join(["boot-media", f"drive-letters={drive}"] + plan["applied"]))
     if title:
         print(f"title: {title}")
     if prof_targets:
         print("profiler: " + ", ".join(prof_targets))
-    print(f"assets: {plan['package_mode']}")
+    if plan["package_mode"] == "retail":
+        print("mods: none; retail Data Files are staged unchanged")
+    else:
+        print(f"mods: {len(enabled_mods(profile))}, packed as {plan['package_mode']}")
     print(f"output: {output}")
     if args.deploy or args.dry_run:
         print(f"target: {deploy.get('host', '<missing>')} {remote or '<missing>'}")
     if args.plan:
         return 0
+
+    vanilla_value = args.vanilla or paths.get("vanilla_root")
+    if not vanilla_value:
+        raise PipelineError("set paths.vanilla_root in local config or pass --vanilla")
+    vanilla = config_path(vanilla_value, base).resolve()
+    data_files = vanilla / "Data Files"
+    retail_xbe = vanilla / "morrowind.xbe"
+    launcher = vanilla / "Default.xbe"
+    ini = vanilla / "Morrowind.ini"
+    for path, label in ((retail_xbe, "retail morrowind.xbe"), (launcher, "retail Default.xbe"),
+                        (ini, "retail Morrowind.ini")):
+        require_file(path, label)
+    if not data_files.is_dir():
+        raise PipelineError(f"retail Data Files not found: {data_files}")
 
     nxdk_value = args.nxdk or paths.get("nxdk_dir")
     if plan["needs_payload"] and not nxdk_value:
@@ -318,19 +348,24 @@ def main(argv=None):
     if (args.deploy or args.dry_run) and (not deploy.get("host") or not remote):
         raise PipelineError("deployment requires deploy.host and deploy.remote_root")
 
-    build_root.mkdir(parents=True, exist_ok=True)
-    work = Path(tempfile.mkdtemp(prefix=f".{profile_name}-", dir=build_root))
+    # Beside the output, so publishing is a rename on one volume.
+    output.parent.mkdir(parents=True, exist_ok=True)
+    work = Path(tempfile.mkdtemp(prefix=f".{profile_name}-", dir=output.parent))
     tree = work / "tree"
     manifest = work / "manifest.json"
     hook_out = work / "hooks"
     patched = work / "morrowind.xbe"
     staged = work / "deploy"
+    # Profile keys first, so the command line overrides them.
+    ini_items = [f"{k}={v}" for k, v in profile.get("ini", {}).items()] + args.ini_set
+    has_mods = plan["package_mode"] != "retail"
     try:
-        build_cmd = [sys.executable, TOOLS / "tes3x_build.py", profile_path,
-                     "--out", tree, "--json", manifest, "--vanilla", data_files]
-        if remote:
-            build_cmd += ["--remote-root", remote]
-        run(build_cmd)
+        if has_mods:
+            build_cmd = [sys.executable, TOOLS / "tes3x_build.py", profile_path,
+                         "--out", tree, "--json", manifest, "--vanilla", data_files]
+            if remote:
+                build_cmd += ["--remote-root", remote]
+            run(build_cmd)
 
         payload = hook_out / "tes3xhook.pe"
         if plan["needs_payload"]:
@@ -356,27 +391,27 @@ def main(argv=None):
         patch_cmd += ["--out", patched]
         run(patch_cmd)
 
-        pack_cmd = [sys.executable, TOOLS / "tes3x_pack.py", tree,
-                    "--vanilla", data_files, "--ini", ini, "--out", staged]
-        if plan["package_mode"] == "delta-bsa":
-            pack_cmd += ["--delta-archive", package.get("archive_name", "tes3xmods.bsa")]
-        if package.get("archive_only", False):
-            pack_cmd.append("--archive-only")
-        for pattern in package.get("loose_assets", []):
-            pack_cmd += ["--loose-asset", pattern]
-        loose_mods = [m["name"] for m in profile.get("mods", [])
-                      if m.get("enabled", True) and m.get("loose", False)]
-        if loose_mods:
-            pack_cmd += ["--manifest", manifest]
-            for name in loose_mods:
-                pack_cmd += ["--loose-mod", name]
-        # Profile keys first, so the command line overrides them.
-        profile_ini = [f"{k}={v}" for k, v in profile.get("ini", {}).items()]
-        for item in profile_ini + args.ini_set:
-            pack_cmd += ["--ini-set", item]
-        if remote:
-            pack_cmd += ["--remote-root", remote]
-        run(pack_cmd)
+        if has_mods:
+            pack_cmd = [sys.executable, TOOLS / "tes3x_pack.py", tree,
+                        "--vanilla", data_files, "--ini", ini, "--out", staged]
+            if plan["package_mode"] == "delta-bsa":
+                pack_cmd += ["--delta-archive", package.get("archive_name", "tes3xmods.bsa")]
+            if package.get("archive_only", False):
+                pack_cmd.append("--archive-only")
+            for pattern in package.get("loose_assets", []):
+                pack_cmd += ["--loose-asset", pattern]
+            loose_mods = [m["name"] for m in enabled_mods(profile) if m.get("loose", False)]
+            if loose_mods:
+                pack_cmd += ["--manifest", manifest]
+                for name in loose_mods:
+                    pack_cmd += ["--loose-mod", name]
+            for item in ini_items:
+                pack_cmd += ["--ini-set", item]
+            if remote:
+                pack_cmd += ["--remote-root", remote]
+            run(pack_cmd)
+        else:
+            stage_retail(data_files, ini, staged, ini_items)
 
         retail_files, retail_bytes = copy_retail_root(vanilla, staged)
         if title:

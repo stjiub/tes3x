@@ -9,6 +9,7 @@ from tes3x_paths import check_paths, require_paths
 from tes3x_pack import write_invalidation
 from tes3x_build import materialize, plugin_masters
 from tes3x_pipeline import PipelineError, copy_retail_root, resolve_patch_plan
+from tes3x_pipeline import main as pipeline_main
 from tes3x_patch import _mcp_97, _mcp_102, _mcp_140, _mcp_154
 from tes3x_plugins import validate_order
 from test_reach import rec, sub
@@ -134,6 +135,7 @@ class PipelinePlanTests(unittest.TestCase):
         profile = {
             'patches': {'preset': 'minimal', 'enable': ['mcp-1', 'script-ext']},
             'package': {'mode': 'delta-bsa'},
+            'mods': [{'name': 'Example'}],
         }
         plan = resolve_patch_plan(profile)
         self.assertEqual(plan['applied'], ['multi-bsa', 'script-ext', 'mcp-1'])
@@ -148,6 +150,21 @@ class PipelinePlanTests(unittest.TestCase):
         # mcp-1 remains explicit until its failed-resolution branch is verified.
         self.assertEqual(plan['selected'], ['mcp-97', 'mcp-102'])
         self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xmcp97.c'])
+
+    def test_profile_without_mods_patches_only(self):
+        plan = resolve_patch_plan({'patches': {'preset': 'standard'},
+                                   'package': {'mode': 'delta-bsa'},
+                                   'mods': [{'name': 'Off', 'enabled': False}]})
+        self.assertEqual(plan['package_mode'], 'retail')
+        self.assertNotIn('multi-bsa', plan['applied'])
+
+    def test_plan_needs_no_retail_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            profile = Path(tmp) / 'p.toml'
+            profile.write_text('[profile]\nname = "p"\n', encoding='utf-8')
+            local = Path(tmp) / 'local.toml'
+            local.write_text('[paths]\nvanilla_root = "missing"\n', encoding='utf-8')
+            self.assertEqual(pipeline_main([str(profile), '--config', str(local), '--plan']), 0)
 
     def test_rotating_autosaves_adds_its_hook_source(self):
         plan = resolve_patch_plan({
