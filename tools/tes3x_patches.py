@@ -15,33 +15,54 @@ CATEGORIES = ("core", "correctness", "compat", "performance", "qol", "balance",
 STATUSES = ("implemented", "verified-xemu", "verified-hardware")
 VERIFIED = ("verified-xemu", "verified-hardware")
 SELECTIONS = ("always", "packaging", "preset", "option")
-REQUIRED = ("name", "category", "status", "selection", "summary")
-OPTIONAL = ("bit", "source", "takes", "evidence")
+# Fixes without code, in the order the generated page lists them.
+CANDIDATE_STATUSES = {
+    "researching": "Being decoded or reproduced now.",
+    "located": "The Xbox cause and a patch design are known; not implemented yet.",
+    "candidate": "Worth porting, but not yet shown to affect the Xbox build.",
+    "deferred": "A real fix, held back for evidence, prerequisites or risk.",
+    "not-applicable": "Targets PC-only code or behaviour; there is nothing to fix on the Xbox.",
+    "infeasible": "Attempted, and cannot be done on the Xbox build.",
+    "rejected": "Deliberately left out of TES3X.",
+}
+PATCH_FIELDS = (("name", "category", "status", "selection", "summary"),
+                ("bit", "source", "takes", "evidence", "origin"))
+CANDIDATE_FIELDS = (("name", "origin", "category", "status", "summary", "reason"),
+                    ("default", "doc"))
 
 
 class RegistryError(ValueError):
     pass
 
 
-def load(path=REGISTRY):
-    """The patches in application order, each a dict of the fields above."""
+def check(entry, fields, choices, sources, where):
+    required, optional = fields
+    missing = [key for key in required if key not in entry]
+    unknown = set(entry) - set(required) - set(optional)
+    if missing or unknown:
+        raise RegistryError(f"{where}: missing {missing or 'nothing'}, "
+                            f"unknown {sorted(unknown) or 'nothing'}")
+    for key, allowed in choices:
+        if entry[key] not in allowed:
+            raise RegistryError(f"{where}: {key} must be one of {', '.join(allowed)}")
+    origin = entry.get("origin")
+    if origin is not None and (not isinstance(origin, dict) or origin.get("source") not in sources
+                               or set(origin) - {"source", "id"}):
+        raise RegistryError(f"{where}: origin wants {{ source = <a [source] name>, id = ... }}")
+
+
+def read(path=REGISTRY):
+    """The sources, the patches in application order, and the fixes without code."""
     with open(path, "rb") as stream:
-        patches = tomllib.load(stream).get("patch", [])
+        data = tomllib.load(stream)
+    sources = data.get("source", {})
+    patches = data.get("patch", [])
+    candidates = data.get("candidate", [])
     names, bits = set(), set()
     for entry in patches:
-        where = f"{path.name}: {entry.get('name', '<unnamed>')}"
-        missing = [key for key in REQUIRED if key not in entry]
-        unknown = set(entry) - set(REQUIRED) - set(OPTIONAL)
-        if missing or unknown:
-            raise RegistryError(f"{where}: missing {missing or 'nothing'}, "
-                                f"unknown {sorted(unknown) or 'nothing'}")
-        for key, allowed in (("category", CATEGORIES), ("status", STATUSES),
-                             ("selection", SELECTIONS)):
-            if entry[key] not in allowed:
-                raise RegistryError(f"{where}: {key} must be one of {', '.join(allowed)}")
-        if entry["name"] in names:
-            raise RegistryError(f"{where}: duplicate name")
-        names.add(entry["name"])
+        where = f"{path.name}: patch {entry.get('name', '<unnamed>')}"
+        check(entry, PATCH_FIELDS, (("category", CATEGORIES), ("status", STATUSES),
+                                    ("selection", SELECTIONS)), sources, where)
         if "bit" in entry:
             if not isinstance(entry["bit"], int) or not 0 <= entry["bit"] < 32:
                 raise RegistryError(f"{where}: bit must be 0-31")
@@ -50,14 +71,37 @@ def load(path=REGISTRY):
             bits.add(entry["bit"])
         if entry["status"] in VERIFIED and not entry.get("evidence"):
             raise RegistryError(f"{where}: {entry['status']} needs evidence")
-    return patches
+    for entry in candidates:
+        where = f"{path.name}: candidate {entry.get('name', '<unnamed>')}"
+        check(entry, CANDIDATE_FIELDS, (("category", CATEGORIES + ("undecided",)),
+                                        ("status", tuple(CANDIDATE_STATUSES))), sources, where)
+    for entry in patches + candidates:
+        if entry["name"] in names:
+            raise RegistryError(f"{path.name}: {entry['name']} is listed twice")
+        names.add(entry["name"])
+    return sources, patches, candidates
 
 
-PATCHES = load()
+def load(path=REGISTRY):
+    return read(path)[1]
+
+
+SOURCES, PATCHES, CANDIDATES = read()
 BY_NAME = {entry["name"]: entry for entry in PATCHES}
 
 
-def render(patches=PATCHES):
+def origin_text(entry):
+    origin = entry.get("origin") or {"source": "TES3X"}
+    source = SOURCES.get(origin["source"], {})
+    text = f"[{origin['source']}]({source['url']})" if source.get("url") else origin["source"]
+    return text + (f" #{origin['id']}" if "id" in origin else "")
+
+
+def cell(text):
+    return text.replace("|", "\\|")
+
+
+def render():
     from tes3x_pipeline import resolve_patch_plan
     presets = {}
     for preset in ("development", "standard"):
@@ -74,6 +118,8 @@ def render(patches=PATCHES):
         "Generated from [`patches.toml`](../patches.toml) by `tools/tes3x_patches.py --write`.",
         "Edit that file, not this one.",
         "",
+        "## Implemented",
+        "",
         "**Status**: `implemented` means the patch applies and passes structural checks;",
         "`verified-xemu` means it was shown to work in the xemu emulator; `verified-hardware`",
         "means it was shown to work on an original Xbox.",
@@ -81,14 +127,35 @@ def render(patches=PATCHES):
         "**Selected by**: `standard` and `development` are presets; a patch marked `standard` is",
         "also in `development`. Anything else is enabled by name in a profile.",
         "",
-        "| patch | what it does | category | status | selected by |",
-        "|---|---|---|---|---|",
+        "| patch | what it does | from | category | status | selected by |",
+        "|---|---|---|---|---|---|",
     ]
-    for entry in patches:
+    for entry in PATCHES:
         name = entry["name"] + (f"={entry['takes']}" if "takes" in entry else "")
         chosen = selection.get(entry["selection"]) or presets.get(entry["name"], "by name")
-        lines.append(f"| `{name}` | {entry['summary']} | {entry['category']} | "
-                     f"{entry['status']} | {chosen} |")
+        lines.append(f"| `{name}` | {cell(entry['summary'])} | {origin_text(entry)} | "
+                     f"{entry['category']} | {entry['status']} | {chosen} |")
+    lines += [
+        "",
+        "## Not implemented",
+        "",
+        "Fixes from other projects that have been reviewed for the Xbox, and why each is not",
+        "implemented yet or at all. Appearing here does not mean the Xbox build has the defect.",
+        "A fix from another project that is not listed has not been reviewed yet.",
+    ]
+    for status, meaning in CANDIDATE_STATUSES.items():
+        entries = [entry for entry in CANDIDATES if entry["status"] == status]
+        if not entries:
+            continue
+        lines += ["", f"### {status}", "", meaning, "",
+                  "| fix | from | category | notes |", "|---|---|---|---|"]
+        for entry in entries:
+            notes = f"**{cell(entry['summary'])}.** {cell(entry['reason'])}"
+            if "doc" in entry:
+                notes += f" [More]({entry['doc']})"
+            category = entry["category"] + (f" ({entry['default']})" if "default" in entry else "")
+            lines.append(f"| `{entry['name']}` | {origin_text(entry)} | {cell(category)} | "
+                         f"{notes} |")
     return "\n".join(lines) + "\n"
 
 
