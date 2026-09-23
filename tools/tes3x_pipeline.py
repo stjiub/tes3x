@@ -362,6 +362,8 @@ def main(argv=None):
             pack_cmd += ["--delta-archive", package.get("archive_name", "tes3xmods.bsa")]
         if package.get("archive_only", False):
             pack_cmd.append("--archive-only")
+        for pattern in package.get("loose_assets", []):
+            pack_cmd += ["--loose-asset", pattern]
         loose_mods = [m["name"] for m in profile.get("mods", [])
                       if m.get("enabled", True) and m.get("loose", False)]
         if loose_mods:
