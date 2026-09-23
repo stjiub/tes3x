@@ -48,9 +48,9 @@ A profile without enabled mods skips collection and packing: the retail `Data Fi
 unchanged, `[ini]` keys are still applied, and no `multi-bsa` is derived.
 
 ```powershell
-python tools/tes3x_pipeline.py examples/mods.toml --plan
-python tools/tes3x_pipeline.py examples/mods.toml --dry-run
-python tools/tes3x_pipeline.py examples/mods.toml --deploy
+python tools/tes3x_pipeline.py examples/profile.toml --plan
+python tools/tes3x_pipeline.py examples/profile.toml --dry-run
+python tools/tes3x_pipeline.py examples/profile.toml --deploy
 ```
 
 The default output is `BUILD_ROOT/PROFILE_NAME`. Only an empty directory or an
@@ -88,7 +88,7 @@ not a filename or directory component exceeding 42 characters.
 ## Reachability
 
 ```powershell
-python tools/tes3x_build.py examples/mods.toml --prune `
+python tools/tes3x_build.py examples/profile.toml --prune `
   --vanilla "build/vanilla/Data Files" `
   --out build/pruned-tree --reachability-json build/reachability.json `
   --remote-root "F:/Games/MorrowindTest"

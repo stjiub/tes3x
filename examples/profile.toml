@@ -1,0 +1,38 @@
+# Copy this file to profile.toml and edit it for one build.
+
+[profile]
+name = "my-build"                    # output: build/pipeline/my-build
+# title = "Morrowind Modded"         # optional dashboard title
+# remote_root = "F:/Games/MorrowindModded"
+library = "C:/path/to/mod-library"  # remove for a patches-only build
+
+[rules]
+max_texture_size = 512
+clear_cache_partitions = true
+
+[patches]
+# minimal: no optional engine fixes; standard: tested fixes; development: diagnostics and console
+preset = "standard"
+enable = []                          # see: python tools/tes3x_patch.py --list
+disable = []
+
+[package]
+# delta-bsa needs LLVM; merged-bsa does not.
+mode = "delta-bsa"
+# archive_only = false
+
+[ini]
+# "General:Show FPS" = 1
+
+# Remove every [[mods]] block and profile.library for a patches-only build.
+# For mods without engine fixes, keep the mod blocks and use preset = "minimal".
+[[mods]]
+name = "Example Mod"                # folder name inside the mod library
+order = 10                           # higher order wins file conflicts
+
+[[mods]]
+name = "Another Mod"
+order = 20
+# enabled = false
+# optional = true
+# plugins = ["Another Mod.esp"]      # include only these plugins from this mod
