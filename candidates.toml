@@ -1,0 +1,2114 @@
+# Fixes TES3X has reviewed but not implemented, and why.
+#
+# Every Morrowind Code Patch id has an entry, plus fixes from MWSE, OpenMW and TES3X's own
+# measurements. docs/candidates.md is generated from this file with the patch table: run
+# `python tools/tes3x_patches.py --write` after editing. When a fix is implemented, delete its
+# entry here and add a [[patch]] entry to patches.toml under the same name.
+#
+# status     researching, located, candidate, deferred, not-applicable (PC-only), infeasible
+#            (tried, cannot be done) or rejected
+# priority   high, medium, low, or none for fixes that will not be ported
+# category   the TES3X category it would have (see patches.toml); omitted when not applicable
+# default    notes on its default policy, when not the category's usual one
+# origin     the project it comes from; sources are listed in patches.toml
+# reason     why it has this status, in a sentence or two
+# doc        a page with the longer reasoning, when needed
+
+[[candidate]]
+name = "mcp-2a"
+origin = { source = "MCP", id = "2" }
+category = "correctness"
+default = "recommended"
+status = "candidate"
+priority = "low"
+summary = "Fix inverted Mercantile contribution to price"
+reason = "Isolate the formula error."
+
+[[candidate]]
+name = "mcp-2b"
+origin = { source = "MCP", id = "2" }
+category = "balance"
+default = "opt in"
+status = "candidate"
+priority = "low"
+summary = "Reduce all price modifiers by 50% and alter zero-value handling"
+reason = "Rebalance, not required to correct the inversion. Do not couple it to 2a."
+
+[[candidate]]
+name = "mcp-3"
+origin = { source = "MCP", id = "3" }
+category = "correctness"
+status = "candidate"
+priority = "medium"
+summary = "Unarmored fix"
+reason = "Clear formula defect: no unarmored armor rating unless at least one armor piece is worn."
+
+[[candidate]]
+name = "mcp-4"
+origin = { source = "MCP", id = "4" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Calendar fix"
+reason = "Month table and names disagree, so the calendar is visibly wrong. Cosmetic."
+
+[[candidate]]
+name = "mcp-5"
+origin = { source = "MCP", id = "5" }
+category = "balance"
+default = "opt in"
+status = "candidate"
+priority = "low"
+summary = "Stop merchants equipping sold items"
+reason = "Changes visible merchant behaviour. OpenMW exposes comparable behaviour as a disabled-by-default option."
+
+[[candidate]]
+name = "mcp-6"
+origin = { source = "MCP", id = "6" }
+category = "correctness"
+status = "candidate"
+priority = "medium"
+summary = "Restore/drain attributes fix"
+reason = "Restore and expiring Drain stop at the base value instead of the fortified one; affects ordinary play."
+
+[[candidate]]
+name = "mcp-7"
+origin = { source = "MCP", id = "7" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "StreamMusic / master volume fix"
+reason = "StreamMusic forcing full volume applies to scripts on Xbox; the master-volume half concerns PC settings storage."
+
+[[candidate]]
+name = "mcp-8"
+origin = { source = "MCP", id = "8" }
+category = "balance"
+default = "opt in"
+status = "candidate"
+priority = "low"
+summary = "Calm spell behaviour"
+reason = "Arguable intended behaviour, but OpenMW keeps classic behaviour by default."
+
+[[candidate]]
+name = "mcp-9"
+origin = { source = "MCP", id = "9" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Vampire stats fix"
+reason = "Constant-effect items worn while becoming a vampire over-raise stats. Rare."
+
+[[candidate]]
+name = "mcp-10"
+origin = { source = "MCP", id = "10" }
+category = "balance"
+default = "opt in"
+status = "candidate"
+priority = "low"
+summary = "Reflected spell behaviour"
+reason = "MCP's rationale includes making reflection less safe; that is balance as well as correctness. OpenMW also preserves classic behaviour by default."
+
+[[candidate]]
+name = "mcp-11"
+origin = { source = "MCP", id = "11" }
+category = "correctness"
+default = "undecided"
+status = "deferred"
+priority = "low"
+summary = "Transparent clothes in inventory"
+reason = "Xbox inventory rendering differs. Only pursue after confirming the affected path exists."
+
+[[candidate]]
+name = "mcp-12"
+origin = { source = "MCP", id = "12" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Enchant glow in fog fix"
+reason = "Fog is not disabled when drawing enchant glow. The Xbox renderer differs, so confirm the white glow happens on Xbox first."
+
+[[candidate]]
+name = "mcp-13"
+origin = { source = "MCP", id = "13" }
+category = "qol"
+status = "candidate"
+priority = "low"
+summary = "Show NPC health bar on healing"
+reason = "Show the target's health bar when healing it."
+
+[[candidate]]
+name = "mcp-14"
+origin = { source = "MCP", id = "14" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Enchanting increases item value"
+reason = "Balance change, opt in only; MCP ships it as an option rather than a defect fix."
+
+[[candidate]]
+name = "mcp-15"
+origin = { source = "MCP", id = "15" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Allow stealing from KOed NPCs"
+reason = "Balance change, opt in only; MCP ships it as an option rather than a defect fix."
+
+[[candidate]]
+name = "mcp-16"
+origin = { source = "MCP", id = "16" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Spellmaking max. magnitude increase"
+reason = "Balance change, opt in only; MCP ships it as an option rather than a defect fix."
+
+[[candidate]]
+name = "mcp-17"
+origin = { source = "MCP", id = "17" }
+category = "qol"
+status = "candidate"
+priority = "low"
+summary = "Spellmaking max. duration reduced"
+reason = "Shorter spellmaker duration cap, easier to set precisely; may suit the controller slider."
+
+[[candidate]]
+name = "mcp-18"
+origin = { source = "MCP", id = "18" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Exhaust NPCs with Damage Fatigue"
+reason = "Balance change, opt in only; MCP ships it as an option rather than a defect fix."
+
+[[candidate]]
+name = "mcp-19"
+origin = { source = "MCP", id = "19" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Disposition fix"
+reason = "Disposition lost when a Personality effect expires above 100."
+
+[[candidate]]
+name = "mcp-20"
+origin = { source = "MCP", id = "20" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Spell magnitude fix"
+reason = "Variable-magnitude spells rarely reach their maximum."
+
+[[candidate]]
+name = "mcp-21"
+origin = { source = "MCP", id = "21" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Dispel fix"
+reason = "Dispel silently stacks until it always succeeds."
+
+[[candidate]]
+name = "mcp-22"
+origin = { source = "MCP", id = "22" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Creature armor damage fix"
+reason = "Creatures without weapons never damage armor."
+
+[[candidate]]
+name = "mcp-23"
+origin = { source = "MCP", id = "23" }
+category = "undecided"
+status = "deferred"
+priority = "medium"
+summary = "Inventory bugs group"
+reason = "Split into individual defects after decoding; do not import a 338-byte group under one policy decision."
+
+[[candidate]]
+name = "mcp-24a"
+origin = { source = "MCP", id = "24" }
+category = "correctness"
+default = "recommended if reproduced"
+status = "candidate"
+priority = "low"
+summary = "Prevent pathological NPC potion-use frequency"
+reason = "Separate a bad scheduling/throttle path from new AI."
+
+[[candidate]]
+name = "mcp-24b"
+origin = { source = "MCP", id = "24" }
+category = "balance"
+default = "opt in"
+status = "candidate"
+priority = "low"
+summary = "Add magicka-potion decision-making to NPC AI"
+reason = "New combat AI behaviour."
+
+[[candidate]]
+name = "mcp-25"
+origin = { source = "MCP", id = "25" }
+category = "correctness"
+status = "candidate"
+priority = "medium"
+summary = "Blind fix"
+reason = "Blind gives the player an attack bonus instead of a penalty: an inverted effect."
+
+[[candidate]]
+name = "mcp-26"
+origin = { source = "MCP", id = "26" }
+category = "compat"
+status = "candidate"
+priority = "low"
+summary = "Gloss map fix"
+reason = "Gloss maps for mods. The Xbox renderer path differs; establish that it shares the limitation first."
+
+[[candidate]]
+name = "mcp-27"
+origin = { source = "MCP", id = "27" }
+category = "correctness"
+status = "deferred"
+priority = "low"
+summary = "Lighting fixes group"
+reason = "A group of renderer lighting fixes. Split into single defects after decoding, as with MCP-23, and confirm each on the Xbox renderer."
+
+[[candidate]]
+name = "mcp-29"
+origin = { source = "MCP", id = "29" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Particle effects fix"
+reason = "Particle emitters detach from scaled weapons and projectiles."
+
+[[candidate]]
+name = "mcp-30"
+origin = { source = "MCP", id = "30" }
+category = "correctness"
+status = "candidate"
+priority = "medium"
+summary = "Projectile aiming fix"
+reason = "Projectiles fire off-centre for races with height other than 1.0, and third-person aiming is poor."
+
+[[candidate]]
+name = "mcp-32"
+origin = { source = "MCP", id = "32" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Waterwalk fix"
+reason = "Waterwalk cast while swimming applies stored fall damage."
+
+[[candidate]]
+name = "mcp-33"
+origin = { source = "MCP", id = "33" }
+category = "balance"
+default = "opt in"
+status = "candidate"
+priority = "low"
+summary = "Training price/stats"
+reason = "Formula looks incorrect, but trainer base-skill behaviour is configurable in OpenMW and affects progression/economy."
+
+[[candidate]]
+name = "mcp-34a"
+origin = { source = "MCP", id = "34" }
+category = "correctness"
+default = "recommended"
+status = "candidate"
+priority = "low"
+summary = "Make displayed and charged travel prices agree"
+reason = "A direct UI/transaction mismatch."
+
+[[candidate]]
+name = "mcp-34b"
+origin = { source = "MCP", id = "34" }
+category = "balance"
+default = "opt in"
+status = "candidate"
+priority = "low"
+summary = "Charge separately for companions"
+reason = "Economy choice; keep separate from the mismatch fix."
+
+[[candidate]]
+name = "mcp-35"
+origin = { source = "MCP", id = "35" }
+category = "undecided"
+status = "deferred"
+priority = "low"
+summary = "Reflection on skinned models"
+reason = "Xbox GPU/render path differs. Require a reproduced Xbox defect and a console-appropriate implementation."
+
+[[candidate]]
+name = "mcp-36"
+origin = { source = "MCP", id = "36" }
+category = "compat"
+status = "candidate"
+priority = "low"
+summary = "Createmaps/fillmap fix"
+reason = "createmaps is a PC map-generation command; only the fillmap half, listing all mods, is useful now that the console is reachable."
+
+[[candidate]]
+name = "mcp-37"
+origin = { source = "MCP", id = "37" }
+category = "core"
+default = "intended default"
+status = "candidate"
+priority = "high"
+summary = "Delayed spell crash"
+reason = "Crash can occur roughly 72 game hours after the initiating cell change, easily misdiagnosed as save corruption."
+
+[[candidate]]
+name = "mcp-38"
+origin = { source = "MCP", id = "38" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Loud interface/gameplay sounds fix"
+reason = "Mostly a PC DirectSound duplicate-sound quirk; the armor-hit volume overflow may exist on Xbox. Reproduce before porting."
+
+[[candidate]]
+name = "mcp-39"
+origin = { source = "MCP", id = "39" }
+category = "undecided"
+status = "not-applicable"
+priority = "none"
+summary = "Splash/title quality"
+reason = "PC presentation path; solve Xbox assets directly if a real issue appears."
+
+[[candidate]]
+name = "mcp-40"
+origin = { source = "MCP", id = "40" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Strength-based hand to hand damage"
+reason = "Balance change, opt in only; MCP ships it as an option rather than a defect fix."
+
+[[candidate]]
+name = "mcp-41"
+origin = { source = "MCP", id = "41" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Spellmaker/enchant multiple effects"
+reason = "Balance change, opt in only; MCP ships it as an option rather than a defect fix."
+
+[[candidate]]
+name = "mcp-42"
+origin = { source = "MCP", id = "42" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Spellmaker area effect cost"
+reason = "Balance change, opt in only; MCP ships it as an option rather than a defect fix."
+
+[[candidate]]
+name = "mcp-43"
+origin = { source = "MCP", id = "43" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Arrow enchanting"
+reason = "Balance change, opt in only; MCP ships it as an option rather than a defect fix."
+
+[[candidate]]
+name = "mcp-44"
+origin = { source = "MCP", id = "44" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Fortify maximum health"
+reason = "Balance change, opt in only; MCP ships it as an option rather than a defect fix."
+
+[[candidate]]
+name = "mcp-45"
+origin = { source = "MCP", id = "45" }
+category = "qol"
+status = "candidate"
+priority = "low"
+summary = "Toggle sneak"
+reason = "Toggle sneak. Check how the Xbox controller mapping already handles sneak first."
+
+[[candidate]]
+name = "mcp-46a"
+origin = { source = "MCP", id = "46" }
+category = "correctness"
+default = "recommended"
+status = "candidate"
+priority = "medium"
+summary = "`Drop` places at the acting reference, not the player"
+reason = "The engine treats every drop as if it came from the player inventory view, so scripted drops land at the wrong actor. Split from the rest of id 46 under rule 3."
+
+[[candidate]]
+name = "mcp-46b"
+origin = { source = "MCP", id = "46" }
+category = "correctness"
+default = "recommended"
+status = "candidate"
+priority = "low"
+summary = "`PlaceAtPC` distance in third person, `PlaceAtMe` scale inheritance"
+reason = "A line-of-sight test misplaces third-person `PlaceAtPC` at the player's feet; `PlaceAtMe` inherits a target's rotation but not its scale. Two separate defects sharing id 46's record set."
+
+[[candidate]]
+name = "mcp-47"
+origin = { source = "MCP", id = "47" }
+category = "correctness"
+status = "candidate"
+priority = "medium"
+summary = "Spell deselection bug fix"
+reason = "The selected spell is dropped when other actors unequip or use up magic items; tedious to reselect with a controller."
+
+[[candidate]]
+name = "mcp-48"
+origin = { source = "MCP", id = "48" }
+category = "correctness"
+status = "candidate"
+priority = "medium"
+summary = "Level-up stats bug fix"
+reason = "Level-up offers a x1 multiplier when the correct one would take a stat to 100."
+
+[[candidate]]
+name = "mcp-49"
+origin = { source = "MCP", id = "49" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Bound items expiry fix"
+reason = "Expiring bound weapons force a weapon draw; bound armor does not restore gloves, bracers and shoes."
+
+[[candidate]]
+name = "mcp-50"
+origin = { source = "MCP", id = "50" }
+category = "qol"
+status = "candidate"
+priority = "low"
+summary = "Stable enchantment sort"
+reason = "Sort enchantments alphabetically every time."
+
+[[candidate]]
+name = "mcp-51"
+origin = { source = "MCP", id = "51" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Fog of war fix"
+reason = "Local-map fog of war can stop updating after a cell crossing because of mismatched rounding."
+
+[[candidate]]
+name = "mcp-52"
+origin = { source = "MCP", id = "52" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Intimidate fix"
+reason = "A successful intimidate can fail to raise disposition."
+
+[[candidate]]
+name = "mcp-53"
+origin = { source = "MCP", id = "53" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Magicka display accuracy"
+reason = "Stat displays round up and overstate current magicka."
+
+[[candidate]]
+name = "mcp-54"
+origin = { source = "MCP", id = "54" }
+category = "compat"
+status = "deferred"
+priority = "low"
+summary = "Hi-def cutscene support"
+reason = "Cutscenes up to 2048x1024. Unlikely to fit the Xbox memory budget; Xbox builds should ship Xbox-sized video."
+
+[[candidate]]
+name = "mcp-55"
+origin = { source = "MCP", id = "55" }
+category = "correctness"
+status = "candidate"
+priority = "medium"
+summary = "Alchemy naming/stacking fix"
+reason = "Alchemy asks for a name that is already present after long play, and resets custom names. The prompt on Xbox is the on-screen keyboard."
+
+[[candidate]]
+name = "mcp-56"
+origin = { source = "MCP", id = "56" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Spellmaker/enchant edit effect fix"
+reason = "Editing a spell effect resets its range to Touch."
+
+[[candidate]]
+name = "mcp-57"
+origin = { source = "MCP", id = "57" }
+category = "compat"
+status = "candidate"
+priority = "low"
+summary = "Allow scroll enchant price modifier"
+reason = "Script or modding support; worth porting only when a mod used on Xbox needs it."
+
+[[candidate]]
+name = "mcp-58"
+origin = { source = "MCP", id = "58" }
+category = "correctness"
+default = "undecided"
+status = "researching"
+priority = "medium"
+summary = "Save-count warning"
+reason = "MCP warns before PC memory corruption at roughly 300 save files. Xbox uses `XCreateSaveGame` and different enumeration, so first determine whether any equivalent limit exists; do not port the PC threshold by assumption."
+
+[[candidate]]
+name = "mcp-64"
+origin = { source = "MCP", id = "64" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Multiple attribute fortify potions"
+reason = "Allows potions with several fortify or drain attribute effects; changes alchemy results."
+
+[[candidate]]
+name = "mcp-65"
+origin = { source = "MCP", id = "65" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Soulgem value rebalance"
+reason = "Balance change, opt in only; MCP ships it as an option rather than a defect fix."
+
+[[candidate]]
+name = "mcp-66"
+origin = { source = "MCP", id = "66" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "On-use ring extra slot"
+reason = "Balance change, opt in only; MCP ships it as an option rather than a defect fix."
+
+[[candidate]]
+name = "mcp-67"
+origin = { source = "MCP", id = "67" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "NPC AI casts zero cost powers"
+reason = "Balance change, opt in only; MCP ships it as an option rather than a defect fix."
+
+[[candidate]]
+name = "mcp-68"
+origin = { source = "MCP", id = "68" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Permanent barter disposition changes"
+reason = "Balance change, opt in only; MCP ships it as an option rather than a defect fix."
+
+[[candidate]]
+name = "mcp-69"
+origin = { source = "MCP", id = "69" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Enchanted item cooldown"
+reason = "Balance change, opt in only; MCP ships it as an option rather than a defect fix."
+
+[[candidate]]
+name = "mcp-70"
+origin = { source = "MCP", id = "70" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Hidden traps"
+reason = "Balance change, opt in only; MCP ships it as an option rather than a defect fix."
+
+[[candidate]]
+name = "mcp-71"
+origin = { source = "MCP", id = "71" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Swift casting"
+reason = "Balance change, opt in only; MCP ships it as an option rather than a defect fix."
+
+[[candidate]]
+name = "mcp-72"
+origin = { source = "MCP", id = "72" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Blight storm disease fix"
+reason = "Blight storms add diseases that never take effect."
+
+[[candidate]]
+name = "mcp-73"
+origin = { source = "MCP", id = "73" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Racial variation in speed fix"
+reason = "Balance change, opt in only; MCP ships it as an option rather than a defect fix."
+
+[[candidate]]
+name = "mcp-74"
+origin = { source = "MCP", id = "74" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Game formula restoration"
+reason = "Restores formulas that ignore their game settings; changes spell fatigue and other mechanics."
+
+[[candidate]]
+name = "mcp-75"
+origin = { source = "MCP", id = "75" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Creature armor rating fix"
+reason = "Gives creatures armor rating damage reduction."
+
+[[candidate]]
+name = "mcp-76"
+origin = { source = "MCP", id = "76" }
+category = "compat"
+status = "candidate"
+priority = "low"
+summary = "Disable weapon transition on unequip"
+reason = "Script or modding support; worth porting only when a mod used on Xbox needs it."
+
+[[candidate]]
+name = "mcp-77"
+origin = { source = "MCP", id = "77" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Pickpocket overhaul"
+reason = "Balance change, opt in only; MCP ships it as an option rather than a defect fix."
+
+[[candidate]]
+name = "mcp-79"
+origin = { source = "MCP", id = "79" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Slowfall on companions fix"
+reason = "Companions under slowfall can take fall damage across some cell changes."
+
+[[candidate]]
+name = "mcp-80"
+origin = { source = "MCP", id = "80" }
+category = "balance"
+default = "opt in"
+status = "candidate"
+priority = "low"
+summary = "Drain Intelligence magicka exploit"
+reason = "Exploit and balance change, not stability."
+
+[[candidate]]
+name = "mcp-81"
+origin = { source = "MCP", id = "81" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Mouseover menu display fixes"
+reason = "Tooltip errors: blank next-rank requirements, spells under the wrong heading."
+
+[[candidate]]
+name = "mcp-82"
+origin = { source = "MCP", id = "82" }
+status = "not-applicable"
+priority = "none"
+summary = "Shortcut key improvements"
+reason = "Keyboard shortcuts such as closing dialogue with the space bar; the Xbox has no keyboard in play."
+
+[[candidate]]
+name = "mcp-83"
+origin = { source = "MCP", id = "83" }
+category = "compat"
+status = "candidate"
+priority = "low"
+summary = "Detect water level fix"
+reason = "Scripts detect the player as underwater in cells without water."
+
+[[candidate]]
+name = "mcp-84"
+origin = { source = "MCP", id = "84" }
+category = "compat"
+status = "candidate"
+priority = "low"
+summary = "Service refusal filtering"
+reason = "Script or modding support; worth porting only when a mod used on Xbox needs it."
+
+[[candidate]]
+name = "mcp-85"
+origin = { source = "MCP", id = "85" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Armor indicator fix"
+reason = "Inventory armor rating does not update for shield spells."
+
+[[candidate]]
+name = "mcp-86"
+origin = { source = "MCP", id = "86" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Detect life spell variant"
+reason = "Balance change, opt in only; MCP ships it as an option rather than a defect fix."
+
+[[candidate]]
+name = "mcp-87"
+origin = { source = "MCP", id = "87" }
+category = "compat"
+status = "candidate"
+priority = "low"
+summary = "Scripted music uninterruptible"
+reason = "Script or modding support; worth porting only when a mod used on Xbox needs it."
+
+[[candidate]]
+name = "mcp-88"
+origin = { source = "MCP", id = "88" }
+category = "compat"
+status = "candidate"
+priority = "low"
+summary = "Argonian clothing choice"
+reason = "Argonian females prefer male clothing models; convenience for clothing mods."
+
+[[candidate]]
+name = "mcp-89"
+origin = { source = "MCP", id = "89" }
+category = "qol"
+status = "candidate"
+priority = "low"
+summary = "Vanity camera lock"
+reason = "Vanity camera stays active with free mouse control. The Xbox camera controls differ; design a controller version if wanted."
+
+[[candidate]]
+name = "mcp-90"
+origin = { source = "MCP", id = "90" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Alchemy potion weight rebalance"
+reason = "Balance change, opt in only; MCP ships it as an option rather than a defect fix."
+
+[[candidate]]
+name = "mcp-91"
+origin = { source = "MCP", id = "91" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Item recharging rebalance"
+reason = "Balance change, opt in only; MCP ships it as an option rather than a defect fix."
+
+[[candidate]]
+name = "mcp-92"
+origin = { source = "MCP", id = "92" }
+category = "core"
+default = "intended default"
+status = "candidate"
+priority = "high"
+summary = "Summoned creature dangling-reference crash"
+reason = "Reproduce unsummoning through non-death paths and locate the lifetime transition."
+
+[[candidate]]
+name = "mcp-93"
+origin = { source = "MCP", id = "93" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Repair item fixes"
+reason = "Low fatigue improves repair chance instead of reducing it; bound items can be repaired."
+
+[[candidate]]
+name = "mcp-94"
+origin = { source = "MCP", id = "94" }
+status = "not-applicable"
+priority = "none"
+summary = "Book and scroll scaling fix"
+reason = "Scales books to wide and multi-monitor PC screens; the Xbox has one fixed output mode."
+
+[[candidate]]
+name = "mcp-95"
+origin = { source = "MCP", id = "95" }
+category = "compat"
+status = "candidate"
+priority = "medium"
+summary = "Voiceover script functions fix"
+reason = "StopSound mutes every actor voice and SayDone fires early. Dialogue and quest mods depend on both."
+
+[[candidate]]
+name = "mcp-96"
+origin = { source = "MCP", id = "96" }
+category = "compat"
+status = "candidate"
+priority = "low"
+summary = "Weapon reach issues"
+reason = "Allows modded weapon reach below 1.0 and applies hand-to-hand reach to the player."
+
+[[candidate]]
+name = "mcp-98"
+origin = { source = "MCP", id = "98" }
+category = "core"
+default = "intended default"
+status = "candidate"
+priority = "high"
+summary = "Animated container refcount crash"
+reason = "Small crash fix; reproduce with a merchant and an animated container in the same cell."
+
+[[candidate]]
+name = "mcp-99"
+origin = { source = "MCP", id = "99" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Light spell fix"
+reason = "Light effect is three times too bright with a poor falloff. Visual; confirm on the Xbox renderer."
+
+[[candidate]]
+name = "mcp-100"
+origin = { source = "MCP", id = "100" }
+category = "compat"
+status = "candidate"
+priority = "low"
+summary = "Allow faction leaving"
+reason = "Script or modding support; worth porting only when a mod used on Xbox needs it."
+
+[[candidate]]
+name = "mcp-101"
+origin = { source = "MCP", id = "101" }
+category = "compat"
+status = "candidate"
+priority = "low"
+summary = "Slow movement anim fix"
+reason = "Very slow walk animations cause animation errors; only for animation mods."
+
+[[candidate]]
+name = "mcp-103"
+origin = { source = "MCP", id = "103" }
+category = "compat"
+status = "candidate"
+priority = "low"
+summary = "PlaySoundVP volume fix"
+reason = "PlaySoundVP ignores its volume argument."
+
+[[candidate]]
+name = "mcp-104"
+origin = { source = "MCP", id = "104" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Fix enchant options on ranged"
+reason = "Cast on Strike offered for bows, where it can never trigger."
+
+[[candidate]]
+name = "mcp-105"
+origin = { source = "MCP", id = "105" }
+category = "compat"
+status = "candidate"
+priority = "low"
+summary = "Prevent empty messages"
+reason = "Suppress empty notification messages, which mods use to silence messages."
+
+[[candidate]]
+name = "mcp-106"
+origin = { source = "MCP", id = "106" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Hidden locks"
+reason = "Balance change, opt in only; MCP ships it as an option rather than a defect fix."
+
+[[candidate]]
+name = "mcp-107"
+origin = { source = "MCP", id = "107" }
+status = "not-applicable"
+priority = "none"
+summary = "Don't loot on dispose"
+reason = "Ctrl-click to dispose without looting. Needs a keyboard modifier; a controller version would be a new design."
+
+[[candidate]]
+name = "mcp-108"
+origin = { source = "MCP", id = "108" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Attribute uncap"
+reason = "Attribute uncap. Balance, and incompatible with levelling mods that expect a cap."
+
+[[candidate]]
+name = "mcp-109"
+origin = { source = "MCP", id = "109" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Hit fader fix"
+reason = "The red damage overlay can stick across a cell change."
+
+[[candidate]]
+name = "mcp-110"
+origin = { source = "MCP", id = "110" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Skill uncap"
+reason = "Skill uncap. Balance, and incompatible with levelling mods that expect a cap."
+
+[[candidate]]
+name = "mcp-111"
+origin = { source = "MCP", id = "111" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Weapon resistance change"
+reason = "Balance change, opt in only; MCP ships it as an option rather than a defect fix."
+
+[[candidate]]
+name = "mcp-112"
+origin = { source = "MCP", id = "112" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Disintegrate fix"
+reason = "Disintegrate Weapon and Armor apply little or no damage."
+
+[[candidate]]
+name = "mcp-113"
+origin = { source = "MCP", id = "113" }
+category = "correctness"
+default = "undecided"
+status = "deferred"
+priority = "low"
+summary = "Incorrect inventory sounds"
+reason = "Large patch with Xbox UI/audio-path uncertainty. Decode before accepting."
+
+[[candidate]]
+name = "mcp-114"
+origin = { source = "MCP", id = "114" }
+category = "compat"
+default = "PfP profiles only"
+status = "candidate"
+priority = "low"
+summary = "Separate axe inventory sounds"
+reason = "MCP source category is **Mod specific**. Patch for Purists documents it as a requirement; prioritize only for profiles that use PfP."
+
+[[candidate]]
+name = "mcp-115"
+origin = { source = "MCP", id = "115" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Confiscated item fix"
+reason = "Guards and merchants confiscate items that are no longer stolen."
+
+[[candidate]]
+name = "mcp-116"
+origin = { source = "MCP", id = "116" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Water environment sound fix"
+reason = "Underwater sound lost through doors between underwater areas; wrong water ambience."
+
+[[candidate]]
+name = "mcp-117"
+origin = { source = "MCP", id = "117" }
+category = "compat"
+status = "candidate"
+priority = "low"
+summary = "'Talked to PC' extension"
+reason = "Script or modding support; worth porting only when a mod used on Xbox needs it."
+
+[[candidate]]
+name = "mcp-118"
+origin = { source = "MCP", id = "118" }
+category = "core"
+default = "intended default"
+status = "candidate"
+priority = "medium"
+summary = "Items dropped while levitating or falling are lost"
+reason = "Dropping in third person while airborne places the object near `{0, 0, 0}`, which is normally unreachable. Data loss, not a preference. Confirm the Xbox third-person and levitation paths share the defect."
+
+[[candidate]]
+name = "mcp-119"
+origin = { source = "MCP", id = "119" }
+category = "compat"
+default = "PfP profiles only"
+status = "candidate"
+priority = "low"
+summary = "Creature voiceover enable"
+reason = "MCP source category is **Mod specific**. Required by PfP and one of the few named-mod patches relevant to the current library."
+
+[[candidate]]
+name = "mcp-120"
+origin = { source = "MCP", id = "120" }
+category = "compat"
+status = "candidate"
+priority = "low"
+summary = "Lock level scripting"
+reason = "Script or modding support; worth porting only when a mod used on Xbox needs it."
+
+[[candidate]]
+name = "mcp-121"
+origin = { source = "MCP", id = "121" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Self-enchanting fix"
+reason = "Self-enchanting with several effects fails far more often than intended."
+
+[[candidate]]
+name = "mcp-122"
+origin = { source = "MCP", id = "122" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Ammunition fix"
+reason = "The ammunition counter does not update while an inventory filter hides the ammo."
+
+[[candidate]]
+name = "mcp-123"
+origin = { source = "MCP", id = "123" }
+category = "core"
+default = "intended default"
+status = "candidate"
+priority = "high"
+summary = "Persist `PlaceItem` objects in unvisited cells"
+reason = "Missing dirty mark loses placed objects. This is persistence/data loss rather than a gameplay preference."
+
+[[candidate]]
+name = "mcp-124"
+origin = { source = "MCP", id = "124" }
+category = "balance"
+default = "no default"
+status = "deferred"
+priority = "low"
+summary = "Creature magicka/fatigue scaling"
+reason = "Experimental inferred intent which introduces new scaling. Require a design decision, not just binary parity."
+
+[[candidate]]
+name = "mcp-125"
+origin = { source = "MCP", id = "125" }
+category = "core"
+default = "intended default"
+status = "candidate"
+priority = "high"
+summary = "Position/PositionCell uninitialized-script crash"
+reason = "Moving an NPC to an unvisited cell can leave its script uninitialized and make dialogue crash."
+
+[[candidate]]
+name = "mcp-126"
+origin = { source = "MCP", id = "126" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Telekinesis fix"
+reason = "Telekinesis does not reach lights, ammunition, books and activators."
+
+[[candidate]]
+name = "mcp-127"
+origin = { source = "MCP", id = "127" }
+category = "compat"
+status = "candidate"
+priority = "high"
+summary = "Map-texture conflict fix"
+reason = "The world map breaks if _land_default.dds is replaced at a different size. TES3X's texture budget resizes textures, so a build can cause this; check the pipeline leaves that texture alone before porting."
+
+[[candidate]]
+name = "mcp-128"
+origin = { source = "MCP", id = "128" }
+category = "qol"
+status = "deferred"
+priority = "low"
+summary = "Rain/snow collision"
+reason = "Rain and snow stop at roofs, at a CPU cost MCP itself warns about. Benchmark on the 733 MHz CPU before considering it."
+
+[[candidate]]
+name = "mcp-130"
+origin = { source = "MCP", id = "130" }
+category = "qol"
+status = "candidate"
+priority = "low"
+summary = "Over-the-shoulder third person camera"
+reason = "Over-the-shoulder third-person camera."
+
+[[candidate]]
+name = "mcp-131"
+origin = { source = "MCP", id = "131" }
+category = "correctness"
+status = "deferred"
+priority = "low"
+summary = "Bump/reflect map local lighting"
+reason = "Bump and reflection maps ignore local light. Renderer-specific; the Xbox renderer differs."
+
+[[candidate]]
+name = "mcp-132"
+origin = { source = "MCP", id = "132" }
+category = "compat"
+status = "candidate"
+priority = "low"
+summary = "Improved animation support"
+reason = "Animation mod support: extra bones, PlayGroup and LoopGroup fixes. Needed only by animation mods."
+
+[[candidate]]
+name = "mcp-133"
+origin = { source = "MCP", id = "133" }
+category = "qol"
+status = "candidate"
+priority = "low"
+summary = "Reduce camera clipping"
+reason = "Less third-person camera snapping past NPCs and activators."
+
+[[candidate]]
+name = "mcp-134"
+origin = { source = "MCP", id = "134" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "NPC minor behaviour fixes"
+reason = "Minor AI faults: short flee distance, knocked-down followers."
+
+[[candidate]]
+name = "mcp-135"
+origin = { source = "MCP", id = "135" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Ammo fixes"
+reason = "Ammunition tooltips omit damage; ammo can be consumed when not loaded."
+
+[[candidate]]
+name = "mcp-136"
+origin = { source = "MCP", id = "136" }
+category = "undecided"
+status = "not-applicable"
+priority = "none"
+summary = "Resolution options"
+reason = "PC display-mode path; no direct Xbox value."
+
+[[candidate]]
+name = "mcp-137"
+origin = { source = "MCP", id = "137" }
+category = "undecided"
+status = "candidate"
+priority = "low"
+summary = "Slowfall overhaul"
+reason = "Mixed: removes slowfall's framerate dependence, a real defect at Xbox framerates, and adds scaled fall damage, a balance change. Split before porting."
+
+[[candidate]]
+name = "mcp-138"
+origin = { source = "MCP", id = "138" }
+category = "correctness"
+default = "recommended"
+status = "candidate"
+priority = "medium"
+summary = "Reliable `CellChanged` for scripted teleports"
+reason = "Script-contract fix used by mods; preserve vanilla transition semantics outside the missed path."
+
+[[candidate]]
+name = "mcp-139"
+origin = { source = "MCP", id = "139" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Barter gold reset fix"
+reason = "Merchant gold resets only when the barter window opens."
+
+[[candidate]]
+name = "mcp-141"
+origin = { source = "MCP", id = "141" }
+category = "core"
+default = "intended default"
+status = "candidate"
+priority = "medium"
+summary = "Script expression parser / `Random` fix"
+reason = "`Random` on multiples of 256 can crash and corrupt its argument. Large, but directly relevant to the extended script surface."
+
+[[candidate]]
+name = "mcp-142"
+origin = { source = "MCP", id = "142" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Two-handed weapon removes shield"
+reason = "Balance change, opt in only; MCP ships it as an option rather than a defect fix."
+
+[[candidate]]
+name = "mcp-143"
+origin = { source = "MCP", id = "143" }
+category = "compat"
+status = "candidate"
+priority = "low"
+summary = "Get/SetAngle enhancement"
+reason = "Script or modding support; worth porting only when a mod used on Xbox needs it."
+
+[[candidate]]
+name = "mcp-144"
+origin = { source = "MCP", id = "144" }
+category = "qol"
+status = "candidate"
+priority = "low"
+summary = "Better recharging"
+reason = "Simpler recharging: pick the item, then the soul gem."
+
+[[candidate]]
+name = "mcp-145"
+origin = { source = "MCP", id = "145" }
+category = "qol"
+status = "candidate"
+priority = "low"
+summary = "Quality-based potion icons/models"
+reason = "Potion icons and models reflect quality instead of being random."
+
+[[candidate]]
+name = "mcp-146"
+origin = { source = "MCP", id = "146" }
+category = "qol"
+status = "candidate"
+priority = "low"
+summary = "Arrow de-nocker"
+reason = "Remove a nocked arrow with the Ready Weapon control."
+
+[[candidate]]
+name = "mcp-147"
+origin = { source = "MCP", id = "147" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Healthy appetite"
+reason = "Balance change, opt in only; MCP ships it as an option rather than a defect fix."
+
+[[candidate]]
+name = "mcp-148"
+origin = { source = "MCP", id = "148" }
+category = "qol"
+status = "candidate"
+priority = "low"
+summary = "Spellmaker/enchanting improvement"
+reason = "Spellmaker magnitude controls that keep minimum and maximum consistent."
+
+[[candidate]]
+name = "mcp-149"
+origin = { source = "MCP", id = "149" }
+category = "core"
+default = "intended default"
+status = "candidate"
+priority = "medium"
+summary = "Dispose corpse before death processing completes"
+reason = "An actor is disposable before its final processing runs, so `OnDeath`/`OnMurder` can never fire and some spell effects never expire. Unrecoverable in an existing save, and corpse looting/disposal is part of the console avoidance ritual, so Xbox exposure is high. Reproduce by disposing during the death animation."
+
+[[candidate]]
+name = "mcp-150"
+origin = { source = "MCP", id = "150" }
+category = "balance"
+default = "opt in"
+status = "candidate"
+priority = "low"
+summary = "Shield hit-location skill credit"
+reason = "Alters skill progression even if the original hit attribution is wrong."
+
+[[candidate]]
+name = "mcp-152"
+origin = { source = "MCP", id = "152" }
+category = "compat"
+status = "candidate"
+priority = "low"
+summary = "First person swim animations"
+reason = "Script or modding support; worth porting only when a mod used on Xbox needs it."
+
+[[candidate]]
+name = "mcp-153"
+origin = { source = "MCP", id = "153" }
+category = "undecided"
+status = "not-applicable"
+priority = "none"
+summary = "Mouse cursor movement"
+reason = "PC mouse input path."
+
+[[candidate]]
+name = "mcp-155"
+origin = { source = "MCP", id = "155" }
+category = "balance"
+default = "opt in"
+status = "candidate"
+priority = "low"
+summary = "Sneaking boots penalty"
+reason = "The GMST suggests intent, but enabling it changes stealth balance."
+
+[[candidate]]
+name = "mcp-156"
+origin = { source = "MCP", id = "156" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Spellmaking matches editor"
+reason = "Balance change, opt in only; MCP ships it as an option rather than a defect fix."
+
+[[candidate]]
+name = "mcp-157"
+origin = { source = "MCP", id = "157" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Allow gloves with bracers"
+reason = "Balance change, opt in only; MCP ships it as an option rather than a defect fix."
+
+[[candidate]]
+name = "mcp-158"
+origin = { source = "MCP", id = "158" }
+category = "compat"
+status = "candidate"
+priority = "low"
+summary = "GetWeaponType fix"
+reason = "GetWeaponType reports a short blade for lockpicks and probes."
+
+[[candidate]]
+name = "mcp-159"
+origin = { source = "MCP", id = "159" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Probe quality fix"
+reason = "Probe quality never reduces trap complexity."
+
+[[candidate]]
+name = "mcp-160"
+origin = { source = "MCP", id = "160" }
+category = "correctness"
+status = "candidate"
+priority = "medium"
+summary = "RemoveItem weight fix"
+reason = "RemoveItem reduces encumbrance by the requested quantity even when fewer items exist; mods leave players permanently misweighted."
+
+[[candidate]]
+name = "mcp-161"
+origin = { source = "MCP", id = "161" }
+category = "compat"
+status = "candidate"
+priority = "low"
+summary = "GetSpellEffects tweak"
+reason = "Script or modding support; worth porting only when a mod used on Xbox needs it."
+
+[[candidate]]
+name = "mcp-162"
+origin = { source = "MCP", id = "162" }
+category = "qol"
+status = "candidate"
+priority = "low"
+summary = "See all standard potion effects"
+reason = "Show every effect on standard potions regardless of alchemy skill."
+
+[[candidate]]
+name = "mcp-163"
+origin = { source = "MCP", id = "163" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Bow sound glitch fix"
+reason = "Bow sounds repeat if the player moves after drawing."
+
+[[candidate]]
+name = "mcp-164"
+origin = { source = "MCP", id = "164" }
+category = "compat"
+default = "opt in"
+status = "candidate"
+priority = "low"
+summary = "Read local variables of a running global script"
+reason = "Three single-byte edits. This widens what scripts may do rather than correcting a defect, so it is compatibility support, not a default. Directly relevant to the `--apply script-ext` surface; enable for profiles whose mods need 32-bit longs shared without float rounding."
+
+[[candidate]]
+name = "mcp-165"
+origin = { source = "MCP", id = "165" }
+category = "compat"
+status = "candidate"
+priority = "low"
+summary = "AIActivate enhancement"
+reason = "Script or modding support; worth porting only when a mod used on Xbox needs it."
+
+[[candidate]]
+name = "mcp-166"
+origin = { source = "MCP", id = "166" }
+category = "compat"
+status = "candidate"
+priority = "low"
+summary = "Scriptable potion use"
+reason = "Script or modding support; worth porting only when a mod used on Xbox needs it."
+
+[[candidate]]
+name = "mcp-167"
+origin = { source = "MCP", id = "167" }
+category = "compat"
+status = "candidate"
+priority = "low"
+summary = "Container respawn timescale"
+reason = "Script or modding support; worth porting only when a mod used on Xbox needs it."
+
+[[candidate]]
+name = "mcp-168"
+origin = { source = "MCP", id = "168" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Avoid blame for neutral NPC deaths"
+reason = "The player is blamed for neutral NPCs killed by others' area spells."
+
+[[candidate]]
+name = "mcp-169"
+origin = { source = "MCP", id = "169" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Multiple summons overlap fix"
+reason = "Several creatures summoned together stack on one spot."
+
+[[candidate]]
+name = "mcp-170"
+origin = { source = "MCP", id = "170" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Barter haggle fix"
+reason = "Holding the haggle buttons stops working at high framerates, which the Xbox rarely reaches. Check whether it reproduces at all."
+
+[[candidate]]
+name = "mcp-171"
+origin = { source = "MCP", id = "171" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Menu mode world interaction fix"
+reason = "World items can be picked up while crafting menus are open."
+
+[[candidate]]
+name = "mcp-172"
+origin = { source = "MCP", id = "172" }
+category = "balance"
+status = "candidate"
+priority = "low"
+summary = "Enchanted item rebalance"
+reason = "Balance change, opt in only; MCP ships it as an option rather than a defect fix."
+
+[[candidate]]
+name = "mcp-173"
+origin = { source = "MCP", id = "173" }
+category = "core"
+default = "intended default"
+status = "candidate"
+priority = "high"
+summary = "Persist `RaiseRank`/`LowerRank`"
+reason = "Missing dirty mark can break faction quests after reload."
+
+[[candidate]]
+name = "mcp-174"
+origin = { source = "MCP", id = "174" }
+category = "compat"
+status = "candidate"
+priority = "low"
+summary = "AddItem with levelled items"
+reason = "Script or modding support; worth porting only when a mod used on Xbox needs it."
+
+[[candidate]]
+name = "mcp-175"
+origin = { source = "MCP", id = "175" }
+category = "compat"
+status = "candidate"
+priority = "low"
+summary = "MoveWorld Z fix"
+reason = "MoveWorld misuses frame time on the Z axis, so scripted movement varies with framerate. Xbox framerates vary widely."
+
+[[candidate]]
+name = "mcp-176"
+origin = { source = "MCP", id = "176" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Spell effect tooltip fix"
+reason = "Active effect tooltips name the wrong source item."
+
+[[candidate]]
+name = "mcp-177"
+origin = { source = "MCP", id = "177" }
+category = "compat"
+status = "candidate"
+priority = "medium"
+summary = "GetEffect/RemoveEffects fix"
+reason = "GetEffect and RemoveEffects sometimes return 0 or do nothing; scripted mods rely on them."
+
+[[candidate]]
+name = "mcp-178"
+origin = { source = "MCP", id = "178" }
+category = "core"
+default = "intended default"
+status = "candidate"
+priority = "high"
+summary = "Load-warning input crash"
+reason = "Xbox has load warnings and a single controller path, so this is directly testable."
+
+[[candidate]]
+name = "mcp-179"
+origin = { source = "MCP", id = "179" }
+category = "balance"
+default = "opt in"
+status = "candidate"
+priority = "low"
+summary = "Followers defend immediately"
+reason = "MCP source category is **Game mechanics**. Can make followers chase ranged enemies or enter hazards; OpenMW documents similar behaviour as optional and not extensively tested. Keep it disabled by default because of pursuit and hazard side effects."
+
+[[candidate]]
+name = "mcp-256"
+origin = { source = "MCP", id = "256" }
+category = "compat"
+status = "candidate"
+priority = "medium"
+summary = "Map expansion (for Tamriel Rebuilt)"
+reason = "Expands the world map for Tamriel Rebuilt. Needed for TR, which itself needs 128 MB today."
+
+[[candidate]]
+name = "mcp-257"
+origin = { source = "MCP", id = "257" }
+status = "not-applicable"
+priority = "none"
+summary = "Main menu wider textures"
+reason = "Wider main menu textures for translated PC editions; TES3X targets the US English Xbox release."
+
+[[candidate]]
+name = "mcp-258"
+origin = { source = "MCP", id = "258" }
+category = "qol"
+status = "candidate"
+priority = "low"
+summary = "Disable map smoothing"
+reason = "Pixel-filtered world map instead of blurred."
+
+[[candidate]]
+name = "mcp-259"
+origin = { source = "MCP", id = "259" }
+category = "qol"
+status = "candidate"
+priority = "low"
+summary = "Display more accurate item weight"
+reason = "Item weight to two decimal places."
+
+[[candidate]]
+name = "mcp-260"
+origin = { source = "MCP", id = "260" }
+status = "not-applicable"
+priority = "none"
+summary = "Polish keyboard support"
+reason = "Polish keyboard input on PC."
+
+[[candidate]]
+name = "mcp-261"
+origin = { source = "MCP", id = "261" }
+status = "not-applicable"
+priority = "none"
+summary = "Un-restrict menu size"
+reason = "Removes limits on resizing menus with the mouse; Xbox menus are not resized by the player."
+
+[[candidate]]
+name = "mcp-262"
+origin = { source = "MCP", id = "262" }
+category = "qol"
+status = "candidate"
+priority = "low"
+summary = "Larger service/chargen menus"
+reason = "Larger service and character-generation menus; may help legibility on a TV."
+
+[[candidate]]
+name = "mcp-263"
+origin = { source = "MCP", id = "263" }
+status = "not-applicable"
+priority = "none"
+summary = "Japanese localization"
+reason = "Japanese fonts for the PC edition."
+
+[[candidate]]
+name = "mcp-264"
+origin = { source = "MCP", id = "264" }
+status = "not-applicable"
+priority = "none"
+summary = "Russian fixes"
+reason = "Fixes for the Russian PC localisation."
+
+[[candidate]]
+name = "mcp-265"
+origin = { source = "MCP", id = "265" }
+category = "compat"
+status = "candidate"
+priority = "low"
+summary = "Journal text colour configuration"
+reason = "Journal text colour from Morrowind.ini, for replacement fonts. The Xbox reads the ini too."
+
+[[candidate]]
+name = "mcp-266"
+origin = { source = "MCP", id = "266" }
+status = "not-applicable"
+priority = "none"
+summary = "Polish character corrections"
+reason = "Polish characters with a PC font mod."
+
+[[candidate]]
+name = "mcp-267"
+origin = { source = "MCP", id = "267" }
+category = "qol"
+status = "candidate"
+priority = "medium"
+summary = "UI display quality fix"
+reason = "Fixes half-pixel UI misalignment that blurs text and icons. Worth checking on TV output, where blur is most visible."
+
+[[candidate]]
+name = "mcp-268"
+origin = { source = "MCP", id = "268" }
+status = "not-applicable"
+priority = "none"
+summary = "Spell select by name"
+reason = "Select spells by typing their first letter; needs a keyboard."
+
+[[candidate]]
+name = "mcp-269"
+origin = { source = "MCP", id = "269" }
+category = "qol"
+status = "candidate"
+priority = "low"
+summary = "Better ingredient and item selector"
+reason = "A large labelled list for choosing ingredients and items."
+
+[[candidate]]
+name = "mcp-270"
+origin = { source = "MCP", id = "270" }
+category = "qol"
+status = "candidate"
+priority = "low"
+summary = "Better typography"
+reason = "Book, scroll and journal layout with more text per page. The Xbox fonts and screen differ; check legibility."
+
+[[candidate]]
+name = "mcp-271"
+origin = { source = "MCP", id = "271" }
+category = "qol"
+status = "candidate"
+priority = "low"
+summary = "Persuasion improvement"
+reason = "Persuasion menu opens at the pointer and stays open."
+
+[[candidate]]
+name = "mcp-272"
+origin = { source = "MCP", id = "272" }
+category = "qol"
+status = "candidate"
+priority = "low"
+summary = "Improved inventory filters"
+reason = "Tidier inventory filters."
+
+[[candidate]]
+name = "mcp-274"
+origin = { source = "MCP", id = "274" }
+category = "qol"
+status = "candidate"
+priority = "low"
+summary = "Better spell merchants"
+reason = "Spell merchants show magicka cost and hide unsellable powers."
+
+[[candidate]]
+name = "mcp-275"
+origin = { source = "MCP", id = "275" }
+category = "qol"
+status = "candidate"
+priority = "low"
+summary = "Level-up skills tooltip"
+reason = "Level tooltip shows skill increases per attribute."
+
+[[candidate]]
+name = "mcp-276"
+origin = { source = "MCP", id = "276" }
+category = "qol"
+status = "candidate"
+priority = "low"
+summary = "Convenient defaults"
+reason = "Start loaded games running and on the world map."
+
+[[candidate]]
+name = "mcp-277"
+origin = { source = "MCP", id = "277" }
+category = "qol"
+status = "candidate"
+priority = "low"
+summary = "Better haggling"
+reason = "Faster haggling input."
+
+[[candidate]]
+name = "mgexe-emissive-particles"
+origin = { source = "MGE XE" }
+category = "undecided"
+status = "deferred"
+priority = "low"
+summary = "Emissive-particle rendering correction"
+reason = "Renderer-specific. Establish that the Xbox renderer shares the defect before doing binary work."
+
+[[candidate]]
+name = "mgexe-high-fps-input"
+origin = { source = "MGE XE" }
+category = "undecided"
+status = "not-applicable"
+priority = "none"
+summary = "High-FPS mouse/input-drop fix"
+reason = "PC input and frame-pacing path unless an Xbox controller reproducer says otherwise."
+
+[[candidate]]
+name = "mwse-activation-skinned-ray"
+origin = { source = "MWSE" }
+category = "correctness"
+default = "recommended"
+status = "candidate"
+priority = "low"
+summary = "Make activation ray tests work against affected skinned objects"
+reason = "Renderer/scene-graph dependent; use a concrete inaccessible-object reproducer."
+
+[[candidate]]
+name = "mwse-anim-idle-sync"
+origin = { source = "MWSE" }
+category = "correctness"
+default = "recommended"
+status = "candidate"
+priority = "low"
+summary = "Keep idle animation selection/state synchronized"
+reason = "Confirm visible Xbox symptom and save/load interaction."
+
+[[candidate]]
+name = "mwse-book-weapon-enchant"
+origin = { source = "MWSE" }
+category = "correctness"
+default = "recommended"
+status = "candidate"
+priority = "low"
+summary = "Preserve weapon-enchantment data through book/object copy paths"
+reason = "Useful for scripted object copying; verify the affected record classes."
+
+[[candidate]]
+name = "mwse-clone-light-null"
+origin = { source = "MWSE" }
+category = "core"
+default = "profile-dependent priority"
+status = "candidate"
+priority = "medium"
+summary = "Handle missing light data while cloning"
+reason = "Validate against malformed or legal-but-unusual meshes."
+
+[[candidate]]
+name = "mwse-clone-sortadjust"
+origin = { source = "MWSE" }
+category = "core"
+default = "profile-dependent priority"
+status = "candidate"
+priority = "medium"
+summary = "Correct `NiSortAdjustNode` cloning"
+reason = "Same rule: a mod-library reproducer raises priority."
+
+[[candidate]]
+name = "mwse-clone-stringextra"
+origin = { source = "MWSE" }
+category = "core"
+default = "profile-dependent priority"
+status = "candidate"
+priority = "medium"
+summary = "Correct `NiStringExtraData` cloning"
+reason = "Mesh-driven lifetime bug; prioritize if a current asset reproduces it."
+
+[[candidate]]
+name = "mwse-dialogue-filter"
+origin = { source = "MWSE" }
+category = "performance"
+default = "benchmark first"
+status = "candidate"
+priority = "medium"
+summary = "Replace dialogue filtering/search with a more efficient implementation"
+reason = "High potential with PfP's dialogue-heavy master. Measure dialogue-open latency and memory with/without PfP, then regression-test filtering."
+
+[[candidate]]
+name = "mwse-disposition-filter"
+origin = { source = "MWSE" }
+category = "performance"
+default = "benchmark first"
+status = "candidate"
+priority = "medium"
+summary = "Optimize disposition/dialogue filtering"
+reason = "Test result identity, not just speed, against a dialogue-rich load order."
+
+[[candidate]]
+name = "mwse-empty-menu-position"
+origin = { source = "MWSE" }
+category = "undecided"
+status = "deferred"
+priority = "low"
+summary = "Empty menu position and long derived-key menu crashes"
+reason = "PC UI evidence is insufficient; prove the Xbox menu path first."
+
+[[candidate]]
+name = "mwse-enable-disable-vars"
+origin = { source = "MWSE" }
+category = "core"
+default = "intended default"
+status = "candidate"
+priority = "medium"
+summary = "Avoid `Enable`/`Disable` crash when script variables are not initialized"
+reason = "High script/mod relevance. Test local, global and absent script data."
+
+[[candidate]]
+name = "mwse-getdeadcount"
+origin = { source = "MWSE" }
+category = "performance"
+default = "benchmark first"
+status = "candidate"
+priority = "medium"
+summary = "Avoid repeated expensive work in `GetDeadCount`"
+reason = "Profile scripts which call it frequently and preserve dynamic death counts."
+
+[[candidate]]
+name = "mwse-global-access"
+origin = { source = "MWSE" }
+category = "performance"
+default = "benchmark first"
+status = "candidate"
+priority = "medium"
+summary = "Speed script global-variable lookup"
+reason = "Existing profiling found only about 22 script commands/frame in the baseline; require evidence this lookup matters in a real modded profile."
+
+[[candidate]]
+name = "mwse-ini-cache"
+origin = { source = "MWSE" }
+category = "performance"
+default = "benchmark first"
+status = "candidate"
+priority = "medium"
+summary = "Cache repeated `DontThreadLoad`/INI reads"
+reason = "First instrument call frequency. Preserve runtime configuration changes if vanilla observes them."
+
+[[candidate]]
+name = "mwse-invis-chameleon"
+origin = { source = "MWSE" }
+category = "correctness"
+default = "recommended"
+status = "candidate"
+priority = "low"
+summary = "Keep invisibility/chameleon state synchronized with visuals and actor state"
+reason = "Define whether the defect is visual only or also affects detection."
+
+[[candidate]]
+name = "mwse-journal-update"
+origin = { source = "MWSE" }
+category = "performance"
+default = "benchmark first"
+status = "candidate"
+priority = "medium"
+summary = "Optimize journal update/search work"
+reason = "Measure large-journal open/update time and verify ordering/quest indices."
+
+[[candidate]]
+name = "mwse-map-border-marker"
+origin = { source = "MWSE" }
+category = "core"
+default = "intended default"
+status = "candidate"
+priority = "medium"
+summary = "Avoid crash while updating map markers at the drawable map border"
+reason = "Relevant to map expansion and large landmasses if the Xbox map bounds match."
+
+[[candidate]]
+name = "mwse-mobile-projectile"
+origin = { source = "MWSE" }
+category = "compat"
+default = "profile dependent"
+status = "candidate"
+priority = "low"
+summary = "Fully initialize projectiles created through mobile/scripted paths"
+reason = "Relevant to future script extensions; avoid duplicating the existing arrow-damage display mod."
+
+[[candidate]]
+name = "mwse-paperdoll"
+origin = { source = "MWSE" }
+category = "core"
+default = "intended default if Xbox path exists"
+status = "candidate"
+priority = "medium"
+summary = "Avoid paper-doll equip/unequip crash"
+reason = "Xbox inventory rendering may not use the PC paper-doll path; prove applicability first."
+
+[[candidate]]
+name = "mwse-pathgrid-zero"
+origin = { source = "MWSE" }
+category = "core"
+default = "intended default"
+status = "candidate"
+priority = "medium"
+summary = "Avoid NPC flee selecting a random node from a zero-node pathgrid"
+reason = "Clean bounds case and likely inexpensive port once the AI path is located."
+
+[[candidate]]
+name = "mwse-pc-process"
+origin = { source = "MWSE" }
+category = "undecided"
+status = "not-applicable"
+priority = "none"
+summary = "Symbolic-link and quit-with-message-box/background-process fixes"
+reason = "PC filesystem/process behaviour."
+
+[[candidate]]
+name = "mwse-showmap-fillmap"
+origin = { source = "MWSE" }
+category = "performance"
+default = "benchmark first"
+status = "candidate"
+priority = "medium"
+summary = "Optimize `ShowMap`/`FillMap`"
+reason = "Compare command time and map correctness across repeated calls."
+
+[[candidate]]
+name = "mwse-sound-loop-volume"
+origin = { source = "MWSE" }
+category = "correctness"
+default = "recommended"
+status = "candidate"
+priority = "low"
+summary = "Correct volume updates for looping sounds"
+reason = "Xbox audio backend may differ; start from the game-side volume state."
+
+[[candidate]]
+name = "mwse-terrain-textures"
+origin = { source = "MWSE" }
+category = "undecided"
+status = "deferred"
+priority = "medium"
+summary = "More-than-500 terrain textures / huge-landmass compatibility"
+reason = "Potentially useful for TR-sized worlds, but those profiles already exceed the present 64 MB target. Revisit only with a feasible large-landmass profile."
+
+[[candidate]]
+name = "mwse-time-midnight"
+origin = { source = "MWSE" }
+category = "correctness"
+default = "recommended"
+status = "candidate"
+priority = "low"
+summary = "Avoid truncation/error when crossing midnight"
+reason = "Test calendar, weather and scheduled-script transitions together."
+
+[[candidate]]
+name = "mwse-time-rest-drift"
+origin = { source = "MWSE" }
+category = "correctness"
+default = "recommended"
+status = "candidate"
+priority = "low"
+summary = "Prevent precision drift while advancing time during rest/travel"
+reason = "Compare day/hour state over repeated long rests."
+
+[[candidate]]
+name = "mwse-uncloned-removeitem"
+origin = { source = "MWSE" }
+category = "core"
+default = "intended default"
+status = "candidate"
+priority = "medium"
+summary = "Avoid actor/item-removal crash on uncloned actors"
+reason = "Establish exact actor lifetime and inventory precondition."
+
+[[candidate]]
+name = "mwse-vfx-load-bloat"
+origin = { source = "MWSE" }
+category = "core"
+default = "intended default"
+status = "candidate"
+priority = "medium"
+summary = "Reject or repair invalid loaded VFX state which causes load errors and save growth"
+reason = "Especially relevant to long-lived Xbox saves; measure record growth as well as crash behaviour."
+
+[[candidate]]
+name = "mwse-vfx-save-empty"
+origin = { source = "MWSE" }
+category = "core"
+default = "intended default"
+status = "candidate"
+priority = "medium"
+summary = "Avoid crash while saving an active visual effect when none of its particles can be serialized"
+reason = "Build a small spell/VFX save reproducer before locating the serializer."
+
+[[candidate]]
+name = "omw-live-inventory"
+origin = { source = "OpenMW-4642" }
+category = "correctness"
+default = "recommended"
+status = "candidate"
+priority = "medium"
+summary = "Refresh an open container/inventory after script `AddItem`/`RemoveItem`"
+reason = "The reported vanilla defect leaves the menu stale and can permit duplication. Reproduce with the Xbox menu before choosing a hook; promote to `core` if data loss/duplication is confirmed."
+
+[[candidate]]
+name = "openmw-parity"
+origin = { source = "OpenMW" }
+category = "undecided"
+status = "rejected"
+priority = "none"
+summary = "Blanket OpenMW parity"
+reason = "OpenMW is a separate reimplementation and intentionally diverges in places. Only explicit vanilla defects or desired, scoped features enter this ledger."
+
+[[candidate]]
+name = "sigf-skill-gmst"
+origin = { source = "SIGF" }
+category = "correctness"
+default = "recommended"
+status = "candidate"
+priority = "low"
+summary = "Use `iLevelupMajorMult` for major skills and `iLevelupMinorMult` for minor skills"
+reason = "The engine reportedly uses the minor value for major skills and the major value for minor skills. Vanilla values hide much of the error; modded GMSTs expose it. Confirm in the Xbox formula."
+
+[[candidate]]
+name = "xbox-controller-tuning"
+origin = { source = "OpenMW" }
+category = "qol"
+default = "opt in"
+status = "candidate"
+priority = "low"
+summary = "Independent horizontal/vertical sensitivity and dead-zone controls"
+reason = "The Xbox build already reads controller settings from `[Xbox]`; prefer compatible INI keys and no save-format change."
+
+[[candidate]]
+name = "xbox-enchant-chance"
+origin = { source = "MCP", id = "151" }
+category = "qol"
+default = "opt in"
+status = "candidate"
+priority = "low"
+summary = "Show self-enchanting success chance"
+reason = "Useful information, but the PC UI patch does not port directly. Design for Xbox screen space and controller flow."
+
+[[candidate]]
+name = "xbox-fmap-save"
+origin = { source = "TES3X" }
+category = "performance"
+default = "deferred pending a format decision"
+status = "deferred"
+priority = "low"
+summary = "Shrink or deduplicate the fixed map bitmap written into every save"
+reason = "`FMAP` is 786,472 bytes and byte-identical across all 18 console saves - 49.5% of each file and twice the next-largest record. Any change alters the save format, so it breaks Wrye Mash and existing saves; that cost has to be accepted before implementation work, not after. Settle the save-size ceiling question (`MCP-58`) first, because without a threshold there is nothing to measure the gain against."
+
+[[candidate]]
+name = "xbox-ownership"
+origin = { source = "MCP", id = "273" }
+category = "qol"
+default = "opt in"
+status = "candidate"
+priority = "low"
+summary = "Ownership indicator/tooltip before taking an item"
+reason = "Helpful, but it changes information available to the player and the PC tooltip layout is inapplicable."
+
+[[candidate]]
+name = "xbox-weapon-details"
+origin = { source = "MCP" }
+category = "qol"
+default = "opt in"
+status = "candidate"
+priority = "low"
+summary = "Expose relevant reach/speed/damage details more clearly"
+reason = "Inventory space is constrained. Do not reproduce data already shown by `XboxArrowDmgDisp.esp`."

@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Read the patch table, patches.toml, and render docs/patches.md from it."""
+"""Read the patch table and the candidate list, and render their pages.
+
+patches.toml holds every patch TES3X can apply; candidates.toml every fix reviewed but not
+implemented. docs/patches.md and docs/candidates.md are generated from them.
+"""
 
 import argparse
 from pathlib import Path
@@ -8,7 +12,10 @@ import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = ROOT / "patches.toml"
+CANDIDATE_LIST = ROOT / "candidates.toml"
 TABLE = ROOT / "docs" / "patches.md"
+CANDIDATE_PAGE = ROOT / "docs" / "candidates.md"
+PATCH_DIRS = ROOT / "patches"
 
 CATEGORIES = ("core", "correctness", "compat", "performance", "qol", "balance",
               "instrumentation", "infrastructure")
@@ -25,10 +32,11 @@ CANDIDATE_STATUSES = {
     "infeasible": "Attempted, and cannot be done on the Xbox build.",
     "rejected": "Deliberately left out of TES3X.",
 }
+PRIORITIES = ("high", "medium", "low", "none")
 PATCH_FIELDS = (("name", "category", "status", "selection", "summary"),
                 ("bit", "source", "takes", "evidence", "origin"))
-CANDIDATE_FIELDS = (("name", "origin", "category", "status", "summary", "reason"),
-                    ("default", "doc"))
+CANDIDATE_FIELDS = (("name", "origin", "status", "priority", "summary", "reason"),
+                    ("category", "default", "doc"))
 
 
 class RegistryError(ValueError):
@@ -43,7 +51,7 @@ def check(entry, fields, choices, sources, where):
         raise RegistryError(f"{where}: missing {missing or 'nothing'}, "
                             f"unknown {sorted(unknown) or 'nothing'}")
     for key, allowed in choices:
-        if entry[key] not in allowed:
+        if key in entry and entry[key] not in allowed:
             raise RegistryError(f"{where}: {key} must be one of {', '.join(allowed)}")
     origin = entry.get("origin")
     if origin is not None and (not isinstance(origin, dict) or origin.get("source") not in sources
@@ -51,16 +59,19 @@ def check(entry, fields, choices, sources, where):
         raise RegistryError(f"{where}: origin wants {{ source = <a [source] name>, id = ... }}")
 
 
-def read(path=REGISTRY):
+def read(path=REGISTRY, candidate_path=CANDIDATE_LIST):
     """The sources, the patches in application order, and the fixes without code."""
     with open(path, "rb") as stream:
         data = tomllib.load(stream)
+    candidates = []
+    if candidate_path and Path(candidate_path).is_file():
+        with open(candidate_path, "rb") as stream:
+            candidates = tomllib.load(stream).get("candidate", [])
     sources = data.get("source", {})
     patches = data.get("patch", [])
-    candidates = data.get("candidate", [])
     names, bits = set(), set()
     for entry in patches:
-        where = f"{path.name}: patch {entry.get('name', '<unnamed>')}"
+        where = f"{Path(path).name}: {entry.get('name', '<unnamed>')}"
         check(entry, PATCH_FIELDS, (("category", CATEGORIES), ("status", STATUSES),
                                     ("selection", SELECTIONS)), sources, where)
         if "bit" in entry:
@@ -72,18 +83,19 @@ def read(path=REGISTRY):
         if entry["status"] in VERIFIED and not entry.get("evidence"):
             raise RegistryError(f"{where}: {entry['status']} needs evidence")
     for entry in candidates:
-        where = f"{path.name}: candidate {entry.get('name', '<unnamed>')}"
+        where = f"{Path(candidate_path).name}: {entry.get('name', '<unnamed>')}"
         check(entry, CANDIDATE_FIELDS, (("category", CATEGORIES + ("undecided",)),
-                                        ("status", tuple(CANDIDATE_STATUSES))), sources, where)
+                                        ("status", tuple(CANDIDATE_STATUSES)),
+                                        ("priority", PRIORITIES)), sources, where)
     for entry in patches + candidates:
         if entry["name"] in names:
-            raise RegistryError(f"{path.name}: {entry['name']} is listed twice")
+            raise RegistryError(f"{entry['name']} is listed twice")
         names.add(entry["name"])
     return sources, patches, candidates
 
 
 def load(path=REGISTRY):
-    return read(path)[1]
+    return read(path, None)[1]
 
 
 SOURCES, PATCHES, CANDIDATES = read()
@@ -97,12 +109,18 @@ def origin_text(entry):
     return text + (f" #{origin['id']}" if "id" in origin else "")
 
 
+def name_text(entry):
+    """The patch name, linked to its folder of notes and proof records when it has one."""
+    name = entry["name"] + (f"={entry['takes']}" if "takes" in entry else "")
+    folder = PATCH_DIRS / entry["name"]
+    return f"[`{name}`](../patches/{entry['name']}/)" if folder.is_dir() else f"`{name}`"
+
+
 def evidence_text(entry):
     links = []
     for evidence in entry.get("evidence", []):
-        if evidence.startswith("verification/"):
-            label = Path(evidence).stem
-            links.append(f"[{label}](../{evidence})")
+        if evidence.startswith("patches/"):
+            links.append(f"[{Path(evidence).stem}](../{evidence})")
         else:
             links.append("findings log, no record yet")
     return ", ".join(links)
@@ -112,7 +130,7 @@ def cell(text):
     return text.replace("|", "\\|")
 
 
-def render():
+def render_patches():
     from tes3x_pipeline import resolve_patch_plan
     presets = {}
     for preset in ("development", "standard"):
@@ -127,9 +145,8 @@ def render():
         "# Patches",
         "",
         "Generated from [`patches.toml`](../patches.toml) by `tools/tes3x_patches.py --write`.",
-        "Edit that file, not this one.",
-        "",
-        "## Implemented",
+        "Edit that file, not this one. Fixes that are not implemented, including every Morrowind",
+        "Code Patch fix, are listed in [candidates.md](candidates.md).",
         "",
         "**Status**: `implemented` means the patch applies and passes structural checks;",
         "`verified-xemu` means it was shown to work in the xemu emulator; `verified-hardware`",
@@ -139,58 +156,86 @@ def render():
         "also in `development`. Anything else is enabled by name in a profile.",
         "",
         "**Evidence**: the proof record behind a status: a control run without the patch, a run",
-        "with it, and their logs. See `tools/tes3x_proof.py`.",
+        "with it, and their logs. A linked patch name opens its folder of notes and records.",
         "",
         "| patch | what it does | from | category | status | selected by | evidence |",
         "|---|---|---|---|---|---|---|",
     ]
     for entry in PATCHES:
-        name = entry["name"] + (f"={entry['takes']}" if "takes" in entry else "")
         chosen = selection.get(entry["selection"]) or presets.get(entry["name"], "by name")
-        lines.append(f"| `{name}` | {cell(entry['summary'])} | {origin_text(entry)} | "
+        lines.append(f"| {name_text(entry)} | {cell(entry['summary'])} | {origin_text(entry)} | "
                      f"{entry['category']} | {entry['status']} | {chosen} | "
                      f"{evidence_text(entry)} |")
-    lines += [
-        "",
-        "## Not implemented",
-        "",
-        "Fixes from other projects that have been reviewed for the Xbox, and why each is not",
-        "implemented yet or at all. Appearing here does not mean the Xbox build has the defect.",
-        "A fix from another project that is not listed has not been reviewed yet.",
-    ]
-    for status, meaning in CANDIDATE_STATUSES.items():
-        entries = [entry for entry in CANDIDATES if entry["status"] == status]
-        if not entries:
-            continue
-        lines += ["", f"### {status}", "", meaning, "",
-                  "| fix | from | category | notes |", "|---|---|---|---|"]
-        for entry in entries:
-            notes = f"**{cell(entry['summary'])}.** {cell(entry['reason'])}"
-            if "doc" in entry:
-                notes += f" [More]({entry['doc']})"
-            category = entry["category"] + (f" ({entry['default']})" if "default" in entry else "")
-            lines.append(f"| `{entry['name']}` | {origin_text(entry)} | {cell(category)} | "
-                         f"{notes} |")
     return "\n".join(lines) + "\n"
 
 
+def render_candidates():
+    counts = {status: sum(e["status"] == status for e in CANDIDATES)
+              for status in CANDIDATE_STATUSES}
+    lines = [
+        "# Candidate fixes",
+        "",
+        "Generated from [`candidates.toml`](../candidates.toml) by",
+        "`tools/tes3x_patches.py --write`. Edit that file, not this one.",
+        "",
+        "Fixes from other projects reviewed for the Xbox, and why each is not implemented yet or",
+        "at all. Every Morrowind Code Patch fix is listed; one split into parts appears once per",
+        "part. Appearing here does not mean the Xbox build has the defect. Implemented fixes are",
+        "in [patches.md](patches.md).",
+        "",
+        "**Priority** is a first estimate of Xbox value: `high` for crashes, corruption and data",
+        "loss players are likely to meet; `medium` for defects visible in normal play or relied",
+        "on by mods; `low` for minor defects and optional changes; `none` for fixes that will not",
+        "be ported.",
+        "",
+        "| status | fixes |",
+        "|---|---|",
+    ] + [f"| {status} | {n} |" for status, n in counts.items() if n]
+    for status, meaning in CANDIDATE_STATUSES.items():
+        entries = [e for e in CANDIDATES if e["status"] == status]
+        if not entries:
+            continue
+        entries.sort(key=lambda e: PRIORITIES.index(e["priority"]))
+        lines += ["", f"## {status}", "", meaning, "",
+                  "| fix | from | priority | category | notes |", "|---|---|---|---|---|"]
+        for e in entries:
+            notes = f"**{cell(e['summary'])}.** {cell(e['reason'])}"
+            if "doc" in e:
+                notes += f" [More]({e['doc']})"
+            category = e.get("category", "")
+            if "default" in e:
+                category += f" ({e['default']})"
+            lines.append(f"| `{e['name']}` | {origin_text(e)} | {e['priority']} | "
+                         f"{cell(category)} | {notes} |")
+    return "\n".join(lines) + "\n"
+
+
+PAGES = ((TABLE, render_patches), (CANDIDATE_PAGE, render_candidates))
+
+
+def stale_pages():
+    return [path for path, render in PAGES
+            if not path.is_file() or path.read_text(encoding="utf-8") != render()]
+
+
 def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__)
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     group = ap.add_mutually_exclusive_group()
-    group.add_argument("--write", action="store_true", help=f"regenerate {TABLE.name}")
-    group.add_argument("--check", action="store_true",
-                       help=f"exit 1 if {TABLE.name} is out of date")
+    group.add_argument("--write", action="store_true", help="regenerate both pages")
+    group.add_argument("--check", action="store_true", help="exit 1 if a page is out of date")
     args = ap.parse_args(argv)
-    text = render()
     if args.write:
-        TABLE.write_text(text, encoding="utf-8", newline="\n")
-        print(f"wrote {TABLE}")
+        for path, render in PAGES:
+            path.write_text(render(), encoding="utf-8", newline="\n")
+            print(f"wrote {path.relative_to(ROOT).as_posix()}")
     elif args.check:
-        current = TABLE.read_text(encoding="utf-8") if TABLE.is_file() else ""
-        if current != text:
-            sys.exit(f"{TABLE} is out of date; run tes3x_patches.py --write")
+        stale = stale_pages()
+        if stale:
+            sys.exit("out of date: " + ", ".join(p.name for p in stale)
+                     + "; run tes3x_patches.py --write")
     else:
-        sys.stdout.write(text)
+        sys.stdout.write(render_patches())
 
 
 if __name__ == "__main__":

@@ -18,9 +18,8 @@ class RegistryTests(unittest.TestCase):
             if 'source' in entry:
                 self.assertTrue((hooks / entry['source']).is_file(), entry['source'])
 
-    def test_generated_table_is_current(self):
-        self.assertEqual(registry.TABLE.read_text(encoding='utf-8'), registry.render(),
-                         'run tools/tes3x_patches.py --write')
+    def test_generated_pages_are_current(self):
+        self.assertEqual(registry.stale_pages(), [], 'run tools/tes3x_patches.py --write')
 
     def test_verified_status_needs_evidence(self):
         with tempfile.TemporaryDirectory() as tmp:

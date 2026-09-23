@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Record and check proof that a patch works: a control run and a patched run, with their logs.
 
-A record is verification/<patch>/<date>-<environment>.toml, stored beside the logs it cites. Each
-run's diagnostics log names the payload build and the patch mask that was live, so a record shows
-that the patched run carried the patch and the control run did not.
+A record is patches/<patch>/<date>-<environment>.toml, in the patch's folder beside the logs it
+cites. Each run's diagnostics log names the payload build and the patch mask that was live, so a
+record shows that the patched run carried the patch and the control run did not.
 
   tes3x_proof.py record mcp-102 --env xemu --control RUN --patched RUN --watch "mcp102\\.loaded"
       --claim "..." --method "..."
@@ -26,7 +26,7 @@ import tes3x_patches as registry
 from tes3x_diag import latest_values, parse_log
 
 ROOT = Path(__file__).resolve().parents[1]
-VERIFICATION = ROOT / "verification"
+PATCH_DIRS = ROOT / "patches"
 MARKER = ".tes3x-pipeline.json"
 ENVIRONMENTS = ("xemu", "hardware")
 RESULTS = ("pass", "fail")
@@ -87,7 +87,7 @@ def load_record(path):
 def check_all():
     """Every problem with the records and with the table's evidence for its statuses."""
     problems, records = [], {}
-    for path in sorted(VERIFICATION.rglob("*.toml")) if VERIFICATION.is_dir() else []:
+    for path in sorted(PATCH_DIRS.rglob("*.toml")) if PATCH_DIRS.is_dir() else []:
         try:
             records[path.relative_to(ROOT).as_posix()] = load_record(path)
         except (ProofError, tomllib.TOMLDecodeError) as exc:
@@ -95,7 +95,7 @@ def check_all():
     for entry in registry.PATCHES:
         cited = []
         for evidence in entry.get("evidence", []):
-            if not evidence.startswith("verification/"):
+            if not evidence.startswith("patches/"):
                 continue
             record = records.get(evidence)
             if record is None:
@@ -167,7 +167,7 @@ def record(args):
             raise ProofError(f"--watch matched nothing in the {role} log {run['log_path']}")
 
     date = datetime.date.fromisoformat(args.date) if args.date else datetime.date.today()
-    folder = VERIFICATION / args.patch
+    folder = PATCH_DIRS / args.patch
     folder.mkdir(parents=True, exist_ok=True)
     stem, n = f"{date.isoformat()}-{args.env}", 1
     while (folder / f"{stem}.toml").exists():

@@ -20,7 +20,7 @@ class ProofTests(unittest.TestCase):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
-        for name, value in (('ROOT', self.root), ('VERIFICATION', self.root / 'verification')):
+        for name, value in (('ROOT', self.root), ('PATCH_DIRS', self.root / 'patches')):
             patcher = patch.object(proof, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -33,7 +33,7 @@ class ProofTests(unittest.TestCase):
                     '--patched', str(self.root / 'patched.txt'),
                     '--watch', r'mcp102\.loaded', '--claim', 'c', '--method', 'm',
                     '--date', '2026-09-23'])
-        return self.root / 'verification' / 'mcp-102' / '2026-09-23-xemu.toml'
+        return self.root / 'patches' / 'mcp-102' / '2026-09-23-xemu.toml'
 
     def test_record_keeps_logs_masks_and_observed_lines(self):
         path = self.record(0x5, 0x5 | MCP102_BIT)
@@ -47,7 +47,7 @@ class ProofTests(unittest.TestCase):
     def test_patched_run_must_carry_the_patch(self):
         with self.assertRaises(SystemExit):
             self.record(0x5, 0x5)
-        self.assertFalse(list((self.root / 'verification').rglob('*.toml')))
+        self.assertFalse(list((self.root / 'patches').rglob('*.toml')))
 
     def test_edited_log_breaks_the_record(self):
         path = self.record(0x5, 0x5 | MCP102_BIT)

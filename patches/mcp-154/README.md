@@ -1,0 +1,16 @@
+# mcp-154: script data fix
+
+Port of Morrowind Code Patch fix 154.
+
+Compiled script data (`SCDT`) is allocated at its exact chunk length, but the script reader can
+read one dword past the end. MCP pads the allocation; so does this port.
+
+## What the patch changes
+
+Both Xbox allocation paths get a four-byte pad, through hooks in `hooks/tes3xmcp154.c`: initial
+load at `0x00137E7E` and reload at `0x00137FC3`. The stored chunk length is unchanged.
+
+## What remains
+
+Minimal and combined payloads pass structural verification. A focused `SCDT` boundary reproducer
+and an xemu run remain.

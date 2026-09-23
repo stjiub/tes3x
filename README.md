@@ -184,6 +184,7 @@ backup of the originals.
 
 Then add or remove single patches by name with `enable` and `disable`.
 [docs/patches.md](docs/patches.md) lists every patch, what it does and which preset includes it.
+Fixes that are not available yet, and why, are in [docs/candidates.md](docs/candidates.md).
 The same list is printed by:
 
 ```powershell
