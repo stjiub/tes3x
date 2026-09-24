@@ -15,6 +15,9 @@ pad, adds a way to type, and runs commands from a file for testing without input
   see [testing and debugging](../../docs/testing.md).
 - At the XBE entry, an `@start` line puts the engine's own relaunch data (`'BXWM'`, New Game or a
   save path) in the kernel's launch data page, so the game starts without the main menu.
+- `tes3x_mailbox`, checked once per frame: a debugger that writes a command and changes its
+  sequence number has it run on the next frame, logged as `live> ...`. Nothing writes it on
+  hardware, so it costs one comparison per frame.
 
 ## Testing it
 
