@@ -47,7 +47,7 @@ typedef struct {
 } MM_STATISTICS;
 
 #define HEAP_MAGIC 0x48583354u /* "T3XH" */
-#define HEAP_VERSION 2
+#define HEAP_VERSION 3
 #define TABLE_BITS 20
 #define TABLE_SIZE (1u << TABLE_BITS)
 #define TABLE_LIMIT (TABLE_SIZE / 10 * 9)
@@ -58,6 +58,10 @@ typedef struct {
 #define SIZE_MAX_UNITS ((1u << SIZE_BITS) - 1)
 #define SIZE_UNIT_SHIFT 3 /* the heap rounds every request up to at least 8 bytes */
 #define HEAP_WORDS 24
+
+#define WALK_BUCKETS 24
+#define WALK_MB 96
+#define FREE_BIAS 1000000000 /* Memory_Heap marks a free block by offsetting its size */
 
 #define HEAP_DUMP_CONSOLE 1
 #define HEAP_DUMP_FIRST_FRAME 2
@@ -97,6 +101,20 @@ typedef struct {
     u32 heap_object;
     u32 heap[HEAP_WORDS];
 } heap_header;
+
+/* The region's blocks, walked from its base to the heap's top at snapshot time. */
+typedef struct {
+    u32 complete; /* the walk ended exactly at the top */
+    u32 used_blocks;
+    u32 used_bytes;
+    u32 free_blocks;
+    u32 free_bytes;
+    u32 free_pages; /* whole pages inside free blocks, past the free-list links */
+    u32 largest_free;
+    u32 free_count[WALK_BUCKETS]; /* by floor(log2(size)) */
+    u32 free_sum[WALK_BUCKETS];
+    u32 free_mb[WALK_MB]; /* free bytes in each MB of the region */
+} heap_walk;
 
 typedef void *(__thiscall *fn_allocate)(void *, u32, const char *, u32);
 typedef void(__thiscall *fn_free)(void *, void *);
@@ -338,8 +356,64 @@ static int heap_write(void *h, const void *buf, u32 len)
     return NtWriteFile(h, 0, 0, 0, &iosb, buf, len, &append) == 0;
 }
 
+static u32 log2_floor(u32 v)
+{
+    u32 n = 0;
+    while (v >>= 1)
+        n++;
+    return n;
+}
+
+/* Blocks are contiguous from the region base (+0x14) to the top (+0x0C): an 8-byte header of
+ * previous block and size, then the payload. A free block keeps its free-list links in the
+ * first 8 payload bytes. Stops at the first header that does not fit. */
+static void heap_walk_region(heap_walk *w)
+{
+    u32 *heap = (u32 *)TES3X_HEAP_OBJECT;
+    u32 base = heap[5], end = base + heap[3], at = base, i;
+
+    for (i = 0; i < sizeof(*w) / 4; i++)
+        ((u32 *)w)[i] = 0;
+    if (!base)
+        return;
+    while (at + 8 <= end) {
+        long raw = ((long *)at)[1];
+        u32 size = (u32)(raw < 0 ? -raw : raw), next;
+        int is_free = size > FREE_BIAS;
+
+        if (is_free)
+            size -= FREE_BIAS;
+        next = at + 8 + size;
+        if (next > end || next <= at)
+            break;
+        if (is_free) {
+            u32 lo = (at + 16 + 0xFFF) & ~0xFFFu, hi = next & ~0xFFFu, b = log2_floor(size);
+            u32 mb = (at - base) >> 20;
+
+            w->free_blocks++;
+            w->free_bytes += size;
+            if (hi > lo)
+                w->free_pages += (hi - lo) >> 12;
+            if (size > w->largest_free)
+                w->largest_free = size;
+            if (b >= WALK_BUCKETS)
+                b = WALK_BUCKETS - 1;
+            w->free_count[b]++;
+            w->free_sum[b] += size;
+            if (mb < WALK_MB)
+                w->free_mb[mb] += size;
+        } else {
+            w->used_blocks++;
+            w->used_bytes += size;
+        }
+        at = next;
+    }
+    w->complete = at == end;
+}
+
 static void heap_dump(u32 reason)
 {
+    static heap_walk walk;
     static heap_site copy[SITE_COUNT];
     ANSI_STRING name;
     OBJECT_ATTRIBUTES oa;
@@ -367,6 +441,7 @@ static void heap_dump(u32 reason)
     hdr.stale_blocks = stale_blocks;
     for (i = 0; i < HEAP_WORDS; i++)
         hdr.heap[i] = ((u32 *)TES3X_HEAP_OBJECT)[i];
+    heap_walk_region(&walk);
     unlock_irq(flags);
 
     hdr.magic = HEAP_MAGIC;
@@ -393,11 +468,16 @@ static void heap_dump(u32 reason)
         dump_lock = 0;
         return;
     }
-    if (heap_write(h, &hdr, sizeof(hdr)) && heap_write(h, copy, n * sizeof(heap_site)))
+    if (heap_write(h, &hdr, sizeof(hdr)) && heap_write(h, &walk, sizeof(walk)) &&
+        heap_write(h, copy, n * sizeof(heap_site)))
         dump_seq++;
     NtClose(h);
     tes3x_log("heap.dump", dump_seq);
     tes3x_log("heap.live_kb", (hdr.live_bytes >> 10) << SAMPLE_SHIFT);
+    tes3x_log("heap.region_free_kb", walk.free_bytes >> 10);
+    tes3x_log("heap.region_free_pages", walk.free_pages);
+    if (!walk.complete)
+        tes3x_log("heap.walk_incomplete", walk.used_blocks + walk.free_blocks);
     tes3x_log("heap.sites", n);
     if (hdr.untracked_allocs)
         tes3x_log("heap.untracked", hdr.untracked_allocs);
