@@ -16,6 +16,10 @@ preset = "standard"
 enable = []                          # see: python tools/tes3x_patch.py --list
 disable = []
 
+[preferences]
+# Applied after the Xbox's stored controls load. Omit the table to leave player preferences alone.
+invert_look = false
+
 [package]
 # delta-bsa needs LLVM; merged-bsa does not.
 mode = "delta-bsa"

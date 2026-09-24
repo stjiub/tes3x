@@ -57,6 +57,15 @@ The annotated [example profile](../examples/profile.toml) is the shortest starti
 `development` adds instrumentation and the in-game console. Use
 `python tools/tes3x_patch.py --list` or see [patches.md](patches.md) for patch names.
 
+### `[preferences]`
+
+Build preferences are applied after the Xbox's stored player options load. Omit this table to
+leave existing preferences and retail defaults unchanged.
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `invert_look` | boolean | stored/retail value | Set right-stick vertical look to inverted or normal. |
+
 ### `[package]`
 
 The archive settings matter only when the profile has enabled mods. `drive_letter` applies to

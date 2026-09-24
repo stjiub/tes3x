@@ -139,7 +139,7 @@ def render_patches():
     selection = {
         "always": "every build",
         "packaging": "delta-bsa packing",
-        "option": "command line",
+        "option": "build option",
     }
     lines = [
         "# Patches",
@@ -153,7 +153,7 @@ def render_patches():
         "means it was shown to work on an original Xbox.",
         "",
         "**Selected by**: `standard` and `development` are presets; a patch marked `standard` is",
-        "also in `development`. Anything else is enabled by name in a profile.",
+        "also in `development`. Anything else is selected explicitly for a build.",
         "",
         "**Evidence**: the proof record behind a status: a control run without the patch, a run",
         "with it, and their logs. A linked patch name opens its folder of notes and records.",

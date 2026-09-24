@@ -28,7 +28,8 @@ RELEASE_ARTIFACT_SUFFIXES = {".iso", ".nfo", ".rar", ".sfv"}
 
 PATCHES = {entry["name"]: entry for entry in registry.PATCHES if entry["selection"] == "preset"}
 PATCH_ORDER = tuple(entry["name"] for entry in registry.PATCHES
-                    if entry["selection"] in ("packaging", "preset"))
+                    if entry["selection"] in ("packaging", "preset")
+                    or entry["name"] == "build-preferences")
 HOOK_SOURCES = {entry["name"]: entry.get("source") for entry in registry.PATCHES}
 CATEGORIES = set(registry.CATEGORIES)
 VERIFIED = set(registry.VERIFIED)
@@ -57,7 +58,7 @@ def validate_profile(profile):
     if not isinstance(profile, dict):
         raise PipelineError("profile must be a TOML table")
 
-    allowed_sections = {"profile", "rules", "patches", "package", "ini", "mods"}
+    allowed_sections = {"profile", "rules", "patches", "preferences", "package", "ini", "mods"}
     unknown = set(profile) - allowed_sections
     if unknown:
         raise PipelineError("unknown profile sections: " + ", ".join(sorted(unknown)))
@@ -106,6 +107,10 @@ def validate_profile(profile):
     typed(patches, "preset", (str,), "patches")
     for key in ("categories", "enable", "disable"):
         string_list(patches.get(key), f"patches.{key}")
+
+    preferences = table("preferences")
+    known(preferences, {"invert_look"}, "preferences")
+    typed(preferences, "invert_look", (bool,), "preferences")
 
     package = table("package")
     known(package, {"mode", "archive_name", "archive_only", "drive_letter", "loose_assets"},
@@ -228,6 +233,8 @@ def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), pac
     applied = set(selected)
     if mode == "delta-bsa":
         applied.add("multi-bsa")
+    if profile.get("preferences"):
+        applied.add("build-preferences")
 
     sources = ["tes3xhook.c", "tes3xlog.c"]
     for name in PATCH_ORDER:
@@ -242,6 +249,13 @@ def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), pac
         "package_mode": mode,
         "needs_payload": bool(applied),
     }
+
+
+def preference_flags(profile):
+    preferences = profile.get("preferences", {})
+    if not preferences:
+        return ""
+    return "-DTES3X_INVERT_LOOK=%d" % int(preferences.get("invert_look", True))
 
 
 def config_path(value, base):
@@ -478,6 +492,9 @@ def main(argv=None):
     print(f"profile: {profile_name}")
     print(f"preset: {plan['preset']}")
     print("patches: " + ", ".join(["boot-media", f"drive-letters={drive}"] + plan["applied"]))
+    if profile.get("preferences"):
+        print("preferences: invert_look=%s" % str(
+            profile["preferences"].get("invert_look", True)).lower())
     if title:
         print(f"title: {title}; dashboard files: {', '.join(dashboards) or 'none'}")
     if prof_targets:
@@ -540,7 +557,8 @@ def main(argv=None):
         payload = hook_out / "tes3xhook.pe"
         if plan["needs_payload"]:
             print("\n== payload: " + " ".join(plan["sources"]), flush=True)
-            build_payload(retail_xbe, plan["sources"], hook_out, llvm_dir=llvm,
+            build_payload(retail_xbe, plan["sources"], hook_out,
+                          user_flags=preference_flags(profile), llvm_dir=llvm,
                           check_xbe=hook_out / "injected-check.xbe")
 
         patch_specs = []

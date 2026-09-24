@@ -166,6 +166,13 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         define("SAVE_GAME", save_game)
         define("SAVE_THIS_PTR", save_this)
         flags.append("-DTES3X_SAVES")
+    if "tes3xprefs.c" in names:
+        site = locate("preferences-load")
+        load = hexva(tes3x_inject.call_target(image, site))
+        table = hexva(locate("controls-table"))
+        print(f"preferences hook: controls load {load}, bindings {table}")
+        define("CONTROLS_LOAD", load)
+        define("CONTROLS_TABLE", table)
     if "tes3xprof.c" in names:
         print("profiler: RDTSC region timing, targets chosen at patch time")
         flags.append("-DTES3X_PROFILE")
@@ -233,6 +240,9 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         extra["prof_stubs"] = {"prof_count": define_value("tes3xprof.c", "TES3X_PROF_SLOTS")}
     if "tes3xsaves.c" in names:
         wanted["autosave"] = ("@tes3x_autosave_hook@12", "_tes3x_autosave_hook")
+    if "tes3xprefs.c" in names:
+        wanted["preferences_load"] = ("@tes3x_preferences_hook@4",
+                                      "_tes3x_preferences_hook")
 
     objects = []
     for source in sources:

@@ -508,6 +508,36 @@ def find_mcp140_status(x):
 
 AUTOSAVE_NAME_SIG = b"autosave\x00\x00\x00\x00%d %s %s%s"
 
+PREFERENCES_LOAD_SIG = re.compile(
+    rb"\x83\xec\x5c\xa1....\x53\x55\x56\x8b\xe9\x8b\x48\x4c\x57"
+    rb"(?P<site>\xe8....)\x33\xc0\xb9\x0c\x00\x00\x00\x8d\x7c\x24\x3c\xf3\xab\xb0\xfa",
+    re.S,
+)
+CONTROLS_COPY_SIG = re.compile(
+    rb"\xb9\x13\x00\x00\x00\x8d\x74\x24\x30\xbf(?P<table>....)"
+    rb"\xf3\xa5\x66\xa5\x5f\x5e\x83\xc4\x78\xc3",
+    re.S,
+)
+
+
+def find_preferences_load(x):
+    """The call that loads controls.dat before player options are applied."""
+    hits = list(PREFERENCES_LOAD_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("build-preferences: %d controls load call(s), expected 1" % len(hits))
+    va = x.off_to_va(hits[0].start("site"))
+    if va is None:
+        raise PatchError("build-preferences: controls load call is outside any section")
+    return va
+
+
+def find_controls_table(x):
+    """The 39 two-byte default action bindings overwritten by controls.dat."""
+    hits = list(CONTROLS_COPY_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("build-preferences: %d controls table copies, expected 1" % len(hits))
+    return struct.unpack("<I", hits[0].group("table"))[0]
+
 
 def find_autosave_calls(x):
     """Find the save routine and the three callers that pass the autosave name buffer."""
@@ -560,6 +590,24 @@ def find_save_this_ptr(x):
         raise PatchError("rotating-autosaves: found %d save owner pointers, expected 1"
                          % len(pointers))
     return pointers.pop()
+
+
+@patch("build-preferences")
+def _build_preferences(x, value, ctx):
+    """Apply profile-selected player preferences after stored Xbox options load."""
+    target = ctx.get("hooks", {}).get("preferences_load")
+    if not target:
+        raise PatchError("build-preferences: needs `payload` first, with a preferences_load "
+                         "hook in its manifest")
+    target = int(str(target), 16)
+    site = find_preferences_load(x)
+    expected = tes3x_inject.call_target(x, site)
+    was, off = x.patch_call(site, target)
+    if was != expected:
+        raise PatchError("build-preferences: call 0x%08X targets 0x%08X, expected 0x%08X"
+                         % (site, was, expected))
+    return [(off, 5, "controls load 0x%08X: 0x%08X -> 0x%08X"
+             % (site, was, target))]
 
 
 @patch("rotating-autosaves")
@@ -916,6 +964,8 @@ LOCATORS = {
     "dxt5-size": find_dxt5_size,
     "save-game": lambda image: find_autosave_calls(image)[0],
     "save-this-ptr": find_save_this_ptr,
+    "preferences-load": find_preferences_load,
+    "controls-table": find_controls_table,
     "diagnostics-update": find_diagnostics_update,
     "console-print": find_console_print,
 }

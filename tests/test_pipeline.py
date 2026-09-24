@@ -9,7 +9,7 @@ from tes3x_paths import check_paths, require_paths
 from tes3x_pack import write_invalidation
 from tes3x_build import materialize, plugin_masters
 from tes3x_pipeline import (PipelineError, copy_retail_root, link_or_copy, resolve_patch_plan,
-                            validate_local_config, validate_profile)
+                            preference_flags, validate_local_config, validate_profile)
 from tes3x_pipeline import main as pipeline_main
 from tes3x_patch import _mcp_97, _mcp_102, _mcp_140, _mcp_154
 from tes3x_plugins import validate_order
@@ -252,6 +252,9 @@ class PipelinePlanTests(unittest.TestCase):
                               'mods': [{'name': 'm', 'order': 'first'}]})
         with self.assertRaisesRegex(PipelineError, 'profile.library is required'):
             validate_profile({'profile': {'name': 'p'}, 'mods': [{'name': 'm'}]})
+        with self.assertRaisesRegex(PipelineError, 'preferences.invert_look must be a boolean'):
+            validate_profile({'profile': {'name': 'p'},
+                              'preferences': {'invert_look': 'no'}})
 
     def test_local_validation_checks_public_tables_and_allows_extensions(self):
         validate_local_config({'paths': {'build_root': 'build'},
@@ -269,6 +272,19 @@ class PipelinePlanTests(unittest.TestCase):
         })
         self.assertEqual(plan['applied'], ['rotating-autosaves'])
         self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xsaves.c'])
+
+    def test_build_preferences_adds_specialized_hook_source(self):
+        profile = {
+            'profile': {'name': 'p'},
+            'patches': {'preset': 'minimal'},
+            'preferences': {'invert_look': False},
+        }
+        validate_profile(profile)
+        plan = resolve_patch_plan(profile)
+        self.assertEqual(plan['applied'], ['build-preferences'])
+        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xprefs.c'])
+        self.assertEqual(preference_flags(profile), '-DTES3X_INVERT_LOOK=0')
+        self.assertEqual(preference_flags({'profile': {'name': 'p'}}), '')
 
     def test_mcp_97_adds_its_hook_source(self):
         plan = resolve_patch_plan({
