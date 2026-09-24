@@ -23,6 +23,7 @@ from tes3x_paths import DEFAULT_REMOTE_ROOT, require_paths
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "tools"
 MARKER = ".tes3x-pipeline.json"
+MARKER_SCHEMA = 2
 REPLACED_RETAIL_ENTRIES = {"data files", "default.xbe", "morrowind.xbe", "morrowind.ini"}
 RELEASE_ARTIFACT_SUFFIXES = {".iso", ".nfo", ".rar", ".sfv"}
 
@@ -286,6 +287,75 @@ def source_revision():
     return commit + ("-dirty" if dirty else "")
 
 
+def sha256_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def tree_digest(root):
+    """Hash a tree without exposing its source paths in the build record."""
+    digest = hashlib.sha256()
+    for path in sorted((p for p in Path(root).rglob("*") if p.is_file()),
+                       key=lambda p: p.relative_to(root).as_posix().lower()):
+        relative = path.relative_to(root).as_posix()
+        digest.update(relative.encode("utf-8") + b"\0")
+        digest.update(str(path.stat().st_size).encode("ascii") + b"\0")
+        digest.update(bytes.fromhex(sha256_file(path)))
+    return digest.hexdigest()
+
+
+def mod_inventory(profile):
+    """The selected mod configuration, with no library or machine paths."""
+    result = []
+    for mod in sorted(enabled_mods(profile), key=lambda item: item.get("order", 0)):
+        item = {"name": mod["name"], "order": mod.get("order", 0)}
+        for key in ("plugins", "loose"):
+            if key in mod:
+                item[key] = mod[key]
+        result.append(item)
+    return result
+
+
+def plugin_inventory(data_files):
+    """Final loose plugin load order and content hashes."""
+    plugins = [path for path in Path(data_files).iterdir()
+               if path.is_file() and path.suffix.lower() in {".esm", ".esp"}]
+    plugins.sort(key=lambda path: (path.stat().st_mtime_ns, path.name.lower()))
+    return [{"name": path.name, "sha256": sha256_file(path)} for path in plugins]
+
+
+def tool_version(path):
+    try:
+        result = subprocess.run([str(path), "--version"], capture_output=True, text=True,
+                                timeout=10, check=True)
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return Path(path).name
+    return next((line.strip() for line in result.stdout.splitlines() if line.strip()),
+                Path(path).name)
+
+
+def sanitized_command(invocation, profile_name, profile_arg):
+    """Keep the effective command shape while removing local filesystem locations."""
+    result = ["python", "tools/tes3x_pipeline.py"]
+    path_options = {"--config", "--vanilla", "--llvm", "--build-root", "--out"}
+    replace_next, replaced_profile = False, False
+    for value in invocation:
+        if not replaced_profile and value == profile_arg:
+            result.append(f"profile:{profile_name}")
+            replaced_profile = True
+        elif replace_next:
+            result.append("<local-path>")
+            replace_next = False
+        else:
+            option = next((item for item in path_options if value.startswith(item + "=")), None)
+            result.append(option + "=<local-path>" if option else value)
+            replace_next = value in path_options
+    return result
+
+
 def link_or_copy(source, target):
     """Hardlink a retail file into the build, or copy it where the volume cannot link.
 
@@ -412,6 +482,7 @@ def publish(work, output):
 
 
 def main(argv=None):
+    invocation = list(argv) if argv is not None else sys.argv[1:]
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("profile")
     ap.add_argument("--config", help="local paths and Xbox settings (default: ./tes3x.local.toml if present)")
@@ -527,10 +598,12 @@ def main(argv=None):
     copy = link_or_copy if hardlink else shutil.copy2
     llvm_value = args.llvm or paths.get("llvm")
     llvm = config_path(llvm_value, base).resolve() if llvm_value else None
+    toolchain = {}
     if plan["needs_payload"]:
         # Fail before any copying, not halfway through the build.
-        find_tool("clang", llvm)
-        find_tool("lld-link", llvm)
+        clang = os.environ.get("CLANG") or find_tool("clang", llvm)
+        lld = os.environ.get("LLD") or find_tool("lld-link", llvm)
+        toolchain = {"clang": tool_version(clang), "lld-link": tool_version(lld)}
     if (args.deploy or args.dry_run) and (not deploy.get("host") or not remote):
         raise PipelineError("deployment requires deploy.host, and profile.remote_root or "
                             "deploy.remote_root")
@@ -612,16 +685,30 @@ def main(argv=None):
                         for path in staged.rglob("*") if path.is_file()]
         require_paths(staged_paths, remote or DEFAULT_REMOTE_ROOT)
         print(f"  retail root payload: {retail_files} files, {retail_bytes / 1048576:.1f} MB")
+        staged_ini = staged / "Morrowind.ini"
         record = {
+            "schema": MARKER_SCHEMA,
             "profile": profile_name,
-            "profile_path": str(profile_path),
+            "profile_sha256": sha256_file(profile_path),
             "preset": plan["preset"],
             "patches": ["payload=hooks/tes3xhook.pe" if spec.startswith("payload=") else spec
                         for spec in patch_specs],
             "package_mode": plan["package_mode"],
+            "preferences": profile.get("preferences", {}),
+            "command": sanitized_command(invocation, profile_name, args.profile),
+            "ini": {
+                "base_sha256": sha256_file(ini),
+                "staged_sha256": sha256_file(staged_ini),
+                "overrides": ini_items,
+            },
+            "mods": mod_inventory(profile),
+            "plugins": plugin_inventory(staged / "Data Files"),
+            "data_files_sha256": tree_digest(staged / "Data Files"),
+            "toolchain": toolchain,
             "deploy_tree": "deploy",
             "tes3x": source_revision(),
             "retail_xbe_sha1": hashlib.sha1(retail_xbe.read_bytes()).hexdigest(),
+            "morrowind_xbe_sha256": sha256_file(staged / "morrowind.xbe"),
         }
         (work / MARKER).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
         publish(work, output)

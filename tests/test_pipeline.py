@@ -9,7 +9,8 @@ from tes3x_paths import check_paths, require_paths
 from tes3x_pack import write_invalidation
 from tes3x_build import materialize, plugin_masters
 from tes3x_pipeline import (PipelineError, copy_retail_root, link_or_copy, resolve_patch_plan,
-                            preference_flags, validate_local_config, validate_profile)
+                            preference_flags, sanitized_command, validate_local_config,
+                            validate_profile)
 from tes3x_pipeline import main as pipeline_main
 from tes3x_patch import _mcp_97, _mcp_102, _mcp_140, _mcp_154
 from tes3x_plugins import validate_order
@@ -189,6 +190,16 @@ class PipelineTests(unittest.TestCase):
             target = link_or_copy(source, self.root / 'b')
         self.assertFalse(target.samefile(source))
         self.assertEqual(target.read_bytes(), b'x')
+
+    def test_recorded_command_removes_machine_paths(self):
+        command = sanitized_command(
+            ['--vanilla', 'D:/private/game', 'profiles/proof.toml',
+             '--out=D:/private/build', '--enable', 'mcp-102'],
+            'proof', 'profiles/proof.toml')
+        self.assertEqual(command, [
+            'python', 'tools/tes3x_pipeline.py', '--vanilla', '<local-path>',
+            'profile:proof', '--out=<local-path>', '--enable', 'mcp-102',
+        ])
 
 
 class PipelinePlanTests(unittest.TestCase):

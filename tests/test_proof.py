@@ -1,3 +1,4 @@
+import json
 import sys
 import tempfile
 import unittest
@@ -25,12 +26,39 @@ class ProofTests(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
-    def record(self, control_mask, patched_mask):
-        (self.root / 'control.txt').write_text(log(control_mask, 0))
-        (self.root / 'patched.txt').write_text(log(patched_mask, 1))
-        proof.main(['record', 'mcp-102', '--env', 'xemu', '--platform', 'xemu test',
-                    '--control', str(self.root / 'control.txt'),
-                    '--patched', str(self.root / 'patched.txt'),
+    def run_folder(self, role, mask, loaded, patches=None, ini='8' * 64):
+        folder = self.root / role
+        (folder / 'pipeline').mkdir(parents=True)
+        (folder / 'tes3xlog.txt').write_text(log(mask, loaded))
+        marker = {
+            'schema': 2, 'profile': 'proof', 'profile_sha256': '1' * 64,
+            'preset': 'minimal', 'patches': patches or ['diagnostics'],
+            'package_mode': 'retail', 'command': ['python', 'tools/tes3x_pipeline.py'],
+            'ini': {'base_sha256': '2' * 64, 'staged_sha256': ini, 'overrides': []},
+            'mods': [], 'plugins': [], 'data_files_sha256': '3' * 64,
+            'toolchain': {}, 'deploy_tree': 'deploy', 'tes3x': 'abcdef123456',
+            'retail_xbe_sha1': '4' * 40,
+            'morrowind_xbe_sha256': ('6' if role == 'control' else '7') * 64,
+        }
+        (folder / 'pipeline' / proof.MARKER).write_text(json.dumps(marker))
+        run_marker = {
+            'schema': 1, 'environment': 'xemu',
+            'command': ['python', 'tools/xemu_run.py', '<run>'],
+            'platform': {'kind': 'xemu', 'version': 'test', 'bios': 'test.bin',
+                         'guest_ram_mb': 64},
+            'fixtures': {'script': {'name': 'proof.txt', 'size': 1, 'sha256': '5' * 64}},
+            'pipeline': marker, 'morrowind_xbe_sha256': marker['morrowind_xbe_sha256'],
+        }
+        (folder / proof.RUN_MARKER).write_text(json.dumps(run_marker))
+        return folder
+
+    def record(self, control_mask, patched_mask, control_patches=None, patched_patches=None,
+               control_ini='8' * 64, patched_ini='8' * 64):
+        control = self.run_folder('control', control_mask, 0, control_patches, control_ini)
+        patched = self.run_folder('patched', patched_mask, 1,
+                                  patched_patches or ['diagnostics', 'mcp-102'], patched_ini)
+        proof.main(['record', 'mcp-102', '--env', 'xemu',
+                    '--control', str(control), '--patched', str(patched),
                     '--watch', r'mcp102\.loaded', '--claim', 'c', '--method', 'm',
                     '--date', '2026-09-23'])
         return self.root / 'patches' / 'mcp-102' / '2026-09-23-xemu.toml'
@@ -43,11 +71,51 @@ class ProofTests(unittest.TestCase):
         self.assertEqual(patched['build'], '0x12345678')
         self.assertEqual(control['observed'], ['25570 ms mcp102.loaded 0'])
         self.assertTrue((path.parent / patched['log']).is_file())
+        self.assertEqual(record['schema'], 2)
+        provenance = json.loads((path.parent / record['provenance']).read_text())
+        self.assertEqual(provenance['inputs']['profile'], 'proof')
+        self.assertEqual(provenance['platform']['guest_ram_mb'], 64)
 
     def test_patched_run_must_carry_the_patch(self):
         with self.assertRaises(SystemExit):
             self.record(0x5, 0x5)
         self.assertFalse(list((self.root / 'patches').rglob('*.toml')))
+
+    def test_runtime_masks_may_differ_only_by_the_patch(self):
+        with self.assertRaises(SystemExit):
+            self.record(0x5, 0x5 | MCP102_BIT | (1 << 3))
+
+    def test_build_patch_lists_may_differ_only_by_the_patch(self):
+        with self.assertRaises(SystemExit):
+            self.record(0x5, 0x5 | MCP102_BIT,
+                        patched_patches=['diagnostics', 'console', 'mcp-102'])
+
+    def test_build_inputs_must_match(self):
+        with self.assertRaises(SystemExit):
+            self.record(0x5, 0x5 | MCP102_BIT, patched_ini='9' * 64)
+
+    def test_hardware_description_tracks_visible_ram_and_cpu(self):
+        path = self.root / 'hardware.toml'
+        path.write_text('''
+[hardware]
+unit = "xbox-a"
+board_revision = "1.4"
+installed_ram_mb = 128
+title_ram_mb = 64
+cpu = "stock"
+cpu_mhz = 733
+bios = "retail"
+''')
+        hardware = proof.load_hardware(path)
+        self.assertEqual(hardware['title_ram_mb'], 64)
+        self.assertEqual(hardware['cpu_mhz'], 733)
+
+    def test_edited_provenance_breaks_the_record(self):
+        path = self.record(0x5, 0x5 | MCP102_BIT)
+        record = proof.load_record(path)
+        (path.parent / record['provenance']).write_text('{}')
+        with self.assertRaises(proof.ProofError):
+            proof.load_record(path)
 
     def test_edited_log_breaks_the_record(self):
         path = self.record(0x5, 0x5 | MCP102_BIT)
