@@ -1,7 +1,7 @@
-# heap-region: engine heap on 128 MB
+# heap-region: engine heap region, committed as it grows
 
-A TES3X patch for consoles with 128 MB. Retail Morrowind never needs it; large mods such as
-Tamriel Rebuilt do.
+A TES3X patch that stops the engine heap holding memory it has not used, and lets it grow large
+enough for mods such as Tamriel Rebuilt on 128 MB.
 
 ## The limit
 
@@ -12,20 +12,25 @@ every further block becomes its own CRT `malloc`, with that allocator's per-bloc
 Retail uses about 12 MB of the region. The masters of Tamriel Rebuilt fill it and spill about
 750,000 blocks.
 
-The region is committed when it is allocated, so its whole size is gone from general memory from
-the start, whether it is used or not.
+The region is allocated with `malloc`, which commits all of it at once. Its whole size is gone
+from general memory from the start, whether it is used or not: about 5 MB for retail on 64 MB.
 
 ## What the patch changes
 
-The `push 0x1100000` becomes a call to `hooks/tes3xregion.c`, which leaves the region size on
-the stack where the push put it. When the kernel reports more than 64 MB of physical memory, the
-size is `[Xbox] HeapRegionKB` in `Morrowind.ini`, 57344 (56 MB) if the key is absent, clamped
-between retail's 17,408 and 98,304. With 64 MB the region stays at retail's size, whatever the
-key says. The log records the size chosen as `region.kb`, or `region.kb_ini` when it came from
-the key.
+- The `push 0x1100000` becomes a call to `hooks/tes3xregion.c`, which leaves the region size on
+  the stack where the push put it: `[Xbox] HeapRegionKB` in `Morrowind.ini`, 98304 (96 MB) if the
+  key is absent, clamped between retail's 17,408 and 98,304. The log records it as `region.kb`,
+  or `region.kb_ini` when it came from the key.
+- The constructor's `malloc` of the region becomes a reservation of address space.
+- `Allocate` places a new block at the heap's high-water mark (`+0x0C`) once it has checked that
+  the block fits the region. The patch retargets that check's `jbe` so that the pages under the
+  block are committed first, 64 KB at a time. If the commit fails, the block goes to CRT
+  `malloc` as it would once the region is full, and the log records `region.commit_failed_kb`.
+- The destructor releases the reservation instead of freeing it.
+
+Committed pages stay committed when the high-water mark falls again, as they did in retail.
 
 ## Choosing a size
 
-A region larger than the heap's live data only holds memory idle. One smaller than it leaves the
-rest to CRT `malloc`, which costs more per block. The best size is about what the load order keeps
-live in the heap, and it grows with the load order.
+Only committed pages use memory, so a region larger than the heap costs address space and
+nothing else. The default fits the Tamriel Rebuilt masters, whose heap needs about 57-60 MB.

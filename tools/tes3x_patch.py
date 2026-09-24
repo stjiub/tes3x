@@ -913,16 +913,28 @@ def _video_arena(x, value, ctx):
 
 @patch("heap-region")
 def _heap_region(x, value, ctx):
-    """Size the engine heap's region from [Xbox] HeapRegionKB when there is more than 64 MB."""
-    target = ctx.get("hooks", {}).get("region_size")
-    if not target:
-        raise PatchError("heap-region: needs `payload` first, with a region_size hook in its "
-                         "manifest")
+    """Reserve the engine heap's region, commit it as the heap grows, size it from the ini."""
+    hooks = ctx.get("hooks", {})
+    names = ("region_size", "region_reserve", "region_carve", "region_release")
+    missing = [name for name in names if not hooks.get(name)]
+    if missing:
+        raise PatchError("heap-region: needs `payload` first, with %s in its manifest"
+                         % ", ".join(missing))
+    size, reserve, carve, release = (int(str(hooks[name]), 16) for name in names)
     site = find_heap_region(x)
+    malloc_site, fit, free_site = find_heap_region_sites(x)
     off = x.va_to_off(site)
-    target = int(str(target), 16)
-    x.data[off:off + 5] = b"\xe8" + struct.pack("<i", target - (site + 5))
-    return [(off, 5, "heap region 0x%08X: push 0x1100000 -> call 0x%08X" % (site, target))]
+    x.data[off:off + 5] = b"\xe8" + struct.pack("<i", size - (site + 5))
+    malloc, malloc_off = x.patch_call(malloc_site, reserve)
+    free, free_off = x.patch_call(free_site, release)
+    fit_off = x.va_to_off(fit)
+    struct.pack_into("<i", x.data, fit_off + 2, carve - (fit + 6))
+    return [
+        (off, 5, "heap region 0x%08X: push 0x1100000 -> call 0x%08X" % (site, size)),
+        (malloc_off, 5, "region malloc 0x%08X: 0x%08X -> 0x%08X" % (malloc_site, malloc, reserve)),
+        (fit_off, 6, "region carve 0x%08X: jbe -> 0x%08X" % (fit, carve)),
+        (free_off, 5, "region free 0x%08X: 0x%08X -> 0x%08X" % (free_site, free, release)),
+    ]
 
 
 @patch("mcp-102")
@@ -1168,6 +1180,40 @@ def find_heap_region(x):
     return x.off_to_va(find_unique(bytes(x.data), sig, "heap-region") + 3)
 
 
+def _find_in(data, start, length, sig, what):
+    at = data.find(sig, start, start + length)
+    if at < 0 or data.find(sig, at + 1, start + length) >= 0:
+        raise PatchError("heap-region: expected one %s" % what)
+    return at
+
+
+def find_heap_region_sites(x):
+    """The constructor's malloc of the region, Allocate's `jbe` taken when a block fits the
+    region, and the destructor's free of the region."""
+    data = bytes(x.data)
+    init = find_heap_region(x)
+    ctor = x.va_to_off(tes3x_inject.call_target(x, init + 10))
+    # call malloc; mov edx, [ebp-0x34]; mov [edx+0x14], eax
+    store = _find_in(data, ctor, 0x100, b"\x8b\x55\xcc\x89\x42\x14", "region base store")
+    if data[store - 5] != 0xE8:
+        raise PatchError("heap-region: no call before the region base store")
+    start, end = find_heap_function(x, "allocate")
+    # cmp eax, [ecx+8]; jbe rel32
+    fit = _find_in(data, x.va_to_off(start), end - start, b"\x3b\x41\x08\x0f\x86",
+                   "region fit check") + 3
+    # The initializer registers the destructor's atexit stub: push stub.
+    off = x.va_to_off(init + 15)
+    if data[off] != 0x68:
+        raise PatchError("heap-region: no atexit push after the heap constructor")
+    stub = struct.unpack_from("<I", data, off + 1)[0]
+    dtor = x.va_to_off(tes3x_inject.call_target(x, stub + 8))
+    # mov edx, [ecx+0x14]; push edx; mov ecx, [ebp-x]; call free
+    free = _find_in(data, dtor, 0x100, b"\x8b\x51\x14\x52\x8b\x4d", "region free") + 7
+    if data[free] != 0xE8:
+        raise PatchError("heap-region: no call after the region free argument")
+    return x.off_to_va(store - 5), x.off_to_va(fit), x.off_to_va(free)
+
+
 @patch("heap-census")
 def _heap_census(x, value, ctx):
     """Redirect every direct Memory_Heap::Allocate and ::Free call to the census."""
@@ -1303,6 +1349,9 @@ LOCATORS = {
     "heap-free": lambda image: find_heap_function(image, "free")[0],
     "heap-object": find_heap_object,
     "heap-region": find_heap_region,
+    "heap-region-malloc": lambda image: find_heap_region_sites(image)[0],
+    "heap-region-fit": lambda image: find_heap_region_sites(image)[1],
+    "heap-region-free": lambda image: find_heap_region_sites(image)[2],
 }
 
 

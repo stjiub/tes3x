@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import struct
 import subprocess
 
 import tes3x_inject
@@ -243,8 +244,19 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         print(f"video-arena hook: size {hexva(locate('video-arena'))}")
         wanted["arena_size"] = ("_tes3x_arena_size_hook",)
     if "tes3xregion.c" in names:
-        print(f"heap-region hook: size {hexva(locate('heap-region'))}")
+        malloc, fit, free = locate("heap-region-malloc"), locate("heap-region-fit"), \
+            locate("heap-region-free")
+        print(f"heap-region hooks: size {hexva(locate('heap-region'))}, malloc {hexva(malloc)}, "
+              f"fit {hexva(fit)}, free {hexva(free)}")
+        define("REGION_MALLOC", hexva(tes3x_inject.call_target(image, malloc)))
+        define("REGION_FREE", hexva(tes3x_inject.call_target(image, free)))
+        define("REGION_SPILL", hexva(fit + 6))
+        define("REGION_CARVE", hexva(fit + 6 + struct.unpack_from(
+            "<i", image.data, image.va_to_off(fit) + 2)[0]))
         wanted["region_size"] = ("_tes3x_region_size_hook",)
+        wanted["region_reserve"] = ("@tes3x_region_reserve@12",)
+        wanted["region_carve"] = ("_tes3x_region_carve_hook",)
+        wanted["region_release"] = ("@tes3x_region_release@12",)
     if "tes3xmcp140.c" in names:
         redraw = locate("mcp-140-redraw")
         update = hexva(tes3x_inject.call_target(image, redraw))
