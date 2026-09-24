@@ -161,8 +161,11 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         define("INI_PATH", ini_path)
     if "tes3xsaves.c" in names:
         save_game = hexva(locate("save-game"))
-        print(f"autosave hook: SaveGame {save_game}")
+        save_this = hexva(locate("save-this-ptr"))
+        print(f"autosave hook: SaveGame {save_game}, owner pointer {save_this}")
         define("SAVE_GAME", save_game)
+        define("SAVE_THIS_PTR", save_this)
+        flags.append("-DTES3X_SAVES")
     if "tes3xprof.c" in names:
         print("profiler: RDTSC region timing, targets chosen at patch time")
         flags.append("-DTES3X_PROFILE")
@@ -189,6 +192,12 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         define("MCP154_RELOAD_RESUME", hexva(reload + 6))
         wanted["mcp154_load"] = ("_tes3x_mcp154_load_hook",)
         wanted["mcp154_reload"] = ("_tes3x_mcp154_reload_hook",)
+    if "tes3xdxt5.c" in names:
+        site = locate("dxt5-size")
+        size = hexva(tes3x_inject.call_target(image, site))
+        print(f"dxt5-size hook: call {hexva(site)}, size function {size}")
+        define("TEXTURE_SIZE", size)
+        wanted["dxt5_size"] = ("_tes3x_dxt5_size_hook",)
     if "tes3xmcp140.c" in names:
         redraw = locate("mcp-140-redraw")
         update = hexva(tes3x_inject.call_target(image, redraw))

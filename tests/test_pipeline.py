@@ -209,8 +209,10 @@ class PipelinePlanTests(unittest.TestCase):
         plan = resolve_patch_plan({'patches': {'preset': 'standard'},
                                    'package': {'mode': 'merged-bsa'}})
         # mcp-1 remains explicit until its failed-resolution branch is verified.
-        self.assertEqual(plan['selected'], ['mcp-97', 'mcp-102'])
-        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xmcp97.c'])
+        self.assertEqual(plan['selected'], ['mcp-97', 'mcp-102', 'dxt5-size'])
+        self.assertEqual(plan['sources'], [
+            'tes3xhook.c', 'tes3xlog.c', 'tes3xmcp97.c', 'tes3xdxt5.c'
+        ])
 
     def test_profile_without_mods_patches_only(self):
         plan = resolve_patch_plan({'patches': {'preset': 'standard'},
@@ -441,7 +443,7 @@ class PipelinePlanTests(unittest.TestCase):
         profile = {'patches': {'preset': 'development', 'disable': ['diagnostics']},
                    'package': {'mode': 'merged-bsa'}}
         plan = resolve_patch_plan(profile)
-        self.assertEqual(plan['selected'], ['mcp-97', 'mcp-102', 'console'])
+        self.assertEqual(plan['selected'], ['mcp-97', 'mcp-102', 'dxt5-size', 'console'])
 
     def test_pipeline_rejects_unknown_categories_and_patches(self):
         with self.assertRaises(PipelineError):

@@ -11,6 +11,9 @@
 #ifdef TES3X_PROFILE
 #include "tes3xprof.h"
 #endif
+#ifdef TES3X_SAVES
+int tes3x_autosave_command(void *game, const char *text);
+#endif
 
 #ifndef TES3X_INI_GET_STRING
 #error "define TES3X_INI_GET_STRING to the VA of the ini string reader"
@@ -800,6 +803,10 @@ static void run_command(const char *text)
         tes3x_log("console.no_game", 0);
         return;
     }
+#ifdef TES3X_SAVES
+    if (tes3x_autosave_command(game, text))
+        return;
+#endif
     mgr = *(unsigned char **)(game + GAME_MENUMGR);
     script = *(void **)(game + GAME_SCRIPT);
     ctx = mgr ? *(void **)(mgr + MENUMGR_CTX) : 0;

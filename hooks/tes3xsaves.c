@@ -7,6 +7,9 @@
 #ifndef TES3X_SAVE_GAME
 #error "define TES3X_SAVE_GAME to the engine save routine"
 #endif
+#ifndef TES3X_SAVE_THIS_PTR
+#error "define TES3X_SAVE_THIS_PTR to the engine save owner pointer"
+#endif
 #ifndef TES3X_INI_GET_STRING
 #error "define TES3X_INI_GET_STRING to the VA of the ini string reader"
 #endif
@@ -28,6 +31,7 @@ typedef int(__cdecl *fn_ini_get_string)(const char *, const char *, const char *
 typedef unsigned char(__attribute__((thiscall)) *fn_save_game)(void *, const char *, const char *);
 
 static char state_path[] = "T:\\tes3x-autosave.dat";
+static char autosave_name[] = "autosave";
 static u32 rotation_enabled = 1;
 static u32 slot_count = AUTOSAVE_DEFAULT_SLOTS;
 static u32 next_slot;
@@ -165,4 +169,25 @@ tes3x_autosave_hook(void *game, const char *filename, const char *display)
         store_next_slot();
     }
     return ok;
+}
+
+unsigned char tes3x_autosave_now(void)
+{
+    void *game = **(void ***)TES3X_SAVE_THIS_PTR;
+
+    return tes3x_autosave_hook(game, autosave_name, autosave_name);
+}
+
+int tes3x_autosave_command(void *game, const char *text)
+{
+    static const char command[] = "tes3xautosave";
+    u32 i;
+
+    for (i = 0; command[i] && text[i] == command[i]; i++)
+        ;
+    if (command[i] || text[i])
+        return 0;
+    (void)game;
+    tes3x_log("autosave.command", tes3x_autosave_now());
+    return 1;
 }

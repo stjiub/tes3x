@@ -398,12 +398,30 @@ MCP140_REDRAW_SIG = re.compile(
     rb"\x8b\xce(?P<site>\xe8....)\x6a\x01\x8b\xce\xe8....\x5f\xb0\x01",
     re.S,
 )
+# The texture-create call to the size function, just before the pitch computation that
+# special-cases DXT1 (0xC) and DXT3 (0xE).
+DXT5_SIZE_SIG = re.compile(
+    rb"\x8b\xf8\x8b\x44\x24\x20\x50\x8b\xc7\x8b\xce(?P<site>\xe8....)\x8b\xe8\x83\xc4\x04"
+    rb"\x8b\xc7\xe8....\x8b\xd8\x0f\xaf\xde\xc1\xeb\x03\x83\xff\x0c",
+    re.S,
+)
 MCP140_STATUS_SIG = re.compile(
     rb"\x85\xf6\x74.(?P<update>\x8b\xce)\xe8....\x33\xd2\x66\x8b\x15...."
     rb"\x8b\xce\x52\xe8....\x85\xc0\x74.\x8b\x4c\x24\x08\x51\x8b\xc8\xe8...."
     rb"(?P<mode>\x6a\x01)\x8b\xce\xe8",
     re.S,
 )
+
+
+def find_dxt5_size(x):
+    """The texture-create call to the texture-size function."""
+    hits = list(DXT5_SIZE_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("dxt5-size: %d texture size call(s), expected 1" % len(hits))
+    va = x.off_to_va(hits[0].start("site"))
+    if va is None:
+        raise PatchError("dxt5-size: texture size call is outside any section")
+    return va
 
 
 def find_ref_load(x):
@@ -528,6 +546,22 @@ def find_autosave_calls(x):
     return targets.pop(), calls
 
 
+def find_save_this_ptr(x):
+    """The global whose pointee owns SaveGame, loaded before each autosave call."""
+    _save_game, calls = find_autosave_calls(x)
+    pointers = set()
+    for site in calls:
+        off = x.va_to_off(site)
+        prefix = bytes(x.data[off - 18:off - 10])
+        if len(prefix) != 8 or prefix[:2] != b"\x8b\x0d" or prefix[6:] != b"\x8b\x09":
+            raise PatchError("rotating-autosaves: unexpected save owner load at 0x%08X" % site)
+        pointers.add(struct.unpack("<I", prefix[2:6])[0])
+    if len(pointers) != 1:
+        raise PatchError("rotating-autosaves: found %d save owner pointers, expected 1"
+                         % len(pointers))
+    return pointers.pop()
+
+
 @patch("rotating-autosaves")
 def _rotating_autosaves(x, value, ctx):
     """Rotate automatic saves through INI-configurable slots."""
@@ -644,6 +678,17 @@ def _mcp_140(x, value, ctx):
         (mode_off, 1, "loading status redraw mode 0x%08X: 1 -> 0" % status_mode),
         (off, 5, "loading progress redraw 0x%08X -> 0x%08X" % (site, target)),
     ]
+
+
+@patch("dxt5-size")
+def _dxt5_size(x, value, ctx):
+    """Size DXT5 textures as DXT3 instead of with a negative length."""
+    target = ctx.get("hooks", {}).get("dxt5_size")
+    if not target:
+        raise PatchError("dxt5-size: needs `payload` first, with a dxt5_size hook in its manifest")
+    site = find_dxt5_size(x)
+    was, off = x.patch_call(site, int(str(target), 16))
+    return [(off, 5, "texture size call 0x%08X: 0x%08X -> %s" % (site, was, target))]
 
 
 @patch("mcp-102")
@@ -868,7 +913,9 @@ LOCATORS = {
     "mcp-154-reload": find_mcp154_reload,
     "mcp-140-redraw": find_mcp140_redraw,
     "mcp-102-actn": find_mcp102_actn,
+    "dxt5-size": find_dxt5_size,
     "save-game": lambda image: find_autosave_calls(image)[0],
+    "save-this-ptr": find_save_this_ptr,
     "diagnostics-update": find_diagnostics_update,
     "console-print": find_console_print,
 }
