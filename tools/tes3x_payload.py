@@ -19,7 +19,8 @@ from tes3x_patch import CONSOLE_PRINT_VSPRINTF, LOCATORS, find_transition_calls
 
 ROOT = Path(__file__).resolve().parents[1]
 HOOKS = ROOT / "hooks"
-HEADERS = ("tes3xdiag.h", "tes3xlog.h", "tes3xnt.h", "tes3xprof.h", "tes3x_thunks.h")
+HEADERS = ("tes3xdiag.h", "tes3xheap.h", "tes3xlog.h", "tes3xnt.h", "tes3xprof.h",
+           "tes3x_thunks.h")
 DEFAULT_SOURCES = ("tes3xhook.c", "tes3xlog.c", "tes3xdiag.c")
 LLVM_DIRS = (Path("C:/Program Files/LLVM/bin"), Path("C:/msys64/clang64/bin"),
              Path("C:/msys64/mingw64/bin"))
@@ -181,6 +182,19 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
     if "tes3xprof.c" in names:
         print("profiler: RDTSC region timing, targets chosen at patch time")
         flags.append("-DTES3X_PROFILE")
+    if "tes3xheap.c" in names:
+        allocate, free = hexva(locate("heap-allocate")), hexva(locate("heap-free"))
+        heap = hexva(locate("heap-object"))
+        print(f"heap census: Allocate {allocate}, Free {free}, heap {heap}")
+        define("HEAP_ALLOCATE", allocate)
+        define("HEAP_FREE", free)
+        define("HEAP_OBJECT", heap)
+        flags.append("-DTES3X_HEAP")
+        wanted["heap_allocate"] = ("_tes3x_heap_alloc_hook",)
+        wanted["heap_allocate_wrapped"] = ("_tes3x_heap_alloc_wrapped_hook",)
+        wanted["heap_allocate_new"] = ("_tes3x_heap_alloc_new_hook",)
+        wanted["heap_allocate_pool"] = ("_tes3x_heap_alloc_pool_hook",)
+        wanted["heap_free"] = ("_tes3x_heap_free_hook",)
     if "tes3xdiag.c" in names:
         update = hexva(locate("diagnostics-update"))
         print(f"diagnostics hook: Game::Update {update}")

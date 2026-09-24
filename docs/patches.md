@@ -36,3 +36,4 @@ with it, and their logs. A linked patch name opens its folder of notes and recor
 | [`diagnostics`](../patches/diagnostics/) | Enable INI-controlled crash records, snapshots and a hang watchdog. | TES3X | instrumentation | verified-xemu | development | findings log, no record yet |
 | [`console`](../patches/console/) | Make the in-game console reachable, by replacing its input gate. | TES3X | qol | verified-xemu | development | [2026-09-23-xemu](../patches/console/2026-09-23-xemu.toml) |
 | [`profile=VA[,VA...]`](../patches/profile/) | Time listed functions with RDTSC at every direct call site. | TES3X | instrumentation | verified-xemu | build option | [2026-09-23-xemu](../patches/profile/2026-09-23-xemu.toml) |
+| [`heap-census`](../patches/heap-census/) | Count live engine heap bytes by source file and line, or by call site. | TES3X | instrumentation | implemented | build option |  |

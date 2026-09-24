@@ -11,6 +11,9 @@
 #ifdef TES3X_PROFILE
 #include "tes3xprof.h"
 #endif
+#ifdef TES3X_HEAP
+#include "tes3xheap.h"
+#endif
 #ifdef TES3X_SAVES
 int tes3x_autosave_command(void *game, const char *text);
 #endif
@@ -793,6 +796,10 @@ static void run_command(const char *text)
 
 #ifdef TES3X_PROFILE
     if (tes3x_prof_command(text))
+        return;
+#endif
+#ifdef TES3X_HEAP
+    if (tes3x_heap_command(text))
         return;
 #endif
 #ifdef TES3X_DIAGNOSTICS

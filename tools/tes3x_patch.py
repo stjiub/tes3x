@@ -978,6 +978,126 @@ def _profile(x, value, ctx):
     return edits
 
 
+# Memory_Heap's entry points push their own names for a lock trace; each ends in `ret imm16`
+# and int3 padding, which bounds the function so its recursive retry call can be left alone.
+HEAP_FUNCTIONS = {
+    "allocate": (b"Memory_Heap::Allocate\x00", b"\xc2\x0c\x00\xcc"),
+    "free": (b"Memory_Heap::Free\x00", b"\xc2\x04\x00\xcc"),
+}
+
+
+def find_heap_function(x, which):
+    """Memory_Heap::Allocate or ::Free as (start, end), from its name string."""
+    name, tail = HEAP_FUNCTIONS[which]
+    data = bytes(x.data)
+    label = name[:-1].decode()
+    string_va = x.off_to_va(find_unique(data, name, label))
+    push = find_unique(data, b"\x68" + struct.pack("<I", string_va), label + " reference")
+    start = data.rfind(b"\xcc\x55\x8b\xec", max(0, push - 0x400), push)
+    if start < 0 or b"\xcc\xcc" in data[start + 1:push]:
+        raise PatchError("%s: no prologue before its name reference" % label)
+    end = data.find(tail, push, push + 0x800)
+    if end < 0:
+        raise PatchError("%s: no ret before the function padding" % label)
+    return x.off_to_va(start + 1), x.off_to_va(end + len(tail) - 1)
+
+
+# A wrapper forwards its own caller's file and line: two loads from [ebp+0xC..0x14] and no
+# immediate push before the call.
+HEAP_FORWARD = re.compile(rb"\x8b[\x45\x4d\x55\x5d\x75\x7d][\x0c\x10\x14]")
+HEAP_WRAPPERS = 4
+
+
+def heap_call_sites(x, which):
+    """Call sites of a Memory_Heap entry point, outside the function itself."""
+    start, end = find_heap_function(x, which)
+    return [site for site in find_call_sites(x, start) if not start <= site < end]
+
+
+def heap_wrapper_sites(x, sites):
+    wrapped = []
+    for site in sites:
+        off = x.va_to_off(site)
+        before = bytes(x.data[off - 24:off])
+        if b"\x68" not in before[-16:] and len(HEAP_FORWARD.findall(before)) >= 2:
+            wrapped.append(site)
+    if len(wrapped) != HEAP_WRAPPERS:
+        raise PatchError("heap-census: %d allocation wrapper(s), expected %d"
+                         % (len(wrapped), HEAP_WRAPPERS))
+    return wrapped
+
+
+# operator new(size): `mov eax,[esp+4]; push 0; push "NA"; push eax; mov ecx,heap; call; ret`.
+HEAP_NEW = re.compile(rb"\x8b\x44\x24\x04\x6a\x00\x68....\x50\xb9....(?=\xe8....\xc3)", re.S)
+# MemoryPool_Simple::Allocate saves four registers, then falls back to the heap when full.
+POOL_NAME = b"MemoryPool_Simple::Allocate\x00"
+POOL_PROLOGUE = b"\x53\x55\x56\x8b\xf1\x57"
+
+
+def heap_new_site(x, sites):
+    """The call inside the frameless global operator new."""
+    found = [site for site in sites
+             if HEAP_NEW.match(bytes(x.data), x.va_to_off(site) - 17)]
+    if len(found) != 1:
+        raise PatchError("heap-census: %d operator new site(s), expected 1" % len(found))
+    return found[0]
+
+
+def heap_pool_site(x, sites):
+    """The heap fallback inside MemoryPool_Simple::Allocate."""
+    data = bytes(x.data)
+    string_va = x.off_to_va(find_unique(data, POOL_NAME, "MemoryPool_Simple::Allocate"))
+    push = find_unique(data, b"\x68" + struct.pack("<I", string_va),
+                       "MemoryPool_Simple::Allocate reference")
+    start = data.rfind(b"\xcc", max(0, push - 0x40), push) + 1
+    if data[start:start + len(POOL_PROLOGUE)] != POOL_PROLOGUE:
+        raise PatchError("heap-census: MemoryPool_Simple::Allocate prologue changed")
+    end = data.find(b"\xcc\xcc", push)
+    found = [site for site in sites if start <= x.va_to_off(site) < end]
+    if len(found) != 1:
+        raise PatchError("heap-census: %d pool fallback site(s), expected 1" % len(found))
+    return found[0]
+
+
+def find_heap_object(x):
+    """The global Memory_Heap, loaded into ecx before most Allocate calls."""
+    counts = {}
+    for site in heap_call_sites(x, "allocate"):
+        off = x.va_to_off(site)
+        if x.data[off - 5] == 0xB9:
+            va = struct.unpack_from("<I", x.data, off - 4)[0]
+            counts[va] = counts.get(va, 0) + 1
+    if not counts:
+        raise PatchError("heap-census: no Allocate call loads the heap object")
+    return max(counts, key=counts.get)
+
+
+@patch("heap-census")
+def _heap_census(x, value, ctx):
+    """Redirect every direct Memory_Heap::Allocate and ::Free call to the census."""
+    hooks = ctx.get("hooks", {})
+    names = ("heap_allocate", "heap_allocate_wrapped", "heap_allocate_new",
+             "heap_allocate_pool", "heap_free")
+    if not all(hooks.get(name) for name in names):
+        raise PatchError("heap-census: needs `payload` first, built with tes3xheap.c")
+    direct, wrapped, new, pool, free = (int(str(hooks[name]), 16) for name in names)
+    allocs = heap_call_sites(x, "allocate")
+    targets = dict.fromkeys(heap_wrapper_sites(x, allocs), wrapped)
+    targets[heap_new_site(x, allocs)] = new
+    targets[heap_pool_site(x, allocs)] = pool
+    frees = heap_call_sites(x, "free")
+    edits = [(None, 0, "Memory_Heap::Allocate: %d call site(s), %d forwarding"
+              % (len(allocs), len(targets))),
+             (None, 0, "Memory_Heap::Free: %d call site(s)" % len(frees))]
+    for site in allocs:
+        _was, off = x.patch_call(site, targets.get(site, direct))
+        edits.append((off, 5, None))
+    for site in frees:
+        _was, off = x.patch_call(site, free)
+        edits.append((off, 5, None))
+    return edits
+
+
 def find_console_gate(x):
     """The one `call` that gates Console::Toggle, found by its push/push/call shape."""
     text = text_section(x)
@@ -1079,6 +1199,9 @@ LOCATORS = {
     "controls-table": find_controls_table,
     "diagnostics-update": find_diagnostics_update,
     "console-print": find_console_print,
+    "heap-allocate": lambda image: find_heap_function(image, "allocate")[0],
+    "heap-free": lambda image: find_heap_function(image, "free")[0],
+    "heap-object": find_heap_object,
 }
 
 

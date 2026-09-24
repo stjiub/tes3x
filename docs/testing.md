@@ -9,8 +9,10 @@ functions. Everything it writes goes to the root of `E:`; copy it off the Xbox w
 | `diagnostics` | session header, crash records, hang watchdog, snapshots | `E:\tes3xlog.txt` |
 | `console` | the in-game console on a pad, commands from a file, their output in the log | `E:\tes3xlog.txt` |
 | `profile` | call counts and CPU cycles for chosen functions | `E:\tes3xprof.bin` |
+| `heap-census` | live engine heap by source file and line, or by call site | `E:\tes3xheap.bin` |
 
-The `development` preset includes `diagnostics` and `console`. The profiler is added by name.
+The `development` preset includes `diagnostics` and `console`. The profiler and the heap census
+are added by name.
 
 ## The log
 
@@ -106,6 +108,20 @@ frames. `tes3xprof reset` clears them.
 Only an original Xbox gives meaningful timings; an emulator run shows only that the build does not
 crash. A command file makes measurements repeatable: move to the same place, wait the same number of
 frames, then `tes3xprof mark`.
+
+## Heap census
+
+`--apply heap-census`, or the pipeline's `--heap-census`, counts what the engine's main heap holds.
+Every direct call to `Memory_Heap::Allocate` and `::Free` is redirected; each allocation is
+attributed to the source file and line the engine passes, or, where it passes none, to its call
+site. Allocation counts are exact, and live blocks are tracked for one address in four. A snapshot
+is appended to `E:\tes3xheap.bin` at the first frame (with `diagnostics`) and on the console
+command `tes3xheap`; each also records the kernel's memory statistics. The record layout is
+`heap_header` and `heap_site` in `hooks/tes3xheap.c`.
+
+The census needs an 8 MB table, so run it on a console or emulator with 128 MB. The engine's
+allocations do not depend on the memory size, so a 128 MB census also describes a 64 MB console.
+Allocations outside that heap, such as the texture and vertex-buffer arena, are not counted.
 
 ## Proof
 

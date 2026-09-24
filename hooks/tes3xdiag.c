@@ -7,6 +7,9 @@
 #ifdef TES3X_PROFILE
 #include "tes3xprof.h"
 #endif
+#ifdef TES3X_HEAP
+#include "tes3xheap.h"
+#endif
 
 #ifndef TES3X_INI_GET_STRING
 #error "define TES3X_INI_GET_STRING to the VA of the ini string reader"
@@ -371,6 +374,9 @@ void tes3x_diag_tick(void)
 #ifdef TES3X_PROFILE
     /* The sole once-per-frame call site, so tick to tick is one whole frame. */
     tes3x_prof_frame();
+#endif
+#ifdef TES3X_HEAP
+    tes3x_heap_frame();
 #endif
     diag_heartbeat++;
     if (!diag_ready)

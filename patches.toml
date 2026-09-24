@@ -245,3 +245,12 @@ source = "tes3xprof.c"
 takes = "VA[,VA...]"
 summary = "Time listed functions with RDTSC at every direct call site."
 evidence = ["patches/profile/2026-09-23-xemu.toml"]
+
+[[patch]]
+name = "heap-census"
+bit = 19
+category = "instrumentation"
+status = "implemented"
+selection = "option"
+source = "tes3xheap.c"
+summary = "Count live engine heap bytes by source file and line, or by call site."
