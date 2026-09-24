@@ -226,6 +226,11 @@ def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), pac
     selected.update(enable)
     selected.difference_update(disable)
 
+    if "mwse-legacy" in selected:
+        if "script-ext" in disabled or "script-ext" in disable:
+            raise PipelineError("mwse-legacy requires script-ext")
+        selected.add("script-ext")
+
     if enabled_mods(profile):
         mode = package_mode or profile.get("package", {}).get("mode", "delta-bsa")
         if mode not in {"delta-bsa", "merged-bsa"}:

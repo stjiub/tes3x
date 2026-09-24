@@ -216,6 +216,20 @@ class PipelinePlanTests(unittest.TestCase):
         ])
         self.assertTrue(plan['needs_payload'])
 
+    def test_legacy_mwse_adds_script_extension_dependency(self):
+        profile = {'patches': {'preset': 'minimal', 'enable': ['mwse-legacy']}}
+        plan = resolve_patch_plan(profile)
+        self.assertEqual(plan['selected'], ['script-ext', 'mwse-legacy'])
+        self.assertEqual(plan['sources'], [
+            'tes3xhook.c', 'tes3xlog.c', 'tes3xscript.c', 'tes3xmwse.c'
+        ])
+
+    def test_legacy_mwse_dependency_cannot_be_disabled(self):
+        profile = {'patches': {'preset': 'minimal', 'enable': ['mwse-legacy'],
+                               'disable': ['script-ext']}}
+        with self.assertRaisesRegex(PipelineError, 'requires script-ext'):
+            resolve_patch_plan(profile)
+
     def test_standard_only_selects_verified_default_fixes(self):
         plan = resolve_patch_plan({'patches': {'preset': 'standard'},
                                    'package': {'mode': 'merged-bsa'}})

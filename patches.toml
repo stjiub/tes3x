@@ -115,6 +115,15 @@ summary = "Add script opcodes: widen the length bounds and hook Script::RunFunct
 evidence = ["findings: new opcode runs in-engine from a plugin's compiled bytecode"]
 
 [[patch]]
+name = "mwse-legacy"
+bit = 18
+category = "compat"
+status = "implemented"
+selection = "preset"
+source = "tes3xmwse.c"
+summary = "Interpret legacy MWSE 0.9.4 bytecode embedded in compiled scripts."
+
+[[patch]]
 name = "mcp-1"
 origin = { source = "MCP", id = "1" }
 bit = 5

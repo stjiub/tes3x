@@ -23,6 +23,7 @@ with it, and their logs. A linked patch name opens its folder of notes and recor
 | `title=NAME` | Rename the XBE's certificate title, the name a dashboard falls back to. | TES3X | infrastructure | implemented | build option |  |
 | `multi-bsa` | Load every archive listed in tes3xarch.txt, not just Morrowind.bsa. | TES3X | infrastructure | verified-xemu | delta-bsa packing | findings log, no record yet |
 | `script-ext` | Add script opcodes: widen the length bounds and hook Script::RunFunction. | TES3X | compat | verified-xemu | by name | findings log, no record yet |
+| `mwse-legacy` | Interpret legacy MWSE 0.9.4 bytecode embedded in compiled scripts. | TES3X | compat | implemented | by name |  |
 | [`mcp-1`](../patches/mcp-1/) | Stop an unresolvable reference being restamped as created at runtime. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #1 | core | implemented | by name |  |
 | [`mcp-97`](../patches/mcp-97/) | Advance the script parser correctly while initializing saved data. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #97 | core | verified-xemu | standard | [2026-09-21-xemu](../patches/mcp-97/2026-09-21-xemu.toml) |
 | [`mcp-154`](../patches/mcp-154/) | Pad compiled script-data allocations to keep dword reads in bounds. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #154 | core | implemented | by name |  |

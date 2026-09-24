@@ -34,6 +34,17 @@ SAVE_STAGING = [b"tempsave.ess", b"vv.dat"]
 RUNFN_DISPATCH = bytes([0x8D, 0x91, 0x00, 0xF0, 0xFF, 0xFF, 0x81, 0xFA, 0xBC, 0x01, 0x00, 0x00])
 RUNFN_PROLOGUE = bytes([0x55, 0x8B, 0xEC, 0x83, 0xE4, 0xF8])
 
+# Script::Decode fetches a word from Script::SCDT using the global instruction pointer.
+# The captured globals are also the state a legacy-MWSE fixup shim must advance.
+SCRIPT_DECODE_SIG = re.compile(
+    rb"\x83\xec\x24\x53\x55\x56\x8b\xd9\x57\xb9....\xe8...."
+    rb"\xb9....\x89\x44\x24\x10\xe8...."
+    rb"\x8b\x2d(?P<ip>....)\x8b\xd0\x8b\x43\x58\x0f\xbf\x04\x28"
+    rb"\x33\xf6\x83\xc5\x02\x3d\x26\x01\x00\x00"
+    rb"\xa3(?P<opcode>....)\x89\x2d(?P=ip)",
+    re.S,
+)
+
 # Six parsers infer instruction length from [0x1000, 0x11BD); unknown opcodes desync bytecode.
 # Five compare 16-bit registers and one compares 32 bits.
 OPCODE_LO = 0x1000
@@ -233,6 +244,39 @@ def find_run_function(x):
     return va
 
 
+def find_script_decode_state(x):
+    """Find Script::Decode and its instruction-pointer/opcode globals."""
+    hits = list(SCRIPT_DECODE_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("Script::Decode: %d signature match(es), expected 1" % len(hits))
+    match = hits[0]
+    va = x.off_to_va(match.start())
+    if va is None:
+        raise PatchError("Script::Decode: entry is outside any section")
+    ip = struct.unpack("<I", match.group("ip"))[0]
+    opcode = struct.unpack("<I", match.group("opcode"))[0]
+    def in_image(address):
+        return any(s.va <= address < s.va + max(getattr(s, "vsize", 0), s.rsize)
+                   for s in x.sections)
+    if not in_image(ip) or not in_image(opcode):
+        raise PatchError("Script::Decode: captured state is outside the image")
+    return va, ip, opcode
+
+
+def find_script_fixup_call(x, decode_va, opcode_va):
+    """Find the fixup-only call to Script::Decode."""
+    sites = []
+    for site in find_call_sites(x, decode_va):
+        off = x.va_to_off(site)
+        if (bytes(x.data[off - 4:off]) == b"\x6a\x01\x8b\xcb"
+                and bytes(x.data[off + 5:off + 10])
+                == b"\xa1" + struct.pack("<I", opcode_va)):
+            sites.append(site)
+    if len(sites) != 1:
+        raise PatchError("mwse-legacy: %d fixup decoder call(s), expected 1" % len(sites))
+    return sites[0]
+
+
 # The unique placeholder at the end anchors the command table.
 COMMAND_SENTINEL = b"ADD NEW FUNCTIONS BEFORE THIS ONE!!!\x00"
 COMMAND_STRIDE = 12  # const char *name; const char *shortName; u32 opcode
@@ -329,6 +373,24 @@ def _script_ext(x, value, ctx):
         was, off = x.patch_call(site, target)
         edits.append((off, 5, "RunFunction call 0x%08X: 0x%08X -> 0x%08X" % (site, was, target)))
     return edits
+
+
+@patch("mwse-legacy")
+def _mwse_legacy(x, value, ctx):
+    """Interpret legacy MWSE 0.9.4 bytecode embedded in compiled scripts."""
+    hooks = ctx.get("hooks", {})
+    target, dispatch = hooks.get("mwse_fixup"), hooks.get("script_dispatch")
+    if not target or not dispatch:
+        raise PatchError("mwse-legacy: needs `payload` first, with mwse_fixup and "
+                         "script_dispatch hooks in its manifest")
+    target = int(str(target), 16)
+    dispatch = int(str(dispatch), 16)
+    if len(find_call_sites(x, dispatch)) != 3:
+        raise PatchError("mwse-legacy: requires script-ext to be applied first")
+    decode, _ip, opcode = find_script_decode_state(x)
+    site = find_script_fixup_call(x, decode, opcode)
+    was, off = x.patch_call(site, target)
+    return [(off, 5, "script fixup decoder 0x%08X: 0x%08X -> 0x%08X" % (site, was, target))]
 
 
 # `mov [esp+0x1c],bl` then the restamp fallback's landing instruction. `mov eax,[ebp+0x4DC]`
@@ -909,6 +971,19 @@ def find_diagnostics_update(x):
     return va
 
 
+def find_game_instance(x):
+    """Global owner passed to the sole Game::Update call."""
+    update = find_diagnostics_update(x)
+    sites = find_call_sites(x, update)
+    if len(sites) != 1:
+        raise PatchError("Game instance: %d call site(s) for Game::Update, expected 1"
+                         % len(sites))
+    off = x.va_to_off(sites[0])
+    if off is None or off < 6 or x.data[off - 6:off - 4] != b"\x8b\x0d":
+        raise PatchError("Game instance: Game::Update call is not preceded by mov ecx,[global]")
+    return struct.unpack_from("<I", x.data, off - 4)[0]
+
+
 @patch("diagnostics")
 def _diagnostics(x, value, ctx):
     """Enable INI-controlled crash records, snapshots and a hang watchdog."""
@@ -1205,6 +1280,9 @@ def _console(x, value, ctx):
 LOCATORS = {
     "run-function": find_run_function,
     "command-table": find_command_table,
+    "script-decode": lambda image: find_script_decode_state(image)[0],
+    "script-ip": lambda image: find_script_decode_state(image)[1],
+    "script-opcode": lambda image: find_script_decode_state(image)[2],
     "ref-load": find_ref_load,
     "ref-skip": find_ref_skip,
     "mcp-97-scan": find_mcp97_scan,
@@ -1219,6 +1297,7 @@ LOCATORS = {
     "preferences-load": find_preferences_load,
     "controls-table": find_controls_table,
     "diagnostics-update": find_diagnostics_update,
+    "game-instance": find_game_instance,
     "console-print": find_console_print,
     "heap-allocate": lambda image: find_heap_function(image, "allocate")[0],
     "heap-free": lambda image: find_heap_function(image, "free")[0],

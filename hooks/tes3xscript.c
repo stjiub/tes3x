@@ -50,6 +50,10 @@ typedef struct {
     u32 opcode;
 } tes3x_command;
 
+#ifdef TES3X_MWSE
+int tes3x_mwse_run(void *script, u32 opcode);
+#endif
+
 /* Sample the first calls and powers of ten to limit log growth. */
 static int tes3x_should_log(u32 n)
 {
@@ -127,6 +131,12 @@ float tes3x_script_run(void *self, u32 opcode, u32 a2, u32 a3)
             tes3x_dump_profile();
         return (float)tes3x_profile_calls;
     default:
+#ifdef TES3X_MWSE
+        if (opcode >= 0x3800) {
+            tes3x_mwse_run(self, opcode);
+            return 0.0f;
+        }
+#endif
         tes3x_unknown++;
         if (tes3x_should_log(tes3x_unknown))
             tes3x_log("script.unknown_opcode", opcode);

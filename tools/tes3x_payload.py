@@ -156,6 +156,21 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         define("COMMAND_TABLE", table)
         wanted["script_dispatch"] = ("_tes3x_script_hook",)
         extra["script_dispatch"] = {"opcode_base": base, "opcode_ceil": ceil}
+    if "tes3xmwse.c" in names:
+        if "tes3xscript.c" not in names:
+            raise PayloadError("tes3xmwse.c requires tes3xscript.c")
+        decode = locate("script-decode")
+        script_ip = locate("script-ip")
+        script_opcode = locate("script-opcode")
+        game_instance = locate("game-instance")
+        print(f"legacy MWSE: Decode {hexva(decode)}, IP {hexva(script_ip)}, "
+              f"opcode {hexva(script_opcode)}, Game {hexva(game_instance)}")
+        define("SCRIPT_DECODE", hexva(decode))
+        define("SCRIPT_IP", hexva(script_ip))
+        define("SCRIPT_OPCODE", hexva(script_opcode))
+        define("GAME_INSTANCE", hexva(game_instance))
+        flags.append("-DTES3X_MWSE")
+        wanted["mwse_fixup"] = ("@tes3x_mwse_fixup_hook@8", "_tes3x_mwse_fixup_hook")
     if names & INI_USERS:
         ini_get, ini_path = address("INI_GET", INI_GET), address("INI_PATH", INI_PATH)
         print(f"ini reader {ini_get}, ini path {ini_path}")
