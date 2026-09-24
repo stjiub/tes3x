@@ -522,6 +522,10 @@ def main(argv=None):
                     help="count kernel allocations and the XAPI heap by caller, with the "
                          "address space map, dumped to E:\\tes3xmem.bin. Instrumentation only: "
                          "needs about 5 MB of tables")
+    ap.add_argument("--pager-test", action="store_true",
+                    help="add the demand pager prototype, whose console command tes3xpager "
+                         "runs a synthetic workload over a 16 MB paged region. Instrumentation "
+                         "only: nothing in the engine is paged")
     ap.add_argument("--hardlink", action=argparse.BooleanOptionalAction,
                     help="hardlink unchanged retail files into the build instead of copying "
                          "them, where the volume allows (default: paths.hardlink_retail)")
@@ -573,6 +577,10 @@ def main(argv=None):
         if "tes3xmem.c" not in plan["sources"]:
             plan["sources"].append("tes3xmem.c")
         plan["needs_payload"] = True
+    if args.pager_test:
+        if "tes3xpager.c" not in plan["sources"]:
+            plan["sources"].append("tes3xpager.c")
+        plan["needs_payload"] = True
     package = profile.get("package", {})
     drive = (args.drive or package.get("drive_letter", "D")).upper()
     if len(drive) != 1 or not drive.isalpha():
@@ -605,6 +613,8 @@ def main(argv=None):
         print("heap census: on")
     if args.mem_census:
         print("memory census: on")
+    if args.pager_test:
+        print("pager test: on")
     if plan["package_mode"] == "retail":
         print("mods: none; retail Data Files are staged unchanged")
     else:

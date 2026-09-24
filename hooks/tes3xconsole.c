@@ -17,6 +17,9 @@
 #ifdef TES3X_MEM
 #include "tes3xmem.h"
 #endif
+#ifdef TES3X_PAGER
+#include "tes3xpager.h"
+#endif
 #ifdef TES3X_SAVES
 int tes3x_autosave_command(void *game, const char *text);
 #endif
@@ -807,6 +810,10 @@ static void run_command(const char *text)
 #endif
 #ifdef TES3X_MEM
     if (tes3x_mem_command(text))
+        return;
+#endif
+#ifdef TES3X_PAGER
+    if (tes3x_pager_command(text))
         return;
 #endif
 #ifdef TES3X_DIAGNOSTICS

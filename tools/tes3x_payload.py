@@ -21,7 +21,7 @@ from tes3x_patch import CONSOLE_PRINT_VSPRINTF, LOCATORS, find_transition_calls
 ROOT = Path(__file__).resolve().parents[1]
 HOOKS = ROOT / "hooks"
 HEADERS = ("tes3xdiag.h", "tes3xheap.h", "tes3xlog.h", "tes3xmem.h", "tes3xnt.h",
-           "tes3xprof.h", "tes3x_thunks.h")
+           "tes3xpager.h", "tes3xprof.h", "tes3x_thunks.h")
 DEFAULT_SOURCES = ("tes3xhook.c", "tes3xlog.c", "tes3xdiag.c")
 LLVM_DIRS = (Path("C:/Program Files/LLVM/bin"), Path("C:/msys64/clang64/bin"),
              Path("C:/msys64/mingw64/bin"))
@@ -222,6 +222,9 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         flags.append("-DTES3X_MEM")
         wanted["mem_heap_alloc"] = ("_tes3x_mem_heap_alloc@12",)
         wanted["mem_heap_free"] = ("_tes3x_mem_heap_free@12",)
+    if "tes3xpager.c" in names:
+        print("pager: synthetic test on the console command tes3xpager")
+        flags.append("-DTES3X_PAGER")
     if "tes3xdiag.c" in names:
         update = hexva(locate("diagnostics-update"))
         print(f"diagnostics hook: Game::Update {update}")
