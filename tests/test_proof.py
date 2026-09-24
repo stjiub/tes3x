@@ -90,6 +90,16 @@ class ProofTests(unittest.TestCase):
             self.record(0x5, 0x5 | MCP102_BIT,
                         patched_patches=['diagnostics', 'console', 'mcp-102'])
 
+    def test_valued_patch_spec_uses_its_patch_name(self):
+        control = self.run_folder('control', 0x5, 0, ['diagnostics'])
+        patched = self.run_folder('patched', 0x5, 1,
+                                  ['diagnostics', 'title=TES3X Proof'])
+        watch = proof.re.compile('mcp102')
+        runs = [('control', proof.read_run(control, watch)),
+                ('patched', proof.read_run(patched, watch))]
+        provenance = proof.build_provenance('title', 'xemu', runs)
+        self.assertEqual(provenance['patch'], 'title')
+
     def test_build_inputs_must_match(self):
         with self.assertRaises(SystemExit):
             self.record(0x5, 0x5 | MCP102_BIT, patched_ini='9' * 64)

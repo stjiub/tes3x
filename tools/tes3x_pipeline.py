@@ -210,7 +210,8 @@ def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), pac
 
     enabled = set(string_list(config.get("enable"), "patches.enable"))
     disabled = set(string_list(config.get("disable"), "patches.disable"))
-    unknown = (enabled | disabled | set(enable) | set(disable)) - PATCHES.keys()
+    selectable = set(PATCHES) | {"build-preferences"}
+    unknown = (enabled | disabled | set(enable) | set(disable)) - selectable
     if unknown:
         raise PipelineError("unknown selectable patches: " + ", ".join(sorted(unknown)))
     for both, where in ((enabled & disabled, "the profile"),
@@ -234,7 +235,8 @@ def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), pac
     applied = set(selected)
     if mode == "delta-bsa":
         applied.add("multi-bsa")
-    if profile.get("preferences"):
+    if profile.get("preferences") and "build-preferences" not in disabled \
+            and "build-preferences" not in disable:
         applied.add("build-preferences")
 
     sources = ["tes3xhook.c", "tes3xlog.c"]
@@ -499,6 +501,8 @@ def main(argv=None):
     ap.add_argument("--drive", help="game-directory drive letter (default: D)")
     ap.add_argument("--title", help="name both XBEs carry, so parallel installs are told "
                                     "apart in a dashboard (default: profile.title)")
+    ap.add_argument("--save-staging", metavar="LETTER",
+                    help="stage save files on this drive before committing them to UDATA")
     ap.add_argument("--profile-target", action="append", default=[], metavar="VA",
                     help="time this function with RDTSC at its direct call sites "
                          "(repeatable, or comma-separated). Instrumentation only: the "
@@ -551,6 +555,9 @@ def main(argv=None):
     drive = (args.drive or package.get("drive_letter", "D")).upper()
     if len(drive) != 1 or not drive.isalpha():
         raise PipelineError("package.drive_letter must be one letter")
+    save_staging = args.save_staging.upper() if args.save_staging else None
+    if save_staging and (len(save_staging) != 1 or not save_staging.isalpha()):
+        raise PipelineError("--save-staging must be one drive letter")
     title = args.title or profile.get("profile", {}).get("title")
     dashboards = dashboard_list(profile)
     # A profile names its own install folder; the local config supplies the fallback.
@@ -568,6 +575,8 @@ def main(argv=None):
             profile["preferences"].get("invert_look", True)).lower())
     if title:
         print(f"title: {title}; dashboard files: {', '.join(dashboards) or 'none'}")
+    if save_staging:
+        print(f"save staging: {save_staging}:")
     if prof_targets:
         print("profiler: " + ", ".join(prof_targets))
     if plan["package_mode"] == "retail":
@@ -638,6 +647,8 @@ def main(argv=None):
         if plan["needs_payload"]:
             patch_specs.append(f"payload={payload}")
         patch_specs.extend(("boot-media", f"drive-letters={drive}"))
+        if save_staging:
+            patch_specs.append(f"save-staging={save_staging}")
         if title:
             patch_specs.append(f"title={title}")
         patch_specs.extend(plan["applied"])

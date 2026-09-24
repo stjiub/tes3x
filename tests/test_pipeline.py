@@ -305,6 +305,9 @@ class PipelinePlanTests(unittest.TestCase):
         self.assertEqual(preference_flags(profile), '-DTES3X_INVERT_LOOK=0')
         self.assertEqual(preference_flags({'profile': {'name': 'p'}}), '')
 
+        control = resolve_patch_plan(profile, disable=['build-preferences'])
+        self.assertNotIn('build-preferences', control['applied'])
+
     def test_mcp_97_adds_its_hook_source(self):
         plan = resolve_patch_plan({
             'patches': {'preset': 'minimal', 'enable': ['mcp-97']},

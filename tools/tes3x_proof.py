@@ -91,6 +91,11 @@ def pipeline_inputs(meta):
     return {key: value for key, value in meta.items() if key not in PIPELINE_VOLATILE}
 
 
+def patch_names(specs):
+    """Patch identities from marker specs such as profile=0x1234 or title=Test."""
+    return {spec.partition("=")[0] for spec in specs}
+
+
 def is_digest(value, digits):
     return isinstance(value, str) and len(value) == digits \
         and all(char in "0123456789abcdef" for char in value.lower())
@@ -149,8 +154,8 @@ def validate_provenance(data, patch, environment, result, where):
                 or not is_digest(run.get("morrowind_xbe_sha256"), 64):
             raise ProofError(f"{where}: {run.get('role', 'unknown')} run provenance is incomplete")
     control, patched = runs
-    control_patches = set(control.get("patches", []))
-    patched_patches = set(patched.get("patches", []))
+    control_patches = patch_names(control.get("patches", []))
+    patched_patches = patch_names(patched.get("patches", []))
     if control_patches - patched_patches or patched_patches - control_patches != {patch}:
         raise ProofError(f"{where}: build patch lists must differ only by {patch}")
     revision = inputs.get("tes3x")
@@ -384,8 +389,8 @@ def build_provenance(patch, environment, runs, hardware=None, fixtures=()):
         metas.append(meta)
     if pipeline_inputs(metas[0]) != pipeline_inputs(metas[1]):
         raise ProofError("control and patched build inputs differ")
-    control_patches, patched_patches = set(metas[0].get("patches", [])), \
-        set(metas[1].get("patches", []))
+    control_patches, patched_patches = patch_names(metas[0].get("patches", [])), \
+        patch_names(metas[1].get("patches", []))
     if control_patches - patched_patches or patched_patches - control_patches != {patch}:
         raise ProofError(f"control and patched build patch lists must differ only by {patch}")
 
