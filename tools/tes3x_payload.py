@@ -47,7 +47,7 @@ CONSOLE_ADDRESSES = (
     ("CREATE_IMAGE", 0x001A7080), ("BUTTON_HINT", 0x001F8630),
 )
 INI_USERS = {"tes3xconsole.c", "tes3xrefs.c", "tes3xdiag.c", "tes3xsaves.c", "tes3xprof.c",
-             "tes3xarena.c"}
+             "tes3xarena.c", "tes3xregion.c"}
 
 
 class PayloadError(RuntimeError):
@@ -227,6 +227,9 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
     if "tes3xarena.c" in names:
         print(f"video-arena hook: size {hexva(locate('video-arena'))}")
         wanted["arena_size"] = ("_tes3x_arena_size_hook",)
+    if "tes3xregion.c" in names:
+        print(f"heap-region hook: size {hexva(locate('heap-region'))}")
+        wanted["region_size"] = ("_tes3x_region_size_hook",)
     if "tes3xmcp140.c" in names:
         redraw = locate("mcp-140-redraw")
         update = hexva(tes3x_inject.call_target(image, redraw))

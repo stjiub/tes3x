@@ -254,3 +254,12 @@ status = "implemented"
 selection = "option"
 source = "tes3xheap.c"
 summary = "Count live engine heap bytes by source file and line, or by call site."
+
+[[patch]]
+name = "heap-region"
+bit = 20
+category = "compat"
+status = "implemented"
+selection = "preset"
+source = "tes3xregion.c"
+summary = "With more than 64 MB, size the engine heap's region from [Xbox] HeapRegionKB."

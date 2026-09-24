@@ -849,6 +849,20 @@ def _video_arena(x, value, ctx):
     return [(off, 5, "arena size 0x%08X: mov ebx, 0xF80000 -> call 0x%08X" % (site, target))]
 
 
+@patch("heap-region")
+def _heap_region(x, value, ctx):
+    """Size the engine heap's region from [Xbox] HeapRegionKB when there is more than 64 MB."""
+    target = ctx.get("hooks", {}).get("region_size")
+    if not target:
+        raise PatchError("heap-region: needs `payload` first, with a region_size hook in its "
+                         "manifest")
+    site = find_heap_region(x)
+    off = x.va_to_off(site)
+    target = int(str(target), 16)
+    x.data[off:off + 5] = b"\xe8" + struct.pack("<i", target - (site + 5))
+    return [(off, 5, "heap region 0x%08X: push 0x1100000 -> call 0x%08X" % (site, target))]
+
+
 @patch("mcp-102")
 def _mcp_102(x, value, ctx):
     """Reactivate script-triggered objects after their script mod is removed."""
@@ -1072,6 +1086,13 @@ def find_heap_object(x):
     return max(counts, key=counts.get)
 
 
+def find_heap_region(x):
+    """The `push 0x1100000` in the static initializer that constructs the global heap."""
+    heap = struct.pack("<I", find_heap_object(x))
+    sig = b"\x55\x8b\xec\x68\x00\x00\x10\x01\xb9" + heap + b"\xe8"
+    return x.off_to_va(find_unique(bytes(x.data), sig, "heap-region") + 3)
+
+
 @patch("heap-census")
 def _heap_census(x, value, ctx):
     """Redirect every direct Memory_Heap::Allocate and ::Free call to the census."""
@@ -1202,6 +1223,7 @@ LOCATORS = {
     "heap-allocate": lambda image: find_heap_function(image, "allocate")[0],
     "heap-free": lambda image: find_heap_function(image, "free")[0],
     "heap-object": find_heap_object,
+    "heap-region": find_heap_region,
 }
 
 
