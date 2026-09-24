@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Walk the game through a plugin's cells and log free memory at each, to find where it runs out.
 
-  tes3x_tour.py make Data/TR_Mainland.esm --bounds=0,-20,30,10 --every 2 -o tes3xexec.txt
+  tes3x_tour.py make Data/TR_Mainland.esm --bounds=0,-20,30,10 --step 2 -o tes3xexec.txt
   tes3x_tour.py make Data/TR_Mainland.esm --interiors --prefix "Firewatch" -o tes3xexec.txt
   tes3x_tour.py report tes3xlog.txt
 
@@ -47,13 +47,14 @@ def cells(paths):
     return out
 
 
-def tour(found, interiors, exteriors, bounds, prefixes, every):
+def tour(found, interiors, exteriors, bounds, prefixes, every, step):
     stops = []
     if exteriors:
         grid = sorted(v for k, v in found.items() if k[0] == "ext")
         if bounds:
             x0, y0, x1, y1 = bounds
             grid = [(x, y) for x, y in grid if x0 <= x <= x1 and y0 <= y <= y1]
+        grid = [(x, y) for x, y in grid if x % step == 0 and y % step == 0]
         rows = {}
         for x, y in grid:
             rows.setdefault(y, []).append(x)
@@ -75,7 +76,7 @@ def make(args):
     bounds = tuple(int(v) for v in args.bounds.split(",")) if args.bounds else None
     if bounds and len(bounds) != 4:
         sys.exit("--bounds is X0,Y0,X1,Y1")
-    stops = tour(found, interiors, exteriors, bounds, args.prefix, args.every)
+    stops = tour(found, interiors, exteriors, bounds, args.prefix, args.every, args.step)
     if args.limit:
         stops = stops[:args.limit]
     if not stops:
@@ -141,7 +142,10 @@ def main():
     mk.add_argument("--exteriors", action="store_true", help="exteriors only (default: both)")
     mk.add_argument("--bounds", metavar="X0,Y0,X1,Y1", help="exterior grid box, inclusive")
     mk.add_argument("--prefix", action="append", default=[], help="interior name prefix (repeatable)")
-    mk.add_argument("--every", type=int, default=1, help="visit every Nth cell")
+    mk.add_argument("--step", type=int, default=1,
+                    help="exteriors only on an N-cell grid, still visited in walking order")
+    mk.add_argument("--every", type=int, default=1,
+                    help="every Nth stop of the whole tour; moves become jumps")
     mk.add_argument("--limit", type=int, help="stop after N cells")
     mk.add_argument("--wait", type=int, default=90, help="frames to wait after each move")
     mk.add_argument("--start", default="new",

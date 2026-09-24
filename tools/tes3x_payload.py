@@ -213,6 +213,7 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         wanted["console_vk_key"] = ("_tes3x_vk_key_limit",)
         wanted["console_vk_space"] = ("_tes3x_vk_space_limit",)
         wanted["console_print"] = ("_tes3x_console_print",)
+        wanted["console_mailbox"] = ("_tes3x_mailbox",)
     if "tes3xdiag.c" in names:
         wanted["diagnostics_update"] = ("_tes3x_diag_update_hook",)
         wanted["diagnostics_flag"] = ("_tes3x_diag_installed",)

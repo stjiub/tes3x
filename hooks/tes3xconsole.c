@@ -195,6 +195,7 @@
  * separate processes unless the relaunch is disabled. */
 #define EXEC_MAX (1024 * 1024)
 #define EXEC_PAD 16
+#define MAILBOX_MAGIC 0x424D3354 /* 'T3MB', so the host can check the address it found */
 #define EXEC_SETTLE 150
 #define EXEC_CLICK_FRAMES 600
 
@@ -1121,6 +1122,33 @@ void __cdecl tes3x_console_print(void *game, const char *fmt, ...)
     ((fn_console_print)TES3X_CONSOLE_PRINT)(game, "%s", buf);
 }
 
+/* A debugger writes `text`, then changes `seq`; the next frame runs it and sets `done` to match,
+ * so the host knows it was taken. Nothing writes it on hardware. */
+struct {
+    u32 magic;
+    volatile u32 seq;
+    volatile u32 done;
+    char text[CMD_MAX];
+} tes3x_mailbox = {MAILBOX_MAGIC, 0, 0, {0}};
+
+static void mailbox_step(void)
+{
+    char line[CMD_MAX];
+    u32 n;
+
+    for (n = 0; n < CMD_MAX - 1 && tes3x_mailbox.text[n]; n++)
+        line[n] = tes3x_mailbox.text[n];
+    line[n] = 0;
+    tes3x_mailbox.done = tes3x_mailbox.seq;
+    tes3x_log_raw("live> ", 6);
+    tes3x_log_raw(line, n);
+    tes3x_log_raw("\n", 1);
+    if (starts_with(line, "mark "))
+        exec_mark(line + 5);
+    else
+        run_command(line);
+}
+
 /* The keyboard's text, while it is still on screen. Returns 0 when there is nothing readable. */
 static void *keyboard_field(void *vk)
 {
@@ -1287,6 +1315,9 @@ unsigned int __attribute__((thiscall)) tes3x_console_hook(void *ctrl, int action
 
     if (exec_len && !vk_watch && !run_delay)
         exec_step();
+
+    if (tes3x_mailbox.seq != tes3x_mailbox.done && !vk_watch && !run_delay)
+        mailbox_step();
 
     if (!in) {
         if (!base)

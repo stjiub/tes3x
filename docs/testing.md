@@ -70,6 +70,10 @@ Each command is logged as `exec> ...` and the first 8 lines it prints as `consol
 `console< GetPos >> -12288.00`. A command that loads a cell runs that cell's scripts, which print
 too; the rest are counted as `console.more N`. Commands typed on the pad are logged the same way.
 
+In an emulator, a debugger can also hand the running game one command at a time: write the text
+into the payload's `tes3x_mailbox`, then change its sequence number. It runs on the next frame and
+is logged as `live> ...`.
+
 The file is read into memory sized to it and released when its last line has run
 (`exec.done`), so even a long script costs only its own size while it runs.
 
@@ -80,16 +84,17 @@ memory after each move; `report` turns the log into a table and, if the game did
 end, names the last command and any crash or hang.
 
 ```
-python tools/tes3x_tour.py make TR_Mainland.esm --exteriors --every 10 -o tes3xexec.txt
+python tools/tes3x_tour.py make TR_Mainland.esm --exteriors --step 3 -o tes3xexec.txt
 python tools/tes3x_tour.py make TR_Mainland.esm --interiors --prefix "Narsis" -o tes3xexec.txt
 python tools/tes3x_tour.py report tes3xlog.txt
 ```
 
-Exteriors are visited row by row, alternating direction, so each move is to a nearby cell;
-`--bounds=X0,Y0,X1,Y1` limits them to a box. `--wait` sets the frames after each move (default
-90), `--start` the `@start` line (default `new`), and the script ends with `exit` unless
-`--no-exit`. Free memory is the kernel's count of free pages; the engine's own heap can still be
-fragmented when it looks sufficient.
+Exteriors are visited row by row, alternating direction, so each move is to a nearby cell.
+`--bounds=X0,Y0,X1,Y1` limits them to a box and `--step N` to every Nth cell in each direction;
+`--every N` thins the whole tour instead, turning moves into jumps. `--wait` sets the frames
+after each move (default 90), `--start` the `@start` line (default `new`), and the script ends
+with `exit` unless `--no-exit`. Free memory is the kernel's count of free pages; the engine's own
+heap can still be fragmented when it looks sufficient.
 
 ## Profiling
 
