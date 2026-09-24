@@ -265,6 +265,15 @@ source = "tes3xheap.c"
 summary = "Count live engine heap bytes by source file and line, or by call site."
 
 [[patch]]
+name = "mem-census"
+bit = 21
+category = "instrumentation"
+channel = "development"
+selection = "option"
+source = "tes3xmem.c"
+summary = "Count kernel allocations and the XAPI heap by caller, with the address space map."
+
+[[patch]]
 name = "heap-region"
 bit = 20
 category = "compat"

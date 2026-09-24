@@ -13,6 +13,9 @@
 #ifdef TES3X_HEAP
 #include "tes3xheap.h"
 #endif
+#ifdef TES3X_MEM
+#include "tes3xmem.h"
+#endif
 
 #ifndef TES3X_ORIG_ENTRY
 #error "define TES3X_ORIG_ENTRY to the XBE's original entry point"
@@ -70,6 +73,9 @@ void tes3x_init(void)
     tes3x_log_prepare();
     DbgPrint("tes3x: hook alive, section at 0x%08x\n", (u32)&tes3x_init);
     tes3x_log("entry.free_kb", tes3x_free_kb());
+#ifdef TES3X_MEM
+    tes3x_mem_init();
+#endif
 #ifdef TES3X_HEAP
     tes3x_heap_init();
 #endif

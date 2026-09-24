@@ -14,6 +14,9 @@
 #ifdef TES3X_HEAP
 #include "tes3xheap.h"
 #endif
+#ifdef TES3X_MEM
+#include "tes3xmem.h"
+#endif
 #ifdef TES3X_SAVES
 int tes3x_autosave_command(void *game, const char *text);
 #endif
@@ -800,6 +803,10 @@ static void run_command(const char *text)
 #endif
 #ifdef TES3X_HEAP
     if (tes3x_heap_command(text))
+        return;
+#endif
+#ifdef TES3X_MEM
+    if (tes3x_mem_command(text))
         return;
 #endif
 #ifdef TES3X_DIAGNOSTICS

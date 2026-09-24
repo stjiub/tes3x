@@ -10,6 +10,9 @@
 #ifdef TES3X_HEAP
 #include "tes3xheap.h"
 #endif
+#ifdef TES3X_MEM
+#include "tes3xmem.h"
+#endif
 
 #ifndef TES3X_INI_GET_STRING
 #error "define TES3X_INI_GET_STRING to the VA of the ini string reader"
@@ -377,6 +380,9 @@ void tes3x_diag_tick(void)
 #endif
 #ifdef TES3X_HEAP
     tes3x_heap_frame();
+#endif
+#ifdef TES3X_MEM
+    tes3x_mem_frame();
 #endif
     diag_heartbeat++;
     if (!diag_ready)

@@ -20,8 +20,8 @@ from tes3x_patch import CONSOLE_PRINT_VSPRINTF, LOCATORS, find_transition_calls
 
 ROOT = Path(__file__).resolve().parents[1]
 HOOKS = ROOT / "hooks"
-HEADERS = ("tes3xdiag.h", "tes3xheap.h", "tes3xlog.h", "tes3xnt.h", "tes3xprof.h",
-           "tes3x_thunks.h")
+HEADERS = ("tes3xdiag.h", "tes3xheap.h", "tes3xlog.h", "tes3xmem.h", "tes3xnt.h",
+           "tes3xprof.h", "tes3x_thunks.h")
 DEFAULT_SOURCES = ("tes3xhook.c", "tes3xlog.c", "tes3xdiag.c")
 LLVM_DIRS = (Path("C:/Program Files/LLVM/bin"), Path("C:/msys64/clang64/bin"),
              Path("C:/msys64/mingw64/bin"))
@@ -211,6 +211,17 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         wanted["heap_allocate_new"] = ("_tes3x_heap_alloc_new_hook",)
         wanted["heap_allocate_pool"] = ("_tes3x_heap_alloc_pool_hook",)
         wanted["heap_free"] = ("_tes3x_heap_free_hook",)
+    if "tes3xmem.c" in names:
+        heap_alloc, heap_free = hexva(locate("xapi-heap-alloc")), hexva(locate("xapi-heap-free"))
+        text = next(s for s in image.sections if s.name == ".text")
+        print(f"memory census: RtlAllocateHeap {heap_alloc}, RtlFreeHeap {heap_free}")
+        define("MEM_HEAP_ALLOC", heap_alloc)
+        define("MEM_HEAP_FREE", heap_free)
+        define("MEM_CODE_START", hexva(text.va))
+        define("MEM_CODE_END", hexva(text.va + text.vsize))
+        flags.append("-DTES3X_MEM")
+        wanted["mem_heap_alloc"] = ("_tes3x_mem_heap_alloc@12",)
+        wanted["mem_heap_free"] = ("_tes3x_mem_heap_free@12",)
     if "tes3xdiag.c" in names:
         update = hexva(locate("diagnostics-update"))
         print(f"diagnostics hook: Game::Update {update}")

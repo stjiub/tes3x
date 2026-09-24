@@ -1240,6 +1240,49 @@ def _heap_census(x, value, ctx):
     return edits
 
 
+# CRT _heap_alloc: round the size, then RtlAllocateHeap(GetProcessHeap(), 0, size).
+CRT_HEAP_ALLOC = re.compile(rb"\x8b\x44\x24\x04\x85\xc0\x75\x01\x40\x83\x3d....\x01\x74\x06"
+                            rb"\x83\xc0\x0f\x83\xe0\xf0\x50\x6a\x00\xe8....\x50(?=\xe8....\xc3)",
+                            re.S)
+# XAPI HeapFree: RtlFreeHeap(heap, flags, ptr), its BOOLEAN widened.
+XAPI_HEAP_FREE = re.compile(rb"(?:\xff\x74\x24\x0c){3}(?=\xe8....\x0f\xb6\xc0\xc2\x0c\x00)", re.S)
+
+
+def _unique_call(x, rx, what):
+    hits = list(rx.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("mem-census: %d %s signature(s), expected 1" % (len(hits), what))
+    return tes3x_inject.call_target(x, x.off_to_va(hits[0].end()))
+
+
+def find_xapi_heap_alloc(x):
+    """RtlAllocateHeap, from the CRT allocator that calls it."""
+    return _unique_call(x, CRT_HEAP_ALLOC, "CRT _heap_alloc")
+
+
+def find_xapi_heap_free(x):
+    """RtlFreeHeap, from XAPI's HeapFree."""
+    return _unique_call(x, XAPI_HEAP_FREE, "HeapFree")
+
+
+@patch("mem-census")
+def _mem_census(x, value, ctx):
+    """Redirect every direct RtlAllocateHeap and RtlFreeHeap call to the memory census."""
+    hooks = ctx.get("hooks", {})
+    if not (hooks.get("mem_heap_alloc") and hooks.get("mem_heap_free")):
+        raise PatchError("mem-census: needs `payload` first, built with tes3xmem.c")
+    edits = []
+    for name, target, key in (("RtlAllocateHeap", find_xapi_heap_alloc(x), "mem_heap_alloc"),
+                              ("RtlFreeHeap", find_xapi_heap_free(x), "mem_heap_free")):
+        hook = int(str(hooks[key]), 16)
+        sites = find_call_sites(x, target)
+        edits.append((None, 0, "%s 0x%08X: %d call site(s)" % (name, target, len(sites))))
+        for site in sites:
+            _was, off = x.patch_call(site, hook)
+            edits.append((off, 5, None))
+    return edits
+
+
 def find_console_gate(x):
     """The one `call` that gates Console::Toggle, found by its push/push/call shape."""
     text = text_section(x)
@@ -1352,6 +1395,8 @@ LOCATORS = {
     "heap-region-malloc": lambda image: find_heap_region_sites(image)[0],
     "heap-region-fit": lambda image: find_heap_region_sites(image)[1],
     "heap-region-free": lambda image: find_heap_region_sites(image)[2],
+    "xapi-heap-alloc": find_xapi_heap_alloc,
+    "xapi-heap-free": find_xapi_heap_free,
 }
 
 
