@@ -199,10 +199,11 @@ evidence = ["patches/rotating-autosaves/2026-09-23-xemu.toml"]
 name = "build-preferences"
 bit = 15
 category = "qol"
-status = "implemented"
+status = "verified-xemu"
 selection = "option"
 source = "tes3xprefs.c"
 summary = "Apply profile-selected player preferences after stored Xbox options load."
+evidence = ["patches/build-preferences/2026-09-24-xemu.toml"]
 
 [[patch]]
 name = "transition-autosaves"
