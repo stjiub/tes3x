@@ -1,0 +1,14 @@
+claim = "Profiling TES3File::readChunkData instruments all 465 direct call sites, survives retail-data loading, and writes counter dumps before a clean menu exit."
+method = "Boot identical minimal direct-engine builds; add profile=0x001017A0 only to the patched build, wait at the menu, and exit through the command script."
+not_established = "Useful cycle counts or overhead on original Xbox hardware, indirect-call coverage, or long-session stability."
+watch = 'diag\.patches|prof\.|exec\.exit'
+apply = "profile=0x001017A0"
+timeout = 180
+script = '''
+@menu wait 60
+@menu exit
+'''
+
+[expect]
+control = ['exec\.exit 0', '!prof\.target']
+patched = ['prof\.target 0x001017A0', 'prof\.dump [1-9]', 'exec\.exit 0']
