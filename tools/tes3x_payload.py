@@ -15,7 +15,7 @@ import shutil
 import subprocess
 
 import tes3x_inject
-from tes3x_patch import CONSOLE_PRINT_VSPRINTF, LOCATORS
+from tes3x_patch import CONSOLE_PRINT_VSPRINTF, LOCATORS, find_transition_calls
 
 ROOT = Path(__file__).resolve().parents[1]
 HOOKS = ROOT / "hooks"
@@ -162,9 +162,13 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
     if "tes3xsaves.c" in names:
         save_game = hexva(locate("save-game"))
         save_this = hexva(locate("save-this-ptr"))
+        _transition_calls, cell_change, companions = find_transition_calls(image)
         print(f"autosave hook: SaveGame {save_game}, owner pointer {save_this}")
+        print(f"transition hooks: cell change {hexva(cell_change)}, companions {hexva(companions)}")
         define("SAVE_GAME", save_game)
         define("SAVE_THIS_PTR", save_this)
+        define("CELL_CHANGE", hexva(cell_change))
+        define("CELL_CHANGE_COMPANIONS", hexva(companions))
         flags.append("-DTES3X_SAVES")
     if "tes3xprefs.c" in names:
         site = locate("preferences-load")
@@ -240,6 +244,10 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         extra["prof_stubs"] = {"prof_count": define_value("tes3xprof.c", "TES3X_PROF_SLOTS")}
     if "tes3xsaves.c" in names:
         wanted["autosave"] = ("@tes3x_autosave_hook@12", "_tes3x_autosave_hook")
+        wanted["transition_cell"] = ("_tes3x_transition_cell_hook",)
+        wanted["transition_cell_companions"] = ("_tes3x_transition_cell_companions_hook",)
+        wanted["transition_teleport"] = ("_tes3x_transition_teleport_hook",)
+        wanted["transition_travel"] = ("_tes3x_transition_travel_hook",)
     if "tes3xprefs.c" in names:
         wanted["preferences_load"] = ("@tes3x_preferences_hook@4",
                                       "_tes3x_preferences_hook")

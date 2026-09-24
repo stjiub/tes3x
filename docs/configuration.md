@@ -66,6 +66,12 @@ leave existing preferences and retail defaults unchanged.
 |---|---|---|---|
 | `invert_look` | boolean | stored/retail value | Set right-stick vertical look to inverted or normal. |
 
+Enable `transition-autosaves` in `[patches]` to save before activated doors, scripted teleports,
+intervention-style magic and paid travel. It deliberately does not save for ordinary exterior
+cell streaming or while a saved game is being restored. `[Xbox] TransitionAutosaves=0` disables
+the added triggers at runtime. Pair it with `rotating-autosaves` to spread these saves over the
+configured slot count.
+
 ### `[package]`
 
 The archive settings matter only when the profile has enabled mods. `drive_letter` applies to

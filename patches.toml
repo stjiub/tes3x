@@ -196,6 +196,15 @@ source = "tes3xprefs.c"
 summary = "Apply profile-selected player preferences after stored Xbox options load."
 
 [[patch]]
+name = "transition-autosaves"
+bit = 16
+category = "qol"
+status = "implemented"
+selection = "preset"
+source = "tes3xsaves.c"
+summary = "Autosave before doors, scripted teleports, interventions and paid travel."
+
+[[patch]]
 name = "diagnostics"
 bit = 6
 category = "instrumentation"

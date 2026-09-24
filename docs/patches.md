@@ -30,7 +30,8 @@ with it, and their logs. A linked patch name opens its folder of notes and recor
 | [`mcp-140`](../patches/mcp-140/) | Throttle loading-screen redraws to one every 50 milliseconds. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #140 | performance | implemented | by name |  |
 | [`dxt5-size`](../patches/dxt5-size/) | Allocate DXT5 textures at their real size, not a negative one that corrupts video memory. | TES3X | core | verified-xemu | standard | [2026-09-23-xemu](../patches/dxt5-size/2026-09-23-xemu.toml) |
 | [`rotating-autosaves`](../patches/rotating-autosaves/) | Rotate automatic saves through INI-configurable slots. | [OpenMW](https://openmw.org) | qol | verified-xemu | by name | [2026-09-23-xemu](../patches/rotating-autosaves/2026-09-23-xemu.toml) |
-| `build-preferences` | Apply profile-selected player preferences after stored Xbox options load. | TES3X | qol | implemented | build option |  |
+| [`build-preferences`](../patches/build-preferences/) | Apply profile-selected player preferences after stored Xbox options load. | TES3X | qol | implemented | build option |  |
+| [`transition-autosaves`](../patches/transition-autosaves/) | Autosave before doors, scripted teleports, interventions and paid travel. | TES3X | qol | implemented | by name |  |
 | [`diagnostics`](../patches/diagnostics/) | Enable INI-controlled crash records, snapshots and a hang watchdog. | TES3X | instrumentation | verified-xemu | development | findings log, no record yet |
 | [`console`](../patches/console/) | Make the in-game console reachable, by replacing its input gate. | TES3X | qol | verified-xemu | development | [2026-09-23-xemu](../patches/console/2026-09-23-xemu.toml) |
 | [`profile=VA[,VA...]`](../patches/profile/) | Time listed functions with RDTSC at every direct call site. | TES3X | instrumentation | implemented | build option |  |

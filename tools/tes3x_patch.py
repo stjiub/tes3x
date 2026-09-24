@@ -519,6 +519,35 @@ CONTROLS_COPY_SIG = re.compile(
     re.S,
 )
 
+TRANSITION_CALL_SIGS = {
+    "cell": [
+        re.compile(rb"\x8b\x50\x38\x83\xec\x0c\x8b\xcc\x89\x11\x8b\x50\x3c"
+                   rb"\x89\x51\x04\x8b\x40\x40\x89\x41\x08(?P<site>\xe8....)\x83\xc4\x20", re.S),
+        re.compile(rb"\x8b\x54\x24\x28\x8b\xc4\x89\x10\x8b\x4c\x24\x2c\x89\x48\x04"
+                   rb"\x8b\x54\x24\x30\x89\x50\x08(?P<site>\xe8....)\x83\xc4\x20", re.S),
+        re.compile(rb"\x89\x64\x24\x38\x89\x48\x04\x89\x50\x08"
+                   rb"(?P<site>\xe8....)\x83\xc4\x20\xe9", re.S),
+    ],
+    "cell_companions": [
+        re.compile(rb"\x89\x64\x24\x34\x89\x48\x04\x89\x50\x08"
+                   rb"(?P<site>\xe8....)\x83\xc4\x1c\xe9", re.S),
+    ],
+    "teleport": [
+        re.compile(rb"\x8b\x4c\x24\x18\x83\xec\x0c\x8b\xc4\x89\x08\x8b\x4c\x24\x2c"
+                   rb"\x89\x50\x04\x89\x48\x08(?P<site>\xe8....)\xa1", re.S),
+        re.compile(rb"\x89\x64\x24\x34\x68....\xe8...."
+                   rb"(?P<site>\xe8....)\x83\xc4\x20\xe9", re.S),
+        re.compile(rb"\x8b\x0d....\x89\x48\x04\x8b\x15....\x89\x64\x24\x38\x89\x50\x08"
+                   rb"(?P<site>\xe8....)\x83\xc4\x20\xe9", re.S),
+        re.compile(rb"\x8b\x10\x83\xec\x0c\x8b\xcc\x89\x11\x8b\x50\x04\x89\x51\x04"
+                   rb"\x8b\x40\x08\x89\x41\x08(?P<site>\xe8....)\x83\xc4\x20\xb0\x01", re.S),
+    ],
+    "travel": [
+        re.compile(rb"\x8b\x56\x08\x83\xec\x0c\x8b\xc4\x89\x10\x8b\x4e\x0c\x89\x48\x04"
+                   rb"\x8b\x56\x10\x89\x50\x08(?P<site>\xe8....)\x83\xc4\x20\xa1", re.S),
+    ],
+}
+
 
 def find_preferences_load(x):
     """The call that loads controls.dat before player options are applied."""
@@ -537,6 +566,30 @@ def find_controls_table(x):
     if len(hits) != 1:
         raise PatchError("build-preferences: %d controls table copies, expected 1" % len(hits))
     return struct.unpack("<I", hits[0].group("table"))[0]
+
+
+def find_transition_calls(x):
+    """Player-triggered cell changes, excluding load restore and exterior streaming."""
+    found = {}
+    data = bytes(x.data)
+    for kind, signatures in TRANSITION_CALL_SIGS.items():
+        sites = []
+        for signature in signatures:
+            hits = list(signature.finditer(data))
+            if len(hits) != 1:
+                raise PatchError("transition-autosaves: %s signature has %d matches, expected 1"
+                                 % (kind, len(hits)))
+            site = x.off_to_va(hits[0].start("site"))
+            if site is None:
+                raise PatchError("transition-autosaves: call is outside any section")
+            sites.append(site)
+        found[kind] = sites
+    targets = {kind: {tes3x_inject.call_target(x, site) for site in sites}
+               for kind, sites in found.items()}
+    if len(targets["cell"] | targets["teleport"] | targets["travel"]) != 1 \
+            or len(targets["cell_companions"]) != 1:
+        raise PatchError("transition-autosaves: unexpected cell-change targets")
+    return found, next(iter(targets["cell"])), next(iter(targets["cell_companions"]))
 
 
 def find_autosave_calls(x):
@@ -627,6 +680,34 @@ def _rotating_autosaves(x, value, ctx):
                              % (site, was, save_game))
         edits.append((off, 5, "autosave call 0x%08X: 0x%08X -> 0x%08X"
                       % (site, was, target)))
+    return edits
+
+
+@patch("transition-autosaves")
+def _transition_autosaves(x, value, ctx):
+    """Save before player-triggered doors, teleports and paid travel."""
+    hooks = ctx.get("hooks", {})
+    wanted = {
+        "cell": "transition_cell",
+        "cell_companions": "transition_cell_companions",
+        "teleport": "transition_teleport",
+        "travel": "transition_travel",
+    }
+    if any(not hooks.get(name) for name in wanted.values()):
+        raise PatchError("transition-autosaves: needs `payload` first, with transition hooks "
+                         "in its manifest")
+    calls, cell_change, companions = find_transition_calls(x)
+    edits = []
+    for kind, sites in calls.items():
+        target = int(str(hooks[wanted[kind]]), 16)
+        expected = companions if kind == "cell_companions" else cell_change
+        for site in sites:
+            was, off = x.patch_call(site, target)
+            if was != expected:
+                raise PatchError("transition-autosaves: call 0x%08X targets 0x%08X, expected 0x%08X"
+                                 % (site, was, expected))
+            edits.append((off, 5, "%s transition 0x%08X: 0x%08X -> 0x%08X"
+                          % (kind, site, was, target)))
     return edits
 
 

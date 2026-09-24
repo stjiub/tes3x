@@ -284,6 +284,14 @@ class PipelinePlanTests(unittest.TestCase):
         self.assertEqual(plan['applied'], ['rotating-autosaves'])
         self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xsaves.c'])
 
+    def test_transition_autosaves_reuses_save_hook_source(self):
+        plan = resolve_patch_plan({
+            'patches': {'preset': 'minimal', 'enable': ['transition-autosaves']},
+            'package': {'mode': 'merged-bsa'},
+        })
+        self.assertEqual(plan['applied'], ['transition-autosaves'])
+        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xsaves.c'])
+
     def test_build_preferences_adds_specialized_hook_source(self):
         profile = {
             'profile': {'name': 'p'},

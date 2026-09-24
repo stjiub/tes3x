@@ -35,6 +35,8 @@ static char autosave_name[] = "autosave";
 static u32 rotation_enabled = 1;
 static u32 slot_count = AUTOSAVE_DEFAULT_SLOTS;
 static u32 next_slot;
+static u32 transition_enabled = 1;
+static int transition_saving;
 static int settings_ready;
 
 static u32 parse_slots(const char *s)
@@ -87,8 +89,15 @@ static void load_settings(void)
         (const char *)TES3X_INI_PATH);
     slot_count = parse_slots(buf);
 
+    for (i = 0; i < (int)sizeof(buf); i++)
+        buf[i] = 0;
+    get("Xbox", "TransitionAutosaves", "1", buf, (int)sizeof(buf) - 1,
+        (const char *)TES3X_INI_PATH);
+    transition_enabled = parse_toggle(buf);
+
     tes3x_log("autosave.enabled", rotation_enabled);
     tes3x_log("autosave.slots", slot_count);
+    tes3x_log("autosave.transitions", transition_enabled);
     if (!rotation_enabled || slot_count <= 1)
         return;
 
@@ -177,6 +186,45 @@ unsigned char tes3x_autosave_now(void)
 
     return tes3x_autosave_hook(game, autosave_name, autosave_name);
 }
+
+void tes3x_transition_save(u32 kind, u32 site)
+{
+    unsigned char ok;
+
+    if (!settings_ready)
+        load_settings();
+    if (!transition_enabled || transition_saving)
+        return;
+    transition_saving = 1;
+    tes3x_log("autosave.transition", kind);
+    tes3x_log_hex("autosave.transition_site", site);
+    ok = tes3x_autosave_now();
+    tes3x_log("autosave.transition_ok", ok);
+    transition_saving = 0;
+}
+
+#define TES3X_SAVE_STR_(x) #x
+#define TES3X_SAVE_STR(x) TES3X_SAVE_STR_(x)
+#define TRANSITION_HOOK(name, kind, target) \
+    __attribute__((naked)) void name(void) \
+    { \
+        __asm__ volatile( \
+            "pushal\n\t" \
+            "pushfl\n\t" \
+            "pushl 36(%esp)\n\t" \
+            "pushl $" TES3X_SAVE_STR(kind) "\n\t" \
+            "call _tes3x_transition_save\n\t" \
+            "addl $8, %esp\n\t" \
+            "popfl\n\t" \
+            "popal\n\t" \
+            "pushl $" TES3X_SAVE_STR(target) "\n\t" \
+            "ret\n\t"); \
+    }
+
+TRANSITION_HOOK(tes3x_transition_cell_hook, 1, TES3X_CELL_CHANGE)
+TRANSITION_HOOK(tes3x_transition_cell_companions_hook, 1, TES3X_CELL_CHANGE_COMPANIONS)
+TRANSITION_HOOK(tes3x_transition_teleport_hook, 2, TES3X_CELL_CHANGE)
+TRANSITION_HOOK(tes3x_transition_travel_hook, 3, TES3X_CELL_CHANGE)
 
 int tes3x_autosave_command(void *game, const char *text)
 {
