@@ -413,6 +413,21 @@ MCP140_STATUS_SIG = re.compile(
 )
 
 
+# The arena constructor's size argument, `mov ebx, 0xF80000; mov esi, eax; call`, behind the
+# null check of the heap object just allocated.
+ARENA_SIZE_SIG = b"\x85\xc0\x74\x0e\xbb\x00\x00\xf8\x00\x8b\xf0\xe8"
+ARENA_SIZE_OFF = 4
+
+
+def find_arena_size(x):
+    """The `mov ebx, 0xF80000` that sizes the video-memory arena."""
+    off = find_unique(bytes(x.data), ARENA_SIZE_SIG, "video-arena") + ARENA_SIZE_OFF
+    va = x.off_to_va(off)
+    if va is None:
+        raise PatchError("video-arena: the arena size is outside any section")
+    return va
+
+
 def find_dxt5_size(x):
     """The texture-create call to the texture-size function."""
     hits = list(DXT5_SIZE_SIG.finditer(bytes(x.data)))
@@ -820,6 +835,20 @@ def _dxt5_size(x, value, ctx):
     return [(off, 5, "texture size call 0x%08X: 0x%08X -> %s" % (site, was, target))]
 
 
+@patch("video-arena")
+def _video_arena(x, value, ctx):
+    """Size the video-memory arena from [Xbox] VideoMemoryKB when there is more than 64 MB."""
+    target = ctx.get("hooks", {}).get("arena_size")
+    if not target:
+        raise PatchError("video-arena: needs `payload` first, with an arena_size hook in its "
+                         "manifest")
+    site = find_arena_size(x)
+    off = x.va_to_off(site)
+    target = int(str(target), 16)
+    x.data[off:off + 5] = b"\xe8" + struct.pack("<i", target - (site + 5))
+    return [(off, 5, "arena size 0x%08X: mov ebx, 0xF80000 -> call 0x%08X" % (site, target))]
+
+
 @patch("mcp-102")
 def _mcp_102(x, value, ctx):
     """Reactivate script-triggered objects after their script mod is removed."""
@@ -1043,6 +1072,7 @@ LOCATORS = {
     "mcp-140-redraw": find_mcp140_redraw,
     "mcp-102-actn": find_mcp102_actn,
     "dxt5-size": find_dxt5_size,
+    "video-arena": find_arena_size,
     "save-game": lambda image: find_autosave_calls(image)[0],
     "save-this-ptr": find_save_this_ptr,
     "preferences-load": find_preferences_load,

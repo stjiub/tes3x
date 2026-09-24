@@ -176,6 +176,15 @@ summary = "Allocate DXT5 textures at their real size, not a negative one that co
 evidence = ["patches/dxt5-size/2026-09-23-xemu.toml"]
 
 [[patch]]
+name = "video-arena"
+bit = 17
+category = "compat"
+status = "implemented"
+selection = "preset"
+source = "tes3xarena.c"
+summary = "With more than 64 MB, size the texture and vertex buffer arena from [Xbox] VideoMemoryKB."
+
+[[patch]]
 name = "rotating-autosaves"
 origin = { source = "OpenMW" }
 bit = 8
