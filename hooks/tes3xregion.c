@@ -52,7 +52,7 @@ typedef void(__thiscall *fn_heap_free)(void *, void *);
 
 /* Only touched under the heap's own lock, or before any thread can allocate. */
 static char *region;
-static u32 reserved, committed;
+static u32 reserved, committed, commit_failed;
 
 u32 tes3x_region_size(void)
 {
@@ -115,7 +115,8 @@ int __stdcall tes3x_region_commit(u32 end)
     base = region + committed;
     len = top - committed;
     if (NtAllocateVirtualMemory(&base, 0, &len, MEM_COMMIT, PAGE_READWRITE) != 0) {
-        tes3x_log("region.commit_failed_kb", committed / 1024);
+        if (!commit_failed++)
+            tes3x_log("region.commit_failed_kb", committed / 1024);
         return 0;
     }
     committed = top;
