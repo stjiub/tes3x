@@ -193,12 +193,12 @@ class PipelineTests(unittest.TestCase):
 
     def test_recorded_command_removes_machine_paths(self):
         command = sanitized_command(
-            ['--vanilla', 'D:/private/game', 'profiles/proof.toml',
+            ['--vanilla', 'D:/private/game', 'profiles/validation.toml',
              '--out=D:/private/build', '--enable', 'mcp-102'],
-            'proof', 'profiles/proof.toml')
+            'validation', 'profiles/validation.toml')
         self.assertEqual(command, [
             'python', 'tools/tes3x_pipeline.py', '--vanilla', '<local-path>',
-            'profile:proof', '--out=<local-path>', '--enable', 'mcp-102',
+            'profile:validation', '--out=<local-path>', '--enable', 'mcp-102',
         ])
 
 
@@ -230,14 +230,18 @@ class PipelinePlanTests(unittest.TestCase):
         with self.assertRaisesRegex(PipelineError, 'requires script-ext'):
             resolve_patch_plan(profile)
 
-    def test_standard_only_selects_verified_default_fixes(self):
+    def test_standard_only_selects_release_channel_default_fixes(self):
         plan = resolve_patch_plan({'patches': {'preset': 'standard'},
                                    'package': {'mode': 'merged-bsa'}})
-        # mcp-1 remains explicit until its failed-resolution branch is verified.
-        self.assertEqual(plan['selected'], ['mcp-97', 'mcp-102', 'dxt5-size'])
-        self.assertEqual(plan['sources'], [
-            'tes3xhook.c', 'tes3xlog.c', 'tes3xmcp97.c', 'tes3xdxt5.c'
-        ])
+        # Automated validation never promotes a patch; no patch has maintainer release approval.
+        self.assertEqual(plan['selected'], [])
+        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c'])
+
+    def test_development_includes_unreleased_default_fixes(self):
+        plan = resolve_patch_plan({'patches': {'preset': 'development'},
+                                   'package': {'mode': 'merged-bsa'}})
+        self.assertTrue({'mcp-1', 'mcp-97', 'mcp-154', 'mcp-102', 'dxt5-size'}
+                        <= set(plan['selected']))
 
     def test_profile_without_mods_patches_only(self):
         plan = resolve_patch_plan({'patches': {'preset': 'standard'},
@@ -495,7 +499,8 @@ class PipelinePlanTests(unittest.TestCase):
         profile = {'patches': {'preset': 'development', 'disable': ['diagnostics']},
                    'package': {'mode': 'merged-bsa'}}
         plan = resolve_patch_plan(profile)
-        self.assertEqual(plan['selected'], ['mcp-97', 'mcp-102', 'dxt5-size', 'console'])
+        self.assertEqual(plan['selected'],
+                         ['mcp-1', 'mcp-97', 'mcp-154', 'mcp-102', 'dxt5-size', 'console'])
 
     def test_pipeline_rejects_unknown_categories_and_patches(self):
         with self.assertRaises(PipelineError):

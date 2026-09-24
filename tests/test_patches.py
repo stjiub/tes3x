@@ -21,10 +21,18 @@ class RegistryTests(unittest.TestCase):
     def test_generated_pages_are_current(self):
         self.assertEqual(registry.stale_pages(), [], 'run tools/tes3x_patches.py --write')
 
-    def test_verified_status_needs_evidence(self):
+    def test_patch_channel_is_explicit(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'patches.toml'
-            path.write_text('[[patch]]\nname = "x"\ncategory = "core"\nstatus = "verified-xemu"\n'
+            path.write_text('[[patch]]\nname = "x"\ncategory = "core"\nchannel = "verified"\n'
+                            'selection = "preset"\nsummary = "x"\n', encoding='utf-8')
+            with self.assertRaises(registry.RegistryError):
+                registry.load(path)
+
+    def test_release_channel_needs_validation_but_is_never_inferred(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'patches.toml'
+            path.write_text('[[patch]]\nname = "x"\ncategory = "core"\nchannel = "release"\n'
                             'selection = "preset"\nsummary = "x"\n', encoding='utf-8')
             with self.assertRaises(registry.RegistryError):
                 registry.load(path)

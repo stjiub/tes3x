@@ -1,6 +1,7 @@
-claim = "A scripted interior-to-exterior cell transition completes normally and produces a successful autosave only when transition-autosaves is enabled."
-method = "Boot identical minimal direct-engine builds, start a new game, teleport to Balmora, and compare the transition and save events before exiting."
-not_established = "Original-Xbox save latency, travel and intervention call sites, or long-session rotation behavior."
+kind = "single"
+purpose = "A scripted interior-to-exterior cell transition completes normally and produces a successful autosave when transition-autosaves is enabled."
+procedure = "Boot a minimal direct-engine build, start a new game, teleport to Balmora, and inspect the transition and save events before exiting."
+limitations = "Original-Xbox save latency, travel and intervention call sites, or long-session rotation behavior."
 watch = 'diag\.patches|console< GetPos|autosave\.transition'
 enable = ["diagnostics", "console", "rotating-autosaves"]
 timeout = 180
@@ -14,5 +15,4 @@ exit
 '''
 
 [expect]
-control = ['console< GetPos >> -12288\.00', '!autosave\.transition']
-patched = ['autosave\.transition 1', 'autosave\.transition_ok 1', 'console< GetPos >> -12288\.00']
+test = ['autosave\.transition 1', 'autosave\.transition_ok 1', 'console< GetPos >> -12288\.00']

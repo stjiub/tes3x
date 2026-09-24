@@ -19,8 +19,7 @@ PATCH_DIRS = ROOT / "patches"
 
 CATEGORIES = ("core", "correctness", "compat", "performance", "qol", "balance",
               "instrumentation", "infrastructure")
-STATUSES = ("implemented", "verified-xemu", "verified-hardware")
-VERIFIED = ("verified-xemu", "verified-hardware")
+CHANNELS = ("development", "release")
 SELECTIONS = ("always", "packaging", "preset", "option")
 # Fixes without code, in the order the generated page lists them.
 CANDIDATE_STATUSES = {
@@ -33,8 +32,8 @@ CANDIDATE_STATUSES = {
     "rejected": "Deliberately left out of TES3X.",
 }
 PRIORITIES = ("high", "medium", "low", "none")
-PATCH_FIELDS = (("name", "category", "status", "selection", "summary"),
-                ("bit", "source", "takes", "evidence", "origin"))
+PATCH_FIELDS = (("name", "category", "channel", "selection", "summary"),
+                ("bit", "source", "takes", "validation", "origin"))
 CANDIDATE_FIELDS = (("name", "origin", "status", "priority", "summary", "reason"),
                     ("category", "default", "doc"))
 
@@ -72,7 +71,7 @@ def read(path=REGISTRY, candidate_path=CANDIDATE_LIST):
     names, bits = set(), set()
     for entry in patches:
         where = f"{Path(path).name}: {entry.get('name', '<unnamed>')}"
-        check(entry, PATCH_FIELDS, (("category", CATEGORIES), ("status", STATUSES),
+        check(entry, PATCH_FIELDS, (("category", CATEGORIES), ("channel", CHANNELS),
                                     ("selection", SELECTIONS)), sources, where)
         if "bit" in entry:
             if not isinstance(entry["bit"], int) or not 0 <= entry["bit"] < 32:
@@ -80,8 +79,11 @@ def read(path=REGISTRY, candidate_path=CANDIDATE_LIST):
             if entry["bit"] in bits:
                 raise RegistryError(f"{where}: bit {entry['bit']} already used")
             bits.add(entry["bit"])
-        if entry["status"] in VERIFIED and not entry.get("evidence"):
-            raise RegistryError(f"{where}: {entry['status']} needs evidence")
+        validation = entry.get("validation", [])
+        if not isinstance(validation, list) or not all(isinstance(item, str) for item in validation):
+            raise RegistryError(f"{where}: validation must be a list of result paths")
+        if entry["channel"] == "release" and not validation:
+            raise RegistryError(f"{where}: release channel needs validation; promotion is manual")
     for entry in candidates:
         where = f"{Path(candidate_path).name}: {entry.get('name', '<unnamed>')}"
         check(entry, CANDIDATE_FIELDS, (("category", CATEGORIES + ("undecided",)),
@@ -110,17 +112,17 @@ def origin_text(entry):
 
 
 def name_text(entry):
-    """The patch name, linked to its folder of notes and proof records when it has one."""
+    """The patch name, linked to its folder of notes and validation results when it has one."""
     name = entry["name"] + (f"={entry['takes']}" if "takes" in entry else "")
     folder = PATCH_DIRS / entry["name"]
     return f"[`{name}`](../patches/{entry['name']}/)" if folder.is_dir() else f"`{name}`"
 
 
-def evidence_text(entry):
+def validation_text(entry):
     links = []
-    for evidence in entry.get("evidence", []):
-        if evidence.startswith("patches/"):
-            links.append(f"[{Path(evidence).stem}](../{evidence})")
+    for result in entry.get("validation", []):
+        if result.startswith("patches/"):
+            links.append(f"[{Path(result).stem}](../{result})")
         else:
             links.append("findings log, no record yet")
     return ", ".join(links)
@@ -135,7 +137,7 @@ def render_patches():
     presets = {}
     for preset in ("development", "standard"):
         plan = resolve_patch_plan({"patches": {"preset": preset}, "mods": [{"name": "x"}]})
-        presets.update({name: preset for name in plan["selected"]})
+        presets.update({name: f"{preset} preset" for name in plan["selected"]})
     selection = {
         "always": "every build",
         "packaging": "delta-bsa packing",
@@ -148,24 +150,26 @@ def render_patches():
         "Edit that file, not this one. Fixes that are not implemented, including every Morrowind",
         "Code Patch fix, are listed in [candidates.md](candidates.md).",
         "",
-        "**Status**: `implemented` means the patch applies and passes structural checks;",
-        "`verified-xemu` means it was shown to work in the xemu emulator; `verified-hardware`",
-        "means it was shown to work on an original Xbox.",
+        "**Channel**: every implemented patch starts in `development`. A patch moves to",
+        "`release` only when the maintainer decides it is ready after appropriate validation and",
+        "testing. Automated results never promote a patch.",
         "",
-        "**Selected by**: `standard` and `development` are presets; a patch marked `standard` is",
-        "also in `development`. Anything else is selected explicitly for a build.",
+        "**Selected by**: the `standard` preset includes release-channel core and correctness",
+        "patches. `development` also includes their development-channel counterparts and test",
+        "instrumentation. Anything else is selected explicitly for a build.",
         "",
-        "**Evidence**: the proof record behind a status: a control run without the patch, a run",
-        "with it, and their logs. A linked patch name opens its folder of notes and records.",
+        "**Validation**: repeatable scenarios and recorded results. A result says only what its",
+        "scenario observed on that platform; it is not a release decision. A linked patch name",
+        "opens its folder of notes, scenarios and results.",
         "",
-        "| patch | what it does | from | category | status | selected by | evidence |",
+        "| patch | what it does | from | category | channel | selected by | validation |",
         "|---|---|---|---|---|---|---|",
     ]
     for entry in PATCHES:
         chosen = selection.get(entry["selection"]) or presets.get(entry["name"], "by name")
         lines.append(f"| {name_text(entry)} | {cell(entry['summary'])} | {origin_text(entry)} | "
-                     f"{entry['category']} | {entry['status']} | {chosen} | "
-                     f"{evidence_text(entry)} |")
+                     f"{entry['category']} | {entry['channel']} | {chosen} | "
+                     f"{validation_text(entry)} |")
     return "\n".join(lines) + "\n"
 
 

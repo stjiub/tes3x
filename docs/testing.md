@@ -123,9 +123,10 @@ The census needs an 8 MB table, so run it on a console or emulator with 128 MB. 
 allocations do not depend on the memory size, so a 128 MB census also describes a 64 MB console.
 Allocations outside that heap, such as the texture and vertex-buffer arena, are not counted.
 
-## Proof
+## Validation
 
-A fix is proven by two runs of the same test, one without the patch and one with it, compared by
-their logs. [Verification](verification.md) describes proof records and the `scenario.toml` a
-patch can keep so the test can be run again. A scenario is a command file plus the log lines each
-run must, or must not, show.
+A patch can keep a repeatable [`scenario.toml`](validation.md) beside its notes. A single scenario
+exercises one build; a comparison scenario runs a control without the patch and a test build with
+it. The script and required or forbidden log lines define the check. A recorded result captures
+one execution and its exact inputs, but does not prove general correctness or approve the patch
+for release.

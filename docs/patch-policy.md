@@ -1,7 +1,7 @@
 # Patch policy
 
-How TES3X decides which engine fixes to port, what they default to, and what evidence moves a fix
-from idea to default. The fixes themselves are listed in [patches.md](patches.md) (implemented)
+How TES3X decides which engine fixes to port, what they default to, and how an implemented patch
+moves from development to release. The fixes themselves are listed in [patches.md](patches.md)
 and [candidates.md](candidates.md) (not implemented).
 
 ## Categories and defaults
@@ -40,20 +40,27 @@ such as `mcp-97` for Morrowind Code Patch fix 97.
    users supply. TES3X does not redistribute third-party files without permission.
 8. **Record every decision.** Each reviewed fix gets an entry in `candidates.toml` with its reason,
    including decisions not to port it, so nobody has to repeat the investigation.
-9. **One fix per commit**: its table entry, any payload code, its notes and its proof, so it can be
+9. **One fix per commit**: its table entry, any payload code, its notes and validation, so it can be
    reverted on its own.
 
-## From candidate to default
+## From candidate to release
 
-A fix advances only with the matching evidence:
+A fix's research state, implementation channel and validation results are separate. Candidate
+states describe work before code exists. Moving a fix into `patches.toml` implements it in the
+`development` channel. Scenarios and results then record specific automated observations without
+changing that channel.
 
-| from | to | evidence |
+| from | to | basis |
 |---|---|---|
 | `candidate` | `researching` | The upstream description, a minimal way to reproduce it, and the likely subsystem. |
 | `researching` | `located` | The PC intent, the Xbox function and site, its calling convention, and the planned change. |
-| `located` | `implemented` | An independently selectable patch that matches the retail XBE and passes structural checks. Move the entry from `candidates.toml` to `patches.toml`. |
-| `implemented` | `verified-xemu` | A [proof record](verification.md): the reproducer fails without the patch and passes with it. |
-| `verified-xemu` | `verified-hardware` | The same on an original Xbox. Performance decisions use this, never xemu timing. |
+| `located` | `development` | An independently selectable patch that matches the retail XBE and passes structural checks. Move the entry from `candidates.toml` to `patches.toml`. |
+| `development` | `release` | The maintainer decides the patch is ready after the relevant automated validation, code review and manual testing. Performance decisions use original-Xbox measurements, never xemu timing. |
+
+Passing a [validation scenario](validation.md) is necessary input where the behavior is
+automatable, but no tool promotes a patch. `channel = "release"` is an explicit maintainer
+decision. A patch can return to `development` if later testing finds a problem; its earlier results
+remain useful historical observations.
 
 A fix that turns out not to apply becomes `not-applicable`, `infeasible` or `rejected`, with the
 reason.

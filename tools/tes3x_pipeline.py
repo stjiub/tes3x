@@ -33,7 +33,6 @@ PATCH_ORDER = tuple(entry["name"] for entry in registry.PATCHES
                     or entry["name"] == "build-preferences")
 HOOK_SOURCES = {entry["name"]: entry.get("source") for entry in registry.PATCHES}
 CATEGORIES = set(registry.CATEGORIES)
-VERIFIED = set(registry.VERIFIED)
 PRESETS = ("minimal", "standard", "development")
 
 
@@ -193,11 +192,13 @@ def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), pac
         raise PipelineError(f"unknown patch preset {preset!r}; choose from {', '.join(PRESETS)}")
 
     selected = set()
-    if preset in {"standard", "development"}:
+    if preset == "standard":
         selected.update(name for name, meta in PATCHES.items()
                         if meta["category"] in {"core", "correctness"}
-                        and meta["status"] in VERIFIED)
+                        and meta["channel"] == "release")
     if preset == "development":
+        selected.update(name for name, meta in PATCHES.items()
+                        if meta["category"] in {"core", "correctness"})
         selected.update(name for name, meta in PATCHES.items()
                         if meta["category"] == "instrumentation")
         selected.add("console")

@@ -1,13 +1,13 @@
 # Every XBE patch TES3X can apply, in the order it applies them.
 #
 # tes3x_patch.py, the pipeline and the diagnostics log reader all read this file, so a patch's
-# name, bit, category and status are set here and nowhere else. docs/patches.md is generated
+# name, bit, category and channel are set here and nowhere else. docs/patches.md is generated
 # from it: run `python tools/tes3x_patches.py --write` after editing.
 #
 # name       what --apply and profiles call it
 # bit        its bit in the patch mask the payload logs (diag.patches); fixed forever once used
 # category   core, correctness, compat, performance, qol, balance, instrumentation, infrastructure
-# status     implemented, verified-xemu or verified-hardware
+# channel    development or release; promotion to release is a maintainer decision
 # selection  how a build gets it:
 #              always    - every pipeline build
 #              packaging - chosen by the package mode
@@ -16,8 +16,8 @@
 # source     payload C file the patch needs, if any
 # takes      the value it needs, as NAME=VALUE
 # summary    one line, shown by --list and in docs/patches.md
-# evidence   proof records under patches/<name>/ (tools/tes3x_proof.py); "findings: ..." marks
-#            older evidence not yet converted to a record
+# validation validation results under patches/<name>/ (tools/tes3x_validate.py); "findings: ..."
+#            marks older observations not yet converted to a result
 # origin     the project a fix comes from, when not TES3X: { source = "MCP", id = "97" }
 #
 # Fixes that are not implemented, including every MCP id, are in candidates.toml.
@@ -52,36 +52,36 @@ name = "TES3X"
 [[patch]]
 name = "payload"
 category = "infrastructure"
-status = "verified-xemu"
+channel = "development"
 selection = "option"
 takes = "FILE.pe"
 summary = "Inject a code section and run it from the entry point."
-evidence = ["findings: every hooked xemu run"]
+validation = ["findings: every hooked xemu run"]
 
 [[patch]]
 name = "boot-media"
 bit = 2
 category = "infrastructure"
-status = "verified-xemu"
+channel = "development"
 selection = "always"
 summary = "Permit booting from any media and region, not just a retail DVD."
-evidence = ["findings: every xemu run"]
+validation = ["findings: every xemu run"]
 
 [[patch]]
 name = "drive-letters"
 bit = 0
 category = "infrastructure"
-status = "verified-xemu"
+channel = "development"
 selection = "always"
 takes = "LETTER"
 summary = "Point every Data Files asset path at one drive."
-evidence = ["findings: every xemu run"]
+validation = ["findings: every xemu run"]
 
 [[patch]]
 name = "save-staging"
 bit = 1
 category = "infrastructure"
-status = "implemented"
+channel = "development"
 selection = "option"
 takes = "LETTER"
 summary = "Stage saves on one volume with UDATA so the commit renames instead of copying."
@@ -89,7 +89,7 @@ summary = "Stage saves on one volume with UDATA so the commit renames instead of
 [[patch]]
 name = "title"
 category = "infrastructure"
-status = "implemented"
+channel = "development"
 selection = "option"
 takes = "NAME"
 summary = "Rename the XBE's certificate title, the name a dashboard falls back to."
@@ -98,27 +98,27 @@ summary = "Rename the XBE's certificate title, the name a dashboard falls back t
 name = "multi-bsa"
 bit = 3
 category = "infrastructure"
-status = "verified-xemu"
+channel = "development"
 selection = "packaging"
 source = "tes3xarch.c"
 summary = "Load every archive listed in tes3xarch.txt, not just Morrowind.bsa."
-evidence = ["findings: delta archive served in xemu"]
+validation = ["findings: delta archive served in xemu"]
 
 [[patch]]
 name = "script-ext"
 bit = 4
 category = "compat"
-status = "verified-xemu"
+channel = "development"
 selection = "preset"
 source = "tes3xscript.c"
 summary = "Add script opcodes: widen the length bounds and hook Script::RunFunction."
-evidence = ["findings: new opcode runs in-engine from a plugin's compiled bytecode"]
+validation = ["findings: new opcode runs in-engine from a plugin's compiled bytecode"]
 
 [[patch]]
 name = "mwse-legacy"
 bit = 18
 category = "compat"
-status = "implemented"
+channel = "development"
 selection = "preset"
 source = "tes3xmwse.c"
 summary = "Interpret legacy MWSE 0.9.4 bytecode embedded in compiled scripts."
@@ -128,7 +128,7 @@ name = "mcp-1"
 origin = { source = "MCP", id = "1" }
 bit = 5
 category = "core"
-status = "implemented"
+channel = "development"
 selection = "preset"
 source = "tes3xrefs.c"
 summary = "Stop an unresolvable reference being restamped as created at runtime."
@@ -138,18 +138,18 @@ name = "mcp-97"
 origin = { source = "MCP", id = "97" }
 bit = 9
 category = "core"
-status = "verified-xemu"
+channel = "development"
 selection = "preset"
 source = "tes3xmcp97.c"
 summary = "Advance the script parser correctly while initializing saved data."
-evidence = ["patches/mcp-97/2026-09-21-xemu.toml"]
+validation = ["patches/mcp-97/2026-09-21-xemu.toml"]
 
 [[patch]]
 name = "mcp-154"
 origin = { source = "MCP", id = "154" }
 bit = 10
 category = "core"
-status = "implemented"
+channel = "development"
 selection = "preset"
 source = "tes3xmcp154.c"
 summary = "Pad compiled script-data allocations to keep dword reads in bounds."
@@ -159,17 +159,17 @@ name = "mcp-102"
 origin = { source = "MCP", id = "102" }
 bit = 12
 category = "correctness"
-status = "verified-xemu"
+channel = "development"
 selection = "preset"
 summary = "Reactivate script-triggered objects after their script mod is removed."
-evidence = ["patches/mcp-102/2026-09-21-xemu.toml"]
+validation = ["patches/mcp-102/2026-09-21-xemu.toml"]
 
 [[patch]]
 name = "mcp-140"
 origin = { source = "MCP", id = "140" }
 bit = 11
 category = "performance"
-status = "implemented"
+channel = "development"
 selection = "preset"
 source = "tes3xmcp140.c"
 summary = "Throttle loading-screen redraws to one every 50 milliseconds."
@@ -178,17 +178,17 @@ summary = "Throttle loading-screen redraws to one every 50 milliseconds."
 name = "dxt5-size"
 bit = 14
 category = "core"
-status = "verified-xemu"
+channel = "development"
 selection = "preset"
 source = "tes3xdxt5.c"
 summary = "Allocate DXT5 textures at their real size, not a negative one that corrupts video memory."
-evidence = ["patches/dxt5-size/2026-09-23-xemu.toml"]
+validation = ["patches/dxt5-size/2026-09-23-xemu.toml"]
 
 [[patch]]
 name = "video-arena"
 bit = 17
 category = "compat"
-status = "implemented"
+channel = "development"
 selection = "preset"
 source = "tes3xarena.c"
 summary = "With more than 64 MB, size the texture and vertex buffer arena from [Xbox] VideoMemoryKB."
@@ -198,68 +198,68 @@ name = "rotating-autosaves"
 origin = { source = "OpenMW" }
 bit = 8
 category = "qol"
-status = "verified-xemu"
+channel = "development"
 selection = "preset"
 source = "tes3xsaves.c"
 summary = "Rotate automatic saves through INI-configurable slots."
-evidence = ["patches/rotating-autosaves/2026-09-23-xemu.toml"]
+validation = ["patches/rotating-autosaves/2026-09-23-xemu.toml"]
 
 [[patch]]
 name = "build-preferences"
 bit = 15
 category = "qol"
-status = "verified-xemu"
+channel = "development"
 selection = "option"
 source = "tes3xprefs.c"
 summary = "Apply profile-selected player preferences after stored Xbox options load."
-evidence = ["patches/build-preferences/2026-09-24-xemu.toml"]
+validation = ["patches/build-preferences/2026-09-24-xemu.toml"]
 
 [[patch]]
 name = "transition-autosaves"
 bit = 16
 category = "qol"
-status = "verified-xemu"
+channel = "development"
 selection = "preset"
 source = "tes3xsaves.c"
 summary = "Autosave before doors, scripted teleports, interventions and paid travel."
-evidence = ["patches/transition-autosaves/2026-09-23-xemu.toml"]
+validation = ["patches/transition-autosaves/2026-09-23-xemu.toml"]
 
 [[patch]]
 name = "diagnostics"
 bit = 6
 category = "instrumentation"
-status = "verified-xemu"
+channel = "development"
 selection = "preset"
 source = "tes3xdiag.c"
 summary = "Enable INI-controlled crash records, snapshots and a hang watchdog."
-evidence = ["findings: watchdog recorded and recovered from a 15-second stall"]
+validation = ["findings: watchdog recorded and recovered from a 15-second stall"]
 
 [[patch]]
 name = "console"
 bit = 7
 category = "qol"
-status = "verified-xemu"
+channel = "development"
 selection = "preset"
 source = "tes3xconsole.c"
 summary = "Make the in-game console reachable, by replacing its input gate."
-evidence = ["patches/console/2026-09-23-xemu.toml"]
+validation = ["patches/console/2026-09-23-xemu.toml"]
 
 [[patch]]
 name = "profile"
 bit = 13
 category = "instrumentation"
-status = "verified-xemu"
+channel = "development"
 selection = "option"
 source = "tes3xprof.c"
 takes = "VA[,VA...]"
 summary = "Time listed functions with RDTSC at every direct call site."
-evidence = ["patches/profile/2026-09-23-xemu.toml"]
+validation = ["patches/profile/2026-09-23-xemu.toml"]
 
 [[patch]]
 name = "heap-census"
 bit = 19
 category = "instrumentation"
-status = "implemented"
+channel = "development"
 selection = "option"
 source = "tes3xheap.c"
 summary = "Count live engine heap bytes by source file and line, or by call site."
@@ -268,8 +268,8 @@ summary = "Count live engine heap bytes by source file and line, or by call site
 name = "heap-region"
 bit = 20
 category = "compat"
-status = "verified-xemu"
+channel = "development"
 selection = "preset"
 source = "tes3xregion.c"
 summary = "With more than 64 MB, size the engine heap's region from [Xbox] HeapRegionKB."
-evidence = ["patches/heap-region/2026-09-24-xemu.toml"]
+validation = ["patches/heap-region/2026-09-24-xemu.toml"]

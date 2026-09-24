@@ -1,6 +1,7 @@
-claim = "Four successful engine autosaves rotate through three slots and wrap from slot 3 to slot 1."
-method = "Load the level-7 Seyda Neen fixture and request four saves through the rotating-autosave helper; it calls the retail SaveGame routine and advances only after success."
-not_established = "Hardware behaviour."
+kind = "single"
+purpose = "Four successful engine autosaves rotate through three slots and wrap from slot 3 to slot 1."
+procedure = "Load the level-7 Seyda Neen fixture and request four saves through the rotating-autosave helper; it calls the retail SaveGame routine and advances only after success."
+limitations = "Hardware behaviour."
 watch = 'autosave\.|exec[.>]|diag\.enabled'
 timeout = 240
 save = "vanilla-seyda-neen.ess"
@@ -20,5 +21,4 @@ exit
 '''
 
 [expect]
-control = ['diag\.enabled', 'console< GetLevel >> 7\.00', '!autosave\.', 'exec\.exit']
-patched = ['console< GetLevel >> 7\.00', 'autosave\.enabled 1', 'autosave\.slots 3', 'autosave\.slot 1', 'autosave\.slot 2', 'autosave\.slot 3', 'exec\.exit']
+test = ['console< GetLevel >> 7\.00', 'autosave\.enabled 1', 'autosave\.slots 3', 'autosave\.slot 1', 'autosave\.slot 2', 'autosave\.slot 3', 'exec\.exit']

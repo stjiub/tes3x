@@ -25,7 +25,7 @@ MCP's Keep Replaced Refs is a save-side merge mode, not a load-time choice, and 
 ## What remains
 
 Builds boot and play a full vanilla intro without regression, but the drop branch has never
-executed in a test: no run has logged `refs.orphan`. A proof needs one controlled failed
+executed in a test: no run has logged `refs.orphan`. A comparison validation needs one controlled failed
 resolution showing:
 
 1. with `DropReplacedRefs=1`, `refs.orphan` in the log, the reference dropped, and the cell
