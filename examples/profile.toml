@@ -31,12 +31,10 @@ mode = "delta-bsa"
 # Remove every [[mods]] block and profile.library for a patches-only build.
 # For mods without engine fixes, keep the mod blocks and use preset = "minimal".
 [[mods]]
-name = "Example Mod"                # folder name inside the mod library
+id = "example-mod"                  # stable id from library.toml
+version = "1.0"
+components = ["extra-textures"]     # optional installer layers
 order = 10                           # higher order wins file conflicts
-
-[[mods]]
-name = "Another Mod"
-order = 20
 # enabled = false
 # optional = true
-# plugins = ["Another Mod.esp"]      # include only these plugins from this mod
+# plugins = ["Example Mod.esp"]      # include only these plugins from this mod

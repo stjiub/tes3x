@@ -16,6 +16,7 @@ another file. Relative paths are resolved from the local config's directory.
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `vanilla_root` | string | none | Clean retail game folder containing both XBEs, `Morrowind.ini` and `Data Files`. Required to build unless `--vanilla` is used. |
+| `mod_library` | string | none | Mod library root. A profile's `library` takes precedence. |
 | `build_root` | string | `build` | Parent directory for profile output folders. |
 | `llvm` | string | `PATH` | Directory containing `clang` and `lld-link`. |
 | `hardlink_retail` | boolean | `false` | Hardlink unchanged retail files when source and output are on the same volume. |
@@ -42,7 +43,7 @@ The annotated [example profile](../examples/profile.toml) is the shortest starti
 | `title` | string | retail title | Dashboard title written to both XBEs and selected dashboard metadata. |
 | `dashboards` | array of strings | `["xbmc4gamers"]` | Dashboard metadata formats to write when `title` is set. Supported: `xbmc4gamers`; use `[]` for none. |
 | `remote_root` | string | local config | Destination game folder for this build. |
-| `library` | string | none | Directory containing one folder per mod. Required when a mod is enabled. |
+| `library` | string | local config | Directory containing mod folders and optional `library.toml`. |
 
 ### `[patches]`
 
@@ -105,12 +106,17 @@ Add one table per mod. Remove all mod tables and `profile.library` for a patches
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `name` | string | required | Folder or file path relative to `profile.library`. |
+| `id` | string | required | Stable id from `library.toml`. |
+| `version` | string | library default | Installed release selected for a managed mod. |
+| `components` | array of strings | component defaults | Named optional layers selected from the release. |
 | `order` | integer | `0` | Conflict priority; higher values win. |
 | `enabled` | boolean | `true` | Include this mod. |
 | `optional` | boolean | `false` | Skip the mod if its folder is absent. |
 | `plugins` | array of strings | all | Include only these plugins from the mod folder. |
 | `loose` | boolean | `false` | Ship this mod's winning assets loose instead of archiving them. |
+
+Every entry needs exactly one of `name` or `id`. See [managed mod libraries](mod-library.md) for
+version and component definitions.
 
 ### `[ini]`
 

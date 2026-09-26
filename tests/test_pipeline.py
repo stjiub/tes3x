@@ -273,14 +273,22 @@ class PipelinePlanTests(unittest.TestCase):
                 pipeline_main([str(profile), '--config', str(local), '--check', '--dry-run'])
             self.assertIn('target: x F:/Games/Profile', out.getvalue())
 
+    def test_local_config_can_supply_mod_library(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            profile = Path(tmp) / 'p.toml'
+            profile.write_text('[profile]\nname = "p"\n[[mods]]\nname = "Example"\n',
+                               encoding='utf-8')
+            local = Path(tmp) / 'local.toml'
+            local.write_text('[paths]\nmod_library = "mods"\n', encoding='utf-8')
+            self.assertEqual(pipeline_main([str(profile), '--config', str(local), '--check']), 0)
+
     def test_profile_validation_rejects_unknown_and_ill_typed_fields(self):
         with self.assertRaisesRegex(PipelineError, 'unknown profile keys: nmae'):
             validate_profile({'profile': {'name': 'p', 'nmae': 'typo'}})
         with self.assertRaisesRegex(PipelineError, r'mods\[1\]\.order must be an integer'):
             validate_profile({'profile': {'name': 'p', 'library': 'mods'},
                               'mods': [{'name': 'm', 'order': 'first'}]})
-        with self.assertRaisesRegex(PipelineError, 'profile.library is required'):
-            validate_profile({'profile': {'name': 'p'}, 'mods': [{'name': 'm'}]})
+        validate_profile({'profile': {'name': 'p'}, 'mods': [{'name': 'm'}]})
         with self.assertRaisesRegex(PipelineError, 'preferences.invert_look must be a boolean'):
             validate_profile({'profile': {'name': 'p'},
                               'preferences': {'invert_look': 'no'}})

@@ -137,16 +137,18 @@ def validate_profile(profile):
         field = f"mods[{index}]"
         if not isinstance(mod, dict):
             raise PipelineError(f"{field} must be a table")
-        known(mod, {"name", "order", "enabled", "optional", "plugins", "loose"}, field)
+        known(mod, {"name", "id", "version", "components", "order", "enabled", "optional",
+                    "plugins", "loose"}, field)
         typed(mod, "name", (str,), field)
-        if not mod.get("name"):
-            raise PipelineError(f"{field}.name is required")
+        typed(mod, "id", (str,), field)
+        typed(mod, "version", (str,), field)
+        if bool(mod.get("name")) == bool(mod.get("id")):
+            raise PipelineError(f"{field} needs exactly one of name or id")
         typed(mod, "order", (int,), field)
         for key in ("enabled", "optional", "loose"):
             typed(mod, key, (bool,), field)
         string_list(mod.get("plugins"), f"{field}.plugins")
-    if enabled_mods(profile) and not identity.get("library"):
-        raise PipelineError("profile.library is required when mods are enabled")
+        string_list(mod.get("components"), f"{field}.components")
 
 
 def validate_local_config(local):
@@ -159,10 +161,10 @@ def validate_local_config(local):
             raise PipelineError(f"{section} must be a table")
 
     paths = local.get("paths", {})
-    extra = set(paths) - {"vanilla_root", "build_root", "llvm", "hardlink_retail"}
+    extra = set(paths) - {"vanilla_root", "mod_library", "build_root", "llvm", "hardlink_retail"}
     if extra:
         raise PipelineError("unknown paths keys: " + ", ".join(sorted(extra)))
-    for key in ("vanilla_root", "build_root", "llvm"):
+    for key in ("vanilla_root", "mod_library", "build_root", "llvm"):
         if key in paths and type(paths[key]) is not str:
             raise PipelineError(f"paths.{key} must be a string")
     if "hardlink_retail" in paths and type(paths["hardlink_retail"]) is not bool:
@@ -319,7 +321,8 @@ def mod_inventory(profile):
     """The selected mod configuration, with no library or machine paths."""
     result = []
     for mod in sorted(enabled_mods(profile), key=lambda item: item.get("order", 0)):
-        item = {"name": mod["name"], "order": mod.get("order", 0)}
+        item = {key: mod[key] for key in ("name", "id", "version", "components") if key in mod}
+        item["order"] = mod.get("order", 0)
         for key in ("plugins", "loose"):
             if key in mod:
                 item[key] = mod[key]
@@ -566,6 +569,10 @@ def main(argv=None):
     base = local_path.parent if local_path else Path.cwd()
     paths = local.get("paths", {})
     deploy = local.get("deploy", {})
+    library_value = profile.get("profile", {}).get("library") or paths.get("mod_library")
+    library = config_path(library_value, base).resolve() if library_value else None
+    if enabled_mods(profile) and not library:
+        raise PipelineError("set profile.library or paths.mod_library when mods are enabled")
 
     plan = resolve_patch_plan(profile, args.preset, args.enable, args.disable,
                               args.package_mode)
@@ -674,6 +681,8 @@ def main(argv=None):
         if has_mods:
             build_cmd = [sys.executable, TOOLS / "tes3x_build.py", profile_path,
                          "--out", tree, "--json", manifest, "--vanilla", data_files]
+            if library:
+                build_cmd += ["--library", library]
             if remote:
                 build_cmd += ["--remote-root", remote]
             run(build_cmd)

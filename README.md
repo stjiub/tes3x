@@ -29,6 +29,8 @@ Use a separate profile file for each build.
 
 The mod library contains one directory per mod, with the layout each mod would use under
 `Data Files`. Wrapper directories from extracted archives are detected automatically.
+For versions and optional installer folders, add a managed `library.toml` and select mod ids and
+components from the profile. See [managed mod libraries](docs/mod-library.md).
 
 The same profile format covers every build:
 

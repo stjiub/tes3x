@@ -9,6 +9,7 @@ import struct
 import sys
 import tomllib
 from collections import defaultdict
+from tes3x_library import LibraryError, load_library, resolve_selection
 from tes3x_paths import DEFAULT_REMOTE_ROOT, require_paths
 
 FATX_NAME_MAX = 42
@@ -72,30 +73,51 @@ def texture_dims(path):
 class Mod:
     def __init__(self, name, path, order, plugins=None, exclude=()):
         self.name = name
-        self.single = os.path.isfile(path)
-        self.root = os.path.dirname(path) if self.single else find_data_root(path)
+        paths = list(path) if isinstance(path, (list, tuple)) else [path]
+        layers = [(str(item["path"]), [str(value) for value in item.get("exclude", [])])
+                  if isinstance(item, dict) else (str(item), []) for item in paths]
+        self.single = len(layers) == 1 and os.path.isfile(layers[0][0])
+        self.roots = [os.path.dirname(source) if os.path.isfile(source)
+                      else find_data_root(source) for source, _blocked in layers]
+        self.root = self.roots[0]
         self.order = order
-        self.want = {p.lower() for p in plugins} if plugins else None
+        self.want = {p.lower() for p in plugins} if plugins is not None else None
         self.skipped_plugins = []
         self.excluded = 0
         self.files = {}
-        if self.single:
-            self.files[os.path.basename(path).lower()] = path
-            return
-        for dirpath, _, filenames in os.walk(self.root):
-            rel = os.path.relpath(dirpath, self.root)
-            for fn in filenames:
-                key = os.path.normpath(os.path.join(rel, fn)).replace("\\", "/").lower()
-                key = key[2:] if key.startswith("./") else key
-                if any(fnmatch.fnmatch(key, pat) or fnmatch.fnmatch(os.path.basename(key), pat)
-                       for pat in exclude):
-                    self.excluded += 1
-                    continue
-                if key.endswith(PLUGIN_EXT) and self.want is not None:
-                    if os.path.basename(key) not in self.want:
-                        self.skipped_plugins.append(os.path.basename(key))
+        self.relative = {}
+        for (source, blocked), root in zip(layers, self.roots):
+            if os.path.isfile(source):
+                name = os.path.basename(source)
+                self.files[name.lower()] = source
+                self.relative[name.lower()] = name
+                continue
+            blocked = [os.path.normcase(os.path.abspath(path)) for path in blocked]
+
+            def is_blocked(path):
+                path = os.path.normcase(os.path.abspath(path))
+                return any(path == value or path.startswith(value + os.sep) for value in blocked)
+
+            for dirpath, dirnames, filenames in os.walk(root):
+                dirnames[:] = [name for name in dirnames
+                               if not is_blocked(os.path.join(dirpath, name))]
+                rel_dir = os.path.relpath(dirpath, root)
+                for fn in filenames:
+                    if is_blocked(os.path.join(dirpath, fn)):
                         continue
-                self.files[key] = os.path.join(dirpath, fn)
+                    rel = os.path.normpath(os.path.join(rel_dir, fn)).replace("\\", "/")
+                    rel = rel[2:] if rel.startswith("./") else rel
+                    key = rel.lower()
+                    if any(fnmatch.fnmatch(key, pat) or fnmatch.fnmatch(os.path.basename(key), pat)
+                           for pat in exclude):
+                        self.excluded += 1
+                        continue
+                    if key.endswith(PLUGIN_EXT) and self.want is not None:
+                        if os.path.basename(key) not in self.want:
+                            self.skipped_plugins.append(os.path.basename(key))
+                            continue
+                    self.files[key] = os.path.join(dirpath, fn)
+                    self.relative[key] = rel
 
 
 def load_profile(path):
@@ -175,7 +197,7 @@ def report(mods, filemap, conflicts, problems):
     tex_bytes, hist = texture_budget(filemap)
     if tex_bytes:
         mb = tex_bytes / 1048576
-        print(f"\n== TEXTURE BUDGET (source bytes, before conversion) ==")
+        print("\n== TEXTURE BUDGET (source bytes, before conversion) ==")
         print(f"  {sum(hist.values())} textures, {mb:.1f} MB "
               f"({mb / RETAIL_TEXTURE_MB:.1f}x retail's {RETAIL_TEXTURE_MB} MB) on a 64 MB console")
         print("  conversion shrinks this; the packed archive is the figure that counts")
@@ -249,8 +271,8 @@ def materialize(filemap, mods, out, rules, cache="cache/tex", load_order=None, s
     plugins = []
 
     for key, (mod, src) in sorted(filemap.items()):
-        rel = os.path.relpath(src, mod.root).replace("\\", "/")
-        name = os.path.basename(rel)
+        rel = getattr(mod, "relative", {}).get(
+            key, os.path.relpath(src, mod.root).replace("\\", "/"))
         if any(len(part) > name_max for part in rel.split('/')):
             raise ValueError(f'FATX name too long: {rel}; renaming requires rewriting asset references')
 
@@ -298,6 +320,7 @@ def materialize(filemap, mods, out, rules, cache="cache/tex", load_order=None, s
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("profile")
+    ap.add_argument("--library", help="override profile.library (normally from local config)")
     ap.add_argument("--json", help="write manifest to this path")
     ap.add_argument("--out", help="materialize the resolved tree into this directory")
     ap.add_argument("--prune", action="store_true", help="prune unreachable mod assets (requires --vanilla)")
@@ -320,7 +343,7 @@ def main():
         ap.error("--sound-rate requires --sox")
 
     prof = load_profile(args.profile)
-    library = prof.get("profile", {}).get("library")
+    library = args.library or prof.get("profile", {}).get("library")
     if not library:
         sys.exit("profile.library is required: the folder holding one directory per mod")
 
@@ -332,17 +355,38 @@ def main():
     exclude = rules.get("exclude", DEFAULT_EXCLUDE)
 
     mods, missing = [], []
+    managed = any("id" in entry for entry in prof.get("mods", []))
+    try:
+        catalog = load_library(library) if managed else None
+    except LibraryError as exc:
+        sys.exit(str(exc))
+    selected_ids = {entry.get("id") for entry in prof.get("mods", [])
+                    if entry.get("enabled", True) and entry.get("id")}
     for entry in prof.get("mods", []):
         if not entry.get("enabled", True):
             continue
-        path = os.path.join(library, entry["name"])
-        if not os.path.exists(path):
+        try:
+            selection = resolve_selection(entry, library, catalog)
+        except (LibraryError, KeyError) as exc:
             if entry.get("optional", False):
-                print(f"  optional mod not found, skipped: {entry['name']}", file=sys.stderr)
-            else:
-                missing.append(entry["name"])
+                print(f"  optional mod skipped: {exc}", file=sys.stderr)
+                continue
+            missing.append(str(exc))
             continue
-        mods.append(Mod(entry["name"], path, entry.get("order", 0),
+        absent = [str(path) for path in selection["roots"] if not path.exists()]
+        if absent:
+            if entry.get("optional", False):
+                print(f"  optional mod not found, skipped: {selection['name']}", file=sys.stderr)
+            else:
+                missing.extend(absent)
+            continue
+        absent_dependencies = set(selection.get("dependencies", [])) - selected_ids
+        if absent_dependencies:
+            missing.append(f"{selection['id']} needs profile mod ids "
+                           + ", ".join(sorted(absent_dependencies)))
+            continue
+        label = selection["name"] + (f" {selection['version']}" if selection["version"] else "")
+        mods.append(Mod(label, selection.get("layers", selection["roots"]), entry.get("order", 0),
                         entry.get("plugins"), exclude))
     if missing:
         # A deploy mirrors the build, so a silently omitted mod would be deleted from the Xbox.

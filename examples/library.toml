@@ -1,0 +1,25 @@
+# Put this file at the root configured as profile.library.
+schema = 1
+
+[[mod]]
+id = "example-mod"
+name = "Example Mod"
+
+[[mod.release]]
+version = "1.0"
+folder = "Example Mod 1.0"
+default = true
+roots = ["00 Core"]
+dependencies = []
+
+[[mod.release.component]]
+id = "extra-textures"
+name = "Extra textures"
+roots = ["10 Extra Textures"]
+default = false
+
+[[mod.release.component]]
+id = "compatibility"
+name = "Compatibility plugin"
+roots = ["20 Compatibility"]
+default = false
