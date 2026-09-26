@@ -1,0 +1,19 @@
+kind = "single"
+purpose = "The complete profile starts a new game, reaches the opening ship, loads Balmora, and exits without a diagnosed crash, hang or fatal error."
+procedure = "Build the profile normally, boot its engine directly, start a new game, inspect the player position, move to Balmora, inspect it again, and exit."
+limitations = "This exercises startup and two visited cells in xemu. It does not establish quest correctness, complete asset coverage, performance, or original-Xbox behavior."
+watch = 'exec[.>]|console< GetPos|console\.more|diag\.|crash\.|hang\.|fatal\.'
+timeout = 180
+xemu = ["--skip-intro", "--no-reboot"]
+script = '''
+@start new
+wait 30
+player->getpos x
+coc "Balmora"
+wait 60
+player->getpos x
+exit
+'''
+
+[expect]
+test = ['exec\.loaded ', 'console< GetPos >> 61\.00', 'console< GetPos >> -12288\.00', 'exec\.exit']

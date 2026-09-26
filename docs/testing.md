@@ -124,6 +124,28 @@ The census needs an 8 MB table, so run it on a console or emulator with 128 MB. 
 allocations do not depend on the memory size, so a 128 MB census also describes a 64 MB console.
 Allocations outside that heap, such as the texture and vertex-buffer arena, are not counted.
 
+## Profile smoke tests
+
+Test the exact mod order, versions, components, plugins, package mode and patch choices in a normal
+profile:
+
+```powershell
+python tools/tes3x_test.py profile.toml --record
+python tools/tes3x_test.py profile.toml --keep-artifacts always
+python tools/tes3x_test.py profile.toml --library-all --record
+python tools/tes3x_test.py profile.toml --library-all --library "D:/Mods To Test"
+```
+
+The smoke scenario adds diagnostics and the command executor as recorded test instrumentation,
+boots the engine directly, starts a new game, visits Balmora and rejects diagnosed crashes, hangs
+and fatal errors. A pass describes only that scripted route; compatibility status remains a manual
+decision based on observation.
+
+Large run artifacts are retained on failure by default. `--keep-artifacts never` removes them even
+after failure; `always` keeps every ISO and pipeline tree. A recorded result copies its compact log
+and provenance out before cleanup. `--library-all` uses the profile as a template and exercises the
+default release/components of each managed library entry as an isolated normal profile.
+
 ## Validation
 
 A patch can keep a repeatable [`scenario.toml`](validation.md) beside its notes. A single scenario
