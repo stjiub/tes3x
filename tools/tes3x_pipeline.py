@@ -151,7 +151,7 @@ def validate_profile(profile):
 
 def validate_local_config(local):
     """Validate the public tables while leaving private extension tables alone."""
-    unknown = set(local) - {"paths", "deploy", "xemu"}
+    unknown = set(local) - {"paths", "deploy", "xemu", "rig"}
     if unknown:
         raise PipelineError("unknown local config sections: " + ", ".join(sorted(unknown)))
     for section in ("paths", "deploy"):
