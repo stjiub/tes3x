@@ -48,6 +48,16 @@ python tools/tes3x_pipeline.py profile.toml
 `--check` validates and resolves the profile without building. A normal build is written to
 `build/pipeline/<name>/deploy`. Add `--dry-run` to preview an FTP sync or `--deploy` to apply it.
 
+Before deployment, an optional xemu smoke test builds and exercises the exact profile:
+
+```powershell
+python tools/tes3x_test.py profile.toml --record
+```
+
+For a graphical profile editor, install `requirements-gui.txt` and run
+`python tools/tes3x_gui.py profile.toml`. It also edits local project settings, reports Xbox FTP
+connectivity, deploys with transfer verification and retrieves hook logs from the console.
+
 ## Deploy
 
 `--deploy` synchronizes the build to `remote_root`; files there that are not in the build are
@@ -122,6 +132,10 @@ The pipeline uses these commands internally; they can also be run directly:
 | `tes3x_build.py` | Collect mods only, and report conflicts, texture sizes and missing masters. |
 | `tes3x_pack.py` | Pack a collected mod tree into a game folder. |
 | `tes3x_deploy.py` | Upload a game folder to the Xbox. |
+| `tes3x_test.py` | Build and run a profile smoke test, or test a managed library one mod at a time. |
+| `tes3x_gui.py` | Edit managed profiles with the optional PySide6 interface. |
+| `tes3x_library.py` | Scan or validate a versioned local mod library. |
+| `tes3x_mods.py` | Generate a readable compatibility page from manual `mods.toml` decisions. |
 | `tes3x_fetch.py` | Copy files back off the Xbox, such as saves or logs. |
 | `tes3x_tour.py` | Write a script that walks through a plugin's cells logging free memory; summarize the log. |
 | `tes3x_audit.py` | Check any `Data Files` folder for long names, junk files and duplicates. |
