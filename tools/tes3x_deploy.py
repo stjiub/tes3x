@@ -133,6 +133,27 @@ def orphans(remote, local_ci):
             if r.lower() not in local_ci and not r.lower().startswith(DASHBOARD_DIR)]
 
 
+def verify_uploads(ftp, base, local, paths, mode):
+    """Verify uploaded files by remote size, or by retrieving and hashing their contents."""
+    if mode == "none" or not paths:
+        return
+    remote = remote_tree(ftp, base)
+    remote_ci = {path.lower(): size for path, size in remote.items()}
+    problems = [f"{path}: remote size {remote_ci.get(path.lower(), 'missing')}, "
+                f"expected {local[path][0]}"
+                for path in paths if remote_ci.get(path.lower()) != local[path][0]]
+    if problems:
+        raise RuntimeError("upload size verification failed: " + "; ".join(problems))
+    if mode == "hash":
+        for path in paths:
+            digest = hashlib.sha1()
+            name = ftp_basename(ftp, posixpath.join(base, path))
+            ftp.retrbinary(f"RETR {name}", digest.update, blocksize=64 * 1024)
+            expected = sha1(local[path][2])
+            if digest.hexdigest() != expected:
+                raise RuntimeError(f"upload hash verification failed: {path}")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("tree", help="staged deploy tree (tes3x_pack --out)")
@@ -144,6 +165,8 @@ def main():
                          "tree is left as it stands")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--clear-cache", action="store_true", help="empty X:/Y:/Z: cache partitions")
+    ap.add_argument("--verify", choices=("none", "size", "hash"), default="none",
+                    help="verify uploaded files after transfer; hash retrieves every upload")
     ap.add_argument("--plugin-delay", type=float, default=2.5,
                     help="seconds between plugin uploads when MFMT is unsupported")
     args = ap.parse_args()
@@ -260,6 +283,10 @@ def main():
         print(f"\r  {human(sent)}/{human(up_bytes)}  {human(sent/max(el,1))}/s   ", end="", flush=True)
 
     print(f"\n  uploaded in {time.time()-t0:.0f}s")
+
+    verify_uploads(ftp, base, local, assets + plugins, args.verify)
+    if args.verify != "none":
+        print(f"  verified {len(assets) + len(plugins)} uploaded files by {args.verify}")
 
     entries = {} if not args.only else dict(manifest)
     for r in local:

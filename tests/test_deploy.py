@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from tes3x_deploy import ensure_dirs, ftp_basename, remote_tree
+from tes3x_deploy import ensure_dirs, ftp_basename, remote_tree, verify_uploads
 
 
 class FakeFtp:
@@ -55,6 +55,13 @@ class FakeFtp:
             raise ftplib.error_perm("550 storing in root not allowed")
         self.files[posixpath.join(self.current, name)] = stream.read()
 
+    def retrbinary(self, command, callback, blocksize=8192):
+        self.calls.append(("retrbinary", self.current, command, blocksize))
+        verb, name = command.split(" ", 1)
+        if verb != "RETR":
+            raise AssertionError(command)
+        callback(self.files[posixpath.join(self.current, name)])
+
 
 class DeployFtpTests(unittest.TestCase):
     def test_remote_tree_uses_cwd_and_restores_parent(self):
@@ -86,6 +93,21 @@ class DeployFtpTests(unittest.TestCase):
 
     def test_missing_remote_tree_is_empty(self):
         self.assertEqual(remote_tree(FakeFtp(), "F:/Games/NewTarget"), {})
+
+    def test_hash_verification_reads_remote_upload(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "a.bin"
+            source.write_bytes(b"content")
+            ftp = FakeFtp()
+            base = "/F/Games/Test"
+            ftp.dirs.add(base)
+            ftp.entries[base] = [("file", "a.bin", 7)]
+            ftp.files[base + "/a.bin"] = b"content"
+            verify_uploads(ftp, base, {"a.bin": (7, 0, str(source))}, ["a.bin"], "hash")
+            ftp.files[base + "/a.bin"] = b"corrupt"
+            with self.assertRaisesRegex(RuntimeError, "hash verification failed"):
+                verify_uploads(ftp, base, {"a.bin": (7, 0, str(source))}, ["a.bin"], "hash")
 
 
 if __name__ == "__main__":

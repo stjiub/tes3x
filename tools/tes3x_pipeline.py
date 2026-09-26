@@ -537,12 +537,18 @@ def main(argv=None):
     action.add_argument("--dry-run", action="store_true",
                         help="build normally, then list what --deploy would upload or delete "
                              "on the Xbox without changing it")
+    ap.add_argument("--verify-deploy", choices=("none", "size", "hash"), default="none",
+                    help="after --deploy, verify uploaded files; hash downloads each upload")
+    ap.add_argument("--discard-build", action="store_true",
+                    help="delete the regenerable pipeline output after a verified deployment")
     ap.add_argument("--ask-password", action="store_true",
                     help="type the Xbox FTP password at a prompt instead of reading it from "
                          "the local config")
     ap.add_argument("--check", action="store_true",
                     help="validate and resolve the profile, print the build summary, then stop")
     args = ap.parse_args(argv)
+    if args.discard_build and (not args.deploy or args.verify_deploy == "none"):
+        ap.error("--discard-build requires --deploy and --verify-deploy size or hash")
 
     profile_path = Path(args.profile).resolve()
     require_file(profile_path, "profile")
@@ -777,9 +783,14 @@ def main(argv=None):
             deploy_cmd.append("--ask-password")
         if args.dry_run:
             deploy_cmd.append("--dry-run")
+        if args.deploy and args.verify_deploy != "none":
+            deploy_cmd += ["--verify", args.verify_deploy]
         if profile.get("rules", {}).get("clear_cache_partitions", False) and args.deploy:
             deploy_cmd.append("--clear-cache")
         run(deploy_cmd)
+        if args.discard_build:
+            shutil.rmtree(output)
+            print(f"discarded verified build: {output}")
     return 0
 
 

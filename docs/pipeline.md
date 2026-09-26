@@ -35,6 +35,17 @@ python tools/tes3x_pipeline.py examples/profile.toml --dry-run
 python tools/tes3x_pipeline.py examples/profile.toml --deploy
 ```
 
+To discard regenerable output after transfer, request post-upload verification explicitly:
+
+```powershell
+python tools/tes3x_pipeline.py profile.toml --deploy --verify-deploy size --discard-build
+python tools/tes3x_pipeline.py profile.toml --deploy --verify-deploy hash --discard-build
+```
+
+`size` re-lists uploaded files. `hash` retrieves every uploaded file and compares its SHA-1, so it
+can roughly double transfer traffic. The remote deployment manifest is written only after the
+requested verification succeeds.
+
 The default output is `BUILD_ROOT/PROFILE_NAME`. Only an empty directory or an
 output carrying the pipeline marker can be replaced. Work from a failed stage is
 kept and reported for inspection. The deploy command creates missing destination
