@@ -57,6 +57,7 @@ exit
 | `click MENU WIDGET` | press a menu widget by name |
 | `mark LABEL` | log free memory now, as `mem.LABEL <KB>` |
 | `exit` | turn the Xbox off |
+| `reboot` | restart the Xbox into the dashboard |
 | `# ...` | comment |
 | anything else | a console command |
 

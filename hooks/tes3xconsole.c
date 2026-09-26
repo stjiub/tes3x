@@ -215,6 +215,7 @@ int tes3x_autosave_command(void *game, const char *text);
 #define NtReadFile KFN(THUNK_NtReadFile, fn_NtReadFile)
 #define NtClose KFN(THUNK_NtClose, fn_NtClose)
 #define HalInitiateShutdown KFN(THUNK_HalInitiateShutdown, fn_HalInitiateShutdown)
+#define HalReturnToFirmware KFN(THUNK_HalReturnToFirmware, fn_HalReturnToFirmware)
 #define NtQueryInformationFile KFN(THUNK_NtQueryInformationFile, fn_NtQueryInformationFile)
 #define MmAllocateSystemMemory KFN(THUNK_MmAllocateSystemMemory, fn_MmAllocateSystemMemory)
 #define MmFreeSystemMemory KFN(THUNK_MmFreeSystemMemory, fn_MmFreeSystemMemory)
@@ -236,6 +237,8 @@ typedef struct {
 } MM_STATS;
 
 typedef void(__stdcall *fn_HalInitiateShutdown)(void);
+typedef void(__stdcall *fn_HalReturnToFirmware)(u32 routine);
+#define HAL_REBOOT_ROUTINE 1
 
 /* LAUNCH_DATA_PAGE: a header, then the title's launch data at 0x400. XGetLaunchInfo copies the
  * data out and frees the page. */
@@ -1113,6 +1116,10 @@ static void exec_step(void)
     } else if (starts_with(line, "exit") && !line[4]) {
         tes3x_log("exec.exit", 0);
         HalInitiateShutdown();
+    } else if (starts_with(line, "reboot") && !line[6]) {
+        /* A full reboot goes through the BIOS to the dashboard, like power-on. */
+        tes3x_log("exec.reboot", 0);
+        HalReturnToFirmware(HAL_REBOOT_ROUTINE);
     } else if (starts_with(line, "click ")) {
         if (!exec_click(line + 6) && ++exec_tries < EXEC_CLICK_FRAMES)
             return;
