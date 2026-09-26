@@ -8,6 +8,7 @@
 #include "tes3x_thunks.h"
 #include "tes3xnt.h"
 #include "tes3xlog.h"
+#include "tes3xregion.h"
 
 #ifndef TES3X_INI_GET_STRING
 #error "define TES3X_INI_GET_STRING to the VA of the ini string reader"
@@ -49,10 +50,132 @@ typedef void(__thiscall *fn_heap_free)(void *, void *);
 #define DEFAULT_KB (96u * 1024u)
 #define MAX_KB (96u * 1024u)
 #define COMMIT_STEP 0x10000u
+#define PAGE 4096u
+#define MAX_PAGES (MAX_KB * 1024u / PAGE)
+
+#define PTE(va) ((volatile u32 *)(0xC0000000u + (((u32)(va) >> 12) << 2)))
+#define PTE_PRESENT 0x001u
+#define PTE_ACCESSED 0x020u
 
 /* Only touched under the heap's own lock, or before any thread can allocate. */
 static char *region;
 static u32 reserved, committed, commit_failed;
+static u32 ws_bits[(MAX_PAGES + 31) / 32];
+static u32 ws_active, ws_union_pages;
+
+static u32 lock_irq(void)
+{
+    u32 flags;
+    __asm__ volatile("pushfl\n\tpopl %0\n\tcli" : "=r"(flags) : : "memory");
+    return flags;
+}
+
+static void unlock_irq(u32 flags)
+{
+    __asm__ volatile("pushl %0\n\tpopfl" : : "r"(flags) : "memory", "cc");
+}
+
+static void flush_tlb(void)
+{
+    u32 cr3;
+    __asm__ volatile("movl %%cr3, %0\n\tmovl %0, %%cr3" : "=r"(cr3) : : "memory");
+}
+
+/* Count pages touched since the preceding sweep, add them to the union, clear accessed bits and
+ * flush the TLB once. Interrupts stay off so an access cannot disappear between clear and flush. */
+static u32 ws_sweep(int record)
+{
+    u32 flags = lock_irq();
+    u32 page, pages = committed / PAGE, touched = 0;
+
+    for (page = 0; page < pages; page++) {
+        volatile u32 *entry = PTE(region + page * PAGE);
+        u32 pte = *entry;
+
+        if (!(pte & PTE_PRESENT) || !(pte & PTE_ACCESSED))
+            continue;
+        touched++;
+        if (record && !(ws_bits[page >> 5] & (1u << (page & 31)))) {
+            ws_bits[page >> 5] |= 1u << (page & 31);
+            ws_union_pages++;
+        }
+        *entry = pte & ~PTE_ACCESSED;
+    }
+    flush_tlb();
+    unlock_irq(flags);
+    return touched;
+}
+
+static void ws_log(const char *label)
+{
+    char tag[64];
+    u32 n = 3, touched;
+
+    if (!ws_active || !region)
+        return;
+    touched = ws_sweep(1);
+    tag[0] = 'w';
+    tag[1] = 's';
+    tag[2] = '.';
+    while (*label && n < sizeof(tag) - 1)
+        tag[n++] = *label++;
+    tag[n] = 0;
+    tes3x_log(tag, touched);
+    tes3x_log("ws.union_pages", ws_union_pages);
+    tes3x_log("ws.committed_pages", committed / PAGE);
+}
+
+static int text_equal(const char *a, const char *b)
+{
+    while (*a && *b) {
+        char ca = *a++, cb = *b++;
+        if (ca >= 'A' && ca <= 'Z')
+            ca += 'a' - 'A';
+        if (cb >= 'A' && cb <= 'Z')
+            cb += 'a' - 'A';
+        if (ca != cb)
+            return 0;
+    }
+    return !*a && !*b;
+}
+
+void tes3x_region_mark(const char *label)
+{
+    ws_log(label);
+}
+
+int tes3x_region_command(const char *text)
+{
+    u32 i;
+
+    if (text_equal(text, "tes3xws reset")) {
+        if (!region) {
+            tes3x_log("ws.no_region", 0);
+            return 1;
+        }
+        for (i = 0; i < sizeof(ws_bits) / sizeof(ws_bits[0]); i++)
+            ws_bits[i] = 0;
+        ws_union_pages = 0;
+        ws_active = 1;
+        ws_sweep(0);
+        tes3x_log_hex("ws.base", (u32)region);
+        tes3x_log("ws.reset", committed / PAGE);
+        return 1;
+    }
+    if (text_equal(text, "tes3xws stop")) {
+        ws_log("stop");
+        ws_active = 0;
+        return 1;
+    }
+    if (text_equal(text, "tes3xws")) {
+        if (!ws_active)
+            tes3x_log("ws.not_active", 0);
+        else
+            ws_log("sample");
+        return 1;
+    }
+    return 0;
+}
 
 u32 tes3x_region_size(void)
 {
@@ -152,4 +275,5 @@ void __fastcall tes3x_region_release(void *heap, void *unused, void *ptr)
     NtFreeVirtualMemory(&ptr, &len, MEM_RELEASE);
     region = 0;
     reserved = committed = 0;
+    ws_active = ws_union_pages = 0;
 }

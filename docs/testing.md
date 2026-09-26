@@ -89,6 +89,7 @@ end, names the last command and any crash or hang.
 ```
 python tools/tes3x_tour.py make TR_Mainland.esm --exteriors --step 3 -o tes3xexec.txt
 python tools/tes3x_tour.py make TR_Mainland.esm --interiors --prefix "Narsis" -o tes3xexec.txt
+python tools/tes3x_tour.py make TR_Mainland.esm --interiors --prefix "Narsis" --working-set -o tes3xexec.txt
 python tools/tes3x_tour.py report tes3xlog.txt
 ```
 
@@ -98,6 +99,11 @@ Exteriors are visited row by row, alternating direction, so each move is to a ne
 after each move (default 90), `--start` the `@start` line (default `new`), and the script ends
 with `exit` unless `--no-exit`. Free memory is the kernel's count of free pages; the engine's own
 heap can still be fragmented when it looks sufficient.
+
+`--working-set` adds `tes3xws reset` before the first mark. Run the game with `heap-region` enabled;
+each mark then samples the region's PTE accessed bits, and `report` adds the pages touched since the
+previous mark, the union since reset and the committed-page count. Prefer named, content-rich cells
+when the goal is a representative play workload; a wide exterior grid is a spatial baseline.
 
 ## Profiling
 

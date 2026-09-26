@@ -20,6 +20,9 @@
 #ifdef TES3X_PAGER
 #include "tes3xpager.h"
 #endif
+#ifdef TES3X_REGION
+#include "tes3xregion.h"
+#endif
 #ifdef TES3X_SAVES
 int tes3x_autosave_command(void *game, const char *text);
 #endif
@@ -819,6 +822,10 @@ static void run_command(const char *text)
     if (tes3x_pager_command(text))
         return;
 #endif
+#ifdef TES3X_REGION
+    if (tes3x_region_command(text))
+        return;
+#endif
 #ifdef TES3X_DIAGNOSTICS
     if (tes3x_diag_command(text))
         return;
@@ -1067,6 +1074,9 @@ static int exec_number(const char *s)
 static void exec_mark(const char *label)
 {
     MM_STATS st;
+#ifdef TES3X_REGION
+    const char *ws_label = label;
+#endif
     char tag[64];
     u32 n;
 
@@ -1081,6 +1091,9 @@ static void exec_mark(const char *label)
     if (MmQueryStatistics(&st) != 0)
         st.AvailablePages = 0;
     tes3x_log(tag, st.AvailablePages * 4);
+#ifdef TES3X_REGION
+    tes3x_region_mark(ws_label);
+#endif
 }
 
 /* One line per frame at most, so each command sees the frame the last one left. */

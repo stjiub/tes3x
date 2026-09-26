@@ -527,7 +527,7 @@ def main(argv=None):
                          "needs about 5 MB of tables")
     ap.add_argument("--pager-test", action="store_true",
                     help="add the demand pager prototype, whose console command tes3xpager "
-                         "runs a synthetic workload over a 16 MB paged region. Instrumentation "
+                         "runs a synthetic workload over a 64 MB paged region. Instrumentation "
                          "only: nothing in the engine is paged")
     ap.add_argument("--hardlink", action=argparse.BooleanOptionalAction,
                     help="hardlink unchanged retail files into the build instead of copying "

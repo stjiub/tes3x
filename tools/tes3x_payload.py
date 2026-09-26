@@ -21,7 +21,7 @@ from tes3x_patch import CONSOLE_PRINT_VSPRINTF, LOCATORS, find_transition_calls
 ROOT = Path(__file__).resolve().parents[1]
 HOOKS = ROOT / "hooks"
 HEADERS = ("tes3xdiag.h", "tes3xheap.h", "tes3xlog.h", "tes3xmem.h", "tes3xnt.h",
-           "tes3xpager.h", "tes3xprof.h", "tes3x_thunks.h")
+           "tes3xpager.h", "tes3xprof.h", "tes3xregion.h", "tes3x_thunks.h")
 DEFAULT_SOURCES = ("tes3xhook.c", "tes3xlog.c", "tes3xdiag.c")
 LLVM_DIRS = (Path("C:/Program Files/LLVM/bin"), Path("C:/msys64/clang64/bin"),
              Path("C:/msys64/mingw64/bin"))
@@ -267,6 +267,7 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         define("REGION_SPILL", hexva(fit + 6))
         define("REGION_CARVE", hexva(fit + 6 + struct.unpack_from(
             "<i", image.data, image.va_to_off(fit) + 2)[0]))
+        flags.append("-DTES3X_REGION")
         wanted["region_size"] = ("_tes3x_region_size_hook",)
         wanted["region_reserve"] = ("@tes3x_region_reserve@12",)
         wanted["region_carve"] = ("_tes3x_region_carve_hook",)

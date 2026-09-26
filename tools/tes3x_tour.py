@@ -23,6 +23,8 @@ from tes3x_records import records, subrecords  # noqa: E402
 CELL_INTERIOR = 0x01
 SESSION_START = re.compile(r"^0 ms entry\.free_kb ")
 MARK = re.compile(r"^(\d+) ms mem\.(.*) (\d+)$")
+WS_MARK = re.compile(r"^(\d+) ms ws\.(.*) (\d+)$")
+WS_META = {"base", "committed_pages", "no_region", "not_active", "reset", "union_pages"}
 
 
 def cells(paths):
@@ -84,7 +86,10 @@ def make(args):
     lines = []
     if args.start:
         lines.append("@start " + args.start)
-    lines += ["wait %d" % args.wait, "mark start"]
+    lines.append("wait %d" % args.wait)
+    if args.working_set:
+        lines.append("tes3xws reset")
+    lines.append("mark start")
     for command, label in stops:
         lines += [command, "wait %d" % args.wait, "mark " + label]
     if args.exit:
@@ -104,11 +109,23 @@ def last_session(text):
 def report(args):
     with open(args.log, encoding="latin-1") as f:
         lines = last_session(f.read())
-    marks, last_command, trouble, finished = [], None, [], False
+    marks, working_set, last_command, trouble, finished = [], [], None, [], False
+    ws_pending = None
     for line in lines:
         m = MARK.match(line.strip())
         if m:
             marks.append((int(m.group(1)), m.group(2), int(m.group(3))))
+            continue
+        m = WS_MARK.match(line.strip())
+        if m:
+            key, value = m.group(2), int(m.group(3))
+            if key == "union_pages" and ws_pending:
+                ws_pending[3] = value
+            elif key == "committed_pages" and ws_pending:
+                ws_pending[4] = value
+            elif key not in WS_META:
+                ws_pending = [int(m.group(1)), key, value, None, None]
+                working_set.append(ws_pending)
         elif line.startswith("exec> "):
             last_command = line[6:].strip()
         elif re.search(r" ms (crash|hang)\.", line):
@@ -117,11 +134,25 @@ def report(args):
             finished = True
     if not marks:
         sys.exit("no mem.* lines in the last session")
-    print("%10s  %9s  %8s  %s" % ("ms", "free KB", "change", "cell"))
+    if working_set:
+        print("%10s  %9s  %8s  %9s  %9s  %9s  %s" %
+              ("ms", "free KB", "change", "touched", "union", "committed", "cell"))
+    else:
+        print("%10s  %9s  %8s  %s" % ("ms", "free KB", "change", "cell"))
     previous = None
-    for ms, label, kb in marks:
+    for index, (ms, label, kb) in enumerate(marks):
         change = "" if previous is None else "%+d" % (kb - previous)
-        print("%10d  %9d  %8s  %s" % (ms, kb, change, label))
+        ws = working_set[index] if index < len(working_set) else None
+        if ws:
+            _ws_ms, ws_label, touched, union, committed = ws
+            if ws_label != label:
+                touched = union = committed = None
+            print("%10d  %9d  %8s  %9s  %9s  %9s  %s" %
+                  (ms, kb, change, touched if touched is not None else "-",
+                   union if union is not None else "-",
+                   committed if committed is not None else "-", label))
+        else:
+            print("%10d  %9d  %8s  %s" % (ms, kb, change, label))
         previous = kb
     low = min(marks, key=lambda m: m[2])
     print("\nlowest: %d KB at %s; %d stops logged" % (low[2], low[1], len(marks) - 1))
@@ -148,6 +179,8 @@ def main():
                     help="every Nth stop of the whole tour; moves become jumps")
     mk.add_argument("--limit", type=int, help="stop after N cells")
     mk.add_argument("--wait", type=int, default=90, help="frames to wait after each move")
+    mk.add_argument("--working-set", action="store_true",
+                    help="reset the heap-region working-set sampler before the tour")
     mk.add_argument("--start", default="new",
                     help="`new`, `load U:\\DIR\\NAME.ess`, or empty for no @start line")
     mk.add_argument("--no-exit", dest="exit", action="store_false",

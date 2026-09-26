@@ -7,9 +7,10 @@
  * NtReadFile may, and returns to the faulting instruction. A fault at raised IRQL or with
  * interrupts off cannot do that; it is counted and chained, so it ends as an access violation.
  *
- * The console command `tes3xpager [runs] [reboot]` runs a synthetic workload over the region from
- * two threads of its own, and logs the pager's counters and page-in times in TSC cycles for each
- * run. `reboot` returns to the dashboard afterwards, which ends an unattended hardware run.
+ * The console command `tes3xpager [runs] [cache] [reboot]` runs a synthetic workload over the
+ * region from two threads of its own, and logs the pager's counters and page-in times in TSC
+ * cycles for each run. `cache` uses the title's Z: partition instead of E:, and `reboot` returns
+ * to the dashboard afterwards, which ends an unattended hardware run.
  * Nothing in the engine uses the region yet.
  */
 
@@ -50,9 +51,10 @@ typedef void(__stdcall *fn_HalReturnToFirmware)(u32);
 #define MEM_DECOMMIT 0x4000u
 #define STATUS_TIMEOUT 0x102u
 #define HAL_REBOOT_ROUTINE 1u
+#define FILE_NO_INTERMEDIATE_BUFFERING 0x08u
 
 #define PAGE 4096u
-#define REGION_PAGES 4096u /* 16 MB */
+#define REGION_PAGES 16384u /* 64 MB, larger than the test drive's cache */
 #define BUDGET_PAGES 256u  /* 1 MB resident */
 
 /* Page tables are self-mapped at 0xC0000000, as on x86 NT. */
@@ -292,9 +294,11 @@ void __stdcall tes3x_pager_fault(u32 addr)
     NtReleaseMutant(lock_handle, 0);
 }
 
-static int install(void)
+static int install(u32 cache_partition)
 {
-    static char path[] = "\\Device\\Harddisk0\\Partition1\\tes3xpage.bin";
+    static char e_path[] = "\\Device\\Harddisk0\\Partition1\\tes3xpage.bin";
+    static char z_path[] = "\\Device\\Harddisk0\\Partition5\\tes3xpage.bin";
+    char *path = cache_partition ? z_path : e_path;
     ANSI_STRING name;
     OBJECT_ATTRIBUTES oa;
     IO_STATUS_BLOCK iosb;
@@ -314,7 +318,7 @@ static int install(void)
     tes3x_object_attributes(&oa, &name, path);
     if (NtCreateFile(&file, GENERIC_READ | GENERIC_WRITE | SYNCHRONIZE, &oa, &iosb, 0,
                      FILE_ATTRIBUTE_NORMAL, 0, FILE_OVERWRITE_IF,
-                     FILE_SYNCHRONOUS_IO_NONALERT) != 0) {
+                     FILE_NO_INTERMEDIATE_BUFFERING | FILE_SYNCHRONOUS_IO_NONALERT) != 0) {
         tes3x_log("pager.file_failed", 0);
         return 0;
     }
@@ -345,6 +349,7 @@ static int install(void)
     tes3x_log_hex("pager.base", tes3x_pager_base);
     tes3x_log("pager.region_kb", size / 1024);
     tes3x_log("pager.budget_kb", BUDGET_PAGES * PAGE / 1024);
+    tes3x_log("pager.partition", cache_partition ? 5 : 1);
     tes3x_log_hex("pager.idt", idtr.base);
     tes3x_log_hex("pager.kernel_pf", tes3x_pager_chain);
     tes3x_log_hex("pager.gate_type", gate[5]);
@@ -501,7 +506,7 @@ int tes3x_pager_command(const char *text)
 {
     const char *rest;
     void *h = 0;
-    u32 runs = 0, reboot = 0;
+    u32 runs = 0, cache_partition = 0, reboot = 0;
 
     if (!(text = word(text, "tes3xpager")))
         return 0;
@@ -512,6 +517,11 @@ int tes3x_pager_command(const char *text)
             break;
         if ((rest = word(text, "reboot"))) {
             reboot = 1;
+            text = rest;
+            continue;
+        }
+        if ((rest = word(text, "cache"))) {
+            cache_partition = 1;
             text = rest;
             continue;
         }
@@ -527,7 +537,7 @@ int tes3x_pager_command(const char *text)
         return 1;
     }
     if (!installed) {
-        if (!install())
+        if (!install(cache_partition))
             return 1;
         installed = 1;
     }
