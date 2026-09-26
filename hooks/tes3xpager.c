@@ -7,9 +7,10 @@
  * NtReadFile may, and returns to the faulting instruction. A fault at raised IRQL or with
  * interrupts off cannot do that; it is counted and chained, so it ends as an access violation.
  *
- * The console command `tes3xpager` runs a synthetic workload over the region from two threads of
- * its own, and logs the pager's counters and page-in times in TSC cycles. Nothing in the engine
- * uses the region yet.
+ * The console command `tes3xpager [runs] [reboot]` runs a synthetic workload over the region from
+ * two threads of its own, and logs the pager's counters and page-in times in TSC cycles for each
+ * run. `reboot` returns to the dashboard afterwards, which ends an unattended hardware run.
+ * Nothing in the engine uses the region yet.
  */
 
 #include "tes3x_thunks.h"
@@ -30,6 +31,7 @@
 #define PsCreateSystemThreadEx KFN(THUNK_PsCreateSystemThreadEx, fn_PsCreateSystemThreadEx)
 #define PsTerminateSystemThread KFN(THUNK_PsTerminateSystemThread, fn_PsTerminateSystemThread)
 #define KeDelayExecutionThread KFN(THUNK_KeDelayExecutionThread, fn_KeDelayExecutionThread)
+#define HalReturnToFirmware KFN(THUNK_HalReturnToFirmware, fn_HalReturnToFirmware)
 
 typedef u32(__stdcall *fn_NtAllocateVirtualMemory)(void **, u32, u32 *, u32, u32);
 typedef u32(__stdcall *fn_NtFreeVirtualMemory)(void **, u32 *, u32);
@@ -41,11 +43,13 @@ typedef u32(__stdcall *fn_PsCreateSystemThreadEx)(void **, u32, u32, u32, void *
                                                   unsigned char, unsigned char, void *);
 typedef void(__stdcall *fn_PsTerminateSystemThread)(u32);
 typedef u32(__stdcall *fn_KeDelayExecutionThread)(u32, unsigned char, long long *);
+typedef void(__stdcall *fn_HalReturnToFirmware)(u32);
 
 #define MEM_COMMIT 0x1000u
 #define MEM_RESERVE 0x2000u
 #define MEM_DECOMMIT 0x4000u
 #define STATUS_TIMEOUT 0x102u
+#define HAL_REBOOT_ROUTINE 1u
 
 #define PAGE 4096u
 #define REGION_PAGES 4096u /* 16 MB */
@@ -71,7 +75,7 @@ static u32 bounce[PAGE / 4] __attribute__((aligned(4096)));
 static u32 n_faults, n_waits, n_zero, n_reads, n_writes, n_clean, n_evicted, n_errors;
 static u64 t_pagein, t_read, t_write;
 static u32 t_pagein_max;
-static u32 installed;
+static u32 installed, runs_wanted, reboot_after;
 static volatile u32 running;
 
 void __stdcall tes3x_pager_fault(u32 addr);
@@ -425,16 +429,21 @@ static void log_counters(const char *phase, u32 bad)
 }
 
 /* The log's millisecond stamps on pager.start and pager.test_kcycles give the TSC rate. */
-static void __stdcall run_test(void *unused)
+static int run_test(u32 run)
 {
     worker a = {0, 12345u, 0, 0}, b = {1, 67890u, 0, 0};
     long long tick = -10 * 10000;
     void *h = 0;
     u32 page, bad = 0;
-    u64 start = rdtsc();
+    u64 start;
 
-    (void)unused;
-    tes3x_log("pager.start", 0);
+    n_faults = n_waits = n_zero = n_reads = n_writes = n_clean = n_evicted = 0;
+    t_pagein = t_read = t_write = 0;
+    t_pagein_max = 0;
+    a.seed += run;
+    b.seed += run;
+    tes3x_log("pager.start", run);
+    start = rdtsc();
     for (page = 0; page < REGION_PAGES; page++)
         fill(page, 1);
     log_counters("pager.fill", 0);
@@ -446,8 +455,7 @@ static void __stdcall run_test(void *unused)
     if (PsCreateSystemThreadEx(&h, 0, 0x4000, 0, 0, worker_start, &b, 0, 0,
                                (void *)worker_system) != 0) {
         tes3x_log("pager.thread_failed", 0);
-        running = 0;
-        return;
+        return 0;
     }
     NtClose(h);
     run_half(&a);
@@ -460,28 +468,60 @@ static void __stdcall run_test(void *unused)
         bad += check(page, 2);
     log_counters("pager.final_bad", bad);
     tes3x_log("pager.test_kcycles", (u32)((rdtsc() - start) >> 10));
+    return !tes3x_pager_broken;
+}
+
+static void __stdcall run_tests(void *unused)
+{
+    u32 run;
+
+    (void)unused;
+    for (run = 1; run <= runs_wanted && run_test(run); run++)
+        ;
+    tes3x_log("pager.done", run - 1);
+    if (reboot_after)
+        HalReturnToFirmware(HAL_REBOOT_ROUTINE);
     running = 0;
 }
 
-static int text_equal(const char *a, const char *b)
+/* Matches a lower-case word at text, case-insensitively; returns the text after it, or 0. */
+static const char *word(const char *text, const char *w)
 {
-    for (;;) {
-        char ca = *a++, cb = *b++;
-        if (ca >= 'A' && ca <= 'Z')
-            ca += 'a' - 'A';
-        if (ca != cb)
+    for (; *w; text++, w++) {
+        char c = *text;
+        if (c >= 'A' && c <= 'Z')
+            c += 'a' - 'A';
+        if (c != *w)
             return 0;
-        if (!ca)
-            return 1;
     }
+    return *text == ' ' || !*text ? text : 0;
 }
 
 int tes3x_pager_command(const char *text)
 {
+    const char *rest;
     void *h = 0;
+    u32 runs = 0, reboot = 0;
 
-    if (!text_equal(text, "tes3xpager"))
+    if (!(text = word(text, "tes3xpager")))
         return 0;
+    for (;;) {
+        while (*text == ' ')
+            text++;
+        if (!*text)
+            break;
+        if ((rest = word(text, "reboot"))) {
+            reboot = 1;
+            text = rest;
+            continue;
+        }
+        if (*text < '0' || *text > '9') {
+            tes3x_log("pager.usage", 0);
+            return 1;
+        }
+        while (*text >= '0' && *text <= '9')
+            runs = runs * 10 + (u32)(*text++ - '0');
+    }
     if (running) {
         tes3x_log("pager.busy", 0);
         return 1;
@@ -495,8 +535,10 @@ int tes3x_pager_command(const char *text)
         tes3x_log("pager.broken", n_errors);
         return 1;
     }
+    runs_wanted = runs ? runs : 1;
+    reboot_after = reboot;
     running = 1;
-    if (PsCreateSystemThreadEx(&h, 0, 0x4000, 0, 0, run_test, 0, 0, 0,
+    if (PsCreateSystemThreadEx(&h, 0, 0x4000, 0, 0, run_tests, 0, 0, 0,
                                (void *)worker_system) != 0) {
         tes3x_log("pager.thread_failed", 0);
         running = 0;
