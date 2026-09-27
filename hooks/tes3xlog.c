@@ -13,6 +13,7 @@
 #define KeQuerySystemTime KFN(THUNK_KeQuerySystemTime, fn_KeQuerySystemTime)
 
 #define TES3X_LOG_MAX (512u * 1024u)
+#define TES3X_LOG_CLUSTER (16u * 1024u)
 
 static char tes3x_path[] = "\\Device\\Harddisk0\\Partition1\\tes3xlog.txt";
 static u64 tes3x_t0;
@@ -141,6 +142,36 @@ void tes3x_log_hex(const char *tag, u32 value)
     tes3x_log_raw(line, n);
 }
 
+void tes3x_log_hex3(const char *tag, u32 a, u32 b, u32 c)
+{
+    char line[96];
+    char num[16];
+    u32 n = 0;
+    const char *p;
+
+    for (p = u32_dec(tes3x_elapsed_ms(), num + sizeof(num)); *p; p++)
+        line[n++] = *p;
+    line[n++] = ' ';
+    line[n++] = 'm';
+    line[n++] = 's';
+    line[n++] = ' ';
+    for (p = tag; *p && n < sizeof(line) - 38; p++)
+        line[n++] = *p;
+    line[n++] = ' ';
+    for (p = u32_hex(a, num + sizeof(num)); *p; p++)
+        line[n++] = *p;
+    line[n++] = ' ';
+    for (p = u32_hex(b, num + sizeof(num)); *p; p++)
+        line[n++] = *p;
+    line[n++] = ' ';
+    for (p = u32_hex(c, num + sizeof(num)); *p; p++)
+        line[n++] = *p;
+    line[n++] = '\r';
+    line[n++] = '\n';
+
+    tes3x_log_raw(line, n);
+}
+
 void tes3x_log_prepare(void)
 {
     ANSI_STRING name;
@@ -169,8 +200,9 @@ void tes3x_log_raw(const char *buf, u32 len)
     ANSI_STRING name;
     OBJECT_ATTRIBUTES oa;
     IO_STATUS_BLOCK iosb;
-    u64 append = FILE_WRITE_TO_END_OF_FILE;
+    u64 append;
     void *h = 0;
+    u32 done = 0, status;
 
     if (!tes3x_log_size_known)
         tes3x_log_prepare();
@@ -180,12 +212,29 @@ void tes3x_log_raw(const char *buf, u32 len)
     tes3x_object_attributes(&oa, &name, tes3x_path);
 
     /* Open per call so a crash does not lose buffered entries. */
-    if (NtCreateFile(&h, FILE_APPEND_DATA | SYNCHRONIZE, &oa, &iosb, 0,
+    status = NtCreateFile(&h, FILE_APPEND_DATA | SYNCHRONIZE, &oa, &iosb, 0,
                      FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, FILE_OPEN_IF,
-                     FILE_SYNCHRONOUS_IO_NONALERT) != 0)
+                     FILE_SYNCHRONOUS_IO_NONALERT);
+    if (status != 0)
         return;
-    /* FATX requires an explicit append offset. */
-    if (NtWriteFile(h, 0, 0, 0, &iosb, buf, len, &append) == 0 && tes3x_log_size_known)
-        tes3x_log_bytes += len;
+    append = FILE_WRITE_TO_END_OF_FILE;
+    /* FATX requires an explicit append offset. A write spanning its 16 KB allocation boundary
+     * can stall, so end one write at the boundary and start the next there. */
+    while (done < len) {
+        u32 chunk = len - done;
+
+        if (tes3x_log_size_known) {
+            u32 to_boundary = TES3X_LOG_CLUSTER -
+                              (tes3x_log_bytes & (TES3X_LOG_CLUSTER - 1));
+            if (chunk > to_boundary)
+                chunk = to_boundary;
+        }
+        if (NtWriteFile(h, 0, 0, 0, &iosb, (void *)(buf + done), chunk, &append) != 0 ||
+            iosb.Information != chunk)
+            break;
+        done += chunk;
+        if (tes3x_log_size_known)
+            tes3x_log_bytes += chunk;
+    }
     NtClose(h);
 }

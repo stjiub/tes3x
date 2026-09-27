@@ -6,11 +6,13 @@
  * in tes3x_pager_resume, which pages in at the thread's own IRQL, blocking as any caller of
  * NtReadFile may, and returns to the faulting instruction. A fault at raised IRQL or with
  * interrupts off cannot do that; it is counted and chained, so it ends as an access violation.
+ * Before either path, the trap records the fault address, saved EIP and allocation group in a
+ * fixed ring. `tes3xfaults` drains the ring to the normal log outside the trap.
  *
- * The console command `tes3xpager [runs] [cache] [reboot]` runs a synthetic workload over the
- * region from two threads of its own, and logs the pager's counters and page-in times in TSC
- * cycles for each run. `cache` uses the title's Z: partition instead of E:, and `reboot` returns
- * to the dashboard afterwards, which ends an unattended hardware run.
+ * The console command `tes3xpager [runs] [cache] [faults] [reboot]` runs a synthetic workload
+ * over the region from two threads of its own, and logs the pager's counters and page-in times
+ * in TSC cycles for each run. `cache` uses the title's Z: partition, `faults` drains the fault
+ * ring on completion, and `reboot` returns to the dashboard afterwards.
  * Nothing in the engine uses the region yet.
  */
 
@@ -56,6 +58,7 @@ typedef void(__stdcall *fn_HalReturnToFirmware)(u32);
 #define PAGE 4096u
 #define REGION_PAGES 16384u /* 64 MB, larger than the test drive's cache */
 #define BUDGET_PAGES 256u  /* 1 MB resident */
+#define FAULT_RING_ENTRIES 256u
 
 /* Page tables are self-mapped at 0xC0000000, as on x86 NT. */
 #define PTE(va) ((volatile u32 *)(0xC0000000u + (((u32)(va) >> 12) << 2)))
@@ -72,15 +75,25 @@ volatile u32 tes3x_pager_violations;
 static void *lock_handle, *file;
 static u8 resident[REGION_PAGES], stored[REGION_PAGES];
 static unsigned short ring[BUDGET_PAGES];
+static unsigned short page_group[REGION_PAGES];
 static u32 ring_used, hand;
 static u32 bounce[PAGE / 4] __attribute__((aligned(4096)));
 static u32 n_faults, n_waits, n_zero, n_reads, n_writes, n_clean, n_evicted, n_errors;
 static u64 t_pagein, t_read, t_write;
 static u32 t_pagein_max;
-static u32 installed, runs_wanted, reboot_after;
+static u32 installed, runs_wanted, dump_faults_after, reboot_after;
 static volatile u32 running;
 
+typedef struct {
+    u32 addr, eip, group;
+} fault_record;
+
+static fault_record fault_ring[FAULT_RING_ENTRIES], fault_snapshot[FAULT_RING_ENTRIES];
+static volatile u32 fault_head, fault_tail, fault_count, fault_dropped, fault_wraps;
+
 void __stdcall tes3x_pager_fault(u32 addr);
+void __stdcall tes3x_pager_trace_fault(u32 addr, u32 eip);
+static void fault_drain(void);
 
 /* IDT vector 14. The frame on entry is the error code, EIP, CS, EFLAGS: kernel mode, no stack
  * switch. For a fault this pager serves, the frame is rewritten so that iret lands in
@@ -100,6 +113,10 @@ __attribute__((naked)) void tes3x_pager_trap(void)
         "cmpl $0, _tes3x_pager_broken\n\t"
         "jne 2f\n\t"
         /* 0 edx, 4 ecx, 8 eax, 12 error, 16 eip, 20 cs, 24 eflags */
+        "pushl 16(%esp)\n\t"
+        "pushl %eax\n\t"
+        "call _tes3x_pager_trace_fault@8\n\t"
+        "movl %cr2, %eax\n\t"
         "testl $0x200, 24(%esp)\n\t"
         "jz 1f\n\t"
         "cmpb $0, %fs:0x24\n\t" /* KPCR.Irql */
@@ -152,6 +169,44 @@ static inline u64 rdtsc(void)
     u32 lo, hi;
     __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
     return (u64)hi << 32 | lo;
+}
+
+/* The interrupt gate keeps this single-core machine from observing a partial entry. */
+void __stdcall tes3x_pager_trace_fault(u32 addr, u32 eip)
+{
+    u32 slot = fault_head;
+    fault_record *record = &fault_ring[slot];
+
+    record->addr = addr;
+    record->eip = eip;
+    record->group = page_group[(addr - tes3x_pager_base) / PAGE];
+    slot++;
+    if (slot == FAULT_RING_ENTRIES) {
+        slot = 0;
+        fault_wraps++;
+    }
+    fault_head = slot;
+    if (fault_count == FAULT_RING_ENTRIES) {
+        fault_tail = (fault_tail + 1) % FAULT_RING_ENTRIES;
+        fault_dropped++;
+    } else {
+        fault_count++;
+    }
+}
+
+int tes3x_pager_set_group(void *base, u32 size, u32 group)
+{
+    u32 addr = (u32)base, first, last, page;
+
+    if (!size || group > 0xFFFFu || addr < tes3x_pager_base ||
+        addr - tes3x_pager_base >= tes3x_pager_size ||
+        size - 1 > tes3x_pager_size - 1 - (addr - tes3x_pager_base))
+        return 0;
+    first = (addr - tes3x_pager_base) / PAGE;
+    last = (addr - tes3x_pager_base + size - 1) / PAGE;
+    for (page = first; page <= last; page++)
+        page_group[page] = (unsigned short)group;
+    return 1;
 }
 
 static void copy_page(void *dst, const void *src)
@@ -306,7 +361,7 @@ static int install(u32 cache_partition)
         unsigned short limit;
         u32 base;
     } __attribute__((packed)) idtr;
-    u32 size = REGION_PAGES * PAGE, flags, cr0, handler;
+    u32 size = REGION_PAGES * PAGE, flags, cr0, handler, page;
     u64 eof = (u64)REGION_PAGES * PAGE;
     void *base = 0;
     u8 *gate;
@@ -332,6 +387,8 @@ static int install(u32 cache_partition)
     }
     tes3x_pager_base = (u32)base;
     tes3x_pager_size = size;
+    for (page = 0; page < REGION_PAGES; page++)
+        page_group[page] = (unsigned short)(page / BUDGET_PAGES + 1);
 
     /* The IDT lives in kernel data mapped read-only to us; write through WP. */
     __asm__ volatile("sidt %0" : "=m"(idtr));
@@ -484,6 +541,8 @@ static void __stdcall run_tests(void *unused)
     for (run = 1; run <= runs_wanted && run_test(run); run++)
         ;
     tes3x_log("pager.done", run - 1);
+    if (dump_faults_after)
+        fault_drain();
     if (reboot_after)
         HalReturnToFirmware(HAL_REBOOT_ROUTINE);
     running = 0;
@@ -502,12 +561,69 @@ static const char *word(const char *text, const char *w)
     return *text == ' ' || !*text ? text : 0;
 }
 
+static u32 lock_irq(void)
+{
+    u32 flags;
+    __asm__ volatile("pushfl\n\tpopl %0\n\tcli" : "=r"(flags) : : "memory");
+    return flags;
+}
+
+static void unlock_irq(u32 flags)
+{
+    __asm__ volatile("pushl %0\n\tpopfl" : : "r"(flags) : "memory", "cc");
+}
+
+static void fault_reset(void)
+{
+    u32 flags = lock_irq();
+
+    fault_head = fault_tail = fault_count = fault_dropped = fault_wraps = 0;
+    unlock_irq(flags);
+}
+
+static void fault_drain(void)
+{
+    u32 flags = lock_irq();
+    u32 count = fault_count, dropped = fault_dropped, wraps = fault_wraps;
+    u32 i, slot = fault_tail;
+
+    for (i = 0; i < count; i++) {
+        fault_snapshot[i] = fault_ring[slot];
+        slot = (slot + 1) % FAULT_RING_ENTRIES;
+    }
+    fault_tail = fault_head;
+    fault_count = fault_dropped = fault_wraps = 0;
+    unlock_irq(flags);
+
+    tes3x_log("pager.fault_entries", count);
+    tes3x_log("pager.fault_dropped", dropped);
+    tes3x_log("pager.fault_wraps", wraps);
+    for (i = 0; i < count; i++)
+        tes3x_log_hex3("pager.fault", fault_snapshot[i].addr,
+                       fault_snapshot[i].eip, fault_snapshot[i].group);
+    tes3x_log("pager.fault_end", count);
+}
+
 int tes3x_pager_command(const char *text)
 {
     const char *rest;
     void *h = 0;
-    u32 runs = 0, cache_partition = 0, reboot = 0;
+    u32 runs = 0, cache_partition = 0, dump_faults = 0, reboot = 0;
 
+    if ((rest = word(text, "tes3xfaults"))) {
+        text = rest;
+        while (*text == ' ')
+            text++;
+        if (!*text) {
+            fault_drain();
+        } else if ((rest = word(text, "reset")) && !*rest) {
+            fault_reset();
+            tes3x_log("pager.fault_reset", 0);
+        } else {
+            tes3x_log("pager.fault_usage", 0);
+        }
+        return 1;
+    }
     if (!(text = word(text, "tes3xpager")))
         return 0;
     for (;;) {
@@ -522,6 +638,11 @@ int tes3x_pager_command(const char *text)
         }
         if ((rest = word(text, "cache"))) {
             cache_partition = 1;
+            text = rest;
+            continue;
+        }
+        if ((rest = word(text, "faults"))) {
+            dump_faults = 1;
             text = rest;
             continue;
         }
@@ -546,6 +667,7 @@ int tes3x_pager_command(const char *text)
         return 1;
     }
     runs_wanted = runs ? runs : 1;
+    dump_faults_after = dump_faults;
     reboot_after = reboot;
     running = 1;
     if (PsCreateSystemThreadEx(&h, 0, 0x4000, 0, 0, run_tests, 0, 0, 0,

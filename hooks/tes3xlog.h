@@ -9,6 +9,7 @@ typedef unsigned long long u64;
 void tes3x_log_prepare(void);
 void tes3x_log(const char *tag, u32 value);
 void tes3x_log_hex(const char *tag, u32 value);
+void tes3x_log_hex3(const char *tag, u32 a, u32 b, u32 c);
 void tes3x_log_raw(const char *buf, u32 len);
 
 #endif
