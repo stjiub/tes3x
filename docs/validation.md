@@ -1,7 +1,5 @@
 # Patch validation
 
-TES3X keeps a patch's release decision separate from its test results.
-
 Each implemented patch has one channel in [`patches.toml`](../patches.toml):
 
 | channel | meaning |
@@ -9,13 +7,9 @@ Each implemented patch has one channel in [`patches.toml`](../patches.toml):
 | `development` | Available for investigation and testing. |
 | `release` | The maintainer has approved it for supported public use. |
 
-Every patch starts in `development`. Passing automated validation is input to the maintainer's
-decision; it never promotes a patch. A release-channel patch can remain opt-in, since channel and
-selection policy answer different questions.
-
 ## Scenarios and results
 
-A `patches/<patch>/scenario.toml` is the human-written validation contract. It contains:
+A `patches/<patch>/scenario.toml` explains how a live test build was ran for automated validation. A scenario contains:
 
 - the behavior being exercised and the repeatable procedure;
 - a command script and controlled runner settings;
