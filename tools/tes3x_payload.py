@@ -281,6 +281,24 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         print(f"dxt5-size hook: call {hexva(site)}, size function {size}")
         define("TEXTURE_SIZE", size)
         wanted["dxt5_size"] = ("_tes3x_dxt5_size_hook",)
+    if "tes3xleanmenu.c" in names:
+        site, tag, launch, no_reboot, preload, player = locate("lean-menu")
+        load = tes3x_inject.call_target(image, site)
+        by_name = tes3x_inject.call_target(image, preload)
+        create = tes3x_inject.call_target(image, player)
+        print(f"lean-menu hook: call {hexva(site)}, record load {hexva(load)}, tag {hexva(tag)}, "
+              f"launch info {hexva(launch)}, no reboot {hexva(no_reboot)}, "
+              f"PreLoad lookup {hexva(preload)} -> {hexva(by_name)}, "
+              f"create player {hexva(player)} -> {hexva(create)}")
+        define("LEAN_CREATE_PLAYER", hexva(create))
+        define("LEAN_LOAD_RECORD", hexva(load))
+        define("LEAN_RECORD_TAG", hexva(tag))
+        define("LEAN_CELL_BY_NAME", hexva(by_name))
+        define("LEAN_LAUNCH_INFO", hexva(launch))
+        define("LEAN_NO_REBOOT", hexva(no_reboot))
+        wanted["lean_record"] = ("_tes3x_lean_record_hook",)
+        wanted["lean_preload"] = ("_tes3x_lean_preload_hook",)
+        wanted["lean_player"] = ("_tes3x_lean_player_hook",)
     if "tes3xarena.c" in names:
         print(f"video-arena hook: size {hexva(locate('video-arena'))}")
         wanted["arena_size"] = ("_tes3x_arena_size_hook",)

@@ -36,6 +36,7 @@ enable = [
     # "video-arena",           # compat: more video memory on a 128 MB Xbox
     # "heap-region",           # compat: larger engine heap on a 128 MB Xbox
     # "info-name-arena",       # compat: move dialogue names out of the engine heap
+    # "lean-menu",             # performance: load only game settings for the main menu
     # "rotating-autosaves",    # qol: rotate autosaves through several slots
     # "transition-autosaves",  # qol: autosave before doors, teleports and travel
     # "console",               # qol: in-game console (already in standard)

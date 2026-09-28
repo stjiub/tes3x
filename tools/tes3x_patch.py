@@ -486,6 +486,56 @@ def find_dxt5_size(x):
     return va
 
 
+# The per-file loop's load-one-record call, whose failure sets the result to 0.
+LEAN_RECORD_SIG = re.compile(rb"\x50\x51\x53\x8b\xcd(?P<site>\xe8....)\x85\xc0\x75\x04\x89\x44\x24\x1c",
+                             re.S)
+# The load-one-record function reads the record tag first.
+LEAN_TAG_SIG = re.compile(rb"\x8b\xcf\x8b\xf0(?P<call>\xe8....)\x8b\xd8\x81\xfb", re.S)
+# Startup stores the launch-info buffer's address after logging "Getting Launch Info".
+LEAN_LAUNCH_SIG = re.compile(rb"\xc7\x84\x24\x14\x0d\x00\x00\xff\xff\xff\xff\xa3(?P<ptr>....)",
+                             re.S)
+# Startup stores the two [Debug] No Reboot flags in adjacent bytes.
+LEAN_NO_REBOOT_SIG = re.compile(rb"\x0f\x95\xc1\x68....\x68....\x88\x0d(?P<new>....)\xe8....\x8b\x0d"
+                                rb"....\x83\xc4\x20\x85\xc0\x0f\x95\xc2\x88\x15(?P<load>....)", re.S)
+# The [PreLoad] Cell 0 lookup, whose result is stored and tested before the main menu.
+LEAN_PRELOAD_SIG = re.compile(rb"\x68....\x68....\xe8....\x8b\x15....\x8b\x0a\x83\xc4\x18\x56"
+                              rb"(?P<site>\xe8....)\x8b\x0d....\x89\x81\x08\x03\x00\x00", re.S)
+# New Game's handler creates the player when there is none, before it decides to relaunch.
+LEAN_PLAYER_SIG = re.compile(rb"\x85\xc0\x75\x0b\x8b\x0d....(?P<site>\xe8....)\x8b\x0d....\xd9\x05",
+                             re.S)
+
+
+def find_lean_menu(x):
+    """The record-load call, the tag getter, the launch-info pointer, the No Reboot flags, the
+    PreLoad cell lookup and New Game's create-player call."""
+    data = bytes(x.data)
+    found = {}
+    for what, sig in (("record call", LEAN_RECORD_SIG),
+                      ("tag read", LEAN_TAG_SIG),
+                      ("launch info", LEAN_LAUNCH_SIG),
+                      ("no-reboot flags", LEAN_NO_REBOOT_SIG),
+                      ("preload lookup", LEAN_PRELOAD_SIG),
+                      ("create player", LEAN_PLAYER_SIG)):
+        hits = list(sig.finditer(data))
+        if len(hits) != 1:
+            raise PatchError("lean-menu: %d %s match(es), expected 1" % (len(hits), what))
+        found[what] = hits[0]
+    site = x.off_to_va(found["record call"].start("site"))
+    load = tes3x_inject.call_target(x, site)
+    tag_call = x.off_to_va(found["tag read"].start("call"))
+    preload = x.off_to_va(found["preload lookup"].start("site"))
+    player = x.off_to_va(found["create player"].start("site"))
+    if None in (site, tag_call, preload, player):
+        raise PatchError("lean-menu: a call site is outside any section")
+    if not load <= tag_call < load + 0x80:
+        raise PatchError("lean-menu: the tag read is not at the head of the record loader")
+    launch = struct.unpack("<I", found["launch info"].group("ptr"))[0]
+    no_reboot = struct.unpack("<I", found["no-reboot flags"].group("new"))[0]
+    if struct.unpack("<I", found["no-reboot flags"].group("load"))[0] != no_reboot + 1:
+        raise PatchError("lean-menu: the No Reboot flags are not adjacent")
+    return site, tes3x_inject.call_target(x, tag_call), launch, no_reboot, preload, player
+
+
 def find_ref_load(x):
     """The restamp fallback the three failed resolutions share with the legitimate path."""
     off = find_unique(x.data, REF_LOAD_SIG, "restamp fallback") + REF_LOAD_OFF
@@ -832,6 +882,23 @@ def _dxt5_size(x, value, ctx):
     site = find_dxt5_size(x)
     was, off = x.patch_call(site, int(str(target), 16))
     return [(off, 5, "texture size call 0x%08X: 0x%08X -> %s" % (site, was, target))]
+
+
+@patch("lean-menu")
+def _lean_menu(x, value, ctx):
+    """Load only game settings for the main menu; the relaunch loads the rest."""
+    hooks = ctx.get("hooks", {})
+    if not all(hooks.get(k) for k in ("lean_record", "lean_preload", "lean_player")):
+        raise PatchError("lean-menu: needs `payload` first, with lean_record, lean_preload and "
+                         "lean_player hooks in its manifest")
+    found = find_lean_menu(x)
+    edits = []
+    for site, key, what in ((found[0], "lean_record", "record load"),
+                            (found[4], "lean_preload", "PreLoad cell lookup"),
+                            (found[5], "lean_player", "New Game create-player")):
+        was, off = x.patch_call(site, int(str(hooks[key]), 16))
+        edits.append((off, 5, "%s call 0x%08X: 0x%08X -> %s" % (what, site, was, hooks[key])))
+    return edits
 
 
 @patch("video-arena")
@@ -1430,6 +1497,7 @@ LOCATORS = {
     "mcp-154-reload": find_mcp154_reload,
     "mcp-102-actn": find_mcp102_actn,
     "dxt5-size": find_dxt5_size,
+    "lean-menu": find_lean_menu,
     "video-arena": find_arena_size,
     "save-game": lambda image: find_autosave_calls(image)[0],
     "save-this-ptr": find_save_this_ptr,

@@ -276,3 +276,12 @@ channel = "development"
 selection = "preset"
 source = "tes3xinfoarena.c"
 summary = "Page INFO's temporary ID, previous and next names outside the engine heap."
+
+[[patch]]
+name = "lean-menu"
+bit = 23
+category = "performance"
+channel = "development"
+selection = "preset"
+source = "tes3xleanmenu.c"
+summary = "Load only game settings for the main menu; New Game and Load relaunch and load the rest."

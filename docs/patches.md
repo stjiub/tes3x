@@ -33,3 +33,4 @@ edit that file, not this one. Fixes that are not implemented are in
 | [`mem-census`](../patches/mem-census/) | Count kernel allocations and the XAPI heap by caller, with the address space map. | TES3X | instrumentation | development | build option |
 | [`heap-region`](../patches/heap-region/) | With more than 64 MB, size the engine heap's region from [Xbox] HeapRegionKB. | TES3X | compat | development | by name |
 | `info-name-arena` | Page INFO's temporary ID, previous and next names outside the engine heap. | TES3X | compat | development | by name |
+| `lean-menu` | Load only game settings for the main menu; New Game and Load relaunch and load the rest. | TES3X | performance | development | by name |
