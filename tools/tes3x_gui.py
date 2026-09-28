@@ -4,6 +4,8 @@
 import argparse
 from collections import defaultdict
 import datetime
+import hashlib
+import html
 import json
 import os
 from pathlib import Path
@@ -12,20 +14,22 @@ import shutil
 import struct
 import sys
 import tempfile
+import threading
 import tomllib
 import uuid
 
 try:
     import tomlkit
-    from PySide6.QtCore import (QAbstractTableModel, QFile, QModelIndex, QProcess, QSettings,
-                                QSortFilterProxyModel, QTimer, Qt, QUrl, Signal)
+    from PySide6.QtCore import (QAbstractTableModel, QFile, QModelIndex, QProcess,
+                                QProcessEnvironment, QSettings, QSortFilterProxyModel, QTimer, Qt,
+                                QUrl, Signal)
     from PySide6.QtGui import QAction, QColor, QDesktopServices, QIcon, QTextCursor
     from PySide6.QtWidgets import (
         QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
         QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
         QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QPushButton,
-        QScrollArea, QSpinBox, QSplitter, QStatusBar, QStyle, QTableView, QTabWidget, QTextEdit,
-        QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+        QScrollArea, QSpinBox, QSplitter, QStatusBar, QStyle, QTableView, QTabWidget,
+        QTextBrowser, QTextEdit, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
     )
 except ImportError as exc:
     raise SystemExit(
@@ -37,15 +41,17 @@ from tes3x_build import DEFAULT_EXCLUDE, PLUGIN_EXT, Mod, plugin_masters
 from tes3x_bsa import Bsa
 from tes3x_library import (ARCHIVES, CATALOG_NAME, LibraryError, append_mods, convert_profile,
                            discover_library, extract_archive, free_id, guess_release,
-                           index_library, install_files, install_layout, load_library,
+                           index_library, install_files, install_layout, load_library, nexus_id,
                            resolve_selection)
 from tes3x_catalog import STATUSES as COMPAT_STATUSES, CatalogError, load as load_catalog
 from tes3x_catalog import match as match_catalog, needs as catalog_needs
 from tes3x_patches import CATEGORIES as PATCH_CATEGORIES, PATCHES as PATCH_CATALOG, SOURCES
 from tes3x_plugins import (BASE_MASTERS, collect, dependency_order, fetch_rules, sort_files,
                            warnings as mlox_notes)
-from tes3x_pipeline import (PipelineError, resolve_patch_plan, validate_local_config,
-                            validate_profile)
+from tes3x_pipeline import (MARKER as PIPELINE_MARKER, PipelineError, resolve_patch_plan,
+                            validate_local_config, validate_profile)
+from tes3x_records import records, subrecords
+import tes3x_nexus as nexus
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -63,6 +69,28 @@ COMPAT = {"works": ("\u2713", QColor(60, 170, 60)),
           "broken": ("\u2717", WARNING), "not-possible": ("\u2717", WARNING)}
 
 
+def plugin_header(path):
+    """Author and description from a plugin's TES3 header."""
+    try:
+        header = next(records(path), None)
+        if header is None or header[0] != b"TES3":
+            return "", ""
+        hedr = next((value for tag, value in subrecords(header[2]) if tag == b"HEDR"), b"")
+    except (OSError, ValueError):
+        return "", ""
+    text = [hedr[start:end].split(b"\0")[0].decode("cp1252", "replace").strip()
+            for start, end in ((8, 40), (40, 296))]
+    return text[0], text[1]
+
+
+def sha256_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for block in iter(lambda: stream.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
 def default_config_path():
     local = Path.cwd() / "tes3x.local.toml"
     return (local if local.is_file() else ROOT / "tes3x.local.toml").resolve()
@@ -74,7 +102,7 @@ class LocalSettingsDialog(QDialog):
     def __init__(self, path, parent=None):
         super().__init__(parent)
         self.path = Path(path).resolve()
-        self.setWindowTitle("TES3X local settings")
+        self.setWindowTitle("TES3X settings")
         self.resize(720, 500)
         try:
             text = self.path.read_text(encoding="utf-8") if self.path.is_file() else ""
@@ -795,9 +823,9 @@ class BuildSettings(QWidget):
         self.title = QLineEdit()
         self.title.setPlaceholderText("Retail title")
         self.remote_root = QLineEdit()
-        self.remote_root.setPlaceholderText("From local settings")
+        self.remote_root.setPlaceholderText("From Settings")
         self.library_path = QLineEdit()
-        self.library_path.setPlaceholderText("From local settings")
+        self.library_path.setPlaceholderText("From Settings")
         self.library_path.editingFinished.connect(lambda: self.on_library())
         browse = QPushButton("Browse…")
         browse.clicked.connect(self.browse_library)
@@ -995,6 +1023,7 @@ class BuildSettings(QWidget):
 
 class ProfileWindow(QMainWindow):
     MOD_NAME, MOD_VERSION, MOD_CONFLICTS, MOD_NOTES, MOD_PRIORITY, MOD_XBOX = range(6)
+    nexus_done = Signal(str, object, object)
 
     def __init__(self, profile=None, config=None, settings=None):
         super().__init__()
@@ -1018,6 +1047,10 @@ class ProfileWindow(QMainWindow):
         self.plugins_loading = False
         self.scans = {}
         self.masters = {}
+        self.nexus_cache = {}
+        self.nexus_links = {}
+        self.nexus_pending = set()
+        self.nexus_done.connect(self.nexus_finished)
         self.forget_analysis()
         try:
             self.compat = load_catalog()
@@ -1102,7 +1135,7 @@ class ProfileWindow(QMainWindow):
         self.action_refresh = QAction("&Refresh library", self)
         self.action_refresh.setShortcut("F5")
         self.action_refresh.triggered.connect(self.reload_library)
-        self.action_settings = QAction("Local &settings…", self)
+        self.action_settings = QAction("&Settings…", self)
         self.action_settings.triggered.connect(self.edit_local_settings)
         self.action_index = QAction("Index new library folders", self)
         self.action_index.triggered.connect(self.write_library_index)
@@ -1137,14 +1170,22 @@ class ProfileWindow(QMainWindow):
         self.action_refresh_ftp.triggered.connect(self.refresh_ftp_status)
         self.discard_after_deploy = QAction("Discard build after verified deploy", self)
         self.discard_after_deploy.setCheckable(True)
-        actions_menu.addActions([self.action_check, self.action_build, self.action_smoke])
+        self.action_play = QAction("&Play in xemu", self)
+        self.action_play.setShortcut("F9")
+        self.action_play.triggered.connect(self.play)
+        self.action_reset_play = QAction("Reset xemu saves…", self)
+        self.action_reset_play.triggered.connect(self.reset_play_disk)
+        actions_menu.addActions([self.action_check, self.action_build, self.action_play,
+                                 self.action_reset_play, self.action_smoke])
         actions_menu.addSeparator()
         actions_menu.addActions([self.action_deploy, self.action_fetch, self.action_refresh_ftp])
         actions_menu.addSeparator()
         actions_menu.addAction(self.discard_after_deploy)
         for action, theme, fallback in (
                 (self.action_check, None, QStyle.StandardPixmap.SP_DialogApplyButton),
-                (self.action_build, QIcon.ThemeIcon.MediaPlaybackStart,
+                (self.action_build, QIcon.ThemeIcon.ViewRefresh,
+                 QStyle.StandardPixmap.SP_BrowserReload),
+                (self.action_play, QIcon.ThemeIcon.MediaPlaybackStart,
                  QStyle.StandardPixmap.SP_MediaPlay),
                 (self.action_deploy, QIcon.ThemeIcon.DocumentSend,
                  QStyle.StandardPixmap.SP_ArrowUp)):
@@ -1157,8 +1198,16 @@ class ProfileWindow(QMainWindow):
             button.setToolTip(action.text().replace("&", "") + (
                 f" ({action.shortcut().toString()})" if not action.shortcut().isEmpty() else ""))
             self.profile_bar.addWidget(button)
-        self.command_actions = (self.action_check, self.action_build, self.action_smoke,
-                                self.action_deploy, self.action_fetch)
+            if action is self.action_play:
+                self.build_state = QLabel()
+                self.profile_bar.addWidget(self.build_state)
+        self.command_actions = (self.action_check, self.action_build, self.action_play,
+                                self.action_smoke, self.action_deploy, self.action_fetch)
+        self.after_command = None
+        self.state_timer = QTimer(self)
+        self.state_timer.setInterval(1500)
+        self.state_timer.timeout.connect(self.update_build_state)
+        self.state_timer.start()
         self.refresh_profile_list()
         if profile:
             self.open_profile(Path(profile))
@@ -1197,13 +1246,23 @@ class ProfileWindow(QMainWindow):
         self.mod_list.dropped_files.connect(self.install_paths)
         self.mod_list.customContextMenuRequested.connect(self.mod_menu)
         self.mod_list.itemSelectionChanged.connect(self.highlight_conflicts)
+        self.mod_list.itemSelectionChanged.connect(self.show_mod_info)
         self.mod_list.headerItem().setToolTip(
             self.MOD_CONFLICTS, "+N: files this mod overrides; -N: its files other mods override")
         left = QWidget()
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.addLayout(top)
-        left_layout.addWidget(self.mod_list, 1)
+        self.mod_info = QTextBrowser()
+        self.mod_info.setOpenLinks(False)
+        self.mod_info.anchorClicked.connect(self.mod_info_link)
+        self.mod_info.setPlaceholderText("Select a mod to see what it is")
+        mod_split = QSplitter(Qt.Orientation.Vertical)
+        mod_split.addWidget(self.mod_list)
+        mod_split.addWidget(self.mod_info)
+        mod_split.setStretchFactor(0, 3)
+        mod_split.setStretchFactor(1, 1)
+        left_layout.addWidget(mod_split, 1)
 
         self.side = QTabWidget()
         self.side.addTab(self.create_plugins_panel(), "Plugins")
@@ -1376,10 +1435,8 @@ class ProfileWindow(QMainWindow):
 
     def update_compat(self, item):
         """The catalog's verdict on a mod, and any requirement this profile does not meet."""
-        name, _version, release, _problem = self.describe(item.data(0, ROLE))
         entry = item.data(0, ROLE)
-        verdict = match_catalog(self.compat, name, entry.get("name", ""), entry.get("id", ""),
-                                release["folder"] if release else "")
+        verdict = self.compat_verdict(item)
         status = verdict["status"] if verdict else "untested"
         symbol, colour = COMPAT.get(status, ("?", self.palette().placeholderText().color()))
         lines = [f"{verdict['name']}: {COMPAT_STATUSES[status]}" if verdict
@@ -1531,12 +1588,179 @@ class ProfileWindow(QMainWindow):
                               and entry["id"] in self.catalog)
             reinstall = menu.addAction("Reinstall…", lambda: self.reinstall_mod(item))
             reinstall.setEnabled(bool(folder and folder.is_dir()))
+            page = self.mod_page(item)[0]
+            web = menu.addAction("Open web page", lambda: QDesktopServices.openUrl(QUrl(page)))
+            web.setEnabled(bool(page))
+            menu.addAction("Find on Nexus…", lambda: self.find_on_nexus(item))
             menu.addSeparator()
             if item.data(0, EXTRA):
                 menu.addAction("Remove from profile", lambda: self.remove_from_profile(item))
             delete = menu.addAction("Delete from library…", lambda: self.delete_mod(item))
             delete.setEnabled(bool(folder and folder.exists()))
         menu.exec(self.mod_list.viewport().mapToGlobal(position))
+
+    # Mod details: what a mod is and where it comes from.
+
+    def compat_verdict(self, item):
+        entry = item.data(0, ROLE)
+        name, _version, release, _problem = self.describe(entry)
+        return match_catalog(self.compat, name, entry.get("name", ""), entry.get("id", ""),
+                             release["folder"] if release else "")
+
+    def mod_record(self, item):
+        """The library's entry for a row, which holds its page and description."""
+        entry = item.data(0, ROLE)
+        if "id" in entry:
+            return self.catalog.get(entry["id"])
+        release = self.describe(entry)[2]
+        return next((mod for mod in self.catalog.values()
+                     if any(value is release for value in mod["releases"].values())), None)
+
+    def mod_page(self, item):
+        """A mod's web page and Nexus id, from the library, the catalog or its download name."""
+        name, _version, release, _problem = self.describe(item.data(0, ROLE))
+        mod = self.mod_record(item) or {}
+        url = mod.get("url") or (self.compat_verdict(item) or {}).get("url")
+        mod_id = (nexus_id(url, release.get("source") if release else None)
+                  or self.nexus_links.get(name))
+        return url or (nexus.page_url(mod_id) if mod_id else None), mod_id
+
+    def show_mod_info(self):
+        item = self.selected_mod()
+        if item is None:
+            self.mod_info.clear()
+            return
+        entry = item.data(0, ROLE)
+        name, version, _release, problem = self.describe(entry)
+        mod = self.mod_record(item) or {}
+        url, mod_id = self.mod_page(item)
+        fetched = self.nexus_cache.get(mod_id)
+        found = fetched if isinstance(fetched, dict) else {}
+        summary = mod.get("summary") or found.get("summary", "")
+        author = mod.get("author") or found.get("author", "")
+        if mod_id and not mod.get("summary") and mod_id not in self.nexus_cache:
+            self.nexus_lookup(f"id:{mod_id}", nexus.mod_info, mod_id)
+
+        def text(value):
+            return html.escape(value).replace("\r\n", "<br>").replace("\n", "<br>")
+
+        parts = [f"<h3>{text(name)} <small>{text(version)}</small></h3>"]
+        if author:
+            parts.append(f"<p>by {text(author)}</p>")
+        if summary:
+            parts.append(f"<p>{text(summary)}</p>")
+        elif f"id:{mod_id}" in self.nexus_pending:
+            parts.append("<p><i>Fetching the description from Nexus…</i></p>")
+        elif isinstance(fetched, Exception):
+            parts.append(f"<p><i>No description from Nexus: {text(str(fetched))}</i></p>")
+        links = [f"<a href='{html.escape(url)}'>{text(url)}</a>"] if url else []
+        links.append("<a href='tes3x:find'>Find on Nexus…</a>")
+        parts.append("<p>" + " · ".join(links) + "</p>")
+        verdict = self.compat_verdict(item)
+        if verdict:
+            parts.append(f"<p><b>Xbox:</b> {text(COMPAT_STATUSES[verdict['status']])}"
+                         + (f" — {text(verdict['notes'])}" if verdict.get("notes") else "")
+                         + "</p>")
+        if problem:
+            parts.append(f"<p style='color:{WARNING.name()}'>{text(problem)}</p>")
+        scanned = self.scan(entry) if self.library_root else None
+        if isinstance(scanned, Mod):
+            rows = []
+            for key, source in sorted(scanned.files.items()):
+                if not key.endswith(PLUGIN_EXT) or os.path.basename(key) in BASE_MASTERS:
+                    continue
+                plugin_author, description = plugin_header(source)
+                rows.append(f"<li><b>{text(os.path.basename(source))}</b>"
+                            + (f" by {text(plugin_author)}" if plugin_author else "")
+                            + (f"<br>{text(description)}" if description else "") + "</li>")
+            if rows:
+                parts.append("<p><b>Plugins</b></p><ul>" + "".join(rows) + "</ul>")
+        self.mod_info.setHtml("".join(parts))
+
+    def mod_info_link(self, url):
+        if url.scheme() != "tes3x":
+            QDesktopServices.openUrl(url)
+        elif self.selected_mod() is not None:
+            self.find_on_nexus(self.selected_mod())
+
+    def nexus_lookup(self, key, function, *args):
+        """Run a Nexus query off the GUI thread; nexus_finished gets the answer."""
+        if key in self.nexus_pending:
+            return
+        self.nexus_pending.add(key)
+
+        def work():
+            try:
+                result, error = function(*args), None
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                result, error = None, exc
+            self.nexus_done.emit(key, result, error)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def nexus_finished(self, key, result, error):
+        self.nexus_pending.discard(key)
+        kind, _, value = key.partition(":")
+        if kind == "search":
+            self.choose_nexus_match(value, result, error)
+            return
+        mod_id = int(value)
+        self.nexus_cache[mod_id] = error or result or LookupError("Nexus has no such mod")
+        if result:
+            for item in self.mod_rows():
+                if self.mod_page(item)[1] == mod_id:
+                    self.store_nexus(item, result, replace=False)
+        self.show_mod_info()
+
+    def find_on_nexus(self, item):
+        name = self.describe(item.data(0, ROLE))[0]
+        text, ok = QInputDialog.getText(self, "Find on Nexus", "Mod name", text=name)
+        if not ok or not text.strip():
+            return
+        self.nexus_search_item = item
+        self.nexus_lookup("search:" + text.strip(), nexus.search, text.strip())
+        self.statusBar().showMessage("Searching Nexus…", 5000)
+
+    def choose_nexus_match(self, text, result, error):
+        item = getattr(self, "nexus_search_item", None)
+        if item is None or not any(row is item for row in self.mod_rows()):
+            return
+        if error:
+            self.error(f"Nexus search failed: {error}")
+            return
+        if not result:
+            QMessageBox.information(self, "Find on Nexus",
+                                    f"No Morrowind mod on Nexus is named like “{text}”.")
+            return
+        result.sort(key=lambda found: found["name"].casefold() != text.casefold())
+        labels = [f"{found['name']} — {found['author']} ({found['id']})" for found in result]
+        label, ok = QInputDialog.getItem(self, "Find on Nexus", "Which mod is it?", labels, 0,
+                                         False)
+        if ok:
+            self.store_nexus(item, result[labels.index(label)], replace=True)
+            self.show_mod_info()
+
+    def store_nexus(self, item, found, replace):
+        """Keep a Nexus page and description in library.toml, or for this session."""
+        self.nexus_cache[found["id"]] = found
+        mod = self.mod_record(item)
+        if not (self.library_indexed and mod):
+            self.nexus_links[self.describe(item.data(0, ROLE))[0]] = found["id"]
+            return
+        values = {key: found[key] for key in ("url", "author", "summary")
+                  if found[key] and (replace or not mod.get(key))}
+        if not values:
+            return
+
+        def change(document):
+            table = self.mod_table(document, mod["id"])
+            for key, value in values.items():
+                table[key] = value
+
+        try:
+            self.edit_catalog(change)
+        except (OSError, LibraryError) as exc:
+            self.error(exc)
 
     def set_checked(self, items, on):
         for item in items:
@@ -1940,7 +2164,7 @@ class ProfileWindow(QMainWindow):
         rules = self.local_path("mlox_rules")
         if vanilla is None or rules is None or not rules.is_file():
             self.error("Sorting needs the clean game root and the mlox rules; set them in "
-                       "File > Local settings (Download fetches the rules).")
+                       "File > Settings (Download fetches the rules).")
             return
         plugins = self.analysis["plugins"]
         chosen = {name: Path(value["path"]) for name, value in plugins.items() if value["included"]}
@@ -2002,7 +2226,7 @@ class ProfileWindow(QMainWindow):
     def install_mod(self, source, replace=None):
         """Install an archive, folder or plugin into the library; returns the mod's name."""
         if self.library_root is None:
-            self.error("Set a mod library first, in the Build tab or the local settings")
+            self.error("Set a mod library first, in the Build tab or File > Settings")
             return None
         work = self.library_root / f".tes3x-install-{uuid.uuid4().hex[:8]}"
         try:
@@ -2621,6 +2845,7 @@ class ProfileWindow(QMainWindow):
         if library_root and not indexed:
             message += " — no library.toml, so mods are added by folder name"
         self.statusBar().showMessage(message)
+        self.update_build_state()
         return True
 
     def resolve_library(self, value, mods):
@@ -2760,6 +2985,7 @@ class ProfileWindow(QMainWindow):
         self.profile_plain = plain
         self.saved_text = text
         self.statusBar().showMessage(f"Saved {self.profile_path}", 5000)
+        self.update_build_state()
         return True
 
     def run_pipeline(self, extra):
@@ -2774,6 +3000,85 @@ class ProfileWindow(QMainWindow):
               if self.local_config_path().is_file() else []),
             *extra,
         ], "Running TES3X pipeline…")
+
+    def build_output(self):
+        root = self.local_path("build_root") or self.work_dir() / "build"
+        return root / self.profile_plain["profile"]["name"]
+
+    def build_status(self):
+        """'built', 'stale' or 'missing', and why, for the saved profile's pipeline output."""
+        if not self.profile_path:
+            return "missing", "No profile"
+        marker = self.build_output() / PIPELINE_MARKER
+        try:
+            record = json.loads(marker.read_text(encoding="utf-8"))
+            current = record.get("profile_sha256") == sha256_file(self.profile_path)
+        except (OSError, ValueError):
+            return "missing", "Not built yet; Play builds it first"
+        if not current or self.is_dirty():
+            return "stale", "The profile changed since the last build; Play rebuilds it first"
+        stamp = datetime.datetime.fromtimestamp(marker.stat().st_mtime)
+        return "built", (f"Built {stamp:%Y-%m-%d %H:%M}. Changes to mod files since then are not "
+                         "detected; Build to pick them up")
+
+    def update_build_state(self):
+        state, tip = self.build_status()
+        text, colour = {"built": ("Built", QColor(60, 170, 60)),
+                        "stale": ("Out of date", QColor(215, 150, 20)),
+                        "missing": ("Not built", self.palette().placeholderText().color())}[state]
+        self.build_state.setText(f"<span style='color:{colour.name()}'>●</span> {text}")
+        self.build_state.setToolTip(tip)
+
+    def play(self):
+        if self.process is not None:
+            self.error("A TES3X command is already running")
+            return
+        if not self.save_profile():
+            return
+        if self.build_status()[0] == "built":
+            self.start_play()
+            return
+        self.run_pipeline([])
+        if self.process is not None:
+            self.after_command = self.start_play
+
+    def play_iso(self):
+        """The ISO an earlier play made of the current build, so it is not packed again."""
+        built = (self.build_output() / PIPELINE_MARKER).stat().st_mtime
+        runs = self.work_dir() / "build" / "xemu"
+        isos = [path for path in runs.glob(f"play-{self.profile_path.stem}-*/game.iso")
+                if path.stat().st_mtime >= built]
+        return max(isos, key=lambda path: path.stat().st_mtime, default=None)
+
+    def start_play(self):
+        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        iso = self.play_iso()
+        source = ["--iso", str(iso)] if iso else ["--deploy", str(self.build_output() / "deploy")]
+        environment = QProcessEnvironment.systemEnvironment()
+        environment.insert("TES3X_CONFIG", str(self.local_config_path()))
+        self.start_command(ROOT / "tools" / "tes3x_xemu.py",
+                           [f"play-{self.profile_path.stem}-{stamp}", *source,
+                            "--disk", str(self.play_disk())],
+                           "Playing in xemu…", environment)
+
+    def play_disk(self):
+        """The profile's own xemu disk, which keeps its saves between plays."""
+        return self.work_dir() / "build" / "play" / self.profile_path.stem / "hdd.qcow2"
+
+    def reset_play_disk(self):
+        if self.process is not None:
+            self.error("A TES3X command is already running")
+            return
+        disk = self.play_disk() if self.profile_path else None
+        if disk is None or not disk.is_file():
+            QMessageBox.information(self, "TES3X", "This profile has no xemu saves yet.")
+            return
+        answer = QMessageBox.question(
+            self, "Reset xemu saves",
+            f"Delete this profile's xemu disk and every save on it?\n\n{disk}")
+        if answer == QMessageBox.StandardButton.Yes:
+            disk.unlink()
+            self.statusBar().showMessage("Deleted the xemu saves; the next Play starts clean", 5000)
 
     def run_smoke_test(self):
         if self.process is not None:
@@ -2816,10 +3121,12 @@ class ProfileWindow(QMainWindow):
             *(["--config", str(config)] if config.is_file() else []),
         ], f"Pulling Xbox logs to {destination}…")
 
-    def start_command(self, program, arguments, message):
+    def start_command(self, program, arguments, message, environment=None):
         self.output.clear()
         process = QProcess(self)
         process.setWorkingDirectory(str(self.work_dir()))
+        if environment is not None:
+            process.setProcessEnvironment(environment)
         process.setProgram(sys.executable)
         process.setArguments([str(program), *arguments])
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
@@ -2844,7 +3151,7 @@ class ProfileWindow(QMainWindow):
         host = local.get("deploy", {}).get("host")
         if not host:
             self.ftp_status.setText("Xbox: not configured")
-            self.ftp_status.setToolTip("Set deploy.host in local settings")
+            self.ftp_status.setToolTip("Set the Xbox host in File > Settings")
             return
         process = QProcess(self)
         process.setWorkingDirectory(str(self.work_dir()))
@@ -2879,6 +3186,10 @@ class ProfileWindow(QMainWindow):
         self.process = None
         for action in self.command_actions:
             action.setEnabled(True)
+        self.update_build_state()
+        follow, self.after_command = self.after_command, None
+        if follow and code == 0:
+            follow()
 
 
 def main(argv=None):

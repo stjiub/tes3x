@@ -345,6 +345,64 @@ order = 10
         self.assertEqual(row.checkState(0), Qt.CheckState.Unchecked)
         self.assertTrue(row.isSelected())
 
+    def test_mod_details_show_page_description_and_plugins(self):
+        import struct
+        hedr = (struct.pack("<fI", 1.3, 0) + b"Someone".ljust(32, b"\0")
+                + b"Adds a thing".ljust(256, b"\0") + struct.pack("<I", 0))
+        data = b"HEDR" + struct.pack("<I", len(hedr)) + hedr
+        (self.library / "Other/other.esp").write_bytes(
+            b"TES3" + struct.pack("<III", len(data), 0, 0) + data)
+        window = self.window()
+        page = "https://www.nexusmods.com/morrowind/mods/123"
+        window.compat = {"other": {"id": "other", "name": "Other", "folder": "Other",
+                                   "status": "works", "url": page}}
+        with patch.object(window, "nexus_lookup") as lookup:
+            self.row(window, "Other").setSelected(True)
+        self.assertEqual(lookup.call_args.args[0], "id:123")
+        shown = window.mod_info.toPlainText()
+        for text in ("Other", "Someone", "Adds a thing", page, "Find on Nexus"):
+            self.assertIn(text, shown)
+
+        window.nexus_finished("id:123", {"id": 123, "name": "Other", "summary": "From Nexus",
+                                         "author": "Author", "version": "1", "url": page}, None)
+        self.assertIn("From Nexus", window.mod_info.toPlainText())
+        with open(self.library / "library.toml", "rb") as stream:
+            other = next(mod for mod in tomllib.load(stream)["mod"] if mod["id"] == "other")
+        self.assertEqual((other["url"], other["summary"], other["author"]),
+                         (page, "From Nexus", "Author"))
+
+    def test_play_builds_first_then_boots_the_build(self):
+        import hashlib
+        import json
+        config = self.root / "local.toml"
+        config.write_text('[paths]\nbuild_root = "out"\n', encoding="utf-8")
+        window = self.window(config=config)
+        self.assertEqual(window.action_settings.text(), "&Settings…")
+        self.assertEqual(window.build_status()[0], "missing")
+
+        def start(program, arguments, *_args):
+            window.process = "running"
+            calls.append((Path(program).name, arguments))
+
+        calls = []
+        with patch.object(window, "start_command", side_effect=start):
+            window.play()
+            self.assertEqual(calls[0][0], "tes3x_pipeline.py")
+            output = self.root / "out" / "gui"
+            (output / "deploy").mkdir(parents=True)
+            (output / ".tes3x-pipeline.json").write_text(json.dumps(
+                {"profile_sha256": hashlib.sha256(self.profile.read_bytes()).hexdigest()}),
+                encoding="utf-8")
+            window.process = None
+            window.command_finished(0, None)
+        self.assertEqual(window.build_status()[0], "built")
+        self.assertEqual(calls[1][0], "tes3x_xemu.py")
+        self.assertEqual(calls[1][1][1:], ["--deploy", str(output / "deploy"), "--disk",
+                                           str(self.root / "build/play/profile/hdd.qcow2")])
+
+        self.profile.write_text(self.profile.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+        self.assertEqual(window.build_status()[0], "stale")
+
     def test_local_settings_dialog_preserves_xemu_and_writes_public_fields(self):
         config = self.root / "local.toml"
         config.write_text('[xemu]\nexe = "xemu.exe"\ncustom = "keep"\n', encoding="utf-8")
