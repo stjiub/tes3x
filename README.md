@@ -22,7 +22,7 @@ cp examples/local.toml tes3x.local.toml
 cp examples/profile.toml profile.toml
 ```
 
-In `tes3x.local.toml`, set `vanilla_root` to your unmodified Morrowind GOTY Xbox files and, if
+In `tes3x.local.toml`, set `vanilla_root` to your unmodified Morrowind GOTY Xbox folder and, if
 needed, add the LLVM and Xbox connection settings.
 In `profile.toml`, set the build name and select its mods and patches.
 Use a separate profile file for each build.
@@ -47,6 +47,24 @@ python tools/tes3x_pipeline.py profile.toml
 
 `--check` validates and resolves the profile without building. A normal build is written to
 `build/pipeline/<name>/deploy`. Add `--dry-run` to preview an FTP sync or `--deploy` to apply it.
+
+The pipeline turns one profile into a complete, deployable game folder:
+
+```text
+local settings + profile + mod library
+                  |
+          resolve and check mods
+                  |
+        collect the winning files
+                  |
+       pack assets and order plugins
+                  |
+    build hooks and patch the retail XBE
+                  |
+      stage the complete game folder
+                  |
+          smoke test or deploy
+```
 
 Before deployment, an optional xemu smoke test builds and exercises the exact profile:
 
@@ -92,22 +110,23 @@ python tools/tes3x_patch.py --list
 With `console` enabled, Back + right thumb click opens the console and A raises the on-screen
 keyboard. `[Xbox] ConsoleCombo` changes the combination.
 
-To run commands without typing, put a `tes3xexec.txt` in `E:\` or next to `default.xbe`. It can
-start a New Game or load a save straight from boot, and each command and its output is recorded
-in `E:\tes3xlog.txt`:
-
-```
-@start new
-wait 30
-coc "Balmora"
-```
-
 See [testing and debugging](docs/testing.md) for the file format, the log, and the profiler.
+
+## Diagnostics and profiling
+
+The `development` preset enables diagnostics and the in-game console. Diagnostics append session,
+crash and hang information to `E:\tes3xlog.txt`; fetch and summarize it with
+`python tools/tes3x_diag.py pull`. Add profiler targets with the pipeline's repeatable
+`--profile-target VA` option, then use the `tes3xprof` console command to write call counts and CPU
+cycles to `E:\tes3xprof.bin`. Profile performance on a physical Xbox; xemu is useful only for
+checking that the instrumented build runs.
 
 ## Packaging and overrides
 
 `delta-bsa` keeps mod assets in a separate archive for smaller rebuilds and uploads, but requires
-LLVM. `merged-bsa` needs no compiler and rebuilds `Morrowind.bsa`.
+LLVM. `merged-bsa` needs no compiler and rebuilds `Morrowind.bsa`. Both modes pack thousands of mod
+assets into an indexed archive, avoiding the repeated FATX directory scans of a large loose-file
+install and improving asset-loading performance.
 
 The annotated [example profile](examples/profile.toml) covers the common options. Command-line
 values override it:
