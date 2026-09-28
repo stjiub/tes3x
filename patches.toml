@@ -282,3 +282,12 @@ selection = "preset"
 source = "tes3xregion.c"
 summary = "With more than 64 MB, size the engine heap's region from [Xbox] HeapRegionKB."
 validation = ["patches/heap-region/2026-09-24-xemu.toml"]
+
+[[patch]]
+name = "info-name-arena"
+bit = 22
+category = "compat"
+channel = "development"
+selection = "preset"
+source = "tes3xinfoarena.c"
+summary = "Page INFO's temporary ID, previous and next names outside the engine heap."

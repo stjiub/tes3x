@@ -42,3 +42,4 @@ opens its folder of notes, scenarios and results.
 | [`heap-census`](../patches/heap-census/) | Count live engine heap bytes by source file and line, or by call site. | TES3X | instrumentation | development | build option |  |
 | [`mem-census`](../patches/mem-census/) | Count kernel allocations and the XAPI heap by caller, with the address space map. | TES3X | instrumentation | development | build option |  |
 | [`heap-region`](../patches/heap-region/) | With more than 64 MB, size the engine heap's region from [Xbox] HeapRegionKB. | TES3X | compat | development | by name | [2026-09-24-xemu](../patches/heap-region/2026-09-24-xemu.toml) |
+| `info-name-arena` | Page INFO's temporary ID, previous and next names outside the engine heap. | TES3X | compat | development | by name |  |

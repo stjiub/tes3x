@@ -32,6 +32,7 @@ PATCH_ORDER = tuple(entry["name"] for entry in registry.PATCHES
                     if entry["selection"] in ("packaging", "preset")
                     or entry["name"] == "build-preferences")
 HOOK_SOURCES = {entry["name"]: entry.get("source") for entry in registry.PATCHES}
+SOURCE_DEPENDENCIES = {"tes3xinfoarena.c": ("tes3xpager.c",)}
 CATEGORIES = set(registry.CATEGORIES)
 PRESETS = ("minimal", "standard", "development")
 
@@ -251,6 +252,9 @@ def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), pac
     for name in PATCH_ORDER:
         source = HOOK_SOURCES.get(name)
         if name in applied and source and source not in sources:
+            for dependency in SOURCE_DEPENDENCIES.get(source, ()):
+                if dependency not in sources:
+                    sources.append(dependency)
             sources.append(source)
     return {
         "preset": preset,

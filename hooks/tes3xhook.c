@@ -16,6 +16,9 @@
 #ifdef TES3X_MEM
 #include "tes3xmem.h"
 #endif
+#ifdef TES3X_INFO_ARENA
+void tes3x_info_arena_init(void);
+#endif
 
 #ifndef TES3X_ORIG_ENTRY
 #error "define TES3X_ORIG_ENTRY to the XBE's original entry point"
@@ -78,6 +81,9 @@ void tes3x_init(void)
 #endif
 #ifdef TES3X_HEAP
     tes3x_heap_init();
+#endif
+#ifdef TES3X_INFO_ARENA
+    tes3x_info_arena_init();
 #endif
 #ifdef TES3X_PROFILE
     tes3x_prof_init();

@@ -13,7 +13,7 @@
  * over the region from two threads of its own, and logs the pager's counters and page-in times
  * in TSC cycles for each run. `cache` uses the title's Z: partition, `faults` drains the fault
  * ring on completion, and `reboot` returns to the dashboard afterwards.
- * Nothing in the engine uses the region yet.
+ * Title clients can initialize the pager at entry and allocate inside tes3x_pager_base.
  */
 
 #include "tes3x_thunks.h"
@@ -411,6 +411,23 @@ static int install(u32 cache_partition)
     tes3x_log_hex("pager.kernel_pf", tes3x_pager_chain);
     tes3x_log_hex("pager.gate_type", gate[5]);
     return 1;
+}
+
+int tes3x_pager_init(void)
+{
+    if (installed)
+        return !tes3x_pager_broken;
+    if (!install(0))
+        return 0;
+    installed = 1;
+    return 1;
+}
+
+int tes3x_pager_contains(const void *ptr)
+{
+    u32 addr = (u32)ptr;
+    return tes3x_pager_base && addr >= tes3x_pager_base &&
+           addr - tes3x_pager_base < tes3x_pager_size;
 }
 
 /* Synthetic workload. */

@@ -937,6 +937,31 @@ def _heap_region(x, value, ctx):
     ]
 
 
+@patch("info-name-arena")
+def _info_name_arena(x, value, ctx):
+    """Put INFO's temporary three-name tables in the demand-paged arena."""
+    hooks = ctx.get("hooks", {})
+    names = ("info_table_allocate", "info_names_allocate", "info_names_free",
+             "info_table_free", "info_cleanup", "info_finish")
+    missing = [name for name in names if not hooks.get(name)]
+    if missing:
+        raise PatchError("info-name-arena: needs `payload` first, with %s in its manifest"
+                         % ", ".join(missing))
+    sites = find_info_arena_sites(x)
+    targets = {name: int(str(hooks[name]), 16) for name in names}
+    edits = []
+    for key, site in (("info_table_allocate", sites["table_allocate"]),
+                      ("info_names_allocate", sites["names_allocate"]),
+                      ("info_names_free", sites["destructor_names_free"]),
+                      ("info_table_free", sites["destructor_table_free"]),
+                      ("info_cleanup", sites["cleanup_call"]),
+                      ("info_finish", sites["finish"])):
+        was, off = x.patch_call(site, targets[key])
+        edits.append((off, 5, "%s 0x%08X: 0x%08X -> 0x%08X"
+                      % (key.replace("_", " "), site, was, targets[key])))
+    return edits
+
+
 @patch("mcp-102")
 def _mcp_102(x, value, ctx):
     """Reactivate script-triggered objects after their script mod is removed."""
@@ -1214,6 +1239,95 @@ def find_heap_region_sites(x):
     return x.off_to_va(store - 5), x.off_to_va(fit), x.off_to_va(free)
 
 
+def find_info_arena_sites(x):
+    """INFO constructor allocations, its two name-free paths, and the call after the global
+    dialogue cleanup loop. All are anchored by the INFO vtable and the global heap object."""
+    data = bytes(x.data)
+    heap = find_heap_object(x)
+    heap_bytes = struct.pack("<I", heap)
+    constructor_store = find_unique(data, b"\xc7\x06\x88\x80\x36\x00",
+                                    "INFO constructor vtable")
+    constructor_start = data.rfind(b"\x6a\xff", constructor_store - 0x60, constructor_store)
+    if constructor_start < 0:
+        raise PatchError("info-name-arena: INFO constructor start not found")
+    constructor_va = x.off_to_va(constructor_start)
+    constructor_end = constructor_store + 0xD0
+    heap_allocate = find_heap_function(x, "allocate")[0]
+    table_calls = [site for site in find_call_sites(x, heap_allocate)
+                   if constructor_va <= site < x.off_to_va(constructor_end)]
+    if len(table_calls) != 1:
+        raise PatchError("info-name-arena: expected one INFO table allocation")
+    table_allocate = table_calls[0]
+    table_off = x.va_to_off(table_allocate)
+    names_sig = (b"\x68\xdb\x0e\x00\x00\x68\x68\x80\x36\x00\x6a\x20\x6a\x03"
+                 b"\x89\x46\x10\xe8")
+    names_off = table_off + 5 + find_unique(
+        data[table_off + 5:constructor_end], names_sig,
+        "INFO name allocation sequence") + len(names_sig) - 1
+    names_allocate = x.off_to_va(names_off)
+
+    constructor_calls = find_call_sites(x, constructor_va)
+    if len(constructor_calls) != 1:
+        raise PatchError("info-name-arena: expected one INFO constructor call")
+    load_off = x.va_to_off(constructor_calls[0] + 5)
+    topic_match = re.search(rb"\x8b\x0d(?P<topic>....)", data[load_off:load_off + 0x20], re.S)
+    if not topic_match:
+        raise PatchError("info-name-arena: current topic load not found")
+    current_topic = struct.unpack("<I", topic_match.group("topic"))[0]
+
+    cleanup_sig = b"\x53\x56\x8b\x71\x18\x33\xdb\x3b\xf3\x74\x4c\x57"
+    cleanup_off = find_unique(data, cleanup_sig, "INFO post-load cleanup")
+    cleanup = x.off_to_va(cleanup_off)
+    cleanup_names_free = cleanup + 0x26
+    cleanup_table_free = cleanup + 0x48
+    cleanup_link = cleanup + 0x17
+    if data[x.va_to_off(cleanup_link)] != 0xE8 or \
+            data[x.va_to_off(cleanup_names_free)] != 0xE8 or \
+            data[x.va_to_off(cleanup_table_free)] != 0xE8:
+        raise PatchError("info-name-arena: cleanup calls changed")
+
+    dtor_free = re.compile(
+        rb"\x8b\x47\x10\x3b\xc5.{0,16}?\x74.\x8b\x08\x51"
+        rb"(?P<names>\xe8....)\x8b\x47\x10\x83\xc4\x04\x50\xb9" +
+        re.escape(heap_bytes) + rb"(?P<table>\xe8....)\x89\x6f\x10", re.S)
+    matches = list(dtor_free.finditer(data))
+    if len(matches) != 1:
+        raise PatchError("info-name-arena: %d destructor free sequences, expected 1"
+                         % len(matches))
+    destructor_names_free = x.off_to_va(matches[0].start("names"))
+    destructor_table_free = x.off_to_va(matches[0].start("table"))
+
+    if tes3x_inject.call_target(x, cleanup_names_free) != \
+            tes3x_inject.call_target(x, destructor_names_free):
+        raise PatchError("info-name-arena: name free targets differ")
+    heap_free = find_heap_function(x, "free")[0]
+    if any(tes3x_inject.call_target(x, site) != heap_free
+           for site in (cleanup_table_free, destructor_table_free)):
+        raise PatchError("info-name-arena: table free target changed")
+
+    callers = find_call_sites(x, cleanup)
+    if len(callers) != 1:
+        raise PatchError("info-name-arena: expected one cleanup caller")
+    cleanup_call = callers[0]
+    finish = cleanup_call + 0x14
+    if data[x.va_to_off(finish)] != 0xE8:
+        raise PatchError("info-name-arena: post-cleanup call changed")
+    return {
+        "table_allocate": table_allocate,
+        "names_allocate": names_allocate,
+        "names_free": tes3x_inject.call_target(x, cleanup_names_free),
+        "cleanup_names_free": cleanup_names_free,
+        "cleanup_table_free": cleanup_table_free,
+        "destructor_names_free": destructor_names_free,
+        "destructor_table_free": destructor_table_free,
+        "cleanup_call": cleanup_call,
+        "link_original": tes3x_inject.call_target(x, cleanup_link),
+        "current_topic": current_topic,
+        "finish": finish,
+        "finish_original": tes3x_inject.call_target(x, finish),
+    }
+
+
 @patch("heap-census")
 def _heap_census(x, value, ctx):
     """Redirect every direct Memory_Heap::Allocate and ::Free call to the census."""
@@ -1395,6 +1509,11 @@ LOCATORS = {
     "heap-region-malloc": lambda image: find_heap_region_sites(image)[0],
     "heap-region-fit": lambda image: find_heap_region_sites(image)[1],
     "heap-region-free": lambda image: find_heap_region_sites(image)[2],
+    "info-names-allocate": lambda image: find_info_arena_sites(image)["names_allocate"],
+    "info-names-free": lambda image: find_info_arena_sites(image)["names_free"],
+    "info-current-topic": lambda image: find_info_arena_sites(image)["current_topic"],
+    "info-link-original": lambda image: find_info_arena_sites(image)["link_original"],
+    "info-finish-original": lambda image: find_info_arena_sites(image)["finish_original"],
     "xapi-heap-alloc": find_xapi_heap_alloc,
     "xapi-heap-free": find_xapi_heap_free,
 }

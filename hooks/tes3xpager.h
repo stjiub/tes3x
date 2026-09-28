@@ -4,6 +4,8 @@
 #include "tes3xlog.h"
 
 int tes3x_pager_command(const char *text);
+int tes3x_pager_init(void);
+int tes3x_pager_contains(const void *ptr);
 int tes3x_pager_set_group(void *base, u32 size, u32 group);
 
 #endif

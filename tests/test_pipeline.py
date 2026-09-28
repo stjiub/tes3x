@@ -230,6 +230,14 @@ class PipelinePlanTests(unittest.TestCase):
         with self.assertRaisesRegex(PipelineError, 'requires script-ext'):
             resolve_patch_plan(profile)
 
+    def test_info_name_arena_adds_pager_dependency(self):
+        profile = {'patches': {'preset': 'minimal', 'enable': ['info-name-arena']}}
+        plan = resolve_patch_plan(profile)
+        self.assertEqual(plan['selected'], ['info-name-arena'])
+        self.assertEqual(plan['sources'], [
+            'tes3xhook.c', 'tes3xlog.c', 'tes3xpager.c', 'tes3xinfoarena.c'
+        ])
+
     def test_standard_only_selects_release_channel_default_fixes(self):
         plan = resolve_patch_plan({'patches': {'preset': 'standard'},
                                    'package': {'mode': 'merged-bsa'}})
