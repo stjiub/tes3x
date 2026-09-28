@@ -130,6 +130,10 @@ order = 10
         window.refresh_analysis()
         rows = window.plugin_list.rows()
         self.assertEqual([item.text(0) for item in rows][3:], ["mod.esp", "other.esp"])
+        self.assertEqual(rows[0].text(1), "Retail")
+        self.assertEqual(rows[1].text(1), "Placeholder")
+        self.assertEqual(rows[2].text(1), "Placeholder")
+        self.assertIn("four-byte expansion placeholders", window.plugin_note.text())
         self.assertEqual(rows[4].text(2), "04")
 
         rows[3].setCheckState(0, Qt.CheckState.Unchecked)

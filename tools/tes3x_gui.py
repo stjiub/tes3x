@@ -54,6 +54,7 @@ EXTRA = Qt.ItemDataRole.UserRole + 1
 TEMPLATE = ROOT / "examples" / "profile.toml"
 PROFILE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 RETAIL_PLUGINS = ("Morrowind.esm", "Tribunal.esm", "Bloodmoon.esm")
+EXPANSION_PLACEHOLDERS = {"tribunal.esm", "bloodmoon.esm"}
 WINS = QColor(60, 170, 60, 60)
 LOSES = QColor(210, 60, 60, 60)
 WARNING = QColor(200, 40, 40)
@@ -1233,7 +1234,7 @@ class ProfileWindow(QMainWindow):
         bar.addWidget(self.reset_order_button)
         bar.addWidget(self.mlox_at_build)
         bar.addStretch()
-        self.plugin_list = DragList(["Plugin", "Mod", "Index"])
+        self.plugin_list = DragList(["Plugin", "Source", "Index"])
         self.plugin_list.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.plugin_list.header().setStretchLastSection(False)
         self.plugin_list.itemChanged.connect(self.plugin_item_changed)
@@ -1769,7 +1770,7 @@ class ProfileWindow(QMainWindow):
         active = sum(1 for item in rows if item.checkState(self.MOD_NAME) == Qt.CheckState.Checked)
         plugins = sum(1 for value in self.analysis["plugins"].values() if value["included"])
         self.counts.setText(f"Mods {active} of {len(rows)} active · "
-                            f"Plugins {plugins + len(RETAIL_PLUGINS)} active")
+                            f"Plugins {plugins + len(self.base_plugins())} active")
 
     # Plugins
 
@@ -1803,17 +1804,39 @@ class ProfileWindow(QMainWindow):
         except (OSError, ValueError):
             return preferred
 
+    def base_plugins(self):
+        """Retail masters and expansion placeholders present in the planned build."""
+        overrides = self.analysis.get("retail", {})
+        vanilla = self.local_path("vanilla_root")
+        data_files = vanilla / "Data Files" if vanilla else None
+        modded = bool(self.analysis["active"])
+        result = []
+        for name in RETAIL_PLUGINS:
+            key = name.casefold()
+            source = overrides.get(key)
+            retail = data_files is not None and (data_files / name).is_file()
+            if source:
+                result.append((name, source, False))
+            elif key not in EXPANSION_PLACEHOLDERS or retail:
+                result.append((name, "Retail", False))
+            elif modded:
+                result.append((name, "Placeholder", True))
+        return result
+
     def populate_plugins(self):
         self.plugins_loading = True
         self.plugin_list.clear()
         plugins = self.analysis["plugins"]
         active = self.analysis["active"]
-        loaded = [name.casefold() for name in RETAIL_PLUGINS]
-        for name in RETAIL_PLUGINS:
-            item = QTreeWidgetItem([name, self.analysis.get("retail", {}).get(name.casefold(),
-                                                                            "Retail"), ""])
+        base = self.base_plugins()
+        loaded = [name.casefold() for name, _source, _placeholder in base]
+        for name, source, placeholder in base:
+            item = QTreeWidgetItem([name, source, ""])
             item.setFlags(Qt.ItemFlag.ItemIsEnabled)
             item.setCheckState(0, Qt.CheckState.Checked)
+            if placeholder:
+                item.setToolTip(0, "Generated automatically for a modded build when the retail "
+                                   "expansion master is absent; contains only the TES3 signature.")
             self.plugin_list.addTopLevelItem(item)
         for name in self.plugin_sequence():
             value = plugins[name]
@@ -1849,6 +1872,7 @@ class ProfileWindow(QMainWindow):
         self.plugin_list.setDragDropMode(
             QAbstractItemView.DragDropMode.NoDragDrop if self.mlox_at_build.isChecked()
             else QAbstractItemView.DragDropMode.InternalMove)
+        self.plugin_list.resizeColumnToContents(1)
         self.plugin_list.resizeColumnToContents(2)
         if self.mlox_at_build.isChecked():
             self.plugin_note.setText("mlox sorts the plugins when the profile is built.")
@@ -1857,6 +1881,10 @@ class ProfileWindow(QMainWindow):
                                      "before other plugins.")
         else:
             self.plugin_note.setText("Mod order. Drag plugins or press Sort to set your own.")
+        if any(placeholder for _name, _source, placeholder in base):
+            self.plugin_note.setText(self.plugin_note.text() +
+                                     " TES3X generates the listed four-byte expansion placeholders "
+                                     "during packaging.")
         self.plugins_loading = False
 
     def plugins_moved(self):

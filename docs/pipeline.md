@@ -28,6 +28,16 @@ The presets:
 Anything else has to be enabled by name or by category. Some patches are added automatically
 when something needs them; `delta-bsa` packing adds `multi-bsa`, for example.
 
+### Expansion master placeholders
+
+Xbox GOTY keeps the expansion content in `Morrowind.esm`, while plugins still name
+`Tribunal.esm` and `Bloodmoon.esm` as masters. For a modded build, TES3X copies either file when
+an input supplies it and otherwise generates a four-byte file containing only `TES3`. These
+placeholders satisfy the dependency names; they do not add or replace expansion content.
+
+This is an automatic packaging compatibility step, not an XBE patch. A profile with no mods
+stages the retail `Data Files` unchanged and does not generate missing placeholders.
+
 ### Loose files
 
 `mode = "loose"` ships every mod file loose and leaves retail `Morrowind.bsa` as it is. In an
