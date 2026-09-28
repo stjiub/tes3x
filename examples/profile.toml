@@ -1,15 +1,22 @@
-# Copy this file into profiles/ and edit it for one build.
+# Copy this file into profiles/ and edit it for one build. Commented lines show each option
+# with its default; uncomment one to change it. docs/configuration.md describes them all.
 
 [profile]
 name = "my-build"                    # output: build/pipeline/my-build
-# title = "Morrowind Modded"         # optional dashboard title
-# remote_root = "F:/Games/MorrowindModded"
 library = "C:/path/to/mod-library"  # remove for a patches-only build
+# title = "Morrowind Modded"         # dashboard title; default: the retail title
+# dashboards = ["xbmc4gamers"]       # dashboard metadata written when title is set; [] for none
+# remote_root = "F:/Games/MorrowindModded"   # Xbox game folder; default: the local config's
 
 [rules]
-max_texture_size = 512
-clear_cache_partitions = true
-# plugin_order = "mlox"              # sort plugins with mlox instead of mod order; needs paths.mlox_rules
+max_texture_size = 512               # shrink mod textures larger than this
+clear_cache_partitions = true        # clear the Xbox's X/Y/Z cache after deploying
+# convert_all_textures = false       # convert every mod texture, not only oversized ones
+# max_filename = 42                  # longest file name allowed; FATX's limit is 42
+# plugin_order = "mods"              # "mods": masters first, then mod order
+#                                    # "mlox": sort with mlox; needs paths.mlox_rules
+# keep_assets = []                   # patterns reachability pruning must keep
+# exclude = [...]                    # patterns left out of mod folders; replaces the built-in list
 
 [patches]
 # minimal: no optional patches
@@ -38,14 +45,25 @@ enable = [
 # Patches the preset includes that you don't want, such as "console".
 disable = []
 
+# Add every patch in these categories: core, correctness, compat, performance, qol, balance,
+# instrumentation.
+# categories = []
+
 [preferences]
 # Applied after the Xbox's stored controls load. Omit the table to leave player preferences alone.
 invert_look = false
 
 [package]
-# delta-bsa needs LLVM; merged-bsa does not.
+# How mod files are shipped:
+#   "delta-bsa":  mod files in their own archive beside the retail one. Needs LLVM.
+#   "merged-bsa": mod files merged into a rebuilt Morrowind.bsa.
+#   "loose":      every mod file loose in Data Files. No LLVM or archive needed and easy to
+#                 inspect, but the Xbox searches large folders for every file.
 mode = "delta-bsa"
-# archive_only = false
+# archive_name = "tes3xmods.bsa"     # the mod archive's name in delta-bsa mode
+# archive_only = false               # read assets only from archives, never loose files
+# loose_assets = []                  # patterns kept loose in an archive build, e.g. "textures/sky/*"
+# drive_letter = "D"                 # drive the game reads its files from
 
 [ini]
 # "General:Show FPS" = 1
@@ -58,5 +76,6 @@ version = "1.0"
 components = ["extra-textures"]     # optional installer layers
 order = 10                           # higher order wins file conflicts
 # enabled = false
-# optional = true
+# optional = true                    # skip the mod if its folder is missing
 # plugins = ["Example Mod.esp"]      # include only these plugins from this mod
+# loose = true                       # ship this mod's files loose in an archive build

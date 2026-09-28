@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """Build and smoke-test an exact TES3X profile in xemu.
 
-The emulator backend is intentionally separate from the test contract. During the transition from
-the private workspace, --runner may point at its tools/xemu_run.py. A checkout-local runner is used
-automatically once present.
+Runs go through tools/tes3x_xemu.py, which reads [xemu] from the local config.
 """
 
 import argparse
 import datetime
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -104,8 +103,7 @@ def find_runner(value):
         if not path.is_file():
             raise TestError(f"xemu runner not found: {path}")
         return path
-    candidates = [ROOT / "tools" / "xemu_run.py", Path.cwd() / "tools" / "xemu_run.py",
-                  ROOT.parent / "tools" / "xemu_run.py"]
+    candidates = [ROOT / "tools" / "tes3x_xemu.py"]
     for path in candidates:
         if path.is_file() and path.resolve() != Path(__file__).resolve():
             return path.resolve()
@@ -159,7 +157,8 @@ def run_profile(args):
     scenario_path = Path(args.scenario).resolve()
     scenario = load_scenario(scenario_path)
     runner = find_runner(args.runner)
-    workspace = runner.parents[1]
+    # The runner writes build/xemu/ under its working folder and reads the config found there.
+    workspace = Path(args.config).resolve().parent if getattr(args, "config", None) else Path.cwd()
     run_root = workspace / "build" / "xemu"
     work_root = Path(args.work_root).resolve()
     work_root.mkdir(parents=True, exist_ok=True)
@@ -183,7 +182,10 @@ def run_profile(args):
     command += ["--", *pipeline_args, "--enable", "diagnostics", "--enable", "console",
                 *args.pipeline_arg]
     print("==", " ".join(command[1:]), flush=True)
-    process = subprocess.run(command, cwd=workspace)
+    env = dict(os.environ)
+    if getattr(args, "config", None):
+        env["TES3X_CONFIG"] = str(Path(args.config).resolve())
+    process = subprocess.run(command, cwd=workspace, env=env)
     log = run_dir / "tes3xlog.txt"
     passed, failures, observed = check_log(log, scenario)
     if process.returncode:
@@ -288,7 +290,7 @@ def main(argv=None):
     parser.add_argument("profile", help="the exact profile to build and test")
     parser.add_argument("--scenario", default=ROOT / "scenarios" / "smoke.toml",
                         help="single-run scenario TOML (default: scenarios/smoke.toml)")
-    parser.add_argument("--runner", help="xemu_run.py backend during the workspace transition")
+    parser.add_argument("--runner", help="xemu runner to use instead of tools/tes3x_xemu.py")
     parser.add_argument("--config", help="local TES3X config passed to the build pipeline")
     parser.add_argument("--work-root", default="build/profile-tests",
                         help="small transient scripts/results (default: build/profile-tests)")

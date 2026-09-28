@@ -16,7 +16,9 @@ applies engine fixes to the retail XBE, extends its functionality, and can also 
 
 ## Setup
 
-Copy the example files:
+The easiest way is the [profile manager](#profile-manager): on first start it asks where your
+retail game and mod library are and how to reach the Xbox, and it creates and edits profiles for
+you. To set up by hand instead, copy the example files:
 
 ```
 cp examples/local.toml tes3x.local.toml
@@ -30,18 +32,18 @@ Each file in `profiles/` is one build: its name, mods and patches.
 
 The mod library contains one directory per mod, with the layout each mod would use under
 `Data Files`. Wrapper directories from extracted archives are detected automatically.
-For versions and optional installer folders, add a managed `library.toml` and select mod ids and
-components from the profile. See [managed mod libraries](docs/mod-library.md).
+A profile picks mods by folder name. For versions and optional installer folders, index the
+library into a `library.toml` and pick mods by id instead. See [the mod library](docs/mod-library.md).
 
 For engine fixes only, remove `library` and every `[[mods]]` block. For mods without engine
 fixes, set `preset = "minimal"`.
 
 ## Profile manager
 
-`python tools/tes3x_gui.py` opens the profile manager, a GUI for picking mods and patches and for
-building and deploying. It lists the profiles in `profiles/` and switches between them; New,
-Duplicate, Rename and Delete sit next to the list. It needs PySide6 and tomlkit:
-`python -m pip install -r requirements-gui.txt`.
+`python tools/tes3x_gui.py` opens the profile manager. It edits everything the text files hold:
+mods, patches, build settings and your local settings. It also builds, tests and deploys. It lists
+the profiles in `profiles/`, with New, Duplicate, Rename and Delete next to the list. It needs
+PySide6 and tomlkit: `python -m pip install -r requirements-gui.txt`.
 
 ## Build
 
@@ -120,6 +122,8 @@ python tools/tes3x_patch.py --list
 
 ## In-game console
 
+![The in-game console with its on-screen keyboard](docs/images/console.png)
+
 The `standard` preset includes the console. Back + right thumb click opens it and A raises the
 on-screen keyboard. `[Xbox] ConsoleCombo` changes the combination; `disable = ["console"]` leaves
 it out.
@@ -138,9 +142,10 @@ checking that the instrumented build runs.
 ## Packaging and overrides
 
 `delta-bsa` keeps mod assets in a separate archive for smaller rebuilds and uploads, but requires
-LLVM. `merged-bsa` needs no compiler and rebuilds `Morrowind.bsa`. Both modes pack thousands of mod
-assets into an indexed archive, avoiding the repeated FATX directory scans of a large loose-file
-install and improving asset-loading performance.
+LLVM. `merged-bsa` needs no compiler and rebuilds `Morrowind.bsa`. Both pack mod files into an
+indexed archive, so the Xbox doesn't have to search large folders for each file. `loose` ships
+every mod file loose in `Data Files`, like a manual install: no archive and no LLVM, and the
+easiest to inspect.
 
 The annotated [example profile](examples/profile.toml) covers the common options. Command-line
 values override it:
@@ -166,6 +171,7 @@ The pipeline uses these commands internally; they can also be run directly:
 | `tes3x_pack.py` | Pack a collected mod tree into a game folder. |
 | `tes3x_deploy.py` | Upload a game folder to the Xbox. |
 | `tes3x_test.py` | Build and run a profile smoke test, or test a managed library one mod at a time. |
+| `tes3x_xemu.py` | Build a profile and run it in xemu with a command file; see [testing](docs/testing.md#running-in-xemu). |
 | `tes3x_gui.py` | The profile manager. |
 | `tes3x_library.py` | Scan or validate a versioned local mod library. |
 | `tes3x_fetch.py` | Copy files back off the Xbox, such as saves or logs. |

@@ -76,11 +76,11 @@ every build.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `mode` | string | `delta-bsa` | `delta-bsa` keeps retail `Morrowind.bsa`; `merged-bsa` rebuilds it with mod assets. |
+| `mode` | string | `delta-bsa` | `delta-bsa` puts mod files in their own archive; `merged-bsa` rebuilds `Morrowind.bsa` with them; `loose` ships them loose. |
 | `archive_name` | string | `tes3xmods.bsa` | Archive name in `delta-bsa` mode. |
-| `archive_only` | boolean | `false` | Set `TryArchiveFirst=1` and skip loose asset lookups. |
+| `archive_only` | boolean | `false` | Set `TryArchiveFirst=1` and skip loose asset lookups. Not with `loose`. |
 | `drive_letter` | string | `D` | Drive used for game-directory asset paths. |
-| `loose_assets` | array of strings | `[]` | Path patterns that must remain loose. |
+| `loose_assets` | array of strings | `[]` | Path patterns kept loose in an archive build. |
 
 `delta-bsa` and engine patches require LLVM. A patches-only profile does not package `Data Files`;
 it stages the retail directory unchanged.
@@ -103,17 +103,17 @@ Add one table per mod. Remove all mod tables and `profile.library` for a patches
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `id` | string | required | Stable id from `library.toml`. |
-| `version` | string | library default | Installed release selected for a managed mod. |
-| `components` | array of strings | component defaults | Named optional layers selected from the release. |
+| `name` | string | | A folder in the mod library; the whole folder is used. |
+| `id` | string | | A mod's id in the library's `library.toml`. |
+| `version` | string | library default | Release to use, for a mod picked by id. |
+| `components` | array of strings | component defaults | Optional installer folders to add, for a mod picked by id. |
 | `order` | integer | `0` | Conflict priority; higher values win. |
 | `enabled` | boolean | `true` | Include this mod. |
 | `optional` | boolean | `false` | Skip the mod if its folder is absent. |
 | `plugins` | array of strings | all | Include only these plugins from the mod folder. |
 | `loose` | boolean | `false` | Ship this mod's winning assets loose instead of archiving them. |
 
-Every entry needs exactly one of `name` or `id`. See [managed mod libraries](mod-library.md) for
-version and component definitions.
+Every entry needs exactly one of `name` or `id`. See [the mod library](mod-library.md).
 
 ### `[ini]`
 

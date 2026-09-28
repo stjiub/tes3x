@@ -60,8 +60,8 @@ order = 10
     def test_profile_window_loads_and_saves_canonical_toml(self):
         window = ProfileWindow(self.profile)
         self.addCleanup(window.close)
-        self.assertEqual(window.tabs.count(), 2)
-        self.assertEqual(window.centralWidget().layout().indexOf(window.output), 2)
+        self.assertEqual(window.tabs.count(), 3)
+        self.assertEqual(window.body_split.indexOf(window.output), 1)
         self.assertTrue(window.discard_after_deploy.isCheckable())
         self.assertEqual(window.action_save.shortcut().toString(), "Ctrl+S")
         self.assertEqual(window.selected.count(), 1)
@@ -111,6 +111,76 @@ order = 10
             window.rename_profile()
         self.assertFalse((profiles / "c.toml").exists())
         self.assertEqual(window.profile_path, (profiles / "d.toml").resolve())
+
+    def test_build_tab_writes_profile_settings(self):
+        window = ProfileWindow(self.profile)
+        self.addCleanup(window.close)
+        original = self.profile.read_text(encoding="utf-8")
+        self.assertTrue(window.save_profile())
+        with open(self.profile, "rb") as stream:
+            untouched = tomllib.load(stream)
+        # Defaults the user never set stay out of the file.
+        self.assertNotIn("package", untouched)
+        self.assertNotIn("rules", untouched)
+        self.assertEqual(set(untouched["profile"]), {"name", "library"})
+
+        build = window.build
+        build.title.setText("Modded")
+        build.select(build.mode, "loose")
+        build.archive_only.setChecked(True)
+        build.select(build.plugin_order, "mlox")
+        build.select(build.invert_look, True)
+        build.add_ini_row("General:Show FPS", "1")
+        build.add_ini_row("Xbox:ConsoleCombo", "7,9")
+        window.selected.setCurrentRow(0)
+        window.mod_switches["loose"][0].setChecked(True)
+        self.assertTrue(window.is_dirty())
+        self.assertTrue(window.save_profile())
+        with open(self.profile, "rb") as stream:
+            saved = tomllib.load(stream)
+        self.assertEqual(saved["profile"]["title"], "Modded")
+        self.assertEqual(saved["package"], {"mode": "loose"})
+        self.assertEqual(saved["rules"], {"plugin_order": "mlox"})
+        self.assertEqual(saved["preferences"], {"invert_look": True})
+        self.assertEqual(saved["ini"], {"General:Show FPS": 1, "Xbox:ConsoleCombo": "7,9"})
+        self.assertTrue(saved["mods"][0]["loose"])
+        self.assertNotEqual(original, self.profile.read_text(encoding="utf-8"))
+
+    def test_folder_name_profiles_work_with_or_without_an_index(self):
+        plain = self.root / "plain"
+        (plain / "Folder Mod").mkdir(parents=True)
+        (plain / "Folder Mod" / "folder.esp").write_bytes(b"TES3")
+        (plain / "Other").mkdir()
+        profile = self.root / "folders.toml"
+        profile.write_text(f'[profile]\nname = "folders"\nlibrary = "{plain.as_posix()}"\n\n'
+                           '[[mods]]\nname = "Folder Mod"\norder = 10\n', encoding="utf-8")
+        window = ProfileWindow(profile)
+        self.addCleanup(window.close)
+        self.assertEqual(window.profile_path, profile.resolve())
+        self.assertEqual(window.selected.item(0).text(), "Folder Mod  (folder)")
+        window.selected.setCurrentRow(0)
+        self.assertEqual(window.plugins.count(), 1)
+        self.assertFalse(window.is_dirty())
+
+        # No library.toml: a mod added in the GUI is written by folder name too.
+        other = next(window.library.topLevelItem(i).child(0)
+                     for i in range(window.library.topLevelItemCount())
+                     if window.library.topLevelItem(i).text(0) == "Other")
+        window.library.setCurrentItem(other)
+        window.add_selected_release()
+        self.assertTrue(window.save_profile())
+        with open(profile, "rb") as stream:
+            saved = tomllib.load(stream)
+        self.assertEqual([mod["name"] for mod in saved["mods"]], ["Folder Mod", "Other"])
+
+        window.write_library_index()
+        self.assertTrue((plain / "library.toml").is_file())
+        with patch.object(QMessageBox, "information"):
+            window.convert_to_ids()
+        with open(profile, "rb") as stream:
+            saved = tomllib.load(stream)
+        self.assertEqual([mod["id"] for mod in saved["mods"]], ["folder-mod", "other"])
+        self.assertEqual(window.selected.count(), 2)
 
     def test_local_settings_dialog_preserves_xemu_and_writes_public_fields(self):
         config = self.root / "local.toml"

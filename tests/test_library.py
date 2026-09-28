@@ -8,8 +8,9 @@ TOOLS = Path(__file__).resolve().parents[1] / "tools"
 sys.path.insert(0, str(TOOLS))
 
 from tes3x_build import Mod, materialize, resolve  # noqa: E402
-from tes3x_library import (LibraryError, available_plugins, dependency_order,  # noqa: E402
-                           discover_library, load_library, resolve_selection, write_library)
+from tes3x_library import (LibraryError, available_plugins, convert_profile, dependency_order,  # noqa: E402
+                           discover_library, index_library, load_library, resolve_selection,
+                           write_library)
 from tes3x_pipeline import PipelineError, validate_profile  # noqa: E402
 
 
@@ -173,6 +174,35 @@ roots = ["Optional"]
         self.assertEqual(set(loaded), set(catalog))
         selected = resolve_selection({"id": "single"}, plain, loaded)
         self.assertEqual(selected["roots"], [plain / "Single.esp"])
+
+    def test_indexing_adds_new_folders_and_keeps_existing_entries(self):
+        (self.root / "New Mod" / "meshes").mkdir(parents=True)
+        (self.root / "Travel").mkdir()  # same slug as an indexed id, different folder
+        before = (self.root / "library.toml").read_text(encoding="utf-8")
+        path, added = index_library(self.root)
+        after = path.read_text(encoding="utf-8")
+        self.assertTrue(after.startswith(before))
+        self.assertEqual(set(added), {"new-mod", "travel-2"})
+        self.assertEqual(set(load_library(self.root)), {"base", "travel", "new-mod", "travel-2"})
+        self.assertEqual(index_library(self.root)[1], {})
+        self.assertEqual(path.read_text(encoding="utf-8"), after)
+
+    def test_convert_rewrites_whole_folder_mods_only(self):
+        (self.root / "Loose Mod").mkdir()
+        index_library(self.root)
+        profile = ('[profile]\nname = "p"\n\n'
+                   '[[mods]]\nname = "Base"\norder = 10\n\n'
+                   '[[mods]]\nname = "Travel 1.0"\norder = 20\n\n'
+                   '[[mods]]\nname = "loose mod"  # comment kept\norder = 30\n\n'
+                   '[[mods]]\nname = "Missing"\norder = 40\n')
+        text, converted, skipped = convert_profile(profile, load_library(self.root))
+        self.assertEqual(converted, ["Base", "loose mod"])
+        self.assertEqual([name for name, _reason in skipped], ["Travel 1.0", "Missing"])
+        self.assertIn('id = "base"\norder = 10', text)
+        self.assertIn('id = "loose-mod"  # comment kept\n', text)
+        self.assertIn('name = "Travel 1.0"', text)
+        self.assertEqual(text.replace('id = "base"', 'name = "Base"')
+                         .replace('id = "loose-mod"', 'name = "loose mod"'), profile)
 
 
 if __name__ == "__main__":

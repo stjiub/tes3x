@@ -28,12 +28,19 @@ The presets:
 Anything else has to be enabled by name or by category. Some patches are added automatically
 when something needs them; `delta-bsa` packing adds `multi-bsa`, for example.
 
-### Loose mods
+### Loose files
 
-`loose = true` on a mod ships its files loose instead of packing them into the archive. If one of
-those files replaces a retail asset, the retail copy is dropped from a merged archive, or listed
-in `ArchiveInvalidationList.txt` when the retail archive is left alone. Loose files need
+`mode = "loose"` ships every mod file loose and leaves retail `Morrowind.bsa` as it is. In an
+archive build, `loose = true` on a mod, or a pattern in `loose_assets`, keeps just those files
+loose.
+
+When a loose file replaces a retail asset, the retail copy is dropped from a merged archive, or
+listed in `ArchiveInvalidationList.txt` when the retail archive is left alone. Loose files need
 `TryArchiveFirst=0`, which the build sets, so they can't be combined with `archive_only`.
+
+A loose build avoids archive limits, such as two file names that hash the same, but the Xbox
+searches each folder entry by entry, and a large mod list puts over a thousand files in some
+folders.
 
 ### Sorting plugins with mlox
 
@@ -46,9 +53,11 @@ mlox isn't included with TES3X. To set it up:
 
 1. `python -m pip install mlox`. Add `--no-deps` to skip its GUI's dependencies, which TES3X
    doesn't use.
-2. Download [`mlox_base.txt`](https://github.com/DanaePlays/mlox-rules/blob/main/mlox_base.txt)
-   and set `paths.mlox_rules` to it in `tes3x.local.toml`. The rules are updated often, so
-   download them again now and then.
+2. Get the rules: **Download** next to "mlox rules" in the profile manager's local settings, or
+   `python tools/tes3x_plugins.py fetch-rules mlox/mlox_base.txt`, then set `paths.mlox_rules` to
+   that file. They come from the
+   [mlox-rules project](https://github.com/DanaePlays/mlox-rules) and change often, so download
+   them again now and then.
 
 mlox runs on a copy of the build's plugins and never touches your library. Its conflict and
 missing-requirement warnings are printed during the build. Everything it said, including notes,

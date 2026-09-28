@@ -13,7 +13,7 @@ from tes3x_pipeline import (PipelineError, copy_retail_root, link_or_copy, resol
                             validate_profile)
 from tes3x_pipeline import main as pipeline_main
 from tes3x_patch import _mcp_97, _mcp_102, _mcp_154
-from tes3x_plugins import collect, validate_order, warnings as mlox_warnings
+from tes3x_plugins import collect, fetch_rules, validate_order, warnings as mlox_warnings
 from test_reach import rec, sub
 
 
@@ -81,12 +81,32 @@ class PipelineTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             collect(built, vanilla, self.root / 'stubs')
 
+    def test_fetch_rules_saves_only_a_rules_file(self):
+        good, bad = self.root / 'good.txt', self.root / 'bad.txt'
+        good.write_bytes(b'[Order]\nMorrowind.esm\nTribunal.esm\n')
+        bad.write_bytes(b'<html>not found</html>')
+        target = self.root / 'mlox' / 'mlox_base.txt'
+        self.assertEqual(fetch_rules(target, good.as_uri()), good.stat().st_size)
+        self.assertEqual(target.read_bytes(), good.read_bytes())
+        with self.assertRaises(ValueError):
+            fetch_rules(target, bad.as_uri())
+        self.assertEqual(target.read_bytes(), good.read_bytes())
+
     def test_mlox_notes_are_not_warnings(self):
         messages = ("[NOTE]\n > 'a.esp'\n |\tadvice\n"
                     "[CONFLICT]\n > 'a.esp'\n > 'b.esp'\n |\tdo not use both\n"
                     "[REQUIRES]\n > 'c.esp' Requires:\n > 'd.esm'\n")
         self.assertEqual([block.split('\n')[0] for block in mlox_warnings(messages)],
                          ['[CONFLICT]', '[REQUIRES]'])
+
+    def test_loose_mode_needs_no_archive_hook(self):
+        plan = resolve_patch_plan({'patches': {'preset': 'minimal'}, 'package': {'mode': 'loose'},
+                                   'mods': [{'name': 'x'}]})
+        self.assertEqual(plan['package_mode'], 'loose')
+        self.assertNotIn('multi-bsa', plan['applied'])
+        with self.assertRaises(PipelineError):
+            validate_profile({'profile': {'name': 'p'},
+                              'package': {'mode': 'loose', 'archive_only': True}})
 
     def test_plugin_order_accepts_mods_or_mlox(self):
         validate_profile({'profile': {'name': 'p'}, 'rules': {'plugin_order': 'mlox'}})

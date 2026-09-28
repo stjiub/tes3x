@@ -74,6 +74,8 @@ def main():
     ap.add_argument("--delta-archive", metavar="NAME", nargs="?", const="tes3xmods.bsa",
                     help="leave vanilla Morrowind.bsa untouched and put mod assets in their own "
                          "archive, listed in tes3xarch.txt (needs the multi-BSA hook)")
+    ap.add_argument("--no-archive", action="store_true",
+                    help="stage every mod asset loose and leave vanilla Morrowind.bsa untouched")
     ap.add_argument("--stubs", choices=("auto", "require", "force"), default="auto",
                     help="expansion master placeholders: use vanilla's and generate what is "
                          "missing (auto), fail if absent (require), or always generate (force)")
@@ -96,8 +98,10 @@ def main():
     ap.add_argument("--load-order", help="tes3x_plugins order/patch JSON; stamp all shipped plugins")
     ap.add_argument("--remote-root", default=DEFAULT_REMOTE_ROOT, help="Xbox game folder for physical path checks")
     args = ap.parse_args()
-    if args.archive_only and (args.loose_asset or args.loose_mod):
+    if args.archive_only and (args.loose_asset or args.loose_mod or args.no_archive):
         ap.error('loose assets require TryArchiveFirst=0; archive-only skips loose lookups')
+    if args.no_archive and args.delta_archive:
+        ap.error('--no-archive and --delta-archive are alternatives')
     if args.loose_mod and not args.manifest:
         ap.error('--loose-mod needs --manifest')
     if os.path.isdir(args.out) and os.listdir(args.out):
@@ -164,7 +168,7 @@ def main():
         if not any(fnmatch.fnmatchcase(key(rel), pattern) for rel, _ in pack):
             ap.error(f"--loose-asset matched nothing: {pattern}")
     staged_loose = [(rel, src) for rel, src in pack
-                    if owner.get(key(rel)) in loose_mods
+                    if args.no_archive or owner.get(key(rel)) in loose_mods
                     or any(fnmatch.fnmatchcase(key(rel), p) for p in globs)]
     moved = {rel for rel, _ in staged_loose}
     pack = [(rel, src) for rel, src in pack if rel not in moved]
@@ -199,7 +203,7 @@ def main():
     paths += ['Data Files/Morrowind.bsa', 'Morrowind.ini']
     if args.delta_archive:
         paths += ['Data Files/' + args.delta_archive, 'Data Files/tes3xarch.txt']
-    if invalidated and args.delta_archive:
+    if invalidated and (args.delta_archive or args.no_archive):
         paths.append('ArchiveInvalidationList.txt')
     require_paths(paths, args.remote_root)
     os.makedirs(out_df, exist_ok=True)
@@ -208,7 +212,10 @@ def main():
         print(f"\r  writing {i}/{n}", end="", flush=True)
 
     out_bsa = os.path.join(out_df, "Morrowind.bsa")
-    if args.delta_archive:
+    if args.no_archive:
+        shutil.copyfile(base_bsa, out_bsa)
+        print(f"  Morrowind.bsa: vanilla unchanged, {os.path.getsize(out_bsa)/1048576:.1f} MB")
+    elif args.delta_archive:
         # The hook loads the mod archive second; prepending makes its entries override vanilla.
         shutil.copyfile(base_bsa, out_bsa)
         delta_path = os.path.join(out_df, args.delta_archive)
@@ -251,7 +258,7 @@ def main():
     names = validate_order(names, plugins)
     for index, name in enumerate(names):
         os.utime(plugins[name], (STAMP_BASE + index * STAMP_STEP,) * 2)
-    if invalidated and args.delta_archive:
+    if invalidated and (args.delta_archive or args.no_archive):
         write_invalidation(Path(args.out) / 'ArchiveInvalidationList.txt', [rel for rel, _ in invalidated])
 
     ini_src = args.ini or os.path.join(os.path.dirname(args.vanilla.rstrip("/\\")), "Morrowind.ini")

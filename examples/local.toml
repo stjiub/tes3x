@@ -26,3 +26,13 @@ remote_root = "F:/Games/MorrowindModded"
 # TES3X_FTP_PASSWORD environment variable or pass --ask-password.
 # user = "xbox"
 # password = "xbox"
+
+# Only for test runs in xemu (tools/tes3x_xemu.py and tools/tes3x_test.py); see docs/testing.md.
+# [xemu]
+# exe = "C:/xemu/xemu.exe"
+# bootrom = "C:/xemu/mcpx_1.0.bin"
+# bios = "C:/xemu/bios.bin"
+# bios_128mb = "C:/xemu/bios-128mb.bin"   # optional, for --ram 128
+# eeprom = "C:/xemu/eeprom.bin"
+# hdd = "C:/xemu/xbox_hdd.qcow2"
+# extract_xiso = "C:/tools/extract-xiso.exe"

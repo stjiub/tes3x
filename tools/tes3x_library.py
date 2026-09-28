@@ -184,10 +184,9 @@ def discover_library(root):
     return result
 
 
-def write_library(root, catalog):
-    """Write normalized library metadata. Source mod files are never touched."""
-    root = Path(root).resolve()
-    lines = ["schema = 1", ""]
+def render_mods(catalog):
+    """library.toml [[mod]] blocks for these mods, sorted by name."""
+    lines = []
     for mod in sorted(catalog.values(), key=lambda item: item["name"].casefold()):
         lines += ["[[mod]]", f"id = {json.dumps(mod['id'], ensure_ascii=False)}",
                   f"name = {json.dumps(mod['name'], ensure_ascii=False)}", ""]
@@ -211,9 +210,94 @@ def write_library(root, catalog):
                     lines.append("conflicts = " + json.dumps(component["conflicts"],
                                                                ensure_ascii=False))
                 lines.append("")
-    path = root / CATALOG_NAME
-    path.write_text("\n".join(lines), encoding="utf-8", newline="\n")
+    return lines
+
+
+def write_library(root, catalog):
+    """Write normalized library metadata. Source mod files are never touched."""
+    path = Path(root).resolve() / CATALOG_NAME
+    path.write_text("\n".join(["schema = 1", "", *render_mods(catalog)]), encoding="utf-8",
+                    newline="\n")
     return path
+
+
+def unindexed(root):
+    """Folders and plugins library.toml does not list yet, as new entries with free ids."""
+    root = Path(root).resolve()
+    existing = load_library(root) if (root / CATALOG_NAME).is_file() else {}
+    known = {release["folder"].casefold()
+             for mod in existing.values() for release in mod["releases"].values()}
+    added = {}
+    for mod in discover_library(root).values():
+        if mod["releases"]["unknown"]["folder"].casefold() in known:
+            continue
+        mod_id, base, suffix = mod["id"], mod["id"], 2
+        while mod_id in existing or mod_id in added:
+            mod_id, suffix = f"{base}-{suffix}", suffix + 1
+        added[mod_id] = {**mod, "id": mod_id}
+    return added
+
+
+def index_library(root):
+    """Add unindexed folders to library.toml, leaving every existing entry exactly as written."""
+    root = Path(root).resolve()
+    path = root / CATALOG_NAME
+    added = unindexed(root)
+    if not path.is_file():
+        write_library(root, added)
+    elif added:
+        text = path.read_text(encoding="utf-8")
+        separator = "" if text.endswith("\n\n") else "\n" if text.endswith("\n") else "\n\n"
+        with open(path, "a", encoding="utf-8", newline="\n") as stream:
+            stream.write(separator + "\n".join(render_mods(added)))
+    return path, added
+
+
+def folder_ids(catalog):
+    """Library folder, case-folded, to (mod id, release) for each indexed release."""
+    return {release["folder"].casefold(): (mod["id"], release)
+            for mod in catalog.values() for release in mod["releases"].values()}
+
+
+def convert_profile(text, catalog):
+    """Rewrite a profile's `name = "folder"` mods as library ids where that is exact.
+
+    A folder entry takes the whole folder, so only a release that is the whole folder with no
+    optional components converts without changing what gets built. Returns the new text, the
+    converted names and the names left alone with the reason."""
+    by_folder = folder_ids(catalog)
+    lines = text.splitlines(keepends=True)
+    out, converted, skipped = [], [], []
+    in_mods = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("["):
+            in_mods = stripped.split("#")[0].strip() == "[[mods]]"
+        match = in_mods and re.match(r"(\s*)name(\s*=\s*)(\"[^\"]*\"|'[^']*')(.*?)(\r?\n)?$", line)
+        if not match:
+            out.append(line)
+            continue
+        name = tomllib.loads("v = " + match.group(3))["v"]
+        found = by_folder.get(name.casefold())
+        if found is None:
+            skipped.append((name, "no library.toml entry has this folder"))
+        elif found[1]["roots"] != ["."] or found[1]["components"]:
+            skipped.append((name, "its release uses subfolders or components; choose them in "
+                                  "the profile manager"))
+            found = None
+        if found is None:
+            out.append(line)
+            continue
+        mod_id, release = found
+        mod = catalog[mod_id]
+        newline = match.group(5) or ""
+        out.append(f"{match.group(1)}id{match.group(2)}{json.dumps(mod_id)}{match.group(4)}"
+                   f"{newline}")
+        if mod["default"] != release["version"] and len(mod["releases"]) > 1:
+            out.append(f"{match.group(1)}version = {json.dumps(release['version'])}"
+                       f"{newline or chr(10)}")
+        converted.append(name)
+    return "".join(out), converted, skipped
 
 
 def resolve_selection(entry, library_root, catalog=None):
@@ -325,19 +409,44 @@ def main(argv=None):
     sub = parser.add_subparsers(dest="command", required=True)
     check = sub.add_parser("check", help="validate an existing library.toml")
     check.add_argument("root")
-    scan = sub.add_parser("scan", help="index top-level mod folders and plugins")
+    scan = sub.add_parser("scan", help="list folders and plugins library.toml does not index yet")
     scan.add_argument("root")
-    scan.add_argument("--write", action="store_true", help="write library.toml")
+    scan.add_argument("--write", action="store_true",
+                      help="add them to library.toml; existing entries are kept as written")
+    convert = sub.add_parser("convert", help="rewrite a profile's folder names as library ids")
+    convert.add_argument("profile")
+    convert.add_argument("--library", help="library root (default: the profile's library)")
+    convert.add_argument("--dry-run", action="store_true", help="report without writing")
     args = parser.parse_args(argv)
     try:
         if args.command == "check":
             catalog = load_library(args.root)
             print(f"{len(catalog)} installed mods")
-        else:
-            catalog = discover_library(args.root)
-            print(f"discovered {len(catalog)} mods")
+        elif args.command == "scan":
             if args.write:
-                print(f"wrote {write_library(args.root, catalog)}")
+                path, added = index_library(args.root)
+            else:
+                path, added = Path(args.root) / CATALOG_NAME, unindexed(args.root)
+            for mod_id, mod in added.items():
+                print(f"  {mod_id}: {mod['releases']['unknown']['folder']}")
+            verb = "added to" if args.write else "not yet in"
+            print(f"{len(added)} mods {verb} {path}")
+        else:
+            profile = Path(args.profile)
+            with open(profile, encoding="utf-8", newline="") as stream:
+                text = stream.read()
+            library = args.library or tomllib.loads(text).get("profile", {}).get("library")
+            if not library:
+                raise LibraryError("the profile has no library; pass --library")
+            new_text, converted, skipped = convert_profile(text, load_library(library))
+            for name in converted:
+                print(f"  converted {name}")
+            for name, reason in skipped:
+                print(f"  kept {name}: {reason}")
+            if converted and not args.dry_run:
+                with open(profile, "w", encoding="utf-8", newline="") as stream:
+                    stream.write(new_text)
+            print(f"{len(converted)} converted, {len(skipped)} kept as folder names")
         return 0
     except (LibraryError, OSError) as exc:
         raise SystemExit(str(exc)) from exc

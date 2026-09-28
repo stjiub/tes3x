@@ -10,6 +10,7 @@ import shutil
 import struct
 import sys
 import types
+import urllib.request
 from pathlib import Path
 
 from tes3x_build import plugin_masters
@@ -17,6 +18,7 @@ from tes3x_records import records, subrecords
 
 STAMP_BASE = 978307200  # 2001-01-01 UTC, representable on FATX
 STAMP_STEP = 4
+RULES_URL = 'https://raw.githubusercontent.com/DanaePlays/mlox-rules/main/mlox_base.txt'
 
 
 def digest(path):
@@ -165,14 +167,34 @@ def run_order(built, vanilla, rules, work, output):
     print(f'mlox {mlox_version()}: sorted {len(names)} plugins; notes in {notes.name}')
 
 
+def fetch_rules(path, url=RULES_URL):
+    """Download the current mlox rules to path; return the byte count."""
+    with urllib.request.urlopen(url, timeout=60) as response:
+        data = response.read()
+    if b'[Order]' not in data:
+        raise ValueError(f'{url} did not return an mlox rules file')
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    partial = path.with_name(path.name + '.part')
+    partial.write_bytes(data)
+    os.replace(partial, path)
+    return len(data)
+
+
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('action', choices=['order'])
-    ap.add_argument('built')
-    ap.add_argument('--vanilla', required=True)
-    ap.add_argument('--rules', required=True, help="mlox_base.txt from the mlox-rules project")
-    ap.add_argument('--work', required=True, help='new isolated working directory')
-    ap.add_argument('--out', required=True)
+    sub = ap.add_subparsers(dest='action', required=True)
+    order = sub.add_parser('order', help='sort a built tree\'s plugins with mlox')
+    order.add_argument('built')
+    order.add_argument('--vanilla', required=True)
+    order.add_argument('--rules', required=True, help="mlox_base.txt from the mlox-rules project")
+    order.add_argument('--work', required=True, help='new isolated working directory')
+    order.add_argument('--out', required=True)
+    fetch = sub.add_parser('fetch-rules', help='download the current mlox rules')
+    fetch.add_argument('out', help='where to save mlox_base.txt')
     args = ap.parse_args()
     sys.stdout.reconfigure(errors='replace')
-    run_order(args.built, args.vanilla, args.rules, args.work, args.out)
+    if args.action == 'fetch-rules':
+        print(f'mlox rules: {fetch_rules(args.out)} bytes -> {args.out}')
+    else:
+        run_order(args.built, args.vanilla, args.rules, args.work, args.out)

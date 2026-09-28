@@ -130,6 +130,36 @@ The census needs an 8 MB table, so run it on a console or emulator with 128 MB. 
 allocations do not depend on the memory size, so a 128 MB census also describes a 64 MB console.
 Allocations outside that heap, such as the texture and vertex-buffer arena, are not counted.
 
+## Running in xemu
+
+`tools/tes3x_xemu.py` builds a profile, packs it as a disc image, boots it in
+[xemu](https://xemu.app) on a fresh copy of a clean hard disk, and copies the log back out. It
+needs these under `[xemu]` in `tes3x.local.toml`, all of which you supply yourself:
+
+| key | file |
+|---|---|
+| `exe` | `xemu.exe` |
+| `bootrom` | the MCPX boot ROM |
+| `bios` | the BIOS for normal runs, such as a retail one |
+| `bios_128mb` | optional: a BIOS that uses 128 MB, for `--ram 128 --bios 128mb` |
+| `eeprom` | an EEPROM image |
+| `hdd` | a clean hard disk image; xemu's own `xbox_hdd.qcow2` works, and is converted once |
+| `extract_xiso` | [extract-xiso](https://github.com/XboxDev/extract-xiso), which packs the disc image |
+| `gdb` | optional: `gdb`, for the `--gdb` options |
+
+```powershell
+python tools/tes3x_xemu.py first-run profiles/my-build.toml --direct-engine --skip-intro --exec script.txt
+```
+
+`--exec` puts a [command file](#commands-without-a-controller) on the disk, and `--direct-engine`
+boots the game itself instead of the retail launcher, which `@start` needs. Each run gets a new
+folder under `build/xemu/` with the log, the disc image and xemu's output. Everything after `--`
+goes to the pipeline, such as `-- --preset minimal`. `--help` lists the rest, including
+screenshots, saves and GDB.
+
+The profile manager's local settings hold the same keys. xemu timings don't reflect a real Xbox,
+so use it to check that a build runs, not how fast.
+
 ## Profile smoke tests
 
 Boot a profile in xemu, start a new game, walk to Balmora and check the log for crashes and

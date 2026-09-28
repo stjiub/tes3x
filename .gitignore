@@ -16,11 +16,13 @@ cache/
 # ...except the logs and screenshots a proof record cites
 !patches/*/*.log
 !patches/*/*.png
+!docs/images/*.png
 
 __pycache__/
 *.pyc
 tes3x.local.toml
 profiles/
+mlox/
 
 # saves pulled off the console for analysis
 42530005/

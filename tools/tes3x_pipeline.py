@@ -36,6 +36,7 @@ HOOK_SOURCES = {entry["name"]: entry.get("source") for entry in registry.PATCHES
 SOURCE_DEPENDENCIES = {"tes3xinfoarena.c": ("tes3xpager.c",)}
 CATEGORIES = set(registry.CATEGORIES)
 PRESETS = ("minimal", "standard", "development")
+PACKAGE_MODES = ("delta-bsa", "merged-bsa", "loose")
 
 
 class PipelineError(ValueError):
@@ -121,9 +122,11 @@ def validate_profile(profile):
           "package")
     for key in ("mode", "archive_name", "drive_letter"):
         typed(package, key, (str,), "package")
-    if package.get("mode", "delta-bsa") not in {"delta-bsa", "merged-bsa"}:
-        raise PipelineError("package.mode must be 'delta-bsa' or 'merged-bsa'")
+    if package.get("mode", "delta-bsa") not in PACKAGE_MODES:
+        raise PipelineError("package.mode must be one of " + ", ".join(PACKAGE_MODES))
     typed(package, "archive_only", (bool,), "package")
+    if package.get("mode") == "loose" and package.get("archive_only"):
+        raise PipelineError("package.archive_only cannot be used with mode = 'loose'")
     string_list(package.get("loose_assets"), "package.loose_assets")
 
     ini = table("ini")
@@ -242,8 +245,8 @@ def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), pac
 
     if enabled_mods(profile):
         mode = package_mode or profile.get("package", {}).get("mode", "delta-bsa")
-        if mode not in {"delta-bsa", "merged-bsa"}:
-            raise PipelineError("package.mode must be 'delta-bsa' or 'merged-bsa'")
+        if mode not in PACKAGE_MODES:
+            raise PipelineError("package.mode must be one of " + ", ".join(PACKAGE_MODES))
     else:
         mode = "retail"
     applied = set(selected)
@@ -514,7 +517,7 @@ def main(argv=None):
     ap.add_argument("--preset", choices=PRESETS)
     ap.add_argument("--enable", action="append", default=[], metavar="PATCH")
     ap.add_argument("--disable", action="append", default=[], metavar="PATCH")
-    ap.add_argument("--package-mode", choices=("delta-bsa", "merged-bsa"),
+    ap.add_argument("--package-mode", choices=PACKAGE_MODES,
                     help="override package.mode (default: the profile's)")
     ap.add_argument("--drive", help="game-directory drive letter (default: D)")
     ap.add_argument("--title", help="name both XBEs carry, so parallel installs are told "
@@ -679,8 +682,9 @@ def main(argv=None):
             raise PipelineError("rules.plugin_order = 'mlox' needs mlox: "
                                 "python -m pip install mlox")
         if not paths.get("mlox_rules"):
-            raise PipelineError("rules.plugin_order = 'mlox' needs paths.mlox_rules "
-                                "in the local config")
+            raise PipelineError("rules.plugin_order = 'mlox' needs paths.mlox_rules in the local "
+                                "config; download the rules with the profile manager's local "
+                                "settings or: python tools/tes3x_plugins.py fetch-rules PATH")
         mlox_rules = config_path(paths["mlox_rules"], base).resolve()
         require_file(mlox_rules, "mlox rules")
     if (args.deploy or args.dry_run) and (not deploy.get("host") or not remote):
@@ -747,6 +751,8 @@ def main(argv=None):
                         "--vanilla", data_files, "--ini", ini, "--out", staged]
             if use_mlox:
                 pack_cmd += ["--load-order", load_order]
+            if plan["package_mode"] == "loose":
+                pack_cmd.append("--no-archive")
             if plan["package_mode"] == "delta-bsa":
                 pack_cmd += ["--delta-archive", package.get("archive_name", "tes3xmods.bsa")]
             if package.get("archive_only", False):

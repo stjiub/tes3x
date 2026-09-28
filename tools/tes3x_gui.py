@@ -15,7 +15,7 @@ try:
     from PySide6.QtWidgets import (
         QAbstractItemView, QApplication, QCheckBox, QDialog, QDialogButtonBox, QFileDialog,
         QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
-        QListWidget,
+        QListWidget, QScrollArea, QTableWidget, QTableWidgetItem,
         QListWidgetItem, QMainWindow, QMessageBox, QPushButton, QSpinBox, QSplitter, QStatusBar,
         QTabWidget, QTextEdit, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
     )
@@ -25,10 +25,12 @@ except ImportError as exc:
         "`python -m pip install -r requirements-gui.txt`"
     ) from exc
 
-from tes3x_build import find_data_root
-from tes3x_library import (CATALOG_NAME, LibraryError, available_plugins, dependency_order,
-                           discover_library, load_library, resolve_selection, write_library)
+from tes3x_build import DEFAULT_EXCLUDE, find_data_root
+from tes3x_library import (CATALOG_NAME, LibraryError, available_plugins, convert_profile,
+                           dependency_order, discover_library, index_library, load_library,
+                           resolve_selection)
 from tes3x_patches import CATEGORIES as PATCH_CATEGORIES, PATCHES as PATCH_CATALOG, SOURCES
+from tes3x_plugins import fetch_rules
 from tes3x_pipeline import (PipelineError, resolve_patch_plan, validate_local_config,
                             validate_profile)
 
@@ -110,8 +112,12 @@ class LocalSettingsDialog(QDialog):
                            ("build_root", "Build output"),
                            ("llvm", "LLVM tools")):
             form.addRow(label, self.browse_row("paths." + key, values.get(key, "")))
-        form.addRow("mlox rules (optional)",
-                    self.browse_row("paths.mlox_rules", values.get("mlox_rules", ""), files=True))
+        rules_row = self.browse_row("paths.mlox_rules", values.get("mlox_rules", ""), files=True)
+        download = QPushButton("Download")
+        download.setToolTip("Download the current mlox rules and use them")
+        download.clicked.connect(self.download_mlox_rules)
+        rules_row.layout().addWidget(download)
+        form.addRow("mlox rules (optional)", rules_row)
         hardlink = QCheckBox("Hardlink unchanged retail files")
         hardlink.setChecked(values.get("hardlink_retail", False))
         self.fields["paths.hardlink_retail"] = hardlink
@@ -135,12 +141,33 @@ class LocalSettingsDialog(QDialog):
         return group
 
     def xemu_group(self, values):
-        group = QGroupBox("xemu")
+        group = QGroupBox("xemu (for test runs)")
         form = QFormLayout(group)
-        for key, label in (("exe", "Executable"), ("eeprom", "EEPROM"),
-                           ("cerbios", "128 MB BIOS")):
+        values = dict(values)
+        values.setdefault("bios_128mb", values.get("cerbios", ""))
+        for key, label in (("exe", "Executable"), ("bootrom", "MCPX boot ROM"),
+                           ("bios", "BIOS"), ("bios_128mb", "BIOS for 128 MB runs"),
+                           ("eeprom", "EEPROM"), ("hdd", "Clean HDD image"),
+                           ("extract_xiso", "extract-xiso")):
             form.addRow(label, self.browse_row("xemu." + key, values.get(key, ""), files=True))
         return group
+
+    def download_mlox_rules(self):
+        field = self.fields["paths.mlox_rules"]
+        target = Path(field.text().strip() or self.path.parent / "mlox" / "mlox_base.txt")
+        if not target.is_absolute():
+            target = self.path.parent / target
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            size = fetch_rules(target)
+        except (OSError, ValueError) as exc:
+            QApplication.restoreOverrideCursor()
+            QMessageBox.critical(self, "TES3X", f"Could not download the mlox rules: {exc}")
+            return
+        QApplication.restoreOverrideCursor()
+        field.setText(target.as_posix())
+        QMessageBox.information(self, "TES3X", f"Saved the mlox rules ({size // 1024} KB) to "
+                                f"{target}. Save the settings to use them.")
 
     def update_table(self, section, values):
         table = self.document.get(section)
@@ -159,6 +186,9 @@ class LocalSettingsDialog(QDialog):
                          else field.value() if isinstance(field, QSpinBox)
                          else field.text().strip())
                   for name, field in self.fields.items()}
+        xemu = self.document.get("xemu")
+        if xemu is not None and "cerbios" in xemu and values.get("xemu.bios_128mb"):
+            del xemu["cerbios"]
         for section in ("paths", "deploy", "xemu"):
             self.update_table(section, {name.split(".", 1)[1]: value
                                         for name, value in values.items()
@@ -176,6 +206,287 @@ class LocalSettingsDialog(QDialog):
             QMessageBox.critical(self, "TES3X", str(exc))
             return
         self.accept()
+
+
+class BuildSettings(QWidget):
+    """Every profile setting outside mods and patches, written back to the same TOML keys."""
+
+    PREFERENCE_CHOICES = (("Keep the player's setting", None), ("Normal", False),
+                          ("Inverted", True))
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.loading = False
+        self.on_change = lambda: None
+        self.on_library = lambda: None
+
+        self.title = QLineEdit()
+        self.title.setPlaceholderText("Retail title")
+        self.remote_root = QLineEdit()
+        self.remote_root.setPlaceholderText("From local settings")
+        self.library_path = QLineEdit()
+        self.library_path.setPlaceholderText("From local settings")
+        self.library_path.editingFinished.connect(lambda: self.on_library())
+        browse = QPushButton("Browse…")
+        browse.clicked.connect(self.browse_library)
+        library_row = QHBoxLayout()
+        library_row.setContentsMargins(0, 0, 0, 0)
+        library_row.addWidget(self.library_path)
+        library_row.addWidget(browse)
+        library_widget = QWidget()
+        library_widget.setLayout(library_row)
+        self.dashboard = QCheckBox("Write XBMC4Gamers dashboard files when a title is set")
+        identity = QGroupBox("Build")
+        form = QFormLayout(identity)
+        form.addRow("Dashboard title", self.title)
+        form.addRow("Xbox game folder", self.remote_root)
+        form.addRow("Mod library", library_widget)
+        form.addRow("", self.dashboard)
+
+        self.mode = QComboBox()
+        for label, value in (("Delta archive (needs LLVM)", "delta-bsa"),
+                             ("Merged Morrowind.bsa", "merged-bsa"),
+                             ("Loose files", "loose")):
+            self.mode.addItem(label, value)
+        self.mode.currentIndexChanged.connect(self.update_enabled)
+        self.archive_name = QLineEdit()
+        self.archive_name.setPlaceholderText("tes3xmods.bsa")
+        self.archive_only = QCheckBox("Read assets only from archives, never loose files")
+        self.drive_letter = QComboBox()
+        self.drive_letter.addItems(list("CDEFGHIJKLMNOPQRSTUVWXYZ"))
+        self.loose_assets = QTextEdit()
+        self.loose_assets.setPlaceholderText("One pattern per line, e.g. textures/sky/*")
+        self.loose_assets.setMaximumHeight(70)
+        package = QGroupBox("Packaging")
+        form = QFormLayout(package)
+        form.addRow("Mode", self.mode)
+        form.addRow("Archive name", self.archive_name)
+        form.addRow("", self.archive_only)
+        form.addRow("Keep loose", self.loose_assets)
+        form.addRow("Game drive", self.drive_letter)
+
+        self.max_texture_size = QComboBox()
+        for size in (128, 256, 512, 1024, 2048):
+            self.max_texture_size.addItem(str(size), size)
+        self.convert_all = QCheckBox("Convert every mod texture, not only oversized ones")
+        self.max_filename = QSpinBox()
+        self.max_filename.setRange(8, 42)
+        self.clear_cache = QCheckBox("Clear the Xbox's X/Y/Z cache after deploying")
+        self.plugin_order = QComboBox()
+        self.plugin_order.addItem("Masters first, then mod order", "mods")
+        self.plugin_order.addItem("Sort with mlox", "mlox")
+        self.keep_assets = QTextEdit()
+        self.keep_assets.setPlaceholderText("Patterns pruning must keep, one per line")
+        self.keep_assets.setMaximumHeight(60)
+        self.exclude = QTextEdit()
+        self.exclude.setPlaceholderText("Built-in list: " + ", ".join(DEFAULT_EXCLUDE))
+        self.exclude.setMaximumHeight(60)
+        rules = QGroupBox("Rules")
+        form = QFormLayout(rules)
+        form.addRow("Largest texture", self.max_texture_size)
+        form.addRow("", self.convert_all)
+        form.addRow("Longest file name", self.max_filename)
+        form.addRow("", self.clear_cache)
+        form.addRow("Plugin order", self.plugin_order)
+        form.addRow("Always keep", self.keep_assets)
+        form.addRow("Leave out", self.exclude)
+
+        self.invert_look = QComboBox()
+        for label, value in self.PREFERENCE_CHOICES:
+            self.invert_look.addItem(label, value)
+        preferences = QGroupBox("Player preferences")
+        form = QFormLayout(preferences)
+        form.addRow("Look up/down", self.invert_look)
+
+        self.ini = QTableWidget(0, 2)
+        self.ini.setHorizontalHeaderLabels(["Section:Key", "Value"])
+        self.ini.horizontalHeader().setStretchLastSection(True)
+        self.ini.itemChanged.connect(self.changed)
+        add = QPushButton("Add")
+        add.clicked.connect(self.add_ini_row)
+        remove = QPushButton("Remove")
+        remove.clicked.connect(self.remove_ini_row)
+        ini_buttons = QHBoxLayout()
+        ini_buttons.addWidget(add)
+        ini_buttons.addWidget(remove)
+        ini_buttons.addStretch()
+        ini = QGroupBox("Morrowind.ini settings (docs/ini-keys.md lists the [Xbox] keys)")
+        ini_layout = QVBoxLayout(ini)
+        ini_layout.addWidget(self.ini)
+        ini_layout.addLayout(ini_buttons)
+
+        left = QVBoxLayout()
+        left.addWidget(identity)
+        left.addWidget(package)
+        left.addWidget(preferences)
+        left.addStretch()
+        right = QVBoxLayout()
+        right.addWidget(rules)
+        right.addWidget(ini, 1)
+        layout = QHBoxLayout(self)
+        layout.addLayout(left, 1)
+        layout.addLayout(right, 1)
+
+        for widget in (self.title, self.remote_root, self.archive_name):
+            widget.textChanged.connect(self.changed)
+        for widget in (self.dashboard, self.archive_only, self.convert_all, self.clear_cache):
+            widget.toggled.connect(self.changed)
+        for widget in (self.mode, self.drive_letter, self.max_texture_size, self.plugin_order,
+                       self.invert_look):
+            widget.currentIndexChanged.connect(self.changed)
+        for widget in (self.loose_assets, self.keep_assets, self.exclude):
+            widget.textChanged.connect(self.changed)
+        self.max_filename.valueChanged.connect(self.changed)
+        self.library_path.textChanged.connect(self.changed)
+
+    def changed(self, *_args):
+        if not self.loading:
+            self.on_change()
+
+    def browse_library(self):
+        selected = QFileDialog.getExistingDirectory(self, "Mod library", self.library_path.text())
+        if selected:
+            self.library_path.setText(selected)
+            self.on_library()
+
+    def update_enabled(self, *_args):
+        mode = self.mode.currentData()
+        self.archive_name.setEnabled(mode == "delta-bsa")
+        self.archive_only.setEnabled(mode != "loose")
+        self.loose_assets.setEnabled(mode != "loose")
+
+    def add_ini_row(self, key="", value=""):
+        row = self.ini.rowCount()
+        self.ini.insertRow(row)
+        self.ini.setItem(row, 0, QTableWidgetItem(key))
+        self.ini.setItem(row, 1, QTableWidgetItem(value))
+        if not key:
+            self.ini.setCurrentCell(row, 0)
+            self.ini.editItem(self.ini.item(row, 0))
+
+    def remove_ini_row(self):
+        row = self.ini.currentRow()
+        if row >= 0:
+            self.ini.removeRow(row)
+            self.changed()
+
+    @staticmethod
+    def select(combo, value):
+        index = combo.findData(value)
+        combo.setCurrentIndex(index if index >= 0 else 0)
+
+    @staticmethod
+    def lines(widget):
+        return [line.strip() for line in widget.toPlainText().splitlines() if line.strip()]
+
+    def load(self, plain):
+        self.loading = True
+        identity = plain.get("profile", {})
+        rules = plain.get("rules", {})
+        package = plain.get("package", {})
+        self.title.setText(identity.get("title", ""))
+        self.remote_root.setText(identity.get("remote_root", ""))
+        self.library_path.setText(identity.get("library", ""))
+        self.dashboard.setChecked("xbmc4gamers" in identity.get("dashboards", ["xbmc4gamers"]))
+        self.select(self.mode, package.get("mode", "delta-bsa"))
+        self.archive_name.setText(package.get("archive_name", ""))
+        self.archive_only.setChecked(package.get("archive_only", False))
+        self.drive_letter.setCurrentText(package.get("drive_letter", "D").upper())
+        self.loose_assets.setPlainText("\n".join(package.get("loose_assets", [])))
+        size = rules.get("max_texture_size", 512)
+        if self.max_texture_size.findData(size) < 0:
+            self.max_texture_size.addItem(str(size), size)
+        self.select(self.max_texture_size, size)
+        self.convert_all.setChecked(rules.get("convert_all_textures", False))
+        self.max_filename.setValue(rules.get("max_filename", 42))
+        self.clear_cache.setChecked(rules.get("clear_cache_partitions", False))
+        self.select(self.plugin_order, rules.get("plugin_order", "mods"))
+        self.keep_assets.setPlainText("\n".join(rules.get("keep_assets", [])))
+        self.exclude.setPlainText("\n".join(rules.get("exclude", [])))
+        self.select(self.invert_look, plain.get("preferences", {}).get("invert_look"))
+        self.ini.setRowCount(0)
+        for key, value in plain.get("ini", {}).items():
+            self.add_ini_row(key, str(value).lower() if isinstance(value, bool) else str(value))
+        self.update_enabled()
+        self.loading = False
+
+    def library(self):
+        return self.library_path.text().strip()
+
+    def package_values(self):
+        values = {"mode": self.mode.currentData()}
+        if self.archive_only.isChecked() and self.mode.currentData() != "loose":
+            values["archive_only"] = True
+        return values
+
+    def preference_values(self):
+        value = self.invert_look.currentData()
+        return {} if value is None else {"invert_look": value}
+
+    @staticmethod
+    def ini_value(text):
+        for kind in (int, float):
+            try:
+                return kind(text)
+            except ValueError:
+                pass
+        return {"true": True, "false": False}.get(text.casefold(), text)
+
+    def ini_values(self):
+        values = {}
+        for row in range(self.ini.rowCount()):
+            key = (self.ini.item(row, 0).text() if self.ini.item(row, 0) else "").strip()
+            if key:
+                text = self.ini.item(row, 1).text().strip() if self.ini.item(row, 1) else ""
+                values[key] = self.ini_value(text)
+        return values
+
+    @staticmethod
+    def put(document, section, key, value, default):
+        """Write a value, leaving an absent key absent while it matches the default."""
+        table = document.get(section)
+        if value is None or (value == default and (table is None or key not in table)):
+            if table is not None and key in table:
+                del table[key]
+            return
+        if table is None:
+            table = tomlkit.table()
+            document[section] = table
+        if table.get(key) != value:
+            table[key] = value
+
+    def apply(self, document):
+        put = lambda *args: self.put(document, *args)
+        put("profile", "title", self.title.text().strip() or None, None)
+        put("profile", "remote_root", self.remote_root.text().strip() or None, None)
+        put("profile", "library", self.library() or None, None)
+        put("profile", "dashboards", ["xbmc4gamers"] if self.dashboard.isChecked() else [],
+            ["xbmc4gamers"])
+        mode = self.mode.currentData()
+        put("package", "mode", mode, "delta-bsa")
+        put("package", "archive_name", self.archive_name.text().strip() or None, None)
+        put("package", "archive_only", self.archive_only.isChecked() and mode != "loose", False)
+        put("package", "drive_letter", self.drive_letter.currentText(), "D")
+        put("package", "loose_assets", self.lines(self.loose_assets), [])
+        put("rules", "max_texture_size", self.max_texture_size.currentData(), 512)
+        put("rules", "convert_all_textures", self.convert_all.isChecked(), False)
+        put("rules", "max_filename", self.max_filename.value(), 42)
+        put("rules", "clear_cache_partitions", self.clear_cache.isChecked(), False)
+        put("rules", "plugin_order", self.plugin_order.currentData(), "mods")
+        put("rules", "keep_assets", self.lines(self.keep_assets), [])
+        put("rules", "exclude", self.lines(self.exclude) or None, None)
+        put("preferences", "invert_look", self.invert_look.currentData(), None)
+        values = self.ini_values()
+        table = document.get("ini")
+        if table is None and values:
+            table = tomlkit.table()
+            document["ini"] = table
+        if table is not None:
+            for key in [key for key in table if key not in values]:
+                del table[key]
+            for key, value in values.items():
+                if table.get(key) != value:
+                    table[key] = value
 
 
 class ProfileWindow(QMainWindow):
@@ -247,6 +558,16 @@ class ProfileWindow(QMainWindow):
         options_layout.addWidget(self.components)
         options_layout.addWidget(QLabel("Plugins"))
         options_layout.addWidget(self.plugins)
+        self.mod_switches = {}
+        for key, label, default in (("enabled", "Enabled", True),
+                                    ("optional", "Skip if the mod folder is missing", False),
+                                    ("loose", "Ship this mod's files loose", False)):
+            box = QCheckBox(label)
+            box.setEnabled(False)
+            box.toggled.connect(lambda value, key=key, default=default:
+                                self.mod_switch_changed(key, value, default))
+            self.mod_switches[key] = (box, default)
+            options_layout.addWidget(box)
 
         choices = QSplitter()
         choices.addWidget(self.library)
@@ -269,12 +590,24 @@ class ProfileWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.tabs.addTab(mods_tab, "Mods")
         self.tabs.addTab(patches_tab, "Patches")
+        self.build = BuildSettings()
+        self.build.on_change = self.build_changed
+        self.build.on_library = self.library_changed
+        build_scroll = QScrollArea()
+        build_scroll.setWidgetResizable(True)
+        build_scroll.setWidget(self.build)
+        self.tabs.addTab(build_scroll, "Build")
 
         body = QWidget()
         layout = QVBoxLayout(body)
         layout.addLayout(profile_bar)
-        layout.addWidget(self.tabs, 3)
-        layout.addWidget(self.output, 2)
+        self.body_split = QSplitter(Qt.Orientation.Vertical)
+        self.body_split.addWidget(self.tabs)
+        self.body_split.addWidget(self.output)
+        self.body_split.setStretchFactor(0, 4)
+        self.body_split.setStretchFactor(1, 1)
+        self.body_split.setSizes([640, 140])
+        layout.addWidget(self.body_split)
         self.setCentralWidget(body)
         self.setStatusBar(QStatusBar())
         self.ftp_status = QPushButton("Xbox: not checked")
@@ -298,13 +631,15 @@ class ProfileWindow(QMainWindow):
         self.action_save.triggered.connect(self.save_profile)
         self.action_settings = QAction("Local &settings…", self)
         self.action_settings.triggered.connect(self.edit_local_settings)
-        self.action_index = QAction("Write library index", self)
+        self.action_index = QAction("Index new library folders", self)
         self.action_index.triggered.connect(self.write_library_index)
+        self.action_convert = QAction("Convert folder names to library ids", self)
+        self.action_convert.triggered.connect(self.convert_to_ids)
         self.action_exit = QAction("E&xit", self)
         self.action_exit.triggered.connect(self.close)
         file_menu.addActions([self.action_new, self.action_open, self.action_save])
         file_menu.addSeparator()
-        file_menu.addActions([self.action_settings, self.action_index])
+        file_menu.addActions([self.action_settings, self.action_index, self.action_convert])
         file_menu.addSeparator()
         file_menu.addAction(self.action_exit)
 
@@ -337,6 +672,8 @@ class ProfileWindow(QMainWindow):
         else:
             self.open_initial_profile()
         if QApplication.platformName() != "offscreen":
+            if not self.local_config_path().is_file():
+                QTimer.singleShot(0, self.first_run)
             QTimer.singleShot(0, self.refresh_ftp_status)
             self.ftp_timer.start()
 
@@ -493,8 +830,8 @@ class ProfileWindow(QMainWindow):
         profile = {
             "patches": config,
             "mods": self.profile_mods() if hasattr(self, "selected") else [],
-            "package": self.profile_plain.get("package", {}),
-            "preferences": self.profile_plain.get("preferences", {}),
+            "package": self.build.package_values() if hasattr(self, "build") else {},
+            "preferences": self.build.preference_values() if hasattr(self, "build") else {},
         }
         try:
             plan = resolve_patch_plan(profile)
@@ -595,13 +932,12 @@ class ProfileWindow(QMainWindow):
     def open_initial_profile(self):
         last = self.settings.value("last_profile", "") if self.settings else ""
         files = self.profile_files()
-        if last and Path(last).is_file():
-            self.open_profile(Path(last))
-        elif files:
-            self.open_profile(files[0])
-        else:
+        candidates = ([Path(last)] if last and Path(last).is_file() else []) + files
+        # A profile the GUI cannot open should not stop it opening the next one.
+        if not any(self.open_profile(path, quiet=True) for path in candidates):
             self.statusBar().showMessage(
-                f"No profiles in {self.profiles_dir()}; use New… to create one")
+                f"No profile in {self.profiles_dir()} could be opened; use New… to create one"
+                if files else f"No profiles in {self.profiles_dir()}; use New… to create one")
 
     def picker_activated(self, index):
         path = Path(self.profile_picker.itemData(index))
@@ -714,6 +1050,11 @@ class ProfileWindow(QMainWindow):
             self.open_profile(files[0])
         self.refresh_profile_list()
 
+    def first_run(self):
+        QMessageBox.information(
+            self, "TES3X", "Set where your retail game files are, and how to reach your Xbox.")
+        self.edit_local_settings()
+
     def edit_local_settings(self):
         try:
             dialog = LocalSettingsDialog(self.local_config_path(), self)
@@ -729,45 +1070,19 @@ class ProfileWindow(QMainWindow):
         self.refresh_ftp_status()
         self.statusBar().showMessage(f"Saved {dialog.path}", 5000)
 
-    def open_profile(self, path):
+    def open_profile(self, path, quiet=False):
         try:
             text = path.read_text(encoding="utf-8")
             document = tomlkit.parse(text)
             plain = tomllib.loads(tomlkit.dumps(document))
             validate_profile(plain)
-            if any("id" not in entry for entry in plain.get("mods", [])):
-                raise PipelineError(
-                    "the GUI accepts only managed mod entries with id/version/components; "
-                    "index the library and update this profile to the new format")
-            local_path = self.local_config_path()
-            if not local_path.is_file():
-                local_path = None
-            local = {}
-            if local_path:
-                with open(local_path, "rb") as stream:
-                    local = tomllib.load(stream)
-            library_value = plain["profile"].get("library") or local.get("paths", {}).get(
-                "mod_library")
-            if not library_value and plain.get("mods"):
-                raise PipelineError("set profile.library or paths.mod_library to manage mods")
-            library_root = None
-            catalog = {}
-            indexed = False
-            if library_value:
-                library_root = Path(library_value)
-                if not library_root.is_absolute():
-                    library_root = self.work_dir() / library_root
-                library_root = library_root.resolve()
-                indexed = (library_root / CATALOG_NAME).is_file()
-                catalog = load_library(library_root) if indexed else discover_library(library_root)
-                if plain.get("mods") and not indexed:
-                    raise PipelineError("managed profiles require library.toml in the mod library")
-                for entry in plain.get("mods", []):
-                    resolve_selection(entry, library_root, catalog)
+            library_root, catalog, indexed = self.resolve_library(
+                plain["profile"].get("library"), plain.get("mods", []))
         except (OSError, tomlkit.exceptions.ParseError, tomllib.TOMLDecodeError,
                 PipelineError, LibraryError) as exc:
-            self.error(exc)
-            return
+            if not quiet:
+                self.error(f"{path.name}: {exc}")
+            return False
         self.profile_path = path.resolve()
         self.document = document
         self.profile_plain = plain
@@ -777,6 +1092,7 @@ class ProfileWindow(QMainWindow):
         self.populate_library()
         self.populate_profile(plain.get("mods", []))
         self.populate_patches(plain.get("patches", {}))
+        self.build.load(plain)
         try:
             self.saved_text = self.profile_text()
         except (PipelineError, LibraryError, tomlkit.exceptions.ParseError):
@@ -787,20 +1103,92 @@ class ProfileWindow(QMainWindow):
         self.setWindowTitle(f"TES3X Profile Manager — {self.profile_path.stem}")
         message = str(self.profile_path)
         if library_root and not indexed:
-            message += " — library scanned; write its index to manage versions/components"
+            message += " — no library.toml, so mods are added by folder name"
         self.statusBar().showMessage(message)
+        return True
+
+    def resolve_library(self, value, mods):
+        """The library a profile uses, its catalog, and whether library.toml indexes it."""
+        config = self.local_config_path()
+        local = tomllib.loads(config.read_text(encoding="utf-8")) if config.is_file() else {}
+        value = value or local.get("paths", {}).get("mod_library")
+        if not value:
+            if mods:
+                raise PipelineError("set a mod library to manage mods")
+            return None, {}, False
+        root = Path(value)
+        root = (root if root.is_absolute() else self.work_dir() / root).resolve()
+        if not root.is_dir():
+            raise PipelineError(f"mod library not found: {root}")
+        indexed = (root / CATALOG_NAME).is_file()
+        catalog = load_library(root) if indexed else discover_library(root)
+        if any("id" in entry for entry in mods) and not indexed:
+            raise PipelineError("mods chosen by id need library.toml in the mod library")
+        for entry in mods:
+            resolve_selection(entry, root, catalog)
+        return root, catalog, indexed
+
+    def library_changed(self):
+        value = self.build.library()
+        try:
+            root, catalog, indexed = self.resolve_library(value, self.profile_mods())
+        except (OSError, tomllib.TOMLDecodeError, PipelineError, LibraryError) as exc:
+            self.error(exc)
+            return
+        if root == self.library_root:
+            return
+        self.library_root, self.catalog, self.library_indexed = root, catalog, indexed
+        self.populate_library()
+        self.show_options(self.selected.currentRow())
+
+    def build_changed(self):
+        self.refresh_patch_summary()
+
+    def mod_switch_changed(self, key, value, default):
+        row = self.selected.currentRow()
+        if row < 0:
+            return
+        item = self.selected.item(row)
+        data = dict(item.data(ROLE))
+        if value == default:
+            data.pop(key, None)
+        else:
+            data[key] = value
+        item.setData(ROLE, data)
+        font = item.font()
+        font.setStrikeOut(not data.get("enabled", True))
+        item.setFont(font)
+        self.refresh_patch_summary()
 
     def write_library_index(self):
-        if not self.library_root or not self.catalog:
+        if not self.library_root:
             return
         try:
-            path = write_library(self.library_root, self.catalog)
+            path, added = index_library(self.library_root)
             self.catalog = load_library(self.library_root)
             self.library_indexed = True
         except (OSError, LibraryError) as exc:
             self.error(exc)
             return
-        self.statusBar().showMessage(f"Wrote {path}", 5000)
+        self.populate_library()
+        self.statusBar().showMessage(f"Added {len(added)} mods to {path}", 5000)
+
+    def convert_to_ids(self):
+        if self.profile_path is None or not self.save_profile():
+            return
+        if not self.library_indexed:
+            self.error("Index the library first (File > Index new library folders)")
+            return
+        with open(self.profile_path, encoding="utf-8", newline="") as stream:
+            text = stream.read()
+        new_text, converted, skipped = convert_profile(text, self.catalog)
+        if converted:
+            with open(self.profile_path, "w", encoding="utf-8", newline="") as stream:
+                stream.write(new_text)
+            self.open_profile(self.profile_path)
+        lines = [f"Converted {len(converted)} mods to library ids."]
+        lines += [f"Kept {name}: {reason}" for name, reason in skipped]
+        QMessageBox.information(self, "TES3X", "\n".join(lines))
 
     def populate_library(self):
         self.library.clear()
@@ -822,14 +1210,31 @@ class ProfileWindow(QMainWindow):
         if self.selected.count():
             self.selected.setCurrentRow(0)
 
+    def entry_folder(self, data):
+        """The library folder a profile mod reads, for spotting the same mod added twice."""
+        if "id" not in data:
+            return data["name"].casefold()
+        mod = self.catalog.get(data["id"])
+        if not mod:
+            return None
+        version = data.get("version") or mod["default"] or next(iter(mod["releases"]))
+        release = mod["releases"].get(version)
+        return release["folder"].casefold() if release else None
+
     def add_profile_item(self, data):
-        if data.get("id") not in self.catalog:
-            raise LibraryError(f"mod id is not installed: {data.get('id', '<missing>')}")
-        mod = self.catalog[data["id"]]
-        version = data.get("version") or mod["default"] or next(iter(mod["releases"]), "?")
-        label = f"{mod['name']}  {version}"
+        if "id" in data:
+            if data["id"] not in self.catalog:
+                raise LibraryError(f"mod id is not installed: {data['id']}")
+            mod = self.catalog[data["id"]]
+            version = data.get("version") or mod["default"] or next(iter(mod["releases"]), "?")
+            label = f"{mod['name']}  {version}"
+        else:
+            label = f"{data['name']}  (folder)"
         item = QListWidgetItem(label)
         item.setData(ROLE, data)
+        font = item.font()
+        font.setStrikeOut(not data.get("enabled", True))
+        item.setFont(font)
         self.selected.addItem(item)
 
     def add_selected_release(self):
@@ -838,9 +1243,17 @@ class ProfileWindow(QMainWindow):
         if not identity:
             return
         mod_id, version = identity
-        if any((self.selected.item(i).data(ROLE) or {}).get("id") == mod_id
-               for i in range(self.selected.count())):
-            self.error(f"{mod_id} is already in this profile")
+        folders = {self.entry_folder(self.selected.item(i).data(ROLE) or {})
+                   for i in range(self.selected.count())}
+        if self.catalog[mod_id]["releases"][version]["folder"].casefold() in folders:
+            self.error(f"{self.catalog[mod_id]['name']} is already in this profile")
+            return
+        if not self.library_indexed:
+            # Without library.toml a mod is its folder, as in a hand-written profile.
+            self.add_profile_item({"name": self.catalog[mod_id]["releases"][version]["folder"],
+                                   "order": (self.selected.count() + 1) * 10})
+            self.selected.setCurrentRow(self.selected.count() - 1)
+            self.refresh_patch_summary()
             return
         present = {(self.selected.item(i).data(ROLE) or {}).get("id")
                    for i in range(self.selected.count())}
@@ -889,18 +1302,32 @@ class ProfileWindow(QMainWindow):
         self.plugins.blockSignals(True)
         self.components.clear()
         self.plugins.clear()
+        for box, default in self.mod_switches.values():
+            box.blockSignals(True)
+            box.setEnabled(row >= 0)
+            box.setChecked(default)
         if row < 0:
             self.options_title.setText("Select a profile mod")
             self.components.blockSignals(False)
             self.plugins.blockSignals(False)
+            for box, _default in self.mod_switches.values():
+                box.blockSignals(False)
             return
         data = dict(self.selected.item(row).data(ROLE))
-        mod = self.catalog[data["id"]]
-        version = data.get("version") or mod["default"] or next(iter(mod["releases"]))
-        release = mod["releases"][version]
-        self.options_title.setText(f"{mod['name']} {version}")
+        for key, (box, default) in self.mod_switches.items():
+            box.setChecked(data.get(key, default))
+            box.blockSignals(False)
+        if "id" in data:
+            mod = self.catalog[data["id"]]
+            version = data.get("version") or mod["default"] or next(iter(mod["releases"]))
+            release = mod["releases"][version]
+            self.options_title.setText(f"{mod['name']} {version}")
+            component_list = release["components"].values()
+        else:
+            self.options_title.setText(f"{data['name']} (whole folder)")
+            component_list = []
         chosen = set(data.get("components", []))
-        for component in release["components"].values():
+        for component in component_list:
             item = QListWidgetItem(component["name"])
             item.setData(ROLE, component["id"])
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
@@ -960,7 +1387,7 @@ class ProfileWindow(QMainWindow):
         mods = tomlkit.aot()
         for values in self.profile_mods():
             table = tomlkit.table()
-            for key in ("id", "version", "components", "order", "enabled",
+            for key in ("name", "id", "version", "components", "order", "enabled",
                         "optional", "plugins", "loose"):
                 if key in values:
                     table.add(key, values[key])
@@ -969,6 +1396,7 @@ class ProfileWindow(QMainWindow):
             self.document["mods"] = mods
         else:
             self.document.pop("mods", None)
+        self.build.apply(self.document)
         patches = self.document.get("patches")
         if patches is None:
             patches = tomlkit.table()

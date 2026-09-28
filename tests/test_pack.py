@@ -72,6 +72,19 @@ class LooseModTests(unittest.TestCase):
         self.assertFalse((out / 'ArchiveInvalidationList.txt').exists())
         self.assertTrue((df / 'meshes/a.nif').exists())
 
+    def test_no_archive(self):
+        out = self.root / 'loose'
+        self.pack(out, '--no-archive')
+        df = out / 'Data Files'
+        for rel in ('meshes/a.nif', 'meshes/b.nif', 'meshes/new.nif'):
+            self.assertEqual((df / rel).read_bytes(), b'mod ' + rel.encode())
+        self.assertEqual((df / 'Morrowind.bsa').read_bytes(),
+                         (self.vanilla / 'Data Files' / 'Morrowind.bsa').read_bytes())
+        self.assertFalse((df / 'tes3xmods.bsa').exists())
+        listed = (out / 'ArchiveInvalidationList.txt').read_bytes()
+        self.assertEqual(sorted(listed.split(b'\r\n')), [b'', b'meshes\\a.nif', b'meshes\\b.nif'])
+        self.assertIn('TryArchiveFirst=0', (out / 'Morrowind.ini').read_text())
+
 
 if __name__ == '__main__':
     unittest.main()
