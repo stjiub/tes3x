@@ -11,8 +11,8 @@ sys.path.insert(0, str(TOOLS))
 from tes3x_build import Mod, materialize, resolve  # noqa: E402
 from tes3x_library import (LibraryError, available_plugins, convert_profile, dependency_order,  # noqa: E402
                            discover_library, extract_archive, guess_release, index_library,
-                           install_files, install_layout, load_library, resolve_selection,
-                           write_library)
+                           install_files, install_layout, load_library, nexus_id,
+                           resolve_selection, write_library)
 from tes3x_pipeline import PipelineError, validate_profile  # noqa: E402
 
 
@@ -235,6 +235,22 @@ class InstallTests(unittest.TestCase):
                          ("Better Bodies", "2.2"))
         self.assertEqual(guess_release("Some_Mod.zip"), ("Some Mod", ""))
         self.assertEqual(guess_release("Folder 1.0"), ("Folder 1.0", ""))
+
+    def test_nexus_id_from_page_or_download_name(self):
+        self.assertEqual(nexus_id("https://www.nexusmods.com/morrowind/mods/45384?tab=files"),
+                         45384)
+        self.assertEqual(nexus_id(None, "D:/dl/Better Bodies-3880-2-2-1609876543.7z"), 3880)
+        self.assertIsNone(nexus_id("https://www.tamriel-rebuilt.org/", "Some_Mod.zip"))
+
+    def test_mod_page_and_description_round_trip(self):
+        plain = self.tree("Mod/x.esp")
+        catalog = discover_library(plain)
+        catalog["mod"].update(url="https://example.org/mod", author="Me", summary="What it is")
+        write_library(plain, catalog)
+        self.assertEqual({key: load_library(plain)["mod"][key]
+                          for key in ("url", "author", "summary")},
+                         {"url": "https://example.org/mod", "author": "Me",
+                          "summary": "What it is"})
 
     def test_install_merges_roots_in_order_and_rejects_unsafe_zips(self):
         base = self.tree("A/x.esp", "B/x.esp", "B/meshes/m.nif")

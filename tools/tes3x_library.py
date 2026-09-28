@@ -14,6 +14,8 @@ import zipfile
 
 CATALOG_NAME = "library.toml"
 IDENTIFIER = re.compile(r"[a-z0-9][a-z0-9._-]*\Z")
+# Optional mod-level text: where the mod comes from and what it is.
+MOD_TEXT = ("url", "author", "summary")
 
 
 class LibraryError(ValueError):
@@ -68,7 +70,7 @@ def load_library(root):
         where = f"mod[{mod_index}]"
         if not isinstance(mod, dict):
             raise LibraryError(f"{path}: {where} must be a table")
-        extra = set(mod) - {"id", "name", "release"}
+        extra = set(mod) - {"id", "name", "release", *MOD_TEXT}
         if extra:
             raise LibraryError(f"{path}: {where} has unknown fields: {', '.join(sorted(extra))}")
         mod_id = _identifier(mod.get("id"), f"{where}.id")
@@ -76,6 +78,9 @@ def load_library(root):
             raise LibraryError(f"{path}: duplicate mod id {mod_id}")
         if not isinstance(mod.get("name"), str) or not mod["name"]:
             raise LibraryError(f"{path}: {where}.name must be a non-empty string")
+        for key in MOD_TEXT:
+            if key in mod and (not isinstance(mod[key], str) or not mod[key]):
+                raise LibraryError(f"{path}: {where}.{key} must be a non-empty string")
         releases = mod.get("release", [])
         if not isinstance(releases, list) or not releases:
             raise LibraryError(f"{path}: {where} needs at least one [[mod.release]]")
@@ -153,7 +158,8 @@ def load_library(root):
         if len(defaults) > 1:
             raise LibraryError(f"{path}: {mod_id} has more than one default release")
         result[mod_id] = {"id": mod_id, "name": mod["name"], "releases": versions,
-                          "default": defaults[0] if defaults else None}
+                          "default": defaults[0] if defaults else None,
+                          **{key: mod[key] for key in MOD_TEXT if key in mod}}
     for mod_id, mod in result.items():
         for release in mod["releases"].values():
             unknown_dependencies = set(release["dependencies"]) - set(result)
@@ -197,7 +203,9 @@ def render_mods(catalog):
     lines = []
     for mod in sorted(catalog.values(), key=lambda item: item["name"].casefold()):
         lines += ["[[mod]]", f"id = {json.dumps(mod['id'], ensure_ascii=False)}",
-                  f"name = {json.dumps(mod['name'], ensure_ascii=False)}", ""]
+                  f"name = {json.dumps(mod['name'], ensure_ascii=False)}",
+                  *(f"{key} = {json.dumps(mod[key], ensure_ascii=False)}"
+                    for key in MOD_TEXT if mod.get(key)), ""]
         for release in mod["releases"].values():
             lines += ["[[mod.release]]",
                       f"version = {json.dumps(release['version'], ensure_ascii=False)}",
@@ -422,7 +430,8 @@ DATA_DIRS = {"meshes", "textures", "icons", "sound", "bookart", "splash", "fonts
              "music", "mwse", "distantland", "shaders"}
 DATA_FILES = (".esm", ".esp", ".bsa")
 ARCHIVES = (".zip", ".7z", ".rar")
-NEXUS_NAME = re.compile(r"^(?P<name>.+?)-\d+-(?P<version>\d+(?:-\d+)*)-\d{9,}$")
+NEXUS_NAME = re.compile(r"^(?P<name>.+?)-(?P<id>\d+)-(?P<version>\d+(?:-\d+)*)-\d{9,}$")
+NEXUS_URL = re.compile(r"nexusmods\.com/morrowind/mods/(\d+)", re.I)
 
 
 def looks_like_data(path):
@@ -466,6 +475,19 @@ def guess_release(path):
     if match:
         return match["name"].replace("_", " ").strip(), match["version"].replace("-", ".")
     return stem.replace("_", " ").strip(), ""
+
+
+def nexus_id(url=None, source=None):
+    """The Nexus Morrowind mod id in a mod page URL or a Nexus download's file name."""
+    match = NEXUS_URL.search(url or "")
+    if match:
+        return int(match[1])
+    if source:
+        path = Path(source)
+        match = NEXUS_NAME.match(path.stem if path.suffix.lower() in ARCHIVES else path.name)
+        if match:
+            return int(match["id"])
+    return None
 
 
 def seven_zip():
