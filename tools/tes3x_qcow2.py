@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""qcow2 access for Xbox HDD images: convert to raw, read through a raw backing file, and
+"""qcow2 access for Xbox HDD images: convert to raw, read through a backing chain, and
 create a copy-on-write overlay so a test run never copies the whole disk."""
 
 import os
@@ -20,12 +20,21 @@ def is_qcow2(path):
 COPIED = 1 << 63
 
 
+def image_size(path):
+    """The guest disk size of a raw or qcow2 image."""
+    if not is_qcow2(path):
+        return os.path.getsize(path)
+    with Qcow2(path) as q:
+        return q.size
+
+
 def create_overlay(path, backing, clusters=None):
-    """qcow2 v3 whose unwritten clusters read from the raw image `backing`. `clusters` maps a guest
-    cluster index to its full contents, as CowView.changed() returns them."""
+    """qcow2 v3 whose unwritten clusters read from `backing`, a raw or qcow2 image. `clusters` maps
+    a guest cluster index to its full contents, as CowView.changed() returns them."""
     cs = 1 << OVERLAY_CLUSTER_BITS
     per_l2 = cs // 8
-    size = os.path.getsize(backing)
+    size = image_size(backing)
+    fmt = b"qcow2" if is_qcow2(backing) else b"raw"
     l1_size = -(-size // (cs * per_l2))
     clusters = clusters or {}
     tables = sorted({c // per_l2 for c in clusters})
@@ -34,7 +43,7 @@ def create_overlay(path, backing, clusters=None):
     if l1_size * 8 > cs or host > cs // 2:
         raise ValueError("overlay layout does not fit one L1 table and one refcount block")
     name = os.path.abspath(backing).replace("\\", "/").encode()
-    ext = struct.pack(">II", EXT_BACKING_FORMAT, 3) + b"raw".ljust(8, b"\0") + struct.pack(">II", 0, 0)
+    ext = struct.pack(">II", EXT_BACKING_FORMAT, len(fmt)) + fmt.ljust(8, b"\0") + struct.pack(">II", 0, 0)
     name_off = 104 + len(ext)
     header = struct.pack(">4sIQIIQIIQQIIQQQQII", MAGIC, 3, name_off, len(name), OVERLAY_CLUSTER_BITS,
                          size, 0, l1_size, cs, 2 * cs, 1, 0, 0, 0, 0, 0, 4, 104)
@@ -60,12 +69,12 @@ def create_overlay(path, backing, clusters=None):
 
 
 class CowView:
-    """Seekable read/write view of a raw image that keeps writes in memory by overlay cluster, so
-    a file can be added to a run's disk without touching the clean image."""
+    """Seekable read/write view of a raw or qcow2 image that keeps writes in memory by overlay
+    cluster, so a file can be added to a run's disk without touching the clean image."""
 
     def __init__(self, backing):
-        self.f = open(backing, "rb")
-        self.size = os.path.getsize(backing)
+        self.f = open_image(backing)
+        self.size = image_size(backing)
         self.cs = 1 << OVERLAY_CLUSTER_BITS
         self.pos = 0
         self.dirty = {}
@@ -152,6 +161,15 @@ class Qcow2:
             self.f.seek(backing_off)
             self.backing = self.f.read(backing_len).decode()
 
+    def close(self):
+        self.f.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
     def _l2(self, l2_offset):
         if l2_offset not in self._l2_cache:
             self.f.seek(l2_offset)
@@ -203,12 +221,16 @@ class Qcow2:
 
 
 class ImageFile:
-    """Seekable read-only view of a qcow2 image as its guest disk, falling back to the raw
-    backing file for clusters the overlay has not written."""
+    """Seekable read-only view of a qcow2 image as its guest disk, falling back to its backing
+    image, raw or qcow2, for clusters the overlay has not written."""
 
     def __init__(self, path):
         self.q = Qcow2(path)
-        self.base = open(self.q.backing, "rb") if self.q.backing else None
+        backing = self.q.backing
+        if backing and not os.path.isabs(backing):
+            # QEMU resolves a relative backing name against the overlay's folder.
+            backing = os.path.join(os.path.dirname(os.path.abspath(path)), backing)
+        self.base = open_image(backing) if backing else None
         self.pos = 0
 
     def seek(self, pos, whence=0):
@@ -252,7 +274,7 @@ class ImageFile:
 
 
 def open_image(path):
-    """A raw image as a plain file, or a qcow2 image through its backing chain of one."""
+    """A raw image as a plain file, or a qcow2 image through its backing chain."""
     return ImageFile(path) if is_qcow2(path) else open(path, "rb")
 
 

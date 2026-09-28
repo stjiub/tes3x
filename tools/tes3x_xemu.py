@@ -7,8 +7,9 @@
 Everything after `--` goes to tes3x_pipeline.py. Diagnostics, the hang watchdog and Show FPS are
 switched on in the ini unless --no-diag. Each run gets its own folder under build/xemu/ holding
 the ISO, xemu's output and the recovered log. The disk is a copy-on-write overlay on the clean
-HDD image, deleted once the log is read unless --keep-disk. Each completed run also writes a
-.tes3x-run.json with no machine paths, for validation results.
+HDD image, deleted once the log is read unless --keep-disk; --disk FILE instead keeps one overlay
+across runs, so saves persist. Each completed run also writes a .tes3x-run.json with no machine
+paths, for validation results.
 
 [xemu] in tes3x.local.toml names the emulator and its files; see docs/testing.md.
 --gdb-capture SECONDS pauses the guest once and saves CPU and stack state to gdb.txt.
@@ -170,6 +171,8 @@ def run_command(args, passthru, pipeline):
                           (args.gdb, "--gdb")):
         if enabled:
             command.append(flag)
+    if args.disk:
+        command += ["--disk", "<disk>"]
     if args.exec:
         command += ["--exec", "fixture:" + Path(args.exec).name]
     for save in args.save:
@@ -305,18 +308,22 @@ def clear_limit64(xbe):
 
 
 def clean_disk(runs):
-    """The raw clean HDD image; xemu's own qcow2 HDD image is converted once."""
+    """The clean HDD image every overlay reads from. A qcow2 image is copied once under a name
+    taken from its contents, so xemu using or replacing the configured file cannot change the
+    base of an existing overlay."""
     hdd = Path(CONFIG["hdd"])
     if not is_qcow2(hdd):
         return hdd
-    raw = runs / f"{hdd.stem}-clean.img"
-    if not raw.is_file():
-        print(f"converting {hdd.name} to a raw clean disk (once): {raw}", flush=True)
+    with Qcow2(str(hdd)) as image:
+        if image.backing:
+            sys.exit(f"{hdd} has a backing file; set [xemu] hdd to a standalone image")
+    clean = runs / f"{hdd.stem}-{sha256_file(hdd)[:12]}.qcow2"
+    if not clean.is_file():
         runs.mkdir(parents=True, exist_ok=True)
-        partial = raw.with_suffix(".part")
-        Qcow2(str(hdd)).to_raw(str(partial))
-        os.replace(partial, raw)
-    return raw
+        partial = clean.with_suffix(".part")
+        shutil.copyfile(hdd, partial)
+        os.replace(partial, clean)
+    return clean
 
 
 def xemu_config(bootrom, bios, eeprom, hdd, dvd, ram):
@@ -369,6 +376,9 @@ def main():
     ap.add_argument("--gdb-port", type=int,
                     help="stub port (default: a free one, written to the run's gdb.port)")
     ap.add_argument("--keep-disk", action="store_true")
+    ap.add_argument("--disk", metavar="FILE",
+                    help="use and keep this overlay across runs, making it over the clean disk "
+                         "the first time")
     ap.add_argument("--bios", help="BIOS to boot instead of [xemu] bios; `128mb` for "
                                    "[xemu] bios_128mb")
     ap.add_argument("--ram", type=int, choices=(64, 128), default=64,
@@ -394,6 +404,8 @@ def main():
         ap.error(f"gdb not found: {GDB}; set [xemu] gdb")
     if a.gdb_capture is not None and a.gdb_script:
         ap.error("--gdb-capture and --gdb-script both need the stub; pick one")
+    if a.disk and (a.exec or a.save or a.keep_disk):
+        ap.error("--exec, --save and --keep-disk apply to a fresh disk, not --disk")
 
     runs = Path.cwd() / "build" / "xemu"
     out = runs / a.name
@@ -428,7 +440,7 @@ def main():
         if pipeline_marker else {}
 
     # Copy-on-write over the clean disk: the run writes only what the guest changes.
-    hdd = out / "hdd.qcow2"
+    hdd = Path(a.disk).resolve() if a.disk else out / "hdd.qcow2"
     clusters = None
     if a.exec or a.save:
         with CowView(str(clean)) as disk:
@@ -440,7 +452,9 @@ def main():
                 put_file(disk, save, SAVE_DIR, Path(save).name)
                 print("save: @start load " + SAVE_PATH + Path(save).name)
             clusters = disk.changed()
-    create_overlay(str(hdd), str(clean), clusters)
+    if not hdd.is_file():
+        hdd.parent.mkdir(parents=True, exist_ok=True)
+        create_overlay(str(hdd), str(clean), clusters)
     shutil.copyfile(CONFIG["eeprom"], out / "eeprom.bin")
     bios = Path(a.bios).resolve() if a.bios else CONFIG["bios"]
     toml = out / "xemu.toml"
@@ -533,7 +547,7 @@ def main():
     if deploy and (deploy / "morrowind.xbe").is_file():
         run_record["morrowind_xbe_sha256"] = sha256_file(deploy / "morrowind.xbe")
     (out / RUN_MARKER).write_text(json.dumps(run_record, indent=2) + "\n", encoding="utf-8")
-    if not a.keep_disk:
+    if not (a.keep_disk or a.disk):
         hdd.unlink()
     print(f"run directory: {out}")
 

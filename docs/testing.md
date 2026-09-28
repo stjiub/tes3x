@@ -143,7 +143,7 @@ needs these under `[xemu]` in `tes3x.local.toml`, all of which you supply yourse
 | `bios` | the BIOS for normal runs, such as a retail one |
 | `bios_128mb` | optional: a BIOS that uses 128 MB, for `--ram 128 --bios 128mb` |
 | `eeprom` | an EEPROM image |
-| `hdd` | a clean hard disk image; xemu's own `xbox_hdd.qcow2` works, and is converted once |
+| `hdd` | a clean hard disk image; xemu's own blank `xbox_hdd.qcow2` (7 MB) is best. Runs never write to it: each run, and each profile the GUI plays, gets an overlay holding only what the game writes |
 | `extract_xiso` | [extract-xiso](https://github.com/XboxDev/extract-xiso), which packs the disc image |
 | `gdb` | optional: `gdb`, for the `--gdb` options |
 
