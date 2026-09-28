@@ -64,11 +64,3 @@ remain useful historical observations.
 
 A fix that turns out not to apply becomes `not-applicable`, `infeasible` or `rejected`, with the
 reason.
-
-## Notes on the candidate list
-
-- MWSE kept fixing the original engine after MCP. Its code is MWSE-specific, but each entry gives a
-  way to reproduce the defect and the intent of the fix.
-- Performance candidates stay opt in until timed on the Xbox's 733 MHz CPU. A faster PC version is
-  not automatically faster on the Xbox, and memory cost matters as much as CPU cost with 64 MB.
-- Priorities are a first estimate and change as fixes are reproduced.
