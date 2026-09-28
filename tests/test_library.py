@@ -2,6 +2,7 @@ import sys
 import subprocess
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parents[1] / "tools"
@@ -9,7 +10,8 @@ sys.path.insert(0, str(TOOLS))
 
 from tes3x_build import Mod, materialize, resolve  # noqa: E402
 from tes3x_library import (LibraryError, available_plugins, convert_profile, dependency_order,  # noqa: E402
-                           discover_library, index_library, load_library, resolve_selection,
+                           discover_library, extract_archive, guess_release, index_library,
+                           install_files, install_layout, load_library, resolve_selection,
                            write_library)
 from tes3x_pipeline import PipelineError, validate_profile  # noqa: E402
 
@@ -203,6 +205,52 @@ roots = ["Optional"]
         self.assertIn('name = "Travel 1.0"', text)
         self.assertEqual(text.replace('id = "base"', 'name = "Base"')
                          .replace('id = "loose-mod"', 'name = "loose mod"'), profile)
+
+
+class InstallTests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+
+    def tree(self, *files):
+        base = Path(tempfile.mkdtemp(dir=self.root))
+        for name in files:
+            (base / name).parent.mkdir(parents=True, exist_ok=True)
+            (base / name).write_bytes(b"x")
+        return base
+
+    def test_layout_unwraps_single_folders(self):
+        base = self.tree("Wrapper/Data Files/Meshes/a.nif", "Wrapper/Data Files/mod.esp")
+        self.assertEqual(install_layout(base), (["Wrapper/Data Files"], ["Wrapper/Data Files"]))
+        self.assertEqual(install_layout(self.tree("mod.esp")), (["."], ["."]))
+
+    def test_layout_offers_option_folders_with_core_chosen(self):
+        base = self.tree("Mod/00 Core/mod.esp", "Mod/01 Extra/textures/a.dds", "Mod/docs/r.txt")
+        self.assertEqual(install_layout(base), (["Mod/00 Core", "Mod/01 Extra"], ["Mod/00 Core"]))
+        self.assertEqual(install_layout(self.tree("Mod/readme.txt")), ([], []))
+
+    def test_guess_release_reads_nexus_names(self):
+        self.assertEqual(guess_release("Better Bodies-3880-2-2-1609876543.7z"),
+                         ("Better Bodies", "2.2"))
+        self.assertEqual(guess_release("Some_Mod.zip"), ("Some Mod", ""))
+        self.assertEqual(guess_release("Folder 1.0"), ("Folder 1.0", ""))
+
+    def test_install_merges_roots_in_order_and_rejects_unsafe_zips(self):
+        base = self.tree("A/x.esp", "B/x.esp", "B/meshes/m.nif")
+        (base / "B/x.esp").write_bytes(b"later")
+        target = self.root / "installed"
+        self.assertEqual(install_files(base, [("A", ["x.esp"]), ("B", ["x.esp", "meshes/m.nif"])],
+                                       target), 3)
+        self.assertEqual((target / "x.esp").read_bytes(), b"later")
+        with self.assertRaises(LibraryError):
+            install_files(base, [], target)
+        archive = self.root / "bad.zip"
+        with zipfile.ZipFile(archive, "w") as stream:
+            stream.writestr("../evil.esp", "x")
+        with self.assertRaises(LibraryError):
+            extract_archive(archive, self.root / "out")
+        self.assertFalse((self.root / "evil.esp").exists())
 
 
 if __name__ == "__main__":

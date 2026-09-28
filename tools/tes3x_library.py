@@ -3,9 +3,13 @@
 
 import argparse
 import json
+import os
 from pathlib import Path
 import re
+import shutil
+import subprocess
 import tomllib
+import zipfile
 
 
 CATALOG_NAME = "library.toml"
@@ -82,7 +86,7 @@ def load_library(root):
             if not isinstance(release, dict):
                 raise LibraryError(f"{path}: {rwhere} must be a table")
             extra = set(release) - {"version", "folder", "default", "roots", "dependencies",
-                                    "component"}
+                                    "component", "source"}
             if extra:
                 raise LibraryError(f"{path}: {rwhere} has unknown fields: "
                                    + ", ".join(sorted(extra)))
@@ -92,6 +96,9 @@ def load_library(root):
             if version in versions:
                 raise LibraryError(f"{path}: {mod_id} has duplicate version {version}")
             folder = _relative(release.get("folder"), f"{rwhere}.folder")
+            source = release.get("source")
+            if source is not None and (not isinstance(source, str) or not source):
+                raise LibraryError(f"{path}: {rwhere}.source must be a non-empty string")
             if "default" in release and type(release["default"]) is not bool:
                 raise LibraryError(f"{path}: {rwhere}.default must be a boolean")
             if release.get("default", False):
@@ -141,6 +148,7 @@ def load_library(root):
             versions[version] = {
                 "version": version, "folder": folder, "default": release.get("default", False),
                 "roots": roots, "dependencies": dependencies, "components": components,
+                "source": source,
             }
         if len(defaults) > 1:
             raise LibraryError(f"{path}: {mod_id} has more than one default release")
@@ -196,8 +204,10 @@ def render_mods(catalog):
                       f"folder = {json.dumps(release['folder'], ensure_ascii=False)}",
                       f"default = {str(bool(release['default'])).lower()}",
                       "roots = " + json.dumps(release["roots"], ensure_ascii=False),
-                      "dependencies = " + json.dumps(release["dependencies"], ensure_ascii=False),
-                      ""]
+                      "dependencies = " + json.dumps(release["dependencies"], ensure_ascii=False)]
+            if release.get("source"):
+                lines.append(f"source = {json.dumps(release['source'], ensure_ascii=False)}")
+            lines.append("")
             for component in release["components"].values():
                 lines += ["[[mod.release.component]]",
                           f"id = {json.dumps(component['id'], ensure_ascii=False)}",
@@ -238,19 +248,23 @@ def unindexed(root):
     return added
 
 
-def index_library(root):
-    """Add unindexed folders to library.toml, leaving every existing entry exactly as written."""
-    root = Path(root).resolve()
-    path = root / CATALOG_NAME
-    added = unindexed(root)
+def append_mods(root, mods):
+    """Add mods to library.toml, leaving every existing entry exactly as written."""
+    path = Path(root).resolve() / CATALOG_NAME
     if not path.is_file():
-        write_library(root, added)
-    elif added:
+        write_library(root, mods)
+    elif mods:
         text = path.read_text(encoding="utf-8")
         separator = "" if text.endswith("\n\n") else "\n" if text.endswith("\n") else "\n\n"
         with open(path, "a", encoding="utf-8", newline="\n") as stream:
-            stream.write(separator + "\n".join(render_mods(added)))
-    return path, added
+            stream.write(separator + "\n".join(render_mods(mods)))
+    return path
+
+
+def index_library(root):
+    """Add unindexed folders to library.toml, leaving every existing entry exactly as written."""
+    added = unindexed(root)
+    return append_mods(root, added), added
 
 
 def folder_ids(catalog):
@@ -283,7 +297,7 @@ def convert_profile(text, catalog):
             skipped.append((name, "no library.toml entry has this folder"))
         elif found[1]["roots"] != ["."] or found[1]["components"]:
             skipped.append((name, "its release uses subfolders or components; choose them in "
-                                  "the profile manager"))
+                                  "the GUI"))
             found = None
         if found is None:
             out.append(line)
@@ -402,6 +416,112 @@ def available_plugins(selection, find_data_root=lambda path: path):
             if path.is_file() and path.suffix.lower() in (".esm", ".esp"):
                 plugins[path.name.lower()] = path.name
     return [plugins[key] for key in sorted(plugins)]
+
+
+DATA_DIRS = {"meshes", "textures", "icons", "sound", "bookart", "splash", "fonts", "video",
+             "music", "mwse", "distantland", "shaders"}
+DATA_FILES = (".esm", ".esp", ".bsa")
+ARCHIVES = (".zip", ".7z", ".rar")
+NEXUS_NAME = re.compile(r"^(?P<name>.+?)-\d+-(?P<version>\d+(?:-\d+)*)-\d{9,}$")
+
+
+def looks_like_data(path):
+    """True when a directory holds Data Files content directly."""
+    try:
+        entries = list(Path(path).iterdir())
+    except OSError:
+        return False
+    return any((entry.is_dir() and entry.name.lower() in DATA_DIRS)
+               or (entry.is_file() and entry.suffix.lower() in DATA_FILES) for entry in entries)
+
+
+def install_layout(root):
+    """Data Files folders in an unpacked mod, relative to root, and the ones to install.
+
+    A mod is either one Data Files tree, possibly wrapped in single folders, or several option
+    folders side by side, of which the core one is installed by default."""
+    root = Path(root)
+    base = root
+    while not looks_like_data(base):
+        folders = [entry for entry in base.iterdir() if entry.is_dir()]
+        if len(folders) != 1:
+            break
+        base = folders[0]
+    if looks_like_data(base):
+        found = [base.relative_to(root).as_posix()]
+        return found, found
+    options = sorted((entry for entry in base.iterdir() if entry.is_dir() and looks_like_data(entry)),
+                     key=lambda entry: entry.name.casefold())
+    found = [entry.relative_to(root).as_posix() for entry in options]
+    chosen = [value for value, entry in zip(found, options)
+              if re.match(r"(00|core\b|main\b|data files\b)", entry.name, re.I)]
+    return found, chosen or found[:1]
+
+
+def guess_release(path):
+    """A mod name and version from an archive or folder name, Nexus style when it matches."""
+    path = Path(path)
+    stem = path.stem if path.suffix.lower() in ARCHIVES else path.name
+    match = NEXUS_NAME.match(stem)
+    if match:
+        return match["name"].replace("_", " ").strip(), match["version"].replace("-", ".")
+    return stem.replace("_", " ").strip(), ""
+
+
+def seven_zip():
+    for candidate in (shutil.which("7z"), shutil.which("7za"),
+                      *(Path(os.environ[key]) / "7-Zip" / "7z.exe"
+                        for key in ("ProgramFiles", "ProgramW6432") if key in os.environ)):
+        if candidate and Path(candidate).is_file():
+            return str(candidate)
+    return None
+
+
+def extract_archive(archive, target):
+    """Unpack a mod archive into target, which must not exist yet."""
+    archive, target = Path(archive), Path(target)
+    target.mkdir(parents=True)
+    if archive.suffix.lower() == ".zip":
+        with zipfile.ZipFile(archive) as stream:
+            for member in stream.namelist():
+                if Path(member).is_absolute() or ".." in Path(member).parts:
+                    raise LibraryError(f"{archive.name}: unsafe path {member}")
+            stream.extractall(target)
+        return target
+    tool = seven_zip()
+    if tool is None:
+        raise LibraryError(f"{archive.name}: install 7-Zip to unpack {archive.suffix} archives")
+    result = subprocess.run([tool, "x", "-y", "-bso0", "-bsp0", f"-o{target}", str(archive)],
+                            capture_output=True, text=True)
+    if result.returncode:
+        raise LibraryError(f"{archive.name}: 7-Zip failed: {result.stderr.strip()}")
+    return target
+
+
+def install_files(unpacked, selection, target):
+    """Copy chosen files into a new mod folder, merging each Data Files root in order.
+
+    selection is [(root, [paths relative to that root])]; later roots overwrite earlier ones."""
+    unpacked, target = Path(unpacked), Path(target)
+    if target.exists():
+        raise LibraryError(f"{target} already exists")
+    target.mkdir(parents=True)
+    count = 0
+    for base, files in selection:
+        for relative in files:
+            destination = target / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(unpacked / base / relative, destination)
+            count += 1
+    return count
+
+
+def free_id(catalog, name):
+    base = slug(name)
+    mod_id, suffix = base, 2
+    while mod_id in catalog:
+        mod_id, suffix = f"{base}-{suffix}", suffix + 1
+    return mod_id
 
 
 def main(argv=None):
