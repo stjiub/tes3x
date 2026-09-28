@@ -1,3 +1,4 @@
+import re
 import sys
 import tempfile
 import unittest
@@ -17,6 +18,16 @@ class RegistryTests(unittest.TestCase):
         for entry in registry.PATCHES:
             if 'source' in entry:
                 self.assertTrue((hooks / entry['source']).is_file(), entry['source'])
+
+    def test_every_ini_key_is_documented(self):
+        read = re.compile(r'get\("Xbox", "(\w+)"|(?:ini|prof)_uint\("(\w+)"')
+        keys = set()
+        for source in (registry.ROOT / 'hooks').glob('*.c'):
+            for match in read.finditer(source.read_text(encoding='utf-8')):
+                keys.add(match.group(1) or match.group(2))
+        page = (registry.ROOT / 'docs' / 'patch-settings.md').read_text(encoding='utf-8')
+        self.assertTrue(keys)
+        self.assertEqual(sorted(k for k in keys if f'`{k}`' not in page), [])
 
     def test_generated_pages_are_current(self):
         self.assertEqual(registry.stale_pages(), [], 'run tools/tes3x_patches.py --write')

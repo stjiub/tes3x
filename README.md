@@ -98,7 +98,8 @@ The profile's `preset` selects a baseline:
 | `standard` | Tested engine fixes |
 | `development` | `standard`, diagnostics and the in-game console |
 
-Use `enable` and `disable` for individual patches. See [available patches](docs/patches.md),
+Use `enable` and `disable` for individual patches. Some patches read settings from
+`Morrowind.ini`; see [patch settings](docs/patch-settings.md). See [available patches](docs/patches.md),
 [candidates](docs/candidates.md), or run:
 
 ```powershell
