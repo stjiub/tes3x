@@ -12,7 +12,7 @@ from tes3x_pipeline import (PipelineError, copy_retail_root, link_or_copy, resol
                             preference_flags, sanitized_command, validate_local_config,
                             validate_profile)
 from tes3x_pipeline import main as pipeline_main
-from tes3x_patch import _mcp_97, _mcp_102, _mcp_140, _mcp_154
+from tes3x_patch import _mcp_97, _mcp_102, _mcp_154
 from tes3x_plugins import validate_order
 from test_reach import rec, sub
 
@@ -462,55 +462,6 @@ class PipelinePlanTests(unittest.TestCase):
         self.assertEqual(plan['applied'], ['mcp-102'])
         self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c'])
 
-    def test_mcp_140_replaces_loading_redraw_tail(self):
-        status = bytes.fromhex(
-            '85f674318bcee8bc01fbff33d2668b15a4933d008bce52e8bb0cfbff85c0'
-            '740c8b4c2408518bc8e8db5ef4ff6a018bcee8b2cdfbff'
-        )
-        redraw = bytes.fromhex(
-            'd94424188bd8e847810600d9038be8e83e8106003be85d5b7433'
-            '8b4c241033c066a118cc3d006a028bd152894c24108bcf50e8c3d9fbff'
-            '8bcee81c04fbff6a018bcee833d0fbff5fb001'
-        )
-
-        class Image:
-            base = 0x100000
-
-            def __init__(self):
-                self.data = bytearray(
-                    b'\x90' * 32 + status + b'\x90' * 16 + redraw + b'\x90' * 32
-                )
-
-            def off_to_va(self, offset):
-                return self.base + offset
-
-            def va_to_off(self, va):
-                return va - self.base
-
-        image = Image()
-        target = 0x200000
-        status_base = 32
-        redraw_base = status_base + len(status) + 16
-        status_update = status_base + status.index(bytes.fromhex('8bcee8bc01fbff'))
-        status_mode = status_base + status.index(bytes.fromhex('6a018bcee8')) + 1
-        site = redraw_base + redraw.index(bytes.fromhex('e81c04fbff'))
-        edits = _mcp_140(image, '', {'hooks': {'mcp140_redraw': hex(target)}})
-        self.assertEqual(image.data[status_update:status_update + 2], b'\xeb\x05')
-        self.assertEqual(image.data[status_mode], 0)
-        self.assertEqual(image.data[site], 0xE9)
-        rel = struct.unpack_from('<i', image.data, site + 1)[0]
-        self.assertEqual(image.off_to_va(site) + 5 + rel, target)
-        self.assertEqual([(offset, length) for offset, length, _label in edits],
-                         [(status_update, 2), (status_mode, 1), (site, 5)])
-
-    def test_mcp_140_adds_its_hook_source(self):
-        plan = resolve_patch_plan({
-            'patches': {'preset': 'minimal', 'enable': ['mcp-140']},
-            'package': {'mode': 'merged-bsa'},
-        })
-        self.assertEqual(plan['applied'], ['mcp-140'])
-        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xmcp140.c'])
-
     def test_development_adds_tools_but_allows_overrides(self):
         profile = {'patches': {'preset': 'development', 'disable': ['diagnostics']},
                    'package': {'mode': 'merged-bsa'}}
@@ -523,6 +474,8 @@ class PipelinePlanTests(unittest.TestCase):
             resolve_patch_plan({'patches': {'categories': ['external']}})
         with self.assertRaises(PipelineError):
             resolve_patch_plan({'patches': {'enable': ['not-a-patch']}})
+        with self.assertRaises(PipelineError):
+            resolve_patch_plan({'patches': {'enable': ['mcp-140']}})
 
 
 if __name__ == '__main__':

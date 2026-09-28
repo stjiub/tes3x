@@ -165,16 +165,6 @@ summary = "Reactivate script-triggered objects after their script mod is removed
 validation = ["patches/mcp-102/2026-09-21-xemu.toml"]
 
 [[patch]]
-name = "mcp-140"
-origin = { source = "MCP", id = "140" }
-bit = 11
-category = "performance"
-channel = "development"
-selection = "preset"
-source = "tes3xmcp140.c"
-summary = "Throttle loading-screen redraws to one every 50 milliseconds."
-
-[[patch]]
 name = "dxt5-size"
 bit = 14
 category = "core"

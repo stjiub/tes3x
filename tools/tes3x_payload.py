@@ -298,16 +298,6 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         wanted["region_reserve"] = ("@tes3x_region_reserve@12",)
         wanted["region_carve"] = ("_tes3x_region_carve_hook",)
         wanted["region_release"] = ("@tes3x_region_release@12",)
-    if "tes3xmcp140.c" in names:
-        redraw = locate("mcp-140-redraw")
-        update = hexva(tes3x_inject.call_target(image, redraw))
-        present = hexva(tes3x_inject.call_target(image, redraw + 9))
-        print(f"mcp-140 hook: redraw {hexva(redraw)}, update {update}, present {present}")
-        define("MCP140_UPDATE", update)
-        define("MCP140_PRESENT", present)
-        define("MCP140_TRUE", hexva(redraw + 14))
-        define("MCP140_FALSE", hexva(redraw + 20))
-        wanted["mcp140_redraw"] = ("_tes3x_mcp140_redraw_hook",)
     if "tes3xconsole.c" in names:
         print(f"console hook: gate {address('CONSOLE_SITE', CONSOLE_SITE)}")
         for name, default in CONSOLE_ADDRESSES:

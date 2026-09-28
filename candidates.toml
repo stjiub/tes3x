@@ -1217,6 +1217,15 @@ summary = "Barter gold reset fix"
 reason = "Merchant gold resets only when the barter window opens."
 
 [[candidate]]
+name = "mcp-140"
+origin = { source = "MCP", id = "140" }
+category = "performance"
+status = "rejected"
+priority = "none"
+summary = "Throttle loading-screen redraws"
+reason = "Original-Xbox cold New Game A/B runs with caches cleared averaged 99.3495 seconds control and 99.3860 seconds patched. The 36.5 ms difference was smaller than the 230-339 ms repeat variation, so the port had no measurable benefit."
+
+[[candidate]]
 name = "mcp-141"
 origin = { source = "MCP", id = "141" }
 category = "core"
