@@ -397,7 +397,7 @@ order = 10
             window.command_finished(0, None)
         self.assertEqual(window.build_status()[0], "built")
         self.assertEqual(calls[1][0], "tes3x_xemu.py")
-        self.assertEqual(calls[1][1][1:], ["--deploy", str(output / "deploy"), "--disk",
+        self.assertEqual(calls[1][1][1:], ["--deploy", str(output / "deploy"), "--keep-iso", "--disk",
                                            str(self.root / "build/play/profile/hdd.qcow2")])
 
         self.profile.write_text(self.profile.read_text(encoding="utf-8") + "\n", encoding="utf-8")

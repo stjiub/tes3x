@@ -3046,14 +3046,19 @@ class ProfileWindow(QMainWindow):
         """The ISO an earlier play made of the current build, so it is not packed again."""
         built = (self.build_output() / PIPELINE_MARKER).stat().st_mtime
         runs = self.work_dir() / "build" / "xemu"
-        isos = [path for path in runs.glob(f"play-{self.profile_path.stem}-*/game.iso")
-                if path.stat().st_mtime >= built]
-        return max(isos, key=lambda path: path.stat().st_mtime, default=None)
+        isos = sorted(runs.glob(f"play-{self.profile_path.stem}-*/game.iso"),
+                      key=lambda path: path.stat().st_mtime)
+        current = isos[-1] if isos and isos[-1].stat().st_mtime >= built else None
+        for iso in isos:
+            if iso != current:
+                iso.unlink(missing_ok=True)
+        return current
 
     def start_play(self):
         stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         iso = self.play_iso()
-        source = ["--iso", str(iso)] if iso else ["--deploy", str(self.build_output() / "deploy")]
+        source = (["--iso", str(iso)] if iso
+                  else ["--deploy", str(self.build_output() / "deploy"), "--keep-iso"])
         environment = QProcessEnvironment.systemEnvironment()
         environment.insert("TES3X_CONFIG", str(self.local_config_path()))
         self.start_command(ROOT / "tools" / "tes3x_xemu.py",

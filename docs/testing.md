@@ -175,8 +175,9 @@ python tools/tes3x_test.py profiles/my-build.toml --library-all --library "D:/Mo
 The test build adds `diagnostics` and `console` to the profile. A pass only means that one route
 worked; it isn't a full playthrough.
 
-Build output and ISOs are kept when a test fails and deleted when it passes. `--keep-artifacts
-never` or `always` changes that. `--library-all` tests every mod in the library on its own, using
+A run's log and build record are kept when a test fails and deleted when it passes. The ISO and
+the built game files, about 2 GB a run, are deleted either way. `--keep-artifacts never` or
+`always` changes that; `always` keeps the ISO and game files too. `--library-all` tests every mod in the library on its own, using
 the profile for everything else.
 
 ## Patch scenarios

@@ -2,14 +2,16 @@
 
     python tools/tes3x_xemu.py NAME profiles/my-build.toml -- --preset minimal --enable diagnostics
     python tools/tes3x_xemu.py NAME --deploy build/some/deploy
-    python tools/tes3x_xemu.py NAME2 --iso build/xemu/NAME/game.iso
+    python tools/tes3x_xemu.py NAME2 --iso build/xemu/NAME/game.iso    (NAME ran with --keep-iso)
 
 Everything after `--` goes to tes3x_pipeline.py. Diagnostics, the hang watchdog and Show FPS are
 switched on in the ini unless --no-diag. Each run gets its own folder under build/xemu/ holding
-the ISO, xemu's output and the recovered log. The disk is a copy-on-write overlay on the clean
-HDD image, deleted once the log is read unless --keep-disk; --disk FILE instead keeps one overlay
-across runs, so saves persist. Each completed run also writes a .tes3x-run.json with no machine
-paths, for validation results.
+xemu's output and the recovered log. The ISO and the build's deploy tree, most of a run's size, are
+deleted when the run ends unless --keep-build (or --keep-iso, to pass the ISO to a later run's
+--iso); the build record, link map and patched XBE stay. The disk is a copy-on-write overlay on
+the clean HDD image, deleted once the log is read unless --keep-disk; --disk FILE instead keeps
+one overlay across runs, so saves persist. Each completed run also writes a .tes3x-run.json with
+no machine paths, for validation results.
 
 [xemu] in tes3x.local.toml names the emulator and its files; see docs/testing.md.
 --gdb-capture SECONDS pauses the guest once and saves CPU and stack state to gdb.txt.
@@ -168,6 +170,8 @@ def run_command(args, passthru, pipeline):
                           (args.no_reboot, "--no-reboot"),
                           (args.no_diag, "--no-diag"),
                           (args.keep_disk, "--keep-disk"),
+                          (args.keep_build, "--keep-build"),
+                          (args.keep_iso, "--keep-iso"),
                           (args.gdb, "--gdb")):
         if enabled:
             command.append(flag)
@@ -376,6 +380,10 @@ def main():
     ap.add_argument("--gdb-port", type=int,
                     help="stub port (default: a free one, written to the run's gdb.port)")
     ap.add_argument("--keep-disk", action="store_true")
+    ap.add_argument("--keep-build", action="store_true",
+                    help="keep the ISO and the build's deploy tree after the run")
+    ap.add_argument("--keep-iso", action="store_true",
+                    help="keep the ISO after the run, for a later run's --iso")
     ap.add_argument("--disk", metavar="FILE",
                     help="use and keep this overlay across runs, making it over the clean disk "
                          "the first time")
@@ -549,6 +557,10 @@ def main():
     (out / RUN_MARKER).write_text(json.dumps(run_record, indent=2) + "\n", encoding="utf-8")
     if not (a.keep_disk or a.disk):
         hdd.unlink()
+    if not (a.iso or a.keep_build or a.keep_iso):
+        iso.unlink(missing_ok=True)
+    if a.profile and not a.keep_build:
+        shutil.rmtree(out / "pipeline" / "deploy", ignore_errors=True)
     print(f"run directory: {out}")
 
 

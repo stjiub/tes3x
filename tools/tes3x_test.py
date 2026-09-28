@@ -173,6 +173,8 @@ def run_profile(args):
     command = [sys.executable, str(runner), run_name, str(profile_path), "--direct-engine",
                "--exec", str(script), "--timeout", str(scenario.get("timeout", 300)),
                *scenario.get("xemu", [])]
+    if args.keep_artifacts == "always":
+        command.append("--keep-build")
     # These are test instrumentation, not a second build profile. The recorded pipeline marker
     # makes their presence explicit, while mod order, package choices and ordinary patches remain
     # exactly those of the selected profile.
