@@ -49,7 +49,7 @@ CONSOLE_ADDRESSES = (
     ("CREATE_IMAGE", 0x001A7080), ("BUTTON_HINT", 0x001F8630),
 )
 INI_USERS = {"tes3xconsole.c", "tes3xrefs.c", "tes3xdiag.c", "tes3xsaves.c", "tes3xprof.c",
-             "tes3xarena.c", "tes3xregion.c"}
+             "tes3xarena.c", "tes3xregion.c", "tes3xbowview.c"}
 
 
 class PayloadError(RuntimeError):
@@ -281,6 +281,25 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         print(f"dxt5-size hook: call {hexva(site)}, size function {size}")
         define("TEXTURE_SIZE", size)
         wanted["dxt5_size"] = ("_tes3x_dxt5_size_hook",)
+    if "tes3xmcp146.c" in names:
+        site = locate("mcp-146")
+        input_action = locate("mcp-146-input")
+        game = locate("mcp-146-game")
+        resume = locate("mcp-146-resume")
+        attacking = tes3x_inject.call_target(image, site)
+        print(f"mcp-146 hook: input guard {hexva(site)}, attacking {hexva(attacking)}, "
+              f"input {hexva(input_action)}, resume {hexva(resume)}")
+        define("MCP146_ATTACKING", hexva(attacking))
+        define("MCP146_INPUT", hexva(input_action))
+        define("MCP146_GAME", hexva(game))
+        define("MCP146_RESUME", hexva(resume))
+        wanted["mcp146"] = ("_tes3x_mcp146_hook",)
+    if "tes3xbowview.c" in names:
+        site = locate("bow-view")
+        update = tes3x_inject.call_target(image, site)
+        print(f"bow-view hook: transform call {hexva(site)}, update {hexva(update)}")
+        define("BOW_VIEW_UPDATE", hexva(update))
+        wanted["bow_view"] = ("_tes3x_bow_view_hook",)
     if "tes3xleanmenu.c" in names:
         site, tag, launch, no_reboot, preload, player = locate("lean-menu")
         load = tes3x_inject.call_target(image, site)

@@ -1272,15 +1272,6 @@ summary = "Quality-based potion icons/models"
 reason = "Potion icons and models reflect quality instead of being random."
 
 [[candidate]]
-name = "mcp-146"
-origin = { source = "MCP", id = "146" }
-category = "qol"
-status = "candidate"
-priority = "low"
-summary = "Arrow de-nocker"
-reason = "Remove a nocked arrow with the Ready Weapon control."
-
-[[candidate]]
 name = "mcp-147"
 origin = { source = "MCP", id = "147" }
 category = "balance"

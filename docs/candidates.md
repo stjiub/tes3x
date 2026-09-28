@@ -13,7 +13,7 @@ on, `low` for minor ones, and `none` for fixes we won't port.
 
 | status | fixes |
 |---|---|
-| candidate | 198 |
+| candidate | 197 |
 | deferred | 13 |
 | not-applicable | 15 |
 | rejected | 2 |
@@ -171,7 +171,6 @@ Worth porting, but not yet shown to affect the Xbox build.
 | `mcp-143` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #143 | low | compat | **Get/SetAngle enhancement.** Script or modding support; worth porting only when a mod used on Xbox needs it. |
 | `mcp-144` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #144 | low | qol | **Better recharging.** Simpler recharging: pick the item, then the soul gem. |
 | `mcp-145` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #145 | low | qol | **Quality-based potion icons/models.** Potion icons and models reflect quality instead of being random. |
-| `mcp-146` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #146 | low | qol | **Arrow de-nocker.** Remove a nocked arrow with the Ready Weapon control. |
 | `mcp-147` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #147 | low | balance | **Healthy appetite.** Balance change, opt in only; MCP ships it as an option rather than a defect fix. |
 | `mcp-148` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #148 | low | qol | **Spellmaker/enchanting improvement.** Spellmaker magnitude controls that keep minimum and maximum consistent. |
 | `mcp-150` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #150 | low | balance (opt in) | **Shield hit-location skill credit.** Alters skill progression even if the original hit attribution is wrong. |

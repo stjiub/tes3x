@@ -285,3 +285,23 @@ channel = "development"
 selection = "preset"
 source = "tes3xleanmenu.c"
 summary = "Load only game settings for the main menu; New Game and Load relaunch and load the rest."
+
+[[patch]]
+name = "mcp-146"
+origin = { source = "MCP", id = "146" }
+bit = 24
+category = "qol"
+channel = "development"
+selection = "preset"
+source = "tes3xmcp146.c"
+summary = "Remove a fully nocked arrow with the Ready Weapon control."
+
+[[patch]]
+name = "bow-view"
+bit = 25
+category = "qol"
+channel = "development"
+selection = "preset"
+source = "tes3xbowview.c"
+ini = { BowViewOffsetZ = "-12" }
+summary = "Lower the first-person bow and arms while an arrow is nocked."

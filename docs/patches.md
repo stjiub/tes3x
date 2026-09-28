@@ -34,3 +34,5 @@ edit that file, not this one. Fixes that are not implemented are in
 | [`heap-region`](../patches/heap-region/) | With more than 64 MB, size the engine heap's region from [Xbox] HeapRegionKB. | TES3X | compat | development | by name |
 | `info-name-arena` | Page INFO's temporary ID, previous and next names outside the engine heap. | TES3X | compat | development | by name |
 | `lean-menu` | Load only game settings for the main menu; New Game and Load relaunch and load the rest. | TES3X | performance | development | by name |
+| [`mcp-146`](../patches/mcp-146/) | Remove a fully nocked arrow with the Ready Weapon control. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #146 | qol | development | by name |
+| [`bow-view`](../patches/bow-view/) | Lower the first-person bow and arms while an arrow is nocked. | TES3X | qol | development | by name |

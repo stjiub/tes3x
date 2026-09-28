@@ -486,6 +486,77 @@ def find_dxt5_size(x):
     return va
 
 
+# MobilePlayer's input loop checks its disabled flag, then suppresses normal action handlers while
+# an attack or cast is active.  The following state check anchors the one call we replace.
+MCP146_SIG = re.compile(
+    rb"\x8a\x86\xb0\x05\x00\x00\x84\xc0\x0f\x85....\x8b\xce"
+    rb"(?P<site>\xe8....)\x84\xc0\x0f\x85....\x80\xbe\xdd\x00\x00\x00\x01",
+    re.S,
+)
+MCP146_READY_SIG = re.compile(
+    rb"\x8b\x46\x10\xc1\xe8\x0d\xa8\x01\x0f\x84...."
+    rb"\x8b\x0d(?P<game>....)\x8b\x49\x4c\x6a\x02\x6a\x06(?P<input>\xe8....)"
+    rb"\x85\xc0\x75.\x8b\x15(?P=game)\x8b\x4a\x4c\x6a\x01\x6a\x06(?P<input2>\xe8....)",
+    re.S,
+)
+MCP146_RESUME_SIG = re.compile(
+    rb"\x8b\x8e\x44\x02\x00\x00\xc6\x44\x24\x13\x01\xe8...."
+    rb"(?P<resume>\x33\xc0\x66\x8b\x46\x08)",
+    re.S,
+)
+
+# MobilePlayer::updateScenegraph updates the first-person transform, then updates and traverses
+# its root.  The call is narrow enough to move only the viewmodel after the engine positions it.
+BOW_VIEW_SIG = re.compile(
+    rb"\x8b\xce(?P<site>\xe8....)\x8b\x17\x8b\xcf\xff\x52\x08\x8b\xcf\xe8....\x8d\x44\x24\x14",
+    re.S,
+)
+
+
+def find_mcp146(x):
+    """The attacking/casting guard in MobilePlayer's Xbox input loop."""
+    hits = list(MCP146_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("mcp-146: %d input guard(s), expected 1" % len(hits))
+    site = x.off_to_va(hits[0].start("site"))
+    if site is None:
+        raise PatchError("mcp-146: input guard is outside any section")
+    return site
+
+
+def find_mcp146_context(x):
+    """The original guard, input query, game pointer and post-Ready-Weapon continuation."""
+    data = bytes(x.data)
+    ready = list(MCP146_READY_SIG.finditer(data))
+    resume = list(MCP146_RESUME_SIG.finditer(data))
+    if len(ready) != 1 or len(resume) != 1:
+        raise PatchError("mcp-146: found %d Ready Weapon handlers and %d continuations, expected 1"
+                         % (len(ready), len(resume)))
+    input1 = x.off_to_va(ready[0].start("input"))
+    input2 = x.off_to_va(ready[0].start("input2"))
+    if input1 is None or input2 is None:
+        raise PatchError("mcp-146: an input call is outside any section")
+    target = tes3x_inject.call_target(x, input1)
+    if tes3x_inject.call_target(x, input2) != target:
+        raise PatchError("mcp-146: Ready Weapon input calls have different targets")
+    resume_va = x.off_to_va(resume[0].start("resume"))
+    if resume_va is None:
+        raise PatchError("mcp-146: continuation is outside any section")
+    game = struct.unpack("<I", ready[0].group("game"))[0]
+    return find_mcp146(x), target, game, resume_va
+
+
+def find_bow_view(x):
+    """The first-person transform call in MobilePlayer::updateScenegraph."""
+    hits = list(BOW_VIEW_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("bow-view: %d first-person transform call(s), expected 1" % len(hits))
+    site = x.off_to_va(hits[0].start("site"))
+    if site is None:
+        raise PatchError("bow-view: transform call is outside any section")
+    return site
+
+
 # The per-file loop's load-one-record call, whose failure sets the result to 0.
 LEAN_RECORD_SIG = re.compile(rb"\x50\x51\x53\x8b\xcd(?P<site>\xe8....)\x85\xc0\x75\x04\x89\x44\x24\x1c",
                              re.S)
@@ -882,6 +953,29 @@ def _dxt5_size(x, value, ctx):
     site = find_dxt5_size(x)
     was, off = x.patch_call(site, int(str(target), 16))
     return [(off, 5, "texture size call 0x%08X: 0x%08X -> %s" % (site, was, target))]
+
+
+@patch("mcp-146")
+def _mcp_146(x, value, ctx):
+    """Remove a fully nocked arrow when Ready Weapon is pressed."""
+    target = ctx.get("hooks", {}).get("mcp146")
+    if not target:
+        raise PatchError("mcp-146: needs `payload` first, with an mcp146 hook in its manifest")
+    site = find_mcp146(x)
+    was, off = x.patch_call(site, int(str(target), 16))
+    return [(off, 5, "player input guard 0x%08X: 0x%08X -> %s" % (site, was, target))]
+
+
+@patch("bow-view")
+def _bow_view(x, value, ctx):
+    """Lower the first-person bow and arms while a projectile is nocked."""
+    target = ctx.get("hooks", {}).get("bow_view")
+    if not target:
+        raise PatchError("bow-view: needs `payload` first, with a bow_view hook in its manifest")
+    site = find_bow_view(x)
+    was, off = x.patch_call(site, int(str(target), 16))
+    return [(off, 5, "first-person transform 0x%08X: 0x%08X -> %s" %
+             (site, was, target))]
 
 
 @patch("lean-menu")
@@ -1497,6 +1591,11 @@ LOCATORS = {
     "mcp-154-reload": find_mcp154_reload,
     "mcp-102-actn": find_mcp102_actn,
     "dxt5-size": find_dxt5_size,
+    "mcp-146": find_mcp146,
+    "mcp-146-input": lambda image: find_mcp146_context(image)[1],
+    "mcp-146-game": lambda image: find_mcp146_context(image)[2],
+    "mcp-146-resume": lambda image: find_mcp146_context(image)[3],
+    "bow-view": find_bow_view,
     "lean-menu": find_lean_menu,
     "video-arena": find_arena_size,
     "save-game": lambda image: find_autosave_calls(image)[0],

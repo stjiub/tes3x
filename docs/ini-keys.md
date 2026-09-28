@@ -79,3 +79,11 @@ Used only when the Xbox has more than 64 MB; on 64 MB the arena keeps its retail
 | `HeapRegionKB` | `17408` to `98304` | `98304` |
 
 Only pages the heap actually uses consume memory, so a large value costs address space, not RAM.
+
+## `bow-view`
+
+| key | values | default |
+|---|---|---|
+| `BowViewOffsetZ` | `-64` to `64` game units | `-12`; `0` retains the retail position |
+
+The offset affects only the first-person bow and arms while an arrow or bolt is nocked.

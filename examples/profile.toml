@@ -37,6 +37,8 @@ enable = [
     # "heap-region",           # compat: larger engine heap on a 128 MB Xbox
     # "info-name-arena",       # compat: move dialogue names out of the engine heap
     # "lean-menu",             # performance: load only game settings for the main menu
+    # "mcp-146",                # qol: remove a fully nocked arrow with Ready Weapon
+    # "bow-view",               # qol: lower the first-person bow and arms while an arrow is nocked
     # "rotating-autosaves",    # qol: rotate autosaves through several slots
     # "transition-autosaves",  # qol: autosave before doors, teleports and travel
     # "console",               # qol: in-game console (already in standard)
