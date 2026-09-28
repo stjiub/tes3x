@@ -44,8 +44,9 @@ folders.
 
 ### Sorting plugins with mlox
 
-By default, plugins load masters first, then in mod order. With `plugin_order = "mlox"` in the
-profile's `[rules]`, [mlox](https://github.com/mlox/mlox) sorts them using the community's
+By default, plugins load masters first, then in mod order. A profile can list its own order in
+`[plugins] order`.
+With `plugin_order = "mlox"` in the profile's `[rules]`, [mlox](https://github.com/mlox/mlox) sorts them using the community's
 ordering rules instead. File conflicts between mods still go by mod order; mlox only changes the
 plugin load order.
 

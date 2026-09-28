@@ -95,7 +95,13 @@ it stages the retail directory unchanged.
 | `exclude` | array of strings | built-in list | Replace the default patterns excluded from mod folders. |
 | `keep_assets` | array of strings | `[]` | Preserve matching assets during reachability pruning. |
 | `clear_cache_partitions` | boolean | `false` | Clear the Xbox X/Y/Z cache after a successful deployment. |
-| `plugin_order` | string | `mods` | `mods` loads plugins in mod order; `mlox` sorts them with mlox. See [pipeline options](pipeline.md#sorting-plugins-with-mlox). |
+| `plugin_order` | string | `mods` | `mods` loads plugins in mod order, or in `[plugins] order` when set; `mlox` sorts them with mlox. See [pipeline options](pipeline.md#sorting-plugins-with-mlox). |
+
+### `[plugins]`
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `order` | array of strings | mod order | Plugin load order. Masters still load before other plugins and before plugins that need them; plugins not listed follow in mod order. Cannot be combined with `plugin_order = "mlox"`. |
 
 ### `[[mods]]`
 

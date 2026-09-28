@@ -1,3 +1,4 @@
+import json
 import struct
 import sys
 import tempfile
@@ -13,7 +14,8 @@ from tes3x_pipeline import (PipelineError, copy_retail_root, link_or_copy, resol
                             validate_profile)
 from tes3x_pipeline import main as pipeline_main
 from tes3x_patch import _mcp_97, _mcp_102, _mcp_154
-from tes3x_plugins import collect, fetch_rules, validate_order, warnings as mlox_warnings
+from tes3x_plugins import (collect, dependency_order, fetch_rules, run_arrange, validate_order,
+                           warnings as mlox_warnings)
 from test_reach import rec, sub
 
 
@@ -112,6 +114,25 @@ class PipelineTests(unittest.TestCase):
         validate_profile({'profile': {'name': 'p'}, 'rules': {'plugin_order': 'mlox'}})
         with self.assertRaises(PipelineError):
             validate_profile({'profile': {'name': 'p'}, 'rules': {'plugin_order': 'loot'}})
+        validate_profile({'profile': {'name': 'p'}, 'plugins': {'order': ['a.esp']}})
+        with self.assertRaises(PipelineError):
+            validate_profile({'profile': {'name': 'p'}, 'plugins': {'order': ['a.esp']},
+                              'rules': {'plugin_order': 'mlox'}})
+
+    def test_listed_order_keeps_masters_first_and_completes_the_list(self):
+        built, vanilla = self.root / 'built', self.root / 'vanilla'
+        built.mkdir()
+        vanilla.mkdir()
+        (vanilla / 'Morrowind.esm').write_bytes(rec(b'TES3', b''))
+        (built / 'lib.esm').write_bytes(rec(b'TES3', sub(b'MAST', b'Morrowind.esm\0')))
+        for name in ('a.esp', 'b.esp', 'c.esp'):
+            (built / name).write_bytes(rec(b'TES3', sub(b'MAST', b'lib.esm\0')))
+        files = collect(built, vanilla, self.root / 'stubs')
+        self.assertEqual(dependency_order(files, mtime=False, preferred=['c.esp', 'a.esp'])[3:],
+                         ['lib.esm', 'c.esp', 'a.esp', 'b.esp'])
+        out = self.root / 'order.json'
+        run_arrange(built, vanilla, ['b.esp', 'lib.esm'], self.root / 'work', out)
+        self.assertEqual(json.loads(out.read_text())['plugins'][3:5], ['lib.esm', 'b.esp'])
 
     def test_invalidation_newline_and_path_safety(self):
         target = self.root / 'ArchiveInvalidationList.txt'

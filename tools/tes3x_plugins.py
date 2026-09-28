@@ -29,17 +29,19 @@ def digest(path):
 BASE_MASTERS = ('morrowind.esm', 'tribunal.esm', 'bloodmoon.esm')
 
 
-def dependency_order(files, mtime=True):
-    """Stable dependency order with retail masters first and mtime/name tiebreaks."""
+def dependency_order(files, mtime=True, preferred=()):
+    """Stable dependency order with retail masters first, then the preferred names in their
+    order, then mtime/name tiebreaks."""
     names = list(files)
     known = set(names)
     masters = {n: {m.lower() for m in plugin_masters(str(files[n]))} & known - {n}
                for n in names}
+    wanted = {name.lower(): index for index, name in enumerate(preferred)}
 
     def rank(n):
         base = BASE_MASTERS.index(n) if n in BASE_MASTERS else len(BASE_MASTERS)
         stamp = files[n].stat().st_mtime if mtime else 0
-        return (base, not n.endswith('.esm'), stamp, n)
+        return (base, not n.endswith('.esm'), wanted.get(n, len(wanted)), stamp, n)
 
     ordered, placed, remaining = [], set(), set(names)
     while remaining:
@@ -149,6 +151,26 @@ def warnings(messages):
     return [block.strip() for block in blocks if block.strip() and not block.startswith('[NOTE]')]
 
 
+def sort_files(files, rules, work):
+    """mlox order for plugin files keyed by lowercase name; returns names and messages."""
+    work = Path(work).resolve()
+    work.mkdir(parents=True, exist_ok=False)
+    stage(files, dependency_order(files), work)
+    names, messages = mlox_sort(work, Path(rules).resolve())
+    return validate_order(names, files), messages
+
+
+def run_arrange(built, vanilla, order, work, output):
+    """Write the load order a profile lists, completed for plugins it does not list."""
+    work = Path(work).resolve()
+    work.mkdir(parents=True, exist_ok=False)
+    files = collect(built, vanilla, work / 'stubs')
+    names = validate_order(dependency_order(files, preferred=order), files)
+    Path(output).write_text(json.dumps({'plugins': [files[n].name for n in names]}, indent=2),
+                            encoding='utf-8')
+    print(f'profile order: {len(names)} plugins')
+
+
 def run_order(built, vanilla, rules, work, output):
     work = Path(work).resolve()
     work.mkdir(parents=True, exist_ok=False)
@@ -190,11 +212,20 @@ if __name__ == '__main__':
     order.add_argument('--rules', required=True, help="mlox_base.txt from the mlox-rules project")
     order.add_argument('--work', required=True, help='new isolated working directory')
     order.add_argument('--out', required=True)
+    arrange = sub.add_parser('arrange', help="order a built tree's plugins as a list gives")
+    arrange.add_argument('built')
+    arrange.add_argument('--vanilla', required=True)
+    arrange.add_argument('--order', required=True, help='JSON array of plugin names')
+    arrange.add_argument('--work', required=True, help='new isolated working directory')
+    arrange.add_argument('--out', required=True)
     fetch = sub.add_parser('fetch-rules', help='download the current mlox rules')
     fetch.add_argument('out', help='where to save mlox_base.txt')
     args = ap.parse_args()
     sys.stdout.reconfigure(errors='replace')
     if args.action == 'fetch-rules':
         print(f'mlox rules: {fetch_rules(args.out)} bytes -> {args.out}')
+    elif args.action == 'arrange':
+        order = json.loads(Path(args.order).read_text(encoding='utf-8'))
+        run_arrange(args.built, args.vanilla, order, args.work, args.out)
     else:
         run_order(args.built, args.vanilla, args.rules, args.work, args.out)

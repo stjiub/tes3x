@@ -65,6 +65,9 @@ mode = "delta-bsa"
 # loose_assets = []                  # patterns kept loose in an archive build, e.g. "textures/sky/*"
 # drive_letter = "D"                 # drive the game reads its files from
 
+# [plugins]
+# order = ["Mod.esm", "Mod.esp"]     # load order; default: masters first, then mod order
+
 [ini]
 # "General:Show FPS" = 1
 # "Xbox:AutosaveSlots" = 5           # docs/ini-keys.md lists the keys patches read

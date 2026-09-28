@@ -61,7 +61,8 @@ def validate_profile(profile):
     if not isinstance(profile, dict):
         raise PipelineError("profile must be a TOML table")
 
-    allowed_sections = {"profile", "rules", "patches", "preferences", "package", "ini", "mods"}
+    allowed_sections = {"profile", "rules", "patches", "preferences", "package", "ini", "mods",
+                        "plugins"}
     unknown = set(profile) - allowed_sections
     if unknown:
         raise PipelineError("unknown profile sections: " + ", ".join(sorted(unknown)))
@@ -106,6 +107,13 @@ def validate_profile(profile):
         typed(rules, key, (bool,), "rules")
     string_list(rules.get("exclude"), "rules.exclude")
     string_list(rules.get("keep_assets"), "rules.keep_assets")
+
+    plugins = table("plugins")
+    known(plugins, {"order"}, "plugins")
+    string_list(plugins.get("order"), "plugins.order")
+    if plugins.get("order") and rules.get("plugin_order") == "mlox":
+        raise PipelineError("plugins.order and rules.plugin_order = 'mlox' both set the load "
+                            "order; keep one")
 
     patches = table("patches")
     known(patches, {"preset", "categories", "enable", "disable"}, "patches")
@@ -642,11 +650,14 @@ def main(argv=None):
         print("pager test: on")
     use_mlox = (plan["package_mode"] != "retail"
                 and profile.get("rules", {}).get("plugin_order") == "mlox")
+    listed_order = (plan["package_mode"] != "retail"
+                    and profile.get("plugins", {}).get("order", []))
     if plan["package_mode"] == "retail":
         print("mods: none; retail Data Files are staged unchanged")
     else:
         print(f"mods: {len(enabled_mods(profile))}, packed as {plan['package_mode']}")
-        print("plugin order: " + ("mlox" if use_mlox else "mod order"))
+        print("plugin order: " + ("mlox" if use_mlox else "profile list" if listed_order
+                                  else "mod order"))
     print(f"output: {output}")
     if args.deploy or args.dry_run:
         print(f"target: {deploy.get('host', '<missing>')} {remote or '<missing>'}")
@@ -745,11 +756,18 @@ def main(argv=None):
             run([sys.executable, TOOLS / "tes3x_plugins.py", "order", tree,
                  "--vanilla", data_files, "--rules", mlox_rules,
                  "--work", work / "mlox", "--out", load_order])
+        elif listed_order:
+            load_order = work / "profile-order.json"
+            listed = work / "profile-order-input.json"
+            listed.write_text(json.dumps(listed_order), encoding="utf-8")
+            run([sys.executable, TOOLS / "tes3x_plugins.py", "arrange", tree,
+                 "--vanilla", data_files, "--order", listed,
+                 "--work", work / "arrange", "--out", load_order])
 
         if has_mods:
             pack_cmd = [sys.executable, TOOLS / "tes3x_pack.py", tree,
                         "--vanilla", data_files, "--ini", ini, "--out", staged]
-            if use_mlox:
+            if use_mlox or listed_order:
                 pack_cmd += ["--load-order", load_order]
             if plan["package_mode"] == "loose":
                 pack_cmd.append("--no-archive")
