@@ -108,6 +108,9 @@ int tes3x_autosave_command(void *game, const char *text);
 #ifndef TES3X_NAV_UP_ID
 #error "define TES3X_NAV_UP_ID to the VA of the focus-up property id global"
 #endif
+#ifndef TES3X_NAV_DOWN_ID
+#error "define TES3X_NAV_DOWN_ID to the VA of the focus-down property id global"
+#endif
 #ifndef TES3X_VK_ROW_NUM_ID
 #error "define TES3X_VK_ROW_NUM_ID to the VA of MenuVirtualKeyboard_RowNum's id global"
 #endif
@@ -191,9 +194,12 @@ int tes3x_autosave_command(void *game, const char *text);
 #define KEY_COUNT 36        /* 0-9, then A-Z; row 4 ends in the space bar */
 #define KEYBOARD_PAD 64     /* the keyboard's frame, when a row cannot be measured */
 #define KEY_GAP 2           /* the key frame draws slightly outside its width */
+#define ITEM_SPACING 8      /* the layout's space between buttons in a row, as drawn */
 #define VK_APPEAR_FRAMES 30 /* a new keyboard is not visible on the frame after it is raised */
 #define VK_RETRY_FRAME 8    /* the first open only builds the menu; a second shows it */
 #define BOTTOM_BUTTONS 6
+/* Bottom row shares, in percent, by label length: Older, Newer, !?#, Backspace, Shift, Done. */
+static const int bottom_share[BOTTOM_BUTTONS] = {16, 17, 13, 22, 14, 18};
 
 /* Per-port block: 22 bytes of XINPUT_STATE, then 30 derived words. A held button reads 0x7FFF. */
 #define CTRL_PORT 0x804
@@ -617,8 +623,6 @@ static void hint(int button, const char *label)
     ((fn_button_hint)TES3X_BUTTON_HINT)(button, ((fn_ui_id)TES3X_UI_ID)(label), HINT_MODE);
 }
 
-/* Symbols, older and newer join the bottom row, and Done moves to its end. The engine links only
- * the row's wrap - Done right to the first button - and siblings navigate in child order. */
 /* The width a row actually gets inside the keyboard's frame, split between n items. */
 static int share(void *row, int fallback, int n)
 {
@@ -629,7 +633,7 @@ static int share(void *row, int fallback, int n)
     return w / n - KEY_GAP;
 }
 
-static int item_gap = KEY_GAP;  /* the spacing the last refit measured */
+static int item_gap = ITEM_SPACING;  /* the spacing the last refit measured */
 
 static int el_int(void *el, int field)
 {
@@ -668,15 +672,21 @@ static void set_width(void **items, int n, int width)
     }
 }
 
-static void extend_bottom_row(void *vk, void **last_row, int last_count)
+/* Symbols, older and newer join the bottom row, which is reordered and sized to end where the key
+ * rows do. The engine's focus links to and from this row follow its old order, so all are set
+ * again. */
+static void extend_bottom_row(void *vk, int kw)
 {
     unsigned char *done = vk_child(vk, *(unsigned short *)TES3X_VK_DONE_ID);
     void *caps = vk_child(vk, *(unsigned short *)TES3X_VK_CAPS_ID);
+    void *back = vk_child(vk, *(unsigned short *)TES3X_VK_BACKSPACE_ID);
     unsigned char *block;
-    void **begin, **end, *added[3];
-    int i, n, bw;
+    void **begin, **end, *added[3], *order[BOTTOM_BUTTONS];
+    void **first_row, **last_row;
+    int i, n, span, used, w, col, pitch, mid, first_count, last_count;
+    int start[BOTTOM_BUTTONS], mid_of[BOTTOM_BUTTONS];
 
-    if (!done || !caps || vk_child(vk, symbols_id))
+    if (!done || !caps || !back || vk_child(vk, symbols_id))
         return;
     block = *(unsigned char **)(done + EL_PARENT);
     if (!block)
@@ -688,20 +698,61 @@ static void extend_bottom_row(void *vk, void **last_row, int last_count)
     begin = *(void ***)(block + EL_CHILDREN);
     end = *(void ***)(block + EL_CHILDREN + 4);
     n = (int)(end - begin);
-    for (i = 0; i < n && begin[i] != done; i++)
-        ;
-    for (; i + 1 < n; i++)
-        begin[i] = begin[i + 1];
-    if (n)
-        begin[n - 1] = done;
+    order[0] = added[1];
+    order[1] = added[2];
+    order[2] = added[0];
+    order[3] = back;
+    order[4] = caps;
+    order[5] = done;
+    for (i = 0; i < BOTTOM_BUTTONS; i++)
+        if (!order[i])
+            break;
+    if (n != BOTTOM_BUTTONS || i != BOTTOM_BUTTONS) {
+        tes3x_log("console.vk_bottom_row", (u32)n);
+        return;
+    }
+    first_row = row_keys(vk, 0, &first_count);
+    last_row = row_keys(vk, KEY_ROWS - 1, &last_count);
 
-    bw = share(block, *(int *)((unsigned char *)vk + EL_WIDTH), BOTTOM_BUTTONS);
-    set_width(begin, n, bw);
-    relayout(vk);
-    set_width(begin, n, refit(block, begin, n, bw));
-    for (i = 0; i < 3 && last_row && last_count; i++)
-        if (added[i])
-            set_ptr(added[i], TES3X_NAV_UP_ID, last_row[last_count - 1]);
+    span = KEY_COLS * kw + (KEY_COLS - 1 - (BOTTOM_BUTTONS - 1)) * item_gap;
+    for (i = 0, used = 0; i < BOTTOM_BUTTONS; i++) {
+        begin[i] = order[i];
+        w = i + 1 < BOTTOM_BUTTONS ? span * bottom_share[i] / 100 : span - used;
+        set_prop(order[i], PROP_MIN_WIDTH, w);
+        set_prop(order[i], PROP_MAX_WIDTH, w);
+        set_ptr(order[i], TES3X_NAV_LEFT_ID, order[(i + BOTTOM_BUTTONS - 1) % BOTTOM_BUTTONS]);
+        set_ptr(order[i], TES3X_NAV_RIGHT_ID, order[(i + 1) % BOTTOM_BUTTONS]);
+        start[i] = used + i * item_gap;
+        mid_of[i] = start[i] + w / 2;
+        used += w;
+    }
+
+    /* Vertical links join each button to the keys over its centre: up to the last key row, and
+     * down, wrapping, to the first. The space bar covers the last row's remaining columns. */
+    pitch = kw + item_gap;
+    for (i = 0; i < BOTTOM_BUTTONS; i++) {
+        col = mid_of[i] / pitch;
+        if (last_count && last_row[col < last_count ? col : last_count - 1])
+            set_ptr(order[i], TES3X_NAV_UP_ID, last_row[col < last_count ? col : last_count - 1]);
+        if (first_count && first_row[col < first_count ? col : first_count - 1])
+            set_ptr(order[i], TES3X_NAV_DOWN_ID,
+                    first_row[col < first_count ? col : first_count - 1]);
+    }
+    for (col = 0; col < last_count; col++) {
+        mid = col + 1 < last_count ? col * pitch + kw / 2
+                                   : (col * pitch + KEY_COLS * pitch - item_gap) / 2;
+        for (i = BOTTOM_BUTTONS - 1; i > 0 && start[i] > mid; i--)
+            ;
+        if (last_row[col])
+            set_ptr(last_row[col], TES3X_NAV_DOWN_ID, order[i]);
+    }
+    for (col = 0; col < first_count; col++) {
+        mid = col * pitch + kw / 2;
+        for (i = BOTTOM_BUTTONS - 1; i > 0 && start[i] > mid; i--)
+            ;
+        if (first_row[col])
+            set_ptr(first_row[col], TES3X_NAV_UP_ID, order[i]);
+    }
 
     ((fn_set_prop)TES3X_SET_PROP)(caps, EVENT_CLICK, (int)caps_clicked, PROP_HANDLER);
     ((fn_set_prop)TES3X_SET_PROP)(vk, EVENT_PAD_Y, (int)y_pressed, PROP_HANDLER);
@@ -752,7 +803,7 @@ static void layout_keyboard(void *vk)
             }
         }
     }
-    extend_bottom_row(vk, keys, n);
+    extend_bottom_row(vk, kw);
     relayout(vk);
     tes3x_log("console.vk_layout", (u32)kw);
 }
