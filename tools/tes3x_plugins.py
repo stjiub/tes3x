@@ -1,11 +1,15 @@
-"""Run mlox with expanded Xbox stubs in an isolated workspace."""
+"""Sort plugins with mlox, on a copy staged with expanded Xbox stubs."""
 import argparse
 import hashlib
+import importlib.metadata
 import json
+import logging
 import os
+import re
 import shutil
 import struct
-import subprocess
+import sys
+import types
 from pathlib import Path
 
 from tes3x_build import plugin_masters
@@ -65,20 +69,24 @@ def validate_order(names, files):
     return names
 
 
-def collect(built, vanilla):
+def collect(built, vanilla, stubs):
     files = {p.name.lower(): p for p in Path(built).iterdir() if p.suffix.lower() in {'.esm', '.esp'}}
     for name in ('Morrowind.esm', 'Tribunal.esm', 'Bloodmoon.esm'):
-        if name.lower() not in files:
-            path = Path(vanilla) / name
-            if not path.is_file():
-                raise ValueError(f'missing required retail master/stub: {path}')
-            files[name.lower()] = path
+        if name.lower() in files:
+            continue
+        path = Path(vanilla) / name
+        if not path.is_file():
+            if name == 'Morrowind.esm':
+                raise ValueError(f'missing retail master: {path}')
+            # Retail Xbox ships no expansion masters; pack generates the same stub.
+            path = Path(stubs) / name
+            path.parent.mkdir(exist_ok=True)
+            path.write_bytes(b'TES3')
+        files[name.lower()] = path
     return files
 
 
 def stage(files, names, work):
-    work = Path(work).resolve()
-    work.mkdir(parents=True, exist_ok=False)
     data = work / 'Data Files'
     data.mkdir()
     for i, name in enumerate(names):
@@ -97,31 +105,64 @@ def stage(files, names, work):
     return work
 
 
-def run_order(built, vanilla, executable, rules, work, output):
-    files = collect(built, vanilla)
-    work = stage(files, dependency_order(files), work)
-    # Legacy mlox identifies a Morrowind directory solely by this filename.
-    # This zero-byte marker is never executable and never leaves the workspace.
-    (work / 'Morrowind.exe').write_bytes(b'')
-    exe = Path(executable).resolve()
-    for src in exe.parent.iterdir():
-        if src.suffix.lower() in {'.exe', '.msg', '.dll', '.gif', '.ico'}:
-            shutil.copyfile(src, work / src.name)
-    shutil.copyfile(rules, work / 'mlox_base.txt')
-    result = subprocess.run([str(work / exe.name), '-n', '-c'], cwd=work,
-                            capture_output=True, timeout=180)
-    (work / 'process.log').write_bytes(result.stdout + result.stderr)
-    result.check_returncode()
-    candidates = [work / 'mlox_new_loadorder.out', work / 'mlox_loadorder.out']
-    order_file = next((p for p in candidates if p.is_file()), None)
-    if order_file is None:
-        raise RuntimeError(f'mlox produced no load order; inspect {work} logs')
-    names = [line.strip() for line in order_file.read_text(encoding='cp1252').splitlines() if line.strip()]
+def mlox_sort(work, rules):
+    """Sort the staged plugins with the mlox package; return the order and mlox's messages."""
+    # mlox.resources only locates the rules under the user's profile, and needs appdirs and
+    # pkg_resources to do it. Supplying it here lets a --no-deps install work.
+    resources = types.ModuleType('mlox.resources')
+    resources.base_file, resources.user_file = str(rules), str(work / 'no-user-rules.txt')
+    sys.modules['mlox.resources'] = resources
+    try:
+        from mlox import loadOrder
+    except ImportError as exc:
+        raise RuntimeError('mlox is not installed; run: python -m pip install mlox') from exc
+    loadOrder.base_file, loadOrder.user_file = resources.base_file, resources.user_file
+    logging.getLogger('mlox').setLevel(logging.ERROR)
+    cwd = os.getcwd()
+    os.chdir(work)  # mlox writes its .out files to the working directory
+    try:
+        order = loadOrder.loadorder()
+        order.game_type = 'Morrowind'
+        order.plugin_file = str(work / 'Morrowind.ini')
+        order.datadir = str(work / 'Data Files')
+        order.get_active_plugins()
+        messages = order.update()
+    finally:
+        os.chdir(cwd)
+    if messages is False:
+        raise RuntimeError(f'mlox could not sort the plugins; check the rules file {rules}')
+    return order.new_order, messages
+
+
+def mlox_version():
+    try:
+        return importlib.metadata.version('mlox')
+    except importlib.metadata.PackageNotFoundError:
+        return 'unknown'
+
+
+def warnings(messages):
+    """mlox's message blocks other than plain notes, which are mostly PC advice."""
+    blocks = re.split(r'(?m)^(?=\[[A-Z]+\])', messages)
+    return [block.strip() for block in blocks if block.strip() and not block.startswith('[NOTE]')]
+
+
+def run_order(built, vanilla, rules, work, output):
+    work = Path(work).resolve()
+    work.mkdir(parents=True, exist_ok=False)
+    files = collect(built, vanilla, work / 'stubs')
+    stage(files, dependency_order(files), work)
+    names, messages = mlox_sort(work, Path(rules).resolve())
     names = validate_order(names, files)
-    payload = {'plugins': [files[n].name for n in names], 'rules_sha256': digest(rules),
-               'tool_sha256': digest(exe), 'input_sha256': {n: digest(files[n]) for n in sorted(files)}}
+    notes = Path(output).with_name('mlox-messages.txt')
+    notes.write_text(messages, encoding='utf-8')
+    payload = {'plugins': [files[n].name for n in names], 'mlox': mlox_version(),
+               'rules_sha256': digest(rules),
+               'input_sha256': {n: digest(files[n]) for n in sorted(files)}}
     Path(output).write_text(json.dumps(payload, indent=2), encoding='utf-8')
-    print(f'mlox: validated {len(names)} plugins -> {output}')
+    for block in warnings(messages):
+        print(block)
+    print(f'mlox {mlox_version()}: sorted {len(names)} plugins; notes in {notes.name}')
 
 
 if __name__ == '__main__':
@@ -129,11 +170,9 @@ if __name__ == '__main__':
     ap.add_argument('action', choices=['order'])
     ap.add_argument('built')
     ap.add_argument('--vanilla', required=True)
-    ap.add_argument('--tool', required=True)
+    ap.add_argument('--rules', required=True, help="mlox_base.txt from the mlox-rules project")
     ap.add_argument('--work', required=True, help='new isolated working directory')
     ap.add_argument('--out', required=True)
-    ap.add_argument('--rules')
     args = ap.parse_args()
-    if not args.rules:
-        ap.error('order requires --rules')
-    run_order(args.built, args.vanilla, args.tool, args.rules, args.work, args.out)
+    sys.stdout.reconfigure(errors='replace')
+    run_order(args.built, args.vanilla, args.rules, args.work, args.out)

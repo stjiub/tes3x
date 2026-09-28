@@ -555,7 +555,7 @@ name = "mcp-58"
 origin = { source = "MCP", id = "58" }
 category = "correctness"
 default = "undecided"
-status = "researching"
+status = "candidate"
 priority = "medium"
 summary = "Save-count warning"
 reason = "MCP warns before PC memory corruption at roughly 300 save files. Xbox uses `XCreateSaveGame` and different enumeration, so first determine whether any equivalent limit exists; do not port the PC threshold by assumption."

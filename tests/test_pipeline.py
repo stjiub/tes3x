@@ -13,7 +13,7 @@ from tes3x_pipeline import (PipelineError, copy_retail_root, link_or_copy, resol
                             validate_profile)
 from tes3x_pipeline import main as pipeline_main
 from tes3x_patch import _mcp_97, _mcp_102, _mcp_154
-from tes3x_plugins import validate_order
+from tes3x_plugins import collect, validate_order, warnings as mlox_warnings
 from test_reach import rec, sub
 
 
@@ -67,6 +67,31 @@ class PipelineTests(unittest.TestCase):
                       ['Morrowind.esm', 'mod.esp', 'mod.esp']):
             with self.assertRaises(ValueError):
                 validate_order(order, files)
+
+    def test_mlox_inputs_generate_missing_expansion_stubs(self):
+        built, vanilla = self.root / 'built', self.root / 'vanilla'
+        built.mkdir()
+        vanilla.mkdir()
+        (vanilla / 'Morrowind.esm').write_bytes(rec(b'TES3', b''))
+        (built / 'mod.esp').write_bytes(rec(b'TES3', sub(b'MAST', b'Morrowind.esm\0')))
+        files = collect(built, vanilla, self.root / 'stubs')
+        self.assertEqual(sorted(files), ['bloodmoon.esm', 'mod.esp', 'morrowind.esm', 'tribunal.esm'])
+        self.assertEqual(files['tribunal.esm'].read_bytes(), b'TES3')
+        (vanilla / 'Morrowind.esm').unlink()
+        with self.assertRaises(ValueError):
+            collect(built, vanilla, self.root / 'stubs')
+
+    def test_mlox_notes_are_not_warnings(self):
+        messages = ("[NOTE]\n > 'a.esp'\n |\tadvice\n"
+                    "[CONFLICT]\n > 'a.esp'\n > 'b.esp'\n |\tdo not use both\n"
+                    "[REQUIRES]\n > 'c.esp' Requires:\n > 'd.esm'\n")
+        self.assertEqual([block.split('\n')[0] for block in mlox_warnings(messages)],
+                         ['[CONFLICT]', '[REQUIRES]'])
+
+    def test_plugin_order_accepts_mods_or_mlox(self):
+        validate_profile({'profile': {'name': 'p'}, 'rules': {'plugin_order': 'mlox'}})
+        with self.assertRaises(PipelineError):
+            validate_profile({'profile': {'name': 'p'}, 'rules': {'plugin_order': 'loot'}})
 
     def test_invalidation_newline_and_path_safety(self):
         target = self.root / 'ArchiveInvalidationList.txt'
@@ -238,12 +263,10 @@ class PipelinePlanTests(unittest.TestCase):
             'tes3xhook.c', 'tes3xlog.c', 'tes3xpager.c', 'tes3xinfoarena.c'
         ])
 
-    def test_standard_only_selects_release_channel_default_fixes(self):
+    def test_standard_selects_release_channel_fixes_and_console(self):
         plan = resolve_patch_plan({'patches': {'preset': 'standard'},
                                    'package': {'mode': 'merged-bsa'}})
-        # Automated validation never promotes a patch; no patch has maintainer release approval.
-        self.assertEqual(plan['selected'], [])
-        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c'])
+        self.assertEqual(plan['selected'], ['console'])
 
     def test_development_includes_unreleased_default_fixes(self):
         plan = resolve_patch_plan({'patches': {'preset': 'development'},

@@ -1,15 +1,15 @@
 # Configuration reference
 
-TES3X reads a build profile and an optional local config. The profile describes what to build;
-`tes3x.local.toml` holds retail, tool, output and Xbox connection paths for one computer.
+A profile says what to build. `tes3x.local.toml` holds the settings for your computer: where the
+retail game, mods and tools are, and how to reach the Xbox.
 
-Run `python tools/tes3x_pipeline.py profile.toml --check` after editing either file. It validates
-the supported keys and prints the resolved build without reading the retail game files.
+`python tools/tes3x_pipeline.py profiles/my-build.toml --check` checks both files and prints
+what would be built.
 
 ## Local config
 
-The default path is `tes3x.local.toml` in the current directory. Use `--config PATH` to select
-another file. Relative paths are resolved from the local config's directory.
+The default is `tes3x.local.toml` in the current directory; the profile manager falls back to the
+one in the TES3X folder. `--config PATH` picks another. Relative paths are relative to the file.
 
 ### `[paths]`
 
@@ -17,6 +17,8 @@ another file. Relative paths are resolved from the local config's directory.
 |---|---|---|---|
 | `vanilla_root` | string | none | Clean retail game folder containing both XBEs, `Morrowind.ini` and `Data Files`. Required to build unless `--vanilla` is used. |
 | `mod_library` | string | none | Mod library root. A profile's `library` takes precedence. |
+| `profiles` | string | `profiles` | Folder the profile manager lists profiles from. |
+| `mlox_rules` | string | none | mlox's `mlox_base.txt`, for `rules.plugin_order = "mlox"`. |
 | `build_root` | string | `build` | Parent directory for profile output folders. |
 | `llvm` | string | `PATH` | Directory containing `clang` and `lld-link`. |
 | `hardlink_retail` | boolean | `false` | Hardlink unchanged retail files when source and output are on the same volume. |
@@ -54,24 +56,18 @@ The annotated [example profile](../examples/profile.toml) is the shortest starti
 | `enable` | array of strings | `[]` | Add individual patches by name. |
 | `disable` | array of strings | `[]` | Remove individual patches selected elsewhere. |
 
-`minimal` adds no optional engine fixes. `standard` selects verified core and correctness fixes.
-`development` adds instrumentation and the in-game console. Use
-`python tools/tes3x_patch.py --list` or see [patches.md](patches.md) for patch names.
+`minimal` adds no optional patches. `standard` adds the tested core and correctness fixes and the
+in-game console. `development` adds the untested ones and diagnostics. See
+[patches.md](patches.md) for patch names.
 
 ### `[preferences]`
 
-Build preferences are applied after the Xbox's stored player options load. Omit this table to
-leave existing preferences and retail defaults unchanged.
+Applied after the Xbox's stored options load. Leave the table out to keep the player's own
+settings.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `invert_look` | boolean | stored/retail value | Set right-stick vertical look to inverted or normal. |
-
-Enable `transition-autosaves` in `[patches]` to save before activated doors, scripted teleports,
-intervention-style magic and paid travel. It deliberately does not save for ordinary exterior
-cell streaming or while a saved game is being restored. `[Xbox] TransitionAutosaves=0` disables
-the added triggers at runtime. Pair it with `rotating-autosaves` to spread these saves over the
-configured slot count.
 
 ### `[package]`
 
@@ -99,6 +95,7 @@ it stages the retail directory unchanged.
 | `exclude` | array of strings | built-in list | Replace the default patterns excluded from mod folders. |
 | `keep_assets` | array of strings | `[]` | Preserve matching assets during reachability pruning. |
 | `clear_cache_partitions` | boolean | `false` | Clear the Xbox X/Y/Z cache after a successful deployment. |
+| `plugin_order` | string | `mods` | `mods` loads plugins in mod order; `mlox` sorts them with mlox. See [pipeline options](pipeline.md#sorting-plugins-with-mlox). |
 
 ### `[[mods]]`
 

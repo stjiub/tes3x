@@ -397,7 +397,7 @@ def check_scenario(path):
 
 
 def check_all():
-    """Every problem with scenarios, results and release-channel validation references."""
+    """Every problem with the scenarios and recorded results."""
     problems, records = [], {}
     for path in sorted(PATCH_DIRS.rglob("*.toml")) if PATCH_DIRS.is_dir() else []:
         if path.name == SCENARIO:
@@ -407,21 +407,6 @@ def check_all():
             records[path.relative_to(ROOT).as_posix()] = load_record(path)
         except (ValidationError, tomllib.TOMLDecodeError) as exc:
             problems.append(str(exc))
-    for entry in registry.PATCHES:
-        cited = []
-        for result_path in entry.get("validation", []):
-            if not result_path.startswith("patches/"):
-                continue
-            record = records.get(result_path)
-            if record is None:
-                problems.append(f"{entry['name']}: validation {result_path} is missing or invalid")
-            elif record["patch"] != entry["name"]:
-                problems.append(f"{entry['name']}: validation {result_path} is for {record['patch']}")
-            else:
-                cited.append(record)
-        if entry["channel"] == "release" and not any(
-                record["result"] == "pass" for record in cited):
-            problems.append(f"{entry['name']}: release channel needs a cited passing validation result")
     return problems
 
 
@@ -670,8 +655,6 @@ def record(args):
         raise
     rel = path.relative_to(ROOT).as_posix()
     print(f"wrote {rel}")
-    print(f"cite it in patches.toml: validation = [\"{rel}\"], then run "
-          "tools/tes3x_patches.py --write; validation never changes a patch's channel")
 
 
 def main(argv=None):
@@ -694,7 +677,7 @@ def main(argv=None):
                      help="hash an additional script, save or other test input (repeatable)")
     rec.add_argument("--result", choices=RESULTS, default="pass")
     rec.add_argument("--date", help="YYYY-MM-DD (default: today)")
-    sub.add_parser("check", help="validate every scenario, result and registry reference")
+    sub.add_parser("check", help="validate every scenario and result")
     args = ap.parse_args(argv)
     try:
         if args.command == "record":

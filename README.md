@@ -12,31 +12,36 @@ applies engine fixes to the retail XBE, extends its functionality, and can also 
   if `clang` and `lld-link` are not on `PATH`
 - A softmodded or hardmodded Xbox, or xemu
 - An FTP server running on the Xbox (only if using `--deploy`)
+- Optional: [mlox](docs/pipeline.md#sorting-plugins-with-mlox) to sort plugins by community rules
 
 ## Setup
 
-Copy the example TOML files to the repository root.
+Copy the example files:
 
 ```
 cp examples/local.toml tes3x.local.toml
-cp examples/profile.toml profile.toml
+mkdir profiles
+cp examples/profile.toml profiles/my-build.toml
 ```
 
 In `tes3x.local.toml`, set `vanilla_root` to your unmodified Morrowind GOTY Xbox folder and, if
 needed, add the LLVM and Xbox connection settings.
-In `profile.toml`, set the build name and select its mods and patches.
-Use a separate profile file for each build.
+Each file in `profiles/` is one build: its name, mods and patches.
 
 The mod library contains one directory per mod, with the layout each mod would use under
 `Data Files`. Wrapper directories from extracted archives are detected automatically.
 For versions and optional installer folders, add a managed `library.toml` and select mod ids and
 components from the profile. See [managed mod libraries](docs/mod-library.md).
 
-The same profile format covers every build:
+For engine fixes only, remove `library` and every `[[mods]]` block. For mods without engine
+fixes, set `preset = "minimal"`.
 
-- For engine fixes only, remove `library` and every `[[mods]]` block.
-- For mods without optional engine fixes, set `preset = "minimal"`.
-- For both, keep the mod list and use `standard` or `development`.
+## Profile manager
+
+`python tools/tes3x_gui.py` opens the profile manager, a GUI for picking mods and patches and for
+building and deploying. It lists the profiles in `profiles/` and switches between them; New,
+Duplicate, Rename and Delete sit next to the list. It needs PySide6 and tomlkit:
+`python -m pip install -r requirements-gui.txt`.
 
 ## Build
 
@@ -62,22 +67,22 @@ The pipeline turns one profile into a complete, deployable game folder:
 
 #### Validate and resolve the profile without building:
 ```
-python tools/tes3x_pipeline.py profile.toml --check
+python tools/tes3x_pipeline.py profiles/my-build.toml --check
 ```
 
 #### Build a profile (written to `build/pipeline/<name>/deploy`):
 ```
-python tools/tes3x_pipeline.py profile.toml
+python tools/tes3x_pipeline.py profiles/my-build.toml
 ```
 
 #### Use `--dry-run` to build and preview an FTP sync:
 ```
-python tools/tes3x_pipeline.py profile.toml --dry-run
+python tools/tes3x_pipeline.py profiles/my-build.toml --dry-run
 ```
 
 #### Build and deploy to the Xbox via FTP:
 ```
-python tools/tes3x_pipeline.py profile.toml --deploy
+python tools/tes3x_pipeline.py profiles/my-build.toml --deploy
 ```
 
 `--deploy` synchronizes the build to `remote_root`; files there that are not in the build are
@@ -92,7 +97,7 @@ You can also copy `build/pipeline/<name>/deploy` with another FTP client.
 
 #### Before deployment, an optional xemu smoke test builds and exercises the exact profile in a live scenario:
 ```
-python tools/tes3x_test.py profile.toml --record
+python tools/tes3x_test.py profiles/my-build.toml --record
 ```
 
 ## Choosing engine fixes
@@ -102,12 +107,12 @@ The profile's `preset` selects a baseline:
 | preset | contents |
 |---|---|
 | `minimal` | No optional engine fixes |
-| `standard` | Tested engine fixes |
-| `development` | `standard`, diagnostics and the in-game console |
+| `standard` | Tested engine fixes and the in-game console |
+| `development` | `standard`, untested fixes and diagnostics |
 
-Use `enable` and `disable` for individual patches. Some patches read settings from
-`Morrowind.ini`; see [patch settings](docs/patch-settings.md). See [available patches](docs/patches.md),
-[candidates](docs/candidates.md), or run:
+Use `enable` and `disable` for individual patches; the example profile lists them all. Some
+patches read settings from `Morrowind.ini`; see [ini keys](docs/ini-keys.md). See
+[available patches](docs/patches.md), [candidates](docs/candidates.md), or run:
 
 ```powershell
 python tools/tes3x_patch.py --list
@@ -115,14 +120,15 @@ python tools/tes3x_patch.py --list
 
 ## In-game console
 
-With `console` enabled, Back + right thumb click opens the console and A raises the on-screen
-keyboard. `[Xbox] ConsoleCombo` changes the combination.
+The `standard` preset includes the console. Back + right thumb click opens it and A raises the
+on-screen keyboard. `[Xbox] ConsoleCombo` changes the combination; `disable = ["console"]` leaves
+it out.
 
 See [testing and debugging](docs/testing.md) for the file format, the log, and the profiler.
 
 ## Diagnostics and profiling
 
-The `development` preset enables diagnostics and the in-game console. Diagnostics append session,
+The `development` preset enables diagnostics, which append session,
 crash and hang information to `E:\tes3xlog.txt`; fetch and summarize it with
 `python tools/tes3x_diag.py pull`. Add profiler targets with the pipeline's repeatable
 `--profile-target VA` option, then use the `tes3xprof` console command to write call counts and CPU
@@ -140,8 +146,8 @@ The annotated [example profile](examples/profile.toml) covers the common options
 values override it:
 
 ```
-python tools/tes3x_pipeline.py profile.toml --preset development --enable console
-python tools/tes3x_pipeline.py profile.toml --ini-set "General:Show FPS=1"
+python tools/tes3x_pipeline.py profiles/my-build.toml --preset development --enable video-arena
+python tools/tes3x_pipeline.py profiles/my-build.toml --ini-set "General:Show FPS=1"
 ```
 
 Set `hardlink_retail = true` in the local config to avoid duplicating unchanged retail files when
@@ -160,9 +166,8 @@ The pipeline uses these commands internally; they can also be run directly:
 | `tes3x_pack.py` | Pack a collected mod tree into a game folder. |
 | `tes3x_deploy.py` | Upload a game folder to the Xbox. |
 | `tes3x_test.py` | Build and run a profile smoke test, or test a managed library one mod at a time. |
-| `tes3x_gui.py` | Edit managed profiles with the optional PySide6 interface. |
+| `tes3x_gui.py` | The profile manager. |
 | `tes3x_library.py` | Scan or validate a versioned local mod library. |
-| `tes3x_mods.py` | Generate a readable compatibility page from manual `mods.toml` decisions. |
 | `tes3x_fetch.py` | Copy files back off the Xbox, such as saves or logs. |
 | `tes3x_tour.py` | Write a script that walks through a plugin's cells logging free memory; summarize the log. |
 | `tes3x_audit.py` | Check any `Data Files` folder for long names, junk files and duplicates. |

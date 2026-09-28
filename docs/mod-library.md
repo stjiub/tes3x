@@ -1,22 +1,21 @@
 # Managed mod library
 
-TES3X profiles are resolved as ordered overlays. The source library is never modified: each later
-mod wins conflicting virtual `Data Files` paths, and the resolved view is compiled into a BSA and
-loose plugin set for the Xbox. This is the build-time equivalent of a PC mod manager's virtual
-filesystem.
+The mod library is a folder of mods, one folder each, laid out the way each mod would sit in
+`Data Files`. TES3X never changes it. A build stacks the mods a profile picks in order, later
+ones winning when two ship the same file, and packs the result for the Xbox.
 
-The GUI uses a managed `library.toml` at the library root. It gives packages stable ids, permits
-multiple installed releases and describes optional installer components. See
+A `library.toml` at the top of the library gives each mod a stable id and can list several
+versions of a mod and its optional installer folders. See
 [`examples/library.toml`](../examples/library.toml).
 
-Create a conservative initial index from an existing one-folder-per-mod library:
+To start one from an existing library:
 
 ```powershell
 python tools/tes3x_library.py scan "D:/Morrowind Mods" --write
 ```
 
-The scan records each top-level folder or standalone plugin as one `unknown` release. It does not
-guess optional-folder meaning or versions; edit those choices once, then reuse them in profiles.
+Each top-level folder or loose plugin becomes one mod with version `unknown`. Fill in versions and
+optional folders by hand afterwards.
 
 ```toml
 schema = 1
@@ -39,7 +38,7 @@ roots = ["10 Travel Music"]
 default = false
 ```
 
-The corresponding portable profile selection is:
+A profile picks it like this:
 
 ```toml
 [[mods]]
@@ -50,58 +49,35 @@ plugins = ["TravelMod.esp"]
 order = 10
 ```
 
-`roots` are ordered overlay layers relative to the release folder. Release roots apply first,
-then selected components in profile order. A component may name a `group`; selecting two members
-of one group is rejected. Its `conflicts` list may reject other component ids explicitly.
-Dependencies name other installed mod ids. Profiles keep dependencies explicit; the GUI and
-library batch tester insert their default releases before the mod that needs them.
+`roots` are folders inside the release folder, applied in order: the release's own roots first,
+then the chosen components in profile order. Components in the same `group` are alternatives, so
+only one can be chosen, and `conflicts` lists components that can't be combined with this one.
+`dependencies` names other mods by id; the profile manager adds them for you when you add a mod.
 
-Component roots nested beneath a release root are automatically hidden from that base layer. This
-supports installer layouts whose normal files are at the package root beside `Optional` folders:
-an optional subtree enters the virtual Data Files view only when its component is selected.
+When a component's folder sits inside a release root, as installers with an `Optional` folder
+beside the main files often do, it is left out of the release until the component is chosen.
 
-Set the library once in the machine-local config:
+Set the library in the local config:
 
 ```toml
 [paths]
 mod_library = "D:/Morrowind Mods"
 ```
 
-`profile.library` remains available and takes precedence. The GUI and CLI consume the same files;
-the GUI is an editor, not a separate mod database.
+A profile's own `library` overrides it.
 
 ## Profile manager
 
-Install the optional GUI dependencies and open a profile:
-
 ```powershell
 python -m pip install -r requirements-gui.txt
-python tools/tes3x_gui.py profile.toml
+python tools/tes3x_gui.py
 ```
 
-The profile manager uses separate **Mods**, **Patches** and **Output** tabs. The patch tab reads the
-real `patches.toml` catalog, groups patches by category, filters by text, category or channel, and
-shows summary, origin and validation information. Presets, whole categories and explicit
-enable/disable choices are written to the normal `[patches]` profile table; an expandable summary
-shows what that profile applies.
+The profile manager opens the last profile you used and lists everything in `profiles/` for
+switching. The **Mods** tab picks mods, versions, optional components and plugins, and sets their
+order. The **Patches** tab sets the preset and turns individual patches or whole categories on or
+off, with a summary of what the profile ends up applying.
 
-The GUI also checks profiles, builds, runs smoke tests and performs size-verified Xbox deployments.
-Its local settings dialog edits `tes3x.local.toml` while retaining comments and xemu-specific
-fields. The status bar checks the configured FTP connection; **Pull Xbox logs** fetches
-`E:/tes3x*` into a timestamped directory under `build/xbox-logs/`. Successful deployment output
-can optionally be discarded only after transfer verification. Profile and local-file operations
-are under **File**; build, test and Xbox operations are under **Actions**. Command output remains
-visible below the tabs. Package import and richer conflict visualization can build on the same
-library module without changing the profile format.
-
-## Compatibility ledger
-
-Compatibility is deliberately separate from the installed library and build profiles. Maintain a
-`mods.toml` like [`examples/mods.toml`](../examples/mods.toml), then generate its readable view:
-
-```powershell
-python tools/tes3x_mods.py mods.toml --write docs/mod-compat.md
-```
-
-Its status is edited only by a person after observation. Automated results can be cited in
-`validation`, but no test command edits or promotes the status.
+**Actions** checks, builds, smoke-tests and deploys the current profile, and pulls logs off the
+Xbox into `build/xbox-logs/`. **File > Local settings** edits `tes3x.local.toml`. The status bar
+shows whether the Xbox is reachable over FTP.

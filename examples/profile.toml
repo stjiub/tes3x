@@ -1,4 +1,4 @@
-# Copy this file to profile.toml and edit it for one build.
+# Copy this file into profiles/ and edit it for one build.
 
 [profile]
 name = "my-build"                    # output: build/pipeline/my-build
@@ -9,11 +9,33 @@ library = "C:/path/to/mod-library"  # remove for a patches-only build
 [rules]
 max_texture_size = 512
 clear_cache_partitions = true
+# plugin_order = "mlox"              # sort plugins with mlox instead of mod order; needs paths.mlox_rules
 
 [patches]
-# minimal: no optional engine fixes; standard: tested fixes; development: diagnostics and console
+# minimal: no optional patches
+# standard: tested fixes and the in-game console
+# development: standard, untested fixes and diagnostics
 preset = "standard"
-enable = []                          # see: python tools/tes3x_patch.py --list
+
+# Uncomment a line to add that patch. docs/patches.md describes each one.
+enable = [
+    # "mcp-1",                 # core: stop an unresolvable reference being restamped as created at runtime
+    # "mcp-97",                # core: advance the script parser correctly while initializing saved data
+    # "mcp-154",               # core: pad compiled script-data allocations to keep reads in bounds
+    # "dxt5-size",             # core: allocate DXT5 textures at their real size
+    # "mcp-102",               # correctness: reactivate script-triggered objects after their mod is removed
+    # "script-ext",            # compat: add script opcodes
+    # "mwse-legacy",           # compat: run legacy MWSE 0.9.4 script bytecode
+    # "video-arena",           # compat: more video memory on a 128 MB Xbox
+    # "heap-region",           # compat: larger engine heap on a 128 MB Xbox
+    # "info-name-arena",       # compat: move dialogue names out of the engine heap
+    # "rotating-autosaves",    # qol: rotate autosaves through several slots
+    # "transition-autosaves",  # qol: autosave before doors, teleports and travel
+    # "console",               # qol: in-game console (already in standard)
+    # "diagnostics",           # instrumentation: crash records and a hang watchdog
+]
+
+# Patches the preset includes that you don't want, such as "console".
 disable = []
 
 [preferences]
@@ -27,9 +49,9 @@ mode = "delta-bsa"
 
 [ini]
 # "General:Show FPS" = 1
+# "Xbox:AutosaveSlots" = 5           # docs/ini-keys.md lists the keys patches read
 
 # Remove every [[mods]] block and profile.library for a patches-only build.
-# For mods without engine fixes, keep the mod blocks and use preset = "minimal".
 [[mods]]
 id = "example-mod"                  # stable id from library.toml
 version = "1.0"

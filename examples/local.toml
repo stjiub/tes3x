@@ -12,6 +12,9 @@ build_root = "build/pipeline"
 # Hardlink unchanged retail files into builds instead of copying them. Needs the build folder
 # and the retail folder on the same NTFS drive; otherwise files are copied.
 # hardlink_retail = true
+# mlox's rules file, for profiles that set rules.plugin_order = "mlox". Download mlox_base.txt
+# from https://github.com/DanaePlays/mlox-rules and install mlox with: python -m pip install mlox
+# mlox_rules = "C:/Tools/mlox/mlox_base.txt"
 
 [deploy]
 host = "192.168.1.20"              # the Xbox's IP address, shown by its dashboard

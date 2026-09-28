@@ -3,6 +3,7 @@
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -91,7 +92,9 @@ def validate_profile(profile):
 
     rules = table("rules")
     known(rules, {"max_texture_size", "max_filename", "convert_all_textures", "exclude",
-                  "keep_assets", "clear_cache_partitions"}, "rules")
+                  "keep_assets", "clear_cache_partitions", "plugin_order"}, "rules")
+    if rules.get("plugin_order", "mods") not in {"mods", "mlox"}:
+        raise PipelineError("rules.plugin_order must be 'mods' or 'mlox'")
     for key in ("max_texture_size", "max_filename"):
         typed(rules, key, (int,), "rules")
         if key in rules and rules[key] <= 0:
@@ -162,10 +165,11 @@ def validate_local_config(local):
             raise PipelineError(f"{section} must be a table")
 
     paths = local.get("paths", {})
-    extra = set(paths) - {"vanilla_root", "mod_library", "build_root", "llvm", "hardlink_retail"}
+    extra = set(paths) - {"vanilla_root", "mod_library", "build_root", "llvm", "hardlink_retail",
+                          "profiles", "mlox_rules"}
     if extra:
         raise PipelineError("unknown paths keys: " + ", ".join(sorted(extra)))
-    for key in ("vanilla_root", "mod_library", "build_root", "llvm"):
+    for key in ("vanilla_root", "mod_library", "build_root", "llvm", "profiles", "mlox_rules"):
         if key in paths and type(paths[key]) is not str:
             raise PipelineError(f"paths.{key} must be a string")
     if "hardlink_retail" in paths and type(paths["hardlink_retail"]) is not bool:
@@ -199,6 +203,7 @@ def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), pac
         selected.update(name for name, meta in PATCHES.items()
                         if meta["category"] in {"core", "correctness"}
                         and meta["channel"] == "release")
+        selected.add("console")
     if preset == "development":
         selected.update(name for name, meta in PATCHES.items()
                         if meta["category"] in {"core", "correctness"})
@@ -632,10 +637,13 @@ def main(argv=None):
         print("memory census: on")
     if args.pager_test:
         print("pager test: on")
+    use_mlox = (plan["package_mode"] != "retail"
+                and profile.get("rules", {}).get("plugin_order") == "mlox")
     if plan["package_mode"] == "retail":
         print("mods: none; retail Data Files are staged unchanged")
     else:
         print(f"mods: {len(enabled_mods(profile))}, packed as {plan['package_mode']}")
+        print("plugin order: " + ("mlox" if use_mlox else "mod order"))
     print(f"output: {output}")
     if args.deploy or args.dry_run:
         print(f"target: {deploy.get('host', '<missing>')} {remote or '<missing>'}")
@@ -666,6 +674,15 @@ def main(argv=None):
         clang = os.environ.get("CLANG") or find_tool("clang", llvm)
         lld = os.environ.get("LLD") or find_tool("lld-link", llvm)
         toolchain = {"clang": tool_version(clang), "lld-link": tool_version(lld)}
+    if use_mlox:
+        if importlib.util.find_spec("mlox") is None:
+            raise PipelineError("rules.plugin_order = 'mlox' needs mlox: "
+                                "python -m pip install mlox")
+        if not paths.get("mlox_rules"):
+            raise PipelineError("rules.plugin_order = 'mlox' needs paths.mlox_rules "
+                                "in the local config")
+        mlox_rules = config_path(paths["mlox_rules"], base).resolve()
+        require_file(mlox_rules, "mlox rules")
     if (args.deploy or args.dry_run) and (not deploy.get("host") or not remote):
         raise PipelineError("deployment requires deploy.host, and profile.remote_root or "
                             "deploy.remote_root")
@@ -719,9 +736,17 @@ def main(argv=None):
         patch_cmd += ["--out", patched]
         run(patch_cmd)
 
+        if use_mlox:
+            load_order = work / "mlox-order.json"
+            run([sys.executable, TOOLS / "tes3x_plugins.py", "order", tree,
+                 "--vanilla", data_files, "--rules", mlox_rules,
+                 "--work", work / "mlox", "--out", load_order])
+
         if has_mods:
             pack_cmd = [sys.executable, TOOLS / "tes3x_pack.py", tree,
                         "--vanilla", data_files, "--ini", ini, "--out", staged]
+            if use_mlox:
+                pack_cmd += ["--load-order", load_order]
             if plan["package_mode"] == "delta-bsa":
                 pack_cmd += ["--delta-archive", package.get("archive_name", "tes3xmods.bsa")]
             if package.get("archive_only", False):

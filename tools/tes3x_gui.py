@@ -4,16 +4,18 @@
 import argparse
 import datetime
 from pathlib import Path
+import re
 import sys
 import tomllib
 
 try:
     import tomlkit
-    from PySide6.QtCore import QProcess, QTimer, Qt
+    from PySide6.QtCore import QProcess, QSettings, QTimer, Qt
     from PySide6.QtGui import QAction, QTextCursor
     from PySide6.QtWidgets import (
         QAbstractItemView, QApplication, QCheckBox, QDialog, QDialogButtonBox, QFileDialog,
-        QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
+        QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
+        QListWidget,
         QListWidgetItem, QMainWindow, QMessageBox, QPushButton, QSpinBox, QSplitter, QStatusBar,
         QTabWidget, QTextEdit, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
     )
@@ -33,6 +35,13 @@ from tes3x_pipeline import (PipelineError, resolve_patch_plan, validate_local_co
 
 ROOT = Path(__file__).resolve().parents[1]
 ROLE = Qt.ItemDataRole.UserRole
+TEMPLATE = ROOT / "examples" / "profile.toml"
+PROFILE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+
+
+def default_config_path():
+    local = Path.cwd() / "tes3x.local.toml"
+    return (local if local.is_file() else ROOT / "tes3x.local.toml").resolve()
 
 
 class LocalSettingsDialog(QDialog):
@@ -97,9 +106,12 @@ class LocalSettingsDialog(QDialog):
         form = QFormLayout(group)
         for key, label in (("vanilla_root", "Clean game root"),
                            ("mod_library", "Mod library"),
+                           ("profiles", "Profiles"),
                            ("build_root", "Build output"),
                            ("llvm", "LLVM tools")):
             form.addRow(label, self.browse_row("paths." + key, values.get(key, "")))
+        form.addRow("mlox rules (optional)",
+                    self.browse_row("paths.mlox_rules", values.get("mlox_rules", ""), files=True))
         hardlink = QCheckBox("Hardlink unchanged retail files")
         hardlink.setChecked(values.get("hardlink_retail", False))
         self.fields["paths.hardlink_retail"] = hardlink
@@ -167,7 +179,7 @@ class LocalSettingsDialog(QDialog):
 
 
 class ProfileWindow(QMainWindow):
-    def __init__(self, profile=None, config=None):
+    def __init__(self, profile=None, config=None, settings=None):
         super().__init__()
         self.setWindowTitle("TES3X Profile Manager")
         self.resize(1180, 760)
@@ -182,6 +194,21 @@ class ProfileWindow(QMainWindow):
         self.patch_modes = {}
         self.patch_combos = {}
         self.config_path = Path(config).resolve() if config else None
+        self.settings = settings
+        self.saved_text = None
+
+        self.profile_picker = QComboBox()
+        self.profile_picker.setMinimumWidth(260)
+        self.profile_picker.activated.connect(self.picker_activated)
+        profile_bar = QHBoxLayout()
+        profile_bar.addWidget(QLabel("Profile"))
+        profile_bar.addWidget(self.profile_picker)
+        for label, handler in (("New…", self.new_profile), ("Duplicate…", self.duplicate_profile),
+                               ("Rename…", self.rename_profile), ("Delete", self.delete_profile)):
+            button = QPushButton(label)
+            button.clicked.connect(handler)
+            profile_bar.addWidget(button)
+        profile_bar.addStretch()
 
         self.library = QTreeWidget()
         self.library.setHeaderLabels(["Library", "Version"])
@@ -245,6 +272,7 @@ class ProfileWindow(QMainWindow):
 
         body = QWidget()
         layout = QVBoxLayout(body)
+        layout.addLayout(profile_bar)
         layout.addWidget(self.tabs, 3)
         layout.addWidget(self.output, 2)
         self.setCentralWidget(body)
@@ -259,7 +287,10 @@ class ProfileWindow(QMainWindow):
         self.ftp_timer.timeout.connect(self.refresh_ftp_status)
 
         file_menu = self.menuBar().addMenu("&File")
-        self.action_open = QAction("&Open profile…", self)
+        self.action_new = QAction("&New profile…", self)
+        self.action_new.setShortcut("Ctrl+N")
+        self.action_new.triggered.connect(self.new_profile)
+        self.action_open = QAction("&Open profile file…", self)
         self.action_open.setShortcut("Ctrl+O")
         self.action_open.triggered.connect(self.open_dialog)
         self.action_save = QAction("&Save profile", self)
@@ -271,7 +302,7 @@ class ProfileWindow(QMainWindow):
         self.action_index.triggered.connect(self.write_library_index)
         self.action_exit = QAction("E&xit", self)
         self.action_exit.triggered.connect(self.close)
-        file_menu.addActions([self.action_open, self.action_save])
+        file_menu.addActions([self.action_new, self.action_open, self.action_save])
         file_menu.addSeparator()
         file_menu.addActions([self.action_settings, self.action_index])
         file_menu.addSeparator()
@@ -300,8 +331,11 @@ class ProfileWindow(QMainWindow):
         actions_menu.addActions([self.action_deploy, self.action_fetch, self.action_refresh_ftp])
         actions_menu.addSeparator()
         actions_menu.addAction(self.discard_after_deploy)
+        self.refresh_profile_list()
         if profile:
             self.open_profile(Path(profile))
+        else:
+            self.open_initial_profile()
         if QApplication.platformName() != "offscreen":
             QTimer.singleShot(0, self.refresh_ftp_status)
             self.ftp_timer.start()
@@ -513,20 +547,172 @@ class ProfileWindow(QMainWindow):
                  f"Selected by: {entry['selection']}", f"Origin: {origin_text}"]
         if entry.get("takes"):
             lines.append("Value: " + entry["takes"])
-        validation = entry.get("validation", [])
-        lines += ["", "Validation:", *("• " + value for value in validation)]
         self.patch_details.setPlainText("\n".join(lines))
 
     def error(self, message):
         QMessageBox.critical(self, "TES3X", str(message))
 
     def open_dialog(self):
-        name, _ = QFileDialog.getOpenFileName(self, "Open TES3X profile", "", "TOML (*.toml)")
-        if name:
+        name, _ = QFileDialog.getOpenFileName(self, "Open TES3X profile",
+                                              str(self.profiles_dir()), "TOML (*.toml)")
+        if name and self.maybe_save():
             self.open_profile(Path(name))
 
     def local_config_path(self):
-        return self.config_path or (Path.cwd() / "tes3x.local.toml").resolve()
+        return self.config_path or default_config_path()
+
+    def work_dir(self):
+        return self.local_config_path().parent
+
+    def profiles_dir(self):
+        config = self.local_config_path()
+        try:
+            local = tomllib.loads(config.read_text(encoding="utf-8")) if config.is_file() else {}
+        except (OSError, tomllib.TOMLDecodeError):
+            local = {}
+        folder = Path(local.get("paths", {}).get("profiles", "profiles"))
+        return (folder if folder.is_absolute() else config.parent / folder).resolve()
+
+    def profile_files(self):
+        folder = self.profiles_dir()
+        if not folder.is_dir():
+            return []
+        return sorted(folder.glob("*.toml"), key=lambda path: path.stem.casefold())
+
+    def refresh_profile_list(self):
+        folder = self.profiles_dir()
+        paths = [path.resolve() for path in self.profile_files()]
+        if self.profile_path and self.profile_path not in paths:
+            paths.append(self.profile_path)
+        self.profile_picker.blockSignals(True)
+        self.profile_picker.clear()
+        for path in paths:
+            self.profile_picker.addItem(path.stem if path.parent == folder else str(path), str(path))
+        self.profile_picker.setCurrentIndex(
+            self.profile_picker.findData(str(self.profile_path)) if self.profile_path else -1)
+        self.profile_picker.blockSignals(False)
+
+    def open_initial_profile(self):
+        last = self.settings.value("last_profile", "") if self.settings else ""
+        files = self.profile_files()
+        if last and Path(last).is_file():
+            self.open_profile(Path(last))
+        elif files:
+            self.open_profile(files[0])
+        else:
+            self.statusBar().showMessage(
+                f"No profiles in {self.profiles_dir()}; use New… to create one")
+
+    def picker_activated(self, index):
+        path = Path(self.profile_picker.itemData(index))
+        if path != self.profile_path and self.maybe_save():
+            self.open_profile(path)
+        self.refresh_profile_list()
+
+    def is_dirty(self):
+        if self.document is None:
+            return False
+        try:
+            return self.profile_text() != self.saved_text
+        except (PipelineError, LibraryError, tomlkit.exceptions.ParseError):
+            return True
+
+    def maybe_save(self):
+        if not self.is_dirty():
+            return True
+        buttons = QMessageBox.StandardButton
+        answer = QMessageBox.question(
+            self, "Unsaved changes", f"Save changes to {self.profile_path.stem}?",
+            buttons.Save | buttons.Discard | buttons.Cancel)
+        if answer == buttons.Save:
+            return self.save_profile()
+        return answer == buttons.Discard
+
+    def closeEvent(self, event):
+        if self.maybe_save():
+            event.accept()
+        else:
+            event.ignore()
+
+    def ask_profile_name(self, title, default=""):
+        name, ok = QInputDialog.getText(self, title, "Profile name", text=default)
+        name = name.strip()
+        if not ok or not name:
+            return None
+        if not PROFILE_NAME.fullmatch(name):
+            self.error("Use letters, digits, dots, underscores and hyphens, "
+                       "starting with a letter or digit")
+            return None
+        if (self.profiles_dir() / f"{name}.toml").exists():
+            self.error(f"A profile named {name} already exists")
+            return None
+        return name
+
+    def write_new_profile(self, name, document):
+        if "profile" not in document:
+            document["profile"] = tomlkit.table()
+        document["profile"]["name"] = name
+        path = self.profiles_dir() / f"{name}.toml"
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(tomlkit.dumps(document), encoding="utf-8", newline="")
+        except OSError as exc:
+            self.error(exc)
+            return False
+        self.open_profile(path)
+        return True
+
+    def new_profile(self):
+        if not self.maybe_save():
+            return
+        name = self.ask_profile_name("New profile")
+        if not name:
+            return
+        lines = TEMPLATE.read_text(encoding="utf-8").splitlines()
+        text = "\n".join(line for line in lines if not line.startswith("# Copy this file"))
+        document = tomlkit.parse(text.lstrip() + "\n")
+        document["profile"].pop("library", None)
+        document.pop("mods", None)
+        self.write_new_profile(name, document)
+
+    def duplicate_profile(self):
+        if self.profile_path is None or not self.maybe_save():
+            return
+        name = self.ask_profile_name("Duplicate profile", self.profile_path.stem + "-copy")
+        if name:
+            self.write_new_profile(name, tomlkit.parse(self.profile_path.read_text(encoding="utf-8")))
+
+    def rename_profile(self):
+        if self.profile_path is None or not self.maybe_save():
+            return
+        old = self.profile_path
+        name = self.ask_profile_name("Rename profile", old.stem)
+        if name and self.write_new_profile(name, tomlkit.parse(old.read_text(encoding="utf-8"))):
+            old.unlink()
+            self.refresh_profile_list()
+
+    def delete_profile(self):
+        if self.profile_path is None:
+            return
+        answer = QMessageBox.question(
+            self, "Delete profile", f"Delete {self.profile_path}?\n\nBuilds are not affected.")
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.profile_path.unlink()
+        except OSError as exc:
+            self.error(exc)
+            return
+        self.profile_path = None
+        self.document = None
+        self.saved_text = None
+        self.library.clear()
+        self.selected.clear()
+        self.setWindowTitle("TES3X Profile Manager")
+        files = self.profile_files()
+        if files:
+            self.open_profile(files[0])
+        self.refresh_profile_list()
 
     def edit_local_settings(self):
         try:
@@ -539,6 +725,7 @@ class ProfileWindow(QMainWindow):
         self.config_path = dialog.path
         if self.profile_path:
             self.open_profile(self.profile_path)
+        self.refresh_profile_list()
         self.refresh_ftp_status()
         self.statusBar().showMessage(f"Saved {dialog.path}", 5000)
 
@@ -552,10 +739,9 @@ class ProfileWindow(QMainWindow):
                 raise PipelineError(
                     "the GUI accepts only managed mod entries with id/version/components; "
                     "index the library and update this profile to the new format")
-            local_path = self.config_path
-            if local_path is None:
-                candidate = Path.cwd() / "tes3x.local.toml"
-                local_path = candidate if candidate.is_file() else None
+            local_path = self.local_config_path()
+            if not local_path.is_file():
+                local_path = None
             local = {}
             if local_path:
                 with open(local_path, "rb") as stream:
@@ -570,7 +756,7 @@ class ProfileWindow(QMainWindow):
             if library_value:
                 library_root = Path(library_value)
                 if not library_root.is_absolute():
-                    library_root = ((local_path.parent if local_path else Path.cwd()) / library_root)
+                    library_root = self.work_dir() / library_root
                 library_root = library_root.resolve()
                 indexed = (library_root / CATALOG_NAME).is_file()
                 catalog = load_library(library_root) if indexed else discover_library(library_root)
@@ -591,9 +777,16 @@ class ProfileWindow(QMainWindow):
         self.populate_library()
         self.populate_profile(plain.get("mods", []))
         self.populate_patches(plain.get("patches", {}))
-        self.setWindowTitle(f"TES3X Profile Manager — {self.profile_path.name}")
+        try:
+            self.saved_text = self.profile_text()
+        except (PipelineError, LibraryError, tomlkit.exceptions.ParseError):
+            self.saved_text = None
+        if self.settings is not None:
+            self.settings.setValue("last_profile", str(self.profile_path))
+        self.refresh_profile_list()
+        self.setWindowTitle(f"TES3X Profile Manager — {self.profile_path.stem}")
         message = str(self.profile_path)
-        if not indexed:
+        if library_root and not indexed:
             message += " — library scanned; write its index to manage versions/components"
         self.statusBar().showMessage(message)
 
@@ -762,35 +955,46 @@ class ProfileWindow(QMainWindow):
         self.renumber()
         return [dict(self.selected.item(i).data(ROLE)) for i in range(self.selected.count())]
 
+    def profile_text(self):
+        """Write the editor state into the document and return it, validated."""
+        mods = tomlkit.aot()
+        for values in self.profile_mods():
+            table = tomlkit.table()
+            for key in ("id", "version", "components", "order", "enabled",
+                        "optional", "plugins", "loose"):
+                if key in values:
+                    table.add(key, values[key])
+            mods.append(table)
+        if len(mods):
+            self.document["mods"] = mods
+        else:
+            self.document.pop("mods", None)
+        patches = self.document.get("patches")
+        if patches is None:
+            patches = tomlkit.table()
+            self.document["patches"] = patches
+        for key, value in self.patch_configuration().items():
+            # Leave unchanged values alone so their comments and layout survive.
+            if patches.get(key) != value:
+                patches[key] = value
+        text = tomlkit.dumps(self.document)
+        validate_profile(tomllib.loads(text))
+        for values in self.profile_mods():
+            resolve_selection(values, self.library_root, self.catalog)
+        return text
+
     def save_profile(self):
         if not self.profile_path or self.document is None:
             return False
         try:
-            mods = tomlkit.aot()
-            for values in self.profile_mods():
-                table = tomlkit.table()
-                for key in ("id", "version", "components", "order", "enabled",
-                            "optional", "plugins", "loose"):
-                    if key in values:
-                        table.add(key, values[key])
-                mods.append(table)
-            self.document["mods"] = mods
-            patches = self.document.get("patches")
-            if patches is None:
-                patches = tomlkit.table()
-                self.document["patches"] = patches
-            for key, value in self.patch_configuration().items():
-                patches[key] = value
-            text = tomlkit.dumps(self.document)
+            text = self.profile_text()
             plain = tomllib.loads(text)
-            validate_profile(plain)
-            for values in self.profile_mods():
-                resolve_selection(values, self.library_root, self.catalog)
             self.profile_path.write_text(text, encoding="utf-8", newline="")
         except (OSError, PipelineError, LibraryError, tomlkit.exceptions.ParseError) as exc:
             self.error(exc)
             return False
         self.profile_plain = plain
+        self.saved_text = text
         self.statusBar().showMessage(f"Saved {self.profile_path}", 5000)
         return True
 
@@ -802,7 +1006,8 @@ class ProfileWindow(QMainWindow):
             return
         self.start_command(ROOT / "tools" / "tes3x_pipeline.py", [
             str(self.profile_path),
-            *(["--config", str(self.config_path)] if self.config_path else []),
+            *(["--config", str(self.local_config_path())]
+              if self.local_config_path().is_file() else []),
             *extra,
         ], "Running TES3X pipeline…")
 
@@ -814,7 +1019,8 @@ class ProfileWindow(QMainWindow):
             return
         self.start_command(ROOT / "tools" / "tes3x_test.py", [
             str(self.profile_path),
-            *(["--config", str(self.config_path)] if self.config_path else []),
+            *(["--config", str(self.local_config_path())]
+              if self.local_config_path().is_file() else []),
             "--record",
         ], "Running profile smoke test…")
 
@@ -839,7 +1045,7 @@ class ProfileWindow(QMainWindow):
             self.error("A TES3X command is already running")
             return
         timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        destination = Path.cwd() / "build" / "xbox-logs" / timestamp
+        destination = self.work_dir() / "build" / "xbox-logs" / timestamp
         config = self.local_config_path()
         self.start_command(ROOT / "tools" / "tes3x_fetch.py", [
             "E:/tes3x*", "--out", str(destination),
@@ -849,7 +1055,7 @@ class ProfileWindow(QMainWindow):
     def start_command(self, program, arguments, message):
         self.output.clear()
         process = QProcess(self)
-        process.setWorkingDirectory(str(Path.cwd()))
+        process.setWorkingDirectory(str(self.work_dir()))
         process.setProgram(sys.executable)
         process.setArguments([str(program), *arguments])
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
@@ -875,7 +1081,7 @@ class ProfileWindow(QMainWindow):
             self.ftp_status.setToolTip("Set deploy.host in local settings")
             return
         process = QProcess(self)
-        process.setWorkingDirectory(str(Path.cwd()))
+        process.setWorkingDirectory(str(self.work_dir()))
         process.setProgram(sys.executable)
         process.setArguments([str(ROOT / "tools" / "tes3x_fetch.py"), "E:/", "--list",
                               "--config", str(config)])
@@ -909,12 +1115,12 @@ class ProfileWindow(QMainWindow):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("profile", nargs="?", help="profile TOML to open")
+    parser.add_argument("profile", nargs="?", help="profile to open instead of the last one")
     parser.add_argument("--config", help="local TES3X config")
     args = parser.parse_args(argv)
     app = QApplication(sys.argv[:1])
     app.setApplicationName("TES3X")
-    window = ProfileWindow(args.profile, args.config)
+    window = ProfileWindow(args.profile, args.config, QSettings("TES3X", "TES3X"))
     window.show()
     return app.exec()
 

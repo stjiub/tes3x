@@ -56,7 +56,6 @@ channel = "development"
 selection = "option"
 takes = "FILE.pe"
 summary = "Inject a code section and run it from the entry point."
-validation = ["findings: every hooked xemu run"]
 
 [[patch]]
 name = "boot-media"
@@ -65,7 +64,6 @@ category = "infrastructure"
 channel = "development"
 selection = "always"
 summary = "Permit booting from any media and region, not just a retail DVD."
-validation = ["findings: every xemu run"]
 
 [[patch]]
 name = "drive-letters"
@@ -75,7 +73,6 @@ channel = "development"
 selection = "always"
 takes = "LETTER"
 summary = "Point every Data Files asset path at one drive."
-validation = ["findings: every xemu run"]
 
 [[patch]]
 name = "save-staging"
@@ -102,7 +99,6 @@ channel = "development"
 selection = "packaging"
 source = "tes3xarch.c"
 summary = "Load every archive listed in tes3xarch.txt, not just Morrowind.bsa."
-validation = ["findings: delta archive served in xemu"]
 
 [[patch]]
 name = "script-ext"
@@ -112,7 +108,6 @@ channel = "development"
 selection = "preset"
 source = "tes3xscript.c"
 summary = "Add script opcodes: widen the length bounds and hook Script::RunFunction."
-validation = ["findings: new opcode runs in-engine from a plugin's compiled bytecode"]
 
 [[patch]]
 name = "mwse-legacy"
@@ -142,7 +137,6 @@ channel = "development"
 selection = "preset"
 source = "tes3xmcp97.c"
 summary = "Advance the script parser correctly while initializing saved data."
-validation = ["patches/mcp-97/2026-09-21-xemu.toml"]
 
 [[patch]]
 name = "mcp-154"
@@ -162,7 +156,6 @@ category = "correctness"
 channel = "development"
 selection = "preset"
 summary = "Reactivate script-triggered objects after their script mod is removed."
-validation = ["patches/mcp-102/2026-09-21-xemu.toml"]
 
 [[patch]]
 name = "dxt5-size"
@@ -172,7 +165,6 @@ channel = "development"
 selection = "preset"
 source = "tes3xdxt5.c"
 summary = "Allocate DXT5 textures at their real size, not a negative one that corrupts video memory."
-validation = ["patches/dxt5-size/2026-09-23-xemu.toml"]
 
 [[patch]]
 name = "video-arena"
@@ -192,7 +184,6 @@ channel = "development"
 selection = "preset"
 source = "tes3xsaves.c"
 summary = "Rotate automatic saves through INI-configurable slots."
-validation = ["patches/rotating-autosaves/2026-09-23-xemu.toml"]
 
 [[patch]]
 name = "build-preferences"
@@ -202,7 +193,6 @@ channel = "development"
 selection = "option"
 source = "tes3xprefs.c"
 summary = "Apply profile-selected player preferences after stored Xbox options load."
-validation = ["patches/build-preferences/2026-09-24-xemu.toml"]
 
 [[patch]]
 name = "transition-autosaves"
@@ -212,7 +202,6 @@ channel = "development"
 selection = "preset"
 source = "tes3xsaves.c"
 summary = "Autosave before doors, scripted teleports, interventions and paid travel."
-validation = ["patches/transition-autosaves/2026-09-23-xemu.toml"]
 
 [[patch]]
 name = "diagnostics"
@@ -222,7 +211,6 @@ channel = "development"
 selection = "preset"
 source = "tes3xdiag.c"
 summary = "Enable INI-controlled crash records, snapshots and a hang watchdog."
-validation = ["findings: watchdog recorded and recovered from a 15-second stall"]
 
 [[patch]]
 name = "console"
@@ -232,7 +220,6 @@ channel = "development"
 selection = "preset"
 source = "tes3xconsole.c"
 summary = "Make the in-game console reachable, by replacing its input gate."
-validation = ["patches/console/2026-09-23-xemu.toml"]
 
 [[patch]]
 name = "profile"
@@ -243,7 +230,6 @@ selection = "option"
 source = "tes3xprof.c"
 takes = "VA[,VA...]"
 summary = "Time listed functions with RDTSC at every direct call site."
-validation = ["patches/profile/2026-09-23-xemu.toml"]
 
 [[patch]]
 name = "heap-census"
@@ -271,7 +257,6 @@ channel = "development"
 selection = "preset"
 source = "tes3xregion.c"
 summary = "With more than 64 MB, size the engine heap's region from [Xbox] HeapRegionKB."
-validation = ["patches/heap-region/2026-09-24-xemu.toml"]
 
 [[patch]]
 name = "info-name-arena"

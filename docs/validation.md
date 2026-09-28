@@ -1,50 +1,16 @@
-# Patch validation
+# Patch scenarios
 
-Each implemented patch has one channel in [`patches.toml`](../patches.toml):
+A patch folder can hold a `scenario.toml` that says how to test the patch in xemu: a command
+script to run and the log lines to expect. A `single` scenario runs one build. A `comparison`
+runs a build without the patch and one with it, for when the difference is the point.
 
-| channel | meaning |
-|---|---|
-| `development` | Available for investigation and testing. |
-| `release` | The maintainer has approved it for supported public use. |
-
-## Scenarios and results
-
-A `patches/<patch>/scenario.toml` explains how a live test build was ran for automated validation. A scenario contains:
-
-- the behavior being exercised and the repeatable procedure;
-- a command script and controlled runner settings;
-- required and forbidden log observations;
-- the limits of what the scenario establishes;
-- whether it is a `single` exercise or a `comparison`.
-
-A single scenario runs one test build. It suits features whose behavior can be observed directly.
-A comparison scenario runs a control without the patch and a test build with it; use one when the
-contrast establishes an engine defect, a fix's causal effect, or a performance difference.
-
-The generated validation result records one execution of that contract. It keeps the complete
-logs, selected observations and hashes. Its provenance sidecar captures sanitized build and run
-commands, the clean TES3X revision, retail and patched XBE hashes, toolchain versions, profile
-hash, selected patches, mod list, plugin order and hashes, Data Files digest, INI hashes and
-overrides, scripted inputs, platform, BIOS and RAM. Machine paths are replaced with placeholders.
-
-A passing result says that the scenario's expectations passed on that revision and platform. It
-does not establish general correctness, absence of regressions, hardware behavior when run in
-xemu, or release readiness. The scenario's `limitations` should name the important gaps.
-
-Full logs are retained as run artifacts, not treated as exact golden output. Timestamps, build
-identifiers and other harmless values change between runs. The scenario's regular expressions are
-the stable oracle; the runner also rejects crash, hang and fatal log lines globally.
-
-Historic schema 1 and 2 files remain valid validation results. New results use schema 3 and bind
-the result to its scenario by path and hash.
-
-## Scenario format
+## Format
 
 ```toml
 kind = "comparison" # or "single"
-purpose = "The specific behavior this scenario exercises."
-procedure = "How the run can be repeated."
-limitations = "Behavior and environments this scenario does not cover."
+purpose = "What this scenario tests."
+procedure = "How to repeat it."
+limitations = "What it doesn't cover."
 watch = 'regex for the lines copied into the result'
 apply = "profile=0x00137C50" # optional valued patch
 timeout = 180
@@ -60,42 +26,26 @@ control = ['diag\.enabled', '!feature\.result']
 test = ['feature\.result 1', 'exec\.exit 0']
 ```
 
-For `kind = "single"`, omit `expect.control` and keep `expect.test`. Every expectation is a
-regular expression matched against a log line. A value starting with `!` must match no line.
+Each expectation is a regular expression that some log line must match; one starting with `!`
+must match none. A `single` scenario has only `expect.test`. Any crash, hang or fatal error line
+fails the run regardless.
 
-`enable` can replace the default common patches, `apply` supplies a valued patch, `xemu` replaces
-the default runner options, `timeout` changes the run limit, and `save` names a fixture under the
-private `build/saves/` directory. The build profile remains an explicit runner argument because
-content and retail paths are local; its exact identity and hash are captured in the result.
+Optional keys: `enable` replaces the default test patches, `xemu` the runner options, and `save`
+names a save to load from `build/saves/`.
 
-## Running in xemu
+## Recording a result
 
-```powershell
-python tools/tes3x_scenario.py mcp-102 profiles/one-mod.toml
-python tools/tes3x_scenario.py mcp-102 profiles/one-mod.toml --record
-```
+`tes3x_validate.py record` checks finished runs against a scenario and, if they pass, writes a
+result into the patch folder with the full logs and the hashes of everything that went into the
+build. Machine paths are replaced with placeholders, and it needs a clean git tree. A run is a log
+file or an xemu run folder.
 
-The runner builds the roles required by the scenario, boots them concurrently when there are two,
-checks their logs, and writes a schema 3 result only when the complete scenario passes. `--reuse`
-checks existing run folders without booting xemu again.
+`python tools/tes3x_validate.py check` checks every scenario and result.
 
-Then cite the result as validation and regenerate the table:
+## Recording a run on hardware
 
-```toml
-validation = ["patches/mcp-102/2026-09-24-xemu.toml"]
-```
-
-```powershell
-python tools/tes3x_patches.py --write
-python tools/tes3x_validate.py check
-```
-
-Recording a passing result requires a clean TES3X tree. The result does not modify `channel`.
-
-## Recording hardware validation
-
-Keep each hardware log with its build's `.tes3x-pipeline.json`. Describe the console in a private
-local file:
+Keep each hardware log with its build's `.tes3x-pipeline.json`, and describe the Xbox in a local
+file:
 
 ```toml
 [hardware]
@@ -110,8 +60,8 @@ storage = "HDD"
 video_mode = "480p"
 ```
 
-Use a pseudonymous unit name, never a serial number, MAC address or EEPROM identifier. Record a
-single scenario with `--test`; add `--control` for a comparison:
+Use a made-up unit name, never a serial number, MAC address or EEPROM data. Record a `single`
+scenario with `--test`, and add `--control` for a comparison:
 
 ```powershell
 python tools/tes3x_validate.py record mcp-102 --env hardware `
@@ -121,9 +71,5 @@ python tools/tes3x_validate.py record mcp-102 --env hardware `
   --hardware-config hardware/xbox-a.toml
 ```
 
-`--fixture LABEL=PATH` hashes an additional script, save or other controlled input. Do not put
-personal saves in public validation results.
-
-Hardware validation and manual playtesting are separate. A scripted hardware result records its
-narrow observations. Manual testing informs the maintainer's release decision but does not need a
-generated validation result or a stronger formal claim.
+`--fixture LABEL=PATH` also hashes a script, save or other input. Don't put personal saves in a
+public result.

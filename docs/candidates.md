@@ -1,33 +1,22 @@
 # Candidate fixes
 
-Generated from [`candidates.toml`](../candidates.toml) by
-`tools/tes3x_patches.py --write`. Edit that file, not this one.
+Generated from [`candidates.toml`](../candidates.toml) by `tools/tes3x_patches.py --write`;
+edit that file, not this one.
 
-Fixes from other projects reviewed for the Xbox, and why each is not implemented yet or
-at all. Every Morrowind Code Patch fix is listed; one split into parts appears once per
-part. Appearing here does not mean the Xbox build has the defect. Implemented fixes are
-in [patches.md](patches.md).
+Fixes from other projects that we've looked at, and why each isn't implemented, yet or at
+all. Every Morrowind Code Patch fix is here. Being listed doesn't mean the Xbox has the bug.
+Implemented fixes are in [patches.md](patches.md).
 
-**Priority** is a first estimate of Xbox value: `high` for crashes, corruption and data
-loss players are likely to meet; `medium` for defects visible in normal play or relied
-on by mods; `low` for minor defects and optional changes; `none` for fixes that will not
-be ported.
+**Priority** is a rough guess at how much a fix matters on the Xbox: `high` for crashes and
+lost saves players are likely to hit, `medium` for bugs seen in normal play or that mods rely
+on, `low` for minor ones, and `none` for fixes we won't port.
 
 | status | fixes |
 |---|---|
-| researching | 1 |
-| candidate | 197 |
+| candidate | 198 |
 | deferred | 13 |
 | not-applicable | 15 |
 | rejected | 2 |
-
-## researching
-
-Being decoded or reproduced now.
-
-| fix | from | priority | category | notes |
-|---|---|---|---|---|
-| `mcp-58` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #58 | medium | correctness (undecided) | **Save-count warning.** MCP warns before PC memory corruption at roughly 300 save files. Xbox uses `XCreateSaveGame` and different enumeration, so first determine whether any equivalent limit exists; do not port the PC threshold by assumption. |
 
 ## candidate
 
@@ -51,6 +40,7 @@ Worth porting, but not yet shown to affect the Xbox build.
 | `mcp-47` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #47 | medium | correctness | **Spell deselection bug fix.** The selected spell is dropped when other actors unequip or use up magic items; tedious to reselect with a controller. |
 | `mcp-48` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #48 | medium | correctness | **Level-up stats bug fix.** Level-up offers a x1 multiplier when the correct one would take a stat to 100. |
 | `mcp-55` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #55 | medium | correctness | **Alchemy naming/stacking fix.** Alchemy asks for a name that is already present after long play, and resets custom names. The prompt on Xbox is the on-screen keyboard. |
+| `mcp-58` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #58 | medium | correctness (undecided) | **Save-count warning.** MCP warns before PC memory corruption at roughly 300 save files. Xbox uses `XCreateSaveGame` and different enumeration, so first determine whether any equivalent limit exists; do not port the PC threshold by assumption. |
 | `mcp-95` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #95 | medium | compat | **Voiceover script functions fix.** StopSound mutes every actor voice and SayDone fires early. Dialogue and quest mods depend on both. |
 | `mcp-118` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #118 | medium | core (intended default) | **Items dropped while levitating or falling are lost.** Dropping in third person while airborne places the object near `{0, 0, 0}`, which is normally unreachable. Data loss, not a preference. Confirm the Xbox third-person and levitation paths share the defect. |
 | `mcp-138` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #138 | medium | correctness (recommended) | **Reliable `CellChanged` for scripted teleports.** Script-contract fix used by mods; preserve vanilla transition semantics outside the missed path. |

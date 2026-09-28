@@ -11,8 +11,8 @@ functions. Everything it writes goes to the root of `E:`; copy it off the Xbox w
 | `profile` | call counts and CPU cycles for chosen functions | `E:\tes3xprof.bin` |
 | `heap-census` | live engine heap by source file and line, or by call site | `E:\tes3xheap.bin` |
 
-The `development` preset includes `diagnostics` and `console`. The profiler and the heap census
-are added by name.
+`standard` includes `console`, and `development` adds `diagnostics`. The profiler and the heap
+census are added by name.
 
 ## The log
 
@@ -132,30 +132,24 @@ Allocations outside that heap, such as the texture and vertex-buffer arena, are 
 
 ## Profile smoke tests
 
-Test the exact mod order, versions, components, plugins, package mode and patch choices in a normal
-profile:
+Boot a profile in xemu, start a new game, walk to Balmora and check the log for crashes and
+hangs:
 
 ```powershell
-python tools/tes3x_test.py profile.toml --record
-python tools/tes3x_test.py profile.toml --keep-artifacts always
-python tools/tes3x_test.py profile.toml --library-all --record
-python tools/tes3x_test.py profile.toml --library-all --library "D:/Mods To Test"
+python tools/tes3x_test.py profiles/my-build.toml --record
+python tools/tes3x_test.py profiles/my-build.toml --keep-artifacts always
+python tools/tes3x_test.py profiles/my-build.toml --library-all --record
+python tools/tes3x_test.py profiles/my-build.toml --library-all --library "D:/Mods To Test"
 ```
 
-The smoke scenario adds diagnostics and the command executor as recorded test instrumentation,
-boots the engine directly, starts a new game, visits Balmora and rejects diagnosed crashes, hangs
-and fatal errors. A pass describes only that scripted route; compatibility status remains a manual
-decision based on observation.
+The test build adds `diagnostics` and `console` to the profile. A pass only means that one route
+worked; it isn't a full playthrough.
 
-Large run artifacts are retained on failure by default. `--keep-artifacts never` removes them even
-after failure; `always` keeps every ISO and pipeline tree. A recorded result copies its compact log
-and provenance out before cleanup. `--library-all` uses the profile as a template and exercises the
-default release/components of each managed library entry as an isolated normal profile.
+Build output and ISOs are kept when a test fails and deleted when it passes. `--keep-artifacts
+never` or `always` changes that. `--library-all` tests every mod in the library on its own, using
+the profile for everything else.
 
-## Validation
+## Patch scenarios
 
-A patch can keep a repeatable [`scenario.toml`](validation.md) beside its notes. A single scenario
-exercises one build; a comparison scenario runs a control without the patch and a test build with
-it. The script and required or forbidden log lines define the check. A recorded result captures
-one execution and its exact inputs, but does not prove general correctness or approve the patch
-for release.
+A patch folder can hold a `scenario.toml`: a script to run and the log lines to expect. See
+[validation](validation.md).

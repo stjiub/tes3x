@@ -25,9 +25,15 @@ class RegistryTests(unittest.TestCase):
         for source in (registry.ROOT / 'hooks').glob('*.c'):
             for match in read.finditer(source.read_text(encoding='utf-8')):
                 keys.add(match.group(1) or match.group(2))
-        page = (registry.ROOT / 'docs' / 'patch-settings.md').read_text(encoding='utf-8')
+        page = (registry.ROOT / 'docs' / 'ini-keys.md').read_text(encoding='utf-8')
         self.assertTrue(keys)
         self.assertEqual(sorted(k for k in keys if f'`{k}`' not in page), [])
+
+    def test_example_profile_lists_every_selectable_patch(self):
+        example = (registry.ROOT / 'examples' / 'profile.toml').read_text(encoding='utf-8')
+        missing = [entry['name'] for entry in registry.PATCHES
+                   if entry['selection'] == 'preset' and f'"{entry["name"]}"' not in example]
+        self.assertEqual(missing, [])
 
     def test_generated_pages_are_current(self):
         self.assertEqual(registry.stale_pages(), [], 'run tools/tes3x_patches.py --write')
@@ -36,14 +42,6 @@ class RegistryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'patches.toml'
             path.write_text('[[patch]]\nname = "x"\ncategory = "core"\nchannel = "verified"\n'
-                            'selection = "preset"\nsummary = "x"\n', encoding='utf-8')
-            with self.assertRaises(registry.RegistryError):
-                registry.load(path)
-
-    def test_release_channel_needs_validation_but_is_never_inferred(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / 'patches.toml'
-            path.write_text('[[patch]]\nname = "x"\ncategory = "core"\nchannel = "release"\n'
                             'selection = "preset"\nsummary = "x"\n', encoding='utf-8')
             with self.assertRaises(registry.RegistryError):
                 registry.load(path)

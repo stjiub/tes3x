@@ -1,186 +1,116 @@
 # Pipeline options
 
-## Complete builds
+`tes3x_pipeline.py` runs the whole build: collect mods, pack, patch the XBE and deploy. Each of
+those steps is also a tool you can run by itself. Every profile and local-config key is in the
+[configuration reference](configuration.md).
 
-`tes3x_pipeline.py` is the normal entry point. It composes the existing build, hook, patch, pack
-and deploy tools; those tools remain independently usable. The
-[configuration reference](configuration.md) lists every local-config and profile key.
-
-`--ini-set` on the command line is applied after `[ini]`, so it overrides a profile key.
-
-A mod entry with `loose = true` ships every asset it wins as a loose file instead of packing
-it. A retail asset it replaces is dropped from a merged archive, or listed in
-`ArchiveInvalidationList.txt` in the game folder when the delta archive leaves retail unchanged.
-Loose assets need `TryArchiveFirst=0`, which the build sets, and are incompatible with
-`archive_only`.
-
-`standard` admits verified default `core` and `correctness` patches.
-`development` adds instrumentation and the console. `compat`, `performance`,
-`qol` and `balance` remain explicit. Candidate or merely implemented catalogue
-entries do not enter `standard`; they can still be explicitly enabled while
-being tested.
-
-Delta-BSA packaging derives the `multi-bsa` infrastructure patch. Any selected
-hook derives the payload sources it needs, and the pipeline applies the payload
-before dependent patches. A successful build carries the retail Xbox root payload
-and stages `Default.xbe`, the patched `morrowind.xbe`, `Morrowind.ini` and generated
-`Data Files` together. Disc-image and scene-release artifacts are excluded.
-
-A profile without enabled mods skips collection and packing: the retail `Data Files` are staged
-unchanged, `[ini]` keys are still applied, and no `multi-bsa` is derived.
+## Building
 
 ```powershell
-python tools/tes3x_pipeline.py examples/profile.toml --check
-python tools/tes3x_pipeline.py examples/profile.toml --dry-run
-python tools/tes3x_pipeline.py examples/profile.toml --deploy
+python tools/tes3x_pipeline.py profiles/my-build.toml --check
+python tools/tes3x_pipeline.py profiles/my-build.toml --dry-run
+python tools/tes3x_pipeline.py profiles/my-build.toml --deploy
 ```
 
-To discard regenerable output after transfer, request post-upload verification explicitly:
+Output goes to `BUILD_ROOT/PROFILE_NAME`. The pipeline only overwrites an empty folder or one it
+built before. If a step fails, what it produced so far is left in place so you can look at it.
+
+A profile with no mods skips collecting and packing and ships the retail `Data Files` unchanged.
+`[ini]` settings still apply. `--ini-set` on the command line overrides the same key in `[ini]`.
+
+The presets:
+
+- `minimal`: no optional patches.
+- `standard`: tested `core` and `correctness` fixes, plus the in-game console.
+- `development`: everything in `standard`, untested `core` and `correctness` fixes, and
+  diagnostics.
+
+Anything else has to be enabled by name or by category. Some patches are added automatically
+when something needs them; `delta-bsa` packing adds `multi-bsa`, for example.
+
+### Loose mods
+
+`loose = true` on a mod ships its files loose instead of packing them into the archive. If one of
+those files replaces a retail asset, the retail copy is dropped from a merged archive, or listed
+in `ArchiveInvalidationList.txt` when the retail archive is left alone. Loose files need
+`TryArchiveFirst=0`, which the build sets, so they can't be combined with `archive_only`.
+
+### Sorting plugins with mlox
+
+By default, plugins load masters first, then in mod order. With `plugin_order = "mlox"` in the
+profile's `[rules]`, [mlox](https://github.com/mlox/mlox) sorts them using the community's
+ordering rules instead. File conflicts between mods still go by mod order; mlox only changes the
+plugin load order.
+
+mlox isn't included with TES3X. To set it up:
+
+1. `python -m pip install mlox`. Add `--no-deps` to skip its GUI's dependencies, which TES3X
+   doesn't use.
+2. Download [`mlox_base.txt`](https://github.com/DanaePlays/mlox-rules/blob/main/mlox_base.txt)
+   and set `paths.mlox_rules` to it in `tes3x.local.toml`. The rules are updated often, so
+   download them again now and then.
+
+mlox runs on a copy of the build's plugins and never touches your library. Its conflict and
+missing-requirement warnings are printed during the build. Everything it said, including notes,
+goes to `mlox-messages.txt` in the build folder, and the order it picked to `mlox-order.json`.
+Many notes are advice for the PC version and don't apply to the Xbox.
+
+### Discarding the build after deploying
 
 ```powershell
-python tools/tes3x_pipeline.py profile.toml --deploy --verify-deploy size --discard-build
-python tools/tes3x_pipeline.py profile.toml --deploy --verify-deploy hash --discard-build
+python tools/tes3x_pipeline.py profiles/my-build.toml --deploy --verify-deploy size --discard-build
+python tools/tes3x_pipeline.py profiles/my-build.toml --deploy --verify-deploy hash --discard-build
 ```
 
-`size` re-lists uploaded files. `hash` retrieves every uploaded file and compares its SHA-1, so it
-can roughly double transfer traffic. The remote deployment manifest is written only after the
-requested verification succeeds.
+`size` re-lists the uploaded files. `hash` downloads every file again and compares it, which
+roughly doubles the transfer. The build is only deleted once the check passes.
 
-The default output is `BUILD_ROOT/PROFILE_NAME`. Only an empty directory or an
-output carrying the pipeline marker can be replaced. Work from a failed stage is
-kept and reported for inspection. The deploy command creates missing destination
-directories; `--dry-run` reports uploads and orphan removals without applying
-them.
+## Xbox paths
 
-## Xbox destination paths
+`remote_root` is the game folder on the Xbox, such as `F:/Games/MorrowindTest`, not its
+`Data Files` folder. The default is `F:/Games/Morrowind`. Set it in the profile, the local config
+or with `--remote-root`.
 
-Build and pack accept `--remote-root "F:/Games/MorrowindTest"`. Default:
-`F:/Games/Morrowind`. The builder also accepts `[profile].remote_root` in TOML;
-the CLI overrides it. The prefix is the game folder, not its Data Files folder.
+FATX limits each file or folder name to 42 characters and a full path to 250 (not counting the
+drive letter). The build checks both before anything is uploaded. Names are never shortened
+automatically, since plugins and meshes refer to files by name. A shorter `remote_root` helps
+with long paths but not with a single name that is too long. Names inside a BSA don't count.
 
-Checks cover each component (42 characters) and the full destination path
-(250 characters including separators, excluding the drive letter and colon).
-Source: [FATXplorer's filesystem reference](https://fatxplorer.eaton-works.com/fatx-file-system-limitations-reference/).
-The full-path boundary has unit coverage; it has not been probed on this console.
+Deploy keeps `tes3xdeploy.json` in the game folder with the size and SHA-1 of every file it sent,
+and only resends files that changed. When any plugin changes, all plugins are resent so their
+load order is stamped again.
 
-`tes3x_deploy --remote` remains required and is checked before FTP connection,
-including dry-run. A different destination is therefore checked again at deploy
-time.
-
-Deploy keeps `tes3xdeploy.json` in the remote folder: each file's size and SHA-1
-as last sent. A file is resent when its size or hash differs; without an entry,
-same-size `.xbe`, `.ini`, `.txt` and `.xml` files are always resent. If any
-plugin is sent, all plugins are resent in load order.
-
-Build validates the prospective loose Data Files tree. Pack validates only actual
-loose output paths, including `Morrowind.bsa`; names inside the BSA do not consume
-FATX directory entries. No automatic renaming: references must be rewritten along
-with names. Shortening the installation directory only fixes total-path overflow,
-not a filename or directory component exceeding 42 characters.
-
-## Reachability
+## Pruning unused assets
 
 ```powershell
-python tools/tes3x_build.py examples/profile.toml --prune `
+python tools/tes3x_build.py profiles/my-build.toml --prune `
   --vanilla "build/vanilla/Data Files" `
-  --out build/pruned-tree --reachability-json build/reachability.json `
-  --remote-root "F:/Games/MorrowindTest"
+  --out build/pruned-tree --reachability-json build/reachability.json
 ```
 
-Use a new/empty output directory. Roots include all asset definitions in the
-retail master and enabled plugins, vanilla archive replacements, voice directories,
-and non-prunable/globbed content. Mesh references retain their textures, extension
-alternatives and animation companions. BOOK images and literal script paths are
-included. Overridden record definitions are intentionally retained as a conservative
-superset. The unnamed retail BSA itself is not pruned.
+`--prune` drops mod assets that nothing refers to. It follows references from records in the
+masters and plugins, from meshes to their textures and animations, from books to their images and
+from scripts to literal paths. When unsure it keeps the file. It only saves disk space, not RAM,
+since an asset nothing loads never used RAM anyway.
 
-Add `[rules].keep_assets = ["textures/custom_dynamic/*"]` for assets selected by
-runtime conventions that do not appear as literal paths. Unknown NIF layouts keep
-all textures and report a warning. The reader handles external NiSourceTexture
-fields in NIF 4.0.0.2; it is not a complete engine dependency analysis.
+Assets picked at runtime by name, rather than referenced directly, won't be found. Keep them with
+`[rules].keep_assets = ["textures/custom_dynamic/*"]`. The JSON report lists why each file was
+kept and what was removed.
 
-The JSON lists each retained file's reasons, removed paths/bytes, unresolved
-references, and warnings. Unresolved references include original retail references
-and do not establish that those files are absent at runtime. Removing an asset
-which was never loaded saves storage, not resident RAM.
+## Invalidating archived assets
 
-## mlox and TES3Merge
+`tes3x_pack.py --loose-asset "textures/example.dds"` puts a file both in the archive and loose,
+and lists it in `ArchiveInvalidationList.txt` so the loose copy wins. It sets `TryArchiveFirst=0`
+and can't be used with `--archive-only`.
 
-Generate an initial built tree using `tes3x_build`. Run mlox against its plugins:
+## Sound and mesh checks
 
-```powershell
-python tools/tes3x_plugins.py order build/DataFiles `
-  --vanilla "build/vanilla/Data Files" --tool build/vendor/mlox/mlox.exe `
-  --rules build/vendor/mlox/mlox_base.txt --work build/mlox-work --out build/order.json
-```
+`tes3x_build.py --sox PATH --sound-rate 22050` resamples mod WAVs to at most that rate. It never
+raises the sample rate and keeps the channel count. Compressed WAVs are left alone.
 
-Work directories must be new. mlox runs with downloads disabled on copies,
-with real plugin sizes/headers available to its rules. Keep `mlox.msg` alongside
-the legacy executable. Order JSON records executable, rule database and plugin
-SHA-256 hashes. This session used the installed 0.61-era executable with the
-[maintainers' legacy rules](https://github.com/DanaePlays/mlox-rules/blob/main/mlox_base_legacy.txt),
-whose embedded version is `2017-15-10 11:11:11 (UTC)`, not the modern rule syntax.
+`python tools/tes3x_assets.py build/pruned-tree --json build/assets.json` flags malformed NIF
+headers and missing texture references, and lists WAV formats. It doesn't check geometry,
+skinning or anything else that can crash the renderer.
 
-Pass `--load-order build/order.json --vanilla "..."` to `tes3x_build` to apply it.
-All plugins must appear once, masters before ESPs, dependencies before users;
-changed plugin bytes invalidate the order. Each plugin gets a unique timestamp,
-four seconds apart from 2001-01-01 UTC. Asset conflict priority remains the profile's
-mod order; mlox sorts plugins only.
-
-```powershell
-# The installed TES3Merge requires .NET 6. This session validated running it
-# on the installed later runtime via explicit major-version roll-forward.
-$env:DOTNET_ROLL_FORWARD = 'Major'
-python tools/tes3x_plugins.py merge build/DataFiles `
-  --vanilla "build/vanilla/Data Files" --tool "<TES3Merge.exe>" `
-  --order build/order.json --work build/merge-work --out "build/merged/Merged Objects.esp"
-```
-
-TES3Merge generates an additional conflict-resolution patch, **not plugin
-consolidation**. Keep the original plugins. [Upstream usage](https://github.com/NullCascade/TES3Merge).
-The wrapper expands the two four-byte expansion stubs only in its PC-side tool
-workspace. A filename marker and empty PC archive prevent discovery of the user's
-other installs; neither ships. Default TES3Merge patches are enabled. Logs and
-the generated patch's source hashes remain available for review.
-
-```powershell
-python tools/tes3x_pack.py build/pruned-tree --vanilla "build/vanilla/Data Files" `
-  --ini build/vanilla/Morrowind.ini --out build/pipeline-deploy --archive-only `
-  --merge-patch "build/merged/Merged Objects.esp" --remote-root "F:/Games/MorrowindTest"
-```
-
-Pack validates the patch's provenance, includes all source plugins, and stamps
-the complete order including retail/stub masters. Its output must be new/empty.
-Hash collisions now fail rather than silently dropping an asset. The staged tree
-still needs the appropriate engine XBE/boot arrangement before use as an install.
-
-## Map companions and invalidation
-
-`python tools/tes3x_map.py "build/vanilla/Data Files/Morrowind.esm.map" --json build/map.json --preview build/tile.png`
-inspects map records and decodes the first CMAP image. These are precomputed map
-data, not plugin record indexes. Existing companions stay loose.
-
-Pack's repeatable `--loose-asset "textures/example.dds"` stages a matching asset
-both in the BSA and loose, then writes `ArchiveInvalidationList.txt` in the game
-root. It sets `TryArchiveFirst=0`. It cannot be combined with `--archive-only`:
-fallback for invalidated assets in that mode is unverified. No exceptions are
-enabled by default. Each list entry is a relative backslash path with a newline,
-including the last entry. No comments or blank lines. The format is established
-from the retail reader; the new generated list has not yet been tested in-game.
-
-## Audio and mesh checks
-
-Build accepts `--sox build/vendor/sox/sox.exe --sound-rate 22050`. Conversion is
-opt-in for mod WAVs only; channels are preserved, sample rates never increase,
-bit depths are preserved up to PCM16, and output duration/format are checked.
-The installed SoX 14.4.2 installer was extracted into the workspace without
-installing it system-wide. Compressed WAVs are not handled by this converter.
-
-`python tools/tes3x_assets.py build/pruned-tree --json build/assets.json` checks
-NIF version/block-count bounds and external texture fields and inventories PCM
-WAV formats. It does **not** validate geometry, skinning, controller links or GPU
-limits and cannot certify a mesh against all engine crashes.
-
-Sources for asset fields:
-[OpenMW TES3 records](https://github.com/OpenMW/openmw/tree/master/components/esm3),
-[Niftools schema](https://github.com/niftools/nifxml/blob/develop/nif.xml).
+`python tools/tes3x_map.py "Data Files/Morrowind.esm.map"` dumps a map companion file and can
+save the first map image with `--preview tile.png`.

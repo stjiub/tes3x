@@ -20,6 +20,7 @@ cache/
 __pycache__/
 *.pyc
 tes3x.local.toml
+profiles/
 
 # saves pulled off the console for analysis
 42530005/

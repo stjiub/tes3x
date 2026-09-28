@@ -6,13 +6,14 @@ import tempfile
 import tomllib
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 TOOLS = Path(__file__).resolve().parents[1] / "tools"
 sys.path.insert(0, str(TOOLS))
 
 try:
     from PySide6.QtCore import Qt
-    from PySide6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication, QInputDialog, QMessageBox
     from tes3x_gui import LocalSettingsDialog, ProfileWindow
 except ImportError:
     QApplication = None
@@ -60,7 +61,7 @@ order = 10
         window = ProfileWindow(self.profile)
         self.addCleanup(window.close)
         self.assertEqual(window.tabs.count(), 2)
-        self.assertEqual(window.centralWidget().layout().indexOf(window.output), 1)
+        self.assertEqual(window.centralWidget().layout().indexOf(window.output), 2)
         self.assertTrue(window.discard_after_deploy.isCheckable())
         self.assertEqual(window.action_save.shortcut().toString(), "Ctrl+S")
         self.assertEqual(window.selected.count(), 1)
@@ -75,6 +76,41 @@ order = 10
         self.assertEqual(profile["mods"][0]["id"], "mod")
         self.assertEqual(profile["mods"][0]["plugins"], [])
         self.assertEqual(profile["patches"]["enable"], ["script-ext"])
+
+    def test_opens_without_arguments_and_switches_profiles(self):
+        profiles = self.root / "profiles"
+        profiles.mkdir()
+        (profiles / "b.toml").write_text('[profile]\nname = "b"\n', encoding="utf-8")
+        (profiles / "a.toml").write_text('[profile]\nname = "a"\n', encoding="utf-8")
+        config = self.root / "local.toml"
+        config.write_text("", encoding="utf-8")
+        window = ProfileWindow(config=config)
+        self.addCleanup(window.close)
+        self.assertEqual(window.profile_path, (profiles / "a.toml").resolve())
+        self.assertEqual([window.profile_picker.itemText(i)
+                          for i in range(window.profile_picker.count())], ["a", "b"])
+        self.assertFalse(window.is_dirty())
+
+        window.patch_preset.setCurrentText("minimal")
+        self.assertTrue(window.is_dirty())
+        with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Save):
+            window.picker_activated(1)
+        self.assertEqual(window.profile_path, (profiles / "b.toml").resolve())
+        with open(profiles / "a.toml", "rb") as stream:
+            self.assertEqual(tomllib.load(stream)["patches"]["preset"], "minimal")
+
+        with patch.object(QInputDialog, "getText", return_value=("c", True)):
+            window.new_profile()
+        with open(profiles / "c.toml", "rb") as stream:
+            created = tomllib.load(stream)
+        self.assertEqual(created["profile"]["name"], "c")
+        self.assertNotIn("mods", created)
+        self.assertEqual(window.profile_path, (profiles / "c.toml").resolve())
+
+        with patch.object(QInputDialog, "getText", return_value=("d", True)):
+            window.rename_profile()
+        self.assertFalse((profiles / "c.toml").exists())
+        self.assertEqual(window.profile_path, (profiles / "d.toml").resolve())
 
     def test_local_settings_dialog_preserves_xemu_and_writes_public_fields(self):
         config = self.root / "local.toml"
