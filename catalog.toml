@@ -1,0 +1,106 @@
+# Mods tried on the Xbox build, and how they fared.
+#
+# The GUI's mod list and docs/catalog.md are generated from this file: run
+# `python tools/tes3x_patches.py --write` after editing it.
+#
+# id            stable name for the mod
+# name, url     what it is called and where it comes from
+# version       the version tried
+# folder        its usual folder or plugin name, which is how the GUI recognises it
+# status        untested, passes-automated, works, works-with-requirements, broken,
+#               investigating or not-possible; only a person sets works, after playing with it
+# patches       TES3X patches it needs
+# ram           64 or 128; 128 means it needs an upgraded Xbox
+# bios          a BIOS it needs, such as "cerbios"
+# requirements  anything else it needs, in words
+# dependencies  ids of other mods here it needs
+# plugins       the plugins to use, when not all of them
+# notes         what was tried and what happened
+schema = 1
+
+[[mod]]
+id = "mop"
+name = "Morrowind Optimization Patch"
+version = "1.17.0"
+url = "https://www.nexusmods.com/morrowind/mods/45384"
+folder = "MOP"
+status = "works-with-requirements"
+patches = ["dxt5-size"]
+notes = "Its DXT5 textures crash the engine on the first trip outside unless dxt5-size is on."
+
+[[mod]]
+id = "atlas"
+name = "Project Atlas"
+version = "unknown"
+url = "https://www.nexusmods.com/morrowind/mods/45399"
+folder = "Atlas"
+status = "works"
+notes = "Played from Seyda Neen to Balmora alongside other mods, not on its own."
+
+[[mod]]
+id = "db-attack-mod"
+name = "Delayed Dark Brotherhood Attack"
+version = "unknown"
+url = "https://www.nexusmods.com/morrowind/mods/14891"
+folder = "DB_Attack_Mod.esp"
+status = "works"
+notes = "Played from Seyda Neen to Balmora alongside other mods, not on its own."
+
+[[mod]]
+id = "graphic-herbalism"
+name = "Graphic Herbalism"
+version = "unknown"
+url = "https://www.nexusmods.com/morrowind/mods/43140"
+folder = "Graphic Herbalism.esp"
+status = "works"
+plugins = ["Graphic Herbalism.esp"]
+notes = "Played from Seyda Neen to Balmora alongside other mods, not on its own."
+
+[[mod]]
+id = "jammings-off"
+name = "Jammings Off"
+version = "unknown"
+url = "https://www.nexusmods.com/morrowind/mods/44523"
+folder = "JammingsOff"
+status = "works"
+notes = "Played from Seyda Neen to Balmora alongside other mods, not on its own."
+
+[[mod]]
+id = "purists"
+name = "Patch for Purists"
+version = "4.0.2"
+url = "https://www.nexusmods.com/morrowind/mods/45096"
+folder = "Purists"
+status = "investigating"
+notes = "Only the intro and Seyda Neen have been played. Newer versions have not been tried."
+
+[[mod]]
+id = "tes-extended-music"
+name = "TES Extended Music"
+version = "unknown"
+folder = "TESExtendedMusic"
+status = "investigating"
+notes = "Only the intro and Seyda Neen have been played."
+
+[[mod]]
+id = "tamriel-data"
+name = "Tamriel Data"
+version = "26.08"
+url = "https://www.tamriel-rebuilt.org/downloads/resources"
+folder = "Tamriel Data"
+status = "investigating"
+notes = "Needed by Tamriel Rebuilt; see that entry."
+
+[[mod]]
+id = "tamriel-rebuilt"
+name = "Tamriel Rebuilt"
+version = "26.08.23"
+url = "https://www.tamriel-rebuilt.org/downloads/main-release"
+folder = "TR"
+status = "investigating"
+patches = ["dxt5-size", "heap-region", "video-arena"]
+ram = 128
+bios = "cerbios"
+dependencies = ["tamriel-data"]
+notes = """Its records alone need more than 64 MB. With 128 MB its plugins load and play; with \
+its assets too, the textures around Firewatch overflow the video memory."""

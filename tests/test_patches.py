@@ -36,6 +36,20 @@ class RegistryTests(unittest.TestCase):
             for key in entry.get('ini', {}):
                 self.assertIn(f'`{key}`', sections.get(entry['name'], ''), entry['name'])
 
+    def test_catalog_loads_and_matches_folder_or_plugin_names(self):
+        import tes3x_catalog
+        catalog = tes3x_catalog.load(patch_names=registry.BY_NAME)
+        self.assertEqual(tes3x_catalog.match(catalog, 'mop')['id'], 'mop')
+        self.assertEqual(tes3x_catalog.match(catalog, 'Graphic Herbalism.ESP')['id'],
+                         'graphic-herbalism')
+        self.assertIsNone(tes3x_catalog.match(catalog, 'Nothing Like It'))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'catalog.toml'
+            path.write_text('schema = 1\n[[mod]]\nid = "x"\nname = "X"\nfolder = "X"\n'
+                            'patches = ["no-such-patch"]\n', encoding='utf-8')
+            with self.assertRaises(tes3x_catalog.CatalogError):
+                tes3x_catalog.load(path, patch_names=registry.BY_NAME)
+
     def test_example_profile_lists_every_selectable_patch(self):
         example = (registry.ROOT / 'examples' / 'profile.toml').read_text(encoding='utf-8')
         missing = [entry['name'] for entry in registry.PATCHES

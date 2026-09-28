@@ -190,7 +190,13 @@ def render_candidates():
     return "\n".join(lines) + "\n"
 
 
-PAGES = ((TABLE, render_patches), (CANDIDATE_PAGE, render_candidates))
+def render_catalog():
+    import tes3x_catalog
+    return tes3x_catalog.render(tes3x_catalog.load(patch_names=BY_NAME))
+
+
+PAGES = ((TABLE, render_patches), (CANDIDATE_PAGE, render_candidates),
+         (ROOT / "docs" / "catalog.md", render_catalog))
 
 
 def stale_pages():
@@ -202,7 +208,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     group = ap.add_mutually_exclusive_group()
-    group.add_argument("--write", action="store_true", help="regenerate both pages")
+    group.add_argument("--write", action="store_true", help="regenerate the generated pages")
     group.add_argument("--check", action="store_true", help="exit 1 if a page is out of date")
     args = ap.parse_args(argv)
     if args.write:
