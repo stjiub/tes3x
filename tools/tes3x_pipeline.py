@@ -153,7 +153,9 @@ def validate_profile(profile):
         if not isinstance(mod, dict):
             raise PipelineError(f"{field} must be a table")
         known(mod, {"name", "id", "version", "components", "order", "enabled", "optional",
-                    "plugins", "loose"}, field)
+                    "plugins", "loose", "archives"}, field)
+        if mod.get("archives", "unpack") not in {"unpack", "load"}:
+            raise PipelineError(f"{field}.archives must be 'unpack' or 'load'")
         typed(mod, "name", (str,), field)
         typed(mod, "id", (str,), field)
         typed(mod, "version", (str,), field)
@@ -258,7 +260,8 @@ def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), pac
     else:
         mode = "retail"
     applied = set(selected)
-    if mode == "delta-bsa":
+    if mode == "delta-bsa" or (mode != "retail" and any(
+            mod.get("archives") == "load" for mod in enabled_mods(profile))):
         applied.add("multi-bsa")
     if profile.get("preferences") and "build-preferences" not in disabled \
             and "build-preferences" not in disable:
@@ -707,6 +710,7 @@ def main(argv=None):
     work = Path(tempfile.mkdtemp(prefix=f".{profile_name}-", dir=output.parent))
     tree = work / "tree"
     manifest = work / "manifest.json"
+    mod_archives = work / "archives.json"
     hook_out = work / "hooks"
     patched = work / "morrowind.xbe"
     staged = work / "deploy"
@@ -716,7 +720,8 @@ def main(argv=None):
     try:
         if has_mods:
             build_cmd = [sys.executable, TOOLS / "tes3x_build.py", profile_path,
-                         "--out", tree, "--json", manifest, "--vanilla", data_files]
+                         "--out", tree, "--json", manifest, "--vanilla", data_files,
+                         "--archive-list", mod_archives]
             if library:
                 build_cmd += ["--library", library]
             if remote:
@@ -766,7 +771,8 @@ def main(argv=None):
 
         if has_mods:
             pack_cmd = [sys.executable, TOOLS / "tes3x_pack.py", tree,
-                        "--vanilla", data_files, "--ini", ini, "--out", staged]
+                        "--vanilla", data_files, "--ini", ini, "--out", staged,
+                        "--mod-archives", mod_archives]
             if use_mlox or listed_order:
                 pack_cmd += ["--load-order", load_order]
             if plan["package_mode"] == "loose":

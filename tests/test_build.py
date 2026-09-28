@@ -6,7 +6,37 @@ from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parents[1] / 'tools'
 sys.path.insert(0, str(TOOLS))
-from tes3x_build import find_data_root
+from tes3x_build import Mod, find_data_root
+from tes3x_bsa import write_bsa
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from test_bsa import pc_bsa  # noqa: E402
+
+
+class ArchiveTests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        self.mod = self.root / 'Mod'
+        (self.mod / 'meshes').mkdir(parents=True)
+        (self.mod / 'meshes' / 'a.nif').write_bytes(b'loose')
+        (self.mod / 'mod.esp').write_bytes(b'TES3')
+
+    def test_archives_unpack_beneath_the_mods_loose_files(self):
+        pc_bsa(self.mod / 'Mod.bsa', [('meshes\\a.nif', b'packed'), ('meshes\\b.nif', b'b')])
+        cache = self.root / 'cache'
+        mod = Mod('Mod', self.mod, 10, unpack=str(cache))
+        self.assertEqual(sorted(mod.files), ['meshes/a.nif', 'meshes/b.nif', 'mod.esp'])
+        self.assertEqual(Path(mod.files['meshes/a.nif']).read_bytes(), b'loose')
+        self.assertEqual(Path(mod.files['meshes/b.nif']).read_bytes(), b'b')
+        self.assertEqual(mod.unpacked, ['Mod.bsa'])
+        self.assertIn('mod.bsa', Mod('Mod', self.mod, 10).files)
+
+    def test_hash_only_archive_cannot_be_unpacked(self):
+        (self.root / 'b.nif').write_bytes(b'b')
+        write_bsa(str(self.mod / 'Mod.bsa'), [('meshes\\b.nif', str(self.root / 'b.nif'))])
+        with self.assertRaisesRegex(ValueError, 'archives = "load"'):
+            Mod('Mod', self.mod, 10, unpack=str(self.root / 'cache'))
 
 
 class BuildTests(unittest.TestCase):

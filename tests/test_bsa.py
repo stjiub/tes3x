@@ -5,7 +5,26 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-from tes3x_bsa import Bsa, tes3_hash, write_bsa
+from tes3x_bsa import Bsa, extract_bsa, tes3_hash, write_bsa
+
+
+def pc_bsa(path, files):
+    """A PC-layout archive, which keeps a name table the Xbox layout leaves out."""
+    names = b''.join(name.encode() + b'\0' for name, _data in files)
+    offsets, position = [], 0
+    for name, _data in files:
+        offsets.append(position)
+        position += len(name) + 1
+    count = len(files)
+    records, data_offset = [], 0
+    for _name, data in files:
+        records += [len(data), data_offset]
+        data_offset += len(data)
+    header = struct.pack('<3I', 0x100, count * 12 + len(names), count)
+    hashes = b''.join(struct.pack('<2I', *tes3_hash(name)) for name, _data in files)
+    Path(path).write_bytes(header + struct.pack(f'<{count * 2}I', *records)
+                           + struct.pack(f'<{count}I', *offsets) + names + hashes
+                           + b''.join(data for _name, data in files))
 
 
 class BsaTests(unittest.TestCase):
@@ -48,6 +67,21 @@ class BsaTests(unittest.TestCase):
         self.assertEqual(archive.read(archive.by_hash[tes3_hash('keep.nif')]), b'keep')
         self.assertEqual(archive.read(archive.by_hash[tes3_hash('swap.nif')]), b'new')
         self.assertFalse(archive.contains('drop.nif'))
+
+
+    def test_pc_archive_names_are_read_and_extracted(self):
+        path = self.root / 'mod.bsa'
+        pc_bsa(path, [('meshes\\a.nif', b'aa'), ('textures\\b.dds', b'bbb')])
+        archive = Bsa(str(path))
+        self.assertTrue(archive.named)
+        self.assertEqual(archive.read(archive.entries[1]), b'bbb')
+        self.assertEqual(extract_bsa(path, self.root / 'out'), 2)
+        self.assertEqual((self.root / 'out/textures/b.dds').read_bytes(), b'bbb')
+        xbox = self.root / 'xbox.bsa'
+        write_bsa(str(xbox), [('meshes\\a.nif', str(self.source('a', b'aa')))])
+        self.assertFalse(Bsa(str(xbox)).named)
+        with self.assertRaises(ValueError):
+            extract_bsa(xbox, self.root / 'none')
 
 
 if __name__ == '__main__':

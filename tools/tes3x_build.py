@@ -5,6 +5,7 @@ import argparse
 import os
 import shutil
 import fnmatch
+import hashlib
 import struct
 import sys
 import tomllib
@@ -71,7 +72,7 @@ def texture_dims(path):
 
 
 class Mod:
-    def __init__(self, name, path, order, plugins=None, exclude=()):
+    def __init__(self, name, path, order, plugins=None, exclude=(), unpack=None):
         self.name = name
         paths = list(path) if isinstance(path, (list, tuple)) else [path]
         layers = [(str(item["path"]), [str(value) for value in item.get("exclude", [])])
@@ -118,6 +119,40 @@ class Mod:
                             continue
                     self.files[key] = os.path.join(dirpath, fn)
                     self.relative[key] = rel
+        self.unpacked = []
+        if unpack is not None:
+            self.unpack_archives(unpack, exclude)
+
+    def unpack_archives(self, cache, exclude):
+        """Replace the mod's archives with their files; its loose files still win."""
+        from tes3x_bsa import extract_bsa
+        archives = sorted(key for key in self.files if key.endswith(".bsa"))
+        for key in reversed(archives):
+            source = self.files.pop(key)
+            self.relative.pop(key)
+            stat = os.stat(source)
+            stamp = f"{os.path.abspath(source)}|{stat.st_size}|{stat.st_mtime_ns}"
+            target = os.path.join(cache, hashlib.sha1(stamp.encode()).hexdigest()[:16])
+            if not os.path.isdir(target):
+                partial = target + ".part"
+                shutil.rmtree(partial, ignore_errors=True)
+                try:
+                    extract_bsa(source, partial)
+                except ValueError as exc:
+                    raise ValueError(f"{self.name}: {exc}; set archives = \"load\" for this "
+                                     "mod to have the multi-bsa patch open it instead") from exc
+                os.replace(partial, target)
+            for dirpath, _dirnames, filenames in os.walk(target):
+                for fn in filenames:
+                    rel = os.path.relpath(os.path.join(dirpath, fn), target).replace("\\", "/")
+                    lower = rel.lower()
+                    if lower in self.files or any(
+                            fnmatch.fnmatch(lower, pat) or fnmatch.fnmatch(os.path.basename(lower), pat)
+                            for pat in exclude):
+                        continue
+                    self.files[lower] = os.path.join(dirpath, fn)
+                    self.relative[lower] = rel
+            self.unpacked.append(os.path.basename(source))
 
 
 def load_profile(path):
@@ -327,6 +362,7 @@ def main():
     ap.add_argument("--vanilla", help="clean Xbox Data Files, for reachability roots and archive replacements")
     ap.add_argument("--reachability-json", help="write pruning decisions and missing references")
     ap.add_argument("--load-order", help="validated tes3x_plugins order JSON; requires --vanilla")
+    ap.add_argument("--archive-list", help="write the mod archives shipped, in load order, as JSON")
     ap.add_argument("--max-texture-size", type=int, metavar="N",
                     help="downscale target for mod textures (profile: max_texture_size)")
     ap.add_argument("--convert-all-textures", dest="convert_all", action="store_true",
@@ -386,8 +422,13 @@ def main():
                            + ", ".join(sorted(absent_dependencies)))
             continue
         label = selection["name"] + (f" {selection['version']}" if selection["version"] else "")
-        mods.append(Mod(label, selection.get("layers", selection["roots"]), entry.get("order", 0),
-                        entry.get("plugins"), exclude))
+        try:
+            mods.append(Mod(label, selection.get("layers", selection["roots"]),
+                            entry.get("order", 0), entry.get("plugins"), exclude,
+                            None if entry.get("archives") == "load"
+                            else os.path.join("cache", "bsa")))
+        except ValueError as exc:
+            sys.exit(str(exc))
     if missing:
         # A deploy mirrors the build, so a silently omitted mod would be deleted from the Xbox.
         sys.exit(f"mods not found in {library}: {', '.join(missing)}\n"
@@ -444,6 +485,14 @@ def main():
             print(f"  SoX: {stats['sound_converted']} WAVs converted, {stats['sound_bytes_saved']} bytes saved")
         print(f"  load order stamped across {len([k for k in filemap if k.endswith(PLUGIN_EXT)])} plugins")
         print()
+
+    if args.archive_list:
+        import json
+        archives = sorted((mod.order, key) for key, (mod, _src) in filemap.items()
+                          if key.endswith(".bsa") and "/" not in key)
+        with open(args.archive_list, "w", encoding="utf-8") as stream:
+            json.dump([filemap[key][0].relative.get(key, key) for _order, key in archives],
+                      stream)
 
     if args.json:
         import json

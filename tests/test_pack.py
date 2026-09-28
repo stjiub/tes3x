@@ -86,5 +86,21 @@ class LooseModTests(unittest.TestCase):
         self.assertIn('TryArchiveFirst=0', (out / 'Morrowind.ini').read_text())
 
 
+    def test_mod_archives_load_before_the_delta_archive(self):
+        (self.tree / 'Mod.bsa').write_bytes(b'archive')
+        listing = self.root / 'archives.json'
+        listing.write_text(json.dumps(['Mod.bsa']))
+        out = self.root / 'listed'
+        self.pack(out, '--delta-archive', 'tes3xmods.bsa', '--mod-archives', str(listing))
+        df = out / 'Data Files'
+        self.assertEqual((df / 'Mod.bsa').read_bytes(), b'archive')
+        self.assertEqual((df / 'tes3xarch.txt').read_bytes().splitlines()[1:3],
+                         [b'Mod.bsa', b'tes3xmods.bsa'])
+        out = self.root / 'loose-listed'
+        self.pack(out, '--no-archive', '--mod-archives', str(listing))
+        self.assertEqual((out / 'Data Files' / 'tes3xarch.txt').read_bytes().splitlines()[1],
+                         b'Mod.bsa')
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -118,6 +118,7 @@ Add one table per mod. Remove all mod tables and `profile.library` for a patches
 | `optional` | boolean | `false` | Skip the mod if its folder is absent. |
 | `plugins` | array of strings | all | Include only these plugins from the mod folder. |
 | `loose` | boolean | `false` | Ship this mod's winning assets loose instead of archiving them. |
+| `archives` | string | `unpack` | `unpack` adds the files in the mod's `.bsa` archives to the build, beneath its loose files. `load` ships the archives and has the `multi-bsa` patch open them; archives that store no file names can only be loaded. |
 
 Every entry needs exactly one of `name` or `id`. See [the mod library](mod-library.md).
 

@@ -30,20 +30,32 @@ def tes3_hash(path):
 
 
 class Bsa:
+    """An Xbox archive, which holds only name hashes, or a PC one, which also holds the names."""
+
     def __init__(self, path):
         self.path = path
         with open(path, "rb") as f:
             version, hash_off, count = struct.unpack("<3I", f.read(12))
             if version != VERSION:
                 raise ValueError(f"unexpected BSA version 0x{version:X}")
-            if hash_off != count * 8:
-                raise ValueError("not an Xbox-layout BSA (has a filename table)")
+            if hash_off < count * 8:
+                raise ValueError("BSA hash table overlaps its file records")
             self.count = count
             recs = struct.unpack(f"<{count*2}I", f.read(count * 8))
+            names = None
+            if hash_off > count * 8:
+                offsets = struct.unpack(f"<{count}I", f.read(count * 4))
+                blob = f.read(hash_off - count * 12)
+                names = [blob[o:blob.index(b"\0", o)].decode("cp1252") for o in offsets]
+            f.seek(12 + hash_off)
             hashes = struct.unpack(f"<{count*2}I", f.read(count * 8))
-        self.data_start = 12 + count * 16
+        self.data_start = 12 + hash_off + count * 8
         self.entries = [dict(size=recs[i*2], offset=recs[i*2+1],
                              hash=(hashes[i*2], hashes[i*2+1])) for i in range(count)]
+        if names is not None:
+            for entry, name in zip(self.entries, names):
+                entry["name"] = name
+        self.named = names is not None
         self.by_hash = {e["hash"]: e for e in self.entries}
 
     def read(self, entry):
@@ -53,6 +65,24 @@ class Bsa:
 
     def contains(self, name):
         return tes3_hash(name) in self.by_hash
+
+
+def extract_bsa(path, target):
+    """Unpack a named archive into target; returns the file count."""
+    archive = Bsa(path)
+    if not archive.named:
+        raise ValueError(f"{path} lists no file names, so it cannot be unpacked")
+    with open(path, "rb") as source:
+        for entry in archive.entries:
+            parts = entry["name"].replace("\\", "/").split("/")
+            if any(part in ("", ".", "..") for part in parts):
+                raise ValueError(f"{path}: unsafe name {entry['name']!r}")
+            destination = os.path.join(target, *parts)
+            os.makedirs(os.path.dirname(destination), exist_ok=True)
+            source.seek(archive.data_start + entry["offset"])
+            with open(destination, "wb") as stream:
+                stream.write(source.read(entry["size"]))
+    return archive.count
 
 
 def write_bsa(out_path, files, base=None, progress=None, drop=()):

@@ -74,6 +74,9 @@ def main():
     ap.add_argument("--delta-archive", metavar="NAME", nargs="?", const="tes3xmods.bsa",
                     help="leave vanilla Morrowind.bsa untouched and put mod assets in their own "
                          "archive, listed in tes3xarch.txt (needs the multi-BSA hook)")
+    ap.add_argument("--mod-archives", metavar="JSON",
+                    help="mod archives in the tree, in load order, for tes3xarch.txt "
+                         "(needs the multi-BSA hook)")
     ap.add_argument("--no-archive", action="store_true",
                     help="stage every mod asset loose and leave vanilla Morrowind.bsa untouched")
     ap.add_argument("--stubs", choices=("auto", "require", "force"), default="auto",
@@ -201,8 +204,14 @@ def main():
 
     paths = ['Data Files/' + rel.replace('\\', '/') for rel, _ in loose]
     paths += ['Data Files/Morrowind.bsa', 'Morrowind.ini']
+    extra_archives = (json.loads(open(args.mod_archives, encoding="utf-8").read())
+                      if args.mod_archives else [])
+    # Loose files beat every archive, so the delta archive, which stands in for them, loads last.
+    listed = extra_archives + ([args.delta_archive] if args.delta_archive else [])
     if args.delta_archive:
-        paths += ['Data Files/' + args.delta_archive, 'Data Files/tes3xarch.txt']
+        paths.append('Data Files/' + args.delta_archive)
+    if listed:
+        paths.append('Data Files/tes3xarch.txt')
     if invalidated and (args.delta_archive or args.no_archive):
         paths.append('ArchiveInvalidationList.txt')
     require_paths(paths, args.remote_root)
@@ -220,9 +229,6 @@ def main():
         shutil.copyfile(base_bsa, out_bsa)
         delta_path = os.path.join(out_df, args.delta_archive)
         count, total = write_bsa(delta_path, pack, progress=prog)
-        with open(os.path.join(out_df, "tes3xarch.txt"), "w", newline="\r\n") as f:
-            f.write("# extra archives, loaded in order; later lines win\n")
-            f.write(args.delta_archive + "\n")
         print(f"\r  Morrowind.bsa: vanilla unchanged, "
               f"{os.path.getsize(out_bsa)/1048576:.1f} MB")
         print(f"  {args.delta_archive}: {count} entries, {total/1048576:.1f} MB content, "
@@ -232,6 +238,12 @@ def main():
                                  drop={tes3_hash(rel) for rel, _ in invalidated})
         print(f"\r  Morrowind.bsa: {count} entries, {total/1048576:.1f} MB content, "
               f"{os.path.getsize(out_bsa)/1048576:.1f} MB on disk")
+
+    if listed:
+        with open(os.path.join(out_df, "tes3xarch.txt"), "w", newline="\r\n") as f:
+            f.write("# extra archives, loaded in order; later lines win\n")
+            f.writelines(name + "\n" for name in listed)
+        print("  tes3xarch.txt: " + ", ".join(listed))
 
     copied = 0
     for rel, full in loose:
