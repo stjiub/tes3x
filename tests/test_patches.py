@@ -28,6 +28,13 @@ class RegistryTests(unittest.TestCase):
         page = (registry.ROOT / 'docs' / 'ini-keys.md').read_text(encoding='utf-8')
         self.assertTrue(keys)
         self.assertEqual(sorted(k for k in keys if f'`{k}`' not in page), [])
+        declared = {key for entry in registry.PATCHES for key in entry.get('ini', {})}
+        self.assertEqual(declared, keys)
+        sections = {match.group(1): match.group(2)
+                    for match in re.finditer(r'(?ms)^## `([\w-]+)`$(.*?)(?=^## |\Z)', page)}
+        for entry in registry.PATCHES:
+            for key in entry.get('ini', {}):
+                self.assertIn(f'`{key}`', sections.get(entry['name'], ''), entry['name'])
 
     def test_example_profile_lists_every_selectable_patch(self):
         example = (registry.ROOT / 'examples' / 'profile.toml').read_text(encoding='utf-8')

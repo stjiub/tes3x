@@ -15,6 +15,8 @@
 #              option    - by a command-line option or research use only
 # source     payload C file the patch needs, if any
 # takes      the value it needs, as NAME=VALUE
+# ini        [Xbox] keys it reads from Morrowind.ini, each with the engine's default ("" when the
+#            default follows another key); docs/ini-keys.md explains them
 # summary    one line, shown by --list and in docs/patches.md
 # validation validation results under patches/<name>/ (tools/tes3x_validate.py); "findings: ..."
 #            marks older observations not yet converted to a result
@@ -126,6 +128,7 @@ category = "core"
 channel = "development"
 selection = "preset"
 source = "tes3xrefs.c"
+ini = { DropReplacedRefs = "1" }
 summary = "Stop an unresolvable reference being restamped as created at runtime."
 
 [[patch]]
@@ -173,6 +176,7 @@ category = "compat"
 channel = "development"
 selection = "preset"
 source = "tes3xarena.c"
+ini = { VideoMemoryKB = "22528" }
 summary = "With more than 64 MB, size the texture and vertex buffer arena from [Xbox] VideoMemoryKB."
 
 [[patch]]
@@ -183,6 +187,7 @@ category = "qol"
 channel = "development"
 selection = "preset"
 source = "tes3xsaves.c"
+ini = { RotatingAutosaves = "1", AutosaveSlots = "3" }
 summary = "Rotate automatic saves through INI-configurable slots."
 
 [[patch]]
@@ -201,6 +206,7 @@ category = "qol"
 channel = "development"
 selection = "preset"
 source = "tes3xsaves.c"
+ini = { TransitionAutosaves = "1" }
 summary = "Autosave before doors, scripted teleports, interventions and paid travel."
 
 [[patch]]
@@ -210,6 +216,7 @@ category = "instrumentation"
 channel = "development"
 selection = "preset"
 source = "tes3xdiag.c"
+ini = { Diagnostics = "0", DiagnosticsLevel = "", HangWatchdog = "1", HangTimeoutSeconds = "60" }
 summary = "Enable INI-controlled crash records, snapshots and a hang watchdog."
 
 [[patch]]
@@ -219,6 +226,7 @@ category = "qol"
 channel = "development"
 selection = "preset"
 source = "tes3xconsole.c"
+ini = { ConsoleCombo = "7,9" }
 summary = "Make the in-game console reachable, by replacing its input gate."
 
 [[patch]]
@@ -229,6 +237,7 @@ channel = "development"
 selection = "option"
 source = "tes3xprof.c"
 takes = "VA[,VA...]"
+ini = { ProfileDumpFrames = "0", ProfileDumpSeconds = "30" }
 summary = "Time listed functions with RDTSC at every direct call site."
 
 [[patch]]
@@ -256,6 +265,7 @@ category = "compat"
 channel = "development"
 selection = "preset"
 source = "tes3xregion.c"
+ini = { HeapRegionKB = "98304" }
 summary = "With more than 64 MB, size the engine heap's region from [Xbox] HeapRegionKB."
 
 [[patch]]

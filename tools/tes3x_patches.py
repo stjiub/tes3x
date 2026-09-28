@@ -33,7 +33,7 @@ CANDIDATE_STATUSES = {
 }
 PRIORITIES = ("high", "medium", "low", "none")
 PATCH_FIELDS = (("name", "category", "channel", "selection", "summary"),
-                ("bit", "source", "takes", "origin"))
+                ("bit", "source", "takes", "origin", "ini"))
 CANDIDATE_FIELDS = (("name", "origin", "status", "priority", "summary", "reason"),
                     ("category", "default", "doc"))
 
@@ -73,6 +73,9 @@ def read(path=REGISTRY, candidate_path=CANDIDATE_LIST):
         where = f"{Path(path).name}: {entry.get('name', '<unnamed>')}"
         check(entry, PATCH_FIELDS, (("category", CATEGORIES), ("channel", CHANNELS),
                                     ("selection", SELECTIONS)), sources, where)
+        ini = entry.get("ini", {})
+        if not isinstance(ini, dict) or any(not isinstance(value, str) for value in ini.values()):
+            raise RegistryError(f"{where}: ini wants {{ Key = \"default\" }}")
         if "bit" in entry:
             if not isinstance(entry["bit"], int) or not 0 <= entry["bit"] < 32:
                 raise RegistryError(f"{where}: bit must be 0-31")
