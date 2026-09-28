@@ -40,43 +40,45 @@ The same profile format covers every build:
 
 ## Build
 
-```
-python tools/tes3x_pipeline.py profile.toml --check
-python tools/tes3x_pipeline.py profile.toml
-```
-
-`--check` validates and resolves the profile without building. A normal build is written to
-`build/pipeline/<name>/deploy`. Add `--dry-run` to preview an FTP sync or `--deploy` to apply it.
-
 The pipeline turns one profile into a complete, deployable game folder:
 
 ```text
-local settings + profile + mod library
+   Local Settings + Profile + Mod Library
                   |
-          resolve and check mods
+          Resolve and Check Mods
                   |
-        collect the winning files
+        Collect the Winning Files
                   |
-       pack assets and order plugins
+       Pack Assets and Order Plugins
                   |
-    build hooks and patch the retail XBE
+    Build Hooks and Patch the Retail XBE
                   |
-      stage the complete game folder
+      Stage the Complete Game Folder
                   |
-          smoke test or deploy
+          Test or Deploy to Xbox
 ```
 
-Before deployment, an optional xemu smoke test builds and exercises the exact profile:
+### To run the pipeline
 
-```powershell
-python tools/tes3x_test.py profile.toml --record
+#### Validate and resolve the profile without building:
+```
+python tools/tes3x_pipeline.py profile.toml --check
 ```
 
-For a graphical profile editor, install `requirements-gui.txt` and run
-`python tools/tes3x_gui.py profile.toml`. It also edits local project settings, reports Xbox FTP
-connectivity, deploys with transfer verification and retrieves hook logs from the console.
+#### Build a profile (written to `build/pipeline/<name>/deploy`):
+```
+python tools/tes3x_pipeline.py profile.toml
+```
 
-## Deploy
+#### Use `--dry-run` to build and preview an FTP sync:
+```
+python tools/tes3x_pipeline.py profile.toml --dry-run
+```
+
+#### Build and deploy to the Xbox via FTP:
+```
+python tools/tes3x_pipeline.py profile.toml --deploy
+```
 
 `--deploy` synchronizes the build to `remote_root`; files there that are not in the build are
 deleted. Use a separate destination, not an existing install you want to preserve. Saves and the
@@ -87,6 +89,11 @@ the default `xbox`/`xbox` login. Set `TES3X_FTP_PASSWORD` or use `--ask-password
 password out of the config file.
 
 You can also copy `build/pipeline/<name>/deploy` with another FTP client.
+
+#### Before deployment, an optional xemu smoke test builds and exercises the exact profile in a live scenario:
+```
+python tools/tes3x_test.py profile.toml --record
+```
 
 ## Choosing engine fixes
 
