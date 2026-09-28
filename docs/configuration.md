@@ -8,7 +8,7 @@ what would be built.
 
 ## Local config
 
-The default is `tes3x.local.toml` in the current directory; the profile manager falls back to the
+The default is `tes3x.local.toml` in the current directory; the GUI falls back to the
 one in the TES3X folder. `--config PATH` picks another. Relative paths are relative to the file.
 
 ### `[paths]`
@@ -17,7 +17,7 @@ one in the TES3X folder. `--config PATH` picks another. Relative paths are relat
 |---|---|---|---|
 | `vanilla_root` | string | none | Clean retail game folder containing both XBEs, `Morrowind.ini` and `Data Files`. Required to build unless `--vanilla` is used. |
 | `mod_library` | string | none | Mod library root. A profile's `library` takes precedence. |
-| `profiles` | string | `profiles` | Folder the profile manager lists profiles from. |
+| `profiles` | string | `profiles` | Folder the GUI lists profiles from. |
 | `mlox_rules` | string | none | mlox's `mlox_base.txt`, for `rules.plugin_order = "mlox"`. |
 | `build_root` | string | `build` | Parent directory for profile output folders. |
 | `llvm` | string | `PATH` | Directory containing `clang` and `lld-link`. |

@@ -157,7 +157,7 @@ folder under `build/xemu/` with the log, the disc image and xemu's output. Every
 goes to the pipeline, such as `-- --preset minimal`. `--help` lists the rest, including
 screenshots, saves and GDB.
 
-The profile manager's local settings hold the same keys. xemu timings don't reflect a real Xbox,
+The GUI's local settings hold the same keys. xemu timings don't reflect a real Xbox,
 so use it to check that a build runs, not how fast.
 
 ## Profile smoke tests

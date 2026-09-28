@@ -1,23 +1,31 @@
 #!/usr/bin/env python3
-"""TES3X profile editor. The GUI edits the same TOML consumed by the command-line tools."""
+"""TES3X GUI. It edits the same TOML the command-line tools read."""
 
 import argparse
+from collections import defaultdict
 import datetime
+import json
+import os
 from pathlib import Path
 import re
+import shutil
+import struct
 import sys
+import tempfile
 import tomllib
+import uuid
 
 try:
     import tomlkit
-    from PySide6.QtCore import QProcess, QSettings, QTimer, Qt
-    from PySide6.QtGui import QAction, QTextCursor
+    from PySide6.QtCore import (QAbstractTableModel, QFile, QModelIndex, QProcess, QSettings,
+                                QSortFilterProxyModel, QTimer, Qt, QUrl, Signal)
+    from PySide6.QtGui import QAction, QColor, QDesktopServices, QIcon, QTextCursor
     from PySide6.QtWidgets import (
-        QAbstractItemView, QApplication, QCheckBox, QDialog, QDialogButtonBox, QFileDialog,
-        QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
-        QListWidget, QScrollArea, QTableWidget, QTableWidgetItem,
-        QListWidgetItem, QMainWindow, QMessageBox, QPushButton, QSpinBox, QSplitter, QStatusBar,
-        QTabWidget, QTextEdit, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+        QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
+        QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
+        QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QPushButton,
+        QScrollArea, QSpinBox, QSplitter, QStatusBar, QStyle, QTableView, QTabWidget, QTextEdit,
+        QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
     )
 except ImportError as exc:
     raise SystemExit(
@@ -25,20 +33,33 @@ except ImportError as exc:
         "`python -m pip install -r requirements-gui.txt`"
     ) from exc
 
-from tes3x_build import DEFAULT_EXCLUDE, find_data_root
-from tes3x_library import (CATALOG_NAME, LibraryError, available_plugins, convert_profile,
-                           dependency_order, discover_library, index_library, load_library,
+from tes3x_build import DEFAULT_EXCLUDE, PLUGIN_EXT, Mod, plugin_masters
+from tes3x_bsa import Bsa
+from tes3x_library import (ARCHIVES, CATALOG_NAME, LibraryError, append_mods, convert_profile,
+                           discover_library, extract_archive, free_id, guess_release,
+                           index_library, install_files, install_layout, load_library,
                            resolve_selection)
+from tes3x_catalog import STATUSES as COMPAT_STATUSES, CatalogError, load as load_catalog
+from tes3x_catalog import match as match_catalog, needs as catalog_needs
 from tes3x_patches import CATEGORIES as PATCH_CATEGORIES, PATCHES as PATCH_CATALOG, SOURCES
-from tes3x_plugins import fetch_rules
+from tes3x_plugins import (BASE_MASTERS, collect, dependency_order, fetch_rules, sort_files,
+                           warnings as mlox_notes)
 from tes3x_pipeline import (PipelineError, resolve_patch_plan, validate_local_config,
                             validate_profile)
 
 
 ROOT = Path(__file__).resolve().parents[1]
 ROLE = Qt.ItemDataRole.UserRole
+EXTRA = Qt.ItemDataRole.UserRole + 1
 TEMPLATE = ROOT / "examples" / "profile.toml"
 PROFILE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+RETAIL_PLUGINS = ("Morrowind.esm", "Tribunal.esm", "Bloodmoon.esm")
+WINS = QColor(60, 170, 60, 60)
+LOSES = QColor(210, 60, 60, 60)
+WARNING = QColor(200, 40, 40)
+COMPAT = {"works": ("\u2713", QColor(60, 170, 60)),
+          "works-with-requirements": ("*", QColor(215, 150, 20)),
+          "broken": ("\u2717", WARNING), "not-possible": ("\u2717", WARNING)}
 
 
 def default_config_path():
@@ -208,8 +229,558 @@ class LocalSettingsDialog(QDialog):
         self.accept()
 
 
+def ini_value(text):
+    for kind in (int, float):
+        try:
+            return kind(text)
+        except ValueError:
+            pass
+    return {"true": True, "false": False}.get(text.casefold(), text)
+
+
+def ini_text(value):
+    return str(value).lower() if isinstance(value, bool) else str(value)
+
+
+def folder_name(name):
+    return re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", name).strip(" .") or "mod"
+
+
+def read_ini(path):
+    """Morrowind.ini as {(section, key) casefolded: (section, key, value)}, first value wins."""
+    values = {}
+    try:
+        text = Path(path).read_text(encoding="latin-1")
+    except OSError:
+        return values
+    section = None
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith(";"):
+            continue
+        if line.startswith("[") and "]" in line:
+            section = line[1:line.index("]")].strip()
+        elif section and "=" in line:
+            key, value = line.split("=", 1)
+            values.setdefault((section.casefold(), key.strip().casefold()),
+                              (section, key.strip(), value.strip()))
+    return values
+
+
+def trash(path):
+    result = QFile.moveToTrash(str(path))
+    return result[0] if isinstance(result, tuple) else bool(result)
+
+
+class DragList(QTreeWidget):
+    """A flat list reordered by dragging; rows never nest."""
+
+    moved = Signal()
+    dropped_files = Signal(list)
+
+    def __init__(self, labels, accept_files=False):
+        super().__init__()
+        self.accept_files = accept_files
+        self.setHeaderLabels(labels)
+        self.setRootIsDecorated(False)
+        self.setUniformRowHeights(True)
+        self.setAlternatingRowColors(True)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+
+    def external(self, event):
+        return self.accept_files and event.source() is not self and event.mimeData().hasUrls()
+
+    def dragEnterEvent(self, event):
+        if self.external(event):
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event):
+        if self.external(event):
+            event.acceptProposedAction()
+        else:
+            super().dragMoveEvent(event)
+
+    def dropEvent(self, event):
+        if self.external(event):
+            event.acceptProposedAction()
+            self.dropped_files.emit([url.toLocalFile() for url in event.mimeData().urls()
+                                     if url.isLocalFile()])
+            return
+        super().dropEvent(event)
+        self.moved.emit()
+
+    def rows(self):
+        return [self.topLevelItem(index) for index in range(self.topLevelItemCount())]
+
+    def move_items(self, items, row):
+        """Move items, in list order, to sit before row."""
+        items = sorted(items, key=self.indexOfTopLevelItem)
+        before = self.topLevelItem(row) if row < self.topLevelItemCount() else None
+        for item in items:
+            self.takeTopLevelItem(self.indexOfTopLevelItem(item))
+        index = self.indexOfTopLevelItem(before) if before is not None else self.topLevelItemCount()
+        for offset, item in enumerate(items):
+            self.insertTopLevelItem(index + offset, item)
+            item.setSelected(True)
+        self.moved.emit()
+
+
+ROW_FLAGS = (Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
+             | Qt.ItemFlag.ItemIsDragEnabled | Qt.ItemFlag.ItemIsUserCheckable)
+
+
+class FilesModel(QAbstractTableModel):
+    HEADERS = ("File", "Provided by", "Overrides")
+
+    def __init__(self):
+        super().__init__()
+        self.entries = []
+
+    def reset(self, entries):
+        self.beginResetModel()
+        self.entries = entries
+        self.endResetModel()
+
+    def rowCount(self, parent=QModelIndex()):
+        return 0 if parent.isValid() else len(self.entries)
+
+    def columnCount(self, parent=QModelIndex()):
+        return 0 if parent.isValid() else 3
+
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        if role == Qt.ItemDataRole.DisplayRole and index.isValid():
+            return self.entries[index.row()][index.column()]
+        return None
+
+    def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
+        if role == Qt.ItemDataRole.DisplayRole and orientation == Qt.Orientation.Horizontal:
+            return self.HEADERS[section]
+        return None
+
+
+class FilesFilter(QSortFilterProxyModel):
+    def __init__(self):
+        super().__init__()
+        self.text = ""
+        self.conflicts_only = False
+
+    def update(self, text=None, conflicts_only=None):
+        if text is not None:
+            self.text = text.casefold()
+        if conflicts_only is not None:
+            self.conflicts_only = conflicts_only
+        self.invalidateFilter()
+
+    def filterAcceptsRow(self, row, _parent):
+        path, owner, others = self.sourceModel().entries[row]
+        if self.conflicts_only and not others:
+            return False
+        return not self.text or self.text in f"{path} {owner} {others}".casefold()
+
+
+class InstallDialog(QDialog):
+    """Choose what an unpacked mod installs: its Data Files folders and the files in them."""
+
+    def __init__(self, unpacked, found, chosen, name, version, label, taken=None, fixed=False,
+                 parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"Install {label}")
+        self.resize(640, 560)
+        self.unpacked = Path(unpacked)
+        self.roots = list(found)
+        self.chosen = set(chosen)
+        self.taken = taken
+        self.name_field = QLineEdit(name)
+        self.name_field.setReadOnly(fixed)
+        self.version_field = QLineEdit(version)
+        self.version_field.setReadOnly(fixed)
+        self.version_field.setPlaceholderText("Optional")
+        form = QFormLayout()
+        form.addRow("Name", self.name_field)
+        form.addRow("Version", self.version_field)
+        self.note = QLabel()
+        self.note.setWordWrap(True)
+        self.tree = QTreeWidget()
+        self.tree.setHeaderLabels(["Contents", ""])
+        self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self.tree_menu)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
+                                   | QDialogButtonBox.StandardButton.Cancel)
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Install")
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout = QVBoxLayout(self)
+        layout.addLayout(form)
+        layout.addWidget(self.note)
+        layout.addWidget(self.tree, 1)
+        layout.addWidget(buttons)
+        self.build_tree()
+
+    def build_tree(self):
+        self.tree.clear()
+        top = QTreeWidgetItem([self.unpacked.name or str(self.unpacked)])
+        top.setData(0, ROLE, ".")
+        self.tree.addTopLevelItem(top)
+        self.items = {".": top}
+        self.add_children(top, self.unpacked, "")
+        for rel, item in self.items.items():
+            root = self.root_of(rel)
+            is_dir = (self.unpacked / rel).is_dir()
+            if root is None:
+                item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                if not is_dir or not any(value.startswith(rel + "/") or rel == "."
+                                         for value in self.roots):
+                    item.setForeground(0, self.palette().placeholderText())
+                continue
+            flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable
+            if is_dir:
+                flags |= Qt.ItemFlag.ItemIsAutoTristate
+            item.setFlags(flags)
+            if rel == root:
+                font = item.font(0)
+                font.setBold(True)
+                item.setFont(0, font)
+                item.setText(1, "Data Files")
+        # A folder's state follows its files, so only files and empty folders are set.
+        for rel, item in self.items.items():
+            root = self.root_of(rel)
+            if root is not None and not item.childCount():
+                item.setCheckState(0, Qt.CheckState.Checked if root in self.chosen
+                                   else Qt.CheckState.Unchecked)
+        self.expand_to_roots()
+        self.tree.resizeColumnToContents(0)
+        if not self.roots:
+            self.note.setText("No Data Files layout found. Right-click the folder that holds "
+                              "Meshes, Textures or plugins and choose Use as Data Files.")
+        elif len(self.roots) > 1:
+            self.note.setText("This mod has option folders. Tick the ones to install; later "
+                              "folders overwrite files from earlier ones.")
+        else:
+            self.note.setText("Data Files layout found. Untick anything you don't want.")
+
+    def add_children(self, parent, path, prefix):
+        entries = sorted(path.iterdir(), key=lambda entry: (entry.is_file(), entry.name.casefold()))
+        for entry in entries:
+            rel = prefix + entry.name
+            item = QTreeWidgetItem([entry.name + ("/" if entry.is_dir() else "")])
+            item.setData(0, ROLE, rel)
+            parent.addChild(item)
+            self.items[rel] = item
+            if entry.is_dir():
+                self.add_children(item, entry, rel + "/")
+
+    def root_of(self, rel):
+        for root in self.roots:
+            if root == "." or rel == root or rel.startswith(root + "/"):
+                return root
+        return None
+
+    def expand_to_roots(self):
+        for root in self.roots:
+            item = self.items.get(root)
+            while item is not None:
+                item.setExpanded(True)
+                item = item.parent()
+        self.items["."].setExpanded(True)
+
+    def tree_menu(self, position):
+        item = self.tree.itemAt(position)
+        if item is None:
+            return
+        rel = item.data(0, ROLE)
+        if not (self.unpacked / rel).is_dir():
+            return
+        menu = QMenu(self)
+        if rel in self.roots:
+            menu.addAction("Don't use as Data Files", lambda: self.set_root(rel, False))
+        else:
+            menu.addAction("Use as Data Files", lambda: self.set_root(rel, True))
+        menu.exec(self.tree.viewport().mapToGlobal(position))
+
+    def set_root(self, rel, use):
+        self.chosen = {root for root in self.roots
+                       if self.items[root].checkState(0) != Qt.CheckState.Unchecked}
+        if use:
+            self.roots = [root for root in self.roots
+                          if not (rel == "." or root == "." or root.startswith(rel + "/")
+                                  or rel.startswith(root + "/"))]
+            self.roots.append(rel)
+            self.roots.sort(key=str.casefold)
+            self.chosen.add(rel)
+        else:
+            self.roots.remove(rel)
+        self.build_tree()
+
+    def name(self):
+        return self.name_field.text().strip()
+
+    def version(self):
+        return self.version_field.text().strip()
+
+    def selection(self):
+        result = []
+        for root in self.roots:
+            files = []
+            prefix = "" if root == "." else root + "/"
+            for rel, item in self.items.items():
+                if (rel.startswith(prefix) and rel != root and (self.unpacked / rel).is_file()
+                        and item.checkState(0) == Qt.CheckState.Checked):
+                    files.append(rel[len(prefix):])
+            if files:
+                result.append((root, files))
+        return result
+
+    def accept(self):
+        if not self.name():
+            QMessageBox.warning(self, "TES3X", "Give the mod a name")
+            return
+        if not self.selection():
+            QMessageBox.warning(self, "TES3X", "Nothing is ticked to install")
+            return
+        problem = self.taken(self.name()) if self.taken else None
+        if problem:
+            QMessageBox.warning(self, "TES3X", problem)
+            return
+        super().accept()
+
+
+class ComponentsDialog(QDialog):
+    def __init__(self, title, components, chosen, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.list = QListWidget()
+        for component in components:
+            item = QListWidgetItem(component["name"])
+            item.setData(ROLE, component["id"])
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Checked if component["id"] in chosen
+                               else Qt.CheckState.Unchecked)
+            self.list.addItem(item)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
+                                   | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("Optional parts to install"))
+        layout.addWidget(self.list)
+        layout.addWidget(buttons)
+
+    def chosen(self):
+        return [self.list.item(i).data(ROLE) for i in range(self.list.count())
+                if self.list.item(i).checkState() == Qt.CheckState.Checked]
+
+
+class IniPanel(QWidget):
+    """The Morrowind.ini a build ships: retail values, patch keys and the profile's changes."""
+
+    HIDDEN = {"game files"}
+    changed = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.retail = {}
+        self.patch_keys = {}
+        self.values = {}
+        self.loading = False
+        self.expanded = {"xbox"}
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Filter settings…")
+        self.search.textChanged.connect(self.refresh)
+        self.changed_only = QCheckBox("Changed only")
+        self.changed_only.toggled.connect(self.refresh)
+        add = QPushButton("Add setting…")
+        add.clicked.connect(self.add_setting)
+        reset = QPushButton("Reset selected")
+        reset.clicked.connect(self.reset_selected)
+        bar = QHBoxLayout()
+        bar.addWidget(self.search, 1)
+        bar.addWidget(self.changed_only)
+        bar.addWidget(add)
+        bar.addWidget(reset)
+        self.tree = QTreeWidget()
+        self.tree.setHeaderLabels(["Setting", "Value", "From"])
+        self.tree.setAlternatingRowColors(True)
+        self.tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.tree.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.tree.itemDoubleClicked.connect(self.start_edit)
+        self.tree.itemChanged.connect(self.edited)
+        self.tree.itemExpanded.connect(lambda item: self.expanded.add(item.text(0).casefold()))
+        self.tree.itemCollapsed.connect(
+            lambda item: self.expanded.discard(item.text(0).casefold()))
+        self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        self.tree.setColumnWidth(0, 280)
+        self.tree.setColumnWidth(1, 220)
+        note = QLabel("Double-click a value to change it. Only changed values are saved in the "
+                      "profile. Patch settings appear while their patch is on; "
+                      "docs/ini-keys.md explains them.")
+        note.setWordWrap(True)
+        layout = QVBoxLayout(self)
+        layout.addLayout(bar)
+        layout.addWidget(self.tree, 1)
+        layout.addWidget(note)
+
+    @staticmethod
+    def split(name):
+        section, _, key = name.partition(":")
+        return section.strip().casefold(), key.strip().casefold()
+
+    def load(self, values, retail_path=None):
+        self.values = dict(values)
+        self.retail = read_ini(retail_path) if retail_path else {}
+        self.refresh()
+
+    def set_patches(self, names):
+        self.patch_keys = {}
+        for entry in PATCH_CATALOG:
+            if entry["name"] in names:
+                for key, default in entry.get("ini", {}).items():
+                    self.patch_keys[("xbox", key.casefold())] = ("Xbox", key, default,
+                                                                entry["name"])
+        self.refresh()
+
+    def patch_owned(self, names):
+        """Profile keys that only the named patches read."""
+        keys = {("xbox", key.casefold()) for entry in PATCH_CATALOG if entry["name"] in names
+                for key in entry.get("ini", {})}
+        return [name for name in self.values
+                if self.split(name) in keys and self.split(name) not in self.retail]
+
+    def base(self, ident):
+        if ident in self.retail:
+            return self.retail[ident][2]
+        if ident in self.patch_keys:
+            return self.patch_keys[ident][2]
+        return None
+
+    def rows(self):
+        rows = {}
+        for ident, (section, key, _value) in self.retail.items():
+            rows[ident] = (section, key)
+        for ident, (section, key, _default, _patch) in self.patch_keys.items():
+            rows.setdefault(ident, (section, key))
+        for name in self.values:
+            ident = self.split(name)
+            section, _, key = name.partition(":")
+            rows.setdefault(ident, (section.strip(), key.strip()))
+        return rows
+
+    def override_name(self, ident):
+        return next((name for name in self.values if self.split(name) == ident), None)
+
+    def refresh(self, *_args):
+        self.loading = True
+        self.tree.clear()
+        query = self.search.text().casefold()
+        sections = {}
+        for ident, (section, key) in self.rows().items():
+            if ident[0] in self.HIDDEN:
+                continue
+            name = self.override_name(ident)
+            base = self.base(ident)
+            value = ini_text(self.values[name]) if name else base or ""
+            patch = self.patch_keys.get(ident)
+            if name and base is None:
+                source = "added"
+            elif name:
+                source = "changed"
+            elif ident in self.retail:
+                source = "retail"
+            else:
+                source = "default"
+            if patch:
+                source += f" · {patch[3]}"
+            if self.changed_only.isChecked() and not name:
+                continue
+            if query and query not in f"{section}:{key}={value}".casefold():
+                continue
+            parent = sections.get(ident[0])
+            if parent is None:
+                parent = QTreeWidgetItem([section])
+                parent.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                sections[ident[0]] = parent
+            item = QTreeWidgetItem([key, value, source])
+            item.setData(0, ROLE, ident)
+            item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+                          | Qt.ItemFlag.ItemIsEditable)
+            if name:
+                font = item.font(0)
+                font.setBold(True)
+                for column in range(3):
+                    item.setFont(column, font)
+                parent.setFont(0, font)
+            if patch:
+                item.setToolTip(0, f"Read by the {patch[3]} patch")
+            parent.addChild(item)
+        order = {section: index for index, section in
+                 enumerate(dict.fromkeys(ident[0] for ident in self.retail))}
+        for ident in sorted(sections, key=lambda value: (value != "xbox",
+                                                         order.get(value, len(order)), value)):
+            parent = sections[ident]
+            self.tree.addTopLevelItem(parent)
+            parent.setExpanded(bool(query) or self.changed_only.isChecked()
+                               or ident in self.expanded or parent.font(0).bold())
+        self.loading = False
+
+    def start_edit(self, item, _column):
+        if item.data(0, ROLE) is not None:
+            self.tree.editItem(item, 1)
+
+    def edited(self, item, column):
+        if self.loading or column != 1:
+            return
+        ident = item.data(0, ROLE)
+        text = item.text(1).strip()
+        name = self.override_name(ident)
+        base = self.base(ident)
+        if text == (base or "") and (base is not None or not text):
+            if name:
+                del self.values[name]
+        else:
+            section, key = self.rows()[ident]
+            self.values[name or f"{section}:{key}"] = ini_value(text)
+        self.changed.emit()
+        QTimer.singleShot(0, self.refresh)
+
+    def set_value(self, name, value):
+        section, _, key = name.partition(":")
+        if not section.strip() or not key.strip():
+            raise ValueError("use Section:Key")
+        ident = self.split(name)
+        existing = self.rows().get(ident)
+        self.values[self.override_name(ident) or
+                    (f"{existing[0]}:{existing[1]}" if existing
+                     else f"{section.strip()}:{key.strip()}")] = value
+        self.changed.emit()
+        self.refresh()
+
+    def add_setting(self):
+        name, ok = QInputDialog.getText(self, "Add setting", "Section:Key, e.g. General:Show FPS")
+        if not ok or not name.strip():
+            return
+        value, ok = QInputDialog.getText(self, "Add setting", f"Value for {name.strip()}")
+        if not ok:
+            return
+        try:
+            self.set_value(name.strip(), ini_value(value.strip()))
+        except ValueError as exc:
+            QMessageBox.warning(self, "TES3X", str(exc))
+
+    def reset_selected(self):
+        for item in self.tree.selectedItems():
+            name = self.override_name(item.data(0, ROLE)) if item.data(0, ROLE) else None
+            if name:
+                del self.values[name]
+        self.changed.emit()
+        self.refresh()
+
+
 class BuildSettings(QWidget):
-    """Every profile setting outside mods and patches, written back to the same TOML keys."""
+    """Profile settings outside mods, plugins, patches and ini, written to the same TOML keys."""
 
     PREFERENCE_CHOICES = (("Keep the player's setting", None), ("Normal", False),
                           ("Inverted", True))
@@ -272,9 +843,6 @@ class BuildSettings(QWidget):
         self.max_filename = QSpinBox()
         self.max_filename.setRange(8, 42)
         self.clear_cache = QCheckBox("Clear the Xbox's X/Y/Z cache after deploying")
-        self.plugin_order = QComboBox()
-        self.plugin_order.addItem("Masters first, then mod order", "mods")
-        self.plugin_order.addItem("Sort with mlox", "mlox")
         self.keep_assets = QTextEdit()
         self.keep_assets.setPlaceholderText("Patterns pruning must keep, one per line")
         self.keep_assets.setMaximumHeight(60)
@@ -287,7 +855,6 @@ class BuildSettings(QWidget):
         form.addRow("", self.convert_all)
         form.addRow("Longest file name", self.max_filename)
         form.addRow("", self.clear_cache)
-        form.addRow("Plugin order", self.plugin_order)
         form.addRow("Always keep", self.keep_assets)
         form.addRow("Leave out", self.exclude)
 
@@ -298,31 +865,14 @@ class BuildSettings(QWidget):
         form = QFormLayout(preferences)
         form.addRow("Look up/down", self.invert_look)
 
-        self.ini = QTableWidget(0, 2)
-        self.ini.setHorizontalHeaderLabels(["Section:Key", "Value"])
-        self.ini.horizontalHeader().setStretchLastSection(True)
-        self.ini.itemChanged.connect(self.changed)
-        add = QPushButton("Add")
-        add.clicked.connect(self.add_ini_row)
-        remove = QPushButton("Remove")
-        remove.clicked.connect(self.remove_ini_row)
-        ini_buttons = QHBoxLayout()
-        ini_buttons.addWidget(add)
-        ini_buttons.addWidget(remove)
-        ini_buttons.addStretch()
-        ini = QGroupBox("Morrowind.ini settings (docs/ini-keys.md lists the [Xbox] keys)")
-        ini_layout = QVBoxLayout(ini)
-        ini_layout.addWidget(self.ini)
-        ini_layout.addLayout(ini_buttons)
-
         left = QVBoxLayout()
         left.addWidget(identity)
         left.addWidget(package)
-        left.addWidget(preferences)
         left.addStretch()
         right = QVBoxLayout()
         right.addWidget(rules)
-        right.addWidget(ini, 1)
+        right.addWidget(preferences)
+        right.addStretch()
         layout = QHBoxLayout(self)
         layout.addLayout(left, 1)
         layout.addLayout(right, 1)
@@ -331,8 +881,7 @@ class BuildSettings(QWidget):
             widget.textChanged.connect(self.changed)
         for widget in (self.dashboard, self.archive_only, self.convert_all, self.clear_cache):
             widget.toggled.connect(self.changed)
-        for widget in (self.mode, self.drive_letter, self.max_texture_size, self.plugin_order,
-                       self.invert_look):
+        for widget in (self.mode, self.drive_letter, self.max_texture_size, self.invert_look):
             widget.currentIndexChanged.connect(self.changed)
         for widget in (self.loose_assets, self.keep_assets, self.exclude):
             widget.textChanged.connect(self.changed)
@@ -354,21 +903,6 @@ class BuildSettings(QWidget):
         self.archive_name.setEnabled(mode == "delta-bsa")
         self.archive_only.setEnabled(mode != "loose")
         self.loose_assets.setEnabled(mode != "loose")
-
-    def add_ini_row(self, key="", value=""):
-        row = self.ini.rowCount()
-        self.ini.insertRow(row)
-        self.ini.setItem(row, 0, QTableWidgetItem(key))
-        self.ini.setItem(row, 1, QTableWidgetItem(value))
-        if not key:
-            self.ini.setCurrentCell(row, 0)
-            self.ini.editItem(self.ini.item(row, 0))
-
-    def remove_ini_row(self):
-        row = self.ini.currentRow()
-        if row >= 0:
-            self.ini.removeRow(row)
-            self.changed()
 
     @staticmethod
     def select(combo, value):
@@ -400,18 +934,17 @@ class BuildSettings(QWidget):
         self.convert_all.setChecked(rules.get("convert_all_textures", False))
         self.max_filename.setValue(rules.get("max_filename", 42))
         self.clear_cache.setChecked(rules.get("clear_cache_partitions", False))
-        self.select(self.plugin_order, rules.get("plugin_order", "mods"))
         self.keep_assets.setPlainText("\n".join(rules.get("keep_assets", [])))
         self.exclude.setPlainText("\n".join(rules.get("exclude", [])))
         self.select(self.invert_look, plain.get("preferences", {}).get("invert_look"))
-        self.ini.setRowCount(0)
-        for key, value in plain.get("ini", {}).items():
-            self.add_ini_row(key, str(value).lower() if isinstance(value, bool) else str(value))
         self.update_enabled()
         self.loading = False
 
     def library(self):
         return self.library_path.text().strip()
+
+    def excluded(self):
+        return self.lines(self.exclude) or DEFAULT_EXCLUDE
 
     def package_values(self):
         values = {"mode": self.mode.currentData()}
@@ -422,24 +955,6 @@ class BuildSettings(QWidget):
     def preference_values(self):
         value = self.invert_look.currentData()
         return {} if value is None else {"invert_look": value}
-
-    @staticmethod
-    def ini_value(text):
-        for kind in (int, float):
-            try:
-                return kind(text)
-            except ValueError:
-                pass
-        return {"true": True, "false": False}.get(text.casefold(), text)
-
-    def ini_values(self):
-        values = {}
-        for row in range(self.ini.rowCount()):
-            key = (self.ini.item(row, 0).text() if self.ini.item(row, 0) else "").strip()
-            if key:
-                text = self.ini.item(row, 1).text().strip() if self.ini.item(row, 1) else ""
-                values[key] = self.ini_value(text)
-        return values
 
     @staticmethod
     def put(document, section, key, value, default):
@@ -472,28 +987,18 @@ class BuildSettings(QWidget):
         put("rules", "convert_all_textures", self.convert_all.isChecked(), False)
         put("rules", "max_filename", self.max_filename.value(), 42)
         put("rules", "clear_cache_partitions", self.clear_cache.isChecked(), False)
-        put("rules", "plugin_order", self.plugin_order.currentData(), "mods")
         put("rules", "keep_assets", self.lines(self.keep_assets), [])
         put("rules", "exclude", self.lines(self.exclude) or None, None)
         put("preferences", "invert_look", self.invert_look.currentData(), None)
-        values = self.ini_values()
-        table = document.get("ini")
-        if table is None and values:
-            table = tomlkit.table()
-            document["ini"] = table
-        if table is not None:
-            for key in [key for key in table if key not in values]:
-                del table[key]
-            for key, value in values.items():
-                if table.get(key) != value:
-                    table[key] = value
 
 
 class ProfileWindow(QMainWindow):
+    MOD_NAME, MOD_VERSION, MOD_CONFLICTS, MOD_NOTES, MOD_PRIORITY, MOD_XBOX = range(6)
+
     def __init__(self, profile=None, config=None, settings=None):
         super().__init__()
-        self.setWindowTitle("TES3X Profile Manager")
-        self.resize(1180, 760)
+        self.setWindowTitle("TES3X")
+        self.resize(1280, 800)
         self.profile_path = None
         self.document = None
         self.library_root = None
@@ -503,10 +1008,27 @@ class ProfileWindow(QMainWindow):
         self.ftp_probe = None
         self.profile_plain = {}
         self.patch_modes = {}
-        self.patch_combos = {}
+        self.patch_categories = []
+        self.patch_loading = False
+        self.applied_patches = set()
+        self.ini_stash = {}
+        self.plugin_order = None
+        self.mods_loading = False
+        self.plugins_loading = False
+        self.scans = {}
+        self.masters = {}
+        self.forget_analysis()
+        try:
+            self.compat = load_catalog()
+        except (OSError, ValueError, CatalogError):
+            self.compat = {}
         self.config_path = Path(config).resolve() if config else None
         self.settings = settings
         self.saved_text = None
+        self.analysis_timer = QTimer(self)
+        self.analysis_timer.setSingleShot(True)
+        self.analysis_timer.setInterval(150)
+        self.analysis_timer.timeout.connect(self.refresh_analysis)
 
         self.profile_picker = QComboBox()
         self.profile_picker.setMinimumWidth(260)
@@ -520,76 +1042,16 @@ class ProfileWindow(QMainWindow):
             button.clicked.connect(handler)
             profile_bar.addWidget(button)
         profile_bar.addStretch()
-
-        self.library = QTreeWidget()
-        self.library.setHeaderLabels(["Library", "Version"])
-        self.library.setAlternatingRowColors(True)
-        self.selected = QListWidget()
-        self.selected.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
-        self.selected.setDefaultDropAction(Qt.DropAction.MoveAction)
-        self.selected.currentRowChanged.connect(self.show_options)
-        self.selected.model().rowsMoved.connect(lambda *_: self.renumber())
-
-        add = QPushButton("Add →")
-        add.clicked.connect(self.add_selected_release)
-        remove = QPushButton("Remove")
-        remove.clicked.connect(self.remove_selected)
-        up = QPushButton("Move up")
-        up.clicked.connect(lambda: self.move_selected(-1))
-        down = QPushButton("Move down")
-        down.clicked.connect(lambda: self.move_selected(1))
-        middle_buttons = QVBoxLayout()
-        middle_buttons.addStretch()
-        for button in (add, remove, up, down):
-            middle_buttons.addWidget(button)
-        middle_buttons.addStretch()
-        middle = QWidget()
-        middle.setLayout(middle_buttons)
-
-        self.options_title = QLabel("Select a profile mod")
-        self.components = QListWidget()
-        self.components.itemChanged.connect(self.components_changed)
-        self.plugins = QListWidget()
-        self.plugins.itemChanged.connect(self.plugins_changed)
-        options = QWidget()
-        options_layout = QVBoxLayout(options)
-        options_layout.addWidget(self.options_title)
-        options_layout.addWidget(QLabel("Components"))
-        options_layout.addWidget(self.components)
-        options_layout.addWidget(QLabel("Plugins"))
-        options_layout.addWidget(self.plugins)
-        self.mod_switches = {}
-        for key, label, default in (("enabled", "Enabled", True),
-                                    ("optional", "Skip if the mod folder is missing", False),
-                                    ("loose", "Ship this mod's files loose", False)):
-            box = QCheckBox(label)
-            box.setEnabled(False)
-            box.toggled.connect(lambda value, key=key, default=default:
-                                self.mod_switch_changed(key, value, default))
-            self.mod_switches[key] = (box, default)
-            options_layout.addWidget(box)
-
-        choices = QSplitter()
-        choices.addWidget(self.library)
-        choices.addWidget(middle)
-        choices.addWidget(self.selected)
-        choices.addWidget(options)
-        choices.setStretchFactor(0, 3)
-        choices.setStretchFactor(2, 3)
-        choices.setStretchFactor(3, 3)
-
-        mods_tab = QWidget()
-        mods_layout = QVBoxLayout(mods_tab)
-        mods_layout.addWidget(choices)
-
-        patches_tab = self.create_patches_tab()
+        self.profile_bar = profile_bar
 
         self.output = QTextEdit()
         self.output.setReadOnly(True)
-
         self.tabs = QTabWidget()
-        self.tabs.addTab(mods_tab, "Mods")
-        self.tabs.addTab(patches_tab, "Patches")
+        self.tabs.addTab(self.create_mods_tab(), "Mods")
+        self.tabs.addTab(self.create_patches_tab(), "Patches")
+        self.ini = IniPanel()
+        self.ini.changed.connect(self.refresh_status)
+        self.tabs.addTab(self.ini, "INI")
         self.build = BuildSettings()
         self.build.on_change = self.build_changed
         self.build.on_library = self.library_changed
@@ -606,10 +1068,12 @@ class ProfileWindow(QMainWindow):
         self.body_split.addWidget(self.output)
         self.body_split.setStretchFactor(0, 4)
         self.body_split.setStretchFactor(1, 1)
-        self.body_split.setSizes([640, 140])
+        self.body_split.setSizes([660, 120])
         layout.addWidget(self.body_split)
         self.setCentralWidget(body)
         self.setStatusBar(QStatusBar())
+        self.counts = QLabel()
+        self.statusBar().addPermanentWidget(self.counts)
         self.ftp_status = QPushButton("Xbox: not checked")
         self.ftp_status.setFlat(True)
         self.ftp_status.setToolTip("Click to check the configured Xbox FTP connection")
@@ -629,6 +1093,14 @@ class ProfileWindow(QMainWindow):
         self.action_save = QAction("&Save profile", self)
         self.action_save.setShortcut("Ctrl+S")
         self.action_save.triggered.connect(self.save_profile)
+        self.action_install = QAction("&Install mod…", self)
+        self.action_install.setShortcut("Ctrl+I")
+        self.action_install.triggered.connect(self.choose_install)
+        self.action_install_folder = QAction("Install mod from &folder…", self)
+        self.action_install_folder.triggered.connect(self.choose_install_folder)
+        self.action_refresh = QAction("&Refresh library", self)
+        self.action_refresh.setShortcut("F5")
+        self.action_refresh.triggered.connect(self.reload_library)
         self.action_settings = QAction("Local &settings…", self)
         self.action_settings.triggered.connect(self.edit_local_settings)
         self.action_index = QAction("Index new library folders", self)
@@ -638,6 +1110,9 @@ class ProfileWindow(QMainWindow):
         self.action_exit = QAction("E&xit", self)
         self.action_exit.triggered.connect(self.close)
         file_menu.addActions([self.action_new, self.action_open, self.action_save])
+        file_menu.addSeparator()
+        file_menu.addActions([self.action_install, self.action_install_folder,
+                              self.action_refresh])
         file_menu.addSeparator()
         file_menu.addActions([self.action_settings, self.action_index, self.action_convert])
         file_menu.addSeparator()
@@ -666,6 +1141,23 @@ class ProfileWindow(QMainWindow):
         actions_menu.addActions([self.action_deploy, self.action_fetch, self.action_refresh_ftp])
         actions_menu.addSeparator()
         actions_menu.addAction(self.discard_after_deploy)
+        for action, theme, fallback in (
+                (self.action_check, None, QStyle.StandardPixmap.SP_DialogApplyButton),
+                (self.action_build, QIcon.ThemeIcon.MediaPlaybackStart,
+                 QStyle.StandardPixmap.SP_MediaPlay),
+                (self.action_deploy, QIcon.ThemeIcon.DocumentSend,
+                 QStyle.StandardPixmap.SP_ArrowUp)):
+            standard = self.style().standardIcon(fallback)
+            action.setIcon(QIcon.fromTheme(theme, standard) if theme else standard)
+            button = QToolButton()
+            button.setDefaultAction(action)
+            button.setText(action.text().replace("&", "").replace("…", "").split()[0])
+            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+            button.setToolTip(action.text().replace("&", "") + (
+                f" ({action.shortcut().toString()})" if not action.shortcut().isEmpty() else ""))
+            self.profile_bar.addWidget(button)
+        self.command_actions = (self.action_check, self.action_build, self.action_smoke,
+                                self.action_deploy, self.action_fetch)
         self.refresh_profile_list()
         if profile:
             self.open_profile(Path(profile))
@@ -677,196 +1169,1181 @@ class ProfileWindow(QMainWindow):
             QTimer.singleShot(0, self.refresh_ftp_status)
             self.ftp_timer.start()
 
-    def create_patches_tab(self):
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
+    # Mods tab
 
-        preset_row = QHBoxLayout()
-        preset_row.addWidget(QLabel("Preset"))
+    def create_mods_tab(self):
+        install = QPushButton("Install mod…")
+        install.setToolTip("Install a .zip, .7z or .rar archive, or a plugin, into the mod "
+                           "library. You can also drop files on the list.")
+        install.clicked.connect(self.choose_install)
+        self.mod_search = QLineEdit()
+        self.mod_search.setPlaceholderText("Filter mods…")
+        self.mod_search.textChanged.connect(self.filter_mods)
+        top = QHBoxLayout()
+        top.addWidget(install)
+        top.addWidget(self.mod_search, 1)
+
+        self.mod_list = DragList(["Mod", "Version", "Conflicts", "Notes", "Priority", "Xbox"],
+                                 accept_files=True)
+        self.mod_list.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.mod_list.header().setStretchLastSection(False)
+        self.mod_list.header().moveSection(self.MOD_XBOX, 1)
+        self.mod_list.headerItem().setToolTip(
+            self.MOD_XBOX, "\u2713 works, * works with requirements, \u2717 does not work, "
+                           "? not known; from catalog.toml")
+        self.mod_list.itemChanged.connect(self.mod_item_changed)
+        self.mod_list.moved.connect(self.mods_moved)
+        self.mod_list.dropped_files.connect(self.install_paths)
+        self.mod_list.customContextMenuRequested.connect(self.mod_menu)
+        self.mod_list.itemSelectionChanged.connect(self.highlight_conflicts)
+        self.mod_list.headerItem().setToolTip(
+            self.MOD_CONFLICTS, "+N: files this mod overrides; -N: its files other mods override")
+        left = QWidget()
+        left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.addLayout(top)
+        left_layout.addWidget(self.mod_list, 1)
+
+        self.side = QTabWidget()
+        self.side.addTab(self.create_plugins_panel(), "Plugins")
+        self.archives = QTreeWidget()
+        self.archives.setHeaderLabels(["Archive", "Provided by", "Loaded"])
+        self.archives.setRootIsDecorated(False)
+        self.side.addTab(self.archives, "Archives")
+        self.side.addTab(self.create_files_panel(), "Data files")
+
+        split = QSplitter()
+        split.addWidget(left)
+        split.addWidget(self.side)
+        split.setStretchFactor(0, 3)
+        split.setStretchFactor(1, 2)
+        return split
+
+    def create_plugins_panel(self):
+        self.sort_button = QPushButton("Sort")
+        self.sort_button.setToolTip("Sort the plugins with mlox now")
+        self.sort_button.clicked.connect(self.sort_plugins)
+        self.reset_order_button = QPushButton("Mod order")
+        self.reset_order_button.setToolTip("Forget the plugin order; load plugins in mod order")
+        self.reset_order_button.clicked.connect(self.reset_plugin_order)
+        self.mlox_at_build = QCheckBox("Sort with mlox at every build")
+        self.mlox_at_build.toggled.connect(self.mlox_toggled)
+        bar = QHBoxLayout()
+        bar.addWidget(self.sort_button)
+        bar.addWidget(self.reset_order_button)
+        bar.addWidget(self.mlox_at_build)
+        bar.addStretch()
+        self.plugin_list = DragList(["Plugin", "Mod", "Index"])
+        self.plugin_list.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.plugin_list.header().setStretchLastSection(False)
+        self.plugin_list.itemChanged.connect(self.plugin_item_changed)
+        self.plugin_list.moved.connect(self.plugins_moved)
+        self.plugin_note = QLabel()
+        self.plugin_note.setWordWrap(True)
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addLayout(bar)
+        layout.addWidget(self.plugin_list, 1)
+        layout.addWidget(self.plugin_note)
+        return panel
+
+    def create_files_panel(self):
+        self.files_model = FilesModel()
+        self.files_filter = FilesFilter()
+        self.files_filter.setSourceModel(self.files_model)
+        search = QLineEdit()
+        search.setPlaceholderText("Filter files…")
+        search.textChanged.connect(lambda text: self.files_filter.update(text=text))
+        conflicts = QCheckBox("Conflicts only")
+        conflicts.toggled.connect(lambda value: self.files_filter.update(conflicts_only=value))
+        bar = QHBoxLayout()
+        bar.addWidget(search, 1)
+        bar.addWidget(conflicts)
+        self.files_view = QTableView()
+        self.files_view.setModel(self.files_filter)
+        self.files_view.setSortingEnabled(True)
+        self.files_view.verticalHeader().hide()
+        self.files_view.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.files_view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.files_view.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addLayout(bar)
+        layout.addWidget(self.files_view, 1)
+        return panel
+
+    def describe(self, entry):
+        """Display name, version text, release and problem for a profile mod entry."""
+        if "id" in entry:
+            mod = self.catalog.get(entry["id"])
+            if mod is None:
+                return entry["id"], "", None, "not in the mod library"
+            version = entry.get("version") or mod["default"] or next(iter(mod["releases"]))
+            release = mod["releases"].get(version)
+            if release is None:
+                return mod["name"], version, None, f"version {version} is not installed"
+            return mod["name"], "" if version == "unknown" else version, release, None
+        name = entry["name"]
+        if self.library_root is None or not (self.library_root / name).exists():
+            return name, "", None, "folder not found in the mod library"
+        release = next((release for mod in self.catalog.values()
+                        for release in mod["releases"].values()
+                        if release["folder"].casefold() == name.casefold()), None)
+        version = release["version"] if release else ""
+        return name, "" if version == "unknown" else version, release, None
+
+    def entry_folders(self, entry):
+        if "id" not in entry:
+            return {entry["name"].casefold()}
+        mod = self.catalog.get(entry["id"])
+        return {release["folder"].casefold() for release in mod["releases"].values()} if mod else set()
+
+    def library_entry(self, mod):
+        if self.library_indexed:
+            return {"id": mod["id"]}
+        return {"name": next(iter(mod["releases"].values()))["folder"]}
+
+    def forget_analysis(self):
+        """Drop row references before rows are deleted."""
+        self.analysis = {"active": [], "plugins": {}, "mod_plugins": [], "beats": [],
+                         "beaten": []}
+
+    def take_mod(self, item):
+        self.forget_analysis()
+        self.mod_list.takeTopLevelItem(self.mod_list.indexOfTopLevelItem(item))
+
+    def populate_mods(self, entries):
+        self.mods_loading = True
+        self.forget_analysis()
+        self.mod_list.clear()
+        used_ids, used_folders = set(), set()
+        for entry in sorted(entries, key=lambda item: item.get("order", 0)):
+            self.add_mod_item(dict(entry), True)
+            used_ids.add(entry.get("id"))
+            used_folders |= self.entry_folders(entry)
+        for mod in sorted(self.catalog.values(), key=lambda item: item["name"].casefold()):
+            folders = {release["folder"].casefold() for release in mod["releases"].values()}
+            if mod["id"] in used_ids or folders & used_folders:
+                continue
+            self.add_mod_item(self.library_entry(mod), False)
+        self.mods_loading = False
+        self.filter_mods()
+        self.schedule_analysis()
+
+    def add_mod_item(self, entry, in_profile, index=None):
+        item = QTreeWidgetItem()
+        item.setFlags(ROW_FLAGS)
+        item.setData(0, ROLE, entry)
+        item.setData(0, EXTRA, in_profile)
+        if index is None:
+            self.mod_list.addTopLevelItem(item)
+        else:
+            self.mod_list.insertTopLevelItem(index, item)
+        self.update_mod_item(item)
+        return item
+
+    def update_mod_item(self, item):
+        loading, self.mods_loading = self.mods_loading, True
+        entry = item.data(0, ROLE)
+        name, version, release, problem = self.describe(entry)
+        item.setText(self.MOD_NAME, name)
+        item.setText(self.MOD_VERSION, version)
+        notes = []
+        if entry.get("components"):
+            notes.append(f"{len(entry['components'])} option(s)")
+        if entry.get("loose"):
+            notes.append("loose")
+        if entry.get("optional"):
+            notes.append("optional")
+        if entry.get("archives") == "load":
+            notes.append("archives via multi-bsa")
+        if problem:
+            notes.insert(0, problem)
+        item.setData(self.MOD_NOTES, ROLE, notes)
+        item.setText(self.MOD_NOTES, ", ".join(notes))
+        on = item.data(0, EXTRA) and entry.get("enabled", True)
+        item.setCheckState(self.MOD_NAME, Qt.CheckState.Checked if on else Qt.CheckState.Unchecked)
+        colour = WARNING if problem else self.palette().text().color()
+        for column in range(self.mod_list.columnCount()):
+            item.setForeground(column, colour)
+        source = release.get("source") if release else None
+        item.setToolTip(self.MOD_NAME, problem or (f"Installed from {source}" if source else ""))
+        self.update_compat(item)
+        self.mods_loading = loading
+
+    def update_compat(self, item):
+        """The catalog's verdict on a mod, and any requirement this profile does not meet."""
+        name, _version, release, _problem = self.describe(item.data(0, ROLE))
+        entry = item.data(0, ROLE)
+        verdict = match_catalog(self.compat, name, entry.get("name", ""), entry.get("id", ""),
+                                release["folder"] if release else "")
+        status = verdict["status"] if verdict else "untested"
+        symbol, colour = COMPAT.get(status, ("?", self.palette().placeholderText().color()))
+        lines = [f"{verdict['name']}: {COMPAT_STATUSES[status]}" if verdict
+                 else "Not in the compatibility catalog"]
+        if verdict:
+            if catalog_needs(verdict):
+                lines.append("Needs " + ", ".join(value.replace("`", "")
+                                                  for value in catalog_needs(verdict)))
+            off = [patch for patch in verdict.get("patches", [])
+                   if patch not in self.applied_patches]
+            if off and item.data(0, EXTRA) and entry.get("enabled", True):
+                colour = WARNING
+                lines.append("Turn on in Patches: " + ", ".join(off))
+            if verdict.get("notes"):
+                lines.append(verdict["notes"])
+        item.setText(self.MOD_XBOX, symbol)
+        item.setForeground(self.MOD_XBOX, colour)
+        item.setTextAlignment(self.MOD_XBOX, Qt.AlignmentFlag.AlignCenter)
+        item.setToolTip(self.MOD_XBOX, "\n".join(lines))
+
+    def mod_rows(self):
+        return self.mod_list.rows()
+
+    def filter_mods(self, *_args):
+        query = self.mod_search.text().casefold()
+        for item in self.mod_rows():
+            item.setHidden(bool(query) and query not in item.text(self.MOD_NAME).casefold())
+
+    def set_entry(self, item, entry, in_profile=True):
+        item.setData(0, ROLE, entry)
+        item.setData(0, EXTRA, in_profile)
+        self.update_mod_item(item)
+
+    def mod_item_changed(self, item, column):
+        if self.mods_loading or column != self.MOD_NAME:
+            return
+        entry = dict(item.data(0, ROLE))
+        on = item.checkState(self.MOD_NAME) == Qt.CheckState.Checked
+        if on == (bool(item.data(0, EXTRA)) and entry.get("enabled", True)):
+            return
+        if on:
+            entry.pop("enabled", None)
+            mod = self.catalog.get(entry.get("id"))
+            if mod and not mod["default"] and len(mod["releases"]) > 1 and "version" not in entry:
+                entry["version"] = next(iter(mod["releases"]))
+        else:
+            entry["enabled"] = False
+        self.set_entry(item, entry)
+        if on:
+            self.add_dependencies(item)
+            self.enable_required_patches(item)
+        self.mods_changed()
+
+    def enable_required_patches(self, item):
+        """Turn on the patches the catalog says a mod needs."""
+        name, _version, release, _problem = self.describe(item.data(0, ROLE))
+        entry = item.data(0, ROLE)
+        verdict = match_catalog(self.compat, name, entry.get("name", ""), entry.get("id", ""),
+                                release["folder"] if release else "")
+        off = [patch for patch in (verdict or {}).get("patches", [])
+               if patch in self.patch_items and patch not in self.applied_patches]
+        for patch in off:
+            self.set_patch(patch, True)
+        if off:
+            self.statusBar().showMessage(f"{name} needs {', '.join(off)}; turned on in Patches",
+                                         8000)
+
+    def add_dependencies(self, item):
+        _name, _version, release, _problem = self.describe(item.data(0, ROLE))
+        for dependency in (release or {}).get("dependencies", []):
+            row = next((other for other in self.mod_rows()
+                        if other.data(0, ROLE).get("id") == dependency), None)
+            if row is None:
+                continue
+            entry = dict(row.data(0, ROLE))
+            entry.pop("enabled", None)
+            self.set_entry(row, entry)
+            if self.mod_list.indexOfTopLevelItem(row) > self.mod_list.indexOfTopLevelItem(item):
+                self.mod_list.takeTopLevelItem(self.mod_list.indexOfTopLevelItem(row))
+                self.mod_list.insertTopLevelItem(self.mod_list.indexOfTopLevelItem(item), row)
+            self.add_dependencies(row)
+
+    def mods_moved(self):
+        for item in self.mod_list.selectedItems():
+            if not item.data(0, EXTRA):
+                entry = dict(item.data(0, ROLE))
+                entry["enabled"] = False
+                self.set_entry(item, entry)
+        self.mods_changed()
+
+    def mods_changed(self):
+        self.schedule_analysis()
+        self.refresh_patch_states()
+
+    def selected_mod(self):
+        items = self.mod_list.selectedItems()
+        return items[0] if len(items) == 1 else None
+
+    def mod_menu(self, position):
+        item = self.mod_list.itemAt(position)
+        if item is None:
+            return
+        if item not in self.mod_list.selectedItems():
+            self.mod_list.clearSelection()
+            item.setSelected(True)
+        items = self.mod_list.selectedItems()
+        entry = item.data(0, ROLE)
+        _name, _version, release, _problem = self.describe(entry)
+        menu = QMenu(self)
+        menu.addAction("Enable", lambda: self.set_checked(items, True))
+        menu.addAction("Disable", lambda: self.set_checked(items, False))
+        menu.addSeparator()
+        menu.addAction("Send to top", lambda: self.mod_list.move_items(items, 0))
+        menu.addAction("Send to bottom",
+                       lambda: self.mod_list.move_items(items, self.mod_list.topLevelItemCount()))
+        if len(items) == 1:
+            mod = self.catalog.get(entry.get("id"))
+            if mod and len(mod["releases"]) > 1:
+                versions = menu.addMenu("Version")
+                current = entry.get("version") or mod["default"]
+                for version in mod["releases"]:
+                    action = versions.addAction(version,
+                                                lambda value=version: self.set_version(item, value))
+                    action.setCheckable(True)
+                    action.setChecked(version == current)
+            options = menu.addAction("Options…", lambda: self.choose_components(item))
+            options.setEnabled(bool(release and release["components"] and "id" in entry))
+            for key, label in (("loose", "Ship files loose"),
+                               ("optional", "Skip if the folder is missing")):
+                action = menu.addAction(label, lambda key=key: self.toggle_flag(item, key))
+                action.setCheckable(True)
+                action.setChecked(bool(entry.get(key)))
+            load = menu.addAction("Load archives with multi-bsa",
+                                  lambda: self.toggle_archives(item))
+            load.setCheckable(True)
+            load.setChecked(entry.get("archives") == "load")
+            load.setToolTip("Ship this mod's .bsa files and have the multi-bsa patch open them, "
+                            "instead of unpacking them into the build")
+            menu.setToolTipsVisible(True)
+            menu.addSeparator()
+            folder = self.library_root / release["folder"] if release and self.library_root else (
+                self.library_root / entry["name"] if "name" in entry and self.library_root
+                else None)
+            open_folder = menu.addAction(
+                "Open folder", lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder))))
+            open_folder.setEnabled(bool(folder and folder.exists()))
+            rename = menu.addAction("Rename…", lambda: self.rename_mod(item))
+            rename.setEnabled(self.library_indexed and "id" in entry
+                              and entry["id"] in self.catalog)
+            reinstall = menu.addAction("Reinstall…", lambda: self.reinstall_mod(item))
+            reinstall.setEnabled(bool(folder and folder.is_dir()))
+            menu.addSeparator()
+            if item.data(0, EXTRA):
+                menu.addAction("Remove from profile", lambda: self.remove_from_profile(item))
+            delete = menu.addAction("Delete from library…", lambda: self.delete_mod(item))
+            delete.setEnabled(bool(folder and folder.exists()))
+        menu.exec(self.mod_list.viewport().mapToGlobal(position))
+
+    def set_checked(self, items, on):
+        for item in items:
+            item.setCheckState(self.MOD_NAME, Qt.CheckState.Checked if on
+                               else Qt.CheckState.Unchecked)
+
+    def set_version(self, item, version):
+        entry = dict(item.data(0, ROLE))
+        if entry.get("version") != version:
+            entry["version"] = version
+            entry.pop("components", None)
+            entry.pop("plugins", None)
+            self.set_entry(item, entry, item.data(0, EXTRA))
+            self.mods_changed()
+
+    def choose_components(self, item):
+        entry = dict(item.data(0, ROLE))
+        name, _version, release, _problem = self.describe(entry)
+        components = list(release["components"].values())
+        chosen = entry.get("components",
+                           [component["id"] for component in components if component["default"]])
+        dialog = ComponentsDialog(name, components, chosen, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        entry["components"] = dialog.chosen()
+        try:
+            resolve_selection(entry, self.library_root, self.catalog)
+        except LibraryError as exc:
+            self.error(exc)
+            return
+        self.set_entry(item, entry, item.data(0, EXTRA))
+        self.mods_changed()
+
+    def toggle_flag(self, item, key):
+        entry = dict(item.data(0, ROLE))
+        if entry.get(key):
+            entry.pop(key)
+        else:
+            entry[key] = True
+        self.set_entry(item, entry, item.data(0, EXTRA))
+        self.mods_changed()
+
+    def toggle_archives(self, item):
+        entry = dict(item.data(0, ROLE))
+        if entry.get("archives") == "load":
+            entry.pop("archives")
+        else:
+            entry["archives"] = "load"
+        self.set_entry(item, entry, item.data(0, EXTRA))
+        self.mods_changed()
+        self.schedule_analysis()
+
+    def remove_from_profile(self, item):
+        entry = item.data(0, ROLE)
+        mod = self.catalog.get(entry.get("id"))
+        if mod is None and "id" not in entry:
+            mod = next((value for value in self.catalog.values()
+                        if self.entry_folders(entry) & {release["folder"].casefold()
+                                                        for release in value["releases"].values()}),
+                       None)
+        if mod is None:
+            self.take_mod(item)
+        else:
+            self.set_entry(item, self.library_entry(mod), False)
+        self.mods_changed()
+
+    def profile_mods(self):
+        mods = []
+        for item in self.mod_rows():
+            if item.data(0, EXTRA):
+                entry = dict(item.data(0, ROLE))
+                entry["order"] = (len(mods) + 1) * 10
+                mods.append(entry)
+        return mods
+
+    # Analysis: which files each active mod wins, the plugins and archives they bring.
+
+    def schedule_analysis(self):
+        self.analysis_timer.start()
+
+    def scan(self, entry):
+        exclude = self.build.excluded()
+        key = json.dumps([{name: entry.get(name) for name in ("id", "name", "version",
+                                                              "components")}, exclude],
+                         sort_keys=True)
+        if key not in self.scans:
+            try:
+                selection = resolve_selection(entry, self.library_root, self.catalog)
+                self.scans[key] = Mod(selection["name"],
+                                      selection.get("layers") or selection["roots"], 0, None,
+                                      exclude)
+            except (LibraryError, OSError, KeyError, ValueError) as exc:
+                self.scans[key] = exc
+        return self.scans[key]
+
+    def refresh_analysis(self):
+        active = []
+        for item in self.mod_rows():
+            if item.checkState(self.MOD_NAME) != Qt.CheckState.Checked:
+                continue
+            mod = self.scan(item.data(0, ROLE))
+            if isinstance(mod, Mod):
+                active.append((item, mod))
+        owners = defaultdict(list)
+        plugins = {}
+        retail = {}
+        mod_plugins = []
+        for index, (item, mod) in enumerate(active):
+            entry = item.data(0, ROLE)
+            wanted = ({name.casefold() for name in entry["plugins"]}
+                      if "plugins" in entry else None)
+            names = []
+            for key, source in mod.files.items():
+                if key.endswith(PLUGIN_EXT):
+                    base = os.path.basename(key)
+                    included = wanted is None or base in wanted
+                    if base in BASE_MASTERS:
+                        if included:
+                            retail[base] = item.text(0)
+                            owners[key].append(index)
+                        continue
+                    names.append(os.path.basename(source))
+                    plugins[base] = {"name": os.path.basename(source), "path": source,
+                                     "owner": index, "included": included}
+                    if not included:
+                        continue
+                owners[key].append(index)
+            mod_plugins.append(names)
+        wins = [0] * len(active)
+        loses = [0] * len(active)
+        beats = [set() for _ in active]
+        beaten = [set() for _ in active]
+        files = []
+        for key, indexes in owners.items():
+            winner = indexes[-1]
+            others = sorted(set(indexes[:-1]))
+            if others:
+                wins[winner] += 1
+                for other in others:
+                    loses[other] += 1
+                    beats[winner].add(other)
+                    beaten[other].add(winner)
+            files.append((active[winner][1].relative.get(key, key), active[winner][0].text(0),
+                          ", ".join(active[other][0].text(0) for other in others)))
+        self.analysis = {"active": active, "owners": owners, "plugins": plugins, "retail": retail,
+                         "mod_plugins": mod_plugins, "beats": beats, "beaten": beaten}
+        position = {id(item): index for index, (item, _mod) in enumerate(active)}
+        self.mods_loading = True
+        for row, item in enumerate(self.mod_rows(), 1):
+            item.setText(self.MOD_PRIORITY, str(row))
+            index = position.get(id(item))
+            text = ""
+            if index is not None and (wins[index] or loses[index]):
+                text = " ".join(part for part in (f"+{wins[index]}" if wins[index] else "",
+                                                  f"-{loses[index]}" if loses[index] else "")
+                                if part)
+            item.setText(self.MOD_CONFLICTS, text)
+            notes = list(item.data(self.MOD_NOTES, ROLE) or [])
+            if index is not None and "plugins" in item.data(0, ROLE):
+                names = mod_plugins[index]
+                wanted = {name.casefold() for name in item.data(0, ROLE)["plugins"]}
+                used = sum(1 for name in names if name.casefold() in wanted)
+                if used < len(names):
+                    notes.append(f"{used} of {len(names)} plugins")
+            item.setText(self.MOD_NOTES, ", ".join(notes))
+        self.mods_loading = False
+        for column in (1, 2, 3, 4, self.MOD_XBOX):
+            self.mod_list.resizeColumnToContents(column)
+        self.files_model.reset(sorted(files, key=lambda row: row[0].casefold()))
+        self.populate_archives(files)
+        self.populate_plugins()
+        self.highlight_conflicts()
+        self.refresh_status()
+
+    def populate_archives(self, files):
+        """The archives the build ships, and whether the engine opens each one."""
+        self.archives.clear()
+        mode = self.build.mode.currentData()
+        assets = sum(1 for path, _owner, _others in files
+                     if not path.lower().endswith((*PLUGIN_EXT, ".bsa")))
+        if not self.analysis["active"]:
+            mode = "retail"
+        rows = [("Morrowind.bsa", "Retail", "yes")]
+        if mode == "merged-bsa":
+            rows = [("Morrowind.bsa", f"Retail, rebuilt with {assets} mod files", "yes")]
+        elif mode == "delta-bsa":
+            name = self.build.archive_name.text().strip() or "tes3xmods.bsa"
+            rows.append((name, f"TES3X build: {assets} mod files", "yes, after Morrowind.bsa"))
+        for row in rows:
+            self.archives.addTopLevelItem(QTreeWidgetItem(list(row)))
+        active = self.analysis["active"]
+        for key, indexes in self.analysis["owners"].items():
+            if not key.endswith(".bsa") or "/" in key:
+                continue
+            row, mod = active[indexes[-1]]
+            try:
+                named = Bsa(mod.files[key]).named
+            except (OSError, ValueError, struct.error):
+                named = False
+            if row.data(0, ROLE).get("archives") == "load":
+                loaded, why = "yes, via multi-bsa", "Listed in tes3xarch.txt for the multi-bsa patch"
+            elif named:
+                loaded, why = "unpacked", "Its files join the build beneath the mod's loose files"
+            else:
+                loaded, why = "can't unpack", ("This archive has no file names. Right-click the "
+                                               "mod and choose Load archives with multi-bsa.")
+            item = QTreeWidgetItem([mod.relative.get(key, key), row.text(0), loaded])
+            item.setToolTip(2, why)
+            if loaded == "can't unpack":
+                item.setForeground(2, WARNING)
+            self.archives.addTopLevelItem(item)
+        for column in range(3):
+            self.archives.resizeColumnToContents(column)
+
+    def highlight_conflicts(self):
+        active = self.analysis["active"]
+        chosen = self.selected_mod()
+        index = next((i for i, (item, _mod) in enumerate(active) if item is chosen), None)
+        beats = self.analysis["beats"][index] if index is not None else set()
+        beaten = self.analysis["beaten"][index] if index is not None else set()
+        for i, (item, _mod) in enumerate(active):
+            colour = WINS if i in beats else LOSES if i in beaten else None
+            for column in range(self.mod_list.columnCount()):
+                if colour is None:
+                    item.setData(column, Qt.ItemDataRole.BackgroundRole, None)
+                else:
+                    item.setBackground(column, colour)
+
+    def refresh_status(self):
+        rows = self.mod_rows()
+        active = sum(1 for item in rows if item.checkState(self.MOD_NAME) == Qt.CheckState.Checked)
+        plugins = sum(1 for value in self.analysis["plugins"].values() if value["included"])
+        self.counts.setText(f"Mods {active} of {len(rows)} active · "
+                            f"Plugins {plugins + len(RETAIL_PLUGINS)} active")
+
+    # Plugins
+
+    def plugin_masters(self, path):
+        try:
+            stamp = os.stat(path).st_mtime_ns
+        except OSError:
+            return []
+        cached = self.masters.get(path)
+        if cached is None or cached[0] != stamp:
+            try:
+                cached = (stamp, plugin_masters(path))
+            except (OSError, ValueError):
+                cached = (stamp, [])
+            self.masters[path] = cached
+        return cached[1]
+
+    def plugin_sequence(self):
+        """Mod plugins in load order: masters first, then the chosen order or mod order."""
+        plugins = self.analysis["plugins"]
+        default = sorted(plugins, key=lambda name: (not name.endswith(".esm"),
+                                                    plugins[name]["owner"], name))
+        preferred = default
+        if self.plugin_order and not self.mlox_at_build.isChecked():
+            wanted = {name.casefold(): index for index, name in enumerate(self.plugin_order)}
+            preferred = sorted(default, key=lambda name: (wanted.get(name, len(wanted)),
+                                                          default.index(name)))
+        try:
+            return dependency_order({name: Path(plugins[name]["path"]) for name in plugins},
+                                    mtime=False, preferred=preferred)
+        except (OSError, ValueError):
+            return preferred
+
+    def populate_plugins(self):
+        self.plugins_loading = True
+        self.plugin_list.clear()
+        plugins = self.analysis["plugins"]
+        active = self.analysis["active"]
+        loaded = [name.casefold() for name in RETAIL_PLUGINS]
+        for name in RETAIL_PLUGINS:
+            item = QTreeWidgetItem([name, self.analysis.get("retail", {}).get(name.casefold(),
+                                                                            "Retail"), ""])
+            item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            item.setCheckState(0, Qt.CheckState.Checked)
+            self.plugin_list.addTopLevelItem(item)
+        for name in self.plugin_sequence():
+            value = plugins[name]
+            item = QTreeWidgetItem([value["name"], active[value["owner"]][0].text(0), ""])
+            item.setFlags(ROW_FLAGS)
+            item.setData(0, ROLE, name)
+            item.setCheckState(0, Qt.CheckState.Checked if value["included"]
+                               else Qt.CheckState.Unchecked)
+            self.plugin_list.addTopLevelItem(item)
+            if value["included"]:
+                loaded.append(name)
+        present = set(loaded)
+        index = 0
+        for item in self.plugin_list.rows():
+            name = item.data(0, ROLE) or item.text(0).casefold()
+            if name not in present:
+                continue
+            item.setText(2, f"{index:02X}")
+            index += 1
+            if name not in plugins:
+                continue
+            earlier = set(loaded[:loaded.index(name)])
+            problems = []
+            for master in self.plugin_masters(plugins[name]["path"]):
+                if master.casefold() not in present:
+                    problems.append(f"missing master {master}")
+                elif master.casefold() not in earlier:
+                    problems.append(f"master {master} loads later")
+            if problems:
+                for column in range(3):
+                    item.setForeground(column, WARNING)
+                item.setToolTip(0, "; ".join(problems))
+        self.plugin_list.setDragDropMode(
+            QAbstractItemView.DragDropMode.NoDragDrop if self.mlox_at_build.isChecked()
+            else QAbstractItemView.DragDropMode.InternalMove)
+        self.plugin_list.resizeColumnToContents(2)
+        if self.mlox_at_build.isChecked():
+            self.plugin_note.setText("mlox sorts the plugins when the profile is built.")
+        elif self.plugin_order:
+            self.plugin_note.setText("Custom order. Drag to change it; masters always load "
+                                     "before other plugins.")
+        else:
+            self.plugin_note.setText("Mod order. Drag plugins or press Sort to set your own.")
+        self.plugins_loading = False
+
+    def plugins_moved(self):
+        self.plugin_order = [self.analysis["plugins"][item.data(0, ROLE)]["name"]
+                             for item in self.plugin_list.rows() if item.data(0, ROLE)]
+        self.populate_plugins()
+
+    def reset_plugin_order(self):
+        self.plugin_order = None
+        self.populate_plugins()
+
+    def mlox_toggled(self, _value):
+        if not self.plugins_loading:
+            self.populate_plugins()
+
+    def plugin_item_changed(self, item, column):
+        if self.plugins_loading or column != 0 or not item.data(0, ROLE):
+            return
+        name = item.data(0, ROLE)
+        on = item.checkState(0) == Qt.CheckState.Checked
+        for (row, _mod), names in zip(self.analysis["active"], self.analysis["mod_plugins"]):
+            if name not in {value.casefold() for value in names}:
+                continue
+            entry = dict(row.data(0, ROLE))
+            wanted = {value.casefold() for value in entry.get("plugins", names)}
+            if on:
+                wanted.add(name)
+            else:
+                wanted.discard(name)
+            if wanted >= {value.casefold() for value in names}:
+                entry.pop("plugins", None)
+            else:
+                entry["plugins"] = [value for value in names if value.casefold() in wanted]
+            self.set_entry(row, entry, row.data(0, EXTRA))
+        self.refresh_analysis()
+
+    def local_values(self):
+        config = self.local_config_path()
+        try:
+            return tomllib.loads(config.read_text(encoding="utf-8")) if config.is_file() else {}
+        except (OSError, tomllib.TOMLDecodeError):
+            return {}
+
+    def local_path(self, key):
+        value = self.local_values().get("paths", {}).get(key)
+        if not value:
+            return None
+        path = Path(value)
+        return path if path.is_absolute() else self.work_dir() / path
+
+    def sort_plugins(self):
+        vanilla = self.local_path("vanilla_root")
+        rules = self.local_path("mlox_rules")
+        if vanilla is None or rules is None or not rules.is_file():
+            self.error("Sorting needs the clean game root and the mlox rules; set them in "
+                       "File > Local settings (Download fetches the rules).")
+            return
+        plugins = self.analysis["plugins"]
+        chosen = {name: Path(value["path"]) for name, value in plugins.items() if value["included"]}
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            with tempfile.TemporaryDirectory(prefix="tes3x-sort-") as temp:
+                empty = Path(temp) / "none"
+                empty.mkdir()
+                files = collect(empty, vanilla / "Data Files", Path(temp) / "stubs")
+                files.update(chosen)
+                names, messages = sort_files(files, rules, Path(temp) / "mlox")
+        except (OSError, ValueError, RuntimeError) as exc:
+            QApplication.restoreOverrideCursor()
+            self.error(f"mlox could not sort the plugins: {exc}")
+            return
+        QApplication.restoreOverrideCursor()
+        sorted_names = [plugins[name]["name"] for name in names if name in plugins]
+        rest = [plugins[name]["name"] for name in self.plugin_sequence() if name not in chosen]
+        self.plugin_order = sorted_names + rest
+        self.mlox_at_build.setChecked(False)
+        self.populate_plugins()
+        notes = mlox_notes(messages)
+        self.output.setPlainText("\n\n".join(notes) if notes else "mlox: no warnings")
+        self.statusBar().showMessage(f"Sorted {len(sorted_names)} plugins with mlox", 5000)
+
+    # Installing and managing library mods
+
+    def choose_install(self):
+        start = self.settings.value("install_dir", "") if self.settings else ""
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, "Install mod", start,
+            "Mods (*.zip *.7z *.rar *.esp *.esm *.bsa);;All files (*)")
+        if paths and self.settings is not None:
+            self.settings.setValue("install_dir", str(Path(paths[0]).parent))
+        self.install_paths(paths)
+
+    def choose_install_folder(self):
+        path = QFileDialog.getExistingDirectory(self, "Install mod from folder")
+        if path:
+            self.install_paths([path])
+
+    def install_paths(self, paths):
+        installed = [self.install_mod(Path(path)) for path in paths]
+        installed = [value for value in installed if value]
+        if installed:
+            self.reload_library()
+            names = {name.casefold() for name in installed}
+            for item in self.mod_rows():
+                if item.text(self.MOD_NAME).casefold() in names:
+                    item.setSelected(True)
+                    self.mod_list.scrollToItem(item)
+
+    def folder_taken(self, name):
+        target = self.library_root / folder_name(name)
+        if target.exists():
+            return f"The mod library already has a folder named {target.name}"
+        return None
+
+    def install_mod(self, source, replace=None):
+        """Install an archive, folder or plugin into the library; returns the mod's name."""
+        if self.library_root is None:
+            self.error("Set a mod library first, in the Build tab or the local settings")
+            return None
+        work = self.library_root / f".tes3x-install-{uuid.uuid4().hex[:8]}"
+        try:
+            if source.is_dir():
+                unpacked = source
+            elif source.suffix.lower() in ARCHIVES:
+                QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+                try:
+                    unpacked = extract_archive(source, work / "unpacked")
+                finally:
+                    QApplication.restoreOverrideCursor()
+            elif source.suffix.lower() in (".esp", ".esm", ".bsa"):
+                unpacked = work / "unpacked"
+                unpacked.mkdir(parents=True)
+                shutil.copy2(source, unpacked / source.name)
+            else:
+                self.error(f"{source.name}: install an archive, a folder or a plugin")
+                return None
+            found, chosen = install_layout(unpacked)
+            name, version = guess_release(source)
+            if replace:
+                name, version = replace["name"], replace["version"]
+            dialog = InstallDialog(unpacked, found, chosen, name, version, source.name,
+                                   taken=None if replace else self.folder_taken,
+                                   fixed=replace is not None, parent=self)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return None
+            name, version = dialog.name(), dialog.version()
+            if replace:
+                target = self.library_root / replace["folder"]
+                staged = work / "installed"
+                install_files(unpacked, dialog.selection(), staged)
+                target.rename(work / "previous")
+                staged.rename(target)
+                if self.library_indexed and replace.get("id") and source.is_file():
+                    self.edit_catalog(lambda document: self.release_table(
+                        document, replace["id"], replace["version"]).__setitem__(
+                            "source", str(source)))
+            else:
+                folder = folder_name(name)
+                install_files(unpacked, dialog.selection(), self.library_root / folder)
+                if self.library_indexed:
+                    mod_id = free_id(self.catalog, name)
+                    release = {"version": version or "unknown", "folder": folder,
+                               "default": True, "roots": ["."], "dependencies": [],
+                               "components": {},
+                               "source": str(source) if source.is_file() else None}
+                    append_mods(self.library_root, {mod_id: {
+                        "id": mod_id, "name": name, "releases": {release["version"]: release}}})
+            self.statusBar().showMessage(f"Installed {name}", 5000)
+            return name
+        except (OSError, LibraryError) as exc:
+            self.error(exc)
+            return None
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+
+    def reinstall_mod(self, item):
+        entry = item.data(0, ROLE)
+        name, version, release, _problem = self.describe(entry)
+        source = Path(release["source"]) if release and release.get("source") else None
+        if source is None or not source.exists():
+            path, _ = QFileDialog.getOpenFileName(
+                self, f"Reinstall {name}", str(source.parent) if source else "",
+                "Mods (*.zip *.7z *.rar *.esp *.esm *.bsa);;All files (*)")
+            if not path:
+                return
+            source = Path(path)
+        folder = release["folder"] if release else entry["name"]
+        replace = {"name": name, "version": version, "folder": folder, "id": entry.get("id")}
+        if self.install_mod(source, replace):
+            self.reload_library()
+
+    @staticmethod
+    def mod_table(document, mod_id):
+        return next(table for table in document["mod"] if table["id"] == mod_id)
+
+    def release_table(self, document, mod_id, version):
+        releases = self.mod_table(document, mod_id)["release"]
+        return next(table for table in releases if table["version"] == (version or "unknown"))
+
+    def edit_catalog(self, change):
+        path = self.library_root / CATALOG_NAME
+        text = path.read_text(encoding="utf-8")
+        document = tomlkit.parse(text)
+        change(document)
+        path.write_text(tomlkit.dumps(document), encoding="utf-8", newline="")
+        try:
+            self.catalog = load_library(self.library_root)
+        except LibraryError:
+            path.write_text(text, encoding="utf-8", newline="")
+            raise
+
+    def rename_mod(self, item):
+        entry = item.data(0, ROLE)
+        mod = self.catalog[entry["id"]]
+        name, ok = QInputDialog.getText(self, "Rename mod", "Name", text=mod["name"])
+        name = name.strip()
+        if not ok or not name or name == mod["name"]:
+            return
+        try:
+            self.edit_catalog(lambda document: self.mod_table(document, entry["id"]).__setitem__(
+                "name", name))
+        except (OSError, LibraryError) as exc:
+            self.error(exc)
+            return
+        self.update_mod_item(item)
+        self.schedule_analysis()
+
+    def profiles_using(self, entry):
+        """Other profiles that pick this mod."""
+        users = []
+        folders = self.entry_folders(entry)
+        for path in self.profile_files():
+            if path.resolve() == self.profile_path:
+                continue
+            try:
+                mods = tomllib.loads(path.read_text(encoding="utf-8")).get("mods", [])
+            except (OSError, tomllib.TOMLDecodeError):
+                continue
+            if any((entry.get("id") and mod.get("id") == entry["id"])
+                   or mod.get("name", "").casefold() in folders for mod in mods):
+                users.append(path.stem)
+        return users
+
+    def delete_mod(self, item):
+        entry = item.data(0, ROLE)
+        name, version, release, _problem = self.describe(entry)
+        folder = self.library_root / (release["folder"] if release else entry["name"])
+        message = f"Move {folder} to the Recycle Bin and remove {name} from the library?"
+        users = self.profiles_using(entry)
+        if users:
+            message += "\n\nThese profiles also use it: " + ", ".join(users)
+        if QMessageBox.question(self, "Delete mod", message) != QMessageBox.StandardButton.Yes:
+            return
+        if not trash(folder):
+            self.error(f"Could not move {folder} to the Recycle Bin")
+            return
+        mod = self.catalog.get(entry.get("id"))
+        if self.library_indexed and mod:
+            def change(document):
+                table = self.mod_table(document, mod["id"])
+                releases = table["release"]
+                if len(releases) > 1:
+                    del releases[next(i for i, value in enumerate(releases)
+                                      if value["version"] == release["version"])]
+                else:
+                    mods = document["mod"]
+                    del mods[next(i for i, value in enumerate(mods) if value["id"] == mod["id"])]
+            try:
+                self.edit_catalog(change)
+            except (OSError, LibraryError) as exc:
+                self.error(exc)
+        self.take_mod(item)
+        self.reload_library()
+
+    def reload_library(self):
+        entries = self.profile_mods()
+        try:
+            self.library_root, self.catalog, self.library_indexed = self.resolve_library(
+                self.build.library(), [])
+        except (OSError, tomllib.TOMLDecodeError, PipelineError, LibraryError) as exc:
+            self.error(exc)
+            return
+        self.scans.clear()
+        self.populate_mods(entries)
+
+    # Patches
+
+    def create_patches_tab(self):
         self.patch_preset = QComboBox()
         self.patch_preset.addItems(["minimal", "standard", "development"])
-        self.patch_preset.currentTextChanged.connect(self.patch_selection_changed)
-        preset_row.addWidget(self.patch_preset)
-        preset_row.addWidget(QLabel(
-            "Explicit choices below override the preset and selected categories."))
-        preset_row.addStretch()
-        layout.addLayout(preset_row)
-
-        self.patch_categories = QListWidget()
-        self.patch_categories.setFlow(QListWidget.Flow.LeftToRight)
-        self.patch_categories.setWrapping(True)
-        self.patch_categories.setMaximumHeight(62)
-        for category in PATCH_CATEGORIES:
-            item = QListWidgetItem(category)
-            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-            item.setCheckState(Qt.CheckState.Unchecked)
-            self.patch_categories.addItem(item)
-        self.patch_categories.itemChanged.connect(self.patch_selection_changed)
-        layout.addWidget(QLabel("Enable whole categories"))
-        layout.addWidget(self.patch_categories)
-
-        self.patch_summary = QTreeWidget()
-        self.patch_summary.setHeaderLabels(["Profile patches", "Selected by"])
-        self.patch_summary.setMaximumHeight(180)
-        layout.addWidget(self.patch_summary)
-
-        filters = QHBoxLayout()
+        self.patch_preset.setToolTip("minimal: no optional patches; standard: tested fixes and "
+                                     "the console; development: everything, untested included")
+        self.patch_preset.currentTextChanged.connect(self.refresh_patch_states)
         self.patch_search = QLineEdit()
-        self.patch_search.setPlaceholderText("Filter by patch name or description…")
-        self.patch_search.textChanged.connect(self.refresh_patch_catalog)
-        self.patch_category_filter = QComboBox()
-        self.patch_category_filter.addItems(["All categories", *PATCH_CATEGORIES])
-        self.patch_category_filter.currentTextChanged.connect(self.refresh_patch_catalog)
-        self.patch_channel_filter = QComboBox()
-        self.patch_channel_filter.addItems(["All channels", "release", "development"])
-        self.patch_channel_filter.currentTextChanged.connect(self.refresh_patch_catalog)
-        filters.addWidget(self.patch_search, 1)
-        filters.addWidget(self.patch_category_filter)
-        filters.addWidget(self.patch_channel_filter)
-        layout.addLayout(filters)
+        self.patch_search.setPlaceholderText("Filter patches…")
+        self.patch_search.textChanged.connect(self.filter_patches)
+        top = QHBoxLayout()
+        top.addWidget(QLabel("Start from"))
+        top.addWidget(self.patch_preset)
+        top.addWidget(self.patch_search, 1)
 
-        self.patch_catalog = QTreeWidget()
-        self.patch_catalog.setHeaderLabels(["Patch", "Channel", "Selected by", "Profile choice"])
-        self.patch_catalog.setAlternatingRowColors(True)
-        self.patch_catalog.currentItemChanged.connect(self.show_patch_details)
+        self.patch_tree = QTreeWidget()
+        self.patch_tree.setHeaderLabels(["Patch", "Channel", "Why"])
+        self.patch_tree.setAlternatingRowColors(True)
+        self.patch_tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.patch_tree.header().setStretchLastSection(False)
+        self.patch_tree.itemChanged.connect(self.patch_item_changed)
+        self.patch_tree.currentItemChanged.connect(self.show_patch_details)
+        self.patch_items = {}
+        self.patch_groups = {}
+        for category in PATCH_CATEGORIES:
+            entries = [entry for entry in PATCH_CATALOG
+                       if entry["category"] == category and entry["selection"] != "option"]
+            if not entries:
+                continue
+            group = QTreeWidgetItem([category])
+            group.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable)
+            group.setData(0, ROLE, None)
+            self.patch_tree.addTopLevelItem(group)
+            self.patch_groups[category] = group
+            for entry in entries:
+                item = QTreeWidgetItem([entry["name"], entry["channel"], ""])
+                item.setData(0, ROLE, entry["name"])
+                item.setToolTip(0, entry["summary"])
+                flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+                if entry["selection"] == "preset":
+                    flags |= Qt.ItemFlag.ItemIsUserCheckable
+                else:
+                    item.setForeground(0, self.palette().placeholderText())
+                item.setFlags(flags)
+                group.addChild(item)
+                self.patch_items[entry["name"]] = item
+            group.setExpanded(True)
+        self.patch_tree.resizeColumnToContents(1)
+        self.patch_tree.resizeColumnToContents(2)
         self.patch_details = QTextEdit()
         self.patch_details.setReadOnly(True)
-        self.patch_details.setPlaceholderText("Select a patch to see its catalog information.")
-        lower = QSplitter()
-        lower.addWidget(self.patch_catalog)
-        lower.addWidget(self.patch_details)
-        lower.setStretchFactor(0, 3)
-        lower.setStretchFactor(1, 2)
-        layout.addWidget(lower, 1)
+        self.patch_details.setPlaceholderText("Select a patch to see what it does.")
+        split = QSplitter()
+        split.addWidget(self.patch_tree)
+        split.addWidget(self.patch_details)
+        split.setStretchFactor(0, 3)
+        split.setStretchFactor(1, 2)
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.addLayout(top)
+        layout.addWidget(split, 1)
         return tab
 
-    def patch_configuration(self):
-        categories = [self.patch_categories.item(index).text()
-                      for index in range(self.patch_categories.count())
-                      if self.patch_categories.item(index).checkState() == Qt.CheckState.Checked]
+    def patch_configuration(self, modes=None):
+        modes = self.patch_modes if modes is None else modes
         order = [entry["name"] for entry in PATCH_CATALOG]
 
         def selected(mode):
-            names = [name for name, value in self.patch_modes.items() if value == mode]
-            return sorted(names, key=lambda name: (order.index(name) if name in order else len(order),
-                                                   name))
+            names = [name for name, value in modes.items() if value == mode]
+            return sorted(names, key=lambda name: (order.index(name) if name in order
+                                                   else len(order), name))
 
-        return {"preset": self.patch_preset.currentText(), "categories": categories,
+        return {"preset": self.patch_preset.currentText(), "categories": list(self.patch_categories),
                 "enable": selected("enable"), "disable": selected("disable")}
+
+    def effective_patches(self, modes=None):
+        profile = {"patches": self.patch_configuration(modes),
+                   "mods": self.profile_mods() if hasattr(self, "mod_list") else [],
+                   "package": self.build.package_values() if hasattr(self, "build") else {},
+                   "preferences": (self.build.preference_values()
+                                   if hasattr(self, "build") else {})}
+        try:
+            applied = set(resolve_patch_plan(profile)["applied"])
+        except PipelineError:
+            applied = set(profile["patches"]["enable"])
+        applied.update(entry["name"] for entry in PATCH_CATALOG if entry["selection"] == "always")
+        return applied
 
     def populate_patches(self, config):
         self.patch_preset.blockSignals(True)
         self.patch_preset.setCurrentText(config.get("preset", "standard"))
         self.patch_preset.blockSignals(False)
-        categories = set(config.get("categories", []))
-        self.patch_categories.blockSignals(True)
-        for index in range(self.patch_categories.count()):
-            item = self.patch_categories.item(index)
-            item.setCheckState(Qt.CheckState.Checked if item.text() in categories
-                               else Qt.CheckState.Unchecked)
-        self.patch_categories.blockSignals(False)
+        self.patch_categories = list(config.get("categories", []))
         self.patch_modes = {name: "enable" for name in config.get("enable", [])}
         self.patch_modes.update({name: "disable" for name in config.get("disable", [])})
-        self.refresh_patch_catalog()
-        self.refresh_patch_summary()
+        self.applied_patches = self.effective_patches()
+        self.ini_stash = {}
+        self.refresh_patch_states()
 
-    def refresh_patch_catalog(self):
-        if not hasattr(self, "patch_catalog"):
+    def refresh_patch_states(self, *_args):
+        if not hasattr(self, "patch_tree"):
             return
-        query = self.patch_search.text().casefold()
-        category_filter = self.patch_category_filter.currentText()
-        channel_filter = self.patch_channel_filter.currentText()
-        self.patch_catalog.clear()
-        self.patch_combos = {}
-        groups = {}
-        for entry in PATCH_CATALOG:
-            text = (entry["name"] + " " + entry["summary"]).casefold()
-            if query and query not in text:
-                continue
-            if category_filter != "All categories" and entry["category"] != category_filter:
-                continue
-            if channel_filter != "All channels" and entry["channel"] != channel_filter:
-                continue
-            parent = groups.get(entry["category"])
-            if parent is None:
-                parent = QTreeWidgetItem([entry["category"]])
-                self.patch_catalog.addTopLevelItem(parent)
-                groups[entry["category"]] = parent
-            item = QTreeWidgetItem([entry["name"], entry["channel"], entry["selection"], ""])
-            item.setData(0, ROLE, entry["name"])
-            item.setToolTip(0, entry["summary"])
-            parent.addChild(item)
-            choice = QComboBox()
-            if entry["selection"] == "preset":
-                choice.addItems(["Default", "Enable", "Disable"])
-                choice.setCurrentText(self.patch_modes.get(entry["name"], "default").title())
-                choice.currentTextChanged.connect(
-                    lambda value, name=entry["name"]: self.patch_mode_changed(name, value))
-                self.patch_combos[entry["name"]] = choice
-            else:
-                choice.addItem("Automatic")
-                choice.setEnabled(False)
-            self.patch_catalog.setItemWidget(item, 3, choice)
-        for parent in groups.values():
-            parent.setExpanded(True)
-        self.patch_catalog.resizeColumnToContents(0)
-
-    def patch_mode_changed(self, name, value):
-        mode = value.casefold()
-        if mode == "default":
-            self.patch_modes.pop(name, None)
-        else:
-            self.patch_modes[name] = mode
-        self.refresh_patch_summary()
-
-    def patch_selection_changed(self, *_args):
-        self.refresh_patch_summary()
-
-    def refresh_patch_summary(self):
-        if not hasattr(self, "patch_summary"):
-            return
-        self.patch_summary.clear()
-        config = self.patch_configuration()
-        profile = {
-            "patches": config,
-            "mods": self.profile_mods() if hasattr(self, "selected") else [],
-            "package": self.build.package_values() if hasattr(self, "build") else {},
-            "preferences": self.build.preference_values() if hasattr(self, "build") else {},
-        }
-        try:
-            plan = resolve_patch_plan(profile)
-            effective = set(plan["applied"])
-        except PipelineError:
-            effective = set(config["enable"])
-        effective.update(entry["name"] for entry in PATCH_CATALOG
-                         if entry["selection"] == "always")
+        applied = self.effective_patches()
         by_name = {entry["name"]: entry for entry in PATCH_CATALOG}
-        root = QTreeWidgetItem([f"Applied by this profile ({len(effective)})"])
-        self.patch_summary.addTopLevelItem(root)
-        for entry in PATCH_CATALOG:
-            name = entry["name"]
-            if name not in effective:
-                continue
-            if name in config["enable"]:
-                reason = "explicit enable"
-            elif entry["category"] in config["categories"]:
+        preset = self.patch_preset.currentText()
+        self.patch_loading = True
+        for name, item in self.patch_items.items():
+            entry = by_name[name]
+            on = name in applied
+            item.setCheckState(0, Qt.CheckState.Checked if on else Qt.CheckState.Unchecked)
+            mode = self.patch_modes.get(name)
+            why = ""
+            if entry["selection"] == "always":
+                reason, why = "Required", "Every build needs this patch"
+            elif entry["selection"] == "packaging":
+                reason = "Required" if on else ""
+                why = ("The delta-bsa package mode needs this patch" if on
+                       else "Only delta-bsa builds need this patch")
+            elif mode == "enable":
+                reason = "added"
+            elif mode == "disable":
+                reason = "removed"
+            elif on and entry["category"] in self.patch_categories:
                 reason = "category"
-            elif entry["selection"] in {"always", "packaging"}:
-                reason = entry["selection"]
             else:
-                reason = config["preset"] + " preset"
-            child = QTreeWidgetItem([name, reason])
-            child.setToolTip(0, entry["summary"])
-            root.addChild(child)
-        if "build-preferences" in effective and "build-preferences" not in by_name:
-            root.addChild(QTreeWidgetItem(["build-preferences", "profile preferences"]))
-        root.setExpanded(True)
-        disabled = QTreeWidgetItem([f"Explicitly disabled ({len(config['disable'])})"])
-        self.patch_summary.addTopLevelItem(disabled)
-        for name in config["disable"]:
-            disabled.addChild(QTreeWidgetItem([name, "explicit disable"]))
-        disabled.setExpanded(bool(config["disable"]))
-        self.patch_summary.resizeColumnToContents(0)
+                reason = f"{preset} preset" if on else ""
+            item.setText(2, reason)
+            item.setToolTip(2, why)
+            item.setForeground(2, WARNING if reason == "Required"
+                               else self.palette().text().color())
+        for group in self.patch_groups.values():
+            states = {group.child(i).checkState(0) for i in range(group.childCount())
+                      if group.child(i).flags() & Qt.ItemFlag.ItemIsUserCheckable}
+            group.setCheckState(0, Qt.CheckState.Checked if states == {Qt.CheckState.Checked}
+                                else Qt.CheckState.Unchecked if Qt.CheckState.Checked not in states
+                                else Qt.CheckState.PartiallyChecked)
+        self.patch_loading = False
+        self.patch_tree.resizeColumnToContents(2)
+        self.sync_patch_ini(applied)
+        if hasattr(self, "mod_list"):
+            loading, self.mods_loading = self.mods_loading, True
+            for row in self.mod_rows():
+                self.update_compat(row)
+            self.mods_loading = loading
+
+    def sync_patch_ini(self, applied):
+        """Show the ini keys of patches that are on; drop profile values only dead patches read."""
+        if not hasattr(self, "ini"):
+            return
+        gone = self.applied_patches - applied
+        back = applied - self.applied_patches
+        still = {("xbox", key.casefold()) for entry in PATCH_CATALOG if entry["name"] in applied
+                 for key in entry.get("ini", {})}
+        for name in self.ini.patch_owned(gone):
+            if self.ini.split(name) not in still:
+                self.ini_stash[name] = self.ini.values.pop(name)
+        for name in self.ini_stash.copy():
+            owners = {entry["name"] for entry in PATCH_CATALOG
+                      if ("xbox", self.ini.split(name)[1]) in
+                      {("xbox", key.casefold()) for key in entry.get("ini", {})}}
+            if owners & back:
+                self.ini.values[name] = self.ini_stash.pop(name)
+        self.applied_patches = applied
+        self.ini.set_patches(applied)
+
+    def patch_item_changed(self, item, column):
+        if self.patch_loading or column != 0:
+            return
+        name = item.data(0, ROLE)
+        on = item.checkState(0) == Qt.CheckState.Checked
+        if name is None:
+            names = [item.child(i).data(0, ROLE) for i in range(item.childCount())
+                     if item.child(i).flags() & Qt.ItemFlag.ItemIsUserCheckable]
+            on = item.checkState(0) != Qt.CheckState.Unchecked
+        else:
+            names = [name]
+        for name in names:
+            modes = {key: value for key, value in self.patch_modes.items() if key != name}
+            if (name in self.effective_patches(modes)) == on:
+                self.patch_modes = modes
+            else:
+                self.patch_modes = {**modes, name: "enable" if on else "disable"}
+        self.refresh_patch_states()
+
+    def set_patch(self, name, on):
+        self.patch_items[name].setCheckState(0, Qt.CheckState.Checked if on
+                                             else Qt.CheckState.Unchecked)
+
+    def filter_patches(self, text):
+        query = text.casefold()
+        by_name = {entry["name"]: entry for entry in PATCH_CATALOG}
+        for group in self.patch_groups.values():
+            visible = 0
+            for i in range(group.childCount()):
+                child = group.child(i)
+                entry = by_name[child.data(0, ROLE)]
+                hidden = bool(query) and query not in (entry["name"] + " "
+                                                       + entry["summary"]).casefold()
+                child.setHidden(hidden)
+                visible += not hidden
+            group.setHidden(visible == 0)
 
     def show_patch_details(self, item, _previous):
         name = item.data(0, ROLE) if item else None
@@ -881,9 +2358,13 @@ class ProfileWindow(QMainWindow):
             origin_text += " #" + str(origin["id"])
         lines = [entry["name"], "", entry["summary"], "",
                  f"Category: {entry['category']}", f"Channel: {entry['channel']}",
-                 f"Selected by: {entry['selection']}", f"Origin: {origin_text}"]
-        if entry.get("takes"):
-            lines.append("Value: " + entry["takes"])
+                 f"Origin: {origin_text}"]
+        if entry["selection"] != "preset":
+            lines.append("Chosen automatically from the build settings")
+        if entry.get("ini"):
+            lines += ["", "Settings (INI tab, [Xbox]):"]
+            lines += [f"  {key}" + (f" = {value}" if value else "")
+                      for key, value in entry["ini"].items()]
         self.patch_details.setPlainText("\n".join(lines))
 
     def error(self, message):
@@ -1042,9 +2523,9 @@ class ProfileWindow(QMainWindow):
         self.profile_path = None
         self.document = None
         self.saved_text = None
-        self.library.clear()
-        self.selected.clear()
-        self.setWindowTitle("TES3X Profile Manager")
+        self.forget_analysis()
+        self.mod_list.clear()
+        self.setWindowTitle("TES3X")
         files = self.profile_files()
         if files:
             self.open_profile(files[0])
@@ -1089,10 +2570,17 @@ class ProfileWindow(QMainWindow):
         self.library_root = library_root
         self.catalog = catalog
         self.library_indexed = indexed
-        self.populate_library()
-        self.populate_profile(plain.get("mods", []))
-        self.populate_patches(plain.get("patches", {}))
+        self.scans.clear()
         self.build.load(plain)
+        self.plugins_loading = True
+        self.mlox_at_build.setChecked(plain.get("rules", {}).get("plugin_order") == "mlox")
+        self.plugins_loading = False
+        self.plugin_order = plain.get("plugins", {}).get("order") or None
+        self.populate_mods(plain.get("mods", []))
+        self.populate_patches(plain.get("patches", {}))
+        vanilla = self.local_path("vanilla_root")
+        self.ini.load(plain.get("ini", {}), vanilla / "Morrowind.ini" if vanilla else None)
+        self.ini.set_patches(self.applied_patches)
         try:
             self.saved_text = self.profile_text()
         except (PipelineError, LibraryError, tomlkit.exceptions.ParseError):
@@ -1100,7 +2588,7 @@ class ProfileWindow(QMainWindow):
         if self.settings is not None:
             self.settings.setValue("last_profile", str(self.profile_path))
         self.refresh_profile_list()
-        self.setWindowTitle(f"TES3X Profile Manager — {self.profile_path.stem}")
+        self.setWindowTitle(f"TES3X — {self.profile_path.stem}")
         message = str(self.profile_path)
         if library_root and not indexed:
             message += " — no library.toml, so mods are added by folder name"
@@ -1124,8 +2612,6 @@ class ProfileWindow(QMainWindow):
         catalog = load_library(root) if indexed else discover_library(root)
         if any("id" in entry for entry in mods) and not indexed:
             raise PipelineError("mods chosen by id need library.toml in the mod library")
-        for entry in mods:
-            resolve_selection(entry, root, catalog)
         return root, catalog, indexed
 
     def library_changed(self):
@@ -1138,27 +2624,12 @@ class ProfileWindow(QMainWindow):
         if root == self.library_root:
             return
         self.library_root, self.catalog, self.library_indexed = root, catalog, indexed
-        self.populate_library()
-        self.show_options(self.selected.currentRow())
+        self.scans.clear()
+        self.populate_mods(self.profile_mods())
 
     def build_changed(self):
-        self.refresh_patch_summary()
-
-    def mod_switch_changed(self, key, value, default):
-        row = self.selected.currentRow()
-        if row < 0:
-            return
-        item = self.selected.item(row)
-        data = dict(item.data(ROLE))
-        if value == default:
-            data.pop(key, None)
-        else:
-            data[key] = value
-        item.setData(ROLE, data)
-        font = item.font()
-        font.setStrikeOut(not data.get("enabled", True))
-        item.setFont(font)
-        self.refresh_patch_summary()
+        self.refresh_patch_states()
+        self.schedule_analysis()
 
     def write_library_index(self):
         if not self.library_root:
@@ -1170,7 +2641,7 @@ class ProfileWindow(QMainWindow):
         except (OSError, LibraryError) as exc:
             self.error(exc)
             return
-        self.populate_library()
+        self.populate_mods(self.profile_mods())
         self.statusBar().showMessage(f"Added {len(added)} mods to {path}", 5000)
 
     def convert_to_ids(self):
@@ -1190,205 +2661,13 @@ class ProfileWindow(QMainWindow):
         lines += [f"Kept {name}: {reason}" for name, reason in skipped]
         QMessageBox.information(self, "TES3X", "\n".join(lines))
 
-    def populate_library(self):
-        self.library.clear()
-        for mod in sorted(self.catalog.values(), key=lambda item: item["name"].casefold()):
-            parent = QTreeWidgetItem([mod["name"], mod["id"]])
-            self.library.addTopLevelItem(parent)
-            for release in mod["releases"].values():
-                child = QTreeWidgetItem([release["version"], "default" if release["default"] else ""])
-                child.setData(0, ROLE, (mod["id"], release["version"]))
-                parent.addChild(child)
-            parent.setExpanded(True)
-
-    def populate_profile(self, mods):
-        self.selected.clear()
-        for index, mod in enumerate(sorted(mods, key=lambda item: item.get("order", 0)), 1):
-            data = dict(mod)
-            data["order"] = index * 10
-            self.add_profile_item(data)
-        if self.selected.count():
-            self.selected.setCurrentRow(0)
-
-    def entry_folder(self, data):
-        """The library folder a profile mod reads, for spotting the same mod added twice."""
-        if "id" not in data:
-            return data["name"].casefold()
-        mod = self.catalog.get(data["id"])
-        if not mod:
-            return None
-        version = data.get("version") or mod["default"] or next(iter(mod["releases"]))
-        release = mod["releases"].get(version)
-        return release["folder"].casefold() if release else None
-
-    def add_profile_item(self, data):
-        if "id" in data:
-            if data["id"] not in self.catalog:
-                raise LibraryError(f"mod id is not installed: {data['id']}")
-            mod = self.catalog[data["id"]]
-            version = data.get("version") or mod["default"] or next(iter(mod["releases"]), "?")
-            label = f"{mod['name']}  {version}"
-        else:
-            label = f"{data['name']}  (folder)"
-        item = QListWidgetItem(label)
-        item.setData(ROLE, data)
-        font = item.font()
-        font.setStrikeOut(not data.get("enabled", True))
-        item.setFont(font)
-        self.selected.addItem(item)
-
-    def add_selected_release(self):
-        item = self.library.currentItem()
-        identity = item.data(0, ROLE) if item else None
-        if not identity:
-            return
-        mod_id, version = identity
-        folders = {self.entry_folder(self.selected.item(i).data(ROLE) or {})
-                   for i in range(self.selected.count())}
-        if self.catalog[mod_id]["releases"][version]["folder"].casefold() in folders:
-            self.error(f"{self.catalog[mod_id]['name']} is already in this profile")
-            return
-        if not self.library_indexed:
-            # Without library.toml a mod is its folder, as in a hand-written profile.
-            self.add_profile_item({"name": self.catalog[mod_id]["releases"][version]["folder"],
-                                   "order": (self.selected.count() + 1) * 10})
-            self.selected.setCurrentRow(self.selected.count() - 1)
-            self.refresh_patch_summary()
-            return
-        present = {(self.selected.item(i).data(ROLE) or {}).get("id")
-                   for i in range(self.selected.count())}
-        for selected_id in dependency_order(mod_id, self.catalog, version):
-            if selected_id in present:
-                continue
-            selected_mod = self.catalog[selected_id]
-            selected_version = (version if selected_id == mod_id else selected_mod["default"] or
-                                next(iter(selected_mod["releases"])))
-            release = selected_mod["releases"][selected_version]
-            components = [entry["id"] for entry in release["components"].values()
-                          if entry["default"]]
-            self.add_profile_item({"id": selected_id, "version": selected_version,
-                                   "components": components,
-                                   "order": (self.selected.count() + 1) * 10})
-            present.add(selected_id)
-        self.selected.setCurrentRow(self.selected.count() - 1)
-        self.refresh_patch_summary()
-
-    def remove_selected(self):
-        row = self.selected.currentRow()
-        if row >= 0:
-            self.selected.takeItem(row)
-            self.renumber()
-            self.refresh_patch_summary()
-
-    def move_selected(self, delta):
-        row = self.selected.currentRow()
-        target = row + delta
-        if row < 0 or not 0 <= target < self.selected.count():
-            return
-        item = self.selected.takeItem(row)
-        self.selected.insertItem(target, item)
-        self.selected.setCurrentRow(target)
-        self.renumber()
-
-    def renumber(self):
-        for index in range(self.selected.count()):
-            item = self.selected.item(index)
-            data = dict(item.data(ROLE))
-            data["order"] = (index + 1) * 10
-            item.setData(ROLE, data)
-
-    def show_options(self, row):
-        self.components.blockSignals(True)
-        self.plugins.blockSignals(True)
-        self.components.clear()
-        self.plugins.clear()
-        for box, default in self.mod_switches.values():
-            box.blockSignals(True)
-            box.setEnabled(row >= 0)
-            box.setChecked(default)
-        if row < 0:
-            self.options_title.setText("Select a profile mod")
-            self.components.blockSignals(False)
-            self.plugins.blockSignals(False)
-            for box, _default in self.mod_switches.values():
-                box.blockSignals(False)
-            return
-        data = dict(self.selected.item(row).data(ROLE))
-        for key, (box, default) in self.mod_switches.items():
-            box.setChecked(data.get(key, default))
-            box.blockSignals(False)
-        if "id" in data:
-            mod = self.catalog[data["id"]]
-            version = data.get("version") or mod["default"] or next(iter(mod["releases"]))
-            release = mod["releases"][version]
-            self.options_title.setText(f"{mod['name']} {version}")
-            component_list = release["components"].values()
-        else:
-            self.options_title.setText(f"{data['name']} (whole folder)")
-            component_list = []
-        chosen = set(data.get("components", []))
-        for component in component_list:
-            item = QListWidgetItem(component["name"])
-            item.setData(ROLE, component["id"])
-            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-            item.setCheckState(Qt.CheckState.Checked if component["id"] in chosen
-                               else Qt.CheckState.Unchecked)
-            self.components.addItem(item)
-        try:
-            selection = resolve_selection(data, self.library_root, self.catalog)
-            discovered = available_plugins(selection, find_data_root)
-        except LibraryError as exc:
-            discovered = []
-            self.statusBar().showMessage(str(exc))
-        selected_plugins = set(name.casefold() for name in data.get("plugins", discovered))
-        for name in discovered:
-            item = QListWidgetItem(name)
-            item.setData(ROLE, name)
-            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-            item.setCheckState(Qt.CheckState.Checked if name.casefold() in selected_plugins
-                               else Qt.CheckState.Unchecked)
-            self.plugins.addItem(item)
-        self.components.blockSignals(False)
-        self.plugins.blockSignals(False)
-
-    def components_changed(self, _item):
-        row = self.selected.currentRow()
-        if row < 0:
-            return
-        target = self.selected.item(row)
-        data = dict(target.data(ROLE))
-        data["components"] = [self.components.item(i).data(ROLE)
-                              for i in range(self.components.count())
-                              if self.components.item(i).checkState() == Qt.CheckState.Checked]
-        try:
-            resolve_selection(data, self.library_root, self.catalog)
-        except LibraryError as exc:
-            self.statusBar().showMessage(str(exc))
-        target.setData(ROLE, data)
-        self.show_options(row)
-
-    def plugins_changed(self, _item):
-        row = self.selected.currentRow()
-        if row < 0:
-            return
-        target = self.selected.item(row)
-        data = dict(target.data(ROLE))
-        data["plugins"] = [self.plugins.item(i).data(ROLE)
-                           for i in range(self.plugins.count())
-                           if self.plugins.item(i).checkState() == Qt.CheckState.Checked]
-        target.setData(ROLE, data)
-
-    def profile_mods(self):
-        self.renumber()
-        return [dict(self.selected.item(i).data(ROLE)) for i in range(self.selected.count())]
-
     def profile_text(self):
         """Write the editor state into the document and return it, validated."""
         mods = tomlkit.aot()
         for values in self.profile_mods():
             table = tomlkit.table()
             for key in ("name", "id", "version", "components", "order", "enabled",
-                        "optional", "plugins", "loose"):
+                        "optional", "plugins", "loose", "archives"):
                 if key in values:
                     table.add(key, values[key])
             mods.append(table)
@@ -1397,18 +2676,47 @@ class ProfileWindow(QMainWindow):
         else:
             self.document.pop("mods", None)
         self.build.apply(self.document)
+        BuildSettings.put(self.document, "rules", "plugin_order",
+                          "mlox" if self.mlox_at_build.isChecked() else "mods", "mods")
+        order = None if self.mlox_at_build.isChecked() else self.plugin_order
+        plugins = self.document.get("plugins")
+        if order:
+            if plugins is None:
+                plugins = tomlkit.table()
+                self.document["plugins"] = plugins
+            if plugins.get("order") != order:
+                listed = tomlkit.array()
+                listed.extend(order)
+                plugins["order"] = listed.multiline(True)
+        elif plugins is not None:
+            plugins.pop("order", None)
+            if not plugins:
+                self.document.pop("plugins")
+        values = dict(self.ini.values)
+        table = self.document.get("ini")
+        if table is None and values:
+            table = tomlkit.table()
+            self.document["ini"] = table
+        if table is not None:
+            for key in [key for key in table if key not in values]:
+                del table[key]
+            for key, value in values.items():
+                if table.get(key) != value:
+                    table[key] = value
         patches = self.document.get("patches")
         if patches is None:
             patches = tomlkit.table()
             self.document["patches"] = patches
         for key, value in self.patch_configuration().items():
             # Leave unchanged values alone so their comments and layout survive.
+            if isinstance(value, list) and not value and key not in patches:
+                continue
+            if isinstance(value, list) and set(patches.get(key, [])) == set(value):
+                continue
             if patches.get(key) != value:
                 patches[key] = value
         text = tomlkit.dumps(self.document)
         validate_profile(tomllib.loads(text))
-        for values in self.profile_mods():
-            resolve_selection(values, self.library_root, self.catalog)
         return text
 
     def save_profile(self):
@@ -1490,6 +2798,8 @@ class ProfileWindow(QMainWindow):
         process.readyReadStandardOutput.connect(self.append_process_output)
         process.finished.connect(self.command_finished)
         self.process = process
+        for action in self.command_actions:
+            action.setEnabled(False)
         process.start()
         self.statusBar().showMessage(message)
 
@@ -1539,6 +2849,8 @@ class ProfileWindow(QMainWindow):
         self.append_process_output()
         self.statusBar().showMessage(f"TES3X exited {code}", 5000)
         self.process = None
+        for action in self.command_actions:
+            action.setEnabled(True)
 
 
 def main(argv=None):

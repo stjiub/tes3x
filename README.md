@@ -16,7 +16,7 @@ applies engine fixes to the retail XBE, extends its functionality, and can also 
 
 ## Setup
 
-The easiest way is the [profile manager](#profile-manager): on first start it asks where your
+The easiest way is the [GUI](#gui): on first start it asks where your
 retail game and mod library are and how to reach the Xbox, and it creates and edits profiles for
 you. To set up by hand instead, copy the example files:
 
@@ -38,12 +38,14 @@ library into a `library.toml` and pick mods by id instead. See [the mod library]
 For engine fixes only, remove `library` and every `[[mods]]` block. For mods without engine
 fixes, set `preset = "minimal"`.
 
-## Profile manager
+## GUI
 
-`python tools/tes3x_gui.py` opens the profile manager. It edits everything the text files hold:
-mods, patches, build settings and your local settings. It also builds, tests and deploys. It lists
-the profiles in `profiles/`, with New, Duplicate, Rename and Delete next to the list. It needs
-PySide6 and tomlkit: `python -m pip install -r requirements-gui.txt`.
+`python tools/tes3x_gui.py` opens the TES3X GUI. It edits everything the text files hold: mods,
+plugins, patches, `Morrowind.ini` settings, build settings and your local settings. It installs
+mod archives into the library, and builds, tests and deploys. It lists the profiles in
+`profiles/`, with New, Duplicate, Rename and Delete next to the list. It needs PySide6 and
+tomlkit: `python -m pip install -r requirements-gui.txt`. See
+[the mod library](docs/mod-library.md#gui).
 
 ## Build
 
@@ -172,8 +174,8 @@ The pipeline uses these commands internally; they can also be run directly:
 | `tes3x_deploy.py` | Upload a game folder to the Xbox. |
 | `tes3x_test.py` | Build and run a profile smoke test, or test a managed library one mod at a time. |
 | `tes3x_xemu.py` | Build a profile and run it in xemu with a command file; see [testing](docs/testing.md#running-in-xemu). |
-| `tes3x_gui.py` | The profile manager. |
-| `tes3x_library.py` | Scan or validate a versioned local mod library. |
+| `tes3x_gui.py` | The GUI. |
+| `tes3x_library.py` | Scan, validate or convert to a versioned local mod library. |
 | `tes3x_fetch.py` | Copy files back off the Xbox, such as saves or logs. |
 | `tes3x_tour.py` | Write a script that walks through a plugin's cells logging free memory; summarize the log. |
 | `tes3x_audit.py` | Check any `Data Files` folder for long names, junk files and duplicates. |

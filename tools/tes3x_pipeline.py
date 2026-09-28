@@ -697,7 +697,7 @@ def main(argv=None):
                                 "python -m pip install mlox")
         if not paths.get("mlox_rules"):
             raise PipelineError("rules.plugin_order = 'mlox' needs paths.mlox_rules in the local "
-                                "config; download the rules with the profile manager's local "
+                                "config; download the rules with the GUI's local "
                                 "settings or: python tools/tes3x_plugins.py fetch-rules PATH")
         mlox_rules = config_path(paths["mlox_rules"], base).resolve()
         require_file(mlox_rules, "mlox rules")

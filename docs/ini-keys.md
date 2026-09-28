@@ -2,7 +2,7 @@
 
 Keys TES3X patches read from the `[Xbox]` section of `Morrowind.ini`. A key does nothing unless
 its patch is enabled. Edit them in the game folder's `Morrowind.ini` on the Xbox, or set them for
-a build in the profile:
+a build in the profile, which the GUI's INI tab does for you:
 
 ```toml
 [ini]

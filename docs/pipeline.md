@@ -45,7 +45,7 @@ folders.
 ### Sorting plugins with mlox
 
 By default, plugins load masters first, then in mod order. A profile can list its own order in
-`[plugins] order`.
+`[plugins] order`; the GUI writes it when you drag plugins or press **Sort**, which runs mlox once.
 With `plugin_order = "mlox"` in the profile's `[rules]`, [mlox](https://github.com/mlox/mlox) sorts them using the community's
 ordering rules instead. File conflicts between mods still go by mod order; mlox only changes the
 plugin load order.
@@ -54,7 +54,7 @@ mlox isn't included with TES3X. To set it up:
 
 1. `python -m pip install mlox`. Add `--no-deps` to skip its GUI's dependencies, which TES3X
    doesn't use.
-2. Get the rules: **Download** next to "mlox rules" in the profile manager's local settings, or
+2. Get the rules: **Download** next to "mlox rules" in the GUI's local settings, or
    `python tools/tes3x_plugins.py fetch-rules mlox/mlox_base.txt`, then set `paths.mlox_rules` to
    that file. They come from the
    [mlox-rules project](https://github.com/DanaePlays/mlox-rules) and change often, so download
