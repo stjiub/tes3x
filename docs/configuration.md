@@ -33,6 +33,18 @@ one in the TES3X folder. `--config PATH` picks another. Relative paths are relat
 | `password` | string | `xbox` | FTP password. `TES3X_FTP_PASSWORD`, `--password` and `--ask-password` take precedence. |
 | `remote_root` | string | none | Destination game folder. A profile's `remote_root` takes precedence. |
 
+### `[addons]`
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `console` | boolean | `false` | The dashboard agent add-on: Play on Xbox. See [add-ons](addons.md). |
+
+### `[console]`
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `dashboard` | string | `F:/XBMC4Gamers` | XBMC4Gamers folder, where the agent is installed. |
+
 ## Profile
 
 The annotated [example profile](../examples/profile.toml) is the shortest starting point.

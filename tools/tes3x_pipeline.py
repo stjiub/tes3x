@@ -170,9 +170,12 @@ def validate_profile(profile):
 
 def validate_local_config(local):
     """Validate the public tables while leaving private extension tables alone."""
-    unknown = set(local) - {"paths", "deploy", "xemu", "rig"}
+    unknown = set(local) - {"paths", "deploy", "xemu", "rig", "addons", "console"}
     if unknown:
         raise PipelineError("unknown local config sections: " + ", ".join(sorted(unknown)))
+    addons = local.get("addons", {})
+    if not isinstance(addons, dict) or any(type(value) is not bool for value in addons.values()):
+        raise PipelineError("addons must map add-on names to true or false")
     for section in ("paths", "deploy"):
         if section in local and not isinstance(local[section], dict):
             raise PipelineError(f"{section} must be a table")

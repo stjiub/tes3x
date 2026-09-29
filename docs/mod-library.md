@@ -137,4 +137,6 @@ shows whether the Xbox is reachable over FTP.
 **Play** runs the profile in [xemu](https://xemu.app), building it first when the dot beside it
 says it is out of date or not built. Its arrow chooses 64 MB or 128 MB; 128 MB needs a BIOS that
 uses the extra memory, set in **File > Settings**. Each profile keeps its own xemu hard disk, so
-saves carry over between sessions; **Actions > Reset xemu saves…** starts it clean.
+saves carry over between sessions; **Actions > Reset xemu saves…** starts it clean. With the
+[console add-on](addons.md) switched on, the arrow also offers **Xbox**: deploy to the console and
+start the game there.

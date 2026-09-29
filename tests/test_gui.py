@@ -422,6 +422,61 @@ order = 10
         self.profile.write_text(self.profile.read_text(encoding="utf-8") + "\n", encoding="utf-8")
         self.assertEqual(window.build_status()[0], "stale")
 
+    def test_xbox_addon_deploys_then_starts_the_build(self):
+        import hashlib
+        import json
+        config = self.root / "local.toml"
+        config.write_text('[paths]\nbuild_root = "out"\n[deploy]\nhost = "192.0.2.5"\n'
+                          'remote_root = "F:/Games/Test"\n', encoding="utf-8")
+        window = self.window(config=config)
+        self.assertNotIn("xbox", window.play_targets)
+
+        dialog = LocalSettingsDialog(config)
+        self.addCleanup(dialog.close)
+        dialog.fields["addons.console"].setChecked(True)
+        self.assertTrue(dialog.save_settings())
+        with open(config, "rb") as stream:
+            self.assertEqual(tomllib.load(stream)["addons"], {"console": True})
+        window.refresh_play_menu()
+        self.assertTrue(window.play_targets["xbox"].isEnabled())
+
+        self.assertTrue(window.save_profile())
+        output = self.root / "out" / "gui"
+        (output / "deploy").mkdir(parents=True)
+        (output / ".tes3x-pipeline.json").write_text(json.dumps(
+            {"profile_sha256": hashlib.sha256(self.profile.read_bytes()).hexdigest()}),
+            encoding="utf-8")
+        calls = []
+
+        def start(program, arguments, message, *_args, clear=True):
+            window.process = "running"
+            calls.append((Path(program).name, arguments[0], clear))
+
+        with patch.object(window, "start_command", side_effect=start), \
+                patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
+            window.play("xbox")
+            for _ in range(2):
+                window.process = None
+                window.command_finished(0, None)
+        self.assertEqual(calls, [("console.py", "ping", True),
+                                 ("tes3x_deploy.py", str(output / "deploy"), False),
+                                 ("console.py", "run", False)])
+        self.assertEqual(window.play_button.text(), "Play on Xbox")
+
+        # A failed step stops the rest.
+        window.process = None
+        calls.clear()
+        with patch.object(window, "start_command", side_effect=start),                 patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
+            window.play("xbox")
+            window.process = None
+            window.command_finished(1, None)
+        self.assertEqual([call[1] for call in calls], ["ping"])
+
+        dialog.fields["addons.console"].setChecked(False)
+        self.assertTrue(dialog.save_settings())
+        with open(config, "rb") as stream:
+            self.assertNotIn("addons", tomllib.load(stream))
+
     def test_local_settings_dialog_preserves_xemu_and_writes_public_fields(self):
         config = self.root / "local.toml"
         config.write_text('[xemu]\nexe = "xemu.exe"\ncustom = "keep"\n', encoding="utf-8")

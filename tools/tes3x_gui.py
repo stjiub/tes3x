@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import shutil
 import struct
+import subprocess
 import sys
 import tempfile
 import threading
@@ -94,6 +95,25 @@ def sha256_file(path):
     return digest.hexdigest()
 
 
+def addon_registry():
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    import addons
+    return addons
+
+
+def enabled_addons(local):
+    """The add-ons switched on in the local config that import, by name."""
+    registry = addon_registry()
+    found = {}
+    for name in registry.enabled(local):
+        try:
+            found[name] = registry.load(name)
+        except ImportError:
+            continue
+    return found
+
+
 def default_config_path():
     local = Path.cwd() / "tes3x.local.toml"
     return (local if local.is_file() else ROOT / "tes3x.local.toml").resolve()
@@ -123,6 +143,7 @@ class LocalSettingsDialog(QDialog):
         layout.addWidget(self.path_group(paths))
         layout.addWidget(self.deploy_group(deploy))
         layout.addWidget(self.xemu_group(xemu))
+        layout.addWidget(self.addons_group(plain.get("addons", {})))
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.save_and_accept)
@@ -205,6 +226,55 @@ class LocalSettingsDialog(QDialog):
             form.addRow(label, self.browse_row("xemu." + key, values.get(key, ""), files=True))
         return group
 
+    def addons_group(self, values):
+        group = QGroupBox("Add-ons")
+        form = QVBoxLayout(group)
+        registry = addon_registry()
+        for name in registry.NAMES:
+            try:
+                module = registry.load(name)
+            except ImportError as exc:
+                form.addWidget(QLabel(f"{name}: cannot load ({exc})"))
+                continue
+            box = QCheckBox(module.LABEL)
+            box.setChecked(bool(values.get(name)))
+            self.fields["addons." + name] = box
+            form.addWidget(box)
+            about = QLabel(module.DESCRIPTION)
+            about.setWordWrap(True)
+            form.addWidget(about)
+            actions = QHBoxLayout()
+            for label, script, arguments in getattr(module, "SETTINGS_ACTIONS", []):
+                button = QPushButton(label)
+                button.clicked.connect(lambda _checked=False, label=label, script=script,
+                                       arguments=arguments: self.run_addon(label, script,
+                                                                           arguments))
+                button.setEnabled(box.isChecked())
+                box.toggled.connect(button.setEnabled)
+                actions.addWidget(button)
+            actions.addStretch()
+            form.addLayout(actions)
+        return group
+
+    def run_addon(self, label, script, arguments):
+        """Save, then run an add-on's command against the saved settings."""
+        try:
+            self.save_settings()
+        except (OSError, PipelineError, tomlkit.exceptions.ParseError) as exc:
+            QMessageBox.critical(self, "TES3X", str(exc))
+            return
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            done = subprocess.run([sys.executable, str(script), *arguments,
+                                   "--config", str(self.path)], cwd=self.path.parent,
+                                  capture_output=True, text=True, timeout=120)
+            output, ok = (done.stdout + done.stderr).strip(), done.returncode == 0
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            output, ok = str(exc), False
+        finally:
+            QApplication.restoreOverrideCursor()
+        (QMessageBox.information if ok else QMessageBox.critical)(self, label, output or "Done.")
+
     def download_mlox_rules(self):
         field = self.fields["paths.mlox_rules"]
         target = Path(field.text().strip() or self.path.parent / "mlox" / "mlox_base.txt")
@@ -246,6 +316,12 @@ class LocalSettingsDialog(QDialog):
             self.update_table(section, {name.split(".", 1)[1]: value
                                         for name, value in values.items()
                                         if name.startswith(section + ".")})
+        chosen = {name.split(".", 1)[1]: value or "" for name, value in values.items()
+                  if name.startswith("addons.")}
+        if any(chosen.values()) or "addons" in self.document:
+            self.update_table("addons", chosen)
+            if not self.document["addons"]:
+                del self.document["addons"]
         text = tomlkit.dumps(self.document)
         validate_local_config(tomllib.loads(text))
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -1205,13 +1281,7 @@ class ProfileWindow(QMainWindow):
                 self.play_button = button
                 self.play_menu = QMenu(self)
                 self.play_menu.setToolTipsVisible(True)
-                group = QActionGroup(self)
                 self.play_targets = {}
-                for key, (label, _suffix, _options) in PLAY_TARGETS.items():
-                    target = self.play_menu.addAction(label, lambda key=key: self.play(key))
-                    target.setCheckable(True)
-                    group.addAction(target)
-                    self.play_targets[key] = target
                 button.setMenu(self.play_menu)
                 button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
                 self.build_state = QLabel()
@@ -1221,7 +1291,7 @@ class ProfileWindow(QMainWindow):
         self.after_command = None
         self.play_target = (self.settings.value("play_target", "xemu-64") if self.settings
                             else "xemu-64")
-        self.update_play_targets()
+        self.refresh_play_menu()
         self.state_timer = QTimer(self)
         self.state_timer.setInterval(1500)
         self.state_timer.timeout.connect(self.update_build_state)
@@ -2819,7 +2889,7 @@ class ProfileWindow(QMainWindow):
             self.open_profile(self.profile_path)
         self.refresh_profile_list()
         self.refresh_ftp_status()
-        self.update_play_targets()
+        self.refresh_play_menu()
         self.statusBar().showMessage(f"Saved {dialog.path}", 5000)
 
     def open_profile(self, path, quiet=False):
@@ -3048,29 +3118,52 @@ class ProfileWindow(QMainWindow):
         self.build_state.setText(f"<span style='color:{colour.name()}'>●</span> {text}")
         self.build_state.setToolTip(tip)
 
+    def refresh_play_menu(self):
+        """xemu's targets, then those of the enabled add-ons."""
+        self.play_addons = {key: module for module in enabled_addons(self.local_values()).values()
+                            for key in module.PLAY}
+        self.play_labels = {key: (label, suffix) for key, (label, suffix, _options)
+                            in PLAY_TARGETS.items()}
+        self.play_labels.update({key: module.PLAY[key] for key, module in self.play_addons.items()})
+        self.play_menu.clear()
+        group = QActionGroup(self.play_menu)
+        self.play_targets = {}
+        for key, (label, _suffix) in self.play_labels.items():
+            if key == next(iter(self.play_addons), None):
+                self.play_menu.addSeparator()
+            target = self.play_menu.addAction(label, lambda key=key: self.play(key))
+            target.setCheckable(True)
+            group.addAction(target)
+            self.play_targets[key] = target
+        self.update_play_targets()
+
     def play_available(self):
         """Each Play target, and why it cannot run when it cannot."""
-        xemu = self.local_values().get("xemu", {})
+        local = self.local_values()
+        xemu = local.get("xemu", {})
         missing = "Set the xemu files in File > Settings" if not xemu.get("exe") else None
-        return {"xemu-64": missing,
-                "xemu-128": missing or (None if xemu.get("bios_128mb") or xemu.get("cerbios")
-                                        else "Set a 128 MB BIOS in File > Settings")}
+        available = {"xemu-64": missing,
+                     "xemu-128": missing or (None if xemu.get("bios_128mb") or xemu.get("cerbios")
+                                             else "Set a 128 MB BIOS in File > Settings")}
+        for key, module in self.play_addons.items():
+            available[key] = module.status(local)
+        return available
 
     def update_play_targets(self):
         available = self.play_available()
-        if self.play_target not in PLAY_TARGETS or available[self.play_target]:
+        if self.play_target not in available or available[self.play_target]:
             self.play_target = "xemu-64"
         for key, target in self.play_targets.items():
             target.setEnabled(not available[key])
             target.setToolTip(available[key] or "")
             target.setChecked(key == self.play_target)
-        label, suffix, _options = PLAY_TARGETS[self.play_target]
+        label, suffix = self.play_labels[self.play_target]
         self.action_play.setText(f"&Play in {label}")
         self.play_button.setText("Play" + suffix)
         self.play_button.setToolTip(f"Play in {label} (F9); the arrow picks where")
 
     def play(self, target=None):
-        reason = self.play_available()[target or self.play_target]
+        reason = self.play_available().get(target or self.play_target, "Not available")
         if reason:
             self.error(reason)
             return
@@ -3103,7 +3196,38 @@ class ProfileWindow(QMainWindow):
                 iso.unlink(missing_ok=True)
         return current
 
+    def play_context(self):
+        return {"profile": self.profile_path, "config": self.local_config_path(),
+                "deploy": self.build_output() / "deploy", "plain": self.profile_plain,
+                "local": self.local_values()}
+
+    def run_steps(self, steps, first=True):
+        """Run commands one after another, stopping at the first that fails."""
+        script, arguments, message = steps[0]
+        self.start_command(script, arguments, message, clear=first)
+        if len(steps) > 1:
+            self.after_command = lambda: self.run_steps(steps[1:], first=False)
+
     def start_play(self):
+        module = self.play_addons.get(self.play_target)
+        if module is not None:
+            context = self.play_context()
+            try:
+                steps = module.play_steps(self.play_target, context)
+            except ValueError as exc:
+                self.error(exc)
+                return
+            question = module.confirm(self.play_target, context) \
+                if hasattr(module, "confirm") else None
+            key = f"confirmed/{self.play_target}/{self.profile_path}"
+            if question and not (self.settings and self.settings.value(key, False, bool)):
+                if QMessageBox.question(self, "TES3X", question) != \
+                        QMessageBox.StandardButton.Yes:
+                    return
+                if self.settings is not None:
+                    self.settings.setValue(key, True)
+            self.run_steps(steps)
+            return
         stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         iso = self.play_iso()
         source = (["--iso", str(iso)] if iso
@@ -3176,8 +3300,9 @@ class ProfileWindow(QMainWindow):
             *(["--config", str(config)] if config.is_file() else []),
         ], f"Pulling Xbox logs to {destination}…")
 
-    def start_command(self, program, arguments, message, environment=None):
-        self.output.clear()
+    def start_command(self, program, arguments, message, environment=None, clear=True):
+        if clear:
+            self.output.clear()
         process = QProcess(self)
         process.setWorkingDirectory(str(self.work_dir()))
         if environment is not None:
