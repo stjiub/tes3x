@@ -314,16 +314,23 @@ class PipelinePlanTests(unittest.TestCase):
             'tes3xhook.c', 'tes3xlog.c', 'tes3xpager.c', 'tes3xinfoarena.c'
         ])
 
-    def test_standard_selects_release_channel_fixes_and_console(self):
-        plan = resolve_patch_plan({'patches': {'preset': 'standard'},
+    def test_recommended_selects_only_release_defaults(self):
+        plan = resolve_patch_plan({'patches': {'preset': 'recommended'},
                                    'package': {'mode': 'merged-bsa'}})
-        self.assertEqual(plan['selected'], ['console'])
+        self.assertEqual(plan['selected'], [])
 
-    def test_dev_includes_unreleased_default_fixes(self):
-        plan = resolve_patch_plan({'patches': {'preset': 'dev'},
+    def test_testing_includes_preview_defaults_but_not_dev_patches(self):
+        plan = resolve_patch_plan({'patches': {'preset': 'testing'},
                                    'package': {'mode': 'merged-bsa'}})
-        self.assertTrue({'mcp-1', 'mcp-97', 'mcp-154', 'mcp-102', 'dxt5-size'}
+        self.assertTrue({'mcp-97', 'mcp-102', 'dxt5-size', 'diagnostics', 'console'}
                         <= set(plan['selected']))
+        self.assertTrue({'mcp-1', 'mcp-154'}.isdisjoint(plan['selected']))
+
+    def test_old_preset_names_remain_compatible(self):
+        standard = resolve_patch_plan({'patches': {'preset': 'standard'}})
+        dev = resolve_patch_plan({'patches': {'preset': 'dev'}})
+        self.assertEqual(standard['preset'], 'recommended')
+        self.assertEqual(dev['preset'], 'testing')
 
     def test_profile_without_mods_patches_only(self):
         plan = resolve_patch_plan({'patches': {'preset': 'standard'},
@@ -555,12 +562,12 @@ class PipelinePlanTests(unittest.TestCase):
         self.assertEqual(plan['applied'], ['mcp-102'])
         self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c'])
 
-    def test_dev_adds_tools_but_allows_overrides(self):
-        profile = {'patches': {'preset': 'dev', 'disable': ['diagnostics']},
+    def test_testing_adds_tools_but_allows_overrides(self):
+        profile = {'patches': {'preset': 'testing', 'disable': ['diagnostics']},
                    'package': {'mode': 'merged-bsa'}}
         plan = resolve_patch_plan(profile)
         self.assertEqual(plan['selected'],
-                         ['mcp-1', 'mcp-97', 'mcp-154', 'mcp-102', 'dxt5-size', 'console'])
+                         ['mcp-97', 'mcp-102', 'dxt5-size', 'console'])
 
     def test_pipeline_rejects_unknown_categories_and_patches(self):
         with self.assertRaises(PipelineError):

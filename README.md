@@ -111,8 +111,8 @@ The profile's `preset` selects a baseline:
 | preset | contents |
 |---|---|
 | `minimal` | No optional engine fixes |
-| `standard` | Tested engine fixes and the in-game console |
-| `dev` | `standard`, untested fixes and diagnostics |
+| `recommended` | Release fixes selected for general use |
+| `testing` | `recommended`, preview fixes, diagnostics and the console |
 
 Use `enable` and `disable` for individual patches; the example profile lists them all. Some
 patches read settings from `Morrowind.ini`; see [ini keys](docs/ini-keys.md). See
@@ -126,15 +126,15 @@ python tools/tes3x_patch.py --list
 
 ![The in-game console with its on-screen keyboard](docs/images/console.png)
 
-The `standard` preset includes the console. Back + right thumb click opens it and A raises the
-on-screen keyboard. `[Xbox] ConsoleCombo` changes the combination; `disable = ["console"]` leaves
-it out.
+The `testing` preset includes the preview console patch. Back + right thumb click opens it and A
+raises the on-screen keyboard. `[Xbox] ConsoleCombo` changes the combination;
+`disable = ["console"]` leaves it out.
 
 See [testing and debugging](docs/testing.md) for the file format, the log, and the profiler.
 
 ## Diagnostics and profiling
 
-The `dev` preset enables diagnostics, which append session,
+The `testing` preset enables diagnostics, which append session,
 crash and hang information to `E:\tes3xlog.txt`; fetch and summarize it with
 `python tools/tes3x_diag.py pull`. Add profiler targets with the pipeline's repeatable
 `--profile-target VA` option, then use the `tes3xprof` console command to write call counts and CPU
@@ -153,7 +153,7 @@ The annotated [example profile](examples/profile.toml) covers the common options
 values override it:
 
 ```
-python tools/tes3x_pipeline.py profiles/my-build.toml --preset dev --enable video-arena
+python tools/tes3x_pipeline.py profiles/my-build.toml --preset testing --enable video-arena
 python tools/tes3x_pipeline.py profiles/my-build.toml --ini-set "General:Show FPS=1"
 ```
 

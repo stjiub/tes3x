@@ -196,7 +196,7 @@ order = 10
         self.assertIn("Rotate automatic saves", window.context_info.toPlainText())
         window.set_patch("rotating-autosaves", True)
         self.assertEqual(window.patch_configuration()["enable"], ["rotating-autosaves"])
-        self.assertEqual(window.patch_items["rotating-autosaves"].text(2), "manually enabled")
+        self.assertEqual(window.patch_items["rotating-autosaves"].text(2), "Profile")
         self.assertIn(("xbox", "autosaveslots"), window.ini.patch_keys)
         window.ini.set_value("Xbox:AutosaveSlots", 5)
         self.assertTrue(window.save_profile())
@@ -210,10 +210,42 @@ order = 10
         self.assertEqual(window.ini.values, {"Xbox:AutosaveSlots": 5})
 
         # Turning off a patch the preset includes records a disable.
+        window.patch_preset.setCurrentText("testing")
         window.set_patch("console", False)
         self.assertEqual(window.patch_configuration()["disable"], ["console"])
         window.set_patch("console", True)
         self.assertEqual(window.patch_configuration()["disable"], [])
+
+    def test_developer_mode_reveals_nonrelease_patches_and_build_options(self):
+        class Settings:
+            def __init__(self):
+                self.values = {}
+
+            def value(self, key, default=None, *_args):
+                return self.values.get(key, default)
+
+            def setValue(self, key, value):
+                self.values[key] = value
+
+        settings = Settings()
+        window = self.window(settings=settings)
+        heap = window.patch_items["heap-census"]
+        self.assertTrue(heap.isHidden())
+        self.assertFalse(heap.flags() & Qt.ItemFlag.ItemIsUserCheckable)
+        self.assertEqual(heap.text(1), "dev")
+        self.assertEqual(window.patch_tree.headerItem().text(2), "Included by")
+
+        window.action_developer_mode.setChecked(True)
+        self.assertFalse(heap.isHidden())
+        self.assertEqual(heap.text(2), "Build option")
+        self.assertTrue(settings.values["developer_mode"])
+
+    def test_active_preview_patch_stays_visible_without_developer_mode(self):
+        window = self.window()
+        patch = window.patch_items["rotating-autosaves"]
+        self.assertTrue(patch.isHidden())
+        window.set_patch("rotating-autosaves", True)
+        self.assertFalse(patch.isHidden())
 
     def test_ini_panel_shows_retail_values_and_saves_changes(self):
         vanilla = self.root / "vanilla"
@@ -246,7 +278,7 @@ order = 10
         window.refresh_analysis()
         self.assertEqual(rows(), [["Morrowind.bsa", "Retail", "yes"],
                                   ["Mod.bsa", "Mod", "yes, via multi-bsa"]])
-        self.assertEqual(window.patch_items["multi-bsa"].text(2), "Required")
+        self.assertEqual(window.patch_items["multi-bsa"].text(2), "Package mode")
         self.assertTrue(window.save_profile())
         self.assertEqual(self.saved()["mods"][0]["archives"], "load")
 

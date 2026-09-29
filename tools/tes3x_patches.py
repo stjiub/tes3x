@@ -19,7 +19,7 @@ PATCH_DIRS = ROOT / "patches"
 
 CATEGORIES = ("core", "correctness", "compat", "performance", "qol", "balance",
               "instrumentation", "infrastructure")
-CHANNELS = ("dev", "release")
+CHANNELS = ("dev", "preview", "release")
 SELECTIONS = ("always", "packaging", "preset", "option")
 # Fixes without code, in the order the generated page lists them.
 CANDIDATE_STATUSES = {
@@ -123,7 +123,7 @@ def cell(text):
 def render_patches():
     from tes3x_pipeline import resolve_patch_plan
     presets = {}
-    for preset in ("dev", "standard"):
+    for preset in ("testing", "recommended"):
         plan = resolve_patch_plan({"patches": {"preset": preset}, "mods": [{"name": "x"}]})
         presets.update({name: f"{preset} preset" for name in plan["selected"]})
     selection = {
@@ -138,7 +138,8 @@ def render_patches():
         "edit that file, not this one. Fixes that are not implemented are in",
         "[candidates.md](candidates.md). A linked name opens the patch's folder of notes and tests.",
         "",
-        "`release` patches are ready for general use; `dev` patches are still being tested.",
+        "`dev` patches are contributor-only, `preview` patches work but need broader testing,",
+        "and `release` patches are ready for general use.",
         "\"By name\" patches are only applied when a profile enables them.",
         "",
         "| patch | what it does | from | category | channel | selected by |",

@@ -38,7 +38,8 @@ PATCH_ORDER = tuple(entry["name"] for entry in registry.PATCHES
 HOOK_SOURCES = {entry["name"]: entry.get("source") for entry in registry.PATCHES}
 SOURCE_DEPENDENCIES = {"tes3xinfoarena.c": ("tes3xpager.c",)}
 CATEGORIES = set(registry.CATEGORIES)
-PRESETS = ("minimal", "standard", "dev")
+PRESETS = ("minimal", "recommended", "testing")
+PRESET_ALIASES = {"standard": "recommended", "dev": "testing"}
 PACKAGE_MODES = ("delta-bsa", "merged-bsa", "loose")
 
 
@@ -221,22 +222,25 @@ def enabled_mods(profile):
 def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), package_mode=None):
     """Resolve user-facing patches and packaging-derived infrastructure."""
     config = profile.get("patches", {})
-    preset = preset_override or config.get("preset", "standard")
+    preset = preset_override or config.get("preset", "recommended")
+    preset = PRESET_ALIASES.get(preset, preset)
     if preset not in PRESETS:
         raise PipelineError(f"unknown patch preset {preset!r}; choose from {', '.join(PRESETS)}")
 
     selected = set()
-    if preset == "standard":
+    if preset == "recommended":
         selected.update(name for name, meta in PATCHES.items()
                         if meta["category"] in {"core", "correctness"}
                         and meta["channel"] == "release")
-        selected.add("console")
-    if preset == "dev":
+        if PATCHES["console"]["channel"] == "release":
+            selected.add("console")
+    if preset == "testing":
         selected.update(name for name, meta in PATCHES.items()
-                        if meta["category"] in {"core", "correctness"})
-        selected.update(name for name, meta in PATCHES.items()
-                        if meta["category"] == "instrumentation")
-        selected.add("console")
+                        if meta["category"] in {"core", "correctness"}
+                        and meta["channel"] in {"preview", "release"})
+        for name in ("diagnostics", "console"):
+            if PATCHES[name]["channel"] in {"preview", "release"}:
+                selected.add(name)
 
     categories = set(string_list(config.get("categories"), "patches.categories"))
     unknown_categories = categories - CATEGORIES
@@ -544,7 +548,7 @@ def main(argv=None):
                                    "(default: paths.llvm, then PATH)")
     ap.add_argument("--build-root", help="parent for profile outputs")
     ap.add_argument("--out", help="complete pipeline output (default: BUILD_ROOT/PROFILE_NAME)")
-    ap.add_argument("--preset", choices=PRESETS)
+    ap.add_argument("--preset", choices=PRESETS + tuple(PRESET_ALIASES))
     ap.add_argument("--enable", action="append", default=[], metavar="PATCH")
     ap.add_argument("--disable", action="append", default=[], metavar="PATCH")
     ap.add_argument("--package-mode", choices=PACKAGE_MODES,

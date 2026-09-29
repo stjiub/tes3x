@@ -7,7 +7,7 @@
 # name       what --apply and profiles call it
 # bit        its bit in the patch mask the payload logs (diag.patches); fixed forever once used
 # category   core, correctness, compat, performance, qol, balance, instrumentation, infrastructure
-# channel    dev or release; promotion to release is a maintainer decision
+# channel    dev, preview or release; promotion is a maintainer decision
 # selection  how a build gets it:
 #              always    - every pipeline build
 #              packaging - chosen by the package mode
@@ -63,7 +63,7 @@ summary = "Inject a code section and run it from the entry point."
 name = "boot-media"
 bit = 2
 category = "infrastructure"
-channel = "dev"
+channel = "preview"
 selection = "always"
 summary = "Permit booting from any media and region, not just a retail DVD."
 
@@ -71,7 +71,7 @@ summary = "Permit booting from any media and region, not just a retail DVD."
 name = "drive-letters"
 bit = 0
 category = "infrastructure"
-channel = "dev"
+channel = "preview"
 selection = "always"
 takes = "LETTER"
 summary = "Point every Data Files asset path at one drive."
@@ -88,7 +88,7 @@ summary = "Stage saves on one volume with UDATA so the commit renames instead of
 [[patch]]
 name = "title"
 category = "infrastructure"
-channel = "dev"
+channel = "preview"
 selection = "option"
 takes = "NAME"
 summary = "Rename the XBE's certificate title, the name a dashboard falls back to."
@@ -96,7 +96,7 @@ summary = "Rename the XBE's certificate title, the name a dashboard falls back t
 [[patch]]
 name = "title-id"
 category = "infrastructure"
-channel = "dev"
+channel = "preview"
 selection = "option"
 takes = "HEX"
 summary = "Give the XBE its own title ID, so its saves go to a separate E:/UDATA folder."
@@ -105,7 +105,7 @@ summary = "Give the XBE its own title ID, so its saves go to a separate E:/UDATA
 name = "multi-bsa"
 bit = 3
 category = "infrastructure"
-channel = "dev"
+channel = "preview"
 selection = "packaging"
 source = "tes3xarch.c"
 summary = "Load every archive listed in tes3xarch.txt, not just Morrowind.bsa."
@@ -114,7 +114,7 @@ summary = "Load every archive listed in tes3xarch.txt, not just Morrowind.bsa."
 name = "script-ext"
 bit = 4
 category = "compat"
-channel = "dev"
+channel = "preview"
 selection = "preset"
 source = "tes3xscript.c"
 summary = "Add script opcodes: widen the length bounds and hook Script::RunFunction."
@@ -144,7 +144,7 @@ name = "mcp-97"
 origin = { source = "MCP", id = "97" }
 bit = 9
 category = "core"
-channel = "dev"
+channel = "preview"
 selection = "preset"
 source = "tes3xmcp97.c"
 summary = "Advance the script parser correctly while initializing saved data."
@@ -164,7 +164,7 @@ name = "mcp-102"
 origin = { source = "MCP", id = "102" }
 bit = 12
 category = "correctness"
-channel = "dev"
+channel = "preview"
 selection = "preset"
 summary = "Reactivate script-triggered objects after their script mod is removed."
 
@@ -172,7 +172,7 @@ summary = "Reactivate script-triggered objects after their script mod is removed
 name = "dxt5-size"
 bit = 14
 category = "core"
-channel = "dev"
+channel = "preview"
 selection = "preset"
 source = "tes3xdxt5.c"
 summary = "Allocate DXT5 textures at their real size, not a negative one that corrupts video memory."
@@ -192,7 +192,7 @@ name = "rotating-autosaves"
 origin = { source = "OpenMW" }
 bit = 8
 category = "qol"
-channel = "dev"
+channel = "preview"
 selection = "preset"
 source = "tes3xsaves.c"
 ini = { RotatingAutosaves = "1", AutosaveSlots = "3" }
@@ -202,7 +202,7 @@ summary = "Rotate automatic saves through INI-configurable slots."
 name = "build-preferences"
 bit = 15
 category = "qol"
-channel = "dev"
+channel = "preview"
 selection = "option"
 source = "tes3xprefs.c"
 summary = "Apply profile-selected player preferences after stored Xbox options load."
@@ -211,7 +211,7 @@ summary = "Apply profile-selected player preferences after stored Xbox options l
 name = "transition-autosaves"
 bit = 16
 category = "qol"
-channel = "dev"
+channel = "preview"
 selection = "preset"
 source = "tes3xsaves.c"
 ini = { TransitionAutosaves = "1" }
@@ -221,7 +221,7 @@ summary = "Autosave before doors, scripted teleports, interventions and paid tra
 name = "diagnostics"
 bit = 6
 category = "instrumentation"
-channel = "dev"
+channel = "preview"
 selection = "preset"
 source = "tes3xdiag.c"
 ini = { Diagnostics = "0", DiagnosticsLevel = "", HangWatchdog = "1", HangTimeoutSeconds = "60" }
@@ -231,7 +231,7 @@ summary = "Enable INI-controlled crash records, snapshots and a hang watchdog."
 name = "console"
 bit = 7
 category = "qol"
-channel = "dev"
+channel = "preview"
 selection = "preset"
 source = "tes3xconsole.c"
 ini = { ConsoleCombo = "7,9" }
@@ -241,7 +241,7 @@ summary = "Make the in-game console reachable, by replacing its input gate."
 name = "profile"
 bit = 13
 category = "instrumentation"
-channel = "dev"
+channel = "preview"
 selection = "option"
 source = "tes3xprof.c"
 takes = "VA[,VA...]"
@@ -270,7 +270,7 @@ summary = "Count kernel allocations and the XAPI heap by caller, with the addres
 name = "heap-region"
 bit = 20
 category = "compat"
-channel = "dev"
+channel = "preview"
 selection = "preset"
 source = "tes3xregion.c"
 ini = { HeapRegionKB = "98304" }

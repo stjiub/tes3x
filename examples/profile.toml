@@ -20,9 +20,9 @@ clear_cache_partitions = true        # clear the Xbox's X/Y/Z cache after deploy
 
 [patches]
 # minimal: no optional patches
-# standard: tested fixes and the in-game console
-# dev: standard, untested fixes and diagnostics
-preset = "standard"
+# recommended: release fixes selected for general use
+# testing: recommended, preview fixes, diagnostics and the console
+preset = "recommended"
 
 # Uncomment a line to add that patch. docs/patches.md describes each one.
 enable = [
@@ -41,7 +41,7 @@ enable = [
     # "bow-view",               # qol: lower the first-person bow and arms while an arrow is nocked
     # "rotating-autosaves",    # qol: rotate autosaves through several slots
     # "transition-autosaves",  # qol: autosave before doors, teleports and travel
-    # "console",               # qol: in-game console (already in standard)
+    # "console",               # qol: in-game console (already in testing)
     # "diagnostics",           # instrumentation: crash records and a hang watchdog
     # "multiplayer",           # infrastructure: join a TES3X server set by [Xbox] NetAddress
 ]

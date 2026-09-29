@@ -10,7 +10,7 @@ A single scenario exercises one build; a comparison scenario runs a control and 
   tes3x_validate.py check
 
 RUN is a diagnostics log, or an xemu run folder holding tes3xlog.txt and .tes3x-run.json. Results
-record observations; they do not approve a patch for the release channel.
+record observations; they do not change a patch's channel.
 """
 
 import argparse

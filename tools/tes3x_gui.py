@@ -366,11 +366,6 @@ class LocalSettingsDialog(QDialog):
         download.clicked.connect(self.download_xemu)
         folder_row.layout().addWidget(download)
         form.addRow("xemu folder", folder_row)
-        note = QLabel("Files left empty are found in the folder. The MCPX boot ROM and BIOS are "
-                      "not part of xemu: copy the dumps from your own Xbox there. Without an "
-                      "EEPROM, xemu makes one.")
-        note.setWordWrap(True)
-        form.addRow("", note)
         for key, label in self.XEMU_FILES:
             form.addRow(label, self.browse_row("xemu." + key, values.get(key, ""), files=True))
         form.addRow("extract-xiso", self.browse_row("xemu.extract_xiso",
@@ -1332,6 +1327,8 @@ class ProfileWindow(QMainWindow):
             self.compat = {}
         self.config_path = Path(config).resolve() if config else None
         self.settings = settings
+        self.developer_mode = (self.settings.value("developer_mode", False, bool)
+                               if self.settings else False)
         self.saved_text = None
         self.analysis_timer = QTimer(self)
         self.analysis_timer.setSingleShot(True)
@@ -1469,6 +1466,14 @@ class ProfileWindow(QMainWindow):
         file_menu.addActions([self.action_settings, self.action_index, self.action_convert])
         file_menu.addSeparator()
         file_menu.addAction(self.action_exit)
+
+        view_menu = self.menuBar().addMenu("&View")
+        self.action_developer_mode = QAction("&Developer mode", self)
+        self.action_developer_mode.setCheckable(True)
+        self.action_developer_mode.setChecked(self.developer_mode)
+        self.action_developer_mode.setToolTip("Show dev and preview patches and build options")
+        self.action_developer_mode.toggled.connect(self.set_developer_mode)
+        view_menu.addAction(self.action_developer_mode)
 
         actions_menu = self.menuBar().addMenu("&Actions")
         self.action_check = QAction("&Check profile", self)
@@ -3612,9 +3617,9 @@ class ProfileWindow(QMainWindow):
 
     def create_patches_tab(self):
         self.patch_preset = QComboBox()
-        self.patch_preset.addItems(["minimal", "standard", "dev"])
-        self.patch_preset.setToolTip("minimal: no optional patches; standard: tested fixes and "
-                                     "the console; dev: everything, untested included")
+        self.patch_preset.addItems(["minimal", "recommended", "testing"])
+        self.patch_preset.setToolTip("minimal: no optional patches; recommended: release fixes; "
+                                     "testing: release and preview fixes, diagnostics and console")
         self.patch_preset.currentTextChanged.connect(self.refresh_patch_states)
         self.patch_search = QLineEdit()
         self.patch_search.setPlaceholderText("Filter patches…")
@@ -3625,7 +3630,7 @@ class ProfileWindow(QMainWindow):
         top.addWidget(self.patch_search, 1)
 
         self.patch_tree = QTreeWidget()
-        self.patch_tree.setHeaderLabels(["Patch", "Channel", "Why"])
+        self.patch_tree.setHeaderLabels(["Patch", "Status", "Included by"])
         self.patch_tree.setAlternatingRowColors(True)
         self.patch_tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.patch_tree.header().setStretchLastSection(False)
@@ -3634,8 +3639,7 @@ class ProfileWindow(QMainWindow):
         self.patch_items = {}
         self.patch_groups = {}
         for category in PATCH_CATEGORIES:
-            entries = [entry for entry in PATCH_CATALOG
-                       if entry["category"] == category and entry["selection"] != "option"]
+            entries = [entry for entry in PATCH_CATALOG if entry["category"] == category]
             if not entries:
                 continue
             group = QTreeWidgetItem([category])
@@ -3691,7 +3695,9 @@ class ProfileWindow(QMainWindow):
 
     def populate_patches(self, config):
         self.patch_preset.blockSignals(True)
-        self.patch_preset.setCurrentText(config.get("preset", "standard"))
+        preset = {"standard": "recommended", "dev": "testing"}.get(
+            config.get("preset", "recommended"), config.get("preset", "recommended"))
+        self.patch_preset.setCurrentText(preset)
         self.patch_preset.blockSignals(False)
         self.patch_categories = list(config.get("categories", []))
         self.patch_modes = {name: "enable" for name in config.get("enable", [])}
@@ -3714,32 +3720,38 @@ class ProfileWindow(QMainWindow):
             mode = self.patch_modes.get(name)
             why = ""
             if entry["selection"] == "always":
-                reason, why = "Required", "Every build needs this patch"
+                reason, why = "Every build", "Every build needs this patch"
             elif entry["selection"] == "packaging":
-                reason = "Required" if on else ""
+                reason = "Package mode" if on else ""
                 why = ("The delta-bsa package mode needs this patch" if on
                        else "Only delta-bsa builds need this patch")
             elif mode == "enable":
-                reason = "manually enabled"
+                reason = "Profile"
             elif mode == "disable":
-                reason = "manually disabled"
+                reason = "Disabled in profile"
             elif on and entry["category"] in self.patch_categories:
-                reason = "category"
+                reason = f"Category: {entry['category']}"
+            elif entry["selection"] == "option":
+                reason = "Build settings" if on else "Build option"
             else:
                 reason = f"{preset} preset" if on else ""
             item.setText(2, reason)
             item.setToolTip(2, why)
-            item.setForeground(2, WARNING if reason == "Required"
+            item.setForeground(2, WARNING if entry["selection"] == "always"
                                else self.palette().text().color())
+        self.patch_loading = False
+        self.patch_tree.resizeColumnToContents(2)
+        self.sync_patch_ini(applied)
+        self.filter_patches()
+        self.patch_loading = True
         for group in self.patch_groups.values():
             states = {group.child(i).checkState(0) for i in range(group.childCount())
-                      if group.child(i).flags() & Qt.ItemFlag.ItemIsUserCheckable}
+                      if not group.child(i).isHidden()
+                      and group.child(i).flags() & Qt.ItemFlag.ItemIsUserCheckable}
             group.setCheckState(0, Qt.CheckState.Checked if states == {Qt.CheckState.Checked}
                                 else Qt.CheckState.Unchecked if Qt.CheckState.Checked not in states
                                 else Qt.CheckState.PartiallyChecked)
         self.patch_loading = False
-        self.patch_tree.resizeColumnToContents(2)
-        self.sync_patch_ini(applied)
         if hasattr(self, "mod_list"):
             loading, self.mods_loading = self.mods_loading, True
             for row in self.mod_rows():
@@ -3773,7 +3785,8 @@ class ProfileWindow(QMainWindow):
         on = item.checkState(0) == Qt.CheckState.Checked
         if name is None:
             names = [item.child(i).data(0, ROLE) for i in range(item.childCount())
-                     if item.child(i).flags() & Qt.ItemFlag.ItemIsUserCheckable]
+                     if not item.child(i).isHidden()
+                     and item.child(i).flags() & Qt.ItemFlag.ItemIsUserCheckable]
             on = item.checkState(0) != Qt.CheckState.Unchecked
         else:
             names = [name]
@@ -3789,19 +3802,29 @@ class ProfileWindow(QMainWindow):
         self.patch_items[name].setCheckState(0, Qt.CheckState.Checked if on
                                              else Qt.CheckState.Unchecked)
 
-    def filter_patches(self, text):
-        query = text.casefold()
+    def filter_patches(self, text=None):
+        query = (self.patch_search.text() if text is None else text).casefold()
         by_name = {entry["name"]: entry for entry in PATCH_CATALOG}
         for group in self.patch_groups.values():
             visible = 0
             for i in range(group.childCount()):
                 child = group.child(i)
                 entry = by_name[child.data(0, ROLE)]
-                hidden = bool(query) and query not in (entry["name"] + " "
-                                                       + entry["summary"]).casefold()
+                name = entry["name"]
+                advanced = (entry["channel"] != "release" or entry["selection"] == "option")
+                in_profile = name in self.applied_patches or name in self.patch_modes
+                hidden = advanced and not self.developer_mode and not in_profile
+                hidden = hidden or (bool(query) and query not in (name + " "
+                                      + entry["summary"]).casefold())
                 child.setHidden(hidden)
                 visible += not hidden
             group.setHidden(visible == 0)
+
+    def set_developer_mode(self, enabled):
+        self.developer_mode = enabled
+        if self.settings is not None:
+            self.settings.setValue("developer_mode", enabled)
+        self.filter_patches()
 
     def show_patch_details(self, item, _previous):
         name = item.data(0, ROLE) if item else None
@@ -3815,10 +3838,11 @@ class ProfileWindow(QMainWindow):
         if "id" in origin:
             origin_text += " #" + str(origin["id"])
         lines = [entry["name"], "", entry["summary"], "",
-                 f"Category: {entry['category']}", f"Channel: {entry['channel']}",
+                 f"Category: {entry['category']}", f"Status: {entry['channel']}",
                  f"Origin: {origin_text}"]
-        if entry["selection"] != "preset":
-            lines.append("Chosen automatically from the build settings")
+        selection = {"always": "every build", "packaging": "package mode",
+                     "preset": "preset or profile", "option": "build option"}
+        lines.append(f"Selection: {selection[entry['selection']]}")
         if entry.get("ini"):
             lines += ["", "Settings (INI tab, [Xbox]):"]
             lines += [f"  {key}" + (f" = {value}" if value else "")

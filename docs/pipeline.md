@@ -21,9 +21,9 @@ A profile with no mods skips collecting and packing and ships the retail `Data F
 The presets:
 
 - `minimal`: no optional patches.
-- `standard`: tested `core` and `correctness` fixes, plus the in-game console.
-- `dev`: everything in `standard`, untested `core` and `correctness` fixes, and
-  diagnostics.
+- `recommended`: release `core` and `correctness` fixes.
+- `testing`: everything in `recommended`, preview `core` and `correctness` fixes,
+  diagnostics and the in-game console.
 
 Anything else has to be enabled by name or by category. Some patches are added automatically
 when something needs them; `delta-bsa` packing adds `multi-bsa`, for example.
