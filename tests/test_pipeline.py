@@ -231,6 +231,16 @@ class PipelineTests(unittest.TestCase):
         self.assertIn('<title>Morrowind &amp; Mods</title>', text)
         self.assertIn('<foldername>MorrowindModded</foldername>', text)
         self.assertIn('<titleid>42530005</titleid>', text)
+        self.assertIn('<titleid>5433ABCD</titleid>', dashboard_xml('t', 'f', 0x5433ABCD))
+
+    def test_save_pool_keys(self):
+        validate_profile({'profile': {'name': 'p', 'save_pool': 'TR'}})
+        validate_profile({'profile': {'name': 'p', 'save_pool': 'TR', 'save_pool_id': '5433ABCD'}})
+        for identity in ({'name': 'p', 'save_pool_id': '5433ABCD'},
+                         {'name': 'p', 'save_pool': 'TR', 'save_pool_id': '42530005'},
+                         {'name': 'p', 'save_pool': 'TR', 'save_pool_id': 'pool'}):
+            with self.assertRaises(PipelineError):
+                validate_profile({'profile': identity})
 
     def test_dashboard_files_are_chosen_per_profile(self):
         from tes3x_pipeline import dashboard_list, write_dashboard_files

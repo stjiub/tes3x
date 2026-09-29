@@ -56,6 +56,7 @@ BOUND32 = re.compile(rb"\x3d\x00\x10\x00\x00.{0,12}?\x3d\xbd\x11\x00\x00", re.S)
 BOUND16_COUNT = 5
 BOUND32_COUNT = 1
 
+CERT_TITLE_ID = 0x18C
 CERT_ALLOWED_MEDIA = 0x220
 CERT_GAME_REGION = 0x224
 # wszTitleName, 40 UTF-16 characters. This is the name a dashboard lists.
@@ -175,6 +176,20 @@ def _title(x, value, ctx):
     was = bytes(x.data[CERT_TITLE_NAME:CERT_TITLE_NAME + size]).decode("utf-16-le")
     x.data[CERT_TITLE_NAME:CERT_TITLE_NAME + size] = name.encode("utf-16-le").ljust(size, b"\0")
     return [(CERT_TITLE_NAME, size, "title %r -> %r" % (was.split("\x00")[0], name))]
+
+
+@patch("title-id")
+def _title_id(x, value, ctx):
+    """Give the image its own title ID, and so its own save folder."""
+    try:
+        new = int(value, 16)
+    except ValueError:
+        raise PatchError("title-id: want 8 hex digits, got %r" % value)
+    if not 0 < new <= 0xFFFFFFFF:
+        raise PatchError("title-id: 0x%X is not a 32-bit title ID" % new)
+    was = struct.unpack_from("<I", x.data, CERT_TITLE_ID)[0]
+    struct.pack_into("<I", x.data, CERT_TITLE_ID, new)
+    return [(CERT_TITLE_ID, 4, "title ID 0x%08X -> 0x%08X" % (was, new))]
 
 
 @patch("payload")

@@ -36,15 +36,17 @@ from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS))
+from tes3x_fatx import PARTITIONS, FatxReader  # noqa: E402
 from tes3x_put import make_dirs, put_file  # noqa: E402
-from tes3x_qcow2 import CowView, Qcow2, create_overlay, is_qcow2  # noqa: E402
+from tes3x_qcow2 import CowView, Qcow2, create_overlay, is_qcow2, open_image  # noqa: E402
+import tes3x_savepool  # noqa: E402
 from tes3x_readlog import read_file, read_log  # noqa: E402
 
 TEST_INI = ["Xbox:Diagnostics=1", "Xbox:HangWatchdog=1", "Xbox:HangTimeoutSeconds=30",
             "General:Show FPS=1"]
 # U: is E:\UDATA\<title id>. The engine loads a save by path, so the folder need not be the hash
 # of a display name the save menu would use.
-SAVE_DIR = "UDATA/42530005/TES3X"
+SAVE_DIR = "TES3X"
 SAVE_PATH = "U:\\TES3X\\"
 # A missing movie is logged to Warnings.txt and skipped.
 SKIP_MOVIES = ["Movies:New Game=none.bik", "Movies:Morrowind Logo=none.bik"]
@@ -123,6 +125,49 @@ def load_config(path=None):
 
 CONFIG = load_config(os.environ.get("TES3X_CONFIG"))
 GDB = Path(CONFIG.get("gdb") or shutil.which("gdb") or "gdb")
+
+
+def vanilla_launcher():
+    """The retail Default.xbe named by [paths] vanilla_root in the local config, if any."""
+    path = Path(os.environ.get("TES3X_CONFIG") or Path.cwd() / "tes3x.local.toml").resolve()
+    try:
+        with open(path, "rb") as stream:
+            root = tomllib.load(stream).get("paths", {}).get("vanilla_root")
+    except (OSError, tomllib.TOMLDecodeError):
+        return None
+    if not root:
+        return None
+    root = Path(root).expanduser()
+    return (root if root.is_absolute() else path.parent / root) / "Default.xbe"
+
+
+def pool_files(pool, deploy, into):
+    """Write a save pool's folder files under `into`; returns their paths."""
+    launcher = deploy / "Default.xbe" if deploy and (deploy / "Default.xbe").is_file() \
+        else vanilla_launcher()
+    if not launcher or not launcher.is_file():
+        sys.exit("the build uses a save pool, whose title image comes from Default.xbe; set "
+                 "[paths] vanilla_root in tes3x.local.toml")
+    image = tes3x_savepool.title_image(launcher)
+    written = []
+    for name, data in tes3x_savepool.files(pool["name"], image).items():
+        path = Path(into) / name
+        path.write_bytes(data)
+        written.append(path)
+    return written
+
+
+def has_file(image, directory, name):
+    off, size = PARTITIONS["E"]
+    with open_image(str(image)) as img:
+        fs = FatxReader(img, off).bind(size)
+        cluster = 1
+        for part in directory.split("/"):
+            hit = [e for e in fs.listdir(cluster) if e[0].lower() == part.lower()]
+            if not hit:
+                return False
+            cluster = hit[0][2]
+        return any(e[0].lower() == name.lower() for e in fs.listdir(cluster))
 
 
 def sha256_file(path):
@@ -470,23 +515,50 @@ def main():
     pipeline_marker = next((path for path in marker_paths if path.is_file()), None)
     pipeline = json.loads(pipeline_marker.read_text(encoding="utf-8")) \
         if pipeline_marker else {}
+    if not pipeline and (iso.parent / RUN_MARKER).is_file():
+        # An ISO kept from an earlier run carries that run's build record.
+        pipeline = json.loads((iso.parent / RUN_MARKER).read_text(encoding="utf-8")).get(
+            "pipeline") or {}
+    pool = pipeline.get("save_pool")
+    udata = tes3x_savepool.folder(int(pool["id"], 16) if pool
+                                  else tes3x_savepool.SHARED_ID)
+    staging = Path(tempfile.mkdtemp(prefix="pool-", dir=out))
+    pool_paths = pool_files(pool, deploy, staging) if pool else []
 
     # Copy-on-write over the clean disk: the run writes only what the guest changes.
     hdd = Path(a.disk).resolve() if a.disk else out / "hdd.qcow2"
     clusters = None
-    if a.exec or a.save:
+    if a.exec or a.save or (pool_paths and not hdd.is_file()):
         with CowView(str(clean)) as disk:
             if a.exec:
                 put_file(disk, a.exec, "", "tes3xexec.txt")
+            if pool_paths:
+                make_dirs(disk, udata)
+            for path in pool_paths:
+                put_file(disk, path, udata, path.name)
             if a.save:
-                make_dirs(disk, SAVE_DIR)
+                make_dirs(disk, f"{udata}/{SAVE_DIR}")
             for save in a.save:
-                put_file(disk, save, SAVE_DIR, Path(save).name)
+                put_file(disk, save, f"{udata}/{SAVE_DIR}", Path(save).name)
                 print("save: @start load " + SAVE_PATH + Path(save).name)
             clusters = disk.changed()
+    elif pool_paths and not has_file(hdd, udata, "TitleImage.xbx"):
+        # A kept disk from before this pool: its files go in an overlay stacked on top.
+        n = 1
+        while hdd.with_name(f"{hdd.stem}-{n}{hdd.suffix}").exists():
+            n += 1
+        below = hdd.rename(hdd.with_name(f"{hdd.stem}-{n}{hdd.suffix}"))
+        with CowView(str(below)) as disk:
+            make_dirs(disk, udata)
+            for path in pool_paths:
+                if not has_file(below, udata, path.name):
+                    put_file(disk, path, udata, path.name)
+            create_overlay(str(hdd), str(below), disk.changed())
+        print(f"save pool '{pool['name']}': added E:/{udata} to {hdd.name}")
     if not hdd.is_file():
         hdd.parent.mkdir(parents=True, exist_ok=True)
         create_overlay(str(hdd), str(clean), clusters)
+    shutil.rmtree(staging, ignore_errors=True)
     shutil.copyfile(CONFIG["eeprom"], out / "eeprom.bin")
     bios = Path(a.bios).resolve() if a.bios else CONFIG["bios"]
     toml = out / "xemu.toml"

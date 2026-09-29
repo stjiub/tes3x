@@ -52,8 +52,8 @@ from tes3x_catalog import match as match_catalog, needs as catalog_needs
 from tes3x_patches import CATEGORIES as PATCH_CATEGORIES, PATCHES as PATCH_CATALOG, SOURCES
 from tes3x_plugins import (BASE_MASTERS, collect, dependency_order, fetch_rules, sort_files,
                            warnings as mlox_notes)
-from tes3x_pipeline import (MARKER as PIPELINE_MARKER, PipelineError, resolve_patch_plan,
-                            validate_local_config, validate_profile)
+from tes3x_pipeline import (DEPLOY_CONFLICT, MARKER as PIPELINE_MARKER, PipelineError,
+                            resolve_patch_plan, validate_local_config, validate_profile)
 from tes3x_records import records, subrecords
 import tes3x_nexus as nexus
 
@@ -1360,6 +1360,7 @@ class ProfileWindow(QMainWindow):
         self.command_actions = (self.action_check, self.action_build, self.action_deploy,
                                 self.action_play, self.action_smoke, self.action_fetch)
         self.after_command = None
+        self.conflict_retry = None
         self.play_target = (self.settings.value("play_target", "xemu-64") if self.settings
                             else "xemu-64")
         self.refresh_play_menu()
@@ -3712,6 +3713,9 @@ class ProfileWindow(QMainWindow):
         if Path(script).name == "tes3x_deploy.py":
             self.command_kind = "deploy"
         self.start_command(script, arguments, message, clear=first)
+        if Path(script).name == "tes3x_deploy.py" and "--replace" not in arguments:
+            self.conflict_retry = lambda: self.run_steps(
+                [(script, [*arguments, "--replace"], message), *steps[1:]], first=False)
         if len(steps) > 1:
             self.after_command = lambda: self.run_steps(steps[1:], first=False)
 
@@ -3763,6 +3767,9 @@ class ProfileWindow(QMainWindow):
             self, "Reset xemu saves",
             f"Delete this profile's xemu disk and every save on it?\n\n{disk}")
         if answer == QMessageBox.StandardButton.Yes:
+            # A save pool added to a kept disk stacks it on hdd-N.qcow2 layers.
+            for layer in disk.parent.glob(f"{disk.stem}-*{disk.suffix}"):
+                layer.unlink()
             disk.unlink()
             self.statusBar().showMessage("Deleted the xemu saves; the next Play starts clean", 5000)
 
@@ -3794,6 +3801,21 @@ class ProfileWindow(QMainWindow):
         if self.discard_after_deploy.isChecked():
             arguments.append("--discard-build")
         self.run_pipeline(arguments)
+        if self.process is not None:
+            self.conflict_retry = self.deploy_built
+
+    def deploy_built(self):
+        """Deploy the finished build with --replace, after a conflict stopped the pipeline's."""
+        remote = (self.profile_plain.get("profile", {}).get("remote_root")
+                  or self.local_values().get("deploy", {}).get("remote_root"))
+        arguments = [str(self.build_output() / "deploy"), "--remote", remote,
+                     "--config", str(self.local_config_path()), "--verify", "size", "--replace"]
+        if self.profile_plain.get("rules", {}).get("clear_cache_partitions", False):
+            arguments.append("--clear-cache")
+        self.run_steps([(ROOT / "tools" / "tes3x_deploy.py", arguments, f"Deploying to {remote}…")],
+                       first=False)
+        if self.discard_after_deploy.isChecked():
+            self.after_command = lambda: shutil.rmtree(self.build_output(), ignore_errors=True)
 
     def pull_logs(self):
         if self.process is not None:
@@ -3895,8 +3917,31 @@ class ProfileWindow(QMainWindow):
             action.setEnabled(True)
         self.update_build_state()
         follow, self.after_command = self.after_command, None
+        retry, self.conflict_retry = self.conflict_retry, None
+        if code == DEPLOY_CONFLICT and retry:
+            if kind == "build":
+                self.build_failed = False
+            elif kind == "deploy":
+                self.deploy_failed = False
+            self.update_build_state()
+            self.confirm_replace(retry)
+            return
         if follow and code == 0:
             follow()
+
+    def confirm_replace(self, retry):
+        """Deploy stopped because the target belongs to something else; ask before going on."""
+        lines = [line.split("conflict: ", 1)[1] for line in self.output.toPlainText().splitlines()
+                 if "conflict: " in line]
+        answer = QMessageBox.warning(
+            self, "Deploy over existing files?",
+            "This deploy would write over:\n\n" + "\n".join(f"• {line}" for line in lines)
+            + "\n\nFiles in the game folder that the build does not have are deleted. "
+            "Deploy anyway?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No)
+        if answer == QMessageBox.StandardButton.Yes:
+            retry()
 
 
 def main(argv=None):

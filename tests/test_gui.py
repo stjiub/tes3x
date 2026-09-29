@@ -576,6 +576,32 @@ order = 10
             window.command_finished(1, None)
         self.assertEqual([call[1] for call in calls], ["ping"])
 
+        # A deploy that stops on a conflict is asked about, then repeated with --replace.
+        window.process = None
+        calls.clear()
+        full = []
+
+        def start_full(program, arguments, message, *_args, clear=True):
+            window.process = "running"
+            full.append(arguments)
+
+        warning = patch.object(QMessageBox, "warning", return_value=QMessageBox.StandardButton.Yes)
+        with patch.object(window, "start_command", side_effect=start_full), warning as asked:
+            window.play("xbox")
+            window.process = None
+            window.command_finished(0, None)
+            window.output.setPlainText("  conflict: F:/Games/Test holds 3 files (1.0 KB) that "
+                                       "TES3X did not deploy\n")
+            window.process = None
+            window.command_finished(3, None)
+            self.assertIn("F:/Games/Test holds 3 files", asked.call_args[0][2])
+            window.process = None
+            window.command_finished(0, None)
+        self.assertEqual([args[0] for args in full],
+                         ["ping", str(output / "deploy"), str(output / "deploy"), "run"])
+        self.assertNotIn("--replace", full[1])
+        self.assertIn("--replace", full[2])
+
         dialog.fields["addons.console"].setChecked(False)
         self.assertTrue(dialog.save_settings())
         with open(config, "rb") as stream:

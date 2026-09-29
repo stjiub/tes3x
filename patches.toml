@@ -94,6 +94,14 @@ takes = "NAME"
 summary = "Rename the XBE's certificate title, the name a dashboard falls back to."
 
 [[patch]]
+name = "title-id"
+category = "infrastructure"
+channel = "development"
+selection = "option"
+takes = "HEX"
+summary = "Give the XBE its own title ID, so its saves go to a separate E:/UDATA folder."
+
+[[patch]]
 name = "multi-bsa"
 bit = 3
 category = "infrastructure"

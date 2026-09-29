@@ -19,11 +19,14 @@ from tes3x_pack import set_ini_key
 import tes3x_patches as registry
 from tes3x_payload import PayloadError, build_payload, find_tool
 from tes3x_paths import DEFAULT_REMOTE_ROOT, require_paths
+import tes3x_savepool
 
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "tools"
 MARKER = ".tes3x-pipeline.json"
+# tes3x_deploy exits with this when the target belongs to something else.
+DEPLOY_CONFLICT = 3
 MARKER_SCHEMA = 2
 REPLACED_RETAIL_ENTRIES = {"data files", "default.xbe", "morrowind.xbe", "morrowind.ini"}
 RELEASE_ARTIFACT_SUFFIXES = {".iso", ".nfo", ".rar", ".sfv"}
@@ -85,11 +88,19 @@ def validate_profile(profile):
             raise PipelineError(f"{parent}.{key} must be {names}")
 
     identity = table("profile")
-    known(identity, {"name", "title", "remote_root", "library", "dashboards"}, "profile")
-    for key in ("name", "title", "remote_root", "library"):
+    known(identity, {"name", "title", "remote_root", "library", "dashboards", "save_pool",
+                     "save_pool_id"}, "profile")
+    for key in ("name", "title", "remote_root", "library", "save_pool", "save_pool_id"):
         typed(identity, key, (str,), "profile")
     if not identity.get("name"):
         raise PipelineError("profile.name is required")
+    if identity.get("save_pool_id") and not identity.get("save_pool"):
+        raise PipelineError("profile.save_pool_id needs profile.save_pool")
+    if identity.get("save_pool"):
+        try:
+            tes3x_savepool.pool_id(identity["save_pool"], identity.get("save_pool_id"))
+        except ValueError as exc:
+            raise PipelineError(f"profile.{exc}")
     string_list(identity.get("dashboards"), "profile.dashboards")
 
     rules = table("rules")
@@ -440,13 +451,13 @@ def stage_retail(data_files, ini, staged, ini_items, copy=shutil.copy2):
     print(f"  retail Data Files staged unchanged; Morrowind.ini with {len(ini_items)} key(s) set")
 
 
-def dashboard_xml(title, folder):
+def dashboard_xml(title, folder, title_id=tes3x_savepool.SHARED_ID):
     """XBMC4Gamers lists a game by _resources/default.xml; the XBE title is only its fallback."""
     return ("<synopsis>\n"
             f"<sourcename>{escape(folder)}</sourcename>\n"
             f"<foldername>{escape(folder)}</foldername>\n"
             f"<title>{escape(title)}</title>\n"
-            "<titleid>42530005</titleid>\n"
+            f"<titleid>{title_id:08X}</titleid>\n"
             "</synopsis>\n")
 
 
@@ -466,12 +477,12 @@ def dashboard_list(profile):
     return names
 
 
-def write_dashboard_files(staged, names, title, folder):
+def write_dashboard_files(staged, names, title, folder, title_id=tes3x_savepool.SHARED_ID):
     for name in names:
         path, render = DASHBOARDS[name]
         target = staged / path
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(render(title, folder), encoding="utf-8", newline="\r\n")
+        target.write_text(render(title, folder, title_id), encoding="utf-8", newline="\r\n")
 
 
 def validate_output(path):
@@ -571,6 +582,9 @@ def main(argv=None):
                              "on the Xbox without changing it")
     ap.add_argument("--verify-deploy", choices=("none", "size", "hash"), default="none",
                     help="after --deploy, verify uploaded files; hash downloads each upload")
+    ap.add_argument("--replace-remote", action="store_true",
+                    help="deploy even where the target folder or save pool belongs to something "
+                         "else")
     ap.add_argument("--discard-build", action="store_true",
                     help="delete the regenerable pipeline output after a verified deployment")
     ap.add_argument("--ask-password", action="store_true",
@@ -635,6 +649,9 @@ def main(argv=None):
     if save_staging and (len(save_staging) != 1 or not save_staging.isalpha()):
         raise PipelineError("--save-staging must be one drive letter")
     title = args.title or profile.get("profile", {}).get("title")
+    pool_name = profile.get("profile", {}).get("save_pool")
+    pool = (tes3x_savepool.pool_id(pool_name, profile["profile"].get("save_pool_id"))
+            if pool_name else None)
     dashboards = dashboard_list(profile)
     # A profile names its own install folder; the local config supplies the fallback.
     remote = profile.get("profile", {}).get("remote_root") or deploy.get("remote_root")
@@ -651,6 +668,8 @@ def main(argv=None):
             profile["preferences"].get("invert_look", True)).lower())
     if title:
         print(f"title: {title}; dashboard files: {', '.join(dashboards) or 'none'}")
+    if pool:
+        print(f"save pool: {pool_name} (E:/{tes3x_savepool.folder(pool)})")
     if save_staging:
         print(f"save staging: {save_staging}:")
     if prof_targets:
@@ -755,6 +774,8 @@ def main(argv=None):
             patch_specs.append(f"save-staging={save_staging}")
         if title:
             patch_specs.append(f"title={title}")
+        if pool:
+            patch_specs.append(f"title-id={pool:08X}")
         patch_specs.extend(plan["applied"])
         if prof_targets:
             patch_specs.append("profile=" + ",".join(prof_targets))
@@ -809,14 +830,20 @@ def main(argv=None):
             stage_retail(data_files, ini, staged, ini_items, copy)
 
         retail_files, retail_bytes = copy_retail_root(vanilla, staged, copy)
-        if title:
-            # A dashboard lists the launcher, so that is the XBE the name has to reach.
+        # A dashboard lists the launcher, so the name has to reach it. So does the title ID, or
+        # the launcher and the engine would save to different folders.
+        launcher_specs = ([f"title={title}"] if title else []) + (
+            [f"title-id={pool:08X}"] if pool else [])
+        if launcher_specs:
             run([sys.executable, TOOLS / "tes3x_patch.py", launcher,
-                 "--apply", f"title={title}", "--out", staged / "Default.xbe"])
-            folder = (remote or DEFAULT_REMOTE_ROOT).replace("\\", "/").rstrip("/")
-            write_dashboard_files(staged, dashboards, title, folder.rsplit("/", 1)[-1])
+                 *[x for spec in launcher_specs for x in ("--apply", spec)],
+                 "--out", staged / "Default.xbe"])
         else:
             shutil.copy2(launcher, staged / "Default.xbe")
+        if title:
+            folder = (remote or DEFAULT_REMOTE_ROOT).replace("\\", "/").rstrip("/")
+            write_dashboard_files(staged, dashboards, title, folder.rsplit("/", 1)[-1],
+                                  pool or tes3x_savepool.SHARED_ID)
         shutil.copy2(patched, staged / "morrowind.xbe")
         staged_paths = [path.relative_to(staged).as_posix()
                         for path in staged.rglob("*") if path.is_file()]
@@ -847,6 +874,8 @@ def main(argv=None):
             "retail_xbe_sha1": hashlib.sha1(retail_xbe.read_bytes()).hexdigest(),
             "morrowind_xbe_sha256": sha256_file(staged / "morrowind.xbe"),
         }
+        if pool:
+            record["save_pool"] = {"name": pool_name, "id": f"{pool:08X}"}
         (work / MARKER).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
         publish(work, output)
     except Exception:
@@ -867,7 +896,14 @@ def main(argv=None):
             deploy_cmd += ["--verify", args.verify_deploy]
         if profile.get("rules", {}).get("clear_cache_partitions", False) and args.deploy:
             deploy_cmd.append("--clear-cache")
-        run(deploy_cmd)
+        if args.replace_remote:
+            deploy_cmd.append("--replace")
+        print("\n== " + " ".join(str(part) for part in deploy_cmd), flush=True)
+        result = subprocess.run([str(part) for part in deploy_cmd])
+        if result.returncode == DEPLOY_CONFLICT:
+            return DEPLOY_CONFLICT
+        if result.returncode:
+            raise subprocess.CalledProcessError(result.returncode, deploy_cmd)
         if args.discard_build:
             shutil.rmtree(output)
             print(f"discarded verified build: {output}")

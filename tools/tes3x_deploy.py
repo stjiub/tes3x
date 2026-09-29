@@ -13,6 +13,7 @@ import sys
 import time
 import tes3x_ftp
 from tes3x_paths import require_paths
+import tes3x_savepool
 
 PLUGIN_EXT = (".esm", ".esp")
 MTIME_SLACK = 3
@@ -22,6 +23,11 @@ MANIFEST = "tes3xdeploy.json"
 DASHBOARD_DIR = "_resources/"
 # Edited in place at the same size; without a manifest entry these always go.
 IN_PLACE_EXT = (".xbe", ".ini", ".txt", ".xml")
+# The manifest entry saying which build a folder holds. A colon cannot start a FATX name.
+BUILD_KEY = ":build"
+PIPELINE_MARKER = ".tes3x-pipeline.json"
+# Exit status when the target folder or save pool belongs to something else.
+CONFLICT = 3
 
 
 def sha1(path):
@@ -44,6 +50,63 @@ def read_manifest(ftp, base):
 def write_manifest(ftp, base, entries):
     data = json.dumps(dict(sorted(entries.items())), indent=0).encode()
     ftp.storbinary(f"STOR {ftp_basename(ftp, posixpath.join(base, MANIFEST))}", io.BytesIO(data))
+
+
+def build_record(tree):
+    """What the pipeline recorded about the tree beside it, or {} for a tree made by hand."""
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(tree)), PIPELINE_MARKER),
+                  encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def owner_conflicts(base, remote, manifest, profile):
+    """Why deploying this profile to `base` would overwrite something it does not own."""
+    if not remote:
+        return []
+    owner = manifest.get(BUILD_KEY)
+    if not manifest:
+        size = sum(max(n, 0) for n in remote.values())
+        return [f"{base} holds {len(remote)} files ({human(size)}) that TES3X did not deploy"]
+    # Folders deployed before builds were stamped name no profile; they stay unchallenged.
+    if isinstance(owner, dict) and owner.get("profile") != profile:
+        when = owner.get("deployed", "an unknown time")
+        return [f"{base} holds profile '{owner.get('profile') or 'unnamed'}', deployed {when}"]
+    return []
+
+
+def read_remote(ftp, path):
+    buf = io.BytesIO()
+    ftp.retrbinary(f"RETR {ftp_basename(ftp, path)}", buf.write)
+    return buf.getvalue()
+
+
+def pool_plan(ftp, pool):
+    """(conflicts, files to write) for a save pool's E:/UDATA folder."""
+    base = "E:/" + tes3x_savepool.folder(int(pool["id"], 16))
+    present = {name.lower(): size for name, size in remote_tree(ftp, base).items()}
+    marker = tes3x_savepool.MARKER.lower()
+    conflicts = []
+    if marker in present:
+        owner = read_remote(ftp, f"{base}/{tes3x_savepool.MARKER}").decode("utf-8", "replace")
+        if owner.strip() != pool["name"]:
+            conflicts.append(f"{base} is save pool '{owner.strip()}', not '{pool['name']}'")
+    elif present:
+        conflicts.append(f"{base} holds {len(present)} files of another title")
+    missing = [name for name in ("TitleMeta.xbx", "TitleImage.xbx", tes3x_savepool.MARKER)
+               if name.lower() not in present]
+    return base, conflicts, missing
+
+
+def write_pool(ftp, base, pool, image, names):
+    contents = tes3x_savepool.files(pool["name"], image)
+    for name in names:
+        path = f"{base}/{name}"
+        ensure_dirs(ftp, path, set())
+        ftp.storbinary(f"STOR {name}", io.BytesIO(contents[name]))
+        print(f"  save pool: wrote {path}")
 
 
 def local_tree(root):
@@ -164,6 +227,9 @@ def main():
                          "(repeatable). Nothing is deleted: the rest of the console's "
                          "tree is left as it stands")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--replace", action="store_true",
+                    help="deploy even where the folder belongs to another profile or to no TES3X "
+                         "build, or the save pool's folder is not this pool's")
     ap.add_argument("--clear-cache", action="store_true", help="empty X:/Y:/Z: cache partitions")
     ap.add_argument("--verify", choices=("none", "size", "hash"), default="none",
                     help="verify uploaded files after transfer; hash retrieves every upload")
@@ -208,6 +274,22 @@ def main():
     print(f"  console has {len(remote)} files under {base}, "
           f"manifest {'with %d entries' % len(manifest) if manifest else 'missing'}")
 
+    record = build_record(args.tree)
+    pool = record.get("save_pool")
+    conflicts = owner_conflicts(base, remote, manifest, record.get("profile"))
+    pool_missing = []
+    if pool:
+        pool_base, pool_conflicts, pool_missing = pool_plan(ftp, pool)
+        conflicts += pool_conflicts
+        print(f"  save pool '{pool['name']}': {pool_base}"
+              + (f", {len(pool_missing)} file(s) to write" if pool_missing else ""))
+    for line in conflicts:
+        print(f"  conflict: {line}")
+    if conflicts and not args.replace and not args.dry_run:
+        ftp.quit()
+        print("nothing changed; deploy with --replace to go ahead")
+        sys.exit(CONFLICT)
+
     hashes = {r: sha1(v[2]) for r, v in local.items()}
 
     # FATX is case-insensitive, so a tree carrying both music/Battle and music/battle
@@ -239,6 +321,8 @@ def main():
     print(f"  delete {len(delete)} orphaned files")
 
     if args.dry_run:
+        for name in pool_missing:
+            print(f"    + {pool_base}/{name}")
         for r in sorted(delete)[:20]:
             print(f"    - {r}")
         if len(delete) > 20:
@@ -291,7 +375,17 @@ def main():
     entries = {} if not args.only else dict(manifest)
     for r in local:
         entries[r.lower()] = [local[r][0], hashes[r]]
+    entries[BUILD_KEY] = {
+        "profile": record.get("profile"),
+        "profile_sha256": record.get("profile_sha256"),
+        "save_pool": pool["id"] if pool else None,
+        "deployed": time.strftime("%Y-%m-%d %H:%M"),
+    }
     write_manifest(ftp, base, entries)
+
+    if pool_missing:
+        image = tes3x_savepool.title_image(os.path.join(args.tree, "Default.xbe"))
+        write_pool(ftp, pool_base, pool, image, pool_missing)
 
     if args.clear_cache:
         for drive in CACHE_DRIVES:

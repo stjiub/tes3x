@@ -100,6 +100,11 @@ Deploy keeps `tes3xdeploy.json` in the game folder with the size and SHA-1 of ev
 and only resends files that changed. When any plugin changes, all plugins are resent so their
 load order is stamped again.
 
+The manifest also names the profile that was deployed. Deploy stops without changing anything,
+exit status 3, when the folder has files but no manifest, holds another profile, or when the
+profile's save pool folder belongs to another title or pool. `--replace-remote` (or
+`tes3x_deploy.py --replace`) goes ahead; the GUI asks first.
+
 ## Pruning unused assets
 
 ```powershell

@@ -65,7 +65,7 @@ Lines run one per frame; ordinary lines start once the game has run 150 frames w
 menu. `@start` applies only when the game was started directly, not from another program that
 passed its own launch data.
 
-`U:` is `E:\UDATA\42530005`. A save loads by path from any folder there; it does not need to
+`U:` is `E:\UDATA\42530005`, or the save pool's folder for a build that sets `save_pool`. A save loads by path from any folder there; it does not need to
 appear in the game's save list. **A path that does not load is not reported: the game starts a New
 Game instead.** A test that loads a save should check something only that save has.
 

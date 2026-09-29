@@ -14,6 +14,7 @@ edit that file, not this one. Fixes that are not implemented are in
 | `drive-letters=LETTER` | Point every Data Files asset path at one drive. | TES3X | infrastructure | development | every build |
 | `save-staging=LETTER` | Stage saves on one volume with UDATA so the commit renames instead of copying. | TES3X | infrastructure | development | build option |
 | `title=NAME` | Rename the XBE's certificate title, the name a dashboard falls back to. | TES3X | infrastructure | development | build option |
+| `title-id=HEX` | Give the XBE its own title ID, so its saves go to a separate E:/UDATA folder. | TES3X | infrastructure | development | build option |
 | `multi-bsa` | Load every archive listed in tes3xarch.txt, not just Morrowind.bsa. | TES3X | infrastructure | development | delta-bsa packing |
 | `script-ext` | Add script opcodes: widen the length bounds and hook Script::RunFunction. | TES3X | compat | development | by name |
 | `mwse-legacy` | Interpret legacy MWSE 0.9.4 bytecode embedded in compiled scripts. | TES3X | compat | development | by name |

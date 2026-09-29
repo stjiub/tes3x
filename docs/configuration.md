@@ -58,6 +58,11 @@ The annotated [example profile](../examples/profile.toml) is the shortest starti
 | `dashboards` | array of strings | `["xbmc4gamers"]` | Dashboard metadata formats to write when `title` is set. Supported: `xbmc4gamers`; use `[]` for none. |
 | `remote_root` | string | local config | Destination game folder for this build. |
 | `library` | string | local config | Directory containing mod folders and optional `library.toml`. |
+| `save_pool` | string | shared | Name of the save pool. Builds in a pool save to their own `E:\UDATA` folder; profiles that name the same pool share its saves. Omit it to use the retail game's saves. |
+| `save_pool_id` | string | from the name | The pool's title ID, eight hex digits. By default it is derived from `save_pool`, in the `5433xxxx` range. |
+
+A save copied whole from one pool's folder into another loads there. Deploying creates the pool's
+folder first; the game hangs if it has to create a new title's folder itself.
 
 ### `[patches]`
 

@@ -6,7 +6,8 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from tes3x_deploy import ensure_dirs, ftp_basename, remote_tree, verify_uploads
+from tes3x_deploy import (BUILD_KEY, ensure_dirs, ftp_basename, owner_conflicts, pool_plan,
+                          remote_tree, verify_uploads)
 
 
 class FakeFtp:
@@ -108,6 +109,38 @@ class DeployFtpTests(unittest.TestCase):
             ftp.files[base + "/a.bin"] = b"corrupt"
             with self.assertRaisesRegex(RuntimeError, "hash verification failed"):
                 verify_uploads(ftp, base, {"a.bin": (7, 0, str(source))}, ["a.bin"], "hash")
+
+    def test_owner_conflicts(self):
+        base = "F:/Games/M"
+        self.assertEqual(owner_conflicts(base, {}, {}, "main"), [])
+        untracked = owner_conflicts(base, {"default.xbe": 2048}, {}, "main")
+        self.assertIn("1 files (2.0 KB) that TES3X did not deploy", untracked[0])
+        mine = {"default.xbe": [1, "x"], BUILD_KEY: {"profile": "main", "deployed": "d"}}
+        self.assertEqual(owner_conflicts(base, {"default.xbe": 1}, mine, "main"), [])
+        self.assertIn("profile 'main', deployed d",
+                      owner_conflicts(base, {"default.xbe": 1}, mine, "tr")[0])
+        legacy = {"default.xbe": [1, "x"]}
+        self.assertEqual(owner_conflicts(base, {"default.xbe": 1}, legacy, "tr"), [])
+
+    def test_pool_plan_tells_our_pool_from_another_title(self):
+        pool = {"name": "TR", "id": "5433ABCD"}
+        ftp = FakeFtp()
+        ftp.dirs.update({"/E", "/E/UDATA"})
+        self.assertEqual(pool_plan(ftp, pool), (
+            "E:/UDATA/5433ABCD", [], ["TitleMeta.xbx", "TitleImage.xbx", "tes3xpool.txt"]))
+
+        folder = "/E/UDATA/5433ABCD"
+        ftp.dirs.add(folder)
+        ftp.entries[folder] = [("file", "TitleMeta.xbx", 78)]
+        conflicts = pool_plan(ftp, pool)[1]
+        self.assertEqual(conflicts, ["E:/UDATA/5433ABCD holds 1 files of another title"])
+
+        ftp.entries[folder].append(("file", "tes3xpool.txt", 2))
+        ftp.files[folder + "/tes3xpool.txt"] = b"TR"
+        self.assertEqual(pool_plan(ftp, pool), ("E:/UDATA/5433ABCD", [], ["TitleImage.xbx"]))
+        ftp.files[folder + "/tes3xpool.txt"] = b"Main"
+        self.assertEqual(pool_plan(ftp, pool)[1],
+                         ["E:/UDATA/5433ABCD is save pool 'Main', not 'TR'"])
 
 
 if __name__ == "__main__":

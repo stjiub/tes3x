@@ -37,9 +37,3 @@ def play_steps(key, context):
             (TOOLS / "tes3x_deploy.py", deploy, f"Deploying to {remote}…"),
             (console, ["run", remote.rstrip("/") + "/default.xbe", *config],
              "Starting the game on the Xbox…")]
-
-
-def confirm(key, context):
-    remote = remote_root(context["plain"], context["local"])
-    return (f"Play on Xbox deploys this build to {remote}, deleting files there that the build "
-            "does not have, then starts it from the dashboard. Continue?")
