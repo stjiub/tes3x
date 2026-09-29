@@ -138,6 +138,13 @@ int tes3x_autosave_command(void *game, const char *text);
 #ifndef TES3X_BUTTON_HINT
 #error "define TES3X_BUTTON_HINT to the VA of the button-hint strip setter"
 #endif
+#if !defined(TES3X_OPEN_MENU) || !defined(TES3X_OPEN_JOURNAL) || !defined(TES3X_JOURNAL_OPENED)
+#error "define TES3X_OPEN_MENU, TES3X_OPEN_JOURNAL and TES3X_JOURNAL_OPENED to the pad's menu openers"
+#endif
+#if !defined(TES3X_RECORDS_PTR) || !defined(TES3X_RESOLVE_OBJECT) || !defined(TES3X_CLOSEST_REF) || \
+    !defined(TES3X_REF_ACTIVATE) || !defined(TES3X_PLAYER_MOBILE)
+#error "define the object lookup, Reference::activate and the player mobile getter"
+#endif
 #ifndef TES3X_CONSOLE_PRINT
 #error "define TES3X_CONSOLE_PRINT to the VA of the console's printf"
 #endif
@@ -182,6 +189,7 @@ int tes3x_autosave_command(void *game, const char *text);
 #define PROP_HANDLER 0x20
 #define CASE_LOWER 0x80BE
 #define EVENT_CLICK 0xFFFF8035
+#define EVENT_PAD_A 0xFFFF8080 /* then B, X, Y */
 #define EVENT_PAD_Y 0xFFFF8083
 #define ID_GENERIC 0xFFFF80B4  /* ids in the engine's anonymous range are not registered */
 #define HINT_MODE 0xFFFF80D1
@@ -293,6 +301,14 @@ typedef void *(__attribute__((thiscall)) *fn_create_image)(void *parent, unsigne
 typedef char(__cdecl *fn_handler)(void *owner, unsigned int id, int d0, int d1, void *source);
 typedef void(__cdecl *fn_button_hint)(int button, unsigned int label, unsigned int mode);
 typedef void(__cdecl *fn_console_print)(void *game, const char *fmt, ...);
+typedef void(__cdecl *fn_void)(void);
+typedef void(__cdecl *fn_open_menu)(int);
+typedef void *(__attribute__((thiscall)) *fn_resolve_object)(void *records, const char *id);
+typedef void *(__attribute__((thiscall)) *fn_closest_ref)(void *records, void *object,
+                                                         const float *position, int any_cell,
+                                                         int unknown);
+typedef void(__attribute__((thiscall)) *fn_ref_activate)(void *ref, void *activator, int flag);
+typedef void *(__attribute__((thiscall)) *fn_player_mobile)(void *game);
 typedef int(__cdecl *fn_vsprintf)(char *buf, const char *fmt, __builtin_va_list args);
 typedef int(__attribute__((thiscall)) *fn_compile_run)(void *self, void *ref, const char *text,
                                                        int a2, int a3, int a4, int a5, int a6);
@@ -1119,6 +1135,90 @@ static int exec_click(char *args)
     return 1;
 }
 
+static int exec_number(const char *s);
+
+/* "MENU A|B|X|Y|N": the pad button's event on the menu, as the pad delivers it; N is the event's
+ * offset from A's. Returns 0 while the menu is not on screen yet. */
+static int exec_pad(char *args)
+{
+    static const char buttons[] = "ABXY";
+    char *button = args;
+    void *menu;
+    u32 i;
+
+    while (*button && *button != ' ')
+        button++;
+    if (!*button)
+        return 1;
+    *button++ = 0;
+    while (*button == ' ')
+        button++;
+    for (i = 0; buttons[i] && buttons[i] != *button; i++)
+        ;
+    if (*button >= '0' && *button <= '9')
+        i = (u32)exec_number(button);
+    else if (!buttons[i] || button[1])
+        return 1;
+    menu = ((fn_find_menu)TES3X_FIND_MENU)(((fn_ui_id)TES3X_UI_ID)(args));
+    if (!menu_up(menu))
+        return 0;
+    ((fn_trigger_event)TES3X_TRIGGER_EVENT)(menu, EVENT_PAD_A + i, 0, 0, menu);
+    return 1;
+}
+
+/* `visible MENU`: whether it is on screen, as `menu.MENU 0|1`. */
+static void exec_visible(const char *name)
+{
+    char tag[64];
+    u32 n;
+
+    tag[0] = 'm';
+    tag[1] = 'e';
+    tag[2] = 'n';
+    tag[3] = 'u';
+    tag[4] = '.';
+    for (n = 5; name[n - 5] && n < sizeof(tag) - 1; n++)
+        tag[n] = name[n - 5];
+    tag[n] = 0;
+    tes3x_log(tag, (u32)menu_up(((fn_find_menu)TES3X_FIND_MENU)(((fn_ui_id)TES3X_UI_ID)(name))));
+}
+
+/* `activate ID`: the player activates the nearest reference of ID, as the pad's A does; a script
+ * `Activate` only flags scripted objects. 0 if there is none. */
+static int exec_activate(const char *id)
+{
+    void **handler = *(void ***)TES3X_RECORDS_PTR, *game = *(void **)TES3X_GAME_PTR;
+    unsigned char *mobile, *player;
+    void *records, *object, *ref;
+
+    if (!handler || !(records = *handler) || !game ||
+        !(mobile = ((fn_player_mobile)TES3X_PLAYER_MOBILE)(game)) ||
+        !(player = *(unsigned char **)(mobile + 0x14)))
+        return 0;
+    if (!(object = ((fn_resolve_object)TES3X_RESOLVE_OBJECT)(records, id)))
+        return 0;
+    ref = ((fn_closest_ref)TES3X_CLOSEST_REF)(records, object, (const float *)(player + 0x38), 0,
+                                              -1);
+    if (!ref)
+        return 0;
+    ((fn_ref_activate)TES3X_REF_ACTIVATE)(ref, player, 1);
+    return 1;
+}
+
+/* "inventory" or "journal": what the pad's menu and journal buttons call in gameplay. */
+static int exec_menu(const char *name)
+{
+    if (starts_with(name, "inventory") && !name[9]) {
+        ((fn_open_menu)TES3X_OPEN_MENU)(1);
+    } else if (starts_with(name, "journal") && !name[7]) {
+        ((fn_void)TES3X_OPEN_JOURNAL)();
+        ((fn_void)TES3X_JOURNAL_OPENED)();
+    } else {
+        return 0;
+    }
+    return 1;
+}
+
 static int exec_number(const char *s)
 {
     int v = 0;
@@ -1154,6 +1254,46 @@ static void exec_mark(const char *label)
 #endif
 }
 
+
+ * last ">> " of its first line (`GetPos >> 61.00` prints 61.00), with VALUE. */
+{
+    char *cmd = line + 7, *want = 0, *got;
+    u32 i, n, wn;
+
+    for (i = 0; cmd[i]; i++)
+        if (starts_with(cmd + i, " == "))
+            want = cmd + i;
+    for (n = 0; cmd[n]; n++)
+        ;
+    tes3x_log_raw(cmd, n);
+    tes3x_log_raw("\n", 1);
+    if (want) {
+        *want = 0;
+        want += 4;
+        run_command(cmd);
+    }
+    while (n && (got[n - 1] == '\n' || got[n - 1] == '\r' || got[n - 1] == ' '))
+        n--;
+    for (i = 0; i + 3 <= n; i++)
+            n -= i + 3;
+            i = 0;
+        }
+    for (wn = 0; want && want[wn]; wn++)
+        ;
+    for (i = 0; want && i < n && i < wn && got[i] == want[i]; i++)
+        ;
+    if (want && i == n && i == wn) {
+        return;
+    }
+    tes3x_log_raw(got, n);
+    tes3x_log_raw("\n", 1);
+}
+
+/* Logged before a script ends the session, or when it runs out. */
+{
+        return;
+}
+
 /* One line per frame at most, so each command sees the frame the last one left. */
 static void exec_step(void)
 {
@@ -1174,8 +1314,9 @@ static void exec_step(void)
         return;
     pos = exec_pos[phase];
     if (!exec_line(phase == 0, &pos, line)) {
-        if (phase == 1)
+        if (phase == 1) {
             exec_free();
+        }
         return;
     }
     for (n = 0; line[n]; n++)
@@ -1197,6 +1338,18 @@ static void exec_step(void)
         tes3x_log(exec_tries < EXEC_CLICK_FRAMES ? "exec.clicked" : "exec.click_missing",
                   (u32)exec_tries);
         exec_tries = 0;
+    } else if (starts_with(line, "pad ")) {
+        if (!exec_pad(line + 4) && ++exec_tries < EXEC_CLICK_FRAMES)
+            return;
+        tes3x_log(exec_tries < EXEC_CLICK_FRAMES ? "exec.pad" : "exec.pad_missing",
+                  (u32)exec_tries);
+        exec_tries = 0;
+    } else if (starts_with(line, "menu ")) {
+        tes3x_log("exec.menu", (u32)exec_menu(line + 5));
+    } else if (starts_with(line, "activate ")) {
+        tes3x_log("exec.activate", (u32)exec_activate(line + 9));
+    } else if (starts_with(line, "visible ")) {
+        exec_visible(line + 8);
     } else {
         tes3x_log_raw("exec> ", 6);
         tes3x_log_raw(line, n);
@@ -1220,6 +1373,8 @@ void __cdecl tes3x_console_print(void *game, const char *fmt, ...)
     __builtin_va_end(args);
     if (n < 0 || n >= (int)sizeof(buf))
         n = 0;
+    if (running && output_lines == 0) {
+    }
     if (running && ++output_lines <= OUTPUT_MAX) {
         tes3x_log_raw("console< ", 9);
         tes3x_log_raw(buf, (u32)n);

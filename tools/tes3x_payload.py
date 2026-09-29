@@ -49,6 +49,9 @@ CONSOLE_ADDRESSES = (
     ("VK_COL_NUM_ID", 0x003DC788), ("VK_CAPS_ID", 0x003DC714),
     ("VK_BACKSPACE_ID", 0x003DC774), ("VK_SPACE_ID", 0x003DC7E8), ("VK_CAPS", 0x0022C240),
     ("CREATE_IMAGE", 0x001A7080), ("BUTTON_HINT", 0x001F8630),
+    ("OPEN_MENU", 0x001AED50), ("OPEN_JOURNAL", 0x001E3190), ("JOURNAL_OPENED", 0x001ACBE0),
+    ("RECORDS_PTR", 0x003CB5F8), ("RESOLVE_OBJECT", 0x00104300), ("CLOSEST_REF", 0x0010CCD0),
+    ("REF_ACTIVATE", 0x0012F630), ("PLAYER_MOBILE", 0x0008BC10),
 )
 INI_USERS = {"tes3xconsole.c", "tes3xrefs.c", "tes3xdiag.c", "tes3xsaves.c", "tes3xprof.c",
              "tes3xarena.c", "tes3xregion.c", "tes3xbowview.c", "tes3xnet.c"}
@@ -237,7 +240,8 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
               f"DataHandler {data_handler}")
         define("NET_WORLD", world)
         define("NET_DATA_HANDLER", data_handler)
-        define("NET_COMPILE_RUN", address("COMPILE_RUN", dict(CONSOLE_ADDRESSES)["COMPILE_RUN"]))
+        for name in ("COMPILE_RUN", "FIND_MENU", "UI_ID", "TRIGGER_EVENT"):
+            define("NET_" + name, address(name, dict(CONSOLE_ADDRESSES)[name]))
         define("NET_MENU_GATE", hexva(locate("menu-mode-gate")))
         define("NET_MOB_GATE", hexva(locate("mob-update-gate")))
         flags.append("-DTES3X_NET")

@@ -10,13 +10,16 @@
  *   tes3xnet probe A.B.C.D  ARP for an address three times and log the replies
  *   tes3xnet stat         log the counters
  *   tes3xnet say TEXT     send TEXT to the other clients as a reliable event
+ *   tes3xnet menusim 0|1|auto  force the world paused or running under menus, or follow the
+ *                         session (the default: running while joined)
  *   tes3xnet down         stop the NIC
  *   tes3xnet [count]      broadcast count "TES3XNET" datagrams (default 8), from 0.0.0.0 unless up
  *
  * With [Xbox] NetAddress set, the first frame brings the NIC up as `up` would, from NetAddress,
  * NetServer, NetGateway and NetDns; every launch and relaunch joins by itself. While joined, each frame
  * sends the player's state, and the server relays the other clients' states back. Each other
- * client near the player is drawn as a ghost NPC from the plugin the pipeline adds.
+ * client near the player is drawn as a ghost NPC from the plugin the pipeline adds. While joined,
+ * menus do not pause the world, and the rest menu closes as it opens.
  *
  * While up, the HalReturnToFirmware thunk points at a wrapper that stops the NIC first: a quick
  * reboot keeps the kernel, which would otherwise keep a connected interrupt object and a live DMA
@@ -40,6 +43,9 @@
 #endif
 #ifndef TES3X_NET_MOB_GATE
 #error "define TES3X_NET_MOB_GATE to the menu mode jne before ProcessMobs in Game::Update"
+#endif
+#if !defined(TES3X_NET_FIND_MENU) || !defined(TES3X_NET_UI_ID) || !defined(TES3X_NET_TRIGGER_EVENT)
+#error "define TES3X_NET_FIND_MENU, TES3X_NET_UI_ID and TES3X_NET_TRIGGER_EVENT to the UI functions"
 #endif
 
 typedef unsigned short u16;
@@ -1302,16 +1308,22 @@ static void stat(void)
 #define GATE_CLOCK 0x1A
 static u8 *const gates[2] = {(u8 *)TES3X_NET_MENU_GATE, (u8 *)TES3X_NET_MOB_GATE};
 static u8 gate_original[2][6];
-static u32 gate_saved;
+#define GATES_UNEXPECTED 2
+static u32 gate_saved, gates_open;
+/* `menusim`: 0 follows the session, else 1 + the forced state. */
+static u32 menu_forced;
 
 static void menu_sim(u32 on)
 {
     u32 cr0, flags, i, g;
 
+    if (on == gates_open || gate_saved == GATES_UNEXPECTED)
+        return;
     if (!gate_saved) {
         for (g = 0; g < 2; g++)
             if (gates[g][0] != 0x0F || gates[g][1] != 0x85) {
                 tes3x_log_hex3("net.menu_gate_unexpected", g, gates[g][0], gates[g][1]);
+                gate_saved = GATES_UNEXPECTED;
                 return;
             }
         for (g = 0; g < 2; g++)
@@ -1326,7 +1338,47 @@ static void menu_sim(u32 on)
             gates[g][i] = on ? 0x90 : gate_original[g][i];
     __asm__ volatile("movl %0, %%cr0" : : "r"(cr0) : "memory");
     unlock(flags);
+    gates_open = on;
     tes3x_log("net.menusim", on);
+}
+
+typedef void *(__cdecl *fn_find_menu)(u32 id);
+typedef u32(__cdecl *fn_ui_id)(const char *name);
+typedef void(__attribute__((thiscall)) *fn_trigger_event)(void *element, u32 event, int d0,
+                                                          int d1, void *source);
+#define MENU_VISIBLE 0x7E
+#define EVENT_PAD_B 0xFFFF8081
+
+static void run_script(const char *text);
+static u32 rest_blocked;
+
+/* Resting and waiting advance the clock, which is shared while joined: the rest menu is closed
+ * as soon as it opens, from a bed, the pad or ShowRestMenu alike. */
+static void rest_block(void)
+{
+    static u32 menu_id;
+    u8 *menu;
+
+    if (!menu_id)
+        menu_id = ((fn_ui_id)TES3X_NET_UI_ID)("MenuRestWait");
+    menu = ((fn_find_menu)TES3X_NET_FIND_MENU)(menu_id);
+    if (!menu || !menu[MENU_VISIBLE])
+        return;
+    /* The Xbox menu has no cancel button; B closes it. */
+    ((fn_trigger_event)TES3X_NET_TRIGGER_EVENT)(menu, EVENT_PAD_B, 0, 0, menu);
+    run_script("MessageBox \"You cannot rest or wait in a multiplayer session.\"");
+    tes3x_log("net.rest_blocked", ++rest_blocked);
+}
+
+/* While joined, the world runs under menus as it does for the other players, and nobody rests.
+ * Only in the world: the main menu at boot has no player to simulate. */
+static void menu_frame(int in_world)
+{
+    u32 joined = ses.state == SESSION_JOINED && in_world;
+
+    menu_sim(menu_forced ? menu_forced - 1 : joined);
+    if (joined)
+        rest_block();
 }
 
 static void menu_stat(void)
@@ -1338,6 +1390,7 @@ static void menu_stat(void)
         plausible(clock))
         tes3x_log_hex3("net.menu_mode", world[WORLD_MENU_MODE], (u32)(int)(*clock * 1000.0f),
                        gate[0] == 0x90);
+    tes3x_log_hex3("net.menu_sim", gates_open, menu_forced, rest_blocked);
 }
 
 static const char *word(const char *text, const char *w)
@@ -1998,7 +2051,9 @@ void tes3x_net_frame(void)
     }
     if (net.up)
         events_frame();
-    if (!net.up || !(ref = player_reference()))
+    ref = player_reference();
+    menu_frame(net.up && ref);
+    if (!net.up || !ref)
         return;
     player_state(ref, state);
     if (!logged_player) {
@@ -2060,8 +2115,12 @@ int tes3x_net_command(const char *text)
     } else if ((rest = word(text, "stat")) && !*skip(rest)) {
         stat();
         menu_stat();
+    } else if ((rest = word(text, "menusim")) && (rest = word(skip(rest), "auto")) &&
+               !*skip(rest)) {
+        menu_forced = 0;
     } else if ((rest = word(text, "menusim")) && (rest = number(skip(rest), &value)) &&
                !*skip(rest)) {
+        menu_forced = 1 + (value != 0);
         menu_sim(value != 0);
     } else if ((rest = word(text, "say")) && *(rest = skip(rest))) {
         for (value = 0; rest[value] && value < EVENT_DATA; value++)

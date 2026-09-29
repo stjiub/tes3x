@@ -55,6 +55,10 @@ exit
 | `@menu ...` | run only while the main menu is up, e.g. `@menu click MenuOptions MenuOptions_New_container` |
 | `wait N` | pause N frames |
 | `click MENU WIDGET` | press a menu widget by name |
+| `pad MENU A\|B\|X\|Y\|N` | send a pad button to a menu; `B` closes most menus. `N` is a raw event, counted from A's |
+| `menu inventory`, `menu journal` | open the in-game menu or the journal, as the pad's buttons do; `menu inventory` again closes it |
+| `activate ID` | the player activates the nearest reference of `ID`, as with the A button (a script's `Activate` only reaches scripted objects) |
+| `visible MENU` | log whether a menu is on screen, as `menu.MENU 0` or `1` |
 | `mark LABEL` | log free memory now, as `mem.LABEL <KB>` |
 | `exit` | turn the Xbox off |
 | `reboot` | restart the Xbox into the dashboard |
