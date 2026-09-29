@@ -272,7 +272,7 @@ def ping(args):
 
 
 T3MP = struct.Struct("<4sBBHIIIII")  # magic, version, type, 0, session, seq, ack, time, echo
-T3MP_VERSION = 4
+T3MP_VERSION = 5
 HELLO, WELCOME, HEARTBEAT, BYE, STATE, PEER, GONE, EVENTS, REFUSE, CLOCK, ACTORS = range(1, 12)
 # GameHour, Day, Month (0-11), Year, DaysPassed, TimeScale, as the game's float globals
 CLOCK_BODY = struct.Struct("<6f")
@@ -290,8 +290,11 @@ EVENT_AUTHORITY, EVENT_HOLD, EVENT_HOLD_BROKEN, EVENT_HIT, EVENT_DEATH = 2, 3, 4
 TARGETED = {EVENT_HOLD: "holds", EVENT_HOLD_BROKEN: "breaks the hold on", EVENT_HIT: "hits"}
 KEY = struct.Struct("<Iii32s")  # kind, grid x, grid y, interior name
 KEY_EXTERIOR, KEY_INTERIOR = 1, 2
-ACTOR = struct.Struct("<I5fI")  # refid, x, y, z, heading, health, flags
-ACTORS_PER_PACKET = 18
+ANIM_BYTES = 20  # per layer: 3 groups, pad, 3 keys, pad, 3 times (tes3xnet.c anim_capture)
+NO_ANIM = b"\xff\xff\xff" + bytes(ANIM_BYTES - 3)  # no group on any layer: the ghost idles
+# refid, x, y, z, heading, health, flags, animation
+ACTOR = struct.Struct(f"<I5fI{ANIM_BYTES}s")
+ACTORS_PER_PACKET = 10
 ACTOR_PERIOD = 0.1
 AUTHORITY_PERIOD = 0.25
 RESEND = 0.25
@@ -378,9 +381,9 @@ class Reliable:
                 self.stale += 1
         return ready, bool(events)
 STATE_BODY = struct.Struct("<I4f32s")  # flags, x, y, z, heading, interior cell name
+STATE_SIZE = STATE_BODY.size + ANIM_BYTES  # then the animation
 IN_WORLD, INTERIOR = 1, 2
 PLACE = IN_WORLD | INTERIOR
-MOVEMENT_SHIFT = 16  # the upper half of STATE and ACTOR flags: the mobile's movement flags
 CELL_UNITS = 8192
 
 
@@ -594,7 +597,7 @@ def serve(args):
 
     bot = {"anchor": None, "next": 0.0, "start": time.time(), "said": 0.0, "line": 0,
            "anchored": None, "state": None, "breaks": [], "held": 0, "hit": False,
-           "killed": False}
+           "killed": False, "mirror": None}
 
     def bot_anchor(state):
         """The bot circles where the first client entered the world, and follows it to a new
@@ -613,9 +616,13 @@ def serve(args):
     def bot_step(now):
         (flags, cell), cx, cy, cz = bot["anchor"]
         t = (now - bot["start"]) * 2 * math.pi / args.bot_period
-        state = STATE_BODY.pack(flags | args.bot_movement << MOVEMENT_SHIFT,
-                                cx + args.bot_radius * math.cos(t),
-                                cy + args.bot_radius * math.sin(t), cz, -t % (2 * math.pi), cell)
+        if bot["mirror"]:
+            _, x, y, z, heading, _, _, anim = ACTOR.unpack(bot["mirror"])
+            state = STATE_BODY.pack(flags, x + args.bot_shift, y, z, heading, cell) + anim
+        else:
+            state = STATE_BODY.pack(flags, cx + args.bot_radius * math.cos(t),
+                                    cy + args.bot_radius * math.sin(t), cz, -t % (2 * math.pi),
+                                    cell) + NO_ANIM
         bot["state"] = state
         for other in clients.values():
             if other.alive:
@@ -713,6 +720,8 @@ def serve(args):
             key = own if own and own[0] == KEY_INTERIOR else (
                 KEY_EXTERIOR, math.floor(x / CELL_UNITS), math.floor(y / CELL_UNITS), b"")
             actors[refid] = (client.id, key, record)
+            if refid == args.bot_mirror:
+                bot["mirror"] = record
             client.actor_states += 1
         for other in clients.values():
             if other is not client and other.alive:
@@ -729,11 +738,11 @@ def serve(args):
             chunk = owned[i:i + ACTORS_PER_PACKET]
             body = struct.pack("<I", len(chunk))
             for record in chunk:
-                refid, x, y, z, heading, health, flags = ACTOR.unpack(record)
+                refid, x, y, z, heading, health, flags, anim = ACTOR.unpack(record)
                 if args.bot_sway:
                     heading = facing
-                    flags = flags & 0xFFFF | args.bot_movement << MOVEMENT_SHIFT
-                body += ACTOR.pack(refid, x + args.bot_shift + sway, y, z, heading, health, flags)
+                body += ACTOR.pack(refid, x + args.bot_shift + sway, y, z, heading, health, flags,
+                                   anim)
             for other in clients.values():
                 if other.alive:
                     send(other, ACTORS, struct.pack("<I", BOT_ID) + body)
@@ -805,8 +814,8 @@ def serve(args):
         if kind == HEARTBEAT:
             client.beats += 1
             send(client, HEARTBEAT)
-        elif kind == STATE and len(packet) >= T3MP.size + STATE_BODY.size:
-            client.state = packet[T3MP.size:T3MP.size + STATE_BODY.size]
+        elif kind == STATE and len(packet) >= T3MP.size + STATE_SIZE:
+            client.state = packet[T3MP.size:T3MP.size + STATE_SIZE]
             client.states += 1
             if args.bot:
                 bot_anchor(client.state)
@@ -994,12 +1003,12 @@ def main(argv=None):
     p.add_argument("--bot-shift", type=float, default=128,
                    help="as the authority, the bot places each actor this many units east of its "
                         "last reported position")
+    p.add_argument("--bot-mirror", type=lambda v: int(v, 16), metavar="REFID",
+                   help="instead of circling, the bot stands --bot-shift units east of this actor "
+                        "(hex refid) as its authority last reported it, and plays its animation")
     p.add_argument("--bot-sway", type=float, default=0, metavar="UNITS",
                    help="as the authority, the bot also swings each actor this far east and west, "
-                        "once per --bot-period, facing the way it moves with --bot-movement")
-    p.add_argument("--bot-movement", type=lambda v: int(v, 0), default=0x101, metavar="FLAGS",
-                   help="the movement flags the bot reports (default 0x101, walking forward; "
-                        "0x201 runs, 0x401 sneaks, 0x1000 jumps)")
+                        "once per --bot-period, facing the way it moves")
     p.add_argument("--bot-break-hold", type=float, metavar="SECONDS",
                    help="as the authority, the bot breaks a client's hold this long after it starts")
     p.add_argument("--bot-hold", metavar="REFID@START:END",

@@ -145,7 +145,7 @@ class AuthorityTests(unittest.TestCase):
             struct.pack('<I', 1)
         self.assertLessEqual(len(data), tes3x_net.EVENT_DATA)
         self.assertEqual(4 + tes3x_net.ACTORS_PER_PACKET * tes3x_net.ACTOR.size,
-                         508)  # within tes3xnet.c's EVENTS_BYTES
+                         484)  # within tes3xnet.c's EVENTS_BYTES
 
 
 if __name__ == '__main__':

@@ -23,7 +23,7 @@
  * time globals; a console joins only once a game is loaded, offering its own clock. The server names
  * one client the authority for each loaded cell: it runs those actors and sends their states, and
  * the others take them out of the simulation and place them from the states. Ghosts and followed
- * actors play the walk, run, sneak, swim or jump animation their movement flags call for.
+ * actors mirror their source's animation layers: moving, attacking, casting and the rest.
  *
  * While up, the HalReturnToFirmware thunk points at a wrapper that stops the NIC first: a quick
  * reboot keeps the kernel, which would otherwise keep a connected interrupt object and a live DMA
@@ -191,7 +191,7 @@ struct descriptor {
 #define CPU_MHZ 733u
 
 /* Session packet: "T3MP", version, type, then session, seq, ack, time and echoed peer time. */
-#define T3MP_VERSION 4u
+#define T3MP_VERSION 5u
 #define T3MP_HEADER 28u
 #define T3MP_HELLO 1u
 #define T3MP_WELCOME 2u
@@ -232,13 +232,14 @@ static struct {
     u8 hop_mac[6];
 } ses;
 
-/* The player's state: flags, position, heading (orientation z), then the interior cell's name.
- * Exterior cells are left empty; the grid follows from the position. The upper half of the flags
- * is the player's movement, as the mobile holds it. */
+/* The player's state: flags, position, heading (orientation z), the interior cell's name, then
+ * the animation (anim_capture). Exterior cells are left empty; the grid follows from the
+ * position. */
 #define STATE_IN_WORLD 1u
 #define STATE_INTERIOR 2u
-#define STATE_MOVEMENT_SHIFT 16
-#define STATE_BYTES 52u
+#define STATE_ANIM 52u
+#define ANIM_BYTES 20u
+#define STATE_BYTES (STATE_ANIM + ANIM_BYTES)
 #define CELL_NAME 32u
 #define PEERS 8u
 #define PEER_TIMEOUT_US 5000000u
@@ -1412,8 +1413,6 @@ static void rest_block(void)
 /* The NPC a dialogue is with stays put while the world runs: it leaves the simulation, as actors
  * outside the loaded cells do, until the dialogue closes. Combat or a drop in its health releases
  * it and closes the dialogue, so holding an NPC in conversation cannot set it up to be hit. */
-#define MOBILE_MOVEMENT 0x8 /* u16: forward 1, back 2, left 4, right 8, walk 0x100, run 0x200,
-                             sneak 0x400, swim 0x800, jump 0x1000 or 0x4000 */
 #define MOBILE_FLAGS 0x10
 #define MOBILE_SIMULATED 0x4u /* ActiveInSimulation, MWSE's activeAI */
 #define MOBILE_IN_COMBAT 0x10000u
@@ -1806,9 +1805,41 @@ static u8 *ref_mobile(const u8 *ref)
     return 0;
 }
 
+/* A reference's AnimationData is its attachment of kind 0. For each layer (lower body, upper
+ * body, arm) it holds the group +0x38, the key reached +0x3C, the loops left +0x48 and the time
+ * in the group +0x58. Sent as the three groups, a pad byte, the three keys, a pad byte, and the
+ * three times. */
+#define ANIM_GROUP 0x38
+#define ANIM_KEY 0x3C
+#define ANIM_LOOPS 0x48
+#define ANIM_TIMING 0x58
+#define ANIM_LAYERS 3u
+
+static u8 *ref_animation(const u8 *ref)
+{
+    return (u8 *)((fn_ref_part)TES3X_NET_REF_ANIMATION)(ref);
+}
+
+static void anim_capture(const u8 *ref, u8 *out)
+{
+    const u8 *a = ref_animation(ref);
+    u32 l;
+
+    for (l = 0; l < ANIM_BYTES; l++)
+        out[l] = 0;
+    for (l = 0; l < ANIM_LAYERS; l++) {
+        out[l] = 0xFF;
+        if (!plausible(a))
+            continue;
+        out[l] = a[ANIM_GROUP + l];
+        out[4 + l] = (u8) * (const u32 *)(a + ANIM_KEY + 4 * l);
+        copy(out + 8 + 4 * l, a + ANIM_TIMING + 4 * l, 4);
+    }
+}
+
 static void player_state(const u8 *ref, u8 *state)
 {
-    const u8 *handler = *(const u8 **)TES3X_NET_DATA_HANDLER, *cell = 0, *mobile = ref_mobile(ref);
+    const u8 *handler = *(const u8 **)TES3X_NET_DATA_HANDLER, *cell = 0;
     const char *name;
     u32 i, flags = STATE_IN_WORLD;
 
@@ -1820,11 +1851,10 @@ static void player_state(const u8 *ref, u8 *state)
         for (i = 0; mapped(name) && name[i] && i < CELL_NAME - 1; i++)
             state[20 + i] = (u8)name[i];
     }
-    if (plausible(mobile))
-        flags |= (u32) * (const u16 *)(mobile + MOBILE_MOVEMENT) << STATE_MOVEMENT_SHIFT;
     put32le(state, flags);
     copy(state + 4, ref + 0x38, 12); /* position */
     copy(state + 16, ref + 0x34, 4); /* orientation z */
+    anim_capture(ref, state + STATE_ANIM);
 }
 
 /* Ghosts: each peer slot drives one persistent NPC of the ghost plugin (tes3x_net.py plugin),
@@ -1849,13 +1879,7 @@ static void player_state(const u8 *ref, u8 *state)
 #define NODE_TRANSLATE 0x30
 #define PI 3.14159265f
 #define GROUP_IDLE 0u
-#define GROUP_SWIM_WALK 43u /* then back, left, right */
-#define GROUP_SWIM_RUN 47u
-#define GROUP_WALK 53u
-#define GROUP_RUN 59u
-#define GROUP_SNEAK 63u
-#define GROUP_JUMP 67u
-#define GROUP_NONE 0xFFu /* nothing played yet */
+#define GROUP_NONE 0xFFu
 #define GROUP_LOOPS 100000 /* LoopGroup's count: until the next group */
 #define MOBILE_SCRIPTED 0x10000000u /* PlayGroup's mark: the group is not the AI's to change */
 
@@ -1874,12 +1898,14 @@ struct pose {
     u32 flags;
     float x, y, z, heading;
     u8 cell[CELL_NAME];
+    u8 anim[ANIM_BYTES];
 };
 
-/* A received position and heading and when it arrived. */
+/* A received position, heading and animation and when it arrived. */
 struct timed {
     u32 time;
     float p[4];
+    u8 anim[ANIM_BYTES];
 };
 
 static struct {
@@ -1888,7 +1914,6 @@ static struct {
     float x, y, z, heading;
     u8 cell[CELL_NAME];
     u8 *ref;
-    u32 group;
 } ghosts[PEERS];
 static u32 ghosts_parked, ghost_settle;
 __attribute__((weak)) int _fltused; /* tes3xscript.c may define it too */
@@ -1967,7 +1992,6 @@ static void ghost_park(u32 i)
 {
     ghost_command(i, "PositionCell ", 128 * ((int)i + 1), " 0 0 0 \"" GHOST_CELL "\"");
     ghosts[i].placed = 0;
-    ghosts[i].group = GROUP_NONE;
 }
 
 static int grid(float f)
@@ -2009,48 +2033,61 @@ static void place_ref(u8 *ref, const float *xyzh)
         ((fn_node_update)TES3X_NET_NODE_UPDATE)(node, 0.0f, 0, 1);
 }
 
-/* Ghosts and followed actors are placed, not simulated, so the engine never picks their movement
- * animation; they play the group ActorAnimationController::selectActorAnim would pick for their
- * movement flags, weapon stances aside. */
-static u32 movement_group(u32 m)
+/* Ghosts and followed actors are placed, not simulated, so the engine never animates them by
+ * itself; they mirror the animation their source sends. When a layer's group changes it is
+ * played as LoopGroup plays it and the mobile marked as PlayGroup marks it; every frame the key
+ * and the time are set between the two states the actor is drawn between (frac of the way), and
+ * the engine's update poses the actor there. */
+static void anim_apply(u8 *ref, const u8 *older, const u8 *newer, float frac)
 {
-    u32 dir = m & 1 ? 0 : m & 2 ? 1 : m & 4 ? 2 : m & 8 ? 3 : 4;
+    u8 *a = ref_animation(ref), *mobile = ref_mobile(ref);
+    u32 l, g;
+    float from, to;
 
-    if (m & 0x5000)
-        return GROUP_JUMP;
-    if (dir == 4)
-        return GROUP_IDLE;
-    if (m & 0x800)
-        return (m & 0x200 ? GROUP_SWIM_RUN : GROUP_SWIM_WALK) + dir;
-    if (m & 0x400)
-        return GROUP_SNEAK + dir;
-    if (m & 0x200)
-        return GROUP_RUN + dir;
-    return m & 0x100 ? GROUP_WALK + dir : GROUP_IDLE;
+    if (!plausible(a))
+        return;
+    if (plausible(mobile))
+        *(u32 *)(mobile + MOBILE_FLAGS) |= MOBILE_SCRIPTED;
+    for (l = 0; l < ANIM_LAYERS; l++) {
+        if ((g = newer[l]) == GROUP_NONE)
+            continue;
+        /* Attack and cast groups take the key to start from where others take 1, at once. */
+        if (a[ANIM_GROUP + l] != g) {
+            if (!((fn_has_group)TES3X_NET_ANIM_HAS_GROUP)(a, (int)g))
+                continue;
+            ((fn_play_group)TES3X_NET_ANIM_PLAY_GROUP)(a, (int)g, (int)l,
+                                                        newer[4 + l] >= 3 ? newer[4 + l] : 1,
+                                                        GROUP_LOOPS);
+            if (a[ANIM_GROUP + l] != g)
+                ((fn_play_group)TES3X_NET_ANIM_PLAY_GROUP)(a, (int)g, (int)l,
+                                                            newer[4 + l] >= 3 ? 1 : 3,
+                                                            GROUP_LOOPS);
+            if (a[ANIM_GROUP + l] != g)
+                continue;
+        }
+        copy((u8 *)&to, newer + 8 + 4 * l, 4);
+        if (older[l] == g && older[4 + l] == newer[4 + l]) {
+            copy((u8 *)&from, older + 8 + 4 * l, 4);
+            if (from <= to)
+                to = from + (to - from) * frac;
+        }
+        *(u32 *)(a + ANIM_KEY + 4 * l) = newer[4 + l];
+        *(u32 *)(a + ANIM_LOOPS + 4 * l) = GROUP_LOOPS;
+        *(float *)(a + ANIM_TIMING + 4 * l) = to;
+    }
 }
 
-/* LoopGroup's work on every layer, played at once: any group but idle marks the mobile as
- * PlayGroup does, and idle hands the actor back to its own animation. A group the actor lacks
- * plays as idle. */
-static void play_group(u8 *ref, u32 group)
+/* Idle on every layer, as PlayGroup Idle: the actor's own animation takes over again. */
+static void anim_release(u8 *ref)
 {
-    void *animation = ((fn_ref_part)TES3X_NET_REF_ANIMATION)(ref);
-    u8 *mobile = ref_mobile(ref);
-    int layer;
+    u8 *a = ref_animation(ref), *mobile = ref_mobile(ref);
+    int l;
 
-    if (!plausible(animation))
-        return;
-    if (group != GROUP_IDLE && !((fn_has_group)TES3X_NET_ANIM_HAS_GROUP)(animation, (int)group))
-        group = GROUP_IDLE;
-    if (plausible(mobile)) {
-        if (group == GROUP_IDLE)
-            *(u32 *)(mobile + MOBILE_FLAGS) &= ~MOBILE_SCRIPTED;
-        else
-            *(u32 *)(mobile + MOBILE_FLAGS) |= MOBILE_SCRIPTED;
-    }
-    for (layer = 0; layer < 3; layer++) /* lower body, upper body, arm */
-        ((fn_play_group)TES3X_NET_ANIM_PLAY_GROUP)(animation, (int)group, layer, 1,
-                                                    group == GROUP_IDLE ? -1 : GROUP_LOOPS);
+    if (plausible(mobile))
+        *(u32 *)(mobile + MOBILE_FLAGS) &= ~MOBILE_SCRIPTED;
+    if (plausible(a))
+        for (l = 0; l < (int)ANIM_LAYERS; l++)
+            ((fn_play_group)TES3X_NET_ANIM_PLAY_GROUP)(a, GROUP_IDLE, l, 1, -1);
 }
 
 /* Whether a placed reference stands more than a unit or 0.01 rad off xyzh. */
@@ -2069,8 +2106,8 @@ static int off_pose(const u8 *ref, const float *xyzh)
 /* The pose delay microseconds ago from n samples, oldest first: between the two around that
  * moment, carried on past the newest for up to GHOST_EXTRAPOLATE_US, or held at one sample when
  * there is no pair or the pair lies too far apart to be a walk. Returns the index of the newer
- * sample of the pair, or of the sample held. */
-static u32 track_pose(const struct timed *s, u32 n, u32 delay, float *out)
+ * sample of the pair, or of the sample held; frac is how far between the pair, at most 1. */
+static u32 track_pose(const struct timed *s, u32 n, u32 delay, float *out, float *frac)
 {
     int target = (int)(now_us() - delay), from = -1, span, into;
     u32 i;
@@ -2079,6 +2116,7 @@ static u32 track_pose(const struct timed *s, u32 n, u32 delay, float *out)
     for (i = 0; i < n; i++)
         if ((int)(s[i].time - (u32)target) <= 0)
             from = (int)i;
+    *frac = 1;
     if (from < 0 || n == 1) {
         i = from < 0 ? 0 : (u32)from;
         copy((u8 *)out, (const u8 *)s[i].p, 16);
@@ -2095,6 +2133,7 @@ static u32 track_pose(const struct timed *s, u32 n, u32 delay, float *out)
     if (into > span + GHOST_EXTRAPOLATE_US)
         into = span + GHOST_EXTRAPOLATE_US;
     t = (float)into / (float)span;
+    *frac = t < 0 ? 0 : t > 1 ? 1 : t;
     out[0] = s[i].p[0] + dx * t;
     out[1] = s[i].p[1] + dy * t;
     out[2] = s[i].p[2] + (s[i + 1].p[2] - s[i].p[2]) * t;
@@ -2139,6 +2178,7 @@ static void read_pose(const u8 *state, struct pose *p)
     copy((u8 *)&p->x, state + 4, 16);
     copy(p->cell, state + 20, CELL_NAME);
     p->cell[CELL_NAME - 1] = 0;
+    copy(p->anim, state + STATE_ANIM, ANIM_BYTES);
 }
 
 static int same_place(const struct pose *a, const struct pose *b)
@@ -2152,8 +2192,9 @@ static int same_place(const struct pose *a, const struct pose *b)
     return a->cell[i] == b->cell[i];
 }
 
-/* The slot's pose GHOST_DELAY_US ago, from a copy of its states; 0 if it has none. */
-static int ghost_pose(u32 slot, struct pose *out)
+/* The slot's pose GHOST_DELAY_US ago, from a copy of its states, with the older state's
+ * animation and how far past it; 0 if it has none. */
+static int ghost_pose(u32 slot, struct pose *out, u8 *older, float *frac)
 {
     static struct {
         u32 time;
@@ -2177,11 +2218,14 @@ static int ghost_pose(u32 slot, struct pose *out)
         track[i].time = ring[k].time;
         copy((u8 *)track[i].p, (const u8 *)&poses[i].x, 16);
     }
-    i = track_pose(track, count, GHOST_DELAY_US, at);
+    i = track_pose(track, count, GHOST_DELAY_US, at, frac);
     *out = poses[i];
+    copy(older, poses[i ? i - 1 : i].anim, ANIM_BYTES);
     /* Across a cell change the newer state stands alone. */
     if (i && same_place(&poses[i - 1], &poses[i]) && (poses[i - 1].flags & STATE_IN_WORLD))
         copy((u8 *)&out->x, (const u8 *)at, 16);
+    else
+        *frac = 1;
     return 1;
 }
 
@@ -2204,7 +2248,6 @@ static void ghost_place(u32 i, const struct pose *p)
     ghosts[i].y = p->y;
     ghosts[i].z = p->z;
     ghosts[i].heading = 1000; /* not an angle: the next frame turns it */
-    ghosts[i].group = GROUP_NONE;
     ghost_places++;
     log_text("net.ghost_cell", p->flags & STATE_INTERIOR ? (const char *)p->cell : "(exterior)");
 }
@@ -2228,8 +2271,9 @@ static int near(const struct pose *p, const struct pose *local)
 static void ghost_update(u32 i, const struct pose *local)
 {
     struct pose p, placed;
-    u32 client = peers[i].client, group;
-    u8 *ref;
+    u32 client = peers[i].client;
+    u8 *ref, older[ANIM_BYTES];
+    float frac;
 
     if (client != ghosts[i].client) {
         if (ghosts[i].placed)
@@ -2238,7 +2282,7 @@ static void ghost_update(u32 i, const struct pose *local)
         if (client)
             tes3x_log_hex3("net.ghost", i + 1, client, 0);
     }
-    if (!client || !ghost_pose(i, &p))
+    if (!client || !ghost_pose(i, &p, older, &frac))
         return;
     if (!(p.flags & STATE_IN_WORLD) || !near(&p, local)) {
         if (ghosts[i].placed)
@@ -2263,10 +2307,7 @@ static void ghost_update(u32 i, const struct pose *local)
         ghosts[i].heading = p.heading;
         ghost_moves++;
     }
-    if ((group = movement_group(p.flags >> STATE_MOVEMENT_SHIFT)) != ghosts[i].group) {
-        play_group(ref, group);
-        ghosts[i].group = group;
-    }
+    anim_apply(ref, older, p.anim, frac);
 }
 
 static void ghosts_frame(const u8 *state)
@@ -2308,8 +2349,10 @@ static void ghosts_frame(const u8 *state)
 #define KEY_EXTERIOR 1u
 #define KEY_INTERIOR 2u
 #define KEY_BYTES (12u + CELL_NAME) /* kind, grid x, grid y, interior name */
-#define ACTOR_BYTES 28u /* refid, x, y, z, heading, health, flags (movement in the upper half) */
-#define ACTORS_PER_PACKET 18u
+/* refid, x, y, z, heading, health, flags, animation */
+#define ACTOR_ANIM 28u
+#define ACTOR_BYTES (ACTOR_ANIM + ANIM_BYTES)
+#define ACTORS_PER_PACKET 10u /* a body of at most EVENTS_BYTES */
 #define ACTOR_PERIOD_US 100000u
 #define ACTOR_SAMPLES 4u
 #define ACTOR_DELAY_US 200000u /* two periods: a state late by one still has a pair */
@@ -2347,7 +2390,7 @@ static struct {
 static u32 authorities, authority_welcome;
 /* Actors this console places for another authority, and whether the engine had them simulated. */
 static struct {
-    u32 refid, owner, simulated, seen, group;
+    u32 refid, owner, simulated, seen, animated;
     u8 *mobile;
     float health;
 } followed[ACTORS];
@@ -2407,6 +2450,7 @@ static void actors_rx(u32 origin, u32 seq, const u8 *p, u32 n)
         j = actors_in[slot].head;
         actors_in[slot].track[j].time = actors_in[slot].time;
         copy((u8 *)actors_in[slot].track[j].p, a + 4, 16);
+        copy(actors_in[slot].track[j].anim, a + ACTOR_ANIM, ANIM_BYTES);
         actors_in[slot].head = (j + 1) % ACTOR_SAMPLES;
         if (actors_in[slot].count < ACTOR_SAMPLES)
             actors_in[slot].count++;
@@ -2515,8 +2559,8 @@ static void actor_command(void *ref, const char *verb, int value)
 
 static void unfollow(u32 i, int restore)
 {
-    if (restore && followed[i].group != GROUP_IDLE && followed[i].group != GROUP_NONE)
-        play_group(*(u8 **)(followed[i].mobile + MOBILE_REFERENCE), GROUP_IDLE);
+    if (restore && followed[i].animated)
+        anim_release(*(u8 **)(followed[i].mobile + MOBILE_REFERENCE));
     if (restore && followed[i].simulated)
         *(u32 *)(followed[i].mobile + MOBILE_FLAGS) |= MOBILE_SIMULATED;
     followed[i].refid = 0;
@@ -2526,8 +2570,8 @@ static void unfollow(u32 i, int restore)
  * its authority's states, as ghosts are, and send a drop in its health to the authority as a hit. */
 static void follow(u8 *mobile, u8 *ref, u32 refid, u32 owner)
 {
-    u32 *flags = (u32 *)(mobile + MOBILE_FLAGS), i, k, slot = ACTORS, count = 0, movement = 0, lk;
-    float health = *(const float *)(mobile + MOBILE_HEALTH), damage, to[4];
+    u32 *flags = (u32 *)(mobile + MOBILE_FLAGS), i, k, slot = ACTORS, count = 0, lk;
+    float health = *(const float *)(mobile + MOBILE_HEALTH), damage, to[4], frac;
     struct timed track[ACTOR_SAMPLES];
 
     for (i = 0; i < ACTORS && slot == ACTORS; i++)
@@ -2545,7 +2589,7 @@ static void follow(u8 *mobile, u8 *ref, u32 refid, u32 owner)
         followed[slot].mobile = mobile;
         followed[slot].simulated = *flags & MOBILE_SIMULATED;
         followed[slot].health = health;
-        followed[slot].group = GROUP_NONE;
+        followed[slot].animated = 0;
         follows++;
         tes3x_log_hex3("net.follow", refid, owner, followed[slot].simulated);
     }
@@ -2562,7 +2606,6 @@ static void follow(u8 *mobile, u8 *ref, u32 refid, u32 owner)
     for (i = 0; i < ACTORS; i++)
         if (actors_in[i].refid == refid && actors_in[i].origin == owner) {
             count = actors_in[i].count;
-            movement = get32le(actors_in[i].state + 24) >> STATE_MOVEMENT_SHIFT;
             for (k = 0; k < count; k++)
                 track[k] = actors_in[i].track[(actors_in[i].head + ACTOR_SAMPLES - count + k) %
                                               ACTOR_SAMPLES];
@@ -2577,15 +2620,13 @@ static void follow(u8 *mobile, u8 *ref, u32 refid, u32 owner)
     *flags &= ~MOBILE_SIMULATED;
     if (!count)
         return;
-    track_pose(track, count, ACTOR_DELAY_US, to);
+    k = track_pose(track, count, ACTOR_DELAY_US, to, &frac);
     if (off_pose(ref, to)) {
         place_ref(ref, to);
         actor_moves++;
     }
-    if ((movement = movement_group(movement)) != followed[slot].group) {
-        play_group(ref, movement);
-        followed[slot].group = movement;
-    }
+    anim_apply(ref, track[k ? k - 1 : k].anim, track[k].anim, frac);
+    followed[slot].animated = 1;
 }
 
 /* On the authority: another client's dialogue holds this actor until it ends, the actor enters
@@ -2775,8 +2816,8 @@ static void authority_frame(const u8 *player, const u8 *state)
         put32le(a + 24, (mobile[MOBILE_ACTION] == 0x12 || mobile[MOBILE_ACTION] == 0x13
                          ? ACTOR_DEAD : 0) |
                         (*(const u32 *)(mobile + MOBILE_FLAGS) & MOBILE_IN_COMBAT
-                         ? ACTOR_IN_COMBAT : 0) |
-                        (u32) * (const u16 *)(mobile + MOBILE_MOVEMENT) << STATE_MOVEMENT_SHIFT);
+                         ? ACTOR_IN_COMBAT : 0));
+        anim_capture(ref, a + ACTOR_ANIM);
         if (++n == ACTORS_PER_PACKET) {
             put32le(out, n);
             lk = lock();
