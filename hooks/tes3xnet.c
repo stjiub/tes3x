@@ -532,7 +532,8 @@ static void session_rx(const u8 *p, u32 n)
     ses.peer_time = get32le(p + 20);
     ses.quiet = 0;
     rtt = now_us() - echo;
-    if (echo && rtt < 10000000u) {
+    /* Only a heartbeat is answered at once; a relayed state echoes whatever we sent last. */
+    if (type == T3MP_HEARTBEAT && echo && rtt < 10000000u) {
         ses.rtt_last = rtt;
         if (!ses.rtt_count || rtt < ses.rtt_min)
             ses.rtt_min = rtt;
