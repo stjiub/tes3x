@@ -6,6 +6,7 @@
     python tools/tes3x_net.py listen --tunnel 9369       # the same through xemu's udp backend
     python tools/tes3x_net.py ping 10.0.2.15 --tunnel 9369
     python tools/tes3x_net.py serve --tunnel 9369 --bot   # plus a player circling the first client
+    python tools/tes3x_net.py serve --tunnel 9369 --bot --bot-say 2 --drop 0.2   # events under loss
     python tools/tes3x_net.py plugin OUT.esp --master Morrowind.esm   # the ghost plugin
 
 With --tunnel PORT this tool is the guest's only peer: xemu sends each guest Ethernet frame to
@@ -16,6 +17,7 @@ answers ARP itself and resolves the console's MAC before it pings.
 import argparse
 import math
 import os
+import random
 import select
 import socket
 import struct
@@ -269,9 +271,97 @@ def ping(args):
 
 
 T3MP = struct.Struct("<4sBBHIIIII")  # magic, version, type, 0, session, seq, ack, time, echo
-T3MP_VERSION = 1
-HELLO, WELCOME, HEARTBEAT, BYE, STATE, PEER, GONE = 1, 2, 3, 4, 5, 6, 7
+T3MP_VERSION = 2
+HELLO, WELCOME, HEARTBEAT, BYE, STATE, PEER, GONE, EVENTS, REFUSE = range(1, 10)
+HELLO_BODY = struct.Struct("<6sIII")  # MAC, build id, load order hash, plugin count
 TIMEOUT = 5.0
+EVENTS_HEAD = struct.Struct("<IB3x")  # the sender's last delivered event, event count
+EVENT = struct.Struct("<IHHI")  # seq, kind, length, origin client; the data follows
+EVENTS_BYTES = 512  # the client's largest EVENTS body
+EVENT_DATA = 64
+EVENT_TEXT = 1
+RESEND = 0.25
+
+
+def load_order_hash(names):
+    """FNV-1a over plugin names in load order, lowercased and zero-terminated, as tes3xnet.c."""
+    h = 2166136261
+    for name in names:
+        for byte in name.lower().encode("latin-1") + b"\0":
+            h = ((h ^ byte) * 16777619) & 0xFFFFFFFF
+    return h
+
+
+def pack_events(ack, events, limit=EVENTS_BYTES):
+    """An EVENTS body: ack, then as many (seq, kind, origin, data) as fit in limit, in order."""
+    out = b""
+    count = 0
+    for seq, kind, origin, data in events:
+        item = EVENT.pack(seq, kind, len(data), origin) + data
+        if EVENTS_HEAD.size + len(out) + len(item) > limit or count == 255:
+            break
+        out += item
+        count += 1
+    return EVENTS_HEAD.pack(ack, count) + out
+
+
+def unpack_events(body):
+    """(ack, [(seq, kind, origin, data)]) of an EVENTS body; a truncated event ends the list."""
+    ack, count = EVENTS_HEAD.unpack_from(body)
+    off, events = EVENTS_HEAD.size, []
+    for _ in range(count):
+        if off + EVENT.size > len(body):
+            break
+        seq, kind, length, origin = EVENT.unpack_from(body, off)
+        data = body[off + EVENT.size:off + EVENT.size + length]
+        if len(data) < length:
+            break
+        events.append((seq, kind, origin, data))
+        off += EVENT.size + length
+    return ack, events
+
+
+class Reliable:
+    """One direction pair of a session's event channel: numbered from 1, resent until acked,
+    delivered only in order."""
+
+    def __init__(self):
+        self.out = []  # unacked (seq, kind, origin, data), oldest first
+        self.out_next = 1
+        self.in_next = 1
+        self.last_send = 0.0
+        self.sent = self.resent = self.delivered = self.stale = 0
+        self.sent_upto = 1
+
+    def queue(self, kind, origin, data):
+        self.out.append((self.out_next, kind, origin, bytes(data)))
+        self.out_next += 1
+
+    def packet(self, now, resend=True):
+        """The EVENTS body to send: the ack, then the unacked events that fit."""
+        self.last_send = now
+        body = pack_events(self.in_next - 1, self.out if resend else [])
+        for seq, *_ in unpack_events(body)[1]:
+            self.sent += 1
+            if seq < self.sent_upto:
+                self.resent += 1
+            else:
+                self.sent_upto = seq + 1
+        return body
+
+    def receive(self, body):
+        """The events now deliverable, in order; the caller then sends an ack."""
+        ack, events = unpack_events(body)
+        self.out = [e for e in self.out if e[0] > ack]
+        ready = []
+        for event in events:
+            if event[0] == self.in_next:
+                ready.append(event)
+                self.in_next += 1
+                self.delivered += 1
+            elif event[0] < self.in_next:
+                self.stale += 1
+        return ready, bool(events)
 STATE_BODY = struct.Struct("<I4f32s")  # flags, x, y, z, heading, interior cell name
 IN_WORLD, INTERIOR = 1, 2
 CELL_UNITS = 8192
@@ -350,6 +440,8 @@ class Client:
         self.state = None
         self.last = time.time()
         self.alive = False
+        self.rel = Reliable()
+        self.events = 0
 
 
 def serve(args):
@@ -374,18 +466,31 @@ def serve(args):
               flush=True)
     deadline = time.time() + args.duration if args.duration else None
     report = time.time() + args.report
+    loss = random.Random(args.seed)
+    pinned = None
+    if args.load_order:
+        pinned = (int(args.load_order, 16), None)
+    lost = {"in": 0, "out": 0}
+
+    def dropped(direction):
+        if args.drop and loss.random() < args.drop:
+            lost[direction] += 1
+            return True
+        return False
 
     def send(client, kind, body=b""):
         client.seq += 1
         packet = T3MP.pack(b"T3MP", T3MP_VERSION, kind, 0, client.session, client.seq,
                            client.peer_seq, now_us(), client.peer_time) + body
+        if dropped("out"):
+            return
         if len(client.addr) == 3:  # a tunnel guest, by its MAC
             ip, _port, mac = client.addr
             link.send(udp_frame(mac, ip, packet, client.seq))
         else:
             sock.sendto(packet, client.addr)
 
-    bot = {"anchor": None, "next": 0.0, "start": time.time()}
+    bot = {"anchor": None, "next": 0.0, "start": time.time(), "said": 0.0, "line": 0}
 
     def bot_anchor(state):
         """The bot circles where the first client entered the world, and follows it to a new
@@ -413,16 +518,44 @@ def serve(args):
             if other.alive:
                 send(other, GONE, struct.pack("<I", client.id))
 
+    def flush(client, now, resend=True):
+        send(client, EVENTS, client.rel.packet(now, resend))
+
+    def broadcast_event(origin, kind, data, now):
+        for other in clients.values():
+            if other.alive and other.id != origin:
+                other.rel.queue(kind, origin, data)
+                flush(other, now)
+
+    def on_event(client, kind, data, stamp, now):
+        client.events += 1
+        if kind == EVENT_TEXT:
+            print(f"{stamp} client {client.id} says: {data.decode('latin-1')}", flush=True)
+        broadcast_event(client.id, kind, data, now)
+
     def handle(packet, addr):
-        if len(packet) < T3MP.size:
+        nonlocal pinned
+        if len(packet) < T3MP.size or dropped("in"):
             return
         magic, version, kind, _, session, seq, _, sent, _ = T3MP.unpack_from(packet)
         if magic != b"T3MP" or version != T3MP_VERSION:
             return
         stamp = time.strftime("%H:%M:%S")
-        if kind == HELLO and len(packet) >= T3MP.size + 10:
-            mac = packet[T3MP.size:T3MP.size + 6].hex(":")
-            build = struct.unpack_from("<I", packet, T3MP.size + 6)[0]
+        now = time.time()
+        if kind == HELLO and len(packet) >= T3MP.size + HELLO_BODY.size:
+            mac, build, order, plugins = HELLO_BODY.unpack_from(packet, T3MP.size)
+            mac = mac.hex(":")
+            if pinned is None:
+                pinned = (order, plugins)
+                print(f"{stamp} load order {order:#010x} ({plugins} plugins) set by {mac}",
+                      flush=True)
+            if order != pinned[0]:
+                print(f"{stamp} refused {mac}: load order {order:#010x} ({plugins} plugins), "
+                      f"session has {pinned[0]:#010x}", flush=True)
+                stranger = Client(0, mac)
+                stranger.addr = addr
+                send(stranger, REFUSE, struct.pack("<II", pinned[0], pinned[1] or 0))
+                return
             client = clients.get(mac)
             if client is None:
                 client = clients[mac] = Client(len(clients) + 1, mac)
@@ -431,7 +564,11 @@ def serve(args):
             by_session[client.session] = client
             client.addr, client.peer_seq, client.peer_time = addr, seq, sent
             client.joins += 1
-            client.alive, client.last = True, time.time()
+            client.alive, client.last = True, now
+            if client.rel.out:
+                print(f"{stamp} client {client.id}: {len(client.rel.out)} unacked events "
+                      f"dropped by the rejoin", flush=True)
+            client.rel = Reliable()
             verb = "joined" if client.joins == 1 else "rejoined"
             print(f"{stamp} client {client.id} {verb}: {mac} at {addr[0]}:{addr[1]}, "
                   f"build {build:#010x}", flush=True)
@@ -458,6 +595,12 @@ def serve(args):
             for other in clients.values():
                 if other is not client and other.alive:
                     send(other, PEER, struct.pack("<I", client.id) + client.state)
+        elif kind == EVENTS and len(packet) >= T3MP.size + EVENTS_HEAD.size:
+            ready, carried = client.rel.receive(packet[T3MP.size:])
+            if carried:
+                flush(client, now, resend=False)
+            for _, event_kind, _, data in ready:
+                on_event(client, event_kind, data, stamp, now)
         elif kind == BYE:
             print(f"{stamp} client {client.id} left", flush=True)
             leave(client)
@@ -509,19 +652,31 @@ def serve(args):
         if args.bot and bot["anchor"] and now >= bot["next"]:
             bot["next"] = now + 1 / args.bot_rate
             bot_step(now)
+        if args.bot_say and bot["anchor"] and now >= bot["said"] + args.bot_say:
+            bot["said"] = now
+            bot["line"] += 1
+            broadcast_event(BOT_ID, EVENT_TEXT, b"bot %d" % bot["line"], now)
+        for client in clients.values():
+            if client.alive and client.rel.out and now - client.rel.last_send >= RESEND:
+                flush(client, now)
         if args.report and now >= report:
             report = now + args.report
             for client in clients.values():
-                print(f"  client {client.id}: {'up' if client.alive else 'down'}, joins "
-                      f"{client.joins}, heartbeats {client.beats}, states {client.states}, "
-                      f"gaps {client.gaps}"
-                      + (f"; {describe_state(client.state)}" if client.state else ""),
-                      flush=True)
+                print(f"  client {client.id}: {'up' if client.alive else 'down'}, "
+                      + summary(client), flush=True)
     for client in clients.values():
-        print(f"client {client.id} {client.mac}: joins {client.joins}, heartbeats "
-              f"{client.beats}, states {client.states}, gaps {client.gaps}"
-              + (f"; last {describe_state(client.state)}" if client.state else ""))
+        print(f"client {client.id} {client.mac}: " + summary(client, "last "))
+    if args.drop:
+        print(f"dropped {lost['in']} packets in, {lost['out']} out")
     return 0 if clients else 1
+
+
+def summary(client, prefix=""):
+    rel = client.rel
+    return (f"joins {client.joins}, heartbeats {client.beats}, states {client.states}, "
+            f"gaps {client.gaps}, events in {client.events} (stale {rel.stale}), out "
+            f"{rel.out_next - 1} (sent {rel.sent}, resent {rel.resent}, unacked {len(rel.out)})"
+            + (f"; {prefix}{describe_state(client.state)}" if client.state else ""))
 
 
 def main(argv=None):
@@ -558,6 +713,14 @@ def main(argv=None):
     p.add_argument("--bot-radius", type=float, default=256, help="units")
     p.add_argument("--bot-period", type=float, default=12, help="seconds per circle")
     p.add_argument("--bot-rate", type=float, default=20, help="states per second")
+    p.add_argument("--bot-say", type=float, metavar="SECONDS",
+                   help="the bot also sends a numbered text event this often")
+    p.add_argument("--drop", type=float, default=0,
+                   help="drop this fraction of session packets each way, to test loss")
+    p.add_argument("--seed", type=int, help="seed for --drop")
+    p.add_argument("--load-order", metavar="HASH",
+                   help="refuse clients whose load order hash differs (hex); default: the first "
+                        "client's")
     p = sub.add_parser("plugin", help="write the ghost plugin the multiplayer patch moves")
     p.add_argument("out")
     p.add_argument("--master", required=True, help="Morrowind.esm, for its size")

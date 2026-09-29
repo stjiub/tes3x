@@ -1216,6 +1216,20 @@ def find_world_controller(x):
     return va
 
 
+MENU_GATE_RE = re.compile(rb"\x8a\x86\xd2\x00\x00\x00\x84\xc0\x0f\x85...."
+                          rb"\x8b\x0d....\x6a\x00\x6a\x00", re.S)
+
+
+def find_menu_mode_gate(x):
+    """The 6-byte jne in mainLoopBeforeInput that skips the world update while a menu is open:
+    `mov al,[esi+0xD2]` (WorldController menu mode), `test al,al`, `jne`, then the DataHandler
+    update."""
+    hits = [m.start() for m in MENU_GATE_RE.finditer(x.data)]
+    if len(hits) != 1:
+        raise PatchError("menu mode gate: %d match(es), expected exactly 1" % len(hits))
+    return x.off_to_va(hits[0] + 8)
+
+
 @patch("diagnostics")
 def _diagnostics(x, value, ctx):
     """Enable INI-controlled crash records, snapshots and a hang watchdog."""
@@ -1716,6 +1730,7 @@ LOCATORS = {
     "diagnostics-update": find_diagnostics_update,
     "game-instance": find_game_instance,
     "world-controller": find_world_controller,
+    "menu-mode-gate": find_menu_mode_gate,
     "console-print": find_console_print,
     "heap-allocate": lambda image: find_heap_function(image, "allocate")[0],
     "heap-free": lambda image: find_heap_function(image, "free")[0],

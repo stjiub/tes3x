@@ -9,6 +9,7 @@
  *                         is looked up at DNS (default GATEWAY) first, and again after a timeout
  *   tes3xnet probe A.B.C.D  ARP for an address three times and log the replies
  *   tes3xnet stat         log the counters
+ *   tes3xnet say TEXT     send TEXT to the other clients as a reliable event
  *   tes3xnet down         stop the NIC
  *   tes3xnet [count]      broadcast count "TES3XNET" datagrams (default 8), from 0.0.0.0 unless up
  *
@@ -33,6 +34,9 @@
 #endif
 #ifndef TES3X_NET_COMPILE_RUN
 #error "define TES3X_NET_COMPILE_RUN to the VA of CompileAndRun"
+#endif
+#ifndef TES3X_NET_MENU_GATE
+#error "define TES3X_NET_MENU_GATE to the menu mode jne in mainLoopBeforeInput"
 #endif
 
 typedef unsigned short u16;
@@ -165,7 +169,7 @@ struct descriptor {
 #define CPU_MHZ 733u
 
 /* Session packet: "T3MP", version, type, then session, seq, ack, time and echoed peer time. */
-#define T3MP_VERSION 1u
+#define T3MP_VERSION 2u
 #define T3MP_HEADER 28u
 #define T3MP_HELLO 1u
 #define T3MP_WELCOME 2u
@@ -174,11 +178,15 @@ struct descriptor {
 #define T3MP_STATE 5u
 #define T3MP_PEER 6u
 #define T3MP_GONE 7u
+#define T3MP_EVENTS 8u
+#define T3MP_REFUSE 9u
 #define SESSION_IDLE 0u
 #define SESSION_ARP 1u
 #define SESSION_HELLO 2u
 #define SESSION_JOINED 3u
 #define SESSION_RESOLVE 4u
+#define SESSION_REFUSED 5u
+#define HELLO_BYTES 18u
 #define DNS_PORT 53u
 #define HOST_NAME 64u
 
@@ -191,6 +199,7 @@ static struct {
     u32 rtt_last, rtt_min, rtt_max, rtt_sum, rtt_count;
     u32 states_out, peers_in;
     u32 dns, dns_id, dns_queries, dns_answers;
+    u32 plugins, plugins_hash, refused_hash, refused_plugins;
     char host[HOST_NAME]; /* the server's name, if it is not an address */
     u8 hop_mac[6];
 } ses;
@@ -215,6 +224,29 @@ static struct {
         u8 state[STATE_BYTES];
     } samples[SAMPLES];
 } peers[PEERS];
+/* Reliable events: each side numbers its events from 1 per session and resends every unacked one
+ * each tick; the receiver takes only the next number, so delivery is in order. An EVENTS packet
+ * is the other side's last delivered number, a count, then events of EVENT_HEADER + length. */
+#define EVENT_TEXT 1u
+#define EVENT_HEADER 12u /* seq, kind, length, origin client */
+#define EVENT_DATA 64u
+#define EVENTS_OUT 16u
+#define EVENTS_IN 16u
+#define EVENTS_BYTES 512u
+
+struct event {
+    u32 seq, kind, length, origin;
+    u8 data[EVENT_DATA];
+};
+
+static struct {
+    struct event out[EVENTS_OUT]; /* by seq % EVENTS_OUT */
+    struct event in[EVENTS_IN];   /* delivered, for the game thread */
+    u32 out_first, out_next, out_sent; /* oldest unacked, next to assign, next never sent */
+    u32 in_next, in_head, in_count;
+    u32 queued, sent, resent, acked, delivered, handled, stale, full, dropped;
+} rel;
+
 static u32 ghost_places, ghost_moves, ghost_failures;
 static u32 ini_checked;
 static u32 probe_ip, probe_hits;
@@ -231,6 +263,8 @@ static fn_HalReturnToFirmware firmware_original;
 
 static void nic_stop(void);
 static void log_text(const char *tag, const char *text);
+static void load_order(void);
+static int plausible(const void *p);
 
 static u32 lock(void)
 {
@@ -465,8 +499,10 @@ static void udp_send(u32 dst, u32 port, const u8 *payload, u32 n)
 
 static void session_send(u32 type, const u8 *body, u32 n)
 {
-    u8 p[T3MP_HEADER + STATE_BYTES];
+    u8 p[T3MP_HEADER + EVENTS_BYTES];
 
+    if (n > EVENTS_BYTES)
+        return;
     p[0] = 'T';
     p[1] = '3';
     p[2] = 'M';
@@ -511,6 +547,108 @@ static void peer_rx(u32 client, u32 seq, const u8 *state)
     ses.peers_in++;
 }
 
+static void events_reset(void)
+{
+    rel.dropped += rel.out_next - rel.out_first;
+    rel.out_first = rel.out_next = rel.out_sent = 1;
+    rel.in_next = 1;
+    rel.in_count = 0;
+}
+
+/* The ack, then with resend every unacked event that fits; caller holds the lock. */
+static void events_send(int resend)
+{
+    u8 body[EVENTS_BYTES];
+    u32 n = 8, count = 0, seq;
+
+    put32le(body, rel.in_next - 1);
+    for (seq = rel.out_first; resend && seq != rel.out_next; seq++) {
+        const struct event *e = &rel.out[seq % EVENTS_OUT];
+        if (n + EVENT_HEADER + e->length > EVENTS_BYTES)
+            break;
+        put32le(body + n, e->seq);
+        body[n + 4] = (u8)e->kind;
+        body[n + 5] = (u8)(e->kind >> 8);
+        body[n + 6] = (u8)e->length;
+        body[n + 7] = (u8)(e->length >> 8);
+        put32le(body + n + 8, 0);
+        copy(body + n + EVENT_HEADER, e->data, e->length);
+        n += EVENT_HEADER + e->length;
+        count++;
+        if ((int)(seq - rel.out_sent) < 0)
+            rel.resent++;
+        else
+            rel.out_sent = seq + 1;
+        rel.sent++;
+    }
+    body[4] = (u8)count;
+    body[5] = body[6] = body[7] = 0;
+    session_send(T3MP_EVENTS, body, n);
+}
+
+/* Game thread. 0 if the queue is full or there is no session. */
+static int event_queue(u32 kind, const u8 *data, u32 length)
+{
+    u32 flags = lock();
+    struct event *e;
+    int ok = ses.state == SESSION_JOINED && rel.out_next - rel.out_first < EVENTS_OUT &&
+             length <= EVENT_DATA;
+
+    if (ok) {
+        e = &rel.out[rel.out_next % EVENTS_OUT];
+        e->seq = rel.out_next++;
+        e->kind = kind;
+        e->length = length;
+        e->origin = 0;
+        copy(e->data, data, length);
+        rel.queued++;
+        events_send(1);
+    } else {
+        rel.full++;
+    }
+    unlock(flags);
+    return ok;
+}
+
+/* Caller holds the lock (the receive DPC). */
+static void events_rx(const u8 *p, u32 n)
+{
+    u32 ack, count, off = 8, seq, length;
+    struct event *e;
+
+    if (n < 8)
+        return;
+    ack = get32le(p);
+    while (rel.out_first != rel.out_next && (int)(ack - rel.out_first) >= 0) {
+        rel.out_first++;
+        rel.acked++;
+    }
+    count = p[4];
+    if (!count)
+        return;
+    while (count-- && off + EVENT_HEADER <= n) {
+        seq = get32le(p + off);
+        length = p[off + 6] | (u32)p[off + 7] << 8;
+        if (off + EVENT_HEADER + length > n)
+            break;
+        if (seq != rel.in_next || length > EVENT_DATA || rel.in_count == EVENTS_IN) {
+            if ((int)(seq - rel.in_next) < 0)
+                rel.stale++;
+        } else {
+            e = &rel.in[(rel.in_head + rel.in_count++) % EVENTS_IN];
+            e->seq = seq;
+            e->kind = p[off + 4] | (u32)p[off + 5] << 8;
+            e->length = length;
+            e->origin = get32le(p + off + 8);
+            copy(e->data, p + off + EVENT_HEADER, length);
+            rel.in_next++;
+            rel.delivered++;
+        }
+        off += EVENT_HEADER + length;
+    }
+    events_send(0);
+}
+
 /* Caller holds the lock (the receive DPC). */
 static void session_rx(const u8 *p, u32 n)
 {
@@ -521,6 +659,14 @@ static void session_rx(const u8 *p, u32 n)
     type = p[5];
     seq = get32le(p + 12);
     echo = get32le(p + 24);
+    if (type == T3MP_REFUSE) {
+        if (ses.state != SESSION_HELLO || n < T3MP_HEADER + 8)
+            return;
+        ses.state = SESSION_REFUSED;
+        ses.refused_hash = get32le(p + 28);
+        ses.refused_plugins = get32le(p + 32);
+        return;
+    }
     if (type == T3MP_WELCOME) {
         if (ses.state != SESSION_HELLO || n < T3MP_HEADER + 4)
             return;
@@ -532,6 +678,7 @@ static void session_rx(const u8 *p, u32 n)
         ses.welcomes++;
         for (i = 0; i < PEERS; i++)
             peers[i].client = 0;
+        events_reset();
     } else {
         if (ses.state != SESSION_JOINED || get32le(p + 8) != ses.id)
             return;
@@ -544,6 +691,8 @@ static void session_rx(const u8 *p, u32 n)
             ses.beats_in++;
         if (type == T3MP_PEER && n >= T3MP_HEADER + 4 + STATE_BYTES)
             peer_rx(get32le(p + T3MP_HEADER), seq, p + T3MP_HEADER + 4);
+        if (type == T3MP_EVENTS)
+            events_rx(p + T3MP_HEADER, n - T3MP_HEADER);
         if (type == T3MP_GONE && n >= T3MP_HEADER + 4)
             for (i = 0; i < PEERS; i++)
                 if (peers[i].client == get32le(p + T3MP_HEADER))
@@ -652,7 +801,7 @@ static void dns_rx(const u8 *p, u32 n)
 /* Every TICK_MS from the timer DPC; caller holds the lock. */
 static void session_tick(void)
 {
-    u8 hello[10];
+    u8 hello[HELLO_BYTES];
 
     ses.ticks++;
     ses.quiet++;
@@ -675,9 +824,13 @@ static void session_tick(void)
         ses.peer_time = 0;
         copy(hello, mac, 6);
         put32le(hello + 6, TES3X_BUILD_ID);
+        put32le(hello + 10, ses.plugins_hash);
+        put32le(hello + 14, ses.plugins);
         session_send(T3MP_HELLO, hello, sizeof(hello));
         ses.hellos++;
     } else if (ses.state == SESSION_JOINED) {
+        if (rel.out_first != rel.out_next)
+            events_send(1);
         if (ses.quiet >= TIMEOUT_TICKS) {
             ses.timeouts++;
             ses.state = SESSION_HELLO;
@@ -1127,12 +1280,57 @@ static void stat(void)
         tes3x_log_hex3("net.rtt_us", ses.rtt_min, ses.rtt_count ? ses.rtt_sum / ses.rtt_count : 0,
                        ses.rtt_max);
         tes3x_log_hex3("net.states", ses.states_out, ses.peers_in, 0);
+        tes3x_log_hex3("net.load_order", ses.plugins, ses.plugins_hash, 0);
+        tes3x_log_hex3("net.events_out", rel.queued, rel.sent, rel.resent);
+        tes3x_log_hex3("net.events_ack", rel.acked, rel.full, rel.dropped);
+        tes3x_log_hex3("net.events_in", rel.delivered, rel.handled, rel.stale);
         for (i = 0; i < PEERS; i++)
             if (peers[i].client)
                 tes3x_log_hex3("net.peer_state", peers[i].client, peers[i].seq,
                                now_us() - peers[i].time);
         tes3x_log_hex3("net.ghosts", ghost_places, ghost_moves, ghost_failures);
     }
+}
+
+/* mainLoopBeforeInput skips the world update while a menu is open with a 6-byte jne; NOPs let the
+ * world run under menus. The simulation clock is the fld operand 0x1A bytes on. */
+#define WORLD_MENU_MODE 0xD2
+#define GATE_CLOCK 0x1A
+static u8 gate_original[6];
+static u32 gate_saved;
+
+static void menu_sim(u32 on)
+{
+    u8 *gate = (u8 *)TES3X_NET_MENU_GATE;
+    u32 cr0, flags, i;
+
+    if (!gate_saved) {
+        if (gate[0] != 0x0F || gate[1] != 0x85) {
+            tes3x_log_hex3("net.menu_gate_unexpected", gate[0], gate[1], 0);
+            return;
+        }
+        copy(gate_original, gate, 6);
+        gate_saved = 1;
+    }
+    flags = lock();
+    __asm__ volatile("movl %%cr0, %0" : "=r"(cr0));
+    __asm__ volatile("movl %0, %%cr0" : : "r"(cr0 & ~CR0_WP) : "memory");
+    for (i = 0; i < 6; i++)
+        gate[i] = on ? 0x90 : gate_original[i];
+    __asm__ volatile("movl %0, %%cr0" : : "r"(cr0) : "memory");
+    unlock(flags);
+    tes3x_log("net.menusim", on);
+}
+
+static void menu_stat(void)
+{
+    const u8 *world = *(const u8 **)TES3X_NET_WORLD, *gate = (const u8 *)TES3X_NET_MENU_GATE;
+    const float *clock = *(const float *const *)(gate + GATE_CLOCK);
+
+    if (plausible(world) && gate[GATE_CLOCK - 2] == 0xD9 && gate[GATE_CLOCK - 1] == 0x05 &&
+        plausible(clock))
+        tes3x_log_hex3("net.menu_mode", world[WORLD_MENU_MODE], (u32)(int)(*clock * 1000.0f),
+                       gate[0] == 0x90);
 }
 
 static const char *word(const char *text, const char *w)
@@ -1257,6 +1455,9 @@ static void command_up(const char *text)
         ses.gateway = gateway;
         ses.dns = dns;
         copy((u8 *)ses.host, (const u8 *)host, HOST_NAME);
+        unlock(flags);
+        load_order();
+        flags = lock();
         route_to(server ? server : dns);
         unlock(flags);
         if ((ses.hop ^ ip) & net.mask)
@@ -1343,6 +1544,44 @@ static int mapped(const void *p)
 static int plausible(const void *p)
 {
     return mapped(p) && !((u32)p & 3);
+}
+
+/* FNV-1a over the loaded plugins' names in load order, lowercased and each ended by a zero, as
+ * tes3x_net.py load_order_hash. The file list is [DataHandler]: count +0xC, files +0xAE70; a
+ * file's name is inline at +0xC. */
+#define FILES_COUNT 0xC
+#define FILES_ARRAY 0xAE70
+#define FILE_NAME 0xC
+#define FILE_NAME_MAX 260u
+
+static void load_order(void)
+{
+    const u8 *handler = *(const u8 **)TES3X_NET_DATA_HANDLER, *list, *file;
+    const char *name;
+    u32 hash = 2166136261u, count, i, j;
+
+    ses.plugins = ses.plugins_hash = 0;
+    if (!plausible(handler) || !plausible(list = *(const u8 **)handler))
+        return;
+    count = *(const u32 *)(list + FILES_COUNT);
+    if (count > 256)
+        return;
+    for (i = 0; i < count; i++) {
+        if (!plausible(file = ((const u8 *const *)(list + FILES_ARRAY))[i]))
+            return;
+        name = (const char *)file + FILE_NAME;
+        for (j = 0; j < FILE_NAME_MAX && name[j]; j++) {
+            char c = name[j];
+            if (c >= 'A' && c <= 'Z')
+                c += 'a' - 'A';
+            hash = (hash ^ (u8)c) * 16777619u;
+        }
+        hash *= 16777619u; /* the terminating zero */
+        log_text("net.plugin", name);
+    }
+    ses.plugins = count;
+    ses.plugins_hash = hash;
+    tes3x_log_hex3("net.load_order", count, hash, 0);
 }
 
 /* WorldController -> MobController -> MobilePlayer -> Reference, or 0 outside the world. */
@@ -1691,11 +1930,46 @@ static void ghosts_frame(const u8 *state)
         ghost_update(i, &local);
 }
 
+static void event_handle(const struct event *e)
+{
+    char text[EVENT_DATA + 1];
+
+    if (e->kind == EVENT_TEXT) {
+        copy((u8 *)text, e->data, e->length);
+        text[e->length] = 0;
+        tes3x_log_hex3("net.text_from", e->origin, e->seq, 0);
+        log_text("net.text", text);
+    } else {
+        tes3x_log_hex3("net.event_unknown", e->kind, e->origin, e->length);
+    }
+}
+
+/* Events the receive DPC delivered, handled in the game thread. */
+static void events_frame(void)
+{
+    struct event e;
+    u32 flags;
+
+    for (;;) {
+        flags = lock();
+        if (!rel.in_count) {
+            unlock(flags);
+            return;
+        }
+        copy((u8 *)&e, (const u8 *)&rel.in[rel.in_head], sizeof(e));
+        rel.in_head = (rel.in_head + 1) % EVENTS_IN;
+        rel.in_count--;
+        rel.handled++;
+        unlock(flags);
+        event_handle(&e);
+    }
+}
+
 /* Once per frame, from the Game::Update hook. */
 void tes3x_net_frame(void)
 {
     static u8 last_cell[CELL_NAME];
-    static u32 logged_player, logged_server, known[PEERS];
+    static u32 logged_player, logged_server, logged_refused, known[PEERS];
     u8 state[STATE_BYTES];
     const u8 *ref;
     u32 i, flags;
@@ -1709,6 +1983,14 @@ void tes3x_net_frame(void)
         if (logged_server)
             tes3x_log_hex3("net.resolved", logged_server, ses.dns_queries, ses.dns_answers);
     }
+    if ((ses.state == SESSION_REFUSED) != logged_refused) {
+        logged_refused = ses.state == SESSION_REFUSED;
+        if (logged_refused)
+            tes3x_log_hex3("net.refused", ses.plugins_hash, ses.refused_hash,
+                           ses.refused_plugins);
+    }
+    if (net.up)
+        events_frame();
     if (!net.up || !(ref = player_reference()))
         return;
     player_state(ref, state);
@@ -1770,6 +2052,15 @@ int tes3x_net_command(const char *text)
         probe(skip(rest));
     } else if ((rest = word(text, "stat")) && !*skip(rest)) {
         stat();
+        menu_stat();
+    } else if ((rest = word(text, "menusim")) && (rest = number(skip(rest), &value)) &&
+               !*skip(rest)) {
+        menu_sim(value != 0);
+    } else if ((rest = word(text, "say")) && *(rest = skip(rest))) {
+        for (value = 0; rest[value] && value < EVENT_DATA; value++)
+            ;
+        if (!event_queue(EVENT_TEXT, (const u8 *)rest, value))
+            tes3x_log("net.event_full", rel.out_next - rel.out_first);
     } else if (!*text) {
         broadcast(8);
     } else if ((rest = number(text, &value)) && !*skip(rest) && value) {

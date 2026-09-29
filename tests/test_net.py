@@ -52,5 +52,50 @@ class GhostPluginTests(unittest.TestCase):
         self.assertEqual(refs, [b'tes3x_ghost%d\0' % i for i in range(1, tes3x_net.GHOSTS + 1)])
 
 
+class LoadOrderTests(unittest.TestCase):
+    def test_hash_ignores_case_but_not_order(self):
+        names = ['Morrowind.esm', 'Tribunal.esm', 'Bloodmoon.esm']
+        self.assertEqual(tes3x_net.load_order_hash(names),
+                         tes3x_net.load_order_hash([n.upper() for n in names]))
+        self.assertNotEqual(tes3x_net.load_order_hash(names),
+                            tes3x_net.load_order_hash(names[::-1]))
+        self.assertNotEqual(tes3x_net.load_order_hash(['ab', 'c']),
+                            tes3x_net.load_order_hash(['a', 'bc']))
+
+    def test_hash_is_fnv1a_with_terminators(self):
+        self.assertEqual(tes3x_net.load_order_hash([]), 0x811C9DC5)
+        self.assertEqual(tes3x_net.load_order_hash(['a']), 0x2B24D044)
+
+
+class EventChannelTests(unittest.TestCase):
+    def test_pack_round_trip_and_limit(self):
+        events = [(i, 1, 7, b'x' * 60) for i in range(1, 20)]
+        body = tes3x_net.pack_events(5, events)
+        self.assertLessEqual(len(body), tes3x_net.EVENTS_BYTES)
+        ack, got = tes3x_net.unpack_events(body)
+        self.assertEqual(ack, 5)
+        self.assertEqual(got, events[:len(got)])
+        self.assertEqual(len(got), (512 - 8) // 72)
+
+    def test_in_order_delivery_under_loss(self):
+        import random
+        loss = random.Random(3)
+        a, b = tes3x_net.Reliable(), tes3x_net.Reliable()
+        for i in range(40):
+            a.queue(1, 0, b'%d' % i)
+        got = []
+        for tick in range(400):
+            body = a.packet(tick)
+            if loss.random() < 0.4:
+                continue
+            ready, carried = b.receive(body)
+            got += [data for _, _, _, data in ready]
+            if carried and loss.random() >= 0.4:
+                a.receive(b.packet(tick, resend=False))
+        self.assertEqual(got, [b'%d' % i for i in range(40)])
+        self.assertEqual(a.out, [])
+        self.assertGreater(a.resent, 0)
+
+
 if __name__ == '__main__':
     unittest.main()

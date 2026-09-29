@@ -17,3 +17,12 @@ The server can be given by name; the driver asks the DNS server (by default the 
 launch and again whenever the server stops answering, so a server whose address changes is found
 again. Only UDP is sent, and only to the server and the DNS server, so a console behind home NAT
 needs no port forward. There is no DHCP yet.
+
+Every client must load the same plugins in the same order, since shared objects are named by
+their place in the load order. The server takes the first client's load order (or `serve
+--load-order HASH`) and refuses any console whose plugins differ; that console logs
+`net.refused` and stops trying until the game is next launched.
+
+Besides positions, clients exchange events, which the server delivers to every other client in
+order and resends until each is acknowledged. For now the only event is text: `tes3xnet say
+TEXT` on one console is logged as `net.text` on the others.
