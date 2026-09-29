@@ -576,6 +576,9 @@ def main(argv=None):
                     help="add the demand pager prototype, whose console command tes3xpager "
                          "runs a synthetic workload over a 64 MB paged region. Instrumentation "
                          "only: nothing in the engine is paged")
+    ap.add_argument("--diag-test-faults", action="store_true",
+                    help="add the diagnostics console commands `tes3xdiag hang` and `tes3xdiag "
+                         "crash`, which stall the update loop and fault on purpose. Test only")
     ap.add_argument("--hardlink", action=argparse.BooleanOptionalAction,
                     help="hardlink unchanged retail files into the build instead of copying "
                          "them, where the volume allows (default: paths.hardlink_retail)")
@@ -644,6 +647,8 @@ def main(argv=None):
         if "tes3xpager.c" not in plan["sources"]:
             plan["sources"].append("tes3xpager.c")
         plan["needs_payload"] = True
+    if args.diag_test_faults and "tes3xdiag.c" not in plan["sources"]:
+        raise PipelineError("--diag-test-faults needs the diagnostics patch")
     package = profile.get("package", {})
     drive = (args.drive or package.get("drive_letter", "D")).upper()
     if len(drive) != 1 or not drive.isalpha():
@@ -683,6 +688,8 @@ def main(argv=None):
         print("memory census: on")
     if args.pager_test:
         print("pager test: on")
+    if args.diag_test_faults:
+        print("diagnostics fault commands: on")
     use_mlox = (plan["package_mode"] != "retail"
                 and profile.get("rules", {}).get("plugin_order") == "mlox")
     listed_order = (plan["package_mode"] != "retail"
@@ -764,7 +771,10 @@ def main(argv=None):
         if plan["needs_payload"]:
             print("\n== payload: " + " ".join(plan["sources"]), flush=True)
             build_payload(retail_xbe, plan["sources"], hook_out,
-                          user_flags=preference_flags(profile), llvm_dir=llvm,
+                          user_flags=" ".join(filter(None, [
+                              preference_flags(profile),
+                              "-DTES3X_DIAG_TEST_FAULTS" if args.diag_test_faults else ""])),
+                          llvm_dir=llvm,
                           check_xbe=hook_out / "injected-check.xbe")
 
         patch_specs = []
