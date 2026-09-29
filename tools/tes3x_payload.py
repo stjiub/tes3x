@@ -35,6 +35,7 @@ INI_GET = 0x001933E0
 INI_PATH = 0x0035E364
 DATA_HANDLER = 0x003CB5F8
 CONSOLE_SITE = 0x00098430
+SERVICE_ACTOR = 0x001CD530  # ui::getServiceActor: the MenuDialog partner's mobile, or 0
 CONSOLE_ADDRESSES = (
     ("FIND_MENU", 0x001AD340), ("OPEN_VK", 0x0022D210), ("CONSOLE_MENU_ID", 0x003D816C),
     ("GET_PROP", 0x0019A770), ("COMPILE_RUN", 0x0014B3C0), ("VK_MENU_ID", 0x003DC710),
@@ -242,6 +243,7 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         define("NET_DATA_HANDLER", data_handler)
         for name in ("COMPILE_RUN", "FIND_MENU", "UI_ID", "TRIGGER_EVENT"):
             define("NET_" + name, address(name, dict(CONSOLE_ADDRESSES)[name]))
+        define("NET_SERVICE_ACTOR", address("SERVICE_ACTOR", SERVICE_ACTOR))
         define("NET_MENU_GATE", hexva(locate("menu-mode-gate")))
         define("NET_MOB_GATE", hexva(locate("mob-update-gate")))
         flags.append("-DTES3X_NET")

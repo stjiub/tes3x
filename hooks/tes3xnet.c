@@ -45,6 +45,9 @@
 #ifndef TES3X_NET_MOB_GATE
 #error "define TES3X_NET_MOB_GATE to the menu mode jne before ProcessMobs in Game::Update"
 #endif
+#ifndef TES3X_NET_SERVICE_ACTOR
+#error "define TES3X_NET_SERVICE_ACTOR to ui::getServiceActor"
+#endif
 #if !defined(TES3X_NET_FIND_MENU) || !defined(TES3X_NET_UI_ID) || !defined(TES3X_NET_TRIGGER_EVENT)
 #error "define TES3X_NET_FIND_MENU, TES3X_NET_UI_ID and TES3X_NET_TRIGGER_EVENT to the UI functions"
 #endif
@@ -1389,6 +1392,78 @@ static void rest_block(void)
     tes3x_log("net.rest_blocked", ++rest_blocked);
 }
 
+/* The NPC a dialogue is with stays put while the world runs: it leaves the simulation, as actors
+ * outside the loaded cells do, until the dialogue closes. Combat or a drop in its health releases
+ * it and closes the dialogue, so holding an NPC in conversation cannot set it up to be hit. */
+#define MOBILE_FLAGS 0x10
+#define MOBILE_SIMULATED 0x4u /* ActiveInSimulation, MWSE's activeAI */
+#define MOBILE_IN_COMBAT 0x10000u
+#define MOBILE_HEALTH 0x2BC /* the current value of the health statistic */
+
+typedef u8 *(__cdecl *fn_service_actor)(void);
+
+static u8 *held;
+static u32 held_simulated, holds, hold_breaks;
+static float held_health;
+
+static void hold_release(void)
+{
+    if (held && held_simulated)
+        *(u32 *)(held + MOBILE_FLAGS) |= MOBILE_SIMULATED;
+    held = 0;
+}
+
+/* Services open on top of the dialogue; B closes them one at a time, then the dialogue. */
+static void dialogue_close(void)
+{
+    static const char *const names[] = {
+        "MenuBarter",     "MenuService",       "MenuServiceSpells", "MenuServiceTraining",
+        "MenuServiceRepair", "MenuServiceTravel", "MenuSpellmaking", "MenuEnchantment",
+        "MenuDialog"};
+    static u32 ids[sizeof(names) / sizeof(names[0])];
+    u32 i;
+    u8 *menu;
+
+    for (i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        if (!ids[i])
+            ids[i] = ((fn_ui_id)TES3X_NET_UI_ID)(names[i]);
+        menu = ((fn_find_menu)TES3X_NET_FIND_MENU)(ids[i]);
+        if (menu && menu[MENU_VISIBLE]) {
+            ((fn_trigger_event)TES3X_NET_TRIGGER_EVENT)(menu, EVENT_PAD_B, 0, 0, menu);
+            return;
+        }
+    }
+}
+
+static void hold_frame(void)
+{
+    u8 *actor = gates_open ? ((fn_service_actor)TES3X_NET_SERVICE_ACTOR)() : 0;
+    u32 *flags;
+    float health;
+
+    if (actor != held)
+        hold_release();
+    if (!plausible(actor))
+        return;
+    flags = (u32 *)(actor + MOBILE_FLAGS);
+    health = *(const float *)(actor + MOBILE_HEALTH);
+    if (!held && !(*flags & MOBILE_IN_COMBAT)) {
+        held = actor;
+        held_simulated = *flags & MOBILE_SIMULATED;
+        held_health = health;
+        tes3x_log_hex3("net.hold", ++holds, (u32)(int)health, held_simulated);
+    }
+    if ((*flags & MOBILE_IN_COMBAT) || (held && health < held_health)) {
+        if (held)
+            tes3x_log_hex3("net.hold_broken", ++hold_breaks, *flags & MOBILE_IN_COMBAT,
+                           (u32)(int)health);
+        hold_release();
+        dialogue_close();
+        return;
+    }
+    *flags &= ~MOBILE_SIMULATED;
+}
+
 /* While joined, the world runs under menus as it does for the other players, and nobody rests.
  * Only in the world: the main menu at boot has no player to simulate. */
 static void menu_frame(int in_world)
@@ -1398,6 +1473,7 @@ static void menu_frame(int in_world)
     menu_sim(menu_forced ? menu_forced - 1 : joined);
     if (joined)
         rest_block();
+    hold_frame();
 }
 
 static void menu_stat(void)
@@ -1410,6 +1486,7 @@ static void menu_stat(void)
         tes3x_log_hex3("net.menu_mode", world[WORLD_MENU_MODE], (u32)(int)(*clock * 1000.0f),
                        gate[0] == 0x90);
     tes3x_log_hex3("net.menu_sim", gates_open, menu_forced, rest_blocked);
+    tes3x_log_hex3("net.holds", holds, hold_breaks, held != 0);
 }
 
 static const char *word(const char *text, const char *w)
