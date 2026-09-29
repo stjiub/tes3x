@@ -2,17 +2,18 @@
  * ring, ARP, a UDP echo responder on port 26500 and a session with a PC server.
  *
  * Console commands:
- *   tes3xnet up A.B.C.D[/BITS] [SERVER[:PORT] [GATEWAY]]
+ *   tes3xnet up A.B.C.D[/BITS] [SERVER[:PORT] [GATEWAY|- [DNS]]]
  *                         bring the NIC up with that address, answer ARP and echo requests, and
  *                         with a server keep a session: HELLO until WELCOME, then a heartbeat
- *                         each second; five silent seconds start over
+ *                         each second; five silent seconds start over. A SERVER that is a name
+ *                         is looked up at DNS (default GATEWAY) first, and again after a timeout
  *   tes3xnet probe A.B.C.D  ARP for an address three times and log the replies
  *   tes3xnet stat         log the counters
  *   tes3xnet down         stop the NIC
  *   tes3xnet [count]      broadcast count "TES3XNET" datagrams (default 8), from 0.0.0.0 unless up
  *
  * With [Xbox] NetAddress set, the first frame brings the NIC up as `up` would, from NetAddress,
- * NetServer and NetGateway; every launch and relaunch joins by itself. While joined, each frame
+ * NetServer, NetGateway and NetDns; every launch and relaunch joins by itself. While joined, each frame
  * sends the player's state, and the server relays the other clients' states back.
  *
  * While up, the HalReturnToFirmware thunk points at a wrapper that stops the NIC first: a quick
@@ -173,6 +174,9 @@ struct descriptor {
 #define SESSION_ARP 1u
 #define SESSION_HELLO 2u
 #define SESSION_JOINED 3u
+#define SESSION_RESOLVE 4u
+#define DNS_PORT 53u
+#define HOST_NAME 64u
 
 static struct {
     u32 up, ip, mask, irqs, dpcs, rx, rx_errors, rx_nobuf, arp, echo, tx, tx_full, tx_errors;
@@ -182,6 +186,8 @@ static struct {
     u32 ticks, quiet, hellos, welcomes, beats_out, beats_in, timeouts, gaps;
     u32 rtt_last, rtt_min, rtt_max, rtt_sum, rtt_count;
     u32 states_out, peers_in;
+    u32 dns, dns_id, dns_queries, dns_answers;
+    char host[HOST_NAME]; /* the server's name, if it is not an address */
     u8 hop_mac[6];
 } ses;
 
@@ -213,6 +219,7 @@ static u32 dpc[0x1C / 4];
 static fn_HalReturnToFirmware firmware_original;
 
 static void nic_stop(void);
+static void log_text(const char *tag, const char *text);
 
 static u32 lock(void)
 {
@@ -544,6 +551,87 @@ static void session_rx(const u8 *p, u32 n)
     }
 }
 
+/* Off the subnet, frames go to the gateway's MAC. Caller holds the lock. */
+static void route_to(u32 target)
+{
+    u32 hop = (target ^ net.ip) & net.mask && ses.gateway ? ses.gateway : target;
+
+    if (hop != ses.hop) {
+        ses.hop = hop;
+        ses.hop_known = 0;
+    }
+    ses.state = SESSION_ARP;
+    ses.ticks = 0;
+}
+
+/* An A query for ses.host; caller holds the lock. */
+static void dns_query(void)
+{
+    u8 q[12 + HOST_NAME + 2 + 4];
+    u32 n = 12, label = 12, i;
+
+    ses.dns_id = (now_us() & 0xFFFF) | 1;
+    for (i = 0; i < 12; i++)
+        q[i] = 0;
+    put16(q, ses.dns_id);
+    q[2] = 0x01; /* recursion desired */
+    q[5] = 1;    /* one question */
+    for (i = 0; ses.host[i]; i++) {
+        if (ses.host[i] == '.') {
+            q[label] = (u8)(n - label);
+            label = ++n;
+        } else {
+            q[++n] = (u8)ses.host[i];
+        }
+    }
+    q[label] = (u8)(n - label);
+    q[++n] = 0;
+    put16(q + n + 1, 1); /* type A */
+    put16(q + n + 3, 1); /* class IN */
+    udp_send(ses.dns, DNS_PORT, q, n + 5);
+    ses.dns_queries++;
+}
+
+/* Offset past a possibly compressed name, or 0 if it runs off the end. */
+static u32 dns_skip_name(const u8 *p, u32 n, u32 off)
+{
+    while (off < n) {
+        if (!p[off])
+            return off + 1;
+        if ((p[off] & 0xC0) == 0xC0)
+            return off + 2 <= n ? off + 2 : 0;
+        off += p[off] + 1u;
+    }
+    return 0;
+}
+
+/* The first A record of a reply to our query; caller holds the lock (the receive DPC). */
+static void dns_rx(const u8 *p, u32 n)
+{
+    u32 off = 12, questions, answers;
+
+    if (ses.state != SESSION_RESOLVE || n < 12 || get16(p) != ses.dns_id || !(p[2] & 0x80) ||
+        (p[3] & 0x0F))
+        return;
+    questions = get16(p + 4);
+    answers = get16(p + 6);
+    while (questions--)
+        if (!(off = dns_skip_name(p, n, off)) || (off += 4) > n)
+            return;
+    while (answers--) {
+        if (!(off = dns_skip_name(p, n, off)) || off + 10 > n)
+            return;
+        if (get16(p + off) == 1 && get16(p + off + 2) == 1 && get16(p + off + 8) == 4 &&
+            off + 14 <= n && get32(p + off + 10)) {
+            ses.server = get32(p + off + 10);
+            ses.dns_answers++;
+            route_to(ses.server);
+            return;
+        }
+        off += 10 + get16(p + off + 8);
+    }
+}
+
 /* Every TICK_MS from the timer DPC; caller holds the lock. */
 static void session_tick(void)
 {
@@ -553,11 +641,15 @@ static void session_tick(void)
     ses.quiet++;
     if (ses.state == SESSION_ARP) {
         if (ses.hop_known) {
-            ses.state = SESSION_HELLO;
+            ses.state = ses.server ? SESSION_HELLO : SESSION_RESOLVE;
             ses.ticks = HELLO_TICKS;
         } else if (ses.ticks % HELLO_TICKS == 1) {
             arp_request(ses.hop);
         }
+    }
+    if (ses.state == SESSION_RESOLVE && ses.ticks >= HELLO_TICKS) {
+        ses.ticks = 0;
+        dns_query();
     }
     if (ses.state == SESSION_HELLO && ses.ticks >= HELLO_TICKS) {
         ses.ticks = 0;
@@ -573,6 +665,10 @@ static void session_tick(void)
             ses.timeouts++;
             ses.state = SESSION_HELLO;
             ses.ticks = HELLO_TICKS - 1;
+            if (ses.host[0]) { /* the name may point elsewhere now */
+                ses.server = 0;
+                route_to(ses.dns);
+            }
         } else if (ses.ticks >= HEARTBEAT_TICKS) {
             ses.ticks = 0;
             session_send(T3MP_HEARTBEAT, 0, 0);
@@ -619,6 +715,10 @@ static void rx_ip(const u8 *f, u32 len)
     udp = ip + ihl;
     if (get16(udp + 2) != PORT)
         return;
+    if (get16(udp) == DNS_PORT && ses.dns && get32(ip + 12) == ses.dns) {
+        dns_rx(udp + 8, total - ihl - 8);
+        return;
+    }
     if (udp[8] == 'T' && udp[9] == '3' && udp[10] == 'M' && udp[11] == 'P') {
         if (ses.state != SESSION_IDLE && get32(ip + 12) == ses.server &&
             get16(udp) == ses.port)
@@ -999,7 +1099,11 @@ static void stat(void)
     tes3x_log_hex3("net.irq", net.irqs, net.dpcs, 0);
     tes3x_log_hex3("net.answered", net.arp, net.echo, 0);
     tes3x_log_hex3("net.tx", net.tx, net.tx_full, net.tx_errors);
-    if (ses.server) {
+    if (ses.host[0]) {
+        log_text("net.host", ses.host);
+        tes3x_log_hex3("net.dns", ses.dns, ses.dns_queries, ses.dns_answers);
+    }
+    if (ses.server || ses.host[0]) {
         tes3x_log_hex3("net.session", ses.state, ses.id, ses.client);
         tes3x_log_hex3("net.joins", ses.hellos, ses.welcomes, ses.timeouts);
         tes3x_log_hex3("net.beats", ses.beats_out, ses.beats_in, ses.gaps);
@@ -1058,33 +1162,72 @@ static const char *address(const char *text, u32 *ip)
     return *ip ? text : 0;
 }
 
-/* up A.B.C.D[/BITS] [SERVER[:PORT] [GATEWAY]] */
+/* A host name into out (HOST_NAME bytes): letters, digits, hyphens and dots between labels. */
+static const char *host_name(const char *text, char *out)
+{
+    u32 n = 0, label = 0;
+
+    for (;; text++) {
+        char c = *text;
+        if (c == '.' && label && label <= 63) {
+            label = 0;
+        } else if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+                   c == '-') {
+            label++;
+        } else {
+            break;
+        }
+        if (n >= HOST_NAME - 1)
+            return 0;
+        out[n++] = c;
+    }
+    out[n] = 0;
+    return n && label && label <= 63 ? text : 0;
+}
+
+/* up A.B.C.D[/BITS] [SERVER[:PORT] [GATEWAY [DNS]]], where SERVER is an address or a name */
 static void command_up(const char *text)
 {
-    u32 ip, bits = 24, server = 0, port = PORT, gateway = 0;
+    u32 ip, bits = 24, server = 0, port = PORT, gateway = 0, dns = 0;
+    char host[HOST_NAME];
+    const char *after;
 
+    host[0] = 0;
     if (!(text = address(skip(text), &ip)))
         goto usage;
     if (*text == '/' && (!(text = number(text + 1, &bits)) || bits < 1 || bits > 30))
         goto usage;
     text = skip(text);
     if (*text) {
-        if (!(text = address(text, &server)))
+        if ((after = address(text, &server)) && (*after == ':' || *after == ' ' || !*after))
+            text = after;
+        else if (!(text = host_name(text, host)))
             goto usage;
         if (*text == ':' && (!(text = number(text + 1, &port)) || !port || port > 65535))
             goto usage;
         text = skip(text);
-        if (*text && !(text = address(text, &gateway)))
+        if (*text == '-') /* no gateway, a DNS server follows */
+            text++;
+        else if (*text && !(text = address(text, &gateway)))
+            goto usage;
+        text = skip(text);
+        if (*text && !(text = address(text, &dns)))
             goto usage;
         if (*skip(text))
             goto usage;
+        if (host[0])
+            server = 0;
+        if (host[0] && !dns && !(dns = gateway)) {
+            tes3x_log("net.no_dns", 0);
+            goto usage;
+        }
     }
     if (!nic_start(ip, 1))
         return;
     net.mask = 0xFFFFFFFFu << (32 - bits);
     announce();
     tes3x_log_hex3("net.up", ip, bits, server);
-    if (server) {
+    if (server || host[0]) {
         u32 flags = lock();
         u32 *w = (u32 *)&ses;
         u32 n;
@@ -1094,13 +1237,15 @@ static void command_up(const char *text)
         ses.server = server;
         ses.port = port;
         ses.gateway = gateway;
-        /* Off the subnet the frames go to the gateway's MAC. */
-        ses.hop = (server ^ ip) & net.mask && gateway ? gateway : server;
-        if ((server ^ ip) & net.mask && !gateway)
-            tes3x_log("net.no_gateway", server);
-        ses.state = SESSION_ARP;
+        ses.dns = dns;
+        copy((u8 *)ses.host, (const u8 *)host, HOST_NAME);
+        route_to(server ? server : dns);
         unlock(flags);
-        tes3x_log_hex3("net.session_start", server, port, ses.hop);
+        if ((ses.hop ^ ip) & net.mask)
+            tes3x_log("net.no_gateway", ses.hop);
+        if (host[0])
+            log_text("net.resolving", host);
+        tes3x_log_hex3("net.session_start", server ? server : dns, port, ses.hop);
     }
     return;
 usage:
@@ -1153,15 +1298,21 @@ static u32 ini_text(const char *key, char *out, u32 size)
 /* The ini reader needs the game drive, which is not mounted at process entry. */
 static void autostart(void)
 {
-    char line[80];
-    u32 n;
+    char line[24 + HOST_NAME + 8 + 2 * 24];
+    u32 n, server;
 
     if (!(n = ini_text("NetAddress", line, 24)))
         return;
     line[n++] = ' ';
-    n += ini_text("NetServer", line + n, 24);
-    line[n++] = ' ';
-    ini_text("NetGateway", line + n, 24);
+    if ((server = ini_text("NetServer", line + n, HOST_NAME + 8))) {
+        n += server;
+        line[n++] = ' ';
+        if (!(server = ini_text("NetGateway", line + n, 24)))
+            line[n++] = '-';
+        n += server;
+        line[n++] = ' ';
+        ini_text("NetDns", line + n, 24);
+    }
     tes3x_log("net.autostart", 1);
     command_up(line);
 }
@@ -1227,7 +1378,7 @@ static void player_state(const u8 *ref, u8 *state)
 void tes3x_net_frame(void)
 {
     static u8 last_cell[CELL_NAME];
-    static u32 logged_player, known[PEERS];
+    static u32 logged_player, logged_server, known[PEERS];
     u8 state[STATE_BYTES];
     const u8 *ref;
     u32 i, flags;
@@ -1235,6 +1386,11 @@ void tes3x_net_frame(void)
     if (!ini_checked) {
         ini_checked = 1;
         autostart();
+    }
+    if (net.up && ses.host[0] && ses.server != logged_server) {
+        logged_server = ses.server;
+        if (logged_server)
+            tes3x_log_hex3("net.resolved", logged_server, ses.dns_queries, ses.dns_answers);
     }
     if (!net.up || !(ref = player_reference()))
         return;

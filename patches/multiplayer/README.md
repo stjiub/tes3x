@@ -13,5 +13,7 @@ screens. While joined it sends the player's cell, position and heading every fra
 relays each client's state to the others. The NIC is stopped before the title relaunches, and
 the relaunched title joins again by itself.
 
-Only UDP is sent, and only to the server, so a console behind home NAT needs no port forward.
-There is no DHCP yet.
+The server can be given by name; the driver asks the DNS server (by default the router) at each
+launch and again whenever the server stops answering, so a server whose address changes is found
+again. Only UDP is sent, and only to the server and the DNS server, so a console behind home NAT
+needs no port forward. There is no DHCP yet.

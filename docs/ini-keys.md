@@ -93,7 +93,9 @@ The offset affects only the first-person bow and arms while an arrow or bolt is 
 | key | values | default |
 |---|---|---|
 | `NetAddress` | the console's address, `A.B.C.D` or `A.B.C.D/BITS` | empty - the network stays off; `/24` when no prefix is given |
-| `NetServer` | the server, `A.B.C.D` or `A.B.C.D:PORT` | empty - answer ARP and UDP echo only; port `26500` |
-| `NetGateway` | the router, `A.B.C.D` | empty - needed only when the server is on another subnet |
+| `NetServer` | the server, an address or a name, with `:PORT` if not `26500` | empty - answer ARP and UDP echo only |
+| `NetGateway` | the router, `A.B.C.D` | empty - needed only when the server or DNS is on another subnet |
+| `NetDns` | the DNS server, `A.B.C.D` | `NetGateway`; used only when `NetServer` is a name |
 
 The keys are read on the first frame of each launch, including the relaunch on New Game and Load.
+A server name is looked up at each launch and again whenever the server stops answering.

@@ -21,6 +21,7 @@ import sys
 import time
 
 PORT = 26500
+DNS_PORT = 53
 MAGIC = b"TES3XNET"
 PING, PONG = b"TES3XPNG", b"TES3XPON"
 PEER_MAC = bytes.fromhex("020000000001")
@@ -54,13 +55,35 @@ def checksum(data):
     return ~total & 0xFFFF
 
 
-def udp_frame(dst_mac, dst_ip, payload, ident=0):
-    """An Ethernet frame carrying payload from PEER_IP:PORT to dst_ip:PORT."""
-    udp = struct.pack(">HHHH", PORT, PORT, 8 + len(payload), 0) + payload
+def udp_frame(dst_mac, dst_ip, payload, ident=0, sport=PORT):
+    """An Ethernet frame carrying payload from PEER_IP:sport to dst_ip:PORT."""
+    udp = struct.pack(">HHHH", sport, PORT, 8 + len(payload), 0) + payload
     ip = struct.pack(">BBHHHBBH4s4s", 0x45, 0, 20 + len(udp), ident & 0xFFFF, 0, 64, 17, 0,
                      socket.inet_aton(PEER_IP), socket.inet_aton(dst_ip))
     ip = ip[:10] + struct.pack(">H", checksum(ip)) + ip[12:]
     return dst_mac + PEER_MAC + b"\x08\x00" + ip + udp
+
+
+def dns_reply(query, hosts):
+    """The answer to an A query from hosts (name -> address), NXDOMAIN otherwise; None if malformed."""
+    if len(query) < 12:
+        return None
+    labels, off = [], 12
+    while off < len(query) and query[off]:
+        labels.append(query[off + 1:off + 1 + query[off]].decode("ascii", "replace"))
+        off += 1 + query[off]
+    off += 1
+    if off + 4 > len(query):
+        return None
+    qtype, qclass = struct.unpack_from(">HH", query, off)
+    question = query[12:off + 4]
+    address = hosts.get(".".join(labels).lower()) if (qtype, qclass) == (1, 1) else None
+    flags = 0x8180 if address else 0x8183
+    head = query[:2] + struct.pack(">HHHHH", flags, 1, 1 if address else 0, 0, 0)
+    if not address:
+        return head + question
+    return head + question + struct.pack(">HHHIH4s", 0xC00C, 1, 1, 60, 4,
+                                         socket.inet_aton(address))
 
 
 def arp_frame(op, dst_mac, target_mac, target_ip):
@@ -285,6 +308,17 @@ def serve(args):
     print(f"serving on {args.bind}:{args.port}" + (f" and tunnel {args.tunnel}" if link else ""),
           flush=True)
     clients, by_session = {}, {}
+    hosts = {}
+    for entry in args.host:
+        name, _, address = entry.partition("=")
+        socket.inet_aton(address)
+        hosts[name.lower().rstrip(".")] = address
+    dns = None
+    if hosts:
+        dns = udp_socket()
+        dns.bind((args.bind, DNS_PORT))
+        print(f"answering DNS on {args.bind}:{DNS_PORT} for {', '.join(sorted(hosts))}",
+              flush=True)
     deadline = time.time() + args.duration if args.duration else None
     report = time.time() + args.report
 
@@ -353,8 +387,19 @@ def serve(args):
             by_session.pop(session, None)
 
     while deadline is None or time.time() < deadline:
-        waiting = [sock] + ([link.sock] if link else [])
+        waiting = [sock] + ([link.sock] if link else []) + ([dns] if dns else [])
         for ready in select.select(waiting, [], [], 0.25)[0]:
+            if ready is dns:
+                try:
+                    query, addr = dns.recvfrom(2048)
+                except ConnectionResetError:
+                    continue
+                reply = dns_reply(query, hosts)
+                if reply:
+                    print(f"{time.strftime('%H:%M:%S')} dns query from {addr[0]}: "
+                          f"{'answered' if reply[7] else 'unknown name'}", flush=True)
+                    dns.sendto(reply, addr)
+                continue
             if ready is sock:
                 try:
                     data, addr = sock.recvfrom(2048)
@@ -368,9 +413,16 @@ def serve(args):
                 if op == 1 and tpa == socket.inet_aton(PEER_IP):
                     link.send(arp_frame(2, sha, sha, socket.inet_ntoa(spa)))
             elif frame:
+                src = socket.inet_ntoa(frame[26:30])
+                query = udp_from_frame(frame, DNS_PORT) if hosts else None
+                reply = dns_reply(query, hosts) if query else None
+                if reply:
+                    print(f"{time.strftime('%H:%M:%S')} dns query from {src}: "
+                          f"{'answered' if reply[7] else 'unknown name'}", flush=True)
+                    link.send(udp_frame(frame[6:12], src, reply, sport=DNS_PORT))
+                    continue
                 data = udp_from_frame(frame)
                 if data:
-                    src = socket.inet_ntoa(frame[26:30])
                     handle(data, (src, PORT, frame[6:12]))
         now = time.time()
         for client in clients.values():
@@ -418,6 +470,9 @@ def main(argv=None):
     p.add_argument("--tunnel", type=int, metavar="PORT", help="serve through xemu's udp backend")
     p.add_argument("--duration", type=float, help="stop after this many seconds")
     p.add_argument("--report", type=float, default=30, help="seconds between status lines")
+    p.add_argument("--host", action="append", default=[], metavar="NAME=ADDRESS",
+                   help="answer DNS queries for NAME, on port 53 and through the tunnel "
+                        "(repeatable)")
     args = ap.parse_args(argv)
     return {"listen": listen, "ping": ping, "serve": serve}[args.command](args)
 
