@@ -106,6 +106,7 @@ order = 10
                          ["Mods", "Plugins", "Archives", "Data Files", "Patches", "INI",
                           "Resources", "Build"])
         self.assertEqual(window.counts.contentsMargins().right(), 8)
+        self.assertTrue(window.command_progress.isHidden())
         budget = window.resource_budget.topLevelItem(0)
         self.assertEqual((budget.text(0), budget.text(1)), ("Mod", "2"))
         self.assertIs(window.details_stack.widget(0), window.mod_details)
@@ -495,6 +496,13 @@ order = 10
         self.assertIn("#a15c00", window.ftp_status.styleSheet())
         window.set_ftp_status("Xbox: connected", "#2e7d32", "Connected")
         self.assertIn("#2e7d32", window.ftp_status.styleSheet())
+
+        with patch("tes3x_gui.QProcess"):
+            window.start_command("tool.py", [], "Working…")
+        self.assertFalse(window.command_progress.isHidden())
+        window.process = None
+        window.command_finished(0, None)
+        self.assertTrue(window.command_progress.isHidden())
 
     def test_xbox_addon_deploys_then_starts_the_build(self):
         import hashlib

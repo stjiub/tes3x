@@ -29,7 +29,8 @@ try:
     from PySide6.QtWidgets import (
         QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
         QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
-        QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QPushButton,
+        QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QProgressBar,
+        QPushButton,
         QScrollArea, QSpinBox, QSplitter, QStackedWidget, QStatusBar, QStyle, QTableView, QTabWidget,
         QTextBrowser, QTextEdit, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
     )
@@ -1213,6 +1214,12 @@ class ProfileWindow(QMainWindow):
         layout.addWidget(self.body_split)
         self.setCentralWidget(body)
         self.setStatusBar(QStatusBar())
+        self.command_progress = QProgressBar()
+        self.command_progress.setRange(0, 0)
+        self.command_progress.setTextVisible(False)
+        self.command_progress.setFixedWidth(140)
+        self.command_progress.hide()
+        self.statusBar().addPermanentWidget(self.command_progress)
         self.counts = QLabel()
         self.counts.setContentsMargins(0, 0, 8, 0)
         self.statusBar().addPermanentWidget(self.counts)
@@ -3757,6 +3764,7 @@ class ProfileWindow(QMainWindow):
         self.process = process
         for action in self.command_actions:
             action.setEnabled(False)
+        self.command_progress.show()
         self.update_build_state()
         process.start()
         self.statusBar().showMessage(message)
@@ -3817,6 +3825,7 @@ class ProfileWindow(QMainWindow):
         elif kind == "build":
             self.build_failed = code != 0
         self.process = None
+        self.command_progress.hide()
         for action in self.command_actions:
             action.setEnabled(True)
         self.update_build_state()
