@@ -566,7 +566,7 @@ def list_xbox(args, pool):
         saves = xbox.saves(pool, heads)
         pools = xbox.pools()
         xbox.ftp.quit()
-    except (OSError, EOFError, ftplib.all_errors, SystemExit) as exc:
+    except (*ftplib.all_errors, SystemExit) as exc:
         cached = index["xbox"].get(key, {})
         return {"saves": cached.get("saves", []), "pools": [], "time": cached.get("time"),
                 "xbox": f"offline: {exc}"}
