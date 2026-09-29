@@ -15,4 +15,4 @@ since a large mod list keeps millions of blocks live. Interrupts are masked whil
 changes. A snapshot also carries `MmQueryStatistics` and the first words of the heap object.
 
 Instrumentation only: every allocation pays for the lookup, and the table needs 128 MB. See
-[testing](../../docs/testing.md#heap-census) for how snapshots are taken.
+[testing](../docs/testing.md#heap-census) for how snapshots are taken.

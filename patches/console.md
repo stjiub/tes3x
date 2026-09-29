@@ -12,14 +12,9 @@ pad, adds a way to type, and runs commands from a file for testing without input
 - Every call to the console's printf (`0x0008BB90`, 216 sites) goes through the payload, which
   logs the first lines of a command's output as `console< ...` and then prints as before.
 - `tes3xexec.txt` in `E:\` or beside `default.xbe` runs through `CompileAndRun` once per launch;
-  see [testing and debugging](../../docs/testing.md).
+  see [testing and debugging](../docs/testing.md).
 - At the XBE entry, an `@start` line puts the engine's own relaunch data (`'BXWM'`, New Game or a
   save path) in the kernel's launch data page, so the game starts without the main menu.
 - `tes3x_mailbox`, checked once per frame: a debugger that writes a command and changes its
   sequence number has it run on the next frame, logged as `live> ...`. Nothing writes it on
   hardware, so it costs one comparison per frame.
-
-## Testing it
-
-[`scenario.toml`](scenario.toml) runs a New Game, reads the player's position, moves to Balmora
-and reads it again. The control build has no console patch and never reads the file.

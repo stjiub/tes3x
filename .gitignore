@@ -13,9 +13,7 @@ cache/
 # Screenshots and run logs
 *.png
 *.log
-# ...except the logs and screenshots a proof record cites
-!patches/*/*.log
-!patches/*/*.png
+# ...except the documentation images
 !docs/images/*.png
 
 __pycache__/

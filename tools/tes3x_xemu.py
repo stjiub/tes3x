@@ -10,8 +10,8 @@ xemu's output and the recovered log. The ISO and the build's deploy tree, most o
 deleted when the run ends unless --keep-build (or --keep-iso, to pass the ISO to a later run's
 --iso); the build record, link map and patched XBE stay. The disk is a copy-on-write overlay on
 the clean HDD image, deleted once the log is read unless --keep-disk; --disk FILE instead keeps
-one overlay across runs, so saves persist. Each completed run also writes a .tes3x-run.json with
-no machine paths, for validation results.
+one overlay across runs, so saves persist. Each completed run also writes a .tes3x-run.json
+recording its command, platform and inputs without machine paths.
 
 [xemu] in tes3x.local.toml names the emulator and its files; see docs/testing.md.
 --gdb-capture SECONDS pauses the guest once and saves CPU and stack state to gdb.txt.

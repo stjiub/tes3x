@@ -192,8 +192,3 @@ A run's log and build record are kept when a test fails and deleted when it pass
 the built game files, about 2 GB a run, are deleted either way. `--keep-artifacts never` or
 `always` changes that; `always` keeps the ISO and game files too. `--library-all` tests every mod in the library on its own, using
 the profile for everything else.
-
-## Patch scenarios
-
-A patch folder can hold a `scenario.toml`: a script to run and the log lines to expect. See
-[validation](validation.md).

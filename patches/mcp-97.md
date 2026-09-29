@@ -21,9 +21,3 @@ resumes on the name's last character; if that character is an ordinary letter, i
 plain byte, advances one, and the scan resynchronises. The bug bites only when that character is
 itself a token: a space or one of `A B D F L M R S T`. The fixed-width form errs the other way and
 steps over the next token's first byte.
-
-## Evidence
-
-[2026-09-21, xemu](2026-09-21-xemu.toml): on a real 34-master save, all 32 operand skips paired
-one to one between control and patched runs, every fixed-width advance 3 to 2 and every
-length-prefixed advance N to N+1, with identical token positions.

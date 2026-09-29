@@ -15,7 +15,7 @@ REGISTRY = ROOT / "patches.toml"
 CANDIDATE_LIST = ROOT / "candidates.toml"
 TABLE = ROOT / "docs" / "patches.md"
 CANDIDATE_PAGE = ROOT / "docs" / "candidates.md"
-PATCH_DIRS = ROOT / "patches"
+PATCH_DOCS = ROOT / "patches"
 
 CATEGORIES = ("core", "correctness", "compat", "performance", "qol", "balance",
               "instrumentation", "infrastructure")
@@ -110,10 +110,10 @@ def origin_text(entry):
 
 
 def name_text(entry):
-    """The patch name, linked to its folder when it has one."""
+    """The patch name, linked to its document when it has one."""
     name = entry["name"] + (f"={entry['takes']}" if "takes" in entry else "")
-    folder = PATCH_DIRS / entry["name"]
-    return f"[`{name}`](../patches/{entry['name']}/)" if folder.is_dir() else f"`{name}`"
+    doc = PATCH_DOCS / f"{entry['name']}.md"
+    return f"[`{name}`](../patches/{entry['name']}.md)" if doc.is_file() else f"`{name}`"
 
 
 def cell(text):
