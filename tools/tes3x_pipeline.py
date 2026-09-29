@@ -556,8 +556,8 @@ def main(argv=None):
                          "runs a synthetic workload over a 64 MB paged region. Instrumentation "
                          "only: nothing in the engine is paged")
     ap.add_argument("--net-test", action="store_true",
-                    help="add the network test, whose console command tes3xnet brings the NIC "
-                         "up, broadcasts UDP datagrams on port 26500 and stops it")
+                    help="add the network driver, whose console command tes3xnet brings the NIC "
+                         "up to answer ARP and UDP echo on port 26500, or broadcasts test datagrams")
     ap.add_argument("--hardlink", action=argparse.BooleanOptionalAction,
                     help="hardlink unchanged retail files into the build instead of copying "
                          "them, where the volume allows (default: paths.hardlink_retail)")

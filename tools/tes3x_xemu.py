@@ -400,8 +400,9 @@ def main():
     ap.add_argument("--bios", help="BIOS to boot instead of [xemu] bios; `128mb` for "
                                    "[xemu] bios_128mb")
     ap.add_argument("--net-tunnel", type=int, metavar="PORT",
-                    help="attach the NIC to xemu's udp backend, sending each guest frame to "
-                         "127.0.0.1:PORT (tes3x_net.py listen --tunnel PORT)")
+                    help="attach the NIC to xemu's udp backend: guest frames go to "
+                         "127.0.0.1:PORT and frames sent to PORT+1 reach the guest "
+                         "(tes3x_net.py --tunnel PORT)")
     ap.add_argument("--ram", type=int, choices=(64, 128), default=64,
                     help="guest RAM in MB; 128 also clears Limit64MB in the XBE it packs")
     a = ap.parse_args(argv)
@@ -489,7 +490,7 @@ def main():
     shutil.copyfile(CONFIG["eeprom"], out / "eeprom.bin")
     bios = Path(a.bios).resolve() if a.bios else CONFIG["bios"]
     toml = out / "xemu.toml"
-    tunnel = (free_port(), a.net_tunnel) if a.net_tunnel else None
+    tunnel = (a.net_tunnel + 1, a.net_tunnel) if a.net_tunnel else None
     toml.write_text(xemu_config(CONFIG["bootrom"], bios, out / "eeprom.bin", hdd, iso, a.ram,
                                 tunnel))
 
