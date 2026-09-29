@@ -84,6 +84,8 @@ typedef u32(__stdcall *fn_PhyGetLinkState)(u8);
 #define REG_RING_SIZES 0x108u
 #define REG_TX_POLL 0x10Cu
 #define REG_LINK_SPEED 0x110u
+#define REG_RX_CURRENT_DESC 0x120u
+#define REG_RX_NEXT_DESC 0x138u
 #define REG_TX_WATERMARK 0x13Cu
 #define REG_SETUP7 0x140u
 #define REG_TXRX_CONTROL 0x144u
@@ -462,6 +464,7 @@ static void nic_stop(void)
         set_thunk(THUNK_HalReturnToFirmware, (void *)firmware_original);
     }
     nic_reset();
+    NIC(REG_ADAPTER) = 0;
     if (pool)
         MmFreeContiguousMemory(pool);
     pool = 0;
@@ -501,6 +504,13 @@ static int nic_start(u32 ip, int irq)
     rx_head = tx_tail = 0;
     net.ip = ip;
 
+    /* Erase what a previous driver left, as forcedeth's open does: with the adapter still marked
+     * running from our own last start, the NIC reported no receive buffers in the next process. */
+    NIC(REG_PACKET_FILTER) = 0;
+    NIC(REG_TX_CONTROL) = 0;
+    NIC(REG_RX_CONTROL) = 0;
+    NIC(REG_ADAPTER) = 0;
+    KeStallExecutionProcessor(50);
     nic_reset();
     NIC(REG_TXRX_CONTROL) = 0;
     NIC(REG_MII_MASK) = 0;
@@ -646,6 +656,8 @@ static void stat(void)
         tes3x_log_hex3("net.regs", NIC(REG_IRQ_STATUS), NIC(REG_RX_CONTROL),
                        NIC(REG_RX_STATUS));
         tes3x_log_hex3("net.ring", ring, NIC(REG_IRQ_MASK), NIC(REG_ADAPTER));
+        tes3x_log_hex3("net.rx_desc", MmGetPhysicalAddress((void *)rx_ring),
+                       NIC(REG_RX_CURRENT_DESC), NIC(REG_RX_NEXT_DESC));
         /* Drains anything the interrupt path missed. */
         flags = lock();
         rx_drain();

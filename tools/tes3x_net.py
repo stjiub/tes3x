@@ -191,7 +191,7 @@ def ping(args):
             except (socket.timeout, ConnectionResetError):
                 pass
         print(f"first reply after {time.time() - t0:.1f} s", flush=True)
-    rtts, lost = [], 0
+    rtts, lost, runs, run = [], 0, [], 0
     for seq in range(args.count):
         payload = PING + struct.pack("<I", seq) + b"\0" * args.pad
         start = time.perf_counter()
@@ -216,14 +216,22 @@ def ping(args):
                 got = time.perf_counter()
         if got is None:
             lost += 1
+            run += 1
             if args.verbose:
                 print(f"seq {seq}: lost")
         else:
+            if run:
+                runs.append((seq - run, run))
+                run = 0
             rtts.append((got - start) * 1000)
             if args.verbose:
                 print(f"seq {seq}: {rtts[-1]:.2f} ms")
         time.sleep(args.interval)
+    if run:
+        runs.append((args.count - run, run))
     print(f"sent {args.count}, received {len(rtts)}, lost {lost}")
+    if runs:
+        print("loss runs (first seq x count): " + ", ".join(f"{a}x{n}" for a, n in runs[:20]))
     if rtts:
         rtts.sort()
         print("rtt ms: min %.2f  median %.2f  avg %.2f  p95 %.2f  max %.2f" % (
