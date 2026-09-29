@@ -105,9 +105,11 @@ first start, with no `tes3x.local.toml` yet, it opens the local settings.
   profile by folder name.
   Selecting a mod shows what it is in the details pane on the right: its author and summary from
   [Nexus Mods](https://www.nexusmods.com/morrowind), its page, the catalog's verdict, and each
-  plugin's own description. The page comes from `library.toml`, the catalog or a Nexus download's
-  file name; for any other mod, **Find on Nexus…** searches by name. What Nexus returns is saved
-  in `library.toml` as the mod's `url`, `author` and `summary`.
+  plugin's own description. The contents below it split the mod into plugins, archives and other
+  files and show whether each reaches the build, is disabled or is overridden. The page comes from
+  `library.toml`, the catalog or a Nexus download's file name; for any other mod, **Find on
+  Nexus…** searches by name. What Nexus returns is saved in `library.toml` as the mod's `url`,
+  `author` and `summary`.
 - **Install mod…**, or dropping files on the list, adds a `.zip`, `.7z` or `.rar` archive (the
   last two need [7-Zip](https://www.7-zip.org)), a folder or a single plugin to the library. It
   shows the files and ticks the `Data Files` folder it found; for mods with numbered option

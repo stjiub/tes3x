@@ -105,7 +105,7 @@ order = 10
         self.assertEqual([window.tabs.tabText(index) for index in range(window.tabs.count())],
                          ["Mods", "Plugins", "Archives", "Data Files", "Patches", "INI",
                           "Build"])
-        self.assertIs(window.content_split.widget(1), window.mod_info)
+        self.assertIs(window.content_split.widget(1), window.mod_details)
         self.assertEqual([item.text(0) for item in window.mod_rows()], ["Mod", "Other"])
         self.assertEqual(self.row(window, "Other").text(1), "")
         self.assertEqual(self.row(window, "Mod").checkState(0), Qt.CheckState.Checked)
@@ -363,9 +363,14 @@ order = 10
             self.row(window, "Other").setSelected(True)
         self.assertEqual(lookup.call_args.args[0], "id:123")
         shown = window.mod_info.toPlainText()
-        for text in ("Other", "Someone", "Adds a thing", page, "Find on Nexus",
-                     "Xbox compatibility: Confirmed"):
+        for text in ("Other", page, "Find on Nexus", "Xbox compatibility: Confirmed"):
             self.assertIn(text, shown)
+        self.assertIn("1 plugin · 0 archives · 1 other file", window.mod_contents_summary.text())
+        plugin_row = window.mod_plugins.topLevelItem(0)
+        self.assertEqual((plugin_row.text(0), plugin_row.text(1)),
+                         ("other.esp", "Not active"))
+        self.assertIn("Someone", plugin_row.text(2))
+        self.assertIn("Adds a thing", plugin_row.text(2))
 
         window.nexus_finished("id:123", {"id": 123, "name": "Other", "summary": "From Nexus",
                                          "author": "Author", "version": "1", "url": page}, None)

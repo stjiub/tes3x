@@ -445,8 +445,9 @@ ROW_FLAGS = (Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
 class FilesModel(QAbstractTableModel):
     HEADERS = ("File", "Provided by", "Overrides")
 
-    def __init__(self):
+    def __init__(self, headers=None):
         super().__init__()
+        self.headers = headers or self.HEADERS
         self.entries = []
 
     def reset(self, entries):
@@ -458,7 +459,7 @@ class FilesModel(QAbstractTableModel):
         return 0 if parent.isValid() else len(self.entries)
 
     def columnCount(self, parent=QModelIndex()):
-        return 0 if parent.isValid() else 3
+        return 0 if parent.isValid() else len(self.headers)
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
         if role == Qt.ItemDataRole.DisplayRole and index.isValid():
@@ -467,7 +468,7 @@ class FilesModel(QAbstractTableModel):
 
     def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
         if role == Qt.ItemDataRole.DisplayRole and orientation == Qt.Orientation.Horizontal:
-            return self.HEADERS[section]
+            return self.headers[section]
         return None
 
 
@@ -1159,10 +1160,7 @@ class ProfileWindow(QMainWindow):
 
         self.output = QTextEdit()
         self.output.setReadOnly(True)
-        self.mod_info = QTextBrowser()
-        self.mod_info.setOpenLinks(False)
-        self.mod_info.anchorClicked.connect(self.mod_info_link)
-        self.mod_info.setPlaceholderText("Select a mod to see what it is")
+        self.mod_details = self.create_mod_details()
         self.tabs = QTabWidget()
         self.tabs.addTab(self.create_mods_tab(), "Mods")
         self.tabs.addTab(self.create_plugins_panel(), "Plugins")
@@ -1188,7 +1186,7 @@ class ProfileWindow(QMainWindow):
         layout.addLayout(profile_bar)
         self.content_split = QSplitter(Qt.Orientation.Horizontal)
         self.content_split.addWidget(self.tabs)
-        self.content_split.addWidget(self.mod_info)
+        self.content_split.addWidget(self.mod_details)
         self.content_split.setStretchFactor(0, 3)
         self.content_split.setStretchFactor(1, 2)
         self.content_split.setSizes([780, 500])
@@ -1324,6 +1322,55 @@ class ProfileWindow(QMainWindow):
             self.ftp_timer.start()
 
     # Mods tab
+
+    def create_mod_details(self):
+        self.mod_info = QTextBrowser()
+        self.mod_info.setOpenLinks(False)
+        self.mod_info.anchorClicked.connect(self.mod_info_link)
+        self.mod_info.setPlaceholderText("Select a mod to see what it is")
+
+        self.mod_contents_summary = QLabel("Select a mod to see its contents")
+        self.mod_contents_summary.setWordWrap(True)
+        self.mod_plugins = QTreeWidget()
+        self.mod_plugins.setHeaderLabels(["Plugin", "Build result", "Description"])
+        self.mod_plugins.setRootIsDecorated(False)
+        self.mod_archives = QTreeWidget()
+        self.mod_archives.setHeaderLabels(["Archive", "Build result"])
+        self.mod_archives.setRootIsDecorated(False)
+        self.mod_files_model = FilesModel(("File", "Type", "Build result"))
+        self.mod_files_filter = FilesFilter()
+        self.mod_files_filter.setSourceModel(self.mod_files_model)
+        search = QLineEdit()
+        search.setPlaceholderText("Filter this mod's files…")
+        search.textChanged.connect(lambda value: self.mod_files_filter.update(text=value))
+        self.mod_files = QTableView()
+        self.mod_files.setModel(self.mod_files_filter)
+        self.mod_files.setSortingEnabled(True)
+        self.mod_files.verticalHeader().hide()
+        self.mod_files.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.mod_files.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.mod_files.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        files = QWidget()
+        files_layout = QVBoxLayout(files)
+        files_layout.setContentsMargins(0, 0, 0, 0)
+        files_layout.addWidget(search)
+        files_layout.addWidget(self.mod_files)
+        self.mod_contents = QTabWidget()
+        self.mod_contents.addTab(self.mod_plugins, "Plugins")
+        self.mod_contents.addTab(self.mod_archives, "Archives")
+        self.mod_contents.addTab(files, "Files")
+        contents = QWidget()
+        contents_layout = QVBoxLayout(contents)
+        contents_layout.setContentsMargins(0, 0, 0, 0)
+        contents_layout.addWidget(self.mod_contents_summary)
+        contents_layout.addWidget(self.mod_contents, 1)
+        details = QSplitter(Qt.Orientation.Vertical)
+        details.addWidget(self.mod_info)
+        details.addWidget(contents)
+        details.setStretchFactor(0, 2)
+        details.setStretchFactor(1, 3)
+        details.setSizes([300, 450])
+        return details
 
     def create_mods_tab(self):
         install = QPushButton("Install mod…")
@@ -1710,6 +1757,7 @@ class ProfileWindow(QMainWindow):
         item = self.selected_mod()
         if item is None:
             self.mod_info.clear()
+            self.populate_mod_contents(None)
             return
         entry = item.data(0, ROLE)
         name, version, _release, problem = self.describe(entry)
@@ -1746,18 +1794,73 @@ class ProfileWindow(QMainWindow):
         if problem:
             parts.append(f"<p style='color:{WARNING.name()}'>{text(problem)}</p>")
         scanned = self.scan(entry) if self.library_root else None
-        if isinstance(scanned, Mod):
-            rows = []
-            for key, source in sorted(scanned.files.items()):
-                if not key.endswith(PLUGIN_EXT) or os.path.basename(key) in BASE_MASTERS:
-                    continue
-                plugin_author, description = plugin_header(source)
-                rows.append(f"<li><b>{text(os.path.basename(source))}</b>"
-                            + (f" by {text(plugin_author)}" if plugin_author else "")
-                            + (f"<br>{text(description)}" if description else "") + "</li>")
-            if rows:
-                parts.append("<p><b>Plugins</b></p><ul>" + "".join(rows) + "</ul>")
         self.mod_info.setHtml("".join(parts))
+        self.populate_mod_contents(item, scanned)
+
+    def mod_build_result(self, item, key):
+        """How one selected mod file reaches, or does not reach, the planned build."""
+        active = self.analysis.get("active", [])
+        index = next((i for i, (row, _mod) in enumerate(active) if row is item), None)
+        if index is None:
+            return "Not active"
+        entry = item.data(0, ROLE)
+        if key.endswith(PLUGIN_EXT) and "plugins" in entry:
+            wanted = {name.casefold() for name in entry["plugins"]}
+            if os.path.basename(key) not in wanted:
+                return "Disabled"
+        owners = self.analysis.get("owners", {}).get(key, [])
+        if index not in owners:
+            return "Not included"
+        if owners[-1] != index:
+            return "Overridden by " + active[owners[-1]][0].text(0)
+        if key.endswith(".bsa"):
+            return ("Loaded via multi-bsa" if entry.get("archives") == "load"
+                    else "Unpacked at build")
+        return "Included"
+
+    def populate_mod_contents(self, item, scanned=None):
+        self.mod_plugins.clear()
+        self.mod_archives.clear()
+        self.mod_files_model.reset([])
+        if item is None or not isinstance(scanned, Mod):
+            self.mod_contents_summary.setText("Select a mod to see its contents")
+            return
+        plugins, archives, files = [], [], []
+        total = 0
+        for key, source in sorted(scanned.files.items()):
+            try:
+                total += os.path.getsize(source)
+            except OSError:
+                pass
+            result = self.mod_build_result(item, key)
+            name = scanned.relative.get(key, key)
+            if key.endswith(PLUGIN_EXT):
+                author, description = plugin_header(source)
+                detail = (f"by {author}" if author else "")
+                if description:
+                    detail += (" — " if detail else "") + description
+                plugins.append((name, result, detail))
+            elif key.endswith(".bsa"):
+                archives.append((name, result))
+            else:
+                parent = name.split("/", 1)[0] if "/" in name else Path(name).suffix.lstrip(".")
+                files.append((name, parent.title() or "File", result))
+        for row in plugins:
+            self.mod_plugins.addTopLevelItem(QTreeWidgetItem(list(row)))
+        for row in archives:
+            self.mod_archives.addTopLevelItem(QTreeWidgetItem(list(row)))
+        self.mod_files_model.reset(files)
+        for tree in (self.mod_plugins, self.mod_archives):
+            for column in range(tree.columnCount()):
+                tree.resizeColumnToContents(column)
+        state = ("Active" if any(row is item for row, _mod in self.analysis.get("active", []))
+                 else "Not active")
+        size = f"{total / 1048576:.1f} MB" if total >= 1048576 else f"{total / 1024:.1f} KB"
+        excluded = f" · {scanned.excluded} excluded" if scanned.excluded else ""
+        count = lambda values, noun: f"{len(values)} {noun}{'' if len(values) == 1 else 's'}"
+        self.mod_contents_summary.setText(
+            f"{state} · {count(plugins, 'plugin')} · {count(archives, 'archive')} · "
+            f"{count(files, 'other file')} · {size}{excluded}")
 
     def mod_info_link(self, url):
         if url.scheme() != "tes3x":
@@ -2016,6 +2119,7 @@ class ProfileWindow(QMainWindow):
         self.populate_plugins()
         self.highlight_conflicts()
         self.refresh_status()
+        self.show_mod_info()
 
     def populate_archives(self, files):
         """The archives the build ships, and whether the engine opens each one."""
