@@ -19,7 +19,8 @@
  * NetServer, NetGateway and NetDns; every launch and relaunch joins by itself. While joined, each frame
  * sends the player's state, and the server relays the other clients' states back. Each other
  * client near the player is drawn as a ghost NPC from the plugin the pipeline adds. While joined,
- * menus do not pause the world, and the rest menu closes as it opens.
+ * menus do not pause the world, the rest menu closes as it opens, and the server's clock sets the
+ * time globals; a console joins only once a game is loaded, offering its own clock.
  *
  * While up, the HalReturnToFirmware thunk points at a wrapper that stops the NIC first: a quick
  * reboot keeps the kernel, which would otherwise keep a connected interrupt object and a live DMA
@@ -178,7 +179,7 @@ struct descriptor {
 #define CPU_MHZ 733u
 
 /* Session packet: "T3MP", version, type, then session, seq, ack, time and echoed peer time. */
-#define T3MP_VERSION 2u
+#define T3MP_VERSION 3u
 #define T3MP_HEADER 28u
 #define T3MP_HELLO 1u
 #define T3MP_WELCOME 2u
@@ -189,13 +190,18 @@ struct descriptor {
 #define T3MP_GONE 7u
 #define T3MP_EVENTS 8u
 #define T3MP_REFUSE 9u
+#define T3MP_CLOCK 10u
 #define SESSION_IDLE 0u
 #define SESSION_ARP 1u
 #define SESSION_HELLO 2u
 #define SESSION_JOINED 3u
 #define SESSION_RESOLVE 4u
 #define SESSION_REFUSED 5u
-#define HELLO_BYTES 18u
+/* The clock: GameHour, Day, Month, Year, DaysPassed and TimeScale, the globals' raw floats. HELLO
+ * carries the client's own, CLOCK the server's. */
+#define CLOCK_GLOBALS 6u
+#define CLOCK_BYTES (CLOCK_GLOBALS * 4u)
+#define HELLO_BYTES (18u + CLOCK_BYTES)
 #define DNS_PORT 53u
 #define HOST_NAME 64u
 
@@ -255,6 +261,13 @@ static struct {
     u32 in_next, in_head, in_count;
     u32 queued, sent, resent, acked, delivered, handled, stale, full, dropped;
 } rel;
+
+/* local: this console's clock, copied by the game thread for HELLO; server: the latest CLOCK,
+ * copied by the receive DPC. Bytes only on both sides of the lock. */
+static struct {
+    u8 local[CLOCK_BYTES], server[CLOCK_BYTES];
+    u32 local_valid, received, applied;
+} game_clock;
 
 static u32 ghost_places, ghost_moves, ghost_failures;
 static u32 ini_checked;
@@ -702,6 +715,10 @@ static void session_rx(const u8 *p, u32 n)
             peer_rx(get32le(p + T3MP_HEADER), seq, p + T3MP_HEADER + 4);
         if (type == T3MP_EVENTS)
             events_rx(p + T3MP_HEADER, n - T3MP_HEADER);
+        if (type == T3MP_CLOCK && n >= T3MP_HEADER + CLOCK_BYTES && seq > ses.peer_seq) {
+            copy(game_clock.server, p + T3MP_HEADER, CLOCK_BYTES);
+            game_clock.received++;
+        }
         if (type == T3MP_GONE && n >= T3MP_HEADER + 4)
             for (i = 0; i < PEERS; i++)
                 if (peers[i].client == get32le(p + T3MP_HEADER))
@@ -826,7 +843,8 @@ static void session_tick(void)
         ses.ticks = 0;
         dns_query();
     }
-    if (ses.state == SESSION_HELLO && ses.ticks >= HELLO_TICKS) {
+    /* Joining waits for a clock to offer, which the game has only once a game is loaded. */
+    if (ses.state == SESSION_HELLO && ses.ticks >= HELLO_TICKS && game_clock.local_valid) {
         ses.ticks = 0;
         ses.id = 0;
         ses.peer_seq = 0;
@@ -835,6 +853,7 @@ static void session_tick(void)
         put32le(hello + 6, TES3X_BUILD_ID);
         put32le(hello + 10, ses.plugins_hash);
         put32le(hello + 14, ses.plugins);
+        copy(hello + 18, game_clock.local, CLOCK_BYTES);
         session_send(T3MP_HELLO, hello, sizeof(hello));
         ses.hellos++;
     } else if (ses.state == SESSION_JOINED) {
@@ -2025,6 +2044,61 @@ static void events_frame(void)
     }
 }
 
+/* The clock globals hang off the WorldController, in HELLO's order: GameHour +0xA4, Day +0xB0,
+ * Month +0xAC, Year +0xA8, DaysPassed +0xB4, TimeScale +0xB8. A global's value is at +0x34. */
+static const u32 clock_offsets[CLOCK_GLOBALS] = {0xA4, 0xB0, 0xAC, 0xA8, 0xB4, 0xB8};
+#define GLOBAL_VALUE 0x34
+
+static float *clock_global(u32 i)
+{
+    const u8 *world = *(const u8 **)TES3X_NET_WORLD, *global;
+
+    if (!plausible(world) || !plausible(global = *(const u8 *const *)(world + clock_offsets[i])))
+        return 0;
+    return (float *)(global + GLOBAL_VALUE);
+}
+
+/* Game thread, in the world: while joined the server's clock overwrites the globals, latest
+ * wins; either way this console's clock is kept for the next HELLO. */
+static void clock_frame(void)
+{
+    u8 local[CLOCK_BYTES], server[CLOCK_BYTES];
+    float *globals[CLOCK_GLOBALS];
+    u32 i, flags, received;
+
+    for (i = 0; i < CLOCK_GLOBALS; i++)
+        if (!(globals[i] = clock_global(i)))
+            return;
+    flags = lock();
+    received = game_clock.received;
+    copy(server, game_clock.server, CLOCK_BYTES);
+    unlock(flags);
+    if (ses.state == SESSION_JOINED && received != game_clock.applied) {
+        for (i = 0; i < CLOCK_GLOBALS; i++)
+            copy((u8 *)globals[i], server + 4 * i, 4);
+        if (!game_clock.applied)
+            tes3x_log_hex3("net.clock_set", (u32)(int)(*globals[0] * 1000.0f),
+                           (u32)(int)*globals[1], (u32)(int)*globals[2]);
+        game_clock.applied = received;
+    }
+    for (i = 0; i < CLOCK_GLOBALS; i++)
+        copy(local + 4 * i, (const u8 *)globals[i], 4);
+    flags = lock();
+    copy(game_clock.local, local, CLOCK_BYTES);
+    game_clock.local_valid = 1;
+    unlock(flags);
+}
+
+static void clock_stat(void)
+{
+    const float *hour = clock_global(0), *day = clock_global(1), *scale = clock_global(5);
+
+    tes3x_log_hex3("net.clock", game_clock.received, game_clock.applied, 0);
+    if (hour && day && scale)
+        tes3x_log_hex3("net.clock_now", (u32)(int)(*hour * 1000.0f), (u32)(int)*day,
+                       (u32)(int)*scale);
+}
+
 /* Once per frame, from the Game::Update hook. */
 void tes3x_net_frame(void)
 {
@@ -2055,6 +2129,7 @@ void tes3x_net_frame(void)
     menu_frame(net.up && ref);
     if (!net.up || !ref)
         return;
+    clock_frame();
     player_state(ref, state);
     if (!logged_player) {
         const u8 *base = *(const u8 **)(ref + 0x28);
@@ -2115,6 +2190,7 @@ int tes3x_net_command(const char *text)
     } else if ((rest = word(text, "stat")) && !*skip(rest)) {
         stat();
         menu_stat();
+        clock_stat();
     } else if ((rest = word(text, "menusim")) && (rest = word(skip(rest), "auto")) &&
                !*skip(rest)) {
         menu_forced = 0;

@@ -97,5 +97,22 @@ class EventChannelTests(unittest.TestCase):
         self.assertGreater(a.resent, 0)
 
 
+class ClockTests(unittest.TestCase):
+    def test_advances_at_timescale_and_rolls_the_calendar(self):
+        clock = tes3x_net.Clock(23.0, 31, 11, 427, 100, 30.0, now=0.0)
+        clock.advance(3600 / 30 * 2)  # two game hours
+        self.assertAlmostEqual(clock.hour, 1.0)
+        self.assertEqual((clock.day, clock.month, clock.year, clock.days_passed),
+                         (1, 0, 428, 101))
+        clock = tes3x_net.Clock(12.0, 28, 1, 427, 0, 30.0, now=0.0)
+        clock.advance(3600 / 30 * 24)
+        self.assertEqual((clock.day, clock.month), (1, 2))
+
+    def test_body_is_six_floats(self):
+        body = tes3x_net.Clock(9.5, 16, 7, 427, 1, 30.0, now=0.0).body(0.0)
+        self.assertEqual(tes3x_net.CLOCK_BODY.unpack(body), (9.5, 16, 7, 427, 1, 30.0))
+        self.assertEqual(tes3x_net.HELLO_BODY.size, 18 + tes3x_net.CLOCK_BODY.size)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -271,9 +271,13 @@ def ping(args):
 
 
 T3MP = struct.Struct("<4sBBHIIIII")  # magic, version, type, 0, session, seq, ack, time, echo
-T3MP_VERSION = 2
-HELLO, WELCOME, HEARTBEAT, BYE, STATE, PEER, GONE, EVENTS, REFUSE = range(1, 10)
-HELLO_BODY = struct.Struct("<6sIII")  # MAC, build id, load order hash, plugin count
+T3MP_VERSION = 3
+HELLO, WELCOME, HEARTBEAT, BYE, STATE, PEER, GONE, EVENTS, REFUSE, CLOCK = range(1, 11)
+# GameHour, Day, Month (0-11), Year, DaysPassed, TimeScale, as the game's float globals
+CLOCK_BODY = struct.Struct("<6f")
+# MAC, build id, load order hash, plugin count, then the client's clock
+HELLO_BODY = struct.Struct("<6sIII" + CLOCK_BODY.format[1:])
+MONTH_DAYS = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
 TIMEOUT = 5.0
 EVENTS_HEAD = struct.Struct("<IB3x")  # the sender's last delivered event, event count
 EVENT = struct.Struct("<IHHI")  # seq, kind, length, origin client; the data follows
@@ -281,6 +285,7 @@ EVENTS_BYTES = 512  # the client's largest EVENTS body
 EVENT_DATA = 64
 EVENT_TEXT = 1
 RESEND = 0.25
+CLOCK_INTERVAL = 1.0
 
 
 def load_order_hash(names):
@@ -431,6 +436,39 @@ def write_ghost_plugin(data_files, master):
     return target
 
 
+class Clock:
+    """The session's game time, run by the server: it advances at TimeScale game seconds per real
+    second and rolls days, months and years over as the game does."""
+
+    def __init__(self, hour, day, month, year, days_passed, scale, now):
+        self.hour, self.day, self.month, self.year = hour, int(day), int(month), int(year)
+        self.days_passed, self.scale, self.last = int(days_passed), scale, now
+
+    def advance(self, now):
+        self.hour += (now - self.last) * self.scale / 3600
+        self.last = now
+        while self.hour >= 24:
+            self.hour -= 24
+            self.days_passed += 1
+            self.day += 1
+            if self.day > MONTH_DAYS[self.month % 12]:
+                self.day = 1
+                self.month += 1
+                if self.month > 11:
+                    self.month = 0
+                    self.year += 1
+
+    def body(self, now):
+        self.advance(now)
+        return CLOCK_BODY.pack(self.hour, self.day, self.month, self.year, self.days_passed,
+                               self.scale)
+
+    def __str__(self):
+        return (f"{int(self.hour):02d}:{int(self.hour % 1 * 60):02d} day {self.day} month "
+                f"{self.month} year {self.year} (days passed {self.days_passed}, "
+                f"timescale {self.scale:g})")
+
+
 class Client:
     def __init__(self, ident, mac):
         self.id, self.mac = ident, mac
@@ -471,6 +509,7 @@ def serve(args):
     if args.load_order:
         pinned = (int(args.load_order, 16), None)
     lost = {"in": 0, "out": 0}
+    clock, clock_next = None, 0.0
 
     def dropped(direction):
         if args.drop and loss.random() < args.drop:
@@ -534,7 +573,7 @@ def serve(args):
         broadcast_event(client.id, kind, data, now)
 
     def handle(packet, addr):
-        nonlocal pinned
+        nonlocal pinned, clock
         if len(packet) < T3MP.size or dropped("in"):
             return
         magic, version, kind, _, session, seq, _, sent, _ = T3MP.unpack_from(packet)
@@ -543,7 +582,7 @@ def serve(args):
         stamp = time.strftime("%H:%M:%S")
         now = time.time()
         if kind == HELLO and len(packet) >= T3MP.size + HELLO_BODY.size:
-            mac, build, order, plugins = HELLO_BODY.unpack_from(packet, T3MP.size)
+            mac, build, order, plugins, *offered = HELLO_BODY.unpack_from(packet, T3MP.size)
             mac = mac.hex(":")
             if pinned is None:
                 pinned = (order, plugins)
@@ -573,6 +612,14 @@ def serve(args):
             print(f"{stamp} client {client.id} {verb}: {mac} at {addr[0]}:{addr[1]}, "
                   f"build {build:#010x}", flush=True)
             send(client, WELCOME, struct.pack("<I", client.id))
+            if clock is None:
+                if args.hour is not None:
+                    offered[0] = args.hour
+                if args.timescale is not None:
+                    offered[5] = args.timescale
+                clock = Clock(*offered, now)
+                print(f"{stamp} clock {clock}, from client {client.id}", flush=True)
+            send(client, CLOCK, clock.body(now))
             return
         client = by_session.get(session)
         if client is None:
@@ -659,8 +706,17 @@ def serve(args):
         for client in clients.values():
             if client.alive and client.rel.out and now - client.rel.last_send >= RESEND:
                 flush(client, now)
+        if clock and now >= clock_next:
+            clock_next = now + CLOCK_INTERVAL
+            body = clock.body(now)
+            for client in clients.values():
+                if client.alive:
+                    send(client, CLOCK, body)
         if args.report and now >= report:
             report = now + args.report
+            if clock:
+                clock.advance(now)
+                print(f"  clock {clock}", flush=True)
             for client in clients.values():
                 print(f"  client {client.id}: {'up' if client.alive else 'down'}, "
                       + summary(client), flush=True)
@@ -721,6 +777,10 @@ def main(argv=None):
     p.add_argument("--load-order", metavar="HASH",
                    help="refuse clients whose load order hash differs (hex); default: the first "
                         "client's")
+    p.add_argument("--hour", type=float,
+                   help="start the session's clock at this GameHour; default: the first client's")
+    p.add_argument("--timescale", type=float,
+                   help="game seconds per real second; default: the first client's TimeScale")
     p = sub.add_parser("plugin", help="write the ghost plugin the multiplayer patch moves")
     p.add_argument("out")
     p.add_argument("--master", required=True, help="Morrowind.esm, for its size")
