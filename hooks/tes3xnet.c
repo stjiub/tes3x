@@ -14,7 +14,8 @@
  *
  * With [Xbox] NetAddress set, the first frame brings the NIC up as `up` would, from NetAddress,
  * NetServer, NetGateway and NetDns; every launch and relaunch joins by itself. While joined, each frame
- * sends the player's state, and the server relays the other clients' states back.
+ * sends the player's state, and the server relays the other clients' states back. Each other
+ * client near the player is drawn as a ghost NPC from the plugin the pipeline adds.
  *
  * While up, the HalReturnToFirmware thunk points at a wrapper that stops the NIC first: a quick
  * reboot keeps the kernel, which would otherwise keep a connected interrupt object and a live DMA
@@ -29,6 +30,9 @@
 #endif
 #ifndef TES3X_NET_DATA_HANDLER
 #error "define TES3X_NET_DATA_HANDLER to the DataHandler pointer"
+#endif
+#ifndef TES3X_NET_COMPILE_RUN
+#error "define TES3X_NET_COMPILE_RUN to the VA of CompileAndRun"
 #endif
 
 typedef unsigned short u16;
@@ -200,11 +204,18 @@ static struct {
 #define PEERS 8u
 #define PEER_TIMEOUT_US 5000000u
 
-/* The last relayed state of each other client, by the server's client id. */
+#define SAMPLES 8u
+
+/* The recent relayed states of each other client, by the server's client id. The receive DPC
+ * only copies bytes: it runs without the game's floating-point state saved. */
 static struct {
-    u32 client, seq, time;
-    u8 state[STATE_BYTES];
+    u32 client, seq, time, head, count;
+    struct {
+        u32 time;
+        u8 state[STATE_BYTES];
+    } samples[SAMPLES];
 } peers[PEERS];
+static u32 ghost_places, ghost_moves, ghost_failures;
 static u32 ini_checked;
 static u32 probe_ip, probe_hits;
 static u32 timer[0x28 / 4];
@@ -487,10 +498,16 @@ static void peer_rx(u32 client, u32 seq, const u8 *state)
     }
     if (slot == PEERS || (peers[slot].client == client && seq <= peers[slot].seq))
         return;
+    if (peers[slot].client != client)
+        peers[slot].count = 0;
     peers[slot].client = client;
     peers[slot].seq = seq;
     peers[slot].time = now_us();
-    copy(peers[slot].state, state, STATE_BYTES);
+    peers[slot].samples[peers[slot].head].time = peers[slot].time;
+    copy(peers[slot].samples[peers[slot].head].state, state, STATE_BYTES);
+    peers[slot].head = (peers[slot].head + 1) % SAMPLES;
+    if (peers[slot].count < SAMPLES)
+        peers[slot].count++;
     ses.peers_in++;
 }
 
@@ -1114,6 +1131,7 @@ static void stat(void)
             if (peers[i].client)
                 tes3x_log_hex3("net.peer_state", peers[i].client, peers[i].seq,
                                now_us() - peers[i].time);
+        tes3x_log_hex3("net.ghosts", ghost_places, ghost_moves, ghost_failures);
     }
 }
 
@@ -1374,6 +1392,305 @@ static void player_state(const u8 *ref, u8 *state)
     copy(state + 16, ref + 0x34, 4); /* orientation z */
 }
 
+/* Ghosts: each peer slot drives one persistent NPC of the ghost plugin (tes3x_net.py plugin)
+ * through the engine's script compiler, as the console does. Each is drawn GHOST_DELAY_US in the
+ * past, between the two states around that moment, so jitter and a lost state do not show. */
+#define GHOST_DELAY_US 100000
+#define GHOST_EXTRAPOLATE_US 200000
+#define GHOST_SNAP 1024.0f /* a longer step between two states is a teleport, not a walk */
+#define GHOST_CELL "TES3X Ghosts"
+/* Any exterior cell's name: PositionCell then finds the exterior cell from the coordinates.
+ * Position alone leaves a ghost that has never been loaded outside the loaded cells. */
+#define GHOST_EXTERIOR "Seyda Neen"
+#define GHOST_SETTLE_FRAMES 10 /* after the local player changes cell */
+#define WORLD_SCRIPT 0x54 /* the compiler CompileAndRun is a method on */
+#define WORLD_MENUS 0x2C0
+#define MENUS_SCRATCH 0x20
+#define PI 3.14159265f
+
+typedef int(__attribute__((thiscall)) *fn_compile_run)(void *self, void *scratch,
+                                                       const char *text, int a2, int ref,
+                                                       int a4, int a5, int a6);
+
+struct pose {
+    u32 flags;
+    float x, y, z, heading;
+    u8 cell[CELL_NAME];
+};
+
+static struct {
+    u32 client, placed, flags;
+    int gx, gy;
+    float x, y, z, heading;
+    u8 cell[CELL_NAME];
+} ghosts[PEERS];
+static u32 ghosts_parked, ghost_settle;
+__attribute__((weak)) int _fltused; /* tes3xscript.c may define it too */
+
+static void run_script(const char *text)
+{
+    u8 *world = *(u8 **)TES3X_NET_WORLD, *menus;
+    void *script, *scratch;
+
+    if (!plausible(world) || !plausible(script = *(void **)(world + WORLD_SCRIPT)) ||
+        !plausible(menus = *(u8 **)(world + WORLD_MENUS)) ||
+        !plausible(scratch = *(void **)(menus + MENUS_SCRATCH))) {
+        ghost_failures++;
+        return;
+    }
+    ((fn_compile_run)TES3X_NET_COMPILE_RUN)(script, scratch, text, 1, 0, 0, 0, 0);
+}
+
+static char *put_text(char *out, const char *text)
+{
+    while (*text)
+        *out++ = *text++;
+    return out;
+}
+
+static char *put_int(char *out, int v)
+{
+    char digits[12];
+    u32 n = 0, u = v < 0 ? (u32)-v : (u32)v;
+
+    if (v < 0)
+        *out++ = '-';
+    do
+        digits[n++] = (char)('0' + u % 10);
+    while (u /= 10);
+    while (n)
+        *out++ = digits[--n];
+    return out;
+}
+
+static int round_int(float f)
+{
+    return (int)(f < 0 ? f - 0.5f : f + 0.5f);
+}
+
+static char *put_xyz(char *out, const float *xyz)
+{
+    out = put_int(out, round_int(xyz[0]));
+    out = put_int(put_text(out, " "), round_int(xyz[1]));
+    return put_int(put_text(out, " "), round_int(xyz[2]));
+}
+
+/* "tes3x_ghostN"-> for slot i */
+static char *put_ghost(char *out, u32 i)
+{
+    out = put_int(put_text(out, "\"tes3x_ghost"), (int)i + 1);
+    return put_text(out, "\"->");
+}
+
+static void ghost_command(u32 i, const char *verb, int value, const char *tail)
+{
+    char line[96];
+    char *p = put_text(put_int(put_text(put_ghost(line, i), verb), value), tail);
+
+    *p = 0;
+    run_script(line);
+}
+
+static void ghost_park(u32 i)
+{
+    ghost_command(i, "PositionCell ", 128 * ((int)i + 1), " 0 0 0 \"" GHOST_CELL "\"");
+    ghosts[i].placed = 0;
+}
+
+static int grid(float f)
+{
+    int g = (int)(f / 8192.0f);
+    return f < 0 && (float)g * 8192.0f != f ? g - 1 : g;
+}
+
+static float wrap_angle(float a)
+{
+    while (a > PI)
+        a -= 2 * PI;
+    while (a < -PI)
+        a += 2 * PI;
+    return a;
+}
+
+static void read_pose(const u8 *state, struct pose *p)
+{
+    p->flags = get32le(state);
+    copy((u8 *)&p->x, state + 4, 16);
+    copy(p->cell, state + 20, CELL_NAME);
+    p->cell[CELL_NAME - 1] = 0;
+}
+
+static int same_place(const struct pose *a, const struct pose *b)
+{
+    u32 i;
+
+    if ((a->flags ^ b->flags) & (STATE_IN_WORLD | STATE_INTERIOR))
+        return 0;
+    for (i = 0; i < CELL_NAME - 1 && a->cell[i] && a->cell[i] == b->cell[i]; i++)
+        ;
+    return a->cell[i] == b->cell[i];
+}
+
+/* The slot's pose GHOST_DELAY_US ago, from a copy of its states; 0 if it has none. */
+static int ghost_pose(u32 slot, struct pose *out)
+{
+    static struct {
+        u32 time;
+        u8 state[STATE_BYTES];
+    } ring[SAMPLES];
+    struct pose older, newer;
+    u32 head, count, flags, i, first, now = now_us();
+    int target, span, from = -1;
+    float t, dx, dy;
+
+    flags = lock();
+    head = peers[slot].head;
+    count = peers[slot].count;
+    copy((u8 *)ring, (const u8 *)peers[slot].samples, sizeof(ring));
+    unlock(flags);
+    if (!count)
+        return 0;
+    first = head + SAMPLES - count; /* sample k, oldest first, is ring[(first + k) % SAMPLES] */
+    target = (int)(now - GHOST_DELAY_US);
+    for (i = 0; i < count; i++)
+        if ((int)(ring[(first + i) % SAMPLES].time - (u32)target) <= 0)
+            from = (int)i;
+    if (from < 0 || count == 1) { /* nothing old enough to interpolate from: hold */
+        read_pose(ring[(from < 0 ? first : first + (u32)from) % SAMPLES].state, out);
+        return 1;
+    }
+    /* Past the newest state, carry the last two on for a moment. */
+    i = (first + ((u32)from + 1 < count ? (u32)from : count - 2)) % SAMPLES;
+    read_pose(ring[i].state, &older);
+    read_pose(ring[(i + 1) % SAMPLES].state, &newer);
+    span = (int)(ring[(i + 1) % SAMPLES].time - ring[i].time);
+    dx = newer.x - older.x;
+    dy = newer.y - older.y;
+    *out = newer;
+    if (span <= 0 || !same_place(&older, &newer) || !(older.flags & STATE_IN_WORLD) ||
+        dx * dx + dy * dy > GHOST_SNAP * GHOST_SNAP)
+        return 1;
+    target -= (int)ring[i].time;
+    if (target > span + GHOST_EXTRAPOLATE_US)
+        target = span + GHOST_EXTRAPOLATE_US;
+    t = (float)target / (float)span;
+    out->x = older.x + dx * t;
+    out->y = older.y + dy * t;
+    out->z = older.z + (newer.z - older.z) * t;
+    out->heading = older.heading + wrap_angle(newer.heading - older.heading) * (t > 1 ? 1 : t);
+    return 1;
+}
+
+static void ghost_place(u32 i, const struct pose *p)
+{
+    char line[128];
+    char *q = put_xyz(put_text(put_ghost(line, i), "PositionCell "), &p->x);
+
+    q = put_text(q, " 0 \"");
+    q = put_text(q, p->flags & STATE_INTERIOR ? (const char *)p->cell : GHOST_EXTERIOR);
+    q = put_text(q, "\"");
+    *q = 0;
+    run_script(line);
+    ghosts[i].placed = 1;
+    ghosts[i].flags = p->flags;
+    ghosts[i].gx = grid(p->x);
+    ghosts[i].gy = grid(p->y);
+    copy(ghosts[i].cell, p->cell, CELL_NAME);
+    ghosts[i].x = p->x;
+    ghosts[i].y = p->y;
+    ghosts[i].z = p->z;
+    ghosts[i].heading = 1000; /* not an angle: SetAngle follows */
+    ghost_places++;
+    log_text("net.ghost_cell", p->flags & STATE_INTERIOR ? (const char *)p->cell : "(exterior)");
+}
+
+static int differs(float a, float b, float by)
+{
+    return a - b > by || b - a > by;
+}
+
+/* Whether a ghost at p would stand in a loaded cell: the same interior, or an exterior cell next
+ * to the local player's. */
+static int near(const struct pose *p, const struct pose *local)
+{
+    int dx = grid(p->x) - grid(local->x), dy = grid(p->y) - grid(local->y);
+
+    if (!same_place(p, local))
+        return 0;
+    return (p->flags & STATE_INTERIOR) || (dx >= -1 && dx <= 1 && dy >= -1 && dy <= 1);
+}
+
+static void ghost_update(u32 i, const struct pose *local)
+{
+    struct pose p, placed;
+    u32 client = peers[i].client;
+
+    if (client != ghosts[i].client) {
+        if (ghosts[i].placed)
+            ghost_park(i);
+        ghosts[i].client = client;
+        if (client)
+            tes3x_log_hex3("net.ghost", i + 1, client, 0);
+    }
+    if (!client || !ghost_pose(i, &p))
+        return;
+    if (!(p.flags & STATE_IN_WORLD) || !near(&p, local)) {
+        if (ghosts[i].placed)
+            ghost_park(i);
+        return;
+    }
+    placed.flags = ghosts[i].flags;
+    copy(placed.cell, ghosts[i].cell, CELL_NAME);
+    if (!ghosts[i].placed || !same_place(&p, &placed) ||
+        (!(p.flags & STATE_INTERIOR) && (grid(p.x) != ghosts[i].gx || grid(p.y) != ghosts[i].gy))) {
+        ghost_place(i, &p);
+    } else if (differs(p.x, ghosts[i].x, 1) || differs(p.y, ghosts[i].y, 1) ||
+               differs(p.z, ghosts[i].z, 1)) {
+        ghost_command(i, "SetPos x ", round_int(p.x), "");
+        ghost_command(i, "SetPos y ", round_int(p.y), "");
+        ghost_command(i, "SetPos z ", round_int(p.z), "");
+        ghosts[i].x = p.x;
+        ghosts[i].y = p.y;
+        ghosts[i].z = p.z;
+        ghost_moves++;
+    }
+    if (differs(p.heading, ghosts[i].heading, 0.02f)) {
+        float degrees = p.heading * (180.0f / PI);
+        while (degrees < 0)
+            degrees += 360;
+        while (degrees >= 360)
+            degrees -= 360;
+        ghost_command(i, "SetAngle z ", round_int(degrees), "");
+        ghosts[i].heading = p.heading;
+    }
+}
+
+static void ghosts_frame(const u8 *state)
+{
+    static int gx, gy;
+    struct pose local;
+    u32 i;
+
+    read_pose(state, &local);
+    /* A save can hold a ghost wherever it stood; start every launch with all of them parked. */
+    if (!ghosts_parked) {
+        ghosts_parked = 1;
+        for (i = 0; i < PEERS; i++)
+            ghost_park(i);
+    }
+    if (grid(local.x) != gx || grid(local.y) != gy) {
+        gx = grid(local.x);
+        gy = grid(local.y);
+        ghost_settle = GHOST_SETTLE_FRAMES;
+    }
+    if (ghost_settle) {
+        ghost_settle--;
+        return;
+    }
+    for (i = 0; i < PEERS; i++)
+        ghost_update(i, &local);
+}
+
 /* Once per frame, from the Game::Update hook. */
 void tes3x_net_frame(void)
 {
@@ -1405,6 +1722,7 @@ void tes3x_net_frame(void)
         ;
     if (i < CELL_NAME) {
         copy(last_cell, state + 20, CELL_NAME);
+        ghost_settle = GHOST_SETTLE_FRAMES;
         log_text("net.cell", state[20] ? (const char *)state + 20 : "(exterior)");
     }
 
@@ -1429,6 +1747,7 @@ void tes3x_net_frame(void)
         flags = lock();
     }
     unlock(flags);
+    ghosts_frame(state);
 }
 
 int tes3x_net_command(const char *text)

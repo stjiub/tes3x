@@ -236,6 +236,7 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
               f"DataHandler {data_handler}")
         define("NET_WORLD", world)
         define("NET_DATA_HANDLER", data_handler)
+        define("NET_COMPILE_RUN", address("COMPILE_RUN", dict(CONSOLE_ADDRESSES)["COMPILE_RUN"]))
         flags.append("-DTES3X_NET")
         wanted["net"] = ("_tes3x_net_frame",)
     if "tes3xinfoarena.c" in names:

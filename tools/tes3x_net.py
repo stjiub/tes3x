@@ -5,6 +5,8 @@
     python tools/tes3x_net.py ping 192.0.2.50             # echo round trips to `tes3xnet up`
     python tools/tes3x_net.py listen --tunnel 9369       # the same through xemu's udp backend
     python tools/tes3x_net.py ping 10.0.2.15 --tunnel 9369
+    python tools/tes3x_net.py serve --tunnel 9369 --bot   # plus a player circling the first client
+    python tools/tes3x_net.py plugin OUT.esp --master Morrowind.esm   # the ghost plugin
 
 With --tunnel PORT this tool is the guest's only peer: xemu sends each guest Ethernet frame to
 PORT as one datagram and accepts frames on PORT+1 (`tes3x_xemu.py --net-tunnel PORT`), so ping
@@ -288,6 +290,57 @@ def now_us():
     return int(time.perf_counter() * 1e6) & 0xFFFFFFFF
 
 
+GHOST_PLUGIN = "TES3X Multiplayer.esp"
+GHOST_CELL = "TES3X Ghosts"
+GHOSTS = 8  # one per peer slot in tes3xnet.c
+BOT_ID = 99
+
+
+def record(tag, subs, flags=0):
+    body = b"".join(name + struct.pack("<I", len(value)) + value for name, value in subs)
+    return tag + struct.pack("<III", len(body), 0, flags) + body
+
+
+def zstr(text):
+    return text.encode("latin-1") + b"\0"
+
+
+def ghost_plugin(master_size, master="Morrowind.esm"):
+    """The plugin tes3xnet.c moves: one persistent NPC per peer slot, parked in a cell of its own.
+    They have no AI packages and zero fight, flee, alarm and hello, so they stand where put."""
+    hedr = (struct.pack("<fI", 1.3, 0) + b"TES3X".ljust(32, b"\0")
+            + b"Other players, placed by the multiplayer patch.".ljust(256, b"\0")
+            + struct.pack("<I", GHOSTS + 1))
+    out = [record(b"TES3", [(b"HEDR", hedr), (b"MAST", zstr(master)),
+                            (b"DATA", struct.pack("<Q", master_size))])]
+    items = ("common_shirt_01", "common_pants_01", "common_shoes_01")
+    for i in range(1, GHOSTS + 1):
+        subs = [(b"NAME", zstr(f"tes3x_ghost{i}")), (b"FNAM", zstr(f"Player {i}")),
+                (b"RNAM", zstr("Dark Elf")), (b"CNAM", zstr("Commoner")), (b"ANAM", b"\0"),
+                (b"BNAM", zstr("b_n_dark elf_m_head_01")),
+                (b"KNAM", zstr("b_n_dark elf_m_hair_01")),
+                (b"NPDT", struct.pack("<hBBB3xI", 1, 50, 0, 0, 0)),
+                (b"FLAG", struct.pack("<I", 0x1A))]  # essential, autocalc
+        subs += [(b"NPCO", struct.pack("<i32s", 1, item.encode())) for item in items]
+        subs.append((b"AIDT", bytes(12)))
+        out.append(record(b"NPC_", subs, flags=0x400))  # references persist
+    cell = [(b"NAME", zstr(GHOST_CELL)), (b"DATA", struct.pack("<Iii", 1, 0, 0)),
+            (b"WHGT", struct.pack("<f", 0)), (b"AMBI", struct.pack("<3If", 0x404040, 0, 0, 0))]
+    for i in range(1, GHOSTS + 1):
+        cell += [(b"FRMR", struct.pack("<I", i)), (b"NAME", zstr(f"tes3x_ghost{i}")),
+                 (b"DATA", struct.pack("<6f", 128.0 * i, 0, 0, 0, 0, 0))]
+    out.append(record(b"CELL", cell))
+    return b"".join(out)
+
+
+def write_ghost_plugin(data_files, master):
+    """Write the ghost plugin into a staged Data Files; the engine loads every plugin there."""
+    target = os.path.join(data_files, GHOST_PLUGIN)
+    with open(target, "wb") as f:
+        f.write(ghost_plugin(os.path.getsize(master)))
+    return target
+
+
 class Client:
     def __init__(self, ident, mac):
         self.id, self.mac = ident, mac
@@ -331,6 +384,28 @@ def serve(args):
             link.send(udp_frame(mac, ip, packet, client.seq))
         else:
             sock.sendto(packet, client.addr)
+
+    bot = {"anchor": None, "next": 0.0, "start": time.time()}
+
+    def bot_anchor(state):
+        """The bot circles where the first client entered the world, and follows it to a new
+        cell or across a long jump."""
+        flags, x, y, z, _, cell = STATE_BODY.unpack_from(state)
+        anchor = bot["anchor"]
+        if flags & IN_WORLD and (anchor is None or anchor[0] != (flags, cell)
+                                 or math.hypot(x - anchor[1], y - anchor[2]) > 2048):
+            bot["anchor"] = ((flags, cell), x, y, z)
+            print(f"{time.strftime('%H:%M:%S')} bot circles {describe_state(state)}",
+                  flush=True)
+
+    def bot_step(now):
+        (flags, cell), cx, cy, cz = bot["anchor"]
+        t = (now - bot["start"]) * 2 * math.pi / args.bot_period
+        state = STATE_BODY.pack(flags, cx + args.bot_radius * math.cos(t),
+                                cy + args.bot_radius * math.sin(t), cz, -t % (2 * math.pi), cell)
+        for other in clients.values():
+            if other.alive:
+                send(other, PEER, struct.pack("<I", BOT_ID) + state)
 
     def leave(client):
         client.alive = False
@@ -378,6 +453,8 @@ def serve(args):
         elif kind == STATE and len(packet) >= T3MP.size + STATE_BODY.size:
             client.state = packet[T3MP.size:T3MP.size + STATE_BODY.size]
             client.states += 1
+            if args.bot:
+                bot_anchor(client.state)
             for other in clients.values():
                 if other is not client and other.alive:
                     send(other, PEER, struct.pack("<I", client.id) + client.state)
@@ -429,6 +506,9 @@ def serve(args):
             if client.alive and now - client.last > TIMEOUT:
                 print(f"{time.strftime('%H:%M:%S')} client {client.id} timed out", flush=True)
                 leave(client)
+        if args.bot and bot["anchor"] and now >= bot["next"]:
+            bot["next"] = now + 1 / args.bot_rate
+            bot_step(now)
         if args.report and now >= report:
             report = now + args.report
             for client in clients.values():
@@ -473,7 +553,19 @@ def main(argv=None):
     p.add_argument("--host", action="append", default=[], metavar="NAME=ADDRESS",
                    help="answer DNS queries for NAME, on port 53 and through the tunnel "
                         "(repeatable)")
+    p.add_argument("--bot", action="store_true",
+                   help="relay a synthetic player circling where the first client stands")
+    p.add_argument("--bot-radius", type=float, default=256, help="units")
+    p.add_argument("--bot-period", type=float, default=12, help="seconds per circle")
+    p.add_argument("--bot-rate", type=float, default=20, help="states per second")
+    p = sub.add_parser("plugin", help="write the ghost plugin the multiplayer patch moves")
+    p.add_argument("out")
+    p.add_argument("--master", required=True, help="Morrowind.esm, for its size")
     args = ap.parse_args(argv)
+    if args.command == "plugin":
+        with open(args.out, "wb") as f:
+            f.write(ghost_plugin(os.path.getsize(args.master)))
+        return 0
     return {"listen": listen, "ping": ping, "serve": serve}[args.command](args)
 
 

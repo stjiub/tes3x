@@ -18,6 +18,7 @@ from xml.sax.saxutils import escape
 from tes3x_pack import set_ini_key
 import tes3x_patches as registry
 from tes3x_payload import PayloadError, build_payload, find_tool
+from tes3x_net import write_ghost_plugin
 from tes3x_paths import DEFAULT_REMOTE_ROOT, require_paths
 import tes3x_savepool
 
@@ -828,6 +829,10 @@ def main(argv=None):
             run(pack_cmd)
         else:
             stage_retail(data_files, ini, staged, ini_items, copy)
+
+        if "multiplayer" in plan["applied"]:
+            ghost = write_ghost_plugin(staged / "Data Files", data_files / "Morrowind.esm")
+            print(f"  ghost plugin: {Path(ghost).name}")
 
         retail_files, retail_bytes = copy_retail_root(vanilla, staged, copy)
         # A dashboard lists the launcher, so the name has to reach it. So does the title ID, or
