@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from tes3x_diag import PATCH_BITS, parse_log, report, sessions
+from tes3x_diag import PATCH_BITS, assertion_failures, parse_log, report, sessions
 from tes3x_patch import PATCH_BITS as PATCHER_BITS
 
 
@@ -48,6 +48,16 @@ class DiagnosticsTests(unittest.TestCase):
         self.assertIn("access violation", text)
         self.assertIn("write at 0xDEADBEEF", text)
         self.assertIn("diagnostics, console", text)
+
+    def test_assertions_report_failures_and_missing_runs(self):
+        script = "assert a == 1\nassert b == 2\nexit\n"
+        log = ("assert> a == 1\n10 ms assert.pass 1\n"
+               "assert> b == 2\n11 ms assert.fail 2\nassert.got 3\n"
+               "12 ms assert.total 2\n13 ms assert.failed 1\n")
+        self.assertEqual(assertion_failures(log, script), ["assert 2: b == 2 (got 3)"])
+        self.assertEqual(assertion_failures("assert> a == 1\n10 ms assert.pass 1\n", script),
+                         ["no assertions ran of 2"])
+        self.assertEqual(assertion_failures("", "exit\n"), [])
 
 
 if __name__ == "__main__":

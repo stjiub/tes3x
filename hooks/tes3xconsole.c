@@ -327,6 +327,8 @@ static char cmd[CMD_MAX];
 static int run_delay;
 static int running;         /* output belongs to a command being run */
 static int output_lines;
+static char first_output[0x104]; /* a command's first printed line, for `assert` */
+static u32 first_len;
 #define OUTPUT_MAX 8        /* a cell load inside a command runs scripts that print too */
 static char hist[HIST_MAX][CMD_MAX];
 static int hist_count;
@@ -921,6 +923,7 @@ static void run_command(const char *text)
     }
     running = 1;
     output_lines = 0;
+    first_len = 0;
     ((fn_compile_run)TES3X_COMPILE_RUN)(script, ctx, text, 1, 0, 0, 0, 0);
     running = 0;
     if (output_lines > OUTPUT_MAX)
@@ -1254,8 +1257,11 @@ static void exec_mark(const char *label)
 #endif
 }
 
+static u32 assert_total, assert_failed;
 
+/* `assert COMMAND == VALUE`: runs the command and compares the value it prints, the text after the
  * last ">> " of its first line (`GetPos >> 61.00` prints 61.00), with VALUE. */
+static void exec_assert(char *line)
 {
     char *cmd = line + 7, *want = 0, *got;
     u32 i, n, wn;
@@ -1263,18 +1269,24 @@ static void exec_mark(const char *label)
     for (i = 0; cmd[i]; i++)
         if (starts_with(cmd + i, " == "))
             want = cmd + i;
+    tes3x_log_raw("assert> ", 8);
     for (n = 0; cmd[n]; n++)
         ;
     tes3x_log_raw(cmd, n);
     tes3x_log_raw("\n", 1);
+    assert_total++;
     if (want) {
         *want = 0;
         want += 4;
         run_command(cmd);
     }
+    got = first_output;
+    n = want ? first_len : 0;
     while (n && (got[n - 1] == '\n' || got[n - 1] == '\r' || got[n - 1] == ' '))
         n--;
     for (i = 0; i + 3 <= n; i++)
+        if (starts_with(first_output + i, ">> ")) {
+            got = first_output + i + 3;
             n -= i + 3;
             i = 0;
         }
@@ -1283,15 +1295,24 @@ static void exec_mark(const char *label)
     for (i = 0; want && i < n && i < wn && got[i] == want[i]; i++)
         ;
     if (want && i == n && i == wn) {
+        tes3x_log("assert.pass", assert_total);
         return;
     }
+    assert_failed++;
+    tes3x_log("assert.fail", assert_total);
+    tes3x_log_raw("assert.got ", 11);
     tes3x_log_raw(got, n);
     tes3x_log_raw("\n", 1);
 }
 
 /* Logged before a script ends the session, or when it runs out. */
+static void exec_summary(void)
 {
+    if (!assert_total)
         return;
+    tes3x_log("assert.total", assert_total);
+    tes3x_log("assert.failed", assert_failed);
+    assert_total = 0;
 }
 
 /* One line per frame at most, so each command sees the frame the last one left. */
@@ -1315,6 +1336,7 @@ static void exec_step(void)
     pos = exec_pos[phase];
     if (!exec_line(phase == 0, &pos, line)) {
         if (phase == 1) {
+            exec_summary();
             exec_free();
         }
         return;
@@ -1326,10 +1348,12 @@ static void exec_step(void)
     } else if (starts_with(line, "mark ")) {
         exec_mark(line + 5);
     } else if (starts_with(line, "exit") && !line[4]) {
+        exec_summary();
         tes3x_log("exec.exit", 0);
         HalInitiateShutdown();
     } else if (starts_with(line, "reboot") && !line[6]) {
         /* A full reboot goes through the BIOS to the dashboard, like power-on. */
+        exec_summary();
         tes3x_log("exec.reboot", 0);
         HalReturnToFirmware(HAL_REBOOT_ROUTINE);
     } else if (starts_with(line, "click ")) {
@@ -1350,6 +1374,8 @@ static void exec_step(void)
         tes3x_log("exec.activate", (u32)exec_activate(line + 9));
     } else if (starts_with(line, "visible ")) {
         exec_visible(line + 8);
+    } else if (starts_with(line, "assert ")) {
+        exec_assert(line);
     } else {
         tes3x_log_raw("exec> ", 6);
         tes3x_log_raw(line, n);
@@ -1374,6 +1400,8 @@ void __cdecl tes3x_console_print(void *game, const char *fmt, ...)
     if (n < 0 || n >= (int)sizeof(buf))
         n = 0;
     if (running && output_lines == 0) {
+        for (first_len = 0; first_len < (u32)n; first_len++)
+            first_output[first_len] = buf[first_len];
     }
     if (running && ++output_lines <= OUTPUT_MAX) {
         tes3x_log_raw("console< ", 9);

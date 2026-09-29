@@ -59,6 +59,7 @@ exit
 | `menu inventory`, `menu journal` | open the in-game menu or the journal, as the pad's buttons do; `menu inventory` again closes it |
 | `activate ID` | the player activates the nearest reference of `ID`, as with the A button (a script's `Activate` only reaches scripted objects) |
 | `visible MENU` | log whether a menu is on screen, as `menu.MENU 0` or `1` |
+| `assert COMMAND == VALUE` | run a console command and check the value it prints |
 | `mark LABEL` | log free memory now, as `mem.LABEL <KB>` |
 | `exit` | turn the Xbox off |
 | `reboot` | restart the Xbox into the dashboard |
@@ -76,6 +77,12 @@ Game instead.** A test that loads a save should check something only that save h
 Each command is logged as `exec> ...` and the first 8 lines it prints as `console< ...`, such as
 `console< GetPos >> -12288.00`. A command that loads a cell runs that cell's scripts, which print
 too; the rest are counted as `console.more N`. Commands typed on the pad are logged the same way.
+
+`assert player->getpos x == 61.00` compares the text after the last `>> ` of the command's first
+printed line with `61.00`, exactly. It logs `assert> ...`, then `assert.pass N` or `assert.fail N`
+followed by `assert.got <value>`, N counting the asserts. Before `exit` or `reboot`, or when the
+script ends, `assert.total` and `assert.failed` summarise them. `tes3x_test.py` fails a run with a
+failed assert, or with fewer asserts run than the script has.
 
 In an emulator, a debugger can also hand the running game one command at a time: write the text
 into the payload's `tes3x_mailbox`, then change its sequence number. It runs on the next frame and

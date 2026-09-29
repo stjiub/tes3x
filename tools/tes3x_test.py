@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tomllib
 
+from tes3x_diag import assertion_failures
 from tes3x_pipeline import validate_profile
 from tes3x_library import CATALOG_NAME, dependency_order, discover_library, load_library
 
@@ -92,7 +93,8 @@ def check_log(path, scenario):
     for expression in GLOBAL_FAILURES:
         if any(re.search(expression, line) for line in lines):
             failures.append("!" + expression)
-    watch = re.compile(scenario.get("watch", r"exec[.>]|diag\.|crash\.|hang\.|fatal\."))
+    failures += assertion_failures("\n".join(lines), scenario["script"])
+    watch = re.compile(scenario.get("watch", r"exec[.>]|assert[.>]|diag\.|crash\.|hang\.|fatal\."))
     observed = [line.rstrip("\r") for line in lines if watch.search(line)]
     return not failures, failures, observed
 

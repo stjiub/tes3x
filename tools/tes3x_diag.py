@@ -49,6 +49,28 @@ def parse_log(text):
     return records
 
 
+def assertion_failures(text, script):
+    """Failed or missing `assert` lines of an exec script, from the log of the run."""
+    wanted = sum(1 for line in script.splitlines() if line.strip().startswith("assert "))
+    if not wanted:
+        return []
+    records = parse_log(text)
+    commands = [r["raw"][8:] for r in records if r["raw"].startswith("assert> ")]
+    failures, total = [], None
+    for i, record in enumerate(records):
+        if record.get("tag") == "assert.fail":
+            n = record["value"]
+            following = records[i + 1]["raw"] if i + 1 < len(records) else ""
+            got = following[11:] if following.startswith("assert.got ") else "?"
+            command = commands[n - 1] if isinstance(n, int) and 0 < n <= len(commands) else "?"
+            failures.append(f"assert {n}: {command} (got {got})")
+        elif record.get("tag") == "assert.total":
+            total = record["value"]
+    if total != wanted:
+        failures.append(f"{total if total is not None else 'no'} assertions ran of {wanted}")
+    return failures
+
+
 def sessions(records):
     out = []
     current = []
