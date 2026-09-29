@@ -20,7 +20,9 @@
  * sends the player's state, and the server relays the other clients' states back. Each other
  * client near the player is drawn as a ghost NPC from the plugin the pipeline adds. While joined,
  * menus do not pause the world, the rest menu closes as it opens, and the server's clock sets the
- * time globals; a console joins only once a game is loaded, offering its own clock.
+ * time globals; a console joins only once a game is loaded, offering its own clock. The server names
+ * one client the authority for each loaded cell: it runs those actors and sends their states, and
+ * the others take them out of the simulation and place them from the states.
  *
  * While up, the HalReturnToFirmware thunk points at a wrapper that stops the NIC first: a quick
  * reboot keeps the kernel, which would otherwise keep a connected interrupt object and a live DMA
@@ -182,7 +184,7 @@ struct descriptor {
 #define CPU_MHZ 733u
 
 /* Session packet: "T3MP", version, type, then session, seq, ack, time and echoed peer time. */
-#define T3MP_VERSION 3u
+#define T3MP_VERSION 4u
 #define T3MP_HEADER 28u
 #define T3MP_HELLO 1u
 #define T3MP_WELCOME 2u
@@ -194,6 +196,7 @@ struct descriptor {
 #define T3MP_EVENTS 8u
 #define T3MP_REFUSE 9u
 #define T3MP_CLOCK 10u
+#define T3MP_ACTORS 11u
 #define SESSION_IDLE 0u
 #define SESSION_ARP 1u
 #define SESSION_HELLO 2u
@@ -290,6 +293,8 @@ static void nic_stop(void);
 static void log_text(const char *tag, const char *text);
 static void load_order(void);
 static int plausible(const void *p);
+static void actors_rx(u32 origin, u32 seq, const u8 *p, u32 n);
+static void actors_reset(void);
 
 static u32 lock(void)
 {
@@ -704,6 +709,7 @@ static void session_rx(const u8 *p, u32 n)
         for (i = 0; i < PEERS; i++)
             peers[i].client = 0;
         events_reset();
+        actors_reset();
     } else {
         if (ses.state != SESSION_JOINED || get32le(p + 8) != ses.id)
             return;
@@ -718,6 +724,8 @@ static void session_rx(const u8 *p, u32 n)
             peer_rx(get32le(p + T3MP_HEADER), seq, p + T3MP_HEADER + 4);
         if (type == T3MP_EVENTS)
             events_rx(p + T3MP_HEADER, n - T3MP_HEADER);
+        if (type == T3MP_ACTORS && n >= T3MP_HEADER + 8)
+            actors_rx(get32le(p + T3MP_HEADER), seq, p + T3MP_HEADER + 4, n - T3MP_HEADER - 4);
         if (type == T3MP_CLOCK && n >= T3MP_HEADER + CLOCK_BYTES && seq > ses.peer_seq) {
             copy(game_clock.server, p + T3MP_HEADER, CLOCK_BYTES);
             game_clock.received++;
@@ -1435,6 +1443,8 @@ static void dialogue_close(void)
     }
 }
 
+static int hold_remote(u8 *actor);
+
 static void hold_frame(void)
 {
     u8 *actor = gates_open ? ((fn_service_actor)TES3X_NET_SERVICE_ACTOR)() : 0;
@@ -1443,7 +1453,7 @@ static void hold_frame(void)
 
     if (actor != held)
         hold_release();
-    if (!plausible(actor))
+    if (hold_remote(plausible(actor) ? actor : 0) || !plausible(actor))
         return;
     flags = (u32 *)(actor + MOBILE_FLAGS);
     health = *(const float *)(actor + MOBILE_HEALTH);
@@ -1822,7 +1832,8 @@ static struct {
 static u32 ghosts_parked, ghost_settle;
 __attribute__((weak)) int _fltused; /* tes3xscript.c may define it too */
 
-static void run_script(const char *text)
+/* With ref, the text runs on that reference, as on the console's selected one. */
+static void run_script_on(const char *text, void *ref)
 {
     u8 *world = *(u8 **)TES3X_NET_WORLD, *menus;
     void *script, *scratch;
@@ -1833,7 +1844,12 @@ static void run_script(const char *text)
         ghost_failures++;
         return;
     }
-    ((fn_compile_run)TES3X_NET_COMPILE_RUN)(script, scratch, text, 1, 0, 0, 0, 0);
+    ((fn_compile_run)TES3X_NET_COMPILE_RUN)(script, scratch, text, 1, (int)ref, 0, 0, 0);
+}
+
+static void run_script(const char *text)
+{
+    run_script_on(text, 0);
 }
 
 static char *put_text(char *out, const char *text)
@@ -2086,6 +2102,522 @@ static void ghosts_frame(const u8 *state)
         ghost_update(i, &local);
 }
 
+/* Cell authority. The server names one client per loaded cell to run the actors there (AUTHORITY
+ * events). It sends their states about 10 times a second; every other client takes those actors
+ * out of the simulation, as the dialogue hold does, and places them from the states. A hit or a
+ * held dialogue on a followed actor goes to its authority as an event. Only references from the
+ * data files take part: their mod index and refnum name one object under one load order. */
+#define EVENT_AUTHORITY 2u   /* cell key, client */
+#define EVENT_HOLD 3u        /* refid, authority, on */
+#define EVENT_HOLD_BROKEN 4u /* refid, holder, reason */
+#define EVENT_HIT 5u         /* refid, authority, damage */
+#define KEY_EXTERIOR 1u
+#define KEY_INTERIOR 2u
+#define KEY_BYTES (12u + CELL_NAME) /* kind, grid x, grid y, interior name */
+#define ACTOR_BYTES 28u /* refid, x, y, z, heading, health, flags */
+#define ACTORS_PER_PACKET 18u
+#define ACTOR_PERIOD_US 100000u
+#define ACTOR_DEAD 1u
+#define ACTOR_IN_COMBAT 2u
+#define AUTHORITIES 16u
+#define ACTORS 64u
+#define REMOTE_HOLDS 8u
+#define HITS 8u
+#define REF_ID 0x48 /* mod index << 24 | refnum; 0 for a reference made at run time */
+#define MOBILE_REFERENCE 0x14
+#define MOBILE_ACTION 0xDD /* 0x12 dying, 0x13 dead */
+#define MOB_PROCESS 0x24   /* MobController -> ProcessManager: player, then the AI planners */
+#define PROCESS_PLANNERS 0xC
+#define PLANNER_MOBILE 4
+
+struct cell_key {
+    u32 kind;
+    int gx, gy;
+    u8 name[CELL_NAME];
+};
+
+/* The latest state of each actor from its authority; the receive DPC writes, bytes only. */
+static struct {
+    u32 refid, origin, seq, time;
+    u8 state[ACTOR_BYTES];
+} actors_in[ACTORS];
+static struct {
+    struct cell_key key;
+    u32 client;
+} authority[AUTHORITIES];
+static u32 authorities, authority_welcome;
+/* Actors this console places for another authority, and whether the engine had them simulated. */
+static struct {
+    u32 refid, owner, simulated, seq, seen;
+    u8 *mobile;
+    float health;
+} followed[ACTORS];
+/* Actors this console runs that another client is talking to. */
+static struct {
+    u32 refid, holder, simulated, found, release;
+    u8 *mobile;
+    float health;
+} remote_holds[REMOTE_HOLDS];
+static struct {
+    u32 refid;
+    float damage;
+} hits[HITS];
+static u32 hit_count, talk_refid, talk_owner, talk_broken;
+static u32 actor_states_out, actor_states_in, actor_moves, follows;
+static u32 hits_out, hits_in, remote_holds_in, remote_breaks_out, remote_breaks_in;
+
+static void actors_reset(void)
+{
+    u32 i;
+
+    for (i = 0; i < ACTORS; i++)
+        actors_in[i].refid = 0;
+}
+
+/* Caller holds the lock (the receive DPC): origin client, count, then the states. */
+static void actors_rx(u32 origin, u32 seq, const u8 *p, u32 n)
+{
+    u32 count = get32le(p), i, j, refid, slot, oldest;
+
+    for (i = 0; i < count && 4 + (i + 1) * ACTOR_BYTES <= n; i++) {
+        const u8 *a = p + 4 + i * ACTOR_BYTES;
+        refid = get32le(a);
+        slot = ACTORS;
+        for (j = 0; j < ACTORS && slot == ACTORS; j++)
+            if (actors_in[j].refid == refid)
+                slot = j;
+        if (slot < ACTORS && actors_in[slot].origin == origin && seq <= actors_in[slot].seq)
+            continue;
+        for (j = 0, oldest = 0; j < ACTORS && slot == ACTORS; j++) {
+            if (!actors_in[j].refid)
+                slot = j;
+            else if ((int)(actors_in[j].time - actors_in[oldest].time) < 0)
+                oldest = j;
+        }
+        if (slot == ACTORS)
+            slot = oldest;
+        actors_in[slot].refid = refid;
+        actors_in[slot].origin = origin;
+        actors_in[slot].seq = seq;
+        actors_in[slot].time = now_us();
+        copy(actors_in[slot].state, a, ACTOR_BYTES);
+        actor_states_in++;
+    }
+}
+
+static int key_equal(const struct cell_key *a, const struct cell_key *b)
+{
+    u32 i;
+
+    if (a->kind != b->kind)
+        return 0;
+    if (a->kind == KEY_EXTERIOR)
+        return a->gx == b->gx && a->gy == b->gy;
+    for (i = 0; i < CELL_NAME - 1 && a->name[i] && a->name[i] == b->name[i]; i++)
+        ;
+    return a->name[i] == b->name[i];
+}
+
+/* An actor's cell: the local interior, or the exterior grid cell it stands in. */
+static void actor_key(const struct pose *local, float x, float y, struct cell_key *k)
+{
+    u32 i;
+
+    k->kind = local->flags & STATE_INTERIOR ? KEY_INTERIOR : KEY_EXTERIOR;
+    k->gx = k->kind == KEY_EXTERIOR ? grid(x) : 0;
+    k->gy = k->kind == KEY_EXTERIOR ? grid(y) : 0;
+    for (i = 0; i < CELL_NAME; i++)
+        k->name[i] = k->kind == KEY_INTERIOR ? local->cell[i] : 0;
+}
+
+static int key_loaded(const struct cell_key *k, const struct pose *local)
+{
+    struct cell_key mine;
+    int dx, dy;
+
+    actor_key(local, local->x, local->y, &mine);
+    if (k->kind != mine.kind)
+        return 0;
+    if (k->kind == KEY_INTERIOR)
+        return key_equal(k, &mine);
+    dx = k->gx - mine.gx;
+    dy = k->gy - mine.gy;
+    return dx >= -1 && dx <= 1 && dy >= -1 && dy <= 1;
+}
+
+static u32 authority_of(const struct cell_key *k)
+{
+    u32 i;
+
+    for (i = 0; i < authorities; i++)
+        if (key_equal(&authority[i].key, k))
+            return authority[i].client;
+    return 0;
+}
+
+static void authority_remove(u32 i)
+{
+    authority[i] = authority[--authorities];
+}
+
+static void authority_set(const struct cell_key *k, u32 client)
+{
+    u32 i;
+
+    if (k->kind == KEY_INTERIOR)
+        log_text("net.authority_cell", (const char *)k->name);
+    tes3x_log_hex3("net.authority", client, (u32)k->gx, (u32)k->gy);
+    for (i = 0; i < authorities; i++)
+        if (key_equal(&authority[i].key, k))
+            break;
+    if (i < authorities && !client)
+        authority_remove(i);
+    if (!client)
+        return;
+    if (i == authorities) {
+        if (authorities == AUTHORITIES)
+            i = 0; /* more cells than a console loads: the table is stale */
+        else
+            authorities++;
+    }
+    authority[i].key = *k;
+    authority[i].client = client;
+}
+
+static void event_words(u32 kind, u32 a, u32 b, const void *c)
+{
+    u8 data[12];
+
+    put32le(data, a);
+    put32le(data + 4, b);
+    copy(data + 8, (const u8 *)c, 4);
+    if (!event_queue(kind, data, sizeof(data)))
+        tes3x_log("net.event_full", kind);
+}
+
+static void actor_command(void *ref, const char *verb, int value)
+{
+    char line[48];
+    char *p = put_int(put_text(line, verb), value);
+
+    *p = 0;
+    run_script_on(line, ref);
+}
+
+static int is_ghost(const u8 *ref)
+{
+    const u8 *base = *(const u8 *const *)(ref + 0x28);
+    const char *id, *g = "tes3x_ghost";
+
+    if (!plausible(base) || !mapped(id = *(const char *const *)(base + 0x2C)))
+        return 0;
+    for (; *g && *id == *g; id++, g++)
+        ;
+    return !*g;
+}
+
+static void unfollow(u32 i, int restore)
+{
+    if (restore && followed[i].simulated)
+        *(u32 *)(followed[i].mobile + MOBILE_FLAGS) |= MOBILE_SIMULATED;
+    followed[i].refid = 0;
+}
+
+/* Another client runs this actor: keep it out of the simulation, place it from the latest state,
+ * and send a drop in its health to the authority as a hit. */
+static void follow(u8 *mobile, u8 *ref, u32 refid, u32 owner)
+{
+    u32 *flags = (u32 *)(mobile + MOBILE_FLAGS), i, slot = ACTORS, seq = 0, lk;
+    float health = *(const float *)(mobile + MOBILE_HEALTH), damage, heading;
+    u8 state[ACTOR_BYTES];
+    const float *at = (const float *)(ref + 0x38), *to = (const float *)(state + 4);
+
+    for (i = 0; i < ACTORS && slot == ACTORS; i++)
+        if (followed[i].refid == refid)
+            slot = i;
+    if (slot < ACTORS && followed[slot].mobile != mobile)
+        unfollow(slot, 0); /* the same reference in a new mobile: a reload */
+    if (slot == ACTORS || !followed[slot].refid) {
+        for (i = 0, slot = ACTORS; i < ACTORS && slot == ACTORS; i++)
+            if (!followed[i].refid)
+                slot = i;
+        if (slot == ACTORS)
+            return;
+        followed[slot].refid = refid;
+        followed[slot].mobile = mobile;
+        followed[slot].simulated = *flags & MOBILE_SIMULATED;
+        followed[slot].seq = 0;
+        followed[slot].health = health;
+        follows++;
+        tes3x_log_hex3("net.follow", refid, owner, followed[slot].simulated);
+    }
+    followed[slot].owner = owner;
+    followed[slot].seen = 1;
+    *flags &= ~MOBILE_SIMULATED;
+    if (health < followed[slot].health - 0.5f) {
+        damage = followed[slot].health - health;
+        event_words(EVENT_HIT, refid, owner, &damage);
+        hits_out++;
+        tes3x_log_hex3("net.hit_sent", refid, owner, (u32)(int)damage);
+    }
+    followed[slot].health = health;
+    lk = lock();
+    for (i = 0; i < ACTORS; i++)
+        if (actors_in[i].refid == refid && actors_in[i].origin == owner) {
+            seq = actors_in[i].seq;
+            copy(state, actors_in[i].state, ACTOR_BYTES);
+            break;
+        }
+    unlock(lk);
+    if (!seq || seq == followed[slot].seq)
+        return;
+    followed[slot].seq = seq;
+    if (differs(to[0], at[0], 1) || differs(to[1], at[1], 1) || differs(to[2], at[2], 1)) {
+        actor_command(ref, "SetPos x ", round_int(to[0]));
+        actor_command(ref, "SetPos y ", round_int(to[1]));
+        actor_command(ref, "SetPos z ", round_int(to[2]));
+        actor_moves++;
+    }
+    if (differs(to[3], *(const float *)(ref + 0x34), 0.02f)) {
+        heading = to[3] * (180.0f / PI);
+        while (heading < 0)
+            heading += 360;
+        while (heading >= 360)
+            heading -= 360;
+        actor_command(ref, "SetAngle z ", round_int(heading));
+    }
+}
+
+/* On the authority: another client's dialogue holds this actor until it ends, the actor enters
+ * combat or its health drops, from anyone's hit. */
+static void remote_hold_apply(u8 *mobile, u32 refid)
+{
+    u32 *flags = (u32 *)(mobile + MOBILE_FLAGS), i, reason;
+    float health = *(const float *)(mobile + MOBILE_HEALTH);
+
+    for (i = 0; i < REMOTE_HOLDS; i++) {
+        if (remote_holds[i].refid != refid)
+            continue;
+        remote_holds[i].found = 1;
+        if (remote_holds[i].mobile != mobile) {
+            remote_holds[i].mobile = mobile;
+            remote_holds[i].simulated = *flags & MOBILE_SIMULATED;
+            remote_holds[i].health = health;
+            tes3x_log_hex3("net.remote_hold", refid, remote_holds[i].holder, (u32)(int)health);
+        }
+        reason = *flags & MOBILE_IN_COMBAT ? 1 : health < remote_holds[i].health ? 2 : 0;
+        if (reason && !remote_holds[i].release) {
+            event_words(EVENT_HOLD_BROKEN, refid, remote_holds[i].holder, &reason);
+            remote_breaks_out++;
+            tes3x_log_hex3("net.remote_hold_broken", refid, remote_holds[i].holder, reason);
+        }
+        if (reason || remote_holds[i].release) {
+            if (remote_holds[i].simulated)
+                *flags |= MOBILE_SIMULATED;
+            remote_holds[i].refid = 0;
+        } else {
+            *flags &= ~MOBILE_SIMULATED;
+        }
+    }
+}
+
+static void hits_apply(void *ref, u32 refid)
+{
+    u32 i;
+
+    for (i = 0; i < hit_count; i++)
+        if (hits[i].refid == refid) {
+            actor_command(ref, "ModCurrentHealth ", -round_int(hits[i].damage));
+            hits[i--] = hits[--hit_count];
+        }
+}
+
+/* The talker's side of a hold on a followed actor: HOLD on while the dialogue is open, off when
+ * it closes; HOLD_BROKEN from the authority closes it. 1 if the actor is followed. */
+static int hold_remote(u8 *actor)
+{
+    u32 i, refid = 0, owner = 0, on;
+
+    for (i = 0; actor && i < ACTORS; i++)
+        if (followed[i].refid && followed[i].mobile == actor) {
+            refid = followed[i].refid;
+            owner = followed[i].owner;
+        }
+    if (talk_refid && talk_refid != refid) {
+        on = 0;
+        event_words(EVENT_HOLD, talk_refid, talk_owner, &on);
+        talk_refid = 0;
+    }
+    if (!refid)
+        return 0;
+    if (!talk_refid) {
+        on = 1;
+        talk_refid = refid;
+        talk_owner = owner;
+        talk_broken = 0;
+        event_words(EVENT_HOLD, refid, owner, &on);
+        tes3x_log_hex3("net.hold_remote", refid, owner, 0);
+    }
+    if (talk_broken)
+        dialogue_close();
+    return 1;
+}
+
+/* Once per frame in the world: follow, send or hold each actor the AI planners hold. */
+static void authority_frame(const u8 *player, const u8 *state)
+{
+    static u32 last_send;
+    const u8 *world = *(const u8 **)TES3X_NET_WORLD, *mobs, *process, *node, *planner;
+    u8 out[4 + ACTORS_PER_PACKET * ACTOR_BYTES], *mobile, *ref, *a;
+    struct pose local;
+    struct cell_key key;
+    u32 i, n = 0, guard, refid, owner, now = now_us(), lk, send;
+
+    read_pose(state, &local);
+    if (ses.state != SESSION_JOINED || authority_welcome != ses.welcomes) {
+        authority_welcome = ses.welcomes;
+        authorities = 0;
+        hit_count = 0;
+        for (i = 0; i < REMOTE_HOLDS; i++)
+            remote_holds[i].release = 1;
+        talk_refid = 0;
+    }
+    for (i = 0; i < authorities; i++)
+        if (!key_loaded(&authority[i].key, &local))
+            authority_remove(i--);
+    send = ses.state == SESSION_JOINED && now - last_send >= ACTOR_PERIOD_US;
+    if (send)
+        last_send = now;
+    for (i = 0; i < ACTORS; i++)
+        followed[i].seen = 0;
+    for (i = 0; i < REMOTE_HOLDS; i++)
+        remote_holds[i].found = 0;
+    if (!plausible(world) || !plausible(mobs = *(const u8 **)(world + 0x5C)) ||
+        !plausible(process = *(const u8 **)(mobs + MOB_PROCESS)))
+        return;
+    node = *(const u8 *const *)(process + PROCESS_PLANNERS);
+    for (guard = 0; plausible(node) && guard < 512; node = *(const u8 *const *)(node + 4), guard++) {
+        if (!plausible(planner = *(const u8 *const *)(node + 8)) ||
+            !plausible(mobile = *(u8 *const *)(planner + PLANNER_MOBILE)) ||
+            !plausible(ref = *(u8 **)(mobile + MOBILE_REFERENCE)) || ref == player ||
+            !(refid = *(const u32 *)(ref + REF_ID)) || is_ghost(ref))
+            continue;
+        actor_key(&local, *(const float *)(ref + 0x38), *(const float *)(ref + 0x3C), &key);
+        owner = authority_of(&key);
+        if (owner && owner != ses.client) {
+            follow(mobile, ref, refid, owner);
+            continue;
+        }
+        for (i = 0; i < ACTORS; i++)
+            if (followed[i].refid == refid)
+                unfollow(i, followed[i].mobile == mobile);
+        if (owner != ses.client)
+            continue;
+        remote_hold_apply(mobile, refid);
+        hits_apply(ref, refid);
+        if (!send)
+            continue;
+        a = out + 4 + n * ACTOR_BYTES;
+        put32le(a, refid);
+        copy(a + 4, ref + 0x38, 12);
+        copy(a + 16, ref + 0x34, 4);
+        copy(a + 20, mobile + MOBILE_HEALTH, 4);
+        put32le(a + 24, (mobile[MOBILE_ACTION] == 0x12 || mobile[MOBILE_ACTION] == 0x13
+                         ? ACTOR_DEAD : 0) |
+                        (*(const u32 *)(mobile + MOBILE_FLAGS) & MOBILE_IN_COMBAT
+                         ? ACTOR_IN_COMBAT : 0));
+        if (++n == ACTORS_PER_PACKET) {
+            put32le(out, n);
+            lk = lock();
+            session_send(T3MP_ACTORS, out, 4 + n * ACTOR_BYTES);
+            unlock(lk);
+            actor_states_out += n;
+            n = 0;
+        }
+    }
+    if (n) {
+        put32le(out, n);
+        lk = lock();
+        session_send(T3MP_ACTORS, out, 4 + n * ACTOR_BYTES);
+        unlock(lk);
+        actor_states_out += n;
+    }
+    hit_count = 0; /* a hit on an actor not loaded here is lost */
+    for (i = 0; i < ACTORS; i++)
+        if (followed[i].refid && !followed[i].seen)
+            unfollow(i, 0);
+    for (i = 0; i < REMOTE_HOLDS; i++)
+        if (remote_holds[i].refid && !remote_holds[i].found &&
+            (remote_holds[i].release || remote_holds[i].mobile))
+            remote_holds[i].refid = 0;
+}
+
+static void authority_event(const struct event *e)
+{
+    struct cell_key key;
+    u32 refid = get32le(e->data), target = get32le(e->data + 4), value = get32le(e->data + 8), i;
+
+    if (e->kind == EVENT_AUTHORITY) {
+        if (e->length < KEY_BYTES + 4)
+            return;
+        key.kind = get32le(e->data);
+        key.gx = (int)get32le(e->data + 4);
+        key.gy = (int)get32le(e->data + 8);
+        copy(key.name, e->data + 12, CELL_NAME);
+        key.name[CELL_NAME - 1] = 0;
+        authority_set(&key, get32le(e->data + KEY_BYTES));
+        return;
+    }
+    if (e->length < 12 || target != ses.client)
+        return;
+    if (e->kind == EVENT_HOLD) {
+        for (i = 0; i < REMOTE_HOLDS; i++)
+            if (remote_holds[i].refid == refid)
+                break;
+        if (i == REMOTE_HOLDS && value)
+            for (i = 0; i < REMOTE_HOLDS && remote_holds[i].refid; i++)
+                ;
+        if (i == REMOTE_HOLDS)
+            return;
+        remote_holds_in++;
+        tes3x_log_hex3("net.hold_request", refid, e->origin, value);
+        if (!remote_holds[i].refid) {
+            remote_holds[i].refid = refid;
+            remote_holds[i].mobile = 0;
+        }
+        remote_holds[i].holder = e->origin;
+        remote_holds[i].release = !value;
+    } else if (e->kind == EVENT_HOLD_BROKEN) {
+        remote_breaks_in++;
+        tes3x_log_hex3("net.hold_broken_remote", refid, e->origin, value);
+        if (refid == talk_refid)
+            talk_broken = 1;
+    } else if (e->kind == EVENT_HIT && hit_count < HITS) {
+        hits[hit_count].refid = refid;
+        copy((u8 *)&hits[hit_count].damage, e->data + 8, 4);
+        tes3x_log_hex3("net.hit", refid, e->origin, (u32)round_int(hits[hit_count].damage));
+        hit_count++;
+        hits_in++;
+    }
+}
+
+static void authority_stat(void)
+{
+    u32 i, n = 0, holds_now = 0;
+
+    for (i = 0; i < ACTORS; i++)
+        n += followed[i].refid != 0;
+    for (i = 0; i < REMOTE_HOLDS; i++)
+        holds_now += remote_holds[i].refid != 0;
+    tes3x_log_hex3("net.authorities", authorities, n, holds_now);
+    for (i = 0; i < authorities; i++)
+        tes3x_log_hex3("net.authority_is", authority[i].client, (u32)authority[i].key.gx,
+                       (u32)authority[i].key.gy);
+    tes3x_log_hex3("net.actor_states", actor_states_out, actor_states_in, actor_moves);
+    tes3x_log_hex3("net.actor_events", follows, hits_out, hits_in);
+    tes3x_log_hex3("net.actor_holds", remote_holds_in, remote_breaks_out, remote_breaks_in);
+}
+
 static void event_handle(const struct event *e)
 {
     char text[EVENT_DATA + 1];
@@ -2095,6 +2627,8 @@ static void event_handle(const struct event *e)
         text[e->length] = 0;
         tes3x_log_hex3("net.text_from", e->origin, e->seq, 0);
         log_text("net.text", text);
+    } else if (e->kind >= EVENT_AUTHORITY && e->kind <= EVENT_HIT) {
+        authority_event(e);
     } else {
         tes3x_log_hex3("net.event_unknown", e->kind, e->origin, e->length);
     }
@@ -2244,6 +2778,7 @@ void tes3x_net_frame(void)
     }
     unlock(flags);
     ghosts_frame(state);
+    authority_frame(ref, state);
 }
 
 int tes3x_net_command(const char *text)
@@ -2268,6 +2803,7 @@ int tes3x_net_command(const char *text)
         stat();
         menu_stat();
         clock_stat();
+        authority_stat();
     } else if ((rest = word(text, "menusim")) && (rest = word(skip(rest), "auto")) &&
                !*skip(rest)) {
         menu_forced = 0;

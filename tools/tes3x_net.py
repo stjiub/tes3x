@@ -7,6 +7,7 @@
     python tools/tes3x_net.py ping 10.0.2.15 --tunnel 9369
     python tools/tes3x_net.py serve --tunnel 9369 --bot   # plus a player circling the first client
     python tools/tes3x_net.py serve --tunnel 9369 --bot --bot-say 2 --drop 0.2   # events under loss
+    python tools/tes3x_net.py serve --tunnel 9369 --bot --bot-owns 20:60   # the bot runs the cell
     python tools/tes3x_net.py plugin OUT.esp --master Morrowind.esm   # the ghost plugin
 
 With --tunnel PORT this tool is the guest's only peer: xemu sends each guest Ethernet frame to
@@ -271,8 +272,8 @@ def ping(args):
 
 
 T3MP = struct.Struct("<4sBBHIIIII")  # magic, version, type, 0, session, seq, ack, time, echo
-T3MP_VERSION = 3
-HELLO, WELCOME, HEARTBEAT, BYE, STATE, PEER, GONE, EVENTS, REFUSE, CLOCK = range(1, 11)
+T3MP_VERSION = 4
+HELLO, WELCOME, HEARTBEAT, BYE, STATE, PEER, GONE, EVENTS, REFUSE, CLOCK, ACTORS = range(1, 12)
 # GameHour, Day, Month (0-11), Year, DaysPassed, TimeScale, as the game's float globals
 CLOCK_BODY = struct.Struct("<6f")
 # MAC, build id, load order hash, plugin count, then the client's clock
@@ -284,6 +285,15 @@ EVENT = struct.Struct("<IHHI")  # seq, kind, length, origin client; the data fol
 EVENTS_BYTES = 512  # the client's largest EVENTS body
 EVENT_DATA = 64
 EVENT_TEXT = 1
+EVENT_AUTHORITY, EVENT_HOLD, EVENT_HOLD_BROKEN, EVENT_HIT = 2, 3, 4, 5
+# refid, target client, then a word: on, reason, or the damage as a float
+TARGETED = {EVENT_HOLD: "holds", EVENT_HOLD_BROKEN: "breaks the hold on", EVENT_HIT: "hits"}
+KEY = struct.Struct("<Iii32s")  # kind, grid x, grid y, interior name
+KEY_EXTERIOR, KEY_INTERIOR = 1, 2
+ACTOR = struct.Struct("<I5fI")  # refid, x, y, z, heading, health, flags
+ACTORS_PER_PACKET = 18
+ACTOR_PERIOD = 0.1
+AUTHORITY_PERIOD = 0.25
 RESEND = 0.25
 CLOCK_INTERVAL = 1.0
 
@@ -379,6 +389,42 @@ def describe_state(state):
     where = (cell.split(b"\0", 1)[0].decode("latin-1") if flags & INTERIOR
              else f"exterior {int(x // CELL_UNITS)},{int(y // CELL_UNITS)}")
     return f"{where} at {x:.0f},{y:.0f},{z:.0f} heading {math.degrees(heading) % 360:.0f}"
+
+
+def cell_keys(state):
+    """(own cell, loaded cells) of a STATE: an interior, or an exterior cell and its neighbours."""
+    flags, x, y, _, _, cell = STATE_BODY.unpack_from(state)
+    if not flags & IN_WORLD:
+        return None, set()
+    if flags & INTERIOR:
+        key = (KEY_INTERIOR, 0, 0, cell.split(b"\0", 1)[0])
+        return key, {key}
+    gx, gy = math.floor(x / CELL_UNITS), math.floor(y / CELL_UNITS)
+    return ((KEY_EXTERIOR, gx, gy, b""),
+            {(KEY_EXTERIOR, gx + dx, gy + dy, b"") for dx in (-1, 0, 1) for dy in (-1, 0, 1)})
+
+
+def describe_key(key):
+    kind, gx, gy, name = key
+    return name.decode("latin-1") if kind == KEY_INTERIOR else f"exterior {gx},{gy}"
+
+
+def assign_authority(owners, candidates, forced=None):
+    """Each loaded cell's authority. candidates: cell -> [(client, stands in it)] in joining
+    order. An authority keeps a cell while it has it loaded, unless it only has it loaded and
+    another client stands in it; forced takes every cell it has loaded."""
+    result = {}
+    for key, cands in candidates.items():
+        ids = [c for c, _ in cands]
+        standing = [c for c, here in cands if here]
+        current = owners.get(key)
+        if forced in ids:
+            result[key] = forced
+        elif current in ids and (current in standing or not standing):
+            result[key] = current
+        else:
+            result[key] = (standing or ids)[0]
+    return result
 
 
 def now_us():
@@ -480,6 +526,9 @@ class Client:
         self.alive = False
         self.rel = Reliable()
         self.events = 0
+        self.known = {}  # cell -> the authority this client was told
+        self.loaded = set()
+        self.actor_states = 0
 
 
 def serve(args):
@@ -510,6 +559,17 @@ def serve(args):
         pinned = (int(args.load_order, 16), None)
     lost = {"in": 0, "out": 0}
     clock, clock_next = None, 0.0
+    owners = {}  # cell -> authority client
+    actors = {}  # refid -> (reporting client, cell, ACTOR bytes), the latest from an authority
+    authority_next = actor_next = 0.0
+
+    def window(spec, now):
+        """Whether now falls in START:END seconds after the bot first placed itself."""
+        if not spec or bot["anchored"] is None:
+            return False
+        start, _, end = spec.partition(":")
+        t = now - bot["anchored"]
+        return float(start) <= t < (float(end) if end else math.inf)
 
     def dropped(direction):
         if args.drop and loss.random() < args.drop:
@@ -529,7 +589,8 @@ def serve(args):
         else:
             sock.sendto(packet, client.addr)
 
-    bot = {"anchor": None, "next": 0.0, "start": time.time(), "said": 0.0, "line": 0}
+    bot = {"anchor": None, "next": 0.0, "start": time.time(), "said": 0.0, "line": 0,
+           "anchored": None, "state": None, "breaks": [], "held": 0, "hit": False}
 
     def bot_anchor(state):
         """The bot circles where the first client entered the world, and follows it to a new
@@ -539,6 +600,8 @@ def serve(args):
         if flags & IN_WORLD and (anchor is None or anchor[0] != (flags, cell)
                                  or math.hypot(x - anchor[1], y - anchor[2]) > 2048):
             bot["anchor"] = ((flags, cell), x, y, z)
+            if bot["anchored"] is None:
+                bot["anchored"] = time.time()
             print(f"{time.strftime('%H:%M:%S')} bot circles {describe_state(state)}",
                   flush=True)
 
@@ -547,6 +610,7 @@ def serve(args):
         t = (now - bot["start"]) * 2 * math.pi / args.bot_period
         state = STATE_BODY.pack(flags, cx + args.bot_radius * math.cos(t),
                                 cy + args.bot_radius * math.sin(t), cz, -t % (2 * math.pi), cell)
+        bot["state"] = state
         for other in clients.values():
             if other.alive:
                 send(other, PEER, struct.pack("<I", BOT_ID) + state)
@@ -566,11 +630,95 @@ def serve(args):
                 other.rel.queue(kind, origin, data)
                 flush(other, now)
 
+    def send_event(target, origin, kind, data, now):
+        for other in clients.values():
+            if other.alive and other.id == target:
+                other.rel.queue(kind, origin, data)
+                flush(other, now)
+
     def on_event(client, kind, data, stamp, now):
         client.events += 1
+        if kind in TARGETED and len(data) >= 12:
+            refid, target = struct.unpack_from("<II", data)
+            word = (f"damage {struct.unpack_from('<f', data, 8)[0]:.0f}" if kind == EVENT_HIT
+                    else f"{struct.unpack_from('<I', data, 8)[0]}")
+            print(f"{stamp} client {client.id} {TARGETED[kind]} {refid:#010x} "
+                  f"(authority {target}): {word}", flush=True)
+            if target != BOT_ID:
+                send_event(target, client.id, kind, data, now)
+            elif kind == EVENT_HOLD and struct.unpack_from("<I", data, 8)[0] and \
+                    args.bot_break_hold is not None:
+                bot["breaks"].append((now + args.bot_break_hold, client.id, refid))
+            return
         if kind == EVENT_TEXT:
             print(f"{stamp} client {client.id} says: {data.decode('latin-1')}", flush=True)
         broadcast_event(client.id, kind, data, now)
+
+    def update_authority(now):
+        """Name each loaded cell's authority and tell every client that has the cell loaded."""
+        candidates, standing = {}, set()
+        for client in sorted(clients.values(), key=lambda c: c.id):
+            client.loaded = set()
+            if client.alive and client.state:
+                own, client.loaded = cell_keys(client.state)
+                standing.add(own)
+                for key in client.loaded:
+                    candidates.setdefault(key, []).append((client.id, key == own))
+        forced = None
+        if bot["state"] and window(args.bot_owns, now):
+            own, loaded = cell_keys(bot["state"])
+            for key in loaded:
+                candidates.setdefault(key, []).append((BOT_ID, key == own))
+            forced = BOT_ID
+        new = assign_authority(owners, candidates, forced)
+        stamp = time.strftime("%H:%M:%S")
+        for key in sorted(standing & set(new), key=describe_key):  # the rest only follow
+            if owners.get(key) != new[key]:
+                print(f"{stamp} authority {describe_key(key)}: client {new[key]}", flush=True)
+        owners.clear()
+        owners.update(new)
+        for client in clients.values():
+            told = False
+            for key in client.loaded:
+                if key in new and client.known.get(key) != new[key]:
+                    client.known[key] = new[key]
+                    client.rel.queue(EVENT_AUTHORITY, 0, KEY.pack(*key) + struct.pack("<I", new[key]))
+                    told = True
+            for key in [k for k in client.known if k not in client.loaded]:
+                del client.known[key]
+            if told:
+                flush(client, now)
+
+    def on_actors(client, body):
+        """Keep an authority's actor states and relay them to the other clients."""
+        count = struct.unpack_from("<I", body)[0]
+        own = cell_keys(client.state)[0] if client.state else None
+        for i in range(count):
+            record = body[4 + i * ACTOR.size:4 + (i + 1) * ACTOR.size]
+            if len(record) < ACTOR.size:
+                break
+            refid, x, y = ACTOR.unpack(record)[:3]
+            key = own if own and own[0] == KEY_INTERIOR else (
+                KEY_EXTERIOR, math.floor(x / CELL_UNITS), math.floor(y / CELL_UNITS), b"")
+            actors[refid] = (client.id, key, record)
+            client.actor_states += 1
+        for other in clients.values():
+            if other is not client and other.alive:
+                send(other, ACTORS, struct.pack("<I", client.id) + body)
+
+    def bot_actors():
+        """As the authority, the bot places each actor of its cells bot_shift units east of where
+        the last authority left it."""
+        owned = [record for _, key, record in actors.values() if owners.get(key) == BOT_ID]
+        for i in range(0, len(owned), ACTORS_PER_PACKET):
+            chunk = owned[i:i + ACTORS_PER_PACKET]
+            body = struct.pack("<I", len(chunk))
+            for record in chunk:
+                refid, x, *rest = ACTOR.unpack(record)
+                body += ACTOR.pack(refid, x + args.bot_shift, *rest)
+            for other in clients.values():
+                if other.alive:
+                    send(other, ACTORS, struct.pack("<I", BOT_ID) + body)
 
     def handle(packet, addr):
         nonlocal pinned, clock
@@ -608,6 +756,7 @@ def serve(args):
                 print(f"{stamp} client {client.id}: {len(client.rel.out)} unacked events "
                       f"dropped by the rejoin", flush=True)
             client.rel = Reliable()
+            client.known = {}
             verb = "joined" if client.joins == 1 else "rejoined"
             print(f"{stamp} client {client.id} {verb}: {mac} at {addr[0]}:{addr[1]}, "
                   f"build {build:#010x}", flush=True)
@@ -642,6 +791,8 @@ def serve(args):
             for other in clients.values():
                 if other is not client and other.alive:
                     send(other, PEER, struct.pack("<I", client.id) + client.state)
+        elif kind == ACTORS and len(packet) >= T3MP.size + 4:
+            on_actors(client, packet[T3MP.size:])
         elif kind == EVENTS and len(packet) >= T3MP.size + EVENTS_HEAD.size:
             ready, carried = client.rel.receive(packet[T3MP.size:])
             if carried:
@@ -699,6 +850,37 @@ def serve(args):
         if args.bot and bot["anchor"] and now >= bot["next"]:
             bot["next"] = now + 1 / args.bot_rate
             bot_step(now)
+        if now >= authority_next:
+            authority_next = now + AUTHORITY_PERIOD
+            update_authority(now)
+        if args.bot and now >= actor_next:
+            actor_next = now + ACTOR_PERIOD
+            bot_actors()
+        for due, holder, refid in [b for b in bot["breaks"] if now >= b[0]]:
+            bot["breaks"].remove((due, holder, refid))
+            print(f"{time.strftime('%H:%M:%S')} bot breaks client {holder}'s hold on "
+                  f"{refid:#010x}", flush=True)
+            send_event(holder, BOT_ID, EVENT_HOLD_BROKEN, struct.pack("<III", refid, holder, 2),
+                       now)
+        if args.bot_hold:
+            refid, _, span = args.bot_hold.partition("@")
+            refid = int(refid, 16)
+            want = window(span, now)
+            owner = owners.get(actors[refid][1]) if refid in actors else None
+            if want != bot["held"] and owner:
+                bot["held"] = want
+                print(f"{time.strftime('%H:%M:%S')} bot {'holds' if want else 'releases'} "
+                      f"{refid:#010x} (authority {owner})", flush=True)
+                send_event(owner, BOT_ID, EVENT_HOLD, struct.pack("<III", refid, owner, want), now)
+        if args.bot_hit and not bot["hit"]:
+            refid, _, at = args.bot_hit.partition("@")
+            refid = int(refid, 16)
+            owner = owners.get(actors[refid][1]) if refid in actors else None
+            if owner and window(at, now):
+                bot["hit"] = True
+                print(f"{time.strftime('%H:%M:%S')} bot hits {refid:#010x} for 5 (authority "
+                      f"{owner})", flush=True)
+                send_event(owner, BOT_ID, EVENT_HIT, struct.pack("<IIf", refid, owner, 5.0), now)
         if args.bot_say and bot["anchor"] and now >= bot["said"] + args.bot_say:
             bot["said"] = now
             bot["line"] += 1
@@ -720,6 +902,10 @@ def serve(args):
             for client in clients.values():
                 print(f"  client {client.id}: {'up' if client.alive else 'down'}, "
                       + summary(client), flush=True)
+            if actors:
+                print(f"  actors: {len(actors)} known; authorities "
+                      + ", ".join(f"{describe_key(k)} {c}" for k, c in sorted(
+                          owners.items(), key=lambda i: describe_key(i[0]))), flush=True)
     for client in clients.values():
         print(f"client {client.id} {client.mac}: " + summary(client, "last "))
     if args.drop:
@@ -730,6 +916,7 @@ def serve(args):
 def summary(client, prefix=""):
     rel = client.rel
     return (f"joins {client.joins}, heartbeats {client.beats}, states {client.states}, "
+            f"actor states {client.actor_states}, "
             f"gaps {client.gaps}, events in {client.events} (stale {rel.stale}), out "
             f"{rel.out_next - 1} (sent {rel.sent}, resent {rel.resent}, unacked {len(rel.out)})"
             + (f"; {prefix}{describe_state(client.state)}" if client.state else ""))
@@ -771,6 +958,18 @@ def main(argv=None):
     p.add_argument("--bot-rate", type=float, default=20, help="states per second")
     p.add_argument("--bot-say", type=float, metavar="SECONDS",
                    help="the bot also sends a numbered text event this often")
+    p.add_argument("--bot-owns", metavar="START:END",
+                   help="the bot is the authority for its cells from START to END seconds after it "
+                        "first appears (END may be left out)")
+    p.add_argument("--bot-shift", type=float, default=128,
+                   help="as the authority, the bot places each actor this many units east of its "
+                        "last reported position")
+    p.add_argument("--bot-break-hold", type=float, metavar="SECONDS",
+                   help="as the authority, the bot breaks a client's hold this long after it starts")
+    p.add_argument("--bot-hold", metavar="REFID@START:END",
+                   help="the bot holds this actor (hex refid) in dialogue from START to END seconds")
+    p.add_argument("--bot-hit", metavar="REFID@SECONDS",
+                   help="the bot hits this actor (hex refid) for 5 once, this long after it appears")
     p.add_argument("--drop", type=float, default=0,
                    help="drop this fraction of session packets each way, to test loss")
     p.add_argument("--seed", type=int, help="seed for --drop")

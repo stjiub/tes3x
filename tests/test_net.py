@@ -114,5 +114,39 @@ class ClockTests(unittest.TestCase):
         self.assertEqual(tes3x_net.HELLO_BODY.size, 18 + tes3x_net.CLOCK_BODY.size)
 
 
+class AuthorityTests(unittest.TestCase):
+    def state(self, x, y, cell=b''):
+        flags = tes3x_net.IN_WORLD | (tes3x_net.INTERIOR if cell else 0)
+        return tes3x_net.STATE_BODY.pack(flags, x, y, 0.0, 0.0, cell)
+
+    def test_exteriors_load_three_by_three_and_interiors_one(self):
+        own, loaded = tes3x_net.cell_keys(self.state(-1.0, 8192.0))
+        self.assertEqual(own, (tes3x_net.KEY_EXTERIOR, -1, 1, b''))
+        self.assertEqual(len(loaded), 9)
+        self.assertIn((tes3x_net.KEY_EXTERIOR, -2, 0, b''), loaded)
+        own, loaded = tes3x_net.cell_keys(self.state(0.0, 0.0, b'Seyda Neen, Census'))
+        self.assertEqual(loaded, {own})
+        self.assertEqual(tes3x_net.cell_keys(tes3x_net.STATE_BODY.pack(0, 0, 0, 0, 0, b'')),
+                         (None, set()))
+
+    def test_authority_is_kept_until_someone_stands_in_a_cell_it_only_loads(self):
+        cell = (tes3x_net.KEY_EXTERIOR, 0, 0, b'')
+        assign = tes3x_net.assign_authority
+        self.assertEqual(assign({}, {cell: [(1, False), (2, True)]}), {cell: 2})
+        self.assertEqual(assign({cell: 2}, {cell: [(1, True), (2, True)]}), {cell: 2})
+        self.assertEqual(assign({cell: 1}, {cell: [(1, False), (2, False)]}), {cell: 1})
+        self.assertEqual(assign({cell: 1}, {cell: [(1, False), (2, True)]}), {cell: 2})
+        self.assertEqual(assign({cell: 3}, {cell: [(1, False), (2, False)]}), {cell: 1})
+        self.assertEqual(assign({cell: 1}, {cell: [(1, True), (99, False)]}, forced=99),
+                         {cell: 99})
+
+    def test_authority_event_fits_the_event_channel(self):
+        data = tes3x_net.KEY.pack(tes3x_net.KEY_INTERIOR, 0, 0, b'Seyda Neen, Census') + \
+            struct.pack('<I', 1)
+        self.assertLessEqual(len(data), tes3x_net.EVENT_DATA)
+        self.assertEqual(4 + tes3x_net.ACTORS_PER_PACKET * tes3x_net.ACTOR.size,
+                         508)  # within tes3xnet.c's EVENTS_BYTES
+
+
 if __name__ == '__main__':
     unittest.main()
