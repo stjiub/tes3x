@@ -150,7 +150,7 @@ def game_test_profile(template, test, library=None):
         profile.setdefault(section, {}).update(values)
     if library:
         profile["profile"]["library"] = Path(library).as_posix()
-        profile["mods"] = [{"id": FIXTURE_MOD, "version": "unknown", "order": 10}]
+        profile["mods"] = [{"name": FIXTURE_MOD, "enabled": True, "order": 10}]
         if profile.get("package", {}).get("mode", "retail") == "retail":
             profile.setdefault("package", {})["mode"] = "delta-bsa"
     return profile
