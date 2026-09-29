@@ -1,8 +1,12 @@
 /* Network driver for the NIC, after nxdk's nvnetdrv: interrupt-driven receive, a polled transmit
- * ring, ARP and a UDP echo responder on port 26500.
+ * ring, ARP, a UDP echo responder on port 26500 and a session with a PC server.
  *
  * Console commands:
- *   tes3xnet up A.B.C.D   bring the NIC up with that address and answer ARP and echo requests
+ *   tes3xnet up A.B.C.D[/BITS] [SERVER[:PORT] [GATEWAY]]
+ *                         bring the NIC up with that address, answer ARP and echo requests, and
+ *                         with a server keep a session: HELLO until WELCOME, then a heartbeat
+ *                         each second; five silent seconds start over
+ *   tes3xnet probe A.B.C.D  ARP for an address three times and log the replies
  *   tes3xnet stat         log the counters
  *   tes3xnet down         stop the NIC
  *   tes3xnet [count]      broadcast count "TES3XNET" datagrams (default 8), from 0.0.0.0 unless up
@@ -30,6 +34,9 @@ typedef void(__stdcall *fn_KeInitializeDpc)(void *, void *, void *);
 typedef u8(__stdcall *fn_KeInsertQueueDpc)(void *, void *, void *);
 typedef u8(__stdcall *fn_KeRemoveQueueDpc)(void *);
 typedef void(__stdcall *fn_HalReturnToFirmware)(u32);
+typedef void(__stdcall *fn_KeInitializeTimerEx)(void *, u32);
+typedef u8(__stdcall *fn_KeSetTimer)(void *, long long, void *);
+typedef u8(__stdcall *fn_KeCancelTimer)(void *);
 typedef u32(__stdcall *fn_PhyInitialize)(u8, void *);
 typedef u32(__stdcall *fn_PhyGetLinkState)(u8);
 
@@ -48,6 +55,9 @@ typedef u32(__stdcall *fn_PhyGetLinkState)(u8);
 #define KeInitializeDpc KFN(THUNK_KeInitializeDpc, fn_KeInitializeDpc)
 #define KeInsertQueueDpc KFN(THUNK_KeInsertQueueDpc, fn_KeInsertQueueDpc)
 #define KeRemoveQueueDpc KFN(THUNK_KeRemoveQueueDpc, fn_KeRemoveQueueDpc)
+#define KeInitializeTimerEx KFN(THUNK_KeInitializeTimerEx, fn_KeInitializeTimerEx)
+#define KeSetTimer KFN(THUNK_KeSetTimer, fn_KeSetTimer)
+#define KeCancelTimer KFN(THUNK_KeCancelTimer, fn_KeCancelTimer)
 
 #define XC_FACTORY_ETHERNET_ADDR 0x101u
 #define PAGE_READWRITE 0x04u
@@ -84,7 +94,9 @@ typedef u32(__stdcall *fn_PhyGetLinkState)(u8);
 #define REG_RING_SIZES 0x108u
 #define REG_TX_POLL 0x10Cu
 #define REG_LINK_SPEED 0x110u
+#define REG_TX_CURRENT_DESC 0x11Cu
 #define REG_RX_CURRENT_DESC 0x120u
+#define REG_TX_NEXT_DESC 0x134u
 #define REG_RX_NEXT_DESC 0x138u
 #define REG_TX_WATERMARK 0x13Cu
 #define REG_SETUP7 0x140u
@@ -130,9 +142,36 @@ struct descriptor {
     u16 flags;
 } __attribute__((packed));
 
+#define TICK_MS 250u
+#define HELLO_TICKS 4u
+#define HEARTBEAT_TICKS 4u
+#define TIMEOUT_TICKS 20u
+#define CPU_MHZ 733u
+
+/* Session packet: "T3MP", version, type, then session, seq, ack, time and echoed peer time. */
+#define T3MP_VERSION 1u
+#define T3MP_HEADER 28u
+#define T3MP_HELLO 1u
+#define T3MP_WELCOME 2u
+#define T3MP_HEARTBEAT 3u
+#define T3MP_BYE 4u
+#define SESSION_IDLE 0u
+#define SESSION_ARP 1u
+#define SESSION_HELLO 2u
+#define SESSION_JOINED 3u
+
 static struct {
-    u32 up, ip, irqs, dpcs, rx, rx_errors, rx_nobuf, arp, echo, tx, tx_full, tx_errors;
+    u32 up, ip, mask, irqs, dpcs, rx, rx_errors, rx_nobuf, arp, echo, tx, tx_full, tx_errors;
 } net;
+static struct {
+    u32 state, server, port, gateway, hop, hop_known, id, client, seq, peer_seq, peer_time;
+    u32 ticks, quiet, hellos, welcomes, beats_out, beats_in, timeouts, gaps;
+    u32 rtt_last, rtt_min, rtt_max, rtt_sum, rtt_count;
+    u8 hop_mac[6];
+} ses;
+static u32 probe_ip, probe_hits;
+static u32 timer[0x28 / 4];
+static u32 tick_dpc[0x1C / 4];
 static u8 mac[6];
 static u8 *pool;
 static volatile struct descriptor *rx_ring, *tx_ring;
@@ -277,8 +316,15 @@ static void rx_arp(const u8 *f, u32 len)
 {
     u8 *o;
 
-    if (len < 42 || get16(f + 14) != 1 || get16(f + 16) != ETH_IP || get16(f + 20) != 1 ||
-        !net.ip || get32(f + 38) != net.ip)
+    if (len < 42 || get16(f + 14) != 1 || get16(f + 16) != ETH_IP)
+        return;
+    if (probe_ip && get32(f + 28) == probe_ip && get16(f + 20) == 2)
+        probe_hits++;
+    if (ses.hop && get32(f + 28) == ses.hop) {
+        copy(ses.hop_mac, f + 22, 6);
+        ses.hop_known = 1;
+    }
+    if (get16(f + 20) != 1 || !net.ip || get32(f + 38) != net.ip)
         return;
     net.arp++;
     if (!(o = tx_begin()))
@@ -294,30 +340,204 @@ static void rx_arp(const u8 *f, u32 len)
     tx_commit(42);
 }
 
-/* Gratuitous ARP: announces our address and MAC to the segment. */
-static void announce(void)
+static u32 get32le(const u8 *p)
 {
-    u32 i, flags = lock();
+    return p[0] | (u32)p[1] << 8 | (u32)p[2] << 16 | (u32)p[3] << 24;
+}
+
+/* Microseconds from the TSC, without a 64-bit division: cycles / 1024 * 1024 / 733. */
+static u32 now_us(void)
+{
+    u32 lo, hi;
+
+    __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
+    return (u32)(((u64)(hi << 22 | lo >> 10) * 5722) >> 12);
+}
+
+/* Caller holds the lock. Asking for our own address is a gratuitous ARP. */
+static void arp_request(u32 target)
+{
+    u32 i;
     u8 *o = tx_begin();
 
-    if (o) {
-        for (i = 0; i < 6; i++) {
-            o[i] = 0xFF;
-            o[32 + i] = 0;
-        }
-        copy(o + 6, mac, 6);
-        put16(o + 12, ETH_ARP);
-        put16(o + 14, 1);
-        put16(o + 16, ETH_IP);
-        o[18] = 6;
-        o[19] = 4;
-        put16(o + 20, 1);
-        copy(o + 22, mac, 6);
-        put32(o + 28, net.ip);
-        put32(o + 38, net.ip);
-        tx_commit(42);
+    if (!o)
+        return;
+    for (i = 0; i < 6; i++) {
+        o[i] = 0xFF;
+        o[32 + i] = 0;
     }
+    copy(o + 6, mac, 6);
+    put16(o + 12, ETH_ARP);
+    put16(o + 14, 1);
+    put16(o + 16, ETH_IP);
+    o[18] = 6;
+    o[19] = 4;
+    put16(o + 20, 1);
+    copy(o + 22, mac, 6);
+    put32(o + 28, net.ip);
+    put32(o + 38, target);
+    tx_commit(42);
+}
+
+static void announce(void)
+{
+    u32 flags = lock();
+    arp_request(net.ip);
     unlock(flags);
+}
+
+/* Caller holds the lock. Goes to the next hop's MAC, so it waits for ARP. */
+static void udp_send(u32 dst, u32 port, const u8 *payload, u32 n)
+{
+    u8 *o;
+
+    if (!ses.hop_known || n > BUF - 42 || !(o = tx_begin()))
+        return;
+    copy(o, ses.hop_mac, 6);
+    copy(o + 6, mac, 6);
+    put16(o + 12, ETH_IP);
+    o[14] = 0x45;
+    o[15] = 0;
+    put16(o + 16, 28 + n);
+    put16(o + 18, ses.seq);
+    put16(o + 20, 0);
+    o[22] = 64;
+    o[23] = 17;
+    put32(o + 26, net.ip);
+    put32(o + 30, dst);
+    ip_checksum(o + 14);
+    put16(o + 34, PORT);
+    put16(o + 36, port);
+    put16(o + 38, 8 + n);
+    put16(o + 40, 0);
+    copy(o + 42, payload, n);
+    tx_commit(42 + n);
+}
+
+static void session_send(u32 type, const u8 *body, u32 n)
+{
+    u8 p[T3MP_HEADER + 16];
+
+    p[0] = 'T';
+    p[1] = '3';
+    p[2] = 'M';
+    p[3] = 'P';
+    p[4] = T3MP_VERSION;
+    p[5] = (u8)type;
+    p[6] = p[7] = 0;
+    put32le(p + 8, ses.id);
+    put32le(p + 12, ++ses.seq);
+    put32le(p + 16, ses.peer_seq);
+    put32le(p + 20, now_us());
+    put32le(p + 24, ses.peer_time);
+    copy(p + T3MP_HEADER, body, n);
+    udp_send(ses.server, ses.port, p, T3MP_HEADER + n);
+}
+
+/* Caller holds the lock (the receive DPC). */
+static void session_rx(const u8 *p, u32 n)
+{
+    u32 type, seq, echo, rtt;
+
+    if (n < T3MP_HEADER || p[4] != T3MP_VERSION)
+        return;
+    type = p[5];
+    seq = get32le(p + 12);
+    echo = get32le(p + 24);
+    if (type == T3MP_WELCOME) {
+        if (ses.state != SESSION_HELLO || n < T3MP_HEADER + 4)
+            return;
+        ses.id = get32le(p + 8);
+        ses.client = get32le(p + 28);
+        ses.state = SESSION_JOINED;
+        ses.ticks = 0;
+        ses.peer_seq = seq;
+        ses.welcomes++;
+    } else {
+        if (ses.state != SESSION_JOINED || get32le(p + 8) != ses.id)
+            return;
+        if (type == T3MP_BYE) {
+            ses.state = SESSION_HELLO;
+            ses.ticks = HELLO_TICKS;
+            return;
+        }
+        if (type == T3MP_HEARTBEAT)
+            ses.beats_in++;
+        if (seq > ses.peer_seq + 1)
+            ses.gaps += seq - ses.peer_seq - 1;
+        if (seq > ses.peer_seq)
+            ses.peer_seq = seq;
+    }
+    ses.peer_time = get32le(p + 20);
+    ses.quiet = 0;
+    rtt = now_us() - echo;
+    if (echo && rtt < 10000000u) {
+        ses.rtt_last = rtt;
+        if (!ses.rtt_count || rtt < ses.rtt_min)
+            ses.rtt_min = rtt;
+        if (rtt > ses.rtt_max)
+            ses.rtt_max = rtt;
+        ses.rtt_sum += rtt;
+        ses.rtt_count++;
+    }
+}
+
+/* Every TICK_MS from the timer DPC; caller holds the lock. */
+static void session_tick(void)
+{
+    u8 hello[10];
+
+    ses.ticks++;
+    ses.quiet++;
+    if (ses.state == SESSION_ARP) {
+        if (ses.hop_known) {
+            ses.state = SESSION_HELLO;
+            ses.ticks = HELLO_TICKS;
+        } else if (ses.ticks % HELLO_TICKS == 1) {
+            arp_request(ses.hop);
+        }
+    }
+    if (ses.state == SESSION_HELLO && ses.ticks >= HELLO_TICKS) {
+        ses.ticks = 0;
+        ses.id = 0;
+        ses.peer_seq = 0;
+        ses.peer_time = 0;
+        copy(hello, mac, 6);
+        put32le(hello + 6, TES3X_BUILD_ID);
+        session_send(T3MP_HELLO, hello, sizeof(hello));
+        ses.hellos++;
+    } else if (ses.state == SESSION_JOINED) {
+        if (ses.quiet >= TIMEOUT_TICKS) {
+            ses.timeouts++;
+            ses.state = SESSION_HELLO;
+            ses.ticks = HELLO_TICKS - 1;
+        } else if (ses.ticks >= HEARTBEAT_TICKS) {
+            ses.ticks = 0;
+            session_send(T3MP_HEARTBEAT, 0, 0);
+            ses.beats_out++;
+        }
+    }
+}
+
+static void arm_timer(void)
+{
+    KeSetTimer(timer, -(long long)TICK_MS * 10000, tick_dpc);
+}
+
+static void __stdcall tick(void *d, void *context, void *a, void *b)
+{
+    u32 flags;
+
+    (void)d;
+    (void)context;
+    (void)a;
+    (void)b;
+    flags = lock();
+    if (net.up && ses.state != SESSION_IDLE)
+        session_tick();
+    unlock(flags);
+    if (net.up)
+        arm_timer();
 }
 
 static void rx_ip(const u8 *f, u32 len)
@@ -337,6 +557,12 @@ static void rx_ip(const u8 *f, u32 len)
     udp = ip + ihl;
     if (get16(udp + 2) != PORT)
         return;
+    if (udp[8] == 'T' && udp[9] == '3' && udp[10] == 'M' && udp[11] == 'P') {
+        if (ses.state != SESSION_IDLE && get32(ip + 12) == ses.server &&
+            get16(udp) == ses.port)
+            session_rx(udp + 8, total - ihl - 8);
+        return;
+    }
     for (i = 0; i < 8; i++)
         if (udp[8 + i] != ping[i])
             return;
@@ -367,29 +593,39 @@ static void rx_ip(const u8 *f, u32 len)
     tx_commit(14 + 20 + total - ihl);
 }
 
+/* Scans every slot from rx_head on: the NIC keeps its ring position across a reset, so after a
+ * restart it can fill slots in an order the driver did not start from. */
 static void rx_drain(void)
 {
-    for (;;) {
-        volatile struct descriptor *d = &rx_ring[rx_head];
-        u32 flags = d->flags;
-        const u8 *f = rx_buf + rx_head * BUF;
+    u32 i, found;
 
-        if (flags & RX_AVAIL)
+    do {
+        found = 0;
+        for (i = 0; i < RX_RING; i++) {
+            u32 slot = (rx_head + i) % RX_RING;
+            volatile struct descriptor *d = &rx_ring[slot];
+            u32 flags = d->flags;
+            const u8 *f = rx_buf + slot * BUF;
+
+            if (flags & RX_AVAIL)
+                continue;
+            if ((flags & RX_DESCRIPTORVALID) && !(flags & RX_ERRORS) && d->length >= 14) {
+                u32 len = d->length, type = get16(f + 12);
+                net.rx++;
+                if (type == ETH_ARP)
+                    rx_arp(f, len);
+                else if (type == ETH_IP)
+                    rx_ip(f, len);
+            } else {
+                net.rx_errors++;
+            }
+            d->length = BUF;
+            d->flags = RX_AVAIL;
+            rx_head = (slot + 1) % RX_RING;
+            found = 1;
             break;
-        if ((flags & RX_DESCRIPTORVALID) && !(flags & RX_ERRORS) && d->length >= 14) {
-            u32 len = d->length, type = get16(f + 12);
-            net.rx++;
-            if (type == ETH_ARP)
-                rx_arp(f, len);
-            else if (type == ETH_IP)
-                rx_ip(f, len);
-        } else {
-            net.rx_errors++;
         }
-        d->length = BUF;
-        d->flags = RX_AVAIL;
-        rx_head = (rx_head + 1) % RX_RING;
-    }
+    } while (found);
     NIC(REG_TXRX_CONTROL) = TXRX_GET;
 }
 
@@ -457,6 +693,20 @@ static void nic_reset(void)
 
 static void nic_stop(void)
 {
+    u32 flags, i;
+
+    if (net.up) {
+        flags = lock();
+        if (ses.state == SESSION_JOINED)
+            session_send(T3MP_BYE, 0, 0);
+        ses.state = SESSION_IDLE;
+        unlock(flags);
+        for (i = 0; i < 1000 && (tx_ring[(tx_tail + TX_RING - 1) % TX_RING].flags & TX_VALID);
+             i++)
+            KeStallExecutionProcessor(5);
+        KeCancelTimer(timer);
+        KeRemoveQueueDpc(tick_dpc);
+    }
     NIC(REG_IRQ_MASK) = 0;
     if (net.up) {
         KeDisconnectInterrupt(interrupt);
@@ -477,7 +727,7 @@ static int nic_start(u32 ip, int irq)
 {
     fn_PhyInitialize phy_init = (fn_PhyInitialize)kernel_export(ORD_PHY_INITIALIZE);
     fn_PhyGetLinkState phy_link = (fn_PhyGetLinkState)kernel_export(ORD_PHY_GET_LINK_STATE);
-    u32 type, i, link, vector;
+    u32 type, i, link, vector, tx_phys, next;
     u8 irql;
 
     if (!phy_init || !phy_link) {
@@ -541,6 +791,13 @@ static int nic_start(u32 ip, int irq)
     NIC(REG_TX_RING) = MmGetPhysicalAddress((void *)tx_ring);
     NIC(REG_RX_RING) = MmGetPhysicalAddress((void *)rx_ring);
     NIC(REG_RING_SIZES) = (RX_RING - 1) << 16 | (TX_RING - 1);
+    /* The NIC loads its descriptor pointers from the ring registers only on a reset: without
+     * this one, most restarts after our own stop received nothing and wedged transmit. */
+    NIC(REG_TXRX_CONTROL) = TXRX_DISABLE | TXRX_RESET;
+    KeStallExecutionProcessor(10);
+    NIC(REG_TXRX_CONTROL) = TXRX_DISABLE;
+    KeStallExecutionProcessor(10);
+    NIC(REG_TXRX_CONTROL) = 0;
 
     NIC(REG_ADAPTER) = 1u << 24 | ADAPTER_PHYVALID;
     NIC(REG_MII_SPEED) = 1u << 8 | 5;
@@ -562,6 +819,16 @@ static int nic_start(u32 ip, int irq)
         NIC(REG_DUPLEX) |= 2u;
     NIC(REG_LINK_SPEED) = (link & LINK_10MBPS ? 1000 : 100) | 0x10000;
 
+    /* Start transmitting at the descriptor the NIC will fetch; after the reset it reads as the
+     * ring base, but a restart that lands elsewhere would otherwise jam the ring. */
+    tx_phys = MmGetPhysicalAddress((void *)tx_ring);
+    next = NIC(REG_TX_CURRENT_DESC);
+    if (next >= tx_phys && next < tx_phys + TX_RING * 8 && !((next - tx_phys) & 7))
+        tx_tail = (next - tx_phys) / 8;
+    tes3x_log_hex3("net.tx_desc", tx_phys, next, NIC(REG_TX_NEXT_DESC));
+    tes3x_log_hex3("net.rx_desc", MmGetPhysicalAddress((void *)rx_ring),
+                   NIC(REG_RX_CURRENT_DESC), NIC(REG_RX_NEXT_DESC));
+
     if (irq) {
         for (i = 0; i < RX_RING; i++) {
             rx_ring[i].paddr = MmGetPhysicalAddress(rx_buf + i * BUF);
@@ -581,6 +848,9 @@ static int nic_start(u32 ip, int irq)
         net.up = 1;
         NIC(REG_IRQ_MASK) = IRQ_ENABLED;
         NIC(REG_RX_CONTROL) |= 1u;
+        KeInitializeTimerEx(timer, 0);
+        KeInitializeDpc(tick_dpc, (void *)tick, 0);
+        arm_timer();
     }
     NIC(REG_TX_CONTROL) |= 1u;
     NIC(REG_TXRX_CONTROL) = TXRX_KICK | TXRX_GET;
@@ -667,6 +937,13 @@ static void stat(void)
     tes3x_log_hex3("net.irq", net.irqs, net.dpcs, 0);
     tes3x_log_hex3("net.answered", net.arp, net.echo, 0);
     tes3x_log_hex3("net.tx", net.tx, net.tx_full, net.tx_errors);
+    if (ses.server) {
+        tes3x_log_hex3("net.session", ses.state, ses.id, ses.client);
+        tes3x_log_hex3("net.joins", ses.hellos, ses.welcomes, ses.timeouts);
+        tes3x_log_hex3("net.beats", ses.beats_out, ses.beats_in, ses.gaps);
+        tes3x_log_hex3("net.rtt_us", ses.rtt_min, ses.rtt_count ? ses.rtt_sum / ses.rtt_count : 0,
+                       ses.rtt_max);
+    }
 }
 
 static const char *word(const char *text, const char *w)
@@ -698,19 +975,94 @@ static const char *number(const char *text, u32 *value)
     return text;
 }
 
-/* A.B.C.D, host order. 0 if malformed. */
-static u32 parse_ip(const char *text)
+/* A.B.C.D into *ip, host order; the text after it, or 0 if malformed. */
+static const char *address(const char *text, u32 *ip)
 {
-    u32 ip = 0, part, i;
+    u32 part, i;
 
+    *ip = 0;
     for (i = 0; i < 4; i++) {
         if (!(text = number(text, &part)) || part > 255)
             return 0;
-        ip = ip << 8 | part;
+        *ip = *ip << 8 | part;
         if (i < 3 && *text++ != '.')
             return 0;
     }
-    return *skip(text) ? 0 : ip;
+    return *ip ? text : 0;
+}
+
+/* up A.B.C.D[/BITS] [SERVER[:PORT] [GATEWAY]] */
+static void command_up(const char *text)
+{
+    u32 ip, bits = 24, server = 0, port = PORT, gateway = 0;
+
+    if (!(text = address(skip(text), &ip)))
+        goto usage;
+    if (*text == '/' && (!(text = number(text + 1, &bits)) || bits < 1 || bits > 30))
+        goto usage;
+    text = skip(text);
+    if (*text) {
+        if (!(text = address(text, &server)))
+            goto usage;
+        if (*text == ':' && (!(text = number(text + 1, &port)) || !port || port > 65535))
+            goto usage;
+        text = skip(text);
+        if (*text && !(text = address(text, &gateway)))
+            goto usage;
+        if (*skip(text))
+            goto usage;
+    }
+    if (!nic_start(ip, 1))
+        return;
+    net.mask = 0xFFFFFFFFu << (32 - bits);
+    announce();
+    tes3x_log_hex3("net.up", ip, bits, server);
+    if (server) {
+        u32 flags = lock();
+        u32 *w = (u32 *)&ses;
+        u32 n;
+
+        for (n = 0; n < sizeof(ses) / 4; n++)
+            w[n] = 0;
+        ses.server = server;
+        ses.port = port;
+        ses.gateway = gateway;
+        /* Off the subnet the frames go to the gateway's MAC. */
+        ses.hop = (server ^ ip) & net.mask && gateway ? gateway : server;
+        if ((server ^ ip) & net.mask && !gateway)
+            tes3x_log("net.no_gateway", server);
+        ses.state = SESSION_ARP;
+        unlock(flags);
+        tes3x_log_hex3("net.session_start", server, port, ses.hop);
+    }
+    return;
+usage:
+    tes3x_log("net.usage", 0);
+}
+
+/* ARP for an address three times and log the replies with the receive and transmit counters,
+ * so a restart can be checked against any host that answers ARP, such as the router. */
+static void probe(const char *text)
+{
+    u32 target, i, flags, rx = net.rx, nobuf = net.rx_nobuf, full = net.tx_full;
+
+    if (!net.up || !(text = address(text, &target)) || *skip(text)) {
+        tes3x_log("net.usage", 0);
+        return;
+    }
+    probe_ip = target;
+    probe_hits = 0;
+    for (i = 0; i < 3; i++) {
+        flags = lock();
+        arp_request(target);
+        unlock(flags);
+        KeStallExecutionProcessor(30000);
+    }
+    for (i = 0; i < 20 && probe_hits < 3; i++)
+        KeStallExecutionProcessor(10000);
+    tes3x_log_hex3("net.probe", probe_hits, net.rx - rx, 0);
+    tes3x_log_hex3("net.probe_errors", net.rx_nobuf - nobuf, net.tx_full - full, net.rx_errors);
+    probe_ip = 0;
 }
 
 int tes3x_net_command(const char *text)
@@ -722,17 +1074,15 @@ int tes3x_net_command(const char *text)
         return 0;
     text = skip(text);
     if ((rest = word(text, "up"))) {
-        if (net.up) {
+        if (net.up)
             tes3x_log("net.already_up", net.ip);
-        } else if (!(value = parse_ip(skip(rest)))) {
-            tes3x_log("net.usage", 0);
-        } else if (nic_start(value, 1)) {
-            announce();
-            tes3x_log_hex("net.up", value);
-        }
+        else
+            command_up(rest);
     } else if ((rest = word(text, "down")) && !*skip(rest)) {
         if (net.up)
             nic_stop();
+    } else if ((rest = word(text, "probe"))) {
+        probe(skip(rest));
     } else if ((rest = word(text, "stat")) && !*skip(rest)) {
         stat();
     } else if (!*text) {

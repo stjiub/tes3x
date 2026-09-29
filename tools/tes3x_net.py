@@ -12,6 +12,7 @@ answers ARP itself and resolves the console's MAC before it pings.
 """
 
 import argparse
+import os
 import socket
 import struct
 import sys
@@ -240,6 +241,126 @@ def ping(args):
     return 0 if not lost else 1
 
 
+T3MP = struct.Struct("<4sBBHIIIII")  # magic, version, type, 0, session, seq, ack, time, echo
+T3MP_VERSION = 1
+HELLO, WELCOME, HEARTBEAT, BYE = 1, 2, 3, 4
+TIMEOUT = 5.0
+
+
+def now_us():
+    return int(time.perf_counter() * 1e6) & 0xFFFFFFFF
+
+
+class Client:
+    def __init__(self, ident, mac):
+        self.id, self.mac = ident, mac
+        self.session = self.seq = self.peer_seq = self.peer_time = 0
+        self.addr = None
+        self.joins = self.beats = self.gaps = 0
+        self.last = time.time()
+        self.alive = False
+
+
+def serve(args):
+    """A session server: welcomes consoles by MAC and answers each heartbeat at once."""
+    link = Tunnel(args.tunnel) if args.tunnel else None
+    if not link:
+        sock = udp_socket()
+        sock.bind((args.bind, args.port))
+    print(f"serving on {'tunnel ' + str(args.tunnel) if link else f'{args.bind}:{args.port}'}",
+          flush=True)
+    clients, by_session = {}, {}
+    deadline = time.time() + args.duration if args.duration else None
+    report = time.time() + args.report
+
+    def send(client, kind, body=b""):
+        client.seq += 1
+        packet = T3MP.pack(b"T3MP", T3MP_VERSION, kind, 0, client.session, client.seq,
+                           client.peer_seq, now_us(), client.peer_time) + body
+        if link:
+            ip, port, mac = client.addr
+            link.send(udp_frame(mac, ip, packet, client.seq))
+        else:
+            sock.sendto(packet, client.addr[:2])
+
+    def handle(packet, addr):
+        if len(packet) < T3MP.size:
+            return
+        magic, version, kind, _, session, seq, _, sent, _ = T3MP.unpack_from(packet)
+        if magic != b"T3MP" or version != T3MP_VERSION:
+            return
+        stamp = time.strftime("%H:%M:%S")
+        if kind == HELLO and len(packet) >= T3MP.size + 10:
+            mac = packet[T3MP.size:T3MP.size + 6].hex(":")
+            build = struct.unpack_from("<I", packet, T3MP.size + 6)[0]
+            client = clients.get(mac)
+            if client is None:
+                client = clients[mac] = Client(len(clients) + 1, mac)
+            by_session.pop(client.session, None)
+            client.session = int.from_bytes(os.urandom(4), "little") or 1
+            by_session[client.session] = client
+            client.addr, client.peer_seq, client.peer_time = addr, seq, sent
+            client.joins += 1
+            client.alive, client.last = True, time.time()
+            verb = "joined" if client.joins == 1 else "rejoined"
+            print(f"{stamp} client {client.id} {verb}: {mac} at {addr[0]}:{addr[1]}, "
+                  f"build {build:#010x}", flush=True)
+            send(client, WELCOME, struct.pack("<I", client.id))
+            return
+        client = by_session.get(session)
+        if client is None:
+            return
+        if seq > client.peer_seq + 1:
+            client.gaps += seq - client.peer_seq - 1
+        client.peer_seq = max(client.peer_seq, seq)
+        client.peer_time, client.addr, client.last = sent, addr, time.time()
+        if not client.alive:
+            print(f"{stamp} client {client.id} back", flush=True)
+            client.alive = True
+        if kind == HEARTBEAT:
+            client.beats += 1
+            send(client, HEARTBEAT)
+        elif kind == BYE:
+            print(f"{stamp} client {client.id} left", flush=True)
+            client.alive = False
+            by_session.pop(session, None)
+
+    while deadline is None or time.time() < deadline:
+        if link:
+            frame = link.recv(0.25)
+            if frame and frame[12:14] == b"\x08\x06" and len(frame) >= 42:
+                op, sha, spa, _, tpa = struct.unpack_from(">H6s4s6s4s", frame, 20)
+                if op == 1 and tpa == socket.inet_aton(PEER_IP):
+                    link.send(arp_frame(2, sha, sha, socket.inet_ntoa(spa)))
+            elif frame:
+                data = udp_from_frame(frame)
+                if data:
+                    src = socket.inet_ntoa(frame[26:30])
+                    handle(data, (src, PORT, frame[6:12]))
+        else:
+            sock.settimeout(0.25)
+            try:
+                data, addr = sock.recvfrom(2048)
+                handle(data, addr)
+            except (socket.timeout, ConnectionResetError):
+                pass
+        now = time.time()
+        for client in clients.values():
+            if client.alive and now - client.last > TIMEOUT:
+                print(f"{time.strftime('%H:%M:%S')} client {client.id} timed out", flush=True)
+                client.alive = False
+        if args.report and now >= report:
+            report = now + args.report
+            for client in clients.values():
+                print(f"  client {client.id}: {'up' if client.alive else 'down'}, joins "
+                      f"{client.joins}, heartbeats {client.beats}, gaps {client.gaps}",
+                      flush=True)
+    for client in clients.values():
+        print(f"client {client.id} {client.mac}: joins {client.joins}, heartbeats "
+              f"{client.beats}, gaps {client.gaps}")
+    return 0 if clients else 1
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -260,8 +381,14 @@ def main(argv=None):
     p.add_argument("--wait", type=float, default=600,
                    help="seconds to wait for the console to answer before measuring")
     p.add_argument("-v", "--verbose", action="store_true")
+    p = sub.add_parser("serve", help="run a session server for consoles (tes3xnet up ... SERVER)")
+    p.add_argument("--port", type=int, default=PORT)
+    p.add_argument("--bind", default="0.0.0.0")
+    p.add_argument("--tunnel", type=int, metavar="PORT", help="serve through xemu's udp backend")
+    p.add_argument("--duration", type=float, help="stop after this many seconds")
+    p.add_argument("--report", type=float, default=30, help="seconds between status lines")
     args = ap.parse_args(argv)
-    return listen(args) if args.command == "listen" else ping(args)
+    return {"listen": listen, "ping": ping, "serve": serve}[args.command](args)
 
 
 if __name__ == "__main__":
