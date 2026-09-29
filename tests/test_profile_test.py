@@ -43,7 +43,8 @@ test = ['exec\\.exit', '!crash\\.']
         self.assertIn("!crash\\.", failures)
 
     def test_comparison_scenario_is_rejected(self):
-        self.scenario.write_text(self.scenario.read_text().replace('"single"', '"comparison"'))
+        self.scenario.write_text(self.scenario.read_text().replace('"single"', '"comparison"')
+                                 + "control = ['exec']\n")
         with self.assertRaisesRegex(TestError, "single"):
             load_scenario(self.scenario)
 

@@ -1,0 +1,17 @@
+kind = "comparison"
+purpose = "With 128 MB and the Tamriel Rebuilt masters, the enlarged heap region leaves more free memory at the first frame and in game than retail's 17 MB region."
+procedure = "Boot identical minimal direct-engine builds of a full Tamriel Rebuilt load order on 128 MB under Cerbios; add heap-region only to the test build, start a new game and compare diag.free_kb."
+limitations = "Original-Xbox hardware, the best size for other load orders, or behaviour on 64 MB."
+watch = 'diag\.patches|region\.|diag\.free_kb|exec\.exit'
+xemu = ["--skip-intro", "--no-reboot", "--ram", "128", "--bios", "cerbios"]
+timeout = 600
+script = '''
+@start new
+wait 30
+tes3xdiag
+exit
+'''
+
+[expect]
+control = ['diag\.free_kb', 'exec\.exit 0', '!region\.']
+test = ['region\.kb [0-9]+', 'diag\.free_kb', 'exec\.exit 0']

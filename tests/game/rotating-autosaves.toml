@@ -1,0 +1,24 @@
+kind = "single"
+purpose = "Four successful engine autosaves rotate through three slots and wrap from slot 3 to slot 1."
+procedure = "Load the level-7 Seyda Neen fixture and request four saves through the rotating-autosave helper; it calls the retail SaveGame routine and advances only after success."
+limitations = "Hardware behaviour."
+watch = 'autosave\.|exec[.>]|diag\.enabled'
+timeout = 240
+save = "vanilla-seyda-neen.ess"
+script = '''
+@start load U:\TES3X\vanilla-seyda-neen.ess
+wait 180
+player->getlevel
+tes3xautosave
+wait 90
+tes3xautosave
+wait 90
+tes3xautosave
+wait 90
+tes3xautosave
+wait 90
+exit
+'''
+
+[expect]
+test = ['console< GetLevel >> 7\.00', 'autosave\.enabled 1', 'autosave\.slots 3', 'autosave\.slot 1', 'autosave\.slot 2', 'autosave\.slot 3', 'exec\.exit']

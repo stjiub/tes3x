@@ -203,3 +203,44 @@ A run's log and build record are kept when a test fails and deleted when it pass
 the built game files, about 2 GB a run, are deleted either way. `--keep-artifacts never` or
 `always` changes that; `always` keeps the ISO and game files too. `--library-all` tests every mod in the library on its own, using
 the profile for everything else.
+
+## Game tests
+
+`tests/game/` holds one test per patch, named after it, plus `smoke.toml`, the profile smoke test
+above. A game test boots the game, so it never runs with the unit tests; the unit tests only check
+that each file is well formed.
+
+```toml
+kind = "comparison"      # or "single"
+purpose = "What this test shows."
+procedure = "How it shows it."
+limitations = "What it does not cover."
+timeout = 180
+script = '''
+@start new
+wait 60
+coc "Balmora, Caius Cosades' House"
+wait 60
+"caius cosades"->cast "fire bite" player
+wait 20
+coc "Balmora"
+wait 60
+assert player->getpos x == -12288.00
+exit
+'''
+
+[expect]
+control = ['!mcp37\.cancelled', 'exec\.exit']
+test = ['mcp37\.cancelled 1', 'exec\.exit']
+```
+
+A `single` test runs one build with the patch. A `comparison` also runs a control build without it,
+for when the difference is the point. The script is an [exec script](#commands-without-a-controller).
+Each expectation is a regular expression that some log line must match; one starting with `!` must
+match none. A run fails on any crash, hang or fatal error line, a failed `assert`, or fewer asserts
+run than the script has. Prefer asserts and a patch's own log counters, such as `mcp37.cancelled`,
+to matching incidental output.
+
+Optional keys: `watch`, a regular expression for the log lines worth keeping; `enable`, the other
+patches every build carries (default `diagnostics` and `console`); `apply`, a valued patch such as
+`profile=0x00137C50`; `save`, a save the script loads; `xemu`, runner options.

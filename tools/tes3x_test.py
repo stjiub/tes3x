@@ -47,35 +47,65 @@ def read_toml(path):
         raise TestError(f"{path}: {exc}") from exc
 
 
-def load_scenario(path):
-    scenario = read_toml(path)
-    allowed = {"kind", "purpose", "procedure", "limitations", "watch", "timeout", "xemu",
-               "script", "expect"}
-    unknown = set(scenario) - allowed
+GAME_TESTS = ROOT / "tests" / "game"
+KINDS = {"single": ("test",), "comparison": ("control", "test")}
+REQUIRED = ("kind", "purpose", "procedure", "script", "expect")
+OPTIONAL = ("limitations", "watch", "timeout", "xemu", "save", "enable", "apply")
+
+
+def game_test_problems(test, where):
+    """Everything wrong with a game test's fields, as messages."""
+    problems = [f"{where}: missing {key}" for key in REQUIRED if key not in test]
+    unknown = set(test) - set(REQUIRED) - set(OPTIONAL)
     if unknown:
-        raise TestError(f"{path}: unknown fields: {', '.join(sorted(unknown))}")
-    if scenario.get("kind") != "single":
-        raise TestError(f"{path}: profile tests must be single scenarios")
-    for field in ("purpose", "procedure", "script"):
-        if not isinstance(scenario.get(field), str) or not scenario[field].strip():
-            raise TestError(f"{path}: {field} must be a non-empty string")
-    if not isinstance(scenario.get("watch", ""), str):
-        raise TestError(f"{path}: watch must be a regular expression")
-    if type(scenario.get("timeout", 300)) not in (int, float) or scenario.get("timeout", 300) <= 0:
-        raise TestError(f"{path}: timeout must be greater than zero")
-    if not isinstance(scenario.get("xemu", []), list) or any(
-            not isinstance(value, str) for value in scenario.get("xemu", [])):
-        raise TestError(f"{path}: xemu must be an array of strings")
-    expect = scenario.get("expect", {})
-    if not isinstance(expect, dict) or not isinstance(expect.get("test"), list) or not expect["test"]:
-        raise TestError(f"{path}: expect.test must be a non-empty array")
-    for expression in [*expect["test"], *GLOBAL_FAILURES, scenario.get("watch", ".")]:
-        if not isinstance(expression, str):
-            raise TestError(f"{path}: expectations must be strings")
+        problems.append(f"{where}: unknown fields: {', '.join(sorted(unknown))}")
+    for key in ("purpose", "procedure", "script"):
+        if key in test and (not isinstance(test[key], str) or not test[key].strip()):
+            problems.append(f"{where}: {key} must be a non-empty string")
+    for key in ("limitations", "watch", "save", "apply"):
+        if key in test and not isinstance(test[key], str):
+            problems.append(f"{where}: {key} must be a string")
+    timeout = test.get("timeout", 300)
+    if type(timeout) not in (int, float) or timeout <= 0:
+        problems.append(f"{where}: timeout must be greater than zero")
+    for key in ("xemu", "enable"):
+        if not isinstance(test.get(key, []), list) or any(
+                not isinstance(value, str) for value in test.get(key, [])):
+            problems.append(f"{where}: {key} must be an array of strings")
+    if test.get("kind") not in KINDS:
+        return problems + [f"{where}: kind must be single or comparison"]
+    roles = KINDS[test["kind"]]
+    expect = test.get("expect")
+    if not isinstance(expect, dict) or set(expect) != set(roles):
+        return problems + [f"{where}: a {test['kind']} test needs expect.{' and expect.'.join(roles)}"]
+    expressions = [test.get("watch", ".")]
+    for role in roles:
+        if not isinstance(expect[role], list) or not expect[role] or any(
+                not isinstance(item, str) for item in expect[role]):
+            problems.append(f"{where}: expect.{role} must be a non-empty array of strings")
+        else:
+            expressions += expect[role]
+    for expression in expressions:
         try:
-            re.compile(expression.removeprefix("!"))
+            re.compile(expression.removeprefix("!") if isinstance(expression, str) else "")
         except re.error as exc:
-            raise TestError(f"{path}: invalid regular expression {expression!r}: {exc}") from exc
+            problems.append(f"{where}: invalid regular expression {expression!r}: {exc}")
+    return problems
+
+
+def load_game_test(path):
+    test = read_toml(path)
+    problems = game_test_problems(test, path)
+    if problems:
+        raise TestError("; ".join(str(problem) for problem in problems))
+    return test
+
+
+def load_scenario(path):
+    """A profile smoke test: a game test with a single build."""
+    scenario = load_game_test(path)
+    if scenario["kind"] != "single":
+        raise TestError(f"{path}: profile tests must be single scenarios")
     return scenario
 
 
@@ -292,8 +322,8 @@ def run_library(args):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("profile", help="the exact profile to build and test")
-    parser.add_argument("--scenario", default=ROOT / "tests" / "smoke.toml",
-                        help="single-run scenario TOML (default: tests/smoke.toml)")
+    parser.add_argument("--scenario", default=GAME_TESTS / "smoke.toml",
+                        help="single-run scenario TOML (default: tests/game/smoke.toml)")
     parser.add_argument("--runner", help="xemu runner to use instead of tools/tes3x_xemu.py")
     parser.add_argument("--config", help="local TES3X config passed to the build pipeline")
     parser.add_argument("--work-root", default="build/profile-tests",

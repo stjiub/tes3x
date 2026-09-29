@@ -1,0 +1,22 @@
+kind = "comparison"
+purpose = "An NPC cast still in progress when the player leaves the cell is cancelled at the cell change."
+procedure = "Start a new game, go to Caius Cosades' house, have Caius cast Fire Bite at the player, change cell to Balmora 20 frames later, then assert the player arrived."
+limitations = "Shows the stale cast is found and cancelled; it does not wait for or reproduce the delayed crash itself. A cast needs a few frames to register: with one frame before the cell change, nothing is in progress."
+watch = 'assert[.>]|mcp37\.|exec\.exit'
+timeout = 180
+script = '''
+@start new
+wait 60
+coc "Balmora, Caius Cosades' House"
+wait 60
+"caius cosades"->cast "fire bite" player
+wait 20
+coc "Balmora"
+wait 60
+assert player->getpos x == -12288.00
+exit
+'''
+
+[expect]
+control = ['!mcp37\.cancelled', 'exec\.exit']
+test = ['mcp37\.cancelled 1', 'exec\.exit']
