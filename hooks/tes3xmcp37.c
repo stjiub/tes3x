@@ -1,5 +1,7 @@
 /* Cancel NPC casts which would otherwise retain an actor reference after a cell change. */
 
+#include "tes3xlog.h"
+
 #ifndef TES3X_MCP37_GAME
 #error "define TES3X_MCP37_GAME to the global game pointer"
 #endif
@@ -26,6 +28,7 @@ void tes3x_mcp37_fix(void)
     void *player_ref;
     void *end;
     void *node;
+    u32 cancelled = 0;
 
     if (!game)
         return;
@@ -44,10 +47,14 @@ void tes3x_mcp37_fix(void)
     while (node != end) {
         char *cast = *(char **)((char *)node + 0x10);
         if (cast && *(unsigned char *)(cast + 0xb4) == 0
-                && player_ref != *(void **)(cast + 0xb8))
+                && player_ref != *(void **)(cast + 0xb8)) {
             *(unsigned char *)(cast + 0xb4) = 7;
+            cancelled++;
+        }
         tree_next(&node);
     }
+    if (cancelled)
+        tes3x_log("mcp37.cancelled", cancelled);
 }
 
 /* Replaces `mov ecx,[game]`. Preserve every other register and the incoming flags. */

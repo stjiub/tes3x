@@ -13,7 +13,10 @@ The hook calls the Xbox tree iterator at `0x000BC7F0`; the PC iterator MCP uses 
 nil-node representation and cannot be copied byte for byte. The Xbox game object also stores the
 magic manager at `+0x6C`, rather than the PC build's `+0x70`.
 
+Each cell change that cancels casts logs `mcp37.cancelled N`. A cast needs a few frames to
+register: one begun on the frame before the cell change is not in the tree yet.
+
 ## What remains
 
-Ordinary cell changes run through the hook, but no test has yet constructed a stale NPC cast or
-reproduced the delayed crash.
+A cast begun 20 frames before a cell change is cancelled, but the delayed crash itself has not been
+reproduced.
