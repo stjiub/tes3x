@@ -25,14 +25,15 @@ try:
     from PySide6.QtCore import (QAbstractTableModel, QFile, QModelIndex, QProcess,
                                 QProcessEnvironment, QSettings, QSortFilterProxyModel, QTimer, Qt,
                                 QUrl, Signal)
-    from PySide6.QtGui import QAction, QActionGroup, QColor, QDesktopServices, QIcon, QTextCursor
+    from PySide6.QtGui import (QAction, QActionGroup, QColor, QDesktopServices, QIcon, QPainter,
+                               QPixmap, QTextCursor)
     from PySide6.QtWidgets import (
         QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
         QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
         QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QProgressBar,
-        QPushButton,
-        QScrollArea, QSpinBox, QSplitter, QStackedWidget, QStatusBar, QStyle, QTableView, QTabWidget,
-        QTextBrowser, QTextEdit, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+        QPushButton, QScrollArea, QSpinBox, QSplitter, QStackedWidget, QStatusBar, QStyle,
+        QTableView, QTabWidget, QTextBrowser, QTextEdit, QToolButton, QTreeWidget, QTreeWidgetItem,
+        QVBoxLayout, QWidget,
     )
 except ImportError as exc:
     raise SystemExit(
@@ -73,6 +74,21 @@ COMPAT = {"works": ("\u2713", QColor(60, 170, 60)),
 # Where Play runs a build: menu label, button suffix and tes3x_xemu.py options.
 PLAY_TARGETS = {"xemu-64": ("xemu (64 MB)", "", []),
                 "xemu-128": ("xemu (128 MB)", " 128 MB", ["--ram", "128", "--bios", "128mb"])}
+
+
+def tinted_icon(icon, colour):
+    """Keep a platform icon's shape while giving toolbar actions distinct accents."""
+    source = icon.pixmap(18, 18)
+    if source.isNull():
+        return icon
+    result = QPixmap(source.size())
+    result.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(result)
+    painter.drawPixmap(0, 0, source)
+    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+    painter.fillRect(result.rect(), QColor(colour))
+    painter.end()
+    return QIcon(result)
 
 
 def plugin_header(path):
@@ -1122,6 +1138,8 @@ class ProfileWindow(QMainWindow):
         self.check_profile_sha = None
         self.check_failed = False
         self.build_failed = False
+        self.deployed_profile_sha = None
+        self.deploy_failed = False
         self.profile_plain = {}
         self.patch_modes = {}
         self.patch_categories = []
@@ -1199,9 +1217,13 @@ class ProfileWindow(QMainWindow):
         self.details_stack = QStackedWidget()
         self.details_stack.addWidget(self.mod_details)
         self.details_stack.addWidget(self.context_info)
+        self.details_container = QWidget()
+        details_layout = QVBoxLayout(self.details_container)
+        details_layout.setContentsMargins(0, self.tabs.tabBar().sizeHint().height(), 0, 0)
+        details_layout.addWidget(self.details_stack)
         self.content_split = QSplitter(Qt.Orientation.Horizontal)
         self.content_split.addWidget(self.tabs)
-        self.content_split.addWidget(self.details_stack)
+        self.content_split.addWidget(self.details_container)
         self.content_split.setStretchFactor(0, 3)
         self.content_split.setStretchFactor(1, 2)
         self.content_split.setSizes([780, 500])
@@ -1227,18 +1249,23 @@ class ProfileWindow(QMainWindow):
         self.statusBar().addPermanentWidget(self.check_state)
         self.build_state = QLabel()
         self.statusBar().addPermanentWidget(self.build_state)
+        self.deploy_state = QLabel()
+        self.statusBar().addPermanentWidget(self.deploy_state)
         self.ftp_status = QPushButton("Xbox: not checked")
         self.ftp_status.setFlat(True)
         self.ftp_status.setToolTip("Click to check the configured Xbox FTP connection")
         self.ftp_status.clicked.connect(self.refresh_ftp_status)
         self.statusBar().addPermanentWidget(self.ftp_status)
         self.update_check_state()
+        self.update_deploy_state()
         self.set_ftp_status("Xbox: not checked", "#616161",
                             "Click to check the configured Xbox FTP connection")
         self.ftp_timer = QTimer(self)
         self.ftp_timer.setInterval(60_000)
         self.ftp_timer.timeout.connect(self.refresh_ftp_status)
 
+        self.menuBar().setFont(self.tabs.tabBar().font())
+        self.menuBar().setStyleSheet("QMenuBar::item { padding: 6px 10px; }")
         file_menu = self.menuBar().addMenu("&File")
         self.action_new = QAction("&New profile…", self)
         self.action_new.setShortcut("Ctrl+N")
@@ -1304,16 +1331,18 @@ class ProfileWindow(QMainWindow):
         actions_menu.addActions([self.action_fetch, self.action_refresh_ftp])
         actions_menu.addSeparator()
         actions_menu.addAction(self.discard_after_deploy)
-        for action, theme, fallback in (
-                (self.action_check, None, QStyle.StandardPixmap.SP_DialogApplyButton),
+        for action, theme, fallback, accent in (
+                (self.action_check, None, QStyle.StandardPixmap.SP_DialogApplyButton, None),
                 (self.action_build, QIcon.ThemeIcon.ViewRefresh,
-                 QStyle.StandardPixmap.SP_BrowserReload),
+                 QStyle.StandardPixmap.SP_BrowserReload, "#1976d2"),
                 (self.action_deploy, QIcon.ThemeIcon.DocumentSend,
-                 QStyle.StandardPixmap.SP_ArrowUp),
+                 QStyle.StandardPixmap.SP_ArrowUp, "#d97706"),
                 (self.action_play, QIcon.ThemeIcon.MediaPlaybackStart,
-                 QStyle.StandardPixmap.SP_MediaPlay)):
+                 QStyle.StandardPixmap.SP_MediaPlay, "#2e7d32")):
             standard = self.style().standardIcon(fallback)
-            action.setIcon(QIcon.fromTheme(theme, standard) if theme else standard)
+            icon = QIcon.fromTheme(theme, standard) if theme else standard
+            action.setIcon(tinted_icon(icon, accent) if accent else icon)
+            action.setProperty("accentColour", accent)
             button = QToolButton()
             button.setDefaultAction(action)
             button.setText(action.text().replace("&", "").replace("…", "").split()[0])
@@ -3313,6 +3342,8 @@ class ProfileWindow(QMainWindow):
         self.check_profile_sha = None
         self.check_failed = False
         self.build_failed = False
+        self.deployed_profile_sha = None
+        self.deploy_failed = False
         self.document = document
         self.profile_plain = plain
         self.library_root = library_root
@@ -3490,7 +3521,8 @@ class ProfileWindow(QMainWindow):
             return
         if not self.save_profile():
             return
-        self.command_kind = "check" if "--check" in extra else "build"
+        self.command_kind = ("check" if "--check" in extra else
+                             "deploy" if "--deploy" in extra else "build")
         self.start_command(ROOT / "tools" / "tes3x_pipeline.py", [
             str(self.profile_path),
             *(["--config", str(self.local_config_path())]
@@ -3520,6 +3552,7 @@ class ProfileWindow(QMainWindow):
 
     def update_build_state(self):
         self.update_check_state()
+        self.update_deploy_state()
         if self.command_kind == "build":
             self.set_status_badge(self.build_state, "Building…", "#a15c00")
             self.build_state.setToolTip("The profile is being built")
@@ -3557,11 +3590,34 @@ class ProfileWindow(QMainWindow):
             except OSError:
                 current = False
             if current and not self.is_dirty():
-                text, colour, tip = "Check passed", "#2e7d32", "The saved profile passed Check"
+                text, colour, tip = "Checked", "#2e7d32", "The saved profile passed Check"
             else:
                 text, colour, tip = "Check needed", "#a15c00", "The profile changed since Check"
         self.set_status_badge(self.check_state, text, colour)
         self.check_state.setToolTip(tip)
+
+    def update_deploy_state(self):
+        if not hasattr(self, "deploy_state"):
+            return
+        if self.command_kind == "deploy":
+            text, colour, tip = "Deploying…", "#a15c00", "Synchronizing the build to the Xbox"
+        elif self.deploy_failed:
+            text, colour, tip = "Deploy failed", "#b3261e", "The last deploy failed; see the output"
+        elif self.deployed_profile_sha is None:
+            text, colour, tip = ("Deploy unknown", "#616161",
+                                 "No deploy has completed during this GUI session")
+        else:
+            try:
+                current = sha256_file(self.profile_path) == self.deployed_profile_sha
+            except OSError:
+                current = False
+            if current and not self.is_dirty():
+                text, colour, tip = "Deployed", "#2e7d32", "The current profile was deployed"
+            else:
+                text, colour, tip = ("Deploy needed", "#a15c00",
+                                     "The profile changed since it was deployed")
+        self.set_status_badge(self.deploy_state, text, colour)
+        self.deploy_state.setToolTip(tip)
 
     def set_ftp_status(self, text, colour, tip):
         self.set_status_badge(self.ftp_status, text, colour)
@@ -3653,6 +3709,8 @@ class ProfileWindow(QMainWindow):
     def run_steps(self, steps, first=True):
         """Run commands one after another, stopping at the first that fails."""
         script, arguments, message = steps[0]
+        if Path(script).name == "tes3x_deploy.py":
+            self.command_kind = "deploy"
         self.start_command(script, arguments, message, clear=first)
         if len(steps) > 1:
             self.after_command = lambda: self.run_steps(steps[1:], first=False)
@@ -3824,6 +3882,13 @@ class ProfileWindow(QMainWindow):
                     self.check_profile_sha = None
         elif kind == "build":
             self.build_failed = code != 0
+        elif kind == "deploy":
+            self.deploy_failed = code != 0
+            if code == 0:
+                try:
+                    self.deployed_profile_sha = sha256_file(self.profile_path)
+                except OSError:
+                    self.deployed_profile_sha = None
         self.process = None
         self.command_progress.hide()
         for action in self.command_actions:

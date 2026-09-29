@@ -106,7 +106,15 @@ order = 10
                          ["Mods", "Plugins", "Archives", "Data Files", "Patches", "INI",
                           "Resources", "Build"])
         self.assertEqual(window.counts.contentsMargins().right(), 8)
+        self.assertEqual(window.details_container.layout().contentsMargins().top(),
+                         window.tabs.tabBar().sizeHint().height())
+        self.assertEqual(window.menuBar().font(), window.tabs.tabBar().font())
         self.assertTrue(window.command_progress.isHidden())
+        for action, colour in ((window.action_build, "#1976d2"),
+                               (window.action_deploy, "#d97706"),
+                               (window.action_play, "#2e7d32")):
+            self.assertFalse(action.icon().isNull())
+            self.assertEqual(action.property("accentColour"), colour)
         budget = window.resource_budget.topLevelItem(0)
         self.assertEqual((budget.text(0), budget.text(1)), ("Mod", "2"))
         self.assertIs(window.details_stack.widget(0), window.mod_details)
@@ -428,6 +436,8 @@ order = 10
         self.assertIn("#b3261e", window.build_state.styleSheet())
         self.assertEqual(window.check_state.text(), "Not checked")
         self.assertIn("#616161", window.check_state.styleSheet())
+        self.assertEqual(window.deploy_state.text(), "Deploy unknown")
+        self.assertIn("#616161", window.deploy_state.styleSheet())
         self.assertIn("#616161", window.ftp_status.styleSheet())
         buttons = [window.profile_bar.itemAt(i).widget()
                    for i in range(window.profile_bar.count())]
@@ -485,7 +495,7 @@ order = 10
         self.assertEqual(window.check_state.text(), "Check: running…")
         self.assertIn("#a15c00", window.check_state.styleSheet())
         window.command_finished(0, None)
-        self.assertEqual(window.check_state.text(), "Check passed")
+        self.assertEqual(window.check_state.text(), "Checked")
         self.assertIn("#2e7d32", window.check_state.styleSheet())
 
         window.command_kind = "check"
@@ -496,6 +506,18 @@ order = 10
         self.assertIn("#a15c00", window.ftp_status.styleSheet())
         window.set_ftp_status("Xbox: connected", "#2e7d32", "Connected")
         self.assertIn("#2e7d32", window.ftp_status.styleSheet())
+
+        window.command_kind = "deploy"
+        window.update_build_state()
+        self.assertEqual(window.deploy_state.text(), "Deploying…")
+        self.assertIn("#a15c00", window.deploy_state.styleSheet())
+        window.command_finished(0, None)
+        self.assertEqual(window.deploy_state.text(), "Deployed")
+        self.assertIn("#2e7d32", window.deploy_state.styleSheet())
+        self.profile.write_text(self.profile.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+        window.update_build_state()
+        self.assertEqual(window.deploy_state.text(), "Deploy needed")
+        self.assertIn("#a15c00", window.deploy_state.styleSheet())
 
         with patch("tes3x_gui.QProcess"):
             window.start_command("tool.py", [], "Working…")
