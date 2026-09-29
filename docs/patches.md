@@ -23,6 +23,7 @@ and `release` patches are ready for general use.
 | [`mcp-37`](../patches/mcp-37.md) | Cancel stale NPC casts before a cell change leaves them dangling. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #37 | core | dev | by name |
 | [`mcp-97`](../patches/mcp-97.md) | Advance the script parser correctly while initializing saved data. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #97 | core | preview | testing preset |
 | [`mcp-98`](../patches/mcp-98.md) | Keep animated-container access from destroying a live animation. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #98 | core | dev | by name |
+| [`mcp-92`](../patches/mcp-92.md) | Retire a summoned actor's magic before the actor is destroyed. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #92 | core | dev | by name |
 | [`mcp-154`](../patches/mcp-154.md) | Pad compiled script-data allocations to keep dword reads in bounds. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #154 | core | dev | by name |
 | [`mcp-102`](../patches/mcp-102.md) | Reactivate script-triggered objects after their script mod is removed. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #102 | correctness | preview | testing preset |
 | [`dxt5-size`](../patches/dxt5-size.md) | Allocate DXT5 textures at their real size, not a negative one that corrupts video memory. | TES3X | core | preview | testing preset |

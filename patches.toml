@@ -167,6 +167,15 @@ selection = "preset"
 summary = "Keep animated-container access from destroying a live animation."
 
 [[patch]]
+name = "mcp-92"
+origin = { source = "MCP", id = "92" }
+bit = 28
+category = "core"
+channel = "dev"
+selection = "preset"
+summary = "Retire a summoned actor's magic before the actor is destroyed."
+
+[[patch]]
 name = "mcp-154"
 origin = { source = "MCP", id = "154" }
 bit = 10

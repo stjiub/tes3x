@@ -453,6 +453,20 @@ MCP98_REFCOUNT_SIG = re.compile(
     re.S,
 )
 
+# The summon-effect removal path already retires spells cast by the actor. Its following virtual
+# cleanup leaves magic targeting that actor alive, however. MCP replaces that call with the same
+# MobileActor::retireMagic wrapper used by the normal actor-lifetime paths.
+MCP92_UNSUMMON_SIG = re.compile(
+    rb"\x8b\xce\xe8....\x8b\x16\x6a\x01\x8b\xce\x8b\xf8\xff\x52\x14"
+    rb"\x8b\xce\xe8....\xa1....\x8b\x48\x6c\x56\xe8...."
+    rb"(?P<site>\x8b\x17\x6a\x00\x8b\xcf\xff\x52\x70)"
+    rb"\x6a\x01\x8b\xce\xe8....",
+    re.S,
+)
+MCP92_RETIRE_MAGIC_SIG = re.compile(
+    rb"\x8b\x41\x14\x8b\x0d....\x8b\x49\x6c\x50\xe8....\xc3"
+)
+
 # Script data is allocated from the SCDT chunk length on both initial load and reload. The
 # reader can touch one dword beyond that data, so MCP pads both allocations by four bytes.
 MCP154_LOAD_SIG = re.compile(
@@ -698,6 +712,20 @@ def find_mcp98_refcounts(x):
     if target != offsets[2]:
         raise PatchError("mcp-98: release guard does not target the common return")
     return vas
+
+
+def find_mcp92_unsummon(x):
+    """Find the unsummon cleanup call and MobileActor::retireMagic wrapper."""
+    sites = list(MCP92_UNSUMMON_SIG.finditer(bytes(x.data)))
+    targets = list(MCP92_RETIRE_MAGIC_SIG.finditer(bytes(x.data)))
+    if len(sites) != 1 or len(targets) != 1:
+        raise PatchError("mcp-92: %d unsummon path(s), %d retire-magic wrapper(s), expected 1 each"
+                         % (len(sites), len(targets)))
+    site = x.off_to_va(sites[0].start("site"))
+    target = x.off_to_va(targets[0].start())
+    if site is None or target is None:
+        raise PatchError("mcp-92: cleanup path is outside any section")
+    return site, target
 
 
 def _find_mcp154_site(x, signature, label):
@@ -1033,6 +1061,16 @@ def _mcp_98(x, value, ctx):
         (release_off, 2, "animated-container release 0x%08X -> 0x%08X"
          % (release, exit_va)),
     ]
+
+
+@patch("mcp-92")
+def _mcp_92(x, value, ctx):
+    """Retire magic targeting a summoned actor before destroying the actor."""
+    site, target = find_mcp92_unsummon(x)
+    off = x.va_to_off(site)
+    replacement = b"\x8b\xcf\xe8" + struct.pack("<i", target - (site + 7)) + b"\x90\x90"
+    x.data[off:off + 9] = replacement
+    return [(off, 9, "summon magic cleanup 0x%08X -> 0x%08X" % (site, target))]
 
 
 @patch("mcp-154")
@@ -1773,6 +1811,7 @@ LOCATORS = {
     "ref-skip": find_ref_skip,
     "mcp-97-scan": find_mcp97_scan,
     "mcp-98": lambda image: find_mcp98_refcounts(image)[0],
+    "mcp-92": lambda image: find_mcp92_unsummon(image)[0],
     "mcp-154-load": find_mcp154_load,
     "mcp-154-reload": find_mcp154_reload,
     "mcp-102-actn": find_mcp102_actn,

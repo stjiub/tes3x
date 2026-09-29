@@ -794,16 +794,6 @@ summary = "Item recharging rebalance"
 reason = "Balance change, opt in only; MCP ships it as an option rather than a defect fix."
 
 [[candidate]]
-name = "mcp-92"
-origin = { source = "MCP", id = "92" }
-category = "core"
-default = "intended default"
-status = "candidate"
-priority = "high"
-summary = "Summoned creature dangling-reference crash"
-reason = "Reproduce unsummoning through non-death paths and locate the lifetime transition."
-
-[[candidate]]
 name = "mcp-93"
 origin = { source = "MCP", id = "93" }
 category = "correctness"

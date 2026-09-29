@@ -1,0 +1,15 @@
+kind = "comparison"
+purpose = "Dispelling or unloading a summoned creature retires its active magic before destroying the actor."
+procedure = "Use a fixture spell which summons a creature with a defensive ability and a lasting spell. Cast it, confirm both effects are active, then dispel the summon or leave the cell in control and patched builds."
+limitations = "The command script proves both builds reach play. Creating the summon and observing its active effects require a purpose-built fixture or manual setup before this can validate the fix."
+watch = 'diag\.patches|exec\.exit|crash\.|hang\.detected|fatal\.'
+timeout = 180
+script = '''
+@start new
+wait 60
+exit
+'''
+
+[expect]
+control = ['exec\.exit 0']
+test = ['diag\.patches', 'exec\.exit 0']

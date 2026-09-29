@@ -13,7 +13,8 @@ from tes3x_pipeline import (PipelineError, copy_retail_root, link_or_copy, resol
                             preference_flags, sanitized_command, validate_local_config,
                             validate_profile)
 from tes3x_pipeline import main as pipeline_main
-from tes3x_patch import MCP37_TREE_NEXT_SIG, _mcp_37, _mcp_97, _mcp_98, _mcp_102, _mcp_154
+from tes3x_patch import (MCP37_TREE_NEXT_SIG, _mcp_37, _mcp_92, _mcp_97, _mcp_98,
+                         _mcp_102, _mcp_154)
 from tes3x_plugins import (collect, dependency_order, fetch_rules, run_arrange, validate_order,
                            warnings as mlox_warnings)
 from test_reach import rec, sub
@@ -562,6 +563,46 @@ class PipelinePlanTests(unittest.TestCase):
             'package': {'mode': 'merged-bsa'},
         })
         self.assertEqual(plan['applied'], ['mcp-98'])
+        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c'])
+
+    def test_mcp_92_replaces_virtual_cleanup_with_retire_magic(self):
+        unsummon = bytes.fromhex(
+            '8bcee8112233448b166a018bce8bf8ff5214'
+            '8bcee855667788a1112233448b486c56e899aabbcc'
+            '8b176a008bcfff52706a018bcee8ddeeff00'
+        )
+        wrapper = bytes.fromhex('8b41148b0d556677888b496c50e811223344c3')
+
+        class Image:
+            base = 0x100000
+
+            def __init__(self):
+                self.data = bytearray(b'\x90' * 32 + unsummon + b'\x90' * 16 + wrapper
+                                      + b'\xcc' * 16)
+
+            def off_to_va(self, offset):
+                return self.base + offset
+
+            def va_to_off(self, va):
+                return va - self.base
+
+        image = Image()
+        edits = _mcp_92(image, '', {})
+        site = 32 + unsummon.index(bytes.fromhex('8b176a008bcfff5270'))
+        target = 32 + len(unsummon) + 16
+        self.assertEqual(image.data[site:site + 2], bytes.fromhex('8bcf'))
+        self.assertEqual(image.data[site + 2], 0xe8)
+        rel = struct.unpack_from('<i', image.data, site + 3)[0]
+        self.assertEqual(image.off_to_va(site) + 7 + rel, image.off_to_va(target))
+        self.assertEqual(image.data[site + 7:site + 9], b'\x90\x90')
+        self.assertEqual([(offset, length) for offset, length, _label in edits], [(site, 9)])
+
+    def test_mcp_92_needs_no_dedicated_hook_source(self):
+        plan = resolve_patch_plan({
+            'patches': {'preset': 'minimal', 'enable': ['mcp-92']},
+            'package': {'mode': 'merged-bsa'},
+        })
+        self.assertEqual(plan['applied'], ['mcp-92'])
         self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c'])
 
     def test_mcp_154_pads_both_script_data_allocations(self):
