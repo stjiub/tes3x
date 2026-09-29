@@ -129,9 +129,6 @@ first start, with no `tes3x.local.toml` yet, it opens the local settings.
 - **INI** shows the `Morrowind.ini` the build ships: the retail values, and the `[Xbox]` keys of
   the patches that are on. Double-click a value to change it; only changed values go in the
   profile. When a patch is turned off, the values only it reads are dropped.
-- **Health** reports missing plugin masters and mod dependencies, required patches that are off,
-  archives that cannot be unpacked, filenames that exceed the configured limit, plugin overflow
-  and unknown or failed Xbox compatibility.
 - **Resources** shows each active mod's source file and texture footprint before conversion and
   packing. Its dependency view combines mod dependencies and plugin masters and marks anything
   missing or ordered too late.

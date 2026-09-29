@@ -1176,7 +1176,6 @@ class ProfileWindow(QMainWindow):
         self.ini.changed.connect(self.refresh_status)
         self.ini.tree.itemSelectionChanged.connect(self.show_context_info)
         self.tabs.addTab(self.ini, "INI")
-        self.tabs.addTab(self.create_health_panel(), "Health")
         self.tabs.addTab(self.create_resources_panel(), "Resources")
         self.build = BuildSettings()
         self.build.on_change = self.build_changed
@@ -1472,14 +1471,6 @@ class ProfileWindow(QMainWindow):
             if patch:
                 lines += ["", f"Read by patch: {patch[3]}"]
             self.context_info.setPlainText("\n".join(lines))
-        elif tab == "Health":
-            items = self.health_tree.selectedItems()
-            if len(items) != 1:
-                self.context_info.setPlainText(
-                    "Profile Health checks the current selection before a build.")
-                return
-            severity, subject, problem = items[0].data(0, ROLE)
-            self.context_info.setPlainText(f"{severity}: {subject}\n\n{problem}")
         elif tab == "Resources":
             tree = (self.resource_budget if self.resource_tabs.currentIndex() == 0
                     else self.resource_dependencies)
@@ -1586,22 +1577,6 @@ class ProfileWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addLayout(bar)
         layout.addWidget(self.files_view, 1)
-        return panel
-
-    def create_health_panel(self):
-        self.health_summary = QLabel("Waiting for profile analysis…")
-        self.health_summary.setWordWrap(True)
-        self.health_tree = QTreeWidget()
-        self.health_tree.setHeaderLabels(["Severity", "Item", "Problem"])
-        self.health_tree.setRootIsDecorated(False)
-        self.health_tree.setAlternatingRowColors(True)
-        self.health_tree.header().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        self.health_tree.itemSelectionChanged.connect(self.show_context_info)
-        panel = QWidget()
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.health_summary)
-        layout.addWidget(self.health_tree, 1)
         return panel
 
     def create_resources_panel(self):
@@ -2307,7 +2282,6 @@ class ProfileWindow(QMainWindow):
         self.populate_plugins()
         self.highlight_conflicts()
         self.refresh_status()
-        self.refresh_health(files)
         self.refresh_resources()
         self.show_mod_info()
 
@@ -2394,91 +2368,6 @@ class ProfileWindow(QMainWindow):
             self.resource_budget.resizeColumnToContents(column)
         for column in (0, 1, 3):
             self.resource_dependencies.resizeColumnToContents(column)
-
-    def refresh_health(self, files=None):
-        """Summarise problems that can be found without running a build."""
-        if not hasattr(self, "health_tree") or not hasattr(self, "build"):
-            return
-        issues = []
-
-        def add(severity, subject, problem):
-            issues.append((severity, subject, problem))
-
-        active_ids = {item.data(0, ROLE).get("id") for item, _mod in self.analysis["active"]}
-        for item, _mod in self.analysis["active"]:
-            entry = item.data(0, ROLE)
-            name, _version, release, problem = self.describe(entry)
-            if problem:
-                add("Error", name, problem)
-                continue
-            verdict = self.compat_verdict(item)
-            if verdict is None or verdict["status"] == "untested":
-                add("Notice", name, "Xbox compatibility is unknown.")
-            elif verdict["status"] == "passes-automated":
-                add("Notice", name, "Only an automated test has passed; compatibility is unknown.")
-            elif verdict["status"] in ("broken", "not-possible"):
-                add("Error", name, f"Xbox compatibility: {COMPAT_LABELS[verdict['status']]}")
-            if verdict:
-                off = [patch for patch in verdict.get("patches", [])
-                       if patch not in self.applied_patches]
-                if off:
-                    add("Error", name, "Required patches are off: " + ", ".join(off))
-                requirements = []
-                if verdict.get("ram") == 128:
-                    requirements.append("128 MB RAM")
-                if verdict.get("bios"):
-                    requirements.append(verdict["bios"].title() + " BIOS")
-                requirements += verdict.get("requirements", [])
-                if requirements:
-                    add("Notice", name, "Requires " + ", ".join(requirements))
-            missing = [mod_id for mod_id in (release or {}).get("dependencies", [])
-                       if mod_id not in active_ids]
-            if missing:
-                add("Error", name, "Missing mod dependencies: " + ", ".join(missing))
-
-        for item in self.plugin_list.rows():
-            if (item.data(0, ROLE) and item.checkState(0) == Qt.CheckState.Checked
-                    and item.toolTip(0)):
-                add("Error", item.text(0), item.toolTip(0))
-        plugin_count = sum(1 for item in self.plugin_list.rows()
-                           if item.checkState(0) == Qt.CheckState.Checked)
-        if plugin_count > 256:
-            add("Error", "Plugins", f"{plugin_count} plugins exceed the 256 load-index limit.")
-
-        for item in self.archives.findItems("can't unpack", Qt.MatchFlag.MatchExactly, 2):
-            add("Error", item.text(0), item.toolTip(2) or "Archive cannot be unpacked.")
-
-        current_files = files if files is not None else self.files_model.entries
-        limit = self.build.max_filename.value()
-        long_names = [(path, owner) for path, owner, _others in current_files
-                      if len(Path(path).name) > limit]
-        if long_names:
-            examples = ", ".join(path for path, _owner in long_names[:3])
-            if len(long_names) > 3:
-                examples += f" and {len(long_names) - 3} more"
-            add("Error", "Data Files",
-                f"{len(long_names)} filenames exceed the configured {limit}-character limit: "
-                + examples)
-
-        rank = {"Error": 0, "Notice": 1}
-        issues.sort(key=lambda row: (rank[row[0]], row[1].casefold(), row[2].casefold()))
-        self.health_tree.clear()
-        for issue in issues:
-            item = QTreeWidgetItem(list(issue))
-            item.setData(0, ROLE, issue)
-            if issue[0] == "Error":
-                item.setForeground(0, WARNING)
-            self.health_tree.addTopLevelItem(item)
-        errors = sum(severity == "Error" for severity, _subject, _problem in issues)
-        notices = len(issues) - errors
-        if not issues:
-            self.health_summary.setText("No problems found in the current profile.")
-        else:
-            parts = [f"{errors} error{'' if errors == 1 else 's'}" if errors else "",
-                     f"{notices} notice{'' if notices == 1 else 's'}" if notices else ""]
-            self.health_summary.setText(" · ".join(part for part in parts if part))
-        self.health_tree.resizeColumnToContents(0)
-        self.health_tree.resizeColumnToContents(1)
 
     def populate_archives(self, files):
         """The archives the build ships, and whether the engine opens each one."""
@@ -3076,7 +2965,6 @@ class ProfileWindow(QMainWindow):
             for row in self.mod_rows():
                 self.update_compat(row)
             self.mods_loading = loading
-        self.refresh_health()
 
     def sync_patch_ini(self, applied):
         """Show the ini keys of patches that are on; drop profile values only dead patches read."""
