@@ -375,7 +375,8 @@ order = 10
         import hashlib
         import json
         config = self.root / "local.toml"
-        config.write_text('[paths]\nbuild_root = "out"\n', encoding="utf-8")
+        config.write_text('[paths]\nbuild_root = "out"\n[xemu]\nexe = "xemu.exe"\n',
+                          encoding="utf-8")
         window = self.window(config=config)
         self.assertEqual(window.action_settings.text(), "&Settings…")
         self.assertEqual(window.build_status()[0], "missing")
@@ -399,6 +400,24 @@ order = 10
         self.assertEqual(calls[1][0], "tes3x_xemu.py")
         self.assertEqual(calls[1][1][1:], ["--deploy", str(output / "deploy"), "--keep-iso", "--disk",
                                            str(self.root / "build/play/profile/hdd.qcow2")])
+
+        self.assertTrue(calls[1][1][0].startswith("play-profile-xemu-64-"))
+
+        # 128 MB needs its BIOS set; then it passes the runner's 128 MB options.
+        self.assertFalse(window.play_targets["xemu-128"].isEnabled())
+        with patch.object(window, "error") as error:
+            window.play("xemu-128")
+        self.assertIn("128 MB BIOS", error.call_args.args[0])
+        config.write_text(config.read_text(encoding="utf-8") + 'bios_128mb = "cerbios.bin"\n',
+                          encoding="utf-8")
+        window.update_play_targets()
+        self.assertTrue(window.play_targets["xemu-128"].isEnabled())
+        with patch.object(window, "start_command", side_effect=start):
+            window.process = None
+            window.play("xemu-128")
+        self.assertIn("--ram", calls[2][1])
+        self.assertEqual(calls[2][1][calls[2][1].index("--ram") + 1], "128")
+        self.assertEqual(window.play_button.text(), "Play 128 MB")
 
         self.profile.write_text(self.profile.read_text(encoding="utf-8") + "\n", encoding="utf-8")
         self.assertEqual(window.build_status()[0], "stale")

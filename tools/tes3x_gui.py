@@ -23,7 +23,7 @@ try:
     from PySide6.QtCore import (QAbstractTableModel, QFile, QModelIndex, QProcess,
                                 QProcessEnvironment, QSettings, QSortFilterProxyModel, QTimer, Qt,
                                 QUrl, Signal)
-    from PySide6.QtGui import QAction, QColor, QDesktopServices, QIcon, QTextCursor
+    from PySide6.QtGui import QAction, QActionGroup, QColor, QDesktopServices, QIcon, QTextCursor
     from PySide6.QtWidgets import (
         QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
         QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
@@ -67,6 +67,9 @@ WARNING = QColor(200, 40, 40)
 COMPAT = {"works": ("\u2713", QColor(60, 170, 60)),
           "works-with-requirements": ("*", QColor(215, 150, 20)),
           "broken": ("\u2717", WARNING), "not-possible": ("\u2717", WARNING)}
+# Where Play runs a build: menu label, button suffix and tes3x_xemu.py options.
+PLAY_TARGETS = {"xemu-64": ("xemu (64 MB)", "", []),
+                "xemu-128": ("xemu (128 MB)", " 128 MB", ["--ram", "128", "--bios", "128mb"])}
 
 
 def plugin_header(path):
@@ -1172,7 +1175,7 @@ class ProfileWindow(QMainWindow):
         self.discard_after_deploy.setCheckable(True)
         self.action_play = QAction("&Play in xemu", self)
         self.action_play.setShortcut("F9")
-        self.action_play.triggered.connect(self.play)
+        self.action_play.triggered.connect(lambda: self.play())
         self.action_reset_play = QAction("Reset xemu saves…", self)
         self.action_reset_play.triggered.connect(self.reset_play_disk)
         actions_menu.addActions([self.action_check, self.action_build, self.action_play,
@@ -1199,11 +1202,26 @@ class ProfileWindow(QMainWindow):
                 f" ({action.shortcut().toString()})" if not action.shortcut().isEmpty() else ""))
             self.profile_bar.addWidget(button)
             if action is self.action_play:
+                self.play_button = button
+                self.play_menu = QMenu(self)
+                self.play_menu.setToolTipsVisible(True)
+                group = QActionGroup(self)
+                self.play_targets = {}
+                for key, (label, _suffix, _options) in PLAY_TARGETS.items():
+                    target = self.play_menu.addAction(label, lambda key=key: self.play(key))
+                    target.setCheckable(True)
+                    group.addAction(target)
+                    self.play_targets[key] = target
+                button.setMenu(self.play_menu)
+                button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
                 self.build_state = QLabel()
                 self.profile_bar.addWidget(self.build_state)
         self.command_actions = (self.action_check, self.action_build, self.action_play,
                                 self.action_smoke, self.action_deploy, self.action_fetch)
         self.after_command = None
+        self.play_target = (self.settings.value("play_target", "xemu-64") if self.settings
+                            else "xemu-64")
+        self.update_play_targets()
         self.state_timer = QTimer(self)
         self.state_timer.setInterval(1500)
         self.state_timer.timeout.connect(self.update_build_state)
@@ -2801,6 +2819,7 @@ class ProfileWindow(QMainWindow):
             self.open_profile(self.profile_path)
         self.refresh_profile_list()
         self.refresh_ftp_status()
+        self.update_play_targets()
         self.statusBar().showMessage(f"Saved {dialog.path}", 5000)
 
     def open_profile(self, path, quiet=False):
@@ -3029,7 +3048,37 @@ class ProfileWindow(QMainWindow):
         self.build_state.setText(f"<span style='color:{colour.name()}'>●</span> {text}")
         self.build_state.setToolTip(tip)
 
-    def play(self):
+    def play_available(self):
+        """Each Play target, and why it cannot run when it cannot."""
+        xemu = self.local_values().get("xemu", {})
+        missing = "Set the xemu files in File > Settings" if not xemu.get("exe") else None
+        return {"xemu-64": missing,
+                "xemu-128": missing or (None if xemu.get("bios_128mb") or xemu.get("cerbios")
+                                        else "Set a 128 MB BIOS in File > Settings")}
+
+    def update_play_targets(self):
+        available = self.play_available()
+        if self.play_target not in PLAY_TARGETS or available[self.play_target]:
+            self.play_target = "xemu-64"
+        for key, target in self.play_targets.items():
+            target.setEnabled(not available[key])
+            target.setToolTip(available[key] or "")
+            target.setChecked(key == self.play_target)
+        label, suffix, _options = PLAY_TARGETS[self.play_target]
+        self.action_play.setText(f"&Play in {label}")
+        self.play_button.setText("Play" + suffix)
+        self.play_button.setToolTip(f"Play in {label} (F9); the arrow picks where")
+
+    def play(self, target=None):
+        reason = self.play_available()[target or self.play_target]
+        if reason:
+            self.error(reason)
+            return
+        if target is not None:
+            self.play_target = target
+            if self.settings is not None:
+                self.settings.setValue("play_target", target)
+            self.update_play_targets()
         if self.process is not None:
             self.error("A TES3X command is already running")
             return
@@ -3046,7 +3095,7 @@ class ProfileWindow(QMainWindow):
         """The ISO an earlier play made of the current build, so it is not packed again."""
         built = (self.build_output() / PIPELINE_MARKER).stat().st_mtime
         runs = self.work_dir() / "build" / "xemu"
-        isos = sorted(runs.glob(f"play-{self.profile_path.stem}-*/game.iso"),
+        isos = sorted(runs.glob(f"play-{self.profile_path.stem}-{self.play_target}-*/game.iso"),
                       key=lambda path: path.stat().st_mtime)
         current = isos[-1] if isos and isos[-1].stat().st_mtime >= built else None
         for iso in isos:
@@ -3061,10 +3110,11 @@ class ProfileWindow(QMainWindow):
                   else ["--deploy", str(self.build_output() / "deploy"), "--keep-iso"])
         environment = QProcessEnvironment.systemEnvironment()
         environment.insert("TES3X_CONFIG", str(self.local_config_path()))
+        label, _suffix, options = PLAY_TARGETS[self.play_target]
         self.start_command(ROOT / "tools" / "tes3x_xemu.py",
-                           [f"play-{self.profile_path.stem}-{stamp}", *source,
-                            "--disk", str(self.play_disk())],
-                           "Playing in xemu…", environment)
+                           [f"play-{self.profile_path.stem}-{self.play_target}-{stamp}", *source,
+                            *options, "--disk", str(self.play_disk())],
+                           f"Playing in {label}…", environment)
 
     def play_disk(self):
         """The profile's own xemu disk, which keeps its saves between plays."""

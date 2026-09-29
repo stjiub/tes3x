@@ -302,6 +302,13 @@ def check_iso(iso):
     print(f"iso: {last}")
 
 
+def link_or_copy(source, target):
+    try:
+        os.link(source, target)
+    except OSError:
+        shutil.copy2(source, target)
+
+
 def clear_limit64(xbe):
     """Clear the XBE init flag that caps a title at 64 MB on a 128 MB console."""
     data = bytearray(xbe.read_bytes())
@@ -390,7 +397,7 @@ def main():
     ap.add_argument("--bios", help="BIOS to boot instead of [xemu] bios; `128mb` for "
                                    "[xemu] bios_128mb")
     ap.add_argument("--ram", type=int, choices=(64, 128), default=64,
-                    help="guest RAM in MB; 128 also clears Limit64MB when building from a profile")
+                    help="guest RAM in MB; 128 also clears Limit64MB in the XBE it packs")
     a = ap.parse_args(argv)
     missing = [f"{key} ({label})" for key, label in FILES.items() if key not in CONFIG]
     if missing:
@@ -434,11 +441,21 @@ def main():
                 ini += [x for kv in NO_REBOOT for x in ("--ini-set", kv)]
             run([sys.executable, TOOLS / "tes3x_pipeline.py", a.profile,
                  "--out", out / "pipeline", *ini, *passthru])
+        packed = deploy
         if a.ram == 128 and a.profile:
             clear_limit64(deploy / "morrowind.xbe")
+        elif a.ram == 128:
+            # Someone else's deploy tree: pack a linked copy holding a patched XBE of its own.
+            packed = out / "stage"
+            shutil.copytree(deploy, packed, copy_function=link_or_copy)
+            (packed / "morrowind.xbe").unlink()
+            shutil.copy2(deploy / "morrowind.xbe", packed / "morrowind.xbe")
+            clear_limit64(packed / "morrowind.xbe")
         if a.direct_engine:
             shutil.copy2(deploy / "morrowind.xbe", deploy / "Default.xbe")
-        run([CONFIG["extract_xiso"], "-c", str(deploy), str(iso)], stdout=subprocess.DEVNULL)
+        run([CONFIG["extract_xiso"], "-c", str(packed), str(iso)], stdout=subprocess.DEVNULL)
+        if packed != deploy:
+            shutil.rmtree(packed)
     check_iso(iso)
 
     marker_paths = ([deploy.parent / PIPELINE_MARKER] if deploy else [])

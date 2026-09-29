@@ -103,6 +103,11 @@ first start, with no `tes3x.local.toml` yet, it opens the local settings.
   Right-click a mod to send it to the top or bottom, pick its version or optional parts, ship it
   loose, open, rename, reinstall or delete it. With no `library.toml`, mods are written to the
   profile by folder name.
+  Selecting a mod shows what it is below the list: its author and summary from
+  [Nexus Mods](https://www.nexusmods.com/morrowind), its page, the catalog's verdict, and each
+  plugin's own description. The page comes from `library.toml`, the catalog or a Nexus download's
+  file name; for any other mod, **Find on Nexus…** searches by name. What Nexus returns is saved
+  in `library.toml` as the mod's `url`, `author` and `summary`.
 - **Install mod…**, or dropping files on the list, adds a `.zip`, `.7z` or `.rar` archive (the
   last two need [7-Zip](https://www.7-zip.org)), a folder or a single plugin to the library. It
   shows the files and ticks the `Data Files` folder it found; for mods with numbered option
@@ -126,5 +131,10 @@ first start, with no `tes3x.local.toml` yet, it opens the local settings.
 Settings left at their defaults stay out of the profile file.
 
 **Actions** checks, builds, smoke-tests and deploys the current profile, and pulls logs off the
-Xbox into `build/xbox-logs/`. **File > Local settings** edits `tes3x.local.toml`. The status bar
+Xbox into `build/xbox-logs/`. **File > Settings** edits `tes3x.local.toml`. The status bar
 shows whether the Xbox is reachable over FTP.
+
+**Play** runs the profile in [xemu](https://xemu.app), building it first when the dot beside it
+says it is out of date or not built. Its arrow chooses 64 MB or 128 MB; 128 MB needs a BIOS that
+uses the extra memory, set in **File > Settings**. Each profile keeps its own xemu hard disk, so
+saves carry over between sessions; **Actions > Reset xemu saves…** starts it clean.
