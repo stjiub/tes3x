@@ -555,6 +555,9 @@ def main(argv=None):
                     help="add the demand pager prototype, whose console command tes3xpager "
                          "runs a synthetic workload over a 64 MB paged region. Instrumentation "
                          "only: nothing in the engine is paged")
+    ap.add_argument("--net-test", action="store_true",
+                    help="add the network test, whose console command tes3xnet brings the NIC "
+                         "up, broadcasts UDP datagrams on port 26500 and stops it")
     ap.add_argument("--hardlink", action=argparse.BooleanOptionalAction,
                     help="hardlink unchanged retail files into the build instead of copying "
                          "them, where the volume allows (default: paths.hardlink_retail)")
@@ -620,6 +623,10 @@ def main(argv=None):
         if "tes3xpager.c" not in plan["sources"]:
             plan["sources"].append("tes3xpager.c")
         plan["needs_payload"] = True
+    if args.net_test:
+        if "tes3xnet.c" not in plan["sources"]:
+            plan["sources"].append("tes3xnet.c")
+        plan["needs_payload"] = True
     package = profile.get("package", {})
     drive = (args.drive or package.get("drive_letter", "D")).upper()
     if len(drive) != 1 or not drive.isalpha():
@@ -654,6 +661,8 @@ def main(argv=None):
         print("memory census: on")
     if args.pager_test:
         print("pager test: on")
+    if args.net_test:
+        print("network test: on")
     use_mlox = (plan["package_mode"] != "retail"
                 and profile.get("rules", {}).get("plugin_order") == "mlox")
     listed_order = (plan["package_mode"] != "retail"

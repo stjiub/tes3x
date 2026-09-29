@@ -337,7 +337,7 @@ def clean_disk(runs):
     return clean
 
 
-def xemu_config(bootrom, bios, eeprom, hdd, dvd, ram):
+def xemu_config(bootrom, bios, eeprom, hdd, dvd, ram, net_tunnel=None):
     template = CONFIG.get("template")
     text = Path(template).read_text() if template else TEMPLATE
     for key, path in (("bootrom", bootrom), ("bios", bios), ("eeprom", eeprom), ("hdd", hdd),
@@ -345,6 +345,9 @@ def xemu_config(bootrom, bios, eeprom, hdd, dvd, ram):
         text = text.replace("{%s}" % key, Path(path).as_posix())
     if ram != 64:
         text += "\n[sys]\nmem_limit = '%d'\n" % ram
+    if net_tunnel:
+        text += ("\n[net]\nenable = true\nbackend = 'udp'\n\n[net.udp]\n"
+                 "bind_addr = '127.0.0.1:%d'\nremote_addr = '127.0.0.1:%d'\n" % net_tunnel)
     return text
 
 
@@ -396,6 +399,9 @@ def main():
                          "the first time")
     ap.add_argument("--bios", help="BIOS to boot instead of [xemu] bios; `128mb` for "
                                    "[xemu] bios_128mb")
+    ap.add_argument("--net-tunnel", type=int, metavar="PORT",
+                    help="attach the NIC to xemu's udp backend, sending each guest frame to "
+                         "127.0.0.1:PORT (tes3x_net.py listen --tunnel PORT)")
     ap.add_argument("--ram", type=int, choices=(64, 128), default=64,
                     help="guest RAM in MB; 128 also clears Limit64MB in the XBE it packs")
     a = ap.parse_args(argv)
@@ -483,7 +489,9 @@ def main():
     shutil.copyfile(CONFIG["eeprom"], out / "eeprom.bin")
     bios = Path(a.bios).resolve() if a.bios else CONFIG["bios"]
     toml = out / "xemu.toml"
-    toml.write_text(xemu_config(CONFIG["bootrom"], bios, out / "eeprom.bin", hdd, iso, a.ram))
+    tunnel = (free_port(), a.net_tunnel) if a.net_tunnel else None
+    toml.write_text(xemu_config(CONFIG["bootrom"], bios, out / "eeprom.bin", hdd, iso, a.ram,
+                                tunnel))
 
     t0 = time.time()
     with open(out / "xemu.out", "w") as so, open(out / "xemu.err", "w") as se:

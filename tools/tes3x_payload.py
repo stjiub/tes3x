@@ -226,6 +226,9 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
     if "tes3xpager.c" in names:
         print("pager: synthetic test on the console command tes3xpager")
         flags.append("-DTES3X_PAGER")
+    if "tes3xnet.c" in names:
+        print("network test: console command tes3xnet broadcasts UDP on port 26500")
+        flags.append("-DTES3X_NET")
     if "tes3xinfoarena.c" in names:
         heap_allocate = hexva(locate("heap-allocate"))
         heap_free = hexva(locate("heap-free"))

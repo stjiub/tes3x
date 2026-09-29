@@ -23,6 +23,9 @@
 #ifdef TES3X_REGION
 #include "tes3xregion.h"
 #endif
+#ifdef TES3X_NET
+int tes3x_net_command(const char *text);
+#endif
 #ifdef TES3X_SAVES
 int tes3x_autosave_command(void *game, const char *text);
 #endif
@@ -871,6 +874,10 @@ static void run_command(const char *text)
 #endif
 #ifdef TES3X_PAGER
     if (tes3x_pager_command(text))
+        return;
+#endif
+#ifdef TES3X_NET
+    if (tes3x_net_command(text))
         return;
 #endif
 #ifdef TES3X_REGION
