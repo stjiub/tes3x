@@ -1,0 +1,17 @@
+kind = "single"
+purpose = "With every asset path pointed at the game drive, the game loads the masters, starts a new game and loads an exterior cell."
+procedure = "Start a new game, assert the player stands on the prison ship, move to Balmora and assert the player arrived."
+limitations = "A build without the patch reads the same assets through the cache partition, so this shows the rewritten paths resolve, not that the cache is bypassed."
+timeout = 180
+script = '''
+@start new
+wait 30
+assert player->getpos x == 61.00
+coc "Balmora"
+wait 60
+assert player->getpos x == -12288.00
+exit
+'''
+
+[expect]
+test = ['exec\.exit']

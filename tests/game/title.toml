@@ -1,0 +1,15 @@
+kind = "single"
+purpose = "An XBE with a renamed certificate title still boots and plays."
+procedure = "Build with the title TES3X Test, start a new game and assert the player stands on the prison ship."
+limitations = "The title is a certificate field only the dashboard reads; the game never does, so this does not show the dashboard's list."
+apply = "title=TES3X Test"
+timeout = 180
+script = '''
+@start new
+wait 30
+assert player->getpos x == 61.00
+exit
+'''
+
+[expect]
+test = ['exec\.exit']

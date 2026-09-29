@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import tomllib
@@ -50,7 +51,11 @@ def read_toml(path):
 GAME_TESTS = ROOT / "tests" / "game"
 KINDS = {"single": ("test",), "comparison": ("control", "test")}
 REQUIRED = ("kind", "purpose", "procedure", "script", "expect")
-OPTIONAL = ("limitations", "watch", "timeout", "xemu", "save", "enable", "apply")
+OPTIONAL = ("limitations", "watch", "timeout", "xemu", "save", "enable", "apply", "pipeline",
+            "allow", "profile", "fixture")
+PROFILE_OVERLAY = ("profile", "rules", "package", "ini")
+FIXTURE_KEYS = {"script": str, "opcodes": list, "texture": bool}
+FIXTURE_MOD = "tes3x-test"
 
 
 def game_test_problems(test, where):
@@ -68,10 +73,24 @@ def game_test_problems(test, where):
     timeout = test.get("timeout", 300)
     if type(timeout) not in (int, float) or timeout <= 0:
         problems.append(f"{where}: timeout must be greater than zero")
-    for key in ("xemu", "enable"):
+    for key in ("xemu", "enable", "pipeline", "allow"):
         if not isinstance(test.get(key, []), list) or any(
                 not isinstance(value, str) for value in test.get(key, [])):
             problems.append(f"{where}: {key} must be an array of strings")
+    for expression in test.get("allow", []):
+        if isinstance(expression, str) and expression not in GLOBAL_FAILURES:
+            problems.append(f"{where}: allow may only name {', '.join(GLOBAL_FAILURES)}")
+    overlay = test.get("profile", {})
+    if not isinstance(overlay, dict) or set(overlay) - set(PROFILE_OVERLAY) or any(
+            not isinstance(value, dict) for value in overlay.values()):
+        problems.append(f"{where}: profile may only hold tables {', '.join(PROFILE_OVERLAY)}")
+    fixture = test.get("fixture", {})
+    if not isinstance(fixture, dict) or set(fixture) - set(FIXTURE_KEYS) or any(
+            type(fixture[key]) is not kind for key, kind in FIXTURE_KEYS.items() if key in fixture):
+        problems.append(f"{where}: fixture takes script (string), opcodes (array) and texture "
+                        "(boolean)")
+    elif any(type(opcode) is not int for opcode in fixture.get("opcodes", [])):
+        problems.append(f"{where}: fixture.opcodes must be integers")
     if test.get("kind") not in KINDS:
         return problems + [f"{where}: kind must be single or comparison"]
     roles = KINDS[test["kind"]]
@@ -101,6 +120,42 @@ def load_game_test(path):
     return test
 
 
+def dxt1_texture():
+    """The smallest valid texture: a 4x4 DXT1 DDS."""
+    header = struct.pack("<7I44x", 124, 0x81007, 4, 4, 8, 0, 0)
+    pixel_format = struct.pack("<2I4s5I", 32, 4, b"DXT1", 0, 0, 0, 0, 0)
+    return b"DDS " + header + pixel_format + struct.pack("<4I4x", 0x1000, 0, 0, 0) + bytes(8)
+
+
+def make_fixture(fixture, esm, library):
+    """A generated test mod in LIBRARY: a plugin appending FIXTURE's opcodes to a retail script,
+    and a texture so packaging has an asset. Built from the user's own retail master."""
+    folder = Path(library) / FIXTURE_MOD
+    folder.mkdir(parents=True, exist_ok=True)
+    if fixture.get("opcodes"):
+        import tes3x_scriptasm
+        tes3x_scriptasm.build(str(esm), fixture.get("script", "Main"), fixture["opcodes"],
+                              str(folder / "TES3X Test.esp"))
+    if fixture.get("texture"):
+        (folder / "Textures").mkdir(exist_ok=True)
+        (folder / "Textures" / "tx_tes3x_test.dds").write_bytes(dxt1_texture())
+    return folder
+
+
+def game_test_profile(template, test, library=None):
+    """The profile a game test builds: TEMPLATE with the test's overlay, and with the generated
+    fixture as its only mod when LIBRARY holds one."""
+    profile = json.loads(json.dumps(template))
+    for section, values in test.get("profile", {}).items():
+        profile.setdefault(section, {}).update(values)
+    if library:
+        profile["profile"]["library"] = Path(library).as_posix()
+        profile["mods"] = [{"id": FIXTURE_MOD, "version": "unknown", "order": 10}]
+        if profile.get("package", {}).get("mode", "retail") == "retail":
+            profile.setdefault("package", {})["mode"] = "delta-bsa"
+    return profile
+
+
 def load_scenario(path):
     """A profile smoke test: a game test with a single build."""
     scenario = load_game_test(path)
@@ -121,7 +176,8 @@ def check_log(path, scenario):
         if found == negate:
             failures.append(item)
     for expression in GLOBAL_FAILURES:
-        if any(re.search(expression, line) for line in lines):
+        if expression not in scenario.get("allow", []) and any(
+                re.search(expression, line) for line in lines):
             failures.append("!" + expression)
     failures += assertion_failures("\n".join(lines), scenario["script"])
     watch = re.compile(scenario.get("watch", r"exec[.>]|assert[.>]|diag\.|crash\.|hang\.|fatal\."))

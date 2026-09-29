@@ -1,0 +1,18 @@
+kind = "comparison"
+purpose = "A plugin's compiled script can call an opcode past the end of the retail command table, and the call reaches injected code while vanilla scripts keep running."
+procedure = "Generate a plugin that appends opcode 0x2001 to the global script Main, start a new game and wait while Main runs every frame."
+limitations = "Covers one zero-argument opcode; commands with arguments and overriding existing opcodes are not part of script-ext yet."
+timeout = 180
+script = '''
+@start new
+wait 120
+assert player->getpos x == 61.00
+exit
+'''
+
+[fixture]
+opcodes = [0x2001]
+
+[expect]
+control = ['!script\.version_call', 'exec\.exit']
+test = ['script\.version_call 100', 'exec\.exit']

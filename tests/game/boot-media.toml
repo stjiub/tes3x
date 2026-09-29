@@ -1,0 +1,14 @@
+kind = "single"
+purpose = "A build whose certificate allows any media and region boots from a disc image that is not a retail DVD and reaches a game."
+procedure = "Boot the engine directly from the test ISO, start a new game and assert the player stands on the prison ship."
+limitations = "xemu may not enforce the certificate's allowed media; booting from the hard disk of an original Xbox is the stronger check."
+timeout = 180
+script = '''
+@start new
+wait 30
+assert player->getpos x == 61.00
+exit
+'''
+
+[expect]
+test = ['exec\.exit']

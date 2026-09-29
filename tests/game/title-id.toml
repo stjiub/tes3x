@@ -1,0 +1,20 @@
+kind = "single"
+purpose = "A build with its own save pool runs under that pool's title ID and can save there."
+procedure = "Build with the save pool TES3X Test, whose title ID is 5433A17B, start a new game and write an autosave."
+limitations = "Shows the running title ID and a successful save; it does not list E:/UDATA to see which folder the save landed in."
+enable = ["diagnostics", "console", "rotating-autosaves"]
+timeout = 240
+script = '''
+@start new
+wait 30
+assert player->getpos x == 61.00
+tes3xautosave
+wait 90
+exit
+'''
+
+[profile]
+profile = { save_pool = "TES3X Test" }
+
+[expect]
+test = ['diag\.title_id 0x5433A17B', 'autosave\.slot 1', 'exec\.exit']

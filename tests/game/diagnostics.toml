@@ -1,0 +1,24 @@
+kind = "single"
+purpose = "The watchdog records a stall of the update loop and its end, and the exception handler records a real fault."
+procedure = "Build with the fault test commands and a 10-second hang timeout, start a new game, take a snapshot, stall the update loop for 15 seconds, then write to unmapped memory."
+limitations = "The faults are deliberate and in xemu; the engine's handling after the crash record, and hardware behaviour, are not checked."
+pipeline = ["--diag-test-faults"]
+xemu = ["--skip-intro", "--no-reboot", "--no-diag"]
+allow = ['crash\.', 'hang\.detected']
+timeout = 240
+script = '''
+@start new
+wait 30
+tes3xdiag
+tes3xdiag hang
+wait 30
+tes3xdiag crash
+wait 60
+exit
+'''
+
+[profile]
+ini = { "Xbox:Diagnostics" = 1, "Xbox:HangWatchdog" = 1, "Xbox:HangTimeoutSeconds" = 10 }
+
+[expect]
+test = ['diag\.test_faults 1', 'diag\.snapshot', 'hang\.detected', 'hang\.resumed', 'crash\.code 0xC0000005']
