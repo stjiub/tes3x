@@ -28,6 +28,7 @@ TEXT` on one console is logged as `net.text` on the others.
 The server also names one client per loaded cell as its authority: that console runs the AI of
 the actors there and sends their positions ten times a second, and the other consoles stop those
 actors' AI and place them where the authority says. Damage done to such an actor, and a
-dialogue held with it, go to the authority. Only actors placed by the data files take part;
-creatures spawned while playing, such as from leveled lists, still run separately on each
-console, and an actor's death is not shared yet.
+dialogue held with it, go to the authority. When an actor dies on its authority, the server
+records the death and every console, including one that joins later, kills its copy. Only actors
+placed by the data files take part; creatures spawned while playing, such as from leveled lists,
+still run separately on each console.

@@ -285,7 +285,7 @@ EVENT = struct.Struct("<IHHI")  # seq, kind, length, origin client; the data fol
 EVENTS_BYTES = 512  # the client's largest EVENTS body
 EVENT_DATA = 64
 EVENT_TEXT = 1
-EVENT_AUTHORITY, EVENT_HOLD, EVENT_HOLD_BROKEN, EVENT_HIT = 2, 3, 4, 5
+EVENT_AUTHORITY, EVENT_HOLD, EVENT_HOLD_BROKEN, EVENT_HIT, EVENT_DEATH = 2, 3, 4, 5, 6
 # refid, target client, then a word: on, reason, or the damage as a float
 TARGETED = {EVENT_HOLD: "holds", EVENT_HOLD_BROKEN: "breaks the hold on", EVENT_HIT: "hits"}
 KEY = struct.Struct("<Iii32s")  # kind, grid x, grid y, interior name
@@ -560,6 +560,7 @@ def serve(args):
     lost = {"in": 0, "out": 0}
     clock, clock_next = None, 0.0
     owners = {}  # cell -> authority client
+    deaths = {}  # refid -> the client that reported it; replayed to each joining client
     actors = {}  # refid -> (reporting client, cell, ACTOR bytes), the latest from an authority
     authority_next = actor_next = 0.0
 
@@ -590,7 +591,8 @@ def serve(args):
             sock.sendto(packet, client.addr)
 
     bot = {"anchor": None, "next": 0.0, "start": time.time(), "said": 0.0, "line": 0,
-           "anchored": None, "state": None, "breaks": [], "held": 0, "hit": False}
+           "anchored": None, "state": None, "breaks": [], "held": 0, "hit": False,
+           "killed": False}
 
     def bot_anchor(state):
         """The bot circles where the first client entered the world, and follows it to a new
@@ -650,6 +652,12 @@ def serve(args):
                     args.bot_break_hold is not None:
                 bot["breaks"].append((now + args.bot_break_hold, client.id, refid))
             return
+        if kind == EVENT_DEATH and len(data) >= 4:
+            refid = struct.unpack_from("<I", data)[0]
+            if refid in deaths:
+                return
+            deaths[refid] = client.id
+            print(f"{stamp} client {client.id}: {refid:#010x} died", flush=True)
         if kind == EVENT_TEXT:
             print(f"{stamp} client {client.id} says: {data.decode('latin-1')}", flush=True)
         broadcast_event(client.id, kind, data, now)
@@ -769,6 +777,10 @@ def serve(args):
                 clock = Clock(*offered, now)
                 print(f"{stamp} clock {clock}, from client {client.id}", flush=True)
             send(client, CLOCK, clock.body(now))
+            for refid, origin in deaths.items():
+                client.rel.queue(EVENT_DEATH, origin, struct.pack("<I", refid))
+            if deaths:
+                flush(client, now)
             return
         client = by_session.get(session)
         if client is None:
@@ -872,6 +884,14 @@ def serve(args):
                 print(f"{time.strftime('%H:%M:%S')} bot {'holds' if want else 'releases'} "
                       f"{refid:#010x} (authority {owner})", flush=True)
                 send_event(owner, BOT_ID, EVENT_HOLD, struct.pack("<III", refid, owner, want), now)
+        if args.bot_kill and not bot["killed"]:
+            refid, _, at = args.bot_kill.partition("@")
+            refid = int(refid, 16)
+            if window(at, now):
+                bot["killed"] = True
+                deaths[refid] = BOT_ID
+                print(f"{time.strftime('%H:%M:%S')} bot kills {refid:#010x}", flush=True)
+                broadcast_event(BOT_ID, EVENT_DEATH, struct.pack("<I", refid), now)
         if args.bot_hit and not bot["hit"]:
             refid, _, at = args.bot_hit.partition("@")
             refid = int(refid, 16)
@@ -970,6 +990,8 @@ def main(argv=None):
                    help="the bot holds this actor (hex refid) in dialogue from START to END seconds")
     p.add_argument("--bot-hit", metavar="REFID@SECONDS",
                    help="the bot hits this actor (hex refid) for 5 once, this long after it appears")
+    p.add_argument("--bot-kill", metavar="REFID@SECONDS",
+                   help="the bot reports this actor (hex refid) dead this long after it appears")
     p.add_argument("--drop", type=float, default=0,
                    help="drop this fraction of session packets each way, to test loss")
     p.add_argument("--seed", type=int, help="seed for --drop")

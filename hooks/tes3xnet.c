@@ -2111,6 +2111,7 @@ static void ghosts_frame(const u8 *state)
 #define EVENT_HOLD 3u        /* refid, authority, on */
 #define EVENT_HOLD_BROKEN 4u /* refid, holder, reason */
 #define EVENT_HIT 5u         /* refid, authority, damage */
+#define EVENT_DEATH 6u       /* refid; the server records it and replays it to each joining client */
 #define KEY_EXTERIOR 1u
 #define KEY_INTERIOR 2u
 #define KEY_BYTES (12u + CELL_NAME) /* kind, grid x, grid y, interior name */
@@ -2123,6 +2124,7 @@ static void ghosts_frame(const u8 *state)
 #define ACTORS 64u
 #define REMOTE_HOLDS 8u
 #define HITS 8u
+#define DEATHS 256u
 #define REF_ID 0x48 /* mod index << 24 | refnum; 0 for a reference made at run time */
 #define MOBILE_REFERENCE 0x14
 #define MOBILE_ACTION 0xDD /* 0x12 dying, 0x13 dead */
@@ -2165,6 +2167,8 @@ static struct {
 static u32 hit_count, talk_refid, talk_owner, talk_broken;
 static u32 actor_states_out, actor_states_in, actor_moves, follows;
 static u32 hits_out, hits_in, remote_holds_in, remote_breaks_out, remote_breaks_in;
+/* Every death this session has seen, reported here or told by the server. */
+static u32 deaths[DEATHS], death_count, deaths_reported, deaths_applied;
 
 static void actors_reset(void)
 {
@@ -2353,7 +2357,6 @@ static void follow(u8 *mobile, u8 *ref, u32 refid, u32 owner)
     }
     followed[slot].owner = owner;
     followed[slot].seen = 1;
-    *flags &= ~MOBILE_SIMULATED;
     if (health < followed[slot].health - 0.5f) {
         damage = followed[slot].health - health;
         event_words(EVENT_HIT, refid, owner, &damage);
@@ -2369,6 +2372,12 @@ static void follow(u8 *mobile, u8 *ref, u32 refid, u32 owner)
             break;
         }
     unlock(lk);
+    /* A death plays out in the simulation; a dead actor has nothing left to place. */
+    if (mobile[MOBILE_ACTION] == 0x12 || mobile[MOBILE_ACTION] == 0x13 || health <= 0) {
+        *flags |= MOBILE_SIMULATED;
+        return;
+    }
+    *flags &= ~MOBILE_SIMULATED;
     if (!seq || seq == followed[slot].seq)
         return;
     followed[slot].seq = seq;
@@ -2421,6 +2430,46 @@ static void remote_hold_apply(u8 *mobile, u32 refid)
     }
 }
 
+static int death_known(u32 refid)
+{
+    u32 i, n = death_count < DEATHS ? death_count : DEATHS;
+
+    for (i = 0; i < n; i++)
+        if (deaths[i] == refid)
+            return 1;
+    return 0;
+}
+
+static void death_add(u32 refid)
+{
+    if (!death_known(refid))
+        deaths[death_count++ % DEATHS] = refid;
+}
+
+/* A death on the authority goes to everyone once; a death told by the server is applied to any
+ * living copy here, whoever runs it. */
+static void death_frame(u8 *mobile, u8 *ref, u32 refid, u32 owner)
+{
+    float health = *(const float *)(mobile + MOBILE_HEALTH);
+    int dead = mobile[MOBILE_ACTION] == 0x12 || mobile[MOBILE_ACTION] == 0x13 || health <= 0;
+    u32 i;
+
+    if (!dead && death_known(refid)) {
+        actor_command(ref, "SetHealth ", 0);
+        *(u32 *)(mobile + MOBILE_FLAGS) |= MOBILE_SIMULATED;
+        for (i = 0; i < ACTORS; i++)
+            if (followed[i].refid == refid)
+                followed[i].health = 0; /* a told death, not a hit to send back */
+        deaths_applied++;
+        tes3x_log_hex3("net.actor_killed", refid, owner, 0);
+    } else if (dead && owner == ses.client && !death_known(refid)) {
+        death_add(refid);
+        if (event_queue(EVENT_DEATH, ref + REF_ID, 4))
+            deaths_reported++;
+        tes3x_log_hex3("net.actor_died", refid, (u32)(int)health, mobile[MOBILE_ACTION]);
+    }
+}
+
 static void hits_apply(void *ref, u32 refid)
 {
     u32 i;
@@ -2463,6 +2512,23 @@ static int hold_remote(u8 *actor)
     return 1;
 }
 
+/* Out of a session, or in a new one, nothing learned in the last one holds. Runs before the frame's
+ * events, which may already belong to the new session. */
+static void authority_session(void)
+{
+    u32 i;
+
+    if (ses.state == SESSION_JOINED && authority_welcome == ses.welcomes)
+        return;
+    authority_welcome = ses.welcomes;
+    authorities = 0;
+    hit_count = 0;
+    for (i = 0; i < REMOTE_HOLDS; i++)
+        remote_holds[i].release = 1;
+    talk_refid = 0;
+    death_count = 0; /* the server replays its deaths after WELCOME */
+}
+
 /* Once per frame in the world: follow, send or hold each actor the AI planners hold. */
 static void authority_frame(const u8 *player, const u8 *state)
 {
@@ -2474,14 +2540,6 @@ static void authority_frame(const u8 *player, const u8 *state)
     u32 i, n = 0, guard, refid, owner, now = now_us(), lk, send;
 
     read_pose(state, &local);
-    if (ses.state != SESSION_JOINED || authority_welcome != ses.welcomes) {
-        authority_welcome = ses.welcomes;
-        authorities = 0;
-        hit_count = 0;
-        for (i = 0; i < REMOTE_HOLDS; i++)
-            remote_holds[i].release = 1;
-        talk_refid = 0;
-    }
     for (i = 0; i < authorities; i++)
         if (!key_loaded(&authority[i].key, &local))
             authority_remove(i--);
@@ -2504,6 +2562,7 @@ static void authority_frame(const u8 *player, const u8 *state)
             continue;
         actor_key(&local, *(const float *)(ref + 0x38), *(const float *)(ref + 0x3C), &key);
         owner = authority_of(&key);
+        death_frame(mobile, ref, refid, owner);
         if (owner && owner != ses.client) {
             follow(mobile, ref, refid, owner);
             continue;
@@ -2568,6 +2627,13 @@ static void authority_event(const struct event *e)
         authority_set(&key, get32le(e->data + KEY_BYTES));
         return;
     }
+    if (e->kind == EVENT_DEATH) {
+        if (e->length >= 4 && !death_known(refid)) {
+            death_add(refid);
+            tes3x_log_hex3("net.death", refid, e->origin, 0);
+        }
+        return;
+    }
     if (e->length < 12 || target != ses.client)
         return;
     if (e->kind == EVENT_HOLD) {
@@ -2615,6 +2681,7 @@ static void authority_stat(void)
                        (u32)authority[i].key.gy);
     tes3x_log_hex3("net.actor_states", actor_states_out, actor_states_in, actor_moves);
     tes3x_log_hex3("net.actor_events", follows, hits_out, hits_in);
+    tes3x_log_hex3("net.actor_deaths", death_count, deaths_reported, deaths_applied);
     tes3x_log_hex3("net.actor_holds", remote_holds_in, remote_breaks_out, remote_breaks_in);
 }
 
@@ -2627,7 +2694,7 @@ static void event_handle(const struct event *e)
         text[e->length] = 0;
         tes3x_log_hex3("net.text_from", e->origin, e->seq, 0);
         log_text("net.text", text);
-    } else if (e->kind >= EVENT_AUTHORITY && e->kind <= EVENT_HIT) {
+    } else if (e->kind >= EVENT_AUTHORITY && e->kind <= EVENT_DEATH) {
         authority_event(e);
     } else {
         tes3x_log_hex3("net.event_unknown", e->kind, e->origin, e->length);
@@ -2642,7 +2709,8 @@ static void events_frame(void)
 
     for (;;) {
         flags = lock();
-        if (!rel.in_count) {
+        /* A WELCOME since authority_session: these belong to a session not yet reset for. */
+        if (!rel.in_count || authority_welcome != ses.welcomes) {
             unlock(flags);
             return;
         }
@@ -2734,8 +2802,10 @@ void tes3x_net_frame(void)
             tes3x_log_hex3("net.refused", ses.plugins_hash, ses.refused_hash,
                            ses.refused_plugins);
     }
-    if (net.up)
+    if (net.up) {
+        authority_session();
         events_frame();
+    }
     ref = player_reference();
     menu_frame(net.up && ref);
     if (!net.up || !ref)
