@@ -1,0 +1,4156 @@
+{
+  "records": [
+    {
+      "va": "0x00011840",
+      "name": "Memory_Heap::Allocate",
+      "confidence": "verified",
+      "note": "thiscall(size, file, line); pushes its own name for the lock trace"
+    },
+    {
+      "va": "0x00011CF0",
+      "name": "Memory_Heap::Free",
+      "confidence": "verified",
+      "note": "thiscall(ptr)"
+    },
+    {
+      "va": "0x000126F0",
+      "name": "operator_new",
+      "confidence": "guess",
+      "note": "frameless; Memory_Heap::Allocate(size, \"NA\", 0) on 0x003EFC70"
+    },
+    {
+      "va": "0x000127E0",
+      "name": "MemoryPool_Simple::Allocate",
+      "confidence": "verified",
+      "note": "falls back to Memory_Heap::Allocate when the pool is full"
+    },
+    {
+      "va": "0x00030A40",
+      "name": "SE::NI_CAMERA_FNADDR_LOOKATWORLDPOINT",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:SE_NI_CAMERA_FNADDR_LOOKATWORLDPOINT",
+      "pc_va": "0x006CD5D0"
+    },
+    {
+      "va": "0x0003A070",
+      "name": "NI::RenderedTexture_create",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:NI_RenderedTexture_create",
+      "pc_va": "0x006DC090"
+    },
+    {
+      "va": "0x00043D70",
+      "name": "AIPlanner::getActivePackage",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_AIPlanner_getActivePackage",
+      "pc_va": "0x00564DF0"
+    },
+    {
+      "va": "0x00053840",
+      "name": "createViewerSectionText",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:createViewerSectionText",
+      "pc_va": "0x006FCFD0"
+    },
+    {
+      "va": "0x00053A30",
+      "name": "createViewerFloat",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:createViewerFloat",
+      "pc_va": "0x006FD1B0"
+    },
+    {
+      "va": "0x00053CD0",
+      "name": "SE::NI_COLLISIONGROUP_FNADDR_ADDCOLLIDER",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:SE_NI_COLLISIONGROUP_FNADDR_ADDCOLLIDER",
+      "pc_va": "0x006FD440"
+    },
+    {
+      "va": "0x00053D70",
+      "name": "SE::NI_COLLISIONGROUP_FNADDR_REMOVECOLLIDER",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:SE_NI_COLLISIONGROUP_FNADDR_REMOVECOLLIDER",
+      "pc_va": "0x006FD5A0"
+    },
+    {
+      "va": "0x00053DE0",
+      "name": "SE::NI_COLLISIONGROUP_FNADDR_REMOVECOLLIDEE",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:SE_NI_COLLISIONGROUP_FNADDR_REMOVECOLLIDEE",
+      "pc_va": "0x006FD610"
+    },
+    {
+      "va": "0x00053E50",
+      "name": "SE::NI_COLLISIONGROUP_FNADDR_REMOVEALL",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:SE_NI_COLLISIONGROUP_FNADDR_REMOVEALL",
+      "pc_va": "0x006FD680"
+    },
+    {
+      "va": "0x00053FD0",
+      "name": "SE::NI_COLLISIONGROUP_FNADDR_CONTAINSCOLLIDER",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:SE_NI_COLLISIONGROUP_FNADDR_CONTAINSCOLLIDER",
+      "pc_va": "0x006FD800"
+    },
+    {
+      "va": "0x000808E0",
+      "name": "SE::NI_AVOBJECT_FNADDR_FINDROOTCOLLISIONNODE",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:SE_NI_AVOBJECT_FNADDR_FINDROOTCOLLISIONNODE",
+      "pc_va": "0x006A3080"
+    },
+    {
+      "va": "0x00085EE0",
+      "name": "WorldController::getMobilePlayer",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WorldController_getMobilePlayer",
+      "pc_va": "0x0040FF20"
+    },
+    {
+      "va": "0x00085F10",
+      "name": "Statistic::modBaseWithCaps",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Statistic_modBaseWithCaps",
+      "pc_va": "0x00401100"
+    },
+    {
+      "va": "0x00085F60",
+      "name": "Statistic::modCurrentWithCaps",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Statistic_modCurrentWithCaps",
+      "pc_va": "0x00401150"
+    },
+    {
+      "va": "0x00086040",
+      "name": "Statistic::setBase",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Statistic_setBase",
+      "pc_va": "0x00401240"
+    },
+    {
+      "va": "0x00086050",
+      "name": "Statistic::setCurrentCapped",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Statistic_setCurrentCapped",
+      "pc_va": "0x00401250"
+    },
+    {
+      "va": "0x00086090",
+      "name": "Statistic::setBaseToCurrent",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Statistic_setBaseToCurrent",
+      "pc_va": "0x004012A0"
+    },
+    {
+      "va": "0x000860A0",
+      "name": "Statistic::getNormalized",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Statistic_getNormalized",
+      "pc_va": "0x004012B0"
+    },
+    {
+      "va": "0x00086100",
+      "name": "SkillStatistic::modSkillCapped",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_SkillStatistic_modSkillCapped",
+      "pc_va": "0x00401060"
+    },
+    {
+      "va": "0x00086180",
+      "name": "AudioController::isDirectSoundAvailable",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_AudioController_isDirectSoundAvailable",
+      "pc_va": "0x00401DA0"
+    },
+    {
+      "va": "0x000862C0",
+      "name": "AudioController::changeMusicTrack",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_AudioController_changeMusicTrack",
+      "pc_va": "0x00403AC0"
+    },
+    {
+      "va": "0x000866C0",
+      "name": "AudioController::playSoundBuffer",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_AudioController_playSoundBuffer",
+      "pc_va": "0x00402820"
+    },
+    {
+      "va": "0x00086730",
+      "name": "AudioController::SetSoundBufferCurrentPosition",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_AudioController_SetSoundBufferCurrentPosition",
+      "pc_va": "0x004029A0"
+    },
+    {
+      "va": "0x000867A0",
+      "name": "AudioController::SetSoundBufferVolume",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_AudioController_SetSoundBufferVolume",
+      "pc_va": "0x004029F0"
+    },
+    {
+      "va": "0x00086880",
+      "name": "AudioController::setSoundBufferMinMaxDistance",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_AudioController_setSoundBufferMinMaxDistance",
+      "pc_va": "0x00402AC0"
+    },
+    {
+      "va": "0x00086C60",
+      "name": "AudioController::commitDeferredSettings",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_AudioController_commitDeferredSettings",
+      "pc_va": "0x00403250"
+    },
+    {
+      "va": "0x00088C00",
+      "name": "Fader::activate",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Fader_activate",
+      "pc_va": "0x00409890"
+    },
+    {
+      "va": "0x00088EC0",
+      "name": "Fader::fadeTo",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Fader_fadeTo",
+      "pc_va": "0x004096B0"
+    },
+    {
+      "va": "0x00088F80",
+      "name": "Fader::updateMaterialProperty",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Fader_updateMaterialProperty",
+      "pc_va": "0x004098F0"
+    },
+    {
+      "va": "0x00089660",
+      "name": "Fader::setColor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Fader_setColor",
+      "pc_va": "0x0040A230"
+    },
+    {
+      "va": "0x00089840",
+      "name": "Fader::setTexture",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Fader_setTexture",
+      "pc_va": "0x0040A3E0"
+    },
+    {
+      "va": "0x00089970",
+      "name": "Fader::ctor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Fader_ctor",
+      "pc_va": "0x004091B0"
+    },
+    {
+      "va": "0x00089A20",
+      "name": "Fader::deactivate",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Fader_deactivate",
+      "pc_va": "0x004098D0"
+    },
+    {
+      "va": "0x00089CA0",
+      "name": "Fader::updateForFrame",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Fader_updateForFrame",
+      "pc_va": "0x00409590"
+    },
+    {
+      "va": "0x0008A040",
+      "name": "Font::substituteTextMacros",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Font_substituteTextMacros",
+      "pc_va": "0x0040BE50"
+    },
+    {
+      "va": "0x0008BCE0",
+      "name": "WorldController::PlayEventMusic",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WorldController_PlayEventMusic",
+      "pc_va": "0x00410FA0"
+    },
+    {
+      "va": "0x0008C150",
+      "name": "WorldController::InitGlobals",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WorldController_InitGlobals",
+      "pc_va": "0x0040E920"
+    },
+    {
+      "va": "0x0008C910",
+      "name": "WorldController::processGlobalScripts",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WorldController_processGlobalScripts",
+      "pc_va": "0x0040FBE0"
+    },
+    {
+      "va": "0x0008CEA0",
+      "name": "WorldController::rechargerAddItem",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WorldController_rechargerAddItem",
+      "pc_va": "0x00410790"
+    },
+    {
+      "va": "0x0008D210",
+      "name": "WorldController::selectNextMusicTrack",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WorldController_selectNextMusicTrack",
+      "pc_va": "0x00410EA0"
+    },
+    {
+      "va": "0x0008D300",
+      "name": "WorldController::getSimulationTimestamp",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WorldController_getSimulationTimestamp",
+      "pc_va": "0x00411000"
+    },
+    {
+      "va": "0x0008D990",
+      "name": "WorldController::CreateFilters",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WorldController_CreateFilters",
+      "pc_va": "0x00411400"
+    },
+    {
+      "va": "0x0008E730",
+      "name": "WorldController::updateEnvironmentLightingWeather",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WorldController_updateEnvironmentLightingWeather",
+      "pc_va": "0x004100D0"
+    },
+    {
+      "va": "0x0008EFE0",
+      "name": "WorldController::mainLoopBeforeInput",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WorldController_mainLoopBeforeInput",
+      "pc_va": "0x0040F610"
+    },
+    {
+      "va": "0x000924E0",
+      "name": "JournalHTML::updateJournal",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_JournalHTML_updateJournal",
+      "pc_va": "0x00415150"
+    },
+    {
+      "va": "0x00092B80",
+      "name": "Game::clearTarget",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Game_clearTarget",
+      "pc_va": "0x0041CD00"
+    },
+    {
+      "va": "0x00094B10",
+      "name": "TES3Game::loadAllPlugins",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3Game_loadAllPlugins",
+      "pc_va": "0x00419CE0"
+    },
+    {
+      "va": "0x00094D60",
+      "name": "Game::renderNextFrame",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Game_renderNextFrame",
+      "pc_va": "0x0041BE90"
+    },
+    {
+      "va": "0x00096110",
+      "name": "Game::CheckPlayerActivationTarget",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Game_CheckPlayerActivationTarget",
+      "pc_va": "0x0041CA50"
+    },
+    {
+      "va": "0x000963B0",
+      "name": "Game::initialize",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Game_initialize",
+      "pc_va": "0x00417880"
+    },
+    {
+      "va": "0x00098300",
+      "name": "Diagnostics::Update",
+      "kind": "function",
+      "confidence": "verified",
+      "provenance": "find_diagnostics_update; holds the console input gate"
+    },
+    {
+      "va": "0x00098430",
+      "name": "Diagnostics::ConsoleGate",
+      "kind": "site",
+      "confidence": "verified",
+      "provenance": "find_console_gate; input gate replaced by --apply console"
+    },
+    {
+      "va": "0x0009E6C0",
+      "name": "Game::savePlayerOptions",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Game_savePlayerOptions",
+      "pc_va": "0x004293A0"
+    },
+    {
+      "va": "0x0009F050",
+      "name": "WorldControllerRenderTarget::lockRenderTarget",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WorldControllerRenderTarget_lockRenderTarget",
+      "pc_va": "0x0042F3F0"
+    },
+    {
+      "va": "0x0009F2B0",
+      "name": "WorldControllerRenderTarget::unlockRenderTarget",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WorldControllerRenderTarget_unlockRenderTarget",
+      "pc_va": "0x0042F620"
+    },
+    {
+      "va": "0x0009F550",
+      "name": "WorldControllerRenderTarget::getFogOfWarPixel",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WorldControllerRenderTarget_getFogOfWarPixel",
+      "pc_va": "0x0042FE20"
+    },
+    {
+      "va": "0x000A2210",
+      "name": "ShadowManager::setUseRealtimeShadows",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ShadowManager_setUseRealtimeShadows",
+      "pc_va": "0x004360F0"
+    },
+    {
+      "va": "0x000A59D0",
+      "name": "WeatherController::getCurrentWeatherIndex",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WeatherController_getCurrentWeatherIndex",
+      "pc_va": "0x004424E0"
+    },
+    {
+      "va": "0x000A69A0",
+      "name": "WeatherController::calcSunDamageScalar",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WeatherController_calcSunDamageScalar",
+      "pc_va": "0x00440630"
+    },
+    {
+      "va": "0x000A6B50",
+      "name": "WeatherController::enableSky",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WeatherController_enableSky",
+      "pc_va": "0x00440820"
+    },
+    {
+      "va": "0x000A6BA0",
+      "name": "WeatherController::disableSky",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WeatherController_disableSky",
+      "pc_va": "0x00440870"
+    },
+    {
+      "va": "0x000A71E0",
+      "name": "WeatherController::switchWeather",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WeatherController_switchWeather",
+      "pc_va": "0x00441C40"
+    },
+    {
+      "va": "0x000B2E00",
+      "name": "WeatherController::updateColours",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WeatherController_updateColours",
+      "pc_va": "0x0043E000"
+    },
+    {
+      "va": "0x000B3930",
+      "name": "WeatherController::updateCloudVertexCols",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WeatherController_updateCloudVertexCols",
+      "pc_va": "0x0043EDE0"
+    },
+    {
+      "va": "0x000B3A00",
+      "name": "WeatherController::updateAmbient",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WeatherController_updateAmbient",
+      "pc_va": "0x0043EF80"
+    },
+    {
+      "va": "0x000B3FB0",
+      "name": "WeatherController::updateSunCols",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WeatherController_updateSunCols",
+      "pc_va": "0x0043F5F0"
+    },
+    {
+      "va": "0x000B46D0",
+      "name": "WeatherController::updateSun",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WeatherController_updateSun",
+      "pc_va": "0x0043FF80"
+    },
+    {
+      "va": "0x000B4B00",
+      "name": "WeatherController::updateTick",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WeatherController_updateTick",
+      "pc_va": "0x00440C80"
+    },
+    {
+      "va": "0x000B9930",
+      "name": "WeatherController::updateClouds",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WeatherController_updateClouds",
+      "pc_va": "0x0043EC20"
+    },
+    {
+      "va": "0x000BC600",
+      "name": "WorldController::updateDeltaTime",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WorldController_updateDeltaTime",
+      "pc_va": "0x00453630"
+    },
+    {
+      "va": "0x000BCD30",
+      "name": "MagicInstanceController::getInstanceFromSerial",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MagicInstanceController_getInstanceFromSerial",
+      "pc_va": "0x004553B0"
+    },
+    {
+      "va": "0x000BCDD0",
+      "name": "MagicInstanceController::interruptCasting",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MagicInstanceController_interruptCasting",
+      "pc_va": "0x00455610"
+    },
+    {
+      "va": "0x000BCE80",
+      "name": "MagicInstanceController::clearSpellEffect",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MagicInstanceController_clearSpellEffect",
+      "pc_va": "0x004556C0"
+    },
+    {
+      "va": "0x000BD030",
+      "name": "MagicInstanceController::removeSpellsByEffect",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MagicInstanceController_removeSpellsByEffect",
+      "pc_va": "0x00455880"
+    },
+    {
+      "va": "0x000BE050",
+      "name": "MagicInstanceController::activateSpell",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MagicInstanceController_activateSpell",
+      "pc_va": "0x00454A60"
+    },
+    {
+      "va": "0x000BE480",
+      "name": "MagicInstanceController::retireMagicCastedByActor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MagicInstanceController_retireMagicCastedByActor",
+      "pc_va": "0x00454EC0"
+    },
+    {
+      "va": "0x000BF7F0",
+      "name": "LoadScreenManager::clearMovieState",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_LoadScreenManager_clearMovieState",
+      "pc_va": "0x004599E0"
+    },
+    {
+      "va": "0x000BF9F0",
+      "name": "LoadScreenManager::open",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_LoadScreenManager_open",
+      "pc_va": "0x004587E0"
+    },
+    {
+      "va": "0x000C1390",
+      "name": "LoadScreenManager::render",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_LoadScreenManager_render",
+      "pc_va": "0x00458910"
+    },
+    {
+      "va": "0x000C1740",
+      "name": "cellChangeWithCompanions",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_cellChangeWithCompanions",
+      "pc_va": "0x0045C9B0"
+    },
+    {
+      "va": "0x000C7490",
+      "name": "EquipmentStack::CanonicalCopy",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_EquipmentStack_CanonicalCopy",
+      "pc_va": "0x00465420"
+    },
+    {
+      "va": "0x000C7A50",
+      "name": "SwapBoundArmor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_SwapBoundArmor",
+      "pc_va": "0x00465DE0"
+    },
+    {
+      "va": "0x000C8DC0",
+      "name": "TriggerSpellSummonEvent",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_TriggerSpellSummonEvent",
+      "pc_va": "0x00466950"
+    },
+    {
+      "va": "0x000C9710",
+      "name": "TriggerSpellBoundWeaponEvent",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_TriggerSpellBoundWeaponEvent",
+      "pc_va": "0x00465B70"
+    },
+    {
+      "va": "0x000C99E0",
+      "name": "TriggerSpellBoundArmorEvent",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_TriggerSpellBoundArmorEvent",
+      "pc_va": "0x00466270"
+    },
+    {
+      "va": "0x000CAA00",
+      "name": "VFXManager::remove",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_VFXManager_remove",
+      "pc_va": "0x00468D00"
+    },
+    {
+      "va": "0x000CAF90",
+      "name": "VFXManager::resetOnNewScene",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_VFXManager_resetOnNewScene",
+      "pc_va": "0x00469390"
+    },
+    {
+      "va": "0x000CB640",
+      "name": "VFXManager::createForEffect",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_VFXManager_createForEffect",
+      "pc_va": "0x00468940"
+    },
+    {
+      "va": "0x000CB950",
+      "name": "VFXManager::createForSource",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_VFXManager_createForSource",
+      "pc_va": "0x00469570"
+    },
+    {
+      "va": "0x000CBA50",
+      "name": "VFXManager::createForMagicEffect",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_VFXManager_createForMagicEffect",
+      "pc_va": "0x004696A0"
+    },
+    {
+      "va": "0x000CBB40",
+      "name": "VFXManager::createForReference",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_VFXManager_createForReference",
+      "pc_va": "0x00468370"
+    },
+    {
+      "va": "0x000CBE00",
+      "name": "VFXManager::createFromSaveData",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_VFXManager_createFromSaveData",
+      "pc_va": "0x00468620"
+    },
+    {
+      "va": "0x000CDBD0",
+      "name": "AnimationData::headTracking",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_AnimationData_headTracking",
+      "pc_va": "0x0046F910"
+    },
+    {
+      "va": "0x000CE2A0",
+      "name": "AnimationData::updateMovementDelta",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_AnimationData_updateMovementDelta",
+      "pc_va": "0x00470320"
+    },
+    {
+      "va": "0x000CE430",
+      "name": "AnimationData::mergeAnimGroups",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_AnimationData_mergeAnimGroups",
+      "pc_va": "0x004708D0"
+    },
+    {
+      "va": "0x000CE5C0",
+      "name": "AnimationData::playAnimationGroupForIndex",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_AnimationData_playAnimationGroupForIndex",
+      "pc_va": "0x00470AE0"
+    },
+    {
+      "va": "0x000CFE90",
+      "name": "AnimationData::setLayerKeyframes",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_AnimationData_setLayerKeyframes",
+      "pc_va": "0x0046BA30"
+    },
+    {
+      "va": "0x000D0080",
+      "name": "BodyPartManager::getActiveBodyPartForItem",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_BodyPartManager_getActiveBodyPartForItem",
+      "pc_va": "0x00472DA0"
+    },
+    {
+      "va": "0x000D0350",
+      "name": "BodyPartManager::removeActiveBodyPart",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_BodyPartManager_removeActiveBodyPart",
+      "pc_va": "0x00472EA0"
+    },
+    {
+      "va": "0x000D0B10",
+      "name": "BodyPartManager::setBodyPartForItem",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_BodyPartManager_setBodyPartForItem",
+      "pc_va": "0x00473CB0"
+    },
+    {
+      "va": "0x000D1780",
+      "name": "BodyPartManager::ctor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_BodyPartManager_ctor",
+      "pc_va": "0x00472580"
+    },
+    {
+      "va": "0x000D2D60",
+      "name": "Diagnostics::InitLogs",
+      "confidence": "verified",
+      "provenance": "deletes three t: logs, reads [General] SkipProgramFlows, zeroes three 0x104-byte buffers",
+      "note": "buffers and gate are never read again in this build"
+    },
+    {
+      "va": "0x000D48E0",
+      "name": "Archive::ReadInvalidationList",
+      "confidence": "verified",
+      "provenance": "traced: fgets lines of D:\\ArchiveInvalidationList.txt into ArchiveManager::Invalidate",
+      "kind": "function"
+    },
+    {
+      "va": "0x000D4D70",
+      "name": "Archive::Init",
+      "confidence": "verified",
+      "provenance": "traced: reads [General] TryArchiveFirst; -1 skips Morrowind.bsa; then ReadInvalidationList",
+      "kind": "function"
+    },
+    {
+      "va": "0x000D4F10",
+      "name": "rand",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_rand",
+      "pc_va": "0x0047B3B0"
+    },
+    {
+      "va": "0x000D50E0",
+      "name": "general::setStringSlot",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_general_setStringSlot",
+      "pc_va": "0x0047B410"
+    },
+    {
+      "va": "0x000D60F0",
+      "name": "Region::randomizeWeather",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Region_randomizeWeather",
+      "pc_va": "0x004812A0"
+    },
+    {
+      "va": "0x000D6700",
+      "name": "AddObjectToHashMapById",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_AddObjectToHashMapById",
+      "pc_va": "0x00481D80"
+    },
+    {
+      "va": "0x000D7250",
+      "name": "DataHandler::incrementLoadedRecords",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_DataHandler_incrementLoadedRecords",
+      "pc_va": "0x0048ED70"
+    },
+    {
+      "va": "0x000D7270",
+      "name": "DataHandler::getTotalLoadedRecordsFraction",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_DataHandler_getTotalLoadedRecordsFraction",
+      "pc_va": "0x0048ED90"
+    },
+    {
+      "va": "0x000D7AB0",
+      "name": "DataHandler::isCellInMemory",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_DataHandler_isCellInMemory",
+      "pc_va": "0x00484AF0"
+    },
+    {
+      "va": "0x000D7B20",
+      "name": "DataHandler::AddMobilesToCell",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_DataHandler_AddMobilesToCell",
+      "pc_va": "0x00484E50"
+    },
+    {
+      "va": "0x000D7EC0",
+      "name": "DataHandler::updateLightsBetweenCells",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_DataHandler_updateLightsBetweenCells",
+      "pc_va": "0x00485A70"
+    },
+    {
+      "va": "0x000D7FC0",
+      "name": "DataHandler::setDynamicLightingForReference",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_DataHandler_setDynamicLightingForReference",
+      "pc_va": "0x00485B00"
+    },
+    {
+      "va": "0x000D8110",
+      "name": "DataHandler::updateAllLights",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_DataHandler_updateAllLights",
+      "pc_va": "0x00485C50"
+    },
+    {
+      "va": "0x000D95C0",
+      "name": "DataHandler::UpdateAllIdles",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_DataHandler_UpdateAllIdles",
+      "pc_va": "0x0048AED0"
+    },
+    {
+      "va": "0x000D96E0",
+      "name": "DataHandler::getSoundPlaying",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_DataHandler_getSoundPlaying",
+      "pc_va": "0x0048BBD0"
+    },
+    {
+      "va": "0x000D97A0",
+      "name": "DataHandler::removeSound",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_DataHandler_removeSound",
+      "pc_va": "0x0048C0D0"
+    },
+    {
+      "va": "0x000D9960",
+      "name": "DataHandler::addTemporarySound",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_DataHandler_addTemporarySound",
+      "pc_va": "0x0048C2B0"
+    },
+    {
+      "va": "0x000DAA40",
+      "name": "NonDynamicData::getLandHeightAtPosition",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_NonDynamicData_getLandHeightAtPosition",
+      "pc_va": "0x0048E410"
+    },
+    {
+      "va": "0x000DAB30",
+      "name": "NonDynamicData::getLandNormalAtPosition",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_NonDynamicData_getLandNormalAtPosition",
+      "pc_va": "0x0048E530"
+    },
+    {
+      "va": "0x000DB1E0",
+      "name": "DataHandler::getClosestPrisonReferences",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_DataHandler_getClosestPrisonReferences",
+      "pc_va": "0x0048EE30"
+    },
+    {
+      "va": "0x000DBFE0",
+      "name": "DataHandler::updateLightingForReference",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_DataHandler_updateLightingForReference",
+      "pc_va": "0x00485E40"
+    },
+    {
+      "va": "0x000DCD10",
+      "name": "DataHandler::updateCollisionGroupsForActiveCells",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_DataHandler_updateCollisionGroupsForActiveCells",
+      "pc_va": "0x00488950"
+    },
+    {
+      "va": "0x000DE060",
+      "name": "DataHandler::addSound",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_DataHandler_addSound",
+      "pc_va": "0x0048BD40"
+    },
+    {
+      "va": "0x000DE7D0",
+      "name": "DataHandler::loadSourceTexture",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_DataHandler_loadSourceTexture",
+      "pc_va": "0x0048DB60"
+    },
+    {
+      "va": "0x000DFF90",
+      "name": "DataHandler::addSoundById",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_DataHandler_addSoundById",
+      "pc_va": "0x0048BCB0"
+    },
+    {
+      "va": "0x000E1270",
+      "name": "DataHandler::setActorCollisionBoxesDisplay",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_DataHandler_setActorCollisionBoxesDisplay",
+      "pc_va": "0x0048DCC0"
+    },
+    {
+      "va": "0x000E1870",
+      "name": "DataHandler::updateCellThreadLoader",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_DataHandler_updateCellThreadLoader",
+      "pc_va": "0x00486620"
+    },
+    {
+      "va": "0x000E59B0",
+      "name": "Archive::findFileHash",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Archive_findFileHash",
+      "pc_va": "0x00493B20"
+    },
+    {
+      "va": "0x000E5C10",
+      "name": "Archive::InvalidateEntry",
+      "confidence": "verified",
+      "provenance": "traced: returns whether this archive held the name",
+      "kind": "function"
+    },
+    {
+      "va": "0x000E5C50",
+      "name": "Archive::InvalidateNewerInDir",
+      "confidence": "verified",
+      "provenance": "traced: invalidates an entry when the loose file is strictly newer; ties keep the archive",
+      "kind": "function"
+    },
+    {
+      "va": "0x000E5F30",
+      "name": "ArchiveManager::Invalidate",
+      "confidence": "verified",
+      "provenance": "traced: walks the chain via +0x150 and invalidates only the first archive holding the name",
+      "kind": "function"
+    },
+    {
+      "va": "0x000E60C0",
+      "name": "Archive::InvalidateNewerLoose",
+      "confidence": "verified",
+      "provenance": "traced: TryArchiveFirst=0 only; walks Meshes and Textures against the archive's time",
+      "kind": "function"
+    },
+    {
+      "va": "0x000E67C0",
+      "name": "PhysicalObject::getMobile",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_PhysicalObject_getMobile",
+      "pc_va": "0x00494E70"
+    },
+    {
+      "va": "0x000E6B90",
+      "name": "Actor::unequipItem",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Actor_unequipItem",
+      "pc_va": "0x00496710"
+    },
+    {
+      "va": "0x000E7210",
+      "name": "Actor::getEquippedItemExact",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Actor_getEquippedItemExact",
+      "pc_va": "0x00496D90"
+    },
+    {
+      "va": "0x000E7250",
+      "name": "Actor::getEquippedItem",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Actor_getEquippedItem",
+      "pc_va": "0x00496DD0"
+    },
+    {
+      "va": "0x000E7280",
+      "name": "Actor::getEquippedClothingBySlot",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Actor_getEquippedClothingBySlot",
+      "pc_va": "0x00496E00"
+    },
+    {
+      "va": "0x000E7340",
+      "name": "Actor::getEquippedArmorBySlot",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Actor_getEquippedArmorBySlot",
+      "pc_va": "0x00496E60"
+    },
+    {
+      "va": "0x000E7390",
+      "name": "Actor::getEquippedWeapon",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Actor_getEquippedWeapon",
+      "pc_va": "0x00496EB0"
+    },
+    {
+      "va": "0x000E7460",
+      "name": "MagicSourceCombo::getSourceEffects",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MagicSourceCombo_getSourceEffects",
+      "pc_va": "0x00496FA0"
+    },
+    {
+      "va": "0x000E7930",
+      "name": "Actor::unequipAllItems",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Actor_unequipAllItems",
+      "pc_va": "0x00496680"
+    },
+    {
+      "va": "0x000E7E90",
+      "name": "Actor::equipItem",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Actor_equipItem",
+      "pc_va": "0x004958B0"
+    },
+    {
+      "va": "0x000E88D0",
+      "name": "Inventory::removeItemData",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Inventory_removeItemData",
+      "pc_va": "0x004997F0"
+    },
+    {
+      "va": "0x000E8C70",
+      "name": "Inventory::findItemStack",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Inventory_findItemStack",
+      "pc_va": "0x0049A6C0"
+    },
+    {
+      "va": "0x000EA7D0",
+      "name": "Inventory::AddItemWithoutData",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Inventory_AddItemWithoutData",
+      "pc_va": "0x00497CD0"
+    },
+    {
+      "va": "0x000EADD0",
+      "name": "Inventory::AddItem",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Inventory_AddItem",
+      "pc_va": "0x00498530"
+    },
+    {
+      "va": "0x000EB4B0",
+      "name": "Inventory::RemoveItemWithData",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Inventory_RemoveItemWithData",
+      "pc_va": "0x00499550"
+    },
+    {
+      "va": "0x000EB6E0",
+      "name": "Inventory::resolveLeveledLists",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Inventory_resolveLeveledLists",
+      "pc_va": "0x0049A190"
+    },
+    {
+      "va": "0x000EB910",
+      "name": "Inventory::DropItem",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Inventory_DropItem",
+      "pc_va": "0x0049B090"
+    },
+    {
+      "va": "0x000EBE20",
+      "name": "Inventory::AddItemByReference",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Inventory_AddItemByReference",
+      "pc_va": "0x00497BC0"
+    },
+    {
+      "va": "0x000EF000",
+      "name": "Armor::getWeightClass",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Armor_getWeightClass",
+      "pc_va": "0x004A0F30"
+    },
+    {
+      "va": "0x000F03C0",
+      "name": "MagicEffect::getCastSoundID",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MagicEffect_getCastSoundID",
+      "pc_va": "0x004A9E40"
+    },
+    {
+      "va": "0x000F03E0",
+      "name": "MagicEffect::getBoltSoundID",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MagicEffect_getBoltSoundID",
+      "pc_va": "0x004A9E60"
+    },
+    {
+      "va": "0x000F0400",
+      "name": "MagicEffect::getHitSoundID",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MagicEffect_getHitSoundID",
+      "pc_va": "0x004A9E80"
+    },
+    {
+      "va": "0x000F0B10",
+      "name": "Activator::ctor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Activator_ctor",
+      "pc_va": "0x0049F990"
+    },
+    {
+      "va": "0x000F2EA0",
+      "name": "Book::loadBookText",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Book_loadBookText",
+      "pc_va": "0x004A2A90"
+    },
+    {
+      "va": "0x000F3B80",
+      "name": "Container::ctor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Container_ctor",
+      "pc_va": "0x004A3BE0"
+    },
+    {
+      "va": "0x000F71C0",
+      "name": "MagicEffect::clearData",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MagicEffect_clearData",
+      "pc_va": "0x004A8D20"
+    },
+    {
+      "va": "0x000F7D40",
+      "name": "MagicEffect::getSpellFailureSound",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MagicEffect_getSpellFailureSound",
+      "pc_va": "0x004A9F00"
+    },
+    {
+      "va": "0x000F8340",
+      "name": "Spell::calculateCastChance",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Spell_calculateCastChance",
+      "pc_va": "0x004AA950"
+    },
+    {
+      "va": "0x000F99A0",
+      "name": "SpellList::containsObject",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_SpellList_containsObject",
+      "pc_va": "0x004ACB50"
+    },
+    {
+      "va": "0x000F9A30",
+      "name": "SpellList::removeByObject",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_SpellList_removeByObject",
+      "pc_va": "0x004ACBE0"
+    },
+    {
+      "va": "0x000FA0C0",
+      "name": "Faction::getAdvancementPotential",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Faction_getAdvancementPotential",
+      "pc_va": "0x004AD420"
+    },
+    {
+      "va": "0x000FA290",
+      "name": "Faction::getLowestJoinedReaction",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Faction_getLowestJoinedReaction",
+      "pc_va": "0x004AD5E0"
+    },
+    {
+      "va": "0x000FA300",
+      "name": "Faction::getHighestJoinedReaction",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Faction_getHighestJoinedReaction",
+      "pc_va": "0x004AD650"
+    },
+    {
+      "va": "0x000FBE20",
+      "name": "Spell::ctor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Spell_ctor",
+      "pc_va": "0x004A9FD0"
+    },
+    {
+      "va": "0x000FC650",
+      "name": "Alchemy::ctor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Alchemy_ctor",
+      "pc_va": "0x004ABA40"
+    },
+    {
+      "va": "0x000FC740",
+      "name": "Alchemy::loadObjectSpecific",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Alchemy_loadObjectSpecific",
+      "pc_va": "0x004ABD90"
+    },
+    {
+      "va": "0x000FCC60",
+      "name": "SpellList::addById",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_SpellList_addById",
+      "pc_va": "0x004AC750"
+    },
+    {
+      "va": "0x000FF9E0",
+      "name": "DialogueInfo::getText",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_DialogueInfo_getText",
+      "pc_va": "0x004B1B80"
+    },
+    {
+      "va": "0x000FFCE0",
+      "name": "DialogueInfo::runScript",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_DialogueInfo_runScript",
+      "pc_va": "0x004B1E40"
+    },
+    {
+      "va": "0x000FFE00",
+      "name": "Dialogue::journalAdd",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Dialogue_journalAdd",
+      "pc_va": "0x004B2F80"
+    },
+    {
+      "va": "0x00101090",
+      "name": "Dialogue::getFilteredInfo",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Dialogue_getFilteredInfo",
+      "pc_va": "0x004B29E0"
+    },
+    {
+      "va": "0x001011C0",
+      "name": "TES3File::close",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_TES3File_close",
+      "pc_va": "0x004B47C0"
+    },
+    {
+      "va": "0x00101370",
+      "name": "TES3File::getMaster",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_TES3File_getMaster",
+      "pc_va": "0x004B5CF0"
+    },
+    {
+      "va": "0x00101640",
+      "name": "TES3File::getFlag20",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_TES3File_getFlag20",
+      "pc_va": "0x004B6200"
+    },
+    {
+      "va": "0x001016C0",
+      "name": "TES3File::getToLoad",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_TES3File_getToLoad",
+      "pc_va": "0x004B6250"
+    },
+    {
+      "va": "0x001016D0",
+      "name": "TES3File::setToLoad",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_TES3File_setToLoad",
+      "pc_va": "0x004B6280"
+    },
+    {
+      "va": "0x001017A0",
+      "name": "TES3File::readChunkData",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_TES3File_readChunkData",
+      "pc_va": "0x004B6880"
+    },
+    {
+      "va": "0x001022F0",
+      "name": "TES3File::collectActiveMods2",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_TES3File_collectActiveMods2",
+      "pc_va": "0x004B5BB0"
+    },
+    {
+      "va": "0x00102570",
+      "name": "TES3File::getNextSubrecord",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_TES3File_getNextSubrecord",
+      "pc_va": "0x004B67C0"
+    },
+    {
+      "va": "0x001025A0",
+      "name": "TES3File::hasMoreRecords",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_TES3File_hasMoreRecords",
+      "pc_va": "0x004B67F0"
+    },
+    {
+      "va": "0x00102630",
+      "name": "TES3File::writeRecordHeader",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_TES3File_writeRecordHeader",
+      "pc_va": "0x004B6B00"
+    },
+    {
+      "va": "0x001026D0",
+      "name": "TES3File::writeChunkData",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_TES3File_writeChunkData",
+      "pc_va": "0x004B6BA0"
+    },
+    {
+      "va": "0x00102780",
+      "name": "TES3File::endRecord",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_TES3File_endRecord",
+      "pc_va": "0x004B6C50"
+    },
+    {
+      "va": "0x001029C0",
+      "name": "TES3File::dtor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_TES3File_dtor",
+      "pc_va": "0x004B4140"
+    },
+    {
+      "va": "0x001030C0",
+      "name": "TES3File::getFirstSubrecord",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_TES3File_getFirstSubrecord",
+      "pc_va": "0x004B6750"
+    },
+    {
+      "va": "0x001031E0",
+      "name": "TES3File::nextForm",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_TES3File_nextForm",
+      "pc_va": "0x004B6380"
+    },
+    {
+      "va": "0x00103310",
+      "name": "TES3File::setFilePointer",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_TES3File_setFilePointer",
+      "pc_va": "0x004B6520"
+    },
+    {
+      "va": "0x001034F0",
+      "name": "TES3File::loadByPath",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_TES3File_loadByPath",
+      "pc_va": "0x004B4530"
+    },
+    {
+      "va": "0x00103940",
+      "name": "TES3File::ctor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_TES3File_ctor",
+      "pc_va": "0x004B3F10"
+    },
+    {
+      "va": "0x00103D30",
+      "name": "TES3File::reopen",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_TES3File_reopen",
+      "pc_va": "0x004B4510"
+    },
+    {
+      "va": "0x001042C0",
+      "name": "NonDynamicData::deleteObject",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_NonDynamicData_deleteObject",
+      "pc_va": "0x004B8B20"
+    },
+    {
+      "va": "0x00104360",
+      "name": "NonDynamicData::findDialogue",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_NonDynamicData_findDialogue",
+      "pc_va": "0x004BA8D0"
+    },
+    {
+      "va": "0x00104610",
+      "name": "isSourcelessObject",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_isSourcelessObject",
+      "pc_va": "0x004C1980"
+    },
+    {
+      "va": "0x00104C30",
+      "name": "ui::setProperty",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_setProperty",
+      "pc_va": "0x00581F30"
+    },
+    {
+      "va": "0x00105C10",
+      "name": "NonDynamicData::findRace",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_NonDynamicData_findRace",
+      "pc_va": "0x004BA5C0"
+    },
+    {
+      "va": "0x00105C60",
+      "name": "NonDynamicData::getRegionById",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_NonDynamicData_getRegionById",
+      "pc_va": "0x004BA610"
+    },
+    {
+      "va": "0x00105D50",
+      "name": "NonDynamicData::findClass",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_NonDynamicData_findClass",
+      "pc_va": "0x004BA6B0"
+    },
+    {
+      "va": "0x00105DA0",
+      "name": "NonDynamicData::findScriptByName",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_NonDynamicData_findScriptByName",
+      "pc_va": "0x004BA700"
+    },
+    {
+      "va": "0x00105DF0",
+      "name": "NonDynamicData::findFaction",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_NonDynamicData_findFaction",
+      "pc_va": "0x004BA750"
+    },
+    {
+      "va": "0x00105F20",
+      "name": "NonDynamicData::findSound",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_NonDynamicData_findSound",
+      "pc_va": "0x004BA7A0"
+    },
+    {
+      "va": "0x00106000",
+      "name": "NonDynamicData::findGlobalVariable",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_NonDynamicData_findGlobalVariable",
+      "pc_va": "0x004BA820"
+    },
+    {
+      "va": "0x001075B0",
+      "name": "NonDynamicData::respawnContainers",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_NonDynamicData_respawnContainers",
+      "pc_va": "0x004C3B00"
+    },
+    {
+      "va": "0x00107D40",
+      "name": "UI::updateLoadingMenu",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UI_updateLoadingMenu",
+      "pc_va": "0x004C7D90"
+    },
+    {
+      "va": "0x00109CD0",
+      "name": "RecordsHandler::findFirstInstanceOfObjectId",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_RecordsHandler_findFirstInstanceOfObjectId",
+      "pc_va": "0x004B8F50"
+    },
+    {
+      "va": "0x0010A120",
+      "name": "NonDynamicData::getCellByGrid",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_NonDynamicData_getCellByGrid",
+      "pc_va": "0x004BAA10"
+    },
+    {
+      "va": "0x0010A840",
+      "name": "SE::NI_GETASSOCIATEDREFERENCE",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:SE_NI_GETASSOCIATEDREFERENCE",
+      "pc_va": "0x004C3C40"
+    },
+    {
+      "va": "0x0010CA40",
+      "name": "NonDynamicData::addNewObject",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_NonDynamicData_addNewObject",
+      "pc_va": "0x004B8980"
+    },
+    {
+      "va": "0x0010CCD0",
+      "name": "RecordsHandler::findClosestReferenceOfObject",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_RecordsHandler_findClosestReferenceOfObject",
+      "pc_va": "0x004B96F0"
+    },
+    {
+      "va": "0x00111260",
+      "name": "NonDynamicData::createReference",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_NonDynamicData_createReference",
+      "pc_va": "0x004C0E80"
+    },
+    {
+      "va": "0x00111920",
+      "name": "NonDynamicData::saveGame",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_NonDynamicData_saveGame",
+      "pc_va": "0x004C4250"
+    },
+    {
+      "va": "0x00114890",
+      "name": "LandVertex::SetLayout",
+      "confidence": "verified",
+      "provenance": "traced: flags bit 17 short3 position, bits 16|17 packed normal, bit 18 short UV; sets the five layout globals",
+      "kind": "function"
+    },
+    {
+      "va": "0x00114910",
+      "name": "LandVertex::SetColor",
+      "confidence": "verified",
+      "provenance": "traced: dword write at PositionSize+NormalSize",
+      "kind": "function"
+    },
+    {
+      "va": "0x00114CC0",
+      "name": "LandVertex::GetPosition",
+      "confidence": "verified",
+      "provenance": "traced: position at base+stride*i; short3 when PositionSize is 6, else float3; bug-2 crash at 0x00114CDA",
+      "kind": "function"
+    },
+    {
+      "va": "0x00114D40",
+      "name": "LandVertex::GetNormal",
+      "confidence": "verified",
+      "provenance": "traced: reads at PositionSize offset; short3 when NormalSize is 6, else float3",
+      "kind": "function"
+    },
+    {
+      "va": "0x00116C30",
+      "name": "Land::GetVertexPosition",
+      "confidence": "matched",
+      "provenance": "call-graph match score 1.00; returns z=-2048 when the land has no geometry",
+      "note": "vertex buffer base is [[[lod+0x98]+0x30]+0x14]+4 | 0x80000000, the D3D resource Data field",
+      "pc_va": "0x004CA9E0",
+      "kind": "function"
+    },
+    {
+      "va": "0x0011A740",
+      "name": "LeveledCreature::resolve",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_LeveledCreature_resolve",
+      "pc_va": "0x004CF870"
+    },
+    {
+      "va": "0x0011B300",
+      "name": "LeveledItem::resolve",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_LeveledItem_resolve",
+      "pc_va": "0x004D0BD0"
+    },
+    {
+      "va": "0x0011C7B0",
+      "name": "EntityLight::setupInternalLight",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_EntityLight_setupInternalLight",
+      "pc_va": "0x004D3580"
+    },
+    {
+      "va": "0x0011C8E0",
+      "name": "Light::ctor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Light_ctor",
+      "pc_va": "0x004D1BA0"
+    },
+    {
+      "va": "0x0011CF30",
+      "name": "DynamicLightingTest",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_DynamicLightingTest",
+      "pc_va": "0x004D2F40"
+    },
+    {
+      "va": "0x0011DB00",
+      "name": "getThreadSafeStringBuffer",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_getThreadSafeStringBuffer",
+      "pc_va": "0x004D51B0"
+    },
+    {
+      "va": "0x0011E210",
+      "name": "NPCorNPCInstance::calculateDisposition",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_NPCorNPCInstance_calculateDisposition",
+      "pc_va": "0x004DA330"
+    },
+    {
+      "va": "0x00122C50",
+      "name": "Cell::getExteriorGridX",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Cell_getExteriorGridX",
+      "pc_va": "0x004DB9D0"
+    },
+    {
+      "va": "0x00122C70",
+      "name": "Cell::getExteriorGridY",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Cell_getExteriorGridY",
+      "pc_va": "0x004DB9F0"
+    },
+    {
+      "va": "0x00122F20",
+      "name": "Cell::getFirstObjectOfType",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Cell_getFirstObjectOfType",
+      "pc_va": "0x004DBEF0"
+    },
+    {
+      "va": "0x00122F90",
+      "name": "Cell::insertReference",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Cell_insertReference",
+      "pc_va": "0x004DC030"
+    },
+    {
+      "va": "0x001244E0",
+      "name": "Cell::constructor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Cell_constructor",
+      "pc_va": "0x004DB500"
+    },
+    {
+      "va": "0x001253E0",
+      "name": "Cell::getOrCreateActivatorsNode",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Cell_getOrCreateActivatorsNode",
+      "pc_va": "0x004E2680"
+    },
+    {
+      "va": "0x00125C90",
+      "name": "Cell::addReference",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Cell_addReference",
+      "pc_va": "0x004DC0A0"
+    },
+    {
+      "va": "0x00126B20",
+      "name": "Cell::static_loadReference",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Cell_static_loadReference",
+      "pc_va": "0x004DE380"
+    },
+    {
+      "va": "0x00129CE5",
+      "name": "Reference::Load.restamp",
+      "kind": "site",
+      "confidence": "verified",
+      "provenance": "find_ref_load; mcp-1 landing instruction; restamps with the reading index"
+    },
+    {
+      "va": "0x00129E2B",
+      "name": "Reference::Load.skip",
+      "kind": "site",
+      "confidence": "verified",
+      "provenance": "find_ref_skip; mcp-1 drop branch"
+    },
+    {
+      "va": "0x00129FB0",
+      "name": "ItemData::constructor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ItemData_constructor",
+      "pc_va": "0x004E44B0"
+    },
+    {
+      "va": "0x0012A5F0",
+      "name": "Reference::GetActionFlags",
+      "kind": "function",
+      "confidence": "verified",
+      "provenance": "paired with SetActionFlags in the mcp-102 probe"
+    },
+    {
+      "va": "0x0012A650",
+      "name": "Reference::SetActionFlags",
+      "kind": "function",
+      "confidence": "verified",
+      "provenance": "find_mcp102_actn; mcp-102 restores the default active bit"
+    },
+    {
+      "va": "0x0012A680",
+      "name": "Reference::setActionFlag",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Reference_setActionFlag",
+      "pc_va": "0x004E55A0"
+    },
+    {
+      "va": "0x0012A6F0",
+      "name": "Reference::setActionReference",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Reference_setActionReference",
+      "pc_va": "0x004E5610"
+    },
+    {
+      "va": "0x0012A820",
+      "name": "Reference::removeAttachment",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Reference_removeAttachment",
+      "pc_va": "0x004E4C10"
+    },
+    {
+      "va": "0x0012A880",
+      "name": "Reference::SetMobile",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Reference_SetMobile",
+      "pc_va": "0x004E5770"
+    },
+    {
+      "va": "0x0012A9B0",
+      "name": "Reference::getScriptVariables",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Reference_getScriptVariables",
+      "pc_va": "0x004E7020"
+    },
+    {
+      "va": "0x0012AC50",
+      "name": "IsItemDataStackable",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_IsItemDataStackable",
+      "pc_va": "0x004E7970"
+    },
+    {
+      "va": "0x0012AEE0",
+      "name": "Reference::getLeveledBaseReference",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Reference_getLeveledBaseReference",
+      "pc_va": "0x004E7EE0"
+    },
+    {
+      "va": "0x0012BE80",
+      "name": "Reference::detachDynamicLightFromAffectedNodes",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Reference_detachDynamicLightFromAffectedNodes",
+      "pc_va": "0x004EBA00"
+    },
+    {
+      "va": "0x0012BEB0",
+      "name": "ItemData::destructor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ItemData_destructor",
+      "pc_va": "0x004E44E0"
+    },
+    {
+      "va": "0x0012BEE0",
+      "name": "Reference::ctor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Reference_ctor",
+      "pc_va": "0x004E4510"
+    },
+    {
+      "va": "0x0012CB30",
+      "name": "Reference::AnimIdleUpdate",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Reference_AnimIdleUpdate",
+      "pc_va": "0x004E6E20"
+    },
+    {
+      "va": "0x0012CFE0",
+      "name": "Reference::setTravelDestination",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Reference_setTravelDestination",
+      "pc_va": "0x004E7B80"
+    },
+    {
+      "va": "0x0012D8C0",
+      "name": "Reference::removeAllAttachments",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Reference_removeAllAttachments",
+      "pc_va": "0x004E4A10"
+    },
+    {
+      "va": "0x0012DAC0",
+      "name": "CS::AddTopicToList",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:CS_AddTopicToList",
+      "pc_va": "0x004E7050"
+    },
+    {
+      "va": "0x0012DD90",
+      "name": "Reference::dtor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Reference_dtor",
+      "pc_va": "0x004E45C0"
+    },
+    {
+      "va": "0x0012E3D0",
+      "name": "Reference::updateBipedParts",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Reference_updateBipedParts",
+      "pc_va": "0x004E8B50"
+    },
+    {
+      "va": "0x0012F3A0",
+      "name": "ui::setText",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_setText",
+      "pc_va": "0x0058AD30"
+    },
+    {
+      "va": "0x0012F630",
+      "name": "Reference::activate",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Reference_activate",
+      "pc_va": "0x004E9610"
+    },
+    {
+      "va": "0x00130E70",
+      "name": "BaseObject::writeFileHeader",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:BaseObject_writeFileHeader",
+      "pc_va": "0x004EEE60"
+    },
+    {
+      "va": "0x001314B0",
+      "name": "ReferenceList::remove",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ReferenceList_remove",
+      "pc_va": "0x004F19A0"
+    },
+    {
+      "va": "0x00131AD0",
+      "name": "MeshData::loadKeyframes",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MeshData_loadKeyframes",
+      "pc_va": "0x004EE200"
+    },
+    {
+      "va": "0x00132130",
+      "name": "BaseObject::dtor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:BaseObject_dtor",
+      "pc_va": "0x004F0CA0"
+    },
+    {
+      "va": "0x00132D90",
+      "name": "MeshData::loadMesh",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MeshData_loadMesh",
+      "pc_va": "0x004EE0A0"
+    },
+    {
+      "va": "0x00133B70",
+      "name": "AnimatedObject::LoadMesh",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_AnimatedObject_LoadMesh",
+      "pc_va": "0x004F0400"
+    },
+    {
+      "va": "0x001347F0",
+      "name": "Weapon::dtor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Weapon_dtor",
+      "pc_va": "0x004F1FA0"
+    },
+    {
+      "va": "0x00135B30",
+      "name": "PathGrid::Hide",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_PathGrid_Hide",
+      "pc_va": "0x004F48D0"
+    },
+    {
+      "va": "0x00135C90",
+      "name": "PathGrid::Show",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_PathGrid_Show",
+      "pc_va": "0x004F4560"
+    },
+    {
+      "va": "0x001367A0",
+      "name": "ScriptCompiler::ctor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ScriptCompiler_ctor",
+      "pc_va": "0x004F7260"
+    },
+    {
+      "va": "0x00137030",
+      "name": "Script::getLocalVarIndexAndType",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Script_getLocalVarIndexAndType",
+      "pc_va": "0x0050E7B0"
+    },
+    {
+      "va": "0x00137120",
+      "name": "Statistic::getBase",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Statistic_getBase",
+      "pc_va": "0x00401030"
+    },
+    {
+      "va": "0x00137970",
+      "name": "Script::resetEventsAndVars",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Script_resetEventsAndVars",
+      "pc_va": "0x004FF450"
+    },
+    {
+      "va": "0x00137C50",
+      "name": "Script::loadRecordSpecific",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Script_loadRecordSpecific",
+      "pc_va": "0x004FF700"
+    },
+    {
+      "va": "0x00137E7E",
+      "name": "ScriptData::Load.alloc",
+      "kind": "site",
+      "confidence": "verified",
+      "provenance": "find_mcp154_load; mcp-154 SCDT allocation"
+    },
+    {
+      "va": "0x00137FC3",
+      "name": "ScriptData::Reload.alloc",
+      "kind": "site",
+      "confidence": "verified",
+      "provenance": "find_mcp154_reload; mcp-154 SCDT allocation"
+    },
+    {
+      "va": "0x00139A20",
+      "name": "Script::ctor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Script_ctor",
+      "pc_va": "0x004FD830"
+    },
+    {
+      "va": "0x00139C70",
+      "name": "ScriptData::InitScan.loop",
+      "kind": "site",
+      "confidence": "verified",
+      "provenance": "mcp-97 scan loop head"
+    },
+    {
+      "va": "0x00139C9F",
+      "name": "ScriptData::InitScan.lengthCase",
+      "kind": "site",
+      "confidence": "verified",
+      "provenance": "find_mcp97_scan; mcp-97 length-prefixed operand advance"
+    },
+    {
+      "va": "0x00139CA9",
+      "name": "ScriptData::InitScan.landing",
+      "kind": "site",
+      "confidence": "verified",
+      "provenance": "shared landing site spliced by the mcp-97 probe"
+    },
+    {
+      "va": "0x0013C210",
+      "name": "ScriptCompiler::parseFunctionName",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ScriptCompiler_parseFunctionName",
+      "pc_va": "0x004FCD10"
+    },
+    {
+      "va": "0x0013D2A0",
+      "name": "Script::setToCompiledResult",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Script_setToCompiledResult",
+      "pc_va": "0x004FDA40"
+    },
+    {
+      "va": "0x0013D370",
+      "name": "Script::RunFunction",
+      "kind": "function",
+      "confidence": "verified",
+      "provenance": "find_run_function; three call rel32 sites redirected by script-ext"
+    },
+    {
+      "va": "0x00142030",
+      "name": "Script::executeScriptOpCode",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Script_executeScriptOpCode",
+      "pc_va": "0x00505770"
+    },
+    {
+      "va": "0x0014B3C0",
+      "name": "Script::CompileAndRun",
+      "kind": "function",
+      "confidence": "verified",
+      "provenance": "runs a typed console command",
+      "mwse": "TES3_Script_DoCommand"
+    },
+    {
+      "va": "0x0014B690",
+      "name": "Sound::isPlaying",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Sound_isPlaying",
+      "pc_va": "0x00510B80"
+    },
+    {
+      "va": "0x0014B6C0",
+      "name": "Sound::isLooping",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Sound_isLooping",
+      "pc_va": "0x00510BA0"
+    },
+    {
+      "va": "0x0014B6E0",
+      "name": "Sound::stop",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Sound_stop",
+      "pc_va": "0x00510BC0"
+    },
+    {
+      "va": "0x0014B9B0",
+      "name": "Sound::loadBuffer",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Sound_loadBuffer",
+      "pc_va": "0x005107E0"
+    },
+    {
+      "va": "0x0014BB70",
+      "name": "Sound::release",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Sound_release",
+      "pc_va": "0x005109F0"
+    },
+    {
+      "va": "0x0014BBD0",
+      "name": "Sound::play",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Sound_play",
+      "pc_va": "0x00510A40"
+    },
+    {
+      "va": "0x0014CF80",
+      "name": "AttributeSpellEffect",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_AttributeSpellEffect",
+      "pc_va": "0x00519110"
+    },
+    {
+      "va": "0x0014E450",
+      "name": "PlaySpellVFX",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_PlaySpellVFX",
+      "pc_va": "0x00515D60"
+    },
+    {
+      "va": "0x0014F060",
+      "name": "MagicSourceInstance::SpellEffectEvent",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MagicSourceInstance_SpellEffectEvent",
+      "pc_va": "0x00518460"
+    },
+    {
+      "va": "0x00152B90",
+      "name": "Stream::dtor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Stream_dtor",
+      "pc_va": "0x0051AD60"
+    },
+    {
+      "va": "0x00153400",
+      "name": "WaterController::createRipple",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WaterController_createRipple",
+      "pc_va": "0x0051C1E0"
+    },
+    {
+      "va": "0x00155A40",
+      "name": "MobileActor::calculateSwimSpeed",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_calculateSwimSpeed",
+      "pc_va": "0x005270B0"
+    },
+    {
+      "va": "0x00155C00",
+      "name": "MobileActor::getFatigueTerm",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_getFatigueTerm",
+      "pc_va": "0x00527610"
+    },
+    {
+      "va": "0x001560A0",
+      "name": "MobileObject::getInventory",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileObject_getInventory",
+      "pc_va": "0x00521620"
+    },
+    {
+      "va": "0x001560B0",
+      "name": "MobileActor::getCell",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_getCell",
+      "pc_va": "0x00521630"
+    },
+    {
+      "va": "0x001566C0",
+      "name": "MobileActor::onTerrainCollision",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_onTerrainCollision",
+      "pc_va": "0x00523310"
+    },
+    {
+      "va": "0x00156760",
+      "name": "MobileActor::onObjectCollision",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_onObjectCollision",
+      "pc_va": "0x005233B0"
+    },
+    {
+      "va": "0x00156820",
+      "name": "MobileActor::onActorCollision",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_onActorCollision",
+      "pc_va": "0x005234A0"
+    },
+    {
+      "va": "0x001568E0",
+      "name": "MobileActor::onActivatorCollision",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_onActivatorCollision",
+      "pc_va": "0x00523590"
+    },
+    {
+      "va": "0x001575A0",
+      "name": "MobileActor::getViewToPointWithFacing",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_getViewToPointWithFacing",
+      "pc_va": "0x005264C0"
+    },
+    {
+      "va": "0x00157AC0",
+      "name": "MobileActor::getBootsWeight",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_getBootsWeight",
+      "pc_va": "0x00526F30"
+    },
+    {
+      "va": "0x00157D10",
+      "name": "MobileActor::isKnockedDown",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_isKnockedDown",
+      "pc_va": "0x005275D0"
+    },
+    {
+      "va": "0x00157D30",
+      "name": "MobileActor::isKnockedOut",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_isKnockedOut",
+      "pc_va": "0x005275F0"
+    },
+    {
+      "va": "0x00158160",
+      "name": "MobileActor::applyJumpFatigueCost",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_applyJumpFatigueCost",
+      "pc_va": "0x00527A60"
+    },
+    {
+      "va": "0x001582C0",
+      "name": "MobileActor::calcDerivedStats",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_calcDerivedStats",
+      "pc_va": "0x00527BC0"
+    },
+    {
+      "va": "0x00158560",
+      "name": "MobileActor::unreadyWeapon",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_unreadyWeapon",
+      "pc_va": "0x00528000"
+    },
+    {
+      "va": "0x00158EF0",
+      "name": "MobileObject::getBasePositionIsUnderwater",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileObject_getBasePositionIsUnderwater",
+      "pc_va": "0x00529540"
+    },
+    {
+      "va": "0x00159280",
+      "name": "MobileActor::resurrect",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_resurrect",
+      "pc_va": "0x00529AF0"
+    },
+    {
+      "va": "0x001594A0",
+      "name": "MobileActor::persuade",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_persuade",
+      "pc_va": "0x00529D10"
+    },
+    {
+      "va": "0x00159E80",
+      "name": "MobileActor::determineModifiedPrice",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_determineModifiedPrice",
+      "pc_va": "0x0052AA50"
+    },
+    {
+      "va": "0x0015A470",
+      "name": "MobileActor::setCurrentMagicFromSourceCombo",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_setCurrentMagicFromSourceCombo",
+      "pc_va": "0x0052B220"
+    },
+    {
+      "va": "0x0015A4F0",
+      "name": "MobileActor::setCurrentMagicFromEquipmentStack",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_setCurrentMagicFromEquipmentStack",
+      "pc_va": "0x0052B2A0"
+    },
+    {
+      "va": "0x0015A5A0",
+      "name": "MobileActor::getSpellList",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_getSpellList",
+      "pc_va": "0x0052B3D0"
+    },
+    {
+      "va": "0x0015A650",
+      "name": "MobilePlayer::modGoldHeld",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobilePlayer_modGoldHeld",
+      "pc_va": "0x0052B480"
+    },
+    {
+      "va": "0x0015B0D0",
+      "name": "MobileActor::dropItem",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_dropItem",
+      "pc_va": "0x0052C460"
+    },
+    {
+      "va": "0x0015B3C0",
+      "name": "MobileActor::retireMagic",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_retireMagic",
+      "pc_va": "0x0052C990"
+    },
+    {
+      "va": "0x0015B3E0",
+      "name": "MobileActor::setReadiedWeapon",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_setReadiedWeapon",
+      "pc_va": "0x0052CB70"
+    },
+    {
+      "va": "0x0015B6C0",
+      "name": "MobileActor::applyEquippedConstantEffectEnchs",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_applyEquippedConstantEffectEnchs",
+      "pc_va": "0x0052CF40"
+    },
+    {
+      "va": "0x0015B7C0",
+      "name": "MobileActor::removeEquippedConstantEffectEnchs",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_removeEquippedConstantEffectEnchs",
+      "pc_va": "0x0052D010"
+    },
+    {
+      "va": "0x0015DF60",
+      "name": "MobileActor::isNotKnockedDownOrOut",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_isNotKnockedDownOrOut",
+      "pc_va": "0x00527580"
+    },
+    {
+      "va": "0x0015E6A0",
+      "name": "MobileActor::getCombatSpellList",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_getCombatSpellList",
+      "pc_va": "0x0052B3C0"
+    },
+    {
+      "va": "0x0015E6B0",
+      "name": "MobileActor::wearItem",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_wearItem",
+      "pc_va": "0x0052C770"
+    },
+    {
+      "va": "0x0015F6E0",
+      "name": "MobileActor::playVoiceover",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_playVoiceover",
+      "pc_va": "0x00528F80"
+    },
+    {
+      "va": "0x0015F8D0",
+      "name": "CrimeEvent::dtor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_CrimeEvent_dtor",
+      "pc_va": "0x0051F580"
+    },
+    {
+      "va": "0x00160250",
+      "name": "CrimeEvent::copy",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_CrimeEvent_copy",
+      "pc_va": "0x0051F3A0"
+    },
+    {
+      "va": "0x00160AD0",
+      "name": "MobileActor::onDeath",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_onDeath",
+      "pc_va": "0x00523AA0"
+    },
+    {
+      "va": "0x00161A20",
+      "name": "Console::FieldDraw?",
+      "kind": "site",
+      "confidence": "matched",
+      "provenance": "candidate for the history-seeded repaint defect"
+    },
+    {
+      "va": "0x00161FB0",
+      "name": "MobileActor::getActionWeightFight",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_getActionWeightFight",
+      "pc_va": "0x00530A20"
+    },
+    {
+      "va": "0x00162950",
+      "name": "MobileActor::forceSpellCast",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_forceSpellCast",
+      "pc_va": "0x0052F790"
+    },
+    {
+      "va": "0x001629F0",
+      "name": "MobileActor::startCombat",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_startCombat",
+      "pc_va": "0x00530470"
+    },
+    {
+      "va": "0x00169C20",
+      "name": "CombatSessionVanilla::dtor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_CombatSessionVanilla_dtor",
+      "pc_va": "0x005372F0"
+    },
+    {
+      "va": "0x0016A230",
+      "name": "CombatSessionVanilla::ctor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_CombatSessionVanilla_ctor",
+      "pc_va": "0x00537120"
+    },
+    {
+      "va": "0x0016B420",
+      "name": "MobileActor::getEffectiveAttackDistance",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_getEffectiveAttackDistance",
+      "pc_va": "0x0053ADD0"
+    },
+    {
+      "va": "0x0016B790",
+      "name": "testLineOfSight",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_testLineOfSight",
+      "pc_va": "0x0053B200"
+    },
+    {
+      "va": "0x0016BE70",
+      "name": "ActorAnimationController::calculateMovementSpeed",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ActorAnimationController_calculateMovementSpeed",
+      "pc_va": "0x0053E1A0"
+    },
+    {
+      "va": "0x0016C3D0",
+      "name": "ActorAnimationController::selectActorAnim",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ActorAnimationController_selectActorAnim",
+      "pc_va": "0x0053F2D0"
+    },
+    {
+      "va": "0x0016CC80",
+      "name": "ActorAnimController::selectMovementAnimAndUpdate",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ActorAnimController_selectMovementAnimAndUpdate",
+      "pc_va": "0x00540A90"
+    },
+    {
+      "va": "0x0016D710",
+      "name": "ActorAnimationController::swingAnimationStateMachine",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ActorAnimationController_swingAnimationStateMachine",
+      "pc_va": "0x005415F0"
+    },
+    {
+      "va": "0x0016DB90",
+      "name": "ActorAnimController::startCastAnimation",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ActorAnimController_startCastAnimation",
+      "pc_va": "0x00541A90"
+    },
+    {
+      "va": "0x0016DD30",
+      "name": "ActorAnimationController::castAnimationStateMachine",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ActorAnimationController_castAnimationStateMachine",
+      "pc_va": "0x00541C30"
+    },
+    {
+      "va": "0x0016DEC0",
+      "name": "ActorAnimationController::actionDataStateMachine",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ActorAnimationController_actionDataStateMachine",
+      "pc_va": "0x0053FBA0"
+    },
+    {
+      "va": "0x0016F120",
+      "name": "ActorAnimationController::getOpacity",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ActorAnimationController_getOpacity",
+      "pc_va": "0x00542130"
+    },
+    {
+      "va": "0x0016F380",
+      "name": "ActorAnimationController::movementPhysics",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ActorAnimationController_movementPhysics",
+      "pc_va": "0x0053E270"
+    },
+    {
+      "va": "0x0016FD00",
+      "name": "ActorAnimationController::setOpacity",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ActorAnimationController_setOpacity",
+      "pc_va": "0x00542030"
+    },
+    {
+      "va": "0x00170160",
+      "name": "PlayerAnimationController::syncRotation",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_PlayerAnimationController_syncRotation",
+      "pc_va": "0x005438F0"
+    },
+    {
+      "va": "0x00171120",
+      "name": "PlayerAnimationController::updateCameraPosition",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_PlayerAnimationController_updateCameraPosition",
+      "pc_va": "0x00542E60"
+    },
+    {
+      "va": "0x00177060",
+      "name": "MobileActor::isDiseased",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_isDiseased",
+      "pc_va": "0x0054DB80"
+    },
+    {
+      "va": "0x0017B2B0",
+      "name": "CombatPhysicalHitDetection",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_CombatPhysicalHitDetection",
+      "pc_va": "0x00554960"
+    },
+    {
+      "va": "0x0017B570",
+      "name": "CombatTouchMagicHitDetection",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_CombatTouchMagicHitDetection",
+      "pc_va": "0x00554C30"
+    },
+    {
+      "va": "0x0017B770",
+      "name": "CombatHitRoll",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_CombatHitRoll",
+      "pc_va": "0x00555290"
+    },
+    {
+      "va": "0x0017BF40",
+      "name": "MobileActor::getWeaponSpeed",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_getWeaponSpeed",
+      "pc_va": "0x00556580"
+    },
+    {
+      "va": "0x0017C160",
+      "name": "MobileActor::isAttackingOrCasting",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_isAttackingOrCasting",
+      "pc_va": "0x005567D0"
+    },
+    {
+      "va": "0x0017C3D0",
+      "name": "MobileActor::applyHealthDamage",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_applyHealthDamage",
+      "pc_va": "0x00557CF0"
+    },
+    {
+      "va": "0x0017C950",
+      "name": "MobileActor::applyFatigueDamage",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_applyFatigueDamage",
+      "pc_va": "0x005581B0"
+    },
+    {
+      "va": "0x0017CC70",
+      "name": "MobileActor::getAttackReach",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_getAttackReach",
+      "pc_va": "0x005584C0"
+    },
+    {
+      "va": "0x0017CE00",
+      "name": "MobileActor::ApplyShieldWear",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_ApplyShieldWear",
+      "pc_va": "0x00558690"
+    },
+    {
+      "va": "0x0017D490",
+      "name": "MobileActor::stopCombat",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_stopCombat",
+      "pc_va": "0x00558720"
+    },
+    {
+      "va": "0x0017DC30",
+      "name": "MobileActor::hitStunTestAndReportCrime",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_hitStunTestAndReportCrime",
+      "pc_va": "0x00557840"
+    },
+    {
+      "va": "0x0017E030",
+      "name": "MobileActor::applyPhysicalHit",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_applyPhysicalHit",
+      "pc_va": "0x005568F0"
+    },
+    {
+      "va": "0x0017E470",
+      "name": "MACT::combatWeaponStrike",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MACT_combatWeaponStrike",
+      "pc_va": "0x00556F40"
+    },
+    {
+      "va": "0x0017F870",
+      "name": "MACTActiveEffects::removeBySerial",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MACTActiveEffects_removeBySerial",
+      "pc_va": "0x0055C9D0"
+    },
+    {
+      "va": "0x001800E0",
+      "name": "KillCounter::load",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_KillCounter_load",
+      "pc_va": "0x0055DA90"
+    },
+    {
+      "va": "0x00180220",
+      "name": "MobileObject::onActivatorCollision",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileObject_onActivatorCollision",
+      "pc_va": "0x00561600"
+    },
+    {
+      "va": "0x001809A0",
+      "name": "MobileObject::setFootPoint",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileObject_setFootPoint",
+      "pc_va": "0x00561960"
+    },
+    {
+      "va": "0x00180CA0",
+      "name": "MobileObject::setLightEffectFalloff",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileObject_setLightEffectFalloff",
+      "pc_va": "0x00562490"
+    },
+    {
+      "va": "0x00180D50",
+      "name": "MobileObject::updateConstantVelocity",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileObject_updateConstantVelocity",
+      "pc_va": "0x0055E7A0"
+    },
+    {
+      "va": "0x00181120",
+      "name": "MobileObject::setInstantVelocity",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileObject_setInstantVelocity",
+      "pc_va": "0x0055EBA0"
+    },
+    {
+      "va": "0x00181200",
+      "name": "MobileObject::resetCollisionGroup",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileObject_resetCollisionGroup",
+      "pc_va": "0x0055ECB0"
+    },
+    {
+      "va": "0x00181B70",
+      "name": "MobileObject::EnterLeaveSimulation",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileObject_EnterLeaveSimulation",
+      "pc_va": "0x00561CB0"
+    },
+    {
+      "va": "0x00183BB0",
+      "name": "MobileObject::removeLight",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileObject_removeLight",
+      "pc_va": "0x00562510"
+    },
+    {
+      "va": "0x00183DD0",
+      "name": "MobileObject::setLightEffectDiffuseCol",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileObject_setLightEffectDiffuseCol",
+      "pc_va": "0x00562350"
+    },
+    {
+      "va": "0x00183F60",
+      "name": "MobManager::clampAllActors",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobManager_clampAllActors",
+      "pc_va": "0x00563CF0"
+    },
+    {
+      "va": "0x001840B0",
+      "name": "MobManager::addMob",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobManager_addMob",
+      "pc_va": "0x005636A0"
+    },
+    {
+      "va": "0x00184200",
+      "name": "MobManager::removeMob",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobManager_removeMob",
+      "pc_va": "0x005637F0"
+    },
+    {
+      "va": "0x00184610",
+      "name": "MobManager::addPlayerAsCollider",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobManager_addPlayerAsCollider",
+      "pc_va": "0x00563640"
+    },
+    {
+      "va": "0x001849D0",
+      "name": "AIPlanner::assignMobileActor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_AIPlanner_assignMobileActor",
+      "pc_va": "0x00564E40"
+    },
+    {
+      "va": "0x00184B10",
+      "name": "AIPlanner::enterLeaveSimulation",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_AIPlanner_enterLeaveSimulation",
+      "pc_va": "0x00565350"
+    },
+    {
+      "va": "0x00184FE0",
+      "name": "AIPlanner::allowRestingNear",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_AIPlanner_allowRestingNear",
+      "pc_va": "0x00564FA0"
+    },
+    {
+      "va": "0x001852C0",
+      "name": "MobilePlayer::setVanityState",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobilePlayer_setVanityState",
+      "pc_va": "0x00567960"
+    },
+    {
+      "va": "0x00185340",
+      "name": "MobilePlayer::setBounty",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobilePlayer_setBounty",
+      "pc_va": "0x005688D0"
+    },
+    {
+      "va": "0x00185530",
+      "name": "MobilePlayer::setupCameras",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobilePlayer_setupCameras",
+      "pc_va": "0x00566500"
+    },
+    {
+      "va": "0x00185890",
+      "name": "MobilePlayer::update1stPersonTransform",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobilePlayer_update1stPersonTransform",
+      "pc_va": "0x005684E0"
+    },
+    {
+      "va": "0x00185BC0",
+      "name": "MobilePlayer::onDeath",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobilePlayer_onDeath",
+      "pc_va": "0x0056A120"
+    },
+    {
+      "va": "0x00185E90",
+      "name": "MobilePlayer::addTopic",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobilePlayer_addTopic",
+      "pc_va": "0x0056A470"
+    },
+    {
+      "va": "0x00185F40",
+      "name": "MobilePlayer::getSkillProgressRequirement",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobilePlayer_getSkillProgressRequirement",
+      "pc_va": "0x0056A520"
+    },
+    {
+      "va": "0x00186890",
+      "name": "MobilePlayer::wakeUp",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobilePlayer_wakeUp",
+      "pc_va": "0x0056BBB0"
+    },
+    {
+      "va": "0x001868C0",
+      "name": "MobilePlayer::progressSkillLevelIfRequirementsMet",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobilePlayer_progressSkillLevelIfRequirementsMet",
+      "pc_va": "0x0056BBE0"
+    },
+    {
+      "va": "0x00187DF0",
+      "name": "MobilePlayer::Dtor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobilePlayer_Dtor",
+      "pc_va": "0x005662F0"
+    },
+    {
+      "va": "0x00188860",
+      "name": "MobilePlayer::updateScenegraph",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobilePlayer_updateScenegraph",
+      "pc_va": "0x005679E0"
+    },
+    {
+      "va": "0x00188B20",
+      "name": "MobilePlayer::exerciseSkill",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobilePlayer_exerciseSkill",
+      "pc_va": "0x0056A5D0"
+    },
+    {
+      "va": "0x00189E40",
+      "name": "MobilePlayer::getBounty",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobilePlayer_getBounty",
+      "pc_va": "0x005688B0"
+    },
+    {
+      "va": "0x0018D900",
+      "name": "ProcessManager::checkNearbyEnemiesAllowRest",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ProcessManager_checkNearbyEnemiesAllowRest",
+      "pc_va": "0x0056F810"
+    },
+    {
+      "va": "0x0018DDE0",
+      "name": "ProcessManager::findActorsInProximity",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ProcessManager_findActorsInProximity",
+      "pc_va": "0x005702B0"
+    },
+    {
+      "va": "0x0018E020",
+      "name": "ProcessManager::checkAlarmRadius",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ProcessManager_checkAlarmRadius",
+      "pc_va": "0x005704B0"
+    },
+    {
+      "va": "0x0018E1C0",
+      "name": "ProcessManager::detectSneak",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ProcessManager_detectSneak",
+      "pc_va": "0x00570600"
+    },
+    {
+      "va": "0x0018E500",
+      "name": "ProcessManager::detectByActor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ProcessManager_detectByActor",
+      "pc_va": "0x00570960"
+    },
+    {
+      "va": "0x0018E610",
+      "name": "ProcessManager::detectPresence",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ProcessManager_detectPresence",
+      "pc_va": "0x00570A60"
+    },
+    {
+      "va": "0x0018E730",
+      "name": "ProcessManager::detectAttack",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ProcessManager_detectAttack",
+      "pc_va": "0x00570C60"
+    },
+    {
+      "va": "0x00190120",
+      "name": "NonDynamicData::resolveObject",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_NonDynamicData_resolveObject",
+      "pc_va": "0x004B8B60"
+    },
+    {
+      "va": "0x001909A0",
+      "name": "ProjectileManager::resolveCollisions",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ProjectileManager_resolveCollisions",
+      "pc_va": "0x005753A0"
+    },
+    {
+      "va": "0x001933E0",
+      "name": "Ini::ReadKey",
+      "kind": "function",
+      "confidence": "verified",
+      "provenance": "engine ini reader used by ConsoleCombo; __cdecl"
+    },
+    {
+      "va": "0x00193710",
+      "name": "Ini::ReadInt",
+      "confidence": "verified",
+      "provenance": "traced: 4 args cdecl (section, key, default, file), returns int",
+      "note": "the string reader is Ini::ReadKey at 0x001933E0"
+    },
+    {
+      "va": "0x00193800",
+      "name": "LoadLanguageFromINI",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_LoadLanguageFromINI",
+      "pc_va": "0x00467850"
+    },
+    {
+      "va": "0x00195800",
+      "name": "InputController::readKeyState",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_InputController_readKeyState",
+      "pc_va": "0x004065E0"
+    },
+    {
+      "va": "0x00195F70",
+      "name": "Input::Action",
+      "kind": "function",
+      "confidence": "verified",
+      "provenance": "console payload calls it",
+      "mwse": "TES3_InputController_keybindTest"
+    },
+    {
+      "va": "0x00197710",
+      "name": "ui::setAutoWidth",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_setAutoWidth",
+      "pc_va": "0x005813C0"
+    },
+    {
+      "va": "0x00197740",
+      "name": "ui::setAutoHeight",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_setAutoHeight",
+      "pc_va": "0x00581400"
+    },
+    {
+      "va": "0x001977D0",
+      "name": "ui::getTopLevelParent",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_getTopLevelParent",
+      "pc_va": "0x00582EF0"
+    },
+    {
+      "va": "0x001983B0",
+      "name": "ui::getPaletteColour",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_getPaletteColour",
+      "pc_va": "0x0057F610"
+    },
+    {
+      "va": "0x00199660",
+      "name": "ui::timingUpdate",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_timingUpdate",
+      "pc_va": "0x00583B60"
+    },
+    {
+      "va": "0x0019A170",
+      "name": "ui::findChildElement",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_findChildElement",
+      "pc_va": "0x00582DE0"
+    },
+    {
+      "va": "0x0019A770",
+      "name": "ui::getProperty",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_getProperty",
+      "pc_va": "0x00581440"
+    },
+    {
+      "va": "0x0019A9B0",
+      "name": "ui::getPropertyType",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_getPropertyType",
+      "pc_va": "0x00582AD0"
+    },
+    {
+      "va": "0x0019B350",
+      "name": "ui::getText",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_getText",
+      "pc_va": "0x00580BB0"
+    },
+    {
+      "va": "0x0019B730",
+      "name": "ui::findMenu",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_findMenu",
+      "pc_va": "0x00595370"
+    },
+    {
+      "va": "0x0019D850",
+      "name": "Console::FieldRepaint?",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "candidate for the history-seeded repaint defect; two attempts reverted"
+    },
+    {
+      "va": "0x0019DBF0",
+      "name": "ui::findPartRootOrComponent",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_findPartRootOrComponent",
+      "pc_va": "0x00582B80"
+    },
+    {
+      "va": "0x0019E9E0",
+      "name": "ui::setIcon",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_setIcon",
+      "pc_va": "0x0058AE20"
+    },
+    {
+      "va": "0x0019F170",
+      "name": "ui::removeProperty",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_removeProperty",
+      "pc_va": "0x00582A70"
+    },
+    {
+      "va": "0x001A0880",
+      "name": "ui::destroyChildren",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_destroyChildren",
+      "pc_va": "0x00578820"
+    },
+    {
+      "va": "0x001A0C40",
+      "name": "ui::reattachToParent",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_reattachToParent",
+      "pc_va": "0x0057B850"
+    },
+    {
+      "va": "0x001A6280",
+      "name": "ui::performLayout",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_performLayout",
+      "pc_va": "0x00583B70"
+    },
+    {
+      "va": "0x001A63C0",
+      "name": "ui::setVisible",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_setVisible",
+      "pc_va": "0x0057F2A0"
+    },
+    {
+      "va": "0x001A6CF0",
+      "name": "ui::createChildElement",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_createChildElement",
+      "pc_va": "0x00582B50"
+    },
+    {
+      "va": "0x001A6E00",
+      "name": "ui::createWidget",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_createWidget",
+      "pc_va": "0x00588140"
+    },
+    {
+      "va": "0x001A6EA0",
+      "name": "ui::createRect",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_createRect",
+      "pc_va": "0x00588340"
+    },
+    {
+      "va": "0x001A7080",
+      "name": "ui::createImage",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_createImage",
+      "pc_va": "0x00588630"
+    },
+    {
+      "va": "0x001A7170",
+      "name": "ui::createNif",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_createNif",
+      "pc_va": "0x00588830"
+    },
+    {
+      "va": "0x001A7240",
+      "name": "ui::createBlock",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_createBlock",
+      "pc_va": "0x00588980"
+    },
+    {
+      "va": "0x001A7300",
+      "name": "ui::createLabel",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_createLabel",
+      "pc_va": "0x00588BE0"
+    },
+    {
+      "va": "0x001A8F70",
+      "name": "MenuInputController::invalidateElementReferences",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MenuInputController_invalidateElementReferences",
+      "pc_va": "0x0058EE90"
+    },
+    {
+      "va": "0x001ACC60",
+      "name": "ui::requestMenuModeOn",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_requestMenuModeOn",
+      "pc_va": "0x00595230"
+    },
+    {
+      "va": "0x001AD280",
+      "name": "ui::getMenuOnTop",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_getMenuOnTop",
+      "pc_va": "0x00595290"
+    },
+    {
+      "va": "0x001AD4A0",
+      "name": "ui::findHelpLayerMenu",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_findHelpLayerMenu",
+      "pc_va": "0x00595A10"
+    },
+    {
+      "va": "0x001AD580",
+      "name": "ui::clearAndHideHelpMenu",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_clearAndHideHelpMenu",
+      "pc_va": "0x00595E30"
+    },
+    {
+      "va": "0x001ADD40",
+      "name": "HideCursor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_HideCursor",
+      "pc_va": "0x005966F0"
+    },
+    {
+      "va": "0x001ADE80",
+      "name": "MenuController::setInventoryMenuEnabled",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MenuController_setInventoryMenuEnabled",
+      "pc_va": "0x005968D0"
+    },
+    {
+      "va": "0x001ADF20",
+      "name": "MenuController::setStatsMenuEnabled",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MenuController_setStatsMenuEnabled",
+      "pc_va": "0x005969B0"
+    },
+    {
+      "va": "0x001ADFC0",
+      "name": "MenuController::setMagicMenuEnabled",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MenuController_setMagicMenuEnabled",
+      "pc_va": "0x00596A90"
+    },
+    {
+      "va": "0x001AE060",
+      "name": "MenuController::setMapMenuEnabled",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MenuController_setMapMenuEnabled",
+      "pc_va": "0x00596B70"
+    },
+    {
+      "va": "0x001AE1A0",
+      "name": "ui::loadMenuPosition",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_loadMenuPosition",
+      "pc_va": "0x005972C0"
+    },
+    {
+      "va": "0x001AF010",
+      "name": "ui::createTooltipMenu",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_createTooltipMenu",
+      "pc_va": "0x00595A40"
+    },
+    {
+      "va": "0x001AF660",
+      "name": "ui::moveMenuToFront",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_moveMenuToFront",
+      "pc_va": "0x00595870"
+    },
+    {
+      "va": "0x001B08F0",
+      "name": "ui::createMenu",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_createMenu",
+      "pc_va": "0x00595400"
+    },
+    {
+      "va": "0x001B1FB0",
+      "name": "alchemySkillRoll",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_alchemySkillRoll",
+      "pc_va": "0x0059D610"
+    },
+    {
+      "va": "0x001B4240",
+      "name": "AttemptPotionBrew",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_AttemptPotionBrew",
+      "pc_va": "0x0059C030"
+    },
+    {
+      "va": "0x001B8CA0",
+      "name": "EquipmentStack::CalculateBarterItemValue",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_EquipmentStack_CalculateBarterItemValue",
+      "pc_va": "0x005A46E0"
+    },
+    {
+      "va": "0x001B8DF0",
+      "name": "FilterBarterTile",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_FilterBarterTile",
+      "pc_va": "0x005A5430"
+    },
+    {
+      "va": "0x001B9340",
+      "name": "GameBarterOffer",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_GameBarterOffer",
+      "pc_va": "0x005A66C0"
+    },
+    {
+      "va": "0x001C1D00",
+      "name": "ShowBookMenu",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ShowBookMenu",
+      "pc_va": "0x005AC2A0"
+    },
+    {
+      "va": "0x001C4450",
+      "name": "ui::setConsoleReference",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_setConsoleReference",
+      "pc_va": "0x005B2F00"
+    },
+    {
+      "va": "0x001C4B30",
+      "name": "ConsoleLogResult",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ConsoleLogResult",
+      "pc_va": "0x005B2C20"
+    },
+    {
+      "va": "0x001C91C0",
+      "name": "UI::showContentsMenu",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UI_showContentsMenu",
+      "pc_va": "0x005B4220"
+    },
+    {
+      "va": "0x001CD530",
+      "name": "ui::getServiceActor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_getServiceActor",
+      "pc_va": "0x005BFEA0"
+    },
+    {
+      "va": "0x001CD8E0",
+      "name": "ui::updateDialogDisposition",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_updateDialogDisposition",
+      "pc_va": "0x005C0780"
+    },
+    {
+      "va": "0x001CD970",
+      "name": "ui::temporaryDispositionMod",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_temporaryDispositionMod",
+      "pc_va": "0x005C08E0"
+    },
+    {
+      "va": "0x001CE640",
+      "name": "UI::updateTopicsList",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UI_updateTopicsList",
+      "pc_va": "0x005BE6C0"
+    },
+    {
+      "va": "0x001CF310",
+      "name": "UI::createResponseText",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UI_createResponseText",
+      "pc_va": "0x005C00D0"
+    },
+    {
+      "va": "0x001CF9E0",
+      "name": "showDialogueMessage",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_showDialogueMessage",
+      "pc_va": "0x005C00A0"
+    },
+    {
+      "va": "0x001D3140",
+      "name": "UI::UpdateEnchantingMenu",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UI_UpdateEnchantingMenu",
+      "pc_va": "0x005C3840"
+    },
+    {
+      "va": "0x001D6540",
+      "name": "FilterInventoryTile",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_FilterInventoryTile",
+      "pc_va": "0x005CC720"
+    },
+    {
+      "va": "0x001D6720",
+      "name": "UpdateEncumbrance",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UpdateEncumbrance",
+      "pc_va": "0x005CD1B0"
+    },
+    {
+      "va": "0x001D94F0",
+      "name": "UI::UpdateInventoryWindowTitle",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UI_UpdateInventoryWindowTitle",
+      "pc_va": "0x005CE080"
+    },
+    {
+      "va": "0x001D96D0",
+      "name": "AttachTileToCursor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_AttachTileToCursor",
+      "pc_va": "0x005D14F0"
+    },
+    {
+      "va": "0x001D9FF0",
+      "name": "ui::inventory_addTile",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_inventory_addTile",
+      "pc_va": "0x005CBCC0"
+    },
+    {
+      "va": "0x001DA810",
+      "name": "ui::inventory_equipInventoryTileToPlayer",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_inventory_equipInventoryTileToPlayer",
+      "pc_va": "0x005CE130"
+    },
+    {
+      "va": "0x001DC670",
+      "name": "ui::inventory_equipInventoryItemToPlayer",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_inventory_equipInventoryItemToPlayer",
+      "pc_va": "0x005D1190"
+    },
+    {
+      "va": "0x001DC930",
+      "name": "updateInventoryCharacterImage",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_updateInventoryCharacterImage",
+      "pc_va": "0x005CD2A0"
+    },
+    {
+      "va": "0x001DD950",
+      "name": "UpdateInventoryTiles",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UpdateInventoryTiles",
+      "pc_va": "0x005CC910"
+    },
+    {
+      "va": "0x001E34E0",
+      "name": "ResolveAssetPath",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ResolveAssetPath",
+      "pc_va": "0x0047A960"
+    },
+    {
+      "va": "0x001E923F",
+      "name": "Loading::Redraw",
+      "kind": "site",
+      "confidence": "verified",
+      "provenance": "MCP-140 investigation; loading progress redraw"
+    },
+    {
+      "va": "0x001E9270",
+      "name": "UI::destroyLoadingMenu",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UI_destroyLoadingMenu",
+      "pc_va": "0x005DEEA0"
+    },
+    {
+      "va": "0x001E92F0",
+      "name": "UI::showLoadingMenu",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UI_showLoadingMenu",
+      "pc_va": "0x005DED20"
+    },
+    {
+      "va": "0x001EA410",
+      "name": "UI::MagicMenu_UpdateSpellSelection",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UI_MagicMenu_UpdateSpellSelection",
+      "pc_va": "0x005E1AB0"
+    },
+    {
+      "va": "0x001EA5D0",
+      "name": "UI::MagicMenu_UpdateEnchantedItemSelection",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UI_MagicMenu_UpdateEnchantedItemSelection",
+      "pc_va": "0x005E2E80"
+    },
+    {
+      "va": "0x001EA780",
+      "name": "UI::removeSpellFromGUIList",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UI_removeSpellFromGUIList",
+      "pc_va": "0x005E3BD0"
+    },
+    {
+      "va": "0x001EB640",
+      "name": "UI::updatEnchantmentsList",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UI_updatEnchantmentsList",
+      "pc_va": "0x005E3070"
+    },
+    {
+      "va": "0x001EC4C0",
+      "name": "UI::MenuMagic_deselectMagic",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UI_MenuMagic_deselectMagic",
+      "pc_va": "0x005E4500"
+    },
+    {
+      "va": "0x001EE460",
+      "name": "UI::updateActiveMagicEffectIcons",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UI_updateActiveMagicEffectIcons",
+      "pc_va": "0x005E2480"
+    },
+    {
+      "va": "0x001EEAD0",
+      "name": "UI::MenuMagic_refreshAll",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UI_MenuMagic_refreshAll",
+      "pc_va": "0x005E3D10"
+    },
+    {
+      "va": "0x001F2C30",
+      "name": "ui::MenuMap_updateLocalPlayer",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_MenuMap_updateLocalPlayer",
+      "pc_va": "0x005EB760"
+    },
+    {
+      "va": "0x001F52A0",
+      "name": "ui::MenuMap_updateMapRender",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_MenuMap_updateMapRender",
+      "pc_va": "0x005E99C0"
+    },
+    {
+      "va": "0x001F7650",
+      "name": "UI::UpdateCurrentMagicFillBar",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UI_UpdateCurrentMagicFillBar",
+      "pc_va": "0x005F5500"
+    },
+    {
+      "va": "0x001FA5F0",
+      "name": "UI::UpdateCurrentMagicFromEquipmentStack",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UI_UpdateCurrentMagicFromEquipmentStack",
+      "pc_va": "0x005F4DB0"
+    },
+    {
+      "va": "0x001FA6B0",
+      "name": "UI::UpdateCurrentMagicFromSpell",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UI_UpdateCurrentMagicFromSpell",
+      "pc_va": "0x005F4E70"
+    },
+    {
+      "va": "0x001FD510",
+      "name": "showMessageBox",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_showMessageBox",
+      "pc_va": "0x005F90C0"
+    },
+    {
+      "va": "0x002096B1",
+      "name": "UI::displayObjectTooltip",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UI_displayObjectTooltip",
+      "pc_va": "0x00590D90"
+    },
+    {
+      "va": "0x0020CAB0",
+      "name": "ShowRestMenu",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ShowRestMenu",
+      "pc_va": "0x00610170"
+    },
+    {
+      "va": "0x0020FB10",
+      "name": "ShowScrollMenu",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ShowScrollMenu",
+      "pc_va": "0x006138A0"
+    },
+    {
+      "va": "0x00219050",
+      "name": "ShowSpellmakingMenu",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ShowSpellmakingMenu",
+      "pc_va": "0x00621450"
+    },
+    {
+      "va": "0x0021AC70",
+      "name": "UI::UpdateSpellmakingMenu",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UI_UpdateSpellmakingMenu",
+      "pc_va": "0x00622020"
+    },
+    {
+      "va": "0x0021B3B0",
+      "name": "UpdateFillBar",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UpdateFillBar",
+      "pc_va": "0x006262D0"
+    },
+    {
+      "va": "0x0021B590",
+      "name": "UI::FlagSkillUpdated",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UI_FlagSkillUpdated",
+      "pc_va": "0x00627320"
+    },
+    {
+      "va": "0x0021BB70",
+      "name": "ShowSkillRaisedNotification",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ShowSkillRaisedNotification",
+      "pc_va": "0x00629FC0"
+    },
+    {
+      "va": "0x0021C370",
+      "name": "UpdatePlayerAttribute",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UpdatePlayerAttribute",
+      "pc_va": "0x00626410"
+    },
+    {
+      "va": "0x0021E7E0",
+      "name": "UpdateStatsPane",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UpdateStatsPane",
+      "pc_va": "0x006266D0"
+    },
+    {
+      "va": "0x00227970",
+      "name": "InventoryData::findTileExact",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_InventoryData_findTileExact",
+      "pc_va": "0x00633E40"
+    },
+    {
+      "va": "0x002279C0",
+      "name": "InventoryData::findTile",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_InventoryData_findTile",
+      "pc_va": "0x00633E80"
+    },
+    {
+      "va": "0x00227CA0",
+      "name": "InventoryData::ClearIcons",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_InventoryData_ClearIcons",
+      "pc_va": "0x00632270"
+    },
+    {
+      "va": "0x00227E10",
+      "name": "InventoryData::mergeTile",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_InventoryData_mergeTile",
+      "pc_va": "0x00632FC0"
+    },
+    {
+      "va": "0x00228E50",
+      "name": "InventoryData::AddInventoryItems",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_InventoryData_AddInventoryItems",
+      "pc_va": "0x00633510"
+    },
+    {
+      "va": "0x0022D920",
+      "name": "WidgetButton::updateStateColor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WidgetButton_updateStateColor",
+      "pc_va": "0x00639E60"
+    },
+    {
+      "va": "0x0022E220",
+      "name": "ui::factoryButton",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_factoryButton",
+      "pc_va": "0x00639420"
+    },
+    {
+      "va": "0x00232A80",
+      "name": "ui::factorySlider",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_factorySlider",
+      "pc_va": "0x00645EB0"
+    },
+    {
+      "va": "0x00233EB0",
+      "name": "WidgetScrollPane::getContentPane",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WidgetScrollPane_getContentPane",
+      "pc_va": "0x00649CA0"
+    },
+    {
+      "va": "0x00233FB0",
+      "name": "UpdateStatsScrollPane",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UpdateStatsScrollPane",
+      "pc_va": "0x00649870"
+    },
+    {
+      "va": "0x00234160",
+      "name": "ui::ScrollPaneHorz_scrollBarChanged",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_ScrollPaneHorz_scrollBarChanged",
+      "pc_va": "0x00649A20"
+    },
+    {
+      "va": "0x00234840",
+      "name": "ui::ScrollPane_contentPaneChanged",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_ScrollPane_contentPaneChanged",
+      "pc_va": "0x00649E40"
+    },
+    {
+      "va": "0x002363F0",
+      "name": "ui::updateTextSelectColorForState",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_updateTextSelectColorForState",
+      "pc_va": "0x0064CB60"
+    },
+    {
+      "va": "0x00244D04",
+      "name": "File::Delete",
+      "confidence": "verified",
+      "provenance": "traced: RtlInitAnsiString + NtOpenFile with DELETE access"
+    },
+    {
+      "va": "0x00265E90",
+      "name": "Memory_Heap_global_init",
+      "confidence": "verified",
+      "note": "static initializer: the global heap 0x003EFC70 with a 0x1100000 region"
+    },
+    {
+      "va": "0x003C4F04",
+      "name": "LandVertex::PositionSize",
+      "confidence": "verified",
+      "provenance": "written by SetLayout: 12 float3, 6 short3",
+      "kind": "data"
+    },
+    {
+      "va": "0x003C4F08",
+      "name": "LandVertex::NormalSize",
+      "confidence": "verified",
+      "provenance": "written by SetLayout: 12, 6 or 4",
+      "kind": "data"
+    },
+    {
+      "va": "0x003C4F0C",
+      "name": "LandVertex::UVSize",
+      "confidence": "verified",
+      "provenance": "written by SetLayout: 8 or 4",
+      "kind": "data"
+    },
+    {
+      "va": "0x003C4F10",
+      "name": "LandVertex::Stride",
+      "confidence": "verified",
+      "provenance": "written by SetLayout: sum of the field sizes plus a 4-byte colour",
+      "kind": "data"
+    },
+    {
+      "va": "0x003C4F14",
+      "name": "LandVertex::Flags",
+      "confidence": "verified",
+      "provenance": "flags word last passed to SetLayout",
+      "kind": "data"
+    },
+    {
+      "va": "0x003C50C8",
+      "name": "Script::CommandTable",
+      "kind": "data",
+      "confidence": "verified",
+      "provenance": "find_command_table; six opcode bounds widened by script-ext"
+    },
+    {
+      "va": "0x003CDA3F",
+      "name": "Diagnostics::SkipProgramFlows",
+      "confidence": "verified",
+      "provenance": "written by InitLogs, read nowhere"
+    },
+    {
+      "va": "0x003CE804",
+      "name": "ArchiveManager::Instance",
+      "confidence": "verified",
+      "provenance": "archive manager passed to Invalidate by ReadInvalidationList",
+      "kind": "data"
+    }
+  ]
+}

@@ -112,6 +112,9 @@ every direct call site. Counters go to `E:\tes3xprof.bin` on the console command
 `tes3xprof mark` (dump, then reset), at loader checkpoints, and every `[Xbox] ProfileDumpFrames`
 frames. `tes3xprof reset` clears them.
 
+`tools/tes3x_prof.py targets NAME` looks a function up in the [symbol map](symbol-map.md) and prints
+the `--apply profile=` value for it; `tools/tes3x_prof.py report tes3xprof.bin` renders the dump.
+
 Only an original Xbox gives meaningful timings; an emulator run shows only that the build does not
 crash. A command file makes measurements repeatable: move to the same place, wait the same number of
 frames, then `tes3xprof mark`.
@@ -125,6 +128,15 @@ site. Allocation counts are exact, and live blocks are tracked for one address i
 is appended to `E:\tes3xheap.bin` at the first frame (with `diagnostics`) and on the console
 command `tes3xheap`; each also records the kernel's memory statistics. The record layout is
 `heap_header` and `heap_site` in `hooks/tes3xheap.c`.
+
+`tools/tes3x_heap.py tes3xheap.bin` renders it, naming call sites from the
+[symbol map](symbol-map.md): `--by-file` groups by source file, `--last` shows only the last
+snapshot, and `--compare BASELINE.bin` subtracts another census, such as retail's.
+
+`--apply mem-census`, or the pipeline's `--mem-census`, covers memory outside that heap: committed
+virtual memory, contiguous and pool allocations and the XAPI heap, each by caller.
+`tools/tes3x_mem.py tes3xmem.bin` renders `E:\tes3xmem.bin`; `--skip NAME` leaves a function out of
+caller chains.
 
 The census needs an 8 MB table, so run it on a console or emulator with 128 MB. The engine's
 allocations do not depend on the memory size, so a 128 MB census also describes a 64 MB console.
