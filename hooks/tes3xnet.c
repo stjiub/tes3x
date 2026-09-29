@@ -22,7 +22,8 @@
  * menus do not pause the world, the rest menu closes as it opens, and the server's clock sets the
  * time globals; a console joins only once a game is loaded, offering its own clock. The server names
  * one client the authority for each loaded cell: it runs those actors and sends their states, and
- * the others take them out of the simulation and place them from the states.
+ * the others take them out of the simulation and place them from the states. Ghosts and followed
+ * actors play the walk, run, sneak, swim or jump animation their movement flags call for.
  *
  * While up, the HalReturnToFirmware thunk points at a wrapper that stops the NIC first: a quick
  * reboot keeps the kernel, which would otherwise keep a connected interrupt object and a live DMA
@@ -53,10 +54,11 @@
 #if !defined(TES3X_NET_FIND_MENU) || !defined(TES3X_NET_UI_ID) || !defined(TES3X_NET_TRIGGER_EVENT)
 #error "define TES3X_NET_FIND_MENU, TES3X_NET_UI_ID and TES3X_NET_TRIGGER_EVENT to the UI functions"
 #endif
-#if !defined(TES3X_NET_FIND_REFERENCE) || !defined(TES3X_NET_REF_MOBILE) || \
+#if !defined(TES3X_NET_FIND_REFERENCE) || !defined(TES3X_NET_REF_ANIMATION) || \
     !defined(TES3X_NET_REF_ORIENTATION) || !defined(TES3X_NET_REF_ROTATION) || \
-    !defined(TES3X_NET_NODE_SET_ROTATION) || !defined(TES3X_NET_NODE_UPDATE)
-#error "define the TES3X_NET_ reference and node functions SetPos and SetAngle call"
+    !defined(TES3X_NET_NODE_SET_ROTATION) || !defined(TES3X_NET_NODE_UPDATE) || \
+    !defined(TES3X_NET_ANIM_HAS_GROUP) || !defined(TES3X_NET_ANIM_PLAY_GROUP)
+#error "define the TES3X_NET_ functions SetPos, SetAngle and PlayGroup call"
 #endif
 
 typedef unsigned short u16;
@@ -231,9 +233,11 @@ static struct {
 } ses;
 
 /* The player's state: flags, position, heading (orientation z), then the interior cell's name.
- * Exterior cells are left empty; the grid follows from the position. */
+ * Exterior cells are left empty; the grid follows from the position. The upper half of the flags
+ * is the player's movement, as the mobile holds it. */
 #define STATE_IN_WORLD 1u
 #define STATE_INTERIOR 2u
+#define STATE_MOVEMENT_SHIFT 16
 #define STATE_BYTES 52u
 #define CELL_NAME 32u
 #define PEERS 8u
@@ -1408,6 +1412,8 @@ static void rest_block(void)
 /* The NPC a dialogue is with stays put while the world runs: it leaves the simulation, as actors
  * outside the loaded cells do, until the dialogue closes. Combat or a drop in its health releases
  * it and closes the dialogue, so holding an NPC in conversation cannot set it up to be hit. */
+#define MOBILE_MOVEMENT 0x8 /* u16: forward 1, back 2, left 4, right 8, walk 0x100, run 0x200,
+                             sneak 0x400, swim 0x800, jump 0x1000 or 0x4000 */
 #define MOBILE_FLAGS 0x10
 #define MOBILE_SIMULATED 0x4u /* ActiveInSimulation, MWSE's activeAI */
 #define MOBILE_IN_COMBAT 0x10000u
@@ -1783,9 +1789,26 @@ static void log_text(const char *tag, const char *text)
     tes3x_log_raw(line, n);
 }
 
+typedef void *(__attribute__((thiscall)) *fn_ref_part)(const void *ref);
+
+/* A reference's attachments are a list of {kind, next, data...}; its mobile is kind 8. */
+#define REF_ATTACHMENTS 0x44
+#define ATTACHMENT_MOBILE 8u
+
+static u8 *ref_mobile(const u8 *ref)
+{
+    const u8 *a = *(const u8 *const *)(ref + REF_ATTACHMENTS);
+    u32 guard;
+
+    for (guard = 0; plausible(a) && guard < 32; a = *(const u8 *const *)(a + 4), guard++)
+        if (*(const u32 *)a == ATTACHMENT_MOBILE)
+            return *(u8 *const *)(a + 8);
+    return 0;
+}
+
 static void player_state(const u8 *ref, u8 *state)
 {
-    const u8 *handler = *(const u8 **)TES3X_NET_DATA_HANDLER, *cell = 0;
+    const u8 *handler = *(const u8 **)TES3X_NET_DATA_HANDLER, *cell = 0, *mobile = ref_mobile(ref);
     const char *name;
     u32 i, flags = STATE_IN_WORLD;
 
@@ -1797,6 +1820,8 @@ static void player_state(const u8 *ref, u8 *state)
         for (i = 0; mapped(name) && name[i] && i < CELL_NAME - 1; i++)
             state[20 + i] = (u8)name[i];
     }
+    if (plausible(mobile))
+        flags |= (u32) * (const u16 *)(mobile + MOBILE_MOVEMENT) << STATE_MOVEMENT_SHIFT;
     put32le(state, flags);
     copy(state + 4, ref + 0x38, 12); /* position */
     copy(state + 16, ref + 0x34, 4); /* orientation z */
@@ -1823,15 +1848,27 @@ static void player_state(const u8 *ref, u8 *state)
 #define NODE_ROTATION 0x2C /* NiAVObject's rotation pointer, then its translation */
 #define NODE_TRANSLATE 0x30
 #define PI 3.14159265f
+#define GROUP_IDLE 0u
+#define GROUP_SWIM_WALK 43u /* then back, left, right */
+#define GROUP_SWIM_RUN 47u
+#define GROUP_WALK 53u
+#define GROUP_RUN 59u
+#define GROUP_SNEAK 63u
+#define GROUP_JUMP 67u
+#define GROUP_NONE 0xFFu /* nothing played yet */
+#define GROUP_LOOPS 100000 /* LoopGroup's count: until the next group */
+#define MOBILE_SCRIPTED 0x10000000u /* PlayGroup's mark: the group is not the AI's to change */
 
 typedef int(__attribute__((thiscall)) *fn_compile_run)(void *self, void *scratch,
                                                        const char *text, int a2, int ref,
                                                        int a4, int a5, int a6);
 typedef u8 *(__attribute__((thiscall)) *fn_find_reference)(void *records, const char *id);
-typedef void *(__attribute__((thiscall)) *fn_ref_part)(void *ref);
 typedef float *(__attribute__((thiscall)) *fn_ref_rotation)(void *ref, float *matrix, int a1);
 typedef void(__attribute__((thiscall)) *fn_node_set_rotation)(void *slot, const float *matrix);
 typedef void(__attribute__((thiscall)) *fn_node_update)(void *node, float time, int a1, int a2);
+typedef u8(__attribute__((thiscall)) *fn_has_group)(void *animation, int group);
+typedef void(__attribute__((thiscall)) *fn_play_group)(void *animation, int group, int layer,
+                                                       int flags, int loops);
 
 struct pose {
     u32 flags;
@@ -1851,6 +1888,7 @@ static struct {
     float x, y, z, heading;
     u8 cell[CELL_NAME];
     u8 *ref;
+    u32 group;
 } ghosts[PEERS];
 static u32 ghosts_parked, ghost_settle;
 __attribute__((weak)) int _fltused; /* tes3xscript.c may define it too */
@@ -1929,6 +1967,7 @@ static void ghost_park(u32 i)
 {
     ghost_command(i, "PositionCell ", 128 * ((int)i + 1), " 0 0 0 \"" GHOST_CELL "\"");
     ghosts[i].placed = 0;
+    ghosts[i].group = GROUP_NONE;
 }
 
 static int grid(float f)
@@ -1948,8 +1987,9 @@ static float wrap_angle(float a)
 
 /* SetPos and SetAngle z as their handlers do them: the position on the reference and its node,
  * the heading in the reference's orientation attachment and as the node's rotation, and a node
- * update unless a mobile drives the node. NPCs build that rotation from the reference's own
- * orientation rather than the attachment's, so the heading goes there too. */
+ * update unless the reference has animation data (attachment kind 0), as actors do. NPCs build
+ * that rotation from the reference's own orientation rather than the attachment's, so the heading
+ * goes there too. */
 static void place_ref(u8 *ref, const float *xyzh)
 {
     u8 *node = *(u8 **)(ref + REF_NODE);
@@ -1965,8 +2005,52 @@ static void place_ref(u8 *ref, const float *xyzh)
     copy(node + NODE_TRANSLATE, (const u8 *)xyzh, 12);
     ((fn_node_set_rotation)TES3X_NET_NODE_SET_ROTATION)(
         node + NODE_ROTATION, ((fn_ref_rotation)TES3X_NET_REF_ROTATION)(ref, matrix, 1));
-    if (!((fn_ref_part)TES3X_NET_REF_MOBILE)(ref))
+    if (!((fn_ref_part)TES3X_NET_REF_ANIMATION)(ref))
         ((fn_node_update)TES3X_NET_NODE_UPDATE)(node, 0.0f, 0, 1);
+}
+
+/* Ghosts and followed actors are placed, not simulated, so the engine never picks their movement
+ * animation; they play the group ActorAnimationController::selectActorAnim would pick for their
+ * movement flags, weapon stances aside. */
+static u32 movement_group(u32 m)
+{
+    u32 dir = m & 1 ? 0 : m & 2 ? 1 : m & 4 ? 2 : m & 8 ? 3 : 4;
+
+    if (m & 0x5000)
+        return GROUP_JUMP;
+    if (dir == 4)
+        return GROUP_IDLE;
+    if (m & 0x800)
+        return (m & 0x200 ? GROUP_SWIM_RUN : GROUP_SWIM_WALK) + dir;
+    if (m & 0x400)
+        return GROUP_SNEAK + dir;
+    if (m & 0x200)
+        return GROUP_RUN + dir;
+    return m & 0x100 ? GROUP_WALK + dir : GROUP_IDLE;
+}
+
+/* LoopGroup's work on every layer, played at once: any group but idle marks the mobile as
+ * PlayGroup does, and idle hands the actor back to its own animation. A group the actor lacks
+ * plays as idle. */
+static void play_group(u8 *ref, u32 group)
+{
+    void *animation = ((fn_ref_part)TES3X_NET_REF_ANIMATION)(ref);
+    u8 *mobile = ref_mobile(ref);
+    int layer;
+
+    if (!plausible(animation))
+        return;
+    if (group != GROUP_IDLE && !((fn_has_group)TES3X_NET_ANIM_HAS_GROUP)(animation, (int)group))
+        group = GROUP_IDLE;
+    if (plausible(mobile)) {
+        if (group == GROUP_IDLE)
+            *(u32 *)(mobile + MOBILE_FLAGS) &= ~MOBILE_SCRIPTED;
+        else
+            *(u32 *)(mobile + MOBILE_FLAGS) |= MOBILE_SCRIPTED;
+    }
+    for (layer = 0; layer < 3; layer++) /* lower body, upper body, arm */
+        ((fn_play_group)TES3X_NET_ANIM_PLAY_GROUP)(animation, (int)group, layer, 1,
+                                                    group == GROUP_IDLE ? -1 : GROUP_LOOPS);
 }
 
 /* Whether a placed reference stands more than a unit or 0.01 rad off xyzh. */
@@ -2120,6 +2204,7 @@ static void ghost_place(u32 i, const struct pose *p)
     ghosts[i].y = p->y;
     ghosts[i].z = p->z;
     ghosts[i].heading = 1000; /* not an angle: the next frame turns it */
+    ghosts[i].group = GROUP_NONE;
     ghost_places++;
     log_text("net.ghost_cell", p->flags & STATE_INTERIOR ? (const char *)p->cell : "(exterior)");
 }
@@ -2143,7 +2228,7 @@ static int near(const struct pose *p, const struct pose *local)
 static void ghost_update(u32 i, const struct pose *local)
 {
     struct pose p, placed;
-    u32 client = peers[i].client;
+    u32 client = peers[i].client, group;
     u8 *ref;
 
     if (client != ghosts[i].client) {
@@ -2165,15 +2250,22 @@ static void ghost_update(u32 i, const struct pose *local)
     if (!ghosts[i].placed || !same_place(&p, &placed) ||
         (!(p.flags & STATE_INTERIOR) && (grid(p.x) != ghosts[i].gx || grid(p.y) != ghosts[i].gy))) {
         ghost_place(i, &p);
-    } else if ((differs(p.x, ghosts[i].x, 1) || differs(p.y, ghosts[i].y, 1) ||
-                differs(p.z, ghosts[i].z, 1) || differs(p.heading, ghosts[i].heading, 0.01f)) &&
-               (ref = ghost_ref(i))) {
+        return;
+    }
+    if (!(ref = ghost_ref(i)))
+        return;
+    if (differs(p.x, ghosts[i].x, 1) || differs(p.y, ghosts[i].y, 1) ||
+        differs(p.z, ghosts[i].z, 1) || differs(p.heading, ghosts[i].heading, 0.01f)) {
         place_ref(ref, &p.x);
         ghosts[i].x = p.x;
         ghosts[i].y = p.y;
         ghosts[i].z = p.z;
         ghosts[i].heading = p.heading;
         ghost_moves++;
+    }
+    if ((group = movement_group(p.flags >> STATE_MOVEMENT_SHIFT)) != ghosts[i].group) {
+        play_group(ref, group);
+        ghosts[i].group = group;
     }
 }
 
@@ -2216,7 +2308,7 @@ static void ghosts_frame(const u8 *state)
 #define KEY_EXTERIOR 1u
 #define KEY_INTERIOR 2u
 #define KEY_BYTES (12u + CELL_NAME) /* kind, grid x, grid y, interior name */
-#define ACTOR_BYTES 28u /* refid, x, y, z, heading, health, flags */
+#define ACTOR_BYTES 28u /* refid, x, y, z, heading, health, flags (movement in the upper half) */
 #define ACTORS_PER_PACKET 18u
 #define ACTOR_PERIOD_US 100000u
 #define ACTOR_SAMPLES 4u
@@ -2255,7 +2347,7 @@ static struct {
 static u32 authorities, authority_welcome;
 /* Actors this console places for another authority, and whether the engine had them simulated. */
 static struct {
-    u32 refid, owner, simulated, seen;
+    u32 refid, owner, simulated, seen, group;
     u8 *mobile;
     float health;
 } followed[ACTORS];
@@ -2423,6 +2515,8 @@ static void actor_command(void *ref, const char *verb, int value)
 
 static void unfollow(u32 i, int restore)
 {
+    if (restore && followed[i].group != GROUP_IDLE && followed[i].group != GROUP_NONE)
+        play_group(*(u8 **)(followed[i].mobile + MOBILE_REFERENCE), GROUP_IDLE);
     if (restore && followed[i].simulated)
         *(u32 *)(followed[i].mobile + MOBILE_FLAGS) |= MOBILE_SIMULATED;
     followed[i].refid = 0;
@@ -2432,7 +2526,7 @@ static void unfollow(u32 i, int restore)
  * its authority's states, as ghosts are, and send a drop in its health to the authority as a hit. */
 static void follow(u8 *mobile, u8 *ref, u32 refid, u32 owner)
 {
-    u32 *flags = (u32 *)(mobile + MOBILE_FLAGS), i, k, slot = ACTORS, count = 0, lk;
+    u32 *flags = (u32 *)(mobile + MOBILE_FLAGS), i, k, slot = ACTORS, count = 0, movement = 0, lk;
     float health = *(const float *)(mobile + MOBILE_HEALTH), damage, to[4];
     struct timed track[ACTOR_SAMPLES];
 
@@ -2451,6 +2545,7 @@ static void follow(u8 *mobile, u8 *ref, u32 refid, u32 owner)
         followed[slot].mobile = mobile;
         followed[slot].simulated = *flags & MOBILE_SIMULATED;
         followed[slot].health = health;
+        followed[slot].group = GROUP_NONE;
         follows++;
         tes3x_log_hex3("net.follow", refid, owner, followed[slot].simulated);
     }
@@ -2467,6 +2562,7 @@ static void follow(u8 *mobile, u8 *ref, u32 refid, u32 owner)
     for (i = 0; i < ACTORS; i++)
         if (actors_in[i].refid == refid && actors_in[i].origin == owner) {
             count = actors_in[i].count;
+            movement = get32le(actors_in[i].state + 24) >> STATE_MOVEMENT_SHIFT;
             for (k = 0; k < count; k++)
                 track[k] = actors_in[i].track[(actors_in[i].head + ACTOR_SAMPLES - count + k) %
                                               ACTOR_SAMPLES];
@@ -2475,7 +2571,7 @@ static void follow(u8 *mobile, u8 *ref, u32 refid, u32 owner)
     unlock(lk);
     /* A death plays out in the simulation; a dead actor has nothing left to place. */
     if (mobile[MOBILE_ACTION] == 0x12 || mobile[MOBILE_ACTION] == 0x13 || health <= 0) {
-        *flags |= MOBILE_SIMULATED;
+        *flags = (*flags | MOBILE_SIMULATED) & ~MOBILE_SCRIPTED;
         return;
     }
     *flags &= ~MOBILE_SIMULATED;
@@ -2485,6 +2581,10 @@ static void follow(u8 *mobile, u8 *ref, u32 refid, u32 owner)
     if (off_pose(ref, to)) {
         place_ref(ref, to);
         actor_moves++;
+    }
+    if ((movement = movement_group(movement)) != followed[slot].group) {
+        play_group(ref, movement);
+        followed[slot].group = movement;
     }
 }
 
@@ -2675,7 +2775,8 @@ static void authority_frame(const u8 *player, const u8 *state)
         put32le(a + 24, (mobile[MOBILE_ACTION] == 0x12 || mobile[MOBILE_ACTION] == 0x13
                          ? ACTOR_DEAD : 0) |
                         (*(const u32 *)(mobile + MOBILE_FLAGS) & MOBILE_IN_COMBAT
-                         ? ACTOR_IN_COMBAT : 0));
+                         ? ACTOR_IN_COMBAT : 0) |
+                        (u32) * (const u16 *)(mobile + MOBILE_MOVEMENT) << STATE_MOVEMENT_SHIFT);
         if (++n == ACTORS_PER_PACKET) {
             put32le(out, n);
             lk = lock();

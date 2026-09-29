@@ -36,10 +36,12 @@ INI_PATH = 0x0035E364
 DATA_HANDLER = 0x003CB5F8
 CONSOLE_SITE = 0x00098430
 SERVICE_ACTOR = 0x001CD530  # ui::getServiceActor: the MenuDialog partner's mobile, or 0
-# What the SetPos and SetAngle handlers call, to place a reference without the script compiler.
+# What the SetPos, SetAngle and PlayGroup handlers call, to place and animate a reference without
+# the script compiler.
 PLACE_ADDRESSES = (
-    ("FIND_REFERENCE", 0x00109CD0), ("REF_MOBILE", 0x0012A160), ("REF_ORIENTATION", 0x0012C3D0),
+    ("FIND_REFERENCE", 0x00109CD0), ("REF_ANIMATION", 0x0012A160), ("REF_ORIENTATION", 0x0012C3D0),
     ("REF_ROTATION", 0x0012AFE0), ("NODE_SET_ROTATION", 0x00042C40), ("NODE_UPDATE", 0x00044170),
+    ("ANIM_HAS_GROUP", 0x000CC960), ("ANIM_PLAY_GROUP", 0x000CE5C0),
 )
 CONSOLE_ADDRESSES = (
     ("FIND_MENU", 0x001AD340), ("OPEN_VK", 0x0022D210), ("CONSOLE_MENU_ID", 0x003D816C),

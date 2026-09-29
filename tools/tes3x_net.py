@@ -379,6 +379,8 @@ class Reliable:
         return ready, bool(events)
 STATE_BODY = struct.Struct("<I4f32s")  # flags, x, y, z, heading, interior cell name
 IN_WORLD, INTERIOR = 1, 2
+PLACE = IN_WORLD | INTERIOR
+MOVEMENT_SHIFT = 16  # the upper half of STATE and ACTOR flags: the mobile's movement flags
 CELL_UNITS = 8192
 
 
@@ -598,6 +600,7 @@ def serve(args):
         """The bot circles where the first client entered the world, and follows it to a new
         cell or across a long jump."""
         flags, x, y, z, _, cell = STATE_BODY.unpack_from(state)
+        flags &= PLACE
         anchor = bot["anchor"]
         if flags & IN_WORLD and (anchor is None or anchor[0] != (flags, cell)
                                  or math.hypot(x - anchor[1], y - anchor[2]) > 2048):
@@ -610,7 +613,8 @@ def serve(args):
     def bot_step(now):
         (flags, cell), cx, cy, cz = bot["anchor"]
         t = (now - bot["start"]) * 2 * math.pi / args.bot_period
-        state = STATE_BODY.pack(flags, cx + args.bot_radius * math.cos(t),
+        state = STATE_BODY.pack(flags | args.bot_movement << MOVEMENT_SHIFT,
+                                cx + args.bot_radius * math.cos(t),
                                 cy + args.bot_radius * math.sin(t), cz, -t % (2 * math.pi), cell)
         bot["state"] = state
         for other in clients.values():
@@ -725,9 +729,11 @@ def serve(args):
             chunk = owned[i:i + ACTORS_PER_PACKET]
             body = struct.pack("<I", len(chunk))
             for record in chunk:
-                refid, x, y, z, heading, *rest = ACTOR.unpack(record)
-                body += ACTOR.pack(refid, x + args.bot_shift + sway, y, z,
-                                   facing if args.bot_sway else heading, *rest)
+                refid, x, y, z, heading, health, flags = ACTOR.unpack(record)
+                if args.bot_sway:
+                    heading = facing
+                    flags = flags & 0xFFFF | args.bot_movement << MOVEMENT_SHIFT
+                body += ACTOR.pack(refid, x + args.bot_shift + sway, y, z, heading, health, flags)
             for other in clients.values():
                 if other.alive:
                     send(other, ACTORS, struct.pack("<I", BOT_ID) + body)
@@ -990,7 +996,10 @@ def main(argv=None):
                         "last reported position")
     p.add_argument("--bot-sway", type=float, default=0, metavar="UNITS",
                    help="as the authority, the bot also swings each actor this far east and west, "
-                        "once per --bot-period, facing the way it moves")
+                        "once per --bot-period, facing the way it moves with --bot-movement")
+    p.add_argument("--bot-movement", type=lambda v: int(v, 0), default=0x101, metavar="FLAGS",
+                   help="the movement flags the bot reports (default 0x101, walking forward; "
+                        "0x201 runs, 0x401 sneaks, 0x1000 jumps)")
     p.add_argument("--bot-break-hold", type=float, metavar="SECONDS",
                    help="as the authority, the bot breaks a client's hold this long after it starts")
     p.add_argument("--bot-hold", metavar="REFID@START:END",
