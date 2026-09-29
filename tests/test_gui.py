@@ -105,6 +105,7 @@ order = 10
         self.assertEqual([window.tabs.tabText(index) for index in range(window.tabs.count())],
                          ["Mods", "Plugins", "Archives", "Data Files", "Patches", "INI",
                           "Resources", "Build"])
+        self.assertEqual(window.counts.contentsMargins().right(), 8)
         budget = window.resource_budget.topLevelItem(0)
         self.assertEqual((budget.text(0), budget.text(1)), ("Mod", "2"))
         self.assertIs(window.details_stack.widget(0), window.mod_details)

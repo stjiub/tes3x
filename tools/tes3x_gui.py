@@ -1214,6 +1214,7 @@ class ProfileWindow(QMainWindow):
         self.setCentralWidget(body)
         self.setStatusBar(QStatusBar())
         self.counts = QLabel()
+        self.counts.setContentsMargins(0, 0, 8, 0)
         self.statusBar().addPermanentWidget(self.counts)
         self.check_state = QLabel()
         self.statusBar().addPermanentWidget(self.check_state)
