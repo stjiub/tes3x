@@ -35,7 +35,6 @@ version = "unknown"
 url = "https://www.nexusmods.com/morrowind/mods/45399"
 folder = "Atlas"
 status = "works"
-notes = "Played from Seyda Neen to Balmora alongside other mods, not on its own."
 
 [[mod]]
 id = "db-attack-mod"
@@ -44,7 +43,6 @@ version = "unknown"
 url = "https://www.nexusmods.com/morrowind/mods/14891"
 folder = "DB_Attack_Mod.esp"
 status = "works"
-notes = "Played from Seyda Neen to Balmora alongside other mods, not on its own."
 
 [[mod]]
 id = "graphic-herbalism"
@@ -54,7 +52,6 @@ url = "https://www.nexusmods.com/morrowind/mods/43140"
 folder = "Graphic Herbalism.esp"
 status = "works"
 plugins = ["Graphic Herbalism.esp"]
-notes = "Played from Seyda Neen to Balmora alongside other mods, not on its own."
 
 [[mod]]
 id = "jammings-off"
@@ -63,7 +60,6 @@ version = "unknown"
 url = "https://www.nexusmods.com/morrowind/mods/44523"
 folder = "JammingsOff"
 status = "works"
-notes = "Played from Seyda Neen to Balmora alongside other mods, not on its own."
 
 [[mod]]
 id = "purists"
@@ -72,7 +68,7 @@ version = "4.0.2"
 url = "https://www.nexusmods.com/morrowind/mods/45096"
 folder = "Purists"
 status = "untested"
-notes = "Only the intro and Seyda Neen have been played. Newer versions have not been tried."
+notes = "Newer versions have not been tried."
 
 [[mod]]
 id = "tes-extended-music"
@@ -80,7 +76,6 @@ name = "TES Extended Music"
 version = "unknown"
 folder = "TESExtendedMusic"
 status = "untested"
-notes = "Only the intro and Seyda Neen have been played."
 
 [[mod]]
 id = "tamriel-data"
