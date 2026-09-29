@@ -150,12 +150,13 @@ needs these under `[xemu]` in `tes3x.local.toml`, all of which you supply yourse
 
 | key | file |
 |---|---|
+| `folder` | optional: a folder the files below are found in when not set; the GUI's Settings download xemu and a blank HDD image into it |
 | `exe` | `xemu.exe` |
 | `bootrom` | the MCPX boot ROM |
 | `bios` | the BIOS for normal runs, such as a retail one |
 | `bios_128mb` | optional: a BIOS that uses 128 MB, for `--ram 128 --bios 128mb` |
-| `eeprom` | an EEPROM image |
-| `hdd` | a clean hard disk image; xemu's own blank `xbox_hdd.qcow2` (7 MB) is best. Runs never write to it: each run, and each profile the GUI plays, gets an overlay holding only what the game writes |
+| `eeprom` | optional: an EEPROM image; without one xemu makes a new one each run |
+| `hdd` | a clean hard disk image; xemu's own blank `xbox_hdd.qcow2` (4.5 MB) is best, and the GUI's Settings download it. Runs never write to it: each run, and each profile the GUI plays, gets an overlay holding only what the game writes |
 | `extract_xiso` | [extract-xiso](https://github.com/XboxDev/extract-xiso), which packs the disc image |
 | `gdb` | optional: `gdb`, for the `--gdb` options |
 

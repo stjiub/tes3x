@@ -40,6 +40,7 @@ from tes3x_fatx import PARTITIONS, FatxReader  # noqa: E402
 from tes3x_put import make_dirs, put_file  # noqa: E402
 from tes3x_qcow2 import CowView, Qcow2, create_overlay, is_qcow2, open_image  # noqa: E402
 import tes3x_savepool  # noqa: E402
+from tes3x_xemu_setup import resolve  # noqa: E402
 from tes3x_readlog import read_file, read_log  # noqa: E402
 
 TEST_INI = ["Xbox:Diagnostics=1", "Xbox:HangWatchdog=1", "Xbox:HangTimeoutSeconds=30",
@@ -58,7 +59,6 @@ FILES = {
     "exe": "xemu executable",
     "bootrom": "MCPX boot ROM",
     "bios": "BIOS",
-    "eeprom": "EEPROM image",
     "hdd": "clean HDD image",
     "extract_xiso": "extract-xiso",
 }
@@ -104,23 +104,15 @@ $bmp.Save($Out, [System.Drawing.Imaging.ImageFormat]::Png)
 
 
 def load_config(path=None):
-    """[xemu] from the local config, with relative paths resolved against that file."""
+    """[xemu] from the local config, with relative paths resolved against that file and unset
+    files found in [xemu] folder."""
     path = Path(path or Path.cwd() / "tes3x.local.toml").resolve()
     try:
         with open(path, "rb") as stream:
             values = tomllib.load(stream).get("xemu", {})
     except FileNotFoundError:
         values = {}
-    config = {}
-    for key, value in values.items():
-        if isinstance(value, str) and key in (*FILES, "bios_128mb", "cerbios", "gdb", "template"):
-            value = Path(value).expanduser()
-            value = value if value.is_absolute() else path.parent / value
-        config[key] = value
-    # The 128 MB BIOS was called cerbios before it had a general name.
-    if "bios_128mb" not in config and "cerbios" in config:
-        config["bios_128mb"] = config["cerbios"]
-    return config
+    return resolve(values, path.parent)
 
 
 CONFIG = load_config(os.environ.get("TES3X_CONFIG"))
@@ -453,7 +445,8 @@ def main():
     a = ap.parse_args(argv)
     missing = [f"{key} ({label})" for key, label in FILES.items() if key not in CONFIG]
     if missing:
-        ap.error("set these under [xemu] in tes3x.local.toml: " + ", ".join(missing))
+        ap.error("set these under [xemu] in tes3x.local.toml, or put them in [xemu] folder: "
+                 + ", ".join(missing))
     for key, label in FILES.items():
         if not Path(CONFIG[key]).is_file():
             ap.error(f"{label} not found: {CONFIG[key]}")
@@ -559,7 +552,9 @@ def main():
         hdd.parent.mkdir(parents=True, exist_ok=True)
         create_overlay(str(hdd), str(clean), clusters)
     shutil.rmtree(staging, ignore_errors=True)
-    shutil.copyfile(CONFIG["eeprom"], out / "eeprom.bin")
+    # Without one, xemu writes a new EEPROM at the path it is given.
+    if CONFIG.get("eeprom"):
+        shutil.copyfile(CONFIG["eeprom"], out / "eeprom.bin")
     bios = Path(a.bios).resolve() if a.bios else CONFIG["bios"]
     toml = out / "xemu.toml"
     tunnel = (a.net_tunnel + 1, a.net_tunnel) if a.net_tunnel else None
@@ -574,6 +569,7 @@ def main():
             (out / "gdb.port").write_text(str(a.gdb_port))
             command.extend(("-gdb", f"tcp:127.0.0.1:{a.gdb_port}"))
         proc = subprocess.Popen(command, stdout=so, stderr=se)
+        print(f"xemu: started, pid {proc.pid}", flush=True)
         debugger = None
         if a.gdb_script:
             time.sleep(3)  # let xemu open the stub's port
