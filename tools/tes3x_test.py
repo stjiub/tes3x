@@ -290,8 +290,8 @@ def run_library(args):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("profile", help="the exact profile to build and test")
-    parser.add_argument("--scenario", default=ROOT / "scenarios" / "smoke.toml",
-                        help="single-run scenario TOML (default: scenarios/smoke.toml)")
+    parser.add_argument("--scenario", default=ROOT / "tests" / "smoke.toml",
+                        help="single-run scenario TOML (default: tests/smoke.toml)")
     parser.add_argument("--runner", help="xemu runner to use instead of tools/tes3x_xemu.py")
     parser.add_argument("--config", help="local TES3X config passed to the build pipeline")
     parser.add_argument("--work-root", default="build/profile-tests",
