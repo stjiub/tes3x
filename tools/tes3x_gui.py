@@ -1117,6 +1117,10 @@ class ProfileWindow(QMainWindow):
         self.library_indexed = False
         self.process = None
         self.ftp_probe = None
+        self.command_kind = None
+        self.check_profile_sha = None
+        self.check_failed = False
+        self.build_failed = False
         self.profile_plain = {}
         self.patch_modes = {}
         self.patch_categories = []
@@ -1211,6 +1215,8 @@ class ProfileWindow(QMainWindow):
         self.setStatusBar(QStatusBar())
         self.counts = QLabel()
         self.statusBar().addPermanentWidget(self.counts)
+        self.check_state = QLabel()
+        self.statusBar().addPermanentWidget(self.check_state)
         self.build_state = QLabel()
         self.statusBar().addPermanentWidget(self.build_state)
         self.ftp_status = QPushButton("Xbox: not checked")
@@ -1218,6 +1224,9 @@ class ProfileWindow(QMainWindow):
         self.ftp_status.setToolTip("Click to check the configured Xbox FTP connection")
         self.ftp_status.clicked.connect(self.refresh_ftp_status)
         self.statusBar().addPermanentWidget(self.ftp_status)
+        self.update_check_state()
+        self.set_ftp_status("Xbox: not checked", "#616161",
+                            "Click to check the configured Xbox FTP connection")
         self.ftp_timer = QTimer(self)
         self.ftp_timer.setInterval(60_000)
         self.ftp_timer.timeout.connect(self.refresh_ftp_status)
@@ -3293,6 +3302,9 @@ class ProfileWindow(QMainWindow):
                 self.error(f"{path.name}: {exc}")
             return False
         self.profile_path = path.resolve()
+        self.check_profile_sha = None
+        self.check_failed = False
+        self.build_failed = False
         self.document = document
         self.profile_plain = plain
         self.library_root = library_root
@@ -3470,6 +3482,7 @@ class ProfileWindow(QMainWindow):
             return
         if not self.save_profile():
             return
+        self.command_kind = "check" if "--check" in extra else "build"
         self.start_command(ROOT / "tools" / "tes3x_pipeline.py", [
             str(self.profile_path),
             *(["--config", str(self.local_config_path())]
@@ -3498,15 +3511,53 @@ class ProfileWindow(QMainWindow):
                          "detected; Build to pick them up")
 
     def update_build_state(self):
+        self.update_check_state()
+        if self.command_kind == "build":
+            self.set_status_badge(self.build_state, "Building…", "#a15c00")
+            self.build_state.setToolTip("The profile is being built")
+            return
+        if self.build_failed:
+            self.set_status_badge(self.build_state, "Build failed", "#b3261e")
+            self.build_state.setToolTip("The last build command failed; see the output")
+            return
         state, tip = self.build_status()
         text, colour = {"built": ("Built", "#2e7d32"),
                         "stale": ("Out of date", "#a15c00"),
                         "missing": ("Not built", "#b3261e")}[state]
-        self.build_state.setText(text)
-        self.build_state.setStyleSheet(
-            f"QLabel {{ color: white; background-color: {colour}; padding: 2px 8px; "
-            "border-radius: 3px; font-weight: bold; }")
+        self.set_status_badge(self.build_state, text, colour)
         self.build_state.setToolTip(tip)
+
+    @staticmethod
+    def set_status_badge(widget, text, colour):
+        widget.setText(text)
+        widget.setStyleSheet(
+            f"color: white; background-color: {colour}; padding: 2px 8px; "
+            "border-radius: 3px; font-weight: bold;")
+
+    def update_check_state(self):
+        if not hasattr(self, "check_state"):
+            return
+        if self.command_kind == "check":
+            text, colour, tip = "Check: running…", "#a15c00", "Checking the saved profile"
+        elif self.check_failed:
+            text, colour, tip = "Check failed", "#b3261e", "The last check failed; see the output"
+        elif self.check_profile_sha is None:
+            text, colour, tip = "Not checked", "#616161", "Run Check profile"
+        else:
+            try:
+                current = sha256_file(self.profile_path) == self.check_profile_sha
+            except OSError:
+                current = False
+            if current and not self.is_dirty():
+                text, colour, tip = "Check passed", "#2e7d32", "The saved profile passed Check"
+            else:
+                text, colour, tip = "Check needed", "#a15c00", "The profile changed since Check"
+        self.set_status_badge(self.check_state, text, colour)
+        self.check_state.setToolTip(tip)
+
+    def set_ftp_status(self, text, colour, tip):
+        self.set_status_badge(self.ftp_status, text, colour)
+        self.ftp_status.setToolTip(tip)
 
     def refresh_play_menu(self):
         """xemu's targets, then those of the enabled add-ons."""
@@ -3705,6 +3756,7 @@ class ProfileWindow(QMainWindow):
         self.process = process
         for action in self.command_actions:
             action.setEnabled(False)
+        self.update_build_state()
         process.start()
         self.statusBar().showMessage(message)
 
@@ -3715,13 +3767,12 @@ class ProfileWindow(QMainWindow):
         try:
             local = tomllib.loads(config.read_text(encoding="utf-8")) if config.is_file() else {}
         except (OSError, tomllib.TOMLDecodeError) as exc:
-            self.ftp_status.setText("Xbox: config error")
-            self.ftp_status.setToolTip(str(exc))
+            self.set_ftp_status("Xbox: config error", "#b3261e", str(exc))
             return
         host = local.get("deploy", {}).get("host")
         if not host:
-            self.ftp_status.setText("Xbox: not configured")
-            self.ftp_status.setToolTip("Set the Xbox host in File > Settings")
+            self.set_ftp_status("Xbox: not configured", "#b3261e",
+                                "Set the Xbox host in File > Settings")
             return
         process = QProcess(self)
         process.setWorkingDirectory(str(self.work_dir()))
@@ -3732,7 +3783,7 @@ class ProfileWindow(QMainWindow):
         process.finished.connect(self.ftp_probe_finished)
         self.ftp_probe = process
         self.ftp_probe_host = host
-        self.ftp_status.setText(f"Xbox: checking {host}…")
+        self.set_ftp_status(f"Xbox: checking {host}…", "#a15c00", "Checking Xbox FTP")
         process.start()
 
     def ftp_probe_finished(self, code, _status):
@@ -3740,8 +3791,9 @@ class ProfileWindow(QMainWindow):
         if self.ftp_probe is not None:
             output = bytes(self.ftp_probe.readAllStandardOutput()).decode(errors="replace").strip()
         host = getattr(self, "ftp_probe_host", "")
-        self.ftp_status.setText(f"Xbox: {'connected' if code == 0 else 'offline'} — {host}")
-        self.ftp_status.setToolTip(output or f"FTP probe exited {code}")
+        self.set_ftp_status(f"Xbox: {'connected' if code == 0 else 'offline'} — {host}",
+                            "#2e7d32" if code == 0 else "#b3261e",
+                            output or f"FTP probe exited {code}")
         self.ftp_probe = None
 
     def append_process_output(self):
@@ -3753,6 +3805,16 @@ class ProfileWindow(QMainWindow):
     def command_finished(self, code, _status):
         self.append_process_output()
         self.statusBar().showMessage(f"TES3X exited {code}", 5000)
+        kind, self.command_kind = self.command_kind, None
+        if kind == "check":
+            self.check_failed = code != 0
+            if code == 0:
+                try:
+                    self.check_profile_sha = sha256_file(self.profile_path)
+                except OSError:
+                    self.check_profile_sha = None
+        elif kind == "build":
+            self.build_failed = code != 0
         self.process = None
         for action in self.command_actions:
             action.setEnabled(True)

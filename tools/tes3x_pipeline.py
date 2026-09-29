@@ -671,8 +671,8 @@ def main(argv=None):
         print("mods: none; retail Data Files are staged unchanged")
     else:
         print(f"mods: {len(enabled_mods(profile))}, packed as {plan['package_mode']}")
-        print("plugin order: " + ("mlox" if use_mlox else "profile list" if listed_order
-                                  else "mod order"))
+        print("plugin order: " + ("mlox at build time" if use_mlox
+                                  else "saved order" if listed_order else "mod order"))
     print(f"output: {output}")
     if args.deploy or args.dry_run:
         print(f"target: {deploy.get('host', '<missing>')} {remote or '<missing>'}")

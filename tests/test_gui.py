@@ -424,6 +424,9 @@ order = 10
         self.assertEqual(window.build_status()[0], "missing")
         self.assertEqual(window.build_state.text(), "Not built")
         self.assertIn("#b3261e", window.build_state.styleSheet())
+        self.assertEqual(window.check_state.text(), "Not checked")
+        self.assertIn("#616161", window.check_state.styleSheet())
+        self.assertIn("#616161", window.ftp_status.styleSheet())
         buttons = [window.profile_bar.itemAt(i).widget()
                    for i in range(window.profile_bar.count())]
         self.assertEqual([button.text() for button in buttons if type(button).__name__ == "QToolButton"],
@@ -471,6 +474,26 @@ order = 10
 
         self.profile.write_text(self.profile.read_text(encoding="utf-8") + "\n", encoding="utf-8")
         self.assertEqual(window.build_status()[0], "stale")
+
+    def test_check_and_xbox_status_badges_show_progress_and_results(self):
+        window = self.window()
+        with patch.object(window, "start_command"):
+            window.run_pipeline(["--check"])
+        window.update_check_state()
+        self.assertEqual(window.check_state.text(), "Check: running…")
+        self.assertIn("#a15c00", window.check_state.styleSheet())
+        window.command_finished(0, None)
+        self.assertEqual(window.check_state.text(), "Check passed")
+        self.assertIn("#2e7d32", window.check_state.styleSheet())
+
+        window.command_kind = "check"
+        window.command_finished(1, None)
+        self.assertEqual(window.check_state.text(), "Check failed")
+        self.assertIn("#b3261e", window.check_state.styleSheet())
+        window.set_ftp_status("Xbox: checking…", "#a15c00", "Checking")
+        self.assertIn("#a15c00", window.ftp_status.styleSheet())
+        window.set_ftp_status("Xbox: connected", "#2e7d32", "Connected")
+        self.assertIn("#2e7d32", window.ftp_status.styleSheet())
 
     def test_xbox_addon_deploys_then_starts_the_build(self):
         import hashlib

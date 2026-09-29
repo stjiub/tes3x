@@ -330,6 +330,25 @@ class PipelinePlanTests(unittest.TestCase):
             local.write_text('[paths]\nvanilla_root = "missing"\n', encoding='utf-8')
             self.assertEqual(pipeline_main([str(profile), '--config', str(local), '--check']), 0)
 
+    def test_check_describes_saved_and_build_time_plugin_order(self):
+        import contextlib
+        import io
+        with tempfile.TemporaryDirectory() as tmp:
+            profile = Path(tmp) / 'p.toml'
+            local = Path(tmp) / 'local.toml'
+            local.write_text('[paths]\nmod_library = "mods"\n', encoding='utf-8')
+            for setting, expected in [
+                    ('[plugins]\norder = ["Example.esp"]', 'saved order'),
+                    ('[rules]\nplugin_order = "mlox"', 'mlox at build time')]:
+                profile.write_text(
+                    '[profile]\nname = "p"\n[[mods]]\nname = "Example"\n' + setting + '\n',
+                    encoding='utf-8')
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    self.assertEqual(
+                        pipeline_main([str(profile), '--config', str(local), '--check']), 0)
+                self.assertIn(f'plugin order: {expected}', out.getvalue())
+
     def test_profile_remote_root_wins_over_local_config(self):
         import contextlib
         import io

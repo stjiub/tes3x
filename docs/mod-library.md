@@ -141,7 +141,8 @@ Settings left at their defaults stay out of the profile file.
 
 **Actions** checks, builds, smoke-tests and deploys the current profile, and pulls logs off the
 Xbox into `build/xbox-logs/`. **File > Settings** edits `tes3x.local.toml`. The status bar
-shows a coloured build state and whether the Xbox is reachable over FTP.
+shows coloured Check, Build and Xbox states: amber while work is needed or in progress, green
+after success, and red after failure or when the Xbox is offline.
 
 **Play** runs the profile in [xemu](https://xemu.app), building it first when the dot beside it
 says it is out of date or not built. Its arrow chooses 64 MB or 128 MB; 128 MB needs a BIOS that
