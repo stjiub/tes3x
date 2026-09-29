@@ -20,6 +20,7 @@ import tempfile
 import threading
 import tomllib
 import uuid
+import zipfile
 
 try:
     import tomlkit
@@ -27,11 +28,11 @@ try:
                                 QProcessEnvironment, QSettings, QSortFilterProxyModel, QTimer, Qt,
                                 QUrl, Signal)
     from PySide6.QtGui import (QAction, QActionGroup, QColor, QDesktopServices, QIcon,
-                               QKeySequence, QPainter, QPixmap, QTextCursor)
+                               QKeySequence, QPainter, QPen, QPixmap, QTextCursor)
     from PySide6.QtWidgets import (
         QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
         QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
-        QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QProgressBar,
+        QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox,
         QPushButton, QScrollArea, QSpinBox, QSplitter, QStackedWidget, QStatusBar, QStyle,
         QTableView, QTabWidget, QTextBrowser, QTextEdit, QToolButton, QTreeWidget, QTreeWidgetItem,
         QVBoxLayout, QWidget,
@@ -59,9 +60,11 @@ from tes3x_records import records, subrecords
 import tes3x_nexus as nexus
 import tes3x_saves as saves_tool
 import tes3x_savepool
+from tes3x_xemu_setup import download_xemu, find_files as find_xemu_files, resolve as resolve_xemu
 
 
 ROOT = Path(__file__).resolve().parents[1]
+VERSION = "0.1.0"
 ROLE = Qt.ItemDataRole.UserRole
 EXTRA = Qt.ItemDataRole.UserRole + 1
 TEMPLATE = ROOT / "examples" / "profile.toml"
@@ -75,8 +78,19 @@ COMPAT = {"works": ("\u2713", QColor(60, 170, 60)),
           "works-with-requirements": ("*", QColor(215, 150, 20)),
           "broken": ("\u2717", WARNING), "not-possible": ("\u2717", WARNING)}
 # Where Play runs a build: menu label, button suffix and tes3x_xemu.py options.
+XEMU_STARTED = "xemu: started"
 PLAY_TARGETS = {"xemu-64": ("xemu (64 MB)", "", []),
                 "xemu-128": ("xemu (128 MB)", " 128 MB", ["--ram", "128", "--bios", "128mb"])}
+
+
+def version_label():
+    """The version, with the commit when run from a checkout."""
+    try:
+        commit = subprocess.run(["git", "-C", str(ROOT), "describe", "--always", "--dirty"],
+                                capture_output=True, text=True, timeout=5).stdout.strip()
+    except OSError:
+        commit = ""
+    return f"TES3X {VERSION}" + (f" ({commit})" if commit else "")
 
 
 def tinted_icon(icon, colour):
@@ -92,6 +106,94 @@ def tinted_icon(icon, colour):
     painter.fillRect(result.rect(), QColor(colour))
     painter.end()
     return QIcon(result)
+
+
+def theme_icon(widget, theme, fallback):
+    return QIcon.fromTheme(theme, widget.style().standardIcon(fallback))
+
+
+def icon_button(action):
+    button = QToolButton()
+    button.setDefaultAction(action)
+    button.setAutoRaise(True)
+    return button
+
+
+def running_xemu():
+    """PIDs of xemu processes, whoever started them."""
+    try:
+        if sys.platform == "win32":
+            output = subprocess.run(["tasklist", "/FI", "IMAGENAME eq xemu.exe", "/FO", "CSV",
+                                     "/NH"], capture_output=True, text=True, timeout=5).stdout
+            return [line.split('","')[1] for line in output.splitlines()
+                    if line.lower().startswith('"xemu.exe"')]
+        output = subprocess.run(["pgrep", "-x", "xemu"], capture_output=True, text=True,
+                                timeout=5).stdout
+        return output.split()
+    except (OSError, subprocess.SubprocessError, IndexError):
+        return []
+
+
+class Spinner(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.angle = 0
+        self.setFixedSize(16, 16)
+        self.timer = QTimer(self)
+        self.timer.setInterval(60)
+        self.timer.timeout.connect(self.step)
+        self.hide()
+
+    def start(self):
+        self.show()
+        self.timer.start()
+
+    def stop(self):
+        self.timer.stop()
+        self.hide()
+
+    def step(self):
+        self.angle = (self.angle - 30) % 360
+        self.update()
+
+    def paintEvent(self, _event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        pen = QPen(self.palette().highlight().color(), 2.5)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        painter.drawArc(self.rect().adjusted(2, 2, -2, -2), self.angle * 16, 270 * 16)
+
+
+class StatusBar(QStatusBar):
+    """Messages go to a label beside the spinner; QStatusBar's own would hide the spinner."""
+
+    def __init__(self):
+        super().__init__()
+        self.spinner = Spinner()
+        self.message = QLabel()
+        self.addWidget(self.spinner)
+        self.addWidget(self.message, 1)
+        self.expiry = QTimer(self)
+        self.expiry.setSingleShot(True)
+        self.expiry.timeout.connect(self.message.clear)
+
+    def showMessage(self, text, timeout=0):
+        self.message.setText(text)
+        self.expiry.stop()
+        if timeout:
+            self.expiry.start(timeout)
+
+    def clearMessage(self):
+        self.message.clear()
+
+
+class Badge(QLabel):
+    clicked = Signal()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
 
 
 def plugin_header(path):
@@ -133,6 +235,20 @@ def enabled_addons(local):
         except ImportError:
             continue
     return found
+
+
+def new_table(document, section):
+    """Append a table, set off by a blank line even after an array of tables."""
+    if not document.as_string().endswith("\n\n"):
+        document.add(tomlkit.nl())
+    table = tomlkit.table()
+    document[section] = table
+    return table
+
+
+def drop_empty(document, section):
+    if section in document and not document[section]:
+        del document[section]
 
 
 def default_config_path():
@@ -235,17 +351,67 @@ class LocalSettingsDialog(QDialog):
         form.insertRow(1, "Port", port)
         return group
 
+    XEMU_FILES = (("exe", "Executable"), ("bootrom", "MCPX boot ROM"), ("bios", "BIOS"),
+                  ("bios_128mb", "BIOS for 128 MB runs"), ("eeprom", "EEPROM"),
+                  ("hdd", "Clean HDD image"))
+
     def xemu_group(self, values):
         group = QGroupBox("xemu (for test runs)")
         form = QFormLayout(group)
         values = dict(values)
         values.setdefault("bios_128mb", values.get("cerbios", ""))
-        for key, label in (("exe", "Executable"), ("bootrom", "MCPX boot ROM"),
-                           ("bios", "BIOS"), ("bios_128mb", "BIOS for 128 MB runs"),
-                           ("eeprom", "EEPROM"), ("hdd", "Clean HDD image"),
-                           ("extract_xiso", "extract-xiso")):
+        folder_row = self.browse_row("xemu.folder", values.get("folder", ""))
+        download = QPushButton("Download xemu")
+        download.setToolTip("Download the latest xemu, and a blank HDD image, into this folder")
+        download.clicked.connect(self.download_xemu)
+        folder_row.layout().addWidget(download)
+        form.addRow("xemu folder", folder_row)
+        note = QLabel("Files left empty are found in the folder. The MCPX boot ROM and BIOS are "
+                      "not part of xemu: copy the dumps from your own Xbox there. Without an "
+                      "EEPROM, xemu makes one.")
+        note.setWordWrap(True)
+        form.addRow("", note)
+        for key, label in self.XEMU_FILES:
             form.addRow(label, self.browse_row("xemu." + key, values.get(key, ""), files=True))
+        form.addRow("extract-xiso", self.browse_row("xemu.extract_xiso",
+                                                    values.get("extract_xiso", ""), files=True))
+        self.fields["xemu.folder"].textChanged.connect(self.show_xemu_files)
+        self.show_xemu_files()
         return group
+
+    def xemu_folder(self):
+        text = self.fields["xemu.folder"].text().strip()
+        folder = Path(text).expanduser() if text else None
+        return folder if folder is None or folder.is_absolute() else self.path.parent / folder
+
+    def show_xemu_files(self, *_args):
+        folder = self.xemu_folder()
+        found = find_xemu_files(folder) if folder else {}
+        for key, _label in self.XEMU_FILES:
+            self.fields["xemu." + key].setPlaceholderText(
+                f"Found: {found[key].name}" if key in found
+                else "Made by xemu" if key == "eeprom" and folder
+                else "Optional" if key == "bios_128mb" else "Not found in the xemu folder"
+                if folder else "")
+
+    def download_xemu(self):
+        folder = self.xemu_folder() or self.path.parent / "xemu"
+        if find_xemu_files(folder).get("exe") and QMessageBox.question(
+                self, "TES3X", f"Replace the xemu in {folder} with the latest release?") \
+                != QMessageBox.StandardButton.Yes:
+            return
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            version = download_xemu(folder)
+        except (OSError, ValueError, KeyError, zipfile.BadZipFile) as exc:
+            QApplication.restoreOverrideCursor()
+            QMessageBox.critical(self, "TES3X", f"Could not download xemu: {exc}")
+            return
+        QApplication.restoreOverrideCursor()
+        self.fields["xemu.folder"].setText(folder.as_posix())
+        self.show_xemu_files()
+        QMessageBox.information(self, "TES3X", f"Downloaded xemu {version} to {folder}. Copy your "
+                                "MCPX boot ROM and BIOS there, then save the settings.")
 
     def addons_group(self, values):
         group = QGroupBox("Add-ons")
@@ -500,11 +666,19 @@ class FilesFilter(QSortFilterProxyModel):
         self.conflicts_only = False
 
     def update(self, text=None, conflicts_only=None):
+        if not hasattr(self, "beginFilterChange"):  # PySide6 before 6.10
+            self.set_filter(text, conflicts_only)
+            self.invalidateFilter()
+            return
+        self.beginFilterChange()
+        self.set_filter(text, conflicts_only)
+        self.endFilterChange(QSortFilterProxyModel.Direction.Rows)
+
+    def set_filter(self, text, conflicts_only):
         if text is not None:
             self.text = text.casefold()
         if conflicts_only is not None:
             self.conflicts_only = conflicts_only
-        self.invalidateFilter()
 
     def filterAcceptsRow(self, row, _parent):
         path, owner, others = self.sourceModel().entries[row]
@@ -995,17 +1169,10 @@ class BuildSettings(QWidget):
         form = QFormLayout(preferences)
         form.addRow("Look up/down", self.invert_look)
 
-        left = QVBoxLayout()
-        left.addWidget(identity)
-        left.addWidget(package)
-        left.addStretch()
-        right = QVBoxLayout()
-        right.addWidget(rules)
-        right.addWidget(preferences)
-        right.addStretch()
-        layout = QHBoxLayout(self)
-        layout.addLayout(left, 1)
-        layout.addLayout(right, 1)
+        layout = QVBoxLayout(self)
+        for group in (identity, package, rules, preferences):
+            layout.addWidget(group)
+        layout.addStretch()
 
         for widget in (self.title, self.remote_root, self.archive_name):
             widget.textChanged.connect(self.changed)
@@ -1093,10 +1260,10 @@ class BuildSettings(QWidget):
         if value is None or (value == default and (table is None or key not in table)):
             if table is not None and key in table:
                 del table[key]
+                drop_empty(document, section)
             return
         if table is None:
-            table = tomlkit.table()
-            document[section] = table
+            table = new_table(document, section)
         if table.get(key) != value:
             table[key] = value
 
@@ -1128,7 +1295,7 @@ class ProfileWindow(QMainWindow):
 
     def __init__(self, profile=None, config=None, settings=None):
         super().__init__()
-        self.setWindowTitle("TES3X")
+        self.setWindowTitle(version_label())
         self.resize(1280, 800)
         self.profile_path = None
         self.document = None
@@ -1240,13 +1407,10 @@ class ProfileWindow(QMainWindow):
         self.body_split.setSizes([660, 120])
         layout.addWidget(self.body_split)
         self.setCentralWidget(body)
-        self.setStatusBar(QStatusBar())
-        self.command_progress = QProgressBar()
-        self.command_progress.setRange(0, 0)
-        self.command_progress.setTextVisible(False)
-        self.command_progress.setFixedWidth(140)
-        self.command_progress.hide()
-        self.statusBar().addPermanentWidget(self.command_progress)
+        self.setStatusBar(StatusBar())
+        self.play_state = QLabel()
+        self.play_state.hide()
+        self.statusBar().addPermanentWidget(self.play_state)
         self.counts = QLabel()
         self.counts.setContentsMargins(0, 0, 8, 0)
         self.statusBar().addPermanentWidget(self.counts)
@@ -1256,8 +1420,8 @@ class ProfileWindow(QMainWindow):
         self.statusBar().addPermanentWidget(self.build_state)
         self.deploy_state = QLabel()
         self.statusBar().addPermanentWidget(self.deploy_state)
-        self.ftp_status = QPushButton("Xbox: not checked")
-        self.ftp_status.setFlat(True)
+        self.ftp_status = Badge()
+        self.ftp_status.setCursor(Qt.CursorShape.PointingHandCursor)
         self.ftp_status.setToolTip("Click to check the configured Xbox FTP connection")
         self.ftp_status.clicked.connect(self.refresh_ftp_status)
         self.statusBar().addPermanentWidget(self.ftp_status)
@@ -1599,9 +1763,14 @@ class ProfileWindow(QMainWindow):
         self.mod_search = QLineEdit()
         self.mod_search.setPlaceholderText("Filter mods…")
         self.mod_search.textChanged.connect(self.filter_mods)
+        refresh = QAction(theme_icon(self, QIcon.ThemeIcon.ViewRefresh,
+                                     QStyle.StandardPixmap.SP_BrowserReload),
+                          "Refresh the mod list from the library (F5)", self)
+        refresh.triggered.connect(self.reload_library)
         top = QHBoxLayout()
         top.addWidget(install)
         top.addWidget(self.mod_search, 1)
+        top.addWidget(icon_button(refresh))
 
         self.mod_list = DragList(["Mod", "Version", "Conflicts", "Notes", "Priority", "Xbox"],
                                  accept_files=True)
@@ -2967,9 +3136,9 @@ class ProfileWindow(QMainWindow):
 
         self.save_actions = {}
         for key, label, handler, tip in (
-                ("pull", "Pull to PC", self.pull_saves,
+                ("pull", "Download to PC", self.pull_saves,
                  "Copy the selected Xbox or xemu saves into the PC save library"),
-                ("push", "Push to Xbox", self.push_saves,
+                ("push", "Upload to Xbox", self.push_saves,
                  "Copy the selected saves into this pool on the Xbox"),
                 ("push_xemu", "Push to xemu", self.push_xemu_saves,
                  "Copy the selected saves into this pool on the profile's xemu disk"),
@@ -2979,9 +3148,13 @@ class ProfileWindow(QMainWindow):
                  "Move the selected saves into another pool, where they are. Each original is "
                  "deleted once its copy is complete, and a save leaving the Xbox keeps a PC "
                  "copy"),
-                ("delete", "Delete…", self.delete_saves, "Delete the selected saves")):
+                ("delete", "Delete…", self.delete_saves, "Delete the selected saves"),
+                ("refresh", "Refresh", lambda: self.refresh_saves(True),
+                 "List this pool's saves again, including the Xbox"),
+                ("folder", "Open PC folder", self.open_save_folder,
+                 "Open this pool's folder in the PC save library")):
             action = QAction(label, self)
-            action.setToolTip(tip)
+            action.setToolTip(f"{label.rstrip('…')}: {tip}")
             action.triggered.connect(handler)
             self.save_actions[key] = action
         self.save_actions["delete"].setShortcut(QKeySequence(QKeySequence.StandardKey.Delete))
@@ -2990,17 +3163,24 @@ class ProfileWindow(QMainWindow):
         self.save_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.save_list.customContextMenuRequested.connect(self.save_menu)
 
+        pixmap = QStyle.StandardPixmap
         buttons = QHBoxLayout()
-        for label, handler, tip in (
-                ("Refresh", lambda: self.refresh_saves(True),
-                 "List this pool's saves again, including the Xbox"),
-                ("Open PC folder", self.open_save_folder,
-                 "Open this pool's folder in the PC save library")):
-            button = QPushButton(label)
-            button.setToolTip(tip)
-            button.clicked.connect(handler)
-            buttons.addWidget(button)
-        buttons.addWidget(QLabel("Right-click saves to copy or move them."))
+        for key, theme, fallback in (
+                ("refresh", QIcon.ThemeIcon.ViewRefresh, pixmap.SP_BrowserReload),
+                ("folder", QIcon.ThemeIcon.FolderOpen, pixmap.SP_DirOpenIcon),
+                (None, None, None),
+                ("pull", QIcon.ThemeIcon.GoDown, pixmap.SP_ArrowDown),
+                ("push", QIcon.ThemeIcon.GoUp, pixmap.SP_ArrowUp),
+                ("push_xemu", QIcon.ThemeIcon.DocumentSend, pixmap.SP_ArrowRight),
+                (None, None, None),
+                ("copy", QIcon.ThemeIcon.EditCopy, pixmap.SP_FileIcon),
+                ("move", QIcon.ThemeIcon.GoNext, pixmap.SP_ArrowForward),
+                ("delete", QIcon.ThemeIcon.EditDelete, pixmap.SP_TrashIcon)):
+            if key is None:
+                buttons.addSpacing(12)
+                continue
+            self.save_actions[key].setIcon(theme_icon(self, theme, fallback))
+            buttons.addWidget(icon_button(self.save_actions[key]))
         buttons.addStretch()
         self.saves_status = QLabel()
         buttons.addWidget(self.saves_status)
@@ -3199,8 +3379,9 @@ class ProfileWindow(QMainWindow):
 
     def show_saves_status(self, doing=None, tip=""):
         counts = collections.Counter(save["source"] for save in self.saves_xbox + self.saves_local)
+        xbox = bool(self.local_values().get("deploy", {}).get("host"))
         parts = [f"{self.SAVE_SOURCES[key]} {counts[key]}" for key in ("xbox", "xemu", "pc")
-                 if counts[key]]
+                 if counts[key] or (key == "xbox" and xbox)]
         parts.append(doing or self.xbox_listing or "")
         self.saves_status.setText(" · ".join(part for part in parts if part)
                                   or "No saves in this pool")
@@ -3539,9 +3720,9 @@ class ProfileWindow(QMainWindow):
                 why = ("The delta-bsa package mode needs this patch" if on
                        else "Only delta-bsa builds need this patch")
             elif mode == "enable":
-                reason = "added"
+                reason = "manually enabled"
             elif mode == "disable":
-                reason = "removed"
+                reason = "manually disabled"
             elif on and entry["category"] in self.patch_categories:
                 reason = "category"
             else:
@@ -3802,7 +3983,6 @@ class ProfileWindow(QMainWindow):
         self.saved_text = None
         self.forget_analysis()
         self.mod_list.clear()
-        self.setWindowTitle("TES3X")
         files = self.profile_files()
         if files:
             self.open_profile(files[0])
@@ -3872,7 +4052,6 @@ class ProfileWindow(QMainWindow):
         if self.settings is not None:
             self.settings.setValue("last_profile", str(self.profile_path))
         self.refresh_profile_list()
-        self.setWindowTitle(f"TES3X — {self.profile_path.stem}")
         message = str(self.profile_path)
         if library_root and not indexed:
             message += " — no library.toml, so mods are added by folder name"
@@ -3968,8 +4147,7 @@ class ProfileWindow(QMainWindow):
         plugins = self.document.get("plugins")
         if order:
             if plugins is None:
-                plugins = tomlkit.table()
-                self.document["plugins"] = plugins
+                plugins = new_table(self.document, "plugins")
             if plugins.get("order") != order:
                 listed = tomlkit.array()
                 listed.extend(order)
@@ -3981,18 +4159,17 @@ class ProfileWindow(QMainWindow):
         values = dict(self.ini.values)
         table = self.document.get("ini")
         if table is None and values:
-            table = tomlkit.table()
-            self.document["ini"] = table
+            table = new_table(self.document, "ini")
         if table is not None:
             for key in [key for key in table if key not in values]:
                 del table[key]
             for key, value in values.items():
                 if table.get(key) != value:
                     table[key] = value
+            drop_empty(self.document, "ini")
         patches = self.document.get("patches")
         if patches is None:
-            patches = tomlkit.table()
-            self.document["patches"] = patches
+            patches = new_table(self.document, "patches")
         for key, value in self.patch_configuration().items():
             # Leave unchanged values alone so their comments and layout survive.
             if isinstance(value, list) and not value and key not in patches:
@@ -4001,7 +4178,7 @@ class ProfileWindow(QMainWindow):
                 continue
             if patches.get(key) != value:
                 patches[key] = value
-        text = tomlkit.dumps(self.document)
+        text = tomlkit.dumps(self.document).rstrip("\n") + "\n"
         validate_profile(tomllib.loads(text))
         return text
 
@@ -4151,10 +4328,10 @@ class ProfileWindow(QMainWindow):
     def play_available(self):
         """Each Play target, and why it cannot run when it cannot."""
         local = self.local_values()
-        xemu = local.get("xemu", {})
-        missing = "Set the xemu files in File > Settings" if not xemu.get("exe") else None
+        xemu = resolve_xemu(local.get("xemu", {}), self.work_dir())
+        missing = "Set the xemu folder in File > Settings" if not xemu.get("exe") else None
         available = {"xemu-64": missing,
-                     "xemu-128": missing or (None if xemu.get("bios_128mb") or xemu.get("cerbios")
+                     "xemu-128": missing or (None if xemu.get("bios_128mb")
                                              else "Set a 128 MB BIOS in File > Settings")}
         for key, module in self.play_addons.items():
             available[key] = module.status(local)
@@ -4255,6 +4432,11 @@ class ProfileWindow(QMainWindow):
                 if self.settings is not None:
                     self.settings.setValue(key, True)
             self.run_steps(steps)
+            return
+        running = running_xemu()
+        if running and QMessageBox.question(
+                self, "TES3X", f"xemu is already running (PID {', '.join(running)}). "
+                "Start another session?") != QMessageBox.StandardButton.Yes:
             return
         stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         iso = self.play_iso()
@@ -4361,7 +4543,7 @@ class ProfileWindow(QMainWindow):
         self.process = process
         for action in self.command_actions:
             action.setEnabled(False)
-        self.command_progress.show()
+        self.statusBar().spinner.start()
         self.update_build_state()
         process.start()
         self.statusBar().showMessage(message)
@@ -4405,8 +4587,15 @@ class ProfileWindow(QMainWindow):
     def append_process_output(self):
         if self.process is None:
             return
+        text = bytes(self.process.readAllStandardOutput()).decode(errors="replace")
         self.output.moveCursor(QTextCursor.MoveOperation.End)
-        self.output.insertPlainText(bytes(self.process.readAllStandardOutput()).decode(errors="replace"))
+        self.output.insertPlainText(text)
+        if XEMU_STARTED in text:
+            self.statusBar().spinner.stop()
+            self.set_status_badge(self.play_state, "Playing", "#2e7d32")
+            self.play_state.setToolTip("xemu is running this build; close it to finish")
+            self.play_state.show()
+            self.statusBar().showMessage("")
 
     def command_finished(self, code, _status):
         self.append_process_output()
@@ -4429,7 +4618,8 @@ class ProfileWindow(QMainWindow):
                 except OSError:
                     self.deployed_profile_sha = None
         self.process = None
-        self.command_progress.hide()
+        self.statusBar().spinner.stop()
+        self.play_state.hide()
         for action in self.command_actions:
             action.setEnabled(True)
         self.update_build_state()

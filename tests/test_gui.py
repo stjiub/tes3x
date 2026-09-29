@@ -102,7 +102,7 @@ order = 10
 
     def test_lists_every_library_mod_and_saves_checked_ones(self):
         window = self.window()
-        self.assertEqual(window.windowTitle(), "TES3X — profile")
+        self.assertTrue(window.windowTitle().startswith("TES3X "))
         self.assertEqual([window.tabs.tabText(index) for index in range(window.tabs.count())],
                          ["Mods", "Plugins", "Archives", "Data Files", "Patches", "INI",
                           "Resources", "Saves", "Build"])
@@ -110,7 +110,7 @@ order = 10
         self.assertEqual(window.details_container.layout().contentsMargins().top(),
                          window.tabs.tabBar().sizeHint().height())
         self.assertEqual(window.menuBar().font(), window.tabs.tabBar().font())
-        self.assertTrue(window.command_progress.isHidden())
+        self.assertTrue(window.statusBar().spinner.isHidden())
         for action, colour in ((window.action_build, "#1976d2"),
                                (window.action_deploy, "#d97706"),
                                (window.action_play, "#2e7d32")):
@@ -196,7 +196,7 @@ order = 10
         self.assertIn("Rotate automatic saves", window.context_info.toPlainText())
         window.set_patch("rotating-autosaves", True)
         self.assertEqual(window.patch_configuration()["enable"], ["rotating-autosaves"])
-        self.assertEqual(window.patch_items["rotating-autosaves"].text(2), "added")
+        self.assertEqual(window.patch_items["rotating-autosaves"].text(2), "manually enabled")
         self.assertIn(("xbox", "autosaveslots"), window.ini.patch_keys)
         window.ini.set_value("Xbox:AutosaveSlots", 5)
         self.assertTrue(window.save_profile())
@@ -523,10 +523,14 @@ order = 10
 
         with patch("tes3x_gui.QProcess"):
             window.start_command("tool.py", [], "Working…")
-        self.assertFalse(window.command_progress.isHidden())
+        self.assertFalse(window.statusBar().spinner.isHidden())
+        window.process.readAllStandardOutput.return_value = b"xemu: started, pid 1\n"
+        window.append_process_output()
+        self.assertTrue(window.statusBar().spinner.isHidden())
+        self.assertEqual(window.play_state.text(), "Playing")
         window.process = None
         window.command_finished(0, None)
-        self.assertTrue(window.command_progress.isHidden())
+        self.assertTrue(window.play_state.isHidden())
 
     def test_xbox_addon_deploys_then_starts_the_build(self):
         import hashlib
