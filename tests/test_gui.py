@@ -13,6 +13,7 @@ TOOLS = Path(__file__).resolve().parents[1] / "tools"
 sys.path.insert(0, str(TOOLS))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_bsa import pc_bsa  # noqa: E402
+import tes3x_saves as saves_tool  # noqa: E402
 
 try:
     from PySide6.QtCore import Qt
@@ -104,7 +105,7 @@ order = 10
         self.assertEqual(window.windowTitle(), "TES3X — profile")
         self.assertEqual([window.tabs.tabText(index) for index in range(window.tabs.count())],
                          ["Mods", "Plugins", "Archives", "Data Files", "Patches", "INI",
-                          "Resources", "Build"])
+                          "Resources", "Saves", "Build"])
         self.assertEqual(window.counts.contentsMargins().right(), 8)
         self.assertEqual(window.details_container.layout().contentsMargins().top(),
                          window.tabs.tabBar().sizeHint().height())
@@ -285,7 +286,8 @@ order = 10
         build.select(build.invert_look, True)
         window.toggle_flag(self.row(window, "Mod"), "loose")
         window.refresh_analysis()
-        window.tabs.setCurrentIndex(window.tabs.count() - 1)
+        window.tabs.setCurrentIndex(
+            [window.tabs.tabText(i) for i in range(window.tabs.count())].index("Build"))
         preview = window.context_info.toPlainText()
         self.assertIn("Dashboard title: Modded", preview)
         self.assertIn("Packaging: Loose files", preview)
@@ -606,6 +608,67 @@ order = 10
         self.assertTrue(dialog.save_settings())
         with open(config, "rb") as stream:
             self.assertNotIn("addons", tomllib.load(stream))
+
+    def test_saves_tab_picks_a_pool_and_checks_saves_against_the_profile(self):
+        config = self.root / "local.toml"
+        config.write_text("[paths]\n", encoding="utf-8")
+        window = self.window(config=config)
+        self.assertEqual(window.current_pool(), (0x42530005, None))
+        with patch.object(QInputDialog, "getText", return_value=("TR test", True)):
+            window.new_pool()
+        value, name = window.current_pool()
+        self.assertEqual((value >> 16, name), (0x5433, "TR test"))
+        self.assertTrue(window.save_profile())
+        self.assertEqual(self.saved()["profile"]["save_pool"], "TR test")
+        self.assertEqual(self.saved()["profile"]["save_pool_id"], f"{value:08X}")
+        self.assertIn(f"E:\\UDATA\\{value:08X}", window.pool_note.text())
+
+        saves = [{"source": "pc", "folder": "A", "name": "fits", "size": 1 << 20,
+                  "masters": ["Morrowind.esm", "mod.esp"]},
+                 {"source": "xemu", "folder": "B", "name": "lacks", "size": 1 << 20,
+                  "masters": ["Morrowind.esm", "gone.esp"]},
+                 {"source": "xbox", "folder": "C", "name": "reordered", "size": 1 << 20,
+                  "masters": ["mod.esp", "Morrowind.esm"]}]
+        window.populate_saves(saves)
+        fits = {window.save_list.topLevelItem(i).text(0):
+                window.save_list.topLevelItem(i).text(window.SAVE_FIT)
+                for i in range(window.save_list.topLevelItemCount())}
+        self.assertEqual(fits, {"fits": "Compatible", "lacks": "Missing gone.esp",
+                                "reordered": "Compatible"})
+        self.assertIn("1 of 3 saves need plugins", window.pool_note.text())
+
+        steps = window.push_steps(saves)
+        self.assertEqual([arguments[0] for _script, arguments, _message in steps],
+                         ["pull", "push"])
+        self.assertIn("xemu", steps[0][1])
+        push = steps[1][1]
+        self.assertEqual(push[1:3], ["A", "B"])
+        self.assertEqual(push[push.index("--pool-name") + 1], "TR test")
+
+        # Each save changes pool where it is: on the Xbox, on the PC or on the xemu disk.
+        moves = window.transfer_steps(saves, 0x42530005, None, True)
+        self.assertEqual([arguments[arguments.index("--where") + 1] for _s, arguments, _m in moves],
+                         ["xbox", "pc", "xemu"])
+        self.assertTrue(all("--move" in arguments for _s, arguments, _m in moves))
+        copies = window.transfer_steps(saves, 0x42530005, None, False)
+        self.assertEqual(len(copies), 3)
+
+        # Back to the shared pool: the new pool stays on the list to choose again.
+        window.pool_chosen(window.pool_combo.findData(0x42530005))
+        self.assertTrue(window.save_profile())
+        self.assertNotIn("save_pool", self.saved()["profile"])
+        self.assertNotEqual(window.pool_combo.findData(value), -1)
+        window.pool_chosen(window.pool_combo.findData(value))
+        self.assertEqual(window.current_pool(), (value, "TR test"))
+
+        # The Xbox's last listing of a pool shows until the Xbox answers again.
+        saves_tool.write_index(window.save_library(), {
+            "pools": {f"{value:08X}": "TR test"},
+            "xbox": {f"{value:08X}": {"time": "2026-09-28 20:00", "saves": saves[2:]}}})
+        window.xbox_listing = None
+        window.refresh_saves(False)
+        self.assertEqual(window.save_list.topLevelItemCount(), 1)
+        self.assertIn("listed 2026-09-28 20:00", window.saves_status.text())
 
     def test_local_settings_dialog_preserves_xemu_and_writes_public_fields(self):
         config = self.root / "local.toml"

@@ -151,3 +151,13 @@ uses the extra memory, set in **File > Settings**. Each profile keeps its own xe
 saves carry over between sessions; **Actions > Reset xemu saves…** starts it clean. With the
 [console add-on](addons.md) switched on, the arrow also offers **Xbox**: deploy to the console and
 start the game there.
+
+**Saves** chooses the profile's save pool: the retail game's shared saves, or a pool of its own
+that keeps its saves apart from other builds (see `save_pool` in
+[configuration.md](configuration.md)). It lists the pool's saves on the Xbox, on the profile's xemu
+disk and in the PC save library (`build/saves/<pool>/`), and marks those that need plugins the
+profile does not load. The last Xbox listing is kept, so the tab opens without waiting for the
+console and still shows it while the console is off. Right-click saves to pull them to the PC,
+push them to the Xbox or xemu, copy or move them to another pool, or delete them. A move deletes
+the original only after the copy is complete; changes to the xemu disk are stacked on it as a new
+layer.

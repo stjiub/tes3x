@@ -2,6 +2,7 @@
 """TES3X GUI. It edits the same TOML the command-line tools read."""
 
 import argparse
+import collections
 from collections import defaultdict
 import datetime
 import fnmatch
@@ -25,8 +26,8 @@ try:
     from PySide6.QtCore import (QAbstractTableModel, QFile, QModelIndex, QProcess,
                                 QProcessEnvironment, QSettings, QSortFilterProxyModel, QTimer, Qt,
                                 QUrl, Signal)
-    from PySide6.QtGui import (QAction, QActionGroup, QColor, QDesktopServices, QIcon, QPainter,
-                               QPixmap, QTextCursor)
+    from PySide6.QtGui import (QAction, QActionGroup, QColor, QDesktopServices, QIcon,
+                               QKeySequence, QPainter, QPixmap, QTextCursor)
     from PySide6.QtWidgets import (
         QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
         QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
@@ -56,6 +57,8 @@ from tes3x_pipeline import (DEPLOY_CONFLICT, MARKER as PIPELINE_MARKER, Pipeline
                             resolve_patch_plan, validate_local_config, validate_profile)
 from tes3x_records import records, subrecords
 import tes3x_nexus as nexus
+import tes3x_saves as saves_tool
+import tes3x_savepool
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1206,7 +1209,9 @@ class ProfileWindow(QMainWindow):
         build_scroll = QScrollArea()
         build_scroll.setWidgetResizable(True)
         build_scroll.setWidget(self.build)
+        self.tabs.addTab(self.create_saves_tab(), "Saves")
         self.tabs.addTab(build_scroll, "Build")
+        self.tabs.currentChanged.connect(self.saves_tab_shown)
         self.tabs.currentChanged.connect(self.show_context_info)
 
         body = QWidget()
@@ -1440,6 +1445,9 @@ class ProfileWindow(QMainWindow):
             self.show_mod_info()
             return
         self.details_stack.setCurrentWidget(self.context_info)
+        if tab == "Saves":
+            self.show_save_info()
+            return
         if tab == "Plugins":
             items = self.plugin_list.selectedItems()
             if len(items) != 1:
@@ -2926,6 +2934,501 @@ class ProfileWindow(QMainWindow):
 
     # Patches
 
+    # Saves
+
+    SAVE_NAME, SAVE_WHERE, SAVE_PLAYER, SAVE_CELL, SAVE_DATE, SAVE_SIZE, SAVE_FIT = range(7)
+    SAVE_SOURCES = {"xbox": "Xbox", "xemu": "xemu", "pc": "PC copy"}
+
+    def create_saves_tab(self):
+        self.pool_combo = QComboBox()
+        self.pool_combo.setMinimumWidth(280)
+        self.pool_combo.activated.connect(self.pool_chosen)
+        new_pool = QPushButton("New pool…")
+        new_pool.clicked.connect(self.new_pool)
+        self.pool_note = QLabel()
+        self.pool_note.setWordWrap(True)
+        top = QHBoxLayout()
+        top.addWidget(QLabel("Save pool"))
+        top.addWidget(self.pool_combo)
+        top.addWidget(new_pool)
+        top.addStretch()
+
+        self.save_list = QTreeWidget()
+        self.save_list.setHeaderLabels(["Save", "Where", "Player", "Cell", "Date", "Size",
+                                        "Plugins"])
+        self.save_list.setRootIsDecorated(False)
+        self.save_list.setSortingEnabled(True)
+        self.save_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.save_list.itemSelectionChanged.connect(self.saves_selected)
+        self.save_list.itemSelectionChanged.connect(self.show_context_info)
+        header = self.save_list.header()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        header.setStretchLastSection(True)
+
+        self.save_actions = {}
+        for key, label, handler, tip in (
+                ("pull", "Pull to PC", self.pull_saves,
+                 "Copy the selected Xbox or xemu saves into the PC save library"),
+                ("push", "Push to Xbox", self.push_saves,
+                 "Copy the selected saves into this pool on the Xbox"),
+                ("push_xemu", "Push to xemu", self.push_xemu_saves,
+                 "Copy the selected saves into this pool on the profile's xemu disk"),
+                ("copy", "Copy to pool…", lambda: self.transfer_saves(False),
+                 "Copy the selected saves into another pool, where they are"),
+                ("move", "Move to pool…", lambda: self.transfer_saves(True),
+                 "Move the selected saves into another pool, where they are. Each original is "
+                 "deleted once its copy is complete, and a save leaving the Xbox keeps a PC "
+                 "copy"),
+                ("delete", "Delete…", self.delete_saves, "Delete the selected saves")):
+            action = QAction(label, self)
+            action.setToolTip(tip)
+            action.triggered.connect(handler)
+            self.save_actions[key] = action
+        self.save_actions["delete"].setShortcut(QKeySequence(QKeySequence.StandardKey.Delete))
+        self.save_actions["delete"].setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
+        self.save_list.addAction(self.save_actions["delete"])
+        self.save_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.save_list.customContextMenuRequested.connect(self.save_menu)
+
+        buttons = QHBoxLayout()
+        for label, handler, tip in (
+                ("Refresh", lambda: self.refresh_saves(True),
+                 "List this pool's saves again, including the Xbox"),
+                ("Open PC folder", self.open_save_folder,
+                 "Open this pool's folder in the PC save library")):
+            button = QPushButton(label)
+            button.setToolTip(tip)
+            button.clicked.connect(handler)
+            buttons.addWidget(button)
+        buttons.addWidget(QLabel("Right-click saves to copy or move them."))
+        buttons.addStretch()
+        self.saves_status = QLabel()
+        buttons.addWidget(self.saves_status)
+
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.addLayout(top)
+        layout.addWidget(self.pool_note)
+        layout.addWidget(self.save_list)
+        layout.addLayout(buttons)
+        self.save_pool = None
+        self.saves_probe = None
+        self.saves_local = []
+        self.saves_xbox = []
+        self.xbox_listing = None
+        self.xbox_checked = set()
+        self.saves_selected()
+        return widget
+
+    def save_library(self):
+        return self.work_dir() / "build" / "saves"
+
+    def current_pool(self):
+        """(title ID, name) of this profile's pool; the shared pool has no name."""
+        if not self.save_pool:
+            return tes3x_savepool.SHARED_ID, None
+        return (tes3x_savepool.pool_id(self.save_pool["name"], self.save_pool.get("id")),
+                self.save_pool["name"])
+
+    def known_pools(self):
+        """{title ID: {"name", "id", "users"}}: every profile's pool, and those the save library
+        has seen, on the Xbox or made here."""
+        pools = {}
+        for path in self.profile_files():
+            try:
+                identity = tomllib.loads(path.read_text(encoding="utf-8")).get("profile", {})
+                name = identity.get("save_pool")
+                value = tes3x_savepool.pool_id(name, identity.get("save_pool_id")) \
+                    if name else None
+            except (OSError, tomllib.TOMLDecodeError, ValueError):
+                continue
+            if value:
+                pool = pools.setdefault(value, {"name": name, "id": identity.get("save_pool_id"),
+                                                "users": []})
+                pool["users"].append(identity.get("name") or path.stem)
+        for hex_id, name in saves_tool.read_index(self.save_library())["pools"].items():
+            pools.setdefault(int(hex_id, 16), {"name": name, "id": hex_id, "users": []})
+        value, name = self.current_pool()
+        if name:
+            pools.setdefault(value, {"name": name, "id": self.save_pool.get("id"), "users": []})
+        pools.pop(tes3x_savepool.SHARED_ID, None)
+        return pools
+
+    def populate_pools(self):
+        self.pool_combo.clear()
+        self.pool_combo.addItem("Shared: the retail game's saves", tes3x_savepool.SHARED_ID)
+        pools = self.known_pools()
+        for value, pool in sorted(pools.items(), key=lambda item: item[1]["name"].casefold()):
+            self.pool_combo.addItem(f"{pool['name']}  ({value:08X})", value)
+        current, _name = self.current_pool()
+        self.pool_combo.setCurrentIndex(max(0, self.pool_combo.findData(current)))
+        me = self.profile_plain.get("profile", {}).get("name")
+        others = [user for user in pools.get(current, {}).get("users", []) if user != me]
+        if current == tes3x_savepool.SHARED_ID:
+            note = ("Saves go to E:\\UDATA\\42530005 with the retail game and every profile "
+                    "without a pool of its own.")
+        else:
+            note = (f"Saves go to E:\\UDATA\\{current:08X}, apart from other builds. "
+                    + (f"Also used by: {', '.join(others)}. " if others else "")
+                    + "A change of pool takes effect from the next build.")
+        self.pool_note.setText(note)
+
+    def load_save_pool(self, plain):
+        identity = plain.get("profile", {})
+        self.save_pool = ({"name": identity["save_pool"], "id": identity.get("save_pool_id")}
+                          if identity.get("save_pool") else None)
+        self.pool_changed()
+
+    def apply_save_pool(self, document):
+        put = lambda *args: BuildSettings.put(document, *args)
+        put("profile", "save_pool", self.save_pool["name"] if self.save_pool else None, None)
+        put("profile", "save_pool_id",
+            self.save_pool.get("id") if self.save_pool else None, None)
+
+    def pool_changed(self):
+        self.populate_pools()
+        self.update_build_state()
+        self.save_list.clear()
+        self.saves_local, self.saves_xbox, self.xbox_listing = [], [], None
+        if self.saves_tab_visible():
+            self.refresh_saves()
+
+    def saves_tab_visible(self):
+        return self.tabs.tabText(self.tabs.currentIndex()) == "Saves"
+
+    def saves_tab_shown(self, _index):
+        if self.saves_tab_visible():
+            self.refresh_saves()
+
+    def pool_chosen(self, index):
+        value = self.pool_combo.itemData(index)
+        if value == self.current_pool()[0]:
+            return
+        if value == tes3x_savepool.SHARED_ID:
+            self.save_pool = None
+        else:
+            pool = self.known_pools()[value]
+            self.save_pool = {"name": pool["name"], "id": pool["id"] or f"{value:08X}"}
+        self.pool_changed()
+
+    def new_pool(self):
+        name, ok = QInputDialog.getText(self, "New save pool",
+                                        "Name of the new save pool (shown on the dashboard):")
+        name = name.strip()
+        if not ok or not name:
+            return
+        pools = self.known_pools()
+        if any(pool["name"].casefold() == name.casefold() for pool in pools.values()):
+            self.error(f"A pool named {name!r} exists already; choose it from the list")
+            return
+        value = tes3x_savepool.pool_id(name)
+        taken = set(pools) | {tes3x_savepool.SHARED_ID}
+        while value in taken:
+            value = tes3x_savepool.PREFIX << 16 | ((value + 1) & 0xFFFF or 1)
+        saves_tool.remember_pool(self.save_library(), value, name)
+        self.save_pool = {"name": name, "id": f"{value:08X}"}
+        self.pool_changed()
+
+    def refresh_saves(self, xbox=None):
+        """List the PC and xemu saves now, show the Xbox's last listing, then ask the Xbox again
+        once per pool and session, or whenever `xbox` is true."""
+        if not self.profile_path:
+            return
+        value, _name = self.current_pool()
+        self.saves_local = []
+        try:
+            self.saves_local += saves_tool.library_saves(self.save_library(), value)
+            if self.play_disk().is_file():
+                self.saves_local += saves_tool.Disk(self.play_disk()).saves(value)
+        except (OSError, ValueError, struct.error) as exc:
+            self.statusBar().showMessage(f"Could not read the PC saves: {exc}", 8000)
+        if self.xbox_listing is None:
+            cached = saves_tool.read_index(self.save_library())["xbox"].get(f"{value:08X}", {})
+            self.saves_xbox = cached.get("saves", [])
+            self.xbox_listing = f"listed {cached['time']}" if cached.get("time") else ""
+        self.show_saves()
+        if not self.local_values().get("deploy", {}).get("host"):
+            return
+        if xbox or (xbox is None and value not in self.xbox_checked):
+            self.list_xbox_saves(value)
+
+    def list_xbox_saves(self, value):
+        if self.saves_probe is not None:
+            probe, self.saves_probe = self.saves_probe, None
+            probe.kill()
+        process = QProcess(self)
+        process.setWorkingDirectory(str(self.work_dir()))
+        process.setProgram(sys.executable)
+        process.setArguments([str(ROOT / "tools" / "tes3x_saves.py"), "list", "--pool",
+                              f"{value:08X}", "--xbox", "--library", str(self.save_library()),
+                              "--config", str(self.local_config_path())])
+        process.finished.connect(lambda code, _status, process=process, value=value:
+                                 self.xbox_saves_listed(process, value, code))
+        self.saves_probe = process
+        self.xbox_checked.add(value)
+        self.show_saves_status("listing the Xbox…")
+        process.start()
+
+    def xbox_saves_listed(self, process, value, code):
+        # A listing started for a pool since left, or replaced by a newer one, is dropped.
+        if process is not self.saves_probe:
+            return
+        self.saves_probe = None
+        output = bytes(process.readAllStandardOutput()).decode("utf-8", "replace").strip()
+        try:
+            result = json.loads(output.splitlines()[-1])
+        except (IndexError, ValueError):
+            error = bytes(process.readAllStandardError()).decode("utf-8", "replace").strip()
+            self.show_saves_status("could not list the Xbox", error or output or f"exit {code}")
+            return
+        if value != self.current_pool()[0]:
+            return
+        self.saves_xbox = result["saves"]
+        if result.get("xbox") == "ok":
+            self.xbox_listing = ""
+            self.populate_pools()
+            self.show_saves()
+        else:
+            self.xbox_listing = (f"Xbox offline, listed {result['time']}" if result.get("time")
+                                 else "Xbox offline")
+            self.show_saves(result.get("xbox") or "")
+
+    def show_saves(self, tip=""):
+        self.populate_saves(self.saves_xbox + self.saves_local)
+        self.show_saves_status(None, tip)
+
+    def show_saves_status(self, doing=None, tip=""):
+        counts = collections.Counter(save["source"] for save in self.saves_xbox + self.saves_local)
+        parts = [f"{self.SAVE_SOURCES[key]} {counts[key]}" for key in ("xbox", "xemu", "pc")
+                 if counts[key]]
+        parts.append(doing or self.xbox_listing or "")
+        self.saves_status.setText(" · ".join(part for part in parts if part)
+                                  or "No saves in this pool")
+        self.saves_status.setToolTip(tip)
+
+    def load_order(self):
+        names = [name for name, _source, _placeholder in self.base_plugins()]
+        names += [name for name, value in self.analysis.get("plugins", {}).items()
+                  if value.get("included")]
+        return {name.casefold() for name in names}
+
+    def save_fit(self, masters):
+        """('ok' | 'missing', text) for a save's masters against this profile. The engine
+        matches a save's masters by name, so their order does not matter."""
+        loaded = self.load_order()
+        # GOTY merged the expansions into Morrowind.esm; their files are empty placeholders.
+        missing = [name for name in masters if name.casefold() not in loaded
+                   and name.casefold() not in EXPANSION_PLACEHOLDERS]
+        if missing:
+            return "missing", "Missing " + ", ".join(missing)
+        return "ok", "Compatible"
+
+    def populate_saves(self, saves):
+        selected = {(save["source"], save["folder"]) for save in self.selected_saves()}
+        self.save_list.setSortingEnabled(False)
+        self.save_list.clear()
+        colours = {"ok": QColor("#2e7d32"), "missing": QColor("#b3261e")}
+        fits = collections.Counter()
+        for save in saves:
+            fit, text = self.save_fit(save.get("masters", []))
+            fits[fit] += 1
+            item = QTreeWidgetItem([
+                save.get("name") or save.get("title") or save["folder"],
+                self.SAVE_SOURCES.get(save["source"], save["source"]),
+                save.get("player") or "", save.get("cell") or "", save.get("date") or "",
+                f"{save['size'] / 1048576:.1f} MB", text])
+            item.setData(0, ROLE, save)
+            item.setForeground(self.SAVE_FIT, colours[fit])
+            item.setToolTip(self.SAVE_FIT, "\n".join(save.get("masters", [])))
+            self.save_list.addTopLevelItem(item)
+            item.setSelected((save["source"], save["folder"]) in selected)
+        self.save_list.setSortingEnabled(True)
+        self.save_list.sortByColumn(self.SAVE_DATE, Qt.SortOrder.DescendingOrder)
+        note = self.pool_note.text().split("  ⚠")[0]
+        if fits["missing"]:
+            note += (f"  ⚠ {fits['missing']} of {len(saves)} saves need plugins this profile "
+                     "does not load.")
+        self.pool_note.setText(note)
+        self.saves_selected()
+
+    def selected_saves(self):
+        return [item.data(0, ROLE) for item in self.save_list.selectedItems()]
+
+    def saves_selected(self):
+        sources = {save["source"] for save in self.selected_saves()}
+        idle = self.process is None
+        disk = self.profile_path is not None and self.play_disk().is_file()
+        for key, wanted in (("pull", {"xbox", "xemu"}), ("push", {"pc", "xemu"}),
+                            ("push_xemu", {"pc", "xbox"} if disk else set()),
+                            ("copy", {"xbox", "pc", "xemu"}), ("move", {"xbox", "pc", "xemu"}),
+                            ("delete", {"xbox", "pc", "xemu"})):
+            self.save_actions[key].setEnabled(idle and bool(sources & wanted))
+
+    def save_menu(self, position):
+        if not self.selected_saves():
+            return
+        menu = QMenu(self)
+        menu.setToolTipsVisible(True)
+        actions = self.save_actions
+        menu.addActions([actions["pull"], actions["push"], actions["push_xemu"]])
+        menu.addSeparator()
+        menu.addActions([actions["copy"], actions["move"]])
+        menu.addSeparator()
+        menu.addAction(actions["delete"])
+        menu.exec(self.save_list.viewport().mapToGlobal(position))
+
+    def saves_command(self, command, folders, *extra):
+        value, _name = self.current_pool()
+        return (ROOT / "tools" / "tes3x_saves.py",
+                [command, *folders, "--pool", f"{value:08X}", "--library",
+                 str(self.save_library()), "--config", str(self.local_config_path()), *extra])
+
+    def pull_steps(self, saves):
+        steps = []
+        for source in ("xbox", "xemu"):
+            folders = [save["folder"] for save in saves if save["source"] == source]
+            if folders:
+                extra = ["--from", "xemu", "--disk", str(self.play_disk())] \
+                    if source == "xemu" else []
+                script, arguments = self.saves_command("pull", folders, *extra)
+                steps.append((script, arguments, f"Copying {len(folders)} save(s) from "
+                                                 f"{self.SAVE_SOURCES[source]} to the PC…"))
+        return steps
+
+    def run_save_steps(self, steps):
+        if not steps:
+            return
+        if self.process is not None:
+            self.error("A TES3X command is already running")
+            return
+        self.run_steps(steps, then=lambda: self.refresh_saves(True))
+
+    def pull_saves(self):
+        self.run_save_steps(self.pull_steps(self.selected_saves()))
+
+    def push_steps(self, saves):
+        """Pull the xemu saves first, then push the PC copies into this pool on the Xbox."""
+        _value, name = self.current_pool()
+        wanted = [save for save in saves if save["source"] in ("pc", "xemu")]
+        steps = self.pull_steps([save for save in wanted if save["source"] == "xemu"])
+        folders = sorted({save["folder"] for save in wanted})
+        if folders:
+            script, arguments = self.saves_command(
+                "push", folders, *(["--pool-name", name] if name else []))
+            steps.append((script, arguments, f"Copying {len(folders)} save(s) to the Xbox…"))
+        return steps
+
+    def push_saves(self):
+        self.run_save_steps(self.push_steps(self.selected_saves()))
+
+    def push_xemu_steps(self, saves):
+        """Pull the Xbox saves first, then write the PC copies into this pool on the xemu
+        disk."""
+        _value, name = self.current_pool()
+        wanted = [save for save in saves if save["source"] in ("pc", "xbox")]
+        steps = self.pull_steps([save for save in wanted if save["source"] == "xbox"])
+        folders = sorted({save["folder"] for save in wanted})
+        if folders:
+            script, arguments = self.saves_command(
+                "push", folders, "--where", "xemu", "--disk", str(self.play_disk()),
+                *(["--pool-name", name] if name else []))
+            steps.append((script, arguments, f"Copying {len(folders)} save(s) to xemu…"))
+        return steps
+
+    def push_xemu_saves(self):
+        self.run_save_steps(self.push_xemu_steps(self.selected_saves()))
+
+    def transfer_steps(self, saves, target, name, move):
+        """Copy or move saves into pool `target`, each where it is."""
+        steps = []
+        for where in ("xbox", "pc", "xemu"):
+            folders = [save["folder"] for save in saves if save["source"] == where]
+            if not folders:
+                continue
+            extra = ["--to", f"{target:08X}", "--where", where]
+            extra += ["--to-name", name] if name else []
+            extra += ["--move"] if move else []
+            extra += ["--disk", str(self.play_disk())] if where == "xemu" else []
+            script, arguments = self.saves_command("copy", folders, *extra)
+            steps.append((script, arguments,
+                          f"{'Moving' if move else 'Copying'} {len(folders)} "
+                          f"{self.SAVE_SOURCES[where]} save(s) to another pool…"))
+        return steps
+
+    def transfer_saves(self, move):
+        current, _name = self.current_pool()
+        pools = {tes3x_savepool.SHARED_ID: {"name": None}, **self.known_pools()}
+        choices = {("Shared: the retail game's saves" if pool["name"] is None
+                    else f"{pool['name']}  ({value:08X})"): value
+                   for value, pool in pools.items() if value != current}
+        if not choices:
+            self.error("There is no other pool; make one with New pool…")
+            return
+        verb = "Move" if move else "Copy"
+        label, ok = QInputDialog.getItem(
+            self, f"{verb} saves",
+            f"{verb} the selected saves into this pool. Xbox saves stay on the Xbox and PC "
+            "copies on the PC" + (", and each original is deleted once its copy is complete:"
+                                  if move else ":"),
+            list(choices), 0, False)
+        if ok:
+            target = choices[label]
+            self.run_save_steps(self.transfer_steps(self.selected_saves(), target,
+                                                    pools[target]["name"], move))
+
+    def delete_saves(self):
+        saves = self.selected_saves()
+        if not saves or self.process is not None:
+            return
+        names = "\n".join(f"• {save.get('name') or save['folder']} "
+                          f"({self.SAVE_SOURCES[save['source']]})" for save in saves)
+        answer = QMessageBox.question(self, "Delete saves",
+                                      f"Delete these saves for good?\n\n{names}")
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        current, _name = self.current_pool()
+        for save in saves:
+            if save["source"] == "pc":
+                folder = self.save_library() / f"{current:08X}" / save["folder"]
+                if not trash(folder):
+                    shutil.rmtree(folder, ignore_errors=True)
+        steps = []
+        for where, extra in (("xbox", []), ("xemu", ["--where", "xemu", "--disk",
+                                                    str(self.play_disk())])):
+            folders = [save["folder"] for save in saves if save["source"] == where]
+            if folders:
+                script, arguments = self.saves_command("delete", folders, *extra)
+                steps.append((script, arguments,
+                              f"Deleting {len(folders)} {self.SAVE_SOURCES[where]} save(s)…"))
+        if steps:
+            self.run_save_steps(steps)
+        else:
+            self.refresh_saves(False)
+
+    def open_save_folder(self):
+        current, _name = self.current_pool()
+        folder = self.save_library() / f"{current:08X}"
+        folder.mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+
+    def show_save_info(self):
+        saves = self.selected_saves()
+        if len(saves) != 1:
+            self.context_info.setPlainText("Select a save to see its details.")
+            return
+        save = saves[0]
+        loaded = self.load_order()
+        lines = [save.get("name") or save["folder"], "",
+                 f"Where: {self.SAVE_SOURCES.get(save['source'], save['source'])}",
+                 f"Folder: {save['folder']}", f"Player: {save.get('player') or '?'}",
+                 f"Cell: {save.get('cell') or '?'}", f"Saved: {save.get('date') or '?'}", "",
+                 f"Plugins ({self.save_fit(save.get('masters', []))[1]}):"]
+        lines += [f"  {name}" + ("" if name.casefold() in loaded
+                                 or name.casefold() in EXPANSION_PLACEHOLDERS
+                                 else "   — not in this profile")
+                  for name in save.get("masters", [])]
+        self.context_info.setPlainText("\n".join(lines))
+
     def create_patches_tab(self):
         self.patch_preset = QComboBox()
         self.patch_preset.addItems(["minimal", "standard", "development"])
@@ -3352,6 +3855,7 @@ class ProfileWindow(QMainWindow):
         self.library_indexed = indexed
         self.scans.clear()
         self.build.load(plain)
+        self.load_save_pool(plain)
         self.plugins_loading = True
         self.mlox_at_build.setChecked(plain.get("rules", {}).get("plugin_order") == "mlox")
         self.plugins_loading = False
@@ -3457,6 +3961,7 @@ class ProfileWindow(QMainWindow):
         else:
             self.document.pop("mods", None)
         self.build.apply(self.document)
+        self.apply_save_pool(self.document)
         BuildSettings.put(self.document, "rules", "plugin_order",
                           "mlox" if self.mlox_at_build.isChecked() else "mods", "mods")
         order = None if self.mlox_at_build.isChecked() else self.plugin_order
@@ -3707,17 +4212,29 @@ class ProfileWindow(QMainWindow):
                 "deploy": self.build_output() / "deploy", "plain": self.profile_plain,
                 "local": self.local_values()}
 
-    def run_steps(self, steps, first=True):
-        """Run commands one after another, stopping at the first that fails."""
+    DEPLOY_QUESTION = ("Deploy over existing files?", "This deploy would write over:",
+                       "Files in the game folder that the build does not have are deleted. "
+                       "Deploy anyway?")
+    PUSH_QUESTION = ("Replace saves?", "These saves are already on the Xbox:",
+                     "Replace them with the copies from the PC?")
+
+    def run_steps(self, steps, first=True, then=None):
+        """Run commands one after another, stopping at the first that fails; `then` runs after
+        the last one succeeds."""
         script, arguments, message = steps[0]
         if Path(script).name == "tes3x_deploy.py":
             self.command_kind = "deploy"
         self.start_command(script, arguments, message, clear=first)
-        if Path(script).name == "tes3x_deploy.py" and "--replace" not in arguments:
-            self.conflict_retry = lambda: self.run_steps(
-                [(script, [*arguments, "--replace"], message), *steps[1:]], first=False)
+        question = {"tes3x_deploy.py": self.DEPLOY_QUESTION,
+                    "tes3x_saves.py": self.PUSH_QUESTION}.get(Path(script).name)
+        if question and "--replace" not in arguments:
+            self.conflict_retry = (lambda: self.run_steps(
+                [(script, [*arguments, "--replace"], message), *steps[1:]], False, then),
+                question)
         if len(steps) > 1:
-            self.after_command = lambda: self.run_steps(steps[1:], first=False)
+            self.after_command = lambda: self.run_steps(steps[1:], False, then)
+        elif then:
+            self.after_command = then
 
     def start_play(self):
         module = self.play_addons.get(self.play_target)
@@ -3802,7 +4319,7 @@ class ProfileWindow(QMainWindow):
             arguments.append("--discard-build")
         self.run_pipeline(arguments)
         if self.process is not None:
-            self.conflict_retry = self.deploy_built
+            self.conflict_retry = (self.deploy_built, self.DEPLOY_QUESTION)
 
     def deploy_built(self):
         """Deploy the finished build with --replace, after a conflict stopped the pipeline's."""
@@ -3918,26 +4435,26 @@ class ProfileWindow(QMainWindow):
         self.update_build_state()
         follow, self.after_command = self.after_command, None
         retry, self.conflict_retry = self.conflict_retry, None
+        self.saves_selected()
         if code == DEPLOY_CONFLICT and retry:
             if kind == "build":
                 self.build_failed = False
             elif kind == "deploy":
                 self.deploy_failed = False
             self.update_build_state()
-            self.confirm_replace(retry)
+            self.confirm_replace(*retry)
             return
         if follow and code == 0:
             follow()
 
-    def confirm_replace(self, retry):
-        """Deploy stopped because the target belongs to something else; ask before going on."""
+    def confirm_replace(self, retry, question):
+        """A command stopped rather than overwrite something; ask before repeating it."""
+        title, lead, ask = question
         lines = [line.split("conflict: ", 1)[1] for line in self.output.toPlainText().splitlines()
                  if "conflict: " in line]
         answer = QMessageBox.warning(
-            self, "Deploy over existing files?",
-            "This deploy would write over:\n\n" + "\n".join(f"• {line}" for line in lines)
-            + "\n\nFiles in the game folder that the build does not have are deleted. "
-            "Deploy anyway?",
+            self, title, lead + "\n\n" + "\n".join(f"• {line}" for line in lines)
+            + "\n\n" + ask,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No)
         if answer == QMessageBox.StandardButton.Yes:
