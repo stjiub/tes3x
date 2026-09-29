@@ -140,6 +140,16 @@ ini = { DropReplacedRefs = "1" }
 summary = "Stop an unresolvable reference being restamped as created at runtime."
 
 [[patch]]
+name = "mcp-37"
+origin = { source = "MCP", id = "37" }
+bit = 11
+category = "core"
+channel = "dev"
+selection = "preset"
+source = "tes3xmcp37.c"
+summary = "Cancel stale NPC casts before a cell change leaves them dangling."
+
+[[patch]]
 name = "mcp-97"
 origin = { source = "MCP", id = "97" }
 bit = 9

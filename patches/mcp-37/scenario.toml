@@ -1,0 +1,17 @@
+kind = "single"
+purpose = "The stale-cast hook runs during a real cell change without crashing the engine."
+procedure = "Boot a direct-engine build with mcp-37, start a new game, move to Balmora through the console, wait in game, query the player position, then exit through the command script."
+limitations = "This does not create an NPC cast that survives the cell change or wait for the delayed cleanup, so it exercises the hook path but not the original crash."
+watch = 'diag\.patches|exec\.exit|crash\.|hang\.detected|fatal\.'
+timeout = 180
+script = '''
+@start new
+wait 30
+coc "Balmora"
+wait 180
+player->getpos x
+exit
+'''
+
+[expect]
+test = ['diag\.patches', 'exec\.exit 0']

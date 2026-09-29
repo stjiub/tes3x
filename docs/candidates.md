@@ -13,7 +13,7 @@ on, `low` for minor ones, and `none` for fixes we won't port.
 
 | status | fixes |
 |---|---|
-| candidate | 197 |
+| candidate | 196 |
 | deferred | 13 |
 | not-applicable | 15 |
 | rejected | 2 |
@@ -24,7 +24,6 @@ Worth porting, but not yet shown to affect the Xbox build.
 
 | fix | from | priority | category | notes |
 |---|---|---|---|---|
-| `mcp-37` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #37 | high | core (intended default) | **Delayed spell crash.** Crash can occur roughly 72 game hours after the initiating cell change, easily misdiagnosed as save corruption. |
 | `mcp-92` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #92 | high | core (intended default) | **Summoned creature dangling-reference crash.** Reproduce unsummoning through non-death paths and locate the lifetime transition. |
 | `mcp-98` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #98 | high | core (intended default) | **Animated container refcount crash.** Small crash fix; reproduce with a merchant and an animated container in the same cell. |
 | `mcp-123` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #123 | high | core (intended default) | **Persist `PlaceItem` objects in unvisited cells.** Missing dirty mark loses placed objects. This is persistence/data loss rather than a gameplay preference. |

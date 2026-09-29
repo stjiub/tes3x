@@ -466,6 +466,25 @@ MCP102_ACTN_SIG = re.compile(
 MCP102_FOUND_JUMP = 11
 MCP102_STORE = bytes.fromhex("8b54240483ca01895008c20400")
 
+# The exterior/interior cell-change path copies the player's position, tears down its current
+# world state, then installs the destination. MCP inserts its stale-cast cleanup immediately
+# after that teardown. Capture the repeated game singleton so the payload does not pin it.
+MCP37_SITE_SIG = re.compile(
+    rb"\x8b\x0d(?P<game>....)\xe8....\x8b\x40\x14\x8b\x48\x38\x83\xc0\x38"
+    rb"\x89\x4c\x24\x04\x8b\x50\x04\x8b\x0d(?P=game)\x89\x54\x24\x08"
+    rb"\x8b\x40\x08\x89\x44\x24\x0c\x8b\x89\x3c\x03\x00\x00\x85\xc9\x74."
+    rb"\xe8....(?P<site>\x8b\x0d(?P=game))\x56\x8d\x94\x24\x84\x00\x00\x00",
+    re.S,
+)
+
+# std::_Tree::iterator::operator++ is shared by the magic manager's trees. Its full body is
+# unique; unlike the PC build, Xbox marks the per-tree nil node at node+0x15.
+MCP37_TREE_NEXT_SIG = bytes.fromhex(
+    "8b018a501584d2754d8b5008538a5a1584db751b8b028a581584db750e8d4900"
+    "8bd08b028a581584db74f589115bc38b40048a501584d2751a8da42400000000"
+    "8b113b5008750c89018b40048a501584d274ed89015bc3"
+)
+
 # The texture-create call to the size function, just before the pitch computation that
 # special-cases DXT1 (0xC) and DXT3 (0xE).
 DXT5_SIZE_SIG = re.compile(
@@ -679,6 +698,24 @@ def find_mcp102_actn(x):
     if va is None:
         raise PatchError("mcp-102: ACTN setter is outside any section")
     return va
+
+
+def find_mcp37_context(x):
+    """Find the cell-change hook and engine state its stale-cast walk needs."""
+    hits = list(MCP37_SITE_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("mcp-37: %d cell-change site(s), expected 1" % len(hits))
+    match = hits[0]
+    site = x.off_to_va(match.start("site"))
+    player_call = x.off_to_va(match.start() + 6)
+    if site is None or player_call is None:
+        raise PatchError("mcp-37: cell-change site is outside any section")
+    tree = find_unique(x.data, MCP37_TREE_NEXT_SIG, "mcp-37 tree iterator")
+    tree = x.off_to_va(tree)
+    if tree is None:
+        raise PatchError("mcp-37: tree iterator is outside any section")
+    game = struct.unpack("<I", match.group("game"))[0]
+    return site, game, tes3x_inject.call_target(x, player_call), tree
 
 
 AUTOSAVE_NAME_SIG = b"autosave\x00\x00\x00\x00%d %s %s%s"
@@ -903,6 +940,22 @@ def _mcp_1(x, value, ctx):
     x.data[shift] = 0xE8
     edits.append((shift, 1, "mod index 0x%08X: sar -> shr" % x.off_to_va(shift - 1)))
     return edits
+
+
+@patch("mcp-37")
+def _mcp_37(x, value, ctx):
+    """Cancel stale NPC casts before their actor references leave the active cell."""
+    target = ctx.get("hooks", {}).get("mcp37")
+    if not target:
+        raise PatchError("mcp-37: needs `payload` first, with an mcp37 hook in its manifest")
+    target = int(str(target), 16)
+    site, _game, _player, _tree = find_mcp37_context(x)
+    off = x.va_to_off(site)
+    expected = b"\x8b\x0d" + struct.pack("<I", _game)
+    if bytes(x.data[off:off + 6]) != expected:
+        raise PatchError("mcp-37: cell-change game load does not match expected instruction")
+    x.data[off:off + 6] = b"\xe8" + struct.pack("<i", target - (site + 5)) + b"\x90"
+    return [(off, 6, "stale-cast cleanup 0x%08X -> 0x%08X" % (site, target))]
 
 
 @patch("mcp-97")
@@ -1647,6 +1700,7 @@ LOCATORS = {
     "mcp-154-load": find_mcp154_load,
     "mcp-154-reload": find_mcp154_reload,
     "mcp-102-actn": find_mcp102_actn,
+    "mcp-37": lambda image: find_mcp37_context(image)[0],
     "dxt5-size": find_dxt5_size,
     "mcp-146": find_mcp146,
     "mcp-146-input": lambda image: find_mcp146_context(image)[1],

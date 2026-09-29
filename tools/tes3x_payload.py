@@ -16,7 +16,8 @@ import struct
 import subprocess
 
 import tes3x_inject
-from tes3x_patch import CONSOLE_PRINT_VSPRINTF, LOCATORS, find_transition_calls
+from tes3x_patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, find_mcp37_context,
+                         find_transition_calls)
 
 ROOT = Path(__file__).resolve().parents[1]
 HOOKS = ROOT / "hooks"
@@ -276,6 +277,14 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         define("REF_RESUME", hexva(load + 6))
         define("REF_SKIP", skip)
         wanted["ref_load"] = ("_tes3x_ref_load_hook",)
+    if "tes3xmcp37.c" in names:
+        site, game, player, tree = find_mcp37_context(image)
+        print(f"mcp-37 hook: cell change {hexva(site)}, game {hexva(game)}, "
+              f"player {hexva(player)}, tree iterator {hexva(tree)}")
+        define("MCP37_GAME", hexva(game))
+        define("MCP37_GET_PLAYER", hexva(player))
+        define("MCP37_TREE_NEXT", hexva(tree))
+        wanted["mcp37"] = ("_tes3x_mcp37_hook",)
     if "tes3xmcp97.c" in names:
         scan = locate("mcp-97-scan")
         print(f"mcp-97 hook: scan {hexva(scan)}, resume {hexva(scan + 6)}")

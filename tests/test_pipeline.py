@@ -13,7 +13,7 @@ from tes3x_pipeline import (PipelineError, copy_retail_root, link_or_copy, resol
                             preference_flags, sanitized_command, validate_local_config,
                             validate_profile)
 from tes3x_pipeline import main as pipeline_main
-from tes3x_patch import _mcp_97, _mcp_102, _mcp_154
+from tes3x_patch import MCP37_TREE_NEXT_SIG, _mcp_37, _mcp_97, _mcp_102, _mcp_154
 from tes3x_plugins import (collect, dependency_order, fetch_rules, run_arrange, validate_order,
                            warnings as mlox_warnings)
 from test_reach import rec, sub
@@ -449,6 +449,51 @@ class PipelinePlanTests(unittest.TestCase):
         })
         self.assertEqual(plan['applied'], ['mcp-97'])
         self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xmcp97.c'])
+
+    def test_mcp_37_redirects_cell_change_to_its_hook(self):
+        base = 0x100000
+        game = 0x3CB5F4
+        player = 0x180000
+        block_offset = 32
+        player_call = base + block_offset + 6
+        block = bytearray(bytes.fromhex('8b0d') + struct.pack('<I', game))
+        block += b'\xe8' + struct.pack('<i', player - (player_call + 5))
+        block += bytes.fromhex(
+            '8b40148b483883c038894c24048b50048b0d'
+        ) + struct.pack('<I', game) + bytes.fromhex(
+            '895424088b40088944240c8b893c03000085c97405e8112233448b0d'
+        ) + struct.pack('<I', game) + bytes.fromhex(
+            '568d942484000000'
+        )
+
+        class Image:
+            def __init__(self):
+                self.data = bytearray(b'\x90' * block_offset + block + b'\x90' * 16
+                                      + MCP37_TREE_NEXT_SIG + b'\xcc' * 16)
+
+            def off_to_va(self, offset):
+                return base + offset
+
+            def va_to_off(self, va):
+                return va - base
+
+        image = Image()
+        target = 0x200000
+        edits = _mcp_37(image, '', {'hooks': {'mcp37': hex(target)}})
+        site = block_offset + block.rindex(bytes.fromhex('8b0d') + struct.pack('<I', game))
+        self.assertEqual(image.data[site], 0xE8)
+        self.assertEqual(image.data[site + 5], 0x90)
+        rel = struct.unpack_from('<i', image.data, site + 1)[0]
+        self.assertEqual(image.off_to_va(site) + 5 + rel, target)
+        self.assertEqual([(offset, length) for offset, length, _label in edits], [(site, 6)])
+
+    def test_mcp_37_adds_its_hook_source(self):
+        plan = resolve_patch_plan({
+            'patches': {'preset': 'minimal', 'enable': ['mcp-37']},
+            'package': {'mode': 'merged-bsa'},
+        })
+        self.assertEqual(plan['applied'], ['mcp-37'])
+        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xmcp37.c'])
 
     def test_mcp_97_patches_both_cursor_advances(self):
         scan = bytes.fromhex(

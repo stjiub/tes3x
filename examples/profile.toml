@@ -27,6 +27,7 @@ preset = "recommended"
 # Uncomment a line to add that patch. docs/patches.md describes each one.
 enable = [
     # "mcp-1",                 # core: stop an unresolvable reference being restamped as created at runtime
+    # "mcp-37",                # core: cancel stale NPC casts before a cell change leaves them dangling
     # "mcp-97",                # core: advance the script parser correctly while initializing saved data
     # "mcp-154",               # core: pad compiled script-data allocations to keep reads in bounds
     # "dxt5-size",             # core: allocate DXT5 textures at their real size

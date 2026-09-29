@@ -350,16 +350,6 @@ summary = "Createmaps/fillmap fix"
 reason = "createmaps is a PC map-generation command; only the fillmap half, listing all mods, is useful now that the console is reachable."
 
 [[candidate]]
-name = "mcp-37"
-origin = { source = "MCP", id = "37" }
-category = "core"
-default = "intended default"
-status = "candidate"
-priority = "high"
-summary = "Delayed spell crash"
-reason = "Crash can occur roughly 72 game hours after the initiating cell change, easily misdiagnosed as save corruption."
-
-[[candidate]]
 name = "mcp-38"
 origin = { source = "MCP", id = "38" }
 category = "correctness"
