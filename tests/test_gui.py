@@ -117,6 +117,17 @@ order = 10
         self.assertEqual(self.row(window, "Other").text(2), "+1")
         self.assertEqual(self.row(window, "Mod").text(2), "-1")
         self.assertEqual(window.files_model.rowCount(), 3)
+
+        file_row = next(index for index, value in enumerate(window.files_model.entries)
+                        if value[0] == "meshes/a.nif")
+        window.tabs.setCurrentIndex(3)
+        window.files_view.selectRow(window.files_filter.mapFromSource(
+            window.files_model.index(file_row, 0)).row())
+        details = window.context_info.toPlainText()
+        self.assertIn("Build result: Packed in tes3xmods.bsa", details)
+        self.assertIn("1. Mod — overridden", details)
+        self.assertIn("2. Other — included", details)
+
         self.assertTrue(window.save_profile())
         self.assertEqual([mod["id"] for mod in self.saved()["mods"]], ["mod", "other"])
 

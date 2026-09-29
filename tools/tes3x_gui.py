@@ -4,6 +4,7 @@
 import argparse
 from collections import defaultdict
 import datetime
+import fnmatch
 import hashlib
 import html
 import json
@@ -1435,8 +1436,20 @@ class ProfileWindow(QMainWindow):
                 return
             source = self.files_filter.mapToSource(index)
             path, owner, others = self.files_model.entries[source.row()]
+            key = path.replace("\\", "/").casefold()
+            providers = self.analysis.get("owners", {}).get(key, [])
+            active = self.analysis.get("active", [])
             lines = [path, "", f"Included from: {owner}"]
-            lines.append("Overrides: " + (others or "Nothing"))
+            if providers:
+                winner = active[providers[-1]][0]
+                lines.append("Build result: " + self.packaging_result(winner, key))
+                lines += ["", "Providers, earlier to later:"]
+                for number, provider in enumerate(providers, 1):
+                    name = active[provider][0].text(0)
+                    result = "included" if provider == providers[-1] else "overridden"
+                    lines.append(f"  {number}. {name} — {result}")
+            else:
+                lines.append("Overrides: " + (others or "Nothing"))
             self.context_info.setPlainText("\n".join(lines))
         elif tab == "Patches":
             self.show_patch_details(self.patch_tree.currentItem(), None)
@@ -1930,10 +1943,30 @@ class ProfileWindow(QMainWindow):
             return "Not included"
         if owners[-1] != index:
             return "Overridden by " + active[owners[-1]][0].text(0)
+        return self.packaging_result(item, key)
+
+    def packaging_result(self, item, key):
+        """Where an included winning file goes in the planned package."""
+        entry = item.data(0, ROLE)
+        if key.endswith(PLUGIN_EXT):
+            return "Included loose"
         if key.endswith(".bsa"):
             return ("Loaded via multi-bsa" if entry.get("archives") == "load"
                     else "Unpacked at build")
-        return "Included"
+        mode = self.build.mode.currentData()
+        if mode == "loose":
+            return "Included loose"
+        if entry.get("loose"):
+            return "Included loose by mod setting"
+        path = key.replace("\\", "/")
+        patterns = [pattern.casefold().replace("\\", "/")
+                    for pattern in self.build.lines(self.build.loose_assets)]
+        if any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns):
+            return "Included loose by path rule"
+        if mode == "merged-bsa":
+            return "Packed in rebuilt Morrowind.bsa"
+        name = self.build.archive_name.text().strip() or "tes3xmods.bsa"
+        return f"Packed in {name}"
 
     def populate_mod_contents(self, item, scanned=None):
         self.mod_plugins.clear()
