@@ -104,7 +104,7 @@ order = 10
         self.assertEqual(window.windowTitle(), "TES3X — profile")
         self.assertEqual([window.tabs.tabText(index) for index in range(window.tabs.count())],
                          ["Mods", "Plugins", "Archives", "Data Files", "Patches", "INI",
-                          "Build"])
+                          "Health", "Build"])
         self.assertIs(window.details_stack.widget(0), window.mod_details)
         self.assertEqual([item.text(0) for item in window.mod_rows()], ["Mod", "Other"])
         self.assertEqual(self.row(window, "Other").text(1), "")
@@ -230,6 +230,9 @@ order = 10
         mod = self.row(window, "Mod")
         self.assertEqual(mod.text(window.MOD_XBOX), "*")
         self.assertIn("Turn on in Patches: dxt5-size", mod.toolTip(window.MOD_XBOX))
+        self.assertIn("Required patches are off: dxt5-size",
+                      "\n".join(window.health_tree.topLevelItem(i).text(2)
+                                for i in range(window.health_tree.topLevelItemCount())))
         window.set_patch("dxt5-size", True)
         self.assertNotIn("Turn on", mod.toolTip(window.MOD_XBOX))
 
