@@ -20,7 +20,8 @@ options rather than preset patches.
 across launches up to 512 KB. A session starts with `entry.free_kb`.
 
 With `[Xbox] Diagnostics=1` in `Morrowind.ini`, each session also logs `diag.build` (the payload
-build) and `diag.patches` (a mask of the patches applied), and:
+build), `diag.patches` (a mask of the patches applied) and `diag.title_id` (the title ID, which
+picks the `E:/UDATA` folder saves go to), and:
 
 - a crash writes `crash.*` lines: the exception code and address, the registers and the last
   heartbeat, before the engine's own handling goes on;
@@ -29,6 +30,9 @@ build) and `diag.patches` (a mask of the patches applied), and:
 - `Diagnostics=2` adds periodic snapshots.
 
 The console command `tes3xdiag` writes a snapshot; `tes3xdiag 0`, `1` or `2` changes the level.
+A build made with the pipeline's `--diag-test-faults` also has `tes3xdiag hang`, which stalls the
+update loop for 15 seconds, and `tes3xdiag crash`, which writes to unmapped memory; both exist to
+test the watchdog and the crash record.
 `tools/tes3x_diag.py pull` fetches the log and summarises it; `report` does the same for a copy.
 
 ## Commands without a controller
@@ -243,4 +247,12 @@ to matching incidental output.
 
 Optional keys: `watch`, a regular expression for the log lines worth keeping; `enable`, the other
 patches every build carries (default `diagnostics` and `console`); `apply`, a valued patch such as
-`profile=0x00137C50`; `save`, a save the script loads; `xemu`, runner options.
+`profile=0x00137C50`; `save`, a save the script loads; `xemu`, runner options; `pipeline`, extra
+pipeline options such as `--diag-test-faults`; `allow`, the crash or hang patterns a test causes on
+purpose.
+
+A test can also shape its build. `[profile]` overlays the chosen profile's `profile`, `rules`,
+`package` or `ini` tables, such as `profile = { save_pool = "TES3X Test" }`. `[fixture]` generates a
+test mod from your own `Morrowind.esm` and makes it the build's only mod: `opcodes = [0x2001]`
+appends those opcode calls to the global script `Main` (or `script`), and `texture = true` adds one
+4x4 texture so there is an asset to pack.
