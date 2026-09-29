@@ -1211,6 +1211,8 @@ class ProfileWindow(QMainWindow):
         self.setStatusBar(QStatusBar())
         self.counts = QLabel()
         self.statusBar().addPermanentWidget(self.counts)
+        self.build_state = QLabel()
+        self.statusBar().addPermanentWidget(self.build_state)
         self.ftp_status = QPushButton("Xbox: not checked")
         self.ftp_status.setFlat(True)
         self.ftp_status.setToolTip("Click to check the configured Xbox FTP connection")
@@ -1278,20 +1280,21 @@ class ProfileWindow(QMainWindow):
         self.action_play.triggered.connect(lambda: self.play())
         self.action_reset_play = QAction("Reset xemu saves…", self)
         self.action_reset_play.triggered.connect(self.reset_play_disk)
-        actions_menu.addActions([self.action_check, self.action_build, self.action_play,
-                                 self.action_reset_play, self.action_smoke])
+        actions_menu.addActions([self.action_check, self.action_build, self.action_smoke])
         actions_menu.addSeparator()
-        actions_menu.addActions([self.action_deploy, self.action_fetch, self.action_refresh_ftp])
+        actions_menu.addActions([self.action_deploy, self.action_play, self.action_reset_play])
+        actions_menu.addSeparator()
+        actions_menu.addActions([self.action_fetch, self.action_refresh_ftp])
         actions_menu.addSeparator()
         actions_menu.addAction(self.discard_after_deploy)
         for action, theme, fallback in (
                 (self.action_check, None, QStyle.StandardPixmap.SP_DialogApplyButton),
                 (self.action_build, QIcon.ThemeIcon.ViewRefresh,
                  QStyle.StandardPixmap.SP_BrowserReload),
-                (self.action_play, QIcon.ThemeIcon.MediaPlaybackStart,
-                 QStyle.StandardPixmap.SP_MediaPlay),
                 (self.action_deploy, QIcon.ThemeIcon.DocumentSend,
-                 QStyle.StandardPixmap.SP_ArrowUp)):
+                 QStyle.StandardPixmap.SP_ArrowUp),
+                (self.action_play, QIcon.ThemeIcon.MediaPlaybackStart,
+                 QStyle.StandardPixmap.SP_MediaPlay)):
             standard = self.style().standardIcon(fallback)
             action.setIcon(QIcon.fromTheme(theme, standard) if theme else standard)
             button = QToolButton()
@@ -1308,10 +1311,8 @@ class ProfileWindow(QMainWindow):
                 self.play_targets = {}
                 button.setMenu(self.play_menu)
                 button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
-                self.build_state = QLabel()
-                self.profile_bar.addWidget(self.build_state)
-        self.command_actions = (self.action_check, self.action_build, self.action_play,
-                                self.action_smoke, self.action_deploy, self.action_fetch)
+        self.command_actions = (self.action_check, self.action_build, self.action_deploy,
+                                self.action_play, self.action_smoke, self.action_fetch)
         self.after_command = None
         self.play_target = (self.settings.value("play_target", "xemu-64") if self.settings
                             else "xemu-64")
@@ -3498,10 +3499,13 @@ class ProfileWindow(QMainWindow):
 
     def update_build_state(self):
         state, tip = self.build_status()
-        text, colour = {"built": ("Built", QColor(60, 170, 60)),
-                        "stale": ("Out of date", QColor(215, 150, 20)),
-                        "missing": ("Not built", self.palette().placeholderText().color())}[state]
-        self.build_state.setText(f"<span style='color:{colour.name()}'>●</span> {text}")
+        text, colour = {"built": ("Built", "#2e7d32"),
+                        "stale": ("Out of date", "#a15c00"),
+                        "missing": ("Not built", "#b3261e")}[state]
+        self.build_state.setText(text)
+        self.build_state.setStyleSheet(
+            f"QLabel {{ color: white; background-color: {colour}; padding: 2px 8px; "
+            "border-radius: 3px; font-weight: bold; }")
         self.build_state.setToolTip(tip)
 
     def refresh_play_menu(self):

@@ -422,6 +422,12 @@ order = 10
         window = self.window(config=config)
         self.assertEqual(window.action_settings.text(), "&Settings…")
         self.assertEqual(window.build_status()[0], "missing")
+        self.assertEqual(window.build_state.text(), "Not built")
+        self.assertIn("#b3261e", window.build_state.styleSheet())
+        buttons = [window.profile_bar.itemAt(i).widget()
+                   for i in range(window.profile_bar.count())]
+        self.assertEqual([button.text() for button in buttons if type(button).__name__ == "QToolButton"],
+                         ["Check", "Build", "Deploy", "Play"])
 
         def start(program, arguments, *_args):
             window.process = "running"
@@ -439,6 +445,8 @@ order = 10
             window.process = None
             window.command_finished(0, None)
         self.assertEqual(window.build_status()[0], "built")
+        self.assertEqual(window.build_state.text(), "Built")
+        self.assertIn("#2e7d32", window.build_state.styleSheet())
         self.assertEqual(calls[1][0], "tes3x_xemu.py")
         self.assertEqual(calls[1][1][1:], ["--deploy", str(output / "deploy"), "--keep-iso", "--disk",
                                            str(self.root / "build/play/profile/hdd.qcow2")])
