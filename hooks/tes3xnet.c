@@ -53,6 +53,11 @@
 #if !defined(TES3X_NET_FIND_MENU) || !defined(TES3X_NET_UI_ID) || !defined(TES3X_NET_TRIGGER_EVENT)
 #error "define TES3X_NET_FIND_MENU, TES3X_NET_UI_ID and TES3X_NET_TRIGGER_EVENT to the UI functions"
 #endif
+#if !defined(TES3X_NET_FIND_REFERENCE) || !defined(TES3X_NET_REF_MOBILE) || \
+    !defined(TES3X_NET_REF_ORIENTATION) || !defined(TES3X_NET_REF_ROTATION) || \
+    !defined(TES3X_NET_NODE_SET_ROTATION) || !defined(TES3X_NET_NODE_UPDATE)
+#error "define the TES3X_NET_ reference and node functions SetPos and SetAngle call"
+#endif
 
 typedef unsigned short u16;
 
@@ -1797,9 +1802,10 @@ static void player_state(const u8 *ref, u8 *state)
     copy(state + 16, ref + 0x34, 4); /* orientation z */
 }
 
-/* Ghosts: each peer slot drives one persistent NPC of the ghost plugin (tes3x_net.py plugin)
- * through the engine's script compiler, as the console does. Each is drawn GHOST_DELAY_US in the
- * past, between the two states around that moment, so jitter and a lost state do not show. */
+/* Ghosts: each peer slot drives one persistent NPC of the ghost plugin (tes3x_net.py plugin),
+ * moved into a cell through the engine's script compiler, as the console does, and within it by
+ * writing its position. Each is drawn GHOST_DELAY_US in the past, between the two states around
+ * that moment, so jitter and a lost state do not show. */
 #define GHOST_DELAY_US 100000
 #define GHOST_EXTRAPOLATE_US 200000
 #define GHOST_SNAP 1024.0f /* a longer step between two states is a teleport, not a walk */
@@ -1811,11 +1817,21 @@ static void player_state(const u8 *ref, u8 *state)
 #define WORLD_SCRIPT 0x54 /* the compiler CompileAndRun is a method on */
 #define WORLD_MENUS 0x2C0
 #define MENUS_SCRATCH 0x20
+#define REF_NODE 0x10
+#define REF_ORIENTATION 0x2C
+#define REF_POSITION 0x38
+#define NODE_ROTATION 0x2C /* NiAVObject's rotation pointer, then its translation */
+#define NODE_TRANSLATE 0x30
 #define PI 3.14159265f
 
 typedef int(__attribute__((thiscall)) *fn_compile_run)(void *self, void *scratch,
                                                        const char *text, int a2, int ref,
                                                        int a4, int a5, int a6);
+typedef u8 *(__attribute__((thiscall)) *fn_find_reference)(void *records, const char *id);
+typedef void *(__attribute__((thiscall)) *fn_ref_part)(void *ref);
+typedef float *(__attribute__((thiscall)) *fn_ref_rotation)(void *ref, float *matrix, int a1);
+typedef void(__attribute__((thiscall)) *fn_node_set_rotation)(void *slot, const float *matrix);
+typedef void(__attribute__((thiscall)) *fn_node_update)(void *node, float time, int a1, int a2);
 
 struct pose {
     u32 flags;
@@ -1823,11 +1839,18 @@ struct pose {
     u8 cell[CELL_NAME];
 };
 
+/* A received position and heading and when it arrived. */
+struct timed {
+    u32 time;
+    float p[4];
+};
+
 static struct {
     u32 client, placed, flags;
     int gx, gy;
     float x, y, z, heading;
     u8 cell[CELL_NAME];
+    u8 *ref;
 } ghosts[PEERS];
 static u32 ghosts_parked, ghost_settle;
 __attribute__((weak)) int _fltused; /* tes3xscript.c may define it too */
@@ -1923,6 +1946,109 @@ static float wrap_angle(float a)
     return a;
 }
 
+/* SetPos and SetAngle z as their handlers do them: the position on the reference and its node,
+ * the heading in the reference's orientation attachment and as the node's rotation, and a node
+ * update unless a mobile drives the node. NPCs build that rotation from the reference's own
+ * orientation rather than the attachment's, so the heading goes there too. */
+static void place_ref(u8 *ref, const float *xyzh)
+{
+    u8 *node = *(u8 **)(ref + REF_NODE);
+    float matrix[12], heading = wrap_angle(xyzh[3]);
+
+    if (heading < 0)
+        heading += 2 * PI;
+    copy(ref + REF_POSITION, (const u8 *)xyzh, 12);
+    *(float *)(ref + REF_ORIENTATION + 8) = heading;
+    ((float *)((fn_ref_part)TES3X_NET_REF_ORIENTATION)(ref))[2] = heading;
+    if (!plausible(node))
+        return;
+    copy(node + NODE_TRANSLATE, (const u8 *)xyzh, 12);
+    ((fn_node_set_rotation)TES3X_NET_NODE_SET_ROTATION)(
+        node + NODE_ROTATION, ((fn_ref_rotation)TES3X_NET_REF_ROTATION)(ref, matrix, 1));
+    if (!((fn_ref_part)TES3X_NET_REF_MOBILE)(ref))
+        ((fn_node_update)TES3X_NET_NODE_UPDATE)(node, 0.0f, 0, 1);
+}
+
+/* Whether a placed reference stands more than a unit or 0.01 rad off xyzh. */
+static int off_pose(const u8 *ref, const float *xyzh)
+{
+    const float *at = (const float *)(ref + REF_POSITION);
+    float turn = wrap_angle(xyzh[3] - *(const float *)(ref + REF_ORIENTATION + 8));
+    u32 i;
+
+    for (i = 0; i < 3; i++)
+        if (at[i] - xyzh[i] > 1 || xyzh[i] - at[i] > 1)
+            return 1;
+    return turn > 0.01f || turn < -0.01f;
+}
+
+/* The pose delay microseconds ago from n samples, oldest first: between the two around that
+ * moment, carried on past the newest for up to GHOST_EXTRAPOLATE_US, or held at one sample when
+ * there is no pair or the pair lies too far apart to be a walk. Returns the index of the newer
+ * sample of the pair, or of the sample held. */
+static u32 track_pose(const struct timed *s, u32 n, u32 delay, float *out)
+{
+    int target = (int)(now_us() - delay), from = -1, span, into;
+    u32 i;
+    float t, dx, dy;
+
+    for (i = 0; i < n; i++)
+        if ((int)(s[i].time - (u32)target) <= 0)
+            from = (int)i;
+    if (from < 0 || n == 1) {
+        i = from < 0 ? 0 : (u32)from;
+        copy((u8 *)out, (const u8 *)s[i].p, 16);
+        return i;
+    }
+    i = (u32)from + 1 < n ? (u32)from : n - 2;
+    copy((u8 *)out, (const u8 *)s[i + 1].p, 16);
+    span = (int)(s[i + 1].time - s[i].time);
+    dx = s[i + 1].p[0] - s[i].p[0];
+    dy = s[i + 1].p[1] - s[i].p[1];
+    if (span <= 0 || dx * dx + dy * dy > GHOST_SNAP * GHOST_SNAP)
+        return i + 1;
+    into = target - (int)s[i].time;
+    if (into > span + GHOST_EXTRAPOLATE_US)
+        into = span + GHOST_EXTRAPOLATE_US;
+    t = (float)into / (float)span;
+    out[0] = s[i].p[0] + dx * t;
+    out[1] = s[i].p[1] + dy * t;
+    out[2] = s[i].p[2] + (s[i + 1].p[2] - s[i].p[2]) * t;
+    out[3] = s[i].p[3] + wrap_angle(s[i + 1].p[3] - s[i].p[3]) * (t > 1 ? 1 : t);
+    return i + 1;
+}
+
+static int is_ghost(const u8 *ref)
+{
+    const u8 *base = *(const u8 *const *)(ref + 0x28);
+    const char *id, *g = "tes3x_ghost";
+
+    if (!plausible(base) || !mapped(id = *(const char *const *)(base + 0x2C)))
+        return 0;
+    for (; *g && *id == *g; id++, g++)
+        ;
+    return !*g;
+}
+
+/* tes3x_ghostN's reference for slot i, looked up once per launch. */
+static u8 *ghost_ref(u32 i)
+{
+    const u8 *handler = *(const u8 **)TES3X_NET_DATA_HANDLER;
+    void *records;
+    char id[16];
+
+    if (!ghosts[i].ref && plausible(handler) && plausible(records = *(void **)handler)) {
+        *put_int(put_text(id, "tes3x_ghost"), (int)i + 1) = 0;
+        ghosts[i].ref = ((fn_find_reference)TES3X_NET_FIND_REFERENCE)(records, id);
+        if (ghosts[i].ref)
+            tes3x_log_hex3("net.ghost_ref", i + 1, (u32)ghosts[i].ref, 0);
+    }
+    if (plausible(ghosts[i].ref) && is_ghost(ghosts[i].ref))
+        return ghosts[i].ref;
+    ghost_failures++;
+    return 0;
+}
+
 static void read_pose(const u8 *state, struct pose *p)
 {
     p->flags = get32le(state);
@@ -1949,10 +2075,10 @@ static int ghost_pose(u32 slot, struct pose *out)
         u32 time;
         u8 state[STATE_BYTES];
     } ring[SAMPLES];
-    struct pose older, newer;
-    u32 head, count, flags, i, first, now = now_us();
-    int target, span, from = -1;
-    float t, dx, dy;
+    struct pose poses[SAMPLES];
+    struct timed track[SAMPLES];
+    float at[4];
+    u32 head, count, flags, i, k;
 
     flags = lock();
     head = peers[slot].head;
@@ -1961,34 +2087,17 @@ static int ghost_pose(u32 slot, struct pose *out)
     unlock(flags);
     if (!count)
         return 0;
-    first = head + SAMPLES - count; /* sample k, oldest first, is ring[(first + k) % SAMPLES] */
-    target = (int)(now - GHOST_DELAY_US);
-    for (i = 0; i < count; i++)
-        if ((int)(ring[(first + i) % SAMPLES].time - (u32)target) <= 0)
-            from = (int)i;
-    if (from < 0 || count == 1) { /* nothing old enough to interpolate from: hold */
-        read_pose(ring[(from < 0 ? first : first + (u32)from) % SAMPLES].state, out);
-        return 1;
+    for (i = 0; i < count; i++) {
+        k = (head + SAMPLES - count + i) % SAMPLES;
+        read_pose(ring[k].state, &poses[i]);
+        track[i].time = ring[k].time;
+        copy((u8 *)track[i].p, (const u8 *)&poses[i].x, 16);
     }
-    /* Past the newest state, carry the last two on for a moment. */
-    i = (first + ((u32)from + 1 < count ? (u32)from : count - 2)) % SAMPLES;
-    read_pose(ring[i].state, &older);
-    read_pose(ring[(i + 1) % SAMPLES].state, &newer);
-    span = (int)(ring[(i + 1) % SAMPLES].time - ring[i].time);
-    dx = newer.x - older.x;
-    dy = newer.y - older.y;
-    *out = newer;
-    if (span <= 0 || !same_place(&older, &newer) || !(older.flags & STATE_IN_WORLD) ||
-        dx * dx + dy * dy > GHOST_SNAP * GHOST_SNAP)
-        return 1;
-    target -= (int)ring[i].time;
-    if (target > span + GHOST_EXTRAPOLATE_US)
-        target = span + GHOST_EXTRAPOLATE_US;
-    t = (float)target / (float)span;
-    out->x = older.x + dx * t;
-    out->y = older.y + dy * t;
-    out->z = older.z + (newer.z - older.z) * t;
-    out->heading = older.heading + wrap_angle(newer.heading - older.heading) * (t > 1 ? 1 : t);
+    i = track_pose(track, count, GHOST_DELAY_US, at);
+    *out = poses[i];
+    /* Across a cell change the newer state stands alone. */
+    if (i && same_place(&poses[i - 1], &poses[i]) && (poses[i - 1].flags & STATE_IN_WORLD))
+        copy((u8 *)&out->x, (const u8 *)at, 16);
     return 1;
 }
 
@@ -2010,7 +2119,7 @@ static void ghost_place(u32 i, const struct pose *p)
     ghosts[i].x = p->x;
     ghosts[i].y = p->y;
     ghosts[i].z = p->z;
-    ghosts[i].heading = 1000; /* not an angle: SetAngle follows */
+    ghosts[i].heading = 1000; /* not an angle: the next frame turns it */
     ghost_places++;
     log_text("net.ghost_cell", p->flags & STATE_INTERIOR ? (const char *)p->cell : "(exterior)");
 }
@@ -2035,6 +2144,7 @@ static void ghost_update(u32 i, const struct pose *local)
 {
     struct pose p, placed;
     u32 client = peers[i].client;
+    u8 *ref;
 
     if (client != ghosts[i].client) {
         if (ghosts[i].placed)
@@ -2055,24 +2165,15 @@ static void ghost_update(u32 i, const struct pose *local)
     if (!ghosts[i].placed || !same_place(&p, &placed) ||
         (!(p.flags & STATE_INTERIOR) && (grid(p.x) != ghosts[i].gx || grid(p.y) != ghosts[i].gy))) {
         ghost_place(i, &p);
-    } else if (differs(p.x, ghosts[i].x, 1) || differs(p.y, ghosts[i].y, 1) ||
-               differs(p.z, ghosts[i].z, 1)) {
-        ghost_command(i, "SetPos x ", round_int(p.x), "");
-        ghost_command(i, "SetPos y ", round_int(p.y), "");
-        ghost_command(i, "SetPos z ", round_int(p.z), "");
+    } else if ((differs(p.x, ghosts[i].x, 1) || differs(p.y, ghosts[i].y, 1) ||
+                differs(p.z, ghosts[i].z, 1) || differs(p.heading, ghosts[i].heading, 0.01f)) &&
+               (ref = ghost_ref(i))) {
+        place_ref(ref, &p.x);
         ghosts[i].x = p.x;
         ghosts[i].y = p.y;
         ghosts[i].z = p.z;
-        ghost_moves++;
-    }
-    if (differs(p.heading, ghosts[i].heading, 0.02f)) {
-        float degrees = p.heading * (180.0f / PI);
-        while (degrees < 0)
-            degrees += 360;
-        while (degrees >= 360)
-            degrees -= 360;
-        ghost_command(i, "SetAngle z ", round_int(degrees), "");
         ghosts[i].heading = p.heading;
+        ghost_moves++;
     }
 }
 
@@ -2118,6 +2219,8 @@ static void ghosts_frame(const u8 *state)
 #define ACTOR_BYTES 28u /* refid, x, y, z, heading, health, flags */
 #define ACTORS_PER_PACKET 18u
 #define ACTOR_PERIOD_US 100000u
+#define ACTOR_SAMPLES 4u
+#define ACTOR_DELAY_US 200000u /* two periods: a state late by one still has a pair */
 #define ACTOR_DEAD 1u
 #define ACTOR_IN_COMBAT 2u
 #define AUTHORITIES 16u
@@ -2138,10 +2241,12 @@ struct cell_key {
     u8 name[CELL_NAME];
 };
 
-/* The latest state of each actor from its authority; the receive DPC writes, bytes only. */
+/* The latest state of each actor from its authority and its last few positions; the receive DPC
+ * writes, bytes only. */
 static struct {
-    u32 refid, origin, seq, time;
+    u32 refid, origin, seq, time, head, count;
     u8 state[ACTOR_BYTES];
+    struct timed track[ACTOR_SAMPLES];
 } actors_in[ACTORS];
 static struct {
     struct cell_key key;
@@ -2150,7 +2255,7 @@ static struct {
 static u32 authorities, authority_welcome;
 /* Actors this console places for another authority, and whether the engine had them simulated. */
 static struct {
-    u32 refid, owner, simulated, seq, seen;
+    u32 refid, owner, simulated, seen;
     u8 *mobile;
     float health;
 } followed[ACTORS];
@@ -2200,11 +2305,19 @@ static void actors_rx(u32 origin, u32 seq, const u8 *p, u32 n)
         }
         if (slot == ACTORS)
             slot = oldest;
+        if (actors_in[slot].refid != refid || actors_in[slot].origin != origin)
+            actors_in[slot].count = 0;
         actors_in[slot].refid = refid;
         actors_in[slot].origin = origin;
         actors_in[slot].seq = seq;
         actors_in[slot].time = now_us();
         copy(actors_in[slot].state, a, ACTOR_BYTES);
+        j = actors_in[slot].head;
+        actors_in[slot].track[j].time = actors_in[slot].time;
+        copy((u8 *)actors_in[slot].track[j].p, a + 4, 16);
+        actors_in[slot].head = (j + 1) % ACTOR_SAMPLES;
+        if (actors_in[slot].count < ACTOR_SAMPLES)
+            actors_in[slot].count++;
         actor_states_in++;
     }
 }
@@ -2308,18 +2421,6 @@ static void actor_command(void *ref, const char *verb, int value)
     run_script_on(line, ref);
 }
 
-static int is_ghost(const u8 *ref)
-{
-    const u8 *base = *(const u8 *const *)(ref + 0x28);
-    const char *id, *g = "tes3x_ghost";
-
-    if (!plausible(base) || !mapped(id = *(const char *const *)(base + 0x2C)))
-        return 0;
-    for (; *g && *id == *g; id++, g++)
-        ;
-    return !*g;
-}
-
 static void unfollow(u32 i, int restore)
 {
     if (restore && followed[i].simulated)
@@ -2327,14 +2428,13 @@ static void unfollow(u32 i, int restore)
     followed[i].refid = 0;
 }
 
-/* Another client runs this actor: keep it out of the simulation, place it from the latest state,
- * and send a drop in its health to the authority as a hit. */
+/* Another client runs this actor: keep it out of the simulation, place it ACTOR_DELAY_US behind
+ * its authority's states, as ghosts are, and send a drop in its health to the authority as a hit. */
 static void follow(u8 *mobile, u8 *ref, u32 refid, u32 owner)
 {
-    u32 *flags = (u32 *)(mobile + MOBILE_FLAGS), i, slot = ACTORS, seq = 0, lk;
-    float health = *(const float *)(mobile + MOBILE_HEALTH), damage, heading;
-    u8 state[ACTOR_BYTES];
-    const float *at = (const float *)(ref + 0x38), *to = (const float *)(state + 4);
+    u32 *flags = (u32 *)(mobile + MOBILE_FLAGS), i, k, slot = ACTORS, count = 0, lk;
+    float health = *(const float *)(mobile + MOBILE_HEALTH), damage, to[4];
+    struct timed track[ACTOR_SAMPLES];
 
     for (i = 0; i < ACTORS && slot == ACTORS; i++)
         if (followed[i].refid == refid)
@@ -2350,7 +2450,6 @@ static void follow(u8 *mobile, u8 *ref, u32 refid, u32 owner)
         followed[slot].refid = refid;
         followed[slot].mobile = mobile;
         followed[slot].simulated = *flags & MOBILE_SIMULATED;
-        followed[slot].seq = 0;
         followed[slot].health = health;
         follows++;
         tes3x_log_hex3("net.follow", refid, owner, followed[slot].simulated);
@@ -2367,8 +2466,10 @@ static void follow(u8 *mobile, u8 *ref, u32 refid, u32 owner)
     lk = lock();
     for (i = 0; i < ACTORS; i++)
         if (actors_in[i].refid == refid && actors_in[i].origin == owner) {
-            seq = actors_in[i].seq;
-            copy(state, actors_in[i].state, ACTOR_BYTES);
+            count = actors_in[i].count;
+            for (k = 0; k < count; k++)
+                track[k] = actors_in[i].track[(actors_in[i].head + ACTOR_SAMPLES - count + k) %
+                                              ACTOR_SAMPLES];
             break;
         }
     unlock(lk);
@@ -2378,22 +2479,12 @@ static void follow(u8 *mobile, u8 *ref, u32 refid, u32 owner)
         return;
     }
     *flags &= ~MOBILE_SIMULATED;
-    if (!seq || seq == followed[slot].seq)
+    if (!count)
         return;
-    followed[slot].seq = seq;
-    if (differs(to[0], at[0], 1) || differs(to[1], at[1], 1) || differs(to[2], at[2], 1)) {
-        actor_command(ref, "SetPos x ", round_int(to[0]));
-        actor_command(ref, "SetPos y ", round_int(to[1]));
-        actor_command(ref, "SetPos z ", round_int(to[2]));
+    track_pose(track, count, ACTOR_DELAY_US, to);
+    if (off_pose(ref, to)) {
+        place_ref(ref, to);
         actor_moves++;
-    }
-    if (differs(to[3], *(const float *)(ref + 0x34), 0.02f)) {
-        heading = to[3] * (180.0f / PI);
-        while (heading < 0)
-            heading += 360;
-        while (heading >= 360)
-            heading -= 360;
-        actor_command(ref, "SetAngle z ", round_int(heading));
     }
 }
 

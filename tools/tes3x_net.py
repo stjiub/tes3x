@@ -714,16 +714,20 @@ def serve(args):
             if other is not client and other.alive:
                 send(other, ACTORS, struct.pack("<I", client.id) + body)
 
-    def bot_actors():
+    def bot_actors(now):
         """As the authority, the bot places each actor of its cells bot_shift units east of where
-        the last authority left it."""
+        the last authority left it, swaying east and west by bot_sway once per bot_period."""
         owned = [record for _, key, record in actors.values() if owners.get(key) == BOT_ID]
+        phase = (now - bot["start"]) * 2 * math.pi / args.bot_period
+        sway = args.bot_sway * math.sin(phase)
+        facing = math.pi / 2 if math.cos(phase) >= 0 else 3 * math.pi / 2
         for i in range(0, len(owned), ACTORS_PER_PACKET):
             chunk = owned[i:i + ACTORS_PER_PACKET]
             body = struct.pack("<I", len(chunk))
             for record in chunk:
-                refid, x, *rest = ACTOR.unpack(record)
-                body += ACTOR.pack(refid, x + args.bot_shift, *rest)
+                refid, x, y, z, heading, *rest = ACTOR.unpack(record)
+                body += ACTOR.pack(refid, x + args.bot_shift + sway, y, z,
+                                   facing if args.bot_sway else heading, *rest)
             for other in clients.values():
                 if other.alive:
                     send(other, ACTORS, struct.pack("<I", BOT_ID) + body)
@@ -867,7 +871,7 @@ def serve(args):
             update_authority(now)
         if args.bot and now >= actor_next:
             actor_next = now + ACTOR_PERIOD
-            bot_actors()
+            bot_actors(now)
         for due, holder, refid in [b for b in bot["breaks"] if now >= b[0]]:
             bot["breaks"].remove((due, holder, refid))
             print(f"{time.strftime('%H:%M:%S')} bot breaks client {holder}'s hold on "
@@ -984,6 +988,9 @@ def main(argv=None):
     p.add_argument("--bot-shift", type=float, default=128,
                    help="as the authority, the bot places each actor this many units east of its "
                         "last reported position")
+    p.add_argument("--bot-sway", type=float, default=0, metavar="UNITS",
+                   help="as the authority, the bot also swings each actor this far east and west, "
+                        "once per --bot-period, facing the way it moves")
     p.add_argument("--bot-break-hold", type=float, metavar="SECONDS",
                    help="as the authority, the bot breaks a client's hold this long after it starts")
     p.add_argument("--bot-hold", metavar="REFID@START:END",
