@@ -132,6 +132,9 @@ first start, with no `tes3x.local.toml` yet, it opens the local settings.
 - **Health** reports missing plugin masters and mod dependencies, required patches that are off,
   archives that cannot be unpacked, filenames that exceed the configured limit, plugin overflow
   and unknown or failed Xbox compatibility.
+- **Resources** shows each active mod's source file and texture footprint before conversion and
+  packing. Its dependency view combines mod dependencies and plugin masters and marks anything
+  missing or ordered too late.
 - **Build** holds everything else in the profile: dashboard title, Xbox folder, mod library,
   packaging mode, texture and file-name rules and player preferences.
 

@@ -104,7 +104,9 @@ order = 10
         self.assertEqual(window.windowTitle(), "TES3X — profile")
         self.assertEqual([window.tabs.tabText(index) for index in range(window.tabs.count())],
                          ["Mods", "Plugins", "Archives", "Data Files", "Patches", "INI",
-                          "Health", "Build"])
+                          "Health", "Resources", "Build"])
+        budget = window.resource_budget.topLevelItem(0)
+        self.assertEqual((budget.text(0), budget.text(1)), ("Mod", "2"))
         self.assertIs(window.details_stack.widget(0), window.mod_details)
         self.assertEqual([item.text(0) for item in window.mod_rows()], ["Mod", "Other"])
         self.assertEqual(self.row(window, "Other").text(1), "")
@@ -149,6 +151,12 @@ order = 10
         self.assertEqual(rows[2].text(1), "Placeholder")
         self.assertIn("four-byte expansion placeholders", window.plugin_note.text())
         self.assertEqual(rows[4].text(2), "04")
+
+        dependencies = [window.resource_dependencies.topLevelItem(i)
+                        for i in range(window.resource_dependencies.topLevelItemCount())]
+        other_master = next(item for item in dependencies if item.text(1) == "other.esp")
+        self.assertEqual((other_master.text(2), other_master.text(3)),
+                         ("Morrowind.esm", "Present"))
 
         window.tabs.setCurrentIndex(1)
         rows[4].setSelected(True)
