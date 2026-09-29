@@ -105,7 +105,7 @@ order = 10
         self.assertEqual([window.tabs.tabText(index) for index in range(window.tabs.count())],
                          ["Mods", "Plugins", "Archives", "Data Files", "Patches", "INI",
                           "Build"])
-        self.assertIs(window.content_split.widget(1), window.mod_details)
+        self.assertIs(window.details_stack.widget(0), window.mod_details)
         self.assertEqual([item.text(0) for item in window.mod_rows()], ["Mod", "Other"])
         self.assertEqual(self.row(window, "Other").text(1), "")
         self.assertEqual(self.row(window, "Mod").checkState(0), Qt.CheckState.Checked)
@@ -139,6 +139,11 @@ order = 10
         self.assertIn("four-byte expansion placeholders", window.plugin_note.text())
         self.assertEqual(rows[4].text(2), "04")
 
+        window.tabs.setCurrentIndex(1)
+        rows[4].setSelected(True)
+        self.assertIn("Provided by: Other", window.context_info.toPlainText())
+        self.assertIn("Masters: Morrowind.esm", window.context_info.toPlainText())
+
         rows[3].setCheckState(0, Qt.CheckState.Unchecked)
         self.assertEqual(self.row(window, "Mod").data(0, 0x0100)["plugins"], [])
         window.plugin_list.move_items([window.plugin_list.rows()[4]], 3)
@@ -156,6 +161,9 @@ order = 10
 
     def test_patches_are_a_checklist_and_carry_their_ini_keys(self):
         window = self.window()
+        window.tabs.setCurrentIndex(4)
+        window.patch_tree.setCurrentItem(window.patch_items["rotating-autosaves"])
+        self.assertIn("Rotate automatic saves", window.context_info.toPlainText())
         window.set_patch("rotating-autosaves", True)
         self.assertEqual(window.patch_configuration()["enable"], ["rotating-autosaves"])
         self.assertEqual(window.patch_items["rotating-autosaves"].text(2), "added")

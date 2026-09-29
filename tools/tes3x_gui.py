@@ -29,7 +29,7 @@ try:
         QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
         QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
         QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QPushButton,
-        QScrollArea, QSpinBox, QSplitter, QStatusBar, QStyle, QTableView, QTabWidget,
+        QScrollArea, QSpinBox, QSplitter, QStackedWidget, QStatusBar, QStyle, QTableView, QTabWidget,
         QTextBrowser, QTextEdit, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
     )
 except ImportError as exc:
@@ -1167,11 +1167,13 @@ class ProfileWindow(QMainWindow):
         self.archives = QTreeWidget()
         self.archives.setHeaderLabels(["Archive", "Provided by", "Loaded"])
         self.archives.setRootIsDecorated(False)
+        self.archives.itemSelectionChanged.connect(self.show_context_info)
         self.tabs.addTab(self.archives, "Archives")
         self.tabs.addTab(self.create_files_panel(), "Data Files")
         self.tabs.addTab(self.create_patches_tab(), "Patches")
         self.ini = IniPanel()
         self.ini.changed.connect(self.refresh_status)
+        self.ini.tree.itemSelectionChanged.connect(self.show_context_info)
         self.tabs.addTab(self.ini, "INI")
         self.build = BuildSettings()
         self.build.on_change = self.build_changed
@@ -1180,13 +1182,19 @@ class ProfileWindow(QMainWindow):
         build_scroll.setWidgetResizable(True)
         build_scroll.setWidget(self.build)
         self.tabs.addTab(build_scroll, "Build")
+        self.tabs.currentChanged.connect(self.show_context_info)
 
         body = QWidget()
         layout = QVBoxLayout(body)
         layout.addLayout(profile_bar)
+        self.context_info = QTextBrowser()
+        self.context_info.setPlaceholderText("Select an item to see its details")
+        self.details_stack = QStackedWidget()
+        self.details_stack.addWidget(self.mod_details)
+        self.details_stack.addWidget(self.context_info)
         self.content_split = QSplitter(Qt.Orientation.Horizontal)
         self.content_split.addWidget(self.tabs)
-        self.content_split.addWidget(self.mod_details)
+        self.content_split.addWidget(self.details_stack)
         self.content_split.setStretchFactor(0, 3)
         self.content_split.setStretchFactor(1, 2)
         self.content_split.setSizes([780, 500])
@@ -1372,6 +1380,88 @@ class ProfileWindow(QMainWindow):
         details.setSizes([300, 450])
         return details
 
+    def show_context_info(self, *_args):
+        """Show details for the selected item in the current primary tab."""
+        if not hasattr(self, "context_info"):
+            return
+        tab = self.tabs.tabText(self.tabs.currentIndex())
+        if tab == "Mods":
+            self.details_stack.setCurrentWidget(self.mod_details)
+            self.show_mod_info()
+            return
+        self.details_stack.setCurrentWidget(self.context_info)
+        if tab == "Plugins":
+            items = self.plugin_list.selectedItems()
+            if len(items) != 1:
+                self.context_info.setPlainText("Select a plugin to see its details.")
+                return
+            item = items[0]
+            key = item.data(0, ROLE)
+            lines = [item.text(0), "", f"Provided by: {item.text(1)}"]
+            if item.text(2):
+                lines.append(f"Load index: {item.text(2)}")
+            if key and key in self.analysis.get("plugins", {}):
+                value = self.analysis["plugins"][key]
+                lines.append("Build result: " + ("Included" if value["included"] else "Disabled"))
+                author, description = plugin_header(value["path"])
+                masters = self.plugin_masters(value["path"])
+                if author:
+                    lines += ["", f"Author: {author}"]
+                if description:
+                    lines += ["", description]
+                lines += ["", "Masters: " + (", ".join(masters) if masters else "None")]
+            elif item.text(1) == "Placeholder":
+                lines += ["", "Generated expansion master placeholder."]
+            problem = item.toolTip(0)
+            if problem:
+                lines += ["", "Warning: " + problem]
+            self.context_info.setPlainText("\n".join(lines))
+        elif tab == "Archives":
+            items = self.archives.selectedItems()
+            if len(items) != 1:
+                self.context_info.setPlainText("Select an archive to see its details.")
+                return
+            item = items[0]
+            lines = [item.text(0), "", f"Provided by: {item.text(1)}",
+                     f"Build treatment: {item.text(2)}"]
+            if item.toolTip(2):
+                lines += ["", item.toolTip(2)]
+            self.context_info.setPlainText("\n".join(lines))
+        elif tab == "Data Files":
+            index = self.files_view.currentIndex()
+            if not index.isValid():
+                self.context_info.setPlainText("Select a file to see its provider chain.")
+                return
+            source = self.files_filter.mapToSource(index)
+            path, owner, others = self.files_model.entries[source.row()]
+            lines = [path, "", f"Included from: {owner}"]
+            lines.append("Overrides: " + (others or "Nothing"))
+            self.context_info.setPlainText("\n".join(lines))
+        elif tab == "Patches":
+            self.show_patch_details(self.patch_tree.currentItem(), None)
+        elif tab == "INI":
+            item = self.ini.tree.currentItem()
+            ident = item.data(0, ROLE) if item else None
+            if ident is None:
+                self.context_info.setPlainText("Select an INI setting to see its details.")
+                return
+            section, key = self.ini.rows()[ident]
+            name = self.ini.override_name(ident)
+            base = self.ini.base(ident)
+            value = self.ini.values[name] if name else base
+            lines = [f"{section}:{key}", "", f"Effective value: {ini_text(value)}",
+                     f"Source: {item.text(2)}"]
+            if name and base is not None:
+                lines.append(f"Base value: {base}")
+            patch = self.ini.patch_keys.get(ident)
+            if patch:
+                lines += ["", f"Read by patch: {patch[3]}"]
+            self.context_info.setPlainText("\n".join(lines))
+        else:
+            self.context_info.setPlainText(
+                "Build-wide profile settings. Changes here affect packaging, deployment and "
+                "player preferences.")
+
     def create_mods_tab(self):
         install = QPushButton("Install mod…")
         install.setToolTip("Install a .zip, .7z or .rar archive, or a plugin, into the mod "
@@ -1426,6 +1516,7 @@ class ProfileWindow(QMainWindow):
         self.plugin_list.header().setStretchLastSection(False)
         self.plugin_list.itemChanged.connect(self.plugin_item_changed)
         self.plugin_list.moved.connect(self.plugins_moved)
+        self.plugin_list.itemSelectionChanged.connect(self.show_context_info)
         self.plugin_note = QLabel()
         self.plugin_note.setWordWrap(True)
         panel = QWidget()
@@ -1455,6 +1546,7 @@ class ProfileWindow(QMainWindow):
         self.files_view.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.files_view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.files_view.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.files_view.selectionModel().selectionChanged.connect(self.show_context_info)
         panel = QWidget()
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -2602,7 +2694,7 @@ class ProfileWindow(QMainWindow):
         self.patch_tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.patch_tree.header().setStretchLastSection(False)
         self.patch_tree.itemChanged.connect(self.patch_item_changed)
-        self.patch_tree.currentItemChanged.connect(self.show_patch_details)
+        self.patch_tree.currentItemChanged.connect(self.show_context_info)
         self.patch_items = {}
         self.patch_groups = {}
         for category in PATCH_CATEGORIES:
@@ -2630,18 +2722,10 @@ class ProfileWindow(QMainWindow):
             group.setExpanded(True)
         self.patch_tree.resizeColumnToContents(1)
         self.patch_tree.resizeColumnToContents(2)
-        self.patch_details = QTextEdit()
-        self.patch_details.setReadOnly(True)
-        self.patch_details.setPlaceholderText("Select a patch to see what it does.")
-        split = QSplitter()
-        split.addWidget(self.patch_tree)
-        split.addWidget(self.patch_details)
-        split.setStretchFactor(0, 3)
-        split.setStretchFactor(1, 2)
         tab = QWidget()
         layout = QVBoxLayout(tab)
         layout.addLayout(top)
-        layout.addWidget(split, 1)
+        layout.addWidget(self.patch_tree, 1)
         return tab
 
     def patch_configuration(self, modes=None):
@@ -2787,7 +2871,7 @@ class ProfileWindow(QMainWindow):
         name = item.data(0, ROLE) if item else None
         entry = next((value for value in PATCH_CATALOG if value["name"] == name), None)
         if not entry:
-            self.patch_details.clear()
+            self.context_info.clear()
             return
         origin = entry.get("origin", {"source": "TES3X"})
         source = SOURCES.get(origin.get("source"), {})
@@ -2803,7 +2887,7 @@ class ProfileWindow(QMainWindow):
             lines += ["", "Settings (INI tab, [Xbox]):"]
             lines += [f"  {key}" + (f" = {value}" if value else "")
                       for key, value in entry["ini"].items()]
-        self.patch_details.setPlainText("\n".join(lines))
+        self.context_info.setPlainText("\n".join(lines))
 
     def error(self, message):
         QMessageBox.critical(self, "TES3X", str(message))

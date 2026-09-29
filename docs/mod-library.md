@@ -121,7 +121,8 @@ first start, with no `tes3x.local.toml` yet, it opens the local settings.
   or load later are shown in red. **Archives** lists the archives the build ships and whether
   the game opens them. A mod's own `.bsa` archives are unpacked into the build unless you
   right-click the mod and choose **Load archives with multi-bsa**. **Data files** shows which mod
-  each file comes from and what it overrides.
+  each file comes from and what it overrides. Selecting a plugin, archive or file explains it in
+  the details pane; patches and INI settings use the same pane.
 - **Patches** is a checklist grouped by category, starting from a preset. Changes are saved as
   the profile's `enable` and `disable` lists.
 - **INI** shows the `Morrowind.ini` the build ships: the retail values, and the `[Xbox]` keys of
