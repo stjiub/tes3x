@@ -319,8 +319,8 @@ class PipelinePlanTests(unittest.TestCase):
                                    'package': {'mode': 'merged-bsa'}})
         self.assertEqual(plan['selected'], ['console'])
 
-    def test_development_includes_unreleased_default_fixes(self):
-        plan = resolve_patch_plan({'patches': {'preset': 'development'},
+    def test_dev_includes_unreleased_default_fixes(self):
+        plan = resolve_patch_plan({'patches': {'preset': 'dev'},
                                    'package': {'mode': 'merged-bsa'}})
         self.assertTrue({'mcp-1', 'mcp-97', 'mcp-154', 'mcp-102', 'dxt5-size'}
                         <= set(plan['selected']))
@@ -555,8 +555,8 @@ class PipelinePlanTests(unittest.TestCase):
         self.assertEqual(plan['applied'], ['mcp-102'])
         self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c'])
 
-    def test_development_adds_tools_but_allows_overrides(self):
-        profile = {'patches': {'preset': 'development', 'disable': ['diagnostics']},
+    def test_dev_adds_tools_but_allows_overrides(self):
+        profile = {'patches': {'preset': 'dev', 'disable': ['diagnostics']},
                    'package': {'mode': 'merged-bsa'}}
         plan = resolve_patch_plan(profile)
         self.assertEqual(plan['selected'],

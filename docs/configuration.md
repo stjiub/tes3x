@@ -68,13 +68,13 @@ folder first; the game hangs if it has to create a new title's folder itself.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `preset` | string | `standard` | `minimal`, `standard` or `development`. |
+| `preset` | string | `standard` | `minimal`, `standard` or `dev`. |
 | `categories` | array of strings | `[]` | Add selectable patches by category. Categories are `core`, `correctness`, `compat`, `performance`, `qol`, `balance`, `instrumentation` and `infrastructure`. |
 | `enable` | array of strings | `[]` | Add individual patches by name. |
 | `disable` | array of strings | `[]` | Remove individual patches selected elsewhere. |
 
 `minimal` adds no optional patches. `standard` adds the tested core and correctness fixes and the
-in-game console. `development` adds the untested ones and diagnostics. See
+in-game console. `dev` adds the untested ones and diagnostics. See
 [patches.md](patches.md) for patch names.
 
 ### `[preferences]`

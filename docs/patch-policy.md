@@ -11,7 +11,7 @@ Which engine fixes TES3X takes on and what each one defaults to. The fixes thems
 | `correctness` | clear bugs in formulas, scripting, saving or display | `standard` once tested |
 | `compat` | something a particular mod needs | off |
 | `performance` | less CPU, disk or memory work | off until measured on an Xbox |
-| `instrumentation` | logging, profiling, crash reports | `development` |
+| `instrumentation` | logging, profiling, crash reports | `dev` |
 | `qol` | interface and convenience changes | off |
 | `balance` | changes to how the game plays | off, never in `standard` |
 

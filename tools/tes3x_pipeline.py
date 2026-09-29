@@ -38,7 +38,7 @@ PATCH_ORDER = tuple(entry["name"] for entry in registry.PATCHES
 HOOK_SOURCES = {entry["name"]: entry.get("source") for entry in registry.PATCHES}
 SOURCE_DEPENDENCIES = {"tes3xinfoarena.c": ("tes3xpager.c",)}
 CATEGORIES = set(registry.CATEGORIES)
-PRESETS = ("minimal", "standard", "development")
+PRESETS = ("minimal", "standard", "dev")
 PACKAGE_MODES = ("delta-bsa", "merged-bsa", "loose")
 
 
@@ -231,7 +231,7 @@ def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), pac
                         if meta["category"] in {"core", "correctness"}
                         and meta["channel"] == "release")
         selected.add("console")
-    if preset == "development":
+    if preset == "dev":
         selected.update(name for name, meta in PATCHES.items()
                         if meta["category"] in {"core", "correctness"})
         selected.update(name for name, meta in PATCHES.items()

@@ -11,7 +11,7 @@ functions. Everything it writes goes to the root of `E:`; copy it off the Xbox w
 | `profile` | call counts and CPU cycles for chosen functions | `E:\tes3xprof.bin` |
 | `heap-census` | live engine heap by source file and line, or by call site | `E:\tes3xheap.bin` |
 
-`standard` includes `console`, and `development` adds `diagnostics`. The profiler and the heap
+`standard` includes `console`, and `dev` adds `diagnostics`. The profiler and the heap
 census are added by name.
 
 ## The log

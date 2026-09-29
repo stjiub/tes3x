@@ -21,7 +21,7 @@ clear_cache_partitions = true        # clear the Xbox's X/Y/Z cache after deploy
 [patches]
 # minimal: no optional patches
 # standard: tested fixes and the in-game console
-# development: standard, untested fixes and diagnostics
+# dev: standard, untested fixes and diagnostics
 preset = "standard"
 
 # Uncomment a line to add that patch. docs/patches.md describes each one.

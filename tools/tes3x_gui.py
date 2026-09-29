@@ -3431,9 +3431,9 @@ class ProfileWindow(QMainWindow):
 
     def create_patches_tab(self):
         self.patch_preset = QComboBox()
-        self.patch_preset.addItems(["minimal", "standard", "development"])
+        self.patch_preset.addItems(["minimal", "standard", "dev"])
         self.patch_preset.setToolTip("minimal: no optional patches; standard: tested fixes and "
-                                     "the console; development: everything, untested included")
+                                     "the console; dev: everything, untested included")
         self.patch_preset.currentTextChanged.connect(self.refresh_patch_states)
         self.patch_search = QLineEdit()
         self.patch_search.setPlaceholderText("Filter patches…")

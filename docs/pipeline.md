@@ -22,7 +22,7 @@ The presets:
 
 - `minimal`: no optional patches.
 - `standard`: tested `core` and `correctness` fixes, plus the in-game console.
-- `development`: everything in `standard`, untested `core` and `correctness` fixes, and
+- `dev`: everything in `standard`, untested `core` and `correctness` fixes, and
   diagnostics.
 
 Anything else has to be enabled by name or by category. Some patches are added automatically
