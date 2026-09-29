@@ -29,6 +29,7 @@ enable = [
     # "mcp-1",                 # core: stop an unresolvable reference being restamped as created at runtime
     # "mcp-37",                # core: cancel stale NPC casts before a cell change leaves them dangling
     # "mcp-97",                # core: advance the script parser correctly while initializing saved data
+    # "mcp-98",                # core: keep animated-container access from destroying a live animation
     # "mcp-154",               # core: pad compiled script-data allocations to keep reads in bounds
     # "dxt5-size",             # core: allocate DXT5 textures at their real size
     # "mcp-102",               # correctness: reactivate script-triggered objects after their mod is removed

@@ -1,0 +1,15 @@
+kind = "comparison"
+purpose = "Talking to a merchant in a cell with an animated container does not destroy the container animation or crash."
+procedure = "Use a profile containing an animated-container mod. Enter a cell where a merchant and one animated container are loaded, open Barter, inspect the container, close both menus, and repeat in control and patched builds."
+limitations = "The command script proves both builds reach play. Placing the owned animated container and driving Barter require a purpose-built fixture or manual setup before this can validate the fix."
+watch = 'diag\.patches|exec\.exit|crash\.|hang\.detected|fatal\.'
+timeout = 180
+script = '''
+@start new
+wait 60
+exit
+'''
+
+[expect]
+control = ['exec\.exit 0']
+test = ['diag\.patches', 'exec\.exit 0']

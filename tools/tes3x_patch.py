@@ -439,6 +439,20 @@ MCP97_FIXED_IMM = 16
 MCP97_LENGTH_CASE = 19
 MCP97_LENGTH_REPLACED = 6
 
+# When two container references share one animated object, this path temporarily adjusts the
+# references' own counts as well as assigning the animation.  Those extra retain/release operations
+# can destroy the animation during access.  Anchor both operations and the common return together.
+MCP98_REFCOUNT_SIG = re.compile(
+    rb"\x3b\xf8\x0f\x85...."
+    rb"\x8b\x57\x18\x8b\x07(?P<retain>\x42)\x8b\xcf\x89\x57\x18\xff\x50\x2c"
+    rb".{64,160}?"
+    rb"(?P<release>\xff\x4e\x18)(?P<guard>\x75.)"
+    rb"\x8b\x06\x8b\xce\xff\x50\x2c"
+    rb".{16,96}?"
+    rb"(?P<exit>\x5e\x5b\x5f\xc3)",
+    re.S,
+)
+
 # Script data is allocated from the SCDT chunk length on both initial load and reload. The
 # reader can touch one dword beyond that data, so MCP pads both allocations by four bytes.
 MCP154_LOAD_SIG = re.compile(
@@ -667,6 +681,23 @@ def find_mcp97_scan(x):
     if va is None:
         raise PatchError("mcp-97: bytecode scan is outside any section")
     return va
+
+
+def find_mcp98_refcounts(x):
+    """Find the animated-container retain, release and common return."""
+    hits = list(MCP98_REFCOUNT_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("mcp-98: %d animated-container path(s), expected 1" % len(hits))
+    match = hits[0]
+    offsets = tuple(match.start(name) for name in ("retain", "release", "exit"))
+    vas = tuple(x.off_to_va(off) for off in offsets)
+    if any(va is None for va in vas):
+        raise PatchError("mcp-98: animated-container path is outside any section")
+    guard = match.start("guard")
+    target = guard + 2 + struct.unpack("<b", match.group("guard")[1:2])[0]
+    if target != offsets[2]:
+        raise PatchError("mcp-98: release guard does not target the common return")
+    return vas
 
 
 def _find_mcp154_site(x, signature, label):
@@ -984,6 +1015,23 @@ def _mcp_97(x, value, ctx):
         (fixed, 1, "fixed-width cursor 0x%08X: 3 -> 2" % x.off_to_va(fixed)),
         (off, MCP97_LENGTH_REPLACED,
          "length-prefixed cursor 0x%08X -> 0x%08X" % (site, target)),
+    ]
+
+
+@patch("mcp-98")
+def _mcp_98(x, value, ctx):
+    """Keep animated-container access from changing the references' own counts."""
+    retain, release, exit_va = find_mcp98_refcounts(x)
+    retain_off, release_off = x.va_to_off(retain), x.va_to_off(release)
+    jump = exit_va - (release + 2)
+    if not -128 <= jump <= 127:
+        raise PatchError("mcp-98: common return is outside short-jump range")
+    x.data[retain_off] = 0x90
+    x.data[release_off:release_off + 2] = b"\xeb" + struct.pack("<b", jump)
+    return [
+        (retain_off, 1, "animated-container retain 0x%08X: removed" % retain),
+        (release_off, 2, "animated-container release 0x%08X -> 0x%08X"
+         % (release, exit_va)),
     ]
 
 
@@ -1724,6 +1772,7 @@ LOCATORS = {
     "ref-load": find_ref_load,
     "ref-skip": find_ref_skip,
     "mcp-97-scan": find_mcp97_scan,
+    "mcp-98": lambda image: find_mcp98_refcounts(image)[0],
     "mcp-154-load": find_mcp154_load,
     "mcp-154-reload": find_mcp154_reload,
     "mcp-102-actn": find_mcp102_actn,

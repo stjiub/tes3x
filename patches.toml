@@ -158,6 +158,15 @@ source = "tes3xmcp97.c"
 summary = "Advance the script parser correctly while initializing saved data."
 
 [[patch]]
+name = "mcp-98"
+origin = { source = "MCP", id = "98" }
+bit = 27
+category = "core"
+channel = "dev"
+selection = "preset"
+summary = "Keep animated-container access from destroying a live animation."
+
+[[patch]]
 name = "mcp-154"
 origin = { source = "MCP", id = "154" }
 bit = 10

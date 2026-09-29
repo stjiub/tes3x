@@ -13,7 +13,7 @@ from tes3x_pipeline import (PipelineError, copy_retail_root, link_or_copy, resol
                             preference_flags, sanitized_command, validate_local_config,
                             validate_profile)
 from tes3x_pipeline import main as pipeline_main
-from tes3x_patch import MCP37_TREE_NEXT_SIG, _mcp_37, _mcp_97, _mcp_102, _mcp_154
+from tes3x_patch import MCP37_TREE_NEXT_SIG, _mcp_37, _mcp_97, _mcp_98, _mcp_102, _mcp_154
 from tes3x_plugins import (collect, dependency_order, fetch_rules, run_arrange, validate_order,
                            warnings as mlox_warnings)
 from test_reach import rec, sub
@@ -524,6 +524,45 @@ class PipelinePlanTests(unittest.TestCase):
         self.assertEqual(image.off_to_va(site) + 5 + rel, target)
         self.assertEqual([(offset, length) for offset, length, _label in edits],
                          [(block + 16, 1), (site, 6)])
+
+    def test_mcp_98_removes_both_reference_count_changes(self):
+        prefix = bytes.fromhex(
+            '3bf80f85112233448b57188b07428bcf895718ff502c'
+        )
+        middle = b'\x90' * 64
+        suffix = bytes.fromhex('ff4e18753a8b068bceff502c') + b'\x90' * 51 + bytes.fromhex('5e5b5fc3')
+
+        class Image:
+            base = 0x100000
+
+            def __init__(self):
+                self.data = bytearray(b'\x90' * 32 + prefix + middle + suffix + b'\xcc' * 16)
+
+            def off_to_va(self, offset):
+                return self.base + offset
+
+            def va_to_off(self, va):
+                return va - self.base
+
+        image = Image()
+        edits = _mcp_98(image, '', {})
+        retain = 32 + prefix.index(b'\x42')
+        release = 32 + len(prefix) + len(middle)
+        exit_off = release + 63
+        self.assertEqual(image.data[retain], 0x90)
+        self.assertEqual(image.data[release:release + 3], bytes.fromhex('eb3d18'))
+        self.assertEqual(release + 2 + struct.unpack('<b', image.data[release + 1:release + 2])[0],
+                         exit_off)
+        self.assertEqual([(offset, length) for offset, length, _label in edits],
+                         [(retain, 1), (release, 2)])
+
+    def test_mcp_98_needs_no_dedicated_hook_source(self):
+        plan = resolve_patch_plan({
+            'patches': {'preset': 'minimal', 'enable': ['mcp-98']},
+            'package': {'mode': 'merged-bsa'},
+        })
+        self.assertEqual(plan['applied'], ['mcp-98'])
+        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c'])
 
     def test_mcp_154_pads_both_script_data_allocations(self):
         load = bytes.fromhex(

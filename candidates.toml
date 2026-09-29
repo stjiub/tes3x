@@ -839,16 +839,6 @@ summary = "Weapon reach issues"
 reason = "Allows modded weapon reach below 1.0 and applies hand-to-hand reach to the player."
 
 [[candidate]]
-name = "mcp-98"
-origin = { source = "MCP", id = "98" }
-category = "core"
-default = "intended default"
-status = "candidate"
-priority = "high"
-summary = "Animated container refcount crash"
-reason = "Small crash fix; reproduce with a merchant and an animated container in the same cell."
-
-[[candidate]]
 name = "mcp-99"
 origin = { source = "MCP", id = "99" }
 category = "correctness"
