@@ -1230,6 +1230,19 @@ def find_menu_mode_gate(x):
     return x.off_to_va(hits[0] + 8)
 
 
+MOB_GATE_RE = re.compile(rb"\x8a\x81\xd2\x00\x00\x00\x84\xc0\x0f\x85....\x84\xdb\x0f\x85...."
+                         rb"\x8b\x51\x2c\x8b\x49\x5c", re.S)
+
+
+def find_mob_gate(x):
+    """The 6-byte jne in Game::Update that skips MobManager::ProcessMobs, idles, cell loading and
+    weather while a menu is open."""
+    hits = [m.start() for m in MOB_GATE_RE.finditer(x.data)]
+    if len(hits) != 1:
+        raise PatchError("mob update gate: %d match(es), expected exactly 1" % len(hits))
+    return x.off_to_va(hits[0] + 8)
+
+
 @patch("diagnostics")
 def _diagnostics(x, value, ctx):
     """Enable INI-controlled crash records, snapshots and a hang watchdog."""
@@ -1731,6 +1744,7 @@ LOCATORS = {
     "game-instance": find_game_instance,
     "world-controller": find_world_controller,
     "menu-mode-gate": find_menu_mode_gate,
+    "mob-update-gate": find_mob_gate,
     "console-print": find_console_print,
     "heap-allocate": lambda image: find_heap_function(image, "allocate")[0],
     "heap-free": lambda image: find_heap_function(image, "free")[0],

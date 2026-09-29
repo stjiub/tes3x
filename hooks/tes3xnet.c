@@ -38,6 +38,9 @@
 #ifndef TES3X_NET_MENU_GATE
 #error "define TES3X_NET_MENU_GATE to the menu mode jne in mainLoopBeforeInput"
 #endif
+#ifndef TES3X_NET_MOB_GATE
+#error "define TES3X_NET_MOB_GATE to the menu mode jne before ProcessMobs in Game::Update"
+#endif
 
 typedef unsigned short u16;
 
@@ -1292,31 +1295,35 @@ static void stat(void)
     }
 }
 
-/* mainLoopBeforeInput skips the world update while a menu is open with a 6-byte jne; NOPs let the
- * world run under menus. The simulation clock is the fld operand 0x1A bytes on. */
+/* Two 6-byte jnes skip the world while a menu is open: one in mainLoopBeforeInput (simulation
+ * clock, controllers), one in Game::Update (ProcessMobs, idles, cell loading, weather). NOPs let
+ * the world run under menus. The simulation clock is the fld operand 0x1A bytes past the first. */
 #define WORLD_MENU_MODE 0xD2
 #define GATE_CLOCK 0x1A
-static u8 gate_original[6];
+static u8 *const gates[2] = {(u8 *)TES3X_NET_MENU_GATE, (u8 *)TES3X_NET_MOB_GATE};
+static u8 gate_original[2][6];
 static u32 gate_saved;
 
 static void menu_sim(u32 on)
 {
-    u8 *gate = (u8 *)TES3X_NET_MENU_GATE;
-    u32 cr0, flags, i;
+    u32 cr0, flags, i, g;
 
     if (!gate_saved) {
-        if (gate[0] != 0x0F || gate[1] != 0x85) {
-            tes3x_log_hex3("net.menu_gate_unexpected", gate[0], gate[1], 0);
-            return;
-        }
-        copy(gate_original, gate, 6);
+        for (g = 0; g < 2; g++)
+            if (gates[g][0] != 0x0F || gates[g][1] != 0x85) {
+                tes3x_log_hex3("net.menu_gate_unexpected", g, gates[g][0], gates[g][1]);
+                return;
+            }
+        for (g = 0; g < 2; g++)
+            copy(gate_original[g], gates[g], 6);
         gate_saved = 1;
     }
     flags = lock();
     __asm__ volatile("movl %%cr0, %0" : "=r"(cr0));
     __asm__ volatile("movl %0, %%cr0" : : "r"(cr0 & ~CR0_WP) : "memory");
-    for (i = 0; i < 6; i++)
-        gate[i] = on ? 0x90 : gate_original[i];
+    for (g = 0; g < 2; g++)
+        for (i = 0; i < 6; i++)
+            gates[g][i] = on ? 0x90 : gate_original[g][i];
     __asm__ volatile("movl %0, %%cr0" : : "r"(cr0) : "memory");
     unlock(flags);
     tes3x_log("net.menusim", on);
