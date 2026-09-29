@@ -8,7 +8,7 @@
 # version       the version tried
 # folder        its usual folder or plugin name, which is how the GUI recognises it
 # status        untested, passes-automated, works, works-with-requirements, broken,
-#               investigating or not-possible; only a person sets works, after playing with it
+#               or not-possible; only a person sets works, after playing with it
 # patches       TES3X patches it needs
 # ram           64 or 128; 128 means it needs an upgraded Xbox
 # bios          a BIOS it needs, such as "cerbios"
@@ -71,7 +71,7 @@ name = "Patch for Purists"
 version = "4.0.2"
 url = "https://www.nexusmods.com/morrowind/mods/45096"
 folder = "Purists"
-status = "investigating"
+status = "untested"
 notes = "Only the intro and Seyda Neen have been played. Newer versions have not been tried."
 
 [[mod]]
@@ -79,7 +79,7 @@ id = "tes-extended-music"
 name = "TES Extended Music"
 version = "unknown"
 folder = "TESExtendedMusic"
-status = "investigating"
+status = "untested"
 notes = "Only the intro and Seyda Neen have been played."
 
 [[mod]]
@@ -88,7 +88,7 @@ name = "Tamriel Data"
 version = "26.08"
 url = "https://www.tamriel-rebuilt.org/downloads/resources"
 folder = "Tamriel Data"
-status = "investigating"
+status = "untested"
 notes = "Needed by Tamriel Rebuilt; see that entry."
 
 [[mod]]
@@ -97,7 +97,7 @@ name = "Tamriel Rebuilt"
 version = "26.08.23"
 url = "https://www.tamriel-rebuilt.org/downloads/main-release"
 folder = "TR"
-status = "investigating"
+status = "untested"
 patches = ["dxt5-size", "heap-region", "video-arena"]
 ram = 128
 bios = "cerbios"

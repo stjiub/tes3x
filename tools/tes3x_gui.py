@@ -44,7 +44,7 @@ from tes3x_library import (ARCHIVES, CATALOG_NAME, LibraryError, append_mods, co
                            discover_library, extract_archive, free_id, guess_release,
                            index_library, install_files, install_layout, load_library, nexus_id,
                            resolve_selection)
-from tes3x_catalog import STATUSES as COMPAT_STATUSES, CatalogError, load as load_catalog
+from tes3x_catalog import STATUS_LABELS as COMPAT_LABELS, CatalogError, load as load_catalog
 from tes3x_catalog import match as match_catalog, needs as catalog_needs
 from tes3x_patches import CATEGORIES as PATCH_CATEGORIES, PATCHES as PATCH_CATALOG, SOURCES
 from tes3x_plugins import (BASE_MASTERS, collect, dependency_order, fetch_rules, sort_files,
@@ -1527,7 +1527,7 @@ class ProfileWindow(QMainWindow):
         verdict = self.compat_verdict(item)
         status = verdict["status"] if verdict else "untested"
         symbol, colour = COMPAT.get(status, ("?", self.palette().placeholderText().color()))
-        lines = [f"{verdict['name']}: {COMPAT_STATUSES[status]}" if verdict
+        lines = [f"Xbox compatibility: {COMPAT_LABELS[status]}" if verdict
                  else "Not in the compatibility catalog"]
         if verdict:
             if catalog_needs(verdict):
@@ -1746,9 +1746,10 @@ class ProfileWindow(QMainWindow):
         parts.append("<p>" + " · ".join(links) + "</p>")
         verdict = self.compat_verdict(item)
         if verdict:
-            parts.append(f"<p><b>Xbox:</b> {text(COMPAT_STATUSES[verdict['status']])}"
-                         + (f" — {text(verdict['notes'])}" if verdict.get("notes") else "")
-                         + "</p>")
+            status = verdict["status"]
+            parts.append(f"<p><b>Xbox compatibility:</b> {text(COMPAT_LABELS[status])}</p>")
+            if verdict.get("notes"):
+                parts.append(f"<p>{text(verdict['notes'])}</p>")
         if problem:
             parts.append(f"<p style='color:{WARNING.name()}'>{text(problem)}</p>")
         scanned = self.scan(entry) if self.library_root else None

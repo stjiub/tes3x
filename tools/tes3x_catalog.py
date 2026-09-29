@@ -14,13 +14,20 @@ CATALOG = ROOT / "catalog.toml"
 PAGE = ROOT / "docs" / "catalog.md"
 
 STATUSES = {
-    "works": "Played on the Xbox build without problems.",
-    "works-with-requirements": "Works once its requirements are met.",
-    "passes-automated": "Passed an automated smoke test; not yet played.",
-    "investigating": "Being tried; the notes say how far.",
-    "untested": "Not tried yet.",
-    "broken": "Fails on the Xbox build; the notes say how.",
+    "works": "Confirmed working on the Xbox.",
+    "works-with-requirements": "Confirmed working when its requirements are met.",
+    "passes-automated": "Passed an automated test; compatibility is not yet confirmed.",
+    "untested": "Compatibility has not been confirmed.",
+    "broken": "Known to fail on the Xbox.",
     "not-possible": "Cannot work on the Xbox, even with patches.",
+}
+STATUS_LABELS = {
+    "works": "Confirmed",
+    "works-with-requirements": "Confirmed with requirements",
+    "passes-automated": "Automated test passed",
+    "untested": "Unknown",
+    "broken": "Broken",
+    "not-possible": "Not possible",
 }
 FIELDS = {"id", "name", "version", "url", "folder", "status", "patches", "ram", "bios",
           "requirements", "dependencies", "plugins", "notes"}

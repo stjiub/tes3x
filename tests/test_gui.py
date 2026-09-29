@@ -360,7 +360,8 @@ order = 10
             self.row(window, "Other").setSelected(True)
         self.assertEqual(lookup.call_args.args[0], "id:123")
         shown = window.mod_info.toPlainText()
-        for text in ("Other", "Someone", "Adds a thing", page, "Find on Nexus"):
+        for text in ("Other", "Someone", "Adds a thing", page, "Find on Nexus",
+                     "Xbox compatibility: Confirmed"):
             self.assertIn(text, shown)
 
         window.nexus_finished("id:123", {"id": 123, "name": "Other", "summary": "From Nexus",
