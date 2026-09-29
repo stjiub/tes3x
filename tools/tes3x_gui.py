@@ -1483,9 +1483,57 @@ class ProfileWindow(QMainWindow):
             self.context_info.setPlainText(detail or "\n".join(
                 items[0].text(column) for column in range(items[0].columnCount())))
         else:
-            self.context_info.setPlainText(
-                "Build-wide profile settings. Changes here affect packaging, deployment and "
-                "player preferences.")
+            self.context_info.setPlainText(self.build_preview())
+
+    def build_preview(self):
+        """Human-readable plan from the current, possibly unsaved controls."""
+        active = self.analysis.get("active", [])
+        plugins = [item.text(0) for item in self.plugin_list.rows()
+                   if item.checkState(0) == Qt.CheckState.Checked]
+        mode = self.build.mode.currentData()
+        mode_text = {"delta-bsa": "Delta archive", "merged-bsa": "Rebuilt Morrowind.bsa",
+                     "loose": "Loose files"}.get(mode, mode)
+        destination = (self.build.remote_root.text().strip()
+                       or self.local_values().get("deploy", {}).get("remote_root")
+                       or "Not set")
+        title = self.build.title.text().strip() or "Retail title"
+        profile = self.profile_path.stem if self.profile_path else "New"
+        lines = ["Build preview", "", f"Profile: {profile}", f"Dashboard title: {title}",
+                 f"Xbox destination: {destination}", f"Packaging: {mode_text}"]
+        if mode == "delta-bsa":
+            lines.append("Archive: " + (self.build.archive_name.text().strip()
+                                         or "tes3xmods.bsa"))
+        if self.build.archive_only.isChecked() and mode != "loose":
+            lines.append("Asset lookup: archives only")
+        lines += ["", f"Mods: {len(active)} active"]
+        lines += [f"  {index}. {item.text(0)}" for index, (item, _mod) in enumerate(active, 1)]
+
+        outcomes = defaultdict(int)
+        for key, providers in self.analysis.get("owners", {}).items():
+            if key.endswith((*PLUGIN_EXT, ".bsa")):
+                continue
+            winner = active[providers[-1]][0]
+            outcomes[self.packaging_result(winner, key)] += 1
+        if outcomes:
+            lines += ["", "Assets:"]
+            lines += [f"  {count} {result.casefold()}" for result, count in sorted(outcomes.items())]
+
+        lines += ["", f"Plugins: {len(plugins)} active"]
+        lines += [f"  {index:02X}  {name}" for index, name in enumerate(plugins[:20])]
+        if len(plugins) > 20:
+            lines.append(f"  … {len(plugins) - 20} more")
+        archives = [self.archives.topLevelItem(i) for i in range(self.archives.topLevelItemCount())]
+        lines += ["", "Archives:"]
+        lines += [f"  {item.text(0)} — {item.text(2)}" for item in archives]
+        patches = sorted(self.applied_patches)
+        lines += ["", f"Engine patches: {len(patches)}"]
+        lines += ["  " + name for name in patches[:20]]
+        if len(patches) > 20:
+            lines.append(f"  … {len(patches) - 20} more")
+        lines += ["", "Deploy:",
+                  "  Clear Xbox cache partitions" if self.build.clear_cache.isChecked()
+                  else "  Keep Xbox cache partitions"]
+        return "\n".join(lines)
 
     def create_mods_tab(self):
         install = QPushButton("Install mod…")
@@ -2283,7 +2331,7 @@ class ProfileWindow(QMainWindow):
         self.highlight_conflicts()
         self.refresh_status()
         self.refresh_resources()
-        self.show_mod_info()
+        self.show_context_info()
 
     @staticmethod
     def display_size(value):

@@ -134,6 +134,8 @@ first start, with no `tes3x.local.toml` yet, it opens the local settings.
   missing or ordered too late.
 - **Build** holds everything else in the profile: dashboard title, Xbox folder, mod library,
   packaging mode, texture and file-name rules and player preferences.
+  Its details pane previews the current mod and plugin order, asset packaging, archives, engine
+  patches and deployment destination before the profile is built.
 
 Settings left at their defaults stay out of the profile file.
 
