@@ -20,7 +20,7 @@ class RegistryTests(unittest.TestCase):
                 self.assertTrue((hooks / entry['source']).is_file(), entry['source'])
 
     def test_every_ini_key_is_documented(self):
-        read = re.compile(r'get\("Xbox", "(\w+)"|(?:ini|prof)_uint\("(\w+)"')
+        read = re.compile(r'get\("Xbox", "(\w+)"|(?:ini_uint|prof_uint|ini_text)\("(\w+)"')
         keys = set()
         for source in (registry.ROOT / 'hooks').glob('*.c'):
             for match in read.finditer(source.read_text(encoding='utf-8')):

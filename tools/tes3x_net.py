@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Talk to the payload's network driver (`--net-test`).
+"""Talk to the payload's network driver (the `multiplayer` patch).
 
     python tools/tes3x_net.py listen                     # console broadcasts on UDP 26500
     python tools/tes3x_net.py ping 192.0.2.50             # echo round trips to `tes3xnet up`
@@ -12,7 +12,9 @@ answers ARP itself and resolves the console's MAC before it pings.
 """
 
 import argparse
+import math
 import os
+import select
 import socket
 import struct
 import sys
@@ -243,8 +245,20 @@ def ping(args):
 
 T3MP = struct.Struct("<4sBBHIIIII")  # magic, version, type, 0, session, seq, ack, time, echo
 T3MP_VERSION = 1
-HELLO, WELCOME, HEARTBEAT, BYE = 1, 2, 3, 4
+HELLO, WELCOME, HEARTBEAT, BYE, STATE, PEER, GONE = 1, 2, 3, 4, 5, 6, 7
 TIMEOUT = 5.0
+STATE_BODY = struct.Struct("<I4f32s")  # flags, x, y, z, heading, interior cell name
+IN_WORLD, INTERIOR = 1, 2
+CELL_UNITS = 8192
+
+
+def describe_state(state):
+    flags, x, y, z, heading, cell = STATE_BODY.unpack_from(state)
+    if not flags & IN_WORLD:
+        return "not in the world"
+    where = (cell.split(b"\0", 1)[0].decode("latin-1") if flags & INTERIOR
+             else f"exterior {int(x // CELL_UNITS)},{int(y // CELL_UNITS)}")
+    return f"{where} at {x:.0f},{y:.0f},{z:.0f} heading {math.degrees(heading) % 360:.0f}"
 
 
 def now_us():
@@ -256,18 +270,19 @@ class Client:
         self.id, self.mac = ident, mac
         self.session = self.seq = self.peer_seq = self.peer_time = 0
         self.addr = None
-        self.joins = self.beats = self.gaps = 0
+        self.joins = self.beats = self.gaps = self.states = 0
+        self.state = None
         self.last = time.time()
         self.alive = False
 
 
 def serve(args):
-    """A session server: welcomes consoles by MAC and answers each heartbeat at once."""
+    """A session server: welcomes consoles by MAC, answers each heartbeat at once and relays each
+    client's state to the others. With --tunnel it also serves an xemu guest."""
     link = Tunnel(args.tunnel) if args.tunnel else None
-    if not link:
-        sock = udp_socket()
-        sock.bind((args.bind, args.port))
-    print(f"serving on {'tunnel ' + str(args.tunnel) if link else f'{args.bind}:{args.port}'}",
+    sock = udp_socket()
+    sock.bind((args.bind, args.port))
+    print(f"serving on {args.bind}:{args.port}" + (f" and tunnel {args.tunnel}" if link else ""),
           flush=True)
     clients, by_session = {}, {}
     deadline = time.time() + args.duration if args.duration else None
@@ -277,11 +292,17 @@ def serve(args):
         client.seq += 1
         packet = T3MP.pack(b"T3MP", T3MP_VERSION, kind, 0, client.session, client.seq,
                            client.peer_seq, now_us(), client.peer_time) + body
-        if link:
-            ip, port, mac = client.addr
+        if len(client.addr) == 3:  # a tunnel guest, by its MAC
+            ip, _port, mac = client.addr
             link.send(udp_frame(mac, ip, packet, client.seq))
         else:
-            sock.sendto(packet, client.addr[:2])
+            sock.sendto(packet, client.addr)
+
+    def leave(client):
+        client.alive = False
+        for other in clients.values():
+            if other.alive:
+                send(other, GONE, struct.pack("<I", client.id))
 
     def handle(packet, addr):
         if len(packet) < T3MP.size:
@@ -320,14 +341,28 @@ def serve(args):
         if kind == HEARTBEAT:
             client.beats += 1
             send(client, HEARTBEAT)
+        elif kind == STATE and len(packet) >= T3MP.size + STATE_BODY.size:
+            client.state = packet[T3MP.size:T3MP.size + STATE_BODY.size]
+            client.states += 1
+            for other in clients.values():
+                if other is not client and other.alive:
+                    send(other, PEER, struct.pack("<I", client.id) + client.state)
         elif kind == BYE:
             print(f"{stamp} client {client.id} left", flush=True)
-            client.alive = False
+            leave(client)
             by_session.pop(session, None)
 
     while deadline is None or time.time() < deadline:
-        if link:
-            frame = link.recv(0.25)
+        waiting = [sock] + ([link.sock] if link else [])
+        for ready in select.select(waiting, [], [], 0.25)[0]:
+            if ready is sock:
+                try:
+                    data, addr = sock.recvfrom(2048)
+                except ConnectionResetError:
+                    continue
+                handle(data, addr)
+                continue
+            frame = link.recv(0)
             if frame and frame[12:14] == b"\x08\x06" and len(frame) >= 42:
                 op, sha, spa, _, tpa = struct.unpack_from(">H6s4s6s4s", frame, 20)
                 if op == 1 and tpa == socket.inet_aton(PEER_IP):
@@ -337,27 +372,23 @@ def serve(args):
                 if data:
                     src = socket.inet_ntoa(frame[26:30])
                     handle(data, (src, PORT, frame[6:12]))
-        else:
-            sock.settimeout(0.25)
-            try:
-                data, addr = sock.recvfrom(2048)
-                handle(data, addr)
-            except (socket.timeout, ConnectionResetError):
-                pass
         now = time.time()
         for client in clients.values():
             if client.alive and now - client.last > TIMEOUT:
                 print(f"{time.strftime('%H:%M:%S')} client {client.id} timed out", flush=True)
-                client.alive = False
+                leave(client)
         if args.report and now >= report:
             report = now + args.report
             for client in clients.values():
                 print(f"  client {client.id}: {'up' if client.alive else 'down'}, joins "
-                      f"{client.joins}, heartbeats {client.beats}, gaps {client.gaps}",
+                      f"{client.joins}, heartbeats {client.beats}, states {client.states}, "
+                      f"gaps {client.gaps}"
+                      + (f"; {describe_state(client.state)}" if client.state else ""),
                       flush=True)
     for client in clients.values():
         print(f"client {client.id} {client.mac}: joins {client.joins}, heartbeats "
-              f"{client.beats}, gaps {client.gaps}")
+              f"{client.beats}, states {client.states}, gaps {client.gaps}"
+              + (f"; last {describe_state(client.state)}" if client.state else ""))
     return 0 if clients else 1
 
 

@@ -1134,6 +1134,35 @@ def find_game_instance(x):
     return struct.unpack_from("<I", x.data, off - 4)[0]
 
 
+# WorldController::getMobilePlayer: the mob controller at +0x5C, a null check, then a tail jump.
+MOBILE_PLAYER_SIG = bytes([
+    0x8B, 0x49, 0x5C,        # mov ecx,[ecx+0x5C]
+    0x85, 0xC9,              # test ecx,ecx
+    0x75, 0x03,              # jne +3
+    0x33, 0xC0, 0xC3,        # xor eax,eax; ret
+    0xE9,                    # jmp MobController::getMobilePlayer
+])
+
+
+def find_world_controller(x):
+    """The WorldController pointer: the global most getMobilePlayer calls load into ecx."""
+    off = find_unique(x.data, MOBILE_PLAYER_SIG, "WorldController::getMobilePlayer")
+    sites = find_call_sites(x, x.off_to_va(off))
+    loads = {}
+    for site in sites:
+        at = x.va_to_off(site)
+        if at is not None and x.data[at - 6:at - 4] == b"\x8b\x0d":
+            va = struct.unpack_from("<I", x.data, at - 4)[0]
+            loads[va] = loads.get(va, 0) + 1
+    if not loads:
+        raise PatchError("WorldController: no getMobilePlayer call loads a global")
+    va = max(loads, key=loads.get)
+    if loads[va] * 2 < len(sites):
+        raise PatchError("WorldController: 0x%08X feeds %d of %d getMobilePlayer calls"
+                         % (va, loads[va], len(sites)))
+    return va
+
+
 @patch("diagnostics")
 def _diagnostics(x, value, ctx):
     """Enable INI-controlled crash records, snapshots and a hang watchdog."""
@@ -1159,6 +1188,19 @@ def _diagnostics(x, value, ctx):
     return [(None, 4, "diagnostics installed flag at 0x%08X" % flag),
             (off, 5, "Game::Update call 0x%08X: 0x%08X -> 0x%08X"
              % (site, was, target))]
+
+
+@patch("multiplayer")
+def _multiplayer(x, value, ctx):
+    """Join a TES3X server from [Xbox] NetAddress and send the player's state each frame."""
+    hooks = ctx.get("hooks", {})
+    frame = hooks.get("diagnostics_update")
+    if not hooks.get("net") or not frame:
+        raise PatchError("multiplayer: needs `payload` first, built with tes3xnet.c and "
+                         "tes3xdiag.c")
+    if len(find_call_sites(x, int(str(frame), 16))) != 1:
+        raise PatchError("multiplayer: requires diagnostics to be applied first")
+    return [(None, 0, "network frame hook %s, started by [Xbox] NetAddress" % hooks["net"])]
 
 
 PROFILE_LIST_SITES = 8
@@ -1619,6 +1661,7 @@ LOCATORS = {
     "controls-table": find_controls_table,
     "diagnostics-update": find_diagnostics_update,
     "game-instance": find_game_instance,
+    "world-controller": find_world_controller,
     "console-print": find_console_print,
     "heap-allocate": lambda image: find_heap_function(image, "allocate")[0],
     "heap-free": lambda image: find_heap_function(image, "free")[0],

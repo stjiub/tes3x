@@ -32,6 +32,7 @@ CFLAGS = ("-target", "i386-pc-win32", "-march=pentium3", "-Os", "-ffreestanding"
 ARCH_SITE = 0x000D4E06
 INI_GET = 0x001933E0
 INI_PATH = 0x0035E364
+DATA_HANDLER = 0x003CB5F8
 CONSOLE_SITE = 0x00098430
 CONSOLE_ADDRESSES = (
     ("FIND_MENU", 0x001AD340), ("OPEN_VK", 0x0022D210), ("CONSOLE_MENU_ID", 0x003D816C),
@@ -49,7 +50,7 @@ CONSOLE_ADDRESSES = (
     ("CREATE_IMAGE", 0x001A7080), ("BUTTON_HINT", 0x001F8630),
 )
 INI_USERS = {"tes3xconsole.c", "tes3xrefs.c", "tes3xdiag.c", "tes3xsaves.c", "tes3xprof.c",
-             "tes3xarena.c", "tes3xregion.c", "tes3xbowview.c"}
+             "tes3xarena.c", "tes3xregion.c", "tes3xbowview.c", "tes3xnet.c"}
 
 
 class PayloadError(RuntimeError):
@@ -227,8 +228,16 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         print("pager: synthetic test on the console command tes3xpager")
         flags.append("-DTES3X_PAGER")
     if "tes3xnet.c" in names:
-        print("network driver: console command tes3xnet (up, stat, down, broadcast), UDP 26500")
+        if "tes3xdiag.c" not in names:
+            raise PayloadError("tes3xnet.c requires tes3xdiag.c for its frame hook")
+        world = hexva(locate("world-controller"))
+        data_handler = address("DATA_HANDLER", DATA_HANDLER)
+        print(f"network: [Xbox] NetAddress, UDP 26500, WorldController {world}, "
+              f"DataHandler {data_handler}")
+        define("NET_WORLD", world)
+        define("NET_DATA_HANDLER", data_handler)
         flags.append("-DTES3X_NET")
+        wanted["net"] = ("_tes3x_net_frame",)
     if "tes3xinfoarena.c" in names:
         heap_allocate = hexva(locate("heap-allocate"))
         heap_free = hexva(locate("heap-free"))

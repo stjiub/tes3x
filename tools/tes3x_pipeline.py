@@ -266,6 +266,11 @@ def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), pac
         if "script-ext" in disabled or "script-ext" in disable:
             raise PipelineError("mwse-legacy requires script-ext")
         selected.add("script-ext")
+    # The network runs from the diagnostics frame hook.
+    if "multiplayer" in selected:
+        if "diagnostics" in disabled or "diagnostics" in disable:
+            raise PipelineError("multiplayer requires diagnostics")
+        selected.add("diagnostics")
 
     if enabled_mods(profile):
         mode = package_mode or profile.get("package", {}).get("mode", "delta-bsa")
@@ -566,9 +571,6 @@ def main(argv=None):
                     help="add the demand pager prototype, whose console command tes3xpager "
                          "runs a synthetic workload over a 64 MB paged region. Instrumentation "
                          "only: nothing in the engine is paged")
-    ap.add_argument("--net-test", action="store_true",
-                    help="add the network driver, whose console command tes3xnet brings the NIC "
-                         "up to answer ARP and UDP echo on port 26500, or broadcasts test datagrams")
     ap.add_argument("--hardlink", action=argparse.BooleanOptionalAction,
                     help="hardlink unchanged retail files into the build instead of copying "
                          "them, where the volume allows (default: paths.hardlink_retail)")
@@ -637,10 +639,6 @@ def main(argv=None):
         if "tes3xpager.c" not in plan["sources"]:
             plan["sources"].append("tes3xpager.c")
         plan["needs_payload"] = True
-    if args.net_test:
-        if "tes3xnet.c" not in plan["sources"]:
-            plan["sources"].append("tes3xnet.c")
-        plan["needs_payload"] = True
     package = profile.get("package", {})
     drive = (args.drive or package.get("drive_letter", "D")).upper()
     if len(drive) != 1 or not drive.isalpha():
@@ -680,8 +678,6 @@ def main(argv=None):
         print("memory census: on")
     if args.pager_test:
         print("pager test: on")
-    if args.net_test:
-        print("network test: on")
     use_mlox = (plan["package_mode"] != "retail"
                 and profile.get("rules", {}).get("plugin_order") == "mlox")
     listed_order = (plan["package_mode"] != "retail"

@@ -43,6 +43,7 @@ enable = [
     # "transition-autosaves",  # qol: autosave before doors, teleports and travel
     # "console",               # qol: in-game console (already in standard)
     # "diagnostics",           # instrumentation: crash records and a hang watchdog
+    # "multiplayer",           # infrastructure: join a TES3X server set by [Xbox] NetAddress
 ]
 
 # Patches the preset includes that you don't want, such as "console".

@@ -313,3 +313,13 @@ selection = "preset"
 source = "tes3xbowview.c"
 ini = { BowViewOffsetZ = "-12" }
 summary = "Lower the first-person bow and arms while an arrow is nocked."
+
+[[patch]]
+name = "multiplayer"
+bit = 26
+category = "infrastructure"
+channel = "development"
+selection = "preset"
+source = "tes3xnet.c"
+ini = { NetAddress = "", NetServer = "", NetGateway = "" }
+summary = "Join a TES3X server from [Xbox] NetAddress and exchange player states every frame."

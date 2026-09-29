@@ -87,3 +87,13 @@ Only pages the heap actually uses consume memory, so a large value costs address
 | `BowViewOffsetZ` | `-64` to `64` game units | `-12`; `0` retains the retail position |
 
 The offset affects only the first-person bow and arms while an arrow or bolt is nocked.
+
+## `multiplayer`
+
+| key | values | default |
+|---|---|---|
+| `NetAddress` | the console's address, `A.B.C.D` or `A.B.C.D/BITS` | empty - the network stays off; `/24` when no prefix is given |
+| `NetServer` | the server, `A.B.C.D` or `A.B.C.D:PORT` | empty - answer ARP and UDP echo only; port `26500` |
+| `NetGateway` | the router, `A.B.C.D` | empty - needed only when the server is on another subnet |
+
+The keys are read on the first frame of each launch, including the relaunch on New Game and Load.

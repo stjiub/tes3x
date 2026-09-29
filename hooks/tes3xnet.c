@@ -11,6 +11,10 @@
  *   tes3xnet down         stop the NIC
  *   tes3xnet [count]      broadcast count "TES3XNET" datagrams (default 8), from 0.0.0.0 unless up
  *
+ * With [Xbox] NetAddress set, the first frame brings the NIC up as `up` would, from NetAddress,
+ * NetServer and NetGateway; every launch and relaunch joins by itself. While joined, each frame
+ * sends the player's state, and the server relays the other clients' states back.
+ *
  * While up, the HalReturnToFirmware thunk points at a wrapper that stops the NIC first: a quick
  * reboot keeps the kernel, which would otherwise keep a connected interrupt object and a live DMA
  * ring inside the next title's memory.
@@ -18,6 +22,13 @@
 
 #include "tes3x_thunks.h"
 #include "tes3xnt.h"
+
+#ifndef TES3X_NET_WORLD
+#error "define TES3X_NET_WORLD to the WorldController pointer"
+#endif
+#ifndef TES3X_NET_DATA_HANDLER
+#error "define TES3X_NET_DATA_HANDLER to the DataHandler pointer"
+#endif
 
 typedef unsigned short u16;
 
@@ -155,6 +166,9 @@ struct descriptor {
 #define T3MP_WELCOME 2u
 #define T3MP_HEARTBEAT 3u
 #define T3MP_BYE 4u
+#define T3MP_STATE 5u
+#define T3MP_PEER 6u
+#define T3MP_GONE 7u
 #define SESSION_IDLE 0u
 #define SESSION_ARP 1u
 #define SESSION_HELLO 2u
@@ -167,8 +181,25 @@ static struct {
     u32 state, server, port, gateway, hop, hop_known, id, client, seq, peer_seq, peer_time;
     u32 ticks, quiet, hellos, welcomes, beats_out, beats_in, timeouts, gaps;
     u32 rtt_last, rtt_min, rtt_max, rtt_sum, rtt_count;
+    u32 states_out, peers_in;
     u8 hop_mac[6];
 } ses;
+
+/* The player's state: flags, position, heading (orientation z), then the interior cell's name.
+ * Exterior cells are left empty; the grid follows from the position. */
+#define STATE_IN_WORLD 1u
+#define STATE_INTERIOR 2u
+#define STATE_BYTES 52u
+#define CELL_NAME 32u
+#define PEERS 8u
+#define PEER_TIMEOUT_US 5000000u
+
+/* The last relayed state of each other client, by the server's client id. */
+static struct {
+    u32 client, seq, time;
+    u8 state[STATE_BYTES];
+} peers[PEERS];
+static u32 ini_checked;
 static u32 probe_ip, probe_hits;
 static u32 timer[0x28 / 4];
 static u32 tick_dpc[0x1C / 4];
@@ -416,7 +447,7 @@ static void udp_send(u32 dst, u32 port, const u8 *payload, u32 n)
 
 static void session_send(u32 type, const u8 *body, u32 n)
 {
-    u8 p[T3MP_HEADER + 16];
+    u8 p[T3MP_HEADER + STATE_BYTES];
 
     p[0] = 'T';
     p[1] = '3';
@@ -434,10 +465,32 @@ static void session_send(u32 type, const u8 *body, u32 n)
     udp_send(ses.server, ses.port, p, T3MP_HEADER + n);
 }
 
+/* Latest state wins: one server sequences everything it sends us, so an older seq is stale. */
+static void peer_rx(u32 client, u32 seq, const u8 *state)
+{
+    u32 i, slot = PEERS;
+
+    for (i = 0; i < PEERS; i++) {
+        if (peers[i].client == client) {
+            slot = i;
+            break;
+        }
+        if (slot == PEERS && !peers[i].client)
+            slot = i;
+    }
+    if (slot == PEERS || (peers[slot].client == client && seq <= peers[slot].seq))
+        return;
+    peers[slot].client = client;
+    peers[slot].seq = seq;
+    peers[slot].time = now_us();
+    copy(peers[slot].state, state, STATE_BYTES);
+    ses.peers_in++;
+}
+
 /* Caller holds the lock (the receive DPC). */
 static void session_rx(const u8 *p, u32 n)
 {
-    u32 type, seq, echo, rtt;
+    u32 type, seq, echo, rtt, i;
 
     if (n < T3MP_HEADER || p[4] != T3MP_VERSION)
         return;
@@ -453,6 +506,8 @@ static void session_rx(const u8 *p, u32 n)
         ses.ticks = 0;
         ses.peer_seq = seq;
         ses.welcomes++;
+        for (i = 0; i < PEERS; i++)
+            peers[i].client = 0;
     } else {
         if (ses.state != SESSION_JOINED || get32le(p + 8) != ses.id)
             return;
@@ -463,6 +518,12 @@ static void session_rx(const u8 *p, u32 n)
         }
         if (type == T3MP_HEARTBEAT)
             ses.beats_in++;
+        if (type == T3MP_PEER && n >= T3MP_HEADER + 4 + STATE_BYTES)
+            peer_rx(get32le(p + T3MP_HEADER), seq, p + T3MP_HEADER + 4);
+        if (type == T3MP_GONE && n >= T3MP_HEADER + 4)
+            for (i = 0; i < PEERS; i++)
+                if (peers[i].client == get32le(p + T3MP_HEADER))
+                    peers[i].client = 0;
         if (seq > ses.peer_seq + 1)
             ses.gaps += seq - ses.peer_seq - 1;
         if (seq > ses.peer_seq)
@@ -943,6 +1004,11 @@ static void stat(void)
         tes3x_log_hex3("net.beats", ses.beats_out, ses.beats_in, ses.gaps);
         tes3x_log_hex3("net.rtt_us", ses.rtt_min, ses.rtt_count ? ses.rtt_sum / ses.rtt_count : 0,
                        ses.rtt_max);
+        tes3x_log_hex3("net.states", ses.states_out, ses.peers_in, 0);
+        for (i = 0; i < PEERS; i++)
+            if (peers[i].client)
+                tes3x_log_hex3("net.peer_state", peers[i].client, peers[i].seq,
+                               now_us() - peers[i].time);
     }
 }
 
@@ -1063,6 +1129,149 @@ static void probe(const char *text)
     tes3x_log_hex3("net.probe", probe_hits, net.rx - rx, 0);
     tes3x_log_hex3("net.probe_errors", net.rx_nobuf - nobuf, net.tx_full - full, net.rx_errors);
     probe_ip = 0;
+}
+
+typedef int(__cdecl *fn_ini_get_string)(const char *, const char *, const char *,
+                                        char *, int, const char *);
+
+static u32 ini_text(const char *key, char *out, u32 size)
+{
+    fn_ini_get_string get = (fn_ini_get_string)TES3X_INI_GET_STRING;
+    u32 i;
+
+    for (i = 0; i < size; i++)
+        out[i] = 0;
+    get("Xbox", key, "", out, (int)size - 1, (const char *)TES3X_INI_PATH);
+    for (i = 0; out[i]; i++)
+        ;
+    while (i && out[i - 1] == ' ')
+        out[--i] = 0;
+    return i;
+}
+
+/* The ini reader needs the game drive, which is not mounted at process entry. */
+static void autostart(void)
+{
+    char line[80];
+    u32 n;
+
+    if (!(n = ini_text("NetAddress", line, 24)))
+        return;
+    line[n++] = ' ';
+    n += ini_text("NetServer", line + n, 24);
+    line[n++] = ' ';
+    ini_text("NetGateway", line + n, 24);
+    tes3x_log("net.autostart", 1);
+    command_up(line);
+}
+
+static int mapped(const void *p)
+{
+    return (u32)p >= 0x10000u && (u32)p < 0x80000000u;
+}
+
+static int plausible(const void *p)
+{
+    return mapped(p) && !((u32)p & 3);
+}
+
+/* WorldController -> MobController -> MobilePlayer -> Reference, or 0 outside the world. */
+static const u8 *player_reference(void)
+{
+    const u8 *world = *(const u8 **)TES3X_NET_WORLD, *mobs, *mobile, *const *list, *ref;
+
+    if (!plausible(world) || !plausible(mobs = *(const u8 **)(world + 0x5C)))
+        return 0;
+    list = *(const u8 *const **)(mobs + 0x24);
+    if (!plausible(list) || !plausible(mobile = *list))
+        return 0;
+    ref = *(const u8 **)(mobile + 0x14);
+    return plausible(ref) ? ref : 0;
+}
+
+static void log_text(const char *tag, const char *text)
+{
+    char line[64];
+    u32 n = 0;
+
+    while (*tag && n < 24)
+        line[n++] = *tag++;
+    line[n++] = ' ';
+    while (text && *text && n < sizeof(line) - 1)
+        line[n++] = *text++;
+    line[n++] = '\n';
+    tes3x_log_raw(line, n);
+}
+
+static void player_state(const u8 *ref, u8 *state)
+{
+    const u8 *handler = *(const u8 **)TES3X_NET_DATA_HANDLER, *cell = 0;
+    const char *name;
+    u32 i, flags = STATE_IN_WORLD;
+
+    for (i = 0; i < STATE_BYTES; i++)
+        state[i] = 0;
+    if (plausible(handler) && plausible(cell = *(const u8 **)(handler + 0xAC))) {
+        flags |= STATE_INTERIOR;
+        name = *(const char **)(cell + 0x14); /* 0x10 on PC */
+        for (i = 0; mapped(name) && name[i] && i < CELL_NAME - 1; i++)
+            state[20 + i] = (u8)name[i];
+    }
+    put32le(state, flags);
+    copy(state + 4, ref + 0x38, 12); /* position */
+    copy(state + 16, ref + 0x34, 4); /* orientation z */
+}
+
+/* Once per frame, from the Game::Update hook. */
+void tes3x_net_frame(void)
+{
+    static u8 last_cell[CELL_NAME];
+    static u32 logged_player, known[PEERS];
+    u8 state[STATE_BYTES];
+    const u8 *ref;
+    u32 i, flags;
+
+    if (!ini_checked) {
+        ini_checked = 1;
+        autostart();
+    }
+    if (!net.up || !(ref = player_reference()))
+        return;
+    player_state(ref, state);
+    if (!logged_player) {
+        const u8 *base = *(const u8 **)(ref + 0x28);
+        logged_player = 1;
+        log_text("net.player", plausible(base) && mapped(*(const char **)(base + 0x2C))
+                 ? *(const char **)(base + 0x2C) : 0);
+    }
+    for (i = 0; i < CELL_NAME && state[20 + i] == last_cell[i]; i++)
+        ;
+    if (i < CELL_NAME) {
+        copy(last_cell, state + 20, CELL_NAME);
+        log_text("net.cell", state[20] ? (const char *)state + 20 : "(exterior)");
+    }
+
+    flags = lock();
+    if (ses.state == SESSION_JOINED) {
+        session_send(T3MP_STATE, state, STATE_BYTES);
+        ses.states_out++;
+    }
+    for (i = 0; i < PEERS; i++) {
+        u32 client = peers[i].client, was = known[i];
+        /* A peer whose leave notice was lost drops out once it goes quiet. */
+        if (client && now_us() - peers[i].time > PEER_TIMEOUT_US)
+            peers[i].client = client = 0;
+        if (client == was)
+            continue;
+        known[i] = client;
+        unlock(flags);
+        if (was)
+            tes3x_log("net.peer_left", was);
+        if (client)
+            tes3x_log("net.peer", client);
+        flags = lock();
+    }
+    unlock(flags);
 }
 
 int tes3x_net_command(const char *text)
