@@ -102,7 +102,10 @@ order = 10
     def test_lists_every_library_mod_and_saves_checked_ones(self):
         window = self.window()
         self.assertEqual(window.windowTitle(), "TES3X — profile")
-        self.assertEqual(window.tabs.count(), 4)
+        self.assertEqual([window.tabs.tabText(index) for index in range(window.tabs.count())],
+                         ["Mods", "Plugins", "Archives", "Data Files", "Patches", "INI",
+                          "Build"])
+        self.assertIs(window.content_split.widget(1), window.mod_info)
         self.assertEqual([item.text(0) for item in window.mod_rows()], ["Mod", "Other"])
         self.assertEqual(self.row(window, "Other").text(1), "")
         self.assertEqual(self.row(window, "Mod").checkState(0), Qt.CheckState.Checked)

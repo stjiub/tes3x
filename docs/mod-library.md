@@ -103,7 +103,7 @@ first start, with no `tes3x.local.toml` yet, it opens the local settings.
   Right-click a mod to send it to the top or bottom, pick its version or optional parts, ship it
   loose, open, rename, reinstall or delete it. With no `library.toml`, mods are written to the
   profile by folder name.
-  Selecting a mod shows what it is below the list: its author and summary from
+  Selecting a mod shows what it is in the details pane on the right: its author and summary from
   [Nexus Mods](https://www.nexusmods.com/morrowind), its page, the catalog's verdict, and each
   plugin's own description. The page comes from `library.toml`, the catalog or a Nexus download's
   file name; for any other mod, **Find on Nexus…** searches by name. What Nexus returns is saved
