@@ -22,7 +22,9 @@ Which engine fixes TES3X takes on and what each one defaults to. The fixes thems
 - `release`: validated and ready for general use.
 
 Every implemented patch starts in `dev`. Promotion to `preview` or `release` is a maintainer
-decision.
+decision, and a patch reaches `preview` only after its game test in
+[`tests/game/`](testing.md#game-tests) has passed. A patch whose game test changes has to pass it
+again.
 
 Every fix can be turned on or off by itself. Fixes taken from another project keep its numbering,
 so Morrowind Code Patch fix 97 is `mcp-97`.
