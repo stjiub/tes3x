@@ -50,6 +50,7 @@ PLACE_ADDRESSES = (
 # the ExplodeSpell and Cast handlers call to start a spell on a reference.
 SPELL_HIT = 0x00150370
 SPELL_HIT_SITES = 9
+CAST_BOLT = 0x0014EB30  # a target effect's bolt at the cast, from process only
 SPELL_ADDRESSES = (
     ("ACTIVATE_SPELL", 0x000BE050), ("MAGIC_INSTANCE", 0x000BCD30),
     ("RESOLVE_OBJECT", 0x00104300),
@@ -277,6 +278,12 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
                                f"{SPELL_HIT_SITES}")
         define("NET_SPELL_HIT", hexva(spell_hit))
         define("NET_SPELL_HIT_SITES", "{" + ",".join(hexva(s) for s in sites) + "}")
+        cast_bolt = int(address("CAST_BOLT", CAST_BOLT), 16)
+        sites = find_call_sites(image, cast_bolt)
+        if len(sites) != 1:
+            raise PayloadError(f"cast bolt {hexva(cast_bolt)}: {len(sites)} call sites, expected 1")
+        define("NET_CAST_BOLT", hexva(cast_bolt))
+        define("NET_CAST_BOLT_SITES", "{" + hexva(sites[0]) + "}")
         define("NET_MENU_GATE", hexva(locate("menu-mode-gate")))
         define("NET_MOB_GATE", hexva(locate("mob-update-gate")))
         define("NET_WEATHER_ROLL", hexva(locate("weather-roll")))

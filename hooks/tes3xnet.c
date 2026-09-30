@@ -70,8 +70,9 @@
 #endif
 #if !defined(TES3X_NET_SPELL_HIT) || !defined(TES3X_NET_SPELL_HIT_SITES) || \
     !defined(TES3X_NET_ACTIVATE_SPELL) || !defined(TES3X_NET_MAGIC_INSTANCE) || \
-    !defined(TES3X_NET_RESOLVE_OBJECT)
-#error "define TES3X_NET_SPELL_HIT, its call sites and the functions that start a spell"
+    !defined(TES3X_NET_RESOLVE_OBJECT) || !defined(TES3X_NET_CAST_BOLT) || \
+    !defined(TES3X_NET_CAST_BOLT_SITES)
+#error "define TES3X_NET_SPELL_HIT, TES3X_NET_CAST_BOLT, their call sites and the spell functions"
 #endif
 
 typedef unsigned short u16;
@@ -3402,44 +3403,119 @@ static u8 *actor_ref(u32 refid)
     return 0;
 }
 
-/* 1 if the hit went out, or went out already for another effect; 0 if it cannot be shared. */
-static int spell_send(const u8 *instance, const u8 *caster, const u8 *target, u32 owner,
-                      u32 refid)
+/* SPELL or CAST data for an instance's spell cast by caster; its length, or 0 if the source is not
+ * a spell. */
+static u32 spell_data(u8 *data, const u8 *instance, const u8 *caster, u32 client, u32 refid)
 {
     const u8 *source = *(const u8 *const *)(instance + INSTANCE_SOURCE), *player;
-    u8 data[SPELL_BYTES + SPELL_ID];
     const char *id;
-    u32 i, n;
+    u32 n;
 
     if (instance[INSTANCE_SOURCE + 4] != SOURCE_SPELL || !plausible(source))
         return 0;
-    for (i = 0; i < spell_sent_count; i++)
-        if (spell_sent[i].instance == instance && spell_sent[i].target == target)
-            return 1;
     id = ((fn_object_id)(*(void *const *const *)source)[OBJECT_GET_ID / 4])(source);
     if (!mapped(id) || !*id)
         return 0;
     player = player_reference();
     put32le(data, plausible(caster) && caster != player ? *(const u32 *)(caster + REF_ID) : 0);
-    put32le(data + 4, owner);
+    put32le(data + 4, client);
     put32le(data + 8, refid);
     data[12] = SOURCE_SPELL;
     data[13] = caster == player;
     for (n = 0; id[n] && n < SPELL_ID - 1; n++)
         data[SPELL_BYTES + n] = (u8)id[n];
     data[SPELL_BYTES + n] = 0;
+    return SPELL_BYTES + n + 1;
+}
+
+/* 1 if the hit went out, or went out already for another effect; 0 if it cannot be shared. */
+static int spell_send(const u8 *instance, const u8 *caster, const u8 *target, u32 owner,
+                      u32 refid)
+{
+    u8 data[SPELL_BYTES + SPELL_ID];
+    u32 i, n;
+
+    for (i = 0; i < spell_sent_count; i++)
+        if (spell_sent[i].instance == instance && spell_sent[i].target == target)
+            return 1;
+    if (!(n = spell_data(data, instance, caster, owner, refid)))
+        return 0;
     if (spell_sent_count < SPELLS_SENT) {
         spell_sent[spell_sent_count].instance = instance;
         spell_sent[spell_sent_count++].target = target;
     }
-    if (!event_queue(EVENT_SPELL, data, SPELL_BYTES + n + 1)) {
+    if (!event_queue(EVENT_SPELL, data, n)) {
         tes3x_log("net.event_full", EVENT_SPELL);
         return 1;
     }
     spells_sent++;
-    log_text("net.spell_sent", id);
+    log_text("net.spell_sent", (const char *)data + SPELL_BYTES);
     tes3x_log_hex3("net.spell_to", owner, refid, get32le(data));
     return 1;
+}
+
+/* A reference as the other consoles can find it: the client that runs it, and its refid unless it
+ * is that client's player. 0 if it cannot be named. */
+static u32 ref_name(const u8 *ref, u32 *refid)
+{
+    u32 owner = ref_owner(ref, refid);
+
+    if (owner == NOBODY || !plausible(ref))
+        return 0;
+    if (!owner && ref != player_reference() && !(*refid = *(const u32 *)(ref + REF_ID)))
+        return 0;
+    return owner ? owner : ses.client;
+}
+
+/* The reference a name from another console stands for here, or 0. */
+static u8 *ref_named(u32 client, u32 refid)
+{
+    u32 i;
+
+    if (refid)
+        return actor_ref(refid);
+    if (client == ses.client)
+        return (u8 *)player_reference();
+    for (i = 0; i < PEERS; i++)
+        if (ghosts[i].client == client && ghosts[i].placed)
+            return ghost_ref(i);
+    return 0;
+}
+
+/* Casts. When a caster run here casts a spell with target effects, the spell goes to the other
+ * consoles as CAST, with its target when the instance has one, and they replay it from the
+ * caster's stand-in so the bolt flies there too. Every effect of a stand-in's cast is withheld,
+ * so the replay only shows; what it does arrives as SPELL. */
+#define EVENT_CAST 11u /* as SPELL; the target is optional */
+#define INSTANCE_CASTING 1
+
+typedef void(__cdecl *fn_cast_bolt)(void *instance, int effect, int index, int count);
+
+static const u32 bolt_sites[] = TES3X_NET_CAST_BOLT_SITES;
+static u32 casts_sent, casts_received, casts_replayed;
+static const u8 *cast_sent_last;
+
+static void __cdecl cast_bolt_hook(u8 *instance, int effect, int index, int count)
+{
+    const u8 *caster = *(const u8 *const *)(instance + INSTANCE_CASTER), *target;
+    u8 data[SPELL_BYTES + SPELL_ID];
+    u32 client = 0, refid = 0, n;
+
+    ((fn_cast_bolt)TES3X_NET_CAST_BOLT)(instance, effect, index, count);
+    if (ses.state != SESSION_JOINED || instance == cast_sent_last || ref_owner(caster, &n))
+        return;
+    cast_sent_last = instance;
+    if (plausible(target = *(const u8 *const *)(instance + INSTANCE_TARGET)))
+        client = ref_name(target, &refid);
+    if (!(n = spell_data(data, instance, caster, client, client ? refid : 0)))
+        return;
+    if (!event_queue(EVENT_CAST, data, n)) {
+        tes3x_log("net.event_full", EVENT_CAST);
+        return;
+    }
+    casts_sent++;
+    log_text("net.cast_sent", (const char *)data + SPELL_BYTES);
+    tes3x_log_hex3("net.cast_at", client, refid, get32le(data));
 }
 
 static void __attribute__((thiscall)) spell_hit_hook(u8 *instance, u8 *target, int effect)
@@ -3464,31 +3540,43 @@ static void __attribute__((thiscall)) spell_hit_hook(u8 *instance, u8 *target, i
     ((fn_spell_hit)TES3X_NET_SPELL_HIT)(instance, target, effect);
 }
 
-static void spell_hook_install(void)
+/* Points each `call rel32` in sites from original to hook; none if any site is not such a call. */
+static int redirect_calls(const u32 *sites, u32 n, u32 original, const void *hook)
 {
-    u32 i, cr0, flags, n = sizeof(spell_sites) / sizeof(spell_sites[0]);
+    u32 i, cr0, flags;
     u8 *site;
 
-    if (spell_hooked)
-        return;
-    spell_hooked = 1;
     for (i = 0; i < n; i++) {
-        site = (u8 *)spell_sites[i];
-        if (site[0] != 0xE8 || (u32)site + 5 + *(const u32 *)(site + 1) != TES3X_NET_SPELL_HIT) {
-            tes3x_log_hex3("net.spell_site_unexpected", (u32)site, site[0], 0);
-            return;
+        site = (u8 *)sites[i];
+        if (site[0] != 0xE8 || (u32)site + 5 + *(const u32 *)(site + 1) != original) {
+            tes3x_log_hex3("net.call_site_unexpected", (u32)site, site[0], original);
+            return 0;
         }
     }
     flags = lock();
     __asm__ volatile("movl %%cr0, %0" : "=r"(cr0));
     __asm__ volatile("movl %0, %%cr0" : : "r"(cr0 & ~CR0_WP) : "memory");
     for (i = 0; i < n; i++) {
-        site = (u8 *)spell_sites[i];
-        *(u32 *)(site + 1) = (u32)spell_hit_hook - ((u32)site + 5);
+        site = (u8 *)sites[i];
+        *(u32 *)(site + 1) = (u32)hook - ((u32)site + 5);
     }
     __asm__ volatile("movl %0, %%cr0" : : "r"(cr0) : "memory");
     unlock(flags);
-    tes3x_log("net.spell_hook", n);
+    return 1;
+}
+
+static void spell_hook_install(void)
+{
+    if (spell_hooked)
+        return;
+    spell_hooked = 1;
+    if (redirect_calls(spell_sites, sizeof(spell_sites) / sizeof(spell_sites[0]),
+                       TES3X_NET_SPELL_HIT, (const void *)spell_hit_hook))
+        spell_hooked |= 2;
+    if (redirect_calls(bolt_sites, sizeof(bolt_sites) / sizeof(bolt_sites[0]),
+                       TES3X_NET_CAST_BOLT, (const void *)cast_bolt_hook))
+        spell_hooked |= 4;
+    tes3x_log("net.spell_hook", spell_hooked);
 }
 
 static void spell_fail(const char *id, u32 why, u32 refid)
@@ -3498,52 +3586,56 @@ static void spell_fail(const char *id, u32 why, u32 refid)
     tes3x_log_hex3("net.spell_failed_why", why, refid, 0);
 }
 
-/* Another console's spell reached a target this one runs: a new instance of the spell from the
- * caster's stand-in (or the target itself), cast at once, each touch and target effect applied to
- * the target as a hit applies it, then left to work as a cast one does. */
-static void spell_event(const struct event *e)
+/* The id and names of a SPELL or CAST; 0 if it is too short. */
+static int spell_read(const struct event *e, char *id, u32 *caster_id, u32 *client, u32 *refid)
 {
-    const u8 *handler = *(const u8 **)TES3X_NET_DATA_HANDLER, *effects;
-    u8 *world = *(u8 **)TES3X_NET_WORLD, *target, *caster = 0, *source, *instance;
+    u32 n;
+
+    if (e->length < SPELL_BYTES + 1)
+        return 0;
+    *caster_id = get32le(e->data);
+    *client = get32le(e->data + 4);
+    *refid = get32le(e->data + 8);
+    for (n = 0; n < SPELL_ID - 1 && SPELL_BYTES + n < e->length && e->data[SPELL_BYTES + n]; n++)
+        id[n] = (char)e->data[SPELL_BYTES + n];
+    id[n] = 0;
+    return 1;
+}
+
+/* The caster's stand-in here: the origin's ghost, or the actor. */
+static u8 *spell_caster(const struct event *e, u32 caster_id)
+{
+    u32 i;
+
+    if (!e->data[13])
+        return actor_ref(caster_id);
+    for (i = 0; i < PEERS; i++)
+        if (ghosts[i].client == e->origin && ghosts[i].placed)
+            return ghost_ref(i);
+    return 0;
+}
+
+/* A new instance of the spell id from caster, certain to succeed, aimed at target; 0 on failure,
+ * logged with refid. */
+static u8 *spell_start(const char *id, u8 *caster, u8 *target, u32 refid)
+{
+    const u8 *handler = *(const u8 **)TES3X_NET_DATA_HANDLER;
+    u8 *world = *(u8 **)TES3X_NET_WORLD, *source, *instance;
     void *records, *controller;
     struct {
         u8 *object;
         u32 type;
     } combo;
-    char id[SPELL_ID];
-    u32 refid, caster_id, i, n;
 
-    if (e->length < SPELL_BYTES + 1 || get32le(e->data + 4) != ses.client)
-        return;
-    spells_received++;
-    caster_id = get32le(e->data);
-    refid = get32le(e->data + 8);
-    for (n = 0; n < SPELL_ID - 1 && SPELL_BYTES + n < e->length && e->data[SPELL_BYTES + n]; n++)
-        id[n] = (char)e->data[SPELL_BYTES + n];
-    id[n] = 0;
-    log_text("net.spell", id);
-    tes3x_log_hex3("net.spell_from", e->origin, refid, caster_id);
-    target = refid ? actor_ref(refid) : (u8 *)player_reference();
-    if (!target || ref_owner(target, &i)) {
-        spell_fail(id, 1, refid); /* not here, or run elsewhere by now */
-        return;
-    }
-    for (i = 0; e->data[13] && i < PEERS; i++)
-        if (ghosts[i].client == e->origin && ghosts[i].placed)
-            caster = ghost_ref(i);
-    if (!e->data[13])
-        caster = actor_ref(caster_id);
-    if (!caster)
-        caster = target;
     if (!plausible(world) || !plausible(handler) || !plausible(records = *(void **)handler) ||
         !plausible(controller = *(void **)(world + WORLD_MAGIC))) {
         spell_fail(id, 2, refid);
-        return;
+        return 0;
     }
     source = ((fn_resolve_object)TES3X_NET_RESOLVE_OBJECT)(records, id);
     if (!plausible(source) || *(const u32 *)(source + OBJECT_TYPE) != TYPE_SPELL) {
         spell_fail(id, 3, refid); /* a spell made in the caster's game */
-        return;
+        return 0;
     }
     combo.object = source;
     combo.type = SOURCE_SPELL;
@@ -3551,11 +3643,38 @@ static void spell_event(const struct event *e)
         controller, ((fn_activate_spell)TES3X_NET_ACTIVATE_SPELL)(controller, caster, 0, &combo));
     if (!plausible(instance)) {
         spell_fail(id, 4, refid);
-        return;
+        return 0;
     }
     *(float *)(instance + INSTANCE_CHANCE) = 100.0f;
     *(u8 **)(instance + INSTANCE_TARGET) = target;
-    effects = source + SOURCE_EFFECTS;
+    return instance;
+}
+
+/* Another console's spell reached a target this one runs: a new instance of the spell from the
+ * caster's stand-in (or the target itself), each touch and target effect applied to the target as
+ * a hit applies it, then left to work as a cast one does. */
+static void spell_event(const struct event *e)
+{
+    const u8 *effects;
+    u8 *target, *caster, *instance;
+    char id[SPELL_ID];
+    u32 refid, caster_id, client, i;
+
+    if (!spell_read(e, id, &caster_id, &client, &refid) || client != ses.client)
+        return;
+    spells_received++;
+    log_text("net.spell", id);
+    tes3x_log_hex3("net.spell_from", e->origin, refid, caster_id);
+    target = refid ? actor_ref(refid) : (u8 *)player_reference();
+    if (!target || ref_owner(target, &i)) {
+        spell_fail(id, 1, refid); /* not here, or run elsewhere by now */
+        return;
+    }
+    if (!(caster = spell_caster(e, caster_id)))
+        caster = target;
+    if (!(instance = spell_start(id, caster, target, refid)))
+        return;
+    effects = *(const u8 *const *)(instance + INSTANCE_SOURCE) + SOURCE_EFFECTS;
     for (i = 0; i < SOURCE_MAX_EFFECTS && *(const short *)(effects + i * EFFECT_BYTES) != -1; i++)
         if (effects[i * EFFECT_BYTES + EFFECT_RANGE] != RANGE_SELF)
             ((fn_spell_hit)TES3X_NET_SPELL_HIT)(instance, target, (int)i);
@@ -3564,10 +3683,34 @@ static void spell_event(const struct event *e)
     tes3x_log_hex3("net.spell_applied", refid, (u32)caster, i);
 }
 
+/* Another console's caster cast: the stand-in casts it here too, at the target when it has one. */
+static void cast_event(const struct event *e)
+{
+    u8 *caster, *target, *instance;
+    char id[SPELL_ID];
+    u32 refid, caster_id, client, own;
+
+    if (!spell_read(e, id, &caster_id, &client, &refid))
+        return;
+    casts_received++;
+    log_text("net.cast", id);
+    tes3x_log_hex3("net.cast_from", e->origin, client, refid);
+    caster = spell_caster(e, caster_id);
+    if (!caster || !ref_owner(caster, &own))
+        return; /* not here, or run here: not a stand-in */
+    target = client ? ref_named(client, refid) : 0;
+    if (!(instance = spell_start(id, caster, target, refid)))
+        return;
+    *(u32 *)(instance + INSTANCE_STATE) = INSTANCE_CASTING;
+    casts_replayed++;
+    tes3x_log_hex3("net.cast_replayed", (u32)caster, (u32)target, 0);
+}
+
 static void spell_stat(void)
 {
     tes3x_log_hex3("net.spells", spells_sent, spells_received, spells_applied);
     tes3x_log_hex3("net.spells_withheld", spells_withheld, spell_failures, spell_hooked);
+    tes3x_log_hex3("net.casts", casts_sent, casts_received, casts_replayed);
 }
 
 static void event_handle(const struct event *e)
@@ -3589,6 +3732,8 @@ static void event_handle(const struct event *e)
         player_hit_event(e);
     } else if (e->kind == EVENT_SPELL) {
         spell_event(e);
+    } else if (e->kind == EVENT_CAST) {
+        cast_event(e);
     } else {
         tes3x_log_hex3("net.event_unknown", e->kind, e->origin, e->length);
     }
