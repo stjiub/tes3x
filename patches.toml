@@ -83,7 +83,7 @@ name = "save-staging"
 title = "Same-volume save staging"
 bit = 1
 category = "infrastructure"
-channel = "dev"
+channel = "preview"
 selection = "option"
 takes = "LETTER"
 summary = "Stage saves on one volume with UDATA so the commit renames instead of copying."
@@ -155,7 +155,7 @@ title = "Unarmored damage reduction"
 origin = { source = "MCP", id = "3" }
 bit = 31
 category = "correctness"
-channel = "dev"
+channel = "preview"
 selection = "preset"
 summary = "Apply Unarmored damage reduction when no armor is equipped."
 
@@ -315,7 +315,7 @@ title = "Rotating autosaves"
 origin = { source = "OpenMW" }
 bit = 8
 category = "qol"
-channel = "preview"
+channel = "dev"
 selection = "preset"
 source = "tes3xsaves.c"
 ini = { RotatingAutosaves = "1", AutosaveSlots = "3" }
@@ -326,7 +326,7 @@ name = "transition-autosaves"
 title = "Transition autosaves"
 bit = 16
 category = "qol"
-channel = "preview"
+channel = "dev"
 selection = "preset"
 source = "tes3xsaves.c"
 ini = { TransitionAutosaves = "1" }
@@ -400,7 +400,7 @@ name = "heap-region"
 title = "Expanded-memory heap region"
 bit = 20
 category = "compat"
-channel = "preview"
+channel = "dev"
 selection = "preset"
 source = "tes3xregion.c"
 ini = { HeapRegionKB = "98304" }
