@@ -136,6 +136,7 @@ selection = "preset"
 source = "tes3xmwse.c"
 summary = "Interpret legacy MWSE 0.9.4 bytecode embedded in compiled scripts."
 
+
 [[patch]]
 name = "mcp-1"
 title = "Unresolvable reference cleanup"
@@ -170,6 +171,16 @@ source = "tes3xmcp37.c"
 summary = "Cancel stale NPC casts before a cell change leaves them dangling."
 
 [[patch]]
+name = "mcp-92"
+title = "Summoned creature crash fix"
+origin = { source = "MCP", id = "92" }
+bit = 28
+category = "core"
+channel = "dev"
+selection = "preset"
+summary = "Retire a summoned actor's magic before the actor is destroyed."
+
+[[patch]]
 name = "mcp-97"
 title = "Saved-script initialization fix"
 origin = { source = "MCP", id = "97" }
@@ -189,27 +200,6 @@ category = "core"
 channel = "dev"
 selection = "preset"
 summary = "Keep animated-container access from destroying a live animation."
-
-[[patch]]
-name = "mcp-92"
-title = "Summoned creature crash fix"
-origin = { source = "MCP", id = "92" }
-bit = 28
-category = "core"
-channel = "dev"
-selection = "preset"
-summary = "Retire a summoned actor's magic before the actor is destroyed."
-
-[[patch]]
-name = "mcp-154"
-title = "Script data overread fix"
-origin = { source = "MCP", id = "154" }
-bit = 10
-category = "core"
-channel = "dev"
-selection = "preset"
-source = "tes3xmcp154.c"
-summary = "Pad compiled script-data allocations to keep dword reads in bounds."
 
 [[patch]]
 name = "mcp-102"
@@ -244,6 +234,28 @@ source = "tes3xmcp125.c"
 summary = "Initialize scripts and collision for actors moved by Position or PositionCell."
 
 [[patch]]
+name = "mcp-146"
+title = "Nocked arrow removal"
+origin = { source = "MCP", id = "146" }
+bit = 24
+category = "qol"
+channel = "dev"
+selection = "preset"
+source = "tes3xmcp146.c"
+summary = "Remove a fully nocked arrow with the Ready Weapon control."
+
+[[patch]]
+name = "mcp-154"
+title = "Script data overread fix"
+origin = { source = "MCP", id = "154" }
+bit = 10
+category = "core"
+channel = "dev"
+selection = "preset"
+source = "tes3xmcp154.c"
+summary = "Pad compiled script-data allocations to keep dword reads in bounds."
+
+[[patch]]
 name = "dxt5-size"
 title = "DXT5 allocation fix"
 bit = 14
@@ -254,15 +266,48 @@ source = "tes3xdxt5.c"
 summary = "Allocate DXT5 textures at their real size, not a negative one that corrupts video memory."
 
 [[patch]]
-name = "video-arena"
-title = "Expanded-memory video arena"
-bit = 17
-category = "compat"
-channel = "dev"
+name = "console"
+title = "In-game console"
+bit = 7
+category = "qol"
+channel = "preview"
 selection = "preset"
-source = "tes3xarena.c"
-ini = { VideoMemoryKB = "22528" }
-summary = "With more than 64 MB, size the texture and vertex buffer arena from [Xbox] VideoMemoryKB."
+source = "tes3xconsole.c"
+ini = { ConsoleCombo = "7,9" }
+summary = "Make the in-game console reachable, by replacing its input gate."
+
+[[patch]]
+name = "diagnostics"
+title = "Crash and hang diagnostics"
+bit = 6
+category = "instrumentation"
+channel = "preview"
+selection = "preset"
+source = "tes3xdiag.c"
+ini = { Diagnostics = "0", DiagnosticsLevel = "", HangWatchdog = "1", HangTimeoutSeconds = "60" }
+summary = "Enable INI-controlled crash records, snapshots and a hang watchdog."
+
+[[patch]]
+name = "profile"
+title = "Function profiler"
+bit = 13
+category = "instrumentation"
+channel = "preview"
+selection = "option"
+source = "tes3xprof.c"
+takes = "VA[,VA...]"
+ini = { ProfileDumpFrames = "0", ProfileDumpSeconds = "30" }
+summary = "Time listed functions with RDTSC at every direct call site."
+
+[[patch]]
+name = "build-preferences"
+title = "Build-selected player preferences"
+bit = 15
+category = "qol"
+channel = "preview"
+selection = "option"
+source = "tes3xprefs.c"
+summary = "Apply profile-selected player preferences after stored Xbox options load."
 
 [[patch]]
 name = "rotating-autosaves"
@@ -277,16 +322,6 @@ ini = { RotatingAutosaves = "1", AutosaveSlots = "3" }
 summary = "Rotate automatic saves through INI-configurable slots."
 
 [[patch]]
-name = "build-preferences"
-title = "Build-selected player preferences"
-bit = 15
-category = "qol"
-channel = "preview"
-selection = "option"
-source = "tes3xprefs.c"
-summary = "Apply profile-selected player preferences after stored Xbox options load."
-
-[[patch]]
 name = "transition-autosaves"
 title = "Transition autosaves"
 bit = 16
@@ -298,38 +333,47 @@ ini = { TransitionAutosaves = "1" }
 summary = "Autosave before doors, scripted teleports, interventions and paid travel."
 
 [[patch]]
-name = "diagnostics"
-title = "Crash and hang diagnostics"
-bit = 6
-category = "instrumentation"
-channel = "preview"
+name = "lean-menu"
+title = "Low-memory main menu"
+bit = 23
+category = "performance"
+channel = "dev"
 selection = "preset"
-source = "tes3xdiag.c"
-ini = { Diagnostics = "0", DiagnosticsLevel = "", HangWatchdog = "1", HangTimeoutSeconds = "60" }
-summary = "Enable INI-controlled crash records, snapshots and a hang watchdog."
+source = "tes3xleanmenu.c"
+summary = "Load only game settings for the main menu; New Game and Load relaunch and load the rest."
 
 [[patch]]
-name = "console"
-title = "In-game console"
-bit = 7
+name = "bow-view"
+title = "Lowered first-person bow"
+bit = 25
 category = "qol"
-channel = "preview"
+channel = "dev"
 selection = "preset"
-source = "tes3xconsole.c"
-ini = { ConsoleCombo = "7,9" }
-summary = "Make the in-game console reachable, by replacing its input gate."
+source = "tes3xbowview.c"
+ini = { BowViewOffsetZ = "-12" }
+summary = "Lower the first-person bow and arms while an arrow is nocked."
 
 [[patch]]
-name = "profile"
-title = "Function profiler"
-bit = 13
-category = "instrumentation"
-channel = "preview"
-selection = "option"
-source = "tes3xprof.c"
-takes = "VA[,VA...]"
-ini = { ProfileDumpFrames = "0", ProfileDumpSeconds = "30" }
-summary = "Time listed functions with RDTSC at every direct call site."
+name = "multiplayer"
+title = "Experimental multiplayer"
+bit = 26
+category = "infrastructure"
+channel = "dev"
+selection = "preset"
+source = "tes3xnet.c"
+ini = { NetAddress = "", NetServer = "", NetGateway = "", NetDns = "" }
+summary = "Join a TES3X server from [Xbox] NetAddress and exchange player states every frame."
+
+[[patch]]
+name = "video-arena"
+title = "Expanded-memory video arena"
+bit = 17
+category = "compat"
+channel = "dev"
+selection = "preset"
+source = "tes3xarena.c"
+ini = { VideoMemoryKB = "22528" }
+summary = "With more than 64 MB, size the texture and vertex buffer arena from [Xbox] VideoMemoryKB."
 
 [[patch]]
 name = "heap-census"
@@ -371,46 +415,3 @@ channel = "dev"
 selection = "preset"
 source = "tes3xinfoarena.c"
 summary = "Page INFO's temporary ID, previous and next names outside the engine heap."
-
-[[patch]]
-name = "lean-menu"
-title = "Low-memory main menu"
-bit = 23
-category = "performance"
-channel = "dev"
-selection = "preset"
-source = "tes3xleanmenu.c"
-summary = "Load only game settings for the main menu; New Game and Load relaunch and load the rest."
-
-[[patch]]
-name = "mcp-146"
-title = "Nocked arrow removal"
-origin = { source = "MCP", id = "146" }
-bit = 24
-category = "qol"
-channel = "dev"
-selection = "preset"
-source = "tes3xmcp146.c"
-summary = "Remove a fully nocked arrow with the Ready Weapon control."
-
-[[patch]]
-name = "bow-view"
-title = "Lowered first-person bow"
-bit = 25
-category = "qol"
-channel = "dev"
-selection = "preset"
-source = "tes3xbowview.c"
-ini = { BowViewOffsetZ = "-12" }
-summary = "Lower the first-person bow and arms while an arrow is nocked."
-
-[[patch]]
-name = "multiplayer"
-title = "Experimental multiplayer"
-bit = 26
-category = "infrastructure"
-channel = "dev"
-selection = "preset"
-source = "tes3xnet.c"
-ini = { NetAddress = "", NetServer = "", NetGateway = "", NetDns = "" }
-summary = "Join a TES3X server from [Xbox] NetAddress and exchange player states every frame."
