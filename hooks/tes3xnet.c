@@ -130,6 +130,11 @@ typedef u8(__stdcall *fn_KeSetTimer)(void *, long long, void *);
 typedef u8(__stdcall *fn_KeCancelTimer)(void *);
 typedef u32(__stdcall *fn_PhyInitialize)(u8, void *);
 typedef u32(__stdcall *fn_PhyGetLinkState)(u8);
+typedef u32(__stdcall *fn_PsCreateSystemThreadEx)(void **, u32, u32, u32, void **,
+                                                  void(__stdcall *)(void *), void *,
+                                                  unsigned char, unsigned char, void *);
+typedef void(__stdcall *fn_PsTerminateSystemThread)(u32);
+typedef u32(__stdcall *fn_KeDelayExecutionThread)(u32, unsigned char, long long *);
 
 #define MmAllocateContiguousMemoryEx \
     KFN(THUNK_MmAllocateContiguousMemoryEx, fn_MmAllocateContiguousMemoryEx)
@@ -149,6 +154,9 @@ typedef u32(__stdcall *fn_PhyGetLinkState)(u8);
 #define KeInitializeTimerEx KFN(THUNK_KeInitializeTimerEx, fn_KeInitializeTimerEx)
 #define KeSetTimer KFN(THUNK_KeSetTimer, fn_KeSetTimer)
 #define KeCancelTimer KFN(THUNK_KeCancelTimer, fn_KeCancelTimer)
+#define PsCreateSystemThreadEx KFN(THUNK_PsCreateSystemThreadEx, fn_PsCreateSystemThreadEx)
+#define PsTerminateSystemThread KFN(THUNK_PsTerminateSystemThread, fn_PsTerminateSystemThread)
+#define KeDelayExecutionThread KFN(THUNK_KeDelayExecutionThread, fn_KeDelayExecutionThread)
 
 #define XC_FACTORY_ETHERNET_ADDR 0x101u
 #define PAGE_READWRITE 0x04u
@@ -386,6 +394,8 @@ static u32 dpc[0x1C / 4];
 static fn_HalReturnToFirmware firmware_original;
 
 static void nic_stop(void);
+static void worker_start(void);
+static void worker_stop(void);
 static void log_text(const char *tag, const char *text);
 static void load_order(void);
 static int plausible(const void *p);
@@ -1496,6 +1506,7 @@ static void nic_stop(void)
     }
     NIC(REG_IRQ_MASK) = 0;
     if (net.up) {
+        worker_stop();
         KeDisconnectInterrupt(interrupt);
         KeRemoveQueueDpc(dpc);
         set_thunk(THUNK_HalReturnToFirmware, (void *)firmware_original);
@@ -1633,6 +1644,7 @@ static int nic_start(u32 ip, int irq)
         firmware_original = *(fn_HalReturnToFirmware *)THUNK_HalReturnToFirmware;
         set_thunk(THUNK_HalReturnToFirmware, (void *)firmware_hook);
         net.up = 1;
+        worker_start();
         NIC(REG_IRQ_MASK) = IRQ_ENABLED;
         NIC(REG_RX_CONTROL) |= 1u;
         KeInitializeTimerEx(timer, 0);
@@ -7006,7 +7018,42 @@ typedef struct {
 #define NtFlushBuffersFile KFN(THUNK_NtFlushBuffersFile, fn_NtFlushBuffersFile)
 #define NtClose KFN(THUNK_NtClose, fn_NtClose)
 
-/* state, id, next and filled are shared with the receive DPC; the rest is the game thread's. */
+/* File work runs on a worker thread: a FATX write and flush can take tens of milliseconds (the
+ * first servers.ini on hardware: 64 ms), and a bulk transfer ends by hashing the whole file. The
+ * log file admits one writer at a time, so the worker queues its lines for the game thread. */
+#define WORKER_SLEEP_MS 5
+#define WORKER_LOGS 16u
+static struct {
+    volatile u32 running, stop;
+    u32 count, lost;
+    struct {
+        const char *tag;
+        u32 a, b, c;
+    } log[WORKER_LOGS];
+} worker;
+
+static void worker_log(const char *tag, u32 a, u32 b, u32 c)
+{
+    u32 flags = lock();
+
+    if (worker.count < WORKER_LOGS) {
+        worker.log[worker.count].tag = tag;
+        worker.log[worker.count].a = a;
+        worker.log[worker.count].b = b;
+        worker.log[worker.count++].c = c;
+    } else {
+        worker.lost++;
+    }
+    unlock(flags);
+}
+
+/* state, id, total, chunks, next and filled are shared with the receive DPC; the rest is the file
+ * work's. An offer waits in bulk_offered until the file work takes it up. */
+static struct {
+    u32 ready, id, total, state;
+    u8 hash[BULK_HASH];
+    char name[BULK_NAME + 1];
+} bulk_offered;
 static struct {
     u32 state, id, total, chunks, next, filled; /* filled: bit s, slot s holds its chunk */
     u32 arrived, duplicates, written, resumed, acks;
@@ -7159,45 +7206,64 @@ static void bulk_close(void)
     bulk.file = 0;
 }
 
-/* Game thread. A plain name: letters, digits, space, '.', '-', '_', not starting with a dot. */
+/* Game thread: check an offer and leave it for the file work. A plain name: letters, digits,
+ * space, '.', '-', '_', not starting with a dot. */
 static void bulk_offer(const struct event *e)
 {
-    u32 i, n = e->length - BULK_OFFER_BYTES, flags, state = BULK_OPENING;
+    u32 i, n = e->length - BULK_OFFER_BYTES, flags, id, total, state = BULK_OPENING;
+    char name[BULK_NAME + 1];
 
     if (e->length < BULK_OFFER_BYTES + 1)
         return;
-    bulk_close();
-    flags = lock();
-    bulk.id = get32le(e->data);
-    bulk.total = get32le(e->data + 4);
-    bulk.state = BULK_OPENING;
-    bulk.filled = 0;
-    unlock(flags);
-    copy(bulk.hash, e->data + 8, BULK_HASH);
+    id = get32le(e->data);
+    total = get32le(e->data + 4);
     for (i = 0; i < n && i < BULK_NAME && e->data[BULK_OFFER_BYTES + i]; i++) {
         char c = (char)e->data[BULK_OFFER_BYTES + i];
         if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
               c == ' ' || c == '.' || c == '-' || c == '_') || (!i && c == '.'))
             break;
-        bulk.name[i] = c;
+        name[i] = c;
     }
-    bulk.name[i] = 0;
-    if (!i || i == BULK_NAME || (i < n && e->data[BULK_OFFER_BYTES + i]) || !bulk.id ||
-        bulk.total > BULK_MAX)
+    name[i] = 0;
+    if (!i || i == BULK_NAME || (i < n && e->data[BULK_OFFER_BYTES + i]) || !id ||
+        total > BULK_MAX)
         state = BULK_REFUSED;
-    bulk.chunks = (bulk.total + BULK_CHUNK - 1) / BULK_CHUNK;
-    tes3x_log_hex3("net.bulk_offer", bulk.id, bulk.total, state);
-    log_text("net.bulk_name", bulk.name);
+    tes3x_log_hex3("net.bulk_offer", id, total, state);
+    log_text("net.bulk_name", name);
     flags = lock();
-    bulk.next = 0;
-    bulk.state = state;
-    if (state == BULK_REFUSED)
+    bulk_offered.id = id;
+    bulk_offered.total = total;
+    bulk_offered.state = state;
+    copy(bulk_offered.hash, e->data + 8, BULK_HASH);
+    copy((u8 *)bulk_offered.name, (const u8 *)name, BULK_NAME + 1);
+    bulk_offered.ready = 1;
+    unlock(flags);
+}
+
+/* File work: take up the latest offer, dropping the transfer before it. */
+static void bulk_adopt(void)
+{
+    u32 flags;
+
+    if (!bulk_offered.ready)
+        return;
+    bulk_close();
+    flags = lock();
+    bulk.id = bulk_offered.id;
+    bulk.total = bulk_offered.total;
+    bulk.chunks = (bulk.total + BULK_CHUNK - 1) / BULK_CHUNK;
+    copy(bulk.hash, bulk_offered.hash, BULK_HASH);
+    copy((u8 *)bulk.name, (const u8 *)bulk_offered.name, BULK_NAME + 1);
+    bulk.filled = bulk.next = 0;
+    bulk.state = bulk_offered.state;
+    bulk_offered.ready = 0;
+    if (bulk.state == BULK_REFUSED)
         bulk_ack();
     unlock(flags);
 }
 
-/* Game thread: open or resume the part, then write what arrived, in order. */
-static void bulk_frame(void)
+/* File work: open or resume the part, then write what arrived, in order. */
+static void bulk_work(void)
 {
     char path[16 + BULK_NAME + 8], part[16 + BULK_NAME + 8];
     IO_STATUS_BLOCK iosb;
@@ -7205,6 +7271,7 @@ static void bulk_frame(void)
     u32 flags, s, n, next, state, wrote = 0;
     void *h;
 
+    bulk_adopt();
     if (bulk.state == BULK_OPENING) {
         bulk_path(path, "");
         bulk_path(part, ".part");
@@ -7226,7 +7293,7 @@ static void bulk_frame(void)
                     bulk.resumed++;
             }
         }
-        tes3x_log_hex3("net.bulk_start", bulk.id, next, state);
+        worker_log("net.bulk_start", bulk.id, next, state);
         flags = lock();
         bulk.next = next;
         bulk.state = state;
@@ -7244,7 +7311,7 @@ static void bulk_frame(void)
         offset = (u64)bulk.next * BULK_CHUNK;
         if (NtWriteFile(bulk.file, 0, 0, 0, &iosb, bulk.slot[s], n, &offset) ||
             iosb.Information != n) {
-            tes3x_log_hex3("net.bulk_write_failed", bulk.id, bulk.next, 0);
+            worker_log("net.bulk_write_failed", bulk.id, bulk.next, 0);
             bulk_close();
             flags = lock();
             bulk.state = BULK_FAILED;
@@ -7281,7 +7348,7 @@ static void bulk_frame(void)
         NtSetInformationFile(h, &iosb, &offset, sizeof(offset), FileEndOfFileInformation);
         NtClose(h);
     }
-    tes3x_log_hex3("net.bulk_done", bulk.id, bulk.total, state);
+    worker_log("net.bulk_done", bulk.id, bulk.total, state);
     flags = lock();
     bulk.state = state;
     bulk_ack();
@@ -7380,6 +7447,11 @@ static struct {
     u8 fingerprint[TRUST_FINGERPRINT], server[NOISE_KEY], client[NOISE_KEY];
     char text[TRUST_TEXT];
 } trust;
+static struct {
+    volatile u32 pending;
+    u32 len;
+    char text[TRUST_TEXT + 256];
+} trust_job;
 
 static int hex_digit(char c)
 {
@@ -7497,14 +7569,11 @@ static void trust_load(void)
     tes3x_log_hex3("net.trust", trust.text_n, trust.has_server, trust.has_client);
 }
 
-/* Game thread. Rewrites the file with this server's section last, through a new file and a
- * rename, so a failed write never loses the keys already there. */
+/* Game thread: the file with this server's section last, for trust_write. */
 static void trust_save(void)
 {
     static char out[TRUST_TEXT + 256];
-    IO_STATUS_BLOCK iosb;
-    u32 off, n, len = 0, inside = 0, status;
-    void *h;
+    u32 off, n, len = 0, inside = 0;
 
     if (trust.text_n >= TRUST_TEXT)
         return;
@@ -7531,6 +7600,26 @@ static void trust_save(void)
     len += hex_write(out + len, trust.client, NOISE_KEY);
     out[len++] = '\r';
     out[len++] = '\n';
+    if (len <= TRUST_TEXT) {
+        copy((u8 *)trust.text, (const u8 *)out, len);
+        trust.text_n = len;
+    }
+    copy((u8 *)trust_job.text, (const u8 *)out, len);
+    trust_job.len = len;
+    trust_job.pending = 1;
+    trust.dirty = 0;
+    crypto_wipe(out, sizeof(out));
+}
+
+/* File work: through a new file and a rename, so a failed write never loses the keys there. */
+static void trust_write(void)
+{
+    IO_STATUS_BLOCK iosb;
+    u32 status;
+    void *h;
+
+    if (!trust_job.pending)
+        return;
     status = bulk_open("U:\\TES3X", GENERIC_READ, FILE_OPEN_IF, FILE_DIRECTORY_FILE, &h);
     if (!status) {
         NtClose(h);
@@ -7538,19 +7627,96 @@ static void trust_save(void)
     }
     if (!status) {
         u64 offset = 0;
-        status = NtWriteFile(h, 0, 0, 0, &iosb, out, len, &offset);
+        status = NtWriteFile(h, 0, 0, 0, &iosb, trust_job.text, trust_job.len, &offset);
         NtFlushBuffersFile(h, &iosb);
         NtClose(h);
     }
     if (!status)
         status = file_replace(trust_new, trust_path);
-    tes3x_log_hex3("net.trust_saved", len, status, 0);
-    if (!status && len <= TRUST_TEXT) {
-        copy((u8 *)trust.text, (const u8 *)out, len);
-        trust.text_n = len;
-        trust.dirty = 0;
+    worker_log("net.trust_saved", trust_job.len, status, 0);
+    crypto_wipe(trust_job.text, sizeof(trust_job.text));
+    trust_job.pending = 0;
+}
+
+static void file_work(void)
+{
+    trust_write();
+    bulk_work();
+}
+
+static void __stdcall worker_thread(void *context)
+{
+    long long wait = -(long long)WORKER_SLEEP_MS * 10000;
+
+    (void)context;
+    while (!worker.stop) {
+        KeDelayExecutionThread(0, 0, &wait);
+        file_work();
     }
-    crypto_wipe(out, sizeof(out));
+    trust_write();
+    worker.running = 0;
+}
+
+static void __stdcall worker_system(void(__stdcall *start)(void *), void *context)
+{
+    start(context);
+    PsTerminateSystemThread(0);
+}
+
+static void worker_start(void)
+{
+    void *h = 0;
+    u32 status;
+
+    if (worker.running)
+        return;
+    worker.stop = 0;
+    worker.running = 1;
+    status = PsCreateSystemThreadEx(&h, 0, 0x4000, 0, 0, worker_thread, 0, 0, 0,
+                                    (void *)worker_system);
+    if (status) {
+        worker.running = 0;
+        tes3x_log_hex("net.worker_failed", status);
+    } else {
+        NtClose(h);
+    }
+}
+
+/* Waits up to two seconds for the file work in hand. */
+static void worker_stop(void)
+{
+    long long wait = -(long long)WORKER_SLEEP_MS * 10000;
+    u32 i;
+
+    worker.stop = 1;
+    for (i = 0; i < 2000 / WORKER_SLEEP_MS && worker.running; i++)
+        KeDelayExecutionThread(0, 0, &wait);
+}
+
+/* Game thread, each frame while up. Without a worker the file work runs here. */
+static void file_frame(void)
+{
+    u32 flags, i, n;
+    const char *tags[WORKER_LOGS];
+    u32 values[WORKER_LOGS][3];
+
+    flags = lock();
+    n = worker.count;
+    for (i = 0; i < n; i++) {
+        tags[i] = worker.log[i].tag;
+        values[i][0] = worker.log[i].a;
+        values[i][1] = worker.log[i].b;
+        values[i][2] = worker.log[i].c;
+    }
+    worker.count = 0;
+    unlock(flags);
+    for (i = 0; i < n; i++)
+        tes3x_log_hex3(tags[i], values[i][0], values[i][1], values[i][2]);
+    /* Not before the server's key is known: the section always carries one. */
+    if (trust.dirty && trust.has_server && !trust_job.pending)
+        trust_save();
+    if (!worker.running)
+        file_work();
 }
 
 /* The handshake: Noise XX with the server (tes3xnoise.c). HANDSHAKE1 is padded to at least the
@@ -7676,8 +7842,6 @@ static void handshake_finish(void)
         tes3x_log_hex3("net.server_pinned", get32(fingerprint), get32(fingerprint + 4),
                        get32(fingerprint + 8));
     }
-    if (trust.dirty)
-        trust_save();
     flags = lock();
     copy(hello, mac, 6);
     put32le(hello + 6, TES3X_BUILD_ID);
@@ -7709,7 +7873,8 @@ static void handshake_frame(void)
 {
     entropy_add();
     entropy_mix();
-    if (hs.phase == HS_WANT && ses.state == SESSION_HELLO)
+    /* A servers.ini write in hand would be read back stale. */
+    if (hs.phase == HS_WANT && ses.state == SESSION_HELLO && !trust_job.pending)
         handshake_start();
     else if (hs.phase == HS_GOT2)
         handshake_finish();
@@ -7722,6 +7887,7 @@ static void handshake_stat(void)
     tes3x_log_hex3("net.sealed", sec.sealed, sec.opened, sec.keyed);
     tes3x_log_hex3("net.rejected", sec.forged, sec.replayed, 0);
     tes3x_log_hex3("net.entropy", entropy.mixed, entropy.drawn, 0);
+    tes3x_log_hex3("net.worker", worker.running, worker.lost, trust_job.pending);
     tes3x_log_hex3("net.refused_values", refused_states, refused_events, refused_anims);
 }
 
@@ -8051,7 +8217,7 @@ void tes3x_net_frame(void)
         authority_session();
         spawns_session();
         events_frame();
-        bulk_frame();
+        file_frame();
         handshake_frame();
     }
     ref = player_reference();
