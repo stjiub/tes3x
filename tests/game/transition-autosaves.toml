@@ -1,18 +1,21 @@
 kind = "single"
-purpose = "A scripted interior-to-exterior cell transition completes normally and produces a successful autosave when transition-autosaves is enabled."
-procedure = "Boot a minimal direct-engine build, start a new game, teleport to Balmora, and inspect the transition and save events before exiting."
+purpose = "Transitions do not save during character generation, then produce a successful autosave once character generation is complete."
+procedure = "Boot a minimal direct-engine build, teleport once during character generation, mark it complete, teleport again, and inspect both transition events."
 limitations = "Original-Xbox save latency, travel and intervention call sites, or long-session rotation behavior."
 watch = 'diag\.patches|console< GetPos|autosave\.transition'
 enable = ["diagnostics", "console", "rotating-autosaves"]
 timeout = 180
 script = '''
-@menu click MenuOptions MenuOptions_New_container
+@start new
 wait 30
 coc "Balmora"
-wait 180
+wait 60
 player->getpos x
+set CharGenState to -1
+coc "Seyda Neen"
+wait 180
 exit
 '''
 
 [expect]
-test = ['autosave\.transition 1', 'autosave\.transition_ok 1', 'console< GetPos >> -12288\.00']
+test = ['autosave\.transition_blocked 1', 'autosave\.transition 1', 'autosave\.transition_ok 1', 'console< GetPos >> -12288\.00']

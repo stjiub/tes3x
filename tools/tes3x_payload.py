@@ -17,7 +17,7 @@ import subprocess
 
 import tes3x_inject
 from tes3x_patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, find_mcp37_context,
-                         find_transition_calls)
+                         find_save_allowed_context, find_transition_calls)
 
 ROOT = Path(__file__).resolve().parents[1]
 HOOKS = ROOT / "hooks"
@@ -195,11 +195,17 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
     if "tes3xsaves.c" in names:
         save_game = hexva(locate("save-game"))
         save_this = hexva(locate("save-this-ptr"))
+        save_owner, save_owner_off, save_state_off = find_save_allowed_context(image)
+        save_owner = hexva(save_owner)
         _transition_calls, cell_change, companions = find_transition_calls(image)
         print(f"autosave hook: SaveGame {save_game}, owner pointer {save_this}")
+        print(f"save gate: owner {save_owner} + 0x{save_owner_off:X} + 0x{save_state_off:X}")
         print(f"transition hooks: cell change {hexva(cell_change)}, companions {hexva(companions)}")
         define("SAVE_GAME", save_game)
         define("SAVE_THIS_PTR", save_this)
+        define("SAVE_GATE_OWNER", save_owner)
+        define("SAVE_GATE_OWNER_OFFSET", hex(save_owner_off))
+        define("SAVE_GATE_STATE_OFFSET", hex(save_state_off))
         define("CELL_CHANGE", hexva(cell_change))
         define("CELL_CHANGE_COMPANIONS", hexva(companions))
         flags.append("-DTES3X_SAVES")

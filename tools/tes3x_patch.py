@@ -916,6 +916,26 @@ def find_save_this_ptr(x):
     return pointers.pop()
 
 
+# Quicksave is gated on the chargen state before the input flag can reach SaveGame. The state is
+# reached through two fields rather than an absolute address: Game -> owner -> float state.
+SAVE_ALLOWED_SIG = re.compile(
+    rb"\x8b\x8e(?P<owner>....)\xd9\x41(?P<state>.)\xe8....\x83\xf8\xff\x75", re.S)
+
+
+def find_save_allowed_context(x):
+    """The owner global and fields used by retail's chargen save gate."""
+    hits = list(SAVE_ALLOWED_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("save gate: %d matches, expected 1" % len(hits))
+    start = max(0, hits[0].start() - 0x100)
+    owners = {struct.unpack("<I", match.group(1))[0] for match in
+              re.finditer(rb"\x8b\x35(....)", bytes(x.data[start:hits[0].start()]), re.S)}
+    if len(owners) != 1:
+        raise PatchError("save gate: %d owner globals, expected 1" % len(owners))
+    return (owners.pop(), struct.unpack("<I", hits[0].group("owner"))[0],
+            hits[0].group("state")[0])
+
+
 @patch("build-preferences")
 def _build_preferences(x, value, ctx):
     """Apply profile-selected player preferences after stored Xbox options load."""

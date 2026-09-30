@@ -10,6 +10,10 @@
 #ifndef TES3X_SAVE_THIS_PTR
 #error "define TES3X_SAVE_THIS_PTR to the engine save owner pointer"
 #endif
+#if !defined(TES3X_SAVE_GATE_OWNER) || !defined(TES3X_SAVE_GATE_OWNER_OFFSET) || \
+    !defined(TES3X_SAVE_GATE_STATE_OFFSET)
+#error "define the retail save-gate owner and fields"
+#endif
 #ifndef TES3X_INI_GET_STRING
 #error "define TES3X_INI_GET_STRING to the VA of the ini string reader"
 #endif
@@ -187,6 +191,17 @@ unsigned char tes3x_autosave_now(void)
     return tes3x_autosave_hook(game, autosave_name, autosave_name);
 }
 
+static int retail_save_allowed(void)
+{
+    unsigned char *game = *(unsigned char **)TES3X_SAVE_GATE_OWNER;
+    unsigned char *owner;
+
+    if (!game)
+        return 0;
+    owner = *(unsigned char **)(game + TES3X_SAVE_GATE_OWNER_OFFSET);
+    return owner && *(u32 *)(owner + TES3X_SAVE_GATE_STATE_OFFSET) == 0xBF800000u;
+}
+
 void tes3x_transition_save(u32 kind, u32 site)
 {
     unsigned char ok;
@@ -195,6 +210,10 @@ void tes3x_transition_save(u32 kind, u32 site)
         load_settings();
     if (!transition_enabled || transition_saving)
         return;
+    if (!retail_save_allowed()) {
+        tes3x_log("autosave.transition_blocked", 1);
+        return;
+    }
     transition_saving = 1;
     tes3x_log("autosave.transition", kind);
     tes3x_log_hex("autosave.transition_site", site);
