@@ -511,9 +511,10 @@ def zstr(text):
 
 def ghost_plugin(master_size, master="Morrowind.esm"):
     """The plugin tes3xnet.c moves: one persistent NPC per peer slot, parked in a cell of its own.
-    They have no AI packages and zero fight, flee, alarm and hello, so they stand where put, and
-    Morrowind.esm's noPickUp script swallows activation: talking to a ghost would turn it to face
-    the speaker, away from where its player faces."""
+    They have no AI packages and zero fight, flee, alarm and hello, so they stand where put.
+    Talking to a ghost would turn it to face the speaker, away from where its player faces: the
+    payload refuses the player's activation of one, and Morrowind.esm's noPickUp script swallows
+    the rest where the ghost has its script variables."""
     hedr = (struct.pack("<fI", 1.3, 0) + b"TES3X".ljust(32, b"\0")
             + b"Other players, placed by the multiplayer patch.".ljust(256, b"\0")
             + struct.pack("<I", GHOSTS + 1))
@@ -674,7 +675,7 @@ def serve(args):
 
     bot = {"anchor": None, "next": 0.0, "start": time.time(), "said": 0.0, "line": 0,
            "anchored": None, "state": None, "breaks": [], "held": 0, "hit": False,
-           "killed": False, "mirror": None, "hit_player": False}
+           "killed": False, "mirror": None, "hit_player": False, "echo": None}
 
     def bot_anchor(state):
         """The bot circles where the first client entered the world, and follows it to a new
@@ -697,6 +698,10 @@ def serve(args):
             _, x, y, z, heading, _, actor_flags, anim = ACTOR.unpack(bot["mirror"])
             state = STATE_BODY.pack(flags | actor_flags & STANCE, x + args.bot_shift, y, z,
                                     heading, cell) + anim
+        elif bot["echo"]:
+            echo_flags, x, y, z, heading, echo_cell = STATE_BODY.unpack_from(bot["echo"])
+            state = STATE_BODY.pack(echo_flags, x + args.bot_shift, y, z, heading,
+                                    echo_cell) + bot["echo"][STATE_BODY.size:]
         else:
             state = STATE_BODY.pack(flags, cx + args.bot_radius * math.cos(t),
                                     cy + args.bot_radius * math.sin(t), cz, -t % (2 * math.pi),
@@ -962,6 +967,8 @@ def serve(args):
             client.states += 1
             if args.bot:
                 bot_anchor(client.state)
+                if args.bot_echo:
+                    bot["echo"] = client.state
             for other in clients.values():
                 if other is not client and other.alive:
                     send(other, PEER, struct.pack("<I", client.id) + client.state)
@@ -1187,6 +1194,9 @@ def main(argv=None):
     p.add_argument("--bot-mirror", type=lambda v: int(v, 16), metavar="REFID",
                    help="instead of circling, the bot stands --bot-shift units east of this actor "
                         "(hex refid) as its authority last reported it, and plays its animation")
+    p.add_argument("--bot-echo", action="store_true",
+                   help="instead of circling, the bot replays the client's own state --bot-shift "
+                        "units east, so a client sees its player as a ghost")
     p.add_argument("--bot-sway", type=float, default=0, metavar="UNITS",
                    help="as the authority, the bot also swings each actor this far east and west, "
                         "once per --bot-period, facing the way it moves")

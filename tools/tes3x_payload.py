@@ -63,6 +63,7 @@ PROJECTILE_ACTOR_HIT = 0x00192610
 HIT_ROLL = 0x0017B770
 NOCK = 0x00158620
 ACTIVATION_TARGET = 0x00096110  # Game::CheckPlayerActivationTarget, from Game::Update only
+PLAYER_CONTROL = 0x001717E0  # PlayerAnimationController's update: look, controls, animation
 CONSOLE_ADDRESSES = (
     ("FIND_MENU", 0x001AD340), ("OPEN_VK", 0x0022D210), ("CONSOLE_MENU_ID", 0x003D816C),
     ("GET_PROP", 0x0019A770), ("COMPILE_RUN", 0x0014B3C0), ("VK_MENU_ID", 0x003DC710),
@@ -314,6 +315,20 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
             raise PayloadError(f"activation target: {len(sites)} call sites, expected 1")
         define("NET_ACTIVATION_TARGET", hexva(target))
         define("NET_ACTIVATION_TARGET_SITES", "{" + hexva(sites[0]) + "}")
+        activate = int(address("REF_ACTIVATE", dict(CONSOLE_ADDRESSES)["REF_ACTIVATE"]), 16)
+        sites = [s for s in find_call_sites(image, activate) if target <= s < target + 0x400]
+        if len(sites) != 1:
+            raise PayloadError(f"player activation: {len(sites)} call sites, expected 1")
+        define("NET_REF_ACTIVATE", hexva(activate))
+        define("NET_PLAYER_ACTIVATE_SITES", "{" + hexva(sites[0]) + "}")
+        control = int(address("PLAYER_CONTROL", PLAYER_CONTROL), 16)
+        slots = [image.off_to_va(m.start()) for m in re.finditer(
+            re.escape(struct.pack("<I", control)), bytes(image.data))]
+        if len(slots) != 1 or None in slots:
+            raise PayloadError(f"player control {hexva(control)}: {len(slots)} vtable slots, "
+                               "expected 1")
+        define("NET_PLAYER_CONTROL", hexva(control))
+        define("NET_PLAYER_CONTROL_SLOT", hexva(slots[0]))
         define("NET_MENU_GATE", hexva(locate("menu-mode-gate")))
         define("NET_MOB_GATE", hexva(locate("mob-update-gate")))
         define("NET_WEATHER_ROLL", hexva(locate("weather-roll")))

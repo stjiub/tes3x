@@ -308,6 +308,7 @@ static struct {
 
 static u32 ghost_places, ghost_moves, ghost_failures, player_hits_out, player_hits_in;
 static u32 equip_sent, equip_received, equip_applied, stance_changes, stance_refused;
+static u32 first_person_states; /* player states whose animation came from the first person */
 static u32 ini_checked;
 static u32 probe_ip, probe_hits;
 static u32 timer[0x28 / 4];
@@ -1362,7 +1363,7 @@ static void stat(void)
                                now_us() - peers[i].time);
         tes3x_log_hex3("net.ghosts", ghost_places, ghost_moves, ghost_failures);
         tes3x_log_hex3("net.equipment_stat", equip_sent, equip_received, equip_applied);
-        tes3x_log_hex3("net.stances", stance_changes, stance_refused, 0);
+        tes3x_log_hex3("net.stances", stance_changes, stance_refused, first_person_states);
     }
 }
 
@@ -1512,18 +1513,19 @@ static void hold_frame(void)
 }
 
 /* With the world running under a menu the player's controls would read the pad the menu is
- * using, so a press that equips an item also swings the weapon: they are disabled as
- * DisablePlayerControls disables them while a menu is open, and restored when it closes. Nor is
- * the activation target looked for, whose name would stay up over the menu. */
+ * using, so a press that equips an item also swings the weapon. While a menu is open the player's
+ * controller runs with DisablePlayerControls' byte set, for that call only: the menu button's
+ * toggle refuses to act while it is set. Nor is the activation target looked for, whose name
+ * would stay up over the menu. */
 #define PLAYER_CONTROLS_OFF 0x5B0 /* MobilePlayer, the byte DisablePlayerControls sets */
+#define CONTROLLER_MOBILE 0x38
 
 typedef void(__attribute__((thiscall)) *fn_game_call)(void *game);
+typedef void(__attribute__((thiscall)) *fn_controller_update)(void *controller, u32 time);
 
 static int redirect_calls(const u32 *sites, u32 n, u32 original, const void *hook);
 static const u32 target_sites[] = TES3X_NET_ACTIVATION_TARGET_SITES;
-static u8 *controls_mobile;
-static u8 controls_saved;
-static u32 target_hooked;
+static u32 target_hooked, control_hooked, controls_held;
 
 static int menu_open(void)
 {
@@ -1538,28 +1540,54 @@ static void __attribute__((thiscall)) activation_target_hook(void *game)
         ((fn_game_call)TES3X_NET_ACTIVATION_TARGET)(game);
 }
 
-static void controls_frame(void)
-{
-    const u8 *world = *(const u8 **)TES3X_NET_WORLD, *mobs, *const *list;
-    u8 *mobile = 0;
+/* The player's own activation (the pad's A) does nothing on a ghost. Its noPickUp script cannot
+ * swallow it: a ghost moved in from its never-loaded cell has no script variables attachment,
+ * without which activation takes the default path and opens the dialogue. */
+typedef void(__attribute__((thiscall)) *fn_activate)(void *target, void *activator, int a2);
+static int is_ghost(const u8 *ref);
+static const u32 activate_sites[] = TES3X_NET_PLAYER_ACTIVATE_SITES;
+static u32 ghost_activations;
 
-    if (plausible(world) && plausible(mobs = *(const u8 *const *)(world + 0x5C)) &&
-        plausible(list = *(const u8 *const *const *)(mobs + 0x24)))
-        mobile = *(u8 *const *)list;
-    if (!plausible(mobile))
-        mobile = 0;
-    if (controls_mobile && (controls_mobile != mobile || !menu_open())) {
-        if (controls_mobile == mobile)
-            mobile[PLAYER_CONTROLS_OFF] = controls_saved;
-        controls_mobile = 0;
+static void __attribute__((thiscall)) player_activate_hook(u8 *target, void *activator, int a2)
+{
+    if (plausible(target) && is_ghost(target)) {
+        ghost_activations++;
+        return;
     }
-    if (mobile && menu_open()) {
-        if (!controls_mobile) {
-            controls_mobile = mobile;
-            controls_saved = mobile[PLAYER_CONTROLS_OFF];
-        }
-        mobile[PLAYER_CONTROLS_OFF] = 1;
+    ((fn_activate)TES3X_NET_REF_ACTIVATE)(target, activator, a2);
+}
+
+static void __attribute__((thiscall)) player_control_hook(u8 *controller, u32 time)
+{
+    u8 *mobile = *(u8 **)(controller + CONTROLLER_MOBILE), saved;
+
+    if (!menu_open() || !plausible(mobile)) {
+        ((fn_controller_update)TES3X_NET_PLAYER_CONTROL)(controller, time);
+        return;
     }
+    saved = mobile[PLAYER_CONTROLS_OFF];
+    mobile[PLAYER_CONTROLS_OFF] = 1;
+    ((fn_controller_update)TES3X_NET_PLAYER_CONTROL)(controller, time);
+    mobile[PLAYER_CONTROLS_OFF] = saved;
+    controls_held++;
+}
+
+static void control_hook_install(void)
+{
+    u32 *slot = (u32 *)TES3X_NET_PLAYER_CONTROL_SLOT, cr0, flags;
+
+    control_hooked = 1;
+    if (*slot != TES3X_NET_PLAYER_CONTROL) {
+        tes3x_log_hex3("net.control_slot_unexpected", (u32)slot, *slot, 0);
+        return;
+    }
+    flags = lock();
+    __asm__ volatile("movl %%cr0, %0" : "=r"(cr0));
+    __asm__ volatile("movl %0, %%cr0" : : "r"(cr0 & ~CR0_WP) : "memory");
+    *slot = (u32)player_control_hook;
+    __asm__ volatile("movl %0, %%cr0" : : "r"(cr0) : "memory");
+    unlock(flags);
+    control_hooked = 2;
 }
 
 /* While joined, the world runs under menus as it does for the other players, and nobody rests.
@@ -1574,8 +1602,13 @@ static void menu_frame(int in_world)
                            TES3X_NET_ACTIVATION_TARGET, (const void *)activation_target_hook))
             target_hooked = 2;
     }
+    if (!control_hooked) {
+        control_hook_install();
+        if (redirect_calls(activate_sites, sizeof(activate_sites) / sizeof(activate_sites[0]),
+                           TES3X_NET_REF_ACTIVATE, (const void *)player_activate_hook))
+            control_hooked |= 4;
+    }
     menu_sim(menu_forced ? menu_forced - 1 : joined);
-    controls_frame();
     if (joined)
         rest_block();
     hold_frame();
@@ -1591,7 +1624,8 @@ static void menu_stat(void)
         tes3x_log_hex3("net.menu_mode", world[WORLD_MENU_MODE], (u32)(int)(*clock * 1000.0f),
                        gate[0] == 0x90);
     tes3x_log_hex3("net.menu_sim", gates_open, menu_forced, rest_blocked);
-    tes3x_log_hex3("net.menu_controls", controls_mobile != 0, controls_saved, target_hooked);
+    tes3x_log_hex3("net.menu_controls", controls_held, control_hooked, target_hooked);
+    tes3x_log_hex3("net.ghost_activations", ghost_activations, 0, 0);
     tes3x_log_hex3("net.holds", holds, hold_breaks, held != 0);
 }
 
@@ -1953,9 +1987,8 @@ static u8 *ref_animation(const u8 *ref)
     return (u8 *)((fn_ref_part)TES3X_NET_REF_ANIMATION)(ref);
 }
 
-static void anim_capture(const u8 *ref, u8 *out)
+static void anim_read(const u8 *a, u8 *out)
 {
-    const u8 *a = ref_animation(ref);
     u32 l;
 
     for (l = 0; l < ANIM_BYTES; l++)
@@ -1967,6 +2000,122 @@ static void anim_capture(const u8 *ref, u8 *out)
         out[l] = a[ANIM_GROUP + l];
         out[4 + l] = (u8) * (const u32 *)(a + ANIM_KEY + 4 * l);
         copy(out + 8 + 4 * l, a + ANIM_TIMING + 4 * l, 4);
+    }
+}
+
+static void anim_capture(const u8 *ref, u8 *out)
+{
+    anim_read(ref_animation(ref), out);
+}
+
+/* In first person the engine runs only the first-person reference's AnimationData (the one its
+ * controller holds) and leaves the third-person one still. The player's groups and keys are read
+ * from the one it runs, and each time moved to the same point between the same two keys of the
+ * group on the third-person model, whose timeline the ghosts share. */
+#define MOBILE_ANIM_CONTROLLER 0x244
+#define CONTROLLER_ANIMATION 0x3C
+#define ANIM_GROUP_OBJECTS 0x68
+#define ANIM_GROUP_COUNT 150u
+#define GROUP_KEY_COUNT 0x14
+#define GROUP_KEY_TIMES 0x1C
+
+static const float *anim_keys(const u8 *a, u32 g, u32 *n)
+{
+    const u8 *group;
+    const float *keys;
+
+    if (g >= ANIM_GROUP_COUNT ||
+        !plausible(group = *(const u8 *const *)(a + ANIM_GROUP_OBJECTS + 4 * g)) ||
+        !(*n = *(const u32 *)(group + GROUP_KEY_COUNT)) ||
+        !plausible(keys = *(const float *const *)(group + GROUP_KEY_TIMES)))
+        return 0;
+    return keys;
+}
+
+static int anim_retime(const u8 *from, const u8 *to, u32 g, float *t)
+{
+    const float *kf, *kt;
+    u32 nf, nt, i = 0, j = 0;
+    float span, frac;
+
+    if (!(kf = anim_keys(from, g, &nf)) || !(kt = anim_keys(to, g, &nt)))
+        return 0;
+    if (nf == nt) {
+        while (i + 2 < nf && *t >= kf[i + 1])
+            i++;
+        j = i + 1 < nf ? i + 1 : i;
+    } else {
+        j = nf - 1;
+    }
+    span = kf[j] - kf[i];
+    frac = span > 0 ? (*t - kf[i]) / span : 0;
+    frac = frac < 0 ? 0 : frac > 1 ? 1 : frac;
+    if (nf != nt)
+        j = nt - 1;
+    *t = kt[i] + (kt[j] - kt[i]) * frac;
+    return 1;
+}
+
+/* The first-person model has no swim groups, and the controller picks none for it. The group the
+ * third-person model would play is taken from the movement flags (mobile +0x8: forward 1, back 2,
+ * left 4, right 8, run 0x200, swim 0x800), looped on its whole timeline. */
+#define MOBILE_MOVEMENT 0x8
+#define MOVE_RUN 0x200u
+#define MOVE_SWIM 0x800u
+#define GROUP_IDLE_SWIM 13u
+#define GROUP_SWIM_WALK 43u /* forward, back, left, right; running 4 further */
+#define GROUP_MOVE_FIRST 53u /* WalkForward to SneakRight */
+#define GROUP_MOVE_LAST 66u
+
+static int swim_capture(const u8 *mobile, const u8 *own, u8 *out)
+{
+    u32 f = *(const u16 *)(mobile + MOBILE_MOVEMENT), g, n, l, span, at;
+    const float *keys;
+    float t;
+
+    if (!(f & MOVE_SWIM))
+        return 0;
+    g = f & 1 ? 0 : f & 2 ? 1 : f & 4 ? 2 : f & 8 ? 3 : 4;
+    g = g == 4 ? GROUP_IDLE_SWIM : GROUP_SWIM_WALK + (f & MOVE_RUN ? 4 : 0) + g;
+    if (!(keys = anim_keys(own, g, &n)))
+        return 0;
+    span = (u32)((keys[n - 1] - keys[0]) * 1000000.0f);
+    at = span ? now_us() % span : 0;
+    t = keys[0] + (float)at / 1000000.0f;
+    for (l = 0; l < ANIM_LAYERS; l++) {
+        if (out[l] && (out[l] < GROUP_MOVE_FIRST || out[l] > GROUP_MOVE_LAST))
+            continue;
+        out[l] = (u8)g;
+        out[4 + l] = 3;
+        copy(out + 8 + 4 * l, (const u8 *)&t, 4);
+    }
+    return 1;
+}
+
+static void player_anim_capture(const u8 *ref, u8 *out)
+{
+    const u8 *own = ref_animation(ref), *mobile = ref_mobile(ref), *controller, *run;
+    float t;
+    u32 l;
+
+    if (!plausible(own) || !plausible(mobile) ||
+        !plausible(controller = *(const u8 *const *)(mobile + MOBILE_ANIM_CONTROLLER)) ||
+        !plausible(run = *(const u8 *const *)(controller + CONTROLLER_ANIMATION)) || run == own) {
+        anim_capture(ref, out);
+        return;
+    }
+    anim_read(run, out);
+    first_person_states++;
+    if (swim_capture(mobile, own, out))
+        return;
+    for (l = 0; l < ANIM_LAYERS; l++) {
+        if (out[l] == 0xFF)
+            continue;
+        copy((u8 *)&t, out + 8 + 4 * l, 4);
+        if (anim_retime(run, own, out[l], &t))
+            copy(out + 8 + 4 * l, (const u8 *)&t, 4);
+        else
+            out[l] = 0xFF;
     }
 }
 
@@ -1987,7 +2136,7 @@ static void player_state(const u8 *ref, u8 *state)
     put32le(state, flags | stance_of(ref_mobile(ref)));
     copy(state + 4, ref + 0x38, 12); /* position */
     copy(state + 16, ref + 0x34, 4); /* orientation z */
-    anim_capture(ref, state + STATE_ANIM);
+    player_anim_capture(ref, state + STATE_ANIM);
 }
 
 /* Ghosts: each peer slot drives one persistent NPC of the ghost plugin (tes3x_net.py plugin),
@@ -3079,6 +3228,27 @@ static void death_add(u32 refid)
         deaths[death_count++ % DEATHS] = refid;
 }
 
+/* Refids seen alive here, open addressing; a full table stops adding. Only their deaths are
+ * reported, so a body the data files place dead is not. */
+#define ALIVE_SLOTS 1024u
+static u32 alive_seen[ALIVE_SLOTS];
+
+static int alive_mark(u32 refid, int add)
+{
+    u32 i = (refid * 2654435761u) >> 22, n;
+
+    for (n = 0; n < ALIVE_SLOTS; n++, i = (i + 1) & (ALIVE_SLOTS - 1)) {
+        if (alive_seen[i] == refid)
+            return 1;
+        if (!alive_seen[i]) {
+            if (add)
+                alive_seen[i] = refid;
+            return add;
+        }
+    }
+    return 0;
+}
+
 /* A death on the authority goes to everyone once; a death told by the server is applied to any
  * living copy here, whoever runs it. */
 static void death_frame(u8 *mobile, u8 *ref, u32 refid, u32 owner)
@@ -3087,6 +3257,8 @@ static void death_frame(u8 *mobile, u8 *ref, u32 refid, u32 owner)
     int dead = mobile[MOBILE_ACTION] == 0x12 || mobile[MOBILE_ACTION] == 0x13 || health <= 0;
     u32 i;
 
+    if (!dead)
+        alive_mark(refid, 1);
     if (!dead && death_known(refid)) {
         actor_command(ref, "SetHealth ", 0);
         *(u32 *)(mobile + MOBILE_FLAGS) |= MOBILE_SIMULATED;
@@ -3095,7 +3267,7 @@ static void death_frame(u8 *mobile, u8 *ref, u32 refid, u32 owner)
                 followed[i].health = 0; /* a told death, not a hit to send back */
         deaths_applied++;
         tes3x_log_hex3("net.actor_killed", refid, owner, 0);
-    } else if (dead && owner == ses.client && !death_known(refid)) {
+    } else if (dead && owner == ses.client && !death_known(refid) && alive_mark(refid, 0)) {
         death_add(refid);
         if (event_queue(EVENT_DEATH, ref + REF_ID, 4))
             deaths_reported++;
