@@ -236,7 +236,7 @@ struct descriptor {
 #define CPU_MHZ 733u
 
 /* Session packet: "T3MP", version, type, then session, seq, ack, time and echoed peer time. */
-#define T3MP_VERSION 9u
+#define T3MP_VERSION 10u
 #define T3MP_HEADER 28u
 #define T3MP_HELLO 1u
 #define T3MP_WELCOME 2u
@@ -1680,6 +1680,7 @@ static void rest_block(void)
 #define MOBILE_SIMULATED 0x4u /* ActiveInSimulation, MWSE's activeAI */
 #define MOBILE_IN_COMBAT 0x10000u
 #define MOBILE_HEALTH 0x2BC /* the current value of the health statistic */
+#define MOBILE_MAGICKA 0x2C8
 #define MOBILE_FATIGUE 0x2E0
 #define MOBILE_FIGHT 0x350 /* int, as SetFight sets it */
 
@@ -3156,10 +3157,13 @@ static void ghosts_frame(const u8 *state)
 #define KEY_EXTERIOR 1u
 #define KEY_INTERIOR 2u
 #define KEY_BYTES (12u + CELL_NAME) /* kind, grid x, grid y, interior name */
-/* refid, x, y, z, heading, health, flags, animation */
-#define ACTOR_ANIM 28u
+/* refid, x, y, z, heading, health, flags, magicka, fatigue, animation */
+#define ACTOR_HEALTH 20u
+#define ACTOR_MAGICKA 28u
+#define ACTOR_FATIGUE 32u
+#define ACTOR_ANIM 36u
 #define ACTOR_BYTES (ACTOR_ANIM + ANIM_BYTES)
-#define ACTORS_PER_PACKET 10u /* a body of at most EVENTS_BYTES */
+#define ACTORS_PER_PACKET 9u /* a body of at most EVENTS_BYTES */
 #define ACTOR_PERIOD_US 100000u
 #define ACTOR_SAMPLES 4u
 #define ACTOR_DELAY_US 200000u /* two periods: a state late by one still has a pair */
@@ -3197,7 +3201,7 @@ static struct {
 static u32 authorities, authority_welcome;
 /* Actors this console places for another authority, and whether the engine had them simulated. */
 static struct {
-    u32 refid, owner, simulated, seen, animated;
+    u32 refid, owner, simulated, seen, animated, affected;
     u8 *mobile;
     float health, fatigue;
 } followed[ACTORS];
@@ -3219,6 +3223,7 @@ static u32 deaths[DEATHS], death_count, deaths_reported, deaths_applied;
 
 static u32 actor_id(const u8 *ref);
 static u32 actor_owner(u32 id, u32 cell_owner);
+static void status_frame(const u8 *mobile, u8 *ref, u32 refid);
 
 static void actors_reset(void)
 {
@@ -3378,11 +3383,12 @@ static void unfollow(u32 i, int restore)
 }
 
 /* Another client runs this actor: keep it out of the simulation, place it ACTOR_DELAY_US behind
- * its authority's states, as ghosts are, and send a drop in its health to the authority as a hit. */
+ * its authority's states, as ghosts are, and send a drop in its health to the authority as a hit.
+ * Its statistics follow the authority's, except a health of 0 or less: DEATH brings that. */
 static void follow(u8 *mobile, u8 *ref, u32 refid, u32 owner)
 {
     u32 *flags = (u32 *)(mobile + MOBILE_FLAGS), i, k, slot = ACTORS, count = 0, lk;
-    float health = *(const float *)(mobile + MOBILE_HEALTH), damage, tired, to[4], frac;
+    float health = *(const float *)(mobile + MOBILE_HEALTH), damage, tired, to[4], frac, stats[3];
     float fatigue = *(const float *)(mobile + MOBILE_FATIGUE);
     struct timed track[ACTOR_SAMPLES];
 
@@ -3403,6 +3409,7 @@ static void follow(u8 *mobile, u8 *ref, u32 refid, u32 owner)
         followed[slot].health = health;
         followed[slot].fatigue = fatigue;
         followed[slot].animated = 0;
+        followed[slot].affected = 0;
         follows++;
         tes3x_log_hex3("net.follow", refid, owner, followed[slot].simulated);
     }
@@ -3421,6 +3428,9 @@ static void follow(u8 *mobile, u8 *ref, u32 refid, u32 owner)
     for (i = 0; i < ACTORS; i++)
         if (actors_in[i].refid == refid && actors_in[i].origin == owner) {
             count = actors_in[i].count;
+            copy((u8 *)&stats[0], actors_in[i].state + ACTOR_HEALTH, 4);
+            copy((u8 *)&stats[1], actors_in[i].state + ACTOR_MAGICKA, 4);
+            copy((u8 *)&stats[2], actors_in[i].state + ACTOR_FATIGUE, 4);
             for (k = 0; k < count; k++)
                 track[k] = actors_in[i].track[(actors_in[i].head + ACTOR_SAMPLES - count + k) %
                                               ACTOR_SAMPLES];
@@ -3432,9 +3442,21 @@ static void follow(u8 *mobile, u8 *ref, u32 refid, u32 owner)
         *flags = (*flags | MOBILE_SIMULATED) & ~MOBILE_SCRIPTED;
         return;
     }
-    *flags &= ~MOBILE_SIMULATED;
+    if (followed[slot].affected) { /* an AFFECT's effect beginning */
+        followed[slot].affected--;
+        *flags |= MOBILE_SIMULATED;
+    } else {
+        *flags &= ~MOBILE_SIMULATED;
+    }
     if (!count)
         return;
+    if (stats[0] > 0) {
+        *(float *)(mobile + MOBILE_HEALTH) = stats[0];
+        followed[slot].health = stats[0];
+    }
+    *(float *)(mobile + MOBILE_MAGICKA) = stats[1];
+    *(float *)(mobile + MOBILE_FATIGUE) = stats[2];
+    followed[slot].fatigue = stats[2];
     k = track_pose(track, count, ACTOR_DELAY_US, to, &frac);
     if (off_pose(ref, to)) {
         place_ref(ref, to);
@@ -3704,6 +3726,8 @@ static void authority_frame(const u8 *player, const u8 *state)
         actor_key(&local, *(const float *)(ref + 0x38), *(const float *)(ref + 0x3C), &key);
         owner = actor_owner(refid, authority_of(&key));
         death_frame(mobile, ref, refid, owner);
+        if (send)
+            status_frame(mobile, ref, refid);
         if (owner && owner != ses.client) {
             follow(mobile, ref, refid, owner);
             continue;
@@ -3722,11 +3746,13 @@ static void authority_frame(const u8 *player, const u8 *state)
         put32le(a, refid);
         copy(a + 4, ref + 0x38, 12);
         copy(a + 16, ref + 0x34, 4);
-        copy(a + 20, mobile + MOBILE_HEALTH, 4);
+        copy(a + ACTOR_HEALTH, mobile + MOBILE_HEALTH, 4);
         put32le(a + 24, (mobile[MOBILE_ACTION] == 0x12 || mobile[MOBILE_ACTION] == 0x13
                          ? ACTOR_DEAD : 0) |
                         (*(const u32 *)(mobile + MOBILE_FLAGS) & MOBILE_IN_COMBAT
                          ? ACTOR_IN_COMBAT : 0) | stance_of(mobile));
+        copy(a + ACTOR_MAGICKA, mobile + MOBILE_MAGICKA, 4);
+        copy(a + ACTOR_FATIGUE, mobile + MOBILE_FATIGUE, 4);
         anim_capture(ref, a + ACTOR_ANIM);
         if (++n == ACTORS_PER_PACKET) {
             put32le(out, n);
@@ -3921,18 +3947,27 @@ static u8 *actor_ref(u32 refid)
     return 0;
 }
 
-/* SPELL or CAST data for an instance's spell cast by caster; its length, or 0 if the source is not
- * a spell. */
-static u32 spell_data(u8 *data, const u8 *instance, const u8 *caster, u32 client, u32 refid)
+/* The id of an instance's spell, or 0 if its source is not a spell. */
+static const char *spell_id(const u8 *instance)
 {
-    const u8 *source = *(const u8 *const *)(instance + INSTANCE_SOURCE), *player;
+    const u8 *source = *(const u8 *const *)(instance + INSTANCE_SOURCE);
     const char *id;
-    u32 n;
 
     if (instance[INSTANCE_SOURCE + 4] != SOURCE_SPELL || !plausible(source))
         return 0;
     id = ((fn_object_id)(*(void *const *const *)source)[OBJECT_GET_ID / 4])(source);
-    if (!mapped(id) || !*id)
+    return mapped(id) && *id ? id : 0;
+}
+
+/* SPELL or CAST data for an instance's spell cast by caster; its length, or 0 if the source is not
+ * a spell. */
+static u32 spell_data(u8 *data, const u8 *instance, const u8 *caster, u32 client, u32 refid)
+{
+    const u8 *player;
+    const char *id;
+    u32 n;
+
+    if (!(id = spell_id(instance)))
         return 0;
     player = player_reference();
     put32le(data, plausible(caster) && caster != player ? actor_id(caster) : 0);
@@ -4036,6 +4071,8 @@ static void __cdecl cast_bolt_hook(u8 *instance, int effect, int index, int coun
     tes3x_log_hex3("net.cast_at", client, refid, get32le(data));
 }
 
+static void affect_send(const u8 *instance, const u8 *target, u32 effect);
+
 static void __attribute__((thiscall)) spell_hit_hook(u8 *instance, u8 *target, int effect)
 {
     const u8 *caster;
@@ -4054,6 +4091,11 @@ static void __attribute__((thiscall)) spell_hit_hook(u8 *instance, u8 *target, i
         }
         if (owner && spell_send(instance, caster, target, owner, refid))
             return;
+        if (!owner) {
+            ((fn_spell_hit)TES3X_NET_SPELL_HIT)(instance, target, effect);
+            affect_send(instance, target, (u32)effect);
+            return;
+        }
     }
     ((fn_spell_hit)TES3X_NET_SPELL_HIT)(instance, target, effect);
 }
@@ -4194,8 +4236,10 @@ static void spell_event(const struct event *e)
         return;
     effects = *(const u8 *const *)(instance + INSTANCE_SOURCE) + SOURCE_EFFECTS;
     for (i = 0; i < SOURCE_MAX_EFFECTS && *(const short *)(effects + i * EFFECT_BYTES) != -1; i++)
-        if (effects[i * EFFECT_BYTES + EFFECT_RANGE] != RANGE_SELF)
+        if (effects[i * EFFECT_BYTES + EFFECT_RANGE] != RANGE_SELF) {
             ((fn_spell_hit)TES3X_NET_SPELL_HIT)(instance, target, (int)i);
+            affect_send(instance, target, i);
+        }
     *(u32 *)(instance + INSTANCE_STATE) = INSTANCE_WORKING;
     spells_applied++;
     tes3x_log_hex3("net.spell_applied", refid, (u32)caster, i);
@@ -6464,6 +6508,229 @@ static void containers_stat(void)
     tes3x_log_hex3("net.contents_bad", box_failures, boxes_full, 0);
 }
 
+/* Statuses. An effect that changes how an actor looks or acts goes out as AFFECT from the console
+ * that applies it, and each follower applies the same effect of the same spell to its copy. Damage
+ * effects are left out: their result arrives with the statistics in ACTORS. AI settings and the
+ * stored base disposition go out as STATUS from whichever console changes them (dialogue changes
+ * disposition on the talker's), latest wins; the disposition shown adds the local player's race,
+ * faction and personality and stays per player. The server keeps the latest STATUS per actor. */
+#define EVENT_AFFECT 18u /* actor id, effect index, spell id */
+#define EVENT_STATUS 19u /* actor id, fight, flee, alarm, hello, base disposition (i16 each) */
+#define AFFECT_BYTES 5u
+#define AFFECT_FRAMES 5u /* an effect begins only on a mobile in the simulation */
+#define STATUS_VALUES 5u
+#define STATUS_BYTES (4u + STATUS_VALUES * 2u)
+#define MOBILE_FLEE 0x354
+#define MOBILE_HELLO 0x358
+#define MOBILE_ALARM 0x35C
+#define NPC_BASE_DISPOSITION 0x8C /* vtable offset; what calculateDisposition 0x0011E210 starts from */
+#define NO_DISPOSITION (-32768)
+#define STATUSES 256u
+#define STATUS_NEW 1u
+#define STATUS_APPLIED 2u
+
+typedef int(__attribute__((thiscall)) *fn_object_int)(const void *object);
+
+/* The values last sent or applied per actor; pending ones wait for the actor to be loaded here. */
+static struct {
+    u32 refid;
+    short v[STATUS_VALUES];
+    u8 pending, settle;
+} statuses[STATUSES];
+static u32 status_next, statuses_sent, statuses_received, statuses_applied, statuses_lost;
+static u32 status_mismatches, affects_sent, affects_received, affects_applied;
+
+static int affect_shared(int id)
+{
+    return (id >= 3 && id <= 6) || id == 10 || id == 17 || id == 22 || (id >= 39 && id <= 42) ||
+           (id >= 45 && id <= 48) || id == 79;
+}
+
+/* An effect applied here to an actor others can name: tell them if it shows. */
+static void affect_send(const u8 *instance, const u8 *target, u32 effect)
+{
+    const u8 *source;
+    const char *id;
+    u8 data[AFFECT_BYTES + SPELL_ID];
+    u32 refid, n;
+
+    if (ses.state != SESSION_JOINED || effect >= SOURCE_MAX_EFFECTS || !plausible(target) ||
+        target == player_reference() || is_ghost(target) || !(refid = actor_id(target)) ||
+        !(id = spell_id(instance)))
+        return;
+    source = *(const u8 *const *)(instance + INSTANCE_SOURCE);
+    if (!affect_shared(*(const short *)(source + SOURCE_EFFECTS + effect * EFFECT_BYTES)))
+        return;
+    put32le(data, refid);
+    data[4] = (u8)effect;
+    for (n = 0; id[n] && n < SPELL_ID - 1; n++)
+        data[AFFECT_BYTES + n] = (u8)id[n];
+    data[AFFECT_BYTES + n] = 0;
+    if (!event_queue(EVENT_AFFECT, data, AFFECT_BYTES + n + 1)) {
+        tes3x_log("net.event_full", EVENT_AFFECT);
+        return;
+    }
+    affects_sent++;
+    log_text("net.affect_sent", id);
+    tes3x_log_hex3("net.affect_to", refid, effect, 0);
+}
+
+/* Another console applied an effect to an actor followed here: the copy casts the same spell on
+ * itself and takes that one effect. */
+static void affect_event(const struct event *e)
+{
+    const u8 *effects;
+    u8 *target, *instance;
+    char id[SPELL_ID];
+    u32 refid, index, n, owner;
+
+    if (e->length < AFFECT_BYTES + 1)
+        return;
+    refid = get32le(e->data);
+    index = e->data[4];
+    for (n = 0; n < SPELL_ID - 1 && AFFECT_BYTES + n < e->length && e->data[AFFECT_BYTES + n]; n++)
+        id[n] = (char)e->data[AFFECT_BYTES + n];
+    id[n] = 0;
+    affects_received++;
+    log_text("net.affect", id);
+    tes3x_log_hex3("net.affect_from", e->origin, refid, index);
+    if (!(target = actor_ref(refid)) || !ref_owner(target, &owner) || index >= SOURCE_MAX_EFFECTS)
+        return; /* not here, or run here */
+    if (!(instance = spell_start(id, target, target, refid)))
+        return;
+    effects = *(const u8 *const *)(instance + INSTANCE_SOURCE) + SOURCE_EFFECTS;
+    for (n = 0; n <= index && *(const short *)(effects + n * EFFECT_BYTES) != -1; n++)
+        ;
+    if (n <= index) {
+        spell_fail(id, 5, refid);
+        return;
+    }
+    ((fn_spell_hit)TES3X_NET_SPELL_HIT)(instance, target, (int)index);
+    *(u32 *)(instance + INSTANCE_STATE) = INSTANCE_WORKING;
+    for (n = 0; n < ACTORS; n++)
+        if (followed[n].refid == refid)
+            followed[n].affected = AFFECT_FRAMES;
+    affects_applied++;
+    tes3x_log_hex3("net.affect_applied", refid, index, 0);
+}
+
+static int is_npc(const u8 *ref)
+{
+    const u8 *object = *(const u8 *const *)(ref + REF_BASE);
+
+    return plausible(object) && *(const u32 *)(object + OBJECT_TYPE) == TAG_NPC;
+}
+
+static void status_read(const u8 *mobile, const u8 *ref, short *v)
+{
+    const u8 *object = *(const u8 *const *)(ref + REF_BASE);
+
+    v[0] = (short)*(const int *)(mobile + MOBILE_FIGHT);
+    v[1] = (short)*(const int *)(mobile + MOBILE_FLEE);
+    v[2] = (short)*(const int *)(mobile + MOBILE_ALARM);
+    v[3] = (short)*(const int *)(mobile + MOBILE_HELLO);
+    v[4] = is_npc(ref) ? (short)((fn_object_int)(*(void *const *const *)object)
+                                     [NPC_BASE_DISPOSITION / 4])(object)
+                       : NO_DISPOSITION;
+}
+
+/* The entry for refid; a new one takes a free slot, else one not waiting to be applied. */
+static u32 status_slot(u32 refid)
+{
+    u32 i, n;
+
+    for (i = 0; i < STATUSES; i++)
+        if (statuses[i].refid == refid)
+            return i;
+    for (i = 0; i < STATUSES; i++)
+        if (!statuses[i].refid)
+            break;
+    for (n = 0; i == STATUSES && n < STATUSES; n++, status_next = (status_next + 1) % STATUSES)
+        if (!statuses[status_next].pending)
+            i = status_next;
+    if (i == STATUSES) {
+        i = status_next;
+        statuses_lost++;
+    }
+    status_next = (i + 1) % STATUSES;
+    statuses[i].refid = refid;
+    statuses[i].pending = 0;
+    statuses[i].settle = STATUS_NEW;
+    return i;
+}
+
+/* On the actor send tick, for each loaded actor: apply what arrived for it, or send what changed
+ * here. The values read on first sight, or right after an apply, are taken as they are. */
+static void status_frame(const u8 *mobile, u8 *ref, u32 refid)
+{
+    u32 i = status_slot(refid), k;
+    short v[STATUS_VALUES];
+    u8 data[STATUS_BYTES];
+
+    if (statuses[i].pending) {
+        actor_command(ref, "SetFight ", statuses[i].v[0]);
+        actor_command(ref, "SetFlee ", statuses[i].v[1]);
+        actor_command(ref, "SetAlarm ", statuses[i].v[2]);
+        actor_command(ref, "SetHello ", statuses[i].v[3]);
+        if (statuses[i].v[4] != NO_DISPOSITION && is_npc(ref))
+            actor_command(ref, "SetDisposition ", statuses[i].v[4]);
+        statuses[i].pending = 0;
+        statuses[i].settle = STATUS_APPLIED;
+        statuses_applied++;
+        tes3x_log_hex3("net.status_applied", refid, (u32)statuses[i].v[0],
+                       (u32)statuses[i].v[4]);
+        return;
+    }
+    status_read(mobile, ref, v);
+    for (k = 0; k < STATUS_VALUES && v[k] == statuses[i].v[k]; k++)
+        ;
+    if (statuses[i].settle) {
+        if (statuses[i].settle == STATUS_APPLIED && k < STATUS_VALUES) {
+            status_mismatches++;
+            tes3x_log_hex3("net.status_mismatch", refid, k, (u32)v[k]);
+        }
+        statuses[i].settle = 0;
+        copy((u8 *)statuses[i].v, (const u8 *)v, sizeof(v));
+        return;
+    }
+    if (k == STATUS_VALUES)
+        return;
+    copy((u8 *)statuses[i].v, (const u8 *)v, sizeof(v));
+    put32le(data, refid);
+    for (k = 0; k < STATUS_VALUES; k++) {
+        data[4 + k * 2] = (u8)v[k];
+        data[5 + k * 2] = (u8)((u16)v[k] >> 8);
+    }
+    if (!event_queue(EVENT_STATUS, data, sizeof(data))) {
+        tes3x_log("net.event_full", EVENT_STATUS);
+        return;
+    }
+    statuses_sent++;
+    tes3x_log_hex3("net.status_sent", refid, (u32)v[0], (u32)v[4]);
+}
+
+static void status_event(const struct event *e)
+{
+    u32 refid, i, k;
+
+    if (e->length < STATUS_BYTES || !(refid = get32le(e->data)))
+        return;
+    i = status_slot(refid);
+    for (k = 0; k < STATUS_VALUES; k++)
+        statuses[i].v[k] = (short)(e->data[4 + k * 2] | e->data[5 + k * 2] << 8);
+    statuses[i].pending = 1;
+    statuses[i].settle = 0;
+    statuses_received++;
+    tes3x_log_hex3("net.status", refid, e->origin, (u32)statuses[i].v[4]);
+}
+
+static void status_stat(void)
+{
+    tes3x_log_hex3("net.statuses", statuses_sent, statuses_received, statuses_applied);
+    tes3x_log_hex3("net.statuses_bad", status_mismatches, statuses_lost, 0);
+    tes3x_log_hex3("net.affects", affects_sent, affects_received, affects_applied);
+}
+
 static void event_handle(const struct event *e)
 {
     char text[EVENT_DATA + 1];
@@ -6493,6 +6760,10 @@ static void event_handle(const struct event *e)
         spawn_event(e);
     } else if (e->kind == EVENT_CONTENTS) {
         contents_event(e);
+    } else if (e->kind == EVENT_AFFECT) {
+        affect_event(e);
+    } else if (e->kind == EVENT_STATUS) {
+        status_event(e);
     } else {
         tes3x_log_hex3("net.event_unknown", e->kind, e->origin, e->length);
     }
@@ -6858,6 +7129,7 @@ int tes3x_net_command(const char *text)
         weather_stat();
         authority_stat();
         spell_stat();
+        status_stat();
         shot_stat();
         objects_stat();
         spawns_stat();

@@ -302,7 +302,15 @@ class AuthorityTests(unittest.TestCase):
             struct.pack('<I', 1)
         self.assertLessEqual(len(data), tes3x_net.EVENT_DATA)
         self.assertEqual(4 + tes3x_net.ACTORS_PER_PACKET * tes3x_net.ACTOR.size,
-                         484)  # within tes3xnet.c's EVENTS_BYTES
+                         508)  # within tes3xnet.c's EVENTS_BYTES
+
+    def test_status_fits_the_event_channel(self):
+        self.assertEqual(tes3x_net.STATUS.size, 14)  # tes3xnet.c's STATUS_BYTES
+        self.assertIn("disposition 60",
+                      tes3x_net.describe_status(0x1234, (30, 0, 0, 30, 60)))
+        self.assertNotIn("disposition",
+                         tes3x_net.describe_status(0x1234, (90, 0, 0, 0,
+                                                            tes3x_net.NO_DISPOSITION)))
 
 
 if __name__ == '__main__':

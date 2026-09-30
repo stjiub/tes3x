@@ -36,7 +36,12 @@ The server also names one client per loaded cell as its authority: that console 
 the actors there and sends their positions ten times a second, and the other consoles stop those
 actors' AI and place them where the authority says. Damage done to such an actor, and a
 dialogue held with it, go to the authority. When an actor dies on its authority, the server
-records the death and every console, including one that joins later, kills its copy. Only actors
+records the death and every console, including one that joins later, kills its copy. The
+other consoles' copies also take the authority's health, magicka and fatigue, and effects that
+show, such as a shield, invisibility or paralysis. A change to an actor's Fight, Flee, Alarm or
+Hello, or to an NPC's disposition as dialogue makes it, reaches every console from wherever it
+happened; the disposition each player sees still adds their own race, faction and personality.
+Only actors
 placed by the data files take part; creatures spawned while playing, such as from leveled lists,
 still run separately on each console.
 

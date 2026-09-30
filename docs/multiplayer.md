@@ -80,7 +80,8 @@ The first client to join sets the session's load order and its game clock. Usefu
 Stop the server with Ctrl+C. Without `--world` the session lives only as long as the server
 does: stop it and the deaths, objects and equipment it recorded are gone. With `--world DIR` it
 keeps the game clock, the deaths, the doors, locks and items taken, the items dropped or placed,
-containers' contents and the weather in one file per load order in `DIR`, loads it when the
+containers' contents, actors' AI settings and disposition, and the weather in one file per
+load order in `DIR`, loads it when the
 first console joins and writes it every 10 seconds
 while it changes, so a restarted server carries on where it stopped. A console's own save is
 still loaded first; joining then applies what the world holds.

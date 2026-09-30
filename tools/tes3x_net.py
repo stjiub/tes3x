@@ -301,7 +301,7 @@ def ping(args):
 
 
 T3MP = struct.Struct("<4sBBHIIIII")  # magic, version, type, 0, session, seq, ack, time, echo
-T3MP_VERSION = 9
+T3MP_VERSION = 10
 HELLO, WELCOME, HEARTBEAT, BYE, STATE, PEER, GONE, EVENTS, REFUSE, CLOCK, ACTORS = range(1, 12)
 # GameHour, Day, Month (0-11), Year, DaysPassed, TimeScale, as the game's float globals
 CLOCK_BODY = struct.Struct("<6f")
@@ -343,6 +343,11 @@ SPAWN_TWIN = 16.0  # units: a script's reference made on two consoles at once
 SPAWN_TWIN_SECONDS = 2.0
 EVENT_CONTENTS = 16  # CONTENTS_HEAD, then entries
 EVENT_WANT = 17  # count, then cell indices u16: the containers of those cells are wanted
+EVENT_AFFECT = 18  # actor id, effect index u8, then the spell id ending in a zero
+EVENT_STATUS = 19  # STATUS: the latest per actor is kept and replayed
+# actor id, fight, flee, alarm, hello, base disposition (NO_DISPOSITION for a creature)
+STATUS = struct.Struct("<I5h")
+NO_DISPOSITION = -32768
 # A container's contents in parts: refid, cell index, part, parts, flags (CONTENTS_ROLLED: the
 # console's first reading of its instance). An entry: count, flags (ENTRY_DATA: its condition and
 # charge follow, raw), then the item's id ending in a zero.
@@ -366,9 +371,9 @@ KEY = struct.Struct("<Iii32s")  # kind, grid x, grid y, interior name
 KEY_EXTERIOR, KEY_INTERIOR = 1, 2
 ANIM_BYTES = 20  # per layer: 3 groups, pad, 3 keys, pad, 3 times (tes3xnet.c anim_capture)
 NO_ANIM = b"\xff\xff\xff" + bytes(ANIM_BYTES - 3)  # no group on any layer: the ghost idles
-# refid, x, y, z, heading, health, flags, animation
-ACTOR = struct.Struct(f"<I5fI{ANIM_BYTES}s")
-ACTORS_PER_PACKET = 10
+# refid, x, y, z, heading, health, flags, magicka, fatigue, animation
+ACTOR = struct.Struct(f"<I5fI2f{ANIM_BYTES}s")
+ACTORS_PER_PACKET = 9
 ACTOR_PERIOD = 0.1
 AUTHORITY_PERIOD = 0.25
 RESEND = 0.25
@@ -544,6 +549,12 @@ def unpack_contents(data):
         entries.append([data[off:end].decode("latin-1"), count, entry_flags, condition, charge])
         off = end + 1
     return refid, cell, part, parts, flags, entries
+
+
+def describe_status(refid, values):
+    fight, flee, alarm, hello, disposition = values
+    base = "" if disposition == NO_DISPOSITION else f", disposition {disposition}"
+    return (f"{refid:#010x} fight {fight}, flee {flee}, alarm {alarm}, hello {hello}{base}")
 
 
 def describe_contents(entries):
@@ -857,6 +868,7 @@ def serve(args):
     actors = {}  # refid -> (reporting client, cell, ACTOR bytes), the latest from an authority
     weather = {}  # region index -> weather, the session's; replayed to each joining client
     objects = {}  # refid -> (cell index, state, lock level); replayed to each joining client
+    statuses = {}  # actor id -> STATUS values after the id; replayed to each joining client
     # spawn id -> reference made at run time (unpack_spawn), removed ones too; replayed likewise
     spawns = {}
     # refid -> {"cell", "entries", "origin"}: a container's latest contents; sent to whoever loads
@@ -881,6 +893,8 @@ def serve(args):
         bot_spawns.append((float(at), name, int(cell), int(condition[0]) if condition else None))
     bot_takes = [float(at) for at in args.bot_take]
     bot_weather = []
+    bot_statuses = list(args.bot_status)
+    bot_affects = list(args.bot_affect)
     bot_spells = []
     bot_shots = [(float(at), ammo) for ammo, _, at in (s.rpartition("@") for s in args.bot_shoot)]
     for kind, specs in ((EVENT_SPELL, args.bot_spell), (EVENT_CAST, args.bot_cast)):
@@ -955,7 +969,7 @@ def serve(args):
         (flags, cell), cx, cy, cz = bot["anchor"]
         t = (now - bot["start"]) * 2 * math.pi / args.bot_period
         if bot["mirror"]:
-            _, x, y, z, heading, _, actor_flags, anim = ACTOR.unpack(bot["mirror"])
+            _, x, y, z, heading, _, actor_flags, _, _, anim = ACTOR.unpack(bot["mirror"])
             state = STATE_BODY.pack(flags | actor_flags & STANCE, x + args.bot_shift, y, z,
                                     heading, cell) + anim
         elif bot["echo"]:
@@ -987,10 +1001,12 @@ def serve(args):
         contents.update({int(k): v for k, v in saved.get("contents", {}).items()})
         world["next_spawn"] = max(world["next_spawn"], saved.get("next_spawn", 1))
         weather.update({int(k): v for k, v in saved.get("weather", {}).items()})
+        statuses.update({int(k): tuple(v) for k, v in saved.get("statuses", {}).items()})
         if saved.get("clock") and args.hour is None:
             clock = Clock(*saved["clock"], now)
         print(f"world {world['path']}: {len(deaths)} deaths, {len(objects)} objects, "
-              f"{len(spawns)} spawns, {len(contents)} containers, {len(weather)} regions"
+              f"{len(spawns)} spawns, {len(contents)} containers, {len(weather)} regions, "
+              f"{len(statuses)} statuses"
               + (f", clock {clock}" if clock else ""), flush=True)
 
     def write_world(now):
@@ -1003,7 +1019,8 @@ def serve(args):
                             for k, v in spawns.items()},
                  "next_spawn": world["next_spawn"],
                  "contents": {str(k): v for k, v in contents.items()},
-                 "weather": {str(k): v for k, v in weather.items()}}
+                 "weather": {str(k): v for k, v in weather.items()},
+                 "statuses": {str(k): list(v) for k, v in statuses.items()}}
         if clock:
             clock.advance(now)
             state["clock"] = [clock.hour, clock.day, clock.month, clock.year, clock.days_passed,
@@ -1202,6 +1219,16 @@ def serve(args):
             deaths[refid] = client.id
             world["dirty"] = True
             print(f"{stamp} client {client.id}: {refid:#010x} died", flush=True)
+        if kind == EVENT_STATUS and len(data) >= STATUS.size:
+            refid, *values = STATUS.unpack_from(data)
+            statuses[refid] = tuple(values)
+            world["dirty"] = True
+            print(f"{stamp} client {client.id}: {describe_status(refid, values)}", flush=True)
+        if kind == EVENT_AFFECT and len(data) > 5:
+            refid, index = struct.unpack_from("<IB", data)
+            name = data[5:].split(b"\0")[0].decode("latin-1")
+            print(f"{stamp} client {client.id}: {refid:#010x} takes effect {index} of {name}",
+                  flush=True)
         if kind == EVENT_OBJECTS and data:
             changed = unpack_objects(data)
             objects.update(changed)
@@ -1287,11 +1314,14 @@ def serve(args):
             chunk = owned[i:i + ACTORS_PER_PACKET]
             body = struct.pack("<I", len(chunk))
             for record in chunk:
-                refid, x, y, z, heading, health, flags, anim = ACTOR.unpack(record)
+                refid, x, y, z, heading, health, flags, magicka, fatigue, anim = \
+                    ACTOR.unpack(record)
                 if args.bot_sway:
                     heading = facing
+                if args.bot_stats:
+                    health, magicka, fatigue = (float(v) for v in args.bot_stats.split(","))
                 body += ACTOR.pack(refid, x + args.bot_shift + sway, y, z, heading, health, flags,
-                                   anim)
+                                   magicka, fatigue, anim)
             for other in clients.values():
                 if other.alive:
                     send(other, ACTORS, struct.pack("<I", BOT_ID) + body)
@@ -1350,6 +1380,8 @@ def serve(args):
                 client.rel.queue(EVENT_DEATH, origin, struct.pack("<I", refid))
             for data in pack_objects(objects):
                 client.rel.queue(EVENT_OBJECTS, 0, data)
+            for refid, values in statuses.items():
+                client.rel.queue(EVENT_STATUS, 0, STATUS.pack(refid, *values))
             for sid, spawn in sorted(spawns.items(), key=lambda s: s[1]["removed"]):
                 client.rel.queue(EVENT_SPAWN, spawn["origin"] if spawn.get("summon") else 0,
                                  pack_spawn(sid, spawn))
@@ -1495,6 +1527,21 @@ def serve(args):
                 deaths[refid] = BOT_ID
                 print(f"{time.strftime('%H:%M:%S')} bot kills {refid:#010x}", flush=True)
                 broadcast_event(BOT_ID, EVENT_DEATH, struct.pack("<I", refid), now)
+        for spec in [b for b in bot_statuses if window(b.partition("@")[2], now)]:
+            bot_statuses.remove(spec)
+            refid, _, values = spec.partition("@")[0].partition(":")
+            refid, values = int(refid, 16), tuple(int(v) for v in values.split(","))
+            statuses[refid] = values
+            print(f"{time.strftime('%H:%M:%S')} bot sets {describe_status(refid, values)}",
+                  flush=True)
+            broadcast_event(BOT_ID, EVENT_STATUS, STATUS.pack(refid, *values), now)
+        for spec in [b for b in bot_affects if window(b.rpartition("@")[2], now)]:
+            bot_affects.remove(spec)
+            refid, index, name = spec.rpartition("@")[0].split(":", 2)
+            print(f"{time.strftime('%H:%M:%S')} bot gives {refid} effect {index} of {name}",
+                  flush=True)
+            broadcast_event(BOT_ID, EVENT_AFFECT, struct.pack("<IB", int(refid, 16), int(index))
+                            + name.encode("latin-1") + b"\0", now)
         if args.bot_hit and not bot["hit"]:
             refid, _, at = args.bot_hit.partition("@")
             refid = int(refid, 16)
@@ -1696,6 +1743,16 @@ def main(argv=None):
     p.add_argument("--bot-take", action="append", default=[], metavar="SECONDS",
                    help="the bot removes every live object a client placed, this long after it "
                         "appears (repeatable)")
+    p.add_argument("--bot-status", action="append", default=[],
+                   metavar="REFID:FIGHT,FLEE,ALARM,HELLO,DISPOSITION@SECONDS",
+                   help="the bot sets an actor's AI settings and base disposition (-32768 for a "
+                        "creature) this long after it appears (repeatable)")
+    p.add_argument("--bot-affect", action="append", default=[],
+                   metavar="REFID:INDEX:SPELL@SECONDS",
+                   help="the bot applies one effect of a spell to an actor this long after it "
+                        "appears (repeatable)")
+    p.add_argument("--bot-stats", metavar="HEALTH,MAGICKA,FATIGUE",
+                   help="the bot, as authority, sends these statistics for every actor")
     p.add_argument("--bot-kill", metavar="REFID@SECONDS",
                    help="the bot reports this actor (hex refid) dead this long after it appears")
     p.add_argument("--bot-equip", metavar="ID,ID,...",
