@@ -563,6 +563,38 @@ static u32 get32le(const u8 *p)
     return p[0] | (u32)p[1] << 8 | (u32)p[2] << 16 | (u32)p[3] << 24;
 }
 
+/* Received numbers are checked before the engine sees them, on their bits: a float's magnitude
+ * bits order as its values do, and NaN and the infinities lie above every finite limit. Integer
+ * only, because the receive DPC must not touch the FPU state of the thread it interrupts. The
+ * limits are tes3x_net.py's placeable and sane_clock. */
+#define POSITION_LIMIT 0x4B189680u /* 1e7 */
+#define ANGLE_LIMIT 0x42800000u    /* 64 */
+#define STAT_LIMIT 0x4B189680u     /* 1e7, statistics and damage */
+#define ANIM_TIME_LIMIT 0x461C4000u /* 1e4 seconds into a group */
+static u32 refused_states, refused_events, refused_anims;
+
+static int float_within(const u8 *p, u32 count, u32 limit)
+{
+    u32 i;
+
+    for (i = 0; i < count; i++)
+        if ((get32le(p + 4 * i) & 0x7FFFFFFFu) > limit)
+            return 0;
+    return 1;
+}
+
+/* Text that goes into a quoted script argument: ended within max bytes, and with no quote or
+ * control character, which would end the string or the line. */
+static int script_safe(const u8 *text, u32 max)
+{
+    u32 i;
+
+    for (i = 0; i < max && text[i]; i++)
+        if (text[i] < 0x20 || text[i] == '"')
+            return 0;
+    return i < max;
+}
+
 /* Microseconds from the TSC, without a 64-bit division: cycles / 1024 * 1024 / 733. */
 static u32 now_us(void)
 {
@@ -676,6 +708,11 @@ static void peer_rx(u32 client, u32 seq, const u8 *state)
 {
     u32 i, slot = PEERS;
 
+    if (!float_within(state + 4, 3, POSITION_LIMIT) || !float_within(state + 16, 1, ANGLE_LIMIT) ||
+        !script_safe(state + 20, CELL_NAME)) {
+        refused_states++;
+        return;
+    }
     for (i = 0; i < PEERS; i++) {
         if (peers[i].client == client) {
             slot = i;
@@ -801,6 +838,29 @@ static void events_rx(const u8 *p, u32 n)
     events_send(0);
 }
 
+/* The date globals index tables and the engine rolls the hours over one day at a time, so a
+ * CLOCK outside these (as float bits, none negative) is dropped. */
+static const u32 clock_limits[CLOCK_GLOBALS][2] = {
+    {0, 0x41C00000u},          /* GameHour 0-24 */
+    {0x3F800000u, 0x41F80000u}, /* Day 1-31 */
+    {0, 0x41300000u},          /* Month 0-11 */
+    {0, 0x47C35000u},          /* Year to 100000 */
+    {0, 0x4B189680u},          /* DaysPassed to 1e7 */
+    {0, 0x461C4000u},          /* TimeScale to 10000 */
+};
+
+static int clock_sane(const u8 *p)
+{
+    u32 i, v;
+
+    for (i = 0; i < CLOCK_GLOBALS; i++)
+        if ((v = get32le(p + 4 * i)) < clock_limits[i][0] || v > clock_limits[i][1]) {
+            refused_states++;
+            return 0;
+        }
+    return 1;
+}
+
 /* Caller holds the lock (the receive DPC). p is an opened packet in the T3MP_HEADER layout. */
 static void session_rx_plain(const u8 *p, u32 n)
 {
@@ -853,7 +913,8 @@ static void session_rx_plain(const u8 *p, u32 n)
             bulk_chunk_rx(p + T3MP_HEADER, n - T3MP_HEADER);
         if (type == T3MP_ACTORS && n >= T3MP_HEADER + 8)
             actors_rx(get32le(p + T3MP_HEADER), seq, p + T3MP_HEADER + 4, n - T3MP_HEADER - 4);
-        if (type == T3MP_CLOCK && n >= T3MP_HEADER + CLOCK_BYTES && seq > ses.peer_seq) {
+        if (type == T3MP_CLOCK && n >= T3MP_HEADER + CLOCK_BYTES && seq > ses.peer_seq &&
+            clock_sane(p + T3MP_HEADER)) {
             copy(game_clock.server, p + T3MP_HEADER, CLOCK_BYTES);
             game_clock.received++;
         }
@@ -2693,7 +2754,7 @@ static void place_ref(u8 *ref, const float *xyzh)
 static void anim_apply(u8 *ref, const u8 *older, const u8 *newer, float frac)
 {
     u8 *a = ref_animation(ref), *mobile = ref_mobile(ref);
-    u32 l, g;
+    u32 l, g, keys;
     float from, to;
 
     if (!plausible(a))
@@ -2703,6 +2764,10 @@ static void anim_apply(u8 *ref, const u8 *older, const u8 *newer, float frac)
     for (l = 0; l < ANIM_LAYERS; l++) {
         if ((g = newer[l]) == GROUP_NONE)
             continue;
+        if (g >= ANIM_GROUP_COUNT || !float_within(newer + 8 + 4 * l, 1, ANIM_TIME_LIMIT)) {
+            refused_anims++;
+            continue;
+        }
         /* Attack and cast groups take the key to start from where others take 1, at once. */
         if (a[ANIM_GROUP + l] != g) {
             if (!((fn_has_group)TES3X_NET_ANIM_HAS_GROUP)(a, (int)g))
@@ -2716,6 +2781,10 @@ static void anim_apply(u8 *ref, const u8 *older, const u8 *newer, float frac)
                                                             GROUP_LOOPS);
             if (a[ANIM_GROUP + l] != g)
                 continue;
+        }
+        if (!anim_keys(a, g, &keys) || newer[4 + l] >= keys) {
+            refused_anims++;
+            continue;
         }
         copy((u8 *)&to, newer + 8 + 4 * l, 4);
         if (older[l] == g && older[4 + l] == newer[4 + l]) {
@@ -3047,6 +3116,12 @@ static void equipment_event(const struct event *e)
 
     if (e->length < 2)
         return;
+    for (off = 2; off < e->length; off++)
+        if ((e->data[off] && e->data[off] < 0x20) || e->data[off] == '"') {
+            refused_events++;
+            return;
+        }
+    off = 2;
     l = look_of(e->origin);
     looks[l].used = ++look_clock;
     if (e->data[0] == 0)
@@ -3164,6 +3239,10 @@ static void player_hit_event(const struct event *e)
 
     if (e->length < 12 || get32le(e->data + 4) != ses.client || !plausible(mobile))
         return;
+    if (!float_within(e->data + 8, e->length >= 16 ? 2 : 1, STAT_LIMIT)) {
+        refused_events++;
+        return;
+    }
     copy((u8 *)&health, e->data + 8, 4);
     if (e->length >= 16)
         copy((u8 *)&fatigue, e->data + 12, 4);
@@ -3345,6 +3424,12 @@ static void actors_rx(u32 origin, u32 seq, const u8 *p, u32 n)
     for (i = 0; i < count && 4 + (i + 1) * ACTOR_BYTES <= n; i++) {
         const u8 *a = p + 4 + i * ACTOR_BYTES;
         refid = get32le(a);
+        if (!float_within(a + 4, 3, POSITION_LIMIT) || !float_within(a + 16, 1, ANGLE_LIMIT) ||
+            !float_within(a + ACTOR_HEALTH, 1, STAT_LIMIT) ||
+            !float_within(a + ACTOR_MAGICKA, 2, STAT_LIMIT)) {
+            refused_states++;
+            continue;
+        }
         slot = ACTORS;
         for (j = 0; j < ACTORS && slot == ACTORS; j++)
             if (actors_in[j].refid == refid)
@@ -3932,6 +4017,10 @@ static void authority_event(const struct event *e)
         if (refid == talk_refid)
             talk_broken = 1;
     } else if (e->kind == EVENT_HIT && hit_count < HITS) {
+        if (!float_within(e->data + 8, e->length >= 16 ? 2 : 1, STAT_LIMIT)) {
+            refused_events++;
+            return;
+        }
         hits[hit_count].refid = refid;
         hits[hit_count].origin = e->origin;
         copy((u8 *)&hits[hit_count].damage, e->data + 8, 4);
@@ -4481,6 +4570,10 @@ static void shot_event(const struct event *e)
     for (n = 0; n < EQUIP_ID - 1 && SHOT_BYTES + n < e->length && e->data[SHOT_BYTES + n]; n++)
         id[n] = (char)e->data[SHOT_BYTES + n];
     id[n] = 0;
+    if (!script_safe((const u8 *)id, EQUIP_ID)) {
+        refused_events++;
+        return;
+    }
     log_text("net.shot", id);
     firer = 0;
     if (!e->data[12])
@@ -5842,6 +5935,10 @@ static void spawn_event(const struct event *e)
     sid = get32le(p);
     cell = p[4] | (u32)p[5] << 8;
     count = p[6] | (u32)p[7] << 8;
+    if (!float_within(p + 8, 3, POSITION_LIMIT) || !float_within(p + 20, 3, ANGLE_LIMIT)) {
+        refused_events++;
+        return;
+    }
     copy((u8 *)pos, p + 8, 12);
     if (count & SPAWN_LEVELED) {
         if (e->length < SPAWN_BYTES + 6)
@@ -6581,6 +6678,11 @@ static void contents_event(const struct event *e)
         for (k = 0; off + k < e->length && p[off + k] && k < SPAWN_ID - 1; k++)
             x->id[k] = (char)p[off + k];
         x->id[k] = 0;
+        if (!script_safe((const u8 *)x->id, SPAWN_ID)) {
+            box_in_count = box_in_part = 0;
+            refused_events++;
+            return;
+        }
         while (off < e->length && p[off])
             off++;
         off++;
@@ -7620,6 +7722,7 @@ static void handshake_stat(void)
     tes3x_log_hex3("net.sealed", sec.sealed, sec.opened, sec.keyed);
     tes3x_log_hex3("net.rejected", sec.forged, sec.replayed, 0);
     tes3x_log_hex3("net.entropy", entropy.mixed, entropy.drawn, 0);
+    tes3x_log_hex3("net.refused_values", refused_states, refused_events, refused_anims);
 }
 
 static void event_handle(const struct event *e)
