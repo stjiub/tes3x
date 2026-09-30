@@ -192,11 +192,14 @@ order = 10
     def test_patches_are_a_checklist_and_carry_their_ini_keys(self):
         window = self.window()
         window.tabs.setCurrentIndex(4)
+        self.assertEqual(window.patch_items["mcp-92"].text(0), "mcp-92")
+        self.assertEqual(window.patch_items["mcp-92"].text(1),
+                         "Summoned creature crash fix")
         window.patch_tree.setCurrentItem(window.patch_items["rotating-autosaves"])
         self.assertIn("Rotate automatic saves", window.context_info.toPlainText())
         window.set_patch("rotating-autosaves", True)
         self.assertEqual(window.patch_configuration()["enable"], ["rotating-autosaves"])
-        self.assertEqual(window.patch_items["rotating-autosaves"].text(2), "Profile")
+        self.assertEqual(window.patch_items["rotating-autosaves"].text(3), "Profile")
         self.assertIn(("xbox", "autosaveslots"), window.ini.patch_keys)
         window.ini.set_value("Xbox:AutosaveSlots", 5)
         self.assertTrue(window.save_profile())
@@ -216,7 +219,7 @@ order = 10
         window.set_patch("console", True)
         self.assertEqual(window.patch_configuration()["disable"], [])
 
-    def test_developer_mode_reveals_nonrelease_patches_and_build_options(self):
+    def test_developer_mode_reveals_dev_patches(self):
         class Settings:
             def __init__(self):
                 self.values = {}
@@ -230,20 +233,25 @@ order = 10
         settings = Settings()
         window = self.window(settings=settings)
         heap = window.patch_items["heap-census"]
+        profiler = window.patch_items["profile"]
+        transition = window.patch_items["transition-autosaves"]
         self.assertTrue(heap.isHidden())
+        self.assertFalse(profiler.isHidden())
+        self.assertFalse(transition.isHidden())
         self.assertFalse(heap.flags() & Qt.ItemFlag.ItemIsUserCheckable)
-        self.assertEqual(heap.text(1), "dev")
-        self.assertEqual(window.patch_tree.headerItem().text(2), "Included by")
+        self.assertFalse(profiler.flags() & Qt.ItemFlag.ItemIsUserCheckable)
+        self.assertEqual(heap.text(2), "dev")
+        self.assertEqual(window.patch_tree.headerItem().text(3), "Included by")
 
         window.action_developer_mode.setChecked(True)
         self.assertFalse(heap.isHidden())
-        self.assertEqual(heap.text(2), "Build option")
+        self.assertEqual(heap.text(3), "Build option")
         self.assertTrue(settings.values["developer_mode"])
 
-    def test_active_preview_patch_stays_visible_without_developer_mode(self):
+    def test_preview_patch_is_visible_without_developer_mode(self):
         window = self.window()
         patch = window.patch_items["rotating-autosaves"]
-        self.assertTrue(patch.isHidden())
+        self.assertFalse(patch.isHidden())
         window.set_patch("rotating-autosaves", True)
         self.assertFalse(patch.isHidden())
 
@@ -278,7 +286,7 @@ order = 10
         window.refresh_analysis()
         self.assertEqual(rows(), [["Morrowind.bsa", "Retail", "yes"],
                                   ["Mod.bsa", "Mod", "yes, via multi-bsa"]])
-        self.assertEqual(window.patch_items["multi-bsa"].text(2), "Package mode")
+        self.assertEqual(window.patch_items["multi-bsa"].text(3), "Package mode")
         self.assertTrue(window.save_profile())
         self.assertEqual(self.saved()["mods"][0]["archives"], "load")
 
@@ -331,6 +339,48 @@ order = 10
         self.assertEqual(saved["package"], {"mode": "loose"})
         self.assertEqual(saved["preferences"], {"invert_look": True})
         self.assertTrue(saved["mods"][0]["loose"])
+
+    def test_build_tab_can_reset_to_defaults(self):
+        config = self.root / "local.toml"
+        config.write_text(f'[paths]\nmod_library = "{self.library.as_posix()}"\n',
+                          encoding="utf-8")
+        window = self.window(config=config)
+        build = window.build
+        build.title.setText("Modded")
+        build.remote_root.setText("F:/Games/Test")
+        build.dashboard.setChecked(False)
+        build.select(build.mode, "loose")
+        build.archive_name.setText("custom.bsa")
+        build.archive_only.setChecked(True)
+        build.drive_letter.setCurrentText("F")
+        build.loose_assets.setPlainText("textures/*")
+        build.select(build.max_texture_size, 1024)
+        build.convert_all.setChecked(True)
+        build.max_filename.setValue(20)
+        build.clear_cache.setChecked(True)
+        build.keep_assets.setPlainText("meshes/*")
+        build.exclude.setPlainText("music")
+        build.select(build.invert_look, True)
+
+        build.reset_button.click()
+
+        self.assertEqual(build.title.text(), "")
+        self.assertEqual(build.remote_root.text(), "")
+        self.assertEqual(build.library(), "")
+        self.assertTrue(build.dashboard.isChecked())
+        self.assertEqual(build.mode.currentData(), "delta-bsa")
+        self.assertEqual(build.archive_name.text(), "")
+        self.assertFalse(build.archive_only.isChecked())
+        self.assertEqual(build.drive_letter.currentText(), "D")
+        self.assertEqual(build.lines(build.loose_assets), [])
+        self.assertEqual(build.max_texture_size.currentData(), 512)
+        self.assertFalse(build.convert_all.isChecked())
+        self.assertEqual(build.max_filename.value(), 42)
+        self.assertFalse(build.clear_cache.isChecked())
+        self.assertEqual(build.lines(build.keep_assets), [])
+        self.assertEqual(build.lines(build.exclude), [])
+        self.assertIsNone(build.invert_look.currentData())
+        self.assertTrue(window.is_dirty())
 
     def test_opens_without_arguments_and_switches_profiles(self):
         profiles = self.root / "profiles"

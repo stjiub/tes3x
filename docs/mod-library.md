@@ -125,9 +125,10 @@ first start, with no `tes3x.local.toml` yet, it opens the local settings.
   the details pane; a file shows its complete provider chain and whether it will be loose or packed.
   Patches and INI settings use the same pane.
 - **Patches** is a checklist grouped by category, starting from a preset. Changes are saved as
-  the profile's `enable` and `disable` lists. **View > Developer mode** reveals `dev` and
-  `preview` patches and informational rows for command-line and build options. A non-release
-  patch already used by the profile remains visible when Developer mode is off.
+  the profile's `enable` and `disable` lists. Release and preview patches are always listed,
+  including informational rows for command-line and build options. **View > Developer mode**
+  reveals `dev` patches. A dev patch already used by the profile remains visible when Developer
+  mode is off.
 - **INI** shows the `Morrowind.ini` the build ships: the retail values, and the `[Xbox]` keys of
   the patches that are on. Double-click a value to change it; only changed values go in the
   profile. When a patch is turned off, the values only it reads are dropped.

@@ -32,7 +32,7 @@ CANDIDATE_STATUSES = {
     "rejected": "Deliberately left out of TES3X.",
 }
 PRIORITIES = ("high", "medium", "low", "none")
-PATCH_FIELDS = (("name", "category", "channel", "selection", "summary"),
+PATCH_FIELDS = (("name", "title", "category", "channel", "selection", "summary"),
                 ("bit", "source", "takes", "origin", "ini"))
 CANDIDATE_FIELDS = (("name", "origin", "status", "priority", "summary", "reason"),
                     ("category", "default", "doc"))

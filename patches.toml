@@ -5,6 +5,7 @@
 # from it: run `python tools/tes3x_patches.py --write` after editing.
 #
 # name       what --apply and profiles call it
+# title      short human-facing name
 # bit        its bit in the patch mask the payload logs (diag.patches); fixed forever once used
 # category   core, correctness, compat, performance, qol, balance, instrumentation, infrastructure
 # channel    dev, preview or release; promotion is a maintainer decision
@@ -51,6 +52,7 @@ name = "TES3X"
 
 [[patch]]
 name = "payload"
+title = "Code payload injection"
 category = "infrastructure"
 channel = "dev"
 selection = "option"
@@ -59,6 +61,7 @@ summary = "Inject a code section and run it from the entry point."
 
 [[patch]]
 name = "boot-media"
+title = "Unrestricted boot media"
 bit = 2
 category = "infrastructure"
 channel = "preview"
@@ -67,6 +70,7 @@ summary = "Permit booting from any media and region, not just a retail DVD."
 
 [[patch]]
 name = "drive-letters"
+title = "Data Files drive redirect"
 bit = 0
 category = "infrastructure"
 channel = "preview"
@@ -76,6 +80,7 @@ summary = "Point every Data Files asset path at one drive."
 
 [[patch]]
 name = "save-staging"
+title = "Same-volume save staging"
 bit = 1
 category = "infrastructure"
 channel = "dev"
@@ -85,6 +90,7 @@ summary = "Stage saves on one volume with UDATA so the commit renames instead of
 
 [[patch]]
 name = "title"
+title = "Dashboard title"
 category = "infrastructure"
 channel = "preview"
 selection = "option"
@@ -93,6 +99,7 @@ summary = "Rename the XBE's certificate title, the name a dashboard falls back t
 
 [[patch]]
 name = "title-id"
+title = "Separate save title ID"
 category = "infrastructure"
 channel = "preview"
 selection = "option"
@@ -101,6 +108,7 @@ summary = "Give the XBE its own title ID, so its saves go to a separate E:/UDATA
 
 [[patch]]
 name = "multi-bsa"
+title = "Multiple BSA loading"
 bit = 3
 category = "infrastructure"
 channel = "preview"
@@ -110,6 +118,7 @@ summary = "Load every archive listed in tes3xarch.txt, not just Morrowind.bsa."
 
 [[patch]]
 name = "script-ext"
+title = "Script opcode extensions"
 bit = 4
 category = "compat"
 channel = "preview"
@@ -119,6 +128,7 @@ summary = "Add script opcodes: widen the length bounds and hook Script::RunFunct
 
 [[patch]]
 name = "mwse-legacy"
+title = "Legacy MWSE bytecode"
 bit = 18
 category = "compat"
 channel = "dev"
@@ -128,6 +138,7 @@ summary = "Interpret legacy MWSE 0.9.4 bytecode embedded in compiled scripts."
 
 [[patch]]
 name = "mcp-1"
+title = "Unresolvable reference cleanup"
 origin = { source = "MCP", id = "1" }
 bit = 5
 category = "core"
@@ -139,6 +150,7 @@ summary = "Stop an unresolvable reference being restamped as created at runtime.
 
 [[patch]]
 name = "mcp-37"
+title = "Cell-change casting crash fix"
 origin = { source = "MCP", id = "37" }
 bit = 11
 category = "core"
@@ -149,6 +161,7 @@ summary = "Cancel stale NPC casts before a cell change leaves them dangling."
 
 [[patch]]
 name = "mcp-97"
+title = "Saved-script initialization fix"
 origin = { source = "MCP", id = "97" }
 bit = 9
 category = "core"
@@ -159,6 +172,7 @@ summary = "Advance the script parser correctly while initializing saved data."
 
 [[patch]]
 name = "mcp-98"
+title = "Animated container crash fix"
 origin = { source = "MCP", id = "98" }
 bit = 27
 category = "core"
@@ -168,6 +182,7 @@ summary = "Keep animated-container access from destroying a live animation."
 
 [[patch]]
 name = "mcp-92"
+title = "Summoned creature crash fix"
 origin = { source = "MCP", id = "92" }
 bit = 28
 category = "core"
@@ -177,6 +192,7 @@ summary = "Retire a summoned actor's magic before the actor is destroyed."
 
 [[patch]]
 name = "mcp-154"
+title = "Script data overread fix"
 origin = { source = "MCP", id = "154" }
 bit = 10
 category = "core"
@@ -187,6 +203,7 @@ summary = "Pad compiled script-data allocations to keep dword reads in bounds."
 
 [[patch]]
 name = "mcp-102"
+title = "Removed-mod object reactivation"
 origin = { source = "MCP", id = "102" }
 bit = 12
 category = "correctness"
@@ -196,6 +213,7 @@ summary = "Reactivate script-triggered objects after their script mod is removed
 
 [[patch]]
 name = "dxt5-size"
+title = "DXT5 allocation fix"
 bit = 14
 category = "core"
 channel = "preview"
@@ -205,6 +223,7 @@ summary = "Allocate DXT5 textures at their real size, not a negative one that co
 
 [[patch]]
 name = "video-arena"
+title = "Expanded-memory video arena"
 bit = 17
 category = "compat"
 channel = "dev"
@@ -215,6 +234,7 @@ summary = "With more than 64 MB, size the texture and vertex buffer arena from [
 
 [[patch]]
 name = "rotating-autosaves"
+title = "Rotating autosaves"
 origin = { source = "OpenMW" }
 bit = 8
 category = "qol"
@@ -226,6 +246,7 @@ summary = "Rotate automatic saves through INI-configurable slots."
 
 [[patch]]
 name = "build-preferences"
+title = "Build-selected player preferences"
 bit = 15
 category = "qol"
 channel = "preview"
@@ -235,6 +256,7 @@ summary = "Apply profile-selected player preferences after stored Xbox options l
 
 [[patch]]
 name = "transition-autosaves"
+title = "Transition autosaves"
 bit = 16
 category = "qol"
 channel = "preview"
@@ -245,6 +267,7 @@ summary = "Autosave before doors, scripted teleports, interventions and paid tra
 
 [[patch]]
 name = "diagnostics"
+title = "Crash and hang diagnostics"
 bit = 6
 category = "instrumentation"
 channel = "preview"
@@ -255,6 +278,7 @@ summary = "Enable INI-controlled crash records, snapshots and a hang watchdog."
 
 [[patch]]
 name = "console"
+title = "In-game console"
 bit = 7
 category = "qol"
 channel = "preview"
@@ -265,6 +289,7 @@ summary = "Make the in-game console reachable, by replacing its input gate."
 
 [[patch]]
 name = "profile"
+title = "Function profiler"
 bit = 13
 category = "instrumentation"
 channel = "preview"
@@ -276,6 +301,7 @@ summary = "Time listed functions with RDTSC at every direct call site."
 
 [[patch]]
 name = "heap-census"
+title = "Engine heap census"
 bit = 19
 category = "instrumentation"
 channel = "dev"
@@ -285,6 +311,7 @@ summary = "Count live engine heap bytes by source file and line, or by call site
 
 [[patch]]
 name = "mem-census"
+title = "Kernel memory census"
 bit = 21
 category = "instrumentation"
 channel = "dev"
@@ -294,6 +321,7 @@ summary = "Count kernel allocations and the XAPI heap by caller, with the addres
 
 [[patch]]
 name = "heap-region"
+title = "Expanded-memory heap region"
 bit = 20
 category = "compat"
 channel = "preview"
@@ -304,6 +332,7 @@ summary = "With more than 64 MB, size the engine heap's region from [Xbox] HeapR
 
 [[patch]]
 name = "info-name-arena"
+title = "Paged dialogue link names"
 bit = 22
 category = "compat"
 channel = "dev"
@@ -313,6 +342,7 @@ summary = "Page INFO's temporary ID, previous and next names outside the engine 
 
 [[patch]]
 name = "lean-menu"
+title = "Low-memory main menu"
 bit = 23
 category = "performance"
 channel = "dev"
@@ -322,6 +352,7 @@ summary = "Load only game settings for the main menu; New Game and Load relaunch
 
 [[patch]]
 name = "mcp-146"
+title = "Nocked arrow removal"
 origin = { source = "MCP", id = "146" }
 bit = 24
 category = "qol"
@@ -332,6 +363,7 @@ summary = "Remove a fully nocked arrow with the Ready Weapon control."
 
 [[patch]]
 name = "bow-view"
+title = "Lowered first-person bow"
 bit = 25
 category = "qol"
 channel = "dev"
@@ -342,6 +374,7 @@ summary = "Lower the first-person bow and arms while an arrow is nocked."
 
 [[patch]]
 name = "multiplayer"
+title = "Experimental multiplayer"
 bit = 26
 category = "infrastructure"
 channel = "dev"

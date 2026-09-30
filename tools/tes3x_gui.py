@@ -1167,6 +1167,12 @@ class BuildSettings(QWidget):
         layout = QVBoxLayout(self)
         for group in (identity, package, rules, preferences):
             layout.addWidget(group)
+        self.reset_button = QPushButton("Reset to defaults")
+        self.reset_button.clicked.connect(self.reset_defaults)
+        button_row = QHBoxLayout()
+        button_row.addStretch()
+        button_row.addWidget(self.reset_button)
+        layout.addLayout(button_row)
         layout.addStretch()
 
         for widget in (self.title, self.remote_root, self.archive_name):
@@ -1183,6 +1189,11 @@ class BuildSettings(QWidget):
     def changed(self, *_args):
         if not self.loading:
             self.on_change()
+
+    def reset_defaults(self):
+        self.load({})
+        self.on_library()
+        self.on_change()
 
     def browse_library(self):
         selected = QFileDialog.getExistingDirectory(self, "Mod library", self.library_path.text())
@@ -1471,7 +1482,7 @@ class ProfileWindow(QMainWindow):
         self.action_developer_mode = QAction("&Developer mode", self)
         self.action_developer_mode.setCheckable(True)
         self.action_developer_mode.setChecked(self.developer_mode)
-        self.action_developer_mode.setToolTip("Show dev and preview patches and build options")
+        self.action_developer_mode.setToolTip("Show development-channel patches")
         self.action_developer_mode.toggled.connect(self.set_developer_mode)
         view_menu.addAction(self.action_developer_mode)
 
@@ -3630,9 +3641,9 @@ class ProfileWindow(QMainWindow):
         top.addWidget(self.patch_search, 1)
 
         self.patch_tree = QTreeWidget()
-        self.patch_tree.setHeaderLabels(["Patch", "Status", "Included by"])
+        self.patch_tree.setHeaderLabels(["Patch", "Title", "Status", "Included by"])
         self.patch_tree.setAlternatingRowColors(True)
-        self.patch_tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.patch_tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.patch_tree.header().setStretchLastSection(False)
         self.patch_tree.itemChanged.connect(self.patch_item_changed)
         self.patch_tree.currentItemChanged.connect(self.show_context_info)
@@ -3648,7 +3659,7 @@ class ProfileWindow(QMainWindow):
             self.patch_tree.addTopLevelItem(group)
             self.patch_groups[category] = group
             for entry in entries:
-                item = QTreeWidgetItem([entry["name"], entry["channel"], ""])
+                item = QTreeWidgetItem([entry["name"], entry["title"], entry["channel"], ""])
                 item.setData(0, ROLE, entry["name"])
                 item.setToolTip(0, entry["summary"])
                 flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
@@ -3660,8 +3671,9 @@ class ProfileWindow(QMainWindow):
                 group.addChild(item)
                 self.patch_items[entry["name"]] = item
             group.setExpanded(True)
-        self.patch_tree.resizeColumnToContents(1)
+        self.patch_tree.resizeColumnToContents(0)
         self.patch_tree.resizeColumnToContents(2)
+        self.patch_tree.resizeColumnToContents(3)
         tab = QWidget()
         layout = QVBoxLayout(tab)
         layout.addLayout(top)
@@ -3735,12 +3747,12 @@ class ProfileWindow(QMainWindow):
                 reason = "Build settings" if on else "Build option"
             else:
                 reason = f"{preset} preset" if on else ""
-            item.setText(2, reason)
-            item.setToolTip(2, why)
-            item.setForeground(2, WARNING if entry["selection"] == "always"
+            item.setText(3, reason)
+            item.setToolTip(3, why)
+            item.setForeground(3, WARNING if entry["selection"] == "always"
                                else self.palette().text().color())
         self.patch_loading = False
-        self.patch_tree.resizeColumnToContents(2)
+        self.patch_tree.resizeColumnToContents(3)
         self.sync_patch_ini(applied)
         self.filter_patches()
         self.patch_loading = True
@@ -3811,11 +3823,11 @@ class ProfileWindow(QMainWindow):
                 child = group.child(i)
                 entry = by_name[child.data(0, ROLE)]
                 name = entry["name"]
-                advanced = (entry["channel"] != "release" or entry["selection"] == "option")
+                advanced = entry["channel"] == "dev"
                 in_profile = name in self.applied_patches or name in self.patch_modes
                 hidden = advanced and not self.developer_mode and not in_profile
-                hidden = hidden or (bool(query) and query not in (name + " "
-                                      + entry["summary"]).casefold())
+                hidden = hidden or (bool(query) and query not in (name + " " + entry["title"]
+                                      + " " + entry["summary"]).casefold())
                 child.setHidden(hidden)
                 visible += not hidden
             group.setHidden(visible == 0)
@@ -3837,7 +3849,7 @@ class ProfileWindow(QMainWindow):
         origin_text = source.get("name", origin.get("source", "TES3X"))
         if "id" in origin:
             origin_text += " #" + str(origin["id"])
-        lines = [entry["name"], "", entry["summary"], "",
+        lines = [f"{entry['name']} — {entry['title']}", "", entry["summary"], "",
                  f"Category: {entry['category']}", f"Status: {entry['channel']}",
                  f"Origin: {origin_text}"]
         selection = {"always": "every build", "packaging": "package mode",

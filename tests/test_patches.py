@@ -62,7 +62,7 @@ class RegistryTests(unittest.TestCase):
     def test_patch_channel_is_explicit(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'patches.toml'
-            path.write_text('[[patch]]\nname = "x"\ncategory = "core"\nchannel = "verified"\n'
+            path.write_text('[[patch]]\nname = "x"\ntitle = "X"\ncategory = "core"\nchannel = "verified"\n'
                             'selection = "preset"\nsummary = "x"\n', encoding='utf-8')
             with self.assertRaises(registry.RegistryError):
                 registry.load(path)
