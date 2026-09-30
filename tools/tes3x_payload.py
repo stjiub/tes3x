@@ -44,7 +44,7 @@ PLACE_ADDRESSES = (
     ("ANIM_HAS_GROUP", 0x000CC960), ("ANIM_PLAY_GROUP", 0x000CE5C0),
     ("UNREADY_WEAPON", 0x00158560), ("MOBILE_HANDS", 0x0015BAF0),
     ("APPLY_HEALTH_DAMAGE", 0x0017C3D0), ("APPLY_FATIGUE_DAMAGE", 0x0017C950),
-    ("HIT_STUN", 0x0017DC30),
+    ("HIT_STUN", 0x0017DC30), ("BLOOD", 0x001758B0),
 )
 # MagicSourceInstance::spellHit, which the multiplayer patch fronts at every call site, and what
 # the ExplodeSpell and Cast handlers call to start a spell on a reference.

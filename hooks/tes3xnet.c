@@ -75,8 +75,8 @@
 #error "define TES3X_NET_SPELL_HIT, TES3X_NET_CAST_BOLT, their call sites and the spell functions"
 #endif
 #if !defined(TES3X_NET_SHOOT) || !defined(TES3X_NET_SHOOT_SLOTS) || !defined(TES3X_NET_NOCK) || \
-    !defined(TES3X_NET_HIT_ROLL) || !defined(TES3X_NET_SHOT_ROLL_SITES)
-#error "define TES3X_NET_SHOOT, its vtable slots, TES3X_NET_NOCK and the projectile's hit roll"
+    !defined(TES3X_NET_HIT_ROLL) || !defined(TES3X_NET_SHOT_ROLL_SITES) || !defined(TES3X_NET_BLOOD)
+#error "define TES3X_NET_SHOOT, its vtable slots, TES3X_NET_NOCK, the hit roll and the blood"
 #endif
 
 typedef unsigned short u16;
@@ -3043,22 +3043,37 @@ static void death_frame(u8 *mobile, u8 *ref, u32 refid, u32 owner)
     }
 }
 
-/* A hit from a follower's player: the damage, and the actor turns on that player's ghost unless
- * it is fighting already. */
+/* A hit from a follower's player lands as a blow does: the damage with its sounds, the stun test
+ * and, from the hitter's ghost, the blood. The actor turns on that ghost unless it is fighting
+ * already. */
+typedef void(__attribute__((thiscall)) *fn_blood)(void *splashes, void *victim, void *attacker);
+#define WORLD_SPLASHES 0x68
+static u32 bloodied;
+
 static void hits_apply(u8 *mobile, void *ref, u32 refid)
 {
+    u8 *world = *(u8 **)TES3X_NET_WORLD, *attacker;
     char line[48];
     u32 i, g;
 
     for (i = 0; i < hit_count; i++)
         if (hits[i].refid == refid) {
-            if (hits[i].damage > 0)
-                actor_command(ref, "ModCurrentHealth ", -round_int(hits[i].damage));
-            if (hits[i].fatigue > 0)
-                actor_command(ref, "ModCurrentFatigue ", -round_int(hits[i].fatigue));
             for (g = 0; g < PEERS && !(ghosts[g].client == hits[i].origin && ghosts[g].placed);
                  g++)
                 ;
+            if (hits[i].fatigue > 0)
+                ((fn_apply_fatigue)TES3X_NET_APPLY_FATIGUE_DAMAGE)(mobile, hits[i].fatigue, 1.0f,
+                                                                   0);
+            if (hits[i].damage > 0)
+                ((fn_apply_health)TES3X_NET_APPLY_HEALTH_DAMAGE)(mobile, hits[i].damage, 0, 0, 0);
+            ((fn_hit_stun)TES3X_NET_HIT_STUN)(mobile, hits[i].damage > 0 ? hits[i].damage
+                                                                          : hits[i].fatigue, 0);
+            if (hits[i].damage > 0 && g < PEERS && plausible(world) &&
+                plausible(*(void **)(world + WORLD_SPLASHES)) &&
+                ghost_ref(g) && plausible(attacker = ref_mobile(ghost_ref(g)))) {
+                ((fn_blood)TES3X_NET_BLOOD)(*(void **)(world + WORLD_SPLASHES), mobile, attacker);
+                bloodied++;
+            }
             if (g < PEERS && !(*(const u32 *)(mobile + MOBILE_FLAGS) & MOBILE_IN_COMBAT)) {
                 *put_text(put_int(put_text(line, "StartCombat \"tes3x_ghost"), (int)g + 1),
                           "\"") = 0;
@@ -3314,7 +3329,7 @@ static void authority_stat(void)
     tes3x_log_hex3("net.actor_states", actor_states_out, actor_states_in, actor_moves);
     tes3x_log_hex3("net.actor_events", follows, hits_out, hits_in);
     tes3x_log_hex3("net.player_hits", player_hits_out, player_hits_in, retaliations);
-    tes3x_log_hex3("net.hostiles", hostiles, 0, 0);
+    tes3x_log_hex3("net.hostiles", hostiles, bloodied, 0);
     tes3x_log_hex3("net.actor_deaths", death_count, deaths_reported, deaths_applied);
     tes3x_log_hex3("net.actor_holds", remote_holds_in, remote_breaks_out, remote_breaks_in);
 }
