@@ -885,10 +885,14 @@ static void session_rx_plain(const u8 *p, u32 n)
     type = p[5];
     seq = get32le(p + 12);
     echo = get32le(p + 24);
+    /* At join, or later as a kick or a ban. */
     if (type == T3MP_REFUSE) {
-        if (ses.state != SESSION_HELLO || n < T3MP_HEADER + 8)
+        if ((ses.state != SESSION_HELLO && ses.state != SESSION_JOINED) || n < T3MP_HEADER + 8)
             return;
         ses.state = SESSION_REFUSED;
+        sec.keyed = 0;
+        for (i = 0; i < PEERS; i++)
+            peers[i].client = 0;
         ses.refused_hash = get32le(p + 28);
         ses.refused_plugins = get32le(p + 32);
         ses.refused_reason = n >= T3MP_HEADER + 12 ? get32le(p + 36) : 0;

@@ -107,6 +107,26 @@ On a server that faces the internet, give players the fingerprint as well: the p
 encrypted to the server's key, so a console that has pinned the key cannot give it to an
 impostor on its first join.
 
+### Kicks and bans
+
+The server takes admin commands typed at its own window, or from the same PC with
+`python tools/tes3x_net.py admin COMMAND` (the server listens for them on `127.0.0.1` only, at
+`--admin-port`, by default the game port plus one; `--admin-port 0` turns that off):
+
+| Command | Does |
+|---|---|
+| `list` | the clients: number, key fingerprint, MAC and address |
+| `kick N` | drop client N; its console stops trying until the game is launched again |
+| `ban N` | ban client N's key and MAC, and drop it |
+| `ban key FINGERPRINT`, `ban mac MAC`, `ban address A.B.C.D` | ban one of them; `unban` the same way lifts it |
+| `bans` | the bans |
+
+Bans are kept in `bans.txt` in the `--world` folder. A key is a player's identity, but a player
+can make a new one by deleting `servers.ini`; on a server with a password, a new key needs the
+password again. The MAC is what the console reports, so a modified build can change it. An
+address ban drops everything from that address before the handshake, and also stops everyone
+else who shares it, such as a household behind one router.
+
 ## Connect a console
 
 1. Start the server.
@@ -178,7 +198,7 @@ With `console` in the build, open the console (Back + right thumb click) and typ
 The log is `E:\tes3xlog.txt`. A console whose plugins differ from the session's logs
 `net.refused` and stops trying until the game is launched again; the server prints `refused`
 with both load order hashes. `net.refused_reason` says why: 1 the load order, 2 the server is
-full, 3 a wrong password.
+full, 3 a wrong password, 4 kicked, 5 banned.
 
 ## Limits
 

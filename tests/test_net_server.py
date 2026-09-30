@@ -134,6 +134,42 @@ class ServerTests(unittest.TestCase):
         (folder,) = (world / 'uploads').iterdir()
         self.assertEqual((folder / 'char.ess').read_bytes(), data)
 
+    def admin(self, port, *words):
+        run = subprocess.run([sys.executable, str(NET), 'admin', '--port', str(port), *words],
+                             capture_output=True, text=True, timeout=10)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        return run.stdout
+
+    def test_kick_and_ban_from_the_admin_port(self):
+        world = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, world)
+        admin = free_port()
+        self.start('--world', str(world), '--admin-port', str(admin))
+        first = self.client(1)
+        first.join()
+        self.assertIn('client 1: playing', self.admin(admin, 'list'))
+        self.admin(admin, 'kick', '1')
+        body = first.receive(1.0, tes3x_net.REFUSE)
+        self.assertEqual(tes3x_net.REFUSE_BODY.unpack(body)[2], tes3x_net.REFUSED_KICKED)
+        again = self.client(1)  # the same key rejoins after a kick
+        again.session ^= 2
+        again.join()
+        self.assertIn('banned key', self.admin(admin, 'ban', '1'))
+        body = again.receive(1.0, tes3x_net.REFUSE)
+        self.assertEqual(tes3x_net.REFUSE_BODY.unpack(body)[2], tes3x_net.REFUSED_BANNED)
+        third = self.client(1)
+        third.session ^= 4
+        with self.assertRaises(RuntimeError):
+            third.join(timeout=1.0)
+        self.assertEqual(tes3x_net.REFUSE_BODY.unpack(third.refused)[2],
+                         tes3x_net.REFUSED_BANNED)
+        banned = [line.split() for line in (world / 'bans.txt').read_text().splitlines()]
+        self.assertEqual([kind for kind, _ in banned], ['key', 'mac'])
+        self.admin(admin, 'unban', *[word for pair in banned for word in pair])
+        fourth = self.client(1)
+        fourth.session ^= 8
+        fourth.join()
+
     def test_replayed_handshake3_does_not_move_the_session(self):
         self.start()
         client = self.client(1)

@@ -23,11 +23,13 @@ import hmac
 import json
 import math
 import os
+import queue
 import random
 import select
 import socket
 import struct
 import sys
+import threading
 import time
 import traceback
 
@@ -334,7 +336,8 @@ PASSWORD_MAX = 64
 PASSWORD_RATE = (5, 1 / 60)  # password tries from one address, (burst, per second)
 # REFUSE: the session's load order hash, its plugin count, and why
 REFUSE_BODY = struct.Struct("<III")
-REFUSED_LOAD_ORDER, REFUSED_FULL, REFUSED_PASSWORD = 1, 2, 3
+REFUSED_LOAD_ORDER, REFUSED_FULL, REFUSED_PASSWORD, REFUSED_KICKED, REFUSED_BANNED = 1, 2, 3, 4, 5
+BAN_KINDS = ("key", "mac", "address")
 MONTH_DAYS = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
 TIMEOUT = 5.0
 EVENTS_HEAD = struct.Struct("<IB3x")  # the sender's last delivered event, event count
@@ -1254,6 +1257,47 @@ def load_password(args):
     return password.encode("ascii")
 
 
+def ban_value(kind, value):
+    """A ban's value in the form the server compares, or None: a key's fingerprint, a MAC, an
+    IPv4 address."""
+    value = value.lower()
+    if kind == "key":
+        ok = len(value) == 32 and all(c in "0123456789abcdef" for c in value)
+    elif kind == "mac":
+        parts = value.split(":")
+        ok = len(parts) == 6 and all(len(x) == 2 and all(c in "0123456789abcdef" for c in x)
+                                     for x in parts)
+    elif kind == "address":
+        try:
+            ok = socket.inet_ntoa(socket.inet_aton(value)) == value
+        except OSError:
+            ok = False
+    else:
+        ok = False
+    return value if ok else None
+
+
+def load_bans(path):
+    """{kind: set of values} from bans.txt: one "KIND VALUE" per line, a note may follow."""
+    bans = {kind: set() for kind in BAN_KINDS}
+    if path and os.path.exists(path):
+        with open(path, encoding="utf-8") as stream:
+            for line in stream:
+                words = line.split()
+                if len(words) >= 2 and ban_value(words[0], words[1]):
+                    bans[words[0]].add(ban_value(words[0], words[1]))
+    return bans
+
+
+def save_bans(path, bans):
+    if path:
+        with open(path + ".tmp", "w", encoding="utf-8") as stream:
+            for kind in BAN_KINDS:
+                for value in sorted(bans[kind]):
+                    stream.write(f"{kind} {value}\n")
+        os.replace(path + ".tmp", path)
+
+
 def load_admitted(path):
     """Console keys that have given the password, one hex key per line with a note after it."""
     admitted = set()
@@ -1346,6 +1390,22 @@ def serve(args):
     password = load_password(args)
     admitted_path = os.path.join(args.world, "admitted.txt") if args.world else None
     admitted, password_buckets = load_admitted(admitted_path), {}
+    bans_path = os.path.join(args.world, "bans.txt") if args.world else None
+    bans = load_bans(bans_path)
+    admin_sock, commands = None, queue.Queue()
+    admin_port = args.port + 1 if args.admin_port is None else args.admin_port
+    if admin_port:
+        admin_sock = udp_socket()
+        try:
+            admin_sock.bind(("127.0.0.1", admin_port))
+            print(f"admin commands on 127.0.0.1:{admin_port} (tes3x_net.py admin)"
+                  + (", and here" if sys.stdin and sys.stdin.isatty() else ""), flush=True)
+        except OSError as error:
+            admin_sock = None
+            print(f"no admin port: 127.0.0.1:{admin_port}: {error}", flush=True)
+    if sys.stdin and sys.stdin.isatty():
+        threading.Thread(target=lambda: [commands.put(line) for line in sys.stdin],
+                         daemon=True).start()
     if password:
         print(f"password asked of new consoles; {len(admitted)} admitted"
               + ("" if admitted_path else " (not kept: give --world)"), flush=True)
@@ -1855,7 +1915,7 @@ def serve(args):
     def handle(packet, addr):
         """Take a handshake message or open a sealed packet, then hand it on in the T3MP
         layout. Anything else is dropped unread."""
-        if len(packet) < OUTER.size or dropped("in"):
+        if len(packet) < OUTER.size or dropped("in") or addr[0] in bans["address"]:
             return
         magic, version, kind, _, session, seq = OUTER.unpack_from(packet)
         if magic != b"T3MP" or version != T3MP_VERSION:
@@ -1910,6 +1970,53 @@ def serve(args):
         order, plugins = pinned or (0, 0)
         send(stranger, REFUSE, REFUSE_BODY.pack(order, plugins or 0, reason))
 
+    def kick(client, reason):
+        """Refuse a joined client, which stops it until the game is launched again."""
+        if client.alive and client.keys:
+            order, plugins = pinned or (0, 0)
+            send(client, REFUSE, REFUSE_BODY.pack(order, plugins or 0, reason))
+        if client.alive:
+            leave(client)
+        by_session.pop(client.session, None)
+
+    def admin(line):
+        """Run an admin command; the reply to print."""
+        words = line.split()
+        verb, rest = (words[0].lower(), words[1:]) if words else ("", [])
+        by_id = {str(c.id): c for c in clients.values()}
+        if verb == "list" and not rest:
+            return "\n".join(
+                f"client {c.id}: {'playing' if c.alive else 'away'}, key "
+                f"{fingerprint(c.key) if c.key else '-'}, mac {c.mac}, address "
+                f"{c.addr[0] if c.addr else '-'}"
+                for c in sorted(clients.values(), key=lambda c: c.id)) or "no clients"
+        if verb == "kick" and len(rest) == 1 and rest[0] in by_id:
+            kick(by_id[rest[0]], REFUSED_KICKED)
+            return f"kicked client {rest[0]}"
+        if verb == "ban" and len(rest) == 1 and rest[0] in by_id:
+            client = by_id[rest[0]]
+            rest = ["key", fingerprint(client.key), "mac", client.mac]
+        if verb in ("ban", "unban") and rest and len(rest) % 2 == 0:
+            pairs = [(kind, ban_value(kind, value)) for kind, value in zip(rest[::2], rest[1::2])]
+            if all(value for _, value in pairs):
+                for kind, value in pairs:
+                    (bans[kind].add if verb == "ban" else bans[kind].discard)(value)
+                save_bans(bans_path, bans)
+                if verb == "ban":
+                    for c in list(clients.values()):
+                        if c.alive and ((c.key and fingerprint(c.key) in bans["key"]) or
+                                        c.mac in bans["mac"] or
+                                        (c.addr and c.addr[0] in bans["address"])):
+                            kick(c, REFUSED_BANNED)
+                return (f"{verb}ned " if verb == "ban" else "unbanned ") + ", ".join(
+                    f"{kind} {value}" for kind, value in pairs) + (
+                    "" if bans_path else " (not kept: give --world)")
+        if verb == "bans" and not rest:
+            return "\n".join(f"{kind} {value}" for kind in BAN_KINDS
+                             for value in sorted(bans[kind])) or "no bans"
+        return ("commands: list; kick N; ban N (its key and MAC); "
+                "ban|unban key FINGERPRINT|mac MAC|address A.B.C.D; bans")
+
     def handle_plain(packet, addr, secure=None):
         nonlocal pinned, clock
         magic, version, kind, _, session, seq, _, sent, _ = T3MP.unpack_from(packet)
@@ -1919,6 +2026,10 @@ def serve(args):
             key, keys = secure
             mac, build, order, plugins, *offered = HELLO_BODY.unpack_from(packet, T3MP.size)
             mac = mac.hex(":")
+            if fingerprint(key) in bans["key"] or mac in bans["mac"]:
+                print(f"{stamp} refused {mac} at {addr[0]}: banned", flush=True)
+                refuse(addr, session, keys, mac, REFUSED_BANNED)
+                return
             if password and key not in admitted:
                 if len(password_buckets) > HANDSHAKES_PENDING:
                     password_buckets.clear()
@@ -2079,7 +2190,10 @@ def serve(args):
     if pinned:
         adopt_world(pinned[0], time.time())
     while deadline is None or time.time() < deadline:
-        waiting = [sock] + [link.sock for link in links] + ([dns] if dns else [])
+        while not commands.empty():
+            print(admin(commands.get()), flush=True)
+        waiting = [sock] + [link.sock for link in links] + ([dns] if dns else []) + (
+            [admin_sock] if admin_sock else [])
         wait = 0.25
         if any(c.queue for c in clients.values()):
             wait = PACE_WINDOW
@@ -2088,6 +2202,16 @@ def serve(args):
         elif any(c.bulk and c.bulk.status == BULK_RECEIVING for c in clients.values()):
             wait = 0.05
         for ready in select.select(waiting, [], [], wait)[0]:
+            if ready is admin_sock:
+                try:
+                    line, addr = admin_sock.recvfrom(2048)
+                except ConnectionResetError:
+                    continue
+                reply = admin(line.decode("utf-8", "replace"))
+                print(f"{time.strftime('%H:%M:%S')} admin: {wire_text(line)}: {reply}",
+                      flush=True)
+                admin_sock.sendto(reply.encode("utf-8"), addr)
+                continue
             if ready is dns:
                 try:
                     query, addr = dns.recvfrom(2048)
@@ -2407,6 +2531,19 @@ def fuzz_body(rng, event_next):
     return kind, rng.randbytes(rng.choice((0, 1, 3, 4, 8, 20, 64, rng.randrange(0, 1400))))
 
 
+def admin_command(args):
+    """Send one admin command to a local server and print its reply."""
+    sock = udp_socket()
+    sock.settimeout(2.0)
+    sock.sendto(" ".join(args.words).encode("utf-8"), ("127.0.0.1", args.port))
+    try:
+        print(sock.recvfrom(65536)[0].decode("utf-8"))
+    except (socket.timeout, ConnectionResetError):
+        print(f"no server answered on 127.0.0.1:{args.port}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def fuzz(args):
     """Join a server as a console, then send it mutated packets; exit 1 if it stops answering."""
     rng = random.Random(args.seed)
@@ -2568,6 +2705,9 @@ def main(argv=None):
     p.add_argument("--key", metavar="FILE",
                    help="the server's secret key, made on first use (default: server.key in "
                         "--world; without either, a new key each run)")
+    p.add_argument("--admin-port", type=int, metavar="PORT",
+                   help="take admin commands (tes3x_net.py admin) on this port of 127.0.0.1 "
+                        "only; 0 for none (default: --port + 1)")
     p.add_argument("--password-file", metavar="FILE",
                    help="a console whose key is new must give the password on this file's first "
                         "line (its NetPassword); admitted keys go to admitted.txt in --world")
@@ -2586,6 +2726,10 @@ def main(argv=None):
                    help="start the session's clock at this GameHour; default: the first client's")
     p.add_argument("--timescale", type=float,
                    help="game seconds per real second; default: the first client's TimeScale")
+    p = sub.add_parser("admin", help="send an admin command to a server on this PC")
+    p.add_argument("words", nargs="+", metavar="COMMAND",
+                   help="list, kick N, ban N, ban|unban key|mac|address VALUE, bans")
+    p.add_argument("--port", type=int, default=PORT + 1, help="the server's --admin-port")
     p = sub.add_parser("fuzz", help="join a server and send it mutated packets")
     p.add_argument("address", help="HOST[:PORT] of a tes3x_net.py server")
     p.add_argument("--count", type=int, default=2000)
@@ -2600,7 +2744,8 @@ def main(argv=None):
         with open(args.out, "wb") as f:
             f.write(ghost_plugin(os.path.getsize(args.master)))
         return 0
-    return {"listen": listen, "ping": ping, "serve": serve, "fuzz": fuzz}[args.command](args)
+    return {"listen": listen, "ping": ping, "serve": serve, "fuzz": fuzz,
+            "admin": admin_command}[args.command](args)
 
 
 if __name__ == "__main__":
