@@ -393,6 +393,17 @@ class BulkTests(unittest.TestCase):
         self.assertEqual(out.due(0.1 + tes3x_net.BULK_PROBE), [0])
         self.assertEqual(out.probes, 1)
 
+    def test_gap_is_resent_at_once_and_only_once(self):
+        out = tes3x_net.Outgoing('test.bin', bytes(8 * 1024))
+        out.on_ack(tes3x_net.BULK_ACK_BODY.pack(out.id, 0, 0, 16, 2), 0.0)
+        self.assertEqual(out.due(0.0), list(range(8)))
+        gap = tes3x_net.BULK_ACK_BODY.pack(out.id, 0, 1 << 3 | 1 << 2, 16, 2)  # 0 and 1 lost
+        out.on_ack(gap, 0.05)
+        self.assertEqual(out.due(0.05), [0, 1])
+        out.on_ack(gap, 0.06)  # nothing sent after the resends has arrived yet
+        self.assertEqual(out.due(0.07), [])
+        self.assertEqual(out.fast, 2)
+
     def test_offer_fits_the_event_channel(self):
         out = tes3x_net.Outgoing('x' * tes3x_net.BULK_NAME, b'')
         self.assertLessEqual(len(out.offer()), tes3x_net.EVENT_DATA)

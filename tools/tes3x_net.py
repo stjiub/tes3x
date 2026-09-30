@@ -853,7 +853,7 @@ class Noise:
 
 class Outgoing:
     """One file sent to one client: chunks inside the window its last ack allows, each resent
-    after BULK_RESEND until acked."""
+    after BULK_RESEND until acked, or at once when a chunk sent after it has arrived."""
 
     def __init__(self, name, data):
         self.name, self.data = name, data
@@ -862,7 +862,8 @@ class Outgoing:
         self.chunks = (len(data) + BULK_CHUNK - 1) // BULK_CHUNK
         self.next = None  # unknown until the first ack
         self.seen, self.sent_at = set(), {}
-        self.window = self.status = self.sent = self.resent = self.probes = 0
+        self.serial, self.sends, self.lost = {}, 0, set()  # each chunk's latest send, in order
+        self.window = self.status = self.sent = self.resent = self.probes = self.fast = 0
         self.first = self.started = None
         self.acked = 0.0  # when the last ack arrived
 
@@ -880,6 +881,11 @@ class Outgoing:
         self.next, self.window = nxt, window
         self.seen = {nxt + k for k in range(32) if bitmap >> k & 1}
         self.sent_at = {i: t for i, t in self.sent_at.items() if i >= nxt}
+        if self.seen:
+            last = self.serial.get(max(self.seen), 0)
+            self.lost |= {i for i in range(nxt, max(self.seen))
+                          if i not in self.seen and 0 < self.serial.get(i, last) < last}
+        self.lost = {i for i in self.lost if i >= nxt and i not in self.seen}
         changed = status != self.status
         self.status = status
         return status if changed else None
@@ -891,11 +897,15 @@ class Outgoing:
         out = []
         for i in range(self.next, min(self.next + self.window, self.chunks)):
             sent = self.sent_at.get(i)
-            if i in self.seen or sent is not None and now - sent < BULK_RESEND:
+            if i in self.seen or (i not in self.lost and sent is not None and
+                                  now - sent < BULK_RESEND):
                 continue
             self.resent += sent is not None
+            self.fast += i in self.lost
+            self.lost.discard(i)
             self.sent += 1
-            self.sent_at[i] = now
+            self.sends += 1
+            self.sent_at[i], self.serial[i] = now, self.sends
             out.append(i)
         # Everything in flight arrived but the final ack did not: a repeated chunk draws another.
         if not out and now - self.acked >= BULK_PROBE:
@@ -1934,7 +1944,8 @@ def serve(args):
                       f"{BULK_STATUS[status] if status < len(BULK_STATUS) else status}, "
                       f"{max(size, 0)} bytes in {took:.1f} s "
                       f"({max(size, 0) / 1024 / max(took, 0.001):.0f} KB/s), "
-                      f"chunks sent {bulk.sent}, resent {bulk.resent}, probes {bulk.probes}",
+                      f"chunks sent {bulk.sent}, resent {bulk.resent} ({bulk.fast} on a gap), "
+                      f"probes {bulk.probes}",
                       flush=True)
         elif kind == EVENTS and len(packet) >= T3MP.size + EVENTS_HEAD.size:
             ready, carried = client.rel.receive(packet[T3MP.size:])
