@@ -149,6 +149,16 @@ ini = { DropReplacedRefs = "1" }
 summary = "Stop an unresolvable reference being restamped as created at runtime."
 
 [[patch]]
+name = "mcp-3"
+title = "Unarmored damage reduction"
+origin = { source = "MCP", id = "3" }
+bit = 31
+category = "correctness"
+channel = "dev"
+selection = "preset"
+summary = "Apply Unarmored damage reduction when no armor is equipped."
+
+[[patch]]
 name = "mcp-37"
 title = "Cell-change casting crash fix"
 origin = { source = "MCP", id = "37" }

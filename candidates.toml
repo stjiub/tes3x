@@ -35,15 +35,6 @@ summary = "Reduce all price modifiers by 50% and alter zero-value handling"
 reason = "Rebalance, not required to correct the inversion. Do not couple it to 2a."
 
 [[candidate]]
-name = "mcp-3"
-origin = { source = "MCP", id = "3" }
-category = "correctness"
-status = "candidate"
-priority = "medium"
-summary = "Unarmored fix"
-reason = "Clear formula defect: no unarmored armor rating unless at least one armor piece is worn."
-
-[[candidate]]
 name = "mcp-4"
 origin = { source = "MCP", id = "4" }
 category = "correctness"

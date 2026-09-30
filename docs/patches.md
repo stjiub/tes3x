@@ -20,6 +20,7 @@ and `release` patches are ready for general use.
 | `script-ext` | Add script opcodes: widen the length bounds and hook Script::RunFunction. | TES3X | compat | preview | by name |
 | `mwse-legacy` | Interpret legacy MWSE 0.9.4 bytecode embedded in compiled scripts. | TES3X | compat | dev | by name |
 | [`mcp-1`](../patches/mcp-1.md) | Stop an unresolvable reference being restamped as created at runtime. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #1 | core | dev | by name |
+| [`mcp-3`](../patches/mcp-3.md) | Apply Unarmored damage reduction when no armor is equipped. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #3 | correctness | dev | by name |
 | [`mcp-37`](../patches/mcp-37.md) | Cancel stale NPC casts before a cell change leaves them dangling. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #37 | core | dev | by name |
 | [`mcp-97`](../patches/mcp-97.md) | Advance the script parser correctly while initializing saved data. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #97 | core | preview | testing preset |
 | [`mcp-98`](../patches/mcp-98.md) | Keep animated-container access from destroying a live animation. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #98 | core | dev | by name |

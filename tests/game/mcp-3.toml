@@ -1,0 +1,15 @@
+kind = "comparison"
+purpose = "A fully unarmored actor receives the damage reduction contributed by the Unarmored skill."
+procedure = "Set the player to a known Unarmored skill and health, remove every armor piece, then apply the same fixed physical hit in control and patched builds and compare health lost."
+limitations = "The command script proves both builds reach play. A deterministic physical-hit fixture is still needed before this can validate the reduction numerically."
+watch = 'diag\.patches|exec\.exit|crash\.|hang\.detected|fatal\.'
+timeout = 180
+script = '''
+@start new
+wait 60
+exit
+'''
+
+[expect]
+control = ['exec\.exit 0']
+test = ['diag\.patches', 'exec\.exit 0']

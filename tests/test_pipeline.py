@@ -13,7 +13,7 @@ from tes3x_pipeline import (PipelineError, copy_retail_root, link_or_copy, resol
                             preference_flags, sanitized_command, validate_local_config,
                             validate_profile)
 from tes3x_pipeline import main as pipeline_main
-from tes3x_patch import (MCP37_TREE_NEXT_SIG, _mcp_37, _mcp_92, _mcp_97, _mcp_98,
+from tes3x_patch import (MCP37_TREE_NEXT_SIG, _mcp_3, _mcp_37, _mcp_92, _mcp_97, _mcp_98,
                          _mcp_102, _mcp_123, _mcp_125, _mcp_154, _test_mcp97, _test_mcp102)
 from tes3x_plugins import (collect, dependency_order, fetch_rules, run_arrange, validate_order,
                            warnings as mlox_warnings)
@@ -495,6 +495,38 @@ class PipelinePlanTests(unittest.TestCase):
         })
         self.assertEqual(plan['applied'], ['mcp-37'])
         self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xmcp37.c'])
+
+    def test_mcp_3_keeps_damage_reduction_for_no_equipped_armor(self):
+        block = bytes.fromhex(
+            'ff92e40000008b44241083cbff85c00f845b020000'
+            'd844241c8b0df4b53c006860040000'
+        )
+
+        class Image:
+            base = 0x100000
+
+            def __init__(self):
+                self.data = bytearray(b'\x90' * 32 + block + b'\xcc' * 16)
+
+            def off_to_va(self, offset):
+                return self.base + offset
+
+            def va_to_off(self, va):
+                return va - self.base
+
+        image = Image()
+        edits = _mcp_3(image, '', {})
+        site = 32 + 15
+        self.assertEqual(image.data[site:site + 6], bytes.fromhex('eb04cccccccc'))
+        self.assertEqual([(offset, length) for offset, length, _label in edits], [(site, 6)])
+
+    def test_mcp_3_needs_no_dedicated_hook_source(self):
+        plan = resolve_patch_plan({
+            'patches': {'preset': 'minimal', 'enable': ['mcp-3']},
+            'package': {'mode': 'merged-bsa'},
+        })
+        self.assertEqual(plan['applied'], ['mcp-3'])
+        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c'])
 
     def test_mcp_97_patches_both_cursor_advances(self):
         scan = bytes.fromhex(

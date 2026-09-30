@@ -503,6 +503,15 @@ MCP102_ACTN_SIG = re.compile(
 MCP102_FOUND_JUMP = 11
 MCP102_STORE = bytes.fromhex("8b54240483ca01895008c20400")
 
+# Physical damage calls the actor's equipped-armor count virtual, then skips the complete
+# reduction calculation when the count is zero. The calculation itself handles an unarmored
+# result; MCP makes it reachable for a fully unarmored actor.
+MCP3_UNARMORED_SIG = re.compile(
+    rb"\xff\x92\xe4\x00\x00\x00\x8b\x44\x24\x10\x83\xcb\xff\x85\xc0"
+    rb"(?P<site>\x0f\x84....)\xd8\x44\x24\x1c\x8b\x0d....\x68\x60\x04\x00\x00",
+    re.S,
+)
+
 # PlaceItem and PlaceItemCell share this call to Cell::addReference.  The reference has already
 # been initialized; the missing operation is marking the destination cell changed before insertion.
 MCP123_ADD_SIG = re.compile(
@@ -801,6 +810,17 @@ def find_mcp102_actn(x):
     va = x.off_to_va(hits[0].start())
     if va is None:
         raise PatchError("mcp-102: ACTN setter is outside any section")
+    return va
+
+
+def find_mcp3_unarmored(x):
+    """Find the fully-unarmored early exit in physical damage calculation."""
+    hits = list(MCP3_UNARMORED_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("mcp-3: %d unarmored branch(es), expected 1" % len(hits))
+    va = x.off_to_va(hits[0].start("site"))
+    if va is None:
+        raise PatchError("mcp-3: unarmored branch is outside any section")
     return va
 
 
@@ -1145,6 +1165,16 @@ def _mcp_37(x, value, ctx):
         raise PatchError("mcp-37: cell-change game load does not match expected instruction")
     x.data[off:off + 6] = b"\xe8" + struct.pack("<i", target - (site + 5)) + b"\x90"
     return [(off, 6, "stale-cast cleanup 0x%08X -> 0x%08X" % (site, target))]
+
+
+@patch("mcp-3")
+def _mcp_3(x, value, ctx):
+    """Apply Unarmored damage reduction when no armor is equipped."""
+    site = find_mcp3_unarmored(x)
+    off = x.va_to_off(site)
+    # Jump over four trap bytes to the calculation which already handles no equipped armor.
+    x.data[off:off + 6] = b"\xeb\x04\xcc\xcc\xcc\xcc"
+    return [(off, 6, "fully unarmored damage 0x%08X: keep reduction path" % site)]
 
 
 @patch("mcp-97")
@@ -2039,6 +2069,7 @@ LOCATORS = {
     "mcp-154-load": find_mcp154_load,
     "mcp-154-reload": find_mcp154_reload,
     "mcp-102-actn": find_mcp102_actn,
+    "mcp-3": find_mcp3_unarmored,
     "mcp-123": find_mcp123_add,
     "mcp-125": find_mcp125_collision,
     "mcp-37": lambda image: find_mcp37_context(image)[0],
