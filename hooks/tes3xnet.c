@@ -136,6 +136,8 @@ typedef u32(__stdcall *fn_PsCreateSystemThreadEx)(void **, u32, u32, u32, void *
                                                   unsigned char, unsigned char, void *);
 typedef void(__stdcall *fn_PsTerminateSystemThread)(u32);
 typedef u32(__stdcall *fn_KeDelayExecutionThread)(u32, unsigned char, long long *);
+typedef long(__stdcall *fn_KeSetBasePriorityThread)(void *, long);
+typedef long(__stdcall *fn_KeQueryBasePriorityThread)(void *);
 
 #define MmAllocateContiguousMemoryEx \
     KFN(THUNK_MmAllocateContiguousMemoryEx, fn_MmAllocateContiguousMemoryEx)
@@ -158,6 +160,9 @@ typedef u32(__stdcall *fn_KeDelayExecutionThread)(u32, unsigned char, long long 
 #define PsCreateSystemThreadEx KFN(THUNK_PsCreateSystemThreadEx, fn_PsCreateSystemThreadEx)
 #define PsTerminateSystemThread KFN(THUNK_PsTerminateSystemThread, fn_PsTerminateSystemThread)
 #define KeDelayExecutionThread KFN(THUNK_KeDelayExecutionThread, fn_KeDelayExecutionThread)
+#define KeSetBasePriorityThread KFN(THUNK_KeSetBasePriorityThread, fn_KeSetBasePriorityThread)
+#define KeQueryBasePriorityThread \
+    KFN(THUNK_KeQueryBasePriorityThread, fn_KeQueryBasePriorityThread)
 
 #define XC_FACTORY_ETHERNET_ADDR 0x101u
 #define PAGE_READWRITE 0x04u
@@ -290,6 +295,8 @@ struct descriptor {
 #define CLOCK_BYTES (CLOCK_GLOBALS * 4u)
 #define HELLO_BYTES (18u + CLOCK_BYTES)
 #define PASSWORD_MAX 64u /* NetPassword, after HELLO */
+static char net_password[PASSWORD_MAX + 2]; /* read with the other keys: an ini read costs ms */
+static u32 net_password_n;
 #define DNS_PORT 53u
 #define HOST_NAME 64u
 
@@ -2268,6 +2275,7 @@ static void autostart(void)
     char line[24 + HOST_NAME + 8 + 1 + 2 * TRUST_FINGERPRINT + 2 * 24];
     u32 n, server;
 
+    net_password_n = ini_text("NetPassword", net_password, sizeof(net_password));
     if (!(n = ini_text("NetAddress", line, 24)))
         return;
     line[n++] = ' ';
@@ -7900,11 +7908,25 @@ static void file_work(void)
     up_work();
 }
 
+/* The KTHREAD running now: the KPCR's PrcbData.CurrentThread. */
+static void *current_thread(void)
+{
+    void *t;
+
+    __asm__ volatile("movl %%fs:0x28, %0" : "=r"(t));
+    return t;
+}
+
+/* Above the game thread, which never yields: at its priority the worker would wait for the end
+ * of its time slice, and the bulk window with it. It mostly waits on the disk. */
+#define WORKER_PRIORITY 2
+
 static void __stdcall worker_thread(void *context)
 {
     long long wait = -(long long)WORKER_SLEEP_MS * 10000;
 
     (void)context;
+    KeSetBasePriorityThread(current_thread(), WORKER_PRIORITY);
     while (!worker.stop) {
         KeDelayExecutionThread(0, 0, &wait);
         file_work();
@@ -7935,6 +7957,8 @@ static void worker_start(void)
         tes3x_log_hex("net.worker_failed", status);
     } else {
         NtClose(h);
+        tes3x_log_hex3("net.worker_priority", (u32)KeQueryBasePriorityThread(current_thread()),
+                       WORKER_PRIORITY, 0);
     }
 }
 
@@ -8106,7 +8130,8 @@ static void handshake_finish(void)
     put32le(hello + 14, ses.plugins);
     copy(hello + 18, game_clock.local, CLOCK_BYTES);
     unlock(flags);
-    password = ini_text("NetPassword", (char *)hello + HELLO_BYTES, PASSWORD_MAX + 2);
+    password = net_password_n;
+    copy(hello + HELLO_BYTES, (const u8 *)net_password, password);
     noise_write3(&hs.noise, hs.packet + T3MP_OUTER, hello, HELLO_BYTES + password);
     crypto_wipe(hello, sizeof(hello));
     flags = lock();
