@@ -37,7 +37,7 @@ test the watchdog and the crash record.
 
 ## Commands without a controller
 
-With `console`, a `tes3xexec.txt` in `E:\` or next to `default.xbe` runs once per launch. `E:\`
+With `console`, a `tes3xexec.txt` script file in `E:\` or next to `default.xbe` runs once per launch. `E:\`
 is checked first, so it can be changed without touching the game folder. A file in `E:\` runs on
 every launch until it is deleted.
 
