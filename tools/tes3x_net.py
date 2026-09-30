@@ -29,6 +29,7 @@ import socket
 import struct
 import sys
 import time
+import traceback
 
 PORT = 26500
 DNS_PORT = 53
@@ -40,6 +41,11 @@ PING, PONG = b"TES3XPNG", b"TES3XPON"
 PEER_MAC = bytes.fromhex("020000000001")
 PEER_IP = "10.0.2.2"
 BROADCAST = b"\xff" * 6
+
+
+def wire_text(data):
+    """Text a client sent, safe to print and store: control characters become '?'."""
+    return "".join(c if " " <= c < "\x7f" or c >= "\xa0" else "?" for c in data.decode("latin-1"))
 
 
 def decode(payload):
@@ -314,6 +320,12 @@ INNER = struct.Struct("<B3xIII")  # type, ack, time, echo
 PROLOGUE = b"TES3X T3MP 11"
 HANDSHAKE_PAD = 128  # a HANDSHAKE1 is at least as large as the HANDSHAKE2 it draws
 HANDSHAKE_KEEP = 10.0  # seconds a handshake is kept to answer its resent messages
+# A HANDSHAKE1 costs the server four X25519 before the client has proved anything: per source
+# address and in all, (burst, per second); and at most HANDSHAKES_PENDING kept at once.
+HANDSHAKE_RATE = (10, 5.0)
+HANDSHAKE_RATE_ALL = (200, 100.0)
+HANDSHAKES_PENDING = 1024
+CLIENT_RATE = (600, 600.0)  # sealed packets from one joined client; a console sends about 60/s
 # GameHour, Day, Month (0-11), Year, DaysPassed, TimeScale, as the game's float globals
 CLOCK_BODY = struct.Struct("<6f")
 # MAC, build id, load order hash, plugin count, then the client's clock
@@ -444,7 +456,7 @@ def pack_equipment(ids):
 
 
 def unpack_equipment(part):
-    return [item.decode("latin-1") for item in part[2:].split(b"\0") if item]
+    return [wire_text(item) for item in part[2:].split(b"\0") if item]
 
 
 def pack_weather(entries, flags=0):
@@ -495,9 +507,11 @@ def unpack_spawn(data):
     sid, cell, count, *place, condition, charge = SPAWN.unpack_from(data)
     off, leveled = SPAWN.size, 0
     if count & SPAWN_LEVELED:
+        if len(data) < off + 4:
+            raise ValueError("SPAWN too short for its placeholder")
         leveled = struct.unpack_from("<I", data, off)[0]
         off += 4
-    name = data[off:].split(b"\0")[0].decode("latin-1")
+    name = wire_text(data[off:].split(b"\0")[0])
     return sid, {"cell": cell, "count": count & SPAWN_COUNT, "leveled": leveled,
                  "summon": bool(count & SPAWN_SUMMON),
                  "removed": bool(count & SPAWN_REMOVED), "pos": place[:3], "rot": place[3:],
@@ -567,10 +581,12 @@ def unpack_contents(data):
         off += ENTRY.size
         condition = charge = 0
         if entry_flags & ENTRY_DATA:
+            if off + 8 > len(data):
+                raise ValueError("CONTENTS entry too short for its item data")
             condition, charge = struct.unpack_from("<II", data, off)
             off += 8
         end = data.index(b"\0", off) if b"\0" in data[off:] else len(data)
-        entries.append([data[off:end].decode("latin-1"), count, entry_flags, condition, charge])
+        entries.append([wire_text(data[off:end]), count, entry_flags, condition, charge])
         off = end + 1
     return refid, cell, part, parts, flags, entries
 
@@ -900,7 +916,7 @@ def describe_state(state):
     flags, x, y, z, heading, cell = STATE_BODY.unpack_from(state)
     if not flags & IN_WORLD:
         return "not in the world"
-    where = (cell.split(b"\0", 1)[0].decode("latin-1") if flags & INTERIOR
+    where = (wire_text(cell.split(b"\0", 1)[0]) if flags & INTERIOR
              else f"exterior {int(x // CELL_UNITS)},{int(y // CELL_UNITS)}")
     return f"{where} at {x:.0f},{y:.0f},{z:.0f} heading {math.degrees(heading) % 360:.0f}"
 
@@ -920,7 +936,7 @@ def cell_keys(state):
 
 def describe_key(key):
     kind, gx, gy, name = key
-    return name.decode("latin-1") if kind == KEY_INTERIOR else f"exterior {gx},{gy}"
+    return wire_text(name) if kind == KEY_INTERIOR else f"exterior {gx},{gy}"
 
 
 def assign_authority(owners, candidates, forced=None):
@@ -999,6 +1015,29 @@ def write_ghost_plugin(data_files, master):
     return target
 
 
+def finite(*values):
+    return all(math.isfinite(v) for v in values)
+
+
+POSITION_LIMIT = 1e7  # units; the game's world spans well under a million
+
+
+def placeable(*coordinates):
+    """A position a client may report: finite, and inside cells a 32-bit grid can number."""
+    return all(math.isfinite(v) and abs(v) <= POSITION_LIMIT for v in coordinates)
+
+
+# What a HELLO's clock must fall in to be adopted: an hour past 24 or a huge timescale would keep
+# Clock.advance rolling days for ever.
+CLOCK_LIMITS = ((0, 24), (1, 31), (0, 11), (0, 100000), (0, 10000000), (0, 10000))
+CLOCK_DEFAULT = (9.0, 16.0, 7.0, 427.0, 1.0, 30.0)
+
+
+def sane_clock(offered):
+    ok = finite(*offered) and all(lo <= v <= hi for v, (lo, hi) in zip(offered, CLOCK_LIMITS))
+    return list(offered) if ok else list(CLOCK_DEFAULT)
+
+
 class Clock:
     """The session's game time, run by the server: it advances at TimeScale game seconds per real
     second and rolls days, months and years over as the game does."""
@@ -1032,6 +1071,22 @@ class Clock:
                 f"timescale {self.scale:g})")
 
 
+class Bucket:
+    """A token bucket: take() is false once more than burst arrive faster than rate per second."""
+
+    def __init__(self, burst, rate):
+        self.burst, self.rate = burst, rate
+        self.tokens, self.last = float(burst), time.time()
+
+    def take(self, now):
+        self.tokens = min(self.burst, self.tokens + (now - self.last) * self.rate)
+        self.last = now
+        if self.tokens < 1:
+            return False
+        self.tokens -= 1
+        return True
+
+
 class Client:
     def __init__(self, ident, mac):
         self.id, self.mac = ident, mac
@@ -1055,7 +1110,8 @@ class Client:
         self.key = None  # the console's static key for this server: its identity
         self.keys = None  # (console to server, server to console) from the handshake
         self.replay = (0, 0)  # the highest seq opened and a bitmap of the 32 up to it
-        self.forged = self.replayed = 0
+        self.forged = self.replayed = self.limited = 0
+        self.bucket = Bucket(*CLIENT_RATE)
 
 
 
@@ -1079,8 +1135,9 @@ def load_server_key(args):
 
 
 def serve(args):
-    """A session server: welcomes consoles by MAC, answers each heartbeat at once and relays each
-    client's state to the others. Each --tunnel also serves an xemu guest."""
+    """A session server: welcomes consoles by their key, answers each heartbeat at once and relays
+    each client's state to the others. Each --tunnel also serves an xemu guest."""
+    sys.stdout.reconfigure(errors="replace")  # the console's code page cannot print every name
     links = [Tunnel(port) for port in args.tunnel]
     sock = udp_socket()
     sock.bind((args.bind, args.port))
@@ -1155,6 +1212,8 @@ def serve(args):
         bot_weather.append((float(at), int(index), int(value)))
     authority_next = actor_next = 0.0
     server_secret = load_server_key(args)
+    handshake_bucket, handshake_buckets = Bucket(*HANDSHAKE_RATE_ALL), {}
+    limits = {"handshakes": 0}
     pending = {}  # session -> a handshake in progress or just done: {"noise", "e", "reply", ...}
     bursts = [(float(at), int(count)) for count, _, at in
               (spec.partition("@") for spec in args.burst)]
@@ -1425,7 +1484,8 @@ def serve(args):
             return
         if kind == EVENT_SPAWN and len(data) > SPAWN.size:
             token, spawn = unpack_spawn(data)
-            add_spawn(client.id, spawn, stamp, now, token)
+            if placeable(*spawn["pos"]) and finite(*spawn["rot"]):
+                add_spawn(client.id, spawn, stamp, now, token)
             return
         if kind == EVENT_REMOVE and data:
             for sid in unpack_removes(data):
@@ -1439,7 +1499,7 @@ def serve(args):
             return
         if kind == EVENT_SPELL and len(data) > SPELL.size:
             caster, target, refid, _, player = SPELL.unpack_from(data)
-            name = data[SPELL.size:].split(b"\0")[0].decode("latin-1")
+            name = wire_text(data[SPELL.size:].split(b"\0")[0])
             who = f"client {client.id}" if player else f"{caster:#010x} of client {client.id}"
             on = (f"{refid:#010x} (authority {target})" if refid
                   else f"the player of client {target}")
@@ -1449,14 +1509,14 @@ def serve(args):
             return
         if kind == EVENT_CAST and len(data) > SPELL.size:
             caster, target, refid, _, player = SPELL.unpack_from(data)
-            name = data[SPELL.size:].split(b"\0")[0].decode("latin-1")
+            name = wire_text(data[SPELL.size:].split(b"\0")[0])
             who = f"client {client.id}" if player else f"{caster:#010x} of client {client.id}"
             at = (f" at {refid:#010x} (client {target})" if refid
                   else f" at the player of client {target}" if target else "")
             print(f"{stamp} {who} casts {name}{at}", flush=True)
         if kind == EVENT_SHOT and len(data) > SHOT.size:
             firer, swing, other, player = SHOT.unpack_from(data)
-            name = data[SHOT.size:].split(b"\0")[0].decode("latin-1")
+            name = wire_text(data[SHOT.size:].split(b"\0")[0])
             who = f"client {client.id}" if player else f"{firer:#010x} of client {client.id}"
             print(f"{stamp} {who} shoots {name} ({swing:.2f}, {other:.2f})", flush=True)
         if kind in TARGETED and len(data) >= 12:
@@ -1493,7 +1553,7 @@ def serve(args):
             print(f"{stamp} client {client.id}: {describe_status(refid, values)}", flush=True)
         if kind == EVENT_AFFECT and len(data) > 5:
             refid, index = struct.unpack_from("<IB", data)
-            name = data[5:].split(b"\0")[0].decode("latin-1")
+            name = wire_text(data[5:].split(b"\0")[0])
             print(f"{stamp} client {client.id}: {refid:#010x} takes effect {index} of {name}",
                   flush=True)
         if kind == EVENT_OBJECTS and data:
@@ -1503,7 +1563,7 @@ def serve(args):
             for refid, rest in changed.items():
                 print(f"{stamp} client {client.id}: {describe_object(refid, *rest)}", flush=True)
         if kind == EVENT_TEXT:
-            print(f"{stamp} client {client.id} says: {data.decode('latin-1')}", flush=True)
+            print(f"{stamp} client {client.id} says: {wire_text(data)}", flush=True)
         if kind == EVENT_EQUIPMENT and len(data) >= 2:
             sets = equipment.setdefault(client.id, [[], []])
             if data[0] == 0:
@@ -1555,17 +1615,23 @@ def serve(args):
         """Keep an authority's actor states and relay them to the other clients."""
         count = struct.unpack_from("<I", body)[0]
         own = cell_keys(client.state)[0] if client.state else None
-        for i in range(count):
+        kept = []  # records with a finite position and statistics, the only ones relayed
+        for i in range(min(count, (len(body) - 4) // ACTOR.size)):
             record = body[4 + i * ACTOR.size:4 + (i + 1) * ACTOR.size]
-            if len(record) < ACTOR.size:
-                break
-            refid, x, y = ACTOR.unpack(record)[:3]
+            values = ACTOR.unpack(record)
+            if not placeable(*values[1:5]) or not finite(values[5], *values[7:9]):
+                continue
+            refid, x, y = values[:3]
             key = own if own and own[0] == KEY_INTERIOR else (
                 KEY_EXTERIOR, math.floor(x / CELL_UNITS), math.floor(y / CELL_UNITS), b"")
             actors[refid] = (client.id, key, record)
             if refid == args.bot_mirror:
                 bot["mirror"] = record
             client.actor_states += 1
+            kept.append(record)
+        if not kept:
+            return
+        body = struct.pack("<I", len(kept)) + b"".join(kept)
         for other in clients.values():
             if other is not client and other.alive:
                 send(other, ACTORS, struct.pack("<I", client.id) + body)
@@ -1625,6 +1691,16 @@ def serve(args):
             return None
         return entry["done"][1:]
 
+    def guarded(packet, addr):
+        """handle, with a packet that breaks a parser dropped and logged instead of ending the
+        server: the parsers check lengths and ranges, this is the second line."""
+        try:
+            handle(packet, addr)
+        except (struct.error, ValueError, IndexError, KeyError, TypeError, OverflowError) as error:
+            where = traceback.extract_tb(error.__traceback__)[-1]
+            print(f"{time.strftime('%H:%M:%S')} malformed packet from {addr[0]}: "
+                  f"{type(error).__name__} in {where.name}: {error}", flush=True)
+
     def handle(packet, addr):
         """Take a handshake message or open a sealed packet, then hand it on in the T3MP
         layout. Anything else is dropped unread."""
@@ -1635,6 +1711,14 @@ def serve(args):
             return
         now = time.time()
         if kind in (HANDSHAKE1, HANDSHAKE3):
+            if kind == HANDSHAKE1 and session not in pending:
+                if len(handshake_buckets) > HANDSHAKES_PENDING:  # forged sources, most likely
+                    handshake_buckets.clear()
+                source = handshake_buckets.setdefault(addr[0], Bucket(*HANDSHAKE_RATE))
+                if (len(pending) >= HANDSHAKES_PENDING or not source.take(now)
+                        or not handshake_bucket.take(now)):
+                    limits["handshakes"] += 1
+                    return
             done = handshake(kind, session, packet, addr, now)
             if done:
                 hello, key, keys = done
@@ -1652,6 +1736,9 @@ def serve(args):
         inner = unseal(client.keys[0], seq, packet[:OUTER.size], packet[OUTER.size:])
         if inner is None:
             client.forged += 1
+            return
+        if not client.bucket.take(now):
+            client.limited += 1
             return
         if seq > top:
             client.replay = (seq, (seen << min(seq - top, 32) | 1) & 0xFFFFFFFF)
@@ -1684,6 +1771,13 @@ def serve(args):
                 return
             # A console is known by its key for this server; the MAC is only a hint.
             client = clients.get(key)
+            playing = sum(c.alive for c in clients.values() if c is not client)
+            if playing >= args.max_players:
+                print(f"{stamp} refused {mac}: {playing} players, the most allowed", flush=True)
+                stranger = Client(0, mac)
+                stranger.addr, stranger.session, stranger.keys = addr, session, keys
+                send(stranger, REFUSE, struct.pack("<II", 0, 0))
+                return
             if client is None:
                 client = clients[key] = Client(len(clients) + 1, mac)
                 client.key = key
@@ -1710,6 +1804,7 @@ def serve(args):
                   f"build {build:#010x}", flush=True)
             send(client, WELCOME, struct.pack("<I", client.id))
             if clock is None:
+                offered = sane_clock(offered)
                 if args.hour is not None:
                     offered[0] = args.hour
                 if args.timescale is not None:
@@ -1754,6 +1849,8 @@ def serve(args):
             client.beats += 1
             send(client, HEARTBEAT)
         elif kind == STATE and len(packet) >= T3MP.size + STATE_SIZE:
+            if not placeable(*STATE_BODY.unpack_from(packet, T3MP.size)[1:5]):
+                return
             client.state = packet[T3MP.size:T3MP.size + STATE_SIZE]
             client.states += 1
             if args.bot:
@@ -1820,7 +1917,7 @@ def serve(args):
                     data, addr = sock.recvfrom(2048)
                 except ConnectionResetError:
                     continue
-                handle(data, addr)
+                guarded(data, addr)
                 continue
             link = next(link for link in links if link.sock is ready)
             frame = link.recv(0)
@@ -1848,7 +1945,7 @@ def serve(args):
                     continue
                 data = udp_from_frame(frame)
                 if data:
-                    handle(data, (src, PORT, frame[6:12], link))
+                    guarded(data, (src, PORT, frame[6:12], link))
         now = time.time()
         for client in clients.values():
             if client.queue:
@@ -2000,6 +2097,8 @@ def serve(args):
                 print(f"  clock {clock}", flush=True)
             if weather:
                 print(f"  weather: {describe_weather(weather)}", flush=True)
+            if limits["handshakes"]:
+                print(f"  handshakes refused over rate: {limits['handshakes']}", flush=True)
             for client in clients.values():
                 print(f"  client {client.id}: {'up' if client.alive else 'down'}, "
                       + summary(client), flush=True)
@@ -2021,12 +2120,146 @@ def serve(args):
     return 0 if clients else 1
 
 
+class FuzzClient:
+    """A console's session in Python: the handshake, then sealed packets of any content."""
+
+    def __init__(self, sock, addr, rng):
+        self.sock, self.addr, self.rng = sock, addr, rng
+        self.session = rng.getrandbits(32) | 1
+        self.seq = self.peer_seq = 0
+        self.keys = None
+        self.event_next = 1  # the next event number the server will deliver, from its acks
+        self.refused = None  # a REFUSE's body
+
+    def join(self, timeout=2.0):
+        secret, e = self.rng.randbytes(32), self.rng.randbytes(32)
+        noise = Noise(True, secret, e, PROLOGUE)
+        message1 = (OUTER.pack(b"T3MP", T3MP_VERSION, HANDSHAKE1, 0, self.session, 0)
+                    + noise.write1()).ljust(HANDSHAKE_PAD, b"\0")
+        self.sock.sendto(message1, self.addr)
+        reply = self.receive_raw(timeout, HANDSHAKE2)
+        noise.read2(reply[OUTER.size:])
+        hello = HELLO_BODY.pack(self.rng.randbytes(6), 0, 0x46555A5A, 3, 12.0, 16.0, 7.0, 427.0,
+                                1.0, 30.0)
+        self.sock.sendto(OUTER.pack(b"T3MP", T3MP_VERSION, HANDSHAKE3, 0, self.session, 0)
+                         + noise.write3(hello), self.addr)
+        self.keys = noise.split()
+        if self.receive(timeout, WELCOME) is None:
+            raise RuntimeError("no WELCOME")
+
+    def receive_raw(self, timeout, kind):
+        end = time.time() + timeout
+        while time.time() < end:
+            self.sock.settimeout(max(end - time.time(), 0.01))
+            try:
+                data, _ = self.sock.recvfrom(4096)
+            except (socket.timeout, ConnectionResetError):
+                continue
+            if len(data) >= OUTER.size and data[5] == kind:
+                return data
+        raise RuntimeError(f"no reply of type {kind}")
+
+    def receive(self, timeout, kind):
+        """The body of the next sealed packet of this kind, or None."""
+        end = time.time() + timeout
+        while time.time() < end:
+            try:
+                data = self.receive_raw(end - time.time(), SEALED)
+            except RuntimeError:
+                return None
+            seq = OUTER.unpack_from(data)[5]
+            inner = unseal(self.keys[1], seq, data[:OUTER.size], data[OUTER.size:])
+            if inner is not None:
+                self.peer_seq = max(self.peer_seq, seq)
+                if inner[0] == REFUSE:
+                    self.refused = inner[INNER.size:]
+                if inner[0] == EVENTS and len(inner) >= INNER.size + 4:
+                    self.event_next = struct.unpack_from("<I", inner, INNER.size)[0] + 1
+                if inner[0] == kind:
+                    return inner[INNER.size:]
+        return None
+
+    def send(self, kind, body):
+        self.seq += 1
+        outer = OUTER.pack(b"T3MP", T3MP_VERSION, SEALED, 0, self.session, self.seq)
+        inner = INNER.pack(kind, self.peer_seq, now_us(), 0) + body
+        self.sock.sendto(outer + seal(self.keys[0], self.seq, outer, inner), self.addr)
+
+
+def fuzz_body(rng, event_next):
+    """A packet kind and body: random, or a well-formed frame around random contents. Events are
+    numbered from event_next, the server's next, so most are delivered."""
+    kinds = [HELLO, WELCOME, HEARTBEAT, STATE, PEER, GONE, EVENTS, REFUSE, CLOCK, ACTORS, CHUNK,
+             BULK_ACK, 0, 255]
+    kind = EVENTS if rng.random() < 0.6 else rng.choice(kinds)
+    shape = rng.random()
+    if kind == EVENTS and shape < 0.7:
+        events, body = [], b""
+        for _ in range(rng.randrange(0, 6)):
+            event_kind = rng.choice(list(range(0, 21)) + [EVENT_OFFER, 65535])
+            data = rng.randbytes(rng.choice((0, 1, 2, 4, 8, rng.randrange(0, EVENT_DATA + 1))))
+            events.append((event_kind, data))
+        body = EVENTS_HEAD.pack(rng.getrandbits(32) if rng.random() < 0.1 else 0, len(events))
+        for n, (event_kind, data) in enumerate(events):
+            length = len(data) if rng.random() < 0.9 else rng.getrandbits(16)
+            body += EVENT.pack(event_next + n, event_kind, length, 0) + data
+        return kind, body
+    if kind == ACTORS and shape < 0.7:
+        count = rng.randrange(0, 12)
+        return kind, struct.pack("<I", rng.getrandbits(32)) + b"".join(
+            ACTOR.pack(rng.getrandbits(32), *(struct.unpack("<5f", rng.randbytes(20))),
+                       rng.getrandbits(32), *(struct.unpack("<2f", rng.randbytes(8))),
+                       rng.randbytes(ANIM_BYTES)) for _ in range(count))
+    if kind == STATE and shape < 0.7:
+        return kind, rng.randbytes(STATE_SIZE)
+    return kind, rng.randbytes(rng.choice((0, 1, 3, 4, 8, 20, 64, rng.randrange(0, 1400))))
+
+
+def fuzz(args):
+    """Join a server as a console, then send it mutated packets; exit 1 if it stops answering."""
+    rng = random.Random(args.seed)
+    host, _, port = args.address.partition(":")
+    addr = (host, int(port or PORT))
+    sock = udp_socket()
+    client = FuzzClient(sock, addr, rng)
+    client.join()
+    print(f"joined {args.address} as session {client.session:#010x}", flush=True)
+    for n in range(1, args.count + 1):
+        time.sleep(1 / args.rate)  # under the server's per-client limit, which would drop the rest
+        roll = rng.random()
+        if roll < 0.1:  # before any handshake: garbage with a plausible header
+            kind = rng.choice((HANDSHAKE1, HANDSHAKE2, HANDSHAKE3, SEALED, 0, 7))
+            sock.sendto(OUTER.pack(b"T3MP", T3MP_VERSION, kind, 0, rng.getrandbits(32),
+                                   rng.getrandbits(32)) + rng.randbytes(rng.randrange(0, 200)),
+                        addr)
+        elif roll < 0.15:  # sealed, but tampered, replayed or truncated
+            client.seq += 1
+            outer = OUTER.pack(b"T3MP", T3MP_VERSION, SEALED, 0, client.session,
+                               rng.choice((client.seq, 1, 0)))
+            sock.sendto(outer + rng.randbytes(rng.randrange(0, 64)), addr)
+        else:
+            kind, body = fuzz_body(rng, client.event_next)
+            client.send(kind, body)
+            if kind == EVENTS:  # its ack moves event_next on
+                client.receive(0.05, EVENTS)
+        if n % 50 == 0 or n == args.count:
+            client.send(HEARTBEAT, b"")
+            if client.receive(2.0, HEARTBEAT) is None:
+                print(f"no heartbeat answered after {n} packets", flush=True)
+                return 1
+    print(f"sent {args.count} packets, {client.event_next - 1} events delivered; the server "
+          "still answers", flush=True)
+    return 0
+
+
 def summary(client, prefix=""):
     rel = client.rel
     return (f"joins {client.joins}, heartbeats {client.beats}, states {client.states}, "
             f"actor states {client.actor_states}, "
             f"gaps {client.gaps}, events in {client.events} (stale {rel.stale}), out "
-            f"{rel.out_next - 1} (sent {rel.sent}, resent {rel.resent}, unacked {len(rel.out)})"
+            f"{rel.out_next - 1} (sent {rel.sent}, resent {rel.resent}, unacked {len(rel.out)}), "
+            f"dropped forged {client.forged}, replayed {client.replayed}, "
+            f"over rate {client.limited}"
             + (f"; {prefix}{describe_state(client.state)}" if client.state else ""))
 
 
@@ -2138,6 +2371,8 @@ def main(argv=None):
                    metavar="REGION:WEATHER@SECONDS",
                    help="the bot sets a region's weather (list index, 0-9) this long after it "
                         "appears (repeatable)")
+    p.add_argument("--max-players", type=int, default=16,
+                   help="refuse a console joining beyond this many (default 16)")
     p.add_argument("--key", metavar="FILE",
                    help="the server's secret key, made on first use (default: server.key in "
                         "--world; without either, a new key each run)")
@@ -2156,6 +2391,11 @@ def main(argv=None):
                    help="start the session's clock at this GameHour; default: the first client's")
     p.add_argument("--timescale", type=float,
                    help="game seconds per real second; default: the first client's TimeScale")
+    p = sub.add_parser("fuzz", help="join a server and send it mutated packets")
+    p.add_argument("address", help="HOST[:PORT] of a tes3x_net.py server")
+    p.add_argument("--count", type=int, default=2000)
+    p.add_argument("--seed", type=int, default=1)
+    p.add_argument("--rate", type=float, default=300, help="packets per second")
     p = sub.add_parser("plugin", help="write the ghost plugin the multiplayer patch moves")
     p.add_argument("out")
     p.add_argument("--master", required=True, help="Morrowind.esm, for its size")
@@ -2164,7 +2404,7 @@ def main(argv=None):
         with open(args.out, "wb") as f:
             f.write(ghost_plugin(os.path.getsize(args.master)))
         return 0
-    return {"listen": listen, "ping": ping, "serve": serve}[args.command](args)
+    return {"listen": listen, "ping": ping, "serve": serve, "fuzz": fuzz}[args.command](args)
 
 
 if __name__ == "__main__":
