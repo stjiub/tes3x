@@ -17,6 +17,7 @@ answers ARP itself and resolves the console's MAC before it pings.
 """
 
 import argparse
+import json
 import math
 import os
 import random
@@ -320,6 +321,12 @@ EVENT_PLAYER_HIT = 9  # attacker refid (0: a player), victim client, health, fat
 EVENT_SPELL = 10  # SPELL, then the spell id ending in a zero
 EVENT_CAST = 11  # as EVENT_SPELL, sent to every other client; the target may be empty
 EVENT_SHOT = 12  # SHOT, then the ammunition id ending in a zero
+EVENT_OBJECTS = 13  # count, then OBJECT records
+# A data-file reference's shared state: refid, its cell's index in the cells list (the same under
+# one load order), state bits, lock level.
+OBJECT = struct.Struct("<IHBB")
+OBJECT_DISABLED, OBJECT_DELETED, OBJECT_LOCK, OBJECT_LOCKED = 1, 2, 4, 8
+OBJECTS_PER_EVENT = (EVENT_DATA - 1) // OBJECT.size
 SHOT = struct.Struct("<IffB")  # firer refid, the two shot values, firer is a player
 # caster refid, target client, target refid (0: its player), source type, caster is a player
 SPELL = struct.Struct("<IIIBB")
@@ -388,6 +395,47 @@ def pack_weather(entries, flags=0):
     return [bytes((flags, len(chunk))) + b"".join(WEATHER_ENTRY.pack(*e) for e in chunk)
             for chunk in (items[i:i + WEATHER_PER_EVENT]
                           for i in range(0, len(items), WEATHER_PER_EVENT))]
+
+
+def pack_objects(objects):
+    """OBJECTS events for {refid: (cell, state, level)}."""
+    items = sorted(objects.items())
+    return [bytes([len(chunk)]) + b"".join(OBJECT.pack(refid, *rest) for refid, rest in chunk)
+            for chunk in (items[i:i + OBJECTS_PER_EVENT]
+                          for i in range(0, len(items), OBJECTS_PER_EVENT))]
+
+
+def unpack_objects(data):
+    """{refid: (cell, state, level)} of an OBJECTS event."""
+    count = data[0] if data else 0
+    return {refid: (cell, state, level) for refid, cell, state, level in
+            (OBJECT.unpack_from(data, 1 + i * OBJECT.size) for i in range(count)
+             if 1 + (i + 1) * OBJECT.size <= len(data))}
+
+
+def describe_object(refid, cell, state, level):
+    words = [name for bit, name in ((OBJECT_DISABLED, "disabled"), (OBJECT_DELETED, "taken"))
+             if state & bit]
+    if state & OBJECT_LOCK:
+        words.append(f"locked {level}" if state & OBJECT_LOCKED else "unlocked")
+    return f"{refid:#010x} in cell {cell}: {', '.join(words) or 'restored'}"
+
+
+def load_world(path):
+    """The saved world of one load order, or None."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return None
+
+
+def save_world(path, world):
+    """Write by temporary file and rename, so a crash leaves the last whole save."""
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path + ".tmp", "w", encoding="utf-8") as f:
+        json.dump(world, f, indent=1, sort_keys=True)
+    os.replace(path + ".tmp", path)
 
 
 def unpack_weather(data):
@@ -661,6 +709,8 @@ def serve(args):
         equipment[BOT_ID] = [pack_equipment([i for i in args.bot_equip.split(",") if i]), []]
     actors = {}  # refid -> (reporting client, cell, ACTOR bytes), the latest from an authority
     weather = {}  # region index -> weather, the session's; replayed to each joining client
+    objects = {}  # refid -> (cell index, state, lock level); replayed to each joining client
+    world = {"path": None, "dirty": False, "saved": 0.0}
     bot_weather = []
     bot_spells = []
     bot_shots = [(float(at), ammo) for ammo, _, at in (s.rpartition("@") for s in args.bot_shoot)]
@@ -739,6 +789,35 @@ def serve(args):
             if other.alive:
                 send(other, PEER, struct.pack("<I", BOT_ID) + state)
 
+    def adopt_world(order, now):
+        """Load what --world holds for this load order: the clock, deaths, objects, weather."""
+        nonlocal clock
+        if not args.world:
+            return
+        world["path"] = os.path.join(args.world, f"{order:08x}.json")
+        saved = load_world(world["path"])
+        if not saved:
+            print(f"world {world['path']}: new", flush=True)
+            return
+        deaths.update({int(k): v for k, v in saved.get("deaths", {}).items()})
+        objects.update({int(k): tuple(v) for k, v in saved.get("objects", {}).items()})
+        weather.update({int(k): v for k, v in saved.get("weather", {}).items()})
+        if saved.get("clock") and args.hour is None:
+            clock = Clock(*saved["clock"], now)
+        print(f"world {world['path']}: {len(deaths)} deaths, {len(objects)} objects, "
+              f"{len(weather)} regions" + (f", clock {clock}" if clock else ""), flush=True)
+
+    def write_world(now):
+        state = {"deaths": {str(k): v for k, v in deaths.items()},
+                 "objects": {str(k): list(v) for k, v in objects.items()},
+                 "weather": {str(k): v for k, v in weather.items()}}
+        if clock:
+            clock.advance(now)
+            state["clock"] = [clock.hour, clock.day, clock.month, clock.year, clock.days_passed,
+                              clock.scale]
+        save_world(world["path"], state)
+        world["dirty"], world["saved"] = False, now
+
     def leave(client):
         client.alive = False
         for other in clients.values():
@@ -766,6 +845,7 @@ def serve(args):
         if not changed:
             return
         weather.update(changed)
+        world["dirty"] = True
         print(f"{stamp} weather from client {origin}: {describe_weather(changed)}", flush=True)
         for other in clients.values():
             if other.alive and (to_origin or other.id != origin):
@@ -828,7 +908,14 @@ def serve(args):
             if refid in deaths:
                 return
             deaths[refid] = client.id
+            world["dirty"] = True
             print(f"{stamp} client {client.id}: {refid:#010x} died", flush=True)
+        if kind == EVENT_OBJECTS and data:
+            changed = unpack_objects(data)
+            objects.update(changed)
+            world["dirty"] = True
+            for refid, rest in changed.items():
+                print(f"{stamp} client {client.id}: {describe_object(refid, *rest)}", flush=True)
         if kind == EVENT_TEXT:
             print(f"{stamp} client {client.id} says: {data.decode('latin-1')}", flush=True)
         if kind == EVENT_EQUIPMENT and len(data) >= 2:
@@ -933,6 +1020,7 @@ def serve(args):
                 pinned = (order, plugins)
                 print(f"{stamp} load order {order:#010x} ({plugins} plugins) set by {mac}",
                       flush=True)
+                adopt_world(order, now)
             if order != pinned[0]:
                 print(f"{stamp} refused {mac}: load order {order:#010x} ({plugins} plugins), "
                       f"session has {pinned[0]:#010x}", flush=True)
@@ -968,6 +1056,8 @@ def serve(args):
             send(client, CLOCK, clock.body(now))
             for refid, origin in deaths.items():
                 client.rel.queue(EVENT_DEATH, origin, struct.pack("<I", refid))
+            for data in pack_objects(objects):
+                client.rel.queue(EVENT_OBJECTS, 0, data)
             for origin, (parts, _) in equipment.items():
                 if origin != client.id:
                     for part in parts:
@@ -1013,6 +1103,8 @@ def serve(args):
             leave(client)
             by_session.pop(session, None)
 
+    if pinned:
+        adopt_world(pinned[0], time.time())
     while deadline is None or time.time() < deadline:
         waiting = [sock] + [link.sock for link in links] + ([dns] if dns else [])
         for ready in select.select(waiting, [], [], 0.25)[0]:
@@ -1066,6 +1158,8 @@ def serve(args):
             if client.alive and now - client.last > TIMEOUT:
                 print(f"{time.strftime('%H:%M:%S')} client {client.id} timed out", flush=True)
                 leave(client)
+        if world["path"] and now >= world["saved"] + (10 if world["dirty"] else 60):
+            write_world(now)
         if args.bot and bot["anchor"] and now >= bot["next"]:
             bot["next"] = now + 1 / args.bot_rate
             bot_step(now)
@@ -1167,10 +1261,14 @@ def serve(args):
             for client in clients.values():
                 print(f"  client {client.id}: {'up' if client.alive else 'down'}, "
                       + summary(client), flush=True)
+            if objects:
+                print(f"  objects: {len(objects)} changed", flush=True)
             if actors:
                 print(f"  actors: {len(actors)} known; authorities "
                       + ", ".join(f"{describe_key(k)} {c}" for k, c in sorted(
                           owners.items(), key=lambda i: describe_key(i[0]))), flush=True)
+    if world["path"]:
+        write_world(time.time())
     for client in clients.values():
         print(f"client {client.id} {client.mac}: " + summary(client, "last "))
     if args.drop:
@@ -1213,6 +1311,10 @@ def main(argv=None):
     p.add_argument("--tunnel", type=int, action="append", default=[], metavar="PORT",
                    help="serve an xemu guest through its udp backend (repeatable, one per xemu)")
     p.add_argument("--duration", type=float, help="stop after this many seconds")
+    p.add_argument("--world", metavar="DIR",
+                   help="keep the world in DIR, one file per load order: the clock, deaths, "
+                        "changed objects and weather, loaded when the load order is set and "
+                        "written every 10 seconds while it changes")
     p.add_argument("--dhcp-lease", type=int, default=3600, metavar="SECONDS",
                    help="lease time offered to xemu guests that ask for an address "
                         "(NetAddress=dhcp); each tunnel leases %s" % GUEST_IP)

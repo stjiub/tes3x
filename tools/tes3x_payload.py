@@ -63,6 +63,7 @@ PROJECTILE_ACTOR_HIT = 0x00192610
 HIT_ROLL = 0x0017B770
 NOCK = 0x00158620
 ACTIVATION_TARGET = 0x00096110  # Game::CheckPlayerActivationTarget, from Game::Update only
+REF_MODIFIED = 0x0012A940  # Reference::setObjectModified, in the Reference vtable only
 PLAYER_CONTROL = 0x001717E0  # PlayerAnimationController's update: look, controls, animation
 CONSOLE_ADDRESSES = (
     ("FIND_MENU", 0x001AD340), ("OPEN_VK", 0x0022D210), ("CONSOLE_MENU_ID", 0x003D816C),
@@ -329,6 +330,14 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
                                "expected 1")
         define("NET_PLAYER_CONTROL", hexva(control))
         define("NET_PLAYER_CONTROL_SLOT", hexva(slots[0]))
+        modified = int(address("REF_MODIFIED", REF_MODIFIED), 16)
+        slots = [image.off_to_va(m.start()) for m in re.finditer(
+            re.escape(struct.pack("<I", modified)), bytes(image.data))]
+        if len(slots) != 1 or None in slots:
+            raise PayloadError(f"Reference::setObjectModified {hexva(modified)}: {len(slots)} "
+                               "vtable slots, expected 1")
+        define("NET_REF_MODIFIED", hexva(modified))
+        define("NET_REF_MODIFIED_SLOT", hexva(slots[0]))
         define("NET_MENU_GATE", hexva(locate("menu-mode-gate")))
         define("NET_MOB_GATE", hexva(locate("mob-update-gate")))
         define("NET_WEATHER_ROLL", hexva(locate("weather-roll")))

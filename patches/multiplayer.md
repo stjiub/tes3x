@@ -40,6 +40,13 @@ records the death and every console, including one that joins later, kills its c
 placed by the data files take part; creatures spawned while playing, such as from leveled lists,
 still run separately on each console.
 
+Objects placed by the data files are shared the same way: when one console takes an item, or a
+script disables an object, or a door or container is locked or unlocked, the server records the
+new state and every console applies it, including one that joins later, once the object's cell
+is loaded. The server can keep these, with the deaths, the clock and the weather, between
+sessions (`serve --world DIR`). Containers' contents and items dropped or made while playing are
+not shared yet.
+
 A spell takes effect on the console that runs its target. When a spell cast on one console
 reaches another player's stand-in, or an actor another console runs, that console applies the
 spell to the real target instead. Spells the player made in their own game are not known to the

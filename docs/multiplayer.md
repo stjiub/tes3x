@@ -74,10 +74,15 @@ The first client to join sets the session's load order and its game clock. Usefu
 | `--hour H`, `--timescale T` | start the clock at a game hour or speed instead of the first client's |
 | `--load-order HASH` | fix the load order instead of taking the first client's |
 | `--host NAME=ADDRESS` | answer DNS for a name, so `NetServer` can be that name |
+| `--world DIR` | keep the world between sessions (below) |
 | `--duration SECONDS` | stop after a while |
 
-Stop the server with Ctrl+C. The session lives only as long as the server does: stop it and
-the deaths and equipment it recorded are gone.
+Stop the server with Ctrl+C. Without `--world` the session lives only as long as the server
+does: stop it and the deaths, objects and equipment it recorded are gone. With `--world DIR` it
+keeps the game clock, the deaths, the doors, locks and items taken, and the weather in one file
+per load order in `DIR`, loads it when the first console joins and writes it every 10 seconds
+while it changes, so a restarted server carries on where it stopped. A console's own save is
+still loaded first; joining then applies what the world holds.
 
 ## Connect a console
 
@@ -153,6 +158,6 @@ with both load order hashes.
 ## Limits
 
 - Menus no longer pause the world while joined, and resting or waiting is refused.
-- Each console keeps its own save. Doors, locks, containers and items taken or dropped are not
-  shared yet, and neither are creatures spawned while playing.
+- Each console keeps its own save. Items taken, objects a script disables and locks are shared;
+  containers' contents, items dropped and creatures spawned while playing are not yet.
 - Stand-ins look like a Dark Elf named "Player N", whatever the player's character.

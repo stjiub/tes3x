@@ -62,6 +62,26 @@ class DhcpReplyTests(unittest.TestCase):
         self.assertIsNone(tes3x_net.dhcp_reply(dhcp_request(1)[:200], 30))
 
 
+class ObjectTests(unittest.TestCase):
+    def test_events_fit_and_round_trip(self):
+        objects = {0x01000000 + i: (2433, i & 3, i) for i in range(20)}
+        events = tes3x_net.pack_objects(objects)
+        self.assertTrue(all(len(e) <= tes3x_net.EVENT_DATA for e in events))
+        merged = {}
+        for event in events:
+            merged.update(tes3x_net.unpack_objects(event))
+        self.assertEqual(merged, objects)
+
+    def test_world_file_round_trip(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / 'sub' / 'ef43975a.json')
+            self.assertIsNone(tes3x_net.load_world(path))
+            world = {'objects': {'17174802': [2433, 12, 30]}, 'deaths': {'16901060': 1}}
+            tes3x_net.save_world(path, world)
+            self.assertEqual(tes3x_net.load_world(path), world)
+            self.assertFalse(Path(path + '.tmp').exists())
+
+
 class GhostPluginTests(unittest.TestCase):
     def test_one_persistent_ghost_per_peer_slot_in_the_parking_cell(self):
         with tempfile.TemporaryDirectory() as tmp:
