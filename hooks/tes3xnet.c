@@ -11,6 +11,7 @@
  *   tes3xnet probe A.B.C.D  ARP for an address three times and log the replies
  *   tes3xnet stat         log the counters
  *   tes3xnet say TEXT     send TEXT to the other clients as a reliable event
+ *   tes3xnet send NAME    send U:\TES3X\NAME to the server
  *   tes3xnet menusim 0|1|auto  force the world paused or running under menus, or follow the
  *                         session (the default: running while joined)
  *   tes3xnet weather roll 0|1|auto  force this console's own weather rolls off or on, or follow
@@ -356,6 +357,7 @@ static struct {
 #define EVENTS_OUT 16u
 #define EVENTS_IN 16u
 #define EVENTS_BYTES 512u
+#define SEND_BYTES 1032u /* the largest body: a CHUNK's id, index and 1024 bytes */
 
 struct event {
     u32 seq, kind, length, origin;
@@ -403,6 +405,8 @@ static void actors_rx(u32 origin, u32 seq, const u8 *p, u32 n);
 static void actors_reset(void);
 static void weather_event(const struct event *e);
 static void bulk_chunk_rx(const u8 *p, u32 n);
+static void up_ack_rx(const u8 *p, u32 n);
+static void up_pump(void);
 static void handshake_tick(void);
 static void handshake_rx(const u8 *p, u32 n);
 static void handshake_reset(void);
@@ -697,9 +701,9 @@ static void t3mp_outer(u8 *p, u32 type, u32 session, u32 seq)
 /* Caller holds the lock. Nothing is sent before the handshake has keyed the session. */
 static void session_send(u32 type, const u8 *body, u32 n)
 {
-    static u8 inner[T3MP_INNER + EVENTS_BYTES], p[T3MP_OUTER + sizeof(inner) + NOISE_TAG];
+    static u8 inner[T3MP_INNER + SEND_BYTES], p[T3MP_OUTER + sizeof(inner) + NOISE_TAG];
 
-    if (n > EVENTS_BYTES || !sec.keyed)
+    if (n > SEND_BYTES || !sec.keyed)
         return;
     t3mp_outer(p, T3MP_SEALED, ses.id, ++ses.seq);
     inner[0] = (u8)type;
@@ -921,6 +925,8 @@ static void session_rx_plain(const u8 *p, u32 n)
             events_rx(p + T3MP_HEADER, n - T3MP_HEADER);
         if (type == T3MP_CHUNK)
             bulk_chunk_rx(p + T3MP_HEADER, n - T3MP_HEADER);
+        if (type == T3MP_BULK_ACK)
+            up_ack_rx(p + T3MP_HEADER, n - T3MP_HEADER);
         if (type == T3MP_ACTORS && n >= T3MP_HEADER + 8)
             actors_rx(get32le(p + T3MP_HEADER), seq, p + T3MP_HEADER + 4, n - T3MP_HEADER - 4);
         if (type == T3MP_CLOCK && n >= T3MP_HEADER + CLOCK_BYTES && seq > ses.peer_seq &&
@@ -1280,6 +1286,7 @@ static void session_tick(void)
         if (rel.out_first != rel.out_next)
             events_send(1);
         bulk_tick();
+        up_pump();
         if (ses.quiet >= TIMEOUT_TICKS) {
             ses.timeouts++;
             ses.state = SESSION_HELLO;
@@ -7110,18 +7117,23 @@ static void bulk_chunk_rx(const u8 *p, u32 n)
         bulk_ack();
 }
 
-static void bulk_path(char *path, const char *suffix)
+static void named_path(char *path, const char *name, const char *suffix)
 {
     static const char dir[] = "U:\\TES3X\\";
     u32 n = 0, i;
 
     for (i = 0; dir[i]; i++)
         path[n++] = dir[i];
-    for (i = 0; bulk.name[i]; i++)
-        path[n++] = bulk.name[i];
+    for (i = 0; name[i]; i++)
+        path[n++] = name[i];
     for (i = 0; suffix[i]; i++)
         path[n++] = suffix[i];
     path[n] = 0;
+}
+
+static void bulk_path(char *path, const char *suffix)
+{
+    named_path(path, bulk.name, suffix);
 }
 
 static u32 bulk_open(char *path, u32 access, u32 disposition, u32 options, void **h)
@@ -7360,6 +7372,245 @@ static void bulk_tick(void)
 {
     if (bulk.state == BULK_RECEIVING)
         bulk_ack();
+}
+
+/* Bulk transfer to the server, the same packets the other way: `tes3xnet send NAME` offers
+ * U:\TES3X\NAME as an OFFER event, and the server's BULK_ACK says which chunk it needs next,
+ * which of those after it arrived and how many may be in flight. The file work hashes the file
+ * and keeps the window's chunks in UP_SLOTS; the receive DPC, the tick and the file work send
+ * them. A chunk goes again after UP_RESEND_US, or at once when one sent after it has arrived.
+ * After a WELCOME the offer goes again, and the server resumes from its part. */
+#define UP_SLOTS 8u
+#define UP_EMPTY 0xFFFFFFFFu
+#define UP_RESEND_US 500000u
+#define UP_PROBE_US 1000000u
+#define UP_IDLE 0u
+#define UP_WANT 1u    /* named; the file work opens and hashes it */
+#define UP_OFFER 2u   /* hashed; the game thread queues the OFFER */
+#define UP_OFFERED 3u /* waiting for the server's first ack */
+#define UP_SENDING 4u
+#define UP_DONE 5u
+#define UP_FAILED 6u /* unreadable here, or refused or failed there */
+static struct {
+    u32 state, id, total, chunks, next, window, seen, status, welcomes, last_ack, first;
+    u32 index[UP_SLOTS], serial[UP_SLOTS], sent_at[UP_SLOTS], lost, serials;
+    u32 sent, resent, fast, acks, logged;
+    void *file;
+    u8 hash[BULK_HASH];
+    char name[BULK_NAME + 1];
+    u8 slot[UP_SLOTS][BULK_CHUNK];
+} up;
+
+/* Caller holds the lock. */
+static void up_send_slot(u32 s, u32 now)
+{
+    static u8 body[8 + BULK_CHUNK];
+    u32 i = up.index[s], n = i + 1 < up.chunks ? BULK_CHUNK : up.total - i * BULK_CHUNK;
+
+    put32le(body, up.id);
+    put32le(body + 4, i);
+    copy(body + 8, up.slot[s], n);
+    session_send(T3MP_CHUNK, body, 8 + n);
+    up.resent += up.serial[s] != 0;
+    up.fast += up.lost >> s & 1;
+    up.lost &= ~(1u << s);
+    up.serial[s] = ++up.serials;
+    up.sent_at[s] = now;
+    up.sent++;
+}
+
+/* Caller holds the lock: send what is loaded and due; with nothing due and no ack for a while, one
+ * chunk again, to draw an ack whose predecessor was lost. */
+static void up_pump(void)
+{
+    u32 i, s, now = now_us(), limit, sent = 0;
+
+    if (up.state != UP_SENDING || ses.state != SESSION_JOINED)
+        return;
+    limit = up.window < UP_SLOTS ? up.window : UP_SLOTS;
+    for (i = up.next; i < up.next + limit && i < up.chunks; i++) {
+        s = i % UP_SLOTS;
+        if (up.index[s] != i || (up.seen >> (i - up.next) & 1))
+            continue;
+        if (up.serial[s] && !(up.lost >> s & 1) && now - up.sent_at[s] < UP_RESEND_US)
+            continue;
+        up_send_slot(s, now);
+        sent++;
+    }
+    s = up.next % UP_SLOTS;
+    if (!sent && now - up.last_ack >= UP_PROBE_US && up.next < up.chunks && up.index[s] == up.next) {
+        up.last_ack = now;
+        up_send_slot(s, now);
+    }
+}
+
+/* Caller holds the lock (the receive DPC). */
+static void up_ack_rx(const u8 *p, u32 n)
+{
+    u32 next, seen, k, s, top, last;
+
+    if (n < BULK_ACK_BYTES || !up.id || get32le(p) != up.id ||
+        (up.state != UP_OFFERED && up.state != UP_SENDING) || (next = get32le(p + 4)) > up.chunks)
+        return;
+    up.acks++;
+    up.last_ack = now_us();
+    if (up.state == UP_OFFERED)
+        up.first = next;
+    seen = get32le(p + 8) & ((1u << UP_SLOTS) - 1);
+    up.next = next;
+    up.seen = seen;
+    up.window = get32le(p + 12);
+    up.status = get32le(p + 16);
+    if (up.status != BULK_RECEIVING) {
+        up.state = up.status == BULK_DONE ? UP_DONE : UP_FAILED;
+        return;
+    }
+    up.state = UP_SENDING;
+    for (top = 0, k = 1; k < UP_SLOTS; k++)
+        if (seen >> k & 1)
+            top = k;
+    if (top && up.index[s = (next + top) % UP_SLOTS] == next + top) {
+        last = up.serial[s];
+        for (k = 0; k < top; k++)
+            if (!(seen >> k & 1) && up.index[s = (next + k) % UP_SLOTS] == next + k &&
+                up.serial[s] && up.serial[s] < last)
+                up.lost |= 1u << s;
+    }
+    up_pump();
+}
+
+static void up_close(void)
+{
+    if (up.file)
+        NtClose(up.file);
+    up.file = 0;
+}
+
+/* File work: open and hash a named file, then keep the window's chunks loaded. */
+static void up_work(void)
+{
+    crypto_blake2b_ctx ctx;
+    IO_STATUS_BLOCK iosb;
+    char path[16 + BULK_NAME + 8];
+    u64 offset, size;
+    u32 flags, i, s, n, left, limit, state = UP_FAILED;
+
+    if (up.state == UP_WANT) {
+        up_close();
+        named_path(path, up.name, "");
+        if (!bulk_open(path, GENERIC_READ, FILE_OPEN, 0, &up.file) &&
+            (size = bulk_size(up.file)) <= BULK_MAX) {
+            crypto_blake2b_init(&ctx, BULK_HASH);
+            for (offset = 0, left = (u32)size; left; offset += n, left -= n) {
+                n = left < sizeof(up.slot) ? left : sizeof(up.slot);
+                if (NtReadFile(up.file, 0, 0, 0, &iosb, up.slot, n, &offset) ||
+                    iosb.Information != n)
+                    break;
+                crypto_blake2b_update(&ctx, (const u8 *)up.slot, n);
+            }
+            crypto_blake2b_final(&ctx, up.hash);
+            if (!left)
+                state = UP_OFFER;
+            up.total = (u32)size;
+        }
+        flags = lock();
+        up.id = get32le(up.hash) ? get32le(up.hash) : 1;
+        up.chunks = (up.total + BULK_CHUNK - 1) / BULK_CHUNK;
+        up.next = up.window = up.seen = up.lost = 0;
+        for (i = 0; i < UP_SLOTS; i++)
+            up.index[i] = UP_EMPTY;
+        up.state = state;
+        unlock(flags);
+        worker_log("net.upload_ready", up.id, up.total, state);
+    }
+    if (up.state == UP_SENDING) {
+        limit = up.window < UP_SLOTS ? up.window : UP_SLOTS;
+        for (i = up.next; i < up.next + limit && i < up.chunks; i++) {
+            if (up.index[s = i % UP_SLOTS] == i)
+                continue;
+            /* The slot's chunk is acked, so neither the DPC nor the tick sends it now. */
+            n = i + 1 < up.chunks ? BULK_CHUNK : up.total - i * BULK_CHUNK;
+            offset = (u64)i * BULK_CHUNK;
+            if (NtReadFile(up.file, 0, 0, 0, &iosb, up.slot[s], n, &offset) ||
+                iosb.Information != n) {
+                flags = lock();
+                up.state = UP_FAILED;
+                unlock(flags);
+                worker_log("net.upload_read_failed", up.id, i, 0);
+                break;
+            }
+            flags = lock();
+            up.index[s] = i;
+            up.serial[s] = 0;
+            up.lost &= ~(1u << s);
+            up_pump();
+            unlock(flags);
+        }
+    }
+    if ((up.state == UP_DONE || up.state == UP_FAILED) && up.file)
+        up_close();
+}
+
+/* Game thread: offer what is hashed, and again after a WELCOME. */
+static void up_frame(void)
+{
+    u8 data[BULK_OFFER_BYTES + BULK_NAME + 1];
+    u32 flags, n;
+
+    flags = lock();
+    if ((up.state == UP_OFFERED || up.state == UP_SENDING) && up.welcomes != ses.welcomes)
+        up.state = UP_OFFER;
+    unlock(flags);
+    if (up.state == UP_OFFER && ses.state == SESSION_JOINED) {
+        put32le(data, up.id);
+        put32le(data + 4, up.total);
+        copy(data + 8, up.hash, BULK_HASH);
+        n = tes3x_strlen(up.name) + 1;
+        copy(data + BULK_OFFER_BYTES, (const u8 *)up.name, n);
+        if (event_queue(EVENT_OFFER, data, BULK_OFFER_BYTES + n)) {
+            flags = lock();
+            up.welcomes = ses.welcomes;
+            up.last_ack = now_us();
+            up.state = UP_OFFERED;
+            unlock(flags);
+        }
+    }
+    if (up.state != up.logged) {
+        up.logged = up.state;
+        tes3x_log_hex3("net.upload_state", up.id, up.state, up.next);
+    }
+}
+
+/* Game thread: `tes3xnet send NAME`. */
+static void up_command(const char *name)
+{
+    u32 i, flags;
+
+    for (i = 0; i < BULK_NAME && name[i]; i++) {
+        char c = name[i];
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+              c == ' ' || c == '.' || c == '-' || c == '_') || (!i && c == '.'))
+            break;
+    }
+    if (!i || name[i] || (up.state >= UP_WANT && up.state <= UP_SENDING)) {
+        tes3x_log("net.upload_refused", up.state);
+        return;
+    }
+    copy((u8 *)up.name, (const u8 *)name, i + 1);
+    flags = lock();
+    up.state = UP_WANT;
+    up.sent = up.resent = up.fast = up.acks = 0;
+    unlock(flags);
+    log_text("net.upload_name", up.name);
+}
+
+static void up_stat(void)
+{
+    if (!up.id)
+        return;
+    tes3x_log_hex3("net.upload", up.id, up.state, up.next);
+    tes3x_log_hex3("net.upload_chunks", up.sent, up.resent, up.fast);
+    tes3x_log_hex3("net.upload_acks", up.acks, up.first, up.total);
 }
 
 static void bulk_stat(void)
@@ -7642,6 +7893,7 @@ static void file_work(void)
 {
     trust_write();
     bulk_work();
+    up_work();
 }
 
 static void __stdcall worker_thread(void *context)
@@ -7717,6 +7969,7 @@ static void file_frame(void)
         trust_save();
     if (!worker.running)
         file_work();
+    up_frame();
 }
 
 /* The handshake: Noise XX with the server (tes3xnoise.c). HANDSHAKE1 is padded to at least the
@@ -8301,6 +8554,7 @@ int tes3x_net_command(const char *text)
         spawns_stat();
         containers_stat();
         bulk_stat();
+        up_stat();
         handshake_stat();
     } else if ((rest = word(text, "menusim")) && (rest = word(skip(rest), "auto")) &&
                !*skip(rest)) {
@@ -8312,6 +8566,8 @@ int tes3x_net_command(const char *text)
     } else if ((rest = word(text, "weather")) && (rest = word(skip(rest), "roll")) &&
                (rest = skip(rest)) && (word(rest, "auto") || number(rest, &value))) {
         weather_forced = word(rest, "auto") ? 0 : 1 + (value != 0);
+    } else if ((rest = word(text, "send")) && *(rest = skip(rest))) {
+        up_command(rest);
     } else if ((rest = word(text, "say")) && *(rest = skip(rest))) {
         for (value = 0; rest[value] && value < EVENT_DATA; value++)
             ;

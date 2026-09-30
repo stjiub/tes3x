@@ -424,7 +424,14 @@ BULK_NAME = 37  # with ".part", FATX's 42 characters
 BULK_RESEND = 0.5
 BULK_PROBE = 1.0
 BULK_STATUS = ("idle", "opening", "receiving", "done", "bad hash", "refused", "failed")
-BULK_RECEIVING = 2
+BULK_RECEIVING, BULK_DONE, BULK_BAD_HASH, BULK_REFUSED, BULK_FAILED = 2, 3, 4, 5, 6
+BULK_WINDOW_IN = 8  # chunks a console keeps in flight to the server: its send slots
+BULK_ACK_EVERY = 0.25  # seconds between acks to a console that is sending
+UPLOAD_FILES = 64  # files one console key may keep in its uploads folder
+BULK_MAX = 16 << 20  # as the console's
+# Names Windows opens as devices, whatever the extension
+DEVICE_NAMES = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(10)),
+                *(f"LPT{i}" for i in range(10))}
 
 
 def load_order_hash(names):
@@ -753,6 +760,89 @@ def x25519_public(secret):
 
 def fingerprint(public):
     return hashlib.blake2b(public, digest_size=16).hexdigest()
+
+
+def plain_name(name):
+    """A file name the console and FATX both take: letters, digits, ' .-_', not led by a dot."""
+    return (0 < len(name) <= BULK_NAME and not name.startswith(".") and
+            all(c.isascii() and (c.isalnum() or c in " .-_") for c in name))
+
+
+class Incoming:
+    """One file a console sends: chunks written in order to NAME.part in its folder, renamed to
+    NAME once the whole file's BLAKE2b matches the offer. A part left by an earlier try is
+    resumed; without a folder the offer is refused."""
+
+    def __init__(self, folder, ident, size, digest, name, now):
+        self.id, self.size, self.hash, self.name = ident, size, digest, name
+        self.chunks = (size + BULK_CHUNK - 1) // BULK_CHUNK
+        self.next = self.first = self.arrived = 0
+        self.held, self.stream = {}, None
+        self.started, self.acked = now, 0.0
+        self.path = os.path.join(folder, name) if folder else None
+        self.status = BULK_REFUSED
+        if not folder or size > BULK_MAX or not plain_name(name) or name[-1] in " ." or \
+                name.split(".")[0].upper() in DEVICE_NAMES:
+            return
+        os.makedirs(folder, exist_ok=True)
+        if os.path.exists(self.path) and self.matches(self.path):
+            self.status, self.next = BULK_DONE, self.chunks
+            return
+        kept = [f for f in os.listdir(folder) if not f.endswith(".part") and f != name]
+        if len(kept) >= UPLOAD_FILES:
+            return
+        part = self.path + ".part"
+        have = os.path.getsize(part) if os.path.exists(part) else 0
+        self.next = min(have, size) // BULK_CHUNK
+        self.stream = open(part, "r+b" if have else "wb")
+        self.stream.truncate(self.next * BULK_CHUNK)
+        self.stream.seek(self.next * BULK_CHUNK)
+        self.first = self.next
+        self.status = BULK_RECEIVING
+        if self.next == self.chunks:
+            self.finish()
+
+    def matches(self, path):
+        digest = hashlib.blake2b(digest_size=32)
+        with open(path, "rb") as stream:
+            for block in iter(lambda: stream.read(1 << 20), b""):
+                digest.update(block)
+        return os.path.getsize(path) == self.size and digest.digest() == self.hash
+
+    def finish(self):
+        self.stream.close()
+        self.stream = None
+        part = self.path + ".part"
+        if self.matches(part):
+            os.replace(part, self.path)
+            self.status = BULK_DONE
+        else:
+            os.remove(part)
+            self.status, self.next = BULK_BAD_HASH, 0
+
+    def on_chunk(self, index, data):
+        """Take a chunk; true when it should be acked now: out of the window, a duplicate, the
+        end, or every fourth arrival."""
+        if self.status != BULK_RECEIVING or not self.next <= index < min(
+                self.next + BULK_WINDOW_IN, self.chunks) or index in self.held or len(data) != (
+                BULK_CHUNK if index + 1 < self.chunks else self.size - index * BULK_CHUNK):
+            return True
+        self.held[index] = data
+        self.arrived += 1
+        while self.next in self.held:
+            self.stream.write(self.held.pop(self.next))
+            self.next += 1
+        if self.next == self.chunks:
+            self.finish()
+            return True
+        return self.arrived % 4 == 0
+
+    def ack(self, now):
+        self.acked = now
+        bitmap = sum(1 << (i - self.next) for i in self.held if i - self.next < 32)
+        return BULK_ACK_BODY.pack(self.id, self.next, bitmap,
+                                  BULK_WINDOW_IN if self.status == BULK_RECEIVING else 0,
+                                  self.status)
 
 
 class Noise:
@@ -1122,6 +1212,7 @@ class Client:
         self.joined = 0.0
         self.bursts = []  # (seconds after joining, packets) still to send
         self.bulk = None  # the Outgoing file of --send, offered again on each join
+        self.upload = None  # the Incoming file this console is sending
         self.key = None  # the console's static key for this server: its identity
         self.keys = None  # (console to server, server to console) from the handshake
         self.replay = (0, 0)  # the highest seq opened and a bitmap of the 32 up to it
@@ -1266,8 +1357,7 @@ def serve(args):
     sending = None
     if args.send:
         name = os.path.basename(args.send)
-        if (not 0 < len(name) <= BULK_NAME or name.startswith(".") or
-                any(not (c.isascii() and (c.isalnum() or c in " .-_")) for c in name)):
+        if not plain_name(name):
             raise SystemExit(f"--send: {name!r} is not a plain name of at most {BULK_NAME} "
                              "characters")
         with open(args.send, "rb") as stream:
@@ -1506,6 +1596,20 @@ def serve(args):
 
     def on_event(client, kind, data, stamp, now):
         client.events += 1
+        if kind == EVENT_OFFER and len(data) > BULK_OFFER.size:
+            ident, size, digest = BULK_OFFER.unpack_from(data)
+            name = wire_text(data[BULK_OFFER.size:].split(b"\0", 1)[0])
+            if client.upload and client.upload.stream:
+                client.upload.stream.close()
+            folder = (os.path.join(args.world, "uploads", fingerprint(client.key))
+                      if args.world and client.key else None)
+            client.upload = Incoming(folder, ident, size, digest, name, now)
+            print(f"{stamp} client {client.id} offers {name} ({size} bytes, id {ident:#010x}): "
+                  f"{BULK_STATUS[client.upload.status]}"
+                  + (f" from chunk {client.upload.next}"
+                     if client.upload.status == BULK_RECEIVING else ""), flush=True)
+            send(client, BULK_ACK, client.upload.ack(now))
+            return
         if kind == EVENT_CONTENTS and len(data) >= CONTENTS_HEAD.size:
             refid, cell, part, parts, flags, entries = unpack_contents(data)
             have = arriving.get(client.id)
@@ -1947,6 +2051,20 @@ def serve(args):
                       f"chunks sent {bulk.sent}, resent {bulk.resent} ({bulk.fast} on a gap), "
                       f"probes {bulk.probes}",
                       flush=True)
+        elif kind == CHUNK and client.upload and len(packet) >= T3MP.size + 8:
+            upload = client.upload
+            ident, index = struct.unpack_from("<II", packet, T3MP.size)
+            if ident != upload.id:
+                return
+            receiving = upload.status == BULK_RECEIVING
+            if upload.on_chunk(index, packet[T3MP.size + 8:]):
+                send(client, BULK_ACK, upload.ack(now))
+            if receiving and upload.status != BULK_RECEIVING:
+                took = max(now - upload.started, 0.001)
+                size = upload.size - upload.first * BULK_CHUNK
+                print(f"{stamp} client {client.id} sent {upload.name}: "
+                      f"{BULK_STATUS[upload.status]}, {size} bytes in {took:.1f} s "
+                      f"({size / 1024 / took:.0f} KB/s)", flush=True)
         elif kind == EVENTS and len(packet) >= T3MP.size + EVENTS_HEAD.size:
             ready, carried = client.rel.receive(packet[T3MP.size:])
             if carried:
@@ -2149,6 +2267,10 @@ def serve(args):
         for client in [c for c in clients.values() if c.alive and c.bulk]:
             for index in client.bulk.due(now):
                 send(client, CHUNK, client.bulk.chunk(index))
+        for client in [c for c in clients.values() if c.alive and c.upload]:
+            if client.upload.status == BULK_RECEIVING and \
+                    now - client.upload.acked >= BULK_ACK_EVERY:
+                send(client, BULK_ACK, client.upload.ack(now))
         for client in clients.values():
             if client.alive and (client.flush_due or client.rel.out and
                                  now - client.rel.last_send >= RESEND):

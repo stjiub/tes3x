@@ -171,6 +171,7 @@ With `console` in the build, open the console (Back + right thumb click) and typ
 |---|---|
 | `tes3xnet stat` | write the network counters to the log |
 | `tes3xnet say TEXT` | send a line of text to the other players (logged there as `net.text`) |
+| `tes3xnet send NAME` | send `U:\TES3X\NAME` to the server, which keeps it under `uploads` in its `--world` folder |
 | `tes3xnet down` | leave the session and stop the network card |
 | `tes3xnet up ADDRESS[/BITS] [SERVER[:PORT] [GATEWAY]]` | start it again by hand |
 

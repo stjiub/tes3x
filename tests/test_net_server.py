@@ -1,6 +1,8 @@
+import hashlib
 import random
 import shutil
 import socket
+import struct
 import subprocess
 import sys
 import tempfile
@@ -100,6 +102,37 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(len((world / 'admitted.txt').read_text().splitlines()), 1)
         with self.assertRaises(RuntimeError):
             self.client(3).join(timeout=1.0)
+
+    def test_console_sends_a_file_through_loss(self):
+        world = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, world)
+        self.start('--world', str(world))
+        client = self.client(1)
+        client.join()
+        data = random.Random(5).randbytes(10 * tes3x_net.BULK_CHUNK + 77)
+        digest = hashlib.blake2b(data, digest_size=32).digest()
+        offer = tes3x_net.BULK_OFFER.pack(9, len(data), digest) + b'char.ess\0'
+        client.send(tes3x_net.EVENTS, tes3x_net.pack_events(0, [(1, tes3x_net.EVENT_OFFER, 0,
+                                                                   offer)]))
+        ack = tes3x_net.BULK_ACK_BODY.unpack(client.receive(1.0, tes3x_net.BULK_ACK))
+        self.assertEqual(ack, (9, 0, 0, tes3x_net.BULK_WINDOW_IN, tes3x_net.BULK_RECEIVING))
+        chunks = [data[i:i + tes3x_net.BULK_CHUNK]
+                  for i in range(0, len(data), tes3x_net.BULK_CHUNK)]
+        for index in (0, 2, 3, 4, 5, 6, 7):  # 1 lost
+            client.send(tes3x_net.CHUNK, struct.pack('<II', 9, index) + chunks[index])
+        acks = []
+        while (body := client.receive(0.5, tes3x_net.BULK_ACK)) is not None:
+            acks.append(tes3x_net.BULK_ACK_BODY.unpack(body))
+        self.assertEqual(acks[-1][1:3], (1, 0b1111110))  # needs 1; 2 to 7 held
+        for index in range(1, len(chunks)):
+            client.send(tes3x_net.CHUNK, struct.pack('<II', 9, index) + chunks[index])
+        while (body := client.receive(1.0, tes3x_net.BULK_ACK)) is not None:
+            if tes3x_net.BULK_ACK_BODY.unpack(body)[4] == tes3x_net.BULK_DONE:
+                break
+        else:
+            self.fail('no ack said done')
+        (folder,) = (world / 'uploads').iterdir()
+        self.assertEqual((folder / 'char.ess').read_bytes(), data)
 
     def test_replayed_handshake3_does_not_move_the_session(self):
         self.start()
