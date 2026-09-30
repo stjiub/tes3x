@@ -16,6 +16,7 @@ CANDIDATE_LIST = ROOT / "candidates.toml"
 TABLE = ROOT / "docs" / "patches.md"
 CANDIDATE_PAGE = ROOT / "docs" / "candidates.md"
 PATCH_DOCS = ROOT / "patches"
+GAME_TESTS = ROOT / "tests" / "game"
 
 CATEGORIES = ("core", "correctness", "compat", "performance", "qol", "balance",
               "instrumentation", "infrastructure")
@@ -116,6 +117,11 @@ def name_text(entry):
     return f"[`{name}`](../patches/{entry['name']}.md)" if doc.is_file() else f"`{name}`"
 
 
+def game_test_text(entry):
+    path = GAME_TESTS / f"{entry['name']}.toml"
+    return f"[test](../tests/game/{entry['name']}.toml)" if path.is_file() else "—"
+
+
 def cell(text):
     return text.replace("|", "\\|")
 
@@ -136,19 +142,22 @@ def render_patches():
         "",
         "Generated from [`patches.toml`](../patches.toml) by `tools/tes3x_patches.py --write`;",
         "edit that file, not this one. Fixes that are not implemented are in",
-        "[candidates.md](candidates.md). A linked name opens the patch's folder of notes and tests.",
+        "[candidates.md](candidates.md). A linked patch name opens its notes; a game-test link",
+        "opens the runnable test definition.",
         "",
         "`dev` patches are contributor-only, `preview` patches work but need broader testing,",
         "and `release` patches are ready for general use.",
         "\"By name\" patches are only applied when a profile enables them.",
+        "The game-test column shows whether a public test definition exists, not its result.",
         "",
-        "| patch | what it does | from | category | channel | selected by |",
-        "|---|---|---|---|---|---|",
+        "| patch | what it does | from | category | channel | game test | selected by |",
+        "|---|---|---|---|---|---|---|",
     ]
     for entry in PATCHES:
         chosen = selection.get(entry["selection"]) or presets.get(entry["name"], "by name")
         lines.append(f"| {name_text(entry)} | {cell(entry['summary'])} | {origin_text(entry)} | "
-                     f"{entry['category']} | {entry['channel']} | {chosen} |")
+                     f"{entry['category']} | {entry['channel']} | {game_test_text(entry)} | "
+                     f"{chosen} |")
     return "\n".join(lines) + "\n"
 
 

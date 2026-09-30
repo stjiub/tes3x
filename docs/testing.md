@@ -212,7 +212,21 @@ the profile for everything else.
 
 `tests/game/` holds one test per patch, named after it, plus `smoke.toml`, the profile smoke test
 above. A game test boots the game, so it never runs with the unit tests; the unit tests only check
-that each file is well formed.
+that each file is well formed. See [patch game tests and validation](validation.md) for the complete
+run, record, reuse and status workflow.
+
+Run a patch's test from the repository root with a local profile:
+
+```powershell
+python tools/tes3x_scenario.py PATCH profiles/my-build.toml
+python tools/tes3x_scenario.py PATCH profiles/my-build.toml --record
+python tools/tes3x_validate.py status
+python tools/tes3x_validate.py check
+```
+
+The runner builds and boots the control and test sides required by the game test, then applies the
+automatic verdict. `--record` writes sanitized logs and provenance to the ignored
+`build/validation/` directory by default. A passing record requires a clean repository revision.
 
 ```toml
 kind = "comparison"      # or "single"
@@ -270,3 +284,6 @@ A test can also shape its build. `[profile]` overlays the chosen profile's `prof
 `[fixture]` generates a test mod from your own `Morrowind.esm` and makes it the build's only mod:
 `opcodes = [0x2001]` appends those opcode calls to the global script `Main` (or `script`), and
 `texture = true` adds one 4x4 texture so there is an asset to pack.
+
+The [validation guide](validation.md) describes direct xemu and original-Xbox recording, local
+standing, privacy, and the maintainer channel gate.

@@ -24,7 +24,14 @@ Which engine fixes TES3X takes on and what each one defaults to. The fixes thems
 Every implemented patch starts in `dev`. Promotion to `preview` or `release` is a maintainer
 decision, and a patch reaches `preview` only after its game test in
 [`tests/game/`](testing.md#game-tests) has passed. A patch whose game test changes has to pass it
-again.
+again. See [patch game tests and validation](validation.md) for how to run the public tests and
+interpret local standing.
+
+The public patch table links to a game test when one exists, but does not publish validation
+results. Results and logs can contain local mod or hardware details, and `current`, `stale` and
+`none` are properties of a particular result store rather than permanent patch metadata. The
+channel is the public readiness statement: `preview` and `release` are gated on maintainer-held
+validation, while `dev` makes no public pass claim.
 
 Every fix can be turned on or off by itself. Fixes taken from another project keep its numbering,
 so Morrowind Code Patch fix 97 is `mcp-97`.

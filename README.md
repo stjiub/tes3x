@@ -131,6 +131,8 @@ raises the on-screen keyboard. `[Xbox] ConsoleCombo` changes the combination;
 `disable = ["console"]` leaves it out.
 
 See [testing and debugging](docs/testing.md) for the file format, the log, and the profiler.
+Patch contributors can run the public in-game scenarios described in
+[patch game tests and validation](docs/validation.md).
 
 ## Diagnostics and profiling
 
@@ -174,6 +176,8 @@ The pipeline uses these commands internally; they can also be run directly:
 | `tes3x_deploy.py` | Upload a game folder to the Xbox. |
 | `tes3x_test.py` | Build and run a profile smoke test, or test a managed library one mod at a time. |
 | `tes3x_xemu.py` | Build a profile and run it in xemu with a command file; see [testing](docs/testing.md#running-in-xemu). |
+| `tes3x_scenario.py` | Run a patch's public game test in xemu and apply its automatic verdict. |
+| `tes3x_validate.py` | Record and check local validation evidence; see [validation](docs/validation.md). |
 | `tes3x_gui.py` | The GUI. |
 | `tes3x_library.py` | Scan, validate or convert to a versioned local mod library. |
 | `tes3x_fetch.py` | Copy files back off the Xbox, such as saves or logs. |
