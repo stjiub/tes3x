@@ -33,6 +33,35 @@ class DnsReplyTests(unittest.TestCase):
         self.assertIsNone(tes3x_net.dns_reply(query('mw.test')[:-3], {'mw.test': '10.0.2.2'}))
 
 
+def dhcp_request(kind, mac=bytes.fromhex('020000002499')):
+    return (bytes([1, 1, 6, 0]) + b'XID1' + bytes([0, 0, 0x80, 0]) + bytes(16) + mac
+            + bytes(10 + 192) + tes3x_net.DHCP_MAGIC + bytes([53, 1, kind, 255]))
+
+
+class DhcpReplyTests(unittest.TestCase):
+    def options(self, reply):
+        found, off = {}, 240
+        while reply[off] != 255:
+            found[reply[off]] = reply[off + 2:off + 2 + reply[off + 1]]
+            off += 2 + reply[off + 1]
+        return found
+
+    def test_discover_gets_an_offer_and_request_an_ack(self):
+        for kind, answer in ((1, 2), (3, 5)):
+            reply = tes3x_net.dhcp_reply(dhcp_request(kind), 30)
+            self.assertEqual(reply[4:8], b'XID1')
+            self.assertEqual(reply[16:20], socket.inet_aton(tes3x_net.GUEST_IP))
+            self.assertEqual(reply[28:34], bytes.fromhex('020000002499'))
+            options = self.options(reply)
+            self.assertEqual(options[53], bytes([answer]))
+            self.assertEqual(options[51], struct.pack('>I', 30))
+            self.assertEqual(options[1], bytes([255, 255, 255, 0]))
+
+    def test_other_messages_are_ignored(self):
+        self.assertIsNone(tes3x_net.dhcp_reply(dhcp_request(7), 30))
+        self.assertIsNone(tes3x_net.dhcp_reply(dhcp_request(1)[:200], 30))
+
+
 class GhostPluginTests(unittest.TestCase):
     def test_one_persistent_ghost_per_peer_slot_in_the_parking_cell(self):
         with tempfile.TemporaryDirectory() as tmp:

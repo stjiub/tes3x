@@ -2,8 +2,9 @@
  * ring, ARP, a UDP echo responder on port 26500 and a session with a PC server.
  *
  * Console commands:
- *   tes3xnet up A.B.C.D[/BITS] [SERVER[:PORT] [GATEWAY|- [DNS]]]
- *                         bring the NIC up with that address, answer ARP and echo requests, and
+ *   tes3xnet up A.B.C.D[/BITS]|dhcp [SERVER[:PORT] [GATEWAY|- [DNS]]]
+ *                         bring the NIC up with that address, or one leased by DHCP with its
+ *                         mask, gateway and DNS server, answer ARP and echo requests, and
  *                         with a server keep a session: HELLO until WELCOME, then a heartbeat
  *                         each second; five silent seconds start over. A SERVER that is a name
  *                         is looked up at DNS (default GATEWAY) first, and again after a timeout
@@ -250,6 +251,20 @@ static struct {
     char host[HOST_NAME]; /* the server's name, if it is not an address */
     u8 hop_mac[6];
 } ses;
+#define SESSION_DHCP 6u /* waiting for an address */
+
+/* DHCP, when NetAddress is "dhcp": the address, mask, gateway and DNS server come from the
+ * network. The lease is renewed at half its time and dropped at its end or on a NAK. */
+#define DHCP_CLIENT 68u
+#define DHCP_SERVER 67u
+#define DHCP_IDLE 0u
+#define DHCP_DISCOVER 1u
+#define DHCP_REQUEST 2u
+#define DHCP_BOUND 3u
+static struct {
+    u32 state, xid, ticks, tries, offered, server, lease, keep_gateway, keep_dns;
+    u32 discovers, requests, offers, acks, naks, renewals, expiries;
+} dhcp;
 
 /* The player's state: flags, position, heading (orientation z), the interior cell's name, then
  * the animation (anim_capture). Exterior cells are left empty; the grid follows from the
@@ -869,6 +884,189 @@ static void dns_rx(const u8 *p, u32 n)
     }
 }
 
+/* A DISCOVER or REQUEST, broadcast; caller holds the lock. A first REQUEST names the offer and
+ * its server, a renewal the bound address. */
+static void dhcp_send(u32 type)
+{
+    static const u8 options[] = {55, 4, 1, 3, 6, 51, 12, 5, 'T', 'E', 'S', '3', 'X'};
+    u8 *o = tx_begin(), *b = o + 42;
+    u32 i, n = 240;
+
+    if (!o)
+        return;
+    for (i = 0; i < 42 + 300; i++)
+        o[i] = 0;
+    for (i = 0; i < 6; i++)
+        o[i] = 0xFF;
+    copy(o + 6, mac, 6);
+    put16(o + 12, ETH_IP);
+    o[14] = 0x45;
+    put16(o + 16, 28 + 300);
+    o[22] = 64;
+    o[23] = 17;
+    put32(o + 26, dhcp.state == DHCP_BOUND ? net.ip : 0);
+    put32(o + 30, 0xFFFFFFFFu);
+    ip_checksum(o + 14);
+    put16(o + 34, DHCP_CLIENT);
+    put16(o + 36, DHCP_SERVER);
+    put16(o + 38, 8 + 300);
+    b[0] = 1; /* request, Ethernet, 6-byte address */
+    b[1] = 1;
+    b[2] = 6;
+    put32(b + 4, dhcp.xid);
+    put16(b + 10, 0x8000); /* reply by broadcast: there is no address to reply to yet */
+    if (dhcp.state == DHCP_BOUND)
+        put32(b + 12, net.ip);
+    copy(b + 28, mac, 6);
+    put32(b + 236, 0x63825363u);
+    b[n++] = 53;
+    b[n++] = 1;
+    b[n++] = (u8)type;
+    if (dhcp.state == DHCP_REQUEST) {
+        b[n++] = 50;
+        b[n++] = 4;
+        put32(b + n, dhcp.offered);
+        n += 4;
+        b[n++] = 54;
+        b[n++] = 4;
+        put32(b + n, dhcp.server);
+        n += 4;
+    }
+    copy(b + n, options, sizeof(options));
+    n += sizeof(options);
+    b[n] = 255;
+    tx_commit(42 + 300);
+}
+
+/* Caller holds the lock. */
+static void dhcp_discover(void)
+{
+    dhcp.state = DHCP_DISCOVER;
+    dhcp.xid = now_us() ^ (u32)mac[4] << 24 ^ (u32)mac[5] << 16;
+    dhcp.ticks = 0;
+    dhcp_send(1);
+    dhcp.discovers++;
+}
+
+/* The lease ended or was refused: the session waits for a new address. */
+static void dhcp_lost(void)
+{
+    net.ip = 0;
+    if (ses.state != SESSION_IDLE)
+        ses.state = SESSION_DHCP;
+    dhcp_discover();
+}
+
+static void dhcp_bind(u32 ip, u32 mask, u32 router, u32 dns, u32 lease)
+{
+    u32 fresh = ip != net.ip;
+
+    net.ip = ip;
+    net.mask = mask ? mask : 0xFFFFFF00u;
+    if (!dhcp.keep_gateway)
+        ses.gateway = router;
+    if (!dhcp.keep_dns)
+        ses.dns = dns ? dns : ses.gateway;
+    if (!lease || lease > 7 * 86400u)
+        lease = 7 * 86400u;
+    dhcp.lease = (lease < 16 ? 16 : lease) * (1000 / TICK_MS);
+    dhcp.state = DHCP_BOUND;
+    dhcp.ticks = 0;
+    if (!fresh)
+        return;
+    arp_request(net.ip);
+    if (ses.state == SESSION_DHCP) {
+        if (ses.server || ses.host[0])
+            route_to(ses.server ? ses.server : ses.dns);
+        else
+            ses.state = SESSION_IDLE;
+    }
+}
+
+/* A reply to our transaction; caller holds the lock (the receive DPC). */
+static void dhcp_rx(const u8 *p, u32 n)
+{
+    u32 off = 240, type = 0, mask = 0, router = 0, dns = 0, lease = 0, server = 0, i;
+
+    if (n < 240 || p[0] != 2 || !dhcp.state || get32(p + 4) != dhcp.xid ||
+        get32(p + 236) != 0x63825363u)
+        return;
+    for (i = 0; i < 6; i++)
+        if (p[28 + i] != mac[i])
+            return;
+    while (off < n && p[off] != 255) {
+        const u8 *v = p + off + 2;
+        u32 code = p[off], len;
+
+        if (!code) {
+            off++;
+            continue;
+        }
+        if (off + 2 > n || off + 2 + (len = p[off + 1]) > n)
+            return;
+        if (code == 53 && len >= 1)
+            type = v[0];
+        else if (len >= 4 && code == 1)
+            mask = get32(v);
+        else if (len >= 4 && code == 3)
+            router = get32(v);
+        else if (len >= 4 && code == 6)
+            dns = get32(v);
+        else if (len >= 4 && code == 51)
+            lease = get32(v);
+        else if (len >= 4 && code == 54)
+            server = get32(v);
+        off += 2 + len;
+    }
+    if (type == 2 && dhcp.state == DHCP_DISCOVER && get32(p + 16)) {
+        dhcp.offers++;
+        dhcp.offered = get32(p + 16);
+        dhcp.server = server ? server : get32(p + 20);
+        dhcp.state = DHCP_REQUEST;
+        dhcp.ticks = dhcp.tries = 0;
+        dhcp_send(3);
+        dhcp.requests++;
+        return;
+    }
+    if (dhcp.state == DHCP_DISCOVER || (server && dhcp.server && server != dhcp.server))
+        return;
+    if (type == 5 && get32(p + 16)) {
+        dhcp.acks++;
+        dhcp_bind(get32(p + 16), mask, router, dns, lease);
+    } else if (type == 6) {
+        dhcp.naks++;
+        dhcp_lost();
+    }
+}
+
+/* Every TICK_MS; caller holds the lock. Discovery every 2 s, a request every second (four, then
+ * discovery again), and once bound a renewal every 4 s from half the lease on. */
+static void dhcp_tick(void)
+{
+    dhcp.ticks++;
+    if (dhcp.state == DHCP_DISCOVER && dhcp.ticks >= 8) {
+        dhcp.ticks = 0;
+        dhcp_send(1);
+        dhcp.discovers++;
+    } else if (dhcp.state == DHCP_REQUEST && dhcp.ticks >= 4) {
+        dhcp.ticks = 0;
+        if (++dhcp.tries >= 4) {
+            dhcp_discover();
+        } else {
+            dhcp_send(3);
+            dhcp.requests++;
+        }
+    } else if (dhcp.state == DHCP_BOUND) {
+        if (dhcp.ticks >= dhcp.lease) {
+            dhcp.expiries++;
+            dhcp_lost();
+        } else if (dhcp.ticks >= dhcp.lease / 2 && (dhcp.ticks - dhcp.lease / 2) % 16 == 0) {
+            dhcp_send(3);
+            dhcp.renewals++;
+        }
+    }
+}
+
 /* Every TICK_MS from the timer DPC; caller holds the lock. */
 static void session_tick(void)
 {
@@ -934,6 +1132,8 @@ static void __stdcall tick(void *d, void *context, void *a, void *b)
     (void)a;
     (void)b;
     flags = lock();
+    if (net.up && dhcp.state)
+        dhcp_tick();
     if (net.up && ses.state != SESSION_IDLE)
         session_tick();
     unlock(flags);
@@ -953,9 +1153,15 @@ static void rx_ip(const u8 *f, u32 len)
     ihl = (ip[0] & 0x0F) * 4;
     total = get16(ip + 2);
     dst = get32(ip + 16);
-    if (total > len - 14 || total < ihl + 8 + 8 || (dst != net.ip && dst != 0xFFFFFFFFu))
+    if (total > len - 14 || total < ihl + 8 + 8)
         return;
     udp = ip + ihl;
+    if (get16(udp) == DHCP_SERVER && get16(udp + 2) == DHCP_CLIENT) {
+        dhcp_rx(udp + 8, total - ihl - 8);
+        return;
+    }
+    if (dst != net.ip && dst != 0xFFFFFFFFu)
+        return;
     if (get16(udp + 2) != PORT)
         return;
     if (get16(udp) == DNS_PORT && ses.dns && get32(ip + 12) == ses.dns) {
@@ -1342,6 +1548,12 @@ static void stat(void)
     tes3x_log_hex3("net.irq", net.irqs, net.dpcs, 0);
     tes3x_log_hex3("net.answered", net.arp, net.echo, 0);
     tes3x_log_hex3("net.tx", net.tx, net.tx_full, net.tx_errors);
+    if (dhcp.state) {
+        tes3x_log_hex3("net.dhcp_stat", dhcp.discovers, dhcp.offers, dhcp.acks);
+        tes3x_log_hex3("net.dhcp_lease", dhcp.state, dhcp.ticks / (1000 / TICK_MS),
+                       dhcp.lease / (1000 / TICK_MS));
+        tes3x_log_hex3("net.dhcp_lost", dhcp.naks, dhcp.expiries, dhcp.renewals);
+    }
     if (ses.host[0]) {
         log_text("net.host", ses.host);
         tes3x_log_hex3("net.dns", ses.dns, ses.dns_queries, ses.dns_answers);
@@ -1697,17 +1909,25 @@ static const char *host_name(const char *text, char *out)
     return n && label && label <= 63 ? text : 0;
 }
 
-/* up A.B.C.D[/BITS] [SERVER[:PORT] [GATEWAY [DNS]]], where SERVER is an address or a name */
+/* up A.B.C.D[/BITS]|dhcp [SERVER[:PORT] [GATEWAY [DNS]]], where SERVER is an address or a name;
+ * with dhcp a GATEWAY or DNS given here overrides the lease's */
 static void command_up(const char *text)
 {
-    u32 ip, bits = 24, server = 0, port = PORT, gateway = 0, dns = 0;
+    u32 ip = 0, bits = 24, server = 0, port = PORT, gateway = 0, dns = 0, flags;
     char host[HOST_NAME];
     const char *after;
+    int lease = 0;
 
     host[0] = 0;
-    if (!(text = address(skip(text), &ip)))
+    if ((after = word(skip(text), "dhcp"))) {
+        lease = 1;
+        bits = 0;
+        text = after;
+    } else if (!(text = address(skip(text), &ip))) {
         goto usage;
-    if (*text == '/' && (!(text = number(text + 1, &bits)) || bits < 1 || bits > 30))
+    }
+    if (!lease && *text == '/' &&
+        (!(text = number(text + 1, &bits)) || bits < 1 || bits > 30))
         goto usage;
     text = skip(text);
     if (*text) {
@@ -1729,21 +1949,22 @@ static void command_up(const char *text)
             goto usage;
         if (host[0])
             server = 0;
-        if (host[0] && !dns && !(dns = gateway)) {
+        if (host[0] && !lease && !dns && !(dns = gateway)) {
             tes3x_log("net.no_dns", 0);
             goto usage;
         }
     }
     if (!nic_start(ip, 1))
         return;
-    net.mask = 0xFFFFFFFFu << (32 - bits);
-    announce();
+    net.mask = lease ? 0 : 0xFFFFFFFFu << (32 - bits);
+    if (!lease)
+        announce();
     tes3x_log_hex3("net.up", ip, bits, server);
     if (server || host[0]) {
-        u32 flags = lock();
         u32 *w = (u32 *)&ses;
         u32 n;
 
+        flags = lock();
         for (n = 0; n < sizeof(ses) / 4; n++)
             w[n] = 0;
         ses.server = server;
@@ -1754,14 +1975,31 @@ static void command_up(const char *text)
         unlock(flags);
         load_order();
         flags = lock();
-        route_to(server ? server : dns);
+        if (lease)
+            ses.state = SESSION_DHCP;
+        else
+            route_to(server ? server : dns);
         unlock(flags);
-        if ((ses.hop ^ ip) & net.mask)
+        if (!lease && (ses.hop ^ ip) & net.mask)
             tes3x_log("net.no_gateway", ses.hop);
         if (host[0])
             log_text("net.resolving", host);
         tes3x_log_hex3("net.session_start", server ? server : dns, port, ses.hop);
     }
+    flags = lock();
+    dhcp.state = DHCP_IDLE;
+    if (lease) {
+        u32 *w = (u32 *)&dhcp, n;
+
+        for (n = 0; n < sizeof(dhcp) / 4; n++)
+            w[n] = 0;
+        dhcp.keep_gateway = gateway != 0;
+        dhcp.keep_dns = dns != 0;
+        ses.gateway = gateway;
+        ses.dns = dns;
+        dhcp_discover();
+    }
+    unlock(flags);
     return;
 usage:
     tes3x_log("net.usage", 0);
@@ -4375,7 +4613,7 @@ static void weather_stat(void)
 void tes3x_net_frame(void)
 {
     static u8 last_cell[CELL_NAME];
-    static u32 logged_player, logged_server, logged_refused, known[PEERS];
+    static u32 logged_player, logged_server, logged_refused, logged_ip, known[PEERS];
     u8 state[STATE_BYTES];
     const u8 *ref;
     u32 i, flags;
@@ -4383,6 +4621,12 @@ void tes3x_net_frame(void)
     if (!ini_checked) {
         ini_checked = 1;
         autostart();
+    }
+    if (net.up && dhcp.state && net.ip != logged_ip) {
+        logged_ip = net.ip;
+        tes3x_log_hex3("net.dhcp", net.ip, net.mask, ses.gateway);
+        if (net.ip)
+            tes3x_log_hex3("net.dhcp_from", dhcp.server, ses.dns, dhcp.lease / (1000 / TICK_MS));
     }
     if (net.up && ses.host[0] && ses.server != logged_server) {
         logged_server = ses.server;

@@ -28,6 +28,9 @@ import time
 
 PORT = 26500
 DNS_PORT = 53
+DHCP_SERVER, DHCP_CLIENT = 67, 68
+DHCP_MAGIC = bytes([0x63, 0x82, 0x53, 0x63])
+GUEST_IP = "10.0.2.15"
 MAGIC = b"TES3XNET"
 PING, PONG = b"TES3XPNG", b"TES3XPON"
 PEER_MAC = bytes.fromhex("020000000001")
@@ -61,13 +64,37 @@ def checksum(data):
     return ~total & 0xFFFF
 
 
-def udp_frame(dst_mac, dst_ip, payload, ident=0, sport=PORT):
-    """An Ethernet frame carrying payload from PEER_IP:sport to dst_ip:PORT."""
-    udp = struct.pack(">HHHH", sport, PORT, 8 + len(payload), 0) + payload
+def udp_frame(dst_mac, dst_ip, payload, ident=0, sport=PORT, dport=PORT):
+    """An Ethernet frame carrying payload from PEER_IP:sport to dst_ip:dport."""
+    udp = struct.pack(">HHHH", sport, dport, 8 + len(payload), 0) + payload
     ip = struct.pack(">BBHHHBBH4s4s", 0x45, 0, 20 + len(udp), ident & 0xFFFF, 0, 64, 17, 0,
                      socket.inet_aton(PEER_IP), socket.inet_aton(dst_ip))
     ip = ip[:10] + struct.pack(">H", checksum(ip)) + ip[12:]
     return dst_mac + PEER_MAC + b"\x08\x00" + ip + udp
+
+
+def dhcp_reply(request, lease):
+    """An OFFER to a DISCOVER or an ACK to a REQUEST, leasing GUEST_IP with this tool as router
+    and DNS server; None for anything else."""
+    if len(request) < 240 or request[0] != 1 or request[236:240] != DHCP_MAGIC:
+        return None
+    kind, off = None, 240
+    while off + 1 < len(request) and request[off] != 255:
+        if request[off] == 0:
+            off += 1
+            continue
+        if request[off] == 53 and request[off + 1]:
+            kind = request[off + 2]
+        off += 2 + request[off + 1]
+    reply = {1: 2, 3: 5}.get(kind)
+    if not reply:
+        return None
+    peer = socket.inet_aton(PEER_IP)
+    head = (bytes([2, 1, 6, 0]) + request[4:8] + bytes(2) + request[10:12] + bytes(4)
+            + socket.inet_aton(GUEST_IP) + peer + bytes(4) + request[28:44] + bytes(192))
+    options = (bytes([53, 1, reply, 54, 4]) + peer + bytes([51, 4]) + struct.pack(">I", lease)
+               + bytes([1, 4, 255, 255, 255, 0, 3, 4]) + peer + bytes([6, 4]) + peer + bytes([255]))
+    return head + DHCP_MAGIC + options
 
 
 def dns_reply(query, hosts):
@@ -1015,6 +1042,15 @@ def serve(args):
                     link.send(arp_frame(2, sha, sha, socket.inet_ntoa(spa)))
             elif frame:
                 src = socket.inet_ntoa(frame[26:30])
+                request = udp_from_frame(frame, DHCP_SERVER)
+                reply = dhcp_reply(request, args.dhcp_lease) if request else None
+                if reply:
+                    print(f"{time.strftime('%H:%M:%S')} dhcp "
+                          f"{'offer' if reply[242] == 2 else 'ack'} {GUEST_IP} to "
+                          f"{frame[6:12].hex(':')}", flush=True)
+                    link.send(udp_frame(frame[6:12], "255.255.255.255", reply,
+                                        sport=DHCP_SERVER, dport=DHCP_CLIENT))
+                    continue
                 query = udp_from_frame(frame, DNS_PORT) if hosts else None
                 reply = dns_reply(query, hosts) if query else None
                 if reply:
@@ -1177,6 +1213,9 @@ def main(argv=None):
     p.add_argument("--tunnel", type=int, action="append", default=[], metavar="PORT",
                    help="serve an xemu guest through its udp backend (repeatable, one per xemu)")
     p.add_argument("--duration", type=float, help="stop after this many seconds")
+    p.add_argument("--dhcp-lease", type=int, default=3600, metavar="SECONDS",
+                   help="lease time offered to xemu guests that ask for an address "
+                        "(NetAddress=dhcp); each tunnel leases %s" % GUEST_IP)
     p.add_argument("--report", type=float, default=30, help="seconds between status lines")
     p.add_argument("--host", action="append", default=[], metavar="NAME=ADDRESS",
                    help="answer DNS queries for NAME, on port 53 and through the tunnel "

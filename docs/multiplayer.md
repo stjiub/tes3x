@@ -28,9 +28,8 @@ preset = "minimal"
 enable = ["multiplayer", "console"]
 
 [ini]
-"Xbox:NetAddress" = "192.168.1.50/24"
+"Xbox:NetAddress" = "dhcp"
 "Xbox:NetServer" = "192.168.1.10"
-"Xbox:NetGateway" = "192.168.1.1"
 ```
 
 The pipeline also writes `TES3X Multiplayer.esp`, which holds the stand-ins that show the other
@@ -39,20 +38,21 @@ saves made with this build depend on that plugin.
 
 ## Network settings
 
-The console has no DHCP yet, so it needs a fixed address. The keys are read from `Morrowind.ini`
-at each launch (see [ini keys](ini-keys.md)):
+The keys are read from `Morrowind.ini` at each launch (see [ini keys](ini-keys.md)):
 
 | Key | Set to |
 |---|---|
-| `NetAddress` | a free address on your network, outside the router's DHCP range, with its prefix: `192.168.1.50/24` |
+| `NetAddress` | `dhcp` to take an address from the router, or a fixed one outside the router's DHCP range, with its prefix: `192.168.1.50/24` |
 | `NetServer` | the server PC's address, or a name, with `:PORT` if not 26500 |
-| `NetGateway` | your router; needed when the server or the DNS server is on another network |
-| `NetDns` | the DNS server, when `NetServer` is a name and it is not the router |
+| `NetGateway` | your router; with `dhcp` the router's own answer is used, and this key overrides it |
+| `NetDns` | the DNS server, when `NetServer` is a name; with `dhcp` the router's answer is used |
 
 Leaving `NetAddress` empty turns the network off, and the build plays as a normal game.
 
-Each console needs its own `NetAddress`. The address sits in the build's ini, so a second console
-needs a second profile (or a second `[ini]` entry at deploy) that differs only in that key.
+With `dhcp` every console can share one build. A fixed address must differ per console, so a
+second console then needs a second profile (or a second `[ini]` entry at deploy) that differs
+only in that key. Give the server PC a fixed address, or a DHCP reservation, so `NetServer` stays
+right.
 
 ## Start the server
 
@@ -111,10 +111,22 @@ where `load.txt` loads the save:
 @start load U:\TES3X\my-save.ess
 ```
 
-`10.0.2.2` is the server as seen through the tunnel, whatever the PC's real address. Start the
-server before xemu; a second server on the same port leaves xemu talking to the wrong one. Only
-one xemu can use a tunnel port. See [testing](testing.md#running-in-xemu) for the runner's other
-options.
+`10.0.2.2` is the server as seen through the tunnel, whatever the PC's real address. Through the
+tunnel the server also answers DHCP with `10.0.2.15`, so `NetAddress=dhcp` works there too. Start
+the server before xemu; a second server on the same port leaves xemu talking to the wrong one. See
+[testing](testing.md#running-in-xemu) for the runner's other options.
+
+Each tunnel serves one xemu, and a tunnel takes two ports (`PORT` and `PORT+1`). For two players
+on one PC, give the server a tunnel per xemu and start each xemu on its own:
+
+```
+python tools/tes3x_net.py serve --tunnel 9369 --tunnel 9371
+python tools/tes3x_xemu.py player1 profiles/net.toml ... --net-tunnel 9369 ...
+python tools/tes3x_xemu.py player2 profiles/net.toml ... --net-tunnel 9371 ...
+```
+
+Each tunnelled xemu gets a MAC made from its port (`02:00:00:00:24:99` for 9369), since the server
+tells clients apart by MAC. Both guests can use the same addresses.
 
 ## Playing over the internet
 
