@@ -1,7 +1,9 @@
 import random
+import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
 from pathlib import Path
@@ -78,7 +80,41 @@ class ServerTests(unittest.TestCase):
         second = self.client(2)
         with self.assertRaises(RuntimeError):
             second.join(timeout=1.0)
-        self.assertEqual(second.refused, bytes(8))
+        self.assertEqual(tes3x_net.REFUSE_BODY.unpack(second.refused)[2], tes3x_net.REFUSED_FULL)
+
+    def test_password_is_asked_once_of_each_key(self):
+        world = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, world)
+        (world / 'password.txt').write_text('open sesame\n')
+        self.start('--world', str(world), '--password-file', str(world / 'password.txt'))
+        wrong = self.client(1)
+        with self.assertRaises(RuntimeError):
+            wrong.join(timeout=1.0, password=b'open sesamE')
+        # (0, 0): the refused console did not set the session's load order
+        self.assertEqual(tes3x_net.REFUSE_BODY.unpack(wrong.refused),
+                         (0, 0, tes3x_net.REFUSED_PASSWORD))
+        self.client(2).join(password=b'open sesame')
+        again = self.client(2)  # the same key, admitted by the join before
+        again.session ^= 2
+        again.join()
+        self.assertEqual(len((world / 'admitted.txt').read_text().splitlines()), 1)
+        with self.assertRaises(RuntimeError):
+            self.client(3).join(timeout=1.0)
+
+    def test_replayed_handshake3_does_not_move_the_session(self):
+        self.start()
+        client = self.client(1)
+        client.join()
+        thief = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        thief.bind(('127.0.0.1', 0))
+        self.addCleanup(thief.close)
+        thief.sendto(client.handshake3, client.addr)
+        self.assertIsNotNone(client.receive(1.0, tes3x_net.WELCOME))
+        thief.settimeout(0.5)
+        with self.assertRaises(socket.timeout):
+            thief.recvfrom(4096)
+        client.send(tes3x_net.HEARTBEAT, b'')
+        self.assertIsNotNone(client.receive(1.0, tes3x_net.HEARTBEAT))
 
     def test_handshake_flood_is_limited_per_address(self):
         self.start()

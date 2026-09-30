@@ -19,7 +19,8 @@
  *   tes3xnet [count]      broadcast count "TES3XNET" datagrams (default 8), from 0.0.0.0 unless up
  *
  * With [Xbox] NetAddress set, the first frame brings the NIC up as `up` would, from NetAddress,
- * NetServer, NetGateway and NetDns; every launch and relaunch joins by itself. While joined, each frame
+ * NetServer, NetGateway and NetDns; every launch and relaunch joins by itself, giving NetPassword
+ * if set (a server asks for it only of a console key it has not admitted). While joined, each frame
  * sends the player's state, and the server relays the other clients' states back. Each other
  * client near the player is drawn as a ghost NPC from the plugin the pipeline adds. While joined,
  * menus do not pause the world, the rest menu closes as it opens, and the server's clock sets the
@@ -279,6 +280,7 @@ struct descriptor {
 #define CLOCK_GLOBALS 6u
 #define CLOCK_BYTES (CLOCK_GLOBALS * 4u)
 #define HELLO_BYTES (18u + CLOCK_BYTES)
+#define PASSWORD_MAX 64u /* NetPassword, after HELLO */
 #define DNS_PORT 53u
 #define HOST_NAME 64u
 
@@ -292,7 +294,7 @@ static struct {
     u32 rtt_last, rtt_min, rtt_max, rtt_sum, rtt_count;
     u32 states_out, peers_in;
     u32 dns, dns_id, dns_queries, dns_answers;
-    u32 plugins, plugins_hash, refused_hash, refused_plugins;
+    u32 plugins, plugins_hash, refused_hash, refused_plugins, refused_reason;
     char host[HOST_NAME]; /* the server's name, if it is not an address */
     u8 hop_mac[6];
 } ses;
@@ -815,6 +817,7 @@ static void session_rx_plain(const u8 *p, u32 n)
         ses.state = SESSION_REFUSED;
         ses.refused_hash = get32le(p + 28);
         ses.refused_plugins = get32le(p + 32);
+        ses.refused_reason = n >= T3MP_HEADER + 12 ? get32le(p + 36) : 0;
         return;
     }
     if (type == T3MP_WELCOME) {
@@ -7464,7 +7467,7 @@ static void trust_save(void)
 static const u8 prologue[] = "TES3X T3MP 11";
 static struct {
     u32 phase, id, tries, packet_n, started, completed, failed, start_us, finish_us;
-    u8 packet[T3MP_OUTER + NOISE_MSG3 + HELLO_BYTES + NOISE_TAG];
+    u8 packet[T3MP_OUTER + NOISE_MSG3 + HELLO_BYTES + PASSWORD_MAX + NOISE_TAG];
     u8 in[NOISE_MSG2];
     struct noise noise;
 } hs;
@@ -7539,8 +7542,8 @@ static void handshake_start(void)
 
 static void handshake_finish(void)
 {
-    u8 fingerprint[TRUST_FINGERPRINT], hello[HELLO_BYTES], none[1];
-    u32 flags, i, diff = 0, t = now_us();
+    u8 fingerprint[TRUST_FINGERPRINT], hello[HELLO_BYTES + PASSWORD_MAX + 2], none[1];
+    u32 flags, i, password, diff = 0, t = now_us();
 
     if (noise_read2(&hs.noise, hs.in, NOISE_MSG2, none) != 0) {
         hs.failed++;
@@ -7580,11 +7583,13 @@ static void handshake_finish(void)
     put32le(hello + 14, ses.plugins);
     copy(hello + 18, game_clock.local, CLOCK_BYTES);
     unlock(flags);
-    noise_write3(&hs.noise, hs.packet + T3MP_OUTER, hello, HELLO_BYTES);
+    password = ini_text("NetPassword", (char *)hello + HELLO_BYTES, PASSWORD_MAX + 2);
+    noise_write3(&hs.noise, hs.packet + T3MP_OUTER, hello, HELLO_BYTES + password);
+    crypto_wipe(hello, sizeof(hello));
     flags = lock();
     noise_split(&hs.noise, sec.send, sec.receive);
     t3mp_outer(hs.packet, T3MP_HANDSHAKE3, hs.id, 0);
-    hs.packet_n = T3MP_OUTER + NOISE_MSG3 + HELLO_BYTES;
+    hs.packet_n = T3MP_OUTER + NOISE_MSG3 + HELLO_BYTES + password;
     sec.keyed = 1;
     sec.top = sec.seen = 0;
     ses.id = hs.id;
@@ -7929,6 +7934,8 @@ void tes3x_net_frame(void)
         if (logged_refused)
             tes3x_log_hex3("net.refused", ses.plugins_hash, ses.refused_hash,
                            ses.refused_plugins);
+        if (logged_refused)
+            tes3x_log_hex3("net.refused_reason", ses.refused_reason, 0, 0);
     }
     spell_sent_count = 0;
     if (net.up) {

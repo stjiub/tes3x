@@ -46,6 +46,7 @@ The keys are read from `Morrowind.ini` at each launch (see [ini keys](ini-keys.m
 | `NetServer` | the server PC's address, or a name, with `:PORT` if not 26500 |
 | `NetGateway` | your router; with `dhcp` the router's own answer is used, and this key overrides it |
 | `NetDns` | the DNS server, when `NetServer` is a name; with `dhcp` the router's answer is used |
+| `NetPassword` | the server's password, if it has one |
 
 Leaving `NetAddress` empty turns the network off, and the build plays as a normal game.
 
@@ -75,6 +76,8 @@ The first client to join sets the session's load order and its game clock. Usefu
 | `--load-order HASH` | fix the load order instead of taking the first client's |
 | `--host NAME=ADDRESS` | answer DNS for a name, so `NetServer` can be that name |
 | `--world DIR` | keep the world between sessions (below) |
+| `--password-file FILE` | ask new consoles for the password on this file's first line (below) |
+| `--max-players N` | refuse consoles beyond this many (default 16) |
 | `--duration SECONDS` | stop after a while |
 
 Stop the server with Ctrl+C. Without `--world` the session lives only as long as the server
@@ -85,6 +88,24 @@ load order in `DIR`, loads it when the
 first console joins and writes it every 10 seconds
 while it changes, so a restarted server carries on where it stopped. A console's own save is
 still loaded first; joining then applies what the world holds.
+
+### Keys and passwords
+
+Traffic between a console and the server is encrypted. The server has a key of its own, kept in
+`server.key` in the `--world` folder (or `--key FILE`), and prints its fingerprint when it
+starts. Each console makes a key for each server on its first join and keeps both in
+`U:\TES3X\servers.ini`. A console trusts the first key it meets and refuses a different one
+later; to accept a server's new key, delete that server's section from `servers.ini`. To pin the
+key before the first join, add the fingerprint to the address:
+`NetServer=my.server.net#0123456789abcdef0123456789abcdef`.
+
+With `--password-file FILE`, a console whose key the server has not seen must give the password
+(1 to 64 printable ASCII characters) as `NetPassword`. The server remembers each key that gave it
+in `admitted.txt` in the `--world` folder and does not ask again; delete a line there to ask that
+console again. A wrong password is refused, and one address gets five tries, then one a minute.
+On a server that faces the internet, give players the fingerprint as well: the password travels
+encrypted to the server's key, so a console that has pinned the key cannot give it to an
+impostor on its first join.
 
 ## Connect a console
 
@@ -155,7 +176,8 @@ With `console` in the build, open the console (Back + right thumb click) and typ
 
 The log is `E:\tes3xlog.txt`. A console whose plugins differ from the session's logs
 `net.refused` and stops trying until the game is launched again; the server prints `refused`
-with both load order hashes.
+with both load order hashes. `net.refused_reason` says why: 1 the load order, 2 the server is
+full, 3 a wrong password.
 
 ## Limits
 

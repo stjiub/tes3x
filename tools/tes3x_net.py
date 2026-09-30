@@ -328,8 +328,13 @@ HANDSHAKES_PENDING = 1024
 CLIENT_RATE = (600, 600.0)  # sealed packets from one joined client; a console sends about 60/s
 # GameHour, Day, Month (0-11), Year, DaysPassed, TimeScale, as the game's float globals
 CLOCK_BODY = struct.Struct("<6f")
-# MAC, build id, load order hash, plugin count, then the client's clock
+# MAC, build id, load order hash, plugin count, then the client's clock; NetPassword follows
 HELLO_BODY = struct.Struct("<6sIII" + CLOCK_BODY.format[1:])
+PASSWORD_MAX = 64
+PASSWORD_RATE = (5, 1 / 60)  # password tries from one address, (burst, per second)
+# REFUSE: the session's load order hash, its plugin count, and why
+REFUSE_BODY = struct.Struct("<III")
+REFUSED_LOAD_ORDER, REFUSED_FULL, REFUSED_PASSWORD = 1, 2, 3
 MONTH_DAYS = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
 TIMEOUT = 5.0
 EVENTS_HEAD = struct.Struct("<IB3x")  # the sender's last delivered event, event count
@@ -1134,6 +1139,31 @@ def load_server_key(args):
     return secret
 
 
+def load_password(args):
+    """The first line of --password-file, or None for an open server."""
+    if not args.password_file:
+        return None
+    with open(args.password_file, encoding="utf-8") as stream:
+        password = stream.readline().strip()
+    # The console reads NetPassword from its ini, which trims spaces and has no Unicode.
+    if not 0 < len(password) <= PASSWORD_MAX or not password.isascii() or \
+            not password.isprintable():
+        sys.exit(f"{args.password_file}: the password must be 1 to {PASSWORD_MAX} printable "
+                 "ASCII characters")
+    return password.encode("ascii")
+
+
+def load_admitted(path):
+    """Console keys that have given the password, one hex key per line with a note after it."""
+    admitted = set()
+    if path and os.path.exists(path):
+        with open(path, encoding="utf-8") as stream:
+            for line in stream:
+                if line.split():
+                    admitted.add(bytes.fromhex(line.split()[0]))
+    return admitted
+
+
 def serve(args):
     """A session server: welcomes consoles by their key, answers each heartbeat at once and relays
     each client's state to the others. Each --tunnel also serves an xemu guest."""
@@ -1212,6 +1242,12 @@ def serve(args):
         bot_weather.append((float(at), int(index), int(value)))
     authority_next = actor_next = 0.0
     server_secret = load_server_key(args)
+    password = load_password(args)
+    admitted_path = os.path.join(args.world, "admitted.txt") if args.world else None
+    admitted, password_buckets = load_admitted(admitted_path), {}
+    if password:
+        print(f"password asked of new consoles; {len(admitted)} admitted"
+              + ("" if admitted_path else " (not kept: give --world)"), flush=True)
     handshake_bucket, handshake_buckets = Bucket(*HANDSHAKE_RATE_ALL), {}
     limits = {"handshakes": 0}
     pending = {}  # session -> a handshake in progress or just done: {"noise", "e", "reply", ...}
@@ -1661,7 +1697,7 @@ def serve(args):
 
     def handshake(kind, session, packet, addr, now):
         """Answer HANDSHAKE1 with HANDSHAKE2; on HANDSHAKE3, the HELLO it carries, the console's
-        key and the session keys."""
+        key, the session keys and whether this HANDSHAKE3 came before."""
         for stale in [k for k, v in pending.items() if now - v["time"] > HANDSHAKE_KEEP]:
             del pending[stale]
         entry = pending.get(session)
@@ -1687,9 +1723,10 @@ def serve(args):
             except ValueError:
                 return None
             entry["done"] = (message, hello, entry["noise"].rs, entry["noise"].split())
-        elif entry["done"][0] != message:
+            return entry["done"][1:] + (False,)
+        if entry["done"][0] != message:
             return None
-        return entry["done"][1:]
+        return entry["done"][1:] + (True,)
 
     def guarded(packet, addr):
         """handle, with a packet that breaks a parser dropped and logged instead of ending the
@@ -1721,7 +1758,12 @@ def serve(args):
                     return
             done = handshake(kind, session, packet, addr, now)
             if done:
-                hello, key, keys = done
+                hello, key, keys, again = done
+                client = by_session.get(session)
+                if again and client is not None and client.keys == keys:
+                    # The WELCOME was lost, or this is a replay: answer the address that joined.
+                    send(client, WELCOME, struct.pack("<I", client.id))
+                    return
                 handle_plain(T3MP.pack(b"T3MP", T3MP_VERSION, HELLO, 0, session, 0, 0, 0, 0)
                              + hello, addr, (key, keys))
             return
@@ -1748,6 +1790,12 @@ def serve(args):
         handle_plain(T3MP.pack(b"T3MP", T3MP_VERSION, inner_kind, 0, session, seq, ack, sent,
                                echo) + inner[INNER.size:], addr)
 
+    def refuse(addr, session, keys, mac, reason):
+        stranger = Client(0, mac)
+        stranger.addr, stranger.session, stranger.keys = addr, session, keys
+        order, plugins = pinned or (0, 0)
+        send(stranger, REFUSE, REFUSE_BODY.pack(order, plugins or 0, reason))
+
     def handle_plain(packet, addr, secure=None):
         nonlocal pinned, clock
         magic, version, kind, _, session, seq, _, sent, _ = T3MP.unpack_from(packet)
@@ -1757,6 +1805,20 @@ def serve(args):
             key, keys = secure
             mac, build, order, plugins, *offered = HELLO_BODY.unpack_from(packet, T3MP.size)
             mac = mac.hex(":")
+            if password and key not in admitted:
+                if len(password_buckets) > HANDSHAKES_PENDING:
+                    password_buckets.clear()
+                tries = password_buckets.setdefault(addr[0], Bucket(*PASSWORD_RATE))
+                given = packet[T3MP.size + HELLO_BODY.size:]
+                if not tries.take(now) or not hmac.compare_digest(given, password):
+                    print(f"{stamp} refused {mac} at {addr[0]}: wrong password", flush=True)
+                    refuse(addr, session, keys, mac, REFUSED_PASSWORD)
+                    return
+                admitted.add(key)
+                if admitted_path:
+                    with open(admitted_path, "a", encoding="utf-8") as stream:
+                        stream.write(f"{key.hex()} {mac} {time.strftime('%Y-%m-%d')}\n")
+                print(f"{stamp} admitted key {fingerprint(key)} ({mac})", flush=True)
             if pinned is None:
                 pinned = (order, plugins)
                 print(f"{stamp} load order {order:#010x} ({plugins} plugins) set by {mac}",
@@ -1765,18 +1827,14 @@ def serve(args):
             if order != pinned[0]:
                 print(f"{stamp} refused {mac}: load order {order:#010x} ({plugins} plugins), "
                       f"session has {pinned[0]:#010x}", flush=True)
-                stranger = Client(0, mac)
-                stranger.addr, stranger.session, stranger.keys = addr, session, keys
-                send(stranger, REFUSE, struct.pack("<II", pinned[0], pinned[1] or 0))
+                refuse(addr, session, keys, mac, REFUSED_LOAD_ORDER)
                 return
             # A console is known by its key for this server; the MAC is only a hint.
             client = clients.get(key)
             playing = sum(c.alive for c in clients.values() if c is not client)
             if playing >= args.max_players:
                 print(f"{stamp} refused {mac}: {playing} players, the most allowed", flush=True)
-                stranger = Client(0, mac)
-                stranger.addr, stranger.session, stranger.keys = addr, session, keys
-                send(stranger, REFUSE, struct.pack("<II", 0, 0))
+                refuse(addr, session, keys, mac, REFUSED_FULL)
                 return
             if client is None:
                 client = clients[key] = Client(len(clients) + 1, mac)
@@ -2127,11 +2185,11 @@ class FuzzClient:
         self.sock, self.addr, self.rng = sock, addr, rng
         self.session = rng.getrandbits(32) | 1
         self.seq = self.peer_seq = 0
-        self.keys = None
+        self.keys = self.handshake3 = None
         self.event_next = 1  # the next event number the server will deliver, from its acks
         self.refused = None  # a REFUSE's body
 
-    def join(self, timeout=2.0):
+    def join(self, timeout=2.0, password=b""):
         secret, e = self.rng.randbytes(32), self.rng.randbytes(32)
         noise = Noise(True, secret, e, PROLOGUE)
         message1 = (OUTER.pack(b"T3MP", T3MP_VERSION, HANDSHAKE1, 0, self.session, 0)
@@ -2141,8 +2199,9 @@ class FuzzClient:
         noise.read2(reply[OUTER.size:])
         hello = HELLO_BODY.pack(self.rng.randbytes(6), 0, 0x46555A5A, 3, 12.0, 16.0, 7.0, 427.0,
                                 1.0, 30.0)
-        self.sock.sendto(OUTER.pack(b"T3MP", T3MP_VERSION, HANDSHAKE3, 0, self.session, 0)
-                         + noise.write3(hello), self.addr)
+        self.handshake3 = (OUTER.pack(b"T3MP", T3MP_VERSION, HANDSHAKE3, 0, self.session, 0)
+                           + noise.write3(hello + password))
+        self.sock.sendto(self.handshake3, self.addr)
         self.keys = noise.split()
         if self.receive(timeout, WELCOME) is None:
             raise RuntimeError("no WELCOME")
@@ -2222,7 +2281,7 @@ def fuzz(args):
     addr = (host, int(port or PORT))
     sock = udp_socket()
     client = FuzzClient(sock, addr, rng)
-    client.join()
+    client.join(password=args.password.encode("ascii"))
     print(f"joined {args.address} as session {client.session:#010x}", flush=True)
     for n in range(1, args.count + 1):
         time.sleep(1 / args.rate)  # under the server's per-client limit, which would drop the rest
@@ -2376,6 +2435,9 @@ def main(argv=None):
     p.add_argument("--key", metavar="FILE",
                    help="the server's secret key, made on first use (default: server.key in "
                         "--world; without either, a new key each run)")
+    p.add_argument("--password-file", metavar="FILE",
+                   help="a console whose key is new must give the password on this file's first "
+                        "line (its NetPassword); admitted keys go to admitted.txt in --world")
     p.add_argument("--send", metavar="FILE",
                    help="send FILE to each client that joins, into U:\\TES3X\\ under its name")
     p.add_argument("--burst", action="append", default=[], metavar="COUNT@SECONDS",
@@ -2396,6 +2458,7 @@ def main(argv=None):
     p.add_argument("--count", type=int, default=2000)
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--rate", type=float, default=300, help="packets per second")
+    p.add_argument("--password", default="", help="the server's password, if it has one")
     p = sub.add_parser("plugin", help="write the ghost plugin the multiplayer patch moves")
     p.add_argument("out")
     p.add_argument("--master", required=True, help="Morrowind.esm, for its size")
