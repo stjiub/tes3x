@@ -7,7 +7,7 @@ functions. Everything it writes goes to the root of `E:`; copy it off the Xbox w
 | Patch | Gives you | Writes |
 |---|---|---|
 | `diagnostics` | session header, crash records, hang watchdog, snapshots | `E:\tes3xlog.txt` |
-| `console` | the in-game console on a pad, commands from a file, their output in the log | `E:\tes3xlog.txt` |
+| `console` | the in-game console, commands from a script file, their output in the log | `E:\tes3xlog.txt` |
 | `profile` | call counts and CPU cycles for chosen functions | `E:\tes3xprof.bin` |
 | `heap-census` | live engine heap by source file and line, or by call site | `E:\tes3xheap.bin` |
 
@@ -37,7 +37,7 @@ test the watchdog and the crash record.
 
 ## Commands without a controller
 
-With `console`, a `tes3xexec.txt` in `E:\` or next to `default.xbe` runs once per launch. `E:\`
+With `console`, a `tes3xexec.txt` script file in `E:\` or next to `default.xbe` runs once per launch. `E:\`
 is checked first, so it can be changed without touching the game folder. A file in `E:\` runs on
 every launch until it is deleted.
 
