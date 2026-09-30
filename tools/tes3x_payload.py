@@ -78,6 +78,13 @@ HIT_ROLL = 0x0017B770
 NOCK = 0x00158620
 ACTIVATION_TARGET = 0x00096110  # Game::CheckPlayerActivationTarget, from Game::Update only
 REF_MODIFIED = 0x0012A940  # Reference::setObjectModified, in the Reference vtable only
+# LeveledCreature's spawn for a placeholder reference, in its vtable only; what it calls to roll
+# the list and to link the creature and the placeholder, and what gives a new actor its mobile.
+LEVELED_SPAWN = 0x0011AD90
+ACTOR_ADDRESSES = (
+    ("LEVELED_RESOLVE", 0x0011A740), ("LEVELED_LINKED", 0x0012AEE0),
+    ("LEVELED_LINK", 0x0012A370), ("ADD_MOB", 0x001840B0),
+)
 PLAYER_CONTROL = 0x001717E0  # PlayerAnimationController's update: look, controls, animation
 CONSOLE_ADDRESSES = (
     ("FIND_MENU", 0x001AD340), ("OPEN_VK", 0x0022D210), ("CONSOLE_MENU_ID", 0x003D816C),
@@ -294,7 +301,7 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
             define("NET_" + name, address(name, dict(CONSOLE_ADDRESSES)[name]))
         define("NET_SERVICE_ACTOR", address("SERVICE_ACTOR", SERVICE_ACTOR))
         for name, default in (PLACE_ADDRESSES + SPELL_ADDRESSES + SPAWN_ADDRESSES
-                              + CONTAINER_ADDRESSES):
+                              + CONTAINER_ADDRESSES + ACTOR_ADDRESSES):
             define("NET_" + name, address(name, default))
         spell_hit = int(address("SPELL_HIT", SPELL_HIT), 16)
         sites = find_call_sites(image, spell_hit)
@@ -353,6 +360,14 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
                                "vtable slots, expected 1")
         define("NET_REF_MODIFIED", hexva(modified))
         define("NET_REF_MODIFIED_SLOT", hexva(slots[0]))
+        leveled = int(address("LEVELED_SPAWN", LEVELED_SPAWN), 16)
+        slots = [image.off_to_va(m.start()) for m in re.finditer(
+            re.escape(struct.pack("<I", leveled)), bytes(image.data))]
+        if len(slots) != 1 or None in slots:
+            raise PayloadError(f"LeveledCreature spawn {hexva(leveled)}: {len(slots)} vtable "
+                               "slots, expected 1")
+        define("NET_LEVELED_SPAWN", hexva(leveled))
+        define("NET_LEVELED_SPAWN_SLOT", hexva(slots[0]))
         define("NET_MENU_GATE", hexva(locate("menu-mode-gate")))
         define("NET_MOB_GATE", hexva(locate("mob-update-gate")))
         define("NET_WEATHER_ROLL", hexva(locate("weather-roll")))

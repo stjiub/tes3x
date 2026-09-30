@@ -85,7 +85,7 @@ class ObjectTests(unittest.TestCase):
 def spawn(name='misc_com_bottle_01', cell=2433, pos=(10.0, 20.0, 30.0), **extra):
     return dict({'cell': cell, 'count': 1, 'removed': False, 'pos': list(pos),
                  'rot': [0.0, 0.0, 1.5], 'id': name, 'data': False, 'condition': 0,
-                 'charge': 0}, **extra)
+                 'charge': 0, 'leveled': 0}, **extra)
 
 
 class SpawnTests(unittest.TestCase):
@@ -117,6 +117,21 @@ class SpawnTests(unittest.TestCase):
         known[7]['removed'] = True
         self.assertIsNone(twin(known, spawn(), 2, 5, 100.0))
         self.assertEqual(twin(known, spawn(), 1, 0x12340001, 100.0), 7)
+
+
+    def test_a_leveled_creature_names_its_placeholder_and_still_fits(self):
+        made = spawn('x' * 31, leveled=0x0000A1B2)
+        data = tes3x_net.pack_spawn(0xFF000002, made)
+        self.assertLessEqual(len(data), tes3x_net.EVENT_DATA)
+        self.assertEqual(tes3x_net.unpack_spawn(data), (0xFF000002, made))
+
+    def test_a_placeholder_keeps_its_living_creature(self):
+        twin = tes3x_net.spawn_twin
+        known = {7: spawn('rat', origin=1, token=1, made=0.0, leveled=0xA1B2)}
+        self.assertEqual(twin(known, spawn('mudcrab', pos=(900, 0, 0), leveled=0xA1B2), 2, 9,
+                              1000.0), 7)
+        self.assertIsNone(twin(known, spawn('mudcrab', leveled=0xA1B2), 2, 9, 1000.0, {7: 1}))
+        self.assertIsNone(twin(known, spawn('rat', leveled=0xA1B3), 2, 9, 1000.0))
 
 
 class ContentsTests(unittest.TestCase):

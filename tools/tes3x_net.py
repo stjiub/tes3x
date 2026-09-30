@@ -301,7 +301,7 @@ def ping(args):
 
 
 T3MP = struct.Struct("<4sBBHIIIII")  # magic, version, type, 0, session, seq, ack, time, echo
-T3MP_VERSION = 8
+T3MP_VERSION = 9
 HELLO, WELCOME, HEARTBEAT, BYE, STATE, PEER, GONE, EVENTS, REFUSE, CLOCK, ACTORS = range(1, 12)
 # GameHour, Day, Month (0-11), Year, DaysPassed, TimeScale, as the game's float globals
 CLOCK_BODY = struct.Struct("<6f")
@@ -332,9 +332,10 @@ EVENT_REMOVE = 15  # count, then spawn ids
 # A reference made at run time: its id (from its maker a token, which the server replaces), cell
 # index, stack count with SPAWN_REMOVED once removed and SPAWN_DATA if it has item data, position,
 # orientation, and the item data's condition (uses, time left) and charge, raw: an int or a float
-# by the item's type.
+# by the item's type. With SPAWN_LEVELED it is a leveled creature, and its placeholder's refid
+# follows before the id.
 SPAWN = struct.Struct("<IHH6fII")
-SPAWN_REMOVED, SPAWN_DATA, SPAWN_COUNT = 0x8000, 0x4000, 0x3FFF
+SPAWN_REMOVED, SPAWN_DATA, SPAWN_LEVELED, SPAWN_COUNT = 0x8000, 0x4000, 0x2000, 0x1FFF
 SPAWN_IDS = 0xFF000000  # never a data-file refid: mod index 0xFF
 SPAWN_TWIN = 16.0  # units: a script's reference made on two consoles at once
 SPAWN_TWIN_SECONDS = 2.0
@@ -369,6 +370,12 @@ ACTORS_PER_PACKET = 10
 ACTOR_PERIOD = 0.1
 AUTHORITY_PERIOD = 0.25
 RESEND = 0.25
+# Least time between two EVENTS packets to one client, and at most PACE_PACKETS packets to one
+# client per PACE_WINDOW seconds, the rest queued. xemu's NIC stops reading its tunnel for good once
+# frames arrive faster than the guest's eight receive slots drain.
+EVENTS_GAP = 0.02
+PACE_PACKETS = 4
+PACE_WINDOW = 0.005
 CLOCK_INTERVAL = 1.0
 
 
@@ -443,18 +450,23 @@ def describe_object(refid, cell, state, level):
 
 def pack_spawn(sid, spawn):
     """A SPAWN event for one reference made at run time."""
+    leveled = spawn.get("leveled", 0)
     count = spawn["count"] | (SPAWN_REMOVED if spawn["removed"] else 0) | \
-        (SPAWN_DATA if spawn.get("data") else 0)
+        (SPAWN_DATA if spawn.get("data") else 0) | (SPAWN_LEVELED if leveled else 0)
     return (SPAWN.pack(sid, spawn["cell"], count, *spawn["pos"], *spawn["rot"],
                        spawn.get("condition", 0), spawn.get("charge", 0))
-            + zstr(spawn["id"][:31]))
+            + (struct.pack("<I", leveled) if leveled else b"") + zstr(spawn["id"][:31]))
 
 
 def unpack_spawn(data):
     """(sid, spawn) of a SPAWN event."""
     sid, cell, count, *place, condition, charge = SPAWN.unpack_from(data)
-    name = data[SPAWN.size:].split(b"\0")[0].decode("latin-1")
-    return sid, {"cell": cell, "count": count & SPAWN_COUNT,
+    off, leveled = SPAWN.size, 0
+    if count & SPAWN_LEVELED:
+        leveled = struct.unpack_from("<I", data, off)[0]
+        off += 4
+    name = data[off:].split(b"\0")[0].decode("latin-1")
+    return sid, {"cell": cell, "count": count & SPAWN_COUNT, "leveled": leveled,
                  "removed": bool(count & SPAWN_REMOVED), "pos": place[:3], "rot": place[3:],
                  "id": name, "data": bool(count & SPAWN_DATA), "condition": condition,
                  "charge": charge}
@@ -472,12 +484,19 @@ def unpack_removes(data):
     return list(struct.unpack_from(f"<{count}I", data, 1))
 
 
-def spawn_twin(spawns, spawn, origin, token, now):
-    """The id of a spawn that this one repeats: the maker sending it again (by its token), or the
-    same object made in the same place by another console's copy of a script moments ago."""
+def spawn_twin(spawns, spawn, origin, token, now, deaths=()):
+    """The id of a spawn that this one repeats: the maker sending it again (by its token), the
+    living creature of the same leveled placeholder, or the same object made in the same place by
+    another console's copy of a script moments ago."""
     for sid, known in spawns.items():
         if token and known["origin"] == origin and known.get("token") == token:
             return sid
+    if spawn.get("leveled"):
+        for sid, known in spawns.items():
+            if known.get("leveled") == spawn["leveled"] and not known["removed"] and \
+                    sid not in deaths:
+                return sid
+        return None
     for sid, known in spawns.items():
         if known["removed"] or known["origin"] == origin or \
                 known["id"].lower() != spawn["id"].lower() or known["cell"] != spawn["cell"]:
@@ -529,6 +548,8 @@ def describe_contents(entries):
 def describe_spawn(sid, spawn):
     x, y, z = spawn["pos"]
     what = f"{spawn['id']}" + (f" x{spawn['count']}" if spawn["count"] > 1 else "")
+    if spawn.get("leveled"):
+        what += f" for placeholder {spawn['leveled']:#010x}"
     if spawn.get("data"):
         what += f" (condition {spawn['condition']:#x}, charge {spawn['charge']:#x})"
     return (f"{sid:#010x} {what} in cell {spawn['cell']} at {x:.0f} {y:.0f} {z:.0f}"
@@ -785,6 +806,10 @@ class Client:
         self.known = {}  # cell -> the authority this client was told
         self.loaded = set()
         self.actor_states = 0
+        self.flush_due = False  # an EVENTS packet held back by EVENTS_GAP
+        self.queue = []  # (address, packet, seq) held back by PACE_PACKETS
+        self.window = (0.0, 0)  # the current PACE_WINDOW's start and packets sent in it
+
 
 
 def serve(args):
@@ -881,11 +906,24 @@ def serve(args):
                            client.peer_seq, now_us(), client.peer_time) + body
         if dropped("out"):
             return
-        if len(client.addr) == 4:  # a tunnel guest, by its MAC
-            ip, _port, mac, link = client.addr
-            link.send(udp_frame(mac, ip, packet, client.seq))
-        else:
-            sock.sendto(packet, client.addr)
+        client.queue.append((client.addr, packet, client.seq))
+        pump(client)
+
+    def pump(client):
+        """Send what PACE_PACKETS allows of the client's queue."""
+        now = time.time()
+        start, count = client.window
+        if now - start >= PACE_WINDOW:
+            start, count = now, 0
+        while client.queue and count < PACE_PACKETS:
+            addr, packet, seq = client.queue.pop(0)
+            if len(addr) == 4:  # a tunnel guest, by its MAC
+                ip, _port, mac, link = addr
+                link.send(udp_frame(mac, ip, packet, seq))
+            else:
+                sock.sendto(packet, addr)
+            count += 1
+        client.window = (start, count)
 
     bot = {"anchor": None, "next": 0.0, "start": time.time(), "said": 0.0, "line": 0,
            "anchored": None, "state": None, "breaks": [], "held": 0, "hit": False,
@@ -952,7 +990,8 @@ def serve(args):
                  "objects": {str(k): list(v) for k, v in objects.items()},
                  "spawns": {str(k): {f: v.get(f, 0) for f in ("cell", "count", "removed", "pos",
                                                               "rot", "id", "origin", "token",
-                                                              "data", "condition", "charge")}
+                                                              "data", "condition", "charge",
+                                                              "leveled")}
                             for k, v in spawns.items()},
                  "next_spawn": world["next_spawn"],
                  "contents": {str(k): v for k, v in contents.items()},
@@ -971,7 +1010,12 @@ def serve(args):
                 send(other, GONE, struct.pack("<I", client.id))
 
     def flush(client, now, resend=True):
-        send(client, EVENTS, client.rel.packet(now, resend))
+        """Send the ack and the unacked events, or hold them until EVENTS_GAP has passed."""
+        if now - client.rel.last_send < EVENTS_GAP:
+            client.flush_due = True
+            return
+        client.flush_due = False
+        send(client, EVENTS, client.rel.packet(now, resend or bool(client.rel.out)))
 
     def broadcast_event(origin, kind, data, now):
         for other in clients.values():
@@ -1003,13 +1047,17 @@ def serve(args):
         """Name a reference made at run time and send it to every client, its maker too, which
         knows it as its own by cell, object and place. A repeat gets the id it already has, and
         goes to the maker only."""
-        sid = spawn_twin(spawns, spawn, origin, token, now)
+        sid = spawn_twin(spawns, spawn, origin, token, now, deaths)
         if sid is not None:
             print(f"{stamp} client {origin} repeats {describe_spawn(sid, spawns[sid])}",
                   flush=True)
             send_event(origin, spawns[sid]["origin"], EVENT_SPAWN, pack_spawn(sid, spawns[sid]),
                        now)
             return sid
+        for old, known in list(spawns.items()):  # a dead creature's placeholder rolled again
+            if spawn.get("leveled") and known.get("leveled") == spawn["leveled"] and \
+                    not known["removed"]:
+                remove_spawn(origin, old, stamp, now, to_origin=True)
         sid = SPAWN_IDS | world["next_spawn"]
         world["next_spawn"] += 1
         spawns[sid] = dict(spawn, origin=origin, token=token, made=now, removed=False)
@@ -1022,13 +1070,15 @@ def serve(args):
                 flush(other, now)
         return sid
 
-    def remove_spawn(origin, sid, stamp, now):
+    def remove_spawn(origin, sid, stamp, now, to_origin=False):
         spawn = spawns.get(sid)
         if spawn is None or spawn["removed"]:
             return
         spawn["removed"] = True
         world["dirty"] = True
         print(f"{stamp} client {origin} removed {describe_spawn(sid, spawn)}", flush=True)
+        if to_origin:
+            send_event(origin, 0, EVENT_SPAWN, pack_spawn(sid, spawn), now)
         broadcast_event(origin, EVENT_SPAWN, pack_spawn(sid, spawn), now)
 
     def send_contents(target, refid, now, flags=0):
@@ -1343,7 +1393,12 @@ def serve(args):
         adopt_world(pinned[0], time.time())
     while deadline is None or time.time() < deadline:
         waiting = [sock] + [link.sock for link in links] + ([dns] if dns else [])
-        for ready in select.select(waiting, [], [], 0.25)[0]:
+        wait = 0.25
+        if any(c.queue for c in clients.values()):
+            wait = PACE_WINDOW
+        elif any(c.flush_due for c in clients.values()):
+            wait = EVENTS_GAP
+        for ready in select.select(waiting, [], [], wait)[0]:
             if ready is dns:
                 try:
                     query, addr = dns.recvfrom(2048)
@@ -1391,6 +1446,8 @@ def serve(args):
                     handle(data, (src, PORT, frame[6:12], link))
         now = time.time()
         for client in clients.values():
+            if client.queue:
+                pump(client)
             if client.alive and now - client.last > TIMEOUT:
                 print(f"{time.strftime('%H:%M:%S')} client {client.id} timed out", flush=True)
                 leave(client)
@@ -1494,7 +1551,8 @@ def serve(args):
             bot["line"] += 1
             broadcast_event(BOT_ID, EVENT_TEXT, b"bot %d" % bot["line"], now)
         for client in clients.values():
-            if client.alive and client.rel.out and now - client.rel.last_send >= RESEND:
+            if client.alive and (client.flush_due or client.rel.out and
+                                 now - client.rel.last_send >= RESEND):
                 flush(client, now)
         if clock and now >= clock_next:
             clock_next = now + CLOCK_INTERVAL
