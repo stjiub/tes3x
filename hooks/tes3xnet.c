@@ -58,8 +58,8 @@
     !defined(TES3X_NET_REF_ORIENTATION) || !defined(TES3X_NET_REF_ROTATION) || \
     !defined(TES3X_NET_NODE_SET_ROTATION) || !defined(TES3X_NET_NODE_UPDATE) || \
     !defined(TES3X_NET_ANIM_HAS_GROUP) || !defined(TES3X_NET_ANIM_PLAY_GROUP) || \
-    !defined(TES3X_NET_REF_UPDATE_EQUIPMENT)
-#error "define the TES3X_NET_ functions SetPos, SetAngle, PlayGroup and unreadyWeapon call"
+    !defined(TES3X_NET_UNREADY_WEAPON) || !defined(TES3X_NET_MOBILE_HANDS)
+#error "define the TES3X_NET_ functions SetPos, SetAngle, PlayGroup and weapon readying call"
 #endif
 
 typedef unsigned short u16;
@@ -289,7 +289,7 @@ static struct {
 } game_clock;
 
 static u32 ghost_places, ghost_moves, ghost_failures;
-static u32 equip_sent, equip_received, equip_applied, stance_changes;
+static u32 equip_sent, equip_received, equip_applied, stance_changes, stance_refused;
 static u32 ini_checked;
 static u32 probe_ip, probe_hits;
 static u32 timer[0x28 / 4];
@@ -1343,7 +1343,7 @@ static void stat(void)
                                now_us() - peers[i].time);
         tes3x_log_hex3("net.ghosts", ghost_places, ghost_moves, ghost_failures);
         tes3x_log_hex3("net.equipment_stat", equip_sent, equip_received, equip_applied);
-        tes3x_log_hex3("net.stances", stance_changes, 0, 0);
+        tes3x_log_hex3("net.stances", stance_changes, stance_refused, 0);
     }
 }
 
@@ -1811,12 +1811,15 @@ static u8 *ref_mobile(const u8 *ref)
     return 0;
 }
 
-/* The drawn weapon and readied spell. Changing either on a mobile the engine does not simulate
- * takes the reference update unreadyWeapon makes after clearing its bit. */
+/* The drawn weapon and readied spell. A simulated actor changes them from its animation's text
+ * keys, which a mirrored animation skips, so they are changed here with the same calls: the
+ * mobile's ready-weapon virtual (at "Equip Attach": sets the bit, attaches the mesh),
+ * unreadyWeapon (at "Unequip Detach"), and for a spell the bit and the hands update. */
 #define MOBILE_WEAPON_DRAWN 0x2000u
 #define MOBILE_SPELL_READIED 0x4000u
+#define MOBILE_READY_WEAPON 0xF0 /* vtable offset */
 
-typedef void(__attribute__((thiscall)) *fn_ref_update)(void *ref, int a1);
+typedef void(__attribute__((thiscall)) *fn_mobile_call)(void *mobile);
 
 static u32 stance_of(const u8 *mobile)
 {
@@ -1829,18 +1832,30 @@ static u32 stance_of(const u8 *mobile)
 static void stance_apply(u8 *ref, u32 stance)
 {
     u8 *mobile = ref_mobile(ref);
-    u32 *flags, want;
+    u32 *flags, have;
 
     if (!plausible(mobile))
         return;
     flags = (u32 *)(mobile + MOBILE_FLAGS);
-    want = (stance & STANCE_WEAPON ? MOBILE_WEAPON_DRAWN : 0) |
-           (stance & STANCE_SPELL ? MOBILE_SPELL_READIED : 0);
-    if (((*flags ^ want) & (MOBILE_WEAPON_DRAWN | MOBILE_SPELL_READIED)) == 0)
+    stance &= STANCE_WEAPON | STANCE_SPELL;
+    have = stance_of(mobile);
+    if (have == stance)
         return;
-    *flags = (*flags & ~(MOBILE_WEAPON_DRAWN | MOBILE_SPELL_READIED)) | want;
-    ((fn_ref_update)TES3X_NET_REF_UPDATE_EQUIPMENT)(ref, 1);
+    if ((have & STANCE_WEAPON) && !(stance & STANCE_WEAPON))
+        ((fn_mobile_call)TES3X_NET_UNREADY_WEAPON)(mobile);
+    if (have & STANCE_SPELL && !(stance & STANCE_SPELL)) {
+        *flags &= ~MOBILE_SPELL_READIED;
+        ((fn_mobile_call)TES3X_NET_MOBILE_HANDS)(mobile);
+    }
+    if (stance & STANCE_WEAPON && !(*flags & MOBILE_WEAPON_DRAWN))
+        ((fn_mobile_call)(*(void *const *const *)mobile)[MOBILE_READY_WEAPON / 4])(mobile);
+    if (stance & STANCE_SPELL && !(*flags & MOBILE_SPELL_READIED)) {
+        *flags |= MOBILE_SPELL_READIED;
+        ((fn_mobile_call)TES3X_NET_MOBILE_HANDS)(mobile);
+    }
     stance_changes++;
+    if (stance_of(mobile) != stance)
+        stance_refused++;
 }
 
 /* A reference's AnimationData is its attachment of kind 0. For each layer (lower body, upper
