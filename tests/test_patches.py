@@ -3,10 +3,12 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch as mock_patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 import tes3x_patches as registry
-from tes3x_patch import PATCHES as PATCHER
+from tes3x_patch import (ALLOWED_PATCH_OVERLAPS, PATCHES as PATCHER, PatchError,
+                         _validate_patch_changes, main as patch_main)
 
 
 class RegistryTests(unittest.TestCase):
@@ -66,6 +68,43 @@ class RegistryTests(unittest.TestCase):
                             'selection = "preset"\nsummary = "x"\n', encoding='utf-8')
             with self.assertRaises(registry.RegistryError):
                 registry.load(path)
+
+
+class PatchOwnershipTests(unittest.TestCase):
+    def validate(self, name, before, after, edits, owners=()):
+        return _validate_patch_changes(name, bytes(before), bytearray(after), edits,
+                                       list(owners))
+
+    def test_accepts_instruction_range_with_unchanged_bytes(self):
+        before = b"\xE8\x01\x02\x03\x04"
+        after = b"\xE8\x05\x06\x07\x08"
+        self.assertEqual(self.validate("a", before, after, [(0, 5, None)]), [(0, 5)])
+
+    def test_rejects_unreported_change(self):
+        with self.assertRaisesRegex(PatchError, "changed unreported byte"):
+            self.validate("a", b"abcdef", b"abcXef", [])
+
+    def test_rejects_reported_range_with_no_change(self):
+        with self.assertRaisesRegex(PatchError, "changed no byte"):
+            self.validate("a", b"abcdef", b"abcXef", [(0, 2, None), (3, 1, None)])
+
+    def test_rejects_range_owned_by_an_earlier_patch(self):
+        with self.assertRaisesRegex(PatchError, "overlaps first"):
+            self.validate("second", b"abcdef", b"abXYef", [(2, 2, None)],
+                          [(1, 2, "first")])
+
+    def test_allows_the_explicit_profiler_overlap(self):
+        self.assertIn(("script-ext", "profile"), ALLOWED_PATCH_OVERLAPS)
+        claims = self.validate("profile", b"abcdef", b"abXYef", [(2, 2, None)],
+                               [(1, 2, "script-ext")])
+        self.assertEqual(claims, [(2, 2)])
+
+    def test_rejects_duplicate_apply_before_opening_the_image(self):
+        argv = ["tes3x_patch.py", "missing.xbe",
+                "--apply", "boot-media", "--apply", "boot-media"]
+        with mock_patch.object(sys, "argv", argv):
+            with self.assertRaisesRegex(SystemExit, "duplicate --apply 'boot-media'"):
+                patch_main()
 
 
 if __name__ == '__main__':

@@ -70,9 +70,71 @@ TEST_PATCHES = {}
 
 PATCH_BITS = {entry["name"]: 1 << entry["bit"] for entry in registry.PATCHES if "bit" in entry}
 
+# The profiler deliberately replaces script-ext's calls with timing stubs which then call the
+# installed dispatch hook.  Other patches have exclusive ownership of their reported ranges.
+ALLOWED_PATCH_OVERLAPS = {("script-ext", "profile")}
+
 
 class PatchError(Exception):
     pass
+
+
+def _format_ranges(offsets):
+    """Render sorted byte offsets as compact half-open file ranges."""
+    ranges = []
+    for off in sorted(offsets):
+        if ranges and off == ranges[-1][1]:
+            ranges[-1] = (ranges[-1][0], off + 1)
+        else:
+            ranges.append((off, off + 1))
+    return ", ".join("0x%X..0x%X" % pair for pair in ranges)
+
+
+def _validate_patch_changes(name, before, after, edits, owners):
+    """Require one patch to report every existing-byte change and own every reported range."""
+    existing_size = len(before)
+    if len(after) < existing_size:
+        raise PatchError("%s: patch truncated the image" % name)
+
+    changed = {off for off in range(existing_size) if before[off] != after[off]}
+    claims = []
+    for off, length, _label in edits:
+        # None describes newly appended bytes or an informational line.  A patch cannot overwrite
+        # an existing byte without claiming its concrete file range.
+        if off is None:
+            continue
+        if not isinstance(off, int) or not isinstance(length, int) or length <= 0:
+            raise PatchError("%s: invalid reported range (%r, %r)" % (name, off, length))
+        if off < 0 or off + length > existing_size:
+            raise PatchError("%s: reported range 0x%X+0x%X is outside the existing image"
+                             % (name, off, length))
+        claims.append((off, length))
+
+    covered = set()
+    for off, length in claims:
+        owned = set(range(off, off + length))
+        if not changed.intersection(owned):
+            raise PatchError("%s: reported range 0x%X+0x%X but changed no byte in it"
+                             % (name, off, length))
+        if covered.intersection(owned):
+            raise PatchError("%s: reported overlapping ranges at 0x%X+0x%X"
+                             % (name, off, length))
+        covered.update(owned)
+
+    missing = changed - covered
+    if missing:
+        raise PatchError("%s: changed unreported byte(s) at %s"
+                         % (name, _format_ranges(missing)))
+
+    for off, length in claims:
+        end = off + length
+        for prior_off, prior_length, prior_name in owners:
+            if off < prior_off + prior_length and prior_off < end:
+                if (prior_name, name) not in ALLOWED_PATCH_OVERLAPS:
+                    raise PatchError("%s: range 0x%X+0x%X overlaps %s's 0x%X+0x%X"
+                                     % (name, off, length, prior_name,
+                                        prior_off, prior_length))
+    return claims
 
 
 def patch(name):
@@ -183,7 +245,10 @@ def _title(x, value, ctx):
                          % (name, len(name), CERT_TITLE_CHARS - 1))
     size = CERT_TITLE_CHARS * 2
     was = bytes(x.data[CERT_TITLE_NAME:CERT_TITLE_NAME + size]).decode("utf-16-le")
-    x.data[CERT_TITLE_NAME:CERT_TITLE_NAME + size] = name.encode("utf-16-le").ljust(size, b"\0")
+    encoded = name.encode("utf-16-le").ljust(size, b"\0")
+    if bytes(x.data[CERT_TITLE_NAME:CERT_TITLE_NAME + size]) == encoded:
+        return []
+    x.data[CERT_TITLE_NAME:CERT_TITLE_NAME + size] = encoded
     return [(CERT_TITLE_NAME, size, "title %r -> %r" % (was.split("\x00")[0], name))]
 
 
@@ -197,6 +262,8 @@ def _title_id(x, value, ctx):
     if not 0 < new <= 0xFFFFFFFF:
         raise PatchError("title-id: 0x%X is not a 32-bit title ID" % new)
     was = struct.unpack_from("<I", x.data, CERT_TITLE_ID)[0]
+    if was == new:
+        return []
     struct.pack_into("<I", x.data, CERT_TITLE_ID, new)
     return [(CERT_TITLE_ID, 4, "title ID 0x%08X -> 0x%08X" % (was, new))]
 
@@ -218,7 +285,7 @@ def _payload(x, value, ctx):
     if os.path.exists(manifest):
         with open(manifest, encoding="utf-8") as f:
             ctx["hooks"] = json.load(f).get("hooks", {})
-    return [(None, vsize, "section %s at 0x%08X, entry -> 0x%08X"
+    return [(tes3x_inject.HDR_ENTRY, 4, "section %s at 0x%08X, entry -> 0x%08X"
              % (ctx["section"], va, imgbase + entry_rva))]
 
 
@@ -1612,7 +1679,7 @@ def _diagnostics(x, value, ctx):
                          % (len(sites), update))
     site = sites[0]
     was, off = x.patch_call(site, target)
-    return [(None, 4, "diagnostics installed flag at 0x%08X" % flag),
+    return [(flag_off, 4, "diagnostics installed flag at 0x%08X" % flag),
             (off, 5, "Game::Update call 0x%08X: 0x%08X -> 0x%08X"
              % (site, was, target))]
 
@@ -1677,7 +1744,8 @@ def _profile(x, value, ctx):
             raise PatchError("profile: no direct call site reaches %s0x%08X" % (label, va))
         stub = struct.unpack_from("<I", x.data, stubs_off + 4 * k)[0]
         struct.pack_into("<I", x.data, table_off + 4 * k, va)
-        edits.append((None, 4, "slot %d = %s0x%08X, stub 0x%08X, %d call site(s)"
+        edits.append((table_off + 4 * k, 4,
+                      "slot %d = %s0x%08X, stub 0x%08X, %d call site(s)"
                       % (k, label, va, stub, len(sites))))
         for site in sites:
             was, off = x.patch_call(site, stub)
@@ -2138,6 +2206,13 @@ def main():
         print()
         return
 
+    seen = set()
+    for spec in a.apply:
+        name = spec.partition("=")[0]
+        if name in seen:
+            raise SystemExit("duplicate --apply %r" % name)
+        seen.add(name)
+
     raw = open(a.xbe, "rb").read()
     x = tes3x_inject.Xbe(raw)
     if a.locate:
@@ -2153,6 +2228,7 @@ def main():
 
     ctx = {"section": a.section}
     touched = []
+    owners = []
     applied = []
     for spec in a.apply:
         name, _, value = spec.partition("=")
@@ -2164,12 +2240,16 @@ def main():
             raise SystemExit("%s needs a value: %s=%s" % (name, name, takes))
         print("\n  %s" % spec)
         try:
-            for off, length, label in fn(x, value, ctx):
+            before = bytes(x.data)
+            edits = list(fn(x, value, ctx))
+            claims = _validate_patch_changes(name, before, x.data, edits, owners)
+            for off, length, label in edits:
                 # A patch with hundreds of identical edits reports them as one line.
                 if label:
                     print("    %s" % label)
-                if off is not None:
-                    touched.append((off, length))
+            touched.extend((off, length) for off, length in claims
+                           if off + length <= len(raw))
+            owners.extend((off, length, name) for off, length in claims)
             applied.append(name)
         except PatchError as exc:
             raise SystemExit("  FAILED: %s" % exc)
