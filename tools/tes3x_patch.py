@@ -494,6 +494,14 @@ MCP102_ACTN_SIG = re.compile(
 MCP102_FOUND_JUMP = 11
 MCP102_STORE = bytes.fromhex("8b54240483ca01895008c20400")
 
+# PlaceItem and PlaceItemCell share this call to Cell::addReference.  The reference has already
+# been initialized; the missing operation is marking the destination cell changed before insertion.
+MCP123_ADD_SIG = re.compile(
+    rb"\xa0....\x84\xc0\x75.\x8b\x17\x6a\x01\x8b\xcf\xff\x52\x14"
+    rb"\x8b\x4c\x24\x40\x57(?P<site>\xe8....)\x85\xf6",
+    re.S,
+)
+
 # The exterior/interior cell-change path copies the player's position, tears down its current
 # world state, then installs the destination. MCP inserts its stale-cast cleanup immediately
 # after that teardown. Capture the repeated game singleton so the payload does not pin it.
@@ -756,6 +764,17 @@ def find_mcp102_actn(x):
     va = x.off_to_va(hits[0].start())
     if va is None:
         raise PatchError("mcp-102: ACTN setter is outside any section")
+    return va
+
+
+def find_mcp123_add(x):
+    """Find the shared PlaceItem call to Cell::addReference."""
+    hits = list(MCP123_ADD_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("mcp-123: %d PlaceItem insertion call(s), expected 1" % len(hits))
+    va = x.off_to_va(hits[0].start("site"))
+    if va is None:
+        raise PatchError("mcp-123: PlaceItem insertion call is outside any section")
     return va
 
 
@@ -1253,6 +1272,19 @@ def _mcp_102(x, value, ctx):
         (store, replaced,
          "ACTN flags 0x%08X: force active bit" % x.off_to_va(store)),
     ]
+
+
+@patch("mcp-123")
+def _mcp_123(x, value, ctx):
+    """Mark a PlaceItem destination cell changed before inserting the new reference."""
+    target = ctx.get("hooks", {}).get("mcp123_add")
+    if not target:
+        raise PatchError("mcp-123: needs `payload` first, with an mcp123_add hook in its manifest")
+    target = int(str(target), 16)
+    site = find_mcp123_add(x)
+    was, off = x.patch_call(site, target)
+    return [(off, 5, "PlaceItem cell insertion 0x%08X: 0x%08X -> 0x%08X"
+             % (site, was, target))]
 
 
 CONSOLE_GATE_SIG = bytes([
@@ -1848,6 +1880,7 @@ LOCATORS = {
     "mcp-154-load": find_mcp154_load,
     "mcp-154-reload": find_mcp154_reload,
     "mcp-102-actn": find_mcp102_actn,
+    "mcp-123": find_mcp123_add,
     "mcp-37": lambda image: find_mcp37_context(image)[0],
     "dxt5-size": find_dxt5_size,
     "mcp-146": find_mcp146,

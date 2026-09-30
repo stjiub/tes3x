@@ -376,6 +376,13 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         define("MCP154_RELOAD_RESUME", hexva(reload + 6))
         wanted["mcp154_load"] = ("_tes3x_mcp154_load_hook",)
         wanted["mcp154_reload"] = ("_tes3x_mcp154_reload_hook",)
+    if "tes3xmcp123.c" in names:
+        site = locate("mcp-123")
+        add_reference = tes3x_inject.call_target(image, site)
+        print(f"mcp-123 hook: PlaceItem call {hexva(site)}, "
+              f"Cell::addReference {hexva(add_reference)}")
+        define("MCP123_ADD_REFERENCE", hexva(add_reference))
+        wanted["mcp123_add"] = ("_tes3x_mcp123_add_hook",)
     if "tes3xdxt5.c" in names:
         site = locate("dxt5-size")
         size = hexva(tes3x_inject.call_target(image, site))

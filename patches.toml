@@ -212,6 +212,17 @@ selection = "preset"
 summary = "Reactivate script-triggered objects after their script mod is removed."
 
 [[patch]]
+name = "mcp-123"
+title = "PlaceItem persistence"
+origin = { source = "MCP", id = "123" }
+bit = 29
+category = "core"
+channel = "dev"
+selection = "preset"
+source = "tes3xmcp123.c"
+summary = "Persist objects placed by scripts into cells the player has not visited."
+
+[[patch]]
 name = "dxt5-size"
 title = "DXT5 allocation fix"
 bit = 14

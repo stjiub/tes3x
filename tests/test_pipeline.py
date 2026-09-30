@@ -14,7 +14,7 @@ from tes3x_pipeline import (PipelineError, copy_retail_root, link_or_copy, resol
                             validate_profile)
 from tes3x_pipeline import main as pipeline_main
 from tes3x_patch import (MCP37_TREE_NEXT_SIG, _mcp_37, _mcp_92, _mcp_97, _mcp_98,
-                         _mcp_102, _mcp_154)
+                         _mcp_102, _mcp_123, _mcp_154)
 from tes3x_plugins import (collect, dependency_order, fetch_rules, run_arrange, validate_order,
                            warnings as mlox_warnings)
 from test_reach import rec, sub
@@ -686,6 +686,52 @@ class PipelinePlanTests(unittest.TestCase):
         })
         self.assertEqual(plan['applied'], ['mcp-102'])
         self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c'])
+
+    def test_mcp_123_redirects_the_shared_placeitem_insertion(self):
+        prefix = bytes.fromhex(
+            'a01122334484c075098b176a018bcfff52148b4c244057'
+        )
+        suffix = bytes.fromhex('85f60f8200000000')
+
+        class Image:
+            base = 0x100000
+
+            def __init__(self):
+                self.data = bytearray(b'\x90' * 32 + prefix + b'\xe8\x00\x00\x00\x00'
+                                      + suffix + b'\xcc' * 16)
+                site = self.base + 32 + len(prefix)
+                struct.pack_into('<i', self.data, 32 + len(prefix) + 1,
+                                 0x101000 - (site + 5))
+
+            def off_to_va(self, offset):
+                return self.base + offset
+
+            def va_to_off(self, va):
+                return va - self.base
+
+            def patch_call(self, site, target):
+                off = self.va_to_off(site)
+                old = site + 5 + struct.unpack_from('<i', self.data, off + 1)[0]
+                struct.pack_into('<i', self.data, off + 1, target - (site + 5))
+                return old, off
+
+        image = Image()
+        target = 0x200000
+        edits = _mcp_123(image, '', {'hooks': {'mcp123_add': hex(target)}})
+        site = 32 + len(prefix)
+        self.assertEqual(image.data[site], 0xe8)
+        rel = struct.unpack_from('<i', image.data, site + 1)[0]
+        self.assertEqual(image.off_to_va(site) + 5 + rel, target)
+        self.assertIn('0x00101000', edits[0][2])
+        self.assertEqual([(offset, length) for offset, length, _label in edits], [(site, 5)])
+
+    def test_mcp_123_adds_its_hook_source(self):
+        plan = resolve_patch_plan({
+            'patches': {'preset': 'minimal', 'enable': ['mcp-123']},
+            'package': {'mode': 'merged-bsa'},
+        })
+        self.assertEqual(plan['applied'], ['mcp-123'])
+        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xmcp123.c'])
 
     def test_testing_adds_tools_but_allows_overrides(self):
         profile = {'patches': {'preset': 'testing', 'disable': ['diagnostics']},

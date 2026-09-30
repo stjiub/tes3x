@@ -26,6 +26,7 @@ and `release` patches are ready for general use.
 | [`mcp-92`](../patches/mcp-92.md) | Retire a summoned actor's magic before the actor is destroyed. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #92 | core | dev | by name |
 | [`mcp-154`](../patches/mcp-154.md) | Pad compiled script-data allocations to keep dword reads in bounds. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #154 | core | dev | by name |
 | [`mcp-102`](../patches/mcp-102.md) | Reactivate script-triggered objects after their script mod is removed. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #102 | correctness | preview | testing preset |
+| [`mcp-123`](../patches/mcp-123.md) | Persist objects placed by scripts into cells the player has not visited. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #123 | core | dev | by name |
 | [`dxt5-size`](../patches/dxt5-size.md) | Allocate DXT5 textures at their real size, not a negative one that corrupts video memory. | TES3X | core | preview | testing preset |
 | [`video-arena`](../patches/video-arena.md) | With more than 64 MB, size the texture and vertex buffer arena from [Xbox] VideoMemoryKB. | TES3X | compat | dev | by name |
 | [`rotating-autosaves`](../patches/rotating-autosaves.md) | Rotate automatic saves through INI-configurable slots. | [OpenMW](https://openmw.org) | qol | preview | by name |

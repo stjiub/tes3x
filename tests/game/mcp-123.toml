@@ -1,0 +1,15 @@
+kind = "comparison"
+purpose = "An object placed by script into an unvisited cell survives saving and reloading."
+procedure = "Use a fixture script to place a unique object into an unvisited cell, save before entering that cell, reload, then visit the cell and compare control and patched builds."
+limitations = "The command script proves both builds reach play. Creating the placement fixture and carrying its save into a second run are not automated yet."
+watch = 'diag\.patches|exec\.exit|crash\.|hang\.detected|fatal\.'
+timeout = 180
+script = '''
+@start new
+wait 60
+exit
+'''
+
+[expect]
+control = ['exec\.exit 0']
+test = ['diag\.patches', 'exec\.exit 0']

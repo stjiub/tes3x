@@ -583,6 +583,8 @@ SEED_NOTES = {
     'find_mcp154_reload': ('ScriptData::Reload.alloc', 'site', 'mcp-154 SCDT allocation'),
     'find_mcp102_actn': ('Reference::SetActionFlags', 'function',
                          'mcp-102 restores the default active bit'),
+    'find_mcp123_add': ('PlaceItem.addReference', 'site',
+                        'mcp-123 marks the destination cell changed'),
     'find_diagnostics_update': ('Diagnostics::Update', 'function',
                                 'holds the console input gate'),
     'find_console_gate': ('Diagnostics::ConsoleGate', 'site',

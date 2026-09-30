@@ -1039,16 +1039,6 @@ summary = "Ammunition fix"
 reason = "The ammunition counter does not update while an inventory filter hides the ammo."
 
 [[candidate]]
-name = "mcp-123"
-origin = { source = "MCP", id = "123" }
-category = "core"
-default = "intended default"
-status = "candidate"
-priority = "high"
-summary = "Persist `PlaceItem` objects in unvisited cells"
-reason = "Missing dirty mark loses placed objects. This is persistence/data loss rather than a gameplay preference."
-
-[[candidate]]
 name = "mcp-124"
 origin = { source = "MCP", id = "124" }
 category = "balance"
