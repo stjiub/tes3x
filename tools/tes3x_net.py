@@ -379,7 +379,7 @@ AUTHORITY_PERIOD = 0.25
 RESEND = 0.25
 # Least time between two EVENTS packets to one client, and at most PACE_PACKETS packets to one
 # client per PACE_WINDOW seconds, the rest queued. xemu's NIC stops reading its tunnel for good once
-# frames arrive faster than the guest's eight receive slots drain.
+# frames arrive faster than the guest's receive slots drain.
 EVENTS_GAP = 0.02
 PACE_PACKETS = 4
 PACE_WINDOW = 0.005
@@ -828,6 +828,8 @@ class Client:
         self.flush_due = False  # an EVENTS packet held back by EVENTS_GAP
         self.queue = []  # (address, packet, seq) held back by PACE_PACKETS
         self.window = (0.0, 0)  # the current PACE_WINDOW's start and packets sent in it
+        self.joined = 0.0
+        self.bursts = []  # (seconds after joining, packets) still to send
 
 
 
@@ -907,6 +909,8 @@ def serve(args):
         index, _, value = change.partition(":")
         bot_weather.append((float(at), int(index), int(value)))
     authority_next = actor_next = 0.0
+    bursts = [(float(at), int(count)) for count, _, at in
+              (spec.partition("@") for spec in args.burst)]
 
     def window(spec, now):
         """Whether now falls in START:END seconds after the bot first placed itself."""
@@ -1364,6 +1368,9 @@ def serve(args):
                       f"dropped by the rejoin", flush=True)
             client.rel = Reliable()
             client.known = {}
+            if client.joins == 1:
+                client.joined = now
+                client.bursts = sorted(bursts)
             verb = "joined" if client.joins == 1 else "rejoined"
             print(f"{stamp} client {client.id} {verb}: {mac} at {addr[0]}:{addr[1]}, "
                   f"build {build:#010x}", flush=True)
@@ -1606,6 +1613,20 @@ def serve(args):
             bot["said"] = now
             bot["line"] += 1
             broadcast_event(BOT_ID, EVENT_TEXT, b"bot %d" % bot["line"], now)
+        for client in [c for c in clients.values() if c.alive and c.bursts]:
+            if now - client.joined >= client.bursts[0][0]:
+                _, count = client.bursts.pop(0)
+                print(f"{time.strftime('%H:%M:%S')} burst of {count} heartbeats to client "
+                      f"{client.id}", flush=True)
+                for _ in range(count):
+                    send(client, HEARTBEAT)
+                    client.queue, queued = [], client.queue
+                    for addr, packet, seq in queued:
+                        if len(addr) == 4:
+                            ip, _port, mac, link = addr
+                            link.send(udp_frame(mac, ip, packet, seq))
+                        else:
+                            sock.sendto(packet, addr)
         for client in clients.values():
             if client.alive and (client.flush_due or client.rel.out and
                                  now - client.rel.last_send >= RESEND):
@@ -1761,6 +1782,9 @@ def main(argv=None):
                    metavar="REGION:WEATHER@SECONDS",
                    help="the bot sets a region's weather (list index, 0-9) this long after it "
                         "appears (repeatable)")
+    p.add_argument("--burst", action="append", default=[], metavar="COUNT@SECONDS",
+                   help="send COUNT heartbeats at once, unpaced, SECONDS after a client first "
+                        "joins (a receive ring stress test)")
     p.add_argument("--drop", type=float, default=0,
                    help="drop this fraction of session packets each way, to test loss")
     p.add_argument("--seed", type=int, help="seed for --drop")

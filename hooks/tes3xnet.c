@@ -214,7 +214,9 @@ typedef u32(__stdcall *fn_PhyGetLinkState)(u8);
 #define RX_ERRORS 0x1F80u /* ERROR1-4, CRC, overflow */
 #define RX_AVAIL 0x8000u
 
-#define RX_RING 8u
+/* xemu's NIC never resumes reading its tunnel once a frame finds the next slot full, so the ring
+ * is sized for bursts rather than for the rate. */
+#define RX_RING 32u
 #define TX_RING 4u
 #define BUF 2048u
 #define POOL_BYTES (4096u + (RX_RING + TX_RING) * BUF)
@@ -264,7 +266,8 @@ struct descriptor {
 #define HOST_NAME 64u
 
 static struct {
-    u32 up, ip, mask, irqs, dpcs, rx, rx_errors, rx_nobuf, arp, echo, tx, tx_full, tx_errors;
+    u32 up, ip, mask, irqs, dpcs, rx, rx_errors, rx_nobuf, rx_peak, arp, echo;
+    u32 tx, tx_full, tx_errors;
 } net;
 static struct {
     u32 state, server, port, gateway, hop, hop_known, id, client, seq, peer_seq, peer_time;
@@ -1233,8 +1236,12 @@ static void rx_ip(const u8 *f, u32 len)
  * restart it can fill slots in an order the driver did not start from. */
 static void rx_drain(void)
 {
-    u32 i, found;
+    u32 i, found, filled = 0;
 
+    for (i = 0; i < RX_RING; i++)
+        filled += !(rx_ring[i].flags & RX_AVAIL);
+    if (filled > net.rx_peak)
+        net.rx_peak = filled;
     do {
         found = 0;
         for (i = 0; i < RX_RING; i++) {
@@ -1558,7 +1565,7 @@ static void stat(void)
     tes3x_log("net.up", net.up);
     if (net.up) {
         for (i = 0; i < RX_RING; i++)
-            ring = ring << 4 | (rx_ring[i].flags >> 12);
+            ring += (rx_ring[i].flags & RX_AVAIL) != 0;
         tes3x_log_hex3("net.regs", NIC(REG_IRQ_STATUS), NIC(REG_RX_CONTROL),
                        NIC(REG_RX_STATUS));
         tes3x_log_hex3("net.ring", ring, NIC(REG_IRQ_MASK), NIC(REG_ADAPTER));
@@ -1570,7 +1577,7 @@ static void stat(void)
         unlock(flags);
     }
     tes3x_log_hex3("net.rx", net.rx, net.rx_errors, net.rx_nobuf);
-    tes3x_log_hex3("net.irq", net.irqs, net.dpcs, 0);
+    tes3x_log_hex3("net.irq", net.irqs, net.dpcs, net.rx_peak);
     tes3x_log_hex3("net.answered", net.arp, net.echo, 0);
     tes3x_log_hex3("net.tx", net.tx, net.tx_full, net.tx_errors);
     if (dhcp.state) {
