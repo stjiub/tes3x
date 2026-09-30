@@ -42,3 +42,8 @@ reaches another player's stand-in, or an actor another console runs, that consol
 spell to the real target instead. Spells the player made in their own game are not known to the
 other consoles and are not applied there. An enchantment's damage still reaches its target as a
 plain hit, without its other effects.
+
+Other consoles see the cast and the shot too: a stand-in casts the same spell, or looses the same
+arrow, bolt or thrown weapon, but what it fires never does anything there, since the real hit
+arrives from the console that fired. Stand-ins aim where they face, so a bolt or an arrow may
+fly a little differently than it did for its shooter.
