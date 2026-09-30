@@ -272,7 +272,7 @@ def ping(args):
 
 
 T3MP = struct.Struct("<4sBBHIIIII")  # magic, version, type, 0, session, seq, ack, time, echo
-T3MP_VERSION = 5
+T3MP_VERSION = 6
 HELLO, WELCOME, HEARTBEAT, BYE, STATE, PEER, GONE, EVENTS, REFUSE, CLOCK, ACTORS = range(1, 12)
 # GameHour, Day, Month (0-11), Year, DaysPassed, TimeScale, as the game's float globals
 CLOCK_BODY = struct.Struct("<6f")
@@ -286,6 +286,7 @@ EVENTS_BYTES = 512  # the client's largest EVENTS body
 EVENT_DATA = 64
 EVENT_TEXT = 1
 EVENT_AUTHORITY, EVENT_HOLD, EVENT_HOLD_BROKEN, EVENT_HIT, EVENT_DEATH = 2, 3, 4, 5, 6
+EVENT_EQUIPMENT = 7  # part, parts, then item ids each ending in a zero
 # refid, target client, then a word: on, reason, or the damage as a float
 TARGETED = {EVENT_HOLD: "holds", EVENT_HOLD_BROKEN: "breaks the hold on", EVENT_HIT: "hits"}
 KEY = struct.Struct("<Iii32s")  # kind, grid x, grid y, interior name
@@ -321,6 +322,21 @@ def pack_events(ack, events, limit=EVENTS_BYTES):
         out += item
         count += 1
     return EVENTS_HEAD.pack(ack, count) + out
+
+
+def pack_equipment(ids):
+    """The EQUIPMENT events of one set, as tes3xnet.c equipment_send packs them."""
+    parts = [b""]
+    for item in ids:
+        item = item.encode("latin-1")[:31] + b"\0"
+        if 2 + len(parts[-1]) + len(item) > EVENT_DATA:
+            parts.append(b"")
+        parts[-1] += item
+    return [bytes((i, len(parts))) + part for i, part in enumerate(parts)]
+
+
+def unpack_equipment(part):
+    return [item.decode("latin-1") for item in part[2:].split(b"\0") if item]
 
 
 def unpack_events(body):
@@ -383,6 +399,7 @@ class Reliable:
 STATE_BODY = struct.Struct("<I4f32s")  # flags, x, y, z, heading, interior cell name
 STATE_SIZE = STATE_BODY.size + ANIM_BYTES  # then the animation
 IN_WORLD, INTERIOR = 1, 2
+STANCE = 4 | 8  # weapon drawn, spell readied; in STATE's flags and ACTOR's
 PLACE = IN_WORLD | INTERIOR
 CELL_UNITS = 8192
 
@@ -566,6 +583,10 @@ def serve(args):
     clock, clock_next = None, 0.0
     owners = {}  # cell -> authority client
     deaths = {}  # refid -> the client that reported it; replayed to each joining client
+    # client -> [parts of its latest whole equipment set, parts of the set arriving]
+    equipment = {}
+    if args.bot_equip is not None:
+        equipment[BOT_ID] = [pack_equipment([i for i in args.bot_equip.split(",") if i]), []]
     actors = {}  # refid -> (reporting client, cell, ACTOR bytes), the latest from an authority
     authority_next = actor_next = 0.0
 
@@ -617,8 +638,9 @@ def serve(args):
         (flags, cell), cx, cy, cz = bot["anchor"]
         t = (now - bot["start"]) * 2 * math.pi / args.bot_period
         if bot["mirror"]:
-            _, x, y, z, heading, _, _, anim = ACTOR.unpack(bot["mirror"])
-            state = STATE_BODY.pack(flags, x + args.bot_shift, y, z, heading, cell) + anim
+            _, x, y, z, heading, _, actor_flags, anim = ACTOR.unpack(bot["mirror"])
+            state = STATE_BODY.pack(flags | actor_flags & STANCE, x + args.bot_shift, y, z,
+                                    heading, cell) + anim
         else:
             state = STATE_BODY.pack(flags, cx + args.bot_radius * math.cos(t),
                                     cy + args.bot_radius * math.sin(t), cz, -t % (2 * math.pi),
@@ -671,6 +693,16 @@ def serve(args):
             print(f"{stamp} client {client.id}: {refid:#010x} died", flush=True)
         if kind == EVENT_TEXT:
             print(f"{stamp} client {client.id} says: {data.decode('latin-1')}", flush=True)
+        if kind == EVENT_EQUIPMENT and len(data) >= 2:
+            sets = equipment.setdefault(client.id, [[], []])
+            if data[0] == 0:
+                sets[1] = []
+            sets[1].append(data)
+            if data[0] + 1 == data[1]:
+                sets[0], sets[1] = sets[1], []
+                items = [i for part in sets[0] for i in unpack_equipment(part)]
+                print(f"{stamp} client {client.id} wears {len(items)}: {', '.join(items)}",
+                      flush=True)
         broadcast_event(client.id, kind, data, now)
 
     def update_authority(now):
@@ -798,7 +830,11 @@ def serve(args):
             send(client, CLOCK, clock.body(now))
             for refid, origin in deaths.items():
                 client.rel.queue(EVENT_DEATH, origin, struct.pack("<I", refid))
-            if deaths:
+            for origin, (parts, _) in equipment.items():
+                if origin != client.id:
+                    for part in parts:
+                        client.rel.queue(EVENT_EQUIPMENT, origin, part)
+            if client.rel.out:
                 flush(client, now)
             return
         client = by_session.get(session)
@@ -1017,6 +1053,8 @@ def main(argv=None):
                    help="the bot hits this actor (hex refid) for 5 once, this long after it appears")
     p.add_argument("--bot-kill", metavar="REFID@SECONDS",
                    help="the bot reports this actor (hex refid) dead this long after it appears")
+    p.add_argument("--bot-equip", metavar="ID,ID,...",
+                   help="the bot wears these items (an empty string: nothing)")
     p.add_argument("--drop", type=float, default=0,
                    help="drop this fraction of session packets each way, to test loss")
     p.add_argument("--seed", type=int, help="seed for --drop")

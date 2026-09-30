@@ -22,8 +22,13 @@ their place in the load order. The server takes the first client's load order (o
 `net.refused` and stops trying until the game is next launched.
 
 Besides positions, clients exchange events, which the server delivers to every other client in
-order and resends until each is acknowledged. For now the only event is text: `tes3xnet say
-TEXT` on one console is logged as `net.text` on the others.
+order and resends until each is acknowledged. `tes3xnet say TEXT` on one console is logged as
+`net.text` on the others.
+
+Other players appear as stand-ins from `TES3X Multiplayer.esp`, which the pipeline writes. Each
+copies its player's movement, animation, drawn weapon or readied spell, and whatever the player
+has equipped; the server keeps each player's equipment and sends it to consoles that join later.
+A drawn weapon is not yet shown in a stand-in's hand.
 
 The server also names one client per loaded cell as its authority: that console runs the AI of
 the actors there and sends their positions ten times a second, and the other consoles stop those

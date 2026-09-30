@@ -97,6 +97,21 @@ class EventChannelTests(unittest.TestCase):
         self.assertGreater(a.resent, 0)
 
 
+class EquipmentTests(unittest.TestCase):
+    def test_parts_fit_an_event_and_round_trip(self):
+        ids = ['glass_cuirass', 'glass_helm', 'daedric longsword', 'x' * 40] + \
+            ['common_shirt_%02d' % i for i in range(8)]
+        parts = tes3x_net.pack_equipment(ids)
+        self.assertTrue(all(len(p) <= tes3x_net.EVENT_DATA for p in parts))
+        self.assertEqual([p[:2] for p in parts],
+                         [bytes((i, len(parts))) for i in range(len(parts))])
+        got = [item for p in parts for item in tes3x_net.unpack_equipment(p)]
+        self.assertEqual(got, ids[:3] + ['x' * 31] + ids[4:])
+
+    def test_nothing_worn_is_one_empty_part(self):
+        self.assertEqual(tes3x_net.pack_equipment([]), [b'\x00\x01'])
+
+
 class ClockTests(unittest.TestCase):
     def test_advances_at_timescale_and_rolls_the_calendar(self):
         clock = tes3x_net.Clock(23.0, 31, 11, 427, 100, 30.0, now=0.0)

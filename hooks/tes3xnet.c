@@ -57,8 +57,9 @@
 #if !defined(TES3X_NET_FIND_REFERENCE) || !defined(TES3X_NET_REF_ANIMATION) || \
     !defined(TES3X_NET_REF_ORIENTATION) || !defined(TES3X_NET_REF_ROTATION) || \
     !defined(TES3X_NET_NODE_SET_ROTATION) || !defined(TES3X_NET_NODE_UPDATE) || \
-    !defined(TES3X_NET_ANIM_HAS_GROUP) || !defined(TES3X_NET_ANIM_PLAY_GROUP)
-#error "define the TES3X_NET_ functions SetPos, SetAngle and PlayGroup call"
+    !defined(TES3X_NET_ANIM_HAS_GROUP) || !defined(TES3X_NET_ANIM_PLAY_GROUP) || \
+    !defined(TES3X_NET_REF_UPDATE_EQUIPMENT)
+#error "define the TES3X_NET_ functions SetPos, SetAngle, PlayGroup and unreadyWeapon call"
 #endif
 
 typedef unsigned short u16;
@@ -191,7 +192,7 @@ struct descriptor {
 #define CPU_MHZ 733u
 
 /* Session packet: "T3MP", version, type, then session, seq, ack, time and echoed peer time. */
-#define T3MP_VERSION 5u
+#define T3MP_VERSION 6u
 #define T3MP_HEADER 28u
 #define T3MP_HELLO 1u
 #define T3MP_WELCOME 2u
@@ -237,6 +238,8 @@ static struct {
  * position. */
 #define STATE_IN_WORLD 1u
 #define STATE_INTERIOR 2u
+#define STANCE_WEAPON 4u /* in STATE's flags and ACTOR's */
+#define STANCE_SPELL 8u
 #define STATE_ANIM 52u
 #define ANIM_BYTES 20u
 #define STATE_BYTES (STATE_ANIM + ANIM_BYTES)
@@ -286,6 +289,7 @@ static struct {
 } game_clock;
 
 static u32 ghost_places, ghost_moves, ghost_failures;
+static u32 equip_sent, equip_received, equip_applied, stance_changes;
 static u32 ini_checked;
 static u32 probe_ip, probe_hits;
 static u32 timer[0x28 / 4];
@@ -1338,6 +1342,8 @@ static void stat(void)
                 tes3x_log_hex3("net.peer_state", peers[i].client, peers[i].seq,
                                now_us() - peers[i].time);
         tes3x_log_hex3("net.ghosts", ghost_places, ghost_moves, ghost_failures);
+        tes3x_log_hex3("net.equipment_stat", equip_sent, equip_received, equip_applied);
+        tes3x_log_hex3("net.stances", stance_changes, 0, 0);
     }
 }
 
@@ -1805,6 +1811,38 @@ static u8 *ref_mobile(const u8 *ref)
     return 0;
 }
 
+/* The drawn weapon and readied spell. Changing either on a mobile the engine does not simulate
+ * takes the reference update unreadyWeapon makes after clearing its bit. */
+#define MOBILE_WEAPON_DRAWN 0x2000u
+#define MOBILE_SPELL_READIED 0x4000u
+
+typedef void(__attribute__((thiscall)) *fn_ref_update)(void *ref, int a1);
+
+static u32 stance_of(const u8 *mobile)
+{
+    u32 f = plausible(mobile) ? *(const u32 *)(mobile + MOBILE_FLAGS) : 0;
+
+    return (f & MOBILE_WEAPON_DRAWN ? STANCE_WEAPON : 0) |
+           (f & MOBILE_SPELL_READIED ? STANCE_SPELL : 0);
+}
+
+static void stance_apply(u8 *ref, u32 stance)
+{
+    u8 *mobile = ref_mobile(ref);
+    u32 *flags, want;
+
+    if (!plausible(mobile))
+        return;
+    flags = (u32 *)(mobile + MOBILE_FLAGS);
+    want = (stance & STANCE_WEAPON ? MOBILE_WEAPON_DRAWN : 0) |
+           (stance & STANCE_SPELL ? MOBILE_SPELL_READIED : 0);
+    if (((*flags ^ want) & (MOBILE_WEAPON_DRAWN | MOBILE_SPELL_READIED)) == 0)
+        return;
+    *flags = (*flags & ~(MOBILE_WEAPON_DRAWN | MOBILE_SPELL_READIED)) | want;
+    ((fn_ref_update)TES3X_NET_REF_UPDATE_EQUIPMENT)(ref, 1);
+    stance_changes++;
+}
+
 /* A reference's AnimationData is its attachment of kind 0. For each layer (lower body, upper
  * body, arm) it holds the group +0x38, the key reached +0x3C, the loops left +0x48 and the time
  * in the group +0x58. Sent as the three groups, a pad byte, the three keys, a pad byte, and the
@@ -1851,7 +1889,7 @@ static void player_state(const u8 *ref, u8 *state)
         for (i = 0; mapped(name) && name[i] && i < CELL_NAME - 1; i++)
             state[20 + i] = (u8)name[i];
     }
-    put32le(state, flags);
+    put32le(state, flags | stance_of(ref_mobile(ref)));
     copy(state + 4, ref + 0x38, 12); /* position */
     copy(state + 16, ref + 0x34, 4); /* orientation z */
     anim_capture(ref, state + STATE_ANIM);
@@ -1903,7 +1941,7 @@ struct pose {
 
 /* A received position, heading and animation and when it arrived. */
 struct timed {
-    u32 time;
+    u32 time, flags;
     float p[4];
     u8 anim[ANIM_BYTES];
 };
@@ -1914,6 +1952,7 @@ static struct {
     float x, y, z, heading;
     u8 cell[CELL_NAME];
     u8 *ref;
+    u32 look; /* the equipment generation it wears */
 } ghosts[PEERS];
 static u32 ghosts_parked, ghost_settle;
 __attribute__((weak)) int _fltused; /* tes3xscript.c may define it too */
@@ -2268,6 +2307,197 @@ static int near(const struct pose *p, const struct pose *local)
     return (p->flags & STATE_INTERIOR) || (dx >= -1 && dx <= 1 && dy >= -1 && dy <= 1);
 }
 
+/* Equipment. Each client sends the ids of what its player has equipped whenever they change, as
+ * EQUIPMENT events: part, parts, then ids each ending in a zero. The server keeps every client's
+ * latest set and replays it to whoever joins. A ghost is made to wear its peer's set by comparing
+ * it with what the ghost has equipped: RemoveItem what it should not wear, Equip what it lacks. */
+#define EVENT_EQUIPMENT 7u
+#define EQUIP_ITEMS 24u
+#define EQUIP_ID 32u
+#define EQUIP_PERIOD_US 500000u
+#define ACTOR_EQUIPMENT 0x58 /* list: head +0x8; node: next +0x4, stack +0x8, object first */
+#define OBJECT_GET_ID 0x20   /* vtable offset */
+
+typedef const char *(__attribute__((thiscall)) *fn_object_id)(const void *object);
+
+static struct {
+    u32 client, used, generation, count, staged, next_part;
+    char ids[EQUIP_ITEMS][EQUIP_ID], stage[EQUIP_ITEMS][EQUIP_ID];
+} looks[PEERS];
+static u32 look_clock;
+
+static u32 equipment_ids(const u8 *ref, char ids[][EQUIP_ID])
+{
+    const u8 *actor = *(const u8 *const *)(ref + 0x28), *node, *stack, *object;
+    void *const *vtable;
+    const char *id;
+    u32 n = 0, guard, k;
+
+    if (!plausible(actor))
+        return 0;
+    node = *(const u8 *const *)(actor + ACTOR_EQUIPMENT + 8);
+    for (guard = 0; plausible(node) && guard < 64 && n < EQUIP_ITEMS;
+         node = *(const u8 *const *)(node + 4), guard++) {
+        if (!plausible(stack = *(const u8 *const *)(node + 8)) ||
+            !plausible(object = *(const u8 *const *)stack) ||
+            !plausible(vtable = *(void *const *const *)object))
+            continue;
+        id = ((fn_object_id)vtable[OBJECT_GET_ID / 4])(object);
+        if (!mapped(id) || !*id)
+            continue;
+        for (k = 0; id[k] && k < EQUIP_ID - 1; k++)
+            ids[n][k] = id[k];
+        ids[n++][k] = 0;
+    }
+    return n;
+}
+
+static int has_id(char ids[][EQUIP_ID], u32 n, const char *id)
+{
+    u32 i, k;
+
+    for (i = 0; i < n; i++) {
+        for (k = 0; ids[i][k] && ids[i][k] == id[k]; k++)
+            ;
+        if (ids[i][k] == id[k])
+            return 1;
+    }
+    return 0;
+}
+
+/* Game thread, in the world: sends the player's set when it differs from the last one sent in
+ * this session, whole or not at all. */
+static void equipment_send(const u8 *ref)
+{
+    static u32 last_check, sent_hash, sent_welcome;
+    char ids[EQUIP_ITEMS][EQUIP_ID];
+    u8 parts[EQUIP_ITEMS][EVENT_DATA];
+    u32 lengths[EQUIP_ITEMS], n, i, k, count = 0, hash = 2166136261u, flags, room, now = now_us();
+
+    if (ses.state != SESSION_JOINED || now - last_check < EQUIP_PERIOD_US)
+        return;
+    last_check = now;
+    n = equipment_ids(ref, ids);
+    for (i = 0; i < n; i++) {
+        for (k = 0; ids[i][k]; k++)
+            hash = (hash ^ (u8)ids[i][k]) * 16777619u;
+        hash *= 16777619u; /* the terminating zero */
+    }
+    if (hash == sent_hash && sent_welcome == ses.welcomes)
+        return;
+    lengths[0] = 2;
+    for (i = 0; i < n; i++) {
+        for (k = 0; ids[i][k]; k++)
+            ;
+        if (lengths[count] + k + 1 > EVENT_DATA)
+            lengths[++count] = 2;
+        copy(parts[count] + lengths[count], (const u8 *)ids[i], k + 1);
+        lengths[count] += k + 1;
+    }
+    count++;
+    flags = lock();
+    room = EVENTS_OUT - (rel.out_next - rel.out_first);
+    unlock(flags);
+    if (room < count)
+        return;
+    for (i = 0; i < count; i++) {
+        parts[i][0] = (u8)i;
+        parts[i][1] = (u8)count;
+        event_queue(EVENT_EQUIPMENT, parts[i], lengths[i]);
+    }
+    sent_hash = hash;
+    sent_welcome = ses.welcomes;
+    equip_sent++;
+    tes3x_log_hex3("net.equipment_sent", n, count, hash);
+}
+
+static u32 look_of(u32 client)
+{
+    u32 i, j, pick = 0;
+
+    for (i = 0; i < PEERS; i++)
+        if (looks[i].client == client)
+            return i;
+    /* Otherwise the least recently used entry of a client that is not a peer now. */
+    for (i = 0; i < PEERS; i++) {
+        for (j = 0; j < PEERS && peers[j].client != looks[i].client; j++)
+            ;
+        if ((j == PEERS || !looks[i].client) && looks[i].used <= looks[pick].used)
+            pick = i;
+    }
+    looks[pick].client = client;
+    looks[pick].generation = looks[pick].count = looks[pick].staged = looks[pick].next_part = 0;
+    return pick;
+}
+
+static void equipment_event(const struct event *e)
+{
+    u32 l, off = 2, k;
+
+    if (e->length < 2)
+        return;
+    l = look_of(e->origin);
+    looks[l].used = ++look_clock;
+    if (e->data[0] == 0)
+        looks[l].staged = looks[l].next_part = 0;
+    else if (e->data[0] != looks[l].next_part)
+        return;
+    looks[l].next_part++;
+    while (off < e->length && looks[l].staged < EQUIP_ITEMS) {
+        for (k = 0; off + k < e->length && e->data[off + k] && k < EQUIP_ID - 1; k++)
+            looks[l].stage[looks[l].staged][k] = (char)e->data[off + k];
+        looks[l].stage[looks[l].staged++][k] = 0;
+        while (off < e->length && e->data[off])
+            off++;
+        off++;
+    }
+    if (looks[l].next_part != e->data[1])
+        return;
+    copy((u8 *)looks[l].ids, (const u8 *)looks[l].stage, sizeof(looks[l].ids));
+    looks[l].count = looks[l].staged;
+    looks[l].generation = look_clock;
+    equip_received++;
+    tes3x_log_hex3("net.equipment", e->origin, looks[l].count, looks[l].generation);
+}
+
+static void ghost_item(u32 i, const char *verb, const char *id, const char *tail)
+{
+    char line[128];
+    char *p = put_text(put_text(put_ghost(line, i), verb), " \"");
+
+    p = put_text(put_text(put_text(p, id), "\""), tail);
+    *p = 0;
+    run_script(line);
+}
+
+/* Once per new set, on a placed ghost. */
+static void equipment_apply(u32 i, u8 *ref)
+{
+    char worn[EQUIP_ITEMS][EQUIP_ID];
+    u32 l, n, k, removed = 0, added = 0;
+
+    for (l = 0; l < PEERS && looks[l].client != ghosts[i].client; l++)
+        ;
+    if (l == PEERS || !looks[l].generation || looks[l].generation == ghosts[i].look)
+        return;
+    ghosts[i].look = looks[l].generation;
+    looks[l].used = ++look_clock;
+    n = equipment_ids(ref, worn);
+    for (k = 0; k < n; k++)
+        if (!has_id(looks[l].ids, looks[l].count, worn[k])) {
+            ghost_item(i, "RemoveItem", worn[k], " 1");
+            removed++;
+        }
+    for (k = 0; k < looks[l].count; k++)
+        if (!has_id(worn, n, looks[l].ids[k])) {
+            ghost_item(i, "Equip", looks[l].ids[k], "");
+            added++;
+        }
+    equip_applied++;
+    tes3x_log_hex3("net.ghost_equip", i + 1, removed << 16 | added,
+                   equipment_ids(ref, worn) << 16 | looks[l].count);
+}
+
 static void ghost_update(u32 i, const struct pose *local)
 {
     struct pose p, placed;
@@ -2279,6 +2509,7 @@ static void ghost_update(u32 i, const struct pose *local)
         if (ghosts[i].placed)
             ghost_park(i);
         ghosts[i].client = client;
+        ghosts[i].look = 0;
         if (client)
             tes3x_log_hex3("net.ghost", i + 1, client, 0);
     }
@@ -2307,6 +2538,8 @@ static void ghost_update(u32 i, const struct pose *local)
         ghosts[i].heading = p.heading;
         ghost_moves++;
     }
+    equipment_apply(i, ref);
+    stance_apply(ref, p.flags);
     anim_apply(ref, older, p.anim, frac);
 }
 
@@ -2451,6 +2684,7 @@ static void actors_rx(u32 origin, u32 seq, const u8 *p, u32 n)
         actors_in[slot].track[j].time = actors_in[slot].time;
         copy((u8 *)actors_in[slot].track[j].p, a + 4, 16);
         copy(actors_in[slot].track[j].anim, a + ACTOR_ANIM, ANIM_BYTES);
+        actors_in[slot].track[j].flags = get32le(a + 24);
         actors_in[slot].head = (j + 1) % ACTOR_SAMPLES;
         if (actors_in[slot].count < ACTOR_SAMPLES)
             actors_in[slot].count++;
@@ -2625,6 +2859,7 @@ static void follow(u8 *mobile, u8 *ref, u32 refid, u32 owner)
         place_ref(ref, to);
         actor_moves++;
     }
+    stance_apply(ref, track[k].flags);
     anim_apply(ref, track[k ? k - 1 : k].anim, track[k].anim, frac);
     followed[slot].animated = 1;
 }
@@ -2816,7 +3051,7 @@ static void authority_frame(const u8 *player, const u8 *state)
         put32le(a + 24, (mobile[MOBILE_ACTION] == 0x12 || mobile[MOBILE_ACTION] == 0x13
                          ? ACTOR_DEAD : 0) |
                         (*(const u32 *)(mobile + MOBILE_FLAGS) & MOBILE_IN_COMBAT
-                         ? ACTOR_IN_COMBAT : 0));
+                         ? ACTOR_IN_COMBAT : 0) | stance_of(mobile));
         anim_capture(ref, a + ACTOR_ANIM);
         if (++n == ACTORS_PER_PACKET) {
             put32le(out, n);
@@ -2929,6 +3164,8 @@ static void event_handle(const struct event *e)
         log_text("net.text", text);
     } else if (e->kind >= EVENT_AUTHORITY && e->kind <= EVENT_DEATH) {
         authority_event(e);
+    } else if (e->kind == EVENT_EQUIPMENT) {
+        equipment_event(e);
     } else {
         tes3x_log_hex3("net.event_unknown", e->kind, e->origin, e->length);
     }
@@ -3080,6 +3317,7 @@ void tes3x_net_frame(void)
         flags = lock();
     }
     unlock(flags);
+    equipment_send(ref);
     ghosts_frame(state);
     authority_frame(ref, state);
 }
