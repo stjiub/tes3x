@@ -55,6 +55,13 @@ SPELL_ADDRESSES = (
     ("ACTIVATE_SPELL", 0x000BE050), ("MAGIC_INSTANCE", 0x000BCD30),
     ("RESOLVE_OBJECT", 0x00104300),
 )
+# An actor's shoot slot (mobile vtable +0xF4) releases the projectile nock put in its hand; a
+# MobileProjectile's actor collision rolls to hit once.
+SHOOT = 0x0017BD30
+SHOOT_SLOTS = 3
+PROJECTILE_ACTOR_HIT = 0x00192610
+HIT_ROLL = 0x0017B770
+NOCK = 0x00158620
 CONSOLE_ADDRESSES = (
     ("FIND_MENU", 0x001AD340), ("OPEN_VK", 0x0022D210), ("CONSOLE_MENU_ID", 0x003D816C),
     ("GET_PROP", 0x0019A770), ("COMPILE_RUN", 0x0014B3C0), ("VK_MENU_ID", 0x003DC710),
@@ -284,6 +291,22 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
             raise PayloadError(f"cast bolt {hexva(cast_bolt)}: {len(sites)} call sites, expected 1")
         define("NET_CAST_BOLT", hexva(cast_bolt))
         define("NET_CAST_BOLT_SITES", "{" + hexva(sites[0]) + "}")
+        shoot = int(address("SHOOT", SHOOT), 16)
+        slots = [image.off_to_va(m.start()) for m in re.finditer(re.escape(struct.pack("<I", shoot)),
+                                                                 bytes(image.data))]
+        if len(slots) != SHOOT_SLOTS or None in slots:
+            raise PayloadError(f"shoot {hexva(shoot)}: {len(slots)} vtable slots, expected "
+                               f"{SHOOT_SLOTS}")
+        hit = int(address("PROJECTILE_ACTOR_HIT", PROJECTILE_ACTOR_HIT), 16)
+        roll = int(address("HIT_ROLL", HIT_ROLL), 16)
+        sites = [s for s in find_call_sites(image, roll) if hit <= s < hit + 0x600]
+        if len(sites) != 1:
+            raise PayloadError(f"projectile hit roll: {len(sites)} call sites, expected 1")
+        define("NET_SHOOT", hexva(shoot))
+        define("NET_SHOOT_SLOTS", "{" + ",".join(hexva(s) for s in slots) + "}")
+        define("NET_NOCK", address("NOCK", NOCK))
+        define("NET_HIT_ROLL", hexva(roll))
+        define("NET_SHOT_ROLL_SITES", "{" + hexva(sites[0]) + "}")
         define("NET_MENU_GATE", hexva(locate("menu-mode-gate")))
         define("NET_MOB_GATE", hexva(locate("mob-update-gate")))
         define("NET_WEATHER_ROLL", hexva(locate("weather-roll")))
