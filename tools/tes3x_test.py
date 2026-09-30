@@ -52,8 +52,8 @@ GAME_TESTS = ROOT / "tests" / "game"
 KINDS = {"single": ("test",), "comparison": ("control", "test")}
 REQUIRED = ("kind", "purpose", "procedure", "script", "expect")
 OPTIONAL = ("limitations", "watch", "timeout", "xemu", "save", "enable", "apply", "pipeline",
-            "allow", "profile", "fixture")
-PROFILE_OVERLAY = ("profile", "rules", "package", "ini")
+            "allow", "profile", "fixture", "sequence", "compare", "required_mods")
+PROFILE_OVERLAY = ("profile", "rules", "preferences", "package", "ini")
 FIXTURE_KEYS = {"script": str, "opcodes": list, "texture": bool}
 FIXTURE_MOD = "tes3x-test"
 
@@ -73,7 +73,7 @@ def game_test_problems(test, where):
     timeout = test.get("timeout", 300)
     if type(timeout) not in (int, float) or timeout <= 0:
         problems.append(f"{where}: timeout must be greater than zero")
-    for key in ("xemu", "enable", "pipeline", "allow"):
+    for key in ("xemu", "enable", "pipeline", "allow", "required_mods"):
         if not isinstance(test.get(key, []), list) or any(
                 not isinstance(value, str) for value in test.get(key, [])):
             problems.append(f"{where}: {key} must be an array of strings")
@@ -109,6 +109,38 @@ def game_test_problems(test, where):
             re.compile(expression.removeprefix("!") if isinstance(expression, str) else "")
         except re.error as exc:
             problems.append(f"{where}: invalid regular expression {expression!r}: {exc}")
+    sequence = test.get("sequence", {})
+    if not isinstance(sequence, dict) or set(sequence) - set(roles):
+        problems.append(f"{where}: sequence may only contain {', '.join(roles)}")
+    else:
+        for role, items in sequence.items():
+            if not isinstance(items, list) or not items or any(
+                    not isinstance(item, str) for item in items):
+                problems.append(f"{where}: sequence.{role} must be a non-empty array of strings")
+                continue
+            for expression in items:
+                try:
+                    re.compile(expression)
+                except re.error as exc:
+                    problems.append(f"{where}: invalid sequence expression {expression!r}: {exc}")
+    comparisons = test.get("compare", [])
+    if comparisons and test["kind"] != "comparison":
+        problems.append(f"{where}: compare needs a comparison test")
+    if not isinstance(comparisons, list):
+        problems.append(f"{where}: compare must be an array of tables")
+    else:
+        for comparison in comparisons:
+            if not isinstance(comparison, dict) or set(comparison) != {"pattern", "relation"}:
+                problems.append(f"{where}: each compare needs pattern and relation")
+                continue
+            if comparison["relation"] not in (">", ">=", "<", "<=", "==", "!="):
+                problems.append(f"{where}: unknown compare relation {comparison['relation']!r}")
+            try:
+                pattern = re.compile(comparison["pattern"])
+                if pattern.groups != 1:
+                    problems.append(f"{where}: compare pattern needs one capture group")
+            except (TypeError, re.error) as exc:
+                problems.append(f"{where}: invalid compare pattern: {exc}")
     return problems
 
 
@@ -118,6 +150,49 @@ def load_game_test(path):
     if problems:
         raise TestError("; ".join(str(problem) for problem in problems))
     return test
+
+
+def sequence_failures(log, patterns):
+    """Ordered regular expressions not found on successive log lines."""
+    lines = log.splitlines()
+    position, failures = 0, []
+    for pattern in patterns:
+        found = next((index for index in range(position, len(lines))
+                      if re.search(pattern, lines[index])), None)
+        if found is None:
+            failures.append(f"sequence:{pattern}")
+            break
+        position = found + 1
+    return failures
+
+
+def comparison_failures(logs, comparisons):
+    """Numeric test-versus-control comparisons over every captured log value."""
+    operations = {
+        ">": lambda test, control: test > control,
+        ">=": lambda test, control: test >= control,
+        "<": lambda test, control: test < control,
+        "<=": lambda test, control: test <= control,
+        "==": lambda test, control: test == control,
+        "!=": lambda test, control: test != control,
+    }
+    failures = []
+    for comparison in comparisons:
+        pattern, relation = re.compile(comparison["pattern"]), comparison["relation"]
+        values = {}
+        for role in ("control", "test"):
+            captures = pattern.findall(logs[role])
+            try:
+                values[role] = [int(value, 16 if value.lower().startswith("0x") else 10)
+                                for value in captures]
+            except (AttributeError, ValueError):
+                values[role] = []
+        if not values["control"] or len(values["control"]) != len(values["test"]):
+            failures.append(f"compare:{comparison['pattern']} count")
+        elif not all(operations[relation](test, control) for control, test in
+                     zip(values["control"], values["test"])):
+            failures.append(f"compare:test {relation} control for {comparison['pattern']}")
+    return failures
 
 
 def dxt1_texture():
@@ -180,6 +255,7 @@ def check_log(path, scenario):
                 re.search(expression, line) for line in lines):
             failures.append("!" + expression)
     failures += assertion_failures("\n".join(lines), scenario["script"])
+    failures += sequence_failures("\n".join(lines), scenario.get("sequence", {}).get("test", []))
     watch = re.compile(scenario.get("watch", r"exec[.>]|assert[.>]|diag\.|crash\.|hang\.|fatal\."))
     observed = [line.rstrip("\r") for line in lines if watch.search(line)]
     return not failures, failures, observed

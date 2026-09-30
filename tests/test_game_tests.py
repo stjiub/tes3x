@@ -4,7 +4,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import tes3x_patches as registry  # noqa: E402
-from tes3x_test import GAME_TESTS, game_test_problems, read_toml  # noqa: E402
+from tes3x_test import (GAME_TESTS, comparison_failures, game_test_problems,  # noqa: E402
+                        read_toml, sequence_failures)
 
 
 class GameTestFileTests(unittest.TestCase):
@@ -33,6 +34,23 @@ class GameTestFileTests(unittest.TestCase):
                 if line.strip().startswith("assert "):
                     with self.subTest(path.name, line=line):
                         self.assertIn(" == ", line)
+
+    def test_ordered_expectations_do_not_reuse_an_earlier_line(self):
+        log = "autosave.slot 1\nautosave.slot 2\nautosave.slot 1\n"
+        self.assertEqual(sequence_failures(
+            log, [r"slot 1", r"slot 2", r"slot 1"]), [])
+        self.assertTrue(sequence_failures(
+            log, [r"slot 1", r"slot 1", r"slot 2"]))
+
+    def test_numeric_comparison_pairs_every_value(self):
+        logs = {
+            "control": "diag.free_kb 17000\ndiag.free_kb 16000\n",
+            "test": "diag.free_kb 28000\ndiag.free_kb 27000\n",
+        }
+        comparison = [{"pattern": r"diag\.free_kb ([0-9]+)", "relation": ">"}]
+        self.assertEqual(comparison_failures(logs, comparison), [])
+        comparison[0]["relation"] = "<"
+        self.assertTrue(comparison_failures(logs, comparison))
 
 
 if __name__ == "__main__":

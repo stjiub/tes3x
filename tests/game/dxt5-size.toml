@@ -1,0 +1,20 @@
+kind = "comparison"
+purpose = "Morrowind Optimization Patch's DXT5 textures corrupt the retail video arena during the first trip outside, while dxt5-size reaches and remains in Seyda Neen."
+procedure = "Use a profile containing MOP 1.17.0, start a new game, move outside to Seyda Neen, wait 1,800 frames, query the player position and compare control and patched builds."
+limitations = "MOP is a third-party local fixture and is not distributed. The control crash address can depend on which corrupted arena object is used first. Hardware behavior and video-memory exhaustion after correct DXT5 accounting are not checked."
+watch = 'crash\.|console< GetPos|exec[.>]'
+allow = ['crash\.']
+required_mods = ["MOP"]
+timeout = 240
+script = '''
+@start new
+wait 60
+coc "Seyda Neen"
+wait 1800
+player->getpos x
+exit
+'''
+
+[expect]
+control = ['crash\.code 0xC0000005', '!exec\.exit 0']
+test = ['!crash\.', 'console< GetPos >> -12288\.00', 'exec\.exit 0']

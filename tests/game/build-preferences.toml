@@ -9,5 +9,8 @@ script = '''
 @menu exit
 '''
 
+[profile]
+preferences = { invert_look = false }
+
 [expect]
 test = ['prefs\.invert_look 0', 'prefs\.look_up 26', 'prefs\.look_down 25', 'exec\.exit 0']

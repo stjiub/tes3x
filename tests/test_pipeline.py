@@ -14,7 +14,7 @@ from tes3x_pipeline import (PipelineError, copy_retail_root, link_or_copy, resol
                             validate_profile)
 from tes3x_pipeline import main as pipeline_main
 from tes3x_patch import (MCP37_TREE_NEXT_SIG, _mcp_37, _mcp_92, _mcp_97, _mcp_98,
-                         _mcp_102, _mcp_123, _mcp_154)
+                         _mcp_102, _mcp_123, _mcp_154, _test_mcp97, _test_mcp102)
 from tes3x_plugins import (collect, dependency_order, fetch_rules, run_arrange, validate_order,
                            warnings as mlox_warnings)
 from test_reach import rec, sub
@@ -526,6 +526,25 @@ class PipelinePlanTests(unittest.TestCase):
         self.assertEqual([(offset, length) for offset, length, _label in edits],
                          [(block + 16, 1), (site, 6)])
 
+    def test_mcp_97_test_probe_replaces_the_shared_landing(self):
+        class Image:
+            base = 0x100000
+
+            def __init__(self):
+                self.data = bytearray(b'\x90' * 32 + bytes.fromhex('4185ed74c2') + b'\x90' * 16)
+
+            def va_to_off(self, va):
+                return va - self.base
+
+        image = Image()
+        site, target = image.base + 32, 0x200000
+        edits = _test_mcp97(image, '', {'hooks': {
+            'mcp97_test': hex(target), 'mcp97_test_site': hex(site)}})
+        self.assertEqual(image.data[32], 0xE9)
+        rel = struct.unpack_from('<i', image.data, 33)[0]
+        self.assertEqual(site + 5 + rel, target)
+        self.assertEqual([(offset, length) for offset, length, _label in edits], [(32, 5)])
+
     def test_mcp_98_removes_both_reference_count_changes(self):
         prefix = bytes.fromhex(
             '3bf80f85112233448b57188b07428bcf895718ff502c'
@@ -686,6 +705,30 @@ class PipelinePlanTests(unittest.TestCase):
         })
         self.assertEqual(plan['applied'], ['mcp-102'])
         self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c'])
+
+    def test_mcp_102_test_probe_wraps_the_actn_load_call(self):
+        class Image:
+            base = 0x100000
+
+            def __init__(self):
+                self.data = bytearray(b'\x90' * 32 + b'\xe8\0\0\0\0' + b'\x90' * 16)
+
+            def va_to_off(self, va):
+                return va - self.base
+
+            def patch_call(self, va, target):
+                off = self.va_to_off(va)
+                was = va + 5 + struct.unpack_from('<i', self.data, off + 1)[0]
+                struct.pack_into('<i', self.data, off + 1, target - (va + 5))
+                return was, off
+
+        image = Image()
+        site, target = image.base + 32, 0x200000
+        edits = _test_mcp102(image, '', {'hooks': {
+            'mcp102_test': hex(target), 'mcp102_test_site': hex(site)}})
+        rel = struct.unpack_from('<i', image.data, 33)[0]
+        self.assertEqual(site + 5 + rel, target)
+        self.assertEqual([(offset, length) for offset, length, _label in edits], [(32, 5)])
 
     def test_mcp_123_redirects_the_shared_placeitem_insertion(self):
         prefix = bytes.fromhex(

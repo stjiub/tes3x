@@ -1,0 +1,17 @@
+kind = "comparison"
+purpose = "Saved-script initialization advances past fixed-width and length-prefixed operands by the corrected byte counts."
+procedure = "Load the local mcp-preview.ess fixture in control and patched builds with the test-only cursor trace enabled, then compare the operand skips."
+limitations = "The fixture is derived from a personal save and is not distributed. It exercises both corrected operand forms but does not contain an identifier which makes vanilla fail to resynchronize. Hardware behavior is not checked."
+watch = 'mcp97\.skip|exec[.>]'
+pipeline = ["--test-probe", "mcp-97"]
+save = "mcp-preview.ess"
+timeout = 240
+script = '''
+@start load U:\TES3X\mcp-preview.ess
+wait 180
+exit
+'''
+
+[expect]
+control = ['mcp97\.skip 0x0003[0-9A-Fa-f]{4}', 'mcp97\.skip 0x0007[0-9A-Fa-f]{4}', '!mcp97\.skip 0x0002[0-9A-Fa-f]{4}', 'exec\.exit 0']
+test = ['mcp97\.skip 0x0002[0-9A-Fa-f]{4}', 'mcp97\.skip 0x0008[0-9A-Fa-f]{4}', '!mcp97\.skip 0x0003[0-9A-Fa-f]{4}', 'exec\.exit 0']

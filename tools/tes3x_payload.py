@@ -384,6 +384,25 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         print(f"mcp-97 hook: scan {hexva(scan)}, resume {hexva(scan + 6)}")
         define("MCP97_RESUME", hexva(scan + 6))
         wanted["mcp97_scan"] = ("_tes3x_mcp97_scan_hook",)
+    if "tes3xtest_mcp97.c" in names:
+        scan = locate("mcp-97-scan")
+        landing = scan + 10
+        print(f"mcp-97 test probe: landing {hexva(landing)}")
+        define("MCP97_TEST_LOOP", hexva(scan - 47))
+        define("MCP97_TEST_EXIT", hexva(landing + 5))
+        wanted["mcp97_test"] = ("_tes3x_mcp97_test_hook",)
+        extra["mcp97_test"] = {"mcp97_test_site": hexva(landing)}
+    if "tes3xtest_mcp102.c" in names:
+        setter = locate("mcp-102-actn")
+        sites = find_call_sites(image, setter)
+        if len(sites) != 1:
+            raise PayloadError(f"mcp-102 test probe: {len(sites)} ACTN load calls, expected 1")
+        print(f"mcp-102 test probe: setter {hexva(setter)}, call {hexva(sites[0])}")
+        define("MCP102_TEST_SET_FLAGS", hexva(setter))
+        define("MCP102_TEST_GET_FLAGS", hexva(setter - 0x60))
+        wanted["mcp102_test"] = ("@tes3x_mcp102_test_hook@8",
+                                 "_tes3x_mcp102_test_hook")
+        extra["mcp102_test"] = {"mcp102_test_site": hexva(sites[0])}
     if "tes3xmcp154.c" in names:
         load, reload = locate("mcp-154-load"), locate("mcp-154-reload")
         print(f"mcp-154 hooks: load {hexva(load)}, reload {hexva(reload)}")

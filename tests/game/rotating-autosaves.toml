@@ -22,3 +22,6 @@ exit
 
 [expect]
 test = ['console< GetLevel >> 7\.00', 'autosave\.enabled 1', 'autosave\.slots 3', 'autosave\.slot 1', 'autosave\.slot 2', 'autosave\.slot 3', 'exec\.exit']
+
+[sequence]
+test = ['autosave\.slot 1', 'autosave\.command 1', 'autosave\.slot 2', 'autosave\.command 1', 'autosave\.slot 3', 'autosave\.command 1', 'autosave\.slot 1', 'autosave\.command 1']

@@ -245,14 +245,28 @@ match none. A run fails on any crash, hang or fatal error line, a failed `assert
 run than the script has. Prefer asserts and a patch's own log counters, such as `mcp37.cancelled`,
 to matching incidental output.
 
+`[sequence]` gives ordered regular expressions for a role when presence alone is not enough. A
+comparison test can also use `[[compare]]` with a one-capture `pattern` and a numeric `relation`
+(`>`, `>=`, `<`, `<=`, `==` or `!=`); every captured test value is compared with the corresponding
+control value.
+
+```toml
+[sequence]
+test = ['autosave\.slot 1', 'autosave\.slot 2', 'autosave\.slot 3', 'autosave\.slot 1']
+
+[[compare]]
+pattern = 'diag\.free_kb ([0-9]+)'
+relation = ">"
+```
+
 Optional keys: `watch`, a regular expression for the log lines worth keeping; `enable`, the other
 patches every build carries (default `diagnostics` and `console`); `apply`, a valued patch such as
 `profile=0x00137C50`; `save`, a save the script loads; `xemu`, runner options; `pipeline`, extra
-pipeline options such as `--diag-test-faults`; `allow`, the crash or hang patterns a test causes on
-purpose.
+pipeline options such as `--diag-test-faults`; `required_mods`, enabled profile mods the scenario
+needs; `allow`, the crash or hang patterns a test causes on purpose.
 
 A test can also shape its build. `[profile]` overlays the chosen profile's `profile`, `rules`,
-`package` or `ini` tables, such as `profile = { save_pool = "TES3X Test" }`. `[fixture]` generates a
-test mod from your own `Morrowind.esm` and makes it the build's only mod: `opcodes = [0x2001]`
-appends those opcode calls to the global script `Main` (or `script`), and `texture = true` adds one
-4x4 texture so there is an asset to pack.
+`preferences`, `package` or `ini` tables, such as `profile = { save_pool = "TES3X Test" }`.
+`[fixture]` generates a test mod from your own `Morrowind.esm` and makes it the build's only mod:
+`opcodes = [0x2001]` appends those opcode calls to the global script `Main` (or `script`), and
+`texture = true` adds one 4x4 texture so there is an asset to pack.

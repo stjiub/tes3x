@@ -66,6 +66,7 @@ MEDIA_ANY = 0xC00001FF
 REGION_ANY = 0x00000007
 
 PATCHES = {}
+TEST_PATCHES = {}
 
 PATCH_BITS = {entry["name"]: 1 << entry["bit"] for entry in registry.PATCHES if "bit" in entry}
 
@@ -80,6 +81,14 @@ def patch(name):
 
     def register(fn):
         PATCHES[name] = (fn, entry.get("takes"), entry["summary"])
+        return fn
+    return register
+
+
+def test_patch(name, summary):
+    """Register test instrumentation that is not part of the public patch table."""
+    def register(fn):
+        TEST_PATCHES[name] = (fn, None, summary)
         return fn
     return register
 
@@ -1274,6 +1283,33 @@ def _mcp_102(x, value, ctx):
     ]
 
 
+@test_patch("test-mcp97", "Trace saved-script cursor advances for the mcp-97 game test.")
+def _test_mcp97(x, value, ctx):
+    hooks = ctx.get("hooks", {})
+    target, site = hooks.get("mcp97_test"), hooks.get("mcp97_test_site")
+    if not target or not site:
+        raise PatchError("test-mcp97: payload has no mcp-97 test probe")
+    target, site = int(str(target), 16), int(str(site), 16)
+    off = x.va_to_off(site)
+    expected = b"\x41\x85\xed\x74\xc2"
+    if off is None or bytes(x.data[off:off + 5]) != expected:
+        raise PatchError("test-mcp97: scan landing does not match expected instructions")
+    x.data[off:off + 5] = b"\xe9" + struct.pack("<i", target - (site + 5))
+    return [(off, 5, "saved-script trace 0x%08X -> 0x%08X" % (site, target))]
+
+
+@test_patch("test-mcp102", "Trace ACTN restoration for the mcp-102 game test.")
+def _test_mcp102(x, value, ctx):
+    hooks = ctx.get("hooks", {})
+    target, site = hooks.get("mcp102_test"), hooks.get("mcp102_test_site")
+    if not target or not site:
+        raise PatchError("test-mcp102: payload has no mcp-102 test probe")
+    target, site = int(str(target), 16), int(str(site), 16)
+    was, off = x.patch_call(site, target)
+    return [(off, 5, "ACTN load call 0x%08X: 0x%08X -> 0x%08X" %
+             (site, was, target))]
+
+
 @patch("mcp-123")
 def _mcp_123(x, value, ctx):
     """Mark a PlaceItem destination cell changed before inserting the new reference."""
@@ -1958,9 +1994,10 @@ def main():
     applied = []
     for spec in a.apply:
         name, _, value = spec.partition("=")
-        if name not in PATCHES:
+        available = {**PATCHES, **TEST_PATCHES}
+        if name not in available:
             raise SystemExit("unknown patch %r; --list shows them" % name)
-        fn, takes, _help = PATCHES[name]
+        fn, takes, _help = available[name]
         if takes and not value:
             raise SystemExit("%s needs a value: %s=%s" % (name, name, takes))
         print("\n  %s" % spec)

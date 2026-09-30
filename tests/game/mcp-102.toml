@@ -1,0 +1,17 @@
+kind = "comparison"
+purpose = "An ACTN=0 object from a removed script mod is restored inactive by retail and with its active bit set by mcp-102."
+procedure = "Load the local mcp-preview.ess fixture without its former Graphic Herbalism plugin; a test-only wrapper records the first zero action flags immediately before and after the engine setter."
+limitations = "The fixture is derived from a personal save and is not distributed. The test measures the restored action state directly rather than driving the affected container or door through controller input. Hardware behavior is not checked."
+watch = 'mcp102\.|exec[.>]'
+pipeline = ["--test-probe", "mcp-102"]
+save = "mcp-preview.ess"
+timeout = 240
+script = '''
+@start load U:\TES3X\mcp-preview.ess
+wait 180
+exit
+'''
+
+[expect]
+control = ['mcp102\.saved 0', 'mcp102\.loaded 0', 'exec\.exit 0']
+test = ['mcp102\.saved 0', 'mcp102\.loaded 1', 'exec\.exit 0']

@@ -15,3 +15,7 @@ exit
 [expect]
 control = ['diag\.free_kb', 'exec\.exit 0', '!region\.']
 test = ['region\.kb [0-9]+', 'diag\.free_kb', 'exec\.exit 0']
+
+[[compare]]
+pattern = 'diag\.free_kb ([0-9]+)'
+relation = ">"

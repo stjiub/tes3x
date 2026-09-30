@@ -579,6 +579,8 @@ def main(argv=None):
     ap.add_argument("--diag-test-faults", action="store_true",
                     help="add the diagnostics console commands `tes3xdiag hang` and `tes3xdiag "
                          "crash`, which stall the update loop and fault on purpose. Test only")
+    ap.add_argument("--test-probe", choices=("mcp-97", "mcp-102"),
+                    help="add a game-test-only trace hook for this patch")
     ap.add_argument("--hardlink", action=argparse.BooleanOptionalAction,
                     help="hardlink unchanged retail files into the build instead of copying "
                          "them, where the volume allows (default: paths.hardlink_retail)")
@@ -649,6 +651,10 @@ def main(argv=None):
         plan["needs_payload"] = True
     if args.diag_test_faults and "tes3xdiag.c" not in plan["sources"]:
         raise PipelineError("--diag-test-faults needs the diagnostics patch")
+    if args.test_probe:
+        source = f"tes3xtest_{args.test_probe.replace('-', '')}.c"
+        plan["sources"].append(source)
+        plan["needs_payload"] = True
     package = profile.get("package", {})
     drive = (args.drive or package.get("drive_letter", "D")).upper()
     if len(drive) != 1 or not drive.isalpha():
@@ -690,6 +696,8 @@ def main(argv=None):
         print("pager test: on")
     if args.diag_test_faults:
         print("diagnostics fault commands: on")
+    if args.test_probe:
+        print(f"test probe: {args.test_probe}")
     use_mlox = (plan["package_mode"] != "retail"
                 and profile.get("rules", {}).get("plugin_order") == "mlox")
     listed_order = (plan["package_mode"] != "retail"
@@ -788,6 +796,8 @@ def main(argv=None):
         if pool:
             patch_specs.append(f"title-id={pool:08X}")
         patch_specs.extend(plan["applied"])
+        if args.test_probe:
+            patch_specs.append("test-" + args.test_probe.replace("-", ""))
         if prof_targets:
             patch_specs.append("profile=" + ",".join(prof_targets))
         if args.heap_census:
