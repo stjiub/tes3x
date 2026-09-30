@@ -22,7 +22,8 @@ from tes3x_patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, find_call_sites, find
 ROOT = Path(__file__).resolve().parents[1]
 HOOKS = ROOT / "hooks"
 HEADERS = ("tes3xdiag.h", "tes3xheap.h", "tes3xlog.h", "tes3xmem.h", "tes3xnt.h",
-           "tes3xpager.h", "tes3xprof.h", "tes3xregion.h", "tes3x_thunks.h", "monocypher.h")
+           "tes3xpager.h", "tes3xprof.h", "tes3xregion.h", "tes3x_thunks.h", "monocypher.h",
+           "tes3xnoise.h")
 DEFAULT_SOURCES = ("tes3xhook.c", "tes3xlog.c", "tes3xdiag.c")
 LLVM_DIRS = (Path("C:/Program Files/LLVM/bin"), Path("C:/msys64/clang64/bin"),
              Path("C:/msys64/mingw64/bin"))
@@ -183,7 +184,7 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
     sources = list(sources)
     names = {Path(s).name for s in sources}
     if "tes3xnet.c" in names:
-        for extra_source in ("monocypher.c", "tes3xcrt.c"):
+        for extra_source in ("monocypher.c", "tes3xnoise.c", "tes3xcrt.c"):
             if extra_source not in names:
                 sources.append(extra_source)
                 names.add(extra_source)

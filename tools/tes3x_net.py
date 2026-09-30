@@ -19,6 +19,7 @@ answers ARP itself and resolves the console's MAC before it pings.
 
 import argparse
 import hashlib
+import hmac
 import json
 import math
 import os
@@ -303,8 +304,16 @@ def ping(args):
 
 
 T3MP = struct.Struct("<4sBBHIIIII")  # magic, version, type, 0, session, seq, ack, time, echo
-T3MP_VERSION = 10
+T3MP_VERSION = 11
 HELLO, WELCOME, HEARTBEAT, BYE, STATE, PEER, GONE, EVENTS, REFUSE, CLOCK, ACTORS = range(1, 12)
+# On the wire every packet but the handshake is SEALED: OUTER in the clear (the AEAD's associated
+# data), then INNER and the body sealed under the session key with seq as the nonce.
+HANDSHAKE1, HANDSHAKE2, HANDSHAKE3, SEALED = range(20, 24)
+OUTER = struct.Struct("<4sBBHII")  # magic, version, type, 0, session, seq
+INNER = struct.Struct("<B3xIII")  # type, ack, time, echo
+PROLOGUE = b"TES3X T3MP 11"
+HANDSHAKE_PAD = 128  # a HANDSHAKE1 is at least as large as the HANDSHAKE2 it draws
+HANDSHAKE_KEEP = 10.0  # seconds a handshake is kept to answer its resent messages
 # GameHour, Day, Month (0-11), Year, DaysPassed, TimeScale, as the game's float globals
 CLOCK_BODY = struct.Struct("<6f")
 # MAC, build id, load order hash, plugin count, then the client's clock
@@ -682,6 +691,145 @@ class Reliable:
             elif event[0] < self.in_next:
                 self.stale += 1
         return ready, bool(events)
+NOISE_PROTOCOL = b"Noise_XX_25519_ChaChaPoly_BLAKE2b"
+NOISE_TAG = 16
+
+
+def crypto():
+    """The primitives the encrypted session needs beyond hashlib, from the cryptography package."""
+    try:
+        from cryptography.exceptions import InvalidTag
+        from cryptography.hazmat.primitives.asymmetric import x25519
+        from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+    except ImportError:
+        raise SystemExit("the session is encrypted: pip install cryptography") from None
+    return InvalidTag, x25519, ChaCha20Poly1305
+
+
+def aead_nonce(counter):
+    return bytes(4) + struct.pack("<Q", counter)
+
+
+def seal(key, counter, ad, data):
+    """ChaCha20-Poly1305 (RFC 8439): the ciphertext, then the tag."""
+    return crypto()[2](key).encrypt(aead_nonce(counter), data, ad)
+
+
+def unseal(key, counter, ad, data):
+    """The plaintext, or None if data is not authentic."""
+    invalid, _, aead = crypto()
+    try:
+        return aead(key).decrypt(aead_nonce(counter), data, ad)
+    except invalid:
+        return None
+
+
+def x25519_public(secret):
+    from cryptography.hazmat.primitives import serialization
+    return crypto()[1].X25519PrivateKey.from_private_bytes(secret).public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+
+
+def fingerprint(public):
+    return hashlib.blake2b(public, digest_size=16).hexdigest()
+
+
+class Noise:
+    """A Noise_XX_25519_ChaChaPoly_BLAKE2b handshake, either side; tes3xnoise.c is the console's
+    initiator. Raises ValueError on a message that does not authenticate."""
+
+    def __init__(self, initiator, s_secret, e_secret, prologue):
+        self.initiator, self.s, self.e = initiator, s_secret, e_secret
+        self.h = self.ck = NOISE_PROTOCOL.ljust(64, b"\0")
+        self.k, self.n, self.re, self.rs = None, 0, None, None
+        self.mix_hash(prologue)
+
+    def mix_hash(self, data):
+        self.h = hashlib.blake2b(self.h + data).digest()
+
+    def hkdf(self, ikm):
+        temp = hmac.new(self.ck, ikm, hashlib.blake2b).digest()
+        out1 = hmac.new(temp, b"\x01", hashlib.blake2b).digest()
+        return out1, hmac.new(temp, out1 + b"\x02", hashlib.blake2b).digest()
+
+    def dh(self, secret, public):
+        try:
+            shared = crypto()[1].X25519PrivateKey.from_private_bytes(secret).exchange(
+                crypto()[1].X25519PublicKey.from_public_bytes(public))
+        except ValueError:
+            raise ValueError("low-order key") from None
+        self.ck, temp = self.hkdf(shared)
+        self.k, self.n = temp[:32], 0
+
+    def encrypt(self, plain):
+        out = plain
+        if self.k:
+            out, self.n = seal(self.k, self.n, self.h, plain), self.n + 1
+        self.mix_hash(out)
+        return out
+
+    def decrypt(self, data):
+        plain = data
+        if self.k:
+            plain = unseal(self.k, self.n, self.h, data)
+            if plain is None:
+                raise ValueError("not authentic")
+            self.n += 1
+        self.mix_hash(data)
+        return plain
+
+    def write_e(self):
+        e = x25519_public(self.e)
+        self.mix_hash(e)
+        return e
+
+    def read_e(self, message):
+        if len(message) < 32:
+            raise ValueError("short message")
+        self.re = message[:32]
+        self.mix_hash(self.re)
+        return message[32:]
+
+    def write1(self, payload=b""):
+        return self.write_e() + self.encrypt(payload)
+
+    def read1(self, message):
+        return self.decrypt(self.read_e(message))
+
+    def write2(self, payload=b""):
+        out = self.write_e()
+        self.dh(self.e, self.re)
+        out += self.encrypt(x25519_public(self.s))
+        self.dh(self.s, self.re)
+        return out + self.encrypt(payload)
+
+    def read2(self, message):
+        rest = self.read_e(message)
+        if len(rest) < 32 + 2 * NOISE_TAG:
+            raise ValueError("short message")
+        self.dh(self.e, self.re)
+        self.rs = self.decrypt(rest[:32 + NOISE_TAG])
+        self.dh(self.e, self.rs)
+        return self.decrypt(rest[32 + NOISE_TAG:])
+
+    def write3(self, payload=b""):
+        out = self.encrypt(x25519_public(self.s))
+        self.dh(self.s, self.re)
+        return out + self.encrypt(payload)
+
+    def read3(self, message):
+        if len(message) < 32 + 2 * NOISE_TAG:
+            raise ValueError("short message")
+        self.rs = self.decrypt(message[:32 + NOISE_TAG])
+        self.dh(self.e, self.rs)
+        return self.decrypt(message[32 + NOISE_TAG:])
+
+    def split(self):
+        """(initiator to responder, responder to initiator) transport keys."""
+        one, two = self.hkdf(b"")
+        return one[:32], two[:32]
+
+
 class Outgoing:
     """One file sent to one client: chunks inside the window its last ack allows, each resent
     after BULK_RESEND until acked."""
@@ -904,7 +1052,30 @@ class Client:
         self.joined = 0.0
         self.bursts = []  # (seconds after joining, packets) still to send
         self.bulk = None  # the Outgoing file of --send, offered again on each join
+        self.key = None  # the console's static key for this server: its identity
+        self.keys = None  # (console to server, server to console) from the handshake
+        self.replay = (0, 0)  # the highest seq opened and a bitmap of the 32 up to it
+        self.forged = self.replayed = 0
 
+
+
+def load_server_key(args):
+    """The server's static secret: from --key, or server.key in the world folder, made on first
+    use; without either, a new one each run."""
+    crypto()
+    path = args.key or (os.path.join(args.world, "server.key") if args.world else None)
+    if path and os.path.exists(path):
+        with open(path, encoding="ascii") as stream:
+            secret = bytes.fromhex(stream.read().strip())
+    else:
+        secret = os.urandom(32)
+        if path:
+            os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+            with open(path, "w", encoding="ascii") as stream:
+                stream.write(secret.hex() + "\n")
+    print(f"server key {fingerprint(x25519_public(secret))}"
+          + ("" if path else " (not kept: give --key or --world)"), flush=True)
+    return secret
 
 
 def serve(args):
@@ -983,6 +1154,8 @@ def serve(args):
         index, _, value = change.partition(":")
         bot_weather.append((float(at), int(index), int(value)))
     authority_next = actor_next = 0.0
+    server_secret = load_server_key(args)
+    pending = {}  # session -> a handshake in progress or just done: {"noise", "e", "reply", ...}
     bursts = [(float(at), int(count)) for count, _, at in
               (spec.partition("@") for spec in args.burst)]
     sending = None
@@ -1010,13 +1183,24 @@ def serve(args):
         return False
 
     def send(client, kind, body=b""):
+        """Seal and queue a packet; nothing goes out before the handshake has keyed the client."""
         client.seq += 1
-        packet = T3MP.pack(b"T3MP", T3MP_VERSION, kind, 0, client.session, client.seq,
-                           client.peer_seq, now_us(), client.peer_time) + body
+        if client.keys is None:
+            return
+        inner = INNER.pack(kind, client.peer_seq, now_us(), client.peer_time) + body
+        outer = OUTER.pack(b"T3MP", T3MP_VERSION, SEALED, 0, client.session, client.seq)
+        packet = outer + seal(client.keys[1], client.seq, outer, inner)
         if dropped("out"):
             return
         client.queue.append((client.addr, packet, client.seq))
         pump(client)
+
+    def transmit(addr, packet, ident=0):
+        if len(addr) == 4:  # a tunnel guest, by its MAC
+            ip, _port, mac, link = addr
+            link.send(udp_frame(mac, ip, packet, ident))
+        else:
+            sock.sendto(packet, addr)
 
     def pump(client):
         """Send what PACE_PACKETS allows of the client's queue."""
@@ -1026,11 +1210,7 @@ def serve(args):
             start, count = now, 0
         while client.queue and count < PACE_PACKETS:
             addr, packet, seq = client.queue.pop(0)
-            if len(addr) == 4:  # a tunnel guest, by its MAC
-                ip, _port, mac, link = addr
-                link.send(udp_frame(mac, ip, packet, seq))
-            else:
-                sock.sendto(packet, addr)
+            transmit(addr, packet, seq)
             count += 1
         client.window = (start, count)
 
@@ -1413,16 +1593,81 @@ def serve(args):
                 if other.alive:
                     send(other, ACTORS, struct.pack("<I", BOT_ID) + body)
 
+    def handshake(kind, session, packet, addr, now):
+        """Answer HANDSHAKE1 with HANDSHAKE2; on HANDSHAKE3, the HELLO it carries, the console's
+        key and the session keys."""
+        for stale in [k for k, v in pending.items() if now - v["time"] > HANDSHAKE_KEEP]:
+            del pending[stale]
+        entry = pending.get(session)
+        if kind == HANDSHAKE1:
+            e = packet[OUTER.size:OUTER.size + 32]
+            if len(packet) < HANDSHAKE_PAD or entry and entry["e"] != e:
+                return None
+            if entry is None:
+                noise = Noise(False, server_secret, os.urandom(32), PROLOGUE)
+                noise.read1(e)
+                entry = pending[session] = {
+                    "noise": noise, "e": e, "time": now, "done": None,
+                    "reply": OUTER.pack(b"T3MP", T3MP_VERSION, HANDSHAKE2, 0, session, 0)
+                    + noise.write2()}
+            transmit(addr, entry["reply"])
+            return None
+        if kind != HANDSHAKE3 or entry is None:
+            return None
+        message = packet[OUTER.size:]
+        if entry["done"] is None:
+            try:
+                hello = entry["noise"].read3(message)
+            except ValueError:
+                return None
+            entry["done"] = (message, hello, entry["noise"].rs, entry["noise"].split())
+        elif entry["done"][0] != message:
+            return None
+        return entry["done"][1:]
+
     def handle(packet, addr):
-        nonlocal pinned, clock
-        if len(packet) < T3MP.size or dropped("in"):
+        """Take a handshake message or open a sealed packet, then hand it on in the T3MP
+        layout. Anything else is dropped unread."""
+        if len(packet) < OUTER.size or dropped("in"):
             return
-        magic, version, kind, _, session, seq, _, sent, _ = T3MP.unpack_from(packet)
+        magic, version, kind, _, session, seq = OUTER.unpack_from(packet)
         if magic != b"T3MP" or version != T3MP_VERSION:
             return
+        now = time.time()
+        if kind in (HANDSHAKE1, HANDSHAKE3):
+            done = handshake(kind, session, packet, addr, now)
+            if done:
+                hello, key, keys = done
+                handle_plain(T3MP.pack(b"T3MP", T3MP_VERSION, HELLO, 0, session, 0, 0, 0, 0)
+                             + hello, addr, (key, keys))
+            return
+        client = by_session.get(session)
+        if kind != SEALED or client is None or client.keys is None or \
+                len(packet) < OUTER.size + INNER.size + NOISE_TAG:
+            return
+        top, seen = client.replay
+        if not seq or seq <= top and (top - seq >= 32 or seen >> (top - seq) & 1):
+            client.replayed += 1
+            return
+        inner = unseal(client.keys[0], seq, packet[:OUTER.size], packet[OUTER.size:])
+        if inner is None:
+            client.forged += 1
+            return
+        if seq > top:
+            client.replay = (seq, (seen << min(seq - top, 32) | 1) & 0xFFFFFFFF)
+        else:
+            client.replay = (top, seen | 1 << (top - seq))
+        inner_kind, ack, sent, echo = INNER.unpack_from(inner)
+        handle_plain(T3MP.pack(b"T3MP", T3MP_VERSION, inner_kind, 0, session, seq, ack, sent,
+                               echo) + inner[INNER.size:], addr)
+
+    def handle_plain(packet, addr, secure=None):
+        nonlocal pinned, clock
+        magic, version, kind, _, session, seq, _, sent, _ = T3MP.unpack_from(packet)
         stamp = time.strftime("%H:%M:%S")
         now = time.time()
-        if kind == HELLO and len(packet) >= T3MP.size + HELLO_BODY.size:
+        if kind == HELLO and secure and len(packet) >= T3MP.size + HELLO_BODY.size:
+            key, keys = secure
             mac, build, order, plugins, *offered = HELLO_BODY.unpack_from(packet, T3MP.size)
             mac = mac.hex(":")
             if pinned is None:
@@ -1434,15 +1679,21 @@ def serve(args):
                 print(f"{stamp} refused {mac}: load order {order:#010x} ({plugins} plugins), "
                       f"session has {pinned[0]:#010x}", flush=True)
                 stranger = Client(0, mac)
-                stranger.addr = addr
+                stranger.addr, stranger.session, stranger.keys = addr, session, keys
                 send(stranger, REFUSE, struct.pack("<II", pinned[0], pinned[1] or 0))
                 return
-            client = clients.get(mac)
+            # A console is known by its key for this server; the MAC is only a hint.
+            client = clients.get(key)
             if client is None:
-                client = clients[mac] = Client(len(clients) + 1, mac)
+                client = clients[key] = Client(len(clients) + 1, mac)
+                client.key = key
+                print(f"{stamp} client {client.id} is key {fingerprint(key)}", flush=True)
+            client.mac = mac
             by_session.pop(client.session, None)
-            client.session = int.from_bytes(os.urandom(4), "little") or 1
+            client.session = session
             by_session[client.session] = client
+            if client.keys != keys:  # a resent HANDSHAKE3 keeps the replay window
+                client.keys, client.replay = keys, (0, 0)
             client.addr, client.peer_seq, client.peer_time = addr, seq, sent
             client.joins += 1
             client.alive, client.last = True, now
@@ -1728,11 +1979,7 @@ def serve(args):
                     send(client, HEARTBEAT)
                     client.queue, queued = [], client.queue
                     for addr, packet, seq in queued:
-                        if len(addr) == 4:
-                            ip, _port, mac, link = addr
-                            link.send(udp_frame(mac, ip, packet, seq))
-                        else:
-                            sock.sendto(packet, addr)
+                        transmit(addr, packet, seq)
         for client in [c for c in clients.values() if c.alive and c.bulk]:
             for index in client.bulk.due(now):
                 send(client, CHUNK, client.bulk.chunk(index))
@@ -1891,6 +2138,9 @@ def main(argv=None):
                    metavar="REGION:WEATHER@SECONDS",
                    help="the bot sets a region's weather (list index, 0-9) this long after it "
                         "appears (repeatable)")
+    p.add_argument("--key", metavar="FILE",
+                   help="the server's secret key, made on first use (default: server.key in "
+                        "--world; without either, a new key each run)")
     p.add_argument("--send", metavar="FILE",
                    help="send FILE to each client that joins, into U:\\TES3X\\ under its name")
     p.add_argument("--burst", action="append", default=[], metavar="COUNT@SECONDS",

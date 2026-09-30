@@ -41,6 +41,7 @@
 #include "tes3x_thunks.h"
 #include "tes3xnt.h"
 #include "monocypher.h"
+#include "tes3xnoise.h"
 
 #ifndef TES3X_NET_WORLD
 #error "define TES3X_NET_WORLD to the WorldController pointer"
@@ -239,9 +240,19 @@ struct descriptor {
 #define TIMEOUT_TICKS 20u
 #define CPU_MHZ 733u
 
-/* Session packet: "T3MP", version, type, then session, seq, ack, time and echoed peer time. */
-#define T3MP_VERSION 10u
+/* Session packet: "T3MP", version, type, then session, seq, ack, time and echoed peer time. On
+ * the wire only the handshake is not sealed: a SEALED packet keeps "T3MP", version, its type,
+ * session and seq in the clear (T3MP_OUTER, the AEAD's associated data) and seals the real type,
+ * ack, times and body under the session's key, seq being the nonce. The receiver rebuilds the
+ * T3MP_HEADER layout after opening it. */
+#define T3MP_VERSION 11u
 #define T3MP_HEADER 28u
+#define T3MP_OUTER 16u
+#define T3MP_INNER 16u
+#define T3MP_HANDSHAKE1 20u
+#define T3MP_HANDSHAKE2 21u
+#define T3MP_HANDSHAKE3 22u
+#define T3MP_SEALED 23u
 #define T3MP_HELLO 1u
 #define T3MP_WELCOME 2u
 #define T3MP_HEARTBEAT 3u
@@ -261,6 +272,8 @@ struct descriptor {
 #define SESSION_JOINED 3u
 #define SESSION_RESOLVE 4u
 #define SESSION_REFUSED 5u
+#define SESSION_UNTRUSTED 7u /* the server's key is not the one pinned */
+#define TRUST_FINGERPRINT 16u /* BLAKE2b of the server's static key, as NetServer's #HEX */
 /* The clock: GameHour, Day, Month, Year, DaysPassed and TimeScale, the globals' raw floats. HELLO
  * carries the client's own, CLOCK the server's. */
 #define CLOCK_GLOBALS 6u
@@ -378,6 +391,12 @@ static void actors_rx(u32 origin, u32 seq, const u8 *p, u32 n);
 static void actors_reset(void);
 static void weather_event(const struct event *e);
 static void bulk_chunk_rx(const u8 *p, u32 n);
+static void handshake_tick(void);
+static void handshake_rx(const u8 *p, u32 n);
+static void handshake_reset(void);
+static void entropy_add(void);
+static int hex_read(const char *text, u8 *out, u32 n);
+static void trust_configure(const char *name, u32 n, const u8 *fingerprint);
 static void bulk_tick(void);
 
 static u32 lock(void)
@@ -611,12 +630,15 @@ static void udp_send(u32 dst, u32 port, const u8 *payload, u32 n)
     tx_commit(42 + n);
 }
 
-static void session_send(u32 type, const u8 *body, u32 n)
-{
-    u8 p[T3MP_HEADER + EVENTS_BYTES];
+/* The session's keys from the handshake, and the replay window: the highest seq opened and a
+ * bitmap of the 32 up to it. */
+static struct {
+    u32 keyed, top, seen, sealed, opened, forged, replayed;
+    u8 send[NOISE_KEY], receive[NOISE_KEY];
+} sec;
 
-    if (n > EVENTS_BYTES)
-        return;
+static void t3mp_outer(u8 *p, u32 type, u32 session, u32 seq)
+{
     p[0] = 'T';
     p[1] = '3';
     p[2] = 'M';
@@ -624,13 +646,27 @@ static void session_send(u32 type, const u8 *body, u32 n)
     p[4] = T3MP_VERSION;
     p[5] = (u8)type;
     p[6] = p[7] = 0;
-    put32le(p + 8, ses.id);
-    put32le(p + 12, ++ses.seq);
-    put32le(p + 16, ses.peer_seq);
-    put32le(p + 20, now_us());
-    put32le(p + 24, ses.peer_time);
-    copy(p + T3MP_HEADER, body, n);
-    udp_send(ses.server, ses.port, p, T3MP_HEADER + n);
+    put32le(p + 8, session);
+    put32le(p + 12, seq);
+}
+
+/* Caller holds the lock. Nothing is sent before the handshake has keyed the session. */
+static void session_send(u32 type, const u8 *body, u32 n)
+{
+    static u8 inner[T3MP_INNER + EVENTS_BYTES], p[T3MP_OUTER + sizeof(inner) + NOISE_TAG];
+
+    if (n > EVENTS_BYTES || !sec.keyed)
+        return;
+    t3mp_outer(p, T3MP_SEALED, ses.id, ++ses.seq);
+    inner[0] = (u8)type;
+    inner[1] = inner[2] = inner[3] = 0;
+    put32le(inner + 4, ses.peer_seq);
+    put32le(inner + 8, now_us());
+    put32le(inner + 12, ses.peer_time);
+    copy(inner + T3MP_INNER, body, n);
+    noise_seal(sec.send, ses.seq, p, T3MP_OUTER, inner, T3MP_INNER + n, p + T3MP_OUTER);
+    udp_send(ses.server, ses.port, p, T3MP_OUTER + T3MP_INNER + n + NOISE_TAG);
+    sec.sealed++;
 }
 
 /* Latest state wins: one server sequences everything it sends us, so an older seq is stale. */
@@ -763,8 +799,8 @@ static void events_rx(const u8 *p, u32 n)
     events_send(0);
 }
 
-/* Caller holds the lock (the receive DPC). */
-static void session_rx(const u8 *p, u32 n)
+/* Caller holds the lock (the receive DPC). p is an opened packet in the T3MP_HEADER layout. */
+static void session_rx_plain(const u8 *p, u32 n)
 {
     u32 type, seq, echo, rtt, i;
 
@@ -790,6 +826,7 @@ static void session_rx(const u8 *p, u32 n)
         ses.ticks = 0;
         ses.peer_seq = seq;
         ses.welcomes++;
+        handshake_reset();
         for (i = 0; i < PEERS; i++)
             peers[i].client = 0;
         events_reset();
@@ -800,6 +837,7 @@ static void session_rx(const u8 *p, u32 n)
         if (type == T3MP_BYE) {
             ses.state = SESSION_HELLO;
             ses.ticks = HELLO_TICKS;
+            sec.keyed = 0;
             return;
         }
         if (type == T3MP_HEARTBEAT)
@@ -838,6 +876,44 @@ static void session_rx(const u8 *p, u32 n)
         ses.rtt_sum += rtt;
         ses.rtt_count++;
     }
+}
+
+/* Caller holds the lock (the receive DPC). Only a handshake reply or a packet sealed under this
+ * session's key and not seen before gets past here. */
+static void session_rx(const u8 *p, u32 n)
+{
+    static u8 plain[12 + BUF];
+    u32 seq, type, age;
+
+    if (n < T3MP_OUTER || p[4] != T3MP_VERSION)
+        return;
+    if (p[5] == T3MP_HANDSHAKE2) {
+        handshake_rx(p, n);
+        return;
+    }
+    if (p[5] != T3MP_SEALED || !sec.keyed || get32le(p + 8) != ses.id ||
+        n < T3MP_OUTER + T3MP_INNER + NOISE_TAG || n - T3MP_OUTER - NOISE_TAG > BUF)
+        return;
+    seq = get32le(p + 12);
+    age = sec.top - seq;
+    if (!seq || ((int)age >= 0 && (age >= 32 || sec.seen >> age & 1))) {
+        sec.replayed++;
+        return;
+    }
+    if (noise_open(sec.receive, seq, p, T3MP_OUTER, p + T3MP_OUTER, n - T3MP_OUTER, plain + 12)) {
+        sec.forged++;
+        return;
+    }
+    if ((int)age < 0) {
+        sec.seen = -age >= 32 ? 1 : sec.seen << -age | 1;
+        sec.top = seq;
+    } else {
+        sec.seen |= 1u << age;
+    }
+    sec.opened++;
+    type = plain[12];
+    t3mp_outer(plain, type, ses.id, seq);
+    session_rx_plain(plain, 12 + n - T3MP_OUTER - NOISE_TAG);
 }
 
 /* Off the subnet, frames go to the gateway's MAC. Caller holds the lock. */
@@ -1107,8 +1183,6 @@ static void dhcp_tick(void)
 /* Every TICK_MS from the timer DPC; caller holds the lock. */
 static void session_tick(void)
 {
-    u8 hello[HELLO_BYTES];
-
     ses.ticks++;
     ses.quiet++;
     if (ses.state == SESSION_ARP) {
@@ -1123,19 +1197,11 @@ static void session_tick(void)
         ses.ticks = 0;
         dns_query();
     }
-    /* Joining waits for a clock to offer, which the game has only once a game is loaded. */
+    /* Joining waits for a clock to offer, which the game has only once a game is loaded. HELLO
+     * goes inside the handshake's last message. */
     if (ses.state == SESSION_HELLO && ses.ticks >= HELLO_TICKS && game_clock.local_valid) {
         ses.ticks = 0;
-        ses.id = 0;
-        ses.peer_seq = 0;
-        ses.peer_time = 0;
-        copy(hello, mac, 6);
-        put32le(hello + 6, TES3X_BUILD_ID);
-        put32le(hello + 10, ses.plugins_hash);
-        put32le(hello + 14, ses.plugins);
-        copy(hello + 18, game_clock.local, CLOCK_BYTES);
-        session_send(T3MP_HELLO, hello, sizeof(hello));
-        ses.hellos++;
+        handshake_tick();
     } else if (ses.state == SESSION_JOINED) {
         if (rel.out_first != rel.out_next)
             events_send(1);
@@ -1144,6 +1210,7 @@ static void session_tick(void)
             ses.timeouts++;
             ses.state = SESSION_HELLO;
             ses.ticks = HELLO_TICKS - 1;
+            sec.keyed = 0;
             if (ses.host[0]) { /* the name may point elsewhere now */
                 ses.server = 0;
                 route_to(ses.dns);
@@ -1170,6 +1237,7 @@ static void __stdcall tick(void *d, void *context, void *a, void *b)
     (void)a;
     (void)b;
     flags = lock();
+    entropy_add();
     if (net.up && dhcp.state)
         dhcp_tick();
     if (net.up && ses.state != SESSION_IDLE)
@@ -1290,6 +1358,7 @@ static u8 __stdcall nic_isr(void *interrupt_object, void *context)
         return 0;
     NIC(REG_IRQ_MASK) = 0;
     net.irqs++;
+    entropy_add();
     KeInsertQueueDpc(dpc, 0, 0);
     return 1;
 }
@@ -1304,6 +1373,7 @@ static void __stdcall nic_dpc(void *d, void *context, void *a, void *b)
     (void)b;
     flags = lock();
     net.dpcs++;
+    entropy_add();
     for (;;) {
         irq = NIC(REG_IRQ_STATUS);
         mii = NIC(REG_MII_STATUS);
@@ -1956,9 +2026,11 @@ static const char *host_name(const char *text, char *out)
  * with dhcp a GATEWAY or DNS given here overrides the lease's */
 static void command_up(const char *text)
 {
-    u32 ip = 0, bits = 24, server = 0, port = PORT, gateway = 0, dns = 0, flags;
+    u32 ip = 0, bits = 24, server = 0, port = PORT, gateway = 0, dns = 0, flags, named = 0;
+    u32 pinned = 0;
     char host[HOST_NAME];
-    const char *after;
+    const char *after, *name = 0;
+    u8 fingerprint[TRUST_FINGERPRINT];
     int lease = 0;
 
     host[0] = 0;
@@ -1974,12 +2046,21 @@ static void command_up(const char *text)
         goto usage;
     text = skip(text);
     if (*text) {
-        if ((after = address(text, &server)) && (*after == ':' || *after == ' ' || !*after))
+        name = text;
+        if ((after = address(text, &server)) &&
+            (*after == ':' || *after == '#' || *after == ' ' || !*after))
             text = after;
         else if (!(text = host_name(text, host)))
             goto usage;
         if (*text == ':' && (!(text = number(text + 1, &port)) || !port || port > 65535))
             goto usage;
+        named = (u32)(text - name);
+        if (*text == '#') { /* the server key's fingerprint, to pin before first contact */
+            if (!hex_read(text + 1, fingerprint, TRUST_FINGERPRINT))
+                goto usage;
+            pinned = 1;
+            text += 1 + 2 * TRUST_FINGERPRINT;
+        }
         text = skip(text);
         if (*text == '-') /* no gateway, a DNS server follows */
             text++;
@@ -2015,7 +2096,10 @@ static void command_up(const char *text)
         ses.gateway = gateway;
         ses.dns = dns;
         copy((u8 *)ses.host, (const u8 *)host, HOST_NAME);
+        handshake_reset();
+        sec.keyed = 0;
         unlock(flags);
+        trust_configure(name, named, pinned ? fingerprint : 0);
         load_order();
         flags = lock();
         if (lease)
@@ -2094,13 +2178,13 @@ static u32 ini_text(const char *key, char *out, u32 size)
 /* The ini reader needs the game drive, which is not mounted at process entry. */
 static void autostart(void)
 {
-    char line[24 + HOST_NAME + 8 + 2 * 24];
+    char line[24 + HOST_NAME + 8 + 1 + 2 * TRUST_FINGERPRINT + 2 * 24];
     u32 n, server;
 
     if (!(n = ini_text("NetAddress", line, 24)))
         return;
     line[n++] = ' ';
-    if ((server = ini_text("NetServer", line + n, HOST_NAME + 8))) {
+    if ((server = ini_text("NetServer", line + n, HOST_NAME + 8 + 1 + 2 * TRUST_FINGERPRINT))) {
         n += server;
         line[n++] = ' ';
         if (!(server = ini_text("NetGateway", line + n, 24)))
@@ -6944,6 +7028,25 @@ static int bulk_verify(char *path)
     return !left && !diff;
 }
 
+/* Renames from to to, replacing what is there; 0 on success. */
+static u32 file_replace(char *from, char *to)
+{
+    FILE_RENAME_INFORMATION rename;
+    IO_STATUS_BLOCK iosb;
+    u32 status;
+    void *h;
+
+    if ((status = bulk_open(from, DELETE_ACCESS, FILE_OPEN, 0, &h)))
+        return status;
+    rename.ReplaceIfExists = 1;
+    rename.RootDirectory = OB_DOS_DEVICES;
+    rename.FileName.Buffer = to;
+    rename.FileName.Length = rename.FileName.MaximumLength = (unsigned short)tes3x_strlen(to);
+    status = NtSetInformationFile(h, &iosb, &rename, sizeof(rename), FileRenameInformation);
+    NtClose(h);
+    return status;
+}
+
 static void bulk_close(void)
 {
     if (bulk.file)
@@ -6992,7 +7095,6 @@ static void bulk_offer(const struct event *e)
 static void bulk_frame(void)
 {
     char path[16 + BULK_NAME + 8], part[16 + BULK_NAME + 8];
-    FILE_RENAME_INFORMATION rename;
     IO_STATUS_BLOCK iosb;
     u64 offset, size;
     u32 flags, s, n, next, state, wrote = 0;
@@ -7068,17 +7170,7 @@ static void bulk_frame(void)
     bulk_path(part, ".part");
     state = BULK_BAD_HASH;
     if (bulk_verify(part)) {
-        state = BULK_FAILED;
-        if (!bulk_open(part, DELETE_ACCESS, FILE_OPEN, 0, &h)) {
-            rename.ReplaceIfExists = 1;
-            rename.RootDirectory = OB_DOS_DEVICES;
-            rename.FileName.Buffer = path;
-            rename.FileName.Length = rename.FileName.MaximumLength =
-                (unsigned short)tes3x_strlen(path);
-            if (!NtSetInformationFile(h, &iosb, &rename, sizeof(rename), FileRenameInformation))
-                state = BULK_DONE;
-            NtClose(h);
-        }
+        state = file_replace(part, path) ? BULK_FAILED : BULK_DONE;
     } else if (!bulk_open(part, GENERIC_WRITE, FILE_OPEN, 0, &h)) {
         offset = 0; /* start over */
         NtSetInformationFile(h, &iosb, &offset, sizeof(offset), FileEndOfFileInformation);
@@ -7105,6 +7197,424 @@ static void bulk_stat(void)
     tes3x_log_hex3("net.bulk", bulk.id, bulk.state, bulk.next);
     tes3x_log_hex3("net.bulk_chunks", bulk.arrived, bulk.duplicates, bulk.written);
     tes3x_log_hex3("net.bulk_acks", bulk.acks, bulk.resumed, bulk.total);
+}
+
+/* Randomness: the kernel exports none. RDTSC is sampled at every NIC interrupt and DPC, every
+ * tick and frame and around trust-file reads; the game thread hashes the samples into a pool
+ * with BLAKE2b and draws from it with keyed BLAKE2b once ENTROPY_NEEDED samples are in. */
+#define ENTROPY_RING 64u
+#define ENTROPY_NEEDED 512u
+
+static volatile u32 entropy_ring[ENTROPY_RING], entropy_in;
+static struct {
+    u32 out, mixed, drawn;
+    u8 pool[64];
+} entropy;
+
+/* Any context; a sample lost to a race costs nothing. */
+static void entropy_add(void)
+{
+    u32 lo, hi;
+
+    __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
+    entropy_ring[entropy_in++ % ENTROPY_RING] = lo;
+}
+
+static void entropy_mix(void)
+{
+    crypto_blake2b_ctx ctx;
+    u32 in = entropy_in, n = in - entropy.out, i;
+    u8 sample[4];
+
+    if (!n)
+        return;
+    if (n > ENTROPY_RING)
+        n = ENTROPY_RING;
+    crypto_blake2b_init(&ctx, sizeof(entropy.pool));
+    crypto_blake2b_update(&ctx, entropy.pool, sizeof(entropy.pool));
+    for (i = in - n; i != in; i++) {
+        put32le(sample, entropy_ring[i % ENTROPY_RING]);
+        crypto_blake2b_update(&ctx, sample, sizeof(sample));
+    }
+    crypto_blake2b_final(&ctx, entropy.pool);
+    entropy.mixed += n;
+    entropy.out = in;
+}
+
+/* Game thread. Up to 64 bytes; 0 until the pool has ENTROPY_NEEDED samples. */
+static int random_bytes(u8 *out, u32 n)
+{
+    u8 block[64], label[8] = {0, 0, 0, 0, 'o', 'u', 't', 0};
+
+    entropy_add();
+    entropy_mix();
+    if (entropy.mixed < ENTROPY_NEEDED || n > sizeof(block))
+        return 0;
+    put32le(label, ++entropy.drawn);
+    crypto_blake2b_keyed(block, sizeof(block), entropy.pool, sizeof(entropy.pool), label, 8);
+    copy(out, block, n);
+    label[4] = 'n';
+    label[5] = 'e';
+    label[6] = 'x';
+    label[7] = 't';
+    crypto_blake2b_keyed(block, sizeof(block), entropy.pool, sizeof(entropy.pool), label, 8);
+    copy(entropy.pool, block, sizeof(block));
+    crypto_wipe(block, sizeof(block));
+    return 1;
+}
+
+/* U:\TES3X\servers.ini keeps, per server as NetServer names it, the server's pinned static key
+ * and this console's own secret key for it: its identity there. Unknown lines are kept. */
+#define TRUST_TEXT 4096u
+
+static char trust_path[] = "U:\\TES3X\\servers.ini";
+static char trust_new[] = "U:\\TES3X\\servers.ini.new";
+static struct {
+    u32 loaded, text_n, has_fingerprint, has_server, has_client, dirty;
+    char name[HOST_NAME + 8];
+    u8 fingerprint[TRUST_FINGERPRINT], server[NOISE_KEY], client[NOISE_KEY];
+    char text[TRUST_TEXT];
+} trust;
+
+static int hex_digit(char c)
+{
+    return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 :
+           c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
+}
+
+/* 1 if text starts with 2n hex digits, read into out. */
+static int hex_read(const char *text, u8 *out, u32 n)
+{
+    u32 i;
+    int hi, lo;
+
+    for (i = 0; i < n; i++) {
+        if ((hi = hex_digit(text[2 * i])) < 0 || (lo = hex_digit(text[2 * i + 1])) < 0)
+            return 0;
+        out[i] = (u8)(hi << 4 | lo);
+    }
+    return 1;
+}
+
+static u32 hex_write(char *out, const u8 *p, u32 n)
+{
+    static const char digits[] = "0123456789abcdef";
+    u32 i;
+
+    for (i = 0; i < n; i++) {
+        out[2 * i] = digits[p[i] >> 4];
+        out[2 * i + 1] = digits[p[i] & 15];
+    }
+    return 2 * n;
+}
+
+/* The length of the line at text, without its end. */
+static u32 line_length(const char *text, u32 left)
+{
+    u32 n = 0;
+
+    while (n < left && text[n] != '\r' && text[n] != '\n')
+        n++;
+    return n;
+}
+
+/* 1 if the line is "[name]" for this server, ignoring case. */
+static int trust_section(const char *line, u32 n)
+{
+    u32 i, len = tes3x_strlen(trust.name);
+
+    if (n != len + 2 || line[0] != '[' || line[n - 1] != ']')
+        return 0;
+    for (i = 0; i < len; i++)
+        if ((line[1 + i] | 0x20) != (trust.name[i] | 0x20))
+            return 0;
+    return 1;
+}
+
+static int starts(const char *line, u32 n, const char *key)
+{
+    u32 i;
+
+    for (i = 0; key[i]; i++)
+        if (i >= n || line[i] != key[i])
+            return 0;
+    return 1;
+}
+
+/* Game thread, at `up`: the section is NetServer as given, without its fingerprint. */
+static void trust_configure(const char *name, u32 n, const u8 *fingerprint)
+{
+    trust.loaded = 0;
+    trust.has_fingerprint = fingerprint != 0;
+    if (fingerprint)
+        copy(trust.fingerprint, fingerprint, TRUST_FINGERPRINT);
+    if (n >= sizeof(trust.name))
+        n = sizeof(trust.name) - 1;
+    copy((u8 *)trust.name, (const u8 *)name, n);
+    trust.name[n] = 0;
+}
+
+/* Game thread, before the first handshake of each `up`. */
+static void trust_load(void)
+{
+    IO_STATUS_BLOCK iosb;
+    u64 offset = 0, size;
+    u32 off, n, inside = 0;
+    void *h;
+
+    if (trust.loaded)
+        return;
+    trust.loaded = 1;
+    trust.text_n = 0;
+    trust.has_server = trust.has_client = trust.dirty = 0;
+    entropy_add();
+    if (bulk_open(trust_path, GENERIC_READ, FILE_OPEN, 0, &h))
+        return;
+    size = bulk_size(h);
+    if (size >= TRUST_TEXT) {
+        trust.text_n = TRUST_TEXT; /* too big to rewrite safely: keys stay in memory only */
+        tes3x_log("net.trust_too_big", (u32)size);
+    } else if (size && !NtReadFile(h, 0, 0, 0, &iosb, trust.text, (u32)size, &offset)) {
+        trust.text_n = iosb.Information;
+    }
+    NtClose(h);
+    entropy_add();
+    for (off = 0; off < trust.text_n && trust.text_n < TRUST_TEXT; off += n + 1) {
+        const char *line = trust.text + off;
+        n = line_length(line, trust.text_n - off);
+        if (n && line[0] == '[')
+            inside = trust_section(line, n);
+        else if (inside && starts(line, n, "server_key=") && n >= 11 + 2 * NOISE_KEY)
+            trust.has_server = hex_read(line + 11, trust.server, NOISE_KEY);
+        else if (inside && starts(line, n, "client_key=") && n >= 11 + 2 * NOISE_KEY)
+            trust.has_client = hex_read(line + 11, trust.client, NOISE_KEY);
+    }
+    tes3x_log_hex3("net.trust", trust.text_n, trust.has_server, trust.has_client);
+}
+
+/* Game thread. Rewrites the file with this server's section last, through a new file and a
+ * rename, so a failed write never loses the keys already there. */
+static void trust_save(void)
+{
+    static char out[TRUST_TEXT + 256];
+    IO_STATUS_BLOCK iosb;
+    u32 off, n, len = 0, inside = 0, status;
+    void *h;
+
+    if (trust.text_n >= TRUST_TEXT)
+        return;
+    for (off = 0; off < trust.text_n; off += n + 1) {
+        const char *line = trust.text + off;
+        n = line_length(line, trust.text_n - off);
+        if (n && line[0] == '[')
+            inside = trust_section(line, n);
+        if (!inside && n && len + n + 2 <= TRUST_TEXT) {
+            copy((u8 *)out + len, (const u8 *)line, n);
+            len += n;
+            out[len++] = '\r';
+            out[len++] = '\n';
+        }
+    }
+    out[len++] = '[';
+    copy((u8 *)out + len, (const u8 *)trust.name, tes3x_strlen(trust.name));
+    len += tes3x_strlen(trust.name);
+    copy((u8 *)out + len, (const u8 *)"]\r\nserver_key=", 14);
+    len += 14;
+    len += hex_write(out + len, trust.server, NOISE_KEY);
+    copy((u8 *)out + len, (const u8 *)"\r\nclient_key=", 13);
+    len += 13;
+    len += hex_write(out + len, trust.client, NOISE_KEY);
+    out[len++] = '\r';
+    out[len++] = '\n';
+    status = bulk_open("U:\\TES3X", GENERIC_READ, FILE_OPEN_IF, FILE_DIRECTORY_FILE, &h);
+    if (!status) {
+        NtClose(h);
+        status = bulk_open(trust_new, GENERIC_WRITE, FILE_OVERWRITE_IF, 0, &h);
+    }
+    if (!status) {
+        u64 offset = 0;
+        status = NtWriteFile(h, 0, 0, 0, &iosb, out, len, &offset);
+        NtFlushBuffersFile(h, &iosb);
+        NtClose(h);
+    }
+    if (!status)
+        status = file_replace(trust_new, trust_path);
+    tes3x_log_hex3("net.trust_saved", len, status, 0);
+    if (!status && len <= TRUST_TEXT) {
+        copy((u8 *)trust.text, (const u8 *)out, len);
+        trust.text_n = len;
+        trust.dirty = 0;
+    }
+    crypto_wipe(out, sizeof(out));
+}
+
+/* The handshake: Noise XX with the server (tes3xnoise.c). HANDSHAKE1 is padded to at least the
+ * size of the server's HANDSHAKE2, so a forged source address gains nothing. HANDSHAKE3 carries
+ * HELLO; the WELCOME that answers it is the first sealed packet. Each message is resent every
+ * second, HANDSHAKE_TRIES times, then the handshake starts over. The tick and the receive DPC
+ * only resend and copy: the X25519 work runs in the game thread. */
+#define HANDSHAKE_PAD 128u
+#define HANDSHAKE_TRIES 5u
+#define HS_IDLE 0u
+#define HS_WANT 1u  /* the tick asks the game thread for a HANDSHAKE1 */
+#define HS_SENT1 2u
+#define HS_GOT2 3u  /* the DPC has a HANDSHAKE2 for the game thread */
+#define HS_SENT3 4u /* keyed, waiting for WELCOME */
+
+static const u8 prologue[] = "TES3X T3MP 11";
+static struct {
+    u32 phase, id, tries, packet_n, started, completed, failed, start_us, finish_us;
+    u8 packet[T3MP_OUTER + NOISE_MSG3 + HELLO_BYTES + NOISE_TAG];
+    u8 in[NOISE_MSG2];
+    struct noise noise;
+} hs;
+
+/* Caller holds the lock. */
+static void handshake_reset(void)
+{
+    if (hs.phase == HS_SENT3)
+        hs.completed++;
+    hs.phase = HS_IDLE;
+    hs.tries = 0;
+}
+
+/* Every second while the session wants to join; caller holds the lock. */
+static void handshake_tick(void)
+{
+    if (hs.phase == HS_SENT1 || hs.phase == HS_SENT3) {
+        if (++hs.tries >= HANDSHAKE_TRIES) {
+            hs.phase = HS_WANT;
+            sec.keyed = 0;
+        } else {
+            udp_send(ses.server, ses.port, hs.packet, hs.packet_n);
+            ses.hellos++;
+        }
+    } else if (hs.phase == HS_IDLE) {
+        hs.phase = HS_WANT;
+    }
+}
+
+/* Caller holds the lock (the receive DPC). */
+static void handshake_rx(const u8 *p, u32 n)
+{
+    if (hs.phase == HS_SENT1 && n == T3MP_OUTER + NOISE_MSG2 && get32le(p + 8) == hs.id) {
+        copy(hs.in, p + T3MP_OUTER, NOISE_MSG2);
+        hs.phase = HS_GOT2;
+    }
+}
+
+static void handshake_start(void)
+{
+    u8 e[NOISE_KEY], id[4];
+    u32 flags, i, t = now_us();
+
+    trust_load();
+    if (!trust.has_client) {
+        if (!random_bytes(trust.client, NOISE_KEY))
+            return;
+        trust.has_client = trust.dirty = 1;
+    }
+    if (!random_bytes(e, NOISE_KEY) || !random_bytes(id, sizeof(id)))
+        return;
+    noise_start(&hs.noise, prologue, sizeof(prologue) - 1, trust.client, e);
+    crypto_wipe(e, sizeof(e));
+    flags = lock();
+    if (hs.phase == HS_WANT && ses.state == SESSION_HELLO) {
+        hs.id = get32le(id) | 1;
+        for (i = 0; i < HANDSHAKE_PAD; i++)
+            hs.packet[i] = 0;
+        t3mp_outer(hs.packet, T3MP_HANDSHAKE1, hs.id, 0);
+        noise_write1(&hs.noise, hs.packet + T3MP_OUTER, 0, 0);
+        hs.packet_n = HANDSHAKE_PAD;
+        hs.phase = HS_SENT1;
+        hs.tries = 0;
+        sec.keyed = 0;
+        udp_send(ses.server, ses.port, hs.packet, hs.packet_n);
+        ses.hellos++;
+        hs.started++;
+    }
+    unlock(flags);
+    hs.start_us = now_us() - t;
+}
+
+static void handshake_finish(void)
+{
+    u8 fingerprint[TRUST_FINGERPRINT], hello[HELLO_BYTES], none[1];
+    u32 flags, i, diff = 0, t = now_us();
+
+    if (noise_read2(&hs.noise, hs.in, NOISE_MSG2, none) != 0) {
+        hs.failed++;
+        tes3x_log("net.handshake_failed", hs.id);
+        flags = lock();
+        hs.phase = HS_WANT;
+        unlock(flags);
+        return;
+    }
+    crypto_blake2b(fingerprint, sizeof(fingerprint), hs.noise.rs, NOISE_KEY);
+    for (i = 0; trust.has_fingerprint && i < TRUST_FINGERPRINT; i++)
+        diff |= fingerprint[i] ^ trust.fingerprint[i];
+    for (i = 0; trust.has_server && i < NOISE_KEY; i++)
+        diff |= hs.noise.rs[i] ^ trust.server[i];
+    if (diff) {
+        tes3x_log_hex3("net.server_untrusted", get32(fingerprint), get32(fingerprint + 4),
+                       trust.has_server);
+        crypto_wipe(&hs.noise, sizeof(hs.noise));
+        flags = lock();
+        ses.state = SESSION_UNTRUSTED;
+        hs.phase = HS_IDLE;
+        unlock(flags);
+        return;
+    }
+    if (!trust.has_server) {
+        copy(trust.server, hs.noise.rs, NOISE_KEY);
+        trust.has_server = trust.dirty = 1;
+        tes3x_log_hex3("net.server_pinned", get32(fingerprint), get32(fingerprint + 4),
+                       get32(fingerprint + 8));
+    }
+    if (trust.dirty)
+        trust_save();
+    flags = lock();
+    copy(hello, mac, 6);
+    put32le(hello + 6, TES3X_BUILD_ID);
+    put32le(hello + 10, ses.plugins_hash);
+    put32le(hello + 14, ses.plugins);
+    copy(hello + 18, game_clock.local, CLOCK_BYTES);
+    unlock(flags);
+    noise_write3(&hs.noise, hs.packet + T3MP_OUTER, hello, HELLO_BYTES);
+    flags = lock();
+    noise_split(&hs.noise, sec.send, sec.receive);
+    t3mp_outer(hs.packet, T3MP_HANDSHAKE3, hs.id, 0);
+    hs.packet_n = T3MP_OUTER + NOISE_MSG3 + HELLO_BYTES;
+    sec.keyed = 1;
+    sec.top = sec.seen = 0;
+    ses.id = hs.id;
+    ses.seq = ses.peer_seq = ses.peer_time = 0;
+    hs.phase = HS_SENT3;
+    hs.tries = 0;
+    udp_send(ses.server, ses.port, hs.packet, hs.packet_n);
+    ses.hellos++;
+    unlock(flags);
+    hs.finish_us = now_us() - t;
+}
+
+/* Game thread, each frame while up. */
+static void handshake_frame(void)
+{
+    entropy_add();
+    entropy_mix();
+    if (hs.phase == HS_WANT && ses.state == SESSION_HELLO)
+        handshake_start();
+    else if (hs.phase == HS_GOT2)
+        handshake_finish();
+}
+
+static void handshake_stat(void)
+{
+    tes3x_log_hex3("net.handshake", hs.started, hs.completed, hs.failed);
+    tes3x_log_hex3("net.handshake_us", hs.start_us, hs.finish_us, hs.phase);
+    tes3x_log_hex3("net.sealed", sec.sealed, sec.opened, sec.keyed);
+    tes3x_log_hex3("net.rejected", sec.forged, sec.replayed, 0);
+    tes3x_log_hex3("net.entropy", entropy.mixed, entropy.drawn, 0);
 }
 
 static void event_handle(const struct event *e)
@@ -7432,6 +7942,7 @@ void tes3x_net_frame(void)
         spawns_session();
         events_frame();
         bulk_frame();
+        handshake_frame();
     }
     ref = player_reference();
     menu_frame(net.up && ref);
@@ -7514,6 +8025,7 @@ int tes3x_net_command(const char *text)
         spawns_stat();
         containers_stat();
         bulk_stat();
+        handshake_stat();
     } else if ((rest = word(text, "menusim")) && (rest = word(skip(rest), "auto")) &&
                !*skip(rest)) {
         menu_forced = 0;
