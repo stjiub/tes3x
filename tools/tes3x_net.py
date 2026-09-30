@@ -511,7 +511,9 @@ def zstr(text):
 
 def ghost_plugin(master_size, master="Morrowind.esm"):
     """The plugin tes3xnet.c moves: one persistent NPC per peer slot, parked in a cell of its own.
-    They have no AI packages and zero fight, flee, alarm and hello, so they stand where put."""
+    They have no AI packages and zero fight, flee, alarm and hello, so they stand where put, and
+    Morrowind.esm's noPickUp script swallows activation: talking to a ghost would turn it to face
+    the speaker, away from where its player faces."""
     hedr = (struct.pack("<fI", 1.3, 0) + b"TES3X".ljust(32, b"\0")
             + b"Other players, placed by the multiplayer patch.".ljust(256, b"\0")
             + struct.pack("<I", GHOSTS + 1))
@@ -522,7 +524,7 @@ def ghost_plugin(master_size, master="Morrowind.esm"):
         subs = [(b"NAME", zstr(f"tes3x_ghost{i}")), (b"FNAM", zstr(f"Player {i}")),
                 (b"RNAM", zstr("Dark Elf")), (b"CNAM", zstr("Commoner")), (b"ANAM", b"\0"),
                 (b"BNAM", zstr("b_n_dark elf_m_head_01")),
-                (b"KNAM", zstr("b_n_dark elf_m_hair_01")),
+                (b"KNAM", zstr("b_n_dark elf_m_hair_01")), (b"SCRI", zstr("noPickUp")),
                 (b"NPDT", struct.pack("<hBBB3xI", 1, 50, 0, 0, 0)),
                 (b"FLAG", struct.pack("<I", 0x1A))]  # essential, autocalc
         subs += [(b"NPCO", struct.pack("<i32s", 1, item.encode())) for item in items]

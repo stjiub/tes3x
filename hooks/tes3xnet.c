@@ -75,7 +75,8 @@
 #error "define TES3X_NET_SPELL_HIT, TES3X_NET_CAST_BOLT, their call sites and the spell functions"
 #endif
 #if !defined(TES3X_NET_SHOOT) || !defined(TES3X_NET_SHOOT_SLOTS) || !defined(TES3X_NET_NOCK) || \
-    !defined(TES3X_NET_HIT_ROLL) || !defined(TES3X_NET_SHOT_ROLL_SITES) || !defined(TES3X_NET_BLOOD)
+    !defined(TES3X_NET_HIT_ROLL) || !defined(TES3X_NET_SHOT_ROLL_SITES) || !defined(TES3X_NET_BLOOD) || \
+    !defined(TES3X_NET_ACTIVATION_TARGET) || !defined(TES3X_NET_ACTIVATION_TARGET_SITES)
 #error "define TES3X_NET_SHOOT, its vtable slots, TES3X_NET_NOCK, the hit roll and the blood"
 #endif
 
@@ -1510,13 +1511,71 @@ static void hold_frame(void)
     *flags &= ~MOBILE_SIMULATED;
 }
 
+/* With the world running under a menu the player's controls would read the pad the menu is
+ * using, so a press that equips an item also swings the weapon: they are disabled as
+ * DisablePlayerControls disables them while a menu is open, and restored when it closes. Nor is
+ * the activation target looked for, whose name would stay up over the menu. */
+#define PLAYER_CONTROLS_OFF 0x5B0 /* MobilePlayer, the byte DisablePlayerControls sets */
+
+typedef void(__attribute__((thiscall)) *fn_game_call)(void *game);
+
+static int redirect_calls(const u32 *sites, u32 n, u32 original, const void *hook);
+static const u32 target_sites[] = TES3X_NET_ACTIVATION_TARGET_SITES;
+static u8 *controls_mobile;
+static u8 controls_saved;
+static u32 target_hooked;
+
+static int menu_open(void)
+{
+    const u8 *world = *(const u8 **)TES3X_NET_WORLD;
+
+    return gates_open && plausible(world) && world[WORLD_MENU_MODE];
+}
+
+static void __attribute__((thiscall)) activation_target_hook(void *game)
+{
+    if (!menu_open())
+        ((fn_game_call)TES3X_NET_ACTIVATION_TARGET)(game);
+}
+
+static void controls_frame(void)
+{
+    const u8 *world = *(const u8 **)TES3X_NET_WORLD, *mobs, *const *list;
+    u8 *mobile = 0;
+
+    if (plausible(world) && plausible(mobs = *(const u8 *const *)(world + 0x5C)) &&
+        plausible(list = *(const u8 *const *const *)(mobs + 0x24)))
+        mobile = *(u8 *const *)list;
+    if (!plausible(mobile))
+        mobile = 0;
+    if (controls_mobile && (controls_mobile != mobile || !menu_open())) {
+        if (controls_mobile == mobile)
+            mobile[PLAYER_CONTROLS_OFF] = controls_saved;
+        controls_mobile = 0;
+    }
+    if (mobile && menu_open()) {
+        if (!controls_mobile) {
+            controls_mobile = mobile;
+            controls_saved = mobile[PLAYER_CONTROLS_OFF];
+        }
+        mobile[PLAYER_CONTROLS_OFF] = 1;
+    }
+}
+
 /* While joined, the world runs under menus as it does for the other players, and nobody rests.
  * Only in the world: the main menu at boot has no player to simulate. */
 static void menu_frame(int in_world)
 {
     u32 joined = ses.state == SESSION_JOINED && in_world;
 
+    if (!target_hooked) {
+        target_hooked = 1;
+        if (redirect_calls(target_sites, sizeof(target_sites) / sizeof(target_sites[0]),
+                           TES3X_NET_ACTIVATION_TARGET, (const void *)activation_target_hook))
+            target_hooked = 2;
+    }
     menu_sim(menu_forced ? menu_forced - 1 : joined);
+    controls_frame();
     if (joined)
         rest_block();
     hold_frame();
@@ -1532,6 +1591,7 @@ static void menu_stat(void)
         tes3x_log_hex3("net.menu_mode", world[WORLD_MENU_MODE], (u32)(int)(*clock * 1000.0f),
                        gate[0] == 0x90);
     tes3x_log_hex3("net.menu_sim", gates_open, menu_forced, rest_blocked);
+    tes3x_log_hex3("net.menu_controls", controls_mobile != 0, controls_saved, target_hooked);
     tes3x_log_hex3("net.holds", holds, hold_breaks, held != 0);
 }
 
