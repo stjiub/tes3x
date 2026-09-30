@@ -288,13 +288,15 @@ EVENT_TEXT = 1
 EVENT_AUTHORITY, EVENT_HOLD, EVENT_HOLD_BROKEN, EVENT_HIT, EVENT_DEATH = 2, 3, 4, 5, 6
 EVENT_EQUIPMENT = 7  # part, parts, then item ids each ending in a zero
 EVENT_WEATHER = 8  # flags, count, then (region index u16, weather u8) each
+EVENT_PLAYER_HIT = 9  # attacker refid (0: a player), victim client, damage
 WEATHER_OFFER = 1  # a joining client's whole table: the server keeps regions it does not know
 WEATHER_ENTRY = struct.Struct("<HB")
 WEATHER_PER_EVENT = (EVENT_DATA - 2) // WEATHER_ENTRY.size
 WEATHERS = ("clear", "cloudy", "foggy", "overcast", "rain", "thunder", "ash", "blight", "snow",
             "blizzard")
 # refid, target client, then a word: on, reason, or the damage as a float
-TARGETED = {EVENT_HOLD: "holds", EVENT_HOLD_BROKEN: "breaks the hold on", EVENT_HIT: "hits"}
+TARGETED = {EVENT_HOLD: "holds", EVENT_HOLD_BROKEN: "breaks the hold on", EVENT_HIT: "hits",
+            EVENT_PLAYER_HIT: "hits the player of"}
 KEY = struct.Struct("<Iii32s")  # kind, grid x, grid y, interior name
 KEY_EXTERIOR, KEY_INTERIOR = 1, 2
 ANIM_BYTES = 20  # per layer: 3 groups, pad, 3 keys, pad, 3 times (tes3xnet.c anim_capture)
@@ -656,7 +658,7 @@ def serve(args):
 
     bot = {"anchor": None, "next": 0.0, "start": time.time(), "said": 0.0, "line": 0,
            "anchored": None, "state": None, "breaks": [], "held": 0, "hit": False,
-           "killed": False, "mirror": None}
+           "killed": False, "mirror": None, "hit_player": False}
 
     def bot_anchor(state):
         """The bot circles where the first client entered the world, and follows it to a new
@@ -732,10 +734,16 @@ def serve(args):
             return
         if kind in TARGETED and len(data) >= 12:
             refid, target = struct.unpack_from("<II", data)
-            word = (f"damage {struct.unpack_from('<f', data, 8)[0]:.0f}" if kind == EVENT_HIT
+            word = (f"damage {struct.unpack_from('<f', data, 8)[0]:.0f}"
+                    if kind in (EVENT_HIT, EVENT_PLAYER_HIT)
                     else f"{struct.unpack_from('<I', data, 8)[0]}")
-            print(f"{stamp} client {client.id} {TARGETED[kind]} {refid:#010x} "
-                  f"(authority {target}): {word}", flush=True)
+            if kind == EVENT_PLAYER_HIT:
+                by = f" (attacker {refid:#010x})" if refid else ""
+                print(f"{stamp} client {client.id} {TARGETED[kind]} client {target}{by}: {word}",
+                      flush=True)
+            else:
+                print(f"{stamp} client {client.id} {TARGETED[kind]} {refid:#010x} "
+                      f"(authority {target}): {word}", flush=True)
             if target != BOT_ID:
                 send_event(target, client.id, kind, data, now)
             elif kind == EVENT_HOLD and struct.unpack_from("<I", data, 8)[0] and \
@@ -1018,6 +1026,15 @@ def serve(args):
         for due, index, value in [w for w in bot_weather if window(f"{w[0]}:", now)]:
             bot_weather.remove((due, index, value))
             set_weather(BOT_ID, {index: value}, time.strftime("%H:%M:%S"), now)
+        if args.bot_hit_player and not bot["hit_player"]:
+            damage, _, at = args.bot_hit_player.partition("@")
+            if window(at, now):
+                bot["hit_player"] = True
+                for other in [c for c in clients.values() if c.alive]:
+                    print(f"{time.strftime('%H:%M:%S')} bot hits client {other.id} for {damage}",
+                          flush=True)
+                    send_event(other.id, BOT_ID, EVENT_PLAYER_HIT,
+                               struct.pack("<IIf", 0, other.id, float(damage)), now)
         if args.bot_say and bot["anchor"] and now >= bot["said"] + args.bot_say:
             bot["said"] = now
             bot["line"] += 1
@@ -1115,6 +1132,8 @@ def main(argv=None):
                    help="the bot holds this actor (hex refid) in dialogue from START to END seconds")
     p.add_argument("--bot-hit", metavar="REFID@SECONDS",
                    help="the bot hits this actor (hex refid) for 5 once, this long after it appears")
+    p.add_argument("--bot-hit-player", metavar="DAMAGE@SECONDS",
+                   help="the bot hits every client's player once, this long after it appears")
     p.add_argument("--bot-kill", metavar="REFID@SECONDS",
                    help="the bot reports this actor (hex refid) dead this long after it appears")
     p.add_argument("--bot-equip", metavar="ID,ID,...",
