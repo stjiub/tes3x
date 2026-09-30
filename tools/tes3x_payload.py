@@ -22,7 +22,7 @@ from tes3x_patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, find_call_sites, find
 ROOT = Path(__file__).resolve().parents[1]
 HOOKS = ROOT / "hooks"
 HEADERS = ("tes3xdiag.h", "tes3xheap.h", "tes3xlog.h", "tes3xmem.h", "tes3xnt.h",
-           "tes3xpager.h", "tes3xprof.h", "tes3xregion.h", "tes3x_thunks.h")
+           "tes3xpager.h", "tes3xprof.h", "tes3xregion.h", "tes3x_thunks.h", "monocypher.h")
 DEFAULT_SOURCES = ("tes3xhook.c", "tes3xlog.c", "tes3xdiag.c")
 LLVM_DIRS = (Path("C:/Program Files/LLVM/bin"), Path("C:/msys64/clang64/bin"),
              Path("C:/msys64/mingw64/bin"))
@@ -182,6 +182,11 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
     xbe, out = Path(xbe), Path(out)
     sources = list(sources)
     names = {Path(s).name for s in sources}
+    if "tes3xnet.c" in names:
+        for extra_source in ("monocypher.c", "tes3xcrt.c"):
+            if extra_source not in names:
+                sources.append(extra_source)
+                names.add(extra_source)
     clang, lld = (os.environ.get("CLANG") or find_tool("clang", llvm_dir),
                   os.environ.get("LLD") or find_tool("lld-link", llvm_dir))
     out.mkdir(parents=True, exist_ok=True)
@@ -598,8 +603,10 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
     objects = []
     for source in sources:
         obj = out / (Path(source).stem + ".obj")
-        subprocess.run([clang, *CFLAGS, f"-DTES3X_ORIG_ENTRY={entry}", *flags, f"-I{HOOKS}",
-                        "-c", str(source_path(source)), "-o", str(obj)], check=True)
+        # Monocypher is vendored whole; the linker keeps only the functions the payload calls.
+        sections = ["-ffunction-sections", "-fdata-sections"] if source == "monocypher.c" else []
+        subprocess.run([clang, *CFLAGS, *sections, f"-DTES3X_ORIG_ENTRY={entry}", *flags,
+                        f"-I{HOOKS}", "-c", str(source_path(source)), "-o", str(obj)], check=True)
         objects.append(str(obj))
     payload, map_path = out / "tes3xhook.pe", out / "tes3xhook.map"
     subprocess.run([lld, "/nologo", "/subsystem:native", "/entry:tes3x_entry", "/fixed",

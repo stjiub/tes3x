@@ -313,5 +313,91 @@ class AuthorityTests(unittest.TestCase):
                                                             tes3x_net.NO_DISPOSITION)))
 
 
+class Receiver:
+    """The console's side of a bulk transfer (tes3xnet.c bulk_chunk_rx, bulk_frame), in memory."""
+
+    def __init__(self, outgoing, start=0):
+        self.out, self.next, self.state, self.filled = outgoing, start, 2, {}
+        self.data, self.acks = bytearray(outgoing.data[:start * tes3x_net.BULK_CHUNK]), []
+        self.ack()
+
+    def ack(self):
+        seen = sum(1 << k for k in range(32) if self.next + k in self.filled)
+        self.acks.append(tes3x_net.BULK_ACK_BODY.pack(self.out.id, self.next, seen,
+                                                      16 if self.state == 2 else 0, self.state))
+
+    def chunk(self, packet):
+        index = struct.unpack_from('<I', packet, 4)[0]
+        if self.state != 2 or not self.next <= index < self.next + 16 or index in self.filled:
+            self.ack()
+            return
+        self.filled[index] = packet[8:]
+        if len(self.filled) % 4 == 0:
+            self.ack()
+
+    def frame(self):
+        wrote = False
+        while self.next in self.filled:
+            self.data += self.filled.pop(self.next)
+            self.next += 1
+            wrote = True
+        if self.state == 2 and self.next >= self.out.chunks:
+            self.state = 3
+            self.ack()
+        elif wrote:
+            self.ack()
+
+
+class BulkTests(unittest.TestCase):
+    def run_transfer(self, size, start=0, loss=0.0, lose_final=False):
+        import random
+        data = bytes(random.Random(size).getrandbits(8) for _ in range(size))
+        out = tes3x_net.Outgoing('test.bin', data)
+        console, lossy, now, step = Receiver(out, start), random.Random(1), 0.0, 0
+        while out.status != 3 and now < 60:
+            now, step = now + 0.01, step + 1
+            if step % 25 == 0 and console.state == 2:  # the tick
+                console.ack()
+            for ack in console.acks:
+                done = struct.unpack_from('<5I', ack)[4] == 3
+                if lossy.random() >= loss and not (lose_final and done):
+                    out.on_ack(ack, now)
+                lose_final = lose_final and not done
+            console.acks = []
+            for index in out.due(now):
+                if lossy.random() >= loss:
+                    console.chunk(out.chunk(index))
+            console.frame()
+        return out, console, data
+
+    def test_whole_file_arrives_in_order(self):
+        out, console, data = self.run_transfer(20 * 1024 + 5)
+        self.assertEqual((out.status, bytes(console.data)), (3, data))
+        self.assertEqual(out.resent, 0)
+
+    def test_resumes_from_the_part_and_survives_loss(self):
+        out, console, data = self.run_transfer(40 * 1024 + 9, start=17, loss=0.3)
+        self.assertEqual((out.status, bytes(console.data)), (3, data))
+        self.assertEqual(out.first, 17)
+
+    def test_lost_final_ack_is_drawn_again(self):
+        out, console, data = self.run_transfer(3 * 1024, lose_final=True)
+        self.assertEqual((out.status, bytes(console.data)), (3, data))
+
+    def test_probe_once_everything_in_flight_is_acked(self):
+        out = tes3x_net.Outgoing('test.bin', bytes(3000))
+        out.on_ack(tes3x_net.BULK_ACK_BODY.pack(out.id, 0, 0, 16, 2), 0.0)
+        self.assertEqual(out.due(0.0), [0, 1, 2])
+        out.on_ack(tes3x_net.BULK_ACK_BODY.pack(out.id, 0, 7, 16, 2), 0.1)
+        self.assertEqual(out.due(0.2), [])
+        self.assertEqual(out.due(0.1 + tes3x_net.BULK_PROBE), [0])
+        self.assertEqual(out.probes, 1)
+
+    def test_offer_fits_the_event_channel(self):
+        out = tes3x_net.Outgoing('x' * tes3x_net.BULK_NAME, b'')
+        self.assertLessEqual(len(out.offer()), tes3x_net.EVENT_DATA)
+        self.assertEqual(out.chunks, 0)
+
+
 if __name__ == '__main__':
     unittest.main()

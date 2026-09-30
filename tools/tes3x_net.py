@@ -9,6 +9,7 @@
     python tools/tes3x_net.py serve --tunnel 9369 --bot --bot-say 2 --drop 0.2   # events under loss
     python tools/tes3x_net.py serve --tunnel 9369 --bot --bot-owns 20:60   # the bot runs the cell
     python tools/tes3x_net.py serve --tunnel 9369 --tunnel 9371   # two xemus, one per tunnel
+    python tools/tes3x_net.py serve --tunnel 9369 --send FILE   # to TES3X on each console's U:
     python tools/tes3x_net.py plugin OUT.esp --master Morrowind.esm   # the ghost plugin
 
 With --tunnel PORT this tool is the guest's only peer: xemu sends each guest Ethernet frame to
@@ -17,6 +18,7 @@ answers ARP itself and resolves the console's MAC before it pings.
 """
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -384,6 +386,19 @@ EVENTS_GAP = 0.02
 PACE_PACKETS = 4
 PACE_WINDOW = 0.005
 CLOCK_INTERVAL = 1.0
+# Bulk transfer: OFFER names the file; CHUNK carries id, index and BULK_CHUNK bytes; the receiver's
+# BULK_ACK gives the next chunk it will write, a bitmap of the 32 after it that arrived, how many
+# chunks past it may be in flight, and its status.
+CHUNK, BULK_ACK = 16, 17
+EVENT_OFFER = 32  # BULK_OFFER, then the file name ending in a zero
+BULK_OFFER = struct.Struct("<II32s")  # id, size, BLAKE2b-256 of the file
+BULK_ACK_BODY = struct.Struct("<5I")
+BULK_CHUNK = 1024
+BULK_NAME = 37  # with ".part", FATX's 42 characters
+BULK_RESEND = 0.5
+BULK_PROBE = 1.0
+BULK_STATUS = ("idle", "opening", "receiving", "done", "bad hash", "refused", "failed")
+BULK_RECEIVING = 2
 
 
 def load_order_hash(names):
@@ -667,6 +682,64 @@ class Reliable:
             elif event[0] < self.in_next:
                 self.stale += 1
         return ready, bool(events)
+class Outgoing:
+    """One file sent to one client: chunks inside the window its last ack allows, each resent
+    after BULK_RESEND until acked."""
+
+    def __init__(self, name, data):
+        self.name, self.data = name, data
+        self.hash = hashlib.blake2b(data, digest_size=32).digest()
+        self.id = int.from_bytes(self.hash[:4], "little") or 1
+        self.chunks = (len(data) + BULK_CHUNK - 1) // BULK_CHUNK
+        self.next = None  # unknown until the first ack
+        self.seen, self.sent_at = set(), {}
+        self.window = self.status = self.sent = self.resent = self.probes = 0
+        self.first = self.started = None
+        self.acked = 0.0  # when the last ack arrived
+
+    def offer(self):
+        return BULK_OFFER.pack(self.id, len(self.data), self.hash) + zstr(self.name)
+
+    def on_ack(self, body, now):
+        """Take an ack; returns the new status if it changed."""
+        ident, nxt, bitmap, window, status = BULK_ACK_BODY.unpack_from(body)
+        if ident != self.id:
+            return None
+        if self.first is None:
+            self.first, self.started = nxt, now
+        self.acked = now
+        self.next, self.window = nxt, window
+        self.seen = {nxt + k for k in range(32) if bitmap >> k & 1}
+        self.sent_at = {i: t for i, t in self.sent_at.items() if i >= nxt}
+        changed = status != self.status
+        self.status = status
+        return status if changed else None
+
+    def due(self, now):
+        """The chunk indices to send now."""
+        if self.next is None or self.status != BULK_RECEIVING:
+            return []
+        out = []
+        for i in range(self.next, min(self.next + self.window, self.chunks)):
+            sent = self.sent_at.get(i)
+            if i in self.seen or sent is not None and now - sent < BULK_RESEND:
+                continue
+            self.resent += sent is not None
+            self.sent += 1
+            self.sent_at[i] = now
+            out.append(i)
+        # Everything in flight arrived but the final ack did not: a repeated chunk draws another.
+        if not out and now - self.acked >= BULK_PROBE:
+            self.acked = now
+            self.probes += 1
+            out.append(min(self.next, max(self.chunks - 1, 0)))
+        return out
+
+    def chunk(self, index):
+        return struct.pack("<II", self.id, index) + self.data[index * BULK_CHUNK:
+                                                              (index + 1) * BULK_CHUNK]
+
+
 STATE_BODY = struct.Struct("<I4f32s")  # flags, x, y, z, heading, interior cell name
 STATE_SIZE = STATE_BODY.size + ANIM_BYTES  # then the animation
 IN_WORLD, INTERIOR = 1, 2
@@ -830,6 +903,7 @@ class Client:
         self.window = (0.0, 0)  # the current PACE_WINDOW's start and packets sent in it
         self.joined = 0.0
         self.bursts = []  # (seconds after joining, packets) still to send
+        self.bulk = None  # the Outgoing file of --send, offered again on each join
 
 
 
@@ -911,6 +985,15 @@ def serve(args):
     authority_next = actor_next = 0.0
     bursts = [(float(at), int(count)) for count, _, at in
               (spec.partition("@") for spec in args.burst)]
+    sending = None
+    if args.send:
+        name = os.path.basename(args.send)
+        if (not 0 < len(name) <= BULK_NAME or name.startswith(".") or
+                any(not (c.isascii() and (c.isalnum() or c in " .-_")) for c in name)):
+            raise SystemExit(f"--send: {name!r} is not a plain name of at most {BULK_NAME} "
+                             "characters")
+        with open(args.send, "rb") as stream:
+            sending = (name, stream.read())
 
     def window(spec, now):
         """Whether now falls in START:END seconds after the bot first placed itself."""
@@ -1398,6 +1481,11 @@ def serve(args):
                         client.rel.queue(EVENT_EQUIPMENT, origin, part)
             for data in pack_weather(weather):
                 client.rel.queue(EVENT_WEATHER, 0, data)
+            if sending and (client.bulk is None or client.bulk.status != 3):
+                client.bulk = Outgoing(*sending)
+                client.rel.queue(EVENT_OFFER, 0, client.bulk.offer())
+                print(f"{stamp} offering {sending[0]} ({len(sending[1])} bytes, id "
+                      f"{client.bulk.id:#010x}) to client {client.id}", flush=True)
             if client.rel.out:
                 flush(client, now)
             return
@@ -1426,6 +1514,22 @@ def serve(args):
                     send(other, PEER, struct.pack("<I", client.id) + client.state)
         elif kind == ACTORS and len(packet) >= T3MP.size + 4:
             on_actors(client, packet[T3MP.size:])
+        elif kind == BULK_ACK and client.bulk and len(packet) >= T3MP.size + BULK_ACK_BODY.size:
+            bulk = client.bulk
+            first = bulk.first is None
+            status = bulk.on_ack(packet[T3MP.size:], now)
+            if first and bulk.first is not None:
+                print(f"{stamp} client {client.id} takes {bulk.name} from chunk {bulk.first} "
+                      f"of {bulk.chunks}", flush=True)
+            if status is not None and status != BULK_RECEIVING:
+                took = now - bulk.started
+                size = len(bulk.data) - min(bulk.first, bulk.chunks) * BULK_CHUNK
+                print(f"{stamp} client {client.id} {bulk.name}: "
+                      f"{BULK_STATUS[status] if status < len(BULK_STATUS) else status}, "
+                      f"{max(size, 0)} bytes in {took:.1f} s "
+                      f"({max(size, 0) / 1024 / max(took, 0.001):.0f} KB/s), "
+                      f"chunks sent {bulk.sent}, resent {bulk.resent}, probes {bulk.probes}",
+                      flush=True)
         elif kind == EVENTS and len(packet) >= T3MP.size + EVENTS_HEAD.size:
             ready, carried = client.rel.receive(packet[T3MP.size:])
             if carried:
@@ -1446,6 +1550,8 @@ def serve(args):
             wait = PACE_WINDOW
         elif any(c.flush_due for c in clients.values()):
             wait = EVENTS_GAP
+        elif any(c.bulk and c.bulk.status == BULK_RECEIVING for c in clients.values()):
+            wait = 0.05
         for ready in select.select(waiting, [], [], wait)[0]:
             if ready is dns:
                 try:
@@ -1627,6 +1733,9 @@ def serve(args):
                             link.send(udp_frame(mac, ip, packet, seq))
                         else:
                             sock.sendto(packet, addr)
+        for client in [c for c in clients.values() if c.alive and c.bulk]:
+            for index in client.bulk.due(now):
+                send(client, CHUNK, client.bulk.chunk(index))
         for client in clients.values():
             if client.alive and (client.flush_due or client.rel.out and
                                  now - client.rel.last_send >= RESEND):
@@ -1782,6 +1891,8 @@ def main(argv=None):
                    metavar="REGION:WEATHER@SECONDS",
                    help="the bot sets a region's weather (list index, 0-9) this long after it "
                         "appears (repeatable)")
+    p.add_argument("--send", metavar="FILE",
+                   help="send FILE to each client that joins, into U:\\TES3X\\ under its name")
     p.add_argument("--burst", action="append", default=[], metavar="COUNT@SECONDS",
                    help="send COUNT heartbeats at once, unpaced, SECONDS after a client first "
                         "joins (a receive ring stress test)")
