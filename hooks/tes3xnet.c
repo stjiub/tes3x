@@ -1259,7 +1259,7 @@ static void rx_ip(const u8 *f, u32 len)
     ihl = (ip[0] & 0x0F) * 4;
     total = get16(ip + 2);
     dst = get32(ip + 16);
-    if (total > len - 14 || total < ihl + 8 + 8)
+    if (ihl < 20 || total > len - 14 || total < ihl + 8 + 8)
         return;
     udp = ip + ihl;
     if (get16(udp) == DHCP_SERVER && get16(udp + 2) == DHCP_CLIENT) {

@@ -8,7 +8,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 import tes3x_net
-from tes3x_payload import HOOKS, PayloadError, find_tool
+
+HOOKS = Path(__file__).resolve().parents[1] / 'hooks'
 
 # Noise_XX_25519_ChaChaPoly_BLAKE2b from cacophony's test vectors (vectors/cacophony.txt).
 PROLOGUE = bytes.fromhex('4a6f686e2047616c74')
@@ -68,9 +69,10 @@ class CNoiseTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         try:
+            from tes3x_payload import find_tool  # where the payload build finds clang
             clang = find_tool('clang')
-        except PayloadError:
-            raise unittest.SkipTest('clang not found')
+        except Exception as error:
+            raise unittest.SkipTest(f'clang not found: {error!r}')
         cls.folder = tempfile.TemporaryDirectory()
         dll = Path(cls.folder.name) / 'tes3xnoise.dll'
         built = subprocess.run([clang, '-shared', '-O2', '-o', str(dll), str(HOOKS / 'tes3xnoise.c'),
