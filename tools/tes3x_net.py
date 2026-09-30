@@ -289,6 +289,10 @@ EVENT_AUTHORITY, EVENT_HOLD, EVENT_HOLD_BROKEN, EVENT_HIT, EVENT_DEATH = 2, 3, 4
 EVENT_EQUIPMENT = 7  # part, parts, then item ids each ending in a zero
 EVENT_WEATHER = 8  # flags, count, then (region index u16, weather u8) each
 EVENT_PLAYER_HIT = 9  # attacker refid (0: a player), victim client, health, fatigue
+EVENT_SPELL = 10  # SPELL, then the spell id ending in a zero
+# caster refid, target client, target refid (0: its player), source type, caster is a player
+SPELL = struct.Struct("<IIIBB")
+SOURCE_SPELL = 1
 WEATHER_OFFER = 1  # a joining client's whole table: the server keeps regions it does not know
 WEATHER_ENTRY = struct.Struct("<HB")
 WEATHER_PER_EVENT = (EVENT_DATA - 2) // WEATHER_ENTRY.size
@@ -624,6 +628,11 @@ def serve(args):
     actors = {}  # refid -> (reporting client, cell, ACTOR bytes), the latest from an authority
     weather = {}  # region index -> weather, the session's; replayed to each joining client
     bot_weather = []
+    bot_spells = []
+    for spec in args.bot_spell:
+        cast, _, at = spec.partition("@")
+        name, _, refid = cast.partition(":")
+        bot_spells.append((float(at), name, int(refid, 16) if refid else 0))
     for spec in args.bot_weather:
         change, _, at = spec.partition("@")
         index, _, value = change.partition(":")
@@ -731,6 +740,16 @@ def serve(args):
             if flags & WEATHER_OFFER:
                 entries = {i: w for i, w in entries.items() if i not in weather}
             set_weather(client.id, entries, stamp, now, not flags & WEATHER_OFFER)
+            return
+        if kind == EVENT_SPELL and len(data) > SPELL.size:
+            caster, target, refid, _, player = SPELL.unpack_from(data)
+            name = data[SPELL.size:].split(b"\0")[0].decode("latin-1")
+            who = f"client {client.id}" if player else f"{caster:#010x} of client {client.id}"
+            on = (f"{refid:#010x} (authority {target})" if refid
+                  else f"the player of client {target}")
+            print(f"{stamp} {who} casts {name} on {on}", flush=True)
+            if target != BOT_ID:
+                send_event(target, client.id, kind, data, now)
             return
         if kind in TARGETED and len(data) >= 12:
             refid, target = struct.unpack_from("<II", data)
@@ -1039,6 +1058,20 @@ def serve(args):
                     send_event(other.id, BOT_ID, EVENT_PLAYER_HIT,
                                struct.pack("<IIff", 0, other.id, float(damage),
                                            float(fatigue or 0)), now)
+        for spell in [s for s in bot_spells if window(f"{s[0]}:", now)]:
+            _, name, refid = spell
+            if refid:
+                target = owners.get(actors[refid][1]) if refid in actors else None
+            else:
+                target = next((c.id for c in clients.values() if c.alive), None)
+            if not target or target == BOT_ID:
+                continue
+            bot_spells.remove(spell)
+            on = f"{refid:#010x}" if refid else "the player"
+            print(f"{time.strftime('%H:%M:%S')} bot casts {name} on {on} of client {target}",
+                  flush=True)
+            send_event(target, BOT_ID, EVENT_SPELL,
+                       SPELL.pack(0, target, refid, SOURCE_SPELL, 1) + zstr(name), now)
         if args.bot_say and bot["anchor"] and now >= bot["said"] + args.bot_say:
             bot["said"] = now
             bot["line"] += 1
@@ -1138,6 +1171,9 @@ def main(argv=None):
                    help="the bot hits this actor (hex refid) for 5 once, this long after it appears")
     p.add_argument("--bot-hit-player", metavar="HEALTH[:FATIGUE]@SECONDS",
                    help="the bot hits every client's player once, this long after it appears")
+    p.add_argument("--bot-spell", action="append", default=[], metavar="SPELL[:REFID]@SECONDS",
+                   help="the bot casts this spell on the first client's player, or on an actor "
+                        "(hex refid) at its authority, this long after it appears (repeatable)")
     p.add_argument("--bot-kill", metavar="REFID@SECONDS",
                    help="the bot reports this actor (hex refid) dead this long after it appears")
     p.add_argument("--bot-equip", metavar="ID,ID,...",

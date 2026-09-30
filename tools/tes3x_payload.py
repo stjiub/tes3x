@@ -16,7 +16,7 @@ import struct
 import subprocess
 
 import tes3x_inject
-from tes3x_patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, find_mcp37_context,
+from tes3x_patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, find_call_sites, find_mcp37_context,
                          find_save_allowed_context, find_transition_calls)
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -45,6 +45,14 @@ PLACE_ADDRESSES = (
     ("UNREADY_WEAPON", 0x00158560), ("MOBILE_HANDS", 0x0015BAF0),
     ("APPLY_HEALTH_DAMAGE", 0x0017C3D0), ("APPLY_FATIGUE_DAMAGE", 0x0017C950),
     ("HIT_STUN", 0x0017DC30),
+)
+# MagicSourceInstance::spellHit, which the multiplayer patch fronts at every call site, and what
+# the ExplodeSpell and Cast handlers call to start a spell on a reference.
+SPELL_HIT = 0x00150370
+SPELL_HIT_SITES = 9
+SPELL_ADDRESSES = (
+    ("ACTIVATE_SPELL", 0x000BE050), ("MAGIC_INSTANCE", 0x000BCD30),
+    ("RESOLVE_OBJECT", 0x00104300),
 )
 CONSOLE_ADDRESSES = (
     ("FIND_MENU", 0x001AD340), ("OPEN_VK", 0x0022D210), ("CONSOLE_MENU_ID", 0x003D816C),
@@ -260,8 +268,15 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         for name in ("COMPILE_RUN", "FIND_MENU", "UI_ID", "TRIGGER_EVENT"):
             define("NET_" + name, address(name, dict(CONSOLE_ADDRESSES)[name]))
         define("NET_SERVICE_ACTOR", address("SERVICE_ACTOR", SERVICE_ACTOR))
-        for name, default in PLACE_ADDRESSES:
+        for name, default in PLACE_ADDRESSES + SPELL_ADDRESSES:
             define("NET_" + name, address(name, default))
+        spell_hit = int(address("SPELL_HIT", SPELL_HIT), 16)
+        sites = find_call_sites(image, spell_hit)
+        if len(sites) != SPELL_HIT_SITES:
+            raise PayloadError(f"spellHit {hexva(spell_hit)}: {len(sites)} call sites, expected "
+                               f"{SPELL_HIT_SITES}")
+        define("NET_SPELL_HIT", hexva(spell_hit))
+        define("NET_SPELL_HIT_SITES", "{" + ",".join(hexva(s) for s in sites) + "}")
         define("NET_MENU_GATE", hexva(locate("menu-mode-gate")))
         define("NET_MOB_GATE", hexva(locate("mob-update-gate")))
         define("NET_WEATHER_ROLL", hexva(locate("weather-roll")))

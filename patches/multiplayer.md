@@ -36,3 +36,9 @@ dialogue held with it, go to the authority. When an actor dies on its authority,
 records the death and every console, including one that joins later, kills its copy. Only actors
 placed by the data files take part; creatures spawned while playing, such as from leveled lists,
 still run separately on each console.
+
+A spell takes effect on the console that runs its target. When a spell cast on one console
+reaches another player's stand-in, or an actor another console runs, that console applies the
+spell to the real target instead. Spells the player made in their own game are not known to the
+other consoles and are not applied there. An enchantment's damage still reaches its target as a
+plain hit, without its other effects.
