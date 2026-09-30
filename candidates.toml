@@ -416,10 +416,10 @@ reason = "Balance change, opt in only; MCP ships it as an option rather than a d
 name = "mcp-45"
 origin = { source = "MCP", id = "45" }
 category = "qol"
-status = "candidate"
-priority = "low"
+status = "not-applicable"
+priority = "none"
 summary = "Toggle sneak"
-reason = "Toggle sneak. Check how the Xbox controller mapping already handles sneak first."
+reason = "The Xbox controller path already toggles sneak on left-thumb click; MCP adds that behaviour to the PC key path."
 
 [[candidate]]
 name = "mcp-46a"

@@ -13,9 +13,9 @@ on, `low` for minor ones, and `none` for fixes we won't port.
 
 | status | fixes |
 |---|---|
-| candidate | 193 |
+| candidate | 192 |
 | deferred | 13 |
-| not-applicable | 15 |
+| not-applicable | 16 |
 | rejected | 2 |
 
 ## candidate
@@ -98,7 +98,6 @@ Worth porting, but not yet shown to affect the Xbox build.
 | `mcp-42` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #42 | low | balance | **Spellmaker area effect cost.** Balance change, opt in only; MCP ships it as an option rather than a defect fix. |
 | `mcp-43` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #43 | low | balance | **Arrow enchanting.** Balance change, opt in only; MCP ships it as an option rather than a defect fix. |
 | `mcp-44` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #44 | low | balance | **Fortify maximum health.** Balance change, opt in only; MCP ships it as an option rather than a defect fix. |
-| `mcp-45` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #45 | low | qol | **Toggle sneak.** Toggle sneak. Check how the Xbox controller mapping already handles sneak first. |
 | `mcp-46b` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #46 | low | correctness (recommended) | **`PlaceAtPC` distance in third person, `PlaceAtMe` scale inheritance.** A line-of-sight test misplaces third-person `PlaceAtPC` at the player's feet; `PlaceAtMe` inherits a target's rotation but not its scale. Two separate defects sharing id 46's record set. |
 | `mcp-49` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #49 | low | correctness | **Bound items expiry fix.** Expiring bound weapons force a weapon draw; bound armor does not restore gloves, bracers and shoes. |
 | `mcp-50` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #50 | low | qol | **Stable enchantment sort.** Sort enchantments alphabetically every time. |
@@ -245,6 +244,7 @@ Targets PC-only code or behaviour; there is nothing to fix on the Xbox.
 | fix | from | priority | category | notes |
 |---|---|---|---|---|
 | `mcp-39` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #39 | none | undecided | **Splash/title quality.** PC presentation path; solve Xbox assets directly if a real issue appears. |
+| `mcp-45` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #45 | none | qol | **Toggle sneak.** The Xbox controller path already toggles sneak on left-thumb click; MCP adds that behaviour to the PC key path. |
 | `mcp-82` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #82 | none |  | **Shortcut key improvements.** Keyboard shortcuts such as closing dialogue with the space bar; the Xbox has no keyboard in play. |
 | `mcp-94` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #94 | none |  | **Book and scroll scaling fix.** Scales books to wide and multi-monitor PC screens; the Xbox has one fixed output mode. |
 | `mcp-107` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #107 | none |  | **Don't loot on dispose.** Ctrl-click to dispose without looting. Needs a keyboard modifier; a controller version would be a new design. |
