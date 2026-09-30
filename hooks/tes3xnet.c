@@ -5946,7 +5946,7 @@ static void spawns_stat(void)
 #define CONTENTS_HEAD 9u
 #define CONTENTS_ROLLED 1u
 #define ENTRY_DATA 1u /* entry: count i32, flags, [condition, charge], id */
-#define BOXES 64u
+#define BOXES 128u
 #define BOX_ENTRIES 96u
 #define ACTIVE_CELLS 16u
 #define CONTAINER_CLONE 0x164 /* vtable offset: (reference) */
@@ -6152,6 +6152,105 @@ static u32 *box_hash(u32 refid, int create)
     return &boxes[free].hash;
 }
 
+/* Actors' inventories. A mobile gives its actor a copy of the object, and the copy holds the
+ * inventory at +0x3C as a container instance does; looting a corpse, pickpocketing and barter change
+ * it. The scan reads the actors of the active cells too (not the player or a ghost), keyed by
+ * actor_id, and received contents are applied as the difference, so a living actor keeps what it
+ * wears. */
+static int inventory_actor(const u8 *ref)
+{
+    u8 *object = *(u8 *const *)(ref + REF_BASE);
+
+    return actor_object(object) && actor_base(object) != object &&
+           ref != player_reference() && !is_ghost(ref);
+}
+
+static int entry_same(const struct entry *a, const struct entry *b)
+{
+    return a->flags == b->flags && same_id(a->id, b->id) &&
+           (!(a->flags & ENTRY_DATA) || (a->condition == b->condition && a->charge == b->charge));
+}
+
+/* Take an item out of an actor's inventory with the script command, which unequips it first: the
+ * worn list points into the stacks. */
+static void inventory_take(u8 *ref, const char *id, int count)
+{
+    char line[64], *p = put_text(line, "RemoveItem \"");
+
+    p = put_int(put_text(put_text(p, id), "\" "), count);
+    *p = 0;
+    run_script_on(line, ref);
+}
+
+/* Add and remove what makes the actor's inventory hold the entries. */
+static int inventory_apply(u8 *ref, const struct entry *want, u32 n)
+{
+    static struct entry have[BOX_ENTRIES];
+    static u8 matched[BOX_ENTRIES];
+    u8 *object = *(u8 **)(ref + REF_BASE), *inventory = object + OBJECT_INVENTORY, *item, *data;
+    u32 h = contents_read(object, have, BOX_ENTRIES), i, k;
+    int delta;
+
+    object_applying = 1;
+    for (k = 0; k < h; k++)
+        matched[k] = 0;
+    for (i = 0; i < n; i++) {
+        for (k = 0; k < h && (matched[k] || !entry_same(&want[i], &have[k])); k++)
+            ;
+        delta = want[i].count - (k < h ? have[k].count : 0);
+        if (k < h)
+            matched[k] = 1;
+        if (!delta)
+            continue;
+        if (!(item = resolve_object(want[i].id))) {
+            box_failures++;
+            continue;
+        }
+        if (delta < 0) {
+            inventory_take(ref, want[i].id, -delta);
+            continue;
+        }
+        data = 0;
+        if ((want[i].flags & ENTRY_DATA) &&
+            plausible(data = ((fn_item_data_new)TES3X_NET_ITEM_DATA_NEW)(item))) {
+            *(u32 *)(data + ITEM_CONDITION) = want[i].condition;
+            *(u32 *)(data + ITEM_CHARGE) = want[i].charge;
+        }
+        ((fn_inventory_add)TES3X_NET_INVENTORY_ADD)(inventory, 0, item, delta, 0,
+                                                    data ? &data : 0);
+    }
+    for (k = 0; k < h; k++)
+        if (!matched[k])
+            inventory_take(ref, have[k].id, have[k].count < 0 ? -have[k].count : have[k].count);
+    ((fn_set_modified)TES3X_NET_REF_MODIFIED)(ref, 1);
+    object_applying = 0;
+    return 1;
+}
+
+/* The actor with this id in an active cell, living or dead. */
+static u8 *inventory_owner(u32 refid)
+{
+    static const u32 lists[2] = {0x2C, 0x3C};
+    u8 *cells[ACTIVE_CELLS], *ref;
+    const u8 *temporary;
+    u32 indices[ACTIVE_CELLS], n, c, l;
+
+    n = active_cells(cells, indices);
+    for (c = 0; c < n; c++)
+        for (l = 0; l < 3; l++) {
+            if (l < 2)
+                ref = *(u8 **)(cells[c] + lists[l] + LIST_HEAD);
+            else if (plausible(temporary = *(const u8 *const *)(cells[c] + CELL_TEMPORARY)))
+                ref = *(u8 *const *)(temporary + 8 + LIST_HEAD);
+            else
+                break;
+            for (; plausible(ref); ref = *(u8 **)(ref + REF_NEXT))
+                if (inventory_actor(ref) && actor_id(ref) == refid)
+                    return ref;
+        }
+    return 0;
+}
+
 /* Every SPAWN_WATCH_US: the container instances of the active cells whose contents changed. */
 static void containers_scan(void)
 {
@@ -6180,8 +6279,13 @@ static void containers_scan(void)
                     leveled_seen(ref, indices[c], cells[c]);
                     continue;
                 }
-                if ((u32)vtable_of(object) != TES3X_NET_CONTAINER_INSTANCE_VTABLE ||
-                    !(refid = *(const u32 *)(ref + REF_ID)))
+                if ((u32)vtable_of(object) == TES3X_NET_CONTAINER_INSTANCE_VTABLE)
+                    refid = *(const u32 *)(ref + REF_ID);
+                else if (inventory_actor(ref))
+                    refid = actor_id(ref);
+                else
+                    continue;
+                if (!refid)
                     continue;
                 count = contents_read(object, entries, BOX_ENTRIES);
                 hash = contents_hash(entries, count) | 1;
@@ -6310,8 +6414,11 @@ static void contents_event(const struct event *e)
     boxes_received++;
     /* Not loaded here: WANT asks for it when its cell is. */
     if (!cell_active(cell_ptr = cell_at(cell)) || !(ref = cell_reference(cell_ptr, refid)))
+        ref = inventory_owner(refid);
+    if (!ref)
         return;
-    if (!contents_apply(ref, box_in, box_in_count)) {
+    if (inventory_actor(ref) ? !inventory_apply(ref, box_in, box_in_count)
+                             : !contents_apply(ref, box_in, box_in_count)) {
         box_failures++;
         tes3x_log_hex3("net.contents_failed", refid, (u32)vtable_of(*(u8 **)(ref + REF_BASE)), 0);
         return;
