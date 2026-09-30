@@ -82,6 +82,9 @@ REF_MODIFIED = 0x0012A940  # Reference::setObjectModified, in the Reference vtab
 # the list and to link the creature and the placeholder, and what gives a new actor its mobile.
 LEVELED_SPAWN = 0x0011AD90
 SUMMON = 0x000C8B00  # makes a summoned creature, from the summon effect's start only
+PLAYER_SCRIPTS = 3  # CompileAndRun's callers: a dialogue result and the console
+DROP_ITEM = 0x0015B0D0  # MobileActor::dropItem; the inventory menus call it on the player
+PLAYER_DROPS = 2
 ACTOR_ADDRESSES = (
     ("LEVELED_RESOLVE", 0x0011A740), ("LEVELED_LINKED", 0x0012AEE0),
     ("LEVELED_LINK", 0x0012A370), ("ADD_MOB", 0x001840B0),
@@ -375,6 +378,28 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
             raise PayloadError(f"summon {hexva(summon)}: {len(sites)} call sites, expected 1")
         define("NET_SUMMON", hexva(summon))
         define("NET_SUMMON_SITES", "{" + hexva(sites[0]) + "}")
+        compile_run = int(address("COMPILE_RUN", dict(CONSOLE_ADDRESSES)["COMPILE_RUN"]), 16)
+        sites = find_call_sites(image, compile_run)
+        if len(sites) != PLAYER_SCRIPTS:
+            raise PayloadError(f"CompileAndRun: {len(sites)} call sites, expected {PLAYER_SCRIPTS}")
+        define("NET_PLAYER_SCRIPT_SITES", "{" + ",".join(hexva(s) for s in sites) + "}")
+        drop = int(address("DROP_ITEM", DROP_ITEM), 16)
+        player_mobile = int(address("PLAYER_MOBILE", dict(CONSOLE_ADDRESSES)["PLAYER_MOBILE"]), 16)
+        data = bytes(image.data)
+
+        def after_player_mobile(site):
+            off = image.va_to_off(site - 7)
+            if off is None or data[off] != 0xE8 or data[off + 5:off + 7] not in (b"\x8b\xc8",
+                                                                                  b"\x89\xc1"):
+                return False
+            return site - 2 + struct.unpack_from("<i", data, off + 1)[0] == player_mobile
+
+        sites = [s for s in find_call_sites(image, drop) if after_player_mobile(s)]
+        if len(sites) != PLAYER_DROPS:
+            raise PayloadError(f"dropItem on the player: {len(sites)} call sites, expected "
+                               f"{PLAYER_DROPS}")
+        define("NET_DROP_ITEM", hexva(drop))
+        define("NET_PLAYER_DROP_SITES", "{" + ",".join(hexva(s) for s in sites) + "}")
         define("NET_MENU_GATE", hexva(locate("menu-mode-gate")))
         define("NET_MOB_GATE", hexva(locate("mob-update-gate")))
         define("NET_WEATHER_ROLL", hexva(locate("weather-roll")))
