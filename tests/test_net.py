@@ -85,7 +85,7 @@ class ObjectTests(unittest.TestCase):
 def spawn(name='misc_com_bottle_01', cell=2433, pos=(10.0, 20.0, 30.0), **extra):
     return dict({'cell': cell, 'count': 1, 'removed': False, 'pos': list(pos),
                  'rot': [0.0, 0.0, 1.5], 'id': name, 'data': False, 'condition': 0,
-                 'charge': 0, 'leveled': 0}, **extra)
+                 'charge': 0, 'leveled': 0, 'summon': False}, **extra)
 
 
 class SpawnTests(unittest.TestCase):
@@ -124,6 +124,11 @@ class SpawnTests(unittest.TestCase):
         data = tes3x_net.pack_spawn(0xFF000002, made)
         self.assertLessEqual(len(data), tes3x_net.EVENT_DATA)
         self.assertEqual(tes3x_net.unpack_spawn(data), (0xFF000002, made))
+
+    def test_a_summon_keeps_its_flag(self):
+        made = spawn('atronach_flame_summon', summon=True)
+        self.assertEqual(tes3x_net.unpack_spawn(tes3x_net.pack_spawn(0xFF000003, made)),
+                         (0xFF000003, made))
 
     def test_a_placeholder_keeps_its_living_creature(self):
         twin = tes3x_net.spawn_twin

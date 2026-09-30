@@ -81,6 +81,7 @@ REF_MODIFIED = 0x0012A940  # Reference::setObjectModified, in the Reference vtab
 # LeveledCreature's spawn for a placeholder reference, in its vtable only; what it calls to roll
 # the list and to link the creature and the placeholder, and what gives a new actor its mobile.
 LEVELED_SPAWN = 0x0011AD90
+SUMMON = 0x000C8B00  # makes a summoned creature, from the summon effect's start only
 ACTOR_ADDRESSES = (
     ("LEVELED_RESOLVE", 0x0011A740), ("LEVELED_LINKED", 0x0012AEE0),
     ("LEVELED_LINK", 0x0012A370), ("ADD_MOB", 0x001840B0),
@@ -368,6 +369,12 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
                                "slots, expected 1")
         define("NET_LEVELED_SPAWN", hexva(leveled))
         define("NET_LEVELED_SPAWN_SLOT", hexva(slots[0]))
+        summon = int(address("SUMMON", SUMMON), 16)
+        sites = find_call_sites(image, summon)
+        if len(sites) != 1:
+            raise PayloadError(f"summon {hexva(summon)}: {len(sites)} call sites, expected 1")
+        define("NET_SUMMON", hexva(summon))
+        define("NET_SUMMON_SITES", "{" + hexva(sites[0]) + "}")
         define("NET_MENU_GATE", hexva(locate("menu-mode-gate")))
         define("NET_MOB_GATE", hexva(locate("mob-update-gate")))
         define("NET_WEATHER_ROLL", hexva(locate("weather-roll")))

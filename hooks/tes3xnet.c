@@ -99,7 +99,8 @@
 #endif
 #if !defined(TES3X_NET_LEVELED_SPAWN) || !defined(TES3X_NET_LEVELED_SPAWN_SLOT) || \
     !defined(TES3X_NET_LEVELED_RESOLVE) || !defined(TES3X_NET_LEVELED_LINKED) || \
-    !defined(TES3X_NET_LEVELED_LINK) || !defined(TES3X_NET_ADD_MOB)
+    !defined(TES3X_NET_LEVELED_LINK) || !defined(TES3X_NET_ADD_MOB) || \
+    !defined(TES3X_NET_SUMMON) || !defined(TES3X_NET_SUMMON_SITES)
 #error "define the TES3X_NET_ leveled creature spawn, its vtable slot and the actor functions"
 #endif
 
@@ -3215,6 +3216,7 @@ static u32 hits_out, hits_in, remote_holds_in, remote_breaks_out, remote_breaks_
 static u32 deaths[DEATHS], death_count, deaths_reported, deaths_applied;
 
 static u32 actor_id(const u8 *ref);
+static u32 actor_owner(u32 id, u32 cell_owner);
 
 static void actors_reset(void)
 {
@@ -3698,7 +3700,7 @@ static void authority_frame(const u8 *player, const u8 *state)
             !(refid = actor_id(ref)) || is_ghost(ref))
             continue;
         actor_key(&local, *(const float *)(ref + 0x38), *(const float *)(ref + 0x3C), &key);
-        owner = authority_of(&key);
+        owner = actor_owner(refid, authority_of(&key));
         death_frame(mobile, ref, refid, owner);
         if (owner && owner != ses.client) {
             follow(mobile, ref, refid, owner);
@@ -4714,7 +4716,8 @@ static void objects_stat(void)
 #define SPAWN_REMOVED 0x8000u /* in the count */
 #define SPAWN_DATA 0x4000u    /* in the count: it has item data, whose condition and charge follow */
 #define SPAWN_LEVELED 0x2000u /* in the count: a leveled creature; its placeholder's refid follows */
-#define SPAWN_COUNT 0x1FFFu
+#define SPAWN_SUMMON 0x1000u  /* in the count: a summon, run by the console that made it */
+#define SPAWN_COUNT 0x0FFFu
 #define SPAWN_ID 32u
 #define SPAWNS 256u
 #define SPAWN_NEAR 1.0f
@@ -4739,16 +4742,16 @@ typedef void(__attribute__((thiscall)) *fn_attach_item_data)(void *ref, void *da
 typedef void(__attribute__((thiscall)) *fn_update_lighting)(void *handler, void *ref);
 
 /* An actor's entry is found by its reference, not its place: actors move. leveled is its
- * placeholder's refid. A stale entry is an actor's from before the last WELCOME, kept until the
+ * placeholder's refid; owner, for a summon, the client that runs it (else the cell's authority). A stale entry is an actor's from before the last WELCOME, kept until the
  * server's replay names it again so the reference is not lost. fresh: the server's creature for
  * the placeholder is a new one, to be made rather than taken from what is linked now. */
 static struct spawn {
-    u32 sid, token, cell, count, used, leveled;
+    u32 sid, token, cell, count, used, leveled, owner;
     float pos[3], rot[3];
     u32 condition, charge; /* raw: an int or a float by the item's type */
     char id[SPAWN_ID];
     u8 *base, *ref, *cell_ptr;
-    u8 send, removed, applied, unresolved, misses, actor, stale, fresh;
+    u8 send, removed, applied, unresolved, misses, actor, stale, fresh, summon;
 } spawns[SPAWNS];
 static u32 spawns_welcome, spawns_sent, spawns_received, spawns_made, spawns_removed;
 static u32 spawns_full, spawn_failures, spawns_logged, spawn_clock, spawns_gone;
@@ -4830,10 +4833,10 @@ static struct spawn *spawn_slot(void)
         return 0;
     }
     pick->used = ++spawn_clock;
-    pick->sid = pick->leveled = 0;
+    pick->sid = pick->leveled = pick->owner = 0;
     pick->ref = pick->base = pick->cell_ptr = 0;
     pick->send = pick->removed = pick->applied = pick->unresolved = pick->misses = 0;
-    pick->actor = pick->stale = pick->fresh = 0;
+    pick->actor = pick->stale = pick->fresh = pick->summon = 0;
     return pick;
 }
 
@@ -4889,6 +4892,8 @@ static u32 spawn_token(void)
     return token;
 }
 
+static void actor_local(u8 *ref, u32 summon);
+
 /* Game thread: a reference made or changed here that has no refid. */
 static void spawn_local(u8 *ref)
 {
@@ -4897,6 +4902,11 @@ static void spawn_local(u8 *ref)
     struct spawn *s;
     u32 cell, count, gone, n, data[2] = {0, 0};
 
+    if (plausible(base) && (*(const u32 *)(base + 4) == TAG_NPC ||
+                            *(const u32 *)(base + 4) == TAG_CREA)) {
+        actor_local(ref, 0);
+        return;
+    }
     if (!spawn_read(ref, &cell, &count, &gone, data))
         return;
     if ((s = spawn_match(cell, base, (const float *)(ref + REF_POSITION), ref))) {
@@ -5359,6 +5369,213 @@ static void leveled_event(u32 sid, u32 leveled, u32 cell, u32 count, const u8 *p
     }
 }
 
+/* Actors made at run time other than leveled creatures: what PlaceAtPC, PlaceAtMe, a script or a
+ * summon makes. The maker sends it as SPAWN; the others make it when its cell is active, or take
+ * the one of the same object in that cell after a relaunch. The cell's authority runs it, and a
+ * summon its maker, whose copy's end (disabled or deleted, as a summon's end and Disable leave
+ * it) goes out as REMOVE. */
+typedef void(__cdecl *fn_summon)(void *instance, void *data, int index, const char *id);
+
+static const u32 summon_sites[] = TES3X_NET_SUMMON_SITES;
+static u32 summon_hooked, summons_sent, actors_made, actors_removed;
+
+static int actor_object(const u8 *object)
+{
+    return plausible(object) &&
+           (*(const u32 *)(object + 4) == TAG_NPC || *(const u32 *)(object + 4) == TAG_CREA);
+}
+
+static u32 actor_owner(u32 id, u32 cell_owner)
+{
+    struct spawn *s;
+
+    if ((id & 0xFF000000u) != 0xFF000000u || !(s = spawn_by_sid(id)) || !s->owner)
+        return cell_owner;
+    return s->owner;
+}
+
+/* Game thread: an actor made here with no refid, not linked to a leveled placeholder. */
+static void actor_local(u8 *ref, u32 summon)
+{
+    const u8 *list;
+    u8 *object;
+    struct spawn *s;
+    u32 i, cell;
+
+    if (ses.state != SESSION_JOINED || !plausible(ref) || *(const u32 *)(ref + 4) != TAG_REFR ||
+        *(const u32 *)(ref + REF_ID) || is_ghost(ref) || leveled_linked(ref) ||
+        (*(const u32 *)(ref + REF_FLAGS) & (REF_DELETED | REF_DISABLED)) ||
+        !actor_object(object = actor_base(*(u8 **)(ref + REF_BASE))) ||
+        !plausible(list = *(const u8 *const *)(ref + REF_LIST)) ||
+        (cell = cell_index(*(const u8 *const *)(list + 0xC))) == OBJECT_NO_CELL)
+        return;
+    for (i = 0; i < SPAWNS; i++)
+        if (spawns[i].used && spawns[i].actor && spawns[i].ref == ref)
+            return;
+    if (!(s = spawn_slot()))
+        return;
+    s->actor = 1;
+    s->summon = (u8)summon;
+    s->owner = summon ? ses.client : 0;
+    s->base = object;
+    s->ref = ref;
+    s->cell = cell;
+    s->cell_ptr = *(u8 *const *)(list + 0xC);
+    s->count = 1;
+    s->condition = s->charge = 0;
+    copy((u8 *)s->pos, ref + REF_POSITION, 12);
+    copy((u8 *)s->rot, ref + REF_ORIENTATION, 12);
+    spawn_name(s, object);
+    s->send = s->applied = 1;
+    s->token = spawn_token();
+    summons_sent += summon;
+    log_text("net.actor_spawn_sent", s->id);
+    tes3x_log_hex3("net.actor_spawn_at", cell, summon, (u32)ref);
+}
+
+/* The creature is the actor the call marks modified, as every run-time creation does. */
+static void __cdecl summon_hook(u8 *instance, void *data, int index, const char *id)
+{
+    const u8 *caster = plausible(instance) ? *(const u8 *const *)(instance + INSTANCE_CASTER) : 0;
+    u32 own, i, before = objects_dirty_count;
+
+    ((fn_summon)TES3X_NET_SUMMON)(instance, data, index, id);
+    if (ses.state != SESSION_JOINED || !plausible(caster) || ref_owner(caster, &own))
+        return;
+    for (i = before; i < objects_dirty_count; i++)
+        actor_local(objects_dirty[i], 1);
+}
+
+static void summon_hook_install(void)
+{
+    if (summon_hooked)
+        return;
+    summon_hooked = 1 + redirect_calls(summon_sites, sizeof(summon_sites) / sizeof(summon_sites[0]),
+                                       TES3X_NET_SUMMON, (const void *)summon_hook);
+}
+
+/* One of a cell's actors made at run time with the entry's object that no entry has. */
+static u8 *actor_find(struct spawn *s, u8 *cell)
+{
+    static const u32 lists[2] = {0x2C, 0x3C};
+    const u8 *temporary;
+    u8 *ref;
+    u32 i, k;
+
+    for (i = 0; i < 3; i++) {
+        if (i < 2)
+            ref = *(u8 **)(cell + lists[i] + LIST_HEAD);
+        else if (plausible(temporary = *(const u8 *const *)(cell + CELL_TEMPORARY)))
+            ref = *(u8 *const *)(temporary + 8 + LIST_HEAD);
+        else
+            break;
+        for (; plausible(ref); ref = *(u8 **)(ref + REF_NEXT)) {
+            if (!actor_is(ref, s) || (*(const u32 *)(ref + REF_FLAGS) & REF_DISABLED) ||
+                leveled_linked(ref))
+                continue;
+            for (k = 0; k < SPAWNS && !(spawns[k].used && spawns[k].ref == ref); k++)
+                ;
+            if (k == SPAWNS)
+                return ref;
+        }
+    }
+    return 0;
+}
+
+static void actor_disable(u8 *ref)
+{
+    object_applying = 1;
+    run_script_on("Disable", ref);
+    object_applying = 0;
+    actors_removed++;
+}
+
+/* Game thread: the server's actor, made here once its cell is active. */
+static void actor_apply(struct spawn *s)
+{
+    u8 *cell, *ref;
+
+    if (!s->used || !s->sid || s->stale || s->applied || s->unresolved)
+        return;
+    if (!s->cell_ptr)
+        s->cell_ptr = cell_at(s->cell);
+    if (!cell_active(cell = s->cell_ptr))
+        return;
+    if (s->removed) {
+        if (actor_is(s->ref, s))
+            actor_disable(s->ref);
+        s->used = 0;
+        return;
+    }
+    if (!actor_is(s->ref, s) && !(s->ref = actor_find(s, cell))) {
+        if (s->misses >= LEVELED_TRIES)
+            return;
+        s->misses++;
+        if ((s->ref = actor_make(s, cell, 0)))
+            actors_made++;
+        tes3x_log_hex3("net.actor_made", s->sid, (u32)s->ref, s->owner);
+    }
+    s->applied = s->ref != 0;
+}
+
+/* Every SPAWN_WATCH_US: an actor this console runs that is gone goes out as REMOVE. */
+static void actor_watch(struct spawn *s)
+{
+    const u8 *ref = s->ref;
+    u32 runs;
+
+    if (!s->sid || s->stale || !s->applied)
+        return;
+    runs = s->owner ? s->owner == ses.client : cell_authority(s->cell_ptr) == ses.client;
+    if (!runs || (plausible(ref) && *(const u32 *)(ref + 4) == TAG_REFR &&
+                  !(*(const u32 *)(ref + REF_FLAGS) & (REF_DELETED | REF_DISABLED))))
+        return;
+    s->removed = s->send = 1;
+    tes3x_log_hex3("net.actor_gone", s->sid, s->owner, (u32)ref);
+}
+
+static void actor_event(u32 sid, u32 cell, u32 count, const u8 *p, const char *id, u32 origin)
+{
+    struct spawn *s = spawn_by_sid(sid);
+    float pos[3];
+    u32 i;
+
+    copy((u8 *)pos, p + 8, 12);
+    for (i = 0; i < SPAWNS && !s; i++) /* our own, back with its id */
+        if (spawns[i].used && spawns[i].actor && !spawns[i].sid && !spawns[i].leveled &&
+            spawns[i].cell == cell && same_id(spawns[i].id, id) && spawn_near(spawns[i].pos, pos))
+            s = &spawns[i];
+    if (count & SPAWN_REMOVED) {
+        if (s && s->sid) {
+            s->removed = 1;
+            s->applied = 0;
+        } else if (s) {
+            s->used = 0;
+        }
+        return;
+    }
+    if (!s) {
+        if (!(s = spawn_slot()))
+            return;
+        s->actor = 1;
+        s->cell = cell;
+        copy((u8 *)s->pos, p + 8, 24);
+        copy((u8 *)s->id, (const u8 *)id, SPAWN_ID);
+        s->unresolved = !(s->base = resolve_object(id));
+    }
+    s->sid = sid;
+    s->stale = s->send = 0;
+    s->summon = (count & SPAWN_SUMMON) != 0;
+    s->owner = s->summon ? origin : 0;
+    s->count = count & SPAWN_COUNT;
+    spawns_pass = 1;
+    if (spawns_logged < 32) {
+        spawns_logged++;
+        log_text("net.actor_spawn_id", id);
+        tes3x_log_hex3("net.actor_spawn", sid, origin, count);
+    }
+}
+
 static void spawn_event(const struct event *e)
 {
     const u8 *p = e->data;
@@ -5387,6 +5604,10 @@ static void spawn_event(const struct event *e)
         return;
     if (leveled) {
         leveled_event(sid, leveled, cell, count, p, id);
+        return;
+    }
+    if ((count & SPAWN_SUMMON) || actor_object(resolve_object(id))) {
+        actor_event(sid, cell, count, p, id, e->origin);
         return;
     }
     if (!(s = spawn_by_sid(sid)))
@@ -5459,6 +5680,10 @@ static void spawns_watch(void)
     spawns_watched = now;
     for (i = 0; i < SPAWNS; i++) {
         s = &spawns[i];
+        if (s->used && s->actor && !s->leveled && !s->removed) {
+            actor_watch(s);
+            continue;
+        }
         if (!s->used || s->actor || s->removed || !s->applied || !s->ref ||
             !cell_active(s->cell_ptr))
             continue;
@@ -5497,7 +5722,7 @@ static void spawns_frame(void)
         s = &spawns[i];
         if (!s->used || !s->send || s->sid || s->removed)
             continue;
-        count = s->count | (s->leveled ? SPAWN_LEVELED : 0);
+        count = s->count | (s->leveled ? SPAWN_LEVELED : 0) | (s->summon ? SPAWN_SUMMON : 0);
         put32le(data, s->token);
         data[4] = (u8)s->cell;
         data[5] = (u8)(s->cell >> 8);
@@ -5544,6 +5769,10 @@ static void spawns_frame(void)
     spawns_pass = 0;
     for (i = 0; i < SPAWNS; i++) {
         s = &spawns[i];
+        if (s->actor && !s->leveled) {
+            actor_apply(s);
+            continue;
+        }
         if (!s->used || !s->sid || s->applied || s->unresolved || s->actor)
             continue;
         if (!s->cell_ptr)
@@ -5580,6 +5809,8 @@ static void spawns_stat(void)
     tes3x_log_hex3("net.leveled", leveled_withheld, leveled_rolled, leveled_made);
     tes3x_log_hex3("net.leveled_links", leveled_adopted, leveled_replaced, actor_failures);
     tes3x_log("net.leveled_hook", leveled_hooked);
+    tes3x_log_hex3("net.actors_made", actors_made, actors_removed, summons_sent);
+    tes3x_log("net.summon_hook", summon_hooked);
 }
 
 /* Containers. A container reference reads its contents from [ref+0x28]: the base container, shared
@@ -6320,6 +6551,7 @@ void tes3x_net_frame(void)
         shot_hook_install();
         objects_hook_install();
         leveled_hook_install();
+        summon_hook_install();
         authority_session();
         spawns_session();
         events_frame();

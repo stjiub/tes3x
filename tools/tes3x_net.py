@@ -333,9 +333,11 @@ EVENT_REMOVE = 15  # count, then spawn ids
 # index, stack count with SPAWN_REMOVED once removed and SPAWN_DATA if it has item data, position,
 # orientation, and the item data's condition (uses, time left) and charge, raw: an int or a float
 # by the item's type. With SPAWN_LEVELED it is a leveled creature, and its placeholder's refid
-# follows before the id.
+# follows before the id; SPAWN_SUMMON marks a summon, run by the client that made it (the event's
+# origin).
 SPAWN = struct.Struct("<IHH6fII")
-SPAWN_REMOVED, SPAWN_DATA, SPAWN_LEVELED, SPAWN_COUNT = 0x8000, 0x4000, 0x2000, 0x1FFF
+SPAWN_REMOVED, SPAWN_DATA, SPAWN_LEVELED, SPAWN_SUMMON = 0x8000, 0x4000, 0x2000, 0x1000
+SPAWN_COUNT = 0x0FFF
 SPAWN_IDS = 0xFF000000  # never a data-file refid: mod index 0xFF
 SPAWN_TWIN = 16.0  # units: a script's reference made on two consoles at once
 SPAWN_TWIN_SECONDS = 2.0
@@ -452,7 +454,8 @@ def pack_spawn(sid, spawn):
     """A SPAWN event for one reference made at run time."""
     leveled = spawn.get("leveled", 0)
     count = spawn["count"] | (SPAWN_REMOVED if spawn["removed"] else 0) | \
-        (SPAWN_DATA if spawn.get("data") else 0) | (SPAWN_LEVELED if leveled else 0)
+        (SPAWN_DATA if spawn.get("data") else 0) | (SPAWN_LEVELED if leveled else 0) | \
+        (SPAWN_SUMMON if spawn.get("summon") else 0)
     return (SPAWN.pack(sid, spawn["cell"], count, *spawn["pos"], *spawn["rot"],
                        spawn.get("condition", 0), spawn.get("charge", 0))
             + (struct.pack("<I", leveled) if leveled else b"") + zstr(spawn["id"][:31]))
@@ -467,6 +470,7 @@ def unpack_spawn(data):
         off += 4
     name = data[off:].split(b"\0")[0].decode("latin-1")
     return sid, {"cell": cell, "count": count & SPAWN_COUNT, "leveled": leveled,
+                 "summon": bool(count & SPAWN_SUMMON),
                  "removed": bool(count & SPAWN_REMOVED), "pos": place[:3], "rot": place[3:],
                  "id": name, "data": bool(count & SPAWN_DATA), "condition": condition,
                  "charge": charge}
@@ -497,8 +501,10 @@ def spawn_twin(spawns, spawn, origin, token, now, deaths=()):
                     sid not in deaths:
                 return sid
         return None
+    if spawn.get("summon"):
+        return None
     for sid, known in spawns.items():
-        if known["removed"] or known["origin"] == origin or \
+        if known["removed"] or known["origin"] == origin or known.get("summon") or \
                 known["id"].lower() != spawn["id"].lower() or known["cell"] != spawn["cell"]:
             continue
         far = max(abs(a - b) for a, b in zip(known["pos"], spawn["pos"]))
@@ -550,6 +556,8 @@ def describe_spawn(sid, spawn):
     what = f"{spawn['id']}" + (f" x{spawn['count']}" if spawn["count"] > 1 else "")
     if spawn.get("leveled"):
         what += f" for placeholder {spawn['leveled']:#010x}"
+    if spawn.get("summon"):
+        what += f" summoned by client {spawn.get('origin')}"
     if spawn.get("data"):
         what += f" (condition {spawn['condition']:#x}, charge {spawn['charge']:#x})"
     return (f"{sid:#010x} {what} in cell {spawn['cell']} at {x:.0f} {y:.0f} {z:.0f}"
@@ -991,7 +999,7 @@ def serve(args):
                  "spawns": {str(k): {f: v.get(f, 0) for f in ("cell", "count", "removed", "pos",
                                                               "rot", "id", "origin", "token",
                                                               "data", "condition", "charge",
-                                                              "leveled")}
+                                                              "leveled", "summon")}
                             for k, v in spawns.items()},
                  "next_spawn": world["next_spawn"],
                  "contents": {str(k): v for k, v in contents.items()},
@@ -1343,7 +1351,8 @@ def serve(args):
             for data in pack_objects(objects):
                 client.rel.queue(EVENT_OBJECTS, 0, data)
             for sid, spawn in sorted(spawns.items(), key=lambda s: s[1]["removed"]):
-                client.rel.queue(EVENT_SPAWN, 0, pack_spawn(sid, spawn))
+                client.rel.queue(EVENT_SPAWN, spawn["origin"] if spawn.get("summon") else 0,
+                                 pack_spawn(sid, spawn))
             for origin, (parts, _) in equipment.items():
                 if origin != client.id:
                     for part in parts:
