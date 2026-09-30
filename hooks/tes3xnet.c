@@ -6011,6 +6011,7 @@ struct entry {
     int count;
     u32 flags, condition, charge;
     char id[SPAWN_ID];
+    u8 *data; /* the item data read, not sent or hashed */
 };
 
 static struct {
@@ -6019,6 +6020,7 @@ static struct {
 static struct entry box_in[BOX_ENTRIES];
 static u32 box_in_count, box_in_part, box_in_refid, boxes_welcome, boxes_want;
 static u32 boxes_sent, boxes_received, boxes_applied, box_failures, boxes_full;
+static u32 items_worn, items_taken;
 
 static const u8 *vtable_of(const u8 *object)
 {
@@ -6057,6 +6059,7 @@ static u32 contents_read(const u8 *object, struct entry *out, u32 max)
             out[n].flags = ENTRY_DATA;
             out[n].condition = *(const u32 *)(data[i] + ITEM_CONDITION);
             out[n].charge = *(const u32 *)(data[i] + ITEM_CHARGE);
+            out[n].data = (u8 *)data[i];
             for (k = 0; id[k] && k < SPAWN_ID - 1; k++)
                 out[n].id[k] = id[k];
             out[n++].id[k] = 0;
@@ -6067,6 +6070,7 @@ static u32 contents_read(const u8 *object, struct entry *out, u32 max)
                 break;
             out[n].count = total < 0 ? total + used : total - used;
             out[n].flags = out[n].condition = out[n].charge = 0;
+            out[n].data = 0;
             for (k = 0; id[k] && k < SPAWN_ID - 1; k++)
                 out[n].id[k] = id[k];
             out[n++].id[k] = 0;
@@ -6224,13 +6228,18 @@ static void inventory_take(u8 *ref, const char *id, int count)
     p = put_int(put_text(put_text(p, id), "\" "), count);
     *p = 0;
     run_script_on(line, ref);
+    items_taken++;
+    log_text("net.inventory_take", id);
 }
 
-/* Add and remove what makes the actor's inventory hold the entries. */
+/* Add and remove what makes the actor's inventory hold the entries. An item that differs only in
+ * its condition or charge (a weapon worn by a blow) is changed in place: taking it out would
+ * unequip it. */
 static int inventory_apply(u8 *ref, const struct entry *want, u32 n)
 {
     static struct entry have[BOX_ENTRIES];
     static u8 matched[BOX_ENTRIES];
+    static u32 pair[BOX_ENTRIES];
     u8 *object = *(u8 **)(ref + REF_BASE), *inventory = object + OBJECT_INVENTORY, *item, *data;
     u32 h = contents_read(object, have, BOX_ENTRIES), i, k;
     int delta;
@@ -6241,9 +6250,28 @@ static int inventory_apply(u8 *ref, const struct entry *want, u32 n)
     for (i = 0; i < n; i++) {
         for (k = 0; k < h && (matched[k] || !entry_same(&want[i], &have[k])); k++)
             ;
-        delta = want[i].count - (k < h ? have[k].count : 0);
         if (k < h)
             matched[k] = 1;
+        pair[i] = k;
+    }
+    for (i = 0; i < n; i++) {
+        if (pair[i] < h)
+            continue;
+        for (k = 0; k < h && (matched[k] || have[k].count != want[i].count ||
+                              !same_id(have[k].id, want[i].id)); k++)
+            ;
+        if (k == h)
+            continue;
+        matched[k] = 1;
+        pair[i] = k;
+        if ((want[i].flags & ENTRY_DATA) && plausible(have[k].data)) {
+            *(u32 *)(have[k].data + ITEM_CONDITION) = want[i].condition;
+            *(u32 *)(have[k].data + ITEM_CHARGE) = want[i].charge;
+            items_worn++;
+        }
+    }
+    for (i = 0; i < n; i++) {
+        delta = want[i].count - (pair[i] < h ? have[pair[i]].count : 0);
         if (!delta)
             continue;
         if (!(item = resolve_object(want[i].id))) {
@@ -6506,6 +6534,7 @@ static void containers_stat(void)
 {
     tes3x_log_hex3("net.contents", boxes_sent, boxes_received, boxes_applied);
     tes3x_log_hex3("net.contents_bad", box_failures, boxes_full, 0);
+    tes3x_log_hex3("net.inventory_items", items_worn, items_taken, 0);
 }
 
 /* Statuses. An effect that changes how an actor looks or acts goes out as AFFECT from the console
