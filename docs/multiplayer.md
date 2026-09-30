@@ -79,8 +79,9 @@ The first client to join sets the session's load order and its game clock. Usefu
 
 Stop the server with Ctrl+C. Without `--world` the session lives only as long as the server
 does: stop it and the deaths, objects and equipment it recorded are gone. With `--world DIR` it
-keeps the game clock, the deaths, the doors, locks and items taken, and the weather in one file
-per load order in `DIR`, loads it when the first console joins and writes it every 10 seconds
+keeps the game clock, the deaths, the doors, locks and items taken, the items dropped or placed,
+containers' contents and the weather in one file per load order in `DIR`, loads it when the
+first console joins and writes it every 10 seconds
 while it changes, so a restarted server carries on where it stopped. A console's own save is
 still loaded first; joining then applies what the world holds.
 
@@ -158,6 +159,12 @@ with both load order hashes.
 ## Limits
 
 - Menus no longer pause the world while joined, and resting or waiting is refused.
-- Each console keeps its own save. Items taken, objects a script disables and locks are shared;
-  containers' contents, items dropped and creatures spawned while playing are not yet.
+- Each console keeps its own save. Items taken, objects a script disables, locks, and items
+  dropped or placed (by the console or a script) are shared, with their stack size, condition and
+  charge, and so are containers' contents: the first player to open a container decides what it
+  holds. Corpses' inventories, creatures spawned while playing and items made in play (potions,
+  enchanted items) are not shared yet.
+- Two players taking from the same container at the same moment can both get the same items.
+- If a script on every console places the same object at different moments, each console's copy
+  is shared, so the object appears more than once.
 - Stand-ins look like a Dark Elf named "Player N", whatever the player's character.

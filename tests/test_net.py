@@ -82,6 +82,64 @@ class ObjectTests(unittest.TestCase):
             self.assertFalse(Path(path + '.tmp').exists())
 
 
+def spawn(name='misc_com_bottle_01', cell=2433, pos=(10.0, 20.0, 30.0), **extra):
+    return dict({'cell': cell, 'count': 1, 'removed': False, 'pos': list(pos),
+                 'rot': [0.0, 0.0, 1.5], 'id': name, 'data': False, 'condition': 0,
+                 'charge': 0}, **extra)
+
+
+class SpawnTests(unittest.TestCase):
+    def test_a_longest_id_fits_the_event_and_round_trips(self):
+        made = spawn('x' * 31, count=7, removed=True, data=True, condition=450,
+                     charge=0x42C80000)
+        data = tes3x_net.pack_spawn(0xFF000001, made)
+        self.assertLessEqual(len(data), tes3x_net.EVENT_DATA)
+        sid, back = tes3x_net.unpack_spawn(data)
+        self.assertEqual(sid, 0xFF000001)
+        self.assertEqual(back, made)
+
+    def test_removes_fit_and_round_trip(self):
+        sids = [0xFF000000 | i for i in range(1, 40)]
+        events = tes3x_net.pack_removes(sids)
+        self.assertTrue(all(len(e) <= tes3x_net.EVENT_DATA for e in events))
+        self.assertEqual([s for e in events for s in tes3x_net.unpack_removes(e)], sids)
+
+    def test_a_resend_is_known_by_its_token_and_a_twin_only_briefly(self):
+        twin = tes3x_net.spawn_twin
+        known = {7: spawn(origin=1, token=0x12340001, made=100.0)}
+        self.assertEqual(twin(known, spawn(), 1, 0x12340001, 500.0), 7)
+        self.assertIsNone(twin(known, spawn(), 1, 0x12340002, 100.0))  # another in the same place
+        self.assertEqual(twin(known, spawn(pos=(18, 20, 30)), 2, 5, 101.0), 7)
+        self.assertIsNone(twin(known, spawn(pos=(18, 20, 30)), 2, 5, 105.0))
+        self.assertIsNone(twin(known, spawn(pos=(30, 20, 30)), 2, 5, 101.0))
+        self.assertIsNone(twin(known, spawn(cell=2434), 2, 5, 100.0))
+        self.assertIsNone(twin(known, spawn('misc_com_bottle_02'), 2, 5, 100.0))
+        known[7]['removed'] = True
+        self.assertIsNone(twin(known, spawn(), 2, 5, 100.0))
+        self.assertEqual(twin(known, spawn(), 1, 0x12340001, 100.0), 7)
+
+
+class ContentsTests(unittest.TestCase):
+    def test_parts_fit_and_round_trip(self):
+        entries = [['x' * 31, 1, tes3x_net.ENTRY_DATA, 5, 0x42C80000]] + \
+            [[f'ingred_{i:02d}', i - 3, 0, 0, 0] for i in range(40)] + [['Gold_001', 31, 0, 0, 0]]
+        parts = tes3x_net.pack_contents(0x0101D347, 2433, entries, tes3x_net.CONTENTS_ROLLED)
+        self.assertGreater(len(parts), 1)
+        self.assertTrue(all(len(p) <= tes3x_net.EVENT_DATA for p in parts))
+        got = []
+        for i, part in enumerate(parts):
+            refid, cell, index, count, flags, some = tes3x_net.unpack_contents(part)
+            self.assertEqual((refid, cell, index, count, flags),
+                             (0x0101D347, 2433, i, len(parts), tes3x_net.CONTENTS_ROLLED))
+            got += some
+        self.assertEqual(got, entries)
+
+    def test_an_empty_container_is_one_part(self):
+        parts = tes3x_net.pack_contents(7, 1, [])
+        self.assertEqual(len(parts), 1)
+        self.assertEqual(tes3x_net.unpack_contents(parts[0])[5], [])
+
+
 class GhostPluginTests(unittest.TestCase):
     def test_one_persistent_ghost_per_peer_slot_in_the_parking_cell(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -165,7 +223,8 @@ class WeatherTests(unittest.TestCase):
     def test_events_fit_and_round_trip(self):
         table = {i: i % 10 for i in range(45)}
         events = tes3x_net.pack_weather(table, tes3x_net.WEATHER_OFFER)
-        self.assertEqual(len(events), 3)
+        self.assertEqual(len(events), -(-45 // tes3x_net.WEATHER_PER_EVENT))
+        self.assertGreater(len(events), 1)
         self.assertTrue(all(len(e) <= tes3x_net.EVENT_DATA for e in events))
         got = {}
         for e in events:

@@ -29,7 +29,8 @@
  * the others take them out of the simulation and place them from the states. Ghosts and followed
  * actors mirror their source's animation layers: moving, attacking, casting and the rest. A spell
  * takes effect on the console that runs its target. Items taken, objects disabled and locks go
- * through the server, which replays them to consoles that join later.
+ * through the server, which replays them to consoles that join later, and so do objects made at
+ * run time: dropped items and what the console or a script places.
  *
  * While up, the HalReturnToFirmware thunk points at a wrapper that stops the NIC first: a quick
  * reboot keeps the kernel, which would otherwise keep a connected interrupt object and a live DMA
@@ -83,6 +84,18 @@
 #endif
 #if !defined(TES3X_NET_REF_MODIFIED) || !defined(TES3X_NET_REF_MODIFIED_SLOT)
 #error "define TES3X_NET_REF_MODIFIED, Reference::setObjectModified, and its vtable slot"
+#endif
+#if !defined(TES3X_NET_CREATE_REFERENCE) || !defined(TES3X_NET_CELL_INSERT) || \
+    !defined(TES3X_NET_CELL_NODE) || !defined(TES3X_NET_CELL_ACTIVATORS) || \
+    !defined(TES3X_NET_ATTACH_SCENE) || !defined(TES3X_NET_ITEM_DATA_NEW) || \
+    !defined(TES3X_NET_ATTACH_ITEM_DATA) || !defined(TES3X_NET_UPDATE_LIGHTING)
+#error "define the TES3X_NET_ functions that make a reference at run time"
+#endif
+#if !defined(TES3X_NET_CONTAINER_VTABLE) || !defined(TES3X_NET_CONTAINER_INSTANCE_VTABLE) || \
+    !defined(TES3X_NET_INVENTORY_ADD) || !defined(TES3X_NET_INVENTORY_REMOVE) || \
+    !defined(TES3X_NET_ITEM_DATA_DESTROY) || !defined(TES3X_NET_HEAP_FREE) || \
+    !defined(TES3X_NET_HEAP)
+#error "define the TES3X_NET_ container vtables and inventory functions"
 #endif
 
 typedef unsigned short u16;
@@ -215,7 +228,7 @@ struct descriptor {
 #define CPU_MHZ 733u
 
 /* Session packet: "T3MP", version, type, then session, seq, ack, time and echoed peer time. */
-#define T3MP_VERSION 7u
+#define T3MP_VERSION 8u
 #define T3MP_HEADER 28u
 #define T3MP_HELLO 1u
 #define T3MP_WELCOME 2u
@@ -300,7 +313,7 @@ static struct {
  * is the other side's last delivered number, a count, then events of EVENT_HEADER + length. */
 #define EVENT_TEXT 1u
 #define EVENT_HEADER 12u /* seq, kind, length, origin client */
-#define EVENT_DATA 64u
+#define EVENT_DATA 80u
 #define EVENTS_OUT 16u
 #define EVENTS_IN 16u
 #define EVENTS_BYTES 512u
@@ -4385,15 +4398,16 @@ static struct object {
 static u8 *objects_dirty[OBJECTS_DIRTY];
 static u32 objects_count, objects_dirty_count, objects_dirty_lost, objects_hooked;
 static u32 objects_sent, objects_received, objects_applied, objects_full, objects_logged;
-static u32 object_applying, objects_signature, objects_pass;
+static u32 object_applying, objects_signature, objects_pass, spawns_pass, spawns_settled;
+
+static void spawn_local(u8 *ref);
 
 static void __attribute__((thiscall)) ref_modified_hook(u8 *ref, u32 on)
 {
     u32 i;
 
     ((fn_set_modified)TES3X_NET_REF_MODIFIED)(ref, on);
-    if (!(on & 0xFF) || object_applying || ses.state != SESSION_JOINED ||
-        !*(const u32 *)(ref + REF_ID))
+    if (!(on & 0xFF) || object_applying || ses.state != SESSION_JOINED)
         return;
     for (i = 0; i < objects_dirty_count; i++)
         if (objects_dirty[i] == ref)
@@ -4603,6 +4617,10 @@ static void objects_frame(void)
         return;
     }
     for (i = 0; i < objects_dirty_count; i++) {
+        if (!*(const u32 *)(objects_dirty[i] + REF_ID)) {
+            spawn_local(objects_dirty[i]);
+            continue;
+        }
         /* Opening a door marks it too: a reference in no state worth sharing gets no entry. */
         if (!object_read(objects_dirty[i], &cell, &state, &level) ||
             !(o = object_find(*(const u32 *)(objects_dirty[i] + REF_ID), state != 0)))
@@ -4649,7 +4667,8 @@ static void objects_frame(void)
         objects_signature = signature;
         for (i = 0; i < objects_count; i++)
             objects[i].applied = 0;
-        objects_pass = 1;
+        objects_pass = spawns_pass = 1;
+        spawns_settled = now_us();
     }
     if (!objects_pass)
         return;
@@ -4670,6 +4689,925 @@ static void objects_stat(void)
     tes3x_log_hex3("net.objects", objects_count, objects_sent, objects_received);
     tes3x_log_hex3("net.objects_apply", objects_applied, objects_full, objects_dirty_lost);
     tes3x_log("net.objects_hook", objects_hooked);
+}
+
+/* References made at run time: an item dropped, or an object PlaceAtPC, PlaceItem or a script
+ * placed. Every such path marks the new reference modified, so the same hook names it; it has no
+ * refid, and the server gives it one. The maker sends it as SPAWN with a token in place of the id,
+ * and the server sends it back with an id to every client, the maker too, which knows its own by
+ * base object, cell and position. Another console makes the reference when its cell is loaded.
+ * Removal (a pickup, Disable) goes to the server as REMOVE; the server keeps removed ones and sends
+ * them as SPAWN marked removed, so a console that still has one, from its save or an unloaded
+ * cell, removes it. Actors are left out: who runs them needs cell authority. */
+#define EVENT_SPAWN 14u  /* id, cell index u16, count u16, position, orientation, item data,
+                            base id */
+#define EVENT_REMOVE 15u /* count, then ids */
+#define SPAWN_BYTES 40u
+#define SPAWN_REMOVED 0x8000u /* in the count */
+#define SPAWN_DATA 0x4000u    /* in the count: it has item data, whose condition and charge follow */
+#define SPAWN_COUNT 0x3FFFu
+#define SPAWN_ID 32u
+#define SPAWNS 256u
+#define SPAWN_NEAR 1.0f
+#define REMOVES_PER_EVENT ((EVENT_DATA - 1) / 4)
+#define ATTACH_ITEM_DATA 6u /* data: count, then +0xC condition, uses or time, +0x10 charge */
+#define ITEM_CONDITION 0xC
+#define ITEM_CHARGE 0x10
+#define CELL_INTERIOR 1u
+#define CELL_GRID_X 0x24
+#define CELL_GRID_Y 0x28
+
+typedef u8 *(__attribute__((thiscall)) *fn_create_reference)(void *records, void *object,
+                                                              const float *position,
+                                                              const float *orientation, int insert,
+                                                              void *ref);
+typedef void(__attribute__((thiscall)) *fn_cell_insert)(void *cell, void *ref);
+typedef void *(__attribute__((thiscall)) *fn_cell_part)(void *cell);
+typedef void(__attribute__((thiscall)) *fn_attach_scene)(void *handler, void *ref, void *node,
+                                                         void *activators, int a4);
+typedef u8 *(__cdecl *fn_item_data_new)(void *object);
+typedef void(__attribute__((thiscall)) *fn_attach_item_data)(void *ref, void *data);
+typedef void(__attribute__((thiscall)) *fn_update_lighting)(void *handler, void *ref);
+
+static struct spawn {
+    u32 sid, token, cell, count, used;
+    float pos[3], rot[3];
+    u32 condition, charge; /* raw: an int or a float by the item's type */
+    char id[SPAWN_ID];
+    u8 *base, *ref, *cell_ptr;
+    u8 send, removed, applied, unresolved, misses;
+} spawns[SPAWNS];
+static u32 spawns_welcome, spawns_sent, spawns_received, spawns_made, spawns_removed;
+static u32 spawns_full, spawn_failures, spawns_logged, spawn_clock, spawns_gone;
+static u32 spawns_watched, spawn_tokens;
+
+static int spawn_near(const float *a, const float *b)
+{
+    u32 i;
+
+    for (i = 0; i < 3; i++)
+        if (a[i] - b[i] > SPAWN_NEAR || b[i] - a[i] > SPAWN_NEAR)
+            return 0;
+    return 1;
+}
+
+static int same_id(const char *a, const char *b)
+{
+    for (; *a && *a == *b; a++, b++)
+        ;
+    return *a == *b;
+}
+
+/* A reference made at run time that is not an actor or a projectile: its cell index, its stack
+ * count (SPAWN_DATA with item data, whose condition and charge go to data) and whether it is gone. */
+static int spawn_read(const u8 *ref, u32 *cell, u32 *count, u32 *gone, u32 *data)
+{
+    const u8 *base, *list, *att, *item;
+    u32 tag;
+    int n;
+
+    if (!plausible(ref) || *(const u32 *)(ref + 4) != TAG_REFR || *(const u32 *)(ref + REF_ID) ||
+        !plausible(base = *(const u8 *const *)(ref + REF_BASE)) || ref_mobile(ref))
+        return 0;
+    tag = *(const u32 *)(base + 4);
+    if (tag == TAG_NPC || tag == TAG_CREA || !plausible(list = *(const u8 *const *)(ref + REF_LIST)) ||
+        (*cell = cell_index(*(const u8 *const *)(list + 0xC))) == OBJECT_NO_CELL)
+        return 0;
+    *gone = (*(const u32 *)(ref + REF_FLAGS) & (REF_DELETED | REF_DISABLED)) != 0;
+    *count = 1;
+    for (att = *(const u8 *const *)(ref + REF_ATTACHMENTS); plausible(att);
+         att = *(const u8 *const *)(att + 4))
+        if (*(const u32 *)att == ATTACH_ITEM_DATA && plausible(item = *(const u8 *const *)(att + 8))) {
+            n = *(const int *)item;
+            *count = SPAWN_DATA | (n < 1 ? 1 : n > (int)SPAWN_COUNT ? SPAWN_COUNT : (u32)n);
+            data[0] = *(const u32 *)(item + ITEM_CONDITION);
+            data[1] = *(const u32 *)(item + ITEM_CHARGE);
+            break;
+        }
+    return 1;
+}
+
+static struct spawn *spawn_by_sid(u32 sid)
+{
+    u32 i;
+
+    for (i = 0; i < SPAWNS; i++)
+        if (spawns[i].used && spawns[i].sid == sid)
+            return &spawns[i];
+    return 0;
+}
+
+/* A free entry, else the oldest removed one whose removal is not still to be sent. */
+static struct spawn *spawn_slot(void)
+{
+    struct spawn *pick = 0;
+    u32 i;
+
+    for (i = 0; i < SPAWNS; i++) {
+        if (!spawns[i].used) {
+            pick = &spawns[i];
+            break;
+        }
+        if (spawns[i].removed && !(spawns[i].sid && spawns[i].send) &&
+            (!pick || spawns[i].used < pick->used))
+            pick = &spawns[i];
+    }
+    if (!pick) {
+        spawns_full++;
+        return 0;
+    }
+    pick->used = ++spawn_clock;
+    pick->sid = 0;
+    pick->ref = pick->base = pick->cell_ptr = 0;
+    pick->send = pick->removed = pick->applied = pick->unresolved = pick->misses = 0;
+    return pick;
+}
+
+static int spawn_is(const u8 *ref, const struct spawn *s);
+
+/* The entry a reference here stands for: the one that last had it, else one of the same cell, base
+ * object and place that has no other reference here. */
+static struct spawn *spawn_match(u32 cell, const u8 *base, const float *pos, const u8 *ref)
+{
+    u32 i;
+
+    for (i = 0; i < SPAWNS; i++)
+        if (spawns[i].used && ref && spawns[i].ref == ref && spawn_is(ref, &spawns[i]))
+            return &spawns[i];
+    for (i = 0; i < SPAWNS; i++)
+        if (spawns[i].used && spawns[i].cell == cell && spawns[i].base == base &&
+            spawn_near(spawns[i].pos, pos) && !spawn_is(spawns[i].ref, &spawns[i]))
+            return &spawns[i];
+    return 0;
+}
+
+/* Whether another entry has ref. */
+static int spawn_claimed(const u8 *ref, const struct spawn *s)
+{
+    u32 i;
+
+    for (i = 0; i < SPAWNS; i++)
+        if (spawns[i].used && &spawns[i] != s && spawns[i].ref == ref)
+            return 1;
+    return 0;
+}
+
+static u8 *resolve_object(const char *id)
+{
+    const u8 *handler = *(const u8 **)TES3X_NET_DATA_HANDLER;
+    void *records;
+
+    if (!plausible(handler) || !plausible(records = *(void **)handler))
+        return 0;
+    return ((fn_resolve_object)TES3X_NET_RESOLVE_OBJECT)(records, id);
+}
+
+/* Game thread: a reference made or changed here that has no refid. */
+static void spawn_local(u8 *ref)
+{
+    const u8 *base = *(const u8 *const *)(ref + REF_BASE);
+    const char *id;
+    struct spawn *s;
+    u32 cell, count, gone, n, data[2] = {0, 0};
+
+    if (!spawn_read(ref, &cell, &count, &gone, data))
+        return;
+    if ((s = spawn_match(cell, base, (const float *)(ref + REF_POSITION), ref))) {
+        s->ref = ref;
+        if (gone && !s->removed && !s->sid && s->send)
+            s->used = 0; /* never sent: nobody else knows it */
+        else if (gone && !s->removed)
+            s->removed = s->applied = s->send = 1;
+        return;
+    }
+    id = ((fn_object_id)(*(void *const *const *)base)[OBJECT_GET_ID / 4])(base);
+    if (gone || !mapped(id) || !*id || !(s = spawn_slot()))
+        return;
+    for (n = 0; id[n] && n < SPAWN_ID - 1; n++)
+        s->id[n] = id[n];
+    s->id[n] = 0;
+    s->cell = cell;
+    s->count = count;
+    s->condition = data[0];
+    s->charge = data[1];
+    copy((u8 *)s->pos, ref + REF_POSITION, 12);
+    copy((u8 *)s->rot, ref + REF_ORIENTATION, 12);
+    s->base = (u8 *)base;
+    s->ref = ref;
+    s->cell_ptr = *(u8 *const *)(*(const u8 *const *)(ref + REF_LIST) + 0xC);
+    s->send = s->applied = 1;
+    /* Names this one to the server apart from another made in the same place; the half from the
+     * clock keeps a relaunch from reusing a token the server still holds. */
+    if (!spawn_tokens)
+        spawn_tokens = (now_us() & 0xFFFF) << 16 | 1;
+    s->token = spawn_tokens;
+    spawn_tokens = (spawn_tokens & 0xFFFF0000u) | ((spawn_tokens + 1) & 0xFFFF);
+}
+
+/* Whether ref is still the entry's reference. */
+static int spawn_is(const u8 *ref, const struct spawn *s)
+{
+    return plausible(ref) && *(const u32 *)(ref + 4) == TAG_REFR && !*(const u32 *)(ref + REF_ID) &&
+           *(u8 *const *)(ref + REF_BASE) == s->base &&
+           !(*(const u32 *)(ref + REF_FLAGS) & REF_DELETED) &&
+           spawn_near((const float *)(ref + REF_POSITION), s->pos);
+}
+
+static u8 *spawn_find(struct spawn *s, u8 *cell)
+{
+    static const u32 lists[2] = {0x2C, 0x3C};
+    const u8 *temporary;
+    u8 *ref;
+    u32 i;
+
+    if (spawn_is(s->ref, s))
+        return s->ref;
+    for (i = 0; i < 3; i++) {
+        if (i < 2)
+            ref = *(u8 **)(cell + lists[i] + LIST_HEAD);
+        else if (plausible(temporary = *(const u8 *const *)(cell + CELL_TEMPORARY)))
+            ref = *(u8 *const *)(temporary + 8 + LIST_HEAD);
+        else
+            break;
+        for (; plausible(ref); ref = *(u8 **)(ref + REF_NEXT))
+            if (spawn_is(ref, s) && !spawn_claimed(ref, s))
+                return ref;
+    }
+    return 0;
+}
+
+/* The current interior, or an exterior cell of the player's 3x3. */
+static int cell_active(const u8 *cell)
+{
+    const u8 *handler = *(const u8 *const *)TES3X_NET_DATA_HANDLER;
+    int dx, dy;
+
+    if (!plausible(cell) || !plausible(handler) ||
+        !(*(const u32 *)(cell + CELL_FLAGS) & CELL_REFS_LOADED))
+        return 0;
+    if (*(const u32 *)(cell + CELL_FLAGS) & CELL_INTERIOR)
+        return *(const u8 *const *)(handler + 0xAC) == cell;
+    if (*(const u8 *const *)(handler + 0xAC))
+        return 0;
+    dx = *(const int *)(cell + CELL_GRID_X) - *(const int *)(handler + 0xA0);
+    dy = *(const int *)(cell + CELL_GRID_Y) - *(const int *)(handler + 0xA4);
+    return dx >= -1 && dx <= 1 && dy >= -1 && dy <= 1;
+}
+
+/* The reference as the leveled creature spawn makes one: made, put in its cell, given its stack
+ * and attached to the cell's scene, as DropItem does. */
+static u8 *spawn_make(struct spawn *s, u8 *cell)
+{
+    u8 *handler = *(u8 **)TES3X_NET_DATA_HANDLER, *ref, *data;
+
+    object_applying = 1;
+    ref = ((fn_create_reference)TES3X_NET_CREATE_REFERENCE)(*(void **)handler, s->base, s->pos,
+                                                             s->rot, 0, 0);
+    if (plausible(ref)) {
+        ((fn_cell_insert)TES3X_NET_CELL_INSERT)(cell, ref);
+        if ((s->count & SPAWN_DATA) &&
+            plausible(data = ((fn_item_data_new)TES3X_NET_ITEM_DATA_NEW)(s->base))) {
+            *(int *)data = (int)(s->count & SPAWN_COUNT);
+            *(u32 *)(data + ITEM_CONDITION) = s->condition;
+            *(u32 *)(data + ITEM_CHARGE) = s->charge;
+            ((fn_attach_item_data)TES3X_NET_ATTACH_ITEM_DATA)(ref, data);
+        }
+        ((fn_attach_scene)TES3X_NET_ATTACH_SCENE)(
+            handler, ref, ((fn_cell_part)TES3X_NET_CELL_NODE)(cell),
+            ((fn_cell_part)TES3X_NET_CELL_ACTIVATORS)(cell), 0);
+        ((fn_set_modified)TES3X_NET_REF_MODIFIED)(ref, 1);
+        ((fn_update_lighting)TES3X_NET_UPDATE_LIGHTING)(handler, ref);
+        spawns_made++;
+    } else {
+        ref = 0;
+        spawn_failures++;
+    }
+    object_applying = 0;
+    return ref;
+}
+
+/* As a pickup: disabled and deleted. */
+static void spawn_remove(u8 *ref)
+{
+    object_applying = 1;
+    run_script_on("Disable", ref);
+    *(u32 *)(ref + REF_FLAGS) |= REF_DELETED;
+    ((fn_set_modified)TES3X_NET_REF_MODIFIED)(ref, 1);
+    object_applying = 0;
+    spawns_removed++;
+}
+
+static void spawn_event(const struct event *e)
+{
+    const u8 *p = e->data;
+    struct spawn *s;
+    char id[SPAWN_ID];
+    u32 sid, cell, count, n, i;
+    float pos[3];
+
+    if (e->length < SPAWN_BYTES + 2)
+        return;
+    sid = get32le(p);
+    cell = p[4] | (u32)p[5] << 8;
+    count = p[6] | (u32)p[7] << 8;
+    copy((u8 *)pos, p + 8, 12);
+    for (n = 0; n < SPAWN_ID - 1 && SPAWN_BYTES + n < e->length && p[SPAWN_BYTES + n]; n++)
+        id[n] = (char)p[SPAWN_BYTES + n];
+    id[n] = 0;
+    spawns_received++;
+    if (!sid)
+        return;
+    if (!(s = spawn_by_sid(sid)))
+        for (i = 0; i < SPAWNS && !s; i++) /* our own, back with its id */
+            if (spawns[i].used && !spawns[i].sid && spawns[i].cell == cell &&
+                same_id(spawns[i].id, id) && spawn_near(spawns[i].pos, pos))
+                s = &spawns[i];
+    if (s && !s->sid) {
+        s->sid = sid;
+        s->send = s->removed; /* a removal waiting for the id */
+    } else if (!s) {
+        if (!(s = spawn_slot()))
+            return;
+        s->sid = sid;
+        s->cell = cell;
+        s->count = count & ~SPAWN_REMOVED;
+        copy((u8 *)s->pos, p + 8, 24);
+        s->condition = get32le(p + 32);
+        s->charge = get32le(p + 36);
+        copy((u8 *)s->id, (const u8 *)id, SPAWN_ID);
+        if (!(s->base = resolve_object(id)))
+            s->unresolved = 1;
+    }
+    if ((count & SPAWN_REMOVED) && !s->removed) {
+        s->removed = 1;
+        s->applied = 0;
+    }
+    spawns_pass = 1;
+    if (spawns_logged < 32) {
+        spawns_logged++;
+        log_text("net.spawn_id", id);
+        tes3x_log_hex3("net.spawn", sid, e->origin, cell << 16 | count);
+    }
+}
+
+static void spawns_session(void)
+{
+    u32 i;
+
+    if (spawns_welcome == ses.welcomes)
+        return;
+    spawns_welcome = ses.welcomes;
+    /* The server sends what it knows again; what it has not answered yet goes again. */
+    for (i = 0; i < SPAWNS; i++) {
+        if (spawns[i].used && spawns[i].sid)
+            spawns[i].used = 0;
+        else if (spawns[i].used)
+            spawns[i].send = 1;
+    }
+}
+
+/* A pickup deletes a reference made at run time outright, without marking it, so each one this
+ * console has in an active cell is looked for now and then: missing twice, it is gone. Not while
+ * cells may still be loading their references. */
+#define SPAWN_WATCH_US 250000u
+#define SPAWN_SETTLE_US 2000000u
+#define SPAWN_MISSES 2u
+
+static void spawns_watch(void)
+{
+    struct spawn *s;
+    u8 *ref;
+    u32 i, now = now_us();
+
+    if (now - spawns_watched < SPAWN_WATCH_US || now - spawns_settled < SPAWN_SETTLE_US)
+        return;
+    spawns_watched = now;
+    for (i = 0; i < SPAWNS; i++) {
+        s = &spawns[i];
+        if (!s->used || s->removed || !s->applied || !s->ref || !cell_active(s->cell_ptr))
+            continue;
+        if (spawn_is(s->ref, s) || (ref = spawn_find(s, s->cell_ptr))) {
+            if (!spawn_is(s->ref, s))
+                s->ref = ref;
+            s->misses = 0;
+            continue;
+        }
+        if (++s->misses < SPAWN_MISSES)
+            continue;
+        spawns_gone++;
+        tes3x_log_hex3("net.spawn_gone", s->sid, s->cell, s->send);
+        if (!s->sid && s->send)
+            s->used = 0; /* never sent: nobody else knows it */
+        else
+            s->removed = s->send = 1;
+    }
+}
+
+/* Game thread, in the world, after the frame's events and objects. */
+static void spawns_frame(void)
+{
+    u8 data[EVENT_DATA], *cell, *ref;
+    struct spawn *s, *batch[REMOVES_PER_EVENT];
+    u32 i, n;
+
+    if (ses.state != SESSION_JOINED)
+        return;
+    spawns_watch();
+    for (i = 0; i < SPAWNS; i++) {
+        s = &spawns[i];
+        if (!s->used || !s->send || s->sid || s->removed)
+            continue;
+        put32le(data, s->token);
+        data[4] = (u8)s->cell;
+        data[5] = (u8)(s->cell >> 8);
+        data[6] = (u8)s->count;
+        data[7] = (u8)(s->count >> 8);
+        copy(data + 8, (const u8 *)s->pos, 24);
+        put32le(data + 32, s->condition);
+        put32le(data + 36, s->charge);
+        for (n = 0; s->id[n]; n++)
+            data[SPAWN_BYTES + n] = (u8)s->id[n];
+        data[SPAWN_BYTES + n] = 0;
+        if (!event_queue(EVENT_SPAWN, data, SPAWN_BYTES + n + 1))
+            break;
+        s->send = 0;
+        spawns_sent++;
+        if (spawns_logged < 32) {
+            spawns_logged++;
+            log_text("net.spawn_sent", s->id);
+            tes3x_log_hex3("net.spawn_at", s->cell, s->count, s->condition);
+        }
+    }
+    for (;;) {
+        for (i = n = 0; i < SPAWNS && n < REMOVES_PER_EVENT; i++)
+            if (spawns[i].used && spawns[i].removed && spawns[i].send && spawns[i].sid)
+                batch[n++] = &spawns[i];
+        if (!n)
+            break;
+        data[0] = (u8)n;
+        for (i = 0; i < n; i++)
+            put32le(data + 1 + 4 * i, batch[i]->sid);
+        if (!event_queue(EVENT_REMOVE, data, 1 + 4 * n))
+            break;
+        for (i = 0; i < n; i++)
+            batch[i]->used = 0;
+        tes3x_log_hex3("net.spawn_remove_sent", n, batch[0]->sid, 0);
+    }
+    if (!spawns_pass)
+        return;
+    spawns_pass = 0;
+    for (i = 0; i < SPAWNS; i++) {
+        s = &spawns[i];
+        if (!s->used || !s->sid || s->applied || s->unresolved)
+            continue;
+        if (!s->cell_ptr)
+            s->cell_ptr = cell_at(s->cell);
+        if (!cell_active(cell = s->cell_ptr))
+            continue;
+        ref = spawn_find(s, cell);
+        if (s->removed) {
+            if (ref)
+                spawn_remove(ref);
+            s->used = 0;
+            continue;
+        }
+        s->ref = ref ? ref : spawn_make(s, cell);
+        s->applied = 1;
+        if (!ref && spawns_logged < 32) {
+            spawns_logged++;
+            tes3x_log_hex3("net.spawn_made", s->sid, (u32)s->ref, s->cell);
+            if (s->count & SPAWN_DATA)
+                tes3x_log_hex3("net.spawn_data", s->count & SPAWN_COUNT, s->condition, s->charge);
+        }
+    }
+}
+
+static void spawns_stat(void)
+{
+    u32 i, n = 0;
+
+    for (i = 0; i < SPAWNS; i++)
+        n += spawns[i].used != 0;
+    tes3x_log_hex3("net.spawns", n, spawns_sent, spawns_received);
+    tes3x_log_hex3("net.spawns_made", spawns_made, spawns_removed, spawn_failures);
+    tes3x_log_hex3("net.spawns_full", spawns_full, spawns_gone, 0);
+}
+
+/* Containers. A container reference reads its contents from [ref+0x28]: the base container, shared
+ * by every reference of it, until the reference is first opened, when the base is cloned into an
+ * instance for that reference and its leveled lists are rolled. Four times a second each console
+ * reads the instances in its active cells, and sends one whose contents changed as CONTENTS (in
+ * parts): each stack's count, and for a stack's item data its condition and charge. The first
+ * reading of an instance, its roll, is marked ROLLED: the server keeps what it already has for
+ * that container and sends it back, so the first console's roll holds everywhere. On a cell change
+ * a console asks for the containers of its active cells (WANT) and writes what comes into the
+ * container's instance, cloning it first, through the inventory calls the Contents menu uses. */
+#define EVENT_CONTENTS 16u /* refid, cell u16, part, parts, flags, then entries */
+#define EVENT_WANT 17u     /* count, then cell indices u16 */
+#define CONTENTS_HEAD 9u
+#define CONTENTS_ROLLED 1u
+#define ENTRY_DATA 1u /* entry: count i32, flags, [condition, charge], id */
+#define BOXES 64u
+#define BOX_ENTRIES 96u
+#define ACTIVE_CELLS 16u
+#define CONTAINER_CLONE 0x164 /* vtable offset: (reference) */
+#define OBJECT_INVENTORY 0x3C /* flags, then the stacks' list: first node at +0xC */
+#define INVENTORY_FIRST 0xC
+#define STACK_VARIABLES 8 /* item data array: pointers +0x4, count +0xC */
+
+typedef void(__attribute__((thiscall)) *fn_clone)(void *object, void *ref);
+typedef void(__attribute__((thiscall)) *fn_inventory_add)(void *inventory, void *mobile,
+                                                          void *object, int count, int overwrite,
+                                                          u8 **data);
+typedef void(__attribute__((thiscall)) *fn_inventory_remove)(void *inventory, void *mobile,
+                                                             void *object, int count, void *data,
+                                                             int drop_array);
+typedef void(__attribute__((thiscall)) *fn_heap_free)(void *heap, void *p);
+
+struct entry {
+    int count;
+    u32 flags, condition, charge;
+    char id[SPAWN_ID];
+};
+
+static struct {
+    u32 refid, hash;
+} boxes[BOXES];
+static struct entry box_in[BOX_ENTRIES];
+static u32 box_in_count, box_in_part, box_in_refid, boxes_welcome, boxes_want;
+static u32 boxes_sent, boxes_received, boxes_applied, box_failures, boxes_full;
+
+static const u8 *vtable_of(const u8 *object)
+{
+    return plausible(object) ? *(const u8 *const *)object : 0;
+}
+
+static const char *object_id(const u8 *object)
+{
+    const char *id = ((fn_object_id)(*(void *const *const *)object)[OBJECT_GET_ID / 4])(object);
+    return mapped(id) ? id : 0;
+}
+
+/* An object's inventory as entries: per stack its item data, one entry each, then what is left. */
+static u32 contents_read(const u8 *object, struct entry *out, u32 max)
+{
+    const u8 *node = *(const u8 *const *)(object + OBJECT_INVENTORY + INVENTORY_FIRST), *stack;
+    const u8 *item, *vars, *const *data;
+    const char *id;
+    u32 n = 0, guard, i, k, filled;
+    int total, used;
+
+    for (guard = 0; plausible(node) && guard < 256 && n < max;
+         node = *(const u8 *const *)(node + 4), guard++) {
+        if (!plausible(stack = *(const u8 *const *)(node + 8)) ||
+            !plausible(item = *(const u8 *const *)(stack + 4)) || !(id = object_id(item)))
+            continue;
+        total = *(const int *)stack;
+        used = 0;
+        vars = *(const u8 *const *)(stack + STACK_VARIABLES);
+        filled = plausible(vars) ? *(const u32 *)(vars + 0xC) : 0;
+        data = filled ? *(const u8 *const *const *)(vars + 4) : 0;
+        for (i = 0; plausible(data) && i < filled && n < max; i++) {
+            if (!plausible(data[i]))
+                continue;
+            out[n].count = 1;
+            out[n].flags = ENTRY_DATA;
+            out[n].condition = *(const u32 *)(data[i] + ITEM_CONDITION);
+            out[n].charge = *(const u32 *)(data[i] + ITEM_CHARGE);
+            for (k = 0; id[k] && k < SPAWN_ID - 1; k++)
+                out[n].id[k] = id[k];
+            out[n++].id[k] = 0;
+            used++;
+        }
+        if (total < 0 ? total + used : total - used) {
+            if (n == max)
+                break;
+            out[n].count = total < 0 ? total + used : total - used;
+            out[n].flags = out[n].condition = out[n].charge = 0;
+            for (k = 0; id[k] && k < SPAWN_ID - 1; k++)
+                out[n].id[k] = id[k];
+            out[n++].id[k] = 0;
+        }
+    }
+    return n;
+}
+
+static u32 contents_hash(const struct entry *e, u32 n)
+{
+    u32 hash = 2166136261u, i, k;
+    const u8 *p;
+
+    for (i = 0; i < n; i++) {
+        p = (const u8 *)&e[i];
+        for (k = 0; k < 16; k++)
+            hash = (hash ^ p[k]) * 16777619u;
+        for (k = 0; e[i].id[k]; k++)
+            hash = (hash ^ (u8)e[i].id[k]) * 16777619u;
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
+/* Game thread: a container's contents as CONTENTS parts, all or none. */
+static int contents_send(u32 refid, u32 cell, u32 flags, const struct entry *e, u32 n)
+{
+    static u8 parts[BOX_ENTRIES + 1][EVENT_DATA];
+    static u32 lengths[BOX_ENTRIES + 1];
+    u32 count = 0, i, k, size, lk, room;
+
+    lengths[0] = CONTENTS_HEAD;
+    for (i = 0; i < n; i++) {
+        for (k = 0; e[i].id[k]; k++)
+            ;
+        size = 5 + (e[i].flags & ENTRY_DATA ? 8 : 0) + k + 1;
+        if (lengths[count] + size > EVENT_DATA)
+            lengths[++count] = CONTENTS_HEAD;
+        {
+            u8 *p = parts[count] + lengths[count];
+            put32le(p, (u32)e[i].count);
+            p[4] = (u8)e[i].flags;
+            p += 5;
+            if (e[i].flags & ENTRY_DATA) {
+                put32le(p, e[i].condition);
+                put32le(p + 4, e[i].charge);
+                p += 8;
+            }
+            copy(p, (const u8 *)e[i].id, k + 1);
+        }
+        lengths[count] += size;
+    }
+    count++;
+    lk = lock();
+    room = EVENTS_OUT - (rel.out_next - rel.out_first);
+    unlock(lk);
+    if (room < count)
+        return 0;
+    for (i = 0; i < count; i++) {
+        put32le(parts[i], refid);
+        parts[i][4] = (u8)cell;
+        parts[i][5] = (u8)(cell >> 8);
+        parts[i][6] = (u8)i;
+        parts[i][7] = (u8)count;
+        parts[i][8] = (u8)flags;
+        event_queue(EVENT_CONTENTS, parts[i], lengths[i]);
+    }
+    boxes_sent++;
+    return 1;
+}
+
+/* The active cells (the current interior, or the 3x3) with their index in the cells list. */
+static u32 active_cells(u8 **cells, u32 *indices)
+{
+    const u8 *node = cells_head();
+    u32 i, n = 0;
+
+    for (i = 0; plausible(node) && i < OBJECT_NO_CELL && n < ACTIVE_CELLS;
+         i++, node = *(const u8 *const *)(node + 8))
+        if (cell_active(*(u8 *const *)node)) {
+            cells[n] = *(u8 *const *)node;
+            indices[n++] = i;
+        }
+    return n;
+}
+
+/* A cell's reference with this refid, or 0. */
+static u8 *cell_reference(u8 *cell, u32 refid)
+{
+    static const u32 lists[2] = {0x2C, 0x3C};
+    const u8 *temporary;
+    u8 *ref;
+    u32 i;
+
+    for (i = 0; i < 3; i++) {
+        if (i < 2)
+            ref = *(u8 **)(cell + lists[i] + LIST_HEAD);
+        else if (plausible(temporary = *(const u8 *const *)(cell + CELL_TEMPORARY)))
+            ref = *(u8 *const *)(temporary + 8 + LIST_HEAD);
+        else
+            break;
+        for (; plausible(ref); ref = *(u8 **)(ref + REF_NEXT))
+            if (*(const u32 *)(ref + REF_ID) == refid)
+                return ref;
+    }
+    return 0;
+}
+
+static u32 *box_hash(u32 refid, int create)
+{
+    u32 i, free = BOXES;
+
+    for (i = 0; i < BOXES; i++) {
+        if (boxes[i].refid == refid)
+            return &boxes[i].hash;
+        if (!boxes[i].refid && free == BOXES)
+            free = i;
+    }
+    if (!create)
+        return 0;
+    if (free == BOXES) {
+        boxes_full++;
+        free = refid % BOXES; /* forgetting one only sends it again */
+    }
+    boxes[free].refid = refid;
+    boxes[free].hash = 0;
+    return &boxes[free].hash;
+}
+
+/* Every SPAWN_WATCH_US: the container instances of the active cells whose contents changed. */
+static void containers_scan(void)
+{
+    static struct entry entries[BOX_ENTRIES];
+    u8 *cells[ACTIVE_CELLS], *ref, *object;
+    const u8 *temporary;
+    u32 indices[ACTIVE_CELLS], n, c, l, count, hash, *known, refid;
+    static const u32 lists[2] = {0x2C, 0x3C};
+
+    n = active_cells(cells, indices);
+    for (c = 0; c < n; c++)
+        for (l = 0; l < 3; l++) {
+            if (l < 2)
+                ref = *(u8 **)(cells[c] + lists[l] + LIST_HEAD);
+            else if (plausible(temporary = *(const u8 *const *)(cells[c] + CELL_TEMPORARY)))
+                ref = *(u8 *const *)(temporary + 8 + LIST_HEAD);
+            else
+                break;
+            for (; plausible(ref); ref = *(u8 **)(ref + REF_NEXT)) {
+                object = *(u8 **)(ref + REF_BASE);
+                if ((u32)vtable_of(object) != TES3X_NET_CONTAINER_INSTANCE_VTABLE ||
+                    !(refid = *(const u32 *)(ref + REF_ID)))
+                    continue;
+                count = contents_read(object, entries, BOX_ENTRIES);
+                hash = contents_hash(entries, count) | 1;
+                known = box_hash(refid, 0);
+                if (known && *known == hash)
+                    continue;
+                if (contents_send(refid, indices[c], known ? 0 : CONTENTS_ROLLED, entries,
+                                  count)) {
+                    *box_hash(refid, 1) = hash;
+                    tes3x_log_hex3("net.contents_sent", refid, count, known ? 0 : 1);
+                }
+            }
+        }
+}
+
+static void wants_send(void)
+{
+    u8 data[EVENT_DATA], *cells[ACTIVE_CELLS];
+    u32 indices[ACTIVE_CELLS], n, i;
+
+    n = active_cells(cells, indices);
+    if (!n)
+        return;
+    data[0] = (u8)n;
+    for (i = 0; i < n; i++) {
+        data[1 + 2 * i] = (u8)indices[i];
+        data[2 + 2 * i] = (u8)(indices[i] >> 8);
+    }
+    if (event_queue(EVENT_WANT, data, 1 + 2 * n))
+        boxes_want = 0;
+}
+
+/* Empty the reference's container instance, cloning it first, and fill it with the entries. */
+static int contents_apply(u8 *ref, const struct entry *e, u32 n)
+{
+    u8 *object = *(u8 **)(ref + REF_BASE), *inventory, *node, *stack, *item, *vars, *data;
+    u32 i, guard;
+    int count;
+
+    if ((u32)vtable_of(object) == TES3X_NET_CONTAINER_VTABLE) {
+        ((fn_clone)(*(void *const *const *)object)[CONTAINER_CLONE / 4])(object, ref);
+        object = *(u8 **)(ref + REF_BASE);
+    }
+    if ((u32)vtable_of(object) != TES3X_NET_CONTAINER_INSTANCE_VTABLE)
+        return 0;
+    inventory = object + OBJECT_INVENTORY;
+    object_applying = 1;
+    for (guard = 0; plausible(node = *(u8 **)(inventory + INVENTORY_FIRST)) && guard < 512;
+         guard++) {
+        stack = *(u8 **)(node + 8);
+        item = *(u8 **)(stack + 4);
+        vars = *(u8 **)(stack + STACK_VARIABLES);
+        if (plausible(vars) && *(const u32 *)(vars + 0xC) &&
+            plausible(data = **(u8 ***)(vars + 4))) {
+            ((fn_inventory_remove)TES3X_NET_INVENTORY_REMOVE)(inventory, 0, item, 1, data, 1);
+            ((fn_mobile_call)TES3X_NET_ITEM_DATA_DESTROY)(data);
+            ((fn_heap_free)TES3X_NET_HEAP_FREE)((void *)TES3X_NET_HEAP, data);
+            continue;
+        }
+        count = *(const int *)stack;
+        ((fn_inventory_remove)TES3X_NET_INVENTORY_REMOVE)(inventory, 0, item,
+                                                          count < 0 ? -count : count ? count : 1,
+                                                          0, 1);
+        if (*(u8 **)(inventory + INVENTORY_FIRST) == node && *(u8 **)(node + 8) == stack &&
+            *(const int *)stack == count)
+            break; /* not removed: stop rather than loop */
+    }
+    for (i = 0; i < n; i++) {
+        if (!(item = resolve_object(e[i].id))) {
+            box_failures++;
+            log_text("net.contents_unknown", e[i].id);
+            continue;
+        }
+        data = 0;
+        if ((e[i].flags & ENTRY_DATA) &&
+            plausible(data = ((fn_item_data_new)TES3X_NET_ITEM_DATA_NEW)(item))) {
+            *(u32 *)(data + ITEM_CONDITION) = e[i].condition;
+            *(u32 *)(data + ITEM_CHARGE) = e[i].charge;
+        }
+        ((fn_inventory_add)TES3X_NET_INVENTORY_ADD)(inventory, 0, item, e[i].count, 0,
+                                                    data ? &data : 0);
+    }
+    ((fn_set_modified)TES3X_NET_REF_MODIFIED)(ref, 1);
+    object_applying = 0;
+    return 1;
+}
+
+static void contents_event(const struct event *e)
+{
+    static struct entry read_back[BOX_ENTRIES];
+    const u8 *p = e->data;
+    u32 refid, cell, off = CONTENTS_HEAD, k, n;
+    u8 *cell_ptr, *ref;
+
+    if (e->length < CONTENTS_HEAD)
+        return;
+    refid = get32le(p);
+    cell = p[4] | (u32)p[5] << 8;
+    if (p[6] == 0) {
+        box_in_count = box_in_part = 0;
+        box_in_refid = refid;
+    } else if (p[6] != box_in_part || refid != box_in_refid) {
+        return;
+    }
+    box_in_part++;
+    while (off + 5 < e->length && box_in_count < BOX_ENTRIES) {
+        struct entry *x = &box_in[box_in_count++];
+        x->count = (int)get32le(p + off);
+        x->flags = p[off + 4];
+        off += 5;
+        x->condition = x->charge = 0;
+        if (x->flags & ENTRY_DATA) {
+            x->condition = get32le(p + off);
+            x->charge = get32le(p + off + 4);
+            off += 8;
+        }
+        for (k = 0; off + k < e->length && p[off + k] && k < SPAWN_ID - 1; k++)
+            x->id[k] = (char)p[off + k];
+        x->id[k] = 0;
+        while (off < e->length && p[off])
+            off++;
+        off++;
+    }
+    if (box_in_part != p[7])
+        return;
+    boxes_received++;
+    /* Not loaded here: WANT asks for it when its cell is. */
+    if (!cell_active(cell_ptr = cell_at(cell)) || !(ref = cell_reference(cell_ptr, refid)))
+        return;
+    if (!contents_apply(ref, box_in, box_in_count)) {
+        box_failures++;
+        tes3x_log_hex3("net.contents_failed", refid, (u32)vtable_of(*(u8 **)(ref + REF_BASE)), 0);
+        return;
+    }
+    n = contents_read(*(u8 **)(ref + REF_BASE), read_back, BOX_ENTRIES);
+    *box_hash(refid, 1) = contents_hash(read_back, n) | 1;
+    boxes_applied++;
+    tes3x_log_hex3("net.contents_applied", refid, box_in_count, n);
+}
+
+/* Game thread, in the world. */
+static void containers_frame(void)
+{
+    static u32 scanned, signature;
+    u32 now = now_us(), i;
+
+    if (ses.state != SESSION_JOINED)
+        return;
+    if (boxes_welcome != ses.welcomes) {
+        boxes_welcome = ses.welcomes;
+        for (i = 0; i < BOXES; i++)
+            boxes[i].refid = 0;
+        boxes_want = 1;
+    }
+    if (signature != spawns_settled) {
+        signature = spawns_settled;
+        boxes_want = 1;
+    }
+    /* Once the cells have loaded their references. */
+    if (now - spawns_settled < SPAWN_SETTLE_US)
+        return;
+    if (boxes_want)
+        wants_send();
+    if (now - scanned < SPAWN_WATCH_US)
+        return;
+    scanned = now;
+    containers_scan();
+}
+
+static void containers_stat(void)
+{
+    tes3x_log_hex3("net.contents", boxes_sent, boxes_received, boxes_applied);
+    tes3x_log_hex3("net.contents_bad", box_failures, boxes_full, 0);
 }
 
 static void event_handle(const struct event *e)
@@ -4697,6 +5635,10 @@ static void event_handle(const struct event *e)
         shot_event(e);
     } else if (e->kind == EVENT_OBJECTS && e->length >= 1) {
         objects_event(e);
+    } else if (e->kind == EVENT_SPAWN) {
+        spawn_event(e);
+    } else if (e->kind == EVENT_CONTENTS) {
+        contents_event(e);
     } else {
         tes3x_log_hex3("net.event_unknown", e->kind, e->origin, e->length);
     }
@@ -4981,6 +5923,7 @@ void tes3x_net_frame(void)
         shot_hook_install();
         objects_hook_install();
         authority_session();
+        spawns_session();
         events_frame();
     }
     ref = player_reference();
@@ -5029,6 +5972,8 @@ void tes3x_net_frame(void)
     ghosts_frame(state);
     authority_frame(ref, state);
     objects_frame();
+    spawns_frame();
+    containers_frame();
 }
 
 int tes3x_net_command(const char *text)
@@ -5058,6 +6003,8 @@ int tes3x_net_command(const char *text)
         spell_stat();
         shot_stat();
         objects_stat();
+        spawns_stat();
+        containers_stat();
     } else if ((rest = word(text, "menusim")) && (rest = word(skip(rest), "auto")) &&
                !*skip(rest)) {
         menu_forced = 0;

@@ -55,6 +55,20 @@ SPELL_ADDRESSES = (
     ("ACTIVATE_SPELL", 0x000BE050), ("MAGIC_INSTANCE", 0x000BCD30),
     ("RESOLVE_OBJECT", 0x00104300),
 )
+# What the leveled creature spawn and Inventory::DropItem call to make a reference at run time,
+# put it in a cell, give it a stack count and attach it to the cell's scene.
+SPAWN_ADDRESSES = (
+    ("CREATE_REFERENCE", 0x00111730), ("CELL_INSERT", 0x00122F90), ("CELL_NODE", 0x00126220),
+    ("CELL_ACTIVATORS", 0x001253E0), ("ATTACH_SCENE", 0x000DC2C0), ("ITEM_DATA_NEW", 0x0012AB10),
+    ("ATTACH_ITEM_DATA", 0x0012D810), ("UPDATE_LIGHTING", 0x000DBFE0),
+)
+# A container's vtable (slot +0x164 clones it into an instance for one reference, as opening it
+# does), the instance's vtable, and what the Contents menu calls to move items.
+CONTAINER_ADDRESSES = (
+    ("CONTAINER_VTABLE", 0x00366558), ("CONTAINER_INSTANCE_VTABLE", 0x003659A0),
+    ("INVENTORY_ADD", 0x000EADD0), ("INVENTORY_REMOVE", 0x000EB4B0),
+    ("ITEM_DATA_DESTROY", 0x0012BEB0), ("HEAP_FREE", 0x00011CF0), ("HEAP", 0x003EFC70),
+)
 # An actor's shoot slot (mobile vtable +0xF4) releases the projectile nock put in its hand; a
 # MobileProjectile's actor collision rolls to hit once.
 SHOOT = 0x0017BD30
@@ -279,7 +293,8 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         for name in ("COMPILE_RUN", "FIND_MENU", "UI_ID", "TRIGGER_EVENT"):
             define("NET_" + name, address(name, dict(CONSOLE_ADDRESSES)[name]))
         define("NET_SERVICE_ACTOR", address("SERVICE_ACTOR", SERVICE_ACTOR))
-        for name, default in PLACE_ADDRESSES + SPELL_ADDRESSES:
+        for name, default in (PLACE_ADDRESSES + SPELL_ADDRESSES + SPAWN_ADDRESSES
+                              + CONTAINER_ADDRESSES):
             define("NET_" + name, address(name, default))
         spell_hit = int(address("SPELL_HIT", SPELL_HIT), 16)
         sites = find_call_sites(image, spell_hit)

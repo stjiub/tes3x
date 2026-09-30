@@ -301,7 +301,7 @@ def ping(args):
 
 
 T3MP = struct.Struct("<4sBBHIIIII")  # magic, version, type, 0, session, seq, ack, time, echo
-T3MP_VERSION = 7
+T3MP_VERSION = 8
 HELLO, WELCOME, HEARTBEAT, BYE, STATE, PEER, GONE, EVENTS, REFUSE, CLOCK, ACTORS = range(1, 12)
 # GameHour, Day, Month (0-11), Year, DaysPassed, TimeScale, as the game's float globals
 CLOCK_BODY = struct.Struct("<6f")
@@ -312,7 +312,7 @@ TIMEOUT = 5.0
 EVENTS_HEAD = struct.Struct("<IB3x")  # the sender's last delivered event, event count
 EVENT = struct.Struct("<IHHI")  # seq, kind, length, origin client; the data follows
 EVENTS_BYTES = 512  # the client's largest EVENTS body
-EVENT_DATA = 64
+EVENT_DATA = 80
 EVENT_TEXT = 1
 EVENT_AUTHORITY, EVENT_HOLD, EVENT_HOLD_BROKEN, EVENT_HIT, EVENT_DEATH = 2, 3, 4, 5, 6
 EVENT_EQUIPMENT = 7  # part, parts, then item ids each ending in a zero
@@ -327,6 +327,26 @@ EVENT_OBJECTS = 13  # count, then OBJECT records
 OBJECT = struct.Struct("<IHBB")
 OBJECT_DISABLED, OBJECT_DELETED, OBJECT_LOCK, OBJECT_LOCKED = 1, 2, 4, 8
 OBJECTS_PER_EVENT = (EVENT_DATA - 1) // OBJECT.size
+EVENT_SPAWN = 14  # SPAWN, then the base object's id ending in a zero
+EVENT_REMOVE = 15  # count, then spawn ids
+# A reference made at run time: its id (from its maker a token, which the server replaces), cell
+# index, stack count with SPAWN_REMOVED once removed and SPAWN_DATA if it has item data, position,
+# orientation, and the item data's condition (uses, time left) and charge, raw: an int or a float
+# by the item's type.
+SPAWN = struct.Struct("<IHH6fII")
+SPAWN_REMOVED, SPAWN_DATA, SPAWN_COUNT = 0x8000, 0x4000, 0x3FFF
+SPAWN_IDS = 0xFF000000  # never a data-file refid: mod index 0xFF
+SPAWN_TWIN = 16.0  # units: a script's reference made on two consoles at once
+SPAWN_TWIN_SECONDS = 2.0
+EVENT_CONTENTS = 16  # CONTENTS_HEAD, then entries
+EVENT_WANT = 17  # count, then cell indices u16: the containers of those cells are wanted
+# A container's contents in parts: refid, cell index, part, parts, flags (CONTENTS_ROLLED: the
+# console's first reading of its instance). An entry: count, flags (ENTRY_DATA: its condition and
+# charge follow, raw), then the item's id ending in a zero.
+CONTENTS_HEAD = struct.Struct("<IHBBB")
+CONTENTS_ROLLED = 1
+ENTRY = struct.Struct("<iB")
+ENTRY_DATA = 1
 SHOT = struct.Struct("<IffB")  # firer refid, the two shot values, firer is a player
 # caster refid, target client, target refid (0: its player), source type, caster is a player
 SPELL = struct.Struct("<IIIBB")
@@ -419,6 +439,100 @@ def describe_object(refid, cell, state, level):
     if state & OBJECT_LOCK:
         words.append(f"locked {level}" if state & OBJECT_LOCKED else "unlocked")
     return f"{refid:#010x} in cell {cell}: {', '.join(words) or 'restored'}"
+
+
+def pack_spawn(sid, spawn):
+    """A SPAWN event for one reference made at run time."""
+    count = spawn["count"] | (SPAWN_REMOVED if spawn["removed"] else 0) | \
+        (SPAWN_DATA if spawn.get("data") else 0)
+    return (SPAWN.pack(sid, spawn["cell"], count, *spawn["pos"], *spawn["rot"],
+                       spawn.get("condition", 0), spawn.get("charge", 0))
+            + zstr(spawn["id"][:31]))
+
+
+def unpack_spawn(data):
+    """(sid, spawn) of a SPAWN event."""
+    sid, cell, count, *place, condition, charge = SPAWN.unpack_from(data)
+    name = data[SPAWN.size:].split(b"\0")[0].decode("latin-1")
+    return sid, {"cell": cell, "count": count & SPAWN_COUNT,
+                 "removed": bool(count & SPAWN_REMOVED), "pos": place[:3], "rot": place[3:],
+                 "id": name, "data": bool(count & SPAWN_DATA), "condition": condition,
+                 "charge": charge}
+
+
+def pack_removes(sids):
+    """REMOVE events for spawn ids, as tes3xnet.c spawns_frame packs them."""
+    per = (EVENT_DATA - 1) // 4
+    return [bytes([len(chunk)]) + struct.pack(f"<{len(chunk)}I", *chunk)
+            for chunk in (sids[i:i + per] for i in range(0, len(sids), per))]
+
+
+def unpack_removes(data):
+    count = min(data[0], (len(data) - 1) // 4) if data else 0
+    return list(struct.unpack_from(f"<{count}I", data, 1))
+
+
+def spawn_twin(spawns, spawn, origin, token, now):
+    """The id of a spawn that this one repeats: the maker sending it again (by its token), or the
+    same object made in the same place by another console's copy of a script moments ago."""
+    for sid, known in spawns.items():
+        if token and known["origin"] == origin and known.get("token") == token:
+            return sid
+    for sid, known in spawns.items():
+        if known["removed"] or known["origin"] == origin or \
+                known["id"].lower() != spawn["id"].lower() or known["cell"] != spawn["cell"]:
+            continue
+        far = max(abs(a - b) for a, b in zip(known["pos"], spawn["pos"]))
+        if far <= SPAWN_TWIN and now - known.get("made", 0) <= SPAWN_TWIN_SECONDS:
+            return sid
+    return None
+
+
+def pack_contents(refid, cell, entries, flags=0):
+    """CONTENTS events for [id, count, flags, condition, charge] entries, as tes3xnet.c packs
+    them."""
+    parts = [b""]
+    for name, count, entry_flags, condition, charge in entries:
+        item = ENTRY.pack(count, entry_flags)
+        if entry_flags & ENTRY_DATA:
+            item += struct.pack("<II", condition, charge)
+        item += zstr(name[:31])
+        if CONTENTS_HEAD.size + len(parts[-1]) + len(item) > EVENT_DATA:
+            parts.append(b"")
+        parts[-1] += item
+    return [CONTENTS_HEAD.pack(refid, cell, i, len(parts), flags) + part
+            for i, part in enumerate(parts)]
+
+
+def unpack_contents(data):
+    """(refid, cell, part, parts, flags, entries) of one CONTENTS event."""
+    refid, cell, part, parts, flags = CONTENTS_HEAD.unpack_from(data)
+    off, entries = CONTENTS_HEAD.size, []
+    while off + ENTRY.size < len(data):
+        count, entry_flags = ENTRY.unpack_from(data, off)
+        off += ENTRY.size
+        condition = charge = 0
+        if entry_flags & ENTRY_DATA:
+            condition, charge = struct.unpack_from("<II", data, off)
+            off += 8
+        end = data.index(b"\0", off) if b"\0" in data[off:] else len(data)
+        entries.append([data[off:end].decode("latin-1"), count, entry_flags, condition, charge])
+        off = end + 1
+    return refid, cell, part, parts, flags, entries
+
+
+def describe_contents(entries):
+    return ", ".join(f"{name} x{count}" + (f" (condition {condition:#x})" if flags else "")
+                     for name, count, flags, condition, _ in entries) or "empty"
+
+
+def describe_spawn(sid, spawn):
+    x, y, z = spawn["pos"]
+    what = f"{spawn['id']}" + (f" x{spawn['count']}" if spawn["count"] > 1 else "")
+    if spawn.get("data"):
+        what += f" (condition {spawn['condition']:#x}, charge {spawn['charge']:#x})"
+    return (f"{sid:#010x} {what} in cell {spawn['cell']} at {x:.0f} {y:.0f} {z:.0f}"
+            + (" (removed)" if spawn["removed"] else ""))
 
 
 def load_world(path):
@@ -710,7 +824,29 @@ def serve(args):
     actors = {}  # refid -> (reporting client, cell, ACTOR bytes), the latest from an authority
     weather = {}  # region index -> weather, the session's; replayed to each joining client
     objects = {}  # refid -> (cell index, state, lock level); replayed to each joining client
-    world = {"path": None, "dirty": False, "saved": 0.0}
+    # spawn id -> reference made at run time (unpack_spawn), removed ones too; replayed likewise
+    spawns = {}
+    # refid -> {"cell", "entries", "origin"}: a container's latest contents; sent to whoever loads
+    # its cell (WANT)
+    contents = {}
+    arriving = {}  # client id -> (refid, entries so far, next part)
+    bot_boxes = []
+    for spec in args.bot_contents:
+        what, _, at = spec.rpartition("@")
+        refid, cell, items = what.split(":", 2)
+        entries = []
+        for item in items.split(","):
+            name, count, *condition = item.split("*")
+            entries.append([name, int(count), ENTRY_DATA if condition else 0,
+                            int(condition[0]) if condition else 0, 0])
+        bot_boxes.append((float(at), int(refid, 16), int(cell), entries))
+    world = {"path": None, "dirty": False, "saved": 0.0, "next_spawn": 1}
+    bot_spawns = []
+    for spec in args.bot_spawn:
+        what, _, at = spec.rpartition("@")
+        name, cell, *condition = what.split(":")
+        bot_spawns.append((float(at), name, int(cell), int(condition[0]) if condition else None))
+    bot_takes = [float(at) for at in args.bot_take]
     bot_weather = []
     bot_spells = []
     bot_shots = [(float(at), ammo) for ammo, _, at in (s.rpartition("@") for s in args.bot_shoot)]
@@ -801,15 +937,25 @@ def serve(args):
             return
         deaths.update({int(k): v for k, v in saved.get("deaths", {}).items()})
         objects.update({int(k): tuple(v) for k, v in saved.get("objects", {}).items()})
+        spawns.update({int(k): v for k, v in saved.get("spawns", {}).items()})
+        contents.update({int(k): v for k, v in saved.get("contents", {}).items()})
+        world["next_spawn"] = max(world["next_spawn"], saved.get("next_spawn", 1))
         weather.update({int(k): v for k, v in saved.get("weather", {}).items()})
         if saved.get("clock") and args.hour is None:
             clock = Clock(*saved["clock"], now)
         print(f"world {world['path']}: {len(deaths)} deaths, {len(objects)} objects, "
-              f"{len(weather)} regions" + (f", clock {clock}" if clock else ""), flush=True)
+              f"{len(spawns)} spawns, {len(contents)} containers, {len(weather)} regions"
+              + (f", clock {clock}" if clock else ""), flush=True)
 
     def write_world(now):
         state = {"deaths": {str(k): v for k, v in deaths.items()},
                  "objects": {str(k): list(v) for k, v in objects.items()},
+                 "spawns": {str(k): {f: v.get(f, 0) for f in ("cell", "count", "removed", "pos",
+                                                              "rot", "id", "origin", "token",
+                                                              "data", "condition", "charge")}
+                            for k, v in spawns.items()},
+                 "next_spawn": world["next_spawn"],
+                 "contents": {str(k): v for k, v in contents.items()},
                  "weather": {str(k): v for k, v in weather.items()}}
         if clock:
             clock.advance(now)
@@ -853,8 +999,96 @@ def serve(args):
                     other.rel.queue(EVENT_WEATHER, origin, data)
                 flush(other, now)
 
+    def add_spawn(origin, spawn, stamp, now, token=0):
+        """Name a reference made at run time and send it to every client, its maker too, which
+        knows it as its own by cell, object and place. A repeat gets the id it already has, and
+        goes to the maker only."""
+        sid = spawn_twin(spawns, spawn, origin, token, now)
+        if sid is not None:
+            print(f"{stamp} client {origin} repeats {describe_spawn(sid, spawns[sid])}",
+                  flush=True)
+            send_event(origin, spawns[sid]["origin"], EVENT_SPAWN, pack_spawn(sid, spawns[sid]),
+                       now)
+            return sid
+        sid = SPAWN_IDS | world["next_spawn"]
+        world["next_spawn"] += 1
+        spawns[sid] = dict(spawn, origin=origin, token=token, made=now, removed=False)
+        world["dirty"] = True
+        print(f"{stamp} client {origin} made {describe_spawn(sid, spawns[sid])}", flush=True)
+        data = pack_spawn(sid, spawns[sid])
+        for other in clients.values():
+            if other.alive:
+                other.rel.queue(EVENT_SPAWN, origin, data)
+                flush(other, now)
+        return sid
+
+    def remove_spawn(origin, sid, stamp, now):
+        spawn = spawns.get(sid)
+        if spawn is None or spawn["removed"]:
+            return
+        spawn["removed"] = True
+        world["dirty"] = True
+        print(f"{stamp} client {origin} removed {describe_spawn(sid, spawn)}", flush=True)
+        broadcast_event(origin, EVENT_SPAWN, pack_spawn(sid, spawn), now)
+
+    def send_contents(target, refid, now, flags=0):
+        box = contents[refid]
+        for other in clients.values():
+            if other.alive and other.id == target:
+                for part in pack_contents(refid, box["cell"], box["entries"], flags):
+                    other.rel.queue(EVENT_CONTENTS, box["origin"], part)
+                flush(other, now)
+
+    def set_contents(origin, refid, cell, entries, rolled, stamp, now):
+        """Keep a container's contents and send them to the other clients. A console's first
+        reading of a container the server already holds gets the server's contents back."""
+        known = contents.get(refid)
+        if rolled and known:
+            if known["entries"] != entries:
+                print(f"{stamp} client {origin} opened {refid:#010x}: keeps "
+                      f"{describe_contents(known['entries'])}", flush=True)
+                send_contents(origin, refid, now)
+            return
+        contents[refid] = {"cell": cell, "entries": entries, "origin": origin}
+        world["dirty"] = True
+        print(f"{stamp} client {origin} {'opened' if rolled else 'changed'} {refid:#010x} in cell "
+              f"{cell}: {describe_contents(entries)}", flush=True)
+        for other in clients.values():
+            if other.alive and other.id != origin:
+                send_contents(other.id, refid, now)
+
     def on_event(client, kind, data, stamp, now):
         client.events += 1
+        if kind == EVENT_CONTENTS and len(data) >= CONTENTS_HEAD.size:
+            refid, cell, part, parts, flags, entries = unpack_contents(data)
+            have = arriving.get(client.id)
+            if part == 0:
+                have = arriving[client.id] = (refid, [], 0)
+            if not have or have[0] != refid or have[2] != part:
+                return
+            arriving[client.id] = (refid, have[1] + entries, part + 1)
+            if part + 1 == parts:
+                del arriving[client.id]
+                set_contents(client.id, refid, cell, have[1] + entries,
+                             bool(flags & CONTENTS_ROLLED), stamp, now)
+            return
+        if kind == EVENT_WANT and data:
+            cells = set(struct.unpack_from(f"<{min(data[0], (len(data) - 1) // 2)}H", data, 1))
+            wanted = [refid for refid, box in contents.items() if box["cell"] in cells]
+            for refid in wanted:
+                send_contents(client.id, refid, now)
+            if wanted:
+                print(f"{stamp} client {client.id} loads cells {sorted(cells)}: sent "
+                      f"{len(wanted)} containers", flush=True)
+            return
+        if kind == EVENT_SPAWN and len(data) > SPAWN.size:
+            token, spawn = unpack_spawn(data)
+            add_spawn(client.id, spawn, stamp, now, token)
+            return
+        if kind == EVENT_REMOVE and data:
+            for sid in unpack_removes(data):
+                remove_spawn(client.id, sid, stamp, now)
+            return
         if kind == EVENT_WEATHER and len(data) >= 2:
             flags, entries = unpack_weather(data)
             if flags & WEATHER_OFFER:
@@ -1058,6 +1292,8 @@ def serve(args):
                 client.rel.queue(EVENT_DEATH, origin, struct.pack("<I", refid))
             for data in pack_objects(objects):
                 client.rel.queue(EVENT_OBJECTS, 0, data)
+            for sid, spawn in sorted(spawns.items(), key=lambda s: s[1]["removed"]):
+                client.rel.queue(EVENT_SPAWN, 0, pack_spawn(sid, spawn))
             for origin, (parts, _) in equipment.items():
                 if origin != client.id:
                     for part in parts:
@@ -1234,6 +1470,21 @@ def serve(args):
                 send_event(target, BOT_ID, kind, data, now)
             else:
                 broadcast_event(BOT_ID, kind, data, now)
+        for spec in [s for s in bot_spawns if window(f"{s[0]}:", now)]:
+            bot_spawns.remove(spec)
+            _, x, y, z = bot["anchor"]
+            add_spawn(BOT_ID, {"cell": spec[2], "count": 1, "pos": [x + 64, y, z],
+                               "rot": [0.0, 0.0, 0.0], "id": spec[1],
+                               "data": spec[3] is not None, "condition": spec[3] or 0,
+                               "charge": 0},
+                      time.strftime("%H:%M:%S"), now)
+        for box in [b for b in bot_boxes if window(f"{b[0]}:", now)]:
+            bot_boxes.remove(box)
+            set_contents(BOT_ID, box[1], box[2], box[3], False, time.strftime("%H:%M:%S"), now)
+        for at in [t for t in bot_takes if window(f"{t}:", now)]:
+            bot_takes.remove(at)
+            for sid in [s for s, v in spawns.items() if v["origin"] != BOT_ID]:
+                remove_spawn(BOT_ID, sid, time.strftime("%H:%M:%S"), now)
         for shot in [s for s in bot_shots if window(f"{s[0]}:", now)]:
             bot_shots.remove(shot)
             print(f"{time.strftime('%H:%M:%S')} bot shoots {shot[1]}", flush=True)
@@ -1263,6 +1514,9 @@ def serve(args):
                       + summary(client), flush=True)
             if objects:
                 print(f"  objects: {len(objects)} changed", flush=True)
+            if spawns:
+                live = sum(not s["removed"] for s in spawns.values())
+                print(f"  spawns: {live} live, {len(spawns) - live} removed", flush=True)
             if actors:
                 print(f"  actors: {len(actors)} known; authorities "
                       + ", ".join(f"{describe_key(k)} {c}" for k, c in sorted(
@@ -1313,7 +1567,8 @@ def main(argv=None):
     p.add_argument("--duration", type=float, help="stop after this many seconds")
     p.add_argument("--world", metavar="DIR",
                    help="keep the world in DIR, one file per load order: the clock, deaths, "
-                        "changed objects and weather, loaded when the load order is set and "
+                        "changed objects, objects made at run time and weather, loaded when the "
+                        "load order is set and "
                         "written every 10 seconds while it changes")
     p.add_argument("--dhcp-lease", type=int, default=3600, metavar="SECONDS",
                    help="lease time offered to xemu guests that ask for an address "
@@ -1360,6 +1615,19 @@ def main(argv=None):
                         "or at an actor (hex refid), this long after it appears (repeatable)")
     p.add_argument("--bot-shoot", action="append", default=[], metavar="AMMO@SECONDS",
                    help="the bot shoots this ammunition (or thrown weapon) this long after it "
+                        "appears (repeatable)")
+    p.add_argument("--bot-spawn", action="append", default=[],
+                   metavar="ID:CELL[:CONDITION]@SECONDS",
+                   help="the bot places this object in the cell of that index (the cells list's "
+                        "order), 64 units east of where the first client entered the world, this "
+                        "long after it appears, with item data of that condition if given "
+                        "(repeatable)")
+    p.add_argument("--bot-contents", action="append", default=[],
+                   metavar="REFID:CELL:ID*COUNT[*CONDITION],...@SECONDS",
+                   help="the bot fills this container (hex refid, in the cell of that index) with "
+                        "these items this long after it appears (repeatable)")
+    p.add_argument("--bot-take", action="append", default=[], metavar="SECONDS",
+                   help="the bot removes every live object a client placed, this long after it "
                         "appears (repeatable)")
     p.add_argument("--bot-kill", metavar="REFID@SECONDS",
                    help="the bot reports this actor (hex refid) dead this long after it appears")
