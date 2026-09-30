@@ -13,7 +13,7 @@ on, `low` for minor ones, and `none` for fixes we won't port.
 
 | status | fixes |
 |---|---|
-| candidate | 192 |
+| candidate | 191 |
 | deferred | 13 |
 | not-applicable | 16 |
 | rejected | 2 |
@@ -24,7 +24,6 @@ Worth porting, but not yet shown to affect the Xbox build.
 
 | fix | from | priority | category | notes |
 |---|---|---|---|---|
-| `mcp-125` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #125 | high | core (intended default) | **Position/PositionCell uninitialized-script crash.** Moving an NPC to an unvisited cell can leave its script uninitialized and make dialogue crash. |
 | `mcp-127` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #127 | high | compat | **Map-texture conflict fix.** The world map breaks if _land_default.dds is replaced at a different size. TES3X's texture budget resizes textures, so a build can cause this; check the pipeline leaves that texture alone before porting. |
 | `mcp-173` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #173 | high | core (intended default) | **Persist `RaiseRank`/`LowerRank`.** Missing dirty mark can break faction quests after reload. |
 | `mcp-178` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #178 | high | core (intended default) | **Load-warning input crash.** Xbox has load warnings and a single controller path, so this is directly testable. |

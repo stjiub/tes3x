@@ -511,6 +511,34 @@ MCP123_ADD_SIG = re.compile(
     re.S,
 )
 
+# Position and PositionCell share the reference-move helper. Their early exits skip the script
+# attachment used by the third caller, and the helper removes actor collision when the destination
+# is absent but never adds it when the destination is present.
+MCP125_POSITION_A_SIG = re.compile(
+    rb"(?P<site>\xa1(?P<angle>....)\x8b\x0d(?P<ref>....)\x50\x68(?P<coords>....)"
+    rb"\x56\x51(?P<call>\xe8....)\x83\xc4\x10\xe9....)",
+    re.S,
+)
+MCP125_POSITION_B_SIG = re.compile(
+    rb"(?P<site>\x8b\x15(?P<angle>....)\xa1(?P<ref>....)\x52\x68(?P<coords>....)"
+    rb"\x56\x50(?P<call>\xe8....)\x83\xc4\x10\xe9....)",
+    re.S,
+)
+MCP125_ATTACH_SIG = re.compile(
+    rb"\x8b\x0d....\x51\x68(?P<coords>....)\x57\x56(?P<call>\xe8....)\x83\xc4\x10"
+    rb"(?P<resume>\x8b\xce\xe8....\x8b\x4e\x10)",
+    re.S,
+)
+MCP125_COLLISION_SIG = re.compile(
+    rb"(?P<site>\x8a\x44\x24\x3c\x84\xc0\x0f\x85....\xa1(?P<manager>....)\x8b\x48\x5c)"
+    rb"\x57(?P<remove>\xe8....)\xe9....",
+    re.S,
+)
+MCP125_ADD_MOB_SIG = re.compile(
+    rb"\x8b\x0d(?P<manager>....)\x8b\x49\x5c\x57(?P<add>\xe8....)\x8b\xcf\xe8....",
+    re.S,
+)
+
 # The exterior/interior cell-change path copies the player's position, tears down its current
 # world state, then installs the destination. MCP inserts its stale-cast cleanup immediately
 # after that teardown. Capture the repeated game singleton so the payload does not pin it.
@@ -785,6 +813,60 @@ def find_mcp123_add(x):
     if va is None:
         raise PatchError("mcp-123: PlaceItem insertion call is outside any section")
     return va
+
+
+def find_mcp125_context(x):
+    """Find the two Position exits, shared attachment tail and collision add/remove methods."""
+    data = bytes(x.data)
+
+    def one(signature, label):
+        hits = list(signature.finditer(data))
+        if len(hits) != 1:
+            raise PatchError("mcp-125: %d %s match(es), expected 1" % (len(hits), label))
+        return hits[0]
+
+    a = one(MCP125_POSITION_A_SIG, "first Position path")
+    b = one(MCP125_POSITION_B_SIG, "second Position path")
+    attach = one(MCP125_ATTACH_SIG, "script attachment tail")
+    collision = one(MCP125_COLLISION_SIG, "collision branch")
+    add = one(MCP125_ADD_MOB_SIG, "add-mob path")
+
+    calls = []
+    for match in (a, b, attach):
+        va = x.off_to_va(match.start("call"))
+        if va is None:
+            raise PatchError("mcp-125: move call is outside any section")
+        calls.append(tes3x_inject.call_target(x, va))
+    if len(set(calls)) != 1:
+        raise PatchError("mcp-125: Position paths do not share one move helper")
+    if a.group("ref") != b.group("ref") or a.group("coords") != b.group("coords"):
+        raise PatchError("mcp-125: Position paths do not share reference and coordinate globals")
+    if a.group("coords") != attach.group("coords"):
+        raise PatchError("mcp-125: attachment path uses a different coordinate global")
+    if collision.group("manager") != add.group("manager"):
+        raise PatchError("mcp-125: collision paths use different mob managers")
+
+    vas = {
+        "positions": [x.off_to_va(a.start("site")), x.off_to_va(b.start("site"))],
+        "resume": x.off_to_va(attach.start("resume")),
+        "collision": x.off_to_va(collision.start("site")),
+        "move": calls[0],
+        "remove": tes3x_inject.call_target(x, x.off_to_va(collision.start("remove"))),
+        "add": tes3x_inject.call_target(x, x.off_to_va(add.start("add"))),
+        "manager": struct.unpack("<I", collision.group("manager"))[0],
+        "ref": struct.unpack("<I", a.group("ref"))[0],
+        "coords": struct.unpack("<I", a.group("coords"))[0],
+        "angles": [struct.unpack("<I", a.group("angle"))[0],
+                   struct.unpack("<I", b.group("angle"))[0]],
+    }
+    if any(va is None for va in vas["positions"] + [vas["resume"], vas["collision"]]):
+        raise PatchError("mcp-125: a patch site is outside any section")
+    return vas
+
+
+def find_mcp125_collision(x):
+    """Find the moved-reference collision branch patched by mcp-125."""
+    return find_mcp125_context(x)["collision"]
 
 
 def find_mcp37_context(x):
@@ -1321,6 +1403,47 @@ def _mcp_123(x, value, ctx):
     was, off = x.patch_call(site, target)
     return [(off, 5, "PlaceItem cell insertion 0x%08X: 0x%08X -> 0x%08X"
              % (site, was, target))]
+
+
+@patch("mcp-125")
+def _mcp_125(x, value, ctx):
+    """Attach moved-reference scripts and register actor collision in the destination cell."""
+    hook = ctx.get("hooks", {}).get("mcp125_collision")
+    if not hook:
+        raise PatchError("mcp-125: needs `payload` first, with an mcp125_collision hook "
+                         "in its manifest")
+    hook = int(str(hook), 16)
+    found = find_mcp125_context(x)
+    edits = []
+
+    for site, angle in zip(found["positions"], found["angles"]):
+        off = x.va_to_off(site)
+        call_site = site + 19
+        block = (
+            b"\xff\x35" + struct.pack("<I", angle) +
+            b"\x68" + struct.pack("<I", found["coords"]) +
+            b"\x56\x8b\x35" + struct.pack("<I", found["ref"]) + b"\x56" +
+            b"\xe8" + struct.pack("<i", found["move"] - (call_site + 5)) +
+            b"\x83\xc4\x10\xe9" + struct.pack("<i", found["resume"] - (site + 32))
+        )
+        if off is None or len(block) != 32:
+            raise PatchError("mcp-125: invalid Position rewrite at 0x%08X" % site)
+        x.data[off:off + 32] = block
+        edits.append((off, 32, "Position script attachment 0x%08X -> 0x%08X"
+                      % (site, found["resume"])))
+
+    site = found["collision"]
+    off = x.va_to_off(site)
+    block = (
+        b"\xa1" + struct.pack("<I", found["manager"]) + b"\x8b\x48\x5c" +
+        b"\x8a\x44\x24\x3c\x57\xe8" + struct.pack("<i", hook - (site + 18)) +
+        b"\xeb\x06"
+    )
+    if off is None or len(block) != 20:
+        raise PatchError("mcp-125: invalid collision rewrite")
+    x.data[off:off + 20] = block
+    edits.append((off, 20, "Position collision branch 0x%08X -> 0x%08X" % (site, hook)))
+    return edits
 
 
 CONSOLE_GATE_SIG = bytes([
@@ -1917,6 +2040,7 @@ LOCATORS = {
     "mcp-154-reload": find_mcp154_reload,
     "mcp-102-actn": find_mcp102_actn,
     "mcp-123": find_mcp123_add,
+    "mcp-125": find_mcp125_collision,
     "mcp-37": lambda image: find_mcp37_context(image)[0],
     "dxt5-size": find_dxt5_size,
     "mcp-146": find_mcp146,

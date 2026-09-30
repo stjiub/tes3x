@@ -33,6 +33,7 @@ enable = [
     # "mcp-92",                # core: retire a summoned actor's magic before destroying it
     # "mcp-154",               # core: pad compiled script-data allocations to keep reads in bounds
     # "mcp-123",               # core: persist objects placed by scripts into unvisited cells
+    # "mcp-125",               # core: initialize scripts and collision for actors moved by Position
     # "dxt5-size",             # core: allocate DXT5 textures at their real size
     # "mcp-102",               # correctness: reactivate script-triggered objects after their mod is removed
     # "script-ext",            # compat: add script opcodes

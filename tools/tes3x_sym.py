@@ -585,6 +585,8 @@ SEED_NOTES = {
                          'mcp-102 restores the default active bit'),
     'find_mcp123_add': ('PlaceItem.addReference', 'site',
                         'mcp-123 marks the destination cell changed'),
+    'find_mcp125_collision': ('Position.collisionRegistration', 'site',
+                              'mcp-125 registers collision after a scripted move'),
     'find_diagnostics_update': ('Diagnostics::Update', 'function',
                                 'holds the console input gate'),
     'find_console_gate': ('Diagnostics::ConsoleGate', 'site',

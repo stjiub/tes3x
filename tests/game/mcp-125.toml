@@ -1,0 +1,15 @@
+kind = "comparison"
+purpose = "PositionCell initializes a moved NPC's script and registers its collision in the current cell."
+procedure = "Use a fixture NPC with a detectable script in an unvisited cell. Move it into the current cell with PositionCell, confirm its script runs and dialogue opens, then fire a projectile through it in control and patched builds."
+limitations = "The command script proves both builds reach play. The scripted NPC and collision assertions require a purpose-built fixture before this can validate the fix."
+watch = 'diag\.patches|exec\.exit|crash\.|hang\.detected|fatal\.'
+timeout = 180
+script = '''
+@start new
+wait 60
+exit
+'''
+
+[expect]
+control = ['exec\.exit 0']
+test = ['diag\.patches', 'exec\.exit 0']

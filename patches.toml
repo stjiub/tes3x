@@ -223,6 +223,17 @@ source = "tes3xmcp123.c"
 summary = "Persist objects placed by scripts into cells the player has not visited."
 
 [[patch]]
+name = "mcp-125"
+title = "Position actor initialization"
+origin = { source = "MCP", id = "125" }
+bit = 30
+category = "core"
+channel = "dev"
+selection = "preset"
+source = "tes3xmcp125.c"
+summary = "Initialize scripts and collision for actors moved by Position or PositionCell."
+
+[[patch]]
 name = "dxt5-size"
 title = "DXT5 allocation fix"
 bit = 14

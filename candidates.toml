@@ -1049,16 +1049,6 @@ summary = "Creature magicka/fatigue scaling"
 reason = "Experimental inferred intent which introduces new scaling. Require a design decision, not just binary parity."
 
 [[candidate]]
-name = "mcp-125"
-origin = { source = "MCP", id = "125" }
-category = "core"
-default = "intended default"
-status = "candidate"
-priority = "high"
-summary = "Position/PositionCell uninitialized-script crash"
-reason = "Moving an NPC to an unvisited cell can leave its script uninitialized and make dialogue crash."
-
-[[candidate]]
 name = "mcp-126"
 origin = { source = "MCP", id = "126" }
 category = "correctness"

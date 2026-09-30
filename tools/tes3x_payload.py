@@ -17,7 +17,7 @@ import subprocess
 
 import tes3x_inject
 from tes3x_patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, find_call_sites, find_mcp37_context,
-                         find_save_allowed_context, find_transition_calls)
+                         find_mcp125_context, find_save_allowed_context, find_transition_calls)
 
 ROOT = Path(__file__).resolve().parents[1]
 HOOKS = ROOT / "hooks"
@@ -426,6 +426,13 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
               f"Cell::addReference {hexva(add_reference)}")
         define("MCP123_ADD_REFERENCE", hexva(add_reference))
         wanted["mcp123_add"] = ("_tes3x_mcp123_add_hook",)
+    if "tes3xmcp125.c" in names:
+        context = find_mcp125_context(image)
+        print(f"mcp-125 hook: collision add {hexva(context['add'])}, "
+              f"remove {hexva(context['remove'])}")
+        define("MCP125_ADD_MOB", hexva(context["add"]))
+        define("MCP125_REMOVE_MOB", hexva(context["remove"]))
+        wanted["mcp125_collision"] = ("_tes3x_mcp125_collision_hook",)
     if "tes3xdxt5.c" in names:
         site = locate("dxt5-size")
         size = hexva(tes3x_inject.call_target(image, site))

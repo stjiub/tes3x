@@ -14,7 +14,7 @@ from tes3x_pipeline import (PipelineError, copy_retail_root, link_or_copy, resol
                             validate_profile)
 from tes3x_pipeline import main as pipeline_main
 from tes3x_patch import (MCP37_TREE_NEXT_SIG, _mcp_37, _mcp_92, _mcp_97, _mcp_98,
-                         _mcp_102, _mcp_123, _mcp_154, _test_mcp97, _test_mcp102)
+                         _mcp_102, _mcp_123, _mcp_125, _mcp_154, _test_mcp97, _test_mcp102)
 from tes3x_plugins import (collect, dependency_order, fetch_rules, run_arrange, validate_order,
                            warnings as mlox_warnings)
 from test_reach import rec, sub
@@ -775,6 +775,85 @@ class PipelinePlanTests(unittest.TestCase):
         })
         self.assertEqual(plan['applied'], ['mcp-123'])
         self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xmcp123.c'])
+
+    def test_mcp_125_attaches_scripts_and_selects_collision_registration(self):
+        base = 0x100000
+        move, remove, add, hook = 0x180000, 0x180100, 0x180200, 0x200000
+        angle_a, angle_b, ref, coords, manager = (0x300001, 0x300002, 0x300010,
+                                                   0x300020, 0x300030)
+
+        def rel_call(site, target):
+            return b'\xe8' + struct.pack('<i', target - (site + 5))
+
+        class Image:
+            def __init__(self):
+                self.base = base
+                self.data = bytearray(b'\x90' * 32)
+                self.sites = []
+                for prefix, angle, pushed in ((b'\xa1', angle_a, b'\x50'),
+                                              (b'\x8b\x15', angle_b, b'\x52')):
+                    site = self.base + len(self.data)
+                    self.sites.append(site)
+                    head = prefix + struct.pack('<I', angle)
+                    ref_load = ((b'\x8b\x0d' if prefix == b'\xa1' else b'\xa1') +
+                                struct.pack('<I', ref))
+                    call_site = site + 19
+                    self.data += (head + ref_load + pushed + b'\x68' + struct.pack('<I', coords) +
+                                  b'\x56' + (b'\x51' if prefix == b'\xa1' else b'\x50') +
+                                  rel_call(call_site, move) + b'\x83\xc4\x10\xe9\0\0\0\0')
+                    self.data += b'\x90' * 16
+
+                attach = self.base + len(self.data)
+                call_site = attach + 14
+                self.data += (b'\x8b\x0d' + struct.pack('<I', angle_a) + b'\x51\x68' +
+                              struct.pack('<I', coords) + b'\x57\x56' + rel_call(call_site, move) +
+                              b'\x83\xc4\x10\x8b\xce\xe8\0\0\0\0\x8b\x4e\x10')
+                self.resume = attach + 22
+                self.data += b'\x90' * 16
+
+                self.collision = self.base + len(self.data)
+                remove_site = self.collision + 21
+                self.data += (b'\x8a\x44\x24\x3c\x84\xc0\x0f\x85\x97\0\0\0\xa1' +
+                              struct.pack('<I', manager) + b'\x8b\x48\x5c\x57' +
+                              rel_call(remove_site, remove) + b'\xe9\x84\0\0\0')
+                self.data += b'\x90' * 16
+
+                add_block = self.base + len(self.data)
+                add_site = add_block + 10
+                self.data += (b'\x8b\x0d' + struct.pack('<I', manager) + b'\x8b\x49\x5c\x57' +
+                              rel_call(add_site, add) + b'\x8b\xcf\xe8\0\0\0\0')
+                self.data += b'\xcc' * 16
+
+            def off_to_va(self, offset):
+                return self.base + offset
+
+            def va_to_off(self, va):
+                return va - self.base
+
+        image = Image()
+        edits = _mcp_125(image, '', {'hooks': {'mcp125_collision': hex(hook)}})
+        for site in image.sites:
+            off = image.va_to_off(site)
+            self.assertEqual(image.data[off:off + 2], b'\xff\x35')
+            self.assertEqual(image.data[off + 12:off + 14], b'\x8b\x35')
+            call_rel = struct.unpack_from('<i', image.data, off + 20)[0]
+            self.assertEqual(site + 24 + call_rel, move)
+            jump_rel = struct.unpack_from('<i', image.data, off + 28)[0]
+            self.assertEqual(site + 32 + jump_rel, image.resume)
+        collision = image.va_to_off(image.collision)
+        hook_rel = struct.unpack_from('<i', image.data, collision + 14)[0]
+        self.assertEqual(image.collision + 18 + hook_rel, hook)
+        self.assertEqual(image.data[collision + 18:collision + 20], b'\xeb\x06')
+        self.assertEqual([(offset, length) for offset, length, _label in edits],
+                         [(image.va_to_off(site), 32) for site in image.sites] + [(collision, 20)])
+
+    def test_mcp_125_adds_its_hook_source(self):
+        plan = resolve_patch_plan({
+            'patches': {'preset': 'minimal', 'enable': ['mcp-125']},
+            'package': {'mode': 'merged-bsa'},
+        })
+        self.assertEqual(plan['applied'], ['mcp-125'])
+        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xmcp125.c'])
 
     def test_testing_adds_tools_but_allows_overrides(self):
         profile = {'patches': {'preset': 'testing', 'disable': ['diagnostics']},

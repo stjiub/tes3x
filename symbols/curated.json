@@ -2198,6 +2198,13 @@
       "provenance": "find_mcp123_add; mcp-123 marks the destination cell changed"
     },
     {
+      "va": "0x00138C87",
+      "name": "Position.collisionRegistration",
+      "kind": "site",
+      "confidence": "verified",
+      "provenance": "find_mcp125_collision; mcp-125 registers collision after a scripted move"
+    },
+    {
       "va": "0x00139A20",
       "name": "Script::ctor",
       "kind": "function",
