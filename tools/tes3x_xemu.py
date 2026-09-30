@@ -27,6 +27,7 @@ import os
 import re
 import shutil
 import socket
+import struct
 import subprocess
 import sys
 import tempfile
@@ -374,6 +375,18 @@ def clean_disk(runs):
     return clean
 
 
+def set_eeprom_mac(path, mac):
+    """Write the factory section's Ethernet address and its checksum."""
+    data = bytearray(Path(path).read_bytes())
+    data[0x40:0x46] = mac
+    high = low = 0
+    for (word,) in struct.iter_unpack("<I", data[0x34:0x60]):
+        total = (high << 32 | low) + word
+        high, low = total >> 32 & 0xFFFFFFFF, total & 0xFFFFFFFF
+    struct.pack_into("<I", data, 0x30, ~(high + low) & 0xFFFFFFFF)
+    Path(path).write_bytes(data)
+
+
 def xemu_config(bootrom, bios, eeprom, hdd, dvd, ram, net_tunnel=None):
     template = CONFIG.get("template")
     text = Path(template).read_text() if template else TEMPLATE
@@ -439,7 +452,8 @@ def main():
     ap.add_argument("--net-tunnel", type=int, metavar="PORT",
                     help="attach the NIC to xemu's udp backend: guest frames go to "
                          "127.0.0.1:PORT and frames sent to PORT+1 reach the guest "
-                         "(tes3x_net.py --tunnel PORT)")
+                         "(tes3x_net.py --tunnel PORT); the guest's MAC becomes "
+                         "02:00:00:00 and PORT, so each tunnel is a separate client")
     ap.add_argument("--ram", type=int, choices=(64, 128), default=64,
                     help="guest RAM in MB; 128 also clears Limit64MB in the XBE it packs")
     a = ap.parse_args(argv)
@@ -555,6 +569,10 @@ def main():
     # Without one, xemu writes a new EEPROM at the path it is given.
     if CONFIG.get("eeprom"):
         shutil.copyfile(CONFIG["eeprom"], out / "eeprom.bin")
+        # The session server knows clients by MAC, so xemus sharing a server need their own.
+        if a.net_tunnel:
+            set_eeprom_mac(out / "eeprom.bin",
+                           bytes([2, 0, 0, 0]) + a.net_tunnel.to_bytes(2, "big"))
     bios = Path(a.bios).resolve() if a.bios else CONFIG["bios"]
     toml = out / "xemu.toml"
     tunnel = (a.net_tunnel + 1, a.net_tunnel) if a.net_tunnel else None

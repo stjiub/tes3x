@@ -8,6 +8,7 @@
     python tools/tes3x_net.py serve --tunnel 9369 --bot   # plus a player circling the first client
     python tools/tes3x_net.py serve --tunnel 9369 --bot --bot-say 2 --drop 0.2   # events under loss
     python tools/tes3x_net.py serve --tunnel 9369 --bot --bot-owns 20:60   # the bot runs the cell
+    python tools/tes3x_net.py serve --tunnel 9369 --tunnel 9371   # two xemus, one per tunnel
     python tools/tes3x_net.py plugin OUT.esp --master Morrowind.esm   # the ghost plugin
 
 With --tunnel PORT this tool is the guest's only peer: xemu sends each guest Ethernet frame to
@@ -599,12 +600,12 @@ class Client:
 
 def serve(args):
     """A session server: welcomes consoles by MAC, answers each heartbeat at once and relays each
-    client's state to the others. With --tunnel it also serves an xemu guest."""
-    link = Tunnel(args.tunnel) if args.tunnel else None
+    client's state to the others. Each --tunnel also serves an xemu guest."""
+    links = [Tunnel(port) for port in args.tunnel]
     sock = udp_socket()
     sock.bind((args.bind, args.port))
-    print(f"serving on {args.bind}:{args.port}" + (f" and tunnel {args.tunnel}" if link else ""),
-          flush=True)
+    print(f"serving on {args.bind}:{args.port}"
+          + "".join(f" and tunnel {port}" for port in args.tunnel), flush=True)
     clients, by_session = {}, {}
     hosts = {}
     for entry in args.host:
@@ -667,8 +668,8 @@ def serve(args):
                            client.peer_seq, now_us(), client.peer_time) + body
         if dropped("out"):
             return
-        if len(client.addr) == 3:  # a tunnel guest, by its MAC
-            ip, _port, mac = client.addr
+        if len(client.addr) == 4:  # a tunnel guest, by its MAC
+            ip, _port, mac, link = client.addr
             link.send(udp_frame(mac, ip, packet, client.seq))
         else:
             sock.sendto(packet, client.addr)
@@ -986,7 +987,7 @@ def serve(args):
             by_session.pop(session, None)
 
     while deadline is None or time.time() < deadline:
-        waiting = [sock] + ([link.sock] if link else []) + ([dns] if dns else [])
+        waiting = [sock] + [link.sock for link in links] + ([dns] if dns else [])
         for ready in select.select(waiting, [], [], 0.25)[0]:
             if ready is dns:
                 try:
@@ -1006,6 +1007,7 @@ def serve(args):
                     continue
                 handle(data, addr)
                 continue
+            link = next(link for link in links if link.sock is ready)
             frame = link.recv(0)
             if frame and frame[12:14] == b"\x08\x06" and len(frame) >= 42:
                 op, sha, spa, _, tpa = struct.unpack_from(">H6s4s6s4s", frame, 20)
@@ -1022,7 +1024,7 @@ def serve(args):
                     continue
                 data = udp_from_frame(frame)
                 if data:
-                    handle(data, (src, PORT, frame[6:12]))
+                    handle(data, (src, PORT, frame[6:12], link))
         now = time.time()
         for client in clients.values():
             if client.alive and now - client.last > TIMEOUT:
@@ -1172,7 +1174,8 @@ def main(argv=None):
     p = sub.add_parser("serve", help="run a session server for consoles (tes3xnet up ... SERVER)")
     p.add_argument("--port", type=int, default=PORT)
     p.add_argument("--bind", default="0.0.0.0")
-    p.add_argument("--tunnel", type=int, metavar="PORT", help="serve through xemu's udp backend")
+    p.add_argument("--tunnel", type=int, action="append", default=[], metavar="PORT",
+                   help="serve an xemu guest through its udp backend (repeatable, one per xemu)")
     p.add_argument("--duration", type=float, help="stop after this many seconds")
     p.add_argument("--report", type=float, default=30, help="seconds between status lines")
     p.add_argument("--host", action="append", default=[], metavar="NAME=ADDRESS",
