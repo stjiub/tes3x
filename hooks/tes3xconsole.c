@@ -26,6 +26,9 @@
 #ifdef TES3X_NET
 int tes3x_net_command(const char *text);
 #endif
+#ifdef TES3X_MCP3_TEST
+int tes3x_mcp3_test_command(const char *text);
+#endif
 #ifdef TES3X_SAVES
 int tes3x_autosave_command(void *game, const char *text);
 #endif
@@ -900,6 +903,10 @@ static void run_command(const char *text)
 #endif
 #ifdef TES3X_REGION
     if (tes3x_region_command(text))
+        return;
+#endif
+#ifdef TES3X_MCP3_TEST
+    if (tes3x_mcp3_test_command(text))
         return;
 #endif
 #ifdef TES3X_DIAGNOSTICS

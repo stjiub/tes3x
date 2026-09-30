@@ -1,15 +1,23 @@
 kind = "comparison"
 purpose = "A fully unarmored actor receives the damage reduction contributed by the Unarmored skill."
-procedure = "Set the player to a known Unarmored skill and health, remove every armor piece, then apply the same fixed physical hit in control and patched builds and compare health lost."
-limitations = "The command script proves both builds reach play. A deterministic physical-hit fixture is still needed before this can validate the reduction numerically."
-watch = 'diag\.patches|exec\.exit|crash\.|hang\.detected|fatal\.'
+procedure = "Set the fully unarmored player to 100 Unarmored, then have a test-only console command pass fixed 50-point damage through the engine's armor calculation in control and patched builds."
+limitations = "Measures the exact engine calculation changed by the patch without applying the returned damage to health. The command can advance Unarmored skill progress and is present only in game-test builds. Hardware behavior is not checked."
+watch = 'mcp3\.|diag\.patches|exec\.exit|crash\.|hang\.detected|fatal\.'
+pipeline = ["--test-probe", "mcp-3"]
 timeout = 180
 script = '''
 @start new
 wait 60
+player->SetUnarmored 100
+tes3xmcp3
+wait 1
 exit
 '''
 
 [expect]
-control = ['exec\.exit 0']
-test = ['diag\.patches', 'exec\.exit 0']
+control = ['mcp3\.armor_count 0', 'mcp3\.rating [1-9][0-9]*', 'mcp3\.damage 50000', 'exec\.exit 0']
+test = ['diag\.patches', 'mcp3\.armor_count 0', 'mcp3\.rating [1-9][0-9]*', 'mcp3\.damage [0-4][0-9]{4}', 'exec\.exit 0']
+
+[[compare]]
+pattern = 'mcp3\.damage ([0-9]+)'
+relation = '<'

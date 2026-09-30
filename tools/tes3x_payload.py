@@ -474,6 +474,12 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         wanted["mcp102_test"] = ("@tes3x_mcp102_test_hook@8",
                                  "_tes3x_mcp102_test_hook")
         extra["mcp102_test"] = {"mcp102_test_site": hexva(sites[0])}
+    if "tes3xtest_mcp3.c" in names:
+        if "tes3xconsole.c" not in names:
+            raise PayloadError("tes3xtest_mcp3.c requires tes3xconsole.c")
+        print("mcp-3 test probe: console command tes3xmcp3")
+        flags.append("-DTES3X_MCP3_TEST")
+        wanted["mcp3_test"] = ("_tes3x_mcp3_test_command",)
     if "tes3xmcp154.c" in names:
         load, reload = locate("mcp-154-load"), locate("mcp-154-reload")
         print(f"mcp-154 hooks: load {hexva(load)}, reload {hexva(reload)}")

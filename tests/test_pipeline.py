@@ -13,8 +13,9 @@ from tes3x_pipeline import (PipelineError, copy_retail_root, link_or_copy, resol
                             preference_flags, sanitized_command, validate_local_config,
                             validate_profile)
 from tes3x_pipeline import main as pipeline_main
-from tes3x_patch import (MCP37_TREE_NEXT_SIG, _mcp_3, _mcp_37, _mcp_92, _mcp_97, _mcp_98,
-                         _mcp_102, _mcp_123, _mcp_125, _mcp_154, _test_mcp97, _test_mcp102)
+from tes3x_patch import (MCP37_TREE_NEXT_SIG, PatchError, _mcp_3, _mcp_37, _mcp_92, _mcp_97,
+                         _mcp_98, _mcp_102, _mcp_123, _mcp_125, _mcp_154, _test_mcp3,
+                         _test_mcp97, _test_mcp102)
 from tes3x_plugins import (collect, dependency_order, fetch_rules, run_arrange, validate_order,
                            warnings as mlox_warnings)
 from test_reach import rec, sub
@@ -527,6 +528,25 @@ class PipelinePlanTests(unittest.TestCase):
         })
         self.assertEqual(plan['applied'], ['mcp-3'])
         self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c'])
+
+    def test_mcp_3_test_probe_requires_its_command(self):
+        with self.assertRaisesRegex(PatchError, 'has no mcp-3 test command'):
+            _test_mcp3(None, '', {'hooks': {}})
+        self.assertEqual(
+            _test_mcp3(None, '', {'hooks': {'mcp3_test': '0x200000'}}),
+            [(None, 0, 'fully unarmored damage command installed')],
+        )
+
+    def test_mcp_3_test_probe_requires_console(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            profile = Path(tmp) / 'p.toml'
+            profile.write_text('[profile]\nname = "p"\n[patches]\npreset = "minimal"\n',
+                               encoding='utf-8')
+            with self.assertRaisesRegex(PipelineError, 'needs the console patch'):
+                pipeline_main([str(profile), '--test-probe', 'mcp-3', '--check'])
+            self.assertEqual(pipeline_main([
+                str(profile), '--test-probe', 'mcp-3', '--enable', 'console', '--check'
+            ]), 0)
 
     def test_mcp_97_patches_both_cursor_advances(self):
         scan = bytes.fromhex(

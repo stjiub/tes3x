@@ -1422,6 +1422,13 @@ def _test_mcp102(x, value, ctx):
              (site, was, target))]
 
 
+@test_patch("test-mcp3", "Measure fully unarmored damage for the mcp-3 game test.")
+def _test_mcp3(x, value, ctx):
+    if not ctx.get("hooks", {}).get("mcp3_test"):
+        raise PatchError("test-mcp3: payload has no mcp-3 test command")
+    return [(None, 0, "fully unarmored damage command installed")]
+
+
 @patch("mcp-123")
 def _mcp_123(x, value, ctx):
     """Mark a PlaceItem destination cell changed before inserting the new reference."""

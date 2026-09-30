@@ -16,5 +16,7 @@ six bytes and needs no injected code.
 
 ## What remains
 
-The equivalent Xbox function and edit are established statically. A control-versus-patched combat
-test with a fully unarmored actor still needs to measure health lost from the same physical hit.
+The game test's `tes3xmcp3` command calls the same virtual armor-rating and damage functions with
+fixed 50-point inputs. It verifies that no armor is equipped and compares the returned damage in
+control and patched builds. This measures the corrected calculation without applying damage to
+health; a real combat hit remains an end-to-end smoke test.
