@@ -112,6 +112,20 @@ class EquipmentTests(unittest.TestCase):
         self.assertEqual(tes3x_net.pack_equipment([]), [b'\x00\x01'])
 
 
+class WeatherTests(unittest.TestCase):
+    def test_events_fit_and_round_trip(self):
+        table = {i: i % 10 for i in range(45)}
+        events = tes3x_net.pack_weather(table, tes3x_net.WEATHER_OFFER)
+        self.assertEqual(len(events), 3)
+        self.assertTrue(all(len(e) <= tes3x_net.EVENT_DATA for e in events))
+        got = {}
+        for e in events:
+            flags, entries = tes3x_net.unpack_weather(e)
+            self.assertEqual(flags, tes3x_net.WEATHER_OFFER)
+            got.update(entries)
+        self.assertEqual(got, table)
+
+
 class ClockTests(unittest.TestCase):
     def test_advances_at_timescale_and_rolls_the_calendar(self):
         clock = tes3x_net.Clock(23.0, 31, 11, 427, 100, 30.0, now=0.0)

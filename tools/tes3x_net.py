@@ -272,7 +272,7 @@ def ping(args):
 
 
 T3MP = struct.Struct("<4sBBHIIIII")  # magic, version, type, 0, session, seq, ack, time, echo
-T3MP_VERSION = 6
+T3MP_VERSION = 7
 HELLO, WELCOME, HEARTBEAT, BYE, STATE, PEER, GONE, EVENTS, REFUSE, CLOCK, ACTORS = range(1, 12)
 # GameHour, Day, Month (0-11), Year, DaysPassed, TimeScale, as the game's float globals
 CLOCK_BODY = struct.Struct("<6f")
@@ -287,6 +287,12 @@ EVENT_DATA = 64
 EVENT_TEXT = 1
 EVENT_AUTHORITY, EVENT_HOLD, EVENT_HOLD_BROKEN, EVENT_HIT, EVENT_DEATH = 2, 3, 4, 5, 6
 EVENT_EQUIPMENT = 7  # part, parts, then item ids each ending in a zero
+EVENT_WEATHER = 8  # flags, count, then (region index u16, weather u8) each
+WEATHER_OFFER = 1  # a joining client's whole table: the server keeps regions it does not know
+WEATHER_ENTRY = struct.Struct("<HB")
+WEATHER_PER_EVENT = (EVENT_DATA - 2) // WEATHER_ENTRY.size
+WEATHERS = ("clear", "cloudy", "foggy", "overcast", "rain", "thunder", "ash", "blight", "snow",
+            "blizzard")
 # refid, target client, then a word: on, reason, or the damage as a float
 TARGETED = {EVENT_HOLD: "holds", EVENT_HOLD_BROKEN: "breaks the hold on", EVENT_HIT: "hits"}
 KEY = struct.Struct("<Iii32s")  # kind, grid x, grid y, interior name
@@ -337,6 +343,32 @@ def pack_equipment(ids):
 
 def unpack_equipment(part):
     return [item.decode("latin-1") for item in part[2:].split(b"\0") if item]
+
+
+def pack_weather(entries, flags=0):
+    """WEATHER events for {region index: weather}, as tes3xnet.c weather_frame packs them."""
+    items = sorted(entries.items())
+    return [bytes((flags, len(chunk))) + b"".join(WEATHER_ENTRY.pack(*e) for e in chunk)
+            for chunk in (items[i:i + WEATHER_PER_EVENT]
+                          for i in range(0, len(items), WEATHER_PER_EVENT))]
+
+
+def unpack_weather(data):
+    """(flags, {region index: weather}) of a WEATHER event."""
+    flags, count = data[0], data[1]
+    entries = {}
+    for i in range(count):
+        off = 2 + i * WEATHER_ENTRY.size
+        if off + WEATHER_ENTRY.size > len(data):
+            break
+        index, weather = WEATHER_ENTRY.unpack_from(data, off)
+        entries[index] = weather
+    return flags, entries
+
+
+def describe_weather(entries):
+    return ", ".join(f"{i} {WEATHERS[w] if w < len(WEATHERS) else w}"
+                     for i, w in sorted(entries.items()))
 
 
 def unpack_events(body):
@@ -588,6 +620,12 @@ def serve(args):
     if args.bot_equip is not None:
         equipment[BOT_ID] = [pack_equipment([i for i in args.bot_equip.split(",") if i]), []]
     actors = {}  # refid -> (reporting client, cell, ACTOR bytes), the latest from an authority
+    weather = {}  # region index -> weather, the session's; replayed to each joining client
+    bot_weather = []
+    for spec in args.bot_weather:
+        change, _, at = spec.partition("@")
+        index, _, value = change.partition(":")
+        bot_weather.append((float(at), int(index), int(value)))
     authority_next = actor_next = 0.0
 
     def window(spec, now):
@@ -671,8 +709,27 @@ def serve(args):
                 other.rel.queue(kind, origin, data)
                 flush(other, now)
 
+    def set_weather(origin, entries, stamp, now, to_origin=True):
+        """Record the regions whose weather changes and send them to every client."""
+        changed = {i: w for i, w in entries.items() if weather.get(i) != w}
+        if not changed:
+            return
+        weather.update(changed)
+        print(f"{stamp} weather from client {origin}: {describe_weather(changed)}", flush=True)
+        for other in clients.values():
+            if other.alive and (to_origin or other.id != origin):
+                for data in pack_weather(changed):
+                    other.rel.queue(EVENT_WEATHER, origin, data)
+                flush(other, now)
+
     def on_event(client, kind, data, stamp, now):
         client.events += 1
+        if kind == EVENT_WEATHER and len(data) >= 2:
+            flags, entries = unpack_weather(data)
+            if flags & WEATHER_OFFER:
+                entries = {i: w for i, w in entries.items() if i not in weather}
+            set_weather(client.id, entries, stamp, now, not flags & WEATHER_OFFER)
+            return
         if kind in TARGETED and len(data) >= 12:
             refid, target = struct.unpack_from("<II", data)
             word = (f"damage {struct.unpack_from('<f', data, 8)[0]:.0f}" if kind == EVENT_HIT
@@ -834,6 +891,8 @@ def serve(args):
                 if origin != client.id:
                     for part in parts:
                         client.rel.queue(EVENT_EQUIPMENT, origin, part)
+            for data in pack_weather(weather):
+                client.rel.queue(EVENT_WEATHER, 0, data)
             if client.rel.out:
                 flush(client, now)
             return
@@ -956,6 +1015,9 @@ def serve(args):
                 print(f"{time.strftime('%H:%M:%S')} bot hits {refid:#010x} for 5 (authority "
                       f"{owner})", flush=True)
                 send_event(owner, BOT_ID, EVENT_HIT, struct.pack("<IIf", refid, owner, 5.0), now)
+        for due, index, value in [w for w in bot_weather if window(f"{w[0]}:", now)]:
+            bot_weather.remove((due, index, value))
+            set_weather(BOT_ID, {index: value}, time.strftime("%H:%M:%S"), now)
         if args.bot_say and bot["anchor"] and now >= bot["said"] + args.bot_say:
             bot["said"] = now
             bot["line"] += 1
@@ -974,6 +1036,8 @@ def serve(args):
             if clock:
                 clock.advance(now)
                 print(f"  clock {clock}", flush=True)
+            if weather:
+                print(f"  weather: {describe_weather(weather)}", flush=True)
             for client in clients.values():
                 print(f"  client {client.id}: {'up' if client.alive else 'down'}, "
                       + summary(client), flush=True)
@@ -1055,6 +1119,10 @@ def main(argv=None):
                    help="the bot reports this actor (hex refid) dead this long after it appears")
     p.add_argument("--bot-equip", metavar="ID,ID,...",
                    help="the bot wears these items (an empty string: nothing)")
+    p.add_argument("--bot-weather", action="append", default=[],
+                   metavar="REGION:WEATHER@SECONDS",
+                   help="the bot sets a region's weather (list index, 0-9) this long after it "
+                        "appears (repeatable)")
     p.add_argument("--drop", type=float, default=0,
                    help="drop this fraction of session packets each way, to test loss")
     p.add_argument("--seed", type=int, help="seed for --drop")

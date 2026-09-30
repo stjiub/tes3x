@@ -262,6 +262,7 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
             define("NET_" + name, address(name, default))
         define("NET_MENU_GATE", hexva(locate("menu-mode-gate")))
         define("NET_MOB_GATE", hexva(locate("mob-update-gate")))
+        define("NET_WEATHER_ROLL", hexva(locate("weather-roll")))
         flags.append("-DTES3X_NET")
         wanted["net"] = ("_tes3x_net_frame",)
     if "tes3xinfoarena.c" in names:

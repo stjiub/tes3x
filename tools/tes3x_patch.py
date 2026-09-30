@@ -1349,6 +1349,19 @@ def find_mob_gate(x):
     return x.off_to_va(hits[0] + 8)
 
 
+WEATHER_ROLL_RE = re.compile(rb"\x8b\x79\x4c\x8b\xcf\xe8....\x85\xc0\x74.\x8d\x9b\x00\x00\x00\x00"
+                             rb"\x8b\x48\x08\xe8....\x8b\xcf\xe8....\x85\xc0\x75", re.S)
+
+
+def find_weather_roll(x):
+    """The 5-byte call to Region::randomizeWeather in updateEnvironmentLightingWeather's loop over
+    every region, which runs when the hours between weather changes have passed."""
+    hits = [m.start() for m in WEATHER_ROLL_RE.finditer(x.data)]
+    if len(hits) != 1:
+        raise PatchError("weather roll: %d match(es), expected exactly 1" % len(hits))
+    return x.off_to_va(hits[0] + 23)
+
+
 @patch("diagnostics")
 def _diagnostics(x, value, ctx):
     """Enable INI-controlled crash records, snapshots and a hang watchdog."""
@@ -1853,6 +1866,7 @@ LOCATORS = {
     "world-controller": find_world_controller,
     "menu-mode-gate": find_menu_mode_gate,
     "mob-update-gate": find_mob_gate,
+    "weather-roll": find_weather_roll,
     "console-print": find_console_print,
     "heap-allocate": lambda image: find_heap_function(image, "allocate")[0],
     "heap-free": lambda image: find_heap_function(image, "free")[0],
