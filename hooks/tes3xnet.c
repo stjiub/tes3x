@@ -64,8 +64,8 @@
     !defined(TES3X_NET_REF_ORIENTATION) || !defined(TES3X_NET_REF_ROTATION) || \
     !defined(TES3X_NET_NODE_SET_ROTATION) || !defined(TES3X_NET_NODE_UPDATE) || \
     !defined(TES3X_NET_ANIM_HAS_GROUP) || !defined(TES3X_NET_ANIM_PLAY_GROUP) || \
-    !defined(TES3X_NET_UNREADY_WEAPON) || !defined(TES3X_NET_MOBILE_HANDS)
-#error "define the TES3X_NET_ functions SetPos, SetAngle, PlayGroup and weapon readying call"
+    !defined(TES3X_NET_UNREADY_WEAPON) || !defined(TES3X_NET_MOBILE_HANDS) ||     !defined(TES3X_NET_APPLY_HEALTH_DAMAGE) || !defined(TES3X_NET_APPLY_FATIGUE_DAMAGE) ||     !defined(TES3X_NET_HIT_STUN)
+#error "define the TES3X_NET_ functions SetPos, SetAngle, PlayGroup, weapon readying and damage"
 #endif
 
 typedef unsigned short u16;
@@ -1430,6 +1430,8 @@ static void rest_block(void)
 #define MOBILE_SIMULATED 0x4u /* ActiveInSimulation, MWSE's activeAI */
 #define MOBILE_IN_COMBAT 0x10000u
 #define MOBILE_HEALTH 0x2BC /* the current value of the health statistic */
+#define MOBILE_FATIGUE 0x2E0
+#define MOBILE_FIGHT 0x350 /* int, as SetFight sets it */
 
 typedef u8 *(__cdecl *fn_service_actor)(void);
 
@@ -2315,11 +2317,6 @@ static void ghost_place(u32 i, const struct pose *p)
     log_text("net.ghost_cell", p->flags & STATE_INTERIOR ? (const char *)p->cell : "(exterior)");
 }
 
-static int differs(float a, float b, float by)
-{
-    return a - b > by || b - a > by;
-}
-
 /* Whether a ghost at p would stand in a loaded cell: the same interior, or an exterior cell next
  * to the local player's. */
 static int near(const struct pose *p, const struct pose *local)
@@ -2337,7 +2334,7 @@ static int near(const struct pose *p, const struct pose *local)
  * it with what the ghost has equipped: RemoveItem what it should not wear, Equip what it lacks. */
 #define EVENT_EQUIPMENT 7u
 #define EVENT_WEATHER 8u /* the weather section */
-#define EVENT_PLAYER_HIT 9u /* attacker refid (0: a player), victim client, damage */
+#define EVENT_PLAYER_HIT 9u /* attacker refid (0: a player), victim client, health, fatigue */
 #define EQUIP_ITEMS 24u
 #define EQUIP_ID 32u
 #define EQUIP_PERIOD_US 500000u
@@ -2524,44 +2521,71 @@ static void equipment_apply(u32 i, u8 *ref)
                    equipment_ids(ref, worn) << 16 | looks[l].count);
 }
 
-static void event_words(u32 kind, u32 a, u32 b, const void *c);
-
 /* A ghost stands for a player, so damage done to it here, by this console's player or an actor
- * this console runs, goes to that player's console as PLAYER_HIT. The ghost keeps GHOST_HEALTH,
- * refilled each frame, so no blow kills it. */
+ * this console runs, goes to that player's console as PLAYER_HIT. The ghost keeps GHOST_HEALTH in
+ * health and fatigue, refilled each frame, so no blow kills or fells it. */
 #define GHOST_HEALTH 5000.0f
+
+typedef u8(__attribute__((thiscall)) *fn_apply_health)(void *mobile, float damage, u8 player,
+                                                        u8 difficulty, u8 keep_health);
+typedef float(__attribute__((thiscall)) *fn_apply_fatigue)(void *mobile, float damage, float swing,
+                                                           u8 voice);
+typedef void(__attribute__((thiscall)) *fn_hit_stun)(void *mobile, float damage, u8 died);
+
+static void event_hit(u32 kind, u32 refid, u32 target, float health, float fatigue)
+{
+    u8 data[16];
+
+    put32le(data, refid);
+    put32le(data + 4, target);
+    copy(data + 8, (const u8 *)&health, 4);
+    copy(data + 12, (const u8 *)&fatigue, 4);
+    if (!event_queue(kind, data, sizeof(data)))
+        tes3x_log("net.event_full", kind);
+}
 
 static void ghost_health(u32 i, u8 *ref)
 {
     u8 *mobile = ref_mobile(ref);
-    float *health, damage;
+    float *health, *fatigue, damage, tired;
 
     if (!plausible(mobile))
         return;
     health = (float *)(mobile + MOBILE_HEALTH);
-    if (ghosts[i].armed && *health < GHOST_HEALTH - 0.5f) {
-        damage = GHOST_HEALTH - *health;
-        event_words(EVENT_PLAYER_HIT, 0, ghosts[i].client, &damage);
+    fatigue = (float *)(mobile + MOBILE_FATIGUE);
+    damage = GHOST_HEALTH - *health;
+    tired = GHOST_HEALTH - *fatigue;
+    if (ghosts[i].armed && (damage > 0.5f || tired > 0.5f)) {
+        event_hit(EVENT_PLAYER_HIT, 0, ghosts[i].client, damage > 0 ? damage : 0,
+                  tired > 0 ? tired : 0);
         player_hits_out++;
-        tes3x_log_hex3("net.player_hit_sent", ghosts[i].client, (u32)round_int(damage), i + 1);
+        tes3x_log_hex3("net.player_hit_sent", ghosts[i].client, (u32)round_int(damage),
+                       (u32)round_int(tired));
     }
-    *health = GHOST_HEALTH;
+    *health = *fatigue = GHOST_HEALTH;
     ghosts[i].armed = 1;
 }
 
-/* Another console's ghost of this player was hit there. */
+/* Another console's ghost of this player was hit there: the damage as the engine applies a blow,
+ * with its sounds, and the stun test, whose flinch the ghost there mirrors. */
 static void player_hit_event(const struct event *e)
 {
-    char line[48];
-    float damage;
+    const u8 *ref = player_reference();
+    u8 *mobile = ref ? ref_mobile(ref) : 0;
+    float health, fatigue = 0;
 
-    if (e->length < 12 || get32le(e->data + 4) != ses.client)
+    if (e->length < 12 || get32le(e->data + 4) != ses.client || !plausible(mobile))
         return;
-    copy((u8 *)&damage, e->data + 8, 4);
-    *put_int(put_text(line, "player->ModCurrentHealth "), -round_int(damage)) = 0;
-    run_script(line);
+    copy((u8 *)&health, e->data + 8, 4);
+    if (e->length >= 16)
+        copy((u8 *)&fatigue, e->data + 12, 4);
+    if (fatigue > 0)
+        ((fn_apply_fatigue)TES3X_NET_APPLY_FATIGUE_DAMAGE)(mobile, fatigue, 1.0f, 0);
+    if (health > 0)
+        ((fn_apply_health)TES3X_NET_APPLY_HEALTH_DAMAGE)(mobile, health, 0, 0, 0);
+    ((fn_hit_stun)TES3X_NET_HIT_STUN)(mobile, health > 0 ? health : fatigue, 0);
     player_hits_in++;
-    tes3x_log_hex3("net.player_hit", e->origin, (u32)round_int(damage), get32le(e->data));
+    tes3x_log_hex3("net.player_hit", e->origin, (u32)round_int(health), (u32)round_int(fatigue));
 }
 
 static void ghost_update(u32 i, const struct pose *local)
@@ -2595,8 +2619,8 @@ static void ghost_update(u32 i, const struct pose *local)
     }
     if (!(ref = ghost_ref(i)))
         return;
-    if (differs(p.x, ghosts[i].x, 1) || differs(p.y, ghosts[i].y, 1) ||
-        differs(p.z, ghosts[i].z, 1) || differs(p.heading, ghosts[i].heading, 0.01f)) {
+    /* Against where it stands: a ghost that was hit turns to its attacker by itself. */
+    if (off_pose(ref, &p.x)) {
         place_ref(ref, &p.x);
         ghosts[i].x = p.x;
         ghosts[i].y = p.y;
@@ -2644,7 +2668,7 @@ static void ghosts_frame(const u8 *state)
 #define EVENT_AUTHORITY 2u   /* cell key, client */
 #define EVENT_HOLD 3u        /* refid, authority, on */
 #define EVENT_HOLD_BROKEN 4u /* refid, holder, reason */
-#define EVENT_HIT 5u         /* refid, authority, damage */
+#define EVENT_HIT 5u         /* refid, authority, health damage, fatigue damage */
 #define EVENT_DEATH 6u       /* refid; the server records it and replays it to each joining client */
 #define KEY_EXTERIOR 1u
 #define KEY_INTERIOR 2u
@@ -2692,7 +2716,7 @@ static u32 authorities, authority_welcome;
 static struct {
     u32 refid, owner, simulated, seen, animated;
     u8 *mobile;
-    float health;
+    float health, fatigue;
 } followed[ACTORS];
 /* Actors this console runs that another client is talking to. */
 static struct {
@@ -2702,7 +2726,7 @@ static struct {
 } remote_holds[REMOTE_HOLDS];
 static struct {
     u32 refid, origin;
-    float damage;
+    float damage, fatigue;
 } hits[HITS];
 static u32 hit_count, talk_refid, talk_owner, talk_broken;
 static u32 actor_states_out, actor_states_in, actor_moves, follows;
@@ -2872,7 +2896,8 @@ static void unfollow(u32 i, int restore)
 static void follow(u8 *mobile, u8 *ref, u32 refid, u32 owner)
 {
     u32 *flags = (u32 *)(mobile + MOBILE_FLAGS), i, k, slot = ACTORS, count = 0, lk;
-    float health = *(const float *)(mobile + MOBILE_HEALTH), damage, to[4], frac;
+    float health = *(const float *)(mobile + MOBILE_HEALTH), damage, tired, to[4], frac;
+    float fatigue = *(const float *)(mobile + MOBILE_FATIGUE);
     struct timed track[ACTOR_SAMPLES];
 
     for (i = 0; i < ACTORS && slot == ACTORS; i++)
@@ -2890,19 +2915,22 @@ static void follow(u8 *mobile, u8 *ref, u32 refid, u32 owner)
         followed[slot].mobile = mobile;
         followed[slot].simulated = *flags & MOBILE_SIMULATED;
         followed[slot].health = health;
+        followed[slot].fatigue = fatigue;
         followed[slot].animated = 0;
         follows++;
         tes3x_log_hex3("net.follow", refid, owner, followed[slot].simulated);
     }
     followed[slot].owner = owner;
     followed[slot].seen = 1;
-    if (health < followed[slot].health - 0.5f) {
-        damage = followed[slot].health - health;
-        event_words(EVENT_HIT, refid, owner, &damage);
+    damage = followed[slot].health - health;
+    tired = followed[slot].fatigue - fatigue;
+    if (damage > 0.5f || tired > 0.5f) {
+        event_hit(EVENT_HIT, refid, owner, damage > 0 ? damage : 0, tired > 0 ? tired : 0);
         hits_out++;
-        tes3x_log_hex3("net.hit_sent", refid, owner, (u32)(int)damage);
+        tes3x_log_hex3("net.hit_sent", refid, (u32)round_int(damage), (u32)round_int(tired));
     }
     followed[slot].health = health;
+    followed[slot].fatigue = fatigue;
     lk = lock();
     for (i = 0; i < ACTORS; i++)
         if (actors_in[i].refid == refid && actors_in[i].origin == owner) {
@@ -3013,7 +3041,10 @@ static void hits_apply(u8 *mobile, void *ref, u32 refid)
 
     for (i = 0; i < hit_count; i++)
         if (hits[i].refid == refid) {
-            actor_command(ref, "ModCurrentHealth ", -round_int(hits[i].damage));
+            if (hits[i].damage > 0)
+                actor_command(ref, "ModCurrentHealth ", -round_int(hits[i].damage));
+            if (hits[i].fatigue > 0)
+                actor_command(ref, "ModCurrentFatigue ", -round_int(hits[i].fatigue));
             for (g = 0; g < PEERS && !(ghosts[g].client == hits[i].origin && ghosts[g].placed);
                  g++)
                 ;
@@ -3026,6 +3057,43 @@ static void hits_apply(u8 *mobile, void *ref, u32 refid)
             }
             hits[i--] = hits[--hit_count];
         }
+}
+
+/* An actor that attacks a player on sight attacks a ghost too. The engine only looks for the
+ * local player, so on the actor's authority one with Fight of HOSTILE_FIGHT or more that is not
+ * fighting turns on the nearest placed ghost within HOSTILE_RANGE units. */
+#define HOSTILE_FIGHT 90
+#define HOSTILE_RANGE 1024.0f
+static u32 hostiles;
+
+static void hostile_check(const u8 *mobile, void *ref, u32 refid)
+{
+    const float *at = (const float *)((const u8 *)ref + REF_POSITION);
+    float dx, dy, dz, d, best = HOSTILE_RANGE * HOSTILE_RANGE;
+    u32 g, pick = PEERS;
+    char line[48];
+
+    if ((*(const u32 *)(mobile + MOBILE_FLAGS) & MOBILE_IN_COMBAT) ||
+        *(const int *)(mobile + MOBILE_FIGHT) < HOSTILE_FIGHT || mobile[MOBILE_ACTION] == 0x12 ||
+        mobile[MOBILE_ACTION] == 0x13 || *(const float *)(mobile + MOBILE_HEALTH) <= 0)
+        return;
+    for (g = 0; g < PEERS; g++) {
+        if (!ghosts[g].placed)
+            continue;
+        dx = ghosts[g].x - at[0];
+        dy = ghosts[g].y - at[1];
+        dz = ghosts[g].z - at[2];
+        if ((d = dx * dx + dy * dy + dz * dz) < best) {
+            best = d;
+            pick = g;
+        }
+    }
+    if (pick == PEERS)
+        return;
+    *put_text(put_int(put_text(line, "StartCombat \"tes3x_ghost"), (int)pick + 1), "\"") = 0;
+    run_script_on(line, ref);
+    hostiles++;
+    tes3x_log_hex3("net.hostile", refid, ghosts[pick].client, pick + 1);
 }
 
 /* The talker's side of a hold on a followed actor: HOLD on while the dialogue is open, off when
@@ -3123,6 +3191,7 @@ static void authority_frame(const u8 *player, const u8 *state)
         hits_apply(mobile, ref, refid);
         if (!send)
             continue;
+        hostile_check(mobile, ref, refid);
         a = out + 4 + n * ACTOR_BYTES;
         put32le(a, refid);
         copy(a + 4, ref + 0x38, 12);
@@ -3210,6 +3279,9 @@ static void authority_event(const struct event *e)
         hits[hit_count].refid = refid;
         hits[hit_count].origin = e->origin;
         copy((u8 *)&hits[hit_count].damage, e->data + 8, 4);
+        hits[hit_count].fatigue = 0;
+        if (e->length >= 16)
+            copy((u8 *)&hits[hit_count].fatigue, e->data + 12, 4);
         tes3x_log_hex3("net.hit", refid, e->origin, (u32)round_int(hits[hit_count].damage));
         hit_count++;
         hits_in++;
@@ -3231,6 +3303,7 @@ static void authority_stat(void)
     tes3x_log_hex3("net.actor_states", actor_states_out, actor_states_in, actor_moves);
     tes3x_log_hex3("net.actor_events", follows, hits_out, hits_in);
     tes3x_log_hex3("net.player_hits", player_hits_out, player_hits_in, retaliations);
+    tes3x_log_hex3("net.hostiles", hostiles, 0, 0);
     tes3x_log_hex3("net.actor_deaths", death_count, deaths_reported, deaths_applied);
     tes3x_log_hex3("net.actor_holds", remote_holds_in, remote_breaks_out, remote_breaks_in);
 }
