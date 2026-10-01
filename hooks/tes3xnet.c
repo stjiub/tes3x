@@ -28,7 +28,7 @@
  * time globals; a console joins only once a game is loaded, offering its own clock. Weather is the
  * server's too: one client rolls it, and each region's weather goes through the server. The server
  * names one client the authority for each loaded cell: it runs those actors and sends their states, and
- * the others take them out of the simulation and place them from the states. Ghosts and followed
+ * the others hold those actors' AI and place them from the states. Ghosts and followed
  * actors mirror their source's animation layers: moving, attacking, casting and the rest. A spell
  * takes effect on the console that runs its target. Items taken, objects disabled and locks go
  * through the server, which replays them to consoles that join later, and so do objects made at
@@ -86,6 +86,9 @@
     !defined(TES3X_NET_HIT_ROLL) || !defined(TES3X_NET_SHOT_ROLL_SITES) || !defined(TES3X_NET_BLOOD) || \
     !defined(TES3X_NET_ACTIVATION_TARGET) || !defined(TES3X_NET_ACTIVATION_TARGET_SITES)
 #error "define TES3X_NET_SHOOT, its vtable slots, TES3X_NET_NOCK, the hit roll and the blood"
+#endif
+#if !defined(TES3X_NET_AI_STEP) || !defined(TES3X_NET_AI_STEP_SLOTS)
+#error "define TES3X_NET_AI_STEP, an actor's AI step, and its vtable slots"
 #endif
 #if !defined(TES3X_NET_REF_MODIFIED) || !defined(TES3X_NET_REF_MODIFIED_SLOT)
 #error "define TES3X_NET_REF_MODIFIED, Reference::setObjectModified, and its vtable slot"
@@ -3359,9 +3362,9 @@ static void ghosts_frame(const u8 *state)
 }
 
 /* Cell authority. The server names one client per loaded cell to run the actors there (AUTHORITY
- * events). It sends their states about 10 times a second; every other client takes those actors
- * out of the simulation, as the dialogue hold does, and places them from the states. A hit or a
- * held dialogue on a followed actor goes to its authority as an event. Only references from the
+ * events). It sends their states about 10 times a second; every other client holds those actors'
+ * AI and places them from the states. A hit or a held dialogue on a followed actor goes to its
+ * authority as an event. Only references from the
  * data files take part: their mod index and refnum name one object under one load order. */
 #define EVENT_AUTHORITY 2u   /* cell key, client */
 #define EVENT_HOLD 3u        /* refid, authority, on */
@@ -3413,9 +3416,9 @@ static struct {
     u32 client;
 } authority[AUTHORITIES];
 static u32 authorities, authority_welcome;
-/* Actors this console places for another authority, and whether the engine had them simulated. */
+/* Actors this console places for another authority; held while their AI is to be skipped. */
 static struct {
-    u32 refid, owner, simulated, seen, animated, affected;
+    u32 refid, owner, held, seen, animated;
     u8 *mobile;
     float health, fatigue;
 } followed[ACTORS];
@@ -3597,14 +3600,65 @@ static void unfollow(u32 i, int restore)
 {
     if (restore && followed[i].animated)
         anim_release(*(u8 **)(followed[i].mobile + MOBILE_REFERENCE));
-    if (restore && followed[i].simulated)
-        *(u32 *)(followed[i].mobile + MOBILE_FLAGS) |= MOBILE_SIMULATED;
     followed[i].refid = 0;
 }
 
-/* Another client runs this actor: keep it out of the simulation, place it ACTOR_DELAY_US behind
- * its authority's states, as ghosts are, and send a drop in its health to the authority as a hit.
- * Its statistics follow the authority's, except a health of 0 or less: DEATH brings that. */
+/* A followed actor stays in the simulation, where blows, projectiles and effects reach it, but
+ * its AI step runs as with ToggleAI off: no decisions, movement cleared, velocity zero. */
+#define WORLD_TOGGLES 0x2C0
+#define TOGGLES_FLAGS 0x24
+#define TOGGLE_AI_OFF 8u
+
+static const u32 ai_step_slots[] = TES3X_NET_AI_STEP_SLOTS;
+static u32 ai_hooked, ai_held;
+
+static void __attribute__((thiscall)) ai_step_hook(u8 *mobile)
+{
+    u8 *world = *(u8 **)TES3X_NET_WORLD, *toggles;
+    u32 i, saved;
+
+    for (i = 0; i < ACTORS; i++)
+        if (followed[i].refid && followed[i].held && followed[i].mobile == mobile)
+            break;
+    if (i == ACTORS || !plausible(world) ||
+        !plausible(toggles = *(u8 **)(world + WORLD_TOGGLES))) {
+        ((fn_mobile_call)TES3X_NET_AI_STEP)(mobile);
+        return;
+    }
+    saved = *(u32 *)(toggles + TOGGLES_FLAGS);
+    *(u32 *)(toggles + TOGGLES_FLAGS) = saved | TOGGLE_AI_OFF;
+    ((fn_mobile_call)TES3X_NET_AI_STEP)(mobile);
+    *(u32 *)(toggles + TOGGLES_FLAGS) = saved;
+    ai_held++;
+}
+
+static void ai_hook_install(void)
+{
+    u32 i, cr0, flags, n = sizeof(ai_step_slots) / sizeof(ai_step_slots[0]);
+
+    if (ai_hooked)
+        return;
+    ai_hooked = 1;
+    for (i = 0; i < n; i++)
+        if (*(const u32 *)ai_step_slots[i] != TES3X_NET_AI_STEP) {
+            tes3x_log_hex3("net.ai_slot_unexpected", ai_step_slots[i],
+                           *(const u32 *)ai_step_slots[i], 0);
+            return;
+        }
+    flags = lock();
+    __asm__ volatile("movl %%cr0, %0" : "=r"(cr0));
+    __asm__ volatile("movl %0, %%cr0" : : "r"(cr0 & ~CR0_WP) : "memory");
+    for (i = 0; i < n; i++)
+        *(u32 *)ai_step_slots[i] = (u32)ai_step_hook;
+    __asm__ volatile("movl %0, %%cr0" : : "r"(cr0) : "memory");
+    unlock(flags);
+    ai_hooked = 2;
+    tes3x_log("net.ai_hook", n);
+}
+
+/* Another client runs this actor: hold its AI, place it ACTOR_DELAY_US behind its authority's
+ * states, as ghosts are, and send a drop in its health to the authority as a hit. Its statistics
+ * follow the authority's, except a health of 0 or less: DEATH brings that. */
 static void follow(u8 *mobile, u8 *ref, u32 refid, u32 owner)
 {
     u32 *flags = (u32 *)(mobile + MOBILE_FLAGS), i, k, slot = ACTORS, count = 0, lk;
@@ -3625,13 +3679,11 @@ static void follow(u8 *mobile, u8 *ref, u32 refid, u32 owner)
             return;
         followed[slot].refid = refid;
         followed[slot].mobile = mobile;
-        followed[slot].simulated = *flags & MOBILE_SIMULATED;
         followed[slot].health = health;
         followed[slot].fatigue = fatigue;
         followed[slot].animated = 0;
-        followed[slot].affected = 0;
         follows++;
-        tes3x_log_hex3("net.follow", refid, owner, followed[slot].simulated);
+        tes3x_log_hex3("net.follow", refid, owner, *flags & MOBILE_SIMULATED);
     }
     followed[slot].owner = owner;
     followed[slot].seen = 1;
@@ -3659,15 +3711,11 @@ static void follow(u8 *mobile, u8 *ref, u32 refid, u32 owner)
     unlock(lk);
     /* A death plays out in the simulation; a dead actor has nothing left to place. */
     if (mobile[MOBILE_ACTION] == 0x12 || mobile[MOBILE_ACTION] == 0x13 || health <= 0) {
-        *flags = (*flags | MOBILE_SIMULATED) & ~MOBILE_SCRIPTED;
+        followed[slot].held = 0;
+        *flags &= ~MOBILE_SCRIPTED;
         return;
     }
-    if (followed[slot].affected) { /* an AFFECT's effect beginning */
-        followed[slot].affected--;
-        *flags |= MOBILE_SIMULATED;
-    } else {
-        *flags &= ~MOBILE_SIMULATED;
-    }
+    followed[slot].held = 1;
     if (!count)
         return;
     if (stats[0] > 0) {
@@ -4078,6 +4126,7 @@ static void authority_stat(void)
                        (u32)authority[i].key.gy);
     tes3x_log_hex3("net.actor_states", actor_states_out, actor_states_in, actor_moves);
     tes3x_log_hex3("net.actor_events", follows, hits_out, hits_in);
+    tes3x_log_hex3("net.ai_held", ai_held, ai_hooked, 0);
     tes3x_log_hex3("net.player_hits", player_hits_out, player_hits_in, retaliations);
     tes3x_log_hex3("net.hostiles", hostiles, bloodied, 0);
     tes3x_log_hex3("net.actor_deaths", death_count, deaths_reported, deaths_applied);
@@ -6783,7 +6832,6 @@ static void containers_stat(void)
 #define EVENT_AFFECT 18u /* actor id, effect index, spell id */
 #define EVENT_STATUS 19u /* actor id, fight, flee, alarm, hello, base disposition (i16 each) */
 #define AFFECT_BYTES 5u
-#define AFFECT_FRAMES 5u /* an effect begins only on a mobile in the simulation */
 #define STATUS_VALUES 5u
 #define STATUS_BYTES (4u + STATUS_VALUES * 2u)
 #define MOBILE_FLEE 0x354
@@ -6873,9 +6921,6 @@ static void affect_event(const struct event *e)
     }
     ((fn_spell_hit)TES3X_NET_SPELL_HIT)(instance, target, (int)index);
     *(u32 *)(instance + INSTANCE_STATE) = INSTANCE_WORKING;
-    for (n = 0; n < ACTORS; n++)
-        if (followed[n].refid == refid)
-            followed[n].affected = AFFECT_FRAMES;
     affects_applied++;
     tes3x_log_hex3("net.affect_applied", refid, index, 0);
 }
@@ -8492,6 +8537,7 @@ void tes3x_net_frame(void)
     if (net.up) {
         spell_hook_install();
         shot_hook_install();
+        ai_hook_install();
         objects_hook_install();
         leveled_hook_install();
         summon_hook_install();

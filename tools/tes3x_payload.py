@@ -74,6 +74,9 @@ CONTAINER_ADDRESSES = (
 # MobileProjectile's actor collision rolls to hit once.
 SHOOT = 0x0017BD30
 SHOOT_SLOTS = 3
+# An actor's AI step (mobile vtable +0xA8): decisions and movement, or none with ToggleAI off.
+AI_STEP = 0x001618D0
+AI_STEP_SLOTS = 3
 PROJECTILE_ACTOR_HIT = 0x00192610
 HIT_ROLL = 0x0017B770
 NOCK = 0x00158620
@@ -339,6 +342,14 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
             raise PayloadError(f"projectile hit roll: {len(sites)} call sites, expected 1")
         define("NET_SHOOT", hexva(shoot))
         define("NET_SHOOT_SLOTS", "{" + ",".join(hexva(s) for s in slots) + "}")
+        ai_step = int(address("AI_STEP", AI_STEP), 16)
+        slots = [image.off_to_va(m.start()) for m in re.finditer(
+            re.escape(struct.pack("<I", ai_step)), bytes(image.data))]
+        if len(slots) != AI_STEP_SLOTS or None in slots:
+            raise PayloadError(f"AI step {hexva(ai_step)}: {len(slots)} vtable slots, expected "
+                               f"{AI_STEP_SLOTS}")
+        define("NET_AI_STEP", hexva(ai_step))
+        define("NET_AI_STEP_SLOTS", "{" + ",".join(hexva(s) for s in slots) + "}")
         define("NET_NOCK", address("NOCK", NOCK))
         define("NET_HIT_ROLL", hexva(roll))
         define("NET_SHOT_ROLL_SITES", "{" + hexva(sites[0]) + "}")
