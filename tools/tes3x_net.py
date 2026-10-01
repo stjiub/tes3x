@@ -1786,7 +1786,8 @@ def serve(args):
         for spec in specs:
             cast, _, at = spec.partition("@")
             name, _, refid = cast.partition(":")
-            bot_spells.append((float(at), kind, name, int(refid, 16) if refid else 0))
+            bot_spells.append((float(at), kind, name,
+                               None if refid == "none" else int(refid, 16) if refid else 0))
     for spec in args.bot_weather:
         change, _, at = spec.partition("@")
         index, _, value = change.partition(":")
@@ -3009,8 +3010,13 @@ def serve(args):
             if not target or target == BOT_ID:
                 continue
             bot_spells.remove(spell)
-            on = f"{refid:#010x}" if refid else "the player"
             verb = "casts" if kind == EVENT_SPELL else "is seen casting"
+            if refid is None:
+                print(f"{time.strftime('%H:%M:%S')} bot {verb} {name} at nothing", flush=True)
+                broadcast_event(BOT_ID, kind, SPELL.pack(0, 0, 0, SOURCE_SPELL, 1) + zstr(name),
+                                now)
+                continue
+            on = f"{refid:#010x}" if refid else "the player"
             print(f"{time.strftime('%H:%M:%S')} bot {verb} {name} on {on} of client {target}",
                   flush=True)
             data = SPELL.pack(0, target, refid, SOURCE_SPELL, 1) + zstr(name)
@@ -3361,7 +3367,8 @@ def main(argv=None):
                         "(hex refid) at its authority, this long after it appears (repeatable)")
     p.add_argument("--bot-cast", action="append", default=[], metavar="SPELL[:REFID]@SECONDS",
                    help="every client sees the bot cast this spell at the first client's player, "
-                        "or at an actor (hex refid), this long after it appears (repeatable)")
+                        "or at an actor (hex refid), or at nothing (none), this long after it appears "
+                        "(repeatable)")
     p.add_argument("--bot-shoot", action="append", default=[], metavar="AMMO@SECONDS",
                    help="the bot shoots this ammunition (or thrown weapon) this long after it "
                         "appears (repeatable)")

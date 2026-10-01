@@ -4521,8 +4521,33 @@ static u8 *ref_named(u32 client, u32 refid)
 typedef void(__cdecl *fn_cast_bolt)(void *instance, int effect, int index, int count);
 
 static const u32 bolt_sites[] = TES3X_NET_CAST_BOLT_SITES;
-static u32 casts_sent, casts_received, casts_replayed;
+static u32 casts_sent, casts_received, casts_replayed, casts_bolted;
 static const u8 *cast_sent_last;
+
+/* With no target, the engine launches an actor's bolt only when the actor has a combat target,
+ * and then aims it there. A replayed cast without one borrows the stand-in itself as combat
+ * target past that test, and gives it back before the bolt is aimed, so it flies where the
+ * stand-in faces; or after a few frames if the cast never gets that far. */
+#define CAST_AIM_FRAMES 8
+static struct {
+    u8 *mobile;
+    const u8 *instance;
+    u32 frames;
+} cast_aim;
+
+static void cast_aim_end(void)
+{
+    if (cast_aim.mobile && *(u8 **)(cast_aim.mobile + MOBILE_TARGET) == cast_aim.mobile)
+        *(u8 **)(cast_aim.mobile + MOBILE_TARGET) = 0;
+    cast_aim.mobile = 0;
+    cast_aim.instance = 0;
+}
+
+static void cast_aim_frame(void)
+{
+    if (cast_aim.mobile && !--cast_aim.frames)
+        cast_aim_end();
+}
 
 static void __cdecl cast_bolt_hook(u8 *instance, int effect, int index, int count)
 {
@@ -4530,8 +4555,17 @@ static void __cdecl cast_bolt_hook(u8 *instance, int effect, int index, int coun
     u8 data[SPELL_BYTES + SPELL_ID];
     u32 client = 0, refid = 0, n;
 
+    if (instance == cast_aim.instance && index + 1 >= count)
+        cast_aim_end();
     ((fn_cast_bolt)TES3X_NET_CAST_BOLT)(instance, effect, index, count);
-    if (ses.state != SESSION_JOINED || instance == cast_sent_last || ref_owner(caster, &n))
+    if (ses.state != SESSION_JOINED)
+        return;
+    if (ref_owner(caster, &n)) {
+        casts_bolted++;
+        tes3x_log_hex3("net.cast_bolt", (u32)caster, (u32)index, (u32)count);
+        return;
+    }
+    if (instance == cast_sent_last)
         return;
     cast_sent_last = instance;
     if (plausible(target = *(const u8 *const *)(instance + INSTANCE_TARGET)))
@@ -4724,7 +4758,7 @@ static void spell_event(const struct event *e)
 /* Another console's caster cast: the stand-in casts it here too, at the target when it has one. */
 static void cast_event(const struct event *e)
 {
-    u8 *caster, *target, *instance;
+    u8 *caster, *target, *instance, *mobile;
     char id[SPELL_ID];
     u32 refid, caster_id, client, own;
 
@@ -4740,6 +4774,14 @@ static void cast_event(const struct event *e)
     if (!(instance = spell_start(id, caster, target, refid)))
         return;
     *(u32 *)(instance + INSTANCE_STATE) = INSTANCE_CASTING;
+    if (!target && plausible(mobile = ref_mobile(caster)) &&
+        !*(const u32 *)(mobile + MOBILE_TARGET)) {
+        cast_aim_end();
+        *(u8 **)(mobile + MOBILE_TARGET) = mobile;
+        cast_aim.mobile = mobile;
+        cast_aim.instance = instance;
+        cast_aim.frames = CAST_AIM_FRAMES;
+    }
     casts_replayed++;
     tes3x_log_hex3("net.cast_replayed", (u32)caster, (u32)target, 0);
 }
@@ -4749,6 +4791,7 @@ static void spell_stat(void)
     tes3x_log_hex3("net.spells", spells_sent, spells_received, spells_applied);
     tes3x_log_hex3("net.spells_withheld", spells_withheld, spell_failures, spell_hooked);
     tes3x_log_hex3("net.casts", casts_sent, casts_received, casts_replayed);
+    tes3x_log_hex3("net.casts_bolted", casts_bolted, 0, 0);
 }
 
 /* Arrows, bolts and thrown weapons. An actor nocks one from its readied ammunition (nock, at
@@ -4767,29 +4810,32 @@ typedef u8(__cdecl *fn_hit_roll)(void *attacker, void *projectile, int a2);
 static const u32 shoot_slots[] = TES3X_NET_SHOOT_SLOTS, shot_roll_sites[] = TES3X_NET_SHOT_ROLL_SITES;
 static u32 shot_hooked, shots_sent, shots_received, shots_replayed, shots_missed, shot_failures;
 
-static void __attribute__((thiscall)) shoot_hook(u8 *mobile)
+/* What the release about to happen sends as SHOT, or 0 when it sends nothing. */
+static u32 shot_read(u8 *mobile, u8 *data)
 {
     const u8 *nocked = *(const u8 *const *)(mobile + MOBILE_NOCKED), *ref, *object, *player;
     const u8 *firer = *(const u8 *const *)(mobile + MOBILE_REFERENCE);
-    u8 data[SHOT_BYTES + EQUIP_ID];
     const char *id;
-    u32 n = 0, own;
+    u32 n, own;
 
-    if (ses.state == SESSION_JOINED && plausible(nocked) && plausible(firer) &&
-        !ref_owner(firer, &own) && plausible(ref = *(const u8 *const *)(nocked + MOBILE_REFERENCE)) &&
-        plausible(object = *(const u8 *const *)(ref + 0x28)) &&
-        mapped(id = ((fn_object_id)(*(void *const *const *)object)[OBJECT_GET_ID / 4])(object))) {
-        player = player_reference();
-        put32le(data, firer != player ? actor_id(firer) : 0);
-        copy(data + 4, mobile + MOBILE_SHOT_VALUES, 4);
-        copy(data + 8, mobile + MOBILE_SHOT_VALUES + 8, 4);
-        data[12] = firer == player;
-        for (n = 0; id[n] && n < EQUIP_ID - 1; n++)
-            data[SHOT_BYTES + n] = (u8)id[n];
-        data[SHOT_BYTES + n] = 0;
-        n += SHOT_BYTES + 1;
-    }
-    ((fn_mobile_call)TES3X_NET_SHOOT)(mobile);
+    if (ses.state != SESSION_JOINED || !plausible(nocked) || !plausible(firer) ||
+        ref_owner(firer, &own) || !plausible(ref = *(const u8 *const *)(nocked + MOBILE_REFERENCE)) ||
+        !plausible(object = *(const u8 *const *)(ref + 0x28)) ||
+        !mapped(id = ((fn_object_id)(*(void *const *const *)object)[OBJECT_GET_ID / 4])(object)))
+        return 0;
+    player = player_reference();
+    put32le(data, firer != player ? actor_id(firer) : 0);
+    copy(data + 4, mobile + MOBILE_SHOT_VALUES, 4);
+    copy(data + 8, mobile + MOBILE_SHOT_VALUES + 8, 4);
+    data[12] = firer == player;
+    for (n = 0; id[n] && n < EQUIP_ID - 1; n++)
+        data[SHOT_BYTES + n] = (u8)id[n];
+    data[SHOT_BYTES + n] = 0;
+    return n + SHOT_BYTES + 1;
+}
+
+static void shot_send(const u8 *data, u32 n)
+{
     if (!n)
         return;
     if (!event_queue(EVENT_SHOT, data, n)) {
@@ -4798,6 +4844,26 @@ static void __attribute__((thiscall)) shoot_hook(u8 *mobile)
     }
     shots_sent++;
     log_text("net.shot_sent", (const char *)data + SHOT_BYTES);
+}
+
+static void __attribute__((thiscall)) shoot_hook(u8 *mobile)
+{
+    u8 data[SHOT_BYTES + EQUIP_ID];
+    u32 n = shot_read(mobile, data);
+
+    ((fn_mobile_call)TES3X_NET_SHOOT)(mobile);
+    shot_send(data, n);
+}
+
+/* The player's slot holds its own release, which settles the ammunition stack and then runs the
+ * shared one. */
+static void __attribute__((thiscall)) player_shoot_hook(u8 *mobile)
+{
+    u8 data[SHOT_BYTES + EQUIP_ID];
+    u32 n = shot_read(mobile, data);
+
+    ((fn_mobile_call)TES3X_NET_PLAYER_SHOOT)(mobile);
+    shot_send(data, n);
 }
 
 static u8 __cdecl shot_roll_hook(u8 *attacker, void *projectile, int a2)
@@ -4825,6 +4891,11 @@ static void shot_hook_install(void)
                            *(const u32 *)shoot_slots[i], 0);
             return;
         }
+    if (*(const u32 *)TES3X_NET_PLAYER_SHOOT_SLOT != TES3X_NET_PLAYER_SHOOT) {
+        tes3x_log_hex3("net.shoot_slot_unexpected", TES3X_NET_PLAYER_SHOOT_SLOT,
+                       *(const u32 *)TES3X_NET_PLAYER_SHOOT_SLOT, 0);
+        return;
+    }
     if (!redirect_calls(shot_roll_sites, sizeof(shot_roll_sites) / sizeof(shot_roll_sites[0]),
                         TES3X_NET_HIT_ROLL, (const void *)shot_roll_hook))
         return;
@@ -4833,10 +4904,11 @@ static void shot_hook_install(void)
     __asm__ volatile("movl %0, %%cr0" : : "r"(cr0 & ~CR0_WP) : "memory");
     for (i = 0; i < n; i++)
         *(u32 *)shoot_slots[i] = (u32)shoot_hook;
+    *(u32 *)TES3X_NET_PLAYER_SHOOT_SLOT = (u32)player_shoot_hook;
     __asm__ volatile("movl %0, %%cr0" : : "r"(cr0) : "memory");
     unlock(flags);
     shot_hooked = 3;
-    tes3x_log("net.shot_hook", n);
+    tes3x_log("net.shot_hook", n + 1);
 }
 
 /* Another console's firer shot: the stand-in nocks the same ammunition and releases it. A ghost is
@@ -10106,6 +10178,7 @@ void tes3x_net_frame(void)
             tes3x_log_hex3("net.refused_reason", ses.refused_reason, 0, 0);
     }
     spell_sent_count = 0;
+    cast_aim_frame();
     if (net.up) {
         spell_hook_install();
         shot_hook_install();

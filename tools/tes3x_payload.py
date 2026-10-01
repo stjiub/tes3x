@@ -75,6 +75,8 @@ CONTAINER_ADDRESSES = (
 # MobileProjectile's actor collision rolls to hit once.
 SHOOT = 0x0017BD30
 SHOOT_SLOTS = 3
+# The player's slot holds its own release, which settles the ammunition stack and jumps to SHOOT.
+PLAYER_SHOOT = 0x00185390
 # An actor's AI step (mobile vtable +0xA8): decisions and movement, or none with ToggleAI off.
 AI_STEP = 0x001618D0
 AI_STEP_SLOTS = 3
@@ -374,6 +376,17 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
             raise PayloadError(f"projectile hit roll: {len(sites)} call sites, expected 1")
         define("NET_SHOOT", hexva(shoot))
         define("NET_SHOOT_SLOTS", "{" + ",".join(hexva(s) for s in slots) + "}")
+        player_shoot = int(address("PLAYER_SHOOT", PLAYER_SHOOT), 16)
+        body = bytes(image.data[image.va_to_off(player_shoot):][:0x40])
+        jumps = [i for i in range(len(body) - 4) if body[i] == 0xE9 and
+                 player_shoot + i + 5 + struct.unpack_from("<i", body, i + 1)[0] == shoot]
+        slots = [image.off_to_va(m.start()) for m in re.finditer(
+            re.escape(struct.pack("<I", player_shoot)), bytes(image.data))]
+        if len(jumps) != 1 or len(slots) != 1 or None in slots:
+            raise PayloadError(f"player shoot {hexva(player_shoot)}: {len(jumps)} jumps to shoot, "
+                               f"{len(slots)} vtable slots, expected 1 and 1")
+        define("NET_PLAYER_SHOOT", hexva(player_shoot))
+        define("NET_PLAYER_SHOOT_SLOT", hexva(slots[0]))
         ai_step = int(address("AI_STEP", AI_STEP), 16)
         slots = [image.off_to_va(m.start()) for m in re.finditer(
             re.escape(struct.pack("<I", ai_step)), bytes(image.data))]
