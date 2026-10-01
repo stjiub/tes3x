@@ -6010,73 +6010,6 @@ static void player_hook_install(void)
         player_hooked |= 4;
 }
 
-/* A save holds the game thread for seconds while the heartbeat DPC keeps the session: BUSY tells
- * the server to hand this console's cells and actors to another player until it is back. */
-#define EVENT_BUSY 21u /* BUSY_SAVING, or 0 once back */
-#define BUSY_SAVING 1u
-
-typedef unsigned char(__attribute__((thiscall)) *fn_save_game)(void *, const char *, const char *);
-static const u32 save_sites[] = TES3X_NET_SAVE_SITES;
-static u32 save_hooked, saves_seen, saves_busy;
-
-/* Every save goes through here: the call sites still aimed at SaveGame, and rotating-autosaves'
- * hook, which owns the other three. */
-unsigned char __attribute__((thiscall)) tes3x_net_save(void *game, const char *file,
-                                                      const char *display)
-{
-    u8 busy = BUSY_SAVING;
-    int sent = net.up && event_queue(EVENT_BUSY, &busy, 1);
-    unsigned char ok;
-
-    saves_seen++;
-    saves_busy += sent;
-    ok = ((fn_save_game)TES3X_NET_SAVE_GAME)(game, file, display);
-    if (sent) {
-        busy = 0;
-        event_queue(EVENT_BUSY, &busy, 1);
-    }
-    return ok;
-}
-
-static void save_hook_install(void)
-{
-    u32 sites[sizeof(save_sites) / sizeof(save_sites[0])], i, n = 0;
-    const u8 *site;
-
-    if (save_hooked)
-        return;
-    for (i = 0; i < sizeof(save_sites) / sizeof(save_sites[0]); i++) {
-        site = (const u8 *)save_sites[i];
-        if (site[0] == 0xE8 && (u32)site + 5 + *(const u32 *)(site + 1) == TES3X_NET_SAVE_GAME)
-            sites[n++] = save_sites[i];
-    }
-    if (n && !redirect_calls(sites, n, TES3X_NET_SAVE_GAME, (const void *)tes3x_net_save))
-        n = 0;
-    save_hooked = 1 + n;
-    tes3x_log("net.save_hook", n);
-}
-
-static void busy_event(const struct event *e)
-{
-    u32 i, flags;
-
-    if (e->length < 1)
-        return;
-    flags = lock();
-    for (i = 0; i < PEERS; i++)
-        if (peers[i].client == e->origin) {
-            peers[i].busy = e->data[0];
-            peers[i].time = now_us();
-        }
-    unlock(flags);
-    tes3x_log_hex3("net.peer_busy", e->origin, e->data[0], 0);
-}
-
-static void save_stat(void)
-{
-    tes3x_log_hex3("net.saves", saves_seen, saves_busy, save_hooked);
-}
-
 static u32 actor_owner(u32 id, u32 cell_owner)
 {
     struct spawn *s;
@@ -7743,6 +7676,7 @@ static struct {
     void *file;
     u8 hash[BULK_HASH];
     char name[BULK_NAME + 1];
+    char path[80]; /* read from here when set, else U:\TES3X\NAME */
     u8 slot[UP_SLOTS][BULK_CHUNK];
 } up;
 
@@ -7836,13 +7770,16 @@ static void up_work(void)
 {
     crypto_blake2b_ctx ctx;
     IO_STATUS_BLOCK iosb;
-    char path[16 + BULK_NAME + 8];
+    char path[sizeof(up.path)];
     u64 offset, size;
     u32 flags, i, s, n, left, limit, state = UP_FAILED;
 
     if (up.state == UP_WANT) {
         up_close();
-        named_path(path, up.name, "");
+        if (up.path[0])
+            copy((u8 *)path, (const u8 *)up.path, sizeof(path));
+        else
+            named_path(path, up.name, "");
         if (!bulk_open(path, GENERIC_READ, FILE_OPEN, 0, &up.file) &&
             (size = bulk_size(up.file)) <= BULK_MAX) {
             crypto_blake2b_init(&ctx, BULK_HASH);
@@ -7927,7 +7864,9 @@ static void up_frame(void)
 }
 
 /* Game thread: `tes3xnet send NAME`. */
-static void up_command(const char *name)
+/* Sends NAME, read from path when given; 0 if NAME is not a plain file name or an upload is under
+ * way. */
+static int up_start(const char *name, const char *path)
 {
     u32 i, flags;
 
@@ -7937,16 +7876,26 @@ static void up_command(const char *name)
               c == ' ' || c == '.' || c == '-' || c == '_') || (!i && c == '.'))
             break;
     }
-    if (!i || name[i] || (up.state >= UP_WANT && up.state <= UP_SENDING)) {
+    if (!i || name[i] || (up.state >= UP_WANT && up.state <= UP_SENDING) ||
+        (path && tes3x_strlen(path) >= sizeof(up.path))) {
         tes3x_log("net.upload_refused", up.state);
-        return;
+        return 0;
     }
     copy((u8 *)up.name, (const u8 *)name, i + 1);
+    up.path[0] = 0;
+    if (path)
+        copy((u8 *)up.path, (const u8 *)path, tes3x_strlen(path) + 1);
     flags = lock();
     up.state = UP_WANT;
     up.sent = up.resent = up.fast = up.acks = 0;
     unlock(flags);
     log_text("net.upload_name", up.name);
+    return 1;
+}
+
+static void up_command(const char *name)
+{
+    up_start(name, 0);
 }
 
 static void up_stat(void)
@@ -8506,6 +8455,183 @@ static void handshake_stat(void)
     tes3x_log_hex3("net.refused_values", refused_states, refused_events, refused_anims);
 }
 
+/* A save holds the game thread for seconds while the heartbeat DPC keeps the session: BUSY tells
+ * the server to hand this console's cells and actors to another player until it is back. */
+#define EVENT_BUSY 21u /* BUSY_SAVING, or 0 once back */
+#define BUSY_SAVING 1u
+
+typedef unsigned char(__attribute__((thiscall)) *fn_save_game)(void *, const char *, const char *);
+typedef u32(__attribute__((stdcall)) *fn_create_save)(const char *root, const u16 *name, u32 how,
+                                                      u32 options, char *path, u32 size);
+static const u32 save_sites[] = TES3X_NET_SAVE_SITES;
+static u32 save_hooked, saves_seen, saves_busy, saves_slotted, saves_uploaded, save_pending;
+#define OPEN_EXISTING 3u
+/* While joined every save goes to one slot per server and character, "MP <character>
+ * <server>": SaveGame names the folder by a hash of its file name, so the slot never meets a
+ * single-player save, and its name with ".ess" stays within BULK_NAME. */
+#define SLOT_CHARACTER 16u
+#define SLOT_SERVER 13u
+static char save_slot[3 + SLOT_CHARACTER + 1 + SLOT_SERVER + 1];
+static char save_path[sizeof(up.path)], save_name[BULK_NAME + 1];
+
+static u32 slot_text(char *out, const char *text, u32 cap)
+{
+    u32 i;
+    char c;
+
+    for (i = 0; i < cap && (c = text[i]); i++)
+        out[i] = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+                 c == ' ' || c == '_' ? c : '-';
+    return i;
+}
+
+/* 0 when there is no player name yet. */
+static int slot_name(void)
+{
+    const u8 *ref = player_reference(), *base;
+    const char *name;
+    u32 n = 3, k;
+
+    /* the player's NPCInstance, its baseNPC (+0x6C) and that NPC's name (+0x70) */
+    if (!ref || !plausible(base = *(const u8 *const *)(ref + 0x28)) ||
+        !plausible(base = *(const u8 *const *)(base + 0x6C)) ||
+        !mapped(name = *(const char *const *)(base + 0x70)) || !name[0])
+        return 0;
+    copy((u8 *)save_slot, (const u8 *)"MP ", 3);
+    n += slot_text(save_slot + n, name, SLOT_CHARACTER);
+    save_slot[n++] = ' ';
+    k = slot_text(save_slot + n, trust.name, SLOT_SERVER);
+    if (!k)
+        n--;
+    save_slot[n + k] = 0;
+    return 1;
+}
+
+/* After the save: its folder from XCreateSaveGame, then the upload. */
+static void slot_upload(void)
+{
+    u16 wide[sizeof(save_slot)];
+    u32 i, n, r;
+
+    for (i = 0; i < sizeof(save_slot); i++)
+        wide[i] = (u8)save_slot[i];
+    save_path[0] = 0;
+    r = ((fn_create_save)TES3X_NET_CREATE_SAVE)("U:\\", wide, OPEN_EXISTING, 0, save_path,
+                                                sizeof(save_path) - sizeof(save_slot) - 4);
+    n = tes3x_strlen(save_path);
+    tes3x_log_hex3("net.save_slot", r, n, 0);
+    if (r || !n)
+        return;
+    if (save_path[n - 1] != '\\')
+        save_path[n++] = '\\';
+    i = tes3x_strlen(save_slot);
+    copy((u8 *)save_path + n, (const u8 *)save_slot, i);
+    copy((u8 *)save_path + n + i, (const u8 *)".ess", 5);
+    copy((u8 *)save_name, (const u8 *)save_slot, i);
+    copy((u8 *)save_name + i, (const u8 *)".ess", 5);
+    log_text("net.save_path", save_path);
+    save_pending = 1;
+}
+
+#define EVENT_SAVE 22u /* the server asks for a save */
+#define CHARGEN_STATE 0xBCu /* WorldController global, -1 once character generation is done */
+static u32 save_requested, saves_requested;
+unsigned char __attribute__((thiscall)) tes3x_net_save(void *game, const char *file,
+                                                      const char *display);
+
+/* A requested save waits for the world: no menu, chargen done, the player named. */
+static void save_request_frame(void)
+{
+    const u8 *world = *(const u8 **)TES3X_NET_WORLD, *global;
+
+    if (!save_requested || !plausible(world) || world[0xD2] ||
+        !plausible(global = *(const u8 *const *)(world + CHARGEN_STATE)) ||
+        *(const u32 *)(global + 0x34) != 0xBF800000u || !slot_name())
+        return;
+    save_requested = 0;
+    saves_requested++;
+    tes3x_net_save(**(void ***)TES3X_NET_DATA_HANDLER, save_slot, save_slot);
+}
+
+/* Game thread: an upload already under way holds the save's until it ends. */
+static void save_frame(void)
+{
+    if (save_requested && ses.state == SESSION_JOINED)
+        save_request_frame();
+    if (save_pending && ses.state == SESSION_JOINED &&
+        !(up.state >= UP_WANT && up.state <= UP_SENDING) && up_start(save_name, save_path)) {
+        save_pending = 0;
+        saves_uploaded++;
+    }
+}
+
+/* Every save goes through here: the call sites still aimed at SaveGame, and rotating-autosaves'
+ * hook, which owns the other three. */
+unsigned char __attribute__((thiscall)) tes3x_net_save(void *game, const char *file,
+                                                      const char *display)
+{
+    u8 busy = BUSY_SAVING;
+    int sent = net.up && event_queue(EVENT_BUSY, &busy, 1), slotted = sent && slot_name();
+    unsigned char ok;
+
+    saves_seen++;
+    saves_busy += sent;
+    saves_slotted += slotted;
+    if (slotted) {
+        log_text("net.save_slot_name", save_slot);
+        file = display = save_slot;
+    }
+    ok = ((fn_save_game)TES3X_NET_SAVE_GAME)(game, file, display);
+    if (sent) {
+        busy = 0;
+        event_queue(EVENT_BUSY, &busy, 1);
+    }
+    if (slotted && ok)
+        slot_upload();
+    return ok;
+}
+
+static void save_hook_install(void)
+{
+    u32 sites[sizeof(save_sites) / sizeof(save_sites[0])], i, n = 0;
+    const u8 *site;
+
+    if (save_hooked)
+        return;
+    for (i = 0; i < sizeof(save_sites) / sizeof(save_sites[0]); i++) {
+        site = (const u8 *)save_sites[i];
+        if (site[0] == 0xE8 && (u32)site + 5 + *(const u32 *)(site + 1) == TES3X_NET_SAVE_GAME)
+            sites[n++] = save_sites[i];
+    }
+    if (n && !redirect_calls(sites, n, TES3X_NET_SAVE_GAME, (const void *)tes3x_net_save))
+        n = 0;
+    save_hooked = 1 + n;
+    tes3x_log("net.save_hook", n);
+}
+
+static void busy_event(const struct event *e)
+{
+    u32 i, flags;
+
+    if (e->length < 1)
+        return;
+    flags = lock();
+    for (i = 0; i < PEERS; i++)
+        if (peers[i].client == e->origin) {
+            peers[i].busy = e->data[0];
+            peers[i].time = now_us();
+        }
+    unlock(flags);
+    tes3x_log_hex3("net.peer_busy", e->origin, e->data[0], 0);
+}
+
+static void save_stat(void)
+{
+    tes3x_log_hex3("net.saves", saves_seen, saves_busy, save_hooked);
+    tes3x_log_hex3("net.saves_slot", saves_slotted, saves_uploaded, save_pending);
+    tes3x_log_hex3("net.saves_asked", saves_requested, save_requested, 0);
+}
+
 static void event_handle(const struct event *e)
 {
     char text[EVENT_DATA + 1];
@@ -8543,6 +8669,8 @@ static void event_handle(const struct event *e)
         bulk_offer(e);
     } else if (e->kind == EVENT_BUSY) {
         busy_event(e);
+    } else if (e->kind == EVENT_SAVE) {
+        save_requested = 1;
     } else {
         tes3x_log_hex3("net.event_unknown", e->kind, e->origin, e->length);
     }
@@ -8836,6 +8964,7 @@ void tes3x_net_frame(void)
         authority_session();
         spawns_session();
         events_frame();
+        save_frame();
         file_frame();
         handshake_frame();
     }

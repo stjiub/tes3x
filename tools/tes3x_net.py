@@ -385,6 +385,7 @@ OWNERS_PER_EVENT = (EVENT_DATA - 4) // OWNER_PAIR.size
 # client keeps its session but gives up its cells and actors to any other player loading them.
 EVENT_BUSY = 21
 BUSY_SAVING = 1
+EVENT_SAVE = 22  # to a client: save into its multiplayer slot and upload it
 # actor id, fight, flee, alarm, hello, base disposition (NO_DISPOSITION for a creature)
 STATUS = struct.Struct("<I5h")
 NO_DISPOSITION = -32768
@@ -1400,6 +1401,7 @@ def serve(args):
         pinned = (int(args.load_order, 16), None)
     lost = {"in": 0, "out": 0}
     clock, clock_next = None, 0.0
+    save_next = time.time() + args.save_every if args.save_every else math.inf
     owners = {}  # cell -> authority client
     actor_owners = {}  # actor id -> (client, since): its owner by proximity
     actor_seen = {}  # actor id -> when a state of it last came
@@ -2136,6 +2138,13 @@ def serve(args):
             leave(client)
         by_session.pop(client.session, None)
 
+    def ask_save(targets, now):
+        for client in targets:
+            if client.alive:
+                client.rel.queue(EVENT_SAVE, 0, b"")
+                flush(client, now)
+        return ", ".join(f"client {c.id}" for c in targets if c.alive) or "nobody"
+
     def admin(line):
         """Run an admin command; the reply to print."""
         words = line.split()
@@ -2168,10 +2177,13 @@ def serve(args):
                 return (f"{verb}ned " if verb == "ban" else "unbanned ") + ", ".join(
                     f"{kind} {value}" for kind, value in pairs) + (
                     "" if bans_path else " (not kept: give --world)")
+        if verb == "save" and len(rest) <= 1 and all(r in by_id for r in rest):
+            targets = [by_id[r] for r in rest] or list(clients.values())
+            return "asked to save: " + ask_save(targets, time.time())
         if verb == "bans" and not rest:
             return "\n".join(f"{kind} {value}" for kind in BAN_KINDS
                              for value in sorted(bans[kind])) or "no bans"
-        return ("commands: list; kick N; ban N (its key and MAC); "
+        return ("commands: list; kick N; save [N]; ban N (its key and MAC); "
                 "ban|unban key FINGERPRINT|mac MAC|address A.B.C.D; bans")
 
     def handle_plain(packet, addr, secure=None):
@@ -2565,6 +2577,11 @@ def serve(args):
             if client.alive and (client.flush_due or client.rel.out and
                                  now - client.rel.last_send >= RESEND):
                 flush(client, now)
+        if now >= save_next:
+            save_next = now + args.save_every
+            if any(c.alive for c in clients.values()):
+                print(f"{time.strftime('%H:%M:%S')} asked to save: "
+                      f"{ask_save(list(clients.values()), now)}", flush=True)
         if clock and now >= clock_next:
             clock_next = now + CLOCK_INTERVAL
             body = clock.body(now)
@@ -2795,6 +2812,9 @@ def main(argv=None):
                         "changed objects, objects made at run time and weather, loaded when the "
                         "load order is set and "
                         "written every 10 seconds while it changes")
+    p.add_argument("--save-every", type=float, metavar="SECONDS",
+                   help="ask every joined console this often to save its character into its "
+                        "multiplayer slot and upload it")
     p.add_argument("--dhcp-lease", type=int, default=3600, metavar="SECONDS",
                    help="lease time offered to xemu guests that ask for an address "
                         "(NetAddress=dhcp); each tunnel leases %s" % GUEST_IP)

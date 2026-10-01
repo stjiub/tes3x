@@ -454,6 +454,14 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         if len(sites) != SAVE_CALLS:
             raise PayloadError(f"SaveGame: {len(sites)} call sites, expected {SAVE_CALLS}")
         define("NET_SAVE_GAME", hexva(save_game))
+        off = image.va_to_off(save_game)
+        # XCreateSaveGame("U:\", name, OPEN_ALWAYS, 0, path, 0x104), which finds the slot's folder
+        calls = list(re.finditer(rb"\x6a\x00\x6a\x04\x8d\x94\x24....\x52\x68....\xe8(....)",
+                                 data[off:off + 0x400], re.S))
+        if len(calls) != 1:
+            raise PayloadError(f"XCreateSaveGame in SaveGame: {len(calls)} calls, expected 1")
+        after = save_game + calls[0].end()
+        define("NET_CREATE_SAVE", hexva(after + struct.unpack("<i", calls[0].group(1))[0]))
         define("NET_SAVE_SITES", "{" + ",".join(hexva(s) for s in sites) + "}")
         define("NET_MENU_GATE", hexva(locate("menu-mode-gate")))
         define("NET_MOB_GATE", hexva(locate("mob-update-gate")))

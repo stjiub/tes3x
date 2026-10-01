@@ -5,6 +5,10 @@
       "note": "Xbox matches the PC layout at the offsets tested: health, magicka and fatigue current (+0x2BC, +0x2C8, +0x2E0), animationController (+0x244)."
     },
     {
+      "name": "TES3::NPCInstance",
+      "note": "Xbox matches the PC at baseNPC (+0x6C); the player's reference (+0x28) is one, and its baseNPC's name (TES3::NPC +0x70) is the character's name."
+    },
+    {
       "name": "TES3::WorldController",
       "pc_valid_until": "0x6C",
       "note": "4 bytes shorter than the PC somewhere in 0x6C..0xA4: the clock globals, CharGenState and menu mode sit 4 below their PC offsets. PC fields from 0x6C on are left out until placed.",
