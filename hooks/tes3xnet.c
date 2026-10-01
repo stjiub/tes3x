@@ -3919,7 +3919,8 @@ static void hits_apply(u8 *mobile, void *ref, u32 refid)
  * local player, so on the actor's authority one that is not fighting turns on the nearest placed
  * ghost within HOSTILE_RANGE units that the engine's own test would attack: Fight, plus
  * iFightDistanceBase less fFightDistanceMultiplier per unit, plus fFightDispMult per point of an
- * NPC's disposition under 50, reaching iFightAttack (Morrowind.esm's values). */
+ * NPC's disposition under 50, reaching iFightAttack (Morrowind.esm's values). An NPC's Fight counts
+ * no higher than its record's: a crime raises the witnesses' against that console's player. */
 #define HOSTILE_RANGE 1024.0f
 #define FIGHT_ATTACK 100.0f
 #define FIGHT_DISTANCE_BASE 20.0f
@@ -3927,7 +3928,10 @@ static void hits_apply(u8 *mobile, void *ref, u32 refid)
 #define FIGHT_DISP_MULT 0.2f
 static u32 hostiles;
 
+#define AI_FIGHT 2 /* in an AIConfig */
+#define AI_ALARM 4
 static int base_disposition(const u8 *ref);
+static int record_ai(const u8 *ref, u32 offset, int value);
 
 static float square_root(float x)
 {
@@ -3948,7 +3952,7 @@ static void hostile_check(const u8 *mobile, void *ref, u32 refid)
         mobile[MOBILE_ACTION] == 0x12 || mobile[MOBILE_ACTION] == 0x13 ||
         *(const float *)(mobile + MOBILE_HEALTH) <= 0)
         return;
-    fight = (float)*(const int *)(mobile + MOBILE_FIGHT) +
+    fight = (float)record_ai(ref, AI_FIGHT, *(const int *)(mobile + MOBILE_FIGHT)) +
             FIGHT_DISP_MULT * (float)(50 - base_disposition(ref));
     if (fight + FIGHT_DISTANCE_BASE < FIGHT_ATTACK)
         return;
@@ -7137,6 +7141,7 @@ static struct {
     u8 pending, settle;
 } statuses[STATUSES];
 static u32 status_next, statuses_sent, statuses_received, statuses_applied, statuses_lost;
+static u32 statuses_kept;
 static u32 status_mismatches, affects_sent, affects_received, affects_applied;
 
 static int affect_shared(int id)
@@ -7227,13 +7232,28 @@ static int base_disposition(const u8 *ref)
                        : 50;
 }
 
+/* An NPC's Fight or Alarm as its record sets it, or value when that is lower or the actor is not
+ * an NPC. Raised above the record they belong to the console that raised them, by a crime against
+ * its player, so they are neither sent nor applied. */
+#define NPC_INSTANCE_BASE 0x6C
+#define NPC_AI_CONFIG 0xE0
+
+static int record_ai(const u8 *ref, u32 offset, int value)
+{
+    const u8 *object = *(const u8 *const *)(ref + REF_BASE), *base;
+
+    if (!is_npc(ref) || !plausible(base = *(const u8 *const *)(object + NPC_INSTANCE_BASE)))
+        return value;
+    return value > base[NPC_AI_CONFIG + offset] ? base[NPC_AI_CONFIG + offset] : value;
+}
+
 static void status_read(const u8 *mobile, const u8 *ref, short *v)
 {
     const u8 *object = *(const u8 *const *)(ref + REF_BASE);
 
-    v[0] = (short)*(const int *)(mobile + MOBILE_FIGHT);
+    v[0] = (short)record_ai(ref, AI_FIGHT, *(const int *)(mobile + MOBILE_FIGHT));
     v[1] = (short)*(const int *)(mobile + MOBILE_FLEE);
-    v[2] = (short)*(const int *)(mobile + MOBILE_ALARM);
+    v[2] = (short)record_ai(ref, AI_ALARM, *(const int *)(mobile + MOBILE_ALARM));
     v[3] = (short)*(const int *)(mobile + MOBILE_HELLO);
     v[4] = is_npc(ref) ? (short)((fn_object_int)(*(void *const *const *)object)
                                      [NPC_BASE_DISPOSITION / 4])(object)
@@ -7274,6 +7294,8 @@ static void status_frame(const u8 *mobile, u8 *ref, u32 refid)
     u8 data[STATUS_BYTES];
 
     if (statuses[i].pending) {
+        statuses[i].v[0] = (short)record_ai(ref, AI_FIGHT, statuses[i].v[0]);
+        statuses[i].v[2] = (short)record_ai(ref, AI_ALARM, statuses[i].v[2]);
         actor_command(ref, "SetFight ", statuses[i].v[0]);
         actor_command(ref, "SetFlee ", statuses[i].v[1]);
         actor_command(ref, "SetAlarm ", statuses[i].v[2]);
@@ -7288,6 +7310,11 @@ static void status_frame(const u8 *mobile, u8 *ref, u32 refid)
         return;
     }
     status_read(mobile, ref, v);
+    if ((v[0] != *(const int *)(mobile + MOBILE_FIGHT) ||
+         v[2] != *(const int *)(mobile + MOBILE_ALARM)) && statuses_kept++ < 32)
+        tes3x_log_hex3("net.status_kept", refid,
+                       (u32)*(const int *)(mobile + MOBILE_FIGHT) << 16 | (u16)v[0],
+                       (u32)*(const int *)(mobile + MOBILE_ALARM) << 16 | (u16)v[2]);
     for (k = 0; k < STATUS_VALUES && v[k] == statuses[i].v[k]; k++)
         ;
     if (statuses[i].settle) {
@@ -7333,7 +7360,7 @@ static void status_event(const struct event *e)
 static void status_stat(void)
 {
     tes3x_log_hex3("net.statuses", statuses_sent, statuses_received, statuses_applied);
-    tes3x_log_hex3("net.statuses_bad", status_mismatches, statuses_lost, 0);
+    tes3x_log_hex3("net.statuses_bad", status_mismatches, statuses_lost, statuses_kept);
     tes3x_log_hex3("net.affects", affects_sent, affects_received, affects_applied);
 }
 
