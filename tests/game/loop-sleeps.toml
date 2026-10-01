@@ -1,0 +1,27 @@
+kind = "single"
+purpose = "A save loads and the game saves twice with the periodic sleeps turned into yields, and the player is unchanged afterwards."
+procedure = "Load the level-7 Seyda Neen fixture, which runs the load walks, then save twice through the rotating-autosave helper, which runs the save walks, checking the player before and after."
+limitations = "Hardware timing, and loading a save this build wrote."
+watch = 'autosave\.(command|slot)|console< (GetLevel|GetPos)|exec[.>]'
+enable = ["diagnostics", "console", "rotating-autosaves"]
+timeout = 240
+save = "vanilla-seyda-neen.ess"
+script = '''
+@start load U:\TES3X\vanilla-seyda-neen.ess
+wait 180
+assert player->getlevel == 7.00
+player->getpos x
+tes3xautosave
+wait 60
+tes3xautosave
+wait 60
+assert player->getlevel == 7.00
+player->getpos x
+exit
+'''
+
+[expect]
+test = ['autosave\.command 1', 'exec\.exit']
+
+[sequence]
+test = ['autosave\.command 1', 'autosave\.command 1']

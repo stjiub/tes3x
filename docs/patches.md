@@ -16,6 +16,7 @@ The game-test column shows whether a public test definition exists, not its resu
 | [`boot-media`](../patches/boot-media.md) | Permit booting from any media and region, not just a retail DVD. | TES3X | infrastructure | preview | [test](../tests/game/boot-media.toml) | every build |
 | [`drive-letters=LETTER`](../patches/drive-letters.md) | Point every Data Files asset path at one drive. | TES3X | infrastructure | preview | [test](../tests/game/drive-letters.toml) | every build |
 | [`save-staging=LETTER`](../patches/save-staging.md) | Stage saves on one volume with UDATA so the commit renames instead of copying. | TES3X | infrastructure | preview | — | build option |
+| [`loop-sleeps`](../patches/loop-sleeps.md) | Yield instead of sleeping 1 ms every 16-128 objects in the save and load walks. | TES3X | performance | dev | [test](../tests/game/loop-sleeps.toml) | by name |
 | [`title=NAME`](../patches/title.md) | Rename the XBE's certificate title, the name a dashboard falls back to. | TES3X | infrastructure | preview | [test](../tests/game/title.toml) | build option |
 | [`title-id=HEX`](../patches/title-id.md) | Give the XBE its own title ID, so its saves go to a separate E:/UDATA folder. | TES3X | infrastructure | preview | [test](../tests/game/title-id.toml) | build option |
 | [`multi-bsa`](../patches/multi-bsa.md) | Load every archive listed in tes3xarch.txt, not just Morrowind.bsa. | TES3X | infrastructure | preview | [test](../tests/game/multi-bsa.toml) | delta-bsa packing |

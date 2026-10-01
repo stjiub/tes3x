@@ -89,6 +89,14 @@ takes = "LETTER"
 summary = "Stage saves on one volume with UDATA so the commit renames instead of copying."
 
 [[patch]]
+name = "loop-sleeps"
+title = "Save and load without forced sleeps"
+category = "performance"
+channel = "dev"
+selection = "preset"
+summary = "Yield instead of sleeping 1 ms every 16-128 objects in the save and load walks."
+
+[[patch]]
 name = "title"
 title = "Dashboard title"
 category = "infrastructure"

@@ -222,6 +222,36 @@ def _save_staging(x, value, ctx):
     return edits
 
 
+SLEEP_SIG = re.compile(rb"\x6a\x00\xff\x74\x24\x08\xe8....\xc2\x04\x00", re.S)
+# inc counter; test its low bits; up to four bytes of interleaved store; jne +7; push 1; call
+SLEEP_LOOP_SIG = re.compile(
+    rb"(?:\xf6[\xc0-\xc7]|\xa8)[\x0f\x3f\x7f].{0,4}\x75\x07\x6a(?P<ms>\x01)\xe8(?P<rel>....)", re.S)
+SLEEP_LOOPS = 13
+
+
+@patch("loop-sleeps")
+def _loop_sleeps(x, value, ctx):
+    """Yield instead of sleeping 1 ms every 16-128 objects in the save and load walks."""
+    hits = list(SLEEP_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("loop-sleeps: %d Sleep wrapper(s), expected 1" % len(hits))
+    sleep = x.off_to_va(hits[0].start())
+    sec = text_section(x)
+    body = bytes(x.data[sec.raw:sec.raw + sec.rsize])
+    edits = []
+    for m in SLEEP_LOOP_SIG.finditer(body):
+        call = sec.va + m.end() - 5
+        if call + 5 + struct.unpack("<i", m.group("rel"))[0] != sleep:
+            continue
+        off = sec.raw + m.start("ms")
+        x.data[off] = 0
+        edits.append((off, 1, "Sleep(1) -> Sleep(0) at 0x%08X" % call))
+    if len(edits) != SLEEP_LOOPS:
+        raise PatchError("loop-sleeps: %d periodic Sleep(1) call(s), expected %d"
+                         % (len(edits), SLEEP_LOOPS))
+    return edits
+
+
 @patch("boot-media")
 def _boot_media(x, value, ctx):
     """Permit booting from any media and region, not just a retail DVD."""
