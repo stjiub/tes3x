@@ -444,6 +444,7 @@ BULK_RECEIVING, BULK_DONE, BULK_BAD_HASH, BULK_REFUSED, BULK_FAILED = 2, 3, 4, 5
 BULK_WINDOW_IN = 8  # chunks a console keeps in flight to the server: its send slots
 BULK_ACK_EVERY = 0.25  # seconds between acks to a console that is sending
 UPLOAD_FILES = 64  # files one console key may keep in its uploads folder
+CHARACTER_BACKUPS = 3  # earlier versions kept beside each character's save
 BULK_MAX = 16 << 20  # as the console's
 # Names Windows opens as devices, whatever the extension
 DEVICE_NAMES = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(10)),
@@ -782,6 +783,25 @@ def plain_name(name):
     """A file name the console and FATX both take: letters, digits, ' .-_', not led by a dot."""
     return (0 < len(name) <= BULK_NAME and not name.startswith(".") and
             all(c.isascii() and (c.isalnum() or c in " .-_") for c in name))
+
+
+def keep_character(upload, folder):
+    """Move a finished .ess upload whose header names a player to folder, shifting the versions
+    it replaces to NAME.1.ess and on; its header, or None when it is not a save."""
+    from tes3x_saves import HEAD_LIMIT, parse_header
+    with open(upload, "rb") as stream:
+        head = parse_header(stream.read(HEAD_LIMIT))
+    if not head["player"]:
+        return None
+    os.makedirs(folder, exist_ok=True)
+    stem = os.path.basename(upload)[:-4]
+    versions = [os.path.join(folder, stem + ".ess")] + [
+        os.path.join(folder, f"{stem}.{i}.ess") for i in range(1, CHARACTER_BACKUPS + 1)]
+    for newer, older in reversed(list(zip(versions, versions[1:]))):
+        if os.path.exists(newer):
+            os.replace(newer, older)
+    os.replace(upload, versions[0])
+    return head
 
 
 class Incoming:
@@ -1698,6 +1718,19 @@ def serve(args):
             if other.alive and other.id != origin:
                 send_contents(other.id, refid, now)
 
+    def received(client, stamp):
+        """A finished upload: a save is kept as the console's character."""
+        if not client.upload.name.lower().endswith(".ess"):
+            return
+        folder = os.path.join(args.world, "characters", fingerprint(client.key))
+        head = keep_character(client.upload.path, folder)
+        if head:
+            print(f"{stamp} client {client.id} kept {client.upload.name}: {head['player']} in "
+                  f"{head['cell']}, {len(head['masters'])} masters", flush=True)
+        else:
+            print(f"{stamp} client {client.id} sent {client.upload.name}, not a save; left in "
+                  f"uploads", flush=True)
+
     def on_event(client, kind, data, stamp, now):
         client.events += 1
         if kind == EVENT_OFFER and len(data) > BULK_OFFER.size:
@@ -1713,6 +1746,8 @@ def serve(args):
                   + (f" from chunk {client.upload.next}"
                      if client.upload.status == BULK_RECEIVING else ""), flush=True)
             send(client, BULK_ACK, client.upload.ack(now))
+            if client.upload.status == BULK_DONE:
+                received(client, stamp)
             return
         if kind == EVENT_CONTENTS and len(data) >= CONTENTS_HEAD.size:
             refid, cell, part, parts, flags, entries = unpack_contents(data)
@@ -2281,6 +2316,8 @@ def serve(args):
                 print(f"{stamp} client {client.id} sent {upload.name}: "
                       f"{BULK_STATUS[upload.status]}, {size} bytes in {took:.1f} s "
                       f"({size / 1024 / took:.0f} KB/s)", flush=True)
+                if upload.status == BULK_DONE:
+                    received(client, stamp)
         elif kind == EVENTS and len(packet) >= T3MP.size + EVENTS_HEAD.size:
             ready, carried = client.rel.receive(packet[T3MP.size:])
             if carried:

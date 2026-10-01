@@ -134,6 +134,47 @@ class ServerTests(unittest.TestCase):
         (folder,) = (world / 'uploads').iterdir()
         self.assertEqual((folder / 'char.ess').read_bytes(), data)
 
+    def test_a_save_is_kept_as_a_character(self):
+        world = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, world)
+        self.start('--world', str(world))
+        client = self.client(1)
+        client.join()
+
+        def sub(tag, body):
+            return tag + struct.pack('<I', len(body)) + body
+
+        def save(player, seed):
+            gmdt = bytearray(124)
+            gmdt[24:29], gmdt[92:92 + len(player)] = b'Balmo', player
+            head = (sub(b'HEDR', bytes(300)) + sub(b'MAST', b'Morrowind.esm\0')
+                    + sub(b'DATA', bytes(8)) + sub(b'GMDT', bytes(gmdt)))
+            return (b'TES3' + struct.pack('<III', len(head), 0, 0) + head
+                    + random.Random(seed).randbytes(3 * tes3x_net.BULK_CHUNK))
+
+        versions = [save(b'Nerevar', seed) for seed in range(5)]
+        for ident, data in enumerate(versions, 1):
+            digest = hashlib.blake2b(data, digest_size=32).digest()
+            offer = tes3x_net.BULK_OFFER.pack(ident, len(data), digest) + b'mp-hero.ess\0'
+            client.send(tes3x_net.EVENTS, tes3x_net.pack_events(
+                ident - 1, [(ident, tes3x_net.EVENT_OFFER, 0, offer)]))
+            client.receive(1.0, tes3x_net.BULK_ACK)
+            for index in range(0, len(data), tes3x_net.BULK_CHUNK):
+                client.send(tes3x_net.CHUNK, struct.pack('<II', ident, index // tes3x_net.BULK_CHUNK)
+                            + data[index:index + tes3x_net.BULK_CHUNK])
+            while (body := client.receive(1.0, tes3x_net.BULK_ACK)) is not None:
+                if tes3x_net.BULK_ACK_BODY.unpack(body)[4] == tes3x_net.BULK_DONE:
+                    break
+            else:
+                self.fail('no ack said done')
+            time.sleep(0.2)
+        (folder,) = (world / 'characters').iterdir()
+        self.assertEqual(sorted(p.name for p in folder.iterdir()),
+                         ['mp-hero.1.ess', 'mp-hero.2.ess', 'mp-hero.3.ess', 'mp-hero.ess'])
+        self.assertEqual((folder / 'mp-hero.ess').read_bytes(), versions[4])
+        self.assertEqual((folder / 'mp-hero.3.ess').read_bytes(), versions[1])
+        self.assertEqual(list((world / 'uploads').rglob('*.ess')), [])
+
     def admin(self, port, *words):
         run = subprocess.run([sys.executable, str(NET), 'admin', '--port', str(port), *words],
                              capture_output=True, text=True, timeout=10)
