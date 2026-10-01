@@ -2797,6 +2797,13 @@
       "pc_va": "0x005175C0"
     },
     {
+      "va": "0x00151350",
+      "name": "MagicSourceInstance::process",
+      "confidence": "guess",
+      "provenance": "calls the cast bolt 0x0014EB30; switches on state +0xB4",
+      "note": "State 1 launches a target effect's bolt only if the instance has a target (+0x14), or the caster is the player, or the caster mobile has a combat target (+0xEC). State 0 plays the cast VFX and sound, rolls the chance and spends magicka."
+    },
+    {
       "va": "0x00152B90",
       "name": "Stream::dtor",
       "kind": "function",
@@ -3388,6 +3395,14 @@
       "pc_va": "0x00555290"
     },
     {
+      "va": "0x0017BD30",
+      "name": "MobileActor::releaseProjectile",
+      "confidence": "matched",
+      "provenance": "mobile vtable +0xF4 in the NPC and creature vtables; releases the projectile nock put in hand (multiplayer shots)",
+      "pc_va": "0x005590E0",
+      "signature": "void __thiscall releaseProjectile()"
+    },
+    {
       "va": "0x0017BF40",
       "name": "MobileActor::getWeaponSpeed",
       "kind": "function",
@@ -3645,6 +3660,14 @@
       "pc_va": "0x005688D0"
     },
     {
+      "va": "0x00185390",
+      "name": "MobilePlayer::releaseProjectile",
+      "confidence": "matched",
+      "provenance": "MobilePlayer vtable +0xF4 (0x0037EE14); settles the readied ammunition stack, then jumps to MobileActor::releaseProjectile",
+      "pc_va": "0x0056A320",
+      "signature": "void __thiscall releaseProjectile()"
+    },
+    {
       "va": "0x00185530",
       "name": "MobilePlayer::setupCameras",
       "kind": "function",
@@ -3829,6 +3852,12 @@
       "pc_va": "0x00574EB0"
     },
     {
+      "va": "0x00190780",
+      "name": "ProjectileManager::addSpellProjectile",
+      "confidence": "guess",
+      "provenance": "profiles 'ProjectileManager::AddSpellProjectile'"
+    },
+    {
       "va": "0x001909A0",
       "name": "ProjectileManager::resolveCollisions",
       "kind": "function",
@@ -3843,6 +3872,13 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_MobileProjectile_onWaterCollision",
       "pc_va": "0x00573790"
+    },
+    {
+      "va": "0x00191AA0",
+      "name": "SpellProjectile::aim",
+      "confidence": "guess",
+      "provenance": "logs 'SpellProjectile::Aim() : Bad Node Pointer for Model'",
+      "note": "An actor caster aims at its combat target (+0xEC) or the instance's target; with neither, along its own orientation."
     },
     {
       "va": "0x001933E0",
