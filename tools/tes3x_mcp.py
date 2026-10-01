@@ -7,9 +7,27 @@ import re
 import struct
 import subprocess
 import tempfile
+import tomllib
 
-MW = os.environ.get("TES3X_PC_MORROWIND",
-                    r"C:\Program Files (x86)\Steam\steamapps\common\Morrowind")
+STEAM_DEFAULT = r"C:\Program Files (x86)\Steam\steamapps\common\Morrowind"
+
+
+def pc_morrowind():
+    """TES3X_PC_MORROWIND, else [paths] pc_morrowind in tes3x.local.toml, else Steam's default."""
+    if os.environ.get("TES3X_PC_MORROWIND"):
+        return os.environ["TES3X_PC_MORROWIND"]
+    here = os.path.dirname(os.path.abspath(__file__))
+    for config in (os.path.join(os.getcwd(), "tes3x.local.toml"),
+                   os.path.join(here, "..", "tes3x.local.toml")):
+        if os.path.isfile(config):
+            with open(config, "rb") as f:
+                path = tomllib.load(f).get("paths", {}).get("pc_morrowind")
+            if path:
+                return os.path.join(os.path.dirname(os.path.abspath(config)), path)
+    return STEAM_DEFAULT
+
+
+MW = pc_morrowind()
 OBJCOPY = os.environ.get("LLVM_OBJCOPY", r"C:\msys64\mingw64\bin\llvm-objcopy.exe")
 OBJDUMP = os.environ.get("LLVM_OBJDUMP", r"C:\msys64\mingw64\bin\llvm-objdump.exe")
 
