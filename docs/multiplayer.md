@@ -92,7 +92,8 @@ still loaded first; joining then applies what the world holds.
 With `--world` the server also keeps each console's character under `characters` in `DIR`.
 Every save made while joined goes to one save slot per server and character and is uploaded; a
 console that joins running another game is sent the kept save and loads it. Between saves the
-console sends its inventory, level, attributes, skills and journal as they change. The server
+console sends its inventory, level, attributes, skills, journal and current health, magicka and
+fatigue as they change. The server
 keeps the latest of them in `stream.json` beside the save and applies them over it when the
 console next loads that save, so a crash loses at most about a second of those.
 
@@ -211,8 +212,9 @@ full, 3 a wrong password, 4 kicked, 5 banned.
 
 - Menus no longer pause the world while joined, and resting or waiting is refused.
 - A console needs a save of its own to join. Over a kept character the server restores the
-  inventory, level, attributes, skills and journal; spells, active effects, topics, factions,
-  bounty and current health, magicka and fatigue come from the last save. Restoring only moves a
+  inventory, level, attributes, skills, journal and current health, magicka and fatigue (health
+  no lower than 1); spells, active effects, topics, factions and bounty come from the last save.
+  Restoring only moves a
   quest forward, never back.
 - Items taken, objects a script disables, locks, and items
   dropped or placed (by the console or a script) are shared, with their stack size, condition and

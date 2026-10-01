@@ -393,12 +393,13 @@ EVENT_SAVE = 22  # to a client: save into its multiplayer slot and upload it
 EVENT_GAME, EVENT_LOAD = 23, 24
 # The player's own state, per character and never relayed: a sub-kind, then PLAYER_ITEMS (part,
 # parts, item id, then entries as in CONTENTS: every stack of that item, none once it is gone),
-# PLAYER_LEVEL (LEVEL), PLAYER_SKILLS (count, then SKILL each) or PLAYER_JOURNAL (count, then
-# (index u16, quest id) each). To a client only: the kept state, then PLAYER_READY (1 when it was
+# PLAYER_LEVEL (LEVEL), PLAYER_SKILLS (count, then SKILL each), PLAYER_JOURNAL (count, then
+# (index u16, quest id) each) or PLAYER_VITALS (VITALS). To a client only: the kept state, then PLAYER_READY (1 when it was
 # replayed over the checkpoint, 0 to have the console send all of it). The console sends nothing
 # before READY.
 EVENT_PLAYER = 25
 PLAYER_ITEMS, PLAYER_LEVEL, PLAYER_SKILLS, PLAYER_JOURNAL, PLAYER_READY = 1, 2, 3, 4, 5
+PLAYER_VITALS = 6
 # Characters. GAME's name is followed by the launch's kind (GAME_NEW: a New Game). To a client:
 # CHARS (part, parts, then the names of its key's characters each ending in a zero) to choose
 # from, or NEWCHAR (the same with start point names) to make one; the console answers PICK
@@ -415,6 +416,7 @@ STARTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "example
 # magicka and fatigue, base attributes (8)
 LEVEL = struct.Struct("<HH11B3f8f")
 SKILL = struct.Struct("<Bff")  # skill, base, progress
+VITALS = struct.Struct("<3f")  # current health, magicka, fatigue
 ATTRIBUTE_NAMES = ("Strength", "Intelligence", "Willpower", "Agility", "Speed", "Endurance",
                    "Personality", "Luck")
 SKILL_NAMES = ("Block", "Armorer", "MediumArmor", "HeavyArmor", "BluntWeapon", "LongBlade", "Axe",
@@ -1023,6 +1025,7 @@ class PlayerStream:
     def __init__(self, path):
         self.path = path
         self.items, self.skills, self.journal, self.level = {}, {}, {}, None
+        self.vitals = None
         self.arriving = None  # (item id, entries so far, next part)
         self.dirty = False
         try:
@@ -1034,11 +1037,12 @@ class PlayerStream:
         self.skills = {int(k): v for k, v in kept.get("skills", {}).items()}
         self.journal = kept.get("journal", {})
         self.level = bytes.fromhex(kept["level"]) if kept.get("level") else None
+        self.vitals = kept.get("vitals")
 
     def reset(self):
         """A new character: nothing streamed so far belongs to it."""
         self.items, self.skills, self.journal, self.level = {}, {}, {}, None
-        self.arriving, self.dirty = None, True
+        self.vitals, self.arriving, self.dirty = None, None, True
 
     def checkpoint(self):
         """A new checkpoint holds each quest's entries up to its index; the latest is enough."""
@@ -1092,6 +1096,12 @@ class PlayerStream:
                     del indices[:-QUEST_INDICES]
             self.dirty = self.dirty or bool(quests)
             return "journal " + ", ".join(f"{q} {i}" for q, i in quests) if quests else None
+        if kind == PLAYER_VITALS and len(data) >= 1 + VITALS.size:
+            vitals = list(VITALS.unpack_from(data, 1))
+            if not finite(*vitals):
+                return None
+            self.vitals, self.dirty = vitals, True
+            return "now health {:.0f}, magicka {:.0f}, fatigue {:.0f}".format(*vitals)
         return None
 
     def replay(self):
@@ -1100,6 +1110,8 @@ class PlayerStream:
                   for part in pack_items(item, entries)]
         if self.level:
             events.append(bytes([PLAYER_LEVEL]) + self.level)
+        if self.vitals:  # after LEVEL, which caps each current value at its base
+            events.append(bytes([PLAYER_VITALS]) + VITALS.pack(*self.vitals))
         skills = sorted(self.skills.items())
         per = (EVENT_DATA - 2) // SKILL.size
         for i in range(0, len(skills), per):
@@ -1114,7 +1126,7 @@ class PlayerStream:
         save_world(self.path, {"items": self.items,
                                "level": self.level.hex() if self.level else None,
                                "skills": {str(k): v for k, v in self.skills.items()},
-                               "journal": self.journal})
+                               "journal": self.journal, "vitals": self.vitals})
         self.dirty = False
 
 

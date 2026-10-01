@@ -9171,7 +9171,8 @@ static void chargen_stat(void)
 /* The player's own state, streamed so that a crash loses only what the server has not seen since
  * the checkpoint. Once a second the console compares its inventory (per item object), level,
  * attributes, skills and journal with what it last sent and sends the changes as PLAYER events;
- * the server keeps the latest of each per character. When a launch runs the character's
+ * the server keeps the latest of each per character. Current health, magicka and fatigue go out
+ * only on a change of a point, or for fatigue of FATIGUE_STEP, so regeneration stays quiet. When a launch runs the character's
  * checkpoint the server sends them back and then READY. Nothing goes out before READY, so a
  * checkpoint's older values never overwrite the server's. */
 #define EVENT_PLAYER 25u
@@ -9180,6 +9181,8 @@ static void chargen_stat(void)
 #define PLAYER_SKILLS 3u  /* count, then (skill u8, base f32, progress f32) */
 #define PLAYER_JOURNAL 4u /* count, then (index u16, quest id) */
 #define PLAYER_READY 5u   /* from the server: 1 once it replayed what it keeps, 0 to send it all */
+#define PLAYER_VITALS 6u  /* current health, magicka, fatigue as f32 */
+#define FATIGUE_STEP 8    /* fatigue regenerates: send a change of an eighth of its base */
 #define PLAYER_POLL_US 1000000u
 #define CARRIED 256u
 #define ITEM_PARTS 12u
@@ -9223,7 +9226,8 @@ static struct {
     u32 hash;
 } carried[CARRIED];
 static u8 carried_seen[CARRIED], level_sent[LEVEL_BYTES];
-static u32 skills_sent[SKILLS][2], skills_known, level_known;
+static u32 skills_sent[SKILLS][2], skills_known, level_known, vitals_known;
+static float vitals_sent[3];
 static u16 journal_sent[JOURNALS];
 static u32 player_mode, player_welcome, player_polled;
 static u32 player_items_out, player_stats_out, player_journal_out, player_too_many;
@@ -9429,6 +9433,40 @@ static void skills_scan(const u8 *mobile, int send)
     }
 }
 
+static int vitals_moved(const float *now, float fatigue_base)
+{
+    float step, d;
+    u32 i;
+
+    for (i = 0; i < 3; i++) {
+        step = i == 2 && fatigue_base > FATIGUE_STEP ? fatigue_base / FATIGUE_STEP : 1.0f;
+        d = now[i] - vitals_sent[i];
+        if (d >= step || -d >= step)
+            return 1;
+    }
+    return 0;
+}
+
+static void vitals_scan(const u8 *mobile, int send)
+{
+    u8 data[1 + 12];
+    float now[3];
+
+    now[0] = *(const float *)(mobile + MOBILE_HEALTH);
+    now[1] = *(const float *)(mobile + MOBILE_MAGICKA);
+    now[2] = *(const float *)(mobile + MOBILE_FATIGUE);
+    if (vitals_known &&
+        !vitals_moved(now, *(const float *)(mobile + MOBILE_FATIGUE_STAT + STAT_BASE)))
+        return;
+    data[0] = PLAYER_VITALS;
+    copy(data + 1, (const u8 *)now, 12);
+    if (send && !event_queue(EVENT_PLAYER, data, sizeof(data)))
+        return;
+    copy((u8 *)vitals_sent, (const u8 *)now, 12);
+    vitals_known = 1;
+    player_stats_out += send;
+}
+
 /* The first node of the dialogue list. */
 static const u8 *dialogues_head(void)
 {
@@ -9517,7 +9555,7 @@ static void player_frame(const u8 *ref)
             carried[i].item = 0;
         for (i = 0; i < JOURNALS; i++)
             journal_sent[i] = 0;
-        level_known = skills_known = 0;
+        level_known = skills_known = vitals_known = 0;
         send = player_mode == 1;
         tes3x_log_hex3("net.player_ready", player_mode, ses.welcomes, 0);
         player_mode = 3;
@@ -9528,6 +9566,7 @@ static void player_frame(const u8 *ref)
     carried_scan(object, send);
     level_scan(mobile, npc, send);
     skills_scan(mobile, send);
+    vitals_scan(mobile, send);
     journal_scan(send);
 }
 
@@ -9590,6 +9629,31 @@ static void skills_apply(u8 *ref, const u8 *p, u32 length)
         if (*(const float *)(mobile + MOBILE_SKILLS + 0x10 * skill + STAT_BASE) != base)
             player_set(ref, "Set", skill_names[skill], round_int(base));
         copy(mobile + PLAYER_SKILL_PROGRESS + 4 * skill, p + 7 + i * SKILL_BYTES, 4);
+    }
+    player_stats_in++;
+}
+
+/* Through ModCurrent*, which keeps the HUD in step. Death is not the stream's to cause: health
+ * stays at 1 or more. */
+static void vitals_apply(u8 *ref, const u8 *body)
+{
+    static const char *const names[3] = {"Health", "Magicka", "Fatigue"};
+    static const u32 current[3] = {MOBILE_HEALTH, MOBILE_MAGICKA, MOBILE_FATIGUE};
+    u8 *mobile = player_mobile();
+    float want;
+    u32 i;
+    int delta;
+
+    if (!plausible(mobile) || !float_within(body, 3, STAT_LIMIT)) {
+        player_apply_failures++;
+        return;
+    }
+    for (i = 0; i < 3; i++) {
+        copy((u8 *)&want, body + 4 * i, 4);
+        if (i == 0 && want < 1.0f)
+            want = 1.0f;
+        if ((delta = round_int(want - *(const float *)(mobile + current[i]))) != 0)
+            player_set(ref, "ModCurrent", names[i], delta);
     }
     player_stats_in++;
 }
@@ -9701,6 +9765,8 @@ static void player_event(const struct event *e)
         skills_apply(ref, e->data, e->length);
     else if (e->data[0] == PLAYER_JOURNAL && e->length >= 2)
         journal_apply(e->data, e->length);
+    else if (e->data[0] == PLAYER_VITALS && e->length >= 1 + 12)
+        vitals_apply(ref, e->data + 1);
 }
 
 static void player_stat(void)

@@ -270,10 +270,12 @@ class ServerTests(unittest.TestCase):
                *net.pack_items('iron longsword', swords),
                bytes([net.PLAYER_LEVEL]) + level,
                bytes([net.PLAYER_SKILLS, 1]) + net.SKILL.pack(5, 42.0, 0.5),
+               bytes([net.PLAYER_VITALS]) + net.VITALS.pack(70.0, 60.0, 150.0),
                *net.pack_journal([('A1_1_FindSpymaster', 10)]))
         time.sleep(0.3)
         player(first, seq, *net.pack_items('Gold_001', [[150, 0, 0, 0]]),
                *net.pack_items('iron longsword', []),
+               bytes([net.PLAYER_VITALS]) + net.VITALS.pack(55.0, 60.0, 180.0),
                *net.pack_journal([('A1_1_FindSpymaster', 20)]))
         time.sleep(0.3)
         kept = (self.character(world) / 'mp-hero.ess').read_bytes()
@@ -297,6 +299,8 @@ class ServerTests(unittest.TestCase):
         items = [net.unpack_items(d) for d in replay if d[0] == net.PLAYER_ITEMS]
         self.assertEqual([(i[2], i[3]) for i in items], [('Gold_001', [[150, 0, 0, 0]])])
         self.assertIn(bytes([net.PLAYER_LEVEL]) + level, replay)
+        vitals = bytes([net.PLAYER_VITALS]) + net.VITALS.pack(55.0, 60.0, 180.0)
+        self.assertGreater(replay.index(vitals), replay.index(bytes([net.PLAYER_LEVEL]) + level))
         self.assertIn(bytes([net.PLAYER_SKILLS, 1]) + net.SKILL.pack(5, 42.0, 0.5), replay)
         quests = [q for d in replay if d[0] == net.PLAYER_JOURNAL for q in net.unpack_journal(d)]
         self.assertEqual(quests, [('A1_1_FindSpymaster', 10), ('A1_1_FindSpymaster', 20)])
