@@ -303,17 +303,21 @@ class AuthorityTests(unittest.TestCase):
         players = {1: ({cell}, 0.0, 0.0), 2: ({cell}, 2000.0, 0.0)}
         authority = {cell: 1}
 
-        def owner(previous, x, flags=0, now=10.0):
-            return net.assign_owners(previous, {7: (cell, x, 0.0, flags)}, players, authority,
-                                     now, 1200)[7]
+        def owner(previous, x, flags=0, now=10.0, target=0):
+            return net.assign_owners(previous, {7: (cell, x, 0.0, flags, target)}, players,
+                                     authority, now)[7]
 
         self.assertEqual(owner({}, 1900.0), (2, 10.0))  # a new actor goes straight to the nearer
         self.assertEqual(owner({}, 300.0)[0], 1)
         self.assertEqual(owner({7: (1, 0.0)}, 1100.0)[0], 1)  # within the margin
         self.assertEqual(owner({7: (1, 9.0)}, 1900.0)[0], 1)  # taken too recently
         self.assertEqual(owner({7: (1, 0.0)}, 1900.0, net.ACTOR_DEAD)[0], 1)
-        self.assertEqual(owner({7: (1, 0.0)}, 1100.0, net.ACTOR_IN_COMBAT)[0], 1)
-        self.assertEqual(owner({7: (1, 0.0)}, 1500.0, net.ACTOR_IN_COMBAT)[0], 2)
+        fighting = net.ACTOR_IN_COMBAT
+        self.assertEqual(owner({7: (2, 0.0)}, 1900.0, fighting, target=1)[0], 1)  # its foe's
+        self.assertEqual(owner({7: (2, 9.0)}, 1900.0, fighting, target=1)[0], 2)  # after the hold
+        self.assertEqual(owner({7: (1, 0.0)}, 1100.0, fighting, target=1)[0], 1)
+        self.assertEqual(owner({7: (1, 0.0)}, 1900.0, fighting, target=0x0101F7C4)[0], 2)
+        self.assertEqual(owner({}, 1900.0, fighting, target=5), (2, 10.0))  # foe not here
         self.assertEqual(owner({7: (3, 9.0)}, 300.0), (1, 10.0))  # its owner left
         players[2] = ({(net.KEY_EXTERIOR, 5, 5, b'')}, 2000.0, 0.0)
         self.assertEqual(owner({7: (1, 0.0)}, 1900.0)[0], 1)  # the nearer one does not load it
@@ -328,7 +332,7 @@ class AuthorityTests(unittest.TestCase):
             struct.pack('<I', 1)
         self.assertLessEqual(len(data), tes3x_net.EVENT_DATA)
         self.assertEqual(4 + tes3x_net.ACTORS_PER_PACKET * tes3x_net.ACTOR.size,
-                         508)  # within tes3xnet.c's EVENTS_BYTES
+                         484)  # within tes3xnet.c's EVENTS_BYTES
 
     def test_status_fits_the_event_channel(self):
         self.assertEqual(tes3x_net.STATUS.size, 14)  # tes3xnet.c's STATUS_BYTES

@@ -312,7 +312,7 @@ def ping(args):
 
 
 T3MP = struct.Struct("<4sBBHIIIII")  # magic, version, type, 0, session, seq, ack, time, echo
-T3MP_VERSION = 12
+T3MP_VERSION = 13
 HELLO, WELCOME, HEARTBEAT, BYE, STATE, PEER, GONE, EVENTS, REFUSE, CLOCK, ACTORS = range(1, 12)
 # On the wire every packet but the handshake is SEALED: OUTER in the clear (the AEAD's associated
 # data), then INNER and the body sealed under the session key with seq as the nonce.
@@ -407,14 +407,16 @@ KEY = struct.Struct("<Iii32s")  # kind, grid x, grid y, interior name
 KEY_EXTERIOR, KEY_INTERIOR = 1, 2
 ANIM_BYTES = 20  # per layer: 3 groups, pad, 3 keys, pad, 3 times (tes3xnet.c anim_capture)
 NO_ANIM = b"\xff\xff\xff" + bytes(ANIM_BYTES - 3)  # no group on any layer: the ghost idles
-# refid, x, y, z, heading, health, flags, magicka, fatigue, animation
-ACTOR = struct.Struct(f"<I5fI2f{ANIM_BYTES}s")
-ACTORS_PER_PACKET = 9
+# refid, x, y, z, heading, health, flags, magicka, fatigue, combat target, animation. The target is
+# a client id for a player (ghosts included), else an actor id; 0 for none.
+ACTOR = struct.Struct(f"<I5fI2fI{ANIM_BYTES}s")
+ACTORS_PER_PACKET = 8
 ACTOR_PERIOD = 0.1
 ACTOR_DEAD, ACTOR_IN_COMBAT = 1, 2
 AUTHORITY_PERIOD = 0.25
 # An actor goes to a nearer player only when that player is this much nearer than its owner and
-# the owner has had it this long, so two players at about the same distance do not trade it.
+# the owner has had it this long, so two players at about the same distance do not trade it. One
+# fighting a player goes to that player's console, after the same hold.
 OWNER_MARGIN = 256
 OWNER_HOLD = 2.0
 OWNER_STALE = 5.0  # seconds without a state before an actor is no longer owned
@@ -1076,25 +1078,25 @@ def assign_authority(owners, candidates, forced=None):
     return result
 
 
-def assign_owners(previous, actors, players, cell_owners, now, ai_distance):
-    """Each actor's owner: the nearest player that loads its cell, since the engine runs actors only
-    within aiDistance of its own player. previous: id -> (client, since); actors: id -> (cell, x, y,
-    flags); players: client -> (loaded cells, x, y). A dead actor keeps its owner, and one in combat
-    keeps it while within the owner's aiDistance: its target does not cross consoles."""
+def assign_owners(previous, actors, players, cell_owners, now):
+    """Each actor's owner: the player it fights if that player loads its cell, else the nearest
+    player that does, since the engine runs actors only within aiDistance of its own player.
+    previous: id -> (client, since); actors: id -> (cell, x, y, flags, combat target); players:
+    client -> (loaded cells, x, y). A dead actor keeps its owner."""
     result = {}
-    for actor, (key, x, y, flags) in actors.items():
+    for actor, (key, x, y, flags, target) in actors.items():
         near = {c: math.hypot(x - px, y - py) for c, (loaded, px, py) in players.items()
                 if key in loaded}
         if not near:
             continue
-        nearest = min(near, key=lambda c: (near[c], c))
+        fights = flags & ACTOR_IN_COMBAT and target in near
+        want = target if fights else min(near, key=lambda c: (near[c], c))
         current, since = previous.get(actor, (cell_owners.get(key), now - OWNER_HOLD))
         if current not in near:
-            current, since = nearest, now
-        if (nearest != current and not flags & ACTOR_DEAD and now - since >= OWNER_HOLD
-                and near[current] - near[nearest] > OWNER_MARGIN
-                and (not flags & ACTOR_IN_COMBAT or near[current] > ai_distance)):
-            current, since = nearest, now
+            current, since = want, now
+        if (want != current and not flags & ACTOR_DEAD and now - since >= OWNER_HOLD
+                and (fights or near[current] - near[want] > OWNER_MARGIN)):
+            current, since = want, now
         result[actor] = (current, since)
     return result
 
@@ -1408,6 +1410,8 @@ def serve(args):
         name, cell, *condition = what.split(":")
         bot_spawns.append((float(at), name, int(cell), int(condition[0]) if condition else None))
     bot_takes = [float(at) for at in args.bot_take]
+    bot_fights = {int(refid, 16): int(client) for refid, _, client in
+                  (spec.partition(":") for spec in args.bot_fights)}
     bot_weather = []
     bot_statuses = list(args.bot_status)
     bot_affects = list(args.bot_affect)
@@ -1531,7 +1535,7 @@ def serve(args):
             cx, cy = cx + dx, cy + dy
         t = (now - bot["start"]) * 2 * math.pi / args.bot_period
         if bot["mirror"]:
-            _, x, y, z, heading, _, actor_flags, _, _, anim = ACTOR.unpack(bot["mirror"])
+            _, x, y, z, heading, _, actor_flags, _, _, _, anim = ACTOR.unpack(bot["mirror"])
             state = STATE_BODY.pack(flags | actor_flags & STANCE, x + args.bot_shift, y, z,
                                     heading, cell) + anim
         elif bot["echo"]:
@@ -1881,9 +1885,8 @@ def serve(args):
                 continue  # run by its maker
             _, key, record = actors[refid]
             values = ACTOR.unpack(record)
-            live[refid] = (key, values[1], values[2], values[6])
-        new = {} if forced else assign_owners(actor_owners, live, players, owners, now,
-                                              args.ai_distance)
+            live[refid] = (key, values[1], values[2], values[6], values[9])
+        new = {} if forced else assign_owners(actor_owners, live, players, owners, now)
         stamp = time.strftime("%H:%M:%S")
         for refid, (client_id, _) in new.items():
             if actor_owners.get(refid, (None,))[0] not in (None, client_id):
@@ -1954,14 +1957,18 @@ def serve(args):
             chunk = owned[i:i + ACTORS_PER_PACKET]
             body = struct.pack("<I", len(chunk))
             for record in chunk:
-                refid, x, y, z, heading, health, flags, magicka, fatigue, anim = \
+                refid, x, y, z, heading, health, flags, magicka, fatigue, target, anim = \
                     ACTOR.unpack(record)
+                if refid in bot_fights:
+                    flags, target = flags | ACTOR_IN_COMBAT, bot_fights[refid]
+                    actors[refid] = (BOT_ID, actors[refid][1], ACTOR.pack(
+                        refid, x, y, z, heading, health, flags, magicka, fatigue, target, anim))
                 if args.bot_sway:
                     heading = facing
                 if args.bot_stats:
                     health, magicka, fatigue = (float(v) for v in args.bot_stats.split(","))
                 body += ACTOR.pack(refid, x + args.bot_shift + sway, y, z, heading, health, flags,
-                                   magicka, fatigue, anim)
+                                   magicka, fatigue, target, anim)
             for other in clients.values():
                 if other.alive:
                     send(other, ACTORS, struct.pack("<I", BOT_ID) + body)
@@ -2628,7 +2635,7 @@ def fuzz_body(rng, event_next):
         return kind, struct.pack("<I", rng.getrandbits(32)) + b"".join(
             ACTOR.pack(rng.getrandbits(32), *(struct.unpack("<5f", rng.randbytes(20))),
                        rng.getrandbits(32), *(struct.unpack("<2f", rng.randbytes(8))),
-                       rng.randbytes(ANIM_BYTES)) for _ in range(count))
+                       rng.getrandbits(32), rng.randbytes(ANIM_BYTES)) for _ in range(count))
     if kind == STATE and shape < 0.7:
         return kind, rng.randbytes(STATE_SIZE)
     return kind, rng.randbytes(rng.choice((0, 1, 3, 4, 8, 20, 64, rng.randrange(0, 1400))))
@@ -2741,9 +2748,9 @@ def main(argv=None):
                    help="the bot circles this far from where the first client entered the world "
                         "and takes the actors nearer to it than to any client (with --bot-shift 0 "
                         "it leaves them where they are)")
-    p.add_argument("--ai-distance", type=float, default=1200,
-                   help="the consoles' aiDistance: an actor in combat changes owner only once "
-                        "its owner's player is farther than this")
+    p.add_argument("--bot-fights", action="append", default=[], metavar="REFID:CLIENT",
+                   help="as an actor's owner, the bot reports it fighting that client's player "
+                        "(hex refid)")
     p.add_argument("--bot-rate", type=float, default=20, help="states per second")
     p.add_argument("--bot-say", type=float, metavar="SECONDS",
                    help="the bot also sends a numbered text event this often")

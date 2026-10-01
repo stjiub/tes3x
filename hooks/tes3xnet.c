@@ -110,7 +110,7 @@
     !defined(TES3X_NET_LEVELED_LINK) || !defined(TES3X_NET_ADD_MOB) || !defined(TES3X_NET_SIMULATE) || \
     !defined(TES3X_NET_SUMMON) || !defined(TES3X_NET_SUMMON_SITES) || \
     !defined(TES3X_NET_PLAYER_SCRIPT_SITES) || !defined(TES3X_NET_DROP_ITEM) || \
-    !defined(TES3X_NET_PLAYER_DROP_SITES)
+    !defined(TES3X_NET_PLAYER_DROP_SITES) || !defined(TES3X_NET_START_COMBAT)
 #error "define the TES3X_NET_ leveled creature spawn, its vtable slot and the actor functions"
 #endif
 
@@ -263,7 +263,7 @@ struct descriptor {
  * session and seq in the clear (T3MP_OUTER, the AEAD's associated data) and seals the real type,
  * ack, times and body under the session's key, seq being the nonce. The receiver rebuilds the
  * T3MP_HEADER layout after opening it. */
-#define T3MP_VERSION 12u
+#define T3MP_VERSION 13u
 #define T3MP_HEADER 28u
 #define T3MP_OUTER 16u
 #define T3MP_INNER 16u
@@ -3405,13 +3405,16 @@ static void ghosts_frame(const u8 *state)
 #define KEY_EXTERIOR 1u
 #define KEY_INTERIOR 2u
 #define KEY_BYTES (12u + CELL_NAME) /* kind, grid x, grid y, interior name */
-/* refid, x, y, z, heading, health, flags, magicka, fatigue, animation */
+/* refid, x, y, z, heading, health, flags, magicka, fatigue, combat target, animation */
 #define ACTOR_HEALTH 20u
 #define ACTOR_MAGICKA 28u
 #define ACTOR_FATIGUE 32u
-#define ACTOR_ANIM 36u
+#define ACTOR_TARGET 36u /* a client id for a player, else an actor id; 0 for none */
+#define ACTOR_ANIM 40u
 #define ACTOR_BYTES (ACTOR_ANIM + ANIM_BYTES)
-#define ACTORS_PER_PACKET 9u /* a body of at most EVENTS_BYTES */
+#define ACTORS_PER_PACKET 8u /* a body of at most EVENTS_BYTES */
+#define PLAYER_IDS 0x01000000u /* below: a client id; an actor id has a mod index of at least 1 */
+#define MOBILE_TARGET 0xEC
 #define ACTOR_PERIOD_US 100000u
 #define ACTOR_SAMPLES 4u
 #define ACTOR_DELAY_US 200000u /* two periods: a state late by one still has a pair */
@@ -3973,7 +3976,6 @@ static void hostile_check(const u8 *mobile, void *ref, u32 refid)
 
 /* An actor run here that fights a ghost, once a second: its action bytes (+0xDC, +0xDD), its
  * upper-body animation group and how far it stands from the ghost. */
-#define MOBILE_TARGET 0xEC
 static void ghost_fight_log(const u8 *mobile, const u8 *ref, u32 refid)
 {
     static u32 last, lines;
@@ -4054,6 +4056,70 @@ static void authority_session(void)
     death_count = 0; /* the server replays its deaths after WELCOME */
 }
 
+typedef void(__attribute__((thiscall)) *fn_start_combat)(void *mobile, void *target);
+static u32 combats_taken, combats_stopped, combats_lost;
+static u8 *actor_ref(u32 refid);
+
+/* What an actor run here fights, as ACTORS sends it. */
+static u32 combat_target(const u8 *mobile)
+{
+    const u8 *target = *(const u8 *const *)(mobile + MOBILE_TARGET), *tref;
+    u32 g;
+
+    if (!(*(const u32 *)(mobile + MOBILE_FLAGS) & MOBILE_IN_COMBAT) || !plausible(target) ||
+        !plausible(tref = *(const u8 *const *)(target + MOBILE_REFERENCE)))
+        return 0;
+    if (tref == player_reference())
+        return ses.client;
+    for (g = 0; g < PEERS; g++)
+        if (ghosts[g].ref == tref)
+            return ghosts[g].placed ? ghosts[g].client : 0;
+    return is_ghost(tref) ? 0 : actor_id(tref);
+}
+
+/* An actor this console takes over from another fights what that console's copy last fought, here
+ * the player, a ghost or an actor; a fight its held copy picked up meanwhile is stopped. */
+static void combat_take(u8 *mobile, void *ref, u32 refid, u32 from)
+{
+    u8 *tref = 0, *target;
+    u32 i, g, lk, flags = 0, id = 0, found = 0;
+
+    lk = lock();
+    for (i = 0; i < ACTORS && !found; i++)
+        if (actors_in[i].refid == refid && actors_in[i].origin == from && actors_in[i].count) {
+            flags = get32le(actors_in[i].state + 24);
+            id = get32le(actors_in[i].state + ACTOR_TARGET);
+            found = 1;
+        }
+    unlock(lk);
+    if (!found || (flags & ACTOR_DEAD))
+        return;
+    if (!(flags & ACTOR_IN_COMBAT) || !id) {
+        if (*(const u32 *)(mobile + MOBILE_FLAGS) & MOBILE_IN_COMBAT) {
+            run_script_on("StopCombat", ref);
+            combats_stopped++;
+            tes3x_log_hex3("net.combat_stopped", refid, from, 0);
+        }
+        return;
+    }
+    if (id == ses.client)
+        tref = (u8 *)player_reference();
+    else if (id < PLAYER_IDS) {
+        for (g = 0; g < PEERS; g++)
+            if (ghosts[g].client == id && ghosts[g].placed)
+                tref = ghost_ref(g);
+    } else
+        tref = actor_ref(id);
+    if (!plausible(tref) || !plausible(target = ref_mobile(tref)) || target == mobile) {
+        combats_lost++;
+        tes3x_log_hex3("net.combat_lost", refid, id, from);
+        return;
+    }
+    ((fn_start_combat)TES3X_NET_START_COMBAT)(mobile, target);
+    combats_taken++;
+    tes3x_log_hex3("net.combat_taken", refid, id, from);
+}
+
 /* Once per frame in the world: follow, send or hold each actor the AI planners hold. */
 static void authority_frame(const u8 *player, const u8 *state)
 {
@@ -4062,7 +4128,7 @@ static void authority_frame(const u8 *player, const u8 *state)
     u8 out[4 + ACTORS_PER_PACKET * ACTOR_BYTES], *mobile, *ref, *a;
     struct pose local;
     struct cell_key key;
-    u32 i, n = 0, guard, refid, owner, now = now_us(), lk, send;
+    u32 i, n = 0, guard, refid, owner, now = now_us(), lk, send, took;
 
     read_pose(state, &local);
     for (i = 0; i < authorities; i++)
@@ -4094,11 +4160,15 @@ static void authority_frame(const u8 *player, const u8 *state)
             follow(mobile, ref, refid, owner);
             continue;
         }
-        for (i = 0; i < ACTORS; i++)
-            if (followed[i].refid == refid)
+        for (i = 0, took = 0; i < ACTORS; i++)
+            if (followed[i].refid == refid) {
+                took = followed[i].owner;
                 unfollow(i, followed[i].mobile == mobile);
+            }
         if (owner != ses.client)
             continue;
+        if (took)
+            combat_take(mobile, ref, refid, took);
         remote_hold_apply(mobile, refid);
         hits_apply(mobile, ref, refid);
         if (!send)
@@ -4116,6 +4186,7 @@ static void authority_frame(const u8 *player, const u8 *state)
                          ? ACTOR_IN_COMBAT : 0) | stance_of(mobile));
         copy(a + ACTOR_MAGICKA, mobile + MOBILE_MAGICKA, 4);
         copy(a + ACTOR_FATIGUE, mobile + MOBILE_FATIGUE, 4);
+        put32le(a + ACTOR_TARGET, combat_target(mobile));
         anim_capture(ref, a + ACTOR_ANIM);
         if (++n == ACTORS_PER_PACKET) {
             put32le(out, n);
@@ -4245,6 +4316,7 @@ static void authority_stat(void)
         holds_now += remote_holds[i].refid != 0;
     tes3x_log_hex3("net.authorities", authorities, n, holds_now);
     tes3x_log_hex3("net.owners", owner_count, owners_in, owners_full);
+    tes3x_log_hex3("net.combats_taken", combats_taken, combats_stopped, combats_lost);
     for (i = 0; i < authorities; i++)
         tes3x_log_hex3("net.authority_is", authority[i].client, (u32)authority[i].key.gx,
                        (u32)authority[i].key.gy);
