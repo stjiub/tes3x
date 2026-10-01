@@ -62,6 +62,9 @@ void tes3x_frag_probe(void);
 #ifdef TES3X_CONSOLE
 void tes3x_console_start(void);
 #endif
+#ifdef TES3X_NET
+void tes3x_net_entry(void);
+#endif
 
 static u32 tes3x_free_kb(void)
 {
@@ -103,6 +106,9 @@ void tes3x_init(void)
 #endif
 #ifdef TES3X_CONSOLE
     tes3x_console_start();
+#endif
+#ifdef TES3X_NET
+    tes3x_net_entry();
 #endif
 }
 

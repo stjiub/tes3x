@@ -134,46 +134,91 @@ class ServerTests(unittest.TestCase):
         (folder,) = (world / 'uploads').iterdir()
         self.assertEqual((folder / 'char.ess').read_bytes(), data)
 
+    @staticmethod
+    def save(player, seed):
+        def sub(tag, body):
+            return tag + struct.pack('<I', len(body)) + body
+
+        gmdt = bytearray(124)
+        gmdt[24:29], gmdt[92:92 + len(player)] = b'Balmo', player
+        head = (sub(b'HEDR', bytes(300)) + sub(b'MAST', b'Morrowind.esm\0')
+                + sub(b'DATA', bytes(8)) + sub(b'GMDT', bytes(gmdt)))
+        return (b'TES3' + struct.pack('<III', len(head), 0, 0) + head
+                + random.Random(seed).randbytes(3 * tes3x_net.BULK_CHUNK))
+
+    def game(self, client, seq, token, loaded):
+        client.send(tes3x_net.EVENTS, tes3x_net.pack_events(0, [
+            (seq, tes3x_net.EVENT_GAME, 0, struct.pack('<I', token) + loaded + b'\0')]))
+
+    def upload(self, client, seq, ident, name, data):
+        digest = hashlib.blake2b(data, digest_size=32).digest()
+        offer = tes3x_net.BULK_OFFER.pack(ident, len(data), digest) + name + b'\0'
+        client.send(tes3x_net.EVENTS, tes3x_net.pack_events(
+            0, [(seq, tes3x_net.EVENT_OFFER, 0, offer)]))
+        client.receive(1.0, tes3x_net.BULK_ACK)
+        for index in range(0, len(data), tes3x_net.BULK_CHUNK):
+            client.send(tes3x_net.CHUNK, struct.pack('<II', ident, index // tes3x_net.BULK_CHUNK)
+                        + data[index:index + tes3x_net.BULK_CHUNK])
+        while (body := client.receive(1.0, tes3x_net.BULK_ACK)) is not None:
+            if tes3x_net.BULK_ACK_BODY.unpack(body)[4] == tes3x_net.BULK_DONE:
+                break
+        else:
+            self.fail('no ack said done')
+        time.sleep(0.2)
+
     def test_a_save_is_kept_as_a_character(self):
         world = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, world)
         self.start('--world', str(world))
         client = self.client(1)
         client.join()
-
-        def sub(tag, body):
-            return tag + struct.pack('<I', len(body)) + body
-
-        def save(player, seed):
-            gmdt = bytearray(124)
-            gmdt[24:29], gmdt[92:92 + len(player)] = b'Balmo', player
-            head = (sub(b'HEDR', bytes(300)) + sub(b'MAST', b'Morrowind.esm\0')
-                    + sub(b'DATA', bytes(8)) + sub(b'GMDT', bytes(gmdt)))
-            return (b'TES3' + struct.pack('<III', len(head), 0, 0) + head
-                    + random.Random(seed).randbytes(3 * tes3x_net.BULK_CHUNK))
-
-        versions = [save(b'Nerevar', seed) for seed in range(5)]
+        self.game(client, 1, 7, b'')
+        versions = [self.save(b'Nerevar', seed) for seed in range(5)]
         for ident, data in enumerate(versions, 1):
-            digest = hashlib.blake2b(data, digest_size=32).digest()
-            offer = tes3x_net.BULK_OFFER.pack(ident, len(data), digest) + b'mp-hero.ess\0'
-            client.send(tes3x_net.EVENTS, tes3x_net.pack_events(
-                ident - 1, [(ident, tes3x_net.EVENT_OFFER, 0, offer)]))
-            client.receive(1.0, tes3x_net.BULK_ACK)
-            for index in range(0, len(data), tes3x_net.BULK_CHUNK):
-                client.send(tes3x_net.CHUNK, struct.pack('<II', ident, index // tes3x_net.BULK_CHUNK)
-                            + data[index:index + tes3x_net.BULK_CHUNK])
-            while (body := client.receive(1.0, tes3x_net.BULK_ACK)) is not None:
-                if tes3x_net.BULK_ACK_BODY.unpack(body)[4] == tes3x_net.BULK_DONE:
-                    break
-            else:
-                self.fail('no ack said done')
-            time.sleep(0.2)
+            self.upload(client, ident + 1, ident, b'mp-hero.ess', data)
         (folder,) = (world / 'characters').iterdir()
         self.assertEqual(sorted(p.name for p in folder.iterdir()),
                          ['mp-hero.1.ess', 'mp-hero.2.ess', 'mp-hero.3.ess', 'mp-hero.ess'])
         self.assertEqual((folder / 'mp-hero.ess').read_bytes(), versions[4])
         self.assertEqual((folder / 'mp-hero.3.ess').read_bytes(), versions[1])
         self.assertEqual(list((world / 'uploads').rglob('*.ess')), [])
+
+    def test_a_new_launch_loads_the_kept_character(self):
+        world = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, world)
+        self.start('--world', str(world))
+        first = self.client(1)
+        first.join()
+        self.game(first, 1, 7, b'')
+        kept = self.save(b'Nerevar', 0)
+        self.upload(first, 2, 1, b'mp-hero.ess', kept)
+        name = tes3x_net.CHECKPOINT_NAME.format(int.from_bytes(
+            hashlib.blake2b(kept, digest_size=32).digest()[:4], 'big')).encode()
+
+        stale = self.client(1)  # the same key after a relaunch into an older save
+        stale.session ^= 2
+        stale.join()
+        self.game(stale, 1, 8, b'old.ess')
+        loads = []
+        end = time.time() + 2
+        while not loads and time.time() < end:
+            body = stale.receive(0.5, tes3x_net.EVENTS)
+            if body is not None:
+                loads = [data for _, kind, _, data in tes3x_net.unpack_events(body)[1]
+                         if kind == tes3x_net.EVENT_LOAD]
+        self.assertEqual(loads, [name + b'\0'])
+        self.upload(stale, 2, 2, b'mp-hero.ess', self.save(b'Nerevar', 1))
+        (folder,) = (world / 'characters').iterdir()
+        self.assertEqual((folder / 'mp-hero.ess').read_bytes(), kept)
+        self.assertEqual(len(list((world / 'uploads').rglob('mp-hero.ess'))), 1)
+
+        loaded = self.client(1)  # relaunched into the checkpoint it was sent
+        loaded.session ^= 4
+        loaded.join()
+        self.game(loaded, 1, 9, name)
+        newer = self.save(b'Nerevar', 2)
+        self.upload(loaded, 2, 3, b'mp-hero.ess', newer)
+        self.assertEqual((folder / 'mp-hero.ess').read_bytes(), newer)
 
     def admin(self, port, *words):
         run = subprocess.run([sys.executable, str(NET), 'admin', '--port', str(port), *words],

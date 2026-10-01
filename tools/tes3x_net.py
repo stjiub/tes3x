@@ -25,6 +25,7 @@ import math
 import os
 import queue
 import random
+import re
 import select
 import socket
 import struct
@@ -312,7 +313,7 @@ def ping(args):
 
 
 T3MP = struct.Struct("<4sBBHIIIII")  # magic, version, type, 0, session, seq, ack, time, echo
-T3MP_VERSION = 14
+T3MP_VERSION = 15
 HELLO, WELCOME, HEARTBEAT, BYE, STATE, PEER, GONE, EVENTS, REFUSE, CLOCK, ACTORS = range(1, 12)
 # On the wire every packet but the handshake is SEALED: OUTER in the clear (the AEAD's associated
 # data), then INNER and the body sealed under the session key with seq as the nonce.
@@ -386,6 +387,10 @@ OWNERS_PER_EVENT = (EVENT_DATA - 4) // OWNER_PAIR.size
 EVENT_BUSY = 21
 BUSY_SAVING = 1
 EVENT_SAVE = 22  # to a client: save into its multiplayer slot and upload it
+# From a client after each WELCOME: its launch token (new each title launch), then the name of the
+# save that launch loaded, or "". A console not running its character's latest checkpoint is sent
+# the checkpoint as CHECKPOINT_NAME and LOAD (to a client: load that file once it has it).
+EVENT_GAME, EVENT_LOAD = 23, 24
 # actor id, fight, flee, alarm, hello, base disposition (NO_DISPOSITION for a creature)
 STATUS = struct.Struct("<I5h")
 NO_DISPOSITION = -32768
@@ -450,6 +455,7 @@ BULK_WINDOW_IN = 8  # chunks a console keeps in flight to the server: its send s
 BULK_ACK_EVERY = 0.25  # seconds between acks to a console that is sending
 UPLOAD_FILES = 64  # files one console key may keep in its uploads folder
 CHARACTER_BACKUPS = 3  # earlier versions kept beside each character's save
+CHECKPOINT_NAME = "char-{:08x}.ess"  # by the first four bytes of its BLAKE2b
 BULK_MAX = 16 << 20  # as the console's
 # Names Windows opens as devices, whatever the extension
 DEVICE_NAMES = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(10)),
@@ -788,6 +794,15 @@ def plain_name(name):
     """A file name the console and FATX both take: letters, digits, ' .-_', not led by a dot."""
     return (0 < len(name) <= BULK_NAME and not name.startswith(".") and
             all(c.isascii() and (c.isalnum() or c in " .-_") for c in name))
+
+
+def latest_character(folder):
+    """The newest kept character's save in folder (not a backup), or None."""
+    if not folder or not os.path.isdir(folder):
+        return None
+    saves = [os.path.join(folder, f) for f in os.listdir(folder)
+             if f.lower().endswith(".ess") and not re.search(r"\.\d+\.ess$", f, re.I)]
+    return max(saves, key=os.path.getmtime, default=None)
 
 
 def keep_character(upload, folder):
@@ -1271,6 +1286,8 @@ class Client:
         self.owners_told = {}  # actor id -> the owner this client was told, where not 0
         self.loaded = set()
         self.busy = None  # since when it has been saving
+        self.game = None  # the launch token it last reported
+        self.synced = False  # that launch runs its character's latest checkpoint
         self.actor_states = 0
         self.flush_due = False  # an EVENTS packet held back by EVENTS_GAP
         self.queue = []  # (address, packet, seq) held back by PACE_PACKETS
@@ -1725,9 +1742,41 @@ def serve(args):
             if other.alive and other.id != origin:
                 send_contents(other.id, refid, now)
 
+    def on_game(client, token, loaded, stamp, now):
+        """A console's launch: send it its character's latest checkpoint unless it runs it."""
+        if token != client.game:
+            client.game, client.synced = token, False
+        if client.synced:
+            return
+        path = latest_character(os.path.join(args.world, "characters", fingerprint(client.key))
+                                if args.world and client.key else None)
+        if path is None:
+            client.synced = True
+            print(f"{stamp} client {client.id} has no kept character", flush=True)
+            return
+        with open(path, "rb") as stream:
+            data = stream.read()
+        name = CHECKPOINT_NAME.format(
+            int.from_bytes(hashlib.blake2b(data, digest_size=32).digest()[:4], "big"))
+        if loaded.lower() == name:
+            client.synced = True
+            print(f"{stamp} client {client.id} runs its character ({os.path.basename(path)})",
+                  flush=True)
+            return
+        client.bulk = Outgoing(name, data)
+        client.rel.queue(EVENT_OFFER, 0, client.bulk.offer())
+        client.rel.queue(EVENT_LOAD, 0, zstr(name))
+        flush(client, now)
+        print(f"{stamp} client {client.id} loaded {loaded or 'no save'}: sending "
+              f"{os.path.basename(path)} as {name} ({len(data)} bytes) to load", flush=True)
+
     def received(client, stamp):
         """A finished upload: a save is kept as the console's character."""
         if not client.upload.name.lower().endswith(".ess"):
+            return
+        if not client.synced:
+            print(f"{stamp} client {client.id} sent {client.upload.name} from a game that is not "
+                  f"its character's; left in uploads", flush=True)
             return
         folder = os.path.join(args.world, "characters", fingerprint(client.key))
         head = keep_character(client.upload.path, folder)
@@ -1860,6 +1909,10 @@ def serve(args):
                 print(f"{stamp} client {client.id}: {describe_object(refid, *rest)}", flush=True)
         if kind == EVENT_TEXT:
             print(f"{stamp} client {client.id} says: {wire_text(data)}", flush=True)
+        if kind == EVENT_GAME and len(data) >= 5:
+            on_game(client, struct.unpack_from("<I", data)[0],
+                    wire_text(data[4:].split(b"\0", 1)[0]), stamp, now)
+            return
         if kind == EVENT_BUSY and data:
             if data[0] and client.busy is None:
                 client.busy = now

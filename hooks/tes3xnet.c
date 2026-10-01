@@ -263,7 +263,7 @@ struct descriptor {
  * session and seq in the clear (T3MP_OUTER, the AEAD's associated data) and seals the real type,
  * ack, times and body under the session's key, seq being the nonce. The receiver rebuilds the
  * T3MP_HEADER layout after opening it. */
-#define T3MP_VERSION 14u
+#define T3MP_VERSION 15u
 #define T3MP_HEADER 28u
 #define T3MP_OUTER 16u
 #define T3MP_INNER 16u
@@ -8553,9 +8553,109 @@ static void save_request_frame(void)
     tes3x_net_save(**(void ***)TES3X_NET_DATA_HANDLER, save_slot, save_slot);
 }
 
+/* Joining from the server's copy of the character. After each WELCOME the console reports this
+ * launch's token and the save it was launched to load; the server sends a console that is not
+ * running its character's latest checkpoint the file (bulk, into U:\TES3X\) and LOAD, and the
+ * console relaunches into it as the Load menu does. */
+#define EVENT_GAME 23u /* launch token, then the name of the save this launch loaded, or "" */
+#define EVENT_LOAD 24u /* a file the server sent: load it */
+#define LAUNCH_DATA 0x400u /* in LaunchDataPage, after the header */
+#define BXWM_MAGIC 0x4D575842u
+#define BXWM_LOAD 1u
+#define BXWM_PATH 0x10u
+#define BXWM_PATH_MAX 0x100u
+static u32 game_token, game_told, load_wanted, loads_started;
+static char game_loaded[BULK_NAME + 1], load_name[BULK_NAME + 1];
+typedef u32(__attribute__((stdcall)) *fn_launch)(const char *xbe, void *data);
+typedef u32(__cdecl *fn_persist)(void);
+
+/* XBE entry, before the engine reads its launch data. */
+void tes3x_net_entry(void)
+{
+    const u8 *page = *(const u8 *const *)*(void ***)THUNK_LaunchDataPage, *data, *path;
+    u32 lo, hi, i, base = 0;
+
+    __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
+    game_token = (lo ^ hi << 16) | 1;
+    if (!page || *(const u32 *)page != 0)
+        return;
+    data = page + LAUNCH_DATA;
+    if (*(const u32 *)data != BXWM_MAGIC || *(const u32 *)(data + 0xC) != BXWM_LOAD)
+        return;
+    path = data + BXWM_PATH;
+    for (i = 0; i < BXWM_PATH_MAX && path[i]; i++)
+        if (path[i] == '\\')
+            base = i + 1;
+    for (i = 0; i < BULK_NAME && i + base < BXWM_PATH_MAX && path[base + i]; i++)
+        game_loaded[i] = (char)path[base + i];
+    game_loaded[i] = 0;
+}
+
+static void load_event(const struct event *e)
+{
+    u32 i;
+
+    for (i = 0; i < e->length && i < BULK_NAME && e->data[i]; i++)
+        load_name[i] = (char)e->data[i];
+    load_name[i] = 0;
+    load_wanted = i != 0;
+    log_text("net.load_wanted", load_name);
+}
+
+/* Once the file is here, the Load menu's relaunch with its path. */
+static void load_frame(void)
+{
+    static u8 data[BXWM_PATH + BXWM_PATH_MAX];
+    const u8 *world = *(const u8 **)TES3X_NET_WORLD, *pads;
+    static const char dir[] = "U:\\TES3X\\";
+    u32 i, n, r;
+
+    if (!load_wanted || bulk.state != BULK_DONE)
+        return;
+    for (i = 0; load_name[i] && bulk.name[i] == load_name[i]; i++)
+        ;
+    if (load_name[i] || bulk.name[i] || !plausible(world) ||
+        !plausible(pads = *(const u8 *const *)(world + 0x4C)))
+        return;
+    load_wanted = 0;
+    loads_started++;
+    for (i = 0; i < sizeof(data); i++)
+        data[i] = 0;
+    ((u32 *)data)[0] = BXWM_MAGIC;
+    ((u32 *)data)[1] = *(const u32 *)(pads + 0x804); /* the pad port, as the Load menu passes */
+    ((u32 *)data)[3] = BXWM_LOAD;
+    for (n = 0; dir[n]; n++)
+        data[BXWM_PATH + n] = (u8)dir[n];
+    for (i = 0; load_name[i]; i++)
+        data[BXWM_PATH + n + i] = (u8)load_name[i];
+    log_text("net.load", load_name);
+    ((fn_persist)TES3X_NET_PERSIST_DISPLAY)();
+    r = ((fn_launch)TES3X_NET_LAUNCH)((const char *)TES3X_NET_ENGINE_PATH, data);
+    tes3x_log("net.load_failed", r);
+}
+
+static void game_frame(void)
+{
+    u8 body[4 + BULK_NAME + 1];
+    u32 n = tes3x_strlen(game_loaded) + 1;
+
+    if (game_told == ses.welcomes)
+        return;
+    put32le(body, game_token);
+    copy(body + 4, (const u8 *)game_loaded, n);
+    if (event_queue(EVENT_GAME, body, 4 + n)) {
+        game_told = ses.welcomes;
+        log_text("net.game_loaded", game_loaded[0] ? game_loaded : "(none)");
+    }
+}
+
 /* Game thread: an upload already under way holds the save's until it ends. */
 static void save_frame(void)
 {
+    if (ses.state == SESSION_JOINED) {
+        game_frame();
+        load_frame();
+    }
     if (save_requested && ses.state == SESSION_JOINED)
         save_request_frame();
     if (save_pending && ses.state == SESSION_JOINED &&
@@ -8630,6 +8730,7 @@ static void save_stat(void)
     tes3x_log_hex3("net.saves", saves_seen, saves_busy, save_hooked);
     tes3x_log_hex3("net.saves_slot", saves_slotted, saves_uploaded, save_pending);
     tes3x_log_hex3("net.saves_asked", saves_requested, save_requested, 0);
+    tes3x_log_hex3("net.game", game_token, load_wanted, loads_started);
 }
 
 static void event_handle(const struct event *e)
@@ -8671,6 +8772,8 @@ static void event_handle(const struct event *e)
         busy_event(e);
     } else if (e->kind == EVENT_SAVE) {
         save_requested = 1;
+    } else if (e->kind == EVENT_LOAD) {
+        load_event(e);
     } else {
         tes3x_log_hex3("net.event_unknown", e->kind, e->origin, e->length);
     }

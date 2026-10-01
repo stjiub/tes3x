@@ -463,6 +463,23 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         after = save_game + calls[0].end()
         define("NET_CREATE_SAVE", hexva(after + struct.unpack("<i", calls[0].group(1))[0]))
         define("NET_SAVE_SITES", "{" + ",".join(hexva(s) for s in sites) + "}")
+        # The engine's relaunches (New Game, Load) call 0x00336DF0, which keeps the picture on
+        # screen, then XLaunchNewImage("D:\morrowind.xbe", &launch data).
+        launches = set()
+        for m in re.finditer(rb"\xe8(....)\x8d\x44\x24.\x50\x68(....)\xe8(....)", data, re.S):
+            path = image.va_to_off(struct.unpack("<I", m.group(2))[0])
+            if path is None or data[path:path + 17] != b"D:\\morrowind.xbe\0":
+                continue
+            at = image.off_to_va(m.start())
+            launches.add((at + 5 + struct.unpack("<i", m.group(1))[0],
+                          struct.unpack("<I", m.group(2))[0],
+                          at + m.end() - m.start() + struct.unpack("<i", m.group(3))[0]))
+        if len(launches) != 1:
+            raise PayloadError(f"title relaunch: {len(launches)} call sequences, expected 1")
+        persist, engine_path, launch = launches.pop()
+        define("NET_PERSIST_DISPLAY", hexva(persist))
+        define("NET_ENGINE_PATH", hexva(engine_path))
+        define("NET_LAUNCH", hexva(launch))
         define("NET_MENU_GATE", hexva(locate("menu-mode-gate")))
         define("NET_MOB_GATE", hexva(locate("mob-update-gate")))
         define("NET_WEATHER_ROLL", hexva(locate("weather-roll")))
