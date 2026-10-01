@@ -4,6 +4,7 @@ String searches report file offsets; use --off2va before finding references.
 """
 
 import argparse
+import json
 import os
 import re
 import struct
@@ -48,12 +49,30 @@ def disasm(x, va, length):
         addr = va + int(m.group(1), 16)
         body = m.group(2)
         # objdump's branch targets are window-relative; rewrite them to real VAs
-        body = re.sub(r"0x([0-9a-f]+) <[^>]*>",
-                      lambda b: "0x%08X" % (va + int(b.group(1), 16)), body)
+        body = re.sub(r"0x([0-9a-f]+) <[^>]*>", lambda b: target(va + int(b.group(1), 16)), body)
         print("  0x%08X  %s" % (addr, body))
 
 
-def xrefs(x, target_va, limit=40):
+def symbols():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "symbols", "curated.json")
+    try:
+        records = json.load(open(path, encoding="utf-8"))["records"]
+    except (OSError, ValueError, KeyError):
+        return {}
+    return {int(r["va"], 16): r["name"] for r in records}
+
+
+NAMES = {}
+
+
+def target(va):
+    va &= 0xFFFFFFFF
+    name = NAMES.get(va)
+    return "0x%08X <%s>" % (va, name) if name else "0x%08X" % va
+
+
+def xrefs(x, target_va, limit=200):
+    """Absolute references to target_va, then direct call and jmp rel32 sites."""
     pat = struct.pack("<I", target_va)
     found = []
     for s in x.sections:
@@ -63,9 +82,11 @@ def xrefs(x, target_va, limit=40):
         for m in re.finditer(re.escape(pat), blob):
             # the immediate usually follows a 1-byte opcode
             found.append((s.va + m.start() - 1, s.name))
-            if len(found) >= limit:
-                return found
-    return found
+        for m in re.finditer(rb"[\xE8\xE9]", blob):
+            i = m.start()
+            if i + 5 <= len(blob) and                     (s.va + i + 5 + struct.unpack_from("<i", blob, i + 1)[0]) & 0xFFFFFFFF == target_va:
+                found.append((s.va + i, s.name + (" call" if blob[i] == 0xE8 else " jmp")))
+    return found[:limit]
 
 
 def main():
@@ -74,11 +95,12 @@ def main():
     ap.add_argument("xbe")
     ap.add_argument("--at", help="VA to disassemble from (hex)")
     ap.add_argument("--len", default="0x100", help="bytes to disassemble (default 0x100)")
-    ap.add_argument("--xref", help="find code references to this VA (hex)")
+    ap.add_argument("--xref", help="find code references and direct calls to this VA (hex)")
     ap.add_argument("--off2va", help="convert a file offset from --strings into a VA (hex)")
     a = ap.parse_args()
 
     x = Xbe(open(a.xbe, "rb").read())
+    NAMES.update(symbols())
     if a.off2va:
         off = int(a.off2va, 16)
         va = off_to_va(x, off)
