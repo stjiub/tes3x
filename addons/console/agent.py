@@ -17,7 +17,9 @@ UNITS = {"K": 1.0 / 1024, "M": 1.0, "G": 1024.0, "T": 1024.0 * 1024}
 # Builtins that stop the dashboard.
 EXITS = ("runxbe", "reboot", "restart", "reset", "shutdown", "powerdown", "restartapp", "dashboard",
          "hibernate", "suspend", "quit", "mastermode", "loadprofile")
-HELP = "ping | run XBE | builtin CMD | stat PATH | drives | reboot | shutdown | help"
+HELP = "ping | run XBE | builtin CMD | stat PATH | drives | stop | reboot | shutdown | help"
+# Ends the agent so its file can be replaced or deleted; the dashboard keeps running.
+STOP = "stop"
 # Brings the agent back if a dashboard-ending builtin fails; dies with the dashboard otherwise.
 RESTART = "AlarmClock(tes3xagent,RunScript(special://scripts/tes3xagent/agent.py),00:10,silent)"
 
@@ -88,6 +90,8 @@ def handle(line):
         return "ok size=%d mtime=%d dir=%d" % (st.st_size, st.st_mtime, os.path.isdir(arg)), None
     if cmd == "drives":
         return "ok " + drives(), None
+    if cmd == "stop":
+        return "ok", STOP
     if cmd == "reboot":
         return "ok", "XBMC.Reboot"
     if cmd == "shutdown":
@@ -148,6 +152,9 @@ def main():
         if not action:
             continue
         log("%s from %s" % (action, peer[0]))
+        if action == STOP:
+            srv.close()
+            return
         if ends_dashboard(action):
             # Finish this script before the dashboard starts shutting down.
             srv.close()

@@ -6,6 +6,7 @@
     python addons/console/console.py builtin "XBMC.ActivateWindow(Home)"
     python addons/console/console.py stat "E:/tes3xlog.txt"
     python addons/console/console.py drives            # free/total MB per drive
+    python addons/console/console.py stop              # end the agent, freeing its file
     python addons/console/console.py reboot | shutdown
     python addons/console/console.py wait [--timeout S]   # until the agent answers
     python addons/console/console.py uninstall
@@ -68,11 +69,33 @@ def put(ftp, path, data):
     ftp.storbinary(f"STOR {path.rsplit('/', 1)[1]}", io.BytesIO(data))
 
 
+# While the agent runs, the dashboard holds its file open and the FTP server answers a write or
+# delete of it with 450.
+IN_USE = ("is in use by the running agent, which is too old to stop on request. Use Remove agent, "
+          "restart the dashboard, then install again.")
+
+
+def stop_agent(host):
+    """Ask a running agent to end, so its file can be replaced; agents before version 5 cannot."""
+    try:
+        reply = request(host, "stop", timeout=3)
+    except OSError:
+        return
+    if reply.startswith("ok"):
+        print("stopped the running agent")
+        time.sleep(1)
+
+
 def install(args):
     agent, startup_path, _old = paths(args.dashboard)
     backup = Path.cwd() / "build" / "console-backup" / "XBMC4Gamers" / "Startup.xml"
+    stop_agent(args.host)
     ftp = tes3x_ftp.connect(args)
-    put(ftp, agent, AGENT.read_bytes())
+    try:
+        put(ftp, agent, AGENT.read_bytes())
+    except ftplib.error_temp:
+        ftp.quit()
+        raise SystemExit(f"{agent} {IN_USE}")
     startup = get(ftp, startup_path)
     if MARKER in startup:
         print(f"{startup_path} already starts the agent")
@@ -90,6 +113,7 @@ def install(args):
 
 def uninstall(args):
     agent, *hooks = paths(args.dashboard)
+    stop_agent(args.host)
     ftp = tes3x_ftp.connect(args)
     for path in hooks:
         try:
@@ -103,6 +127,9 @@ def uninstall(args):
     try:
         ftp.delete(ftp_basename(ftp, agent))
         print(f"removed {agent}")
+    except ftplib.error_temp:
+        print(f"{agent} is in use by the running agent and stays for now; it no longer starts "
+              "with the dashboard. Remove agent again after restarting the dashboard to delete it.")
     except ftplib.error_perm as e:
         print(f"{agent}: {e}")
     ftp.quit()
@@ -123,7 +150,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("command", choices=["install", "uninstall", "ping", "run", "builtin", "stat",
-                                        "drives", "reboot", "shutdown", "wait"])
+                                        "drives", "stop", "reboot", "shutdown", "wait"])
     ap.add_argument("arg", nargs="?")
     ap.add_argument("--timeout", type=float, default=120, help="for wait (default 120 s)")
     ap.add_argument("--dashboard", help=f"dashboard folder (default: [console] dashboard, then "

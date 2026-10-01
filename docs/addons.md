@@ -40,7 +40,10 @@ drive's free and total space in its tooltip. Click it to check again. A deploy a
 installing again; until then the badge reads **Drives: unknown**.
 
 An XBMC4Gamers update that replaces the skin removes the line; install again. **Remove agent**
-undoes the install. If the dashboard folder is not `F:/XBMC4Gamers`, set it:
+undoes the install. Install and remove first ask a running agent to stop, since the dashboard
+holds its file open while it runs. Agents installed before the drive badge cannot be stopped this
+way: **Remove agent** then leaves the file in place (it no longer starts), so restart the
+dashboard before installing again. If the dashboard folder is not `F:/XBMC4Gamers`, set it:
 
 ```toml
 [console]
@@ -54,6 +57,7 @@ python addons/console/console.py ping
 python addons/console/console.py run "F:/Games/Morrowind/default.xbe"
 python addons/console/console.py stat "E:/tes3xlog.txt"
 python addons/console/console.py drives                    # free/total MB per drive
+python addons/console/console.py stop                      # end the agent; the dashboard runs on
 python addons/console/console.py wait --timeout 120        # until the agent answers
 python addons/console/console.py reboot | shutdown
 python addons/console/console.py install | uninstall
