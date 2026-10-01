@@ -91,7 +91,7 @@ DROP_ITEM = 0x0015B0D0  # MobileActor::dropItem; the inventory menus call it on 
 PLAYER_DROPS = 2
 ACTOR_ADDRESSES = (
     ("LEVELED_RESOLVE", 0x0011A740), ("LEVELED_LINKED", 0x0012AEE0),
-    ("LEVELED_LINK", 0x0012A370), ("ADD_MOB", 0x001840B0),
+    ("LEVELED_LINK", 0x0012A370), ("ADD_MOB", 0x001840B0), ("SIMULATE", 0x00180630),
 )
 PLAYER_CONTROL = 0x001717E0  # PlayerAnimationController's update: look, controls, animation
 CONSOLE_ADDRESSES = (

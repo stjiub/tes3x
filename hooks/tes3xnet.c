@@ -107,7 +107,7 @@
 #endif
 #if !defined(TES3X_NET_LEVELED_SPAWN) || !defined(TES3X_NET_LEVELED_SPAWN_SLOT) || \
     !defined(TES3X_NET_LEVELED_RESOLVE) || !defined(TES3X_NET_LEVELED_LINKED) || \
-    !defined(TES3X_NET_LEVELED_LINK) || !defined(TES3X_NET_ADD_MOB) || \
+    !defined(TES3X_NET_LEVELED_LINK) || !defined(TES3X_NET_ADD_MOB) || !defined(TES3X_NET_SIMULATE) || \
     !defined(TES3X_NET_SUMMON) || !defined(TES3X_NET_SUMMON_SITES) || \
     !defined(TES3X_NET_PLAYER_SCRIPT_SITES) || !defined(TES3X_NET_DROP_ITEM) || \
     !defined(TES3X_NET_PLAYER_DROP_SITES)
@@ -3341,7 +3341,7 @@ static void ghost_update(u32 i, const struct pose *local)
  * rotation (first row, x1000): the engine may turn one without the others. */
 static void ghost_heading_stat(void)
 {
-    const u8 *ref, *node;
+    const u8 *ref, *node, *mobile;
     const float *m;
     u32 i;
 
@@ -3356,6 +3356,9 @@ static void ghost_heading_stat(void)
             plausible(m = *(const float *const *)(node + NODE_ROTATION)))
             tes3x_log_hex3("net.ghost_node", i + 1, (u32)round_int(m[0] * 1000),
                            (u32)round_int(m[1] * 1000));
+        if (plausible(mobile = ref_mobile(ref)))
+            tes3x_log_hex3("net.ghost_mobile", i + 1, *(const u32 *)(mobile + MOBILE_FLAGS),
+                           *(const u32 *)(ref + 8));
     }
 }
 
@@ -3921,6 +3924,8 @@ static float square_root(float x)
     return x;
 }
 
+static void ghost_fight_log(const u8 *mobile, const u8 *ref, u32 refid);
+
 static void hostile_check(const u8 *mobile, void *ref, u32 refid)
 {
     const float *at = (const float *)((const u8 *)ref + REF_POSITION);
@@ -3956,6 +3961,40 @@ static void hostile_check(const u8 *mobile, void *ref, u32 refid)
     run_script_on(line, ref);
     hostiles++;
     tes3x_log_hex3("net.hostile", refid, ghosts[pick].client, pick + 1);
+}
+
+/* An actor run here that fights a ghost, once a second: its action bytes (+0xDC, +0xDD), its
+ * upper-body animation group and how far it stands from the ghost. */
+#define MOBILE_TARGET 0xEC
+static void ghost_fight_log(const u8 *mobile, const u8 *ref, u32 refid)
+{
+    static u32 last, lines;
+    const u8 *target = *(const u8 *const *)(mobile + MOBILE_TARGET), *tref, *a;
+    const float *p, *q;
+    float dx, dy, dz;
+    u32 now = now_us();
+
+    if (!plausible(target) || !plausible(tref = *(const u8 *const *)(target + MOBILE_REFERENCE)) ||
+        !is_ghost(tref))
+        return;
+    if (now - last >= 1000000u) {
+        last = now;
+        lines = 0;
+    }
+    if (lines++ >= 4)
+        return;
+    p = (const float *)(ref + REF_POSITION);
+    q = (const float *)(tref + REF_POSITION);
+    dx = p[0] - q[0];
+    dy = p[1] - q[1];
+    dz = p[2] - q[2];
+    a = ref_animation(ref);
+    tes3x_log_hex3("net.ghost_fight", refid,
+                   mobile[0xDC] | (u32)mobile[0xDD] << 8 |
+                       (u32)(plausible(a) ? a[ANIM_GROUP + 1] : 0xFF) << 16,
+                   (u32)round_int(square_root(dx * dx + dy * dy + dz * dz)));
+    tes3x_log_hex3("net.ghost_fighter", refid, *(const u32 *)(mobile + MOBILE_FLAGS),
+                   *(const u32 *)(mobile + 0x244));
 }
 
 /* The talker's side of a hold on a followed actor: HOLD on while the dialogue is open, off when
@@ -4056,6 +4095,7 @@ static void authority_frame(const u8 *player, const u8 *state)
         if (!send)
             continue;
         hostile_check(mobile, ref, refid);
+        ghost_fight_log(mobile, ref, refid);
         a = out + 4 + n * ACTOR_BYTES;
         put32le(a, refid);
         copy(a + 4, ref + 0x38, 12);
@@ -4173,6 +4213,13 @@ static void authority_stat(void)
     tes3x_log_hex3("net.actor_states", actor_states_out, actor_states_in, actor_moves);
     tes3x_log_hex3("net.actor_events", follows, hits_out, hits_in);
     tes3x_log_hex3("net.ai_held", ai_held, ai_hooked, follows_full);
+    {
+        const u8 *w = *(const u8 **)TES3X_NET_WORLD, *m, *pm;
+
+        if (plausible(w) && plausible(m = *(const u8 **)(w + 0x5C)) &&
+            plausible(pm = *(const u8 **)(m + MOB_PROCESS)))
+            tes3x_log_hex3("net.ai_distance", (u32)round_int(*(const float *)(pm + 0x830)), 0, 0);
+    }
     tes3x_log_hex3("net.player_hits", player_hits_out, player_hits_in, retaliations);
     tes3x_log_hex3("net.hostiles", hostiles, bloodied, 0);
     tes3x_log_hex3("net.actor_deaths", death_count, deaths_reported, deaths_applied);
@@ -5584,6 +5631,7 @@ static void leveled_hook_install(void)
 static u8 *actor_make(struct spawn *s, u8 *cell, u8 *placeholder)
 {
     u8 *handler = *(u8 **)TES3X_NET_DATA_HANDLER, *world = *(u8 **)TES3X_NET_WORLD, *mobs, *ref;
+    u8 *mobile;
 
     if (!plausible(world) || !plausible(mobs = *(u8 **)(world + WORLD_MOBS)) ||
         !plausible(handler)) {
@@ -5605,6 +5653,9 @@ static u8 *actor_make(struct spawn *s, u8 *cell, u8 *placeholder)
         }
         ((fn_set_modified)TES3X_NET_REF_MODIFIED)(ref, 1);
         ((fn_add_mob)TES3X_NET_ADD_MOB)(mobs, ref);
+        /* Into the simulation or out of it by its distance, as PlaceAtPC does after addMob. */
+        if (plausible(mobile = ref_mobile(ref)))
+            ((fn_mobile_call)TES3X_NET_SIMULATE)(mobile);
     } else {
         ref = 0;
         actor_failures++;
