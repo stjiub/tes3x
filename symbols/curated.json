@@ -3656,8 +3656,9 @@
       "name": "MobilePlayer::setBounty",
       "kind": "function",
       "confidence": "matched",
-      "provenance": "mwse:TES3_MobilePlayer_setBounty",
-      "pc_va": "0x005688D0"
+      "provenance": "PC body: [this+0x598] set, then UpdateStatsPane",
+      "pc_va": "0x005688D0",
+      "signature": "void __thiscall setBounty(int value)"
     },
     {
       "va": "0x00185390",
@@ -3759,9 +3760,10 @@
       "va": "0x00189E40",
       "name": "MobilePlayer::getBounty",
       "kind": "function",
-      "confidence": "matched",
-      "provenance": "mwse:TES3_MobilePlayer_getBounty",
-      "pc_va": "0x005688B0"
+      "confidence": "verified",
+      "provenance": "same body as the PC's; returns 100 after ModPCCrimeLevel 100 (bounty-a2)",
+      "pc_va": "0x005688B0",
+      "signature": "int __thiscall getBounty()"
     },
     {
       "va": "0x0018D900",
