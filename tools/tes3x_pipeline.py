@@ -882,7 +882,8 @@ def main(argv=None):
             build_payload(retail_xbe, plan["sources"], hook_out,
                           user_flags=" ".join(filter(None, [
                               preference_flags(profile),
-                              "-DTES3X_DIAG_TEST_FAULTS" if args.diag_test_faults else ""])),
+                              "-DTES3X_DIAG_TEST_FAULTS" if args.diag_test_faults else "",
+                              os.environ.get("EXTRA_CFLAGS", "")])),
                           llvm_dir=llvm,
                           check_xbe=hook_out / "injected-check.xbe")
 

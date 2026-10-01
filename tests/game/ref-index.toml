@@ -1,0 +1,18 @@
+kind = "single"
+purpose = "A save loads with global script references answered from the index, and the index is built, used and freed."
+procedure = "Load the level-7 Seyda Neen fixture, which starts every global script, then check the player and the index counters the load logged."
+limitations = "Hardware timing. A build with -DTES3X_REFINDEX_VERIFY also compares every indexed answer with the engine's walk and logs refindex.mismatch."
+watch = 'refindex\.|console< (GetLevel|GetPos)|exec[.>]'
+enable = ["diagnostics", "console", "ref-index"]
+timeout = 240
+save = "vanilla-seyda-neen.ess"
+script = '''
+@start load U:\TES3X\vanilla-seyda-neen.ess
+wait 180
+assert player->getlevel == 7.00
+player->getpos x
+exit
+'''
+
+[expect]
+test = ['refindex\.lookups [1-9]', 'refindex\.keys [1-9]', 'exec\.exit']

@@ -600,6 +600,14 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         define("MCP146_GAME", hexva(game))
         define("MCP146_RESUME", hexva(resume))
         wanted["mcp146"] = ("_tes3x_mcp146_hook",)
+    if "tes3xrefindex.c" in names:
+        find = hexva(locate("ref-index-find"))
+        scripts = hexva(locate("ref-index-scripts"))
+        print(f"ref-index hooks: Cell::findReferenceToObject {find}, startGlobalScripts {scripts}")
+        define("REFINDEX_FIND_IN_CELL", find)
+        define("REFINDEX_START_SCRIPTS", scripts)
+        wanted["refindex_find"] = ("_tes3x_refindex_find_hook",)
+        wanted["refindex_scripts"] = ("_tes3x_refindex_scripts_hook",)
     if "tes3xbowview.c" in names:
         site = locate("bow-view")
         update = tes3x_inject.call_target(image, site)

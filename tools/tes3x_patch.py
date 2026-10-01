@@ -707,6 +707,40 @@ def find_arena_size(x):
     return va
 
 
+# The walk behind findFirstInstanceOfObjectId: every cell of NonDynamicData+0xB270, asking each
+# Cell::findReferenceToObject(object, 0).
+REF_INDEX_FIND_SIG = re.compile(
+    rb"\x83\xec\x08\x53\x55\x56\x89\x4c\x24\x10\x8b\x89\x70\xb2\x00\x00\x57"
+    rb"\xc7\x44\x24\x10\x00\x00\x00\x00\xe8....\x8b\xf8\x85\xff\x74.\x8b\x6c\x24\x1c"
+    rb"\x8b\x37\x6a\x00\x55\x8b\xce(?P<find>\xe8....)",
+    re.S,
+)
+# WorldController::startGlobalScripts: the scripts list from the data handler, a counter in ebx.
+REF_INDEX_SCRIPTS_SIG = re.compile(
+    rb"\xa1....\x53\x55\x8b\xe9\x8b\x08\x56\x8b\x71\x38\x57\x8b\xce\x33\xdb\xe8....\x85\xc0\x74.",
+    re.S,
+)
+REF_INDEX_SCRIPT_CALLS = 4
+
+
+def find_ref_index(x):
+    """Return the cell walk, Cell::findReferenceToObject and startGlobalScripts."""
+    data = bytes(x.data)
+    found = []
+    for signature, label in ((REF_INDEX_FIND_SIG, "cell walk"),
+                             (REF_INDEX_SCRIPTS_SIG, "startGlobalScripts")):
+        hits = list(signature.finditer(data))
+        if len(hits) != 1:
+            raise PatchError("ref-index: %d %s match(es), expected 1" % (len(hits), label))
+        found.append(hits[0])
+    walk = x.off_to_va(found[0].start())
+    scripts = x.off_to_va(found[1].start())
+    if walk is None or scripts is None:
+        raise PatchError("ref-index: a match is outside any section")
+    find_site = walk + found[0].start("find") - found[0].start()
+    return walk, tes3x_inject.call_target(x, find_site), scripts
+
+
 def find_dxt5_size(x):
     """The texture-create call to the texture-size function."""
     hits = list(DXT5_SIZE_SIG.finditer(bytes(x.data)))
@@ -1394,6 +1428,29 @@ def _mcp_146(x, value, ctx):
     site = find_mcp146(x)
     was, off = x.patch_call(site, int(str(target), 16))
     return [(off, 5, "player input guard 0x%08X: 0x%08X -> %s" % (site, was, target))]
+
+
+@patch("ref-index")
+def _ref_index(x, value, ctx):
+    """Answer reference lookups from an index while global scripts start."""
+    hooks = ctx.get("hooks", {})
+    if not all(hooks.get(k) for k in ("refindex_find", "refindex_scripts")):
+        raise PatchError("ref-index: needs `payload` first, with refindex_find and "
+                         "refindex_scripts hooks in its manifest")
+    walk, _, scripts = find_ref_index(x)
+    sites = find_call_sites(x, scripts)
+    if len(sites) != REF_INDEX_SCRIPT_CALLS:
+        raise PatchError("ref-index: %d startGlobalScripts call(s), expected %d"
+                         % (len(sites), REF_INDEX_SCRIPT_CALLS))
+    find_hook = int(str(hooks["refindex_find"]), 16)
+    off = x.va_to_off(walk)
+    x.data[off:off + 5] = b"\xe9" + struct.pack("<i", find_hook - (walk + 5))
+    edits = [(off, 5, "cell walk 0x%08X -> 0x%08X" % (walk, find_hook))]
+    scripts_hook = int(str(hooks["refindex_scripts"]), 16)
+    for site in sites:
+        _, off = x.patch_call(site, scripts_hook)
+        edits.append((off, 5, "startGlobalScripts call 0x%08X -> 0x%08X" % (site, scripts_hook)))
+    return edits
 
 
 @patch("bow-view")
@@ -2218,6 +2275,9 @@ LOCATORS = {
     "mcp-146-game": lambda image: find_mcp146_context(image)[2],
     "mcp-146-resume": lambda image: find_mcp146_context(image)[3],
     "bow-view": find_bow_view,
+    "ref-index": lambda image: find_ref_index(image)[0],
+    "ref-index-find": lambda image: find_ref_index(image)[1],
+    "ref-index-scripts": lambda image: find_ref_index(image)[2],
     "lean-menu": find_lean_menu,
     "video-arena": find_arena_size,
     "save-game": lambda image: find_autosave_calls(image)[0],

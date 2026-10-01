@@ -98,6 +98,15 @@ selection = "preset"
 summary = "Yield instead of sleeping 1 ms every 16-128 objects in the save and load walks."
 
 [[patch]]
+name = "ref-index"
+title = "Indexed reference lookup at global script start"
+category = "performance"
+channel = "dev"
+selection = "preset"
+source = "tes3xrefindex.c"
+summary = "Find the references global scripts name from one pass over the cells, not one per name."
+
+[[patch]]
 name = "title"
 title = "Dashboard title"
 category = "infrastructure"
