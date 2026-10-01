@@ -11,7 +11,8 @@
     python tools/tes3x_saves.py delete --pool 42530005 1B22410A51D3
 
 A save is its folder under E:/UDATA/<pool>: <name>.ess, SaveMeta.xbx, saveimage.xbx and vv.dat.
-It is moved whole; the game finds it by the name in SaveMeta.xbx and checks vv.dat. The library
+It is moved whole; the game finds it by the name in SaveMeta.xbx and checks vv.dat. A folder
+without SaveMeta.xbx, such as TES3X with its loose test saves, is not listed. The library
 keeps copies as <library>/<pool>/<folder>/, and saves.json there the last Xbox listing of each
 pool and the names of known pools. `list` prints JSON; the rest print progress and exit 3 when a
 push or copy would replace a save, unless --replace.
@@ -181,12 +182,14 @@ class Xbox:
                 continue
             listing = ftp_list(self.fresh(), f"{base}/{name}")
             files = {f: s for f, s, d, _ in listing if not d}
+            meta = next((f for f in files if f.lower() == META.lower()), None)
+            if meta is None:
+                continue
             ess = next((f for f in files if f.lower().endswith(".ess")), None)
             key = f"{pool:08X}/{name}/{ess}/{files.get(ess)}"
             if ess and key not in cache:
                 cache[key] = read_head(self.fresh(), f"{base}/{name}/{ess}").hex()
-            meta = next((f for f in files if f.lower() == META.lower()), None)
-            meta_raw = read_all(self.fresh(), f"{base}/{name}/{meta}") if meta else None
+            meta_raw = read_all(self.fresh(), f"{base}/{name}/{meta}")
             head = bytes.fromhex(cache[key]) if ess else None
             found.append(entry("xbox", name, files, head, meta_raw, date))
         return found
@@ -269,11 +272,13 @@ class Disk:
                 if not attrs & ATTR_DIRECTORY:
                     continue
                 files = {e[0]: e for e in self.entries(fs, first) if not e[1] & ATTR_DIRECTORY}
-                ess = next((f for f in files if f.lower().endswith(".ess")), None)
                 meta = next((f for f in files if f.lower() == META.lower()), None)
+                if meta is None:
+                    continue
+                ess = next((f for f in files if f.lower().endswith(".ess")), None)
                 head = fs.read_chain(files[ess][2], min(files[ess][3], HEAD_LIMIT)) \
                     if ess else None
-                meta_raw = fs.read_chain(files[meta][2], files[meta][3]) if meta else None
+                meta_raw = fs.read_chain(files[meta][2], files[meta][3])
                 found.append(entry("xemu", name, {f: e[3] for f, e in files.items()}, head,
                                    meta_raw, max((e[4] or "" for e in files.values()),
                                                  default=date)))
@@ -417,15 +422,17 @@ def library_saves(root, pool):
     base = Path(root) / f"{pool:08X}"
     for folder in sorted(p for p in base.iterdir() if p.is_dir()) if base.is_dir() else []:
         files = {p.name: p.stat().st_size for p in folder.iterdir() if p.is_file()}
-        ess = next((f for f in files if f.lower().endswith(".ess")), None)
         meta = next((f for f in files if f.lower() == META.lower()), None)
+        if meta is None:
+            continue
+        ess = next((f for f in files if f.lower().endswith(".ess")), None)
         head = None
         if ess:
             with open(folder / ess, "rb") as f:
                 head = f.read(HEAD_LIMIT)
         stamp = max((p.stat().st_mtime for p in folder.iterdir()), default=0)
         found.append(entry("pc", folder.name, files, head,
-                           (folder / meta).read_bytes() if meta else None,
+                           (folder / meta).read_bytes(),
                            datetime.datetime.fromtimestamp(stamp).strftime("%Y-%m-%d %H:%M")))
     return found
 
