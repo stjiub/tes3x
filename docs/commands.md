@@ -65,7 +65,7 @@ what each one is for and where it is explained; `--help` on any command lists it
 |---|---|---|
 | `tes3x_sym.py` | build and query the XBE's symbol map | [symbol map](symbol-map.md) |
 | `tes3x_xbe.py` | print an XBE's header, certificate, sections and strings | |
-| `tes3x_disasm.py` | disassemble an address range and find references to an address | |
+| `tes3x_disasm.py` | disassemble an address range, naming calls from the symbol map, and find references and direct calls to an address | |
 | `tes3x_inject.py` | add a section to an XBE and retarget its entry point | [payload](../patches/payload.md) |
 | `tes3x_ini.py` | list every `Morrowind.ini` key the XBE reads, with its default | [ini keys](ini-keys.md) |
 | `tes3x_mcp.py` | read a Morrowind Code Patch fix against the original PC executable | [patch policy](patch-policy.md) |
