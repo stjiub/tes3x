@@ -1,4 +1,4 @@
-"""One xemu test run: build a profile, pack an ISO, boot it on a fresh disk, read the log.
+"""Build and run a profile in xemu, optionally driving it with a script and recovering its log.
 
     python tools/tes3x_xemu.py NAME profiles/my-build.toml -- --preset minimal --enable diagnostics
     python tools/tes3x_xemu.py NAME --deploy build/some/deploy
@@ -43,6 +43,7 @@ from tes3x_qcow2 import CowView, Qcow2, create_overlay, is_qcow2, open_image  # 
 import tes3x_savepool  # noqa: E402
 from tes3x_xemu_setup import resolve  # noqa: E402
 from tes3x_readlog import read_file, read_log  # noqa: E402
+from tes3x_pipeline import set_ini_key, stage_retail_base  # noqa: E402
 
 TEST_INI = ["Xbox:Diagnostics=1", "Xbox:HangWatchdog=1", "Xbox:HangTimeoutSeconds=30",
             "General:Show FPS=1"]
@@ -120,8 +121,8 @@ CONFIG = load_config(os.environ.get("TES3X_CONFIG"))
 GDB = Path(CONFIG.get("gdb") or shutil.which("gdb") or "gdb")
 
 
-def vanilla_launcher():
-    """The retail Default.xbe named by [paths] vanilla_root in the local config, if any."""
+def vanilla_root():
+    """Clean retail root named by [paths] vanilla_root in the local config, if any."""
     path = Path(os.environ.get("TES3X_CONFIG") or Path.cwd() / "tes3x.local.toml").resolve()
     try:
         with open(path, "rb") as stream:
@@ -131,7 +132,20 @@ def vanilla_launcher():
     if not root:
         return None
     root = Path(root).expanduser()
-    return (root if root.is_absolute() else path.parent / root) / "Default.xbe"
+    return root if root.is_absolute() else path.parent / root
+
+
+def vanilla_launcher():
+    root = vanilla_root()
+    return root / "Default.xbe" if root else None
+
+
+def profile_layout(path):
+    try:
+        with open(path, "rb") as stream:
+            return tomllib.load(stream).get("profile", {}).get("install_layout", "full")
+    except (OSError, tomllib.TOMLDecodeError):
+        return "full"
 
 
 def pool_files(pool, deploy, into):
@@ -498,20 +512,41 @@ def main():
                 ini += [x for kv in SKIP_MOVIES for x in ("--ini-set", kv)]
             if a.no_reboot:
                 ini += [x for kv in NO_REBOOT for x in ("--ini-set", kv)]
+            if profile_layout(a.profile) == "overlay":
+                ini += ["--ini-set", r"Xbox:OverlayBase=\Device\CdRom0\Base"]
             run([sys.executable, TOOLS / "tes3x_pipeline.py", a.profile,
                  "--out", out / "pipeline", *ini, *passthru])
+        marker = deploy.parent / PIPELINE_MARKER
+        pipeline = json.loads(marker.read_text(encoding="utf-8")) if marker.is_file() else {}
+        overlay = pipeline.get("install_layout") == "overlay"
         packed = deploy
-        if a.ram == 128 and a.profile:
-            clear_limit64(deploy / "morrowind.xbe")
-        elif a.ram == 128:
-            # Someone else's deploy tree: pack a linked copy holding a patched XBE of its own.
+        if overlay or (a.ram == 128 and not a.profile):
+            # Keep someone else's deploy tree intact, and compose an overlay disc separately.
             packed = out / "stage"
             shutil.copytree(deploy, packed, copy_function=link_or_copy)
-            (packed / "morrowind.xbe").unlink()
-            shutil.copy2(deploy / "morrowind.xbe", packed / "morrowind.xbe")
-            clear_limit64(packed / "morrowind.xbe")
+        if overlay:
+            retail = vanilla_root()
+            if not retail or not (retail / "Data Files" / "Morrowind.bsa").is_file():
+                sys.exit("the overlay install layout needs [paths] vanilla_root to compose its "
+                         "retail base for xemu")
+            files, size = stage_retail_base(retail, packed / "Base", link_or_copy)
+            ini_path = packed / "Morrowind.ini"
+            ini_text = ini_path.read_text(encoding="latin-1")
+            ini_path.write_text(set_ini_key(ini_text, "Xbox", "OverlayBase",
+                                            r"\Device\CdRom0\Base"), encoding="latin-1")
+            print(f"overlay base: {files} files, {size / 1048576:.1f} MB")
+        if a.ram == 128:
+            if packed == deploy and a.profile:
+                clear_limit64(packed / "morrowind.xbe")
+            else:
+                if packed == deploy:
+                    packed = out / "stage"
+                    shutil.copytree(deploy, packed, copy_function=link_or_copy)
+                (packed / "morrowind.xbe").unlink()
+                shutil.copy2(deploy / "morrowind.xbe", packed / "morrowind.xbe")
+                clear_limit64(packed / "morrowind.xbe")
         if a.direct_engine:
-            shutil.copy2(deploy / "morrowind.xbe", deploy / "Default.xbe")
+            shutil.copy2(packed / "morrowind.xbe", packed / "Default.xbe")
         run([CONFIG["extract_xiso"], "-c", str(packed), str(iso)], stdout=subprocess.DEVNULL)
         if packed != deploy:
             shutil.rmtree(packed)
@@ -521,7 +556,7 @@ def main():
     marker_paths.append(iso.parent / "pipeline" / PIPELINE_MARKER)
     pipeline_marker = next((path for path in marker_paths if path.is_file()), None)
     pipeline = json.loads(pipeline_marker.read_text(encoding="utf-8")) \
-        if pipeline_marker else {}
+        if pipeline_marker else locals().get("pipeline", {})
     if not pipeline and (iso.parent / RUN_MARKER).is_file():
         # An ISO kept from an earlier run carries that run's build record.
         pipeline = json.loads((iso.parent / RUN_MARKER).read_text(encoding="utf-8")).get(

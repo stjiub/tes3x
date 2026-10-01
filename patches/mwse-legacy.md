@@ -1,5 +1,7 @@
 # Legacy MWSE bytecode
 
+Patch key: `mwse-legacy`
+
 Some older PC mods were compiled with MWSE 0.9.4, which embeds its own stack-machine instructions
 in a script's compiled bytecode. The Xbox engine does not know them: the script stops or goes out
 of step. This patch interprets a subset of those instructions, so such mods can run.

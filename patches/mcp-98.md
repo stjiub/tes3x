@@ -1,5 +1,7 @@
 # Animated container crash fix
 
+Patch key: `mcp-98`
+
 Accessing an animated container can destroy its live animation while the engine is still using it.
 The failure is easiest to provoke when a merchant checks containers for sellable items, or when one
 container is the only instance in a cell. This patch removes the reference-count operations that

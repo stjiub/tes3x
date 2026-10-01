@@ -1,5 +1,7 @@
 # Expanded-memory video arena
 
+Patch key: `video-arena`
+
 On a console with 128 MB, this patch lets textures and vertex buffers use more memory than the
 retail game's fixed arena. Retail Morrowind never needs it; large mods such as Tamriel Rebuilt do.
 

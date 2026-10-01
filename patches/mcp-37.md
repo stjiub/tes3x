@@ -1,5 +1,7 @@
 # Cell-change casting crash fix
 
+Patch key: `mcp-37`
+
 Leaving a cell while an NPC is still in its casting animation can leave that cast in the magic
 manager after its actor reference leaves the active cell. When the engine later cleans up the
 reference, the stale cast can dereference it and crash. This patch cancels such casts when the

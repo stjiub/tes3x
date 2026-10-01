@@ -1,5 +1,7 @@
 # Lowered first-person bow
 
+Patch key: `bow-view`
+
 In first person, a drawn bow and the arms holding it cover much of the screen. This patch lowers
 them while an arrow or bolt is nocked, so more of the target stays visible.
 

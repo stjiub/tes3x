@@ -1,5 +1,7 @@
 # Build-selected player preferences
 
+Patch key: `build-preferences`
+
 The Xbox stores player options in a signed file that cannot be edited on a PC. This patch lets a
 build profile choose some of those preferences, applied after the stored options load, so a
 build starts with them already set.

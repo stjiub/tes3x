@@ -1,8 +1,8 @@
 # Running in xemu
 
-[xemu](https://xemu.app) is an original-Xbox emulator. TES3X uses it to check that a build boots and
-plays, and to run game tests without a console. Its timings do not reflect a real Xbox: use it to
-check that a build runs, not how fast.
+[xemu](https://xemu.app) is an original-Xbox emulator. TES3X supports playing profiles in it with
+persistent saves, as well as scripted runs and game tests without a console. Its timings do not
+reflect a real Xbox, so use original hardware for performance measurements.
 
 ## Setup
 
@@ -21,7 +21,16 @@ yourself. The GUI's local settings hold the same keys.
 | `extract_xiso` | [extract-xiso](https://github.com/XboxDev/extract-xiso), which packs the disc image |
 | `gdb` | optional: `gdb`, for the `--gdb` options |
 
-## A run
+## Playing from the GUI
+
+Open a profile and choose **Play**. Each profile keeps its own emulated hard disk, so saves persist
+between sessions and appear in the GUI's **Saves** tab. **Actions > Reset xemu saves…** gives that
+profile a clean disk again. The Play menu offers 64 MB and 128 MB when both BIOSes are configured.
+
+An overlay-layout profile is also playable in xemu. TES3X adds the clean retail base to the disc
+image for that run; it does not need the Xbox's shared-base path.
+
+## Scripted and automated runs
 
 `tools/tes3x_xemu.py` builds a profile, packs it as a disc image, boots it on a fresh copy of the
 clean hard disk, and copies the log back out:
@@ -43,4 +52,5 @@ Each run gets a new folder under `build/xemu/` with the log, the disc image and 
 - Without `[Xbox] Diagnostics=1` there is no crash record and no watchdog. A crash shows as
   `crash.*` lines in the log, a stall after the first frame as `hang.detected`; a hang while
   loading leaves only the session header. See [diagnostics](diagnostics.md).
-- Drive a run with an exec script, not keystrokes: xemu samples held keys and loses short presses.
+- Drive an automated run with an exec script, not synthetic keystrokes: xemu samples held keys and
+  loses short presses. Normal interactive play uses the configured controller or keyboard.

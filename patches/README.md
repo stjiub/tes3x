@@ -5,15 +5,17 @@ Each implemented patch in [`patches.toml`](../patches.toml) has a page here name
 listed in the [patch table](../docs/patches.md). The test suite fails while a patch has no page or
 a page has no patch.
 
-A page explains what the patch changes, why someone would use it and how it works. It does not
-repeat what `patches.toml` already records (name, bit, category, channel, selection, origin,
-summary) or say how ready the patch is: no validation results, measurements, plans or open
-investigations. A permanent limitation belongs on the page; unfinished work does not.
+A page identifies its patch key, explains what the patch changes, why someone would use it and how
+it works. It does not repeat the registry's category, channel, selection, origin, bit or summary,
+or say how ready the patch is: no validation results, measurements, plans or open investigations.
+A permanent limitation belongs on the page; unfinished work does not.
 
 ## Template
 
 ```markdown
 # <the patch's title from patches.toml>
+
+Patch key: `<name from patches.toml>[=<takes>]`
 
 One or two paragraphs: what the patch changes, and why someone would use it.
 

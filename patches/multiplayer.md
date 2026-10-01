@@ -1,5 +1,7 @@
 # Experimental multiplayer
 
+Patch key: `multiplayer`
+
 This patch adds a network driver for the Xbox NIC and a session with a TES3X server
 (`tools/tes3x_net.py serve`), so several consoles, or consoles and xemu, can play in one world.
 Starting a server and connecting players is covered in [multiplayer](../docs/multiplayer.md).

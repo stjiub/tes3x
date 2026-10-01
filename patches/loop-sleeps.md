@@ -1,5 +1,7 @@
 # Save and load without forced sleeps
 
+Patch key: `loop-sleeps`
+
 The Xbox build pauses its own game thread while saving and loading. Loops that walk every object
 in the game call `Sleep(1)` after each 16th, 64th or 128th object, and the PC build has no such
 calls. The more objects a game holds, the longer it sleeps, so a large modded game freezes for

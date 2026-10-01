@@ -47,7 +47,7 @@ class DiagnosticsTests(unittest.TestCase):
         text = out.getvalue()
         self.assertIn("access violation", text)
         self.assertIn("write at 0xDEADBEEF", text)
-        self.assertIn("diagnostics, console", text)
+        self.assertIn("console, diagnostics", text)
 
     def test_assertions_report_failures_and_missing_runs(self):
         script = "assert a == 1\nassert b == 2\nexit\n"

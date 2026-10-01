@@ -51,7 +51,8 @@ from tes3x_library import (ARCHIVES, CATALOG_NAME, LibraryError, append_mods, co
                            resolve_selection)
 from tes3x_catalog import STATUS_LABELS as COMPAT_LABELS, CatalogError, load as load_catalog
 from tes3x_catalog import match as match_catalog, needs as catalog_needs
-from tes3x_patches import CATEGORIES as PATCH_CATEGORIES, PATCHES as PATCH_CATALOG, SOURCES
+from tes3x_patches import (CATEGORIES as PATCH_CATEGORIES, PATCHES as PATCH_CATALOG, SOURCES,
+                           patch_spec)
 from tes3x_plugins import (BASE_MASTERS, collect, dependency_order, fetch_rules, sort_files,
                            warnings as mlox_notes)
 from tes3x_pipeline import (DEPLOY_CONFLICT, DEPLOY_NO_SPACE, MARKER as PIPELINE_MARKER, PipelineError,
@@ -341,7 +342,8 @@ class LocalSettingsDialog(QDialog):
         form = QFormLayout(group)
         for key, label, default in (("host", "Host", ""), ("user", "User", "xbox"),
                                     ("password", "Password", "xbox"),
-                                    ("remote_root", "Game destination", "")):
+                                    ("remote_root", "Game destination", ""),
+                                    ("retail_root", "Shared retail base", "")):
             field = self.line(values.get(key, default), password=key == "password")
             self.fields["deploy." + key] = field
             form.addRow(label, field)
@@ -357,7 +359,7 @@ class LocalSettingsDialog(QDialog):
                   ("hdd", "Clean HDD image"))
 
     def xemu_group(self, values):
-        group = QGroupBox("xemu (for test runs)")
+        group = QGroupBox("xemu")
         form = QFormLayout(group)
         values = dict(values)
         values.setdefault("bios_128mb", values.get("cerbios", ""))
@@ -1114,6 +1116,9 @@ class BuildSettings(QWidget):
         self.title.setPlaceholderText("Retail title")
         self.remote_root = QLineEdit()
         self.remote_root.setPlaceholderText("From Settings")
+        self.install_layout = QComboBox()
+        self.install_layout.addItem("Full game folder", "full")
+        self.install_layout.addItem("Overlay on shared retail base", "overlay")
         self.library_path = QLineEdit()
         self.library_path.setPlaceholderText("From Settings")
         self.library_path.editingFinished.connect(lambda: self.on_library())
@@ -1133,6 +1138,7 @@ class BuildSettings(QWidget):
         form = QFormLayout(identity)
         form.addRow("Dashboard title", self.title)
         form.addRow("Xbox game folder", self.remote_root)
+        form.addRow("Install layout", self.install_layout)
         form.addRow("Mod library", library_widget)
         form.addRow("", self.dashboard)
         form.addRow("", self.skip_intro)
@@ -1203,7 +1209,8 @@ class BuildSettings(QWidget):
             widget.textChanged.connect(self.changed)
         for widget in (self.dashboard, self.archive_only, self.convert_all, self.clear_cache):
             widget.toggled.connect(self.changed)
-        for widget in (self.mode, self.drive_letter, self.max_texture_size, self.invert_look):
+        for widget in (self.install_layout, self.mode, self.drive_letter, self.max_texture_size,
+                       self.invert_look):
             widget.currentIndexChanged.connect(self.changed)
         for widget in (self.loose_assets, self.keep_assets, self.exclude):
             widget.textChanged.connect(self.changed)
@@ -1248,6 +1255,7 @@ class BuildSettings(QWidget):
         package = plain.get("package", {})
         self.title.setText(identity.get("title", ""))
         self.remote_root.setText(identity.get("remote_root", ""))
+        self.select(self.install_layout, identity.get("install_layout", "full"))
         self.library_path.setText(identity.get("library", ""))
         self.dashboard.setChecked("xbmc4gamers" in identity.get("dashboards", ["xbmc4gamers"]))
         self.select(self.mode, package.get("mode", "delta-bsa"))
@@ -1302,6 +1310,7 @@ class BuildSettings(QWidget):
         put = lambda *args: self.put(document, *args)
         put("profile", "title", self.title.text().strip() or None, None)
         put("profile", "remote_root", self.remote_root.text().strip() or None, None)
+        put("profile", "install_layout", self.install_layout.currentData(), "full")
         put("profile", "library", self.library() or None, None)
         put("profile", "dashboards", ["xbmc4gamers"] if self.dashboard.isChecked() else [],
             ["xbmc4gamers"])
@@ -1515,7 +1524,7 @@ class ProfileWindow(QMainWindow):
         self.action_developer_mode = QAction("&Developer mode", self)
         self.action_developer_mode.setCheckable(True)
         self.action_developer_mode.setChecked(self.developer_mode)
-        self.action_developer_mode.setToolTip("Show development-channel patches")
+        self.action_developer_mode.setToolTip("Allow selecting development-channel patches")
         self.action_developer_mode.toggled.connect(self.set_developer_mode)
         view_menu.addAction(self.action_developer_mode)
 
@@ -1768,8 +1777,11 @@ class ProfileWindow(QMainWindow):
                        or "Not set")
         title = self.build.title.text().strip() or "Retail title"
         profile = self.profile_path.stem if self.profile_path else "New"
+        layout = ("Shared retail base" if self.build.install_layout.currentData() == "overlay"
+                  else "Full game folder")
         lines = ["Build preview", "", f"Profile: {profile}", f"Dashboard title: {title}",
-                 f"Xbox destination: {destination}", f"Packaging: {mode_text}"]
+                 f"Xbox destination: {destination}", f"Install layout: {layout}",
+                 f"Packaging: {mode_text}"]
         if mode == "delta-bsa":
             lines.append("Archive: " + (self.build.archive_name.text().strip()
                                          or "tes3xmods.bsa"))
@@ -3675,7 +3687,7 @@ class ProfileWindow(QMainWindow):
         top.addWidget(self.patch_search, 1)
 
         self.patch_tree = QTreeWidget()
-        self.patch_tree.setHeaderLabels(["Patch", "Title", "Status", "Included by"])
+        self.patch_tree.setHeaderLabels(["Title", "Patch key", "Status", "Included by"])
         self.patch_tree.setAlternatingRowColors(True)
         self.patch_tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.patch_tree.header().setStretchLastSection(False)
@@ -3693,11 +3705,12 @@ class ProfileWindow(QMainWindow):
             self.patch_tree.addTopLevelItem(group)
             self.patch_groups[category] = group
             for entry in entries:
-                item = QTreeWidgetItem([entry["name"], entry["title"], entry["channel"], ""])
+                item = QTreeWidgetItem([entry["title"], patch_spec(entry), entry["channel"], ""])
                 item.setData(0, ROLE, entry["name"])
                 item.setToolTip(0, entry["summary"])
                 flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
-                if entry["selection"] == "preset":
+                if entry["selection"] == "preset" and (entry["channel"] != "dev"
+                                                         or self.developer_mode):
                     flags |= Qt.ItemFlag.ItemIsUserCheckable
                 else:
                     item.setForeground(0, self.palette().placeholderText())
@@ -3728,6 +3741,8 @@ class ProfileWindow(QMainWindow):
 
     def effective_patches(self, modes=None):
         profile = {"patches": self.patch_configuration(modes),
+                   "profile": {"install_layout": self.build.install_layout.currentData()}
+                   if hasattr(self, "build") else {},
                    "mods": self.profile_mods() if hasattr(self, "mod_list") else [],
                    "package": self.build.package_values() if hasattr(self, "build") else {},
                    "preferences": (self.build.preference_values()
@@ -3758,19 +3773,37 @@ class ProfileWindow(QMainWindow):
         applied = self.effective_patches()
         by_name = {entry["name"]: entry for entry in PATCH_CATALOG}
         preset = self.patch_preset.currentText()
+        required_by = {
+            name: [owner["name"] for owner in PATCH_CATALOG
+                   if owner["name"] in applied and name in owner.get("requires", [])]
+            for name in self.patch_items
+        }
+        overlay_layout = self.build.install_layout.currentData() == "overlay"
         self.patch_loading = True
         for name, item in self.patch_items.items():
             entry = by_name[name]
+            flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+            if entry["selection"] == "preset" and (entry["channel"] != "dev"
+                                                     or self.developer_mode) \
+                    and not required_by[name] \
+                    and not (name == "data-overlay" and overlay_layout):
+                flags |= Qt.ItemFlag.ItemIsUserCheckable
+            item.setFlags(flags)
             on = name in applied
             item.setCheckState(0, Qt.CheckState.Checked if on else Qt.CheckState.Unchecked)
             mode = self.patch_modes.get(name)
             why = ""
             if entry["selection"] == "always":
-                reason, why = "Every build", "Every build needs this patch"
+                reason, why = "Always included", "Every build includes this patch"
             elif entry["selection"] == "packaging":
-                reason = "Package mode" if on else ""
+                reason = "Delta-BSA packaging" if on else ""
                 why = ("The delta-bsa package mode needs this patch" if on
                        else "Only delta-bsa builds need this patch")
+            elif name == "data-overlay" and overlay_layout:
+                reason, why = "Overlay install layout", "The shared-base layout needs this patch"
+            elif required_by[name]:
+                reason = ", ".join(required_by[name])
+                why = "Included because " + ", ".join(required_by[name]) + " needs this patch"
             elif mode == "enable":
                 reason = "Profile"
             elif mode == "disable":
@@ -3857,11 +3890,8 @@ class ProfileWindow(QMainWindow):
                 child = group.child(i)
                 entry = by_name[child.data(0, ROLE)]
                 name = entry["name"]
-                advanced = entry["channel"] == "dev"
-                in_profile = name in self.applied_patches or name in self.patch_modes
-                hidden = advanced and not self.developer_mode and not in_profile
-                hidden = hidden or (bool(query) and query not in (name + " " + entry["title"]
-                                      + " " + entry["summary"]).casefold())
+                hidden = bool(query) and query not in (name + " " + entry["title"]
+                                                       + " " + entry["summary"]).casefold()
                 child.setHidden(hidden)
                 visible += not hidden
             group.setHidden(visible == 0)
@@ -3870,7 +3900,7 @@ class ProfileWindow(QMainWindow):
         self.developer_mode = enabled
         if self.settings is not None:
             self.settings.setValue("developer_mode", enabled)
-        self.filter_patches()
+        self.refresh_patch_states()
 
     def show_patch_details(self, item, _previous):
         name = item.data(0, ROLE) if item else None
@@ -3883,7 +3913,7 @@ class ProfileWindow(QMainWindow):
         origin_text = source.get("name", origin.get("source", "TES3X"))
         if "id" in origin:
             origin_text += " #" + str(origin["id"])
-        lines = [f"{entry['name']} — {entry['title']}", "", entry["summary"], "",
+        lines = [f"{entry['title']} — {patch_spec(entry)}", "", entry["summary"], "",
                  f"Category: {entry['category']}", f"Status: {entry['channel']}",
                  f"Origin: {origin_text}"]
         selection = {"always": "every build", "packaging": "package mode",
@@ -4572,14 +4602,20 @@ class ProfileWindow(QMainWindow):
         if self.process is not None:
             self.error("A TES3X command is already running")
             return
+        overlay = self.build.install_layout.currentData() == "overlay"
+        retail = self.local_values().get("deploy", {}).get("retail_root")
+        overlay_note = (f"\n\nThe shared retail base at {retail or '<not configured>'} will be "
+                        "installed or synchronized first." if overlay else "")
         answer = QMessageBox.question(
             self, "Deploy profile",
             "Build this profile and synchronize it to the configured Xbox destination?\n\n"
             "Files absent from the build are removed from that destination. Uploaded files are "
-            "verified by size before the command succeeds.")
+            "verified by size before the command succeeds." + overlay_note)
         if answer != QMessageBox.StandardButton.Yes:
             return
         arguments = ["--deploy", "--verify-deploy", "size"]
+        if overlay:
+            arguments.append("--install-retail-base")
         if self.discard_after_deploy.isChecked():
             arguments.append("--discard-build")
         self.run_pipeline(arguments)

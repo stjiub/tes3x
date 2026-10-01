@@ -1,5 +1,7 @@
 # Data Files drive redirect
 
+Patch key: `drive-letters=LETTER`
+
 The retail game reads `Data Files` through `Z:`, the title's cache partition. A game installed on
 the hard disk keeps its data beside the XBE instead, on `D:`, the drive the title was launched
 from. This patch points every `Data Files` path at one drive, so the engine reads the installed

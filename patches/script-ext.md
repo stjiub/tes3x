@@ -1,5 +1,7 @@
 # Script opcode extensions
 
+Patch key: `script-ext`
+
 Morrowind scripts compile to bytecode, and the engine knows a fixed set of opcodes. This patch lets
 the payload add new ones, so a plugin's compiled script can call code TES3X provides. It is also
 the base that [legacy MWSE bytecode](mwse-legacy.md) runs on.

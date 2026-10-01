@@ -1,5 +1,7 @@
 # Crash and hang diagnostics
 
+Patch key: `diagnostics`
+
 The retail game gives nothing to go on when it crashes or stalls. This patch writes crash records,
 a main-loop heartbeat and hang reports to `E:\tes3xlog.txt`, so a failure on the console leaves a
 record of what happened.

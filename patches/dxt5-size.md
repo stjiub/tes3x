@@ -1,5 +1,7 @@
 # DXT5 allocation fix
 
+Patch key: `dxt5-size`
+
 The engine computes a DXT5 texture's size as a negative number, and the video-memory allocator
 accepts it. Every DXT5 texture that loads therefore corrupts video memory. The retail game ships
 no DXT5 textures, so it never hits this; mods do ship them, and without the fix they cause crashes

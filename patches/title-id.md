@@ -1,5 +1,7 @@
 # Separate save title ID
 
+Patch key: `title-id=HEX`
+
 An Xbox title keeps its saves in `E:\UDATA\<title ID>`, so every Morrowind build on a console shares
 one save folder. This patch gives a build its own title ID, and with it a separate save folder, so
 test builds cannot touch the saves of the game you play.

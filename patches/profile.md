@@ -1,5 +1,7 @@
 # Function profiler
 
+Patch key: `profile=VA[,VA...]`
+
 The engine's own timing output is compiled out of the retail build. This patch times up to 16
 engine functions, chosen when the XBE is patched, with the CPU's cycle counter.
 

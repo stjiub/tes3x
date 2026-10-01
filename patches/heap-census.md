@@ -1,5 +1,7 @@
 # Engine heap census
 
+Patch key: `heap-census`
+
 A tool for finding what fills memory: it counts the engine heap's live bytes by the source file
 and line that allocated them, or by call site where the engine passes no source.
 

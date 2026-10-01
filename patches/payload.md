@@ -1,5 +1,7 @@
 # Code payload injection
 
+Patch key: `payload=FILE.pe`
+
 Most TES3X fixes need new code, not just changed bytes. This patch adds that code to the retail
 XBE as a new section and runs it before the game starts. Every patch that names a payload source
 in the patch table depends on it.

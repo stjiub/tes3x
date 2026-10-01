@@ -1,5 +1,7 @@
 # Same-volume save staging
 
+Patch key: `save-staging=LETTER`
+
 The game writes each save in two steps: it first writes the files to a staging location, then moves
 them into the save folder. Retail stages on `Z:`, the cache partition, while saves live under
 `E:\UDATA`, so the move cannot be a rename: every save is written twice, copied across partitions

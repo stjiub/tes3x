@@ -42,18 +42,17 @@ New, Duplicate, Rename and Delete beside the list. On first start, with no `tes3
   the details pane; a file shows its complete provider chain and whether it will be loose or packed.
   Patches and INI settings use the same pane.
 - **Patches** is a checklist grouped by category, starting from a preset. Changes are saved as
-  the profile's `enable` and `disable` lists. Release and preview patches are always listed,
-  including informational rows for command-line and build options. **View > Developer mode**
-  reveals `dev` patches. A dev patch already used by the profile remains visible when Developer
-  mode is off.
+  the profile's `enable` and `disable` lists. Every patch is listed, including informational rows
+  for command-line and build options. Development-channel patches remain read-only until
+  **View > Developer mode** is on.
 - **INI** shows the `Morrowind.ini` the build ships: the retail values, and the `[Xbox]` keys of
   the patches that are on. Double-click a value to change it; only changed values go in the
   profile. When a patch is turned off, the values only it reads are dropped.
 - **Resources** shows each active mod's source file and texture footprint before conversion and
   packing. Its dependency view combines mod dependencies and plugin masters and marks anything
   missing or ordered too late.
-- **Build** holds everything else in the profile: dashboard title, Xbox folder, mod library,
-  packaging mode, texture and file-name rules and player preferences.
+- **Build** holds everything else in the profile: dashboard title, Xbox folder, full or shared-base
+  install layout, mod library, packaging mode, texture and file-name rules and player preferences.
   **Skip the logo and New Game movies** sets the two `[Movies]` keys in the INI tab to a missing
   file, which the game skips. Its details pane previews the current mod and plugin order, asset
   packaging, archives, engine patches and deployment destination before the profile is built.
@@ -65,6 +64,10 @@ Xbox into `build/xbox-logs/`. **File > Settings** edits `tes3x.local.toml`. The 
 shows coloured Check, Build, Deploy and Xbox states: amber while work is needed or in progress,
 green after success, and red after failure or when the Xbox is offline. An activity bar is shown
 while a command is running.
+
+For a shared-base layout, local settings also name the clean retail folder on the Xbox. Deployment
+shows that path before explicitly installing or synchronizing it, then sends the smaller profile
+folder.
 
 **Play** runs the profile in [xemu](https://xemu.app), building it first when the dot beside it
 says it is out of date or not built. Its arrow chooses 64 MB or 128 MB; 128 MB needs a BIOS that

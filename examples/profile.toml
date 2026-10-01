@@ -7,6 +7,7 @@ library = "C:/path/to/mod-library"  # remove for a patches-only build
 # title = "Morrowind Modded"         # dashboard title; default: the retail title
 # dashboards = ["xbmc4gamers"]       # dashboard metadata written when title is set; [] for none
 # remote_root = "F:/Games/MorrowindModded"   # Xbox game folder; default: the local config's
+# install_layout = "full"            # "overlay" keeps only files that differ from retail
 
 [rules]
 max_texture_size = 512               # shrink mod textures larger than this

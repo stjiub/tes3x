@@ -15,6 +15,7 @@
 #              preset    - by preset, or by name in a profile's enable/disable
 #              option    - by a command-line option or research use only
 # source     payload C file the patch needs, if any
+# requires   other patch keys this patch turns on first
 # takes      the value it needs, as NAME=VALUE
 # ini        [Xbox] keys it reads from Morrowind.ini, each with the engine's default ("" when the
 #            default follows another key); docs/ini-keys.md explains them
@@ -142,6 +143,7 @@ category = "compat"
 channel = "dev"
 selection = "preset"
 source = "tes3xmwse.c"
+requires = ["script-ext"]
 summary = "Interpret legacy MWSE 0.9.4 bytecode embedded in compiled scripts."
 
 
@@ -379,6 +381,7 @@ category = "infrastructure"
 channel = "dev"
 selection = "preset"
 source = "tes3xnet.c"
+requires = ["diagnostics"]
 ini = { NetAddress = "", NetServer = "", NetGateway = "", NetDns = "", NetPassword = "" }
 summary = "Join a TES3X server from [Xbox] NetAddress and exchange player states every frame."
 

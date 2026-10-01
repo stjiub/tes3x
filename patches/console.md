@@ -1,5 +1,7 @@
 # In-game console
 
+Patch key: `console`
+
 The Xbox build keeps Morrowind's console, but no input reaches it. This patch opens it from the
 pad, adds a way to type, and runs commands from a file, so a build can be tested without input.
 

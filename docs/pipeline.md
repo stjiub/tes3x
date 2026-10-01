@@ -133,9 +133,11 @@ is complete; if a stage fails, what it produced so far is kept and the path is p
 `paths.hardlink_retail = true` to hardlink unchanged retail files instead of copying them, when the
 build and the retail folder are on the same NTFS volume.
 
-## 6. Test, preview or deploy
+## 6. Play, test, preview or deploy
 
-- `tools/tes3x_test.py` boots the same profile in xemu; see [testing](testing.md).
+- The GUI's **Play** action runs the profile in xemu with its persistent saves; see [xemu](xemu.md).
+- `tools/tes3x_test.py` runs a scripted smoke test of the same profile in xemu; see
+  [testing](testing.md).
 - `--dry-run` lists what is in the Xbox folder and what an upload would change.
 - `--deploy` uploads the build; see [deployment](deployment.md).
 

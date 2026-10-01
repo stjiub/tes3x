@@ -1,5 +1,7 @@
 # Game folder overlay
 
+Patch key: `data-overlay`
+
 A modded build normally carries a full copy of the game: every retail file goes into its folder
 beside the mod files, over a gigabyte for each build. With this patch a build folder holds only
 what differs from retail, and reads everything else from an untouched install already on the
@@ -25,9 +27,11 @@ A file in the build folder always wins over the same file in the base folder, ar
 
 ## Using it
 
-A build folder needs the XBEs, `Morrowind.ini`, the dashboard files, and every file that differs
-from the base: plugins, mod archives with `tes3xarch.txt`, loose files. A file identical to the
-base folder's copy can be left out.
+Set `profile.install_layout = "overlay"`; the pipeline enables this patch and keeps the XBEs,
+`Morrowind.ini`, dashboard files, and every file that differs from the base. Plugins, mod archives
+with `tes3xarch.txt`, and loose files therefore stay in the build. A file identical to the clean
+retail source is left out. See [deployment](../docs/deployment.md#shared-retail-base) for installing
+and verifying the shared base.
 
 `E:\tes3xlog.txt` shows where the engine's files came from:
 
@@ -45,10 +49,14 @@ Counters are logged at each power of two.
 
 ## Configuration
 
-`[Xbox] OverlayBase` in the build's `Morrowind.ini` names the base folder, as a drive path
-(`F:\Games\Morrowind Game of the Year`; drives C, E, F and G) or a device path
-(`\Device\Harddisk0\Partition6\Games\...`). Without it, or when the folder does not exist, the
-patch does nothing.
+For an overlay-layout deployment, `deploy.retail_root` in the local config names the base folder
+and the pipeline writes `[Xbox] OverlayBase` automatically. The value may be a drive path
+(`F:\Games\MorrowindRetail`; drives C, E, F and G) or a device path
+(`\Device\Harddisk0\Partition6\Games\...`). A direct patch user may still set `OverlayBase`
+manually. Without it, or when the folder does not exist, the patch does nothing.
+
+xemu builds place their clean base under the disc's `Base` folder and substitute that path for the
+run; the console-specific path is not needed there.
 
 ## Compatibility and limits
 

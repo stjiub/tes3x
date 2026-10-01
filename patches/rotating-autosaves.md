@@ -1,5 +1,7 @@
 # Rotating autosaves
 
+Patch key: `rotating-autosaves`
+
 Retail overwrites one autosave slot every time, so a bad autosave replaces the only good one. With
 this patch automatic saves rotate through several slots instead. The idea comes from OpenMW's
 autosave settings.

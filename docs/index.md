@@ -14,7 +14,7 @@ Generated from [`nav.toml`](nav.toml) by `tools/tes3x_docs.py --write`; edit tha
 - [Packaging](packaging.md): The pipeline's packing stage turns the collected mod files and the retail `Data Files` into what ships to the Xbox.
 - [Deployment](deployment.md): `--deploy` uploads a finished build to the Xbox over FTP with `tools/tes3x_deploy.py`.
 - [Testing](testing.md): TES3X is tested in steps, from fast checks on the PC to play on an original Xbox.
-- [Running in xemu](xemu.md): Set up xemu and run a build in it from a script.
+- [Running in xemu](xemu.md): Set up xemu to play profiles or run them from scripts.
 - [Patch game tests and validation](validation.md): Each patch can have a repeatable in-game test in `tests/game/PATCH.toml`.
 - [Diagnostics and profiling](diagnostics.md): A patched build can record what it does, time engine functions and count where memory goes.
 - [Multiplayer](multiplayer.md): Run a TES3X server and connect consoles and xemu to it.

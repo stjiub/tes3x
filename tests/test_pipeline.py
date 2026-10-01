@@ -10,8 +10,8 @@ from tes3x_paths import check_paths, require_paths
 from tes3x_pack import write_invalidation
 from tes3x_build import materialize, plugin_masters
 from tes3x_pipeline import (PipelineError, copy_retail_root, link_or_copy, resolve_patch_plan,
-                            preference_flags, sanitized_command, validate_local_config,
-                            validate_profile)
+                            preference_flags, sanitized_command, stage_retail_base,
+                            strip_retail_files, validate_local_config, validate_profile)
 from tes3x_pipeline import main as pipeline_main
 from tes3x_patch import (MCP37_TREE_NEXT_SIG, PatchError, _mcp_3, _mcp_37, _mcp_92, _mcp_97,
                          _mcp_98, _mcp_102, _mcp_123, _mcp_125, _mcp_154, _test_mcp3,
@@ -209,6 +209,32 @@ class PipelineTests(unittest.TestCase):
         self.assertTrue((staged / 'sound-cache' / 'voice.wav').samefile(
             vanilla / 'sound-cache' / 'voice.wav'))
 
+    def test_overlay_base_omits_executables_and_strips_unchanged_files(self):
+        vanilla = self.root / 'vanilla'
+        staged = self.root / 'staged'
+        (vanilla / 'Data Files').mkdir(parents=True)
+        (vanilla / 'Data Files' / 'Morrowind.bsa').write_bytes(b'retail')
+        for name in ('Default.xbe', 'morrowind.xbe', 'Morrowind.ini'):
+            (vanilla / name).write_bytes(b'retail')
+        (vanilla / 'movie.bik').write_bytes(b'movie')
+
+        base = self.root / 'base'
+        count, _size = stage_retail_base(vanilla, base)
+        self.assertEqual(count, 2)
+        self.assertTrue((base / 'Data Files' / 'Morrowind.bsa').is_file())
+        self.assertTrue((base / 'movie.bik').is_file())
+        self.assertFalse((base / 'Default.xbe').exists())
+
+        (staged / 'Data Files').mkdir(parents=True)
+        (staged / 'Data Files' / 'Morrowind.bsa').write_bytes(b'retail')
+        (staged / 'Data Files' / 'mod.bsa').write_bytes(b'mod')
+        (staged / 'Morrowind.ini').write_bytes(b'retail')
+        removed, removed_bytes = strip_retail_files(staged, vanilla)
+        self.assertEqual((removed, removed_bytes), (1, 6))
+        self.assertFalse((staged / 'Data Files' / 'Morrowind.bsa').exists())
+        self.assertTrue((staged / 'Data Files' / 'mod.bsa').is_file())
+        self.assertTrue((staged / 'Morrowind.ini').is_file())
+
     def test_patches_only_stages_retail_data_and_ini_keys(self):
         from tes3x_pipeline import stage_retail
         data = self.root / 'Data Files'
@@ -308,6 +334,16 @@ class PipelinePlanTests(unittest.TestCase):
         with self.assertRaisesRegex(PipelineError, 'requires script-ext'):
             resolve_patch_plan(profile)
 
+    def test_overlay_layout_adds_its_patch_and_cannot_disable_it(self):
+        profile = {'profile': {'install_layout': 'overlay'},
+                   'patches': {'preset': 'minimal'}}
+        plan = resolve_patch_plan(profile)
+        self.assertEqual(plan['selected'], ['data-overlay'])
+        self.assertIn('tes3xoverlay.c', plan['sources'])
+        profile['patches']['disable'] = ['data-overlay']
+        with self.assertRaisesRegex(PipelineError, 'requires data-overlay'):
+            resolve_patch_plan(profile)
+
     def test_info_name_arena_adds_pager_dependency(self):
         profile = {'patches': {'preset': 'minimal', 'enable': ['info-name-arena']}}
         plan = resolve_patch_plan(profile)
@@ -402,10 +438,12 @@ class PipelinePlanTests(unittest.TestCase):
         with self.assertRaisesRegex(PipelineError, 'preferences.invert_look must be a boolean'):
             validate_profile({'profile': {'name': 'p'},
                               'preferences': {'invert_look': 'no'}})
+        with self.assertRaisesRegex(PipelineError, 'profile.install_layout'):
+            validate_profile({'profile': {'name': 'p', 'install_layout': 'thin'}})
 
     def test_local_validation_checks_public_tables_and_allows_extensions(self):
         validate_local_config({'paths': {'build_root': 'build'},
-                               'deploy': {'port': 21},
+                               'deploy': {'port': 21, 'retail_root': 'F:/Games/Retail'},
                                'xemu': {'exe': 'private-extension'}})
         with self.assertRaisesRegex(PipelineError, 'unknown paths keys: build_rooot'):
             validate_local_config({'paths': {'build_rooot': 'build'}})
@@ -912,7 +950,7 @@ class PipelinePlanTests(unittest.TestCase):
                    'package': {'mode': 'merged-bsa'}}
         plan = resolve_patch_plan(profile)
         self.assertEqual(plan['selected'],
-                         ['mcp-97', 'mcp-102', 'dxt5-size', 'console'])
+                         ['mcp-3', 'mcp-97', 'mcp-102', 'dxt5-size', 'console'])
 
     def test_pipeline_rejects_unknown_categories_and_patches(self):
         with self.assertRaises(PipelineError):

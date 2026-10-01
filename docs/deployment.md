@@ -47,6 +47,26 @@ options, then `[deploy]` in the local config, then the default `xbox`/`xbox`. Se
   example profile), deploy empties the `X:`, `Y:` and `Z:` cache partitions, which would
   otherwise serve stale copies of changed assets.
 
+## Shared retail base
+
+Set `profile.install_layout = "overlay"` to keep only files that differ from retail in a build's
+game folder. Set `deploy.retail_root` in the local config to a separate clean folder such as
+`F:/Games/MorrowindRetail`. The pipeline enables the
+[game folder overlay](../patches/data-overlay.md), writes its INI setting and removes unchanged
+retail files automatically.
+
+An overlay deploy checks that the shared base already matches the local clean game before changing
+the profile folder. Install or synchronize it explicitly with:
+
+```powershell
+python tools/tes3x_pipeline.py profiles/my-build.toml --deploy --install-retail-base
+```
+
+The GUI does this after showing the shared-base path in its deployment confirmation. The base does
+not carry either XBE or dashboard metadata, so it is not another launchable game. Never point
+`retail_root` at a working or modded installation: synchronizing the base makes that folder match
+the clean retail data.
+
 ## Free space
 
 When the console add-on's agent is installed and answering, a deploy asks it how much space is

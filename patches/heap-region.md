@@ -1,5 +1,7 @@
 # Expanded-memory heap region
 
+Patch key: `heap-region`
+
 This patch stops the engine heap holding memory it has not used, and lets it grow large enough for
 mods such as Tamriel Rebuilt on a 128 MB console.
 

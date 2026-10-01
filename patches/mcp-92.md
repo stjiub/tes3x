@@ -1,5 +1,7 @@
 # Summoned creature crash fix
 
+Patch key: `mcp-92`
+
 Unsummoning a creature by leaving the cell or dispelling its summon can destroy the actor while
 magic which targets it remains active. Later cleanup can then follow the stale actor reference and
 crash. Killing the creature normally retires that magic first; this patch makes unsummoning do the

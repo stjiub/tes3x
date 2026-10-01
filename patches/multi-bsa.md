@@ -1,5 +1,7 @@
 # Multiple BSA loading
 
+Patch key: `multi-bsa`
+
 The Xbox engine opens exactly one archive, `Morrowind.bsa`; nothing else in `Data Files` can be
 archived. This patch loads further archives from a list, so mod assets can ship in their own
 archive instead of loose files or a rebuilt `Morrowind.bsa`.

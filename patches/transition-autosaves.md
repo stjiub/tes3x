@@ -1,5 +1,7 @@
 # Transition autosaves
 
+Patch key: `transition-autosaves`
+
 This patch saves immediately before player cell transitions that can lead to a loading screen:
 activated doors, scripted and console teleports, intervention-style magic, and paid travel. A
 crash or a bad outcome on the other side then costs little progress.

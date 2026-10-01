@@ -1,5 +1,7 @@
 # Low-memory main menu
 
+Patch key: `lean-menu`
+
 On the Xbox, starting a new game or loading a save relaunches the title, and the new process loads
 every record again. The process that shows the main menu has already loaded them all, only to
 throw them away. This patch has the menu process load just the game settings its text needs, so

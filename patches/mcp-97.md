@@ -1,5 +1,7 @@
 # Saved-script initialization fix
 
+Patch key: `mcp-97`
+
 While a save loads, `Script::ReplaceGlobalsInData` scans compiled script bytecode and skips over
 operands. It advances the cursor wrongly for two operand forms, so it can land in the middle of a
 string identifier and read it as opcodes: "Unable to find id" errors, or a load that never ends.

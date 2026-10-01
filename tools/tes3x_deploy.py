@@ -271,6 +271,9 @@ def main():
                          "(repeatable). Nothing is deleted: the rest of the console's "
                          "tree is left as it stands")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--require-current", action="store_true",
+                    help="with --dry-run, exit as a conflict unless the remote tree already "
+                         "matches exactly")
     ap.add_argument("--replace", action="store_true",
                     help="deploy even where the folder belongs to another profile or to no TES3X "
                          "build, or the save pool's folder is not this pool's")
@@ -282,6 +285,8 @@ def main():
     ap.add_argument("--plugin-delay", type=float, default=2.5,
                     help="seconds between plugin uploads when MFMT is unsupported")
     args = ap.parse_args()
+    if args.require_current and not args.dry_run:
+        ap.error("--require-current needs --dry-run")
 
     if not os.path.isdir(args.tree):
         sys.exit(f"not a directory: {args.tree}")
@@ -396,6 +401,9 @@ def main():
         if len(upload) > 20:
             print(f"    + ... {len(upload)-20} more")
         ftp.quit()
+        if args.require_current and (conflicts or delete or upload):
+            print("nothing changed: the required remote tree is missing or out of date")
+            sys.exit(CONFLICT)
         return
 
     for r in sorted(delete):

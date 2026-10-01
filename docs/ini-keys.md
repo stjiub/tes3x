@@ -107,4 +107,6 @@ A server name is looked up at each launch and again whenever the server stops an
 |---|---|---|
 | `OverlayBase` | a game folder, `F:\Games\Morrowind Game of the Year` (drives C, E, F, G) or a `\Device\...` path | empty - the overlay stays off |
 
-Read from the build's own `Morrowind.ini` on the first access to `D:\`.
+Read from the build's own `Morrowind.ini` on the first access to `D:\`. With
+`profile.install_layout = "overlay"`, the pipeline writes it from the local
+`deploy.retail_root`; xemu runs substitute the base carried on their disc image.

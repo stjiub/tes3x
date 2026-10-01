@@ -1,5 +1,7 @@
 # Unrestricted boot media
 
+Patch key: `boot-media`
+
 The retail XBE's certificate allows it to run only from a retail DVD, in the regions it was sold
 in. This patch allows every media type and region, so the game runs from the hard disk of a
 modded console. Every pipeline build applies it.

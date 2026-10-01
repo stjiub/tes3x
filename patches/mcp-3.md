@@ -1,5 +1,7 @@
 # Unarmored damage reduction
 
+Patch key: `mcp-3`
+
 The physical-damage path asks the actor how many armor pieces are equipped. Retail skips its
 complete damage-reduction calculation when that count is zero, even though the calculation handles
 unarmored body parts. A fully unarmored actor therefore receives no protection from the Unarmored

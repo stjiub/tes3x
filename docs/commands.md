@@ -33,7 +33,7 @@ what each one is for and where it is explained; `--help` on any command lists it
 
 | command | job | see |
 |---|---|---|
-| `tes3x_xemu.py` | build a profile and run it once in xemu with an exec script | [xemu](xemu.md) |
+| `tes3x_xemu.py` | build and run a profile in xemu, interactively or from an exec script | [xemu](xemu.md) |
 | `tes3x_xemu_setup.py` | find xemu's files in one folder, or download xemu and a blank disk | [xemu](xemu.md) |
 | `tes3x_test.py` | smoke-test a profile in xemu, or every library mod on its own | [testing](testing.md#profile-smoke-tests) |
 | `tes3x_scenario.py` | run a patch's game test and apply its verdict | [validation](validation.md) |

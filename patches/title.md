@@ -1,5 +1,7 @@
 # Dashboard title
 
+Patch key: `title=NAME`
+
 Several TES3X builds can be installed side by side, and a dashboard would list them all as
 "Morrowind". This patch renames the XBE's certificate title, so each build has its own name.
 

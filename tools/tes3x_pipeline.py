@@ -2,6 +2,7 @@
 """Build, patch, pack and optionally deploy one TES3X profile."""
 
 import argparse
+import filecmp
 import hashlib
 import importlib.util
 import json
@@ -33,6 +34,7 @@ DEPLOY_NO_SPACE = 4
 MARKER_SCHEMA = 2
 REPLACED_RETAIL_ENTRIES = {"data files", "default.xbe", "morrowind.xbe", "morrowind.ini"}
 RELEASE_ARTIFACT_SUFFIXES = {".iso", ".nfo", ".rar", ".sfv"}
+OVERLAY_BASE_EXCLUDES = {"default.xbe", "morrowind.xbe", "morrowind.ini", "_resources"}
 
 PATCHES = {entry["name"]: entry for entry in registry.PATCHES if entry["selection"] == "preset"}
 PATCH_ORDER = tuple(entry["name"] for entry in registry.PATCHES
@@ -47,6 +49,7 @@ CATEGORIES = set(registry.CATEGORIES)
 PRESETS = ("minimal", "recommended", "testing")
 PRESET_ALIASES = {"standard": "recommended", "dev": "testing"}
 PACKAGE_MODES = ("delta-bsa", "merged-bsa", "loose")
+INSTALL_LAYOUTS = ("full", "overlay")
 
 
 class PipelineError(ValueError):
@@ -96,13 +99,16 @@ def validate_profile(profile):
 
     identity = table("profile")
     known(identity, {"name", "title", "remote_root", "library", "dashboards", "save_pool",
-                     "save_pool_id"}, "profile")
-    for key in ("name", "title", "remote_root", "library", "save_pool", "save_pool_id"):
+                     "save_pool_id", "install_layout"}, "profile")
+    for key in ("name", "title", "remote_root", "library", "save_pool", "save_pool_id",
+                "install_layout"):
         typed(identity, key, (str,), "profile")
     if not identity.get("name"):
         raise PipelineError("profile.name is required")
     if identity.get("save_pool_id") and not identity.get("save_pool"):
         raise PipelineError("profile.save_pool_id needs profile.save_pool")
+    if identity.get("install_layout", "full") not in INSTALL_LAYOUTS:
+        raise PipelineError("profile.install_layout must be one of " + ", ".join(INSTALL_LAYOUTS))
     if identity.get("save_pool"):
         try:
             tes3x_savepool.pool_id(identity["save_pool"], identity.get("save_pool_id"))
@@ -211,10 +217,10 @@ def validate_local_config(local):
         raise PipelineError("paths.hardlink_retail must be a boolean")
 
     deploy = local.get("deploy", {})
-    extra = set(deploy) - {"host", "port", "user", "password", "remote_root"}
+    extra = set(deploy) - {"host", "port", "user", "password", "remote_root", "retail_root"}
     if extra:
         raise PipelineError("unknown deploy keys: " + ", ".join(sorted(extra)))
-    for key in ("host", "user", "password", "remote_root"):
+    for key in ("host", "user", "password", "remote_root", "retail_root"):
         if key in deploy and type(deploy[key]) is not str:
             raise PipelineError(f"deploy.{key} must be a string")
     if "port" in deploy and (type(deploy["port"]) is not int
@@ -273,15 +279,22 @@ def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), pac
     selected.update(enable)
     selected.difference_update(disable)
 
-    if "mwse-legacy" in selected:
-        if "script-ext" in disabled or "script-ext" in disable:
-            raise PipelineError("mwse-legacy requires script-ext")
-        selected.add("script-ext")
-    # The network runs from the diagnostics frame hook.
-    if "multiplayer" in selected:
-        if "diagnostics" in disabled or "diagnostics" in disable:
-            raise PipelineError("multiplayer requires diagnostics")
-        selected.add("diagnostics")
+    layout = profile.get("profile", {}).get("install_layout", "full")
+    if layout == "overlay":
+        if "data-overlay" in disabled or "data-overlay" in disable:
+            raise PipelineError("the overlay install layout requires data-overlay")
+        selected.add("data-overlay")
+
+    blocked = disabled | set(disable)
+    pending = list(selected)
+    while pending:
+        name = pending.pop()
+        for dependency in registry.BY_NAME[name].get("requires", []):
+            if dependency in blocked:
+                raise PipelineError(f"{name} requires {dependency}")
+            if dependency not in selected:
+                selected.add(dependency)
+                pending.append(dependency)
 
     if enabled_mods(profile):
         mode = package_mode or profile.get("package", {}).get("mode", "delta-bsa")
@@ -453,6 +466,51 @@ def copy_retail_root(vanilla, staged, copy=shutil.copy2):
     return len(copied), sum(path.stat().st_size for path in copied)
 
 
+def stage_retail_base(vanilla, staged, copy=shutil.copy2):
+    """Stage the clean data tree shared by overlay installs, without a dashboard-visible XBE."""
+    Path(staged).mkdir(parents=True, exist_ok=True)
+    copied = []
+    for source in sorted(Path(vanilla).iterdir(), key=lambda path: path.name.lower()):
+        suffix = source.suffix.lower()
+        release_part = len(suffix) == 4 and suffix[1] == "r" and suffix[2:].isdigit()
+        if (source.name.lower() in OVERLAY_BASE_EXCLUDES
+                or suffix in RELEASE_ARTIFACT_SUFFIXES or release_part):
+            continue
+        target = Path(staged) / source.name
+        if source.is_dir():
+            shutil.copytree(source, target, copy_function=copy)
+            copied.extend(path for path in source.rglob("*") if path.is_file())
+        elif source.is_file():
+            copy(source, target)
+            copied.append(source)
+        else:
+            raise PipelineError(f"unsupported retail base entry: {source}")
+    return len(copied), sum(path.stat().st_size for path in copied)
+
+
+def strip_retail_files(staged, vanilla):
+    """Remove files the overlay can read unchanged from its clean retail base."""
+    kept_roots = {"default.xbe", "morrowind.xbe", "morrowind.ini", "_resources"}
+    removed = removed_bytes = 0
+    for path in sorted((item for item in Path(staged).rglob("*") if item.is_file()),
+                       reverse=True):
+        relative = path.relative_to(staged)
+        if relative.parts[0].lower() in kept_roots:
+            continue
+        retail = Path(vanilla) / relative
+        if retail.is_file() and filecmp.cmp(path, retail, shallow=False):
+            removed += 1
+            removed_bytes += path.stat().st_size
+            path.unlink()
+    for path in sorted((item for item in Path(staged).rglob("*") if item.is_dir()),
+                       key=lambda item: len(item.parts), reverse=True):
+        try:
+            path.rmdir()
+        except OSError:
+            pass
+    return removed, removed_bytes
+
+
 def stage_retail(data_files, ini, staged, ini_items, copy=shutil.copy2):
     """Stage unchanged retail Data Files and an adapted Morrowind.ini, for a build without mods."""
     shutil.copytree(data_files, staged / "Data Files", copy_function=copy)
@@ -465,6 +523,17 @@ def stage_retail(data_files, ini, staged, ini_items, copy=shutil.copy2):
         text = set_ini_key(text, section.strip(), key.strip(), value)
     (staged / "Morrowind.ini").write_text(text, encoding="latin-1")
     print(f"  retail Data Files staged unchanged; Morrowind.ini with {len(ini_items)} key(s) set")
+
+
+def ini_override(items, wanted_section, wanted_key):
+    """Last SECTION:KEY=VALUE override for one case-insensitive INI setting."""
+    for item in reversed(items):
+        section, separator, rest = item.partition(":")
+        key, equals, value = rest.partition("=")
+        if (separator and equals and section.strip().casefold() == wanted_section.casefold()
+                and key.strip().casefold() == wanted_key.casefold()):
+            return value
+    return None
 
 
 def dashboard_xml(title, folder, title_id=tes3x_savepool.SHARED_ID):
@@ -603,6 +672,9 @@ def main(argv=None):
     ap.add_argument("--replace-remote", action="store_true",
                     help="deploy even where the target folder or save pool belongs to something "
                          "else")
+    ap.add_argument("--install-retail-base", action="store_true",
+                    help="with an overlay deployment, explicitly install or synchronize the "
+                         "configured deploy.retail_root before the profile")
     ap.add_argument("--ignore-space", action="store_true",
                     help="deploy even when the Xbox's dashboard agent reports too little free "
                          "space")
@@ -616,6 +688,8 @@ def main(argv=None):
     args = ap.parse_args(argv)
     if args.discard_build and (not args.deploy or args.verify_deploy == "none"):
         ap.error("--discard-build requires --deploy and --verify-deploy size or hash")
+    if args.install_retail_base and not args.deploy:
+        ap.error("--install-retail-base requires --deploy")
 
     profile_path = Path(args.profile).resolve()
     require_file(profile_path, "profile")
@@ -640,6 +714,9 @@ def main(argv=None):
 
     plan = resolve_patch_plan(profile, args.preset, args.enable, args.disable,
                               args.package_mode)
+    install_layout = profile["profile"].get("install_layout", "full")
+    if args.install_retail_base and install_layout != "overlay":
+        ap.error("--install-retail-base requires profile.install_layout = 'overlay'")
     prof_targets = [item.strip() for value in args.profile_target
                     for item in value.split(",") if item.strip()]
     if prof_targets:
@@ -680,6 +757,19 @@ def main(argv=None):
     dashboards = dashboard_list(profile)
     # A profile names its own install folder; the local config supplies the fallback.
     remote = profile.get("profile", {}).get("remote_root") or deploy.get("remote_root")
+    ini_items = [f"{k}={v}" for k, v in profile.get("ini", {}).items()] + args.ini_set
+    overlay_base = ini_override(ini_items, "Xbox", "OverlayBase")
+    if install_layout == "overlay":
+        overlay_base = overlay_base or deploy.get("retail_root")
+        if not overlay_base:
+            raise PipelineError("the overlay install layout needs deploy.retail_root in the "
+                                "local config, or an Xbox:OverlayBase INI override")
+        if ini_override(ini_items, "Xbox", "OverlayBase") is None:
+            ini_items.append("Xbox:OverlayBase=" + overlay_base.replace("/", "\\"))
+        if remote and deploy.get("retail_root") and \
+                remote.replace("\\", "/").rstrip("/").casefold() == \
+                deploy["retail_root"].replace("\\", "/").rstrip("/").casefold():
+            raise PipelineError("profile.remote_root and deploy.retail_root must be different")
     build_value = args.build_root or paths.get("build_root", "build")
     build_root = config_path(build_value, base).resolve()
     output = Path(args.out).resolve() if args.out else build_root / profile_name
@@ -720,6 +810,8 @@ def main(argv=None):
         print("plugin order: " + ("mlox at build time" if use_mlox
                                   else "saved order" if listed_order else "mod order"))
     print(f"output: {output}")
+    print(f"install layout: {install_layout}"
+          + (f"; retail base {overlay_base}" if install_layout == "overlay" else ""))
     if args.deploy or args.dry_run:
         print(f"target: {deploy.get('host', '<missing>')} {remote or '<missing>'}")
     if args.check:
@@ -772,8 +864,6 @@ def main(argv=None):
     hook_out = work / "hooks"
     patched = work / "morrowind.xbe"
     staged = work / "deploy"
-    # Profile keys first, so the command line overrides them.
-    ini_items = [f"{k}={v}" for k, v in profile.get("ini", {}).items()] + args.ini_set
     has_mods = plan["package_mode"] != "retail"
     try:
         if has_mods:
@@ -886,6 +976,12 @@ def main(argv=None):
         require_paths(staged_paths, remote or DEFAULT_REMOTE_ROOT)
         print(f"  retail root payload: {retail_files} files, {retail_bytes / 1048576:.1f} MB")
         staged_ini = staged / "Morrowind.ini"
+        plugins = plugin_inventory(staged / "Data Files")
+        data_files_sha256 = tree_digest(staged / "Data Files")
+        if install_layout == "overlay":
+            removed, removed_bytes = strip_retail_files(staged, vanilla)
+            print(f"  overlay: omitted {removed} unchanged retail files "
+                  f"({removed_bytes / 1048576:.1f} MB)")
         record = {
             "schema": MARKER_SCHEMA,
             "profile": profile_name,
@@ -894,6 +990,7 @@ def main(argv=None):
             "patches": ["payload=hooks/tes3xhook.pe" if spec.startswith("payload=") else spec
                         for spec in patch_specs],
             "package_mode": plan["package_mode"],
+            "install_layout": install_layout,
             "preferences": profile.get("preferences", {}),
             "command": sanitized_command(invocation, profile_name, args.profile),
             "ini": {
@@ -902,8 +999,8 @@ def main(argv=None):
                 "overrides": ini_items,
             },
             "mods": mod_inventory(profile),
-            "plugins": plugin_inventory(staged / "Data Files"),
-            "data_files_sha256": tree_digest(staged / "Data Files"),
+            "plugins": plugins,
+            "data_files_sha256": data_files_sha256,
             "toolchain": toolchain,
             "deploy_tree": "deploy",
             "tes3x": source_revision(),
@@ -920,6 +1017,39 @@ def main(argv=None):
 
     print(f"\ncomplete install staged at {output / 'deploy'}")
     if args.deploy or args.dry_run:
+        if install_layout == "overlay" and not deploy.get("retail_root"):
+            raise PipelineError("deploying an overlay layout requires deploy.retail_root in the "
+                                "local config")
+        if install_layout == "overlay":
+            with tempfile.TemporaryDirectory(prefix="tes3x-retail-base-",
+                                             dir=output.parent) as base_temp:
+                base_work = Path(base_temp)
+                base_tree = base_work / "deploy"
+                files, size = stage_retail_base(vanilla, base_tree, copy)
+                (base_work / MARKER).write_text(json.dumps({
+                    "schema": MARKER_SCHEMA,
+                    "profile": "TES3X retail base",
+                    "install_layout": "retail-base",
+                    "deploy_tree": "deploy",
+                }, indent=2) + "\n", encoding="utf-8")
+                print(f"\nretail base: {files} files, {size / 1048576:.1f} MB")
+                base_cmd = [sys.executable, TOOLS / "tes3x_deploy.py", base_tree,
+                            "--config", local_path, "--remote", deploy["retail_root"]]
+                if args.ask_password:
+                    base_cmd.append("--ask-password")
+                if args.dry_run:
+                    base_cmd.append("--dry-run")
+                elif args.install_retail_base:
+                    base_cmd += ["--replace", "--verify", "size"]
+                else:
+                    base_cmd += ["--dry-run", "--require-current"]
+                print("\n== " + " ".join(str(part) for part in base_cmd), flush=True)
+                result = subprocess.run([str(part) for part in base_cmd])
+                if result.returncode == DEPLOY_CONFLICT:
+                    return DEPLOY_CONFLICT
+                if result.returncode:
+                    raise subprocess.CalledProcessError(result.returncode, base_cmd)
+
         # The deploy tool reads the login from the config itself, keeping the password off
         # the command line.
         deploy_cmd = [sys.executable, TOOLS / "tes3x_deploy.py", output / "deploy",

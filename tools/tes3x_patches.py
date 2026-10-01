@@ -34,7 +34,7 @@ CANDIDATE_STATUSES = {
 }
 PRIORITIES = ("high", "medium", "low", "none")
 PATCH_FIELDS = (("name", "title", "category", "channel", "selection", "summary"),
-                ("bit", "source", "takes", "origin", "ini"))
+                ("bit", "source", "takes", "origin", "ini", "requires"))
 CANDIDATE_FIELDS = (("name", "origin", "status", "priority", "summary", "reason"),
                     ("category", "default", "doc"))
 
@@ -77,6 +77,10 @@ def read(path=REGISTRY, candidate_path=CANDIDATE_LIST):
         ini = entry.get("ini", {})
         if not isinstance(ini, dict) or any(not isinstance(value, str) for value in ini.values()):
             raise RegistryError(f"{where}: ini wants {{ Key = \"default\" }}")
+        requires = entry.get("requires", [])
+        if not isinstance(requires, list) or any(not isinstance(value, str)
+                                                 for value in requires):
+            raise RegistryError(f"{where}: requires wants an array of patch names")
         if "bit" in entry:
             if not isinstance(entry["bit"], int) or not 0 <= entry["bit"] < 32:
                 raise RegistryError(f"{where}: bit must be 0-31")
@@ -92,6 +96,12 @@ def read(path=REGISTRY, candidate_path=CANDIDATE_LIST):
         if entry["name"] in names:
             raise RegistryError(f"{entry['name']} is listed twice")
         names.add(entry["name"])
+    patch_names = {entry["name"] for entry in patches}
+    for entry in patches:
+        unknown = set(entry.get("requires", [])) - patch_names
+        if unknown:
+            raise RegistryError(f"{entry['name']}: unknown required patches: "
+                                + ", ".join(sorted(unknown)))
     return sources, patches, candidates
 
 
@@ -110,9 +120,12 @@ def origin_text(entry):
     return text + (f" #{origin['id']}" if "id" in origin else "")
 
 
-def name_text(entry):
-    name = entry["name"] + (f"={entry['takes']}" if "takes" in entry else "")
-    return f"[`{name}`](../patches/{entry['name']}.md)"
+def patch_spec(entry):
+    return entry["name"] + (f"={entry['takes']}" if "takes" in entry else "")
+
+
+def title_text(entry):
+    return f"[{entry['title']}](../patches/{entry['name']}.md)"
 
 
 # The sections a patch page may have, in order; patches/README.md is the template.
@@ -136,6 +149,9 @@ def page_problems(patches=None, docs=PATCH_DOCS):
         titles = [line[2:] for line in lines if line.startswith("# ")]
         if titles != [entry["title"]]:
             problems.append(f"{where}: wants the single heading '# {entry['title']}'")
+        key_line = f"Patch key: `{patch_spec(entry)}`"
+        if key_line not in lines[1:5]:
+            problems.append(f"{where}: wants '{key_line}' directly below the title")
         sections = [line[3:] for line in lines if line.startswith("## ")]
         if "How it works" not in sections:
             problems.append(f"{where}: no '## How it works'")
@@ -165,30 +181,41 @@ def render_patches():
     for preset in ("testing", "recommended"):
         plan = resolve_patch_plan({"patches": {"preset": preset}, "mods": [{"name": "x"}]})
         presets.update({name: f"{preset} preset" for name in plan["selected"]})
-    selection = {
-        "always": "every build",
-        "packaging": "delta-bsa packing",
-        "option": "build option",
-    }
+    selection = {"always": "**Always included**", "packaging": "Delta-BSA packaging",
+                 "option": "Build option"}
+    required_by = {}
+    for entry in PATCHES:
+        for dependency in entry.get("requires", []):
+            required_by.setdefault(dependency, []).append(entry["name"])
     lines = [
         "# Patches",
         "",
         "Generated from [`patches.toml`](../patches.toml) by `tools/tes3x_patches.py --write`;",
         "edit that file, not this one. Fixes that are not implemented are in",
-        "[candidates.md](candidates.md). A linked patch name opens its notes; a game-test link",
+        "[candidates.md](candidates.md). A linked title opens the patch's notes; a game-test link",
         "opens the runnable test definition.",
         "",
         "`dev` patches are contributor-only, `preview` patches work but need broader testing,",
         "and `release` patches are ready for general use.",
         "\"By name\" patches are only applied when a profile enables them.",
+        "\"Included by\" says what selects a patch; requirements are contextual rather than a",
+        "single required/not-required flag.",
         "The game-test column shows whether a public test definition exists, not its result.",
         "",
-        "| patch | what it does | from | category | channel | game test | selected by |",
-        "|---|---|---|---|---|---|---|",
+        "| title | patch key | what it does | from | category | channel | game test | included by |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for entry in PATCHES:
-        chosen = selection.get(entry["selection"]) or presets.get(entry["name"], "by name")
-        lines.append(f"| {name_text(entry)} | {cell(entry['summary'])} | {origin_text(entry)} | "
+        chosen = selection.get(entry["selection"]) or presets.get(entry["name"], "By name")
+        if entry["name"] == "payload":
+            chosen = "Injected-code patches or build option"
+        if entry["name"] == "data-overlay":
+            chosen = "Overlay install layout or profile"
+        dependents = required_by.get(entry["name"], [])
+        if dependents:
+            chosen += "; " + ", ".join(f"`{name}`" for name in dependents)
+        lines.append(f"| {title_text(entry)} | `{patch_spec(entry)}` | "
+                     f"{cell(entry['summary'])} | {origin_text(entry)} | "
                      f"{entry['category']} | {entry['channel']} | {game_test_text(entry)} | "
                      f"{chosen} |")
     return "\n".join(lines) + "\n"

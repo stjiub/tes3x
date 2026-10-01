@@ -77,7 +77,8 @@ class RegistryTests(unittest.TestCase):
             self.assertTrue(any('What remains' in p for p in problems))
             self.assertTrue(any('patch table' in p for p in problems))
             (docs / 'y.md').unlink()
-            (docs / 'x.md').write_text('# Some fix\n\nSee the [patch table](../docs/patches.md).'
+            (docs / 'x.md').write_text('# Some fix\n\nPatch key: `x`\n\n'
+                                       'See the [patch table](../docs/patches.md).'
                                        '\n\n## How it works\n\n## Configuration\n',
                                        encoding='utf-8')
             self.assertEqual(registry.page_problems([entry], docs), [])

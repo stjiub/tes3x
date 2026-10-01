@@ -1,8 +1,8 @@
 # TES3X
 
-TES3X is a modding and patching toolkit for *Morrowind Game of the Year Edition* on the original
-Xbox. It applies engine fixes to the retail XBE, extends what the engine can do, and assembles,
-optimizes and deploys a list of mods directly to an Xbox.
+TES3X is a modding and patching toolkit for the original-Xbox release of *Morrowind Game of the
+Year Edition*, played on original hardware or in xemu. It applies engine fixes to the retail XBE,
+extends what the engine can do, and assembles and optimizes a list of mods.
 
 ## Features
 
@@ -19,8 +19,9 @@ optimizes and deploys a list of mods directly to an Xbox.
 - **Deployment.** Builds upload over FTP to a folder of their own, sending only what changed,
   stamping plugin load order and clearing the game's cache partitions.
 - **A GUI** for the mod library, profiles, plugins, patches and INI settings, with each mod's
-  known Xbox compatibility.
-- **Testing and diagnostics.** Builds run in xemu from scripts; patches have scripted game tests;
+  known Xbox compatibility. Each profile can be played in xemu with persistent saves or deployed
+  to an Xbox.
+- **Testing and diagnostics.** Builds can also run in xemu from scripts; patches have game tests;
   crash records, a hang watchdog, a function profiler and memory censuses work on the console.
 
 ## Status and limitations
@@ -67,12 +68,13 @@ build a folder of its own. [Getting started](docs/getting-started.md) walks thro
 The [documentation index](docs/index.md) lists every page. The main ones:
 
 - [Getting started](docs/getting-started.md): from a clean game to a build on the Xbox.
-- [GUI](docs/gui.md), [mod library](docs/mod-library.md) and [pipeline](docs/pipeline.md).
+- [GUI](docs/gui.md), [xemu](docs/xemu.md), [mod library](docs/mod-library.md) and
+  [pipeline](docs/pipeline.md).
 - [Configuration](docs/configuration.md): every profile and local-config key.
 - [Patches](docs/patches.md), [candidates](docs/candidates.md),
   [ini keys](docs/ini-keys.md) and [patch policy](docs/patch-policy.md).
 - [Compatibility catalog](docs/catalog.md).
-- [Testing](docs/testing.md), [xemu](docs/xemu.md), [exec scripts](docs/exec-scripts.md),
+- [Testing](docs/testing.md), [exec scripts](docs/exec-scripts.md),
   [game tests](docs/game-tests.md), [validation](docs/validation.md) and
   [diagnostics](docs/diagnostics.md).
 - [Multiplayer](docs/multiplayer.md), [add-ons](docs/addons.md) and the

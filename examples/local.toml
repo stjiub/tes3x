@@ -24,12 +24,15 @@ host = "192.168.1.20"              # the Xbox's IP address, shown by its dashboa
 # Anything in it that is not part of the build is deleted, so use a new folder, not an install
 # you want to keep.
 remote_root = "F:/Games/MorrowindModded"
+# Shared clean retail data for profiles with install_layout = "overlay". The GUI or
+# --install-retail-base installs it explicitly and overlay deploys verify it first.
+# retail_root = "F:/Games/MorrowindRetail"
 # FTP login. The default is xbox/xbox. Instead of a password here, you can set the
 # TES3X_FTP_PASSWORD environment variable or pass --ask-password.
 # user = "xbox"
 # password = "xbox"
 
-# Only for test runs in xemu (tools/tes3x_xemu.py and tools/tes3x_test.py); see docs/xemu.md.
+# For playing profiles and for automated runs in xemu; see docs/xemu.md.
 # [xemu]
 # exe = "C:/xemu/xemu.exe"
 # bootrom = "C:/xemu/mcpx_1.0.bin"

@@ -192,9 +192,9 @@ order = 10
     def test_patches_are_a_checklist_and_carry_their_ini_keys(self):
         window = self.window()
         window.tabs.setCurrentIndex(4)
-        self.assertEqual(window.patch_items["mcp-92"].text(0), "mcp-92")
-        self.assertEqual(window.patch_items["mcp-92"].text(1),
+        self.assertEqual(window.patch_items["mcp-92"].text(0),
                          "Summoned creature crash fix")
+        self.assertEqual(window.patch_items["mcp-92"].text(1), "mcp-92")
         window.patch_tree.setCurrentItem(window.patch_items["rotating-autosaves"])
         self.assertIn("Rotate automatic saves", window.context_info.toPlainText())
         window.set_patch("rotating-autosaves", True)
@@ -219,7 +219,7 @@ order = 10
         window.set_patch("console", True)
         self.assertEqual(window.patch_configuration()["disable"], [])
 
-    def test_developer_mode_reveals_dev_patches(self):
+    def test_developer_mode_allows_selecting_visible_dev_patches(self):
         class Settings:
             def __init__(self):
                 self.values = {}
@@ -235,17 +235,22 @@ order = 10
         heap = window.patch_items["heap-census"]
         profiler = window.patch_items["profile"]
         transition = window.patch_items["transition-autosaves"]
-        self.assertTrue(heap.isHidden())
+        self.assertFalse(heap.isHidden())
         self.assertFalse(profiler.isHidden())
         self.assertFalse(transition.isHidden())
-        self.assertFalse(heap.flags() & Qt.ItemFlag.ItemIsUserCheckable)
+        self.assertFalse(transition.flags() & Qt.ItemFlag.ItemIsUserCheckable)
         self.assertFalse(profiler.flags() & Qt.ItemFlag.ItemIsUserCheckable)
         self.assertEqual(heap.text(2), "dev")
         self.assertEqual(window.patch_tree.headerItem().text(3), "Included by")
 
         window.action_developer_mode.setChecked(True)
         self.assertFalse(heap.isHidden())
+        self.assertTrue(transition.flags() & Qt.ItemFlag.ItemIsUserCheckable)
         self.assertEqual(heap.text(3), "Build option")
+        window.set_patch("mwse-legacy", True)
+        script_ext = window.patch_items["script-ext"]
+        self.assertFalse(script_ext.flags() & Qt.ItemFlag.ItemIsUserCheckable)
+        self.assertEqual(script_ext.text(3), "mwse-legacy")
         self.assertTrue(settings.values["developer_mode"])
 
     def test_preview_patch_is_visible_without_developer_mode(self):
@@ -286,7 +291,7 @@ order = 10
         window.refresh_analysis()
         self.assertEqual(rows(), [["Morrowind.bsa", "Retail", "yes"],
                                   ["Mod.bsa", "Mod", "yes, via multi-bsa"]])
-        self.assertEqual(window.patch_items["multi-bsa"].text(3), "Package mode")
+        self.assertEqual(window.patch_items["multi-bsa"].text(3), "Delta-BSA packaging")
         self.assertTrue(window.save_profile())
         self.assertEqual(self.saved()["mods"][0]["archives"], "load")
 
@@ -321,6 +326,10 @@ order = 10
 
         build = window.build
         build.title.setText("Modded")
+        build.select(build.install_layout, "overlay")
+        self.assertEqual(window.patch_items["data-overlay"].text(3), "Overlay install layout")
+        self.assertFalse(window.patch_items["data-overlay"].flags()
+                         & Qt.ItemFlag.ItemIsUserCheckable)
         build.select(build.mode, "loose")
         build.archive_only.setChecked(True)
         build.select(build.invert_look, True)
@@ -330,12 +339,14 @@ order = 10
             [window.tabs.tabText(i) for i in range(window.tabs.count())].index("Build"))
         preview = window.context_info.toPlainText()
         self.assertIn("Dashboard title: Modded", preview)
+        self.assertIn("Install layout: Shared retail base", preview)
         self.assertIn("Packaging: Loose files", preview)
         self.assertIn("Mods: 1 active", preview)
         self.assertTrue(window.is_dirty())
         self.assertTrue(window.save_profile())
         saved = self.saved()
         self.assertEqual(saved["profile"]["title"], "Modded")
+        self.assertEqual(saved["profile"]["install_layout"], "overlay")
         self.assertEqual(saved["package"], {"mode": "loose"})
         self.assertEqual(saved["preferences"], {"invert_look": True})
         self.assertTrue(saved["mods"][0]["loose"])
@@ -527,7 +538,8 @@ order = 10
         self.assertEqual((other["url"], other["summary"], other["author"]),
                          (page, "From Nexus", "Author"))
 
-    def test_play_builds_first_then_boots_the_build(self):
+    @patch("tes3x_gui.running_xemu", return_value=[])
+    def test_play_builds_first_then_boots_the_build(self, _running):
         import hashlib
         import json
         config = self.root / "local.toml"
@@ -783,12 +795,14 @@ order = 10
         self.addCleanup(dialog.close)
         dialog.fields["paths.mod_library"].setText("D:/Mods")
         dialog.fields["deploy.host"].setText("192.0.2.5")
+        dialog.fields["deploy.retail_root"].setText("F:/Games/MorrowindRetail")
         dialog.fields["deploy.port"].setValue(2121)
         self.assertTrue(dialog.save_settings())
         with open(config, "rb") as stream:
             values = tomllib.load(stream)
         self.assertEqual(values["paths"]["mod_library"], "D:/Mods")
         self.assertEqual(values["deploy"]["host"], "192.0.2.5")
+        self.assertEqual(values["deploy"]["retail_root"], "F:/Games/MorrowindRetail")
         self.assertEqual(values["deploy"]["port"], 2121)
         self.assertEqual(values["xemu"]["custom"], "keep")
 

@@ -1,5 +1,7 @@
 # Paged dialogue link names
 
+Patch key: `info-name-arena`
+
 While plugins load, every dialogue response (`INFO`) keeps three names, its own ID and those of
 the responses before and after it, until the responses are linked into order. With the Tamriel
 Rebuilt masters these tables hold about 12 MB of the engine heap. This patch moves them out of the

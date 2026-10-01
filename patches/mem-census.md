@@ -1,5 +1,7 @@
 # Kernel memory census
 
+Patch key: `mem-census`
+
 A tool for finding what uses memory outside the engine heap: kernel allocations and the XAPI heap
 under CRT `malloc`, counted by caller, with a map of the address space.
 

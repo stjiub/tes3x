@@ -1,5 +1,7 @@
 # Unresolvable reference cleanup
 
+Patch key: `mcp-1`
+
 When a save refers to an object from a mod that is no longer loaded, the retail loader keeps the
 reference and restamps it as an object created at runtime. The result is a phantom object that
 belongs to no mod and stays in the save for good. This patch drops such a reference instead.
