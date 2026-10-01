@@ -26,6 +26,8 @@ yourself. The GUI's local settings hold the same keys.
 Open a profile and choose **Play**. Each profile keeps its own emulated hard disk, so saves persist
 between sessions and appear in the GUI's **Saves** tab. **Actions > Reset xemu saves…** gives that
 profile a clean disk again. The Play menu offers 64 MB and 128 MB when both BIOSes are configured.
+**Debug with GDB** in the same menu opens xemu's debugger stub; while the game runs, the status bar
+shows its port, and its tooltip the command to attach (`gdb -ex "target remote 127.0.0.1:PORT"`).
 
 An overlay-layout profile is also playable in xemu. TES3X adds the clean retail base to the disc
 image for that run; it does not need the Xbox's shared-base path.

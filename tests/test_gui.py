@@ -600,6 +600,21 @@ order = 10
         self.assertEqual(calls[2][1][calls[2][1].index("--ram") + 1], "128")
         self.assertEqual(window.play_button.text(), "Play 128 MB")
 
+        # Debug with GDB opens the stub; the badge names the port the runner wrote.
+        window.set_play_gdb()
+        with patch.object(window, "start_command", side_effect=start):
+            window.process = None
+            window.play()
+        self.assertIn("--gdb", calls[3][1])
+        window.play_run.mkdir(parents=True)
+        (window.play_run / "gdb.port").write_text("1234")
+        window.process = type("Process", (), {"readAllStandardOutput": lambda self:
+                                              b"xemu: started, pid 1\n"})()
+        window.append_process_output()
+        self.assertEqual(window.play_state.text(), "Playing · GDB :1234")
+        window.process = None
+        window.set_play_gdb()
+
         self.profile.write_text(self.profile.read_text(encoding="utf-8") + "\n", encoding="utf-8")
         self.assertEqual(window.build_status()[0], "stale")
 

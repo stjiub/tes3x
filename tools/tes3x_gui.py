@@ -1591,6 +1591,8 @@ class ProfileWindow(QMainWindow):
         self.space_retry = None
         self.play_target = (self.settings.value("play_target", "xemu-64") if self.settings
                             else "xemu-64")
+        self.play_gdb = bool(self.settings and self.settings.value("play_gdb", False, bool))
+        self.play_run = None
         self.refresh_play_menu()
         self.state_timer = QTimer(self)
         self.state_timer.setInterval(1500)
@@ -4433,7 +4435,17 @@ class ProfileWindow(QMainWindow):
             target.setCheckable(True)
             group.addAction(target)
             self.play_targets[key] = target
+        self.play_menu.addSeparator()
+        gdb = self.play_menu.addAction("Debug with GDB", self.set_play_gdb)
+        gdb.setCheckable(True)
+        gdb.setChecked(self.play_gdb)
+        gdb.setToolTip("Open xemu's GDB stub; the status bar shows the port to attach to")
         self.update_play_targets()
+
+    def set_play_gdb(self):
+        self.play_gdb = not self.play_gdb
+        if self.settings is not None:
+            self.settings.setValue("play_gdb", self.play_gdb)
 
     def play_available(self):
         """Each Play target, and why it cannot run when it cannot."""
@@ -4558,9 +4570,11 @@ class ProfileWindow(QMainWindow):
         environment = QProcessEnvironment.systemEnvironment()
         environment.insert("TES3X_CONFIG", str(self.local_config_path()))
         label, _suffix, options = PLAY_TARGETS[self.play_target]
+        name = f"play-{self.profile_path.stem}-{self.play_target}-{stamp}"
+        self.play_run = self.work_dir() / "build" / "xemu" / name
         self.start_command(ROOT / "tools" / "tes3x_xemu.py",
-                           [f"play-{self.profile_path.stem}-{self.play_target}-{stamp}", *source,
-                            *options, "--disk", str(self.play_disk())],
+                           [name, *source, *options, *(["--gdb"] if self.play_gdb else []),
+                            "--disk", str(self.play_disk())],
                            f"Playing in {label}…", environment)
 
     def play_disk(self):
@@ -4777,6 +4791,15 @@ class ProfileWindow(QMainWindow):
             self.statusBar().spinner.stop()
             self.set_status_badge(self.play_state, "Playing", "#2e7d32")
             self.play_state.setToolTip("xemu is running this build; close it to finish")
+            port = self.play_run / "gdb.port" if self.play_gdb and self.play_run else None
+            if port is not None and port.is_file():
+                port = port.read_text().strip()
+                attach = f'gdb -ex "target remote 127.0.0.1:{port}"'
+                self.set_status_badge(self.play_state, f"Playing · GDB :{port}", "#2e7d32")
+                self.play_state.setToolTip(f"xemu is running this build; close it to finish\n"
+                                           f"Attach with: {attach}")
+                self.output.insertPlainText(f"\nGDB stub on 127.0.0.1:{port}; attach with "
+                                            f"{attach}\n")
             self.play_state.show()
             self.statusBar().showMessage("")
 
