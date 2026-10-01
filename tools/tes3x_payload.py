@@ -639,6 +639,9 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         wanted["transition_cell_companions"] = ("_tes3x_transition_cell_companions_hook",)
         wanted["transition_teleport"] = ("_tes3x_transition_teleport_hook",)
         wanted["transition_travel"] = ("_tes3x_transition_travel_hook",)
+    if "tes3xoverlay.c" in names:
+        flags.append("-DTES3X_OVERLAY")
+        wanted["overlay_flag"] = ("_tes3x_overlay_installed",)
     if "tes3xprefs.c" in names:
         wanted["preferences_load"] = ("@tes3x_preferences_hook@4",
                                       "_tes3x_preferences_hook")

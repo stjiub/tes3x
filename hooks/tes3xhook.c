@@ -19,6 +19,9 @@
 #ifdef TES3X_INFO_ARENA
 void tes3x_info_arena_init(void);
 #endif
+#ifdef TES3X_OVERLAY
+void tes3x_overlay_init(void);
+#endif
 
 #ifndef TES3X_ORIG_ENTRY
 #error "define TES3X_ORIG_ENTRY to the XBE's original entry point"
@@ -76,6 +79,9 @@ void tes3x_init(void)
     tes3x_log_prepare();
     DbgPrint("tes3x: hook alive, section at 0x%08x\n", (u32)&tes3x_init);
     tes3x_log("entry.free_kb", tes3x_free_kb());
+#ifdef TES3X_OVERLAY
+    tes3x_overlay_init();
+#endif
 #ifdef TES3X_MEM
     tes3x_mem_init();
 #endif

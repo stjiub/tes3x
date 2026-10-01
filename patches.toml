@@ -296,6 +296,16 @@ ini = { Diagnostics = "0", DiagnosticsLevel = "", HangWatchdog = "1", HangTimeou
 summary = "Enable INI-controlled crash records, snapshots and a hang watchdog."
 
 [[patch]]
+name = "data-overlay"
+title = "Game folder overlay"
+category = "infrastructure"
+channel = "dev"
+selection = "preset"
+source = "tes3xoverlay.c"
+ini = { OverlayBase = "" }
+summary = "Read files missing from the game folder from another install, named by [Xbox] OverlayBase."
+
+[[patch]]
 name = "profile"
 title = "Function profiler"
 bit = 13

@@ -100,3 +100,11 @@ The offset affects only the first-person bow and arms while an arrow or bolt is 
 
 The keys are read on the first frame of each launch, including the relaunch on New Game and Load.
 A server name is looked up at each launch and again whenever the server stops answering.
+
+## `data-overlay`
+
+| key | values | default |
+|---|---|---|
+| `OverlayBase` | a game folder, `F:\Games\Morrowind Game of the Year` (drives C, E, F, G) or a `\Device\...` path | empty - the overlay stays off |
+
+Read from the build's own `Morrowind.ini` on the first access to `D:\`.

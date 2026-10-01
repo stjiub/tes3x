@@ -1733,6 +1733,20 @@ def _diagnostics(x, value, ctx):
              % (site, was, target))]
 
 
+@patch("data-overlay")
+def _data_overlay(x, value, ctx):
+    """Read files missing from the game folder from the folder named by [Xbox] OverlayBase."""
+    flag = ctx.get("hooks", {}).get("overlay_flag")
+    if not flag:
+        raise PatchError("data-overlay: needs `payload` first, built with tes3xoverlay.c")
+    flag = int(str(flag), 16)
+    flag_off = x.va_to_off(flag)
+    if flag_off is None:
+        raise PatchError("data-overlay: installed flag is outside the payload section")
+    struct.pack_into("<I", x.data, flag_off, 1)
+    return [(flag_off, 4, "data-overlay installed flag at 0x%08X" % flag)]
+
+
 @patch("multiplayer")
 def _multiplayer(x, value, ctx):
     """Join a TES3X server from [Xbox] NetAddress and send the player's state each frame."""

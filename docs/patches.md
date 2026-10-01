@@ -36,6 +36,7 @@ The game-test column shows whether a public test definition exists, not its resu
 | [`dxt5-size`](../patches/dxt5-size.md) | Allocate DXT5 textures at their real size, not a negative one that corrupts video memory. | TES3X | core | preview | [test](../tests/game/dxt5-size.toml) | testing preset |
 | [`console`](../patches/console.md) | Make the in-game console reachable, by replacing its input gate. | TES3X | qol | preview | [test](../tests/game/console.toml) | testing preset |
 | [`diagnostics`](../patches/diagnostics.md) | Enable INI-controlled crash records, snapshots and a hang watchdog. | TES3X | instrumentation | preview | [test](../tests/game/diagnostics.toml) | testing preset |
+| [`data-overlay`](../patches/data-overlay.md) | Read files missing from the game folder from another install, named by [Xbox] OverlayBase. | TES3X | infrastructure | dev | — | by name |
 | [`profile=VA[,VA...]`](../patches/profile.md) | Time listed functions with RDTSC at every direct call site. | TES3X | instrumentation | preview | [test](../tests/game/profile.toml) | build option |
 | [`build-preferences`](../patches/build-preferences.md) | Apply profile-selected player preferences after stored Xbox options load. | TES3X | qol | preview | [test](../tests/game/build-preferences.toml) | build option |
 | [`rotating-autosaves`](../patches/rotating-autosaves.md) | Rotate automatic saves through INI-configurable slots. | [OpenMW](https://openmw.org) | qol | dev | [test](../tests/game/rotating-autosaves.toml) | by name |
