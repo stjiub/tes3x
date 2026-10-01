@@ -3902,22 +3902,39 @@ static void hits_apply(u8 *mobile, void *ref, u32 refid)
 }
 
 /* An actor that attacks a player on sight attacks a ghost too. The engine only looks for the
- * local player, so on the actor's authority one with Fight of HOSTILE_FIGHT or more that is not
- * fighting turns on the nearest placed ghost within HOSTILE_RANGE units. */
-#define HOSTILE_FIGHT 90
+ * local player, so on the actor's authority one that is not fighting turns on the nearest placed
+ * ghost within HOSTILE_RANGE units that the engine's own test would attack: Fight, plus
+ * iFightDistanceBase less fFightDistanceMultiplier per unit, plus fFightDispMult per point of an
+ * NPC's disposition under 50, reaching iFightAttack (Morrowind.esm's values). */
 #define HOSTILE_RANGE 1024.0f
+#define FIGHT_ATTACK 100.0f
+#define FIGHT_DISTANCE_BASE 20.0f
+#define FIGHT_DISTANCE_MULT 0.005f
+#define FIGHT_DISP_MULT 0.2f
 static u32 hostiles;
+
+static int base_disposition(const u8 *ref);
+
+static float square_root(float x)
+{
+    __asm__("fsqrt" : "+t"(x));
+    return x;
+}
 
 static void hostile_check(const u8 *mobile, void *ref, u32 refid)
 {
     const float *at = (const float *)((const u8 *)ref + REF_POSITION);
-    float dx, dy, dz, d, best = HOSTILE_RANGE * HOSTILE_RANGE;
+    float dx, dy, dz, d, near, best = HOSTILE_RANGE * HOSTILE_RANGE, fight;
     u32 g, pick = PEERS;
     char line[48];
 
     if ((*(const u32 *)(mobile + MOBILE_FLAGS) & MOBILE_IN_COMBAT) ||
-        *(const int *)(mobile + MOBILE_FIGHT) < HOSTILE_FIGHT || mobile[MOBILE_ACTION] == 0x12 ||
-        mobile[MOBILE_ACTION] == 0x13 || *(const float *)(mobile + MOBILE_HEALTH) <= 0)
+        mobile[MOBILE_ACTION] == 0x12 || mobile[MOBILE_ACTION] == 0x13 ||
+        *(const float *)(mobile + MOBILE_HEALTH) <= 0)
+        return;
+    fight = (float)*(const int *)(mobile + MOBILE_FIGHT) +
+            FIGHT_DISP_MULT * (float)(50 - base_disposition(ref));
+    if (fight + FIGHT_DISTANCE_BASE < FIGHT_ATTACK)
         return;
     for (g = 0; g < PEERS; g++) {
         if (!ghosts[g].placed)
@@ -3925,7 +3942,10 @@ static void hostile_check(const u8 *mobile, void *ref, u32 refid)
         dx = ghosts[g].x - at[0];
         dy = ghosts[g].y - at[1];
         dz = ghosts[g].z - at[2];
-        if ((d = dx * dx + dy * dy + dz * dz) < best) {
+        if ((d = dx * dx + dy * dy + dz * dz) >= best)
+            continue;
+        near = FIGHT_DISTANCE_BASE - FIGHT_DISTANCE_MULT * square_root(d);
+        if (fight + (near > 0 ? near : 0) >= FIGHT_ATTACK) {
             best = d;
             pick = g;
         }
@@ -6956,6 +6976,16 @@ static int is_npc(const u8 *ref)
     const u8 *object = *(const u8 *const *)(ref + REF_BASE);
 
     return plausible(object) && *(const u32 *)(object + OBJECT_TYPE) == TAG_NPC;
+}
+
+/* An NPC's stored base disposition; 50, which adds nothing to Fight, for a creature. */
+static int base_disposition(const u8 *ref)
+{
+    const u8 *object = *(const u8 *const *)(ref + REF_BASE);
+
+    return is_npc(ref) ? ((fn_object_int)(*(void *const *const *)object)[NPC_BASE_DISPOSITION / 4])(
+                             object)
+                       : 50;
 }
 
 static void status_read(const u8 *mobile, const u8 *ref, short *v)
