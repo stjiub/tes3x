@@ -20,7 +20,7 @@ promotes a patch.
 ## Prerequisites
 
 Set up a normal build profile and the `[xemu]` files in `tes3x.local.toml` first. See
-[configuration](configuration.md) and [running in xemu](testing.md#running-in-xemu). Run the
+[configuration](configuration.md) and [running in xemu](xemu.md). Run the
 commands below from the public repository root.
 
 ## Run a patch's game test
@@ -135,7 +135,7 @@ of what happened, but it does not change the patch's standing from `none`, `stal
 ## Write or review a game test
 
 The game-test format, including scripts, expectations, sequences, comparisons, generated fixtures
-and private save inputs, is documented under [game tests](testing.md#game-tests). Unit tests check
+and private save inputs, is documented under [game tests](game-tests.md). Unit tests check
 that every committed definition is well formed, but they do not boot the game:
 
 ```powershell

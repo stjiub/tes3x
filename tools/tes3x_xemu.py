@@ -13,7 +13,7 @@ the clean HDD image, deleted once the log is read unless --keep-disk; --disk FIL
 one overlay across runs, so saves persist. Each completed run also writes a .tes3x-run.json
 recording its command, platform and inputs without machine paths.
 
-[xemu] in tes3x.local.toml names the emulator and its files; see docs/testing.md.
+[xemu] in tes3x.local.toml names the emulator and its files; see docs/xemu.md.
 --gdb-capture SECONDS pauses the guest once and saves CPU and stack state to gdb.txt.
 --gdb-script FILE attaches GDB at boot and runs a Python script for the whole session;
 $tes3x_handler holds the diagnostics crash handler's address from the build's link map, and

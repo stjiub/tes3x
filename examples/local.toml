@@ -27,7 +27,7 @@ remote_root = "F:/Games/MorrowindModded"
 # user = "xbox"
 # password = "xbox"
 
-# Only for test runs in xemu (tools/tes3x_xemu.py and tools/tes3x_test.py); see docs/testing.md.
+# Only for test runs in xemu (tools/tes3x_xemu.py and tools/tes3x_test.py); see docs/xemu.md.
 # [xemu]
 # exe = "C:/xemu/xemu.exe"
 # bootrom = "C:/xemu/mcpx_1.0.bin"

@@ -21,7 +21,7 @@ changes. A snapshot also carries `MmQueryStatistics` and the first words of the 
 ## Using it
 
 Build with `--apply heap-census`, or the pipeline's `--heap-census`. See
-[testing](../docs/testing.md#heap-census) for how snapshots are taken and read.
+[diagnostics](../docs/diagnostics.md#heap-census) for how snapshots are taken and read.
 
 ## Compatibility and limits
 

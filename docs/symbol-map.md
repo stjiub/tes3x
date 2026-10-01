@@ -103,9 +103,9 @@ partitions and the controller) has no PC counterpart at all, so it is named only
 
 - `tools/tes3x_prof.py targets NAME` turns a name into the address list for
   `--apply profile=`, and `report FILE` renders `E:\tes3xprof.bin`
-  ([Profiling](testing.md#profiling)).
+  ([Profiling](diagnostics.md#profiling)).
 - `tools/tes3x_heap.py` and `tools/tes3x_mem.py` render the heap and memory censuses, naming call
-  sites from the map ([Heap census](testing.md#heap-census)).
+  sites from the map ([Heap census](diagnostics.md#heap-census)).
 
 ## Credit and limits
 

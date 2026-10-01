@@ -23,7 +23,7 @@ Which engine fixes TES3X takes on and what each one defaults to. The fixes thems
 
 Every implemented patch starts in `dev`. Promotion to `preview` or `release` is a maintainer
 decision, and a patch reaches `preview` only after its game test in
-[`tests/game/`](testing.md#game-tests) has passed. A patch whose game test changes has to pass it
+[`tests/game/`](game-tests.md) has passed. A patch whose game test changes has to pass it
 again. See [patch game tests and validation](validation.md) for how to run the public tests and
 interpret local standing.
 

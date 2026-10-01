@@ -26,7 +26,7 @@ See the [patch table](../docs/patches.md) for availability and selection.
 ## Using it
 
 Back + right thumb click opens the console, and A raises the on-screen keyboard. The command file
-format is in [testing](../docs/testing.md).
+format is in [exec scripts](../docs/exec-scripts.md).
 
 ## Configuration
 

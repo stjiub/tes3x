@@ -162,7 +162,7 @@ where `load.txt` loads the save:
 `10.0.2.2` is the server as seen through the tunnel, whatever the PC's real address. Through the
 tunnel the server also answers DHCP with `10.0.2.15`, so `NetAddress=dhcp` works there too. Start
 the server before xemu; a second server on the same port leaves xemu talking to the wrong one. See
-[testing](testing.md#running-in-xemu) for the runner's other options.
+[xemu](xemu.md) for the runner's other options.
 
 Each tunnel serves one xemu, and a tunnel takes two ports (`PORT` and `PORT+1`). For two players
 on one PC, give the server a tunnel per xemu and start each xemu on its own:
