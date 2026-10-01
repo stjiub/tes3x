@@ -33,6 +33,12 @@ it. Fetch logs afterwards with **Actions > Pull Xbox logs**.
 3. Restart the dashboard once. The agent starts about 30 seconds after the dashboard's startup
    screen closes.
 
+With the add-on on, the GUI's status bar shows a **Drives** badge after the Xbox answers on
+FTP: the free space on the build's drive, red under 512 MB and amber under 2 GB, with every
+drive's free and total space in its tooltip. Click it to check again. A deploy asks the agent too
+(see [Deploying to the Xbox](deployment.md#free-space)). An agent installed before this needs
+installing again; until then the badge reads **Drives: unknown**.
+
 An XBMC4Gamers update that replaces the skin removes the line; install again. **Remove agent**
 undoes the install. If the dashboard folder is not `F:/XBMC4Gamers`, set it:
 
@@ -47,6 +53,7 @@ dashboard = "E:/XBMC4Gamers"
 python addons/console/console.py ping
 python addons/console/console.py run "F:/Games/Morrowind/default.xbe"
 python addons/console/console.py stat "E:/tes3xlog.txt"
+python addons/console/console.py drives                    # free/total MB per drive
 python addons/console/console.py wait --timeout 120        # until the agent answers
 python addons/console/console.py reboot | shutdown
 python addons/console/console.py install | uninstall

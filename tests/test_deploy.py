@@ -6,8 +6,8 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from tes3x_deploy import (BUILD_KEY, ensure_dirs, ftp_basename, owner_conflicts, pool_plan,
-                          remote_tree, verify_uploads)
+from tes3x_deploy import (BUILD_KEY, CLUSTER, ensure_dirs, ftp_basename, on_disk,
+                          owner_conflicts, parse_drives, pool_plan, remote_tree, verify_uploads)
 
 
 class FakeFtp:
@@ -141,6 +141,18 @@ class DeployFtpTests(unittest.TestCase):
         ftp.files[folder + "/tes3xpool.txt"] = b"Main"
         self.assertEqual(pool_plan(ftp, pool)[1],
                          ["E:/UDATA/5433ABCD is save pool 'Main', not 'TR'"])
+
+
+
+class DriveSpaceTests(unittest.TestCase):
+    def test_the_agent_reply_gives_megabytes_per_drive(self):
+        self.assertEqual(parse_drives("ok C=120/480 E=?/4882 F=9000/?"),
+                         {"C": (120, 480), "E": (None, 4882), "F": (9000, None)})
+        self.assertEqual(parse_drives("err unknown command: drives"), {})
+
+    def test_files_take_whole_clusters(self):
+        self.assertEqual([on_disk(n) for n in (0, 1, CLUSTER, CLUSTER + 1)],
+                         [0, CLUSTER, CLUSTER, 2 * CLUSTER])
 
 
 if __name__ == "__main__":

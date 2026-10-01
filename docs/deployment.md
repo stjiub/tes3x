@@ -47,6 +47,15 @@ options, then `[deploy]` in the local config, then the default `xbox`/`xbox`. Se
   example profile), deploy empties the `X:`, `Y:` and `Z:` cache partitions, which would
   otherwise serve stale copies of changed assets.
 
+## Free space
+
+When the console add-on's agent is installed and answering, a deploy asks it how much space is
+free on the target drive and compares that with what the deploy adds: each uploaded file in whole
+16 KB clusters, less the files it replaces or deletes. It stops without changing anything, with
+exit status 4, when the deploy will not fit, and warns when less than 256 MB would be left.
+`--ignore-space` (on `tes3x_pipeline.py` or `tes3x_deploy.py`) goes ahead; the GUI asks first.
+Without the agent the deploy says the free space is unknown and carries on.
+
 ## Limits
 
 FATX limits each file or folder name to 42 characters and a full path to 250 (not counting the

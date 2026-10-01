@@ -10,6 +10,8 @@ DESCRIPTION = ("Adds Play on Xbox: deploy the build over FTP and start it throug
 PLAY = {"xbox": ("Xbox", " on Xbox")}
 SETTINGS_ACTIONS = [("Install agent on Xbox", HERE / "console.py", ["install"]),
                     ("Remove agent", HERE / "console.py", ["uninstall"])]
+# Prints the agent's "ok C=free/total ..." (MB) for the status bar's drive badge.
+DRIVE_SPACE = (HERE / "console.py", ["drives"])
 
 
 def status(local):

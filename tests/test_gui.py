@@ -772,6 +772,23 @@ order = 10
         self.assertEqual(values["deploy"]["port"], 2121)
         self.assertEqual(values["xemu"]["custom"], "keep")
 
+    def test_drive_badge_shows_the_build_drive_from_the_agent(self):
+        window = self.window()
+        window.build.remote_root.setText("F:/Games/Morrowind")
+
+        class Reply:
+            def readAllStandardOutput(self):
+                return b"ok C=120/480 E=3000/4882 F=1536/60000 G=?/?"
+
+        window.drive_probe = Reply()
+        window.drive_probe_finished(0, None)
+        self.assertEqual(window.drive_status.text(), "F: 1.5 GB free")
+        self.assertIn("E: 2.9 GB free of 4.8 GB, 39% used", window.drive_status.toolTip())
+        window.drive_probe = Reply()
+        window.drive_probe.readAllStandardOutput = lambda: b"err unknown command: drives"
+        window.drive_probe_finished(1, None)
+        self.assertEqual(window.drive_status.text(), "Drives: unknown")
+
 
 if __name__ == "__main__":
     unittest.main()

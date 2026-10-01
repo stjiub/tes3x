@@ -28,6 +28,8 @@ TOOLS = ROOT / "tools"
 MARKER = ".tes3x-pipeline.json"
 # tes3x_deploy exits with this when the target belongs to something else.
 DEPLOY_CONFLICT = 3
+# tes3x_deploy exits with this when the dashboard agent reports too little free space.
+DEPLOY_NO_SPACE = 4
 MARKER_SCHEMA = 2
 REPLACED_RETAIL_ENTRIES = {"data files", "default.xbe", "morrowind.xbe", "morrowind.ini"}
 RELEASE_ARTIFACT_SUFFIXES = {".iso", ".nfo", ".rar", ".sfv"}
@@ -601,6 +603,9 @@ def main(argv=None):
     ap.add_argument("--replace-remote", action="store_true",
                     help="deploy even where the target folder or save pool belongs to something "
                          "else")
+    ap.add_argument("--ignore-space", action="store_true",
+                    help="deploy even when the Xbox's dashboard agent reports too little free "
+                         "space")
     ap.add_argument("--discard-build", action="store_true",
                     help="delete the regenerable pipeline output after a verified deployment")
     ap.add_argument("--ask-password", action="store_true",
@@ -929,10 +934,12 @@ def main(argv=None):
             deploy_cmd.append("--clear-cache")
         if args.replace_remote:
             deploy_cmd.append("--replace")
+        if args.ignore_space:
+            deploy_cmd.append("--ignore-space")
         print("\n== " + " ".join(str(part) for part in deploy_cmd), flush=True)
         result = subprocess.run([str(part) for part in deploy_cmd])
-        if result.returncode == DEPLOY_CONFLICT:
-            return DEPLOY_CONFLICT
+        if result.returncode in (DEPLOY_CONFLICT, DEPLOY_NO_SPACE):
+            return result.returncode
         if result.returncode:
             raise subprocess.CalledProcessError(result.returncode, deploy_cmd)
         if args.discard_build:

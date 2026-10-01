@@ -3,6 +3,7 @@
 # the network up, it froze the whole dashboard on half the boots.
 # One request per connection: a line in, a line out. Commands are listed in HELP.
 import os
+import re
 
 try:
     import xbmc
@@ -10,11 +11,13 @@ except ImportError:  # host-side test
     xbmc = None
 
 PORT = 7353
-VERSION = 4
+VERSION = 5
+DRIVES = "CEFGXYZ"
+UNITS = {"K": 1.0 / 1024, "M": 1.0, "G": 1024.0, "T": 1024.0 * 1024}
 # Builtins that stop the dashboard.
 EXITS = ("runxbe", "reboot", "restart", "reset", "shutdown", "powerdown", "restartapp", "dashboard",
          "hibernate", "suspend", "quit", "mastermode", "loadprofile")
-HELP = "ping | run XBE | builtin CMD | stat PATH | reboot | shutdown | help"
+HELP = "ping | run XBE | builtin CMD | stat PATH | drives | reboot | shutdown | help"
 # Brings the agent back if a dashboard-ending builtin fails; dies with the dashboard otherwise.
 RESTART = "AlarmClock(tes3xagent,RunScript(special://scripts/tes3xagent/agent.py),00:10,silent)"
 
@@ -39,6 +42,28 @@ def free_mem():
         return -1
 
 
+def space_mb(drive, kind):
+    """MB from the dashboard's System.FreeSpace(D) or System.TotalSpace(D) label, which reads like
+    "1234 MB Free"; None when it has no number."""
+    if xbmc is None:
+        return None
+    text = xbmc.getInfoLabel("System.%sSpace(%s)" % (kind, drive)) or ""
+    match = re.search(r"([\d.,]+)\s*([KMGT])B", text, re.I)
+    if not match:
+        return None
+    return int(float(match.group(1).replace(",", "")) * UNITS[match.group(2).upper()])
+
+
+def drives():
+    """'C=free/total ...' in MB, '?' where the dashboard does not say."""
+    parts = []
+    for drive in DRIVES:
+        free, total = space_mb(drive, "Free"), space_mb(drive, "Total")
+        parts.append("%s=%s/%s" % (drive, "?" if free is None else free,
+                                   "?" if total is None else total))
+    return " ".join(parts)
+
+
 def handle(line):
     """Return the reply and an action to run after the reply is sent."""
     cmd, _, arg = line.strip().partition(" ")
@@ -61,6 +86,8 @@ def handle(line):
         except OSError as e:
             return "err %s" % e, None
         return "ok size=%d mtime=%d dir=%d" % (st.st_size, st.st_mtime, os.path.isdir(arg)), None
+    if cmd == "drives":
+        return "ok " + drives(), None
     if cmd == "reboot":
         return "ok", "XBMC.Reboot"
     if cmd == "shutdown":

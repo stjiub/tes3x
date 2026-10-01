@@ -9,6 +9,8 @@ import io
 import json
 import os
 import posixpath
+import re
+import socket
 import sys
 import time
 import tes3x_ftp
@@ -28,6 +30,12 @@ BUILD_KEY = ":build"
 PIPELINE_MARKER = ".tes3x-pipeline.json"
 # Exit status when the target folder or save pool belongs to something else.
 CONFLICT = 3
+# Exit status when the console's drive cannot take the upload.
+NO_SPACE = 4
+CLUSTER = 16 * 1024  # FATX's unit of allocation on the console's partitions
+SPACE_WARN = 256 * 1024 * 1024  # left free below this after a deploy, say so
+# The XBMC4Gamers dashboard agent (addons/console), when installed: one line in, one line out.
+AGENT_PORT = 7353
 
 
 def sha1(path):
@@ -190,6 +198,42 @@ def human(n):
         n /= 1024
 
 
+def agent_request(host, line, timeout=10):
+    with socket.create_connection((host, AGENT_PORT), timeout=timeout) as s:
+        s.sendall((line + "\n").encode("latin-1"))
+        data = b""
+        while not data.endswith(b"\n"):
+            chunk = s.recv(4096)
+            if not chunk:
+                break
+            data += chunk
+    return data.decode("latin-1").strip()
+
+
+def parse_drives(reply):
+    """{drive: (free MB, total MB)} from the agent's 'ok C=free/total ...', None where unknown."""
+    drives = {}
+    for drive, free, total in re.findall(r"([A-Z])=(\d+|\?)/(\d+|\?)", reply or ""):
+        drives[drive] = tuple(None if v == "?" else int(v) for v in (free, total))
+    return drives
+
+
+def drive_free(host, drive, timeout=3):
+    """Bytes free on the console's drive from the dashboard agent; None without one."""
+    try:
+        reply = agent_request(host, "drives", timeout)
+    except OSError:
+        return None
+    if not reply.startswith("ok"):
+        return None
+    free = parse_drives(reply).get(drive.upper(), (None, None))[0]
+    return None if free is None else free * 1024 * 1024
+
+
+def on_disk(size):
+    return -(-size // CLUSTER) * CLUSTER
+
+
 def orphans(remote, local_ci):
     """Console files the build does not contain, other than the dashboard's own."""
     return [r for r in remote
@@ -233,6 +277,8 @@ def main():
     ap.add_argument("--clear-cache", action="store_true", help="empty X:/Y:/Z: cache partitions")
     ap.add_argument("--verify", choices=("none", "size", "hash"), default="none",
                     help="verify uploaded files after transfer; hash retrieves every upload")
+    ap.add_argument("--ignore-space", action="store_true",
+                    help="deploy even when the dashboard agent reports too little free space")
     ap.add_argument("--plugin-delay", type=float, default=2.5,
                     help="seconds between plugin uploads when MFMT is unsupported")
     args = ap.parse_args()
@@ -319,6 +365,24 @@ def main():
     up_bytes = sum(local[r][0] for r in upload)
     print(f"\n  upload {len(upload)} files ({human(up_bytes)})")
     print(f"  delete {len(delete)} orphaned files")
+    grow = (sum(on_disk(local[r][0]) - on_disk(remote_ci.get(r.lower()) or 0) for r in upload)
+            - sum(on_disk(remote[r]) for r in delete))
+    drive = base[0].upper()
+    free = drive_free(args.host, drive)
+    if free is None:
+        print(f"  space: needs {human(max(grow, 0))} more on {drive}:; free space unknown "
+              "(the dashboard agent is not installed or not answering)")
+    else:
+        print(f"  space: needs {human(max(grow, 0))} more on {drive}:, {human(free)} free")
+        if grow > free and not args.dry_run and not args.ignore_space:
+            ftp.quit()
+            print(f"nothing changed: {drive}: is {human(grow - free)} short; free some space, "
+                  "or deploy with --ignore-space")
+            sys.exit(NO_SPACE)
+        if grow > free:
+            print(f"  warning: {drive}: is {human(grow - free)} short")
+        elif free - grow < SPACE_WARN:
+            print(f"  warning: {human(free - grow)} will be left free on {drive}:")
 
     if args.dry_run:
         for name in pool_missing:

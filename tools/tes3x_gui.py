@@ -54,9 +54,10 @@ from tes3x_catalog import match as match_catalog, needs as catalog_needs
 from tes3x_patches import CATEGORIES as PATCH_CATEGORIES, PATCHES as PATCH_CATALOG, SOURCES
 from tes3x_plugins import (BASE_MASTERS, collect, dependency_order, fetch_rules, sort_files,
                            warnings as mlox_notes)
-from tes3x_pipeline import (DEPLOY_CONFLICT, MARKER as PIPELINE_MARKER, PipelineError,
+from tes3x_pipeline import (DEPLOY_CONFLICT, DEPLOY_NO_SPACE, MARKER as PIPELINE_MARKER, PipelineError,
                             resolve_patch_plan, validate_local_config, validate_profile)
 from tes3x_records import records, subrecords
+from tes3x_deploy import parse_drives
 import tes3x_nexus as nexus
 import tes3x_saves as saves_tool
 import tes3x_savepool
@@ -1310,6 +1311,7 @@ class ProfileWindow(QMainWindow):
         self.library_indexed = False
         self.process = None
         self.ftp_probe = None
+        self.drive_probe = None
         self.command_kind = None
         self.check_profile_sha = None
         self.check_failed = False
@@ -1433,6 +1435,11 @@ class ProfileWindow(QMainWindow):
         self.ftp_status.setToolTip("Click to check the configured Xbox FTP connection")
         self.ftp_status.clicked.connect(self.refresh_ftp_status)
         self.statusBar().addPermanentWidget(self.ftp_status)
+        self.drive_status = Badge()
+        self.drive_status.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.drive_status.clicked.connect(self.refresh_drive_status)
+        self.drive_status.hide()
+        self.statusBar().addPermanentWidget(self.drive_status)
         self.update_check_state()
         self.update_deploy_state()
         self.set_ftp_status("Xbox: not checked", "#616161",
@@ -1546,6 +1553,7 @@ class ProfileWindow(QMainWindow):
                                 self.action_play, self.action_smoke, self.action_fetch)
         self.after_command = None
         self.conflict_retry = None
+        self.space_retry = None
         self.play_target = (self.settings.value("play_target", "xemu-64") if self.settings
                             else "xemu-64")
         self.refresh_play_menu()
@@ -4444,6 +4452,9 @@ class ProfileWindow(QMainWindow):
             self.conflict_retry = (lambda: self.run_steps(
                 [(script, [*arguments, "--replace"], message), *steps[1:]], False, then),
                 question)
+        if Path(script).name == "tes3x_deploy.py" and "--ignore-space" not in arguments:
+            self.space_retry = lambda: self.run_steps(
+                [(script, [*arguments, "--ignore-space"], message), *steps[1:]], False, then)
         if len(steps) > 1:
             self.after_command = lambda: self.run_steps(steps[1:], False, then)
         elif then:
@@ -4538,13 +4549,16 @@ class ProfileWindow(QMainWindow):
         self.run_pipeline(arguments)
         if self.process is not None:
             self.conflict_retry = (self.deploy_built, self.DEPLOY_QUESTION)
+            self.space_retry = lambda: self.deploy_built("--ignore-space")
 
-    def deploy_built(self):
-        """Deploy the finished build with --replace, after a conflict stopped the pipeline's."""
+    def deploy_built(self, *extra):
+        """Deploy the finished build with --replace, after a conflict or a shortage of space
+        stopped the pipeline's."""
         remote = (self.profile_plain.get("profile", {}).get("remote_root")
                   or self.local_values().get("deploy", {}).get("remote_root"))
         arguments = [str(self.build_output() / "deploy"), "--remote", remote,
-                     "--config", str(self.local_config_path()), "--verify", "size", "--replace"]
+                     "--config", str(self.local_config_path()), "--verify", "size", "--replace",
+                     *extra]
         if self.profile_plain.get("rules", {}).get("clear_cache_partitions", False):
             arguments.append("--clear-cache")
         self.run_steps([(ROOT / "tools" / "tes3x_deploy.py", arguments, f"Deploying to {remote}…")],
@@ -4619,6 +4633,67 @@ class ProfileWindow(QMainWindow):
                             "#2e7d32" if code == 0 else "#b3261e",
                             output or f"FTP probe exited {code}")
         self.ftp_probe = None
+        if code == 0:
+            self.refresh_drive_status()
+        else:
+            self.drive_status.hide()
+
+    def drive_space_command(self):
+        """(script, arguments) of the first enabled add-on that reports the Xbox's drives."""
+        for module in enabled_addons(self.local_values()).values():
+            command = getattr(module, "DRIVE_SPACE", None)
+            if command:
+                return command
+        return None
+
+    def refresh_drive_status(self):
+        """Free space on the Xbox's drives, from an add-on such as the dashboard agent."""
+        command = self.drive_space_command()
+        if command is None:
+            self.drive_status.hide()
+            return
+        if self.drive_probe is not None:
+            return
+        script, arguments = command
+        process = QProcess(self)
+        process.setWorkingDirectory(str(self.work_dir()))
+        process.setProgram(sys.executable)
+        process.setArguments([str(script), *arguments, "--config", str(self.local_config_path())])
+        process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        process.finished.connect(self.drive_probe_finished)
+        self.drive_probe = process
+        self.drive_status.show()
+        process.start()
+
+    def drive_probe_finished(self, code, _status):
+        output = bytes(self.drive_probe.readAllStandardOutput()).decode(errors="replace").strip()
+        self.drive_probe = None
+        drives = parse_drives(output) if code == 0 else {}
+        if not drives:
+            self.set_status_badge(self.drive_status, "Drives: unknown", "#616161")
+            self.drive_status.setToolTip("The dashboard agent did not report drive space: "
+                                         + (output or f"exit {code}")
+                                         + "\nClick to ask again")
+            return
+        remote = (self.build.remote_root.text().strip()
+                  or self.local_values().get("deploy", {}).get("remote_root") or "F:")
+        target = remote[0].upper()
+        lines = []
+        for drive, (free, total) in sorted(drives.items()):
+            if free is None:
+                continue
+            used = f", {100 - 100 * free // total}% used" if total else ""
+            lines.append(f"{drive}: {free / 1024:.1f} GB free of "
+                         f"{(total or 0) / 1024:.1f} GB{used}")
+        free = drives.get(target, (None, None))[0]
+        if free is None:
+            text, colour = "Drives", "#616161"
+        else:
+            text = f"{target}: {free / 1024:.1f} GB free"
+            colour = "#b3261e" if free < 512 else "#a15c00" if free < 2048 else "#2e7d32"
+        self.set_status_badge(self.drive_status, text, colour)
+        self.drive_status.setToolTip("\n".join(lines or ["No drive reported its space"])
+                                     + "\nClick to check again")
 
     def append_process_output(self):
         if self.process is None:
@@ -4661,7 +4736,16 @@ class ProfileWindow(QMainWindow):
         self.update_build_state()
         follow, self.after_command = self.after_command, None
         retry, self.conflict_retry = self.conflict_retry, None
+        space, self.space_retry = self.space_retry, None
         self.saves_selected()
+        if code == DEPLOY_NO_SPACE and space:
+            if kind == "build":
+                self.build_failed = False
+            elif kind == "deploy":
+                self.deploy_failed = False
+            self.update_build_state()
+            self.confirm_space(space)
+            return
         if code == DEPLOY_CONFLICT and retry:
             if kind == "build":
                 self.build_failed = False
@@ -4672,6 +4756,19 @@ class ProfileWindow(QMainWindow):
             return
         if follow and code == 0:
             follow()
+
+    def confirm_space(self, retry):
+        """The Xbox's drive looked too small for the deploy; ask before trying anyway."""
+        lines = [line.strip() for line in self.output.toPlainText().splitlines()
+                 if line.strip().startswith(("space:", "nothing changed:"))]
+        answer = QMessageBox.warning(
+            self, "Not enough space on the Xbox",
+            "\n".join(lines[-2:]) + "\n\nThe deploy may fail partway and leave the game folder "
+            "incomplete. Deploy anyway?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No)
+        if answer == QMessageBox.StandardButton.Yes:
+            retry()
 
     def confirm_replace(self, retry, question):
         """A command stopped rather than overwrite something; ask before repeating it."""

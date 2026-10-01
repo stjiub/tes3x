@@ -5,6 +5,7 @@
     python addons/console/console.py run "F:/Games/Morrowind/default.xbe"
     python addons/console/console.py builtin "XBMC.ActivateWindow(Home)"
     python addons/console/console.py stat "E:/tes3xlog.txt"
+    python addons/console/console.py drives            # free/total MB per drive
     python addons/console/console.py reboot | shutdown
     python addons/console/console.py wait [--timeout S]   # until the agent answers
     python addons/console/console.py uninstall
@@ -22,18 +23,17 @@ import argparse
 import ftplib
 import io
 from pathlib import Path
-import socket
 import sys
 import time
 import tomllib
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[1] / "tools"))
+from tes3x_deploy import AGENT_PORT as PORT, agent_request as request  # noqa: E402
 from tes3x_deploy import ensure_dirs, ftp_basename  # noqa: E402
 import tes3x_ftp  # noqa: E402
 
 AGENT = HERE / "agent.py"
-PORT = 7353
 DASHBOARD = "F:/XBMC4Gamers"
 MARKER = b"tes3xagent"
 LAUNCH = (b"<onunload>AlarmClock(tes3xagent,RunScript(special://scripts/tes3xagent/agent.py),"
@@ -54,18 +54,6 @@ def dashboard_setting(config):
         return tomllib.loads(path.read_text(encoding="utf-8")).get("console", {}).get("dashboard")
     except (OSError, tomllib.TOMLDecodeError):
         return None
-
-
-def request(host, line, timeout=10):
-    with socket.create_connection((host, PORT), timeout=timeout) as s:
-        s.sendall((line + "\n").encode("latin-1"))
-        data = b""
-        while not data.endswith(b"\n"):
-            chunk = s.recv(4096)
-            if not chunk:
-                break
-            data += chunk
-    return data.decode("latin-1").strip()
 
 
 def get(ftp, path):
@@ -135,7 +123,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("command", choices=["install", "uninstall", "ping", "run", "builtin", "stat",
-                                        "reboot", "shutdown", "wait"])
+                                        "drives", "reboot", "shutdown", "wait"])
     ap.add_argument("arg", nargs="?")
     ap.add_argument("--timeout", type=float, default=120, help="for wait (default 120 s)")
     ap.add_argument("--dashboard", help=f"dashboard folder (default: [console] dashboard, then "

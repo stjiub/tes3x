@@ -16,6 +16,8 @@ and optionally:
                  a question the GUI asks before a profile's first play on that target
     SETTINGS_ACTIONS
                  [(button label, script, arguments)] run from Settings, after saving it
+    DRIVE_SPACE  (script, arguments) printing "ok C=free/total ..." in MB, for the status bar's
+                 drive badge
 """
 
 import importlib
