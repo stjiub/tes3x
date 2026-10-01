@@ -3411,7 +3411,7 @@ static void ghosts_frame(const u8 *state)
 #define ACTOR_DEAD 1u
 #define ACTOR_IN_COMBAT 2u
 #define AUTHORITIES 16u
-#define ACTORS 64u
+#define ACTORS 256u /* a full follow table leaves the rest running here too */
 #define REMOTE_HOLDS 8u
 #define HITS 8u
 #define DEATHS 256u
@@ -3457,7 +3457,7 @@ static struct {
     float damage, fatigue;
 } hits[HITS];
 static u32 hit_count, talk_refid, talk_owner, talk_broken;
-static u32 actor_states_out, actor_states_in, actor_moves, follows;
+static u32 actor_states_out, actor_states_in, actor_moves, follows, follows_full;
 static u32 hits_out, hits_in, remote_holds_in, remote_breaks_out, remote_breaks_in, retaliations;
 /* Every death this session has seen, reported here or told by the server. */
 static u32 deaths[DEATHS], death_count, deaths_reported, deaths_applied;
@@ -3699,8 +3699,10 @@ static void follow(u8 *mobile, u8 *ref, u32 refid, u32 owner)
         for (i = 0, slot = ACTORS; i < ACTORS && slot == ACTORS; i++)
             if (!followed[i].refid)
                 slot = i;
-        if (slot == ACTORS)
+        if (slot == ACTORS) {
+            follows_full++;
             return;
+        }
         followed[slot].refid = refid;
         followed[slot].mobile = mobile;
         followed[slot].health = health;
@@ -4150,7 +4152,7 @@ static void authority_stat(void)
                        (u32)authority[i].key.gy);
     tes3x_log_hex3("net.actor_states", actor_states_out, actor_states_in, actor_moves);
     tes3x_log_hex3("net.actor_events", follows, hits_out, hits_in);
-    tes3x_log_hex3("net.ai_held", ai_held, ai_hooked, 0);
+    tes3x_log_hex3("net.ai_held", ai_held, ai_hooked, follows_full);
     tes3x_log_hex3("net.player_hits", player_hits_out, player_hits_in, retaliations);
     tes3x_log_hex3("net.hostiles", hostiles, bloodied, 0);
     tes3x_log_hex3("net.actor_deaths", death_count, deaths_reported, deaths_applied);
