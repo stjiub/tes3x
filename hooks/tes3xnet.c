@@ -9193,11 +9193,10 @@ static void chargen_stat(void)
 #define LEVEL_BYTES 59u
 #define ATTRIBUTES 8u
 #define STAT_BASE 4 /* Statistic: vtable, base, current */
-#define STAT_LIMIT 0x49742400u /* 1e6 as float bits */
 #define MOBILE_ATTRIBUTES 0x254
-#define MOBILE_HEALTH 0x2B4
-#define MOBILE_MAGICKA 0x2C0
-#define MOBILE_FATIGUE 0x2D8
+#define MOBILE_HEALTH_STAT 0x2B4 /* the Statistic; MOBILE_HEALTH is its current value */
+#define MOBILE_MAGICKA_STAT 0x2C0
+#define MOBILE_FATIGUE_STAT 0x2D8
 #define MOBILE_SKILLS 0x3B0 /* 0x10 each */
 #define PLAYER_LEVELUPS 0x56C /* int per attribute, then per specialisation */
 #define PLAYER_LEVEL_PROGRESS 0x5E8
@@ -9359,7 +9358,7 @@ static void carried_scan(const u8 *object, int send)
 
 static void level_read(const u8 *mobile, const u8 *npc, u8 *out)
 {
-    static const u32 stats[3] = {MOBILE_HEALTH, MOBILE_MAGICKA, MOBILE_FATIGUE};
+    static const u32 stats[3] = {MOBILE_HEALTH_STAT, MOBILE_MAGICKA_STAT, MOBILE_FATIGUE_STAT};
     u32 i;
     int v;
 
@@ -9544,7 +9543,7 @@ static void player_set(u8 *ref, const char *what, const char *name, int value)
 /* Attributes and the level through their script commands, which update what follows from them. */
 static void level_apply(u8 *ref, const u8 *body)
 {
-    static const u32 stats[3] = {MOBILE_HEALTH, MOBILE_MAGICKA, MOBILE_FATIGUE};
+    static const u32 stats[3] = {MOBILE_HEALTH_STAT, MOBILE_MAGICKA_STAT, MOBILE_FATIGUE_STAT};
     u8 *mobile = player_mobile(), *npc = player_npc(ref);
     float value, *stat;
     u32 i;
