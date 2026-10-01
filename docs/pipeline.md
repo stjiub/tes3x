@@ -1,64 +1,98 @@
-# Pipeline options
+# Pipeline
 
-`tes3x_pipeline.py` runs the whole build: collect mods, pack, patch the XBE and deploy. Each of
-those steps is also a tool you can run by itself. Every profile and local-config key is in the
+`tools/tes3x_pipeline.py` turns one profile into a complete game folder, and optionally deploys
+it. It runs a fixed series of stages, each implemented by a tool you can also run by itself (see
+[commands](commands.md)). Every profile and local-config key is in the
 [configuration reference](configuration.md).
 
-## Building
+```text
+   local config + profile + mod library
+                  |
+         1. resolve and check
+                  |
+       2. collect the winning files
+                  |
+    3. order plugins, pack Data Files
+                  |
+   4. build the payload, patch the XBE
+                  |
+      5. stage the complete game
+                  |
+     6. test, preview or deploy
+```
 
 ```powershell
 python tools/tes3x_pipeline.py profiles/my-build.toml --check
+python tools/tes3x_pipeline.py profiles/my-build.toml
 python tools/tes3x_pipeline.py profiles/my-build.toml --dry-run
 python tools/tes3x_pipeline.py profiles/my-build.toml --deploy
 ```
 
-Output goes to `BUILD_ROOT/PROFILE_NAME`. The pipeline only overwrites an empty folder or one it
-built before. If a step fails, what it produced so far is left in place so you can look at it.
+## 1. Resolve and check
 
-A profile with no mods skips collecting and packing and ships the retail `Data Files` unchanged.
-`[ini]` settings still apply. `--ini-set` on the command line overrides the same key in `[ini]`.
+Reads `tes3x.local.toml` and the profile, resolves the preset and patch selection, the mods and the
+package mode, and prints what would be built. `--check` stops here.
 
-The presets:
+A profile with no mods is a patches-only build: stages 2 and 3 are skipped and the retail
+`Data Files` ship unchanged. `[ini]` settings still apply.
 
-- `minimal`: no optional patches.
-- `recommended`: release `core` and `correctness` fixes.
-- `testing`: everything in `recommended`, preview `core` and `correctness` fixes,
-  diagnostics and the in-game console.
+Common failures:
 
-Anything else has to be enabled by name or by category. Some patches are added automatically
-when something needs them; `delta-bsa` packing adds `multi-bsa`, for example.
+- `set paths.vanilla_root in local config or pass --vanilla`: the local config does not name the
+  clean game folder.
+- `unknown selectable patches: ...`, or patches both enabled and disabled.
+- `rules.plugin_order = 'mlox' needs mlox` or `needs paths.mlox_rules`: see
+  [sorting plugins with mlox](#sorting-plugins-with-mlox).
+- `deployment requires deploy.host, and profile.remote_root or deploy.remote_root`.
 
-### Expansion master placeholders
+### Choosing engine fixes
 
-Xbox GOTY keeps the expansion content in `Morrowind.esm`, while plugins still name
-`Tribunal.esm` and `Bloodmoon.esm` as masters. For a modded build, TES3X copies either file when
-an input supplies it and otherwise generates a four-byte file containing only `TES3`. These
-placeholders satisfy the dependency names; they do not add or replace expansion content.
+The profile's `[patches] preset` selects a baseline:
 
-This is an automatic packaging compatibility step, not an XBE patch. A profile with no mods
-stages the retail `Data Files` unchanged and does not generate missing placeholders.
+| preset | contents |
+|---|---|
+| `minimal` | no optional engine fixes |
+| `recommended` | release fixes selected for general use |
+| `testing` | `recommended`, preview fixes, diagnostics and the console |
 
-### Loose files
+`enable` and `disable` add or remove individual patches, and `categories` adds every patch in a
+category; the [example profile](../examples/profile.toml) lists them all. `--preset`, `--enable`
+and `--disable` on the command line override the profile. Some patches are added when something
+needs them: `delta-bsa` packing adds `multi-bsa`, `mwse-legacy` adds `script-ext`, and
+`multiplayer` adds `diagnostics`. Every build gets [`boot-media`](../patches/boot-media.md) and
+[`drive-letters`](../patches/drive-letters.md). See the [patch table](patches.md), the
+[`[Xbox]` ini keys](ini-keys.md) patches read, or `python tools/tes3x_patch.py --list`.
 
-`mode = "loose"` ships every mod file loose and leaves retail `Morrowind.bsa` as it is. In an
-archive build, `loose = true` on a mod, or a pattern in `loose_assets`, keeps just those files
-loose.
+## 2. Collect the winning files
 
-When a loose file replaces a retail asset, the retail copy is dropped from a merged archive, or
-listed in `ArchiveInvalidationList.txt` when the retail archive is left alone. Loose files need
-`TryArchiveFirst=0`, which the build sets, so they can't be combined with `archive_only`.
+`tes3x_build.py` stacks the profile's mods in order, later mods winning when two ship the same
+file, and writes the result as one `Data Files` tree. On the way it:
 
-A loose build avoids archive limits, such as two file names that hash the same, but the Xbox
-searches each folder entry by entry, and a large mod list puts over a thousand files in some
-folders.
+- drops files matching `rules.exclude` (by default documentation, images and stray `.ini` files);
+- converts mod textures larger than `rules.max_texture_size` to fit, and reports the total texture
+  size against retail's, since video memory is a total budget;
+- checks file names against FATX's limits, and reports conflicts, the busiest folders and missing
+  masters.
+
+`== MISSING MASTERS` means a plugin names a master no mod supplies; on the Xbox such a plugin stalls
+the loader. `mods not found in LIBRARY` means a profile names a mod folder or id the library does
+not have.
+
+## 3. Order plugins and pack
+
+Plugins load in the order set by their file times. By default, masters load first, then plugins
+in mod order. A profile can list its own order in `[plugins] order`; the GUI writes it when you
+drag plugins or press **Sort**. With `rules.plugin_order = "mlox"`, mlox sorts them at build time.
+`tes3x_plugins.py` does the ordering.
+
+`tes3x_pack.py` then packages the tree with the retail files according to `package.mode`:
+`delta-bsa` (the default), `merged-bsa` or `loose`. See [packaging](packaging.md).
 
 ### Sorting plugins with mlox
 
-By default, plugins load masters first, then in mod order. A profile can list its own order in
-`[plugins] order`; the GUI writes it when you drag plugins or press **Sort**, which runs mlox once.
-With `plugin_order = "mlox"` in the profile's `[rules]`, [mlox](https://github.com/mlox/mlox) sorts them using the community's
-ordering rules instead. File conflicts between mods still go by mod order; mlox only changes the
-plugin load order.
+With `plugin_order = "mlox"` in the profile's `[rules]`, [mlox](https://github.com/mlox/mlox) sorts
+plugins using the community's ordering rules. File conflicts between mods still go by mod order;
+mlox only changes the plugin load order.
 
 mlox isn't included with TES3X. To set it up:
 
@@ -66,76 +100,56 @@ mlox isn't included with TES3X. To set it up:
    doesn't use.
 2. Get the rules: **Download** next to "mlox rules" in the GUI's local settings, or
    `python tools/tes3x_plugins.py fetch-rules mlox/mlox_base.txt`, then set `paths.mlox_rules` to
-   that file. They come from the
-   [mlox-rules project](https://github.com/DanaePlays/mlox-rules) and change often, so download
-   them again now and then.
+   that file. They come from the [mlox-rules project](https://github.com/DanaePlays/mlox-rules)
+   and change often, so download them again now and then.
 
 mlox runs on a copy of the build's plugins and never touches your library. Its conflict and
 missing-requirement warnings are printed during the build. Everything it said, including notes,
 goes to `mlox-messages.txt` in the build folder, and the order it picked to `mlox-order.json`.
 Many notes are advice for the PC version and don't apply to the Xbox.
 
-### Discarding the build after deploying
+## 4. Build the payload and patch the XBE
+
+When a selected patch needs code, `tes3x_payload.py` compiles the [payload](../patches/payload.md)
+for your `morrowind.xbe` with clang and lld-link. `tes3x_patch.py` then applies every selected
+patch to a copy of the XBE, each located by content. `--title` and a save pool also patch the
+launcher, `Default.xbe`.
+
+This stage needs LLVM whenever a patch needs code; the pipeline checks for it before copying
+anything. `clang not found` means LLVM is not installed or `paths.llvm` points elsewhere. A
+patch that cannot find its site fails with the number of matches it found, which means the XBE is
+not the retail GOTY build the patch expects.
+
+## 5. Stage the complete game
+
+The packed `Data Files`, the patched XBEs, `Morrowind.ini` with the profile's `[ini]` settings,
+and the rest of the retail game folder are assembled into `<build_root>/<profile name>/deploy`.
+With a title set, dashboard metadata is written too. The build folder also holds
+`.tes3x-pipeline.json`, a record of what was built from what.
+
+The pipeline only overwrites an empty folder or one it built before (`existing output is not owned
+by tes3x_pipeline` otherwise). A build is assembled beside the output and moved into place when it
+is complete; if a stage fails, what it produced so far is kept and the path is printed. Set
+`paths.hardlink_retail = true` to hardlink unchanged retail files instead of copying them, when the
+build and the retail folder are on the same NTFS volume.
+
+## 6. Test, preview or deploy
+
+- `tools/tes3x_test.py` boots the same profile in xemu; see [testing](testing.md).
+- `--dry-run` lists what is in the Xbox folder and what an upload would change.
+- `--deploy` uploads the build; see [deployment](deployment.md).
+
+You can also copy `<build_root>/<profile name>/deploy` to the Xbox with any FTP client.
+
+## Command-line overrides
+
+Command-line values override the profile:
 
 ```powershell
-python tools/tes3x_pipeline.py profiles/my-build.toml --deploy --verify-deploy size --discard-build
-python tools/tes3x_pipeline.py profiles/my-build.toml --deploy --verify-deploy hash --discard-build
+python tools/tes3x_pipeline.py profiles/my-build.toml --preset testing --enable video-arena
+python tools/tes3x_pipeline.py profiles/my-build.toml --ini-set "General:Show FPS=1"
+python tools/tes3x_pipeline.py profiles/my-build.toml --package-mode loose
 ```
 
-`size` re-lists the uploaded files. `hash` downloads every file again and compares it, which
-roughly doubles the transfer. The build is only deleted once the check passes.
-
-## Xbox paths
-
-`remote_root` is the game folder on the Xbox, such as `F:/Games/MorrowindTest`, not its
-`Data Files` folder. The default is `F:/Games/Morrowind`. Set it in the profile, the local config
-or with `--remote-root`.
-
-FATX limits each file or folder name to 42 characters and a full path to 250 (not counting the
-drive letter). The build checks both before anything is uploaded. Names are never shortened
-automatically, since plugins and meshes refer to files by name. A shorter `remote_root` helps
-with long paths but not with a single name that is too long. Names inside a BSA don't count.
-
-Deploy keeps `tes3xdeploy.json` in the game folder with the size and SHA-1 of every file it sent,
-and only resends files that changed. When any plugin changes, all plugins are resent so their
-load order is stamped again.
-
-The manifest also names the profile that was deployed. Deploy stops without changing anything,
-exit status 3, when the folder has files but no manifest, holds another profile, or when the
-profile's save pool folder belongs to another title or pool. `--replace-remote` (or
-`tes3x_deploy.py --replace`) goes ahead; the GUI asks first.
-
-## Pruning unused assets
-
-```powershell
-python tools/tes3x_build.py profiles/my-build.toml --prune `
-  --vanilla "build/vanilla/Data Files" `
-  --out build/pruned-tree --reachability-json build/reachability.json
-```
-
-`--prune` drops mod assets that nothing refers to. It follows references from records in the
-masters and plugins, from meshes to their textures and animations, from books to their images and
-from scripts to literal paths. When unsure it keeps the file. It only saves disk space, not RAM,
-since an asset nothing loads never used RAM anyway.
-
-Assets picked at runtime by name, rather than referenced directly, won't be found. Keep them with
-`[rules].keep_assets = ["textures/custom_dynamic/*"]`. The JSON report lists why each file was
-kept and what was removed.
-
-## Invalidating archived assets
-
-`tes3x_pack.py --loose-asset "textures/example.dds"` puts a file both in the archive and loose,
-and lists it in `ArchiveInvalidationList.txt` so the loose copy wins. It sets `TryArchiveFirst=0`
-and can't be used with `--archive-only`.
-
-## Sound and mesh checks
-
-`tes3x_build.py --sox PATH --sound-rate 22050` resamples mod WAVs to at most that rate. It never
-raises the sample rate and keeps the channel count. Compressed WAVs are left alone.
-
-`python tools/tes3x_assets.py build/pruned-tree --json build/assets.json` flags malformed NIF
-headers and missing texture references, and lists WAV formats. It doesn't check geometry,
-skinning or anything else that can crash the renderer.
-
-`python tools/tes3x_map.py "Data Files/Morrowind.esm.map"` dumps a map companion file and can
-save the first map image with `--preview tile.png`.
+`--help` lists every option, including the instrumentation options described in
+[diagnostics](diagnostics.md).
