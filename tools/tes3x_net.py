@@ -449,8 +449,10 @@ BULK_CHUNK = 1024
 BULK_NAME = 37  # with ".part", FATX's 42 characters
 BULK_RESEND = 0.5
 BULK_PROBE = 1.0
-BULK_STATUS = ("idle", "opening", "receiving", "done", "bad hash", "refused", "failed")
+BULK_STATUS = ("idle", "opening", "receiving", "done", "bad hash", "refused", "failed",
+               "no space")
 BULK_RECEIVING, BULK_DONE, BULK_BAD_HASH, BULK_REFUSED, BULK_FAILED = 2, 3, 4, 5, 6
+BULK_NO_SPACE = 7  # the console's drive cannot take the file and a margin
 BULK_WINDOW_IN = 8  # chunks a console keeps in flight to the server: its send slots
 BULK_ACK_EVERY = 0.25  # seconds between acks to a console that is sending
 UPLOAD_FILES = 64  # files one console key may keep in its uploads folder
@@ -2376,7 +2378,10 @@ def serve(args):
             if first and bulk.first is not None:
                 print(f"{stamp} client {client.id} takes {bulk.name} from chunk {bulk.first} "
                       f"of {bulk.chunks}", flush=True)
-            if status is not None and status != BULK_RECEIVING:
+            if status == BULK_NO_SPACE:
+                print(f"{stamp} client {client.id} has no room for {bulk.name} "
+                      f"({len(bulk.data)} bytes and its margin)", flush=True)
+            elif status is not None and status != BULK_RECEIVING:
                 took = now - bulk.started
                 size = len(bulk.data) - min(bulk.first, bulk.chunks) * BULK_CHUNK
                 print(f"{stamp} client {client.id} {bulk.name}: "

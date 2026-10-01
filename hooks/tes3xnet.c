@@ -7283,6 +7283,11 @@ static void status_stat(void)
 #define BULK_BAD_HASH 4u
 #define BULK_REFUSED 5u
 #define BULK_FAILED 6u
+#define BULK_NO_SPACE 7u /* the volume cannot take the rest of the file and BULK_SPACE_KB */
+/* Left free after a download: the engine's next save into the slot writes a copy beside the old
+ * one before it replaces it. */
+#define BULK_SPACE_KB 1024u
+static char game_loaded[BULK_NAME + 1]; /* the save this launch was made to load */
 #define FILE_DIRECTORY_FILE 0x01u
 #define FILE_SHARE_WRITE 0x02u
 #define FILE_SHARE_DELETE 0x04u
@@ -7302,6 +7307,16 @@ typedef struct {
 #define NtSetInformationFile KFN(THUNK_NtSetInformationFile, fn_NtSetInformationFile)
 #define NtFlushBuffersFile KFN(THUNK_NtFlushBuffersFile, fn_NtFlushBuffersFile)
 #define NtClose KFN(THUNK_NtClose, fn_NtClose)
+typedef u32(__stdcall *fn_NtQueryVolumeInformationFile)(void *, IO_STATUS_BLOCK *, void *, u32,
+                                                        u32);
+/* Xbox's NtQueryDirectoryFile has no ReturnSingleEntry; RestartScan is a BOOLEAN in a 4-byte slot. */
+typedef u32(__stdcall *fn_NtQueryDirectoryFile)(void *, void *, void *, void *, IO_STATUS_BLOCK *,
+                                                void *, u32, u32, ANSI_STRING *, u32);
+#define NtQueryVolumeInformationFile                                                               \
+    KFN(THUNK_NtQueryVolumeInformationFile, fn_NtQueryVolumeInformationFile)
+#define NtQueryDirectoryFile KFN(THUNK_NtQueryDirectoryFile, fn_NtQueryDirectoryFile)
+#define FileFsSizeInformation 3u
+#define FileDirectoryInformation 1u
 
 /* File work runs on a worker thread: a FATX write and flush can take tens of milliseconds (the
  * first servers.ini on hardware: 64 ms), and a bulk transfer ends by hashing the whole file. The
@@ -7553,14 +7568,95 @@ static void bulk_adopt(void)
 }
 
 /* File work: open or resume the part, then write what arrived, in order. */
+/* KB free on the volume holding h; all of it when the volume will not say. */
+static u32 volume_free_kb(void *h)
+{
+    struct {
+        u64 total, available;
+        u32 sectors, bytes;
+    } fs;
+    IO_STATUS_BLOCK iosb;
+    u32 cluster_kb;
+
+    if (NtQueryVolumeInformationFile(h, &iosb, &fs, sizeof(fs), FileFsSizeInformation))
+        return 0xFFFFFFFFu;
+    cluster_kb = fs.sectors * fs.bytes / 1024;
+    if (fs.available >> 32 || (cluster_kb && (u32)fs.available > 0xFFFFFFFFu / cluster_kb))
+        return 0xFFFFFFFFu;
+    return (u32)fs.available * cluster_kb;
+}
+
+static int same_name(const char *a, const char *b)
+{
+    u32 i;
+
+    for (i = 0; a[i] && (a[i] | 0x20) == (b[i] | 0x20); i++)
+        ;
+    return !a[i] && !b[i];
+}
+
+/* Once per launch, before any transfer: checkpoints sent by the server (char-*.ess and their
+ * parts) other than the one this launch loaded. A new one arrives with each join that needs it. */
+#define SWEEP_FILES 32u
+static u32 sweep_done, swept;
+
+static void checkpoint_sweep(void)
+{
+    static u8 info[1024];
+    static char names[SWEEP_FILES][BULK_NAME + 6];
+    char mask_text[] = "char-*", path[16 + BULK_NAME + 8];
+    ANSI_STRING mask;
+    IO_STATUS_BLOCK iosb;
+    u32 count = 0, n, off, i, restart = 1, gone = 0;
+    const u8 *e;
+    void *dir, *h;
+    u8 del = 1;
+
+    if (sweep_done)
+        return;
+    sweep_done = 1;
+    if (bulk_open("U:\\TES3X", GENERIC_READ, FILE_OPEN, FILE_DIRECTORY_FILE, &dir))
+        return;
+    mask.Buffer = mask_text;
+    mask.Length = mask.MaximumLength = sizeof(mask_text) - 1;
+    while (count < SWEEP_FILES &&
+           !NtQueryDirectoryFile(dir, 0, 0, 0, &iosb, info, sizeof(info),
+                                 FileDirectoryInformation, &mask, restart)) {
+        restart = 0;
+        for (off = 0; off < sizeof(info) && count < SWEEP_FILES; off += n) {
+            e = info + off;
+            i = *(const u32 *)(e + 0x3C);
+            if (i && i < sizeof(names[0])) {
+                copy((u8 *)names[count], e + 0x40, i);
+                names[count][i] = 0;
+                if (!same_name(names[count], game_loaded))
+                    count++;
+            }
+            if (!(n = *(const u32 *)e))
+                break;
+        }
+    }
+    NtClose(dir);
+    for (i = 0; i < count; i++) {
+        named_path(path, names[i], "");
+        if (!bulk_open(path, DELETE_ACCESS, FILE_OPEN, 0, &h)) {
+            gone += !NtSetInformationFile(h, &iosb, &del, sizeof(del), FileDispositionInformation);
+            NtClose(h);
+        }
+    }
+    swept = gone;
+    worker_log("net.checkpoints_swept", count, gone, 0);
+}
+
 static void bulk_work(void)
 {
     char path[16 + BULK_NAME + 8], part[16 + BULK_NAME + 8];
     IO_STATUS_BLOCK iosb;
     u64 offset, size;
-    u32 flags, s, n, next, state, wrote = 0;
+    u32 flags, s, n, next, state, wrote = 0, need, free;
     void *h;
 
+    checkpoint_sweep();
     bulk_adopt();
     if (bulk.state == BULK_OPENING) {
         bulk_path(path, "");
@@ -7581,6 +7677,14 @@ static void bulk_work(void)
                 next = size > bulk.total ? 0 : (u32)size / BULK_CHUNK;
                 if (next)
                     bulk.resumed++;
+                need = (bulk.total - next * BULK_CHUNK + 1023) / 1024 + BULK_SPACE_KB;
+                free = volume_free_kb(bulk.file);
+                worker_log("net.bulk_space", bulk.id, free, need);
+                if (free < need) {
+                    worker_log("net.bulk_no_space", bulk.id, free, need);
+                    bulk_close();
+                    state = BULK_NO_SPACE;
+                }
             }
         }
         worker_log("net.bulk_start", bulk.id, next, state);
@@ -8565,7 +8669,7 @@ static void save_request_frame(void)
 #define BXWM_PATH 0x10u
 #define BXWM_PATH_MAX 0x100u
 static u32 game_token, game_told, load_wanted, loads_started;
-static char game_loaded[BULK_NAME + 1], load_name[BULK_NAME + 1];
+static char load_name[BULK_NAME + 1];
 typedef u32(__attribute__((stdcall)) *fn_launch)(const char *xbe, void *data);
 typedef u32(__cdecl *fn_persist)(void);
 
@@ -8610,6 +8714,13 @@ static void load_frame(void)
     static const char dir[] = "U:\\TES3X\\";
     u32 i, n, r;
 
+    if (load_wanted && bulk.state == BULK_NO_SPACE && same_name(bulk.name, load_name)) {
+        load_wanted = 0;
+        log_text("net.load_no_space", load_name);
+        run_script("MessageBox \"There is not enough free space on the hard disk to load your "
+                   "character from the server.\"");
+        return;
+    }
     if (!load_wanted || bulk.state != BULK_DONE)
         return;
     for (i = 0; load_name[i] && bulk.name[i] == load_name[i]; i++)
