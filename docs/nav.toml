@@ -1,0 +1,55 @@
+# The documentation's table of contents. docs/index.md is generated from it by
+# `python tools/tes3x_docs.py --write`; every page in docs/ must be listed exactly once.
+#
+# A page's entry in the index is its title and the first sentence of its first paragraph, or
+# its line in [summary] when that sentence does not describe it.
+
+[[section]]
+title = "Start here"
+pages = ["getting-started.md"]
+
+[[section]]
+title = "Guides"
+pages = [
+    "gui.md",
+    "mod-library.md",
+    "pipeline.md",
+    "packaging.md",
+    "deployment.md",
+    "testing.md",
+    "xemu.md",
+    "validation.md",
+    "diagnostics.md",
+    "multiplayer.md",
+    "addons.md",
+]
+
+[[section]]
+title = "Reference"
+pages = [
+    "configuration.md",
+    "commands.md",
+    "exec-scripts.md",
+    "game-tests.md",
+    "ini-keys.md",
+    "patches.md",
+    "candidates.md",
+    "catalog.md",
+]
+
+[[section]]
+title = "Development"
+pages = [
+    "patch-policy.md",
+    "../patches/README.md",
+    "symbol-map.md",
+]
+
+[summary]
+"patches.md" = "Every patch TES3X can apply, with its channel and how a build selects it."
+"candidates.md" = "Fixes from other projects that were reviewed, and why each is not implemented."
+"catalog.md" = "Mods tried on the Xbox, and whether they work."
+"xemu.md" = "Set up xemu and run a build in it from a script."
+"multiplayer.md" = "Run a TES3X server and connect consoles and xemu to it."
+"configuration.md" = "Every key in a profile and in the local config."
+"../patches/README.md" = "What a patch's notes page contains, and its template."

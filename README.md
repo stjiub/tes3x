@@ -64,6 +64,8 @@ build a folder of its own. [Getting started](docs/getting-started.md) walks thro
 
 ## Documentation
 
+The [documentation index](docs/index.md) lists every page. The main ones:
+
 - [Getting started](docs/getting-started.md): from a clean game to a build on the Xbox.
 - [GUI](docs/gui.md), [mod library](docs/mod-library.md) and [pipeline](docs/pipeline.md).
 - [Configuration](docs/configuration.md): every profile and local-config key.
