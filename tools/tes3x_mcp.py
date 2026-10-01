@@ -125,7 +125,7 @@ def disasm(blob, va):
         if not m:
             continue
         body = re.sub(r"0x([0-9a-f]+) <[^>]*>",
-                      lambda b: "0x%08X" % (va + int(b.group(1), 16)), m.group(2))
+                      lambda b: "0x%08X" % ((va + int(b.group(1), 16)) & 0xFFFFFFFF), m.group(2))
         lines.append("0x%08X  %s" % (va + int(m.group(1), 16), body))
     return lines
 
