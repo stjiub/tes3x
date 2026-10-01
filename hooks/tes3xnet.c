@@ -390,6 +390,7 @@ static struct {
 } game_clock;
 
 static u32 ghost_places, ghost_moves, ghost_failures, player_hits_out, player_hits_in;
+static void ghost_heading_stat(void);
 static u32 equip_sent, equip_received, equip_applied, stance_changes, stance_refused;
 static u32 first_person_states; /* player states whose animation came from the first person */
 static u32 ini_checked;
@@ -1783,6 +1784,7 @@ static void stat(void)
                 tes3x_log_hex3("net.peer_state", peers[i].client, peers[i].seq,
                                now_us() - peers[i].time);
         tes3x_log_hex3("net.ghosts", ghost_places, ghost_moves, ghost_failures);
+        ghost_heading_stat();
         tes3x_log_hex3("net.equipment_stat", equip_sent, equip_received, equip_applied);
         tes3x_log_hex3("net.stances", stance_changes, stance_refused, first_person_states);
     }
@@ -3333,6 +3335,28 @@ static void ghost_update(u32 i, const struct pose *local)
     equipment_apply(i, ref);
     stance_apply(ref, p.flags);
     anim_apply(ref, older, p.anim, frac);
+}
+
+/* Each placed ghost's heading in its reference, its orientation attachment and its node's
+ * rotation (first row, x1000): the engine may turn one without the others. */
+static void ghost_heading_stat(void)
+{
+    const u8 *ref, *node;
+    const float *m;
+    u32 i;
+
+    for (i = 0; i < PEERS; i++) {
+        if (!ghosts[i].placed || !(ref = ghost_ref(i)))
+            continue;
+        tes3x_log_hex3("net.ghost_heading", i + 1,
+                       (u32)round_int(*(const float *)(ref + REF_ORIENTATION + 8) * 1000),
+                       (u32)round_int(((const float *)((fn_ref_part)TES3X_NET_REF_ORIENTATION)(
+                                          ref))[2] * 1000));
+        if (plausible(node = *(const u8 *const *)(ref + REF_NODE)) &&
+            plausible(m = *(const float *const *)(node + NODE_ROTATION)))
+            tes3x_log_hex3("net.ghost_node", i + 1, (u32)round_int(m[0] * 1000),
+                           (u32)round_int(m[1] * 1000));
+    }
 }
 
 static void ghosts_frame(const u8 *state)
