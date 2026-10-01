@@ -843,6 +843,82 @@ def cmd_callers(a):
         print(f'  0x{target:08X} {kind:5} {rec["name"] if rec else ""}')
 
 
+def ghidra_names(db, tag):
+    """Curated names for one image, and a stamp that changes with them."""
+    recs = load_curated()['records']
+    if tag == 'xbe':
+        names = {r['va']: r['name'] for r in recs if r.get('kind', 'function') != 'site'}
+    else:
+        by_xbe = {int(r['va'], 16): r['name'] for r in recs
+                  if r.get('kind', 'function') == 'function'}
+        names = {f'0x{pc:08X}': by_xbe[x] for x, pc in db.execute('SELECT xbe, pc FROM match')
+                 if x in by_xbe}
+        names.update({r['pc_va']: r['name'] for r in recs if r.get('pc_va')})
+    return str(CURATED.stat().st_mtime_ns), names
+
+
+def ghidra_client(db, tags):
+    import tes3x_ghidra
+    cl = tes3x_ghidra.Client()
+    for tag in tags:
+        cl.sync_names(tag, *ghidra_names(db, tag))
+    return cl
+
+
+def pc_counterpart(db, va):
+    m = db.execute('SELECT pc FROM match WHERE xbe=?', (va,)).fetchone()
+    if m:
+        return m[0]
+    rec = next((r for r in load_curated()['records'] if int(r['va'], 16) == va), None)
+    return int(rec['pc_va'], 16) if rec and rec.get('pc_va') else None
+
+
+def cmd_ghidra_setup(a):
+    import tes3x_ghidra
+    db = sqlite3.connect(DB_PATH)
+    schema(db)
+    rows = db.execute('SELECT tag, path FROM image WHERE tag IN (%s)' %
+                      ','.join('?' * len(a.tag)), a.tag).fetchall()
+    if not rows:
+        raise SystemExit('build the images first (`tes3x_sym.py build IMAGE --tag ...`)')
+    tes3x_ghidra.setup(rows)
+
+
+def cmd_ghidra_stop(a):
+    import tes3x_ghidra
+    print('stopped' if tes3x_ghidra.stop() else 'not running')
+
+
+def cmd_decompile(a):
+    db = sqlite3.connect(DB_PATH)
+    schema(db)
+    cl = ghidra_client(db, [a.tag] + (['pc'] if a.pc else []))
+    for v in a.va:
+        res = cl.call('decompile', tag=a.tag, va=v, timeout=a.timeout)
+        print(f"// {a.tag} 0x{res['entry']:08X} {res['name']}")
+        print(res['c'].strip() + '\n')
+        if a.pc and a.tag == 'xbe':
+            pc = pc_counterpart(db, res['entry'])
+            if pc is None:
+                print('// pc: no matched counterpart\n')
+                continue
+            res = cl.call('decompile', tag='pc', va=f'0x{pc:08X}', timeout=a.timeout)
+            print(f"// pc 0x{res['entry']:08X} {res['name']}")
+            print(res['c'].strip() + '\n')
+    cl.close()
+
+
+def cmd_refs(a):
+    db = sqlite3.connect(DB_PATH)
+    schema(db)
+    cl = ghidra_client(db, [a.tag])
+    refs = cl.call('refs', tag=a.tag, va=a.va)['refs']
+    cl.close()
+    for r in sorted(refs, key=lambda r: r['from']):
+        fn = f"0x{r['func']:08X} {r['name']}" if 'func' in r else ''
+        print(f"  0x{r['from']:08X} {r['type']:<16} {r.get('insn', ''):<36} {fn}")
+
+
 def cmd_stats(a):
     db = sqlite3.connect(DB_PATH)
     schema(db)
@@ -915,6 +991,25 @@ def main():
 
     st = sub.add_parser('stats', help='database summary')
     st.set_defaults(fn=cmd_stats)
+
+    gs = sub.add_parser('ghidra-setup', help='import and analyse the images in Ghidra (slow, once)')
+    gs.add_argument('--tag', nargs='+', default=['xbe', 'pc'], choices=['xbe', 'pc'])
+    gs.set_defaults(fn=cmd_ghidra_setup)
+
+    dc = sub.add_parser('decompile', help='Ghidra pseudo-C of the functions containing VAs')
+    dc.add_argument('va', nargs='+')
+    dc.add_argument('--tag', default='xbe', choices=['xbe', 'pc'])
+    dc.add_argument('--pc', action='store_true', help='also the matched PC function')
+    dc.add_argument('--timeout', type=int, default=60)
+    dc.set_defaults(fn=cmd_decompile)
+
+    rf = sub.add_parser('refs', help="Ghidra's code and data references to an address")
+    rf.add_argument('va')
+    rf.add_argument('--tag', default='xbe', choices=['xbe', 'pc'])
+    rf.set_defaults(fn=cmd_refs)
+
+    gx = sub.add_parser('ghidra-stop', help='stop the background Ghidra process')
+    gx.set_defaults(fn=cmd_ghidra_stop)
 
     args = ap.parse_args()
     args.fn(args)

@@ -22,6 +22,7 @@ one in the TES3X folder. `--config PATH` picks another. Relative paths are relat
 | `build_root` | string | `build` | Parent directory for profile output folders. |
 | `llvm` | string | `PATH` | Directory containing `clang` and `lld-link`. |
 | `hardlink_retail` | boolean | `false` | Hardlink unchanged retail files when source and output are on the same volume. |
+| `ghidra` | string | none | Ghidra install folder, for `tes3x_sym.py decompile` and `refs`. `GHIDRA_INSTALL_DIR` takes precedence. |
 | `pc_morrowind` | string | Steam's default folder | PC Morrowind with Code Patch installed, for `tes3x_mcp.py`. `TES3X_PC_MORROWIND` takes precedence. |
 
 ### `[deploy]`

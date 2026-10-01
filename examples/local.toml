@@ -15,6 +15,8 @@ build_root = "build/pipeline"
 # mlox's rules file, for profiles that set rules.plugin_order = "mlox". Download mlox_base.txt
 # from https://github.com/DanaePlays/mlox-rules and install mlox with: python -m pip install mlox
 # mlox_rules = "C:/Tools/mlox/mlox_base.txt"
+# Ghidra 11.3 or later with the ghidra-xbe loader, for tools/tes3x_sym.py decompile and refs.
+# ghidra = "C:/Tools/ghidra_11.3_PUBLIC"
 
 [deploy]
 host = "192.168.1.20"              # the Xbox's IP address, shown by its dashboard

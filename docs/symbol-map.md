@@ -72,6 +72,27 @@ The queries need the database; `build` of the XBE alone is enough for `lookup`, 
 `callers`, and the PC build and matching add the PC counterpart. The renderers below name call sites
 only when `build/symbols.db` exists, and print bare addresses otherwise.
 
+## Decompiling
+
+`decompile` and `refs` use [Ghidra](https://ghidra-sre.org/) 11.3 or later with the
+[ghidra-xbe](https://github.com/XboxDev/ghidra-xbe) loader, found through `GHIDRA_INSTALL_DIR` or
+`[paths] ghidra` in `tes3x.local.toml` (and a JDK Ghidra accepts). Import and analyse the images
+once; it takes several minutes per image:
+
+```
+python tools/tes3x_sym.py ghidra-setup                        # both images in symbols.db
+python tools/tes3x_sym.py decompile 0x00111920                # pseudo-C of the function
+python tools/tes3x_sym.py decompile 0x00111920 --pc           # and its PC counterpart
+python tools/tes3x_sym.py refs 0x003CB5F4                     # code and data references
+python tools/tes3x_sym.py ghidra-stop
+```
+
+The first request starts a headless Ghidra in the background that keeps the project open; later
+requests take well under a second, and the process exits after 30 idle minutes. Curated names are
+applied to both images before each request when `curated.json` has changed, and PC functions take
+the names of their matched Xbox functions, so the pseudo-C reads with the map's names. The project
+lives in `build/ghidra/` and is never committed.
+
 ## Adding a name
 
 ```
