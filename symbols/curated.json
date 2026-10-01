@@ -25,6 +25,12 @@
       "note": "falls back to Memory_Heap::Allocate when the pool is full"
     },
     {
+      "va": "0x00012D40",
+      "name": "NiFile::seek?",
+      "confidence": "guess",
+      "provenance": "flushes the buffer (0x00012F80) then fseeks unless the target lies inside the read buffer"
+    },
+    {
       "va": "0x00030A40",
       "name": "SE::NI_CAMERA_FNADDR_LOOKATWORLDPOINT",
       "kind": "function",
@@ -975,6 +981,24 @@
       "pc_va": "0x00472580"
     },
     {
+      "va": "0x000D22B0",
+      "name": "GameFile::getSize?",
+      "confidence": "guess",
+      "provenance": "vtable 0x0036294C +0x18; flushes (+0x14), then fseeks the FILE* to the end and back"
+    },
+    {
+      "va": "0x000D2300",
+      "name": "GameFile::seek?",
+      "confidence": "guess",
+      "provenance": "vtable 0x0036294C +0x10; SEEK_END takes the size from vtable +0x18, then calls 0x00012D40 when the position changes"
+    },
+    {
+      "va": "0x000D24C0",
+      "name": "GameFile::ctor?",
+      "confidence": "guess",
+      "provenance": "write-mode object (0x130 bytes) made by the file factory 0x000D4C10 that TES3File uses; vtable 0x0036294C"
+    },
+    {
       "va": "0x000D2D60",
       "name": "Diagnostics::InitLogs",
       "confidence": "verified",
@@ -1749,7 +1773,8 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_TES3File_writeRecordHeader",
-      "pc_va": "0x004B6B00"
+      "pc_va": "0x004B6B00",
+      "note": "seeks to end (0,2) each record: the write stream's size query flushes and runs fflush/fseek/ftell/fseek; 0.22 ms per record on hardware"
     },
     {
       "va": "0x001026D0",
@@ -1765,7 +1790,8 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_TES3File_endRecord",
-      "pc_va": "0x004B6C50"
+      "pc_va": "0x004B6C50",
+      "note": "seeks back to the record header to patch its size, flushing the stream; 0.36 ms per record on hardware"
     },
     {
       "va": "0x001029C0",
@@ -1969,6 +1995,12 @@
       "pc_va": "0x004BAA10"
     },
     {
+      "va": "0x0010A2B0",
+      "name": "NonDynamicData::loadBaseAnimation?",
+      "confidence": "guess",
+      "provenance": "references 'base_anim.nif'; calls MeshData::loadMesh and MeshData::loadKeyframes"
+    },
+    {
       "va": "0x0010A840",
       "name": "SE::NI_GETASSOCIATEDREFERENCE",
       "kind": "function",
@@ -2001,6 +2033,12 @@
       "pc_va": "0x004BBC30"
     },
     {
+      "va": "0x0010E8B0",
+      "name": "NonDynamicData::loadRecord?",
+      "confidence": "guess",
+      "provenance": "called once per record by 0x00112290; dispatches to the record type's constructors"
+    },
+    {
       "va": "0x00111260",
       "name": "NonDynamicData::createReference",
       "kind": "function",
@@ -2018,6 +2056,12 @@
       "note": "7 direct callers: quicksave 0x000988F2, autosaves 0x0020BE36/0x0020BF63/0x0020C0B6 (rotating-autosaves), save menu 0x0020EA86/0x0020EDF7, fatal error path 0x000D2F9F. multiplayer wraps all of them (tes3x_net_save)."
     },
     {
+      "va": "0x00112290",
+      "name": "NonDynamicData::loadFile?",
+      "confidence": "guess",
+      "provenance": "reopens a TES3File and calls 0x0010E8B0 per record until TES3File::nextForm fails; 'Loading Files %d%%'"
+    },
+    {
       "va": "0x00112450",
       "name": "NonDynamicData::loadGame.walk?",
       "confidence": "guess",
@@ -2027,10 +2071,11 @@
     },
     {
       "va": "0x00113290",
-      "name": "NonDynamicData::loadGame?",
+      "name": "NonDynamicData::loadAllFiles?",
       "confidence": "guess",
-      "provenance": "calls 0x00112450 and 0x00107910; called from the main loop at 0x00094CFF",
-      "pc_va": "0x004BB1D0"
+      "provenance": "only caller TES3Game::loadAllPlugins (0x00094B10); loads each selected file through 0x00112290, then links every object",
+      "pc_va": "0x004BB1D0",
+      "note": "boot data load: 23.6 s on hardware with 34 masters (findings 2026-10-01)"
     },
     {
       "va": "0x00114300",
@@ -2172,6 +2217,12 @@
       "pc_va": "0x004DB500"
     },
     {
+      "va": "0x001245F0",
+      "name": "Cell::findReferenceToObject?",
+      "confidence": "guess",
+      "provenance": "called per cell by 0x00104E10 with (object, flag)"
+    },
+    {
       "va": "0x001253E0",
       "name": "Cell::getOrCreateActivatorsNode",
       "kind": "function",
@@ -2186,6 +2237,12 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_Cell_addReference",
       "pc_va": "0x004DC0A0"
+    },
+    {
+      "va": "0x00126A80",
+      "name": "Cell::linkReferences?",
+      "confidence": "guess",
+      "provenance": "calls vtable +0xE0 on every reference in the cell's lists at +0x3C and +0x2C; called per cell from 0x00113290"
     },
     {
       "va": "0x00126B20",
@@ -2582,6 +2639,12 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_ScriptCompiler_parseFunctionName",
       "pc_va": "0x004FCD10"
+    },
+    {
+      "va": "0x0013C350",
+      "name": "Script::resolveObjectReferences?",
+      "confidence": "guess",
+      "provenance": "run for every script by startGlobalScripts; calls Script::Decode, findFirstInstanceOfObjectId and the NonDynamicData find* lookups; error 'Unable to find object \"%s\" in script %s.'"
     },
     {
       "va": "0x0013D2A0",
