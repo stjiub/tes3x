@@ -263,7 +263,7 @@ struct descriptor {
  * session and seq in the clear (T3MP_OUTER, the AEAD's associated data) and seals the real type,
  * ack, times and body under the session's key, seq being the nonce. The receiver rebuilds the
  * T3MP_HEADER layout after opening it. */
-#define T3MP_VERSION 11u
+#define T3MP_VERSION 12u
 #define T3MP_HEADER 28u
 #define T3MP_OUTER 16u
 #define T3MP_INNER 16u
@@ -3398,6 +3398,10 @@ static void ghosts_frame(const u8 *state)
 #define EVENT_HOLD_BROKEN 4u /* refid, holder, reason */
 #define EVENT_HIT 5u         /* refid, authority, health damage, fatigue damage */
 #define EVENT_DEATH 6u       /* refid; the server records it and replays it to each joining client */
+/* count, then (actor id, client) pairs: the player nearest an actor runs it, since the engine runs
+ * actors only within aiDistance of its own player; client 0 hands it back to its cell's authority */
+#define EVENT_OWNERS 20u
+#define OWNERS 256u
 #define KEY_EXTERIOR 1u
 #define KEY_INTERIOR 2u
 #define KEY_BYTES (12u + CELL_NAME) /* kind, grid x, grid y, interior name */
@@ -3443,6 +3447,10 @@ static struct {
     u32 client;
 } authority[AUTHORITIES];
 static u32 authorities, authority_welcome;
+static struct {
+    u32 id, client;
+} owners[OWNERS];
+static u32 owner_count, owners_in, owners_full;
 /* Actors this console places for another authority; held while their AI is to be skipped. */
 static struct {
     u32 refid, owner, held, seen, animated;
@@ -4038,6 +4046,7 @@ static void authority_session(void)
         return;
     authority_welcome = ses.welcomes;
     authorities = 0;
+    owner_count = 0;
     hit_count = 0;
     for (i = 0; i < REMOTE_HOLDS; i++)
         remote_holds[i].release = 1;
@@ -4134,6 +4143,30 @@ static void authority_frame(const u8 *player, const u8 *state)
             remote_holds[i].refid = 0;
 }
 
+static void owners_event(const struct event *e)
+{
+    u32 count = e->length >= 4 ? get32le(e->data) : 0, i, j, id, client;
+
+    for (i = 0; i < count && 8 + i * 8 <= e->length; i++) {
+        id = get32le(e->data + 4 + i * 8);
+        client = get32le(e->data + 8 + i * 8);
+        owners_in++;
+        for (j = 0; j < owner_count && owners[j].id != id; j++)
+            ;
+        if (j < owner_count && !client)
+            owners[j] = owners[--owner_count];
+        else if (j < owner_count)
+            owners[j].client = client;
+        else if (client && owner_count < OWNERS) {
+            owners[owner_count].id = id;
+            owners[owner_count++].client = client;
+        } else if (client)
+            owners_full++;
+        if (owners_in <= 64)
+            tes3x_log_hex3("net.owner", id, client, 0);
+    }
+}
+
 static void authority_event(const struct event *e)
 {
     struct cell_key key;
@@ -4148,6 +4181,10 @@ static void authority_event(const struct event *e)
         copy(key.name, e->data + 12, CELL_NAME);
         key.name[CELL_NAME - 1] = 0;
         authority_set(&key, get32le(e->data + KEY_BYTES));
+        return;
+    }
+    if (e->kind == EVENT_OWNERS) {
+        owners_event(e);
         return;
     }
     if (e->kind == EVENT_DEATH) {
@@ -4207,6 +4244,7 @@ static void authority_stat(void)
     for (i = 0; i < REMOTE_HOLDS; i++)
         holds_now += remote_holds[i].refid != 0;
     tes3x_log_hex3("net.authorities", authorities, n, holds_now);
+    tes3x_log_hex3("net.owners", owner_count, owners_in, owners_full);
     for (i = 0; i < authorities; i++)
         tes3x_log_hex3("net.authority_is", authority[i].client, (u32)authority[i].key.gx,
                        (u32)authority[i].key.gy);
@@ -5903,10 +5941,14 @@ static void player_hook_install(void)
 static u32 actor_owner(u32 id, u32 cell_owner)
 {
     struct spawn *s;
+    u32 i;
 
-    if ((id & 0xFF000000u) != 0xFF000000u || !(s = spawn_by_sid(id)) || !s->owner)
-        return cell_owner;
-    return s->owner;
+    if ((id & 0xFF000000u) == 0xFF000000u && (s = spawn_by_sid(id)) && s->owner)
+        return s->owner;
+    for (i = 0; i < owner_count; i++)
+        if (owners[i].id == id)
+            return owners[i].client;
+    return cell_owner;
 }
 
 /* Game thread: an actor made here with no refid, not linked to a leveled placeholder. */
@@ -6042,7 +6084,7 @@ static void actor_watch(struct spawn *s)
 
     if (!s->sid || s->stale || !s->applied)
         return;
-    runs = s->owner ? s->owner == ses.client : cell_authority(s->cell_ptr) == ses.client;
+    runs = actor_owner(s->sid, cell_authority(s->cell_ptr)) == ses.client;
     if (!runs || (plausible(ref) && *(const u32 *)(ref + 4) == TAG_REFR &&
                   !(*(const u32 *)(ref + REF_FLAGS) & (REF_DELETED | REF_DISABLED))))
         return;
@@ -8334,7 +8376,7 @@ static void event_handle(const struct event *e)
         text[e->length] = 0;
         tes3x_log_hex3("net.text_from", e->origin, e->seq, 0);
         log_text("net.text", text);
-    } else if (e->kind >= EVENT_AUTHORITY && e->kind <= EVENT_DEATH) {
+    } else if ((e->kind >= EVENT_AUTHORITY && e->kind <= EVENT_DEATH) || e->kind == EVENT_OWNERS) {
         authority_event(e);
     } else if (e->kind == EVENT_EQUIPMENT) {
         equipment_event(e);

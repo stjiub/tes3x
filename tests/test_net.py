@@ -297,6 +297,32 @@ class AuthorityTests(unittest.TestCase):
         self.assertEqual(assign({cell: 1}, {cell: [(1, True), (99, False)]}, forced=99),
                          {cell: 99})
 
+    def test_actors_go_to_the_nearest_player_with_a_margin(self):
+        net = tes3x_net
+        cell = (net.KEY_EXTERIOR, 0, 0, b'')
+        players = {1: ({cell}, 0.0, 0.0), 2: ({cell}, 2000.0, 0.0)}
+        authority = {cell: 1}
+
+        def owner(previous, x, flags=0, now=10.0):
+            return net.assign_owners(previous, {7: (cell, x, 0.0, flags)}, players, authority,
+                                     now, 1200)[7]
+
+        self.assertEqual(owner({}, 1900.0), (2, 10.0))  # a new actor goes straight to the nearer
+        self.assertEqual(owner({}, 300.0)[0], 1)
+        self.assertEqual(owner({7: (1, 0.0)}, 1100.0)[0], 1)  # within the margin
+        self.assertEqual(owner({7: (1, 9.0)}, 1900.0)[0], 1)  # taken too recently
+        self.assertEqual(owner({7: (1, 0.0)}, 1900.0, net.ACTOR_DEAD)[0], 1)
+        self.assertEqual(owner({7: (1, 0.0)}, 1100.0, net.ACTOR_IN_COMBAT)[0], 1)
+        self.assertEqual(owner({7: (1, 0.0)}, 1500.0, net.ACTOR_IN_COMBAT)[0], 2)
+        self.assertEqual(owner({7: (3, 9.0)}, 300.0), (1, 10.0))  # its owner left
+        players[2] = ({(net.KEY_EXTERIOR, 5, 5, b'')}, 2000.0, 0.0)
+        self.assertEqual(owner({7: (1, 0.0)}, 1900.0)[0], 1)  # the nearer one does not load it
+
+    def test_owners_event_fits_the_event_channel(self):
+        self.assertLessEqual(4 + tes3x_net.OWNERS_PER_EVENT * tes3x_net.OWNER_PAIR.size,
+                             tes3x_net.EVENT_DATA)
+        self.assertEqual(tes3x_net.OWNERS_PER_EVENT, 9)
+
     def test_authority_event_fits_the_event_channel(self):
         data = tes3x_net.KEY.pack(tes3x_net.KEY_INTERIOR, 0, 0, b'Seyda Neen, Census') + \
             struct.pack('<I', 1)

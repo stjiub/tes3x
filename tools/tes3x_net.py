@@ -312,7 +312,7 @@ def ping(args):
 
 
 T3MP = struct.Struct("<4sBBHIIIII")  # magic, version, type, 0, session, seq, ack, time, echo
-T3MP_VERSION = 11
+T3MP_VERSION = 12
 HELLO, WELCOME, HEARTBEAT, BYE, STATE, PEER, GONE, EVENTS, REFUSE, CLOCK, ACTORS = range(1, 12)
 # On the wire every packet but the handshake is SEALED: OUTER in the clear (the AEAD's associated
 # data), then INNER and the body sealed under the session key with seq as the nonce.
@@ -376,6 +376,11 @@ EVENT_CONTENTS = 16  # CONTENTS_HEAD, then entries
 EVENT_WANT = 17  # count, then cell indices u16: the containers of those cells are wanted
 EVENT_AFFECT = 18  # actor id, effect index u8, then the spell id ending in a zero
 EVENT_STATUS = 19  # STATUS: the latest per actor is kept and replayed
+# count, then (actor id, client) pairs: who runs an actor instead of its cell's authority; client 0
+# hands it back to the cell's authority
+EVENT_OWNERS = 20
+OWNER_PAIR = struct.Struct("<II")
+OWNERS_PER_EVENT = (EVENT_DATA - 4) // OWNER_PAIR.size
 # actor id, fight, flee, alarm, hello, base disposition (NO_DISPOSITION for a creature)
 STATUS = struct.Struct("<I5h")
 NO_DISPOSITION = -32768
@@ -406,7 +411,13 @@ NO_ANIM = b"\xff\xff\xff" + bytes(ANIM_BYTES - 3)  # no group on any layer: the 
 ACTOR = struct.Struct(f"<I5fI2f{ANIM_BYTES}s")
 ACTORS_PER_PACKET = 9
 ACTOR_PERIOD = 0.1
+ACTOR_DEAD, ACTOR_IN_COMBAT = 1, 2
 AUTHORITY_PERIOD = 0.25
+# An actor goes to a nearer player only when that player is this much nearer than its owner and
+# the owner has had it this long, so two players at about the same distance do not trade it.
+OWNER_MARGIN = 256
+OWNER_HOLD = 2.0
+OWNER_STALE = 5.0  # seconds without a state before an actor is no longer owned
 RESEND = 0.25
 # Least time between two EVENTS packets to one client, and at most PACE_PACKETS packets to one
 # client per PACE_WINDOW seconds, the rest queued. xemu's NIC stops reading its tunnel for good once
@@ -1065,6 +1076,29 @@ def assign_authority(owners, candidates, forced=None):
     return result
 
 
+def assign_owners(previous, actors, players, cell_owners, now, ai_distance):
+    """Each actor's owner: the nearest player that loads its cell, since the engine runs actors only
+    within aiDistance of its own player. previous: id -> (client, since); actors: id -> (cell, x, y,
+    flags); players: client -> (loaded cells, x, y). A dead actor keeps its owner, and one in combat
+    keeps it while within the owner's aiDistance: its target does not cross consoles."""
+    result = {}
+    for actor, (key, x, y, flags) in actors.items():
+        near = {c: math.hypot(x - px, y - py) for c, (loaded, px, py) in players.items()
+                if key in loaded}
+        if not near:
+            continue
+        nearest = min(near, key=lambda c: (near[c], c))
+        current, since = previous.get(actor, (cell_owners.get(key), now - OWNER_HOLD))
+        if current not in near:
+            current, since = nearest, now
+        if (nearest != current and not flags & ACTOR_DEAD and now - since >= OWNER_HOLD
+                and near[current] - near[nearest] > OWNER_MARGIN
+                and (not flags & ACTOR_IN_COMBAT or near[current] > ai_distance)):
+            current, since = nearest, now
+        result[actor] = (current, since)
+    return result
+
+
 def now_us():
     return int(time.perf_counter() * 1e6) & 0xFFFFFFFF
 
@@ -1207,6 +1241,7 @@ class Client:
         self.rel = Reliable()
         self.events = 0
         self.known = {}  # cell -> the authority this client was told
+        self.owners_told = {}  # actor id -> the owner this client was told, where not 0
         self.loaded = set()
         self.actor_states = 0
         self.flush_due = False  # an EVENTS packet held back by EVENTS_GAP
@@ -1339,6 +1374,8 @@ def serve(args):
     lost = {"in": 0, "out": 0}
     clock, clock_next = None, 0.0
     owners = {}  # cell -> authority client
+    actor_owners = {}  # actor id -> (client, since): its owner by proximity
+    actor_seen = {}  # actor id -> when a state of it last came
     deaths = {}  # refid -> the client that reported it; replayed to each joining client
     # client -> [parts of its latest whole equipment set, parts of the set arriving]
     equipment = {}
@@ -1489,6 +1526,9 @@ def serve(args):
 
     def bot_step(now):
         (flags, cell), cx, cy, cz = bot["anchor"]
+        if args.bot_at:
+            dx, dy = (float(v) for v in args.bot_at.split(","))
+            cx, cy = cx + dx, cy + dy
         t = (now - bot["start"]) * 2 * math.pi / args.bot_period
         if bot["mirror"]:
             _, x, y, z, heading, _, actor_flags, _, _, anim = ACTOR.unpack(bot["mirror"])
@@ -1820,6 +1860,58 @@ def serve(args):
                 del client.known[key]
             if told:
                 flush(client, now)
+        update_owners(now, forced)
+
+    def update_owners(now, forced):
+        """Name each actor's owner by proximity and tell every client that loads its cell where
+        that differs from the cell's authority."""
+        players = {}
+        for client in clients.values():
+            if client.alive and client.state and client.loaded:
+                players[client.id] = (client.loaded,) + STATE_BODY.unpack_from(client.state)[1:3]
+        if args.bot_at and bot["state"]:
+            players[BOT_ID] = (cell_keys(bot["state"])[1],) + \
+                STATE_BODY.unpack_from(bot["state"])[1:3]
+        for refid in [r for r, seen in actor_seen.items() if now - seen > OWNER_STALE]:
+            del actor_seen[refid]
+        live = {}
+        for refid in actor_seen:
+            spawn = spawns.get(refid)
+            if spawn and spawn.get("summon"):
+                continue  # run by its maker
+            _, key, record = actors[refid]
+            values = ACTOR.unpack(record)
+            live[refid] = (key, values[1], values[2], values[6])
+        new = {} if forced else assign_owners(actor_owners, live, players, owners, now,
+                                              args.ai_distance)
+        stamp = time.strftime("%H:%M:%S")
+        for refid, (client_id, _) in new.items():
+            if actor_owners.get(refid, (None,))[0] not in (None, client_id):
+                print(f"{stamp} actor {refid:#010x} owned by client {client_id}", flush=True)
+        actor_owners.clear()
+        actor_owners.update(new)
+        for client in clients.values():
+            if not client.alive:
+                continue
+            changes = []
+            for refid, (client_id, _) in new.items():
+                want = client_id if client_id != owners.get(live[refid][0]) else 0
+                if live[refid][0] in client.loaded and client.owners_told.get(refid, 0) != want:
+                    changes.append((refid, want))
+            for refid, told in client.owners_told.items():
+                if told and (refid not in new or live[refid][0] not in client.loaded):
+                    changes.append((refid, 0))
+            for refid, want in changes:
+                if want:
+                    client.owners_told[refid] = want
+                else:
+                    client.owners_told.pop(refid, None)
+            for i in range(0, len(changes), OWNERS_PER_EVENT):
+                chunk = changes[i:i + OWNERS_PER_EVENT]
+                client.rel.queue(EVENT_OWNERS, 0, struct.pack("<I", len(chunk)) +
+                                 b"".join(OWNER_PAIR.pack(*c) for c in chunk))
+            if changes:
+                flush(client, now)
 
     def on_actors(client, body):
         """Keep an authority's actor states and relay them to the other clients."""
@@ -1835,6 +1927,7 @@ def serve(args):
             key = own if own and own[0] == KEY_INTERIOR else (
                 KEY_EXTERIOR, math.floor(x / CELL_UNITS), math.floor(y / CELL_UNITS), b"")
             actors[refid] = (client.id, key, record)
+            actor_seen[refid] = time.time()
             if refid == args.bot_mirror:
                 bot["mirror"] = record
             client.actor_states += 1
@@ -1849,7 +1942,11 @@ def serve(args):
     def bot_actors(now):
         """As the authority, the bot places each actor of its cells bot_shift units east of where
         the last authority left it, swaying east and west by bot_sway once per bot_period."""
-        owned = [record for _, key, record in actors.values() if owners.get(key) == BOT_ID]
+        owned = [refid for refid, (_, key, _) in actors.items()
+                 if actor_owners.get(refid, (owners.get(key),))[0] == BOT_ID]
+        for refid in owned:
+            actor_seen[refid] = now  # a client's states of it have stopped
+        owned = [actors[refid][2] for refid in owned]
         phase = (now - bot["start"]) * 2 * math.pi / args.bot_period
         sway = args.bot_sway * math.sin(phase)
         facing = math.pi / 2 if math.cos(phase) >= 0 else 3 * math.pi / 2
@@ -2079,6 +2176,7 @@ def serve(args):
                       f"dropped by the rejoin", flush=True)
             client.rel = Reliable()
             client.known = {}
+            client.owners_told = {}
             if client.joins == 1:
                 client.joined = now
                 client.bursts = sorted(bursts)
@@ -2426,6 +2524,11 @@ def serve(args):
                 print(f"  actors: {len(actors)} known; authorities "
                       + ", ".join(f"{describe_key(k)} {c}" for k, c in sorted(
                           owners.items(), key=lambda i: describe_key(i[0]))), flush=True)
+                runs = {}
+                for client_id, _ in actor_owners.values():
+                    runs[client_id] = runs.get(client_id, 0) + 1
+                print("  actors run by: " + ", ".join(
+                    f"client {c} {n}" for c, n in sorted(runs.items())), flush=True)
     if world["path"]:
         write_world(time.time())
     for client in clients.values():
@@ -2634,6 +2737,13 @@ def main(argv=None):
                    help="relay a synthetic player circling where the first client stands")
     p.add_argument("--bot-radius", type=float, default=256, help="units")
     p.add_argument("--bot-period", type=float, default=12, help="seconds per circle")
+    p.add_argument("--bot-at", metavar="DX,DY",
+                   help="the bot circles this far from where the first client entered the world "
+                        "and takes the actors nearer to it than to any client (with --bot-shift 0 "
+                        "it leaves them where they are)")
+    p.add_argument("--ai-distance", type=float, default=1200,
+                   help="the consoles' aiDistance: an actor in combat changes owner only once "
+                        "its owner's player is farther than this")
     p.add_argument("--bot-rate", type=float, default=20, help="states per second")
     p.add_argument("--bot-say", type=float, metavar="SECONDS",
                    help="the bot also sends a numbered text event this often")
