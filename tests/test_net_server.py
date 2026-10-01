@@ -1,4 +1,5 @@
 import hashlib
+import os
 import random
 import shutil
 import socket
@@ -219,6 +220,102 @@ class ServerTests(unittest.TestCase):
         newer = self.save(b'Nerevar', 2)
         self.upload(loaded, 2, 3, b'mp-hero.ess', newer)
         self.assertEqual((folder / 'mp-hero.ess').read_bytes(), newer)
+
+    def events(self, client, until, timeout=3.0):
+        """Events the server sends, acked, in order, up to the first for which until is true."""
+        got, end = [], time.time() + timeout
+        delivered = getattr(client, 'delivered', 0)
+        while time.time() < end:
+            body = client.receive(0.5, tes3x_net.EVENTS)
+            if body is None:
+                continue
+            for seq, kind, _, data in tes3x_net.unpack_events(body)[1]:
+                if seq == delivered + 1:
+                    delivered = client.delivered = seq
+                    got.append((kind, data))
+            client.send(tes3x_net.EVENTS, tes3x_net.pack_events(delivered, []))
+            if any(until(kind, data) for kind, data in got):
+                return got
+        self.fail(f'no such event among {got}')
+
+    def test_player_state_is_replayed_over_the_checkpoint(self):
+        world = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, world)
+        self.start('--world', str(world))
+        net = tes3x_net
+
+        def ready(kind, data):
+            return kind == net.EVENT_PLAYER and data[:1] == bytes([net.PLAYER_READY])
+
+        def player(client, seq, *bodies):
+            client.send(net.EVENTS, net.pack_events(0, [
+                (seq + i, net.EVENT_PLAYER, 0, body) for i, body in enumerate(bodies)]))
+            return seq + len(bodies)
+
+        first = self.client(1)
+        first.join()
+        self.game(first, 1, 7, b'')
+        self.assertEqual(self.events(first, ready)[-1][1], bytes([net.PLAYER_READY, 0]))
+        level = net.LEVEL.pack(9, 3, *range(11), 80.0, 60.0, 200.0, *[40.0] * 8)
+        swords = [[1, net.ENTRY_DATA, 300 + i, 0] for i in range(12)]  # three parts
+        seq = player(first, 2, *net.pack_items('Gold_001', [[100, 0, 0, 0]]),
+               *net.pack_items('iron longsword', swords),
+               bytes([net.PLAYER_LEVEL]) + level,
+               bytes([net.PLAYER_SKILLS, 1]) + net.SKILL.pack(5, 42.0, 0.5),
+               *net.pack_journal([('A1_1_FindSpymaster', 10)]))
+        time.sleep(0.3)
+        self.upload(first, seq, 1, b'mp-hero.ess', self.save(b'Nerevar', 0))
+        player(first, seq + 1, *net.pack_items('Gold_001', [[150, 0, 0, 0]]),
+               *net.pack_items('iron longsword', []),
+               *net.pack_journal([('A1_1_FindSpymaster', 20)]))
+        time.sleep(0.3)
+        kept = (next((world / 'characters').iterdir()) / 'mp-hero.ess').read_bytes()
+        name = net.CHECKPOINT_NAME.format(int.from_bytes(
+            hashlib.blake2b(kept, digest_size=32).digest()[:4], 'big')).encode()
+
+        stale = self.client(1)  # a relaunch into another save gets no replay, only LOAD
+        stale.session ^= 2
+        stale.join()
+        self.game(stale, 1, 8, b'old.ess')
+        sent = self.events(stale, lambda kind, _: kind == net.EVENT_LOAD)
+        self.assertFalse([d for k, d in sent if k == net.EVENT_PLAYER])
+        player(stale, 2, *net.pack_items('Gold_001', [[1, 0, 0, 0]]))  # not its character's
+
+        loaded = self.client(1)
+        loaded.session ^= 4
+        loaded.join()
+        self.game(loaded, 1, 9, name)
+        replay = [d for k, d in self.events(loaded, ready) if k == net.EVENT_PLAYER]
+        self.assertEqual(replay[-1], bytes([net.PLAYER_READY, 1]))
+        items = [net.unpack_items(d) for d in replay if d[0] == net.PLAYER_ITEMS]
+        self.assertEqual([(i[2], i[3]) for i in items], [('Gold_001', [[150, 0, 0, 0]])])
+        self.assertIn(bytes([net.PLAYER_LEVEL]) + level, replay)
+        self.assertIn(bytes([net.PLAYER_SKILLS, 1]) + net.SKILL.pack(5, 42.0, 0.5), replay)
+        quests = [q for d in replay if d[0] == net.PLAYER_JOURNAL for q in net.unpack_journal(d)]
+        self.assertEqual(quests, [('A1_1_FindSpymaster', 10), ('A1_1_FindSpymaster', 20)])
+
+        self.game(loaded, 2, 9, name)  # a rejoin of the same launch: the console sends it all
+        self.assertEqual(self.events(loaded, ready)[-1][1], bytes([net.PLAYER_READY, 0]))
+        stream = (next((world / 'characters').iterdir()) / net.STREAM_NAME)
+        end = time.time() + 4
+        while not stream.exists() and time.time() < end:
+            time.sleep(0.2)
+        self.assertEqual(net.PlayerStream(str(stream)).items, {'Gold_001': [[150, 0, 0, 0]]})
+
+    def test_player_events_round_trip(self):
+        net = tes3x_net
+        swords = [[1, net.ENTRY_DATA, 300 + i, 7] for i in range(12)]
+        parts = net.pack_items('iron longsword', swords)
+        self.assertGreater(len(parts), 1)
+        self.assertTrue(all(len(p) <= net.EVENT_DATA for p in parts))
+        stream = net.PlayerStream(os.devnull + '.missing')
+        for part in parts:
+            stream.take(part)
+        self.assertEqual(stream.items['iron longsword'], swords)
+        quests = [(f'quest_{i:02d}_with_a_long_name', i) for i in range(9)]
+        events = net.pack_journal(quests)
+        self.assertTrue(all(len(e) <= net.EVENT_DATA for e in events))
+        self.assertEqual([q for e in events for q in net.unpack_journal(e)], quests)
 
     def admin(self, port, *words):
         run = subprocess.run([sys.executable, str(NET), 'admin', '--port', str(port), *words],

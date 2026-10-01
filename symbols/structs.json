@@ -2,11 +2,80 @@
   "structs": [
     {
       "name": "TES3::MobileActor",
-      "note": "Xbox matches the PC layout at the offsets tested: health, magicka and fatigue current (+0x2BC, +0x2C8, +0x2E0), animationController (+0x244)."
+      "note": "Xbox matches the PC layout at the offsets tested: attributes (+0x254, Statistic {vtable, base, current} each), health, magicka and fatigue current (+0x2BC, +0x2C8, +0x2E0), animationController (+0x244)."
+    },
+    {
+      "name": "TES3::MobileNPC",
+      "note": "Xbox matches the PC at skills (+0x3B0, 27 SkillStatistic of 0x10; type +0xC is major, minor or misc, not the skill index)."
+    },
+    {
+      "name": "TES3::MobilePlayer",
+      "note": "Xbox matches the PC at clawMultiplier (+0x5AC), skillProgress (+0x5F4), firstPersonReference (+0x660), birthsign (+0x670) and lastPositionOfFogOfWarUpdate (+0x67C). restWaitPosition (+0x5D8) holds stale bytes until the player rests."
     },
     {
       "name": "TES3::NPCInstance",
       "note": "Xbox matches the PC at baseNPC (+0x6C); the player's reference (+0x28) is one, and its baseNPC's name (TES3::NPC +0x70) is the character's name."
+    },
+    {
+      "name": "TES3::NPC",
+      "note": "Xbox matches the PC at name (+0x70) and level (+0x7C, short; SetLevel on the player writes it)."
+    },
+    {
+      "name": "TES3::Dialogue",
+      "size": "0x20",
+      "pc_valid_until": "0x18",
+      "note": "0x20 bytes on the Xbox (0x30 on the PC): the info list is a pointer, not inline, so journalIndex sits at +0x1C. Retail has 2,884 dialogues, 758 of them journals (type 4).",
+      "fields": [
+        {
+          "offset": "0x18",
+          "name": "info",
+          "type": "NI::IteratedList<TES3::DialogueInfo*>*",
+          "confidence": "verified",
+          "provenance": "xemu peek: a pointer to a list where the PC has the list inline"
+        },
+        {
+          "offset": "0x1C",
+          "name": "journalIndex",
+          "type": "int",
+          "confidence": "verified",
+          "provenance": "xemu peek: 10 for A1_1_FindSpymaster after Journal A1_1_FindSpymaster 10"
+        }
+      ]
+    },
+    {
+      "name": "TES3::NonDynamicData",
+      "pc_valid_until": "0x0",
+      "note": "12 bytes longer than the PC at or before +0x44; the record lists and the cells list sit 0xC past their PC offsets. PC fields are left out until placed.",
+      "fields": [
+        {
+          "offset": "0x44",
+          "name": "globals",
+          "type": "NI::IteratedList<TES3::GlobalVariable*>*",
+          "confidence": "matched",
+          "provenance": "PC +0x38, at the same 0xC shift as its neighbours"
+        },
+        {
+          "offset": "0x48",
+          "name": "dialogues",
+          "type": "NI::IteratedList<TES3::Dialogue*>*",
+          "confidence": "verified",
+          "provenance": "PC +0x3C; xemu walk: 2,884 objects tagged DIAL"
+        },
+        {
+          "offset": "0x4C",
+          "name": "regions",
+          "type": "NI::IteratedList<TES3::Region*>*",
+          "confidence": "verified",
+          "provenance": "PC +0x40; the multiplayer weather table"
+        },
+        {
+          "offset": "0xB270",
+          "name": "cells",
+          "type": "void*",
+          "confidence": "verified",
+          "provenance": "PC +0xB264; ref-index and the multiplayer cell list"
+        }
+      ]
     },
     {
       "name": "TES3::WorldController",

@@ -89,6 +89,13 @@ first console joins and writes it every 10 seconds
 while it changes, so a restarted server carries on where it stopped. A console's own save is
 still loaded first; joining then applies what the world holds.
 
+With `--world` the server also keeps each console's character under `characters` in `DIR`.
+Every save made while joined goes to one save slot per server and character and is uploaded; a
+console that joins running another game is sent the kept save and loads it. Between saves the
+console sends its inventory, level, attributes, skills and journal as they change. The server
+keeps the latest of them in `stream.json` beside the save and applies them over it when the
+console next loads that save, so a crash loses at most about a second of those.
+
 ### Keys and passwords
 
 Traffic between a console and the server is encrypted. The server has a key of its own, kept in
@@ -203,7 +210,11 @@ full, 3 a wrong password, 4 kicked, 5 banned.
 ## Limits
 
 - Menus no longer pause the world while joined, and resting or waiting is refused.
-- Each console keeps its own save. Items taken, objects a script disables, locks, and items
+- A console needs a save of its own to join. Over a kept character the server restores the
+  inventory, level, attributes, skills and journal; spells, active effects, topics, factions,
+  bounty and current health, magicka and fatigue come from the last save. Restoring only moves a
+  quest forward, never back.
+- Items taken, objects a script disables, locks, and items
   dropped or placed (by the console or a script) are shared, with their stack size, condition and
   charge, and so are containers' contents: the first player to open a container decides what it
   holds. Corpses' inventories, creatures spawned while playing and items made in play (potions,

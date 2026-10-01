@@ -313,7 +313,7 @@ def ping(args):
 
 
 T3MP = struct.Struct("<4sBBHIIIII")  # magic, version, type, 0, session, seq, ack, time, echo
-T3MP_VERSION = 15
+T3MP_VERSION = 16
 HELLO, WELCOME, HEARTBEAT, BYE, STATE, PEER, GONE, EVENTS, REFUSE, CLOCK, ACTORS = range(1, 12)
 # On the wire every packet but the handshake is SEALED: OUTER in the clear (the AEAD's associated
 # data), then INNER and the body sealed under the session key with seq as the nonce.
@@ -391,6 +391,27 @@ EVENT_SAVE = 22  # to a client: save into its multiplayer slot and upload it
 # save that launch loaded, or "". A console not running its character's latest checkpoint is sent
 # the checkpoint as CHECKPOINT_NAME and LOAD (to a client: load that file once it has it).
 EVENT_GAME, EVENT_LOAD = 23, 24
+# The player's own state, per character and never relayed: a sub-kind, then PLAYER_ITEMS (part,
+# parts, item id, then entries as in CONTENTS: every stack of that item, none once it is gone),
+# PLAYER_LEVEL (LEVEL), PLAYER_SKILLS (count, then SKILL each) or PLAYER_JOURNAL (count, then
+# (index u16, quest id) each). To a client only: the kept state, then PLAYER_READY (1 when it was
+# replayed over the checkpoint, 0 to have the console send all of it). The console sends nothing
+# before READY.
+EVENT_PLAYER = 25
+PLAYER_ITEMS, PLAYER_LEVEL, PLAYER_SKILLS, PLAYER_JOURNAL, PLAYER_READY = 1, 2, 3, 4, 5
+# level, level progress, level-ups per attribute (8) and per specialisation (3), base health,
+# magicka and fatigue, base attributes (8)
+LEVEL = struct.Struct("<HH11B3f8f")
+SKILL = struct.Struct("<Bff")  # skill, base, progress
+ATTRIBUTE_NAMES = ("Strength", "Intelligence", "Willpower", "Agility", "Speed", "Endurance",
+                   "Personality", "Luck")
+SKILL_NAMES = ("Block", "Armorer", "MediumArmor", "HeavyArmor", "BluntWeapon", "LongBlade", "Axe",
+               "Spear", "Athletics", "Enchant", "Destruction", "Alteration", "Illusion",
+               "Conjuration", "Mysticism", "Restoration", "Alchemy", "Unarmored", "Security",
+               "Sneak", "Acrobatics", "LightArmor", "ShortBlade", "Marksman", "Mercantile",
+               "Speechcraft", "HandToHand")
+QUEST_INDICES = 32  # a quest's latest indices kept for the replay
+STREAM_NAME = "stream.json"
 # actor id, fight, flee, alarm, hello, base disposition (NO_DISPOSITION for a creature)
 STATUS = struct.Struct("<I5h")
 NO_DISPOSITION = -32768
@@ -824,6 +845,180 @@ def keep_character(upload, folder):
             os.replace(newer, older)
     os.replace(upload, versions[0])
     return head
+
+
+def pack_items(item, entries):
+    """PLAYER_ITEMS parts for every stack of one item; an empty list says it is gone."""
+    head = item.encode("latin-1") + b"\0"
+    parts, body = [], b""
+    for count, flags, condition, charge in entries:
+        entry = ENTRY.pack(count, flags) + (struct.pack("<II", condition, charge)
+                                            if flags & ENTRY_DATA else b"")
+        if body and 3 + len(head) + len(body) + len(entry) > EVENT_DATA:
+            parts.append(body)
+            body = b""
+        body += entry
+    parts.append(body)
+    return [bytes([PLAYER_ITEMS, i, len(parts)]) + head + part for i, part in enumerate(parts)]
+
+
+def unpack_items(data):
+    """(part, parts, item id, entries) of a PLAYER_ITEMS event."""
+    part, parts = data[1], data[2]
+    raw, _, rest = data[3:].partition(b"\0")
+    entries, off = [], 0
+    while off + ENTRY.size <= len(rest):
+        count, flags = ENTRY.unpack_from(rest, off)
+        off += ENTRY.size
+        condition = charge = 0
+        if flags & ENTRY_DATA:
+            if off + 8 > len(rest):
+                break
+            condition, charge = struct.unpack_from("<II", rest, off)
+            off += 8
+        entries.append([count, flags & ENTRY_DATA, condition, charge])
+    return part, parts, wire_text(raw), entries
+
+
+def pack_journal(quests):
+    """PLAYER_JOURNAL events for (quest id, index) pairs, in order."""
+    events, body, count = [], b"", 0
+    for quest, index in quests:
+        entry = struct.pack("<H", index) + quest.encode("latin-1") + b"\0"
+        if count and 2 + len(body) + len(entry) > EVENT_DATA:
+            events.append(bytes([PLAYER_JOURNAL, count]) + body)
+            body, count = b"", 0
+        body += entry
+        count += 1
+    if count:
+        events.append(bytes([PLAYER_JOURNAL, count]) + body)
+    return events
+
+
+def unpack_journal(data):
+    """(quest id, index) pairs of a PLAYER_JOURNAL event."""
+    quests, off = [], 2
+    for _ in range(data[1]):
+        if off + 3 > len(data):
+            break
+        index = struct.unpack_from("<H", data, off)[0]
+        raw, found, _ = data[off + 2:].partition(b"\0")
+        if not found:
+            break
+        quests.append((wire_text(raw), index))
+        off += 3 + len(raw)
+    return quests
+
+
+def describe_level(body):
+    level, progress, *rest = LEVEL.unpack(body)
+    stats, attributes = rest[11:14], rest[14:]
+    return (f"level {level} ({progress} toward the next), health {stats[0]:.0f}, magicka "
+            f"{stats[1]:.0f}, fatigue {stats[2]:.0f}, "
+            + ", ".join(f"{n} {v:.0f}" for n, v in zip(ATTRIBUTE_NAMES, attributes)))
+
+
+class PlayerStream:
+    """One character's state as its console streamed it: each item's stacks, the level block,
+    each skill and each quest's indices in order. It holds what changed since the character's
+    first launch on this server, so it replays over whichever of its checkpoints a console loads."""
+
+    def __init__(self, path):
+        self.path = path
+        self.items, self.skills, self.journal, self.level = {}, {}, {}, None
+        self.arriving = None  # (item id, entries so far, next part)
+        self.dirty = False
+        try:
+            with open(path, encoding="utf-8") as f:
+                kept = json.load(f)
+        except FileNotFoundError:
+            return
+        self.items = kept.get("items", {})
+        self.skills = {int(k): v for k, v in kept.get("skills", {}).items()}
+        self.journal = kept.get("journal", {})
+        self.level = bytes.fromhex(kept["level"]) if kept.get("level") else None
+
+    def reset(self):
+        """A new character: nothing streamed so far belongs to it."""
+        self.items, self.skills, self.journal, self.level = {}, {}, {}, None
+        self.arriving, self.dirty = None, True
+
+    def checkpoint(self):
+        """A new checkpoint holds each quest's entries up to its index; the latest is enough."""
+        for quest, indices in self.journal.items():
+            if len(indices) > 1:
+                self.journal[quest] = indices[-1:]
+                self.dirty = True
+
+    def take(self, data):
+        """Keep one PLAYER event; what changed, for the log, or None."""
+        kind = data[0] if data else 0
+        if kind == PLAYER_ITEMS and len(data) > 3:
+            part, parts, item, entries = unpack_items(data)
+            if part == 0:
+                self.arriving = (item, [], 0)
+            if not self.arriving or self.arriving[0] != item or self.arriving[2] != part:
+                self.arriving = None
+                return None
+            self.arriving = (item, self.arriving[1] + entries, part + 1)
+            if part + 1 < parts:
+                return None
+            entries, self.arriving = self.arriving[1], None
+            if entries:
+                self.items[item] = entries
+            else:
+                self.items.pop(item, None)
+            self.dirty = True
+            return (f"carries {describe_contents([[item, *e] for e in entries])}"
+                    if entries else f"no longer carries {item}")
+        if kind == PLAYER_LEVEL and len(data) >= 1 + LEVEL.size:
+            body = bytes(data[1:1 + LEVEL.size])
+            if not finite(*LEVEL.unpack(body)[13:]):
+                return None
+            self.level, self.dirty = body, True
+            return describe_level(body)
+        if kind == PLAYER_SKILLS and len(data) >= 2:
+            changed = []
+            for i in range(min(data[1], (len(data) - 2) // SKILL.size)):
+                skill, base, progress = SKILL.unpack_from(data, 2 + i * SKILL.size)
+                if skill < len(SKILL_NAMES) and finite(base, progress):
+                    self.skills[skill] = [base, progress]
+                    changed.append(f"{SKILL_NAMES[skill]} {base:.0f} ({progress:.2f})")
+            self.dirty = self.dirty or bool(changed)
+            return ", ".join(changed) or None
+        if kind == PLAYER_JOURNAL and len(data) >= 2:
+            quests = unpack_journal(data)
+            for quest, index in quests:
+                indices = self.journal.setdefault(quest, [])
+                if not indices or indices[-1] != index:
+                    indices.append(index)
+                    del indices[:-QUEST_INDICES]
+            self.dirty = self.dirty or bool(quests)
+            return "journal " + ", ".join(f"{q} {i}" for q, i in quests) if quests else None
+        return None
+
+    def replay(self):
+        """The kept state as events, in the order a console applies them."""
+        events = [part for item, entries in sorted(self.items.items())
+                  for part in pack_items(item, entries)]
+        if self.level:
+            events.append(bytes([PLAYER_LEVEL]) + self.level)
+        skills = sorted(self.skills.items())
+        per = (EVENT_DATA - 2) // SKILL.size
+        for i in range(0, len(skills), per):
+            chunk = skills[i:i + per]
+            events.append(bytes([PLAYER_SKILLS, len(chunk)]) + b"".join(
+                SKILL.pack(skill, *values) for skill, values in chunk))
+        events += pack_journal([(q, i) for q, indices in sorted(self.journal.items())
+                                for i in indices])
+        return events
+
+    def save(self):
+        save_world(self.path, {"items": self.items,
+                               "level": self.level.hex() if self.level else None,
+                               "skills": {str(k): v for k, v in self.skills.items()},
+                               "journal": self.journal})
+        self.dirty = False
 
 
 class Incoming:
@@ -1450,6 +1645,8 @@ def serve(args):
                             int(condition[0]) if condition else 0, 0])
         bot_boxes.append((float(at), int(refid, 16), int(cell), entries))
     world = {"path": None, "dirty": False, "saved": 0.0, "next_spawn": 1}
+    streams = {}  # character folder -> PlayerStream
+    streams_saved = 0.0
     bot_spawns = []
     for spec in args.bot_spawn:
         what, _, at = spec.rpartition("@")
@@ -1744,17 +1941,47 @@ def serve(args):
             if other.alive and other.id != origin:
                 send_contents(other.id, refid, now)
 
+    def character_folder(client):
+        return (os.path.join(args.world, "characters", fingerprint(client.key))
+                if args.world and client.key else None)
+
+    def player_stream(client):
+        folder = character_folder(client)
+        if folder is None:
+            return None
+        if folder not in streams:
+            streams[folder] = PlayerStream(os.path.join(folder, STREAM_NAME))
+        return streams[folder]
+
+    def player_ready(client, replay, stamp, now):
+        """Replay the kept player state over the checkpoint, or have the console send it all."""
+        stream = player_stream(client)
+        if stream is None:
+            return
+        events = stream.replay() if replay else []
+        for data in events:
+            client.rel.queue(EVENT_PLAYER, 0, data)
+        client.rel.queue(EVENT_PLAYER, 0, bytes([PLAYER_READY, 1 if replay else 0]))
+        flush(client, now)
+        print(f"{stamp} client {client.id}: " + (
+            f"replayed {len(stream.items)} items, {len(stream.skills)} skills, "
+            f"{len(stream.journal)} quests" + (", the level" if stream.level else "")
+            if replay else "streams its player from scratch"), flush=True)
+
     def on_game(client, token, loaded, stamp, now):
         """A console's launch: send it its character's latest checkpoint unless it runs it."""
         if token != client.game:
             client.game, client.synced = token, False
-        if client.synced:
+        if client.synced:  # a rejoin of the same launch: events in flight were dropped
+            player_ready(client, False, stamp, now)
             return
-        path = latest_character(os.path.join(args.world, "characters", fingerprint(client.key))
-                                if args.world and client.key else None)
+        path = latest_character(character_folder(client))
         if path is None:
             client.synced = True
             print(f"{stamp} client {client.id} has no kept character", flush=True)
+            if player_stream(client):
+                player_stream(client).reset()
+            player_ready(client, False, stamp, now)
             return
         with open(path, "rb") as stream:
             data = stream.read()
@@ -1764,6 +1991,7 @@ def serve(args):
             client.synced = True
             print(f"{stamp} client {client.id} runs its character ({os.path.basename(path)})",
                   flush=True)
+            player_ready(client, True, stamp, now)
             return
         client.bulk = Outgoing(name, data)
         client.rel.queue(EVENT_OFFER, 0, client.bulk.offer())
@@ -1780,11 +2008,11 @@ def serve(args):
             print(f"{stamp} client {client.id} sent {client.upload.name} from a game that is not "
                   f"its character's; left in uploads", flush=True)
             return
-        folder = os.path.join(args.world, "characters", fingerprint(client.key))
-        head = keep_character(client.upload.path, folder)
+        head = keep_character(client.upload.path, character_folder(client))
         if head:
             print(f"{stamp} client {client.id} kept {client.upload.name}: {head['player']} in "
                   f"{head['cell']}, {len(head['masters'])} masters", flush=True)
+            player_stream(client).checkpoint()
         else:
             print(f"{stamp} client {client.id} sent {client.upload.name}, not a save; left in "
                   f"uploads", flush=True)
@@ -1806,6 +2034,12 @@ def serve(args):
             send(client, BULK_ACK, client.upload.ack(now))
             if client.upload.status == BULK_DONE:
                 received(client, stamp)
+            return
+        if kind == EVENT_PLAYER:
+            stream = player_stream(client) if client.synced else None
+            change = stream.take(data) if stream else None
+            if change:
+                print(f"{stamp} client {client.id} {change}", flush=True)
             return
         if kind == EVENT_CONTENTS and len(data) >= CONTENTS_HEAD.size:
             refid, cell, part, parts, flags, entries = unpack_contents(data)
@@ -2497,6 +2731,11 @@ def serve(args):
                 leave(client)
         if world["path"] and now >= world["saved"] + (10 if world["dirty"] else 60):
             write_world(now)
+        if now >= streams_saved + 2:
+            streams_saved = now
+            for stream in streams.values():
+                if stream.dirty:
+                    stream.save()
         if args.bot and bot["anchor"] and window(args.bot_busy, now) != bot["busy"]:
             bot["busy"] = not bot["busy"]
             print(f"{time.strftime('%H:%M:%S')} bot {'saves' if bot['busy'] else 'is back'}",
@@ -2675,6 +2914,9 @@ def serve(args):
                     f"client {c} {n}" for c, n in sorted(runs.items())), flush=True)
     if world["path"]:
         write_world(time.time())
+    for stream in streams.values():
+        if stream.dirty:
+            stream.save()
     for client in clients.values():
         print(f"client {client.id} {client.mac}: " + summary(client, "last "))
     if args.drop:

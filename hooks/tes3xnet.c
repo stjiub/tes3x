@@ -263,7 +263,7 @@ struct descriptor {
  * session and seq in the clear (T3MP_OUTER, the AEAD's associated data) and seals the real type,
  * ack, times and body under the session's key, seq being the nonce. The receiver rebuilds the
  * T3MP_HEADER layout after opening it. */
-#define T3MP_VERSION 15u
+#define T3MP_VERSION 16u
 #define T3MP_HEADER 28u
 #define T3MP_OUTER 16u
 #define T3MP_INNER 16u
@@ -6525,8 +6525,9 @@ static const char *object_id(const u8 *object)
     return mapped(id) ? id : 0;
 }
 
-/* An object's inventory as entries: per stack its item data, one entry each, then what is left. */
-static u32 contents_read(const u8 *object, struct entry *out, u32 max)
+/* An object's inventory as entries: per stack its item data, one entry each, then what is left;
+ * with only, the stacks of that item. */
+static u32 contents_read(const u8 *object, struct entry *out, u32 max, const char *only)
 {
     const u8 *node = *(const u8 *const *)(object + OBJECT_INVENTORY + INVENTORY_FIRST), *stack;
     const u8 *item, *vars, *const *data;
@@ -6537,7 +6538,8 @@ static u32 contents_read(const u8 *object, struct entry *out, u32 max)
     for (guard = 0; plausible(node) && guard < 256 && n < max;
          node = *(const u8 *const *)(node + 4), guard++) {
         if (!plausible(stack = *(const u8 *const *)(node + 8)) ||
-            !plausible(item = *(const u8 *const *)(stack + 4)) || !(id = object_id(item)))
+            !plausible(item = *(const u8 *const *)(stack + 4)) || !(id = object_id(item)) ||
+            (only && !same_id(id, only)))
             continue;
         total = *(const int *)stack;
         used = 0;
@@ -6727,13 +6729,13 @@ static void inventory_take(u8 *ref, const char *id, int count)
 /* Add and remove what makes the actor's inventory hold the entries. An item that differs only in
  * its condition or charge (a weapon worn by a blow) is changed in place: taking it out would
  * unequip it. */
-static int inventory_apply(u8 *ref, const struct entry *want, u32 n)
+static int inventory_apply(u8 *ref, const struct entry *want, u32 n, const char *only, u8 *mobile)
 {
     static struct entry have[BOX_ENTRIES];
     static u8 matched[BOX_ENTRIES];
     static u32 pair[BOX_ENTRIES];
     u8 *object = *(u8 **)(ref + REF_BASE), *inventory = object + OBJECT_INVENTORY, *item, *data;
-    u32 h = contents_read(object, have, BOX_ENTRIES), i, k;
+    u32 h = contents_read(object, have, BOX_ENTRIES, only), i, k;
     int delta;
 
     object_applying = 1;
@@ -6780,7 +6782,7 @@ static int inventory_apply(u8 *ref, const struct entry *want, u32 n)
             *(u32 *)(data + ITEM_CONDITION) = want[i].condition;
             *(u32 *)(data + ITEM_CHARGE) = want[i].charge;
         }
-        ((fn_inventory_add)TES3X_NET_INVENTORY_ADD)(inventory, 0, item, delta, 0,
+        ((fn_inventory_add)TES3X_NET_INVENTORY_ADD)(inventory, mobile, item, delta, 0,
                                                     data ? &data : 0);
     }
     for (k = 0; k < h; k++)
@@ -6851,7 +6853,7 @@ static void containers_scan(void)
                     continue;
                 if (!refid)
                     continue;
-                count = contents_read(object, entries, BOX_ENTRIES);
+                count = contents_read(object, entries, BOX_ENTRIES, 0);
                 hash = contents_hash(entries, count) | 1;
                 known = box_hash(refid, 0);
                 if (known && *known == hash)
@@ -6986,13 +6988,13 @@ static void contents_event(const struct event *e)
         ref = inventory_owner(refid);
     if (!ref)
         return;
-    if (inventory_actor(ref) ? !inventory_apply(ref, box_in, box_in_count)
+    if (inventory_actor(ref) ? !inventory_apply(ref, box_in, box_in_count, 0, 0)
                              : !contents_apply(ref, box_in, box_in_count)) {
         box_failures++;
         tes3x_log_hex3("net.contents_failed", refid, (u32)vtable_of(*(u8 **)(ref + REF_BASE)), 0);
         return;
     }
-    n = contents_read(*(u8 **)(ref + REF_BASE), read_back, BOX_ENTRIES);
+    n = contents_read(*(u8 **)(ref + REF_BASE), read_back, BOX_ENTRIES, 0);
     *box_hash(refid, 1) = contents_hash(read_back, n) | 1;
     boxes_applied++;
     tes3x_log_hex3("net.contents_applied", refid, box_in_count, n);
@@ -8844,6 +8846,549 @@ static void save_stat(void)
     tes3x_log_hex3("net.game", game_token, load_wanted, loads_started);
 }
 
+/* The player's own state, streamed so that a crash loses only what the server has not seen since
+ * the checkpoint. Once a second the console compares its inventory (per item object), level,
+ * attributes, skills and journal with what it last sent and sends the changes as PLAYER events;
+ * the server keeps the latest of each per character. When a launch runs the character's
+ * checkpoint the server sends them back and then READY. Nothing goes out before READY, so a
+ * checkpoint's older values never overwrite the server's. */
+#define EVENT_PLAYER 25u
+#define PLAYER_ITEMS 1u   /* part, parts, item id, then entries as in CONTENTS */
+#define PLAYER_LEVEL 2u   /* LEVEL_BYTES */
+#define PLAYER_SKILLS 3u  /* count, then (skill u8, base f32, progress f32) */
+#define PLAYER_JOURNAL 4u /* count, then (index u16, quest id) */
+#define PLAYER_READY 5u   /* from the server: 1 once it replayed what it keeps, 0 to send it all */
+#define PLAYER_POLL_US 1000000u
+#define CARRIED 256u
+#define ITEM_PARTS 12u
+#define SKILLS 27u
+#define SKILL_BYTES 9u
+#define SKILLS_PER_EVENT ((EVENT_DATA - 2) / SKILL_BYTES)
+#define JOURNALS 4096u
+#define JOURNAL_ENTRIES 16u
+/* level u16, level progress u16, level-ups per attribute 8 u8 and per specialisation 3 u8, base
+ * health, magicka, fatigue and the 8 attributes as f32 */
+#define LEVEL_BYTES 59u
+#define ATTRIBUTES 8u
+#define STAT_BASE 4 /* Statistic: vtable, base, current */
+#define STAT_LIMIT 0x49742400u /* 1e6 as float bits */
+#define MOBILE_ATTRIBUTES 0x254
+#define MOBILE_HEALTH 0x2B4
+#define MOBILE_MAGICKA 0x2C0
+#define MOBILE_FATIGUE 0x2D8
+#define MOBILE_SKILLS 0x3B0 /* 0x10 each */
+#define PLAYER_LEVELUPS 0x56C /* int per attribute, then per specialisation */
+#define PLAYER_LEVEL_PROGRESS 0x5E8
+#define PLAYER_SKILL_PROGRESS 0x5F4
+#define NPC_LEVEL 0x7C
+#define RECORDS_DIALOGUES 0x48 /* list: head +0x8; node: next +0x4, dialogue +0x8 */
+#define DIALOGUE_NAME 0x10
+#define DIALOGUE_TYPE 0x14
+#define DIALOGUE_JOURNAL 4
+#define DIALOGUE_INDEX 0x1C
+
+static const char *const attribute_names[ATTRIBUTES] = {
+    "Strength", "Intelligence", "Willpower", "Agility", "Speed", "Endurance", "Personality",
+    "Luck"};
+static const char *const skill_names[SKILLS] = {
+    "Block",      "Armorer",     "MediumArmor", "HeavyArmor",  "BluntWeapon", "LongBlade",
+    "Axe",        "Spear",       "Athletics",   "Enchant",     "Destruction", "Alteration",
+    "Illusion",   "Conjuration", "Mysticism",   "Restoration", "Alchemy",     "Unarmored",
+    "Security",   "Sneak",       "Acrobatics",  "LightArmor",  "ShortBlade",  "Marksman",
+    "Mercantile", "Speechcraft", "HandToHand"};
+
+static struct {
+    const u8 *item;
+    u32 hash;
+} carried[CARRIED];
+static u8 carried_seen[CARRIED], level_sent[LEVEL_BYTES];
+static u32 skills_sent[SKILLS][2], skills_known, level_known;
+static u16 journal_sent[JOURNALS];
+static u32 player_mode, player_welcome, player_polled;
+static u32 player_items_out, player_stats_out, player_journal_out, player_too_many;
+static u32 player_items_in, player_stats_in, player_journal_in, player_apply_failures;
+static struct entry player_in[BOX_ENTRIES];
+static u32 player_in_count, player_in_part;
+static char player_in_id[SPAWN_ID];
+
+static u8 *player_mobile(void)
+{
+    const u8 *world = *(const u8 **)TES3X_NET_WORLD, *mobs;
+    u8 *const *list;
+
+    if (!plausible(world) || !plausible(mobs = *(const u8 **)(world + 0x5C)))
+        return 0;
+    list = *(u8 *const *const *)(mobs + 0x24);
+    return plausible(list) && plausible(*list) ? *list : 0;
+}
+
+/* The player's base NPC, which holds the level. */
+static u8 *player_npc(const u8 *ref)
+{
+    u8 *instance = *(u8 *const *)(ref + REF_BASE), *npc;
+
+    return plausible(instance) && plausible(npc = *(u8 *const *)(instance + 0x6C)) ? npc : 0;
+}
+
+static u32 events_room(void)
+{
+    u32 flags = lock(), room = EVENTS_OUT - (rel.out_next - rel.out_first);
+
+    unlock(flags);
+    return room;
+}
+
+/* A stack's count and item data, as contents_read reads them. */
+static u32 stack_hash(const u8 *stack)
+{
+    const u8 *vars = *(const u8 *const *)(stack + STACK_VARIABLES), *const *data;
+    u32 hash = (2166136261u ^ *(const u32 *)stack) * 16777619u, filled, i;
+
+    filled = plausible(vars) ? *(const u32 *)(vars + 0xC) : 0;
+    data = filled ? *(const u8 *const *const *)(vars + 4) : 0;
+    for (i = 0; plausible(data) && i < filled; i++)
+        if (plausible(data[i]))
+            hash = ((hash ^ *(const u32 *)(data[i] + ITEM_CONDITION)) * 16777619u ^
+                    *(const u32 *)(data[i] + ITEM_CHARGE)) * 16777619u;
+    return hash | 1;
+}
+
+/* Every stack of one item the player carries, as PLAYER_ITEMS parts; none when it is gone. 0 when
+ * the queue has no room. */
+static int carried_send(const u8 *object, const char *id)
+{
+    static struct entry e[BOX_ENTRIES];
+    static u8 parts[ITEM_PARTS][EVENT_DATA];
+    u32 lengths[ITEM_PARTS], n = contents_read(object, e, BOX_ENTRIES, id), count = 0, head, i, k;
+    u32 size;
+
+    for (k = 0; id[k]; k++)
+        ;
+    head = 3 + k + 1;
+    lengths[0] = head;
+    for (i = 0; i < n; i++) {
+        size = 5 + (e[i].flags & ENTRY_DATA ? 8 : 0);
+        if (lengths[count] + size > EVENT_DATA) {
+            if (++count == ITEM_PARTS) {
+                player_too_many++;
+                return 1;
+            }
+            lengths[count] = head;
+        }
+        put32le(parts[count] + lengths[count], (u32)e[i].count);
+        parts[count][lengths[count] + 4] = (u8)e[i].flags;
+        if (e[i].flags & ENTRY_DATA) {
+            put32le(parts[count] + lengths[count] + 5, e[i].condition);
+            put32le(parts[count] + lengths[count] + 9, e[i].charge);
+        }
+        lengths[count] += size;
+    }
+    count++;
+    if (events_room() < count + 2)
+        return 0;
+    for (i = 0; i < count; i++) {
+        parts[i][0] = PLAYER_ITEMS;
+        parts[i][1] = (u8)i;
+        parts[i][2] = (u8)count;
+        copy(parts[i] + 3, (const u8 *)id, k + 1);
+        event_queue(EVENT_PLAYER, parts[i], lengths[i]);
+    }
+    player_items_out++;
+    return 1;
+}
+
+/* The inventory by item object: a stack that changed, or one that is gone, goes out. */
+static void carried_scan(const u8 *object, int send)
+{
+    const u8 *node, *stack, *item;
+    const char *id;
+    u32 i, free, guard, hash;
+
+    for (i = 0; i < CARRIED; i++)
+        carried_seen[i] = 0;
+    for (node = *(const u8 *const *)(object + OBJECT_INVENTORY + INVENTORY_FIRST), guard = 0;
+         plausible(node) && guard < 512; node = *(const u8 *const *)(node + 4), guard++) {
+        if (!plausible(stack = *(const u8 *const *)(node + 8)) ||
+            !plausible(item = *(const u8 *const *)(stack + 4)) || !(id = object_id(item)))
+            continue;
+        hash = stack_hash(stack);
+        for (i = 0, free = CARRIED; i < CARRIED && carried[i].item != item; i++)
+            if (!carried[i].item && free == CARRIED)
+                free = i;
+        if (i == CARRIED && (i = free) == CARRIED) {
+            player_too_many++;
+            continue;
+        }
+        carried_seen[i] = 1;
+        if (carried[i].item == item && carried[i].hash == hash)
+            continue;
+        if (send && !carried_send(object, id)) {
+            carried_seen[i] = carried[i].item == item;
+            continue;
+        }
+        carried[i].item = item;
+        carried[i].hash = hash;
+    }
+    for (i = 0; i < CARRIED; i++)
+        if (carried[i].item && !carried_seen[i] &&
+            (!send || ((id = object_id(carried[i].item)) && carried_send(object, id))))
+            carried[i].item = 0;
+}
+
+static void level_read(const u8 *mobile, const u8 *npc, u8 *out)
+{
+    static const u32 stats[3] = {MOBILE_HEALTH, MOBILE_MAGICKA, MOBILE_FATIGUE};
+    u32 i;
+    int v;
+
+    out[0] = npc[NPC_LEVEL];
+    out[1] = npc[NPC_LEVEL + 1];
+    v = *(const int *)(mobile + PLAYER_LEVEL_PROGRESS);
+    out[2] = (u8)v;
+    out[3] = (u8)(v >> 8);
+    for (i = 0; i < 11; i++) {
+        v = ((const int *)(mobile + PLAYER_LEVELUPS))[i];
+        out[4 + i] = (u8)(v < 0 ? 0 : v > 255 ? 255 : v);
+    }
+    for (i = 0; i < 3; i++)
+        copy(out + 15 + 4 * i, mobile + stats[i] + STAT_BASE, 4);
+    for (i = 0; i < ATTRIBUTES; i++)
+        copy(out + 27 + 4 * i, mobile + MOBILE_ATTRIBUTES + 0xC * i + STAT_BASE, 4);
+}
+
+static void level_scan(const u8 *mobile, const u8 *npc, int send)
+{
+    u8 data[1 + LEVEL_BYTES];
+    u32 i;
+
+    level_read(mobile, npc, data + 1);
+    for (i = 0; level_known && i < LEVEL_BYTES && data[1 + i] == level_sent[i]; i++)
+        ;
+    if (level_known && i == LEVEL_BYTES)
+        return;
+    data[0] = PLAYER_LEVEL;
+    if (send && !event_queue(EVENT_PLAYER, data, sizeof(data)))
+        return;
+    copy(level_sent, data + 1, LEVEL_BYTES);
+    level_known = 1;
+    player_stats_out += send;
+}
+
+/* Skills whose base or progress changed, SKILLS_PER_EVENT to an event. */
+static void skills_scan(const u8 *mobile, int send)
+{
+    u8 data[EVENT_DATA];
+    u32 i, n = 0, k, base, progress, pending[SKILLS_PER_EVENT];
+
+    for (i = 0; i <= SKILLS; i++) {
+        if (i < SKILLS) {
+            base = *(const u32 *)(mobile + MOBILE_SKILLS + 0x10 * i + STAT_BASE);
+            progress = ((const u32 *)(mobile + PLAYER_SKILL_PROGRESS))[i];
+            if ((skills_known >> i & 1) && skills_sent[i][0] == base &&
+                skills_sent[i][1] == progress)
+                continue;
+            data[2 + n * SKILL_BYTES] = (u8)i;
+            put32le(data + 3 + n * SKILL_BYTES, base);
+            put32le(data + 7 + n * SKILL_BYTES, progress);
+            pending[n++] = i;
+        }
+        if (!n || (n < SKILLS_PER_EVENT && i < SKILLS))
+            continue;
+        data[0] = PLAYER_SKILLS;
+        data[1] = (u8)n;
+        if (send && !event_queue(EVENT_PLAYER, data, 2 + n * SKILL_BYTES))
+            return;
+        for (k = 0; k < n; k++) {
+            skills_sent[pending[k]][0] = get32le(data + 3 + k * SKILL_BYTES);
+            skills_sent[pending[k]][1] = get32le(data + 7 + k * SKILL_BYTES);
+            skills_known |= 1u << pending[k];
+        }
+        player_stats_out += send;
+        n = 0;
+    }
+}
+
+/* The first node of the dialogue list. */
+static const u8 *dialogues_head(void)
+{
+    const u8 *handler = *(const u8 **)TES3X_NET_DATA_HANDLER, *records, *list;
+
+    if (!plausible(handler) || !plausible(records = *(const u8 *const *)handler) ||
+        !plausible(list = *(const u8 *const *)(records + RECORDS_DIALOGUES)))
+        return 0;
+    return *(const u8 *const *)(list + 8);
+}
+
+static const char *dialogue_name(const u8 *dialogue)
+{
+    const char *name = *(const char *const *)(dialogue + DIALOGUE_NAME);
+
+    return mapped(name) ? name : 0;
+}
+
+/* Journal indices, kept by the quest's place among the journals and sent as (index, id). */
+static void journal_scan(int send)
+{
+    u8 data[EVENT_DATA];
+    const u8 *node = dialogues_head(), *dialogue;
+    const char *name;
+    u32 k, n = 0, length = 2, size, guard, i, pending[JOURNAL_ENTRIES], values[JOURNAL_ENTRIES];
+    int index;
+
+    for (guard = k = 0; k <= JOURNALS && guard < 65536; guard++) {
+        dialogue = plausible(node) ? *(const u8 *const *)(node + 8) : 0;
+        if (dialogue && (!plausible(dialogue) || dialogue[DIALOGUE_TYPE] != DIALOGUE_JOURNAL)) {
+            node = *(const u8 *const *)(node + 4);
+            continue;
+        }
+        size = 0;
+        index = 0;
+        if (dialogue && k < JOURNALS) {
+            index = *(const int *)(dialogue + DIALOGUE_INDEX);
+            index = index < 0 ? 0 : index > 0xFFFF ? 0xFFFF : index;
+            name = dialogue_name(dialogue);
+            for (size = 0; name && name[size] && size < SPAWN_ID - 1; size++)
+                ;
+            if (journal_sent[k] == (u16)index || !name || name[size] ||
+                !script_safe((const u8 *)name, SPAWN_ID)) {
+                k++;
+                node = *(const u8 *const *)(node + 4);
+                continue;
+            }
+        }
+        /* the event is full, or this was the end of the list */
+        if (n && (!dialogue || k == JOURNALS || length + 3 + size > EVENT_DATA ||
+                  n == JOURNAL_ENTRIES)) {
+            data[0] = PLAYER_JOURNAL;
+            data[1] = (u8)n;
+            if (send && !event_queue(EVENT_PLAYER, data, length))
+                return;
+            for (i = 0; i < n; i++)
+                journal_sent[pending[i]] = (u16)values[i];
+            player_journal_out += send;
+            n = 0;
+            length = 2;
+        }
+        if (!dialogue || k == JOURNALS)
+            return;
+        data[length] = (u8)index;
+        data[length + 1] = (u8)(index >> 8);
+        copy(data + length + 2, (const u8 *)name, size + 1);
+        length += 3 + size;
+        pending[n] = k++;
+        values[n++] = (u32)index;
+        node = *(const u8 *const *)(node + 4);
+    }
+}
+
+/* Game thread, in the world: after READY, the changes once a second. */
+static void player_frame(const u8 *ref)
+{
+    u8 *mobile = player_mobile(), *npc = player_npc(ref), *object = *(u8 *const *)(ref + REF_BASE);
+    u32 now = now_us(), i, send = 1;
+
+    if (ses.state != SESSION_JOINED || player_welcome != ses.welcomes || !player_mode ||
+        !plausible(mobile) || !npc || !plausible(object))
+        return;
+    if (player_mode != 3) {
+        /* After a replay what the console has is what the server keeps; otherwise send it all. */
+        for (i = 0; i < CARRIED; i++)
+            carried[i].item = 0;
+        for (i = 0; i < JOURNALS; i++)
+            journal_sent[i] = 0;
+        level_known = skills_known = 0;
+        send = player_mode == 1;
+        tes3x_log_hex3("net.player_ready", player_mode, ses.welcomes, 0);
+        player_mode = 3;
+    } else if (now - player_polled < PLAYER_POLL_US) {
+        return;
+    }
+    player_polled = now;
+    carried_scan(object, send);
+    level_scan(mobile, npc, send);
+    skills_scan(mobile, send);
+    journal_scan(send);
+}
+
+static void player_set(u8 *ref, const char *what, const char *name, int value)
+{
+    char line[48], *p = put_text(put_text(line, what), name);
+
+    p = put_int(put_text(p, " "), value);
+    *p = 0;
+    run_script_on(line, ref);
+}
+
+/* Attributes and the level through their script commands, which update what follows from them. */
+static void level_apply(u8 *ref, const u8 *body)
+{
+    static const u32 stats[3] = {MOBILE_HEALTH, MOBILE_MAGICKA, MOBILE_FATIGUE};
+    u8 *mobile = player_mobile(), *npc = player_npc(ref);
+    float value, *stat;
+    u32 i;
+    int level = body[0] | body[1] << 8;
+
+    if (!plausible(mobile) || !npc || !float_within(body + 15, 3 + ATTRIBUTES, STAT_LIMIT)) {
+        player_apply_failures++;
+        return;
+    }
+    if (*(const short *)(npc + NPC_LEVEL) != level)
+        player_set(ref, "SetLevel", "", level);
+    for (i = 0; i < ATTRIBUTES; i++) {
+        copy((u8 *)&value, body + 27 + 4 * i, 4);
+        if (*(const float *)(mobile + MOBILE_ATTRIBUTES + 0xC * i + STAT_BASE) != value)
+            player_set(ref, "Set", attribute_names[i], round_int(value));
+    }
+    for (i = 0; i < 3; i++) {
+        stat = (float *)(mobile + stats[i]);
+        copy((u8 *)&stat[1], body + 15 + 4 * i, 4);
+        if (stat[2] > stat[1])
+            stat[2] = stat[1];
+    }
+    *(int *)(mobile + PLAYER_LEVEL_PROGRESS) = body[2] | body[3] << 8;
+    for (i = 0; i < 11; i++)
+        ((int *)(mobile + PLAYER_LEVELUPS))[i] = body[4 + i];
+    player_stats_in++;
+}
+
+static void skills_apply(u8 *ref, const u8 *p, u32 length)
+{
+    u8 *mobile = player_mobile();
+    u32 i, skill;
+    float base;
+
+    if (!plausible(mobile)) {
+        player_apply_failures++;
+        return;
+    }
+    for (i = 0; i < p[1] && 2 + (i + 1) * SKILL_BYTES <= length; i++) {
+        skill = p[2 + i * SKILL_BYTES];
+        if (skill >= SKILLS || !float_within(p + 3 + i * SKILL_BYTES, 2, STAT_LIMIT))
+            continue;
+        copy((u8 *)&base, p + 3 + i * SKILL_BYTES, 4);
+        if (*(const float *)(mobile + MOBILE_SKILLS + 0x10 * skill + STAT_BASE) != base)
+            player_set(ref, "Set", skill_names[skill], round_int(base));
+        copy(mobile + PLAYER_SKILL_PROGRESS + 4 * skill, p + 7 + i * SKILL_BYTES, 4);
+    }
+    player_stats_in++;
+}
+
+/* A quest only moves forward: the checkpoint already holds the entries up to its own index. */
+static void journal_apply(const u8 *p, u32 length)
+{
+    char line[64], *out;
+    const u8 *node, *dialogue = 0;
+    const char *id, *name;
+    u32 off = 2, i, guard, max;
+    int index;
+
+    for (i = 0; i < p[1] && off + 3 <= length; i++) {
+        index = p[off] | p[off + 1] << 8;
+        id = (const char *)p + off + 2;
+        max = length - off - 2 < SPAWN_ID ? length - off - 2 : SPAWN_ID;
+        if (!script_safe(p + off + 2, max))
+            return;
+        for (off += 2; p[off]; off++)
+            ;
+        off++;
+        for (node = dialogues_head(), guard = 0; plausible(node) && guard < 65536;
+             node = *(const u8 *const *)(node + 4), guard++)
+            if (plausible(dialogue = *(const u8 *const *)(node + 8)) &&
+                dialogue[DIALOGUE_TYPE] == DIALOGUE_JOURNAL && (name = dialogue_name(dialogue)) &&
+                same_name(name, id))
+                break;
+        if (!plausible(node)) {
+            player_apply_failures++;
+            log_text("net.player_quest_unknown", id);
+            continue;
+        }
+        if (*(const int *)(dialogue + DIALOGUE_INDEX) >= index)
+            continue;
+        out = put_int(put_text(put_text(put_text(line, "Journal \""), id), "\" "), index);
+        *out = 0;
+        run_script(line);
+        player_journal_in++;
+    }
+}
+
+static void player_items_event(u8 *ref, const struct event *e)
+{
+    const u8 *p = e->data;
+    u32 off, k, max = e->length - 3 < SPAWN_ID ? e->length - 3 : SPAWN_ID;
+
+    if (e->length < 4 || !script_safe(p + 3, max))
+        return;
+    if (p[1] == 0) {
+        player_in_count = player_in_part = 0;
+        for (k = 0; p[3 + k]; k++)
+            player_in_id[k] = (char)p[3 + k];
+        player_in_id[k] = 0;
+    } else if (p[1] != player_in_part || !same_id((const char *)p + 3, player_in_id)) {
+        return;
+    }
+    player_in_part++;
+    for (off = 3; p[off]; off++)
+        ;
+    off++;
+    while (off + 5 <= e->length && player_in_count < BOX_ENTRIES) {
+        struct entry *x = &player_in[player_in_count];
+        x->count = (int)get32le(p + off);
+        x->flags = p[off + 4] & ENTRY_DATA;
+        x->condition = x->charge = 0;
+        off += 5;
+        if (x->flags & ENTRY_DATA) {
+            if (off + 8 > e->length)
+                break;
+            x->condition = get32le(p + off);
+            x->charge = get32le(p + off + 4);
+            off += 8;
+        }
+        for (k = 0; player_in_id[k]; k++)
+            x->id[k] = player_in_id[k];
+        x->id[k] = 0;
+        player_in_count++;
+    }
+    if (player_in_part != p[2])
+        return;
+    if (inventory_apply(ref, player_in, player_in_count, player_in_id, player_mobile()))
+        player_items_in++;
+    else
+        player_apply_failures++;
+    log_text("net.player_item", player_in_id);
+}
+
+static void player_event(const struct event *e)
+{
+    u8 *ref = (u8 *)player_reference();
+
+    if (e->length < 1)
+        return;
+    if (e->data[0] == PLAYER_READY) {
+        player_mode = e->length >= 2 && e->data[1] ? 2 : 1;
+        player_welcome = ses.welcomes;
+        return;
+    }
+    if (!ref) {
+        player_apply_failures++;
+        return;
+    }
+    if (e->data[0] == PLAYER_ITEMS)
+        player_items_event(ref, e);
+    else if (e->data[0] == PLAYER_LEVEL && e->length >= 1 + LEVEL_BYTES)
+        level_apply(ref, e->data + 1);
+    else if (e->data[0] == PLAYER_SKILLS && e->length >= 2)
+        skills_apply(ref, e->data, e->length);
+    else if (e->data[0] == PLAYER_JOURNAL && e->length >= 2)
+        journal_apply(e->data, e->length);
+}
+
+static void player_stat(void)
+{
+    tes3x_log_hex3("net.player_out", player_items_out, player_stats_out, player_journal_out);
+    tes3x_log_hex3("net.player_in", player_items_in, player_stats_in, player_journal_in);
+    tes3x_log_hex3("net.player_bad", player_apply_failures, player_too_many, player_mode);
+}
+
 static void event_handle(const struct event *e)
 {
     char text[EVENT_DATA + 1];
@@ -8885,6 +9430,8 @@ static void event_handle(const struct event *e)
         save_requested = 1;
     } else if (e->kind == EVENT_LOAD) {
         load_event(e);
+    } else if (e->kind == EVENT_PLAYER) {
+        player_event(e);
     } else {
         tes3x_log_hex3("net.event_unknown", e->kind, e->origin, e->length);
     }
@@ -9230,6 +9777,7 @@ void tes3x_net_frame(void)
     objects_frame();
     spawns_frame();
     containers_frame();
+    player_frame(ref);
 }
 
 int tes3x_net_command(const char *text)
@@ -9266,6 +9814,7 @@ int tes3x_net_command(const char *text)
         up_stat();
         handshake_stat();
         save_stat();
+        player_stat();
     } else if ((rest = word(text, "menusim")) && (rest = word(skip(rest), "auto")) &&
                !*skip(rest)) {
         menu_forced = 0;
