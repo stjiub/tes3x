@@ -329,6 +329,14 @@
       "pc_va": "0x0040FBE0"
     },
     {
+      "va": "0x0008C970",
+      "name": "WorldController::startGlobalScripts?",
+      "confidence": "guess",
+      "provenance": "string 'Unable to locate reference for global script'; called during load from 0x00112EB7",
+      "note": "Sleep(1) every 64 scripts (loop-sleeps)",
+      "pc_va": "0x0040FC40"
+    },
+    {
       "va": "0x0008CEA0",
       "name": "WorldController::rechargerAddItem",
       "kind": "function",
@@ -1664,6 +1672,14 @@
       "pc_va": "0x004C3B00"
     },
     {
+      "va": "0x00107910",
+      "name": "NonDynamicData::closeSaveFile?",
+      "confidence": "guess",
+      "provenance": "called by saveGame after the serialiser and by both load paths",
+      "note": "walks the object lists three times; the Xbox build adds Sleep(1) every 16 objects (loop-sleeps), PC does not",
+      "pc_va": "0x004C7BE0"
+    },
+    {
       "va": "0x00107D40",
       "name": "UI::updateLoadingMenu",
       "kind": "function",
@@ -1712,6 +1728,14 @@
       "pc_va": "0x004B96F0"
     },
     {
+      "va": "0x0010DCF0",
+      "name": "NonDynamicData::writeSaveFile?",
+      "confidence": "guess",
+      "provenance": "strings 'SAVE COMPLETE.', '...SAVE dialogue'; called once per save by saveGame",
+      "note": "serialises the whole save: 2.5-2.7 s for a 1.65 MB save on hardware",
+      "pc_va": "0x004BBC30"
+    },
+    {
       "va": "0x00111260",
       "name": "NonDynamicData::createReference",
       "kind": "function",
@@ -1726,6 +1750,27 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_NonDynamicData_saveGame",
       "pc_va": "0x004C4250"
+    },
+    {
+      "va": "0x00112450",
+      "name": "NonDynamicData::loadGame.walk?",
+      "confidence": "guess",
+      "provenance": "strings 'Loading...', 'Loading...Parsing Quests...'",
+      "note": "six Sleep(1) loops every 64-128 objects (loop-sleeps)",
+      "pc_va": "0x004C54C0"
+    },
+    {
+      "va": "0x00113290",
+      "name": "NonDynamicData::loadGame?",
+      "confidence": "guess",
+      "provenance": "calls 0x00112450 and 0x00107910; called from the main loop at 0x00094CFF",
+      "pc_va": "0x004BB1D0"
+    },
+    {
+      "va": "0x00114300",
+      "name": "NonDynamicData::loadGameFromMenu?",
+      "confidence": "guess",
+      "provenance": "calls 0x00112450 and 0x00107910; called from 0x00095A0B and a menu at 0x001E7B49"
     },
     {
       "va": "0x00114890",
@@ -4100,10 +4145,52 @@
       "pc_va": "0x0064CB60"
     },
     {
+      "va": "0x002434DF",
+      "name": "SleepEx",
+      "confidence": "guess",
+      "provenance": "called by Sleep with (ms, FALSE)"
+    },
+    {
+      "va": "0x0024355D",
+      "name": "Sleep",
+      "confidence": "verified",
+      "provenance": "push 0; push [esp+8]; call SleepEx; ret 4 - located by loop-sleeps; 12,275 calls timed in load-prof-a1"
+    },
+    {
+      "va": "0x0024356B",
+      "name": "CloseHandle",
+      "confidence": "guess",
+      "provenance": "saveGame size gate; NtClose"
+    },
+    {
+      "va": "0x002439B9",
+      "name": "GetFileSizeEx",
+      "confidence": "guess",
+      "provenance": "saveGame size gate: (handle, &size); NtQueryInformationFile"
+    },
+    {
+      "va": "0x00243B04",
+      "name": "CreateFileA",
+      "confidence": "guess",
+      "provenance": "saveGame size gate: (path, GENERIC_READ, 0, 0, OPEN_EXISTING, 0, 0)"
+    },
+    {
       "va": "0x00244D04",
       "name": "File::Delete",
       "confidence": "verified",
       "provenance": "traced: RtlInitAnsiString + NtOpenFile with DELETE access"
+    },
+    {
+      "va": "0x002450BB",
+      "name": "MoveFileExA",
+      "confidence": "guess",
+      "provenance": "saveGame commit: (src, dst, REPLACE_EXISTING|COPY_ALLOWED) x3; 73-88 ms per save on hardware (savetime-prof)"
+    },
+    {
+      "va": "0x00246960",
+      "name": "XCreateSaveGame",
+      "confidence": "guess",
+      "provenance": ".agents save write path; not reached from its direct call sites in savetime-prof"
     },
     {
       "va": "0x00265E90",
