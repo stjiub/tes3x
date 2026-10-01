@@ -340,6 +340,26 @@ order = 10
         self.assertEqual(saved["preferences"], {"invert_look": True})
         self.assertTrue(saved["mods"][0]["loose"])
 
+    def test_skip_intro_writes_movie_keys(self):
+        window = self.window()
+        window.build.skip_intro.setChecked(True)
+        self.assertTrue(window.save_profile())
+        self.assertEqual(self.saved()["ini"], {"Movies:Morrowind Logo": "none.bik",
+                                               "Movies:New Game": "none.bik"})
+
+        # Resetting one key in the INI tab clears the box; unticking drops the other.
+        del window.ini.values["Movies:New Game"]
+        window.ini.changed.emit()
+        self.assertFalse(window.build.skip_intro.isChecked())
+        window.build.skip_intro.setChecked(True)
+        window.build.skip_intro.setChecked(False)
+        self.assertTrue(window.save_profile())
+        self.assertNotIn("ini", self.saved())
+
+        window.ini.set_value("Movies:New Game", "none.bik")
+        window.ini.set_value("Movies:Morrowind Logo", "NONE.BIK")
+        self.assertTrue(window.build.skip_intro.isChecked())
+
     def test_build_tab_can_reset_to_defaults(self):
         config = self.root / "local.toml"
         config.write_text(f'[paths]\nmod_library = "{self.library.as_posix()}"\n',

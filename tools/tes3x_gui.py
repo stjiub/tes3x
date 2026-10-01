@@ -529,6 +529,11 @@ def ini_value(text):
     return {"true": True, "false": False}.get(text.casefold(), text)
 
 
+# A missing movie is logged to Warnings.txt and skipped.
+INTRO_MOVIES = ("Movies:Morrowind Logo", "Movies:New Game")
+SKIP_MOVIE = "none.bik"
+
+
 def ini_text(value):
     return str(value).lower() if isinstance(value, bool) else str(value)
 
@@ -1058,6 +1063,20 @@ class IniPanel(QWidget):
         self.changed.emit()
         self.refresh()
 
+    def skips_intro(self):
+        return all(str(self.values.get(self.override_name(self.split(name)))).casefold()
+                   == SKIP_MOVIE for name in INTRO_MOVIES)
+
+    def set_skip_intro(self, on):
+        for name in INTRO_MOVIES:
+            current = self.override_name(self.split(name))
+            if on:
+                self.values[current or name] = SKIP_MOVIE
+            elif current and str(self.values[current]).casefold() == SKIP_MOVIE:
+                del self.values[current]
+        self.changed.emit()
+        self.refresh()
+
     def add_setting(self):
         name, ok = QInputDialog.getText(self, "Add setting", "Section:Key, e.g. General:Show FPS")
         if not ok or not name.strip():
@@ -1107,12 +1126,16 @@ class BuildSettings(QWidget):
         library_widget = QWidget()
         library_widget.setLayout(library_row)
         self.dashboard = QCheckBox("Write XBMC4Gamers dashboard files when a title is set")
+        self.skip_intro = QCheckBox("Skip the logo and New Game movies")
+        self.skip_intro.setToolTip("Sets [Movies] Morrowind Logo and New Game to a missing "
+                                   "file in the INI tab")
         identity = QGroupBox("Build")
         form = QFormLayout(identity)
         form.addRow("Dashboard title", self.title)
         form.addRow("Xbox game folder", self.remote_root)
         form.addRow("Mod library", library_widget)
         form.addRow("", self.dashboard)
+        form.addRow("", self.skip_intro)
 
         self.mode = QComboBox()
         for label, value in (("Delta archive (needs LLVM)", "delta-bsa"),
@@ -1192,6 +1215,7 @@ class BuildSettings(QWidget):
             self.on_change()
 
     def reset_defaults(self):
+        self.skip_intro.setChecked(False)
         self.load({})
         self.on_library()
         self.on_change()
@@ -1383,6 +1407,8 @@ class ProfileWindow(QMainWindow):
         self.build = BuildSettings()
         self.build.on_change = self.build_changed
         self.build.on_library = self.library_changed
+        self.build.skip_intro.toggled.connect(self.skip_intro_toggled)
+        self.ini.changed.connect(self.sync_skip_intro)
         build_scroll = QScrollArea()
         build_scroll.setWidgetResizable(True)
         build_scroll.setWidget(self.build)
@@ -4089,6 +4115,7 @@ class ProfileWindow(QMainWindow):
         vanilla = self.local_path("vanilla_root")
         self.ini.load(plain.get("ini", {}), vanilla / "Morrowind.ini" if vanilla else None)
         self.ini.set_patches(self.applied_patches)
+        self.sync_skip_intro()
         try:
             self.saved_text = self.profile_text()
         except (PipelineError, LibraryError, tomlkit.exceptions.ParseError):
@@ -4138,6 +4165,15 @@ class ProfileWindow(QMainWindow):
     def build_changed(self):
         self.refresh_patch_states()
         self.schedule_analysis()
+
+    def skip_intro_toggled(self, on):
+        if on != self.ini.skips_intro():
+            self.ini.set_skip_intro(on)
+
+    def sync_skip_intro(self):
+        self.build.skip_intro.blockSignals(True)
+        self.build.skip_intro.setChecked(self.ini.skips_intro())
+        self.build.skip_intro.blockSignals(False)
 
     def write_library_index(self):
         if not self.library_root:

@@ -54,8 +54,9 @@ New, Duplicate, Rename and Delete beside the list. On first start, with no `tes3
   missing or ordered too late.
 - **Build** holds everything else in the profile: dashboard title, Xbox folder, mod library,
   packaging mode, texture and file-name rules and player preferences.
-  Its details pane previews the current mod and plugin order, asset packaging, archives, engine
-  patches and deployment destination before the profile is built.
+  **Skip the logo and New Game movies** sets the two `[Movies]` keys in the INI tab to a missing
+  file, which the game skips. Its details pane previews the current mod and plugin order, asset
+  packaging, archives, engine patches and deployment destination before the profile is built.
 
 Settings left at their defaults stay out of the profile file.
 
