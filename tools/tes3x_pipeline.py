@@ -198,7 +198,7 @@ def validate_local_config(local):
 
     paths = local.get("paths", {})
     extra = set(paths) - {"vanilla_root", "mod_library", "build_root", "llvm", "hardlink_retail",
-                          "profiles", "mlox_rules", "pc_morrowind"}
+                          "profiles", "mlox_rules", "pc_morrowind", "ghidra"}
     if extra:
         raise PipelineError("unknown paths keys: " + ", ".join(sorted(extra)))
     for key in ("vanilla_root", "mod_library", "build_root", "llvm", "profiles", "mlox_rules",
