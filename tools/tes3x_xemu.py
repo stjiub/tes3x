@@ -428,7 +428,8 @@ def main():
     ap.add_argument("--deploy", help="use an existing deploy tree instead of building")
     ap.add_argument("--iso", help="reuse an existing ISO")
     ap.add_argument("--direct-engine", action="store_true",
-                    help="profile builds only: boot morrowind.xbe directly as Default.xbe")
+                    help="boot morrowind.xbe directly as Default.xbe; an overlay build then keeps "
+                         "its retail data in the disc's Base folder")
     ap.add_argument("--exec", metavar="FILE",
                     help="write FILE to tes3xexec.txt on the run's E: drive, for the console patch "
                          "to run in-engine")
@@ -486,8 +487,8 @@ def main():
         ap.error("give exactly one of PROFILE, --deploy or --iso")
     if (a.skip_intro or a.no_reboot) and not a.profile:
         ap.error("--skip-intro and --no-reboot require a profile build")
-    if a.direct_engine and not a.profile:
-        ap.error("--direct-engine requires a profile build")
+    if a.direct_engine and not (a.profile or a.deploy):
+        ap.error("--direct-engine requires a profile build or --deploy")
     if (a.gdb_capture is not None or a.gdb_script) and not shutil.which(str(GDB)):
         ap.error(f"gdb not found: {GDB}; set [xemu] gdb")
     if a.gdb_capture is not None and a.gdb_script:
@@ -520,21 +521,34 @@ def main():
         pipeline = json.loads(marker.read_text(encoding="utf-8")) if marker.is_file() else {}
         overlay = pipeline.get("install_layout") == "overlay"
         packed = deploy
-        if overlay or (a.ram == 128 and not a.profile):
-            # Keep someone else's deploy tree intact, and compose an overlay disc separately.
-            packed = out / "stage"
-            shutil.copytree(deploy, packed, copy_function=link_or_copy)
         if overlay:
             retail = vanilla_root()
             if not retail or not (retail / "Data Files" / "Morrowind.bsa").is_file():
                 sys.exit("the overlay install layout needs [paths] vanilla_root to compose its "
                          "retail base for xemu")
-            files, size = stage_retail_base(retail, packed / "Base", link_or_copy)
+            packed = out / "stage"
+            if a.direct_engine:
+                # Exercise the overlay itself: only the patched engine can see this Base folder.
+                shutil.copytree(deploy, packed, copy_function=link_or_copy)
+                files, size = stage_retail_base(retail, packed / "Base", link_or_copy)
+                overlay_base = r"\Device\CdRom0\Base"
+                label = "overlay base"
+            else:
+                # Normal Play retains the retail launcher. Reconstitute a full disc because that
+                # unpatched XBE cannot use the engine's file-open overlay.
+                files, size = stage_retail_base(retail, packed, link_or_copy)
+                shutil.copytree(deploy, packed, copy_function=link_or_copy, dirs_exist_ok=True)
+                overlay_base = ""
+                label = "retail base"
             ini_path = packed / "Morrowind.ini"
             ini_text = ini_path.read_text(encoding="latin-1")
-            ini_path.write_text(set_ini_key(ini_text, "Xbox", "OverlayBase",
-                                            r"\Device\CdRom0\Base"), encoding="latin-1")
-            print(f"overlay base: {files} files, {size / 1048576:.1f} MB")
+            ini_path.write_text(set_ini_key(ini_text, "Xbox", "OverlayBase", overlay_base),
+                                encoding="latin-1")
+            print(f"{label}: {files} files, {size / 1048576:.1f} MB")
+        elif a.ram == 128 and not a.profile:
+            # Keep someone else's deploy tree intact while changing its XBE init flags.
+            packed = out / "stage"
+            shutil.copytree(deploy, packed, copy_function=link_or_copy)
         if a.ram == 128:
             if packed == deploy and a.profile:
                 clear_limit64(packed / "morrowind.xbe")

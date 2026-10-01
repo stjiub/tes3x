@@ -42,8 +42,10 @@ python tools/tes3x_xemu.py first-run profiles/my-build.toml --direct-engine --sk
 ```
 
 - `--exec` puts an [exec script](exec-scripts.md) on the disk.
-- `--direct-engine` boots the game itself instead of the retail launcher. `@start` needs it: the
-  launcher has no hook, and the game relaunches itself on New Game.
+- `--direct-engine` boots the game itself instead of the retail launcher. For an overlay-layout
+  build this also exercises the overlay against the disc's `Base` folder. Without the option,
+  xemu Play reconstructs a full disc so the unpatched retail launcher works. `@start` needs direct
+  engine boot: the launcher has no hook, and the game relaunches itself on New Game.
 - Everything after `--` goes to the pipeline, such as `-- --preset minimal`.
 - `--help` lists the rest, including screenshots, saves, memory size and GDB.
 
