@@ -12,15 +12,15 @@ The game-test column shows whether a public test definition exists, not its resu
 
 | patch | what it does | from | category | channel | game test | selected by |
 |---|---|---|---|---|---|---|
-| `payload=FILE.pe` | Inject a code section and run it from the entry point. | TES3X | infrastructure | dev | — | build option |
-| `boot-media` | Permit booting from any media and region, not just a retail DVD. | TES3X | infrastructure | preview | [test](../tests/game/boot-media.toml) | every build |
-| `drive-letters=LETTER` | Point every Data Files asset path at one drive. | TES3X | infrastructure | preview | [test](../tests/game/drive-letters.toml) | every build |
-| `save-staging=LETTER` | Stage saves on one volume with UDATA so the commit renames instead of copying. | TES3X | infrastructure | preview | — | build option |
-| `title=NAME` | Rename the XBE's certificate title, the name a dashboard falls back to. | TES3X | infrastructure | preview | [test](../tests/game/title.toml) | build option |
-| `title-id=HEX` | Give the XBE its own title ID, so its saves go to a separate E:/UDATA folder. | TES3X | infrastructure | preview | [test](../tests/game/title-id.toml) | build option |
-| `multi-bsa` | Load every archive listed in tes3xarch.txt, not just Morrowind.bsa. | TES3X | infrastructure | preview | [test](../tests/game/multi-bsa.toml) | delta-bsa packing |
-| `script-ext` | Add script opcodes: widen the length bounds and hook Script::RunFunction. | TES3X | compat | preview | [test](../tests/game/script-ext.toml) | by name |
-| `mwse-legacy` | Interpret legacy MWSE 0.9.4 bytecode embedded in compiled scripts. | TES3X | compat | dev | — | by name |
+| [`payload=FILE.pe`](../patches/payload.md) | Inject a code section and run it from the entry point. | TES3X | infrastructure | dev | — | build option |
+| [`boot-media`](../patches/boot-media.md) | Permit booting from any media and region, not just a retail DVD. | TES3X | infrastructure | preview | [test](../tests/game/boot-media.toml) | every build |
+| [`drive-letters=LETTER`](../patches/drive-letters.md) | Point every Data Files asset path at one drive. | TES3X | infrastructure | preview | [test](../tests/game/drive-letters.toml) | every build |
+| [`save-staging=LETTER`](../patches/save-staging.md) | Stage saves on one volume with UDATA so the commit renames instead of copying. | TES3X | infrastructure | preview | — | build option |
+| [`title=NAME`](../patches/title.md) | Rename the XBE's certificate title, the name a dashboard falls back to. | TES3X | infrastructure | preview | [test](../tests/game/title.toml) | build option |
+| [`title-id=HEX`](../patches/title-id.md) | Give the XBE its own title ID, so its saves go to a separate E:/UDATA folder. | TES3X | infrastructure | preview | [test](../tests/game/title-id.toml) | build option |
+| [`multi-bsa`](../patches/multi-bsa.md) | Load every archive listed in tes3xarch.txt, not just Morrowind.bsa. | TES3X | infrastructure | preview | [test](../tests/game/multi-bsa.toml) | delta-bsa packing |
+| [`script-ext`](../patches/script-ext.md) | Add script opcodes: widen the length bounds and hook Script::RunFunction. | TES3X | compat | preview | [test](../tests/game/script-ext.toml) | by name |
+| [`mwse-legacy`](../patches/mwse-legacy.md) | Interpret legacy MWSE 0.9.4 bytecode embedded in compiled scripts. | TES3X | compat | dev | — | by name |
 | [`mcp-1`](../patches/mcp-1.md) | Stop an unresolvable reference being restamped as created at runtime. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #1 | core | dev | — | by name |
 | [`mcp-3`](../patches/mcp-3.md) | Apply Unarmored damage reduction when no armor is equipped. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #3 | correctness | preview | [test](../tests/game/mcp-3.toml) | testing preset |
 | [`mcp-37`](../patches/mcp-37.md) | Cancel stale NPC casts before a cell change leaves them dangling. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #37 | core | dev | [test](../tests/game/mcp-37.toml) | by name |
@@ -39,11 +39,11 @@ The game-test column shows whether a public test definition exists, not its resu
 | [`build-preferences`](../patches/build-preferences.md) | Apply profile-selected player preferences after stored Xbox options load. | TES3X | qol | preview | [test](../tests/game/build-preferences.toml) | build option |
 | [`rotating-autosaves`](../patches/rotating-autosaves.md) | Rotate automatic saves through INI-configurable slots. | [OpenMW](https://openmw.org) | qol | dev | [test](../tests/game/rotating-autosaves.toml) | by name |
 | [`transition-autosaves`](../patches/transition-autosaves.md) | Autosave before doors, scripted teleports, interventions and paid travel. | TES3X | qol | dev | [test](../tests/game/transition-autosaves.toml) | by name |
-| `lean-menu` | Load only game settings for the main menu; New Game and Load relaunch and load the rest. | TES3X | performance | dev | — | by name |
+| [`lean-menu`](../patches/lean-menu.md) | Load only game settings for the main menu; New Game and Load relaunch and load the rest. | TES3X | performance | dev | — | by name |
 | [`bow-view`](../patches/bow-view.md) | Lower the first-person bow and arms while an arrow is nocked. | TES3X | qol | dev | [test](../tests/game/bow-view.toml) | by name |
 | [`multiplayer`](../patches/multiplayer.md) | Join a TES3X server from [Xbox] NetAddress and exchange player states every frame. | TES3X | infrastructure | dev | — | by name |
 | [`video-arena`](../patches/video-arena.md) | With more than 64 MB, size the texture and vertex buffer arena from [Xbox] VideoMemoryKB. | TES3X | compat | dev | — | by name |
 | [`heap-census`](../patches/heap-census.md) | Count live engine heap bytes by source file and line, or by call site. | TES3X | instrumentation | dev | — | build option |
 | [`mem-census`](../patches/mem-census.md) | Count kernel allocations and the XAPI heap by caller, with the address space map. | TES3X | instrumentation | dev | — | build option |
 | [`heap-region`](../patches/heap-region.md) | With more than 64 MB, size the engine heap's region from [Xbox] HeapRegionKB. | TES3X | compat | dev | [test](../tests/game/heap-region.toml) | by name |
-| `info-name-arena` | Page INFO's temporary ID, previous and next names outside the engine heap. | TES3X | compat | dev | — | by name |
+| [`info-name-arena`](../patches/info-name-arena.md) | Page INFO's temporary ID, previous and next names outside the engine heap. | TES3X | compat | dev | — | by name |

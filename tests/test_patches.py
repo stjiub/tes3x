@@ -61,6 +61,27 @@ class RegistryTests(unittest.TestCase):
     def test_generated_pages_are_current(self):
         self.assertEqual(registry.stale_pages(), [], 'run tools/tes3x_patches.py --write')
 
+    def test_every_patch_page_follows_the_contract(self):
+        self.assertEqual(registry.page_problems(), [])
+
+    def test_page_problems_are_reported(self):
+        entry = {'name': 'x', 'title': 'Some fix'}
+        with tempfile.TemporaryDirectory() as tmp:
+            docs = Path(tmp)
+            self.assertEqual(registry.page_problems([entry], docs), ['patches/x.md: missing'])
+            (docs / 'x.md').write_text('# x\n\n## What remains\n', encoding='utf-8')
+            (docs / 'y.md').write_text('# Y\n', encoding='utf-8')
+            problems = registry.page_problems([entry], docs)
+            self.assertIn('patches/y.md: no such patch in patches.toml', problems)
+            self.assertTrue(any("'# Some fix'" in p for p in problems))
+            self.assertTrue(any('What remains' in p for p in problems))
+            self.assertTrue(any('patch table' in p for p in problems))
+            (docs / 'y.md').unlink()
+            (docs / 'x.md').write_text('# Some fix\n\nSee the [patch table](../docs/patches.md).'
+                                       '\n\n## How it works\n\n## Configuration\n',
+                                       encoding='utf-8')
+            self.assertEqual(registry.page_problems([entry], docs), [])
+
     def test_patch_channel_is_explicit(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'patches.toml'

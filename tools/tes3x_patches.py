@@ -111,10 +111,43 @@ def origin_text(entry):
 
 
 def name_text(entry):
-    """The patch name, linked to its document when it has one."""
     name = entry["name"] + (f"={entry['takes']}" if "takes" in entry else "")
-    doc = PATCH_DOCS / f"{entry['name']}.md"
-    return f"[`{name}`](../patches/{entry['name']}.md)" if doc.is_file() else f"`{name}`"
+    return f"[`{name}`](../patches/{entry['name']}.md)"
+
+
+# The sections a patch page may have, in order; patches/README.md is the template.
+PAGE_SECTIONS = ("How it works", "Using it", "Configuration", "Compatibility and limits")
+TABLE_LINK = "](../docs/patches.md)"
+
+
+def page_problems(patches=None, docs=PATCH_DOCS):
+    """Every way the patch pages break the contract in patches/README.md."""
+    patches = PATCHES if patches is None else patches
+    problems = []
+    pages = {path.stem: path for path in Path(docs).glob("*.md") if path.name != "README.md"}
+    for name in sorted(set(pages) - {entry["name"] for entry in patches}):
+        problems.append(f"patches/{name}.md: no such patch in patches.toml")
+    for entry in patches:
+        where = f"patches/{entry['name']}.md"
+        if entry["name"] not in pages:
+            problems.append(f"{where}: missing")
+            continue
+        lines = pages[entry["name"]].read_text(encoding="utf-8").splitlines()
+        titles = [line[2:] for line in lines if line.startswith("# ")]
+        if titles != [entry["title"]]:
+            problems.append(f"{where}: wants the single heading '# {entry['title']}'")
+        sections = [line[3:] for line in lines if line.startswith("## ")]
+        if "How it works" not in sections:
+            problems.append(f"{where}: no '## How it works'")
+        unknown = [s for s in sections if s not in PAGE_SECTIONS]
+        if unknown:
+            problems.append(f"{where}: sections {unknown} are not in {list(PAGE_SECTIONS)}")
+        elif sections != sorted(sections, key=PAGE_SECTIONS.index) or \
+                len(set(sections)) != len(sections):
+            problems.append(f"{where}: sections out of order or repeated")
+        if not any(TABLE_LINK in line for line in lines):
+            problems.append(f"{where}: no link to the patch table")
+    return problems
 
 
 def game_test_text(entry):
@@ -226,10 +259,13 @@ def main(argv=None):
             path.write_text(render(), encoding="utf-8", newline="\n")
             print(f"wrote {path.relative_to(ROOT).as_posix()}")
     elif args.check:
+        problems = page_problems()
         stale = stale_pages()
         if stale:
-            sys.exit("out of date: " + ", ".join(p.name for p in stale)
-                     + "; run tes3x_patches.py --write")
+            problems.append("out of date: " + ", ".join(p.name for p in stale)
+                            + "; run tes3x_patches.py --write")
+        if problems:
+            sys.exit("\n".join(problems))
     else:
         sys.stdout.write(render_patches())
 

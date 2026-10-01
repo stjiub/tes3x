@@ -1,9 +1,13 @@
-# dxt5-size: DXT5 texture allocation
+# DXT5 allocation fix
 
-A TES3X fix. The retail game ships no DXT5 textures, so the defect never shows in it; mods do
-ship them, and every one corrupts video memory when it loads.
+The engine computes a DXT5 texture's size as a negative number, and the video-memory allocator
+accepts it. Every DXT5 texture that loads therefore corrupts video memory. The retail game ships
+no DXT5 textures, so it never hits this; mods do ship them, and without the fix they cause crashes
+far from their cause.
 
-## The defect
+See the [patch table](../docs/patches.md) for availability and selection.
+
+## How it works
 
 Textures are created at `0x00023AB0`, which asks `0x00023CF0` for the size of the mip chain.
 That function knows two compressed formats: DXT1 (D3D format `0xC`, 8 bytes per 4x4 block) and
@@ -21,13 +25,11 @@ the land vertex writer, `0x00114EA5`; the particle quad builder, `0x00018949`), 
 list in the allocator itself (`0x00015153`), or xemu's `attr->offset < dma_len` assertion when
 the GPU reads a vertex buffer outside its memory.
 
-## What the patch changes
-
 The call to the size function at `0x00023AC8` goes through a hook in `hooks/tes3xdxt5.c`, which
 passes format `0xF` on as `0xE` and every other format unchanged. DXT5 has DXT3's block size, so
 the allocation is exact. The texture keeps format `0xF`; only its size is computed as DXT3.
 
-## What remains
+## Compatibility and limits
 
 A texture set that fitted only because its DXT5 textures cost nothing now costs its real size. The
 engine's answer to exhausted video memory is its own out-of-memory handler (`0x00092BA0`), which

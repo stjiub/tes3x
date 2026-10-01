@@ -1,11 +1,19 @@
-# Bow view
+# Lowered first-person bow
 
-This patch lowers the first-person bow and arms only while an arrow or bolt is nocked. It adjusts
-the viewmodel root after `MobilePlayer::update1stPersonTransform`; it does not change camera height,
-field of view, projectile direction, or third-person animation.
+In first person, a drawn bow and the arms holding it cover much of the screen. This patch lowers
+them while an arrow or bolt is nocked, so more of the target stays visible.
 
-`[Xbox] BowViewOffsetZ` is a signed vertical offset in game units. The default is `-12`; values are
-clamped to `-64` through `64`. Zero retains the retail position. The setting is read when a nocked
-projectile is first seen because the game drive is not available at process entry.
+See the [patch table](../docs/patches.md) for availability and selection.
 
-The default offset is an initial tuning value and has not been compared on a 480p display.
+## How it works
+
+The hook (`hooks/tes3xbowview.c`) adjusts the viewmodel root after
+`MobilePlayer::update1stPersonTransform`, only while a projectile is nocked. It does not change
+camera height, field of view, projectile direction, or third-person animation.
+
+## Configuration
+
+`[Xbox] BowViewOffsetZ` in `Morrowind.ini` is a signed vertical offset in game units. The default
+is `-12`; values are clamped to `-64` through `64`, and zero keeps the retail position. The setting
+is read when a nocked projectile is first seen, because the game drive is not available at process
+entry.

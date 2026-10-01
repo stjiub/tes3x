@@ -1,9 +1,11 @@
-# video-arena: video memory on 128 MB
+# Expanded-memory video arena
 
-A TES3X patch for consoles with 128 MB. Retail Morrowind never needs it; large mods such as
-Tamriel Rebuilt do.
+On a console with 128 MB, this patch lets textures and vertex buffers use more memory than the
+retail game's fixed arena. Retail Morrowind never needs it; large mods such as Tamriel Rebuilt do.
 
-## The limit
+See the [patch table](../docs/patches.md) for availability and selection.
+
+## How it works
 
 Every texture and vertex buffer comes from one contiguous arena, allocated once at startup by the
 constructor at `0x000150A0`. Its size, `0xF80000` bytes (15.5 MB), is an immediate at
@@ -17,16 +19,16 @@ has been measured holding 8.8 MB of pages. When that allocation also fails, the 
 out-of-memory handler (`0x00092BA0`) purges what it can and relaunches the title with the "disc
 may be dirty or damaged" error.
 
-## What the patch changes
-
 The `mov ebx, 0xF80000` at `0x00013549` becomes a call to `hooks/tes3xarena.c`, which returns the
 arena size in `ebx` and leaves the heap object in `eax` untouched. When the kernel reports more
-than 64 MB of physical memory, the size is `[Xbox] VideoMemoryKB` in `Morrowind.ini`, 22528
-(22 MB) if the key is absent, clamped between retail's 15,872 and 49,152. With 64 MB the arena
-stays at retail's size, whatever the key says. The log records the size chosen as `arena.kb`, or
+than 64 MB of physical memory, the size comes from the ini key below. With 64 MB the arena stays at
+retail's size, whatever the key says. The log records the size chosen as `arena.kb`, or
 `arena.kb_ini` when it came from the key.
 
-## Choosing a size
+## Configuration
+
+`[Xbox] VideoMemoryKB` in `Morrowind.ini` sets the arena size: 22528 (22 MB) if the key is absent,
+clamped between retail's 15,872 and 49,152.
 
 The arena and general memory share the same RAM, so a larger arena only moves memory between the
 two: everything the arena gains is gone from general memory from the start. It saves the page

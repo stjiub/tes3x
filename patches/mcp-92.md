@@ -2,7 +2,12 @@
 
 Unsummoning a creature by leaving the cell or dispelling its summon can destroy the actor while
 magic which targets it remains active. Later cleanup can then follow the stale actor reference and
-crash. Killing the creature normally retires that magic first.
+crash. Killing the creature normally retires that magic first; this patch makes unsummoning do the
+same.
+
+See the [patch table](../docs/patches.md) for availability and selection.
+
+## How it works
 
 The Xbox unsummon path at `0x000C7BB0` already retires spells cast by the summoned actor, an extra
 cleanup absent from the corresponding PC path. It then calls the same virtual actor cleanup that
@@ -11,9 +16,3 @@ the engine's existing `MobileActor::retireMagic` wrapper at `0x0015B3C0`. The wr
 targeting the actor before the actor is destroyed.
 
 The patch changes nine bytes and needs no injected code.
-
-## What remains
-
-The equivalent Xbox code, cleanup wrapper and edit are established statically. A summoned creature
-with an active defensive ability or an ongoing spell on another actor still needs to be dispelled
-in control and patched builds to reproduce and validate the lifetime fix.

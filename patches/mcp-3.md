@@ -1,22 +1,21 @@
-# Unarmored fix
-
-See the [patch table](../docs/patches.md) for status and selection details.
+# Unarmored damage reduction
 
 The physical-damage path asks the actor how many armor pieces are equipped. Retail skips its
 complete damage-reduction calculation when that count is zero, even though the calculation handles
 unarmored body parts. A fully unarmored actor therefore receives no protection from the Unarmored
-skill; equipping any one armor piece makes the skill contribute again.
+skill; equipping any one armor piece makes the skill contribute again. This patch lets the
+calculation run for a fully unarmored actor.
 
-## What the patch changes
+See the [patch table](../docs/patches.md) for availability and selection.
+
+## How it works
 
 The Xbox function at `0x00176700` has the same defect as the PC build. Its branch at `0x00176759`
 skips to `0x001769BA` when the equipped-armor count is zero. The patch makes that branch always
 continue at `0x0017675F`, allowing the existing armor and Unarmored calculation to run. It changes
 six bytes and needs no injected code.
 
-## What remains
+## Compatibility and limits
 
-The game test's `tes3xmcp3` command calls the same virtual armor-rating and damage functions with
-fixed 50-point inputs. It verifies that no armor is equipped and compares the returned damage in
-control and patched builds. This measures the corrected calculation without applying damage to
-health; a real combat hit remains an end-to-end smoke test.
+Fully unarmored characters take less physical damage than in the retail game, which changes the
+balance for characters built around the skill.
