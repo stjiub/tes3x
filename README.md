@@ -6,17 +6,36 @@ optimizes and deploys a list of mods directly to an Xbox.
 
 ## Features
 
-- Engine fixes and extensions applied to the retail XBE
-- A mod pipeline: collect, convert, pack and order mods into a complete game folder
-- Deployment to the Xbox over FTP
-- A GUI for mods, profiles, patches and settings
-- Testing in xemu, and diagnostics on the console
+- **Engine fixes.** Bugs from the [Morrowind Code Patch](https://www.nexusmods.com/morrowind/mods/19510)
+  and other projects, rewritten for the Xbox build, and fixes for problems only the Xbox has.
+  Each is chosen by preset or by name, and located in the XBE by content, so a build fails
+  loudly rather than patching the wrong place.
+- **Engine extensions.** Several BSA archives, new script opcodes, legacy MWSE bytecode, more
+  memory on 128 MB consoles, rotating and transition autosaves, an in-game console, and
+  experimental multiplayer.
+- **A mod pipeline.** One profile turns a mod library into a complete game folder: the winning
+  files collected, textures shrunk to a budget, file names checked against FATX's limits, plugins
+  ordered, assets packed into archives and `Morrowind.ini` settings applied.
+- **Deployment.** Builds upload over FTP to a folder of their own, sending only what changed,
+  stamping plugin load order and clearing the game's cache partitions.
+- **A GUI** for the mod library, profiles, plugins, patches and INI settings, with each mod's
+  known Xbox compatibility.
+- **Testing and diagnostics.** Builds run in xemu from scripts; patches have scripted game tests;
+  crash records, a hang watchdog, a function profiler and memory censuses work on the console.
 
-## Status
+## Status and limitations
 
-TES3X is experimental and changes often. It comes with no guarantees: keep backups of your saves
-and your game, and expect builds to break between versions. Each patch's
-[channel](docs/patches.md) says how far it has been tested.
+TES3X is experimental. It is developed against the retail GOTY release and tested in xemu and on
+original hardware, but each patch matures at its own pace: the [patch table](docs/patches.md)
+gives every patch's channel, from `dev` to `release`, and the
+[candidates](docs/candidates.md) list what has been looked at and not implemented.
+
+- The Xbox has 64 MB of memory, and a stock console cannot load everything the PC can. The
+  largest mods, such as the complete Tamriel Rebuilt, need a console upgraded to 128 MB.
+- Engine fixes are compiled for your own XBE when you build, so they need LLVM.
+- The [compatibility catalog](docs/catalog.md) lists mods tried on the Xbox and how they fared;
+  many PC mods depend on features the Xbox build lacks.
+- TES3X includes no game files. You supply your own copy of the game.
 
 ## Quick start
 
