@@ -11,6 +11,13 @@ class DocsTests(unittest.TestCase):
     def test_documentation_is_consistent(self):
         self.assertEqual(docs.problems(), [])
 
+    def test_every_command_is_listed(self):
+        page = (docs.DOCS / 'commands.md').read_text(encoding='utf-8')
+        missing = [path.name for path in sorted((docs.ROOT / 'tools').glob('*.py'))
+                   if 'ArgumentParser' in (text := path.read_text(encoding='utf-8'))
+                   and '__main__' in text and f'`{path.name}`' not in page]
+        self.assertEqual(missing, [])
+
     def test_slug_matches_rendered_anchors(self):
         self.assertEqual(docs.slug('2. Collect the winning files'), '2-collect-the-winning-files')
         self.assertEqual(docs.slug('`[paths]`'), 'paths')

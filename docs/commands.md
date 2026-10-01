@@ -70,6 +70,7 @@ what each one is for and where it is explained; `--help` on any command lists it
 | `tes3x_ini.py` | list every `Morrowind.ini` key the XBE reads, with its default | [ini keys](ini-keys.md) |
 | `tes3x_mcp.py` | read a Morrowind Code Patch fix against the original PC executable | [patch policy](patch-policy.md) |
 | `tes3x_patches.py` | check the patch table and regenerate its pages | [patch notes](../patches/README.md) |
+| `tes3x_docs.py` | check the documentation's links and regenerate its index | [documentation index](index.md) |
 
 ## Disk images
 
