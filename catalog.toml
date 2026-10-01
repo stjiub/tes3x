@@ -67,8 +67,8 @@ name = "Patch for Purists"
 version = "4.0.2"
 url = "https://www.nexusmods.com/morrowind/mods/45096"
 folder = "Purists"
-status = "untested"
-notes = "Newer versions have not been tried."
+status = "broken"
+notes = "Version 4.0.2 removes Sellus Gravius' duties topic during a new game."
 
 [[mod]]
 id = "tes-extended-music"
