@@ -17,7 +17,8 @@ import subprocess
 
 import tes3x_inject
 from tes3x_patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, find_call_sites, find_mcp37_context,
-                         find_mcp125_context, find_save_allowed_context, find_transition_calls)
+                         find_mcp125_context, find_save_allowed_context,
+                         find_script_ip_restore_call, find_transition_calls)
 
 ROOT = Path(__file__).resolve().parents[1]
 HOOKS = ROOT / "hooks"
@@ -220,12 +221,13 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         define("ARCHIVE_LOAD", hexva(load))
         wanted["archive_load"] = ("_tes3x_archive_hook",)
     if "tes3xscript.c" in names:
-        run_function, table = hexva(locate("run-function")), hexva(locate("command-table"))
+        run_function, table = locate("run-function"), locate("command-table")
         base = define_value("tes3xscript.c", "TES3X_OPCODE_BASE")
         ceil = define_value("tes3xscript.c", "TES3X_OPCODE_CEIL")
-        print(f"script hook: RunFunction {run_function}, table {table}, opcodes [{base}, {ceil})")
-        define("RUN_FUNCTION", run_function)
-        define("COMMAND_TABLE", table)
+        print(f"script hook: RunFunction {hexva(run_function)}, table {hexva(table)}, "
+              f"opcodes [{base}, {ceil})")
+        define("RUN_FUNCTION", hexva(run_function))
+        define("COMMAND_TABLE", hexva(table))
         wanted["script_dispatch"] = ("_tes3x_script_hook",)
         extra["script_dispatch"] = {"opcode_base": base, "opcode_ceil": ceil}
     if "tes3xmwse.c" in names:
@@ -235,12 +237,40 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         script_ip = locate("script-ip")
         script_opcode = locate("script-opcode")
         game_instance = locate("game-instance")
+        world = locate("world-controller")
         print(f"legacy MWSE: Decode {hexva(decode)}, IP {hexva(script_ip)}, "
-              f"opcode {hexva(script_opcode)}, Game {hexva(game_instance)}")
+              f"opcode {hexva(script_opcode)}, Game {hexva(game_instance)}, World {hexva(world)}")
         define("SCRIPT_DECODE", hexva(decode))
         define("SCRIPT_IP", hexva(script_ip))
         define("SCRIPT_OPCODE", hexva(script_opcode))
+        restore_site = find_script_ip_restore_call(image, run_function, script_ip)
+        define("MWSE_IP_RESTORE_RETURN", hexva(restore_site + 5))
         define("GAME_INSTANCE", hexva(game_instance))
+        define("MWSE_WORLD", hexva(world))
+        define("MWSE_DATA_HANDLER", address("DATA_HANDLER", DATA_HANDLER))
+        find_reference = dict(PLACE_ADDRESSES)["FIND_REFERENCE"]
+        define("MWSE_FIND_REFERENCE", address("FIND_REFERENCE", find_reference))
+        resolve_object = dict(SPELL_ADDRESSES)["RESOLVE_OBJECT"]
+        inventory_add = dict(CONTAINER_ADDRESSES)["INVENTORY_ADD"]
+        inventory_remove = dict(CONTAINER_ADDRESSES)["INVENTORY_REMOVE"]
+        define("MWSE_RESOLVE_OBJECT", address("RESOLVE_OBJECT", resolve_object))
+        define("MWSE_INVENTORY_ADD", address("INVENTORY_ADD", inventory_add))
+        define("MWSE_INVENTORY_REMOVE", address("INVENTORY_REMOVE", inventory_remove))
+        define("MWSE_INVENTORY_ITEM_DATA", address("INVENTORY_ITEM_DATA", 0x000E8880))
+        define("MWSE_ACTOR_EQUIPPED", address("ACTOR_EQUIPPED", 0x000E7250))
+        define("MWSE_WEAR_ITEM", address("WEAR_ITEM", 0x0015E6B0))
+        define("MWSE_DROP_ITEM", address("DROP_ITEM", DROP_ITEM))
+        define("MWSE_START_COMBAT", address("START_COMBAT", 0x001629F0))
+        define("MWSE_GET_SPELL_LIST", address("GET_SPELL_LIST", 0x0015A5A0))
+        define("MWSE_SPELL_ADD_ID", address("SPELL_ADD_ID", 0x000FCC60))
+        define("MWSE_SPELL_REMOVE", address("SPELL_REMOVE", 0x000F9A30))
+        define("MWSE_FORCE_CAST", address("FORCE_CAST", 0x00162950))
+        for name, default in SPAWN_ADDRESSES:
+            if name in ("CREATE_REFERENCE", "CELL_INSERT", "CELL_NODE", "CELL_ACTIVATORS",
+                        "ATTACH_SCENE", "UPDATE_LIGHTING"):
+                define("MWSE_" + name, address(name, default))
+        define("MWSE_REF_MODIFIED", address("REF_MODIFIED", REF_MODIFIED))
+        define("MWSE_ADD_MOB", address("ADD_MOB", dict(ACTOR_ADDRESSES)["ADD_MOB"]))
         flags.append("-DTES3X_MWSE")
         wanted["mwse_fixup"] = ("@tes3x_mwse_fixup_hook@8", "_tes3x_mwse_fixup_hook")
     if names & INI_USERS:

@@ -2279,6 +2279,13 @@
       "provenance": "shared landing site spliced by the mcp-97 probe"
     },
     {
+      "va": "0x0013A6A0",
+      "name": "Script::Decode",
+      "kind": "function",
+      "confidence": "verified",
+      "provenance": "find_script_decode_state; mwse-legacy redirects its fixup caller"
+    },
+    {
       "va": "0x0013C210",
       "name": "ScriptCompiler::parseFunctionName",
       "kind": "function",
@@ -2308,6 +2315,13 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_Script_executeScriptOpCode",
       "pc_va": "0x00505770"
+    },
+    {
+      "va": "0x0014B102",
+      "name": "Script::RunFunction.restoreIpCall",
+      "kind": "site",
+      "confidence": "verified",
+      "provenance": "find_script_ip_restore_site; caller restores Script::Decode.ip from ESI"
     },
     {
       "va": "0x0014B3C0",
@@ -4234,6 +4248,13 @@
       "kind": "data"
     },
     {
+      "va": "0x003C505C",
+      "name": "Script::Decode.opcode",
+      "kind": "data",
+      "confidence": "verified",
+      "provenance": "find_script_decode_state; live decoded opcode used by mwse-legacy"
+    },
+    {
       "va": "0x003C50C8",
       "name": "Script::CommandTable",
       "kind": "data",
@@ -4252,6 +4273,13 @@
       "confidence": "verified",
       "provenance": "archive manager passed to Invalidate by ReadInvalidationList",
       "kind": "data"
+    },
+    {
+      "va": "0x003D3698",
+      "name": "Script::Decode.ip",
+      "kind": "data",
+      "confidence": "verified",
+      "provenance": "find_script_decode_state; live decoder cursor used by mwse-legacy"
     }
   ]
 }

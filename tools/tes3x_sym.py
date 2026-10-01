@@ -574,6 +574,8 @@ SEED_NOTES = {
                           'three call rel32 sites redirected by script-ext'),
     'find_command_table': ('Script::CommandTable', 'data',
                            'six opcode bounds widened by script-ext'),
+    'find_script_ip_restore_site': ('Script::RunFunction.restoreIpCall', 'site',
+                                    'caller restores Script::Decode.ip from ESI'),
     'find_ref_load': ('Reference::Load.restamp', 'site',
                       'mcp-1 landing instruction; restamps with the reading index'),
     'find_ref_skip': ('Reference::Load.skip', 'site', 'mcp-1 drop branch'),
@@ -635,6 +637,16 @@ def cmd_seed(a):
         for va in (r if isinstance(r, (list, tuple)) else [r]):
             if isinstance(va, int):
                 put(va, name, kind, 'verified', f'{fn_name}; {why}')
+    try:
+        decode, script_ip, script_opcode = P.find_script_decode_state(x)
+        put(decode, 'Script::Decode', 'function', 'verified',
+            'find_script_decode_state; mwse-legacy redirects its fixup caller')
+        put(script_ip, 'Script::Decode.ip', 'data', 'verified',
+            'find_script_decode_state; live decoder cursor used by mwse-legacy')
+        put(script_opcode, 'Script::Decode.opcode', 'data', 'verified',
+            'find_script_decode_state; live decoded opcode used by mwse-legacy')
+    except Exception as e:
+        print(f'  script decode state: unresolved ({e})')
     for va, name, kind, conf, why in SEED_MANUAL:
         put(int(va, 16), name, kind, conf, why)
 

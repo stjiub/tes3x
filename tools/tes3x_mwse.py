@@ -169,6 +169,12 @@ COMMANDS = {
     0x3FA1: "XRemoveSpell",
 }
 
+# The injected 0.9.4 interpreter implements the complete catalogue above. Keep
+# these sets separate from recognition so audit output continues to expose any
+# command added to the catalogue before its runtime implementation lands.
+RUNTIME_VM_OPS = frozenset(VM_OPS)
+RUNTIME_COMMANDS = frozenset(COMMANDS)
+
 
 SOURCE_MARKER = re.compile(
     rb"(?i)(?:\b(?:setx|ifx|whilex)\b|\bx(?:"
@@ -227,6 +233,9 @@ def scan_bytecode(data):
             "name": name,
             "kind": kind,
             "operand": operand.hex(),
+            "runtime_supported": (
+                opcode in RUNTIME_VM_OPS if kind == "vm" else opcode in RUNTIME_COMMANDS
+            ),
         })
         offset = end
     return instructions
@@ -264,6 +273,8 @@ def audit_plugin(path):
     scripts = []
     all_vm = set()
     all_commands = set()
+    unsupported_vm = set()
+    unsupported_commands = set()
     for tag, _flags, body in records(path):
         if tag != b"SCPT":
             continue
@@ -282,6 +293,14 @@ def audit_plugin(path):
         commands = sorted({i["name"] for i in instructions if i["kind"] == "command"})
         all_vm.update(vm)
         all_commands.update(commands)
+        unsupported_vm.update(
+            i["name"] for i in instructions
+            if i["kind"] == "vm" and not i["runtime_supported"]
+        )
+        unsupported_commands.update(
+            i["name"] for i in instructions
+            if i["kind"] == "command" and not i["runtime_supported"]
+        )
         scripts.append({
             "name": name,
             "source_marked": marked,
@@ -295,6 +314,8 @@ def audit_plugin(path):
         "scripts": scripts,
         "vm": sorted(all_vm),
         "commands": sorted(all_commands),
+        "unsupported_vm": sorted(unsupported_vm),
+        "unsupported_commands": sorted(unsupported_commands),
     }
 
 
@@ -318,6 +339,11 @@ def print_report(report, show_instructions=False):
         print("  VM: " + ", ".join(report["vm"]))
     if report["commands"]:
         print("  commands: " + ", ".join(report["commands"]))
+    unsupported = report["unsupported_vm"] + report["unsupported_commands"]
+    if unsupported:
+        print("  runtime unsupported: " + ", ".join(unsupported))
+    else:
+        print("  runtime: all decoded operations supported")
 
 
 def main():

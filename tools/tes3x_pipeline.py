@@ -37,7 +37,10 @@ PATCH_ORDER = tuple(entry["name"] for entry in registry.PATCHES
                     if entry["selection"] in ("packaging", "preset")
                     or entry["name"] == "build-preferences")
 HOOK_SOURCES = {entry["name"]: entry.get("source") for entry in registry.PATCHES}
-SOURCE_DEPENDENCIES = {"tes3xinfoarena.c": ("tes3xpager.c",)}
+SOURCE_DEPENDENCIES = {
+    "tes3xinfoarena.c": ("tes3xpager.c",),
+    "tes3xmwse.c": ("tes3xconsole.c",),
+}
 CATEGORIES = set(registry.CATEGORIES)
 PRESETS = ("minimal", "recommended", "testing")
 PRESET_ALIASES = {"standard": "recommended", "dev": "testing"}

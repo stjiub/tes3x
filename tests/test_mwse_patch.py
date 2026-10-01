@@ -6,7 +6,8 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from tes3x_patch import (DIAGNOSTICS_UPDATE_SIG, PatchError, _mwse_legacy, find_game_instance,
-                         find_script_decode_state, find_script_fixup_call)
+                         find_script_decode_state, find_script_fixup_call,
+                         find_script_ip_restore_call)
 
 
 class Image:
@@ -57,6 +58,24 @@ class MwsePatchTests(unittest.TestCase):
             '<i', update - (Image.base + call_off + 5)))
 
         self.assertEqual(find_game_instance(Image(data)), instance)
+
+    def test_script_ip_restore_call_is_content_located(self):
+        run_function = Image.base + 0x180
+        script_ip = 0x103000
+        data = bytearray(b'\x90' * 0x200)
+        for call_off in (0x20, 0x60):
+            data[call_off:call_off + 5] = b'\xe8' + struct.pack(
+                '<i', run_function - (Image.base + call_off + 5))
+        data[0x60 + 7:0x60 + 13] = b'\x89\x35' + struct.pack('<I', script_ip)
+
+        self.assertEqual(
+            find_script_ip_restore_call(Image(data), run_function, script_ip),
+            Image.base + 0x60,
+        )
+
+        data[0x20 + 7:0x20 + 13] = b'\x89\x35' + struct.pack('<I', script_ip)
+        with self.assertRaisesRegex(PatchError, '2 call site'):
+            find_script_ip_restore_call(Image(data), run_function, script_ip)
 
     def test_mwse_patch_requires_script_extension_first(self):
         with self.assertRaisesRegex(PatchError, 'requires script-ext'):

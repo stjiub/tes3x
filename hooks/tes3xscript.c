@@ -51,7 +51,13 @@ typedef struct {
 } tes3x_command;
 
 #ifdef TES3X_MWSE
-int tes3x_mwse_run(void *script, u32 opcode);
+int tes3x_mwse_run(void *script, u32 opcode, u32 a2, u32 a3);
+#ifndef TES3X_SCRIPT_IP
+#error "define TES3X_SCRIPT_IP to the VA of the script instruction pointer"
+#endif
+#ifndef TES3X_MWSE_IP_RESTORE_RETURN
+#error "define TES3X_MWSE_IP_RESTORE_RETURN to the runtime caller's return VA"
+#endif
 #endif
 
 /* Sample the first calls and powers of ten to limit log growth. */
@@ -133,7 +139,7 @@ float tes3x_script_run(void *self, u32 opcode, u32 a2, u32 a3)
     default:
 #ifdef TES3X_MWSE
         if (opcode >= 0x3800) {
-            tes3x_mwse_run(self, opcode);
+            tes3x_mwse_run(self, opcode, a2, a3);
             return 0.0f;
         }
 #endif
@@ -168,6 +174,13 @@ __attribute__((naked)) void tes3x_script_hook(void)
         "pushl %ecx\n\t" /* this */
         "call _tes3x_script_run\n\t"
         "addl $0x10, %esp\n\t"
+#ifdef TES3X_MWSE
+        /* This caller restores the decoder IP from ESI after RunFunction. */
+        "cmpl $" TES3X_STR(TES3X_MWSE_IP_RESTORE_RETURN) ", (%esp)\n\t"
+        "jne 3f\n\t"
+        "movl " TES3X_STR(TES3X_SCRIPT_IP) ", %esi\n\t"
+        "3:\n\t"
+#endif
         "ret $0xC\n\t"
         "1:\n\t"
         "movl $" TES3X_STR(TES3X_RUN_FUNCTION) ", %eax\n\t"

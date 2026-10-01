@@ -450,6 +450,25 @@ def find_call_sites(x, target_va):
     return sites
 
 
+def find_script_ip_restore_call(x, run_function, script_ip):
+    """Find the RunFunction caller that restores the decoder cursor from ESI."""
+    sites = []
+    for site in find_call_sites(x, run_function):
+        off = x.va_to_off(site)
+        if (bytes(x.data[off + 7:off + 9]) == b"\x89\x35"
+                and struct.unpack_from("<I", x.data, off + 9)[0] == script_ip):
+            sites.append(site)
+    if len(sites) != 1:
+        raise PatchError("script cursor restore: %d call site(s), expected 1" % len(sites))
+    return sites[0]
+
+
+def find_script_ip_restore_site(x):
+    """Locate the RunFunction call whose caller owns the live decoder cursor."""
+    _decode, script_ip, _opcode = find_script_decode_state(x)
+    return find_script_ip_restore_call(x, find_run_function(x), script_ip)
+
+
 def widen_opcode_bounds(x, ceiling):
     """Raise the six instruction-length bounds from 0x11BD to `ceiling`."""
     sec = text_section(x)
@@ -2166,6 +2185,7 @@ LOCATORS = {
     "script-decode": lambda image: find_script_decode_state(image)[0],
     "script-ip": lambda image: find_script_decode_state(image)[1],
     "script-opcode": lambda image: find_script_decode_state(image)[2],
+    "script-ip-restore": find_script_ip_restore_site,
     "ref-load": find_ref_load,
     "ref-skip": find_ref_skip,
     "mcp-97-scan": find_mcp97_scan,

@@ -347,6 +347,7 @@ static int vk_fresh;      /* raised, not yet laid out */
 static int vk_seen;
 static int vk_wait;
 static int vk_cancel;     /* B was seen while the keyboard was up */
+static int vk_text_client; /* 1 active, 2 accepted, -1 cancelled */
 static int symbols_on;
 static int console_layout;
 static unsigned int row_id[KEY_ROWS];
@@ -1554,6 +1555,10 @@ static void watch_keyboard(short *in)
     vk_watch = 0;
     vk_fresh = 0;
     tes3x_vk_limit = VK_TEXT_LIMIT;
+    if (vk_text_client == 1) {
+        vk_text_client = vk_cancel ? -1 : 2;
+        return;
+    }
     if (vk_cancel || !cmd[0]) {
         tes3x_log("console.cancelled", (u32)vk_cancel);
         cmd[0] = 0;
@@ -1567,6 +1572,53 @@ static void watch_keyboard(short *in)
     hist_push(cmd);
     /* Not from here: this runs inside the input gate while the keyboard is being torn down. */
     run_delay = 8;
+}
+
+int tes3x_console_text_begin(const char *initial)
+{
+    u32 i = 0;
+    if (vk_watch || run_delay || vk_text_client)
+        return 0;
+    while (initial && initial[i] && i < CMD_MAX - 1) {
+        cmd[i] = initial[i];
+        i++;
+    }
+    cmd[i] = 0;
+    if (!open_keyboard())
+        return 0;
+    vk_watch = 1;
+    vk_fresh = 1;
+    vk_seen = 0;
+    vk_wait = 0;
+    vk_cancel = 0;
+    symbols_on = 0;
+    hist_sel = -1;
+    vk_text_client = 1;
+    tes3x_vk_limit = CMD_MAX - 1;
+    return 1;
+}
+
+int tes3x_console_text_poll(char *out, u32 size)
+{
+    u32 i = 0;
+    int status;
+    if (vk_text_client == 1)
+        watch_keyboard(0);
+    if (vk_text_client == 1)
+        return 0;
+    status = vk_text_client;
+    if (status != 2 && status != -1)
+        return -2;
+    if (size) {
+        while (cmd[i] && i + 1 < size) {
+            out[i] = cmd[i];
+            i++;
+        }
+        out[i] = 0;
+    }
+    vk_text_client = 0;
+    cmd[0] = 0;
+    return status;
 }
 
 /* Replaces the engine's action check at its console call site; ret 8 matches the original. */

@@ -299,7 +299,7 @@ class PipelinePlanTests(unittest.TestCase):
         plan = resolve_patch_plan(profile)
         self.assertEqual(plan['selected'], ['script-ext', 'mwse-legacy'])
         self.assertEqual(plan['sources'], [
-            'tes3xhook.c', 'tes3xlog.c', 'tes3xscript.c', 'tes3xmwse.c'
+            'tes3xhook.c', 'tes3xlog.c', 'tes3xscript.c', 'tes3xconsole.c', 'tes3xmwse.c'
         ])
 
     def test_legacy_mwse_dependency_cannot_be_disabled(self):
