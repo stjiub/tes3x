@@ -95,7 +95,9 @@ console that joins running another game is sent the kept save and loads it. Betw
 console sends its inventory, level, attributes, skills, journal and current health, magicka and
 fatigue as they change. The server
 keeps the latest of them in `stream.json` beside the save and applies them over it when the
-console next loads that save, so a crash loses at most about a second of those.
+console next loads that save, so a crash loses at most about a second of those. It also keeps
+where the player last was and puts them back there, so a crash or a power cut does not return a
+player to where the save was made.
 
 ### Keys and passwords
 
@@ -212,8 +214,8 @@ full, 3 a wrong password, 4 kicked, 5 banned.
 
 - Menus no longer pause the world while joined, and resting or waiting is refused.
 - A console needs a save of its own to join. Over a kept character the server restores the
-  inventory, level, attributes, skills, journal and current health, magicka and fatigue (health
-  no lower than 1); spells, active effects, topics, factions and bounty come from the last save.
+  inventory, level, attributes, skills, journal, current health, magicka and fatigue (health
+  no lower than 1) and the player's position; spells, active effects, topics, factions and bounty come from the last save.
   Restoring only moves a
   quest forward, never back.
 - Items taken, objects a script disables, locks, and items
