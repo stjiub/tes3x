@@ -395,12 +395,15 @@ EVENT_GAME, EVENT_LOAD = 23, 24
 # The player's own state, per character and never relayed: a sub-kind, then PLAYER_ITEMS (part,
 # parts, item id, then entries as in CONTENTS: every stack of that item, none once it is gone),
 # PLAYER_LEVEL (LEVEL), PLAYER_SKILLS (count, then SKILL each), PLAYER_JOURNAL (count, then
-# (index u16, quest id) each) or PLAYER_VITALS (VITALS). To a client only: the kept state, then PLAYER_READY (1 when it was
+# (index u16, quest id) each) or PLAYER_VITALS (VITALS). To a client only: PLAYER_PLACE (a
+# STATE_BODY: where the player last was, which the server takes from STATE), the kept state, then PLAYER_READY (1 when it was
 # replayed over the checkpoint, 0 to have the console send all of it). The console sends nothing
 # before READY.
 EVENT_PLAYER = 25
 PLAYER_ITEMS, PLAYER_LEVEL, PLAYER_SKILLS, PLAYER_JOURNAL, PLAYER_READY = 1, 2, 3, 4, 5
-PLAYER_VITALS = 6
+PLAYER_VITALS, PLAYER_PLACE = 6, 7
+PLACE_HOLD = 15.0  # seconds a replayed place waits for the console to arrive before STATE counts
+PLACE_NEAR = 512.0  # units: the console has arrived; also the move that marks the place to write
 # Characters. GAME's name is followed by the launch's kind (GAME_NEW: a New Game). To a client:
 # CHARS (part, parts, then the names of its key's characters each ending in a zero) to choose
 # from, or NEWCHAR (the same with start point names) to make one; the console answers PICK
@@ -1026,7 +1029,7 @@ class PlayerStream:
     def __init__(self, path):
         self.path = path
         self.items, self.skills, self.journal, self.level = {}, {}, {}, None
-        self.vitals = None
+        self.vitals = self.place = None
         self.arriving = None  # (item id, entries so far, next part)
         self.dirty = False
         try:
@@ -1039,11 +1042,13 @@ class PlayerStream:
         self.journal = kept.get("journal", {})
         self.level = bytes.fromhex(kept["level"]) if kept.get("level") else None
         self.vitals = kept.get("vitals")
+        self.place = bytes.fromhex(kept["place"]) if kept.get("place") else None
 
     def reset(self):
         """A new character: nothing streamed so far belongs to it."""
         self.items, self.skills, self.journal, self.level = {}, {}, {}, None
-        self.vitals, self.arriving, self.dirty = None, None, True
+        self.vitals = self.place = self.arriving = None
+        self.dirty = True
 
     def checkpoint(self):
         """A new checkpoint holds each quest's entries up to its index; the latest is enough."""
@@ -1051,6 +1056,13 @@ class PlayerStream:
             if len(indices) > 1:
                 self.journal[quest] = indices[-1:]
                 self.dirty = True
+
+    def keep_place(self, body):
+        """Keep where the player is (a STATE_BODY); written once it moved PLACE_NEAR or changed
+        cell."""
+        if not self.place or not same_place(self.place, body):
+            self.dirty = True
+        self.place = bytes(body)
 
     def take(self, data):
         """Keep one PLAYER event; what changed, for the log, or None."""
@@ -1113,6 +1125,8 @@ class PlayerStream:
             events.append(bytes([PLAYER_LEVEL]) + self.level)
         if self.vitals:  # after LEVEL, which caps each current value at its base
             events.append(bytes([PLAYER_VITALS]) + VITALS.pack(*self.vitals))
+        if self.place:
+            events.append(bytes([PLAYER_PLACE]) + self.place)
         skills = sorted(self.skills.items())
         per = (EVENT_DATA - 2) // SKILL.size
         for i in range(0, len(skills), per):
@@ -1127,7 +1141,8 @@ class PlayerStream:
         save_world(self.path, {"items": self.items,
                                "level": self.level.hex() if self.level else None,
                                "skills": {str(k): v for k, v in self.skills.items()},
-                               "journal": self.journal, "vitals": self.vitals})
+                               "journal": self.journal, "vitals": self.vitals,
+                               "place": self.place.hex() if self.place else None})
         self.dirty = False
 
 
@@ -1389,6 +1404,14 @@ def describe_state(state):
     return f"{where} at {x:.0f},{y:.0f},{z:.0f} heading {math.degrees(heading) % 360:.0f}"
 
 
+def same_place(a, b):
+    """Two STATE_BODYs in one cell within PLACE_NEAR of each other."""
+    fa, xa, ya, za, _, ca = STATE_BODY.unpack_from(a)
+    fb, xb, yb, zb, _, cb = STATE_BODY.unpack_from(b)
+    return (fa & PLACE == fb & PLACE and (not fa & INTERIOR or ca == cb)
+            and math.dist((xa, ya, za), (xb, yb, zb)) < PLACE_NEAR)
+
+
 def cell_keys(state):
     """(own cell, loaded cells) of a STATE: an interior, or an exterior cell and its neighbours."""
     flags, x, y, _, _, cell = STATE_BODY.unpack_from(state)
@@ -1605,6 +1628,7 @@ class Client:
         self.synced = False  # that launch runs its character's latest checkpoint
         self.launch = 0  # GAME_NONE, GAME_LOAD or GAME_NEW
         self.character = None  # the folder of the character that launch runs
+        self.place_hold = None  # (replayed place, until when) while STATE still shows the old one
         self.listed = []  # the folders CHARS offered, in order
         self.actor_states = 0
         self.flush_due = False  # an EVENTS packet held back by EVENTS_GAP
@@ -2084,12 +2108,29 @@ def serve(args):
             streams[folder] = PlayerStream(os.path.join(folder, STREAM_NAME))
         return streams[folder]
 
+    def keep_place(client, now):
+        """The character's last place, from STATE, once a replayed place has been reached."""
+        stream = player_stream(client) if client.synced else None
+        body = client.state[:STATE_BODY.size]
+        if stream is None or not STATE_BODY.unpack_from(body)[0] & IN_WORLD:
+            return
+        if client.place_hold:
+            kept, until = client.place_hold
+            if not same_place(kept, body) and now < until:
+                return
+            if not same_place(kept, body):
+                print(f"{time.strftime('%H:%M:%S')} client {client.id} did not reach "
+                      f"{describe_state(kept)}", flush=True)
+            client.place_hold = None
+        stream.keep_place(body)
+
     def player_ready(client, replay, stamp, now):
         """Replay the kept player state over the checkpoint, or have the console send it all."""
         stream = player_stream(client)
         if stream is None:
             return
         events = stream.replay() if replay else []
+        client.place_hold = (stream.place, now + PLACE_HOLD) if replay and stream.place else None
         for data in events:
             client.rel.queue(EVENT_PLAYER, 0, data)
         client.rel.queue(EVENT_PLAYER, 0, bytes([PLAYER_READY, 1 if replay else 0]))
@@ -2097,6 +2138,7 @@ def serve(args):
         print(f"{stamp} client {client.id}: " + (
             f"replayed {len(stream.items)} items, {len(stream.skills)} skills, "
             f"{len(stream.journal)} quests" + (", the level" if stream.level else "")
+            + (f", the place ({describe_state(stream.place)})" if stream.place else "")
             if replay else "streams its player from scratch"), flush=True)
 
     def send_names(client, kind, names, now):
@@ -2796,6 +2838,7 @@ def serve(args):
                 return
             client.state = packet[T3MP.size:T3MP.size + STATE_SIZE]
             client.states += 1
+            keep_place(client, now)
             if args.bot:
                 bot_anchor(client.state)
                 if args.bot_echo:

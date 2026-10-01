@@ -2986,13 +2986,15 @@ static int ghost_pose(u32 slot, struct pose *out, u8 *older, float *frac)
     return 1;
 }
 
+static const char *interior_name(const u8 *cut);
+
 static void ghost_place(u32 i, const struct pose *p)
 {
-    char line[128];
+    char line[160];
     char *q = put_xyz(put_text(put_ghost(line, i), "PositionCell "), &p->x);
 
     q = put_text(q, " 0 \"");
-    q = put_text(q, p->flags & STATE_INTERIOR ? (const char *)p->cell : GHOST_EXTERIOR);
+    q = put_text(q, p->flags & STATE_INTERIOR ? interior_name(p->cell) : GHOST_EXTERIOR);
     q = put_text(q, "\"");
     *q = 0;
     run_script(line);
@@ -5756,6 +5758,32 @@ static void cell_key_of(const u8 *cell, struct cell_key *k)
         k->name[i] = 0;
     for (i = 0; mapped(name) && name[i] && i < CELL_NAME - 1; i++)
         k->name[i] = (u8)name[i];
+}
+
+/* An interior's whole name from STATE's, which keeps CELL_NAME - 1 characters: the first interior
+ * that begins with them. A name that was not cut is returned as it is. */
+static const char *interior_name(const u8 *cut)
+{
+    const u8 *node, *cell;
+    const char *name;
+    u32 i, guard;
+
+    for (i = 0; i < CELL_NAME - 1 && cut[i]; i++)
+        ;
+    if (i < CELL_NAME - 1)
+        return (const char *)cut;
+    for (node = cells_head(), guard = 0; plausible(node) && guard < 65536;
+         node = *(const u8 *const *)(node + 8), guard++) {
+        if (!plausible(cell = *(const u8 *const *)node) ||
+            !(*(const u32 *)(cell + CELL_FLAGS) & CELL_INTERIOR) ||
+            !mapped(name = *(const char *const *)(cell + CELL_NAME_PTR)))
+            continue;
+        for (i = 0; i < CELL_NAME - 1 && name[i] == (char)cut[i]; i++)
+            ;
+        if (i == CELL_NAME - 1)
+            return name;
+    }
+    return (const char *)cut;
 }
 
 static u32 cell_authority(const u8 *cell)
@@ -9396,6 +9424,8 @@ static void chargen_stat(void)
 #define PLAYER_JOURNAL 4u /* count, then (index u16, quest id) */
 #define PLAYER_READY 5u   /* from the server: 1 once it replayed what it keeps, 0 to send it all */
 #define PLAYER_VITALS 6u  /* current health, magicka, fatigue as f32 */
+#define PLAYER_PLACE 7u   /* from the server: where the player last was, as STATE's first bytes */
+#define PLACE_BYTES (20 + CELL_NAME)
 #define FATIGUE_STEP 8    /* fatigue regenerates: send a change of an eighth of its base */
 #define PLAYER_POLL_US 1000000u
 #define CARRIED 256u
@@ -9872,6 +9902,32 @@ static void vitals_apply(u8 *ref, const u8 *body)
     player_stats_in++;
 }
 
+/* The checkpoint was made somewhere else: go where the server last saw the player, so a power cut
+ * is no way out of a place. */
+static void place_apply(const u8 *body)
+{
+    char line[160], *q;
+    u32 flags = get32le(body);
+    float heading;
+
+    if (!(flags & STATE_IN_WORLD) || !float_within(body + 4, 3, POSITION_LIMIT) ||
+        !float_within(body + 16, 1, ANGLE_LIMIT) ||
+        ((flags & STATE_INTERIOR) && !script_safe(body + 20, CELL_NAME))) {
+        player_apply_failures++;
+        return;
+    }
+    copy((u8 *)&heading, body + 16, 4);
+    q = put_xyz(put_text(line, "Player->PositionCell "), (const float *)(body + 4));
+    q = put_int(put_text(q, " "), round_int(heading * (180.0f / PI)));
+    q = put_text(q, " \"");
+    q = put_text(q, flags & STATE_INTERIOR ? interior_name(body + 20) : GHOST_EXTERIOR);
+    q = put_text(q, "\"");
+    *q = 0;
+    run_script(line);
+    log_text("net.player_place", flags & STATE_INTERIOR ? interior_name(body + 20) : "(exterior)");
+    player_stats_in++;
+}
+
 /* A quest only moves forward: the checkpoint already holds the entries up to its own index. */
 static void journal_apply(const u8 *p, u32 length)
 {
@@ -9981,6 +10037,8 @@ static void player_event(const struct event *e)
         journal_apply(e->data, e->length);
     else if (e->data[0] == PLAYER_VITALS && e->length >= 1 + 12)
         vitals_apply(ref, e->data + 1);
+    else if (e->data[0] == PLAYER_PLACE && e->length >= 1 + PLACE_BYTES)
+        place_apply(e->data + 1);
 }
 
 static void player_stat(void)

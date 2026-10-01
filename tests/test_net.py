@@ -280,6 +280,13 @@ class AuthorityTests(unittest.TestCase):
         flags = tes3x_net.IN_WORLD | (tes3x_net.INTERIOR if cell else 0)
         return tes3x_net.STATE_BODY.pack(flags, x, y, 0.0, 0.0, cell)
 
+    def test_a_place_is_the_same_within_a_cell_and_a_step(self):
+        same = tes3x_net.same_place
+        self.assertTrue(same(self.state(0.0, 0.0), self.state(300.0, 300.0)))
+        self.assertFalse(same(self.state(0.0, 0.0), self.state(600.0, 0.0)))
+        self.assertFalse(same(self.state(0.0, 0.0, b'A'), self.state(0.0, 0.0, b'B')))
+        self.assertFalse(same(self.state(0.0, 0.0, b'A'), self.state(0.0, 0.0)))
+
     def test_exteriors_load_three_by_three_and_interiors_one(self):
         own, loaded = tes3x_net.cell_keys(self.state(-1.0, 8192.0))
         self.assertEqual(own, (tes3x_net.KEY_EXTERIOR, -1, 1, b''))

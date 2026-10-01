@@ -272,6 +272,9 @@ class ServerTests(unittest.TestCase):
                bytes([net.PLAYER_SKILLS, 1]) + net.SKILL.pack(5, 42.0, 0.5),
                bytes([net.PLAYER_VITALS]) + net.VITALS.pack(70.0, 60.0, 150.0),
                *net.pack_journal([('A1_1_FindSpymaster', 10)]))
+        place = net.STATE_BODY.pack(net.IN_WORLD | net.INTERIOR, 100.0, 200.0, 30.0, 1.5,
+                                    b"Arrille's Tradehouse")
+        first.send(net.STATE, place + bytes(net.ANIM_BYTES))
         time.sleep(0.3)
         player(first, seq, *net.pack_items('Gold_001', [[150, 0, 0, 0]]),
                *net.pack_items('iron longsword', []),
@@ -299,6 +302,7 @@ class ServerTests(unittest.TestCase):
         items = [net.unpack_items(d) for d in replay if d[0] == net.PLAYER_ITEMS]
         self.assertEqual([(i[2], i[3]) for i in items], [('Gold_001', [[150, 0, 0, 0]])])
         self.assertIn(bytes([net.PLAYER_LEVEL]) + level, replay)
+        self.assertIn(bytes([net.PLAYER_PLACE]) + place, replay)
         vitals = bytes([net.PLAYER_VITALS]) + net.VITALS.pack(55.0, 60.0, 180.0)
         self.assertGreater(replay.index(vitals), replay.index(bytes([net.PLAYER_LEVEL]) + level))
         self.assertIn(bytes([net.PLAYER_SKILLS, 1]) + net.SKILL.pack(5, 42.0, 0.5), replay)
