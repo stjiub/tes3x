@@ -27,6 +27,7 @@ except ImportError as exc:
 ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = Path.cwd() / 'build' / 'symbols.db'
 CURATED = ROOT / 'symbols' / 'curated.json'
+STRUCTS = ROOT / 'symbols' / 'structs.json'
 
 MAX_FUNC = 0x10000
 BODY_GAP = 64
@@ -749,16 +750,22 @@ def cmd_annotate(a):
         rec = {'va': f'0x{va:08X}'}
         cur['records'].append(rec)
     rec['name'] = a.name
-    rec['confidence'] = a.confidence
+    rec['confidence'] = a.confidence or rec.get('confidence', 'matched')
     if a.provenance:
         rec['provenance'] = a.provenance
     if a.note:
         rec['note'] = a.note
     if a.pc_va:
         rec['pc_va'] = f'0x{int(a.pc_va, 16):08X}'
+    if a.kind:
+        rec['kind'] = a.kind
+    if a.type:
+        rec['type'] = a.type
+    if a.signature:
+        rec['signature'] = a.signature
     cur['records'].sort(key=lambda r: int(r['va'], 16))
     save_curated(cur)
-    print(f"0x{va:08X} = {a.name} ({a.confidence})")
+    print(f"0x{va:08X} = {a.name} ({rec['confidence']})")
 
 
 def cmd_lookup(a):
@@ -843,26 +850,70 @@ def cmd_callers(a):
         print(f'  0x{target:08X} {kind:5} {rec["name"] if rec else ""}')
 
 
-def ghidra_names(db, tag):
-    """Curated names for one image, and a stamp that changes with them."""
-    recs = load_curated()['records']
+def ghidra_sync(db, tag):
+    """What Ghidra needs for one image: types, then names, signatures, notes and global types.
+
+    The Xbox image gets MWSE's PC layouts with symbols/structs.json over them; the PC image gets
+    MWSE's layouts as they are, and the names of its matched Xbox functions.
+    """
+    import tes3x_layouts as lay
+    sources = [CURATED, STRUCTS, lay.OUT]
+    stamp = ':'.join(str(p.stat().st_mtime_ns) if p.exists() else '-' for p in sources)
+    types = json.loads(lay.OUT.read_text()) if lay.OUT.exists() else {'records': {}, 'enums': {}}
     if tag == 'xbe':
-        names = {r['va']: r['name'] for r in recs if r.get('kind', 'function') != 'site'}
+        types = lay.merge(types, json.loads(STRUCTS.read_text(encoding='utf-8')))
+    types = {'records': types['records'], 'enums': types['enums']}
+
+    def entry(r, va):
+        e = {'va': va, 'name': r['name']}
+        if r.get('note'):
+            e['note'] = r['note']
+        if r.get('signature'):
+            e['signature'], conv = lay.ghidra_signature(r['signature'])
+            if conv:
+                e['convention'] = conv
+        if r.get('type'):
+            e['type'] = lay.internal_type(r['type'], types)
+        return e
+
+    recs = [r for r in load_curated()['records'] if r.get('kind', 'function') != 'site']
+    if tag == 'xbe':
+        out = [entry(r, r['va']) for r in recs]
     else:
-        by_xbe = {int(r['va'], 16): r['name'] for r in recs
-                  if r.get('kind', 'function') == 'function'}
-        names = {f'0x{pc:08X}': by_xbe[x] for x, pc in db.execute('SELECT xbe, pc FROM match')
-                 if x in by_xbe}
-        names.update({r['pc_va']: r['name'] for r in recs if r.get('pc_va')})
-    return str(CURATED.stat().st_mtime_ns), names
+        funcs = {int(r['va'], 16): r for r in recs if r.get('kind', 'function') == 'function'}
+        by_pc = {pc: funcs[x] for x, pc in db.execute('SELECT xbe, pc FROM match') if x in funcs}
+        by_pc.update({int(r['pc_va'], 16): r for r in recs if r.get('pc_va')})
+        out = [entry(r, f'0x{pc:08X}') for pc, r in by_pc.items()]
+    return stamp, {'types': types, 'records': out}
 
 
 def ghidra_client(db, tags):
     import tes3x_ghidra
     cl = tes3x_ghidra.Client()
     for tag in tags:
-        cl.sync_names(tag, *ghidra_names(db, tag))
+        stamp, payload = ghidra_sync(db, tag)
+        if cl.call('ping')['stamps'].get(tag) != stamp:
+            res = cl.call('sync', tag=tag, stamp=stamp, **payload)
+            if res['errors']:
+                print(f"ghidra {tag}: {len(res['errors'])} items not applied "
+                      f"(`ghidra-sync` lists them)", file=sys.stderr)
     return cl
+
+
+def cmd_ghidra_sync(a):
+    """Re-apply types and names now and list what Ghidra rejected."""
+    import tes3x_ghidra
+    db = sqlite3.connect(DB_PATH)
+    schema(db)
+    cl = tes3x_ghidra.Client()
+    for tag in a.tag:
+        stamp, payload = ghidra_sync(db, tag)
+        res = cl.call('sync', tag=tag, stamp=stamp, **payload)
+        print(f"{tag}: {res.get('types', 0)} types, {res['records']} records, "
+              f"{len(res['errors'])} not applied")
+        for e in res['errors']:
+            print(f'  {e}')
+    cl.close()
 
 
 def pc_counterpart(db, va):
@@ -965,11 +1016,15 @@ def main():
     a_ = sub.add_parser('annotate', help='record a name in the curated layer')
     a_.add_argument('va')
     a_.add_argument('name')
-    a_.add_argument('--confidence', default='matched',
+    a_.add_argument('--confidence', default=None,
                     choices=['verified', 'matched', 'guess'])
     a_.add_argument('--provenance', default='')
     a_.add_argument('--note', default='')
     a_.add_argument('--pc-va', default='')
+    a_.add_argument('--kind', choices=['function', 'site', 'data'])
+    a_.add_argument('--type', default='', help="a global's C type, e.g. 'TES3::WorldController*'")
+    a_.add_argument('--signature', default='',
+                    help="C prototype without this, e.g. 'float __thiscall getSkill(int id)'")
     a_.set_defaults(fn=cmd_annotate)
 
     lk = sub.add_parser('lookup', help='describe the function containing a VA')
@@ -1007,6 +1062,10 @@ def main():
     rf.add_argument('va')
     rf.add_argument('--tag', default='xbe', choices=['xbe', 'pc'])
     rf.set_defaults(fn=cmd_refs)
+
+    gy = sub.add_parser('ghidra-sync', help='apply types and names now; list what was rejected')
+    gy.add_argument('--tag', nargs='+', default=['xbe', 'pc'], choices=['xbe', 'pc'])
+    gy.set_defaults(fn=cmd_ghidra_sync)
 
     gx = sub.add_parser('ghidra-stop', help='stop the background Ghidra process')
     gx.set_defaults(fn=cmd_ghidra_stop)

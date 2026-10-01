@@ -143,10 +143,6 @@ class Client:
             raise SystemExit(f"Ghidra: {res['error']}")
         return res
 
-    def sync_names(self, tag, stamp, names):
-        if self.call('ping')['stamps'].get(tag) != stamp:
-            self.call('names', tag=tag, stamp=stamp, names=names)
-
     def close(self):
         self.sock.close()
 

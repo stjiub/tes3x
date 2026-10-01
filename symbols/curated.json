@@ -2912,7 +2912,8 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_MobileActor_applyHealthDamage",
-      "pc_va": "0x00557CF0"
+      "pc_va": "0x00557CF0",
+      "signature": "bool __thiscall applyHealthDamage(float damage, bool isPlayerAttack, bool scaleWithDifficulty, bool doNotChangeHealth)"
     },
     {
       "va": "0x0017C950",
@@ -4260,6 +4261,14 @@
       "kind": "data",
       "confidence": "verified",
       "provenance": "find_command_table; six opcode bounds widened by script-ext"
+    },
+    {
+      "va": "0x003CB5F4",
+      "name": "WorldController::instance",
+      "confidence": "verified",
+      "provenance": "every [0x003CB5F4]+offset read the multiplayer and save work rely on (CharGenState, menu mode, mob manager)",
+      "kind": "data",
+      "type": "TES3::WorldController*"
     },
     {
       "va": "0x003CDA3F",

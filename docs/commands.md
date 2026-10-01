@@ -63,7 +63,8 @@ what each one is for and where it is explained; `--help` on any command lists it
 
 | command | job | see |
 |---|---|---|
-| `tes3x_sym.py` | build and query the XBE's symbol map | [symbol map](symbol-map.md) |
+| `tes3x_sym.py` | build and query the XBE's symbol map; decompile through Ghidra | [symbol map](symbol-map.md) |
+| `tes3x_layouts.py` | compile MWSE's struct layouts into data types for Ghidra | [symbol map](symbol-map.md#types) |
 | `tes3x_xbe.py` | print an XBE's header, certificate, sections and strings | |
 | `tes3x_disasm.py` | disassemble an address range, naming calls from the symbol map, and find references and direct calls to an address | |
 | `tes3x_inject.py` | add a section to an XBE and retarget its entry point | [payload](../patches/payload.md) |

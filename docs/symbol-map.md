@@ -31,7 +31,9 @@ community has already worked out.
 | `confidence` | how far to trust the name (below) |
 | `provenance` | where it came from; `mwse:` names come from MWSE's address list |
 | `pc_va` | the matching address in PC `Morrowind.exe` 1.6.1820, when there is one |
-| `note` | optional: behaviour worth knowing before touching it |
+| `note` | optional: behaviour worth knowing before touching it; shown above the function in `decompile` |
+| `type` | optional, for `data`: the global's C type, such as `TES3::WorldController*` |
+| `signature` | optional, for a function: its C prototype without `this`, such as `float __thiscall getSkill(int id)` |
 
 `confidence` is one of:
 
@@ -84,23 +86,69 @@ python tools/tes3x_sym.py ghidra-setup                        # both images in s
 python tools/tes3x_sym.py decompile 0x00111920                # pseudo-C of the function
 python tools/tes3x_sym.py decompile 0x00111920 --pc           # and its PC counterpart
 python tools/tes3x_sym.py refs 0x003CB5F4                     # code and data references
+python tools/tes3x_sym.py ghidra-sync                         # apply now, list rejections
 python tools/tes3x_sym.py ghidra-stop
 ```
 
 The first request starts a headless Ghidra in the background that keeps the project open; later
-requests take well under a second, and the process exits after 30 idle minutes. Curated names are
-applied to both images before each request when `curated.json` has changed, and PC functions take
-the names of their matched Xbox functions, so the pseudo-C reads with the map's names. The project
-lives in `build/ghidra/` and is never committed.
+requests take well under a second, and the process exits after 30 idle minutes. Before a request,
+whenever `curated.json`, `structs.json` or the generated layouts have changed, Ghidra is given:
+
+- the struct and enum types below;
+- every name, with `Class::method` placed in a class whose struct exists, so that `this` takes
+  that type. A method without a recorded signature is made `__thiscall` when its first
+  instructions read `ECX`;
+- each `signature`, each `note` as a comment above the function, and each global's `type`.
+
+PC functions take the names, signatures and notes of their matched Xbox functions. Nothing is
+saved into the Ghidra project, which lives in `build/ghidra/` and is never committed: what a
+session learns goes into the files above.
+
+## Types
+
+MWSE describes the PC engine's structs in C++ headers. `tes3x_layouts.py` compiles them for 32-bit
+MSVC with libclang and writes the exact layouts to `build/ghidra/types-mwse.json`; it needs
+`python -m pip install libclang`, clang (`[paths] llvm`) and the MSVC and Windows SDK headers of a
+Visual Studio C++ install. MWSE asserts its own sizes and offsets, and the tool reports any that
+fail.
+
+```
+python tools/tes3x_layouts.py path/to/MWSE
+```
+
+The Xbox build shares most layouts with the PC, not all. `symbols/structs.json` corrects them for
+the Xbox image only:
+
+```json
+{
+  "name": "TES3::WorldController",
+  "pc_valid_until": "0x6C",
+  "note": "4 bytes shorter than the PC somewhere in 0x6C..0xA4",
+  "fields": [
+    {"offset": "0xBC", "name": "gvarCharGenState", "type": "TES3::GlobalVariable*",
+     "confidence": "verified", "provenance": "transition-autosaves gates saving on it"}
+  ]
+}
+```
+
+`pc_valid_until` drops the PC fields from that offset on; each field replaces whatever PC field it
+overlaps; a struct the PC does not have takes a `size`. Types are C++ names (unqualified ones are
+looked up in `TES3` and then `NI`) with `*` and `[N]`.
 
 ## Adding a name
 
 ```
 python tools/tes3x_sym.py annotate 0x00193710 Ini::ReadInt --confidence verified \
     --provenance "traced: 4 args cdecl (section, key, default, file), returns int"
+python tools/tes3x_sym.py annotate 0x003CB5F4 WorldController::instance --kind data \
+    --type "TES3::WorldController*" --confidence verified --provenance "..."
+python tools/tes3x_sym.py annotate 0x0017C3D0 MobileActor::applyHealthDamage \
+    --signature "bool __thiscall applyHealthDamage(float damage, bool isPlayerAttack, bool scaleWithDifficulty, bool doNotChangeHealth)"
 ```
 
 Record `verified` only for what a run or a working patch showed, and say how in `provenance`.
+`annotate` keeps fields it is not given; a signature names the arguments every caller's pseudo-C
+then shows. Struct fields go into `structs.json` by hand.
 
 ## How the matching works
 
@@ -131,5 +179,6 @@ partitions and the controller) has no PC counterpart at all, so it is named only
 ## Credit and limits
 
 `mwse:` names come from [MWSE](https://github.com/MWSE/MWSE)'s address definitions (MIT licence),
-carried across by the matching above. The map holds addresses and names only: no bytes of the game,
-no decompiled code.
+carried across by the matching above, and so do the struct layouts `tes3x_layouts.py` compiles from
+its headers. The map holds addresses, names, types and signatures only: no bytes of the game, no
+decompiled code.

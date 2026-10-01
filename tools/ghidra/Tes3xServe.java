@@ -9,11 +9,16 @@ import java.util.*;
 import com.google.gson.*;
 
 import ghidra.app.cmd.disassemble.DisassembleCommand;
+import ghidra.app.cmd.function.ApplyFunctionSignatureCmd;
 import ghidra.app.cmd.function.CreateFunctionCmd;
 import ghidra.app.decompiler.*;
 import ghidra.app.script.GhidraScript;
+import ghidra.app.util.NamespaceUtils;
+import ghidra.app.util.parser.FunctionSignatureParser;
 import ghidra.framework.model.DomainFile;
 import ghidra.program.model.address.*;
+import ghidra.program.model.data.*;
+import ghidra.program.model.lang.Register;
 import ghidra.program.model.listing.*;
 import ghidra.program.model.symbol.*;
 
@@ -121,8 +126,8 @@ public class Tes3xServe extends GhidraScript {
 			throw new IllegalArgumentException("no program for tag " + tag);
 		}
 		switch (op) {
-			case "names":
-				res.addProperty("applied", names(p, req.getAsJsonObject("names")));
+			case "sync":
+				res = sync(p, req);
 				stamps.put(tag, req.get("stamp").getAsString());
 				return res;
 			case "decompile":
@@ -139,33 +144,275 @@ public class Tes3xServe extends GhidraScript {
 		return p.getAddressFactory().getDefaultAddressSpace().getAddress(Long.decode(va));
 	}
 
-	private int names(Program p, JsonObject names) {
-		int applied = 0;
-		int tx = p.startTransaction("tes3x names");
+	// Types first, so that names can find their class struct and signatures their types.
+	private JsonObject sync(Program p, JsonObject req) {
+		JsonObject res = new JsonObject();
+		List<String> errors = new ArrayList<>();
+		int tx = p.startTransaction("tes3x sync");
 		try {
-			SymbolTable st = p.getSymbolTable();
-			for (Map.Entry<String, JsonElement> e : names.entrySet()) {
-				Address a = addr(p, e.getKey());
-				String name = e.getValue().getAsString().replaceAll("\\s+", "_");
-				try {
-					Function f = p.getFunctionManager().getFunctionAt(a);
-					if (f != null) {
-						f.setName(name, SourceType.USER_DEFINED);
-					}
-					else {
-						st.createLabel(a, name, SourceType.USER_DEFINED).setPrimary();
-					}
-					applied++;
-				}
-				catch (Exception ex) {
-					// A name Ghidra rejects stays unapplied; the rest still go in.
-				}
+			if (req.has("types")) {
+				res.addProperty("types", types(p, req.getAsJsonObject("types"), errors));
 			}
+			res.addProperty("records", records(p, req.getAsJsonArray("records"), errors));
 		}
 		finally {
 			p.endTransaction(tx, true);
 		}
+		res.add("errors", gson.toJsonTree(errors));
+		return res;
+	}
+
+	private static CategoryPath category(String path) {
+		int i = path.lastIndexOf('/');
+		return i <= 0 ? CategoryPath.ROOT : new CategoryPath(path.substring(0, i));
+	}
+
+	private static String leaf(String path) {
+		return path.substring(path.lastIndexOf('/') + 1);
+	}
+
+	private DataType primitive(String name) {
+		switch (name) {
+			case "bool": return BooleanDataType.dataType;
+			case "char": return CharDataType.dataType;
+			case "uchar": return ByteDataType.dataType;
+			case "short": return ShortDataType.dataType;
+			case "ushort": return UnsignedShortDataType.dataType;
+			case "int": return IntegerDataType.dataType;
+			case "uint": return UnsignedIntegerDataType.dataType;
+			case "longlong": return LongLongDataType.dataType;
+			case "ulonglong": return UnsignedLongLongDataType.dataType;
+			case "float": return FloatDataType.dataType;
+			case "double": return DoubleDataType.dataType;
+			case "wchar16": return WideChar16DataType.dataType;
+			case "void": return VoidDataType.dataType;
+		}
+		if (name.startsWith("undefined")) {
+			return Undefined.getUndefinedDataType(Integer.parseInt(name.substring(9)));
+		}
+		return null;
+	}
+
+	// "/TES3/Statistic*[8]": a base type, then pointer and array suffixes applied in order.
+	private DataType resolve(DataTypeManager dtm, String t) {
+		int i = t.length();
+		while (i > 0 && (t.charAt(i - 1) == '*' || t.charAt(i - 1) == ']')) {
+			i = t.charAt(i - 1) == '*' ? i - 1 : t.lastIndexOf('[', i - 1);
+		}
+		String base = t.substring(0, i);
+		DataType dt = primitive(base);
+		if (dt == null) {
+			dt = dtm.getDataType(category(base), leaf(base));
+		}
+		if (dt == null) {
+			dt = Undefined.getUndefinedDataType(1);
+			if (i == t.length()) {
+				return null;
+			}
+		}
+		while (i < t.length()) {
+			if (t.charAt(i) == '*') {
+				dt = new PointerDataType(dt, 4, dtm);
+				i++;
+			}
+			else {
+				int end = t.indexOf(']', i);
+				int n = Integer.parseInt(t.substring(i + 1, end));
+				if (n <= 0 || dt.getLength() <= 0) {
+					return null;
+				}
+				dt = new ArrayDataType(dt, n, dt.getLength(), dtm);
+				i = end + 1;
+			}
+		}
+		return dt;
+	}
+
+	private int types(Program p, JsonObject types, List<String> errors) {
+		DataTypeManager dtm = p.getDataTypeManager();
+		DataTypeConflictHandler replace = DataTypeConflictHandler.REPLACE_HANDLER;
+		for (Map.Entry<String, JsonElement> e : types.getAsJsonObject("enums").entrySet()) {
+			JsonObject o = e.getValue().getAsJsonObject();
+			EnumDataType en = new EnumDataType(category(e.getKey()), leaf(e.getKey()),
+				o.get("size").getAsInt(), dtm);
+			for (Map.Entry<String, JsonElement> v : o.getAsJsonObject("values").entrySet()) {
+				try {
+					en.add(v.getKey(), v.getValue().getAsLong());
+				}
+				catch (IllegalArgumentException ex) {
+					// Duplicate names or values out of range: keep the rest.
+				}
+			}
+			dtm.addDataType(en, replace);
+		}
+		JsonObject records = types.getAsJsonObject("records");
+		Map<String, Composite> made = new HashMap<>();
+		for (Map.Entry<String, JsonElement> e : records.entrySet()) {
+			JsonObject o = e.getValue().getAsJsonObject();
+			CategoryPath cp = category(e.getKey());
+			Composite c = o.get("kind").getAsString().equals("union")
+					? new UnionDataType(cp, leaf(e.getKey()), dtm)
+					: new StructureDataType(cp, leaf(e.getKey()), o.get("size").getAsInt(), dtm);
+			made.put(e.getKey(), (Composite) dtm.addDataType(c, replace));
+		}
+		// Unions take their size from their members, so fill them before anything embeds them.
+		List<String> order = new ArrayList<>(records.keySet());
+		order.sort(Comparator.comparing(k -> !(made.get(k) instanceof Union)));
+		for (String key : order) {
+			JsonObject o = records.getAsJsonObject(key);
+			Composite c = made.get(key);
+			if (o.has("bases")) {
+				for (JsonElement b : o.getAsJsonArray("bases")) {
+					JsonArray a = b.getAsJsonArray();
+					DataType dt = made.get(a.get(1).getAsString());
+					if (dt != null && dt.getLength() > 0 && c instanceof Structure s) {
+						place(s, a.get(0).getAsInt(), dt, "base_" + dt.getName(), key, errors);
+					}
+				}
+			}
+			for (JsonElement f : o.getAsJsonArray("fields")) {
+				JsonArray a = f.getAsJsonArray();
+				DataType dt = resolve(dtm, a.get(2).getAsString());
+				if (dt == null || dt.getLength() <= 0) {
+					continue;
+				}
+				String name = a.get(1).getAsString();
+				if (c instanceof Structure s) {
+					place(s, a.get(0).getAsInt(), dt, name, key, errors);
+				}
+				else {
+					c.add(dt, dt.getLength(), name, null);
+				}
+			}
+			if (o.has("note")) {
+				c.setDescription(o.get("note").getAsString());
+			}
+		}
+		return made.size();
+	}
+
+	private void place(Structure s, int off, DataType dt, String name, String key,
+			List<String> errors) {
+		try {
+			if (off + dt.getLength() > s.getLength()) {
+				throw new IllegalArgumentException("past the end");
+			}
+			s.replaceAtOffset(off, dt, dt.getLength(), name, null);
+		}
+		catch (IllegalArgumentException ex) {
+			errors.add(key + "+0x" + Integer.toHexString(off) + " " + name + ": " +
+				ex.getMessage());
+		}
+	}
+
+	// The class a "Class::method" name belongs to, qualified by the namespace its struct is in.
+	private String classPath(DataTypeManager dtm, String cls) {
+		if (cls.contains("::")) {
+			return cls;
+		}
+		for (String ns : new String[] { "TES3", "NI", "TES3/UI" }) {
+			if (dtm.getDataType(new CategoryPath("/" + ns), cls) instanceof Structure) {
+				return ns.replace("/", "::") + "::" + cls;
+			}
+		}
+		return null;
+	}
+
+	private boolean readsEcxFirst(Program p, Function f) {
+		Register ecx = p.getRegister("ECX");
+		InstructionIterator it = p.getListing().getInstructions(f.getEntryPoint(), true);
+		for (int i = 0; i < 16 && it.hasNext(); i++) {
+			Instruction ins = it.next();
+			// MSVC reserves a stack slot with push ecx; that is not a use of this.
+			if (ins.getMnemonicString().equals("PUSH") && ecx.equals(ins.getRegister(0))) {
+				continue;
+			}
+			for (Object o : ins.getInputObjects()) {
+				if (o instanceof Register r && ecx.contains(r)) {
+					return true;
+				}
+			}
+			for (Object o : ins.getResultObjects()) {
+				if (o instanceof Register r && r.contains(ecx)) {
+					return false;
+				}
+			}
+			if (!ins.getFlowType().isFallthrough()) {
+				return false;
+			}
+		}
+		return false;
+	}
+
+	private int records(Program p, JsonArray records, List<String> errors) {
+		int applied = 0;
+		DataTypeManager dtm = p.getDataTypeManager();
+		SymbolTable st = p.getSymbolTable();
+		for (JsonElement el : records) {
+			JsonObject r = el.getAsJsonObject();
+			Address a = addr(p, r.get("va").getAsString());
+			String name = r.get("name").getAsString().replaceAll("\\s+", "_");
+			try {
+				Function f = p.getFunctionManager().getFunctionAt(a);
+				if (f == null) {
+					st.createLabel(a, name, SourceType.USER_DEFINED).setPrimary();
+					if (r.has("type")) {
+						DataType dt = resolve(dtm, r.get("type").getAsString());
+						if (dt != null) {
+							DataUtilities.createData(p, a, dt, -1,
+								DataUtilities.ClearDataMode.CLEAR_ALL_CONFLICT_DATA);
+						}
+					}
+				}
+				else {
+					function(p, f, name, r, errors);
+				}
+				if (r.has("note")) {
+					p.getListing().setComment(a, CodeUnit.PLATE_COMMENT,
+						r.get("note").getAsString());
+				}
+				applied++;
+			}
+			catch (Exception ex) {
+				errors.add(r.get("va").getAsString() + " " + name + ": " + ex.getMessage());
+			}
+		}
 		return applied;
+	}
+
+	private void function(Program p, Function f, String name, JsonObject r, List<String> errors)
+			throws Exception {
+		int sep = name.lastIndexOf("::");
+		String cls = sep > 0 ? classPath(p.getDataTypeManager(), name.substring(0, sep)) : null;
+		if (cls != null) {
+			Namespace ns = NamespaceUtils.createNamespaceHierarchy(cls, null, p,
+				SourceType.USER_DEFINED);
+			if (!(ns instanceof GhidraClass)) {
+				ns = NamespaceUtils.convertNamespaceToClass(ns);
+			}
+			f.setParentNamespace(ns);
+			f.setName(name.substring(sep + 2), SourceType.USER_DEFINED);
+		}
+		else {
+			f.setName(name, SourceType.USER_DEFINED);
+		}
+		String conv = r.has("convention") ? r.get("convention").getAsString() : null;
+		if (r.has("signature")) {
+			FunctionSignatureParser parser = new FunctionSignatureParser(p.getDataTypeManager(),
+				null);
+			FunctionDefinitionDataType def = parser.parse(f.getSignature(),
+				r.get("signature").getAsString());
+			if (!new ApplyFunctionSignatureCmd(f.getEntryPoint(), def, SourceType.USER_DEFINED,
+				true, false).applyTo(p)) {
+				errors.add(r.get("va").getAsString() + " signature not applied");
+			}
+		}
+		if (conv == null && cls != null && readsEcxFirst(p, f)) {
+			conv = "__thiscall";
+		}
+		if (conv != null) {
+			f.setCallingConvention(conv);
+		}
 	}
 
 	private Function function(Program p, Address a) {
