@@ -10,15 +10,20 @@
 #define NtWriteFile KFN(THUNK_NtWriteFile, fn_NtWriteFile)
 #define NtQueryInformationFile KFN(THUNK_NtQueryInformationFile, fn_NtQueryInformationFile)
 #define NtClose KFN(THUNK_NtClose, fn_NtClose)
+#define NtFlushBuffersFile KFN(THUNK_NtFlushBuffersFile, fn_NtFlushBuffersFile)
 #define KeQuerySystemTime KFN(THUNK_KeQuerySystemTime, fn_KeQuerySystemTime)
 
 #define TES3X_LOG_MAX (512u * 1024u)
 #define TES3X_LOG_CLUSTER (16u * 1024u)
+/* Closing the file leaves its data in the kernel's cache; only a clean exit writes it out, so a
+ * killed xemu or a power cut lost everything past the first few KB. */
+#define TES3X_LOG_FLUSH_TICKS 20000000u /* 2 s of 100 ns ticks */
 
 static char tes3x_path[] = "\\Device\\Harddisk0\\Partition1\\tes3xlog.txt";
 static u64 tes3x_t0;
 static u32 tes3x_log_bytes;
 static int tes3x_log_size_known;
+static u64 tes3x_log_flushed;
 
 static void tes3x_log_truncate(void)
 {
@@ -200,7 +205,7 @@ void tes3x_log_raw(const char *buf, u32 len)
     ANSI_STRING name;
     OBJECT_ATTRIBUTES oa;
     IO_STATUS_BLOCK iosb;
-    u64 append;
+    u64 append, now;
     void *h = 0;
     u32 done = 0, status;
 
@@ -235,6 +240,11 @@ void tes3x_log_raw(const char *buf, u32 len)
         done += chunk;
         if (tes3x_log_size_known)
             tes3x_log_bytes += chunk;
+    }
+    KeQuerySystemTime(&now);
+    if (now - tes3x_log_flushed >= TES3X_LOG_FLUSH_TICKS) {
+        NtFlushBuffersFile(h, &iosb);
+        tes3x_log_flushed = now;
     }
     NtClose(h);
 }
