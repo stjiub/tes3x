@@ -263,7 +263,7 @@ struct descriptor {
  * session and seq in the clear (T3MP_OUTER, the AEAD's associated data) and seals the real type,
  * ack, times and body under the session's key, seq being the nonce. The receiver rebuilds the
  * T3MP_HEADER layout after opening it. */
-#define T3MP_VERSION 13u
+#define T3MP_VERSION 14u
 #define T3MP_HEADER 28u
 #define T3MP_OUTER 16u
 #define T3MP_INNER 16u
@@ -351,7 +351,7 @@ static struct {
 /* The recent relayed states of each other client, by the server's client id. The receive DPC
  * only copies bytes: it runs without the game's floating-point state saved. */
 static struct {
-    u32 client, seq, time, head, count;
+    u32 client, seq, time, head, count, busy;
     struct {
         u32 time;
         u8 state[STATE_BYTES];
@@ -749,7 +749,7 @@ static void peer_rx(u32 client, u32 seq, const u8 *state)
     if (slot == PEERS || (peers[slot].client == client && seq <= peers[slot].seq))
         return;
     if (peers[slot].client != client)
-        peers[slot].count = 0;
+        peers[slot].count = peers[slot].busy = 0;
     peers[slot].client = client;
     peers[slot].seq = seq;
     peers[slot].time = now_us();
@@ -6010,6 +6010,73 @@ static void player_hook_install(void)
         player_hooked |= 4;
 }
 
+/* A save holds the game thread for seconds while the heartbeat DPC keeps the session: BUSY tells
+ * the server to hand this console's cells and actors to another player until it is back. */
+#define EVENT_BUSY 21u /* BUSY_SAVING, or 0 once back */
+#define BUSY_SAVING 1u
+
+typedef unsigned char(__attribute__((thiscall)) *fn_save_game)(void *, const char *, const char *);
+static const u32 save_sites[] = TES3X_NET_SAVE_SITES;
+static u32 save_hooked, saves_seen, saves_busy;
+
+/* Every save goes through here: the call sites still aimed at SaveGame, and rotating-autosaves'
+ * hook, which owns the other three. */
+unsigned char __attribute__((thiscall)) tes3x_net_save(void *game, const char *file,
+                                                      const char *display)
+{
+    u8 busy = BUSY_SAVING;
+    int sent = net.up && event_queue(EVENT_BUSY, &busy, 1);
+    unsigned char ok;
+
+    saves_seen++;
+    saves_busy += sent;
+    ok = ((fn_save_game)TES3X_NET_SAVE_GAME)(game, file, display);
+    if (sent) {
+        busy = 0;
+        event_queue(EVENT_BUSY, &busy, 1);
+    }
+    return ok;
+}
+
+static void save_hook_install(void)
+{
+    u32 sites[sizeof(save_sites) / sizeof(save_sites[0])], i, n = 0;
+    const u8 *site;
+
+    if (save_hooked)
+        return;
+    for (i = 0; i < sizeof(save_sites) / sizeof(save_sites[0]); i++) {
+        site = (const u8 *)save_sites[i];
+        if (site[0] == 0xE8 && (u32)site + 5 + *(const u32 *)(site + 1) == TES3X_NET_SAVE_GAME)
+            sites[n++] = save_sites[i];
+    }
+    if (n && !redirect_calls(sites, n, TES3X_NET_SAVE_GAME, (const void *)tes3x_net_save))
+        n = 0;
+    save_hooked = 1 + n;
+    tes3x_log("net.save_hook", n);
+}
+
+static void busy_event(const struct event *e)
+{
+    u32 i, flags;
+
+    if (e->length < 1)
+        return;
+    flags = lock();
+    for (i = 0; i < PEERS; i++)
+        if (peers[i].client == e->origin) {
+            peers[i].busy = e->data[0];
+            peers[i].time = now_us();
+        }
+    unlock(flags);
+    tes3x_log_hex3("net.peer_busy", e->origin, e->data[0], 0);
+}
+
+static void save_stat(void)
+{
+    tes3x_log_hex3("net.saves", saves_seen, saves_busy, save_hooked);
+}
+
 static u32 actor_owner(u32 id, u32 cell_owner)
 {
     struct spawn *s;
@@ -8474,6 +8541,8 @@ static void event_handle(const struct event *e)
         status_event(e);
     } else if (e->kind == EVENT_OFFER) {
         bulk_offer(e);
+    } else if (e->kind == EVENT_BUSY) {
+        busy_event(e);
     } else {
         tes3x_log_hex3("net.event_unknown", e->kind, e->origin, e->length);
     }
@@ -8763,6 +8832,7 @@ void tes3x_net_frame(void)
         leveled_hook_install();
         summon_hook_install();
         player_hook_install();
+        save_hook_install();
         authority_session();
         spawns_session();
         events_frame();
@@ -8797,8 +8867,8 @@ void tes3x_net_frame(void)
     }
     for (i = 0; i < PEERS; i++) {
         u32 client = peers[i].client, was = known[i];
-        /* A peer whose leave notice was lost drops out once it goes quiet. */
-        if (client && now_us() - peers[i].time > PEER_TIMEOUT_US)
+        /* A peer whose leave notice was lost drops out once it goes quiet, unless it is saving. */
+        if (client && !peers[i].busy && now_us() - peers[i].time > PEER_TIMEOUT_US)
             peers[i].client = client = 0;
         if (client == was)
             continue;
@@ -8852,6 +8922,7 @@ int tes3x_net_command(const char *text)
         bulk_stat();
         up_stat();
         handshake_stat();
+        save_stat();
     } else if ((rest = word(text, "menusim")) && (rest = word(skip(rest), "auto")) &&
                !*skip(rest)) {
         menu_forced = 0;

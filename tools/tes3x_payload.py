@@ -90,6 +90,7 @@ SUMMON = 0x000C8B00  # makes a summoned creature, from the summon effect's start
 PLAYER_SCRIPTS = 3  # CompileAndRun's callers: a dialogue result and the console
 DROP_ITEM = 0x0015B0D0  # MobileActor::dropItem; the inventory menus call it on the player
 PLAYER_DROPS = 2
+SAVE_CALLS = 7  # SaveGame's callers: quicksave, three autosaves, the save menu's two, fatal error
 ACTOR_ADDRESSES = (
     ("LEVELED_RESOLVE", 0x0011A740), ("LEVELED_LINKED", 0x0012AEE0),
     ("LEVELED_LINK", 0x0012A370), ("ADD_MOB", 0x001840B0), ("SIMULATE", 0x00180630),
@@ -448,6 +449,12 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
                                f"{PLAYER_DROPS}")
         define("NET_DROP_ITEM", hexva(drop))
         define("NET_PLAYER_DROP_SITES", "{" + ",".join(hexva(s) for s in sites) + "}")
+        save_game = locate("save-game")
+        sites = find_call_sites(image, save_game)
+        if len(sites) != SAVE_CALLS:
+            raise PayloadError(f"SaveGame: {len(sites)} call sites, expected {SAVE_CALLS}")
+        define("NET_SAVE_GAME", hexva(save_game))
+        define("NET_SAVE_SITES", "{" + ",".join(hexva(s) for s in sites) + "}")
         define("NET_MENU_GATE", hexva(locate("menu-mode-gate")))
         define("NET_MOB_GATE", hexva(locate("mob-update-gate")))
         define("NET_WEATHER_ROLL", hexva(locate("weather-roll")))

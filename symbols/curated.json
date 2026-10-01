@@ -1749,7 +1749,8 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_NonDynamicData_saveGame",
-      "pc_va": "0x004C4250"
+      "pc_va": "0x004C4250",
+      "note": "7 direct callers: quicksave 0x000988F2, autosaves 0x0020BE36/0x0020BF63/0x0020C0B6 (rotating-autosaves), save menu 0x0020EA86/0x0020EDF7, fatal error path 0x000D2F9F. multiplayer wraps all of them (tes3x_net_save)."
     },
     {
       "va": "0x00112450",

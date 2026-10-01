@@ -34,6 +34,14 @@ typedef int(__cdecl *fn_ini_get_string)(const char *, const char *, const char *
                                         char *, int, const char *);
 typedef unsigned char(__attribute__((thiscall)) *fn_save_game)(void *, const char *, const char *);
 
+#ifdef TES3X_NET
+/* The multiplayer patch wraps every save; the autosave call sites are this file's. */
+unsigned char __attribute__((thiscall)) tes3x_net_save(void *, const char *, const char *);
+#define SAVE_ENTRY tes3x_net_save
+#else
+#define SAVE_ENTRY ((fn_save_game)TES3X_SAVE_GAME)
+#endif
+
 static char state_path[] = "T:\\tes3x-autosave.dat";
 static char autosave_name[] = "autosave";
 static u32 rotation_enabled = 1;
@@ -157,7 +165,7 @@ static void slot_name(char *out, u32 cap, const char *base, u32 slot)
 unsigned char __attribute__((thiscall))
 tes3x_autosave_hook(void *game, const char *filename, const char *display)
 {
-    fn_save_game save = (fn_save_game)TES3X_SAVE_GAME;
+    fn_save_game save = SAVE_ENTRY;
     char slot_filename[64];
     char slot_display[64];
     u32 slot;

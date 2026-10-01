@@ -312,7 +312,7 @@ def ping(args):
 
 
 T3MP = struct.Struct("<4sBBHIIIII")  # magic, version, type, 0, session, seq, ack, time, echo
-T3MP_VERSION = 13
+T3MP_VERSION = 14
 HELLO, WELCOME, HEARTBEAT, BYE, STATE, PEER, GONE, EVENTS, REFUSE, CLOCK, ACTORS = range(1, 12)
 # On the wire every packet but the handshake is SEALED: OUTER in the clear (the AEAD's associated
 # data), then INNER and the body sealed under the session key with seq as the nonce.
@@ -381,6 +381,10 @@ EVENT_STATUS = 19  # STATUS: the latest per actor is kept and replayed
 EVENT_OWNERS = 20
 OWNER_PAIR = struct.Struct("<II")
 OWNERS_PER_EVENT = (EVENT_DATA - 4) // OWNER_PAIR.size
+# u8: BUSY_SAVING while the client's game thread is held by a save, 0 once it is back. A busy
+# client keeps its session but gives up its cells and actors to any other player loading them.
+EVENT_BUSY = 21
+BUSY_SAVING = 1
 # actor id, fight, flee, alarm, hello, base disposition (NO_DISPOSITION for a creature)
 STATUS = struct.Struct("<I5h")
 NO_DISPOSITION = -32768
@@ -1265,6 +1269,7 @@ class Client:
         self.known = {}  # cell -> the authority this client was told
         self.owners_told = {}  # actor id -> the owner this client was told, where not 0
         self.loaded = set()
+        self.busy = None  # since when it has been saving
         self.actor_states = 0
         self.flush_due = False  # an EVENTS packet held back by EVENTS_GAP
         self.queue = []  # (address, packet, seq) held back by PACE_PACKETS
@@ -1532,7 +1537,7 @@ def serve(args):
 
     bot = {"anchor": None, "next": 0.0, "start": time.time(), "said": 0.0, "line": 0,
            "anchored": None, "state": None, "breaks": [], "held": 0, "hit": False,
-           "killed": False, "mirror": None, "hit_player": False, "echo": None}
+           "killed": False, "mirror": None, "hit_player": False, "echo": None, "busy": False}
 
     def bot_anchor(state):
         """The bot circles where the first client entered the world, and follows it to a new
@@ -1853,6 +1858,15 @@ def serve(args):
                 print(f"{stamp} client {client.id}: {describe_object(refid, *rest)}", flush=True)
         if kind == EVENT_TEXT:
             print(f"{stamp} client {client.id} says: {wire_text(data)}", flush=True)
+        if kind == EVENT_BUSY and data:
+            if data[0] and client.busy is None:
+                client.busy = now
+                print(f"{stamp} client {client.id} is saving: its cells and actors go to others",
+                      flush=True)
+            elif not data[0] and client.busy is not None:
+                print(f"{stamp} client {client.id} is back after {now - client.busy:.1f} s",
+                      flush=True)
+                client.busy = None
         if kind == EVENT_EQUIPMENT and len(data) >= 2:
             sets = equipment.setdefault(client.id, [[], []])
             if data[0] == 0:
@@ -1875,6 +1889,10 @@ def serve(args):
                 standing.add(own)
                 for key in client.loaded:
                     candidates.setdefault(key, []).append((client.id, key == own))
+        busy = {c.id for c in clients.values() if c.busy is not None}
+        for key, cands in candidates.items():
+            if any(c not in busy for c, _ in cands):
+                candidates[key] = [c for c in cands if c[0] not in busy]
         forced = None
         if bot["state"] and window(args.bot_owns, now):
             own, loaded = cell_keys(bot["state"])
@@ -1906,9 +1924,9 @@ def serve(args):
         that differs from the cell's authority."""
         players = {}
         for client in clients.values():
-            if client.alive and client.state and client.loaded:
+            if client.alive and client.state and client.loaded and client.busy is None:
                 players[client.id] = (client.loaded,) + STATE_BODY.unpack_from(client.state)[1:3]
-        if args.bot_at and bot["state"]:
+        if args.bot_at and bot["state"] and not bot["busy"]:
             players[BOT_ID] = (cell_keys(bot["state"])[1],) + \
                 STATE_BODY.unpack_from(bot["state"])[1:3]
         for refid in [r for r, seen in actor_seen.items() if now - seen > OWNER_STALE]:
@@ -2219,6 +2237,7 @@ def serve(args):
             client.rel = Reliable()
             client.known = {}
             client.owners_told = {}
+            client.busy = None
             if client.joins == 1:
                 client.joined = now
                 client.bursts = sorted(bursts)
@@ -2408,7 +2427,12 @@ def serve(args):
                 leave(client)
         if world["path"] and now >= world["saved"] + (10 if world["dirty"] else 60):
             write_world(now)
-        if args.bot and bot["anchor"] and now >= bot["next"]:
+        if args.bot and bot["anchor"] and window(args.bot_busy, now) != bot["busy"]:
+            bot["busy"] = not bot["busy"]
+            print(f"{time.strftime('%H:%M:%S')} bot {'saves' if bot['busy'] else 'is back'}",
+                  flush=True)
+            broadcast_event(BOT_ID, EVENT_BUSY, bytes([BUSY_SAVING if bot["busy"] else 0]), now)
+        if args.bot and bot["anchor"] and now >= bot["next"] and not bot["busy"]:
             bot["next"] = now + 1 / args.bot_rate
             bot_step(now)
         if now >= authority_next:
@@ -2557,7 +2581,8 @@ def serve(args):
             if limits["handshakes"]:
                 print(f"  handshakes refused over rate: {limits['handshakes']}", flush=True)
             for client in clients.values():
-                print(f"  client {client.id}: {'up' if client.alive else 'down'}, "
+                print(f"  client {client.id}: {'up' if client.alive else 'down'}"
+                      + (" (saving)" if client.busy is not None else "") + ", "
                       + summary(client), flush=True)
             if objects:
                 print(f"  objects: {len(objects)} changed", flush=True)
@@ -2794,6 +2819,9 @@ def main(argv=None):
     p.add_argument("--bot-owns", metavar="START:END",
                    help="the bot is the authority for its cells from START to END seconds after it "
                         "first appears (END may be left out)")
+    p.add_argument("--bot-busy", metavar="START:END",
+                   help="the bot saves from START to END seconds after it first appears: it sends "
+                        "BUSY, stops its states and gives up the actors it owns")
     p.add_argument("--bot-shift", type=float, default=128,
                    help="as the authority, the bot places each actor this many units east of its "
                         "last reported position")
