@@ -173,10 +173,14 @@ class GhostPluginTests(unittest.TestCase):
         npcs = [(flags, dict(subrecords(body))) for tag, flags, body in found if tag == b'NPC_']
         self.assertEqual(len(npcs), tes3x_net.GHOSTS)
         self.assertTrue(all(flags & 0x400 and subs[b'AIDT'] == bytes(12) for flags, subs in npcs))
-        cell = list(subrecords(found[-1][2]))
+        cell = list(subrecords(found[-2][2]))
         self.assertEqual(cell[0][1], tes3x_net.GHOST_CELL.encode() + b'\0')
         refs = [value for tag, value in cell if tag == b'NAME'][1:]
         self.assertEqual(refs, [b'tes3x_ghost%d\0' % i for i in range(1, tes3x_net.GHOSTS + 1)])
+        arrival = list(subrecords(found[-1][2]))
+        self.assertEqual(arrival[0][1], tes3x_net.ARRIVAL_CELL.encode() + b'\0')
+        self.assertEqual([v for t, v in arrival if t == b'FRMR'],
+                         [struct.pack('<I', tes3x_net.GHOSTS + 1)])
 
 
 class LoadOrderTests(unittest.TestCase):

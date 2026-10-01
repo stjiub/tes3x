@@ -147,9 +147,15 @@ class ServerTests(unittest.TestCase):
         return (b'TES3' + struct.pack('<III', len(head), 0, 0) + head
                 + random.Random(seed).randbytes(3 * tes3x_net.BULK_CHUNK))
 
-    def game(self, client, seq, token, loaded):
+    def game(self, client, seq, token, loaded, launch=tes3x_net.GAME_LOAD):
         client.send(tes3x_net.EVENTS, tes3x_net.pack_events(0, [
-            (seq, tes3x_net.EVENT_GAME, 0, struct.pack('<I', token) + loaded + b'\0')]))
+            (seq, tes3x_net.EVENT_GAME, 0, struct.pack('<I', token) + loaded + b'\0'
+             + bytes([launch]))]))
+
+    @staticmethod
+    def character(world, name='Nerevar'):
+        (key,) = (world / 'characters').iterdir()
+        return key / name
 
     def upload(self, client, seq, ident, name, data):
         digest = hashlib.blake2b(data, digest_size=32).digest()
@@ -170,14 +176,14 @@ class ServerTests(unittest.TestCase):
     def test_a_save_is_kept_as_a_character(self):
         world = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, world)
-        self.start('--world', str(world))
+        self.start('--world', str(world), '--adopt')
         client = self.client(1)
         client.join()
         self.game(client, 1, 7, b'')
         versions = [self.save(b'Nerevar', seed) for seed in range(5)]
         for ident, data in enumerate(versions, 1):
             self.upload(client, ident + 1, ident, b'mp-hero.ess', data)
-        (folder,) = (world / 'characters').iterdir()
+        folder = self.character(world)
         self.assertEqual(sorted(p.name for p in folder.iterdir()),
                          ['mp-hero.1.ess', 'mp-hero.2.ess', 'mp-hero.3.ess', 'mp-hero.ess'])
         self.assertEqual((folder / 'mp-hero.ess').read_bytes(), versions[4])
@@ -187,7 +193,7 @@ class ServerTests(unittest.TestCase):
     def test_a_new_launch_loads_the_kept_character(self):
         world = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, world)
-        self.start('--world', str(world))
+        self.start('--world', str(world), '--adopt')
         first = self.client(1)
         first.join()
         self.game(first, 1, 7, b'')
@@ -209,7 +215,7 @@ class ServerTests(unittest.TestCase):
                          if kind == tes3x_net.EVENT_LOAD]
         self.assertEqual(loads, [name + b'\0'])
         self.upload(stale, 2, 2, b'mp-hero.ess', self.save(b'Nerevar', 1))
-        (folder,) = (world / 'characters').iterdir()
+        folder = self.character(world)
         self.assertEqual((folder / 'mp-hero.ess').read_bytes(), kept)
         self.assertEqual(len(list((world / 'uploads').rglob('mp-hero.ess'))), 1)
 
@@ -241,7 +247,7 @@ class ServerTests(unittest.TestCase):
     def test_player_state_is_replayed_over_the_checkpoint(self):
         world = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, world)
-        self.start('--world', str(world))
+        self.start('--world', str(world), '--adopt')
         net = tes3x_net
 
         def ready(kind, data):
@@ -255,21 +261,22 @@ class ServerTests(unittest.TestCase):
         first = self.client(1)
         first.join()
         self.game(first, 1, 7, b'')
+        self.upload(first, 2, 1, b'mp-hero.ess', self.save(b'Nerevar', 0))
+        # the first checkpoint makes the character, and the console sends its state from scratch
         self.assertEqual(self.events(first, ready)[-1][1], bytes([net.PLAYER_READY, 0]))
         level = net.LEVEL.pack(9, 3, *range(11), 80.0, 60.0, 200.0, *[40.0] * 8)
         swords = [[1, net.ENTRY_DATA, 300 + i, 0] for i in range(12)]  # three parts
-        seq = player(first, 2, *net.pack_items('Gold_001', [[100, 0, 0, 0]]),
+        seq = player(first, 3, *net.pack_items('Gold_001', [[100, 0, 0, 0]]),
                *net.pack_items('iron longsword', swords),
                bytes([net.PLAYER_LEVEL]) + level,
                bytes([net.PLAYER_SKILLS, 1]) + net.SKILL.pack(5, 42.0, 0.5),
                *net.pack_journal([('A1_1_FindSpymaster', 10)]))
         time.sleep(0.3)
-        self.upload(first, seq, 1, b'mp-hero.ess', self.save(b'Nerevar', 0))
-        player(first, seq + 1, *net.pack_items('Gold_001', [[150, 0, 0, 0]]),
+        player(first, seq, *net.pack_items('Gold_001', [[150, 0, 0, 0]]),
                *net.pack_items('iron longsword', []),
                *net.pack_journal([('A1_1_FindSpymaster', 20)]))
         time.sleep(0.3)
-        kept = (next((world / 'characters').iterdir()) / 'mp-hero.ess').read_bytes()
+        kept = (self.character(world) / 'mp-hero.ess').read_bytes()
         name = net.CHECKPOINT_NAME.format(int.from_bytes(
             hashlib.blake2b(kept, digest_size=32).digest()[:4], 'big')).encode()
 
@@ -296,11 +303,89 @@ class ServerTests(unittest.TestCase):
 
         self.game(loaded, 2, 9, name)  # a rejoin of the same launch: the console sends it all
         self.assertEqual(self.events(loaded, ready)[-1][1], bytes([net.PLAYER_READY, 0]))
-        stream = (next((world / 'characters').iterdir()) / net.STREAM_NAME)
+        stream = self.character(world) / net.STREAM_NAME
         end = time.time() + 4
         while not stream.exists() and time.time() < end:
             time.sleep(0.2)
         self.assertEqual(net.PlayerStream(str(stream)).items, {'Gold_001': [[150, 0, 0, 0]]})
+
+    def test_a_new_character_is_made_listed_and_chosen(self):
+        world = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, world)
+        self.start('--world', str(world))
+        net = tes3x_net
+
+        def kinds(*wanted):
+            return lambda kind, _: kind in wanted
+
+        def names(events, kind):
+            parts = [d for k, d in events if k == kind]
+            return [n.decode() for d in parts for n in d[2:].split(b'\0')[:-1]]
+
+        def pick(client, seq, what, index):
+            client.send(net.EVENTS, net.pack_events(client.delivered, [
+                (seq, net.EVENT_PICK, 0, bytes([what, index]))]))
+
+        starts = [name for name, _ in net.load_starts(net.STARTS)]
+        loaded = self.client(1)  # a key with no character, in someone else's save
+        loaded.join()
+        self.game(loaded, 1, 7, b'old.ess')
+        newchar = self.events(loaded, lambda k, d: k == net.EVENT_NEWCHAR and d[0] + 1 == d[1])
+        self.assertEqual(names(newchar, net.EVENT_NEWCHAR), starts)  # it relaunches to New Game
+        self.upload(loaded, 2, 1, b'mp-hero.ess', self.save(b'Nerevar', 0))
+        self.assertFalse((world / 'characters').exists())
+
+        new = self.client(1)
+        new.session ^= 2
+        new.join()
+        self.game(new, 1, 8, b'', net.GAME_NEW)
+        self.events(new, lambda k, d: k == net.EVENT_NEWCHAR and d[0] + 1 == d[1])
+        pick(new, 2, net.PICK_START, 1)
+        run = [d for k, d in self.events(new, lambda k, d: k == net.EVENT_RUN and d == b'\0')
+               if k == net.EVENT_RUN]
+        self.assertEqual(run[0], b'Player->PositionCell 505 -387 -752 205 '
+                                 b'"Balmora, Guild of Mages"\0')
+        self.upload(new, 3, 2, b'mp-hero.ess', self.save(b'Nerevar', 1))
+        self.events(new, lambda k, d: k == net.EVENT_PLAYER and d == bytes([net.PLAYER_READY, 0]))
+        self.assertTrue((self.character(world) / 'mp-hero.ess').exists())
+
+        again = self.client(1)  # in another save: the list, and a second character
+        again.session ^= 4
+        again.join()
+        self.game(again, 1, 9, b'old.ess')
+        self.assertEqual(names(self.events(again, kinds(net.EVENT_CHARS)), net.EVENT_CHARS),
+                         ['Nerevar'])
+        pick(again, 2, net.PICK_CHARACTER, net.PICK_NEW)
+        self.events(again, kinds(net.EVENT_NEWCHAR))
+        second = self.client(1)
+        second.session ^= 8
+        second.join()
+        self.game(second, 1, 10, b'', net.GAME_NEW)
+        self.events(second, kinds(net.EVENT_NEWCHAR))
+        self.upload(second, 2, 3, b'mp-hero.ess', self.save(b'Nerevar', 2))
+        self.assertTrue((self.character(world, 'Nerevar-2') / 'mp-hero.ess').exists())
+
+        third = self.client(1)
+        third.session ^= 16
+        third.join()
+        self.game(third, 1, 11, b'old.ess')
+        listed = names(self.events(third, kinds(net.EVENT_CHARS)), net.EVENT_CHARS)
+        self.assertEqual(listed, ['Nerevar-2', 'Nerevar'])
+        pick(third, 2, net.PICK_CHARACTER, 1)
+        loads = [d for k, d in self.events(third, kinds(net.EVENT_LOAD)) if k == net.EVENT_LOAD]
+        kept = (self.character(world) / 'mp-hero.ess').read_bytes()
+        self.assertEqual(loads, [net.checkpoint_name(kept).encode() + b'\0'])
+
+    def test_characters_kept_before_the_list_move_into_a_folder(self):
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root)
+        (root / 'mp-hero.ess').write_bytes(self.save(b'Nerevar', 0))
+        (root / 'mp-hero.1.ess').write_bytes(self.save(b'Nerevar', 1))
+        (root / tes3x_net.STREAM_NAME).write_text('{}')
+        kept = tes3x_net.kept_characters(str(root))
+        self.assertEqual([(f, os.path.basename(p)) for f, p in kept], [('Nerevar', 'mp-hero.ess')])
+        self.assertEqual(sorted(p.name for p in (root / 'Nerevar').iterdir()),
+                         ['mp-hero.1.ess', 'mp-hero.ess', tes3x_net.STREAM_NAME])
 
     def test_player_events_round_trip(self):
         net = tes3x_net

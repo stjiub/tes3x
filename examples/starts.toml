@@ -1,0 +1,60 @@
+# Where a new multiplayer character may begin: `tes3x_net.py serve --starts FILE`. Without
+# --starts the server offers this list. With one entry there is no choice.
+#
+# name      the button the player picks, at most 31 characters, no double quotes
+# cell      an interior cell; without it the position is in the exterior world
+# position  x, y, z
+# rotation  the facing PositionCell and Position take
+# remove    [[id, count], ...] taken from the starting clothes
+# items     [[id, count], ...] given
+# equip     [id, ...] equipped after the items are given
+# script    further lines run on the console, after the rest
+#
+# Places after Chargen Revamped (Nexus 44110), whose Xbox conversion is XboxChargenRevamped.
+
+[[start]]
+name = "Seyda Neen, the census office"
+cell = "Seyda Neen, Census and Excise Office"
+position = [-48, -135, 270]
+rotation = 90
+
+[[start]]
+name = "Balmora, the Mages Guild"
+cell = "Balmora, Guild of Mages"
+position = [505, -387, -752]
+rotation = 205
+remove = [["iron dagger", 1], ["common_shirt_01", 1]]
+items = [["common_robe_03", 1], ["bookskill_Alchemy2", 1]]
+equip = ["common_robe_03"]
+
+[[start]]
+name = "Caldera, Shenk's Shovel"
+cell = "Caldera, Shenk's Shovel"
+position = [230, -198, 160]
+rotation = 0
+items = [["Gold_001", 5], ["ingred_fire_petal_01", 4], ["ingred_black_anther_01", 6]]
+
+[[start]]
+name = "Ebonheart, the docks"
+position = [20373, -102522, 79]
+rotation = 343
+items = [["Gold_001", 10], ["bk_guide_to_vvardenfell", 1]]
+
+[[start]]
+name = "Gnisis, the market"
+position = [-85371, 92544, 1028]
+rotation = 0
+items = [["Gold_001", 60], ["light_de_buglamp_01", 1]]
+
+[[start]]
+name = "Dagon Fel"
+position = [59482, 181274, 553]
+rotation = 115
+items = [["Gold_001", 25], ["ingred_bread_01", 1]]
+
+[[start]]
+name = "Maar Gan, Andus Tradehouse"
+cell = "Maar Gan, Andus Tradehouse"
+position = [29, -384, -386]
+rotation = 0
+items = [["Gold_001", 35], ["misc_de_tankard_01", 1]]

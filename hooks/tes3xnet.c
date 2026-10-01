@@ -8667,10 +8667,14 @@ static void save_request_frame(void)
 #define EVENT_LOAD 24u /* a file the server sent: load it */
 #define LAUNCH_DATA 0x400u /* in LaunchDataPage, after the header */
 #define BXWM_MAGIC 0x4D575842u
+#define BXWM_NEW_GAME 0u
 #define BXWM_LOAD 1u
 #define BXWM_PATH 0x10u
 #define BXWM_PATH_MAX 0x100u
-static u32 game_token, game_told, load_wanted, loads_started;
+#define GAME_NONE 0u /* the launch kind GAME ends with */
+#define GAME_LOAD 1u
+#define GAME_NEW 2u
+static u32 game_token, game_told, game_launch, load_wanted, loads_started;
 static char load_name[BULK_NAME + 1];
 typedef u32(__attribute__((stdcall)) *fn_launch)(const char *xbe, void *data);
 typedef u32(__cdecl *fn_persist)(void);
@@ -8686,8 +8690,13 @@ void tes3x_net_entry(void)
     if (!page || *(const u32 *)page != 0)
         return;
     data = page + LAUNCH_DATA;
-    if (*(const u32 *)data != BXWM_MAGIC || *(const u32 *)(data + 0xC) != BXWM_LOAD)
+    if (*(const u32 *)data != BXWM_MAGIC)
         return;
+    if (*(const u32 *)(data + 0xC) == BXWM_NEW_GAME)
+        game_launch = GAME_NEW;
+    if (*(const u32 *)(data + 0xC) != BXWM_LOAD)
+        return;
+    game_launch = GAME_LOAD;
     path = data + BXWM_PATH;
     for (i = 0; i < BXWM_PATH_MAX && path[i]; i++)
         if (path[i] == '\\')
@@ -8708,13 +8717,39 @@ static void load_event(const struct event *e)
     log_text("net.load_wanted", load_name);
 }
 
-/* Once the file is here, the Load menu's relaunch with its path. */
-static void load_frame(void)
+/* The title relaunch Load and New Game make: Load of U:\TES3X\name, or New Game without a name.
+ * 0 while the world cannot give the pad port. */
+static int relaunch(const char *name)
 {
     static u8 data[BXWM_PATH + BXWM_PATH_MAX];
     const u8 *world = *(const u8 **)TES3X_NET_WORLD, *pads;
     static const char dir[] = "U:\\TES3X\\";
-    u32 i, n, r;
+    u32 i, n = 0, r;
+
+    if (!plausible(world) || !plausible(pads = *(const u8 *const *)(world + 0x4C)))
+        return 0;
+    for (i = 0; i < sizeof(data); i++)
+        data[i] = 0;
+    ((u32 *)data)[0] = BXWM_MAGIC;
+    ((u32 *)data)[1] = *(const u32 *)(pads + 0x804); /* the pad port, as the Load menu passes */
+    ((u32 *)data)[3] = name ? BXWM_LOAD : BXWM_NEW_GAME;
+    if (name) {
+        for (; dir[n]; n++)
+            data[BXWM_PATH + n] = (u8)dir[n];
+        for (i = 0; name[i]; i++)
+            data[BXWM_PATH + n + i] = (u8)name[i];
+    }
+    log_text("net.load", name ? name : "(new game)");
+    ((fn_persist)TES3X_NET_PERSIST_DISPLAY)();
+    r = ((fn_launch)TES3X_NET_LAUNCH)((const char *)TES3X_NET_ENGINE_PATH, data);
+    tes3x_log("net.load_failed", r);
+    return 1;
+}
+
+/* Once the file is here, the Load menu's relaunch with its path. */
+static void load_frame(void)
+{
+    u32 i;
 
     if (load_wanted && bulk.state == BULK_NO_SPACE && same_name(bulk.name, load_name)) {
         load_wanted = 0;
@@ -8727,47 +8762,37 @@ static void load_frame(void)
         return;
     for (i = 0; load_name[i] && bulk.name[i] == load_name[i]; i++)
         ;
-    if (load_name[i] || bulk.name[i] || !plausible(world) ||
-        !plausible(pads = *(const u8 *const *)(world + 0x4C)))
+    if (load_name[i] || bulk.name[i])
         return;
-    load_wanted = 0;
-    loads_started++;
-    for (i = 0; i < sizeof(data); i++)
-        data[i] = 0;
-    ((u32 *)data)[0] = BXWM_MAGIC;
-    ((u32 *)data)[1] = *(const u32 *)(pads + 0x804); /* the pad port, as the Load menu passes */
-    ((u32 *)data)[3] = BXWM_LOAD;
-    for (n = 0; dir[n]; n++)
-        data[BXWM_PATH + n] = (u8)dir[n];
-    for (i = 0; load_name[i]; i++)
-        data[BXWM_PATH + n + i] = (u8)load_name[i];
-    log_text("net.load", load_name);
-    ((fn_persist)TES3X_NET_PERSIST_DISPLAY)();
-    r = ((fn_launch)TES3X_NET_LAUNCH)((const char *)TES3X_NET_ENGINE_PATH, data);
-    tes3x_log("net.load_failed", r);
+    if (relaunch(load_name))
+        load_wanted = 0, loads_started++;
 }
 
 static void game_frame(void)
 {
-    u8 body[4 + BULK_NAME + 1];
+    u8 body[4 + BULK_NAME + 2];
     u32 n = tes3x_strlen(game_loaded) + 1;
 
     if (game_told == ses.welcomes)
         return;
     put32le(body, game_token);
     copy(body + 4, (const u8 *)game_loaded, n);
-    if (event_queue(EVENT_GAME, body, 4 + n)) {
+    body[4 + n] = (u8)game_launch;
+    if (event_queue(EVENT_GAME, body, 4 + n + 1)) {
         game_told = ses.welcomes;
         log_text("net.game_loaded", game_loaded[0] ? game_loaded : "(none)");
     }
 }
 
 /* Game thread: an upload already under way holds the save's until it ends. */
+static void chargen_frame(void);
+
 static void save_frame(void)
 {
     if (ses.state == SESSION_JOINED) {
         game_frame();
         load_frame();
+        chargen_frame();
     }
     if (save_requested && ses.state == SESSION_JOINED)
         save_request_frame();
@@ -8844,6 +8869,303 @@ static void save_stat(void)
     tes3x_log_hex3("net.saves_slot", saves_slotted, saves_uploaded, save_pending);
     tes3x_log_hex3("net.saves_asked", saves_requested, save_requested, 0);
     tes3x_log_hex3("net.game", game_token, load_wanted, loads_started);
+}
+
+/* Characters. After GAME the server lists this key's characters (CHARS) or has the console make
+ * one (NEWCHAR, the start points); the player picks from a message box and the console answers
+ * PICK. A character is made in a New Game, relaunching into one if needed. Once the vanilla
+ * CharGen script has put the player on the prison ship, the player waits in CHARGEN_CELL through
+ * the name, race, class, birthsign and review menus and picks a start point. What the boat and
+ * the census office would have done follows, then the start's lines from the server (RUN) and
+ * the first save into the multiplayer slot, which the server keeps as the new character. */
+#define EVENT_CHARS 26u   /* part, parts, then names */
+#define EVENT_PICK 27u    /* PICK_CHARACTER or PICK_START, then an index or PICK_NEW */
+#define EVENT_NEWCHAR 28u /* part, parts, then start point names */
+#define EVENT_RUN 29u     /* a line of the chosen start; "" ends them */
+#define PICK_CHARACTER 1u
+#define PICK_START 2u
+#define PICK_NEW 255u
+#define CHARGEN_CELL "TES3X Arrival" /* in TES3X Multiplayer.esp */
+#define CHARGEN_DONE 0xBF800000u     /* -1.0f; 0 until CharGen has run */
+#define NAMES_BYTES 768u
+#define NAMES_MAX 24u
+#define NAME_LONGEST 36u
+#define CHOOSER_PAGE 6u
+#define CHOOSER_MORE 0xFEu
+#define MENU_QUIET_FRAMES 30u   /* a menu step is over once no menu has been open this long */
+#define MENU_MISSING_FRAMES 600u
+#define RUN_BYTES 2048u
+
+struct names {
+    char text[NAMES_BYTES];
+    u16 at[NAMES_MAX];
+    u32 count, used, next, complete;
+};
+static struct names chars_names, start_names;
+
+enum { CG_IDLE, CG_NEW_GAME, CG_HOLD, CG_ARRIVE, CG_MENUS, CG_STARTS, CG_FINISH, CG_RUN };
+static u32 cg_state, cg_step, cg_frames, cg_seen, cg_made, cg_bad;
+static u32 chooser_open, chooser_page, chooser_kind;
+static u8 chooser_map[CHOOSER_PAGE + 2];
+static char run_text[RUN_BYTES];
+static u32 run_used, run_at, run_ended;
+
+static const char *const chargen_menus[] = {
+    "EnableNameMenu", "EnableRaceMenu", "EnableClassMenu", "EnableBirthMenu",
+    "EnableStatReviewMenu"};
+
+/* What CharGenClassNPC, CharGenDoorExitCaptain and the other boat and census office scripts
+ * would have done by the time the player leaves the census office. */
+static const char *const chargen_finish[] = {
+    "\"CharGen StatsSheet\"->Disable", "\"CharGen Boat\"->Disable",
+    "\"CharGen Boat Guard 1\"->Disable", "\"CharGen Boat Guard 2\"->Disable",
+    "\"CharGen Dock Guard\"->Disable", "\"CharGen_cabindoor\"->Disable",
+    "\"CharGen_chest_02_empty\"->Disable", "\"CharGen_crate_01\"->Disable",
+    "\"CharGen_crate_01_empty\"->Disable", "\"CharGen_crate_01_misc01\"->Disable",
+    "\"CharGen_crate_02\"->Disable", "\"CharGen_lantern_03_sway\"->Disable",
+    "\"CharGen_ship_trapdoor\"->Disable", "\"CharGen_barrel_01\"->Disable",
+    "\"CharGen_barrel_02\"->Disable", "\"CharGenbarrel_01_drinks\"->Disable",
+    "\"CharGen_plank\"->Disable", "\"CharGen Door Hall\"->Unlock", "StartScript RaceCheck",
+    "EnablePlayerControls", "EnablePlayerJumping", "EnablePlayerViewSwitch", "EnableVanityMode",
+    "EnablePlayerFighting", "EnablePlayerMagic", "EnableStatsMenu", "EnableInventoryMenu",
+    "EnableMagicMenu", "EnableMapMenu", "EnableRest", "AddTopic \"background\"",
+    "AddTopic \"specific place\"", "AddTopic \"someone in particular\"",
+    "AddTopic \"services\"", "AddTopic \"my trade\"", "AddTopic \"little secret\"",
+    "AddTopic \"latest rumors\"", "AddTopic \"little advice\"", "set CharGenState to -1"};
+
+static void names_event(struct names *list, const struct event *e)
+{
+    u32 i = 2, start;
+
+    if (e->length < 2)
+        return;
+    if (e->data[0] == 0)
+        list->count = list->used = list->next = list->complete = 0;
+    if (e->data[0] != list->next || list->complete)
+        return;
+    while (i < e->length && list->count < NAMES_MAX) {
+        start = i;
+        while (i < e->length && e->data[i])
+            i++;
+        if (i == e->length || i - start > NAME_LONGEST || list->used + i - start + 1 > NAMES_BYTES)
+            break;
+        list->at[list->count++] = (u16)list->used;
+        copy((u8 *)list->text + list->used, e->data + start, i - start + 1);
+        list->used += i - start + 1;
+        i++;
+    }
+    list->next++;
+    list->complete = list->next >= e->data[1];
+}
+
+static u32 chargen_global(void)
+{
+    const u8 *world = *(const u8 **)TES3X_NET_WORLD, *global;
+
+    if (!plausible(world) || !plausible(global = *(const u8 *const *)(world + CHARGEN_STATE)))
+        return 0;
+    return *(const u32 *)(global + 0x34);
+}
+
+static int world_idle(void)
+{
+    const u8 *world = *(const u8 **)TES3X_NET_WORLD;
+
+    return player_reference() && plausible(world) && !world[WORLD_MENU_MODE];
+}
+
+static char *put_quoted(char *out, const char *text)
+{
+    *out++ = ' ';
+    *out++ = '"';
+    out = put_text(out, text);
+    *out++ = '"';
+    return out;
+}
+
+/* A message box of one page of names, "More" while more follow and extra (a name or 0) last. */
+static void chooser_show(const struct names *list, const char *title, const char *extra)
+{
+    char line[16 + (NAME_LONGEST + 3) * (CHOOSER_PAGE + 3)], *out;
+    u32 i, n = 0, first = chooser_page * CHOOSER_PAGE;
+
+    out = put_quoted(put_text(line, "MessageBox"), title);
+    for (i = first; i < list->count && i < first + CHOOSER_PAGE; i++) {
+        out = put_quoted(out, list->text + list->at[i]);
+        chooser_map[n++] = (u8)i;
+    }
+    if (list->count > first + CHOOSER_PAGE || chooser_page) {
+        out = put_quoted(out, list->count > first + CHOOSER_PAGE ? "More" : "Back");
+        chooser_map[n++] = CHOOSER_MORE;
+    }
+    if (extra) {
+        out = put_quoted(out, extra);
+        chooser_map[n++] = PICK_NEW;
+    }
+    *out = 0;
+    *(int *)TES3X_NET_BUTTON = -1;
+    run_script(line);
+    chooser_open = 1;
+}
+
+/* The chosen index, PICK_NEW for extra, or -1 while the box is up or turns a page. */
+static int chooser_poll(const struct names *list, const char *title, const char *extra)
+{
+    int button = *(int *)TES3X_NET_BUTTON;
+
+    if (!chooser_open) {
+        if (world_idle())
+            chooser_show(list, title, extra);
+        return -1;
+    }
+    if (button < 0 || button >= CHOOSER_PAGE + 2)
+        return -1;
+    *(int *)TES3X_NET_BUTTON = -1;
+    chooser_open = 0;
+    if (chooser_map[button] != CHOOSER_MORE)
+        return chooser_map[button];
+    chooser_page = (chooser_page + 1) * CHOOSER_PAGE < list->count ? chooser_page + 1 : 0;
+    return -1;
+}
+
+static void pick(u32 what, u32 index)
+{
+    u8 body[2] = {(u8)what, (u8)index};
+
+    if (!event_queue(EVENT_PICK, body, 2))
+        cg_bad++;
+    tes3x_log_hex3("net.chargen_pick", what, index, 0);
+}
+
+static void chars_event(const struct event *e)
+{
+    names_event(&chars_names, e);
+    if (chars_names.complete)
+        chooser_open = chooser_page = 0, chooser_kind = EVENT_CHARS;
+}
+
+static void newchar_event(const struct event *e)
+{
+    names_event(&start_names, e);
+    if (!start_names.complete)
+        return;
+    log_text("net.chargen_starts", start_names.count ? start_names.text : "(none)");
+    if (chooser_kind == EVENT_CHARS)
+        chooser_kind = 0;
+    if (cg_state != CG_IDLE && cg_state != CG_NEW_GAME)
+        return;
+    cg_state = game_launch == GAME_NEW && chargen_global() != CHARGEN_DONE ? CG_HOLD : CG_NEW_GAME;
+    cg_step = cg_frames = 0;
+    run_used = run_at = run_ended = 0;
+    tes3x_log_hex3("net.chargen", cg_state, game_launch, start_names.count);
+}
+
+static void run_event(const struct event *e)
+{
+    u32 n = 0;
+
+    while (n < e->length && e->data[n])
+        n++;
+    if (!n) {
+        run_ended = 1;
+        return;
+    }
+    if (run_used + n + 1 > RUN_BYTES) {
+        cg_bad++;
+        return;
+    }
+    copy((u8 *)run_text + run_used, e->data, n);
+    run_text[run_used + n] = 0;
+    run_used += n + 1;
+}
+
+static void chargen_next(u32 state)
+{
+    cg_state = state;
+    cg_step = cg_frames = cg_seen = 0;
+    tes3x_log_hex3("net.chargen", cg_state, game_launch, start_names.count);
+}
+
+static void chargen_frame(void)
+{
+    const u8 *world = *(const u8 **)TES3X_NET_WORLD;
+    int chosen;
+
+    if (chooser_kind == EVENT_CHARS && cg_state == CG_IDLE) {
+        chosen = chooser_poll(&chars_names, "Choose your character", "New character");
+        if (chosen >= 0) {
+            chooser_kind = 0;
+            pick(PICK_CHARACTER, (u32)chosen);
+        }
+        return;
+    }
+    switch (cg_state) {
+    case CG_NEW_GAME:
+        if (relaunch(0))
+            chargen_next(CG_IDLE);
+        break;
+    case CG_HOLD:
+        /* Once CharGen has put the player on the ship and disabled the controls and menus. */
+        if (!world_idle() || !chargen_global() || chargen_global() == CHARGEN_DONE)
+            break;
+        run_script("Player->PositionCell 0 0 64 0 \"" CHARGEN_CELL "\"");
+        chargen_next(CG_ARRIVE);
+        break;
+    case CG_ARRIVE:
+        if (++cg_frames >= MENU_QUIET_FRAMES)
+            chargen_next(CG_MENUS);
+        break;
+    case CG_MENUS:
+        if (!plausible(world))
+            break;
+        if (cg_frames++ == 0)
+            run_script(chargen_menus[cg_step]);
+        if (world[WORLD_MENU_MODE])
+            cg_seen = 1, cg_frames = 1;
+        else if ((cg_seen && cg_frames > MENU_QUIET_FRAMES) || cg_frames > MENU_MISSING_FRAMES) {
+            if (!cg_seen)
+                tes3x_log("net.chargen_no_menu", cg_step);
+            cg_seen = cg_frames = 0;
+            if (++cg_step == sizeof(chargen_menus) / sizeof(*chargen_menus))
+                chargen_next(CG_STARTS);
+        }
+        break;
+    case CG_STARTS:
+        if (!start_names.complete || !start_names.count)
+            break;
+        chosen = start_names.count == 1 ? 0 : chooser_poll(&start_names, "Where does your story begin?", 0);
+        if (chosen >= 0) {
+            pick(PICK_START, (u32)chosen);
+            chargen_next(CG_FINISH);
+        }
+        break;
+    case CG_FINISH:
+        if (!world_idle())
+            break;
+        run_script(chargen_finish[cg_step]);
+        if (++cg_step == sizeof(chargen_finish) / sizeof(*chargen_finish))
+            chargen_next(CG_RUN);
+        break;
+    case CG_RUN:
+        if (!world_idle())
+            break;
+        if (run_at < run_used) {
+            log_text("net.chargen_run", run_text + run_at);
+            run_script(run_text + run_at);
+            run_at += tes3x_strlen(run_text + run_at) + 1;
+        } else if (run_ended && ++cg_frames >= MENU_QUIET_FRAMES) {
+            cg_made++;
+            save_requested = 1;
+            chargen_next(CG_IDLE);
+        }
+        break;
+    }
+}
+
+static void chargen_stat(void)
+{
+    tes3x_log_hex3("net.chargen", cg_state, game_launch, start_names.count);
+    tes3x_log_hex3("net.chargen_made", cg_made, cg_bad, chars_names.count);
 }
 
 /* The player's own state, streamed so that a crash loses only what the server has not seen since
@@ -9432,6 +9754,12 @@ static void event_handle(const struct event *e)
         load_event(e);
     } else if (e->kind == EVENT_PLAYER) {
         player_event(e);
+    } else if (e->kind == EVENT_CHARS) {
+        chars_event(e);
+    } else if (e->kind == EVENT_NEWCHAR) {
+        newchar_event(e);
+    } else if (e->kind == EVENT_RUN) {
+        run_event(e);
     } else {
         tes3x_log_hex3("net.event_unknown", e->kind, e->origin, e->length);
     }
@@ -9814,6 +10142,7 @@ int tes3x_net_command(const char *text)
         up_stat();
         handshake_stat();
         save_stat();
+        chargen_stat();
         player_stat();
     } else if ((rest = word(text, "menusim")) && (rest = word(skip(rest), "auto")) &&
                !*skip(rest)) {

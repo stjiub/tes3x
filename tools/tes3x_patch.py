@@ -1763,6 +1763,18 @@ def find_weather_roll(x):
     return x.off_to_va(hits[0] + 23)
 
 
+BUTTON_PRESSED_RE = re.compile(rb"\xa1(....)\xc3(?:\x90|\xcc)*\xc7\x05\1\xff\xff\xff\xff\xc3", re.S)
+
+
+def find_button_pressed(x):
+    """The message box button GetButtonPressed reads, -1 until one is pressed: the global of the
+    getter `mov eax,[X]; ret` that is followed by its reset `mov [X],-1; ret`."""
+    hits = [m for m in BUTTON_PRESSED_RE.finditer(x.data)]
+    if len(hits) != 1:
+        raise PatchError("button pressed index: %d match(es), expected exactly 1" % len(hits))
+    return struct.unpack("<I", hits[0].group(1))[0]
+
+
 @patch("diagnostics")
 def _diagnostics(x, value, ctx):
     """Enable INI-controlled crash records, snapshots and a hang watchdog."""
@@ -2290,6 +2302,7 @@ LOCATORS = {
     "menu-mode-gate": find_menu_mode_gate,
     "mob-update-gate": find_mob_gate,
     "weather-roll": find_weather_roll,
+    "button-pressed": find_button_pressed,
     "console-print": find_console_print,
     "heap-allocate": lambda image: find_heap_function(image, "allocate")[0],
     "heap-free": lambda image: find_heap_function(image, "free")[0],

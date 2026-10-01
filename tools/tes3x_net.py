@@ -399,6 +399,18 @@ EVENT_GAME, EVENT_LOAD = 23, 24
 # before READY.
 EVENT_PLAYER = 25
 PLAYER_ITEMS, PLAYER_LEVEL, PLAYER_SKILLS, PLAYER_JOURNAL, PLAYER_READY = 1, 2, 3, 4, 5
+# Characters. GAME's name is followed by the launch's kind (GAME_NEW: a New Game). To a client:
+# CHARS (part, parts, then the names of its key's characters each ending in a zero) to choose
+# from, or NEWCHAR (the same with start point names) to make one; the console answers PICK
+# (PICK_CHARACTER and an index into CHARS or PICK_NEW, or PICK_START and an index into NEWCHAR).
+# The chosen start comes back as RUN events, one script line each, ended by an empty one.
+EVENT_CHARS, EVENT_PICK, EVENT_NEWCHAR, EVENT_RUN = 26, 27, 28, 29
+GAME_NONE, GAME_LOAD, GAME_NEW = 0, 1, 2
+PICK_CHARACTER, PICK_START, PICK_NEW = 1, 2, 255
+CHARACTERS_LISTED = 8  # buttons on the console's list, with "New character"
+START_NAME = 31
+STARTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "examples",
+                      "starts.toml")
 # level, level progress, level-ups per attribute (8) and per specialisation (3), base health,
 # magicka and fatigue, base attributes (8)
 LEVEL = struct.Struct("<HH11B3f8f")
@@ -845,6 +857,91 @@ def keep_character(upload, folder):
             os.replace(newer, older)
     os.replace(upload, versions[0])
     return head
+
+
+def save_player(path):
+    """The player's name in a save's header, or None."""
+    from tes3x_saves import HEAD_LIMIT, parse_header
+    with open(path, "rb") as stream:
+        return parse_header(stream.read(HEAD_LIMIT))["player"]
+
+
+def character_slug(name):
+    return re.sub(r"[^A-Za-z0-9 _-]", "-", name or "").strip()[:24] or "character"
+
+
+def kept_characters(root):
+    """(folder name, latest save) of each character in a key's folder, newest first. Saves kept
+    in the key's folder itself, from before a key could hold several, move into one of their own."""
+    if not root or not os.path.isdir(root):
+        return []
+    loose = latest_character(root)
+    if loose:
+        folder = new_character_folder(root, save_player(loose))
+        os.makedirs(folder)
+        for f in os.listdir(root):
+            if f.lower().endswith(".ess") or f == STREAM_NAME:
+                os.replace(os.path.join(root, f), os.path.join(folder, f))
+    found = [(f, latest_character(os.path.join(root, f))) for f in os.listdir(root)
+             if os.path.isdir(os.path.join(root, f))]
+    return sorted(((f, p) for f, p in found if p), key=lambda c: -os.path.getmtime(c[1]))
+
+
+def new_character_folder(root, player):
+    slug = character_slug(player)
+    folder, n = os.path.join(root, slug), 1
+    while os.path.exists(folder):
+        n += 1
+        folder = os.path.join(root, f"{slug}-{n}")
+    return folder
+
+
+def checkpoint_name(data):
+    return CHECKPOINT_NAME.format(
+        int.from_bytes(hashlib.blake2b(data, digest_size=32).digest()[:4], "big"))
+
+
+def load_starts(path):
+    """Start points as (name, script lines), from a TOML file of [[start]] tables."""
+    import tomllib
+    with open(path, "rb") as f:
+        tables = tomllib.load(f).get("start", [])
+    starts = []
+    for t in tables:
+        name = str(t["name"])
+        if not name or len(name) > START_NAME or '"' in name or not name.isascii():
+            raise ValueError(f"{path}: start name {name!r}: 1 to {START_NAME} ASCII characters, "
+                             "no double quotes")
+        x, y, z = (float(v) for v in t["position"])
+        turn = float(t.get("rotation", 0))
+        where = f"{x:g} {y:g} {z:g} {turn:g}"
+        lines = [f'Player->PositionCell {where} "{t["cell"]}"' if "cell" in t
+                 else f"Player->Position {where}"]
+        lines += [f'Player->RemoveItem "{i}" {int(n)}' for i, n in t.get("remove", [])]
+        lines += [f'Player->AddItem "{i}" {int(n)}' for i, n in t.get("items", [])]
+        lines += [f'Player->Equip "{i}"' for i in t.get("equip", [])]
+        lines += [str(line) for line in t.get("script", [])]
+        for line in lines:
+            if len(line) >= EVENT_DATA or not line.isascii() or "\n" in line:
+                raise ValueError(f"{path}: {name}: line {line!r} is not one ASCII line under "
+                                 f"{EVENT_DATA} bytes")
+        starts.append((name, lines))
+    if not starts:
+        raise ValueError(f"{path}: no [[start]] tables")
+    return starts
+
+
+def pack_names(names):
+    """CHARS or NEWCHAR bodies: part, parts, then names each ending in a zero."""
+    parts, body = [], b""
+    for name in names:
+        entry = name.encode("latin-1", "replace") + b"\0"
+        if body and 2 + len(body) + len(entry) > EVENT_DATA:
+            parts.append(body)
+            body = b""
+        body += entry
+    parts.append(body)
+    return [bytes([i, len(parts)]) + part for i, part in enumerate(parts)]
 
 
 def pack_items(item, entries):
@@ -1344,6 +1441,7 @@ def now_us():
 
 GHOST_PLUGIN = "TES3X Multiplayer.esp"
 GHOST_CELL = "TES3X Ghosts"
+ARRIVAL_CELL = "TES3X Arrival"  # tes3xnet.c's CHARGEN_CELL
 GHOSTS = 8  # one per peer slot in tes3xnet.c
 BOT_ID = 99
 
@@ -1365,7 +1463,7 @@ def ghost_plugin(master_size, master="Morrowind.esm"):
     the rest where the ghost has its script variables."""
     hedr = (struct.pack("<fI", 1.3, 0) + b"TES3X".ljust(32, b"\0")
             + b"Other players, placed by the multiplayer patch.".ljust(256, b"\0")
-            + struct.pack("<I", GHOSTS + 1))
+            + struct.pack("<I", GHOSTS + 2))
     out = [record(b"TES3", [(b"HEDR", hedr), (b"MAST", zstr(master)),
                             (b"DATA", struct.pack("<Q", master_size))])]
     items = ("common_shirt_01", "common_pants_01", "common_shoes_01")
@@ -1385,6 +1483,13 @@ def ghost_plugin(master_size, master="Morrowind.esm"):
         cell += [(b"FRMR", struct.pack("<I", i)), (b"NAME", zstr(f"tes3x_ghost{i}")),
                  (b"DATA", struct.pack("<6f", 128.0 * i, 0, 0, 0, 0, 0))]
     out.append(record(b"CELL", cell))
+    # A new character stands here, out of the shared world, while choosing race, class and the
+    # rest; the floor keeps it from falling the whole time.
+    out.append(record(b"CELL", [
+        (b"NAME", zstr(ARRIVAL_CELL)), (b"DATA", struct.pack("<Iii", 1, 0, 0)),
+        (b"WHGT", struct.pack("<f", 0)), (b"AMBI", struct.pack("<3If", 0x808080, 0x808080, 0, 0)),
+        (b"FRMR", struct.pack("<I", GHOSTS + 1)), (b"NAME", zstr("In_Lava_Blacksquare")),
+        (b"DATA", struct.pack("<6f", 0, 0, 0, 0, 0, 0))]))
     return b"".join(out)
 
 
@@ -1485,6 +1590,9 @@ class Client:
         self.busy = None  # since when it has been saving
         self.game = None  # the launch token it last reported
         self.synced = False  # that launch runs its character's latest checkpoint
+        self.launch = 0  # GAME_NONE, GAME_LOAD or GAME_NEW
+        self.character = None  # the folder of the character that launch runs
+        self.listed = []  # the folders CHARS offered, in order
         self.actor_states = 0
         self.flush_due = False  # an EVENTS packet held back by EVENTS_GAP
         self.queue = []  # (address, packet, seq) held back by PACE_PACKETS
@@ -1647,6 +1755,8 @@ def serve(args):
     world = {"path": None, "dirty": False, "saved": 0.0, "next_spawn": 1}
     streams = {}  # character folder -> PlayerStream
     streams_saved = 0.0
+    starts = load_starts(args.starts or STARTS)
+    creating = set()  # key fingerprints making a new character
     bot_spawns = []
     for spec in args.bot_spawn:
         what, _, at = spec.rpartition("@")
@@ -1941,9 +2051,13 @@ def serve(args):
             if other.alive and other.id != origin:
                 send_contents(other.id, refid, now)
 
-    def character_folder(client):
+    def key_folder(client):
         return (os.path.join(args.world, "characters", fingerprint(client.key))
                 if args.world and client.key else None)
+
+    def character_folder(client):
+        root = key_folder(client)
+        return os.path.join(root, client.character) if root and client.character else None
 
     def player_stream(client):
         folder = character_folder(client)
@@ -1968,31 +2082,24 @@ def serve(args):
             f"{len(stream.journal)} quests" + (", the level" if stream.level else "")
             if replay else "streams its player from scratch"), flush=True)
 
-    def on_game(client, token, loaded, stamp, now):
-        """A console's launch: send it its character's latest checkpoint unless it runs it."""
-        if token != client.game:
-            client.game, client.synced = token, False
-        if client.synced:  # a rejoin of the same launch: events in flight were dropped
-            player_ready(client, False, stamp, now)
-            return
-        path = latest_character(character_folder(client))
-        if path is None:
-            client.synced = True
-            print(f"{stamp} client {client.id} has no kept character", flush=True)
-            if player_stream(client):
-                player_stream(client).reset()
-            player_ready(client, False, stamp, now)
-            return
+    def send_names(client, kind, names, now):
+        for part in pack_names(names):
+            client.rel.queue(kind, 0, part)
+        flush(client, now)
+
+    def offer_starts(client, stamp, now):
+        """Have the console make a character: in this launch if it is a New Game, else it
+        relaunches into one and is offered the start points again."""
+        creating.add(fingerprint(client.key))
+        client.synced = client.launch == GAME_NEW
+        send_names(client, EVENT_NEWCHAR, [name for name, _ in starts], now)
+        print(f"{stamp} client {client.id} makes a new character"
+              + ("" if client.synced else ", after a New Game"), flush=True)
+
+    def send_checkpoint(client, path, loaded, stamp, now):
         with open(path, "rb") as stream:
             data = stream.read()
-        name = CHECKPOINT_NAME.format(
-            int.from_bytes(hashlib.blake2b(data, digest_size=32).digest()[:4], "big"))
-        if loaded.lower() == name:
-            client.synced = True
-            print(f"{stamp} client {client.id} runs its character ({os.path.basename(path)})",
-                  flush=True)
-            player_ready(client, True, stamp, now)
-            return
+        name = checkpoint_name(data)
         client.bulk = Outgoing(name, data)
         client.rel.queue(EVENT_OFFER, 0, client.bulk.offer())
         client.rel.queue(EVENT_LOAD, 0, zstr(name))
@@ -2000,22 +2107,87 @@ def serve(args):
         print(f"{stamp} client {client.id} loaded {loaded or 'no save'}: sending "
               f"{os.path.basename(path)} as {name} ({len(data)} bytes) to load", flush=True)
 
-    def received(client, stamp):
-        """A finished upload: a save is kept as the console's character."""
+    def on_game(client, token, loaded, launch, stamp, now):
+        """A console's launch: it runs one of its key's characters, or chooses one, or makes
+        one."""
+        if token != client.game:
+            client.game, client.synced, client.character = token, False, None
+            client.launch = launch
+        making = client.key and fingerprint(client.key) in creating
+        if client.synced:  # a rejoin of the same launch: events in flight were dropped
+            if client.character:
+                player_ready(client, False, stamp, now)
+            elif making:
+                offer_starts(client, stamp, now)
+            return
+        kept = kept_characters(key_folder(client))
+        for folder, path in kept:
+            with open(path, "rb") as stream:
+                if loaded.lower() == checkpoint_name(stream.read()):
+                    client.synced, client.character = True, folder
+                    creating.discard(fingerprint(client.key))
+                    print(f"{stamp} client {client.id} runs {folder} ({os.path.basename(path)})",
+                          flush=True)
+                    player_ready(client, True, stamp, now)
+                    return
+        if making or (not kept and not args.adopt and key_folder(client)):
+            offer_starts(client, stamp, now)
+            return
+        if not kept:
+            client.synced = True
+            print(f"{stamp} client {client.id} has no kept character", flush=True)
+            return
+        if args.adopt:
+            send_checkpoint(client, kept[0][1], loaded, stamp, now)
+            return
+        client.listed = [folder for folder, _ in kept[:CHARACTERS_LISTED]]
+        send_names(client, EVENT_CHARS, client.listed, now)
+        print(f"{stamp} client {client.id} loaded {loaded or 'no save'}: offered "
+              f"{', '.join(client.listed)}", flush=True)
+
+    def on_pick(client, what, index, stamp, now):
+        if what == PICK_CHARACTER and index == PICK_NEW:
+            offer_starts(client, stamp, now)
+        elif what == PICK_CHARACTER and index < len(client.listed):
+            creating.discard(fingerprint(client.key))
+            path = latest_character(os.path.join(key_folder(client), client.listed[index]))
+            if path:
+                send_checkpoint(client, path, "the list", stamp, now)
+        elif (what == PICK_START and index < len(starts) and client.synced
+              and client.character is None):
+            name, lines = starts[index]
+            for line in lines + [""]:
+                client.rel.queue(EVENT_RUN, 0, zstr(line))
+            flush(client, now)
+            print(f"{stamp} client {client.id} starts at {name}", flush=True)
+
+    def received(client, stamp, now):
+        """A finished upload: a save is kept as the console's character, the first one of a new
+        character in a folder of its own."""
         if not client.upload.name.lower().endswith(".ess"):
             return
         if not client.synced:
             print(f"{stamp} client {client.id} sent {client.upload.name} from a game that is not "
                   f"its character's; left in uploads", flush=True)
             return
-        head = keep_character(client.upload.path, character_folder(client))
-        if head:
-            print(f"{stamp} client {client.id} kept {client.upload.name}: {head['player']} in "
-                  f"{head['cell']}, {len(head['masters'])} masters", flush=True)
-            player_stream(client).checkpoint()
-        else:
+        new = client.character is None
+        player = save_player(client.upload.path)
+        if not player:
             print(f"{stamp} client {client.id} sent {client.upload.name}, not a save; left in "
                   f"uploads", flush=True)
+            return
+        folder = (new_character_folder(key_folder(client), player) if new
+                  else character_folder(client))
+        head = keep_character(client.upload.path, folder)
+        print(f"{stamp} client {client.id} kept {client.upload.name}: {head['player']} in "
+              f"{head['cell']}, {len(head['masters'])} masters"
+              + (f", a new character in {os.path.basename(folder)}" if new else ""), flush=True)
+        if new:
+            client.character = os.path.basename(folder)
+            creating.discard(fingerprint(client.key))
+            player_ready(client, False, stamp, now)
+        else:
+            player_stream(client).checkpoint()
 
     def on_event(client, kind, data, stamp, now):
         client.events += 1
@@ -2033,7 +2205,7 @@ def serve(args):
                      if client.upload.status == BULK_RECEIVING else ""), flush=True)
             send(client, BULK_ACK, client.upload.ack(now))
             if client.upload.status == BULK_DONE:
-                received(client, stamp)
+                received(client, stamp, now)
             return
         if kind == EVENT_PLAYER:
             stream = player_stream(client) if client.synced else None
@@ -2146,8 +2318,12 @@ def serve(args):
         if kind == EVENT_TEXT:
             print(f"{stamp} client {client.id} says: {wire_text(data)}", flush=True)
         if kind == EVENT_GAME and len(data) >= 5:
-            on_game(client, struct.unpack_from("<I", data)[0],
-                    wire_text(data[4:].split(b"\0", 1)[0]), stamp, now)
+            loaded, _, rest = data[4:].partition(b"\0")
+            on_game(client, struct.unpack_from("<I", data)[0], wire_text(loaded),
+                    rest[0] if rest else GAME_NONE, stamp, now)
+            return
+        if kind == EVENT_PICK and len(data) >= 2:
+            on_pick(client, data[0], data[1], stamp, now)
             return
         if kind == EVENT_BUSY and data:
             if data[0] and client.busy is None:
@@ -2640,7 +2816,7 @@ def serve(args):
                       f"{BULK_STATUS[upload.status]}, {size} bytes in {took:.1f} s "
                       f"({size / 1024 / took:.0f} KB/s)", flush=True)
                 if upload.status == BULK_DONE:
-                    received(client, stamp)
+                    received(client, stamp, now)
         elif kind == EVENTS and len(packet) >= T3MP.size + EVENTS_HEAD.size:
             ready, carried = client.rel.receive(packet[T3MP.size:])
             if carried:
@@ -3115,6 +3291,12 @@ def main(argv=None):
     p.add_argument("--save-every", type=float, metavar="SECONDS",
                    help="ask every joined console this often to save its character into its "
                         "multiplayer slot and upload it")
+    p.add_argument("--starts", metavar="FILE",
+                   help="where new characters may begin ([[start]] tables; default "
+                        "examples/starts.toml)")
+    p.add_argument("--adopt", action="store_true",
+                   help="a key with no character keeps whatever game its console runs instead "
+                        "of making a new one (tests that start from a save)")
     p.add_argument("--dhcp-lease", type=int, default=3600, metavar="SECONDS",
                    help="lease time offered to xemu guests that ask for an address "
                         "(NetAddress=dhcp); each tunnel leases %s" % GUEST_IP)

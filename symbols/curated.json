@@ -4545,6 +4545,22 @@
       "pc_va": "0x005E99C0"
     },
     {
+      "va": "0x001F6650",
+      "name": "UI::getButtonPressedIndex",
+      "confidence": "matched",
+      "provenance": "same getter/reset pair as PC 0x5F2160/0x5F2170 on 0x7B88C0 (MWSE)",
+      "pc_va": "0x005F2160",
+      "signature": "int __cdecl f(void)"
+    },
+    {
+      "va": "0x001F6660",
+      "name": "UI::resetButtonPressedIndex",
+      "confidence": "matched",
+      "provenance": "pair of 0x001F6650",
+      "pc_va": "0x005F2170",
+      "signature": "void __cdecl f(void)"
+    },
+    {
       "va": "0x001F7650",
       "name": "UI::UpdateCurrentMagicFillBar",
       "kind": "function",
@@ -4875,6 +4891,16 @@
       "kind": "data",
       "confidence": "verified",
       "provenance": "find_command_table; six opcode bounds widened by script-ext"
+    },
+    {
+      "va": "0x003C6BE0",
+      "name": "UI::buttonPressedIndex",
+      "confidence": "matched",
+      "provenance": "MWSE TES3_ui_buttonPressedIndex",
+      "note": "-1 until a message box button is pressed; GetButtonPressed reads it",
+      "pc_va": "0x007B88C0",
+      "kind": "data",
+      "type": "int"
     },
     {
       "va": "0x003CB5F4",
