@@ -33,6 +33,14 @@
       "pc_va": "0x006CD5D0"
     },
     {
+      "va": "0x00039570",
+      "name": "SE::NI_MATERIALPROPERTY_FNADDR_CTOR",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:SE_NI_MATERIALPROPERTY_FNADDR_CTOR",
+      "pc_va": "0x006DB0A0"
+    },
+    {
       "va": "0x0003A070",
       "name": "NI::RenderedTexture_create",
       "kind": "function",
@@ -169,6 +177,14 @@
       "pc_va": "0x004012B0"
     },
     {
+      "va": "0x000860D0",
+      "name": "Statistic::setBaseAndCurrent",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Statistic_setBaseAndCurrent",
+      "pc_va": "0x00401290"
+    },
+    {
       "va": "0x00086100",
       "name": "SkillStatistic::modSkillCapped",
       "kind": "function",
@@ -297,6 +313,14 @@
       "pc_va": "0x00409590"
     },
     {
+      "va": "0x00089EF0",
+      "name": "UI::Font_wrapTextInPlace",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UI_Font_wrapTextInPlace",
+      "pc_va": "0x0040BBC0"
+    },
+    {
       "va": "0x0008A040",
       "name": "Font::substituteTextMacros",
       "kind": "function",
@@ -313,12 +337,28 @@
       "pc_va": "0x00410FA0"
     },
     {
+      "va": "0x0008BE70",
+      "name": "MobileActor::isActive",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_isActive",
+      "pc_va": "0x0050F5F0"
+    },
+    {
       "va": "0x0008C150",
       "name": "WorldController::InitGlobals",
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_WorldController_InitGlobals",
       "pc_va": "0x0040E920"
+    },
+    {
+      "va": "0x0008C8B0",
+      "name": "WorldController::isGlobalScriptRunning",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WorldController_isGlobalScriptRunning",
+      "pc_va": "0x0040FB90"
     },
     {
       "va": "0x0008C910",
@@ -343,6 +383,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_WorldController_rechargerAddItem",
       "pc_va": "0x00410790"
+    },
+    {
+      "va": "0x0008D100",
+      "name": "WorldController::applyEnchantEffect",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WorldController_applyEnchantEffect",
+      "pc_va": "0x00410B00"
     },
     {
       "va": "0x0008D210",
@@ -399,6 +447,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_Game_clearTarget",
       "pc_va": "0x0041CD00"
+    },
+    {
+      "va": "0x000947E0",
+      "name": "Game::ctor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Game_ctor",
+      "pc_va": "0x00417280"
     },
     {
       "va": "0x00094B10",
@@ -711,12 +767,36 @@
       "pc_va": "0x00466270"
     },
     {
+      "va": "0x000CA580",
+      "name": "SaveVisualEffects",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_SaveVisualEffects",
+      "pc_va": "0x00469CC0"
+    },
+    {
       "va": "0x000CAA00",
       "name": "VFXManager::remove",
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_VFXManager_remove",
       "pc_va": "0x00468D00"
+    },
+    {
+      "va": "0x000CAB60",
+      "name": "VFXManager::removeForReference",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_VFXManager_removeForReference",
+      "pc_va": "0x00468EA0"
+    },
+    {
+      "va": "0x000CAE20",
+      "name": "VFXManager::removeForSerialForReference",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_VFXManager_removeForSerialForReference",
+      "pc_va": "0x004691E0"
     },
     {
       "va": "0x000CAF90",
@@ -759,6 +839,22 @@
       "pc_va": "0x00468370"
     },
     {
+      "va": "0x000CBC40",
+      "name": "VFXManager::createAtPosition",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_VFXManager_createAtPosition",
+      "pc_va": "0x00468470"
+    },
+    {
+      "va": "0x000CBD40",
+      "name": "VFXManager::createForAVObject",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_VFXManager_createForAVObject",
+      "pc_va": "0x00468560"
+    },
+    {
       "va": "0x000CBE00",
       "name": "VFXManager::createFromSaveData",
       "kind": "function",
@@ -799,6 +895,14 @@
       "pc_va": "0x00470AE0"
     },
     {
+      "va": "0x000CFCF0",
+      "name": "AnimationData::setHeadNode",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_AnimationData_setHeadNode",
+      "pc_va": "0x004704B0"
+    },
+    {
       "va": "0x000CFE90",
       "name": "AnimationData::setLayerKeyframes",
       "kind": "function",
@@ -823,12 +927,44 @@
       "pc_va": "0x00472EA0"
     },
     {
+      "va": "0x000D04B0",
+      "name": "BodyPartManager::getActiveBodyPartBaseNode",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_BodyPartManager_getActiveBodyPartBaseNode",
+      "pc_va": "0x00473030"
+    },
+    {
       "va": "0x000D0B10",
       "name": "BodyPartManager::setBodyPartForItem",
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_BodyPartManager_setBodyPartForItem",
       "pc_va": "0x00473CB0"
+    },
+    {
+      "va": "0x000D0CF0",
+      "name": "BodyPartManager::updateForReference",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_BodyPartManager_updateForReference",
+      "pc_va": "0x00473EA0"
+    },
+    {
+      "va": "0x000D1390",
+      "name": "BodyPartManager::removeEquippedLayers",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_BodyPartManager_removeEquippedLayers",
+      "pc_va": "0x00472D70"
+    },
+    {
+      "va": "0x000D1750",
+      "name": "BodyPartManager::setBodyPartByIdForItem",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_BodyPartManager_setBodyPartByIdForItem",
+      "pc_va": "0x00473C80"
     },
     {
       "va": "0x000D1780",
@@ -1184,6 +1320,14 @@
       "pc_va": "0x004997F0"
     },
     {
+      "va": "0x000E89C0",
+      "name": "Inventory::calculateContainedWeight",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Inventory_calculateContainedWeight",
+      "pc_va": "0x0049A080"
+    },
+    {
       "va": "0x000E8C70",
       "name": "Inventory::findItemStack",
       "kind": "function",
@@ -1240,12 +1384,28 @@
       "pc_va": "0x00497BC0"
     },
     {
+      "va": "0x000EC970",
+      "name": "CreatureInstance::reevaluateEquipment",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_CreatureInstance_reevaluateEquipment",
+      "pc_va": "0x0049EF60"
+    },
+    {
       "va": "0x000EF000",
       "name": "Armor::getWeightClass",
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_Armor_getWeightClass",
       "pc_va": "0x004A0F30"
+    },
+    {
+      "va": "0x000EF430",
+      "name": "Clothing::setupBodyParts",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Clothing_setupBodyParts",
+      "pc_va": "0x004A38F0"
     },
     {
       "va": "0x000F03C0",
@@ -1272,12 +1432,36 @@
       "pc_va": "0x004A9E80"
     },
     {
+      "va": "0x000F0420",
+      "name": "MagicEffect::getAreaSoundID",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MagicEffect_getAreaSoundID",
+      "pc_va": "0x004A9EA0"
+    },
+    {
       "va": "0x000F0B10",
       "name": "Activator::ctor",
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_Activator_ctor",
       "pc_va": "0x0049F990"
+    },
+    {
+      "va": "0x000F1DC0",
+      "name": "Armor::calculateArmorRatingForNPC",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Armor_calculateArmorRatingForNPC",
+      "pc_va": "0x004A0FD0"
+    },
+    {
+      "va": "0x000F1E80",
+      "name": "Armor::setupBodyParts",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Armor_setupBodyParts",
+      "pc_va": "0x004A1280"
     },
     {
       "va": "0x000F2EA0",
@@ -1296,6 +1480,22 @@
       "pc_va": "0x004A3BE0"
     },
     {
+      "va": "0x000F6780",
+      "name": "Static::ctor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Static_ctor",
+      "pc_va": "0x004A72D0"
+    },
+    {
+      "va": "0x000F67E0",
+      "name": "Static::dtor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Static_dtor",
+      "pc_va": "0x004A7350"
+    },
+    {
       "va": "0x000F71C0",
       "name": "MagicEffect::clearData",
       "kind": "function",
@@ -1312,6 +1512,30 @@
       "pc_va": "0x004A9F00"
     },
     {
+      "va": "0x000F7F70",
+      "name": "Effect::calculateCost",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Effect_calculateCost",
+      "pc_va": "0x004AA700"
+    },
+    {
+      "va": "0x000F8260",
+      "name": "Spell::getLeastProficientEffect",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Spell_getLeastProficientEffect",
+      "pc_va": "0x004AA850"
+    },
+    {
+      "va": "0x000F8300",
+      "name": "Spell::getLeastProficientSchool",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Spell_getLeastProficientSchool",
+      "pc_va": "0x004AA910"
+    },
+    {
       "va": "0x000F8340",
       "name": "Spell::calculateCastChance",
       "kind": "function",
@@ -1326,6 +1550,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_SpellList_containsObject",
       "pc_va": "0x004ACB50"
+    },
+    {
+      "va": "0x000F99E0",
+      "name": "SpellList::getCheapest",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_SpellList_getCheapest",
+      "pc_va": "0x004ACB90"
     },
     {
       "va": "0x000F9A30",
@@ -1360,6 +1592,14 @@
       "pc_va": "0x004AD650"
     },
     {
+      "va": "0x000FB9D0",
+      "name": "MagicEffect::ctor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MagicEffect_ctor",
+      "pc_va": "0x004A8C90"
+    },
+    {
       "va": "0x000FBE20",
       "name": "Spell::ctor",
       "kind": "function",
@@ -1390,6 +1630,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_SpellList_addById",
       "pc_va": "0x004AC750"
+    },
+    {
+      "va": "0x000FD1F0",
+      "name": "getDialogue",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_getDialogue",
+      "pc_va": "0x004B2C00"
     },
     {
       "va": "0x000FF9E0",
@@ -1600,12 +1848,29 @@
       "pc_va": "0x004C1980"
     },
     {
+      "va": "0x00104850",
+      "name": "NonDynamicData::getBaseAnimationFile",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_NonDynamicData_getBaseAnimationFile",
+      "pc_va": "0x004C2720"
+    },
+    {
       "va": "0x00104C30",
       "name": "ui::setProperty",
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_ui_setProperty",
       "pc_va": "0x00581F30"
+    },
+    {
+      "va": "0x00104E10",
+      "name": "RecordsHandler::findEntityInWorld",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_RecordsHandler_findEntityInWorld",
+      "note": "linear over every cell: 1.7 ms per call with 2,895 cells; 2,559 calls from global script startup cost 4.4 s on hardware",
+      "kind": "function",
+      "pc_va": "0x004B90F0"
     },
     {
       "va": "0x00105C10",
@@ -2191,6 +2456,30 @@
       "pc_va": "0x004F7260"
     },
     {
+      "va": "0x00136DF0",
+      "name": "Script::getShortValue",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Script_getShortValue",
+      "pc_va": "0x004FFB90"
+    },
+    {
+      "va": "0x00136ED0",
+      "name": "Script::getLongValue",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Script_getLongValue",
+      "pc_va": "0x004FFC00"
+    },
+    {
+      "va": "0x00136FA0",
+      "name": "Script::getFloatValue",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Script_getFloatValue",
+      "pc_va": "0x004FFC70"
+    },
+    {
       "va": "0x00137030",
       "name": "Script::getLocalVarIndexAndType",
       "kind": "function",
@@ -2357,6 +2646,14 @@
       "pc_va": "0x00510BC0"
     },
     {
+      "va": "0x0014B760",
+      "name": "Sound::dtor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Sound_dtor",
+      "pc_va": "0x00510500"
+    },
+    {
       "va": "0x0014B9B0",
       "name": "Sound::loadBuffer",
       "kind": "function",
@@ -2389,6 +2686,22 @@
       "pc_va": "0x00519110"
     },
     {
+      "va": "0x0014D640",
+      "name": "MagicSourceInstance::onAbsorb",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MagicSourceInstance_onAbsorb",
+      "pc_va": "0x00519900"
+    },
+    {
+      "va": "0x0014D900",
+      "name": "MagicSourceInstance::retireEffectsOnReference",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MagicSourceInstance_retireEffectsOnReference",
+      "pc_va": "0x00512940"
+    },
+    {
       "va": "0x0014E450",
       "name": "PlaySpellVFX",
       "kind": "function",
@@ -2403,6 +2716,22 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_MagicSourceInstance_SpellEffectEvent",
       "pc_va": "0x00518460"
+    },
+    {
+      "va": "0x00150370",
+      "name": "MagicSourceInstance::spellHit",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MagicSourceInstance_spellHit",
+      "pc_va": "0x00516D90"
+    },
+    {
+      "va": "0x00150A90",
+      "name": "MagicSourceInstance::projectileHit",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MagicSourceInstance_projectileHit",
+      "pc_va": "0x005175C0"
     },
     {
       "va": "0x00152B90",
@@ -2421,6 +2750,14 @@
       "pc_va": "0x0051C1E0"
     },
     {
+      "va": "0x001559E0",
+      "name": "MobileActor::calculateRunSpeed",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_calculateRunSpeed",
+      "pc_va": "0x00527050"
+    },
+    {
       "va": "0x00155A40",
       "name": "MobileActor::calculateSwimSpeed",
       "kind": "function",
@@ -2435,6 +2772,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_MobileActor_getFatigueTerm",
       "pc_va": "0x00527610"
+    },
+    {
+      "va": "0x00155C70",
+      "name": "isWeaponAnimNotCreatureAttack",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:isWeaponAnimNotCreatureAttack",
+      "pc_va": "0x00528050"
     },
     {
       "va": "0x001560A0",
@@ -2589,12 +2934,28 @@
       "pc_va": "0x0052B2A0"
     },
     {
+      "va": "0x0015A570",
+      "name": "MobileActor::setCurrentMagicFromSpell",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_setCurrentMagicFromSpell",
+      "pc_va": "0x0052B390"
+    },
+    {
       "va": "0x0015A5A0",
       "name": "MobileActor::getSpellList",
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_MobileActor_getSpellList",
       "pc_va": "0x0052B3D0"
+    },
+    {
+      "va": "0x0015A620",
+      "name": "MobilePlayer::getGoldHeld",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobilePlayer_getGoldHeld",
+      "pc_va": "0x0052B450"
     },
     {
       "va": "0x0015A650",
@@ -2653,6 +3014,14 @@
       "pc_va": "0x00527580"
     },
     {
+      "va": "0x0015E410",
+      "name": "MobileActor::startDialogue",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_startDialogue",
+      "pc_va": "0x00529260"
+    },
+    {
       "va": "0x0015E6A0",
       "name": "MobileActor::getCombatSpellList",
       "kind": "function",
@@ -2683,6 +3052,30 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_CrimeEvent_dtor",
       "pc_va": "0x0051F580"
+    },
+    {
+      "va": "0x0015FEE0",
+      "name": "MobileActor::isAffectedBySpell",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_isAffectedBySpell",
+      "pc_va": "0x0052D0E0"
+    },
+    {
+      "va": "0x0015FFC0",
+      "name": "MobileActor::isAffectedByAlchemy",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_isAffectedByAlchemy",
+      "pc_va": "0x0052D1A0"
+    },
+    {
+      "va": "0x00160180",
+      "name": "CrimeEvent::ctor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_CrimeEvent_ctor",
+      "pc_va": "0x0051F250"
     },
     {
       "va": "0x00160250",
@@ -2732,12 +3125,44 @@
       "pc_va": "0x00530470"
     },
     {
+      "va": "0x00167FD0",
+      "name": "getWeightedRandomAttackDirection",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:getWeightedRandomAttackDirection",
+      "pc_va": "0x005373B0"
+    },
+    {
+      "va": "0x00168610",
+      "name": "CombatSession::changeEquipment",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_CombatSession_changeEquipment",
+      "pc_va": "0x005379E0"
+    },
+    {
+      "va": "0x00168940",
+      "name": "CombatSession::chooseAlchemyWithEffect",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_CombatSession_chooseAlchemyWithEffect",
+      "pc_va": "0x00538330"
+    },
+    {
       "va": "0x00169C20",
       "name": "CombatSessionVanilla::dtor",
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_CombatSessionVanilla_dtor",
       "pc_va": "0x005372F0"
+    },
+    {
+      "va": "0x00169DB0",
+      "name": "CombatSession::determineNextAction",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_CombatSession_determineNextAction",
+      "pc_va": "0x00538F00"
     },
     {
       "va": "0x0016A230",
@@ -2786,6 +3211,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_ActorAnimController_selectMovementAnimAndUpdate",
       "pc_va": "0x00540A90"
+    },
+    {
+      "va": "0x0016D3A0",
+      "name": "ActorAnimController::startAttackAnimation",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ActorAnimController_startAttackAnimation",
+      "pc_va": "0x005411C0"
     },
     {
       "va": "0x0016D710",
@@ -2981,6 +3414,22 @@
       "pc_va": "0x0055C9D0"
     },
     {
+      "va": "0x0017FDC0",
+      "name": "KillCounter::ctor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_KillCounter_ctor",
+      "pc_va": "0x0055D750"
+    },
+    {
+      "va": "0x0017FEA0",
+      "name": "KillCounter::save",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_KillCounter_save",
+      "pc_va": "0x0055D950"
+    },
+    {
       "va": "0x001800E0",
       "name": "KillCounter::load",
       "kind": "function",
@@ -3141,6 +3590,14 @@
       "pc_va": "0x00566500"
     },
     {
+      "va": "0x001857D0",
+      "name": "MobilePlayer::getVanityState",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobilePlayer_getVanityState",
+      "pc_va": "0x00567990"
+    },
+    {
       "va": "0x00185890",
       "name": "MobilePlayer::update1stPersonTransform",
       "kind": "function",
@@ -3285,12 +3742,44 @@
       "pc_va": "0x004B8B60"
     },
     {
+      "va": "0x00190530",
+      "name": "SpellProjectile::onWaterCollision",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_SpellProjectile_onWaterCollision",
+      "pc_va": "0x00574DA0"
+    },
+    {
+      "va": "0x001905D0",
+      "name": "SpellProjectile::onTerrainCollision",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_SpellProjectile_onTerrainCollision",
+      "pc_va": "0x00574E40"
+    },
+    {
+      "va": "0x00190640",
+      "name": "SpellProjectile::onStaticCollision",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_SpellProjectile_onStaticCollision",
+      "pc_va": "0x00574EB0"
+    },
+    {
       "va": "0x001909A0",
       "name": "ProjectileManager::resolveCollisions",
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_ProjectileManager_resolveCollisions",
       "pc_va": "0x005753A0"
+    },
+    {
+      "va": "0x00191800",
+      "name": "MobileProjectile::onWaterCollision",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileProjectile_onWaterCollision",
+      "pc_va": "0x00573790"
     },
     {
       "va": "0x001933E0",
@@ -3546,6 +4035,22 @@
       "pc_va": "0x00595230"
     },
     {
+      "va": "0x001ACCA0",
+      "name": "ui::requestMenuModeOff",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_requestMenuModeOff",
+      "pc_va": "0x00595270"
+    },
+    {
+      "va": "0x001AD210",
+      "name": "AudioController::loadSoundFile",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_AudioController_loadSoundFile",
+      "pc_va": "0x00401DB0"
+    },
+    {
       "va": "0x001AD280",
       "name": "ui::getMenuOnTop",
       "kind": "function",
@@ -3682,6 +4187,14 @@
       "pc_va": "0x005A66C0"
     },
     {
+      "va": "0x001BB5D0",
+      "name": "UpdateBarterMenuTiles",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UpdateBarterMenuTiles",
+      "pc_va": "0x005A5620"
+    },
+    {
       "va": "0x001C1D00",
       "name": "ShowBookMenu",
       "kind": "function",
@@ -3730,6 +4243,14 @@
       "pc_va": "0x005C0780"
     },
     {
+      "va": "0x001CD8F0",
+      "name": "ui::permanentDispositionMod",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_permanentDispositionMod",
+      "pc_va": "0x005C0860"
+    },
+    {
       "va": "0x001CD970",
       "name": "ui::temporaryDispositionMod",
       "kind": "function",
@@ -3744,6 +4265,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_UI_updateTopicsList",
       "pc_va": "0x005BE6C0"
+    },
+    {
+      "va": "0x001CED90",
+      "name": "UI::goodbye",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UI_goodbye",
+      "pc_va": "0x005BF7C0"
     },
     {
       "va": "0x001CF310",
@@ -3832,6 +4361,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_updateInventoryCharacterImage",
       "pc_va": "0x005CD2A0"
+    },
+    {
+      "va": "0x001DD3F0",
+      "name": "UI::PostAddAndEquipBoundItem",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UI_PostAddAndEquipBoundItem",
+      "pc_va": "0x005D1F00"
     },
     {
       "va": "0x001DD950",

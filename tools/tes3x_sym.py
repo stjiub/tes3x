@@ -158,14 +158,16 @@ def scan_pointers(img, lo, hi):
 
 
 def scan_vtables(img, lo, hi, minrun=3):
-    """Runs of consecutive aligned code pointers. Most are C++ vtables.
+    """Runs of consecutive aligned code pointers in data sections.
 
-    Direct calls reach only a fraction of the image; almost everything else is a
-    virtual method, reachable only through one of these.
+    Most short runs are C++ vtables. The images also contain a long, ordered
+    function-address table, which propagation recognizes separately. Restricting
+    this scan to data sections avoids resources and XBE library metadata whose
+    small integers happen to fall in the Xbox code range.
     """
     out = []
     for name, sva, vsize, raw, rsize, is_code in img.sections:
-        if is_code and name not in ('.rdata', '.data'):
+        if name not in ('.rdata', '.data', '.data1'):
             continue
         blob = img.data[raw:raw + min(vsize, rsize)]
         run, start = [], 0
@@ -460,23 +462,38 @@ def cmd_propagate(a):
             d.setdefault(dst, set()).add(src)
         return d
 
-    def vtables(tag):
-        by_va, member = {}, {}
+    def pointer_runs(tag):
+        by_va = {}
         for va, idx, target in db.execute(
                 'SELECT vtab, idx, target FROM vtab_entry WHERE tag=? ORDER BY vtab, idx',
                 (tag,)):
             by_va.setdefault(va, []).append(target)
-            member.setdefault(target, []).append((va, idx))
-        return by_va, member
+        return by_va
+
+    def is_function_order(run, valid):
+        """The order table is long, almost entirely valid, and has unique entries."""
+        if len(run) < 512:
+            return False
+        return (sum(v in valid for v in run) >= len(run) * 0.95 and
+                len(set(run)) >= len(run) * 0.9)
+
+    def table_members(by_va):
+        member = {}
+        for va, values in by_va.items():
+            for idx, target in enumerate(values):
+                member.setdefault(target, []).append((va, idx))
+        return member
 
     xs, ps = sites('xbe'), sites('pc')
     xcal, pcal = callers('xbe'), callers('pc')
-    xvt, xmem = vtables('xbe')
-    pvt, pmem = vtables('pc')
     # Call and vtable targets include addresses descent rejected; they are not
     # functions and must not enter the match.
     known = {t: {va for (va,) in db.execute('SELECT va FROM func WHERE tag=?', (t,))}
              for t in ('xbe', 'pc')}
+    xruns, pruns = pointer_runs('xbe'), pointer_runs('pc')
+    xorder = {va: v for va, v in xruns.items() if is_function_order(v, known['xbe'])}
+    porder = {va: v for va, v in pruns.items() if is_function_order(v, known['pc'])}
+    xmem, pmem = table_members(xruns), table_members(pruns)
     pairs = {x: p for x, p in db.execute('SELECT xbe, pc FROM match')}
     claimed = set(pairs.values())
     seeds = len(pairs)
@@ -485,53 +502,83 @@ def cmd_propagate(a):
     while True:
         gen += 1
         votes = {}
+
+        def vote(cx, cp, source, weight=1):
+            if cx in pairs or cp in claimed:
+                return
+            entry = votes.setdefault(cx, {}).setdefault(cp, [0, set()])
+            entry[0] += weight
+            entry[1].add(source)
+
         for x, p in pairs.items():
             a_, b_ = xs.get(x, []), ps.get(p, [])
             if a_ and b_:
                 for cx, cp in align_calls(a_, b_, pairs):
-                    if cx not in pairs and cp not in claimed:
-                        votes.setdefault(cx, {}).setdefault(cp, 0)
-                        votes[cx][cp] += 1
+                    vote(cx, cp, 'call-graph')
             ca, cb = xcal.get(x, set()), pcal.get(p, set())
             if len(ca) == 1 and len(cb) == 1:
                 cx, cp = next(iter(ca)), next(iter(cb))
-                if cx not in pairs and cp not in claimed:
-                    votes.setdefault(cx, {}).setdefault(cp, 0)
-                    votes[cx][cp] += 1
-        # Adjacent vtables in .rdata run together, so table boundaries differ between
-        # the images. Align on the offset between matched slots instead: two anchors
-        # agreeing on one shift fixes the whole overlap.
+                vote(cx, cp, 'call-graph')
+
+        # Both builds contain a list of function addresses in nearly the same order.
+        # Existing pairs anchor a sequence alignment; only equal-length gaps
+        # are safe because a different gap means one compiler emitted extra functions.
+        order_candidates = []
+        for vx, xa in xorder.items():
+            for vp, pa in porder.items():
+                left = [pairs[x] if x in pairs else ~i for i, x in enumerate(xa)]
+                support = sum(n for _, _, n in
+                              SequenceMatcher(None, left, pa, autojunk=False)
+                              .get_matching_blocks())
+                if support >= 20:
+                    order_candidates.append((support, vx, vp))
+        xbest, pbest = {}, {}
+        for support, vx, vp in order_candidates:
+            xbest[vx] = max(xbest.get(vx, 0), support)
+            pbest[vp] = max(pbest.get(vp, 0), support)
+        for support, vx, vp in order_candidates:
+            if support != xbest[vx] or support != pbest[vp]:
+                continue
+            if sum(s == support for s, x, _ in order_candidates if x == vx) != 1:
+                continue
+            if sum(s == support for s, _, p in order_candidates if p == vp) != 1:
+                continue
+            for cx, cp in align_calls(xorder[vx], porder[vp], pairs):
+                vote(cx, cp, 'function-order', 2)
+
+        # Adjacent RTTI-free vtables can run together, so the two builds do not
+        # always have the same table boundaries. Two anchors agreeing on a slot
+        # shift fix the overlap; reject a shift unless it dominates the evidence.
         shifts = {}
         for x, p in pairs.items():
             for vx, ix in xmem.get(x, []):
                 for vp, ip in pmem.get(p, []):
                     shifts.setdefault((vx, vp), {}).setdefault(ip - ix, 0)
                     shifts[(vx, vp)][ip - ix] += 1
-        for (vx, vp), cands in shifts.items():
-            shift, n = max(cands.items(), key=lambda kv: kv[1])
-            if n < 2 or n < sum(cands.values()) * 0.8:
+        for (vx, vp), candidates in shifts.items():
+            shift, n = max(candidates.items(), key=lambda kv: kv[1])
+            total = sum(candidates.values())
+            if n < 2 or n < total * 0.8:
                 continue
-            vpairs[(vx, vp)] = shift
-            a_, b_ = xvt[vx], pvt[vp]
-            for ix, cx in enumerate(a_):
+            vpairs[(vx, vp)] = n / total
+            xa, pa = xruns[vx], pruns[vp]
+            for ix, cx in enumerate(xa):
                 ip = ix + shift
-                if not (0 <= ip < len(b_)):
+                if not 0 <= ip < len(pa):
                     continue
-                cp = b_[ip]
-                if cx not in pairs and cp not in claimed:
-                    votes.setdefault(cx, {}).setdefault(cp, 0)
-                    votes[cx][cp] += 2
+                cp = pa[ip]
+                vote(cx, cp, 'vtable', 2)
 
         fresh = {}
         for cx, cands in votes.items():
             if len(cands) != 1 or cx not in known['xbe']:
                 continue
-            cp, n = next(iter(cands.items()))
+            cp, (n, sources) = next(iter(cands.items()))
             if cp in known['pc']:
-                fresh[cx] = (cp, n)
+                fresh[cx] = (cp, n, sources)
         # Reject any pc function two xbe functions both want.
         back = {}
-        for cx, (cp, n) in fresh.items():
+        for cx, (cp, n, sources) in fresh.items():
             back.setdefault(cp, []).append(cx)
         added = 0
         rows = []
@@ -541,7 +588,9 @@ def cmd_propagate(a):
             cx = lst[0]
             pairs[cx] = cp
             claimed.add(cp)
-            rows.append((cx, cp, min(1.0, fresh[cx][1] / 2.0), f'propagate:{gen}', ''))
+            n, sources = fresh[cx][1:]
+            method = '+'.join(sorted(sources)) + f':{gen}'
+            rows.append((cx, cp, min(1.0, n / 2.0), method, ''))
             added += 1
         db.executemany('INSERT OR REPLACE INTO match VALUES(?,?,?,?,?)', rows)
         db.commit()
@@ -711,6 +760,8 @@ def cmd_names(a):
     match = {p: x for x, p in db.execute('SELECT xbe, pc FROM match')}
     cur = load_curated()
     # Re-importing must not leave names behind from a previous match run.
+    old_mwse = {int(r['va'], 16): r for r in cur['records']
+                if str(r.get('provenance', '')).startswith('mwse:')}
     cur['records'] = [r for r in cur['records']
                       if not str(r.get('provenance', '')).startswith('mwse:')]
     by_va = {int(r['va'], 16): r for r in cur['records']}
@@ -729,7 +780,8 @@ def cmd_names(a):
             kept += 1
             continue
         if rec is None:
-            rec = {'va': f'0x{xva:08X}'}
+            # Notes and signatures are Xbox annotations, not MWSE-owned fields.
+            rec = old_mwse.get(xva, {'va': f'0x{xva:08X}'})
             by_va[xva] = rec
         rec.update(name=name.replace('_', '::', 1), kind='function',
                    confidence='matched', provenance=f'mwse:{full}',
@@ -788,9 +840,11 @@ def cmd_lookup(a):
         for k in ('provenance', 'pc_va', 'note'):
             if rec.get(k):
                 print(f'  {k}: {rec[k]}')
-    m = db.execute('SELECT pc, score, evidence FROM match WHERE xbe=?', (fva,)).fetchone()
+    m = db.execute('SELECT pc, score, method, evidence FROM match WHERE xbe=?',
+                   (fva,)).fetchone()
     if m:
-        print(f'  matches pc 0x{m[0]:08X} (score {m[1]:.2f}) via {m[2]}')
+        evidence = f' {m[3]}' if m[3] else ''
+        print(f'  matches pc 0x{m[0]:08X} (score {m[1]:.2f}) via {m[2]}{evidence}')
     callers = db.execute('SELECT COUNT(DISTINCT src) FROM edge WHERE tag=? AND dst=?',
                          (a.tag, fva)).fetchone()[0]
     callees = db.execute('SELECT COUNT(DISTINCT dst) FROM edge WHERE tag=? AND src=?',
@@ -970,6 +1024,104 @@ def cmd_refs(a):
         print(f"  0x{r['from']:08X} {r['type']:<16} {r.get('insn', ''):<36} {fn}")
 
 
+def cmd_body_match(a):
+    """Add exact-body and high-confidence reference matches reported by Ghidra."""
+    db = sqlite3.connect(DB_PATH)
+    schema(db)
+    ranges = {tag: (va, va + size - 1) for tag, va, size in
+              db.execute('SELECT tag, code_va, code_size FROM image')}
+    if set(ranges) != {'xbe', 'pc'}:
+        raise SystemExit('build the xbe and pc images first')
+    known = {tag: {va for (va,) in
+                   db.execute('SELECT va FROM func WHERE tag=?', (tag,))}
+             for tag in ('xbe', 'pc')}
+    pairs = {x: p for x, p in db.execute('SELECT xbe, pc FROM match')}
+    claimed = {p: x for x, p in pairs.items()}
+    cl = ghidra_client(db, ['xbe', 'pc'])
+    found = {}
+    added = []
+    conflicts = 0
+    try:
+        for kind in ('instructions', 'mnemonics'):
+            res = cl.call('correlate', tag='xbe', kind=kind,
+                          xbe_lo=hex(ranges['xbe'][0]), xbe_hi=hex(ranges['xbe'][1]),
+                          pc_lo=hex(ranges['pc'][0]), pc_hi=hex(ranges['pc'][1]))
+            rows = [r for r in res['matches']
+                    if r['xbe'] in known['xbe'] and r['pc'] in known['pc'] and
+                    r['similarity'] == 1.0 and r['confidence'] >= 10.0]
+            xcount, pcount = {}, {}
+            for r in rows:
+                xcount[r['xbe']] = xcount.get(r['xbe'], 0) + 1
+                pcount[r['pc']] = pcount.get(r['pc'], 0) + 1
+            rows = [r for r in rows if xcount[r['xbe']] == 1 and pcount[r['pc']] == 1]
+            comparable = [r for r in rows if r['xbe'] in pairs]
+            correct = sum(pairs[r['xbe']] == r['pc'] for r in comparable)
+            precision = 100.0 * correct / len(comparable) if comparable else 0.0
+            print(f'  exact {kind}: {len(rows)} mutually unique; '
+                  f'{correct}/{len(comparable)} existing pairs agree ({precision:.1f}%)')
+            for r in rows:
+                found.setdefault((r['xbe'], r['pc']), set()).add(kind)
+
+        for (x, p), kinds in found.items():
+            if x in pairs or p in claimed:
+                if pairs.get(x) != p:
+                    conflicts += 1
+                continue
+            method = 'ghidra-exact-' + '+'.join(sorted(kinds))
+            evidence = json.dumps({'similarity': 1.0, 'confidence': 10.0})
+            added.append((x, p, 1.0, method, evidence))
+            pairs[x] = p
+            claimed[p] = x
+        db.executemany('INSERT INTO match VALUES(?,?,?,?,?)', added)
+        db.commit()
+
+        # Reference correlators use the established pairs as seeds. Their raw output
+        # is noisy; on the established set, mutually best matches at these thresholds
+        # were 43/43 correct. Lower thresholds are deliberately not accepted.
+        seeds = [[hex(x), hex(p)] for x, p in pairs.items()]
+        res = cl.call('correlate', tag='xbe', kind='function-references', seeds=seeds,
+                      xbe_lo=hex(ranges['xbe'][0]), xbe_hi=hex(ranges['xbe'][1]),
+                      pc_lo=hex(ranges['pc'][0]), pc_hi=hex(ranges['pc'][1]))
+        refs = [r for r in res['matches']
+                if r['xbe'] in known['xbe'] and r['pc'] in known['pc']]
+        by_x, by_p = {}, {}
+        for r in refs:
+            by_x.setdefault(r['xbe'], []).append(r)
+            by_p.setdefault(r['pc'], []).append(r)
+
+        def unique_best(r, group):
+            rank = (r['similarity'], r['confidence'])
+            best = max((v['similarity'], v['confidence']) for v in group)
+            return rank == best and sum((v['similarity'], v['confidence']) == rank
+                                        for v in group) == 1
+
+        refs = [r for r in refs
+                if unique_best(r, by_x[r['xbe']]) and unique_best(r, by_p[r['pc']]) and
+                r['similarity'] >= 0.95 and r['confidence'] >= 250.0]
+        comparable = [r for r in refs if r['xbe'] in pairs]
+        correct = sum(pairs[r['xbe']] == r['pc'] for r in comparable)
+        precision = 100.0 * correct / len(comparable) if comparable else 0.0
+        print(f'  function references: {len(refs)} above threshold; '
+              f'{correct}/{len(comparable)} existing pairs agree ({precision:.1f}%)')
+        ref_added = []
+        for r in refs:
+            x, p = r['xbe'], r['pc']
+            if x in pairs or p in claimed:
+                continue
+            evidence = json.dumps({'similarity': r['similarity'],
+                                   'confidence': r['confidence']})
+            ref_added.append((x, p, r['similarity'],
+                              'ghidra-function-references', evidence))
+            pairs[x] = p
+            claimed[p] = x
+        db.executemany('INSERT INTO match VALUES(?,?,?,?,?)', ref_added)
+        db.commit()
+        added.extend(ref_added)
+    finally:
+        cl.close()
+    print(f'body matches: +{len(added)}, {conflicts} conflicts with existing pairs left unchanged')
+
+
 def cmd_stats(a):
     db = sqlite3.connect(DB_PATH)
     schema(db)
@@ -1062,6 +1214,9 @@ def main():
     rf.add_argument('va')
     rf.add_argument('--tag', default='xbe', choices=['xbe', 'pc'])
     rf.set_defaults(fn=cmd_refs)
+
+    bm = sub.add_parser('body-match', help='pair exact function bodies through Ghidra')
+    bm.set_defaults(fn=cmd_body_match)
 
     gy = sub.add_parser('ghidra-sync', help='apply types and names now; list what was rejected')
     gy.add_argument('--tag', nargs='+', default=['xbe', 'pc'], choices=['xbe', 'pc'])

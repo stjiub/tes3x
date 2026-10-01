@@ -57,6 +57,8 @@ python tools/tes3x_sym.py build morrowind.xbe --tag xbe       # function invento
 python tools/tes3x_sym.py build Morrowind.exe --tag pc
 python tools/tes3x_sym.py match                               # pair by shared strings
 python tools/tes3x_sym.py propagate                           # extend through the call graph
+python tools/tes3x_sym.py body-match                          # exact bodies and references in Ghidra
+python tools/tes3x_sym.py propagate                           # extend from the body matches
 python tools/tes3x_sym.py seed morrowind.xbe                  # addresses the patcher finds
 python tools/tes3x_sym.py names path/to/MWSE                  # MWSE names onto matched functions
 ```
@@ -99,6 +101,12 @@ whenever `curated.json`, `structs.json` or the generated layouts have changed, G
   that type. A method without a recorded signature is made `__thiscall` when its first
   instructions read `ECX`;
 - each `signature`, each `note` as a comment above the function, and each global's `type`.
+
+`body-match` also uses the analysed programs. It runs Ghidra's exact-instruction and
+exact-mnemonic correlators, then seeds the function-reference correlator with the established
+pairs. Exact matches must be unique on both sides. Reference matches must be mutually best, at
+least 0.95 similar and have confidence 250 or greater; those thresholds had no errors in the
+established-pair calibration set. Conflicts are reported and left unchanged.
 
 PC functions take the names, signatures and notes of their matched Xbox functions. Nothing is
 saved into the Ghidra project, which lives in `build/ghidra/` and is never committed: what a
@@ -157,12 +165,16 @@ then shows. Struct fields go into `structs.json` by hand.
    (D3D, DirectSound, Bink and the like) are left out.
 2. **String anchoring.** About 85% of the XBE's longer strings also appear in the PC build. A
    string used by exactly one function on each side pairs those two functions.
-3. **Propagation.** Matched functions that call the same number of functions in the same order
-   pair their callees, repeated until nothing new pairs.
-4. **Names.** MWSE's addresses for `Morrowind.exe` 1.6.1820 name the PC side; each matched Xbox
+3. **Pointer tables.** Already-paired slots align virtual tables. A long function-address table
+   present in both images is aligned as a sequence; only equal-length gaps between anchors pair.
+4. **Propagation.** Matched functions align callees and unique callers, repeated until nothing
+   new pairs.
+5. **Bodies and references.** Ghidra pairs unique exact instruction or mnemonic sequences, then
+   high-confidence mutually best function-reference candidates. Propagation runs again afterward.
+6. **Names.** MWSE's addresses for `Morrowind.exe` 1.6.1820 name the PC side; each matched Xbox
    function inherits the name as `matched`.
 
-About 13% of the XBE's functions match. Most of the rest are never the target of a direct call:
+About 16% of the XBE's functions match. Most of the rest are never the target of a direct call:
 about 19,700 of the 26,000 are reached only through a C++ virtual table, which the call-graph step
 cannot follow. The same limit applies to call-site hooks such as the profiler: a virtually
 dispatched function has no call site to redirect. The Xbox-only code (the XDK, FATX, the cache

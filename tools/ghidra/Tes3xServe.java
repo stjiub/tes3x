@@ -15,6 +15,10 @@ import ghidra.app.decompiler.*;
 import ghidra.app.script.GhidraScript;
 import ghidra.app.util.NamespaceUtils;
 import ghidra.app.util.parser.FunctionSignatureParser;
+import ghidra.feature.vt.api.correlator.program.*;
+import ghidra.feature.vt.api.db.VTSessionDB;
+import ghidra.feature.vt.api.main.*;
+import ghidra.feature.vt.api.util.VTOptions;
 import ghidra.framework.model.DomainFile;
 import ghidra.program.model.address.*;
 import ghidra.program.model.data.*;
@@ -135,6 +139,8 @@ public class Tes3xServe extends GhidraScript {
 					req.has("timeout") ? req.get("timeout").getAsInt() : 60);
 			case "refs":
 				return refs(p, addr(p, req.get("va").getAsString()));
+			case "correlate":
+				return correlate(req);
 			default:
 				throw new IllegalArgumentException("unknown op " + op);
 		}
@@ -469,6 +475,79 @@ public class Tes3xServe extends GhidraScript {
 		}
 		JsonObject res = new JsonObject();
 		res.add("refs", list);
+		return res;
+	}
+
+	private JsonObject correlate(JsonObject req) throws Exception {
+		Program source = programs.get("xbe");
+		Program destination = programs.get("pc");
+		String kind = req.get("kind").getAsString();
+		VTProgramCorrelatorFactory factory;
+		if (kind.equals("instructions")) {
+			factory = new ExactMatchInstructionsProgramCorrelatorFactory();
+		}
+		else if (kind.equals("mnemonics")) {
+			factory = new ExactMatchMnemonicsProgramCorrelatorFactory();
+		}
+		else if (kind.equals("function-references")) {
+			factory = new FunctionReferenceProgramCorrelatorFactory();
+		}
+		else if (kind.equals("combined-references")) {
+			factory = new CombinedFunctionAndDataReferenceProgramCorrelatorFactory();
+		}
+		else {
+			throw new IllegalArgumentException("unknown correlator " + kind);
+		}
+		AddressSet xs = new AddressSet(
+			addr(source, req.get("xbe_lo").getAsString()),
+			addr(source, req.get("xbe_hi").getAsString()));
+		AddressSet ps = new AddressSet(
+			addr(destination, req.get("pc_lo").getAsString()),
+			addr(destination, req.get("pc_hi").getAsString()));
+		VTSessionDB session = new VTSessionDB("tes3x correlate", source, destination, this);
+		JsonArray rows = new JsonArray();
+		int tx = session.startTransaction("tes3x correlate");
+		try {
+			if (req.has("seeds")) {
+				VTMatchSet manual = session.getManualMatchSet();
+				for (JsonElement el : req.getAsJsonArray("seeds")) {
+					JsonArray pair = el.getAsJsonArray();
+					Address x = addr(source, pair.get(0).getAsString());
+					Address p = addr(destination, pair.get(1).getAsString());
+					if (source.getFunctionManager().getFunctionAt(x) == null ||
+						destination.getFunctionManager().getFunctionAt(p) == null) {
+						continue;
+					}
+					VTMatchInfo info = new VTMatchInfo(manual);
+					info.setAssociationType(VTAssociationType.FUNCTION);
+					info.setSourceAddress(x);
+					info.setDestinationAddress(p);
+					info.setSourceLength(1);
+					info.setDestinationLength(1);
+					info.setSimilarityScore(new VTScore(1.0));
+					info.setConfidenceScore(new VTScore(10.0));
+					manual.addMatch(info).getAssociation().setAccepted();
+				}
+			}
+			VTOptions options = factory.createDefaultOptions();
+			VTProgramCorrelator correlator = factory.createCorrelator(
+				source, xs, destination, ps, options);
+			VTMatchSet matches = correlator.correlate(session, monitor);
+			for (VTMatch match : matches.getMatches()) {
+				JsonObject row = new JsonObject();
+				row.addProperty("xbe", match.getSourceAddress().getOffset());
+				row.addProperty("pc", match.getDestinationAddress().getOffset());
+				row.addProperty("similarity", match.getSimilarityScore().getScore());
+				row.addProperty("confidence", match.getConfidenceScore().getScore());
+				rows.add(row);
+			}
+		}
+		finally {
+			session.endTransaction(tx, true);
+			session.release(this);
+		}
+		JsonObject res = new JsonObject();
+		res.add("matches", rows);
 		return res;
 	}
 }
