@@ -387,6 +387,7 @@ OWNERS_PER_EVENT = (EVENT_DATA - 4) // OWNER_PAIR.size
 EVENT_BUSY = 21
 BUSY_SAVING = 1
 EVENT_SAVE = 22  # to a client: save into its multiplayer slot and upload it
+EVENT_BOUNTY = 30  # the player's bounty, i32: the latest of each client is kept and replayed
 # From a client after each WELCOME: its launch token (new each title launch), then the name of the
 # save that launch loaded, or "". A console not running its character's latest checkpoint is sent
 # the checkpoint as CHECKPOINT_NAME and LOAD (to a client: load that file once it has it).
@@ -1742,6 +1743,7 @@ def serve(args):
     deaths = {}  # refid -> the client that reported it; replayed to each joining client
     # client -> [parts of its latest whole equipment set, parts of the set arriving]
     equipment = {}
+    bounties = {}
     if args.bot_equip is not None:
         equipment[BOT_ID] = [pack_equipment([i for i in args.bot_equip.split(",") if i]), []]
     actors = {}  # refid -> (reporting client, cell, ACTOR bytes), the latest from an authority
@@ -1781,6 +1783,8 @@ def serve(args):
     bot_statuses = list(args.bot_status)
     bot_affects = list(args.bot_affect)
     bot_spells = []
+    bot_bounties = [(float(at), int(value)) for value, _, at in
+                    (s.rpartition("@") for s in args.bot_bounty)]
     bot_shots = [(float(at), ammo) for ammo, _, at in (s.rpartition("@") for s in args.bot_shoot)]
     for kind, specs in ((EVENT_SPELL, args.bot_spell), (EVENT_CAST, args.bot_cast)):
         for spec in specs:
@@ -2347,6 +2351,10 @@ def serve(args):
                 print(f"{stamp} client {client.id} is back after {now - client.busy:.1f} s",
                       flush=True)
                 client.busy = None
+        if kind == EVENT_BOUNTY and len(data) >= 4:
+            bounties[client.id] = data[:4]
+            print(f"{stamp} client {client.id} bounty {struct.unpack_from('<i', data)[0]}",
+                  flush=True)
         if kind == EVENT_EQUIPMENT and len(data) >= 2:
             sets = equipment.setdefault(client.id, [[], []])
             if data[0] == 0:
@@ -2759,6 +2767,9 @@ def serve(args):
                         client.rel.queue(EVENT_EQUIPMENT, origin, part)
             for data in pack_weather(weather):
                 client.rel.queue(EVENT_WEATHER, 0, data)
+            for origin, data in bounties.items():
+                if origin != client.id:
+                    client.rel.queue(EVENT_BOUNTY, origin, data)
             if sending and (client.bulk is None or client.bulk.status != 3):
                 client.bulk = Outgoing(*sending)
                 client.rel.queue(EVENT_OFFER, 0, client.bulk.offer())
@@ -2925,6 +2936,10 @@ def serve(args):
             for stream in streams.values():
                 if stream.dirty:
                     stream.save()
+        for spec in [b for b in bot_bounties if args.bot and window(f"{b[0]}:", now)]:
+            bot_bounties.remove(spec)
+            print(f"{time.strftime('%H:%M:%S')} bot bounty {spec[1]}", flush=True)
+            broadcast_event(BOT_ID, EVENT_BOUNTY, struct.pack("<i", spec[1]), now)
         if args.bot and bot["anchor"] and window(args.bot_busy, now) != bot["busy"]:
             bot["busy"] = not bot["busy"]
             print(f"{time.strftime('%H:%M:%S')} bot {'saves' if bot['busy'] else 'is back'}",
@@ -3339,6 +3354,10 @@ def main(argv=None):
     p.add_argument("--bot-owns", metavar="START:END",
                    help="the bot is the authority for its cells from START to END seconds after it "
                         "first appears (END may be left out)")
+    p.add_argument("--bot-bounty", action="append", default=[], metavar="VALUE@SECONDS",
+                   help="the bot's bounty becomes VALUE this long after it first appears; 0 after "
+                        "a bounty ends the fights of actors that would not attack it otherwise "
+                        "(repeatable)")
     p.add_argument("--bot-busy", metavar="START:END",
                    help="the bot saves from START to END seconds after it first appears: it sends "
                         "BUSY, stops its states and gives up the actors it owns")

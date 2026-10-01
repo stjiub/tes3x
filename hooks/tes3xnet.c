@@ -4124,6 +4124,8 @@ static void combat_take(u8 *mobile, void *ref, u32 refid, u32 from)
     tes3x_log_hex3("net.combat_taken", refid, id, from);
 }
 
+static void peace_check(const u8 *mobile, void *ref, u32 refid);
+
 /* Once per frame in the world: follow, send or hold each actor the AI planners hold. */
 static void authority_frame(const u8 *player, const u8 *state)
 {
@@ -4178,6 +4180,7 @@ static void authority_frame(const u8 *player, const u8 *state)
         if (!send)
             continue;
         hostile_check(mobile, ref, refid);
+        peace_check(mobile, ref, refid);
         ghost_fight_log(mobile, ref, refid);
         a = out + 4 + n * ACTOR_BYTES;
         put32le(a, refid);
@@ -4553,6 +4556,20 @@ static void cast_aim_frame(void)
         cast_aim_end();
 }
 
+/* The caster's three layer groups and keys as the stream sends them (the player's, in first
+ * person, from the model it runs), for comparing a cast's animation on both consoles. */
+static void cast_anim_log(const char *what, const u8 *caster)
+{
+    u8 anim[ANIM_BYTES];
+
+    if (caster == player_reference())
+        player_anim_capture(caster, anim);
+    else
+        anim_capture(caster, anim);
+    tes3x_log_hex3(what, (u32)anim[0] | (u32)anim[1] << 8 | (u32)anim[2] << 16,
+                   (u32)anim[4] | (u32)anim[5] << 8 | (u32)anim[6] << 16, 0);
+}
+
 static void __cdecl cast_bolt_hook(u8 *instance, int effect, int index, int count)
 {
     const u8 *caster = *(const u8 *const *)(instance + INSTANCE_CASTER), *target;
@@ -4583,6 +4600,7 @@ static void __cdecl cast_bolt_hook(u8 *instance, int effect, int index, int coun
     casts_sent++;
     log_text("net.cast_sent", (const char *)data + SPELL_BYTES);
     tes3x_log_hex3("net.cast_at", client, refid, get32le(data));
+    cast_anim_log("net.cast_anim_sent", caster);
 }
 
 static void affect_send(const u8 *instance, const u8 *target, u32 effect);
@@ -4788,6 +4806,7 @@ static void cast_event(const struct event *e)
     }
     casts_replayed++;
     tes3x_log_hex3("net.cast_replayed", (u32)caster, (u32)target, 0);
+    cast_anim_log("net.cast_anim_here", caster);
 }
 
 static void spell_stat(void)
@@ -7357,6 +7376,102 @@ static void status_event(const struct event *e)
     tes3x_log_hex3("net.status", refid, e->origin, (u32)statuses[i].v[4]);
 }
 
+/* Bounties. Each console sends its player's bounty when it changes, and the server replays the
+ * latest of each player to a joiner. When a player's bounty drops to nothing (a fine paid, a
+ * crime forgiven), the actors run here that fight that player's ghost and would not attack on
+ * their record's Fight stop, as the criminal's own console stops its guards. */
+#define EVENT_BOUNTY 30u /* the player's bounty, i32 */
+#define BOUNTY_EVERY_US 1000000u
+#define PEACE_US 3000000u
+
+typedef int(__attribute__((thiscall)) *fn_get_bounty)(const void *mobile_player);
+
+static struct {
+    u32 client, peace_until;
+    int bounty;
+} bounties[PEERS];
+static int bounty_sent = -1;
+static u32 bounty_checked, bounties_received, peace_stops;
+
+static void bounty_frame(void)
+{
+    const u8 *ref = player_reference(), *mobile;
+    u32 now = now_us();
+    int bounty;
+    u8 data[4];
+
+    if (ses.state != SESSION_JOINED) {
+        bounty_sent = -1;
+        return;
+    }
+    if (now - bounty_checked < BOUNTY_EVERY_US || !plausible(ref) ||
+        !plausible(mobile = ref_mobile(ref)))
+        return;
+    bounty_checked = now;
+    bounty = ((fn_get_bounty)TES3X_NET_GET_BOUNTY)(mobile);
+    if (bounty == bounty_sent)
+        return;
+    put32le(data, (u32)bounty);
+    if (!event_queue(EVENT_BOUNTY, data, sizeof(data))) {
+        tes3x_log("net.event_full", EVENT_BOUNTY);
+        return;
+    }
+    bounty_sent = bounty;
+    tes3x_log_hex3("net.bounty_sent", (u32)bounty, 0, 0);
+}
+
+static void bounty_event(const struct event *e)
+{
+    u32 i, free = PEERS;
+    int bounty, old;
+
+    if (e->length < 4 || !e->origin || e->origin == ses.client)
+        return;
+    bounty = (int)get32le(e->data);
+    for (i = 0; i < PEERS && bounties[i].client != e->origin; i++)
+        if (!bounties[i].client && free == PEERS)
+            free = i;
+    if (i == PEERS) {
+        if (free == PEERS)
+            return;
+        i = free;
+        bounties[i].client = e->origin;
+        bounties[i].bounty = 0;
+    }
+    old = bounties[i].bounty;
+    bounties[i].bounty = bounty;
+    bounties_received++;
+    if (old > 0 && bounty <= 0)
+        bounties[i].peace_until = now_us() + PEACE_US;
+    tes3x_log_hex3("net.bounty", e->origin, (u32)bounty, (u32)old);
+}
+
+static void peace_check(const u8 *mobile, void *ref, u32 refid)
+{
+    u32 client = combat_target(mobile), i;
+    float fight;
+
+    if (!client || client >= PLAYER_IDS || client == ses.client)
+        return;
+    for (i = 0; i < PEERS; i++)
+        if (bounties[i].client == client && (int)(bounties[i].peace_until - now_us()) > 0)
+            break;
+    if (i == PEERS)
+        return;
+    fight = (float)record_ai(ref, AI_FIGHT, *(const int *)(mobile + MOBILE_FIGHT)) +
+            FIGHT_DISP_MULT * (float)(50 - base_disposition(ref));
+    if (fight + FIGHT_DISTANCE_BASE >= FIGHT_ATTACK)
+        return;
+    run_script_on("StopCombat", ref);
+    peace_stops++;
+    tes3x_log_hex3("net.peace", refid, client, 0);
+}
+
+static void bounty_stat(void)
+{
+    tes3x_log_hex3("net.bounties", (u32)bounty_sent, bounties_received, peace_stops);
+}
+
 static void status_stat(void)
 {
     tes3x_log_hex3("net.statuses", statuses_sent, statuses_received, statuses_applied);
@@ -9908,6 +10023,8 @@ static void event_handle(const struct event *e)
         affect_event(e);
     } else if (e->kind == EVENT_STATUS) {
         status_event(e);
+    } else if (e->kind == EVENT_BOUNTY) {
+        bounty_event(e);
     } else if (e->kind == EVENT_OFFER) {
         bulk_offer(e);
     } else if (e->kind == EVENT_BUSY) {
@@ -10228,6 +10345,7 @@ void tes3x_net_frame(void)
     if (!net.up || !ref)
         return;
     clock_frame();
+    bounty_frame();
     player_state(ref, state);
     if (!logged_player) {
         const u8 *base = *(const u8 **)(ref + 0x28);
@@ -10299,6 +10417,7 @@ int tes3x_net_command(const char *text)
         authority_stat();
         spell_stat();
         status_stat();
+        bounty_stat();
         shot_stat();
         objects_stat();
         spawns_stat();

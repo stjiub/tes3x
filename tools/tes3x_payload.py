@@ -83,6 +83,7 @@ AI_STEP_SLOTS = 3
 PROJECTILE_ACTOR_HIT = 0x00192610
 HIT_ROLL = 0x0017B770
 NOCK = 0x00158620
+GET_BOUNTY = 0x00189E40  # MobilePlayer::getBounty: mov ecx, [ecx+0x598]; push "bounty"; call
 ACTIVATION_TARGET = 0x00096110  # Game::CheckPlayerActivationTarget, from Game::Update only
 REF_MODIFIED = 0x0012A940  # Reference::setObjectModified, in the Reference vtable only
 # LeveledCreature's spawn for a placeholder reference, in its vtable only; what it calls to roll
@@ -396,6 +397,10 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         define("NET_AI_STEP", hexva(ai_step))
         define("NET_AI_STEP_SLOTS", "{" + ",".join(hexva(s) for s in slots) + "}")
         define("NET_NOCK", address("NOCK", NOCK))
+        get_bounty = int(address("GET_BOUNTY", GET_BOUNTY), 16)
+        if bytes(image.data[image.va_to_off(get_bounty):][:7]) != bytes.fromhex("8b899805000068"):
+            raise PayloadError(f"get bounty {hexva(get_bounty)}: not MobilePlayer::getBounty")
+        define("NET_GET_BOUNTY", hexva(get_bounty))
         define("NET_HIT_ROLL", hexva(roll))
         define("NET_SHOT_ROLL_SITES", "{" + hexva(sites[0]) + "}")
         target = int(address("ACTIVATION_TARGET", ACTIVATION_TARGET), 16)
