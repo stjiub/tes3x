@@ -18,7 +18,16 @@
     },
     {
       "name": "TES3::NPC",
-      "note": "Xbox matches the PC at name (+0x70) and level (+0x7C, short; SetLevel on the player writes it), and at aiConfig (+0xE0: fight +2, alarm +4; an Imperial Guard reads fight 30)."
+      "note": "Xbox matches the PC at name (+0x70), level (+0x7C, short; SetLevel on the player writes it), spellList (+0xC4) and aiConfig (+0xE0: fight +2, alarm +4; an Imperial Guard reads fight 30). SpellList's IteratedList head is at NPC +0xD0; each node has next at +4 and a TES3::Spell* at +8.",
+      "fields": [
+        {
+          "offset": "0xC4",
+          "name": "spellList",
+          "type": "TES3::SpellList",
+          "confidence": "verified",
+          "provenance": "xemu spells-a1/spells-b1: walking the player NPC's list found calm humanoid; AddSpell and RemoveSpell changed the list"
+        }
+      ]
     },
     {
       "name": "TES3::Dialogue",

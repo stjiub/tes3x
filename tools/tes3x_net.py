@@ -314,7 +314,7 @@ def ping(args):
 
 
 T3MP = struct.Struct("<4sBBHIIIII")  # magic, version, type, 0, session, seq, ack, time, echo
-T3MP_VERSION = 16
+T3MP_VERSION = 17
 HELLO, WELCOME, HEARTBEAT, BYE, STATE, PEER, GONE, EVENTS, REFUSE, CLOCK, ACTORS = range(1, 12)
 # On the wire every packet but the handshake is SEALED: OUTER in the clear (the AEAD's associated
 # data), then INNER and the body sealed under the session key with seq as the nonce.
@@ -400,17 +400,21 @@ EVENT_GAME, EVENT_LOAD = 23, 24
 # parts, item id, then entries as in CONTENTS: every stack of that item, none once it is gone),
 # PLAYER_LEVEL (LEVEL), PLAYER_SKILLS (count, then SKILL each), PLAYER_JOURNAL (count, then
 # (index u16, quest id) each) or PLAYER_VITALS (VITALS). To a client only: PLAYER_PLACE (a
-# STATE_BODY: where the player last was, which the server takes from STATE), the kept state, then PLAYER_READY (1 when it was
-# replayed over the checkpoint, 0 to have the console send all of it). The console sends nothing
-# before READY.
+# STATE_BODY: where the player last was, which the server takes from STATE), PLAYER_SPELLS (mode,
+# part, parts, ids ending in zero), the kept state, then PLAYER_READY (1 when it was replayed over
+# the checkpoint, 0 to have the console send all of it). The console sends nothing before READY.
 EVENT_PLAYER = 25
 PLAYER_ITEMS, PLAYER_LEVEL, PLAYER_SKILLS, PLAYER_JOURNAL, PLAYER_READY = 1, 2, 3, 4, 5
 PLAYER_VITALS, PLAYER_PLACE = 6, 7
 # Death while joined: the console sends PLAYER_DEATH instead of offering its last save, is answered
 # PLAYER_RESPAWN (RESPAWN: delay in ms, RESPAWN_*, gold to lose) and sends PLAYER_ALIVE once
-# resurrected at the closest marker. A character that died and was not back is respawned again
-# after the replay of its next launch.
+# resurrected at the closest marker. The server relays DEATH and ALIVE to the other players so
+# their ghosts fall and rise. A character that died and was not back is respawned again after the
+# replay of its next launch.
 PLAYER_DEATH, PLAYER_RESPAWN, PLAYER_ALIVE = 8, 9, 10
+PLAYER_SPELLS = 11
+PLAYER_BOUNTY = 12  # from the server: the character's last streamed crime bounty, i32
+SPELLS_SNAPSHOT, SPELLS_ADD, SPELLS_REMOVE = 0, 1, 2
 RESPAWN = struct.Struct("<IBI")
 RESPAWN_PLACES = {"temple": 0, "shrine": 1, "nearest": 2}
 PLACE_HOLD = 15.0  # seconds a replayed place waits for the console to arrive before STATE counts
@@ -1034,13 +1038,16 @@ def describe_level(body):
 
 class PlayerStream:
     """One character's state as its console streamed it: each item's stacks, the level block,
-    each skill and each quest's indices in order. It holds what changed since the character's
-    first launch on this server, so it replays over whichever of its checkpoints a console loads."""
+    each skill, each quest's indices in order and its known spells. It holds what changed since
+    the character's first launch on this server, so it replays over whichever checkpoint a
+    console loads."""
 
     def __init__(self, path):
         self.path = path
         self.items, self.skills, self.journal, self.level = {}, {}, {}, None
+        self.spells = None
         self.vitals = self.place = None
+        self.bounty = None
         self.dead = False  # died and not yet back
         self.arriving = None  # (item id, entries so far, next part)
         self.dirty = False
@@ -1056,11 +1063,15 @@ class PlayerStream:
         self.vitals = kept.get("vitals")
         self.place = bytes.fromhex(kept["place"]) if kept.get("place") else None
         self.dead = kept.get("dead", False)
+        self.spells = kept.get("spells")
+        self.bounty = kept.get("bounty")
 
     def reset(self):
         """A new character: nothing streamed so far belongs to it."""
         self.items, self.skills, self.journal, self.level = {}, {}, {}, None
+        self.spells = None
         self.vitals = self.place = self.arriving = None
+        self.bounty = None
         self.dead = False
         self.dirty = True
 
@@ -1129,6 +1140,21 @@ class PlayerStream:
                 return None
             self.vitals, self.dirty = vitals, True
             return "now health {:.0f}, magicka {:.0f}, fatigue {:.0f}".format(*vitals)
+        if kind == PLAYER_SPELLS and len(data) >= 4 and data[1] in (SPELLS_ADD, SPELLS_REMOVE):
+            names = unpack_equipment(data[2:])
+            if not names:
+                if self.spells is None and data[1] == SPELLS_ADD:
+                    self.spells, self.dirty = [], True
+                    return "knows no spells"
+                return None
+            known = {name.lower(): name for name in (self.spells or [])}
+            if data[1] == SPELLS_ADD:
+                known.update((name.lower(), name) for name in names)
+            else:
+                for name in names:
+                    known.pop(name.lower(), None)
+            self.spells, self.dirty = list(known.values()), True
+            return ("learned " if data[1] == SPELLS_ADD else "forgot ") + ", ".join(names)
         return None
 
     def replay(self):
@@ -1141,6 +1167,11 @@ class PlayerStream:
             events.append(bytes([PLAYER_VITALS]) + VITALS.pack(*self.vitals))
         if self.place and not self.dead:  # the dead go to a marker instead
             events.append(bytes([PLAYER_PLACE]) + self.place)
+        if self.spells is not None:
+            events += [bytes([PLAYER_SPELLS, SPELLS_SNAPSHOT]) + part
+                       for part in pack_equipment(self.spells)]
+        if self.bounty is not None:
+            events.append(bytes([PLAYER_BOUNTY]) + struct.pack("<i", self.bounty))
         skills = sorted(self.skills.items())
         per = (EVENT_DATA - 2) // SKILL.size
         for i in range(0, len(skills), per):
@@ -1157,6 +1188,8 @@ class PlayerStream:
                                "skills": {str(k): v for k, v in self.skills.items()},
                                "journal": self.journal, "vitals": self.vitals,
                                "place": self.place.hex() if self.place else None,
+                               "spells": self.spells,
+                               "bounty": self.bounty,
                                "dead": self.dead})
         self.dirty = False
 
@@ -1633,6 +1666,7 @@ class Client:
         self.state = None
         self.last = time.time()
         self.alive = False
+        self.dead = False  # its player died and has not respawned; relayed to peers
         self.rel = Reliable()
         self.events = 0
         self.known = {}  # cell -> the authority this client was told
@@ -1928,7 +1962,8 @@ def serve(args):
 
     bot = {"anchor": None, "next": 0.0, "start": time.time(), "said": 0.0, "line": 0,
            "anchored": None, "state": None, "breaks": [], "held": 0, "hit": False,
-           "killed": False, "mirror": None, "hit_player": False, "echo": None, "busy": False}
+           "killed": False, "mirror": None, "hit_player": False, "echo": None, "busy": False,
+           "dead": False}
 
     def bot_anchor(state):
         """The bot circles where the first client entered the world, and follows it to a new
@@ -2160,10 +2195,18 @@ def serve(args):
     def on_player_death(client, alive, stamp, now):
         stream = player_stream(client) if client.synced else None
         name = client.character or f"client {client.id}"
+        client.dead = not alive
         if stream:
             stream.dead, stream.dirty = not alive, True
+        life = bytes([PLAYER_ALIVE if alive else PLAYER_DEATH])
+        for other in clients.values():
+            if other.in_world and other is not client:
+                other.rel.queue(EVENT_PLAYER, client.id, life)
         if alive:
             print(f"{stamp} client {client.id} ({name}) is back", flush=True)
+            for other in clients.values():
+                if other.in_world and other is not client:
+                    flush(other, now)
             return
         lost = respawn(client, args.respawn_delay, now)
         print(f"{stamp} client {client.id} ({name}) died: respawns at the {args.respawn} marker "
@@ -2453,8 +2496,12 @@ def serve(args):
                       flush=True)
                 client.busy = None
         if kind == EVENT_BOUNTY and len(data) >= 4:
+            bounty = struct.unpack_from("<i", data)[0]
             bounties[client.id] = data[:4]
-            print(f"{stamp} client {client.id} bounty {struct.unpack_from('<i', data)[0]}",
+            stream = player_stream(client) if client.synced else None
+            if stream and stream.bounty != bounty:
+                stream.bounty, stream.dirty = bounty, True
+            print(f"{stamp} client {client.id} bounty {bounty}",
                   flush=True)
         if kind == EVENT_EQUIPMENT and len(data) >= 2:
             sets = equipment.setdefault(client.id, [[], []])
@@ -2878,6 +2925,9 @@ def serve(args):
             for origin, data in bounties.items():
                 if origin != client.id:
                     client.rel.queue(EVENT_BOUNTY, origin, data)
+            for other in clients.values():
+                if other is not client and other.in_world and other.dead:
+                    client.rel.queue(EVENT_PLAYER, other.id, bytes([PLAYER_DEATH]))
             if sending and (client.bulk is None or client.bulk.status != 3):
                 client.bulk = Outgoing(*sending)
                 client.rel.queue(EVENT_OFFER, 0, client.bulk.offer())
@@ -3088,6 +3138,12 @@ def serve(args):
             print(f"{time.strftime('%H:%M:%S')} bot {'saves' if bot['busy'] else 'is back'}",
                   flush=True)
             broadcast_event(BOT_ID, EVENT_BUSY, bytes([BUSY_SAVING if bot["busy"] else 0]), now)
+        if args.bot and bot["anchor"] and window(args.bot_dead, now) != bot["dead"]:
+            bot["dead"] = not bot["dead"]
+            print(f"{time.strftime('%H:%M:%S')} bot {'dies' if bot['dead'] else 'respawns'}",
+                  flush=True)
+            broadcast_event(BOT_ID, EVENT_PLAYER,
+                            bytes([PLAYER_DEATH if bot["dead"] else PLAYER_ALIVE]), now)
         if args.bot and bot["anchor"] and now >= bot["next"] and not bot["busy"]:
             bot["next"] = now + 1 / args.bot_rate
             bot_step(now)
@@ -3514,6 +3570,8 @@ def main(argv=None):
     p.add_argument("--bot-busy", metavar="START:END",
                    help="the bot saves from START to END seconds after it first appears: it sends "
                         "BUSY, stops its states and gives up the actors it owns")
+    p.add_argument("--bot-dead", metavar="START:END",
+                   help="the bot falls dead from START to END seconds after it first appears")
     p.add_argument("--bot-shift", type=float, default=128,
                    help="as the authority, the bot places each actor this many units east of its "
                         "last reported position")

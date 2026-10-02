@@ -275,6 +275,9 @@ class ServerTests(unittest.TestCase):
         place = net.STATE_BODY.pack(net.IN_WORLD | net.INTERIOR, 100.0, 200.0, 30.0, 1.5,
                                     b"Arrille's Tradehouse")
         first.send(net.STATE, place + bytes(net.ANIM_BYTES))
+        first.send(net.EVENTS, net.pack_events(0, [
+            (seq, net.EVENT_BOUNTY, 0, struct.pack('<i', 4321))]))
+        seq += 1
         time.sleep(0.3)
         player(first, seq, *net.pack_items('Gold_001', [[150, 0, 0, 0]]),
                *net.pack_items('iron longsword', []),
@@ -303,6 +306,7 @@ class ServerTests(unittest.TestCase):
         self.assertEqual([(i[2], i[3]) for i in items], [('Gold_001', [[150, 0, 0, 0]])])
         self.assertIn(bytes([net.PLAYER_LEVEL]) + level, replay)
         self.assertIn(bytes([net.PLAYER_PLACE]) + place, replay)
+        self.assertIn(bytes([net.PLAYER_BOUNTY]) + struct.pack('<i', 4321), replay)
         vitals = bytes([net.PLAYER_VITALS]) + net.VITALS.pack(55.0, 60.0, 180.0)
         self.assertGreater(replay.index(vitals), replay.index(bytes([net.PLAYER_LEVEL]) + level))
         self.assertIn(bytes([net.PLAYER_SKILLS, 1]) + net.SKILL.pack(5, 42.0, 0.5), replay)
@@ -316,6 +320,7 @@ class ServerTests(unittest.TestCase):
         while not stream.exists() and time.time() < end:
             time.sleep(0.2)
         self.assertEqual(net.PlayerStream(str(stream)).items, {'Gold_001': [[150, 0, 0, 0]]})
+        self.assertEqual(net.PlayerStream(str(stream)).bounty, 4321)
 
     def test_the_main_menu_gets_no_world_only_the_choice(self):
         world = Path(tempfile.mkdtemp())
@@ -351,12 +356,21 @@ class ServerTests(unittest.TestCase):
         self.events(first, player)
         first.send(net.EVENTS, net.pack_events(0, [
             (3, net.EVENT_PLAYER, 0, net.pack_items('Gold_001', [[200, 0, 0, 0]])[0]),
-            (4, net.EVENT_PLAYER, 0, bytes([net.PLAYER_DEATH]))]))
+            (4, net.EVENT_PLAYER, 0, bytes([net.PLAYER_SPELLS, net.SPELLS_ADD, 0, 1])
+             + b'fire bite\0'),
+            (5, net.EVENT_PLAYER, 0, bytes([net.PLAYER_DEATH]))]))
         kind_wanted = [net.PLAYER_RESPAWN]
         respawn = [d for k, d in self.events(first, player) if player(k, d)][0]
         self.assertEqual(net.RESPAWN.unpack(respawn[1:]), (3000, 0, 50))
-        notice = self.events(second, lambda kind, _: kind == net.EVENT_TEXT)[-1][1]
+        seen = self.events(second, lambda kind, _: kind in (net.EVENT_PLAYER, net.EVENT_TEXT))
+        self.assertIn((net.EVENT_PLAYER, bytes([net.PLAYER_DEATH])), seen)
+        notice = [data for kind, data in seen if kind == net.EVENT_TEXT][-1]
         self.assertEqual(notice, b'Nerevar has died.')
+
+        late = self.client(3)
+        late.join()
+        replay = self.events(late, lambda kind, _: kind == net.EVENT_PLAYER)
+        self.assertIn((net.EVENT_PLAYER, bytes([net.PLAYER_DEATH])), replay)
 
         kept = (self.character(world) / 'mp-hero.ess').read_bytes()
         name = net.CHECKPOINT_NAME.format(int.from_bytes(
@@ -365,16 +379,22 @@ class ServerTests(unittest.TestCase):
         again.session ^= 2
         again.join()
         self.game(again, 1, 8, name)
-        respawn = [d for k, d in self.events(again, player) if player(k, d)][0]
+        replay = self.events(again, player)
+        respawn = [d for k, d in replay if player(k, d)][0]
         self.assertEqual(net.RESPAWN.unpack(respawn[1:])[0], 0)
+        self.assertIn((net.EVENT_PLAYER, bytes([net.PLAYER_SPELLS, net.SPELLS_SNAPSHOT, 0, 1])
+                       + b'fire bite\0'), replay)
         again.send(net.EVENTS, net.pack_events(again.delivered, [
             (2, net.EVENT_PLAYER, 0, bytes([net.PLAYER_ALIVE]))]))
+        alive = self.events(second, lambda kind, _: kind == net.EVENT_PLAYER)
+        self.assertIn((net.EVENT_PLAYER, bytes([net.PLAYER_ALIVE])), alive)
         stream = self.character(world) / net.STREAM_NAME
         end = time.time() + 5
         while time.time() < end and (not stream.exists() or
                                      net.PlayerStream(str(stream)).dead):
             time.sleep(0.2)
         self.assertFalse(net.PlayerStream(str(stream)).dead)
+        self.assertEqual(net.PlayerStream(str(stream)).spells, ['fire bite'])
 
     def test_a_new_character_is_made_listed_and_chosen(self):
         world = Path(tempfile.mkdtemp())
@@ -468,6 +488,12 @@ class ServerTests(unittest.TestCase):
         events = net.pack_journal(quests)
         self.assertTrue(all(len(e) <= net.EVENT_DATA for e in events))
         self.assertEqual([q for e in events for q in net.unpack_journal(e)], quests)
+        self.assertEqual(stream.take(bytes([net.PLAYER_SPELLS, net.SPELLS_ADD, 0, 1])
+                                     + b'fire bite\0calm humanoid\0'),
+                         'learned fire bite, calm humanoid')
+        self.assertEqual(stream.spells, ['fire bite', 'calm humanoid'])
+        stream.take(bytes([net.PLAYER_SPELLS, net.SPELLS_REMOVE, 0, 1]) + b'FIRE BITE\0')
+        self.assertEqual(stream.spells, ['calm humanoid'])
 
     def admin(self, port, *words):
         run = subprocess.run([sys.executable, str(NET), 'admin', '--port', str(port), *words],

@@ -271,7 +271,7 @@ struct descriptor {
  * session and seq in the clear (T3MP_OUTER, the AEAD's associated data) and seals the real type,
  * ack, times and body under the session's key, seq being the nonce. The receiver rebuilds the
  * T3MP_HEADER layout after opening it. */
-#define T3MP_VERSION 16u
+#define T3MP_VERSION 17u
 #define T3MP_HEADER 28u
 #define T3MP_OUTER 16u
 #define T3MP_INNER 16u
@@ -2698,8 +2698,13 @@ static struct {
     u8 *ref;
     u32 look;  /* the equipment generation it wears */
     u32 armed; /* its health is set to GHOST_HEALTH: a drop from there is a hit */
+    u32 dead;  /* 0 alive, 1 dead, 2 not yet reconciled with the server */
 } ghosts[PEERS];
 static u32 ghosts_parked, ghost_settle;
+static struct {
+    u32 client, dead;
+} ghost_lives[PEERS];
+static u32 ghost_deaths, ghost_respawns;
 __attribute__((weak)) int _fltused; /* tes3xscript.c may define it too */
 
 /* With ref, the text runs on that reference, as on the console's selected one. */
@@ -2767,6 +2772,15 @@ static void ghost_command(u32 i, const char *verb, int value, const char *tail)
 {
     char line[96];
     char *p = put_text(put_int(put_text(put_ghost(line, i), verb), value), tail);
+
+    *p = 0;
+    run_script(line);
+}
+
+static void ghost_action(u32 i, const char *verb)
+{
+    char line[64];
+    char *p = put_text(put_ghost(line, i), verb);
 
     *p = 0;
     run_script(line);
@@ -3065,6 +3079,8 @@ static int near(const struct pose *p, const struct pose *local)
 #define EVENT_EQUIPMENT 7u
 #define EVENT_WEATHER 8u /* the weather section */
 #define EVENT_PLAYER_HIT 9u /* attacker refid (0: a player), victim client, health, fatigue */
+#define PLAYER_DEATH 8u     /* to server and peers: the player died */
+#define PLAYER_ALIVE 10u    /* to server and peers: the player respawned */
 #define EQUIP_ITEMS 24u
 #define EQUIP_ID 32u
 #define EQUIP_PERIOD_US 500000u
@@ -3302,6 +3318,42 @@ static void ghost_health(u32 i, u8 *ref)
     ghosts[i].armed = 1;
 }
 
+static int ghost_life_dead(u32 client)
+{
+    u32 i;
+
+    for (i = 0; i < PEERS; i++)
+        if (ghost_lives[i].client == client)
+            return ghost_lives[i].dead != 0;
+    return 0;
+}
+
+/* PLAYER_DEATH and PLAYER_ALIVE relayed by the server carry the player as their origin. The
+ * state is kept before a PEER packet gives that player a ghost slot, so late-join replay works. */
+static void ghost_life_event(const struct event *e)
+{
+    u32 i, empty = PEERS;
+    int dead;
+
+    if (!e->origin || e->length < 1 ||
+        (e->data[0] != PLAYER_DEATH && e->data[0] != PLAYER_ALIVE))
+        return;
+    dead = e->data[0] == PLAYER_DEATH;
+    for (i = 0; i < PEERS; i++) {
+        if (ghost_lives[i].client == e->origin)
+            break;
+        if (!ghost_lives[i].client && empty == PEERS)
+            empty = i;
+    }
+    if (i == PEERS)
+        i = empty;
+    if (i == PEERS)
+        return;
+    ghost_lives[i].client = e->origin;
+    ghost_lives[i].dead = dead;
+    tes3x_log_hex3("net.ghost_life", e->origin, dead, e->seq);
+}
+
 /* Another console's ghost of this player was hit there: the damage as the engine applies a blow,
  * with its sounds, and the stun test, whose flinch the ghost there mirrors. */
 static void player_hit_event(const struct event *e)
@@ -3334,12 +3386,14 @@ static void ghost_update(u32 i, const struct pose *local)
     u32 client = peers[i].client;
     u8 *ref, older[ANIM_BYTES];
     float frac;
+    int dead;
 
     if (client != ghosts[i].client) {
         if (ghosts[i].placed)
             ghost_park(i);
         ghosts[i].client = client;
         ghosts[i].look = 0;
+        ghosts[i].dead = 2;
         if (client)
             tes3x_log_hex3("net.ghost", i + 1, client, 0);
     }
@@ -3368,6 +3422,18 @@ static void ghost_update(u32 i, const struct pose *local)
         ghosts[i].heading = p.heading;
         ghost_moves++;
     }
+    dead = ghost_life_dead(client);
+    if (ghosts[i].dead != (u32)dead) {
+        ghost_action(i, dead ? "Kill" : "Resurrect");
+        ghosts[i].dead = dead;
+        ghosts[i].armed = 0;
+        if (dead)
+            ghost_deaths++;
+        else
+            ghost_respawns++;
+    }
+    if (dead)
+        return;
     ghost_health(i, ref);
     equipment_apply(i, ref);
     stance_apply(ref, p.flags);
@@ -4095,6 +4161,10 @@ static void authority_session(void)
         remote_holds[i].release = 1;
     talk_refid = 0;
     death_count = 0; /* the server replays its deaths after WELCOME */
+    for (i = 0; i < PEERS; i++) {
+        ghost_lives[i].client = 0;
+        ghost_lives[i].dead = 0;
+    }
 }
 
 typedef void(__attribute__((thiscall)) *fn_start_combat)(void *mobile, void *target);
@@ -7455,6 +7525,8 @@ static struct {
 } bounties[PEERS];
 static int bounty_sent = -1;
 static u32 bounty_checked, bounties_received, peace_stops;
+static u32 player_mode; /* 3 once the checkpoint's player-state replay is complete */
+static u32 player_welcome, player_bounty_replayed;
 
 static void bounty_frame(void)
 {
@@ -7467,6 +7539,8 @@ static void bounty_frame(void)
         bounty_sent = -1;
         return;
     }
+    if (player_mode != 3 || player_welcome != ses.welcomes)
+        return;
     if (now - bounty_checked < BOUNTY_EVERY_US || !plausible(ref) ||
         !plausible(mobile = ref_mobile(ref)))
         return;
@@ -9642,7 +9716,7 @@ static void chargen_stat(void)
 
 /* The player's own state, streamed so that a crash loses only what the server has not seen since
  * the checkpoint. Once a second the console compares its inventory (per item object), level,
- * attributes, skills and journal with what it last sent and sends the changes as PLAYER events;
+ * attributes, skills, journal and known spells with what it last sent and sends the changes as PLAYER events;
  * the server keeps the latest of each per character. Current health, magicka and fatigue go out
  * only on a change of a point, or for fatigue of FATIGUE_STEP, so regeneration stays quiet. When a launch runs the character's
  * checkpoint the server sends them back and then READY. Nothing goes out before READY, so a
@@ -9655,6 +9729,11 @@ static void chargen_stat(void)
 #define PLAYER_READY 5u   /* from the server: 1 once it replayed what it keeps, 0 to send it all */
 #define PLAYER_VITALS 6u  /* current health, magicka, fatigue as f32 */
 #define PLAYER_PLACE 7u   /* from the server: where the player last was, as STATE's first bytes */
+#define PLAYER_SPELLS 11u /* mode, part, parts, then spell ids ending in zero */
+#define PLAYER_BOUNTY 12u /* from the server: the character's last bounty as i32 */
+#define SPELLS_SNAPSHOT 0u
+#define SPELLS_ADD 1u
+#define SPELLS_REMOVE 2u
 #define PLACE_BYTES (20 + CELL_NAME)
 #define FATIGUE_STEP 8    /* fatigue regenerates: send a change of an eighth of its base */
 #define PLAYER_POLL_US 1000000u
@@ -9684,6 +9763,9 @@ static void chargen_stat(void)
 #define DIALOGUE_TYPE 0x14
 #define DIALOGUE_JOURNAL 4
 #define DIALOGUE_INDEX 0x1C
+#define PLAYER_SPELLS_MAX 256u
+#define NPC_SPELLS_HEAD 0xD0 /* NPC +0xC4 SpellList, +4 list, +8 head */
+#define SPELL_OBJECT_ID 0x28
 
 static const char *const attribute_names[ATTRIBUTES] = {
     "Strength", "Intelligence", "Willpower", "Agility", "Speed", "Endurance", "Personality",
@@ -9703,7 +9785,12 @@ static u8 carried_seen[CARRIED], level_sent[LEVEL_BYTES];
 static u32 skills_sent[SKILLS][2], skills_known, level_known, vitals_known;
 static float vitals_sent[3];
 static u16 journal_sent[JOURNALS];
-static u32 player_mode, player_welcome, player_polled;
+static const u8 *player_spells_sent[PLAYER_SPELLS_MAX], *player_spells_now[PLAYER_SPELLS_MAX];
+static char player_spells_stage[PLAYER_SPELLS_MAX][SPAWN_ID];
+static u32 player_spells_sent_count, player_spells_stage_count, player_spells_part;
+static u32 player_spells_known, player_spells_out, player_spells_in, player_spells_omitted;
+static u32 player_spells_replayed;
+static u32 player_polled;
 static u32 player_items_out, player_stats_out, player_journal_out, player_too_many;
 static u32 player_items_in, player_stats_in, player_journal_in, player_apply_failures;
 static struct entry player_in[BOX_ENTRIES];
@@ -10014,6 +10101,134 @@ static void journal_scan(int send)
     }
 }
 
+static const char *player_spell_id(const u8 *spell)
+{
+    const char *id;
+
+    return plausible(spell) && mapped(id = *(const char *const *)(spell + SPELL_OBJECT_ID)) ? id : 0;
+}
+
+static int spell_object_in(const u8 *spell, const u8 *const *list, u32 count)
+{
+    u32 i;
+
+    for (i = 0; i < count; i++)
+        if (list[i] == spell)
+            return 1;
+    return 0;
+}
+
+static int spell_name_in(const char *id, char list[][SPAWN_ID], u32 count)
+{
+    u32 i;
+
+    for (i = 0; i < count; i++)
+        if (same_name(id, list[i]))
+            return 1;
+    return 0;
+}
+
+/* The player's NPC record owns its learned-spell list. Invalid or overlong ids cannot safely go
+ * through AddSpell, and a list above the bound leaves its tail to the next checkpoint. */
+static u32 player_spells_read(const u8 *npc, const u8 **out)
+{
+    const u8 *node = *(const u8 *const *)(npc + NPC_SPELLS_HEAD), *spell;
+    const char *id;
+    u32 n = 0, guard, length;
+
+    for (guard = 0; plausible(node) && guard < 1024; guard++) {
+        spell = *(const u8 *const *)(node + 8);
+        id = player_spell_id(spell);
+        for (length = 0; id && id[length] && length < SPAWN_ID; length++)
+            ;
+        if (id && length && length < SPAWN_ID && script_safe((const u8 *)id, SPAWN_ID) &&
+            !spell_object_in(spell, out, n)) {
+            if (n < PLAYER_SPELLS_MAX)
+                out[n++] = spell;
+            else
+                player_spells_omitted++;
+        }
+        node = *(const u8 *const *)(node + 4);
+    }
+    return n;
+}
+
+static void player_spell_forget(const u8 *spell)
+{
+    u32 i;
+
+    for (i = 0; i < player_spells_sent_count && player_spells_sent[i] != spell; i++)
+        ;
+    if (i < player_spells_sent_count) {
+        for (; i + 1 < player_spells_sent_count; i++)
+            player_spells_sent[i] = player_spells_sent[i + 1];
+        player_spells_sent_count--;
+    }
+}
+
+/* Send one event of additions or removals. More than fits waits for the next one-second poll. */
+static void player_spells_delta(u32 mode, const u8 *const *now, u32 count)
+{
+    const u8 *spell, *pending[EVENT_DATA / 2];
+    const char *id;
+    u8 data[EVENT_DATA];
+    u32 source_count, i, n = 0, length = 4, size;
+
+    source_count = mode == SPELLS_ADD ? count : player_spells_sent_count;
+    for (i = 0; i < source_count; i++) {
+        spell = mode == SPELLS_ADD ? now[i] : player_spells_sent[i];
+        if ((mode == SPELLS_ADD && spell_object_in(spell, player_spells_sent,
+                                                   player_spells_sent_count)) ||
+            (mode == SPELLS_REMOVE && spell_object_in(spell, now, count)))
+            continue;
+        id = player_spell_id(spell);
+        for (size = 0; id && id[size] && size < SPAWN_ID; size++)
+            ;
+        if (!id || !size || size == SPAWN_ID || length + size + 1 > EVENT_DATA)
+            continue;
+        copy(data + length, (const u8 *)id, size + 1);
+        length += size + 1;
+        pending[n++] = spell;
+    }
+    if (!n)
+        return;
+    data[0] = PLAYER_SPELLS;
+    data[1] = (u8)mode;
+    data[2] = 0;
+    data[3] = 1;
+    if (!event_queue(EVENT_PLAYER, data, length))
+        return;
+    for (i = 0; i < n; i++) {
+        if (mode == SPELLS_ADD && player_spells_sent_count < PLAYER_SPELLS_MAX)
+            player_spells_sent[player_spells_sent_count++] = pending[i];
+        else if (mode == SPELLS_REMOVE)
+            player_spell_forget(pending[i]);
+    }
+    player_spells_out++;
+}
+
+static void player_spells_scan(const u8 *npc, int send)
+{
+    u32 n = player_spells_read(npc, player_spells_now), i;
+    u8 empty[4] = {PLAYER_SPELLS, SPELLS_ADD, 0, 1};
+
+    if (!send) {
+        for (i = 0; i < n; i++)
+            player_spells_sent[i] = player_spells_now[i];
+        player_spells_sent_count = n;
+        player_spells_known = 1;
+        return;
+    }
+    if (!player_spells_known) {
+        player_spells_sent_count = 0;
+        player_spells_known = 1;
+        if (!n && !event_queue(EVENT_PLAYER, empty, sizeof(empty)))
+            return;
+    }
+    player_spells_delta(SPELLS_REMOVE, player_spells_now, n);
+    player_spells_delta(SPELLS_ADD, player_spells_now, n);
+}
+
 /* Game thread, in the world: after READY, the changes once a second. */
 static void player_frame(const u8 *ref)
 {
@@ -10029,8 +10244,10 @@ static void player_frame(const u8 *ref)
             carried[i].item = 0;
         for (i = 0; i < JOURNALS; i++)
             journal_sent[i] = 0;
-        level_known = skills_known = vitals_known = 0;
+        level_known = skills_known = vitals_known = player_spells_known = 0;
         send = player_mode == 1;
+        if (player_bounty_replayed != ses.welcomes)
+            bounty_sent = -1;
         tes3x_log_hex3("net.player_ready", player_mode, ses.welcomes, 0);
         player_mode = 3;
     } else if (now - player_polled < PLAYER_POLL_US) {
@@ -10042,6 +10259,7 @@ static void player_frame(const u8 *ref)
     skills_scan(mobile, send);
     vitals_scan(mobile, send);
     journal_scan(send);
+    player_spells_scan(npc, send || player_spells_replayed != ses.welcomes);
 }
 
 static void player_set(u8 *ref, const char *what, const char *name, int value)
@@ -10158,14 +10376,107 @@ static void place_apply(const u8 *body)
     player_stats_in++;
 }
 
+static void player_spell_command(u8 *ref, const char *verb, const char *id)
+{
+    char line[64], *p = put_text(put_text(put_text(line, verb), " \""), id);
+
+    *put_text(p, "\"") = 0;
+    run_script_on(line, ref);
+}
+
+static void player_bounty_apply(const u8 *body)
+{
+    u8 *mobile = player_mobile();
+    char line[48];
+    int bounty = (int)get32le(body);
+
+    if (!plausible(mobile) || bounty < 0) {
+        player_apply_failures++;
+        return;
+    }
+    if (((fn_get_bounty)TES3X_NET_GET_BOUNTY)(mobile) != bounty) {
+        *put_int(put_text(line, "SetPCCrimeLevel "), bounty) = 0;
+        run_script(line);
+    }
+    bounty_sent = bounty;
+    player_bounty_replayed = ses.welcomes;
+    tes3x_log("net.player_bounty", (u32)bounty);
+}
+
+/* Reconcile the checkpoint's list with the server's absolute snapshot. */
+static void player_spells_apply(u8 *ref)
+{
+    u8 *npc = player_npc(ref);
+    const char *id;
+    u32 count, i;
+
+    if (!npc) {
+        player_apply_failures++;
+        return;
+    }
+    count = player_spells_read(npc, player_spells_now);
+    for (i = 0; i < count; i++) {
+        id = player_spell_id(player_spells_now[i]);
+        if (id && !spell_name_in(id, player_spells_stage, player_spells_stage_count))
+            player_spell_command(ref, "RemoveSpell", id);
+    }
+    for (i = 0; i < player_spells_stage_count; i++) {
+        u32 k;
+        for (k = 0; k < count; k++) {
+            id = player_spell_id(player_spells_now[k]);
+            if (id && same_name(id, player_spells_stage[i]))
+                break;
+        }
+        if (k == count)
+            player_spell_command(ref, "AddSpell", player_spells_stage[i]);
+    }
+    player_spells_in++;
+    tes3x_log("net.player_spells_applied", player_spells_stage_count);
+}
+
+static void player_spells_event(u8 *ref, const struct event *e)
+{
+    const u8 *p = e->data;
+    u32 part = p[2], parts = p[3], off = 4, start, n;
+
+    if (p[1] != SPELLS_SNAPSHOT || !parts || part >= parts ||
+        (part == 0 ? 0 : part != player_spells_part)) {
+        player_apply_failures++;
+        return;
+    }
+    if (!part)
+        player_spells_stage_count = player_spells_part = 0;
+    while (off < e->length) {
+        start = off;
+        while (off < e->length && p[off])
+            off++;
+        n = off - start;
+        if (off == e->length || !n || n >= SPAWN_ID ||
+            !script_safe(p + start, n + 1) || player_spells_stage_count == PLAYER_SPELLS_MAX) {
+            player_apply_failures++;
+            player_spells_part = 0;
+            return;
+        }
+        copy((u8 *)player_spells_stage[player_spells_stage_count], p + start, n + 1);
+        if (!spell_name_in(player_spells_stage[player_spells_stage_count], player_spells_stage,
+                           player_spells_stage_count))
+            player_spells_stage_count++;
+        off++;
+    }
+    player_spells_part = part + 1;
+    if (player_spells_part == parts) {
+        player_spells_apply(ref);
+        player_spells_replayed = ses.welcomes;
+        player_spells_part = 0;
+    }
+}
+
 /* Death while joined. The engine's death ends in "load the most recent save?", which would load a
  * stale copy of the character: while joined, MobilePlayer::onDeath returns before it and the
  * server is told (PLAYER_DEATH). Its RESPAWN sets a delay, a place and the gold lost; then the
  * player is resurrected at the closest TempleMarker or DivineMarker, as the Intervention spells
  * find them, and the console sends PLAYER_ALIVE. Without an answer it respawns anyway. */
-#define PLAYER_DEATH 8u   /* to the server: the player died */
 #define PLAYER_RESPAWN 9u /* from the server: delay ms u32, RESPAWN_*, gold to lose u32 */
-#define PLAYER_ALIVE 10u  /* to the server: resurrected */
 #define RESPAWN_TEMPLE 0u
 #define RESPAWN_SHRINE 1u
 #define RESPAWN_NEAREST 2u
@@ -10358,6 +10669,7 @@ static void death_stat(void)
                        (u32)round_int(*(const float *)(mobile + MOBILE_HEALTH)));
     tes3x_log_hex3("net.player_dead", player_dead, death_hooked,
                    plausible(handler) ? handler[HANDLER_DEATH_FLAG] : 0xFF);
+    tes3x_log_hex3("net.ghost_deaths", ghost_deaths, ghost_respawns, 0);
 }
 
 /* A quest only moves forward: the checkpoint already holds the entries up to its own index. */
@@ -10450,6 +10762,10 @@ static void player_event(const struct event *e)
 
     if (e->length < 1)
         return;
+    if (e->origin && (e->data[0] == PLAYER_DEATH || e->data[0] == PLAYER_ALIVE)) {
+        ghost_life_event(e);
+        return;
+    }
     if (e->data[0] == PLAYER_READY) {
         player_mode = e->length >= 2 && e->data[1] ? 2 : 1;
         player_welcome = ses.welcomes;
@@ -10471,6 +10787,10 @@ static void player_event(const struct event *e)
         vitals_apply(ref, e->data + 1);
     else if (e->data[0] == PLAYER_PLACE && e->length >= 1 + PLACE_BYTES)
         place_apply(e->data + 1);
+    else if (e->data[0] == PLAYER_SPELLS && e->length >= 4)
+        player_spells_event(ref, e);
+    else if (e->data[0] == PLAYER_BOUNTY && e->length >= 5)
+        player_bounty_apply(e->data + 1);
     else if (e->data[0] == PLAYER_RESPAWN && e->length >= 1 + 9)
         respawn_event(e->data + 1);
 }
@@ -10480,6 +10800,8 @@ static void player_stat(void)
     tes3x_log_hex3("net.player_out", player_items_out, player_stats_out, player_journal_out);
     tes3x_log_hex3("net.player_in", player_items_in, player_stats_in, player_journal_in);
     tes3x_log_hex3("net.player_bad", player_apply_failures, player_too_many, player_mode);
+    tes3x_log_hex3("net.player_spells", player_spells_out, player_spells_in,
+                   player_spells_omitted);
 }
 
 static void event_handle(const struct event *e)
