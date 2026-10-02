@@ -42,8 +42,7 @@ def headless():
 
 def setup(images):
     """Import and analyse each (tag, path); takes minutes per image."""
-    if SERVER.exists():
-        stop()
+    stop()
     PROJECT_DIR.mkdir(parents=True, exist_ok=True)
     progs = json.loads(PROGRAMS.read_text()) if PROGRAMS.exists() else {}
     for tag, path in images:
@@ -96,6 +95,27 @@ def _start():
     return port, p.pid
 
 
+def _running():
+    """(port, pid) of a server already serving this project, found by its command line."""
+    if os.name == 'nt':
+        ps = ("Get-CimInstance Win32_Process -Filter \"Name='java.exe'\" | "
+              "ForEach-Object { \"$($_.ProcessId) $($_.CommandLine)\" }")
+        out = subprocess.run(['powershell', '-NoProfile', '-Command', ps],
+                             capture_output=True, text=True, errors='replace').stdout
+    else:
+        out = subprocess.run(['ps', '-eo', 'pid=,args='], capture_output=True, text=True).stdout
+    project = str(PROJECT_DIR).replace('\\', '/').lower()
+    for line in out.splitlines():
+        pid, _, cl = line.strip().partition(' ')
+        args = [a.strip('"') for a in cl.split()]
+        if 'Tes3xServe.java' not in args or project not in cl.replace('\\', '/').lower():
+            continue
+        i = args.index('Tes3xServe.java')
+        if i + 1 < len(args) and args[i + 1].isdigit() and pid.isdigit():
+            return int(args[i + 1]), int(pid)
+    return None
+
+
 def _server():
     """Socket to the running server, starting one when none answers."""
     PROJECT_DIR.mkdir(parents=True, exist_ok=True)
@@ -108,10 +128,17 @@ def _server():
                 break
             SERVER.unlink(missing_ok=True)
             continue
-        port, pid = _start()
+        # A lost server.json must not start a second Ghidra: the project lock would stop it.
+        found = _running()
+        if found:
+            port, pid = found
+            print(f'using the running Ghidra (pid {pid})', file=sys.stderr)
+        else:
+            port, pid = _start()
+            print(f'starting Ghidra (pid {pid}); the first request waits for it',
+                  file=sys.stderr)
         with os.fdopen(fd, 'w') as f:
             json.dump({'port': port, 'pid': pid}, f)
-        print(f'starting Ghidra (pid {pid}); the first request waits for it', file=sys.stderr)
         break
     info = json.loads(SERVER.read_text())
     deadline = time.time() + START_TIMEOUT
@@ -121,7 +148,10 @@ def _server():
         except OSError:
             if not _alive(info['pid']):
                 SERVER.unlink(missing_ok=True)
-                raise SystemExit(f'Ghidra exited; see {PROJECT_DIR / "serve.log"}')
+                hint = ''
+                if any(PROJECT_DIR.glob(f'{PROJECT}.lock*')):
+                    hint = '; the project is locked, probably by a Ghidra GUI'
+                raise SystemExit(f'Ghidra exited; see {PROJECT_DIR / "serve.log"}{hint}')
             if time.time() > deadline:
                 raise SystemExit('Ghidra did not start in time')
             time.sleep(1)
@@ -148,9 +178,12 @@ class Client:
 
 
 def stop():
-    if not SERVER.exists():
+    if SERVER.exists():
+        info = json.loads(SERVER.read_text() or '{}')
+    elif found := _running():
+        info = {'port': found[0], 'pid': found[1]}
+    else:
         return False
-    info = json.loads(SERVER.read_text() or '{}')
     try:
         s = _connect(info['port'])
         s.sendall(b'{"op": "stop"}\n')
