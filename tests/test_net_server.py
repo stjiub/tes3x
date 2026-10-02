@@ -317,6 +317,50 @@ class ServerTests(unittest.TestCase):
             time.sleep(0.2)
         self.assertEqual(net.PlayerStream(str(stream)).items, {'Gold_001': [[150, 0, 0, 0]]})
 
+    def test_a_death_is_respawned_and_announced(self):
+        world = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, world)
+        self.start('--world', str(world), '--adopt', '--respawn', 'temple',
+                   '--respawn-delay', '3', '--death-gold', '25')
+        net = tes3x_net
+
+        def player(kind, data):
+            return kind == net.EVENT_PLAYER and data[:1] == bytes([kind_wanted[0]])
+
+        first, second = self.client(1), self.client(2)
+        first.join()
+        second.join()
+        self.game(first, 1, 7, b'')
+        self.upload(first, 2, 1, b'mp-hero.ess', self.save(b'Nerevar', 0))
+        kind_wanted = [net.PLAYER_READY]
+        self.events(first, player)
+        first.send(net.EVENTS, net.pack_events(0, [
+            (3, net.EVENT_PLAYER, 0, net.pack_items('Gold_001', [[200, 0, 0, 0]])[0]),
+            (4, net.EVENT_PLAYER, 0, bytes([net.PLAYER_DEATH]))]))
+        kind_wanted = [net.PLAYER_RESPAWN]
+        respawn = [d for k, d in self.events(first, player) if player(k, d)][0]
+        self.assertEqual(net.RESPAWN.unpack(respawn[1:]), (3000, 0, 50))
+        notice = self.events(second, lambda kind, _: kind == net.EVENT_TEXT)[-1][1]
+        self.assertEqual(notice, b'Nerevar has died.')
+
+        kept = (self.character(world) / 'mp-hero.ess').read_bytes()
+        name = net.CHECKPOINT_NAME.format(int.from_bytes(
+            hashlib.blake2b(kept, digest_size=32).digest()[:4], 'big')).encode()
+        again = self.client(1)  # the power went before the respawn
+        again.session ^= 2
+        again.join()
+        self.game(again, 1, 8, name)
+        respawn = [d for k, d in self.events(again, player) if player(k, d)][0]
+        self.assertEqual(net.RESPAWN.unpack(respawn[1:])[0], 0)
+        again.send(net.EVENTS, net.pack_events(again.delivered, [
+            (2, net.EVENT_PLAYER, 0, bytes([net.PLAYER_ALIVE]))]))
+        stream = self.character(world) / net.STREAM_NAME
+        end = time.time() + 5
+        while time.time() < end and (not stream.exists() or
+                                     net.PlayerStream(str(stream)).dead):
+            time.sleep(0.2)
+        self.assertFalse(net.PlayerStream(str(stream)).dead)
+
     def test_a_new_character_is_made_listed_and_chosen(self):
         world = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, world)

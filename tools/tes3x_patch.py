@@ -1775,6 +1775,20 @@ def find_button_pressed(x):
     return struct.unpack("<I", hits[0].group(1))[0]
 
 
+FIND_MARKER_RE = re.compile(rb"\x83\xec\x0c\x56\x57\x8b\x7c\x24\x18\x8b\xf1\x8b\x0d(....)\x33\xc0"
+                            rb"\x3b\xf9\x74.\x3b\x3d(....)\x0f\x85", re.S)
+
+
+def find_marker(x):
+    """DataHandler's closest TempleMarker or DivineMarker reference to the player (the Intervention
+    spells' search): the function, then the globals holding the two marker objects."""
+    hits = list(FIND_MARKER_RE.finditer(x.data))
+    if len(hits) != 1:
+        raise PatchError("find marker: %d match(es), expected exactly 1" % len(hits))
+    return (x.off_to_va(hits[0].start()), struct.unpack("<I", hits[0].group(1))[0],
+            struct.unpack("<I", hits[0].group(2))[0])
+
+
 @patch("diagnostics")
 def _diagnostics(x, value, ctx):
     """Enable INI-controlled crash records, snapshots and a hang watchdog."""
@@ -2303,6 +2317,9 @@ LOCATORS = {
     "mob-update-gate": find_mob_gate,
     "weather-roll": find_weather_roll,
     "button-pressed": find_button_pressed,
+    "find-marker": lambda image: find_marker(image)[0],
+    "temple-marker": lambda image: find_marker(image)[1],
+    "divine-marker": lambda image: find_marker(image)[2],
     "console-print": find_console_print,
     "heap-allocate": lambda image: find_heap_function(image, "allocate")[0],
     "heap-free": lambda image: find_heap_function(image, "free")[0],

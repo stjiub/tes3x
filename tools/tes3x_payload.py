@@ -519,6 +519,30 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         define("NET_MOB_GATE", hexva(locate("mob-update-gate")))
         define("NET_WEATHER_ROLL", hexva(locate("weather-roll")))
         define("NET_BUTTON", hexva(locate("button-pressed")))
+        # MobilePlayer::onDeath: UpdateFillBar(health bar, current, base) empties the bar; after the
+        # engine's death (magic stopped, DataHandler told), the last save's name chooses between
+        # "load it?" and the main menu, both ending in the epilogue.
+        world_va, handler_va = int(world, 16), int(data_handler, 16)
+        deaths = [m for m in re.finditer(rb"\x33\xc0\x66\xa1(....)\x51\x52\x50\xe8(....)\x83\xc4"
+                                         rb"\x0c\x8b\xcf\xe8....\x8b\x0d(....)\x8b\x51\x6c\xc6\x42"
+                                         rb"\x04\x01\x8b\x0d(....)\xe8....\xa1(....)\x8b\x08\x8b\x71"
+                                         rb"\x14\x85\xf6\x0f\x84(....)", data, re.S)
+                  if struct.unpack("<3I", m.group(3) + m.group(4) + m.group(5)) ==
+                  (world_va, handler_va, handler_va) and b"\x68\x61\x02\x00\x00" in
+                  data[m.end():m.end() + 0x80]]
+        if len(deaths) != 1:
+            raise PayloadError(f"player death menu: {len(deaths)} sites, expected 1")
+        site = deaths[0].start(5) - 1
+        menu = image.off_to_va(deaths[0].end()) + struct.unpack("<i", deaths[0].group(6))[0]
+        if data[image.va_to_off(menu) - 6:image.va_to_off(menu)] != b"\x5f\x5e\x83\xc4\x08\xc3":
+            raise PayloadError(f"player death menu {hexva(menu)}: not after onDeath's epilogue")
+        fill = image.off_to_va(deaths[0].end(2)) + struct.unpack("<i", deaths[0].group(2))[0]
+        define("NET_DEATH_SITE", hexva(image.off_to_va(site)))
+        define("NET_FILL_BAR", hexva(fill))
+        define("NET_HEALTH_BAR", hexva(struct.unpack("<I", deaths[0].group(1))[0]))
+        define("NET_FIND_MARKER", hexva(locate("find-marker")))
+        define("NET_TEMPLE_MARKER", hexva(locate("temple-marker")))
+        define("NET_DIVINE_MARKER", hexva(locate("divine-marker")))
         flags.append("-DTES3X_NET")
         wanted["net"] = ("_tes3x_net_frame",)
     if "tes3xinfoarena.c" in names:

@@ -80,6 +80,9 @@ The first client to join sets the session's load order and its game clock. Usefu
 | `--max-players N` | refuse consoles beyond this many (default 16) |
 | `--duration SECONDS` | stop after a while |
 | `--stop-wait SECONDS` | how long stopping waits for consoles' saves (default 60) |
+| `--respawn temple\|shrine\|nearest` | where a player who dies comes back (default `nearest`) |
+| `--respawn-delay SECONDS` | how long a dead player lies before coming back (default 5) |
+| `--death-gold PERCENT` | the share of carried gold a death costs (default 10) |
 
 Stop the server with Ctrl+C, or the admin command `stop`. Before it exits it asks every
 joined console to save its character and waits, up to `--stop-wait`, for each save to arrive;
@@ -103,6 +106,12 @@ where the player last was and puts them back there, so a crash or a power cut do
 player to where the save was made. Exit while joined saves and uploads first, and quits once
 the server has the save; if the server does not confirm it within 30 seconds, the player chooses
 to leave anyway or stay.
+
+A player who dies while joined is not offered the last save. The others see a notice, and after
+`--respawn-delay` the player gets up at the closest temple or Imperial shrine (the markers
+Almsivi and Divine Intervention use), with full health, magicka and fatigue, the same bounty, and
+`--death-gold` percent less gold. A dead player cannot leave or save until then; a console that
+loses power while dead comes back at the marker on its next join.
 
 ### Keys and passwords
 

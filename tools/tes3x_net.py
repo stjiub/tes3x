@@ -403,6 +403,13 @@ EVENT_GAME, EVENT_LOAD = 23, 24
 EVENT_PLAYER = 25
 PLAYER_ITEMS, PLAYER_LEVEL, PLAYER_SKILLS, PLAYER_JOURNAL, PLAYER_READY = 1, 2, 3, 4, 5
 PLAYER_VITALS, PLAYER_PLACE = 6, 7
+# Death while joined: the console sends PLAYER_DEATH instead of offering its last save, is answered
+# PLAYER_RESPAWN (RESPAWN: delay in ms, RESPAWN_*, gold to lose) and sends PLAYER_ALIVE once
+# resurrected at the closest marker. A character that died and was not back is respawned again
+# after the replay of its next launch.
+PLAYER_DEATH, PLAYER_RESPAWN, PLAYER_ALIVE = 8, 9, 10
+RESPAWN = struct.Struct("<IBI")
+RESPAWN_PLACES = {"temple": 0, "shrine": 1, "nearest": 2}
 PLACE_HOLD = 15.0  # seconds a replayed place waits for the console to arrive before STATE counts
 PLACE_NEAR = 512.0  # units: the console has arrived; also the move that marks the place to write
 # Characters. GAME's name is followed by the launch's kind (GAME_NEW: a New Game). To a client:
@@ -1031,6 +1038,7 @@ class PlayerStream:
         self.path = path
         self.items, self.skills, self.journal, self.level = {}, {}, {}, None
         self.vitals = self.place = None
+        self.dead = False  # died and not yet back
         self.arriving = None  # (item id, entries so far, next part)
         self.dirty = False
         try:
@@ -1044,11 +1052,13 @@ class PlayerStream:
         self.level = bytes.fromhex(kept["level"]) if kept.get("level") else None
         self.vitals = kept.get("vitals")
         self.place = bytes.fromhex(kept["place"]) if kept.get("place") else None
+        self.dead = kept.get("dead", False)
 
     def reset(self):
         """A new character: nothing streamed so far belongs to it."""
         self.items, self.skills, self.journal, self.level = {}, {}, {}, None
         self.vitals = self.place = self.arriving = None
+        self.dead = False
         self.dirty = True
 
     def checkpoint(self):
@@ -1126,7 +1136,7 @@ class PlayerStream:
             events.append(bytes([PLAYER_LEVEL]) + self.level)
         if self.vitals:  # after LEVEL, which caps each current value at its base
             events.append(bytes([PLAYER_VITALS]) + VITALS.pack(*self.vitals))
-        if self.place:
+        if self.place and not self.dead:  # the dead go to a marker instead
             events.append(bytes([PLAYER_PLACE]) + self.place)
         skills = sorted(self.skills.items())
         per = (EVENT_DATA - 2) // SKILL.size
@@ -1143,7 +1153,8 @@ class PlayerStream:
                                "level": self.level.hex() if self.level else None,
                                "skills": {str(k): v for k, v in self.skills.items()},
                                "journal": self.journal, "vitals": self.vitals,
-                               "place": self.place.hex() if self.place else None})
+                               "place": self.place.hex() if self.place else None,
+                               "dead": self.dead})
         self.dirty = False
 
 
@@ -2126,15 +2137,48 @@ def serve(args):
             client.place_hold = None
         stream.keep_place(body)
 
+    def respawn(client, delay, now):
+        """Tell a dead player's console when and where to come back, and what it loses."""
+        stream = player_stream(client) if client.synced else None
+        gold = sum(e[0] for item, entries in stream.items.items() if item.lower() == "gold_001"
+                   for e in entries) if stream else 0
+        lost = gold * args.death_gold // 100
+        client.rel.queue(EVENT_PLAYER, 0, bytes([PLAYER_RESPAWN]) + RESPAWN.pack(
+            int(delay * 1000), RESPAWN_PLACES[args.respawn], lost))
+        flush(client, now)
+        return lost
+
+    def on_player_death(client, alive, stamp, now):
+        stream = player_stream(client) if client.synced else None
+        name = client.character or f"client {client.id}"
+        if stream:
+            stream.dead, stream.dirty = not alive, True
+        if alive:
+            print(f"{stamp} client {client.id} ({name}) is back", flush=True)
+            return
+        lost = respawn(client, args.respawn_delay, now)
+        print(f"{stamp} client {client.id} ({name}) died: respawns at the {args.respawn} marker "
+              f"in {args.respawn_delay:g} s, loses {lost} gold", flush=True)
+        notice = f"{name} has died."[:EVENT_DATA].encode("latin-1", "replace")
+        for other in clients.values():
+            if other.alive and other is not client:
+                other.rel.queue(EVENT_TEXT, 0, notice)
+                flush(other, now)
+
     def player_ready(client, replay, stamp, now):
         """Replay the kept player state over the checkpoint, or have the console send it all."""
         stream = player_stream(client)
         if stream is None:
             return
         events = stream.replay() if replay else []
-        client.place_hold = (stream.place, now + PLACE_HOLD) if replay and stream.place else None
+        client.place_hold = (stream.place, now + PLACE_HOLD) if (
+            replay and stream.place and not stream.dead) else None
         for data in events:
             client.rel.queue(EVENT_PLAYER, 0, data)
+        if replay and stream.dead:
+            print(f"{stamp} client {client.id} died before its last stop: respawns now",
+                  flush=True)
+            respawn(client, 0, now)
         client.rel.queue(EVENT_PLAYER, 0, bytes([PLAYER_READY, 1 if replay else 0]))
         flush(client, now)
         print(f"{stamp} client {client.id}: " + (
@@ -2268,6 +2312,9 @@ def serve(args):
             send(client, BULK_ACK, client.upload.ack(now))
             if client.upload.status == BULK_DONE:
                 received(client, stamp, now)
+            return
+        if kind == EVENT_PLAYER and data[:1] in (bytes([PLAYER_DEATH]), bytes([PLAYER_ALIVE])):
+            on_player_death(client, data[0] == PLAYER_ALIVE, stamp, now)
             return
         if kind == EVENT_PLAYER:
             stream = player_stream(client) if client.synced else None
@@ -3413,6 +3460,13 @@ def main(argv=None):
     p.add_argument("--starts", metavar="FILE",
                    help="where new characters may begin ([[start]] tables; default "
                         "examples/starts.toml)")
+    p.add_argument("--respawn", choices=sorted(RESPAWN_PLACES), default="nearest",
+                   help="where a player who dies comes back: the closest temple (TempleMarker), "
+                        "Imperial shrine (DivineMarker) or either (default)")
+    p.add_argument("--respawn-delay", type=float, default=5.0, metavar="SECONDS",
+                   help="how long a dead player lies before coming back (default 5)")
+    p.add_argument("--death-gold", type=int, default=10, metavar="PERCENT",
+                   help="the share of carried gold a death costs (default 10)")
     p.add_argument("--adopt", action="store_true",
                    help="a key with no character keeps whatever game its console runs instead "
                         "of making a new one (tests that start from a save)")
