@@ -66,6 +66,12 @@ since reset and the committed-page count. `tes3xws` samples by hand and `tes3xws
 sampling. Prefer named, content-rich cells when the goal is a representative play workload; a wide
 exterior grid is a spatial baseline.
 
+`tes3xws pulse N` instead sweeps on a system thread every nominal `N` milliseconds, including
+while a cell-loading command blocks the main thread. The next mark or `tes3xws stop` reports the
+peak bucket, the conservative sum of two adjacent buckets, the sample count, and the actual TSC
+duration of the longest and busiest buckets. Use the actual duration rather than `N`: a sweep or
+host scheduling can make a bucket longer. A failed heap-region commit also writes a final sample.
+
 ## Profiling
 
 `--apply profile=VA[,VA...]`, or the pipeline's `--profile-target VA`, times up to 16 functions at

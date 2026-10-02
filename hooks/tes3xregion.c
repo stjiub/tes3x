@@ -34,9 +34,19 @@
 
 #define NtAllocateVirtualMemory KFN(THUNK_NtAllocateVirtualMemory, fn_NtAllocateVirtualMemory)
 #define NtFreeVirtualMemory KFN(THUNK_NtFreeVirtualMemory, fn_NtFreeVirtualMemory)
+#define NtClose KFN(THUNK_NtClose, fn_NtClose)
+#define PsCreateSystemThreadEx KFN(THUNK_PsCreateSystemThreadEx, fn_PsCreateSystemThreadEx)
+#define PsTerminateSystemThread KFN(THUNK_PsTerminateSystemThread, fn_PsTerminateSystemThread)
+#define KeDelayExecutionThread KFN(THUNK_KeDelayExecutionThread, fn_KeDelayExecutionThread)
 
 typedef u32(__stdcall *fn_NtAllocateVirtualMemory)(void **, u32, u32 *, u32, u32);
 typedef u32(__stdcall *fn_NtFreeVirtualMemory)(void **, u32 *, u32);
+typedef u32(__stdcall *fn_NtClose)(void *);
+typedef u32(__stdcall *fn_PsCreateSystemThreadEx)(void **, u32, u32, u32, void **,
+                                                  void(__stdcall *)(void *), void *,
+                                                  unsigned char, unsigned char, void *);
+typedef void(__stdcall *fn_PsTerminateSystemThread)(u32);
+typedef u32(__stdcall *fn_KeDelayExecutionThread)(u32, unsigned char, long long *);
 typedef int(__cdecl *fn_ini_get_string)(const char *, const char *, const char *,
                                         char *, int, const char *);
 typedef void *(__thiscall *fn_heap_malloc)(void *, u32);
@@ -62,6 +72,36 @@ static char *region;
 static u32 reserved, committed, commit_failed;
 static u32 ws_bits[(MAX_PAGES + 31) / 32];
 static u32 ws_active, ws_union_pages;
+static volatile u32 ws_pulse_ms, ws_pulse_samples, ws_pulse_peak;
+static volatile u32 ws_pulse_pair_peak, ws_pulse_previous, ws_worker_started;
+static volatile u32 ws_pulse_max_kcycles, ws_pulse_peak_kcycles;
+static volatile u64 ws_pulse_last_tsc;
+
+static u64 read_tsc(void)
+{
+    u32 lo, hi;
+    __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
+    return ((u64)hi << 32) | lo;
+}
+
+static void ws_record_pulse(u32 touched)
+{
+    u64 now = read_tsc();
+    u32 elapsed = (u32)((now - ws_pulse_last_tsc) >> 10);
+    u32 pair = ws_pulse_previous + touched;
+
+    ws_pulse_last_tsc = now;
+    ws_pulse_previous = touched;
+    ws_pulse_samples++;
+    if (elapsed > ws_pulse_max_kcycles)
+        ws_pulse_max_kcycles = elapsed;
+    if (touched > ws_pulse_peak) {
+        ws_pulse_peak = touched;
+        ws_pulse_peak_kcycles = elapsed;
+    }
+    if (pair > ws_pulse_pair_peak)
+        ws_pulse_pair_peak = pair;
+}
 
 static u32 lock_irq(void)
 {
@@ -106,6 +146,50 @@ static u32 ws_sweep(int record)
     return touched;
 }
 
+static void __stdcall ws_worker(void *unused)
+{
+    (void)unused;
+    for (;;) {
+        u32 ms = ws_pulse_ms;
+        long long delay;
+        u32 touched;
+
+        if (!ms)
+            ms = 100;
+        delay = -(long long)ms * 10000;
+        KeDelayExecutionThread(0, 0, &delay);
+        if (!ws_active || !ws_pulse_ms || !region)
+            continue;
+        touched = ws_sweep(1);
+        ws_record_pulse(touched);
+    }
+}
+
+static void __stdcall ws_worker_system(void(__stdcall *start)(void *), void *context)
+{
+    start(context);
+    PsTerminateSystemThread(0);
+}
+
+static int ws_start_worker(void)
+{
+    void *handle = 0;
+    u32 status;
+
+    if (ws_worker_started)
+        return 1;
+    ws_worker_started = 1;
+    status = PsCreateSystemThreadEx(&handle, 0, 0x4000, 0, 0, ws_worker, 0, 0, 0,
+                                    (void *)ws_worker_system);
+    if (status) {
+        ws_worker_started = 0;
+        tes3x_log_hex("ws.thread_failed", status);
+        return 0;
+    }
+    NtClose(handle);
+    return 1;
+}
+
 static void ws_log(const char *label)
 {
     char tag[64];
@@ -114,6 +198,8 @@ static void ws_log(const char *label)
     if (!ws_active || !region)
         return;
     touched = ws_sweep(1);
+    if (ws_pulse_ms)
+        ws_record_pulse(touched);
     tag[0] = 'w';
     tag[1] = 's';
     tag[2] = '.';
@@ -123,6 +209,14 @@ static void ws_log(const char *label)
     tes3x_log(tag, touched);
     tes3x_log("ws.union_pages", ws_union_pages);
     tes3x_log("ws.committed_pages", committed / PAGE);
+    if (ws_pulse_ms) {
+        tes3x_log("ws.pulse_ms", ws_pulse_ms);
+        tes3x_log("ws.pulse_samples", ws_pulse_samples);
+        tes3x_log("ws.pulse_peak_pages", ws_pulse_peak);
+        tes3x_log("ws.pulse_pair_peak_pages", ws_pulse_pair_peak);
+        tes3x_log("ws.pulse_max_kcycles", ws_pulse_max_kcycles);
+        tes3x_log("ws.pulse_peak_kcycles", ws_pulse_peak_kcycles);
+    }
 }
 
 static int text_equal(const char *a, const char *b)
@@ -139,6 +233,15 @@ static int text_equal(const char *a, const char *b)
     return !*a && !*b;
 }
 
+static u32 text_number(const char *text)
+{
+    u32 value = 0;
+
+    while (*text >= '0' && *text <= '9')
+        value = value * 10 + (u32)(*text++ - '0');
+    return *text ? 0 : value;
+}
+
 void tes3x_region_mark(const char *label)
 {
     ws_log(label);
@@ -148,6 +251,31 @@ int tes3x_region_command(const char *text)
 {
     u32 i;
 
+    if (text[0] == 't' && text[1] == 'e' && text[2] == 's' && text[3] == '3' &&
+        text[4] == 'x' && text[5] == 'w' && text[6] == 's' && text[7] == ' ' &&
+        text[8] == 'p' && text[9] == 'u' && text[10] == 'l' && text[11] == 's' &&
+        text[12] == 'e' && text[13] == ' ') {
+        u32 ms = text_number(text + 14);
+        if (!region || !ms || ms > 10000) {
+            tes3x_log("ws.pulse_invalid", ms);
+            return 1;
+        }
+        for (i = 0; i < sizeof(ws_bits) / sizeof(ws_bits[0]); i++)
+            ws_bits[i] = 0;
+        ws_union_pages = 0;
+        ws_pulse_samples = ws_pulse_peak = ws_pulse_pair_peak = ws_pulse_previous = 0;
+        ws_pulse_max_kcycles = ws_pulse_peak_kcycles = 0;
+        ws_active = 1;
+        ws_sweep(0);
+        ws_pulse_last_tsc = read_tsc();
+        ws_pulse_ms = ms;
+        if (ws_start_worker()) {
+            tes3x_log("ws.pulse_start_ms", ms);
+        } else
+            ws_pulse_ms = 0;
+        return 1;
+    }
+
     if (text_equal(text, "tes3xws reset")) {
         if (!region) {
             tes3x_log("ws.no_region", 0);
@@ -156,6 +284,7 @@ int tes3x_region_command(const char *text)
         for (i = 0; i < sizeof(ws_bits) / sizeof(ws_bits[0]); i++)
             ws_bits[i] = 0;
         ws_union_pages = 0;
+        ws_pulse_ms = 0;
         ws_active = 1;
         ws_sweep(0);
         tes3x_log_hex("ws.base", (u32)region);
@@ -165,6 +294,7 @@ int tes3x_region_command(const char *text)
     if (text_equal(text, "tes3xws stop")) {
         ws_log("stop");
         ws_active = 0;
+        ws_pulse_ms = 0;
         return 1;
     }
     if (text_equal(text, "tes3xws")) {
@@ -238,8 +368,10 @@ int __stdcall tes3x_region_commit(u32 end)
     base = region + committed;
     len = top - committed;
     if (NtAllocateVirtualMemory(&base, 0, &len, MEM_COMMIT, PAGE_READWRITE) != 0) {
-        if (!commit_failed++)
+        if (!commit_failed++) {
             tes3x_log("region.commit_failed_kb", committed / 1024);
+            ws_log("commit_failed");
+        }
         return 0;
     }
     committed = top;
@@ -276,4 +408,5 @@ void __fastcall tes3x_region_release(void *heap, void *unused, void *ptr)
     region = 0;
     reserved = committed = 0;
     ws_active = ws_union_pages = 0;
+    ws_pulse_ms = 0;
 }
