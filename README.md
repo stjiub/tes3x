@@ -59,22 +59,13 @@ python tools/tes3x_pipeline.py profiles/my-build.toml --deploy
 `--deploy` makes the Xbox folder match the build and deletes anything else in it, so give each
 build a folder of its own. [Getting started](docs/getting-started.md) walks through every step.
 
-## Documentation
+## Docs
 
-The [documentation index](docs/index.md) lists every page. The main ones:
-
-- [Getting started](docs/getting-started.md): from a clean game to a build on the Xbox.
-- [GUI](docs/gui.md), [xemu](docs/xemu.md), [mod library](docs/mod-library.md) and
-  [pipeline](docs/pipeline.md).
-- [Configuration](docs/configuration.md): every profile and local-config key.
-- [Patches](docs/patches.md), [candidates](docs/candidates.md),
-  [ini keys](docs/ini-keys.md) and [patch policy](docs/patch-policy.md).
-- [Compatibility catalog](docs/catalog.md).
-- [Testing](docs/testing.md), [exec scripts](docs/exec-scripts.md),
-  [game tests](docs/game-tests.md), [validation](docs/validation.md) and
-  [diagnostics](docs/diagnostics.md).
-- [Multiplayer](docs/multiplayer.md), [add-ons](docs/addons.md) and the
-  [symbol map](docs/symbol-map.md).
+- [Getting Started](docs/getting-started.md)
+- [Patches](docs/patches.md)
+- [Candidates](docs/candidates.md)
+- [Pipeline](docs/pipeline.md)
+- [Full TES3X Documentation](docs/index.md)
 
 ## License
 
