@@ -175,6 +175,28 @@ def main():
                     or any(fnmatch.fnmatchcase(key(rel), p) for p in globs)]
     moved = {rel for rel, _ in staged_loose}
     pack = [(rel, src) for rel, src in pack if rel not in moved]
+
+    # A BSA identifies entries only by hash, so neither member of a collision can remain in the
+    # archive. Loose lookup uses the full path and preserves both assets.
+    by_hash = {}
+    for item in pack:
+        by_hash.setdefault(tes3_hash(item[0]), []).append(item)
+    collision_groups = [items for items in by_hash.values()
+                        if len({key(rel) for rel, _ in items}) > 1]
+    collision_paths = {key(rel) for items in collision_groups for rel, _ in items}
+    if collision_groups and args.archive_only:
+        ap.error('BSA hash collisions require loose assets; remove --archive-only')
+    collision_loose = [(rel, src) for rel, src in pack if key(rel) in collision_paths]
+    if collision_loose:
+        pack = [(rel, src) for rel, src in pack if key(rel) not in collision_paths]
+        staged_loose.extend(collision_loose)
+        for items in collision_groups:
+            print('  BSA hash collision; staging loose:')
+            for rel, _ in items:
+                print(f'    {rel}')
+        print(f'  {len(collision_loose)} assets in {len(collision_groups)} collision group(s) '
+              'staged loose')
+
     loose.extend(staged_loose)
     invalidated = [(rel, src) for rel, src in staged_loose if tes3_hash(rel) in base.by_hash]
     if staged_loose:
@@ -186,21 +208,13 @@ def main():
             ap.error('Merged Objects.esp hangs the Xbox loading screen; remove it from the tree')
 
     seen = {}
-    collisions = []
     for rel, full in pack:
         h = tes3_hash(rel)
-        if h in seen and seen[h][0].lower() != rel.lower():
-            collisions.append((seen[h][0], rel))
         seen[h] = (rel, full)
     pack = list(seen.values())
 
     overrides = sum(1 for h in seen if h in base.by_hash)
     print(f"packing {len(pack)} assets ({overrides} override vanilla), {len(loose)} stay loose")
-    if collisions:
-        for a, b in collisions:
-            print(f"    {a}")
-            print(f"    {b}")
-        ap.error(f"{len(collisions)} BSA hash collision(s); cannot silently discard an asset")
 
     paths = ['Data Files/' + rel.replace('\\', '/') for rel, _ in loose]
     paths += ['Data Files/Morrowind.bsa', 'Morrowind.ini']

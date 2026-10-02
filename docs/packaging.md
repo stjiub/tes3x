@@ -30,6 +30,10 @@ archive, or listed in `ArchiveInvalidationList.txt` when the retail archive is l
 files need `TryArchiveFirst=0`, which the build sets, so they cannot be combined with
 `package.archive_only`.
 
+TES3 BSA entries are addressed by hash rather than full path. If selected assets share a hash,
+the packer automatically keeps every member of that collision group loose so none are discarded.
+This also enables loose-first lookup in the staged INI; no profile exception is needed.
+
 `tes3x_pack.py --loose-asset "textures/example.dds"` does the same for one file outside a profile:
 the file goes both in the archive and loose, and is listed in `ArchiveInvalidationList.txt` so the
 loose copy wins.

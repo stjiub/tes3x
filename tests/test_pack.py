@@ -101,6 +101,21 @@ class LooseModTests(unittest.TestCase):
         self.assertEqual((out / 'Data Files' / 'tes3xarch.txt').read_bytes().splitlines()[1],
                          b'Mod.bsa')
 
+    def test_bsa_hash_collisions_are_staged_loose(self):
+        colliding = ('meshes/tr/b/tr_b_altmer_f_hd_13.nif',
+                     'meshes/tr/b/tr_b_altmer_m_hd_18.nif')
+        for rel in colliding:
+            path = self.tree / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(rel.encode())
+        out = self.root / 'collisions'
+        self.pack(out, '--delta-archive', 'tes3xmods.bsa')
+        delta = Bsa(str(out / 'Data Files' / 'tes3xmods.bsa'))
+        for rel in colliding:
+            self.assertEqual((out / 'Data Files' / rel).read_bytes(), rel.encode())
+            self.assertFalse(delta.contains(rel.replace('/', '\\')))
+        self.assertIn('TryArchiveFirst=0', (out / 'Morrowind.ini').read_text())
+
 
 if __name__ == '__main__':
     unittest.main()
