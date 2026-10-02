@@ -4197,6 +4197,13 @@
       "pc_va": "0x00595270"
     },
     {
+      "va": "0x001AD020",
+      "name": "ui::bringToFront",
+      "confidence": "guess",
+      "provenance": "takes an element's top-level menu and calls 0x001A3CA0 on it with the root above it; Start's handler 0x00095E1B passes it findMenu(MenuOptions) after MenuOptions::open",
+      "signature": "void __cdecl bringToFront(TES3::UI::Element* element)"
+    },
+    {
       "va": "0x001AD210",
       "name": "AudioController::loadSoundFile",
       "kind": "function",
@@ -4726,6 +4733,12 @@
       "name": "MenuOptions::onExitClick",
       "confidence": "guess",
       "provenance": "Exit container click: sMessage5 box (Yes, No), answer callback 0x001FEE10"
+    },
+    {
+      "va": "0x001FF160",
+      "name": "MenuOptions::returnToGame",
+      "confidence": "matched",
+      "provenance": "MenuOptions' B handler 0x001FF220 calls it; closes the menu and turns menu mode off"
     },
     {
       "va": "0x00200990",

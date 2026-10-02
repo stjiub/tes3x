@@ -1258,7 +1258,7 @@ static int exec_menu(const char *name)
         ((fn_void)TES3X_OPEN_JOURNAL)();
         ((fn_void)TES3X_JOURNAL_OPENED)();
     } else if (starts_with(name, "options") && !name[7]) {
-        /* as Start does: menu mode, MenuOptions::open, then the mode's menu */
+        /* as Start does: menu mode, MenuOptions::open, then the menu to the front */
         unsigned char *world = *(unsigned char **)TES3X_GAME_PTR;
         world[0xD2] = 1;
         world[0xD0] = 1;
