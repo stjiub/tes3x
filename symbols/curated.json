@@ -1694,6 +1694,14 @@
       "signature": "void __thiscall mergeRepeated(TES3::Dialogue* replacement)"
     },
     {
+      "va": "0x000FF680",
+      "name": "Dialogue::appendInfo",
+      "confidence": "guess",
+      "provenance": "decompiled; loader INFO branch calls it once per record",
+      "note": "Master loading passes atTail=1: a non-empty PNAM walks the whole +0x1C chain to append, an empty one pushes the head. Quadratic per topic: retail 11.7M steps, 441 ms on hardware (~28 cycles/step); full TR with dialogue-merge 74.5M steps (tools/tes3x_dialogue_census.py --steps).",
+      "signature": "void __thiscall appendInfo(TES3::DialogueInfo* info, bool atTail)"
+    },
+    {
       "va": "0x000FF9E0",
       "name": "DialogueInfo::getText",
       "kind": "function",
