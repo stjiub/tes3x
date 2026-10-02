@@ -54,7 +54,7 @@ REQUIRED = ("kind", "purpose", "procedure", "script", "expect")
 OPTIONAL = ("limitations", "watch", "timeout", "xemu", "save", "enable", "apply", "pipeline",
             "allow", "profile", "fixture", "sequence", "compare", "required_mods")
 PROFILE_OVERLAY = ("profile", "rules", "preferences", "package", "ini")
-FIXTURE_KEYS = {"script": str, "opcodes": list, "texture": bool}
+FIXTURE_KEYS = {"script": str, "opcodes": list, "texture": bool, "dialogue": str}
 FIXTURE_MOD = "tes3x-test"
 
 
@@ -87,8 +87,8 @@ def game_test_problems(test, where):
     fixture = test.get("fixture", {})
     if not isinstance(fixture, dict) or set(fixture) - set(FIXTURE_KEYS) or any(
             type(fixture[key]) is not kind for key, kind in FIXTURE_KEYS.items() if key in fixture):
-        problems.append(f"{where}: fixture takes script (string), opcodes (array) and texture "
-                        "(boolean)")
+        problems.append(f"{where}: fixture takes script (string), opcodes (array), texture "
+                        "(boolean) and dialogue (string)")
     elif any(type(opcode) is not int for opcode in fixture.get("opcodes", [])):
         problems.append(f"{where}: fixture.opcodes must be integers")
     if test.get("kind") not in KINDS:
@@ -202,15 +202,51 @@ def dxt1_texture():
     return b"DDS " + header + pixel_format + struct.pack("<4I4x", 0x1000, 0, 0, 0) + bytes(8)
 
 
+def repeat_topic(esm, topic, out, master="Morrowind.esm"):
+    """A plugin repeating ESM's DIAL record for TOPIC with one new response, copied from the
+    topic's first and renamed."""
+    from tes3x_records import records, subrecords
+
+    def record(tag, flags, body):
+        return tag + struct.pack("<III", len(body), 0, flags) + body
+
+    def subrecord(tag, value):
+        return tag + struct.pack("<I", len(value)) + value
+
+    dial = info = None
+    for tag, flags, body in records(esm):
+        if tag == b"DIAL":
+            if dial:
+                break
+            name = dict(subrecords(body)).get(b"NAME", b"").rstrip(b"\0")
+            if name.decode("cp1252").casefold() == topic.casefold():
+                dial = record(tag, flags, body)
+        elif tag == b"INFO" and dial:
+            renamed = {b"INAM": b"tes3x_dialogue_merge\0", b"PNAM": b"\0", b"NNAM": b"\0"}
+            info = record(tag, flags, b"".join(subrecord(t, renamed.get(t, v))
+                                              for t, v in subrecords(body)))
+            break
+    if not dial or not info:
+        raise TestError(f"{esm}: no topic {topic!r} with a response")
+    hedr = (struct.pack("<fI", 1.2, 0) + b"tes3x".ljust(32, b"\0")
+            + b"tes3x dialogue-merge test".ljust(256, b"\0") + struct.pack("<I", 2))
+    header = (subrecord(b"HEDR", hedr) + subrecord(b"MAST", master.encode() + b"\0")
+              + subrecord(b"DATA", struct.pack("<Q", os.path.getsize(esm))))
+    Path(out).write_bytes(record(b"TES3", 0, header) + dial + info)
+
+
 def make_fixture(fixture, esm, library):
     """A generated test mod in LIBRARY: a plugin appending FIXTURE's opcodes to a retail script,
-    and a texture so packaging has an asset. Built from the user's own retail master."""
+    one repeating a retail topic, and a texture so packaging has an asset. Built from the user's
+    own retail master."""
     folder = Path(library) / FIXTURE_MOD
     folder.mkdir(parents=True, exist_ok=True)
     if fixture.get("opcodes"):
         import tes3x_scriptasm
         tes3x_scriptasm.build(str(esm), fixture.get("script", "Main"), fixture["opcodes"],
                               str(folder / "TES3X Test.esp"))
+    if fixture.get("dialogue"):
+        repeat_topic(esm, fixture["dialogue"], folder / "TES3X Dialogue.esp")
     if fixture.get("texture"):
         (folder / "Textures").mkdir(exist_ok=True)
         (folder / "Textures" / "tx_tes3x_test.dds").write_bytes(dxt1_texture())

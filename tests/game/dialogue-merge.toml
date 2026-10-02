@@ -1,0 +1,21 @@
+kind = "comparison"
+purpose = "A plugin that adds a response to a retail topic keeps the topic's retail responses."
+procedure = "Generate a plugin repeating Morrowind.esm's `Latest Rumors` DIAL record with one new INFO, start a new game, and have a test-only console command count the topic's INFO chain in control and patched builds."
+limitations = "Counts the loaded chain rather than holding a conversation. The command is present only in game-test builds. Hardware behavior is not checked."
+watch = 'dialmerge\.|diag\.patches|exec\.exit|crash\.|hang\.detected|fatal\.'
+pipeline = ["--test-probe", "dialogue-merge"]
+timeout = 180
+script = '''
+@start new
+wait 60
+tes3xdial latest rumors
+wait 1
+exit
+'''
+
+[fixture]
+dialogue = "Latest Rumors"
+
+[expect]
+control = ['dialmerge\.infos 1$', 'exec\.exit 0']
+test = ['dialmerge\.infos 345$', 'exec\.exit 0']

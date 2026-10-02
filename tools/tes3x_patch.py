@@ -628,6 +628,12 @@ MCP3_UNARMORED_SIG = re.compile(
     re.S,
 )
 
+# A repeated DIAL record merges into the existing topic, then copies the just-constructed
+# replacement's empty INFO head over it (Dialogue::mergeRepeated). The PC keeps the chain.
+DIALOGUE_MERGE_SIG = re.compile(
+    rb"\x8a\x47\x14\x88\x46\x14\x8b\x4f\x18(?P<site>\x89\x4e\x18)\x5f\x5e\xc2\x04\x00"
+)
+
 # PlaceItem and PlaceItemCell share this call to Cell::addReference.  The reference has already
 # been initialized; the missing operation is marking the destination cell changed before insertion.
 MCP123_ADD_SIG = re.compile(
@@ -971,6 +977,17 @@ def find_mcp3_unarmored(x):
     va = x.off_to_va(hits[0].start("site"))
     if va is None:
         raise PatchError("mcp-3: unarmored branch is outside any section")
+    return va
+
+
+def find_dialogue_merge(x):
+    """Find the store that replaces a repeated topic's INFO head."""
+    hits = list(DIALOGUE_MERGE_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("dialogue-merge: %d INFO head store(s), expected 1" % len(hits))
+    va = x.off_to_va(hits[0].start("site"))
+    if va is None:
+        raise PatchError("dialogue-merge: INFO head store is outside any section")
     return va
 
 
@@ -1327,6 +1344,15 @@ def _mcp_3(x, value, ctx):
     return [(off, 6, "fully unarmored damage 0x%08X: keep reduction path" % site)]
 
 
+@patch("dialogue-merge")
+def _dialogue_merge(x, value, ctx):
+    """Keep a topic's INFO chain when a later plugin repeats its DIAL record."""
+    site = find_dialogue_merge(x)
+    off = x.va_to_off(site)
+    x.data[off:off + 3] = b"\x90\x90\x90"
+    return [(off, 3, "repeated topic 0x%08X: keep INFO chain" % site)]
+
+
 @patch("mcp-97")
 def _mcp_97(x, value, ctx):
     """Advance the script parser correctly while initializing saved data."""
@@ -1593,6 +1619,13 @@ def _test_mcp102(x, value, ctx):
     was, off = x.patch_call(site, target)
     return [(off, 5, "ACTN load call 0x%08X: 0x%08X -> 0x%08X" %
              (site, was, target))]
+
+
+@test_patch("test-dialoguemerge", "Count a topic's responses for the dialogue-merge game test.")
+def _test_dialoguemerge(x, value, ctx):
+    if not ctx.get("hooks", {}).get("dialmerge_test"):
+        raise PatchError("test-dialoguemerge: payload has no dialogue-merge test command")
+    return [(None, 0, "topic response count command installed")]
 
 
 @test_patch("test-mcp3", "Measure fully unarmored damage for the mcp-3 game test.")
@@ -2292,6 +2325,7 @@ LOCATORS = {
     "mcp-154-reload": find_mcp154_reload,
     "mcp-102-actn": find_mcp102_actn,
     "mcp-3": find_mcp3_unarmored,
+    "dialogue-merge": find_dialogue_merge,
     "mcp-123": find_mcp123_add,
     "mcp-125": find_mcp125_collision,
     "mcp-37": lambda image: find_mcp37_context(image)[0],

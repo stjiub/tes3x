@@ -654,7 +654,7 @@ def main(argv=None):
     ap.add_argument("--diag-test-faults", action="store_true",
                     help="add the diagnostics console commands `tes3xdiag hang` and `tes3xdiag "
                          "crash`, which stall the update loop and fault on purpose. Test only")
-    ap.add_argument("--test-probe", choices=("mcp-3", "mcp-97", "mcp-102"),
+    ap.add_argument("--test-probe", choices=("mcp-3", "mcp-97", "mcp-102", "dialogue-merge"),
                     help="add a game-test-only trace hook for this patch")
     ap.add_argument("--hardlink", action=argparse.BooleanOptionalAction,
                     help="hardlink unchanged retail files into the build instead of copying "
@@ -741,8 +741,9 @@ def main(argv=None):
         source = f"tes3xtest_{args.test_probe.replace('-', '')}.c"
         plan["sources"].append(source)
         plan["needs_payload"] = True
-        if args.test_probe == "mcp-3" and "tes3xconsole.c" not in plan["sources"]:
-            raise PipelineError("--test-probe mcp-3 needs the console patch")
+        if args.test_probe in {"mcp-3", "dialogue-merge"} \
+                and "tes3xconsole.c" not in plan["sources"]:
+            raise PipelineError(f"--test-probe {args.test_probe} needs the console patch")
     package = profile.get("package", {})
     drive = (args.drive or package.get("drive_letter", "D")).upper()
     if len(drive) != 1 or not drive.isalpha():

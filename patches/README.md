@@ -7,8 +7,9 @@ a page has no patch.
 
 A page identifies its patch key, explains what the patch changes, why someone would use it and how
 it works. It does not repeat the registry's category, channel, selection, origin, bit or summary,
-or say how ready the patch is: no validation results, measurements, plans or open investigations.
-A permanent limitation belongs on the page; unfinished work does not.
+or say how ready the patch is: no validation results, test-run data, plans or open investigations.
+A measured effect that shows what the patch does, with the setup it was measured in, may go under
+`How it works`. A permanent limitation belongs on the page; unfinished work does not.
 
 ## Template
 

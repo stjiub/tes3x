@@ -1685,6 +1685,15 @@
       "pc_va": "0x004B2C00"
     },
     {
+      "va": "0x000FE060",
+      "name": "Dialogue::mergeRepeated",
+      "confidence": "matched",
+      "provenance": "string match; PC body adds the new DIAL's INFOs, Xbox overwrites the head",
+      "note": "Xbox bug: 0x000FE0E1 stores the replacement's null INFO head (+0x18) over the existing topic, detaching every earlier INFO of a topic a later plugin repeats. PC keeps the chain. With TD+TR this drops 18,098 Morrowind.esm INFOs (Hello, greetings, rumors, 15 journal) and 5,885 Tamriel_Data INFOs.",
+      "pc_va": "0x004B2790",
+      "signature": "void __thiscall mergeRepeated(TES3::Dialogue* replacement)"
+    },
+    {
       "va": "0x000FF9E0",
       "name": "DialogueInfo::getText",
       "kind": "function",

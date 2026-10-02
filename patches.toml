@@ -179,6 +179,14 @@ selection = "preset"
 summary = "Apply Unarmored damage reduction when no armor is equipped."
 
 [[patch]]
+name = "dialogue-merge"
+title = "Keep responses of repeated topics"
+category = "correctness"
+channel = "dev"
+selection = "preset"
+summary = "Keep a topic's earlier responses when a later plugin adds to it."
+
+[[patch]]
 name = "mcp-37"
 title = "Cell-change casting crash fix"
 origin = { source = "MCP", id = "37" }
