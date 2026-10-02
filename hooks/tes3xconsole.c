@@ -913,13 +913,13 @@ static void run_command(const char *text)
     if (tes3x_mcp3_test_command(text))
         return;
 #endif
-#ifdef TES3X_DIAGNOSTICS
-    if (tes3x_diag_command(text))
-        return;
 #ifdef TES3X_DIALMERGE_TEST
     if (tes3x_dialmerge_test_command(text))
         return;
 #endif
+#ifdef TES3X_DIAGNOSTICS
+    if (tes3x_diag_command(text))
+        return;
 #endif
     if (!game) {
         tes3x_log("console.no_game", 0);

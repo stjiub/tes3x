@@ -636,7 +636,6 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         print("mcp-3 test probe: console command tes3xmcp3")
         flags.append("-DTES3X_MCP3_TEST")
         wanted["mcp3_test"] = ("_tes3x_mcp3_test_command",)
-    if "tes3xmcp154.c" in names:
     if "tes3xtest_dialoguemerge.c" in names:
         if "tes3xconsole.c" not in names:
             raise PayloadError("tes3xtest_dialoguemerge.c requires tes3xconsole.c")
@@ -644,6 +643,7 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         flags.append("-DTES3X_DIALMERGE_TEST")
         define("DIALMERGE_DATA_HANDLER", address("DATA_HANDLER", DATA_HANDLER))
         wanted["dialmerge_test"] = ("_tes3x_dialmerge_test_command",)
+    if "tes3xmcp154.c" in names:
         load, reload = locate("mcp-154-load"), locate("mcp-154-reload")
         print(f"mcp-154 hooks: load {hexva(load)}, reload {hexva(reload)}")
         define("MCP154_LOAD_RESUME", hexva(load + 6))
