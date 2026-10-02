@@ -1,25 +1,9 @@
 # Pipeline
 
-`tools/tes3x_pipeline.py` turns one profile into a complete game folder, and optionally deploys
-it. It runs a fixed series of stages, each implemented by a tool you can also run by itself (see
+`tools/tes3x_pipeline.py` turns one mod library profile into a complete game folder, and optionally deploys
+it. It runs a fixed series of stages, each implemented by a tool you can also run individually (see
 [commands](commands.md)). Every profile and local-config key is in the
 [configuration reference](configuration.md).
-
-```text
-   local config + profile + mod library
-                  |
-         1. resolve and check
-                  |
-       2. collect the winning files
-                  |
-    3. order plugins, pack Data Files
-                  |
-   4. build the payload, patch the XBE
-                  |
-      5. stage the complete game
-                  |
-     6. test, preview or deploy
-```
 
 ```powershell
 python tools/tes3x_pipeline.py profiles/my-build.toml --check
