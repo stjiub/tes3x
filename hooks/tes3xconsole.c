@@ -217,6 +217,7 @@ int tes3x_autosave_command(void *game, const char *text);
 #define BOTTOM_BUTTONS 6
 /* Bottom row shares, in percent, by label length: Older, Newer, !?#, Backspace, Shift, Done. */
 static const int bottom_share[BOTTOM_BUTTONS] = {16, 17, 13, 22, 14, 18};
+static const int bottom_share_text[BOTTOM_BUTTONS - 2] = {20, 30, 22, 28};
 
 /* Per-port block: 22 bytes of XINPUT_STATE, then 30 derived words. A held button reads 0x7FFF. */
 #define CTRL_PORT 0x804
@@ -351,6 +352,7 @@ static int vk_seen;
 static int vk_wait;
 static int vk_cancel;     /* B was seen while the keyboard was up */
 static int vk_text_client; /* 1 active, 2 accepted, -1 cancelled */
+static void *vk_owner;      /* a client's menu to open the keyboard on, or the console's */
 static int symbols_on;
 static int console_layout;
 static unsigned int row_id[KEY_ROWS];
@@ -713,6 +715,9 @@ static void extend_bottom_row(void *vk, int kw)
     void **first_row, **last_row;
     int i, n, span, used, w, col, pitch, mid, first_count, last_count;
     int start[BOTTOM_BUTTONS], mid_of[BOTTOM_BUTTONS];
+    /* typing for another menu: no history, so no Older and Newer */
+    int nb = vk_owner ? BOTTOM_BUTTONS - 2 : BOTTOM_BUTTONS;
+    const int *share = vk_owner ? bottom_share_text : bottom_share;
 
     if (!done || !caps || !back || vk_child(vk, symbols_id))
         return;
@@ -720,36 +725,39 @@ static void extend_bottom_row(void *vk, int kw)
     if (!block)
         return;
     added[0] = add_button(block, symbols_id, "!?#", symbols_clicked);
-    added[1] = add_button(block, older_id, "Older", older_clicked);
-    added[2] = add_button(block, newer_id, "Newer", newer_clicked);
+    added[1] = vk_owner ? 0 : add_button(block, older_id, "Older", older_clicked);
+    added[2] = vk_owner ? 0 : add_button(block, newer_id, "Newer", newer_clicked);
 
     begin = *(void ***)(block + EL_CHILDREN);
     end = *(void ***)(block + EL_CHILDREN + 4);
     n = (int)(end - begin);
-    order[0] = added[1];
-    order[1] = added[2];
-    order[2] = added[0];
-    order[3] = back;
-    order[4] = caps;
-    order[5] = done;
-    for (i = 0; i < BOTTOM_BUTTONS; i++)
+    i = 0;
+    if (!vk_owner) {
+        order[i++] = added[1];
+        order[i++] = added[2];
+    }
+    order[i++] = added[0];
+    order[i++] = back;
+    order[i++] = caps;
+    order[i++] = done;
+    for (i = 0; i < nb; i++)
         if (!order[i])
             break;
-    if (n != BOTTOM_BUTTONS || i != BOTTOM_BUTTONS) {
+    if (n != nb || i != nb) {
         tes3x_log("console.vk_bottom_row", (u32)n);
         return;
     }
     first_row = row_keys(vk, 0, &first_count);
     last_row = row_keys(vk, KEY_ROWS - 1, &last_count);
 
-    span = KEY_COLS * kw + (KEY_COLS - 1 - (BOTTOM_BUTTONS - 1)) * item_gap;
-    for (i = 0, used = 0; i < BOTTOM_BUTTONS; i++) {
+    span = KEY_COLS * kw + (KEY_COLS - 1 - (nb - 1)) * item_gap;
+    for (i = 0, used = 0; i < nb; i++) {
         begin[i] = order[i];
-        w = i + 1 < BOTTOM_BUTTONS ? span * bottom_share[i] / 100 : span - used;
+        w = i + 1 < nb ? span * share[i] / 100 : span - used;
         set_prop(order[i], PROP_MIN_WIDTH, w);
         set_prop(order[i], PROP_MAX_WIDTH, w);
-        set_ptr(order[i], TES3X_NAV_LEFT_ID, order[(i + BOTTOM_BUTTONS - 1) % BOTTOM_BUTTONS]);
-        set_ptr(order[i], TES3X_NAV_RIGHT_ID, order[(i + 1) % BOTTOM_BUTTONS]);
+        set_ptr(order[i], TES3X_NAV_LEFT_ID, order[(i + nb - 1) % nb]);
+        set_ptr(order[i], TES3X_NAV_RIGHT_ID, order[(i + 1) % nb]);
         start[i] = used + i * item_gap;
         mid_of[i] = start[i] + w / 2;
         used += w;
@@ -758,7 +766,7 @@ static void extend_bottom_row(void *vk, int kw)
     /* Vertical links join each button to the keys over its centre: up to the last key row, and
      * down, wrapping, to the first. The space bar covers the last row's remaining columns. */
     pitch = kw + item_gap;
-    for (i = 0; i < BOTTOM_BUTTONS; i++) {
+    for (i = 0; i < nb; i++) {
         col = mid_of[i] / pitch;
         if (last_count && last_row[col < last_count ? col : last_count - 1])
             set_ptr(order[i], TES3X_NAV_UP_ID, last_row[col < last_count ? col : last_count - 1]);
@@ -769,14 +777,14 @@ static void extend_bottom_row(void *vk, int kw)
     for (col = 0; col < last_count; col++) {
         mid = col + 1 < last_count ? col * pitch + kw / 2
                                    : (col * pitch + KEY_COLS * pitch - item_gap) / 2;
-        for (i = BOTTOM_BUTTONS - 1; i > 0 && start[i] > mid; i--)
+        for (i = nb - 1; i > 0 && start[i] > mid; i--)
             ;
         if (last_row[col])
             set_ptr(last_row[col], TES3X_NAV_DOWN_ID, order[i]);
     }
     for (col = 0; col < first_count; col++) {
         mid = col * pitch + kw / 2;
-        for (i = BOTTOM_BUTTONS - 1; i > 0 && start[i] > mid; i--)
+        for (i = nb - 1; i > 0 && start[i] > mid; i--)
             ;
         if (first_row[col])
             set_ptr(first_row[col], TES3X_NAV_UP_ID, order[i]);
@@ -851,7 +859,8 @@ static void layout_console(void)
 
 static int open_keyboard(void)
 {
-    void *menu = ((fn_find_menu)TES3X_FIND_MENU)(*(unsigned short *)TES3X_CONSOLE_MENU_ID);
+    void *menu = vk_owner ? vk_owner
+                          : ((fn_find_menu)TES3X_FIND_MENU)(*(unsigned short *)TES3X_CONSOLE_MENU_ID);
 
     if (!menu) {
         tes3x_log("console.vk_no_menu", 0);
@@ -1540,9 +1549,9 @@ static void watch_keyboard(short *in)
         if (in) {
             if (in[KEY_B])
                 vk_cancel = 1;
-            if (pressed(in, KEY_HIST_OLDER, &held_older))
+            if (pressed(in, KEY_HIST_OLDER, &held_older) && !vk_owner)
                 recall(vk, 1);
-            if (pressed(in, KEY_HIST_NEWER, &held_newer))
+            if (pressed(in, KEY_HIST_NEWER, &held_newer) && !vk_owner)
                 recall(vk, -1);
             if (pressed(in, KEY_SYMBOLS, &held_symbols))
                 toggle_symbols(vk);
@@ -1581,18 +1590,21 @@ static void watch_keyboard(short *in)
     run_delay = 8;
 }
 
-int tes3x_console_text_begin(const char *initial)
+static int text_begin(void *owner, const char *initial)
 {
     u32 i = 0;
     if (vk_watch || run_delay || vk_text_client)
         return 0;
+    vk_owner = owner;
     while (initial && initial[i] && i < CMD_MAX - 1) {
         cmd[i] = initial[i];
         i++;
     }
     cmd[i] = 0;
-    if (!open_keyboard())
+    if (!open_keyboard()) {
+        vk_owner = 0;
         return 0;
+    }
     vk_watch = 1;
     vk_fresh = 1;
     vk_seen = 0;
@@ -1603,6 +1615,24 @@ int tes3x_console_text_begin(const char *initial)
     vk_text_client = 1;
     tes3x_vk_limit = CMD_MAX - 1;
     return 1;
+}
+
+int tes3x_console_text_begin(const char *initial)
+{
+    return text_begin(0, initial);
+}
+
+/* As tes3x_console_text_begin, on another menu: the console's exists only once a game is
+ * loaded. */
+int tes3x_console_text_begin_on(void *menu, const char *initial)
+{
+    return text_begin(menu, initial);
+}
+
+/* The text typed so far, while a client's keyboard is up. */
+const char *tes3x_console_text_now(void)
+{
+    return vk_text_client == 1 ? cmd : 0;
 }
 
 int tes3x_console_text_poll(char *out, u32 size)
@@ -1624,6 +1654,7 @@ int tes3x_console_text_poll(char *out, u32 size)
         out[i] = 0;
     }
     vk_text_client = 0;
+    vk_owner = 0;
     cmd[0] = 0;
     return status;
 }

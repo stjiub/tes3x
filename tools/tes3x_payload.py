@@ -121,7 +121,9 @@ CONSOLE_ADDRESSES = (
 # The main menu builder's own calls (0x00200990), for buttons made the way it makes them
 NET_UI_ADDRESSES = (
     ("CREATE_BLOCK", 0x001A7240), ("CREATE_IMAGE", 0x001A7080), ("SET_WIDTH", 0x00198980),
-    ("SET_HEIGHT", 0x00198A60), ("SET_VISIBLE", 0x001A63C0),
+    ("SET_HEIGHT", 0x00198A60), ("SET_VISIBLE", 0x001A63C0), ("CREATE_LABEL", 0x001A7300),
+    ("SET_FOCUS", 0x001AF6E0), ("SET_AUTO_WIDTH", 0x00197710), ("CREATE_NIF", 0x001A7170),
+    ("SCROLL_PANE", 0x002357B0),  # the factory registered as PartScrollPaneVert
 )
 INI_USERS = {"tes3xconsole.c", "tes3xrefs.c", "tes3xdiag.c", "tes3xsaves.c", "tes3xprof.c",
              "tes3xarena.c", "tes3xregion.c", "tes3xbowview.c", "tes3xnet.c"}

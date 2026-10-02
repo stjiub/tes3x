@@ -4040,6 +4040,12 @@
       "pc_va": "0x00580BB0"
     },
     {
+      "va": "0x0019B700",
+      "name": "ui::getFocus",
+      "confidence": "verified",
+      "provenance": "reads property 0xFFFF809B of the top-level parent"
+    },
+    {
       "va": "0x0019B730",
       "name": "ui::findMenu",
       "kind": "function",
@@ -4285,6 +4291,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_ui_moveMenuToFront",
       "pc_va": "0x00595870"
+    },
+    {
+      "va": "0x001AF6E0",
+      "name": "ui::setFocus",
+      "confidence": "verified",
+      "provenance": "pad navigation 0x001B1050 calls it with the NAV target; join menu focus (servers-a7)",
+      "note": "The focused element is the top-level menu's property 0xFFFF809B (pointer), read by 0x0019B700.",
+      "signature": "void __cdecl setFocus(TES3::UI::Element* element, bool on)"
     },
     {
       "va": "0x001B08F0",
@@ -4678,6 +4692,13 @@
       "pc_va": "0x005F4E70"
     },
     {
+      "va": "0x001FC010",
+      "name": "MenuName::build",
+      "confidence": "matched",
+      "provenance": "reads MenuName ids; key grid from 0x001FB560",
+      "note": "Its key table (0x001FB560) has / 0-9 a-z and accented letters, no '.' or ':'; Enter sets the player's name."
+    },
+    {
       "va": "0x001FD510",
       "name": "showMessageBox",
       "kind": "function",
@@ -4697,6 +4718,13 @@
       "name": "MenuOptions::onExitClick",
       "confidence": "guess",
       "provenance": "Exit container click: sMessage5 box (Yes, No), answer callback 0x001FEE10"
+    },
+    {
+      "va": "0x00200990",
+      "name": "MenuOptions::build",
+      "confidence": "verified",
+      "provenance": "builds New/Save/Load/Options/Return/Exit image buttons; QuickStart text button behind [General] QuickStart",
+      "note": "Each button is a 120x50 block with props 0xFFFF8048/0xFFFF80A8=0xFFFF80BD and handlers 0xFFFF8035 click, 0xFFFF8034 pressed, 0xFFFF8033 over, 0xFFFF8032 normal, holding three images. The menu's height and width are set (350), not fitted."
     },
     {
       "va": "0x00201590",
@@ -4843,6 +4871,18 @@
       "pc_va": "0x00639420"
     },
     {
+      "va": "0x0022E290",
+      "name": "ui::factoryButtonText",
+      "confidence": "verified",
+      "provenance": "registered as PartButton (thunk 0x0022E650); keyboard and MenuName keys"
+    },
+    {
+      "va": "0x00230C20",
+      "name": "ui::factoryNonDragMenu",
+      "confidence": "matched",
+      "provenance": "creates PartNonDragMenu_main; MenuOptions and MenuName builders turn their menu into it (replace=1)"
+    },
+    {
       "va": "0x00232A80",
       "name": "ui::factorySlider",
       "kind": "function",
@@ -4881,6 +4921,18 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_ui_ScrollPane_contentPaneChanged",
       "pc_va": "0x00649E40"
+    },
+    {
+      "va": "0x00234F20",
+      "name": "ui::factoryScrollPane",
+      "confidence": "verified",
+      "provenance": "registered as PartScrollPane (thunk 0x00235AF0)"
+    },
+    {
+      "va": "0x002357B0",
+      "name": "ui::factoryVertScrollPane",
+      "confidence": "verified",
+      "provenance": "registered as PartScrollPaneVert (thunk 0x00235B10); the join server list"
     },
     {
       "va": "0x002363F0",

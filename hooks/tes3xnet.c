@@ -44,6 +44,11 @@
 #include "tes3xnt.h"
 #include "monocypher.h"
 #include "tes3xnoise.h"
+#ifdef TES3X_CONSOLE
+int tes3x_console_text_begin_on(void *menu, const char *initial);
+int tes3x_console_text_poll(char *out, u32 size);
+const char *tes3x_console_text_now(void);
+#endif
 
 #ifndef TES3X_NET_WORLD
 #error "define TES3X_NET_WORLD to the WorldController pointer"
@@ -10719,10 +10724,11 @@ static void weather_stat(void)
                    (u32)(int)(*(const float *)(controller + WEATHER_TRANSITION) * 1000.0f));
 }
 
-/* The main menu's Join, below Exit: the server in NetServer, or else the one this console last
- * trusted (servers.ini's last section). Pressing it brings the NIC up if it is not, opens a lobby
- * session and marks later relaunches with the server; the character list or the start points
- * follow at the main menu as they do in a game. */
+/* The main menu's Join, above Exit. It turns the menu's column into the server list: one row per
+ * server this console knows (NetServer, then servers.ini's sections, newest first), New server,
+ * which types an address on the console patch's keyboard, and Return. Choosing a server brings the
+ * NIC up if it is not, opens a lobby session and marks later relaunches with the server; the
+ * character list or the start points follow at the main menu as they do in a game. */
 #define UI_CLICK 0xFFFF8035u
 #define UI_PRESS 0xFFFF8034u /* the main menu's buttons show their pressed image */
 #define UI_OVER 0xFFFF8033u  /* ... their highlighted one */
@@ -10730,8 +10736,12 @@ static void weather_stat(void)
 #define UI_FLAG_B 0xFFFF800Bu
 #define UI_FOCUS_A 0xFFFF8048u /* both UI_TRUE on each main menu button */
 #define UI_FOCUS_B 0xFFFF80A8u
+#define UI_CHILD_ALIGN_X 0xFFFF8054u
+#define UI_CHILD_ALIGN_Y 0xFFFF8055u
 #define UI_TRUE 0xFFFF80BDu
+#define UI_HALF 0x3F000000 /* 0.5f */
 #define UI_PROP_INT 1
+#define UI_PROP_FLOAT 2
 #define UI_PROP_PTR 8
 #define UI_PROP_ENUM 0x10
 #define UI_PROP_HANDLER 0x20
@@ -10739,53 +10749,114 @@ static void weather_stat(void)
 #define UI_CHILDREN 0x28 /* vector: begin, then end at +4 */
 #define UI_WIDTH 0xF4
 #define UI_HEIGHT 0xF8
+#define UI_COLOUR 0x154    /* red, green, blue, alpha; MWSE's PC Element + 8 */
+#define UI_FONT 0x164      /* 0 the small Century Gothic, 1 the big one */
 #define UI_IMAGE_FLAG 0x87 /* cleared on each main menu image */
 #define MENU_ROW 0x32      /* a main menu button's height */
+#define MENU_ROWS 5        /* New, Load, Options, Join, Exit */
+#define SERVERS_SHOWN 8
+#define LIST_VISIBLE 4   /* rows the list's box shows; the rest scroll */
+#define LIST_ROW 32
+#define BOX_PAD 8
+#define UI_FLOW 0xFFFF8059u
+#define UI_TOP_DOWN 0xFFFF80CCu
+#define UI_ALIGN_Y 0x12C /* the main menu sits at 0.95 */
+#define TYPE_ALIGN_Y 0.12f
 typedef void *(__attribute__((thiscall)) *fn_find_child)(void *widget, u32 id);
 typedef void *(__attribute__((thiscall)) *fn_create_block)(void *parent, u32 id, int a0);
 typedef void *(__attribute__((thiscall)) *fn_create_image)(void *parent, u32 id, const char *path,
                                                            int a0);
+typedef void *(__attribute__((thiscall)) *fn_create_label)(void *parent, u32 id, const char *text,
+                                                           int black, int replace);
+typedef void *(__attribute__((thiscall)) *fn_create_nif)(void *parent, u32 id, const char *path,
+                                                         int a0);
+typedef void *(__attribute__((thiscall)) *fn_create_widget)(void *parent, u32 id, u32 factory,
+                                                            int a0);
 typedef void(__attribute__((thiscall)) *fn_set_size)(void *widget, int value);
+typedef void(__attribute__((thiscall)) *fn_set_auto)(void *widget, int on);
 typedef void(__attribute__((thiscall)) *fn_set_visible)(void *widget, int on);
 typedef void(__attribute__((thiscall)) *fn_set_prop)(void *widget, u32 id, int value, int type);
+typedef void(__attribute__((thiscall)) *fn_set_text)(void *widget, const char *text);
 typedef void(__attribute__((thiscall)) *fn_layout)(void *widget, int a0);
+typedef void(__cdecl *fn_set_focus)(void *widget, int on);
 typedef char(__cdecl *fn_ui_handler)(void *owner, u32 id, int d0, int d1, void *source);
 static const char *const button_states[3] = {"TES3X_normal", "TES3X_over", "TES3X_pressed"};
-static char join_target[JOIN_NAME + 1];
-static u32 join_looked, join_pressed, join_buttons, joins_pressed;
+static const char *const main_rows[MENU_ROWS] = {
+    "MenuOptions_New_container", "MenuOptions_Load_container", "MenuOptions_Options_container",
+    "TES3X_Join", "MenuOptions_Exit_container"};
+static const char *const server_rows[SERVERS_SHOWN] = {
+    "TES3X_Server1", "TES3X_Server2", "TES3X_Server3", "TES3X_Server4",
+    "TES3X_Server5", "TES3X_Server6", "TES3X_Server7", "TES3X_Server8"};
+static const float gold[3] = {0.88f, 0.74f, 0.42f}, gold_lit[3] = {1.0f, 0.93f, 0.68f};
+static char servers[SERVERS_SHOWN][JOIN_NAME + 1];
+static u32 servers_n, servers_view, join_buttons, joins_pressed, menu_height, menu_width;
+static int server_chosen = -1; /* a row, SERVER_NEW or SERVER_RETURN, from a click handler */
+static u32 typing;             /* the keyboard is up for New server */
+#define SERVER_NEW SERVERS_SHOWN
+#define SERVER_RETURN (SERVERS_SHOWN + 1)
+#define SERVER_OPEN (SERVERS_SHOWN + 2)
 
-/* servers.ini is small; trust.text is free until the next `up` loads it again. */
-static void join_target_read(void)
+static int same_server(const char *a, const char *b)
 {
+    for (; *a && (*a | 0x20) == (*b | 0x20); a++, b++)
+        ;
+    return !*a && !*b;
+}
+
+static void server_add(const char *name, u32 n)
+{
+    u32 i;
+
+    if (!n || n > JOIN_NAME)
+        return;
+    if (servers_n == SERVERS_SHOWN)
+        servers_n--; /* the oldest goes */
+    for (i = servers_n; i > 0; i--)
+        copy((u8 *)servers[i], (const u8 *)servers[i - 1], JOIN_NAME + 1);
+    copy((u8 *)servers[0], (const u8 *)name, n);
+    servers[0][n] = 0;
+    servers_n++;
+    for (i = 1; i < servers_n; i++)
+        if (same_server(servers[i], servers[0])) {
+            for (; i + 1 < servers_n; i++)
+                copy((u8 *)servers[i], (const u8 *)servers[i + 1], JOIN_NAME + 1);
+            servers_n--;
+            break;
+        }
+}
+
+/* servers.ini is small; trust.text is free until the next `up` loads it again. Its last section is
+ * the newest, so sections are added oldest first, each in front. */
+static void servers_read(void)
+{
+    char server[JOIN_NAME + 1];
     IO_STATUS_BLOCK iosb;
     u64 offset = 0, size;
     u32 off, n, len = 0;
     void *h;
 
-    if (ini_text("NetServer", join_target, sizeof(join_target)))
-        return;
-    if (bulk_open(trust_path, GENERIC_READ, FILE_OPEN, 0, &h))
-        return;
-    size = bulk_size(h);
-    if (size && size < TRUST_TEXT && !NtReadFile(h, 0, 0, 0, &iosb, trust.text, (u32)size, &offset))
-        len = iosb.Information;
-    NtClose(h);
-    trust.loaded = 0;
+    servers_n = 0;
+    if (!bulk_open(trust_path, GENERIC_READ, FILE_OPEN, 0, &h)) {
+        size = bulk_size(h);
+        if (size && size < TRUST_TEXT &&
+            !NtReadFile(h, 0, 0, 0, &iosb, trust.text, (u32)size, &offset))
+            len = iosb.Information;
+        NtClose(h);
+        trust.loaded = 0;
+    }
     for (off = 0; off < len; off += n + 1) {
         const char *line = trust.text + off;
         n = line_length(line, len - off);
-        if (n > 2 && n - 2 <= JOIN_NAME && line[0] == '[' && line[n - 1] == ']') {
-            copy((u8 *)join_target, (const u8 *)line + 1, n - 2);
-            join_target[n - 2] = 0;
-        }
+        if (n > 2 && line[0] == '[' && line[n - 1] == ']')
+            server_add(line + 1, n - 2);
     }
+    if ((n = ini_text("NetServer", server, sizeof(server))))
+        server_add(server, n);
 }
 
-static char __cdecl join_click(void *owner, u32 id, int d0, int d1, void *source)
+static u8 *menu_part(u8 *menu, const char *name)
 {
-    (void)owner, (void)id, (void)d0, (void)d1, (void)source;
-    join_pressed = 1;
-    return 1;
+    return ((fn_find_child)TES3X_NET_FIND_CHILD)(menu, ((fn_ui_id)TES3X_NET_UI_ID)(name));
 }
 
 /* Show one of a button's three images, as the engine's own handlers do, and lay out its menu. */
@@ -10827,6 +10898,18 @@ static char __cdecl button_left(void *owner, u32 id, int d0, int d1, void *sourc
     return 1;
 }
 
+static void focusable(u8 *block, int width, fn_ui_handler click)
+{
+    fn_set_prop set = (fn_set_prop)TES3X_NET_SET_PROP;
+
+    ((fn_set_size)TES3X_NET_SET_WIDTH)(block, width);
+    ((fn_set_size)TES3X_NET_SET_HEIGHT)(block, MENU_ROW);
+    set(block, UI_FLAG_B, 0, UI_PROP_INT);
+    set(block, UI_FOCUS_A, (int)UI_TRUE, UI_PROP_ENUM);
+    set(block, UI_FOCUS_B, (int)UI_TRUE, UI_PROP_ENUM);
+    set(block, UI_CLICK, (int)click, UI_PROP_HANDLER);
+}
+
 /* A button as the main menu builds its own: a block holding Textures\NAME.tga, NAME_over and
  * NAME_pressed, the last two hidden until the pad or the pointer reaches it. */
 static u8 *menu_button(u8 *parent, u32 id, const char *name, int width, fn_ui_handler click)
@@ -10840,12 +10923,7 @@ static u8 *menu_button(u8 *parent, u32 id, const char *name, int width, fn_ui_ha
 
     if (!plausible(block = ((fn_create_block)TES3X_NET_CREATE_BLOCK)(parent, id, 0)))
         return 0;
-    ((fn_set_size)TES3X_NET_SET_WIDTH)(block, width);
-    ((fn_set_size)TES3X_NET_SET_HEIGHT)(block, MENU_ROW);
-    set(block, UI_FLAG_B, 0, UI_PROP_INT);
-    set(block, UI_FOCUS_A, (int)UI_TRUE, UI_PROP_ENUM);
-    set(block, UI_FOCUS_B, (int)UI_TRUE, UI_PROP_ENUM);
-    set(block, UI_CLICK, (int)click, UI_PROP_HANDLER);
+    focusable(block, width, click);
     set(block, UI_PRESS, (int)button_pressed, UI_PROP_HANDLER);
     set(block, UI_OVER, (int)button_over, UI_PROP_HANDLER);
     set(block, UI_LEAVE, (int)button_left, UI_PROP_HANDLER);
@@ -10864,35 +10942,322 @@ static u8 *menu_button(u8 *parent, u32 id, const char *name, int width, fn_ui_ha
     return block;
 }
 
+/* A server's row: its address in the gold of the buttons, brighter while highlighted. */
+static void row_colour(u8 *row, int lit)
+{
+    u8 *label = menu_part(row, "TES3X_label");
+
+    if (!plausible(label))
+        return;
+    copy(label + UI_COLOUR, (const u8 *)(lit ? gold_lit : gold), 12);
+    button_show(row, 0);
+}
+
+static char __cdecl row_over(void *owner, u32 id, int d0, int d1, void *source)
+{
+    (void)id, (void)d0, (void)d1, (void)source;
+    row_colour(owner, 1);
+    return 1;
+}
+
+static char __cdecl row_left(void *owner, u32 id, int d0, int d1, void *source)
+{
+    (void)id, (void)d0, (void)d1, (void)source;
+    row_colour(owner, 0);
+    return 1;
+}
+
+/* The row holding el, which may be the row, its label or the menu's own element. */
+static int server_row(const u8 *el)
+{
+    u8 *menu = ((fn_find_menu)TES3X_NET_FIND_MENU)(((fn_ui_id)TES3X_NET_UI_ID)("MenuOptions"));
+    u32 depth;
+    int i;
+
+    for (depth = 0; plausible(el) && plausible(menu) && depth < 4;
+         depth++, el = *(const u8 *const *)(el + UI_PARENT))
+        for (i = 0; i < SERVERS_SHOWN; i++)
+            if (menu_part(menu, server_rows[i]) == el)
+                return i;
+    return -1;
+}
+
+static char __cdecl join_click(void *owner, u32 id, int d0, int d1, void *source)
+{
+    (void)owner, (void)id, (void)d0, (void)d1, (void)source;
+    server_chosen = SERVER_OPEN;
+    return 1;
+}
+
+static char __cdecl row_click(void *owner, u32 id, int d0, int d1, void *source)
+{
+    (void)id, (void)d0, (void)d1;
+    server_chosen = server_row(owner);
+    if (server_chosen < 0)
+        server_chosen = server_row(source);
+    tes3x_log_hex3("net.join_row", (u32)owner, (u32)source, (u32)server_chosen);
+    return 1;
+}
+
+static char __cdecl new_server_click(void *owner, u32 id, int d0, int d1, void *source)
+{
+    (void)owner, (void)id, (void)d0, (void)d1, (void)source;
+    server_chosen = SERVER_NEW;
+    return 1;
+}
+
+static char __cdecl return_click(void *owner, u32 id, int d0, int d1, void *source)
+{
+    (void)owner, (void)id, (void)d0, (void)d1, (void)source;
+    server_chosen = SERVER_RETURN;
+    return 1;
+}
+
+static void typing_text(u8 *menu, const char *text)
+{
+    char line[JOIN_NAME + 2];
+    u32 i;
+
+    for (i = 0; text[i] && i < JOIN_NAME; i++)
+        line[i] = text[i];
+    line[i++] = '_';
+    line[i] = 0;
+    ((fn_set_text)TES3X_NET_WIDGET_SET_TEXT)(menu_part(menu, "TES3X_TypeText"), line);
+    ((fn_layout)TES3X_NET_PERFORM_LAYOUT)(menu, 1);
+}
+
+/* A box with the thin border the settings lists have, its children top to bottom. */
+static u8 *bordered(u8 *parent, const char *name, int width, int height)
+{
+    fn_set_prop set = (fn_set_prop)TES3X_NET_SET_PROP;
+    u8 *box = ((fn_create_nif)TES3X_NET_CREATE_NIF)(parent, ((fn_ui_id)TES3X_NET_UI_ID)(name),
+                                                    "menu_thin_border.nif", 0);
+
+    if (!plausible(box))
+        return 0;
+    ((fn_set_size)TES3X_NET_SET_WIDTH)(box, width);
+    ((fn_set_size)TES3X_NET_SET_HEIGHT)(box, height);
+    set(box, UI_FLOW, (int)UI_TOP_DOWN, UI_PROP_ENUM);
+    set(box, UI_CHILD_ALIGN_X, UI_HALF, UI_PROP_FLOAT);
+    return box;
+}
+
+static u8 *gold_label(u8 *parent, const char *name, const char *text)
+{
+    u8 *label = ((fn_create_label)TES3X_NET_CREATE_LABEL)(
+        parent, ((fn_ui_id)TES3X_NET_UI_ID)(name), text, 0, 0);
+
+    if (plausible(label)) {
+        *(int *)(label + UI_FONT) = 1;
+        copy(label + UI_COLOUR, (const u8 *)gold, 12);
+    }
+    return label;
+}
+
+/* The list's box, New Server and Return go at the end of the column, hidden; the box that shows
+ * what is typed too. */
+static void servers_build(u8 *column, int width)
+{
+    fn_set_prop set = (fn_set_prop)TES3X_NET_SET_PROP;
+    fn_ui_id ui_id = (fn_ui_id)TES3X_NET_UI_ID;
+    fn_set_visible visible = (fn_set_visible)TES3X_NET_SET_VISIBLE;
+    u8 *box, *pane, *content, *row, *text;
+    u32 i;
+
+    if (plausible(box = bordered(column, "TES3X_TypeBox", 3 * width, 2 * LIST_ROW + 2 * BOX_PAD))) {
+        /* the small font: the big one draws ':' as ';' */
+        if (plausible(text = gold_label(box, "TES3X_TypeTitle", "IP/DNS:PORT")))
+            *(int *)(text + UI_FONT) = 0;
+        if (plausible(text = gold_label(box, "TES3X_TypeText", "_")))
+            *(int *)(text + UI_FONT) = 0;
+        visible(box, 0);
+    }
+    if (!plausible(box = bordered(column, "TES3X_ServerBox", 3 * width,
+                                  LIST_VISIBLE * LIST_ROW + 2 * BOX_PAD)))
+        return;
+    pane = ((fn_create_widget)TES3X_NET_CREATE_WIDGET)(box, ui_id("TES3X_ServerPane"),
+                                                       TES3X_NET_SCROLL_PANE, 0);
+    if (!plausible(pane))
+        return;
+    ((fn_set_size)TES3X_NET_SET_WIDTH)(pane, 3 * width - 2 * BOX_PAD);
+    ((fn_set_size)TES3X_NET_SET_HEIGHT)(pane, LIST_VISIBLE * LIST_ROW);
+    content = menu_part(pane, "PartScrollPane_pane");
+    if (!plausible(content))
+        content = pane;
+    set(content, UI_FLOW, (int)UI_TOP_DOWN, UI_PROP_ENUM);
+    set(content, UI_CHILD_ALIGN_X, UI_HALF, UI_PROP_FLOAT);
+    for (i = 0; i < SERVERS_SHOWN; i++) {
+        if (!plausible(row = ((fn_create_block)TES3X_NET_CREATE_BLOCK)(
+                           content, ui_id(server_rows[i]), 0)))
+            continue;
+        focusable(row, width, row_click);
+        ((fn_set_size)TES3X_NET_SET_HEIGHT)(row, LIST_ROW);
+        ((fn_set_auto)TES3X_NET_SET_AUTO_WIDTH)(row, 1); /* fitted to the name, so centred */
+        set(row, UI_CHILD_ALIGN_Y, UI_HALF, UI_PROP_FLOAT);
+        set(row, UI_OVER, (int)row_over, UI_PROP_HANDLER);
+        set(row, UI_LEAVE, (int)row_left, UI_PROP_HANDLER);
+        gold_label(row, "TES3X_label", "-");
+    }
+    visible(box, 0);
+#ifdef TES3X_CONSOLE
+    if (plausible(row = menu_button(column, ui_id("TES3X_NewServer"), "menu_newserver", 2 * width,
+                                    new_server_click)))
+        visible(row, 0);
+#endif
+    if (plausible(row = menu_button(column, ui_id("TES3X_Return"), "menu_return", width,
+                                    return_click)))
+        visible(row, 0);
+}
+
+/* Show the main column or the server list, link the pad's focus through what shows and put it on
+ * the first. */
+static void servers_show(u8 *menu, u32 on)
+{
+    fn_set_visible visible = (fn_set_visible)TES3X_NET_SET_VISIBLE;
+    fn_set_prop set = (fn_set_prop)TES3X_NET_SET_PROP;
+    u16 up = *(const u16 *)TES3X_NET_NAV_UP_ID, down = *(const u16 *)TES3X_NET_NAV_DOWN_ID;
+    u8 *shown[SERVERS_SHOWN + 2], *part;
+    u32 i, n = 0;
+
+    for (i = 0; i < MENU_ROWS; i++)
+        if (plausible(part = menu_part(menu, main_rows[i])))
+            visible(part, !on);
+    if (plausible(part = menu_part(menu, "TES3X_ServerBox")))
+        visible(part, on);
+    for (i = 0; i < SERVERS_SHOWN; i++)
+        if (plausible(part = menu_part(menu, server_rows[i]))) {
+            visible(part, on && i < servers_n);
+            if (on && i < servers_n) {
+                ((fn_set_text)TES3X_NET_WIDGET_SET_TEXT)(menu_part(part, "TES3X_label"),
+                                                          servers[i]);
+                row_colour(part, 0);
+                shown[n++] = part;
+            }
+        }
+    if (plausible(part = menu_part(menu, "TES3X_NewServer"))) {
+        visible(part, on);
+        if (on)
+            shown[n++] = part;
+    }
+    if (plausible(part = menu_part(menu, "TES3X_Return"))) {
+        visible(part, on);
+        if (on)
+            shown[n++] = part;
+    }
+    servers_view = on;
+    for (i = 0; i < n; i++) {
+        set(shown[i], up, (int)shown[(i + n - 1) % n], UI_PROP_PTR);
+        set(shown[i], down, (int)shown[(i + 1) % n], UI_PROP_PTR);
+    }
+    /* the menu's width is set, not fitted: the box is wider than a button */
+    ((fn_set_size)TES3X_NET_SET_WIDTH)(menu, (int)(on ? 3 * menu_width + 2 * BOX_PAD : menu_width));
+    ((fn_layout)TES3X_NET_PERFORM_LAYOUT)(menu, 1);
+    part = on ? (n ? shown[0] : 0) : menu_part(menu, "TES3X_Join");
+    if (plausible(part))
+        ((fn_set_focus)TES3X_NET_SET_FOCUS)(part, 1);
+}
+
+/* While the keyboard is up the menu shows only what is typed, moved up above the keyboard. */
+static void typing_show(u8 *menu, u32 on)
+{
+    static const char *const list[3] = {"TES3X_ServerBox", "TES3X_NewServer", "TES3X_Return"};
+    static float bottom;
+    fn_set_visible visible = (fn_set_visible)TES3X_NET_SET_VISIBLE;
+    u8 *part;
+    u32 i;
+
+    for (i = 0; i < 3; i++)
+        if (plausible(part = menu_part(menu, list[i])))
+            visible(part, !on);
+    if (plausible(part = menu_part(menu, "TES3X_TypeBox")))
+        visible(part, on);
+    if (on) {
+        bottom = *(float *)(menu + UI_ALIGN_Y);
+        *(float *)(menu + UI_ALIGN_Y) = TYPE_ALIGN_Y;
+        typing_text(menu, "");
+    } else {
+        *(float *)(menu + UI_ALIGN_Y) = bottom;
+        servers_show(menu, 1);
+    }
+    ((fn_layout)TES3X_NET_PERFORM_LAYOUT)(menu, 1);
+}
+
+static void join_server_now(u8 *menu, const char *server, u8 *row)
+{
+    char text[JOIN_NAME + 16];
+
+    if (lobby)
+        return;
+    joins_pressed++;
+    copy((u8 *)join_server, (const u8 *)server, tes3x_strlen(server) + 1);
+    lobby = 1;
+    log_text("net.join", join_server);
+    if (plausible(row)) {
+        *put_text(put_text(text, "Joining "), server) = 0;
+        ((fn_set_text)TES3X_NET_WIDGET_SET_TEXT)(menu_part(row, "TES3X_label"), text);
+        ((fn_layout)TES3X_NET_PERFORM_LAYOUT)(menu, 1);
+    }
+    if (!net.up)
+        autostart();
+}
+
+/* New server: whatever was typed, without spaces, is the server to join. */
+static void typing_frame(u8 *menu)
+{
+#ifdef TES3X_CONSOLE
+    char text[JOIN_NAME + 1];
+    const char *now = tes3x_console_text_now();
+    u32 i, n = 0;
+    int status = tes3x_console_text_poll(text, sizeof(text));
+
+    if (!status) {
+        if (now)
+            typing_text(menu, now);
+        return;
+    }
+    typing = 0;
+    typing_show(menu, 0);
+    if (status != 2)
+        return;
+    for (i = 0; text[i]; i++)
+        if (text[i] != ' ')
+            text[n++] = text[i];
+    text[n] = 0;
+    log_text("net.join_typed", text);
+    if (!n)
+        return;
+    server_add(text, n);
+    servers_show(menu, 1);
+    join_server_now(menu, servers[0], menu_part(menu, server_rows[0]));
+#else
+    (void)menu;
+    typing = 0;
+#endif
+}
+
 static void join_frame(void)
 {
     fn_ui_id ui_id = (fn_ui_id)TES3X_NET_UI_ID;
-    fn_find_child child = (fn_find_child)TES3X_NET_FIND_CHILD;
     fn_set_prop set = (fn_set_prop)TES3X_NET_SET_PROP;
     u16 up = *(const u16 *)TES3X_NET_NAV_UP_ID, down = *(const u16 *)TES3X_NET_NAV_DOWN_ID;
     u8 *menu, *exit, *above, *column, *button, **begin, **end, **at;
-    u32 id;
+    int chosen;
 
     if (player_reference())
         return; /* a game is loaded: Load and New relaunch, and the pause menu has no Join */
-    if (!join_looked) {
-        join_looked = 1;
-        join_target_read();
-        log_text("net.join_target", join_target[0] ? join_target : "(none)");
-    }
-    if (!join_target[0] ||
-        !plausible(menu = ((fn_find_menu)TES3X_NET_FIND_MENU)(ui_id("MenuOptions"))))
+    if (!plausible(menu = ((fn_find_menu)TES3X_NET_FIND_MENU)(ui_id("MenuOptions"))))
         return;
-    id = ui_id("TES3X_Join");
-    if (!plausible(button = child(menu, id))) {
-        exit = child(menu, ui_id("MenuOptions_Exit_container"));
-        above = child(menu, ui_id("MenuOptions_Options_container"));
+    if (!plausible(button = menu_part(menu, "TES3X_Join"))) {
+        exit = menu_part(menu, "MenuOptions_Exit_container");
+        above = menu_part(menu, "MenuOptions_Options_container");
         if (!plausible(exit) || !plausible(column = *(u8 **)(exit + UI_PARENT)) ||
-            !plausible(button = menu_button(column, id, "menu_join",
+            !plausible(button = menu_button(column, ui_id("TES3X_Join"), "menu_join",
                                             *(const int *)(exit + UI_WIDTH), join_click)))
             return;
         /* the menu's height is set, not fitted: one row more */
-        ((fn_set_size)TES3X_NET_SET_HEIGHT)(menu, *(const int *)(menu + UI_HEIGHT) + MENU_ROW);
+        menu_height = *(const int *)(menu + UI_HEIGHT) + MENU_ROW;
+        menu_width = *(const int *)(menu + UI_WIDTH);
+        ((fn_set_size)TES3X_NET_SET_HEIGHT)(menu, (int)menu_height);
         /* Join goes above Exit: the block was added last to its column's children */
         begin = *(u8 ***)(column + UI_CHILDREN);
         end = *(u8 ***)(column + UI_CHILDREN + 4);
@@ -10912,25 +11277,38 @@ static void join_frame(void)
             set(button, up, (int)above, UI_PROP_PTR);
             set(above, down, (int)button, UI_PROP_PTR);
         }
+        servers_build(column, *(const int *)(exit + UI_WIDTH));
+        servers_view = 0;
         ((fn_layout)TES3X_NET_PERFORM_LAYOUT)(menu, 0);
         join_buttons++;
     }
-    if (!join_pressed)
+    if (typing) {
+        typing_frame(menu);
         return;
-    join_pressed = 0;
-    if (lobby)
-        return;
-    joins_pressed++;
-    copy((u8 *)join_server, (const u8 *)join_target, JOIN_NAME + 1);
-    lobby = 1;
-    log_text("net.join", join_server);
-    if (!net.up)
-        autostart();
+    }
+    chosen = server_chosen;
+    server_chosen = -1;
+    if (chosen == SERVER_OPEN) {
+        servers_read();
+        servers_show(menu, 1);
+    } else if (chosen == SERVER_RETURN) {
+        servers_show(menu, 0);
+#ifdef TES3X_CONSOLE
+    } else if (chosen == SERVER_NEW) {
+        typing = tes3x_console_text_begin_on(menu, "");
+        tes3x_log("net.join_keyboard", typing);
+        if (typing)
+            typing_show(menu, 1);
+#endif
+    } else if (chosen >= 0 && chosen < (int)servers_n) {
+        join_server_now(menu, servers[chosen], menu_part(menu, server_rows[chosen]));
+    }
 }
 
 static void join_stat(void)
 {
     tes3x_log_hex3("net.join_menu", join_buttons, joins_pressed, lobby);
+    tes3x_log_hex3("net.join_servers", servers_n, servers_view, typing);
 }
 
 /* Once per frame, from the Game::Update hook. */

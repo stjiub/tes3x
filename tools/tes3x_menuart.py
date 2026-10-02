@@ -21,7 +21,7 @@ BUTTONS = {
     "menu_savegame": ("Save", 128), "menu_options": ("Options", 128),
     "menu_return": ("Return", 128), "menu_exitgame": ("Exit", 128),
     "menu_join": ("Join", 128), "menu_servers": ("Servers", 128),
-    "menu_newserver": ("New server", 256),
+    "menu_newserver": ("New Server", 256),
 }
 HEIGHT = 64
 CAP = 21       # cap height, as the retail lettering
