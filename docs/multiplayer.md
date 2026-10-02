@@ -79,8 +79,11 @@ The first client to join sets the session's load order and its game clock. Usefu
 | `--password-file FILE` | ask new consoles for the password on this file's first line (below) |
 | `--max-players N` | refuse consoles beyond this many (default 16) |
 | `--duration SECONDS` | stop after a while |
+| `--stop-wait SECONDS` | how long stopping waits for consoles' saves (default 60) |
 
-Stop the server with Ctrl+C. Without `--world` the session lives only as long as the server
+Stop the server with Ctrl+C, or the admin command `stop`. Before it exits it asks every
+joined console to save its character and waits, up to `--stop-wait`, for each save to arrive;
+it names any console that did not send one. A second Ctrl+C stops at once. Without `--world` the session lives only as long as the server
 does: stop it and the deaths, objects and equipment it recorded are gone. With `--world DIR` it
 keeps the game clock, the deaths, the doors, locks and items taken, the items dropped or placed,
 containers' contents, actors' AI settings and disposition, and the weather in one file per
@@ -132,6 +135,8 @@ The server takes admin commands typed at its own window, or from the same PC wit
 | `ban N` | ban client N's key and MAC, and drop it |
 | `ban key FINGERPRINT`, `ban mac MAC`, `ban address A.B.C.D` | ban one of them; `unban` the same way lifts it |
 | `bans` | the bans |
+| `save [N]` | ask every console, or client N, to save its character now |
+| `stop` | ask every console for its character, wait for the saves, then stop |
 
 Bans are kept in `bans.txt` in the `--world` folder. A key is a player's identity, but a player
 can make a new one by deleting `servers.ini`; on a server with a password, a new key needs the

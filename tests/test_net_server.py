@@ -446,6 +446,39 @@ class ServerTests(unittest.TestCase):
         fourth.session ^= 8
         fourth.join()
 
+    def test_stopping_waits_for_each_console_to_save(self):
+        world = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, world)
+        admin = free_port()
+        self.start('--world', str(world), '--adopt', '--admin-port', str(admin),
+                   '--stop-wait', '20')
+        client = self.client(1)
+        client.join()
+        self.game(client, 1, 7, b'')
+        self.upload(client, 2, 1, b'mp-hero.ess', self.save(b'Nerevar', 0))
+        self.assertIn('stopping', self.admin(admin, 'stop'))
+        self.events(client, lambda kind, _: kind == tes3x_net.EVENT_SAVE)
+        self.assertIsNone(self.server.poll())
+        last = self.save(b'Nerevar', 1)
+        self.upload(client, 3, 2, b'mp-hero.ess', last)
+        self.assertEqual(self.server.wait(5), 0)
+        self.assertEqual((self.character(world) / 'mp-hero.ess').read_bytes(), last)
+
+    def test_stopping_gives_up_on_a_silent_console(self):
+        world = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, world)
+        admin = free_port()
+        self.start('--world', str(world), '--adopt', '--admin-port', str(admin),
+                   '--stop-wait', '1')
+        client = self.client(1)
+        client.join()
+        self.game(client, 1, 7, b'')
+        self.upload(client, 2, 1, b'mp-hero.ess', self.save(b'Nerevar', 0))
+        started = time.time()
+        self.admin(admin, 'stop')
+        self.assertEqual(self.server.wait(5), 0)
+        self.assertGreaterEqual(time.time() - started, 0.9)
+
     def test_replayed_handshake3_does_not_move_the_session(self):
         self.start()
         client = self.client(1)

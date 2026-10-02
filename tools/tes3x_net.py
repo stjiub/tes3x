@@ -27,6 +27,7 @@ import queue
 import random
 import re
 import select
+import signal
 import socket
 import struct
 import sys
@@ -1638,6 +1639,7 @@ class Client:
         self.bursts = []  # (seconds after joining, packets) still to send
         self.bulk = None  # the Outgoing file of --send, offered again on each join
         self.upload = None  # the Incoming file this console is sending
+        self.kept = 0  # saves kept from it as its character
         self.key = None  # the console's static key for this server: its identity
         self.keys = None  # (console to server, server to console) from the handshake
         self.replay = (0, 0)  # the highest seq opened and a bitmap of the 32 up to it
@@ -2241,6 +2243,7 @@ def serve(args):
         print(f"{stamp} client {client.id} kept {client.upload.name}: {head['player']} in "
               f"{head['cell']}, {len(head['masters'])} masters"
               + (f", a new character in {os.path.basename(folder)}" if new else ""), flush=True)
+        client.kept += 1
         if new:
             client.character = os.path.basename(folder)
             creating.discard(fingerprint(client.key))
@@ -2708,11 +2711,14 @@ def serve(args):
         if verb == "save" and len(rest) <= 1 and all(r in by_id for r in rest):
             targets = [by_id[r] for r in rest] or list(clients.values())
             return "asked to save: " + ask_save(targets, time.time())
+        if verb == "stop" and not rest:
+            begin_stop("admin stop", time.time())
+            return "stopping"
         if verb == "bans" and not rest:
             return "\n".join(f"{kind} {value}" for kind in BAN_KINDS
                              for value in sorted(bans[kind])) or "no bans"
         return ("commands: list; kick N; save [N]; ban N (its key and MAC); "
-                "ban|unban key FINGERPRINT|mac MAC|address A.B.C.D; bans")
+                "ban|unban key FINGERPRINT|mac MAC|address A.B.C.D; bans; stop")
 
     def handle_plain(packet, addr, secure=None):
         nonlocal pinned, clock
@@ -2895,9 +2901,43 @@ def serve(args):
             leave(client)
             by_session.pop(session, None)
 
+    # Stopping asks every joined console for its character and waits, up to --stop-wait, for the
+    # saves of those running one; a second Ctrl-C stops at once.
+    stop = {"until": None, "waiting": {}}
+
+    def begin_stop(why, now):
+        if stop["until"] is not None:
+            return
+        stop["until"] = now + args.stop_wait
+        stop["waiting"] = {c.id: c.kept for c in clients.values() if c.alive and c.synced}
+        asked = ask_save([c for c in clients.values() if c.alive], now)
+        print(f"{time.strftime('%H:%M:%S')} stopping ({why}): asked to save: {asked}; waiting "
+              f"up to {args.stop_wait:g} s for "
+              + (", ".join(f"client {i}" for i in stop["waiting"]) or "nobody"), flush=True)
+        signal.signal(signal.SIGINT, signal.default_int_handler)
+
+    def stopped(now):
+        if stop["until"] is None:
+            if deadline is None or now < deadline:
+                return False
+            begin_stop("duration over", now)
+        for ident, kept in list(stop["waiting"].items()):
+            client = next(c for c in clients.values() if c.id == ident)
+            if client.kept > kept or not client.alive:
+                del stop["waiting"][ident]
+                print(f"{time.strftime('%H:%M:%S')} client {ident} "
+                      + ("saved" if client.kept > kept else "left without saving"), flush=True)
+        if stop["waiting"] and now < stop["until"]:
+            return False
+        for ident in stop["waiting"]:
+            print(f"{time.strftime('%H:%M:%S')} client {ident} did not save in "
+                  f"{args.stop_wait:g} s", flush=True)
+        return True
+
+    signal.signal(signal.SIGINT, lambda *_: commands.put("stop"))
     if pinned:
         adopt_world(pinned[0], time.time())
-    while deadline is None or time.time() < deadline:
+    while not stopped(time.time()):
         while not commands.empty():
             print(admin(commands.get()), flush=True)
         waiting = [sock] + [link.sock for link in links] + ([dns] if dns else []) + (
@@ -3359,6 +3399,9 @@ def main(argv=None):
     p.add_argument("--tunnel", type=int, action="append", default=[], metavar="PORT",
                    help="serve an xemu guest through its udp backend (repeatable, one per xemu)")
     p.add_argument("--duration", type=float, help="stop after this many seconds")
+    p.add_argument("--stop-wait", type=float, default=60.0, metavar="SECONDS",
+                   help="on stopping (Ctrl-C, --duration, admin stop) wait this long for every "
+                        "joined console to save its character (default 60)")
     p.add_argument("--world", metavar="DIR",
                    help="keep the world in DIR, one file per load order: the clock, deaths, "
                         "changed objects, objects made at run time and weather, loaded when the "
