@@ -4309,6 +4309,14 @@
       "pc_va": "0x00595400"
     },
     {
+      "va": "0x001B1050",
+      "name": "ui::navigate",
+      "confidence": "verified",
+      "provenance": "exec nav drives the D-pad through it; join list focus (joinfail-c6)",
+      "note": "direction 0xE up, 0xF down, 0x10 left, 0x11 right. With the focused element's NAV property for that direction set it only calls setFocus and returns: no over/leave events and no scrollToElement, which the search path does.",
+      "signature": "void __cdecl navigate(int direction, char sound, char remember)"
+    },
+    {
       "va": "0x001B1FB0",
       "name": "alchemySkillRoll",
       "kind": "function",
@@ -4913,6 +4921,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_ui_ScrollPaneHorz_scrollBarChanged",
       "pc_va": "0x00649A20"
+    },
+    {
+      "va": "0x00234300",
+      "name": "ui::scrollToElement",
+      "confidence": "verified",
+      "provenance": "join list follows pad focus with it (joinfail-a3, -c8)",
+      "note": "Scrolls the enclosing PartScrollPane so the element shows, with a 16-unit margin.",
+      "signature": "char __cdecl scrollToElement(TES3::UI::Element* element)"
     },
     {
       "va": "0x00234840",

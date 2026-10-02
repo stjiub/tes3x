@@ -46,6 +46,7 @@
 #include "tes3xnoise.h"
 #ifdef TES3X_CONSOLE
 int tes3x_console_text_begin_on(void *menu, const char *initial);
+void *tes3x_console_text_field(void);
 int tes3x_console_text_poll(char *out, u32 size);
 const char *tes3x_console_text_now(void);
 #endif
@@ -2136,11 +2137,12 @@ static const char *host_name(const char *text, char *out)
 }
 
 /* up A.B.C.D[/BITS]|dhcp [SERVER[:PORT] [GATEWAY [DNS]]], where SERVER is an address or a name;
- * with dhcp a GATEWAY or DNS given here overrides the lease's */
+ * with dhcp a GATEWAY or DNS given here overrides the lease's. With the NIC already up only the
+ * session is opened again, to the server given. */
 static void command_up(const char *text)
 {
     u32 ip = 0, bits = 24, server = 0, port = PORT, gateway = 0, dns = 0, flags, named = 0;
-    u32 pinned = 0;
+    u32 pinned = 0, again = net.up;
     char host[HOST_NAME];
     const char *after, *name = 0;
     u8 fingerprint[TRUST_FINGERPRINT];
@@ -2191,17 +2193,25 @@ static void command_up(const char *text)
             goto usage;
         }
     }
-    if (!nic_start(ip, 1))
-        return;
-    net.mask = lease ? 0 : 0xFFFFFFFFu << (32 - bits);
-    if (!lease)
-        announce();
-    tes3x_log_hex3("net.up", ip, bits, server);
+    if (!again) {
+        if (!nic_start(ip, 1))
+            return;
+        net.mask = lease ? 0 : 0xFFFFFFFFu << (32 - bits);
+        if (!lease)
+            announce();
+    }
+    tes3x_log_hex3(again ? "net.reopen" : "net.up", ip, bits, server);
     if (server || host[0]) {
         u32 *w = (u32 *)&ses;
         u32 n;
 
         flags = lock();
+        if (again && ses.state == SESSION_JOINED)
+            session_send(T3MP_BYE, 0, 0);
+        if (again && lease) { /* what the lease gave */
+            gateway = gateway ? gateway : ses.gateway;
+            dns = dns ? dns : ses.dns;
+        }
         for (n = 0; n < sizeof(ses) / 4; n++)
             w[n] = 0;
         ses.server = server;
@@ -2215,17 +2225,19 @@ static void command_up(const char *text)
         trust_configure(name, named, pinned ? fingerprint : 0);
         load_order();
         flags = lock();
-        if (lease)
+        if (lease && !(again && dhcp.state == DHCP_BOUND))
             ses.state = SESSION_DHCP;
         else
             route_to(server ? server : dns);
         unlock(flags);
-        if (!lease && (ses.hop ^ ip) & net.mask)
+        if (!lease && !again && (ses.hop ^ ip) & net.mask)
             tes3x_log("net.no_gateway", ses.hop);
         if (host[0])
             log_text("net.resolving", host);
         tes3x_log_hex3("net.session_start", server ? server : dns, port, ses.hop);
     }
+    if (again)
+        return;
     flags = lock();
     dhcp.state = DHCP_IDLE;
     if (lease) {
@@ -2289,7 +2301,7 @@ static u32 ini_text(const char *key, char *out, u32 size)
 }
 
 /* The ini reader needs the game drive, which is not mounted at process entry. A launch the main
- * menu's Join led to joins its server even without NetAddress (DHCP) or NetServer. */
+ * menu's Join led to joins its server even without NetAddress (DHCP), and in place of NetServer. */
 static void autostart(void)
 {
     char line[24 + JOIN_NAME + 2 * 24];
@@ -2303,12 +2315,10 @@ static void autostart(void)
         n = 4;
     }
     line[n++] = ' ';
-    server = ini_text("NetServer", line + n, JOIN_NAME);
-    if (!server && join_server[0]) {
-        for (i = 0; join_server[i]; i++)
-            line[n + i] = join_server[i];
-        server = i;
-    }
+    for (i = 0; join_server[i]; i++)
+        line[n + i] = join_server[i];
+    if (!(server = i))
+        server = ini_text("NetServer", line + n, JOIN_NAME);
     if (server) {
         n += server;
         line[n++] = ' ';
@@ -8353,15 +8363,16 @@ static int random_bytes(u8 *out, u32 n)
     return 1;
 }
 
-/* U:\TES3X\servers.ini keeps, per server as NetServer names it, the server's pinned static key
- * and this console's own secret key for it: its identity there. Unknown lines are kept. */
+/* U:\TES3X\servers.ini keeps, per server as NetServer names it, the server's pinned static key,
+ * this console's own secret key for it (its identity there) and the password typed at Join, which
+ * goes in place of NetPassword. Unknown lines are kept. */
 #define TRUST_TEXT 4096u
 
 static char trust_path[] = "U:\\TES3X\\servers.ini";
 static char trust_new[] = "U:\\TES3X\\servers.ini.new";
 static struct {
-    u32 loaded, text_n, has_fingerprint, has_server, has_client, dirty;
-    char name[HOST_NAME + 8];
+    u32 loaded, text_n, has_fingerprint, has_server, has_client, dirty, password_n;
+    char name[HOST_NAME + 8], password[PASSWORD_MAX + 1];
     u8 fingerprint[TRUST_FINGERPRINT], server[NOISE_KEY], client[NOISE_KEY];
     char text[TRUST_TEXT];
 } trust;
@@ -8461,7 +8472,7 @@ static void trust_load(void)
         return;
     trust.loaded = 1;
     trust.text_n = 0;
-    trust.has_server = trust.has_client = trust.dirty = 0;
+    trust.has_server = trust.has_client = trust.dirty = trust.password_n = 0;
     entropy_add();
     if (bulk_open(trust_path, GENERIC_READ, FILE_OPEN, 0, &h))
         return;
@@ -8483,6 +8494,8 @@ static void trust_load(void)
             trust.has_server = hex_read(line + 11, trust.server, NOISE_KEY);
         else if (inside && starts(line, n, "client_key=") && n >= 11 + 2 * NOISE_KEY)
             trust.has_client = hex_read(line + 11, trust.client, NOISE_KEY);
+        else if (inside && starts(line, n, "password=") && n - 9 <= PASSWORD_MAX)
+            copy((u8 *)trust.password, (const u8 *)line + 9, trust.password_n = n - 9);
     }
     tes3x_log_hex3("net.trust", trust.text_n, trust.has_server, trust.has_client);
 }
@@ -8516,6 +8529,12 @@ static void trust_save(void)
     copy((u8 *)out + len, (const u8 *)"\r\nclient_key=", 13);
     len += 13;
     len += hex_write(out + len, trust.client, NOISE_KEY);
+    if (trust.password_n) {
+        copy((u8 *)out + len, (const u8 *)"\r\npassword=", 11);
+        len += 11;
+        copy((u8 *)out + len, (const u8 *)trust.password, trust.password_n);
+        len += trust.password_n;
+    }
     out[len++] = '\r';
     out[len++] = '\n';
     if (len <= TRUST_TEXT) {
@@ -8785,8 +8804,10 @@ static void handshake_finish(void)
     put32le(hello + 14, ses.plugins | (lobby ? LOBBY_PLUGINS : 0));
     copy(hello + 18, game_clock.local, CLOCK_BYTES);
     unlock(flags);
-    password = net_password_n;
-    copy(hello + HELLO_BYTES, (const u8 *)net_password, password);
+    if ((password = trust.password_n))
+        copy(hello + HELLO_BYTES, (const u8 *)trust.password, password);
+    else
+        copy(hello + HELLO_BYTES, (const u8 *)net_password, password = net_password_n);
     noise_write3(&hs.noise, hs.packet + T3MP_OUTER, hello, HELLO_BYTES + password);
     crypto_wipe(hello, sizeof(hello));
     flags = lock();
@@ -10750,6 +10771,7 @@ static void weather_stat(void)
 #define UI_WIDTH 0xF4
 #define UI_HEIGHT 0xF8
 #define UI_COLOUR 0x154    /* red, green, blue, alpha; MWSE's PC Element + 8 */
+#define UI_COLOUR_CHANGED 0x7F /* flagColourChanged, likewise */
 #define UI_FONT 0x164      /* 0 the small Century Gothic, 1 the big one */
 #define UI_IMAGE_FLAG 0x87 /* cleared on each main menu image */
 #define MENU_ROW 0x32      /* a main menu button's height */
@@ -10791,7 +10813,14 @@ static const float gold[3] = {0.88f, 0.74f, 0.42f}, gold_lit[3] = {1.0f, 0.93f, 
 static char servers[SERVERS_SHOWN][JOIN_NAME + 1];
 static u32 servers_n, servers_view, join_buttons, joins_pressed, menu_height, menu_width;
 static int server_chosen = -1; /* a row, SERVER_NEW or SERVER_RETURN, from a click handler */
-static u32 typing;             /* the keyboard is up for New server */
+static u32 typing;             /* the keyboard is up, for TYPE_SERVER or TYPE_PASSWORD */
+#define TYPE_SERVER 1u
+#define TYPE_PASSWORD 2u
+#define JOIN_WAIT_US 20000000u /* a join with no WELCOME by then has failed */
+static u8 *join_row, *list_focus; /* the row being joined; the focus the list last followed */
+static u32 join_started, join_failures, list_follows;
+typedef u8 *(__attribute__((thiscall)) *fn_get_focus)(void *menu);
+typedef char(__cdecl *fn_scroll_to)(void *element);
 #define SERVER_NEW SERVERS_SHOWN
 #define SERVER_RETURN (SERVERS_SHOWN + 1)
 #define SERVER_OPEN (SERVERS_SHOWN + 2)
@@ -10877,24 +10906,37 @@ static void button_show(u8 *button, u32 which)
     ((fn_layout)TES3X_NET_PERFORM_LAYOUT)(root, 1);
 }
 
+/* A handler is given the menu as owner and the widget hit as source, which may be a part of the
+ * button or row: the widget holding a part named so. */
+static u8 *event_widget(void *source, const char *part)
+{
+    u32 id = ((fn_ui_id)TES3X_NET_UI_ID)(part), depth;
+    u8 *el = source, *found;
+
+    for (depth = 0; plausible(el) && depth < 4; depth++, el = *(u8 **)(el + UI_PARENT))
+        if (plausible(found = ((fn_find_child)TES3X_NET_FIND_CHILD)(el, id)) && found != el)
+            return el;
+    return 0;
+}
+
 static char __cdecl button_pressed(void *owner, u32 id, int d0, int d1, void *source)
 {
-    (void)id, (void)d0, (void)d1, (void)source;
-    button_show(owner, 2);
+    (void)owner, (void)id, (void)d0, (void)d1;
+    button_show(event_widget(source, "TES3X_pressed"), 2);
     return 1;
 }
 
 static char __cdecl button_over(void *owner, u32 id, int d0, int d1, void *source)
 {
-    (void)id, (void)d0, (void)d1, (void)source;
-    button_show(owner, 1);
+    (void)owner, (void)id, (void)d0, (void)d1;
+    button_show(event_widget(source, "TES3X_pressed"), 1);
     return 1;
 }
 
 static char __cdecl button_left(void *owner, u32 id, int d0, int d1, void *source)
 {
-    (void)id, (void)d0, (void)d1, (void)source;
-    button_show(owner, 0);
+    (void)owner, (void)id, (void)d0, (void)d1;
+    button_show(event_widget(source, "TES3X_pressed"), 0);
     return 1;
 }
 
@@ -10945,26 +10987,41 @@ static u8 *menu_button(u8 *parent, u32 id, const char *name, int width, fn_ui_ha
 /* A server's row: its address in the gold of the buttons, brighter while highlighted. */
 static void row_colour(u8 *row, int lit)
 {
-    u8 *label = menu_part(row, "TES3X_label");
+    u8 *label;
 
-    if (!plausible(label))
+    if (!plausible(row) || !plausible(label = menu_part(row, "TES3X_label")))
         return;
     copy(label + UI_COLOUR, (const u8 *)(lit ? gold_lit : gold), 12);
+    label[UI_COLOUR_CHANGED] = 1;
     button_show(row, 0);
 }
 
 static char __cdecl row_over(void *owner, u32 id, int d0, int d1, void *source)
 {
-    (void)id, (void)d0, (void)d1, (void)source;
-    row_colour(owner, 1);
+    (void)owner, (void)id, (void)d0, (void)d1;
+    row_colour(event_widget(source, "TES3X_label"), 1);
     return 1;
 }
 
 static char __cdecl row_left(void *owner, u32 id, int d0, int d1, void *source)
 {
-    (void)id, (void)d0, (void)d1, (void)source;
-    row_colour(owner, 0);
+    (void)owner, (void)id, (void)d0, (void)d1;
+    row_colour(event_widget(source, "TES3X_label"), 0);
     return 1;
+}
+
+/* A row's text, in the small font when it has a ':', which the big one draws as ';'. */
+static void row_label(u8 *row, const char *text)
+{
+    u8 *label = menu_part(row, "TES3X_label");
+    u32 i;
+
+    if (!plausible(label))
+        return;
+    for (i = 0; text[i] && text[i] != ':'; i++)
+        ;
+    *(int *)(label + UI_FONT) = !text[i];
+    ((fn_set_text)TES3X_NET_WIDGET_SET_TEXT)(label, text);
 }
 
 /* The row holding el, which may be the row, its label or the menu's own element. */
@@ -10992,9 +11049,7 @@ static char __cdecl join_click(void *owner, u32 id, int d0, int d1, void *source
 static char __cdecl row_click(void *owner, u32 id, int d0, int d1, void *source)
 {
     (void)id, (void)d0, (void)d1;
-    server_chosen = server_row(owner);
-    if (server_chosen < 0)
-        server_chosen = server_row(source);
+    server_chosen = server_row(source);
     tes3x_log_hex3("net.join_row", (u32)owner, (u32)source, (u32)server_chosen);
     return 1;
 }
@@ -11019,7 +11074,7 @@ static void typing_text(u8 *menu, const char *text)
     u32 i;
 
     for (i = 0; text[i] && i < JOIN_NAME; i++)
-        line[i] = text[i];
+        line[i] = typing == TYPE_PASSWORD ? '*' : text[i];
     line[i++] = '_';
     line[i] = 0;
     ((fn_set_text)TES3X_NET_WIDGET_SET_TEXT)(menu_part(menu, "TES3X_TypeText"), line);
@@ -11128,8 +11183,7 @@ static void servers_show(u8 *menu, u32 on)
         if (plausible(part = menu_part(menu, server_rows[i]))) {
             visible(part, on && i < servers_n);
             if (on && i < servers_n) {
-                ((fn_set_text)TES3X_NET_WIDGET_SET_TEXT)(menu_part(part, "TES3X_label"),
-                                                          servers[i]);
+                row_label(part, servers[i]);
                 row_colour(part, 0);
                 shown[n++] = part;
             }
@@ -11171,6 +11225,9 @@ static void typing_show(u8 *menu, u32 on)
             visible(part, !on);
     if (plausible(part = menu_part(menu, "TES3X_TypeBox")))
         visible(part, on);
+    if (on && plausible(part = menu_part(menu, "TES3X_TypeTitle")))
+        ((fn_set_text)TES3X_NET_WIDGET_SET_TEXT)(part, typing == TYPE_PASSWORD ? "PASSWORD" :
+                                                 "IP/DNS:PORT");
     if (on) {
         bottom = *(float *)(menu + UI_ALIGN_Y);
         *(float *)(menu + UI_ALIGN_Y) = TYPE_ALIGN_Y;
@@ -11182,41 +11239,157 @@ static void typing_show(u8 *menu, u32 on)
     ((fn_layout)TES3X_NET_PERFORM_LAYOUT)(menu, 1);
 }
 
+static void row_text(u8 *menu, u8 *row, const char *a, const char *b, const char *c)
+{
+    char text[JOIN_NAME + 40];
+
+    if (!plausible(row))
+        return;
+    *put_text(put_text(put_text(text, a), b), c) = 0;
+    row_label(row, text);
+    ((fn_layout)TES3X_NET_PERFORM_LAYOUT)(menu, 1);
+}
+
+/* 1 if the session in hand, or the one being opened, is to this server (NetServer's text,
+ * fingerprint aside, as trust_configure keeps it). */
+static int session_for(const char *server)
+{
+    u32 i;
+
+    if (ses.state == SESSION_IDLE || ses.state == SESSION_REFUSED ||
+        ses.state == SESSION_UNTRUSTED || (!ses.server && !ses.host[0]))
+        return 0;
+    for (i = 0; trust.name[i] && (trust.name[i] | 0x20) == (server[i] | 0x20); i++)
+        ;
+    return !trust.name[i] && (!server[i] || server[i] == '#');
+}
+
 static void join_server_now(u8 *menu, const char *server, u8 *row)
 {
-    char text[JOIN_NAME + 16];
-
     if (lobby)
         return;
     joins_pressed++;
-    copy((u8 *)join_server, (const u8 *)server, tes3x_strlen(server) + 1);
+    if (server != join_server)
+        copy((u8 *)join_server, (const u8 *)server, tes3x_strlen(server) + 1);
     lobby = 1;
+    join_row = row;
+    join_started = now_us();
     log_text("net.join", join_server);
-    if (plausible(row)) {
-        *put_text(put_text(text, "Joining "), server) = 0;
-        ((fn_set_text)TES3X_NET_WIDGET_SET_TEXT)(menu_part(row, "TES3X_label"), text);
-        ((fn_layout)TES3X_NET_PERFORM_LAYOUT)(menu, 1);
-    }
-    if (!net.up)
+    row_text(menu, row, "Joining ", join_server, "");
+    /* NetAddress alone brings the NIC up without a session; NetServer's may be another server */
+    if (!net.up || !session_for(join_server))
         autostart();
 }
 
-/* New server: whatever was typed, without spaces, is the server to join. */
+static void join_failed(u8 *menu, const char *why)
+{
+    u32 flags = lock();
+
+    if (ses.state != SESSION_JOINED && ses.state != SESSION_REFUSED &&
+        ses.state != SESSION_UNTRUSTED) {
+        ses.state = SESSION_IDLE;
+        handshake_reset();
+    }
+    unlock(flags);
+    lobby = 0;
+    join_failures++;
+    log_text("net.join_failed", why);
+    row_text(menu, join_row, join_server, " - ", why);
+    join_row = 0;
+}
+
+static void password_ask(u8 *menu)
+{
+    lobby = 0;
+#ifdef TES3X_CONSOLE
+    if (tes3x_console_text_begin_on(menu, "")) {
+        typing = TYPE_PASSWORD;
+        typing_show(menu, 1);
+        tes3x_log("net.join_password", trust.password_n);
+        return;
+    }
+#endif
+    join_failed(menu, "password needed");
+}
+
+/* Until WELCOME: what stopped the join, on its row. */
+static void join_watch(u8 *menu)
+{
+    static const char *const refused[6] = {"refused", "different mods", "server full",
+                                           "wrong password", "kicked", "banned"};
+    u32 state = ses.state, reason = ses.refused_reason;
+
+    if (!lobby || !join_row)
+        return;
+    if (state == SESSION_JOINED) {
+        join_row = 0;
+    } else if (state == SESSION_REFUSED && reason == 3) {
+        password_ask(menu);
+    } else if (state == SESSION_REFUSED) {
+        join_failed(menu, refused[reason < 6 ? reason : 0]);
+    } else if (state == SESSION_UNTRUSTED) {
+        join_failed(menu, "server key changed");
+    } else if (now_us() - join_started > JOIN_WAIT_US) {
+        join_failed(menu, state == SESSION_DHCP ? "no network address" :
+                          state == SESSION_RESOLVE ? "name not found" :
+                          state == SESSION_ARP ? "no route" : "no answer");
+    }
+}
+
+/* The D-pad moves focus along NAV links without the events that light a button, so they are sent
+ * here; on a server row the list scrolls to show it. */
+static void list_follow(u8 *menu)
+{
+    fn_trigger_event trigger = (fn_trigger_event)TES3X_NET_TRIGGER_EVENT;
+    u8 *focus = ((fn_get_focus)TES3X_NET_GET_FOCUS)(menu);
+
+    if (focus == list_focus)
+        return;
+    if (plausible(list_focus))
+        trigger(list_focus, UI_LEAVE, 0, 0, list_focus);
+    if (plausible(focus))
+        trigger(focus, UI_OVER, 0, 0, focus);
+    list_focus = focus;
+    if (plausible(focus) && server_row(focus) >= 0) {
+        ((fn_scroll_to)TES3X_NET_SCROLL_TO)(focus);
+        list_follows++;
+    }
+}
+
+/* New server: whatever was typed, without spaces, is the server to join. A password goes into
+ * the server's section of servers.ini and the join is made again. */
 static void typing_frame(u8 *menu)
 {
 #ifdef TES3X_CONSOLE
     char text[JOIN_NAME + 1];
     const char *now = tes3x_console_text_now();
-    u32 i, n = 0;
+    u8 *field = tes3x_console_text_field();
+    u32 i, n = 0, kind = typing;
     int status = tes3x_console_text_poll(text, sizeof(text));
 
     if (!status) {
         if (now)
             typing_text(menu, now);
+        /* the keyboard echoes what is typed above its keys; the box shows a password masked */
+        if (kind == TYPE_PASSWORD && plausible(field) && field[MENU_VISIBLE])
+            ((fn_set_visible)TES3X_NET_SET_VISIBLE)(field, 0);
         return;
     }
     typing = 0;
     typing_show(menu, 0);
+    if (kind == TYPE_PASSWORD) {
+        for (n = 0; status == 2 && text[n] && n < PASSWORD_MAX; n++)
+            trust.password[n] = text[n];
+        crypto_wipe(text, sizeof(text));
+        if (!n) {
+            join_failed(menu, "password needed");
+            return;
+        }
+        trust.password_n = n;
+        trust.dirty = 1;
+        join_server_now(menu, join_server, join_row);
+        return;
+    }
     if (status != 2)
         return;
     for (i = 0; text[i]; i++)
@@ -11286,6 +11459,11 @@ static void join_frame(void)
         typing_frame(menu);
         return;
     }
+    join_watch(menu);
+    if (typing)
+        return;
+    if (servers_view)
+        list_follow(menu);
     chosen = server_chosen;
     server_chosen = -1;
     if (chosen == SERVER_OPEN) {
@@ -11295,7 +11473,7 @@ static void join_frame(void)
         servers_show(menu, 0);
 #ifdef TES3X_CONSOLE
     } else if (chosen == SERVER_NEW) {
-        typing = tes3x_console_text_begin_on(menu, "");
+        typing = tes3x_console_text_begin_on(menu, "") ? TYPE_SERVER : 0;
         tes3x_log("net.join_keyboard", typing);
         if (typing)
             typing_show(menu, 1);
@@ -11309,6 +11487,7 @@ static void join_stat(void)
 {
     tes3x_log_hex3("net.join_menu", join_buttons, joins_pressed, lobby);
     tes3x_log_hex3("net.join_servers", servers_n, servers_view, typing);
+    tes3x_log_hex3("net.join_failures", join_failures, list_follows, trust.password_n);
 }
 
 /* Once per frame, from the Game::Update hook. */

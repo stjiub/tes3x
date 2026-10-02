@@ -117,6 +117,7 @@ CONSOLE_ADDRESSES = (
     ("OPEN_MENU", 0x001AED50), ("OPEN_JOURNAL", 0x001E3190), ("JOURNAL_OPENED", 0x001ACBE0),
     ("RECORDS_PTR", 0x003CB5F8), ("RESOLVE_OBJECT", 0x00104300), ("CLOSEST_REF", 0x0010CCD0),
     ("REF_ACTIVATE", 0x0012F630), ("PLAYER_MOBILE", 0x0008BC10),
+    ("UI_NAV", 0x001B1050),  # the pad's D-pad: direction 0xE-0x11, click sound, remember
 )
 # The main menu builder's own calls (0x00200990), for buttons made the way it makes them
 NET_UI_ADDRESSES = (
@@ -124,6 +125,7 @@ NET_UI_ADDRESSES = (
     ("SET_HEIGHT", 0x00198A60), ("SET_VISIBLE", 0x001A63C0), ("CREATE_LABEL", 0x001A7300),
     ("SET_FOCUS", 0x001AF6E0), ("SET_AUTO_WIDTH", 0x00197710), ("CREATE_NIF", 0x001A7170),
     ("SCROLL_PANE", 0x002357B0),  # the factory registered as PartScrollPaneVert
+    ("GET_FOCUS", 0x0019B700), ("SCROLL_TO", 0x00234300),
 )
 INI_USERS = {"tes3xconsole.c", "tes3xrefs.c", "tes3xdiag.c", "tes3xsaves.c", "tes3xprof.c",
              "tes3xarena.c", "tes3xregion.c", "tes3xbowview.c", "tes3xnet.c"}

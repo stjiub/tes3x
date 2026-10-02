@@ -124,7 +124,9 @@ key before the first join, add the fingerprint to the address:
 `NetServer=my.server.net#0123456789abcdef0123456789abcdef`.
 
 With `--password-file FILE`, a console whose key the server has not seen must give the password
-(1 to 64 printable ASCII characters) as `NetPassword`. The server remembers each key that gave it
+(1 to 64 printable ASCII characters), as `NetPassword` or typed when Join asks for it; a typed
+password is kept in that server's section of `servers.ini` and used in place of `NetPassword`.
+The server remembers each key that gave it
 in `admitted.txt` in the `--world` folder and does not ask again; delete a line there to ask that
 console again. A wrong password is refused, and one address gets five tries, then one a minute.
 On a server that faces the internet, give players the fingerprint as well: the password travels
@@ -170,7 +172,9 @@ to connect without loading a game; the server lists that console's characters wi
 character", and the chosen character is sent and loaded, joining the same server. **New Server**
 opens the keyboard to type an address or name, with `:PORT` when it is not 26500 (the `!?#` key
 has `.` and `:`), and joins it. Join needs neither `NetServer` nor `NetAddress` (it asks DHCP for
-an address). New and Load from the main menu still play alone. A multiplayer build redraws the
+an address). A join that fails says why on the server's row: no answer, no network address, name
+not found, different mods, server full, kicked, banned or server key changed; a server that wants a
+password raises the keyboard for it. New and Load from the main menu still play alone. A multiplayer build redraws the
 menu buttons so they match the ones it adds; `tools/tes3x_menuart.py` renders them from the
 bundled Fondamento font (SIL Open Font License, `assets/fonts`).
 

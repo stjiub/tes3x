@@ -35,6 +35,7 @@ exit
 | `wait N` | pause N frames |
 | `click MENU WIDGET` | press a menu widget by name |
 | `pad MENU A\|B\|X\|Y\|N` | send a pad button to a menu; `B` closes most menus. `N` is a raw event, counted from A's |
+| `nav up\|down\|left\|right` | move pad focus as the D-pad does, through the engine's navigation |
 | `menu inventory`, `menu journal` | open the in-game menu or the journal, as the pad's buttons do; `menu inventory` again closes it |
 | `activate ID` | the player activates the nearest reference of `ID`, as with the A button (a script's `Activate` only reaches scripted objects) |
 | `visible MENU` | log whether a menu is on screen, as `menu.MENU 0` or `1` |

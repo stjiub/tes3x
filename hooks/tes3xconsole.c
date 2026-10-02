@@ -1193,6 +1193,23 @@ static int exec_pad(char *args)
     return 1;
 }
 
+/* "up|down|left|right": the D-pad, through the engine's own navigation. */
+typedef void(__cdecl *fn_ui_nav)(int direction, char sound, char remember);
+static int exec_nav(const char *args)
+{
+    static const char *const names[4] = {"up", "down", "left", "right"};
+    u32 i, n = 0;
+
+    while (args[n] && args[n] != ' ')
+        n++;
+    for (i = 0; i < 4 && !(starts_with(args, names[i]) && !names[i][n]); i++)
+        ;
+    if (i == 4)
+        return 0;
+    ((fn_ui_nav)TES3X_UI_NAV)(0xE + (int)i, 1, 1);
+    return 1;
+}
+
 /* `visible MENU`: whether it is on screen, as `menu.MENU 0|1`. */
 static void exec_visible(const char *name)
 {
@@ -1392,6 +1409,8 @@ static void exec_step(void)
         tes3x_log(exec_tries < EXEC_CLICK_FRAMES ? "exec.pad" : "exec.pad_missing",
                   (u32)exec_tries);
         exec_tries = 0;
+    } else if (starts_with(line, "nav ")) {
+        tes3x_log("exec.nav", (u32)exec_nav(line + 4));
     } else if (starts_with(line, "menu ")) {
         tes3x_log("exec.menu", (u32)exec_menu(line + 5));
     } else if (starts_with(line, "activate ")) {
@@ -1633,6 +1652,14 @@ int tes3x_console_text_begin_on(void *menu, const char *initial)
 const char *tes3x_console_text_now(void)
 {
     return vk_text_client == 1 ? cmd : 0;
+}
+
+/* The keyboard's own line of text, while a client's keyboard is up; 0 before it shows. */
+void *tes3x_console_text_field(void)
+{
+    void *vk = ((fn_find_menu)TES3X_FIND_MENU)(*(unsigned short *)TES3X_VK_MENU_ID);
+
+    return vk_text_client == 1 && vk_seen && vk ? keyboard_field(vk) : 0;
 }
 
 int tes3x_console_text_poll(char *out, u32 size)
