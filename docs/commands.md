@@ -58,6 +58,7 @@ what each one is for and where it is explained; `--help` on any command lists it
 | command | job | see |
 |---|---|---|
 | `tes3x_net.py` | run a multiplayer server, administer it, and test the network driver | [multiplayer](multiplayer.md) |
+| `tes3x_menuart.py` | redraw the menu buttons multiplayer ships, in `assets/menu` (needs Pillow and numpy) | [multiplayer](multiplayer.md) |
 
 ## Reverse engineering
 

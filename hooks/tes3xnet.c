@@ -10724,16 +10724,33 @@ static void weather_stat(void)
  * session and marks later relaunches with the server; the character list or the start points
  * follow at the main menu as they do in a game. */
 #define UI_CLICK 0xFFFF8035u
+#define UI_PRESS 0xFFFF8034u /* the main menu's buttons show their pressed image */
+#define UI_OVER 0xFFFF8033u  /* ... their highlighted one */
+#define UI_LEAVE 0xFFFF8032u /* ... their normal one */
+#define UI_FLAG_B 0xFFFF800Bu
+#define UI_FOCUS_A 0xFFFF8048u /* both UI_TRUE on each main menu button */
+#define UI_FOCUS_B 0xFFFF80A8u
+#define UI_TRUE 0xFFFF80BDu
+#define UI_PROP_INT 1
 #define UI_PROP_PTR 8
+#define UI_PROP_ENUM 0x10
 #define UI_PROP_HANDLER 0x20
 #define UI_PARENT 0x34
-#define JOIN_LABEL 32u
+#define UI_CHILDREN 0x28 /* vector: begin, then end at +4 */
+#define UI_WIDTH 0xF4
+#define UI_HEIGHT 0xF8
+#define UI_IMAGE_FLAG 0x87 /* cleared on each main menu image */
+#define MENU_ROW 0x32      /* a main menu button's height */
 typedef void *(__attribute__((thiscall)) *fn_find_child)(void *widget, u32 id);
-typedef void *(__attribute__((thiscall)) *fn_create_widget)(void *parent, u32 id, u32 factory,
-                                                            int a0);
-typedef void(__attribute__((thiscall)) *fn_set_text)(void *widget, const char *text);
+typedef void *(__attribute__((thiscall)) *fn_create_block)(void *parent, u32 id, int a0);
+typedef void *(__attribute__((thiscall)) *fn_create_image)(void *parent, u32 id, const char *path,
+                                                           int a0);
+typedef void(__attribute__((thiscall)) *fn_set_size)(void *widget, int value);
+typedef void(__attribute__((thiscall)) *fn_set_visible)(void *widget, int on);
 typedef void(__attribute__((thiscall)) *fn_set_prop)(void *widget, u32 id, int value, int type);
 typedef void(__attribute__((thiscall)) *fn_layout)(void *widget, int a0);
+typedef char(__cdecl *fn_ui_handler)(void *owner, u32 id, int d0, int d1, void *source);
+static const char *const button_states[3] = {"TES3X_normal", "TES3X_over", "TES3X_pressed"};
 static char join_target[JOIN_NAME + 1];
 static u32 join_looked, join_pressed, join_buttons, joins_pressed;
 
@@ -10771,15 +10788,80 @@ static char __cdecl join_click(void *owner, u32 id, int d0, int d1, void *source
     return 1;
 }
 
-static void join_label(void *button, const char *verb)
+/* Show one of a button's three images, as the engine's own handlers do, and lay out its menu. */
+static void button_show(u8 *button, u32 which)
 {
-    char text[JOIN_LABEL + 16], *out = put_text(text, verb);
+    fn_ui_id ui_id = (fn_ui_id)TES3X_NET_UI_ID;
+    fn_find_child child = (fn_find_child)TES3X_NET_FIND_CHILD;
+    u8 *image, *root = button, *up;
     u32 i;
 
-    for (i = 0; join_target[i] && i < JOIN_LABEL; i++)
-        *out++ = join_target[i];
-    *out = 0;
-    ((fn_set_text)TES3X_NET_WIDGET_SET_TEXT)(button, text);
+    if (!plausible(button))
+        return;
+    for (i = 0; i < 3; i++)
+        if (plausible(image = child(button, ui_id(button_states[i]))))
+            ((fn_set_visible)TES3X_NET_SET_VISIBLE)(image, i == which);
+    while (plausible(up = *(u8 **)(root + UI_PARENT)))
+        root = up;
+    ((fn_layout)TES3X_NET_PERFORM_LAYOUT)(root, 1);
+}
+
+static char __cdecl button_pressed(void *owner, u32 id, int d0, int d1, void *source)
+{
+    (void)id, (void)d0, (void)d1, (void)source;
+    button_show(owner, 2);
+    return 1;
+}
+
+static char __cdecl button_over(void *owner, u32 id, int d0, int d1, void *source)
+{
+    (void)id, (void)d0, (void)d1, (void)source;
+    button_show(owner, 1);
+    return 1;
+}
+
+static char __cdecl button_left(void *owner, u32 id, int d0, int d1, void *source)
+{
+    (void)id, (void)d0, (void)d1, (void)source;
+    button_show(owner, 0);
+    return 1;
+}
+
+/* A button as the main menu builds its own: a block holding Textures\NAME.tga, NAME_over and
+ * NAME_pressed, the last two hidden until the pad or the pointer reaches it. */
+static u8 *menu_button(u8 *parent, u32 id, const char *name, int width, fn_ui_handler click)
+{
+    static const char *const suffix[3] = {"", "_over", "_pressed"};
+    fn_set_prop set = (fn_set_prop)TES3X_NET_SET_PROP;
+    fn_ui_id ui_id = (fn_ui_id)TES3X_NET_UI_ID;
+    char path[64];
+    u8 *block, *image;
+    u32 i;
+
+    if (!plausible(block = ((fn_create_block)TES3X_NET_CREATE_BLOCK)(parent, id, 0)))
+        return 0;
+    ((fn_set_size)TES3X_NET_SET_WIDTH)(block, width);
+    ((fn_set_size)TES3X_NET_SET_HEIGHT)(block, MENU_ROW);
+    set(block, UI_FLAG_B, 0, UI_PROP_INT);
+    set(block, UI_FOCUS_A, (int)UI_TRUE, UI_PROP_ENUM);
+    set(block, UI_FOCUS_B, (int)UI_TRUE, UI_PROP_ENUM);
+    set(block, UI_CLICK, (int)click, UI_PROP_HANDLER);
+    set(block, UI_PRESS, (int)button_pressed, UI_PROP_HANDLER);
+    set(block, UI_OVER, (int)button_over, UI_PROP_HANDLER);
+    set(block, UI_LEAVE, (int)button_left, UI_PROP_HANDLER);
+    for (i = 0; i < 3; i++) {
+        *put_text(put_text(put_text(put_text(path, "Textures\\"), name), suffix[i]), ".tga") = 0;
+        if (!plausible(image = ((fn_create_image)TES3X_NET_CREATE_IMAGE)(
+                           block, ui_id(button_states[i]), path, 0)))
+            continue;
+        ((fn_set_size)TES3X_NET_SET_WIDTH)(image, width);
+        ((fn_set_size)TES3X_NET_SET_HEIGHT)(image, MENU_ROW);
+        image[UI_IMAGE_FLAG] = 0;
+        set(image, UI_FLAG_B, 0, UI_PROP_INT);
+        if (i)
+            ((fn_set_visible)TES3X_NET_SET_VISIBLE)(image, 0);
+    }
+    return block;
 }
 
 static void join_frame(void)
@@ -10788,7 +10870,7 @@ static void join_frame(void)
     fn_find_child child = (fn_find_child)TES3X_NET_FIND_CHILD;
     fn_set_prop set = (fn_set_prop)TES3X_NET_SET_PROP;
     u16 up = *(const u16 *)TES3X_NET_NAV_UP_ID, down = *(const u16 *)TES3X_NET_NAV_DOWN_ID;
-    u8 *menu, *exit, *first, *column, *button;
+    u8 *menu, *exit, *above, *column, *button, **begin, **end, **at;
     u32 id;
 
     if (player_reference())
@@ -10804,18 +10886,31 @@ static void join_frame(void)
     id = ui_id("TES3X_Join");
     if (!plausible(button = child(menu, id))) {
         exit = child(menu, ui_id("MenuOptions_Exit_container"));
-        first = child(menu, ui_id("MenuOptions_New_container"));
+        above = child(menu, ui_id("MenuOptions_Options_container"));
         if (!plausible(exit) || !plausible(column = *(u8 **)(exit + UI_PARENT)) ||
-            !plausible(button = ((fn_create_widget)TES3X_NET_CREATE_WIDGET)(
-                           column, id, TES3X_NET_VK_BUTTON, 0)))
+            !plausible(button = menu_button(column, id, "menu_join",
+                                            *(const int *)(exit + UI_WIDTH), join_click)))
             return;
-        join_label(button, lobby ? "Joining " : "Join ");
-        set(button, UI_CLICK, (int)join_click, UI_PROP_HANDLER);
-        set(exit, down, (int)button, UI_PROP_PTR);
-        set(button, up, (int)exit, UI_PROP_PTR);
-        if (plausible(first)) {
-            set(button, down, (int)first, UI_PROP_PTR);
-            set(first, up, (int)button, UI_PROP_PTR);
+        /* the menu's height is set, not fitted: one row more */
+        ((fn_set_size)TES3X_NET_SET_HEIGHT)(menu, *(const int *)(menu + UI_HEIGHT) + MENU_ROW);
+        /* Join goes above Exit: the block was added last to its column's children */
+        begin = *(u8 ***)(column + UI_CHILDREN);
+        end = *(u8 ***)(column + UI_CHILDREN + 4);
+        if (plausible(begin) && end > begin && end[-1] == button) {
+            for (at = end - 1; at > begin && at[-1] != exit; at--)
+                ;
+            if (at > begin) {
+                for (at = end - 1; at[-1] != exit; at--)
+                    at[0] = at[-1];
+                at[0] = at[-1];
+                at[-1] = button;
+            }
+        }
+        set(button, down, (int)exit, UI_PROP_PTR);
+        set(exit, up, (int)button, UI_PROP_PTR);
+        if (plausible(above)) {
+            set(button, up, (int)above, UI_PROP_PTR);
+            set(above, down, (int)button, UI_PROP_PTR);
         }
         ((fn_layout)TES3X_NET_PERFORM_LAYOUT)(menu, 0);
         join_buttons++;
@@ -10828,7 +10923,6 @@ static void join_frame(void)
     joins_pressed++;
     copy((u8 *)join_server, (const u8 *)join_target, JOIN_NAME + 1);
     lobby = 1;
-    join_label(button, "Joining ");
     log_text("net.join", join_server);
     if (!net.up)
         autostart();

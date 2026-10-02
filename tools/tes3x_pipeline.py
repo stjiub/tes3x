@@ -16,7 +16,7 @@ import tempfile
 import tomllib
 from xml.sax.saxutils import escape
 
-from tes3x_pack import set_ini_key
+from tes3x_pack import set_ini_key, write_invalidation
 import tes3x_patches as registry
 from tes3x_payload import PayloadError, build_payload, find_tool
 from tes3x_net import write_ghost_plugin
@@ -955,6 +955,23 @@ def main(argv=None):
         if "multiplayer" in plan["applied"]:
             ghost = write_ghost_plugin(staged / "Data Files", data_files / "Morrowind.esm")
             print(f"  ghost plugin: {Path(ghost).name}")
+            # The retail menu buttons are redrawn to match the ones multiplayer adds. A loose file
+            # beats the archive only when newer, and an ISO has no file times, so the list names
+            # them.
+            textures = staged / "Data Files" / "Textures"
+            textures.mkdir(parents=True, exist_ok=True)
+            art = sorted((ROOT / "assets" / "menu").glob("*.dds"))
+            for path in art:
+                target = textures / path.name
+                if target.exists():
+                    target.unlink()  # a hard link into the retail tree must not be written through
+                shutil.copy2(path, target)
+            listed = staged / "ArchiveInvalidationList.txt"
+            kept = listed.read_text(encoding="cp1252").splitlines() if listed.exists() else []
+            if listed.exists():
+                listed.unlink()
+            write_invalidation(listed, kept + [f"textures\\{p.name}" for p in art])
+            print(f"  menu buttons: {len(art)} textures")
 
         retail_files, retail_bytes = copy_retail_root(vanilla, staged, copy)
         # A dashboard lists the launcher, so the name has to reach it. So does the title ID, or

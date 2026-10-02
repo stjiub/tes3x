@@ -118,6 +118,11 @@ CONSOLE_ADDRESSES = (
     ("RECORDS_PTR", 0x003CB5F8), ("RESOLVE_OBJECT", 0x00104300), ("CLOSEST_REF", 0x0010CCD0),
     ("REF_ACTIVATE", 0x0012F630), ("PLAYER_MOBILE", 0x0008BC10),
 )
+# The main menu builder's own calls (0x00200990), for buttons made the way it makes them
+NET_UI_ADDRESSES = (
+    ("CREATE_BLOCK", 0x001A7240), ("CREATE_IMAGE", 0x001A7080), ("SET_WIDTH", 0x00198980),
+    ("SET_HEIGHT", 0x00198A60), ("SET_VISIBLE", 0x001A63C0),
+)
 INI_USERS = {"tes3xconsole.c", "tes3xrefs.c", "tes3xdiag.c", "tes3xsaves.c", "tes3xprof.c",
              "tes3xarena.c", "tes3xregion.c", "tes3xbowview.c", "tes3xnet.c"}
 
@@ -349,6 +354,8 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
                      "CREATE_WIDGET", "VK_BUTTON", "WIDGET_SET_TEXT", "SET_PROP",
                      "PERFORM_LAYOUT", "NAV_UP_ID", "NAV_DOWN_ID"):
             define("NET_" + name, address(name, dict(CONSOLE_ADDRESSES)[name]))
+        for name, default in NET_UI_ADDRESSES:
+            define("NET_" + name, address(name, default))
         define("NET_SERVICE_ACTOR", address("SERVICE_ACTOR", SERVICE_ACTOR))
         for name, default in (PLACE_ADDRESSES + SPELL_ADDRESSES + SPAWN_ADDRESSES
                               + CONTAINER_ADDRESSES + ACTOR_ADDRESSES):
