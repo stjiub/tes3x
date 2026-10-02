@@ -174,7 +174,11 @@ opens the keyboard to type an address or name, with `:PORT` when it is not 26500
 has `.` and `:`), and joins it. Join needs neither `NetServer` nor `NetAddress` (it asks DHCP for
 an address). A join that fails says why on the server's row: no answer, no network address, name
 not found, different mods, server full, kicked, banned or server key changed; a server that wants a
-password raises the keyboard for it. New and Load from the main menu still play alone. A multiplayer build redraws the
+password raises the keyboard for it. New and Load from the main menu still play alone.
+
+While joined, the pause menu has **Save to Server** in place of Save, which saves the character
+and sends it to the server, and **Leave** in place of Exit, which saves to the server and then
+quits; Load is gone, since a local save is not the server's character. A multiplayer build redraws the
 menu buttons so they match the ones it adds; `tools/tes3x_menuart.py` renders them from the
 bundled Fondamento font (SIL Open Font License, `assets/fonts`).
 

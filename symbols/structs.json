@@ -91,6 +91,16 @@
         {"offset": "0xBC", "name": "gvarCharGenState", "type": "TES3::GlobalVariable*", "confidence": "verified", "provenance": "transition-autosaves gates saving on [+0xBC]+0x34 != -1"},
         {"offset": "0xD2", "name": "flagMenuMode", "type": "bool", "confidence": "verified", "provenance": "menu pause: two jne skip the world while set"}
       ]
+    },
+    {
+      "name": "TES3::UI::Element",
+      "pc_valid_until": "0x38",
+      "note": "8 bytes longer than the PC before 0x7D: the flags and the colour sit 8 above their PC offsets. Laying out the element above the top-level menus lays out every menu, and the HUD loses its place.",
+      "fields": [
+        {"offset": "0x7D", "name": "visible", "type": "bool", "confidence": "matched", "provenance": "ui::navigate 0x001B1050 skips menus with it clear; PC 0x75"},
+        {"offset": "0x7F", "name": "flagColourChanged", "type": "bool", "confidence": "verified", "provenance": "a label's new colour shows only once it is set (Join server rows); PC 0x77"},
+        {"offset": "0x154", "name": "colour", "type": "float[4]", "confidence": "verified", "provenance": "Join server rows' gold; PC 0x14C"}
+      ]
     }
   ]
 }
