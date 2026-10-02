@@ -128,11 +128,12 @@
     },
     {
       "va": "0x00085EE0",
-      "name": "WorldController::getMobilePlayer",
+      "name": "Statistic::getBase",
       "kind": "function",
-      "confidence": "matched",
-      "provenance": "mwse:TES3_WorldController_getMobilePlayer",
-      "pc_va": "0x0040FF20"
+      "confidence": "verified",
+      "provenance": "body: fld [ecx+4]; ret; called on MobileActor::health in MobilePlayer::onDeath",
+      "pc_va": "0x0040FF20",
+      "signature": "float __thiscall getBase()"
     },
     {
       "va": "0x00085F10",
@@ -733,6 +734,12 @@
       "pc_va": "0x0045C9B0"
     },
     {
+      "va": "0x000C6960",
+      "name": "interventionTeleport",
+      "confidence": "matched",
+      "provenance": "pc 0x00463740; calls DataHandler::findClosestMarker then the cell change"
+    },
+    {
       "va": "0x000C7490",
       "name": "EquipmentStack::CanonicalCopy",
       "kind": "function",
@@ -1162,6 +1169,20 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_DataHandler_getClosestPrisonReferences",
       "pc_va": "0x0048EE30"
+    },
+    {
+      "va": "0x000DB2B0",
+      "name": "DataHandler::findClosestMarker",
+      "confidence": "verified",
+      "provenance": "accepts only the TempleMarker/DivineMarker globals; used by the Intervention effect; respawn run death-a2",
+      "note": "Searches from the player's position, or from the last exterior cell (DataHandler+0xB8/+0xBC) when inside; returns 0 for any other object.",
+      "signature": "TES3::Reference* __thiscall findClosestMarker(TES3::Object* marker)"
+    },
+    {
+      "va": "0x000DB950",
+      "name": "DataHandler::onPlayerDeath",
+      "confidence": "guess",
+      "provenance": "called by MobilePlayer::onDeath; sets DataHandler+0xB518, which reads 0 again after Player->Resurrect (death-a2)"
     },
     {
       "va": "0x000DBFE0",
@@ -2662,6 +2683,14 @@
       "provenance": "find_run_function; three call rel32 sites redirected by script-ext"
     },
     {
+      "va": "0x0013D570",
+      "name": "MessageBox",
+      "confidence": "verified",
+      "provenance": "join-a3 crash at 0x0013D590",
+      "note": "Script MessageBox: Font::substituteTextMacros with the mobile player; faults with no game loaded (join-a3).",
+      "kind": "site"
+    },
+    {
       "va": "0x00142030",
       "name": "Script::executeScriptOpCode",
       "kind": "function",
@@ -3698,7 +3727,8 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_MobilePlayer_onDeath",
-      "pc_va": "0x0056A120"
+      "pc_va": "0x0056A120",
+      "note": "Ends with GMST 0x261 'load the most recent save?' or MenuOptions::open; multiplayer replaces the branch at 0x00185C3E while joined and respawns instead."
     },
     {
       "va": "0x00185E90",
@@ -4599,6 +4629,14 @@
       "signature": "void __cdecl f(void)"
     },
     {
+      "va": "0x001F6D30",
+      "name": "UI::showMessageMenu",
+      "confidence": "verified",
+      "provenance": "called by the MessageBox command with text then 10 button pointers and 0, and by MobilePlayer::onDeath; used at the main menu by join-a4",
+      "note": "Buttons are a NULL-terminated list of strings. Unlike the MessageBox command it expands no text macros, so it works with no player (the command reads [mobile player+0x560] and faults at the main menu).",
+      "signature": "void __cdecl showMessageMenu(const char* text, ...)"
+    },
+    {
       "va": "0x001F7650",
       "name": "UI::UpdateCurrentMagicFillBar",
       "kind": "function",
@@ -4981,6 +5019,22 @@
       "confidence": "verified",
       "provenance": "archive manager passed to Invalidate by ReadInvalidationList",
       "kind": "data"
+    },
+    {
+      "va": "0x003D2CF0",
+      "name": "TempleMarker",
+      "confidence": "verified",
+      "provenance": "set from the id 'TempleMarker' in 0x001068A0",
+      "kind": "data",
+      "type": "TES3::Object*"
+    },
+    {
+      "va": "0x003D2CF4",
+      "name": "DivineMarker",
+      "confidence": "verified",
+      "provenance": "set beside TempleMarker in 0x001068A0; second marker DataHandler::findClosestMarker accepts",
+      "kind": "data",
+      "type": "TES3::Object*"
     },
     {
       "va": "0x003D3698",

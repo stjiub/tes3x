@@ -317,6 +317,21 @@ class ServerTests(unittest.TestCase):
             time.sleep(0.2)
         self.assertEqual(net.PlayerStream(str(stream)).items, {'Gold_001': [[150, 0, 0, 0]]})
 
+    def test_the_main_menu_gets_no_world_only_the_choice(self):
+        world = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, world)
+        self.start('--world', str(world))
+        net = tes3x_net
+        menu = self.client(1)
+        menu.join(lobby=True)
+        self.assertIsNone(menu.receive(1.5, net.CLOCK))
+        self.game(menu, 1, 7, b'', net.GAME_NONE)
+        got = self.events(menu, lambda kind, _: kind == net.EVENT_NEWCHAR)
+        self.assertEqual({k for k, _ in got}, {net.EVENT_NEWCHAR})
+        playing = self.client(2)  # a lobby does not set the session's load order or clock
+        playing.join()
+        self.assertIsNotNone(playing.receive(1.5, net.CLOCK))
+
     def test_a_death_is_respawned_and_announced(self):
         world = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, world)

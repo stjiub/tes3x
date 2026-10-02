@@ -345,7 +345,9 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
               f"DataHandler {data_handler}")
         define("NET_WORLD", world)
         define("NET_DATA_HANDLER", data_handler)
-        for name in ("COMPILE_RUN", "FIND_MENU", "UI_ID", "TRIGGER_EVENT"):
+        for name in ("COMPILE_RUN", "FIND_MENU", "UI_ID", "TRIGGER_EVENT", "FIND_CHILD",
+                     "CREATE_WIDGET", "VK_BUTTON", "WIDGET_SET_TEXT", "SET_PROP",
+                     "PERFORM_LAYOUT", "NAV_UP_ID", "NAV_DOWN_ID"):
             define("NET_" + name, address(name, dict(CONSOLE_ADDRESSES)[name]))
         define("NET_SERVICE_ACTOR", address("SERVICE_ACTOR", SERVICE_ACTOR))
         for name, default in (PLACE_ADDRESSES + SPELL_ADDRESSES + SPAWN_ADDRESSES
@@ -537,6 +539,13 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         if data[image.va_to_off(menu) - 6:image.va_to_off(menu)] != b"\x5f\x5e\x83\xc4\x08\xc3":
             raise PayloadError(f"player death menu {hexva(menu)}: not after onDeath's epilogue")
         fill = image.off_to_va(deaths[0].end(2)) + struct.unpack("<i", deaths[0].group(2))[0]
+        # MessageMenu(text, button, ..., 0), as onDeath shows "load it?" (Yes, No)
+        boxes = list(re.finditer(rb"\x6a\x44\xe8....\x50\x57\xe8(....)",
+                                 data[deaths[0].end():deaths[0].end() + 0x100], re.S))
+        if len(boxes) != 1:
+            raise PayloadError(f"message menu: {len(boxes)} calls in onDeath, expected 1")
+        define("NET_MESSAGE_MENU", hexva(image.off_to_va(deaths[0].end() + boxes[0].end()) +
+                                         struct.unpack("<i", boxes[0].group(1))[0]))
         define("NET_DEATH_SITE", hexva(image.off_to_va(site)))
         define("NET_FILL_BAR", hexva(fill))
         define("NET_HEALTH_BAR", hexva(struct.unpack("<I", deaths[0].group(1))[0]))

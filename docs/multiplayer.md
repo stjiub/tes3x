@@ -164,6 +164,13 @@ else who shares it, such as a household behind one router.
 New Game and Load relaunch the title; the console leaves and joins again by itself, and the server
 prints `rejoined`. If the server stops answering for five seconds, the console keeps trying.
 
+Once a console has joined a server, its main menu shows **Join** with that server's address
+(the one `NetServer` names, or else the last server in `U:\TES3X\servers.ini`). Join works
+without `NetServer` or `NetAddress` (it asks DHCP for an address): the console connects without
+loading a game, the server lists that console's characters with "New character", and the chosen
+character is sent and loaded, joining the same server. New and Load from the main menu still play
+alone.
+
 ## Connect xemu
 
 xemu reaches the server through a tunnel instead of a network card. On the PC that runs xemu:

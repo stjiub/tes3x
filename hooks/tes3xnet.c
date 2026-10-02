@@ -304,6 +304,12 @@ static char net_password[PASSWORD_MAX + 2]; /* read with the other keys: an ini 
 static u32 net_password_n;
 #define DNS_PORT 53u
 #define HOST_NAME 64u
+#define JOIN_NAME (HOST_NAME + 8 + 1 + 2 * TRUST_FINGERPRINT) /* NetServer's text */
+static char join_server[JOIN_NAME + 1]; /* the server a main menu Join chose */
+/* A session from the main menu, with no game loaded: the server sends it no world, only the
+ * character list or the start points. Marked in HELLO's plugin count. */
+#define LOBBY_PLUGINS 0x80000000u
+static u32 lobby;
 
 static struct {
     u32 up, ip, mask, irqs, dpcs, rx, rx_errors, rx_nobuf, rx_peak, arp, echo;
@@ -1296,7 +1302,8 @@ static void session_tick(void)
     }
     /* Joining waits for a clock to offer, which the game has only once a game is loaded. HELLO
      * goes inside the handshake's last message. */
-    if (ses.state == SESSION_HELLO && ses.ticks >= HELLO_TICKS && game_clock.local_valid) {
+    if (ses.state == SESSION_HELLO && ses.ticks >= HELLO_TICKS &&
+        (game_clock.local_valid || lobby)) {
         ses.ticks = 0;
         handshake_tick();
     } else if (ses.state == SESSION_JOINED) {
@@ -2276,17 +2283,28 @@ static u32 ini_text(const char *key, char *out, u32 size)
     return i;
 }
 
-/* The ini reader needs the game drive, which is not mounted at process entry. */
+/* The ini reader needs the game drive, which is not mounted at process entry. A launch the main
+ * menu's Join led to joins its server even without NetAddress (DHCP) or NetServer. */
 static void autostart(void)
 {
-    char line[24 + HOST_NAME + 8 + 1 + 2 * TRUST_FINGERPRINT + 2 * 24];
-    u32 n, server;
+    char line[24 + JOIN_NAME + 2 * 24];
+    u32 n, server, i;
 
     net_password_n = ini_text("NetPassword", net_password, sizeof(net_password));
-    if (!(n = ini_text("NetAddress", line, 24)))
-        return;
+    if (!(n = ini_text("NetAddress", line, 24))) {
+        if (!join_server[0])
+            return;
+        copy((u8 *)line, (const u8 *)"dhcp", 4);
+        n = 4;
+    }
     line[n++] = ' ';
-    if ((server = ini_text("NetServer", line + n, HOST_NAME + 8 + 1 + 2 * TRUST_FINGERPRINT))) {
+    server = ini_text("NetServer", line + n, JOIN_NAME);
+    if (!server && join_server[0]) {
+        for (i = 0; join_server[i]; i++)
+            line[n + i] = join_server[i];
+        server = i;
+    }
+    if (server) {
         n += server;
         line[n++] = ' ';
         if (!(server = ini_text("NetGateway", line + n, 24)))
@@ -8759,7 +8777,7 @@ static void handshake_finish(void)
     copy(hello, mac, 6);
     put32le(hello + 6, TES3X_BUILD_ID);
     put32le(hello + 10, ses.plugins_hash);
-    put32le(hello + 14, ses.plugins);
+    put32le(hello + 14, ses.plugins | (lobby ? LOBBY_PLUGINS : 0));
     copy(hello + 18, game_clock.local, CLOCK_BYTES);
     unlock(flags);
     password = net_password_n;
@@ -8922,6 +8940,10 @@ static void save_request_frame(void)
 #define GAME_NEW 2u
 static u32 game_token, game_told, game_launch, load_wanted, loads_started;
 static char load_name[BULK_NAME + 1];
+/* A launch the main menu's Join led to carries JOIN_MAGIC and the server after the path, so it
+ * joins that server without NetServer. */
+#define JOIN_MAGIC 0x4A4D3354u /* "T3MJ" */
+#define JOIN_AT (BXWM_PATH + BXWM_PATH_MAX)
 typedef u32(__attribute__((stdcall)) *fn_launch)(const char *xbe, void *data);
 typedef u32(__cdecl *fn_persist)(void);
 
@@ -8938,6 +8960,11 @@ void tes3x_net_entry(void)
     data = page + LAUNCH_DATA;
     if (*(const u32 *)data != BXWM_MAGIC)
         return;
+    if (*(const u32 *)(data + JOIN_AT) == JOIN_MAGIC) {
+        for (i = 0; i < JOIN_NAME && data[JOIN_AT + 4 + i]; i++)
+            join_server[i] = (char)data[JOIN_AT + 4 + i];
+        join_server[i] = 0;
+    }
     if (*(const u32 *)(data + 0xC) == BXWM_NEW_GAME)
         game_launch = GAME_NEW;
     if (*(const u32 *)(data + 0xC) != BXWM_LOAD)
@@ -8967,7 +8994,7 @@ static void load_event(const struct event *e)
  * 0 while the world cannot give the pad port. */
 static int relaunch(const char *name)
 {
-    static u8 data[BXWM_PATH + BXWM_PATH_MAX];
+    static u8 data[JOIN_AT + 4 + JOIN_NAME + 1];
     const u8 *world = *(const u8 **)TES3X_NET_WORLD, *pads;
     static const char dir[] = "U:\\TES3X\\";
     u32 i, n = 0, r;
@@ -8984,6 +9011,11 @@ static int relaunch(const char *name)
             data[BXWM_PATH + n] = (u8)dir[n];
         for (i = 0; name[i]; i++)
             data[BXWM_PATH + n + i] = (u8)name[i];
+    }
+    if (join_server[0]) {
+        *(u32 *)(data + JOIN_AT) = JOIN_MAGIC;
+        for (i = 0; join_server[i]; i++)
+            data[JOIN_AT + 4 + i] = (u8)join_server[i];
     }
     log_text("net.load", name ? name : "(new game)");
     ((fn_persist)TES3X_NET_PERSIST_DISPLAY)();
@@ -9347,27 +9379,37 @@ static char *put_quoted(char *out, const char *text)
 }
 
 /* A message box of one page of names, "More" while more follow and extra (a name or 0) last. */
+/* MessageMenu(text, button, ..., 0): the box the MessageBox command opens, without the command's
+ * text macros, which read the player and so fail at the main menu. */
+typedef void(__cdecl *fn_message_menu)(const char *text, ...);
+
 static void chooser_show(const struct names *list, const char *title, const char *extra)
 {
     char line[16 + (NAME_LONGEST + 3) * (CHOOSER_PAGE + 3)], *out;
+    const char *buttons[CHOOSER_PAGE + 3] = {0};
     u32 i, n = 0, first = chooser_page * CHOOSER_PAGE;
 
     out = put_quoted(put_text(line, "MessageBox"), title);
     for (i = first; i < list->count && i < first + CHOOSER_PAGE; i++) {
-        out = put_quoted(out, list->text + list->at[i]);
+        out = put_quoted(out, buttons[n] = list->text + list->at[i]);
         chooser_map[n++] = (u8)i;
     }
     if (list->count > first + CHOOSER_PAGE || chooser_page) {
-        out = put_quoted(out, list->count > first + CHOOSER_PAGE ? "More" : "Back");
+        out = put_quoted(out, buttons[n] = list->count > first + CHOOSER_PAGE ? "More" : "Back");
         chooser_map[n++] = CHOOSER_MORE;
     }
     if (extra) {
-        out = put_quoted(out, extra);
+        out = put_quoted(out, buttons[n] = extra);
         chooser_map[n++] = PICK_NEW;
     }
     *out = 0;
     *(int *)TES3X_NET_BUTTON = -1;
-    run_script(line);
+    if (player_reference())
+        run_script(line);
+    else
+        ((fn_message_menu)TES3X_NET_MESSAGE_MENU)(title, buttons[0], buttons[1], buttons[2],
+                                                  buttons[3], buttons[4], buttons[5], buttons[6],
+                                                  buttons[7], (const char *)0);
     chooser_open = 1;
 }
 
@@ -9377,7 +9419,7 @@ static int chooser_poll(const struct names *list, const char *title, const char 
     int button = *(int *)TES3X_NET_BUTTON;
 
     if (!chooser_open) {
-        if (world_idle())
+        if (world_idle() || (lobby && !player_reference()))
             chooser_show(list, title, extra);
         return -1;
     }
@@ -10383,7 +10425,7 @@ static void event_handle(const struct event *e)
         tes3x_log_hex3("net.text_from", e->origin, e->seq, 0);
         log_text("net.text", text);
         /* The server's own notices (deaths) show on screen; players' lines only in the log. */
-        if (!e->origin && script_safe((const u8 *)text, sizeof(text))) {
+        if (!e->origin && player_reference() && script_safe((const u8 *)text, sizeof(text))) {
             *put_text(put_text(put_text(line, "MessageBox \""), text), "\"") = 0;
             run_script(line);
         }
@@ -10677,6 +10719,126 @@ static void weather_stat(void)
                    (u32)(int)(*(const float *)(controller + WEATHER_TRANSITION) * 1000.0f));
 }
 
+/* The main menu's Join, below Exit: the server in NetServer, or else the one this console last
+ * trusted (servers.ini's last section). Pressing it brings the NIC up if it is not, opens a lobby
+ * session and marks later relaunches with the server; the character list or the start points
+ * follow at the main menu as they do in a game. */
+#define UI_CLICK 0xFFFF8035u
+#define UI_PROP_PTR 8
+#define UI_PROP_HANDLER 0x20
+#define UI_PARENT 0x34
+#define JOIN_LABEL 32u
+typedef void *(__attribute__((thiscall)) *fn_find_child)(void *widget, u32 id);
+typedef void *(__attribute__((thiscall)) *fn_create_widget)(void *parent, u32 id, u32 factory,
+                                                            int a0);
+typedef void(__attribute__((thiscall)) *fn_set_text)(void *widget, const char *text);
+typedef void(__attribute__((thiscall)) *fn_set_prop)(void *widget, u32 id, int value, int type);
+typedef void(__attribute__((thiscall)) *fn_layout)(void *widget, int a0);
+static char join_target[JOIN_NAME + 1];
+static u32 join_looked, join_pressed, join_buttons, joins_pressed;
+
+/* servers.ini is small; trust.text is free until the next `up` loads it again. */
+static void join_target_read(void)
+{
+    IO_STATUS_BLOCK iosb;
+    u64 offset = 0, size;
+    u32 off, n, len = 0;
+    void *h;
+
+    if (ini_text("NetServer", join_target, sizeof(join_target)))
+        return;
+    if (bulk_open(trust_path, GENERIC_READ, FILE_OPEN, 0, &h))
+        return;
+    size = bulk_size(h);
+    if (size && size < TRUST_TEXT && !NtReadFile(h, 0, 0, 0, &iosb, trust.text, (u32)size, &offset))
+        len = iosb.Information;
+    NtClose(h);
+    trust.loaded = 0;
+    for (off = 0; off < len; off += n + 1) {
+        const char *line = trust.text + off;
+        n = line_length(line, len - off);
+        if (n > 2 && n - 2 <= JOIN_NAME && line[0] == '[' && line[n - 1] == ']') {
+            copy((u8 *)join_target, (const u8 *)line + 1, n - 2);
+            join_target[n - 2] = 0;
+        }
+    }
+}
+
+static char __cdecl join_click(void *owner, u32 id, int d0, int d1, void *source)
+{
+    (void)owner, (void)id, (void)d0, (void)d1, (void)source;
+    join_pressed = 1;
+    return 1;
+}
+
+static void join_label(void *button, const char *verb)
+{
+    char text[JOIN_LABEL + 16], *out = put_text(text, verb);
+    u32 i;
+
+    for (i = 0; join_target[i] && i < JOIN_LABEL; i++)
+        *out++ = join_target[i];
+    *out = 0;
+    ((fn_set_text)TES3X_NET_WIDGET_SET_TEXT)(button, text);
+}
+
+static void join_frame(void)
+{
+    fn_ui_id ui_id = (fn_ui_id)TES3X_NET_UI_ID;
+    fn_find_child child = (fn_find_child)TES3X_NET_FIND_CHILD;
+    fn_set_prop set = (fn_set_prop)TES3X_NET_SET_PROP;
+    u16 up = *(const u16 *)TES3X_NET_NAV_UP_ID, down = *(const u16 *)TES3X_NET_NAV_DOWN_ID;
+    u8 *menu, *exit, *first, *column, *button;
+    u32 id;
+
+    if (player_reference())
+        return; /* a game is loaded: Load and New relaunch, and the pause menu has no Join */
+    if (!join_looked) {
+        join_looked = 1;
+        join_target_read();
+        log_text("net.join_target", join_target[0] ? join_target : "(none)");
+    }
+    if (!join_target[0] ||
+        !plausible(menu = ((fn_find_menu)TES3X_NET_FIND_MENU)(ui_id("MenuOptions"))))
+        return;
+    id = ui_id("TES3X_Join");
+    if (!plausible(button = child(menu, id))) {
+        exit = child(menu, ui_id("MenuOptions_Exit_container"));
+        first = child(menu, ui_id("MenuOptions_New_container"));
+        if (!plausible(exit) || !plausible(column = *(u8 **)(exit + UI_PARENT)) ||
+            !plausible(button = ((fn_create_widget)TES3X_NET_CREATE_WIDGET)(
+                           column, id, TES3X_NET_VK_BUTTON, 0)))
+            return;
+        join_label(button, lobby ? "Joining " : "Join ");
+        set(button, UI_CLICK, (int)join_click, UI_PROP_HANDLER);
+        set(exit, down, (int)button, UI_PROP_PTR);
+        set(button, up, (int)exit, UI_PROP_PTR);
+        if (plausible(first)) {
+            set(button, down, (int)first, UI_PROP_PTR);
+            set(first, up, (int)button, UI_PROP_PTR);
+        }
+        ((fn_layout)TES3X_NET_PERFORM_LAYOUT)(menu, 0);
+        join_buttons++;
+    }
+    if (!join_pressed)
+        return;
+    join_pressed = 0;
+    if (lobby)
+        return;
+    joins_pressed++;
+    copy((u8 *)join_server, (const u8 *)join_target, JOIN_NAME + 1);
+    lobby = 1;
+    join_label(button, "Joining ");
+    log_text("net.join", join_server);
+    if (!net.up)
+        autostart();
+}
+
+static void join_stat(void)
+{
+    tes3x_log_hex3("net.join_menu", join_buttons, joins_pressed, lobby);
+}
+
 /* Once per frame, from the Game::Update hook. */
 void tes3x_net_frame(void)
 {
@@ -10711,6 +10873,7 @@ void tes3x_net_frame(void)
     }
     spell_sent_count = 0;
     cast_aim_frame();
+    join_frame();
     if (net.up) {
         spell_hook_install();
         shot_hook_install();
@@ -10820,6 +10983,7 @@ int tes3x_net_command(const char *text)
         chargen_stat();
         player_stat();
         death_stat();
+        join_stat();
     } else if ((rest = word(text, "menusim")) && (rest = word(skip(rest), "auto")) &&
                !*skip(rest)) {
         menu_forced = 0;

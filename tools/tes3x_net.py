@@ -332,8 +332,11 @@ HANDSHAKES_PENDING = 1024
 CLIENT_RATE = (600, 600.0)  # sealed packets from one joined client; a console sends about 60/s
 # GameHour, Day, Month (0-11), Year, DaysPassed, TimeScale, as the game's float globals
 CLOCK_BODY = struct.Struct("<6f")
-# MAC, build id, load order hash, plugin count, then the client's clock; NetPassword follows
+# MAC, build id, load order hash, plugin count, then the client's clock; NetPassword follows.
+# LOBBY in the plugin count: a console at the main menu, with no game and so no clock. It gets no
+# world, only what picks a character (GAME, CHARS or NEWCHAR, PICK, the checkpoint and LOAD).
 HELLO_BODY = struct.Struct("<6sIII" + CLOCK_BODY.format[1:])
+LOBBY = 0x80000000
 PASSWORD_MAX = 64
 PASSWORD_RATE = (5, 1 / 60)  # password tries from one address, (burst, per second)
 # REFUSE: the session's load order hash, its plugin count, and why
@@ -1636,6 +1639,7 @@ class Client:
         self.owners_told = {}  # actor id -> the owner this client was told, where not 0
         self.loaded = set()
         self.busy = None  # since when it has been saving
+        self.lobby = False  # joined from the main menu, with no game
         self.game = None  # the launch token it last reported
         self.synced = False  # that launch runs its character's latest checkpoint
         self.launch = 0  # GAME_NONE, GAME_LOAD or GAME_NEW
@@ -1656,6 +1660,11 @@ class Client:
         self.replay = (0, 0)  # the highest seq opened and a bitmap of the 32 up to it
         self.forged = self.replayed = self.limited = 0
         self.bucket = Bucket(*CLIENT_RATE)
+
+    @property
+    def in_world(self):
+        """Joined with a game loaded: it gets the world, the others' states and events."""
+        return self.alive and not self.lobby
 
 
 
@@ -1955,7 +1964,7 @@ def serve(args):
                                     cell) + NO_ANIM
         bot["state"] = state
         for other in clients.values():
-            if other.alive:
+            if other.in_world:
                 send(other, PEER, struct.pack("<I", BOT_ID) + state)
 
     def adopt_world(order, now):
@@ -2017,7 +2026,7 @@ def serve(args):
 
     def broadcast_event(origin, kind, data, now):
         for other in clients.values():
-            if other.alive and other.id != origin:
+            if other.in_world and other.id != origin:
                 other.rel.queue(kind, origin, data)
                 flush(other, now)
 
@@ -2036,7 +2045,7 @@ def serve(args):
         world["dirty"] = True
         print(f"{stamp} weather from client {origin}: {describe_weather(changed)}", flush=True)
         for other in clients.values():
-            if other.alive and (to_origin or other.id != origin):
+            if other.in_world and (to_origin or other.id != origin):
                 for data in pack_weather(changed):
                     other.rel.queue(EVENT_WEATHER, origin, data)
                 flush(other, now)
@@ -2063,7 +2072,7 @@ def serve(args):
         print(f"{stamp} client {origin} made {describe_spawn(sid, spawns[sid])}", flush=True)
         data = pack_spawn(sid, spawns[sid])
         for other in clients.values():
-            if other.alive:
+            if other.in_world:
                 other.rel.queue(EVENT_SPAWN, origin, data)
                 flush(other, now)
         return sid
@@ -2102,7 +2111,7 @@ def serve(args):
         print(f"{stamp} client {origin} {'opened' if rolled else 'changed'} {refid:#010x} in cell "
               f"{cell}: {describe_contents(entries)}", flush=True)
         for other in clients.values():
-            if other.alive and other.id != origin:
+            if other.in_world and other.id != origin:
                 send_contents(other.id, refid, now)
 
     def key_folder(client):
@@ -2161,7 +2170,7 @@ def serve(args):
               f"in {args.respawn_delay:g} s, loses {lost} gold", flush=True)
         notice = f"{name} has died."[:EVENT_DATA].encode("latin-1", "replace")
         for other in clients.values():
-            if other.alive and other is not client:
+            if other.in_world and other is not client:
                 other.rel.queue(EVENT_TEXT, 0, notice)
                 flush(other, now)
 
@@ -2572,7 +2581,7 @@ def serve(args):
             return
         body = struct.pack("<I", len(kept)) + b"".join(kept)
         for other in clients.values():
-            if other is not client and other.alive:
+            if other is not client and other.in_world:
                 send(other, ACTORS, struct.pack("<I", client.id) + body)
 
     def bot_actors(now):
@@ -2603,7 +2612,7 @@ def serve(args):
                 body += ACTOR.pack(refid, x + args.bot_shift + sway, y, z, heading, health, flags,
                                    magicka, fatigue, target, anim)
             for other in clients.values():
-                if other.alive:
+                if other.in_world:
                     send(other, ACTORS, struct.pack("<I", BOT_ID) + body)
 
     def handshake(kind, session, packet, addr, now):
@@ -2775,7 +2784,7 @@ def serve(args):
         if kind == HELLO and secure and len(packet) >= T3MP.size + HELLO_BODY.size:
             key, keys = secure
             mac, build, order, plugins, *offered = HELLO_BODY.unpack_from(packet, T3MP.size)
-            mac = mac.hex(":")
+            mac, lobby, plugins = mac.hex(":"), bool(plugins & LOBBY), plugins & ~LOBBY
             if fingerprint(key) in bans["key"] or mac in bans["mac"]:
                 print(f"{stamp} refused {mac} at {addr[0]}: banned", flush=True)
                 refuse(addr, session, keys, mac, REFUSED_BANNED)
@@ -2794,12 +2803,12 @@ def serve(args):
                     with open(admitted_path, "a", encoding="utf-8") as stream:
                         stream.write(f"{key.hex()} {mac} {time.strftime('%Y-%m-%d')}\n")
                 print(f"{stamp} admitted key {fingerprint(key)} ({mac})", flush=True)
-            if pinned is None:
+            if pinned is None and not lobby:
                 pinned = (order, plugins)
                 print(f"{stamp} load order {order:#010x} ({plugins} plugins) set by {mac}",
                       flush=True)
                 adopt_world(order, now)
-            if order != pinned[0]:
+            if pinned and order != pinned[0]:
                 print(f"{stamp} refused {mac}: load order {order:#010x} ({plugins} plugins), "
                       f"session has {pinned[0]:#010x}", flush=True)
                 refuse(addr, session, keys, mac, REFUSED_LOAD_ORDER)
@@ -2831,6 +2840,7 @@ def serve(args):
             client.known = {}
             client.owners_told = {}
             client.busy = None
+            client.lobby = lobby
             if client.joins == 1:
                 client.joined = now
                 client.bursts = sorted(bursts)
@@ -2838,6 +2848,9 @@ def serve(args):
             print(f"{stamp} client {client.id} {verb}: {mac} at {addr[0]}:{addr[1]}, "
                   f"build {build:#010x}", flush=True)
             send(client, WELCOME, struct.pack("<I", client.id))
+            if lobby:
+                print(f"{stamp} client {client.id} is at the main menu", flush=True)
+                return
             if clock is None:
                 offered = sane_clock(offered)
                 if args.hour is not None:
@@ -2897,7 +2910,7 @@ def serve(args):
                 if args.bot_echo:
                     bot["echo"] = client.state
             for other in clients.values():
-                if other is not client and other.alive:
+                if other is not client and other.in_world:
                     send(other, PEER, struct.pack("<I", client.id) + client.state)
         elif kind == ACTORS and len(packet) >= T3MP.size + 4:
             on_actors(client, packet[T3MP.size:])
@@ -3222,7 +3235,7 @@ def serve(args):
             clock_next = now + CLOCK_INTERVAL
             body = clock.body(now)
             for client in clients.values():
-                if client.alive:
+                if client.alive and not client.lobby:
                     send(client, CLOCK, body)
         if args.report and now >= report:
             report = now + args.report
@@ -3274,7 +3287,7 @@ class FuzzClient:
         self.event_next = 1  # the next event number the server will deliver, from its acks
         self.refused = None  # a REFUSE's body
 
-    def join(self, timeout=2.0, password=b""):
+    def join(self, timeout=2.0, password=b"", lobby=False):
         secret, e = self.rng.randbytes(32), self.rng.randbytes(32)
         noise = Noise(True, secret, e, PROLOGUE)
         message1 = (OUTER.pack(b"T3MP", T3MP_VERSION, HANDSHAKE1, 0, self.session, 0)
@@ -3282,8 +3295,8 @@ class FuzzClient:
         self.sock.sendto(message1, self.addr)
         reply = self.receive_raw(timeout, HANDSHAKE2)
         noise.read2(reply[OUTER.size:])
-        hello = HELLO_BODY.pack(self.rng.randbytes(6), 0, 0x46555A5A, 3, 12.0, 16.0, 7.0, 427.0,
-                                1.0, 30.0)
+        hello = HELLO_BODY.pack(self.rng.randbytes(6), 0, 0x46555A5A, 3 | (LOBBY if lobby else 0),
+                                12.0, 16.0, 7.0, 427.0, 1.0, 30.0)
         self.handshake3 = (OUTER.pack(b"T3MP", T3MP_VERSION, HANDSHAKE3, 0, self.session, 0)
                            + noise.write3(hello + password))
         self.sock.sendto(self.handshake3, self.addr)
