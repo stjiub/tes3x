@@ -950,7 +950,8 @@ class PipelinePlanTests(unittest.TestCase):
                    'package': {'mode': 'merged-bsa'}}
         plan = resolve_patch_plan(profile)
         self.assertEqual(plan['selected'],
-                         ['mcp-3', 'mcp-97', 'mcp-102', 'dxt5-size', 'console'])
+                         ['mcp-3', 'dialogue-merge', 'mcp-97', 'mcp-102', 'dxt5-size',
+                          'console'])
 
     def test_pipeline_rejects_unknown_categories_and_patches(self):
         with self.assertRaises(PipelineError):

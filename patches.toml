@@ -182,7 +182,7 @@ summary = "Apply Unarmored damage reduction when no armor is equipped."
 name = "dialogue-merge"
 title = "Keep responses of repeated topics"
 category = "correctness"
-channel = "dev"
+channel = "preview"
 selection = "preset"
 summary = "Keep a topic's earlier responses when a later plugin adds to it."
 
