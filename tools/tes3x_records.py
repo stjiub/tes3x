@@ -3,7 +3,11 @@ import struct
 from pathlib import Path
 
 
-def records(path):
+RECORD_HEADER = struct.Struct('<4sIII')
+
+
+def raw_records(path):
+    """Yield offset, tag, unknown, flags and body without changing any record fields."""
     with open(path, 'rb') as stream:
         length = Path(path).stat().st_size
         # Retail expansion dependency placeholders are deliberately just TES3.
@@ -12,13 +16,18 @@ def records(path):
         stream.seek(0)
         while stream.tell() < length:
             offset = stream.tell()
-            header = stream.read(16)
-            if len(header) != 16:
+            header = stream.read(RECORD_HEADER.size)
+            if len(header) != RECORD_HEADER.size:
                 raise ValueError(f'{path}: truncated record header at {offset}')
-            tag, size, _, flags = struct.unpack('<4sIII', header)
+            tag, size, unknown, flags = RECORD_HEADER.unpack(header)
             if size > length - stream.tell():
                 raise ValueError(f'{path}: {tag!r} exceeds file at {offset}')
-            yield tag, flags, stream.read(size)
+            yield offset, tag, unknown, flags, stream.read(size)
+
+
+def records(path):
+    for _offset, tag, _unknown, flags, data in raw_records(path):
+        yield tag, flags, data
 
 
 def subrecords(data):

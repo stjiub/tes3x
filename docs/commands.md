@@ -11,6 +11,7 @@ what each one is for and where it is explained; `--help` on any command lists it
 | `tes3x_pipeline.py` | build one profile into a game folder, and optionally deploy it | [pipeline](pipeline.md) |
 | `tes3x_build.py` | collect a profile's mods into one `Data Files` tree; report conflicts, textures and missing masters; prune unused assets | [pipeline](pipeline.md#2-collect-the-winning-files), [packaging](packaging.md#pruning-unused-assets) |
 | `tes3x_plugins.py` | order plugins with mlox or a saved order; download the mlox rules | [pipeline](pipeline.md#sorting-plugins-with-mlox) |
+| `tes3x_optimize.py` | write equivalence-checked derived copies that make the Xbox load fewer records | [plugin optimizer](optimizer.md) |
 | `tes3x_pack.py` | pack a collected tree into archives and stage the game's `Data Files` | [packaging](packaging.md) |
 | `tes3x_payload.py` | compile the patch payload for one retail XBE | [payload](../patches/payload.md) |
 | `tes3x_patch.py` | apply patches to an XBE directly; `--list` shows them | [patches](patches.md) |

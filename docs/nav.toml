@@ -15,6 +15,7 @@ pages = [
     "mod-library.md",
     "pipeline.md",
     "packaging.md",
+    "optimizer.md",
     "deployment.md",
     "testing.md",
     "xemu.md",
