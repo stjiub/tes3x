@@ -24,14 +24,14 @@
       "name": "TES3::Dialogue",
       "size": "0x20",
       "pc_valid_until": "0x18",
-      "note": "0x20 bytes on the Xbox (0x30 on the PC): the info list is a pointer, not inline, so journalIndex sits at +0x1C. Retail has 2,884 dialogues, 758 of them journals (type 4).",
+      "note": "0x20 bytes on the Xbox (0x30 on the PC): the INFOs are an intrusive chain from a head pointer, not an inline list, so journalIndex sits at +0x1C. Retail has 2,884 dialogues, 758 of them journals (type 4).",
       "fields": [
         {
           "offset": "0x18",
           "name": "info",
-          "type": "NI::IteratedList<TES3::DialogueInfo*>*",
+          "type": "TES3::DialogueInfo*",
           "confidence": "verified",
-          "provenance": "xemu peek: a pointer to a list where the PC has the list inline"
+          "provenance": "head of the chain linked through DialogueInfo +0x1C: appendInfo 0x000FF680 and the by-name lookup 0x000FE0F0 walk it"
         },
         {
           "offset": "0x1C",
@@ -40,6 +40,21 @@
           "confidence": "verified",
           "provenance": "xemu peek: 10 for A1_1_FindSpymaster after Journal A1_1_FindSpymaster 10"
         }
+      ]
+    },
+    {
+      "name": "TES3::DialogueInfo",
+      "size": "0x2C",
+      "pc_valid_until": "0x16",
+      "note": "Same size as the PC, but DATA is packed into +0x14..+0x1B so +0x1C can link the topic's chain. The Xbox master stores DATA in that 8-byte form; a 12-byte PC DATA is repacked on load (0x000FE830). +0x20 conditions and +0x24 file offset match the PC.",
+      "fields": [
+        {"offset": "0x16", "name": "disposition", "type": "short", "confidence": "verified", "provenance": "INFO load 0x000FE830; journal index for journal topics"},
+        {"offset": "0x18", "name": "npcRank", "type": "signed char", "confidence": "verified", "provenance": "INFO load 0x000FE830"},
+        {"offset": "0x19", "name": "npcSex", "type": "signed char", "confidence": "verified", "provenance": "INFO load 0x000FE830"},
+        {"offset": "0x1A", "name": "pcRank", "type": "signed char", "confidence": "verified", "provenance": "INFO load 0x000FE830"},
+        {"offset": "0x1C", "name": "next", "type": "TES3::DialogueInfo*", "confidence": "verified", "provenance": "appendInfo 0x000FF680 and lookup 0x000FE0F0 follow it"},
+        {"offset": "0x20", "name": "conditions", "type": "TES3::DialogueInfoFilterNode*", "confidence": "matched", "provenance": "INFO copy 0x000FF230 walks it as the PC copy 0x004AFF10 does"},
+        {"offset": "0x24", "name": "espFileOffset", "type": "int", "confidence": "matched", "provenance": "INFO copy 0x000FF230 and the PC copy 0x004AFF10 both carry it"}
       ]
     },
     {

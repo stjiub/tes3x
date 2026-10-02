@@ -988,6 +988,14 @@
       "pc_va": "0x00472580"
     },
     {
+      "va": "0x000D2160",
+      "name": "Birthsign::copy",
+      "confidence": "matched",
+      "provenance": "loader calls it on the existing record with a repeated one; same body as PC 0x00474BA0",
+      "pc_va": "0x00474BA0",
+      "signature": "void __thiscall copy(TES3::Birthsign* from)"
+    },
+    {
       "va": "0x000D22B0",
       "name": "GameFile::getSize?",
       "confidence": "guess",
@@ -1051,12 +1059,28 @@
       "pc_va": "0x004812A0"
     },
     {
+      "va": "0x000D6290",
+      "name": "Region::copy",
+      "confidence": "matched",
+      "provenance": "loader calls it on the existing record with a repeated one; same body as PC 0x00480E10",
+      "pc_va": "0x00480E10",
+      "signature": "void __thiscall copy(TES3::Region* from)"
+    },
+    {
       "va": "0x000D6700",
       "name": "AddObjectToHashMapById",
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_AddObjectToHashMapById",
       "pc_va": "0x00481D80"
+    },
+    {
+      "va": "0x000D6B70",
+      "name": "StartScript::copy",
+      "confidence": "matched",
+      "provenance": "loader calls it on the existing record with a repeated one; same body as PC 0x00482AC0",
+      "pc_va": "0x00482AC0",
+      "signature": "void __thiscall copy(TES3::StartScript* from)"
     },
     {
       "va": "0x000D7250",
@@ -1429,6 +1453,14 @@
       "pc_va": "0x00497BC0"
     },
     {
+      "va": "0x000EC3A0",
+      "name": "Creature::copy",
+      "confidence": "matched",
+      "provenance": "Object vtable +0x24 (vtable 0x00364DB8); same body as PC 0x0049D1B0",
+      "pc_va": "0x0049D1B0",
+      "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
+    },
+    {
       "va": "0x000EC970",
       "name": "CreatureInstance::reevaluateEquipment",
       "kind": "function",
@@ -1451,6 +1483,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_Clothing_setupBodyParts",
       "pc_va": "0x004A38F0"
+    },
+    {
+      "va": "0x000EFD60",
+      "name": "Static::copy",
+      "confidence": "matched",
+      "provenance": "Object vtable +0x24 (vtable 0x00366F48); same body as PC 0x004A74D0",
+      "pc_va": "0x004A74D0",
+      "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
     },
     {
       "va": "0x000F03C0",
@@ -1493,6 +1533,30 @@
       "pc_va": "0x0049F990"
     },
     {
+      "va": "0x000F0DE0",
+      "name": "Activator::copy",
+      "confidence": "matched",
+      "provenance": "Object vtable +0x24 (vtable 0x00365BC8); same body as PC 0x0049FD20",
+      "pc_va": "0x0049FD20",
+      "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
+    },
+    {
+      "va": "0x000F11C0",
+      "name": "Apparatus::copy",
+      "confidence": "matched",
+      "provenance": "Object vtable +0x24 (vtable 0x00365D20); same body as PC 0x004A01E0",
+      "pc_va": "0x004A01E0",
+      "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
+    },
+    {
+      "va": "0x000F1A00",
+      "name": "Armor::copy",
+      "confidence": "matched",
+      "provenance": "Object vtable +0x24 (vtable 0x00365E70); same body as PC 0x004A0BF0",
+      "pc_va": "0x004A0BF0",
+      "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
+    },
+    {
       "va": "0x000F1DC0",
       "name": "Armor::calculateArmorRatingForNPC",
       "kind": "function",
@@ -1509,6 +1573,22 @@
       "pc_va": "0x004A1280"
     },
     {
+      "va": "0x000F21E0",
+      "name": "BodyPart::copy",
+      "confidence": "matched",
+      "provenance": "Object vtable +0x24 (vtable 0x00366000); same body as PC 0x004A1710",
+      "pc_va": "0x004A1710",
+      "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
+    },
+    {
+      "va": "0x000F2CA0",
+      "name": "Book::copy",
+      "confidence": "matched",
+      "provenance": "Object vtable +0x24 (vtable 0x00366228); same body as PC 0x004A24E0",
+      "pc_va": "0x004A24E0",
+      "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
+    },
+    {
       "va": "0x000F2EA0",
       "name": "Book::loadBookText",
       "kind": "function",
@@ -1517,12 +1597,76 @@
       "pc_va": "0x004A2A90"
     },
     {
+      "va": "0x000F37D0",
+      "name": "Clothing::copy",
+      "confidence": "matched",
+      "provenance": "Object vtable +0x24 (vtable 0x00366378); same body as PC 0x004A3590",
+      "pc_va": "0x004A3590",
+      "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
+    },
+    {
       "va": "0x000F3B80",
       "name": "Container::ctor",
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_Container_ctor",
       "pc_va": "0x004A3BE0"
+    },
+    {
+      "va": "0x000F4080",
+      "name": "Container::copy",
+      "confidence": "matched",
+      "provenance": "Object vtable +0x24 (vtable 0x00366558); same body as PC 0x004A4070",
+      "pc_va": "0x004A4070",
+      "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
+    },
+    {
+      "va": "0x000F5180",
+      "name": "Door::copy",
+      "confidence": "matched",
+      "provenance": "Object vtable +0x24 (vtable 0x00366738); same body as PC 0x004A56B0",
+      "pc_va": "0x004A56B0",
+      "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
+    },
+    {
+      "va": "0x000F55C0",
+      "name": "Ingredient::copy",
+      "confidence": "matched",
+      "provenance": "Object vtable +0x24 (vtable 0x00366890); same body as PC 0x004A5C70",
+      "pc_va": "0x004A5C70",
+      "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
+    },
+    {
+      "va": "0x000F59C0",
+      "name": "Lockpick::copy",
+      "confidence": "matched",
+      "provenance": "Object vtable +0x24 (vtable 0x00366A08); same body as PC 0x004A61B0",
+      "pc_va": "0x004A61B0",
+      "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
+    },
+    {
+      "va": "0x000F5E40",
+      "name": "Miscellaneous::copy",
+      "confidence": "matched",
+      "provenance": "Object vtable +0x24 (vtable 0x00366B58); same body as PC 0x004A67A0",
+      "pc_va": "0x004A67A0",
+      "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
+    },
+    {
+      "va": "0x000F6230",
+      "name": "Probe::copy",
+      "confidence": "matched",
+      "provenance": "Object vtable +0x24 (vtable 0x00366CA8); same body as PC 0x004A6C70",
+      "pc_va": "0x004A6C70",
+      "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
+    },
+    {
+      "va": "0x000F6640",
+      "name": "RepairTool::copy",
+      "confidence": "matched",
+      "provenance": "Object vtable +0x24 (vtable 0x00366DF8); same body as PC 0x004A7160",
+      "pc_va": "0x004A7160",
+      "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
     },
     {
       "va": "0x000F6780",
@@ -1637,6 +1781,38 @@
       "pc_va": "0x004AD650"
     },
     {
+      "va": "0x000FA670",
+      "name": "GlobalVariable::copy",
+      "confidence": "matched",
+      "provenance": "loader calls it on the existing record with a repeated one; same body as PC 0x004ADB80",
+      "pc_va": "0x004ADB80",
+      "signature": "void __thiscall copy(TES3::GlobalVariable* from)"
+    },
+    {
+      "va": "0x000FB560",
+      "name": "Race::copy",
+      "confidence": "matched",
+      "provenance": "loader calls it on the existing record with a repeated one; same body as PC 0x004A7D40",
+      "pc_va": "0x004A7D40",
+      "signature": "void __thiscall copy(TES3::Race* from)"
+    },
+    {
+      "va": "0x000FB7C0",
+      "name": "Class::copy",
+      "confidence": "matched",
+      "provenance": "loader calls it on the existing record with a repeated one; same body as PC 0x004A8490",
+      "pc_va": "0x004A8490",
+      "signature": "void __thiscall copy(TES3::Class* from)"
+    },
+    {
+      "va": "0x000FB910",
+      "name": "Skill::copy",
+      "confidence": "matched",
+      "provenance": "loader calls it on the existing record with a repeated one; same body as PC 0x004A89B0",
+      "pc_va": "0x004A89B0",
+      "signature": "void __thiscall copy(TES3::Skill* from)"
+    },
+    {
       "va": "0x000FB9D0",
       "name": "MagicEffect::ctor",
       "kind": "function",
@@ -1645,12 +1821,36 @@
       "pc_va": "0x004A8C90"
     },
     {
+      "va": "0x000FBA80",
+      "name": "MagicEffect::copy",
+      "confidence": "matched",
+      "provenance": "loader calls it on the existing record with a repeated one; same body as PC 0x004A9990",
+      "pc_va": "0x004A9990",
+      "signature": "void __thiscall copy(TES3::MagicEffect* from)"
+    },
+    {
       "va": "0x000FBE20",
       "name": "Spell::ctor",
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_Spell_ctor",
       "pc_va": "0x004A9FD0"
+    },
+    {
+      "va": "0x000FC260",
+      "name": "Spell::copy",
+      "confidence": "matched",
+      "provenance": "Object vtable +0x24 (vtable 0x00367358); same body as PC 0x004AA7B0",
+      "pc_va": "0x004AA7B0",
+      "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
+    },
+    {
+      "va": "0x000FC630",
+      "name": "Enchantment::copy",
+      "confidence": "matched",
+      "provenance": "Object vtable +0x24 (vtable 0x00367498); same body as PC 0x004AB530",
+      "pc_va": "0x004AB530",
+      "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
     },
     {
       "va": "0x000FC650",
@@ -1669,12 +1869,28 @@
       "pc_va": "0x004ABD90"
     },
     {
+      "va": "0x000FCAE0",
+      "name": "Alchemy::copy",
+      "confidence": "matched",
+      "provenance": "Object vtable +0x24 (vtable 0x00367638); same body as PC 0x004AC450",
+      "pc_va": "0x004AC450",
+      "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
+    },
+    {
       "va": "0x000FCC60",
       "name": "SpellList::addById",
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_SpellList_addById",
       "pc_va": "0x004AC750"
+    },
+    {
+      "va": "0x000FCE20",
+      "name": "Faction::copy",
+      "confidence": "matched",
+      "provenance": "loader calls it on the existing record with a repeated one; same body as PC 0x004AD110",
+      "pc_va": "0x004AD110",
+      "signature": "void __thiscall copy(TES3::Faction* from)"
     },
     {
       "va": "0x000FD1F0",
@@ -1692,6 +1908,28 @@
       "note": "Xbox bug: 0x000FE0E1 stores the replacement's null INFO head (+0x18) over the existing topic, detaching every earlier INFO of a topic a later plugin repeats. PC keeps the chain. With TD+TR this drops 18,098 Morrowind.esm INFOs (Hello, greetings, rumors, 15 journal) and 5,885 Tamriel_Data INFOs.",
       "pc_va": "0x004B2790",
       "signature": "void __thiscall mergeRepeated(TES3::Dialogue* replacement)"
+    },
+    {
+      "va": "0x000FE0F0",
+      "name": "Dialogue::findInfo",
+      "confidence": "matched",
+      "provenance": "walks the +0x18 head through DialogueInfo +0x1C comparing INAM; the loader uses it to replace a repeated INFO in place",
+      "pc_va": "0x004B2920"
+    },
+    {
+      "va": "0x000FE830",
+      "name": "DialogueInfo::loadObjectSpecific",
+      "confidence": "matched",
+      "provenance": "DialogueInfo vtable +0x4; repacks 12-byte DATA into the Xbox 8-byte form",
+      "pc_va": "0x004AF490"
+    },
+    {
+      "va": "0x000FF230",
+      "name": "DialogueInfo::copy",
+      "confidence": "matched",
+      "provenance": "loader calls it on the existing record with a repeated one; same body as PC 0x004AFF10",
+      "pc_va": "0x004AFF10",
+      "signature": "void __thiscall copy(TES3::DialogueInfo* from)"
     },
     {
       "va": "0x000FF680",
@@ -2150,6 +2388,14 @@
       "kind": "function"
     },
     {
+      "va": "0x001150F0",
+      "name": "LandTexture::copy",
+      "confidence": "matched",
+      "provenance": "loader calls it on the existing record with a repeated one; same body as PC 0x004C96C0",
+      "pc_va": "0x004C96C0",
+      "signature": "void __thiscall copy(TES3::LandTexture* from)"
+    },
+    {
       "va": "0x00116C30",
       "name": "Land::GetVertexPosition",
       "confidence": "matched",
@@ -2167,12 +2413,36 @@
       "pc_va": "0x004CF870"
     },
     {
+      "va": "0x0011AC20",
+      "name": "LeveledCreature::copy",
+      "confidence": "matched",
+      "provenance": "Object vtable +0x24 (vtable 0x00374820); same body as PC 0x004CF5C0",
+      "pc_va": "0x004CF5C0",
+      "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
+    },
+    {
       "va": "0x0011B300",
       "name": "LeveledItem::resolve",
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_LeveledItem_resolve",
       "pc_va": "0x004D0BD0"
+    },
+    {
+      "va": "0x0011B7D0",
+      "name": "LeveledItem::copy",
+      "confidence": "matched",
+      "provenance": "Object vtable +0x24 (vtable 0x00374A68); same body as PC 0x004D0920",
+      "pc_va": "0x004D0920",
+      "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
+    },
+    {
+      "va": "0x0011C530",
+      "name": "Light::copy",
+      "confidence": "matched",
+      "provenance": "Object vtable +0x24 (vtable 0x00374D58); same body as PC 0x004D2120",
+      "pc_va": "0x004D2120",
+      "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
     },
     {
       "va": "0x0011C7B0",
@@ -2213,6 +2483,28 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_NPCorNPCInstance_calculateDisposition",
       "pc_va": "0x004DA330"
+    },
+    {
+      "va": "0x0011E660",
+      "name": "NPC::copy",
+      "confidence": "matched",
+      "provenance": "Object vtable +0x24 (vtable 0x00375100); same body as PC 0x004D7340",
+      "pc_va": "0x004D7340",
+      "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
+    },
+    {
+      "va": "0x00122A50",
+      "name": "Cell::setLand",
+      "confidence": "matched",
+      "provenance": "same body as PC; a later LAND replaces the cell's land",
+      "pc_va": "0x004E2820"
+    },
+    {
+      "va": "0x00122A90",
+      "name": "Cell::setPathGrid",
+      "confidence": "matched",
+      "provenance": "same body as PC (pathGrid at +0x70, PC +0x8C)",
+      "pc_va": "0x004E2860"
     },
     {
       "va": "0x00122C50",
@@ -2289,6 +2581,13 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_Cell_static_loadReference",
       "pc_va": "0x004DE380"
+    },
+    {
+      "va": "0x001293A0",
+      "name": "Cell::loadObjectSpecific",
+      "confidence": "matched",
+      "provenance": "Cell vtable +0x4; string match. Repeated CELLs load into the existing cell through it, as on PC",
+      "pc_va": "0x004DCBB0"
     },
     {
       "va": "0x00129CE5",
@@ -2527,6 +2826,14 @@
       "pc_va": "0x004F1FA0"
     },
     {
+      "va": "0x00134CA0",
+      "name": "Weapon::copy",
+      "confidence": "matched",
+      "provenance": "Object vtable +0x24 (vtable 0x00376D90); same body as PC 0x004F2600",
+      "pc_va": "0x004F2600",
+      "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
+    },
+    {
       "va": "0x00135B30",
       "name": "PathGrid::Hide",
       "kind": "function",
@@ -2763,6 +3070,14 @@
       "pc_va": "0x00510500"
     },
     {
+      "va": "0x0014B800",
+      "name": "Sound::copy",
+      "confidence": "matched",
+      "provenance": "loader calls it on the existing record with a repeated one; same body as PC 0x00510590",
+      "pc_va": "0x00510590",
+      "signature": "void __thiscall copy(TES3::Sound* from)"
+    },
+    {
       "va": "0x0014B9B0",
       "name": "Sound::loadBuffer",
       "kind": "function",
@@ -2785,6 +3100,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_Sound_play",
       "pc_va": "0x00510A40"
+    },
+    {
+      "va": "0x0014BF20",
+      "name": "SoundGenerator::copy",
+      "confidence": "matched",
+      "provenance": "loader calls it on the existing record with a repeated one; same body as PC 0x005114B0",
+      "pc_va": "0x005114B0",
+      "signature": "void __thiscall copy(TES3::SoundGenerator* from)"
     },
     {
       "va": "0x0014CF80",
