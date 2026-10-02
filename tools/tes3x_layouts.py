@@ -373,7 +373,10 @@ def ghidra_signature(sig):
     """Curated C prototype -> (Ghidra signature text, calling convention or None)."""
     conv = CONVENTIONS.search(sig)
     text = CONVENTIONS.sub('', sig)
-    text = re.sub(r'\b(?:\w+::)+(\w+)', r'\1', text)
+    # Type names stay qualified (TES3::Object and NI::Object are different); Ghidra resolves them.
+    text = re.sub(r'\b(?:\w+::)+(\w+)(?=\s*\()', r'\1', text)
+    # Ghidra signatures have no const and its parser rejects the word.
+    text = re.sub(r'\bconst\s+', '', text)
     return text.strip(), conv.group(1) if conv else None
 
 

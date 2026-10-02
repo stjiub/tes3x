@@ -404,9 +404,7 @@ public class Tes3xServe extends GhidraScript {
 		}
 		String conv = r.has("convention") ? r.get("convention").getAsString() : null;
 		if (r.has("signature")) {
-			FunctionSignatureParser parser = new FunctionSignatureParser(p.getDataTypeManager(),
-				null);
-			FunctionDefinitionDataType def = parser.parse(f.getSignature(),
+			FunctionDefinitionDataType def = signature(p.getDataTypeManager(), f,
 				r.get("signature").getAsString());
 			if (!new ApplyFunctionSignatureCmd(f.getEntryPoint(), def, SourceType.USER_DEFINED,
 				true, false).applyTo(p)) {
@@ -419,6 +417,68 @@ public class Tes3xServe extends GhidraScript {
 		if (conv != null) {
 			f.setCallingConvention(conv);
 		}
+	}
+
+	private static final java.util.regex.Pattern QUALIFIED =
+		java.util.regex.Pattern.compile("\\b(?:\\w+::)+\\w+\\b");
+
+	// Ghidra's parser finds types by bare name and fails when two categories share one
+	// (TES3::Object, NI::Object), so it parses placeholders and qualified names resolve here.
+	private FunctionDefinitionDataType signature(DataTypeManager dtm, Function f, String text)
+			throws Exception {
+		int open = text.indexOf('(');
+		int close = text.lastIndexOf(')');
+		if (open < 0 || close < open) {
+			throw new IllegalArgumentException("bad signature: " + text);
+		}
+		List<String> slots = new ArrayList<>();
+		slots.add(text.substring(0, open));
+		for (String a : text.substring(open + 1, close).split(",")) {
+			String t = a.trim();
+			if (!t.isEmpty() && !t.equals("...") && !t.equals("void")) {
+				slots.add(t);
+			}
+		}
+		DataType[] bases = new DataType[slots.size()];
+		for (int i = 0; i < slots.size(); i++) {
+			java.util.regex.Matcher m = QUALIFIED.matcher(slots.get(i));
+			if (m.find()) {
+				bases[i] = resolve(dtm, "/" + m.group().replace("::", "/"));
+				if (bases[i] == null) {
+					throw new IllegalArgumentException("unknown type " + m.group());
+				}
+			}
+		}
+		String plain = QUALIFIED.matcher(text).replaceAll("undefined1");
+		FunctionDefinitionDataType def = new FunctionSignatureParser(dtm, null)
+				.parse(f.getSignature(), plain);
+		ParameterDefinition[] args = def.getArguments();
+		if (args.length != bases.length - 1) {
+			throw new IllegalArgumentException("parsed " + args.length + " arguments, expected " +
+				(bases.length - 1));
+		}
+		if (bases[0] != null) {
+			def.setReturnType(rebase(def.getReturnType(), bases[0], dtm));
+		}
+		for (int i = 0; i < args.length; i++) {
+			if (bases[i + 1] != null) {
+				args[i].setDataType(rebase(args[i].getDataType(), bases[i + 1], dtm));
+			}
+		}
+		def.setArguments(args);
+		return def;
+	}
+
+	// The parsed placeholder's pointers and arrays, around the real base type.
+	private static DataType rebase(DataType dt, DataType base, DataTypeManager dtm) {
+		if (dt instanceof Pointer ptr) {
+			return new PointerDataType(rebase(ptr.getDataType(), base, dtm), ptr.getLength(), dtm);
+		}
+		if (dt instanceof Array arr) {
+			DataType e = rebase(arr.getDataType(), base, dtm);
+			return new ArrayDataType(e, arr.getNumElements(), e.getLength(), dtm);
+		}
+		return base;
 	}
 
 	private Function function(Program p, Address a) {

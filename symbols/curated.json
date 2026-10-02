@@ -5341,7 +5341,7 @@
       "name": "XLaunchNewImage",
       "confidence": "verified",
       "provenance": "called with D:\\morrowind.xbe and the BXWM launch data by every relaunch (Load, New Game); multiplayer calls it to load a checkpoint",
-      "signature": "u32 __stdcall XLaunchNewImage(const char *xbe, void *data)"
+      "signature": "unsigned int __stdcall XLaunchNewImage(const char *xbe, void *data)"
     },
     {
       "va": "0x00246960",

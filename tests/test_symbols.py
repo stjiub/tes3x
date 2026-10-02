@@ -72,10 +72,10 @@ class StructOverlayTests(unittest.TestCase):
                          [[0, "a", "int"], [4, "stats", "/TES3/Stat*[1]"], [12, "flag", "uchar"]])
         self.assertEqual(types["records"]["/TES3/World"]["fields"][1][1], "stat")
 
-    def test_signature_drops_convention_and_qualifiers(self):
+    def test_signature_drops_convention_name_qualifier_and_const(self):
         text, conv = tes3x_layouts.ghidra_signature(
-            "float __thiscall TES3::MobileActor::getSkill(TES3::Skill * s, int i)")
-        self.assertEqual(text, "float getSkill(Skill * s, int i)")
+            "float __thiscall TES3::MobileActor::getSkill(const TES3::Skill * s, int i)")
+        self.assertEqual(text, "float getSkill(TES3::Skill * s, int i)")
         self.assertEqual(conv, "__thiscall")
 
 
