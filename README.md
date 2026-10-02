@@ -6,7 +6,7 @@ extends engine capabilites, and manages, optimizes and deploys a modlist. It att
 and push the limits of the Morrowind experience on the Xbox. 
 
 ## Features
-- **Engine fixes and extensions.** - Performance and stability improvements, porting bug fixes from the
+- **Engine fixes.** - Performance and stability improvements, porting bug fixes from the
   [Morrowind Code Patch](https://www.nexusmods.com/morrowind/mods/19510)
   and similar projects, and Xbox specific patches.
 - **Engine extensions.** New script opcodes, support for legacy MWSE (0.9.X),
