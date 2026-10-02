@@ -97,7 +97,9 @@ fatigue as they change. The server
 keeps the latest of them in `stream.json` beside the save and applies them over it when the
 console next loads that save, so a crash loses at most about a second of those. It also keeps
 where the player last was and puts them back there, so a crash or a power cut does not return a
-player to where the save was made.
+player to where the save was made. Exit while joined saves and uploads first, and quits once
+the server has the save; if the server does not confirm it within 30 seconds, the player chooses
+to leave anyway or stay.
 
 ### Keys and passwords
 
@@ -202,6 +204,7 @@ With `console` in the build, open the console (Back + right thumb click) and typ
 | `tes3xnet stat` | write the network counters to the log |
 | `tes3xnet say TEXT` | send a line of text to the other players (logged there as `net.text`) |
 | `tes3xnet send NAME` | send `U:\TES3X\NAME` to the server; a save that names a player is kept as that console's character under `characters` in its `--world` folder, with three earlier versions, and any other file under `uploads` |
+| `tes3xnet leave` | what Exit's Yes does while joined: save, upload, and quit once the server has the save |
 | `tes3xnet down` | leave the session and stop the network card |
 | `tes3xnet up ADDRESS[/BITS] [SERVER[:PORT] [GATEWAY]]` | start it again by hand |
 

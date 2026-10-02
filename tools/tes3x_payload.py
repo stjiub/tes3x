@@ -498,6 +498,23 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         define("NET_PERSIST_DISPLAY", hexva(persist))
         define("NET_ENGINE_PATH", hexva(engine_path))
         define("NET_LAUNCH", hexva(launch))
+        # Exit in the pause menu: MessageBox(sMessage5 (GMST 0x266), Yes, No), then the answer's
+        # callback (push 0x20, push callback), which relaunches D:\Default.xbe.
+        quits = list(re.finditer(rb"\x68\x66\x02\x00\x00\xe8....\x50\xe8.{0,48}?\x6a\x20\x68(....)"
+                                 rb"\x8b\xc8", data, re.S))
+        if len(quits) != 1:
+            raise PayloadError(f"quit callback: {len(quits)} sites, expected 1")
+        quit_site = image.off_to_va(quits[0].start(1))
+        quit = struct.unpack("<I", quits[0].group(1))[0]
+        body = data[image.va_to_off(quit):image.va_to_off(quit) + 0x30]
+        pushed = [struct.unpack_from("<I", body, m.start() + 1)[0]
+                  for m in re.finditer(rb"\x68", body)]
+        if not any(image.va_to_off(p) is not None and
+                   data[image.va_to_off(p):image.va_to_off(p) + 15].lower() == b"d:\\default.xbe\0"
+                   for p in pushed):
+            raise PayloadError(f"quit callback {quit:#x} does not launch D:\\Default.xbe")
+        define("NET_QUIT_SITE", hexva(quit_site))
+        define("NET_QUIT", hexva(quit))
         define("NET_MENU_GATE", hexva(locate("menu-mode-gate")))
         define("NET_MOB_GATE", hexva(locate("mob-update-gate")))
         define("NET_WEATHER_ROLL", hexva(locate("weather-roll")))

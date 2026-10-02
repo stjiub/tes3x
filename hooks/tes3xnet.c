@@ -9026,6 +9026,112 @@ static void game_frame(void)
     }
 }
 
+/* Leaving while joined: Exit's Yes saves into the slot, uploads it and waits for the server to
+ * have the whole file before the engine's own quit runs, so the server keeps where the player
+ * stopped. If the server does not confirm, the player chooses to leave without it or stay. */
+#define LEAVE_SAVE 1u
+#define LEAVE_UPLOAD 2u
+#define LEAVE_ASK 3u
+#define LEAVE_TIMEOUT_US 30000000u
+typedef unsigned char(__cdecl *fn_quit)(void);
+static u32 leave_state, leave_since, leave_upload, leave_told, quit_hooked;
+static u32 leaves_saved, leaves_forced, leaves_stayed;
+
+static unsigned char quit(void)
+{
+    log_text("net.leave", leave_state == LEAVE_ASK ? "without the server's copy" : "saved");
+    return ((fn_quit)TES3X_NET_QUIT)();
+}
+
+unsigned char __cdecl tes3x_net_quit(void)
+{
+    if (ses.state != SESSION_JOINED || leave_state)
+        return ((fn_quit)TES3X_NET_QUIT)();
+    leave_state = LEAVE_SAVE;
+    leave_since = now_us();
+    leave_told = 0;
+    return 1;
+}
+
+static void quit_hook_install(void)
+{
+    u32 cr0, flags, *site = (u32 *)TES3X_NET_QUIT_SITE;
+
+    if (quit_hooked)
+        return;
+    quit_hooked = 1;
+    if (*site != TES3X_NET_QUIT) {
+        tes3x_log_hex3("net.call_site_unexpected", (u32)site, *site, TES3X_NET_QUIT);
+        return;
+    }
+    flags = lock();
+    __asm__ volatile("movl %%cr0, %0" : "=r"(cr0));
+    __asm__ volatile("movl %0, %%cr0" : : "r"(cr0 & ~CR0_WP) : "memory");
+    *site = (u32)tes3x_net_quit;
+    __asm__ volatile("movl %0, %%cr0" : : "r"(cr0) : "memory");
+    unlock(flags);
+    quit_hooked = 2;
+}
+
+static void leave_ask(const char *why)
+{
+    log_text("net.leave_unconfirmed", why);
+    leave_state = LEAVE_ASK;
+    *(int *)TES3X_NET_BUTTON = -1;
+    run_script("MessageBox \"The server has not confirmed your save. Leave anyway? What it last "
+               "heard is kept.\" \"Leave\" \"Stay\"");
+}
+
+static void leave_frame(void)
+{
+    const u8 *world = *(const u8 **)TES3X_NET_WORLD, *global;
+    int button;
+
+    if (leave_state == LEAVE_SAVE) {
+        if (!leave_told) {
+            leave_told = 1;
+            run_script("MessageBox \"Saving to the server...\"");
+            return;
+        }
+        if (up.state >= UP_WANT && up.state <= UP_SENDING && now_us() - leave_since <
+                                                                 LEAVE_TIMEOUT_US)
+            return; /* an earlier save is still going up */
+        if (ses.state != SESSION_JOINED || !plausible(world) ||
+            !plausible(global = *(const u8 *const *)(world + CHARGEN_STATE)) ||
+            *(const u32 *)(global + 0x34) != 0xBF800000u || !slot_name()) {
+            leave_ask("no save to make");
+            return;
+        }
+        leave_upload = saves_uploaded + 1;
+        save_pending = 0;
+        if (!tes3x_net_save(**(void ***)TES3X_NET_DATA_HANDLER, save_slot, save_slot) ||
+            !save_pending) {
+            leave_ask("the save failed");
+            return;
+        }
+        leave_state = LEAVE_UPLOAD;
+    } else if (leave_state == LEAVE_UPLOAD) {
+        if (saves_uploaded >= leave_upload && up.state == UP_DONE) {
+            leaves_saved++;
+            leave_state = 0;
+            quit();
+        } else if (saves_uploaded >= leave_upload && up.state == UP_FAILED) {
+            leave_ask("the upload failed");
+        } else if (now_us() - leave_since >= LEAVE_TIMEOUT_US) {
+            leave_ask("no answer");
+        }
+    } else if (leave_state == LEAVE_ASK && (button = *(int *)TES3X_NET_BUTTON) >= 0) {
+        *(int *)TES3X_NET_BUTTON = -1;
+        if (button == 0) {
+            leaves_forced++;
+            quit();
+        } else {
+            leaves_stayed++;
+        }
+        leave_state = 0;
+    }
+}
+
 /* Game thread: an upload already under way holds the save's until it ends. */
 static void chargen_frame(void);
 
@@ -9038,6 +9144,7 @@ static void save_frame(void)
     }
     if (save_requested && ses.state == SESSION_JOINED)
         save_request_frame();
+    leave_frame();
     if (save_pending && ses.state == SESSION_JOINED &&
         !(up.state >= UP_WANT && up.state <= UP_SENDING) && up_start(save_name, save_path)) {
         save_pending = 0;
@@ -9111,6 +9218,8 @@ static void save_stat(void)
     tes3x_log_hex3("net.saves_slot", saves_slotted, saves_uploaded, save_pending);
     tes3x_log_hex3("net.saves_asked", saves_requested, save_requested, 0);
     tes3x_log_hex3("net.game", game_token, load_wanted, loads_started);
+    tes3x_log_hex3("net.leaves", leaves_saved, leaves_forced, leaves_stayed);
+    tes3x_log_hex3("net.leave_state", leave_state, quit_hooked, 0);
 }
 
 /* Characters. After GAME the server lists this key's characters (CHARS) or has the console make
@@ -10390,6 +10499,7 @@ void tes3x_net_frame(void)
         summon_hook_install();
         player_hook_install();
         save_hook_install();
+        quit_hook_install();
         authority_session();
         spawns_session();
         events_frame();
@@ -10498,6 +10608,8 @@ int tes3x_net_command(const char *text)
         weather_forced = word(rest, "auto") ? 0 : 1 + (value != 0);
     } else if ((rest = word(text, "send")) && *(rest = skip(rest))) {
         up_command(rest);
+    } else if ((rest = word(text, "leave")) && !*skip(rest)) {
+        ((fn_quit)*(const u32 *)TES3X_NET_QUIT_SITE)(); /* what Exit's Yes calls */
     } else if ((rest = word(text, "say")) && *(rest = skip(rest))) {
         for (value = 0; rest[value] && value < EVENT_DATA; value++)
             ;

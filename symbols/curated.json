@@ -4631,6 +4631,27 @@
       "pc_va": "0x005F90C0"
     },
     {
+      "va": "0x001FEE10",
+      "name": "MenuOptions::onQuitConfirmed",
+      "confidence": "guess",
+      "provenance": "installed by onExitClick; relaunches D:\\Default.xbe",
+      "note": "TES3X multiplayer replaces the pointer to it pushed in onExitClick (tes3xnet.c tes3x_net_quit)"
+    },
+    {
+      "va": "0x001FF0E0",
+      "name": "MenuOptions::onExitClick",
+      "confidence": "guess",
+      "provenance": "Exit container click: sMessage5 box (Yes, No), answer callback 0x001FEE10"
+    },
+    {
+      "va": "0x00201590",
+      "name": "MenuOptions::open",
+      "confidence": "guess",
+      "provenance": "builds MenuOptions through 0x00200990; called by onDeath and the pad handler",
+      "signature": "void __cdecl f(char skip)",
+      "note": "The pad handler follows it with ui::requestMenuModeOn(MenuOptions id); called alone from an exec command it showed New, Load, Options, Exit over the game and a click on Exit did not reach onExitClick"
+    },
+    {
       "va": "0x002096B1",
       "name": "UI::displayObjectTooltip",
       "kind": "function",
