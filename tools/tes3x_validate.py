@@ -515,7 +515,8 @@ def read_run(source, watch, build_source=None):
     if isinstance(values.get("diag.build"), int):
         run["build"] = "0x%08X" % values["diag.build"]
     if isinstance(values.get("diag.patches"), int):
-        run["patches"] = "0x%08X" % values["diag.patches"]
+        mask = values["diag.patches"] | (values.get("diag.patches_hi", 0) << 32)
+        run["patches"] = "0x%0*X" % (16 if mask >> 32 else 8, mask)
     if folder:
         run_meta = read_json_marker(folder, (RUN_MARKER,))
         if run_meta:

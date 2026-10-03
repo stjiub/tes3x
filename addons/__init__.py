@@ -18,6 +18,7 @@ and optionally:
                  [(button label, script, arguments)] run from Settings, after saving it
     DRIVE_SPACE  (script, arguments) printing "ok C=free/total ..." in MB, for the status bar's
                  drive badge
+    AGENT_STATUS (script, arguments, current version) printing the dashboard agent's ping reply
 """
 
 import importlib

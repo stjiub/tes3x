@@ -1,5 +1,4 @@
-"""The payload's receive path (tes3xnet.c's rx_arp and rx_ip, and the DHCP, DNS, ARP, handshake,
-session, event, actor and bulk parsers behind them) built for the PC and fed mutated frames."""
+"""The network and multiplayer receive paths built for the PC and fed mutated frames."""
 
 import random
 import re
@@ -27,19 +26,25 @@ MTU = 1518
 
 
 def build(folder, clang):
-    """nethost.exe from a copy of tes3xnet.c without its inline assembly."""
+    """nethost.exe from copies of the split network sources without their inline assembly."""
     folder = Path(folder)
-    source = (HOOKS / 'tes3xnet.c').read_text(encoding='utf-8')
-    source = re.sub(r'^(\s*)__asm__ volatile\(.*\);[ \t]*$', r'\1;', source, flags=re.M)
-    source = source.replace('0xFEF00000u', '(uintptr_t)host_nic')
-    (folder / 'tes3xnet.c').write_text(source, encoding='utf-8')
+    sources = {}
+    for filename in ('tes3xnet.c', 'tes3xmulti.c'):
+        source = (HOOKS / filename).read_text(encoding='utf-8')
+        source = re.sub(r'^(\s*)__asm__ volatile\(.*\);[ \t]*$', r'\1;', source, flags=re.M)
+        source = re.sub(
+            r'__attribute__\(\(naked\)\) void tes3x_net_death_gate\(void\)\s*\{.*?^\}',
+            'void tes3x_net_death_gate(void) {}', source, flags=re.M | re.S)
+        sources[filename] = source.replace('0xFEF00000u', '(uintptr_t)host_nic')
+        (folder / filename).write_text(sources[filename], encoding='utf-8')
+    source = '\n'.join(sources.values())
     thunks = sorted(set(re.findall(r'THUNK_\w+', source + (HOOKS / 'tes3xnt.h').read_text())))
     (folder / 'tes3x_thunks.h').write_text(
         '#include <stdint.h>\nextern void *host_thunks[64];\n'
         + ''.join(f'#define {name} ((uintptr_t)&host_thunks[{i}])\n'
                   for i, name in enumerate(thunks)), encoding='utf-8')
-    for name in ('tes3xnt.h', 'tes3xlog.h', 'monocypher.h', 'monocypher.c', 'tes3xnoise.h',
-                 'tes3xnoise.c'):
+    for name in ('tes3xnt.h', 'tes3xlog.h', 'tes3xnet.h', 'monocypher.h', 'monocypher.c',
+                 'tes3xnoise.h', 'tes3xnoise.c'):
         shutil.copy(HOOKS / name, folder / name)
     for name in ('host.c', 'guard.c'):
         shutil.copy(HERE / name, folder / name)

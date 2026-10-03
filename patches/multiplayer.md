@@ -2,7 +2,7 @@
 
 Patch key: `multiplayer`
 
-This patch adds a network driver for the Xbox NIC and a session with a TES3X server
+This patch adds a session with a TES3X server over the shared [network foundation](net.md)
 (`tools/tes3x_net.py serve`), so several consoles, or consoles and xemu, can play in one world.
 Starting a server and connecting players is covered in [multiplayer](../docs/multiplayer.md).
 
@@ -10,7 +10,7 @@ See the [patch table](../docs/patches.md) for availability and selection.
 
 ## How it works
 
-On the first frame after each launch the driver brings the NIC up with a static address, or one
+On the first frame after each launch the network layer brings the NIC up with a static address, or one
 leased by DHCP, joins the server and keeps the session alive with a heartbeat each second, also
 through loading screens. While joined it sends the player's cell, position and heading every
 frame; the server relays each client's state to the others. The NIC is stopped before the title
@@ -57,8 +57,8 @@ anything there, since the real hit arrives from the console that fired.
 The patch is opt in twice: a build carries the driver only when its profile enables
 `multiplayer`, and the driver starts only when `[Xbox] NetAddress` is set in `Morrowind.ini`, to
 an address or `dhcp`. `NetServer`, `NetGateway`, `NetDns` and `NetPassword` are described in
-[ini keys](../docs/ini-keys.md). Enabling `multiplayer` also enables
-[diagnostics](diagnostics.md), whose frame hook runs the network.
+[ini keys](../docs/ini-keys.md). Enabling `multiplayer` also enables the network foundation and
+[diagnostics](diagnostics.md), whose frame hook runs it.
 
 ## Compatibility and limits
 

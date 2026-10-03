@@ -82,8 +82,8 @@ def read(path=REGISTRY, candidate_path=CANDIDATE_LIST):
                                                  for value in requires):
             raise RegistryError(f"{where}: requires wants an array of patch names")
         if "bit" in entry:
-            if not isinstance(entry["bit"], int) or not 0 <= entry["bit"] < 32:
-                raise RegistryError(f"{where}: bit must be 0-31")
+            if not isinstance(entry["bit"], int) or not 0 <= entry["bit"] < 64:
+                raise RegistryError(f"{where}: bit must be 0-63")
             if entry["bit"] in bits:
                 raise RegistryError(f"{where}: bit {entry['bit']} already used")
             bits.add(entry["bit"])

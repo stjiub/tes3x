@@ -54,6 +54,7 @@ enable = [
     # "console",               # qol: in-game console (already in testing)
     # "diagnostics",           # instrumentation: crash records and a hang watchdog
     # "data-overlay",          # infrastructure: read missing files from [Xbox] OverlayBase
+    # "net",                   # infrastructure: shared Xbox NIC, IPv4 and UDP foundation
     # "multiplayer",           # infrastructure: join a TES3X server set by [Xbox] NetAddress
 ]
 

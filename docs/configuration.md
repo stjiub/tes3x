@@ -41,6 +41,8 @@ Xbox targets accept:
 | `games_root` | string | required | Parent folder for profile installs, such as `F:/Games`. |
 | `retail_root` | string | none | Shared clean retail data folder for profiles whose `install_layout` is `overlay`. |
 | `ram` | integer | `64` | Console RAM in MB: `64` or `128`. |
+| `agent_token` | string | generated | Private dashboard-agent token. `console.py install` creates it; do not copy it into a public profile. |
+| `dashboard` | string | detected | This target's XBMC4Gamers root, such as `F:/XBMC4Gamers` or `C:`. The agent installer detects common layouts when omitted. |
 
 An xemu target accepts `ram` (`64` or `128`) plus `folder`, `exe`, `bootrom`, `bios`,
 `bios_128mb`, `eeprom`, `hdd`, `extract_xiso`, `gdb` and `template`; see [xemu](xemu.md). Each
@@ -65,7 +67,7 @@ should use targets.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `dashboard` | string | `F:/XBMC4Gamers` | XBMC4Gamers folder, where the agent is installed. |
+| `dashboard` | string | detected | Fallback XBMC4Gamers root for Xbox targets that do not set `dashboard` themselves. |
 
 ## Profile
 

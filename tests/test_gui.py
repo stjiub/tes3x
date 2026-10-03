@@ -20,7 +20,8 @@ import tes3x_saves as saves_tool  # noqa: E402
 try:
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QApplication, QDialog, QInputDialog, QMessageBox
-    from tes3x_gui import InstallDialog, LocalSettingsDialog, ProfileWindow
+    from tes3x_gui import (InstallDialog, LocalSettingsDialog, ProfileWindow,
+                           dashboard_agent_state, target_capabilities, target_runtime_label)
 except ImportError:
     QApplication = None
     LocalSettingsDialog = None
@@ -101,6 +102,43 @@ order = 10
 
     def row(self, window, name):
         return next(item for item in window.mod_rows() if item.text(0) == name)
+
+    def test_target_capabilities_follow_available_agents(self):
+        xbox = {"name": "bench", "kind": "xbox", "host": "192.0.2.5",
+                "games_root": "F:/Games"}
+        self.assertEqual(target_runtime_label(xbox, {"ftp": "offline"}), "Off")
+        self.assertNotIn("pull_logs", target_capabilities(xbox, {"ftp": "offline"}))
+
+        ftp = target_capabilities(xbox, {"ftp": "connected", "dashboard": "missing"})
+        self.assertTrue({"remote_saves", "installed_builds", "pull_logs",
+                         "install_dashboard_agent"} <= ftp)
+        self.assertNotIn("commands", ftp)
+        self.assertEqual(target_runtime_label(
+            xbox, {"ftp": "connected", "dashboard": "missing"}), "Dashboard, no agent")
+
+        dashboard = target_capabilities(
+            xbox, {"ftp": "connected", "dashboard": "current"})
+        self.assertTrue({"dashboard_agent", "dashboard_control", "launch"} <= dashboard)
+        outdated = target_capabilities(
+            xbox, {"ftp": "connected", "dashboard": "outdated"})
+        self.assertIn("update_dashboard_agent", outdated)
+        self.assertNotIn("dashboard_control", outdated)
+
+        game = target_capabilities(xbox, {"ftp": "offline", "game": "connected"})
+        self.assertTrue({"live_logs", "commands", "agent_fetch", "pull_logs"} <= game)
+        stalled = target_capabilities(xbox, {"game": "stalled"})
+        self.assertIn("stalled", stalled)
+        self.assertNotIn("commands", stalled)
+
+        xemu = {"name": "emu", "kind": "xemu", "exe": "xemu.exe"}
+        running = target_capabilities(xemu, {"process": "running", "game": "connected"})
+        self.assertTrue({"launch", "xemu_disk", "recovered_logs", "process_control",
+                         "live_logs", "commands"} <= running)
+        self.assertEqual(target_runtime_label(xemu, {"process": "running"}), "xemu running")
+
+        self.assertEqual(dashboard_agent_state("ok tes3xagent 6 mem=23", 0, 6)[0], "current")
+        self.assertEqual(dashboard_agent_state("ok tes3xagent 5 mem=23", 0, 6)[0], "outdated")
+        self.assertEqual(dashboard_agent_state("connection refused", 1, 6)[0], "missing")
 
     def test_lists_every_library_mod_and_saves_checked_ones(self):
         window = self.window()
@@ -778,7 +816,8 @@ order = 10
 
     def test_saves_tab_picks_a_pool_and_checks_saves_against_the_profile(self):
         config = self.root / "local.toml"
-        config.write_text("[paths]\n", encoding="utf-8")
+        config.write_text('[deploy]\nhost = "192.0.2.5"\nremote_root = "F:/Games/Test"\n'
+                          "[paths]\n", encoding="utf-8")
         window = self.window(config=config)
         self.assertEqual(window.current_pool(), (0x42530005, None))
         with patch.object(QInputDialog, "getText", return_value=("TR test", True)):
@@ -837,6 +876,41 @@ order = 10
         self.assertEqual(window.save_list.topLevelItemCount(), 1)
         self.assertIn("listed 2026-09-28 20:00", window.saves_status.text())
 
+    def test_saves_follow_the_selected_target(self):
+        config = self.root / "local.toml"
+        config.write_text('default_target = "bench"\n[targets.bench]\nkind = "xbox"\n'
+                          'host = "192.0.2.5"\ngames_root = "F:/Games"\n'
+                          '[targets.spare]\nkind = "xbox"\nhost = "192.0.2.6"\n'
+                          'games_root = "E:/Games"\n', encoding="utf-8")
+        window = self.window(config=config)
+        value = window.current_pool()[0]
+        make_save = lambda source, folder: {
+            "source": source, "folder": folder, "name": folder, "size": 1,
+            "date": "2026-10-03 12:00", "masters": ["Morrowind.esm"]}
+        saves_tool.write_index(window.save_library(), {
+            "pools": {}, "xbox": {}, "targets": {
+                "bench": {f"{value:08X}": {"time": "one", "saves": [
+                    make_save("xbox", "bench-save")]}},
+                "spare": {f"{value:08X}": {"time": "two", "saves": [
+                    make_save("xbox", "spare-save")]}}}})
+
+        window.tabs.blockSignals(True)
+        window.tabs.setCurrentIndex(next(index for index in range(window.tabs.count())
+                                         if window.tabs.tabText(index) == "Saves"))
+        window.tabs.blockSignals(False)
+        window.xbox_listing = None
+        window.refresh_saves(False)
+        self.assertEqual(window.save_list.topLevelItem(0).text(0), "bench-save")
+        self.assertIn("listed one", window.saves_status.text())
+
+        window.target_picker.setCurrentIndex(window.target_picker.findData("spare"))
+        window.target_selection_changed(probe=False)
+        self.assertEqual(window.save_list.topLevelItem(0).text(0), "spare-save")
+        self.assertIn("listed two", window.saves_status.text())
+        with patch.object(window, "list_xbox_saves") as listing:
+            window.refresh_saves(None)
+        listing.assert_called_once_with(value, "spare")
+
     def test_local_settings_dialog_preserves_xemu_and_writes_public_fields(self):
         config = self.root / "local.toml"
         config.write_text('# keep this comment\n[xemu]\nexe = "xemu.exe"\ncustom = "keep"\n',
@@ -856,6 +930,7 @@ order = 10
         dialog.target_games_root.setText("F:/Games")
         self.assertIn("F:/Games/MorrowindRetail", dialog.target_retail_root.placeholderText())
         dialog.target_retail_root.setText("F:/Games/MorrowindRetail")
+        dialog.target_dashboard.setText("C:")
         dialog.target_port.setValue(2121)
         self.assertTrue(dialog.save_settings())
         with open(config, "rb") as stream:
@@ -866,6 +941,7 @@ order = 10
         self.assertEqual(values["targets"]["bench"]["games_root"], "F:/Games")
         self.assertEqual(values["targets"]["bench"]["retail_root"],
                          "F:/Games/MorrowindRetail")
+        self.assertEqual(values["targets"]["bench"]["dashboard"], "C:")
         self.assertEqual(values["targets"]["bench"]["port"], 2121)
         self.assertEqual(values["targets"]["xemu"]["exe"], "xemu.exe")
         self.assertEqual(values["targets"]["xemu-new"]["exe"], "D:/xemu-new/xemu.exe")
@@ -887,6 +963,27 @@ order = 10
         values = self.saved(config)
         self.assertNotIn("deploy", values)
         self.assertEqual(values["targets"]["xbox"]["games_root"], "F:/Games")
+
+    def test_dashboard_agent_action_uses_the_selected_target(self):
+        config = self.root / "local.toml"
+        config.write_text('default_target = "bench"\n[targets.bench]\nkind = "xbox"\n'
+                          'host = "192.0.2.5"\ngames_root = "F:/Games"\n', encoding="utf-8")
+        dialog = LocalSettingsDialog(config)
+        self.addCleanup(dialog.close)
+
+        class Done:
+            returncode = 0
+            stdout = "installed; restart the dashboard once\n"
+            stderr = ""
+
+        with patch("tes3x_gui.subprocess.run", return_value=Done()) as run, \
+                patch.object(QMessageBox, "information"):
+            dialog.run_target_agent("Install / update agent", "install")
+        command = run.call_args.args[0]
+        self.assertEqual(Path(command[1]).name, "console.py")
+        self.assertIn("install", command)
+        self.assertEqual(command[command.index("--target") + 1], "bench")
+        self.assertIn("restart the dashboard", dialog.target_agent_status.text())
 
     def test_legacy_xemu_settings_can_change_without_converting_deploy(self):
         config = self.root / "local.toml"
@@ -925,6 +1022,35 @@ order = 10
         window.drive_probe.readAllStandardOutput = lambda: b"err unknown command: drives"
         window.drive_probe_finished(1, None)
         self.assertIn("unknown command: drives", window.target_picker.toolTip())
+
+        window.agent_probe = Reply()
+        window.agent_probe.readAllStandardOutput = lambda: b"ok tes3xagent 5 mem=23"
+        window.agent_probe_target = "bench"
+        window.agent_probe_expected = 6
+        window.set_target_runtime("bench", ftp="connected")
+        window.dashboard_probe_finished(0, None)
+        self.assertEqual(window.target_runtime["bench"]["dashboard"], "outdated")
+        self.assertIn("Dashboard agent outdated", window.target_picker.toolTip())
+
+    def test_in_game_events_drive_the_target_state_and_log_buffer(self):
+        config = self.root / "local.toml"
+        config.write_text('default_target = "bench"\n[targets.bench]\nkind = "xbox"\n'
+                          'host = "192.0.2.5"\ngames_root = "F:/Games"\n', encoding="utf-8")
+        window = self.window(config=config)
+        window.set_target_runtime("bench", ftp="offline")
+        base = {"address": ("192.0.2.5", 40000), "session": 1, "client_key": "abc",
+                "payload": b""}
+        window.handle_in_game_event({**base, "kind": "connected"})
+        self.assertEqual(window.target_runtime["bench"]["game"], "connected")
+        self.assertEqual(target_runtime_label(
+            {"kind": "xbox"}, window.target_runtime["bench"]), "In game")
+        self.assertIn("In game", window.target_picker.toolTip())
+
+        window.handle_in_game_event({**base, "kind": "log", "payload": b"one\ntwo\n"})
+        self.assertEqual(window.agent_logs["bench"], ["one", "two"])
+        window.handle_in_game_event({**base, "kind": "stalled"})
+        self.assertEqual(window.target_runtime["bench"]["game"], "stalled")
+        self.assertIn("heartbeat stopped", window.target_picker.toolTip())
 
 
 if __name__ == "__main__":

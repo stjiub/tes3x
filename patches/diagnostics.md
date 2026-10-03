@@ -16,11 +16,12 @@ See the [patch table](../docs/patches.md) for availability and selection.
 - A watchdog thread records a stall once the heartbeat stops for the timeout, and records it
   again if the main loop resumes.
 - Each session logs the payload build ID and the mask of patches applied (`diag.build`,
-  `diag.patches`), so a log identifies the build that wrote it, and the title ID
+  `diag.patches`, plus `diag.patches_hi` when needed), so a log identifies the build that wrote
+  it, and the title ID
   (`diag.title_id`).
 
-The payload source is `hooks/tes3xdiag.c`. Multiplayer runs from its frame hook, so it brings this
-patch with it.
+The payload source is `hooks/tes3xdiag.c`. The network foundation runs from its frame hook, so
+network features bring this patch with them.
 
 ## Using it
 

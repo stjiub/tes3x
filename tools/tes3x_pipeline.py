@@ -8,6 +8,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import time
 import subprocess
@@ -45,6 +46,7 @@ HOOK_SOURCES = {entry["name"]: entry.get("source") for entry in registry.PATCHES
 SOURCE_DEPENDENCIES = {
     "tes3xinfoarena.c": ("tes3xpager.c",),
     "tes3xmwse.c": ("tes3xconsole.c",),
+    "tes3xmulti.c": ("tes3xnet.c",),
 }
 CATEGORIES = set(registry.CATEGORIES)
 PRESETS = ("minimal", "recommended", "testing")
@@ -219,15 +221,18 @@ def validate_local_config(local):
         raise PipelineError("paths.hardlink_retail must be a boolean")
 
     deploy = local.get("deploy", {})
-    extra = set(deploy) - {"host", "port", "user", "password", "remote_root", "retail_root"}
+    extra = set(deploy) - {"host", "port", "user", "password", "remote_root", "retail_root",
+                           "agent_token"}
     if extra:
         raise PipelineError("unknown deploy keys: " + ", ".join(sorted(extra)))
-    for key in ("host", "user", "password", "remote_root", "retail_root"):
+    for key in ("host", "user", "password", "remote_root", "retail_root", "agent_token"):
         if key in deploy and type(deploy[key]) is not str:
             raise PipelineError(f"deploy.{key} must be a string")
     if "port" in deploy and (type(deploy["port"]) is not int
                              or not 1 <= deploy["port"] <= 65535):
         raise PipelineError("deploy.port must be an integer from 1 to 65535")
+    if deploy.get("agent_token") and not re.fullmatch(r"[0-9a-f]{64}", deploy["agent_token"]):
+        raise PipelineError("deploy.agent_token must be 64 lowercase hex digits")
 
     if "default_target" in local and type(local["default_target"]) is not str:
         raise PipelineError("default_target must be a string")
@@ -235,7 +240,7 @@ def validate_local_config(local):
     if not isinstance(targets, dict):
         raise PipelineError("targets must be a table")
     allowed = {"kind", "host", "port", "user", "password", "games_root", "retail_root",
-               "ram", *tes3x_targets.XEMU_KEYS}
+               "agent_token", "dashboard", "ram", *tes3x_targets.XEMU_KEYS}
     for name, target in targets.items():
         if not isinstance(target, dict):
             raise PipelineError(f"targets.{name} must be a table")
@@ -244,8 +249,8 @@ def validate_local_config(local):
             raise PipelineError(f"unknown targets.{name} keys: " + ", ".join(sorted(extra)))
         if target.get("kind") not in tes3x_targets.TARGET_KINDS:
             raise PipelineError(f"targets.{name}.kind must be 'xbox' or 'xemu'")
-        strings = ("host", "user", "password", "games_root", "retail_root",
-                   *tes3x_targets.XEMU_KEYS)
+        strings = ("host", "user", "password", "games_root", "retail_root", "agent_token",
+                   "dashboard", *tes3x_targets.XEMU_KEYS)
         for key in strings:
             if key in target and type(target[key]) is not str:
                 raise PipelineError(f"targets.{name}.{key} must be a string")
@@ -254,6 +259,9 @@ def validate_local_config(local):
             raise PipelineError(f"targets.{name}.port must be an integer from 1 to 65535")
         if "ram" in target and (type(target["ram"]) is not int or target["ram"] not in (64, 128)):
             raise PipelineError(f"targets.{name}.ram must be 64 or 128")
+        if target.get("agent_token") and not re.fullmatch(r"[0-9a-f]{64}",
+                                                          target["agent_token"]):
+            raise PipelineError(f"targets.{name}.agent_token must be 64 lowercase hex digits")
         if target["kind"] == "xbox" and not target.get("games_root"):
             raise PipelineError(f"targets.{name}.games_root is required for an Xbox target")
     if local.get("default_target") and local["default_target"] not in tes3x_targets.targets(local):
@@ -1004,10 +1012,10 @@ def main(argv=None):
             textures.mkdir(parents=True, exist_ok=True)
             art = sorted((ROOT / "assets" / "menu").glob("*.dds"))
             for path in art:
-                target = textures / path.name
-                if target.exists():
-                    target.unlink()  # a hard link into the retail tree must not be written through
-                shutil.copy2(path, target)
+                texture_target = textures / path.name
+                if texture_target.exists():
+                    texture_target.unlink()  # a hard link must not be written through
+                shutil.copy2(path, texture_target)
             listed = staged / "ArchiveInvalidationList.txt"
             kept = listed.read_text(encoding="cp1252").splitlines() if listed.exists() else []
             if listed.exists():

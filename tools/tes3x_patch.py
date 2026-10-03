@@ -1863,17 +1863,26 @@ def _data_overlay(x, value, ctx):
     return [(flag_off, 4, "data-overlay installed flag at 0x%08X" % flag)]
 
 
+@patch("net")
+def _net(x, value, ctx):
+    """Install the shared Xbox NIC, IPv4 and UDP layer."""
+    hooks = ctx.get("hooks", {})
+    frame = hooks.get("diagnostics_update")
+    if not hooks.get("net") or not frame:
+        raise PatchError("net: needs `payload` first, built with tes3xnet.c and tes3xdiag.c")
+    if len(find_call_sites(x, int(str(frame), 16))) != 1:
+        raise PatchError("net: requires diagnostics to be applied first")
+    return [(None, 0, "network foundation %s, started by [Xbox] NetAddress" % hooks["net"])]
+
+
 @patch("multiplayer")
 def _multiplayer(x, value, ctx):
     """Join a TES3X server from [Xbox] NetAddress and send the player's state each frame."""
     hooks = ctx.get("hooks", {})
-    frame = hooks.get("diagnostics_update")
-    if not hooks.get("net") or not frame:
-        raise PatchError("multiplayer: needs `payload` first, built with tes3xnet.c and "
-                         "tes3xdiag.c")
-    if len(find_call_sites(x, int(str(frame), 16))) != 1:
-        raise PatchError("multiplayer: requires diagnostics to be applied first")
-    return [(None, 0, "network frame hook %s, started by [Xbox] NetAddress" % hooks["net"])]
+    if not hooks.get("multiplayer") or not hooks.get("net"):
+        raise PatchError("multiplayer: needs `payload` first, built with tes3xmulti.c and "
+                         "tes3xnet.c")
+    return [(None, 0, "multiplayer channel %s" % hooks["multiplayer"])]
 
 
 PROFILE_LIST_SITES = 8
@@ -2443,16 +2452,24 @@ def main():
             raise SystemExit("  FAILED: %s" % exc)
 
     mask_va = ctx.get("hooks", {}).get("patch_mask")
+    mask_hi_va = ctx.get("hooks", {}).get("patch_mask_hi")
     if mask_va:
         mask_va = int(str(mask_va), 16)
+        mask_hi_va = int(str(mask_hi_va), 16) if mask_hi_va else None
         mask_off = x.va_to_off(mask_va)
-        if mask_off is None:
+        mask_hi_off = x.va_to_off(mask_hi_va) if mask_hi_va else None
+        if mask_off is None or (mask_hi_va and mask_hi_off is None):
             raise SystemExit("payload patch mask is outside the injected section")
         mask = 0
         for name in applied:
             mask |= PATCH_BITS.get(name, 0)
-        struct.pack_into("<I", x.data, mask_off, mask)
-        print("\n  payload patch mask 0x%08X at 0x%08X" % (mask, mask_va))
+        if mask >> 32 and mask_hi_off is None:
+            raise SystemExit("payload has no high patch mask for patches above bit 31")
+        struct.pack_into("<I", x.data, mask_off, mask & 0xFFFFFFFF)
+        if mask_hi_off is not None:
+            struct.pack_into("<I", x.data, mask_hi_off, mask >> 32)
+        width = 16 if mask >> 32 else 8
+        print("\n  payload patch mask 0x%0*X at 0x%08X" % (width, mask, mask_va))
 
     x.rebuild_headers()
     out = bytes(x.data)

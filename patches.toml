@@ -391,15 +391,27 @@ ini = { BowViewOffsetZ = "-12" }
 summary = "Lower the first-person bow and arms while an arrow is nocked."
 
 [[patch]]
+name = "net"
+title = "Xbox network foundation"
+bit = 32
+category = "infrastructure"
+channel = "dev"
+selection = "preset"
+source = "tes3xnet.c"
+requires = ["diagnostics"]
+ini = { NetAddress = "", NetGateway = "", NetDns = "" }
+summary = "Provide the shared Xbox NIC, ARP, IPv4 and UDP layer used by network services."
+
+[[patch]]
 name = "multiplayer"
 title = "Experimental multiplayer"
 bit = 26
 category = "infrastructure"
 channel = "dev"
 selection = "preset"
-source = "tes3xnet.c"
-requires = ["diagnostics"]
-ini = { NetAddress = "", NetServer = "", NetGateway = "", NetDns = "", NetPassword = "" }
+source = "tes3xmulti.c"
+requires = ["net"]
+ini = { NetServer = "", NetPassword = "" }
 summary = "Join a TES3X server from [Xbox] NetAddress and exchange player states every frame."
 
 [[patch]]

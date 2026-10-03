@@ -61,6 +61,7 @@ from tes3x_pipeline import (DEPLOY_CONFLICT, DEPLOY_NO_SPACE, MARKER as PIPELINE
                             resolve_patch_plan, validate_local_config, validate_profile)
 from tes3x_records import records, subrecords
 from tes3x_deploy import parse_drives
+from tes3x_agent import AgentListener, key_fingerprint, load_or_create_key
 import tes3x_nexus as nexus
 import tes3x_saves as saves_tool
 import tes3x_savepool
@@ -85,6 +86,70 @@ COMPAT = {"works": ("\u2713", QColor(60, 170, 60)),
 XEMU_STARTED = "xemu: started"
 CHECK_MARKER = ".tes3x-check.json"
 DEPLOYS_MARKER = ".tes3x-deploys.json"
+
+
+def target_capabilities(target, runtime=None):
+    """Runtime features a target can offer now, not merely features its kind supports."""
+    runtime = runtime or {}
+    capabilities = {"cached_logs", "cached_saves"}
+    kind = target.get("kind") if target else None
+    game = runtime.get("game")
+
+    if kind == "xbox":
+        if target.get("host") and target.get("games_root"):
+            capabilities.add("configured_deploy")
+        if runtime.get("ftp") == "connected":
+            capabilities.update({"ftp", "remote_files", "remote_saves", "installed_builds",
+                                 "pull_logs", "install_dashboard_agent"})
+        dashboard = runtime.get("dashboard")
+        if dashboard == "current":
+            capabilities.update({"dashboard_agent", "dashboard_control", "launch"})
+        elif dashboard == "outdated":
+            capabilities.add("update_dashboard_agent")
+    elif kind == "xemu":
+        capabilities.update({"xemu_disk", "recovered_logs"})
+        if target.get("exe") or target.get("folder"):
+            capabilities.add("launch")
+        if runtime.get("process") in {"starting", "running"}:
+            capabilities.update({"process_control", "runner_output"})
+
+    if game == "connected":
+        capabilities.update({"in_game_agent", "live_status", "live_logs", "commands",
+                             "agent_fetch", "pull_logs"})
+    elif game == "stalled":
+        capabilities.update({"in_game_agent", "stalled"})
+    return frozenset(capabilities)
+
+
+def target_runtime_label(target, runtime=None):
+    """Short state label shared by target badges and capability-driven pages."""
+    runtime = runtime or {}
+    if runtime.get("game") == "connected":
+        return "In game"
+    if runtime.get("game") == "stalled":
+        return "Stalled"
+    if target and target.get("kind") == "xemu":
+        return {"starting": "Starting", "running": "xemu running",
+                "stopping": "Stopping"}.get(
+            runtime.get("process"), "Stopped")
+    if runtime.get("ftp") == "checking":
+        return "Checking"
+    if runtime.get("ftp") == "connected":
+        return {"current": "Dashboard", "outdated": "Dashboard agent outdated",
+                "missing": "Dashboard, no agent", "checking": "Checking agent"}.get(
+                    runtime.get("dashboard"), "Dashboard reachable")
+    return "Off" if runtime.get("ftp") == "offline" else "Unknown"
+
+
+def dashboard_agent_state(output, code, expected):
+    """(state, detail) from the dashboard agent's authenticated ping."""
+    match = re.search(r"\bok tes3xagent (\d+)\b", output) if code == 0 else None
+    if match is None:
+        return "missing", output.strip() or f"agent probe exited {code}"
+    version = int(match.group(1))
+    if version < expected:
+        return "outdated", f"Dashboard agent {version}; update to {expected}"
+    return "current", output.strip()
 
 
 def version_label():
@@ -456,11 +521,14 @@ class LocalSettingsDialog(QDialog):
         self.target_games_root = self.line()
         self.target_games_root.setPlaceholderText("F:/Games")
         self.target_retail_root = self.line()
+        self.target_dashboard = self.line()
+        self.target_dashboard.setPlaceholderText("Auto-detect")
         self.target_games_root.textChanged.connect(self.update_retail_placeholder)
         for label, field in (("Host", self.target_host), ("Port", self.target_port),
                              ("User", self.target_user), ("Password", self.target_password),
                              ("Games root", self.target_games_root),
-                             ("Shared retail base", self.target_retail_root)):
+                             ("Shared retail base", self.target_retail_root),
+                             ("Dashboard root", self.target_dashboard)):
             xbox.addRow(label, field)
         self.update_retail_placeholder()
         probe_row = QHBoxLayout()
@@ -470,6 +538,19 @@ class LocalSettingsDialog(QDialog):
         probe_row.addWidget(self.target_test)
         probe_row.addWidget(self.target_test_status, 1)
         xbox.addRow("", probe_row)
+        agent_row = QHBoxLayout()
+        self.target_agent_buttons = []
+        for label, command in (("Install / update agent", "install"),
+                               ("Restart dashboard", "restart"),
+                               ("Remove agent", "uninstall")):
+            button = QPushButton(label)
+            button.clicked.connect(lambda _checked=False, label=label, command=command:
+                                   self.run_target_agent(label, command))
+            self.target_agent_buttons.append(button)
+            agent_row.addWidget(button)
+        self.target_agent_status = QLabel()
+        agent_row.addWidget(self.target_agent_status, 1)
+        xbox.addRow("Dashboard agent", agent_row)
         editor.addWidget(self.xbox_fields)
 
         self.xemu_fields_widget = QWidget()
@@ -516,6 +597,7 @@ class LocalSettingsDialog(QDialog):
             "password": self.target_password.text(),
             "games_root": self.target_games_root.text().strip(),
             "retail_root": self.target_retail_root.text().strip(),
+            "dashboard": self.target_dashboard.text().strip(),
             **{key: field.text().strip() for key, field in self.xemu_target_fields.items()},
         }
 
@@ -579,6 +661,8 @@ class LocalSettingsDialog(QDialog):
         self.target_password.setText(target.get("password", "xbox"))
         self.target_games_root.setText(target.get("games_root", ""))
         self.target_retail_root.setText(target.get("retail_root", ""))
+        self.target_dashboard.setText(target.get("dashboard", ""))
+        self.target_agent_status.clear()
         for key, field in self.xemu_target_fields.items():
             field.setText(str(target.get(key, "")))
         self.target_editor.setEnabled(True)
@@ -596,6 +680,8 @@ class LocalSettingsDialog(QDialog):
         self.xbox_fields.setVisible(xbox)
         self.xemu_fields_widget.setVisible(not xbox)
         self.target_test.setEnabled(xbox)
+        for button in self.target_agent_buttons:
+            button.setEnabled(xbox)
         if not xbox:
             self.show_target_xemu_files()
 
@@ -674,6 +760,34 @@ class LocalSettingsDialog(QDialog):
     def target_probe_finished(self, ok, message):
         self.target_test.setEnabled(self.target_kind.currentData() == "xbox")
         self.target_test_status.setText(message if ok else "Could not connect: " + message)
+
+    def run_target_agent(self, label, command):
+        """Run a dashboard-agent lifecycle command for the Xbox being edited."""
+        if command == "uninstall" and QMessageBox.question(
+                self, "TES3X", f"Remove the dashboard agent from {self.current_target_name}?") \
+                != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.save_settings()
+        except (OSError, PipelineError, tomlkit.exceptions.ParseError) as exc:
+            QMessageBox.critical(self, "TES3X", str(exc))
+            return
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            done = subprocess.run(
+                [sys.executable, str(ROOT / "addons" / "console" / "console.py"), command,
+                 "--config", str(self.path), "--target", self.current_target_name],
+                cwd=self.path.parent, capture_output=True, text=True, timeout=120)
+            output, ok = (done.stdout + done.stderr).strip(), done.returncode == 0
+            # Install may have added the private token. Keep it in subsequent settings saves.
+            self.document = tomlkit.parse(self.path.read_text(encoding="utf-8"))
+        except (OSError, subprocess.TimeoutExpired, tomlkit.exceptions.ParseError) as exc:
+            output, ok = str(exc), False
+        finally:
+            QApplication.restoreOverrideCursor()
+        summary = output.splitlines()[-1] if output else "Done."
+        self.target_agent_status.setText(summary)
+        (QMessageBox.information if ok else QMessageBox.critical)(self, label, output or "Done.")
 
     XEMU_FILES = (("exe", "Executable"), ("bootrom", "MCPX boot ROM"), ("bios", "BIOS"),
                   ("bios_128mb", "BIOS for 128 MB runs"), ("eeprom", "EEPROM"),
@@ -833,7 +947,7 @@ class LocalSettingsDialog(QDialog):
             if name not in self.target_values:
                 del tables[name]
         keys = ("kind", "host", "port", "user", "password", "games_root", "retail_root",
-                "ram", *sorted(tes3x_targets.XEMU_KEYS))
+                "dashboard", "ram", *sorted(tes3x_targets.XEMU_KEYS))
         for name, values in self.target_values.items():
             target = tables.get(name)
             if target is None:
@@ -843,7 +957,7 @@ class LocalSettingsDialog(QDialog):
             clean = {key: values.get(key) for key in keys}
             kind_keys = ({"kind", "ram", *tes3x_targets.XEMU_KEYS} if kind == "xemu" else
                          {"kind", "host", "port", "user", "password", "games_root",
-                          "retail_root", "ram"})
+                          "retail_root", "dashboard", "ram"})
             for key in list(target):
                 if key in keys and (key not in kind_keys or key not in clean
                                     or clean[key] in ("", None, False)):
@@ -1722,6 +1836,7 @@ class BuildSettings(QWidget):
 class ProfileWindow(QMainWindow):
     MOD_NAME, MOD_VERSION, MOD_CONFLICTS, MOD_NOTES, MOD_PRIORITY, MOD_XBOX = range(6)
     nexus_done = Signal(str, object, object)
+    in_game_event = Signal(object)
 
     def __init__(self, profile=None, config=None, settings=None):
         super().__init__()
@@ -1737,6 +1852,10 @@ class ProfileWindow(QMainWindow):
         self.play_pid = None
         self.play_output_buffer = ""
         self.ftp_probe = None
+        self.agent_probe = None
+        self.in_game_listener = None
+        self.agent_fingerprint = None
+        self.agent_logs = defaultdict(list)
         self.drive_probe = None
         self.command_kind = None
         self.command_target = None
@@ -1760,6 +1879,7 @@ class ProfileWindow(QMainWindow):
         self.nexus_links = {}
         self.nexus_pending = set()
         self.nexus_done.connect(self.nexus_finished)
+        self.in_game_event.connect(self.handle_in_game_event)
         self.forget_analysis()
         try:
             self.compat = load_catalog()
@@ -1798,6 +1918,7 @@ class ProfileWindow(QMainWindow):
         self.target_picker.activated.connect(self.target_activated)
         profile_bar.addWidget(self.target_picker)
         self.target_states = {}
+        self.target_runtime = {}
         self.target_drive_tips = {}
         self.profile_bar = profile_bar
 
@@ -1862,8 +1983,6 @@ class ProfileWindow(QMainWindow):
         self.counts = QLabel()
         self.counts.setContentsMargins(0, 0, 8, 0)
         self.statusBar().addPermanentWidget(self.counts)
-        self.profile_status = QLabel()
-        self.statusBar().addPermanentWidget(self.profile_status)
         self.ftp_timer = QTimer(self)
         self.ftp_timer.setInterval(60_000)
         self.ftp_timer.timeout.connect(self.refresh_ftp_status)
@@ -2012,6 +2131,7 @@ class ProfileWindow(QMainWindow):
         else:
             self.open_initial_profile()
         if QApplication.platformName() != "offscreen":
+            self.start_in_game_listener()
             if not self.local_config_path().is_file():
                 QTimer.singleShot(0, self.first_run)
             QTimer.singleShot(0, self.refresh_ftp_status)
@@ -3329,6 +3449,60 @@ class ProfileWindow(QMainWindow):
         except (OSError, tomllib.TOMLDecodeError):
             return {}
 
+    def start_in_game_listener(self):
+        """Start the shared Xbox/xemu agent endpoint after the real GUI is visible."""
+        key_path = self.local_config_path().with_name("tes3x.agent.key")
+        try:
+            secret = load_or_create_key(key_path)
+            listener = AgentListener(secret, self.in_game_event.emit)
+            listener.start()
+        except (OSError, ValueError, SystemExit) as exc:
+            self.statusBar().showMessage(f"Could not start the in-game agent listener: {exc}",
+                                         10000)
+            return
+        self.in_game_listener = listener
+        self.agent_fingerprint = key_fingerprint(secret)
+
+    def in_game_target(self, address):
+        """Map an agent's source address to a configured target."""
+        host = address[0]
+        targets = tes3x_targets.targets(self.local_values())
+        selected = self.target_picker.currentData()
+        matching = [name for name, target in targets.items()
+                    if target.get("kind") == "xbox" and target.get("host") == host]
+        if selected in matching:
+            return selected
+        if matching:
+            return matching[0]
+        if host.startswith("127.") or host == "::1":
+            target = targets.get(selected, {})
+            if target.get("kind") == "xemu":
+                return selected
+        return None
+
+    def handle_in_game_event(self, event):
+        name = self.in_game_target(event["address"])
+        if not name:
+            return
+        kind = event["kind"]
+        if kind == "goodbye":
+            state = self.target_runtime.setdefault(name, {})
+            state.pop("game", None)
+            state["game_detail"] = "In-game agent disconnected"
+            self.refresh_target_item(name)
+            return
+        if kind == "stalled":
+            self.set_target_runtime(name, game="stalled",
+                                    game_detail="In-game heartbeat stopped")
+            return
+        detail = f"In-game agent from {event['address'][0]}:{event['address'][1]}"
+        self.set_target_runtime(name, game="connected", game_detail=detail,
+                                game_key=event.get("client_key"))
+        if kind == "log":
+            lines = event.get("payload", b"").decode("cp1252", "replace").splitlines()
+            self.agent_logs[name].extend(lines)
+            del self.agent_logs[name][:-2000]
+
     def default_target(self, kind=None):
         name = self.target_picker.currentData() if hasattr(self, "target_picker") else None
         try:
@@ -3356,24 +3530,59 @@ class ProfileWindow(QMainWindow):
         self.target_picker.blockSignals(False)
         self.target_selection_changed(probe=False)
 
+    def target_runtime_state(self, name, target=None):
+        state = self.target_runtime.setdefault(name, {})
+        target = target or tes3x_targets.targets(self.local_values()).get(name, {})
+        if target.get("kind") == "xbox":
+            state["ftp"] = self.target_states.get(name, state.get("ftp", "unknown"))
+        return state
+
+    def set_target_runtime(self, name, **values):
+        state = self.target_runtime.setdefault(name, {})
+        state.update(values)
+        if "ftp" in values:
+            self.target_states[name] = values["ftp"]
+        self.refresh_target_item(name)
+
+    def target_features(self, name=None):
+        name = name or self.target_picker.currentData()
+        target = tes3x_targets.targets(self.local_values()).get(name)
+        return target_capabilities(target, self.target_runtime_state(name, target)) \
+            if target else frozenset()
+
     def target_colour(self, name, target=None):
         target = target or tes3x_targets.targets(self.local_values()).get(name, {})
-        if target.get("kind") == "xemu":
-            return "#616161"
-        return {"checking": "#a15c00", "connected": "#2e7d32",
-                "offline": "#b3261e"}.get(self.target_states.get(name), "#616161")
+        label = target_runtime_label(target, self.target_runtime_state(name, target))
+        if label in {"In game", "Dashboard", "Dashboard reachable", "xemu running"}:
+            return "#2e7d32"
+        if label in {"Checking", "Checking agent", "Starting", "Stopping",
+                     "Dashboard agent outdated"}:
+            return "#a15c00"
+        if label in {"Off", "Stalled"}:
+            return "#b3261e"
+        return "#616161"
 
     def target_tooltip(self, name, target=None):
         target = target or tes3x_targets.targets(self.local_values()).get(name, {})
+        runtime = self.target_runtime_state(name, target)
         if target.get("kind") == "xemu":
-            lines = [f"xemu · {target.get('ram', 64)} MB"]
+            lines = [f"xemu · {target.get('ram', 64)} MB", target_runtime_label(target, runtime)]
         else:
             host = target.get("host") or "address not configured"
             lines = [f"Xbox FTP: {host}:{target.get('port', 21)}"]
-            status = self.target_states.get(name)
+            status = runtime.get("ftp")
             if status:
                 lines.append({"checking": "Checking connection…", "connected": "Connected",
                               "offline": "Unreachable"}.get(status, status))
+            agent = target_runtime_label(target, runtime)
+            if runtime.get("game") in {"connected", "stalled"}:
+                lines.append(agent)
+            elif status == "connected" and agent not in {"Dashboard reachable", "Unknown"}:
+                lines.append(agent)
+            if runtime.get("dashboard_detail") and runtime.get("dashboard") != "current":
+                lines.append(runtime["dashboard_detail"])
+        if runtime.get("game_detail"):
+            lines.append(runtime["game_detail"])
         if self.target_drive_tips.get(name):
             lines.append(self.target_drive_tips[name])
         return "\n".join(lines)
@@ -3412,6 +3621,8 @@ class ProfileWindow(QMainWindow):
         if hasattr(self, "play_menu"):
             self.refresh_play_menu()
         self.update_deploy_state()
+        if hasattr(self, "save_list"):
+            self.save_target_changed(probe)
         if probe and xbox:
             self.refresh_ftp_status()
 
@@ -3845,6 +4056,16 @@ class ProfileWindow(QMainWindow):
         if self.saves_tab_visible():
             self.refresh_saves()
 
+    def save_target_changed(self, probe=False):
+        """Drop state from the old target and show saves belonging to the selected one."""
+        if self.saves_probe is not None:
+            probe_process, self.saves_probe = self.saves_probe, None
+            probe_process.kill()
+        self.saves_xbox = []
+        self.xbox_listing = None
+        if self.saves_tab_visible() and self.profile_path:
+            self.refresh_saves(None if probe else False)
+
     def saves_tab_visible(self):
         return self.tabs.tabText(self.tabs.currentIndex()) == "Saves"
 
@@ -3882,49 +4103,59 @@ class ProfileWindow(QMainWindow):
         self.pool_changed()
 
     def refresh_saves(self, xbox=None):
-        """List the PC and xemu saves now, show the Xbox's last listing, then ask the Xbox again
-        once per pool and session, or whenever `xbox` is true."""
+        """List the PC library and the selected target's saves.
+
+        Show an Xbox target's last listing, then ask it again once per pool and session, or
+        whenever `xbox` is true. An xemu target reads this profile's persistent play disk.
+        """
         if not self.profile_path:
             return
         value, _name = self.current_pool()
+        target = self.default_target()
         self.saves_local = []
         try:
             self.saves_local += saves_tool.library_saves(self.save_library(), value)
-            if self.play_disk().is_file():
+            if target and target.get("kind") == "xemu" and self.play_disk().is_file():
                 self.saves_local += saves_tool.Disk(self.play_disk()).saves(value)
         except (OSError, ValueError, struct.error) as exc:
             self.statusBar().showMessage(f"Could not read the PC saves: {exc}", 8000)
-        if self.xbox_listing is None:
-            cached = saves_tool.read_index(self.save_library())["xbox"].get(f"{value:08X}", {})
+        xbox_target = target if target and target.get("kind") == "xbox" else None
+        if xbox_target and self.xbox_listing is None:
+            cached = saves_tool.target_listing(
+                saves_tool.read_index(self.save_library()), xbox_target["name"], value)
             self.saves_xbox = cached.get("saves", [])
             self.xbox_listing = f"listed {cached['time']}" if cached.get("time") else ""
+        elif not xbox_target:
+            self.saves_xbox = []
+            self.xbox_listing = ""
         self.show_saves()
-        target = self.default_target("xbox")
-        if not target or not target.get("host"):
+        if not xbox_target or not xbox_target.get("host"):
             return
-        if xbox or (xbox is None and value not in self.xbox_checked):
-            self.list_xbox_saves(value)
+        checked = (xbox_target["name"], value)
+        if xbox or (xbox is None and checked not in self.xbox_checked):
+            self.list_xbox_saves(value, xbox_target["name"])
 
-    def list_xbox_saves(self, value):
+    def list_xbox_saves(self, value, target_name=None):
         if self.saves_probe is not None:
             probe, self.saves_probe = self.saves_probe, None
             probe.kill()
         process = QProcess(self)
         process.setWorkingDirectory(str(self.work_dir()))
         process.setProgram(sys.executable)
-        target = self.default_target("xbox")
-        selected = (["--target", target["name"]] if target else [])
+        target_name = target_name or self.target_picker.currentData()
+        selected = (["--target", target_name] if target_name else [])
         process.setArguments([str(ROOT / "tools" / "tes3x_saves.py"), "list", "--pool",
                               f"{value:08X}", "--xbox", "--library", str(self.save_library()),
                               "--config", str(self.local_config_path()), *selected])
-        process.finished.connect(lambda code, _status, process=process, value=value:
-                                 self.xbox_saves_listed(process, value, code))
+        process.finished.connect(lambda code, _status, process=process, value=value,
+                                 target_name=target_name:
+                                 self.xbox_saves_listed(process, value, target_name, code))
         self.saves_probe = process
-        self.xbox_checked.add(value)
-        self.show_saves_status("listing the Xbox…")
+        self.xbox_checked.add((target_name, value))
+        self.show_saves_status(f"listing {target_name}…")
         process.start()
 
-    def xbox_saves_listed(self, process, value, code):
+    def xbox_saves_listed(self, process, value, target_name, code):
         # A listing started for a pool since left, or replaced by a newer one, is dropped.
         if process is not self.saves_probe:
             return
@@ -3936,7 +4167,7 @@ class ProfileWindow(QMainWindow):
             error = bytes(process.readAllStandardError()).decode("utf-8", "replace").strip()
             self.show_saves_status("could not list the Xbox", error or output or f"exit {code}")
             return
-        if value != self.current_pool()[0]:
+        if value != self.current_pool()[0] or target_name != self.target_picker.currentData():
             return
         self.saves_xbox = result["saves"]
         if result.get("xbox") == "ok":
@@ -3954,7 +4185,8 @@ class ProfileWindow(QMainWindow):
 
     def show_saves_status(self, doing=None, tip=""):
         counts = collections.Counter(save["source"] for save in self.saves_xbox + self.saves_local)
-        xbox = bool((self.default_target("xbox") or {}).get("host"))
+        target = self.default_target()
+        xbox = bool(target and target.get("kind") == "xbox" and target.get("host"))
         parts = [f"{self.SAVE_SOURCES[key]} {counts[key]}" for key in ("xbox", "xemu", "pc")
                  if counts[key] or (key == "xbox" and xbox)]
         parts.append(doing or self.xbox_listing or "")
@@ -4013,9 +4245,12 @@ class ProfileWindow(QMainWindow):
     def saves_selected(self):
         sources = {save["source"] for save in self.selected_saves()}
         idle = self.process is None
+        target = self.default_target()
+        kind = target.get("kind") if target else None
         disk = self.profile_path is not None and self.play_disk().is_file()
-        for key, wanted in (("pull", {"xbox", "xemu"}), ("push", {"pc", "xemu"}),
-                            ("push_xemu", {"pc", "xbox"} if disk else set()),
+        for key, wanted in (("pull", {kind} if kind in {"xbox", "xemu"} else set()),
+                            ("push", {"pc"} if kind == "xbox" else set()),
+                            ("push_xemu", {"pc"} if kind == "xemu" and disk else set()),
                             ("copy", {"xbox", "pc", "xemu"}), ("move", {"xbox", "pc", "xemu"}),
                             ("delete", {"xbox", "pc", "xemu"})):
             self.save_actions[key].setEnabled(idle and bool(sources & wanted))
@@ -4520,6 +4755,9 @@ class ProfileWindow(QMainWindow):
 
     def closeEvent(self, event):
         if self.maybe_save():
+            if self.in_game_listener is not None:
+                self.in_game_listener.close()
+                self.in_game_listener = None
             event.accept()
         else:
             event.ignore()
@@ -4669,12 +4907,10 @@ class ProfileWindow(QMainWindow):
         if self.settings is not None:
             self.settings.setValue("last_profile", str(self.profile_path))
         self.refresh_profile_list()
-        self.profile_status.setText(str(self.profile_path))
-        self.profile_status.setToolTip(str(self.profile_path))
-        message = str(self.profile_path)
+        self.statusBar().clearMessage()
         if library_root and not indexed:
-            message += " — no library.toml, so mods are added by folder name"
-        self.statusBar().showMessage(message)
+            self.statusBar().showMessage(
+                "The mod library has no library.toml, so mods are added by folder name", 8000)
         self.update_build_state()
         return True
 
@@ -5301,9 +5537,12 @@ class ProfileWindow(QMainWindow):
         process.readyReadStandardOutput.connect(self.append_play_output)
         process.finished.connect(self.play_finished)
         self.play_process = process
+        self.play_target = self.target_picker.currentData()
         self.play_pid = None
         self.play_output_buffer = ""
         self.statusBar().spinner.start()
+        if self.play_target:
+            self.set_target_runtime(self.play_target, process="starting")
         self.refresh_play_menu()
         process.start()
         self.statusBar().showMessage(message)
@@ -5318,6 +5557,8 @@ class ProfileWindow(QMainWindow):
         match = re.search(r"xemu: started, pid (\d+)", self.play_output_buffer)
         if match and self.play_pid is None:
             self.play_pid = int(match.group(1))
+            if getattr(self, "play_target", None):
+                self.set_target_runtime(self.play_target, process="running")
             self.statusBar().spinner.stop()
             port = self.play_run / "gdb.port" if self.play_gdb and self.play_run else None
             if port is not None and port.is_file():
@@ -5342,11 +5583,15 @@ class ProfileWindow(QMainWindow):
             self.error(f"Could not stop xemu PID {self.play_pid}: {exc}")
             return
         self.statusBar().showMessage(f"Stopping xemu PID {self.play_pid}; recovering its log…")
+        if getattr(self, "play_target", None):
+            self.set_target_runtime(self.play_target, process="stopping")
         self.action_play.setEnabled(False)
         self.action_stop.setEnabled(False)
 
     def play_finished(self, code, _status):
         self.append_play_output()
+        if getattr(self, "play_target", None):
+            self.set_target_runtime(self.play_target, process="stopped")
         self.play_process = None
         self.play_pid = None
         self.play_output_buffer = ""
@@ -5365,9 +5610,8 @@ class ProfileWindow(QMainWindow):
         except (OSError, tomllib.TOMLDecodeError) as exc:
             name = self.target_picker.currentData()
             if name:
-                self.target_states[name] = "offline"
+                self.set_target_runtime(name, ftp="offline", dashboard="unknown")
                 self.target_drive_tips[name] = f"Configuration error: {exc}"
-                self.refresh_target_item(name)
             return
         try:
             target = tes3x_targets.resolve(local, self.target_picker.currentData(), kind="xbox")
@@ -5376,9 +5620,8 @@ class ProfileWindow(QMainWindow):
         host = target.get("host") if target else None
         if not host:
             if target:
-                self.target_states[target["name"]] = "offline"
+                self.set_target_runtime(target["name"], ftp="offline", dashboard="unknown")
                 self.target_drive_tips[target["name"]] = "Set the Xbox host in File > Settings"
-                self.refresh_target_item(target["name"])
             return
         process = QProcess(self)
         process.setWorkingDirectory(str(self.work_dir()))
@@ -5389,8 +5632,7 @@ class ProfileWindow(QMainWindow):
         process.finished.connect(self.ftp_probe_finished)
         self.ftp_probe = process
         self.ftp_probe_target = target["name"]
-        self.target_states[target["name"]] = "checking"
-        self.refresh_target_item(target["name"])
+        self.set_target_runtime(target["name"], ftp="checking", dashboard="unknown")
         process.start()
 
     def ftp_probe_finished(self, code, _status):
@@ -5398,21 +5640,60 @@ class ProfileWindow(QMainWindow):
         if self.ftp_probe is not None:
             output = bytes(self.ftp_probe.readAllStandardOutput()).decode(errors="replace").strip()
         name = getattr(self, "ftp_probe_target", self.target_picker.currentData())
-        self.target_states[name] = "connected" if code == 0 else "offline"
+        self.set_target_runtime(name, ftp="connected" if code == 0 else "offline",
+                                dashboard="checking" if code == 0 else "unknown")
         if code != 0:
             self.target_drive_tips[name] = output or f"FTP probe exited {code}"
         self.ftp_probe = None
-        self.refresh_target_item(name)
         if code == 0 and name == self.target_picker.currentData():
+            self.refresh_dashboard_status(name)
+
+    def dashboard_status_command(self):
+        """(script, arguments, expected version) for the built-in dashboard agent."""
+        try:
+            module = addon_registry().load("console")
+        except ImportError:
+            return None
+        return getattr(module, "AGENT_STATUS", None)
+
+    def refresh_dashboard_status(self, name=None):
+        command = self.dashboard_status_command()
+        name = name or self.target_picker.currentData()
+        if command is None or not name or self.agent_probe is not None:
+            if command is None and name:
+                self.set_target_runtime(name, dashboard="unknown")
+            return
+        script, arguments, expected = command
+        process = QProcess(self)
+        process.setWorkingDirectory(str(self.work_dir()))
+        process.setProgram(sys.executable)
+        process.setArguments([str(script), *arguments, "--config", str(self.local_config_path()),
+                              "--target", name])
+        process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        process.finished.connect(self.dashboard_probe_finished)
+        self.agent_probe = process
+        self.agent_probe_target = name
+        self.agent_probe_expected = expected
+        self.set_target_runtime(name, dashboard="checking")
+        process.start()
+
+    def dashboard_probe_finished(self, code, _status):
+        output = bytes(self.agent_probe.readAllStandardOutput()).decode(errors="replace").strip()
+        name = getattr(self, "agent_probe_target", self.target_picker.currentData())
+        expected = getattr(self, "agent_probe_expected", 0)
+        self.agent_probe = None
+        state, detail = dashboard_agent_state(output, code, expected)
+        self.set_target_runtime(name, dashboard=state, dashboard_detail=detail)
+        if state == "current" and name == self.target_picker.currentData():
             self.refresh_drive_status()
 
     def drive_space_command(self):
-        """(script, arguments) of the first enabled add-on that reports the Xbox's drives."""
-        for module in enabled_addons(self.local_values()).values():
-            command = getattr(module, "DRIVE_SPACE", None)
-            if command:
-                return command
-        return None
+        """(script, arguments) used by the built-in dashboard agent."""
+        try:
+            module = addon_registry().load("console")
+        except ImportError:
+            return None
+        return getattr(module, "DRIVE_SPACE", None)
 
     def refresh_drive_status(self):
         """Free space on the Xbox's drives, from an add-on such as the dashboard agent."""
@@ -5460,8 +5741,9 @@ class ProfileWindow(QMainWindow):
         if self.process is None:
             return
         text = bytes(self.process.readAllStandardOutput()).decode(errors="replace")
+        shown = text.replace("\r\n", "\n").replace("\r", "\n")
         self.output.moveCursor(QTextCursor.MoveOperation.End)
-        self.output.insertPlainText(text)
+        self.output.insertPlainText(shown)
         if XEMU_STARTED in text:
             self.statusBar().spinner.stop()
             port = self.play_run / "gdb.port" if self.play_gdb and self.play_run else None

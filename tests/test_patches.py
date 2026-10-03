@@ -91,6 +91,17 @@ class RegistryTests(unittest.TestCase):
             with self.assertRaises(registry.RegistryError):
                 registry.load(path)
 
+    def test_patch_bits_have_two_words(self):
+        template = ('[[patch]]\nname = "x"\ntitle = "X"\ncategory = "core"\n'
+                    'channel = "dev"\nselection = "preset"\nsummary = "x"\nbit = %d\n')
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'patches.toml'
+            path.write_text(template % 63, encoding='utf-8')
+            self.assertEqual(registry.load(path)[0]['bit'], 63)
+            path.write_text(template % 64, encoding='utf-8')
+            with self.assertRaisesRegex(registry.RegistryError, 'bit must be 0-63'):
+                registry.load(path)
+
 
 class PatchOwnershipTests(unittest.TestCase):
     def validate(self, name, before, after, edits, owners=()):

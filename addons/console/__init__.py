@@ -8,12 +8,11 @@ HERE = Path(__file__).resolve().parent
 TOOLS = HERE.parents[1] / "tools"
 LABEL = "Xbox dashboard agent (XBMC4Gamers)"
 DESCRIPTION = ("Adds Play on Xbox: deploy the build over FTP and start it through an agent in the "
-               "XBMC4Gamers dashboard. Install the agent from here once.")
+               "XBMC4Gamers dashboard. Manage the agent on each Xbox target.")
 PLAY = {"xbox": ("Xbox", " on Xbox")}
-SETTINGS_ACTIONS = [("Install agent on Xbox", HERE / "console.py", ["install"]),
-                    ("Remove agent", HERE / "console.py", ["uninstall"])]
 # Prints the agent's "ok C=free/total ..." (MB) for the status bar's drive badge.
 DRIVE_SPACE = (HERE / "console.py", ["drives"])
+AGENT_STATUS = (HERE / "console.py", ["ping"], 6)
 
 
 def status(local):

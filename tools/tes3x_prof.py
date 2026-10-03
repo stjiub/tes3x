@@ -132,7 +132,8 @@ def report_block(seq, f, targets, rows, active, names, hz_override):
      reset_time, reset_tsc, frames, buckets, frame_total, frame_lo, frame_hi) = f[:15]
     hist = f[15:23]
     (overhead, foreign, overflow, stale, underflow, depth_max, threads,
-     mask, build, _reserved) = f[23:33]
+     mask, build, mask_hi) = f[23:33]
+    mask |= mask_hi << 32
 
     wall_100ns = dump_time - session
     derived = None
@@ -147,9 +148,10 @@ def report_block(seq, f, targets, rows, active, names, hz_override):
     free_kb = f[33] if version >= 2 else None
     reason = f[36] if version >= 2 else 0
     reason_text = DUMP_REASONS.get(reason, f'reason-{reason}') if reason else 'legacy'
+    mask_width = 16 if mask >> 32 else 8
     print(f'\n=== block {seq}  uptime {wall_100ns / 1e7:.1f}s  '
           f'window {ms(window, hz) / 1000:.1f}s  '
-          f'patches 0x{mask:08X}  build 0x{build:08X}  {reason_text} ===')
+          f'patches 0x{mask:0{mask_width}X}  build 0x{build:08X}  {reason_text} ===')
     if derived:
         print(f'  TSC {derived / 1e6:.2f} MHz measured over {wall_100ns / 1e7:.1f}s'
               + ('  (overridden)' if hz_override else ''))

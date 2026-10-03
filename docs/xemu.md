@@ -31,7 +31,8 @@ read as fallback defaults for older local configurations.
 
 Open a profile and choose **Play**. Each profile keeps its own emulated hard disk, so saves persist
 between sessions and appear in the GUI's **Saves** tab. **Actions > Reset xemu saves…** gives that
-profile a clean disk again. Choose another xemu configuration from the target dropdown.
+profile a clean disk again. Select an xemu target to show that disk in Saves; an Xbox target shows
+that console's saves instead. Choose another xemu configuration from the target dropdown.
 **Debug with GDB** in the Play menu opens xemu's debugger stub; while the game runs, the status bar
 shows its port and the command to attach (`gdb -ex "target remote 127.0.0.1:PORT"`). Play becomes
 **Stop** while the session is open; it terminates only the PID that this run started, then lets the

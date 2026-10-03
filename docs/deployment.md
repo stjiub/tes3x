@@ -41,7 +41,8 @@ options, then the selected target, then the default `xbox`/`xbox`. Set
 ## What a deploy does
 
 - **Uploads only what changed.** Files are compared with the manifest, and only new or changed
-  files are sent.
+  files are sent. The deploy prints each file and its within-file and total progress. A transient
+  FTP failure reconnects and retries that file twice by default; `--retries N` changes the count.
 - **Stamps plugin load order.** The engine orders plugins by file time, and FATX keeps times to 2
   seconds, so bulk copies tie. Deploy sets each plugin's time explicitly when the FTP server
   supports `MFMT`, and otherwise uploads plugins in order, paced apart. When any plugin changes,
@@ -101,7 +102,8 @@ python tools/tes3x_pipeline.py profiles/my-build.toml --deploy --verify-deploy h
 
 `size` lists the uploaded files again. `hash` downloads every file again and compares it, which
 roughly doubles the transfer. With `--discard-build`, the local build is deleted only once the
-check passes.
+check passes. GUI deploys use size verification, so a completed deploy does not rely only on the
+FTP upload command having returned successfully.
 
 ## Getting files back
 

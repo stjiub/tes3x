@@ -2,12 +2,16 @@ import ftplib
 import io
 import posixpath
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from tes3x_deploy import (BUILD_KEY, CLUSTER, ensure_dirs, ftp_basename, on_disk,
-                          owner_conflicts, parse_drives, pool_plan, remote_tree, verify_uploads)
+                          owner_conflicts, parse_drives, pool_plan, remote_tree, upload_file,
+                          verify_uploads)
 
 
 class FakeFtp:
@@ -49,12 +53,15 @@ class FakeFtp:
             raise ftplib.error_perm("550 parent not found")
         self.dirs.add(target)
 
-    def storbinary(self, command, stream, blocksize=8192):
+    def storbinary(self, command, stream, blocksize=8192, callback=None):
         self.calls.append(("storbinary", self.current, command, blocksize))
         verb, name = command.split(" ", 1)
         if verb != "STOR" or "/" in name or ":" in name:
             raise ftplib.error_perm("550 storing in root not allowed")
-        self.files[posixpath.join(self.current, name)] = stream.read()
+        data = stream.read()
+        self.files[posixpath.join(self.current, name)] = data
+        if callback:
+            callback(data)
 
     def retrbinary(self, command, callback, blocksize=8192):
         self.calls.append(("retrbinary", self.current, command, blocksize))
@@ -62,6 +69,9 @@ class FakeFtp:
         if verb != "RETR":
             raise AssertionError(command)
         callback(self.files[posixpath.join(self.current, name)])
+
+    def close(self):
+        self.calls.append(("close",))
 
 
 class DeployFtpTests(unittest.TestCase):
@@ -96,7 +106,6 @@ class DeployFtpTests(unittest.TestCase):
         self.assertEqual(remote_tree(FakeFtp(), "F:/Games/NewTarget"), {})
 
     def test_hash_verification_reads_remote_upload(self):
-        import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp) / "a.bin"
             source.write_bytes(b"content")
@@ -109,6 +118,27 @@ class DeployFtpTests(unittest.TestCase):
             ftp.files[base + "/a.bin"] = b"corrupt"
             with self.assertRaisesRegex(RuntimeError, "hash verification failed"):
                 verify_uploads(ftp, base, {"a.bin": (7, 0, str(source))}, ["a.bin"], "hash")
+
+    def test_upload_reconnects_and_retries_the_named_file(self):
+        class FlakyFtp(FakeFtp):
+            def storbinary(self, command, stream, blocksize=8192, callback=None):
+                raise ftplib.error_temp("426 connection closed")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "asset.bin"
+            source.write_bytes(b"content")
+            first, second = FlakyFtp(), FakeFtp()
+            first.dirs.add("/F/Games/Test")
+            second.dirs.add("/F/Games/Test")
+            progress = []
+            with patch("tes3x_deploy.tes3x_ftp.connect", return_value=second), \
+                    patch("tes3x_deploy.time.sleep"):
+                result = upload_file(first, SimpleNamespace(), "F:/Games/Test/asset.bin",
+                                     source, set(), lambda amount, reset:
+                                     progress.append((amount, reset)), retries=1)
+            self.assertIs(result, second)
+            self.assertEqual(second.files["/F/Games/Test/asset.bin"], b"content")
+            self.assertEqual(progress, [(0, True), (0, True), (7, False)])
 
     def test_owner_conflicts(self):
         base = "F:/Games/M"

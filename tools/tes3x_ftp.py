@@ -55,6 +55,7 @@ def resolve(args, environ=os.environ):
         raise SystemExit("no Xbox address: pass --host or configure an Xbox target")
     args.port = args.port or settings.get("port", DEFAULT_PORT)
     args.user = args.user or settings.get("user", DEFAULT_USER)
+    args.agent_token = settings.get("agent_token")
     if args.ask_password:
         args.password = getpass.getpass(f"FTP password for {args.user}@{args.host}: ")
     else:

@@ -1,8 +1,6 @@
-/* The payload's receive path on the PC. tests/test_net_host.py copies tes3xnet.c beside this file
- * with its inline assembly removed and the NIC's registers moved into host_nic, and writes a
- * tes3x_thunks.h whose slots are host_thunks. Frames come on stdin as a mode byte, a little-endian
- * length and the frame, placed so they end at an unreadable page, and go to rx_arp or rx_ip as
- * the receive DPC's drain sends them. The mode picks the session state the frame meets. */
+/* The payload's receive path on the PC. tests/test_net_host.py copies the network sources beside
+ * this file with inline assembly removed and the NIC's registers moved into host_nic. Frames come
+ * on stdin as a mode byte, a little-endian length and the frame, placed at an unreadable page. */
 
 #include <stdint.h>
 #include <stdio.h>
@@ -15,6 +13,30 @@ static int verbose;
 
 #include "tes3xnet.c"
 
+/* The production sources are separate translation units. Give the few file-local helpers with
+ * the same names distinct ones while this harness includes both to reach their parser state. */
+#define get16 multi_get16
+#define get32 multi_get32
+#define put16 multi_put16
+#define put32 multi_put32
+#define put32le multi_put32le
+#define copy multi_copy
+#define mac multi_mac
+#define BUF MULTI_BUF
+#define TICK_MS MULTI_TICK_MS
+#define CR0_WP MULTI_CR0_WP
+#include "tes3xmulti.c"
+#undef get16
+#undef get32
+#undef put16
+#undef put32
+#undef put32le
+#undef copy
+#undef mac
+#undef BUF
+#undef TICK_MS
+#undef CR0_WP
+
 #define HOST_MTU 1518u
 #define HOST_SESSION 0x11223344u
 #define HOST_XID 0x01020304u
@@ -25,7 +47,7 @@ static int verbose;
 #define MODE_BOUND 3
 
 static volatile struct descriptor host_tx[TX_RING];
-static u8 host_tx_buf[TX_RING * BUF];
+static u8 host_tx_buf[TX_RING * 2048u];
 
 static u32 __stdcall host_physical(void *p)
 {
@@ -96,6 +118,13 @@ static void host_setup(void)
     mac[0] = 2;
     mac[4] = 0x24;
     mac[5] = 0x99;
+    memcpy(multi_mac, mac, 6);
+    multi_channel.port = PORT;
+    multi_channel.receive = multi_receive;
+    dhcp_channel.port = DHCP_CLIENT;
+    dhcp_channel.receive = dhcp_receive;
+    tes3x_net_register(&multi_channel);
+    tes3x_net_register(&dhcp_channel);
     for (i = 0; i < NOISE_KEY; i++) {
         sec.send[i] = 0x11;
         sec.receive[i] = 0x22;
@@ -112,9 +141,9 @@ static void host_prepare(int mode)
     net.up = 1; /* a DHCP NAK or a new lease changes these */
     net.ip = 0x0A00020Fu;
     net.mask = 0xFFFFFF00u;
-    ses.server = ses.dns = ses.gateway = ses.hop = 0x0A000202u;
+    ses.server = ses.dns = ses.gateway = multi_channel.route.hop = 0x0A000202u;
     ses.port = PORT;
-    ses.hop_known = 1;
+    multi_channel.route.known = 1;
     ses.state = mode == MODE_HANDSHAKE ? SESSION_HELLO :
                 mode == MODE_RESOLVE ? SESSION_RESOLVE : SESSION_JOINED;
     ses.id = HOST_SESSION;

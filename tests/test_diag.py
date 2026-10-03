@@ -14,6 +14,20 @@ class DiagnosticsTests(unittest.TestCase):
         self.assertEqual({bit: name for name, bit in PATCHER_BITS.items()},
                          {1 << bit: name for bit, name in PATCH_BITS.items()})
 
+    def test_high_patch_mask_word_is_decoded(self):
+        old = dict(PATCH_BITS)
+        try:
+            PATCH_BITS[32] = "net"
+            records = parse_log(
+                "1 ms diag.patches 0x00000040\n"
+                "2 ms diag.patches_hi 0x00000001\n")
+            out = io.StringIO()
+            report(records, stream=out)
+            self.assertIn("diagnostics, net (0x0000000100000040)", out.getvalue())
+        finally:
+            PATCH_BITS.clear()
+            PATCH_BITS.update(old)
+
     def test_sessions_start_at_xbe_entry(self):
         records = parse_log(
             "0 ms entry.free_kb 59820\r\n"

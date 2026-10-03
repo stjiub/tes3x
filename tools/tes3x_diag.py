@@ -130,9 +130,11 @@ def report(records, xbe=None, show_all=False, stream=sys.stdout):
         if "diag.build" in values:
             print("  payload build: %s" % fmt_value(values["diag.build"]), file=stream)
         if isinstance(values.get("diag.patches"), int):
-            mask = values["diag.patches"]
+            mask = values["diag.patches"] | (values.get("diag.patches_hi", 0) << 32)
             names = [name for bit, name in PATCH_BITS.items() if mask & (1 << bit)]
-            print("  patches: %s (0x%08X)" % (", ".join(names) or "none", mask), file=stream)
+            width = 16 if mask >> 32 else 8
+            print("  patches: %s (0x%0*X)" %
+                  (", ".join(names) or "none", width, mask), file=stream)
         if "diag.enabled" in values:
             print("  diagnostics level: %s" % values["diag.enabled"], file=stream)
         elif "entry.free_kb" in values:

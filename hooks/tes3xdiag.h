@@ -13,6 +13,7 @@ enum {
 
 extern volatile u32 tes3x_diag_installed;
 extern volatile u32 tes3x_patch_mask;
+extern volatile u32 tes3x_patch_mask_hi;
 
 void tes3x_diag_init(void);
 void tes3x_diag_tick(void);

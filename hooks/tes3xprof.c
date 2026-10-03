@@ -143,6 +143,7 @@ typedef struct {
 } prof_active;
 
 extern volatile u32 tes3x_patch_mask;
+extern volatile u32 tes3x_patch_mask_hi;
 
 /* The patcher writes a target VA here; index TES3X_PROF_CALIB is set at init. */
 u32 tes3x_prof_target[TES3X_PROF_TOTAL];
@@ -506,7 +507,7 @@ static void prof_dump(u32 reason)
     }
     hdr.patch_mask = tes3x_patch_mask;
     hdr.build_id = TES3X_BUILD_ID;
-    hdr.reserved = 0;
+    hdr.reserved = tes3x_patch_mask_hi;
     hdr.free_kb = prof_free_kb();
     hdr.active = prof_snapshot_active(hdr.tsc_now);
     hdr.active_record = sizeof(prof_active);

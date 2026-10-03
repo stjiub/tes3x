@@ -517,7 +517,17 @@ def read_index(library):
         index = {}
     index.setdefault("pools", {})
     index.setdefault("xbox", {})
+    index.setdefault("targets", {})
     return index
+
+
+def target_listing(index, target, pool):
+    """The cached listing for one Xbox target, with the old single-Xbox cache as fallback."""
+    key = f"{pool:08X}"
+    cached = index.get("targets", {}).get(target, {}).get(key)
+    if cached is not None:
+        return cached
+    return index.get("xbox", {}).get(key, {}) if target == "xbox" else {}
 
 
 def write_index(library, index):
@@ -569,22 +579,24 @@ def list_xbox(args, pool):
     key = f"{pool:08X}"
     try:
         tes3x_ftp.resolve(args)
+        target = args.target or "xbox"
         xbox = Xbox(args)
         saves = xbox.saves(pool, heads)
         pools = xbox.pools()
         xbox.ftp.quit()
     except (*ftplib.all_errors, SystemExit) as exc:
-        cached = index["xbox"].get(key, {})
+        target = args.target or "xbox"
+        cached = target_listing(index, target, pool)
         return {"saves": cached.get("saves", []), "pools": [], "time": cached.get("time"),
-                "xbox": f"offline: {exc}"}
+                "xbox": f"offline: {exc}", "target": target}
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    index["xbox"][key] = {"time": now, "saves": saves}
+    index["targets"].setdefault(target, {})[key] = {"time": now, "saves": saves}
     for found in pools:
         index["pools"].setdefault(found["id"], found["name"])
     if args.library:
         write_index(library, index)
         heads_path.write_text(json.dumps(heads), encoding="utf-8")
-    return {"saves": saves, "pools": pools, "time": now, "xbox": "ok"}
+    return {"saves": saves, "pools": pools, "time": now, "xbox": "ok", "target": target}
 
 
 def main():

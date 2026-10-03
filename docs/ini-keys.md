@@ -88,14 +88,19 @@ Only pages the heap actually uses consume memory, so a large value costs address
 
 The offset affects only the first-person bow and arms while an arrow or bolt is nocked.
 
-## `multiplayer`
+## `net`
 
 | key | values | default |
 |---|---|---|
 | `NetAddress` | the console's address, `A.B.C.D` or `A.B.C.D/BITS`, or `dhcp` | empty - the network stays off; `/24` when no prefix is given |
-| `NetServer` | the server, an address or a name, with `:PORT` if not `26500`, and `#FINGERPRINT` to pin its key | empty - answer ARP and UDP echo only |
 | `NetGateway` | the router, `A.B.C.D` | empty, or the lease's router with `dhcp` - needed only when the server or DNS is on another subnet |
 | `NetDns` | the DNS server, `A.B.C.D` | the lease's with `dhcp`, else `NetGateway`; used only when `NetServer` is a name |
+
+## `multiplayer`
+
+| key | values | default |
+|---|---|---|
+| `NetServer` | the server, an address or a name, with `:PORT` if not `26500`, and `#FINGERPRINT` to pin its key | empty - answer ARP and UDP echo only |
 | `NetPassword` | the server's password, up to 64 printable ASCII characters | empty - for a server without one; a server asks for it only on a console's first join |
 
 The keys are read on the first frame of each launch, including the relaunch on New Game and Load.

@@ -36,6 +36,7 @@ CLUSTER = 16 * 1024  # FATX's unit of allocation on the console's partitions
 SPACE_WARN = 256 * 1024 * 1024  # left free below this after a deploy, say so
 # The XBMC4Gamers dashboard agent (addons/console), when installed: one line in, one line out.
 AGENT_PORT = 7353
+RETRYABLE_FTP = (ftplib.error_temp, ftplib.error_reply, ftplib.error_proto, EOFError, OSError)
 
 
 def sha1(path):
@@ -198,9 +199,52 @@ def human(n):
         n /= 1024
 
 
-def agent_request(host, line, timeout=10):
+def upload_file(ftp, args, path, source, made, progress=None, retries=2):
+    """Upload one file, reconnecting after a transient failure; return the usable FTP session."""
+    for attempt in range(retries + 1):
+        if ftp is None:
+            try:
+                ftp = tes3x_ftp.connect(args)
+            except RETRYABLE_FTP as exc:
+                if attempt >= retries:
+                    raise RuntimeError(
+                        f"upload failed for {path} after {attempt + 1} attempts: {exc}") from exc
+                print(f"\n    reconnect failed: {exc}; retrying "
+                      f"({attempt + 2}/{retries + 1})", flush=True)
+                time.sleep(min(1 + attempt, 3))
+                continue
+        try:
+            ensure_dirs(ftp, path, made)
+            with open(source, "rb") as stream:
+                name = ftp_basename(ftp, path)
+                callback = None
+                if progress:
+                    progress(0, True)
+                    callback = lambda block: progress(len(block), False)
+                ftp.storbinary(f"STOR {name}", stream, blocksize=64 * 1024,
+                               callback=callback)
+            return ftp
+        except ftplib.error_perm as exc:
+            raise RuntimeError(f"upload failed for {path}: {exc}") from exc
+        except RETRYABLE_FTP as exc:
+            if attempt >= retries:
+                raise RuntimeError(
+                    f"upload failed for {path} after {attempt + 1} attempts: {exc}") from exc
+            print(f"\n    transfer failed: {exc}; reconnecting and retrying "
+                  f"({attempt + 2}/{retries + 1})", flush=True)
+            try:
+                ftp.close()
+            except ftplib.all_errors:
+                pass
+            ftp = None
+            time.sleep(min(1 + attempt, 3))
+            made.clear()
+
+
+def agent_request(host, line, timeout=10, token=None):
     with socket.create_connection((host, AGENT_PORT), timeout=timeout) as s:
-        s.sendall((line + "\n").encode("latin-1"))
+        request = line if not token else token + " " + line
+        s.sendall((request + "\n").encode("latin-1"))
         data = b""
         while not data.endswith(b"\n"):
             chunk = s.recv(4096)
@@ -218,10 +262,10 @@ def parse_drives(reply):
     return drives
 
 
-def drive_free(host, drive, timeout=3):
+def drive_free(host, drive, timeout=3, token=None):
     """Bytes free on the console's drive from the dashboard agent; None without one."""
     try:
-        reply = agent_request(host, "drives", timeout)
+        reply = agent_request(host, "drives", timeout, token)
     except OSError:
         return None
     if not reply.startswith("ok"):
@@ -284,9 +328,13 @@ def main():
                     help="deploy even when the dashboard agent reports too little free space")
     ap.add_argument("--plugin-delay", type=float, default=2.5,
                     help="seconds between plugin uploads when MFMT is unsupported")
+    ap.add_argument("--retries", type=int, default=2,
+                    help="times to retry a file after a transient FTP failure (default: 2)")
     args = ap.parse_args()
     if args.require_current and not args.dry_run:
         ap.error("--require-current needs --dry-run")
+    if args.retries < 0:
+        ap.error("--retries cannot be negative")
 
     if not os.path.isdir(args.tree):
         sys.exit(f"not a directory: {args.tree}")
@@ -373,7 +421,7 @@ def main():
     grow = (sum(on_disk(local[r][0]) - on_disk(remote_ci.get(r.lower()) or 0) for r in upload)
             - sum(on_disk(remote[r]) for r in delete))
     drive = base[0].upper()
-    free = drive_free(args.host, drive)
+    free = drive_free(args.host, drive, token=getattr(args, "agent_token", None))
     if free is None:
         print(f"  space: needs {human(max(grow, 0))} more on {drive}:; free space unknown "
               "(the dashboard agent is not installed or not answering)")
@@ -420,13 +468,35 @@ def main():
     sent = 0
     t0 = time.time()
 
-    for r in assets + plugins:
+    transfers = assets + plugins
+    for index, r in enumerate(transfers, 1):
         dst = posixpath.join(base, r)
-        ensure_dirs(ftp, dst, made)
-        with open(local[r][2], "rb") as f:
-            name = ftp_basename(ftp, dst)
-            ftp.storbinary(f"STOR {name}", f, blocksize=64 * 1024)
+        size = local[r][0]
+        print(f"  [{index}/{len(transfers)}] {r} ({human(size)})", flush=True)
+        file_sent = 0
+        last_progress = 0.0
+
+        def progress(amount, reset):
+            nonlocal file_sent, last_progress
+            if reset:
+                file_sent, last_progress = 0, 0.0
+                return
+            file_sent += amount
+            now = time.monotonic()
+            if file_sent == size or now - last_progress >= 0.5:
+                elapsed = max(time.time() - t0, 1)
+                print(f"\r    {human(file_sent)}/{human(size)} · total "
+                      f"{human(sent + file_sent)}/{human(up_bytes)} · "
+                      f"{human((sent + file_sent) / elapsed)}/s   ", end="", flush=True)
+                last_progress = now
+
+        try:
+            ftp = upload_file(ftp, args, dst, local[r][2], made, progress, args.retries)
+        except RuntimeError as exc:
+            sys.exit(str(exc))
+        print()
         sent += local[r][0]
+        name = ftp_basename(ftp, dst)
         if has_mfmt:
             stamp = time.strftime("%Y%m%d%H%M%S", time.gmtime(local[r][1]))
             try:
@@ -435,10 +505,8 @@ def main():
                 has_mfmt = False
         elif r in set(plugins):
             time.sleep(args.plugin_delay)
-        el = time.time() - t0
-        print(f"\r  {human(sent)}/{human(up_bytes)}  {human(sent/max(el,1))}/s   ", end="", flush=True)
 
-    print(f"\n  uploaded in {time.time()-t0:.0f}s")
+    print(f"  uploaded in {time.time()-t0:.0f}s")
 
     verify_uploads(ftp, base, local, assets + plugins, args.verify)
     if args.verify != "none":

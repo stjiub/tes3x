@@ -23,9 +23,12 @@ class FtpSettingsTests(unittest.TestCase):
                                  environ or {})
 
     def test_config_fills_what_the_command_line_leaves_out(self):
+        self.config.write_text(self.config.read_text(encoding='utf-8') +
+                               'agent_token = "' + 'a' * 64 + '"\n', encoding='utf-8')
         args = self.resolve([])
         self.assertEqual((args.host, args.port, args.user, args.password),
                          ('192.0.2.1', 21, 'me', 'file'))
+        self.assertEqual(args.agent_token, 'a' * 64)
 
     def test_command_line_then_environment_win(self):
         self.assertEqual(self.resolve(['--password', 'flag']).password, 'flag')

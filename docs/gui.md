@@ -60,16 +60,19 @@ New, Duplicate, Rename and Delete beside the list. On first start, with no `tes3
 Settings left at their defaults stay out of the profile file. **File > Settings** uses categories
 for paths, targets and add-ons. Targets can be added, duplicated or removed. Choosing Xbox or xemu
 changes the editor beside the list: an Xbox target has its own FTP login, games root and optional
-shared retail base; an xemu target has its emulator version, firmware, clean disk and memory size.
-The connection button tests an Xbox's FTP login before saving. A legacy `[deploy]` configuration
-is left alone until **Convert** is pressed.
+shared retail base. It also owns that console's dashboard root and the controls to install, update,
+restart or remove its dashboard agent. Common XBMC4Gamers layouts are detected when the root is
+blank. An xemu target has its emulator version, firmware, clean disk and memory size. The
+connection button tests an Xbox's FTP login before saving. A legacy `[deploy]` configuration is
+left alone until **Convert** is pressed. Dashboard-agent status and drive-space probing are target
+capabilities and do not depend on enabling the separate Play integration under Add-ons.
 
 The toolbar target chooses where checks, builds, deploys, saves, logs and Play go. Its dot is grey
 before an Xbox is checked or for xemu, green while an Xbox answers, and red when it is unreachable;
 the tooltip carries its address and reported free space. The joined Check, Build and Deploy buttons
 use grey, green, amber and red dots for not run, current, stale and failed. Deploy is unavailable
 for xemu targets. **Actions** also smoke-tests the current profile. The status bar is reserved for
-activity, transient messages, counts and the profile path. Check and per-target Deploy results are
+activity, transient messages and counts. Check and per-target Deploy results are
 remembered in the build output; like the Build state, they notice profile edits but not changes
 inside mod folders.
 
@@ -87,10 +90,10 @@ running emulator releases that build.
 
 **Saves** chooses the profile's save pool: the retail game's shared saves, or a pool of its own
 that keeps its saves apart from other builds (see `save_pool` in
-[configuration.md](configuration.md)). It lists the pool's saves on the Xbox, on the profile's xemu
-disk and in the PC save library (`build/saves/<pool>/`), and marks those that need plugins the
-profile does not load. The last Xbox listing is kept, so the tab opens without waiting for the
-console and still shows it while the console is off. Right-click saves to pull them to the PC,
-push them to the Xbox or xemu, copy or move them to another pool, or delete them. A move deletes
-the original only after the copy is complete; changes to the xemu disk are stacked on it as a new
-layer.
+[configuration.md](configuration.md)). It lists the PC save library (`build/saves/<pool>/`) plus
+the selected target: that Xbox's saves or the profile's persistent xemu disk. Switching targets
+refreshes the list. Each Xbox target keeps its own last listing, so the tab opens without waiting
+for that console and still shows it while the console is off. Saves that need plugins the profile
+does not load are marked. Right-click saves to pull them to the PC, push them to the selected Xbox
+or xemu disk, copy or move them to another pool, or delete them. A move deletes the original only
+after the copy is complete; changes to the xemu disk are stacked on it as a new layer.

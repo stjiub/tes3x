@@ -132,7 +132,8 @@ NET_UI_ADDRESSES = (
     ("SAVE_ID", 0x003D9ECC), ("LOAD_ID", 0x003DA018), ("EXIT_ID", 0x003DA05C),
 )
 INI_USERS = {"tes3xconsole.c", "tes3xrefs.c", "tes3xdiag.c", "tes3xsaves.c", "tes3xprof.c",
-             "tes3xarena.c", "tes3xregion.c", "tes3xbowview.c", "tes3xnet.c"}
+             "tes3xarena.c", "tes3xregion.c", "tes3xbowview.c", "tes3xnet.c",
+             "tes3xmulti.c"}
 
 
 class PayloadError(RuntimeError):
@@ -352,6 +353,11 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
     if "tes3xnet.c" in names:
         if "tes3xdiag.c" not in names:
             raise PayloadError("tes3xnet.c requires tes3xdiag.c for its frame hook")
+        flags.append("-DTES3X_NET")
+        wanted["net"] = ("_tes3x_net_frame",)
+    if "tes3xmulti.c" in names:
+        if "tes3xnet.c" not in names:
+            raise PayloadError("tes3xmulti.c requires tes3xnet.c")
         world = hexva(locate("world-controller"))
         data_handler = address("DATA_HANDLER", DATA_HANDLER)
         print(f"network: [Xbox] NetAddress, UDP 26500, WorldController {world}, "
@@ -573,8 +579,8 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         define("NET_FIND_MARKER", hexva(locate("find-marker")))
         define("NET_TEMPLE_MARKER", hexva(locate("temple-marker")))
         define("NET_DIVINE_MARKER", hexva(locate("divine-marker")))
-        flags.append("-DTES3X_NET")
-        wanted["net"] = ("_tes3x_net_frame",)
+        flags.append("-DTES3X_MULTIPLAYER")
+        wanted["multiplayer"] = ("_tes3x_multi_frame",)
     if "tes3xinfoarena.c" in names:
         heap_allocate = hexva(locate("heap-allocate"))
         heap_free = hexva(locate("heap-free"))
@@ -766,6 +772,7 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         wanted["diagnostics_update"] = ("_tes3x_diag_update_hook",)
         wanted["diagnostics_flag"] = ("_tes3x_diag_installed",)
         wanted["patch_mask"] = ("_tes3x_patch_mask",)
+        wanted["patch_mask_hi"] = ("_tes3x_patch_mask_hi",)
     if "tes3xprof.c" in names:
         wanted["prof_target"] = ("_tes3x_prof_target",)
         wanted["prof_stubs"] = ("_tes3x_prof_stubs",)

@@ -352,6 +352,14 @@ class PipelinePlanTests(unittest.TestCase):
             'tes3xhook.c', 'tes3xlog.c', 'tes3xpager.c', 'tes3xinfoarena.c'
         ])
 
+    def test_multiplayer_adds_network_foundation(self):
+        profile = {'patches': {'preset': 'minimal', 'enable': ['multiplayer']}}
+        plan = resolve_patch_plan(profile)
+        self.assertEqual(plan['selected'], ['diagnostics', 'net', 'multiplayer'])
+        self.assertEqual(plan['sources'], [
+            'tes3xhook.c', 'tes3xlog.c', 'tes3xdiag.c', 'tes3xnet.c', 'tes3xmulti.c'
+        ])
+
     def test_recommended_selects_only_release_defaults(self):
         plan = resolve_patch_plan({'patches': {'preset': 'recommended'},
                                    'package': {'mode': 'merged-bsa'}})
@@ -472,8 +480,16 @@ class PipelinePlanTests(unittest.TestCase):
             'targets': {'xemu-128': {'kind': 'xemu', 'ram': 128,
                                       'exe': 'xemu.exe', 'bios': 'cerbios.bin'}},
         })
+        validate_local_config({
+            'default_target': 'bench',
+            'targets': {'bench': {'kind': 'xbox', 'host': 'x', 'games_root': 'F:/Games',
+                                   'agent_token': 'a' * 64, 'dashboard': 'C:'}},
+        })
         with self.assertRaisesRegex(PipelineError, 'games_root is required'):
             validate_local_config({'targets': {'bench': {'kind': 'xbox', 'host': 'x'}}})
+        with self.assertRaisesRegex(PipelineError, 'agent_token'):
+            validate_local_config({'targets': {'bench': {
+                'kind': 'xbox', 'host': 'x', 'games_root': 'F:/Games', 'agent_token': 'bad'}}})
         with self.assertRaisesRegex(PipelineError, 'default_target'):
             validate_local_config({'default_target': 'missing', 'targets': {}})
 

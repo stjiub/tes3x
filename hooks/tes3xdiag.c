@@ -109,6 +109,7 @@ extern u64 tes3x_boot_time;
 
 volatile u32 tes3x_diag_installed;
 volatile u32 tes3x_patch_mask;
+volatile u32 tes3x_patch_mask_hi;
 
 static volatile u32 diag_heartbeat;
 static volatile u32 diag_last_code;
@@ -373,6 +374,8 @@ void tes3x_diag_init(void)
     tes3x_log_hex("diag.session", (u32)tes3x_boot_time);
     tes3x_log_hex("diag.build", TES3X_BUILD_ID);
     tes3x_log_hex("diag.patches", tes3x_patch_mask);
+    if (tes3x_patch_mask_hi)
+        tes3x_log_hex("diag.patches_hi", tes3x_patch_mask_hi);
     /* The certificate's title ID, which picks the E:/UDATA folder saves go to. */
     tes3x_log_hex("diag.title_id", *(u32 *)(*(u32 *)0x00010118 + 8));
 }
