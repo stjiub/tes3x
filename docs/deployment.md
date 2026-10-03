@@ -60,6 +60,10 @@ game folder. Set `retail_root` on the Xbox target to a separate clean folder suc
 [game folder overlay](../patches/data-overlay.md), writes its INI setting and removes unchanged
 retail files automatically.
 
+There is no implicit retail-base path: an overlay build or deploy stops when `retail_root` is
+unset. The GUI suggests `MorrowindRetail` beneath the target's games root, but requires the path to
+be set explicitly.
+
 An overlay deploy checks that the shared base already matches the local clean game before changing
 the profile folder. Install or synchronize it explicitly with:
 

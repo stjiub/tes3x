@@ -42,9 +42,14 @@ Xbox targets accept:
 | `retail_root` | string | none | Shared clean retail data folder for profiles whose `install_layout` is `overlay`. |
 | `ram` | integer | `64` | Console RAM in MB: `64` or `128`. |
 
-An xemu target has `kind = "xemu"` and `ram = 64` or `128`. Emulator file paths remain shared in
-`[xemu]`. Pass `--target NAME` to select a target for one command; explicit `--host`, `--remote`
-and similar command options still take precedence.
+An xemu target accepts `ram` (`64` or `128`) plus `folder`, `exe`, `bootrom`, `bios`,
+`bios_128mb`, `eeprom`, `hdd`, `extract_xiso`, `gdb` and `template`; see [xemu](xemu.md). Each
+target may use a different emulator version, firmware and clean disk. The old shared `[xemu]`
+table remains a fallback for keys absent from a target and becomes an implicit target named `xemu`
+when no xemu target exists.
+
+Pass `--target NAME` to select a target for one command; explicit `--host`, `--remote` and similar
+command options still take precedence.
 
 The old `[deploy]` table remains readable as an implicit Xbox target named `xbox`. Its
 `remote_root` is split into `games_root` and the fallback install folder. New configurations

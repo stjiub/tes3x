@@ -235,7 +235,7 @@ def validate_local_config(local):
     if not isinstance(targets, dict):
         raise PipelineError("targets must be a table")
     allowed = {"kind", "host", "port", "user", "password", "games_root", "retail_root",
-               "ram"}
+               "ram", *tes3x_targets.XEMU_KEYS}
     for name, target in targets.items():
         if not isinstance(target, dict):
             raise PipelineError(f"targets.{name} must be a table")
@@ -244,7 +244,8 @@ def validate_local_config(local):
             raise PipelineError(f"unknown targets.{name} keys: " + ", ".join(sorted(extra)))
         if target.get("kind") not in tes3x_targets.TARGET_KINDS:
             raise PipelineError(f"targets.{name}.kind must be 'xbox' or 'xemu'")
-        strings = ("host", "user", "password", "games_root", "retail_root")
+        strings = ("host", "user", "password", "games_root", "retail_root",
+                   *tes3x_targets.XEMU_KEYS)
         for key in strings:
             if key in target and type(target[key]) is not str:
                 raise PipelineError(f"targets.{name}.{key} must be a string")

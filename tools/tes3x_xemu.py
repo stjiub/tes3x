@@ -13,7 +13,7 @@ the clean HDD image, deleted once the log is read unless --keep-disk; --disk FIL
 one overlay across runs, so saves persist. Each completed run also writes a .tes3x-run.json
 recording its command, platform and inputs without machine paths.
 
-[xemu] in tes3x.local.toml names the emulator and its files; see docs/xemu.md.
+The selected xemu target in tes3x.local.toml names the emulator and its files; see docs/xemu.md.
 --gdb-capture SECONDS pauses the guest once and saves CPU and stack state to gdb.txt.
 --gdb-script FILE attaches GDB at boot and runs a Python script for the whole session;
 $tes3x_handler holds the diagnostics crash handler's address from the build's link map, and
@@ -106,15 +106,22 @@ $bmp.Save($Out, [System.Drawing.Imaging.ImageFormat]::Png)
 """
 
 
-def load_config(path=None):
-    """[xemu] from the local config, with relative paths resolved against that file and unset
-    files found in [xemu] folder."""
+def load_config(path=None, target_name=None):
+    """The selected xemu target, with legacy [xemu] defaults and paths resolved locally."""
     path = Path(path or Path.cwd() / "tes3x.local.toml").resolve()
     try:
         with open(path, "rb") as stream:
-            values = tomllib.load(stream).get("xemu", {})
+            local = tomllib.load(stream)
     except FileNotFoundError:
-        values = {}
+        local = {}
+    values = dict(local.get("xemu", {}))
+    try:
+        target = tes3x_targets.resolve(local, target_name, "xemu")
+    except tes3x_targets.TargetError:
+        target = None
+    if target:
+        values.update({key: value for key, value in target.items()
+                       if key in tes3x_targets.XEMU_KEYS})
     return resolve(values, path.parent)
 
 
@@ -381,7 +388,7 @@ def clean_disk(runs):
         return hdd
     with Qcow2(str(hdd)) as image:
         if image.backing:
-            sys.exit(f"{hdd} has a backing file; set [xemu] hdd to a standalone image")
+            sys.exit(f"{hdd} has a backing file; set the target's hdd to a standalone image")
     clean = runs / f"{hdd.stem}-{sha256_file(hdd)[:12]}.qcow2"
     if not clean.is_file():
         runs.mkdir(parents=True, exist_ok=True)
@@ -467,8 +474,8 @@ def main():
     ap.add_argument("--disk", metavar="FILE",
                     help="use and keep this overlay across runs, making it over the clean disk "
                          "the first time")
-    ap.add_argument("--bios", help="BIOS to boot instead of [xemu] bios; `128mb` for "
-                                   "[xemu] bios_128mb")
+    ap.add_argument("--bios", help="BIOS to boot instead of the target's bios; `128mb` for "
+                                   "its bios_128mb")
     ap.add_argument("--net-tunnel", type=int, metavar="PORT",
                     help="attach the NIC to xemu's udp backend: guest frames go to "
                          "127.0.0.1:PORT and frames sent to PORT+1 reach the guest "
@@ -479,8 +486,6 @@ def main():
     a = ap.parse_args(argv)
     config_path = Path(a.config or Path.cwd() / "tes3x.local.toml").resolve()
     CONFIG_PATH = config_path
-    CONFIG = load_config(config_path)
-    GDB = Path(CONFIG.get("gdb") or shutil.which("gdb") or "gdb")
     try:
         with open(config_path, "rb") as stream:
             local = tomllib.load(stream)
@@ -492,19 +497,21 @@ def main():
         ap.error(str(exc))
     if target:
         a.target = target["name"]
+    CONFIG = load_config(config_path, a.target)
+    GDB = Path(CONFIG.get("gdb") or shutil.which("gdb") or "gdb")
     a.ram = a.ram or (target.get("ram", 64) if target else 64)
     if target and a.ram == 128 and not a.bios:
         a.bios = "128mb"
     missing = [f"{key} ({label})" for key, label in FILES.items() if key not in CONFIG]
     if missing:
-        ap.error("set these under [xemu] in tes3x.local.toml, or put them in [xemu] folder: "
+        ap.error("set these on the xemu target, or put them in its folder: "
                  + ", ".join(missing))
     for key, label in FILES.items():
         if not Path(CONFIG[key]).is_file():
             ap.error(f"{label} not found: {CONFIG[key]}")
     if a.bios in ("128mb", "cerbios"):
         if "bios_128mb" not in CONFIG:
-            ap.error("--bios 128mb needs [xemu] bios_128mb in tes3x.local.toml")
+            ap.error("--bios 128mb needs bios_128mb on the selected xemu target")
         a.bios = str(CONFIG["bios_128mb"])
     if sum(bool(x) for x in (a.profile, a.deploy, a.iso)) != 1:
         ap.error("give exactly one of PROFILE, --deploy or --iso")
@@ -513,7 +520,7 @@ def main():
     if a.direct_engine and not (a.profile or a.deploy):
         ap.error("--direct-engine requires a profile build or --deploy")
     if (a.gdb_capture is not None or a.gdb_script) and not shutil.which(str(GDB)):
-        ap.error(f"gdb not found: {GDB}; set [xemu] gdb")
+        ap.error(f"gdb not found: {GDB}; set gdb on the selected xemu target")
     if a.gdb_capture is not None and a.gdb_script:
         ap.error("--gdb-capture and --gdb-script both need the stub; pick one")
     if a.disk and (a.exec or a.save or a.keep_disk):

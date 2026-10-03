@@ -37,18 +37,20 @@ games_root = "F:/Games"
 [targets.xemu]
 kind = "xemu"
 ram = 64
-
-# A second target can use the same shared [xemu] files with another memory size.
-# [targets.xemu-128]
-# kind = "xemu"
-# ram = 128
-
-# For playing profiles and for automated runs in xemu; see docs/xemu.md.
-# [xemu]
+# A folder can supply the files left unset below.
+folder = "C:/xemu"
 # exe = "C:/xemu/xemu.exe"
 # bootrom = "C:/xemu/mcpx_1.0.bin"
 # bios = "C:/xemu/bios.bin"
-# bios_128mb = "C:/xemu/bios-128mb.bin"   # optional, for --ram 128
+# bios_128mb = "C:/xemu/bios-128mb.bin"   # optional, for a 128 MB target
 # eeprom = "C:/xemu/eeprom.bin"
 # hdd = "C:/xemu/xbox_hdd.qcow2"
 # extract_xiso = "C:/tools/extract-xiso.exe"
+# gdb = "C:/tools/gdb.exe"
+# template = "tools/xemu-template.toml"
+
+# A second target can select another xemu version, BIOS and disk as well as another memory size.
+# [targets.xemu-128]
+# kind = "xemu"
+# ram = 128
+# folder = "C:/xemu-128"

@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import struct
 import subprocess
 import sys
@@ -82,6 +83,8 @@ COMPAT = {"works": ("\u2713", QColor(60, 170, 60)),
           "works-with-requirements": ("*", QColor(215, 150, 20)),
           "broken": ("\u2717", WARNING), "not-possible": ("\u2717", WARNING)}
 XEMU_STARTED = "xemu: started"
+CHECK_MARKER = ".tes3x-check.json"
+DEPLOYS_MARKER = ".tes3x-deploys.json"
 
 
 def version_label():
@@ -280,12 +283,11 @@ class LocalSettingsDialog(QDialog):
 
         plain = tomllib.loads(tomlkit.dumps(self.document))
         paths = plain.get("paths", {})
-        xemu = plain.get("xemu", {})
         self.fields = {}
         self.legacy_deploy = bool(plain.get("deploy")) and not plain.get("targets")
         self.use_targets = not self.legacy_deploy
-        self.target_values = {name: dict(value) for name, value in
-                              tes3x_targets.targets(plain).items()}
+        self.target_values = {name: tes3x_targets.resolve(plain, name) for name in
+                              tes3x_targets.targets(plain)}
         self.current_target_name = None
         self.target_loading = False
 
@@ -299,7 +301,6 @@ class LocalSettingsDialog(QDialog):
         layout.addLayout(content, 1)
         for label, page in (("Paths", self.path_group(paths)),
                             ("Targets", self.targets_page(plain)),
-                            ("xemu", self.xemu_group(xemu)),
                             ("Add-ons", self.addons_group(plain.get("addons", {})))):
             self.add_page(label, page)
         self.categories.currentRowChanged.connect(self.pages.setCurrentIndex)
@@ -453,12 +454,15 @@ class LocalSettingsDialog(QDialog):
         self.target_user = self.line("xbox")
         self.target_password = self.line("xbox", password=True)
         self.target_games_root = self.line()
+        self.target_games_root.setPlaceholderText("F:/Games")
         self.target_retail_root = self.line()
+        self.target_games_root.textChanged.connect(self.update_retail_placeholder)
         for label, field in (("Host", self.target_host), ("Port", self.target_port),
                              ("User", self.target_user), ("Password", self.target_password),
                              ("Games root", self.target_games_root),
                              ("Shared retail base", self.target_retail_root)):
             xbox.addRow(label, field)
+        self.update_retail_placeholder()
         probe_row = QHBoxLayout()
         self.target_test = QPushButton("Test connection")
         self.target_test.clicked.connect(self.test_target_connection)
@@ -467,6 +471,32 @@ class LocalSettingsDialog(QDialog):
         probe_row.addWidget(self.target_test_status, 1)
         xbox.addRow("", probe_row)
         editor.addWidget(self.xbox_fields)
+
+        self.xemu_fields_widget = QWidget()
+        xemu = QFormLayout(self.xemu_fields_widget)
+        xemu.setContentsMargins(0, 8, 0, 0)
+        self.xemu_target_fields = {}
+        for key, label in (("folder", "xemu folder"), *self.XEMU_FILES,
+                           ("extract_xiso", "extract-xiso"), ("gdb", "GDB"),
+                           ("template", "Config template")):
+            field = self.line()
+            self.xemu_target_fields[key] = field
+            button = QPushButton("Browse…")
+            button.clicked.connect(lambda _checked=False, key=key:
+                                   self.browse_target_xemu(key))
+            row = QWidget()
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.addWidget(field)
+            row_layout.addWidget(button)
+            if key == "folder":
+                download = QPushButton("Download xemu")
+                download.clicked.connect(self.download_target_xemu)
+                field.textChanged.connect(self.show_target_xemu_files)
+            xemu.addRow(label, row)
+            if key == "folder":
+                xemu.addRow("", download)
+        editor.addWidget(self.xemu_fields_widget)
         editor.addStretch()
         body.addWidget(self.target_editor, 2)
         layout.addLayout(body, 1)
@@ -486,6 +516,7 @@ class LocalSettingsDialog(QDialog):
             "password": self.target_password.text(),
             "games_root": self.target_games_root.text().strip(),
             "retail_root": self.target_retail_root.text().strip(),
+            **{key: field.text().strip() for key, field in self.xemu_target_fields.items()},
         }
 
     def store_current_target(self):
@@ -498,7 +529,7 @@ class LocalSettingsDialog(QDialog):
             raise PipelineError(f"target {name!r} already exists")
         values = self.target_data()
         previous = self.target_values.pop(self.current_target_name, {})
-        for key in ("legacy", "legacy_install_dir"):
+        for key in ("legacy", "legacy_install_dir", "legacy_xemu"):
             if key in previous:
                 values[key] = previous[key]
         self.target_values[name] = values
@@ -548,14 +579,25 @@ class LocalSettingsDialog(QDialog):
         self.target_password.setText(target.get("password", "xbox"))
         self.target_games_root.setText(target.get("games_root", ""))
         self.target_retail_root.setText(target.get("retail_root", ""))
+        for key, field in self.xemu_target_fields.items():
+            field.setText(str(target.get(key, "")))
         self.target_editor.setEnabled(True)
         self.target_loading = False
         self.target_kind_changed()
 
+    def update_retail_placeholder(self, *_args):
+        games = self.target_games_root.text().strip().rstrip("/\\")
+        suggested = games + "/MorrowindRetail" if games else "F:/Games/MorrowindRetail"
+        self.target_retail_root.setPlaceholderText(
+            f"{suggested} (recommended for overlay profiles; set explicitly)")
+
     def target_kind_changed(self, *_args):
         xbox = self.target_kind.currentData() == "xbox"
         self.xbox_fields.setVisible(xbox)
+        self.xemu_fields_widget.setVisible(not xbox)
         self.target_test.setEnabled(xbox)
+        if not xbox:
+            self.show_target_xemu_files()
 
     def convert_legacy(self):
         self.store_current_target()
@@ -637,43 +679,32 @@ class LocalSettingsDialog(QDialog):
                   ("bios_128mb", "BIOS for 128 MB runs"), ("eeprom", "EEPROM"),
                   ("hdd", "Clean HDD image"))
 
-    def xemu_group(self, values):
-        group, layout = self.page("xemu", "Files shared by every xemu target.")
-        form = self.form_section(layout, "Installation")
-        values = dict(values)
-        values.setdefault("bios_128mb", values.get("cerbios", ""))
-        folder_row = self.browse_row("xemu.folder", values.get("folder", ""))
-        download = QPushButton("Download xemu")
-        download.setToolTip("Download the latest xemu, and a blank HDD image, into this folder")
-        download.clicked.connect(self.download_xemu)
-        folder_row.layout().addWidget(download)
-        form.addRow("xemu folder", folder_row)
-        for key, label in self.XEMU_FILES:
-            form.addRow(label, self.browse_row("xemu." + key, values.get(key, ""), files=True))
-        form.addRow("extract-xiso", self.browse_row("xemu.extract_xiso",
-                                                    values.get("extract_xiso", ""), files=True))
-        self.fields["xemu.folder"].textChanged.connect(self.show_xemu_files)
-        self.show_xemu_files()
-        layout.addStretch()
-        return group
-
-    def xemu_folder(self):
-        text = self.fields["xemu.folder"].text().strip()
+    def target_xemu_folder(self):
+        text = self.xemu_target_fields["folder"].text().strip()
         folder = Path(text).expanduser() if text else None
         return folder if folder is None or folder.is_absolute() else self.path.parent / folder
 
-    def show_xemu_files(self, *_args):
-        folder = self.xemu_folder()
+    def browse_target_xemu(self, key):
+        field = self.xemu_target_fields[key]
+        if key == "folder":
+            selected = QFileDialog.getExistingDirectory(self, "Select xemu folder", field.text())
+        else:
+            selected, _ = QFileDialog.getOpenFileName(self, "Select file", field.text())
+        if selected:
+            field.setText(selected)
+
+    def show_target_xemu_files(self, *_args):
+        folder = self.target_xemu_folder()
         found = find_xemu_files(folder) if folder else {}
         for key, _label in self.XEMU_FILES:
-            self.fields["xemu." + key].setPlaceholderText(
+            self.xemu_target_fields[key].setPlaceholderText(
                 f"Found: {found[key].name}" if key in found
                 else "Made by xemu" if key == "eeprom" and folder
                 else "Optional" if key == "bios_128mb" else "Not found in the xemu folder"
                 if folder else "")
 
-    def download_xemu(self):
-        folder = self.xemu_folder() or self.path.parent / "xemu"
+    def download_target_xemu(self):
+        folder = self.target_xemu_folder() or self.path.parent / "xemu"
         if find_xemu_files(folder).get("exe") and QMessageBox.question(
                 self, "TES3X", f"Replace the xemu in {folder} with the latest release?") \
                 != QMessageBox.StandardButton.Yes:
@@ -686,8 +717,8 @@ class LocalSettingsDialog(QDialog):
             QMessageBox.critical(self, "TES3X", f"Could not download xemu: {exc}")
             return
         QApplication.restoreOverrideCursor()
-        self.fields["xemu.folder"].setText(folder.as_posix())
-        self.show_xemu_files()
+        self.xemu_target_fields["folder"].setText(folder.as_posix())
+        self.show_target_xemu_files()
         QMessageBox.information(self, "TES3X", f"Downloaded xemu {version} to {folder}. Copy your "
                                 "MCPX boot ROM and BIOS there, then save the settings.")
 
@@ -778,13 +809,19 @@ class LocalSettingsDialog(QDialog):
     def write_targets(self):
         self.store_current_target()
         if not self.use_targets:
-            target = next(iter(self.target_values.values()), {})
+            target = next((value for value in self.target_values.values()
+                           if value.get("kind") == "xbox"), {})
             legacy_dir = target.get("legacy_install_dir", "")
             games = target.get("games_root", "").rstrip("/\\")
             values = {key: target.get(key, "") for key in
                       ("host", "port", "user", "password", "retail_root")}
             values["remote_root"] = games + "/" + legacy_dir if games and legacy_dir else ""
             self.update_table("deploy", values)
+            xemu = next((value for value in self.target_values.values()
+                         if value.get("kind") == "xemu"), None)
+            if xemu is not None:
+                self.update_table("xemu", {key: xemu.get(key, "")
+                                           for key in tes3x_targets.XEMU_KEYS})
             return
 
         self.document.pop("deploy", None)
@@ -796,7 +833,7 @@ class LocalSettingsDialog(QDialog):
             if name not in self.target_values:
                 del tables[name]
         keys = ("kind", "host", "port", "user", "password", "games_root", "retail_root",
-                "ram")
+                "ram", *sorted(tes3x_targets.XEMU_KEYS))
         for name, values in self.target_values.items():
             target = tables.get(name)
             if target is None:
@@ -804,17 +841,24 @@ class LocalSettingsDialog(QDialog):
                 tables[name] = target
             kind = values.get("kind", "xbox")
             clean = {key: values.get(key) for key in keys}
+            kind_keys = ({"kind", "ram", *tes3x_targets.XEMU_KEYS} if kind == "xemu" else
+                         {"kind", "host", "port", "user", "password", "games_root",
+                          "retail_root", "ram"})
             for key in list(target):
-                if key in keys and (key not in clean or clean[key] in ("", None, False)):
+                if key in keys and (key not in kind_keys or key not in clean
+                                    or clean[key] in ("", None, False)):
                     del target[key]
             target["kind"] = kind
             for key, value in clean.items():
                 if key == "kind" or value in ("", None, False):
                     continue
-                if kind == "xemu" and key not in ("ram",):
+                if kind == "xemu" and key not in ("ram", *tes3x_targets.XEMU_KEYS):
                     continue
-                if kind == "xbox" and key == "ram" and value == 64:
-                    continue
+                if kind == "xbox":
+                    if key in tes3x_targets.XEMU_KEYS:
+                        continue
+                    if key == "ram" and value == 64:
+                        continue
                 target[key] = value
         if not tables:
             del self.document["targets"]
@@ -822,20 +866,17 @@ class LocalSettingsDialog(QDialog):
         else:
             default = self.document.get("default_target")
             if default not in self.target_values:
-                self.document["default_target"] = next(iter(self.target_values))
+                self.document["default_target"] = (self.current_target_name
+                                                   or next(iter(self.target_values)))
 
     def save_settings(self):
         values = {name: (field.isChecked() if isinstance(field, QCheckBox)
                          else field.value() if isinstance(field, QSpinBox)
                          else field.text().strip())
                   for name, field in self.fields.items()}
-        xemu = self.document.get("xemu")
-        if xemu is not None and "cerbios" in xemu and values.get("xemu.bios_128mb"):
-            del xemu["cerbios"]
-        for section in ("paths", "xemu"):
-            self.update_table(section, {name.split(".", 1)[1]: value
-                                        for name, value in values.items()
-                                        if name.startswith(section + ".")})
+        self.update_table("paths", {name.split(".", 1)[1]: value
+                                    for name, value in values.items()
+                                    if name.startswith("paths.")})
         self.write_targets()
         chosen = {name.split(".", 1)[1]: value or "" for name, value in values.items()
                   if name.startswith("addons.")}
@@ -1692,14 +1733,18 @@ class ProfileWindow(QMainWindow):
         self.catalog = {}
         self.library_indexed = False
         self.process = None
+        self.play_process = None
+        self.play_pid = None
+        self.play_output_buffer = ""
         self.ftp_probe = None
         self.drive_probe = None
         self.command_kind = None
+        self.command_target = None
         self.check_profile_sha = None
         self.check_failed = False
         self.build_failed = False
-        self.deployed_profile_sha = None
         self.deploy_failed = False
+        self.deploy_records = {}
         self.profile_plain = {}
         self.patch_modes = {}
         self.patch_categories = []
@@ -1889,11 +1934,16 @@ class ProfileWindow(QMainWindow):
         self.action_play = QAction("&Play in xemu", self)
         self.action_play.setShortcut("F9")
         self.action_play.triggered.connect(lambda: self.play())
+        self.action_stop = QAction("Stop xemu", self)
+        self.action_stop.setShortcut("Shift+F9")
+        self.action_stop.setEnabled(False)
+        self.action_stop.triggered.connect(self.stop_play)
         self.action_reset_play = QAction("Reset xemu saves…", self)
         self.action_reset_play.triggered.connect(self.reset_play_disk)
         actions_menu.addActions([self.action_check, self.action_build, self.action_smoke])
         actions_menu.addSeparator()
-        actions_menu.addActions([self.action_deploy, self.action_play, self.action_reset_play])
+        actions_menu.addActions([self.action_deploy, self.action_play, self.action_stop,
+                                 self.action_reset_play])
         actions_menu.addSeparator()
         actions_menu.addActions([self.action_fetch, self.action_refresh_ftp])
         actions_menu.addSeparator()
@@ -4591,8 +4641,8 @@ class ProfileWindow(QMainWindow):
         self.check_profile_sha = None
         self.check_failed = False
         self.build_failed = False
-        self.deployed_profile_sha = None
         self.deploy_failed = False
+        self.deploy_records = {}
         self.document = document
         self.profile_plain = plain
         self.library_root = library_root
@@ -4615,6 +4665,7 @@ class ProfileWindow(QMainWindow):
             self.saved_text = self.profile_text()
         except (PipelineError, LibraryError, tomlkit.exceptions.ParseError):
             self.saved_text = None
+        self.load_remembered_states()
         if self.settings is not None:
             self.settings.setValue("last_profile", str(self.profile_path))
         self.refresh_profile_list()
@@ -4779,10 +4830,15 @@ class ProfileWindow(QMainWindow):
         if self.process is not None:
             self.error("A TES3X command is already running")
             return
+        requested = ("check" if "--check" in extra else
+                     "deploy" if "--deploy" in extra else "build")
+        if requested == "build" and self.play_process is not None:
+            self.error("Stop xemu before replacing the build it is running")
+            return
         if not self.save_profile():
             return
-        self.command_kind = ("check" if "--check" in extra else
-                             "deploy" if "--deploy" in extra else "build")
+        self.command_kind = requested
+        self.command_target = self.target_picker.currentData()
         self.start_command(ROOT / "tools" / "tes3x_pipeline.py", [
             str(self.profile_path),
             *(["--config", str(self.local_config_path())]
@@ -4795,6 +4851,57 @@ class ProfileWindow(QMainWindow):
     def build_output(self):
         root = self.local_path("build_root") or self.work_dir() / "build"
         return root / self.profile_plain["profile"]["name"]
+
+    @staticmethod
+    def read_state(path, fallback):
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+            return value if isinstance(value, type(fallback)) else fallback
+        except (OSError, ValueError):
+            return fallback
+
+    @staticmethod
+    def write_state(path, value):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        staged = path.with_name(path.name + ".tmp")
+        staged.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+        staged.replace(path)
+
+    def load_remembered_states(self):
+        check = self.read_state(self.build_output() / CHECK_MARKER, {})
+        self.check_profile_sha = check.get("profile_sha256")
+        self.check_failed = bool(check and check.get("result") != "pass")
+        self.deploy_records = self.read_state(self.build_output() / DEPLOYS_MARKER, {})
+
+    def remember_check(self, passed):
+        try:
+            profile_sha = sha256_file(self.profile_path)
+            self.write_state(self.build_output() / CHECK_MARKER, {
+                "profile_sha256": profile_sha,
+                "time": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "result": "pass" if passed else "fail",
+            })
+            self.check_profile_sha = profile_sha
+        except OSError:
+            self.check_profile_sha = None
+        self.check_failed = not passed
+
+    def remember_deploy(self, target_name):
+        if not target_name:
+            return
+        marker = self.build_output() / PIPELINE_MARKER
+        try:
+            record = {
+                "profile_sha256": sha256_file(self.profile_path),
+                "build_sha256": sha256_file(marker),
+                "time": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            }
+            records = self.read_state(self.build_output() / DEPLOYS_MARKER, {})
+            records[target_name] = record
+            self.write_state(self.build_output() / DEPLOYS_MARKER, records)
+            self.deploy_records = records
+        except OSError:
+            return
 
     def build_status(self):
         """'built', 'stale' or 'missing', and why, for the saved profile's pipeline output."""
@@ -4852,7 +4959,8 @@ class ProfileWindow(QMainWindow):
             except OSError:
                 current = False
             if current and not self.is_dirty():
-                state, tip = "current", "The saved profile passed Check"
+                state, tip = ("current", "The saved profile passed Check. Changes inside mod "
+                              "folders are not detected")
             else:
                 state, tip = "stale", "The profile changed since Check"
         self.set_action_state(self.check_button, "Check", state, tip)
@@ -4861,23 +4969,31 @@ class ProfileWindow(QMainWindow):
         if not hasattr(self, "deploy_button"):
             return
         target = self.default_target()
-        if not target or target.get("kind") != "xbox":
+        if not self.profile_path:
+            state, tip = "idle", "Open a profile before deploying"
+        elif not target or target.get("kind") != "xbox":
             state, tip = "idle", "Select an Xbox target to deploy"
         elif self.command_kind == "deploy":
             state, tip = "running", "Synchronizing the build to the Xbox"
         elif self.deploy_failed:
             state, tip = "failed", "The last deploy failed; see the output"
-        elif self.deployed_profile_sha is None:
-            state, tip = "idle", "No deploy has completed during this GUI session"
         else:
+            record = self.deploy_records.get(target["name"], {})
             try:
-                current = sha256_file(self.profile_path) == self.deployed_profile_sha
+                marker = self.build_output() / PIPELINE_MARKER
+                current = (record.get("profile_sha256") == sha256_file(self.profile_path)
+                           and record.get("build_sha256") == sha256_file(marker))
             except OSError:
                 current = False
             if current and not self.is_dirty():
-                state, tip = "current", "The current profile was deployed"
+                when = record.get("time", "an earlier session")
+                state = "current"
+                tip = (f"This build was deployed to {target['name']} at {when}. Changes inside "
+                       "mod folders are not detected")
+            elif record:
+                state, tip = "stale", f"The build deployed to {target['name']} is out of date"
             else:
-                state, tip = "stale", "The profile changed since it was deployed"
+                state, tip = "stale", f"This build has not been deployed to {target['name']}"
         self.set_action_state(self.deploy_button, "Deploy", state, tip)
 
     def refresh_play_menu(self):
@@ -4901,11 +5017,21 @@ class ProfileWindow(QMainWindow):
         refresh = self.play_menu.addAction("Refresh connection", self.refresh_ftp_status)
         refresh.setEnabled(xbox)
         name = target["name"] if target else "a target"
+        if self.play_process is not None:
+            self.action_play.setText("&Stop")
+            self.play_button.setText("Stop")
+            self.play_button.setToolTip("Stop the xemu process started by this session")
+            self.action_play.setEnabled(self.play_pid is not None)
+            self.action_stop.setEnabled(self.play_pid is not None)
+            self.action_build.setEnabled(False)
+            return
         reason = self.play_available()
         self.action_play.setText("&Play")
         self.play_button.setText("Play")
         self.play_button.setToolTip(reason or f"Play on {name} (F9)")
         self.action_play.setEnabled(not reason and self.process is None)
+        self.action_stop.setEnabled(False)
+        self.action_build.setEnabled(self.process is None)
 
     def set_play_gdb(self):
         self.play_gdb = not self.play_gdb
@@ -4927,7 +5053,7 @@ class ProfileWindow(QMainWindow):
             selected = dict(local)
             selected["default_target"] = target["name"]
             return module.status(selected)
-        xemu = resolve_xemu(local.get("xemu", {}), self.work_dir())
+        xemu = resolve_xemu(target, self.local_config_path().parent)
         if not xemu.get("exe"):
             return "Set the xemu folder in File > Settings"
         if target.get("ram", 64) == 128 and not xemu.get("bios_128mb"):
@@ -4935,6 +5061,9 @@ class ProfileWindow(QMainWindow):
         return None
 
     def play(self):
+        if self.play_process is not None:
+            self.stop_play()
+            return
         reason = self.play_available()
         if reason:
             self.error(reason)
@@ -4982,6 +5111,7 @@ class ProfileWindow(QMainWindow):
         script, arguments, message = steps[0]
         if Path(script).name == "tes3x_deploy.py":
             self.command_kind = "deploy"
+            self.command_target = self.target_picker.currentData()
         self.start_command(script, arguments, message, clear=first)
         question = {"tes3x_deploy.py": self.DEPLOY_QUESTION,
                     "tes3x_saves.py": self.PUSH_QUESTION}.get(Path(script).name)
@@ -5034,20 +5164,20 @@ class ProfileWindow(QMainWindow):
         environment.insert("TES3X_CONFIG", str(self.local_config_path()))
         name = f"play-{self.profile_path.stem}-{target['name']}-{stamp}"
         self.play_run = self.work_dir() / "build" / "xemu" / name
-        self.start_command(ROOT / "tools" / "tes3x_xemu.py",
-                           [name, *source, "--target", target["name"],
-                            "--config", str(self.local_config_path()),
-                            *(["--gdb"] if self.play_gdb else []),
-                            "--disk", str(self.play_disk())],
-                           f"Playing in {target['name']}…", environment)
+        self.start_play_process(ROOT / "tools" / "tes3x_xemu.py",
+                                [name, *source, "--target", target["name"],
+                                 "--config", str(self.local_config_path()),
+                                 *(["--gdb"] if self.play_gdb else []),
+                                 "--disk", str(self.play_disk())],
+                                f"Playing in {target['name']}…", environment)
 
     def play_disk(self):
         """The profile's own xemu disk, which keeps its saves between plays."""
         return self.work_dir() / "build" / "play" / self.profile_path.stem / "hdd.qcow2"
 
     def reset_play_disk(self):
-        if self.process is not None:
-            self.error("A TES3X command is already running")
+        if self.process is not None or self.play_process is not None:
+            self.error("Stop running TES3X commands and xemu before resetting its saves")
             return
         disk = self.play_disk() if self.profile_path else None
         if disk is None or not disk.is_file():
@@ -5149,12 +5279,82 @@ class ProfileWindow(QMainWindow):
         process.readyReadStandardOutput.connect(self.append_process_output)
         process.finished.connect(self.command_finished)
         self.process = process
+        self.target_picker.setEnabled(False)
         for action in self.command_actions:
-            action.setEnabled(False)
+            if action is not self.action_play or self.play_process is None:
+                action.setEnabled(False)
         self.statusBar().spinner.start()
         self.update_build_state()
         process.start()
         self.statusBar().showMessage(message)
+
+    def start_play_process(self, program, arguments, message, environment=None):
+        """Start the long-lived xemu wrapper without occupying the command process slot."""
+        self.output.clear()
+        process = QProcess(self)
+        process.setWorkingDirectory(str(self.work_dir()))
+        if environment is not None:
+            process.setProcessEnvironment(environment)
+        process.setProgram(sys.executable)
+        process.setArguments([str(program), *arguments])
+        process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        process.readyReadStandardOutput.connect(self.append_play_output)
+        process.finished.connect(self.play_finished)
+        self.play_process = process
+        self.play_pid = None
+        self.play_output_buffer = ""
+        self.statusBar().spinner.start()
+        self.refresh_play_menu()
+        process.start()
+        self.statusBar().showMessage(message)
+
+    def append_play_output(self):
+        if self.play_process is None:
+            return
+        text = bytes(self.play_process.readAllStandardOutput()).decode(errors="replace")
+        self.output.moveCursor(QTextCursor.MoveOperation.End)
+        self.output.insertPlainText(text)
+        self.play_output_buffer = (self.play_output_buffer + text)[-512:]
+        match = re.search(r"xemu: started, pid (\d+)", self.play_output_buffer)
+        if match and self.play_pid is None:
+            self.play_pid = int(match.group(1))
+            self.statusBar().spinner.stop()
+            port = self.play_run / "gdb.port" if self.play_gdb and self.play_run else None
+            if port is not None and port.is_file():
+                value = port.read_text().strip()
+                attach = f'gdb -ex "target remote 127.0.0.1:{value}"'
+                self.output.insertPlainText(f"\nGDB stub on 127.0.0.1:{value}; attach with "
+                                            f"{attach}\n")
+                self.statusBar().showMessage(f"Playing · GDB :{value}")
+            else:
+                self.statusBar().showMessage(f"Playing in xemu · PID {self.play_pid}")
+            self.refresh_play_menu()
+
+    def stop_play(self):
+        if self.play_process is None:
+            return
+        if self.play_pid is None:
+            self.error("xemu is still starting; wait for its PID before stopping it")
+            return
+        try:
+            os.kill(self.play_pid, signal.SIGTERM)
+        except OSError as exc:
+            self.error(f"Could not stop xemu PID {self.play_pid}: {exc}")
+            return
+        self.statusBar().showMessage(f"Stopping xemu PID {self.play_pid}; recovering its log…")
+        self.action_play.setEnabled(False)
+        self.action_stop.setEnabled(False)
+
+    def play_finished(self, code, _status):
+        self.append_play_output()
+        self.play_process = None
+        self.play_pid = None
+        self.play_output_buffer = ""
+        self.statusBar().spinner.stop()
+        self.statusBar().showMessage(f"xemu session exited {code}; log recovery finished", 5000)
+        self.refresh_play_menu()
+        self.update_build_state()
+        self.refresh_saves(False)
 
     def refresh_ftp_status(self):
         if self.ftp_probe is not None:
@@ -5278,24 +5478,18 @@ class ProfileWindow(QMainWindow):
         self.append_process_output()
         self.statusBar().showMessage(f"TES3X exited {code}", 5000)
         kind, self.command_kind = self.command_kind, None
+        target, self.command_target = self.command_target, None
         if kind == "check":
-            self.check_failed = code != 0
-            if code == 0:
-                try:
-                    self.check_profile_sha = sha256_file(self.profile_path)
-                except OSError:
-                    self.check_profile_sha = None
+            self.remember_check(code == 0)
         elif kind == "build":
             self.build_failed = code != 0
         elif kind == "deploy":
             self.deploy_failed = code != 0
             if code == 0:
-                try:
-                    self.deployed_profile_sha = sha256_file(self.profile_path)
-                except OSError:
-                    self.deployed_profile_sha = None
+                self.remember_deploy(target)
         self.process = None
         self.statusBar().spinner.stop()
+        self.target_picker.setEnabled(True)
         for action in self.command_actions:
             action.setEnabled(True)
         self.target_selection_changed(probe=False)

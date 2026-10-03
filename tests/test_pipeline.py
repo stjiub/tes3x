@@ -436,6 +436,24 @@ class PipelinePlanTests(unittest.TestCase):
                          'E:/A much longer games directory/MorrowindMods')
         self.assertEqual(path_check_root(local, profile, 'bench'), 'F:/Games/MorrowindMods')
 
+    def test_xemu_targets_hold_their_own_emulator_files(self):
+        from tes3x_targets import resolve
+        local = {
+            'xemu': {'bootrom': 'legacy.bin'},
+            'targets': {
+                'stable': {'kind': 'xemu', 'exe': 'xemu-stable.exe', 'bios': 'retail.bin'},
+                'new': {'kind': 'xemu', 'exe': 'xemu-new.exe', 'bios': 'debug.bin'},
+            },
+        }
+        stable = resolve(local, 'stable', 'xemu')
+        new = resolve(local, 'new', 'xemu')
+        self.assertEqual((stable['exe'], stable['bios']), ('xemu-stable.exe', 'retail.bin'))
+        self.assertEqual((new['exe'], new['bios']), ('xemu-new.exe', 'debug.bin'))
+        self.assertEqual(stable['bootrom'], 'legacy.bin')
+
+        legacy = resolve({'xemu': {'exe': 'old-xemu.exe', 'bios': 'old.bin'}}, kind='xemu')
+        self.assertEqual((legacy['name'], legacy['exe']), ('xemu', 'old-xemu.exe'))
+
     def test_legacy_deploy_is_an_implicit_target(self):
         from tes3x_targets import remote_root, resolve
         local = {'deploy': {'host': 'x', 'remote_root': 'F:/Games/LegacyFolder'}}
@@ -451,7 +469,8 @@ class PipelinePlanTests(unittest.TestCase):
     def test_target_validation(self):
         validate_local_config({
             'default_target': 'xemu-128',
-            'targets': {'xemu-128': {'kind': 'xemu', 'ram': 128}},
+            'targets': {'xemu-128': {'kind': 'xemu', 'ram': 128,
+                                      'exe': 'xemu.exe', 'bios': 'cerbios.bin'}},
         })
         with self.assertRaisesRegex(PipelineError, 'games_root is required'):
             validate_local_config({'targets': {'bench': {'kind': 'xbox', 'host': 'x'}}})

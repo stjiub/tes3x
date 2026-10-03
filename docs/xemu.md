@@ -6,8 +6,8 @@ reflect a real Xbox, so use original hardware for performance measurements.
 
 ## Setup
 
-`tools/tes3x_xemu.py` needs these under `[xemu]` in `tes3x.local.toml`, all of which you supply
-yourself. The GUI's local settings hold the same keys.
+Each xemu `[targets.NAME]` in `tes3x.local.toml` holds the emulator and firmware it uses. The GUI's
+target editor writes the same keys, all of which you supply yourself.
 
 | key | file |
 |---|---|
@@ -20,18 +20,22 @@ yourself. The GUI's local settings hold the same keys.
 | `hdd` | a clean hard disk image; xemu's own blank `xbox_hdd.qcow2` (4.5 MB) is best, and the GUI's Settings download it. Runs never write to it: each run, and each profile the GUI plays, gets an overlay holding only what the game writes |
 | `extract_xiso` | [extract-xiso](https://github.com/XboxDev/extract-xiso), which packs the disc image |
 | `gdb` | optional: `gdb`, for the `--gdb` options |
+| `template` | optional: a base `xemu.toml` whose storage and network sections TES3X replaces |
 
-An xemu target selects the guest memory size while these file paths stay shared. Use
-`--target NAME`, or pass `--ram 64|128` for one run. A 128 MB target uses `bios_128mb` and clears
-the XBE's `Limit64MB` flag in the staged copy.
+Different targets can select different xemu versions, firmware, clean disks and guest memory.
+Use `--target NAME`, or pass `--ram 64|128` for one run. A 128 MB target uses `bios_128mb` and
+clears the XBE's `Limit64MB` flag in the staged copy. The former shared `[xemu]` table is still
+read as fallback defaults for older local configurations.
 
 ## Playing from the GUI
 
 Open a profile and choose **Play**. Each profile keeps its own emulated hard disk, so saves persist
 between sessions and appear in the GUI's **Saves** tab. **Actions > Reset xemu saves…** gives that
-profile a clean disk again. The Play menu offers 64 MB and 128 MB when both BIOSes are configured.
-**Debug with GDB** in the same menu opens xemu's debugger stub; while the game runs, the status bar
-shows its port, and its tooltip the command to attach (`gdb -ex "target remote 127.0.0.1:PORT"`).
+profile a clean disk again. Choose another xemu configuration from the target dropdown.
+**Debug with GDB** in the Play menu opens xemu's debugger stub; while the game runs, the status bar
+shows its port and the command to attach (`gdb -ex "target remote 127.0.0.1:PORT"`). Play becomes
+**Stop** while the session is open; it terminates only the PID that this run started, then lets the
+runner recover the log from the emulated disk.
 
 An overlay-layout profile is also playable in xemu. TES3X adds the clean retail base to the disc
 image for that run; it does not need the Xbox's shared-base path.

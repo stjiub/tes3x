@@ -19,7 +19,7 @@ promotes a patch.
 
 ## Prerequisites
 
-Set up a normal build profile and the `[xemu]` files in `tes3x.local.toml` first. See
+Set up a normal build profile and an xemu target in `tes3x.local.toml` first. See
 [configuration](configuration.md) and [running in xemu](xemu.md). Run the
 commands below from the public repository root.
 

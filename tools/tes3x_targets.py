@@ -12,6 +12,8 @@ from tes3x_paths import xbox_root
 XBOX_DEFAULTS = {"port": 21, "user": "xbox", "password": "xbox", "ram": 64}
 XEMU_DEFAULTS = {"ram": 64}
 TARGET_KINDS = {"xbox", "xemu"}
+XEMU_KEYS = {"folder", "exe", "bootrom", "bios", "bios_128mb", "eeprom", "hdd",
+             "extract_xiso", "gdb", "template"}
 
 
 class TargetError(ValueError):
@@ -44,6 +46,11 @@ def targets(local):
             value["games_root"], value["legacy_install_dir"] = _split_remote(
                 legacy["remote_root"])
         result["xbox"] = value
+    shared_xemu = local.get("xemu", {})
+    if shared_xemu and not any(target.get("kind") == "xemu" for target in result.values()):
+        value = dict(shared_xemu)
+        value.update({"name": "xemu", "kind": "xemu", "legacy_xemu": True})
+        result["xemu"] = value
     return result
 
 
@@ -71,6 +78,11 @@ def resolve(local, name=None, kind=None, required=False):
     if kind and target.get("kind") != kind:
         raise TargetError(f"target {selected!r} is {target.get('kind')!r}, not {kind!r}")
     defaults = XBOX_DEFAULTS if target.get("kind") == "xbox" else XEMU_DEFAULTS
+    if target.get("kind") == "xemu":
+        inherited = {key: value for key, value in local.get("xemu", {}).items()
+                     if key in XEMU_KEYS}
+        inherited.update(target)
+        target = inherited
     for key, value in defaults.items():
         target.setdefault(key, value)
     return target

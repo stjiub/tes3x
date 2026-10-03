@@ -1,6 +1,8 @@
 import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+import json
+import signal
 import sys
 import tempfile
 import tomllib
@@ -546,8 +548,8 @@ order = 10
         import json
         config = self.root / "local.toml"
         config.write_text('default_target = "xemu"\n[targets.xemu]\nkind = "xemu"\n'
-                          'ram = 64\n[targets.xemu-128]\nkind = "xemu"\nram = 128\n'
-                          '[paths]\nbuild_root = "out"\n[xemu]\nexe = "xemu.exe"\n',
+                          'ram = 64\nexe = "xemu.exe"\n[targets.xemu-128]\nkind = "xemu"\n'
+                          'ram = 128\nexe = "xemu-new.exe"\n[paths]\nbuild_root = "out"\n',
                           encoding="utf-8")
         window = self.window(config=config)
         self.assertEqual(window.action_settings.text(), "&Settings…")
@@ -565,8 +567,13 @@ order = 10
             window.process = "running"
             calls.append((Path(program).name, arguments))
 
+        def start_play(program, arguments, *_args):
+            window.play_process = "running"
+            calls.append((Path(program).name, arguments))
+
         calls = []
-        with patch.object(window, "start_command", side_effect=start):
+        with patch.object(window, "start_command", side_effect=start), \
+                patch.object(window, "start_play_process", side_effect=start_play):
             window.play()
             self.assertEqual(calls[0][0], "tes3x_pipeline.py")
             output = self.root / "out" / "gui"
@@ -586,35 +593,45 @@ order = 10
         self.assertTrue(calls[1][1][0].startswith("play-profile-xemu-"))
 
         # RAM comes from the selected target; a 128 MB target needs its BIOS set.
+        window.play_process = None
         window.target_picker.setCurrentIndex(window.target_picker.findData("xemu-128"))
         window.target_selection_changed()
         with patch.object(window, "error") as error:
             window.play()
         self.assertIn("128 MB BIOS", error.call_args.args[0])
-        config.write_text(config.read_text(encoding="utf-8") + 'bios_128mb = "cerbios.bin"\n',
-                          encoding="utf-8")
+        config.write_text(config.read_text(encoding="utf-8").replace(
+            'ram = 128\nexe = "xemu-new.exe"',
+            'ram = 128\nexe = "xemu-new.exe"\nbios_128mb = "cerbios.bin"'), encoding="utf-8")
         window.process = None
+        window.play_process = None
         window.refresh_play_menu()
         self.assertTrue(window.action_play.isEnabled())
-        with patch.object(window, "start_command", side_effect=start):
-            window.process = None
+        with patch.object(window, "start_play_process", side_effect=start_play):
             window.play()
         self.assertEqual(calls[2][1][calls[2][1].index("--target") + 1], "xemu-128")
         self.assertEqual(window.play_button.text(), "Play")
+        with patch.object(window, "error") as error:
+            window.run_pipeline([])
+        self.assertIn("Stop xemu", error.call_args.args[0])
 
         # Debug with GDB opens the stub; the transient status names the runner's port.
+        window.play_process = None
         window.set_play_gdb()
-        with patch.object(window, "start_command", side_effect=start):
-            window.process = None
+        with patch.object(window, "start_play_process", side_effect=start_play):
             window.play()
         self.assertIn("--gdb", calls[3][1])
         window.play_run.mkdir(parents=True)
         (window.play_run / "gdb.port").write_text("1234")
-        window.process = type("Process", (), {"readAllStandardOutput": lambda self:
-                                              b"xemu: started, pid 1\n"})()
-        window.append_process_output()
+        window.play_process = type("Process", (), {"readAllStandardOutput": lambda self:
+                                                   b"xemu: started, pid 1\n"})()
+        window.append_play_output()
         self.assertEqual(window.statusBar().message.text(), "Playing · GDB :1234")
-        window.process = None
+        self.assertEqual(window.play_pid, 1)
+        with patch("tes3x_gui.os.kill") as kill:
+            window.stop_play()
+        kill.assert_called_once_with(1, signal.SIGTERM)
+        window.play_process = None
+        window.play_pid = None
         window.set_play_gdb()
 
         self.profile.write_text(self.profile.read_text(encoding="utf-8") + "\n", encoding="utf-8")
@@ -623,7 +640,9 @@ order = 10
     def test_check_deploy_and_target_status_show_progress_and_results(self):
         config = self.root / "local.toml"
         config.write_text('default_target = "bench"\n[targets.bench]\nkind = "xbox"\n'
-                          'host = "192.0.2.5"\ngames_root = "F:/Games"\n', encoding="utf-8")
+                          'host = "192.0.2.5"\ngames_root = "F:/Games"\n'
+                          '[targets.spare]\nkind = "xbox"\nhost = "192.0.2.6"\n'
+                          'games_root = "E:/Games"\n', encoding="utf-8")
         window = self.window(config=config)
         with patch.object(window, "start_command"):
             window.run_pipeline(["--check"])
@@ -631,6 +650,8 @@ order = 10
         self.assertEqual(window.check_button.property("state"), "running")
         window.command_finished(0, None)
         self.assertEqual(window.check_button.property("state"), "current")
+        check_record = json.loads((window.build_output() / ".tes3x-check.json").read_text())
+        self.assertEqual(check_record["result"], "pass")
 
         window.command_kind = "check"
         window.command_finished(1, None)
@@ -642,11 +663,25 @@ order = 10
         window.refresh_target_item("bench")
         self.assertIn("Connected", window.target_picker.toolTip())
 
+        window.build_output().mkdir(parents=True, exist_ok=True)
+        (window.build_output() / ".tes3x-pipeline.json").write_text('{"build": true}\n')
         window.command_kind = "deploy"
+        window.command_target = "bench"
         window.update_build_state()
         self.assertEqual(window.deploy_button.property("state"), "running")
         window.command_finished(0, None)
         self.assertEqual(window.deploy_button.property("state"), "current")
+        deploys = json.loads((window.build_output() / ".tes3x-deploys.json").read_text())
+        self.assertIn("bench", deploys)
+        window.target_picker.setCurrentIndex(window.target_picker.findData("spare"))
+        window.target_selection_changed()
+        self.assertEqual(window.deploy_button.property("state"), "stale")
+        window.target_picker.setCurrentIndex(window.target_picker.findData("bench"))
+        window.target_selection_changed()
+        self.assertEqual(window.deploy_button.property("state"), "current")
+        reopened = self.window(config=config)
+        self.assertEqual(reopened.check_button.property("state"), "failed")
+        self.assertEqual(reopened.deploy_button.property("state"), "current")
         self.profile.write_text(self.profile.read_text(encoding="utf-8") + "\n", encoding="utf-8")
         window.update_build_state()
         self.assertEqual(window.deploy_button.property("state"), "stale")
@@ -810,11 +845,16 @@ order = 10
         self.addCleanup(dialog.close)
         self.assertEqual([dialog.categories.item(row).text()
                           for row in range(dialog.categories.count())],
-                         ["Paths", "Targets", "xemu", "Add-ons"])
+                         ["Paths", "Targets", "Add-ons"])
+        self.assertEqual(dialog.target_values["xemu"]["exe"], "xemu.exe")
+        dialog.duplicate_target("xemu-new")
+        dialog.xemu_target_fields["exe"].setText("D:/xemu-new/xemu.exe")
+        dialog.xemu_target_fields["bios"].setText("D:/xemu-new/bios.bin")
         dialog.fields["paths.mod_library"].setText("D:/Mods")
         dialog.add_target("bench")
         dialog.target_host.setText("192.0.2.5")
         dialog.target_games_root.setText("F:/Games")
+        self.assertIn("F:/Games/MorrowindRetail", dialog.target_retail_root.placeholderText())
         dialog.target_retail_root.setText("F:/Games/MorrowindRetail")
         dialog.target_port.setValue(2121)
         self.assertTrue(dialog.save_settings())
@@ -827,6 +867,9 @@ order = 10
         self.assertEqual(values["targets"]["bench"]["retail_root"],
                          "F:/Games/MorrowindRetail")
         self.assertEqual(values["targets"]["bench"]["port"], 2121)
+        self.assertEqual(values["targets"]["xemu"]["exe"], "xemu.exe")
+        self.assertEqual(values["targets"]["xemu-new"]["exe"], "D:/xemu-new/xemu.exe")
+        self.assertEqual(values["targets"]["xemu-new"]["bios"], "D:/xemu-new/bios.bin")
         self.assertEqual(values["xemu"]["custom"], "keep")
         self.assertIn("# keep this comment", config.read_text(encoding="utf-8"))
 
@@ -844,6 +887,23 @@ order = 10
         values = self.saved(config)
         self.assertNotIn("deploy", values)
         self.assertEqual(values["targets"]["xbox"]["games_root"], "F:/Games")
+
+    def test_legacy_xemu_settings_can_change_without_converting_deploy(self):
+        config = self.root / "local.toml"
+        config.write_text('[deploy]\nhost = "192.0.2.5"\n'
+                          'remote_root = "F:/Games/MorrowindTest"\n'
+                          '[xemu]\nexe = "old/xemu.exe"\nbios = "bios.bin"\n', encoding="utf-8")
+        dialog = LocalSettingsDialog(config)
+        self.addCleanup(dialog.close)
+        row = next(index for index in range(dialog.target_list.count())
+                   if dialog.target_list.item(index).data(Qt.ItemDataRole.UserRole) == "xemu")
+        dialog.target_list.setCurrentRow(row)
+        dialog.xemu_target_fields["exe"].setText("new/xemu.exe")
+        self.assertTrue(dialog.save_settings())
+        values = self.saved(config)
+        self.assertIn("deploy", values)
+        self.assertNotIn("targets", values)
+        self.assertEqual(values["xemu"]["exe"], "new/xemu.exe")
 
     def test_target_tooltip_shows_drive_space_from_the_agent(self):
         config = self.root / "local.toml"
