@@ -15,8 +15,8 @@ The agent is agent.py beside this file. The skin's Startup window closes once pe
 after the network is up; install adds a marked onunload line there that starts the agent 30 s
 later, and keeps the original under build/console-backup. Until the alarm fires, uninstall can
 still remove a hook that hangs the dashboard. The first install needs one reboot, and an
-XBMC4Gamers update that replaces the skin needs another install. The FTP login comes from
-[deploy] in tes3x.local.toml; [console] dashboard names the dashboard folder if it is not
+XBMC4Gamers update that replaces the skin needs another install. The FTP login comes from the
+selected Xbox target in tes3x.local.toml; [console] dashboard names the dashboard folder if it is not
 F:/XBMC4Gamers.
 """
 

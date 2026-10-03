@@ -10,7 +10,7 @@ Generated from [`nav.toml`](nav.toml) by `tools/tes3x_docs.py --write`; edit tha
 
 - [GUI](gui.md): The GUI edits everything a profile and the local config hold, installs mods into the library, and checks, builds, tests and deploys.
 - [Mod library](mod-library.md): The mod library is a folder of mods, one folder each, laid out the way each mod would sit in `Data Files`.
-- [Pipeline](pipeline.md): `tools/tes3x_pipeline.py` turns one profile into a complete game folder, and optionally deploys it.
+- [Pipeline](pipeline.md): `tools/tes3x_pipeline.py` turns one mod library profile into a complete game folder, and optionally deploys it.
 - [Packaging](packaging.md): The pipeline's packing stage turns the collected mod files and the retail `Data Files` into what ships to the Xbox.
 - [Plugin optimizer](optimizer.md): The plugin optimizer writes derived copies of a load order that produce the same modeled Xbox engine state while making the loader construct fewer records.
 - [Deployment](deployment.md): `--deploy` uploads a finished build to the Xbox over FTP with `tools/tes3x_deploy.py`.

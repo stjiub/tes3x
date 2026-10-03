@@ -6,7 +6,7 @@ name = "my-build"                    # output: build/pipeline/my-build
 library = "C:/path/to/mod-library"  # remove for a patches-only build
 # title = "Morrowind Modded"         # dashboard title; default: the retail title
 # dashboards = ["xbmc4gamers"]       # dashboard metadata written when title is set; [] for none
-# remote_root = "F:/Games/MorrowindModded"   # Xbox game folder; default: the local config's
+# install_dir = "MorrowindModded"   # folder below each Xbox target's games_root; default: name
 # install_layout = "full"            # "overlay" keeps only files that differ from retail
 
 [rules]

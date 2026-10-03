@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import tes3x_targets
+
 HERE = Path(__file__).resolve().parent
 TOOLS = HERE.parents[1] / "tools"
 LABEL = "Xbox dashboard agent (XBMC4Gamers)"
@@ -15,27 +17,32 @@ DRIVE_SPACE = (HERE / "console.py", ["drives"])
 
 
 def status(local):
-    if not local.get("deploy", {}).get("host"):
-        return "Set the Xbox address in File > Settings"
+    try:
+        target = tes3x_targets.resolve(local, kind="xbox", required=True)
+    except tes3x_targets.TargetError as exc:
+        return str(exc)
+    if not target.get("host"):
+        return "Set the Xbox target's address in File > Settings"
     return None
 
 
-def remote_root(plain, local):
-    return (plain.get("profile", {}).get("remote_root")
-            or local.get("deploy", {}).get("remote_root"))
+def target_and_root(plain, local, name=None):
+    target = tes3x_targets.resolve(local, name, "xbox", required=True)
+    return target, tes3x_targets.remote_root(plain, target)
 
 
 def play_steps(key, context):
     """Check the agent answers, deploy the build, then start it."""
-    remote = remote_root(context["plain"], context["local"])
-    if not remote:
-        raise ValueError("Set the Xbox folder in the Build tab or File > Settings")
+    target, remote = target_and_root(context["plain"], context["local"],
+                                     context.get("target"))
     config = ["--config", str(context["config"])]
-    deploy = [str(context["deploy"]), "--remote", remote, "--verify", "size", *config]
+    selected = ["--target", target["name"]]
+    deploy = [str(context["deploy"]), "--remote", remote, "--verify", "size", *config,
+              *selected]
     if context["plain"].get("rules", {}).get("clear_cache_partitions", False):
         deploy.append("--clear-cache")
     console = HERE / "console.py"
-    return [(console, ["ping", *config], "Looking for the Xbox dashboard agent…"),
+    return [(console, ["ping", *config, *selected], "Looking for the Xbox dashboard agent…"),
             (TOOLS / "tes3x_deploy.py", deploy, f"Deploying to {remote}…"),
-            (console, ["run", remote.rstrip("/") + "/default.xbe", *config],
+            (console, ["run", remote.rstrip("/") + "/default.xbe", *config, *selected],
              "Starting the game on the Xbox…")]

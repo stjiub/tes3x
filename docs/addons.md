@@ -16,8 +16,8 @@ A small agent inside the dashboard starts games on request, so a build can go fr
 screen in one step. The GUI's **Play** button gains an **Xbox** target that:
 
 1. checks that the agent answers,
-2. deploys the build over FTP to the profile's Xbox folder (the Build tab's Xbox folder, or
-   `[deploy] remote_root`), deleting files there that the build does not have,
+2. deploys the build over FTP to the selected target's `games_root` and the profile's
+   `install_dir`, deleting files there that the build does not have,
 3. starts `default.xbe` from that folder.
 
 It asks before the first deploy of each profile. The Xbox must be on and showing the dashboard;
@@ -26,7 +26,7 @@ it. Fetch logs afterwards with **Actions > Pull Xbox logs**.
 
 ### Setup
 
-1. Set the Xbox's address under **File > Settings** (`[deploy] host`); FTP must work.
+1. Set the Xbox target's address under **File > Settings**; FTP must work.
 2. Tick the add-on and press **Install agent on Xbox**. This copies `agent.py` into the dashboard
    and adds one line to the skin's `Startup.xml`, keeping the original under
    `build/console-backup/`.

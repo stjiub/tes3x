@@ -21,6 +21,10 @@ yourself. The GUI's local settings hold the same keys.
 | `extract_xiso` | [extract-xiso](https://github.com/XboxDev/extract-xiso), which packs the disc image |
 | `gdb` | optional: `gdb`, for the `--gdb` options |
 
+An xemu target selects the guest memory size while these file paths stay shared. Use
+`--target NAME`, or pass `--ram 64|128` for one run. A 128 MB target uses `bios_128mb` and clears
+the XBE's `Limit64MB` flag in the staged copy.
+
 ## Playing from the GUI
 
 Open a profile and choose **Play**. Each profile keeps its own emulated hard disk, so saves persist

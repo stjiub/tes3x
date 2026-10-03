@@ -1,7 +1,7 @@
 # Configuration reference
 
 A profile says what to build. `tes3x.local.toml` holds the settings for your computer: where the
-retail game, mods and tools are, and how to reach the Xbox.
+retail game, mods and tools are, and the Xbox and xemu targets that can run a build.
 
 `python tools/tes3x_pipeline.py profiles/my-build.toml --check` checks both files and prints
 what would be built.
@@ -25,7 +25,12 @@ one in the TES3X folder. `--config PATH` picks another. Relative paths are relat
 | `ghidra` | string | none | Ghidra install folder, for `tes3x_sym.py decompile` and `refs`. `GHIDRA_INSTALL_DIR` takes precedence. |
 | `pc_morrowind` | string | Steam's default folder | PC Morrowind with Code Patch installed, for `tes3x_mcp.py`. `TES3X_PC_MORROWIND` takes precedence. |
 
-### `[deploy]`
+### Targets
+
+`default_target` names the target used when `--target` is omitted. Each `[targets.NAME]` table has
+a `kind` of `xbox` or `xemu`.
+
+Xbox targets accept:
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
@@ -33,8 +38,18 @@ one in the TES3X folder. `--config PATH` picks another. Relative paths are relat
 | `port` | integer | `21` | FTP port. |
 | `user` | string | `xbox` | FTP user. |
 | `password` | string | `xbox` | FTP password. `TES3X_FTP_PASSWORD`, `--password` and `--ask-password` take precedence. |
-| `remote_root` | string | none | Destination game folder. A profile's `remote_root` takes precedence. |
-| `retail_root` | string | none | Shared clean retail data folder on the Xbox for profiles whose `install_layout` is `overlay`. |
+| `games_root` | string | required | Parent folder for profile installs, such as `F:/Games`. |
+| `retail_root` | string | none | Shared clean retail data folder for profiles whose `install_layout` is `overlay`. |
+| `ram` | integer | `64` | Console RAM in MB: `64` or `128`. |
+| `rig` | boolean | `false` | Whether the hardware rig is wired to this console. Only one target may set it. |
+
+An xemu target has `kind = "xemu"` and `ram = 64` or `128`. Emulator file paths remain shared in
+`[xemu]`. Pass `--target NAME` to select a target for one command; explicit `--host`, `--remote`
+and similar command options still take precedence.
+
+The old `[deploy]` table remains readable as an implicit Xbox target named `xbox`. Its
+`remote_root` is split into `games_root` and the fallback install folder. New configurations
+should use targets.
 
 ### `[addons]`
 
@@ -59,8 +74,9 @@ The annotated [example profile](../examples/profile.toml) is the shortest starti
 | `name` | string | required | Build name and output directory name. |
 | `title` | string | retail title | Dashboard title written to both XBEs and selected dashboard metadata. |
 | `dashboards` | array of strings | `["xbmc4gamers"]` | Dashboard metadata formats to write when `title` is set. Supported: `xbmc4gamers`; use `[]` for none. |
-| `remote_root` | string | local config | Destination game folder for this build. |
-| `install_layout` | string | `full` | `full` carries every retail file; `overlay` carries only differences and reads the rest from `deploy.retail_root`. |
+| `install_dir` | string | `name` | Folder created beneath an Xbox target's `games_root`. |
+| `remote_root` | string | none | Legacy absolute destination; its final component is used as `install_dir`. |
+| `install_layout` | string | `full` | `full` carries every retail file; `overlay` carries only differences and reads the rest from the target's `retail_root`. |
 | `library` | string | local config | Directory containing mod folders and optional `library.toml`. |
 | `save_pool` | string | shared | Name of the save pool. Builds in a pool save to their own `E:\UDATA` folder; profiles that name the same pool share its saves. Omit it to use the retail game's saves. |
 | `save_pool_id` | string | from the name | The pool's title ID, eight hex digits. By default it is derived from `save_pool`, in the `5433xxxx` range. |
@@ -156,7 +172,8 @@ Each entry sets one `Morrowind.ini` value. Keys use `Section:Key` syntax.
 
 ## Command-line precedence
 
-Command-line values override the profile and local config. The main overrides are `--preset`,
+Command-line values override the profile and local config. `--target NAME` picks a machine. The
+main build overrides are `--preset`,
 `--enable`, `--disable`, `--package-mode`, `--drive`, `--title`, `--ini-set`, `--vanilla`,
 `--llvm`, `--build-root`, `--out` and `--hardlink`. Run
 `python tools/tes3x_pipeline.py --help` for their exact syntax.

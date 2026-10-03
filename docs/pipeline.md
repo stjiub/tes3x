@@ -27,7 +27,7 @@ Common failures:
 - `unknown selectable patches: ...`, or patches both enabled and disabled.
 - `rules.plugin_order = 'mlox' needs mlox` or `needs paths.mlox_rules`: see
   [sorting plugins with mlox](#sorting-plugins-with-mlox).
-- `deployment requires deploy.host, and profile.remote_root or deploy.remote_root`.
+- `deployment requires an Xbox target with host and games_root`.
 
 ### Choosing engine fixes
 
@@ -139,3 +139,7 @@ python tools/tes3x_pipeline.py profiles/my-build.toml --package-mode loose
 
 `--help` lists every option, including the instrumentation options described in
 [diagnostics](diagnostics.md).
+
+`--target NAME` selects one configured machine. Without it, builds validate FATX paths against the
+longest configured Xbox `games_root`, so a build accepted for one target will not silently exceed
+the path limit on another. With it, only that target's destination is checked.

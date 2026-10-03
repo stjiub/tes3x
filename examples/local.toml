@@ -1,5 +1,7 @@
-# Paths on this PC and the Xbox address. Copy to tes3x.local.toml in the folder you run
+# Paths on this PC and the machines that run builds. Copy to tes3x.local.toml in the folder you run
 # the commands from; profiles stay free of machine-specific paths.
+default_target = "xbox"
+
 [paths]
 # Your own clean, unmodified copy of the game folder: it holds Default.xbe, morrowind.xbe,
 # Morrowind.ini and Data Files.
@@ -18,12 +20,12 @@ build_root = "build/pipeline"
 # Ghidra 11.3 or later with the ghidra-xbe loader, for tools/tes3x_sym.py decompile and refs.
 # ghidra = "C:/Tools/ghidra_11.3_PUBLIC"
 
-[deploy]
+[targets.xbox]
+kind = "xbox"
 host = "192.168.1.20"              # the Xbox's IP address, shown by its dashboard
-# The game folder --deploy writes to, for profiles that do not set their own remote_root.
-# Anything in it that is not part of the build is deleted, so use a new folder, not an install
-# you want to keep.
-remote_root = "F:/Games/MorrowindModded"
+# Profile install_dir folders go below this. A deploy makes that folder match the build, so never
+# use the folder name of an install you want to keep.
+games_root = "F:/Games"
 # Shared clean retail data for profiles with install_layout = "overlay". The GUI or
 # --install-retail-base installs it explicitly and overlay deploys verify it first.
 # retail_root = "F:/Games/MorrowindRetail"
@@ -31,6 +33,15 @@ remote_root = "F:/Games/MorrowindModded"
 # TES3X_FTP_PASSWORD environment variable or pass --ask-password.
 # user = "xbox"
 # password = "xbox"
+
+[targets.xemu]
+kind = "xemu"
+ram = 64
+
+# A second target can use the same shared [xemu] files with another memory size.
+# [targets.xemu-128]
+# kind = "xemu"
+# ram = 128
 
 # For playing profiles and for automated runs in xemu; see docs/xemu.md.
 # [xemu]

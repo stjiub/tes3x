@@ -37,6 +37,16 @@ class FtpSettingsTests(unittest.TestCase):
         args = self.resolve([])
         self.assertEqual((args.user, args.password), ('xbox', 'xbox'))
 
+    def test_named_target_supplies_connection(self):
+        self.config.write_text(
+            'default_target = "bench"\n[targets.bench]\nkind = "xbox"\n'
+            'host = "192.0.2.2"\ngames_root = "F:/Games"\nuser = "target-user"\n'
+            '[targets.other]\nkind = "xbox"\nhost = "192.0.2.3"\n'
+            'games_root = "E:/Games"\n', encoding='utf-8')
+        self.assertEqual(self.resolve([]).host, '192.0.2.2')
+        other = self.resolve(['--target', 'other'])
+        self.assertEqual((other.target, other.host), ('other', '192.0.2.3'))
+
 
 if __name__ == '__main__':
     unittest.main()

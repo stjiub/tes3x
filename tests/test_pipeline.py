@@ -417,7 +417,44 @@ class PipelinePlanTests(unittest.TestCase):
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
                 pipeline_main([str(profile), '--config', str(local), '--check', '--dry-run'])
-            self.assertIn('target: x F:/Games/Profile', out.getvalue())
+            self.assertIn('target: xbox x F:/Games/Profile', out.getvalue())
+
+    def test_targets_resolve_install_folder_and_longest_path_root(self):
+        from tes3x_targets import path_check_root, remote_root, resolve
+        local = {
+            'default_target': 'bench',
+            'targets': {
+                'bench': {'kind': 'xbox', 'host': 'a', 'games_root': 'F:/Games'},
+                'long': {'kind': 'xbox', 'host': 'b',
+                         'games_root': 'E:/A much longer games directory'},
+                'emulator': {'kind': 'xemu', 'ram': 128},
+            },
+        }
+        profile = {'profile': {'name': 'output-name', 'install_dir': 'MorrowindMods'}}
+        self.assertEqual(remote_root(profile, resolve(local)), 'F:/Games/MorrowindMods')
+        self.assertEqual(path_check_root(local, profile),
+                         'E:/A much longer games directory/MorrowindMods')
+        self.assertEqual(path_check_root(local, profile, 'bench'), 'F:/Games/MorrowindMods')
+
+    def test_legacy_deploy_is_an_implicit_target(self):
+        from tes3x_targets import remote_root, resolve
+        local = {'deploy': {'host': 'x', 'remote_root': 'F:/Games/LegacyFolder'}}
+        target = resolve(local)
+        self.assertEqual((target['name'], target['kind']), ('xbox', 'xbox'))
+        profile = {'profile': {'name': 'profile-name'}}
+        self.assertEqual(remote_root(profile, target), 'F:/Games/LegacyFolder')
+        profile['profile']['remote_root'] = 'G:/Old/ProfileFolder'
+        self.assertEqual(remote_root(profile, target), 'F:/Games/ProfileFolder')
+
+    def test_target_validation(self):
+        validate_local_config({
+            'default_target': 'xemu-128',
+            'targets': {'xemu-128': {'kind': 'xemu', 'ram': 128}},
+        })
+        with self.assertRaisesRegex(PipelineError, 'games_root is required'):
+            validate_local_config({'targets': {'bench': {'kind': 'xbox', 'host': 'x'}}})
+        with self.assertRaisesRegex(PipelineError, 'default_target'):
+            validate_local_config({'default_target': 'missing', 'targets': {}})
 
     def test_local_config_can_supply_mod_library(self):
         with tempfile.TemporaryDirectory() as tmp:

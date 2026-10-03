@@ -61,10 +61,10 @@ The [GUI guide](gui.md) describes every tab.
    cp examples/profile.toml profiles/my-build.toml
    ```
 
-2. In `tes3x.local.toml`, set `paths.vanilla_root` to the retail game folder and `deploy.host` to
-   the Xbox's IP address. Set `paths.llvm` if `clang` is not on `PATH`.
-3. In `profiles/my-build.toml`, set `profile.name`, `profile.library` and
-   `profile.remote_root`, the game folder on the Xbox, and list your mods as `[[mods]]` blocks.
+2. In `tes3x.local.toml`, set `paths.vanilla_root` to the retail game folder, then set the Xbox
+   target's `host` and `games_root`. Set `paths.llvm` if `clang` is not on `PATH`.
+3. In `profiles/my-build.toml`, set `profile.name`, `profile.library` and `profile.install_dir`,
+   the folder created below the target's games root, and list your mods as `[[mods]]` blocks.
    For engine fixes only, remove `library` and every `[[mods]]` block. The example's comments
    explain each option; the [configuration reference](configuration.md) lists them all.
 4. Check the profile:

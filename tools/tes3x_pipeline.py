@@ -22,6 +22,7 @@ from tes3x_payload import PayloadError, build_payload, find_tool
 from tes3x_net import write_ghost_plugin
 from tes3x_paths import DEFAULT_REMOTE_ROOT, require_paths
 import tes3x_savepool
+import tes3x_targets
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -98,10 +99,10 @@ def validate_profile(profile):
             raise PipelineError(f"{parent}.{key} must be {names}")
 
     identity = table("profile")
-    known(identity, {"name", "title", "remote_root", "library", "dashboards", "save_pool",
-                     "save_pool_id", "install_layout"}, "profile")
-    for key in ("name", "title", "remote_root", "library", "save_pool", "save_pool_id",
-                "install_layout"):
+    known(identity, {"name", "title", "install_dir", "remote_root", "library", "dashboards",
+                     "save_pool", "save_pool_id", "install_layout"}, "profile")
+    for key in ("name", "title", "install_dir", "remote_root", "library", "save_pool",
+                "save_pool_id", "install_layout"):
         typed(identity, key, (str,), "profile")
     if not identity.get("name"):
         raise PipelineError("profile.name is required")
@@ -194,7 +195,8 @@ def validate_profile(profile):
 
 def validate_local_config(local):
     """Validate the public tables while leaving private extension tables alone."""
-    unknown = set(local) - {"paths", "deploy", "xemu", "rig", "addons", "console"}
+    unknown = set(local) - {"default_target", "targets", "paths", "deploy", "xemu", "rig",
+                            "addons", "console", "server"}
     if unknown:
         raise PipelineError("unknown local config sections: " + ", ".join(sorted(unknown)))
     addons = local.get("addons", {})
@@ -226,6 +228,37 @@ def validate_local_config(local):
     if "port" in deploy and (type(deploy["port"]) is not int
                              or not 1 <= deploy["port"] <= 65535):
         raise PipelineError("deploy.port must be an integer from 1 to 65535")
+
+    if "default_target" in local and type(local["default_target"]) is not str:
+        raise PipelineError("default_target must be a string")
+    targets = local.get("targets", {})
+    if not isinstance(targets, dict):
+        raise PipelineError("targets must be a table")
+    allowed = {"kind", "host", "port", "user", "password", "games_root", "retail_root",
+               "ram", "rig"}
+    for name, target in targets.items():
+        if not isinstance(target, dict):
+            raise PipelineError(f"targets.{name} must be a table")
+        extra = set(target) - allowed
+        if extra:
+            raise PipelineError(f"unknown targets.{name} keys: " + ", ".join(sorted(extra)))
+        if target.get("kind") not in tes3x_targets.TARGET_KINDS:
+            raise PipelineError(f"targets.{name}.kind must be 'xbox' or 'xemu'")
+        strings = ("host", "user", "password", "games_root", "retail_root")
+        for key in strings:
+            if key in target and type(target[key]) is not str:
+                raise PipelineError(f"targets.{name}.{key} must be a string")
+        if "port" in target and (type(target["port"]) is not int
+                                 or not 1 <= target["port"] <= 65535):
+            raise PipelineError(f"targets.{name}.port must be an integer from 1 to 65535")
+        if "ram" in target and (type(target["ram"]) is not int or target["ram"] not in (64, 128)):
+            raise PipelineError(f"targets.{name}.ram must be 64 or 128")
+        if "rig" in target and type(target["rig"]) is not bool:
+            raise PipelineError(f"targets.{name}.rig must be a boolean")
+        if target["kind"] == "xbox" and not target.get("games_root"):
+            raise PipelineError(f"targets.{name}.games_root is required for an Xbox target")
+    if local.get("default_target") and local["default_target"] not in tes3x_targets.targets(local):
+        raise PipelineError(f"default_target {local['default_target']!r} is not configured")
 
 
 def enabled_mods(profile):
@@ -619,6 +652,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("profile")
     ap.add_argument("--config", help="local paths and Xbox settings (default: ./tes3x.local.toml if present)")
+    ap.add_argument("--target", help="machine target (default: default_target)")
     ap.add_argument("--vanilla", help="clean retail game root containing Data Files and both XBEs")
     ap.add_argument("--llvm", help="folder holding clang and lld-link, for engine fixes "
                                    "(default: paths.llvm, then PATH)")
@@ -706,7 +740,17 @@ def main(argv=None):
     validate_local_config(local)
     base = local_path.parent if local_path else Path.cwd()
     paths = local.get("paths", {})
-    deploy = local.get("deploy", {})
+    try:
+        target = tes3x_targets.resolve(local, args.target)
+        deploy = target if target and target.get("kind") == "xbox" else {}
+        remote = tes3x_targets.remote_root(profile, target) if deploy else None
+        path_remote = tes3x_targets.path_check_root(local, profile, args.target)
+    except tes3x_targets.TargetError as exc:
+        raise PipelineError(str(exc)) from exc
+    # A profile with an old absolute destination remains useful without a local target for
+    # build-time FATX checks, though deployment still needs a configured Xbox.
+    if path_remote is None and profile.get("profile", {}).get("remote_root"):
+        path_remote = profile["profile"]["remote_root"]
     library_value = profile.get("profile", {}).get("library") or paths.get("mod_library")
     library = config_path(library_value, base).resolve() if library_value else None
     if enabled_mods(profile) and not library:
@@ -756,21 +800,19 @@ def main(argv=None):
     pool = (tes3x_savepool.pool_id(pool_name, profile["profile"].get("save_pool_id"))
             if pool_name else None)
     dashboards = dashboard_list(profile)
-    # A profile names its own install folder; the local config supplies the fallback.
-    remote = profile.get("profile", {}).get("remote_root") or deploy.get("remote_root")
     ini_items = [f"{k}={v}" for k, v in profile.get("ini", {}).items()] + args.ini_set
     overlay_base = ini_override(ini_items, "Xbox", "OverlayBase")
     if install_layout == "overlay":
         overlay_base = overlay_base or deploy.get("retail_root")
         if not overlay_base:
-            raise PipelineError("the overlay install layout needs deploy.retail_root in the "
+            raise PipelineError("the overlay install layout needs target.retail_root in the "
                                 "local config, or an Xbox:OverlayBase INI override")
         if ini_override(ini_items, "Xbox", "OverlayBase") is None:
             ini_items.append("Xbox:OverlayBase=" + overlay_base.replace("/", "\\"))
         if remote and deploy.get("retail_root") and \
                 remote.replace("\\", "/").rstrip("/").casefold() == \
                 deploy["retail_root"].replace("\\", "/").rstrip("/").casefold():
-            raise PipelineError("profile.remote_root and deploy.retail_root must be different")
+            raise PipelineError("the profile destination and target.retail_root must be different")
     build_value = args.build_root or paths.get("build_root", "build")
     build_root = config_path(build_value, base).resolve()
     output = Path(args.out).resolve() if args.out else build_root / profile_name
@@ -814,7 +856,8 @@ def main(argv=None):
     print(f"install layout: {install_layout}"
           + (f"; retail base {overlay_base}" if install_layout == "overlay" else ""))
     if args.deploy or args.dry_run:
-        print(f"target: {deploy.get('host', '<missing>')} {remote or '<missing>'}")
+        print(f"target: {target.get('name', '<missing>') if target else '<missing>'} "
+              f"{deploy.get('host', '<missing>')} {remote or '<missing>'}")
     if args.check:
         return 0
 
@@ -853,8 +896,7 @@ def main(argv=None):
         mlox_rules = config_path(paths["mlox_rules"], base).resolve()
         require_file(mlox_rules, "mlox rules")
     if (args.deploy or args.dry_run) and (not deploy.get("host") or not remote):
-        raise PipelineError("deployment requires deploy.host, and profile.remote_root or "
-                            "deploy.remote_root")
+        raise PipelineError("deployment requires an Xbox target with host and games_root")
 
     # Beside the output, so publishing is a rename on one volume.
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -873,8 +915,8 @@ def main(argv=None):
                          "--archive-list", mod_archives]
             if library:
                 build_cmd += ["--library", library]
-            if remote:
-                build_cmd += ["--remote-root", remote]
+            if path_remote:
+                build_cmd += ["--remote-root", path_remote]
             run(build_cmd)
 
         payload = hook_out / "tes3xhook.pe"
@@ -947,8 +989,8 @@ def main(argv=None):
                     pack_cmd += ["--loose-mod", name]
             for item in ini_items:
                 pack_cmd += ["--ini-set", item]
-            if remote:
-                pack_cmd += ["--remote-root", remote]
+            if path_remote:
+                pack_cmd += ["--remote-root", path_remote]
             run(pack_cmd)
         else:
             stage_retail(data_files, ini, staged, ini_items, copy)
@@ -1037,7 +1079,7 @@ def main(argv=None):
     print(f"\ncomplete install staged at {output / 'deploy'}")
     if args.deploy or args.dry_run:
         if install_layout == "overlay" and not deploy.get("retail_root"):
-            raise PipelineError("deploying an overlay layout requires deploy.retail_root in the "
+            raise PipelineError("deploying an overlay layout requires target.retail_root in the "
                                 "local config")
         if install_layout == "overlay":
             with tempfile.TemporaryDirectory(prefix="tes3x-retail-base-",
@@ -1054,6 +1096,8 @@ def main(argv=None):
                 print(f"\nretail base: {files} files, {size / 1048576:.1f} MB")
                 base_cmd = [sys.executable, TOOLS / "tes3x_deploy.py", base_tree,
                             "--config", local_path, "--remote", deploy["retail_root"]]
+                if target:
+                    base_cmd += ["--target", target["name"]]
                 if args.ask_password:
                     base_cmd.append("--ask-password")
                 if args.dry_run:
@@ -1073,6 +1117,8 @@ def main(argv=None):
         # the command line.
         deploy_cmd = [sys.executable, TOOLS / "tes3x_deploy.py", output / "deploy",
                       "--config", local_path, "--remote", remote]
+        if target:
+            deploy_cmd += ["--target", target["name"]]
         if args.ask_password:
             deploy_cmd.append("--ask-password")
         if args.dry_run:

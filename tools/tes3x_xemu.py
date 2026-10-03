@@ -41,6 +41,7 @@ from tes3x_fatx import PARTITIONS, FatxReader  # noqa: E402
 from tes3x_put import make_dirs, put_file  # noqa: E402
 from tes3x_qcow2 import CowView, Qcow2, create_overlay, is_qcow2, open_image  # noqa: E402
 import tes3x_savepool  # noqa: E402
+import tes3x_targets  # noqa: E402
 from tes3x_xemu_setup import resolve  # noqa: E402
 from tes3x_readlog import read_file, read_log  # noqa: E402
 from tes3x_pipeline import set_ini_key, stage_retail_base  # noqa: E402
@@ -117,13 +118,14 @@ def load_config(path=None):
     return resolve(values, path.parent)
 
 
-CONFIG = load_config(os.environ.get("TES3X_CONFIG"))
+CONFIG_PATH = Path(os.environ.get("TES3X_CONFIG") or Path.cwd() / "tes3x.local.toml").resolve()
+CONFIG = load_config(CONFIG_PATH)
 GDB = Path(CONFIG.get("gdb") or shutil.which("gdb") or "gdb")
 
 
 def vanilla_root():
     """Clean retail root named by [paths] vanilla_root in the local config, if any."""
-    path = Path(os.environ.get("TES3X_CONFIG") or Path.cwd() / "tes3x.local.toml").resolve()
+    path = CONFIG_PATH
     try:
         with open(path, "rb") as stream:
             root = tomllib.load(stream).get("paths", {}).get("vanilla_root")
@@ -416,6 +418,7 @@ def xemu_config(bootrom, bios, eeprom, hdd, dvd, ram, net_tunnel=None):
 
 
 def main():
+    global CONFIG_PATH, CONFIG, GDB
     argv = sys.argv[1:]
     passthru = []
     if "--" in argv:
@@ -425,6 +428,8 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("name", help="run folder under build/xemu/")
     ap.add_argument("profile", nargs="?", help="profile to build with tes3x_pipeline.py")
+    ap.add_argument("--config", help="local config (default: ./tes3x.local.toml)")
+    ap.add_argument("--target", help="xemu target (default: the first configured xemu target)")
     ap.add_argument("--deploy", help="use an existing deploy tree instead of building")
     ap.add_argument("--iso", help="reuse an existing ISO")
     ap.add_argument("--direct-engine", action="store_true",
@@ -469,9 +474,27 @@ def main():
                          "127.0.0.1:PORT and frames sent to PORT+1 reach the guest "
                          "(tes3x_net.py --tunnel PORT); the guest's MAC becomes "
                          "02:00:00:00 and PORT, so each tunnel is a separate client")
-    ap.add_argument("--ram", type=int, choices=(64, 128), default=64,
+    ap.add_argument("--ram", type=int, choices=(64, 128),
                     help="guest RAM in MB; 128 also clears Limit64MB in the XBE it packs")
     a = ap.parse_args(argv)
+    config_path = Path(a.config or Path.cwd() / "tes3x.local.toml").resolve()
+    CONFIG_PATH = config_path
+    CONFIG = load_config(config_path)
+    GDB = Path(CONFIG.get("gdb") or shutil.which("gdb") or "gdb")
+    try:
+        with open(config_path, "rb") as stream:
+            local = tomllib.load(stream)
+    except FileNotFoundError:
+        local = {}
+    try:
+        target = tes3x_targets.resolve(local, a.target, "xemu", required=bool(a.target))
+    except tes3x_targets.TargetError as exc:
+        ap.error(str(exc))
+    if target:
+        a.target = target["name"]
+    a.ram = a.ram or (target.get("ram", 64) if target else 64)
+    if target and a.ram == 128 and not a.bios:
+        a.bios = "128mb"
     missing = [f"{key} ({label})" for key, label in FILES.items() if key not in CONFIG]
     if missing:
         ap.error("set these under [xemu] in tes3x.local.toml, or put them in [xemu] folder: "
@@ -515,8 +538,10 @@ def main():
                 ini += [x for kv in NO_REBOOT for x in ("--ini-set", kv)]
             if profile_layout(a.profile) == "overlay":
                 ini += ["--ini-set", r"Xbox:OverlayBase=\Device\CdRom0\Base"]
+            target_args = (["--target", a.target] if a.target else [])
+            config_args = (["--config", config_path] if config_path.is_file() else [])
             run([sys.executable, TOOLS / "tes3x_pipeline.py", a.profile,
-                 "--out", out / "pipeline", *ini, *passthru])
+                 "--out", out / "pipeline", *config_args, *target_args, *ini, *passthru])
         marker = deploy.parent / PIPELINE_MARKER
         pipeline = json.loads(marker.read_text(encoding="utf-8")) if marker.is_file() else {}
         overlay = pipeline.get("install_layout") == "overlay"

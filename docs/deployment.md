@@ -13,9 +13,14 @@ without changing anything.
 
 ## Where it goes
 
-`remote_root` is the game folder on the Xbox, such as `F:/Games/MorrowindTest`, not its
-`Data Files` folder. Set it in the profile, the local config's `[deploy]` or with `--remote-root`;
-the default is `F:/Games/Morrowind`.
+An Xbox target supplies a `games_root`, such as `F:/Games`, and the profile supplies an
+`install_dir`, such as `MorrowindTest`. TES3X deploys to `F:/Games/MorrowindTest`, not its
+`Data Files` folder. `profile.name` is the default install folder. Select a target with
+`--target NAME`; an explicit destination option still wins where a command provides one.
+
+Legacy `[deploy] remote_root` and `profile.remote_root` settings remain readable. TES3X splits the
+local destination into a games root and folder, and uses the profile destination's final component
+as its folder.
 
 A deploy makes that folder match the build: files there that are not in the build are deleted.
 Saves and the dashboard's `_resources` folder are not touched. Give every build its own folder, and
@@ -29,8 +34,8 @@ the GUI asks first.
 
 ## Connecting
 
-The Xbox's address is `deploy.host` in `tes3x.local.toml`. The login comes from command-line
-options, then `[deploy]` in the local config, then the default `xbox`/`xbox`. Set
+The Xbox's address is `targets.NAME.host` in `tes3x.local.toml`. The login comes from command-line
+options, then the selected target, then the default `xbox`/`xbox`. Set
 `TES3X_FTP_PASSWORD` or pass `--ask-password` to keep the password out of the config file.
 
 ## What a deploy does
@@ -50,7 +55,7 @@ options, then `[deploy]` in the local config, then the default `xbox`/`xbox`. Se
 ## Shared retail base
 
 Set `profile.install_layout = "overlay"` to keep only files that differ from retail in a build's
-game folder. Set `deploy.retail_root` in the local config to a separate clean folder such as
+game folder. Set `retail_root` on the Xbox target to a separate clean folder such as
 `F:/Games/MorrowindRetail`. The pipeline enables the
 [game folder overlay](../patches/data-overlay.md), writes its INI setting and removes unchanged
 retail files automatically.
@@ -80,7 +85,7 @@ Without the agent the deploy says the free space is unknown and carries on.
 
 FATX limits each file or folder name to 42 characters and a full path to 250 (not counting the
 drive letter). The build checks both before anything is uploaded. Names are never shortened
-automatically, since plugins and meshes refer to files by name. A shorter `remote_root` helps with
+automatically, since plugins and meshes refer to files by name. A shorter `games_root` helps with
 long paths but not with a single name that is too long. Names inside a BSA don't count.
 
 ## Verifying and discarding the build
