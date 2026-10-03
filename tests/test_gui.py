@@ -545,21 +545,20 @@ order = 10
         import hashlib
         import json
         config = self.root / "local.toml"
-        config.write_text('[paths]\nbuild_root = "out"\n[xemu]\nexe = "xemu.exe"\n',
+        config.write_text('default_target = "xemu"\n[targets.xemu]\nkind = "xemu"\n'
+                          'ram = 64\n[targets.xemu-128]\nkind = "xemu"\nram = 128\n'
+                          '[paths]\nbuild_root = "out"\n[xemu]\nexe = "xemu.exe"\n',
                           encoding="utf-8")
         window = self.window(config=config)
         self.assertEqual(window.action_settings.text(), "&Settings…")
         self.assertEqual(window.build_status()[0], "missing")
-        self.assertEqual(window.build_state.text(), "Not built")
-        self.assertIn("#b3261e", window.build_state.styleSheet())
-        self.assertEqual(window.check_state.text(), "Not checked")
-        self.assertIn("#616161", window.check_state.styleSheet())
-        self.assertEqual(window.deploy_state.text(), "Deploy unknown")
-        self.assertIn("#616161", window.deploy_state.styleSheet())
-        self.assertIn("#616161", window.ftp_status.styleSheet())
-        buttons = [window.profile_bar.itemAt(i).widget()
-                   for i in range(window.profile_bar.count())]
-        self.assertEqual([button.text() for button in buttons if type(button).__name__ == "QToolButton"],
+        self.assertEqual(window.build_button.property("state"), "idle")
+        self.assertEqual(window.check_button.property("state"), "idle")
+        self.assertEqual(window.deploy_button.property("state"), "idle")
+        self.assertFalse(window.action_deploy.isEnabled())
+        self.assertEqual(window.target_picker.currentData(), "xemu")
+        self.assertEqual([button.text() for button in
+                          [*window.command_buttons, window.play_button]],
                          ["Check", "Build", "Deploy", "Play"])
 
         def start(program, arguments, *_args):
@@ -578,31 +577,32 @@ order = 10
             window.process = None
             window.command_finished(0, None)
         self.assertEqual(window.build_status()[0], "built")
-        self.assertEqual(window.build_state.text(), "Built")
-        self.assertIn("#2e7d32", window.build_state.styleSheet())
+        self.assertEqual(window.build_button.property("state"), "current")
         self.assertEqual(calls[1][0], "tes3x_xemu.py")
-        self.assertEqual(calls[1][1][1:], ["--deploy", str(output / "deploy"), "--keep-iso", "--disk",
+        self.assertEqual(calls[1][1][1:], ["--deploy", str(output / "deploy"), "--keep-iso",
+                                           "--target", "xemu", "--config", str(config), "--disk",
                                            str(self.root / "build/play/profile/hdd.qcow2")])
 
-        self.assertTrue(calls[1][1][0].startswith("play-profile-xemu-64-"))
+        self.assertTrue(calls[1][1][0].startswith("play-profile-xemu-"))
 
-        # 128 MB needs its BIOS set; then it passes the runner's 128 MB options.
-        self.assertFalse(window.play_targets["xemu-128"].isEnabled())
+        # RAM comes from the selected target; a 128 MB target needs its BIOS set.
+        window.target_picker.setCurrentIndex(window.target_picker.findData("xemu-128"))
+        window.target_selection_changed()
         with patch.object(window, "error") as error:
-            window.play("xemu-128")
+            window.play()
         self.assertIn("128 MB BIOS", error.call_args.args[0])
         config.write_text(config.read_text(encoding="utf-8") + 'bios_128mb = "cerbios.bin"\n',
                           encoding="utf-8")
-        window.update_play_targets()
-        self.assertTrue(window.play_targets["xemu-128"].isEnabled())
+        window.process = None
+        window.refresh_play_menu()
+        self.assertTrue(window.action_play.isEnabled())
         with patch.object(window, "start_command", side_effect=start):
             window.process = None
-            window.play("xemu-128")
-        self.assertIn("--ram", calls[2][1])
-        self.assertEqual(calls[2][1][calls[2][1].index("--ram") + 1], "128")
-        self.assertEqual(window.play_button.text(), "Play 128 MB")
+            window.play()
+        self.assertEqual(calls[2][1][calls[2][1].index("--target") + 1], "xemu-128")
+        self.assertEqual(window.play_button.text(), "Play")
 
-        # Debug with GDB opens the stub; the badge names the port the runner wrote.
+        # Debug with GDB opens the stub; the transient status names the runner's port.
         window.set_play_gdb()
         with patch.object(window, "start_command", side_effect=start):
             window.process = None
@@ -613,44 +613,43 @@ order = 10
         window.process = type("Process", (), {"readAllStandardOutput": lambda self:
                                               b"xemu: started, pid 1\n"})()
         window.append_process_output()
-        self.assertEqual(window.play_state.text(), "Playing · GDB :1234")
+        self.assertEqual(window.statusBar().message.text(), "Playing · GDB :1234")
         window.process = None
         window.set_play_gdb()
 
         self.profile.write_text(self.profile.read_text(encoding="utf-8") + "\n", encoding="utf-8")
         self.assertEqual(window.build_status()[0], "stale")
 
-    def test_check_and_xbox_status_badges_show_progress_and_results(self):
-        window = self.window()
+    def test_check_deploy_and_target_status_show_progress_and_results(self):
+        config = self.root / "local.toml"
+        config.write_text('default_target = "bench"\n[targets.bench]\nkind = "xbox"\n'
+                          'host = "192.0.2.5"\ngames_root = "F:/Games"\n', encoding="utf-8")
+        window = self.window(config=config)
         with patch.object(window, "start_command"):
             window.run_pipeline(["--check"])
         window.update_check_state()
-        self.assertEqual(window.check_state.text(), "Check: running…")
-        self.assertIn("#a15c00", window.check_state.styleSheet())
+        self.assertEqual(window.check_button.property("state"), "running")
         window.command_finished(0, None)
-        self.assertEqual(window.check_state.text(), "Checked")
-        self.assertIn("#2e7d32", window.check_state.styleSheet())
+        self.assertEqual(window.check_button.property("state"), "current")
 
         window.command_kind = "check"
         window.command_finished(1, None)
-        self.assertEqual(window.check_state.text(), "Check failed")
-        self.assertIn("#b3261e", window.check_state.styleSheet())
-        window.set_ftp_status("Xbox: checking…", "#a15c00", "Checking")
-        self.assertIn("#a15c00", window.ftp_status.styleSheet())
-        window.set_ftp_status("Xbox: connected", "#2e7d32", "Connected")
-        self.assertIn("#2e7d32", window.ftp_status.styleSheet())
+        self.assertEqual(window.check_button.property("state"), "failed")
+        window.target_states["bench"] = "checking"
+        window.refresh_target_item("bench")
+        self.assertIn("Checking connection", window.target_picker.toolTip())
+        window.target_states["bench"] = "connected"
+        window.refresh_target_item("bench")
+        self.assertIn("Connected", window.target_picker.toolTip())
 
         window.command_kind = "deploy"
         window.update_build_state()
-        self.assertEqual(window.deploy_state.text(), "Deploying…")
-        self.assertIn("#a15c00", window.deploy_state.styleSheet())
+        self.assertEqual(window.deploy_button.property("state"), "running")
         window.command_finished(0, None)
-        self.assertEqual(window.deploy_state.text(), "Deployed")
-        self.assertIn("#2e7d32", window.deploy_state.styleSheet())
+        self.assertEqual(window.deploy_button.property("state"), "current")
         self.profile.write_text(self.profile.read_text(encoding="utf-8") + "\n", encoding="utf-8")
         window.update_build_state()
-        self.assertEqual(window.deploy_state.text(), "Deploy needed")
-        self.assertIn("#a15c00", window.deploy_state.styleSheet())
+        self.assertEqual(window.deploy_button.property("state"), "stale")
 
         with patch("tes3x_gui.QProcess"):
             window.start_command("tool.py", [], "Working…")
@@ -658,10 +657,8 @@ order = 10
         window.process.readAllStandardOutput.return_value = b"xemu: started, pid 1\n"
         window.append_process_output()
         self.assertTrue(window.statusBar().spinner.isHidden())
-        self.assertEqual(window.play_state.text(), "Playing")
         window.process = None
         window.command_finished(0, None)
-        self.assertTrue(window.play_state.isHidden())
 
     def test_xbox_addon_deploys_then_starts_the_build(self):
         import hashlib
@@ -670,7 +667,7 @@ order = 10
         config.write_text('[paths]\nbuild_root = "out"\n[deploy]\nhost = "192.0.2.5"\n'
                           'remote_root = "F:/Games/Test"\n', encoding="utf-8")
         window = self.window(config=config)
-        self.assertNotIn("xbox", window.play_targets)
+        self.assertFalse(window.action_play.isEnabled())
 
         dialog = LocalSettingsDialog(config)
         self.addCleanup(dialog.close)
@@ -678,8 +675,8 @@ order = 10
         self.assertTrue(dialog.save_settings())
         with open(config, "rb") as stream:
             self.assertEqual(tomllib.load(stream)["addons"], {"console": True})
-        window.refresh_play_menu()
-        self.assertTrue(window.play_targets["xbox"].isEnabled())
+        window.refresh_targets()
+        self.assertTrue(window.action_play.isEnabled())
 
         self.assertTrue(window.save_profile())
         output = self.root / "out" / "gui"
@@ -695,20 +692,20 @@ order = 10
 
         with patch.object(window, "start_command", side_effect=start), \
                 patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
-            window.play("xbox")
+            window.play()
             for _ in range(2):
                 window.process = None
                 window.command_finished(0, None)
         self.assertEqual(calls, [("console.py", "ping", True),
                                  ("tes3x_deploy.py", str(output / "deploy"), False),
                                  ("console.py", "run", False)])
-        self.assertEqual(window.play_button.text(), "Play on Xbox")
+        self.assertEqual(window.play_button.text(), "Play")
 
         # A failed step stops the rest.
         window.process = None
         calls.clear()
         with patch.object(window, "start_command", side_effect=start),                 patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
-            window.play("xbox")
+            window.play()
             window.process = None
             window.command_finished(1, None)
         self.assertEqual([call[1] for call in calls], ["ping"])
@@ -724,7 +721,7 @@ order = 10
 
         warning = patch.object(QMessageBox, "warning", return_value=QMessageBox.StandardButton.Yes)
         with patch.object(window, "start_command", side_effect=start_full), warning as asked:
-            window.play("xbox")
+            window.play()
             window.process = None
             window.command_finished(0, None)
             window.output.setPlainText("  conflict: F:/Games/Test holds 3 files (1.0 KB) that "
@@ -813,14 +810,13 @@ order = 10
         self.addCleanup(dialog.close)
         self.assertEqual([dialog.categories.item(row).text()
                           for row in range(dialog.categories.count())],
-                         ["Paths", "Targets", "xemu", "Hardware rig", "Add-ons"])
+                         ["Paths", "Targets", "xemu", "Add-ons"])
         dialog.fields["paths.mod_library"].setText("D:/Mods")
         dialog.add_target("bench")
         dialog.target_host.setText("192.0.2.5")
         dialog.target_games_root.setText("F:/Games")
         dialog.target_retail_root.setText("F:/Games/MorrowindRetail")
         dialog.target_port.setValue(2121)
-        dialog.rig_target.setCurrentIndex(dialog.rig_target.findData("bench"))
         self.assertTrue(dialog.save_settings())
         with open(config, "rb") as stream:
             values = tomllib.load(stream)
@@ -831,7 +827,6 @@ order = 10
         self.assertEqual(values["targets"]["bench"]["retail_root"],
                          "F:/Games/MorrowindRetail")
         self.assertEqual(values["targets"]["bench"]["port"], 2121)
-        self.assertTrue(values["targets"]["bench"]["rig"])
         self.assertEqual(values["xemu"]["custom"], "keep")
         self.assertIn("# keep this comment", config.read_text(encoding="utf-8"))
 
@@ -850,22 +845,26 @@ order = 10
         self.assertNotIn("deploy", values)
         self.assertEqual(values["targets"]["xbox"]["games_root"], "F:/Games")
 
-    def test_drive_badge_shows_the_build_drive_from_the_agent(self):
-        window = self.window()
-        window.build.remote_root.setText("F:/Games/Morrowind")
+    def test_target_tooltip_shows_drive_space_from_the_agent(self):
+        config = self.root / "local.toml"
+        config.write_text('default_target = "bench"\n[targets.bench]\nkind = "xbox"\n'
+                          'host = "192.0.2.5"\ngames_root = "F:/Games"\n', encoding="utf-8")
+        window = self.window(config=config)
 
         class Reply:
             def readAllStandardOutput(self):
                 return b"ok C=120/480 E=3000/4882 F=1536/60000 G=?/?"
 
         window.drive_probe = Reply()
+        window.drive_probe_target = "bench"
         window.drive_probe_finished(0, None)
-        self.assertEqual(window.drive_status.text(), "F: 1.5 GB free")
-        self.assertIn("E: 2.9 GB free of 4.8 GB, 39% used", window.drive_status.toolTip())
+        self.assertIn("F: 1.5 GB free of 58.6 GB", window.target_picker.toolTip())
+        self.assertIn("E: 2.9 GB free of 4.8 GB, 39% used", window.target_picker.toolTip())
         window.drive_probe = Reply()
+        window.drive_probe_target = "bench"
         window.drive_probe.readAllStandardOutput = lambda: b"err unknown command: drives"
         window.drive_probe_finished(1, None)
-        self.assertEqual(window.drive_status.text(), "Drives: unknown")
+        self.assertIn("unknown command: drives", window.target_picker.toolTip())
 
 
 if __name__ == "__main__":

@@ -56,14 +56,6 @@ def default_name(local, kind=None):
                  if kind is None or target.get("kind") == kind), None)
 
 
-def rig_name(local):
-    names = [name for name, target in targets(local).items()
-             if target.get("kind") == "xbox" and target.get("rig")]
-    if len(names) > 1:
-        raise TargetError("only one Xbox target may have rig = true")
-    return names[0] if names else None
-
-
 def resolve(local, name=None, kind=None, required=False):
     """Resolve NAME (or default_target) and apply kind defaults."""
     available = targets(local)

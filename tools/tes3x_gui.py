@@ -28,7 +28,7 @@ try:
     from PySide6.QtCore import (QAbstractTableModel, QFile, QModelIndex, QProcess,
                                 QProcessEnvironment, QSettings, QSortFilterProxyModel, QTimer, Qt,
                                 QUrl, Signal)
-    from PySide6.QtGui import (QAction, QActionGroup, QColor, QDesktopServices, QIcon,
+    from PySide6.QtGui import (QAction, QColor, QDesktopServices, QIcon,
                                QKeySequence, QPainter, QPen, QPixmap, QTextCursor)
     from PySide6.QtWidgets import (
         QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
@@ -81,10 +81,7 @@ WARNING = QColor(200, 40, 40)
 COMPAT = {"works": ("\u2713", QColor(60, 170, 60)),
           "works-with-requirements": ("*", QColor(215, 150, 20)),
           "broken": ("\u2717", WARNING), "not-possible": ("\u2717", WARNING)}
-# Where Play runs a build: menu label, button suffix and tes3x_xemu.py options.
 XEMU_STARTED = "xemu: started"
-PLAY_TARGETS = {"xemu-64": ("xemu (64 MB)", "", []),
-                "xemu-128": ("xemu (128 MB)", " 128 MB", ["--ram", "128", "--bios", "128mb"])}
 
 
 def version_label():
@@ -114,6 +111,18 @@ def tinted_icon(icon, colour):
 
 def theme_icon(widget, theme, fallback):
     return QIcon.fromTheme(theme, widget.style().standardIcon(fallback))
+
+
+def dot_icon(colour):
+    pixmap = QPixmap(12, 12)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setBrush(QColor(colour))
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.drawEllipse(2, 2, 8, 8)
+    painter.end()
+    return QIcon(pixmap)
 
 
 def icon_button(action):
@@ -190,14 +199,6 @@ class StatusBar(QStatusBar):
 
     def clearMessage(self):
         self.message.clear()
-
-
-class Badge(QLabel):
-    clicked = Signal()
-
-    def mouseReleaseEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.clicked.emit()
 
 
 def plugin_header(path):
@@ -287,7 +288,6 @@ class LocalSettingsDialog(QDialog):
                               tes3x_targets.targets(plain).items()}
         self.current_target_name = None
         self.target_loading = False
-        self.rig_types = {key: type(value) for key, value in plain.get("rig", {}).items()}
 
         layout = QVBoxLayout(self)
         content = QHBoxLayout()
@@ -300,7 +300,6 @@ class LocalSettingsDialog(QDialog):
         for label, page in (("Paths", self.path_group(paths)),
                             ("Targets", self.targets_page(plain)),
                             ("xemu", self.xemu_group(xemu)),
-                            ("Hardware rig", self.rig_page(plain.get("rig", {}))),
                             ("Add-ons", self.addons_group(plain.get("addons", {})))):
             self.add_page(label, page)
         self.categories.currentRowChanged.connect(self.pages.setCurrentIndex)
@@ -581,7 +580,6 @@ class LocalSettingsDialog(QDialog):
         self.target_values[name] = {"kind": "xbox", "ram": 64, "port": 21,
                                     "user": "xbox", "password": "xbox"}
         self.refresh_target_list(name)
-        self.refresh_rig_targets()
 
     def duplicate_target(self, name=None):
         if not self.current_target_name:
@@ -600,7 +598,6 @@ class LocalSettingsDialog(QDialog):
         self.use_targets = True
         self.target_values[suggested] = dict(self.target_values[source])
         self.refresh_target_list(suggested)
-        self.refresh_rig_targets()
 
     def remove_target(self):
         if not self.current_target_name:
@@ -609,7 +606,6 @@ class LocalSettingsDialog(QDialog):
         self.current_target_name = None
         self.use_targets = True
         self.refresh_target_list()
-        self.refresh_rig_targets()
 
     def test_target_connection(self):
         if self.target_kind.currentData() != "xbox" or not self.target_host.text().strip():
@@ -660,44 +656,6 @@ class LocalSettingsDialog(QDialog):
         self.show_xemu_files()
         layout.addStretch()
         return group
-
-    RIG_FIELDS = (("relay_port", "Relay serial port"),
-                  ("capture_video", "Capture video device"),
-                  ("capture_audio", "Capture audio device"),
-                  ("capture_size", "Capture size"),
-                  ("capture_fps", "Capture frame rate"),
-                  ("pad_host", "Controller host"),
-                  ("pad_token", "Controller token"),
-                  ("pico_sdk", "Pico SDK"),
-                  ("pico_tools", "Pico tools"),
-                  ("wifi_ssid", "Controller Wi-Fi"),
-                  ("wifi_password", "Wi-Fi password"))
-
-    def rig_page(self, values):
-        page, layout = self.page("Hardware rig", "Optional relay, capture card and controller "
-                                 "used by the unattended hardware tools.")
-        form = self.form_section(layout, "Bench hardware")
-        self.rig_target = QComboBox()
-        form.addRow("Wired to", self.rig_target)
-        for key, label in self.RIG_FIELDS:
-            field = self.line(values.get(key, ""), password=key == "wifi_password")
-            self.fields["rig." + key] = field
-            form.addRow(label, field)
-        layout.addStretch()
-        self.refresh_rig_targets()
-        return page
-
-    def refresh_rig_targets(self):
-        if not hasattr(self, "rig_target"):
-            return
-        selected = next((name for name, target in self.target_values.items()
-                         if target.get("kind") == "xbox" and target.get("rig")), None)
-        self.rig_target.clear()
-        self.rig_target.addItem("Not connected", None)
-        for name, target in self.target_values.items():
-            if target.get("kind") == "xbox":
-                self.rig_target.addItem(name, name)
-        self.rig_target.setCurrentIndex(max(0, self.rig_target.findData(selected)))
 
     def xemu_folder(self):
         text = self.fields["xemu.folder"].text().strip()
@@ -819,9 +777,6 @@ class LocalSettingsDialog(QDialog):
 
     def write_targets(self):
         self.store_current_target()
-        rig = self.rig_target.currentData()
-        for name, target in self.target_values.items():
-            target["rig"] = name == rig
         if not self.use_targets:
             target = next(iter(self.target_values.values()), {})
             legacy_dir = target.get("legacy_install_dir", "")
@@ -841,7 +796,7 @@ class LocalSettingsDialog(QDialog):
             if name not in self.target_values:
                 del tables[name]
         keys = ("kind", "host", "port", "user", "password", "games_root", "retail_root",
-                "ram", "rig")
+                "ram")
         for name, values in self.target_values.items():
             target = tables.get(name)
             if target is None:
@@ -881,20 +836,6 @@ class LocalSettingsDialog(QDialog):
             self.update_table(section, {name.split(".", 1)[1]: value
                                         for name, value in values.items()
                                         if name.startswith(section + ".")})
-        rig = {}
-        for name, value in values.items():
-            if not name.startswith("rig."):
-                continue
-            key = name.split(".", 1)[1]
-            if value != "" and (self.rig_types.get(key) is int
-                                or key in ("capture_fps", "pad_token")):
-                try:
-                    value = int(value)
-                except ValueError as exc:
-                    raise PipelineError(f"rig.{key} must be an integer") from exc
-            rig[key] = value
-        self.update_table("rig", rig)
-        drop_empty(self.document, "rig")
         self.write_targets()
         chosen = {name.split(".", 1)[1]: value or "" for name, value in values.items()
                   if name.startswith("addons.")}
@@ -1795,12 +1736,24 @@ class ProfileWindow(QMainWindow):
         profile_bar = QHBoxLayout()
         profile_bar.addWidget(QLabel("Profile"))
         profile_bar.addWidget(self.profile_picker)
+        profile_actions = QToolButton()
+        profile_actions.setText("…")
+        profile_actions.setToolTip("Profile actions")
+        profile_actions.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        profile_menu = QMenu(profile_actions)
         for label, handler in (("New…", self.new_profile), ("Duplicate…", self.duplicate_profile),
                                ("Rename…", self.rename_profile), ("Delete", self.delete_profile)):
-            button = QPushButton(label)
-            button.clicked.connect(handler)
-            profile_bar.addWidget(button)
+            profile_menu.addAction(label, handler)
+        profile_actions.setMenu(profile_menu)
+        profile_bar.addWidget(profile_actions)
         profile_bar.addStretch()
+        profile_bar.addWidget(QLabel("Target"))
+        self.target_picker = QComboBox()
+        self.target_picker.setMinimumWidth(155)
+        self.target_picker.activated.connect(self.target_activated)
+        profile_bar.addWidget(self.target_picker)
+        self.target_states = {}
+        self.target_drive_tips = {}
         self.profile_bar = profile_bar
 
         self.output = QTextEdit()
@@ -1861,32 +1814,11 @@ class ProfileWindow(QMainWindow):
         layout.addWidget(self.body_split)
         self.setCentralWidget(body)
         self.setStatusBar(StatusBar())
-        self.play_state = QLabel()
-        self.play_state.hide()
-        self.statusBar().addPermanentWidget(self.play_state)
         self.counts = QLabel()
         self.counts.setContentsMargins(0, 0, 8, 0)
         self.statusBar().addPermanentWidget(self.counts)
-        self.check_state = QLabel()
-        self.statusBar().addPermanentWidget(self.check_state)
-        self.build_state = QLabel()
-        self.statusBar().addPermanentWidget(self.build_state)
-        self.deploy_state = QLabel()
-        self.statusBar().addPermanentWidget(self.deploy_state)
-        self.ftp_status = Badge()
-        self.ftp_status.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.ftp_status.setToolTip("Click to check the configured Xbox FTP connection")
-        self.ftp_status.clicked.connect(self.refresh_ftp_status)
-        self.statusBar().addPermanentWidget(self.ftp_status)
-        self.drive_status = Badge()
-        self.drive_status.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.drive_status.clicked.connect(self.refresh_drive_status)
-        self.drive_status.hide()
-        self.statusBar().addPermanentWidget(self.drive_status)
-        self.update_check_state()
-        self.update_deploy_state()
-        self.set_ftp_status("Xbox: not checked", "#616161",
-                            "Click to check the configured Xbox FTP connection")
+        self.profile_status = QLabel()
+        self.statusBar().addPermanentWidget(self.profile_status)
         self.ftp_timer = QTimer(self)
         self.ftp_timer.setInterval(60_000)
         self.ftp_timer.timeout.connect(self.refresh_ftp_status)
@@ -1966,6 +1898,11 @@ class ProfileWindow(QMainWindow):
         actions_menu.addActions([self.action_fetch, self.action_refresh_ftp])
         actions_menu.addSeparator()
         actions_menu.addAction(self.discard_after_deploy)
+        command_group = QWidget()
+        command_layout = QHBoxLayout(command_group)
+        command_layout.setContentsMargins(0, 0, 0, 0)
+        command_layout.setSpacing(0)
+        self.command_buttons = []
         for action, theme, fallback, accent in (
                 (self.action_check, None, QStyle.StandardPixmap.SP_DialogApplyButton, None),
                 (self.action_build, QIcon.ThemeIcon.ViewRefresh,
@@ -1984,24 +1921,37 @@ class ProfileWindow(QMainWindow):
             button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
             button.setToolTip(action.text().replace("&", "") + (
                 f" ({action.shortcut().toString()})" if not action.shortcut().isEmpty() else ""))
-            self.profile_bar.addWidget(button)
             if action is self.action_play:
+                self.profile_bar.addWidget(command_group)
+                self.profile_bar.addWidget(button)
                 self.play_button = button
                 self.play_menu = QMenu(self)
                 self.play_menu.setToolTipsVisible(True)
-                self.play_targets = {}
                 button.setMenu(self.play_menu)
                 button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+            else:
+                self.command_buttons.append(button)
+                command_layout.addWidget(button)
+                if action is self.action_check:
+                    self.check_button = button
+                elif action is self.action_build:
+                    self.build_button = button
+                elif action is self.action_deploy:
+                    self.deploy_button = button
+        command_group.setStyleSheet(
+            "QToolButton { border: 1px solid palette(mid); padding: 4px 8px; "
+            "border-radius: 0; } QToolButton:first-child { border-top-left-radius: 4px; "
+            "border-bottom-left-radius: 4px; }")
         self.command_actions = (self.action_check, self.action_build, self.action_deploy,
                                 self.action_play, self.action_smoke, self.action_fetch)
         self.after_command = None
         self.conflict_retry = None
         self.space_retry = None
-        self.play_target = (self.settings.value("play_target", "xemu-64") if self.settings
-                            else "xemu-64")
         self.play_gdb = bool(self.settings and self.settings.value("play_gdb", False, bool))
         self.play_run = None
+        self.refresh_targets()
         self.refresh_play_menu()
+        self.update_build_state()
         self.state_timer = QTimer(self)
         self.state_timer.setInterval(1500)
         self.state_timer.timeout.connect(self.update_build_state)
@@ -3330,10 +3280,90 @@ class ProfileWindow(QMainWindow):
             return {}
 
     def default_target(self, kind=None):
+        name = self.target_picker.currentData() if hasattr(self, "target_picker") else None
         try:
-            return tes3x_targets.resolve(self.local_values(), kind=kind)
+            return tes3x_targets.resolve(self.local_values(), name=name, kind=kind)
         except (tes3x_targets.TargetError, ValueError):
             return None
+
+    def refresh_targets(self):
+        """Reload machine targets while preserving status learned during this session."""
+        local = self.local_values()
+        available = tes3x_targets.targets(local)
+        selected = self.target_picker.currentData() or tes3x_targets.default_name(local)
+        self.target_picker.blockSignals(True)
+        self.target_picker.clear()
+        for name, target in available.items():
+            kind = target.get("kind", "xbox")
+            detail = target.get("host", "") if kind == "xbox" else f"{target.get('ram', 64)} MB"
+            self.target_picker.addItem(dot_icon(self.target_colour(name, target)),
+                                       f"{name}  ·  {detail or kind}", name)
+            row = self.target_picker.count() - 1
+            self.target_picker.setItemData(row, self.target_tooltip(name, target),
+                                           Qt.ItemDataRole.ToolTipRole)
+        index = self.target_picker.findData(selected)
+        self.target_picker.setCurrentIndex(index if index >= 0 else 0)
+        self.target_picker.blockSignals(False)
+        self.target_selection_changed(probe=False)
+
+    def target_colour(self, name, target=None):
+        target = target or tes3x_targets.targets(self.local_values()).get(name, {})
+        if target.get("kind") == "xemu":
+            return "#616161"
+        return {"checking": "#a15c00", "connected": "#2e7d32",
+                "offline": "#b3261e"}.get(self.target_states.get(name), "#616161")
+
+    def target_tooltip(self, name, target=None):
+        target = target or tes3x_targets.targets(self.local_values()).get(name, {})
+        if target.get("kind") == "xemu":
+            lines = [f"xemu · {target.get('ram', 64)} MB"]
+        else:
+            host = target.get("host") or "address not configured"
+            lines = [f"Xbox FTP: {host}:{target.get('port', 21)}"]
+            status = self.target_states.get(name)
+            if status:
+                lines.append({"checking": "Checking connection…", "connected": "Connected",
+                              "offline": "Unreachable"}.get(status, status))
+        if self.target_drive_tips.get(name):
+            lines.append(self.target_drive_tips[name])
+        return "\n".join(lines)
+
+    def refresh_target_item(self, name):
+        target = tes3x_targets.targets(self.local_values()).get(name)
+        row = self.target_picker.findData(name)
+        if target is None or row < 0:
+            return
+        self.target_picker.setItemIcon(row, dot_icon(self.target_colour(name, target)))
+        tip = self.target_tooltip(name, target)
+        self.target_picker.setItemData(row, tip, Qt.ItemDataRole.ToolTipRole)
+        if row == self.target_picker.currentIndex():
+            self.target_picker.setToolTip(tip)
+
+    def target_activated(self, *_args):
+        name = self.target_picker.currentData()
+        config = self.local_config_path()
+        if name and config.is_file():
+            try:
+                document = tomlkit.parse(config.read_text(encoding="utf-8"))
+                document["default_target"] = name
+                config.write_text(tomlkit.dumps(document), encoding="utf-8", newline="")
+            except (OSError, tomlkit.exceptions.ParseError) as exc:
+                self.error(f"Could not remember target: {exc}")
+        self.target_selection_changed(probe=True)
+
+    def target_selection_changed(self, probe=False):
+        target = self.default_target()
+        xbox = bool(target and target.get("kind") == "xbox")
+        self.action_deploy.setEnabled(xbox and self.process is None)
+        self.action_fetch.setEnabled(xbox and self.process is None)
+        self.discard_after_deploy.setEnabled(xbox)
+        if target:
+            self.target_picker.setToolTip(self.target_tooltip(target["name"], target))
+        if hasattr(self, "play_menu"):
+            self.refresh_play_menu()
+        self.update_deploy_state()
+        if probe and xbox:
+            self.refresh_ftp_status()
 
     def xbox_destination(self):
         target = self.default_target("xbox")
@@ -3957,7 +3987,9 @@ class ProfileWindow(QMainWindow):
         value, _name = self.current_pool()
         return (ROOT / "tools" / "tes3x_saves.py",
                 [command, *folders, "--pool", f"{value:08X}", "--library",
-                 str(self.save_library()), "--config", str(self.local_config_path()), *extra])
+                 str(self.save_library()), "--config", str(self.local_config_path()),
+                 *(["--target", self.target_picker.currentData()]
+                   if self.target_picker.currentData() else []), *extra])
 
     def pull_steps(self, saves):
         steps = []
@@ -4538,8 +4570,8 @@ class ProfileWindow(QMainWindow):
         if self.profile_path:
             self.open_profile(self.profile_path)
         self.refresh_profile_list()
+        self.refresh_targets()
         self.refresh_ftp_status()
-        self.refresh_play_menu()
         self.statusBar().showMessage(f"Saved {dialog.path}", 5000)
 
     def open_profile(self, path, quiet=False):
@@ -4586,6 +4618,8 @@ class ProfileWindow(QMainWindow):
         if self.settings is not None:
             self.settings.setValue("last_profile", str(self.profile_path))
         self.refresh_profile_list()
+        self.profile_status.setText(str(self.profile_path))
+        self.profile_status.setToolTip(str(self.profile_path))
         message = str(self.profile_path)
         if library_root and not indexed:
             message += " — no library.toml, so mods are added by folder name"
@@ -4753,6 +4787,8 @@ class ProfileWindow(QMainWindow):
             str(self.profile_path),
             *(["--config", str(self.local_config_path())]
               if self.local_config_path().is_file() else []),
+            *(["--target", self.target_picker.currentData()]
+              if self.target_picker.currentData() else []),
             *extra,
         ], "Running TES3X pipeline…")
 
@@ -4780,98 +4816,96 @@ class ProfileWindow(QMainWindow):
         self.update_check_state()
         self.update_deploy_state()
         if self.command_kind == "build":
-            self.set_status_badge(self.build_state, "Building…", "#a15c00")
-            self.build_state.setToolTip("The profile is being built")
+            self.set_action_state(self.build_button, "Build", "running",
+                                  "The profile is being built")
             return
         if self.build_failed:
-            self.set_status_badge(self.build_state, "Build failed", "#b3261e")
-            self.build_state.setToolTip("The last build command failed; see the output")
+            self.set_action_state(self.build_button, "Build", "failed",
+                                  "The last build command failed; see the output")
             return
         state, tip = self.build_status()
-        text, colour = {"built": ("Built", "#2e7d32"),
-                        "stale": ("Out of date", "#a15c00"),
-                        "missing": ("Not built", "#b3261e")}[state]
-        self.set_status_badge(self.build_state, text, colour)
-        self.build_state.setToolTip(tip)
+        self.set_action_state(self.build_button, "Build",
+                              {"built": "current", "stale": "stale",
+                               "missing": "idle"}[state], tip)
 
     @staticmethod
-    def set_status_badge(widget, text, colour):
-        widget.setText(text)
-        widget.setStyleSheet(
-            f"color: white; background-color: {colour}; padding: 2px 8px; "
-            "border-radius: 3px; font-weight: bold;")
+    def set_action_state(button, label, state, tip):
+        colours = {"idle": "#616161", "current": "#2e7d32", "stale": "#a15c00",
+                   "running": "#a15c00", "failed": "#b3261e"}
+        button.setText(label)
+        button.setIcon(dot_icon(colours[state]))
+        button.setProperty("state", state)
+        button.setToolTip(tip)
 
     def update_check_state(self):
-        if not hasattr(self, "check_state"):
+        if not hasattr(self, "check_button"):
             return
         if self.command_kind == "check":
-            text, colour, tip = "Check: running…", "#a15c00", "Checking the saved profile"
+            state, tip = "running", "Checking the saved profile"
         elif self.check_failed:
-            text, colour, tip = "Check failed", "#b3261e", "The last check failed; see the output"
+            state, tip = "failed", "The last check failed; see the output"
         elif self.check_profile_sha is None:
-            text, colour, tip = "Not checked", "#616161", "Run Check profile"
+            state, tip = "idle", "Run Check profile"
         else:
             try:
                 current = sha256_file(self.profile_path) == self.check_profile_sha
             except OSError:
                 current = False
             if current and not self.is_dirty():
-                text, colour, tip = "Checked", "#2e7d32", "The saved profile passed Check"
+                state, tip = "current", "The saved profile passed Check"
             else:
-                text, colour, tip = "Check needed", "#a15c00", "The profile changed since Check"
-        self.set_status_badge(self.check_state, text, colour)
-        self.check_state.setToolTip(tip)
+                state, tip = "stale", "The profile changed since Check"
+        self.set_action_state(self.check_button, "Check", state, tip)
 
     def update_deploy_state(self):
-        if not hasattr(self, "deploy_state"):
+        if not hasattr(self, "deploy_button"):
             return
-        if self.command_kind == "deploy":
-            text, colour, tip = "Deploying…", "#a15c00", "Synchronizing the build to the Xbox"
+        target = self.default_target()
+        if not target or target.get("kind") != "xbox":
+            state, tip = "idle", "Select an Xbox target to deploy"
+        elif self.command_kind == "deploy":
+            state, tip = "running", "Synchronizing the build to the Xbox"
         elif self.deploy_failed:
-            text, colour, tip = "Deploy failed", "#b3261e", "The last deploy failed; see the output"
+            state, tip = "failed", "The last deploy failed; see the output"
         elif self.deployed_profile_sha is None:
-            text, colour, tip = ("Deploy unknown", "#616161",
-                                 "No deploy has completed during this GUI session")
+            state, tip = "idle", "No deploy has completed during this GUI session"
         else:
             try:
                 current = sha256_file(self.profile_path) == self.deployed_profile_sha
             except OSError:
                 current = False
             if current and not self.is_dirty():
-                text, colour, tip = "Deployed", "#2e7d32", "The current profile was deployed"
+                state, tip = "current", "The current profile was deployed"
             else:
-                text, colour, tip = ("Deploy needed", "#a15c00",
-                                     "The profile changed since it was deployed")
-        self.set_status_badge(self.deploy_state, text, colour)
-        self.deploy_state.setToolTip(tip)
-
-    def set_ftp_status(self, text, colour, tip):
-        self.set_status_badge(self.ftp_status, text, colour)
-        self.ftp_status.setToolTip(tip)
+                state, tip = "stale", "The profile changed since it was deployed"
+        self.set_action_state(self.deploy_button, "Deploy", state, tip)
 
     def refresh_play_menu(self):
-        """xemu's targets, then those of the enabled add-ons."""
+        """Actions that apply to the target selected in the toolbar."""
         self.play_addons = {key: module for module in enabled_addons(self.local_values()).values()
                             for key in module.PLAY}
-        self.play_labels = {key: (label, suffix) for key, (label, suffix, _options)
-                            in PLAY_TARGETS.items()}
-        self.play_labels.update({key: module.PLAY[key] for key, module in self.play_addons.items()})
+        target = self.default_target()
+        xemu = bool(target and target.get("kind") == "xemu")
+        xbox = bool(target and target.get("kind") == "xbox")
         self.play_menu.clear()
-        group = QActionGroup(self.play_menu)
-        self.play_targets = {}
-        for key, (label, _suffix) in self.play_labels.items():
-            if key == next(iter(self.play_addons), None):
-                self.play_menu.addSeparator()
-            target = self.play_menu.addAction(label, lambda key=key: self.play(key))
-            target.setCheckable(True)
-            group.addAction(target)
-            self.play_targets[key] = target
-        self.play_menu.addSeparator()
         gdb = self.play_menu.addAction("Debug with GDB", self.set_play_gdb)
         gdb.setCheckable(True)
         gdb.setChecked(self.play_gdb)
+        gdb.setEnabled(xemu)
         gdb.setToolTip("Open xemu's GDB stub; the status bar shows the port to attach to")
-        self.update_play_targets()
+        reset = self.play_menu.addAction("Reset xemu saves…", self.reset_play_disk)
+        reset.setEnabled(xemu)
+        self.play_menu.addSeparator()
+        pull = self.play_menu.addAction("Pull logs", self.pull_logs)
+        pull.setEnabled(xbox and self.process is None)
+        refresh = self.play_menu.addAction("Refresh connection", self.refresh_ftp_status)
+        refresh.setEnabled(xbox)
+        name = target["name"] if target else "a target"
+        reason = self.play_available()
+        self.action_play.setText("&Play")
+        self.play_button.setText("Play")
+        self.play_button.setToolTip(reason or f"Play on {name} (F9)")
+        self.action_play.setEnabled(not reason and self.process is None)
 
     def set_play_gdb(self):
         self.play_gdb = not self.play_gdb
@@ -4879,40 +4913,32 @@ class ProfileWindow(QMainWindow):
             self.settings.setValue("play_gdb", self.play_gdb)
 
     def play_available(self):
-        """Each Play target, and why it cannot run when it cannot."""
+        """Why the selected target cannot run, or None when it can."""
         local = self.local_values()
+        target = self.default_target()
+        if target is None:
+            return "Configure and select a target in File > Settings"
+        if target.get("kind") == "xbox":
+            if not target.get("host"):
+                return "Set the Xbox target's address in File > Settings"
+            module = self.play_addons.get("xbox")
+            if module is None:
+                return "Enable the Xbox dashboard agent add-on in File > Settings"
+            selected = dict(local)
+            selected["default_target"] = target["name"]
+            return module.status(selected)
         xemu = resolve_xemu(local.get("xemu", {}), self.work_dir())
-        missing = "Set the xemu folder in File > Settings" if not xemu.get("exe") else None
-        available = {"xemu-64": missing,
-                     "xemu-128": missing or (None if xemu.get("bios_128mb")
-                                             else "Set a 128 MB BIOS in File > Settings")}
-        for key, module in self.play_addons.items():
-            available[key] = module.status(local)
-        return available
+        if not xemu.get("exe"):
+            return "Set the xemu folder in File > Settings"
+        if target.get("ram", 64) == 128 and not xemu.get("bios_128mb"):
+            return "Set a 128 MB BIOS in File > Settings"
+        return None
 
-    def update_play_targets(self):
-        available = self.play_available()
-        if self.play_target not in available or available[self.play_target]:
-            self.play_target = "xemu-64"
-        for key, target in self.play_targets.items():
-            target.setEnabled(not available[key])
-            target.setToolTip(available[key] or "")
-            target.setChecked(key == self.play_target)
-        label, suffix = self.play_labels[self.play_target]
-        self.action_play.setText(f"&Play in {label}")
-        self.play_button.setText("Play" + suffix)
-        self.play_button.setToolTip(f"Play in {label} (F9); the arrow picks where")
-
-    def play(self, target=None):
-        reason = self.play_available().get(target or self.play_target, "Not available")
+    def play(self):
+        reason = self.play_available()
         if reason:
             self.error(reason)
             return
-        if target is not None:
-            self.play_target = target
-            if self.settings is not None:
-                self.settings.setValue("play_target", target)
-            self.update_play_targets()
         if self.process is not None:
             self.error("A TES3X command is already running")
             return
@@ -4929,7 +4955,8 @@ class ProfileWindow(QMainWindow):
         """The ISO an earlier play made of the current build, so it is not packed again."""
         built = (self.build_output() / PIPELINE_MARKER).stat().st_mtime
         runs = self.work_dir() / "build" / "xemu"
-        isos = sorted(runs.glob(f"play-{self.profile_path.stem}-{self.play_target}-*/game.iso"),
+        name = self.target_picker.currentData()
+        isos = sorted(runs.glob(f"play-{self.profile_path.stem}-{name}-*/game.iso"),
                       key=lambda path: path.stat().st_mtime)
         current = isos[-1] if isos and isos[-1].stat().st_mtime >= built else None
         for iso in isos:
@@ -4971,17 +4998,21 @@ class ProfileWindow(QMainWindow):
             self.after_command = then
 
     def start_play(self):
-        module = self.play_addons.get(self.play_target)
+        target = self.default_target()
+        if target is None:
+            self.error("Select a target")
+            return
+        module = self.play_addons.get(target.get("kind"))
         if module is not None:
             context = self.play_context()
             try:
-                steps = module.play_steps(self.play_target, context)
+                steps = module.play_steps(target.get("kind"), context)
             except ValueError as exc:
                 self.error(exc)
                 return
-            question = module.confirm(self.play_target, context) \
+            question = module.confirm(target.get("kind"), context) \
                 if hasattr(module, "confirm") else None
-            key = f"confirmed/{self.play_target}/{self.profile_path}"
+            key = f"confirmed/{target['name']}/{self.profile_path}"
             if question and not (self.settings and self.settings.value(key, False, bool)):
                 if QMessageBox.question(self, "TES3X", question) != \
                         QMessageBox.StandardButton.Yes:
@@ -5001,13 +5032,14 @@ class ProfileWindow(QMainWindow):
                   else ["--deploy", str(self.build_output() / "deploy"), "--keep-iso"])
         environment = QProcessEnvironment.systemEnvironment()
         environment.insert("TES3X_CONFIG", str(self.local_config_path()))
-        label, _suffix, options = PLAY_TARGETS[self.play_target]
-        name = f"play-{self.profile_path.stem}-{self.play_target}-{stamp}"
+        name = f"play-{self.profile_path.stem}-{target['name']}-{stamp}"
         self.play_run = self.work_dir() / "build" / "xemu" / name
         self.start_command(ROOT / "tools" / "tes3x_xemu.py",
-                           [name, *source, *options, *(["--gdb"] if self.play_gdb else []),
+                           [name, *source, "--target", target["name"],
+                            "--config", str(self.local_config_path()),
+                            *(["--gdb"] if self.play_gdb else []),
                             "--disk", str(self.play_disk())],
-                           f"Playing in {label}…", environment)
+                           f"Playing in {target['name']}…", environment)
 
     def play_disk(self):
         """The profile's own xemu disk, which keeps its saves between plays."""
@@ -5100,6 +5132,8 @@ class ProfileWindow(QMainWindow):
         self.start_command(ROOT / "tools" / "tes3x_fetch.py", [
             "E:/tes3x*", "--out", str(destination),
             *(["--config", str(config)] if config.is_file() else []),
+            *(["--target", self.target_picker.currentData()]
+              if self.target_picker.currentData() else []),
         ], f"Pulling Xbox logs to {destination}…")
 
     def start_command(self, program, arguments, message, environment=None, clear=True):
@@ -5129,16 +5163,22 @@ class ProfileWindow(QMainWindow):
         try:
             local = tomllib.loads(config.read_text(encoding="utf-8")) if config.is_file() else {}
         except (OSError, tomllib.TOMLDecodeError) as exc:
-            self.set_ftp_status("Xbox: config error", "#b3261e", str(exc))
+            name = self.target_picker.currentData()
+            if name:
+                self.target_states[name] = "offline"
+                self.target_drive_tips[name] = f"Configuration error: {exc}"
+                self.refresh_target_item(name)
             return
         try:
-            target = tes3x_targets.resolve(local, kind="xbox")
+            target = tes3x_targets.resolve(local, self.target_picker.currentData(), kind="xbox")
         except tes3x_targets.TargetError:
             target = None
         host = target.get("host") if target else None
         if not host:
-            self.set_ftp_status("Xbox: not configured", "#b3261e",
-                                "Set the Xbox host in File > Settings")
+            if target:
+                self.target_states[target["name"]] = "offline"
+                self.target_drive_tips[target["name"]] = "Set the Xbox host in File > Settings"
+                self.refresh_target_item(target["name"])
             return
         process = QProcess(self)
         process.setWorkingDirectory(str(self.work_dir()))
@@ -5148,23 +5188,23 @@ class ProfileWindow(QMainWindow):
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         process.finished.connect(self.ftp_probe_finished)
         self.ftp_probe = process
-        self.ftp_probe_host = host
-        self.set_ftp_status(f"Xbox: checking {host}…", "#a15c00", "Checking Xbox FTP")
+        self.ftp_probe_target = target["name"]
+        self.target_states[target["name"]] = "checking"
+        self.refresh_target_item(target["name"])
         process.start()
 
     def ftp_probe_finished(self, code, _status):
         output = ""
         if self.ftp_probe is not None:
             output = bytes(self.ftp_probe.readAllStandardOutput()).decode(errors="replace").strip()
-        host = getattr(self, "ftp_probe_host", "")
-        self.set_ftp_status(f"Xbox: {'connected' if code == 0 else 'offline'} — {host}",
-                            "#2e7d32" if code == 0 else "#b3261e",
-                            output or f"FTP probe exited {code}")
+        name = getattr(self, "ftp_probe_target", self.target_picker.currentData())
+        self.target_states[name] = "connected" if code == 0 else "offline"
+        if code != 0:
+            self.target_drive_tips[name] = output or f"FTP probe exited {code}"
         self.ftp_probe = None
-        if code == 0:
+        self.refresh_target_item(name)
+        if code == 0 and name == self.target_picker.currentData():
             self.refresh_drive_status()
-        else:
-            self.drive_status.hide()
 
     def drive_space_command(self):
         """(script, arguments) of the first enabled add-on that reports the Xbox's drives."""
@@ -5178,7 +5218,6 @@ class ProfileWindow(QMainWindow):
         """Free space on the Xbox's drives, from an add-on such as the dashboard agent."""
         command = self.drive_space_command()
         if command is None:
-            self.drive_status.hide()
             return
         if self.drive_probe is not None:
             return
@@ -5186,22 +5225,24 @@ class ProfileWindow(QMainWindow):
         process = QProcess(self)
         process.setWorkingDirectory(str(self.work_dir()))
         process.setProgram(sys.executable)
-        process.setArguments([str(script), *arguments, "--config", str(self.local_config_path())])
+        name = self.target_picker.currentData()
+        process.setArguments([str(script), *arguments, "--config", str(self.local_config_path()),
+                              *(["--target", name] if name else [])])
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         process.finished.connect(self.drive_probe_finished)
         self.drive_probe = process
-        self.drive_status.show()
+        self.drive_probe_target = name
         process.start()
 
     def drive_probe_finished(self, code, _status):
         output = bytes(self.drive_probe.readAllStandardOutput()).decode(errors="replace").strip()
         self.drive_probe = None
         drives = parse_drives(output) if code == 0 else {}
+        name = getattr(self, "drive_probe_target", self.target_picker.currentData())
         if not drives:
-            self.set_status_badge(self.drive_status, "Drives: unknown", "#616161")
-            self.drive_status.setToolTip("The dashboard agent did not report drive space: "
-                                         + (output or f"exit {code}")
-                                         + "\nClick to ask again")
+            self.target_drive_tips[name] = ("The dashboard agent did not report drive space: "
+                                            + (output or f"exit {code}"))
+            self.refresh_target_item(name)
             return
         remote = self.xbox_destination() or "F:"
         target = remote[0].upper()
@@ -5212,15 +5253,8 @@ class ProfileWindow(QMainWindow):
             used = f", {100 - 100 * free // total}% used" if total else ""
             lines.append(f"{drive}: {free / 1024:.1f} GB free of "
                          f"{(total or 0) / 1024:.1f} GB{used}")
-        free = drives.get(target, (None, None))[0]
-        if free is None:
-            text, colour = "Drives", "#616161"
-        else:
-            text = f"{target}: {free / 1024:.1f} GB free"
-            colour = "#b3261e" if free < 512 else "#a15c00" if free < 2048 else "#2e7d32"
-        self.set_status_badge(self.drive_status, text, colour)
-        self.drive_status.setToolTip("\n".join(lines or ["No drive reported its space"])
-                                     + "\nClick to check again")
+        self.target_drive_tips[name] = "\n".join(lines or ["No drive reported its space"])
+        self.refresh_target_item(name)
 
     def append_process_output(self):
         if self.process is None:
@@ -5230,19 +5264,15 @@ class ProfileWindow(QMainWindow):
         self.output.insertPlainText(text)
         if XEMU_STARTED in text:
             self.statusBar().spinner.stop()
-            self.set_status_badge(self.play_state, "Playing", "#2e7d32")
-            self.play_state.setToolTip("xemu is running this build; close it to finish")
             port = self.play_run / "gdb.port" if self.play_gdb and self.play_run else None
             if port is not None and port.is_file():
                 port = port.read_text().strip()
                 attach = f'gdb -ex "target remote 127.0.0.1:{port}"'
-                self.set_status_badge(self.play_state, f"Playing · GDB :{port}", "#2e7d32")
-                self.play_state.setToolTip(f"xemu is running this build; close it to finish\n"
-                                           f"Attach with: {attach}")
                 self.output.insertPlainText(f"\nGDB stub on 127.0.0.1:{port}; attach with "
                                             f"{attach}\n")
-            self.play_state.show()
-            self.statusBar().showMessage("")
+                self.statusBar().showMessage(f"Playing · GDB :{port}")
+            else:
+                self.statusBar().showMessage("Playing in xemu")
 
     def command_finished(self, code, _status):
         self.append_process_output()
@@ -5266,9 +5296,9 @@ class ProfileWindow(QMainWindow):
                     self.deployed_profile_sha = None
         self.process = None
         self.statusBar().spinner.stop()
-        self.play_state.hide()
         for action in self.command_actions:
             action.setEnabled(True)
+        self.target_selection_changed(probe=False)
         self.update_build_state()
         follow, self.after_command = self.after_command, None
         retry, self.conflict_retry = self.conflict_retry, None

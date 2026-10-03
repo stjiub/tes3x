@@ -58,27 +58,27 @@ New, Duplicate, Rename and Delete beside the list. On first start, with no `tes3
   packaging, archives, engine patches and deployment destination before the profile is built.
 
 Settings left at their defaults stay out of the profile file. **File > Settings** uses categories
-for paths, targets, the shared xemu installation, the hardware rig and add-ons. Targets can be
+for paths, targets, the shared xemu installation and add-ons. Targets can be
 added, duplicated or removed; an Xbox target has its own FTP login, games root and optional shared
 retail base, while an xemu target chooses 64 or 128 MB. The connection button tests an Xbox's FTP
 login before saving. A legacy `[deploy]` configuration is left alone until **Convert** is pressed.
 
-**Actions** checks, builds, smoke-tests and deploys the current profile, and pulls logs off the
-Xbox into `build/xbox-logs/`. **File > Settings** edits `tes3x.local.toml`. The status bar
-shows coloured Check, Build, Deploy and Xbox states: amber while work is needed or in progress,
-green after success, and red after failure or when the Xbox is offline. An activity bar is shown
-while a command is running.
+The toolbar target chooses where checks, builds, deploys, saves, logs and Play go. Its dot is grey
+before an Xbox is checked or for xemu, green while an Xbox answers, and red when it is unreachable;
+the tooltip carries its address and reported free space. The joined Check, Build and Deploy buttons
+use grey, green, amber and red dots for not run, current, stale and failed. Deploy is unavailable
+for xemu targets. **Actions** also smoke-tests the current profile. The status bar is reserved for
+activity, transient messages, counts and the profile path.
 
 For a shared-base layout, local settings also name the clean retail folder on the Xbox. Deployment
 shows that path before explicitly installing or synchronizing it, then sends the smaller profile
 folder.
 
-**Play** runs the profile in [xemu](https://xemu.app), building it first when the dot beside it
-says it is out of date or not built. Its arrow chooses 64 MB or 128 MB; 128 MB needs a BIOS that
-uses the extra memory, set in **File > Settings**. Each profile keeps its own xemu hard disk, so
-saves carry over between sessions; **Actions > Reset xemu saves…** starts it clean. With the
-[console add-on](addons.md) switched on, the arrow also offers **Xbox**: deploy to the console and
-start the game there.
+**Play** runs the profile on the selected target, building it first when necessary. A 128 MB xemu
+target needs a BIOS that uses the extra memory, set in **File > Settings**. Each profile keeps its
+own xemu hard disk, so saves carry over between sessions; the Play menu can reset it, enable GDB,
+pull Xbox logs or refresh the selected Xbox connection. With the [console add-on](addons.md)
+switched on, Play on an Xbox target deploys the build and starts the game there.
 
 **Saves** chooses the profile's save pool: the retail game's shared saves, or a pool of its own
 that keeps its saves apart from other builds (see `save_pool` in

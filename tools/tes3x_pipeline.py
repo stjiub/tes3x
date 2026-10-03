@@ -235,7 +235,7 @@ def validate_local_config(local):
     if not isinstance(targets, dict):
         raise PipelineError("targets must be a table")
     allowed = {"kind", "host", "port", "user", "password", "games_root", "retail_root",
-               "ram", "rig"}
+               "ram"}
     for name, target in targets.items():
         if not isinstance(target, dict):
             raise PipelineError(f"targets.{name} must be a table")
@@ -253,8 +253,6 @@ def validate_local_config(local):
             raise PipelineError(f"targets.{name}.port must be an integer from 1 to 65535")
         if "ram" in target and (type(target["ram"]) is not int or target["ram"] not in (64, 128)):
             raise PipelineError(f"targets.{name}.ram must be 64 or 128")
-        if "rig" in target and type(target["rig"]) is not bool:
-            raise PipelineError(f"targets.{name}.rig must be a boolean")
         if target["kind"] == "xbox" and not target.get("games_root"):
             raise PipelineError(f"targets.{name}.games_root is required for an Xbox target")
     if local.get("default_target") and local["default_target"] not in tes3x_targets.targets(local):

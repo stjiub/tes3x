@@ -41,7 +41,6 @@ Xbox targets accept:
 | `games_root` | string | required | Parent folder for profile installs, such as `F:/Games`. |
 | `retail_root` | string | none | Shared clean retail data folder for profiles whose `install_layout` is `overlay`. |
 | `ram` | integer | `64` | Console RAM in MB: `64` or `128`. |
-| `rig` | boolean | `false` | Whether the hardware rig is wired to this console. Only one target may set it. |
 
 An xemu target has `kind = "xemu"` and `ram = 64` or `128`. Emulator file paths remain shared in
 `[xemu]`. Pass `--target NAME` to select a target for one command; explicit `--host`, `--remote`
