@@ -23,6 +23,8 @@ def _split_remote(remote):
     head, separator, tail = remote.rpartition("/")
     if not separator or not tail:
         raise TargetError("deploy.remote_root must name a game folder below a games root")
+    if head.endswith(":"):
+        head += "/"
     return head, tail
 
 

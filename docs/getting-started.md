@@ -37,10 +37,11 @@ You need:
    python tools/tes3x_gui.py
    ```
 
-2. On first start the GUI opens **File > Settings**. Set the clean game root, your mod library, and the
-   Xbox's IP address from its dashboard. Set **LLVM tools** if `clang` is not on `PATH`.
-3. Press **New** beside the profile list and name the build. On the **Build** tab, set the Xbox
-   folder it will deploy to, such as `F:/Games/MorrowindModded`.
+2. On first start the GUI opens **File > Settings**. Set the clean game root and your mod library,
+   then add an Xbox target with its IP address and games root. Set **LLVM tools** if `clang` is not
+   on `PATH`.
+3. Press **New** beside the profile list and name the build. On the **Build** tab, set its install
+   folder, such as `MorrowindModded`.
 4. Tick mods on **Mods**, and check **Plugins** and **Patches**. **Install mod…** adds an archive to
    the library.
 5. **Actions > Check profile** resolves the profile without building.

@@ -326,6 +326,7 @@ order = 10
 
         build = window.build
         build.title.setText("Modded")
+        build.install_dir.setText("MorrowindModded")
         build.select(build.install_layout, "overlay")
         self.assertEqual(window.patch_items["data-overlay"].text(3), "Overlay install layout")
         self.assertFalse(window.patch_items["data-overlay"].flags()
@@ -346,6 +347,7 @@ order = 10
         self.assertTrue(window.save_profile())
         saved = self.saved()
         self.assertEqual(saved["profile"]["title"], "Modded")
+        self.assertEqual(saved["profile"]["install_dir"], "MorrowindModded")
         self.assertEqual(saved["profile"]["install_layout"], "overlay")
         self.assertEqual(saved["package"], {"mode": "loose"})
         self.assertEqual(saved["preferences"], {"invert_look": True})
@@ -805,21 +807,48 @@ order = 10
 
     def test_local_settings_dialog_preserves_xemu_and_writes_public_fields(self):
         config = self.root / "local.toml"
-        config.write_text('[xemu]\nexe = "xemu.exe"\ncustom = "keep"\n', encoding="utf-8")
+        config.write_text('# keep this comment\n[xemu]\nexe = "xemu.exe"\ncustom = "keep"\n',
+                          encoding="utf-8")
         dialog = LocalSettingsDialog(config)
         self.addCleanup(dialog.close)
+        self.assertEqual([dialog.categories.item(row).text()
+                          for row in range(dialog.categories.count())],
+                         ["Paths", "Targets", "xemu", "Hardware rig", "Add-ons"])
         dialog.fields["paths.mod_library"].setText("D:/Mods")
-        dialog.fields["deploy.host"].setText("192.0.2.5")
-        dialog.fields["deploy.retail_root"].setText("F:/Games/MorrowindRetail")
-        dialog.fields["deploy.port"].setValue(2121)
+        dialog.add_target("bench")
+        dialog.target_host.setText("192.0.2.5")
+        dialog.target_games_root.setText("F:/Games")
+        dialog.target_retail_root.setText("F:/Games/MorrowindRetail")
+        dialog.target_port.setValue(2121)
+        dialog.rig_target.setCurrentIndex(dialog.rig_target.findData("bench"))
         self.assertTrue(dialog.save_settings())
         with open(config, "rb") as stream:
             values = tomllib.load(stream)
         self.assertEqual(values["paths"]["mod_library"], "D:/Mods")
-        self.assertEqual(values["deploy"]["host"], "192.0.2.5")
-        self.assertEqual(values["deploy"]["retail_root"], "F:/Games/MorrowindRetail")
-        self.assertEqual(values["deploy"]["port"], 2121)
+        self.assertEqual(values["default_target"], "bench")
+        self.assertEqual(values["targets"]["bench"]["host"], "192.0.2.5")
+        self.assertEqual(values["targets"]["bench"]["games_root"], "F:/Games")
+        self.assertEqual(values["targets"]["bench"]["retail_root"],
+                         "F:/Games/MorrowindRetail")
+        self.assertEqual(values["targets"]["bench"]["port"], 2121)
+        self.assertTrue(values["targets"]["bench"]["rig"])
         self.assertEqual(values["xemu"]["custom"], "keep")
+        self.assertIn("# keep this comment", config.read_text(encoding="utf-8"))
+
+    def test_local_settings_offers_legacy_target_conversion(self):
+        config = self.root / "local.toml"
+        config.write_text('[deploy]\nhost = "192.0.2.5"\n'
+                          'remote_root = "F:/Games/MorrowindTest"\n', encoding="utf-8")
+        dialog = LocalSettingsDialog(config)
+        self.addCleanup(dialog.close)
+        self.assertFalse(dialog.use_targets)
+        self.assertFalse(dialog.legacy_notice.isHidden())
+        dialog.convert_legacy()
+        self.assertTrue(dialog.use_targets)
+        self.assertTrue(dialog.save_settings())
+        values = self.saved(config)
+        self.assertNotIn("deploy", values)
+        self.assertEqual(values["targets"]["xbox"]["games_root"], "F:/Games")
 
     def test_drive_badge_shows_the_build_drive_from_the_agent(self):
         window = self.window()

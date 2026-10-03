@@ -6,6 +6,7 @@ import collections
 from collections import defaultdict
 import datetime
 import fnmatch
+import ftplib
 import hashlib
 import html
 import json
@@ -62,6 +63,7 @@ from tes3x_deploy import parse_drives
 import tes3x_nexus as nexus
 import tes3x_saves as saves_tool
 import tes3x_savepool
+import tes3x_targets
 from tes3x_xemu_setup import download_xemu, find_files as find_xemu_files, resolve as resolve_xemu
 
 
@@ -261,11 +263,14 @@ def default_config_path():
 class LocalSettingsDialog(QDialog):
     """Edit the machine-local TOML without discarding comments or private xemu settings."""
 
+    probe_done = Signal(bool, str)
+
     def __init__(self, path, parent=None):
         super().__init__(parent)
         self.path = Path(path).resolve()
         self.setWindowTitle("TES3X settings")
-        self.resize(720, 500)
+        self.resize(920, 650)
+        self.setMinimumSize(720, 480)
         try:
             text = self.path.read_text(encoding="utf-8") if self.path.is_file() else ""
             self.document = tomlkit.parse(text)
@@ -274,20 +279,77 @@ class LocalSettingsDialog(QDialog):
 
         plain = tomllib.loads(tomlkit.dumps(self.document))
         paths = plain.get("paths", {})
-        deploy = plain.get("deploy", {})
         xemu = plain.get("xemu", {})
         self.fields = {}
+        self.legacy_deploy = bool(plain.get("deploy")) and not plain.get("targets")
+        self.use_targets = not self.legacy_deploy
+        self.target_values = {name: dict(value) for name, value in
+                              tes3x_targets.targets(plain).items()}
+        self.current_target_name = None
+        self.target_loading = False
+        self.rig_types = {key: type(value) for key, value in plain.get("rig", {}).items()}
 
         layout = QVBoxLayout(self)
-        layout.addWidget(self.path_group(paths))
-        layout.addWidget(self.deploy_group(deploy))
-        layout.addWidget(self.xemu_group(xemu))
-        layout.addWidget(self.addons_group(plain.get("addons", {})))
+        content = QHBoxLayout()
+        self.categories = QListWidget()
+        self.categories.setFixedWidth(155)
+        self.pages = QStackedWidget()
+        content.addWidget(self.categories)
+        content.addWidget(self.pages, 1)
+        layout.addLayout(content, 1)
+        for label, page in (("Paths", self.path_group(paths)),
+                            ("Targets", self.targets_page(plain)),
+                            ("xemu", self.xemu_group(xemu)),
+                            ("Hardware rig", self.rig_page(plain.get("rig", {}))),
+                            ("Add-ons", self.addons_group(plain.get("addons", {})))):
+            self.add_page(label, page)
+        self.categories.currentRowChanged.connect(self.pages.setCurrentIndex)
+        self.categories.setCurrentRow(0)
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.save_and_accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+        self.probe_done.connect(self.target_probe_finished)
+
+    def add_page(self, label, page):
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setWidget(page)
+        self.categories.addItem(label)
+        self.pages.addWidget(scroll)
+
+    @staticmethod
+    def page(title, description=""):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(20, 12, 20, 20)
+        heading = QLabel(title)
+        font = heading.font()
+        font.setPointSize(font.pointSize() + 4)
+        font.setBold(True)
+        heading.setFont(font)
+        layout.addWidget(heading)
+        if description:
+            about = QLabel(description)
+            about.setWordWrap(True)
+            layout.addWidget(about)
+        return page, layout
+
+    @staticmethod
+    def form_section(layout, title):
+        heading = QLabel(title)
+        font = heading.font()
+        font.setBold(True)
+        heading.setFont(font)
+        heading.setContentsMargins(0, 12, 0, 2)
+        layout.addWidget(heading)
+        body = QWidget()
+        form = QFormLayout(body)
+        form.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(body)
+        return form
 
     def line(self, value="", password=False):
         field = QLineEdit(str(value))
@@ -317,8 +379,8 @@ class LocalSettingsDialog(QDialog):
         return row
 
     def path_group(self, values):
-        group = QGroupBox("Project paths")
-        form = QFormLayout(group)
+        group, layout = self.page("Paths", "Folders and tools shared by every profile.")
+        form = self.form_section(layout, "Project paths")
         for key, label in (("vanilla_root", "Clean game root"),
                            ("mod_library", "Mod library"),
                            ("profiles", "Profiles"),
@@ -335,32 +397,253 @@ class LocalSettingsDialog(QDialog):
         hardlink.setChecked(values.get("hardlink_retail", False))
         self.fields["paths.hardlink_retail"] = hardlink
         form.addRow("", hardlink)
+        layout.addStretch()
         return group
 
-    def deploy_group(self, values):
-        group = QGroupBox("Xbox FTP and deployment")
-        form = QFormLayout(group)
-        for key, label, default in (("host", "Host", ""), ("user", "User", "xbox"),
-                                    ("password", "Password", "xbox"),
-                                    ("remote_root", "Game destination", ""),
-                                    ("retail_root", "Shared retail base", "")):
-            field = self.line(values.get(key, default), password=key == "password")
-            self.fields["deploy." + key] = field
-            form.addRow(label, field)
-        port = QSpinBox()
-        port.setRange(1, 65535)
-        port.setValue(values.get("port", 21))
-        self.fields["deploy.port"] = port
-        form.insertRow(1, "Port", port)
-        return group
+    def targets_page(self, plain):
+        page, layout = self.page("Targets", "Choose the Xboxes and xemu configurations that can "
+                                 "run any profile.")
+        if self.legacy_deploy:
+            self.legacy_notice = QWidget()
+            notice_layout = QHBoxLayout(self.legacy_notice)
+            notice_layout.setContentsMargins(0, 6, 0, 6)
+            note = QLabel("This file still uses [deploy]. Convert it to an Xbox target when "
+                          "you are ready.")
+            note.setWordWrap(True)
+            convert = QPushButton("Convert")
+            convert.clicked.connect(self.convert_legacy)
+            notice_layout.addWidget(note, 1)
+            notice_layout.addWidget(convert)
+            layout.addWidget(self.legacy_notice)
+
+        body = QHBoxLayout()
+        left = QVBoxLayout()
+        self.target_list = QListWidget()
+        self.target_list.setMinimumWidth(180)
+        left.addWidget(self.target_list, 1)
+        actions = QHBoxLayout()
+        for label, handler in (("Add", self.add_target), ("Duplicate", self.duplicate_target),
+                               ("Remove", self.remove_target)):
+            button = QPushButton(label)
+            button.clicked.connect(handler)
+            actions.addWidget(button)
+        left.addLayout(actions)
+        body.addLayout(left, 1)
+
+        self.target_editor = QWidget()
+        editor = QVBoxLayout(self.target_editor)
+        editor.setContentsMargins(18, 0, 0, 0)
+        form = self.form_section(editor, "Target")
+        self.target_name = QLineEdit()
+        self.target_kind = QComboBox()
+        self.target_kind.addItem("Xbox", "xbox")
+        self.target_kind.addItem("xemu", "xemu")
+        self.target_ram = QComboBox()
+        self.target_ram.addItem("64 MB", 64)
+        self.target_ram.addItem("128 MB", 128)
+        form.addRow("Name", self.target_name)
+        form.addRow("Kind", self.target_kind)
+        form.addRow("Memory", self.target_ram)
+
+        self.xbox_fields = QWidget()
+        xbox = QFormLayout(self.xbox_fields)
+        xbox.setContentsMargins(0, 8, 0, 0)
+        self.target_host = self.line()
+        self.target_port = QSpinBox()
+        self.target_port.setRange(1, 65535)
+        self.target_user = self.line("xbox")
+        self.target_password = self.line("xbox", password=True)
+        self.target_games_root = self.line()
+        self.target_retail_root = self.line()
+        for label, field in (("Host", self.target_host), ("Port", self.target_port),
+                             ("User", self.target_user), ("Password", self.target_password),
+                             ("Games root", self.target_games_root),
+                             ("Shared retail base", self.target_retail_root)):
+            xbox.addRow(label, field)
+        probe_row = QHBoxLayout()
+        self.target_test = QPushButton("Test connection")
+        self.target_test.clicked.connect(self.test_target_connection)
+        self.target_test_status = QLabel()
+        probe_row.addWidget(self.target_test)
+        probe_row.addWidget(self.target_test_status, 1)
+        xbox.addRow("", probe_row)
+        editor.addWidget(self.xbox_fields)
+        editor.addStretch()
+        body.addWidget(self.target_editor, 2)
+        layout.addLayout(body, 1)
+
+        self.target_list.currentRowChanged.connect(self.target_selected)
+        self.target_kind.currentIndexChanged.connect(self.target_kind_changed)
+        self.refresh_target_list(plain.get("default_target"))
+        return page
+
+    def target_data(self):
+        return {
+            "kind": self.target_kind.currentData(),
+            "ram": self.target_ram.currentData(),
+            "host": self.target_host.text().strip(),
+            "port": self.target_port.value(),
+            "user": self.target_user.text().strip(),
+            "password": self.target_password.text(),
+            "games_root": self.target_games_root.text().strip(),
+            "retail_root": self.target_retail_root.text().strip(),
+        }
+
+    def store_current_target(self):
+        if self.target_loading or not self.current_target_name:
+            return
+        name = self.target_name.text().strip()
+        if not PROFILE_NAME.fullmatch(name):
+            raise PipelineError("target names use letters, numbers, dot, underscore and dash")
+        if name != self.current_target_name and name in self.target_values:
+            raise PipelineError(f"target {name!r} already exists")
+        values = self.target_data()
+        previous = self.target_values.pop(self.current_target_name, {})
+        for key in ("legacy", "legacy_install_dir"):
+            if key in previous:
+                values[key] = previous[key]
+        self.target_values[name] = values
+        self.current_target_name = name
+
+    def refresh_target_list(self, selected=None):
+        selected = selected or self.current_target_name
+        self.target_loading = True
+        self.target_list.clear()
+        for name, target in self.target_values.items():
+            kind = target.get("kind", "xbox")
+            detail = (target.get("host", "") if kind == "xbox"
+                      else f"{target.get('ram', 64)} MB")
+            item = QListWidgetItem(f"{name}  ·  {detail or kind}")
+            item.setData(ROLE, name)
+            self.target_list.addItem(item)
+        row = next((index for index in range(self.target_list.count())
+                    if self.target_list.item(index).data(ROLE) == selected), 0)
+        self.target_loading = False
+        if self.target_list.count():
+            self.target_list.setCurrentRow(row)
+        else:
+            self.current_target_name = None
+            self.target_editor.setEnabled(False)
+
+    def target_selected(self, row):
+        if self.target_loading:
+            return
+        try:
+            self.store_current_target()
+        except PipelineError as exc:
+            QMessageBox.warning(self, "TES3X", str(exc))
+        item = self.target_list.item(row)
+        if item is None:
+            return
+        name = item.data(ROLE)
+        target = self.target_values[name]
+        self.target_loading = True
+        self.current_target_name = name
+        self.target_name.setText(name)
+        self.target_kind.setCurrentIndex(max(0, self.target_kind.findData(
+            target.get("kind", "xbox"))))
+        self.target_ram.setCurrentIndex(max(0, self.target_ram.findData(target.get("ram", 64))))
+        self.target_host.setText(target.get("host", ""))
+        self.target_port.setValue(target.get("port", 21))
+        self.target_user.setText(target.get("user", "xbox"))
+        self.target_password.setText(target.get("password", "xbox"))
+        self.target_games_root.setText(target.get("games_root", ""))
+        self.target_retail_root.setText(target.get("retail_root", ""))
+        self.target_editor.setEnabled(True)
+        self.target_loading = False
+        self.target_kind_changed()
+
+    def target_kind_changed(self, *_args):
+        xbox = self.target_kind.currentData() == "xbox"
+        self.xbox_fields.setVisible(xbox)
+        self.target_test.setEnabled(xbox)
+
+    def convert_legacy(self):
+        self.store_current_target()
+        self.use_targets = True
+        for target in self.target_values.values():
+            target.pop("legacy", None)
+            target.pop("legacy_install_dir", None)
+        self.legacy_notice.hide()
+
+    def add_target(self, name=None):
+        if isinstance(name, bool) or name is None:
+            name, ok = QInputDialog.getText(self, "Add target", "Target name")
+            if not ok:
+                return
+        name = name.strip()
+        if not PROFILE_NAME.fullmatch(name) or name in self.target_values:
+            QMessageBox.warning(self, "TES3X", "Choose a new target name using letters, "
+                                "numbers, dot, underscore or dash.")
+            return
+        self.store_current_target()
+        self.use_targets = True
+        self.target_values[name] = {"kind": "xbox", "ram": 64, "port": 21,
+                                    "user": "xbox", "password": "xbox"}
+        self.refresh_target_list(name)
+        self.refresh_rig_targets()
+
+    def duplicate_target(self, name=None):
+        if not self.current_target_name:
+            return
+        suggested = name if isinstance(name, str) else self.current_target_name + "-copy"
+        if not isinstance(name, str):
+            suggested, ok = QInputDialog.getText(self, "Duplicate target", "Target name",
+                                                  text=suggested)
+            if not ok:
+                return
+        self.store_current_target()
+        source = self.current_target_name
+        if not PROFILE_NAME.fullmatch(suggested) or suggested in self.target_values:
+            QMessageBox.warning(self, "TES3X", "Choose a new valid target name.")
+            return
+        self.use_targets = True
+        self.target_values[suggested] = dict(self.target_values[source])
+        self.refresh_target_list(suggested)
+        self.refresh_rig_targets()
+
+    def remove_target(self):
+        if not self.current_target_name:
+            return
+        del self.target_values[self.current_target_name]
+        self.current_target_name = None
+        self.use_targets = True
+        self.refresh_target_list()
+        self.refresh_rig_targets()
+
+    def test_target_connection(self):
+        if self.target_kind.currentData() != "xbox" or not self.target_host.text().strip():
+            self.target_test_status.setText("Set a host first")
+            return
+        host = self.target_host.text().strip()
+        port = self.target_port.value()
+        user, password = self.target_user.text().strip(), self.target_password.text()
+        self.target_test.setEnabled(False)
+        self.target_test_status.setText("Connecting…")
+
+        def probe():
+            try:
+                ftp = ftplib.FTP(encoding="latin-1")
+                ftp.connect(host, port, timeout=5)
+                ftp.login(user or "xbox", password or "xbox")
+                ftp.quit()
+                self.probe_done.emit(True, f"Connected to {host}")
+            except ftplib.all_errors as exc:
+                self.probe_done.emit(False, str(exc))
+
+        threading.Thread(target=probe, daemon=True).start()
+
+    def target_probe_finished(self, ok, message):
+        self.target_test.setEnabled(self.target_kind.currentData() == "xbox")
+        self.target_test_status.setText(message if ok else "Could not connect: " + message)
 
     XEMU_FILES = (("exe", "Executable"), ("bootrom", "MCPX boot ROM"), ("bios", "BIOS"),
                   ("bios_128mb", "BIOS for 128 MB runs"), ("eeprom", "EEPROM"),
                   ("hdd", "Clean HDD image"))
 
     def xemu_group(self, values):
-        group = QGroupBox("xemu")
-        form = QFormLayout(group)
+        group, layout = self.page("xemu", "Files shared by every xemu target.")
+        form = self.form_section(layout, "Installation")
         values = dict(values)
         values.setdefault("bios_128mb", values.get("cerbios", ""))
         folder_row = self.browse_row("xemu.folder", values.get("folder", ""))
@@ -375,7 +658,46 @@ class LocalSettingsDialog(QDialog):
                                                     values.get("extract_xiso", ""), files=True))
         self.fields["xemu.folder"].textChanged.connect(self.show_xemu_files)
         self.show_xemu_files()
+        layout.addStretch()
         return group
+
+    RIG_FIELDS = (("relay_port", "Relay serial port"),
+                  ("capture_video", "Capture video device"),
+                  ("capture_audio", "Capture audio device"),
+                  ("capture_size", "Capture size"),
+                  ("capture_fps", "Capture frame rate"),
+                  ("pad_host", "Controller host"),
+                  ("pad_token", "Controller token"),
+                  ("pico_sdk", "Pico SDK"),
+                  ("pico_tools", "Pico tools"),
+                  ("wifi_ssid", "Controller Wi-Fi"),
+                  ("wifi_password", "Wi-Fi password"))
+
+    def rig_page(self, values):
+        page, layout = self.page("Hardware rig", "Optional relay, capture card and controller "
+                                 "used by the unattended hardware tools.")
+        form = self.form_section(layout, "Bench hardware")
+        self.rig_target = QComboBox()
+        form.addRow("Wired to", self.rig_target)
+        for key, label in self.RIG_FIELDS:
+            field = self.line(values.get(key, ""), password=key == "wifi_password")
+            self.fields["rig." + key] = field
+            form.addRow(label, field)
+        layout.addStretch()
+        self.refresh_rig_targets()
+        return page
+
+    def refresh_rig_targets(self):
+        if not hasattr(self, "rig_target"):
+            return
+        selected = next((name for name, target in self.target_values.items()
+                         if target.get("kind") == "xbox" and target.get("rig")), None)
+        self.rig_target.clear()
+        self.rig_target.addItem("Not connected", None)
+        for name, target in self.target_values.items():
+            if target.get("kind") == "xbox":
+                self.rig_target.addItem(name, name)
+        self.rig_target.setCurrentIndex(max(0, self.rig_target.findData(selected)))
 
     def xemu_folder(self):
         text = self.fields["xemu.folder"].text().strip()
@@ -412,8 +734,13 @@ class LocalSettingsDialog(QDialog):
                                 "MCPX boot ROM and BIOS there, then save the settings.")
 
     def addons_group(self, values):
-        group = QGroupBox("Add-ons")
-        form = QVBoxLayout(group)
+        group, form = self.page("Add-ons", "Optional integrations for particular setups.")
+        heading = QLabel("Installed add-ons")
+        font = heading.font()
+        font.setBold(True)
+        heading.setFont(font)
+        heading.setContentsMargins(0, 12, 0, 2)
+        form.addWidget(heading)
         registry = addon_registry()
         for name in registry.NAMES:
             try:
@@ -439,6 +766,7 @@ class LocalSettingsDialog(QDialog):
                 actions.addWidget(button)
             actions.addStretch()
             form.addLayout(actions)
+        form.addStretch()
         return group
 
     def run_addon(self, label, script, arguments):
@@ -489,6 +817,58 @@ class LocalSettingsDialog(QDialog):
             else:
                 table[key] = value
 
+    def write_targets(self):
+        self.store_current_target()
+        rig = self.rig_target.currentData()
+        for name, target in self.target_values.items():
+            target["rig"] = name == rig
+        if not self.use_targets:
+            target = next(iter(self.target_values.values()), {})
+            legacy_dir = target.get("legacy_install_dir", "")
+            games = target.get("games_root", "").rstrip("/\\")
+            values = {key: target.get(key, "") for key in
+                      ("host", "port", "user", "password", "retail_root")}
+            values["remote_root"] = games + "/" + legacy_dir if games and legacy_dir else ""
+            self.update_table("deploy", values)
+            return
+
+        self.document.pop("deploy", None)
+        tables = self.document.get("targets")
+        if tables is None:
+            tables = tomlkit.table()
+            self.document["targets"] = tables
+        for name in list(tables):
+            if name not in self.target_values:
+                del tables[name]
+        keys = ("kind", "host", "port", "user", "password", "games_root", "retail_root",
+                "ram", "rig")
+        for name, values in self.target_values.items():
+            target = tables.get(name)
+            if target is None:
+                target = tomlkit.table()
+                tables[name] = target
+            kind = values.get("kind", "xbox")
+            clean = {key: values.get(key) for key in keys}
+            for key in list(target):
+                if key in keys and (key not in clean or clean[key] in ("", None, False)):
+                    del target[key]
+            target["kind"] = kind
+            for key, value in clean.items():
+                if key == "kind" or value in ("", None, False):
+                    continue
+                if kind == "xemu" and key not in ("ram",):
+                    continue
+                if kind == "xbox" and key == "ram" and value == 64:
+                    continue
+                target[key] = value
+        if not tables:
+            del self.document["targets"]
+            self.document.pop("default_target", None)
+        else:
+            default = self.document.get("default_target")
+            if default not in self.target_values:
+                self.document["default_target"] = next(iter(self.target_values))
+
     def save_settings(self):
         values = {name: (field.isChecked() if isinstance(field, QCheckBox)
                          else field.value() if isinstance(field, QSpinBox)
@@ -497,10 +877,25 @@ class LocalSettingsDialog(QDialog):
         xemu = self.document.get("xemu")
         if xemu is not None and "cerbios" in xemu and values.get("xemu.bios_128mb"):
             del xemu["cerbios"]
-        for section in ("paths", "deploy", "xemu"):
+        for section in ("paths", "xemu"):
             self.update_table(section, {name.split(".", 1)[1]: value
                                         for name, value in values.items()
                                         if name.startswith(section + ".")})
+        rig = {}
+        for name, value in values.items():
+            if not name.startswith("rig."):
+                continue
+            key = name.split(".", 1)[1]
+            if value != "" and (self.rig_types.get(key) is int
+                                or key in ("capture_fps", "pad_token")):
+                try:
+                    value = int(value)
+                except ValueError as exc:
+                    raise PipelineError(f"rig.{key} must be an integer") from exc
+            rig[key] = value
+        self.update_table("rig", rig)
+        drop_empty(self.document, "rig")
+        self.write_targets()
         chosen = {name.split(".", 1)[1]: value or "" for name, value in values.items()
                   if name.startswith("addons.")}
         if any(chosen.values()) or "addons" in self.document:
@@ -1114,8 +1509,10 @@ class BuildSettings(QWidget):
 
         self.title = QLineEdit()
         self.title.setPlaceholderText("Retail title")
-        self.remote_root = QLineEdit()
-        self.remote_root.setPlaceholderText("From Settings")
+        self.install_dir = QLineEdit()
+        self.install_dir.setPlaceholderText("Profile name")
+        # Kept as an attribute alias until the target toolbar lands in the next phase.
+        self.remote_root = self.install_dir
         self.install_layout = QComboBox()
         self.install_layout.addItem("Full game folder", "full")
         self.install_layout.addItem("Overlay on shared retail base", "overlay")
@@ -1134,10 +1531,12 @@ class BuildSettings(QWidget):
         self.skip_intro = QCheckBox("Skip the logo and New Game movies")
         self.skip_intro.setToolTip("Sets [Movies] Morrowind Logo and New Game to a missing "
                                    "file in the INI tab")
-        identity = QGroupBox("Build")
-        form = QFormLayout(identity)
+        identity = QWidget()
+        identity_layout = QVBoxLayout(identity)
+        identity_layout.setContentsMargins(0, 0, 0, 0)
+        form = LocalSettingsDialog.form_section(identity_layout, "Profile")
         form.addRow("Dashboard title", self.title)
-        form.addRow("Xbox game folder", self.remote_root)
+        form.addRow("Install folder", self.install_dir)
         form.addRow("Install layout", self.install_layout)
         form.addRow("Mod library", library_widget)
         form.addRow("", self.dashboard)
@@ -1157,8 +1556,10 @@ class BuildSettings(QWidget):
         self.loose_assets = QTextEdit()
         self.loose_assets.setPlaceholderText("One pattern per line, e.g. textures/sky/*")
         self.loose_assets.setMaximumHeight(70)
-        package = QGroupBox("Packaging")
-        form = QFormLayout(package)
+        package = QWidget()
+        package_layout = QVBoxLayout(package)
+        package_layout.setContentsMargins(0, 0, 0, 0)
+        form = LocalSettingsDialog.form_section(package_layout, "Packaging")
         form.addRow("Mode", self.mode)
         form.addRow("Archive name", self.archive_name)
         form.addRow("", self.archive_only)
@@ -1178,8 +1579,10 @@ class BuildSettings(QWidget):
         self.exclude = QTextEdit()
         self.exclude.setPlaceholderText("Built-in list: " + ", ".join(DEFAULT_EXCLUDE))
         self.exclude.setMaximumHeight(60)
-        rules = QGroupBox("Rules")
-        form = QFormLayout(rules)
+        rules = QWidget()
+        rules_layout = QVBoxLayout(rules)
+        rules_layout.setContentsMargins(0, 0, 0, 0)
+        form = LocalSettingsDialog.form_section(rules_layout, "Rules")
         form.addRow("Largest texture", self.max_texture_size)
         form.addRow("", self.convert_all)
         form.addRow("Longest file name", self.max_filename)
@@ -1190,11 +1593,14 @@ class BuildSettings(QWidget):
         self.invert_look = QComboBox()
         for label, value in self.PREFERENCE_CHOICES:
             self.invert_look.addItem(label, value)
-        preferences = QGroupBox("Player preferences")
-        form = QFormLayout(preferences)
+        preferences = QWidget()
+        preferences_layout = QVBoxLayout(preferences)
+        preferences_layout.setContentsMargins(0, 0, 0, 0)
+        form = LocalSettingsDialog.form_section(preferences_layout, "Player preferences")
         form.addRow("Look up/down", self.invert_look)
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 0, 20, 20)
         for group in (identity, package, rules, preferences):
             layout.addWidget(group)
         self.reset_button = QPushButton("Reset to defaults")
@@ -1205,7 +1611,7 @@ class BuildSettings(QWidget):
         layout.addLayout(button_row)
         layout.addStretch()
 
-        for widget in (self.title, self.remote_root, self.archive_name):
+        for widget in (self.title, self.install_dir, self.archive_name):
             widget.textChanged.connect(self.changed)
         for widget in (self.dashboard, self.archive_only, self.convert_all, self.clear_cache):
             widget.toggled.connect(self.changed)
@@ -1254,7 +1660,8 @@ class BuildSettings(QWidget):
         rules = plain.get("rules", {})
         package = plain.get("package", {})
         self.title.setText(identity.get("title", ""))
-        self.remote_root.setText(identity.get("remote_root", ""))
+        legacy = identity.get("remote_root", "").replace("\\", "/").rstrip("/")
+        self.install_dir.setText(identity.get("install_dir") or legacy.rpartition("/")[2])
         self.select(self.install_layout, identity.get("install_layout", "full"))
         self.library_path.setText(identity.get("library", ""))
         self.dashboard.setChecked("xbmc4gamers" in identity.get("dashboards", ["xbmc4gamers"]))
@@ -1309,7 +1716,8 @@ class BuildSettings(QWidget):
     def apply(self, document):
         put = lambda *args: self.put(document, *args)
         put("profile", "title", self.title.text().strip() or None, None)
-        put("profile", "remote_root", self.remote_root.text().strip() or None, None)
+        put("profile", "install_dir", self.install_dir.text().strip() or None, None)
+        put("profile", "remote_root", None, None)
         put("profile", "install_layout", self.install_layout.currentData(), "full")
         put("profile", "library", self.library() or None, None)
         put("profile", "dashboards", ["xbmc4gamers"] if self.dashboard.isChecked() else [],
@@ -1774,9 +2182,7 @@ class ProfileWindow(QMainWindow):
         mode = self.build.mode.currentData()
         mode_text = {"delta-bsa": "Delta archive", "merged-bsa": "Rebuilt Morrowind.bsa",
                      "loose": "Loose files"}.get(mode, mode)
-        destination = (self.build.remote_root.text().strip()
-                       or self.local_values().get("deploy", {}).get("remote_root")
-                       or "Not set")
+        destination = self.xbox_destination() or "Not set"
         title = self.build.title.text().strip() or "Retail title"
         profile = self.profile_path.stem if self.profile_path else "New"
         layout = ("Shared retail base" if self.build.install_layout.currentData() == "overlay"
@@ -2923,6 +3329,28 @@ class ProfileWindow(QMainWindow):
         except (OSError, tomllib.TOMLDecodeError):
             return {}
 
+    def default_target(self, kind=None):
+        try:
+            return tes3x_targets.resolve(self.local_values(), kind=kind)
+        except (tes3x_targets.TargetError, ValueError):
+            return None
+
+    def xbox_destination(self):
+        target = self.default_target("xbox")
+        if not target:
+            return None
+        plain = dict(self.profile_plain or {})
+        identity = dict(plain.get("profile", {}))
+        folder = self.build.install_dir.text().strip()
+        if folder:
+            identity["install_dir"] = folder
+            identity.pop("remote_root", None)
+        plain["profile"] = identity
+        try:
+            return tes3x_targets.remote_root(plain, target)
+        except tes3x_targets.TargetError:
+            return None
+
     def local_path(self, key):
         value = self.local_values().get("paths", {}).get(key)
         if not value:
@@ -3391,7 +3819,8 @@ class ProfileWindow(QMainWindow):
             self.saves_xbox = cached.get("saves", [])
             self.xbox_listing = f"listed {cached['time']}" if cached.get("time") else ""
         self.show_saves()
-        if not self.local_values().get("deploy", {}).get("host"):
+        target = self.default_target("xbox")
+        if not target or not target.get("host"):
             return
         if xbox or (xbox is None and value not in self.xbox_checked):
             self.list_xbox_saves(value)
@@ -3403,9 +3832,11 @@ class ProfileWindow(QMainWindow):
         process = QProcess(self)
         process.setWorkingDirectory(str(self.work_dir()))
         process.setProgram(sys.executable)
+        target = self.default_target("xbox")
+        selected = (["--target", target["name"]] if target else [])
         process.setArguments([str(ROOT / "tools" / "tes3x_saves.py"), "list", "--pool",
                               f"{value:08X}", "--xbox", "--library", str(self.save_library()),
-                              "--config", str(self.local_config_path())])
+                              "--config", str(self.local_config_path()), *selected])
         process.finished.connect(lambda code, _status, process=process, value=value:
                                  self.xbox_saves_listed(process, value, code))
         self.saves_probe = process
@@ -3443,7 +3874,7 @@ class ProfileWindow(QMainWindow):
 
     def show_saves_status(self, doing=None, tip=""):
         counts = collections.Counter(save["source"] for save in self.saves_xbox + self.saves_local)
-        xbox = bool(self.local_values().get("deploy", {}).get("host"))
+        xbox = bool((self.default_target("xbox") or {}).get("host"))
         parts = [f"{self.SAVE_SOURCES[key]} {counts[key]}" for key in ("xbox", "xemu", "pc")
                  if counts[key] or (key == "xbox" and xbox)]
         parts.append(doing or self.xbox_listing or "")
@@ -4507,9 +4938,10 @@ class ProfileWindow(QMainWindow):
         return current
 
     def play_context(self):
+        target = self.default_target()
         return {"profile": self.profile_path, "config": self.local_config_path(),
                 "deploy": self.build_output() / "deploy", "plain": self.profile_plain,
-                "local": self.local_values()}
+                "local": self.local_values(), "target": target.get("name") if target else None}
 
     DEPLOY_QUESTION = ("Deploy over existing files?", "This deploy would write over:",
                        "Files in the game folder that the build does not have are deleted. "
@@ -4617,7 +5049,8 @@ class ProfileWindow(QMainWindow):
             self.error("A TES3X command is already running")
             return
         overlay = self.build.install_layout.currentData() == "overlay"
-        retail = self.local_values().get("deploy", {}).get("retail_root")
+        target = self.default_target("xbox") or {}
+        retail = target.get("retail_root")
         overlay_note = (f"\n\nThe shared retail base at {retail or '<not configured>'} will be "
                         "installed or synchronized first." if overlay else "")
         answer = QMessageBox.question(
@@ -4640,11 +5073,16 @@ class ProfileWindow(QMainWindow):
     def deploy_built(self, *extra):
         """Deploy the finished build with --replace, after a conflict or a shortage of space
         stopped the pipeline's."""
-        remote = (self.profile_plain.get("profile", {}).get("remote_root")
-                  or self.local_values().get("deploy", {}).get("remote_root"))
+        target = self.default_target("xbox") or {}
+        remote = self.xbox_destination()
+        if not remote:
+            self.error("Configure an Xbox target before deploying")
+            return
         arguments = [str(self.build_output() / "deploy"), "--remote", remote,
                      "--config", str(self.local_config_path()), "--verify", "size", "--replace",
                      *extra]
+        if target.get("name"):
+            arguments += ["--target", target["name"]]
         if self.profile_plain.get("rules", {}).get("clear_cache_partitions", False):
             arguments.append("--clear-cache")
         self.run_steps([(ROOT / "tools" / "tes3x_deploy.py", arguments, f"Deploying to {remote}…")],
@@ -4693,7 +5131,11 @@ class ProfileWindow(QMainWindow):
         except (OSError, tomllib.TOMLDecodeError) as exc:
             self.set_ftp_status("Xbox: config error", "#b3261e", str(exc))
             return
-        host = local.get("deploy", {}).get("host")
+        try:
+            target = tes3x_targets.resolve(local, kind="xbox")
+        except tes3x_targets.TargetError:
+            target = None
+        host = target.get("host") if target else None
         if not host:
             self.set_ftp_status("Xbox: not configured", "#b3261e",
                                 "Set the Xbox host in File > Settings")
@@ -4702,7 +5144,7 @@ class ProfileWindow(QMainWindow):
         process.setWorkingDirectory(str(self.work_dir()))
         process.setProgram(sys.executable)
         process.setArguments([str(ROOT / "tools" / "tes3x_fetch.py"), "E:/", "--list",
-                              "--config", str(config)])
+                              "--config", str(config), "--target", target["name"]])
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         process.finished.connect(self.ftp_probe_finished)
         self.ftp_probe = process
@@ -4761,8 +5203,7 @@ class ProfileWindow(QMainWindow):
                                          + (output or f"exit {code}")
                                          + "\nClick to ask again")
             return
-        remote = (self.build.remote_root.text().strip()
-                  or self.local_values().get("deploy", {}).get("remote_root") or "F:")
+        remote = self.xbox_destination() or "F:"
         target = remote[0].upper()
         lines = []
         for drive, (free, total) in sorted(drives.items()):

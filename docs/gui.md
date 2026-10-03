@@ -51,13 +51,17 @@ New, Duplicate, Rename and Delete beside the list. On first start, with no `tes3
 - **Resources** shows each active mod's source file and texture footprint before conversion and
   packing. Its dependency view combines mod dependencies and plugin masters and marks anything
   missing or ordered too late.
-- **Build** holds everything else in the profile: dashboard title, Xbox folder, full or shared-base
+- **Build** holds everything else in the profile: dashboard title, install folder, full or shared-base
   install layout, mod library, packaging mode, texture and file-name rules and player preferences.
   **Skip the logo and New Game movies** sets the two `[Movies]` keys in the INI tab to a missing
   file, which the game skips. Its details pane previews the current mod and plugin order, asset
   packaging, archives, engine patches and deployment destination before the profile is built.
 
-Settings left at their defaults stay out of the profile file.
+Settings left at their defaults stay out of the profile file. **File > Settings** uses categories
+for paths, targets, the shared xemu installation, the hardware rig and add-ons. Targets can be
+added, duplicated or removed; an Xbox target has its own FTP login, games root and optional shared
+retail base, while an xemu target chooses 64 or 128 MB. The connection button tests an Xbox's FTP
+login before saving. A legacy `[deploy]` configuration is left alone until **Convert** is pressed.
 
 **Actions** checks, builds, smoke-tests and deploys the current profile, and pulls logs off the
 Xbox into `build/xbox-logs/`. **File > Settings** edits `tes3x.local.toml`. The status bar

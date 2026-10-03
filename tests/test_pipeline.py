@@ -445,6 +445,8 @@ class PipelinePlanTests(unittest.TestCase):
         self.assertEqual(remote_root(profile, target), 'F:/Games/LegacyFolder')
         profile['profile']['remote_root'] = 'G:/Old/ProfileFolder'
         self.assertEqual(remote_root(profile, target), 'F:/Games/ProfileFolder')
+        root_target = resolve({'deploy': {'host': 'x', 'remote_root': 'F:/Games'}})
+        self.assertEqual(remote_root({'profile': {'name': 'p'}}, root_target), 'F:/Games')
 
     def test_target_validation(self):
         validate_local_config({
