@@ -77,6 +77,75 @@ class ServerTests(unittest.TestCase):
         client.sock.sendto(bytes(forged), client.addr)
         self.assertIsNone(client.receive(0.5, tes3x_net.HEARTBEAT))
 
+    def test_dialogue_is_held_by_one_player(self):
+        self.start()
+        net = tes3x_net
+        first, second = self.client(1), self.client(2)
+        first.join()
+        second.join()
+        refid = 0x0101F7C4
+        first.send(net.EVENTS, net.pack_events(0, [
+            (1, net.EVENT_HOLD, 0, struct.pack('<III', refid, 1, 1))]))
+        second.send(net.EVENTS, net.pack_events(0, [
+            (1, net.EVENT_HOLD, 0, struct.pack('<III', refid, 1, 1))]))
+        refused = self.events(second, lambda kind, _: kind == net.EVENT_HOLD_BROKEN)
+        self.assertEqual(refused[-1],
+                         (net.EVENT_HOLD_BROKEN, struct.pack('<III', refid, 2, 3)))
+
+        first.send(net.EVENTS, net.pack_events(0, [
+            (2, net.EVENT_HOLD, 0, struct.pack('<III', refid, 1, 0))]))
+        time.sleep(0.1)
+        second.send(net.EVENTS, net.pack_events(second.delivered, [
+            (2, net.EVENT_HOLD, 0, struct.pack('<III', refid, 1, 1))]))
+        claimed = self.events(first, lambda kind, data: kind == net.EVENT_HOLD and data[-4:] ==
+                              struct.pack('<I', 1))
+        self.assertEqual(claimed[-1],
+                         (net.EVENT_HOLD, struct.pack('<III', refid, 1, 1)))
+
+    def test_player_identity_is_relayed_and_replayed(self):
+        self.start()
+        net = tes3x_net
+        first, second = self.client(1), self.client(2)
+        first.join()
+        second.join()
+        parts = net.pack_identity('Nerevar', 'Imperial', 'b_n_imperial_f_head_01',
+                                  'b_n_imperial_f_hair_01', True)
+        first.send(net.EVENTS, net.pack_events(0, [
+            (i + 1, net.EVENT_IDENTITY, 0, part) for i, part in enumerate(parts)]))
+        relayed = self.events(second, lambda kind, data: kind == net.EVENT_IDENTITY and
+                              data[0] == 1)
+        self.assertEqual([data for kind, data in relayed if kind == net.EVENT_IDENTITY], parts)
+
+        late = self.client(3)
+        late.join()
+        replayed = self.events(late, lambda kind, data: kind == net.EVENT_IDENTITY and
+                               data[0] == 1)
+        self.assertEqual([data for kind, data in replayed if kind == net.EVENT_IDENTITY], parts)
+
+    def test_actor_equipment_is_relayed_and_replayed(self):
+        self.start()
+        net = tes3x_net
+        first, second = self.client(1), self.client(2)
+        first.join()
+        second.join()
+        refid = 0x0101F7C4
+        items = [f'long_actor_equipment_id_{i:02d}' for i in range(7)]
+        parts = net.pack_actor_equipment(refid, items)
+        self.assertGreater(len(parts), 1)
+        first.send(net.EVENTS, net.pack_events(0, [
+            (i + 1, net.EVENT_ACTOR_EQUIPMENT, 0, part) for i, part in enumerate(parts)]))
+        relayed = self.events(second, lambda kind, data: kind == net.EVENT_ACTOR_EQUIPMENT and
+                              data[4] + 1 == data[5])
+        self.assertEqual([data for kind, data in relayed
+                          if kind == net.EVENT_ACTOR_EQUIPMENT], parts)
+
+        late = self.client(3)
+        late.join()
+        replayed = self.events(late, lambda kind, data: kind == net.EVENT_ACTOR_EQUIPMENT and
+                               data[4] + 1 == data[5])
+        self.assertEqual([data for kind, data in replayed
+                          if kind == net.EVENT_ACTOR_EQUIPMENT], parts)
+
     def test_max_players_refuses_the_next_console(self):
         self.start('--max-players', '1')
         self.client(1).join()

@@ -314,7 +314,7 @@ def ping(args):
 
 
 T3MP = struct.Struct("<4sBBHIIIII")  # magic, version, type, 0, session, seq, ack, time, echo
-T3MP_VERSION = 17
+T3MP_VERSION = 18
 HELLO, WELCOME, HEARTBEAT, BYE, STATE, PEER, GONE, EVENTS, REFUSE, CLOCK, ACTORS = range(1, 12)
 # On the wire every packet but the handshake is SEALED: OUTER in the clear (the AEAD's associated
 # data), then INNER and the body sealed under the session key with seq as the nonce.
@@ -350,6 +350,8 @@ EVENT = struct.Struct("<IHHI")  # seq, kind, length, origin client; the data fol
 EVENTS_BYTES = 512  # the client's largest EVENTS body
 EVENT_DATA = 80
 EVENT_TEXT = 1
+EVENT_IDENTITY = 33  # part, two parts, female, then two ids/text values ending in zero
+EVENT_ACTOR_EQUIPMENT = 34  # actor id, part, parts, then equipped item ids ending in zero
 EVENT_AUTHORITY, EVENT_HOLD, EVENT_HOLD_BROKEN, EVENT_HIT, EVENT_DEATH = 2, 3, 4, 5, 6
 EVENT_EQUIPMENT = 7  # part, parts, then item ids each ending in a zero
 EVENT_WEATHER = 8  # flags, count, then (region index u16, weather u8) each
@@ -553,6 +555,59 @@ def pack_equipment(ids):
 
 def unpack_equipment(part):
     return [wire_text(item) for item in part[2:].split(b"\0") if item]
+
+
+def pack_identity(name, race, head, hair, female=False):
+    """The two IDENTITY events sent for one character."""
+    values = [value.encode() if isinstance(value, str) else value
+              for value in (name, race, head, hair)]
+    if any(not value or len(value) >= 32 or b"\0" in value for value in values):
+        raise ValueError("identity values must be 1..31 bytes without a zero")
+    return [bytes((part, 2, bool(female))) + b"\0".join(values[2 * part:2 * part + 2]) + b"\0"
+            for part in range(2)]
+
+
+def unpack_identity(part):
+    """Return (part, female, first, second), or raise ValueError for malformed identity data."""
+    if len(part) < 5 or part[0] > 1 or part[1] != 2:
+        raise ValueError("bad identity header")
+    values = part[3:].split(b"\0")
+    if len(values) != 3 or values[-1] or any(not value or len(value) >= 32 for value in values[:2]):
+        raise ValueError("bad identity strings")
+    if any(byte < 0x20 for value in values[:2] for byte in value):
+        raise ValueError("bad identity character")
+    return part[0], bool(part[2]), *(wire_text(value) for value in values[:2])
+
+
+def pack_actor_equipment(refid, ids):
+    """The ACTOR_EQUIPMENT events of one set."""
+    parts = [bytearray(struct.pack("<I", refid) + b"\0\0")]
+    for item in ids:
+        item = item.encode() if isinstance(item, str) else item
+        if not item or len(item) >= 32 or b"\0" in item:
+            raise ValueError("equipment ids must be 1..31 bytes without a zero")
+        if len(parts[-1]) + len(item) + 1 > EVENT_DATA:
+            parts.append(bytearray(struct.pack("<I", refid) + b"\0\0"))
+        parts[-1] += item + b"\0"
+    for index, part in enumerate(parts):
+        part[4:6] = bytes((index, len(parts)))
+    return [bytes(part) for part in parts]
+
+
+def unpack_actor_equipment(data):
+    """Return (refid, part, parts, ids), or raise ValueError for malformed data."""
+    if len(data) < 6:
+        raise ValueError("short actor equipment")
+    refid = struct.unpack_from("<I", data)[0]
+    part, parts = data[4], data[5]
+    if not refid or not parts or part >= parts:
+        raise ValueError("bad actor equipment header")
+    values = data[6:].split(b"\0")
+    if values[-1] or any(not value or len(value) >= 32 for value in values[:-1]):
+        raise ValueError("bad actor equipment id")
+    if any(byte < 0x20 or byte == ord('"') for value in values[:-1] for byte in value):
+        raise ValueError("bad actor equipment character")
+    return refid, part, parts, [wire_text(value) for value in values[:-1]]
 
 
 def pack_weather(entries, flags=0):
@@ -1820,9 +1875,12 @@ def serve(args):
     owners = {}  # cell -> authority client
     actor_owners = {}  # actor id -> (client, since): its owner by proximity
     actor_seen = {}  # actor id -> when a state of it last came
+    dialogues = {}  # actor id -> (talking client, authority client)
     deaths = {}  # refid -> the client that reported it; replayed to each joining client
     # client -> [parts of its latest whole equipment set, parts of the set arriving]
     equipment = {}
+    identities = {}  # client -> its complete [name/race, head/hair] parts
+    actor_equipment = {}  # actor id -> (authority, complete parts, arriving parts)
     bounties = {}
     if args.bot_equip is not None:
         equipment[BOT_ID] = [pack_equipment([i for i in args.bot_equip.split(",") if i]), []]
@@ -2047,6 +2105,12 @@ def serve(args):
 
     def leave(client):
         client.alive = False
+        for refid, (holder, target) in list(dialogues.items()):
+            if holder == client.id:
+                del dialogues[refid]
+                if target != holder:
+                    send_event(target, holder, EVENT_HOLD,
+                               struct.pack("<III", refid, target, 0), time.time())
         for other in clients.values():
             if other.alive:
                 send(other, GONE, struct.pack("<I", client.id))
@@ -2447,8 +2511,22 @@ def serve(args):
             else:
                 print(f"{stamp} client {client.id} {TARGETED[kind]} {refid:#010x} "
                       f"(authority {target}): {word}", flush=True)
+            if kind == EVENT_HOLD:
+                on = struct.unpack_from("<I", data, 8)[0]
+                held = dialogues.get(refid)
+                if on and held and held[0] != client.id:
+                    print(f"{stamp} client {client.id} is refused dialogue with {refid:#010x}: "
+                          f"client {held[0]} is talking", flush=True)
+                    send_event(client.id, 0, EVENT_HOLD_BROKEN,
+                               struct.pack("<III", refid, client.id, 3), now)
+                    return
+                if on:
+                    dialogues[refid] = (client.id, target)
+                elif held and held[0] == client.id:
+                    del dialogues[refid]
             if target != BOT_ID:
-                send_event(target, client.id, kind, data, now)
+                if kind != EVENT_HOLD or target != client.id:
+                    send_event(target, client.id, kind, data, now)
             elif kind == EVENT_HOLD and struct.unpack_from("<I", data, 8)[0] and \
                     args.bot_break_hold is not None:
                 bot["breaks"].append((now + args.bot_break_hold, client.id, refid))
@@ -2513,6 +2591,40 @@ def serve(args):
                 items = [i for part in sets[0] for i in unpack_equipment(part)]
                 print(f"{stamp} client {client.id} wears {len(items)}: {', '.join(items)}",
                       flush=True)
+        if kind == EVENT_IDENTITY:
+            try:
+                part, female, first, second = unpack_identity(data)
+            except ValueError:
+                return
+            parts = identities.get(client.id)
+            if part == 0:
+                parts = identities[client.id] = [data, None]
+            elif not parts or not parts[0] or bool(parts[0][2]) != female:
+                return
+            else:
+                parts[1] = data
+            if parts[1]:
+                name, race = unpack_identity(parts[0])[2:]
+                head, hair = unpack_identity(parts[1])[2:]
+                print(f"{stamp} client {client.id} is {name}: {race}, {head}, {hair}",
+                      flush=True)
+        if kind == EVENT_ACTOR_EQUIPMENT:
+            try:
+                refid, part, count, items = unpack_actor_equipment(data)
+            except ValueError:
+                return
+            have = actor_equipment.get(refid)
+            if part == 0:
+                have = actor_equipment[refid] = [client.id, have[1] if have else [], []]
+            elif not have or have[0] != client.id or len(have[2]) != part or \
+                    have[2][0][5] != count:
+                return
+            have[2].append(data)
+            if part + 1 == count:
+                have[1], have[2] = have[2], []
+                worn = [item for body in have[1] for item in unpack_actor_equipment(body)[3]]
+                print(f"{stamp} client {client.id}: {refid:#010x} wears {len(worn)}: "
+                      f"{', '.join(worn)}", flush=True)
         broadcast_event(client.id, kind, data, now)
 
     def update_authority(now):
@@ -2920,6 +3032,13 @@ def serve(args):
                 if origin != client.id:
                     for part in parts:
                         client.rel.queue(EVENT_EQUIPMENT, origin, part)
+            for origin, parts in identities.items():
+                if origin != client.id and all(parts):
+                    for part in parts:
+                        client.rel.queue(EVENT_IDENTITY, origin, part)
+            for origin, parts, _ in actor_equipment.values():
+                for part in parts:
+                    client.rel.queue(EVENT_ACTOR_EQUIPMENT, origin, part)
             for data in pack_weather(weather):
                 client.rel.queue(EVENT_WEATHER, 0, data)
             for origin, data in bounties.items():
@@ -3409,7 +3528,8 @@ def fuzz_body(rng, event_next):
     if kind == EVENTS and shape < 0.7:
         events, body = [], b""
         for _ in range(rng.randrange(0, 6)):
-            event_kind = rng.choice(list(range(0, 21)) + [EVENT_OFFER, 65535])
+            event_kind = rng.choice(list(range(0, 21)) +
+                                    [EVENT_OFFER, EVENT_IDENTITY, EVENT_ACTOR_EQUIPMENT, 65535])
             data = rng.randbytes(rng.choice((0, 1, 2, 4, 8, rng.randrange(0, EVENT_DATA + 1))))
             events.append((event_kind, data))
         body = EVENTS_HEAD.pack(rng.getrandbits(32) if rng.random() < 0.1 else 0, len(events))

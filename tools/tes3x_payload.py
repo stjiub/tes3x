@@ -44,6 +44,7 @@ PLACE_ADDRESSES = (
     ("FIND_REFERENCE", 0x00109CD0), ("REF_ANIMATION", 0x0012A160), ("REF_ORIENTATION", 0x0012C3D0),
     ("REF_ROTATION", 0x0012AFE0), ("NODE_SET_ROTATION", 0x00042C40), ("NODE_UPDATE", 0x00044170),
     ("ANIM_HAS_GROUP", 0x000CC960), ("ANIM_PLAY_GROUP", 0x000CE5C0),
+    ("BODY_PART_UPDATE", 0x000D0CF0),
     ("UNREADY_WEAPON", 0x00158560), ("MOBILE_HANDS", 0x0015BAF0),
     ("APPLY_HEALTH_DAMAGE", 0x0017C3D0), ("APPLY_FATIGUE_DAMAGE", 0x0017C950),
     ("HIT_STUN", 0x0017DC30), ("BLOOD", 0x001758B0),
@@ -388,9 +389,9 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
                                f"{SHOOT_SLOTS}")
         hit = int(address("PROJECTILE_ACTOR_HIT", PROJECTILE_ACTOR_HIT), 16)
         roll = int(address("HIT_ROLL", HIT_ROLL), 16)
-        sites = [s for s in find_call_sites(image, roll) if hit <= s < hit + 0x600]
-        if len(sites) != 1:
-            raise PayloadError(f"projectile hit roll: {len(sites)} call sites, expected 1")
+        roll_sites = [s for s in find_call_sites(image, roll) if hit <= s < hit + 0x600]
+        if len(roll_sites) != 1:
+            raise PayloadError(f"projectile hit roll: {len(roll_sites)} call sites, expected 1")
         define("NET_SHOOT", hexva(shoot))
         define("NET_SHOOT_SLOTS", "{" + ",".join(hexva(s) for s in slots) + "}")
         player_shoot = int(address("PLAYER_SHOOT", PLAYER_SHOOT), 16)
@@ -417,8 +418,14 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         if bytes(image.data[image.va_to_off(get_bounty):][:7]) != bytes.fromhex("8b899805000068"):
             raise PayloadError(f"get bounty {hexva(get_bounty)}: not MobilePlayer::getBounty")
         define("NET_GET_BOUNTY", hexva(get_bounty))
+        hit_stun = int(address("HIT_STUN", dict(PLACE_ADDRESSES)["HIT_STUN"]), 16)
+        sites = find_call_sites(image, hit_stun)
+        if len(sites) != 2:
+            raise PayloadError(f"hit stun/crime {hexva(hit_stun)}: {len(sites)} call sites, "
+                               "expected 2")
+        define("NET_HIT_STUN_SITES", "{" + ",".join(hexva(s) for s in sites) + "}")
         define("NET_HIT_ROLL", hexva(roll))
-        define("NET_SHOT_ROLL_SITES", "{" + hexva(sites[0]) + "}")
+        define("NET_SHOT_ROLL_SITES", "{" + hexva(roll_sites[0]) + "}")
         target = int(address("ACTIVATION_TARGET", ACTIVATION_TARGET), 16)
         sites = find_call_sites(image, target)
         if len(sites) != 1:

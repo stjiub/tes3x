@@ -961,7 +961,8 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_BodyPartManager_updateForReference",
-      "pc_va": "0x00473EA0"
+      "pc_va": "0x00473EA0",
+      "signature": "void __thiscall updateForReference(TES3::Reference* reference)"
     },
     {
       "va": "0x000D1390",

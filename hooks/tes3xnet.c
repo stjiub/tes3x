@@ -79,7 +79,8 @@ const char *tes3x_console_text_now(void);
     !defined(TES3X_NET_REF_ORIENTATION) || !defined(TES3X_NET_REF_ROTATION) || \
     !defined(TES3X_NET_NODE_SET_ROTATION) || !defined(TES3X_NET_NODE_UPDATE) || \
     !defined(TES3X_NET_ANIM_HAS_GROUP) || !defined(TES3X_NET_ANIM_PLAY_GROUP) || \
-    !defined(TES3X_NET_UNREADY_WEAPON) || !defined(TES3X_NET_MOBILE_HANDS) ||     !defined(TES3X_NET_APPLY_HEALTH_DAMAGE) || !defined(TES3X_NET_APPLY_FATIGUE_DAMAGE) ||     !defined(TES3X_NET_HIT_STUN)
+    !defined(TES3X_NET_BODY_PART_UPDATE) || \
+    !defined(TES3X_NET_UNREADY_WEAPON) || !defined(TES3X_NET_MOBILE_HANDS) ||     !defined(TES3X_NET_APPLY_HEALTH_DAMAGE) || !defined(TES3X_NET_APPLY_FATIGUE_DAMAGE) ||     !defined(TES3X_NET_HIT_STUN) || !defined(TES3X_NET_HIT_STUN_SITES)
 #error "define the TES3X_NET_ functions SetPos, SetAngle, PlayGroup, weapon readying and damage"
 #endif
 #if !defined(TES3X_NET_SPELL_HIT) || !defined(TES3X_NET_SPELL_HIT_SITES) || \
@@ -271,7 +272,7 @@ struct descriptor {
  * session and seq in the clear (T3MP_OUTER, the AEAD's associated data) and seals the real type,
  * ack, times and body under the session's key, seq being the nonce. The receiver rebuilds the
  * T3MP_HEADER layout after opening it. */
-#define T3MP_VERSION 17u
+#define T3MP_VERSION 18u
 #define T3MP_HEADER 28u
 #define T3MP_OUTER 16u
 #define T3MP_INNER 16u
@@ -376,6 +377,8 @@ static struct {
  * is the other side's last delivered number, a count, then events of EVENT_HEADER + length. */
 #define EVENT_TEXT 1u
 #define EVENT_OFFER 32u /* id, size, hash, then the file name */
+#define EVENT_IDENTITY 33u /* two parts: sex, then name/race or head/hair */
+#define EVENT_ACTOR_EQUIPMENT 34u /* actor id, part, parts, then equipped item ids */
 #define EVENT_HEADER 12u /* seq, kind, length, origin client */
 #define EVENT_DATA 80u
 #define EVENTS_OUT 16u
@@ -404,8 +407,12 @@ static struct {
 } game_clock;
 
 static u32 ghost_places, ghost_moves, ghost_failures, player_hits_out, player_hits_in;
+static u32 player_hits_unseen;
 static void ghost_heading_stat(void);
+static u32 ghost_crimes_blocked, ghost_crime_hooked;
 static u32 equip_sent, equip_received, equip_applied, stance_changes, stance_refused;
+static u32 identity_sent, identity_received, identity_applied, identity_refused;
+static u32 actor_equip_sent, actor_equip_received, actor_equip_applied, actor_equip_refused;
 static u32 first_person_states; /* player states whose animation came from the first person */
 static u32 ini_checked;
 static u32 probe_ip, probe_hits;
@@ -1801,6 +1808,11 @@ static void stat(void)
         tes3x_log_hex3("net.ghosts", ghost_places, ghost_moves, ghost_failures);
         ghost_heading_stat();
         tes3x_log_hex3("net.equipment_stat", equip_sent, equip_received, equip_applied);
+        tes3x_log_hex3("net.identity_stat", identity_sent, identity_received, identity_applied);
+        tes3x_log("net.identity_bad", identity_refused);
+        tes3x_log_hex3("net.actor_equip", actor_equip_sent, actor_equip_received,
+                       actor_equip_applied);
+        tes3x_log("net.actor_equip_bad", actor_equip_refused);
         tes3x_log_hex3("net.stances", stance_changes, stance_refused, first_person_states);
     }
 }
@@ -1854,6 +1866,7 @@ typedef void(__attribute__((thiscall)) *fn_trigger_event)(void *element, u32 eve
 #define EVENT_PAD_B 0xFFFF8081
 
 static void run_script(const char *text);
+static const u8 *player_reference(void);
 static u32 rest_blocked;
 
 /* Resting and waiting advance the clock, which is shared while joined: the rest menu is closed
@@ -1878,6 +1891,7 @@ static void rest_block(void)
  * outside the loaded cells do, until the dialogue closes. Combat or a drop in its health releases
  * it and closes the dialogue, so holding an NPC in conversation cannot set it up to be hit. */
 #define MOBILE_FLAGS 0x10
+#define MOBILE_REFERENCE 0x14
 #define MOBILE_SIMULATED 0x4u /* ActiveInSimulation, MWSE's activeAI */
 #define MOBILE_IN_COMBAT 0x10000u
 #define MOBILE_HEALTH 0x2BC /* the current value of the health statistic */
@@ -1949,6 +1963,31 @@ static void hold_frame(void)
         return;
     }
     *flags &= ~MOBILE_SIMULATED;
+}
+
+/* These are HUD notices: MessageBox without buttons fades on its own and does not stop play. */
+static void connection_notice_frame(void)
+{
+    static u32 joined_once, was_joined, slow;
+    u32 joined = ses.state == SESSION_JOINED;
+
+    if (!player_reference())
+        return;
+    if (was_joined && !joined)
+        run_script("MessageBox \"Connection lost. Reconnecting...\"");
+    else if (!was_joined && joined && joined_once)
+        run_script("MessageBox \"Connection restored.\"");
+    if (joined)
+        joined_once = 1;
+    was_joined = joined;
+    if (joined && !slow && ses.rtt_last >= 500000u) {
+        slow = 1;
+        run_script("MessageBox \"Connection is slow.\"");
+    } else if (slow && (!joined || ses.rtt_last < 300000u)) {
+        slow = 0;
+        if (joined)
+            run_script("MessageBox \"Connection recovered.\"");
+    }
 }
 
 /* With the world running under a menu the player's controls would read the pad the menu is
@@ -2065,6 +2104,7 @@ static void menu_stat(void)
     tes3x_log_hex3("net.menu_sim", gates_open, menu_forced, rest_blocked);
     tes3x_log_hex3("net.menu_controls", controls_held, control_hooked, target_hooked);
     tes3x_log_hex3("net.ghost_activations", ghost_activations, 0, 0);
+    tes3x_log_hex3("net.ghost_crimes", ghost_crimes_blocked, ghost_crime_hooked, 0);
     tes3x_log_hex3("net.holds", holds, hold_breaks, held != 0);
 }
 
@@ -2696,6 +2736,7 @@ static struct {
     float x, y, z, heading;
     u8 cell[CELL_NAME];
     u8 *ref;
+    u32 identity; /* the identity generation applied to its base NPC */
     u32 look;  /* the equipment generation it wears */
     u32 armed; /* its health is set to GHOST_HEALTH: a drop from there is a hit */
     u32 dead;  /* 0 alive, 1 dead, 2 not yet reconciled with the server */
@@ -3273,6 +3314,397 @@ static void equipment_apply(u32 i, u8 *ref)
                    equipment_ids(ref, worn) << 16 | looks[l].count);
 }
 
+/* A ghost's plugin NPC is only a placeholder. Each player sends the character name, sex and the
+ * record ids that choose its race, head and hair. The server retains the two reliable parts and
+ * replays them after WELCOME. The strings live in their identity slot because the ghost NPC and
+ * its linked-id table point at them after the event has gone away. */
+#define IDENTITY_PARTS 2u
+#define IDENTITY_TEXT 32u
+#define NPC_FLAGS 0x34
+#define NPC_BASE 0x6C
+#define NPC_NAME 0x70
+#define NPC_LINKS 0x78
+#define NPC_RACE 0xB0
+#define NPC_HEAD 0xBC
+#define NPC_HAIR 0xC0
+#define NPC_FEMALE 1u
+#define ATTACHMENT_BODY_PARTS 1u
+
+typedef void(__attribute__((thiscall)) *fn_body_part_update)(void *manager, void *ref);
+
+static struct {
+    u32 client, used, generation, have, female;
+    char name[IDENTITY_TEXT], race[IDENTITY_TEXT], head[IDENTITY_TEXT], hair[IDENTITY_TEXT];
+} identities[PEERS];
+static u32 identity_clock;
+
+static u32 identity_of(u32 client)
+{
+    u32 i, j, pick = 0;
+
+    for (i = 0; i < PEERS; i++)
+        if (identities[i].client == client)
+            return i;
+    for (i = 0; i < PEERS; i++) {
+        for (j = 0; j < PEERS && peers[j].client != identities[i].client; j++)
+            ;
+        if ((j == PEERS || !identities[i].client) && identities[i].used <= identities[pick].used)
+            pick = i;
+    }
+    identities[pick].client = client;
+    identities[pick].generation = identities[pick].have = 0;
+    return pick;
+}
+
+/* Copy the two zero-terminated strings after an identity part's three-byte header. */
+static int identity_pair(const struct event *e, char *first, char *second)
+{
+    char *out = first;
+    u32 off = 3, n = 0, which;
+
+    if (e->length < 5 || e->data[1] != IDENTITY_PARTS || e->data[0] >= IDENTITY_PARTS)
+        return 0;
+    first[0] = second[0] = 0;
+    for (which = 0; which < 2; which++) {
+        n = 0;
+        while (off < e->length && e->data[off]) {
+            if (e->data[off] < 0x20 || n >= IDENTITY_TEXT - 1)
+                return 0;
+            out[n++] = (char)e->data[off++];
+        }
+        if (off >= e->length || !n)
+            return 0;
+        out[n] = 0;
+        off++;
+        out = second;
+    }
+    return off == e->length;
+}
+
+static void identity_event(const struct event *e)
+{
+    char first[IDENTITY_TEXT], second[IDENTITY_TEXT];
+    u32 slot;
+
+    if (!e->origin || !identity_pair(e, first, second)) {
+        identity_refused++;
+        return;
+    }
+    slot = identity_of(e->origin);
+    identities[slot].used = ++identity_clock;
+    if (!e->data[0]) {
+        identities[slot].have = 1;
+        identities[slot].female = e->data[2] != 0;
+        copy((u8 *)identities[slot].name, (const u8 *)first, IDENTITY_TEXT);
+        copy((u8 *)identities[slot].race, (const u8 *)second, IDENTITY_TEXT);
+        return;
+    }
+    if (!(identities[slot].have & 1) || identities[slot].female != (e->data[2] != 0)) {
+        identity_refused++;
+        return;
+    }
+    copy((u8 *)identities[slot].head, (const u8 *)first, IDENTITY_TEXT);
+    copy((u8 *)identities[slot].hair, (const u8 *)second, IDENTITY_TEXT);
+    identities[slot].have = 3;
+    identities[slot].generation = identity_clock;
+    identity_received++;
+    tes3x_log_hex3("net.identity", e->origin, identities[slot].female,
+                   identities[slot].generation);
+    log_text("net.identity_name", identities[slot].name);
+}
+
+static u32 identity_put(u8 *part, u32 off, const char *text)
+{
+    u32 n;
+
+    if (!mapped(text))
+        return 0;
+    for (n = 0; n < IDENTITY_TEXT - 1 && text[n]; n++)
+        part[off + n] = (u8)text[n];
+    if (!n)
+        return 0;
+    part[off + n] = 0;
+    return off + n + 1;
+}
+
+/* Game thread: send a complete identity after each WELCOME and whenever chargen changes it. */
+static void identity_send(const u8 *ref)
+{
+    static u32 last_check, sent_hash, sent_welcome;
+    const u8 *instance, *npc, *links;
+    const char *fields[4];
+    u8 parts[2][EVENT_DATA];
+    u32 lengths[2], female, hash = 2166136261u, i, k, flags, room, now = now_us();
+
+    if (ses.state != SESSION_JOINED || now - last_check < EQUIP_PERIOD_US)
+        return;
+    last_check = now;
+    if (!plausible(instance = *(const u8 *const *)(ref + 0x28)) ||
+        !plausible(npc = *(const u8 *const *)(instance + NPC_BASE)) ||
+        !plausible(links = *(const u8 *const *)(npc + NPC_LINKS)))
+        return;
+    fields[0] = *(const char *const *)(npc + NPC_NAME);
+    fields[1] = *(const char *const *)(links + 0);
+    fields[2] = *(const char *const *)(links + 12);
+    fields[3] = *(const char *const *)(links + 16);
+    female = (*(const u32 *)(instance + NPC_FLAGS) & NPC_FEMALE) != 0;
+    for (i = 0; i < 2; i++) {
+        parts[i][0] = (u8)i;
+        parts[i][1] = IDENTITY_PARTS;
+        parts[i][2] = (u8)female;
+        lengths[i] = identity_put(parts[i], 3, fields[2 * i]);
+        if (!lengths[i] || !(lengths[i] = identity_put(parts[i], lengths[i], fields[2 * i + 1])))
+            return;
+        for (k = 0; k < lengths[i]; k++)
+            hash = (hash ^ parts[i][k]) * 16777619u;
+    }
+    if (hash == sent_hash && sent_welcome == ses.welcomes)
+        return;
+    flags = lock();
+    room = EVENTS_OUT - (rel.out_next - rel.out_first);
+    unlock(flags);
+    if (room < IDENTITY_PARTS)
+        return;
+    for (i = 0; i < IDENTITY_PARTS; i++)
+        event_queue(EVENT_IDENTITY, parts[i], lengths[i]);
+    sent_hash = hash;
+    sent_welcome = ses.welcomes;
+    identity_sent++;
+    tes3x_log_hex3("net.identity_sent", female, hash, ses.welcomes);
+}
+
+static u8 *resolve_object(const char *id);
+
+static void identity_apply(u32 i, u8 *ref)
+{
+    u8 *instance, *npc, *links, *race, *head, *hair, *attachment, *manager = 0;
+    u32 slot, guard, *flags;
+
+    for (slot = 0; slot < PEERS && identities[slot].client != ghosts[i].client; slot++)
+        ;
+    if (slot == PEERS || identities[slot].have != 3 || !identities[slot].generation ||
+        identities[slot].generation == ghosts[i].identity ||
+        !plausible(instance = *(u8 **)(ref + 0x28)) ||
+        !plausible(npc = *(u8 **)(instance + NPC_BASE)) ||
+        !plausible(links = *(u8 **)(npc + NPC_LINKS)) ||
+        !plausible(race = resolve_object(identities[slot].race)) ||
+        !plausible(head = resolve_object(identities[slot].head)) ||
+        !plausible(hair = resolve_object(identities[slot].hair)))
+        return;
+    attachment = *(u8 **)(ref + REF_ATTACHMENTS);
+    for (guard = 0; plausible(attachment) && guard < 32;
+         attachment = *(u8 **)(attachment + 4), guard++)
+        if (*(u32 *)attachment == ATTACHMENT_BODY_PARTS) {
+            manager = *(u8 **)(attachment + 8);
+            break;
+        }
+    if (!plausible(manager))
+        return;
+    *(char **)(npc + NPC_NAME) = identities[slot].name;
+    *(char **)(links + 0) = identities[slot].race;
+    *(char **)(links + 12) = identities[slot].head;
+    *(char **)(links + 16) = identities[slot].hair;
+    *(u8 **)(npc + NPC_RACE) = race;
+    *(u8 **)(npc + NPC_HEAD) = head;
+    *(u8 **)(npc + NPC_HAIR) = hair;
+    flags = (u32 *)(npc + NPC_FLAGS);
+    *flags = (*flags & ~NPC_FEMALE) | (identities[slot].female ? NPC_FEMALE : 0);
+    flags = (u32 *)(instance + NPC_FLAGS);
+    *flags = (*flags & ~NPC_FEMALE) | (identities[slot].female ? NPC_FEMALE : 0);
+    ((fn_body_part_update)TES3X_NET_BODY_PART_UPDATE)(manager, ref);
+    ghosts[i].identity = identities[slot].generation;
+    identities[slot].used = ++identity_clock;
+    identity_applied++;
+    tes3x_log_hex3("net.ghost_identity", i + 1, ghosts[i].client, ghosts[i].identity);
+}
+
+/* NPC equipment is authority-owned just like the actor pose. At most one authority actor is
+ * inspected per frame; unchanged sets are reconsidered once a second. The server retains each
+ * actor's latest complete set for followers and late joiners. */
+#define ACTOR_LOOKS 64u
+#define ACTOR_EQUIP_SENT 256u
+#define ACTOR_EQUIP_PERIOD_US 1000000u
+#define ACTOR_EQUIP_HEAD 6u /* refid, part, parts */
+
+static struct {
+    u32 refid, used, generation, count, staged, next_part;
+    char ids[EQUIP_ITEMS][EQUIP_ID];
+} actor_looks[ACTOR_LOOKS];
+static struct {
+    u32 refid, hash, next, used;
+} actor_looks_sent[ACTOR_EQUIP_SENT];
+static u32 actor_look_clock, actor_equip_budget;
+
+static u32 actor_look_of(u32 refid)
+{
+    u32 i, pick = 0;
+
+    for (i = 0; i < ACTOR_LOOKS; i++)
+        if (actor_looks[i].refid == refid)
+            return i;
+    for (i = 0; i < ACTOR_LOOKS; i++)
+        if (!actor_looks[i].refid || actor_looks[i].used <= actor_looks[pick].used)
+            pick = i;
+    actor_looks[pick].refid = refid;
+    actor_looks[pick].generation = actor_looks[pick].count = actor_looks[pick].staged = 0;
+    actor_looks[pick].next_part = 0;
+    return pick;
+}
+
+static void actor_equipment_event(const struct event *e)
+{
+    u32 refid, slot, part, parts, off, k;
+
+    if (e->length < ACTOR_EQUIP_HEAD || !(refid = get32le(e->data)) ||
+        !(parts = e->data[5]) || (part = e->data[4]) >= parts) {
+        actor_equip_refused++;
+        return;
+    }
+    for (off = ACTOR_EQUIP_HEAD; off < e->length; off++)
+        if ((e->data[off] && e->data[off] < 0x20) || e->data[off] == '"') {
+            actor_equip_refused++;
+            return;
+        }
+    slot = actor_look_of(refid);
+    actor_looks[slot].used = ++actor_look_clock;
+    if (!part) {
+        actor_looks[slot].generation = 0;
+        actor_looks[slot].staged = actor_looks[slot].next_part = 0;
+    } else if (part != actor_looks[slot].next_part)
+        return;
+    actor_looks[slot].next_part++;
+    off = ACTOR_EQUIP_HEAD;
+    while (off < e->length && actor_looks[slot].staged < EQUIP_ITEMS) {
+        for (k = 0; off + k < e->length && e->data[off + k] && k < EQUIP_ID - 1; k++)
+            actor_looks[slot].ids[actor_looks[slot].staged][k] = (char)e->data[off + k];
+        if (off + k >= e->length || e->data[off + k]) {
+            actor_equip_refused++;
+            return;
+        }
+        actor_looks[slot].ids[actor_looks[slot].staged++][k] = 0;
+        off += k + 1;
+    }
+    if (off != e->length) {
+        actor_equip_refused++;
+        return;
+    }
+    if (actor_looks[slot].next_part != parts)
+        return;
+    actor_looks[slot].count = actor_looks[slot].staged;
+    actor_looks[slot].generation = actor_look_clock;
+    actor_equip_received++;
+    tes3x_log_hex3("net.actor_equipment", refid, actor_looks[slot].count,
+                   actor_looks[slot].generation);
+}
+
+static void actor_item(u8 *ref, const char *verb, const char *id, const char *tail)
+{
+    char line[96];
+    char *p = put_text(put_text(line, verb), " \"");
+
+    p = put_text(put_text(put_text(p, id), "\""), tail);
+    *p = 0;
+    run_script_on(line, ref);
+}
+
+static void actor_equipment_apply(u32 refid, u8 *ref, u32 *applied)
+{
+    char worn[EQUIP_ITEMS][EQUIP_ID];
+    u32 slot, n, k, removed = 0, added = 0;
+
+    for (slot = 0; slot < ACTOR_LOOKS && actor_looks[slot].refid != refid; slot++)
+        ;
+    if (slot == ACTOR_LOOKS || !actor_looks[slot].generation ||
+        actor_looks[slot].generation == *applied)
+        return;
+    *applied = actor_looks[slot].generation;
+    actor_looks[slot].used = ++actor_look_clock;
+    n = equipment_ids(ref, worn);
+    for (k = 0; k < n; k++)
+        if (!has_id(actor_looks[slot].ids, actor_looks[slot].count, worn[k])) {
+            actor_item(ref, "RemoveItem", worn[k], " 1");
+            removed++;
+        }
+    for (k = 0; k < actor_looks[slot].count; k++)
+        if (!has_id(worn, n, actor_looks[slot].ids[k])) {
+            actor_item(ref, "Equip", actor_looks[slot].ids[k], "");
+            added++;
+        }
+    actor_equip_applied++;
+    tes3x_log_hex3("net.actor_equip_apply", refid, removed << 16 | added,
+                   equipment_ids(ref, worn) << 16 | actor_looks[slot].count);
+}
+
+static void actor_equipment_begin_frame(void)
+{
+    actor_equip_budget = 1;
+}
+
+/* Return after inspecting one due actor, whether or not its set changed. */
+static void actor_equipment_send(u8 *ref, u32 refid)
+{
+    char ids[EQUIP_ITEMS][EQUIP_ID];
+    u8 parts[EQUIP_ITEMS][EVENT_DATA];
+    u32 lengths[EQUIP_ITEMS], n, i, k, slot = ACTOR_EQUIP_SENT, pick = 0, count = 0;
+    u32 hash = 2166136261u, flags, room, now = now_us();
+
+    if (!actor_equip_budget || ses.state != SESSION_JOINED)
+        return;
+    for (i = 0; i < ACTOR_EQUIP_SENT; i++) {
+        if (actor_looks_sent[i].refid == refid) {
+            slot = i;
+            break;
+        }
+        if (!actor_looks_sent[i].refid || actor_looks_sent[i].used <= actor_looks_sent[pick].used)
+            pick = i;
+    }
+    if (slot == ACTOR_EQUIP_SENT)
+        slot = pick;
+    if (actor_looks_sent[slot].refid == refid &&
+        (int)(actor_looks_sent[slot].next - now) > 0)
+        return;
+    actor_equip_budget = 0;
+    if (actor_looks_sent[slot].refid != refid)
+        actor_looks_sent[slot].hash = 0;
+    actor_looks_sent[slot].refid = refid;
+    actor_looks_sent[slot].used = ++actor_look_clock;
+    actor_looks_sent[slot].next = now + ACTOR_EQUIP_PERIOD_US;
+    n = equipment_ids(ref, ids);
+    for (i = 0; i < n; i++) {
+        for (k = 0; ids[i][k]; k++)
+            hash = (hash ^ (u8)ids[i][k]) * 16777619u;
+        hash *= 16777619u;
+    }
+    if (actor_looks_sent[slot].hash == hash)
+        return;
+    lengths[0] = ACTOR_EQUIP_HEAD;
+    for (i = 0; i < n; i++) {
+        for (k = 0; ids[i][k]; k++)
+            ;
+        if (lengths[count] + k + 1 > EVENT_DATA)
+            lengths[++count] = ACTOR_EQUIP_HEAD;
+        copy(parts[count] + lengths[count], (const u8 *)ids[i], k + 1);
+        lengths[count] += k + 1;
+    }
+    count++;
+    flags = lock();
+    room = EVENTS_OUT - (rel.out_next - rel.out_first);
+    unlock(flags);
+    if (room < count) {
+        actor_looks_sent[slot].next = now + 100000u;
+        return;
+    }
+    for (i = 0; i < count; i++) {
+        put32le(parts[i], refid);
+        parts[i][4] = (u8)i;
+        parts[i][5] = (u8)count;
+        event_queue(EVENT_ACTOR_EQUIPMENT, parts[i], lengths[i]);
+    }
+    actor_looks_sent[slot].hash = hash;
+    actor_equip_sent++;
+    tes3x_log_hex3("net.actor_equip_sent", refid, n, hash);
+}
+
 /* A ghost stands for a player, so damage done to it here, by this console's player or an actor
  * this console runs, goes to that player's console as PLAYER_HIT. The ghost keeps GHOST_HEALTH in
  * health and fatigue, refilled each frame, so no blow kills or fells it. */
@@ -3283,6 +3715,31 @@ typedef u8(__attribute__((thiscall)) *fn_apply_health)(void *mobile, float damag
 typedef float(__attribute__((thiscall)) *fn_apply_fatigue)(void *mobile, float damage, float swing,
                                                            u8 voice);
 typedef void(__attribute__((thiscall)) *fn_hit_stun)(void *mobile, float damage, u8 died);
+static const u32 hit_stun_sites[] = TES3X_NET_HIT_STUN_SITES;
+
+/* A ghost is another player, not an NPC victim. Keep the engine's hit reaction but suppress the
+ * assault report that would give the attacker a bounty and turn witnesses hostile. */
+static void __attribute__((thiscall)) ghost_hit_stun(u8 *mobile, float damage, u8 crime)
+{
+    const u8 *ref = plausible(mobile) ? *(const u8 *const *)(mobile + MOBILE_REFERENCE) : 0;
+
+    if (crime && plausible(ref) && is_ghost(ref)) {
+        crime = 0;
+        ghost_crimes_blocked++;
+    }
+    ((fn_hit_stun)TES3X_NET_HIT_STUN)(mobile, damage, crime);
+}
+
+static void ghost_crime_hook_install(void)
+{
+    if (ghost_crime_hooked)
+        return;
+    ghost_crime_hooked = 1;
+    if (redirect_calls(hit_stun_sites, sizeof(hit_stun_sites) / sizeof(hit_stun_sites[0]),
+                       TES3X_NET_HIT_STUN, (const void *)ghost_hit_stun))
+        ghost_crime_hooked = 2;
+    tes3x_log("net.ghost_crime_hook", ghost_crime_hooked);
+}
 
 static void event_hit(u32 kind, u32 refid, u32 target, float health, float fatigue)
 {
@@ -3354,18 +3811,30 @@ static void ghost_life_event(const struct event *e)
     tes3x_log_hex3("net.ghost_life", e->origin, dead, e->seq);
 }
 
+static u8 *actor_ref(u32 refid);
+
 /* Another console's ghost of this player was hit there: the damage as the engine applies a blow,
- * with its sounds, and the stun test, whose flinch the ghost there mirrors. */
+ * with its sounds, and the stun test, whose flinch the ghost there mirrors. An NPC hit is accepted
+ * only while that same actor has a local scene node; otherwise an authority can kill the player
+ * with an actor their console has not loaded or cannot draw. */
 static void player_hit_event(const struct event *e)
 {
     const u8 *ref = player_reference();
-    u8 *mobile = ref ? ref_mobile(ref) : 0;
+    u8 *mobile = ref ? ref_mobile(ref) : 0, *attacker;
+    u32 attacker_id;
     float health, fatigue = 0;
 
     if (e->length < 12 || get32le(e->data + 4) != ses.client || !plausible(mobile))
         return;
     if (!float_within(e->data + 8, e->length >= 16 ? 2 : 1, STAT_LIMIT)) {
         refused_events++;
+        return;
+    }
+    attacker_id = get32le(e->data);
+    if (attacker_id && (!(attacker = actor_ref(attacker_id)) ||
+                        !plausible(*(u8 **)(attacker + REF_NODE)))) {
+        player_hits_unseen++;
+        tes3x_log_hex3("net.player_hit_unseen", attacker_id, e->origin, player_hits_unseen);
         return;
     }
     copy((u8 *)&health, e->data + 8, 4);
@@ -3392,6 +3861,7 @@ static void ghost_update(u32 i, const struct pose *local)
         if (ghosts[i].placed)
             ghost_park(i);
         ghosts[i].client = client;
+        ghosts[i].identity = 0;
         ghosts[i].look = 0;
         ghosts[i].dead = 2;
         if (client)
@@ -3413,6 +3883,8 @@ static void ghost_update(u32 i, const struct pose *local)
     }
     if (!(ref = ghost_ref(i)))
         return;
+    if (plausible(ref_mobile(ref)))
+        *(u32 *)(ref_mobile(ref) + MOBILE_FLAGS) &= ~MOBILE_SIMULATED;
     /* Against where it stands: a ghost that was hit turns to its attacker by itself. */
     if (off_pose(ref, &p.x)) {
         place_ref(ref, &p.x);
@@ -3432,6 +3904,7 @@ static void ghost_update(u32 i, const struct pose *local)
         else
             ghost_respawns++;
     }
+    identity_apply(i, ref);
     if (dead)
         return;
     ghost_health(i, ref);
@@ -3529,7 +4002,6 @@ static void ghosts_frame(const u8 *state)
 #define HITS 8u
 #define DEATHS 256u
 #define REF_ID 0x48 /* mod index << 24 | refnum; 0 for a reference made at run time */
-#define MOBILE_REFERENCE 0x14
 #define MOBILE_ACTION 0xDD /* 0x12 dying, 0x13 dead */
 #define MOB_PROCESS 0x24   /* MobController -> ProcessManager: player, then the AI planners */
 #define PROCESS_PLANNERS 0xC
@@ -3559,7 +4031,7 @@ static struct {
 static u32 owner_count, owners_in, owners_full;
 /* Actors this console places for another authority; held while their AI is to be skipped. */
 static struct {
-    u32 refid, owner, held, seen, animated;
+    u32 refid, owner, held, seen, animated, look;
     u8 *mobile;
     float health, fatigue;
 } followed[ACTORS];
@@ -3825,6 +4297,7 @@ static void follow(u8 *mobile, u8 *ref, u32 refid, u32 owner)
         followed[slot].health = health;
         followed[slot].fatigue = fatigue;
         followed[slot].animated = 0;
+        followed[slot].look = 0;
         follows++;
         tes3x_log_hex3("net.follow", refid, owner, *flags & MOBILE_SIMULATED);
     }
@@ -3839,6 +4312,9 @@ static void follow(u8 *mobile, u8 *ref, u32 refid, u32 owner)
     }
     followed[slot].health = health;
     followed[slot].fatigue = fatigue;
+    actor_equipment_apply(refid, ref, &followed[slot].look);
+    followed[slot].health = *(const float *)(mobile + MOBILE_HEALTH);
+    followed[slot].fatigue = *(const float *)(mobile + MOBILE_FATIGUE);
     lk = lock();
     for (i = 0; i < ACTORS; i++)
         if (actors_in[i].refid == refid && actors_in[i].origin == owner) {
@@ -4118,6 +4594,7 @@ static void ghost_fight_log(const u8 *mobile, const u8 *ref, u32 refid)
  * it closes; HOLD_BROKEN from the authority closes it. 1 if the actor is followed. */
 static int hold_remote(u8 *actor)
 {
+    const u8 *ref;
     u32 i, refid = 0, owner = 0, on;
 
     for (i = 0; actor && i < ACTORS; i++)
@@ -4125,6 +4602,9 @@ static int hold_remote(u8 *actor)
             refid = followed[i].refid;
             owner = followed[i].owner;
         }
+    if (actor && !refid && plausible(ref = *(const u8 *const *)(actor + MOBILE_REFERENCE)) &&
+        (refid = actor_id(ref)))
+        owner = ses.client;
     if (talk_refid && talk_refid != refid) {
         on = 0;
         event_words(EVENT_HOLD, talk_refid, talk_owner, &on);
@@ -4140,9 +4620,14 @@ static int hold_remote(u8 *actor)
         event_words(EVENT_HOLD, refid, owner, &on);
         tes3x_log_hex3("net.hold_remote", refid, owner, 0);
     }
-    if (talk_broken)
+    if (talk_broken) {
         dialogue_close();
-    return 1;
+        if (talk_broken == 3) {
+            run_script("MessageBox \"That person is already in conversation.\"");
+            talk_broken = 1;
+        }
+    }
+    return owner != ses.client;
 }
 
 /* Out of a session, or in a new one, nothing learned in the last one holds. Runs before the frame's
@@ -4254,6 +4739,7 @@ static void authority_frame(const u8 *player, const u8 *state)
         followed[i].seen = 0;
     for (i = 0; i < REMOTE_HOLDS; i++)
         remote_holds[i].found = 0;
+    actor_equipment_begin_frame();
     if (!plausible(world) || !plausible(mobs = *(const u8 **)(world + 0x5C)) ||
         !plausible(process = *(const u8 **)(mobs + MOB_PROCESS)))
         return;
@@ -4280,6 +4766,7 @@ static void authority_frame(const u8 *player, const u8 *state)
             }
         if (owner != ses.client)
             continue;
+        actor_equipment_send(ref, refid);
         if (took)
             combat_take(mobile, ref, refid, took);
         remote_hold_apply(mobile, refid);
@@ -4402,7 +4889,7 @@ static void authority_event(const struct event *e)
         remote_breaks_in++;
         tes3x_log_hex3("net.hold_broken_remote", refid, e->origin, value);
         if (refid == talk_refid)
-            talk_broken = 1;
+            talk_broken = value ? value : 1;
     } else if (e->kind == EVENT_HIT && hit_count < HITS) {
         if (!float_within(e->data + 8, e->length >= 16 ? 2 : 1, STAT_LIMIT)) {
             refused_events++;
@@ -4445,6 +4932,7 @@ static void authority_stat(void)
             tes3x_log_hex3("net.ai_distance", (u32)round_int(*(const float *)(pm + 0x830)), 0, 0);
     }
     tes3x_log_hex3("net.player_hits", player_hits_out, player_hits_in, retaliations);
+    tes3x_log("net.player_hits_unseen", player_hits_unseen);
     tes3x_log_hex3("net.hostiles", hostiles, bloodied, 0);
     tes3x_log_hex3("net.actor_deaths", death_count, deaths_reported, deaths_applied);
     tes3x_log_hex3("net.actor_holds", remote_holds_in, remote_breaks_out, remote_breaks_in);
@@ -7523,6 +8011,7 @@ static struct {
     u32 client, peace_until;
     int bounty;
 } bounties[PEERS];
+static u32 player_peace_until;
 static int bounty_sent = -1;
 static u32 bounty_checked, bounties_received, peace_stops;
 static u32 player_mode; /* 3 once the checkpoint's player-state replay is complete */
@@ -7553,6 +8042,8 @@ static void bounty_frame(void)
         tes3x_log("net.event_full", EVENT_BOUNTY);
         return;
     }
+    if (bounty_sent > 0 && bounty <= 0)
+        player_peace_until = now + PEACE_US;
     bounty_sent = bounty;
     tes3x_log_hex3("net.bounty_sent", (u32)bounty, 0, 0);
 }
@@ -7588,13 +8079,18 @@ static void peace_check(const u8 *mobile, void *ref, u32 refid)
     u32 client = combat_target(mobile), i;
     float fight;
 
-    if (!client || client >= PLAYER_IDS || client == ses.client)
+    if (!client || client >= PLAYER_IDS)
         return;
-    for (i = 0; i < PEERS; i++)
-        if (bounties[i].client == client && (int)(bounties[i].peace_until - now_us()) > 0)
-            break;
-    if (i == PEERS)
-        return;
+    if (client == ses.client) {
+        if ((int)(player_peace_until - now_us()) <= 0)
+            return;
+    } else {
+        for (i = 0; i < PEERS; i++)
+            if (bounties[i].client == client && (int)(bounties[i].peace_until - now_us()) > 0)
+                break;
+        if (i == PEERS)
+            return;
+    }
     fight = (float)record_ai(ref, AI_FIGHT, *(const int *)(mobile + MOBILE_FIGHT)) +
             FIGHT_DISP_MULT * (float)(50 - base_disposition(ref));
     if (fight + FIGHT_DISTANCE_BASE >= FIGHT_ATTACK)
@@ -10492,6 +10988,7 @@ typedef const u8 *(__attribute__((thiscall)) *fn_find_marker)(void *data_handler
 typedef void(__cdecl *fn_fill_bar)(u32 bar, float current, float base);
 static u32 dead_since, respawn_told, respawn_at, respawn_where, respawn_gold;
 static u32 deaths_here, respawns_done, deaths_unjoined, death_hooked;
+static u32 player_view_valid, player_view_third;
 
 int __cdecl tes3x_net_death(void)
 {
@@ -10626,10 +11123,9 @@ static void respawn(void)
                                       *(const float *)(mobile + MOBILE_HEALTH_STAT + STAT_BASE));
     if (plausible(magic = *(u8 **)(world + WORLD_MAGIC)))
         magic[4] = 0;
-    if (bounty > 0) { /* Resurrect clears it */
-        *put_int(put_text(line, "SetPCCrimeLevel "), bounty) = 0;
-        run_script(line);
-    }
+    /* Resurrect clears the bounty, but actors already fighting the player keep their target.
+     * For three seconds peace_check stops only fights their base disposition would not start. */
+    player_peace_until = now_us() + PEACE_US;
     if (respawn_gold) {
         *put_int(put_text(line, "Player->RemoveItem gold_001 "), (int)respawn_gold) = 0;
         run_script(line);
@@ -10641,11 +11137,36 @@ static void respawn(void)
         *q = 0;
         run_script(line);
     }
+    if (player_view_valid && !player_view_third)
+        run_script("TogglePOV");
+    {
+        static const char *const messages[] = {
+            "Death could not hold you. ", "The gods return you to life. ",
+            "You awaken at sanctuary. "};
+        q = put_text(put_text(line, "MessageBox \""), messages[deaths_here % 3]);
+        if (respawn_gold)
+            q = put_text(put_int(put_text(q, "Penalty: "), (int)respawn_gold), " gold lost.");
+        else
+            q = put_text(q, "Penalty: none.");
+        *put_text(q, "\"") = 0;
+        run_script(line);
+    }
     player_dead = 0;
     respawns_done++;
     event_queue(EVENT_PLAYER, &data, 1);
     tes3x_log_hex3("net.respawned", marker ? *(const u32 *)(marker + REF_ID) : 0, (u32)bounty,
                    respawn_gold);
+}
+
+static void player_view_frame(void)
+{
+    const u8 *mobile = player_mobile();
+    const u8 *anim = plausible(mobile) ? *(const u8 *const *)(mobile + MOBILE_ANIM_CONTROLLER) : 0;
+
+    if (!player_dead && plausible(anim)) {
+        player_view_third = anim[ANIM_THIRD_PERSON] != 0;
+        player_view_valid = 1;
+    }
 }
 
 static void respawn_frame(void)
@@ -10822,6 +11343,10 @@ static void event_handle(const struct event *e)
         authority_event(e);
     } else if (e->kind == EVENT_EQUIPMENT) {
         equipment_event(e);
+    } else if (e->kind == EVENT_IDENTITY) {
+        identity_event(e);
+    } else if (e->kind == EVENT_ACTOR_EQUIPMENT) {
+        actor_equipment_event(e);
     } else if (e->kind == EVENT_WEATHER) {
         weather_event(e);
     } else if (e->kind == EVENT_PLAYER_HIT) {
@@ -12021,6 +12546,7 @@ void tes3x_net_frame(void)
     if (net.up) {
         spell_hook_install();
         shot_hook_install();
+        ghost_crime_hook_install();
         ai_hook_install();
         objects_hook_install();
         leveled_hook_install();
@@ -12038,6 +12564,7 @@ void tes3x_net_frame(void)
         handshake_frame();
     }
     ref = player_reference();
+    connection_notice_frame();
     menu_frame(net.up && ref);
     pause_frame(net.up && ref);
     weather_frame(net.up && ref);
@@ -12046,6 +12573,7 @@ void tes3x_net_frame(void)
     clock_frame();
     bounty_frame();
     player_state(ref, state);
+    player_view_frame();
     if (!logged_player) {
         const u8 *base = *(const u8 **)(ref + 0x28);
         logged_player = 1;
@@ -12081,6 +12609,7 @@ void tes3x_net_frame(void)
         flags = lock();
     }
     unlock(flags);
+    identity_send(ref);
     equipment_send(ref);
     ghosts_frame(state);
     authority_frame(ref, state);
