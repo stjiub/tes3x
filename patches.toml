@@ -424,7 +424,7 @@ selection = "preset"
 source = "tes3xagent.c"
 requires = ["net"]
 ini = { NetAgent = "" }
-summary = "Report live game status and logs to the authenticated TES3X GUI listener."
+summary = "Report live status and logs to the paired TES3X GUI and take its commands."
 
 [[patch]]
 name = "video-arena"

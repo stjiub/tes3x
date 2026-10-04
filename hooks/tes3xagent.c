@@ -17,8 +17,19 @@ typedef unsigned short u16;
 typedef int(__cdecl *fn_ini_get_string)(const char *, const char *, const char *, char *, int,
                                         const char *);
 typedef u32(__stdcall *fn_MmQueryStatistics)(void *);
+typedef void(__stdcall *fn_HalReturnToFirmware)(u32);
+
+#ifdef TES3X_CONSOLE
+int tes3x_console_submit(const char *text, u32 n);
+#endif
 
 #define MmQueryStatistics KFN(THUNK_MmQueryStatistics, fn_MmQueryStatistics)
+#define NtCreateFile KFN(THUNK_NtCreateFile, fn_NtCreateFile)
+#define NtReadFile KFN(THUNK_NtReadFile, fn_NtReadFile)
+#define NtQueryInformationFile KFN(THUNK_NtQueryInformationFile, fn_NtQueryInformationFile)
+#define NtClose KFN(THUNK_NtClose, fn_NtClose)
+#define HalReturnToFirmware KFN(THUNK_HalReturnToFirmware, fn_HalReturnToFirmware)
+#define HAL_REBOOT_ROUTINE 1u
 #define AGENT_PORT 26501u
 #define AGENT_VERSION 1u
 #define AGENT_HEADER 16u
@@ -39,6 +50,25 @@ typedef u32(__stdcall *fn_MmQueryStatistics)(void *);
 #define AGENT_HEARTBEAT 1u
 #define AGENT_LOG 2u
 #define AGENT_GOODBYE 3u
+#define AGENT_REPLY 4u
+#define AGENT_REQUEST 5u
+
+#define OP_CONSOLE 1u
+#define OP_READ 2u
+#define OP_REBOOT 3u
+#define ST_OK 0u
+#define ST_BUSY 1u
+#define ST_UNSUPPORTED 2u
+#define ST_FAILED 3u
+#define ST_BAD 4u
+
+#define AGENT_REQUESTS 8u
+#define AGENT_REQUEST_BYTES 200u
+#define AGENT_DONE 16u
+#define AGENT_READ_MAX 1024u
+#define AGENT_PATH 160u
+#define AGENT_FILE_IDLE 60u
+#define AGENT_SILENCE_US 6000000u /* the GUI acknowledges every heartbeat */
 
 #define HS_IDLE 0u
 #define HS_WANT 1u
@@ -51,7 +81,9 @@ typedef u32(__stdcall *fn_MmQueryStatistics)(void *);
 static const u8 prologue[] = "TES3X in-game agent v1";
 static struct tes3x_net_channel agent_channel;
 static u32 configured, target, target_port, gateway, session, ticks, tries, phase;
-static u32 outgoing, incoming, has_incoming, last_frame_us, last_beat_us;
+static u32 outgoing, incoming, has_incoming, last_frame_us, last_beat_us, last_heard_us;
+static volatile u32 heard;
+static u32 announced;
 static u8 pinned[AGENT_FINGERPRINT], send_key[NOISE_KEY], receive_key[NOISE_KEY];
 static struct noise handshake;
 static u8 handshake_packet[AGENT_HEADER + NOISE_MSG3 + 16];
@@ -71,6 +103,25 @@ static struct {
     u8 line[AGENT_LOG_SLOTS][AGENT_LOG_BYTES];
     u8 partial[AGENT_LOG_BYTES];
 } logs;
+
+/* Filled by the receive DPC, drained by the game thread. */
+static struct {
+    u32 head, count;
+    u16 length[AGENT_REQUESTS];
+    u8 body[AGENT_REQUESTS][AGENT_REQUEST_BYTES];
+} requests;
+
+/* A retried console or reboot request is answered again, not run again. Reads are idempotent. */
+static struct {
+    u32 next;
+    u32 id[AGENT_DONE];
+} done;
+
+static struct {
+    void *handle;
+    u32 size, idle;
+    char path[AGENT_PATH];
+} file;
 
 static u32 get32le(const u8 *p)
 {
@@ -345,7 +396,7 @@ static void handshake_finish(void)
 static void agent_receive(u32 source, u32 port, const u8 *p, u32 n)
 {
     static u8 plain[AGENT_MAX];
-    u32 kind, size, id, sequence;
+    u32 kind, size, id, sequence, slot, length;
 
     if (source != target || port != target_port || n < AGENT_HEADER || n > AGENT_MAX ||
         p[0] != 'T' || p[1] != '3' || p[2] != 'A' || p[3] != 'G' ||
@@ -362,10 +413,20 @@ static void agent_receive(u32 source, u32 port, const u8 *p, u32 n)
         (has_incoming && (int)(sequence - incoming) <= 0) ||
         noise_open(receive_key, sequence, p, AGENT_HEADER, p + AGENT_HEADER, size, plain))
         return;
-    incoming = sequence; has_incoming = 1;
+    incoming = sequence; has_incoming = 1; heard = 1;
+    length = size - NOISE_TAG - 1;
     if (plain[0] == AGENT_WELCOME && phase == HS_SENT3) {
         phase = HS_CONNECTED;
         last_beat_us = 0;
+        requests.count = 0;
+        for (slot = 0; slot < AGENT_DONE; slot++)
+            done.id[slot] = 0;
+    } else if (plain[0] == AGENT_REQUEST && phase == HS_CONNECTED && length > 4 &&
+               length <= AGENT_REQUEST_BYTES && requests.count < AGENT_REQUESTS) {
+        /* A full queue drops the request; the GUI retries it. */
+        slot = (requests.head + requests.count++) % AGENT_REQUESTS;
+        requests.length[slot] = (u16)length;
+        copy(requests.body[slot], plain + 1, length);
     }
 }
 
@@ -445,6 +506,199 @@ void tes3x_agent_log_raw(const char *text, u32 n)
     __sync_lock_release(&logs.busy);
 }
 
+static void reply(u32 id, u32 status, const u8 *payload, u32 n)
+{
+    static u8 body[5 + 8 + AGENT_READ_MAX];
+    u32 flags;
+
+    put32le(body, id);
+    body[4] = (u8)status;
+    copy(body + 5, payload, n);
+    flags = tes3x_net_lock(); sealed_send(AGENT_REPLY, body, 5 + n); tes3x_net_unlock(flags);
+}
+
+static void file_close(void)
+{
+    if (file.handle)
+        NtClose(file.handle);
+    file.handle = 0;
+    file.path[0] = 0;
+}
+
+/* E: and the other fixed partitions by device name; D:, T: and U: through the title's DOS
+ * devices. */
+static int file_open(const u8 *path, u32 n)
+{
+    static const char letters[] = "CEFGXYZ", partitions[] = "2167345";
+    static char full[AGENT_PATH + 32];
+    ANSI_STRING name;
+    OBJECT_ATTRIBUTES oa;
+    IO_STATUS_BLOCK iosb;
+    FILE_NETWORK_OPEN_INFORMATION st;
+    const char *prefix = "\\Device\\Harddisk0\\Partition0";
+    u32 i, at = 0, dos = 0;
+    char letter;
+
+    if (file.handle && n < AGENT_PATH && equal((const u8 *)file.path, path, n) && !file.path[n])
+        return 1;
+    file_close();
+    if (n < 3 || n >= AGENT_PATH || path[1] != ':' || (path[2] != '\\' && path[2] != '/'))
+        return 0;
+    letter = (char)(path[0] & ~0x20);
+    for (i = 0; letters[i] && letters[i] != letter; i++)
+        ;
+    if (letters[i]) {
+        while (prefix[at]) {
+            full[at] = prefix[at];
+            at++;
+        }
+        full[at - 1] = partitions[i];
+    } else if (letter == 'D' || letter == 'T' || letter == 'U') {
+        full[at++] = letter;
+        full[at++] = ':';
+        dos = 1;
+    } else {
+        return 0;
+    }
+    for (i = 2; i < n; i++) {
+        if (!path[i])
+            return 0;
+        full[at++] = path[i] == '/' ? '\\' : (char)path[i];
+    }
+    full[at] = 0;
+    if (dos)
+        tes3x_dos_attributes(&oa, &name, full);
+    else
+        tes3x_object_attributes(&oa, &name, full);
+    /* The log and other dumps may still be open for writing. */
+    if (NtCreateFile(&file.handle, GENERIC_READ | SYNCHRONIZE, &oa, &iosb, 0,
+                     FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_OPEN,
+                     FILE_SYNCHRONOUS_IO_NONALERT) != 0) {
+        file.handle = 0;
+        return 0;
+    }
+    if (NtQueryInformationFile(file.handle, &iosb, &st, sizeof(st),
+                               FileNetworkOpenInformation) != 0) {
+        file_close();
+        return 0;
+    }
+    file.size = (u32)st.EndOfFile;
+    copy((u8 *)file.path, path, n);
+    file.path[n] = 0;
+    tes3x_log("agent.file", file.size);
+    return 1;
+}
+
+static void file_read(u32 id, const u8 *args, u32 n)
+{
+    static u8 out[8 + AGENT_READ_MAX];
+    IO_STATUS_BLOCK iosb;
+    u64 offset;
+    u32 want, got = 0;
+
+    if (n < 7) {
+        reply(id, ST_BAD, 0, 0);
+        return;
+    }
+    offset = get32le(args);
+    want = args[4] | (u32)args[5] << 8;
+    if (want > AGENT_READ_MAX)
+        want = AGENT_READ_MAX;
+    if (!file_open(args + 6, n - 6)) {
+        reply(id, ST_FAILED, 0, 0);
+        return;
+    }
+    file.idle = 0;
+    if (offset < file.size) {
+        if (want > file.size - (u32)offset)
+            want = file.size - (u32)offset;
+        iosb.Information = 0;
+        if (NtReadFile(file.handle, 0, 0, 0, &iosb, out + 8, want, &offset) != 0) {
+            file_close();
+            reply(id, ST_FAILED, 0, 0);
+            return;
+        }
+        got = iosb.Information;
+    }
+    put32le(out, file.size);
+    put32le(out + 4, (u32)offset);
+    reply(id, ST_OK, out, 8 + got);
+}
+
+static int done_has(u32 id)
+{
+    u32 i;
+    for (i = 0; i < AGENT_DONE; i++)
+        if (done.id[i] == id)
+            return 1;
+    return 0;
+}
+
+static int is_reboot(const u8 *text, u32 n)
+{
+    return n == 6 && equal(text, (const u8 *)"reboot", 6);
+}
+
+/* Runs on the game thread, between frames. */
+static void request(const u8 *body, u32 n)
+{
+    u32 id = get32le(body), op = body[4];
+    const u8 *args = body + 5;
+
+    n -= 5;
+    if (op == OP_READ) {
+        file_read(id, args, n);
+        return;
+    }
+    if (op == OP_REBOOT || (op == OP_CONSOLE && is_reboot(args, n))) {
+        reply(id, ST_OK, 0, 0);
+        tes3x_log("agent.reboot", id);
+        HalReturnToFirmware(HAL_REBOOT_ROUTINE);
+        return;
+    }
+    if (op != OP_CONSOLE || !n) {
+        reply(id, ST_BAD, 0, 0);
+        return;
+    }
+#ifdef TES3X_CONSOLE
+    if (done_has(id)) {
+        reply(id, ST_OK, 0, 0);
+        return;
+    }
+    if (!tes3x_console_submit((const char *)args, n)) {
+        reply(id, ST_BUSY, 0, 0);
+        return;
+    }
+    done.id[done.next++ % AGENT_DONE] = id;
+    reply(id, ST_OK, 0, 0);
+#else
+    reply(id, ST_UNSUPPORTED, 0, 0);
+#endif
+}
+
+static void requests_step(void)
+{
+    static u8 body[AGENT_REQUEST_BYTES];
+    u32 flags, n, slot, i;
+
+    for (i = 0; i < AGENT_REQUESTS; i++) {
+        flags = tes3x_net_lock();
+        if (!requests.count) {
+            tes3x_net_unlock(flags);
+            break;
+        }
+        slot = requests.head;
+        n = requests.length[slot];
+        copy(body, requests.body[slot], n);
+        requests.head = (requests.head + 1) % AGENT_REQUESTS;
+        requests.count--;
+        tes3x_net_unlock(flags);
+        request(body, n);
+    }
+    if (file.handle && ++file.idle > AGENT_FILE_IDLE)
+        file_close();
+}
+
 static void agent_frame(void)
 {
     u8 body[AGENT_LOG_BYTES];
@@ -465,9 +719,28 @@ static void agent_frame(void)
         handshake_start();
     else if (phase == HS_GOT2)
         handshake_finish();
-    if (phase != HS_CONNECTED)
+    if (phase != HS_CONNECTED) {
+        file_close();
+        announced = 0;
         return;
+    }
+    if (!announced) {
+        announced = 1;
+        tes3x_log("agent.connected", session);
+    }
     now = tes3x_net_now_us();
+    if (heard || !last_heard_us) {
+        heard = 0;
+        last_heard_us = now;
+    } else if (now - last_heard_us > AGENT_SILENCE_US) {
+        /* The GUI restarted or went away: pair again with a new session. */
+        tes3x_log("agent.silent", (now - last_heard_us) / 1000);
+        flags = tes3x_net_lock(); phase = HS_WANT; tes3x_net_unlock(flags);
+        last_heard_us = 0;
+        file_close();
+        return;
+    }
+    requests_step();
     if (!last_beat_us || now - last_beat_us >= 1000000u) {
         put32le(body, now);
         put32le(body + 4, last_frame_us ? now - last_frame_us : 0);

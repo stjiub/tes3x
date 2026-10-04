@@ -1484,10 +1484,29 @@ static void mailbox_step(void)
     tes3x_log_raw("live> ", 6);
     tes3x_log_raw(line, n);
     tes3x_log_raw("\n", 1);
-    if (starts_with(line, "mark "))
+    if (starts_with(line, "mark ")) {
         exec_mark(line + 5);
-    else
+    } else if (starts_with(line, "exit") && !line[4]) {
+        exec_summary();
+        tes3x_log("live.exit", 0);
+        HalInitiateShutdown();
+    } else {
         run_command(line);
+    }
+}
+
+/* Queue a line for the next frame through the mailbox. Returns 0 while another is pending. */
+int tes3x_console_submit(const char *text, u32 n)
+{
+    u32 i;
+
+    if (tes3x_mailbox.seq != tes3x_mailbox.done)
+        return 0;
+    for (i = 0; i < n && i < CMD_MAX - 1 && text[i]; i++)
+        tes3x_mailbox.text[i] = text[i];
+    tes3x_mailbox.text[i] = 0;
+    tes3x_mailbox.seq++;
+    return 1;
 }
 
 /* The keyboard's text, while it is still on screen. Returns 0 when there is nothing readable. */

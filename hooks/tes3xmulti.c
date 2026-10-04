@@ -7395,7 +7395,6 @@ static void status_stat(void)
 #define BULK_SPACE_KB 1024u
 static char game_loaded[BULK_NAME + 1]; /* the save this launch was made to load */
 #define FILE_DIRECTORY_FILE 0x01u
-#define FILE_SHARE_WRITE 0x02u
 #define FILE_SHARE_DELETE 0x04u
 #define DELETE_ACCESS 0x00010000u
 #define FileRenameInformation 10u

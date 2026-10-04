@@ -49,7 +49,7 @@ The game-test column shows whether a public test definition exists, not its resu
 | [Lowered first-person bow](../patches/bow-view.md) | `bow-view` | Lower the first-person bow and arms while an arrow is nocked. | TES3X | qol | dev | [test](../tests/game/bow-view.toml) | By name |
 | [Xbox network foundation](../patches/net.md) | `net` | Provide the shared Xbox NIC, ARP, IPv4 and UDP layer used by network services. | TES3X | infrastructure | dev | — | By name; `multiplayer`, `agent` |
 | [Experimental multiplayer](../patches/multiplayer.md) | `multiplayer` | Join a TES3X server from [Xbox] NetAddress and exchange player states every frame. | TES3X | infrastructure | dev | — | By name |
-| [In-game agent](../patches/agent.md) | `agent` | Report live game status and logs to the authenticated TES3X GUI listener. | TES3X | infrastructure | dev | — | By name |
+| [In-game agent](../patches/agent.md) | `agent` | Report live status and logs to the paired TES3X GUI and take its commands. | TES3X | infrastructure | dev | [test](../tests/game/agent.toml) | By name |
 | [Expanded-memory video arena](../patches/video-arena.md) | `video-arena` | With more than 64 MB, size the texture and vertex buffer arena from [Xbox] VideoMemoryKB. | TES3X | compat | dev | — | By name |
 | [Engine heap census](../patches/heap-census.md) | `heap-census` | Count live engine heap bytes by source file and line, or by call site. | TES3X | instrumentation | dev | — | Build option |
 | [Kernel memory census](../patches/mem-census.md) | `mem-census` | Count kernel allocations and the XAPI heap by caller, with the address space map. | TES3X | instrumentation | dev | — | Build option |

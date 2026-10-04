@@ -41,6 +41,7 @@ typedef void(__stdcall *fn_KeQuerySystemTime)(u64 *);
 #define FILE_APPEND_DATA 0x0004u
 #define FILE_ATTRIBUTE_NORMAL 0x80u
 #define FILE_SHARE_READ 0x01u
+#define FILE_SHARE_WRITE 0x02u
 #define FILE_OPEN 1u
 #define FILE_OPEN_IF 3u
 #define FILE_OVERWRITE_IF 5u

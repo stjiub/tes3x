@@ -2,9 +2,10 @@
 
 Patch key: `agent`
 
-This patch lets a running game report its status and diagnostic log to the TES3X GUI. It keeps
-the target visible after the dashboard and FTP stop for the game, and lets the GUI distinguish a
-running frame loop from one that has stalled.
+This patch lets a running game report its status and diagnostic log to the TES3X GUI, and take
+commands from it. It keeps the target visible after the dashboard and FTP stop for the game, lets
+the GUI distinguish a running frame loop from one that has stalled, and lets it run console lines,
+copy files off the console and quit to the dashboard without power-cycling it.
 
 See the [patch table](../docs/patches.md) for availability and selection.
 
@@ -17,7 +18,27 @@ second and forwards new diagnostic log lines from a fixed-size ring. A slow or u
 can make the ring discard old lines, but cannot grow the game's memory use.
 
 The heartbeat and log stream are best-effort telemetry. Missing packet sequence numbers expose
-drops, and no heartbeat for three seconds makes the GUI show the target as stalled.
+drops, and no heartbeat for three seconds makes the GUI show the target as stalled. The GUI
+acknowledges each heartbeat; after six seconds without an answer the game pairs again with a new
+session, so a restarted GUI picks up a game that is already running.
+
+## Using it
+
+Requests from the GUI carry an ID and are resent until answered; the game runs each between
+frames and answers a repeated ID without running it again.
+
+- **Console line**: runs like a line typed into the in-game console, so engine commands and
+  TES3X commands such as `tes3xnet stat` work, and their output arrives in the log stream. This
+  needs the [`console`](console.md) patch as well. `exit` shuts the console down.
+- **Read file**: returns up to 1 KB of a file at an offset, from `C:`, `E:`, `F:`, `G:`, the
+  `X:`/`Y:`/`Z:` cache partitions, or the title's `D:`, `T:` and `U:`. The GUI keeps eight reads
+  in flight to copy a whole file, such as `E:\tes3xprof.bin` or a save.
+- **Reboot**: returns to the dashboard through the firmware, as an exec script's `reboot` does.
+
+A hard hang stops the frame loop, so commands then go unanswered; the stalled heartbeat shows
+why. `tes3x_agent.py` offers the same requests from the command line (`--console`, `--fetch`,
+`--exit`, `--reboot`, `--until-end`); it listens on the GUI's port, so run it while the GUI is
+closed.
 
 ## Configuration
 
@@ -26,9 +47,12 @@ Set `NetAgent` to the GUI host and its fingerprint, for example
 before the fingerprint to change it. The pipeline writes this setting from the selected target
 and the persistent GUI key unless the profile supplies an explicit value.
 
-`NetAddress` must also be `dhcp` or a static console address as described for the shared
-[`net`](net.md) transport. Leaving it empty keeps the NIC off.
+`NetAddress` is `dhcp` or a static console address as described for the shared [`net`](net.md)
+transport. An agent build without `multiplayer` uses `dhcp` unless the profile sets it; a
+multiplayer build keeps the profile's own network settings.
 
-For xemu's raw UDP backend, run `tes3x_net.py serve --tunnel PORT` beside the listener. The tunnel
-forwards agent port `26501` to localhost; add `--forward AGENT_PORT` when `NetAgent` names another
-port.
+For xemu's raw UDP backend, the GUI's Play runs a tunnel itself: the Server workspace's first
+tunnel while that server runs, otherwise a forwarder of its own for the session. From the command
+line, run `tes3x_net.py serve --tunnel PORT` beside the listener and pass `--net-tunnel PORT` to
+the xemu runner. The tunnel forwards agent port `26501` to localhost; add `--forward AGENT_PORT`
+when `NetAgent` names another port.

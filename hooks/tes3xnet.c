@@ -916,9 +916,16 @@ void tes3x_net_frame(void)
 
 int tes3x_net_command(const char *text)
 {
+    static const char stat[] = "tes3xnet stat";
     u32 i;
     for (i = 0; i < channel_count; i++)
         if (channels[i]->command && channels[i]->command(text))
             return 1;
-    return 0;
+    /* Without multiplayer, which reports more, the transport's own counters. */
+    for (i = 0; stat[i] && text[i] == stat[i]; i++)
+        ;
+    if (stat[i] || text[i])
+        return 0;
+    tes3x_net_stat();
+    return 1;
 }
