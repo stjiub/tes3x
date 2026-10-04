@@ -1,0 +1,24 @@
+# TES3X multiplayer server. From this folder: docker compose up -d
+# Consoles set [Xbox] NetServer to this machine's LAN address; see docs/multiplayer.md.
+services:
+  server:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    image: tes3x-server
+    restart: unless-stopped
+    ports:
+      - "26500:26500/udp"
+    volumes:
+      - world:/world
+    # Options after `serve --world /world`, one per line; `tes3x_net.py serve --help` lists them.
+    command:
+      # - --password-file=/world/password.txt
+      # - --max-players=8
+      # - --respawn=temple
+      - --report=60
+    # A clean stop waits up to --stop-wait (60 s) for every console's save.
+    stop_grace_period: 90s
+
+volumes:
+  world:

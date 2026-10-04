@@ -155,6 +155,43 @@ password again. The MAC is what the console reports, so a modified build can cha
 address ban drops everything from that address before the handshake, and also stops everyone
 else who shares it, such as a household behind one router.
 
+## Run the server in Docker
+
+`server/` holds a Docker Compose setup for a machine that should only run the server, with no
+Python install and no GUI. It runs the same `tes3x_net.py serve` with `--world` on a Docker volume,
+so the server key, characters, saves, admitted keys and bans survive restarts and rebuilds. From
+the repository:
+
+```
+cd server
+docker compose up -d
+docker compose logs -f
+```
+
+The server publishes UDP 26500; point each console's `NetServer` at the Docker host's address.
+Add server options under `command:` in `server/compose.yaml`, one per line, and run
+`docker compose up -d` again. Admin commands run inside the container:
+
+```
+docker compose exec server python tools/tes3x_net.py admin list
+```
+
+To require a password, copy the file into the volume, uncomment `--password-file` in
+`compose.yaml` and start again:
+
+```
+docker compose cp password.txt server:/world/password.txt
+docker compose up -d
+```
+
+`docker compose stop` stops the server as Ctrl+C does: it asks every joined console to save and
+waits up to 60 seconds. `docker compose cp server:/world ./world-backup` copies the world out.
+
+The container cannot serve [xemu](#connect-xemu): a tunnel talks to xemu over the host's own
+`127.0.0.1`. Run the server directly on the PC that runs xemu, or on Linux add
+`network_mode: host` to the service, which also replaces its `ports:`. A `--host` DNS name needs
+`53:53/udp` published as well.
+
 ## Connect a console
 
 1. Start the server.

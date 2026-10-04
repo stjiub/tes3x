@@ -1,0 +1,4 @@
+# Only the server image builds from this folder; it needs the Python tools and the start points.
+*
+!tools/*.py
+!examples/starts.toml
