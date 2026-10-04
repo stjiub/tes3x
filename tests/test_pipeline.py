@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from tes3x_paths import check_paths, require_paths
 from tes3x_pack import write_invalidation
 from tes3x_build import materialize, plugin_masters
-from tes3x_pipeline import (PipelineError, agent_setting, copy_retail_root, link_or_copy,
+from tes3x_pipeline import (PipelineError, agent_ini, agent_setting, copy_retail_root, link_or_copy,
                             resolve_patch_plan,
                             preference_flags, sanitized_command, stage_default_xbe, stage_retail_base,
                             strip_retail_files, validate_local_config, validate_profile)
@@ -380,6 +380,19 @@ class PipelinePlanTests(unittest.TestCase):
         self.assertEqual(plan['sources'], [
             'tes3xhook.c', 'tes3xlog.c', 'tes3xdiag.c', 'tes3xnet.c', 'tes3xagent.c'
         ])
+
+    def test_agent_ini_pairs_and_turns_the_network_on(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base, xemu = Path(folder), {'kind': 'xemu'}
+            items = agent_ini(['net', 'agent'], [], base, xemu)
+            self.assertEqual(items, ['Xbox:NetAgent=' + agent_setting(base, xemu),
+                                     'Xbox:NetAddress=dhcp'])
+            self.assertEqual(agent_ini(['net', 'agent'], ['Xbox:NetAddress=192.0.2.9',
+                                                         'Xbox:NetAgent=1.2.3.4#00'], base, xemu),
+                             [])
+            self.assertEqual(agent_ini(['net', 'multiplayer', 'agent'], [], base, xemu),
+                             ['Xbox:NetAgent=' + agent_setting(base, xemu)])
+            self.assertEqual(agent_ini(['net', 'multiplayer'], [], base, xemu), [])
 
     def test_agent_setting_uses_xemu_gateway_and_persistent_key(self):
         with tempfile.TemporaryDirectory(dir=Path.cwd()) as folder:

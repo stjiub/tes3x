@@ -609,6 +609,20 @@ def agent_setting(base, target):
     return f"{host}#{key_fingerprint(secret)}"
 
 
+def agent_ini(applied, ini_items, base, target):
+    """INI overrides the agent needs that the profile does not set itself."""
+    if "agent" not in applied:
+        return []
+    items = []
+    if ini_override(ini_items, "Xbox", "NetAgent") is None:
+        items.append("Xbox:NetAgent=" + agent_setting(base, target))
+    # Without an address the NIC stays off and the agent can never connect. Multiplayer builds
+    # bring their own network settings.
+    if "multiplayer" not in applied and ini_override(ini_items, "Xbox", "NetAddress") is None:
+        items.append("Xbox:NetAddress=dhcp")
+    return items
+
+
 def dashboard_xml(title, folder, title_id=tes3x_savepool.SHARED_ID):
     """XBMC4Gamers lists a game by _resources/default.xml; the XBE title is only its fallback."""
     return ("<synopsis>\n"
@@ -841,8 +855,7 @@ def main(argv=None):
             if pool_name else None)
     dashboards = dashboard_list(profile)
     ini_items = [f"{k}={v}" for k, v in profile.get("ini", {}).items()] + args.ini_set
-    if "agent" in plan["applied"] and ini_override(ini_items, "Xbox", "NetAgent") is None:
-        ini_items.append("Xbox:NetAgent=" + agent_setting(base, target))
+    ini_items += agent_ini(plan["applied"], ini_items, base, target)
     overlay_base = ini_override(ini_items, "Xbox", "OverlayBase")
     if install_layout == "overlay":
         overlay_base = overlay_base or deploy.get("retail_root")
