@@ -55,8 +55,8 @@ from tes3x_catalog import STATUS_LABELS as COMPAT_LABELS, CatalogError, load as 
 from tes3x_catalog import match as match_catalog, needs as catalog_needs
 from tes3x_patches import (CATEGORIES as PATCH_CATEGORIES, PATCHES as PATCH_CATALOG, SOURCES,
                            patch_spec)
-from tes3x_plugins import (BASE_MASTERS, collect, dependency_order, fetch_rules, sort_files,
-                           warnings as mlox_notes)
+from tes3x_plugins import (BASE_MASTERS, collect, default_rules, dependency_order, fetch_rules,
+                           rules_file, sort_files, warnings as mlox_notes)
 from tes3x_pipeline import (DEPLOY_CONFLICT, DEPLOY_NO_SPACE, MARKER as PIPELINE_MARKER, PipelineError,
                             resolve_patch_plan, validate_local_config, validate_profile)
 from tes3x_records import records, subrecords
@@ -155,7 +155,10 @@ def dashboard_agent_state(output, code, expected):
 
 
 def version_label():
-    """The version, with the commit when run from a checkout."""
+    """The packaged version, or the base version with the commit when run from a checkout."""
+    packaged = ROOT / "VERSION"
+    if packaged.is_file():
+        return "TES3X " + packaged.read_text(encoding="utf-8").strip()
     try:
         commit = subprocess.run(["git", "-C", str(ROOT), "describe", "--always", "--dirty"],
                                 capture_output=True, text=True, timeout=5).stdout.strip()
@@ -456,9 +459,11 @@ class LocalSettingsDialog(QDialog):
             form.addRow(label, self.browse_row("paths." + key, values.get(key, "")))
         rules_row = self.browse_row("paths.mlox_rules", values.get("mlox_rules", ""), files=True)
         download = QPushButton("Download")
-        download.setToolTip("Download the current mlox rules and use them")
+        download.setToolTip("Download the current mlox rules")
         download.clicked.connect(self.download_mlox_rules)
         rules_row.layout().addWidget(download)
+        self.fields["paths.mlox_rules"].setPlaceholderText(
+            "Downloaded automatically when first needed")
         form.addRow("mlox rules (optional)", rules_row)
         hardlink = QCheckBox("Hardlink unchanged retail files")
         hardlink.setChecked(values.get("hardlink_retail", False))
@@ -895,7 +900,7 @@ class LocalSettingsDialog(QDialog):
 
     def download_mlox_rules(self):
         field = self.fields["paths.mlox_rules"]
-        target = Path(field.text().strip() or self.path.parent / "mlox" / "mlox_base.txt")
+        target = Path(field.text().strip() or default_rules())
         if not target.is_absolute():
             target = self.path.parent / target
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
@@ -906,9 +911,8 @@ class LocalSettingsDialog(QDialog):
             QMessageBox.critical(self, "TES3X", f"Could not download the mlox rules: {exc}")
             return
         QApplication.restoreOverrideCursor()
-        field.setText(target.as_posix())
         QMessageBox.information(self, "TES3X", f"Saved the mlox rules ({size // 1024} KB) to "
-                                f"{target}. Save the settings to use them.")
+                                f"{target}.")
 
     def update_table(self, section, values):
         table = self.document.get(section)
@@ -3785,15 +3789,14 @@ class ProfileWindow(QMainWindow):
 
     def sort_plugins(self):
         vanilla = self.local_path("vanilla_root")
-        rules = self.local_path("mlox_rules")
-        if vanilla is None or rules is None or not rules.is_file():
-            self.error("Sorting needs the clean game root and the mlox rules; set them in "
-                       "File > Settings (Download fetches the rules).")
+        if vanilla is None:
+            self.error("Sorting needs the clean game root; set it in File > Settings.")
             return
         plugins = self.analysis["plugins"]
         chosen = {name: Path(value["path"]) for name, value in plugins.items() if value["included"]}
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
+            rules = rules_file(self.local_path("mlox_rules"))
             with tempfile.TemporaryDirectory(prefix="tes3x-sort-") as temp:
                 empty = Path(temp) / "none"
                 empty.mkdir()

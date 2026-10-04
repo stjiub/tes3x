@@ -18,6 +18,7 @@ what each one is for and where it is explained; `--help` on any command lists it
 | `tes3x_deploy.py` | upload a game folder to the Xbox | [deployment](deployment.md) |
 | `tes3x_fetch.py` | copy files or folders off the Xbox | [deployment](deployment.md#getting-files-back) |
 | `tes3x_saves.py` | list and move saves between the Xbox, an xemu disk and a PC save library | [GUI](gui.md) |
+| `tes3x_package.py` | build a portable TES3X folder that starts with `TES3X.exe` | [GUI](gui.md#portable-folder) |
 
 ## Mods
 

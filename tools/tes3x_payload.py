@@ -26,6 +26,7 @@ HEADERS = ("tes3xdiag.h", "tes3xheap.h", "tes3xlog.h", "tes3xmem.h", "tes3xnt.h"
            "tes3xpager.h", "tes3xprof.h", "tes3xregion.h", "tes3x_thunks.h", "monocypher.h",
            "tes3xnoise.h")
 DEFAULT_SOURCES = ("tes3xhook.c", "tes3xlog.c", "tes3xdiag.c")
+BUNDLED_LLVM = ROOT / "externals" / "llvm" / "bin"
 LLVM_DIRS = (Path("C:/Program Files/LLVM/bin"), Path("C:/msys64/clang64/bin"),
              Path("C:/msys64/mingw64/bin"))
 CFLAGS = ("-target", "i386-pc-win32", "-march=pentium3", "-Os", "-ffreestanding", "-nostdlib",
@@ -156,6 +157,8 @@ def find_tool(name, llvm_dir=None):
         if not path.is_file():
             raise PayloadError(f"{exe} not found in {llvm_dir}")
         return str(path)
+    if (BUNDLED_LLVM / exe).is_file():
+        return str(BUNDLED_LLVM / exe)
     found = shutil.which(name)
     if found:
         return found

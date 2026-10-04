@@ -1,12 +1,28 @@
 # GUI
 
 The GUI edits everything a profile and the local config hold, installs mods into the library, and
-checks, builds, tests and deploys. It needs PySide6 and tomlkit:
+checks, builds, tests and deploys. In a [portable folder](#portable-folder), double-click
+`TES3X.exe`. From a checkout, install its packages and start it with Python:
 
 ```powershell
 python -m pip install -r requirements-gui.txt
 python tools/tes3x_gui.py
 ```
+
+### Portable folder
+
+`python tools/tes3x_package.py --zip` writes `build/package/TES3X-<version>/` and its zip: the
+tools, an embedded Python 3.12 with the GUI's packages, and `TES3X.exe`, which starts the GUI with
+that Python. `externals/` holds 7-Zip, for `.7z` and `.rar` mods, and clang and lld-link from
+LLVM, for engine fixes, each with its license. Nothing needs installing on the PC that runs it;
+the **LLVM tools** setting still overrides the bundled LLVM.
+
+Building the folder needs a C compiler for `TES3X.exe` (MSYS2's `gcc` or `clang`, or `--cc`). The
+first build downloads Python, 7-Zip and LLVM (about 880 MB, mostly the LLVM release), checks each
+against a pinned SHA-256, and keeps them in `%LOCALAPPDATA%\TES3X\package` for later builds.
+
+The version is `X.Y.Z` at a `vX.Y.Z` tag, and `X.Y.Z-dev.N+gSHA` for a commit N past it, with
+`.dirty` when the checkout has uncommitted changes. The GUI shows it in its title.
 
 The GUI opens the last profile you used and lists everything in `profiles/` for switching, with
 New, Duplicate, Rename and Delete beside the list. On first start, with no `tes3x.local.toml` yet, it opens the local settings.

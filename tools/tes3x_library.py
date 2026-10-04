@@ -13,6 +13,7 @@ import zipfile
 
 
 CATALOG_NAME = "library.toml"
+BUNDLED_7Z = Path(__file__).resolve().parents[1] / "externals" / "7zip" / "7z.exe"
 IDENTIFIER = re.compile(r"[a-z0-9][a-z0-9._-]*\Z")
 # Optional mod-level text: where the mod comes from and what it is.
 MOD_TEXT = ("url", "author", "summary")
@@ -491,7 +492,7 @@ def nexus_id(url=None, source=None):
 
 
 def seven_zip():
-    for candidate in (shutil.which("7z"), shutil.which("7za"),
+    for candidate in (BUNDLED_7Z, shutil.which("7z"), shutil.which("7za"),
                       *(Path(os.environ[key]) / "7-Zip" / "7z.exe"
                         for key in ("ProgramFiles", "ProgramW6432") if key in os.environ)):
         if candidate and Path(candidate).is_file():

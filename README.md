@@ -40,7 +40,7 @@ You need Python 3.12 or newer with Pillow, a clean copy of the game's Xbox files
 fixes [LLVM](https://releases.llvm.org). With the GUI:
 
 ```powershell
-python -m pip install Pillow -r requirements-gui.txt
+python -m pip install -r requirements-gui.txt
 python tools/tes3x_gui.py
 ```
 
