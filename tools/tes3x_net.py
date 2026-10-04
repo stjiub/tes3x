@@ -38,6 +38,7 @@ import traceback
 PORT = 26500
 AGENT_PORT = 26501
 ADMIN_PORT = 26502
+REMOTE_ADMIN_PORT = 26503
 DNS_PORT = 53
 DHCP_SERVER, DHCP_CLIENT = 67, 68
 DHCP_MAGIC = bytes([0x63, 0x82, 0x53, 0x63])
@@ -1723,9 +1724,9 @@ class Clock:
 class Bucket:
     """A token bucket: take() is false once more than burst arrive faster than rate per second."""
 
-    def __init__(self, burst, rate):
+    def __init__(self, burst, rate, now=None):
         self.burst, self.rate = burst, rate
-        self.tokens, self.last = float(burst), time.time()
+        self.tokens, self.last = float(burst), time.time() if now is None else now
 
     def take(self, now):
         self.tokens = min(self.burst, self.tokens + (now - self.last) * self.rate)
@@ -1734,6 +1735,10 @@ class Bucket:
             return False
         self.tokens -= 1
         return True
+
+    def available(self, now):
+        """Whether take() would succeed now, without spending a token."""
+        return min(self.burst, self.tokens + (now - self.last) * self.rate) >= 1
 
 
 class Client:
@@ -1976,6 +1981,17 @@ def serve(args):
         except OSError as error:
             admin_sock = None
             print(f"no admin port: 127.0.0.1:{admin_port}: {error}", flush=True)
+    remote_admin = None
+    if args.remote_admin:
+        password_path = args.admin_password_file or (
+            os.path.join(args.world, "admin-password.txt") if args.world else None)
+        if not password_path or not os.path.isfile(password_path):
+            sys.exit("--remote-admin needs --admin-password-file, or admin-password.txt in --world")
+        remote_sock = udp_socket()
+        remote_sock.bind((args.bind, args.remote_admin))
+        remote_admin = RemoteAdmin(admin_secret(load_admin_password(password_path)), remote_sock)
+        print(f"remote admin on {args.bind}:{args.remote_admin}, with the password in "
+              f"{password_path}", flush=True)
     if sys.stdin and sys.stdin.isatty():
         threading.Thread(target=lambda: [commands.put(line) for line in sys.stdin],
                          daemon=True).start()
@@ -3195,7 +3211,7 @@ def serve(args):
             print(admin(commands.get()), flush=True)
         waiting = [sock] + [link.sock for link in links] + [link.forward for link in links] + (
             [dns] if dns else []) + (
-            [admin_sock] if admin_sock else [])
+            [admin_sock] if admin_sock else []) + ([remote_admin.sock] if remote_admin else [])
         wait = 0.25
         if any(c.queue for c in clients.values()):
             wait = PACE_WINDOW
@@ -3213,6 +3229,22 @@ def serve(args):
                 print(f"{time.strftime('%H:%M:%S')} admin: {wire_text(line)}: {reply}",
                       flush=True)
                 admin_sock.sendto(reply.encode("utf-8"), addr)
+                continue
+            if remote_admin and ready is remote_admin.sock:
+                try:
+                    data, addr = remote_admin.sock.recvfrom(2048)
+                except ConnectionResetError:
+                    continue
+
+                def run(line, addr=addr):
+                    reply = admin(line)
+                    print(f"{time.strftime('%H:%M:%S')} remote admin from {addr[0]}: "
+                          f"{wire_text(line.encode('utf-8'))}: {reply}", flush=True)
+                    return reply
+
+                reply = remote_admin.handle(data, addr, run)
+                if reply:
+                    remote_admin.sock.sendto(reply, addr)
                 continue
             if ready is dns:
                 try:
@@ -3594,11 +3626,149 @@ def fuzz_body(rng, event_next):
     return kind, rng.randbytes(rng.choice((0, 1, 3, 4, 8, 20, 64, rng.randrange(0, 1400))))
 
 
+# Remote admin: HELLO, then a single-use challenge, then the command and its reply sealed with
+# a key from the admin password and that challenge. The password is stretched, so a captured
+# exchange does not make guessing it cheap.
+REMOTE_MAGIC = b"T3AD"
+REMOTE_VERSION = 1
+REMOTE_HELLO, REMOTE_CHALLENGE, REMOTE_COMMAND, REMOTE_REPLY, REMOTE_REFUSED = range(5)
+REMOTE_HEAD = struct.Struct("<4sBB")
+REMOTE_NONCE = 16
+REMOTE_NONCE_SECONDS = 10.0
+REMOTE_NONCES = 64
+ADMIN_PASSWORD_MIN = 8
+
+
+def admin_secret(password):
+    """The stretched admin password both ends derive their per-command keys from."""
+    return hashlib.scrypt(password, salt=b"tes3x remote admin v1", n=1 << 14, r=8, p=1,
+                          dklen=32)
+
+
+def remote_key(secret, nonce):
+    return hmac.new(secret, b"tes3x admin " + nonce, hashlib.sha256).digest()
+
+
+def load_admin_password(path):
+    """The first line of an admin password file, as bytes."""
+    with open(path, encoding="utf-8") as stream:
+        password = stream.readline().strip()
+    if len(password) < ADMIN_PASSWORD_MIN or not password.isprintable():
+        sys.exit(f"{path}: the admin password must be at least {ADMIN_PASSWORD_MIN} printable "
+                 "characters")
+    return password.encode("utf-8")
+
+
+class RemoteAdmin:
+    """The server's remote admin listener; run(line) answers an authenticated command."""
+
+    def __init__(self, secret, sock, clock=time.time):
+        self.secret, self.sock, self.clock = secret, sock, clock
+        self.nonces = {}  # nonce -> (address, issued)
+        self.failures = {}  # address -> Bucket
+
+    def handle(self, data, addr, run):
+        """The reply datagram for one request, or None; run(line) executes a command."""
+        now = self.clock()
+        if len(data) < REMOTE_HEAD.size:
+            return None
+        magic, version, kind = REMOTE_HEAD.unpack_from(data)
+        if magic != REMOTE_MAGIC or version != REMOTE_VERSION:
+            return None
+        for nonce in [n for n, (_, at) in self.nonces.items()
+                      if now - at > REMOTE_NONCE_SECONDS]:
+            del self.nonces[nonce]
+        if kind == REMOTE_HELLO:
+            if len(self.nonces) >= REMOTE_NONCES:
+                return self.refuse(b"", "busy")
+            nonce = os.urandom(REMOTE_NONCE)
+            self.nonces[nonce] = (addr, now)
+            return REMOTE_HEAD.pack(REMOTE_MAGIC, REMOTE_VERSION, REMOTE_CHALLENGE) + nonce
+        if kind != REMOTE_COMMAND or len(data) < REMOTE_HEAD.size + REMOTE_NONCE + 16:
+            return None
+        bucket = self.failures.setdefault(addr[0], Bucket(*PASSWORD_RATE, now))
+        nonce = data[REMOTE_HEAD.size:REMOTE_HEAD.size + REMOTE_NONCE]
+        issued = self.nonces.pop(nonce, None)
+        if not bucket.available(now):
+            # Not even tried: a right guess while slowed would otherwise still get through.
+            return self.refuse(nonce, "slow down")
+        head = data[:REMOTE_HEAD.size + REMOTE_NONCE]
+        line = None
+        if issued and issued[0] == addr:
+            line = unseal(remote_key(self.secret, nonce), 0, head,
+                          data[REMOTE_HEAD.size + REMOTE_NONCE:])
+        if line is None:
+            # Only failures spend tries, so polling with the right password is never slowed.
+            bucket.take(now)
+            return self.refuse(nonce, "unauthorized")
+        reply = run(line.decode("utf-8", "replace")).encode("utf-8")
+        head = REMOTE_HEAD.pack(REMOTE_MAGIC, REMOTE_VERSION, REMOTE_REPLY) + nonce
+        return head + seal(remote_key(self.secret, nonce), 1, head, reply)
+
+    @staticmethod
+    def refuse(nonce, why):
+        return (REMOTE_HEAD.pack(REMOTE_MAGIC, REMOTE_VERSION, REMOTE_REFUSED) + nonce
+                + why.encode("ascii"))
+
+
+class RemoteAdminError(Exception):
+    pass
+
+
+def remote_admin_request(host, port, secret, line, timeout=3.0):
+    """Run one admin command on a server's remote admin port; its reply text."""
+    sock = udp_socket()
+    sock.settimeout(timeout)
+    try:
+        address = (socket.gethostbyname(host), port)
+        sock.sendto(REMOTE_HEAD.pack(REMOTE_MAGIC, REMOTE_VERSION, REMOTE_HELLO), address)
+        data = sock.recvfrom(65536)[0]
+        if REMOTE_HEAD.unpack_from(data) != (REMOTE_MAGIC, REMOTE_VERSION, REMOTE_CHALLENGE) or \
+                len(data) != REMOTE_HEAD.size + REMOTE_NONCE:
+            raise RemoteAdminError("not a TES3X remote admin port")
+        nonce = data[REMOTE_HEAD.size:]
+        key = remote_key(secret, nonce)
+        head = REMOTE_HEAD.pack(REMOTE_MAGIC, REMOTE_VERSION, REMOTE_COMMAND) + nonce
+        sock.sendto(head + seal(key, 0, head, line.encode("utf-8")), address)
+        data = sock.recvfrom(65536)[0]
+    except (socket.timeout, ConnectionResetError):
+        raise RemoteAdminError(f"no server answered on {host}:{port}") from None
+    except OSError as exc:
+        raise RemoteAdminError(f"{host}:{port}: {exc}") from None
+    finally:
+        sock.close()
+    kind = REMOTE_HEAD.unpack_from(data)[2] if len(data) >= REMOTE_HEAD.size else None
+    if kind == REMOTE_REFUSED:
+        raise RemoteAdminError("refused: " + data[REMOTE_HEAD.size + REMOTE_NONCE:]
+                               .decode("ascii", "replace"))
+    head = data[:REMOTE_HEAD.size + REMOTE_NONCE]
+    reply = None
+    if kind == REMOTE_REPLY and head[REMOTE_HEAD.size:] == nonce:
+        reply = unseal(key, 1, head, data[len(head):])
+    if reply is None:
+        raise RemoteAdminError("the reply was not authentic")
+    return reply.decode("utf-8", "replace")
+
+
 def admin_command(args):
-    """Send one admin command to a local server and print its reply."""
+    """Send one admin command to a local server, or with --server to a remote one."""
+    line = " ".join(args.words)
+    if args.server:
+        host, _, port = args.server.partition(":")
+        if not args.password_file:
+            print("--server needs --password-file with the server's admin password",
+                  file=sys.stderr)
+            return 2
+        secret = admin_secret(load_admin_password(args.password_file))
+        try:
+            print(remote_admin_request(host, int(port or REMOTE_ADMIN_PORT), secret, line))
+        except RemoteAdminError as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        return 0
     sock = udp_socket()
     sock.settimeout(2.0)
-    sock.sendto(" ".join(args.words).encode("utf-8"), ("127.0.0.1", args.port))
+    sock.sendto(line.encode("utf-8"), ("127.0.0.1", args.port))
     try:
         print(sock.recvfrom(65536)[0].decode("utf-8"))
     except (socket.timeout, ConnectionResetError):
@@ -3814,6 +3984,13 @@ def main(argv=None):
     p.add_argument("--password-file", metavar="FILE",
                    help="a console whose key is new must give the password on this file's first "
                         "line (its NetPassword); admitted keys go to admitted.txt in --world")
+    p.add_argument("--remote-admin", type=int, metavar="PORT",
+                   help="also take admin commands from other machines on this UDP port (26503 "
+                        "by convention), authenticated by the admin password")
+    p.add_argument("--admin-password-file", metavar="FILE",
+                   help="the remote admin password on this file's first line, at least "
+                        f"{ADMIN_PASSWORD_MIN} characters (default: admin-password.txt in "
+                        "--world)")
     p.add_argument("--send", metavar="FILE",
                    help="send FILE to each client that joins, into U:\\TES3X\\ under its name")
     p.add_argument("--burst", action="append", default=[], metavar="COUNT@SECONDS",
@@ -3829,10 +4006,16 @@ def main(argv=None):
                    help="start the session's clock at this GameHour; default: the first client's")
     p.add_argument("--timescale", type=float,
                    help="game seconds per real second; default: the first client's TimeScale")
-    p = sub.add_parser("admin", help="send an admin command to a server on this PC")
+    p = sub.add_parser("admin", help="send an admin command to a server on this PC or, with "
+                                     "--server, elsewhere")
     p.add_argument("words", nargs="+", metavar="COMMAND",
                    help="list, kick N, ban N, ban|unban key|mac|address VALUE, bans")
     p.add_argument("--port", type=int, default=ADMIN_PORT, help="the server's --admin-port")
+    p.add_argument("--server", metavar="HOST[:PORT]",
+                   help=f"a server's --remote-admin port instead (default port "
+                        f"{REMOTE_ADMIN_PORT})")
+    p.add_argument("--password-file", metavar="FILE",
+                   help="with --server, the admin password on this file's first line")
     p = sub.add_parser("fuzz", help="join a server and send it mutated packets")
     p.add_argument("address", help="HOST[:PORT] of a tes3x_net.py server")
     p.add_argument("--count", type=int, default=2000)

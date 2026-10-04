@@ -451,5 +451,91 @@ class BulkTests(unittest.TestCase):
         self.assertEqual(out.chunks, 0)
 
 
+class RemoteAdminTests(unittest.TestCase):
+    secret = tes3x_net.admin_secret(b'correct horse')
+    here = ('192.0.2.9', 40000)
+
+    def setUp(self):
+        self.now = [100.0]
+        self.server = tes3x_net.RemoteAdmin(self.secret, None, lambda: self.now[0])
+        self.ran = []
+
+    def run_line(self, line):
+        self.ran.append(line)
+        return f'did {line}'
+
+    def challenge(self, addr=here):
+        hello = tes3x_net.REMOTE_HEAD.pack(tes3x_net.REMOTE_MAGIC, 1, tes3x_net.REMOTE_HELLO)
+        reply = self.server.handle(hello, addr, self.run_line)
+        return reply[tes3x_net.REMOTE_HEAD.size:]
+
+    def command(self, nonce, line, secret=None, addr=here):
+        head = tes3x_net.REMOTE_HEAD.pack(tes3x_net.REMOTE_MAGIC, 1,
+                                          tes3x_net.REMOTE_COMMAND) + nonce
+        key = tes3x_net.remote_key(secret or self.secret, nonce)
+        reply = self.server.handle(head + tes3x_net.seal(key, 0, head, line.encode()), addr,
+                                   self.run_line)
+        kind = reply[5]
+        if kind == tes3x_net.REMOTE_REFUSED:
+            return 'refused ' + reply[len(head):].decode()
+        return tes3x_net.unseal(key, 1, reply[:len(head)], reply[len(head):]).decode()
+
+    def test_command_runs_once_with_the_right_password(self):
+        nonce = self.challenge()
+        self.assertEqual(self.command(nonce, 'list'), 'did list')
+        self.assertEqual(self.command(nonce, 'list'), 'refused unauthorized')  # replayed
+        self.assertEqual(self.ran, ['list'])
+
+    def test_wrong_password_other_address_and_stale_challenge_are_refused(self):
+        wrong = tes3x_net.admin_secret(b'wrong horse')
+        self.assertEqual(self.command(self.challenge(), 'stop', wrong), 'refused unauthorized')
+        nonce = self.challenge()
+        self.assertEqual(self.command(nonce, 'stop', addr=('192.0.2.8', 40000)),
+                         'refused unauthorized')
+        nonce = self.challenge()
+        self.now[0] += tes3x_net.REMOTE_NONCE_SECONDS + 1
+        self.assertEqual(self.command(nonce, 'stop'), 'refused unauthorized')
+        self.assertEqual(self.ran, [])
+
+    def test_failures_slow_an_address_even_for_the_right_password(self):
+        wrong = tes3x_net.admin_secret(b'wrong horse')
+        for _ in range(tes3x_net.PASSWORD_RATE[0]):
+            self.assertEqual(self.command(self.challenge(), 'list', wrong),
+                             'refused unauthorized')
+        self.assertEqual(self.command(self.challenge(), 'list'), 'refused slow down')
+        other = ('192.0.2.8', 1)
+        self.assertEqual(self.command(self.challenge(other), 'list', addr=other), 'did list')
+        self.now[0] += 1 / tes3x_net.PASSWORD_RATE[1]
+        self.assertEqual(self.command(self.challenge(), 'list'), 'did list')
+
+    def test_client_talks_to_a_listener(self):
+        import threading
+        sock = tes3x_net.udp_socket()
+        sock.bind(('127.0.0.1', 0))
+        server = tes3x_net.RemoteAdmin(self.secret, sock)
+        stop = threading.Event()
+
+        def serve():
+            sock.settimeout(0.1)
+            while not stop.is_set():
+                try:
+                    data, addr = sock.recvfrom(2048)
+                except (socket.timeout, OSError):
+                    continue
+                reply = server.handle(data, addr, lambda line: line.upper())
+                if reply:
+                    sock.sendto(reply, addr)
+
+        thread = threading.Thread(target=serve, daemon=True)
+        thread.start()
+        self.addCleanup(lambda: (stop.set(), thread.join(1), sock.close()))
+        port = sock.getsockname()[1]
+        self.assertEqual(tes3x_net.remote_admin_request('127.0.0.1', port, self.secret, 'bans'),
+                         'BANS')
+        with self.assertRaisesRegex(tes3x_net.RemoteAdminError, 'unauthorized'):
+            tes3x_net.remote_admin_request('127.0.0.1', port,
+                                           tes3x_net.admin_secret(b'nope nope'), 'bans')
+
+
 if __name__ == '__main__':
     unittest.main()
