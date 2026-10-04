@@ -573,7 +573,6 @@ class ServerPage(QWidget):
         super().__init__()
         self.window = window
         self.process = None
-        self.running = {}
         self.admin = None
         self.stopping = False
         layout = QHBoxLayout(self)
@@ -761,7 +760,7 @@ class ServerPage(QWidget):
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         process.readyReadStandardOutput.connect(self.read_output)
         process.finished.connect(self.finished)
-        self.process, self.stopping, self.running = process, False, values
+        self.process, self.stopping = process, False
         self.admin_port = values.get("admin_port", tes3x_net.ADMIN_PORT)
         self.admin = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.admin.bind(("127.0.0.1", 0))

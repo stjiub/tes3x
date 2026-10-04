@@ -1135,6 +1135,12 @@ order = 10
             page.quit_game()
         self.assertEqual(listener.sent[-1][2], OP_REBOOT)
 
+        # xemu needs its NIC, on xemu's NAT, only for builds with a network patch.
+        window.applied_patches = {"diagnostics"}
+        self.assertFalse(window.play_network())
+        window.applied_patches = {"diagnostics", "net", "agent"}
+        self.assertTrue(window.play_network())
+
     def test_log_catalog_reads_pull_records_and_xemu_runs(self):
         pulled = self.root / "build" / "xbox-logs" / "bench" / "20261004-120000"
         pulled.mkdir(parents=True)

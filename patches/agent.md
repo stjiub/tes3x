@@ -51,8 +51,7 @@ and the persistent GUI key unless the profile supplies an explicit value.
 transport. An agent build without `multiplayer` uses `dhcp` unless the profile sets it; a
 multiplayer build keeps the profile's own network settings.
 
-For xemu's raw UDP backend, the GUI's Play runs a tunnel itself: the Server workspace's first
-tunnel while that server runs, otherwise a forwarder of its own for the session. From the command
-line, run `tes3x_net.py serve --tunnel PORT` beside the listener and pass `--net-tunnel PORT` to
-the xemu runner. The tunnel forwards agent port `26501` to localhost; add `--forward AGENT_PORT`
-when `NetAgent` names another port.
+In xemu the pipeline points `NetAgent` at `10.0.2.2`. The GUI's Play turns on xemu's NAT for an
+agent build, where that address is the PC's own loopback; from the command line pass `--net-nat`
+to the xemu runner. A tunnel (`tes3x_net.py serve --tunnel PORT` and `--net-tunnel PORT`) works
+too: it forwards agent port `26501` to localhost, and `--forward AGENT_PORT` adds another.

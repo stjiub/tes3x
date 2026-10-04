@@ -187,10 +187,11 @@ docker compose up -d
 `docker compose stop` stops the server as Ctrl+C does: it asks every joined console to save and
 waits up to 60 seconds. `docker compose cp server:/world ./world-backup` copies the world out.
 
-The container cannot serve [xemu](#connect-xemu): a tunnel talks to xemu over the host's own
-`127.0.0.1`. Run the server directly on the PC that runs xemu, or on Linux add
-`network_mode: host` to the service, which also replaces its `ports:`. A `--host` DNS name needs
-`53:53/udp` published as well.
+[xemu](#connect-xemu) on its NAT joins the container like a console does, at the Docker host's
+address (or `10.0.2.2` when xemu runs on that host). A tunnel cannot reach the container: it
+talks to xemu over the host's own `127.0.0.1`. For tunnels, run the server directly on the PC
+that runs xemu, or on Linux add `network_mode: host` to the service, which also replaces its
+`ports:`. A `--host` DNS name needs `53:53/udp` published as well.
 
 ## Connect a console
 
@@ -221,7 +222,21 @@ bundled Fondamento font (SIL Open Font License, `assets/fonts`).
 
 ## Connect xemu
 
-xemu reaches the server through a tunnel instead of a network card. On the PC that runs xemu:
+xemu can join any server, on this PC, the LAN or the internet, through its own NAT. Run the
+xemu runner with `--net-nat` and give the build `NetAddress=dhcp` and the server's address:
+
+```
+python tools/tes3x_xemu.py player2 profiles/net.toml --direct-engine --skip-intro --net-nat -- --ini-set Xbox:NetAddress=dhcp --ini-set Xbox:NetServer=my.server.net
+```
+
+xemu's NAT answers DHCP with `10.0.2.15`, resolves names through the PC and sends the session's
+UDP out from the PC, so the server sees the PC's address. `10.0.2.2` there is the PC itself:
+`NetServer=10.0.2.2` reaches a server running on the same PC. Each run's MAC is made from its
+run name, so two xemus on one PC are two clients. The GUI's Play uses the NAT for any build with
+`multiplayer` or `agent`.
+
+A tunnel instead hands the guest's raw frames to a server on this PC, which is how the
+automated tests run. On the PC that runs xemu:
 
 ```
 python tools/tes3x_net.py serve --tunnel 9369

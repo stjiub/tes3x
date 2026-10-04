@@ -64,7 +64,6 @@ from tes3x_deploy import parse_drives
 from tes3x_agent import (AgentListener, Fetch, OP_REBOOT, console_request, key_fingerprint,
                          load_or_create_key)
 from tes3x_gui_pages import ServerPage, TargetsPage, fetch_destination
-from tes3x_net import AGENT_PORT, free_udp_ports
 import tes3x_nexus as nexus
 import tes3x_saves as saves_tool
 import tes3x_savepool
@@ -1855,7 +1854,6 @@ class ProfileWindow(QMainWindow):
         self.play_process = None
         self.play_pid = None
         self.play_output_buffer = ""
-        self.play_forwarder = None
         self.ftp_probe = None
         self.agent_probe = None
         self.in_game_listener = None
@@ -5574,39 +5572,18 @@ class ProfileWindow(QMainWindow):
         environment.insert("TES3X_CONFIG", str(self.local_config_path()))
         name = f"play-{self.profile_path.stem}-{target['name']}-{stamp}"
         self.play_run = self.work_dir() / "build" / "xemu" / name
-        tunnel = self.play_tunnel()
         self.start_play_process(ROOT / "tools" / "tes3x_xemu.py",
                                 [name, *source, "--target", target["name"],
                                  "--config", str(self.local_config_path()),
                                  *(["--gdb"] if self.play_gdb else []),
-                                 *(["--net-tunnel", str(tunnel)] if tunnel else []),
+                                 *(["--net-nat"] if self.play_network() else []),
                                  "--disk", str(self.play_disk())],
                                 f"Playing in {target['name']}…", environment)
 
-    def play_tunnel(self):
-        """The tunnel an xemu session's network goes through: the running server's first one,
-        or for an agent build a forwarder of its own that answers DHCP and passes the agent's
-        port to this GUI."""
-        if self.server_page.process is not None and self.server_page.running.get("tunnels"):
-            return self.server_page.running["tunnels"][0]
-        if "agent" not in self.applied_patches:
-            return None
-        try:
-            port = free_udp_ports(3)  # the tunnel, xemu's end of it, the forwarder's game port
-        except OSError as exc:
-            self.statusBar().showMessage(f"No network for xemu: {exc}", 8000)
-            return None
-        process = QProcess(self)
-        process.setWorkingDirectory(str(self.work_dir()))
-        process.setProgram(sys.executable)
-        process.setArguments([str(ROOT / "tools" / "tes3x_net.py"), "serve", "--tunnel",
-                              str(port), "--port", str(port + 2), "--admin-port", "0",
-                              "--forward", str(AGENT_PORT), "--stop-wait", "0"])
-        process.setStandardOutputFile(QProcess.nullDevice())
-        process.setStandardErrorFile(QProcess.nullDevice())
-        process.start()
-        self.play_forwarder = process
-        return port
+    def play_network(self):
+        """Whether an xemu session needs its NIC. xemu's NAT gives the guest DHCP, routes UDP to
+        any server and makes 10.0.2.2 this PC's loopback, where the in-game agent listens."""
+        return bool(self.applied_patches & {"agent", "multiplayer"})
 
     def play_disk(self):
         """The profile's own xemu disk, which keeps its saves between plays."""
@@ -5810,10 +5787,6 @@ class ProfileWindow(QMainWindow):
 
     def play_finished(self, code, _status):
         self.append_play_output()
-        if self.play_forwarder is not None:
-            self.play_forwarder.kill()
-            self.play_forwarder.waitForFinished(3000)
-            self.play_forwarder = None
         if getattr(self, "play_target", None):
             self.set_target_runtime(self.play_target, process="stopped")
         self.play_process = None

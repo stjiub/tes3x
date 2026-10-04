@@ -5,6 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 
+from tes3x_xemu import xemu_config  # noqa: E402
 from tes3x_xemu_setup import find_files, release_asset, resolve  # noqa: E402
 
 
@@ -41,6 +42,21 @@ class XemuSetupTests(unittest.TestCase):
         asset = release_asset(assets)
         if sys.platform == "win32":
             self.assertEqual(asset["name"], "xemu-0.8.136-windows-x86_64.zip")
+
+
+class XemuConfigTests(unittest.TestCase):
+    def config(self, **network):
+        return xemu_config("boot.bin", "bios.bin", "eeprom.bin", "hdd.qcow2", "game.iso", 64,
+                           **network)
+
+    def test_network_backends(self):
+        self.assertNotIn("[net]", self.config())
+        tunnel = self.config(net_tunnel=(9370, 9369))
+        self.assertIn("backend = 'udp'", tunnel)
+        self.assertIn("bind_addr = '127.0.0.1:9370'", tunnel)
+        nat = self.config(net_nat=True)
+        self.assertIn("[net]\nenable = true\nbackend = 'nat'", nat)
+        self.assertNotIn("[net.udp]", nat)
 
 
 if __name__ == "__main__":

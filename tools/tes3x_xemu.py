@@ -410,7 +410,7 @@ def set_eeprom_mac(path, mac):
     Path(path).write_bytes(data)
 
 
-def xemu_config(bootrom, bios, eeprom, hdd, dvd, ram, net_tunnel=None):
+def xemu_config(bootrom, bios, eeprom, hdd, dvd, ram, net_tunnel=None, net_nat=False):
     template = CONFIG.get("template")
     text = Path(template).read_text() if template else TEMPLATE
     for key, path in (("bootrom", bootrom), ("bios", bios), ("eeprom", eeprom), ("hdd", hdd),
@@ -421,6 +421,8 @@ def xemu_config(bootrom, bios, eeprom, hdd, dvd, ram, net_tunnel=None):
     if net_tunnel:
         text += ("\n[net]\nenable = true\nbackend = 'udp'\n\n[net.udp]\n"
                  "bind_addr = '127.0.0.1:%d'\nremote_addr = '127.0.0.1:%d'\n" % net_tunnel)
+    elif net_nat:
+        text += "\n[net]\nenable = true\nbackend = 'nat'\n"
     return text
 
 
@@ -481,6 +483,10 @@ def main():
                          "127.0.0.1:PORT and frames sent to PORT+1 reach the guest "
                          "(tes3x_net.py --tunnel PORT); the guest's MAC becomes "
                          "02:00:00:00 and PORT, so each tunnel is a separate client")
+    ap.add_argument("--net-nat", action="store_true",
+                    help="attach the NIC to xemu's nat backend: DHCP gives 10.0.2.15, UDP "
+                         "reaches any address through this PC, and 10.0.2.2 is its loopback; "
+                         "the guest's MAC comes from the run name")
     ap.add_argument("--ram", type=int, choices=(64, 128),
                     help="guest RAM in MB; 128 also clears Limit64MB in the XBE it packs")
     a = ap.parse_args(argv)
@@ -525,6 +531,8 @@ def main():
         ap.error("--gdb-capture and --gdb-script both need the stub; pick one")
     if a.disk and (a.exec or a.save or a.keep_disk):
         ap.error("--exec, --save and --keep-disk apply to a fresh disk, not --disk")
+    if a.net_nat and a.net_tunnel:
+        ap.error("--net-nat and --net-tunnel are two backends for one NIC; pick one")
 
     runs = Path.cwd() / "build" / "xemu"
     out = runs / a.name
@@ -654,11 +662,14 @@ def main():
         if a.net_tunnel:
             set_eeprom_mac(out / "eeprom.bin",
                            bytes([2, 0, 0, 0]) + a.net_tunnel.to_bytes(2, "big"))
+        elif a.net_nat:
+            set_eeprom_mac(out / "eeprom.bin",
+                           bytes([2, 0, 1]) + hashlib.sha256(a.name.encode()).digest()[:3])
     bios = Path(a.bios).resolve() if a.bios else CONFIG["bios"]
     toml = out / "xemu.toml"
     tunnel = (a.net_tunnel + 1, a.net_tunnel) if a.net_tunnel else None
     toml.write_text(xemu_config(CONFIG["bootrom"], bios, out / "eeprom.bin", hdd, iso, a.ram,
-                                tunnel))
+                                tunnel, a.net_nat))
 
     t0 = time.time()
     with open(out / "xemu.out", "w") as so, open(out / "xemu.err", "w") as se:
