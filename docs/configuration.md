@@ -69,6 +69,28 @@ should use targets.
 |---|---|---|---|
 | `dashboard` | string | detected | Fallback XBMC4Gamers root for Xbox targets that do not set `dashboard` themselves. |
 
+### `[server]`
+
+The GUI's **Server** workspace keeps its settings here and turns them into
+`tes3x_net.py serve` options (see [multiplayer](multiplayer.md#start-the-server)). Command-line
+use of the server does not read this table.
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `world` | string | none | `--world`: the folder that keeps the server key, password, characters, saves and bans. |
+| `port` | integer | `26500` | `--port`: the UDP port consoles join. |
+| `admin_port` | integer | `26502` | `--admin-port`: the local admin port the GUI polls. |
+| `password_file` | string | none | `--password-file`. |
+| `max_players` | integer | `16` | `--max-players`. |
+| `respawn` | string | `nearest` | `--respawn`: `nearest`, `shrine` or `temple`. |
+| `respawn_delay` | number | server default | `--respawn-delay` in seconds; `0` keeps the default. |
+| `death_gold` | integer | `10` | `--death-gold`, a percentage. |
+| `hour` | number | server default | `--hour`; a negative value keeps the default. |
+| `timescale` | number | server default | `--timescale`; `0` keeps the default. |
+| `save_every` | integer | server default | `--save-every` in seconds; `0` keeps the default. |
+| `hosts` | array of strings | `[]` | `--host NAME=ADDRESS` for each entry. |
+| `tunnels` | array of integers | `[]` | `--tunnel PORT` for each xemu guest. |
+
 ## Profile
 
 The annotated [example profile](../examples/profile.toml) is the shortest starting point.

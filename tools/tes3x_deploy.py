@@ -165,6 +165,25 @@ def remote_tree(ftp, base):
     return out
 
 
+def installed_builds(ftp, games_root):
+    """{folder: its manifest's build record, or None} for each folder under games_root."""
+    root = games_root.replace("\\", "/").rstrip("/")
+    try:
+        ftp.cwd(root)
+    except (ftplib.error_perm, ftplib.error_temp):
+        return {}
+    entries = []
+    ftp.retrlines("LIST", entries.append)
+    folders = [parts[8] for parts in (line.split(maxsplit=8) for line in entries)
+               if len(parts) == 9 and parts[0].startswith("d") and parts[8] not in (".", "..")]
+    builds = {}
+    for name in folders:
+        manifest = read_manifest(ftp, posixpath.join(root, name))
+        record = manifest.get(BUILD_KEY)
+        builds[name] = record if isinstance(record, dict) else ({} if manifest else None)
+    return builds
+
+
 def ensure_dirs(ftp, path, made):
     parent = posixpath.dirname(path)
     if parent in made:

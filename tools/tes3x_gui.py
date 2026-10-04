@@ -33,10 +33,10 @@ try:
                                QKeySequence, QPainter, QPen, QPixmap, QTextCursor)
     from PySide6.QtWidgets import (
         QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-        QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
+        QFileDialog, QFormLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
         QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox,
         QPushButton, QScrollArea, QSpinBox, QSplitter, QStackedWidget, QStatusBar, QStyle,
-        QTableView, QTabWidget, QTextBrowser, QTextEdit, QToolButton, QTreeWidget, QTreeWidgetItem,
+        QTabBar, QTableView, QTabWidget, QTextBrowser, QTextEdit, QToolButton, QTreeWidget, QTreeWidgetItem,
         QVBoxLayout, QWidget,
     )
 except ImportError as exc:
@@ -61,7 +61,10 @@ from tes3x_pipeline import (DEPLOY_CONFLICT, DEPLOY_NO_SPACE, MARKER as PIPELINE
                             resolve_patch_plan, validate_local_config, validate_profile)
 from tes3x_records import records, subrecords
 from tes3x_deploy import parse_drives
-from tes3x_agent import AgentListener, key_fingerprint, load_or_create_key
+from tes3x_agent import (AgentListener, Fetch, OP_REBOOT, console_request, key_fingerprint,
+                         load_or_create_key)
+from tes3x_gui_pages import ServerPage, TargetsPage, fetch_destination
+from tes3x_net import AGENT_PORT, free_udp_ports
 import tes3x_nexus as nexus
 import tes3x_saves as saves_tool
 import tes3x_savepool
@@ -1837,6 +1840,7 @@ class ProfileWindow(QMainWindow):
     MOD_NAME, MOD_VERSION, MOD_CONFLICTS, MOD_NOTES, MOD_PRIORITY, MOD_XBOX = range(6)
     nexus_done = Signal(str, object, object)
     in_game_event = Signal(object)
+    agent_lines = Signal(str, object)
 
     def __init__(self, profile=None, config=None, settings=None):
         super().__init__()
@@ -1851,11 +1855,15 @@ class ProfileWindow(QMainWindow):
         self.play_process = None
         self.play_pid = None
         self.play_output_buffer = ""
+        self.play_forwarder = None
         self.ftp_probe = None
         self.agent_probe = None
         self.in_game_listener = None
         self.agent_fingerprint = None
         self.agent_logs = defaultdict(list)
+        self.agent_replies = {}
+        self.agent_fetches = []
+        self.target_builds = {}
         self.drive_probe = None
         self.command_kind = None
         self.command_target = None
@@ -1899,6 +1907,15 @@ class ProfileWindow(QMainWindow):
         self.profile_picker.setMinimumWidth(260)
         self.profile_picker.activated.connect(self.picker_activated)
         profile_bar = QHBoxLayout()
+        self.workspace_bar = QTabBar()
+        self.workspace_bar.setDrawBase(False)
+        self.workspace_bar.setExpanding(False)
+        self.workspace_bar.setUsesScrollButtons(False)
+        self.workspace_bar.setElideMode(Qt.TextElideMode.ElideNone)
+        for label in ("Profile", "Targets", "Server"):
+            self.workspace_bar.addTab(label)
+        profile_bar.addWidget(self.workspace_bar)
+        profile_bar.addSpacing(16)
         profile_bar.addWidget(QLabel("Profile"))
         profile_bar.addWidget(self.profile_picker)
         profile_actions = QToolButton()
@@ -1971,8 +1988,15 @@ class ProfileWindow(QMainWindow):
         self.content_split.setStretchFactor(0, 3)
         self.content_split.setStretchFactor(1, 2)
         self.content_split.setSizes([780, 500])
+        self.targets_page = TargetsPage(self)
+        self.agent_lines.connect(self.targets_page.append_lines)
+        self.server_page = ServerPage(self)
+        self.workspaces = QStackedWidget()
+        for page in (self.content_split, self.targets_page, self.server_page):
+            self.workspaces.addWidget(page)
+        self.workspace_bar.currentChanged.connect(self.workspace_changed)
         self.body_split = QSplitter(Qt.Orientation.Vertical)
-        self.body_split.addWidget(self.content_split)
+        self.body_split.addWidget(self.workspaces)
         self.body_split.addWidget(self.output)
         self.body_split.setStretchFactor(0, 4)
         self.body_split.setStretchFactor(1, 1)
@@ -2130,6 +2154,8 @@ class ProfileWindow(QMainWindow):
             self.open_profile(Path(profile))
         else:
             self.open_initial_profile()
+        if self.settings:
+            self.workspace_bar.setCurrentIndex(self.settings.value("workspace", 0, int))
         if QApplication.platformName() != "offscreen":
             self.start_in_game_listener()
             if not self.local_config_path().is_file():
@@ -3475,16 +3501,23 @@ class ProfileWindow(QMainWindow):
         if matching:
             return matching[0]
         if host.startswith("127.") or host == "::1":
+            # xemu reaches the listener through a local tunnel: the running session's target.
+            playing = getattr(self, "play_target", None) if self.play_process else None
+            if playing in targets:
+                return playing
             target = targets.get(selected, {})
             if target.get("kind") == "xemu":
                 return selected
         return None
 
     def handle_in_game_event(self, event):
+        kind = event["kind"]
+        if kind == "reply":
+            self.agent_reply(event)
+            return
         name = self.in_game_target(event["address"])
         if not name:
             return
-        kind = event["kind"]
         if kind == "goodbye":
             state = self.target_runtime.setdefault(name, {})
             state.pop("game", None)
@@ -3496,12 +3529,111 @@ class ProfileWindow(QMainWindow):
                                     game_detail="In-game heartbeat stopped")
             return
         detail = f"In-game agent from {event['address'][0]}:{event['address'][1]}"
-        self.set_target_runtime(name, game="connected", game_detail=detail,
-                                game_key=event.get("client_key"))
+        values = {"game": "connected", "game_detail": detail,
+                  "game_key": event.get("client_key"), "game_address": event["address"]}
+        payload = event.get("payload", b"")
+        if kind == "heartbeat" and len(payload) >= 16:
+            _, frame_us, free_kb, dropped = struct.unpack_from("<IIII", payload)
+            values["heartbeat"] = {"frame_us": frame_us, "free_kb": free_kb, "dropped": dropped}
+        self.set_target_runtime(name, **values)
         if kind == "log":
-            lines = event.get("payload", b"").decode("cp1252", "replace").splitlines()
+            lines = payload.decode("cp1252", "replace").splitlines()
             self.agent_logs[name].extend(lines)
             del self.agent_logs[name][:-2000]
+            self.agent_lines.emit(name, lines)
+
+    def agent_request(self, name, op, args, done):
+        """Send a request to the game on target `name`; `done(event)`, if given, gets the
+        reply."""
+        address = self.target_runtime.get(name, {}).get("game_address")
+        if self.in_game_listener is None or address is None \
+                or self.target_runtime[name].get("game") != "connected":
+            return None
+        ident = self.in_game_listener.request(address[0], op, args, address[1])
+        if ident is not None and done is not None:
+            self.agent_replies[ident] = done
+        return ident
+
+    def agent_reply(self, event):
+        for job in list(self.agent_fetches):
+            if job["fetch"].handle(event):
+                self.fetch_progress(job)
+                return
+        done = self.agent_replies.pop(event.get("id"), None)
+        if done:
+            done(event)
+
+    def agent_console(self, name, line):
+        def done(event):
+            if event["status"] != "ok":
+                self.agent_lines.emit(name, [f"» {line}: {event['status']}"])
+
+        try:
+            op, args = console_request(line)
+        except ValueError as exc:
+            self.agent_lines.emit(name, [f"» {exc}"])
+            return
+        if self.agent_request(name, op, args, done) is None:
+            self.agent_lines.emit(name, ["» no game is connected"])
+
+    def agent_reboot(self, name):
+        def done(event):
+            self.statusBar().showMessage(f"{name}: quit to dashboard: {event['status']}", 8000)
+
+        if self.agent_request(name, OP_REBOOT, b"", done) is None:
+            self.error("No game with the in-game agent is connected")
+
+    def agent_fetch(self, name, path, destination=None):
+        """Copy a file from the running game into build/agent-fetch/TARGET/TIME/."""
+        destination = destination or fetch_destination(self.work_dir(), name, path)
+
+        def send(op, args):
+            return self.agent_request(name, op, args, None)
+
+        job = {"fetch": Fetch(send, path), "target": name, "path": path,
+               "destination": Path(destination)}
+        self.agent_fetches.append(job)
+        job["fetch"].start()
+        self.fetch_progress(job)
+
+    def fetch_progress(self, job):
+        fetch = job["fetch"]
+        if fetch.error:
+            self.agent_fetches.remove(job)
+            self.error(f"Fetch from {job['target']} failed: {fetch.error}")
+        elif fetch.done:
+            self.agent_fetches.remove(job)
+            try:
+                job["destination"].parent.mkdir(parents=True, exist_ok=True)
+                job["destination"].write_bytes(fetch.data())
+            except OSError as exc:
+                self.error(f"Could not save {job['destination']}: {exc}")
+                return
+            self.statusBar().showMessage(f"Fetched {job['path']} to {job['destination']}", 10000)
+            self.targets_page.refresh_logs()
+        else:
+            size = f" of {fetch.size:,}" if fetch.size is not None else ""
+            self.statusBar().showMessage(
+                f"Fetching {job['path']}: {fetch.received:,}{size} bytes…")
+
+    def target_settings(self, name):
+        return tes3x_targets.targets(self.local_values()).get(name, {}) if name else {}
+
+    def target_label(self, name):
+        target = self.target_settings(name)
+        return target_runtime_label(target, self.target_runtime_state(name, target)) \
+            if target else "Unknown"
+
+    def profile_name(self):
+        return (self.profile_plain or {}).get("profile", {}).get("name") or (
+            self.profile_path.stem if self.profile_path else None)
+
+    def workspace_changed(self, index):
+        self.workspaces.setCurrentIndex(index)
+        if self.settings:
+            self.settings.setValue("workspace", index)
+        if index == 1:
+            self.targets_page.set_target(self.target_picker.currentData())
 
     def default_target(self, kind=None):
         name = self.target_picker.currentData() if hasattr(self, "target_picker") else None
@@ -3597,6 +3729,8 @@ class ProfileWindow(QMainWindow):
         self.target_picker.setItemData(row, tip, Qt.ItemDataRole.ToolTipRole)
         if row == self.target_picker.currentIndex():
             self.target_picker.setToolTip(tip)
+            if hasattr(self, "targets_page"):
+                self.targets_page.refresh()
 
     def target_activated(self, *_args):
         name = self.target_picker.currentData()
@@ -3623,6 +3757,8 @@ class ProfileWindow(QMainWindow):
         self.update_deploy_state()
         if hasattr(self, "save_list"):
             self.save_target_changed(probe)
+        if hasattr(self, "targets_page"):
+            self.targets_page.set_target(self.target_picker.currentData())
         if probe and xbox:
             self.refresh_ftp_status()
 
@@ -3888,8 +4024,7 @@ class ProfileWindow(QMainWindow):
 
     # Saves
 
-    SAVE_NAME, SAVE_WHERE, SAVE_PLAYER, SAVE_CELL, SAVE_DATE, SAVE_SIZE, SAVE_FIT = range(7)
-    SAVE_SOURCES = {"xbox": "Xbox", "xemu": "xemu", "pc": "PC copy"}
+    SAVE_NAME, SAVE_PLAYER, SAVE_CELL, SAVE_DATE, SAVE_SIZE, SAVE_FIT = range(6)
 
     def create_saves_tab(self):
         self.pool_combo = QComboBox()
@@ -3906,10 +4041,7 @@ class ProfileWindow(QMainWindow):
         top.addStretch()
 
         self.save_list = QTreeWidget()
-        self.save_list.setHeaderLabels(["Save", "Where", "Player", "Cell", "Date", "Size",
-                                        "Plugins"])
-        self.save_list.setRootIsDecorated(False)
-        self.save_list.setSortingEnabled(True)
+        self.save_list.setHeaderLabels(["Save", "Player", "Cell", "Date", "Size", "Plugins"])
         self.save_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.save_list.itemSelectionChanged.connect(self.saves_selected)
         self.save_list.itemSelectionChanged.connect(self.show_context_info)
@@ -3919,21 +4051,17 @@ class ProfileWindow(QMainWindow):
 
         self.save_actions = {}
         for key, label, handler, tip in (
-                ("pull", "Download to PC", self.pull_saves,
-                 "Copy the selected Xbox or xemu saves into the PC save library"),
-                ("push", "Upload to Xbox", self.push_saves,
-                 "Copy the selected saves into this pool on the Xbox"),
-                ("push_xemu", "Push to xemu", self.push_xemu_saves,
-                 "Copy the selected saves into this pool on the profile's xemu disk"),
+                ("send", "Copy to…", self.send_saves,
+                 "Copy the selected saves, in this pool, to the PC, an Xbox or the xemu disk"),
                 ("copy", "Copy to pool…", lambda: self.transfer_saves(False),
                  "Copy the selected saves into another pool, where they are"),
                 ("move", "Move to pool…", lambda: self.transfer_saves(True),
                  "Move the selected saves into another pool, where they are. Each original is "
-                 "deleted once its copy is complete, and a save leaving the Xbox keeps a PC "
+                 "deleted once its copy is complete, and a save leaving an Xbox keeps a PC "
                  "copy"),
                 ("delete", "Delete…", self.delete_saves, "Delete the selected saves"),
                 ("refresh", "Refresh", lambda: self.refresh_saves(True),
-                 "List this pool's saves again, including the Xbox"),
+                 "List this pool's saves again, on every Xbox too"),
                 ("folder", "Open PC folder", self.open_save_folder,
                  "Open this pool's folder in the PC save library")):
             action = QAction(label, self)
@@ -3952,9 +4080,7 @@ class ProfileWindow(QMainWindow):
                 ("refresh", QIcon.ThemeIcon.ViewRefresh, pixmap.SP_BrowserReload),
                 ("folder", QIcon.ThemeIcon.FolderOpen, pixmap.SP_DirOpenIcon),
                 (None, None, None),
-                ("pull", QIcon.ThemeIcon.GoDown, pixmap.SP_ArrowDown),
-                ("push", QIcon.ThemeIcon.GoUp, pixmap.SP_ArrowUp),
-                ("push_xemu", QIcon.ThemeIcon.DocumentSend, pixmap.SP_ArrowRight),
+                ("send", QIcon.ThemeIcon.DocumentSend, pixmap.SP_ArrowRight),
                 (None, None, None),
                 ("copy", QIcon.ThemeIcon.EditCopy, pixmap.SP_FileIcon),
                 ("move", QIcon.ThemeIcon.GoNext, pixmap.SP_ArrowForward),
@@ -3975,10 +4101,11 @@ class ProfileWindow(QMainWindow):
         layout.addWidget(self.save_list)
         layout.addLayout(buttons)
         self.save_pool = None
-        self.saves_probe = None
+        self.saves_probes = {}
         self.saves_local = []
-        self.saves_xbox = []
-        self.xbox_listing = None
+        self.saves_disk = []
+        self.saves_xbox = {}
+        self.xbox_listing = {}
         self.xbox_checked = set()
         self.saves_selected()
         return widget
@@ -3995,7 +4122,7 @@ class ProfileWindow(QMainWindow):
 
     def known_pools(self):
         """{title ID: {"name", "id", "users"}}: every profile's pool, and those the save library
-        has seen, on the Xbox or made here."""
+        has seen, on an Xbox or made here."""
         pools = {}
         for path in self.profile_files():
             try:
@@ -4052,17 +4179,12 @@ class ProfileWindow(QMainWindow):
         self.populate_pools()
         self.update_build_state()
         self.save_list.clear()
-        self.saves_local, self.saves_xbox, self.xbox_listing = [], [], None
+        self.saves_local, self.saves_disk, self.saves_xbox, self.xbox_listing = [], [], {}, {}
         if self.saves_tab_visible():
             self.refresh_saves()
 
     def save_target_changed(self, probe=False):
-        """Drop state from the old target and show saves belonging to the selected one."""
-        if self.saves_probe is not None:
-            probe_process, self.saves_probe = self.saves_probe, None
-            probe_process.kill()
-        self.saves_xbox = []
-        self.xbox_listing = None
+        """The inventory covers every target; a changed target list may add or drop one."""
         if self.saves_tab_visible() and self.profile_path:
             self.refresh_saves(None if probe else False)
 
@@ -4102,96 +4224,117 @@ class ProfileWindow(QMainWindow):
         self.save_pool = {"name": name, "id": f"{value:08X}"}
         self.pool_changed()
 
-    def refresh_saves(self, xbox=None):
-        """List the PC library and the selected target's saves.
+    def save_xboxes(self):
+        """{name: target} for every Xbox target the inventory lists."""
+        return {name: target for name, target in tes3x_targets.targets(self.local_values()).items()
+                if target.get("kind") == "xbox" and target.get("host")}
 
-        Show an Xbox target's last listing, then ask it again once per pool and session, or
-        whenever `xbox` is true. An xemu target reads this profile's persistent play disk.
+    def save_devices(self):
+        """[(device, label)] in display order: the PC, this profile's xemu disk, each Xbox."""
+        devices = [("pc", "PC library")]
+        if self.profile_path and self.play_disk().is_file():
+            devices.append(("xemu", "xemu disk (this profile)"))
+        devices += [(f"xbox:{name}", f"Xbox · {name}") for name in sorted(self.save_xboxes())]
+        return devices
+
+    @staticmethod
+    def save_device(save):
+        return f"xbox:{save['target']}" if save["source"] == "xbox" else save["source"]
+
+    def refresh_saves(self, xbox=None):
+        """List this pool on the PC, the profile's xemu disk and every Xbox.
+
+        Each Xbox shows its last listing, then is asked again once per pool and session, or
+        whenever `xbox` is true.
         """
         if not self.profile_path:
             return
         value, _name = self.current_pool()
-        target = self.default_target()
-        self.saves_local = []
+        self.saves_local, self.saves_disk = [], []
         try:
-            self.saves_local += saves_tool.library_saves(self.save_library(), value)
-            if target and target.get("kind") == "xemu" and self.play_disk().is_file():
-                self.saves_local += saves_tool.Disk(self.play_disk()).saves(value)
+            self.saves_local = saves_tool.library_saves(self.save_library(), value)
+            if self.play_disk().is_file():
+                self.saves_disk = saves_tool.Disk(self.play_disk()).saves(value)
         except (OSError, ValueError, struct.error) as exc:
             self.statusBar().showMessage(f"Could not read the PC saves: {exc}", 8000)
-        xbox_target = target if target and target.get("kind") == "xbox" else None
-        if xbox_target and self.xbox_listing is None:
-            cached = saves_tool.target_listing(
-                saves_tool.read_index(self.save_library()), xbox_target["name"], value)
-            self.saves_xbox = cached.get("saves", [])
-            self.xbox_listing = f"listed {cached['time']}" if cached.get("time") else ""
-        elif not xbox_target:
-            self.saves_xbox = []
-            self.xbox_listing = ""
+        xboxes = self.save_xboxes()
+        index = saves_tool.read_index(self.save_library())
+        for name in list(self.saves_xbox):
+            if name not in xboxes:
+                del self.saves_xbox[name]
+                self.xbox_listing.pop(name, None)
+        for name in xboxes:
+            if name not in self.saves_xbox:
+                cached = saves_tool.target_listing(index, name, value)
+                self.saves_xbox[name] = [dict(save, target=name)
+                                         for save in cached.get("saves", [])]
+                self.xbox_listing[name] = f"listed {cached['time']}" if cached.get("time") \
+                    else "not listed"
         self.show_saves()
-        if not xbox_target or not xbox_target.get("host"):
-            return
-        checked = (xbox_target["name"], value)
-        if xbox or (xbox is None and checked not in self.xbox_checked):
-            self.list_xbox_saves(value, xbox_target["name"])
+        for name in xboxes:
+            if xbox or (xbox is None and (name, value) not in self.xbox_checked):
+                self.list_xbox_saves(value, name)
 
-    def list_xbox_saves(self, value, target_name=None):
-        if self.saves_probe is not None:
-            probe, self.saves_probe = self.saves_probe, None
-            probe.kill()
+    def list_xbox_saves(self, value, target_name):
+        if target_name in self.saves_probes:
+            self.saves_probes.pop(target_name).kill()
         process = QProcess(self)
         process.setWorkingDirectory(str(self.work_dir()))
         process.setProgram(sys.executable)
-        target_name = target_name or self.target_picker.currentData()
-        selected = (["--target", target_name] if target_name else [])
         process.setArguments([str(ROOT / "tools" / "tes3x_saves.py"), "list", "--pool",
                               f"{value:08X}", "--xbox", "--library", str(self.save_library()),
-                              "--config", str(self.local_config_path()), *selected])
+                              "--config", str(self.local_config_path()),
+                              "--target", target_name])
         process.finished.connect(lambda code, _status, process=process, value=value,
                                  target_name=target_name:
                                  self.xbox_saves_listed(process, value, target_name, code))
-        self.saves_probe = process
+        self.saves_probes[target_name] = process
         self.xbox_checked.add((target_name, value))
-        self.show_saves_status(f"listing {target_name}…")
+        self.xbox_listing[target_name] = "listing…"
+        self.show_saves_status()
         process.start()
 
     def xbox_saves_listed(self, process, value, target_name, code):
         # A listing started for a pool since left, or replaced by a newer one, is dropped.
-        if process is not self.saves_probe:
+        if self.saves_probes.get(target_name) is not process:
             return
-        self.saves_probe = None
+        del self.saves_probes[target_name]
+        if value != self.current_pool()[0]:
+            return
         output = bytes(process.readAllStandardOutput()).decode("utf-8", "replace").strip()
         try:
             result = json.loads(output.splitlines()[-1])
         except (IndexError, ValueError):
             error = bytes(process.readAllStandardError()).decode("utf-8", "replace").strip()
-            self.show_saves_status("could not list the Xbox", error or output or f"exit {code}")
+            self.xbox_listing[target_name] = "could not list"
+            self.show_saves(error or output or f"exit {code}")
             return
-        if value != self.current_pool()[0] or target_name != self.target_picker.currentData():
-            return
-        self.saves_xbox = result["saves"]
+        self.saves_xbox[target_name] = [dict(save, target=target_name)
+                                        for save in result["saves"]]
         if result.get("xbox") == "ok":
-            self.xbox_listing = ""
+            self.xbox_listing[target_name] = ""
             self.populate_pools()
             self.show_saves()
         else:
-            self.xbox_listing = (f"Xbox offline, listed {result['time']}" if result.get("time")
-                                 else "Xbox offline")
+            self.xbox_listing[target_name] = (f"offline, listed {result['time']}"
+                                              if result.get("time") else "offline")
             self.show_saves(result.get("xbox") or "")
 
-    def show_saves(self, tip=""):
-        self.populate_saves(self.saves_xbox + self.saves_local)
-        self.show_saves_status(None, tip)
+    def all_saves(self):
+        return self.saves_local + self.saves_disk + [
+            save for saves in self.saves_xbox.values() for save in saves]
 
-    def show_saves_status(self, doing=None, tip=""):
-        counts = collections.Counter(save["source"] for save in self.saves_xbox + self.saves_local)
-        target = self.default_target()
-        xbox = bool(target and target.get("kind") == "xbox" and target.get("host"))
-        parts = [f"{self.SAVE_SOURCES[key]} {counts[key]}" for key in ("xbox", "xemu", "pc")
-                 if counts[key] or (key == "xbox" and xbox)]
-        parts.append(doing or self.xbox_listing or "")
-        self.saves_status.setText(" · ".join(part for part in parts if part)
-                                  or "No saves in this pool")
+    def show_saves(self, tip=""):
+        self.populate_saves(self.all_saves())
+        self.show_saves_status(tip)
+
+    def show_saves_status(self, tip=""):
+        total = len(self.all_saves())
+        waiting = [name for name, text in self.xbox_listing.items() if text == "listing…"]
+        text = f"{total} save{'s' if total != 1 else ''} in this pool"
+        if waiting:
+            text += " · listing " + ", ".join(sorted(waiting)) + "…"
+        self.saves_status.setText(text)
         self.saves_status.setToolTip(tip)
 
     def load_order(self):
@@ -4212,26 +4355,44 @@ class ProfileWindow(QMainWindow):
         return "ok", "Compatible"
 
     def populate_saves(self, saves):
-        selected = {(save["source"], save["folder"]) for save in self.selected_saves()}
-        self.save_list.setSortingEnabled(False)
+        """One group per device, newest save first, each device shown even when empty."""
+        selected = {(self.save_device(save), save["folder"]) for save in self.selected_saves()}
         self.save_list.clear()
         colours = {"ok": QColor("#2e7d32"), "missing": QColor("#b3261e")}
         fits = collections.Counter()
-        for save in saves:
+        groups = {}
+        for device, label in self.save_devices():
+            group = QTreeWidgetItem([label])
+            group.setData(0, ROLE, None)
+            group.setData(0, EXTRA, device)
+            group.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            font = group.font(0)
+            font.setBold(True)
+            group.setFont(0, font)
+            self.save_list.addTopLevelItem(group)
+            groups[device] = group
+        for save in sorted(saves, key=lambda save: save.get("date") or "", reverse=True):
+            group = groups.get(self.save_device(save))
+            if group is None:
+                continue
             fit, text = self.save_fit(save.get("masters", []))
             fits[fit] += 1
             item = QTreeWidgetItem([
                 save.get("name") or save.get("title") or save["folder"],
-                self.SAVE_SOURCES.get(save["source"], save["source"]),
                 save.get("player") or "", save.get("cell") or "", save.get("date") or "",
                 f"{save['size'] / 1048576:.1f} MB", text])
             item.setData(0, ROLE, save)
             item.setForeground(self.SAVE_FIT, colours[fit])
             item.setToolTip(self.SAVE_FIT, "\n".join(save.get("masters", [])))
-            self.save_list.addTopLevelItem(item)
-            item.setSelected((save["source"], save["folder"]) in selected)
-        self.save_list.setSortingEnabled(True)
-        self.save_list.sortByColumn(self.SAVE_DATE, Qt.SortOrder.DescendingOrder)
+            group.addChild(item)
+            item.setSelected((self.save_device(save), save["folder"]) in selected)
+        for device, group in groups.items():
+            count = group.childCount()
+            detail = f"{count} save{'s' if count != 1 else ''}"
+            if device.startswith("xbox:") and self.xbox_listing.get(device[5:]):
+                detail += f" · {self.xbox_listing[device[5:]]}"
+            group.setText(self.SAVE_PLAYER, detail)
+            group.setExpanded(True)
         note = self.pool_note.text().split("  ⚠")[0]
         if fits["missing"]:
             note += (f"  ⚠ {fits['missing']} of {len(saves)} saves need plugins this profile "
@@ -4240,52 +4401,82 @@ class ProfileWindow(QMainWindow):
         self.saves_selected()
 
     def selected_saves(self):
-        return [item.data(0, ROLE) for item in self.save_list.selectedItems()]
+        return [item.data(0, ROLE) for item in self.save_list.selectedItems()
+                if item.data(0, ROLE) is not None]
 
     def saves_selected(self):
-        sources = {save["source"] for save in self.selected_saves()}
+        selected = bool(self.selected_saves())
         idle = self.process is None
-        target = self.default_target()
-        kind = target.get("kind") if target else None
-        disk = self.profile_path is not None and self.play_disk().is_file()
-        for key, wanted in (("pull", {kind} if kind in {"xbox", "xemu"} else set()),
-                            ("push", {"pc"} if kind == "xbox" else set()),
-                            ("push_xemu", {"pc"} if kind == "xemu" and disk else set()),
-                            ("copy", {"xbox", "pc", "xemu"}), ("move", {"xbox", "pc", "xemu"}),
-                            ("delete", {"xbox", "pc", "xemu"})):
-            self.save_actions[key].setEnabled(idle and bool(sources & wanted))
+        for key in ("send", "copy", "move", "delete"):
+            self.save_actions[key].setEnabled(idle and selected)
 
     def save_menu(self, position):
         if not self.selected_saves():
             return
         menu = QMenu(self)
         menu.setToolTipsVisible(True)
-        actions = self.save_actions
-        menu.addActions([actions["pull"], actions["push"], actions["push_xemu"]])
+        sources = {self.save_device(save) for save in self.selected_saves()}
+        send = menu.addMenu("Copy to")
+        for device, label in self.save_devices():
+            action = send.addAction(label, lambda device=device: self.send_saves(device))
+            action.setEnabled(self.process is None and sources != {device})
         menu.addSeparator()
-        menu.addActions([actions["copy"], actions["move"]])
+        menu.addActions([self.save_actions["copy"], self.save_actions["move"]])
         menu.addSeparator()
-        menu.addAction(actions["delete"])
+        menu.addAction(self.save_actions["delete"])
         menu.exec(self.save_list.viewport().mapToGlobal(position))
 
-    def saves_command(self, command, folders, *extra):
+    def saves_command(self, command, folders, *extra, target=None):
         value, _name = self.current_pool()
         return (ROOT / "tools" / "tes3x_saves.py",
                 [command, *folders, "--pool", f"{value:08X}", "--library",
                  str(self.save_library()), "--config", str(self.local_config_path()),
-                 *(["--target", self.target_picker.currentData()]
-                   if self.target_picker.currentData() else []), *extra])
+                 *(["--target", target] if target else []), *extra])
+
+    def device_groups(self, saves):
+        """{device: [folders]} in display order."""
+        groups = {}
+        for save in saves:
+            groups.setdefault(self.save_device(save), []).append(save["folder"])
+        order = [device for device, _label in self.save_devices()]
+        return {device: groups[device] for device in sorted(
+            groups, key=lambda device: order.index(device) if device in order else len(order))}
+
+    def device_label(self, device):
+        return dict(self.save_devices()).get(device, device)
 
     def pull_steps(self, saves):
+        """Copy the saves that are not on the PC into the PC library."""
         steps = []
-        for source in ("xbox", "xemu"):
-            folders = [save["folder"] for save in saves if save["source"] == source]
-            if folders:
-                extra = ["--from", "xemu", "--disk", str(self.play_disk())] \
-                    if source == "xemu" else []
-                script, arguments = self.saves_command("pull", folders, *extra)
-                steps.append((script, arguments, f"Copying {len(folders)} save(s) from "
-                                                 f"{self.SAVE_SOURCES[source]} to the PC…"))
+        for device, folders in self.device_groups(saves).items():
+            if device == "pc":
+                continue
+            if device == "xemu":
+                script, arguments = self.saves_command(
+                    "pull", folders, "--from", "xemu", "--disk", str(self.play_disk()))
+            else:
+                script, arguments = self.saves_command("pull", folders, target=device[5:])
+            steps.append((script, arguments, f"Copying {len(folders)} save(s) from "
+                                             f"{self.device_label(device)} to the PC…"))
+        return steps
+
+    def send_steps(self, saves, destination):
+        """Copy saves to `destination`, through the PC library: pull, then push."""
+        saves = [save for save in saves if self.save_device(save) != destination]
+        steps = self.pull_steps(saves)
+        folders = sorted({save["folder"] for save in saves})
+        if destination == "pc" or not folders:
+            return steps
+        _value, name = self.current_pool()
+        pool_name = ["--pool-name", name] if name else []
+        if destination == "xemu":
+            script, arguments = self.saves_command(
+                "push", folders, "--where", "xemu", "--disk", str(self.play_disk()), *pool_name)
+        else:
+            script, arguments = self.saves_command("push", folders, *pool_name,
+                                                   target=destination[5:])
+        steps.append((script, arguments, f"Copying {len(folders)} save(s) to "
+                                         f"{self.device_label(destination)}…"))
         return steps
 
     def run_save_steps(self, steps):
@@ -4296,56 +4487,36 @@ class ProfileWindow(QMainWindow):
             return
         self.run_steps(steps, then=lambda: self.refresh_saves(True))
 
-    def pull_saves(self):
-        self.run_save_steps(self.pull_steps(self.selected_saves()))
-
-    def push_steps(self, saves):
-        """Pull the xemu saves first, then push the PC copies into this pool on the Xbox."""
-        _value, name = self.current_pool()
-        wanted = [save for save in saves if save["source"] in ("pc", "xemu")]
-        steps = self.pull_steps([save for save in wanted if save["source"] == "xemu"])
-        folders = sorted({save["folder"] for save in wanted})
-        if folders:
-            script, arguments = self.saves_command(
-                "push", folders, *(["--pool-name", name] if name else []))
-            steps.append((script, arguments, f"Copying {len(folders)} save(s) to the Xbox…"))
-        return steps
-
-    def push_saves(self):
-        self.run_save_steps(self.push_steps(self.selected_saves()))
-
-    def push_xemu_steps(self, saves):
-        """Pull the Xbox saves first, then write the PC copies into this pool on the xemu
-        disk."""
-        _value, name = self.current_pool()
-        wanted = [save for save in saves if save["source"] in ("pc", "xbox")]
-        steps = self.pull_steps([save for save in wanted if save["source"] == "xbox"])
-        folders = sorted({save["folder"] for save in wanted})
-        if folders:
-            script, arguments = self.saves_command(
-                "push", folders, "--where", "xemu", "--disk", str(self.play_disk()),
-                *(["--pool-name", name] if name else []))
-            steps.append((script, arguments, f"Copying {len(folders)} save(s) to xemu…"))
-        return steps
-
-    def push_xemu_saves(self):
-        self.run_save_steps(self.push_xemu_steps(self.selected_saves()))
+    def send_saves(self, destination=None):
+        saves = self.selected_saves()
+        if not saves:
+            return
+        if destination is None:
+            sources = {self.save_device(save) for save in saves}
+            choices = {label: device for device, label in self.save_devices()
+                       if sources != {device}}
+            label, ok = QInputDialog.getItem(self, "Copy saves",
+                                             "Copy the selected saves, in this pool, to:",
+                                             list(choices), 0, False)
+            if not ok:
+                return
+            destination = choices[label]
+        self.run_save_steps(self.send_steps(saves, destination))
 
     def transfer_steps(self, saves, target, name, move):
         """Copy or move saves into pool `target`, each where it is."""
         steps = []
-        for where in ("xbox", "pc", "xemu"):
-            folders = [save["folder"] for save in saves if save["source"] == where]
-            if not folders:
-                continue
+        for device, folders in self.device_groups(saves).items():
+            where = device.split(":")[0]
             extra = ["--to", f"{target:08X}", "--where", where]
             extra += ["--to-name", name] if name else []
             extra += ["--move"] if move else []
             extra += ["--disk", str(self.play_disk())] if where == "xemu" else []
-            script, arguments = self.saves_command("copy", folders, *extra)
+            script, arguments = self.saves_command(
+                "copy", folders, *extra, target=device[5:] if where == "xbox" else None)
             steps.append((script, arguments,
                           f"{'Moving' if move else 'Copying'} {len(folders)} "
-                          f"{self.SAVE_SOURCES[where]} save(s) to another pool…"))
+                          f"{self.device_label(device)} save(s) to another pool…"))
         return steps
 
     def transfer_saves(self, move):
@@ -4360,7 +4531,7 @@ class ProfileWindow(QMainWindow):
         verb = "Move" if move else "Copy"
         label, ok = QInputDialog.getItem(
             self, f"{verb} saves",
-            f"{verb} the selected saves into this pool. Xbox saves stay on the Xbox and PC "
+            f"{verb} the selected saves into this pool. Xbox saves stay on their Xbox and PC "
             "copies on the PC" + (", and each original is deleted once its copy is complete:"
                                   if move else ":"),
             list(choices), 0, False)
@@ -4374,25 +4545,27 @@ class ProfileWindow(QMainWindow):
         if not saves or self.process is not None:
             return
         names = "\n".join(f"• {save.get('name') or save['folder']} "
-                          f"({self.SAVE_SOURCES[save['source']]})" for save in saves)
+                          f"({self.device_label(self.save_device(save))})" for save in saves)
         answer = QMessageBox.question(self, "Delete saves",
                                       f"Delete these saves for good?\n\n{names}")
         if answer != QMessageBox.StandardButton.Yes:
             return
         current, _name = self.current_pool()
-        for save in saves:
-            if save["source"] == "pc":
-                folder = self.save_library() / f"{current:08X}" / save["folder"]
-                if not trash(folder):
-                    shutil.rmtree(folder, ignore_errors=True)
         steps = []
-        for where, extra in (("xbox", []), ("xemu", ["--where", "xemu", "--disk",
-                                                    str(self.play_disk())])):
-            folders = [save["folder"] for save in saves if save["source"] == where]
-            if folders:
-                script, arguments = self.saves_command("delete", folders, *extra)
-                steps.append((script, arguments,
-                              f"Deleting {len(folders)} {self.SAVE_SOURCES[where]} save(s)…"))
+        for device, folders in self.device_groups(saves).items():
+            if device == "pc":
+                for folder in folders:
+                    path = self.save_library() / f"{current:08X}" / folder
+                    if not trash(path):
+                        shutil.rmtree(path, ignore_errors=True)
+                continue
+            if device == "xemu":
+                script, arguments = self.saves_command(
+                    "delete", folders, "--where", "xemu", "--disk", str(self.play_disk()))
+            else:
+                script, arguments = self.saves_command("delete", folders, target=device[5:])
+            steps.append((script, arguments, f"Deleting {len(folders)} "
+                                             f"{self.device_label(device)} save(s)…"))
         if steps:
             self.run_save_steps(steps)
         else:
@@ -4412,7 +4585,7 @@ class ProfileWindow(QMainWindow):
         save = saves[0]
         loaded = self.load_order()
         lines = [save.get("name") or save["folder"], "",
-                 f"Where: {self.SAVE_SOURCES.get(save['source'], save['source'])}",
+                 f"Where: {self.device_label(self.save_device(save))}",
                  f"Folder: {save['folder']}", f"Player: {save.get('player') or '?'}",
                  f"Cell: {save.get('cell') or '?'}", f"Saved: {save.get('date') or '?'}", "",
                  f"Plugins ({self.save_fit(save.get('masters', []))[1]}):"]
@@ -4755,6 +4928,7 @@ class ProfileWindow(QMainWindow):
 
     def closeEvent(self, event):
         if self.maybe_save():
+            self.server_page.shutdown()
             if self.in_game_listener is not None:
                 self.in_game_listener.close()
                 self.in_game_listener = None
@@ -5400,12 +5574,39 @@ class ProfileWindow(QMainWindow):
         environment.insert("TES3X_CONFIG", str(self.local_config_path()))
         name = f"play-{self.profile_path.stem}-{target['name']}-{stamp}"
         self.play_run = self.work_dir() / "build" / "xemu" / name
+        tunnel = self.play_tunnel()
         self.start_play_process(ROOT / "tools" / "tes3x_xemu.py",
                                 [name, *source, "--target", target["name"],
                                  "--config", str(self.local_config_path()),
                                  *(["--gdb"] if self.play_gdb else []),
+                                 *(["--net-tunnel", str(tunnel)] if tunnel else []),
                                  "--disk", str(self.play_disk())],
                                 f"Playing in {target['name']}…", environment)
+
+    def play_tunnel(self):
+        """The tunnel an xemu session's network goes through: the running server's first one,
+        or for an agent build a forwarder of its own that answers DHCP and passes the agent's
+        port to this GUI."""
+        if self.server_page.process is not None and self.server_page.running.get("tunnels"):
+            return self.server_page.running["tunnels"][0]
+        if "agent" not in self.applied_patches:
+            return None
+        try:
+            port = free_udp_ports(3)  # the tunnel, xemu's end of it, the forwarder's game port
+        except OSError as exc:
+            self.statusBar().showMessage(f"No network for xemu: {exc}", 8000)
+            return None
+        process = QProcess(self)
+        process.setWorkingDirectory(str(self.work_dir()))
+        process.setProgram(sys.executable)
+        process.setArguments([str(ROOT / "tools" / "tes3x_net.py"), "serve", "--tunnel",
+                              str(port), "--port", str(port + 2), "--admin-port", "0",
+                              "--forward", str(AGENT_PORT), "--stop-wait", "0"])
+        process.setStandardOutputFile(QProcess.nullDevice())
+        process.setStandardErrorFile(QProcess.nullDevice())
+        process.start()
+        self.play_forwarder = process
+        return port
 
     def play_disk(self):
         """The profile's own xemu disk, which keeps its saves between plays."""
@@ -5492,8 +5693,15 @@ class ProfileWindow(QMainWindow):
         if self.process is not None:
             self.error("A TES3X command is already running")
             return
+        name = self.target_picker.currentData()
         timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        destination = self.work_dir() / "build" / "xbox-logs" / timestamp
+        destination = self.work_dir() / "build" / "xbox-logs" / (name or "xbox") / timestamp
+        features = self.target_features(name)
+        if "ftp" not in features and "agent_fetch" in features:
+            self.agent_fetch(name, "E:\\tes3xlog.txt", destination / "tes3xlog.txt")
+            self.write_pull_record(destination, name)
+            return
+        self.write_pull_record(destination, name)
         config = self.local_config_path()
         self.start_command(ROOT / "tools" / "tes3x_fetch.py", [
             "E:/tes3x*", "--out", str(destination),
@@ -5501,6 +5709,17 @@ class ProfileWindow(QMainWindow):
             *(["--target", self.target_picker.currentData()]
               if self.target_picker.currentData() else []),
         ], f"Pulling Xbox logs to {destination}…")
+
+    def write_pull_record(self, destination, name):
+        """What a pulled log folder came from, for the Targets page's log catalog."""
+        try:
+            destination.mkdir(parents=True, exist_ok=True)
+            (destination / "pull.json").write_text(json.dumps({
+                "target": name, "profile": self.profile_name(),
+                "time": datetime.datetime.now().isoformat(timespec="seconds")},
+                indent=2) + "\n", encoding="utf-8")
+        except OSError as exc:
+            self.error(f"Could not record the pull: {exc}")
 
     def start_command(self, program, arguments, message, environment=None, clear=True):
         if clear:
@@ -5521,6 +5740,7 @@ class ProfileWindow(QMainWindow):
                 action.setEnabled(False)
         self.statusBar().spinner.start()
         self.update_build_state()
+        self.targets_page.refresh()
         process.start()
         self.statusBar().showMessage(message)
 
@@ -5590,6 +5810,10 @@ class ProfileWindow(QMainWindow):
 
     def play_finished(self, code, _status):
         self.append_play_output()
+        if self.play_forwarder is not None:
+            self.play_forwarder.kill()
+            self.play_forwarder.waitForFinished(3000)
+            self.play_forwarder = None
         if getattr(self, "play_target", None):
             self.set_target_runtime(self.play_target, process="stopped")
         self.play_process = None
@@ -5725,15 +5949,17 @@ class ProfileWindow(QMainWindow):
                                             + (output or f"exit {code}"))
             self.refresh_target_item(name)
             return
-        remote = self.xbox_destination() or "F:"
-        target = remote[0].upper()
+        deploy_drive = (self.xbox_destination() or "F:")[0].upper()
         lines = []
         for drive, (free, total) in sorted(drives.items()):
             if free is None:
                 continue
             used = f", {100 - 100 * free // total}% used" if total else ""
+            note = ""
+            if drive == deploy_drive:
+                note = " · deploy drive" + (", nearly full" if free < 2048 else "")
             lines.append(f"{drive}: {free / 1024:.1f} GB free of "
-                         f"{(total or 0) / 1024:.1f} GB{used}")
+                         f"{(total or 0) / 1024:.1f} GB{used}{note}")
         self.target_drive_tips[name] = "\n".join(lines or ["No drive reported its space"])
         self.refresh_target_item(name)
 

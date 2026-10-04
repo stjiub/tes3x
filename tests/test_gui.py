@@ -22,6 +22,7 @@ try:
     from PySide6.QtWidgets import QApplication, QDialog, QInputDialog, QMessageBox
     from tes3x_gui import (InstallDialog, LocalSettingsDialog, ProfileWindow,
                            dashboard_agent_state, target_capabilities, target_runtime_label)
+    from tes3x_gui_pages import log_catalog, parse_clients, server_arguments
 except ImportError:
     QApplication = None
     LocalSettingsDialog = None
@@ -833,28 +834,35 @@ order = 10
                   "masters": ["Morrowind.esm", "mod.esp"]},
                  {"source": "xemu", "folder": "B", "name": "lacks", "size": 1 << 20,
                   "masters": ["Morrowind.esm", "gone.esp"]},
-                 {"source": "xbox", "folder": "C", "name": "reordered", "size": 1 << 20,
-                  "masters": ["mod.esp", "Morrowind.esm"]}]
-        window.populate_saves(saves)
-        fits = {window.save_list.topLevelItem(i).text(0):
-                window.save_list.topLevelItem(i).text(window.SAVE_FIT)
-                for i in range(window.save_list.topLevelItemCount())}
+                 {"source": "xbox", "target": "xbox", "folder": "C", "name": "reordered",
+                  "size": 1 << 20, "masters": ["mod.esp", "Morrowind.esm"]}]
+        devices = [("pc", "PC library"), ("xemu", "xemu disk"), ("xbox:xbox", "Xbox · xbox")]
+        with patch.object(window, "save_devices", return_value=devices):
+            window.populate_saves(saves)
+        children = [window.save_list.topLevelItem(i).child(j)
+                    for i in range(window.save_list.topLevelItemCount())
+                    for j in range(window.save_list.topLevelItem(i).childCount())]
+        fits = {item.text(0): item.text(window.SAVE_FIT) for item in children}
         self.assertEqual(fits, {"fits": "Compatible", "lacks": "Missing gone.esp",
                                 "reordered": "Compatible"})
         self.assertIn("1 of 3 saves need plugins", window.pool_note.text())
 
-        steps = window.push_steps(saves)
+        # A copy to an Xbox goes through the PC: pull what is elsewhere, then push.
+        steps = window.send_steps(saves, "xbox:xbox")
         self.assertEqual([arguments[0] for _script, arguments, _message in steps],
                          ["pull", "push"])
         self.assertIn("xemu", steps[0][1])
         push = steps[1][1]
         self.assertEqual(push[1:3], ["A", "B"])
         self.assertEqual(push[push.index("--pool-name") + 1], "TR test")
+        self.assertEqual(push[push.index("--target") + 1], "xbox")
+        self.assertEqual([arguments[0] for _s, arguments, _m in window.send_steps(saves, "pc")],
+                         ["pull", "pull"])
 
         # Each save changes pool where it is: on the Xbox, on the PC or on the xemu disk.
         moves = window.transfer_steps(saves, 0x42530005, None, True)
-        self.assertEqual([arguments[arguments.index("--where") + 1] for _s, arguments, _m in moves],
-                         ["xbox", "pc", "xemu"])
+        self.assertEqual(sorted(arguments[arguments.index("--where") + 1]
+                                for _s, arguments, _m in moves), ["pc", "xbox", "xemu"])
         self.assertTrue(all("--move" in arguments for _s, arguments, _m in moves))
         copies = window.transfer_steps(saves, 0x42530005, None, False)
         self.assertEqual(len(copies), 3)
@@ -871,12 +879,14 @@ order = 10
         saves_tool.write_index(window.save_library(), {
             "pools": {f"{value:08X}": "TR test"},
             "xbox": {f"{value:08X}": {"time": "2026-09-28 20:00", "saves": saves[2:]}}})
-        window.xbox_listing = None
+        window.saves_xbox = {}
         window.refresh_saves(False)
-        self.assertEqual(window.save_list.topLevelItemCount(), 1)
-        self.assertIn("listed 2026-09-28 20:00", window.saves_status.text())
+        self.assertEqual(len(window.all_saves()), 1)
+        group = window.save_list.topLevelItem(1)
+        self.assertEqual(group.text(0), "Xbox · xbox")
+        self.assertIn("listed 2026-09-28 20:00", group.text(window.SAVE_PLAYER))
 
-    def test_saves_follow_the_selected_target(self):
+    def test_saves_list_every_target_by_device(self):
         config = self.root / "local.toml"
         config.write_text('default_target = "bench"\n[targets.bench]\nkind = "xbox"\n'
                           'host = "192.0.2.5"\ngames_root = "F:/Games"\n'
@@ -898,18 +908,29 @@ order = 10
         window.tabs.setCurrentIndex(next(index for index in range(window.tabs.count())
                                          if window.tabs.tabText(index) == "Saves"))
         window.tabs.blockSignals(False)
-        window.xbox_listing = None
+        window.saves_xbox = {}
         window.refresh_saves(False)
-        self.assertEqual(window.save_list.topLevelItem(0).text(0), "bench-save")
-        self.assertIn("listed one", window.saves_status.text())
+        groups = {window.save_list.topLevelItem(i).text(0): window.save_list.topLevelItem(i)
+                  for i in range(window.save_list.topLevelItemCount())}
+        self.assertEqual(list(groups), ["PC library", "Xbox · bench", "Xbox · spare"])
+        self.assertEqual(groups["Xbox · bench"].child(0).text(0), "bench-save")
+        self.assertEqual(groups["Xbox · spare"].child(0).text(0), "spare-save")
+        self.assertIn("listed two", groups["Xbox · spare"].text(window.SAVE_PLAYER))
 
-        window.target_picker.setCurrentIndex(window.target_picker.findData("spare"))
-        window.target_selection_changed(probe=False)
-        self.assertEqual(window.save_list.topLevelItem(0).text(0), "spare-save")
-        self.assertIn("listed two", window.saves_status.text())
+        # Each Xbox is asked once per pool and session, whichever target is selected.
         with patch.object(window, "list_xbox_saves") as listing:
             window.refresh_saves(None)
-        listing.assert_called_once_with(value, "spare")
+        self.assertEqual(sorted(call.args for call in listing.call_args_list),
+                         [(value, "bench"), (value, "spare")])
+
+        # A copy between Xboxes goes through the PC: pull from one, push to the other.
+        spare = next(window.save_list.topLevelItem(i) for i in
+                     range(window.save_list.topLevelItemCount())
+                     if window.save_list.topLevelItem(i).text(0) == "Xbox · spare")
+        spare.child(0).setSelected(True)
+        steps = window.send_steps(window.selected_saves(), "xbox:bench")
+        self.assertEqual([(arguments[0], arguments[arguments.index("--target") + 1])
+                          for _s, arguments, _m in steps], [("pull", "spare"), ("push", "bench")])
 
     def test_local_settings_dialog_preserves_xemu_and_writes_public_fields(self):
         config = self.root / "local.toml"
@@ -1051,6 +1072,113 @@ order = 10
         window.handle_in_game_event({**base, "kind": "stalled"})
         self.assertEqual(window.target_runtime["bench"]["game"], "stalled")
         self.assertIn("heartbeat stopped", window.target_picker.toolTip())
+
+
+    def test_targets_page_sends_commands_and_fetches_through_the_agent(self):
+        import struct
+        from tes3x_agent import OP_CONSOLE, OP_READ, OP_REBOOT
+        config = self.root / "local.toml"
+        config.write_text('default_target = "bench"\n[targets.bench]\nkind = "xbox"\n'
+                          'host = "192.0.2.5"\ngames_root = "F:/Games"\n', encoding="utf-8")
+        window = self.window(config=config)
+
+        class Listener:
+            def __init__(self):
+                self.sent = []
+
+            def request(self, host, op, args, port=None):
+                self.sent.append((host, port, op, args))
+                return len(self.sent)
+
+            def close(self):
+                pass
+
+        window.in_game_listener = listener = Listener()
+        page = window.targets_page
+        window.workspace_bar.setCurrentIndex(1)
+        self.assertIs(window.workspaces.currentWidget(), page)
+        self.assertFalse(page.send_button.isEnabled())
+        self.assertIn("no game", page.send_button.toolTip())
+
+        base = {"address": ("192.0.2.5", 26501), "session": 1, "client_key": "abc"}
+        window.handle_in_game_event({**base, "kind": "heartbeat",
+                                     "payload": struct.pack("<IIII", 1, 33400, 5444, 2)})
+        self.assertTrue(page.send_button.isEnabled())
+        self.assertIn("33.4 ms frame", page.fields["heartbeat"].text())
+        window.handle_in_game_event({**base, "kind": "log", "payload": b"live> fps"})
+        self.assertIn("live> fps", page.console_view.toPlainText())
+
+        page.console_entry.setText("tes3xnet stat")
+        page.send_command()
+        self.assertEqual(listener.sent[-1], ("192.0.2.5", 26501, OP_CONSOLE, b"tes3xnet stat"))
+        self.assertEqual(page.history, ["tes3xnet stat"])
+        window.handle_in_game_event({**base, "kind": "reply", "id": 1, "status": "unsupported",
+                                     "payload": b""})
+        self.assertIn("tes3xnet stat: unsupported", page.console_view.toPlainText())
+
+        content = b"x" * 1500
+        destination = self.root / "fetched" / "tes3xprof.bin"
+        window.agent_fetch("bench", "E:\\tes3xprof.bin", destination)
+        answered = 1  # the console line
+        while window.agent_fetches and answered < len(listener.sent):
+            answered += 1
+            _host, _port, op, args = listener.sent[answered - 1]
+            self.assertEqual(op, OP_READ)
+            at = struct.unpack_from("<I", args)[0]
+            window.handle_in_game_event({**base, "kind": "reply", "id": answered, "status": "ok",
+                                         "payload": struct.pack("<II", len(content), at)
+                                         + content[at:at + 1024]})
+        self.assertEqual(destination.read_bytes(), content)
+        self.assertEqual(window.agent_fetches, [])
+
+        with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
+            page.quit_game()
+        self.assertEqual(listener.sent[-1][2], OP_REBOOT)
+
+    def test_log_catalog_reads_pull_records_and_xemu_runs(self):
+        pulled = self.root / "build" / "xbox-logs" / "bench" / "20261004-120000"
+        pulled.mkdir(parents=True)
+        (pulled / "pull.json").write_text('{"target": "bench", "profile": "gui"}',
+                                          encoding="utf-8")
+        (pulled / "tes3xlog.txt").write_text("0 ms entry.free_kb 1\n", encoding="utf-8")
+        (pulled / "tes3xprof.bin").write_bytes(b"\0")
+        run = self.root / "build" / "xemu" / "run1"
+        run.mkdir(parents=True)
+        (run / "tes3xlog.txt").write_text("0 ms entry.free_kb 2\n", encoding="utf-8")
+        entries = log_catalog(self.root)
+        self.assertEqual(sorted((e["source"], e["target"], e["profile"], e["path"].name)
+                                for e in entries),
+                         [("pulled", "bench", "gui", "tes3xlog.txt"),
+                          ("xemu run", None, None, "tes3xlog.txt")])
+
+    def test_server_page_arguments_and_client_list(self):
+        values = {"world": "D:/world", "port": 26500, "admin_port": 26502, "max_players": 4,
+                  "respawn": "temple", "respawn_delay": 0.0, "death_gold": 10, "hour": -1.0,
+                  "timescale": 0.0, "save_every": 300, "hosts": ["mp.local=192.0.2.2"],
+                  "tunnels": [9369]}
+        args = server_arguments(values)
+        self.assertEqual(args[:3], ["serve", "--world", "D:/world"])
+        for pair in (["--max-players", "4"], ["--respawn", "temple"], ["--save-every", "300"],
+                     ["--host", "mp.local=192.0.2.2"], ["--tunnel", "9369"]):
+            self.assertIn(pair, [args[i:i + 2] for i in range(len(args) - 1)])
+        self.assertNotIn("--hour", args)
+        self.assertNotIn("--timescale", args)
+        self.assertEqual(parse_clients(
+            "client 1: playing, key abc, mac 02:00:00:00:00:01, address 192.0.2.9\n"
+            "client 2: away, key -, mac 02:00:00:00:00:02, address -"),
+            [("1", "playing", "abc", "02:00:00:00:00:01", "192.0.2.9"),
+             ("2", "away", "-", "02:00:00:00:00:02", "-")])
+        self.assertEqual(parse_clients("no clients"), [])
+
+        config = self.root / "local.toml"
+        config.write_text("[paths]\n", encoding="utf-8")
+        window = self.window(config=config)
+        page = window.server_page
+        page.inputs["max_players"][1].setValue(4)
+        page.inputs["tunnels"][1].setText("9369, 9371")
+        self.assertTrue(page.save())
+        saved = tomllib.loads(config.read_text(encoding="utf-8"))["server"]
+        self.assertEqual((saved["max_players"], saved["tunnels"]), (4, [9369, 9371]))
 
 
 if __name__ == "__main__":

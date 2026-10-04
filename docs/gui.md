@@ -11,6 +11,13 @@ python tools/tes3x_gui.py
 The GUI opens the last profile you used and lists everything in `profiles/` for switching, with
 New, Duplicate, Rename and Delete beside the list. On first start, with no `tes3x.local.toml` yet, it opens the local settings.
 
+Three workspaces sit at the left of the toolbar: **Profile** edits the open profile (the tabs
+below), [**Targets**](#targets) shows what the selected Xbox or xemu target is doing, and
+[**Server**](#server) runs the multiplayer server. The toolbar and the command output stay the
+same in all three.
+
+## Profile
+
 - **Mods** lists every mod in the library. Tick the ones this profile uses and drag them into
   order; lower mods win file conflicts. **Conflicts** counts the files a mod overrides (+) and
   loses (-), and selecting a mod highlights the mods it beats and the ones that beat it.
@@ -90,10 +97,42 @@ running emulator releases that build.
 
 **Saves** chooses the profile's save pool: the retail game's shared saves, or a pool of its own
 that keeps its saves apart from other builds (see `save_pool` in
-[configuration.md](configuration.md)). It lists the PC save library (`build/saves/<pool>/`) plus
-the selected target: that Xbox's saves or the profile's persistent xemu disk. Switching targets
-refreshes the list. Each Xbox target keeps its own last listing, so the tab opens without waiting
-for that console and still shows it while the console is off. Saves that need plugins the profile
-does not load are marked. Right-click saves to pull them to the PC, push them to the selected Xbox
-or xemu disk, copy or move them to another pool, or delete them. A move deletes the original only
-after the copy is complete; changes to the xemu disk are stacked on it as a new layer.
+[configuration.md](configuration.md)). It lists that pool everywhere at once, grouped by device:
+the PC save library (`build/saves/<pool>/`), the profile's persistent xemu disk, and every
+configured Xbox. Each Xbox keeps its own last listing, so the tab opens without waiting for the
+consoles and still shows one while it is off; each is asked again once per session, or on
+**Refresh**. Saves that need plugins the profile does not load are marked. **Copy to…** sends the
+selected saves to the device you choose, through the PC library; right-click for the same choice,
+for copying or moving saves to another pool where they are, or for deleting them. A move deletes
+the original only after the copy is complete; changes to the xemu disk are stacked on it as a new
+layer.
+
+## Targets
+
+**Targets** follows the toolbar target. Its actions are offered by what the target can do now:
+FTP, the dashboard agent, the in-game [agent](../patches/agent.md) or a running xemu. An
+unavailable action stays visible and its tooltip says what is missing.
+
+- **Overview** shows the address, state, dashboard agent, the in-game heartbeat (frame time, free
+  memory, dropped log lines) and drive space, with Check connection, Pull logs, Restart dashboard,
+  Quit to dashboard and Fetch file.
+- **Console** streams the running game's log and runs console lines in it, such as
+  `player->getpos x` or `tes3xnet stat`; Up and Down recall earlier lines. It needs a build with
+  the `agent` and `console` patches. **Fetch file…** copies a file such as `E:\tes3xprof.bin` from
+  the running game into `build/agent-fetch/<target>/<time>/`.
+- **Logs** lists every pulled, fetched and xemu-recovered log for this target, this target and
+  profile, or everything, and shows one raw or as a crash and hang summary. **Pull logs** copies
+  `E:\tes3x*` over FTP into `build/xbox-logs/<target>/<time>/`, beside a `pull.json` naming the
+  target and profile; while a game is running, and FTP with it is gone, it fetches the log through
+  the in-game agent instead.
+- **Builds** lists the game folders on an Xbox and, for those TES3X deployed, the profile, save
+  pool and time of the deploy; the open profile's folder is bold.
+
+## Server
+
+**Server** starts `tes3x_net.py serve` on this PC with the settings in the form, which are kept in
+the `[server]` table of `tes3x.local.toml` (see [configuration](configuration.md#server)). It shows
+the server's output and polls the admin port for the connected consoles; Kick, Ban and Ask all to
+save act on them. **Stop** asks every console to save its character before the server exits;
+pressing it again stops at once. Closing the GUI stops a server it started. See
+[multiplayer](multiplayer.md) for what the settings mean.
