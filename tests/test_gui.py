@@ -1187,5 +1187,79 @@ order = 10
         self.assertEqual((saved["max_players"], saved["tunnels"]), (4, [9369, 9371]))
 
 
+    def test_server_page_manages_a_remote_server(self):
+        import threading
+        import time
+        import tes3x_net
+        secret = tes3x_net.admin_secret(b'correct horse')
+        sock = tes3x_net.udp_socket()
+        sock.bind(('127.0.0.1', 0))
+        listener = tes3x_net.RemoteAdmin(secret, sock)
+        ran, stop = [], threading.Event()
+
+        def run(line):
+            ran.append(line)
+            return ('client 1: playing, key abc, mac 02:00:00:00:00:01, address 192.0.2.9'
+                    if line == 'list' else f'did {line}')
+
+        def serve():
+            sock.settimeout(0.05)
+            while not stop.is_set():
+                try:
+                    data, addr = sock.recvfrom(2048)
+                except OSError:
+                    continue
+                reply = listener.handle(data, addr, run)
+                if reply:
+                    sock.sendto(reply, addr)
+
+        thread = threading.Thread(target=serve, daemon=True)
+        thread.start()
+        self.addCleanup(lambda: (stop.set(), thread.join(1), sock.close()))
+
+        config = self.root / "local.toml"
+        config.write_text("[paths]\n", encoding="utf-8")
+        window = self.window(config=config)
+        page = window.server_page
+        page.mode.setCurrentIndex(page.mode.findData("remote"))
+        self.assertFalse(page.local_box.isVisibleTo(page))
+        page.remote_address.setText(f"127.0.0.1:{sock.getsockname()[1]}")
+        page.remote_password.setText("correct horse")
+
+        # Pumping events can deliver an earlier test's late Nexus answer, whose error dialog
+        # would block.
+        self.enterContext(patch.object(ProfileWindow, "error"))
+
+        def until(test):
+            deadline = time.time() + 5
+            while not test() and time.time() < deadline:
+                self.app.processEvents()
+                time.sleep(0.01)
+            self.assertTrue(test())
+
+        page.toggle_remote()
+        until(lambda: page.players.topLevelItemCount() == 1)
+        self.assertEqual(page.players.topLevelItem(0).text(4), "192.0.2.9")
+        self.assertEqual(page.status.text(), "Connected")
+        self.assertTrue(page.kick_button.isEnabled())
+        self.assertFalse(page.mode.isEnabled())
+        page.players.topLevelItem(0).setSelected(True)
+        with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
+            page.player_command("kick")
+        until(lambda: "admin: did kick 1" in page.log.toPlainText())
+        self.assertIn("kick 1", ran)
+
+        saved = tomllib.loads(config.read_text(encoding="utf-8"))["server"]
+        self.assertEqual(saved["mode"], "remote")
+        self.assertNotIn("remote_password", saved)  # only when asked to remember it
+        page.disconnect_remote()
+        self.assertTrue(page.mode.isEnabled())
+
+        page.remote_password.setText("wrong horse")
+        page.toggle_remote()
+        until(lambda: page.remote is None)
+        self.assertIn("unauthorized", page.status.text())
+
+
 if __name__ == "__main__":
     unittest.main()

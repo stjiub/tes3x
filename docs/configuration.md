@@ -90,6 +90,11 @@ use of the server does not read this table.
 | `save_every` | integer | server default | `--save-every` in seconds; `0` keeps the default. |
 | `hosts` | array of strings | `[]` | `--host NAME=ADDRESS` for each entry. |
 | `tunnels` | array of integers | `[]` | `--tunnel PORT` for each xemu guest. |
+| `remote_admin` | integer | `0` | `--remote-admin PORT`; `0` keeps admin to this PC. |
+| `admin_password_file` | string | none | `--admin-password-file`. |
+| `mode` | string | `local` | `local` manages a server on this PC, `remote` one at `remote_address`. |
+| `remote_address` | string | none | A remote server's `HOST` or `HOST:PORT` (port 26503 by default). |
+| `remote_password` | string | none | Its admin password, kept only when **Remember** is ticked. Do not copy it into a public file. |
 
 ## Profile
 

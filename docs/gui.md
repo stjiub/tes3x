@@ -130,9 +130,14 @@ unavailable action stays visible and its tooltip says what is missing.
 
 ## Server
 
-**Server** starts `tes3x_net.py serve` on this PC with the settings in the form, which are kept in
+**Server** manages either a server on this PC or a remote one. **A server on this PC** starts
+`tes3x_net.py serve` with the settings in the form, which are kept in
 the `[server]` table of `tes3x.local.toml` (see [configuration](configuration.md#server)). It shows
 the server's output and polls the admin port for the connected consoles; Kick, Ban and Ask all to
 save act on them. **Stop** asks every console to save its character before the server exits;
-pressing it again stops at once. Closing the GUI stops a server it started. See
+pressing it again stops at once. Closing the GUI stops a server it started. **A remote server**
+connects to a server's remote admin port (see
+[remote admin](multiplayer.md#remote-admin)) with its address and admin password, then lists
+the consoles and offers the same Kick, Ban, Ask all to save and Bans, and Stop server. The
+password is kept in the local config only if you tick **Remember**. See
 [multiplayer](multiplayer.md) for what the settings mean.

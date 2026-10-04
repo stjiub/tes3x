@@ -9,6 +9,7 @@ services:
     restart: unless-stopped
     ports:
       - "26500:26500/udp"
+      # - "26503:26503/udp"  # with --remote-admin
     volumes:
       - world:/world
     # Options after `serve --world /world`, one per line; `tes3x_net.py serve --help` lists them.
@@ -16,6 +17,7 @@ services:
       # - --password-file=/world/password.txt
       # - --max-players=8
       # - --respawn=temple
+      # - --remote-admin=26503  # needs /world/admin-password.txt
       - --report=60
     # A clean stop waits up to --stop-wait (60 s) for every console's save.
     stop_grace_period: 90s

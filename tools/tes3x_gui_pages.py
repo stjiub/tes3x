@@ -5,6 +5,7 @@ import datetime
 import io
 import json
 from pathlib import Path, PureWindowsPath
+import queue
 import socket
 import sys
 import threading
@@ -523,7 +524,13 @@ SERVER_FIELDS = (
      "the server's default"),
     ("hosts", "DNS names", "lines", [], "NAME=ADDRESS, one per line, answered to consoles"),
     ("tunnels", "xemu tunnels", "text", "", "Tunnel ports for xemu guests, comma separated"),
+    ("remote_admin", "Remote admin port", "int", 0, "Also take admin commands from other "
+     f"machines on this UDP port ({tes3x_net.REMOTE_ADMIN_PORT} by convention); 0 keeps admin "
+     "to this PC"),
+    ("admin_password_file", "Admin password file", "file", "", "The remote admin password on "
+     f"its first line, at least {tes3x_net.ADMIN_PASSWORD_MIN} characters"),
 )
+REMOTE_KEYS = ("mode", "remote_address", "remote_password")
 
 
 def server_arguments(values):
@@ -548,6 +555,10 @@ def server_arguments(values):
         args += ["--host", host]
     for port in values.get("tunnels", []):
         args += ["--tunnel", str(port)]
+    if values.get("remote_admin"):
+        args += ["--remote-admin", str(values["remote_admin"])]
+    if values.get("admin_password_file"):
+        args += ["--admin-password-file", str(values["admin_password_file"])]
     return args
 
 
@@ -567,7 +578,10 @@ def parse_clients(reply):
 
 
 class ServerPage(QWidget):
-    """Run `tes3x_net.py serve` locally and manage its players."""
+    """Run `tes3x_net.py serve` locally, or reach one elsewhere through its remote admin port,
+    and manage its players."""
+
+    remote_answer = Signal(str, str, str)
 
     def __init__(self, window):
         super().__init__()
@@ -575,6 +589,9 @@ class ServerPage(QWidget):
         self.process = None
         self.admin = None
         self.stopping = False
+        self.remote = None  # the command queue of a connected remote server
+        self.remote_pending = set()
+        self.remote_answer.connect(self.remote_answered)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 8, 12, 4)
         split = QSplitter(Qt.Orientation.Horizontal)
@@ -583,10 +600,52 @@ class ServerPage(QWidget):
         form_page = QWidget()
         form_layout = QVBoxLayout(form_page)
         form_layout.addWidget(heading("Multiplayer server"))
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(QLabel("Manage"))
+        self.mode = QComboBox()
+        self.mode.addItem("A server on this PC", "local")
+        self.mode.addItem("A remote server", "remote")
+        self.mode.currentIndexChanged.connect(self.mode_changed)
+        mode_row.addWidget(self.mode, 1)
+        form_layout.addLayout(mode_row)
+
+        self.remote_box = QWidget()
+        remote_layout = QVBoxLayout(self.remote_box)
+        remote_layout.setContentsMargins(0, 0, 0, 0)
+        about = QLabel("Connects to a server started with --remote-admin, such as one in Docker "
+                       "or on another PC, using its admin password.")
+        about.setWordWrap(True)
+        remote_layout.addWidget(about)
+        remote_form = QFormLayout()
+        self.remote_address = QLineEdit()
+        self.remote_address.setPlaceholderText(
+            f"host or host:port (port {tes3x_net.REMOTE_ADMIN_PORT} by default)")
+        self.remote_password = QLineEdit()
+        self.remote_password.setEchoMode(QLineEdit.EchoMode.Password)
+        self.remember_password = QCheckBox("Remember the password in the local config")
+        remote_form.addRow("Address", self.remote_address)
+        remote_form.addRow("Admin password", self.remote_password)
+        remote_form.addRow("", self.remember_password)
+        remote_layout.addLayout(remote_form)
+        remote_buttons = QHBoxLayout()
+        self.connect_button = QPushButton("Connect")
+        self.connect_button.clicked.connect(self.toggle_remote)
+        self.remote_stop = QPushButton("Stop server")
+        self.remote_stop.setToolTip("Ask every console to save, then stop the remote server")
+        self.remote_stop.clicked.connect(self.stop_remote_server)
+        remote_buttons.addWidget(self.connect_button)
+        remote_buttons.addWidget(self.remote_stop)
+        remote_buttons.addStretch()
+        remote_layout.addLayout(remote_buttons)
+        form_layout.addWidget(self.remote_box)
+
+        self.local_box = QWidget()
+        local_layout = QVBoxLayout(self.local_box)
+        local_layout.setContentsMargins(0, 0, 0, 0)
         about = QLabel("Runs tes3x_net.py serve on this machine. Settings are kept in the "
                        "[server] table of the local config.")
         about.setWordWrap(True)
-        form_layout.addWidget(about)
+        local_layout.addWidget(about)
         form = QFormLayout()
         self.inputs = {}
         for key, label, kind, default, help_text in SERVER_FIELDS:
@@ -595,7 +654,7 @@ class ServerPage(QWidget):
                 widget.setToolTip(help_text)
             self.inputs[key] = (kind, widget)
             form.addRow(label, widget)
-        form_layout.addLayout(form)
+        local_layout.addLayout(form)
         buttons = QHBoxLayout()
         self.start_button = QPushButton("Start")
         self.start_button.clicked.connect(self.start)
@@ -606,7 +665,8 @@ class ServerPage(QWidget):
         for button in (self.start_button, self.stop_button, save):
             buttons.addWidget(button)
         buttons.addStretch()
-        form_layout.addLayout(buttons)
+        local_layout.addLayout(buttons)
+        form_layout.addWidget(self.local_box)
         self.status = QLabel("Stopped")
         form_layout.addWidget(self.status)
         form_layout.addStretch()
@@ -653,7 +713,7 @@ class ServerPage(QWidget):
         self.poll.timeout.connect(self.poll_admin)
         self.ticks = 0
         self.load()
-        self.update_buttons()
+        self.mode_changed()
 
     def field(self, kind, default):
         if kind == "int":
@@ -712,8 +772,20 @@ class ServerPage(QWidget):
                             if part.isdigit()]
         return out
 
+    def remote_values(self):
+        out = {"mode": self.mode.currentData()}
+        if self.remote_address.text().strip():
+            out["remote_address"] = self.remote_address.text().strip()
+        if self.remember_password.isChecked() and self.remote_password.text():
+            out["remote_password"] = self.remote_password.text()
+        return out
+
     def load(self):
         saved = self.window.local_values().get("server", {})
+        self.mode.setCurrentIndex(max(0, self.mode.findData(saved.get("mode", "local"))))
+        self.remote_address.setText(str(saved.get("remote_address", "")))
+        self.remote_password.setText(str(saved.get("remote_password", "")))
+        self.remember_password.setChecked("remote_password" in saved)
         for key, (kind, widget) in self.inputs.items():
             if key not in saved:
                 continue
@@ -738,9 +810,10 @@ class ServerPage(QWidget):
             if table is None:
                 table = tomlkit.table()
                 document["server"] = table
-            for key, value in self.values().items():
+            values = {**self.values(), **self.remote_values()}
+            for key, value in values.items():
                 table[key] = value
-            for key in [key for key in table if key not in self.values()]:
+            for key in [key for key in table if key not in values]:
                 del table[key]
             path.write_text(tomlkit.dumps(document), encoding="utf-8", newline="")
         except (OSError, tomlkit.exceptions.ParseError) as exc:
@@ -807,7 +880,95 @@ class ServerPage(QWidget):
         self.status.setText("Stopped")
         self.update_buttons()
 
+    def mode_changed(self, *_args):
+        remote = self.mode.currentData() == "remote"
+        self.remote_box.setVisible(remote)
+        self.local_box.setVisible(not remote)
+        self.players.clear()
+        self.status.setText(("Connected" if self.remote else "Not connected") if remote else
+                            ("Running" if self.process else "Stopped"))
+        self.update_buttons()
+
+    def toggle_remote(self):
+        if self.remote is not None:
+            self.disconnect_remote()
+            return
+        host, _, port = self.remote_address.text().strip().partition(":")
+        password = self.remote_password.text().encode("utf-8")
+        if not host or (port and not port.isdigit()):
+            QMessageBox.warning(self, "TES3X", "Give the server's address as host or host:port")
+            return
+        if len(password) < tes3x_net.ADMIN_PASSWORD_MIN:
+            QMessageBox.warning(self, "TES3X", "The admin password has at least "
+                                f"{tes3x_net.ADMIN_PASSWORD_MIN} characters")
+            return
+        self.save()
+        port = int(port or tes3x_net.REMOTE_ADMIN_PORT)
+        jobs = queue.Queue()
+
+        def work():
+            secret = tes3x_net.admin_secret(password)
+            while (line := jobs.get()) is not None:
+                try:
+                    reply = tes3x_net.remote_admin_request(host, port, secret, line)
+                    self.remote_answer.emit(line, reply, "")
+                except tes3x_net.RemoteAdminError as exc:
+                    self.remote_answer.emit(line, "", str(exc))
+
+        threading.Thread(target=work, daemon=True).start()
+        self.remote, self.remote_pending = jobs, set()
+        self.status.setText(f"Connecting to {host}:{port}…")
+        self.log.appendPlainText(f"remote admin {host}:{port}")
+        self.send_admin("list")
+        self.poll.start()
+        self.update_buttons()
+
+    def disconnect_remote(self):
+        if self.remote is not None:
+            self.remote.put(None)
+        self.remote = None
+        if self.process is None:
+            self.poll.stop()
+        self.players.clear()
+        self.status.setText("Not connected")
+        self.update_buttons()
+
+    def stop_remote_server(self):
+        if self.remote is not None and QMessageBox.question(
+                self, "TES3X", "Stop the remote server? It asks every console to save first.") \
+                == QMessageBox.StandardButton.Yes:
+            self.send_admin("stop")
+
+    def remote_answered(self, line, reply, error):
+        self.remote_pending.discard(line)
+        if self.remote is None:
+            return
+        if error:
+            self.status.setText(f"Remote: {error}")
+            if line != "list" or "refused" in error:
+                self.log.appendPlainText(f"admin {line}: {error}")
+            if "refused" in error:
+                self.disconnect_remote()
+                self.status.setText(f"Remote: {error}")
+            return
+        self.status.setText("Connected")
+        self.admin_reply(reply)
+
+    def admin_reply(self, reply):
+        if reply.startswith("client ") or reply == "no clients":
+            self.show_clients(parse_clients(reply))
+        else:
+            self.log.appendPlainText(f"admin: {reply}")
+
     def send_admin(self, line):
+        if self.mode.currentData() == "remote":
+            # One list at a time, so a slow or silent server does not pile them up.
+            if self.remote is not None and not (line == "list" and line in self.remote_pending):
+                self.remote_pending.add(line)
+                self.remote.put(line)
+                if line != "list":
+                    self.log.appendPlainText(f"admin> {line}")
+            return
         if self.admin is None:
             return
         try:
@@ -819,6 +980,11 @@ class ServerPage(QWidget):
             self.log.appendPlainText(f"admin> {line}")
 
     def poll_admin(self):
+        if self.mode.currentData() == "remote":
+            self.ticks += 1
+            if self.remote is not None and self.ticks % 6 == 1:
+                self.send_admin("list")
+            return
         if self.admin is None:
             return
         while True:
@@ -828,10 +994,7 @@ class ServerPage(QWidget):
                 break
             except OSError:
                 return
-            if reply.startswith("client ") or reply == "no clients":
-                self.show_clients(parse_clients(reply))
-            else:
-                self.log.appendPlainText(f"admin: {reply}")
+            self.admin_reply(reply)
         self.ticks += 1
         if self.ticks % 6 == 1 and not self.stopping:
             self.send_admin("list")
@@ -861,16 +1024,25 @@ class ServerPage(QWidget):
 
     def update_buttons(self):
         running = self.process is not None
+        remote = self.mode.currentData() == "remote"
+        connected = self.remote is not None
+        self.mode.setEnabled(not running and not connected)
         self.start_button.setEnabled(not running)
         self.stop_button.setEnabled(running)
         self.stop_button.setText("Force stop" if self.stopping else "Stop")
         for key, (_, widget) in self.inputs.items():
             widget.setEnabled(not running)
+        self.connect_button.setText("Disconnect" if connected else "Connect")
+        self.remote_stop.setEnabled(connected)
+        for widget in (self.remote_address, self.remote_password, self.remember_password):
+            widget.setEnabled(not connected)
+        live = connected if remote else running and not self.stopping
         for button in (self.kick_button, self.ban_button, self.save_button, self.bans_button):
-            button.setEnabled(running and not self.stopping)
+            button.setEnabled(live)
 
     def shutdown(self):
         """On closing the GUI: stop the server rather than orphan it."""
+        self.disconnect_remote()
         if self.process is not None:
             self.process.kill()
             self.process.waitForFinished(3000)

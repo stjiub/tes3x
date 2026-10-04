@@ -155,6 +155,25 @@ password again. The MAC is what the console reports, so a modified build can cha
 address ban drops everything from that address before the handshake, and also stops everyone
 else who shares it, such as a household behind one router.
 
+### Remote admin
+
+To manage a server from another machine, such as one in Docker or on a rented host, start it
+with `--remote-admin 26503` and an admin password of at least eight characters on the first
+line of `admin-password.txt` in its `--world` folder (or `--admin-password-file FILE`). Then,
+from anywhere that reaches that UDP port:
+
+```
+python tools/tes3x_net.py admin --server my.server.net --password-file admin-password.txt list
+```
+
+takes every command above. The GUI's Server workspace does the same under **A remote server**.
+Each command asks the server for a single-use challenge first; the command and its reply are
+encrypted and authenticated with a key made from the password and that challenge, so a
+listener on the network can neither read nor replay them, nor send commands of its own. The
+password is stretched with scrypt. Like a console's password, five wrong tries from one address
+allow one more a minute, and while that holds even the right password is refused. Keep the
+admin password apart from the console password: anyone with it can kick, ban and stop.
+
 ## Run the server in Docker
 
 `server/` holds a Docker Compose setup for a machine that should only run the server, with no
@@ -181,6 +200,14 @@ To require a password, copy the file into the volume, uncomment `--password-file
 
 ```
 docker compose cp password.txt server:/world/password.txt
+docker compose up -d
+```
+
+To manage it from the GUI or another PC, put an admin password in the volume, uncomment the
+`--remote-admin` line and its port in `compose.yaml`, and start again:
+
+```
+docker compose cp admin-password.txt server:/world/admin-password.txt
 docker compose up -d
 ```
 
