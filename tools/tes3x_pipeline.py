@@ -531,6 +531,13 @@ def stage_retail_base(vanilla, staged, copy=shutil.copy2):
     return len(copied), sum(path.stat().st_size for path in copied)
 
 
+def stage_default_xbe(launcher, engine, output, install_layout):
+    """Use the patched engine as an overlay folder's dashboard entry."""
+    source = engine if install_layout == "overlay" else launcher
+    shutil.copy2(source, output)
+    return source
+
+
 def strip_retail_files(staged, vanilla):
     """Remove files the overlay can read unchanged from its clean retail base."""
     kept_roots = {"default.xbe", "morrowind.xbe", "morrowind.ini", "_resources"}
@@ -1052,16 +1059,18 @@ def main(argv=None):
             print(f"  menu buttons: {len(art)} textures")
 
         retail_files, retail_bytes = copy_retail_root(vanilla, staged, copy)
-        # A dashboard lists the launcher, so the name has to reach it. So does the title ID, or
-        # the launcher and the engine would save to different folders.
+        # A data-only overlay cannot support the unpatched retail launcher. Use the engine as its
+        # dashboard entry; New Game and Load still relaunch D:\morrowind.xbe.
         launcher_specs = ([f"title={title}"] if title else []) + (
             [f"title-id={pool:08X}"] if pool else [])
-        if launcher_specs:
+        if install_layout == "overlay":
+            stage_default_xbe(launcher, patched, staged / "Default.xbe", install_layout)
+        elif launcher_specs:
             run([sys.executable, TOOLS / "tes3x_patch.py", launcher,
                  *[x for spec in launcher_specs for x in ("--apply", spec)],
                  "--out", staged / "Default.xbe"])
         else:
-            shutil.copy2(launcher, staged / "Default.xbe")
+            stage_default_xbe(launcher, patched, staged / "Default.xbe", install_layout)
         if title:
             folder = (remote or DEFAULT_REMOTE_ROOT).replace("\\", "/").rstrip("/")
             write_dashboard_files(staged, dashboards, title, folder.rsplit("/", 1)[-1],

@@ -18,7 +18,8 @@ screen in one step. The GUI's **Play** button gains an **Xbox** target that:
 1. checks that the agent answers,
 2. deploys the build over FTP to the selected target's `games_root` and the profile's
    `install_dir`, deleting files there that the build does not have,
-3. starts `default.xbe` from that folder.
+3. starts `default.xbe` from that folder. In an overlay-layout build this is the patched engine,
+   because the retail launcher cannot read from the separate data-only base.
 
 It asks before the first deploy of each profile. The Xbox must be on and showing the dashboard;
 once a game is running, the dashboard, and with it the agent and FTP, are gone until you return to

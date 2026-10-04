@@ -566,8 +566,8 @@ def main():
                 overlay_base = r"\Device\CdRom0\Base"
                 label = "overlay base"
             else:
-                # Normal Play retains the retail launcher. Reconstitute a full disc because that
-                # unpatched XBE cannot use the engine's file-open overlay.
+                # Normal Play reconstitutes a full disc and leaves the patched engine as the
+                # dashboard entry, so the overlay hook has nothing to supply.
                 files, size = stage_retail_base(retail, packed, link_or_copy)
                 shutil.copytree(deploy, packed, copy_function=link_or_copy, dirs_exist_ok=True)
                 overlay_base = ""

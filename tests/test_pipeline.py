@@ -11,7 +11,7 @@ from tes3x_pack import write_invalidation
 from tes3x_build import materialize, plugin_masters
 from tes3x_pipeline import (PipelineError, agent_setting, copy_retail_root, link_or_copy,
                             resolve_patch_plan,
-                            preference_flags, sanitized_command, stage_retail_base,
+                            preference_flags, sanitized_command, stage_default_xbe, stage_retail_base,
                             strip_retail_files, validate_local_config, validate_profile)
 from tes3x_pipeline import main as pipeline_main
 from tes3x_patch import (MCP37_TREE_NEXT_SIG, PatchError, _mcp_3, _mcp_37, _mcp_92, _mcp_97,
@@ -235,6 +235,18 @@ class PipelineTests(unittest.TestCase):
         self.assertFalse((staged / 'Data Files' / 'Morrowind.bsa').exists())
         self.assertTrue((staged / 'Data Files' / 'mod.bsa').is_file())
         self.assertTrue((staged / 'Morrowind.ini').is_file())
+
+    def test_overlay_uses_patched_engine_as_dashboard_entry(self):
+        launcher = self.root / 'launcher.xbe'
+        engine = self.root / 'engine.xbe'
+        output = self.root / 'Default.xbe'
+        launcher.write_bytes(b'launcher')
+        engine.write_bytes(b'engine')
+
+        self.assertEqual(stage_default_xbe(launcher, engine, output, 'overlay'), engine)
+        self.assertEqual(output.read_bytes(), b'engine')
+        self.assertEqual(stage_default_xbe(launcher, engine, output, 'full'), launcher)
+        self.assertEqual(output.read_bytes(), b'launcher')
 
     def test_patches_only_stages_retail_data_and_ini_keys(self):
         from tes3x_pipeline import stage_retail

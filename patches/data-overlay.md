@@ -6,7 +6,9 @@ A modded build normally carries a full copy of the game: every retail file goes 
 beside the mod files, over a gigabyte for each build. With this patch a build folder holds only
 what differs from retail, and reads everything else from an untouched install already on the
 console. Each build is still its own folder with its own `default.xbe`, so dashboards list it as a
-separate game.
+separate game. For an overlay build, `default.xbe` is a second copy of the patched engine rather
+than the retail launcher: the launcher cannot read from the data-only base before the engine's
+overlay hook is active.
 
 See the [patch table](../docs/patches.md) for availability and selection.
 
@@ -27,8 +29,9 @@ A file in the build folder always wins over the same file in the base folder, ar
 
 ## Using it
 
-Set `profile.install_layout = "overlay"`; the pipeline enables this patch and keeps the XBEs,
-`Morrowind.ini`, dashboard files, and every file that differs from the base. Plugins, mod archives
+Set `profile.install_layout = "overlay"`; the pipeline enables this patch and keeps the engine as
+both `default.xbe` and `morrowind.xbe`, plus `Morrowind.ini`, dashboard files, and every file that
+differs from the base. Plugins, mod archives
 with `tes3xarch.txt`, and loose files therefore stay in the build. A file identical to the clean
 retail source is left out. See [deployment](../docs/deployment.md#shared-retail-base) for installing
 and verifying the shared base.
