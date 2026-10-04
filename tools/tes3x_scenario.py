@@ -34,6 +34,14 @@ result store.
     [[compare]]                                       # comparison scenarios only
     pattern = "metric ([0-9]+)"                      # one numeric capture per log line
     relation = ">"                                   # every test value > its control value
+    [agent]                                           # optional: drive the in-game agent
+    after = "regex"                                  # once a game log line matches,
+    console = ["line"]                               # run these through the agent,
+    fetch = ["E:\\tes3xlog.txt"]                     # then copy these files back,
+    exit = true                                      # then end the game
+
+An `agent` scenario runs a tunnel (`tes3x_net.py serve`) and a listener (`tes3x_agent.py`) with a
+throwaway key beside each xemu; the run fails unless every agent request succeeds.
 
 A single scenario runs only the test build. A comparison scenario runs control and test builds
 side by side; the control omits the patch and the test build adds it. Every run uses
@@ -49,13 +57,16 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
+from tes3x_agent import key_fingerprint, load_or_create_key  # noqa: E402
 from tes3x_diag import assertion_failures  # noqa: E402
+from tes3x_net import free_udp_ports  # noqa: E402
 import tes3x_patches as registry  # noqa: E402
 from tes3x_test import (GAME_TESTS, TestError, game_test_profile, load_game_test,  # noqa: E402
                         make_fixture, read_toml, write_profile, comparison_failures,
                         sequence_failures)
 
 DEFAULT_ENABLE = ["diagnostics", "console"]
+BUILD_SECONDS = 1200  # an agent scenario's listener starts before the runner builds and boots
 DEFAULT_XEMU = ["--skip-intro", "--no-reboot"]
 GLOBAL_FAILURES = (r"crash\.", r"hang\.detected", r"fatal\.")
 
@@ -150,6 +161,54 @@ def check(log, expectations, script, allow=(), sequence=()):
     return ok, report
 
 
+def start_agent(spec, folder, timeout, env, workspace):
+    """Start the tunnel and listener for an agent scenario; (processes, xemu args, build args)."""
+    base = free_udp_ports(5)  # tunnel and its xemu side, agent, server, server admin
+    tunnel, agent, server, admin = base, base + 2, base + 3, base + 4
+    key = folder.with_name(folder.name + ".agent.key")
+    key.unlink(missing_ok=True)
+    fingerprint = key_fingerprint(load_or_create_key(key))
+    tools = ROOT / "tools"
+    serve = [sys.executable, str(tools / "tes3x_net.py"), "serve", "--tunnel", str(tunnel),
+             "--forward", str(agent), "--port", str(server), "--admin-port", str(admin),
+             "--duration", str(timeout + BUILD_SECONDS)]
+    listen = [sys.executable, str(tools / "tes3x_agent.py"), "--key", str(key),
+              "--port", str(agent), "--wait", str(timeout + BUILD_SECONDS), "--quiet",
+              "--out", str(folder.with_name(folder.name + ".fetched"))]
+    settings = spec["agent"]
+    if settings.get("after"):
+        listen += ["--after", settings["after"]]
+    for line in settings.get("console", []):
+        listen += ["--console", line]
+    for path in settings.get("fetch", []):
+        listen += ["--fetch", path]
+    if settings.get("exit"):
+        listen.append("--exit")
+    processes = []
+    for name, cmd in (("serve", serve), ("agent", listen)):
+        out = open(folder.with_name(f"{folder.name}.{name}.txt"), "w")
+        processes.append((subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT,
+                                           cwd=workspace, env=env), out))
+    build = ["--ini-set", "Xbox:NetAddress=dhcp",
+             "--ini-set", f"Xbox:NetAgent=10.0.2.2:{agent}#{fingerprint}"]
+    return processes, ["--net-tunnel", str(tunnel)], build
+
+
+def finish_agent(processes):
+    """Stop the tunnel; the listener's exit code (it should have finished with the game)."""
+    (serve, serve_out), (listen, listen_out) = processes
+    try:
+        code = listen.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        listen.kill()
+        code = listen.wait()
+    serve.terminate()
+    serve.wait()
+    serve_out.close()
+    listen_out.close()
+    return code
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -211,24 +270,32 @@ def main():
     profile = profile_arg if a.reuse else test_profile(spec, profile_arg, prefix, runs, config)
 
     # Both sides build and boot at once; each has its own folder, disk overlay and xemu config.
-    procs = {}
+    procs, agents = {}, {}
     for role in roles:
         folder = runs / f"{prefix}-{role}"
         if a.reuse:
             if not folder.is_dir():
                 sys.exit(f"--reuse: no run folder {folder}")
             continue
+        xemu_extra, build_extra = [], []
+        if spec.get("agent"):
+            agents[role], xemu_extra, build_extra = start_agent(
+                spec, folder, spec.get("timeout", 300), env, workspace)
         cmd = [sys.executable, str(runner), folder.name, profile,
                "--direct-engine", "--exec", str(script), *saves,
                "--timeout", str(spec.get("timeout", 300)),
-               *spec.get("xemu", DEFAULT_XEMU), "--", *build_flags(spec, a.patch, role)]
+               *spec.get("xemu", DEFAULT_XEMU), *xemu_extra,
+               "--", *build_flags(spec, a.patch, role), *build_extra]
         print(f"== {role}: {' '.join(cmd[1:])}", flush=True)
         out = open(runs / f"{prefix}-{role}.out", "w")
         procs[role] = (subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT,
                                        cwd=workspace, env=env), out)
+    agent_codes = {}
     for role, (proc, out) in procs.items():
         proc.wait()
         out.close()
+        if role in agents:
+            agent_codes[role] = finish_agent(agents[role])
         if proc.returncode:
             sys.exit(f"{role} run failed; see {out.name}")
 
@@ -242,6 +309,10 @@ def main():
                            spec.get("allow", []), spec.get("sequence", {}).get(role, []))
         if not log:
             ok, report = False, ["  FAIL no log recovered"]
+        if agent_codes.get(role):
+            ok = False
+            report.append(f"  FAIL agent requests exited {agent_codes[role]}; "
+                          f"see {folder.name}.agent.txt")
         results[role] = (folder, ok)
         print(f"{role}: {'pass' if ok else 'FAIL'}", *report, sep="\n")
 

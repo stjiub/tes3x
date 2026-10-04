@@ -141,6 +141,25 @@ def arp_frame(op, dst_mac, target_mac, target_ip):
     return dst_mac + PEER_MAC + b"\x08\x06" + body
 
 
+def free_udp_ports(count):
+    """`count` consecutive free UDP ports on localhost, below the ephemeral range, where any
+    process's next outgoing socket could take one before xemu binds it."""
+    for _ in range(50):
+        sockets = []
+        base = random.randrange(20000, 30000)
+        try:
+            for port in range(base, base + count):
+                sockets.append(socket.socket(socket.AF_INET, socket.SOCK_DGRAM))
+                sockets[-1].bind(("127.0.0.1", port))
+            return base
+        except OSError:
+            continue
+        finally:
+            for item in sockets:
+                item.close()
+    raise OSError("no free UDP ports for an xemu tunnel")
+
+
 def udp_socket():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     # Windows reports an ICMP port-unreachable as a reset on the next recv; a peer that is not

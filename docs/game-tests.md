@@ -81,6 +81,7 @@ relation = ">"
 | `pipeline` | extra pipeline options, such as `--diag-test-faults` |
 | `required_mods` | enabled profile mods the scenario needs, checked before the run |
 | `allow` | the failure patterns a test causes on purpose: `crash\.`, `hang\.detected` or `fatal\.` |
+| `agent` | requests sent through the in-game agent; see [Driving the agent](#driving-the-agent) |
 
 `save` and `required_mods` name inputs that stay on your machine: they are hashed into a result's
 provenance but never copied into the repository.
@@ -93,3 +94,21 @@ tables, such as `profile = { save_pool = "TES3X Test" }`.
 `[fixture]` generates a test mod from your own `Morrowind.esm` and makes it the build's only mod:
 `opcodes = [0x2001]` appends those opcode calls to the global script `Main` (or `script`), and
 `texture = true` adds one 4x4 texture so there is an asset to pack.
+
+## Driving the agent
+
+`[agent]` runs a tunnel (`tes3x_net.py serve`) and a listener (`tes3x_agent.py`) with a throwaway
+key beside each xemu, and points the build's `NetAgent` at it. Once a game log line matches
+`after`, the listener runs each `console` line, copies each `fetch` path into
+`build/xemu/NAME.fetched/`, then sends `exit` when `exit = true`:
+
+```toml
+[agent]
+after = 'mem\.agent-ready '
+console = ["player->getpos x"]
+fetch = ['E:\tes3xlog.txt']
+exit = true
+```
+
+The run fails unless every request succeeds; the listener's output is in
+`build/xemu/NAME.agent.txt`.

@@ -52,9 +52,10 @@ GAME_TESTS = ROOT / "tests" / "game"
 KINDS = {"single": ("test",), "comparison": ("control", "test")}
 REQUIRED = ("kind", "purpose", "procedure", "script", "expect")
 OPTIONAL = ("limitations", "watch", "timeout", "xemu", "save", "enable", "apply", "pipeline",
-            "allow", "profile", "fixture", "sequence", "compare", "required_mods")
+            "allow", "profile", "fixture", "sequence", "compare", "required_mods", "agent")
 PROFILE_OVERLAY = ("profile", "rules", "preferences", "package", "ini")
 FIXTURE_KEYS = {"script": str, "opcodes": list, "texture": bool, "dialogue": str}
+AGENT_KEYS = {"after": str, "console": list, "fetch": list, "exit": bool}
 FIXTURE_MOD = "tes3x-test"
 
 
@@ -91,6 +92,13 @@ def game_test_problems(test, where):
                         "(boolean) and dialogue (string)")
     elif any(type(opcode) is not int for opcode in fixture.get("opcodes", [])):
         problems.append(f"{where}: fixture.opcodes must be integers")
+    agent = test.get("agent", {})
+    if not isinstance(agent, dict) or set(agent) - set(AGENT_KEYS) or any(
+            type(agent[key]) is not kind for key, kind in AGENT_KEYS.items() if key in agent) or any(
+            not isinstance(value, str) for key in ("console", "fetch")
+            for value in agent.get(key, [])):
+        problems.append(f"{where}: agent takes after (string), console and fetch (arrays of "
+                        "strings) and exit (boolean)")
     if test.get("kind") not in KINDS:
         return problems + [f"{where}: kind must be single or comparison"]
     roles = KINDS[test["kind"]]
