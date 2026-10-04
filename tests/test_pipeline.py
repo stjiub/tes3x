@@ -1,8 +1,10 @@
 import json
+import os
 import struct
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
@@ -17,8 +19,8 @@ from tes3x_pipeline import main as pipeline_main
 from tes3x_patch import (MCP37_TREE_NEXT_SIG, PatchError, _mcp_3, _mcp_37, _mcp_92, _mcp_97,
                          _mcp_98, _mcp_102, _mcp_123, _mcp_125, _mcp_154, _test_mcp3,
                          _test_mcp97, _test_mcp102)
-from tes3x_plugins import (collect, dependency_order, fetch_rules, run_arrange, validate_order,
-                           warnings as mlox_warnings)
+from tes3x_plugins import (collect, dependency_order, fetch_rules, rules_file, run_arrange,
+                           validate_order, warnings as mlox_warnings)
 from test_reach import rec, sub
 
 
@@ -96,6 +98,18 @@ class PipelineTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             fetch_rules(target, bad.as_uri())
         self.assertEqual(target.read_bytes(), good.read_bytes())
+
+    def test_rules_download_once_to_the_data_folder(self):
+        source = self.root / 'rules.txt'
+        source.write_bytes(b'[Order]\nMorrowind.esm\n')
+        data = {'TES3X_DATA': str(self.root / 'data')}
+        with mock.patch.dict(os.environ, data), \
+                mock.patch('tes3x_plugins.RULES_URL', source.as_uri()):
+            path = rules_file()
+            self.assertEqual(path, self.root / 'data' / 'mlox' / 'mlox_base.txt')
+            source.unlink()
+            self.assertEqual(rules_file(), path)
+            self.assertEqual(rules_file(self.root / 'mine.txt'), self.root / 'mine.txt')
 
     def test_mlox_notes_are_not_warnings(self):
         messages = ("[NOTE]\n > 'a.esp'\n |\tadvice\n"

@@ -78,14 +78,12 @@ With `plugin_order = "mlox"` in the profile's `[rules]`, [mlox](https://github.c
 plugins using the community's ordering rules. File conflicts between mods still go by mod order;
 mlox only changes the plugin load order.
 
-mlox isn't included with TES3X. To set it up:
-
-1. `python -m pip install mlox`. Add `--no-deps` to skip its GUI's dependencies, which TES3X
-   doesn't use.
-2. Get the rules: **Download** next to "mlox rules" in the GUI's local settings, or
-   `python tools/tes3x_plugins.py fetch-rules mlox/mlox_base.txt`, then set `paths.mlox_rules` to
-   that file. They come from the [mlox-rules project](https://github.com/DanaePlays/mlox-rules)
-   and change often, so download them again now and then.
+TES3X includes mlox's sorter, so there is nothing to install. The rules come from the
+[mlox-rules project](https://github.com/DanaePlays/mlox-rules): the first sort downloads them to
+TES3X's data folder (`%LOCALAPPDATA%\TES3X\mlox` on Windows, or `TES3X_DATA` when set) and later
+sorts reuse that copy. The rules change often; **Download** next to "mlox rules" in the GUI's
+local settings, or `python tools/tes3x_plugins.py fetch-rules`, fetches the current ones. To use
+your own rules file instead, set `paths.mlox_rules`.
 
 mlox runs on a copy of the build's plugins and never touches your library. Its conflict and
 missing-requirement warnings are printed during the build. Everything it said, including notes,

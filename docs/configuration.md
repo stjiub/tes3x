@@ -18,7 +18,7 @@ one in the TES3X folder. `--config PATH` picks another. Relative paths are relat
 | `vanilla_root` | string | none | Clean retail game folder containing both XBEs, `Morrowind.ini` and `Data Files`. Required to build unless `--vanilla` is used. |
 | `mod_library` | string | none | Mod library root. A profile's `library` takes precedence. |
 | `profiles` | string | `profiles` | Folder the GUI lists profiles from. |
-| `mlox_rules` | string | none | mlox's `mlox_base.txt`, for `rules.plugin_order = "mlox"`. |
+| `mlox_rules` | string | downloaded | mlox's `mlox_base.txt`, for `rules.plugin_order = "mlox"`. Without it TES3X downloads the current rules on first use. |
 | `build_root` | string | `build` | Parent directory for profile output folders. |
 | `llvm` | string | `PATH` | Directory containing `clang` and `lld-link`. |
 | `hardlink_retail` | boolean | `false` | Hardlink unchanged retail files when source and output are on the same volume. |

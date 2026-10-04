@@ -1,5 +1,7 @@
-"""Validate FATX component and full-path limits."""
+"""Validate FATX component and full-path limits; locate TES3X's per-user data."""
+import os
 import re
+from pathlib import Path
 
 DEFAULT_REMOTE_ROOT = 'F:/Games/Morrowind'
 NAME_MAX = 42
@@ -57,3 +59,12 @@ def require_paths(relative_paths, root=DEFAULT_REMOTE_ROOT, prefix=''):
     print(f"Xbox paths: {report['remote_root']}; longest {report['longest_length']}/{PATH_MAX}: "
           f"{report['longest_path']}")
     return report
+
+
+def data_dir():
+    """Per-user folder for what TES3X downloads or caches; TES3X_DATA overrides it."""
+    if os.environ.get('TES3X_DATA'):
+        return Path(os.environ['TES3X_DATA'])
+    if os.name == 'nt':
+        return Path(os.environ.get('LOCALAPPDATA') or Path.home() / 'AppData' / 'Local') / 'TES3X'
+    return Path(os.environ.get('XDG_DATA_HOME') or Path.home() / '.local' / 'share') / 'tes3x'

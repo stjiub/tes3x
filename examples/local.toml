@@ -14,8 +14,8 @@ build_root = "build/pipeline"
 # Hardlink unchanged retail files into builds instead of copying them. Needs the build folder
 # and the retail folder on the same NTFS drive; otherwise files are copied.
 # hardlink_retail = true
-# mlox's rules file, for profiles that set rules.plugin_order = "mlox". Download mlox_base.txt
-# from https://github.com/DanaePlays/mlox-rules and install mlox with: python -m pip install mlox
+# Your own mlox rules file, for profiles that set rules.plugin_order = "mlox". Without it TES3X
+# downloads the current rules from https://github.com/DanaePlays/mlox-rules on first use.
 # mlox_rules = "C:/Tools/mlox/mlox_base.txt"
 # Ghidra 11.3 or later with the ghidra-xbe loader, for tools/tes3x_sym.py decompile and refs.
 # ghidra = "C:/Tools/ghidra_11.3_PUBLIC"

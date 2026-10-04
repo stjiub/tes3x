@@ -21,7 +21,7 @@ __pycache__/
 tes3x.local.toml
 tes3x.agent.key
 profiles/
-mlox/
+/mlox/
 
 # saves pulled off the console for analysis
 42530005/

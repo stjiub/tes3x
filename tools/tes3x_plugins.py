@@ -1,7 +1,6 @@
 """Sort plugins with mlox, on a copy staged with expanded Xbox stubs."""
 import argparse
 import hashlib
-import importlib.metadata
 import json
 import logging
 import os
@@ -9,16 +8,18 @@ import re
 import shutil
 import struct
 import sys
-import types
 import urllib.request
 from pathlib import Path
 
 from tes3x_build import plugin_masters
+from tes3x_paths import data_dir
 from tes3x_records import records, subrecords
 
 STAMP_BASE = 978307200  # 2001-01-01 UTC, representable on FATX
 STAMP_STEP = 4
 RULES_URL = 'https://raw.githubusercontent.com/DanaePlays/mlox-rules/main/mlox_base.txt'
+VENDOR = Path(__file__).resolve().parent / 'vendor'
+MLOX_VERSION = '1.0.3'
 
 
 def digest(path):
@@ -110,17 +111,11 @@ def stage(files, names, work):
 
 
 def mlox_sort(work, rules):
-    """Sort the staged plugins with the mlox package; return the order and mlox's messages."""
-    # mlox.resources only locates the rules under the user's profile, and needs appdirs and
-    # pkg_resources to do it. Supplying it here lets a --no-deps install work.
-    resources = types.ModuleType('mlox.resources')
-    resources.base_file, resources.user_file = str(rules), str(work / 'no-user-rules.txt')
-    sys.modules['mlox.resources'] = resources
-    try:
-        from mlox import loadOrder
-    except ImportError as exc:
-        raise RuntimeError('mlox is not installed; run: python -m pip install mlox') from exc
-    loadOrder.base_file, loadOrder.user_file = resources.base_file, resources.user_file
+    """Sort the staged plugins with the bundled mlox; return the order and mlox's messages."""
+    if str(VENDOR) not in sys.path:
+        sys.path.insert(0, str(VENDOR))
+    from mlox import loadOrder
+    loadOrder.base_file, loadOrder.user_file = str(rules), str(work / 'no-user-rules.txt')
     logging.getLogger('mlox').setLevel(logging.ERROR)
     cwd = os.getcwd()
     os.chdir(work)  # mlox writes its .out files to the working directory
@@ -139,10 +134,7 @@ def mlox_sort(work, rules):
 
 
 def mlox_version():
-    try:
-        return importlib.metadata.version('mlox')
-    except importlib.metadata.PackageNotFoundError:
-        return 'unknown'
+    return MLOX_VERSION
 
 
 def warnings(messages):
@@ -189,6 +181,23 @@ def run_order(built, vanilla, rules, work, output):
     print(f'mlox {mlox_version()}: sorted {len(names)} plugins; notes in {notes.name}')
 
 
+def default_rules():
+    return data_dir() / 'mlox' / 'mlox_base.txt'
+
+
+def rules_file(configured=None):
+    """The configured rules, or TES3X's own copy, downloaded the first time it is needed."""
+    if configured:
+        return Path(configured)
+    path = default_rules()
+    if not path.is_file():
+        try:
+            fetch_rules(path, RULES_URL)
+        except (OSError, ValueError) as exc:
+            raise RuntimeError(f'could not download the mlox rules from {RULES_URL}: {exc}') from exc
+    return path
+
+
 def fetch_rules(path, url=RULES_URL):
     """Download the current mlox rules to path; return the byte count."""
     with urllib.request.urlopen(url, timeout=60) as response:
@@ -209,7 +218,8 @@ if __name__ == '__main__':
     order = sub.add_parser('order', help='sort a built tree\'s plugins with mlox')
     order.add_argument('built')
     order.add_argument('--vanilla', required=True)
-    order.add_argument('--rules', required=True, help="mlox_base.txt from the mlox-rules project")
+    order.add_argument('--rules', help="mlox_base.txt from the mlox-rules project "
+                       "(default: downloaded on first use)")
     order.add_argument('--work', required=True, help='new isolated working directory')
     order.add_argument('--out', required=True)
     arrange = sub.add_parser('arrange', help="order a built tree's plugins as a list gives")
@@ -219,13 +229,14 @@ if __name__ == '__main__':
     arrange.add_argument('--work', required=True, help='new isolated working directory')
     arrange.add_argument('--out', required=True)
     fetch = sub.add_parser('fetch-rules', help='download the current mlox rules')
-    fetch.add_argument('out', help='where to save mlox_base.txt')
+    fetch.add_argument('out', nargs='?', help="where to save mlox_base.txt (default: TES3X's copy)")
     args = ap.parse_args()
     sys.stdout.reconfigure(errors='replace')
     if args.action == 'fetch-rules':
-        print(f'mlox rules: {fetch_rules(args.out)} bytes -> {args.out}')
+        out = args.out or default_rules()
+        print(f'mlox rules: {fetch_rules(out)} bytes -> {out}')
     elif args.action == 'arrange':
         order = json.loads(Path(args.order).read_text(encoding='utf-8'))
         run_arrange(args.built, args.vanilla, order, args.work, args.out)
     else:
-        run_order(args.built, args.vanilla, args.rules, args.work, args.out)
+        run_order(args.built, args.vanilla, rules_file(args.rules), args.work, args.out)

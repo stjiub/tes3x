@@ -4,7 +4,6 @@
 import argparse
 import filecmp
 import hashlib
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -24,6 +23,7 @@ from tes3x_payload import PayloadError, build_payload, find_tool
 from tes3x_net import write_ghost_plugin
 from tes3x_agent import key_fingerprint, load_or_create_key
 from tes3x_paths import DEFAULT_REMOTE_ROOT, require_paths
+from tes3x_plugins import rules_file
 import tes3x_savepool
 import tes3x_targets
 
@@ -941,14 +941,11 @@ def main(argv=None):
         lld = os.environ.get("LLD") or find_tool("lld-link", llvm)
         toolchain = {"clang": tool_version(clang), "lld-link": tool_version(lld)}
     if use_mlox:
-        if importlib.util.find_spec("mlox") is None:
-            raise PipelineError("rules.plugin_order = 'mlox' needs mlox: "
-                                "python -m pip install mlox")
-        if not paths.get("mlox_rules"):
-            raise PipelineError("rules.plugin_order = 'mlox' needs paths.mlox_rules in the local "
-                                "config; download the rules with the GUI's local "
-                                "settings or: python tools/tes3x_plugins.py fetch-rules PATH")
-        mlox_rules = config_path(paths["mlox_rules"], base).resolve()
+        try:
+            mlox_rules = rules_file(paths.get("mlox_rules")
+                                    and config_path(paths["mlox_rules"], base)).resolve()
+        except RuntimeError as exc:
+            raise PipelineError(str(exc)) from exc
         require_file(mlox_rules, "mlox rules")
     if (args.deploy or args.dry_run) and (not deploy.get("host") or not remote):
         raise PipelineError("deployment requires an Xbox target with host and games_root")
