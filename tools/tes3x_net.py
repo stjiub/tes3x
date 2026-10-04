@@ -36,6 +36,8 @@ import time
 import traceback
 
 PORT = 26500
+AGENT_PORT = 26501
+ADMIN_PORT = 26502
 DNS_PORT = 53
 DHCP_SERVER, DHCP_CLIENT = 67, 68
 DHCP_MAGIC = bytes([0x63, 0x82, 0x53, 0x63])
@@ -155,6 +157,9 @@ class Tunnel:
         self.sock = udp_socket()
         self.sock.bind(("127.0.0.1", port))
         self.guest = ("127.0.0.1", port + 1)
+        self.forward = udp_socket()
+        self.forward.bind(("127.0.0.1", 0))
+        self.forward_guest = {}
 
     def send(self, frame):
         self.sock.sendto(frame.ljust(60, b"\0"), self.guest)
@@ -1942,7 +1947,7 @@ def serve(args):
     bans_path = os.path.join(args.world, "bans.txt") if args.world else None
     bans = load_bans(bans_path)
     admin_sock, commands = None, queue.Queue()
-    admin_port = args.port + 1 if args.admin_port is None else args.admin_port
+    admin_port = ADMIN_PORT if args.admin_port is None else args.admin_port
     if admin_port:
         admin_sock = udp_socket()
         try:
@@ -3169,7 +3174,8 @@ def serve(args):
     while not stopped(time.time()):
         while not commands.empty():
             print(admin(commands.get()), flush=True)
-        waiting = [sock] + [link.sock for link in links] + ([dns] if dns else []) + (
+        waiting = [sock] + [link.sock for link in links] + [link.forward for link in links] + (
+            [dns] if dns else []) + (
             [admin_sock] if admin_sock else [])
         wait = 0.25
         if any(c.queue for c in clients.values()):
@@ -3207,6 +3213,19 @@ def serve(args):
                     continue
                 guarded(data, addr)
                 continue
+            forwarding = next((link for link in links if link.forward is ready), None)
+            if forwarding:
+                try:
+                    data, address = forwarding.forward.recvfrom(2048)
+                except ConnectionResetError:
+                    continue
+                guest = forwarding.forward_guest.get(address[1])
+                if guest:
+                    mac, guest_ip, guest_port = guest
+                    host_port = address[1]
+                    forwarding.send(udp_frame(mac, guest_ip, data, sport=host_port,
+                                              dport=guest_port))
+                continue
             link = next(link for link in links if link.sock is ready)
             frame = link.recv(0)
             if frame and frame[12:14] == b"\x08\x06" and len(frame) >= 42:
@@ -3234,6 +3253,14 @@ def serve(args):
                 data = udp_from_frame(frame)
                 if data:
                     guarded(data, (src, PORT, frame[6:12], link))
+                    continue
+                udp = 14 + (frame[14] & 0x0F) * 4 if len(frame) >= 42 else 0
+                if udp and frame[23] == 17:
+                    sport, dport = struct.unpack_from(">HH", frame, udp)
+                    data = udp_from_frame(frame, dport)
+                    if data is not None and dport in args.forward_ports:
+                        link.forward_guest[dport] = (frame[6:12], src, sport)
+                        link.forward.sendto(data, ("127.0.0.1", dport))
         now = time.time()
         for client in clients.values():
             if client.queue:
@@ -3634,6 +3661,10 @@ def main(argv=None):
     p.add_argument("--bind", default="0.0.0.0")
     p.add_argument("--tunnel", type=int, action="append", default=[], metavar="PORT",
                    help="serve an xemu guest through its udp backend (repeatable, one per xemu)")
+    p.add_argument("--forward", type=int, action="append", default=[AGENT_PORT],
+                   dest="forward_ports", metavar="PORT",
+                   help="with --tunnel, forward this guest UDP port to localhost "
+                        "(repeatable; default 26501 for the in-game agent)")
     p.add_argument("--duration", type=float, help="stop after this many seconds")
     p.add_argument("--stop-wait", type=float, default=60.0, metavar="SECONDS",
                    help="on stopping (Ctrl-C, --duration, admin stop) wait this long for every "
@@ -3760,7 +3791,7 @@ def main(argv=None):
                         "--world; without either, a new key each run)")
     p.add_argument("--admin-port", type=int, metavar="PORT",
                    help="take admin commands (tes3x_net.py admin) on this port of 127.0.0.1 "
-                        "only; 0 for none (default: --port + 1)")
+                        "only; 0 for none (default: 26502)")
     p.add_argument("--password-file", metavar="FILE",
                    help="a console whose key is new must give the password on this file's first "
                         "line (its NetPassword); admitted keys go to admitted.txt in --world")
@@ -3782,7 +3813,7 @@ def main(argv=None):
     p = sub.add_parser("admin", help="send an admin command to a server on this PC")
     p.add_argument("words", nargs="+", metavar="COMMAND",
                    help="list, kick N, ban N, ban|unban key|mac|address VALUE, bans")
-    p.add_argument("--port", type=int, default=PORT + 1, help="the server's --admin-port")
+    p.add_argument("--port", type=int, default=ADMIN_PORT, help="the server's --admin-port")
     p = sub.add_parser("fuzz", help="join a server and send it mutated packets")
     p.add_argument("address", help="HOST[:PORT] of a tes3x_net.py server")
     p.add_argument("--count", type=int, default=2000)

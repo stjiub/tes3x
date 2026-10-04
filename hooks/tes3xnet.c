@@ -8,6 +8,17 @@
 
 typedef unsigned short u16;
 
+#if defined(TES3X_AGENT) && !defined(TES3X_MULTIPLAYER)
+#ifndef TES3X_INI_GET_STRING
+#error "define TES3X_INI_GET_STRING to the VA of the ini string reader"
+#endif
+#ifndef TES3X_INI_PATH
+#error "define TES3X_INI_PATH to the VA of the engine's ini filename string"
+#endif
+typedef int(__cdecl *fn_ini_get_string)(const char *, const char *, const char *, char *, int,
+                                        const char *);
+#endif
+
 typedef void *(__stdcall *fn_MmAllocateContiguousMemoryEx)(u32, u32, u32, u32, u32);
 typedef void(__stdcall *fn_MmFreeContiguousMemory)(void *);
 typedef u32(__stdcall *fn_MmGetPhysicalAddress)(void *);
@@ -124,6 +135,13 @@ typedef u32(__stdcall *fn_PhyGetLinkState)(u8);
 #define MIN_FRAME 60u
 #define TICK_MS 250u
 
+#define DHCP_CLIENT 68u
+#define DHCP_SERVER 67u
+#define DHCP_IDLE 0u
+#define DHCP_DISCOVER 1u
+#define DHCP_REQUEST 2u
+#define DHCP_BOUND 3u
+
 struct descriptor {
     u32 paddr;
     u16 length;
@@ -138,7 +156,15 @@ static u8 mac[6], *pool, *rx_buf, *tx_buf;
 static volatile struct descriptor *rx_ring, *tx_ring;
 static u32 rx_head, tx_tail, interrupt[0x70 / 4], dpc[0x1C / 4];
 static fn_HalReturnToFirmware firmware_original;
-static u32 probe_ip, probe_hits;
+static u32 probe_ip, probe_hits, network_gateway;
+
+#if defined(TES3X_AGENT) && !defined(TES3X_MULTIPLAYER)
+static struct tes3x_net_channel dhcp_channel;
+static u32 autostart_tried;
+static struct {
+    u32 state, xid, ticks, tries, offered, server, lease;
+} dhcp;
+#endif
 
 u32 tes3x_net_lock(void)
 {
@@ -167,6 +193,133 @@ static void put32le(u8 *p, u32 v)
     p[0] = (u8)v; p[1] = (u8)(v >> 8); p[2] = (u8)(v >> 16); p[3] = (u8)(v >> 24);
 }
 static void copy(u8 *d, const u8 *s, u32 n) { while (n--) *d++ = *s++; }
+
+#if defined(TES3X_AGENT) && !defined(TES3X_MULTIPLAYER)
+static u32 net_ini_text(const char *key, char *out, u32 size)
+{
+    fn_ini_get_string get = (fn_ini_get_string)TES3X_INI_GET_STRING;
+    u32 i;
+
+    for (i = 0; i < size; i++)
+        out[i] = 0;
+    get("Xbox", key, "", out, (int)size - 1, (const char *)TES3X_INI_PATH);
+    for (i = 0; out[i]; i++)
+        ;
+    while (i && (out[i - 1] == ' ' || out[i - 1] == '\t'))
+        out[--i] = 0;
+    return i;
+}
+
+static const char *net_address(const char *text, u32 *out)
+{
+    u32 value = 0, part, i;
+
+    for (i = 0; i < 4; i++) {
+        if (*text < '0' || *text > '9')
+            return 0;
+        part = 0;
+        while (*text >= '0' && *text <= '9') {
+            part = part * 10 + (*text++ - '0');
+            if (part > 255)
+                return 0;
+        }
+        value = value << 8 | part;
+        if (i != 3 && *text++ != '.')
+            return 0;
+    }
+    *out = value;
+    return text;
+}
+
+static void dhcp_send(u32 type)
+{
+    static const u8 options[] = {55, 4, 1, 3, 6, 51, 12, 5, 'T', 'E', 'S', '3', 'X'};
+    u8 body[300];
+    u32 i, n = 240;
+
+    for (i = 0; i < sizeof(body); i++) body[i] = 0;
+    body[0] = 1; body[1] = 1; body[2] = 6;
+    put32(body + 4, dhcp.xid); put16(body + 10, 0x8000);
+    if (dhcp.state == DHCP_BOUND) put32(body + 12, tes3x_net.ip);
+    copy(body + 28, mac, 6); put32(body + 236, 0x63825363u);
+    body[n++] = 53; body[n++] = 1; body[n++] = (u8)type;
+    if (dhcp.state == DHCP_REQUEST) {
+        body[n++] = 50; body[n++] = 4; put32(body + n, dhcp.offered); n += 4;
+        body[n++] = 54; body[n++] = 4; put32(body + n, dhcp.server); n += 4;
+    }
+    copy(body + n, options, sizeof(options)); n += sizeof(options); body[n] = 255;
+    tes3x_net_send_broadcast(DHCP_CLIENT, DHCP_SERVER, body, sizeof(body));
+}
+
+static void dhcp_discover(void)
+{
+    dhcp.state = DHCP_DISCOVER;
+    dhcp.xid = tes3x_net_now_us() ^ (u32)mac[4] << 24 ^ (u32)mac[5] << 16;
+    dhcp.ticks = dhcp.tries = 0;
+    dhcp_send(1);
+}
+
+static void dhcp_bind(u32 ip, u32 mask, u32 router, u32 lease)
+{
+    tes3x_net.ip = ip;
+    tes3x_net.mask = mask ? mask : 0xFFFFFF00u;
+    if (!network_gateway) network_gateway = router;
+    if (!lease || lease > 7 * 86400u) lease = 7 * 86400u;
+    dhcp.lease = (lease < 16 ? 16 : lease) * 4;
+    dhcp.state = DHCP_BOUND; dhcp.ticks = 0;
+    tes3x_net_arp(ip);
+}
+
+static void dhcp_receive(u32 source, u32 port, const u8 *p, u32 n)
+{
+    u32 off = 240, type = 0, mask = 0, router = 0, lease = 0, server = 0, i;
+    (void)source;
+    if (port != DHCP_SERVER || n < 240 || p[0] != 2 || !dhcp.state ||
+        get32(p + 4) != dhcp.xid || get32(p + 236) != 0x63825363u)
+        return;
+    for (i = 0; i < 6; i++) if (p[28 + i] != mac[i]) return;
+    while (off < n && p[off] != 255) {
+        const u8 *v;
+        u32 code, len;
+        if (!p[off]) { off++; continue; }
+        if (off + 2 > n || off + 2 + (len = p[off + 1]) > n) return;
+        code = p[off]; v = p + off + 2;
+        if (code == 53 && len == 1) type = v[0];
+        else if (code == 1 && len >= 4) mask = get32(v);
+        else if (code == 3 && len >= 4) router = get32(v);
+        else if (code == 51 && len >= 4) lease = get32(v);
+        else if (code == 54 && len >= 4) server = get32(v);
+        off += 2 + len;
+    }
+    if (type == 2 && dhcp.state == DHCP_DISCOVER && get32(p + 16)) {
+        dhcp.offered = get32(p + 16); dhcp.server = server ? server : get32(p + 20);
+        dhcp.state = DHCP_REQUEST; dhcp.ticks = dhcp.tries = 0; dhcp_send(3);
+    } else if (dhcp.state != DHCP_DISCOVER && (!server || !dhcp.server || server == dhcp.server)) {
+        if (type == 5 && get32(p + 16)) {
+            dhcp_bind(get32(p + 16), mask, router, lease);
+        } else if (type == 6) {
+            tes3x_net.ip = 0; dhcp_discover();
+        }
+    }
+}
+
+static void dhcp_tick(void)
+{
+    if (!dhcp.state) return;
+    dhcp.ticks++;
+    if (dhcp.state == DHCP_DISCOVER && dhcp.ticks >= 8) {
+        dhcp.ticks = 0; dhcp_send(1);
+    } else if (dhcp.state == DHCP_REQUEST && dhcp.ticks >= 4) {
+        dhcp.ticks = 0;
+        if (++dhcp.tries >= 4) dhcp_discover(); else dhcp_send(3);
+    } else if (dhcp.state == DHCP_BOUND && dhcp.ticks >= dhcp.lease) {
+        tes3x_net.ip = 0; dhcp_discover();
+    } else if (dhcp.state == DHCP_BOUND && dhcp.ticks >= dhcp.lease / 2 &&
+               (dhcp.ticks - dhcp.lease / 2) % 16 == 0) {
+        dhcp_send(3);
+    }
+}
+#endif
 
 static void ip_checksum(u8 *ip)
 {
@@ -605,6 +758,71 @@ int tes3x_net_start(u32 ip, int irq)
     return 1;
 }
 
+int tes3x_net_autostart(void)
+{
+#if defined(TES3X_AGENT) && !defined(TES3X_MULTIPLAYER)
+    char address_text[32], gateway_text[24];
+    const char *p;
+    u32 ip, bits = 24, flags;
+
+    if (autostart_tried)
+        return tes3x_net.up != 0;
+    autostart_tried = 1;
+    if (!net_ini_text("NetAddress", address_text, sizeof(address_text)))
+        return 0;
+    if (net_ini_text("NetGateway", gateway_text, sizeof(gateway_text))) {
+        p = net_address(gateway_text, &network_gateway);
+        if (!p || *p) {
+            tes3x_log("net.bad_gateway", 0);
+            return 0;
+        }
+    }
+    if (address_text[0] == 'd' && address_text[1] == 'h' && address_text[2] == 'c' &&
+        address_text[3] == 'p' && !address_text[4]) {
+        dhcp_channel.port = DHCP_CLIENT;
+        dhcp_channel.receive = dhcp_receive;
+        dhcp_channel.tick = dhcp_tick;
+        if (!tes3x_net_register(&dhcp_channel)) {
+            tes3x_log("net.dhcp_channel_failed", 0);
+            return 0;
+        }
+        if (!tes3x_net_start(0, 1))
+            return 0;
+        flags = tes3x_net_lock();
+        dhcp_discover();
+        tes3x_net_unlock(flags);
+        return 1;
+    }
+    p = net_address(address_text, &ip);
+    if (!p) {
+        tes3x_log("net.bad_address", 0);
+        return 0;
+    }
+    if (*p == '/') {
+        bits = 0;
+        for (p++; *p >= '0' && *p <= '9'; p++) bits = bits * 10 + (*p - '0');
+    }
+    if (*p || bits < 1 || bits > 30) {
+        tes3x_log("net.bad_address", 0);
+        return 0;
+    }
+    if (!tes3x_net_start(ip, 1))
+        return 0;
+    tes3x_net_set_mask(0xFFFFFFFFu << (32 - bits));
+    tes3x_net_announce();
+    return 1;
+#else
+    return tes3x_net.up != 0;
+#endif
+}
+
+u32 tes3x_net_gateway(void)
+{
+    return network_gateway;
+}
+
+void tes3x_net_set_gateway(u32 gateway) { network_gateway = gateway; }
+
 void tes3x_net_probe(u32 target)
 {
     u32 i, flags, rx = tes3x_net.rx, nobuf = tes3x_net.rx_nobuf, full = tes3x_net.tx_full;
@@ -674,11 +892,17 @@ void tes3x_net_stat(void)
 #ifdef TES3X_MULTIPLAYER
 void tes3x_multi_entry(void);
 #endif
+#ifdef TES3X_AGENT
+void tes3x_agent_entry(void);
+#endif
 
 void tes3x_net_entry(void)
 {
 #ifdef TES3X_MULTIPLAYER
     tes3x_multi_entry();
+#endif
+#ifdef TES3X_AGENT
+    tes3x_agent_entry();
 #endif
 }
 

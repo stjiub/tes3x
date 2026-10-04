@@ -106,6 +106,15 @@ The offset affects only the first-person bow and arms while an arrow or bolt is 
 The keys are read on the first frame of each launch, including the relaunch on New Game and Load.
 A server name is looked up at each launch and again whenever the server stops answering.
 
+## `agent`
+
+| key | values | default |
+|---|---|---|
+| `NetAgent` | the GUI host's IPv4 address, with `:PORT` if not `26501`, then `#FINGERPRINT` | empty - no in-game status or log connection |
+
+The fingerprint is the 32-character hexadecimal BLAKE2b fingerprint shown by the GUI. The game
+refuses a listener whose key does not match it.
+
 ## `data-overlay`
 
 | key | values | default |

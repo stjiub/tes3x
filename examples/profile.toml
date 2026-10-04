@@ -56,6 +56,7 @@ enable = [
     # "data-overlay",          # infrastructure: read missing files from [Xbox] OverlayBase
     # "net",                   # infrastructure: shared Xbox NIC, IPv4 and UDP foundation
     # "multiplayer",           # infrastructure: join a TES3X server set by [Xbox] NetAddress
+    # "agent",                # infrastructure: report live status and logs to the TES3X GUI
 ]
 
 # Patches the preset includes that you don't want, such as "console".

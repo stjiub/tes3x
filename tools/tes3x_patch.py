@@ -1885,6 +1885,15 @@ def _multiplayer(x, value, ctx):
     return [(None, 0, "multiplayer channel %s" % hooks["multiplayer"])]
 
 
+@patch("agent")
+def _agent(x, value, ctx):
+    """Connect to the authenticated TES3X GUI listener."""
+    hooks = ctx.get("hooks", {})
+    if not hooks.get("agent") or not hooks.get("net"):
+        raise PatchError("agent: needs `payload` first, built with tes3xagent.c and tes3xnet.c")
+    return [(None, 0, "in-game agent channel %s" % hooks["agent"])]
+
+
 PROFILE_LIST_SITES = 8
 
 

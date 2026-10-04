@@ -9,7 +9,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from tes3x_paths import check_paths, require_paths
 from tes3x_pack import write_invalidation
 from tes3x_build import materialize, plugin_masters
-from tes3x_pipeline import (PipelineError, copy_retail_root, link_or_copy, resolve_patch_plan,
+from tes3x_pipeline import (PipelineError, agent_setting, copy_retail_root, link_or_copy,
+                            resolve_patch_plan,
                             preference_flags, sanitized_command, stage_retail_base,
                             strip_retail_files, validate_local_config, validate_profile)
 from tes3x_pipeline import main as pipeline_main
@@ -359,6 +360,21 @@ class PipelinePlanTests(unittest.TestCase):
         self.assertEqual(plan['sources'], [
             'tes3xhook.c', 'tes3xlog.c', 'tes3xdiag.c', 'tes3xnet.c', 'tes3xmulti.c'
         ])
+
+    def test_agent_adds_network_foundation(self):
+        profile = {'patches': {'preset': 'minimal', 'enable': ['agent']}}
+        plan = resolve_patch_plan(profile)
+        self.assertEqual(plan['selected'], ['diagnostics', 'net', 'agent'])
+        self.assertEqual(plan['sources'], [
+            'tes3xhook.c', 'tes3xlog.c', 'tes3xdiag.c', 'tes3xnet.c', 'tes3xagent.c'
+        ])
+
+    def test_agent_setting_uses_xemu_gateway_and_persistent_key(self):
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as folder:
+            first = agent_setting(Path(folder), {'kind': 'xemu'})
+            second = agent_setting(Path(folder), {'kind': 'xemu'})
+            self.assertEqual(first, second)
+            self.assertRegex(first, r'^10\.0\.2\.2#[0-9a-f]{32}$')
 
     def test_recommended_selects_only_release_defaults(self):
         plan = resolve_patch_plan({'patches': {'preset': 'recommended'},

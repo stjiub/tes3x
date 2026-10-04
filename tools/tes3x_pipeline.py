@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import socket
 import time
 import subprocess
 import sys
@@ -21,6 +22,7 @@ from tes3x_pack import set_ini_key, write_invalidation
 import tes3x_patches as registry
 from tes3x_payload import PayloadError, build_payload, find_tool
 from tes3x_net import write_ghost_plugin
+from tes3x_agent import key_fingerprint, load_or_create_key
 from tes3x_paths import DEFAULT_REMOTE_ROOT, require_paths
 import tes3x_savepool
 import tes3x_targets
@@ -47,6 +49,7 @@ SOURCE_DEPENDENCIES = {
     "tes3xinfoarena.c": ("tes3xpager.c",),
     "tes3xmwse.c": ("tes3xconsole.c",),
     "tes3xmulti.c": ("tes3xnet.c",),
+    "tes3xagent.c": ("tes3xnet.c",),
 }
 CATEGORIES = set(registry.CATEGORIES)
 PRESETS = ("minimal", "recommended", "testing")
@@ -576,6 +579,29 @@ def ini_override(items, wanted_section, wanted_key):
     return None
 
 
+def agent_setting(base, target):
+    """NetAgent for the selected target and the GUI identity beside the local config."""
+    if not target:
+        raise PipelineError("the agent patch needs a selected target or an explicit "
+                            "Xbox:NetAgent INI value")
+    if target.get("kind") == "xemu":
+        host = "10.0.2.2"
+    else:
+        destination = target.get("host")
+        if not destination:
+            raise PipelineError("the agent patch needs the selected Xbox target's host")
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            probe.connect((destination, 9))
+            host = probe.getsockname()[0]
+        except OSError as exc:
+            raise PipelineError(f"cannot find this PC's address for {destination}: {exc}") from exc
+        finally:
+            probe.close()
+    secret = load_or_create_key(base / "tes3x.agent.key")
+    return f"{host}#{key_fingerprint(secret)}"
+
+
 def dashboard_xml(title, folder, title_id=tes3x_savepool.SHARED_ID):
     """XBMC4Gamers lists a game by _resources/default.xml; the XBE title is only its fallback."""
     return ("<synopsis>\n"
@@ -808,6 +834,8 @@ def main(argv=None):
             if pool_name else None)
     dashboards = dashboard_list(profile)
     ini_items = [f"{k}={v}" for k, v in profile.get("ini", {}).items()] + args.ini_set
+    if "agent" in plan["applied"] and ini_override(ini_items, "Xbox", "NetAgent") is None:
+        ini_items.append("Xbox:NetAgent=" + agent_setting(base, target))
     overlay_base = ini_override(ini_items, "Xbox", "OverlayBase")
     if install_layout == "overlay":
         overlay_base = overlay_base or deploy.get("retail_root")

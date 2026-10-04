@@ -866,6 +866,7 @@ static void dhcp_bind(u32 ip, u32 mask, u32 router, u32 dns, u32 lease)
     net.mask = mask ? mask : 0xFFFFFF00u;
     if (!dhcp.keep_gateway)
         ses.gateway = router;
+    tes3x_net_set_gateway(ses.gateway);
     if (!dhcp.keep_dns)
         ses.dns = dns ? dns : ses.gateway;
     if (!lease || lease > 7 * 86400u)
@@ -1522,6 +1523,7 @@ static void command_up(const char *text)
         ses.server = server;
         ses.port = port;
         ses.gateway = gateway;
+        tes3x_net_set_gateway(gateway);
         ses.dns = dns;
         copy((u8 *)ses.host, (const u8 *)host, HOST_NAME);
         handshake_reset();
@@ -1554,6 +1556,7 @@ static void command_up(const char *text)
         dhcp.keep_gateway = gateway != 0;
         dhcp.keep_dns = dns != 0;
         ses.gateway = gateway;
+        tes3x_net_set_gateway(gateway);
         ses.dns = dns;
         dhcp_discover();
     }

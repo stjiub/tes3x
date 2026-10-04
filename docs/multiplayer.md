@@ -137,7 +137,7 @@ impostor on its first join.
 
 The server takes admin commands typed at its own window, or from the same PC with
 `python tools/tes3x_net.py admin COMMAND` (the server listens for them on `127.0.0.1` only, at
-`--admin-port`, by default the game port plus one; `--admin-port 0` turns that off):
+`--admin-port`, by default `26502`; `--admin-port 0` turns that off):
 
 | Command | Does |
 |---|---|

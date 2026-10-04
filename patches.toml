@@ -415,6 +415,18 @@ ini = { NetServer = "", NetPassword = "" }
 summary = "Join a TES3X server from [Xbox] NetAddress and exchange player states every frame."
 
 [[patch]]
+name = "agent"
+title = "In-game agent"
+bit = 33
+category = "infrastructure"
+channel = "dev"
+selection = "preset"
+source = "tes3xagent.c"
+requires = ["net"]
+ini = { NetAgent = "" }
+summary = "Report live game status and logs to the authenticated TES3X GUI listener."
+
+[[patch]]
 name = "video-arena"
 title = "Expanded-memory video arena"
 bit = 17

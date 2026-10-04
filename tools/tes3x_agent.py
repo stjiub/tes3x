@@ -1,5 +1,6 @@
 """Authenticated UDP listener for the in-game TES3X agent."""
 
+import argparse
 from dataclasses import dataclass
 import os
 from pathlib import Path
@@ -209,3 +210,43 @@ class AgentListener(threading.Thread):
         self.socket.close()
         if self.is_alive():
             self.join(1)
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--key", default="tes3x.agent.key",
+                    help="raw X25519 secret (default: tes3x.agent.key)")
+    ap.add_argument("--bind", default="0.0.0.0")
+    ap.add_argument("--port", type=int, default=PORT)
+    ap.add_argument("--duration", type=float, help="stop after this many seconds")
+    args = ap.parse_args(argv)
+    secret = load_or_create_key(args.key)
+    started = time.monotonic()
+
+    def report(event):
+        payload = event.get("payload", b"")
+        if event["kind"] == "heartbeat" and len(payload) >= 16:
+            now, frame, free, dropped = struct.unpack_from("<IIII", payload)
+            detail = f" time_us={now} frame_us={frame} free_kb={free} dropped={dropped}"
+        elif event["kind"] == "log":
+            detail = " " + payload.decode("cp1252", "replace")
+        else:
+            detail = f" bytes={len(payload)}"
+        print(f"{event['kind']} {event['address'][0]}:{event['address'][1]}"
+              f" session={event['session']:08x} gap={event.get('gap', 0)}{detail}", flush=True)
+
+    listener = AgentListener(secret, report, args.bind, args.port)
+    listener.start()
+    print(f"agent fingerprint {key_fingerprint(secret)}; listening on "
+          f"{listener.address[0]}:{listener.address[1]}", flush=True)
+    try:
+        while args.duration is None or time.monotonic() - started < args.duration:
+            time.sleep(0.25)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        listener.close()
+
+
+if __name__ == "__main__":
+    main()

@@ -133,7 +133,7 @@ NET_UI_ADDRESSES = (
 )
 INI_USERS = {"tes3xconsole.c", "tes3xrefs.c", "tes3xdiag.c", "tes3xsaves.c", "tes3xprof.c",
              "tes3xarena.c", "tes3xregion.c", "tes3xbowview.c", "tes3xnet.c",
-             "tes3xmulti.c"}
+             "tes3xmulti.c", "tes3xagent.c"}
 
 
 class PayloadError(RuntimeError):
@@ -581,6 +581,11 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         define("NET_DIVINE_MARKER", hexva(locate("divine-marker")))
         flags.append("-DTES3X_MULTIPLAYER")
         wanted["multiplayer"] = ("_tes3x_multi_frame",)
+    if "tes3xagent.c" in names:
+        if "tes3xnet.c" not in names:
+            raise PayloadError("tes3xagent.c requires tes3xnet.c")
+        flags.append("-DTES3X_AGENT")
+        wanted["agent"] = ("_tes3x_agent_entry",)
     if "tes3xinfoarena.c" in names:
         heap_allocate = hexva(locate("heap-allocate"))
         heap_free = hexva(locate("heap-free"))
