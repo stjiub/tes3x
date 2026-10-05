@@ -31,6 +31,13 @@
       "provenance": "flushes the buffer (0x00012F80) then fseeks unless the target lies inside the read buffer"
     },
     {
+      "va": "0x000166D0",
+      "name": "NiXBoxRenderer::create",
+      "confidence": "guess",
+      "provenance": "only caller of Direct3D_CreateDevice (0x00016908); fills D3DPRESENT_PARAMETERS at this+0x28C",
+      "note": "args (width, height, bpp, backBufferCount, flags, depthBits, refresh, interval); present Flags fixed at 1 (lockable back buffer): no progressive or widescreen bit"
+    },
+    {
       "va": "0x00030A40",
       "name": "SE::NI_CAMERA_FNADDR_LOOKATWORLDPOINT",
       "kind": "function",
@@ -462,6 +469,13 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_Game_clearTarget",
       "pc_va": "0x0041CD00"
+    },
+    {
+      "va": "0x00093B90",
+      "name": "Game::newRenderer",
+      "confidence": "matched",
+      "provenance": "strings 'Start NewRenderer', 'Could not create a new renderer!'",
+      "pc_va": "0x0041A700"
     },
     {
       "va": "0x000947E0",
@@ -2965,6 +2979,13 @@
       "pc_va": "0x004F4560"
     },
     {
+      "va": "0x001366B0",
+      "name": "RendererSettings::ctor",
+      "confidence": "guess",
+      "provenance": "vtable 0x00377008; base of Game::ctor's settings chain (0x00196E90, 0x0009E940)",
+      "note": "defaults: +8 width 640, +0xC height 480, +0x10 bpp 32, +0x14 back buffers 1; the only 640/480 immediates in .text are here"
+    },
+    {
       "va": "0x001367A0",
       "name": "ScriptCompiler::ctor",
       "kind": "function",
@@ -4413,6 +4434,13 @@
       "mwse": "TES3_InputController_keybindTest"
     },
     {
+      "va": "0x00196F10",
+      "name": "Game::createRenderer",
+      "confidence": "guess",
+      "provenance": "decompiled; passes this+8/+0xC as width/height to NiXBoxRenderer::create",
+      "note": "then SetFlickerFilter(5), SetSoftDisplayFilter(0)"
+    },
+    {
       "va": "0x00197710",
       "name": "ui::setAutoWidth",
       "kind": "function",
@@ -4642,6 +4670,13 @@
       "pc_va": "0x00595270"
     },
     {
+      "va": "0x001ACD40",
+      "name": "MenuController::isInventoryEnabled",
+      "confidence": "matched",
+      "provenance": "traced: +0x34 flag, or CharGenState -1",
+      "signature": "bool __thiscall isInventoryEnabled()"
+    },
+    {
       "va": "0x001AD020",
       "name": "ui::bringToFront",
       "confidence": "guess",
@@ -4767,6 +4802,12 @@
       "provenance": "exec nav drives the D-pad through it; join list focus (joinfail-c6)",
       "note": "direction 0xE up, 0xF down, 0x10 left, 0x11 right. With the focused element's NAV property for that direction set it only calls setFocus and returns: no over/leave events and no scrollToElement, which the search path does.",
       "signature": "void __cdecl navigate(int direction, char sound, char remember)"
+    },
+    {
+      "va": "0x001B13F0",
+      "name": "MenuController::ensureStatusMenus",
+      "confidence": "matched",
+      "provenance": "traced: from Game::Update; after chargen makes any of the HUD-tab menus (map, inventory, magic, stats) that is missing, each followed by 0x001FB4C0"
     },
     {
       "va": "0x001B1FB0",
@@ -4950,6 +4991,12 @@
       "pc_va": "0x005CD1B0"
     },
     {
+      "va": "0x001D7BE0",
+      "name": "MenuInventory::destroy",
+      "confidence": "verified",
+      "provenance": "traced: removes and frees MenuInventory if it exists; xemu beast-a8 saw it gone after MenuRaceSex::onOk"
+    },
+    {
       "va": "0x001D94F0",
       "name": "UI::UpdateInventoryWindowTitle",
       "kind": "function",
@@ -5012,6 +5059,13 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_UpdateInventoryTiles",
       "pc_va": "0x005CC910"
+    },
+    {
+      "va": "0x001DEC90",
+      "name": "MenuInventory::build",
+      "confidence": "verified",
+      "provenance": "traced: makes MenuInventory if missing and fills it; does nothing while the inventory menu is disabled; leaves it visible; xemu beast-a9",
+      "signature": "void __cdecl build()"
     },
     {
       "va": "0x001E34E0",
@@ -5165,6 +5219,13 @@
       "pc_va": "0x005F4E70"
     },
     {
+      "va": "0x001FB4C0",
+      "name": "MenuController::registerStatusMenu",
+      "confidence": "guess",
+      "provenance": "traced: called on each menu ensureStatusMenus makes, with event 0xFFFF8035; maps the menu id to a tab index",
+      "signature": "bool __cdecl registerStatusMenu(void* menu, int event, int data0, int data1, void* source)"
+    },
+    {
       "va": "0x001FC010",
       "name": "MenuName::build",
       "confidence": "matched",
@@ -5219,6 +5280,15 @@
       "provenance": "builds MenuOptions through 0x00200990; called by onDeath and the pad handler",
       "signature": "void __cdecl f(char skip)",
       "note": "The pad handler follows it with ui::requestMenuModeOn(MenuOptions id); called alone from an exec command it showed New, Load, Options, Exit over the game and a click on Exit did not reach onExitClick"
+    },
+    {
+      "va": "0x00206570",
+      "name": "MenuRaceSex::onOk",
+      "confidence": "verified",
+      "provenance": "same body as PC 0x0060B750; xemu rebuild-c4, beast-a9: rebuilt the player's model after an identity change",
+      "note": "Resets both player references' visual nodes, setupCameras, AI planner and collider, destroys MenuInventory, unequipAllItems then reevaluateEquipment (drops rings); leaves menu mode only while MenuController flags +0xAC is 0, then sets it",
+      "pc_va": "0x0060B750",
+      "signature": "bool __cdecl onOk(void* widget, int event, int data0, int data1, void* source)"
     },
     {
       "va": "0x002096B1",

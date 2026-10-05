@@ -118,7 +118,14 @@ const char *tes3x_console_text_now(void);
     !defined(TES3X_NET_PLAYER_DROP_SITES) || !defined(TES3X_NET_START_COMBAT)
 #error "define the TES3X_NET_ leveled creature spawn, its vtable slot and the actor functions"
 #endif
-#if !defined(TES3X_NET_FIND_RACE) || !defined(TES3X_NET_FIND_CLASS) ||     !defined(TES3X_NET_FIND_BIRTHSIGN) || !defined(TES3X_NET_ENGINE_ALLOCATE) ||     !defined(TES3X_NET_CLASS_NEW) || !defined(TES3X_NET_CLASS_SET_ID) ||     !defined(TES3X_NET_CLASS_DESCRIPTION) || !defined(TES3X_NET_CLASS_SET_DESCRIPTION) ||     !defined(TES3X_NET_LIST_APPEND) || !defined(TES3X_NET_GMST_TEXT)
+#if !defined(TES3X_NET_FIND_RACE) || !defined(TES3X_NET_FIND_CLASS) || \
+    !defined(TES3X_NET_FIND_BIRTHSIGN) || !defined(TES3X_NET_ENGINE_ALLOCATE) || \
+    !defined(TES3X_NET_CLASS_NEW) || !defined(TES3X_NET_CLASS_SET_ID) || \
+    !defined(TES3X_NET_CLASS_DESCRIPTION) || !defined(TES3X_NET_CLASS_SET_DESCRIPTION) || \
+    !defined(TES3X_NET_LIST_APPEND) || !defined(TES3X_NET_GMST_TEXT) || \
+    !defined(TES3X_NET_RACE_SEX_OK) || !defined(TES3X_NET_UNEQUIP_ITEM) || \
+    !defined(TES3X_NET_EQUIP_ITEM) || !defined(TES3X_NET_INVENTORY_BUILD) || \
+    !defined(TES3X_NET_MENU_TAB)
 #error "define the TES3X_NET_ record lookups and the class functions chargen uses"
 #endif
 
@@ -10101,9 +10108,29 @@ static void player_spells_scan(const u8 *npc, int send)
 /* Who the character is: sex, the class's attributes, specialisation and skills, then name, race,
  * head, hair, birthsign, class id and class name, each ending in zero. Applied, it turns whatever
  * the console runs into the kept character. Chargen's own class (NEWCLASSID_CHARGEN) lives only in
- * the save that made it, so a missing class is made as MenuCreateClass makes it. The model keeps
- * the head, hair, skin and skeleton it was built with until the next load: BodyPartManager sets
- * that base layer only when it is made, and updateForReference redoes only the equipment. */
+ * the save that made it, so a missing class is made as MenuCreateClass makes it. A new race, sex,
+ * head or hair needs the model rebuilt, since the BodyPartManager sets that base layer only when it
+ * is made: the race menu's OK does that for both views, with its chargen flag held set so it leaves
+ * menu mode alone. It destroys MenuInventory for the new race; the per-frame menu check would make
+ * it again and leave it on screen, so it is made here as that check makes it and hidden unless the
+ * world is in menu mode. It also unequips everything and lets the engine choose again, which drops
+ * rings, so what was worn is put back: extras through unequipItem, as unequipAllItems removes them,
+ * and the missing with their own item data through Actor::equipItem and the hands update, the
+ * branch of MobileActor::wearItem that does not go through the inventory menu (its player branch,
+ * like the Equip command, opens it). That does not keep a beast race out of footwear or a closed
+ * helmet, as the inventory does, so those stay off as MWSE's isUsableByBeasts decides; then both
+ * views take the equipment's body parts. */
+#define WORN_MAX 32u
+#define UI_EVENT_MENU_TAB 0xFFFF8035u /* what the per-frame menu check passes */
+#define RACE_FLAGS 0xD8
+#define RACE_BEAST 2u
+#define WEARABLE_PARTS 0x44 /* Armor, Clothing (PC +0x54): 7 x (part byte, -1 unused; male, female) */
+#define WEARABLE_PART_COUNT 7u
+#define PART_HEAD 0u
+#define PART_RIGHT_FOOT 15u
+#define PART_LEFT_FOOT 16u
+#define TAG_ARMO 0x4F4D5241u
+#define TAG_CLOT 0x544F4C43u
 #define IDENTITY_STRINGS 7u
 #define IDENTITY_STATS (1 + 13 * 4)
 #define IDENTITY_BODY (IDENTITY_STATS + IDENTITY_STRINGS * 32)
@@ -10118,10 +10145,13 @@ static void player_spells_scan(const u8 *npc, int send)
 #define CLASS_PLAYABLE 0x84
 #define CLASS_SIZE 0x94
 #define CUSTOM_CLASS_TEXT 0x327 /* the GMST chargen gives a made class as its description */
+#define PLAYER_FIRST_PERSON_REF 0x660
 #define PLAYER_FIRST_PERSON 0x664
 #define PLAYER_BIRTHSIGN 0x670
 #define OBJECT_SET_MODIFIED 0x14 /* vtable offsets */
 #define OBJECT_SET_NAME 0x10C
+#define MENUS_FLAGS 0x10 /* [WorldController+WORLD_MENUS]: chargen progress flags */
+#define FLAGS_RACE_DONE 0xAC
 #define LINK_RACE 0
 #define LINK_CLASS 4
 #define LINK_HEAD 12
@@ -10134,12 +10164,21 @@ typedef void(__attribute__((thiscall)) *fn_object_call)(void *object);
 typedef void(__attribute__((thiscall)) *fn_object_text)(void *object, const char *text);
 typedef void *(__attribute__((thiscall)) *fn_object_get)(void *object);
 typedef void(__attribute__((thiscall)) *fn_list_append)(void *list, void *item);
+typedef u8(__cdecl *fn_race_sex_ok)(void *widget, u32 event, u32 data0, u32 data1, void *source);
+typedef void(__cdecl *fn_inventory_build)(void);
+typedef u8(__cdecl *fn_menu_tab)(void *menu, u32 event, u32 data0, u32 data1, void *source);
+typedef void(__attribute__((thiscall)) *fn_menu_visible)(void *element, int on);
+typedef void *(__attribute__((thiscall)) *fn_equip_item)(void *actor, void *object, void *item_data,
+                                                         void **stack, void *mobile);
+typedef void *(__attribute__((thiscall)) *fn_unequip_item)(void *actor, void *object, int remove,
+                                                            void *mobile, int update_gui,
+                                                            void *item_data);
 typedef const char *(__attribute__((thiscall)) *fn_gmst_text)(void *game, u32 index);
 
 static u8 player_identity_sent[IDENTITY_BODY], player_identity_in[IDENTITY_BODY];
 static u32 player_identity_sent_length, player_identity_known, player_identity_in_length;
 static u32 player_identity_in_part, player_identity_out, player_identity_applied;
-static u32 player_classes_made;
+static u32 player_classes_made, player_models_rebuilt, player_worn_fixed;
 
 static void *records_ptr(void)
 {
@@ -10288,12 +10327,118 @@ static void sex_set(u8 *object, u32 female)
     *flags = (*flags & ~NPC_FEMALE) | (female ? NPC_FEMALE : 0);
 }
 
+/* The equipped stacks as (object, item data) pairs. */
+static u32 worn_read(const u8 *actor, void *worn[][2])
+{
+    const u8 *node = *(const u8 *const *)(actor + ACTOR_EQUIPMENT + 8), *stack;
+    u32 n = 0, guard;
+
+    for (guard = 0; plausible(node) && guard < 64 && n < WORN_MAX;
+         node = *(const u8 *const *)(node + 4), guard++)
+        if (plausible(stack = *(const u8 *const *)(node + 8)) &&
+            plausible(*(void *const *)stack)) {
+            worn[n][0] = *(void *const *)stack;
+            worn[n++][1] = *(void *const *)(stack + 4);
+        }
+    return n;
+}
+
+static int worn_has(void *worn[][2], u32 n, void *object, void *data)
+{
+    u32 i;
+
+    for (i = 0; i < n; i++)
+        if (worn[i][0] == object && worn[i][1] == data)
+            return 1;
+    return 0;
+}
+
+static int beast_can_wear(const u8 *object)
+{
+    u32 tag = *(const u32 *)(object + OBJECT_TYPE), i, part;
+
+    if (tag != TAG_ARMO && tag != TAG_CLOT)
+        return 1;
+    for (i = 0; i < WEARABLE_PART_COUNT; i++) {
+        part = object[WEARABLE_PARTS + 0xC * i];
+        if (part == PART_RIGHT_FOOT || part == PART_LEFT_FOOT ||
+            (tag == TAG_ARMO && part == PART_HEAD))
+            return 0;
+    }
+    return 1;
+}
+
+static void body_parts_update(u8 *ref)
+{
+    u8 *attachment;
+    u32 guard;
+
+    for (attachment = plausible(ref) ? *(u8 **)(ref + REF_ATTACHMENTS) : 0, guard = 0;
+         plausible(attachment) && guard < 32; attachment = *(u8 **)(attachment + 4), guard++)
+        if (*(u32 *)attachment == ATTACHMENT_BODY_PARTS) {
+            if (plausible(*(u8 **)(attachment + 8)))
+                ((fn_body_part_update)TES3X_NET_BODY_PART_UPDATE)(*(u8 **)(attachment + 8), ref);
+            return;
+        }
+}
+
+static void player_model_rebuild(u8 *ref, u8 *instance, u8 *mobile, const u8 *race)
+{
+    static void *before[WORN_MAX][2], *after[WORN_MAX][2];
+    u8 *world = *(u8 **)TES3X_NET_WORLD, *menus, *flags, done;
+    u32 n, m, i, fixed = player_worn_fixed, inventory_id;
+    void *inventory;
+
+    if (!plausible(world) || !plausible(menus = *(u8 **)(world + WORLD_MENUS)) ||
+        !plausible(flags = *(u8 **)(menus + MENUS_FLAGS)))
+        return;
+    n = worn_read(instance, before);
+    done = flags[FLAGS_RACE_DONE];
+    flags[FLAGS_RACE_DONE] = 1;
+    ((fn_race_sex_ok)TES3X_NET_RACE_SEX_OK)((void *)1, 0, 0, 0, 0);
+    flags[FLAGS_RACE_DONE] = done;
+    inventory_id = ((fn_ui_id)TES3X_NET_UI_ID)("MenuInventory");
+    if (!((fn_find_menu)TES3X_NET_FIND_MENU)(inventory_id)) {
+        ((fn_inventory_build)TES3X_NET_INVENTORY_BUILD)();
+        if ((inventory = ((fn_find_menu)TES3X_NET_FIND_MENU)(inventory_id)) != 0) {
+            ((fn_menu_tab)TES3X_NET_MENU_TAB)(inventory, UI_EVENT_MENU_TAB, 0, 0, 0);
+            if (!world[WORLD_MENU_MODE])
+                ((fn_menu_visible)TES3X_NET_SET_VISIBLE)(inventory, 0);
+        }
+    }
+    m = worn_read(instance, after);
+    for (i = 0; i < m; i++)
+        if (!worn_has(before, n, after[i][0], after[i][1])) {
+            ((fn_unequip_item)TES3X_NET_UNEQUIP_ITEM)(instance, after[i][0], 1, mobile, 0,
+                                                      after[i][1]);
+            log_text("net.player_unworn", object_id(after[i][0]));
+            player_worn_fixed++;
+        }
+    m = worn_read(instance, after);
+    for (i = 0; i < n; i++)
+        if (!worn_has(after, m, before[i][0], before[i][1])) {
+            if ((*(const u32 *)(race + RACE_FLAGS) & RACE_BEAST) && !beast_can_wear(before[i][0])) {
+                log_text("net.player_beast_bare", object_id(before[i][0]));
+                continue;
+            }
+            ((fn_equip_item)TES3X_NET_EQUIP_ITEM)(instance, before[i][0], before[i][1], 0, mobile);
+            ((fn_mobile_call)TES3X_NET_MOBILE_HANDS)(mobile);
+            log_text("net.player_rewear", object_id(before[i][0]));
+            player_worn_fixed++;
+        }
+    if (player_worn_fixed != fixed) {
+        body_parts_update(ref);
+        body_parts_update(*(u8 **)(mobile + PLAYER_FIRST_PERSON_REF));
+    }
+    player_models_rebuilt++;
+}
+
 static void player_identity_apply(u8 *ref, const u8 *body, u32 length)
 {
     const char *texts[IDENTITY_STRINGS];
     u8 *mobile = player_mobile(), *instance = *(u8 **)(ref + REF_BASE), *npc, *links, *first;
     u8 *race, *head, *hair, *sign = 0, *class_;
-    u32 off = IDENTITY_STATS, i, k, female = body[0] != 0;
+    u32 off = IDENTITY_STATS, i, k, female = body[0] != 0, looks;
 
     for (i = 0; i < IDENTITY_STRINGS; i++) {
         texts[i] = (const char *)body + off;
@@ -10318,6 +10463,9 @@ static void player_identity_apply(u8 *ref, const u8 *body, u32 length)
         log_text("net.player_identity_bad", texts[0]);
         return;
     }
+    looks = *(u8 **)(npc + NPC_RACE) != race || *(u8 **)(npc + NPC_HEAD) != head ||
+            *(u8 **)(npc + NPC_HAIR) != hair ||
+            ((*(const u32 *)(npc + NPC_FLAGS) & NPC_FEMALE) != 0) != female;
     if (!mapped(*(const char *const *)(npc + NPC_NAME)) ||
         !same_id(*(const char *const *)(npc + NPC_NAME), texts[0]))
         ((fn_object_text)vtable_slot(npc, OBJECT_SET_NAME))(npc, texts[0]);
@@ -10340,9 +10488,12 @@ static void player_identity_apply(u8 *ref, const u8 *body, u32 length)
     }
     if (sign)
         *(u8 **)(mobile + PLAYER_BIRTHSIGN) = sign;
+    if (looks)
+        player_model_rebuild(ref, instance, mobile, race);
     player_identity_applied++;
     log_text("net.player_identity", texts[0]);
     tes3x_log_hex3("net.player_class", player_classes_made, female, (u32)class_);
+    tes3x_log_hex3("net.player_model", looks, player_models_rebuilt, player_worn_fixed);
 }
 
 static void player_identity_event(u8 *ref, const struct event *e)

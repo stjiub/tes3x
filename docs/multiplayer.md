@@ -338,8 +338,7 @@ report from any two saves.
 - A console needs a save of its own to join. Over a kept character the server restores the
   inventory, level, attributes, skills, journal, current health, magicka and fatigue (health
   no lower than 1), the player's position and who the character is; active effects, topics and
-  factions come from the last save. A name, race, sex, head or hair restored over another
-  character's save shows on the player's model only from the next load.
+  factions come from the last save.
   Restoring only moves a
   quest forward, never back.
 - Items taken, objects a script disables, locks, and items

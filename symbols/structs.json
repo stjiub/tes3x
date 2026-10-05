@@ -30,6 +30,20 @@
       ]
     },
     {
+      "name": "TES3::Clothing",
+      "pc_valid_until": "0x30",
+      "note": "0x10 shorter than the PC by +0x44: the 7 wearable parts (part index byte, -1 unused; male, female BodyPart*) start at +0x44 (PC +0x54) and the slot is the byte at +0x98 (PC +0xA8). Clothing::setupBodyParts 0x000EF430; xemu beast-a9 read common_shoes_01's feet parts there."
+    },
+    {
+      "name": "TES3::Armor",
+      "pc_valid_until": "0x30",
+      "note": "The 7 wearable parts start at +0x44 (PC +0x54), as on Clothing; Armor::setupBodyParts 0x000F1E80 walks them from there."
+    },
+    {
+      "name": "TES3::Race",
+      "note": "Matches the PC at id (+0x10) and flags (+0xD8: 1 playable, 2 beast; xemu beast-a4 read 3 for Khajiit)."
+    },
+    {
       "name": "TES3::Class",
       "size": "0x94",
       "note": "Matches the PC: id[32] +0x10, name[32] +0x30, attributes[2] +0x50, specialization +0x58, skills[10] +0x5C, playable +0x84, description +0x8C. MenuCreateClass::create allocates 0x94 bytes for chargen's NEWCLASSID_CHARGEN (xemu identity-a2 made one the same way and the save wrote it)."

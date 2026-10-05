@@ -101,13 +101,17 @@ ACTOR_ADDRESSES = (
     ("LEVELED_LINK", 0x0012A370), ("ADD_MOB", 0x001840B0), ("SIMULATE", 0x00180630),
     ("START_COMBAT", 0x001629F0),
 )
-# What the player's identity is applied with: the record lookups, and what MenuCreateClass's OK
-# calls to make and list chargen's class.
+# What the player's identity is applied with: the record lookups, what MenuCreateClass's OK
+# calls to make and list chargen's class, MenuRaceSex's OK, which rebuilds the player's model, and
+# Actor::unequipItem and Actor::equipItem, to put back what that OK changes, and the per-frame menu
+# check's build of MenuInventory, which that OK destroys.
 IDENTITY_ADDRESSES = (
     ("FIND_RACE", 0x00105C10), ("FIND_CLASS", 0x00105D50), ("FIND_BIRTHSIGN", 0x00105CB0),
     ("ENGINE_ALLOCATE", 0x00011840), ("CLASS_NEW", 0x000EFEB0), ("CLASS_SET_ID", 0x000F01C0),
     ("CLASS_DESCRIPTION", 0x000FB790), ("CLASS_SET_DESCRIPTION", 0x000F0060),
-    ("LIST_APPEND", 0x000D5A60), ("GMST_TEXT", 0x0008BB50),
+    ("LIST_APPEND", 0x000D5A60), ("GMST_TEXT", 0x0008BB50), ("RACE_SEX_OK", 0x00206570),
+    ("UNEQUIP_ITEM", 0x000E6B90), ("EQUIP_ITEM", 0x000E7E90),
+    ("INVENTORY_BUILD", 0x001DEC90), ("MENU_TAB", 0x001FB4C0),
 )
 PLAYER_CONTROL = 0x001717E0  # PlayerAnimationController's update: look, controls, animation
 CONSOLE_ADDRESSES = (
