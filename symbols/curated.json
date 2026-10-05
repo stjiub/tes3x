@@ -1022,6 +1022,22 @@
       "note": "buffers and gate are never read again in this build"
     },
     {
+      "va": "0x000D2ED0",
+      "name": "FatalError",
+      "confidence": "verified",
+      "provenance": "xemu GDB 2026-10-04, Merged Objects.esp investigation",
+      "note": "Appends the message to t:\\Warnings.txt, shows 'The disc you are using may be dirty or damaged.'; with --direct-engine it relaunches the title.",
+      "signature": "void __cdecl FatalError(char * fmt, ...)"
+    },
+    {
+      "va": "0x000D2FD0",
+      "name": "DebugLog",
+      "confidence": "verified",
+      "provenance": "xemu GDB 2026-10-04, Merged Objects.esp investigation",
+      "note": "Empty on Xbox; messages such as 'Missing Masterfile: %s' are dropped.",
+      "signature": "void __cdecl DebugLog(char * fmt, ...)"
+    },
+    {
       "va": "0x000D48E0",
       "name": "Archive::ReadInvalidationList",
       "confidence": "verified",
@@ -2143,6 +2159,14 @@
       "pc_va": "0x004BA8D0"
     },
     {
+      "va": "0x001044E0",
+      "name": "TES3File::loadMastersRecursive",
+      "confidence": "matched",
+      "provenance": "xemu GDB 2026-10-04, Merged Objects.esp investigation; string 'Unable to find masterfile: %s'",
+      "note": "An unresolved MAST ends in FatalError, i.e. a relaunch loop before the menu.",
+      "pc_va": "0x004BB0B0"
+    },
+    {
       "va": "0x00104610",
       "name": "isSourcelessObject",
       "kind": "function",
@@ -2300,6 +2324,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_RecordsHandler_findClosestReferenceOfObject",
       "pc_va": "0x004B96F0"
+    },
+    {
+      "va": "0x0010CEA0",
+      "name": "NonDynamicData::findGameFiles",
+      "confidence": "matched",
+      "provenance": "xemu GDB 2026-10-04, Merged Objects.esp investigation; globs *.esm, *.esp, *.es?.map",
+      "note": "Registers every NtQueryDirectoryFile hit; that match skips names with a second dot (Ports Of Vvardenfell V1.6.ESP), so such plugins never load.",
+      "pc_va": "0x004BABE0"
     },
     {
       "va": "0x0010DCF0",
