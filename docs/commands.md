@@ -62,7 +62,7 @@ what each one is for and where it is explained; `--help` on any command lists it
 | command | job | see |
 |---|---|---|
 | `tes3x_net.py` | run a multiplayer server, administer it, and test the network driver | [multiplayer](multiplayer.md) |
-| `tes3x_agent.py` | listen for the in-game agent; run console lines, fetch files or reboot through it | [in-game agent](../patches/agent.md) |
+| `tes3x_agent.py` | listen for the in-game agent; run console lines, fetch files or reboot through it, and through the console manager write, list, rename and delete files and launch an XBE | [in-game agent](../patches/agent.md) |
 | `tes3x_menuart.py` | redraw the menu buttons multiplayer ships, in `assets/menu` (needs Pillow and numpy) | [multiplayer](multiplayer.md) |
 
 ## Reverse engineering

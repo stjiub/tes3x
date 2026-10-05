@@ -65,6 +65,9 @@ python tools/tes3x_xemu.py first-run profiles/my-build.toml --direct-engine --sk
 - `--add DISC=FILE` puts another file on the disc, such as a second program for the exec script's
   `launch` to start: `--add Tool/default.xbe=build/tool/bin/default.xbe` is
   `\Device\CdRom0\Tool\default.xbe`.
+- `--put DEST=SOURCE` copies a file or folder onto the run's `E:` drive, such as a build folder
+  for the console manager to find: `--put Games/Test=build/test-build` is `E:\Games\Test`.
+  `--deploy` with a folder holding only the manager boots the manager instead of the game.
 - Everything after `--` goes to the pipeline, such as `-- --preset minimal`.
 - `--help` lists the rest, including screenshots, saves, memory size and GDB.
 
