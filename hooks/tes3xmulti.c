@@ -10946,7 +10946,7 @@ static void weather_stat(void)
 #define UI_FONT 0x164      /* 0 the small Century Gothic, 1 the big one */
 #define UI_IMAGE_FLAG 0x87 /* cleared on each main menu image */
 #define MENU_ROW 0x32      /* a main menu button's height */
-#define MENU_ROWS 5        /* New, Load, Options, Join, Exit */
+#define MENU_ROWS 5        /* New, Load, Join, Options, Exit */
 #define SERVERS_SHOWN 8
 #define LIST_VISIBLE 4   /* rows the list's box shows; the rest scroll */
 #define LIST_ROW 32
@@ -10975,8 +10975,8 @@ typedef void(__cdecl *fn_set_focus)(void *widget, int on);
 typedef char(__cdecl *fn_ui_handler)(void *owner, u32 id, int d0, int d1, void *source);
 static const char *const button_states[3] = {"TES3X_normal", "TES3X_over", "TES3X_pressed"};
 static const char *const main_rows[MENU_ROWS] = {
-    "MenuOptions_New_container", "MenuOptions_Load_container", "MenuOptions_Options_container",
-    "TES3X_Join", "MenuOptions_Exit_container"};
+    "MenuOptions_New_container", "MenuOptions_Load_container", "TES3X_Join",
+    "MenuOptions_Options_container", "MenuOptions_Exit_container"};
 static const char *const server_rows[SERVERS_SHOWN] = {
     "TES3X_Server1", "TES3X_Server2", "TES3X_Server3", "TES3X_Server4",
     "TES3X_Server5", "TES3X_Server6", "TES3X_Server7", "TES3X_Server8"};
@@ -11509,7 +11509,7 @@ static void join_watch(u8 *menu)
 }
 
 /* The D-pad moves focus along NAV links without the events that light a button, so they are sent
- * here; on a server row the list scrolls to show it. */
+ * here, for the main column as well as the list; on a server row the list scrolls to show it. */
 static void list_follow(u8 *menu)
 {
     fn_trigger_event trigger = (fn_trigger_event)TES3X_NET_TRIGGER_EVENT;
@@ -11589,7 +11589,7 @@ static void join_frame(void)
     fn_ui_id ui_id = (fn_ui_id)TES3X_NET_UI_ID;
     fn_set_prop set = (fn_set_prop)TES3X_NET_SET_PROP;
     u16 up = *(const u16 *)TES3X_NET_NAV_UP_ID, down = *(const u16 *)TES3X_NET_NAV_DOWN_ID;
-    u8 *menu, *exit, *above, *column, *button, **begin, **end, **at;
+    u8 *menu, *exit, *options, *load, *column, *button, **begin, **end, **at;
     int chosen;
 
     if (player_reference())
@@ -11598,8 +11598,10 @@ static void join_frame(void)
         return;
     if (!plausible(button = menu_part(menu, "TES3X_Join"))) {
         exit = menu_part(menu, "MenuOptions_Exit_container");
-        above = menu_part(menu, "MenuOptions_Options_container");
-        if (!plausible(exit) || !plausible(column = *(u8 **)(exit + UI_PARENT)) ||
+        options = menu_part(menu, "MenuOptions_Options_container");
+        load = menu_part(menu, "MenuOptions_Load_container");
+        if (!plausible(exit) || !plausible(options) ||
+            !plausible(column = *(u8 **)(exit + UI_PARENT)) ||
             !plausible(button = menu_button(column, ui_id("TES3X_Join"), "menu_join",
                                             *(const int *)(exit + UI_WIDTH), join_click)))
             return;
@@ -11607,24 +11609,24 @@ static void join_frame(void)
         menu_height = *(const int *)(menu + UI_HEIGHT) + MENU_ROW;
         menu_width = *(const int *)(menu + UI_WIDTH);
         ((fn_set_size)TES3X_NET_SET_HEIGHT)(menu, (int)menu_height);
-        /* Join goes above Exit: the block was added last to its column's children */
+        /* Join goes above Options: the block was added last to its column's children */
         begin = *(u8 ***)(column + UI_CHILDREN);
         end = *(u8 ***)(column + UI_CHILDREN + 4);
         if (plausible(begin) && end > begin && end[-1] == button) {
-            for (at = end - 1; at > begin && at[-1] != exit; at--)
+            for (at = end - 1; at > begin && at[-1] != options; at--)
                 ;
             if (at > begin) {
-                for (at = end - 1; at[-1] != exit; at--)
+                for (at = end - 1; at[-1] != options; at--)
                     at[0] = at[-1];
                 at[0] = at[-1];
                 at[-1] = button;
             }
         }
-        set(button, down, (int)exit, UI_PROP_PTR);
-        set(exit, up, (int)button, UI_PROP_PTR);
-        if (plausible(above)) {
-            set(button, up, (int)above, UI_PROP_PTR);
-            set(above, down, (int)button, UI_PROP_PTR);
+        set(button, down, (int)options, UI_PROP_PTR);
+        set(options, up, (int)button, UI_PROP_PTR);
+        if (plausible(load)) {
+            set(button, up, (int)load, UI_PROP_PTR);
+            set(load, down, (int)button, UI_PROP_PTR);
         }
         servers_build(column, *(const int *)(exit + UI_WIDTH));
         servers_view = 0;
@@ -11638,8 +11640,7 @@ static void join_frame(void)
     join_watch(menu);
     if (typing)
         return;
-    if (servers_view)
-        list_follow(menu);
+    list_follow(menu);
     chosen = server_chosen;
     server_chosen = -1;
     if (chosen == SERVER_OPEN) {
