@@ -186,6 +186,20 @@ def has_file(image, directory, name):
         return any(e[0].lower() == name.lower() for e in fs.listdir(cluster))
 
 
+def put_tree(disk, source, dest):
+    """A host file or folder at E:/dest."""
+    parent, _, name = dest.replace("\\", "/").strip("/").rpartition("/")
+    if source.is_file():
+        make_dirs(disk, parent)
+        put_file(disk, source, parent, name)
+        return
+    for path in sorted(source.rglob("*")):
+        if path.is_file():
+            folder = "/".join([dest.strip("/"), *path.relative_to(source).parent.parts])
+            make_dirs(disk, folder)
+            put_file(disk, path, folder, path.name)
+
+
 def sha256_file(path):
     digest = hashlib.sha256()
     with open(path, "rb") as stream:
@@ -474,6 +488,11 @@ def main():
                     type=lambda v: tuple(v.split("=", 1)) if "=" in v else ap.error(
                         f"--add takes DISC=FILE, not {v}"),
                     help="put FILE on the disc at DISC, e.g. Manager/default.xbe (repeatable)")
+    ap.add_argument("--put", action="append", default=[], metavar="DEST=SOURCE",
+                    type=lambda v: tuple(v.split("=", 1)) if "=" in v else ap.error(
+                        f"--put takes DEST=SOURCE, not {v}"),
+                    help="put a file or folder on the run's E: drive at DEST, e.g. "
+                         "Games/Test=build/test-build (repeatable)")
     ap.add_argument("--save", action="append", default=[], metavar="FILE.ess",
                     help="put a save in the run's U:/TES3X folder (repeatable); a command file "
                          "loads it at boot with `@start load` and its path")
@@ -561,8 +580,8 @@ def main():
         ap.error(f"gdb not found: {GDB}; set gdb on the selected xemu target")
     if a.gdb_capture is not None and a.gdb_script:
         ap.error("--gdb-capture and --gdb-script both need the stub; pick one")
-    if a.disk and (a.exec or a.save or a.keep_disk):
-        ap.error("--exec, --save and --keep-disk apply to a fresh disk, not --disk")
+    if a.disk and (a.exec or a.save or a.put or a.keep_disk):
+        ap.error("--exec, --save, --put and --keep-disk apply to a fresh disk, not --disk")
     if a.net_nat and a.net_tunnel:
         ap.error("--net-nat and --net-tunnel are two backends for one NIC; pick one")
 
@@ -663,10 +682,12 @@ def main():
     # Copy-on-write over the clean disk: the run writes only what the guest changes.
     hdd = Path(a.disk).resolve() if a.disk else out / "hdd.qcow2"
     clusters = None
-    if a.exec or a.save or (pool_paths and not hdd.is_file()):
+    if a.exec or a.save or a.put or (pool_paths and not hdd.is_file()):
         with CowView(str(clean)) as disk:
             if a.exec:
                 put_file(disk, a.exec, "", "tes3xexec.txt")
+            for dest, source in a.put:
+                put_tree(disk, Path(source), dest)
             if pool_paths:
                 make_dirs(disk, udata)
             for path in pool_paths:
@@ -763,7 +784,7 @@ def main():
     else:
         print("  no hook log on the disk")
     for name, label in (("tes3xprof.bin", "profiler dump"), ("tes3xheap.bin", "heap census"),
-                        ("tes3xmem.bin", "memory census")):
+                        ("tes3xmem.bin", "memory census"), ("tes3xmgr.txt", "manager log")):
         data = read_file(str(hdd), name)
         if data:
             (out / name).write_bytes(data)
