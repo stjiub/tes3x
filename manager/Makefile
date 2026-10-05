@@ -5,5 +5,7 @@ SRCS = $(CURDIR)/main.c $(CURDIR)/builds.c $(CURDIR)/xbe.c $(CURDIR)/json.c \
 NXDK_DIR ?= $(CURDIR)/../../..
 NXDK_SDL = y
 NXDK_NET = y
+# nxdk sets no optimisation level, and the crypto and hashing are several times slower without one
+override CFLAGS += -O2
 
 include $(NXDK_DIR)/Makefile
