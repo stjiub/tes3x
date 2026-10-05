@@ -61,13 +61,19 @@ def build(source, out, defines=(), config=None):
     paths = local_paths(config)
     nxdk, bash = find_nxdk(paths), find_bash(paths)
     out = Path(out)
+    cflags = " ".join(f"-D{d}" for d in defines)
+    # make does not rebuild objects when only the flags changed
+    stamp = out / "build-flags.txt"
+    flags = cflags + "\n" + (Path(source) / "Makefile").read_text(encoding="utf-8")
+    if stamp.is_file() and stamp.read_text(encoding="utf-8") != flags:
+        for obj in [*out.rglob("*.obj"), *(out.parent / "hooks").glob("*.obj")]:
+            obj.unlink()
     shutil.copytree(source, out, dirs_exist_ok=True)
     hooks = Path(source).resolve().parent / "hooks"
     if hooks.is_dir():
         shutil.copytree(hooks, out.parent / "hooks", dirs_exist_ok=True,
                         ignore=lambda _dir, names: [n for n in names
                                                     if not n.endswith((".c", ".h"))])
-    cflags = " ".join(f"-D{d}" for d in defines)
     script = (f"export NXDK_DIR={posix(nxdk)}; eval $($NXDK_DIR/bin/activate -s); "
               f"cd {posix(out)} && make NXDK_DIR=$NXDK_DIR CFLAGS={shlex.quote(cflags)}")
     env = dict(os.environ, MSYSTEM="MINGW64", CHERE_INVOKING="1")
@@ -75,6 +81,7 @@ def build(source, out, defines=(), config=None):
     xbe = out / "bin" / "default.xbe"
     if result.returncode or not xbe.is_file():
         raise NxdkError(f"build failed in {out}")
+    stamp.write_text(flags, encoding="utf-8")
     return xbe
 
 
