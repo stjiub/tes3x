@@ -1497,7 +1497,8 @@
       "name": "Inventory::removeItemWithData",
       "kind": "function",
       "confidence": "verified",
-      "provenance": "mwse:TES3_Inventory_RemoveItemWithData; xemu loadstate-a5: swapped data and count left a data stack in place",
+      "provenance": "xemu loadstate-a5: swapped data and count left a data stack in place",
+      "mwse": "TES3_Inventory_RemoveItemWithData",
       "pc_va": "0x00499550",
       "note": "itemData comes before count. A stack whose data does not match is not removed; a mobile gets its encumbrance changed.",
       "signature": "void __thiscall removeItemWithData(TES3::MobileActor* mobile, TES3::Item* item, TES3::ItemData* itemData, int count, bool deleteStackData)"
