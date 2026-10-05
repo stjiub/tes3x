@@ -332,6 +332,13 @@ the kept one. The report goes beside the upload as `uploads/KEY/NAME.diff.txt`, 
 of state; neither save is kept as the character. `tes3x_ess.py --diff KEPT OTHER` makes the same
 report from any two saves.
 
+With `--load-state`, a console loading a character gets no save. The server sends the
+character's identity, inventory, worn items and last place as a small `char-*.t3c` file, and
+the console starts a New Game that becomes that character on the loading screen, in that place;
+the rest of the kept state follows once it joins. Everything the server does not keep yet
+(topics, factions, active effects) starts as in a new game, so this is for testing until it
+does. A character with no kept identity is still sent its save.
+
 ## Limits
 
 - Menus no longer pause the world while joined, and resting or waiting is refused.
