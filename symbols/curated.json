@@ -5278,7 +5278,7 @@
       "name": "Game::startNewGame",
       "confidence": "verified",
       "provenance": "xemu arrival-a2: swapping its [PreLoad] Cell 0 read changes the New Game start cell",
-      "note": "Loads each [PreLoad] Cell N, Cell 0 being the start; sets CharGenState 1 and runs global scripts. Multiplayer swaps Cell 0 at 0x001FFAA9 (NET_PRELOAD_SITE)."
+      "note": "Loads each [PreLoad] Cell N, Cell 0 being the start; sets CharGenState 1 and runs global scripts. Multiplayer swaps Cell 0 at 0x001FFAA9 (NET_PRELOAD_SITE). At that read the player's reference, mobile and scene node already exist (built from the default record); records written there need MenuRaceSex::onOk to rebuild the body, which works there (xemu preload-a6)."
     },
     {
       "va": "0x00200990",
