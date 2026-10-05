@@ -1,27 +1,18 @@
 /* Cross-folder launch probe: logs the launch data it was started with to E:\tes3xmgr.txt, then
- * starts TARGET with the engine's New Game launch data and JOIN_MAGIC naming SERVER. On its
- * VISITS-th start it turns the console off instead, which ends an unattended run. */
+ * starts the target with the engine's New Game launch data and JOIN_MAGIC naming the server. On
+ * its last visit it powers off or reboots to the dashboard instead, which ends an unattended run.
+ * D:\probe.txt may set target=, server=, visits= and end=reboot. */
 
 #include <hal/xbox.h>
 #include <nxdk/mount.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <xboxkrnl/xboxkrnl.h>
 
-#ifndef TARGET
-#define TARGET "\\Device\\CdRom0\\default.xbe"
-#endif
-#ifndef SERVER
-#define SERVER "10.0.2.2"
-#endif
-#ifndef TARGET_TITLE
 #define TARGET_TITLE 0x42530005u
-#endif
-#ifndef VISITS
-#define VISITS 2
-#endif
-
 #define LOG_PATH "E:\\tes3xmgr.txt"
+#define CONFIG_PATH "D:\\probe.txt"
 #define LAUNCH_PAGE 0x1000
 
 /* The engine's relaunch data (tes3xmulti.c): magic, pad port, -, mode, save path, then a join. */
@@ -31,6 +22,35 @@
 #define JOIN_AT 0x110u
 
 static FILE *out;
+static char target[260] = "\\Device\\CdRom0\\default.xbe";
+static char server[64] = "10.0.2.2";
+static int last_visit = 2, end_reboot;
+
+static void config(void)
+{
+    char line[300], *value;
+    size_t n;
+    FILE *f = fopen(CONFIG_PATH, "r");
+
+    if (!f)
+        return;
+    while (fgets(line, sizeof(line), f)) {
+        n = strcspn(line, "\r\n");
+        line[n] = 0;
+        if (!(value = strchr(line, '=')))
+            continue;
+        *value++ = 0;
+        if (!strcmp(line, "target") && strlen(value) < sizeof(target))
+            strcpy(target, value);
+        else if (!strcmp(line, "server") && strlen(value) < sizeof(server))
+            strcpy(server, value);
+        else if (!strcmp(line, "visits"))
+            last_visit = atoi(value);
+        else if (!strcmp(line, "end"))
+            end_reboot = !strcmp(value, "reboot");
+    }
+    fclose(f);
+}
 
 static int visits(void)
 {
@@ -93,24 +113,27 @@ int main(void)
     int n;
 
     nxMountDrive('E', "\\Device\\Harddisk0\\Partition1\\");
+    config();
     n = visits() + 1;
     out = fopen(LOG_PATH, "a");
     if (!out)
         return 1;
     fprintf(out, "visit %d\n", n);
     log_page(LaunchDataPage);
-    if (n >= VISITS) {
-        fprintf(out, "shutdown\n");
+    if (n >= last_visit) {
+        fprintf(out, end_reboot ? "reboot\n" : "shutdown\n");
         fclose(out);
+        if (end_reboot)
+            HalReturnToFirmware(HalRebootRoutine);
         HalInitiateShutdown();
         return 0;
     }
     ((unsigned *)data)[0] = BXWM_MAGIC;
     ((unsigned *)data)[3] = BXWM_NEW_GAME;
     *(unsigned *)(data + JOIN_AT) = JOIN_MAGIC;
-    strcpy((char *)data + JOIN_AT + 4, SERVER);
-    fprintf(out, "launch %s join %s\n", TARGET, SERVER);
+    strcpy((char *)data + JOIN_AT + 4, server);
+    fprintf(out, "launch %s join %s\n", target, server);
     fclose(out);
-    launch(TARGET, data, sizeof(data));
+    launch(target, data, sizeof(data));
     return 1;
 }
