@@ -24,7 +24,9 @@ target editor writes the same keys, all of which you supply yourself.
 
 Different targets can select different xemu versions, firmware, clean disks and guest memory.
 Use `--target NAME`, or pass `--ram 64|128` for one run. A 128 MB target uses `bios_128mb` and
-clears the XBE's `Limit64MB` flag in the staged copy. The former shared `[xemu]` table is still
+clears the XBE's `Limit64MB` flag in the staged copy. `--video 480i|480p|720p` boots a run with that
+dashboard HDTV setting written into its copy of the EEPROM, on xemu's HDTV AV pack, and shows the
+picture at the shape the game draws it; it needs an `eeprom`. The former shared `[xemu]` table is still
 read as fallback defaults for older local configurations.
 
 ## Playing from the GUI

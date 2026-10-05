@@ -794,14 +794,6 @@ summary = "Repair item fixes"
 reason = "Low fatigue improves repair chance instead of reducing it; bound items can be repaired."
 
 [[candidate]]
-name = "mcp-94"
-origin = { source = "MCP", id = "94" }
-status = "not-applicable"
-priority = "none"
-summary = "Book and scroll scaling fix"
-reason = "Scales books to wide and multi-monitor PC screens; the Xbox has one fixed output mode."
-
-[[candidate]]
 name = "mcp-95"
 origin = { source = "MCP", id = "95" }
 category = "compat"

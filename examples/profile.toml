@@ -40,6 +40,7 @@ enable = [
     # "mcp-125",               # core: initialize scripts and collision for actors moved by Position
     # "dxt5-size",             # core: allocate DXT5 textures at their real size
     # "mcp-102",               # correctness: reactivate script-triggered objects after their mod is removed
+    # "mcp-94",                # correctness: scale books, the journal and scrolls by screen height
     # "script-ext",            # compat: add script opcodes
     # "mwse-legacy",           # compat: run legacy MWSE 0.9.4 script bytecode
     # "video-arena",           # compat: more video memory on a 128 MB Xbox
@@ -49,6 +50,7 @@ enable = [
     # "loop-sleeps",           # performance: save and load without forced 1 ms sleeps
     # "mcp-146",                # qol: remove a fully nocked arrow with Ready Weapon
     # "bow-view",               # qol: lower the first-person bow and arms while an arrow is nocked
+    # "video-mode",            # qol: 720p output when the dashboard allows it (128 MB advised)
     # "rotating-autosaves",    # qol: rotate autosaves through several slots
     # "transition-autosaves",  # qol: autosave before doors, teleports and travel
     # "console",               # qol: in-game console (already in testing)

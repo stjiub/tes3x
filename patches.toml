@@ -391,6 +391,27 @@ ini = { BowViewOffsetZ = "-12" }
 summary = "Lower the first-person bow and arms while an arrow is nocked."
 
 [[patch]]
+name = "mcp-94"
+title = "Book and scroll scaling fix"
+origin = { source = "MCP", id = "94" }
+bit = 35
+category = "correctness"
+channel = "dev"
+selection = "preset"
+summary = "Scale books, the journal and scrolls by screen height, so they fit a widescreen picture."
+
+[[patch]]
+name = "video-mode"
+title = "720p video output"
+bit = 34
+category = "qol"
+channel = "dev"
+selection = "preset"
+source = "tes3xvideo.c"
+requires = ["mcp-94"]
+summary = "Render at 1280x720 and output 720p when the dashboard and an HD AV pack allow it."
+
+[[patch]]
 name = "net"
 title = "Xbox network foundation"
 bit = 32

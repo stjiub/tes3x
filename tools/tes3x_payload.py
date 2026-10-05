@@ -746,6 +746,19 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         print(f"bow-view hook: transform call {hexva(site)}, update {hexva(update)}")
         define("BOW_VIEW_UPDATE", hexva(update))
         wanted["bow_view"] = ("_tes3x_bow_view_hook",)
+    if "tes3xvideo.c" in names:
+        renderer_site, create_site, count, enum = locate("video-mode")
+        renderer = tes3x_inject.call_target(image, renderer_site)
+        create = tes3x_inject.call_target(image, create_site)
+        print(f"video-mode hook: renderer call {hexva(renderer_site)} -> {hexva(renderer)}, "
+              f"CreateDevice call {hexva(create_site)} -> {hexva(create)}, "
+              f"modes {hexva(count)}, {hexva(enum)}")
+        define("VIDEO_RENDERER_CREATE", hexva(renderer))
+        define("VIDEO_CREATE_DEVICE", hexva(create))
+        define("VIDEO_MODE_COUNT", hexva(count))
+        define("VIDEO_ENUM_MODES", hexva(enum))
+        wanted["video_renderer"] = ("_tes3x_video_renderer_hook",)
+        wanted["video_create"] = ("_tes3x_video_create_hook",)
     if "tes3xleanmenu.c" in names:
         site, tag, launch, no_reboot, preload, player = locate("lean-menu")
         load = tes3x_inject.call_target(image, site)

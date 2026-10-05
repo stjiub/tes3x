@@ -35,7 +35,7 @@
       "name": "NiXBoxRenderer::create",
       "confidence": "guess",
       "provenance": "only caller of Direct3D_CreateDevice (0x00016908); fills D3DPRESENT_PARAMETERS at this+0x28C",
-      "note": "args (width, height, bpp, backBufferCount, flags, depthBits, refresh, interval); present Flags fixed at 1 (lockable back buffer): no progressive or widescreen bit"
+      "note": "cdecl (width, height, bpp, backBufferCount, flags, depthBits, refresh, interval); present Flags fixed at 1 (lockable back buffer); video-mode hooks its call and the CreateDevice call"
     },
     {
       "va": "0x00030A40",
@@ -4858,6 +4858,14 @@
       "pc_va": "0x005A5620"
     },
     {
+      "va": "0x001BFAB0",
+      "name": "MenuBook::scaleToScreen",
+      "confidence": "guess",
+      "provenance": "called by ShowBookMenu and the journal opener; PC 'Book close' body matches",
+      "note": "scale = 640 / (viewWidth * 0.9); mcp-94 makes it 480 / (viewHeight * 0.9)",
+      "pc_va": "0x005AC520"
+    },
+    {
       "va": "0x001C1D00",
       "name": "ShowBookMenu",
       "kind": "function",
@@ -5066,6 +5074,12 @@
       "confidence": "verified",
       "provenance": "traced: makes MenuInventory if missing and fills it; does nothing while the inventory menu is disabled; leaves it visible; xemu beast-a9",
       "signature": "void __cdecl build()"
+    },
+    {
+      "va": "0x001E3190",
+      "name": "MenuJournal::open",
+      "confidence": "guess",
+      "provenance": "creates the journal menu; plays 'Book open'; calls MenuBook::scaleToScreen"
     },
     {
       "va": "0x001E34E0",
@@ -5578,6 +5592,13 @@
       "name": "D3DDevice_PersistDisplay?",
       "confidence": "guess",
       "provenance": "reads the D3D device (0x348D78); called right before every XLaunchNewImage"
+    },
+    {
+      "va": "0x00340A2B",
+      "name": "D3D::findDisplayMode",
+      "confidence": "guess",
+      "provenance": "decompiled; matches width, height, refresh and present flags against the mode table at 0x00345CC0",
+      "note": "with neither interlaced (0x20) nor progressive (0x40) asked, takes the first fitting entry; HDTV NTSC lists 640x480 progressive first, so retail gets 480p when the dashboard allows it"
     },
     {
       "va": "0x003C4F04",

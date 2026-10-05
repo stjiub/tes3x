@@ -410,14 +410,37 @@ def set_eeprom_mac(path, mac):
     Path(path).write_bytes(data)
 
 
-def xemu_config(bootrom, bios, eeprom, hdd, dvd, ram, net_tunnel=None, net_nat=False):
+# The dashboard's HDTV modes, as the user section of the EEPROM stores them.
+VIDEO_FLAGS = {"480i": 0, "480p": 0x80000, "720p": 0xA0000}
+
+
+def set_eeprom_video(path, flags):
+    """Write the user section's video flags and its checksum."""
+    data = bytearray(Path(path).read_bytes())
+    struct.pack_into("<I", data, 0x94, flags)
+    high = low = 0
+    for (word,) in struct.iter_unpack("<I", data[0x64:0xC0]):
+        total = (high << 32 | low) + word
+        high, low = total >> 32 & 0xFFFFFFFF, total & 0xFFFFFFFF
+    struct.pack_into("<I", data, 0x60, ~(high + low) & 0xFFFFFFFF)
+    Path(path).write_bytes(data)
+
+
+def xemu_config(bootrom, bios, eeprom, hdd, dvd, ram, net_tunnel=None, net_nat=False,
+                avpack=None):
     template = CONFIG.get("template")
     text = Path(template).read_text() if template else TEMPLATE
     for key, path in (("bootrom", bootrom), ("bios", bios), ("eeprom", eeprom), ("hdd", hdd),
                       ("dvd", dvd)):
         text = text.replace("{%s}" % key, Path(path).as_posix())
-    if ram != 64:
-        text += "\n[sys]\nmem_limit = '%d'\n" % ram
+    sys_keys = ["mem_limit = '%d'" % ram] if ram != 64 else []
+    if avpack:
+        sys_keys.append("avpack = '%s'" % avpack)
+    if sys_keys:
+        text += "\n[sys]\n" + "\n".join(sys_keys) + "\n"
+    if avpack:
+        # "auto" follows the dashboard's widescreen flag; show the frame the guest draws.
+        text += "\n[display.ui]\naspect_ratio = 'native'\n"
     if net_tunnel:
         text += ("\n[net]\nenable = true\nbackend = 'udp'\n\n[net.udp]\n"
                  "bind_addr = '127.0.0.1:%d'\nremote_addr = '127.0.0.1:%d'\n" % net_tunnel)
@@ -489,6 +512,9 @@ def main():
                          "the guest's MAC comes from the run name")
     ap.add_argument("--ram", type=int, choices=(64, 128),
                     help="guest RAM in MB; 128 also clears Limit64MB in the XBE it packs")
+    ap.add_argument("--video", choices=tuple(VIDEO_FLAGS),
+                    help="dashboard HDTV setting to boot with, on an HDTV AV pack "
+                         "(default: the configured EEPROM and xemu's AV pack)")
     a = ap.parse_args(argv)
     config_path = Path(a.config or Path.cwd() / "tes3x.local.toml").resolve()
     CONFIG_PATH = config_path
@@ -665,11 +691,15 @@ def main():
         elif a.net_nat:
             set_eeprom_mac(out / "eeprom.bin",
                            bytes([2, 0, 1]) + hashlib.sha256(a.name.encode()).digest()[:3])
+    if a.video:
+        if not CONFIG.get("eeprom"):
+            sys.exit("--video needs an eeprom in the xemu target")
+        set_eeprom_video(out / "eeprom.bin", VIDEO_FLAGS[a.video])
     bios = Path(a.bios).resolve() if a.bios else CONFIG["bios"]
     toml = out / "xemu.toml"
     tunnel = (a.net_tunnel + 1, a.net_tunnel) if a.net_tunnel else None
     toml.write_text(xemu_config(CONFIG["bootrom"], bios, out / "eeprom.bin", hdd, iso, a.ram,
-                                tunnel, a.net_nat))
+                                tunnel, a.net_nat, "hdtv" if a.video else None))
 
     t0 = time.time()
     with open(out / "xemu.out", "w") as so, open(out / "xemu.err", "w") as se:

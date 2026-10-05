@@ -785,6 +785,68 @@ BOW_VIEW_SIG = re.compile(
 )
 
 
+# Game::createRenderer passes its settings' width and height to NiXBoxRenderer::create, which
+# passes its present parameters to Direct3D_CreateDevice; the renderer's mode list asks D3D for
+# the mode count and each mode.
+VIDEO_RENDERER_SIG = re.compile(
+    rb"\x8b\x56\x08\x51\x8b\x4e\x0c\x50\x55\x51\x52(?P<site>\xe8....)\x83\xc4\x20\x8b\xf0\x6a\x05",
+    re.S,
+)
+VIDEO_CREATE_SIG = re.compile(
+    rb"\x8d\x4e\x70\x55\x89\x7e\x78\x89\xbe\x84\x02\x00\x00\x89\x54\x24\x14(?P<site>\xe8....)"
+    rb"\x3b\xc7\x5d",
+    re.S,
+)
+VIDEO_MODES_SIG = re.compile(
+    rb"\x8b\x07\x89\x44\x24\x0c(?P<count>\xe8....)\x8d\xb7\xe0\x00\x00\x00.{80,100}?"
+    rb"\x8d\x54\x24\x14\x52\x55(?P<enum>\xe8....)\x85\xc0\x75",
+    re.S,
+)
+
+
+# The book and journal scale helper and ShowScrollMenu divide 640.0 by viewWidth (+0x74); the
+# float after that 640.0 is 480.0.
+MCP94_SIGS = (
+    re.compile(rb"\x8b\x0d....(?P<view>\xdb\x41\x74)\x8b\x56\x38\x89\x54\x24\x10\x6a\x02"
+               rb"\xd8\x0d....\x8b\xc8\xd8\x3d(?P<base>....)", re.S),
+    re.compile(rb"\xa1....(?P<view>\xdb\x40\x74)\x8b\xbe\x90\x00\x00\x00\x8b\x4f\x30\x8b\x57\x38"
+               rb"\xd8\x3d(?P<base>....)", re.S),
+)
+
+
+def find_mcp94(x):
+    """The viewWidth reads and 640.0 operands of the book and scroll scales."""
+    data = bytes(x.data)
+    sites = []
+    for sig, what in zip(MCP94_SIGS, ("book", "scroll")):
+        hits = list(sig.finditer(data))
+        if len(hits) != 1:
+            raise PatchError("mcp-94: %d %s scale(s), expected 1" % (len(hits), what))
+        base = struct.unpack("<I", hits[0].group("base"))[0]
+        off = x.va_to_off(base)
+        if off is None or struct.unpack_from("<ff", data, off) != (640.0, 480.0):
+            raise PatchError("mcp-94: %s scale does not divide 640.0 beside 480.0" % what)
+        sites.append((what, hits[0].start("view") + 2, hits[0].start("base"), base))
+    return sites
+
+
+def find_video_mode(x):
+    """The renderer and CreateDevice calls, and the D3D mode count and enumeration functions."""
+    data = bytes(x.data)
+    renderer = list(VIDEO_RENDERER_SIG.finditer(data))
+    create = list(VIDEO_CREATE_SIG.finditer(data))
+    modes = list(VIDEO_MODES_SIG.finditer(data))
+    if len(renderer) != 1 or len(create) != 1 or len(modes) != 1:
+        raise PatchError("video-mode: found %d renderer calls, %d CreateDevice calls and %d mode "
+                         "lists, expected 1" % (len(renderer), len(create), len(modes)))
+    sites = [x.off_to_va(m.start(g)) for m, g in ((renderer[0], "site"), (create[0], "site"),
+                                                  (modes[0], "count"), (modes[0], "enum"))]
+    if None in sites:
+        raise PatchError("video-mode: a call is outside any section")
+    return (sites[0], sites[1], tes3x_inject.call_target(x, sites[2]),
+            tes3x_inject.call_target(x, sites[3]))
+
+
 def find_mcp146(x):
     """The attacking/casting guard in MobilePlayer's Xbox input loop."""
     hits = list(MCP146_SIG.finditer(bytes(x.data)))
@@ -1489,6 +1551,34 @@ def _bow_view(x, value, ctx):
     was, off = x.patch_call(site, int(str(target), 16))
     return [(off, 5, "first-person transform 0x%08X: 0x%08X -> %s" %
              (site, was, target))]
+
+
+@patch("mcp-94")
+def _mcp_94(x, value, ctx):
+    """Scale books, the journal and scrolls by screen height instead of width."""
+    edits = []
+    for what, view_off, base_off, base in find_mcp94(x):
+        x.data[view_off] = 0x78
+        x.data[base_off:base_off + 4] = struct.pack("<I", base + 4)
+        edits.append((view_off, 1, "%s scale: viewWidth -> viewHeight" % what))
+        edits.append((base_off, 4, "%s scale: 640.0 -> 480.0" % what))
+    return edits
+
+
+@patch("video-mode")
+def _video_mode(x, value, ctx):
+    """Render and output 1280x720 when the dashboard and AV pack allow it."""
+    hooks = ctx.get("hooks", {})
+    if not all(hooks.get(k) for k in ("video_renderer", "video_create")):
+        raise PatchError("video-mode: needs `payload` first, with video_renderer and video_create "
+                         "hooks in its manifest")
+    found = find_video_mode(x)
+    edits = []
+    for site, key, what in ((found[0], "video_renderer", "NiXBoxRenderer::create"),
+                            (found[1], "video_create", "Direct3D_CreateDevice")):
+        was, off = x.patch_call(site, int(str(hooks[key]), 16))
+        edits.append((off, 5, "%s call 0x%08X: 0x%08X -> %s" % (what, site, was, hooks[key])))
+    return edits
 
 
 @patch("lean-menu")
@@ -2353,6 +2443,7 @@ LOCATORS = {
     "mcp-146-game": lambda image: find_mcp146_context(image)[2],
     "mcp-146-resume": lambda image: find_mcp146_context(image)[3],
     "bow-view": find_bow_view,
+    "video-mode": find_video_mode,
     "ref-index": lambda image: find_ref_index(image)[0],
     "ref-index-find": lambda image: find_ref_index(image)[1],
     "ref-index-scripts": lambda image: find_ref_index(image)[2],

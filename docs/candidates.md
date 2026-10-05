@@ -15,7 +15,7 @@ on, `low` for minor ones, and `none` for fixes we won't port.
 |---|---|
 | candidate | 190 |
 | deferred | 13 |
-| not-applicable | 16 |
+| not-applicable | 15 |
 | rejected | 2 |
 
 ## candidate
@@ -244,7 +244,6 @@ Targets PC-only code or behaviour; there is nothing to fix on the Xbox.
 | `mcp-39` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #39 | none | undecided | **Splash/title quality.** PC presentation path; solve Xbox assets directly if a real issue appears. |
 | `mcp-45` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #45 | none | qol | **Toggle sneak.** The Xbox controller path already toggles sneak on left-thumb click; MCP adds that behaviour to the PC key path. |
 | `mcp-82` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #82 | none |  | **Shortcut key improvements.** Keyboard shortcuts such as closing dialogue with the space bar; the Xbox has no keyboard in play. |
-| `mcp-94` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #94 | none |  | **Book and scroll scaling fix.** Scales books to wide and multi-monitor PC screens; the Xbox has one fixed output mode. |
 | `mcp-107` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #107 | none |  | **Don't loot on dispose.** Ctrl-click to dispose without looting. Needs a keyboard modifier; a controller version would be a new design. |
 | `mcp-136` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #136 | none | undecided | **Resolution options.** PC display-mode path; no direct Xbox value. |
 | `mcp-153` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #153 | none | undecided | **Mouse cursor movement.** PC mouse input path. |
