@@ -1754,7 +1754,8 @@ def zstr(text):
 
 CHARGEN_SOURCE = """Begin CharGen
 ; Morrowind.esm's, except that a New Game joining a server starts in TES3X Arrival (the payload
-; swaps [PreLoad] Cell 0) and stays there rather than going to the prison ship.
+; swaps [PreLoad] Cell 0) and stays there rather than going to the prison ship, and one started
+; from a kept character (serve --load-state) stays in that character's cell.
 DisablePlayerControls
 DisablePlayerJumping
 DisablePlayerViewSwitch
@@ -1763,7 +1764,7 @@ DisablePlayerFighting
 DisablePlayerMagic
 if ( GetPCCell "TES3X Arrival" == 1 )
 	Player->PositionCell 0, 0, 64, 0, "TES3X Arrival"
-else
+elseif ( GetPCCell "Imperial Prison Ship" == 1 )
 	Player->PositionCell 61, -135, 24, 340, "Imperial Prison Ship"
 	ChangeWeather "Bitter Coast Region" 1
 endif
@@ -1786,11 +1787,13 @@ def chargen_script():
         return (op(0x010C) + name("player") + op(0x1005) + struct.pack("<4f", x, y, z, angle)
                 + name(cell))
 
-    condition = b" X" + op(0x1112) + b" c" + name(ARRIVAL_CELL) + b" == 1"
+    def in_cell(cell):
+        return name((b" X" + op(0x1112) + b" c" + name(cell) + b" == 1").decode("latin-1"))
+
     data = b"".join(op(c) for c in (0x10DE, 0x1140, 0x10E3, 0x114C, 0x115A, 0x115D))
-    data += op(0x0106) + b"\x01" + name(condition.decode("latin-1"))
+    data += op(0x0106) + b"\x01" + in_cell(ARRIVAL_CELL)
     data += position_cell(0, 0, 64, 0, ARRIVAL_CELL)
-    data += op(0x0107) + b"\x02"
+    data += op(0x0108) + b"\x02" + in_cell("Imperial Prison Ship")
     data += position_cell(61, -135, 24, 340, "Imperial Prison Ship")
     data += op(0x1124) + name("Bitter Coast Region") + struct.pack("<h", 1)
     data += op(0x0109)
