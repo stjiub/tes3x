@@ -9,7 +9,7 @@ import tes3x_manifest as manifest
 
 
 class ManifestTests(unittest.TestCase):
-    def test_create_marks_what_a_server_may_hand_out(self):
+    def test_create_records_where_each_file_comes_from(self):
         with tempfile.TemporaryDirectory() as tmp:
             build, retail = Path(tmp, "build"), Path(tmp, "retail")
             for root in (build, retail):
@@ -20,9 +20,9 @@ class ManifestTests(unittest.TestCase):
             (build / "Morrowind.ini").write_bytes(b"ini")
             made = manifest.create(build, profile="p", source={"kind": "pipeline"},
                                    plugins=["mod.esp"], retail=retail)
-            self.assertEqual({path: entry["serve"] for path, entry in made["files"].items()}, {
-                "Data Files/Morrowind.bsa": False, "Data Files/mod.esp": True,
-                "Morrowind.ini": True, "default.xbe": False})
+            self.assertEqual({path: entry["origin"] for path, entry in made["files"].items()}, {
+                "Data Files/Morrowind.bsa": "retail", "Data Files/mod.esp": "build",
+                "Morrowind.ini": "build", "default.xbe": "xbe"})
             self.assertEqual(made["files"]["Data Files/mod.esp"]["sha256"],
                              hashlib.sha256(b"mod").hexdigest())
             self.assertEqual((made["format"], made["plugins"]), (manifest.FORMAT, ["mod.esp"]))

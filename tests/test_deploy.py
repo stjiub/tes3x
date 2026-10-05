@@ -180,7 +180,7 @@ class DeployFtpTests(unittest.TestCase):
             built = tes3x_manifest.create(root, profile="main", source={"kind": "pipeline"},
                                           plugins=["a.esp"])
             local = {"Data Files/a.esp": (6, 0, str(root / "Data Files" / "a.esp"))}
-            previous = {"files": {"default.xbe": {"size": 3, "sha256": "old", "serve": False},
+            previous = {"files": {"default.xbe": {"size": 3, "sha256": "old", "origin": "xbe"},
                                   "Morrowind.ini": {"size": 1, "sha1": "x"},
                                   "data files/A.esp": {"size": 1, "sha256": "stale"}}}
             out = deployed_manifest(built, {}, local, {"Data Files/a.esp": "new"}, previous)
@@ -188,8 +188,8 @@ class DeployFtpTests(unittest.TestCase):
             self.assertEqual(out["plugins"], ["a.esp"])
             self.assertIn("deployed", out)
             self.assertEqual(out["files"], {
-                "Data Files/a.esp": {"size": 6, "sha256": "new", "serve": True},
-                "default.xbe": {"size": 3, "sha256": "old", "serve": False},
+                "Data Files/a.esp": {"size": 6, "sha256": "new", "origin": "build"},
+                "default.xbe": {"size": 3, "sha256": "old", "origin": "xbe"},
                 "Morrowind.ini": {"size": 1, "sha1": "x"}})
             made = deployed_manifest(None, {"profile": "hand"}, local, {"Data Files/a.esp": "h"})
             self.assertEqual((made["profile"], made["source"], list(made["files"])),

@@ -37,8 +37,9 @@ Every game folder the pipeline stages carries `tes3xbuild.json`, which says what
 
 - the profile, where it came from (the TES3X revision and the profile's SHA-256) and the install
   layout;
-- every file, with its size, SHA-256 and whether it may be handed out by a server. XBEs and
-  byte copies of retail files may not: players rebuild those from their own retail copy;
+- every file, with its size, SHA-256 and origin: `xbe`, `retail` for a byte copy of a retail
+  file, or `build` for everything else. A server decides from the origin what it hands out;
+  players normally rebuild XBEs from their own retail copy;
 - the plugins in load order, the `Morrowind.ini` settings the build changed and the save pool;
 - for each XBE, the retail XBE it was made from, by its retail digest, the patches applied,
   the result's SHA-256 and the delta that rebuilds it.

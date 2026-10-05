@@ -63,23 +63,24 @@ def tree_files(root):
             and path.relative_to(root).as_posix().lower() != NAME}
 
 
-def servable(relative, path, retail=None):
-    """A server may hand this file out: not an XBE, which is rebuilt from the player's own
-    retail copy, and not a byte copy of a retail file."""
+def origin(relative, path, retail=None):
+    """Where a file comes from, for a server's policy on what it sends: "xbe" (rebuilt from the
+    player's own retail copy by its delta), "retail" (a byte copy of a retail file) or "build"."""
     if relative.lower().endswith(".xbe"):
-        return False
-    if retail is None:
-        return True
-    original = Path(retail) / relative
-    return not (original.is_file() and original.stat().st_size == path.stat().st_size
-                and filecmp.cmp(path, original, shallow=False))
+        return "xbe"
+    if retail is not None:
+        original = Path(retail) / relative
+        if (original.is_file() and original.stat().st_size == path.stat().st_size
+                and filecmp.cmp(path, original, shallow=False)):
+            return "retail"
+    return "build"
 
 
 def file_entries(root, retail=None):
-    """{path: {size, sha256, serve}} for a staged tree."""
+    """{path: {size, sha256, origin}} for a staged tree."""
     return {relative: {"size": path.stat().st_size,
                        "sha256": sha256_file(path),
-                       "serve": servable(relative, path, retail)}
+                       "origin": origin(relative, path, retail)}
             for relative, path in tree_files(root).items()}
 
 

@@ -100,8 +100,8 @@ def deployed_manifest(built, record, local, hashes, previous=None):
              if path.lower() not in sent}
     for r, (size, _, path) in local.items():
         entry = built_ci.get(r.lower())
-        serve = entry["serve"] if entry else tes3x_manifest.servable(r, Path(path))
-        files[r] = {"size": size, "sha256": hashes[r], "serve": serve}
+        kind = entry["origin"] if entry else tes3x_manifest.origin(r, Path(path))
+        files[r] = {"size": size, "sha256": hashes[r], "origin": kind}
     manifest = {key: value for key, value in built.items() if key != "files"}
     manifest["deployed"] = time.strftime("%Y-%m-%d %H:%M")
     manifest["files"] = dict(sorted(files.items(), key=lambda item: item[0].lower()))
