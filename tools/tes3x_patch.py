@@ -1,11 +1,13 @@
 """Apply content-located patches to a retail Morrowind XBE."""
 
 import argparse
+import hashlib
 import json
 import os
 import re
 import struct
 import sys
+from types import SimpleNamespace
 
 sys.path.insert(0, __file__.rsplit("\\", 1)[0].rsplit("/", 1)[0])
 import tes3x_inject  # noqa: E402
@@ -191,6 +193,27 @@ def _drive_letters(x, value, ctx):
         edits.append((off, 1, "inline %s:\\" % letter))
         x.data[off] = ord(letter)
     return edits
+
+
+# A scene copy of a retail image differs from it only by these edits. Making them, rather than
+# undoing them, is unambiguous: retail itself has `Data Files\%s` under both D: and Z:.
+SCENE_EDITS = (("boot-media", ""), ("drive-letters", "D"))
+
+
+def retail_digest(data):
+    """SHA-256 of an image with the scene's edits made, so retail and scene copies share it.
+
+    An image without the asset paths, such as the launcher, gets only the certificate edit."""
+    if data[:4] != b"XBEH":
+        raise ValueError("not an XBE")
+    x = SimpleNamespace(data=bytearray(data))
+    for name, value in SCENE_EDITS:
+        before = bytes(x.data)
+        try:
+            PATCHES[name][0](x, value, {})
+        except PatchError:
+            x.data[:] = before
+    return hashlib.sha256(x.data).hexdigest()
 
 
 @patch("save-staging")
@@ -2491,6 +2514,8 @@ def main():
     ap.add_argument("--list", action="store_true", help="list available patches and exit")
     ap.add_argument("--locate", choices=list(LOCATORS),
                     help="print a content-located engine address and exit")
+    ap.add_argument("--digest", action="store_true",
+                    help="print the image's retail digest, which a scene copy shares, and exit")
     a = ap.parse_args()
 
     if a.list or not a.xbe:
@@ -2511,6 +2536,9 @@ def main():
         seen.add(name)
 
     raw = open(a.xbe, "rb").read()
+    if a.digest:
+        print(retail_digest(raw))
+        return
     x = tes3x_inject.Xbe(raw)
     if a.locate:
         print("0x%08X" % LOCATORS[a.locate](x))

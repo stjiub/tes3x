@@ -1,4 +1,5 @@
 import re
+import struct
 import sys
 import tempfile
 import unittest
@@ -7,8 +8,8 @@ from unittest.mock import patch as mock_patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 import tes3x_patches as registry
-from tes3x_patch import (ALLOWED_PATCH_OVERLAPS, PATCHES as PATCHER, PatchError,
-                         _validate_patch_changes, main as patch_main)
+from tes3x_patch import (ALLOWED_PATCH_OVERLAPS, ASSET_PATHS, PATCHES as PATCHER, PatchError,
+                         _validate_patch_changes, main as patch_main, retail_digest)
 
 
 class RegistryTests(unittest.TestCase):
@@ -138,6 +139,32 @@ class PatchOwnershipTests(unittest.TestCase):
         with mock_patch.object(sys, "argv", argv):
             with self.assertRaisesRegex(SystemExit, "duplicate --apply 'boot-media'"):
                 patch_main()
+
+
+class RetailDigestTests(unittest.TestCase):
+    @staticmethod
+    def image(drive, media, region):
+        data = bytearray(b'XBEH' + bytes(0x300))
+        struct.pack_into('<II', data, 0x220, media, region)
+        data += b'\xC7\x44\x24\x0C' + drive + b':\\\x00'
+        for tail in ASSET_PATHS:
+            data += b'\x00' + drive + b':\\' + tail + b'\x00'
+        return bytes(data)
+
+    def test_retail_and_scene_copies_share_a_digest(self):
+        retail = self.image(b'Z', 2, 1)
+        scene = self.image(b'D', 0xC00001FF, 7)
+        self.assertNotEqual(retail, scene)
+        self.assertEqual(retail_digest(retail), retail_digest(scene))
+        self.assertNotEqual(retail_digest(retail), retail_digest(retail[:-1] + b'!'))
+
+    def test_an_image_without_asset_paths_gets_the_certificate_edit(self):
+        launcher = bytearray(b'XBEH' + bytes(0x300))
+        opened = bytearray(launcher)
+        struct.pack_into('<II', opened, 0x220, 0xC00001FF, 7)
+        self.assertEqual(retail_digest(bytes(launcher)), retail_digest(bytes(opened)))
+        with self.assertRaises(ValueError):
+            retail_digest(b'MZ')
 
 
 if __name__ == '__main__':

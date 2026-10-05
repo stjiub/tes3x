@@ -18,6 +18,7 @@ import tomllib
 from xml.sax.saxutils import escape
 
 from tes3x_pack import set_ini_key, write_invalidation
+from tes3x_patch import retail_digest
 import tes3x_patches as registry
 from tes3x_payload import PayloadError, build_payload, find_tool
 from tes3x_net import write_ghost_plugin
@@ -1148,12 +1149,14 @@ def main(argv=None):
         }
         if pool:
             record["save_pool"] = {"name": pool_name, "id": f"{pool:08X}"}
-        engine_recipe = {"retail": "morrowind.xbe", "retail_sha256": sha256_file(retail_xbe),
+        engine_recipe = {"retail": "morrowind.xbe",
+                         "retail_digest": retail_digest(retail_xbe.read_bytes()),
                          "patches": record["patches"]}
         if install_layout == "overlay":
             launcher_recipe = engine_recipe
         else:
-            launcher_recipe = {"retail": "Default.xbe", "retail_sha256": sha256_file(launcher),
+            launcher_recipe = {"retail": "Default.xbe",
+                               "retail_digest": retail_digest(launcher.read_bytes()),
                                "patches": launcher_specs}
         tes3x_manifest.write(staged, tes3x_manifest.create(
             staged, profile=profile_name, install_layout=install_layout,
