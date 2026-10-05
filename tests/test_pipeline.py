@@ -136,6 +136,14 @@ class PipelineTests(unittest.TestCase):
             validate_profile({'profile': {'name': 'p'}, 'plugins': {'order': ['a.esp']},
                               'rules': {'plugin_order': 'mlox'}})
 
+    def test_tes3merge_is_a_rule_with_a_local_tool_path(self):
+        validate_profile({'profile': {'name': 'p'}, 'rules': {'tes3merge': True}})
+        with self.assertRaises(PipelineError):
+            validate_profile({'profile': {'name': 'p'}, 'rules': {'tes3merge': 'yes'}})
+        validate_local_config({'paths': {'tes3merge': 'TES3Merge.exe'}})
+        with self.assertRaises(PipelineError):
+            validate_local_config({'paths': {'tes3merge': True}})
+
     def test_listed_order_keeps_masters_first_and_completes_the_list(self):
         built, vanilla = self.root / 'built', self.root / 'vanilla'
         built.mkdir()

@@ -69,6 +69,14 @@ in mod order. A profile can list its own order in `[plugins] order`; the GUI wri
 drag plugins or press **Sort**. With `rules.plugin_order = "mlox"`, mlox sorts them at build time.
 `tes3x_plugins.py` does the ordering.
 
+The Xbox never loads a plugin whose name has more than one dot, such as
+`Ports Of Vvardenfell V1.6.ESP`: the file is skipped without an error, and a plugin that needs it
+as a master makes the game restart before the main menu, over and over. Packing therefore ships
+such a plugin with its extra dots turned into underscores (`Ports Of Vvardenfell V1_6.ESP`) and
+points every plugin that names it as a master at the new name. The build prints each rename. Load
+order is unaffected, since it comes from file times. Plugins that were never loaded under the old
+name appear in no save.
+
 `tes3x_pack.py` then packages the tree with the retail files according to `package.mode`:
 `delta-bsa` (the default), `merged-bsa` or `loose`. See [packaging](packaging.md).
 
@@ -89,6 +97,24 @@ mlox runs on a copy of the build's plugins and never touches your library. Its c
 missing-requirement warnings are printed during the build. Everything it said, including notes,
 goes to `mlox-messages.txt` in the build folder, and the order it picked to `mlox-order.json`.
 Many notes are advice for the PC version and don't apply to the Xbox.
+
+### Conflict patch with TES3Merge
+
+With `tes3merge = true` in the profile's `[rules]` and `paths.tes3merge` pointing at
+`TES3Merge.exe`, the build runs [TES3Merge](https://github.com/NullCascade/TES3Merge) over its
+plugins in load order and ships the result, `Merged Objects.esp`, as the last plugin. TES3Merge
+combines the changes several mods make to the same record, so that the last-loaded mod no longer
+wins outright. It adds a plugin rather than replacing any. Its default fixes also apply: summoned
+creatures are flagged persistent, and cells with zero fog density get a small nonzero value.
+
+TES3Merge runs on a copy staged with the Xbox's own `Morrowind.esm`. Your library and any other
+Morrowind install are left alone. Its log stays in the build's `tes3merge` folder. Releases
+target .NET 6; the build lets a newer installed .NET runtime run it. When nothing conflicts,
+no patch is shipped.
+
+`python tools/tes3x_plugins.py merge TREE --vanilla "Data Files" --tool TES3Merge.exe --work DIR
+--out "Merged Objects.esp"` runs the same step alone; `--order` takes an order file from `order`
+or `arrange`.
 
 ## 4. Build the payload and patch the XBE
 

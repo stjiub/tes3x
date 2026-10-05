@@ -1,4 +1,5 @@
 import json
+import struct
 import subprocess
 import sys
 import tempfile
@@ -8,6 +9,8 @@ from pathlib import Path
 TOOLS = Path(__file__).resolve().parents[1] / 'tools'
 sys.path.insert(0, str(TOOLS))
 from tes3x_bsa import Bsa, write_bsa
+from tes3x_build import plugin_masters
+from tes3x_plugins import xbox_name, xbox_renames
 
 
 class LooseModTests(unittest.TestCase):
@@ -115,6 +118,38 @@ class LooseModTests(unittest.TestCase):
             self.assertEqual((out / 'Data Files' / rel).read_bytes(), rel.encode())
             self.assertFalse(delta.contains(rel.replace('/', '\\')))
         self.assertIn('TryArchiveFirst=0', (out / 'Morrowind.ini').read_text())
+
+    def test_plugin_with_two_dots_is_renamed_and_its_users_follow(self):
+        def plugin(name, masters):
+            hedr = b'HEDR' + struct.pack('<I', 300) + bytes(300)
+            mast = b''.join(b'MAST' + struct.pack('<I', len(m) + 1) + m.encode() + b'\0'
+                            + b'DATA' + struct.pack('<IQ', 8, 0) for m in masters)
+            head = hedr + mast
+            (self.tree / name).write_bytes(b'TES3' + struct.pack('<III', len(head), 0, 0) + head
+                                           + b'MISC' + struct.pack('<III', 4, 0, 0) + b'body')
+
+        plugin('Ports V1.6.ESP', ['Morrowind.esm'])
+        plugin('Patch.esp', ['Morrowind.esm', 'Ports V1.6.ESP'])
+        out = self.root / 'renamed'
+        self.pack(out, '--delta-archive', 'tes3xmods.bsa')
+        df = out / 'Data Files'
+        self.assertFalse((df / 'Ports V1.6.ESP').exists())
+        self.assertTrue((df / 'Ports V1_6.ESP').exists())
+        self.assertEqual(plugin_masters(str(df / 'Patch.esp')), ['Morrowind.esm', 'Ports V1_6.ESP'])
+        self.assertTrue((df / 'Patch.esp').read_bytes().endswith(b'MISC' + struct.pack('<III', 4, 0, 0)
+                                                                  + b'body'))
+        self.assertLess((df / 'Ports V1_6.ESP').stat().st_mtime, (df / 'Patch.esp').stat().st_mtime)
+
+
+class XboxNameTests(unittest.TestCase):
+    def test_only_extra_dots_change(self):
+        self.assertEqual(xbox_name('Better Clothes_v1.1.esp'), 'Better Clothes_v1_1.esp')
+        self.assertEqual(xbox_name('S.E.R.A.esp'), 'S_E_R_A.esp')
+        self.assertEqual(xbox_name('Morrowind.esm'), 'Morrowind.esm')
+
+    def test_a_clash_is_refused(self):
+        with self.assertRaises(ValueError):
+            xbox_renames(['Mod v1.1.esp', 'Mod v1_1.esp'])
 
 
 if __name__ == '__main__':

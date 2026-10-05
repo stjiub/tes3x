@@ -19,6 +19,7 @@ one in the TES3X folder. `--config PATH` picks another. Relative paths are relat
 | `mod_library` | string | none | Mod library root. A profile's `library` takes precedence. |
 | `profiles` | string | `profiles` | Folder the GUI lists profiles from. |
 | `mlox_rules` | string | downloaded | mlox's `mlox_base.txt`, for `rules.plugin_order = "mlox"`. Without it TES3X downloads the current rules on first use. |
+| `tes3merge` | string | none | `TES3Merge.exe`, for `rules.tes3merge = true`. |
 | `build_root` | string | `build` | Parent directory for profile output folders. |
 | `llvm` | string | `PATH` | Directory containing `clang` and `lld-link`. |
 | `hardlink_retail` | boolean | `false` | Hardlink unchanged retail files when source and output are on the same volume. |
@@ -167,6 +168,7 @@ overlay may still use delta archives, a merged archive or loose mod files.
 | `keep_assets` | array of strings | `[]` | Preserve matching assets during reachability pruning. |
 | `clear_cache_partitions` | boolean | `false` | Clear the Xbox X/Y/Z cache after a successful deployment. |
 | `plugin_order` | string | `mods` | `mods` loads plugins in mod order, or in `[plugins] order` when set; `mlox` sorts them with mlox. See [pipeline options](pipeline.md#sorting-plugins-with-mlox). |
+| `tes3merge` | boolean | `false` | Generate and ship TES3Merge's `Merged Objects.esp`; needs `paths.tes3merge`. See [conflict patch](pipeline.md#conflict-patch-with-tes3merge). |
 
 ### `[plugins]`
 

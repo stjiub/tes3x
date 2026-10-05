@@ -124,7 +124,7 @@ def validate_profile(profile):
 
     rules = table("rules")
     known(rules, {"max_texture_size", "max_filename", "convert_all_textures", "exclude",
-                  "keep_assets", "clear_cache_partitions", "plugin_order"}, "rules")
+                  "keep_assets", "clear_cache_partitions", "plugin_order", "tes3merge"}, "rules")
     if rules.get("plugin_order", "mods") not in {"mods", "mlox"}:
         raise PipelineError("rules.plugin_order must be 'mods' or 'mlox'")
     for key in ("max_texture_size", "max_filename"):
@@ -133,7 +133,7 @@ def validate_profile(profile):
             raise PipelineError(f"rules.{key} must be greater than zero")
     if rules.get("max_filename", 42) > 42:
         raise PipelineError("rules.max_filename cannot exceed the FATX limit of 42")
-    for key in ("convert_all_textures", "clear_cache_partitions"):
+    for key in ("convert_all_textures", "clear_cache_partitions", "tes3merge"):
         typed(rules, key, (bool,), "rules")
     string_list(rules.get("exclude"), "rules.exclude")
     string_list(rules.get("keep_assets"), "rules.keep_assets")
@@ -213,11 +213,11 @@ def validate_local_config(local):
 
     paths = local.get("paths", {})
     extra = set(paths) - {"vanilla_root", "mod_library", "build_root", "llvm", "hardlink_retail",
-                          "profiles", "mlox_rules", "pc_morrowind", "ghidra"}
+                          "profiles", "mlox_rules", "pc_morrowind", "ghidra", "tes3merge"}
     if extra:
         raise PipelineError("unknown paths keys: " + ", ".join(sorted(extra)))
     for key in ("vanilla_root", "mod_library", "build_root", "llvm", "profiles", "mlox_rules",
-                "pc_morrowind"):
+                "pc_morrowind", "tes3merge"):
         if key in paths and type(paths[key]) is not str:
             raise PipelineError(f"paths.{key} must be a string")
     if "hardlink_retail" in paths and type(paths["hardlink_retail"]) is not bool:
@@ -901,12 +901,16 @@ def main(argv=None):
                 and profile.get("rules", {}).get("plugin_order") == "mlox")
     listed_order = (plan["package_mode"] != "retail"
                     and profile.get("plugins", {}).get("order", []))
+    use_merge = (plan["package_mode"] != "retail"
+                 and profile.get("rules", {}).get("tes3merge", False))
     if plan["package_mode"] == "retail":
         print("mods: none; retail Data Files are staged unchanged")
     else:
         print(f"mods: {len(enabled_mods(profile))}, packed as {plan['package_mode']}")
         print("plugin order: " + ("mlox at build time" if use_mlox
                                   else "saved order" if listed_order else "mod order"))
+        if use_merge:
+            print("conflict patch: TES3Merge")
     print(f"output: {output}")
     print(f"install layout: {install_layout}"
           + (f"; retail base {overlay_base}" if install_layout == "overlay" else ""))
@@ -947,6 +951,11 @@ def main(argv=None):
         except RuntimeError as exc:
             raise PipelineError(str(exc)) from exc
         require_file(mlox_rules, "mlox rules")
+    if use_merge:
+        if not paths.get("tes3merge"):
+            raise PipelineError("rules.tes3merge needs paths.tes3merge, the TES3Merge.exe to run")
+        tes3merge = config_path(paths["tes3merge"], base).resolve()
+        require_file(tes3merge, "TES3Merge")
     if (args.deploy or args.dry_run) and (not deploy.get("host") or not remote):
         raise PipelineError("deployment requires an Xbox target with host and games_root")
 
@@ -1019,6 +1028,19 @@ def main(argv=None):
             run([sys.executable, TOOLS / "tes3x_plugins.py", "arrange", tree,
                  "--vanilla", data_files, "--order", listed,
                  "--work", work / "arrange", "--out", load_order])
+
+        if has_mods and use_merge:
+            merged = tree / "Merged Objects.esp"
+            merge_cmd = [sys.executable, TOOLS / "tes3x_plugins.py", "merge", tree,
+                         "--vanilla", data_files, "--tool", tes3merge,
+                         "--work", work / "tes3merge", "--out", merged]
+            if use_mlox or listed_order:
+                merge_cmd += ["--order", load_order]
+            run(merge_cmd)
+            if merged.is_file() and (use_mlox or listed_order):
+                order_record = json.loads(load_order.read_text(encoding="utf-8"))
+                order_record["plugins"].append(merged.name)
+                load_order.write_text(json.dumps(order_record, indent=2), encoding="utf-8")
 
         if has_mods:
             pack_cmd = [sys.executable, TOOLS / "tes3x_pack.py", tree,

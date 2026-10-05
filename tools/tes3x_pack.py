@@ -202,10 +202,17 @@ def main():
     if staged_loose:
         print(f"  {len(staged_loose)} assets staged loose, {len(invalidated)} replace retail entries")
 
-    # TES3Merge output hangs the Xbox loading screen indefinitely; keep it out of builds
-    for rel, _src in loose:
-        if os.path.basename(rel).lower() == 'merged objects.esp':
-            ap.error('Merged Objects.esp hangs the Xbox loading screen; remove it from the tree')
+    from tes3x_plugins import xbox_renames, rename_masters
+    is_plugin = lambda rel: rel.lower().endswith(('.esm', '.esp'))
+    try:
+        renames = xbox_renames([os.path.basename(rel) for rel, _ in loose if is_plugin(rel)])
+    except ValueError as error:
+        ap.error(str(error))
+    for old, new in renames.items():
+        print(f"  renaming plugin {old} -> {new}: the Xbox skips a name with two dots")
+    loose = [(os.path.join(os.path.dirname(rel), renames[os.path.basename(rel).lower()])
+              if is_plugin(rel) and os.path.basename(rel).lower() in renames else rel, full)
+             for rel, full in loose]
 
     seen = {}
     for rel, full in pack:
@@ -274,10 +281,14 @@ def main():
 
     from pathlib import Path
     from tes3x_plugins import validate_order, STAMP_BASE, STAMP_STEP
-    plugins = {Path(rel).name.lower(): Path(out_df) / rel for rel, _ in loose
-               if rel.lower().endswith(('.esm', '.esp'))}
+    plugins = {Path(rel).name.lower(): Path(out_df) / rel for rel, _ in loose if is_plugin(rel)}
+    if renames:
+        for path in plugins.values():
+            for old in rename_masters(path, renames):
+                print(f"    {path.name}: master {old} -> {renames[old.lower()]}")
     if args.load_order:
         names = json.loads(Path(args.load_order).read_text(encoding='utf-8'))['plugins']
+        names = [renames.get(name.lower(), name) for name in names]
     else:
         from tes3x_plugins import dependency_order
         names = dependency_order(plugins)

@@ -465,6 +465,8 @@ class LocalSettingsDialog(QDialog):
         self.fields["paths.mlox_rules"].setPlaceholderText(
             "Downloaded automatically when first needed")
         form.addRow("mlox rules (optional)", rules_row)
+        form.addRow("TES3Merge (optional)",
+                    self.browse_row("paths.tes3merge", values.get("tes3merge", ""), files=True))
         hardlink = QCheckBox("Hardlink unchanged retail files")
         hardlink.setChecked(values.get("hardlink_retail", False))
         self.fields["paths.hardlink_retail"] = hardlink
@@ -1675,6 +1677,7 @@ class BuildSettings(QWidget):
         self.max_filename = QSpinBox()
         self.max_filename.setRange(8, 42)
         self.clear_cache = QCheckBox("Clear the Xbox's X/Y/Z cache after deploying")
+        self.tes3merge = QCheckBox("Ship a TES3Merge conflict patch (needs TES3Merge in Paths)")
         self.keep_assets = QTextEdit()
         self.keep_assets.setPlaceholderText("Patterns pruning must keep, one per line")
         self.keep_assets.setMaximumHeight(60)
@@ -1689,6 +1692,7 @@ class BuildSettings(QWidget):
         form.addRow("", self.convert_all)
         form.addRow("Longest file name", self.max_filename)
         form.addRow("", self.clear_cache)
+        form.addRow("", self.tes3merge)
         form.addRow("Always keep", self.keep_assets)
         form.addRow("Leave out", self.exclude)
 
@@ -1715,7 +1719,8 @@ class BuildSettings(QWidget):
 
         for widget in (self.title, self.install_dir, self.archive_name):
             widget.textChanged.connect(self.changed)
-        for widget in (self.dashboard, self.archive_only, self.convert_all, self.clear_cache):
+        for widget in (self.dashboard, self.archive_only, self.convert_all, self.clear_cache,
+                       self.tes3merge):
             widget.toggled.connect(self.changed)
         for widget in (self.install_layout, self.mode, self.drive_letter, self.max_texture_size,
                        self.invert_look):
@@ -1779,6 +1784,7 @@ class BuildSettings(QWidget):
         self.convert_all.setChecked(rules.get("convert_all_textures", False))
         self.max_filename.setValue(rules.get("max_filename", 42))
         self.clear_cache.setChecked(rules.get("clear_cache_partitions", False))
+        self.tes3merge.setChecked(rules.get("tes3merge", False))
         self.keep_assets.setPlainText("\n".join(rules.get("keep_assets", [])))
         self.exclude.setPlainText("\n".join(rules.get("exclude", [])))
         self.select(self.invert_look, plain.get("preferences", {}).get("invert_look"))
@@ -1834,6 +1840,7 @@ class BuildSettings(QWidget):
         put("rules", "convert_all_textures", self.convert_all.isChecked(), False)
         put("rules", "max_filename", self.max_filename.value(), 42)
         put("rules", "clear_cache_partitions", self.clear_cache.isChecked(), False)
+        put("rules", "tes3merge", self.tes3merge.isChecked(), False)
         put("rules", "keep_assets", self.lines(self.keep_assets), [])
         put("rules", "exclude", self.lines(self.exclude) or None, None)
         put("preferences", "invert_look", self.invert_look.currentData(), None)

@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import struct
+import subprocess
 import sys
 import urllib.request
 from pathlib import Path
@@ -55,6 +56,49 @@ def dependency_order(files, mtime=True, preferred=()):
         placed.add(pick)
         remaining.discard(pick)
     return ordered
+
+
+def xbox_name(name):
+    """The name a plugin must ship under. The Xbox kernel's `*.esp` match skips a name with a
+    second dot, so `Mod V1.6.esp` would never load; the extra dots become underscores."""
+    stem, ext = os.path.splitext(name)
+    return stem.replace('.', '_') + ext
+
+
+def xbox_renames(names):
+    """Map each lower-case plugin name that cannot load on the Xbox to its shipping name."""
+    taken = {n.lower() for n in names}
+    renames = {}
+    for name in names:
+        new = xbox_name(name)
+        if new == name:
+            continue
+        if new.lower() in taken:
+            raise ValueError(f'{name}: renaming it to {new} would clash with another plugin')
+        taken.add(new.lower())
+        renames[name.lower()] = new
+    return renames
+
+
+def rename_masters(path, renames):
+    """Point a plugin's MAST entries at renamed masters; return the names it changed."""
+    data = Path(path).read_bytes()
+    if len(data) < 16 or data[:4] != b'TES3':
+        return []
+    size = struct.unpack_from('<I', data, 4)[0]
+    header, body = data[16:16 + size], bytearray()
+    changed = []
+    for tag, value in subrecords(header):
+        if tag == b'MAST':
+            old = value.split(b'\0')[0].decode('cp1252')
+            if old.lower() in renames:
+                value = renames[old.lower()].encode('cp1252') + b'\0'
+                changed.append(old)
+        body += tag + struct.pack('<I', len(value)) + value
+    if changed:
+        Path(path).write_bytes(data[:4] + struct.pack('<I', len(body)) + data[8:16] + body
+                               + data[16 + size:])
+    return changed
 
 
 def validate_order(names, files):
@@ -181,6 +225,52 @@ def run_order(built, vanilla, rules, work, output):
     print(f'mlox {mlox_version()}: sorted {len(names)} plugins; notes in {notes.name}')
 
 
+MERGED = 'Merged Objects.esp'
+
+
+def run_merge(built, vanilla, tool, work, output, order=None):
+    """Run TES3Merge over a built tree's plugins in load order; write its patch to output.
+    Return False when it found nothing to merge."""
+    work = Path(work).resolve()
+    work.mkdir(parents=True, exist_ok=False)
+    files = collect(built, vanilla, work / 'stubs')
+    if MERGED.lower() in files:
+        raise ValueError(f'{built} already holds {MERGED}')
+    names = validate_order(order or dependency_order(files), files)
+    install = work / 'install'
+    install.mkdir()
+    stage(files, names, install)
+    # TES3Merge requires Morrowind.bsa and recognises an install by Morrowind.exe; neither ships.
+    (install / 'Data Files' / 'Morrowind.bsa').write_bytes(struct.pack('<III', 0x100, 0, 0))
+    (install / 'Morrowind.exe').write_bytes(b'')
+    runner = install / 'TES3Merge'
+    runner.mkdir()
+    shutil.copy2(tool, runner / 'TES3Merge.exe')
+    ini = Path(tool).with_name('TES3Merge.ini')
+    text = ini.read_text(encoding='utf-8') if ini.is_file() else '[General]\n'
+    text = re.sub(r'(?m)^\s*PauseOnCompletion\s*=.*$', '', text)
+    (runner / 'TES3Merge.ini').write_text(
+        text.replace('[General]', '[General]\nPauseOnCompletion = false', 1), encoding='utf-8')
+    # Releases target .NET 6; let a newer runtime run them.
+    env = dict(os.environ, DOTNET_ROLL_FORWARD='Major')
+    result = subprocess.run([str(runner / 'TES3Merge.exe')], cwd=runner, env=env,
+                            stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                            errors='replace')
+    log = runner / 'TES3Merge.log'
+    output = Path(output)
+    merged = install / 'Data Files' / MERGED
+    if result.returncode or 'serious error' in result.stdout:
+        raise RuntimeError(f'TES3Merge failed (exit {result.returncode}); see {log}\n'
+                           f'{result.stdout[-2000:]}')
+    if not merged.is_file():
+        print('TES3Merge: no conflicts to merge')
+        return False
+    shutil.copyfile(merged, output)
+    count = sum(1 for tag, _flags, _data in records(merged) if tag != b'TES3')
+    print(f'TES3Merge: {count} merged records -> {output.name}')
+    return True
+
+
 def default_rules():
     return data_dir() / 'mlox' / 'mlox_base.txt'
 
@@ -228,6 +318,14 @@ if __name__ == '__main__':
     arrange.add_argument('--order', required=True, help='JSON array of plugin names')
     arrange.add_argument('--work', required=True, help='new isolated working directory')
     arrange.add_argument('--out', required=True)
+    merge = sub.add_parser('merge', help="write TES3Merge's patch for a built tree's plugins")
+    merge.add_argument('built')
+    merge.add_argument('--vanilla', required=True)
+    merge.add_argument('--tool', required=True, help='TES3Merge.exe')
+    merge.add_argument('--order', help="order JSON from 'order' or 'arrange' (default: masters, "
+                       'then file time)')
+    merge.add_argument('--work', required=True, help='new isolated working directory')
+    merge.add_argument('--out', required=True, help=f'where to write {MERGED}')
     fetch = sub.add_parser('fetch-rules', help='download the current mlox rules')
     fetch.add_argument('out', nargs='?', help="where to save mlox_base.txt (default: TES3X's copy)")
     args = ap.parse_args()
@@ -235,6 +333,13 @@ if __name__ == '__main__':
     if args.action == 'fetch-rules':
         out = args.out or default_rules()
         print(f'mlox rules: {fetch_rules(out)} bytes -> {out}')
+    elif args.action == 'merge':
+        order = (json.loads(Path(args.order).read_text(encoding='utf-8'))['plugins']
+                 if args.order else None)
+        try:
+            run_merge(args.built, args.vanilla, args.tool, args.work, args.out, order)
+        except (ValueError, RuntimeError) as exc:
+            sys.exit(str(exc))
     elif args.action == 'arrange':
         order = json.loads(Path(args.order).read_text(encoding='utf-8'))
         run_arrange(args.built, args.vanilla, order, args.work, args.out)

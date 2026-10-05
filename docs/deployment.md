@@ -94,6 +94,9 @@ drive letter). The build checks both before anything is uploaded. Names are neve
 automatically, since plugins and meshes refer to files by name. A shorter `games_root` helps with
 long paths but not with a single name that is too long. Names inside a BSA don't count.
 
+A plugin name may hold only one dot; the Xbox skips `Mod V1.6.esp`. Packing renames such plugins
+and the master references to them; see [ordering plugins](pipeline.md#3-order-plugins-and-pack).
+
 ## Verifying and discarding the build
 
 ```powershell
