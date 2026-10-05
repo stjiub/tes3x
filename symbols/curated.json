@@ -1320,6 +1320,23 @@
       "pc_va": "0x00486620"
     },
     {
+      "va": "0x000E2D60",
+      "name": "DataHandler::changeToInterior",
+      "confidence": "matched",
+      "provenance": "cellChangeWithCompanions and Game::startNewGame call it for an interior with a position",
+      "pc_va": "0x00489050",
+      "signature": "void __thiscall changeToInterior(TES3::Cell* cell, float* position)"
+    },
+    {
+      "va": "0x000E34A0",
+      "name": "DataHandler::changeToExterior",
+      "confidence": "matched",
+      "provenance": "cellChangeWithCompanions calls it for an exterior with the target position (e2d60 for an interior); xemu loadstate-a8",
+      "note": "Loads the exterior grid around position. Called from the [PreLoad] cell lookup (multiplayer --load-state), it starts New Game there with no second load.",
+      "pc_va": "0x004897E0",
+      "signature": "void __thiscall changeToExterior(float* position)"
+    },
+    {
       "va": "0x000E59B0",
       "name": "Archive::findFileHash",
       "kind": "function",
@@ -1477,11 +1494,13 @@
     },
     {
       "va": "0x000EB4B0",
-      "name": "Inventory::RemoveItemWithData",
+      "name": "Inventory::removeItemWithData",
       "kind": "function",
-      "confidence": "matched",
-      "provenance": "mwse:TES3_Inventory_RemoveItemWithData",
-      "pc_va": "0x00499550"
+      "confidence": "verified",
+      "provenance": "mwse:TES3_Inventory_RemoveItemWithData; xemu loadstate-a5: swapped data and count left a data stack in place",
+      "pc_va": "0x00499550",
+      "note": "itemData comes before count. A stack whose data does not match is not removed; a mobile gets its encumbrance changed.",
+      "signature": "void __thiscall removeItemWithData(TES3::MobileActor* mobile, TES3::Item* item, TES3::ItemData* itemData, int count, bool deleteStackData)"
     },
     {
       "va": "0x000EB6E0",
@@ -2336,6 +2355,14 @@
       "pc_va": "0x004BA820"
     },
     {
+      "va": "0x001060B0",
+      "name": "NonDynamicData::findCellByName",
+      "confidence": "matched",
+      "provenance": "first cell whose name matches, case-insensitive; startNewGame's [PreLoad] lookup",
+      "pc_va": "0x004BA9B0",
+      "signature": "TES3::Cell* __thiscall findCellByName(char* name)"
+    },
+    {
       "va": "0x001075B0",
       "name": "NonDynamicData::respawnContainers",
       "kind": "function",
@@ -2620,6 +2647,14 @@
       "provenance": "traced: MenuCreateClass OK calls it on the player's base NPC; copies the id into the links' 32-byte class buffer and calls resolveLinks, else findClass",
       "pc_va": "0x004D77D0",
       "signature": "void __thiscall setClass(const char* id)"
+    },
+    {
+      "va": "0x00122A00",
+      "name": "Cell::getIsInterior",
+      "confidence": "verified",
+      "provenance": "returns flags (+0x18) & 1",
+      "pc_va": "0x004E22F0",
+      "signature": "bool __thiscall getIsInterior()"
     },
     {
       "va": "0x00122A50",
@@ -5278,7 +5313,7 @@
       "name": "Game::startNewGame",
       "confidence": "verified",
       "provenance": "xemu arrival-a2: swapping its [PreLoad] Cell 0 read changes the New Game start cell",
-      "note": "Loads each [PreLoad] Cell N, Cell 0 being the start; sets CharGenState 1 and runs global scripts. Multiplayer swaps Cell 0 at 0x001FFAA9 (NET_PRELOAD_SITE). At that read the player's reference, mobile and scene node already exist (built from the default record); records written there need MenuRaceSex::onOk to rebuild the body, which works there (xemu preload-a6)."
+      "note": "Loads each [PreLoad] Cell N, Cell 0 being the start: findCellByName, then changeToInterior at (0,0,0) or the exterior grid preload; then sets CharGenState 1 and runs global scripts (CharGen starts after the read, not before). Multiplayer swaps Cell 0 at 0x001FFAA9 (NET_PRELOAD_SITE) and answers the lookup at 0x001FFAD8 (NET_PRELOAD_FIND_SITE). At that read the player's reference, mobile and scene node already exist (built from the default record); records written there need MenuRaceSex::onOk to rebuild the body, which works there (xemu preload-a6). Writing the player's position before a grid preload hangs the load (loadstate-a7)."
     },
     {
       "va": "0x00200990",
