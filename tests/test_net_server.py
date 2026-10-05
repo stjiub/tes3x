@@ -604,6 +604,21 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(stream.spells, ['fire bite', 'calm humanoid'])
         stream.take(bytes([net.PLAYER_SPELLS, net.SPELLS_REMOVE, 0, 1]) + b'FIRE BITE\0')
         self.assertEqual(stream.spells, ['calm humanoid'])
+        identity = {'name': 'Vela Arenim of the Long Road', 'race': 'Dark Elf',
+                    'head': 'b_n_dark elf_f_head_01', 'hair': 'b_n_dark elf_f_hair_02',
+                    'birthsign': '', 'class': 'NEWCLASSID_CHARGEN',
+                    'class_name': 'Spellsword of Vivec', 'female': True,
+                    'class_attributes': [0, 6], 'specialization': 1,
+                    'class_skills': list(range(10, 20))}
+        parts = net.pack_player_identity(identity)
+        self.assertGreater(len(parts), 1)
+        self.assertTrue(all(len(p) <= net.EVENT_DATA for p in parts))
+        for part in parts[:-1]:
+            self.assertIsNone(stream.take(part))
+        self.assertTrue(stream.take(parts[-1]).startswith('is Vela Arenim'))
+        self.assertEqual(stream.identity, identity)
+        self.assertIsNone(stream.take(parts[-1]))  # a part out of order is dropped
+        self.assertEqual(stream.replay()[:len(parts)], parts)
 
     def admin(self, port, *words):
         run = subprocess.run([sys.executable, str(NET), 'admin', '--port', str(port), *words],

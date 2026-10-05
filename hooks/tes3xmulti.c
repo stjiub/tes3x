@@ -118,6 +118,9 @@ const char *tes3x_console_text_now(void);
     !defined(TES3X_NET_PLAYER_DROP_SITES) || !defined(TES3X_NET_START_COMBAT)
 #error "define the TES3X_NET_ leveled creature spawn, its vtable slot and the actor functions"
 #endif
+#if !defined(TES3X_NET_FIND_RACE) || !defined(TES3X_NET_FIND_CLASS) ||     !defined(TES3X_NET_FIND_BIRTHSIGN) || !defined(TES3X_NET_ENGINE_ALLOCATE) ||     !defined(TES3X_NET_CLASS_NEW) || !defined(TES3X_NET_CLASS_SET_ID) ||     !defined(TES3X_NET_CLASS_DESCRIPTION) || !defined(TES3X_NET_CLASS_SET_DESCRIPTION) ||     !defined(TES3X_NET_LIST_APPEND) || !defined(TES3X_NET_GMST_TEXT)
+#error "define the TES3X_NET_ record lookups and the class functions chargen uses"
+#endif
 
 typedef unsigned short u16;
 typedef void(__stdcall *fn_KeStallExecutionProcessor)(u32);
@@ -9594,6 +9597,7 @@ static void chargen_stat(void)
 #define PLAYER_PLACE 7u   /* from the server: where the player last was, as STATE's first bytes */
 #define PLAYER_SPELLS 11u /* mode, part, parts, then spell ids ending in zero */
 #define PLAYER_BOUNTY 12u /* from the server: the character's last bounty as i32 */
+#define PLAYER_IDENTITY 13u /* part, parts, then a slice of IDENTITY_BODY */
 #define SPELLS_SNAPSHOT 0u
 #define SPELLS_ADD 1u
 #define SPELLS_REMOVE 2u
@@ -10092,6 +10096,275 @@ static void player_spells_scan(const u8 *npc, int send)
     player_spells_delta(SPELLS_ADD, player_spells_now, n);
 }
 
+/* Who the character is: sex, the class's attributes, specialisation and skills, then name, race,
+ * head, hair, birthsign, class id and class name, each ending in zero. Applied, it turns whatever
+ * the console runs into the kept character. Chargen's own class (NEWCLASSID_CHARGEN) lives only in
+ * the save that made it, so a missing class is made as MenuCreateClass makes it. The model keeps
+ * the head, hair, skin and skeleton it was built with until the next load: BodyPartManager sets
+ * that base layer only when it is made, and updateForReference redoes only the equipment. */
+#define IDENTITY_STRINGS 7u
+#define IDENTITY_STATS (1 + 13 * 4)
+#define IDENTITY_BODY (IDENTITY_STATS + IDENTITY_STRINGS * 32)
+#define IDENTITY_PER_EVENT (EVENT_DATA - 3)
+#define IDENTITY_BIRTHSIGN 4u /* the one string that may be empty */
+#define RECORDS_CLASSES 0x30
+#define NPC_CLASS 0xB4
+#define RACE_ID 0x10
+#define CLASS_ID 0x10
+#define CLASS_NAME 0x30
+#define CLASS_STATS 0x50 /* attributes 2, specialisation, skills 10, as int */
+#define CLASS_PLAYABLE 0x84
+#define CLASS_SIZE 0x94
+#define CUSTOM_CLASS_TEXT 0x327 /* the GMST chargen gives a made class as its description */
+#define PLAYER_FIRST_PERSON 0x664
+#define PLAYER_BIRTHSIGN 0x670
+#define OBJECT_SET_MODIFIED 0x14 /* vtable offsets */
+#define OBJECT_SET_NAME 0x10C
+#define LINK_RACE 0
+#define LINK_CLASS 4
+#define LINK_HEAD 12
+#define LINK_HAIR 16
+
+typedef u8 *(__attribute__((thiscall)) *fn_find_record)(void *records, const char *id);
+typedef void *(__attribute__((thiscall)) *fn_engine_allocate)(void *heap, u32 size,
+                                                               const char *file, u32 line);
+typedef void(__attribute__((thiscall)) *fn_object_call)(void *object);
+typedef void(__attribute__((thiscall)) *fn_object_text)(void *object, const char *text);
+typedef void *(__attribute__((thiscall)) *fn_object_get)(void *object);
+typedef void(__attribute__((thiscall)) *fn_list_append)(void *list, void *item);
+typedef const char *(__attribute__((thiscall)) *fn_gmst_text)(void *game, u32 index);
+
+static u8 player_identity_sent[IDENTITY_BODY], player_identity_in[IDENTITY_BODY];
+static u32 player_identity_sent_length, player_identity_known, player_identity_in_length;
+static u32 player_identity_in_part, player_identity_out, player_identity_applied;
+static u32 player_classes_made;
+
+static void *records_ptr(void)
+{
+    void *const *handler = *(void *const *const *)TES3X_NET_DATA_HANDLER;
+
+    return plausible(handler) && plausible(*handler) ? *handler : 0;
+}
+
+static u8 *find_record(u32 finder, const char *id)
+{
+    void *records = records_ptr();
+
+    return records ? ((fn_find_record)finder)(records, id) : 0;
+}
+
+static void *vtable_slot(const void *object, u32 offset)
+{
+    return (*(void *const *const *)object)[offset / 4];
+}
+
+static u32 player_identity_read(const u8 *mobile, const u8 *npc, u8 *out)
+{
+    const u8 *class_ = *(const u8 *const *)(npc + NPC_CLASS);
+    const u8 *race = *(const u8 *const *)(npc + NPC_RACE);
+    const u8 *head = *(const u8 *const *)(npc + NPC_HEAD);
+    const u8 *hair = *(const u8 *const *)(npc + NPC_HAIR);
+    const u8 *sign = *(const u8 *const *)(mobile + PLAYER_BIRTHSIGN);
+    const char *texts[IDENTITY_STRINGS];
+    u32 n = IDENTITY_STATS, i, k;
+
+    if (!plausible(class_) || !plausible(race) || !plausible(head) || !plausible(hair))
+        return 0;
+    texts[0] = *(const char *const *)(npc + NPC_NAME);
+    texts[1] = (const char *)race + RACE_ID;
+    texts[2] = object_id(head);
+    texts[3] = object_id(hair);
+    texts[4] = plausible(sign) ? object_id(sign) : "";
+    texts[5] = (const char *)class_ + CLASS_ID;
+    texts[6] = (const char *)class_ + CLASS_NAME;
+    out[0] = (*(const u32 *)(npc + NPC_FLAGS) & NPC_FEMALE) != 0;
+    copy(out + 1, class_ + CLASS_STATS, 13 * 4);
+    for (i = 0; i < IDENTITY_STRINGS; i++) {
+        if (!mapped(texts[i]))
+            return 0;
+        for (k = 0; k < 31 && texts[i][k]; k++)
+            out[n + k] = (u8)texts[i][k];
+        if (texts[i][k] || (!k && i != IDENTITY_BIRTHSIGN))
+            return 0;
+        out[n + k] = 0;
+        n += k + 1;
+    }
+    return n;
+}
+
+static void player_identity_scan(const u8 *mobile, const u8 *npc, int send)
+{
+    u8 body[IDENTITY_BODY], data[EVENT_DATA];
+    u32 n = player_identity_read(mobile, npc, body), parts, i, size;
+
+    if (!n)
+        return;
+    for (i = 0; player_identity_known && n == player_identity_sent_length && i < n &&
+                body[i] == player_identity_sent[i];
+         i++)
+        ;
+    if (player_identity_known && i == n)
+        return;
+    parts = (n + IDENTITY_PER_EVENT - 1) / IDENTITY_PER_EVENT;
+    if (send) {
+        if (events_room() < parts + 2)
+            return;
+        for (i = 0; i < parts; i++) {
+            size = n - i * IDENTITY_PER_EVENT;
+            size = size < IDENTITY_PER_EVENT ? size : IDENTITY_PER_EVENT;
+            data[0] = PLAYER_IDENTITY;
+            data[1] = (u8)i;
+            data[2] = (u8)parts;
+            copy(data + 3, body + i * IDENTITY_PER_EVENT, size);
+            event_queue(EVENT_PLAYER, data, 3 + size);
+        }
+        player_identity_out++;
+    }
+    copy(player_identity_sent, body, n);
+    player_identity_sent_length = n;
+    player_identity_known = 1;
+}
+
+/* The class by id, its numbers and name made to match; a missing one is made and listed. */
+static u8 *player_class(const char *id, const char *name, const u8 *stats)
+{
+    static const char file[] = "tes3xmulti.c";
+    u8 *class_ = find_record(TES3X_NET_FIND_CLASS, id), *records = records_ptr(), *list;
+    const char *text;
+    u32 i, changed = 0;
+
+    if (!plausible(class_)) {
+        if (!records || !plausible(list = *(u8 **)(records + RECORDS_CLASSES)) ||
+            !plausible(class_ = ((fn_engine_allocate)TES3X_NET_ENGINE_ALLOCATE)(
+                           (void *)TES3X_NET_HEAP, CLASS_SIZE, file, 0)))
+            return 0;
+        ((fn_object_call)TES3X_NET_CLASS_NEW)(class_);
+        ((fn_object_text)TES3X_NET_CLASS_SET_ID)(class_, id);
+        class_[CLASS_PLAYABLE] = 0;
+        if (!((fn_object_get)TES3X_NET_CLASS_DESCRIPTION)(class_) &&
+            plausible(*(void **)TES3X_NET_WORLD) &&
+            mapped(text = ((fn_gmst_text)TES3X_NET_GMST_TEXT)(*(void **)TES3X_NET_WORLD,
+                                                               CUSTOM_CLASS_TEXT)))
+            ((fn_object_text)TES3X_NET_CLASS_SET_DESCRIPTION)(class_, text);
+        ((fn_list_append)TES3X_NET_LIST_APPEND)(list, class_);
+        player_classes_made++;
+    }
+    for (i = 0; i < 13 * 4 && class_[CLASS_STATS + i] == stats[i]; i++)
+        ;
+    if (i < 13 * 4) {
+        copy(class_ + CLASS_STATS, stats, 13 * 4);
+        changed = 1;
+    }
+    if (!same_id((const char *)class_ + CLASS_NAME, name)) {
+        for (i = 0; name[i] && i < 31; i++)
+            class_[CLASS_NAME + i] = (u8)name[i];
+        class_[CLASS_NAME + i] = 0;
+        changed = 1;
+    }
+    if (changed)
+        ((fn_set_modified)vtable_slot(class_, OBJECT_SET_MODIFIED))(class_, 1);
+    return class_;
+}
+
+/* The link table's ids are 32-byte buffers the save writes from. */
+static void link_set(u8 *links, u32 at, const char *id)
+{
+    char *slot = *(char **)(links + at);
+    u32 i;
+
+    if (!plausible(slot))
+        return;
+    for (i = 0; id[i] && i < 31; i++)
+        slot[i] = id[i];
+    slot[i] = 0;
+}
+
+static void sex_set(u8 *object, u32 female)
+{
+    u32 *flags = (u32 *)(object + NPC_FLAGS);
+
+    *flags = (*flags & ~NPC_FEMALE) | (female ? NPC_FEMALE : 0);
+}
+
+static void player_identity_apply(u8 *ref, const u8 *body, u32 length)
+{
+    const char *texts[IDENTITY_STRINGS];
+    u8 *mobile = player_mobile(), *instance = *(u8 **)(ref + REF_BASE), *npc, *links, *first;
+    u8 *race, *head, *hair, *sign = 0, *class_;
+    u32 off = IDENTITY_STATS, i, k, female = body[0] != 0;
+
+    for (i = 0; i < IDENTITY_STRINGS; i++) {
+        texts[i] = (const char *)body + off;
+        for (k = 0; off + k < length && body[off + k] >= 0x20; k++)
+            ;
+        if (off + k == length || body[off + k] || k > 31 || (!k && i != IDENTITY_BIRTHSIGN)) {
+            player_apply_failures++;
+            return;
+        }
+        off += k + 1;
+    }
+    race = find_record(TES3X_NET_FIND_RACE, texts[1]);
+    head = resolve_object(texts[2]);
+    hair = resolve_object(texts[3]);
+    if (texts[IDENTITY_BIRTHSIGN][0])
+        sign = find_record(TES3X_NET_FIND_BIRTHSIGN, texts[IDENTITY_BIRTHSIGN]);
+    if (off != length || !plausible(mobile) || !plausible(instance) ||
+        !plausible(npc = *(u8 **)(instance + NPC_BASE)) || !plausible(race) || !plausible(head) ||
+        !plausible(hair) || (texts[IDENTITY_BIRTHSIGN][0] && !plausible(sign)) ||
+        !(class_ = player_class(texts[5], texts[6], body + 1))) {
+        player_apply_failures++;
+        log_text("net.player_identity_bad", texts[0]);
+        return;
+    }
+    if (!mapped(*(const char *const *)(npc + NPC_NAME)) ||
+        !same_id(*(const char *const *)(npc + NPC_NAME), texts[0]))
+        ((fn_object_text)vtable_slot(npc, OBJECT_SET_NAME))(npc, texts[0]);
+    if (plausible(links = *(u8 **)(npc + NPC_LINKS))) {
+        link_set(links, LINK_RACE, texts[1]);
+        link_set(links, LINK_CLASS, texts[5]);
+        link_set(links, LINK_HEAD, texts[2]);
+        link_set(links, LINK_HAIR, texts[3]);
+    }
+    *(u8 **)(npc + NPC_RACE) = race;
+    *(u8 **)(npc + NPC_CLASS) = class_;
+    *(u8 **)(npc + NPC_HEAD) = head;
+    *(u8 **)(npc + NPC_HAIR) = hair;
+    sex_set(npc, female);
+    sex_set(instance, female);
+    first = *(u8 **)(mobile + PLAYER_FIRST_PERSON);
+    if (plausible(first) && *(void **)first == *(void **)npc) {
+        *(u8 **)(first + NPC_RACE) = race;
+        sex_set(first, female);
+    }
+    if (sign)
+        *(u8 **)(mobile + PLAYER_BIRTHSIGN) = sign;
+    player_identity_applied++;
+    log_text("net.player_identity", texts[0]);
+    tes3x_log_hex3("net.player_class", player_classes_made, female, (u32)class_);
+}
+
+static void player_identity_event(u8 *ref, const struct event *e)
+{
+    const u8 *p = e->data;
+    u32 part = p[1], parts = p[2], size = e->length - 3;
+
+    if (!parts || part >= parts || (part && part != player_identity_in_part) ||
+        (part ? player_identity_in_length : 0) + size > IDENTITY_BODY) {
+        player_apply_failures++;
+        player_identity_in_part = 0;
+        return;
+    }
+    if (!part)
+        player_identity_in_length = 0;
+    copy(player_identity_in + player_identity_in_length, p + 3, size);
+    player_identity_in_length += size;
+    player_identity_in_part = part + 1;
+    if (player_identity_in_part == parts) {
+        player_identity_in_part = 0;
+        player_identity_apply(ref, player_identity_in, player_identity_in_length);
+    }
+}
+
 /* Game thread, in the world: after READY, the changes once a second. */
 static void player_frame(const u8 *ref)
 {
@@ -10108,6 +10381,7 @@ static void player_frame(const u8 *ref)
         for (i = 0; i < JOURNALS; i++)
             journal_sent[i] = 0;
         level_known = skills_known = vitals_known = player_spells_known = 0;
+        player_identity_known = 0;
         send = player_mode == 1;
         if (player_bounty_replayed != ses.welcomes)
             bounty_sent = -1;
@@ -10117,6 +10391,7 @@ static void player_frame(const u8 *ref)
         return;
     }
     player_polled = now;
+    player_identity_scan(mobile, npc, send);
     carried_scan(object, send);
     level_scan(mobile, npc, send);
     skills_scan(mobile, send);
@@ -10679,6 +10954,8 @@ static void player_event(const struct event *e)
         player_spells_event(ref, e);
     else if (e->data[0] == PLAYER_BOUNTY && e->length >= 5)
         player_bounty_apply(e->data + 1);
+    else if (e->data[0] == PLAYER_IDENTITY && e->length >= 4)
+        player_identity_event(ref, e);
     else if (e->data[0] == PLAYER_RESPAWN && e->length >= 1 + 9)
         respawn_event(e->data + 1);
 }
@@ -10690,6 +10967,8 @@ static void player_stat(void)
     tes3x_log_hex3("net.player_bad", player_apply_failures, player_too_many, player_mode);
     tes3x_log_hex3("net.player_spells", player_spells_out, player_spells_in,
                    player_spells_omitted);
+    tes3x_log_hex3("net.player_identity_stat", player_identity_out, player_identity_applied,
+                   player_classes_made);
 }
 
 static void event_handle(const struct event *e)

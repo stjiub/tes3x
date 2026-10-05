@@ -99,7 +99,8 @@ With `--world` the server also keeps each console's character under `characters`
 Every save made while joined goes to one save slot per server and character and is uploaded; a
 console that joins running another game is sent the kept save and loads it. Between saves the
 console sends its inventory, level, attributes, skills, journal and current health, magicka and
-fatigue as they change. The server
+fatigue as they change, and who the character is: name, race, sex, head, hair, birthsign and
+class, including a class made in character creation. The server
 keeps the latest of them in `stream.json` beside the save and applies them over it when the
 console next loads that save, so a crash loses at most about a second of those. It also keeps
 where the player last was and puts them back there, so a crash or a power cut does not return a
@@ -336,7 +337,9 @@ report from any two saves.
 - Menus no longer pause the world while joined, and resting or waiting is refused.
 - A console needs a save of its own to join. Over a kept character the server restores the
   inventory, level, attributes, skills, journal, current health, magicka and fatigue (health
-  no lower than 1) and the player's position; spells, active effects, topics, factions and bounty come from the last save.
+  no lower than 1), the player's position and who the character is; active effects, topics and
+  factions come from the last save. A name, race, sex, head or hair restored over another
+  character's save shows on the player's model only from the next load.
   Restoring only moves a
   quest forward, never back.
 - Items taken, objects a script disables, locks, and items

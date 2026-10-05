@@ -442,6 +442,14 @@ PLAYER_VITALS, PLAYER_PLACE = 6, 7
 PLAYER_DEATH, PLAYER_RESPAWN, PLAYER_ALIVE = 8, 9, 10
 PLAYER_SPELLS = 11
 PLAYER_BOUNTY = 12  # from the server: the character's last streamed crime bounty, i32
+# Who the character is, both ways: part, parts, then a slice of one body (IDENTITY_STATS: female,
+# then the class's two attributes, specialisation and ten skills; then name, race, head, hair,
+# birthsign, class id and class name, each ending in zero; the birthsign may be empty). The
+# server keeps the latest and replays it first, so a launch running another character becomes
+# this one.
+PLAYER_IDENTITY = 13
+IDENTITY_STATS = struct.Struct("<B13i")
+IDENTITY_FIELDS = ("name", "race", "head", "hair", "birthsign", "class", "class_name")
 SPELLS_SNAPSHOT, SPELLS_ADD, SPELLS_REMOVE = 0, 1, 2
 RESPAWN = struct.Struct("<IBI")
 RESPAWN_PLACES = {"temple": 0, "shrine": 1, "nearest": 2}
@@ -603,6 +611,45 @@ def unpack_identity(part):
     if any(byte < 0x20 for value in values[:2] for byte in value):
         raise ValueError("bad identity character")
     return part[0], bool(part[2]), *(wire_text(value) for value in values[:2])
+
+
+def pack_player_identity(identity):
+    """The PLAYER_IDENTITY events for a kept identity."""
+    body = IDENTITY_STATS.pack(bool(identity["female"]), *identity["class_attributes"],
+                               identity["specialization"], *identity["class_skills"])
+    for field in IDENTITY_FIELDS:
+        value = identity[field].encode("latin-1", "replace")
+        if len(value) >= 32 or b"\0" in value or (not value and field != "birthsign"):
+            raise ValueError(f"identity {field} must be 1..31 bytes without a zero")
+        body += value + b"\0"
+    per = EVENT_DATA - 3
+    chunks = [body[i:i + per] for i in range(0, len(body), per)]
+    return [bytes([PLAYER_IDENTITY, i, len(chunks)]) + chunk for i, chunk in enumerate(chunks)]
+
+
+def unpack_player_identity(body):
+    """A whole PLAYER_IDENTITY body as a dict, or raise ValueError."""
+    if len(body) < IDENTITY_STATS.size:
+        raise ValueError("identity too short")
+    female, *stats = IDENTITY_STATS.unpack_from(body)
+    values = body[IDENTITY_STATS.size:].split(b"\0")
+    if len(values) != len(IDENTITY_FIELDS) + 1 or values[-1]:
+        raise ValueError("bad identity strings")
+    for field, value in zip(IDENTITY_FIELDS, values):
+        if len(value) >= 32 or (not value and field != "birthsign") or \
+                any(byte < 0x20 for byte in value):
+            raise ValueError(f"bad identity {field}")
+    identity = dict(zip(IDENTITY_FIELDS, (wire_text(value) for value in values)))
+    identity.update(female=bool(female), class_attributes=stats[:2], specialization=stats[2],
+                    class_skills=stats[3:])
+    return identity
+
+
+def describe_identity(identity):
+    sex = "female" if identity["female"] else "male"
+    sign = identity["birthsign"] or "no birthsign"
+    return (f"is {identity['name']}: {sex} {identity['race']}, {identity['head']}, "
+            f"{identity['hair']}, {identity['class_name']} ({identity['class']}), {sign}")
 
 
 def pack_actor_equipment(refid, ids):
@@ -1128,9 +1175,10 @@ class PlayerStream:
         self.items, self.skills, self.journal, self.level = {}, {}, {}, None
         self.spells = None
         self.vitals = self.place = None
-        self.bounty = None
+        self.bounty = self.identity = None
         self.dead = False  # died and not yet back
         self.arriving = None  # (item id, entries so far, next part)
+        self.identity_parts = None  # (body so far, next part)
         self.dirty = False
         try:
             with open(path, encoding="utf-8") as f:
@@ -1146,13 +1194,14 @@ class PlayerStream:
         self.dead = kept.get("dead", False)
         self.spells = kept.get("spells")
         self.bounty = kept.get("bounty")
+        self.identity = kept.get("identity")
 
     def reset(self):
         """A new character: nothing streamed so far belongs to it."""
         self.items, self.skills, self.journal, self.level = {}, {}, {}, None
         self.spells = None
         self.vitals = self.place = self.arriving = None
-        self.bounty = None
+        self.bounty = self.identity = self.identity_parts = None
         self.dead = False
         self.dirty = True
 
@@ -1236,12 +1285,33 @@ class PlayerStream:
                     known.pop(name.lower(), None)
             self.spells, self.dirty = list(known.values()), True
             return ("learned " if data[1] == SPELLS_ADD else "forgot ") + ", ".join(names)
+        if kind == PLAYER_IDENTITY and len(data) > 3:
+            part, parts = data[1], data[2]
+            if part == 0:
+                self.identity_parts = (b"", 0)
+            if not self.identity_parts or self.identity_parts[1] != part or part >= parts:
+                self.identity_parts = None
+                return None
+            body = self.identity_parts[0] + bytes(data[3:])
+            self.identity_parts = (body, part + 1)
+            if part + 1 < parts:
+                return None
+            self.identity_parts = None
+            try:
+                identity = unpack_player_identity(body)
+            except ValueError:
+                return None
+            if identity == self.identity:
+                return None
+            self.identity, self.dirty = identity, True
+            return describe_identity(identity)
         return None
 
     def replay(self):
         """The kept state as events, in the order a console applies them."""
-        events = [part for item, entries in sorted(self.items.items())
-                  for part in pack_items(item, entries)]
+        events = pack_player_identity(self.identity) if self.identity else []
+        events += [part for item, entries in sorted(self.items.items())
+                   for part in pack_items(item, entries)]
         if self.level:
             events.append(bytes([PLAYER_LEVEL]) + self.level)
         if self.vitals:  # after LEVEL, which caps each current value at its base
@@ -1271,6 +1341,7 @@ class PlayerStream:
                                "place": self.place.hex() if self.place else None,
                                "spells": self.spells,
                                "bounty": self.bounty,
+                               "identity": self.identity,
                                "dead": self.dead})
         self.dirty = False
 
@@ -2390,7 +2461,8 @@ def serve(args):
         client.rel.queue(EVENT_PLAYER, 0, bytes([PLAYER_READY, 0]))
         flush(client, now)
         print(f"{stamp} client {client.id}: " + (
-            f"replayed {len(stream.items)} items, {len(stream.skills)} skills, "
+            "replayed " + (f"{stream.identity['name']}'s identity, " if stream.identity else "")
+            + f"{len(stream.items)} items, {len(stream.skills)} skills, "
             f"{len(stream.journal)} quests" + (", the level" if stream.level else "")
             + (f", the place ({describe_state(stream.place)})" if stream.place else "")
             if replay else "streams its player from scratch"), flush=True)

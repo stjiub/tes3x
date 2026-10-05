@@ -101,6 +101,14 @@ ACTOR_ADDRESSES = (
     ("LEVELED_LINK", 0x0012A370), ("ADD_MOB", 0x001840B0), ("SIMULATE", 0x00180630),
     ("START_COMBAT", 0x001629F0),
 )
+# What the player's identity is applied with: the record lookups, and what MenuCreateClass's OK
+# calls to make and list chargen's class.
+IDENTITY_ADDRESSES = (
+    ("FIND_RACE", 0x00105C10), ("FIND_CLASS", 0x00105D50), ("FIND_BIRTHSIGN", 0x00105CB0),
+    ("ENGINE_ALLOCATE", 0x00011840), ("CLASS_NEW", 0x000EFEB0), ("CLASS_SET_ID", 0x000F01C0),
+    ("CLASS_DESCRIPTION", 0x000FB790), ("CLASS_SET_DESCRIPTION", 0x000F0060),
+    ("LIST_APPEND", 0x000D5A60), ("GMST_TEXT", 0x0008BB50),
+)
 PLAYER_CONTROL = 0x001717E0  # PlayerAnimationController's update: look, controls, animation
 CONSOLE_ADDRESSES = (
     ("FIND_MENU", 0x001AD340), ("OPEN_VK", 0x0022D210), ("CONSOLE_MENU_ID", 0x003D816C),
@@ -375,7 +383,7 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
             define("NET_" + name, address(name, default))
         define("NET_SERVICE_ACTOR", address("SERVICE_ACTOR", SERVICE_ACTOR))
         for name, default in (PLACE_ADDRESSES + SPELL_ADDRESSES + SPAWN_ADDRESSES
-                              + CONTAINER_ADDRESSES + ACTOR_ADDRESSES):
+                              + CONTAINER_ADDRESSES + ACTOR_ADDRESSES + IDENTITY_ADDRESSES):
             define("NET_" + name, address(name, default))
         spell_hit = int(address("SPELL_HIT", SPELL_HIT), 16)
         sites = find_call_sites(image, spell_hit)

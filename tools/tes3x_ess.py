@@ -182,7 +182,8 @@ def blob(data):
 def save_units(path):
     """Every comparable piece of a save, as {(row, label): value}."""
     units = {}
-    dial = None
+    dial = player_class = None
+    classes = {}
     clones = collections.defaultdict(list)
 
     def put(row, label, value):
@@ -205,6 +206,9 @@ def save_units(path):
             put("Clock and game", "GAME", blob(first.get(b"GMDT", b"")))
         elif tag == b"NPC_" and name.lower() == "player":
             player_npc(subs, put)
+            player_class = zstr(first.get(b"CNAM", b"")).lower()
+        elif tag == b"CLAS":  # the player's own is identity; chargen's custom class lives here
+            classes[name.lower()] = (name, data)
         elif tag == b"NPCC" and name.lower() == "playersavegame":
             player_inventory(subs, put)
         elif tag == b"PCDT":
@@ -264,6 +268,11 @@ def save_units(path):
             put("Other", f"{t} {name}", blob(data))
     for (t, name), bodies in clones.items():
         put("Actors (changed)", f"{t} {name}", blob(b"".join(sorted(bodies))))
+    for key, (name, data) in classes.items():
+        if key == player_class:
+            put("Identity", "class record", blob(data))
+        else:
+            put("Base records changed", f"CLAS {name}", blob(data))
     return units
 
 

@@ -10,7 +10,7 @@
     },
     {
       "name": "TES3::MobilePlayer",
-      "note": "Xbox matches the PC at clawMultiplier (+0x5AC), skillProgress (+0x5F4), firstPersonReference (+0x660), birthsign (+0x670) and lastPositionOfFogOfWarUpdate (+0x67C). restWaitPosition (+0x5D8) holds stale bytes until the player rests."
+      "note": "Xbox matches the PC at clawMultiplier (+0x5AC), skillProgress (+0x5F4), firstPersonReference (+0x660), birthsign (+0x670) and lastPositionOfFogOfWarUpdate (+0x67C). restWaitPosition (+0x5D8) holds stale bytes until the player rests. Writing birthsign (from NonDynamicData::findBirthsign) is what the save's PCDT BNAM follows (xemu identity-a1)."
     },
     {
       "name": "TES3::NPCInstance",
@@ -18,7 +18,7 @@
     },
     {
       "name": "TES3::NPC",
-      "note": "Xbox matches the PC at name (+0x70), level (+0x7C, short; SetLevel on the player writes it), spellList (+0xC4) and aiConfig (+0xE0: fight +2, alarm +4; an Imperial Guard reads fight 30). SpellList's IteratedList head is at NPC +0xD0; each node has next at +4 and a TES3::Spell* at +8.",
+      "note": "Xbox matches the PC at name (+0x70), level (+0x7C, short; SetLevel on the player writes it), spellList (+0xC4) and aiConfig (+0xE0: fight +2, alarm +4; an Imperial Guard reads fight 30). SpellList's IteratedList head is at NPC +0xD0; each node has next at +4 and a TES3::Spell* at +8. The player's links table (+0x78) survives loading: race, class, faction, head and hair ids, each a 32-byte buffer, which NPC::setClass writes and the save's RNAM/CNAM/BNAM/KNAM follow together with race (+0xB0), class (+0xB4), head (+0xBC) and hair (+0xC0) (xemu identity-a1, rebuild-c2).",
       "fields": [
         {
           "offset": "0xC4",
@@ -28,6 +28,11 @@
           "provenance": "xemu spells-a1/spells-b1: walking the player NPC's list found calm humanoid; AddSpell and RemoveSpell changed the list"
         }
       ]
+    },
+    {
+      "name": "TES3::Class",
+      "size": "0x94",
+      "note": "Matches the PC: id[32] +0x10, name[32] +0x30, attributes[2] +0x50, specialization +0x58, skills[10] +0x5C, playable +0x84, description +0x8C. MenuCreateClass::create allocates 0x94 bytes for chargen's NEWCLASSID_CHARGEN (xemu identity-a2 made one the same way and the save wrote it)."
     },
     {
       "name": "TES3::Dialogue",
@@ -72,6 +77,20 @@
       "note": "12 bytes longer than the PC at or before +0x44; the record lists and the cells list sit 0xC past their PC offsets. PC fields are left out until placed.",
       "fields": [
         {
+          "offset": "0x28",
+          "name": "races",
+          "type": "NI::IteratedList<TES3::Race*>*",
+          "confidence": "verified",
+          "provenance": "PC +0x1C; NonDynamicData::findRace 0x00105C10 walks it"
+        },
+        {
+          "offset": "0x30",
+          "name": "classes",
+          "type": "NI::IteratedList<TES3::Class*>*",
+          "confidence": "verified",
+          "provenance": "PC +0x24; MenuCreateClass::onOk appends chargen's class to it"
+        },
+        {
           "offset": "0x44",
           "name": "globals",
           "type": "NI::IteratedList<TES3::GlobalVariable*>*",
@@ -91,6 +110,13 @@
           "type": "NI::IteratedList<TES3::Region*>*",
           "confidence": "verified",
           "provenance": "PC +0x40; the multiplayer weather table"
+        },
+        {
+          "offset": "0x50",
+          "name": "birthsigns",
+          "type": "NI::IteratedList<TES3::Birthsign*>*",
+          "confidence": "verified",
+          "provenance": "PC +0x44; NonDynamicData::findBirthsign 0x00105CB0 walks it"
         },
         {
           "offset": "0xB270",
