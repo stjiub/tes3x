@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Build an nxdk program (the manager, its probes) into its own output folder.
 
-nxdk's Makefile writes objects beside the sources, so the sources are copied to OUT first. Needs
+nxdk's Makefile writes objects beside the sources, so the sources are copied to OUT first, and
+the payload's sources (hooks/) beside it, for a program that shares its portable files. Needs
 an nxdk checkout with its libraries and tools built, and on Windows MSYS2 with make, clang and lld.
 """
 
@@ -61,6 +62,11 @@ def build(source, out, defines=(), config=None):
     nxdk, bash = find_nxdk(paths), find_bash(paths)
     out = Path(out)
     shutil.copytree(source, out, dirs_exist_ok=True)
+    hooks = Path(source).resolve().parent / "hooks"
+    if hooks.is_dir():
+        shutil.copytree(hooks, out.parent / "hooks", dirs_exist_ok=True,
+                        ignore=lambda _dir, names: [n for n in names
+                                                    if not n.endswith((".c", ".h"))])
     cflags = " ".join(f"-D{d}" for d in defines)
     script = (f"export NXDK_DIR={posix(nxdk)}; eval $($NXDK_DIR/bin/activate -s); "
               f"cd {posix(out)} && make NXDK_DIR=$NXDK_DIR CFLAGS={shlex.quote(cflags)}")

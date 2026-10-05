@@ -68,6 +68,13 @@ int name_cmp(const char *a, const char *b)
     return tolower((unsigned char)*a) - tolower((unsigned char)*b);
 }
 
+int name_cmp_n(const char *a, const char *b, size_t n)
+{
+    for (; n && *a && tolower((unsigned char)*a) == tolower((unsigned char)*b); a++, b++, n--)
+        ;
+    return n ? tolower((unsigned char)*a) - tolower((unsigned char)*b) : 0;
+}
+
 void join_path(char *out, size_t n, const char *folder, const char *relative)
 {
     size_t i;
@@ -204,6 +211,7 @@ int verify_build(const struct build *b, struct verify *v, progress_fn progress)
     struct json j;
     char *text, name[PATH_MAX_MGR], path[PATH_MAX_MGR], want[65], got[65];
     unsigned long long done = 0;
+    DWORD start = KeTickCount;
     int files, i, e, r;
 
     memset(v, 0, sizeof(*v));
@@ -233,25 +241,32 @@ int verify_build(const struct build *b, struct verify *v, progress_fn progress)
         }
     }
     v->bytes = done;
-    mgr_log("verify %s: %d ok, %d missing, %d changed%s\n", b->path, v->ok, v->missing,
-            v->changed, v->cancelled ? ", cancelled" : "");
+    mgr_log("verify %s: %d ok, %d missing, %d changed%s, %lu ms\n", b->path, v->ok,
+            v->missing, v->changed, v->cancelled ? ", cancelled" : "", KeTickCount - start);
     manifest_free(text, &j);
     return 0;
 }
 
 const char *launch_build(const struct build *b, void (*before)(void))
 {
-    PLAUNCH_DATA_PAGE page = LaunchDataPage;
     char xbe[PATH_MAX_MGR];
+
+    join_path(xbe, sizeof(xbe), b->path, "default.xbe");
+    return launch_xbe(xbe, before);
+}
+
+const char *launch_xbe(const char *xbe, void (*before)(void))
+{
+    PLAUNCH_DATA_PAGE page = LaunchDataPage;
+    const char *slash = strrchr(xbe, '\\');
     unsigned title_id;
     size_t i;
 
-    join_path(xbe, sizeof(xbe), b->path, "default.xbe");
     if (xbe_title_id(xbe, &title_id))
-        return "default.xbe is missing or not an XBE";
-    for (i = 0; i < sizeof(drives) / sizeof(*drives) && drives[i].letter != b->path[0]; i++)
+        return "the XBE is missing or not an XBE";
+    for (i = 0; i < sizeof(drives) / sizeof(*drives) && drives[i].letter != xbe[0]; i++)
         ;
-    if (i == sizeof(drives) / sizeof(*drives))
+    if (i == sizeof(drives) / sizeof(*drives) || !slash || slash < xbe + 2)
         return "not on a known partition";
     if (!page && !(page = MmAllocateContiguousMemory(LAUNCH_PAGE)))
         return "no memory for the launch page";
@@ -262,8 +277,8 @@ const char *launch_build(const struct build *b, void (*before)(void))
     /* XAPI's XGetLaunchInfo hands a title only data carrying its own title ID */
     page->Header.dwTitleId = title_id;
     /* the kernel takes "folder;file" and maps D: to the folder */
-    snprintf(page->Header.szLaunchPath, sizeof(page->Header.szLaunchPath), "%s%s;default.xbe",
-             drives[i].device, b->path + 2);
+    snprintf(page->Header.szLaunchPath, sizeof(page->Header.szLaunchPath), "%s%.*s;%s",
+             drives[i].device, (int)(slash - xbe - 2), xbe + 2, slash + 1);
     mgr_log("launch %s title %08X\n", page->Header.szLaunchPath, title_id);
     if (before)
         before();

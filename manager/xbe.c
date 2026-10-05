@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <windows.h>
+#include <xboxkrnl/xboxkrnl.h>
 
 #include "zstd/zstd.h"
 
@@ -166,6 +167,7 @@ const char *rebuild_xbe(const struct build *b, const char *xbe, const char *reta
     size_t ref_n, patch_n, out_n, got;
     unsigned long long size;
     ZSTD_DCtx *dctx = NULL;
+    DWORD start = KeTickCount;
     const char *err = NULL;
     int recipe;
 
@@ -241,7 +243,7 @@ const char *rebuild_xbe(const struct build *b, const char *xbe, const char *reta
     }
     join_path(target, sizeof(target), b->path, xbe);
     err = install(target, out, out_n);
-    mgr_log("rebuild %s: %s\n", target, err ? err : "done");
+    mgr_log("rebuild %s: %s, %lu ms\n", target, err ? err : "done", KeTickCount - start);
 done:
     ZSTD_freeDCtx(dctx);
     free(out);

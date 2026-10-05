@@ -23,9 +23,15 @@ HEADER = struct.Struct("<4sBBHII")  # magic, version, kind, body bytes, session,
 HANDSHAKE1, HANDSHAKE2, HANDSHAKE3, SEALED = range(1, 5)
 WELCOME, HEARTBEAT, LOG, GOODBYE, REPLY, REQUEST = range(6)
 OP_CONSOLE, OP_READ, OP_REBOOT = range(1, 4)
+# The console manager's file operations and launch; the game answers them "bad request".
+OP_WRITE, OP_LIST, OP_DELETE, OP_RENAME, OP_MKDIR, OP_LAUNCH = range(4, 10)
 STATUS = {0: "ok", 1: "busy", 2: "unsupported", 3: "failed", 4: "bad request"}
 MAX_PACKET = 1400
-MAX_REQUEST = 200
+MAX_REQUEST = 200  # what the game accepts
+# what one sealed packet carries: the manager accepts requests up to this
+MAX_SEALED_REQUEST = MAX_PACKET - 16 - 16 - 1
+WRITE_CHUNK = 1024
+PATH_MAX = 255
 CONSOLE_MAX = 95
 READ_CHUNK = 1024
 PENDING_SECONDS = 5.0
@@ -115,6 +121,44 @@ def read_request(path, offset, length=READ_CHUNK):
     if b"\0" in data or len(data) + 11 > MAX_REQUEST:
         raise ValueError(f"path too long: {path}")
     return OP_READ, struct.pack("<IH", offset, length) + data
+
+
+def _path(path):
+    data = path.encode("cp1252")
+    if not data or b"\0" in data or len(data) > PATH_MAX:
+        raise ValueError(f"bad console path: {path!r}")
+    return data
+
+
+def write_request(path, offset, data):
+    """Write data at offset; offset 0 creates or truncates the file."""
+    name = _path(path)
+    return OP_WRITE, struct.pack("<IB", offset, len(name)) + name + bytes(data)
+
+
+def list_request(path, start=0):
+    return OP_LIST, struct.pack("<I", start) + _path(path)
+
+
+def parse_list(payload):
+    """(entries in the folder, [(name, is_dir, size)] from the requested start)."""
+    total, count = struct.unpack_from("<IH", payload)
+    at, entries = 6, []
+    for _ in range(count):
+        attrs, size, n = struct.unpack_from("<BIB", payload, at)
+        entries.append((payload[at + 6:at + 6 + n].decode("cp1252"), bool(attrs & 1), size))
+        at += 6 + n
+    return total, entries
+
+
+def path_request(op, path):
+    """OP_DELETE (a file or an empty folder), OP_MKDIR or OP_LAUNCH (an XBE)."""
+    return op, _path(path)
+
+
+def rename_request(source, target):
+    name = _path(source)
+    return OP_RENAME, bytes([len(name)]) + name + _path(target)
 
 
 class AgentProtocol:
@@ -230,7 +274,7 @@ class AgentProtocol:
         ident = self.next_id
         self.next_id = self.next_id % 0xFFFFFFFF + 1
         body = struct.pack("<IB", ident, op) + args
-        if len(body) > MAX_REQUEST:
+        if len(body) > MAX_SEALED_REQUEST:
             raise ValueError("agent request is too large")
         key = peer.address, peer.session
         self.requests[ident] = Request(key, body, self.clock())
@@ -381,6 +425,48 @@ class Fetch:
         return True
 
 
+class Put:
+    """Write one console file in chunks: the first alone, since it truncates the file, then the
+    rest windowed. Pass every reply event to `handle`."""
+
+    def __init__(self, send, path, data, window=8):
+        self.send, self.path, self.data, self.window = send, path, bytes(data), window
+        self.error, self.done = None, False
+        self.outstanding = {}
+        self.next_offset = 0
+        self.written = 0
+
+    def start(self):
+        self.issue()
+
+    def issue(self):
+        offset = self.next_offset
+        self.next_offset += WRITE_CHUNK
+        ident = self.send(*write_request(self.path, offset,
+                                         self.data[offset:offset + WRITE_CHUNK]))
+        if ident is None:
+            self.error = "no console is connected"
+        else:
+            self.outstanding[ident] = offset
+
+    def handle(self, event):
+        """True when the event answered one of this put's requests."""
+        if event.get("kind") != "reply" or event.get("id") not in self.outstanding:
+            return False
+        offset = self.outstanding.pop(event["id"])
+        if self.error or self.done:
+            return True
+        if event.get("status") != "ok":
+            self.error = f"{self.path} at {offset}: {event.get('status')}"
+            return True
+        self.written += len(self.data[offset:offset + WRITE_CHUNK])
+        while not self.error and len(self.outstanding) < self.window \
+                and self.next_offset < len(self.data):
+            self.issue()
+        self.done = not self.error and not self.outstanding
+        return True
+
+
 def wait_for(events, test, timeout):
     """The first queued event that passes `test`, or None."""
     deadline = time.monotonic() + timeout
@@ -412,6 +498,17 @@ def main(argv=None):
     ap.add_argument("--fetch", action="append", default=[], metavar="PATH",
                     help="copy a console file, such as E:/tes3xprof.bin (repeatable)")
     ap.add_argument("--out", default=".", help="folder for fetched files")
+    ap.add_argument("--mkdir", action="append", default=[], metavar="PATH",
+                    help="manager: make a folder (repeatable)")
+    ap.add_argument("--put", action="append", default=[], metavar="PATH=LOCAL",
+                    help="manager: write a local file to the console (repeatable)")
+    ap.add_argument("--rename", action="append", default=[], metavar="FROM=TO",
+                    help="manager: rename a console file or folder (repeatable)")
+    ap.add_argument("--list", action="append", default=[], metavar="PATH",
+                    help="manager: list a console folder (repeatable)")
+    ap.add_argument("--delete", action="append", default=[], metavar="PATH",
+                    help="manager: delete a console file or empty folder (repeatable)")
+    ap.add_argument("--launch", metavar="XBE", help="manager: start an XBE on the console")
     ap.add_argument("--exit", action="store_true",
                     help="after the rest, shut the console down (needs the console patch)")
     ap.add_argument("--reboot", action="store_true", help="return the console to its dashboard")
@@ -445,7 +542,9 @@ def main(argv=None):
           f"{listener.address[0]}:{listener.address[1]}", flush=True)
     code = 0
     try:
-        acting = args.console or args.fetch or args.exit or args.reboot or args.until_end
+        acting = (args.console or args.fetch or args.exit or args.reboot or args.until_end
+                  or args.mkdir or args.put or args.rename or args.list or args.delete
+                  or args.launch)
         if not acting:
             while args.duration is None or time.monotonic() - started < args.duration:
                 time.sleep(0.25)
@@ -477,7 +576,8 @@ def main(argv=None):
 
 
 def act(listener, events, host, args):
-    """Run the console lines, fetches, exit and reboot in that order; nonzero on failure."""
+    """Run the console lines, folders, puts, renames, lists, fetches, deletes, launch, exit and
+    reboot in that order; nonzero on failure."""
     def send(op, data):
         return listener.request(host, op, data)
 
@@ -491,9 +591,56 @@ def act(listener, events, host, args):
         print(f"agent: {label}: {status}", flush=True)
         return status == "ok"
 
+    def wait_reply(ident):
+        return wait_for(events, lambda e: e["kind"] == "reply" and e.get("id") == ident,
+                        RETRY_SECONDS * (RETRIES + 2))
+
+    def run(transfer, label):
+        transfer.start()
+        while not transfer.done and not transfer.error:
+            event = wait_for(events, lambda e: e["kind"] == "reply",
+                             RETRY_SECONDS * (RETRIES + 2))
+            if event is None:
+                transfer.error = f"{label}: no reply"
+            else:
+                transfer.handle(event)
+        if transfer.error:
+            print(f"agent: {transfer.error}", file=sys.stderr)
+        return not transfer.error
+
     for line in args.console:
         if not answer(send(*console_request(line)), line):
             return 1
+    for path in args.mkdir:
+        if not answer(send(*path_request(OP_MKDIR, path)), f"mkdir {path}"):
+            return 1
+    for spec in args.put:
+        path, _, local = spec.partition("=")
+        data = Path(local).read_bytes()
+        started = time.monotonic()
+        if not run(Put(send, path, data), path):
+            return 1
+        seconds = time.monotonic() - started
+        print(f"agent: put {local} -> {path} ({len(data)} bytes, {seconds:.1f} s)", flush=True)
+    for spec in args.rename:
+        source, _, target = spec.partition("=")
+        if not answer(send(*rename_request(source, target)), f"rename {source}"):
+            return 1
+    for path in args.list:
+        start, total = 0, None
+        while total is None or start < total:
+            reply = wait_reply(send(*list_request(path, start)))
+            if reply is None or reply["status"] != "ok":
+                print(f"agent: list {path}: {reply['status'] if reply else 'no reply'}",
+                      file=sys.stderr)
+                return 1
+            total, entries = parse_list(reply["payload"])
+            for name, is_dir, size in entries:
+                print(f"  {name}{'/' if is_dir else ''}" + ("" if is_dir else f"  {size}"))
+            if not entries:
+                break
+            start += len(entries)
+        print(f"agent: list {path}: {total} entries", flush=True)
     for path in args.fetch:
         fetch = Fetch(send, path)
         fetch.start()
@@ -511,6 +658,12 @@ def act(listener, events, host, args):
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(fetch.data())
         print(f"agent: fetched {path} -> {out} ({fetch.size} bytes)", flush=True)
+    for path in args.delete:
+        if not answer(send(*path_request(OP_DELETE, path)), f"delete {path}"):
+            return 1
+    if args.launch and not answer(send(*path_request(OP_LAUNCH, args.launch)),
+                                  f"launch {args.launch}"):
+        return 1
     if args.exit and not answer(send(*console_request("exit")), "exit"):
         return 1
     if args.reboot and not answer(send(OP_REBOOT, b""), "reboot"):

@@ -42,6 +42,15 @@ void manifest_free(char *text, struct json *j);
 int verify_build(const struct build *b, struct verify *v, progress_fn progress);
 /* Starts the build's default.xbe; returns only on failure, with a reason. */
 const char *launch_build(const struct build *b, void (*before)(void));
+const char *launch_xbe(const char *xbe, void (*before)(void));
+/* main.c: stops the screen and starts an XBE; returns only on failure. */
+void mgr_launch_xbe(const char *xbe);
+
+/* The agent (agent.c), on when E:\TES3X\console.ini sets NetAgent. */
+void agent_start(void);
+void agent_poll(void);
+void agent_goodbye(void);
+const char *agent_status(void);
 
 /* XBE rebuild from the delta in a manifest's xbe entry (xbe.c). */
 int xbe_title_id(const char *path, unsigned *title_id);
@@ -50,6 +59,7 @@ const char *rebuild_xbe(const struct build *b, const char *xbe, const char *reta
 
 int read_file(const char *path, unsigned char **data, size_t *n);
 int name_cmp(const char *a, const char *b);
+int name_cmp_n(const char *a, const char *b, size_t n);
 void join_path(char *out, size_t n, const char *folder, const char *relative);
 
 #endif

@@ -3,7 +3,8 @@
  *
  * E:\tes3xmgrexec.txt, when present, is read once at start and deleted: one command a line,
  * run in order without input, for unattended tests:
- *   list | verify NAME | launch NAME | rebuild NAME XBE RETAIL DELTA | shutdown | reboot */
+ *   list | verify NAME | launch NAME | rebuild NAME XBE RETAIL DELTA | agent SECONDS
+ *   | shutdown | reboot */
 
 #include "mgr.h"
 
@@ -23,7 +24,7 @@
 #define MAX_BUILDS 64
 #define ROWS 16
 #define COLS 60
-#define LIST_ROWS (ROWS - 4)
+#define LIST_ROWS (ROWS - 5)
 #define MAX_LINES 512
 
 enum screen { LIST, DETAILS, MESSAGE };
@@ -101,6 +102,7 @@ static void draw_list(void)
         pb_printat(2 + row, 0, "%c %-22.22s %-16.16s %5lluMB", i == selected ? '>' : ' ',
                    b->path, b->error[0] ? b->error : b->profile, b->bytes >> 20);
     }
+    pb_printat(ROWS - 2, 0, "Agent: %.50s", agent_status());
     pb_printat(ROWS - 1, 0, "A details  Y rescan");
 }
 
@@ -148,6 +150,7 @@ static int cancel_pressed(void)
 
 static int progress(const char *what, unsigned long long done, unsigned long long total)
 {
+    agent_poll();
     if (!video_up || SDL_GetTicks() - last_draw < 100)
         return 0;
     frame_begin();
@@ -236,8 +239,9 @@ static void verify(const struct build *b)
         snprintf(message[2], COLS + 1, "The files are listed in " LOG_PATH ".");
 }
 
-static void stop_video(void)
+static void leaving(void)
 {
+    agent_goodbye();
     if (video_up)
         pb_kill();
     video_up = 0;
@@ -245,9 +249,17 @@ static void stop_video(void)
 
 static void launch(const struct build *b)
 {
-    const char *err = launch_build(b, stop_video);
+    const char *err = launch_build(b, leaving);
 
     mgr_log("launch %s failed: %s\n", b->path, err);
+    say("Cannot launch:", err);
+}
+
+void mgr_launch_xbe(const char *xbe)
+{
+    const char *err = launch_xbe(xbe, leaving);
+
+    mgr_log("launch %s failed: %s\n", xbe, err);
     say("Cannot launch:", err);
 }
 
@@ -298,6 +310,12 @@ static void run_exec(void)
         } else if (!strcmp(arg[0], "rebuild") && argc == 5 && (b = find_build(arg[1]))) {
             err = rebuild_xbe(b, arg[2], arg[3], arg[4], NULL);
             mgr_log("exec: rebuild %s\n", err ? err : "ok");
+        } else if (!strcmp(arg[0], "agent") && argc == 2) {
+            /* serve the agent unattended, until the PC reboots or launches */
+            for (n = KeTickCount; KeTickCount - n < (DWORD)atoi(arg[1]) * 1000;) {
+                agent_poll();
+                Sleep(5);
+            }
         } else if (!strcmp(arg[0], "shutdown")) {
             mgr_log("exec: shutdown\n");
             HalInitiateShutdown();
@@ -354,6 +372,7 @@ int main(void)
     mount_drives();
     mgr_log("manager %s start\n", MGR_VERSION);
     scan();
+    agent_start();
     run_exec();
 
     XVideoSetMode(640, 480, 32, REFRESH_DEFAULT);
@@ -371,6 +390,7 @@ int main(void)
             else if (e.type == SDL_CONTROLLERBUTTONDOWN)
                 press(e.cbutton.button);
         }
+        agent_poll();
         draw();
     }
 }

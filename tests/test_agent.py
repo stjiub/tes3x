@@ -7,10 +7,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import struct
 
 from tes3x_agent import (AgentProtocol, Fetch, HANDSHAKE1, HANDSHAKE2, HANDSHAKE3, HEADER,
-                         HEARTBEAT, MAGIC, OP_CONSOLE, OP_READ, PROLOGUE, READ_CHUNK, REPLY,
-                         REQUEST, RETRIES, RETRY_SECONDS, SEALED, VERSION, WELCOME,
-                         console_request, decode, encode, key_fingerprint, load_or_create_key,
-                         read_request)
+                         HEARTBEAT, MAGIC, OP_CONSOLE, OP_MKDIR, OP_LIST, OP_READ, OP_RENAME,
+                         OP_WRITE, PROLOGUE, Put, READ_CHUNK, REPLY, REQUEST, RETRIES,
+                         RETRY_SECONDS, SEALED, VERSION, WELCOME, console_request, decode, encode,
+                         key_fingerprint, list_request, load_or_create_key, parse_list,
+                         path_request, read_request, rename_request, write_request)
 from tes3x_net import Noise, fingerprint, seal, unseal
 
 
@@ -194,6 +195,46 @@ class AgentRequestTests(unittest.TestCase):
         self.console.send(REPLY, struct.pack("<IB", ident, 3))
         fetch.handle(self.replies()[-1])
         self.assertIn("failed", fetch.error)
+
+    def test_put_writes_the_first_chunk_alone_then_windows(self):
+        content = bytes(range(256)) * 13
+        sent, written = [], bytearray()
+
+        def send(op, args):
+            ident, packets = self.protocol.request(self.peer, op, args)
+            sent.append((ident, self.console.open(packets[0][0])))
+            return ident
+
+        put = Put(send, "F:\\Games\\X\\a.bin", content, window=2)
+        put.start()
+        self.assertEqual(len(sent), 1)
+        while sent:
+            ident, plain = sent.pop(0)
+            _, op = struct.unpack_from("<IB", plain, 1)
+            offset, n = struct.unpack_from("<IB", plain, 6)
+            self.assertEqual((op, plain[11:11 + n]), (OP_WRITE, b"F:\\Games\\X\\a.bin"))
+            data = plain[11 + n:]
+            if offset == 0:
+                written[:] = data
+            else:
+                written[offset:offset + len(data)] = data
+            self.console.send(REPLY, struct.pack("<IB", ident, 0))
+            put.handle(self.replies()[-1])
+            self.assertLessEqual(len(put.outstanding), 2)
+        self.assertTrue(put.done)
+        self.assertEqual(bytes(written), content)
+
+    def test_list_reply_and_manager_requests(self):
+        payload = struct.pack("<IH", 3, 2) + struct.pack("<BIB", 1, 0, 4) + b"Data" + \
+            struct.pack("<BIB", 0, 1234, 7) + b"Mod.esp"
+        self.assertEqual(parse_list(payload), (3, [("Data", True, 0), ("Mod.esp", False, 1234)]))
+        self.assertEqual(rename_request("E:/a", "E:/bb"), (OP_RENAME, b"\x04E:/aE:/bb"))
+        self.assertEqual(path_request(OP_MKDIR, "E:/x"), (OP_MKDIR, b"E:/x"))
+        self.assertEqual(list_request("E:/", 5), (OP_LIST, b"\x05\0\0\0E:/"))
+        with self.assertRaises(ValueError):
+            write_request("E:/" + "x" * 300, 0, b"")
+        # a write chunk with a long path still fits one sealed packet
+        self.protocol.request(self.peer, *write_request("E:/" + "x" * 252, 0, b"\0" * 1024))
 
 
 if __name__ == "__main__":
