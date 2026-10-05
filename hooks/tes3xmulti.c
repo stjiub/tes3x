@@ -6478,7 +6478,7 @@ typedef void(__attribute__((thiscall)) *fn_inventory_add)(void *inventory, void 
                                                           void *object, int count, int overwrite,
                                                           u8 **data);
 typedef void(__attribute__((thiscall)) *fn_inventory_remove)(void *inventory, void *mobile,
-                                                             void *object, int count, void *data,
+                                                             void *object, void *data, int count,
                                                              int drop_array);
 typedef void(__attribute__((thiscall)) *fn_heap_free)(void *heap, void *p);
 
@@ -6867,12 +6867,44 @@ static void wants_send(void)
         boxes_want = 0;
 }
 
+/* Every stack out, item data destroyed. Nothing may be worn: the worn list points into them. */
+static void inventory_empty(u8 *inventory)
+{
+    u8 *node, *stack, *item, *vars, *data;
+    u32 guard;
+    int count;
+
+    for (guard = 0; plausible(node = *(u8 **)(inventory + INVENTORY_FIRST)) && guard < 512;
+         guard++) {
+        stack = *(u8 **)(node + 8);
+        item = *(u8 **)(stack + 4);
+        vars = *(u8 **)(stack + STACK_VARIABLES);
+        if (plausible(vars) && *(const u32 *)(vars + 0xC) &&
+            plausible(data = **(u8 ***)(vars + 4))) {
+            ((fn_inventory_remove)TES3X_NET_INVENTORY_REMOVE)(inventory, 0, item, data, 1, 1);
+            vars = *(u8 **)(stack + STACK_VARIABLES);
+            if (*(u8 **)(inventory + INVENTORY_FIRST) == node && *(u8 **)(node + 8) == stack &&
+                plausible(vars) && *(const u32 *)(vars + 0xC) && **(u8 ***)(vars + 4) == data)
+                break; /* not removed: freeing it would leave the stack pointing at it */
+            ((fn_mobile_call)TES3X_NET_ITEM_DATA_DESTROY)(data);
+            ((fn_heap_free)TES3X_NET_HEAP_FREE)((void *)TES3X_NET_HEAP, data);
+            continue;
+        }
+        count = *(const int *)stack;
+        ((fn_inventory_remove)TES3X_NET_INVENTORY_REMOVE)(inventory, 0, item, 0,
+                                                          count < 0 ? -count : count ? count : 1,
+                                                          1);
+        if (*(u8 **)(inventory + INVENTORY_FIRST) == node && *(u8 **)(node + 8) == stack &&
+            *(const int *)stack == count)
+            break; /* not removed: stop rather than loop */
+    }
+}
+
 /* Empty the reference's container instance, cloning it first, and fill it with the entries. */
 static int contents_apply(u8 *ref, const struct entry *e, u32 n)
 {
-    u8 *object = *(u8 **)(ref + REF_BASE), *inventory, *node, *stack, *item, *vars, *data;
-    u32 i, guard;
-    int count;
+    u8 *object = *(u8 **)(ref + REF_BASE), *inventory, *item, *data;
+    u32 i;
 
     if ((u32)vtable_of(object) == TES3X_NET_CONTAINER_VTABLE) {
         ((fn_clone)(*(void *const *const *)object)[CONTAINER_CLONE / 4])(object, ref);
@@ -6882,26 +6914,7 @@ static int contents_apply(u8 *ref, const struct entry *e, u32 n)
         return 0;
     inventory = object + OBJECT_INVENTORY;
     object_applying = 1;
-    for (guard = 0; plausible(node = *(u8 **)(inventory + INVENTORY_FIRST)) && guard < 512;
-         guard++) {
-        stack = *(u8 **)(node + 8);
-        item = *(u8 **)(stack + 4);
-        vars = *(u8 **)(stack + STACK_VARIABLES);
-        if (plausible(vars) && *(const u32 *)(vars + 0xC) &&
-            plausible(data = **(u8 ***)(vars + 4))) {
-            ((fn_inventory_remove)TES3X_NET_INVENTORY_REMOVE)(inventory, 0, item, 1, data, 1);
-            ((fn_mobile_call)TES3X_NET_ITEM_DATA_DESTROY)(data);
-            ((fn_heap_free)TES3X_NET_HEAP_FREE)((void *)TES3X_NET_HEAP, data);
-            continue;
-        }
-        count = *(const int *)stack;
-        ((fn_inventory_remove)TES3X_NET_INVENTORY_REMOVE)(inventory, 0, item,
-                                                          count < 0 ? -count : count ? count : 1,
-                                                          0, 1);
-        if (*(u8 **)(inventory + INVENTORY_FIRST) == node && *(u8 **)(node + 8) == stack &&
-            *(const int *)stack == count)
-            break; /* not removed: stop rather than loop */
-    }
+    inventory_empty(inventory);
     for (i = 0; i < n; i++) {
         if (!(item = resolve_object(e[i].id))) {
             box_failures++;
