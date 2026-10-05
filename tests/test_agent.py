@@ -214,6 +214,7 @@ class AgentRequestTests(unittest.TestCase):
             offset, n = struct.unpack_from("<IB", plain, 6)
             self.assertEqual((op, plain[11:11 + n]), (OP_WRITE, b"F:\\Games\\X\\a.bin"))
             data = plain[11 + n:]
+            last = offset, len(data)
             if offset == 0:
                 written[:] = data
             else:
@@ -223,6 +224,8 @@ class AgentRequestTests(unittest.TestCase):
             self.assertLessEqual(len(put.outstanding), 2)
         self.assertTrue(put.done)
         self.assertEqual(bytes(written), content)
+        # the last write is empty, so its answer covers what the manager held back
+        self.assertEqual(last, (len(content), 0))
 
     def test_list_reply_and_manager_requests(self):
         payload = struct.pack("<IH", 3, 2) + struct.pack("<BIB", 1, 0, 4) + b"Data" + \

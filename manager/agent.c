@@ -39,6 +39,7 @@ enum { OFF, NET_WAIT, WANT, SENT1, SENT3, CONNECTED, UNTRUSTED };
 #define LIST_BUDGET 1200
 #define DONE_IDS 64
 #define FILE_IDLE_MS 2000
+#define WRITE_BUFFER 65536
 
 static const unsigned char prologue[] = "TES3X in-game agent v1";
 static const unsigned char hello[8] = {0, 0, 0, 0, 'm', 'g', 'r', '1'};
@@ -52,7 +53,7 @@ static unsigned char pinned[AGENT_FINGERPRINT], send_key[32], receive_key[32];
 static struct noise handshake;
 static unsigned char hs_packet[AGENT_HEADER + NOISE_MSG3 + sizeof(hello)];
 static unsigned hs_n;
-static volatile int net_ready;
+static CRITICAL_SECTION lock;
 static char status_text[64] = "off";
 static nx_net_parameters_t net;
 
@@ -72,10 +73,21 @@ static struct {
     char path[PATH_MAX_MGR];
     int writing;
     DWORD used;
+    /* contiguous writes held back: the disk takes about 1 ms for each small write */
+    unsigned start, fill;
 } file = {INVALID_HANDLE_VALUE};
+static unsigned char held[WRITE_BUFFER];
+/* a held write that later failed; the next request that changes something reports it */
+static int write_failed;
+
+/* Where a session's time went, in CPU cycles; logged when it ends. */
+static struct {
+    unsigned long long open, op, seal, send;
+    unsigned requests, idle;
+} cost;
 
 static char launch_path[PATH_MAX_MGR];
-static DWORD launch_at;
+static volatile DWORD launch_at;
 
 static unsigned get32(const unsigned char *p)
 {
@@ -86,6 +98,23 @@ static void put32(unsigned char *p, unsigned v)
 {
     p[0] = (unsigned char)v, p[1] = (unsigned char)(v >> 8);
     p[2] = (unsigned char)(v >> 16), p[3] = (unsigned char)(v >> 24);
+}
+
+static unsigned long long cycles(void)
+{
+    unsigned lo, hi;
+
+    __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
+    return (unsigned long long)hi << 32 | lo;
+}
+
+static void cost_log(void)
+{
+    if (cost.requests)
+        mgr_log("agent: %u requests; us in open %u, ops %u, seal %u, send %u; %u idle sleeps\n",
+                cost.requests, (unsigned)(cost.open / 733), (unsigned)(cost.op / 733),
+                (unsigned)(cost.seal / 733), (unsigned)(cost.send / 733), cost.idle);
+    memset(&cost, 0, sizeof(cost));
 }
 
 static void entropy_add(void)
@@ -145,6 +174,7 @@ static void sealed_send(int kind, const unsigned char *body, unsigned n)
 {
     static unsigned char packet[AGENT_MAX], plain[AGENT_MAX];
     unsigned sequence;
+    unsigned long long t;
 
     if (phase != CONNECTED || AGENT_HEADER + n + 1 + NOISE_TAG > AGENT_MAX)
         return;
@@ -152,8 +182,12 @@ static void sealed_send(int kind, const unsigned char *body, unsigned n)
     plain[0] = (unsigned char)kind;
     memcpy(plain + 1, body, n);
     header(packet, SEALED, n + 1 + NOISE_TAG, sequence);
+    t = cycles();
     noise_seal(send_key, sequence, packet, AGENT_HEADER, plain, n + 1, packet + AGENT_HEADER);
+    cost.seal += cycles() - t;
+    t = cycles();
     transmit(packet, AGENT_HEADER + n + 1 + NOISE_TAG);
+    cost.send += cycles() - t;
 }
 
 static void reply(unsigned id, int status, const unsigned char *payload, unsigned n)
@@ -292,16 +326,7 @@ static int parse_network(const char *text)
     return 1;
 }
 
-static DWORD WINAPI net_thread(LPVOID unused)
-{
-    int r = nxNetInit(&net);
-
-    (void)unused;
-    /* -2 is DHCP still waiting; its lease may come later */
-    mgr_log("agent: network init %d\n", r);
-    net_ready = r == 0 || r == -2;
-    return 0;
-}
+static DWORD WINAPI agent_thread(LPVOID unused);
 
 void agent_start(void)
 {
@@ -326,13 +351,32 @@ void agent_start(void)
     snprintf(status_text, sizeof(status_text), "starting network");
     mgr_log("agent: target %u.%u.%u.%u:%u\n", target >> 24, target >> 16 & 255, target >> 8 & 255,
             target & 255, target_port);
-    CreateThread(NULL, 0, net_thread, NULL, 0, NULL);
+    InitializeCriticalSection(&lock);
+    CreateThread(NULL, 0, agent_thread, NULL, 0, NULL);
 }
 
 /* --- requests --- */
 
+static int file_flush(void)
+{
+    DWORD put;
+    int ok;
+
+    if (!file.fill)
+        return 1;
+    ok = SetFilePointer(file.h, (LONG)file.start, NULL, FILE_BEGIN) != INVALID_SET_FILE_POINTER
+         && WriteFile(file.h, held, file.fill, &put, NULL) && put == file.fill;
+    if (!ok) {
+        write_failed = 1;
+        mgr_log("agent: write %s at %u failed\n", file.path, file.start);
+    }
+    file.fill = 0;
+    return ok;
+}
+
 static void file_close(void)
 {
+    file_flush();
     if (file.h != INVALID_HANDLE_VALUE)
         CloseHandle(file.h);
     file.h = INVALID_HANDLE_VALUE;
@@ -432,12 +476,12 @@ static void op_read(unsigned id, const unsigned char *a, unsigned n)
     reply(id, ST_OK, out, 8 + got);
 }
 
-/* offset, path length, path, data. Offset 0 creates or truncates the file. */
+/* offset, path length, path, data. Offset 0 creates or truncates the file; no data writes out
+ * what is held, so its answer covers every earlier write. */
 static void op_write(unsigned id, const unsigned char *a, unsigned n)
 {
     char path[PATH_MAX_MGR];
     unsigned offset, path_n;
-    DWORD put;
 
     if (n < 6 || (path_n = a[4]) + 5 > n || !take_path(a + 5, path_n, path)) {
         reply(id, ST_BAD, NULL, 0);
@@ -445,15 +489,21 @@ static void op_write(unsigned id, const unsigned char *a, unsigned n)
     }
     offset = get32(a);
     a += 5 + path_n, n -= 5 + path_n;
-    if (!file_open(path, 1, offset == 0)
-        || SetFilePointer(file.h, (LONG)offset, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER
-        || !WriteFile(file.h, a, n, &put, NULL) || put != n) {
-        file_close();
+    if (!file_open(path, 1, offset == 0)) {
         finish(id, ST_FAILED);
         return;
     }
     file.used = KeTickCount;
-    finish(id, ST_OK);
+    if (file.fill && (offset != file.start + file.fill || file.fill + n > WRITE_BUFFER))
+        file_flush();
+    if (!file.fill)
+        file.start = offset;
+    memcpy(held + file.fill, a, n);
+    file.fill += n;
+    if (!n || file.fill == WRITE_BUFFER)
+        file_flush();
+    finish(id, write_failed ? ST_FAILED : ST_OK);
+    write_failed = 0;
 }
 
 /* start, path. Answers the total and as many entries from `start` as fit: attributes, size,
@@ -566,6 +616,11 @@ static void request(const unsigned char *body, unsigned n)
         reply(id, status, NULL, 0);
         return;
     }
+    if (op != OP_WRITE && (file_flush(), write_failed)) {
+        write_failed = 0;
+        finish(id, ST_FAILED);
+        return;
+    }
     switch (op) {
     case OP_WRITE:
         op_write(id, body, n);
@@ -638,6 +693,8 @@ static void receive(const unsigned char *p, unsigned n)
 {
     static unsigned char plain[AGENT_MAX];
     unsigned size, sequence, length;
+    unsigned long long t;
+    int opened;
 
     if (n < AGENT_HEADER || memcmp(p, "T3AG", 4) || p[4] != AGENT_VERSION
         || (size = p[6] | (unsigned)p[7] << 8) != n - AGENT_HEADER || get32(p + 8) != session)
@@ -648,8 +705,12 @@ static void receive(const unsigned char *p, unsigned n)
         return;
     }
     if (p[5] != SEALED || phase < SENT3 || size < NOISE_TAG + 1
-        || (has_incoming && (int)(sequence - incoming) <= 0)
-        || noise_open(receive_key, sequence, p, AGENT_HEADER, p + AGENT_HEADER, size, plain))
+        || (has_incoming && (int)(sequence - incoming) <= 0))
+        return;
+    t = cycles();
+    opened = noise_open(receive_key, sequence, p, AGENT_HEADER, p + AGENT_HEADER, size, plain);
+    cost.open += cycles() - t;
+    if (opened)
         return;
     /* A request can overtake the welcome; it is retried, and must not make the welcome look
      * like a replay. */
@@ -664,7 +725,10 @@ static void receive(const unsigned char *p, unsigned n)
         snprintf(status_text, sizeof(status_text), "connected to the PC");
         mgr_log("agent: connected, session %08X\n", session);
     } else if (plain[0] == REQUEST && phase == CONNECTED && length > 4) {
+        t = cycles();
         request(plain + 1, length);
+        cost.op += cycles() - t;
+        cost.requests++;
     }
 }
 
@@ -698,40 +762,11 @@ static void open_socket(void)
     phase = WANT;
 }
 
-void agent_poll(void)
+static void serve(void)
 {
-    static unsigned char packet[AGENT_MAX + 1];
     unsigned char beat[16];
-    struct sockaddr_in from;
-    socklen_t from_n;
-    int got;
     DWORD now = KeTickCount;
 
-    entropy_add();
-    if (launch_at && (int)(now - launch_at) >= 0) {
-        launch_at = 0;
-        mgr_launch_xbe(launch_path);
-    }
-    if (phase == OFF || phase == UNTRUSTED)
-        return;
-    if (phase == NET_WAIT) {
-        if (net_ready)
-            open_socket();
-        return;
-    }
-    for (;;) {
-        from_n = sizeof(from);
-        got = recvfrom(sock, packet, sizeof(packet), MSG_DONTWAIT, (struct sockaddr *)&from,
-                       &from_n);
-        if (got <= 0)
-            break;
-        entropy_add();
-        if (ntohl(from.sin_addr.s_addr) == target && ntohs(from.sin_port) == target_port
-            && got <= AGENT_MAX)
-            receive(packet, (unsigned)got);
-    }
-    /* requests may have taken a while, and heard_at must not be later than now */
-    now = KeTickCount;
     if (phase == WANT) {
         handshake_start();
     } else if (phase == SENT1 || phase == SENT3) {
@@ -746,6 +781,7 @@ void agent_poll(void)
         if (now - heard_at > SILENCE_MS) {
             mgr_log("agent: PC silent, pairing again\n");
             snprintf(status_text, sizeof(status_text), "PC silent, pairing again");
+            cost_log();
             phase = WANT;
             file_close();
             return;
@@ -763,6 +799,63 @@ void agent_poll(void)
     }
 }
 
+/* Requests are answered as they arrive: a reply waits on nothing the UI does. */
+static DWORD WINAPI agent_thread(LPVOID unused)
+{
+    static unsigned char packet[AGENT_MAX + 1];
+    struct sockaddr_in from;
+    socklen_t from_n;
+    int r, got, heard;
+
+    (void)unused;
+    r = nxNetInit(&net);
+    /* -2 is DHCP still waiting; its lease may come later */
+    mgr_log("agent: network init %d\n", r);
+    if (r != 0 && r != -2)
+        return 0;
+    while (sock < 0) {
+        entropy_add();
+        open_socket();
+        if (sock < 0)
+            Sleep(100);
+    }
+    for (;;) {
+        for (heard = 0;; heard = 1) {
+            from_n = sizeof(from);
+            got = recvfrom(sock, packet, sizeof(packet), MSG_DONTWAIT, (struct sockaddr *)&from,
+                           &from_n);
+            if (got <= 0)
+                break;
+            EnterCriticalSection(&lock);
+            entropy_add();
+            if (ntohl(from.sin_addr.s_addr) == target && ntohs(from.sin_port) == target_port
+                && got <= AGENT_MAX && phase != OFF)
+                receive(packet, (unsigned)got);
+            LeaveCriticalSection(&lock);
+        }
+        EnterCriticalSection(&lock);
+        entropy_add();
+        if (phase == OFF || phase == UNTRUSTED) {
+            LeaveCriticalSection(&lock);
+            return 0;
+        }
+        serve();
+        LeaveCriticalSection(&lock);
+        if (!heard) {
+            cost.idle++;
+            Sleep(1);
+        }
+    }
+}
+
+void agent_poll(void)
+{
+    if (launch_at && (int)(KeTickCount - launch_at) >= 0) {
+        launch_at = 0;
+        mgr_launch_xbe(launch_path);
+    }
+}
+
 const char *agent_status(void)
 {
     return status_text;
@@ -770,6 +863,12 @@ const char *agent_status(void)
 
 void agent_goodbye(void)
 {
+    if (phase == OFF)
+        return;
+    EnterCriticalSection(&lock);
     file_close();
     sealed_send(GOODBYE, NULL, 0);
+    cost_log();
+    phase = OFF;
+    LeaveCriticalSection(&lock);
 }

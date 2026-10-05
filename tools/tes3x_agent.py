@@ -170,6 +170,7 @@ class AgentProtocol:
         self.secret, self.notify, self.clock = secret, notify, clock
         self.pending, self.peers = {}, {}
         self.requests, self.next_id = {}, 1
+        self.resent = 0
 
     def event(self, peer, kind, payload=b"", **extra):
         value = {"kind": kind, "address": peer.address, "session": peer.session,
@@ -294,6 +295,7 @@ class AgentProtocol:
                     self.event(peer, "reply", b"", id=ident, status="timeout")
                 continue
             request.sent, request.tries = now, request.tries + 1
+            self.resent += 1
             packets.append((self.send(peer, REQUEST, request.body), peer.address))
         return packets
 
@@ -427,7 +429,8 @@ class Fetch:
 
 class Put:
     """Write one console file in chunks: the first alone, since it truncates the file, then the
-    rest windowed. Pass every reply event to `handle`."""
+    rest windowed, then an empty write whose answer covers the writes the manager held back.
+    Pass every reply event to `handle`."""
 
     def __init__(self, send, path, data, window=8):
         self.send, self.path, self.data, self.window = send, path, bytes(data), window
@@ -435,6 +438,7 @@ class Put:
         self.outstanding = {}
         self.next_offset = 0
         self.written = 0
+        self.synced = not self.data
 
     def start(self):
         self.issue()
@@ -462,6 +466,9 @@ class Put:
         self.written += len(self.data[offset:offset + WRITE_CHUNK])
         while not self.error and len(self.outstanding) < self.window \
                 and self.next_offset < len(self.data):
+            self.issue()
+        if not self.error and not self.outstanding and not self.synced:
+            self.synced, self.next_offset = True, len(self.data)
             self.issue()
         self.done = not self.error and not self.outstanding
         return True
@@ -502,6 +509,8 @@ def main(argv=None):
                     help="manager: make a folder (repeatable)")
     ap.add_argument("--put", action="append", default=[], metavar="PATH=LOCAL",
                     help="manager: write a local file to the console (repeatable)")
+    ap.add_argument("--window", type=int, default=8,
+                    help="manager: writes in flight during --put (default 8)")
     ap.add_argument("--rename", action="append", default=[], metavar="FROM=TO",
                     help="manager: rename a console file or folder (repeatable)")
     ap.add_argument("--list", action="append", default=[], metavar="PATH",
@@ -617,11 +626,13 @@ def act(listener, events, host, args):
     for spec in args.put:
         path, _, local = spec.partition("=")
         data = Path(local).read_bytes()
-        started = time.monotonic()
-        if not run(Put(send, path, data), path):
+        started, resent = time.monotonic(), listener.protocol.resent
+        if not run(Put(send, path, data, args.window), path):
             return 1
         seconds = time.monotonic() - started
-        print(f"agent: put {local} -> {path} ({len(data)} bytes, {seconds:.1f} s)", flush=True)
+        print(f"agent: put {local} -> {path} ({len(data)} bytes, {seconds:.1f} s, "
+              f"{len(data) / seconds / 1e6:.2f} MB/s, "
+              f"{listener.protocol.resent - resent} resent)", flush=True)
     for spec in args.rename:
         source, _, target = spec.partition("=")
         if not answer(send(*rename_request(source, target)), f"rename {source}"):
