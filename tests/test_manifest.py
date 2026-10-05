@@ -36,6 +36,17 @@ class ManifestTests(unittest.TestCase):
             self.assertEqual(manifest.diff(made, build),
                              (["Data Files/mod.esp"], ["Morrowind.ini"], ["extra.txt"]))
 
+    def test_a_delta_rebuilds_the_output_from_the_reference(self):
+        try:
+            import zstandard  # noqa: F401
+        except ImportError:
+            self.skipTest("zstandard is not installed")
+        reference = bytes(range(256)) * 4096
+        output = reference[:500000] + b"patched" * 1000 + reference[600000:]
+        delta = manifest.make_delta(reference, output)
+        self.assertLess(len(delta), 20000)
+        self.assertEqual(manifest.apply_delta(reference, delta), output)
+
     def test_a_newer_format_is_refused(self):
         with self.assertRaisesRegex(ValueError, "newer"):
             manifest.parse(b'{"format": 99, "files": {}}')

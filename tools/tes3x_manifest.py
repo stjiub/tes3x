@@ -14,6 +14,39 @@ FORMAT = 1
 MANAGER = 1
 
 
+def _zstd():
+    try:
+        import zstandard
+    except ImportError:
+        raise RuntimeError("XBE deltas need the zstandard package: pip install zstandard") \
+            from None
+    return zstandard
+
+
+def _window_log(reference, size):
+    # The frame refers back across the whole reference, so the window has to span it too.
+    return max(10, (len(reference) + size - 1).bit_length())
+
+
+def make_delta(reference, output):
+    """A zstd frame that rebuilds `output` from `reference`, as `zstd --patch-from` makes."""
+    zstd = _zstd()
+    prefix = zstd.ZstdCompressionDict(reference, dict_type=zstd.DICT_TYPE_RAWCONTENT)
+    params = zstd.ZstdCompressionParameters.from_level(
+        19, window_log=_window_log(reference, len(output)), source_size=len(output),
+        enable_ldm=True)
+    return zstd.ZstdCompressor(compression_params=params, dict_data=prefix).compress(output)
+
+
+def apply_delta(reference, delta):
+    zstd = _zstd()
+    prefix = zstd.ZstdCompressionDict(reference, dict_type=zstd.DICT_TYPE_RAWCONTENT)
+    size = zstd.frame_content_size(delta)
+    return zstd.ZstdDecompressor(dict_data=prefix,
+                                 max_window_size=1 << _window_log(reference, size)
+                                 ).decompress(delta)
+
+
 def sha256_file(path):
     digest = hashlib.sha256()
     with open(path, "rb") as stream:

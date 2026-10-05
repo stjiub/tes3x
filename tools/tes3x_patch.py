@@ -200,8 +200,8 @@ def _drive_letters(x, value, ctx):
 SCENE_EDITS = (("boot-media", ""), ("drive-letters", "D"))
 
 
-def retail_digest(data):
-    """SHA-256 of an image with the scene's edits made, so retail and scene copies share it.
+def scene_form(data):
+    """An image with the scene's edits made, headers untouched; deltas are made against it.
 
     An image without the asset paths, such as the launcher, gets only the certificate edit."""
     if data[:4] != b"XBEH":
@@ -213,7 +213,12 @@ def retail_digest(data):
             PATCHES[name][0](x, value, {})
         except PatchError:
             x.data[:] = before
-    return hashlib.sha256(x.data).hexdigest()
+    return bytes(x.data)
+
+
+def retail_digest(data):
+    """SHA-256 of an image's scene form, so retail and scene copies share it."""
+    return hashlib.sha256(scene_form(data)).hexdigest()
 
 
 @patch("save-staging")

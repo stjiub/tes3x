@@ -57,7 +57,8 @@ Also included, outside this folder:
 
 - `python/`: Python {PYTHON}, PSF License (`python/LICENSE.txt`), and the GUI's packages in
   `python/Lib/site-packages`, each with its license in its `.dist-info` folder: PySide6 and Qt
-  (GNU LGPL 3), tomlkit (MIT), cryptography (Apache 2.0 or BSD), Pillow (MIT-CMU).
+  (GNU LGPL 3), tomlkit (MIT), cryptography (Apache 2.0 or BSD), Pillow (MIT-CMU),
+  zstandard (BSD).
 - `tools/vendor/mlox/`: mlox 1.0.3, MIT.
 """
 CC_DIRS = (Path("C:/msys64/mingw64/bin"), Path("C:/msys64/clang64/bin"))

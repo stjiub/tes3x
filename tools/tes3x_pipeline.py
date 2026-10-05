@@ -18,7 +18,7 @@ import tomllib
 from xml.sax.saxutils import escape
 
 from tes3x_pack import set_ini_key, write_invalidation
-from tes3x_patch import retail_digest
+from tes3x_patch import scene_form
 import tes3x_patches as registry
 from tes3x_payload import PayloadError, build_payload, find_tool
 from tes3x_net import write_ghost_plugin
@@ -576,6 +576,28 @@ def stage_retail(data_files, ini, staged, ini_items, copy=shutil.copy2):
         text = set_ini_key(text, section.strip(), key.strip(), value)
     (staged / "Morrowind.ini").write_text(text, encoding="latin-1")
     print(f"  retail Data Files staged unchanged; Morrowind.ini with {len(ini_items)} key(s) set")
+
+
+def xbe_recipe(path, retail, patches, deltas):
+    """A build manifest's XBE entry, its delta from the retail image's scene form in `deltas`."""
+    reference = scene_form(retail.read_bytes())
+    output = path.read_bytes()
+    entry = {"path": path.name, "retail": retail.name,
+             "retail_digest": hashlib.sha256(reference).hexdigest(),
+             "patches": patches, "sha256": hashlib.sha256(output).hexdigest()}
+    try:
+        delta = tes3x_manifest.make_delta(reference, output)
+    except RuntimeError as exc:
+        print(f"  no delta for {path.name}: {exc}")
+        return entry
+    if tes3x_manifest.apply_delta(reference, delta) != output:
+        raise PipelineError(f"the delta made for {path.name} does not rebuild it")
+    digest = hashlib.sha256(delta).hexdigest()
+    deltas.mkdir(exist_ok=True)
+    (deltas / f"{digest}.zst").write_bytes(delta)
+    entry["delta"] = {"sha256": digest, "size": len(delta)}
+    print(f"  {path.name} delta: {len(delta):,} bytes")
+    return entry
 
 
 def ini_override(items, wanted_section, wanted_key):
@@ -1149,24 +1171,17 @@ def main(argv=None):
         }
         if pool:
             record["save_pool"] = {"name": pool_name, "id": f"{pool:08X}"}
-        engine_recipe = {"retail": "morrowind.xbe",
-                         "retail_digest": retail_digest(retail_xbe.read_bytes()),
-                         "patches": record["patches"]}
-        if install_layout == "overlay":
-            launcher_recipe = engine_recipe
-        else:
-            launcher_recipe = {"retail": "Default.xbe",
-                               "retail_digest": retail_digest(launcher.read_bytes()),
-                               "patches": launcher_specs}
+        deltas = work / "deltas"
+        launcher_source = ((retail_xbe, record["patches"]) if install_layout == "overlay"
+                           else (launcher, launcher_specs))
+        recipes = [xbe_recipe(staged / "Default.xbe", *launcher_source, deltas),
+                   xbe_recipe(staged / "morrowind.xbe", retail_xbe, record["patches"], deltas)]
         tes3x_manifest.write(staged, tes3x_manifest.create(
             staged, profile=profile_name, install_layout=install_layout,
             source={"kind": "pipeline", "tes3x": record["tes3x"],
                     "profile_sha256": record["profile_sha256"]},
             plugins=[plugin["name"] for plugin in plugins], ini=ini_items,
-            xbe=[{"path": "Default.xbe", **launcher_recipe,
-                  "sha256": sha256_file(staged / "Default.xbe")},
-                 {"path": "morrowind.xbe", **engine_recipe,
-                  "sha256": record["morrowind_xbe_sha256"]}],
+            xbe=recipes,
             save_pool=record.get("save_pool"), retail=vanilla))
         (work / MARKER).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
         publish(work, output)

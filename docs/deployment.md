@@ -40,13 +40,19 @@ Every game folder the pipeline stages carries `tes3xbuild.json`, which says what
 - every file, with its size, SHA-256 and whether it may be handed out by a server. XBEs and
   byte copies of retail files may not: players rebuild those from their own retail copy;
 - the plugins in load order, the `Morrowind.ini` settings the build changed and the save pool;
-- for each XBE, the retail XBE it was made from, by its retail digest, the patches applied and
-  the result's SHA-256.
+- for each XBE, the retail XBE it was made from, by its retail digest, the patches applied,
+  the result's SHA-256 and the delta that rebuilds it.
 
 A retail digest is the SHA-256 of an XBE with the edits scene copies carry made to it: the
 certificate opened to any media and region, and the game's drive letters set to `D:`. A retail
 copy and a scene copy of the same image therefore share one digest.
 `python tools/tes3x_patch.py XBE --digest` prints it.
+
+The delta is a zstd frame, as `zstd --patch-from` makes, that turns the retail XBE with those
+edits made into the patched one: about 90 KB for the engine. The pipeline writes it to
+`<build_root>/<profile name>/deltas/<its SHA-256>.zst`, beside the game folder rather than in it,
+and checks that it rebuilds the XBE. Deltas need the `zstandard` package
+(`pip install zstandard`); without it the pipeline builds as before and leaves them out.
 
 Deploy compares the console's copy of the manifest with the build, sends what differs and writes
 the manifest last, with the time of the deploy, so it describes what the console holds. A folder

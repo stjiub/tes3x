@@ -2,3 +2,4 @@ PySide6-Essentials>=6.8,<7
 tomlkit>=0.13,<1
 cryptography>=43,<47
 Pillow>=10,<13
+zstandard>=0.22,<1
