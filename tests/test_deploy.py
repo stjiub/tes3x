@@ -9,9 +9,10 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from tes3x_deploy import (BUILD_KEY, CLUSTER, ensure_dirs, ftp_basename, on_disk,
-                          owner_conflicts, parse_drives, pool_plan, remote_tree, upload_file,
-                          verify_uploads)
+from tes3x_deploy import (CLUSTER, deployed_manifest, ensure_dirs, ftp_basename,
+                          legacy_manifest, on_disk, owner_conflicts, parse_drives, pool_plan,
+                          read_manifest, remote_tree, upload_file, verify_uploads)
+import tes3x_manifest
 
 
 class FakeFtp:
@@ -68,7 +69,10 @@ class FakeFtp:
         verb, name = command.split(" ", 1)
         if verb != "RETR":
             raise AssertionError(command)
-        callback(self.files[posixpath.join(self.current, name)])
+        path = posixpath.join(self.current, name)
+        if path not in self.files:
+            raise ftplib.error_perm("550 file not found")
+        callback(self.files[path])
 
     def close(self):
         self.calls.append(("close",))
@@ -142,15 +146,54 @@ class DeployFtpTests(unittest.TestCase):
 
     def test_owner_conflicts(self):
         base = "F:/Games/M"
-        self.assertEqual(owner_conflicts(base, {}, {}, "main"), [])
-        untracked = owner_conflicts(base, {"default.xbe": 2048}, {}, "main")
+        self.assertEqual(owner_conflicts(base, {}, None, "main"), [])
+        untracked = owner_conflicts(base, {"default.xbe": 2048}, None, "main")
         self.assertIn("1 files (2.0 KB) that TES3X did not deploy", untracked[0])
-        mine = {"default.xbe": [1, "x"], BUILD_KEY: {"profile": "main", "deployed": "d"}}
+        mine = {"profile": "main", "deployed": "d", "files": {}}
         self.assertEqual(owner_conflicts(base, {"default.xbe": 1}, mine, "main"), [])
         self.assertIn("profile 'main', deployed d",
                       owner_conflicts(base, {"default.xbe": 1}, mine, "tr")[0])
-        legacy = {"default.xbe": [1, "x"]}
-        self.assertEqual(owner_conflicts(base, {"default.xbe": 1}, legacy, "tr"), [])
+        unstamped = legacy_manifest({"default.xbe": [1, "x"]})
+        self.assertEqual(owner_conflicts(base, {"default.xbe": 1}, unstamped, "tr"), [])
+
+    def test_old_deploy_record_reads_as_a_manifest(self):
+        ftp = FakeFtp()
+        base = "/F/Games/M"
+        ftp.dirs.add(base)
+        ftp.files[base + "/tes3xdeploy.json"] = (
+            b'{"default.xbe": [1, "ab"], ":build": {"profile": "main", "save_pool": "5433ABCD",'
+            b' "deployed": "d"}}')
+        manifest = read_manifest(ftp, "F:/Games/M")
+        self.assertEqual(manifest["profile"], "main")
+        self.assertEqual(manifest["save_pool"], {"id": "5433ABCD"})
+        self.assertEqual(manifest["files"], {"default.xbe": {"size": 1, "sha1": "ab"}})
+        ftp.files[base + "/tes3xbuild.json"] = b'{"format": 1, "profile": "new", "files": {}}'
+        self.assertEqual(read_manifest(ftp, "F:/Games/M")["profile"], "new")
+        self.assertIsNone(read_manifest(ftp, "F:/Games/Other"))
+
+    def test_deployed_manifest_records_the_console(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "Data Files").mkdir()
+            (root / "Data Files" / "a.esp").write_bytes(b"plugin")
+            (root / "default.xbe").write_bytes(b"xbe")
+            built = tes3x_manifest.create(root, profile="main", source={"kind": "pipeline"},
+                                          plugins=["a.esp"])
+            local = {"Data Files/a.esp": (6, 0, str(root / "Data Files" / "a.esp"))}
+            previous = {"files": {"default.xbe": {"size": 3, "sha256": "old", "serve": False},
+                                  "Morrowind.ini": {"size": 1, "sha1": "x"},
+                                  "data files/A.esp": {"size": 1, "sha256": "stale"}}}
+            out = deployed_manifest(built, {}, local, {"Data Files/a.esp": "new"}, previous)
+            self.assertEqual(out["profile"], "main")
+            self.assertEqual(out["plugins"], ["a.esp"])
+            self.assertIn("deployed", out)
+            self.assertEqual(out["files"], {
+                "Data Files/a.esp": {"size": 6, "sha256": "new", "serve": True},
+                "default.xbe": {"size": 3, "sha256": "old", "serve": False},
+                "Morrowind.ini": {"size": 1, "sha1": "x"}})
+            made = deployed_manifest(None, {"profile": "hand"}, local, {"Data Files/a.esp": "h"})
+            self.assertEqual((made["profile"], made["source"], list(made["files"])),
+                             ("hand", {"kind": "tree"}, ["Data Files/a.esp"]))
 
     def test_pool_plan_tells_our_pool_from_another_title(self):
         pool = {"name": "TR", "id": "5433ABCD"}

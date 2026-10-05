@@ -24,6 +24,7 @@ from tes3x_net import write_ghost_plugin
 from tes3x_agent import key_fingerprint, load_or_create_key
 from tes3x_paths import DEFAULT_REMOTE_ROOT, require_paths
 from tes3x_plugins import rules_file
+import tes3x_manifest
 import tes3x_savepool
 import tes3x_targets
 
@@ -1147,6 +1148,23 @@ def main(argv=None):
         }
         if pool:
             record["save_pool"] = {"name": pool_name, "id": f"{pool:08X}"}
+        engine_recipe = {"retail": "morrowind.xbe", "retail_sha256": sha256_file(retail_xbe),
+                         "patches": record["patches"]}
+        if install_layout == "overlay":
+            launcher_recipe = engine_recipe
+        else:
+            launcher_recipe = {"retail": "Default.xbe", "retail_sha256": sha256_file(launcher),
+                               "patches": launcher_specs}
+        tes3x_manifest.write(staged, tes3x_manifest.create(
+            staged, profile=profile_name, install_layout=install_layout,
+            source={"kind": "pipeline", "tes3x": record["tes3x"],
+                    "profile_sha256": record["profile_sha256"]},
+            plugins=[plugin["name"] for plugin in plugins], ini=ini_items,
+            xbe=[{"path": "Default.xbe", **launcher_recipe,
+                  "sha256": sha256_file(staged / "Default.xbe")},
+                 {"path": "morrowind.xbe", **engine_recipe,
+                  "sha256": record["morrowind_xbe_sha256"]}],
+            save_pool=record.get("save_pool"), retail=vanilla))
         (work / MARKER).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
         publish(work, output)
     except Exception:

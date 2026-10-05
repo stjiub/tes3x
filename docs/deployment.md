@@ -26,11 +26,28 @@ A deploy makes that folder match the build: files there that are not in the buil
 Saves and the dashboard's `_resources` folder are not touched. Give every build its own folder, and
 never deploy over an install you want to keep.
 
-Deploy keeps `tes3xdeploy.json` in the game folder, with the size and SHA-1 of every file it sent
-and the profile it came from. It stops without changing anything, with exit status 3, when the
-folder has files but no manifest, holds another profile, or when the profile's save pool folder
+Deploy stops without changing anything, with exit status 3, when the folder has files but no
+[build manifest](#build-manifest), holds another profile, or when the profile's save pool folder
 belongs to another title or pool. `--replace-remote` (or `tes3x_deploy.py --replace`) goes ahead;
 the GUI asks first.
+
+## Build manifest
+
+Every game folder the pipeline stages carries `tes3xbuild.json`, which says what the build is:
+
+- the profile, where it came from (the TES3X revision and the profile's SHA-256) and the install
+  layout;
+- every file, with its size, SHA-256 and whether it may be handed out by a server. XBEs and
+  byte copies of retail files may not: players rebuild those from their own retail copy;
+- the plugins in load order, the `Morrowind.ini` settings the build changed and the save pool;
+- for each XBE, the retail XBE it was made from (by SHA-256), the patches applied and the
+  result's SHA-256.
+
+Deploy compares the console's copy of the manifest with the build, sends what differs and writes
+the manifest last, with the time of the deploy, so it describes what the console holds. A folder
+deployed before the manifest existed has `tes3xdeploy.json` instead; deploy still trusts its
+SHA-1s and replaces it. `python tools/tes3x_manifest.py FOLDER` checks a local game folder
+against its manifest.
 
 ## Connecting
 

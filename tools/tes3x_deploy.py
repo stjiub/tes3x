@@ -13,19 +13,22 @@ import re
 import socket
 import sys
 import time
+from pathlib import Path
 import tes3x_ftp
+import tes3x_manifest
 from tes3x_paths import require_paths
 import tes3x_savepool
 
 PLUGIN_EXT = (".esm", ".esp")
 MTIME_SLACK = 3
 CACHE_DRIVES = ("X:", "Y:", "Z:")
-MANIFEST = "tes3xdeploy.json"
+MANIFEST = tes3x_manifest.NAME
+# Written by deploys before the build manifest: {path: [size, sha1], ":build": {...}}.
+LEGACY_MANIFEST = "tes3xdeploy.json"
 # The dashboard keeps its metadata and artwork here. A build may add to it but never owns it.
 DASHBOARD_DIR = "_resources/"
 # Edited in place at the same size; without a manifest entry these always go.
 IN_PLACE_EXT = (".xbe", ".ini", ".txt", ".xml")
-# The manifest entry saying which build a folder holds. A colon cannot start a FATX name.
 BUILD_KEY = ":build"
 PIPELINE_MARKER = ".tes3x-pipeline.json"
 # Exit status when the target folder or save pool belongs to something else.
@@ -48,17 +51,68 @@ def sha1(path):
 
 
 def read_manifest(ftp, base):
-    buf = io.BytesIO()
-    try:
-        ftp.retrbinary(f"RETR {ftp_basename(ftp, posixpath.join(base, MANIFEST))}", buf.write)
-        return {k.lower(): v for k, v in json.loads(buf.getvalue()).items()}
-    except ftplib.all_errors + (ValueError,):
-        return {}
+    """The folder's build manifest, a legacy deploy record converted to one, or None.
+
+    A converted record keeps its SHA-1s under "sha1"; they still vouch for unchanged files."""
+    for name in (MANIFEST, LEGACY_MANIFEST):
+        buf = io.BytesIO()
+        try:
+            ftp.retrbinary(f"RETR {ftp_basename(ftp, posixpath.join(base, name))}", buf.write)
+            if name == MANIFEST:
+                return tes3x_manifest.parse(buf.getvalue())
+            return legacy_manifest(json.loads(buf.getvalue()))
+        except ftplib.all_errors + (ValueError,):
+            continue
+    return None
 
 
-def write_manifest(ftp, base, entries):
-    data = json.dumps(dict(sorted(entries.items())), indent=0).encode()
+def legacy_manifest(entries):
+    build = entries.get(BUILD_KEY)
+    # Folders deployed before builds were stamped name no profile.
+    build = build if isinstance(build, dict) else {}
+    pool = build.get("save_pool")
+    return {"profile": build.get("profile"), "deployed": build.get("deployed"),
+            "save_pool": {"id": pool} if pool else None, "legacy": True,
+            "files": {path: {"size": value[0], "sha1": value[1]}
+                      for path, value in entries.items()
+                      if path != BUILD_KEY and isinstance(value, list) and len(value) == 2}}
+
+
+def write_manifest(ftp, base, manifest):
+    data = (json.dumps(manifest, indent=1) + "\n").encode()
     ftp.storbinary(f"STOR {ftp_basename(ftp, posixpath.join(base, MANIFEST))}", io.BytesIO(data))
+
+
+def deployed_manifest(built, record, local, hashes, previous=None):
+    """The manifest a deploy leaves: the build's own, or one made for a hand-built tree, with
+    the files as they now stand on the console.
+
+    `previous` is the console's manifest when only some files were sent; its entries keep
+    vouching for the rest, old-format SHA-1 ones included until a full deploy."""
+    if built is None:
+        built = tes3x_manifest.create(
+            None, files={}, profile=record.get("profile"), source={"kind": "tree"},
+            install_layout=record.get("install_layout", "full"),
+            save_pool=record.get("save_pool"))
+    sent = {r.lower() for r in local}
+    built_ci = {p.lower(): e for p, e in built["files"].items()}
+    files = {path: entry for path, entry in (previous or {}).get("files", {}).items()
+             if path.lower() not in sent}
+    for r, (size, _, path) in local.items():
+        entry = built_ci.get(r.lower())
+        serve = entry["serve"] if entry else tes3x_manifest.servable(r, Path(path))
+        files[r] = {"size": size, "sha256": hashes[r], "serve": serve}
+    manifest = {key: value for key, value in built.items() if key != "files"}
+    manifest["deployed"] = time.strftime("%Y-%m-%d %H:%M")
+    manifest["files"] = dict(sorted(files.items(), key=lambda item: item[0].lower()))
+    return manifest
+
+
+def build_summary(manifest):
+    """What a folder list shows about a build: profile, save pool ID, deploy time."""
+    pool = manifest.get("save_pool") or {}
+    return {"profile": manifest.get("profile"), "save_pool": pool.get("id"),
+            "deployed": manifest.get("deployed")}
 
 
 def build_record(tree):
@@ -75,14 +129,14 @@ def owner_conflicts(base, remote, manifest, profile):
     """Why deploying this profile to `base` would overwrite something it does not own."""
     if not remote:
         return []
-    owner = manifest.get(BUILD_KEY)
-    if not manifest:
+    if manifest is None:
         size = sum(max(n, 0) for n in remote.values())
         return [f"{base} holds {len(remote)} files ({human(size)}) that TES3X did not deploy"]
     # Folders deployed before builds were stamped name no profile; they stay unchallenged.
-    if isinstance(owner, dict) and owner.get("profile") != profile:
-        when = owner.get("deployed", "an unknown time")
-        return [f"{base} holds profile '{owner.get('profile') or 'unnamed'}', deployed {when}"]
+    owner = manifest.get("profile")
+    if owner is not None and owner != profile:
+        when = manifest.get("deployed") or "an unknown time"
+        return [f"{base} holds profile '{owner}', deployed {when}"]
     return []
 
 
@@ -179,8 +233,7 @@ def installed_builds(ftp, games_root):
     builds = {}
     for name in folders:
         manifest = read_manifest(ftp, posixpath.join(root, name))
-        record = manifest.get(BUILD_KEY)
-        builds[name] = record if isinstance(record, dict) else ({} if manifest else None)
+        builds[name] = build_summary(manifest) if manifest else None
     return builds
 
 
@@ -359,6 +412,9 @@ def main():
         sys.exit(f"not a directory: {args.tree}")
 
     local = local_tree(args.tree)
+    built = tes3x_manifest.load(args.tree)
+    for r in [r for r in local if r.lower() == MANIFEST]:
+        del local[r]
     if args.only:
         matched = {r for r in local
                    for pat in args.only if r == pat or fnmatch.fnmatch(r, pat)}
@@ -388,9 +444,12 @@ def main():
 
     remote = remote_tree(ftp, base)
     remote.pop(MANIFEST, None)
+    legacy = remote.pop(LEGACY_MANIFEST, None) is not None
     manifest = read_manifest(ftp, base)
+    known_files = {p.lower(): e for p, e in manifest["files"].items()} if manifest else {}
     print(f"  console has {len(remote)} files under {base}, "
-          f"manifest {'with %d entries' % len(manifest) if manifest else 'missing'}")
+          + (f"manifest with {len(known_files)} entries" if manifest else "manifest missing")
+          + (" (old format)" if manifest and manifest.get("legacy") else ""))
 
     record = build_record(args.tree)
     pool = record.get("save_pool")
@@ -408,7 +467,7 @@ def main():
         print("nothing changed; deploy with --replace to go ahead")
         sys.exit(CONFLICT)
 
-    hashes = {r: sha1(v[2]) for r, v in local.items()}
+    hashes = {r: tes3x_manifest.sha256_file(v[2]) for r, v in local.items()}
 
     # FATX is case-insensitive, so a tree carrying both music/Battle and music/battle
     # matches one remote directory. Comparing case-sensitively made every sync delete
@@ -422,9 +481,11 @@ def main():
         if have != sz:
             return True
         # A manifest entry only vouches for the file if the size still agrees with it.
-        known = manifest.get(r.lower())
-        if known and known[0] == have:
-            return known[1] != hashes[r]
+        known = known_files.get(r.lower())
+        if known and known["size"] == have:
+            if "sha256" in known:
+                return known["sha256"] != hashes[r]
+            return known.get("sha1") != sha1(local[r][2])
         return r.lower().endswith(IN_PLACE_EXT)
 
     # A named selection goes regardless: an XBE edited in place is the normal case.
@@ -531,16 +592,13 @@ def main():
     if args.verify != "none":
         print(f"  verified {len(assets) + len(plugins)} uploaded files by {args.verify}")
 
-    entries = {} if not args.only else dict(manifest)
-    for r in local:
-        entries[r.lower()] = [local[r][0], hashes[r]]
-    entries[BUILD_KEY] = {
-        "profile": record.get("profile"),
-        "profile_sha256": record.get("profile_sha256"),
-        "save_pool": pool["id"] if pool else None,
-        "deployed": time.strftime("%Y-%m-%d %H:%M"),
-    }
-    write_manifest(ftp, base, entries)
+    write_manifest(ftp, base, deployed_manifest(
+        built, record, local, hashes, manifest if args.only else None))
+    if legacy:
+        try:
+            ftp.delete(ftp_basename(ftp, posixpath.join(base, LEGACY_MANIFEST)))
+        except ftplib.all_errors as e:
+            print(f"    delete failed {LEGACY_MANIFEST}: {e}")
 
     if pool_missing:
         image = tes3x_savepool.title_image(os.path.join(args.tree, "Default.xbe"))
