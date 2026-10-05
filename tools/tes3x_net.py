@@ -448,6 +448,10 @@ PLAYER_BOUNTY = 12  # from the server: the character's last streamed crime bount
 # server keeps the latest and replays it first, so a launch running another character becomes
 # this one.
 PLAYER_IDENTITY = 13
+# What the character wears, both ways: part, parts, then a slice of one body of WORN entries (flags,
+# condition and charge when flags has ENTRY_DATA, item id ending in zero), every equipped stack. The
+# server keeps the latest and replays it after the items.
+PLAYER_WORN = 14
 IDENTITY_STATS = struct.Struct("<B13i")
 IDENTITY_FIELDS = ("name", "race", "head", "hair", "birthsign", "class", "class_name")
 SPELLS_SNAPSHOT, SPELLS_ADD, SPELLS_REMOVE = 0, 1, 2
@@ -1108,6 +1112,38 @@ def pack_items(item, entries):
     return [bytes([PLAYER_ITEMS, i, len(parts)]) + head + part for i, part in enumerate(parts)]
 
 
+def pack_worn(worn):
+    """PLAYER_WORN parts for a kept list of [item id, flags, condition, charge]."""
+    body = b"".join(bytes([flags & ENTRY_DATA]) +
+                    (struct.pack("<II", condition, charge) if flags & ENTRY_DATA else b"") +
+                    item.encode("latin-1", "replace") + b"\0"
+                    for item, flags, condition, charge in worn)
+    per = EVENT_DATA - 3
+    chunks = [body[i:i + per] for i in range(0, len(body), per)] or [b""]
+    return [bytes([PLAYER_WORN, i, len(chunks)]) + chunk for i, chunk in enumerate(chunks)]
+
+
+def unpack_worn(body):
+    """A whole PLAYER_WORN body as [item id, flags, condition, charge] entries, or raise
+    ValueError."""
+    worn, off = [], 0
+    while off < len(body):
+        flags = body[off] & ENTRY_DATA
+        off += 1
+        condition = charge = 0
+        if flags:
+            if off + 8 > len(body):
+                raise ValueError("worn entry cut short")
+            condition, charge = struct.unpack_from("<II", body, off)
+            off += 8
+        end = body.find(b"\0", off)
+        if end <= off or end - off >= 32:
+            raise ValueError("bad worn item id")
+        worn.append([wire_text(body[off:end]), flags, condition, charge])
+        off = end + 1
+    return worn
+
+
 def unpack_items(data):
     """(part, parts, item id, entries) of a PLAYER_ITEMS event."""
     part, parts = data[1], data[2]
@@ -1175,10 +1211,10 @@ class PlayerStream:
         self.items, self.skills, self.journal, self.level = {}, {}, {}, None
         self.spells = None
         self.vitals = self.place = None
-        self.bounty = self.identity = None
+        self.bounty = self.identity = self.worn = None
         self.dead = False  # died and not yet back
         self.arriving = None  # (item id, entries so far, next part)
-        self.identity_parts = None  # (body so far, next part)
+        self.identity_parts = self.worn_parts = None  # (body so far, next part)
         self.dirty = False
         try:
             with open(path, encoding="utf-8") as f:
@@ -1195,6 +1231,7 @@ class PlayerStream:
         self.spells = kept.get("spells")
         self.bounty = kept.get("bounty")
         self.identity = kept.get("identity")
+        self.worn = kept.get("worn")
 
     def reset(self):
         """A new character: nothing streamed so far belongs to it."""
@@ -1202,6 +1239,7 @@ class PlayerStream:
         self.spells = None
         self.vitals = self.place = self.arriving = None
         self.bounty = self.identity = self.identity_parts = None
+        self.worn = self.worn_parts = None
         self.dead = False
         self.dirty = True
 
@@ -1305,6 +1343,26 @@ class PlayerStream:
                 return None
             self.identity, self.dirty = identity, True
             return describe_identity(identity)
+        if kind == PLAYER_WORN and len(data) >= 3:
+            part, parts = data[1], data[2]
+            if part == 0:
+                self.worn_parts = (b"", 0)
+            if not self.worn_parts or self.worn_parts[1] != part or part >= parts:
+                self.worn_parts = None
+                return None
+            body = self.worn_parts[0] + bytes(data[3:])
+            self.worn_parts = (body, part + 1)
+            if part + 1 < parts:
+                return None
+            self.worn_parts = None
+            try:
+                worn = unpack_worn(body)
+            except ValueError:
+                return None
+            if worn == self.worn:
+                return None
+            self.worn, self.dirty = worn, True
+            return "wears " + (", ".join(item for item, *_ in worn) or "nothing")
         return None
 
     def replay(self):
@@ -1312,6 +1370,8 @@ class PlayerStream:
         events = pack_player_identity(self.identity) if self.identity else []
         events += [part for item, entries in sorted(self.items.items())
                    for part in pack_items(item, entries)]
+        if self.worn is not None:
+            events += pack_worn(self.worn)
         if self.level:
             events.append(bytes([PLAYER_LEVEL]) + self.level)
         if self.vitals:  # after LEVEL, which caps each current value at its base
@@ -1342,6 +1402,7 @@ class PlayerStream:
                                "spells": self.spells,
                                "bounty": self.bounty,
                                "identity": self.identity,
+                               "worn": self.worn,
                                "dead": self.dead})
         self.dirty = False
 

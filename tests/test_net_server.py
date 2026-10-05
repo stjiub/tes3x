@@ -619,6 +619,17 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(stream.identity, identity)
         self.assertIsNone(stream.take(parts[-1]))  # a part out of order is dropped
         self.assertEqual(stream.replay()[:len(parts)], parts)
+        worn = [[f'expensive_ring_{i:02d}_long_enough', net.ENTRY_DATA, i, 50] for i in range(8)]
+        worn.append(['common_shirt_01', 0, 0, 0])
+        parts = net.pack_worn(worn)
+        self.assertGreater(len(parts), 1)
+        self.assertTrue(all(len(p) <= net.EVENT_DATA for p in parts))
+        for part in parts[:-1]:
+            self.assertIsNone(stream.take(part))
+        self.assertTrue(stream.take(parts[-1]).startswith('wears expensive_ring_00'))
+        self.assertEqual(stream.worn, worn)
+        self.assertIn(parts[-1], stream.replay())
+        self.assertEqual(stream.take(net.pack_worn([])[0]), 'wears nothing')
 
     def admin(self, port, *words):
         run = subprocess.run([sys.executable, str(NET), 'admin', '--port', str(port), *words],

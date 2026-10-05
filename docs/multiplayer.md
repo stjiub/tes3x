@@ -98,7 +98,7 @@ still loaded first; joining then applies what the world holds.
 With `--world` the server also keeps each console's character under `characters` in `DIR`.
 Every save made while joined goes to one save slot per server and character and is uploaded; a
 console that joins running another game is sent the kept save and loads it. Between saves the
-console sends its inventory, level, attributes, skills, journal and current health, magicka and
+console sends its inventory and what it wears, level, attributes, skills, journal and current health, magicka and
 fatigue as they change, and who the character is: name, race, sex, head, hair, birthsign and
 class, including a class made in character creation. The server
 keeps the latest of them in `stream.json` beside the save and applies them over it when the

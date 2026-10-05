@@ -9607,6 +9607,7 @@ static void chargen_stat(void)
 #define PLAYER_SPELLS 11u /* mode, part, parts, then spell ids ending in zero */
 #define PLAYER_BOUNTY 12u /* from the server: the character's last bounty as i32 */
 #define PLAYER_IDENTITY 13u /* part, parts, then a slice of IDENTITY_BODY */
+#define PLAYER_WORN 14u     /* part, parts, then a slice of WORN entries */
 #define SPELLS_SNAPSHOT 0u
 #define SPELLS_ADD 1u
 #define SPELLS_REMOVE 2u
@@ -10433,66 +10434,94 @@ static void player_model_rebuild(u8 *ref, u8 *instance, u8 *mobile, const u8 *ra
     player_models_rebuilt++;
 }
 
-static void player_identity_apply(u8 *ref, const u8 *body, u32 length)
-{
+struct identity {
     const char *texts[IDENTITY_STRINGS];
-    u8 *mobile = player_mobile(), *instance = *(u8 **)(ref + REF_BASE), *npc, *links, *first;
-    u8 *race, *head, *hair, *sign = 0, *class_;
-    u32 off = IDENTITY_STATS, i, k, female = body[0] != 0, looks;
+    u8 *race, *head, *hair, *sign, *class_;
+    u32 female;
+};
+
+/* The body's records found, and its class made to match; 0 if any is missing. */
+static int identity_resolve(const u8 *body, u32 length, struct identity *id)
+{
+    u32 off = IDENTITY_STATS, i, k;
 
     for (i = 0; i < IDENTITY_STRINGS; i++) {
-        texts[i] = (const char *)body + off;
+        id->texts[i] = (const char *)body + off;
         for (k = 0; off + k < length && body[off + k] >= 0x20; k++)
             ;
-        if (off + k == length || body[off + k] || k > 31 || (!k && i != IDENTITY_BIRTHSIGN)) {
-            player_apply_failures++;
-            return;
-        }
+        if (off + k == length || body[off + k] || k > 31 || (!k && i != IDENTITY_BIRTHSIGN))
+            return 0;
         off += k + 1;
     }
-    race = find_record(TES3X_NET_FIND_RACE, texts[1]);
-    head = resolve_object(texts[2]);
-    hair = resolve_object(texts[3]);
-    if (texts[IDENTITY_BIRTHSIGN][0])
-        sign = find_record(TES3X_NET_FIND_BIRTHSIGN, texts[IDENTITY_BIRTHSIGN]);
-    if (off != length || !plausible(mobile) || !plausible(instance) ||
-        !plausible(npc = *(u8 **)(instance + NPC_BASE)) || !plausible(race) || !plausible(head) ||
-        !plausible(hair) || (texts[IDENTITY_BIRTHSIGN][0] && !plausible(sign)) ||
-        !(class_ = player_class(texts[5], texts[6], body + 1))) {
-        player_apply_failures++;
-        log_text("net.player_identity_bad", texts[0]);
-        return;
-    }
-    looks = *(u8 **)(npc + NPC_RACE) != race || *(u8 **)(npc + NPC_HEAD) != head ||
-            *(u8 **)(npc + NPC_HAIR) != hair ||
-            ((*(const u32 *)(npc + NPC_FLAGS) & NPC_FEMALE) != 0) != female;
+    id->female = body[0] != 0;
+    id->race = find_record(TES3X_NET_FIND_RACE, id->texts[1]);
+    id->head = resolve_object(id->texts[2]);
+    id->hair = resolve_object(id->texts[3]);
+    id->sign = id->texts[IDENTITY_BIRTHSIGN][0]
+                   ? find_record(TES3X_NET_FIND_BIRTHSIGN, id->texts[IDENTITY_BIRTHSIGN])
+                   : 0;
+    id->class_ = 0;
+    if (off != length || !plausible(id->race) || !plausible(id->head) || !plausible(id->hair) ||
+        (id->texts[IDENTITY_BIRTHSIGN][0] && !plausible(id->sign)))
+        return 0;
+    return (id->class_ = player_class(id->texts[5], id->texts[6], body + 1)) != 0;
+}
+
+/* Writes the identity into the player's records; 1 if race, sex, head or hair changed. The
+ * instance and mobile may not exist yet. */
+static u32 identity_write(u8 *npc, u8 *instance, u8 *mobile, const struct identity *id)
+{
+    u8 *links, *first;
+    u32 looks = *(u8 **)(npc + NPC_RACE) != id->race || *(u8 **)(npc + NPC_HEAD) != id->head ||
+                *(u8 **)(npc + NPC_HAIR) != id->hair ||
+                ((*(const u32 *)(npc + NPC_FLAGS) & NPC_FEMALE) != 0) != id->female;
+
     if (!mapped(*(const char *const *)(npc + NPC_NAME)) ||
-        !same_id(*(const char *const *)(npc + NPC_NAME), texts[0]))
-        ((fn_object_text)vtable_slot(npc, OBJECT_SET_NAME))(npc, texts[0]);
+        !same_id(*(const char *const *)(npc + NPC_NAME), id->texts[0]))
+        ((fn_object_text)vtable_slot(npc, OBJECT_SET_NAME))(npc, id->texts[0]);
     if (plausible(links = *(u8 **)(npc + NPC_LINKS))) {
-        link_set(links, LINK_RACE, texts[1]);
-        link_set(links, LINK_CLASS, texts[5]);
-        link_set(links, LINK_HEAD, texts[2]);
-        link_set(links, LINK_HAIR, texts[3]);
+        link_set(links, LINK_RACE, id->texts[1]);
+        link_set(links, LINK_CLASS, id->texts[5]);
+        link_set(links, LINK_HEAD, id->texts[2]);
+        link_set(links, LINK_HAIR, id->texts[3]);
     }
-    *(u8 **)(npc + NPC_RACE) = race;
-    *(u8 **)(npc + NPC_CLASS) = class_;
-    *(u8 **)(npc + NPC_HEAD) = head;
-    *(u8 **)(npc + NPC_HAIR) = hair;
-    sex_set(npc, female);
-    sex_set(instance, female);
+    *(u8 **)(npc + NPC_RACE) = id->race;
+    *(u8 **)(npc + NPC_CLASS) = id->class_;
+    *(u8 **)(npc + NPC_HEAD) = id->head;
+    *(u8 **)(npc + NPC_HAIR) = id->hair;
+    sex_set(npc, id->female);
+    if (instance)
+        sex_set(instance, id->female);
+    if (!mobile)
+        return looks;
     first = *(u8 **)(mobile + PLAYER_FIRST_PERSON);
     if (plausible(first) && *(void **)first == *(void **)npc) {
-        *(u8 **)(first + NPC_RACE) = race;
-        sex_set(first, female);
+        *(u8 **)(first + NPC_RACE) = id->race;
+        sex_set(first, id->female);
     }
-    if (sign)
-        *(u8 **)(mobile + PLAYER_BIRTHSIGN) = sign;
+    if (id->sign)
+        *(u8 **)(mobile + PLAYER_BIRTHSIGN) = id->sign;
+    return looks;
+}
+
+static void player_identity_apply(u8 *ref, const u8 *body, u32 length)
+{
+    struct identity id;
+    u8 *mobile = player_mobile(), *instance = *(u8 **)(ref + REF_BASE), *npc;
+    u32 looks;
+
+    if (!plausible(mobile) || !plausible(instance) ||
+        !plausible(npc = *(u8 **)(instance + NPC_BASE)) || !identity_resolve(body, length, &id)) {
+        player_apply_failures++;
+        log_text("net.player_identity_bad", (const char *)body + IDENTITY_STATS);
+        return;
+    }
+    looks = identity_write(npc, instance, mobile, &id);
     if (looks)
-        player_model_rebuild(ref, instance, mobile, race);
+        player_model_rebuild(ref, instance, mobile, id.race);
     player_identity_applied++;
-    log_text("net.player_identity", texts[0]);
-    tes3x_log_hex3("net.player_class", player_classes_made, female, (u32)class_);
+    log_text("net.player_identity", id.texts[0]);
+    tes3x_log_hex3("net.player_class", player_classes_made, id.female, (u32)id.class_);
     tes3x_log_hex3("net.player_model", looks, player_models_rebuilt, player_worn_fixed);
 }
 
@@ -10518,6 +10547,174 @@ static void player_identity_event(u8 *ref, const struct event *e)
     }
 }
 
+/* Every worn stack as a WORN entry: flags, condition and charge if it has item data, id. */
+#define WORN_BODY (WORN_MAX * (1 + 8 + SPAWN_ID))
+static u8 worn_sent[WORN_BODY], worn_in[WORN_BODY];
+static u32 worn_sent_length, worn_known, worn_in_length, worn_in_part;
+static u32 worn_out, worn_applied, worn_equipped, worn_removed;
+
+/* The body's length plus one, so an empty list reads as known; 0 when an id cannot be read. */
+static u32 worn_body(const u8 *instance, u8 *out)
+{
+    static void *worn[WORN_MAX][2];
+    const char *id;
+    u32 n = worn_read(instance, worn), i, k, at = 0;
+
+    for (i = 0; i < n; i++) {
+        if (!(id = object_id(worn[i][0])))
+            return 0;
+        out[at++] = worn[i][1] ? ENTRY_DATA : 0;
+        if (worn[i][1]) {
+            put32le(out + at, *(const u32 *)((const u8 *)worn[i][1] + ITEM_CONDITION));
+            put32le(out + at + 4, *(const u32 *)((const u8 *)worn[i][1] + ITEM_CHARGE));
+            at += 8;
+        }
+        for (k = 0; id[k] && k < SPAWN_ID - 1; k++)
+            out[at + k] = (u8)id[k];
+        out[at + k] = 0;
+        at += k + 1;
+    }
+    return at + 1;
+}
+
+static void worn_scan(const u8 *instance, int send)
+{
+    static u8 body[WORN_BODY];
+    u8 data[EVENT_DATA];
+    u32 n = worn_body(instance, body), parts, i, size;
+
+    if (!n--)
+        return;
+    for (i = 0; worn_known && n == worn_sent_length && i < n && body[i] == worn_sent[i]; i++)
+        ;
+    if (worn_known && n == worn_sent_length && i == n)
+        return;
+    parts = n ? (n + IDENTITY_PER_EVENT - 1) / IDENTITY_PER_EVENT : 1;
+    if (send) {
+        if (events_room() < parts + 2)
+            return;
+        for (i = 0; i < parts; i++) {
+            size = n - i * IDENTITY_PER_EVENT;
+            size = size < IDENTITY_PER_EVENT ? size : IDENTITY_PER_EVENT;
+            data[0] = PLAYER_WORN;
+            data[1] = (u8)i;
+            data[2] = (u8)parts;
+            copy(data + 3, body + i * IDENTITY_PER_EVENT, size);
+            event_queue(EVENT_PLAYER, data, 3 + size);
+        }
+        worn_out++;
+    }
+    copy(worn_sent, body, n);
+    worn_sent_length = n;
+    worn_known = 1;
+}
+
+/* The carried stack a WORN entry names, not yet taken: the item data with its condition and
+ * charge, or none for a plain stack. 0 when the player has no such stack. */
+static int worn_find(const u8 *instance, void *object, const char *id, u32 flags, u32 condition,
+                     u32 charge, void **data, void *taken[][2], u32 taken_n)
+{
+    static struct entry e[BOX_ENTRIES];
+    u32 n = contents_read(instance, e, BOX_ENTRIES, id), i;
+
+    for (i = 0; i < n; i++)
+        if (flags & ENTRY_DATA
+                ? (e[i].flags & ENTRY_DATA) && e[i].condition == condition &&
+                      e[i].charge == charge && !worn_has(taken, taken_n, object, e[i].data)
+                : !(e[i].flags & ENTRY_DATA) && e[i].count) {
+            *data = e[i].data;
+            return 1;
+        }
+    return 0;
+}
+
+/* Wear what the body lists and nothing else. */
+static void worn_apply(u8 *ref, const u8 *body, u32 length)
+{
+    static void *want[WORN_MAX][2], *have[WORN_MAX][2];
+    u8 *instance = *(u8 **)(ref + REF_BASE), *mobile = player_mobile(), *npc, *race, *object;
+    const char *id;
+    u32 off = 0, n = 0, m, i, k, flags, condition = 0, charge = 0, changed = 0;
+    void *data;
+
+    if (!plausible(instance) || !plausible(mobile) ||
+        !plausible(npc = *(u8 **)(instance + NPC_BASE)) ||
+        !plausible(race = *(u8 **)(npc + NPC_RACE))) {
+        player_apply_failures++;
+        return;
+    }
+    while (off < length && n < WORN_MAX) {
+        flags = body[off++];
+        if (flags & ENTRY_DATA) {
+            if (off + 8 > length)
+                break;
+            condition = get32le(body + off);
+            charge = get32le(body + off + 4);
+            off += 8;
+        }
+        id = (const char *)body + off;
+        for (k = 0; off + k < length && body[off + k]; k++)
+            ;
+        if (off + k == length || !k || k >= SPAWN_ID)
+            break;
+        off += k + 1;
+        data = 0;
+        if (!plausible(object = resolve_object(id)) ||
+            !worn_find(instance, object, id, flags, condition, charge, &data, want, n)) {
+            log_text("net.player_worn_missing", id);
+            player_apply_failures++;
+            continue;
+        }
+        want[n][0] = object;
+        want[n++][1] = data;
+    }
+    m = worn_read(instance, have);
+    for (i = 0; i < m; i++)
+        if (!worn_has(want, n, have[i][0], have[i][1])) {
+            ((fn_unequip_item)TES3X_NET_UNEQUIP_ITEM)(instance, have[i][0], 1, mobile, 0,
+                                                      have[i][1]);
+            worn_removed++, changed++;
+        }
+    for (i = 0; i < n; i++)
+        if (!worn_has(have, m, want[i][0], want[i][1])) {
+            if ((*(const u32 *)(race + RACE_FLAGS) & RACE_BEAST) && !beast_can_wear(want[i][0])) {
+                log_text("net.player_beast_bare", object_id(want[i][0]));
+                continue;
+            }
+            ((fn_equip_item)TES3X_NET_EQUIP_ITEM)(instance, want[i][0], want[i][1], 0, mobile);
+            ((fn_mobile_call)TES3X_NET_MOBILE_HANDS)(mobile);
+            worn_equipped++, changed++;
+        }
+    if (changed) {
+        body_parts_update(ref);
+        body_parts_update(*(u8 **)(mobile + PLAYER_FIRST_PERSON_REF));
+    }
+    worn_applied++;
+    tes3x_log_hex3("net.player_worn", n, worn_equipped, worn_removed);
+}
+
+static void worn_event(u8 *ref, const struct event *e)
+{
+    const u8 *p = e->data;
+    u32 part = p[1], parts = p[2], size = e->length - 3;
+
+    if (!parts || part >= parts || (part && part != worn_in_part) ||
+        (part ? worn_in_length : 0) + size > WORN_BODY) {
+        player_apply_failures++;
+        worn_in_part = 0;
+        return;
+    }
+    if (!part)
+        worn_in_length = 0;
+    copy(worn_in + worn_in_length, p + 3, size);
+    worn_in_length += size;
+    worn_in_part = part + 1;
+    if (worn_in_part == parts) {
+        worn_in_part = 0;
+        worn_apply(ref, worn_in, worn_in_length);
+    }
+}
+
 /* Game thread, in the world: after READY, the changes once a second. */
 static void player_frame(const u8 *ref)
 {
@@ -10534,7 +10731,7 @@ static void player_frame(const u8 *ref)
         for (i = 0; i < JOURNALS; i++)
             journal_sent[i] = 0;
         level_known = skills_known = vitals_known = player_spells_known = 0;
-        player_identity_known = 0;
+        player_identity_known = worn_known = 0;
         send = player_mode == 1;
         if (player_bounty_replayed != ses.welcomes)
             bounty_sent = -1;
@@ -10546,6 +10743,7 @@ static void player_frame(const u8 *ref)
     player_polled = now;
     player_identity_scan(mobile, npc, send);
     carried_scan(object, send);
+    worn_scan(object, send);
     level_scan(mobile, npc, send);
     skills_scan(mobile, send);
     vitals_scan(mobile, send);
@@ -11109,6 +11307,8 @@ static void player_event(const struct event *e)
         player_bounty_apply(e->data + 1);
     else if (e->data[0] == PLAYER_IDENTITY && e->length >= 4)
         player_identity_event(ref, e);
+    else if (e->data[0] == PLAYER_WORN && e->length >= 3)
+        worn_event(ref, e);
     else if (e->data[0] == PLAYER_RESPAWN && e->length >= 1 + 9)
         respawn_event(e->data + 1);
 }
@@ -11122,6 +11322,7 @@ static void player_stat(void)
                    player_spells_omitted);
     tes3x_log_hex3("net.player_identity_stat", player_identity_out, player_identity_applied,
                    player_classes_made);
+    tes3x_log_hex3("net.player_worn_stat", worn_out, worn_applied, worn_removed);
 }
 
 static void event_handle(const struct event *e)
