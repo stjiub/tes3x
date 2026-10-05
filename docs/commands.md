@@ -53,7 +53,7 @@ what each one is for and where it is explained; `--help` on any command lists it
 | `tes3x_heap.py` | render the engine heap census | [diagnostics](diagnostics.md#heap-census) |
 | `tes3x_mem.py` | render the kernel memory census | [diagnostics](diagnostics.md#memory-census) |
 | `tes3x_readlog.py` | read the log or another file from an xemu disk image | [xemu](xemu.md) |
-| `tes3x_ess.py` | break a save into record types, changed references and inventories | |
+| `tes3x_ess.py` | break a save into record types, changed references and inventories; `--diff` compares two saves by kind of state | [multiplayer](multiplayer.md#checking-a-session) |
 
 ## Multiplayer
 

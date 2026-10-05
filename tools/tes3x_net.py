@@ -428,8 +428,9 @@ EVENT_GAME, EVENT_LOAD = 23, 24
 # PLAYER_LEVEL (LEVEL), PLAYER_SKILLS (count, then SKILL each), PLAYER_JOURNAL (count, then
 # (index u16, quest id) each) or PLAYER_VITALS (VITALS). To a client only: PLAYER_PLACE (a
 # STATE_BODY: where the player last was, which the server takes from STATE), PLAYER_SPELLS (mode,
-# part, parts, ids ending in zero), the kept state, then PLAYER_READY (1 when it was replayed over
-# the checkpoint, 0 to have the console send all of it). The console sends nothing before READY.
+# part, parts, ids ending in zero), the kept state, then PLAYER_READY (0: the console sends all of
+# its state, so a stream kept from before a field was streamed fills in; 1, which the console still
+# takes as "already sent", is no longer used). The console sends nothing before READY.
 EVENT_PLAYER = 25
 PLAYER_ITEMS, PLAYER_LEVEL, PLAYER_SKILLS, PLAYER_JOURNAL, PLAYER_READY = 1, 2, 3, 4, 5
 PLAYER_VITALS, PLAYER_PLACE = 6, 7
@@ -1812,6 +1813,7 @@ class Client:
         self.synced = False  # that launch runs its character's latest checkpoint
         self.launch = 0  # GAME_NONE, GAME_LOAD or GAME_NEW
         self.character = None  # the folder of the character that launch runs
+        self.rebuild = None  # (checkpoint, when to ask for the save) under --rebuild
         self.place_hold = None  # (replayed place, until when) while STATE still shows the old one
         self.listed = []  # the folders CHARS offered, in order
         self.actor_states = 0
@@ -2385,7 +2387,7 @@ def serve(args):
             print(f"{stamp} client {client.id} died before its last stop: respawns now",
                   flush=True)
             respawn(client, 0, now)
-        client.rel.queue(EVENT_PLAYER, 0, bytes([PLAYER_READY, 1 if replay else 0]))
+        client.rel.queue(EVENT_PLAYER, 0, bytes([PLAYER_READY, 0]))
         flush(client, now)
         print(f"{stamp} client {client.id}: " + (
             f"replayed {len(stream.items)} items, {len(stream.skills)} skills, "
@@ -2423,7 +2425,7 @@ def serve(args):
         one."""
         if token != client.game:
             client.game, client.synced, client.character = token, False, None
-            client.launch = launch
+            client.launch, client.rebuild = launch, None
         making = client.key and fingerprint(client.key) in creating
         if client.synced:  # a rejoin of the same launch: events in flight were dropped
             if client.character:
@@ -2441,6 +2443,13 @@ def serve(args):
                           flush=True)
                     player_ready(client, True, stamp, now)
                     return
+        if args.rebuild is not None and kept:
+            client.character, path = kept[0]
+            client.rebuild = (path, now + args.rebuild)
+            print(f"{stamp} client {client.id} loaded {loaded or 'no save'}: rebuilding "
+                  f"{client.character} over it from the kept state alone", flush=True)
+            player_ready(client, True, stamp, now)
+            return
         if making or (not kept and not args.adopt and key_folder(client)):
             offer_starts(client, stamp, now)
             return
@@ -2455,6 +2464,26 @@ def serve(args):
         send_names(client, EVENT_CHARS, client.listed, now)
         print(f"{stamp} client {client.id} loaded {loaded or 'no save'}: offered "
               f"{', '.join(client.listed)}", flush=True)
+
+    def compare_rebuild(client, stamp):
+        """Diff a rebuilt character's save against its checkpoint, by coverage row."""
+        import contextlib
+        import io
+        from tes3x_ess import report_diff
+        checkpoint, _ = client.rebuild
+        out = client.upload.path[:-4] + ".diff.txt"
+        text = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(text):
+                count = report_diff(checkpoint, client.upload.path, 1000)
+        except ValueError as exc:
+            print(f"{stamp} client {client.id} rebuilt {client.character}, but the saves do "
+                  f"not compare: {exc}", flush=True)
+            return
+        with open(out, "w", encoding="utf-8") as f:
+            f.write(text.getvalue())
+        print(f"{stamp} client {client.id} rebuilt {client.character}: {count} differences "
+              f"from {os.path.basename(checkpoint)}, in {out}", flush=True)
 
     def on_pick(client, what, index, stamp, now):
         if what == PICK_CHARACTER and index == PICK_NEW:
@@ -2476,6 +2505,9 @@ def serve(args):
         """A finished upload: a save is kept as the console's character, the first one of a new
         character in a folder of its own."""
         if not client.upload.name.lower().endswith(".ess"):
+            return
+        if client.rebuild and client.rebuild[1] is None:
+            compare_rebuild(client, stamp)
             return
         if not client.synced:
             print(f"{stamp} client {client.id} sent {client.upload.name} from a game that is not "
@@ -3529,6 +3561,11 @@ def serve(args):
             if client.alive and (client.flush_due or client.rel.out and
                                  now - client.rel.last_send >= RESEND):
                 flush(client, now)
+        for client in clients.values():
+            if client.alive and client.rebuild and client.rebuild[1] and now >= client.rebuild[1]:
+                client.rebuild = (client.rebuild[0], None)
+                print(f"{time.strftime('%H:%M:%S')} asked client {client.id} for its rebuilt "
+                      f"character: {ask_save([client], now)}", flush=True)
         if now >= save_next:
             save_next = now + args.save_every
             if any(c.alive for c in clients.values()):
@@ -3926,6 +3963,11 @@ def main(argv=None):
                    help="how long a dead player lies before coming back (default 5)")
     p.add_argument("--death-gold", type=int, default=10, metavar="PERCENT",
                    help="the share of carried gold a death costs (default 10)")
+    p.add_argument("--rebuild", type=float, nargs="?", const=10.0, metavar="SECONDS",
+                   help="a launch not running its key's newest character gets that character's "
+                        "kept state replayed over whatever it runs and, SECONDS later (default "
+                        "10), is asked for a save; the server diffs it against the checkpoint "
+                        "(tes3x_ess.py --diff) into uploads/KEY/NAME.diff.txt and keeps neither")
     p.add_argument("--adopt", action="store_true",
                    help="a key with no character keeps whatever game its console runs instead "
                         "of making a new one (tests that start from a save)")

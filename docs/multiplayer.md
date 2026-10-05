@@ -324,6 +324,13 @@ The log is `E:\tes3xlog.txt`. A console whose plugins differ from the session's 
 with both load order hashes. `net.refused_reason` says why: 1 the load order, 2 the server is
 full, 3 a wrong password, 4 kicked, 5 banned.
 
+To see how much of a character the server could restore without its save, start the server with
+`--rebuild` and join from a different save. The server applies the character's kept state over
+that save, asks the console to save 10 seconds later, and compares the save that arrives with
+the kept one. The report goes beside the upload as `uploads/KEY/NAME.diff.txt`, one row per kind
+of state; neither save is kept as the character. `tes3x_ess.py --diff KEPT OTHER` makes the same
+report from any two saves.
+
 ## Limits
 
 - Menus no longer pause the world while joined, and resting or waiting is refused.

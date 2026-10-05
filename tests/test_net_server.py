@@ -370,7 +370,7 @@ class ServerTests(unittest.TestCase):
         loaded.join()
         self.game(loaded, 1, 9, name)
         replay = [d for k, d in self.events(loaded, ready) if k == net.EVENT_PLAYER]
-        self.assertEqual(replay[-1], bytes([net.PLAYER_READY, 1]))
+        self.assertEqual(replay[-1], bytes([net.PLAYER_READY, 0]))  # and then the console sends it all
         items = [net.unpack_items(d) for d in replay if d[0] == net.PLAYER_ITEMS]
         self.assertEqual([(i[2], i[3]) for i in items], [('Gold_001', [[150, 0, 0, 0]])])
         self.assertIn(bytes([net.PLAYER_LEVEL]) + level, replay)
@@ -390,6 +390,47 @@ class ServerTests(unittest.TestCase):
             time.sleep(0.2)
         self.assertEqual(net.PlayerStream(str(stream)).items, {'Gold_001': [[150, 0, 0, 0]]})
         self.assertEqual(net.PlayerStream(str(stream)).bounty, 4321)
+
+    def test_rebuild_replays_the_kept_state_over_another_save_and_diffs_it(self):
+        world = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, world)
+        self.start('--world', str(world), '--adopt', '--rebuild', '0.5')
+        net = tes3x_net
+
+        def save(seed):  # a header, then a journal record tes3x_ess.py can read
+            data = self.save(b'Nerevar', seed)
+            head = 16 + struct.unpack_from('<I', data, 4)[0]
+            text = random.Random(seed).randbytes(3 * net.BULK_CHUNK)
+            body = b'NAME' + struct.pack('<I', len(text)) + text
+            return data[:head] + b'JOUR' + struct.pack('<III', len(body), 0, 0) + body
+
+        first = self.client(1)
+        first.join()
+        self.game(first, 1, 7, b'')
+        kept = save(0)
+        self.upload(first, 2, 1, b'mp-hero.ess', kept)
+        self.events(first, lambda k, d: k == net.EVENT_PLAYER and d[:1] == bytes([net.PLAYER_READY]))
+        first.send(net.EVENTS, net.pack_events(0, [
+            (3, net.EVENT_PLAYER, 0, body) for body in net.pack_items('Gold_001', [[150, 0, 0, 0]])]))
+        time.sleep(0.3)
+
+        other = self.client(1)  # a launch running another save gets the character's state
+        other.session ^= 2
+        other.join()
+        self.game(other, 1, 8, b'base.ess')
+        sent = self.events(other, lambda kind, _: kind == net.EVENT_SAVE)
+        replay = [d for k, d in sent if k == net.EVENT_PLAYER]
+        self.assertEqual([net.unpack_items(d)[2:4] for d in replay if d[0] == net.PLAYER_ITEMS],
+                         [('Gold_001', [[150, 0, 0, 0]])])
+        self.assertIn(bytes([net.PLAYER_READY, 0]), replay)
+        self.upload(other, 2, 2, b'mp-hero.ess', save(1))
+        end = time.time() + 3
+        while not (found := list((world / 'uploads').rglob('mp-hero.diff.txt')))                 and time.time() < end:
+            time.sleep(0.1)
+        self.assertTrue(found, 'no diff report')
+        report = found[0].read_text(encoding='utf-8')
+        self.assertRegex(report, r'Journal\s+1\s+1')
+        self.assertEqual((self.character(world) / 'mp-hero.ess').read_bytes(), kept)
 
     def test_the_main_menu_gets_no_world_only_the_choice(self):
         world = Path(tempfile.mkdtemp())
