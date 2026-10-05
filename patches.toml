@@ -401,15 +401,15 @@ selection = "preset"
 summary = "Scale books, the journal and scrolls by screen height, so they fit a widescreen picture."
 
 [[patch]]
-name = "video-mode"
-title = "720p video output"
+name = "hd-video"
+title = "HD video output"
 bit = 34
 category = "qol"
 channel = "dev"
 selection = "preset"
 source = "tes3xvideo.c"
 requires = ["mcp-94"]
-summary = "Render at 1280x720 and output 720p when the dashboard and an HD AV pack allow it."
+summary = "Follow the dashboard's HDTV settings: 720p when enabled, otherwise the retail 480p or 480i."
 
 [[patch]]
 name = "net"

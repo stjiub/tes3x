@@ -754,10 +754,10 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         define("BOW_VIEW_UPDATE", hexva(update))
         wanted["bow_view"] = ("_tes3x_bow_view_hook",)
     if "tes3xvideo.c" in names:
-        renderer_site, create_site, count, enum = locate("video-mode")
+        renderer_site, create_site, count, enum = locate("hd-video")
         renderer = tes3x_inject.call_target(image, renderer_site)
         create = tes3x_inject.call_target(image, create_site)
-        print(f"video-mode hook: renderer call {hexva(renderer_site)} -> {hexva(renderer)}, "
+        print(f"hd-video hook: renderer call {hexva(renderer_site)} -> {hexva(renderer)}, "
               f"CreateDevice call {hexva(create_site)} -> {hexva(create)}, "
               f"modes {hexva(count)}, {hexva(enum)}")
         define("VIDEO_RENDERER_CREATE", hexva(renderer))

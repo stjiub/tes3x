@@ -35,7 +35,7 @@
       "name": "NiXBoxRenderer::create",
       "confidence": "guess",
       "provenance": "only caller of Direct3D_CreateDevice (0x00016908); fills D3DPRESENT_PARAMETERS at this+0x28C",
-      "note": "cdecl (width, height, bpp, backBufferCount, flags, depthBits, refresh, interval); present Flags fixed at 1 (lockable back buffer); video-mode hooks its call and the CreateDevice call"
+      "note": "cdecl (width, height, bpp, backBufferCount, flags, depthBits, refresh, interval); present Flags fixed at 1 (lockable back buffer); hd-video hooks its call and the CreateDevice call"
     },
     {
       "va": "0x00030A40",

@@ -830,19 +830,19 @@ def find_mcp94(x):
     return sites
 
 
-def find_video_mode(x):
+def find_hd_video(x):
     """The renderer and CreateDevice calls, and the D3D mode count and enumeration functions."""
     data = bytes(x.data)
     renderer = list(VIDEO_RENDERER_SIG.finditer(data))
     create = list(VIDEO_CREATE_SIG.finditer(data))
     modes = list(VIDEO_MODES_SIG.finditer(data))
     if len(renderer) != 1 or len(create) != 1 or len(modes) != 1:
-        raise PatchError("video-mode: found %d renderer calls, %d CreateDevice calls and %d mode "
+        raise PatchError("hd-video: found %d renderer calls, %d CreateDevice calls and %d mode "
                          "lists, expected 1" % (len(renderer), len(create), len(modes)))
     sites = [x.off_to_va(m.start(g)) for m, g in ((renderer[0], "site"), (create[0], "site"),
                                                   (modes[0], "count"), (modes[0], "enum"))]
     if None in sites:
-        raise PatchError("video-mode: a call is outside any section")
+        raise PatchError("hd-video: a call is outside any section")
     return (sites[0], sites[1], tes3x_inject.call_target(x, sites[2]),
             tes3x_inject.call_target(x, sites[3]))
 
@@ -1565,14 +1565,14 @@ def _mcp_94(x, value, ctx):
     return edits
 
 
-@patch("video-mode")
-def _video_mode(x, value, ctx):
+@patch("hd-video")
+def _hd_video(x, value, ctx):
     """Render and output 1280x720 when the dashboard and AV pack allow it."""
     hooks = ctx.get("hooks", {})
     if not all(hooks.get(k) for k in ("video_renderer", "video_create")):
-        raise PatchError("video-mode: needs `payload` first, with video_renderer and video_create "
+        raise PatchError("hd-video: needs `payload` first, with video_renderer and video_create "
                          "hooks in its manifest")
-    found = find_video_mode(x)
+    found = find_hd_video(x)
     edits = []
     for site, key, what in ((found[0], "video_renderer", "NiXBoxRenderer::create"),
                             (found[1], "video_create", "Direct3D_CreateDevice")):
@@ -2443,7 +2443,7 @@ LOCATORS = {
     "mcp-146-game": lambda image: find_mcp146_context(image)[2],
     "mcp-146-resume": lambda image: find_mcp146_context(image)[3],
     "bow-view": find_bow_view,
-    "video-mode": find_video_mode,
+    "hd-video": find_hd_video,
     "ref-index": lambda image: find_ref_index(image)[0],
     "ref-index-find": lambda image: find_ref_index(image)[1],
     "ref-index-scripts": lambda image: find_ref_index(image)[2],

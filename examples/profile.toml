@@ -50,7 +50,7 @@ enable = [
     # "loop-sleeps",           # performance: save and load without forced 1 ms sleeps
     # "mcp-146",                # qol: remove a fully nocked arrow with Ready Weapon
     # "bow-view",               # qol: lower the first-person bow and arms while an arrow is nocked
-    # "video-mode",            # qol: 720p output when the dashboard allows it (128 MB advised)
+    # "hd-video",              # qol: 720p when the dashboard enables it, else 480p/480i (128 MB advised)
     # "rotating-autosaves",    # qol: rotate autosaves through several slots
     # "transition-autosaves",  # qol: autosave before doors, teleports and travel
     # "console",               # qol: in-game console (already in testing)

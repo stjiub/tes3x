@@ -1,8 +1,8 @@
 kind = "single"
 purpose = "At 1280x720 the journal, a book and a scroll open without a crash, with their scale taken from the screen height."
-procedure = "Load the level-7 Seyda Neen fixture on a 720p build (video-mode, which requires this patch), then open the journal, read a scroll and read a book, checking that each menu is on screen."
+procedure = "Load the level-7 Seyda Neen fixture on a 720p build (hd-video, which requires this patch), then open the journal, read a scroll and read a book, checking that each menu is on screen."
 limitations = "Whether each menu fits the screen is a look at the picture: compare screenshots with and without the patch. At 640x480 the patch computes the retail scale, so it has nothing to show there."
-enable = ["diagnostics", "console", "video-mode"]
+enable = ["diagnostics", "console", "hd-video"]
 xemu = ["--skip-intro", "--no-reboot", "--ram", "128", "--bios", "cerbios", "--video", "720p"]
 save = "vanilla-seyda-neen.ess"
 watch = 'video\.mode|menu\.Menu|exec\.exit|crash\.|hang\.detected|fatal\.'

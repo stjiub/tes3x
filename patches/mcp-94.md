@@ -3,7 +3,7 @@
 Patch key: `mcp-94`
 
 The game sizes books, the journal and scrolls from the screen's width. On a 4:3 picture that
-fits, but on a 16:9 one, such as the 1280x720 that [`video-mode`](video-mode.md) renders, the
+fits, but on a 16:9 one, such as the 1280x720 that [`hd-video`](hd-video.md) renders, the
 menus grow taller than the screen and their top and bottom are cut off. This patch sizes them
 from the screen's height instead, so they fit at any aspect ratio.
 

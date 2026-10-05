@@ -1,6 +1,6 @@
 kind = "single"
 purpose = "With the dashboard's 720p setting on an HDTV AV pack, the renderer is created at 1280x720 progressive and the game reaches a playable session."
-procedure = "Boot a direct-engine build with video-mode on 128 MB, xemu's HDTV AV pack and an EEPROM with 480p and 720p enabled, start a new game, wait in game, then exit through the command script."
+procedure = "Boot a direct-engine build with hd-video on 128 MB, xemu's HDTV AV pack and an EEPROM with 480p and 720p enabled, start a new game, wait in game, then exit through the command script."
 limitations = "xemu does not show whether a television accepts the signal or how fast the console draws 720p; both need the console. UI layout and the camera's aspect need a look at the picture."
 xemu = ["--skip-intro", "--no-reboot", "--ram", "128", "--bios", "cerbios", "--video", "720p"]
 watch = 'video\.|diag\.patches|exec\.exit|crash\.|hang\.detected|fatal\.'
