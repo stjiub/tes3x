@@ -1619,6 +1619,55 @@ def zstr(text):
     return text.encode("latin-1") + b"\0"
 
 
+CHARGEN_SOURCE = """Begin CharGen
+; Morrowind.esm's, except that a New Game joining a server starts in TES3X Arrival (the payload
+; swaps [PreLoad] Cell 0) and stays there rather than going to the prison ship.
+DisablePlayerControls
+DisablePlayerJumping
+DisablePlayerViewSwitch
+DisableVanityMode
+DisablePlayerFighting
+DisablePlayerMagic
+if ( GetPCCell "TES3X Arrival" == 1 )
+	Player->PositionCell 0, 0, 64, 0, "TES3X Arrival"
+else
+	Player->PositionCell 61, -135, 24, 340, "Imperial Prison Ship"
+	ChangeWeather "Bitter Coast Region" 1
+endif
+set CharGenState to 10
+stopscript CharGen
+End CharGen
+"""
+
+
+def chargen_script():
+    """CHARGEN_SOURCE compiled as the Construction Set would: opcodes little-endian, names and
+    strings behind a length byte, an if or else followed by the count of statements it skips."""
+    def name(text):
+        return bytes([len(text)]) + text.encode("latin-1")
+
+    def op(code):
+        return struct.pack("<H", code)
+
+    def position_cell(x, y, z, angle, cell):
+        return (op(0x010C) + name("player") + op(0x1005) + struct.pack("<4f", x, y, z, angle)
+                + name(cell))
+
+    condition = b" X" + op(0x1112) + b" c" + name(ARRIVAL_CELL) + b" == 1"
+    data = b"".join(op(c) for c in (0x10DE, 0x1140, 0x10E3, 0x114C, 0x115A, 0x115D))
+    data += op(0x0106) + b"\x01" + name(condition.decode("latin-1"))
+    data += position_cell(0, 0, 64, 0, ARRIVAL_CELL)
+    data += op(0x0107) + b"\x02"
+    data += position_cell(61, -135, 24, 340, "Imperial Prison Ship")
+    data += op(0x1124) + name("Bitter Coast Region") + struct.pack("<h", 1)
+    data += op(0x0109)
+    data += op(0x0105) + b"G" + name("CharGenState") + name(" 10")
+    data += op(0x101C) + name("CharGen") + op(0x0101)
+    head = b"CharGen".ljust(32, b"\0") + struct.pack("<5I", 0, 0, 0, len(data), 0)
+    return record(b"SCPT", [(b"SCHD", head), (b"SCDT", data),
+                            (b"SCTX", CHARGEN_SOURCE.encode("latin-1"))])
+
+
 def ghost_plugin(master_size, master="Morrowind.esm"):
     """The plugin tes3xnet.c moves: one persistent NPC per peer slot, parked in a cell of its own.
     They have no AI packages and zero fight, flee, alarm and hello, so they stand where put.
@@ -1627,7 +1676,7 @@ def ghost_plugin(master_size, master="Morrowind.esm"):
     the rest where the ghost has its script variables."""
     hedr = (struct.pack("<fI", 1.3, 0) + b"TES3X".ljust(32, b"\0")
             + b"Other players, placed by the multiplayer patch.".ljust(256, b"\0")
-            + struct.pack("<I", GHOSTS + 2))
+            + struct.pack("<I", GHOSTS + 3))
     out = [record(b"TES3", [(b"HEDR", hedr), (b"MAST", zstr(master)),
                             (b"DATA", struct.pack("<Q", master_size))])]
     items = ("common_shirt_01", "common_pants_01", "common_shoes_01")
@@ -1641,6 +1690,7 @@ def ghost_plugin(master_size, master="Morrowind.esm"):
         subs += [(b"NPCO", struct.pack("<i32s", 1, item.encode())) for item in items]
         subs.append((b"AIDT", bytes(12)))
         out.append(record(b"NPC_", subs, flags=0x400))  # references persist
+    out.append(chargen_script())
     cell = [(b"NAME", zstr(GHOST_CELL)), (b"DATA", struct.pack("<Iii", 1, 0, 0)),
             (b"WHGT", struct.pack("<f", 0)), (b"AMBI", struct.pack("<3If", 0x404040, 0, 0, 0))]
     for i in range(1, GHOSTS + 1):

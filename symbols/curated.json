@@ -4300,6 +4300,13 @@
       "note": "the string reader is Ini::ReadKey at 0x001933E0"
     },
     {
+      "va": "0x00193780",
+      "name": "Ini::readPreLoadKey",
+      "confidence": "guess",
+      "provenance": "decompiled call sites: (section, key, default, out, size, file), nonzero when found",
+      "signature": "unsigned int __cdecl f(char* section, char* key, char* fallback, char* out, unsigned int size, char* file)"
+    },
+    {
       "va": "0x00193800",
       "name": "LoadLanguageFromINI",
       "kind": "function",
@@ -5095,6 +5102,13 @@
       "name": "MenuOptions::returnToGame",
       "confidence": "matched",
       "provenance": "MenuOptions' B handler 0x001FF220 calls it; closes the menu and turns menu mode off"
+    },
+    {
+      "va": "0x001FF5B0",
+      "name": "Game::startNewGame",
+      "confidence": "verified",
+      "provenance": "xemu arrival-a2: swapping its [PreLoad] Cell 0 read changes the New Game start cell",
+      "note": "Loads each [PreLoad] Cell N, Cell 0 being the start; sets CharGenState 1 and runs global scripts. Multiplayer swaps Cell 0 at 0x001FFAA9 (NET_PRELOAD_SITE)."
     },
     {
       "va": "0x00200990",

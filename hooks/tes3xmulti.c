@@ -8798,6 +8798,7 @@ static char load_name[BULK_NAME + 1];
 #define JOIN_AT (BXWM_PATH + BXWM_PATH_MAX)
 typedef u32(__attribute__((stdcall)) *fn_launch)(const char *xbe, void *data);
 typedef u32(__cdecl *fn_persist)(void);
+static void preload_hook_install(void);
 
 /* XBE entry, before the engine reads its launch data. */
 static void multi_started(void)
@@ -8844,8 +8845,10 @@ void tes3x_multi_entry(void)
             join_server[i] = (char)data[JOIN_AT + 4 + i];
         join_server[i] = 0;
     }
-    if (*(const u32 *)(data + 0xC) == BXWM_NEW_GAME)
+    if (*(const u32 *)(data + 0xC) == BXWM_NEW_GAME) {
         game_launch = GAME_NEW;
+        preload_hook_install();
+    }
     if (*(const u32 *)(data + 0xC) != BXWM_LOAD)
         return;
     game_launch = GAME_LOAD;
@@ -9093,6 +9096,7 @@ static void leave_frame(void)
 
 /* Game thread: an upload already under way holds the save's until it ends. */
 static void chargen_frame(void);
+static void arrival_frame(void);
 
 static void save_frame(void)
 {
@@ -9101,6 +9105,7 @@ static void save_frame(void)
         load_frame();
         chargen_frame();
     }
+    arrival_frame();
     if (save_requested && ses.state == SESSION_JOINED)
         save_request_frame();
     leave_frame();
@@ -9188,9 +9193,10 @@ static void save_stat(void)
 
 /* Characters. After GAME the server lists this key's characters (CHARS) or has the console make
  * one (NEWCHAR, the start points); the player picks from a message box and the console answers
- * PICK. A character is made in a New Game, relaunching into one if needed. Once the vanilla
- * CharGen script has put the player on the prison ship, the player waits in CHARGEN_CELL through
- * the name, race, class, birthsign and review menus and picks a start point. What the boat and
+ * PICK. A character is made in a New Game, relaunching into one if needed. Once CharGen has run
+ * (a launch joining a server starts in CHARGEN_CELL; any other is moved there from the prison
+ * ship), the player waits in CHARGEN_CELL through the name, race, class, birthsign and review
+ * menus and picks a start point. What the boat and
  * the census office would have done follows, then the start's lines from the server (RUN) and
  * the first save into the multiplayer slot, which the server keeps as the new character. */
 #define EVENT_CHARS 26u   /* part, parts, then names */
@@ -9411,6 +9417,83 @@ static void chargen_next(u32 state)
     tes3x_log_hex3("net.chargen", cg_state, game_launch, start_names.count);
 }
 
+/* New Game starts in the cell [PreLoad] Cell 0 names. A launch that will join a server starts in
+ * CHARGEN_CELL instead, where TES3X Multiplayer.esp's CharGen keeps the player off the prison ship.
+ * The ini reader needs the game drive, mounted by the time New Game reads the cell. */
+#define ARRIVAL_HOOKED 1u
+#define ARRIVAL_STARTED 2u /* the launch began in CHARGEN_CELL */
+#define ARRIVAL_CLAIMED 3u /* ... and the server is making or loading a character */
+#define ARRIVAL_SHIP 4u    /* ... and nothing came, so the player went on to the ship */
+#define ARRIVAL_JOIN_US 60000000u   /* to join */
+#define ARRIVAL_ANSWER_US 15000000u /* once joined, for CHARS, NEWCHAR or LOAD */
+typedef u32(__cdecl *fn_ini_read)(const char *section, const char *key, const char *fallback,
+                                  char *out, u32 size, const char *file);
+static fn_ini_read preload_read;
+static u32 arrival_start;
+
+static u32 __cdecl preload_cell(const char *section, const char *key, const char *fallback,
+                                char *out, u32 size, const char *file)
+{
+    char probe[JOIN_NAME + 1];
+    u32 n = preload_read(section, key, fallback, out, size, file);
+
+    if (!join_server[0] && (!ini_text("NetAddress", probe, sizeof(probe)) ||
+                            !ini_text("NetServer", probe, sizeof(probe))))
+        return n;
+    for (n = 0; CHARGEN_CELL[n] && n + 1 < size; n++)
+        out[n] = CHARGEN_CELL[n];
+    out[n] = 0;
+    arrival_start = ARRIVAL_STARTED;
+    tes3x_log("net.arrival_start", join_server[0] != 0);
+    return n;
+}
+
+static void preload_hook_install(void)
+{
+    u8 *site = (u8 *)TES3X_NET_PRELOAD_SITE;
+    u32 cr0, flags;
+
+    if (site[0] != 0xE8) {
+        tes3x_log_hex3("net.call_site_unexpected", (u32)site, *(const u32 *)site, 0);
+        return;
+    }
+    preload_read = (fn_ini_read)(site + 5 + *(const int *)(site + 1));
+    flags = lock();
+    __asm__ volatile("movl %%cr0, %0" : "=r"(cr0));
+    __asm__ volatile("movl %0, %%cr0" : : "r"(cr0 & ~CR0_WP) : "memory");
+    *(u32 *)(site + 1) = (u32)preload_cell - ((u32)site + 5);
+    __asm__ volatile("movl %0, %%cr0" : : "r"(cr0) : "memory");
+    unlock(flags);
+    arrival_start = ARRIVAL_HOOKED;
+}
+
+/* A launch begun in CHARGEN_CELL that no server claims (none answers, or one keeping whatever the
+ * console runs) goes on to the prison ship, as vanilla CharGen would have put it. */
+static void arrival_frame(void)
+{
+    static u32 since, joined_at, timing, joined;
+    u32 now = now_us();
+
+    if (arrival_start != ARRIVAL_STARTED || !world_idle())
+        return;
+    if (cg_state != CG_IDLE || chooser_kind || load_wanted) {
+        arrival_start = ARRIVAL_CLAIMED;
+        return;
+    }
+    if (!timing)
+        timing = 1, since = now;
+    if (ses.state != SESSION_JOINED)
+        joined = 0;
+    else if (!joined)
+        joined = 1, joined_at = now;
+    if (joined ? now - joined_at < ARRIVAL_ANSWER_US : now - since < ARRIVAL_JOIN_US)
+        return;
+    arrival_start = ARRIVAL_SHIP;
+    run_script("Player->PositionCell 61 -135 24 340 \"Imperial Prison Ship\"");
+    run_script("ChangeWeather \"Bitter Coast Region\" 1");
+    tes3x_log("net.arrival_ship", joined);
+}
+
 static void chargen_frame(void)
 {
     const u8 *world = *(const u8 **)TES3X_NET_WORLD;
@@ -9433,7 +9516,8 @@ static void chargen_frame(void)
         /* Once CharGen has put the player on the ship and disabled the controls and menus. */
         if (!world_idle() || !chargen_global() || chargen_global() == CHARGEN_DONE)
             break;
-        run_script("Player->PositionCell 0 0 64 0 \"" CHARGEN_CELL "\"");
+        if (arrival_start != ARRIVAL_STARTED && arrival_start != ARRIVAL_CLAIMED)
+            run_script("Player->PositionCell 0 0 64 0 \"" CHARGEN_CELL "\"");
         chargen_next(CG_ARRIVE);
         break;
     case CG_ARRIVE:

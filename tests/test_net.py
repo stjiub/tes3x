@@ -182,6 +182,19 @@ class GhostPluginTests(unittest.TestCase):
         self.assertEqual([v for t, v in arrival if t == b'FRMR'],
                          [struct.pack('<I', tes3x_net.GHOSTS + 1)])
 
+    def test_chargen_keeps_a_joining_new_game_in_the_arrival_cell(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / tes3x_net.GHOST_PLUGIN
+            path.write_bytes(tes3x_net.ghost_plugin(12345))
+            scripts = [dict(subrecords(body)) for tag, _, body in records(path) if tag == b'SCPT']
+        self.assertEqual(len(scripts), 1)
+        head, data = scripts[0][b'SCHD'], scripts[0][b'SCDT']
+        self.assertEqual(head[:32].rstrip(b'\0'), b'CharGen')
+        self.assertEqual(struct.unpack_from('<I', head, 44)[0], len(data))
+        arrival = tes3x_net.ARRIVAL_CELL.encode()
+        self.assertIn(b' X\x12\x11 c' + bytes([len(arrival)]) + arrival + b' == 1', data)
+        self.assertTrue(data.endswith(b'\x1c\x10\x07CharGen\x01\x01'))
+
 
 class LoadOrderTests(unittest.TestCase):
     def test_hash_ignores_case_but_not_order(self):

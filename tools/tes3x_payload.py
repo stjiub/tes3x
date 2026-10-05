@@ -577,6 +577,15 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         define("NET_MESSAGE_MENU", hexva(image.off_to_va(deaths[0].end() + boxes[0].end()) +
                                          struct.unpack("<i", boxes[0].group(1))[0]))
         define("NET_DEATH_SITE", hexva(image.off_to_va(site)))
+        # New Game's first ini read of [PreLoad] Cell N (the menu's reads a constant "Cell 0"):
+        # push key, push "PreLoad", call, add esp 0x18, test eax, je.
+        preload = data.find(b"\0PreLoad\0") + 1
+        preload_va = image.off_to_va(preload) if preload else None
+        reads = list(re.finditer(rb"\x57\x68" + struct.pack("<I", preload_va or 0) +
+                                 rb"\xe8....\x83\xc4\x18\x85\xc0\x0f\x84", data, re.S))
+        if not preload_va or len(reads) != 1:
+            raise PayloadError(f"New Game's PreLoad read: {len(reads)} sites, expected 1")
+        define("NET_PRELOAD_SITE", hexva(image.off_to_va(reads[0].start() + 6)))
         define("NET_FILL_BAR", hexva(fill))
         define("NET_HEALTH_BAR", hexva(struct.unpack("<I", deaths[0].group(1))[0]))
         define("NET_FIND_MARKER", hexva(locate("find-marker")))
