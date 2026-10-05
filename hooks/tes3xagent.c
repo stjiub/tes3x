@@ -413,6 +413,10 @@ static void agent_receive(u32 source, u32 port, const u8 *p, u32 n)
         (has_incoming && (int)(sequence - incoming) <= 0) ||
         noise_open(receive_key, sequence, p, AGENT_HEADER, p + AGENT_HEADER, size, plain))
         return;
+    /* A request can overtake the welcome; it is retried, and must not make the welcome look
+     * like a replay. */
+    if (phase == HS_SENT3 && plain[0] != AGENT_WELCOME)
+        return;
     incoming = sequence; has_incoming = 1; heard = 1;
     length = size - NOISE_TAG - 1;
     if (plain[0] == AGENT_WELCOME && phase == HS_SENT3) {
