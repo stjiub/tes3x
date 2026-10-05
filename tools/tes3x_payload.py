@@ -45,7 +45,7 @@ PLACE_ADDRESSES = (
     ("FIND_REFERENCE", 0x00109CD0), ("REF_ANIMATION", 0x0012A160), ("REF_ORIENTATION", 0x0012C3D0),
     ("REF_ROTATION", 0x0012AFE0), ("NODE_SET_ROTATION", 0x00042C40), ("NODE_UPDATE", 0x00044170),
     ("ANIM_HAS_GROUP", 0x000CC960), ("ANIM_PLAY_GROUP", 0x000CE5C0),
-    ("BODY_PART_UPDATE", 0x000D0CF0),
+    ("BODY_PART_UPDATE", 0x000D0CF0), ("EXTERIOR_CHANGE", 0x000E34A0),
     ("UNREADY_WEAPON", 0x00158560), ("MOBILE_HANDS", 0x0015BAF0),
     ("APPLY_HEALTH_DAMAGE", 0x0017C3D0), ("APPLY_FATIGUE_DAMAGE", 0x0017C950),
     ("HIT_STUN", 0x0017DC30), ("BLOOD", 0x001758B0),
@@ -598,6 +598,13 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         if not preload_va or len(reads) != 1:
             raise PayloadError(f"New Game's PreLoad read: {len(reads)} sites, expected 1")
         define("NET_PRELOAD_SITE", hexva(image.off_to_va(reads[0].start() + 6)))
+        # The loop's next step finds the cell by that name: mov edx, [DataHandler]; mov ecx,
+        # [edx]; push ebp; call.
+        finds = list(re.finditer(rb"\x8b\x15....\x8b\x0a\x55\xe8",
+                                 data[reads[0].end():reads[0].end() + 0x60], re.S))
+        if len(finds) != 1:
+            raise PayloadError(f"New Game's PreLoad cell lookup: {len(finds)} sites, expected 1")
+        define("NET_PRELOAD_FIND_SITE", hexva(image.off_to_va(reads[0].end() + finds[0].end() - 1)))
         define("NET_FILL_BAR", hexva(fill))
         define("NET_HEALTH_BAR", hexva(struct.unpack("<I", deaths[0].group(1))[0]))
         define("NET_FIND_MARKER", hexva(locate("find-marker")))

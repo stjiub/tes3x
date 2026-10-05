@@ -77,7 +77,8 @@ const char *tes3x_console_text_now(void);
     !defined(TES3X_NET_REF_ORIENTATION) || !defined(TES3X_NET_REF_ROTATION) || \
     !defined(TES3X_NET_NODE_SET_ROTATION) || !defined(TES3X_NET_NODE_UPDATE) || \
     !defined(TES3X_NET_ANIM_HAS_GROUP) || !defined(TES3X_NET_ANIM_PLAY_GROUP) || \
-    !defined(TES3X_NET_BODY_PART_UPDATE) || \
+    !defined(TES3X_NET_BODY_PART_UPDATE) || !defined(TES3X_NET_EXTERIOR_CHANGE) || \
+    !defined(TES3X_NET_PRELOAD_FIND_SITE) || \
     !defined(TES3X_NET_UNREADY_WEAPON) || !defined(TES3X_NET_MOBILE_HANDS) ||     !defined(TES3X_NET_APPLY_HEALTH_DAMAGE) || !defined(TES3X_NET_APPLY_FATIGUE_DAMAGE) ||     !defined(TES3X_NET_HIT_STUN) || !defined(TES3X_NET_HIT_STUN_SITES)
 #error "define the TES3X_NET_ functions SetPos, SetAngle, PlayGroup, weapon readying and damage"
 #endif
@@ -8819,6 +8820,12 @@ static char load_name[BULK_NAME + 1];
  * joins that server without NetServer. */
 #define JOIN_MAGIC 0x4A4D3354u /* "T3MJ" */
 #define JOIN_AT (BXWM_PATH + BXWM_PATH_MAX)
+/* A New Game started from a character file the server sent (serve --load-state) carries
+ * CHAR_MAGIC and the file's name, which the [PreLoad] read writes into the player. */
+#define CHAR_MAGIC 0x434D3354u /* "T3MC", also the file's first four bytes */
+#define CHAR_AT 0x300u
+#define LAUNCH_BYTES 0xC00u /* what XLaunchNewImage copies */
+#define CHAR_SUFFIX ".t3c"
 typedef u32(__attribute__((stdcall)) *fn_launch)(const char *xbe, void *data);
 typedef u32(__cdecl *fn_persist)(void);
 static void preload_hook_install(void);
@@ -8870,6 +8877,11 @@ void tes3x_multi_entry(void)
     }
     if (*(const u32 *)(data + 0xC) == BXWM_NEW_GAME) {
         game_launch = GAME_NEW;
+        if (*(const u32 *)(data + CHAR_AT) == CHAR_MAGIC) {
+            for (i = 0; i < BULK_NAME && data[CHAR_AT + 4 + i]; i++)
+                game_loaded[i] = (char)data[CHAR_AT + 4 + i];
+            game_loaded[i] = 0;
+        }
         preload_hook_install();
     }
     if (*(const u32 *)(data + 0xC) != BXWM_LOAD)
@@ -8895,11 +8907,21 @@ static void load_event(const struct event *e)
     log_text("net.load_wanted", load_name);
 }
 
-/* The title relaunch Load and New Game make: Load of U:\TES3X\name, or New Game without a name.
- * 0 while the world cannot give the pad port. */
+static int is_character_file(const char *name)
+{
+    u32 n = tes3x_strlen(name), i;
+
+    for (i = 0; i < 4 && n >= 4; i++)
+        if ((name[n - 4 + i] | 0x20) != (CHAR_SUFFIX[i] | 0x20))
+            return 0;
+    return n > 4;
+}
+
+/* The title relaunch Load and New Game make: Load of U:\TES3X\name, New Game from that
+ * character file, or New Game without a name. 0 while the world cannot give the pad port. */
 static int relaunch(const char *name)
 {
-    static u8 data[JOIN_AT + 4 + JOIN_NAME + 1];
+    static u8 data[LAUNCH_BYTES];
     const u8 *world = *(const u8 **)TES3X_NET_WORLD, *pads;
     static const char dir[] = "U:\\TES3X\\";
     u32 i, n = 0, r;
@@ -8910,8 +8932,12 @@ static int relaunch(const char *name)
         data[i] = 0;
     ((u32 *)data)[0] = BXWM_MAGIC;
     ((u32 *)data)[1] = *(const u32 *)(pads + 0x804); /* the pad port, as the Load menu passes */
-    ((u32 *)data)[3] = name ? BXWM_LOAD : BXWM_NEW_GAME;
-    if (name) {
+    ((u32 *)data)[3] = name && !is_character_file(name) ? BXWM_LOAD : BXWM_NEW_GAME;
+    if (name && is_character_file(name)) {
+        *(u32 *)(data + CHAR_AT) = CHAR_MAGIC;
+        for (i = 0; name[i] && i < BULK_NAME; i++)
+            data[CHAR_AT + 4 + i] = (u8)name[i];
+    } else if (name) {
         for (; dir[n]; n++)
             data[BXWM_PATH + n] = (u8)dir[n];
         for (i = 0; name[i]; i++)
@@ -9120,6 +9146,7 @@ static void leave_frame(void)
 /* Game thread: an upload already under way holds the save's until it ends. */
 static void chargen_frame(void);
 static void arrival_frame(void);
+static void preload_frame(void);
 
 static void save_frame(void)
 {
@@ -9129,6 +9156,7 @@ static void save_frame(void)
         chargen_frame();
     }
     arrival_frame();
+    preload_frame();
     if (save_requested && ses.state == SESSION_JOINED)
         save_request_frame();
     leave_frame();
@@ -9453,8 +9481,14 @@ static void chargen_next(u32 state)
 #define ARRIVAL_ANSWER_US 15000000u /* once joined, for CHARS, NEWCHAR or LOAD */
 typedef u32(__cdecl *fn_ini_read)(const char *section, const char *key, const char *fallback,
                                   char *out, u32 size, const char *file);
+typedef u8 *(__attribute__((thiscall)) *fn_find_cell)(void *records, const char *name);
 static fn_ini_read preload_read;
+static fn_find_cell preload_find;
 static u32 arrival_start;
+static u32 preloading; /* the character file is being applied, before the world's first frame */
+static u32 preload_asked, preload_finished;
+static u8 preload_place[20 + CELL_NAME]; /* a PLAYER PLACE body; flags 0 without one */
+static int preload_character(void);
 
 static u32 __cdecl preload_cell(const char *section, const char *key, const char *fallback,
                                 char *out, u32 size, const char *file)
@@ -9462,34 +9496,73 @@ static u32 __cdecl preload_cell(const char *section, const char *key, const char
     char probe[JOIN_NAME + 1];
     u32 n = preload_read(section, key, fallback, out, size, file);
 
-    if (!join_server[0] && (!ini_text("NetAddress", probe, sizeof(probe)) ||
-                            !ini_text("NetServer", probe, sizeof(probe))))
+    if (!join_server[0] && !game_loaded[0] && (!ini_text("NetAddress", probe, sizeof(probe)) ||
+                                               !ini_text("NetServer", probe, sizeof(probe))))
         return n;
     for (n = 0; CHARGEN_CELL[n] && n + 1 < size; n++)
         out[n] = CHARGEN_CELL[n];
     out[n] = 0;
     arrival_start = ARRIVAL_STARTED;
     tes3x_log("net.arrival_start", join_server[0] != 0);
+    if (game_loaded[0] && preload_character())
+        arrival_start = ARRIVAL_CLAIMED;
     return n;
 }
 
-static void preload_hook_install(void)
+/* The start cell's lookup by name, answered with the character's own interior. An exterior has
+ * no name of its own to find it by: the player is put at the spot and the world changes to the
+ * exterior there, as a cell change does, and New Game is told there is no cell to load. */
+typedef void(__attribute__((thiscall)) *fn_exterior_change)(void *handler, const float *at);
+
+static u8 *__attribute__((thiscall)) preload_cell_find(void *records, const char *name)
 {
-    u8 *site = (u8 *)TES3X_NET_PRELOAD_SITE;
+    u32 flags = get32le(preload_place);
+    u8 *cell = 0, *ref = (u8 *)player_reference();
+
+    if (preload_asked++ || !(flags & STATE_IN_WORLD))
+        return preload_find(records, name); /* Cell 1 and on, or no place kept */
+    if (flags & STATE_INTERIOR) {
+        if (script_safe(preload_place + 20, CELL_NAME))
+            cell = preload_find(records, interior_name(preload_place + 20));
+        tes3x_log_hex3("net.preload_cell", flags, (u32)cell, 0);
+        return cell ? cell : preload_find(records, name);
+    }
+    if (!ref)
+        return preload_find(records, name);
+    copy(ref + REF_POSITION, preload_place + 4, 12);
+    ((fn_exterior_change)TES3X_NET_EXTERIOR_CHANGE)(*(void **)TES3X_NET_DATA_HANDLER,
+                                                    (const float *)(preload_place + 4));
+    tes3x_log_hex3("net.preload_cell", flags, 0, 0);
+    return 0;
+}
+
+static int call_retarget(u8 *site, void *to, void **was)
+{
     u32 cr0, flags;
 
     if (site[0] != 0xE8) {
         tes3x_log_hex3("net.call_site_unexpected", (u32)site, *(const u32 *)site, 0);
-        return;
+        return 0;
     }
-    preload_read = (fn_ini_read)(site + 5 + *(const int *)(site + 1));
+    *was = site + 5 + *(const int *)(site + 1);
     flags = lock();
     __asm__ volatile("movl %%cr0, %0" : "=r"(cr0));
     __asm__ volatile("movl %0, %%cr0" : : "r"(cr0 & ~CR0_WP) : "memory");
-    *(u32 *)(site + 1) = (u32)preload_cell - ((u32)site + 5);
+    *(u32 *)(site + 1) = (u32)to - ((u32)site + 5);
     __asm__ volatile("movl %0, %%cr0" : : "r"(cr0) : "memory");
     unlock(flags);
+    return 1;
+}
+
+static void preload_hook_install(void)
+{
+    if (!call_retarget((u8 *)TES3X_NET_PRELOAD_SITE, (void *)preload_cell,
+                       (void **)&preload_read))
+        return;
     arrival_start = ARRIVAL_HOOKED;
+    if (game_loaded[0])
+        call_retarget((u8 *)TES3X_NET_PRELOAD_FIND_SITE, (void *)preload_cell_find,
+                      (void **)&preload_find);
 }
 
 /* A launch begun in CHARGEN_CELL that no server claims (none answers, or one keeping whatever the
@@ -9642,6 +9715,7 @@ static void chargen_stat(void)
 #define MOBILE_ATTRIBUTES 0x254
 #define MOBILE_HEALTH_STAT 0x2B4 /* the Statistic; MOBILE_HEALTH is its current value */
 #define MOBILE_MAGICKA_STAT 0x2C0
+#define MOBILE_ENCUMBRANCE 0x2CC /* the Statistic; current is the carried weight */
 #define MOBILE_FATIGUE_STAT 0x2D8
 #define MOBILE_SKILLS 0x3B0 /* 0x10 each */
 #define PLAYER_LEVELUPS 0x56C /* int per attribute, then per specialisation */
@@ -10412,7 +10486,7 @@ static void player_model_rebuild(u8 *ref, u8 *instance, u8 *mobile, const u8 *ra
     ((fn_race_sex_ok)TES3X_NET_RACE_SEX_OK)((void *)1, 0, 0, 0, 0);
     flags[FLAGS_RACE_DONE] = done;
     inventory_id = ((fn_ui_id)TES3X_NET_UI_ID)("MenuInventory");
-    if (!((fn_find_menu)TES3X_NET_FIND_MENU)(inventory_id)) {
+    if (!preloading && !((fn_find_menu)TES3X_NET_FIND_MENU)(inventory_id)) {
         ((fn_inventory_build)TES3X_NET_INVENTORY_BUILD)();
         if ((inventory = ((fn_find_menu)TES3X_NET_FIND_MENU)(inventory_id)) != 0) {
             ((fn_menu_tab)TES3X_NET_MENU_TAB)(inventory, UI_EVENT_MENU_TAB, 0, 0, 0);
@@ -11324,6 +11398,95 @@ static void player_event(const struct event *e)
         worn_event(ref, e);
     else if (e->data[0] == PLAYER_RESPAWN && e->length >= 1 + 9)
         respawn_event(e->data + 1);
+}
+
+/* A New Game from a character file: at the [PreLoad] read the player's reference, mobile and
+ * body already exist, built from the default record. The identity is written and the body
+ * rebuilt, the default gear goes, the items are added and the worn list put on, all before the
+ * first frame. The place picks the start cell (preload_cell_find); the rest comes with the replay
+ * once joined. */
+static int preload_character(void)
+{
+    static char path[16 + BULK_NAME];
+    static void *worn[WORN_MAX][2];
+    u8 *ref = (u8 *)player_reference(), *mobile = player_mobile(), *instance, head[4];
+    IO_STATUS_BLOCK iosb;
+    u64 offset = 0;
+    struct event e;
+    u32 status, n, i, records = 0, emptied = 0;
+    void *h;
+
+    *put_text(put_text(path, "U:\\TES3X\\"), game_loaded) = 0;
+    if (!ref || !plausible(mobile) || !plausible(instance = *(u8 **)(ref + REF_BASE))) {
+        log_text("net.preload_bad", game_loaded);
+        return 0;
+    }
+    if ((status = bulk_open(path, GENERIC_READ, FILE_OPEN, 0, &h)) != 0) {
+        tes3x_log_hex3("net.preload_file", status, 0, 0);
+        return 0;
+    }
+    if (NtReadFile(h, 0, 0, 0, &iosb, head, 4, &offset) || iosb.Information != 4 ||
+        get32le(head) != CHAR_MAGIC) {
+        NtClose(h);
+        log_text("net.preload_bad", game_loaded);
+        return 0;
+    }
+    offset = 4;
+    preloading = 1;
+    e.seq = e.origin = 0;
+    e.kind = EVENT_PLAYER;
+    for (;;) {
+        if (NtReadFile(h, 0, 0, 0, &iosb, head, 2, &offset) || iosb.Information != 2)
+            e.length = 0;
+        else
+            e.length = head[0] | head[1] << 8, offset += 2;
+        if (e.length > EVENT_DATA ||
+            (e.length && (NtReadFile(h, 0, 0, 0, &iosb, e.data, e.length, &offset) ||
+                          iosb.Information != e.length))) {
+            player_apply_failures++;
+            e.length = 0;
+        }
+        /* The identity's body rebuild re-equips the default record's gear, so it goes after */
+        if (!emptied && (!e.length || e.data[0] != PLAYER_IDENTITY)) {
+            emptied = 1;
+            n = worn_read(instance, worn);
+            for (i = 0; i < n; i++)
+                ((fn_unequip_item)TES3X_NET_UNEQUIP_ITEM)(instance, worn[i][0], 1, mobile, 0,
+                                                          worn[i][1]);
+            /* without the mobile, whose removal re-picks equipment from what is left */
+            inventory_empty(instance + OBJECT_INVENTORY);
+            ((float *)(mobile + MOBILE_ENCUMBRANCE))[2] = 0.0f;
+        }
+        if (!e.length)
+            break;
+        offset += e.length;
+        records++;
+        if (e.data[0] == PLAYER_PLACE && e.length >= 1 + sizeof(preload_place))
+            copy(preload_place, e.data + 1, sizeof(preload_place));
+        else if (e.data[0] == PLAYER_IDENTITY || e.data[0] == PLAYER_ITEMS ||
+                 e.data[0] == PLAYER_WORN)
+            player_event(&e);
+    }
+    NtClose(h);
+    preloading = 0;
+    tes3x_log_hex3("net.preload", records, player_identity_applied, worn_applied);
+    return 1;
+}
+
+/* The first world frame: the exact spot within the start cell, and what finishing chargen
+ * would have done; a character from a file is long past it. */
+static void preload_frame(void)
+{
+    u32 i;
+
+    if (arrival_start != ARRIVAL_CLAIMED || !game_loaded[0] || preload_finished || !world_idle())
+        return;
+    preload_finished = 1;
+    for (i = 0; i < sizeof(chargen_finish) / sizeof(*chargen_finish); i++)
+        run_script(chargen_finish[i]);
+    if (get32le(preload_place) & STATE_IN_WORLD)
+        place_apply(preload_place);
+    tes3x_log_hex3("net.preload_finished", get32le(preload_place), preload_asked, 0);
 }
 
 static void player_stat(void)

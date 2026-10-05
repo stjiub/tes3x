@@ -552,6 +552,10 @@ BULK_ACK_EVERY = 0.25  # seconds between acks to a console that is sending
 UPLOAD_FILES = 64  # files one console key may keep in its uploads folder
 CHARACTER_BACKUPS = 3  # earlier versions kept beside each character's save
 CHECKPOINT_NAME = "char-{:08x}.ess"  # by the first four bytes of its BLAKE2b
+# What a New Game writes into the player at its [PreLoad] read (serve --load-state): "T3MC", then
+# PLAYER events (identity, items, worn, place) each behind a u16 length.
+CHARACTER_FILE = "char-{:08x}.t3c"
+CHARACTER_MAGIC = b"T3MC"
 BULK_MAX = 16 << 20  # as the console's
 # Names Windows opens as devices, whatever the extension
 DEVICE_NAMES = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(10)),
@@ -1049,8 +1053,8 @@ def new_character_folder(root, player):
     return folder
 
 
-def checkpoint_name(data):
-    return CHECKPOINT_NAME.format(
+def checkpoint_name(data, form=CHECKPOINT_NAME):
+    return form.format(
         int.from_bytes(hashlib.blake2b(data, digest_size=32).digest()[:4], "big"))
 
 
@@ -1392,6 +1396,20 @@ class PlayerStream:
         events += pack_journal([(q, i) for q, indices in sorted(self.journal.items())
                                 for i in indices])
         return events
+
+    def character_file(self):
+        """What a New Game builds the player from before its first frame; None without an
+        identity. The rest comes with the replay after the console joins."""
+        if not self.identity:
+            return None
+        events = pack_player_identity(self.identity)
+        events += [part for item, entries in sorted(self.items.items())
+                   for part in pack_items(item, entries)]
+        if self.worn is not None:
+            events += pack_worn(self.worn)
+        if self.place and not self.dead:
+            events.append(bytes([PLAYER_PLACE]) + self.place)
+        return CHARACTER_MAGIC + b"".join(struct.pack("<H", len(e)) + e for e in events)
 
     def save(self):
         save_world(self.path, {"items": self.items,
@@ -2556,6 +2574,30 @@ def serve(args):
         print(f"{stamp} client {client.id} loaded {loaded or 'no save'}: sending "
               f"{os.path.basename(path)} as {name} ({len(data)} bytes) to load", flush=True)
 
+    def send_character(client, folder, path, loaded, stamp, now):
+        """Under --load-state, the character's kept state as a file a New Game starts from; the
+        checkpoint when no identity is kept. The file stays in the folder, so a launch from it
+        is known after a restart."""
+        if folder not in streams:
+            streams[folder] = PlayerStream(os.path.join(folder, STREAM_NAME))
+        data = streams[folder].character_file() if args.load_state else None
+        if data is None:
+            send_checkpoint(client, path, loaded, stamp, now)
+            return
+        name = checkpoint_name(data, CHARACTER_FILE)
+        for f in os.listdir(folder):
+            if f.lower().endswith(".t3c") and f != name:
+                os.remove(os.path.join(folder, f))
+        with open(os.path.join(folder, name), "wb") as stream:
+            stream.write(data)
+        client.bulk = Outgoing(name, data)
+        client.rel.queue(EVENT_OFFER, 0, client.bulk.offer())
+        client.rel.queue(EVENT_LOAD, 0, zstr(name))
+        flush(client, now)
+        print(f"{stamp} client {client.id} loaded {loaded or 'no save'}: sending "
+              f"{os.path.basename(folder)}'s state as {name} ({len(data)} bytes) to start from",
+              flush=True)
+
     def on_game(client, token, loaded, launch, stamp, now):
         """A console's launch: it runs one of its key's characters, or chooses one, or makes
         one."""
@@ -2571,6 +2613,16 @@ def serve(args):
             return
         kept = kept_characters(key_folder(client))
         for folder, path in kept:
+            if loaded.lower().endswith(".t3c") and os.path.exists(
+                    os.path.join(key_folder(client), folder, loaded.lower())):
+                client.synced, client.character = True, folder
+                creating.discard(fingerprint(client.key))
+                if args.rebuild is not None:
+                    client.rebuild = (path, now + args.rebuild)
+                print(f"{stamp} client {client.id} runs {folder}, started from {loaded}",
+                      flush=True)
+                player_ready(client, True, stamp, now)
+                return
             with open(path, "rb") as stream:
                 if loaded.lower() == checkpoint_name(stream.read()):
                     client.synced, client.character = True, folder
@@ -2594,7 +2646,8 @@ def serve(args):
             print(f"{stamp} client {client.id} has no kept character", flush=True)
             return
         if args.adopt:
-            send_checkpoint(client, kept[0][1], loaded, stamp, now)
+            send_character(client, os.path.join(key_folder(client), kept[0][0]), kept[0][1],
+                           loaded, stamp, now)
             return
         client.listed = [folder for folder, _ in kept[:CHARACTERS_LISTED]]
         send_names(client, EVENT_CHARS, client.listed, now)
@@ -2626,9 +2679,10 @@ def serve(args):
             offer_starts(client, stamp, now)
         elif what == PICK_CHARACTER and index < len(client.listed):
             creating.discard(fingerprint(client.key))
-            path = latest_character(os.path.join(key_folder(client), client.listed[index]))
+            folder = os.path.join(key_folder(client), client.listed[index])
+            path = latest_character(folder)
             if path:
-                send_checkpoint(client, path, "the list", stamp, now)
+                send_character(client, folder, path, "the list", stamp, now)
         elif (what == PICK_START and index < len(starts) and client.synced
               and client.character is None):
             name, lines = starts[index]
@@ -4104,6 +4158,10 @@ def main(argv=None):
                         "kept state replayed over whatever it runs and, SECONDS later (default "
                         "10), is asked for a save; the server diffs it against the checkpoint "
                         "(tes3x_ess.py --diff) into uploads/KEY/NAME.diff.txt and keeps neither")
+    p.add_argument("--load-state", action="store_true",
+                   help="a console loads a character by a New Game built from the server's kept "
+                        "state (identity, items, worn, place) before its first frame, then the "
+                        "replay, instead of from the character's save")
     p.add_argument("--adopt", action="store_true",
                    help="a key with no character keeps whatever game its console runs instead "
                         "of making a new one (tests that start from a save)")
