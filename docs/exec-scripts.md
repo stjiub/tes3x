@@ -43,6 +43,7 @@ exit
 | `mark LABEL` | log free memory now, as `mem.LABEL <KB>` |
 | `exit` | turn the Xbox off |
 | `reboot` | restart the Xbox into the dashboard |
+| `launch \Device\...\NAME.xbe` | start another program from any folder, as dashboards do, e.g. `launch \Device\Harddisk0\Partition6\Games\Tool\default.xbe` |
 | `# ...` | comment |
 | anything else | a console command |
 

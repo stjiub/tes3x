@@ -470,6 +470,10 @@ def main():
     ap.add_argument("--exec", metavar="FILE",
                     help="write FILE to tes3xexec.txt on the run's E: drive, for the console patch "
                          "to run in-engine")
+    ap.add_argument("--add", action="append", default=[], metavar="DISC=FILE",
+                    type=lambda v: tuple(v.split("=", 1)) if "=" in v else ap.error(
+                        f"--add takes DISC=FILE, not {v}"),
+                    help="put FILE on the disc at DISC, e.g. Manager/default.xbe (repeatable)")
     ap.add_argument("--save", action="append", default=[], metavar="FILE.ess",
                     help="put a save in the run's U:/TES3X folder (repeatable); a command file "
                          "loads it at boot with `@start load` and its path")
@@ -547,6 +551,8 @@ def main():
         a.bios = str(CONFIG["bios_128mb"])
     if sum(bool(x) for x in (a.profile, a.deploy, a.iso)) != 1:
         ap.error("give exactly one of PROFILE, --deploy or --iso")
+    if a.add and a.iso:
+        ap.error("--add changes the disc; it needs a build, not --iso")
     if (a.skip_intro or a.no_reboot) and not a.profile:
         ap.error("--skip-intro and --no-reboot require a profile build")
     if a.direct_engine and not (a.profile or a.deploy):
@@ -625,6 +631,13 @@ def main():
                 (packed / "morrowind.xbe").unlink()
                 shutil.copy2(deploy / "morrowind.xbe", packed / "morrowind.xbe")
                 clear_limit64(packed / "morrowind.xbe")
+        if a.add:
+            if packed == deploy and not a.profile:
+                packed = out / "stage"
+                shutil.copytree(deploy, packed, copy_function=link_or_copy)
+            for disc, source in a.add:
+                (packed / disc).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, packed / disc)
         if a.direct_engine:
             shutil.copy2(packed / "morrowind.xbe", packed / "Default.xbe")
         run([CONFIG["extract_xiso"], "-c", str(packed), str(iso)], stdout=subprocess.DEVNULL)

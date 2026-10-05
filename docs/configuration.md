@@ -22,6 +22,8 @@ one in the TES3X folder. `--config PATH` picks another. Relative paths are relat
 | `tes3merge` | string | none | `TES3Merge.exe`, for `rules.tes3merge = true`. |
 | `build_root` | string | `build` | Parent directory for profile output folders. |
 | `llvm` | string | `PATH` | Directory containing `clang` and `lld-link`. |
+| `nxdk` | string | none | nxdk checkout with its libraries built, for `tes3x_nxdk.py`. `NXDK_DIR` takes precedence. |
+| `msys2` | string | `C:/msys64` | MSYS2 install whose `make`, `clang` and `lld` build nxdk programs on Windows. |
 | `hardlink_retail` | boolean | `false` | Hardlink unchanged retail files when source and output are on the same volume. |
 | `ghidra` | string | none | Ghidra install folder, for `tes3x_sym.py decompile` and `refs`. `GHIDRA_INSTALL_DIR` takes precedence. |
 | `pc_morrowind` | string | Steam's default folder | PC Morrowind with Code Patch installed, for `tes3x_mcp.py`. `TES3X_PC_MORROWIND` takes precedence. |

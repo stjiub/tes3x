@@ -213,11 +213,12 @@ def validate_local_config(local):
 
     paths = local.get("paths", {})
     extra = set(paths) - {"vanilla_root", "mod_library", "build_root", "llvm", "hardlink_retail",
-                          "profiles", "mlox_rules", "pc_morrowind", "ghidra", "tes3merge"}
+                          "profiles", "mlox_rules", "pc_morrowind", "ghidra", "tes3merge", "nxdk",
+                          "msys2"}
     if extra:
         raise PipelineError("unknown paths keys: " + ", ".join(sorted(extra)))
     for key in ("vanilla_root", "mod_library", "build_root", "llvm", "profiles", "mlox_rules",
-                "pc_morrowind", "tes3merge"):
+                "pc_morrowind", "tes3merge", "nxdk", "msys2"):
         if key in paths and type(paths[key]) is not str:
             raise PipelineError(f"paths.{key} must be a string")
     if "hardlink_retail" in paths and type(paths["hardlink_retail"]) is not bool:

@@ -14,6 +14,7 @@ what each one is for and where it is explained; `--help` on any command lists it
 | `tes3x_optimize.py` | write equivalence-checked derived copies that make the Xbox load fewer records | [plugin optimizer](optimizer.md) |
 | `tes3x_pack.py` | pack a collected tree into archives and stage the game's `Data Files` | [packaging](packaging.md) |
 | `tes3x_payload.py` | compile the patch payload for one retail XBE | [payload](../patches/payload.md) |
+| `tes3x_nxdk.py` | build a standalone nxdk program, such as the console-side manager | [configuration](configuration.md) |
 | `tes3x_patch.py` | apply patches to an XBE directly; `--list` shows them | [patches](patches.md) |
 | `tes3x_deploy.py` | upload a game folder to the Xbox | [deployment](deployment.md) |
 | `tes3x_fetch.py` | copy files or folders off the Xbox | [deployment](deployment.md#getting-files-back) |

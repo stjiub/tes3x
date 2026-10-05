@@ -62,6 +62,9 @@ python tools/tes3x_xemu.py first-run profiles/my-build.toml --direct-engine --sk
   build this also exercises the overlay against the disc's `Base` folder. Without the option,
   xemu Play reconstructs a full disc so the unpatched retail launcher works. `@start` needs direct
   engine boot: the launcher has no hook, and the game relaunches itself on New Game.
+- `--add DISC=FILE` puts another file on the disc, such as a second program for the exec script's
+  `launch` to start: `--add Tool/default.xbe=build/tool/bin/default.xbe` is
+  `\Device\CdRom0\Tool\default.xbe`.
 - Everything after `--` goes to the pipeline, such as `-- --preset minimal`.
 - `--help` lists the rest, including screenshots, saves, memory size and GDB.
 

@@ -1,0 +1,5 @@
+@menu wait 300
+@menu launch \Device\CdRom0\Manager\default.xbe
+wait 1200
+tes3xnet stat
+launch \Device\CdRom0\Manager\default.xbe
