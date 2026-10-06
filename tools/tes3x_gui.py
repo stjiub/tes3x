@@ -61,8 +61,8 @@ from tes3x_pipeline import (DEPLOY_CONFLICT, DEPLOY_NO_SPACE, MARKER as PIPELINE
                             resolve_patch_plan, validate_local_config, validate_profile)
 from tes3x_records import records, subrecords
 from tes3x_deploy import parse_drives
-from tes3x_agent import (AgentListener, Fetch, OP_REBOOT, console_request, key_fingerprint,
-                         load_or_create_key)
+from tes3x_agent import (AgentListener, Fetch, OP_REBOOT, console_request, is_manager,
+                         key_fingerprint, load_or_create_key)
 from tes3x_gui_pages import ServerPage, TargetsPage, fetch_destination
 import tes3x_nexus as nexus
 import tes3x_saves as saves_tool
@@ -115,7 +115,9 @@ def target_capabilities(target, runtime=None):
         if runtime.get("process") in {"starting", "running"}:
             capabilities.update({"process_control", "runner_output"})
 
-    if game == "connected":
+    if game == "connected" and runtime.get("game_kind") == "manager":
+        capabilities.update({"manager_agent", "agent_fetch", "pull_logs"})
+    elif game == "connected":
         capabilities.update({"in_game_agent", "live_status", "live_logs", "commands",
                              "agent_fetch", "pull_logs"})
     elif game == "stalled":
@@ -127,7 +129,7 @@ def target_runtime_label(target, runtime=None):
     """Short state label shared by target badges and capability-driven pages."""
     runtime = runtime or {}
     if runtime.get("game") == "connected":
-        return "In game"
+        return "Manager" if runtime.get("game_kind") == "manager" else "In game"
     if runtime.get("game") == "stalled":
         return "Stalled"
     if target and target.get("kind") == "xemu":
@@ -1869,6 +1871,8 @@ class ProfileWindow(QMainWindow):
         self.agent_probe = None
         self.in_game_listener = None
         self.agent_fingerprint = None
+        self.listener_lent = False
+        self.deploy_agent = False
         self.agent_logs = defaultdict(list)
         self.agent_replies = {}
         self.agent_fetches = []
@@ -3498,6 +3502,26 @@ class ProfileWindow(QMainWindow):
         self.in_game_listener = listener
         self.agent_fingerprint = key_fingerprint(secret)
 
+    def lend_listener(self):
+        """Close the agent listener so a deploy through the manager can bind its port. The
+        manager pairs with the deploy, and with the GUI again once the deploy ends."""
+        if self.in_game_listener is not None:
+            self.in_game_listener.close()
+            self.in_game_listener = None
+        for name, state in self.target_runtime.items():
+            if state.get("game_kind") == "manager" and state.pop("game", None):
+                state["game_detail"] = "Manager's agent lent to the deploy"
+                self.refresh_target_item(name)
+        self.listener_lent = True
+
+    def restore_listener(self):
+        if self.listener_lent:
+            self.listener_lent = False
+            self.start_in_game_listener()
+
+    def manager_paired(self, name):
+        return bool(name) and "manager_agent" in self.target_features(name)
+
     def in_game_target(self, address):
         """Map an agent's source address to a configured target."""
         host = address[0]
@@ -3537,9 +3561,13 @@ class ProfileWindow(QMainWindow):
             self.set_target_runtime(name, game="stalled",
                                     game_detail="In-game heartbeat stopped")
             return
-        detail = f"In-game agent from {event['address'][0]}:{event['address'][1]}"
-        values = {"game": "connected", "game_detail": detail,
-                  "game_key": event.get("client_key"), "game_address": event["address"]}
+        values = {"game": "connected", "game_key": event.get("client_key"),
+                  "game_address": event["address"]}
+        if kind == "connected":
+            manager = is_manager(event.get("payload", b""))
+            values["game_kind"] = "manager" if manager else "game"
+            values["game_detail"] = (f"{'Manager' if manager else 'In-game'} agent from "
+                                     f"{event['address'][0]}:{event['address'][1]}")
         payload = event.get("payload", b"")
         if kind == "heartbeat" and len(payload) >= 16:
             _, frame_us, free_kb, dropped = struct.unpack_from("<IIII", payload)
@@ -3694,7 +3722,8 @@ class ProfileWindow(QMainWindow):
     def target_colour(self, name, target=None):
         target = target or tes3x_targets.targets(self.local_values()).get(name, {})
         label = target_runtime_label(target, self.target_runtime_state(name, target))
-        if label in {"In game", "Dashboard", "Dashboard reachable", "xemu running"}:
+        if label in {"In game", "Manager", "Dashboard", "Dashboard reachable",
+                     "xemu running"}:
             return "#2e7d32"
         if label in {"Checking", "Checking agent", "Starting", "Stopping",
                      "Dashboard agent outdated"}:
@@ -5639,11 +5668,14 @@ class ProfileWindow(QMainWindow):
         retail = target.get("retail_root")
         overlay_note = (f"\n\nThe shared retail base at {retail or '<not configured>'} will be "
                         "installed or synchronized first." if overlay else "")
+        manager = self.manager_paired(target.get("name"))
+        manager_note = ("\n\nThe files go through the TES3X manager running on the Xbox."
+                        if manager else "")
         answer = QMessageBox.question(
             self, "Deploy profile",
             "Build this profile and synchronize it to the configured Xbox destination?\n\n"
             "Files absent from the build are removed from that destination. Uploaded files are "
-            "verified by size before the command succeeds." + overlay_note)
+            "verified by size before the command succeeds." + overlay_note + manager_note)
         if answer != QMessageBox.StandardButton.Yes:
             return
         arguments = ["--deploy", "--verify-deploy", "size"]
@@ -5651,8 +5683,13 @@ class ProfileWindow(QMainWindow):
             arguments.append("--install-retail-base")
         if self.discard_after_deploy.isChecked():
             arguments.append("--discard-build")
+        self.deploy_agent = manager
+        if manager:
+            arguments.append("--deploy-agent")
         self.run_pipeline(arguments)
         if self.process is not None:
+            if manager:
+                self.lend_listener()
             self.conflict_retry = (self.deploy_built, self.DEPLOY_QUESTION)
             self.space_retry = lambda: self.deploy_built("--ignore-space")
 
@@ -5671,6 +5708,10 @@ class ProfileWindow(QMainWindow):
             arguments += ["--target", target["name"]]
         if self.profile_plain.get("rules", {}).get("clear_cache_partitions", False):
             arguments.append("--clear-cache")
+        # The manager re-pairs with the GUI only seconds after the first attempt ends.
+        if self.deploy_agent or self.manager_paired(target.get("name")):
+            arguments.append("--agent")
+            self.lend_listener()
         self.run_steps([(ROOT / "tools" / "tes3x_deploy.py", arguments, f"Deploying to {remote}…")],
                        first=False)
         if self.discard_after_deploy.isChecked():
@@ -5988,6 +6029,7 @@ class ProfileWindow(QMainWindow):
         follow, self.after_command = self.after_command, None
         retry, self.conflict_retry = self.conflict_retry, None
         space, self.space_retry = self.space_retry, None
+        self.restore_listener()
         self.saves_selected()
         if code == DEPLOY_NO_SPACE and space:
             if kind == "build":

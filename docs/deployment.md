@@ -81,6 +81,10 @@ The fingerprint is this PC's agent key, `tes3x.agent.key` beside the local confi
 prints while it waits for the manager to pair. `--agent-port` changes the port deploy listens on,
 for when the GUI holds 26501.
 
+The GUI uses the manager by itself: when the manager is paired with the GUI, the target shows
+**Manager** and Deploy goes through it. The GUI hands its port to the deploy for the duration;
+the manager pairs with the deploy, then with the GUI again, about 6 seconds each way.
+
 When the folder already holds files, each file is written under a temporary `~t3x` name and
 renamed into place only once every file has arrived, so an interrupted deploy leaves the build as
 it was; the next deploy deletes the leftovers. Into an empty folder there is no build to keep, so

@@ -94,7 +94,8 @@ The toolbar target chooses where checks, builds, deploys, saves, logs and Play g
 before an Xbox is checked or for xemu, green while an Xbox answers, and red when it is unreachable;
 the tooltip carries its address and reported free space. The joined Check, Build and Deploy buttons
 use grey, green, amber and red dots for not run, current, stale and failed. Deploy is unavailable
-for xemu targets. **Actions** also smoke-tests the current profile. The status bar is reserved for
+for xemu targets. An Xbox whose [console manager](deployment.md#through-the-console-manager) is
+paired with this PC shows **Manager**, and Deploy then goes through the manager instead of FTP. **Actions** also smoke-tests the current profile. The status bar is reserved for
 activity, transient messages and counts. Check and per-target Deploy results are
 remembered in the build output; like the Build state, they notice profile edits but not changes
 inside mod folders.

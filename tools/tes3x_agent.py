@@ -25,6 +25,8 @@ WELCOME, HEARTBEAT, LOG, GOODBYE, REPLY, REQUEST = range(6)
 OP_CONSOLE, OP_READ, OP_REBOOT = range(1, 4)
 # The console manager's file operations and launch; the game answers them "bad request".
 OP_WRITE, OP_LIST, OP_DELETE, OP_RENAME, OP_MKDIR, OP_LAUNCH, OP_TIME, OP_SPACE = range(4, 12)
+# The manager's handshake payload ends in this; the game's is its 4-byte build ID.
+MANAGER_HELLO = b"mgr1"
 STATUS = {0: "ok", 1: "busy", 2: "unsupported", 3: "failed", 4: "bad request"}
 MAX_PACKET = 1400
 MAX_REQUEST = 200  # what the game accepts
@@ -557,6 +559,10 @@ class Client:
     def space(self, path):
         """(free, total) bytes on the drive holding path."""
         return struct.unpack("<QQ", self.call(*space_request(path), f"space {path}")[:16])
+
+
+def is_manager(hello):
+    return hello[4:8] == MANAGER_HELLO
 
 
 def connect(key, host=None, port=PORT, wait=60):
