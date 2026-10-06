@@ -887,6 +887,18 @@ static void serve(void)
     }
 }
 
+/* Sleep(1) here cost each request about 2 ms; select wakes on the packet. The timeout keeps
+ * heartbeats and retries going. */
+static void wait_readable(void)
+{
+    struct timeval wait = {0, 20000};
+    fd_set readable;
+
+    FD_ZERO(&readable);
+    FD_SET(sock, &readable);
+    select(sock + 1, &readable, NULL, NULL, &wait);
+}
+
 /* Requests are answered as they arrive: a reply waits on nothing the UI does. */
 static DWORD WINAPI agent_thread(LPVOID unused)
 {
@@ -931,7 +943,7 @@ static DWORD WINAPI agent_thread(LPVOID unused)
         LeaveCriticalSection(&lock);
         if (!heard) {
             cost.idle++;
-            Sleep(1);
+            wait_readable();
         }
     }
 }
