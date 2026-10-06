@@ -104,20 +104,25 @@ static void draw_bases(const struct view *v)
 {
     const struct base *b;
     const char *sub;
-    int i, y;
+    int i, y, top = UI_PANEL_TOP + 80, rows = BASE_ROWS;
 
     gfx_text(ui->bold, IN_LEFT, UI_PANEL_TOP + 10, ui->accent, "Retail base");
     gfx_text_wrap(ui->small, IN_LEFT, UI_PANEL_TOP + 34, IN_RIGHT - IN_LEFT, ui->dim,
                   "Overlay builds read unchanged game files from it, and XBE updates are rebuilt "
                   "from its morrowind.xbe.");
-    if (!v->base_list.count) {
-        gfx_text_wrap(ui->body, IN_LEFT, UI_PANEL_TOP + 90, IN_RIGHT - IN_LEFT, ui->text,
+    if (!v->base_count) {
+        gfx_text_wrap(ui->body, IN_LEFT, top + 10, IN_RIGHT - IN_LEFT, ui->text,
                       "No retail base found under C, E, F or G:\\Games. Install one from the PC, "
-                      "or copy the game (morrowind.xbe and Data Files) into a folder there.");
-        return;
+                      "or choose the folder that holds the game (morrowind.xbe and Data Files).");
+        top += 90, rows = 1;
     }
-    for (i = v->base_list.top, y = UI_PANEL_TOP + 80;
-         i < v->base_list.count && i < v->base_list.top + BASE_ROWS; i++, y += ROW_H) {
+    for (i = v->base_list.top, y = top;
+         i < v->base_list.count && i < v->base_list.top + rows; i++, y += ROW_H) {
+        if (i == v->base_count) {
+            row(y, i == v->base_list.sel, "Choose a folder...", NULL, 0,
+                "A copy of the game anywhere on the disk", ui->dim);
+            continue;
+        }
         b = &v->bases[i];
         sub = !b->installed ? "Copied, not installed by TES3X: use it only if it is unmodded"
               : b->has_xbe  ? "Installed by TES3X"
@@ -125,7 +130,35 @@ static void draw_bases(const struct view *v)
         row(y, i == v->base_list.sel, b->path, i == v->base_current ? "In use" : NULL, ui->accent,
             sub, b->installed && b->has_xbe ? ui->dim : ui->bad);
     }
-    ui_scrollbar(SCROLL_X, UI_PANEL_TOP + 80, BASE_ROWS * ROW_H, &v->base_list);
+    ui_scrollbar(SCROLL_X, top, rows * ROW_H, &v->base_list);
+}
+
+static void draw_browse(const struct view *v)
+{
+    const struct folder *f;
+    int i, y, top = UI_PANEL_TOP + 64;
+
+    gfx_text(ui->bold, IN_LEFT, UI_PANEL_TOP + 10, ui->accent, "Choose the retail base");
+    gfx_text_fit(ui->small, IN_LEFT, UI_PANEL_TOP + 34, IN_RIGHT - IN_LEFT, ui->dim,
+                 v->browse_path[0] ? v->browse_path : "Drives");
+    gfx_fill(IN_LEFT, UI_PANEL_TOP + 56, IN_RIGHT - IN_LEFT, 1, ui->line);
+    if (!v->folder_list.count) {
+        gfx_text(ui->body, IN_LEFT, top + 4, ui->dim, "No folders here.");
+        return;
+    }
+    for (i = v->folder_list.top, y = top;
+         i < v->folder_list.count && i < v->folder_list.top + FOLDER_ROWS; i++, y += LINE_H) {
+        f = &v->folders[i];
+        if (i == v->folder_list.sel)
+            ui->select(UI_LEFT + 4, y, UI_WIDTH - 8 - 14, LINE_H);
+        if (f->game)
+            gfx_text(ui->small, IN_RIGHT - 8 - gfx_text_width(ui->small, "morrowind.xbe"), y + 3,
+                     ui->accent, "morrowind.xbe");
+        gfx_text_fit(i == v->folder_list.sel ? ui->bold : ui->body, IN_LEFT, y + 1,
+                     IN_RIGHT - IN_LEFT - 140, i == v->folder_list.sel ? ui->bright : ui->text,
+                     f->name);
+    }
+    ui_scrollbar(SCROLL_X, top, FOLDER_ROWS * LINE_H, &v->folder_list);
 }
 
 static void draw_page(const struct view *v)
@@ -133,6 +166,10 @@ static void draw_page(const struct view *v)
     static const struct ui_hint list[] = {{UI_A, "Details"}, {UI_Y, "Rescan"}};
     static const struct ui_hint details[] = {{UI_A, "Launch"}, {UI_X, "Verify"}, {UI_B, "Back"}};
     static const struct ui_hint bases[] = {{UI_A, "Use"}, {UI_B, "Back"}};
+    static const struct ui_hint choose[] = {{UI_A, "Choose"}, {UI_B, "Back"}};
+    static const struct ui_hint browse[] = {{UI_A, "Open"}, {UI_X, "Use this folder"},
+                                            {UI_B, "Up"}};
+    static const struct ui_hint drives[] = {{UI_A, "Open"}, {UI_B, "Back"}};
     static const struct ui_hint change[] = {{UI_A, "Change"}};
     static const struct ui_hint update[] = {{UI_A, "Check for update"}};
     const struct ui_hint *hints = NULL;
@@ -155,9 +192,15 @@ static void draw_page(const struct view *v)
             hints = list + 1, n = 1;
     } else if (v->page == PAGE_BASES) {
         draw_bases(v);
-        hints = bases, n = 2;
-        if (!v->base_list.count)
-            hints = bases + 1, n = 1;
+        hints = v->base_list.sel == v->base_count ? choose : bases, n = 2;
+    } else if (v->page == PAGE_BROWSE) {
+        draw_browse(v);
+        if (!v->browse_path[0])
+            hints = drives, n = 2;
+        else if (v->folder_list.count)
+            hints = browse, n = 3;
+        else
+            hints = browse + 1, n = 2;
     } else {
         draw_settings(v);
         if (v->settings.sel == SET_BASE)

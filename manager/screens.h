@@ -8,7 +8,7 @@
 #include "ui.h"
 
 enum tab { TAB_BUILDS, TAB_SETTINGS, TAB_COUNT };
-enum page { PAGE_MAIN, PAGE_DETAILS, PAGE_BASES };
+enum page { PAGE_MAIN, PAGE_DETAILS, PAGE_BASES, PAGE_BROWSE };
 enum setting { SET_BASE, SET_AGENT, SET_MANAGER, SET_COUNT };
 
 #define LINE_HEAD 1
@@ -28,8 +28,12 @@ struct view {
     const struct line *lines; /* the details page */
     struct ui_list line_list;
     const struct base *bases;
-    struct ui_list base_list;
-    int base_current; /* index of OverlayBase among bases, or -1 */
+    int base_count;
+    struct ui_list base_list; /* the bases, then a row for choosing a folder */
+    int base_current;         /* index of OverlayBase among bases, or -1 */
+    const struct folder *folders;
+    struct ui_list folder_list;
+    const char *browse_path; /* the folder shown, empty for the drives */
     struct ui_list settings;
     const char *overlay_base, *agent, *slot;
     /* a dialog over the page, when title is set */
@@ -42,6 +46,7 @@ struct view {
 #define BUILD_ROWS 7
 #define LINE_ROWS 12
 #define BASE_ROWS 5
+#define FOLDER_ROWS 12
 
 void screen_draw(const struct view *v);
 /* The page with a dialog of text and no buttons over it, for work that cannot be cancelled. */

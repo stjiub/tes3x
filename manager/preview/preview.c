@@ -45,6 +45,11 @@ static struct base bases[] = {
     {"G:\\Games\\Morrowind Game of the Year", 0, 1},
 };
 
+static struct folder folders[] = {
+    {"Apps", 0}, {"Games", 0}, {"Morrowind GOTY Clean", 1}, {"Morrowind Ultimate", 1},
+    {"Music", 0}, {"XBMC4Gamers", 0},
+};
+
 static struct line lines[MAX_LINES];
 
 static void add(const char *label, const char *text, int style)
@@ -70,7 +75,11 @@ int main(int argc, char **argv)
     v.builds = builds;
     v.build_list = (struct ui_list){4, 0, 0, BUILD_ROWS};
     v.bases = bases;
-    v.base_list = (struct ui_list){3, 1, 0, BASE_ROWS};
+    v.base_count = 3;
+    v.base_list = (struct ui_list){4, 1, 0, BASE_ROWS};
+    v.folders = folders;
+    v.folder_list = (struct ui_list){6, 2, 0, FOLDER_ROWS};
+    v.browse_path = "F:\\Backup";
     v.base_current = 0;
     v.settings = (struct ui_list){SET_COUNT, 0, 0, SET_COUNT};
     v.overlay_base = "F:\\Games\\MorrowindRetail";
@@ -116,6 +125,24 @@ int main(int argc, char **argv)
     v.page = PAGE_BASES;
     screen_draw(&v);
     save("bases");
+    v.base_list.sel = 3;
+    screen_draw(&v);
+    save("bases-choose");
+    v.base_count = 0;
+    v.base_list = (struct ui_list){1, 0, 0, BASE_ROWS};
+    screen_draw(&v);
+    save("bases-none");
+    v.page = PAGE_BROWSE;
+    screen_draw(&v);
+    save("browse");
+    snprintf(v.title, sizeof(v.title), "Not a retail base");
+    snprintf(v.text[0], sizeof(v.text[0]), "F:\\Backup\\Music");
+    snprintf(v.text[1], sizeof(v.text[1]), "It has no morrowind.xbe.");
+    v.dismiss = 1;
+    screen_draw(&v);
+    save("browse-refused");
+    memset(v.title, 0, sizeof(v.title));
+    memset(v.text, 0, sizeof(v.text));
     v.tab = TAB_BUILDS;
     v.page = PAGE_MAIN;
     v.build_list.count = 0;

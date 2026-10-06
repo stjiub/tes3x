@@ -63,6 +63,18 @@ struct base {
     int has_xbe;   /* morrowind.xbe present with a known retail digest */
 };
 int find_bases(struct base *out, int max, progress_fn progress);
+/* Whether a folder the user chose can be the base, as find_bases judges a copy: NULL and *out
+ * filled in if it can, else the reason. */
+const char *check_base(const char *folder, struct base *out);
+
+/* A subfolder, for choosing a base anywhere on the disk. */
+#define FOLDER_NAME 43 /* FATX's 42 characters */
+struct folder {
+    char name[FOLDER_NAME];
+    int game; /* holds morrowind.xbe */
+};
+/* The subfolders of `path` sorted by name, or the drives when it is empty. */
+int list_folders(const char *path, struct folder *out, int max);
 
 /* The agent (agent.c), on when E:\TES3X\console.ini sets NetAgent. */
 void agent_start(void);

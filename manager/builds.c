@@ -294,6 +294,70 @@ int find_bases(struct base *out, int max, progress_fn progress)
     return n;
 }
 
+const char *check_base(const char *folder, struct base *out)
+{
+    static struct build b;
+    char xbe[PATH_MAX_MGR];
+    unsigned title_id;
+    int installed_base = 0;
+
+    if (exists(folder, MANIFEST)) {
+        memset(&b, 0, sizeof(b));
+        snprintf(b.path, sizeof(b.path), "%s", folder);
+        summarize(&b);
+        if (strcmp(b.layout, BASE_LAYOUT))
+            return "It is a TES3X build, not a retail copy.";
+        installed_base = 1;
+    }
+    join_path(xbe, sizeof(xbe), folder, "morrowind.xbe");
+    if (xbe_title_id(xbe, &title_id))
+        return "It has no morrowind.xbe.";
+    if (title_id != RETAIL_TITLE_ID)
+        return "Its morrowind.xbe is not Morrowind.";
+    if (!exists(folder, "Data Files\\Morrowind.esm"))
+        return "It has no Data Files\\Morrowind.esm.";
+    if (!xbe_known_retail(xbe))
+        return "Its morrowind.xbe is not a retail image this manager knows.";
+    add_base(out, 0, 1, folder, installed_base, 1);
+    return NULL;
+}
+
+static int folder_cmp(const void *a, const void *b)
+{
+    return name_cmp(((const struct folder *)a)->name, ((const struct folder *)b)->name);
+}
+
+int list_folders(const char *path, struct folder *out, int max)
+{
+    WIN32_FIND_DATAA fd;
+    char pattern[PATH_MAX_MGR];
+    HANDLE h;
+    size_t d;
+    int n = 0;
+
+    if (!path[0]) {
+        for (d = 0; d < sizeof(drives) / sizeof(*drives) && n < max; d++, n++) {
+            snprintf(out[n].name, sizeof(out[n].name), "%c:", drives[d].letter);
+            out[n].game = 0;
+        }
+    } else {
+        snprintf(pattern, sizeof(pattern), "%s\\*", path);
+        if ((h = FindFirstFileA(pattern, &fd)) == INVALID_HANDLE_VALUE)
+            return 0;
+        do {
+            if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || fd.cFileName[0] == '.'
+                || n >= max)
+                continue;
+            snprintf(out[n].name, sizeof(out[n].name), "%s", fd.cFileName);
+            snprintf(pattern, sizeof(pattern), "%s\\%s", path, fd.cFileName);
+            out[n++].game = exists(pattern, "morrowind.xbe");
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
+    }
+    qsort(out, n, sizeof(*out), folder_cmp);
+    return n;
+}
+
 static int hash_file(const char *path, unsigned long long size, char hex[65],
                      unsigned long long *done, unsigned long long total, const char *name,
                      progress_fn progress)

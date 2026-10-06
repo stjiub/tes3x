@@ -4,9 +4,10 @@
  * E:\tes3xmgrexec.txt, when present, is read once at start and deleted: one command a line,
  * run in order without input, for unattended tests:
  *   list | verify NAME | launch NAME | rebuild NAME XBE DELTA | agent SECONDS
- *   | base [use N] | update | fetch [FEED] | get URL FILE | run XBE | press BUTTON...
- *   | shutdown | reboot
- * `base` lists the retail bases found; `base use N` makes the Nth one OverlayBase. `rebuild`
+ *   | base [use N | path FOLDER] | update | fetch [FEED] | get URL FILE | run XBE
+ *   | press BUTTON... | shutdown | reboot
+ * `base` lists the retail bases found; `base use N` makes the Nth one OverlayBase, `base path`
+ * the folder named by the rest of the line, as choosing it on screen does. `rebuild`
  * decodes DELTA against OverlayBase's morrowind.xbe. `update` installs a release waiting in
  * E:\TES3X\update, as a start does; `fetch` checks the update feed and installs from it; `get`
  * saves a URL to a file; `run` starts any XBE, leaving the lines after it for that XBE; `press`
@@ -30,12 +31,15 @@
 #define EXEC_PATH "E:\\tes3xmgrexec.txt"
 #define MAX_BUILDS 64
 #define MAX_BASES 8
+#define MAX_FOLDERS 256
 /* the agent's status can change without input */
 #define REDRAW_MS 500
 #define TRIGGER_DOWN 16000
 
 static struct build builds[MAX_BUILDS];
 static struct base bases[MAX_BASES];
+static struct folder folders[MAX_FOLDERS];
+static char browse_path[PATH_MAX_MGR];
 static struct line lines[MAX_LINES];
 static char overlay_base[PATH_MAX_MGR];
 static struct view v;
@@ -165,10 +169,16 @@ static void find_retail_bases(void)
     int i;
 
     busy("Looking for a retail base...");
-    v.base_list.count = find_bases(bases, MAX_BASES, NULL);
+    v.base_count = find_bases(bases, MAX_BASES - 1, NULL);
+    /* a base chosen by folder is outside the search */
+    for (i = 0; i < v.base_count && name_cmp(bases[i].path, overlay_base); i++)
+        ;
+    if (overlay_base[0] && i == v.base_count && !check_base(overlay_base, &bases[i]))
+        v.base_count++;
+    v.base_list.count = v.base_count + 1;
     v.base_list.sel = v.base_list.top = 0;
     v.base_current = -1;
-    for (i = 0; i < v.base_list.count; i++) {
+    for (i = 0; i < v.base_count; i++) {
         mgr_log("base %d: %s, %s%s\n", i, bases[i].path,
                 bases[i].installed ? "installed by TES3X" : "copied",
                 bases[i].has_xbe ? ", retail XBE" : ", no retail XBE");
@@ -191,6 +201,76 @@ static void use_base(const struct base *b)
     v.base_current = (int)(b - bases);
     v.page = PAGE_MAIN;
     mgr_log("base: %s\n", b->path);
+}
+
+static void browse(const char *path)
+{
+    char from[PATH_MAX_MGR];
+
+    snprintf(from, sizeof(from), "%s", path);
+    snprintf(browse_path, sizeof(browse_path), "%s", from);
+    busy("Reading folders...");
+    v.folder_list.count = list_folders(browse_path, folders, MAX_FOLDERS);
+    v.folder_list.sel = v.folder_list.top = 0;
+    v.page = PAGE_BROWSE;
+    mgr_log("browse: '%s', %d folder(s)\n", browse_path, v.folder_list.count);
+}
+
+static void browse_into(const struct folder *f)
+{
+    char path[PATH_MAX_MGR];
+
+    if (browse_path[0])
+        join_path(path, sizeof(path), browse_path, f->name);
+    else
+        snprintf(path, sizeof(path), "%s", f->name);
+    browse(path);
+}
+
+/* Up a level, keeping the folder left selected; from the drives, back to the bases. */
+static void browse_up(void)
+{
+    char path[PATH_MAX_MGR], *slash;
+    const char *name;
+    int i;
+
+    if (!browse_path[0]) {
+        v.page = PAGE_BASES;
+        return;
+    }
+    snprintf(path, sizeof(path), "%s", browse_path);
+    slash = strrchr(path, '\\');
+    if (slash)
+        *slash = 0;
+    name = slash ? slash + 1 : path;
+    browse(slash ? path : "");
+    for (i = 0; i < v.folder_list.count; i++)
+        if (!name_cmp(folders[i].name, name))
+            v.folder_list.sel = i;
+    ui_list_move(&v.folder_list, 0);
+}
+
+static void use_folder(const char *path)
+{
+    struct base b;
+    const char *why = check_base(path, &b);
+    int i;
+
+    if (why) {
+        mgr_log("base: %s refused: %s\n", path, why);
+        say("Not a retail base", path, why);
+        return;
+    }
+    for (i = 0; i < v.base_count && name_cmp(bases[i].path, b.path); i++)
+        ;
+    if (i == v.base_count) {
+        i = v.base_count < MAX_BASES ? v.base_count++ : MAX_BASES - 1;
+        v.base_list.count = v.base_count + 1;
+    }
+    bases[i] = b;
+    use_base(&bases[i]);
+    if (!b.installed)
+        say("Retail base", b.path, "Not installed by TES3X: use it only if it is unmodded.");
 }
 
 static void details(const struct build *b)
@@ -367,7 +447,7 @@ static void run_exec(void)
     struct build *b;
     struct verify r;
     const char *err;
-    size_t n;
+    size_t n, len;
     int argc;
     FILE *f;
 
@@ -380,11 +460,20 @@ static void run_exec(void)
         if (next)
             for (*next++ = 0; *next == '\r' || *next == '\n'; next++)
                 ;
+        len = strlen(line);
         for (argc = 0; argc < 5 && (arg[argc] = strtok(argc ? NULL : line, " \t")); argc++)
             ;
         if (!argc || arg[0][0] == '#')
             continue;
         mgr_log("exec: %s\n", arg[0]);
+        if (!strcmp(arg[0], "base") && argc >= 3 && !strcmp(arg[1], "path")) {
+            /* the folder may hold spaces, which strtok took */
+            for (n = arg[2] - line; n < len; n++)
+                if (!line[n])
+                    line[n] = ' ';
+            use_folder(arg[2]);
+            continue;
+        }
         if (!strcmp(arg[0], "list")) {
             scan();
         } else if (!strcmp(arg[0], "verify") && argc == 2 && (b = find_build(arg[1]))) {
@@ -407,7 +496,7 @@ static void run_exec(void)
         } else if (!strcmp(arg[0], "base")) {
             find_retail_bases();
             if (argc == 3 && !strcmp(arg[1], "use") && atoi(arg[2]) >= 0
-                && atoi(arg[2]) < v.base_list.count)
+                && atoi(arg[2]) < v.base_count)
                 use_base(&bases[atoi(arg[2])]);
             else if (argc != 1)
                 mgr_log("exec: no such base\n");
@@ -480,11 +569,22 @@ static void press(int button)
             verify(b);
         else if (button == SDL_CONTROLLER_BUTTON_A && !b->error[0])
             launch(b);
+    } else if (v.page == PAGE_BROWSE) {
+        if (step)
+            ui_list_move(&v.folder_list, step);
+        else if (button == SDL_CONTROLLER_BUTTON_A && v.folder_list.count)
+            browse_into(&folders[v.folder_list.sel]);
+        else if (button == SDL_CONTROLLER_BUTTON_X && browse_path[0])
+            use_folder(browse_path);
+        else if (button == SDL_CONTROLLER_BUTTON_B)
+            browse_up();
     } else if (v.page == PAGE_BASES) {
         if (step)
             ui_list_move(&v.base_list, step);
-        else if (button == SDL_CONTROLLER_BUTTON_A && v.base_list.count)
+        else if (button == SDL_CONTROLLER_BUTTON_A && v.base_list.sel < v.base_count)
             use_base(&bases[v.base_list.sel]);
+        else if (button == SDL_CONTROLLER_BUTTON_A)
+            browse(browse_path);
         else if (button == SDL_CONTROLLER_BUTTON_B)
             v.page = PAGE_MAIN;
     } else {
@@ -521,6 +621,8 @@ int main(void)
     update_locate();
     v.builds = builds;
     v.bases = bases;
+    v.folders = folders;
+    v.browse_path = browse_path;
     v.lines = lines;
     v.overlay_base = overlay_base;
     v.slot = update_slot();
@@ -528,6 +630,7 @@ int main(void)
     v.build_list.rows = BUILD_ROWS;
     v.line_list.rows = LINE_ROWS;
     v.base_list.rows = BASE_ROWS;
+    v.folder_list.rows = FOLDER_ROWS;
     v.settings.count = v.settings.rows = SET_COUNT;
     v.agent = agent_status();
     /* before the command file too: without a video mode the rig's capture sees no signal */
@@ -544,7 +647,7 @@ int main(void)
     /* first run: offer the bases found, since overlay builds and XBE updates need one */
     if (!console_get("OverlayBase", overlay_base, sizeof(overlay_base))) {
         find_retail_bases();
-        if (v.base_list.count)
+        if (v.base_count)
             v.tab = TAB_SETTINGS, v.page = PAGE_BASES;
     }
     if (news)
