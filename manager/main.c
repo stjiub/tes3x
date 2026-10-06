@@ -314,6 +314,8 @@ static void run_exec(void)
             /* serve the agent unattended, until the PC reboots or launches */
             for (n = KeTickCount; KeTickCount - n < (DWORD)atoi(arg[1]) * 1000;) {
                 agent_poll();
+                if (SDL_GetTicks() - last_draw >= 1000)
+                    draw();
                 Sleep(5);
             }
         } else if (!strcmp(arg[0], "shutdown")) {
@@ -371,10 +373,7 @@ int main(void)
 
     mount_drives();
     mgr_log("manager %s start\n", MGR_VERSION);
-    scan();
-    agent_start();
-    run_exec();
-
+    /* before the command file too: without a video mode the rig's capture sees no signal */
     XVideoSetMode(640, 480, 32, REFRESH_DEFAULT);
     if (SDL_Init(SDL_INIT_GAMECONTROLLER) || pb_init()) {
         mgr_log("video or input init failed\n");
@@ -383,6 +382,10 @@ int main(void)
     }
     pb_show_front_screen();
     video_up = 1;
+    scan();
+    agent_start();
+    draw();
+    run_exec();
     for (;;) {
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_CONTROLLERDEVICEADDED)

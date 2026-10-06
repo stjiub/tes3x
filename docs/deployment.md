@@ -81,10 +81,15 @@ The fingerprint is this PC's agent key, `tes3x.agent.key` beside the local confi
 prints while it waits for the manager to pair. `--agent-port` changes the port deploy listens on,
 for when the GUI holds 26501.
 
-Each file is written under a temporary `~t3x` name, and renamed into place only once every file
-has arrived, so an interrupted deploy leaves the build as it was; the next deploy deletes the
-leftovers. Each file's time is set after the rename, plugins included, so load order holds. The
-manager reports free space itself; it needs room for the new copies before the old ones go.
+When the folder already holds files, each file is written under a temporary `~t3x` name and
+renamed into place only once every file has arrived, so an interrupted deploy leaves the build as
+it was; the next deploy deletes the leftovers. Into an empty folder there is no build to keep, so
+files are written in place: a rename in a folder of a few hundred files is slow on FATX. Each
+file's time is set once it is in place, plugins included, so load order holds. The manager reports
+free space itself; it needs room for the new copies before the old ones go.
+
+A full build of about 1 GB and 7,300 files takes about 7 minutes through the manager on wired
+Ethernet, and about 13 minutes over the dashboard's FTP server.
 
 ## What a deploy does
 

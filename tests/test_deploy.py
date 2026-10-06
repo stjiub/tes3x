@@ -282,7 +282,7 @@ class AgentDeployTests(unittest.TestCase):
         with patch("sys.stdout", io.StringIO()):
             sync(args, target, "F:/Games/M", local, None)
 
-    def test_files_are_staged_then_renamed_in_with_their_times(self):
+    def test_an_empty_folder_is_written_in_place_then_updates_are_staged(self):
         manager = FakeManager()
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -295,19 +295,23 @@ class AgentDeployTests(unittest.TestCase):
             self.assertEqual(files["f:/games/m/data files/a.esp"], b"plugin")
             self.assertEqual(manager.times["f:/games/m/data files/a.esp"], 1_000_000_000)
             self.assertIn("f:/games/m/tes3xbuild.json", files)
-            self.assertFalse([p for p in files if "~t3x" in p])
-            puts = [i for i, e in enumerate(manager.log) if e[0] == "put"]
-            renames = [i for i, e in enumerate(manager.log) if e[0] == "rename"]
-            self.assertLess(puts[1], renames[0])  # every file arrives before any is renamed
+            self.assertEqual([e[1] for e in manager.log if e[0] == "put"],
+                             ["default.xbe", "a.esp", "~t3x.new"])
 
             (root / "default.xbe").write_bytes(b"new xbe")
+            (root / "Data Files" / "a.esp").write_bytes(b"new plugin")
+            os.utime(root / "Data Files" / "a.esp", (1_000_000_100, 1_000_000_100))
             files["f:/games/m/~t3x9.new"] = b"left by an interrupted deploy"
             manager.log.clear()
             self.deploy(root, manager)
             self.assertEqual(files["f:/games/m/default.xbe"], b"new xbe")
+            self.assertEqual(manager.times["f:/games/m/data files/a.esp"], 1_000_000_100)
             self.assertFalse([p for p in files if "~t3x" in p])
             self.assertEqual([e[1] for e in manager.log if e[0] == "put"],
-                             ["~t3x1.new", "~t3x.new"])
+                             ["~t3x1.new", "~t3x2.new", "~t3x.new"])
+            puts = [i for i, e in enumerate(manager.log) if e[0] == "put"]
+            renames = [i for i, e in enumerate(manager.log) if e[0] == "rename"]
+            self.assertLess(puts[1], renames[0])  # every file arrives before any is renamed
 
 
 

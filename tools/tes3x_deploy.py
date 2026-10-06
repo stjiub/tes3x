@@ -695,8 +695,11 @@ def sync(args, target, base, local, built):
     up_bytes = sum(local[r][0] for r in upload)
     print(f"\n  upload {len(upload)} files ({human(up_bytes)})")
     print(f"  delete {len(delete)} orphaned files")
+    # Staging keeps a build runnable through an interrupted deploy; an empty folder has none,
+    # and each rename costs about 40 ms in a FATX directory of 500 files.
+    staging = target.staged and bool(remote)
     # Staged files sit beside the ones they replace until all have arrived.
-    replaced = 0 if target.staged else sum(on_disk(remote_ci.get(r.lower()) or 0) for r in upload)
+    replaced = 0 if staging else sum(on_disk(remote_ci.get(r.lower()) or 0) for r in upload)
     grow = (sum(on_disk(local[r][0]) for r in upload) - replaced
             - sum(on_disk(remote[r]) for r in delete))
     drive = base[0].upper()
@@ -766,7 +769,7 @@ def sync(args, target, base, local, built):
                       f"{human((sent + file_sent) / elapsed)}/s   ", end="", flush=True)
                 last_progress = now
 
-        if target.staged:
+        if staging:
             staged[r] = staging_name(dst, index)
         try:
             target.upload(staged.get(r, dst), local[r][2], progress)
@@ -774,18 +777,19 @@ def sync(args, target, base, local, built):
             sys.exit(str(exc))
         print()
         sent += local[r][0]
-        if not target.staged and not target.set_time(dst, local[r][1]) and r in set(plugins):
+        if not staging and not target.set_time(dst, local[r][1]) and r in set(plugins):
             time.sleep(args.plugin_delay)
 
     print(f"  uploaded in {time.time()-t0:.0f}s")
     if staged:
+        t0 = time.time()
         for r, path in staged.items():
             dst = posixpath.join(base, r)
             if r.lower() in remote_ci:
                 target.delete(dst)
             target.rename(path, dst)
             target.set_time(dst, local[r][1])
-        print(f"  renamed {len(staged)} staged files into place")
+        print(f"  renamed {len(staged)} staged files into place in {time.time()-t0:.0f}s")
 
     check_uploads(target.tree, target.read, base, local, assets + plugins, args.verify)
     if args.verify != "none":
