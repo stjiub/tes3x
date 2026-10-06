@@ -67,6 +67,25 @@ The Xbox's address is `targets.NAME.host` in `tes3x.local.toml`. The login comes
 options, then the selected target, then the default `xbox`/`xbox`. Set
 `TES3X_FTP_PASSWORD` or pass `--ask-password` to keep the password out of the config file.
 
+## Through the console manager
+
+`--deploy-agent` (or `tes3x_deploy.py --agent`) deploys through the TES3X console manager
+instead of FTP. Start the manager on the Xbox with `E:\TES3X\console.ini` naming this PC:
+
+```ini
+[Xbox]
+NetAgent=192.0.2.7:26501#FINGERPRINT
+```
+
+The fingerprint is this PC's agent key, `tes3x.agent.key` beside the local config, which the deploy
+prints while it waits for the manager to pair. `--agent-port` changes the port deploy listens on,
+for when the GUI holds 26501.
+
+Each file is written under a temporary `~t3x` name, and renamed into place only once every file
+has arrived, so an interrupted deploy leaves the build as it was; the next deploy deletes the
+leftovers. Each file's time is set after the rename, plugins included, so load order holds. The
+manager reports free space itself; it needs room for the new copies before the old ones go.
+
 ## What a deploy does
 
 - **Uploads only what changed.** Files are compared with the manifest, and only new or changed
@@ -109,12 +128,12 @@ launcher, so starting its dashboard entry can activate the overlay before any ba
 
 ## Free space
 
-When the console add-on's agent is installed and answering, a deploy asks it how much space is
-free on the target drive and compares that with what the deploy adds: each uploaded file in whole
-16 KB clusters, less the files it replaces or deletes. It stops without changing anything, with
-exit status 4, when the deploy will not fit, and warns when less than 256 MB would be left.
-`--ignore-space` (on `tes3x_pipeline.py` or `tes3x_deploy.py`) goes ahead; the GUI asks first.
-Without the agent the deploy says the free space is unknown and carries on.
+When the console manager or the console add-on's agent is answering, a deploy asks it how much
+space is free on the target drive and compares that with what the deploy adds: each uploaded file
+in whole 16 KB clusters, less the files it replaces or deletes. It stops without changing
+anything, with exit status 4, when the deploy will not fit, and warns when less than 256 MB would
+be left. `--ignore-space` (on `tes3x_pipeline.py` or `tes3x_deploy.py`) goes ahead; the GUI asks
+first. Without either agent the deploy says the free space is unknown and carries on.
 
 ## Limits
 

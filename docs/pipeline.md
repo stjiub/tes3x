@@ -148,7 +148,8 @@ build and the retail folder are on the same NTFS volume.
 - `tools/tes3x_test.py` runs a scripted smoke test of the same profile in xemu; see
   [testing](testing.md).
 - `--dry-run` lists what is in the Xbox folder and what an upload would change.
-- `--deploy` uploads the build; see [deployment](deployment.md).
+- `--deploy` uploads the build, over FTP or with `--deploy-agent` through the console manager;
+  see [deployment](deployment.md).
 
 You can also copy `<build_root>/<profile name>/deploy` to the Xbox with any FTP client.
 

@@ -791,6 +791,9 @@ def main(argv=None):
     ap.add_argument("--ignore-space", action="store_true",
                     help="deploy even when the Xbox's dashboard agent reports too little free "
                          "space")
+    ap.add_argument("--deploy-agent", action="store_true",
+                    help="deploy through the TES3X manager's agent instead of FTP; the manager "
+                         "must be running on the Xbox with NetAgent naming this PC")
     ap.add_argument("--discard-build", action="store_true",
                     help="delete the regenerable pipeline output after a verified deployment")
     ap.add_argument("--ask-password", action="store_true",
@@ -1213,6 +1216,8 @@ def main(argv=None):
                     base_cmd += ["--target", target["name"]]
                 if args.ask_password:
                     base_cmd.append("--ask-password")
+                if args.deploy_agent:
+                    base_cmd.append("--agent")
                 if args.dry_run:
                     base_cmd.append("--dry-run")
                 elif args.install_retail_base:
@@ -1234,6 +1239,8 @@ def main(argv=None):
             deploy_cmd += ["--target", target["name"]]
         if args.ask_password:
             deploy_cmd.append("--ask-password")
+        if args.deploy_agent:
+            deploy_cmd.append("--agent")
         if args.dry_run:
             deploy_cmd.append("--dry-run")
         if args.deploy and args.verify_deploy != "none":

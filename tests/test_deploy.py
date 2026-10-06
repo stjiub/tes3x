@@ -1,5 +1,6 @@
 import ftplib
 import io
+import os
 import posixpath
 import sys
 import tempfile
@@ -9,9 +10,11 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from tes3x_deploy import (CLUSTER, deployed_manifest, ensure_dirs, ftp_basename,
-                          legacy_manifest, on_disk, owner_conflicts, parse_drives, pool_plan,
-                          read_manifest, remote_tree, upload_file, verify_uploads)
+from tes3x_agent import AgentError
+from tes3x_deploy import (CLUSTER, AgentTarget, deployed_manifest, ensure_dirs, ftp_basename,
+                          legacy_manifest, local_tree, on_disk, owner_conflicts, parse_drives,
+                          pool_plan, read_manifest, remote_tree, sync, upload_file,
+                          verify_uploads)
 import tes3x_manifest
 
 
@@ -214,6 +217,97 @@ class DeployFtpTests(unittest.TestCase):
         ftp.files[folder + "/tes3xpool.txt"] = b"Main"
         self.assertEqual(pool_plan(ftp, pool)[1],
                          ["E:/UDATA/5433ABCD is save pool 'Main', not 'TR'"])
+
+
+class FakeManager:
+    """The manager's file operations over a case-insensitive in-memory drive."""
+
+    def __init__(self):
+        self.host = "192.0.2.50"
+        self.files, self.dirs, self.times, self.log = {}, {"f:", "f:/games"}, {}, []
+
+    def key(self, path):
+        return path.replace("\\", "/").rstrip("/").lower()
+
+    def list(self, path):
+        folder = self.key(path)
+        if folder not in self.dirs:
+            raise AgentError(f"list {path}: failed")
+        names = {}
+        for name in list(self.dirs) + list(self.files):
+            if posixpath.dirname(name) == folder and name != folder:
+                names[posixpath.basename(name)] = name
+        return [(n, full in self.dirs, len(self.files.get(full, b""))) for n, full in names.items()]
+
+    def fetch(self, path):
+        if self.key(path) not in self.files:
+            raise AgentError(f"{path}: failed")
+        return self.files[self.key(path)]
+
+    def mkdir(self, path):
+        self.dirs.add(self.key(path))
+
+    def put(self, path, data, window=16, progress=None):
+        assert posixpath.dirname(self.key(path)) in self.dirs, path
+        self.log.append(("put", posixpath.basename(path)))
+        self.files[self.key(path)] = bytes(data)
+        if progress:
+            progress(len(data))
+
+    def delete(self, path):
+        if self.files.pop(self.key(path), None) is None:
+            raise AgentError(f"delete {path}: failed")
+
+    def rename(self, source, target):
+        if self.key(target) in self.files:
+            raise AgentError(f"rename {source}: failed")
+        self.log.append(("rename", posixpath.basename(source), posixpath.basename(target)))
+        self.files[self.key(target)] = self.files.pop(self.key(source))
+
+    def set_time(self, path, mtime):
+        self.times[self.key(path)] = mtime
+
+    def space(self, path):
+        return 1 << 30, 1 << 32
+
+
+class AgentDeployTests(unittest.TestCase):
+    def deploy(self, tree, manager, **options):
+        target = AgentTarget.__new__(AgentTarget)
+        target.client, target.dirs, target.listener = manager, set(), None
+        args = SimpleNamespace(tree=str(tree), only=[], dry_run=False, replace=False,
+                               require_current=False, verify="size", ignore_space=False,
+                               plugin_delay=0, clear_cache=False, **options)
+        local = local_tree(tree)
+        with patch("sys.stdout", io.StringIO()):
+            sync(args, target, "F:/Games/M", local, None)
+
+    def test_files_are_staged_then_renamed_in_with_their_times(self):
+        manager = FakeManager()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "Data Files").mkdir()
+            (root / "Data Files" / "a.esp").write_bytes(b"plugin")
+            (root / "default.xbe").write_bytes(b"xbe")
+            os.utime(root / "Data Files" / "a.esp", (1_000_000_000, 1_000_000_000))
+            self.deploy(root, manager)
+            files = manager.files
+            self.assertEqual(files["f:/games/m/data files/a.esp"], b"plugin")
+            self.assertEqual(manager.times["f:/games/m/data files/a.esp"], 1_000_000_000)
+            self.assertIn("f:/games/m/tes3xbuild.json", files)
+            self.assertFalse([p for p in files if "~t3x" in p])
+            puts = [i for i, e in enumerate(manager.log) if e[0] == "put"]
+            renames = [i for i, e in enumerate(manager.log) if e[0] == "rename"]
+            self.assertLess(puts[1], renames[0])  # every file arrives before any is renamed
+
+            (root / "default.xbe").write_bytes(b"new xbe")
+            files["f:/games/m/~t3x9.new"] = b"left by an interrupted deploy"
+            manager.log.clear()
+            self.deploy(root, manager)
+            self.assertEqual(files["f:/games/m/default.xbe"], b"new xbe")
+            self.assertFalse([p for p in files if "~t3x" in p])
+            self.assertEqual([e[1] for e in manager.log if e[0] == "put"],
+                             ["~t3x1.new", "~t3x.new"])
 
 
 

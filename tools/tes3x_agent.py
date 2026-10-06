@@ -24,7 +24,7 @@ HANDSHAKE1, HANDSHAKE2, HANDSHAKE3, SEALED = range(1, 5)
 WELCOME, HEARTBEAT, LOG, GOODBYE, REPLY, REQUEST = range(6)
 OP_CONSOLE, OP_READ, OP_REBOOT = range(1, 4)
 # The console manager's file operations and launch; the game answers them "bad request".
-OP_WRITE, OP_LIST, OP_DELETE, OP_RENAME, OP_MKDIR, OP_LAUNCH = range(4, 10)
+OP_WRITE, OP_LIST, OP_DELETE, OP_RENAME, OP_MKDIR, OP_LAUNCH, OP_TIME, OP_SPACE = range(4, 12)
 STATUS = {0: "ok", 1: "busy", 2: "unsupported", 3: "failed", 4: "bad request"}
 MAX_PACKET = 1400
 MAX_REQUEST = 200  # what the game accepts
@@ -159,6 +159,17 @@ def path_request(op, path):
 def rename_request(source, target):
     name = _path(source)
     return OP_RENAME, bytes([len(name)]) + name + _path(target)
+
+
+def time_request(path, mtime):
+    """Set a file's last-write time from a Unix time."""
+    filetime = int((mtime + 11644473600) * 10_000_000)
+    return OP_TIME, struct.pack("<Q", filetime) + _path(path)
+
+
+def space_request(path):
+    """Free and total bytes of the drive holding path."""
+    return OP_SPACE, _path(path)
 
 
 class AgentProtocol:
@@ -474,6 +485,94 @@ class Put:
         return True
 
 
+class AgentError(Exception):
+    pass
+
+
+class Client:
+    """Blocking requests to one console through a running listener whose events go to `events`."""
+
+    def __init__(self, listener, events, host):
+        self.listener, self.events, self.host = listener, events, host
+
+    def send(self, op, args):
+        return self.listener.request(self.host, op, args)
+
+    def call(self, op, args, label):
+        """The reply's payload; AgentError unless it is ok."""
+        ident = self.send(op, args)
+        if ident is None:
+            raise AgentError(f"{label}: no console is connected")
+        reply = wait_for(self.events, lambda e: e["kind"] == "reply" and e.get("id") == ident,
+                         RETRY_SECONDS * (RETRIES + 2))
+        status = reply["status"] if reply else "no reply"
+        if status != "ok":
+            raise AgentError(f"{label}: {status}")
+        return reply["payload"]
+
+    def run(self, transfer, label, progress=None):
+        transfer.start()
+        while not transfer.done and not transfer.error:
+            event = wait_for(self.events, lambda e: e["kind"] == "reply",
+                             RETRY_SECONDS * (RETRIES + 2))
+            if event is None:
+                transfer.error = f"{label}: no reply"
+            elif transfer.handle(event) and progress:
+                progress(transfer)
+        if transfer.error:
+            raise AgentError(transfer.error)
+        return transfer
+
+    def put(self, path, data, window=16, progress=None):
+        """Write a file; `progress(bytes written)` as replies arrive."""
+        self.run(Put(self.send, path, data, window), path,
+                 progress and (lambda t: progress(t.written)))
+
+    def fetch(self, path):
+        return self.run(Fetch(self.send, path), path).data()
+
+    def list(self, path):
+        """[(name, is_dir, size)] in a console folder; AgentError when it does not exist."""
+        start, total, out = 0, None, []
+        while total is None or start < total:
+            total, entries = parse_list(self.call(*list_request(path, start), f"list {path}"))
+            out += entries
+            if not entries:
+                break
+            start += len(entries)
+        return out
+
+    def mkdir(self, path):
+        self.call(*path_request(OP_MKDIR, path), f"mkdir {path}")
+
+    def delete(self, path):
+        self.call(*path_request(OP_DELETE, path), f"delete {path}")
+
+    def rename(self, source, target):
+        self.call(*rename_request(source, target), f"rename {source}")
+
+    def set_time(self, path, mtime):
+        self.call(*time_request(path, mtime), f"time {path}")
+
+    def space(self, path):
+        """(free, total) bytes on the drive holding path."""
+        return struct.unpack("<QQ", self.call(*space_request(path), f"space {path}")[:16])
+
+
+def connect(key, host=None, port=PORT, wait=60):
+    """Listen for a console and return (listener, Client) once one pairs; the caller closes the
+    listener. `host` limits it to one console's address."""
+    events = queue.Queue()
+    listener = AgentListener(load_or_create_key(key), events.put, port=port)
+    listener.start()
+    first = wait_for(events, lambda e: e["kind"] in {"connected", "heartbeat"} and (
+        host is None or e["address"][0] == host), wait)
+    if first is None:
+        listener.close()
+        raise AgentError(f"no console paired with this PC's agent key {key} within {wait:.0f} s")
+    return listener, Client(listener, events, first["address"][0])
+
+
 def wait_for(events, test, timeout):
     """The first queued event that passes `test`, or None."""
     deadline = time.monotonic() + timeout
@@ -515,6 +614,8 @@ def main(argv=None):
                     help="manager: rename a console file or folder (repeatable)")
     ap.add_argument("--list", action="append", default=[], metavar="PATH",
                     help="manager: list a console folder (repeatable)")
+    ap.add_argument("--space", action="append", default=[], metavar="PATH",
+                    help="manager: free and total bytes of a console drive (repeatable)")
     ap.add_argument("--delete", action="append", default=[], metavar="PATH",
                     help="manager: delete a console file or empty folder (repeatable)")
     ap.add_argument("--launch", metavar="XBE", help="manager: start an XBE on the console")
@@ -553,7 +654,7 @@ def main(argv=None):
     try:
         acting = (args.console or args.fetch or args.exit or args.reboot or args.until_end
                   or args.mkdir or args.put or args.rename or args.list or args.delete
-                  or args.launch)
+                  or args.launch or args.space)
         if not acting:
             while args.duration is None or time.monotonic() - started < args.duration:
                 time.sleep(0.25)
@@ -587,97 +688,53 @@ def main(argv=None):
 def act(listener, events, host, args):
     """Run the console lines, folders, puts, renames, lists, fetches, deletes, launch, exit and
     reboot in that order; nonzero on failure."""
-    def send(op, data):
-        return listener.request(host, op, data)
+    client = Client(listener, events, host)
 
-    def answer(ident, label):
-        if ident is None:
-            print(f"agent: {label}: no console is connected", file=sys.stderr)
-            return False
-        reply = wait_for(events, lambda e: e["kind"] == "reply" and e.get("id") == ident,
-                         RETRY_SECONDS * (RETRIES + 2))
-        status = reply["status"] if reply else "no reply"
-        print(f"agent: {label}: {status}", flush=True)
-        return status == "ok"
+    def answer(op, data, label):
+        client.call(op, data, label)
+        print(f"agent: {label}: ok", flush=True)
 
-    def wait_reply(ident):
-        return wait_for(events, lambda e: e["kind"] == "reply" and e.get("id") == ident,
-                        RETRY_SECONDS * (RETRIES + 2))
-
-    def run(transfer, label):
-        transfer.start()
-        while not transfer.done and not transfer.error:
-            event = wait_for(events, lambda e: e["kind"] == "reply",
-                             RETRY_SECONDS * (RETRIES + 2))
-            if event is None:
-                transfer.error = f"{label}: no reply"
-            else:
-                transfer.handle(event)
-        if transfer.error:
-            print(f"agent: {transfer.error}", file=sys.stderr)
-        return not transfer.error
-
-    for line in args.console:
-        if not answer(send(*console_request(line)), line):
-            return 1
-    for path in args.mkdir:
-        if not answer(send(*path_request(OP_MKDIR, path)), f"mkdir {path}"):
-            return 1
-    for spec in args.put:
-        path, _, local = spec.partition("=")
-        data = Path(local).read_bytes()
-        started, resent = time.monotonic(), listener.protocol.resent
-        if not run(Put(send, path, data, args.window), path):
-            return 1
-        seconds = time.monotonic() - started
-        print(f"agent: put {local} -> {path} ({len(data)} bytes, {seconds:.1f} s, "
-              f"{len(data) / seconds / 1e6:.2f} MB/s, "
-              f"{listener.protocol.resent - resent} resent)", flush=True)
-    for spec in args.rename:
-        source, _, target = spec.partition("=")
-        if not answer(send(*rename_request(source, target)), f"rename {source}"):
-            return 1
-    for path in args.list:
-        start, total = 0, None
-        while total is None or start < total:
-            reply = wait_reply(send(*list_request(path, start)))
-            if reply is None or reply["status"] != "ok":
-                print(f"agent: list {path}: {reply['status'] if reply else 'no reply'}",
-                      file=sys.stderr)
-                return 1
-            total, entries = parse_list(reply["payload"])
+    try:
+        for line in args.console:
+            answer(*console_request(line), line)
+        for path in args.mkdir:
+            answer(*path_request(OP_MKDIR, path), f"mkdir {path}")
+        for spec in args.put:
+            path, _, local = spec.partition("=")
+            data = Path(local).read_bytes()
+            started, resent = time.monotonic(), listener.protocol.resent
+            client.put(path, data, args.window)
+            seconds = time.monotonic() - started
+            print(f"agent: put {local} -> {path} ({len(data)} bytes, {seconds:.1f} s, "
+                  f"{len(data) / seconds / 1e6:.2f} MB/s, "
+                  f"{listener.protocol.resent - resent} resent)", flush=True)
+        for spec in args.rename:
+            source, _, target = spec.partition("=")
+            answer(*rename_request(source, target), f"rename {source}")
+        for path in args.list:
+            entries = client.list(path)
             for name, is_dir, size in entries:
                 print(f"  {name}{'/' if is_dir else ''}" + ("" if is_dir else f"  {size}"))
-            if not entries:
-                break
-            start += len(entries)
-        print(f"agent: list {path}: {total} entries", flush=True)
-    for path in args.fetch:
-        fetch = Fetch(send, path)
-        fetch.start()
-        while not fetch.done and not fetch.error:
-            event = wait_for(events, lambda e: e["kind"] == "reply",
-                             RETRY_SECONDS * (RETRIES + 2))
-            if event is None:
-                fetch.error = f"{path}: no reply"
-            else:
-                fetch.handle(event)
-        if fetch.error:
-            print(f"agent: fetch {fetch.error}", file=sys.stderr)
-            return 1
-        out = Path(args.out) / PureWindowsPath(path).name
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_bytes(fetch.data())
-        print(f"agent: fetched {path} -> {out} ({fetch.size} bytes)", flush=True)
-    for path in args.delete:
-        if not answer(send(*path_request(OP_DELETE, path)), f"delete {path}"):
-            return 1
-    if args.launch and not answer(send(*path_request(OP_LAUNCH, args.launch)),
-                                  f"launch {args.launch}"):
-        return 1
-    if args.exit and not answer(send(*console_request("exit")), "exit"):
-        return 1
-    if args.reboot and not answer(send(OP_REBOOT, b""), "reboot"):
+            print(f"agent: list {path}: {len(entries)} entries", flush=True)
+        for path in args.space:
+            free, total = client.space(path)
+            print(f"agent: space {path}: {free} free of {total} bytes", flush=True)
+        for path in args.fetch:
+            data = client.fetch(path)
+            out = Path(args.out) / PureWindowsPath(path).name
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(data)
+            print(f"agent: fetched {path} -> {out} ({len(data)} bytes)", flush=True)
+        for path in args.delete:
+            answer(*path_request(OP_DELETE, path), f"delete {path}")
+        if args.launch:
+            answer(*path_request(OP_LAUNCH, args.launch), f"launch {args.launch}")
+        if args.exit:
+            answer(*console_request("exit"), "exit")
+        if args.reboot:
+            answer(OP_REBOOT, b"", "reboot")
+    except AgentError as exc:
+        print(f"agent: {exc}", file=sys.stderr)
         return 1
     return 0
 

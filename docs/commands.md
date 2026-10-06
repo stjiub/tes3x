@@ -16,7 +16,7 @@ what each one is for and where it is explained; `--help` on any command lists it
 | `tes3x_payload.py` | compile the patch payload for one retail XBE | [payload](../patches/payload.md) |
 | `tes3x_nxdk.py` | build a standalone nxdk program, such as the console-side manager | [configuration](configuration.md) |
 | `tes3x_patch.py` | apply patches to an XBE directly; `--list` shows them | [patches](patches.md) |
-| `tes3x_deploy.py` | upload a game folder to the Xbox | [deployment](deployment.md) |
+| `tes3x_deploy.py` | upload a game folder to the Xbox, over FTP or through the console manager | [deployment](deployment.md) |
 | `tes3x_manifest.py` | check a game folder against its build manifest | [deployment](deployment.md#build-manifest) |
 | `tes3x_fetch.py` | copy files or folders off the Xbox | [deployment](deployment.md#getting-files-back) |
 | `tes3x_saves.py` | list and move saves between the Xbox, an xemu disk and a PC save library | [GUI](gui.md) |
@@ -62,7 +62,7 @@ what each one is for and where it is explained; `--help` on any command lists it
 | command | job | see |
 |---|---|---|
 | `tes3x_net.py` | run a multiplayer server, administer it, and test the network driver | [multiplayer](multiplayer.md) |
-| `tes3x_agent.py` | listen for the in-game agent; run console lines, fetch files or reboot through it, and through the console manager write, list, rename and delete files and launch an XBE | [in-game agent](../patches/agent.md) |
+| `tes3x_agent.py` | listen for the in-game agent; run console lines, fetch files or reboot through it, and through the console manager write, list, rename and delete files, report free space and launch an XBE | [in-game agent](../patches/agent.md) |
 | `tes3x_menuart.py` | redraw the menu buttons multiplayer ships, in `assets/menu` (needs Pillow and numpy) | [multiplayer](multiplayer.md) |
 
 ## Reverse engineering

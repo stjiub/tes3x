@@ -14,6 +14,7 @@ import socket
 import sys
 import time
 from pathlib import Path
+import tes3x_agent
 import tes3x_ftp
 import tes3x_manifest
 from tes3x_paths import require_paths
@@ -40,6 +41,9 @@ SPACE_WARN = 256 * 1024 * 1024  # left free below this after a deploy, say so
 # The XBMC4Gamers dashboard agent (addons/console), when installed: one line in, one line out.
 AGENT_PORT = 7353
 RETRYABLE_FTP = (ftplib.error_temp, ftplib.error_reply, ftplib.error_proto, EOFError, OSError)
+REMOTE_ERRORS = ftplib.all_errors + (tes3x_agent.AgentError,)
+# Through the manager, files arrive under this prefix and are renamed in once all are complete.
+STAGING_PREFIX = "~t3x"
 
 
 def sha1(path):
@@ -51,17 +55,20 @@ def sha1(path):
 
 
 def read_manifest(ftp, base):
+    return load_manifest(lambda path: read_remote(ftp, path), base)
+
+
+def load_manifest(read, base):
     """The folder's build manifest, a legacy deploy record converted to one, or None.
 
     A converted record keeps its SHA-1s under "sha1"; they still vouch for unchanged files."""
     for name in (MANIFEST, LEGACY_MANIFEST):
-        buf = io.BytesIO()
         try:
-            ftp.retrbinary(f"RETR {ftp_basename(ftp, posixpath.join(base, name))}", buf.write)
+            data = read(posixpath.join(base, name))
             if name == MANIFEST:
-                return tes3x_manifest.parse(buf.getvalue())
-            return legacy_manifest(json.loads(buf.getvalue()))
-        except ftplib.all_errors + (ValueError,):
+                return tes3x_manifest.parse(data)
+            return legacy_manifest(json.loads(data))
+        except REMOTE_ERRORS + (ValueError,):
             continue
     return None
 
@@ -78,9 +85,8 @@ def legacy_manifest(entries):
                       if path != BUILD_KEY and isinstance(value, list) and len(value) == 2}}
 
 
-def write_manifest(ftp, base, manifest):
-    data = (json.dumps(manifest, indent=1) + "\n").encode()
-    ftp.storbinary(f"STOR {ftp_basename(ftp, posixpath.join(base, MANIFEST))}", io.BytesIO(data))
+def manifest_bytes(manifest):
+    return (json.dumps(manifest, indent=1) + "\n").encode()
 
 
 def deployed_manifest(built, record, local, hashes, previous=None):
@@ -147,13 +153,18 @@ def read_remote(ftp, path):
 
 
 def pool_plan(ftp, pool):
-    """(conflicts, files to write) for a save pool's E:/UDATA folder."""
+    return pool_check(lambda base: remote_tree(ftp, base), lambda path: read_remote(ftp, path),
+                      pool)
+
+
+def pool_check(tree, read, pool):
+    """(base, conflicts, files to write) for a save pool's E:/UDATA folder."""
     base = "E:/" + tes3x_savepool.folder(int(pool["id"], 16))
-    present = {name.lower(): size for name, size in remote_tree(ftp, base).items()}
+    present = {name.lower(): size for name, size in tree(base).items()}
     marker = tes3x_savepool.MARKER.lower()
     conflicts = []
     if marker in present:
-        owner = read_remote(ftp, f"{base}/{tes3x_savepool.MARKER}").decode("utf-8", "replace")
+        owner = read(f"{base}/{tes3x_savepool.MARKER}").decode("utf-8", "replace")
         if owner.strip() != pool["name"]:
             conflicts.append(f"{base} is save pool '{owner.strip()}', not '{pool['name']}'")
     elif present:
@@ -357,11 +368,15 @@ def orphans(remote, local_ci):
 
 
 def verify_uploads(ftp, base, local, paths, mode):
+    check_uploads(lambda path: remote_tree(ftp, path), lambda path: read_remote(ftp, path),
+                  base, local, paths, mode)
+
+
+def check_uploads(tree, read, base, local, paths, mode):
     """Verify uploaded files by remote size, or by retrieving and hashing their contents."""
     if mode == "none" or not paths:
         return
-    remote = remote_tree(ftp, base)
-    remote_ci = {path.lower(): size for path, size in remote.items()}
+    remote_ci = {path.lower(): size for path, size in tree(base).items()}
     problems = [f"{path}: remote size {remote_ci.get(path.lower(), 'missing')}, "
                 f"expected {local[path][0]}"
                 for path in paths if remote_ci.get(path.lower()) != local[path][0]]
@@ -369,12 +384,176 @@ def verify_uploads(ftp, base, local, paths, mode):
         raise RuntimeError("upload size verification failed: " + "; ".join(problems))
     if mode == "hash":
         for path in paths:
-            digest = hashlib.sha1()
-            name = ftp_basename(ftp, posixpath.join(base, path))
-            ftp.retrbinary(f"RETR {name}", digest.update, blocksize=64 * 1024)
-            expected = sha1(local[path][2])
-            if digest.hexdigest() != expected:
+            if hashlib.sha1(read(posixpath.join(base, path))).hexdigest() != \
+                    sha1(local[path][2]):
                 raise RuntimeError(f"upload hash verification failed: {path}")
+
+
+class FtpTarget:
+    """The console through its dashboard's FTP server."""
+
+    staged = False
+
+    def __init__(self, args):
+        self.args, self.made = args, set()
+        self.ftp = tes3x_ftp.connect(args)
+        feats = ""
+        try:
+            feats = self.ftp.sendcmd("FEAT")
+        except ftplib.all_errors:
+            pass
+        self.timed = "MFMT" in feats.upper()
+        self.label = (f"connected to {args.host}:{args.port} as {args.user}\n  MFMT (set mtime): "
+                      + ("yes" if self.timed else "no - will pace plugin uploads"))
+
+    def tree(self, base):
+        return remote_tree(self.ftp, base)
+
+    def read(self, path):
+        return read_remote(self.ftp, path)
+
+    def write(self, path, data):
+        ensure_dirs(self.ftp, path, set())
+        self.ftp.storbinary(f"STOR {posixpath.basename(path)}", io.BytesIO(data))
+
+    def upload(self, path, source, progress):
+        self.ftp = upload_file(self.ftp, self.args, path, source, self.made, progress,
+                               self.args.retries)
+
+    def delete(self, path):
+        self.ftp.delete(ftp_basename(self.ftp, path))
+
+    def set_time(self, path, mtime):
+        """False once the server has refused; later plugins are then paced instead."""
+        if self.timed:
+            stamp = time.strftime("%Y%m%d%H%M%S", time.gmtime(mtime))
+            try:
+                self.ftp.sendcmd(f"MFMT {stamp} {ftp_basename(self.ftp, path)}")
+            except ftplib.all_errors:
+                self.timed = False
+        return self.timed
+
+    def free(self, drive):
+        return drive_free(self.args.host, drive, token=getattr(self.args, "agent_token", None))
+
+    def clear(self, drive):
+        for name in self.ftp.nlst(f"/{drive}"):
+            if posixpath.basename(name) not in (".", ".."):
+                try:
+                    self.ftp.delete(name)
+                except ftplib.all_errors:
+                    pass
+
+    def close(self):
+        try:
+            self.ftp.quit()
+        except ftplib.all_errors:
+            pass
+
+
+class AgentTarget:
+    """The console through the TES3X manager's agent. Uploads are staged: each file goes to a
+    temporary name and all are renamed in at the end, so an interrupted deploy leaves the build
+    as it was."""
+
+    staged = True
+    timed = True
+
+    def __init__(self, args):
+        self.listener, self.client = tes3x_agent.connect(args.agent_key, args.host,
+                                                         args.agent_port, args.agent_wait)
+        self.label = f"paired with the manager at {self.client.host}"
+        self.dirs = set()
+
+    def tree(self, base):
+        out = {}
+
+        def walk(path, prefix):
+            try:
+                entries = self.client.list(path)
+            except tes3x_agent.AgentError:
+                return
+            for name, is_dir, size in entries:
+                if is_dir:
+                    walk(f"{path}/{name}", f"{prefix}{name}/")
+                else:
+                    out[prefix + name] = size
+
+        walk(base.rstrip("/"), "")
+        return out
+
+    def read(self, path):
+        return self.client.fetch(path)
+
+    def ensure_dirs(self, path):
+        parts = posixpath.dirname(path).split("/")
+        for count in range(2, len(parts) + 1):
+            folder = "/".join(parts[:count])
+            if folder not in self.dirs:
+                self.client.mkdir(folder)
+                self.dirs.add(folder)
+
+    def write(self, path, data):
+        self.ensure_dirs(path)
+        self.client.put(path, data)
+
+    def upload(self, path, source, progress):
+        self.ensure_dirs(path)
+        data = Path(source).read_bytes()
+        done = 0
+
+        def advance(written):
+            nonlocal done
+            progress(written - done, False)
+            done = written
+
+        progress(0, True)
+        self.client.put(path, data, progress=advance)
+
+    def delete(self, path):
+        self.client.delete(path)
+
+    def rename(self, source, target):
+        self.client.rename(source, target)
+
+    def set_time(self, path, mtime):
+        self.client.set_time(path, mtime)
+        return True
+
+    def free(self, drive):
+        try:
+            return self.client.space(f"{drive}:/")[0]
+        except tes3x_agent.AgentError:
+            return None
+
+    def clear(self, drive):
+        for name, is_dir, _ in self.client.list(f"{drive[0]}:/"):
+            if not is_dir:
+                try:
+                    self.client.delete(f"{drive[0]}:/{name}")
+                except tes3x_agent.AgentError:
+                    pass
+
+    def close(self):
+        self.listener.close()
+
+
+def staging_name(path, index):
+    return posixpath.join(posixpath.dirname(path), f"{STAGING_PREFIX}{index}.new")
+
+
+def put_file(target, path, data):
+    """Write a small file whole; a staged target renames it over the old one."""
+    if not target.staged:
+        target.write(path, data)
+        return
+    staged = staging_name(path, "")
+    target.write(staged, data)
+    try:
+        target.delete(path)
+    except REMOTE_ERRORS:
+        pass
+    target.rename(staged, path)
 
 
 def main():
@@ -402,6 +581,15 @@ def main():
                     help="seconds between plugin uploads when MFMT is unsupported")
     ap.add_argument("--retries", type=int, default=2,
                     help="times to retry a file after a transient FTP failure (default: 2)")
+    ap.add_argument("--agent", action="store_true",
+                    help="deploy through the TES3X manager's agent instead of FTP; the manager "
+                         "must be running with NetAgent naming this PC")
+    ap.add_argument("--agent-key", help="this PC's agent key (default: tes3x.agent.key beside "
+                                        "the local config)")
+    ap.add_argument("--agent-port", type=int, default=tes3x_agent.PORT,
+                    help=f"UDP port NetAgent names (default: {tes3x_agent.PORT})")
+    ap.add_argument("--agent-wait", type=float, default=60,
+                    help="seconds to wait for the manager to pair (default: 60)")
     args = ap.parse_args()
     if args.require_current and not args.dry_run:
         ap.error("--require-current needs --dry-run")
@@ -431,21 +619,31 @@ def main():
 
     base = args.remote.replace("\\", "/").rstrip("/")
     tes3x_ftp.resolve(args)
-    ftp = tes3x_ftp.connect(args)
-    print(f"connected to {args.host}:{args.port} as {args.user}")
-
-    feats = ""
+    if args.agent:
+        args.agent_key = args.agent_key or str(
+            Path(args.config or Path.cwd() / "tes3x.local.toml").with_name("tes3x.agent.key"))
+        secret = tes3x_agent.load_or_create_key(args.agent_key)
+        print(f"waiting for the manager at {args.host} to pair "
+              f"(agent key {tes3x_agent.key_fingerprint(secret)})", flush=True)
     try:
-        feats = ftp.sendcmd("FEAT")
-    except ftplib.all_errors:
-        pass
-    has_mfmt = "MFMT" in feats.upper()
-    print(f"  MFMT (set mtime): {'yes' if has_mfmt else 'no - will pace plugin uploads'}")
+        target = AgentTarget(args) if args.agent else FtpTarget(args)
+    except tes3x_agent.AgentError as exc:
+        sys.exit(str(exc))
+    print(target.label)
+    try:
+        sync(args, target, base, local, built)
+    except tes3x_agent.AgentError as exc:
+        sys.exit(f"agent: {exc}")
+    finally:
+        target.close()
+    print("done")
 
-    remote = remote_tree(ftp, base)
+
+def sync(args, target, base, local, built):
+    remote = target.tree(base)
     remote.pop(MANIFEST, None)
     legacy = remote.pop(LEGACY_MANIFEST, None) is not None
-    manifest = read_manifest(ftp, base)
+    manifest = load_manifest(target.read, base)
     known_files = {p.lower(): e for p, e in manifest["files"].items()} if manifest else {}
     print(f"  console has {len(remote)} files under {base}, "
           + (f"manifest with {len(known_files)} entries" if manifest else "manifest missing")
@@ -456,14 +654,13 @@ def main():
     conflicts = owner_conflicts(base, remote, manifest, record.get("profile"))
     pool_missing = []
     if pool:
-        pool_base, pool_conflicts, pool_missing = pool_plan(ftp, pool)
+        pool_base, pool_conflicts, pool_missing = pool_check(target.tree, target.read, pool)
         conflicts += pool_conflicts
         print(f"  save pool '{pool['name']}': {pool_base}"
               + (f", {len(pool_missing)} file(s) to write" if pool_missing else ""))
     for line in conflicts:
         print(f"  conflict: {line}")
     if conflicts and not args.replace and not args.dry_run:
-        ftp.quit()
         print("nothing changed; deploy with --replace to go ahead")
         sys.exit(CONFLICT)
 
@@ -491,24 +688,25 @@ def main():
     # A named selection goes regardless: an XBE edited in place is the normal case.
     upload = [r for r in local if args.only or stale(r)]
     # Load order is upload order without MFMT, so one changed plugin resends them all.
-    if not has_mfmt and any(r.lower().endswith(PLUGIN_EXT) for r in upload):
+    if not target.timed and any(r.lower().endswith(PLUGIN_EXT) for r in upload):
         upload += [r for r in local if r.lower().endswith(PLUGIN_EXT) and r not in upload]
     # A selected send says nothing about what else belongs on the console.
     delete = [] if args.only else orphans(remote, local_ci)
     up_bytes = sum(local[r][0] for r in upload)
     print(f"\n  upload {len(upload)} files ({human(up_bytes)})")
     print(f"  delete {len(delete)} orphaned files")
-    grow = (sum(on_disk(local[r][0]) - on_disk(remote_ci.get(r.lower()) or 0) for r in upload)
+    # Staged files sit beside the ones they replace until all have arrived.
+    replaced = 0 if target.staged else sum(on_disk(remote_ci.get(r.lower()) or 0) for r in upload)
+    grow = (sum(on_disk(local[r][0]) for r in upload) - replaced
             - sum(on_disk(remote[r]) for r in delete))
     drive = base[0].upper()
-    free = drive_free(args.host, drive, token=getattr(args, "agent_token", None))
+    free = target.free(drive)
     if free is None:
         print(f"  space: needs {human(max(grow, 0))} more on {drive}:; free space unknown "
               "(the dashboard agent is not installed or not answering)")
     else:
         print(f"  space: needs {human(max(grow, 0))} more on {drive}:, {human(free)} free")
         if grow > free and not args.dry_run and not args.ignore_space:
-            ftp.quit()
             print(f"nothing changed: {drive}: is {human(grow - free)} short; free some space, "
                   "or deploy with --ignore-space")
             sys.exit(NO_SPACE)
@@ -528,7 +726,6 @@ def main():
             print(f"    + {r}  {human(local[r][0])}")
         if len(upload) > 20:
             print(f"    + ... {len(upload)-20} more")
-        ftp.quit()
         if args.require_current and (conflicts or delete or upload):
             print("nothing changed: the required remote tree is missing or out of date")
             sys.exit(CONFLICT)
@@ -536,12 +733,10 @@ def main():
 
     for r in sorted(delete):
         try:
-            dst = posixpath.join(base, r)
-            ftp.delete(ftp_basename(ftp, dst))
-        except ftplib.all_errors as e:
+            target.delete(posixpath.join(base, r))
+        except REMOTE_ERRORS as e:
             print(f"    delete failed {r}: {e}")
 
-    made = set()
     plugins = sorted((r for r in upload if r.lower().endswith(PLUGIN_EXT)),
                      key=lambda r: local[r][1])
     assets = [r for r in upload if r not in set(plugins)]
@@ -549,6 +744,7 @@ def main():
     t0 = time.time()
 
     transfers = assets + plugins
+    staged = {}
     for index, r in enumerate(transfers, 1):
         dst = posixpath.join(base, r)
         size = local[r][0]
@@ -570,57 +766,53 @@ def main():
                       f"{human((sent + file_sent) / elapsed)}/s   ", end="", flush=True)
                 last_progress = now
 
+        if target.staged:
+            staged[r] = staging_name(dst, index)
         try:
-            ftp = upload_file(ftp, args, dst, local[r][2], made, progress, args.retries)
+            target.upload(staged.get(r, dst), local[r][2], progress)
         except RuntimeError as exc:
             sys.exit(str(exc))
         print()
         sent += local[r][0]
-        name = ftp_basename(ftp, dst)
-        if has_mfmt:
-            stamp = time.strftime("%Y%m%d%H%M%S", time.gmtime(local[r][1]))
-            try:
-                ftp.sendcmd(f"MFMT {stamp} {name}")
-            except ftplib.all_errors:
-                has_mfmt = False
-        elif r in set(plugins):
+        if not target.staged and not target.set_time(dst, local[r][1]) and r in set(plugins):
             time.sleep(args.plugin_delay)
 
     print(f"  uploaded in {time.time()-t0:.0f}s")
+    if staged:
+        for r, path in staged.items():
+            dst = posixpath.join(base, r)
+            if r.lower() in remote_ci:
+                target.delete(dst)
+            target.rename(path, dst)
+            target.set_time(dst, local[r][1])
+        print(f"  renamed {len(staged)} staged files into place")
 
-    verify_uploads(ftp, base, local, assets + plugins, args.verify)
+    check_uploads(target.tree, target.read, base, local, assets + plugins, args.verify)
     if args.verify != "none":
         print(f"  verified {len(assets) + len(plugins)} uploaded files by {args.verify}")
 
-    write_manifest(ftp, base, deployed_manifest(
-        built, record, local, hashes, manifest if args.only else None))
+    put_file(target, posixpath.join(base, MANIFEST), manifest_bytes(deployed_manifest(
+        built, record, local, hashes, manifest if args.only else None)))
     if legacy:
         try:
-            ftp.delete(ftp_basename(ftp, posixpath.join(base, LEGACY_MANIFEST)))
-        except ftplib.all_errors as e:
+            target.delete(posixpath.join(base, LEGACY_MANIFEST))
+        except REMOTE_ERRORS as e:
             print(f"    delete failed {LEGACY_MANIFEST}: {e}")
 
     if pool_missing:
         image = tes3x_savepool.title_image(os.path.join(args.tree, "Default.xbe"))
-        write_pool(ftp, pool_base, pool, image, pool_missing)
+        contents = tes3x_savepool.files(pool["name"], image)
+        for name in pool_missing:
+            target.write(f"{pool_base}/{name}", contents[name])
+            print(f"  save pool: wrote {pool_base}/{name}")
 
     if args.clear_cache:
         for drive in CACHE_DRIVES:
             try:
-                names = ftp.nlst(f"/{drive}")
-                for n in names:
-                    if posixpath.basename(n) in (".", ".."):
-                        continue
-                    try:
-                        ftp.delete(n)
-                    except ftplib.all_errors:
-                        pass
+                target.clear(drive)
                 print(f"  cleared {drive}")
-            except ftplib.all_errors:
+            except REMOTE_ERRORS:
                 print(f"  {drive} not accessible")
-
-    ftp.quit()
-    print("done")
 
 
 if __name__ == "__main__":
