@@ -17,6 +17,7 @@ from pathlib import Path
 import tes3x_agent
 import tes3x_ftp
 import tes3x_manifest
+from tes3x_pack import set_ini_key
 from tes3x_paths import require_paths
 import tes3x_savepool
 
@@ -44,6 +45,8 @@ RETRYABLE_FTP = (ftplib.error_temp, ftplib.error_reply, ftplib.error_proto, EOFE
 REMOTE_ERRORS = ftplib.all_errors + (tes3x_agent.AgentError,)
 # Through the manager, files arrive under this prefix and are renamed in once all are complete.
 STAGING_PREFIX = "~t3x"
+# [Xbox] settings of the console rather than a build; the payload reads them before Morrowind.ini.
+CONSOLE_INI = "E:/TES3X/console.ini"
 
 
 def sha1(path):
@@ -538,6 +541,44 @@ class AgentTarget:
         self.listener.close()
 
 
+def ini_pairs(text):
+    """[(key, value)] of a file's [Xbox] section."""
+    pairs, section = [], None
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("["):
+            section = line.lower()
+        elif section == "[xbox]" and "=" in line and not line.startswith(";"):
+            key, _, value = line.partition("=")
+            pairs.append((key.strip(), value.strip()))
+    return pairs
+
+
+def merge_console_ini(remote, wanted):
+    """The console's console.ini with the build's keys set; its other keys are kept."""
+    text = remote.replace("\r\n", "\n").strip("\n")
+    for key, value in ini_pairs(wanted):
+        text = set_ini_key(text, "Xbox", key, value)
+    return text.strip("\n").replace("\n", "\r\n") + "\r\n"
+
+
+def write_console_ini(target, source, dry_run):
+    wanted = Path(source).read_text(encoding="latin-1")
+    try:
+        remote = target.read(CONSOLE_INI).decode("latin-1")
+    except REMOTE_ERRORS:
+        remote = ""
+    merged = merge_console_ini(remote, wanted)
+    keys = ", ".join(key for key, _ in ini_pairs(wanted))
+    if ini_pairs(merged) == ini_pairs(remote):
+        print(f"  {CONSOLE_INI}: {keys} already set")
+    elif dry_run:
+        print(f"  {CONSOLE_INI}: would set {keys}")
+    else:
+        put_file(target, CONSOLE_INI, merged.encode("latin-1"))
+        print(f"  {CONSOLE_INI}: set {keys}")
+
+
 def staging_name(path, index):
     return posixpath.join(posixpath.dirname(path), f"{STAGING_PREFIX}{index}.new")
 
@@ -590,6 +631,8 @@ def main():
                     help=f"UDP port NetAgent names (default: {tes3x_agent.PORT})")
     ap.add_argument("--agent-wait", type=float, default=60,
                     help="seconds to wait for the manager to pair (default: 60)")
+    ap.add_argument("--console-ini", metavar="FILE",
+                    help=f"merge this file's [Xbox] keys into the console's {CONSOLE_INI}")
     args = ap.parse_args()
     if args.require_current and not args.dry_run:
         ap.error("--require-current needs --dry-run")
@@ -632,6 +675,8 @@ def main():
     print(target.label)
     try:
         sync(args, target, base, local, built)
+        if args.console_ini:
+            write_console_ini(target, args.console_ini, args.dry_run)
     except tes3x_agent.AgentError as exc:
         sys.exit(f"agent: {exc}")
     finally:

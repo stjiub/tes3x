@@ -44,7 +44,8 @@ import tes3x_savepool  # noqa: E402
 import tes3x_targets  # noqa: E402
 from tes3x_xemu_setup import resolve  # noqa: E402
 from tes3x_readlog import read_file, read_log  # noqa: E402
-from tes3x_pipeline import set_ini_key, stage_retail_base  # noqa: E402
+from tes3x_pipeline import CONSOLE_INI, set_ini_key, stage_retail_base  # noqa: E402
+from tes3x_deploy import ini_pairs  # noqa: E402
 
 TEST_INI = ["Xbox:Diagnostics=1", "Xbox:HangWatchdog=1", "Xbox:HangTimeoutSeconds=30",
             "General:Show FPS=1"]
@@ -640,6 +641,20 @@ def main():
             # Keep someone else's deploy tree intact while changing its XBE init flags.
             packed = out / "stage"
             shutil.copytree(deploy, packed, copy_function=link_or_copy)
+        console_ini = deploy.parent / CONSOLE_INI
+        if console_ini.is_file():
+            # The disc is this run's alone, so the console's keys go into its Morrowind.ini; a
+            # reused play disk then needs no console.ini.
+            if packed == deploy:
+                packed = out / "stage"
+                shutil.copytree(deploy, packed, copy_function=link_or_copy)
+            ini_path = packed / "Morrowind.ini"
+            ini_text = ini_path.read_text(encoding="latin-1")
+            for key, value in ini_pairs(console_ini.read_text(encoding="latin-1")):
+                if not (overlay and key.casefold() == "overlaybase"):
+                    ini_text = set_ini_key(ini_text, "Xbox", key, value)
+            ini_path.unlink()  # a hard link must not be written through
+            ini_path.write_text(ini_text, encoding="latin-1")
         if a.ram == 128:
             if packed == deploy and a.profile:
                 clear_limit64(packed / "morrowind.xbe")

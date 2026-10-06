@@ -3,6 +3,7 @@
 #include "tes3x_thunks.h"
 #include "tes3xnt.h"
 #include "tes3xlog.h"
+#include "tes3xini.h"
 
 #ifndef TES3X_SAVE_GAME
 #error "define TES3X_SAVE_GAME to the engine save routine"
@@ -30,8 +31,6 @@
 #define AUTOSAVE_DEFAULT_SLOTS 3u
 #define AUTOSAVE_MAX_SLOTS 9u
 
-typedef int(__cdecl *fn_ini_get_string)(const char *, const char *, const char *,
-                                        char *, int, const char *);
 typedef unsigned char(__attribute__((thiscall)) *fn_save_game)(void *, const char *, const char *);
 
 #ifdef TES3X_NET
@@ -78,7 +77,6 @@ static u32 parse_toggle(const char *s)
 
 static void load_settings(void)
 {
-    fn_ini_get_string get = (fn_ini_get_string)TES3X_INI_GET_STRING;
     ANSI_STRING name;
     OBJECT_ATTRIBUTES oa;
     IO_STATUS_BLOCK iosb;
@@ -89,22 +87,13 @@ static void load_settings(void)
     int i;
 
     settings_ready = 1;
-    for (i = 0; i < (int)sizeof(buf); i++)
-        buf[i] = 0;
-    get("Xbox", "RotatingAutosaves", "1", buf, (int)sizeof(buf) - 1,
-        (const char *)TES3X_INI_PATH);
+    tes3x_ini_xbox("RotatingAutosaves", "1", buf, sizeof(buf));
     rotation_enabled = parse_toggle(buf);
 
-    for (i = 0; i < (int)sizeof(buf); i++)
-        buf[i] = 0;
-    get("Xbox", "AutosaveSlots", "3", buf, (int)sizeof(buf) - 1,
-        (const char *)TES3X_INI_PATH);
+    tes3x_ini_xbox("AutosaveSlots", "3", buf, sizeof(buf));
     slot_count = parse_slots(buf);
 
-    for (i = 0; i < (int)sizeof(buf); i++)
-        buf[i] = 0;
-    get("Xbox", "TransitionAutosaves", "1", buf, (int)sizeof(buf) - 1,
-        (const char *)TES3X_INI_PATH);
+    tes3x_ini_xbox("TransitionAutosaves", "1", buf, sizeof(buf));
     transition_enabled = parse_toggle(buf);
 
     tes3x_log("autosave.enabled", rotation_enabled);

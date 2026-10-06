@@ -67,6 +67,19 @@ The Xbox's address is `targets.NAME.host` in `tes3x.local.toml`. The login comes
 options, then the selected target, then the default `xbox`/`xbox`. Set
 `TES3X_FTP_PASSWORD` or pass `--ask-password` to keep the password out of the config file.
 
+## Console settings
+
+Settings that belong to a console rather than a build live outside every game folder, in
+`E:\TES3X\console.ini`: `NetAgent` (the PC the console pairs with), `OverlayBase` (the retail base
+on this console) and the network keys `NetAddress`, `NetGateway` and `NetDns`. The game reads each
+`[Xbox]` key there before `Morrowind.ini`, so one build's files are the same on every console and
+its manifest hashes hold everywhere.
+
+The pipeline writes these keys, whether they come from the profile, `--ini-set` or the target, to
+`console.ini` beside `deploy/` instead of into `Morrowind.ini`. Deploy merges them into the
+console's file (`tes3x_deploy.py --console-ini FILE`), keeping the keys it does not set. The xemu
+runner puts them back into the disc's `Morrowind.ini`, since an xemu disc belongs to one run.
+
 ## Through the console manager
 
 `--deploy-agent` (or `tes3x_deploy.py --agent`) deploys through the TES3X console manager

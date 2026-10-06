@@ -11,8 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from tes3x_paths import check_paths, require_paths
 from tes3x_pack import write_invalidation
 from tes3x_build import materialize, plugin_masters
-from tes3x_pipeline import (PipelineError, agent_ini, agent_setting, copy_retail_root, link_or_copy,
-                            resolve_patch_plan,
+from tes3x_pipeline import (PipelineError, agent_ini, agent_setting, console_ini_text,
+                            copy_retail_root, link_or_copy, resolve_patch_plan, split_console,
                             preference_flags, sanitized_command, stage_default_xbe, stage_retail_base,
                             strip_retail_files, validate_local_config, validate_profile)
 from tes3x_pipeline import main as pipeline_main
@@ -351,7 +351,7 @@ class PipelinePlanTests(unittest.TestCase):
         plan = resolve_patch_plan(profile)
         self.assertEqual(plan['applied'], ['multi-bsa', 'script-ext', 'mcp-1'])
         self.assertEqual(plan['sources'], [
-            'tes3xhook.c', 'tes3xlog.c', 'tes3xarch.c', 'tes3xscript.c', 'tes3xrefs.c'
+            'tes3xhook.c', 'tes3xlog.c', 'tes3xini.c', 'tes3xarch.c', 'tes3xscript.c', 'tes3xrefs.c'
         ])
         self.assertTrue(plan['needs_payload'])
 
@@ -360,7 +360,7 @@ class PipelinePlanTests(unittest.TestCase):
         plan = resolve_patch_plan(profile)
         self.assertEqual(plan['selected'], ['script-ext', 'mwse-legacy'])
         self.assertEqual(plan['sources'], [
-            'tes3xhook.c', 'tes3xlog.c', 'tes3xscript.c', 'tes3xconsole.c', 'tes3xmwse.c'
+            'tes3xhook.c', 'tes3xlog.c', 'tes3xini.c', 'tes3xscript.c', 'tes3xconsole.c', 'tes3xmwse.c'
         ])
 
     def test_legacy_mwse_dependency_cannot_be_disabled(self):
@@ -384,7 +384,7 @@ class PipelinePlanTests(unittest.TestCase):
         plan = resolve_patch_plan(profile)
         self.assertEqual(plan['selected'], ['info-name-arena'])
         self.assertEqual(plan['sources'], [
-            'tes3xhook.c', 'tes3xlog.c', 'tes3xpager.c', 'tes3xinfoarena.c'
+            'tes3xhook.c', 'tes3xlog.c', 'tes3xini.c', 'tes3xpager.c', 'tes3xinfoarena.c'
         ])
 
     def test_multiplayer_adds_network_foundation(self):
@@ -392,7 +392,7 @@ class PipelinePlanTests(unittest.TestCase):
         plan = resolve_patch_plan(profile)
         self.assertEqual(plan['selected'], ['diagnostics', 'net', 'multiplayer'])
         self.assertEqual(plan['sources'], [
-            'tes3xhook.c', 'tes3xlog.c', 'tes3xdiag.c', 'tes3xnet.c', 'tes3xmulti.c'
+            'tes3xhook.c', 'tes3xlog.c', 'tes3xini.c', 'tes3xdiag.c', 'tes3xnet.c', 'tes3xmulti.c'
         ])
 
     def test_agent_adds_network_foundation(self):
@@ -400,7 +400,7 @@ class PipelinePlanTests(unittest.TestCase):
         plan = resolve_patch_plan(profile)
         self.assertEqual(plan['selected'], ['diagnostics', 'net', 'agent'])
         self.assertEqual(plan['sources'], [
-            'tes3xhook.c', 'tes3xlog.c', 'tes3xdiag.c', 'tes3xnet.c', 'tes3xagent.c'
+            'tes3xhook.c', 'tes3xlog.c', 'tes3xini.c', 'tes3xdiag.c', 'tes3xnet.c', 'tes3xagent.c'
         ])
 
     def test_agent_ini_pairs_and_turns_the_network_on(self):
@@ -415,6 +415,14 @@ class PipelinePlanTests(unittest.TestCase):
             self.assertEqual(agent_ini(['net', 'multiplayer', 'agent'], [], base, xemu),
                              ['Xbox:NetAgent=' + agent_setting(base, xemu)])
             self.assertEqual(agent_ini(['net', 'multiplayer'], [], base, xemu), [])
+
+    def test_console_keys_leave_the_build(self):
+        build, console = split_console(['Xbox:NetAgent=1.2.3.4#00', 'Xbox:NetServer=a',
+                                        'General:NetAddress=x', 'xbox:netaddress=dhcp',
+                                        'Xbox:NetAddress=192.0.2.9/24'])
+        self.assertEqual(build, ['Xbox:NetServer=a', 'General:NetAddress=x'])
+        self.assertEqual(console_ini_text(console),
+                         '[Xbox]\r\nNetAgent=1.2.3.4#00\r\nNetAddress=192.0.2.9/24\r\n')
 
     def test_agent_setting_uses_xemu_gateway_and_persistent_key(self):
         with tempfile.TemporaryDirectory(dir=Path.cwd()) as folder:
@@ -593,7 +601,7 @@ class PipelinePlanTests(unittest.TestCase):
             'package': {'mode': 'merged-bsa'},
         })
         self.assertEqual(plan['applied'], ['rotating-autosaves'])
-        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xsaves.c'])
+        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xini.c', 'tes3xsaves.c'])
 
     def test_transition_autosaves_reuses_save_hook_source(self):
         plan = resolve_patch_plan({
@@ -601,7 +609,7 @@ class PipelinePlanTests(unittest.TestCase):
             'package': {'mode': 'merged-bsa'},
         })
         self.assertEqual(plan['applied'], ['transition-autosaves'])
-        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xsaves.c'])
+        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xini.c', 'tes3xsaves.c'])
 
     def test_build_preferences_adds_specialized_hook_source(self):
         profile = {
@@ -612,7 +620,7 @@ class PipelinePlanTests(unittest.TestCase):
         validate_profile(profile)
         plan = resolve_patch_plan(profile)
         self.assertEqual(plan['applied'], ['build-preferences'])
-        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xprefs.c'])
+        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xini.c', 'tes3xprefs.c'])
         self.assertEqual(preference_flags(profile), '-DTES3X_INVERT_LOOK=0')
         self.assertEqual(preference_flags({'profile': {'name': 'p'}}), '')
 
@@ -625,7 +633,7 @@ class PipelinePlanTests(unittest.TestCase):
             'package': {'mode': 'merged-bsa'},
         })
         self.assertEqual(plan['applied'], ['mcp-97'])
-        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xmcp97.c'])
+        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xini.c', 'tes3xmcp97.c'])
 
     def test_mcp_37_redirects_cell_change_to_its_hook(self):
         base = 0x100000
@@ -670,7 +678,7 @@ class PipelinePlanTests(unittest.TestCase):
             'package': {'mode': 'merged-bsa'},
         })
         self.assertEqual(plan['applied'], ['mcp-37'])
-        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xmcp37.c'])
+        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xini.c', 'tes3xmcp37.c'])
 
     def test_mcp_3_keeps_damage_reduction_for_no_equipped_armor(self):
         block = bytes.fromhex(
@@ -702,7 +710,7 @@ class PipelinePlanTests(unittest.TestCase):
             'package': {'mode': 'merged-bsa'},
         })
         self.assertEqual(plan['applied'], ['mcp-3'])
-        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c'])
+        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xini.c'])
 
     def test_mcp_3_test_probe_requires_its_command(self):
         with self.assertRaisesRegex(PatchError, 'has no mcp-3 test command'):
@@ -809,7 +817,7 @@ class PipelinePlanTests(unittest.TestCase):
             'package': {'mode': 'merged-bsa'},
         })
         self.assertEqual(plan['applied'], ['mcp-98'])
-        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c'])
+        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xini.c'])
 
     def test_mcp_92_replaces_virtual_cleanup_with_retire_magic(self):
         unsummon = bytes.fromhex(
@@ -849,7 +857,7 @@ class PipelinePlanTests(unittest.TestCase):
             'package': {'mode': 'merged-bsa'},
         })
         self.assertEqual(plan['applied'], ['mcp-92'])
-        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c'])
+        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xini.c'])
 
     def test_mcp_154_pads_both_script_data_allocations(self):
         load = bytes.fromhex(
@@ -893,7 +901,7 @@ class PipelinePlanTests(unittest.TestCase):
             'package': {'mode': 'merged-bsa'},
         })
         self.assertEqual(plan['applied'], ['mcp-154'])
-        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xmcp154.c'])
+        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xini.c', 'tes3xmcp154.c'])
 
     def test_mcp_102_forces_active_bit_in_both_actn_paths(self):
         setter = bytes.fromhex(
@@ -931,7 +939,7 @@ class PipelinePlanTests(unittest.TestCase):
             'package': {'mode': 'merged-bsa'},
         })
         self.assertEqual(plan['applied'], ['mcp-102'])
-        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c'])
+        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xini.c'])
 
     def test_mcp_102_test_probe_wraps_the_actn_load_call(self):
         class Image:
@@ -1001,7 +1009,7 @@ class PipelinePlanTests(unittest.TestCase):
             'package': {'mode': 'merged-bsa'},
         })
         self.assertEqual(plan['applied'], ['mcp-123'])
-        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xmcp123.c'])
+        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xini.c', 'tes3xmcp123.c'])
 
     def test_mcp_125_attaches_scripts_and_selects_collision_registration(self):
         base = 0x100000
@@ -1080,7 +1088,7 @@ class PipelinePlanTests(unittest.TestCase):
             'package': {'mode': 'merged-bsa'},
         })
         self.assertEqual(plan['applied'], ['mcp-125'])
-        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xmcp125.c'])
+        self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xini.c', 'tes3xmcp125.c'])
 
     def test_testing_adds_tools_but_allows_overrides(self):
         profile = {'patches': {'preset': 'testing', 'disable': ['diagnostics']},

@@ -3,6 +3,7 @@
  */
 
 #include "tes3xlog.h"
+#include "tes3xini.h"
 
 #ifndef TES3X_BOW_VIEW_UPDATE
 #error "define TES3X_BOW_VIEW_UPDATE to MobilePlayer::update1stPersonTransform"
@@ -17,9 +18,6 @@
 #define TES3X_STR_(x) #x
 #define TES3X_STR(x) TES3X_STR_(x)
 
-typedef int(__cdecl *fn_ini_get_string)(const char *, const char *, const char *,
-                                        char *, int, const char *);
-
 #define DEFAULT_OFFSET_Z (-12)
 #define MIN_OFFSET_Z (-64)
 #define MAX_OFFSET_Z 64
@@ -30,15 +28,11 @@ static int offset_ready;
 /* Deferred because D: is not mounted at the XBE entry point. */
 static void load_offset(void)
 {
-    fn_ini_get_string get = (fn_ini_get_string)TES3X_INI_GET_STRING;
     char buf[16];
     int i, sign = 1, value = 0, set = 0;
 
     offset_ready = 1;
-    for (i = 0; i < (int)sizeof(buf); i++)
-        buf[i] = 0;
-    get("Xbox", "BowViewOffsetZ", "", buf, (int)sizeof(buf) - 1,
-        (const char *)TES3X_INI_PATH);
+    tes3x_ini_xbox("BowViewOffsetZ", "", buf, sizeof(buf));
     for (i = 0; buf[i] == ' ' || buf[i] == '\t'; i++)
         ;
     if (buf[i] == '-' || buf[i] == '+') {

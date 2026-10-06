@@ -39,6 +39,7 @@
 
 #include "tes3x_thunks.h"
 #include "tes3xnt.h"
+#include "tes3xini.h"
 #include "tes3xnet.h"
 #include "monocypher.h"
 #include "tes3xnoise.h"
@@ -1590,17 +1591,11 @@ static void probe(const char *text)
     tes3x_net_probe(target);
 }
 
-typedef int(__cdecl *fn_ini_get_string)(const char *, const char *, const char *,
-                                        char *, int, const char *);
-
 static u32 ini_text(const char *key, char *out, u32 size)
 {
-    fn_ini_get_string get = (fn_ini_get_string)TES3X_INI_GET_STRING;
     u32 i;
 
-    for (i = 0; i < size; i++)
-        out[i] = 0;
-    get("Xbox", key, "", out, (int)size - 1, (const char *)TES3X_INI_PATH);
+    tes3x_ini_xbox(key, "", out, size);
     for (i = 0; out[i]; i++)
         ;
     while (i && out[i - 1] == ' ')

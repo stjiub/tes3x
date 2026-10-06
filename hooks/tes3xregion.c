@@ -8,6 +8,7 @@
 #include "tes3x_thunks.h"
 #include "tes3xnt.h"
 #include "tes3xlog.h"
+#include "tes3xini.h"
 #include "tes3xregion.h"
 
 #ifndef TES3X_INI_GET_STRING
@@ -47,8 +48,6 @@ typedef u32(__stdcall *fn_PsCreateSystemThreadEx)(void **, u32, u32, u32, void *
                                                   unsigned char, unsigned char, void *);
 typedef void(__stdcall *fn_PsTerminateSystemThread)(u32);
 typedef u32(__stdcall *fn_KeDelayExecutionThread)(u32, unsigned char, long long *);
-typedef int(__cdecl *fn_ini_get_string)(const char *, const char *, const char *,
-                                        char *, int, const char *);
 typedef void *(__thiscall *fn_heap_malloc)(void *, u32);
 typedef void(__thiscall *fn_heap_free)(void *, void *);
 
@@ -309,14 +308,11 @@ int tes3x_region_command(const char *text)
 
 u32 tes3x_region_size(void)
 {
-    fn_ini_get_string get = (fn_ini_get_string)TES3X_INI_GET_STRING;
     char buf[16];
     u32 kb = 0;
     int i, set = 0;
 
-    for (i = 0; i < (int)sizeof(buf); i++)
-        buf[i] = 0;
-    get("Xbox", "HeapRegionKB", "", buf, (int)sizeof(buf) - 1, (const char *)TES3X_INI_PATH);
+    tes3x_ini_xbox("HeapRegionKB", "", buf, sizeof(buf));
     for (i = 0; buf[i] >= '0' && buf[i] <= '9'; i++, set = 1)
         kb = kb * 10 + (u32)(buf[i] - '0');
     if (!set)

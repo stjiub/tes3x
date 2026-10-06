@@ -356,7 +356,7 @@ def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), pac
             and "build-preferences" not in disable:
         applied.add("build-preferences")
 
-    sources = ["tes3xhook.c", "tes3xlog.c"]
+    sources = ["tes3xhook.c", "tes3xlog.c", "tes3xini.c"]
     for name in PATCH_ORDER:
         source = HOOK_SOURCES.get(name)
         if name in applied and source and source not in sources:
@@ -609,6 +609,33 @@ def ini_override(items, wanted_section, wanted_key):
                 and key.strip().casefold() == wanted_key.casefold()):
             return value
     return None
+
+
+# [Xbox] keys that belong to a console, not a build. The payload reads them from the console's
+# E:\TES3X\console.ini before Morrowind.ini, so a build's files are the same on every console.
+CONSOLE_KEYS = {"netagent", "overlaybase", "netaddress", "netgateway", "netdns"}
+CONSOLE_INI = "console.ini"
+
+
+def split_console(items):
+    """(build overrides, console overrides) from SECTION:KEY=VALUE items."""
+    build, console = [], []
+    for item in items:
+        section, _, rest = item.partition(":")
+        key = rest.partition("=")[0].strip().casefold()
+        (console if section.strip().casefold() == "xbox" and key in CONSOLE_KEYS
+         else build).append(item)
+    return build, console
+
+
+def console_ini_text(items):
+    """console.ini for the overrides split_console kept back, last value winning."""
+    values = {}
+    for item in items:
+        key, _, value = item.partition(":")[2].partition("=")
+        values.pop(key.strip().casefold(), None)
+        values[key.strip().casefold()] = (key.strip(), value)
+    return "[Xbox]\r\n" + "".join(f"{key}={value}\r\n" for key, value in values.values())
 
 
 def agent_setting(base, target):
@@ -896,6 +923,7 @@ def main(argv=None):
                 remote.replace("\\", "/").rstrip("/").casefold() == \
                 deploy["retail_root"].replace("\\", "/").rstrip("/").casefold():
             raise PipelineError("the profile destination and target.retail_root must be different")
+    ini_items, console_items = split_console(ini_items)
     build_value = args.build_root or paths.get("build_root", "build")
     build_root = config_path(build_value, base).resolve()
     output = Path(args.out).resolve() if args.out else build_root / profile_name
@@ -1162,6 +1190,7 @@ def main(argv=None):
                 "base_sha256": sha256_file(ini),
                 "staged_sha256": sha256_file(staged_ini),
                 "overrides": ini_items,
+                "console": console_items,
             },
             "mods": mod_inventory(profile),
             "plugins": plugins,
@@ -1186,6 +1215,10 @@ def main(argv=None):
             plugins=[plugin["name"] for plugin in plugins], ini=ini_items,
             xbe=recipes,
             save_pool=record.get("save_pool"), retail=vanilla))
+        if console_items:
+            (work / CONSOLE_INI).write_bytes(console_ini_text(console_items).encode("latin-1"))
+            print(f"  {CONSOLE_INI}: " + ", ".join(item.partition(":")[2].partition("=")[0]
+                                                    for item in console_items))
         (work / MARKER).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
         publish(work, output)
     except Exception:
@@ -1241,6 +1274,8 @@ def main(argv=None):
             deploy_cmd.append("--ask-password")
         if args.deploy_agent:
             deploy_cmd.append("--agent")
+        if (output / CONSOLE_INI).is_file():
+            deploy_cmd += ["--console-ini", output / CONSOLE_INI]
         if args.dry_run:
             deploy_cmd.append("--dry-run")
         if args.deploy and args.verify_deploy != "none":

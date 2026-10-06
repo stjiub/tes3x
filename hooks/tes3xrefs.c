@@ -7,6 +7,7 @@
 
 #include "tes3x_thunks.h"
 #include "tes3xlog.h"
+#include "tes3xini.h"
 
 #ifndef TES3X_REF_RESUME
 #error "define TES3X_REF_RESUME to the VA after the restamp fallback's first instruction"
@@ -25,9 +26,6 @@
 #define TES3X_STR(x) TES3X_STR_(x)
 
 /* __cdecl: 0x001933E0 ends `mov esp,ebp; pop ebp; ret`, so the caller clears the arguments. */
-typedef int(__cdecl *fn_ini_get_string)(const char *section, const char *key, const char *dflt,
-                                        char *buf, int size, const char *file);
-
 /* MCP drops unconditionally - clean saving. This is an escape hatch, not MCP's Keep Replaced
  * Refs, which is a separate save-side mode; [Xbox] DropReplacedRefs=0 restores vanilla's
  * restamp, orphan and all. */
@@ -55,15 +53,11 @@ static int should_log(u32 n)
 /* Deferred: D: is not mounted at the XBE entry point. */
 static void load_drop(void)
 {
-    fn_ini_get_string get = (fn_ini_get_string)TES3X_INI_GET_STRING;
     char buf[16];
     int i;
 
     drop_ready = 1;
-    for (i = 0; i < (int)sizeof(buf); i++)
-        buf[i] = 0;
-
-    get("Xbox", "DropReplacedRefs", "", buf, (int)sizeof(buf) - 1, (const char *)TES3X_INI_PATH);
+    tes3x_ini_xbox("DropReplacedRefs", "", buf, sizeof(buf));
     for (i = 0; buf[i] == ' ' || buf[i] == '\t'; i++)
         ;
     if (buf[i] == '0' || buf[i] == '1') {

@@ -44,8 +44,10 @@ closed.
 
 Set `NetAgent` to the GUI host and its fingerprint, for example
 `192.168.1.10#0123456789abcdef0123456789abcdef`. The port defaults to `26501`; put `:PORT`
-before the fingerprint to change it. The pipeline writes this setting from the selected target
-and the persistent GUI key unless the profile supplies an explicit value.
+before the fingerprint to change it. The pipeline makes this setting from the selected target
+and the persistent GUI key unless the profile supplies an explicit value, and deploy writes it to
+the console's `E:\TES3X\console.ini`, not the build (see
+[console settings](../docs/deployment.md#console-settings)).
 
 `NetAddress` is `dhcp` or a static console address as described for the shared [`net`](net.md)
 transport. An agent build without `multiplayer` uses `dhcp` unless the profile sets it; a

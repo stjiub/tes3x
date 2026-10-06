@@ -4,6 +4,7 @@
 
 #include "tes3x_thunks.h"
 #include "tes3xnt.h"
+#include "tes3xini.h"
 #include "tes3xnet.h"
 
 typedef unsigned short u16;
@@ -15,8 +16,6 @@ typedef unsigned short u16;
 #ifndef TES3X_INI_PATH
 #error "define TES3X_INI_PATH to the VA of the engine's ini filename string"
 #endif
-typedef int(__cdecl *fn_ini_get_string)(const char *, const char *, const char *, char *, int,
-                                        const char *);
 #endif
 
 typedef void *(__stdcall *fn_MmAllocateContiguousMemoryEx)(u32, u32, u32, u32, u32);
@@ -197,12 +196,9 @@ static void copy(u8 *d, const u8 *s, u32 n) { while (n--) *d++ = *s++; }
 #if defined(TES3X_AGENT) && !defined(TES3X_MULTIPLAYER)
 static u32 net_ini_text(const char *key, char *out, u32 size)
 {
-    fn_ini_get_string get = (fn_ini_get_string)TES3X_INI_GET_STRING;
     u32 i;
 
-    for (i = 0; i < size; i++)
-        out[i] = 0;
-    get("Xbox", key, "", out, (int)size - 1, (const char *)TES3X_INI_PATH);
+    tes3x_ini_xbox(key, "", out, size);
     for (i = 0; out[i]; i++)
         ;
     while (i && (out[i - 1] == ' ' || out[i - 1] == '\t'))

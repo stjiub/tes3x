@@ -55,8 +55,8 @@ anything there, since the real hit arrives from the console that fired.
 ## Configuration
 
 The patch is opt in twice: a build carries the driver only when its profile enables
-`multiplayer`, and the driver starts only when `[Xbox] NetAddress` is set in `Morrowind.ini`, to
-an address or `dhcp`. `NetServer`, `NetGateway`, `NetDns` and `NetPassword` are described in
+`multiplayer`, and the driver starts only when `[Xbox] NetAddress` is set, in the console's
+`E:\TES3X\console.ini` or `Morrowind.ini`, to an address or `dhcp`. `NetServer`, `NetGateway`, `NetDns` and `NetPassword` are described in
 [ini keys](../docs/ini-keys.md). Enabling `multiplayer` also enables the network foundation and
 [diagnostics](diagnostics.md), whose frame hook runs it.
 

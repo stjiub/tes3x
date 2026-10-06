@@ -5,6 +5,7 @@
 #include "tes3x_thunks.h"
 #include "tes3xnt.h"
 #include "tes3xlog.h"
+#include "tes3xini.h"
 #ifdef TES3X_DIAGNOSTICS
 #include "tes3xdiag.h"
 #endif
@@ -326,9 +327,6 @@ typedef int(__cdecl *fn_vsprintf)(char *buf, const char *fmt, __builtin_va_list 
 typedef int(__attribute__((thiscall)) *fn_compile_run)(void *self, void *ref, const char *text,
                                                        int a2, int a3, int a4, int a5, int a6);
 
-typedef int(__cdecl *fn_ini_get_string)(const char *section, const char *key, const char *dflt,
-                                        char *buf, int size, const char *file);
-
 static int combo_a = COMBO_DEFAULT_A;
 static int combo_b = COMBO_DEFAULT_B;
 static int combo_ready;
@@ -410,15 +408,10 @@ static int parse_combo(const char *s)
 /* Deferred: D: is not mounted at the XBE entry point. */
 static void load_combo(void)
 {
-    fn_ini_get_string get = (fn_ini_get_string)TES3X_INI_GET_STRING;
     char buf[32];
-    int i;
 
     combo_ready = 1;
-    for (i = 0; i < (int)sizeof(buf); i++)
-        buf[i] = 0;
-
-    get("Xbox", "ConsoleCombo", "", buf, (int)sizeof(buf) - 1, (const char *)TES3X_INI_PATH);
+    tes3x_ini_xbox("ConsoleCombo", "", buf, sizeof(buf));
     if (buf[0] && parse_combo(buf))
         tes3x_log("console.combo_ini", (u32)((combo_a << 8) | combo_b));
     else

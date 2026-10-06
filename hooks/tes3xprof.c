@@ -11,6 +11,7 @@
 #include "tes3x_thunks.h"
 #include "tes3xnt.h"
 #include "tes3xlog.h"
+#include "tes3xini.h"
 #include "tes3xprof.h"
 
 #ifndef TES3X_INI_GET_STRING
@@ -55,8 +56,6 @@
 #define KeQuerySystemTime KFN(THUNK_KeQuerySystemTime, fn_KeQuerySystemTime)
 #define MmQueryStatistics KFN(THUNK_MmQueryStatistics, fn_MmQueryStatistics)
 
-typedef int(__cdecl *fn_ini_get_string)(const char *, const char *, const char *,
-                                        char *, int, const char *);
 typedef u32(__stdcall *fn_MmQueryStatistics)(void *);
 
 typedef struct {
@@ -563,14 +562,11 @@ static void prof_reset(void)
 
 static int prof_uint(const char *key, int dflt)
 {
-    fn_ini_get_string get = (fn_ini_get_string)TES3X_INI_GET_STRING;
     char buf[24];
-    int v = 0, any = 0, i;
+    int v = 0, any = 0;
     const char *s = buf;
 
-    for (i = 0; i < (int)sizeof(buf); i++)
-        buf[i] = 0;
-    get("Xbox", key, "", buf, (int)sizeof(buf) - 1, (const char *)TES3X_INI_PATH);
+    tes3x_ini_xbox(key, "", buf, sizeof(buf));
     while (*s == ' ' || *s == '\t')
         s++;
     while (*s >= '0' && *s <= '9') {

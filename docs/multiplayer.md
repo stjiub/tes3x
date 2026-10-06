@@ -38,7 +38,9 @@ saves made with this build depend on that plugin.
 
 ## Network settings
 
-The keys are read from `Morrowind.ini` at each launch (see [ini keys](ini-keys.md)):
+The keys are read at each launch, from the console's `E:\TES3X\console.ini` and then
+`Morrowind.ini` (see [ini keys](ini-keys.md)); deploy puts `NetAddress`, `NetGateway` and `NetDns`
+in `console.ini`:
 
 | Key | Set to |
 |---|---|
@@ -50,10 +52,9 @@ The keys are read from `Morrowind.ini` at each launch (see [ini keys](ini-keys.m
 
 Leaving `NetAddress` empty turns the network off, and the build plays as a normal game.
 
-With `dhcp` every console can share one build. A fixed address must differ per console, so a
-second console then needs a second profile (or a second `[ini]` entry at deploy) that differs
-only in that key. Give the server PC a fixed address, or a DHCP reservation, so `NetServer` stays
-right.
+Every console can share one build. A fixed address belongs to one console: deploy writes it to
+that console's `console.ini`, so a second console takes the same build deployed with its own
+address. Give the server PC a fixed address, or a DHCP reservation, so `NetServer` stays right.
 
 ## Start the server
 

@@ -5708,6 +5708,8 @@ class ProfileWindow(QMainWindow):
             arguments += ["--target", target["name"]]
         if self.profile_plain.get("rules", {}).get("clear_cache_partitions", False):
             arguments.append("--clear-cache")
+        if (self.build_output() / "console.ini").is_file():
+            arguments += ["--console-ini", str(self.build_output() / "console.ini")]
         # The manager re-pairs with the GUI only seconds after the first attempt ends.
         if self.deploy_agent or self.manager_paired(target.get("name")):
             arguments.append("--agent")

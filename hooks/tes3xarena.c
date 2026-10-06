@@ -7,6 +7,7 @@
 #include "tes3x_thunks.h"
 #include "tes3xnt.h"
 #include "tes3xlog.h"
+#include "tes3xini.h"
 
 #ifndef TES3X_INI_GET_STRING
 #error "define TES3X_INI_GET_STRING to the VA of the ini string reader"
@@ -18,9 +19,6 @@
 #define MmQueryStatistics KFN(THUNK_MmQueryStatistics, fn_MmQueryStatistics)
 
 typedef u32(__stdcall *fn_MmQueryStatistics)(void *);
-typedef int(__cdecl *fn_ini_get_string)(const char *, const char *, const char *,
-                                        char *, int, const char *);
-
 typedef struct {
     u32 Length;
     u32 TotalPhysicalPages;
@@ -40,7 +38,6 @@ typedef struct {
 
 u32 tes3x_arena_size(void)
 {
-    fn_ini_get_string get = (fn_ini_get_string)TES3X_INI_GET_STRING;
     MM_STATISTICS st;
     char buf[16];
     u32 kb = 0;
@@ -51,9 +48,7 @@ u32 tes3x_arena_size(void)
         tes3x_log("arena.kb", RETAIL_BYTES / 1024);
         return RETAIL_BYTES;
     }
-    for (i = 0; i < (int)sizeof(buf); i++)
-        buf[i] = 0;
-    get("Xbox", "VideoMemoryKB", "", buf, (int)sizeof(buf) - 1, (const char *)TES3X_INI_PATH);
+    tes3x_ini_xbox("VideoMemoryKB", "", buf, sizeof(buf));
     for (i = 0; buf[i] >= '0' && buf[i] <= '9'; i++, set = 1)
         kb = kb * 10 + (u32)(buf[i] - '0');
     if (!set)

@@ -6,6 +6,7 @@
 #include "tes3x_thunks.h"
 #include "tes3xnt.h"
 #include "tes3xlog.h"
+#include "tes3xini.h"
 
 typedef u32(__stdcall *fn_NtOpenFile)(void **, u32, OBJECT_ATTRIBUTES *, IO_STATUS_BLOCK *, u32,
                                       u32);
@@ -422,30 +423,6 @@ static int same(const char *a, const char *b)
     return 1;
 }
 
-/* One ini line: track the section, and copy KEY's value when in [Xbox]. */
-static int ini_line(char *line, int *in_xbox, const char *key, char *out, u32 size)
-{
-    u32 n = tes3x_strlen(key), i;
-    char *v;
-
-    while (*line == ' ' || *line == '\t')
-        line++;
-    if (*line == '[') {
-        *in_xbox = same(line, "[xbox]");
-        return 0;
-    }
-    if (!*in_xbox || !same(line, key))
-        return 0;
-    for (v = line + n; *v == ' ' || *v == '\t'; v++)
-        ;
-    if (*v++ != '=')
-        return 0;
-    for (i = 0; v[i] && i < size - 1; i++)
-        out[i] = v[i];
-    out[i] = 0;
-    return !v[i];
-}
-
 /* The engine's ini reader is not usable this early, so D:\Morrowind.ini is scanned directly. */
 static int ini_text(const char *key, char *out, u32 size)
 {
@@ -459,6 +436,8 @@ static int ini_text(const char *key, char *out, u32 size)
     int in_xbox = 0, found = 0;
     void *h = 0;
 
+    if (tes3x_console_ini(key, out, size))
+        return 1;
     tes3x_dos_attributes(&oa, &name, path);
     if (orig_create(&h, GENERIC_READ | SYNCHRONIZE, &oa, &iosb, 0, FILE_ATTRIBUTE_NORMAL,
                     FILE_SHARE_READ, FILE_OPEN, FILE_SYNCHRONOUS_IO_NONALERT) != 0)
@@ -474,7 +453,7 @@ static int ini_text(const char *key, char *out, u32 size)
             char c = chunk[i];
             if (c == '\n' || c == '\r') {
                 line[n] = 0;
-                found = ini_line(line, &in_xbox, key, out, size);
+                found = tes3x_ini_line(line, &in_xbox, key, out, size);
                 n = 0;
             } else if (n < sizeof(line) - 1) {
                 line[n++] = c;
@@ -483,7 +462,7 @@ static int ini_text(const char *key, char *out, u32 size)
     }
     if (!found && n) {
         line[n] = 0;
-        found = ini_line(line, &in_xbox, key, out, size);
+        found = tes3x_ini_line(line, &in_xbox, key, out, size);
     }
     orig_close(h);
     return found;

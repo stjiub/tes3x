@@ -3,6 +3,7 @@
 #include "tes3x_thunks.h"
 #include "tes3xnt.h"
 #include "tes3xlog.h"
+#include "tes3xini.h"
 #include "tes3xdiag.h"
 #ifdef TES3X_PROFILE
 #include "tes3xprof.h"
@@ -56,8 +57,6 @@ void tes3x_net_frame(void);
 #define MmQueryStatistics KFN(THUNK_MmQueryStatistics, fn_MmQueryStatistics)
 #define MmQueryAddressProtect KFN(THUNK_MmQueryAddressProtect, fn_MmQueryAddressProtect)
 
-typedef int(__cdecl *fn_ini_get_string)(const char *, const char *, const char *,
-                                        char *, int, const char *);
 typedef u32(__stdcall *fn_PsCreateSystemThreadEx)(void **, u32, u32, u32, void **,
                                                   void(__stdcall *)(void *), void *,
                                                   unsigned char, unsigned char, void *);
@@ -151,13 +150,9 @@ static int parse_uint(const char *s, int dflt)
 
 static int ini_uint(const char *key, int dflt)
 {
-    fn_ini_get_string get = (fn_ini_get_string)TES3X_INI_GET_STRING;
     char buf[24];
-    int i;
 
-    for (i = 0; i < (int)sizeof(buf); i++)
-        buf[i] = 0;
-    get("Xbox", key, "", buf, (int)sizeof(buf) - 1, (const char *)TES3X_INI_PATH);
+    tes3x_ini_xbox(key, "", buf, sizeof(buf));
     return parse_uint(buf, dflt);
 }
 
