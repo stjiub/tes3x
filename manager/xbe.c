@@ -112,6 +112,33 @@ static void digest_hex(const unsigned char *d, size_t n, char hex[65])
     sha256_hex(digest, hex);
 }
 
+/* tes3x_patch.retail_digest of each supported image: GOTY USA morrowind.xbe */
+static const char *const retail_digests[] = {
+    "fd4cf820663f004437ee7ec1077889713c55c7ca6b2db8badfabdb352216dfed",
+};
+
+int xbe_known_retail(const char *path)
+{
+    unsigned char *d;
+    char hex[65];
+    size_t n, i;
+
+    if (read_file(path, &d, &n))
+        return 0;
+    if (n < 4 || memcmp(d, "XBEH", 4)) {
+        free(d);
+        return 0;
+    }
+    scene_form(d, n);
+    digest_hex(d, n, hex);
+    free(d);
+    for (i = 0; i < sizeof(retail_digests) / sizeof(*retail_digests); i++)
+        if (!strcmp(hex, retail_digests[i]))
+            return 1;
+    mgr_log("%s: not a known retail image (%.16s)\n", path, hex);
+    return 0;
+}
+
 static int write_file(const char *path, const unsigned char *d, size_t n)
 {
     FILE *f = fopen(path, "wb");

@@ -40,7 +40,9 @@ DEPLOY_NO_SPACE = 4
 MARKER_SCHEMA = 2
 REPLACED_RETAIL_ENTRIES = {"data files", "default.xbe", "morrowind.xbe", "morrowind.ini"}
 RELEASE_ARTIFACT_SUFFIXES = {".iso", ".nfo", ".rar", ".sfv"}
-OVERLAY_BASE_EXCLUDES = {"default.xbe", "morrowind.xbe", "morrowind.ini", "_resources"}
+# The base keeps morrowind.xbe, the reference XBE deltas are rebuilt against; without
+# default.xbe no dashboard lists it.
+OVERLAY_BASE_EXCLUDES = {"default.xbe", "morrowind.ini", "_resources"}
 
 PATCHES = {entry["name"]: entry for entry in registry.PATCHES if entry["selection"] == "preset"}
 PATCH_ORDER = tuple(entry["name"] for entry in registry.PATCHES
@@ -513,7 +515,7 @@ def copy_retail_root(vanilla, staged, copy=shutil.copy2):
 
 
 def stage_retail_base(vanilla, staged, copy=shutil.copy2):
-    """Stage the clean data tree shared by overlay installs, without a dashboard-visible XBE."""
+    """Stage the clean tree shared by overlay installs, without a dashboard-visible XBE."""
     Path(staged).mkdir(parents=True, exist_ok=True)
     copied = []
     for source in sorted(Path(vanilla).iterdir(), key=lambda path: path.name.lower()):

@@ -4,7 +4,8 @@
  * E:\tes3xmgrexec.txt, when present, is read once at start and deleted: one command a line,
  * run in order without input, for unattended tests:
  *   list | verify NAME | launch NAME | rebuild NAME XBE RETAIL DELTA | agent SECONDS
- *   | shutdown | reboot */
+ *   | base [use N] | shutdown | reboot
+ * `base` lists the retail bases found; `base use N` makes the Nth one OverlayBase. */
 
 #include "mgr.h"
 
@@ -26,12 +27,16 @@
 #define COLS 60
 #define LIST_ROWS (ROWS - 5)
 #define MAX_LINES 512
+#define MAX_BASES 8
 
-enum screen { LIST, DETAILS, MESSAGE };
+enum screen { LIST, DETAILS, MESSAGE, BASE };
 
 static struct build builds[MAX_BUILDS];
 static int build_count, selected, top;
-static enum screen screen;
+static enum screen screen, back;
+static struct base bases[MAX_BASES];
+static int base_count, base_selected;
+static char overlay_base[PATH_MAX_MGR];
 static char lines[MAX_LINES][COLS + 1];
 static int line_count, scroll;
 static char message[4][COLS + 1];
@@ -67,6 +72,8 @@ static void say(const char *a, const char *b)
     memset(message, 0, sizeof(message));
     snprintf(message[0], COLS + 1, "%s", a);
     snprintf(message[1], COLS + 1, "%s", b ? b : "");
+    if (screen != MESSAGE)
+        back = screen;
     screen = MESSAGE;
 }
 
@@ -102,8 +109,37 @@ static void draw_list(void)
         pb_printat(2 + row, 0, "%c %-22.22s %-16.16s %5lluMB", i == selected ? '>' : ' ',
                    b->path, b->error[0] ? b->error : b->profile, b->bytes >> 20);
     }
+    pb_printat(ROWS - 3, 0, "Retail base: %.45s", overlay_base[0] ? overlay_base : "not set");
     pb_printat(ROWS - 2, 0, "Agent: %.50s", agent_status());
-    pb_printat(ROWS - 1, 0, "A details  Y rescan");
+    pb_printat(ROWS - 1, 0, "A details  X retail base  Y rescan");
+}
+
+static void draw_bases(void)
+{
+    const struct base *b;
+    int i;
+
+    pb_printat(0, 0, "Retail base");
+    pb_printat(1, 0, "Overlay builds read unchanged game files from it.");
+    if (!base_count) {
+        pb_printat(3, 0, "No retail base found under C/E/F/G:\\Games.");
+        pb_printat(4, 0, "Install one from the PC, or copy the game");
+        pb_printat(5, 0, "(morrowind.xbe and Data Files) into a folder there.");
+        pb_printat(ROWS - 1, 0, "B back");
+        return;
+    }
+    for (i = 0; i < base_count && i < LIST_ROWS; i++) {
+        b = &bases[i];
+        pb_printat(3 + i, 0, "%c%c %-34.34s %s", i == base_selected ? '>' : ' ',
+                   !name_cmp(b->path, overlay_base) ? '*' : ' ', b->path,
+                   !b->installed ? "copied" : b->has_xbe ? "TES3X" : "TES3X, no XBE");
+    }
+    b = &bases[base_selected];
+    if (!b->installed)
+        pb_printat(ROWS - 3, 0, "Not installed by TES3X: use it only if it is unmodded.");
+    else if (!b->has_xbe)
+        pb_printat(ROWS - 3, 0, "No retail XBE: updates cannot rebuild XBEs from it.");
+    pb_printat(ROWS - 1, 0, "A use  B back");
 }
 
 static void draw_details(void)
@@ -126,6 +162,8 @@ static void draw(void)
         draw_list();
     } else if (screen == DETAILS) {
         draw_details();
+    } else if (screen == BASE) {
+        draw_bases();
     } else {
         for (i = 0; i < 4; i++)
             pb_printat(4 + i, 0, "%s", message[i]);
@@ -180,6 +218,37 @@ static void scan(void)
                 builds[i].path, builds[i].profile, builds[i].layout, builds[i].files,
                 builds[i].bytes, builds[i].plugins, builds[i].xbes,
                 builds[i].error[0] ? ", " : "", builds[i].error);
+}
+
+static void find_retail_bases(void)
+{
+    int i;
+
+    if (video_up) {
+        frame_begin();
+        pb_printat(4, 0, "Looking for a retail base...");
+        frame_end();
+    }
+    base_count = find_bases(bases, MAX_BASES, NULL);
+    base_selected = 0;
+    for (i = 0; i < base_count; i++) {
+        mgr_log("base %d: %s, %s%s\n", i, bases[i].path,
+                bases[i].installed ? "installed by TES3X" : "copied",
+                bases[i].has_xbe ? ", retail XBE" : ", no retail XBE");
+        if (!name_cmp(bases[i].path, overlay_base))
+            base_selected = i;
+    }
+}
+
+static void use_base(const struct base *b)
+{
+    screen = LIST;
+    if (console_set("OverlayBase", b->path)) {
+        say("Could not write " CONSOLE_INI ".", NULL);
+        return;
+    }
+    snprintf(overlay_base, sizeof(overlay_base), "%s", b->path);
+    say("Retail base set:", b->path);
 }
 
 static void details(const struct build *b)
@@ -318,6 +387,13 @@ static void run_exec(void)
                     draw();
                 Sleep(5);
             }
+        } else if (!strcmp(arg[0], "base")) {
+            find_retail_bases();
+            if (argc == 3 && !strcmp(arg[1], "use") && atoi(arg[2]) >= 0
+                && atoi(arg[2]) < base_count)
+                use_base(&bases[atoi(arg[2])]);
+            else if (argc != 1)
+                mgr_log("exec: no such base\n");
         } else if (!strcmp(arg[0], "shutdown")) {
             mgr_log("exec: shutdown\n");
             HalInitiateShutdown();
@@ -346,6 +422,8 @@ static void press(int button)
             details(b), screen = DETAILS;
         else if (button == SDL_CONTROLLER_BUTTON_Y)
             scan();
+        else if (button == SDL_CONTROLLER_BUTTON_X)
+            find_retail_bases(), screen = BASE;
         if (selected < top)
             top = selected;
         else if (selected >= top + LIST_ROWS)
@@ -362,8 +440,17 @@ static void press(int button)
             verify(b);
         else if (button == SDL_CONTROLLER_BUTTON_A)
             launch(b);
+    } else if (screen == BASE) {
+        if (button == SDL_CONTROLLER_BUTTON_DPAD_UP && base_selected > 0)
+            base_selected--;
+        else if (button == SDL_CONTROLLER_BUTTON_DPAD_DOWN && base_selected + 1 < base_count)
+            base_selected++;
+        else if (button == SDL_CONTROLLER_BUTTON_A && base_count)
+            use_base(&bases[base_selected]);
+        else if (button == SDL_CONTROLLER_BUTTON_B)
+            screen = LIST;
     } else if (button == SDL_CONTROLLER_BUTTON_B) {
-        screen = build_count ? DETAILS : LIST;
+        screen = back == DETAILS && build_count ? DETAILS : LIST;
     }
 }
 
@@ -383,6 +470,12 @@ int main(void)
     pb_show_front_screen();
     video_up = 1;
     scan();
+    /* first run: offer the bases found, since overlay builds and XBE updates need one */
+    if (!console_get("OverlayBase", overlay_base, sizeof(overlay_base))) {
+        find_retail_bases();
+        if (base_count)
+            screen = BASE;
+    }
     agent_start();
     draw();
     run_exec();

@@ -17,7 +17,6 @@
 #include "../hooks/monocypher.h"
 #include "../hooks/tes3xnoise.h"
 
-#define CONSOLE_INI "E:\\TES3X\\console.ini"
 #define AGENT_PORT 26501
 #define AGENT_VERSION 1
 #define AGENT_HEADER 16
@@ -208,44 +207,6 @@ static void reply(unsigned id, int status, const unsigned char *payload, unsigne
     if (n)
         memcpy(body + 5, payload, n);
     sealed_send(REPLY, body, 5 + n);
-}
-
-/* --- console.ini --- */
-
-static int ini_get(const char *text, const char *key, char *out, size_t n)
-{
-    const char *line = text, *end, *eq, *v;
-    size_t k = strlen(key), len;
-    int in_xbox = 0;
-
-    for (; *line; line = *end ? end + 1 : end) {
-        end = line + strcspn(line, "\r\n");
-        while (line < end && (*line == ' ' || *line == '\t'))
-            line++;
-        if (*line == '[') {
-            in_xbox = end - line >= 6 && !name_cmp_n(line, "[Xbox]", 6);
-            continue;
-        }
-        eq = memchr(line, '=', (size_t)(end - line));
-        if (!in_xbox || !eq)
-            continue;
-        len = (size_t)(eq - line);
-        while (len && (line[len - 1] == ' ' || line[len - 1] == '\t'))
-            len--;
-        if (len != k || name_cmp_n(line, key, k))
-            continue;
-        for (v = eq + 1; v < end && (*v == ' ' || *v == '\t'); v++)
-            ;
-        len = (size_t)(end - v);
-        while (len && (v[len - 1] == ' ' || v[len - 1] == '\t'))
-            len--;
-        if (len >= n)
-            return 0;
-        memcpy(out, v, len);
-        out[len] = 0;
-        return (int)len;
-    }
-    return 0;
 }
 
 static const char *address(const char *p, unsigned *out)

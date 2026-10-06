@@ -14,6 +14,9 @@
 
 #define LAUNCH_PAGE 0x1000
 #define CHUNK (256 * 1024)
+#define MAX_BASES 8
+#define BASE_LAYOUT "retail-base"
+#define RETAIL_TITLE_ID 0x42530005u
 
 /* Game partitions in the order they are scanned, and the kernel device each drive letter is. */
 static const struct {
@@ -136,6 +139,10 @@ static void summarize(struct build *b)
     manifest_free(text, &j);
 }
 
+/* Retail bases the last scan_builds saw by their manifest. */
+static char installed[MAX_BASES][PATH_MAX_MGR];
+static int installed_count;
+
 static int scan_folder(const char *root, struct build *out, int n, int max)
 {
     WIN32_FIND_DATAA fd;
@@ -157,6 +164,12 @@ static int scan_folder(const char *root, struct build *out, int n, int max)
         snprintf(b->path, sizeof(b->path), "%s\\%s", root, fd.cFileName);
         snprintf(b->name, sizeof(b->name), "%s", fd.cFileName);
         summarize(b);
+        /* a retail base is listed apart from the builds */
+        if (!strcmp(b->layout, BASE_LAYOUT)) {
+            if (installed_count < MAX_BASES)
+                snprintf(installed[installed_count++], PATH_MAX_MGR, "%s", b->path);
+            n--;
+        }
     } while (FindNextFileA(h, &fd));
     FindClose(h);
     return n;
@@ -168,9 +181,68 @@ int scan_builds(struct build *out, int max)
     size_t i;
     int n = 0;
 
+    installed_count = 0;
     for (i = 0; i < sizeof(drives) / sizeof(*drives); i++) {
         snprintf(root, sizeof(root), "%c:\\Games", drives[i].letter);
         n = scan_folder(root, out, n, max);
+    }
+    return n;
+}
+
+static int exists(const char *folder, const char *relative)
+{
+    char path[PATH_MAX_MGR];
+
+    join_path(path, sizeof(path), folder, relative);
+    return GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES;
+}
+
+static int add_base(struct base *out, int n, int max, const char *path, int installed_base,
+                    int has_xbe)
+{
+    if (n >= max)
+        return n;
+    memset(&out[n], 0, sizeof(*out));
+    snprintf(out[n].path, sizeof(out[n].path), "%s", path);
+    out[n].installed = installed_base;
+    out[n].has_xbe = has_xbe;
+    return n + 1;
+}
+
+/* Bases installed by TES3X, as the last scan_builds found them, then folders without a manifest
+ * whose morrowind.xbe is a known retail image with the game's data beside it. The second kind is
+ * only as clean as whoever copied it, which the user confirms. */
+int find_bases(struct base *out, int max, progress_fn progress)
+{
+    WIN32_FIND_DATAA fd;
+    char pattern[PATH_MAX_MGR], folder[PATH_MAX_MGR], xbe[PATH_MAX_MGR];
+    unsigned title_id;
+    HANDLE h;
+    size_t d;
+    int i, n = 0;
+
+    for (i = 0; i < installed_count; i++) {
+        join_path(xbe, sizeof(xbe), installed[i], "morrowind.xbe");
+        n = add_base(out, n, max, installed[i], 1, xbe_known_retail(xbe));
+    }
+    for (d = 0; d < sizeof(drives) / sizeof(*drives); d++) {
+        snprintf(pattern, sizeof(pattern), "%c:\\Games\\*", drives[d].letter);
+        if ((h = FindFirstFileA(pattern, &fd)) == INVALID_HANDLE_VALUE)
+            continue;
+        do {
+            if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || fd.cFileName[0] == '.')
+                continue;
+            snprintf(folder, sizeof(folder), "%c:\\Games\\%s", drives[d].letter, fd.cFileName);
+            join_path(xbe, sizeof(xbe), folder, "morrowind.xbe");
+            if (exists(folder, MANIFEST) || xbe_title_id(xbe, &title_id)
+                || title_id != RETAIL_TITLE_ID || !exists(folder, "Data Files\\Morrowind.esm"))
+                continue;
+            if (progress)
+                progress(folder, 0, 0);
+            if (xbe_known_retail(xbe))
+                n = add_base(out, n, max, folder, 0, 1);
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
     }
     return n;
 }

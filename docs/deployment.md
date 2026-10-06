@@ -142,8 +142,9 @@ the profile folder. Install or synchronize it explicitly with:
 python tools/tes3x_pipeline.py profiles/my-build.toml --deploy --install-retail-base
 ```
 
-The GUI does this after showing the shared-base path in its deployment confirmation. The base does
-not carry either XBE or dashboard metadata, so it is not another launchable game. Never point
+The GUI does this after showing the shared-base path in its deployment confirmation. The base
+carries the retail `morrowind.xbe`, which the console manager rebuilds a build's XBE from, but not
+`Default.xbe` or dashboard metadata, so it is not another launchable game. Never point
 `retail_root` at a working or modded installation: synchronizing the base makes that folder match
 the clean retail data. An overlay profile's `Default.xbe` is the patched engine, not the retail
 launcher, so starting its dashboard entry can activate the overlay before any base file is read.

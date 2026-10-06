@@ -46,6 +46,22 @@ const char *launch_xbe(const char *xbe, void (*before)(void));
 /* main.c: stops the screen and starts an XBE; returns only on failure. */
 void mgr_launch_xbe(const char *xbe);
 
+/* console.c: [Xbox] keys of E:\TES3X\console.ini. Getters return the value's length, 0 when
+ * absent; console_set keeps the file's other keys. */
+#define CONSOLE_INI "E:\\TES3X\\console.ini"
+int ini_get(const char *text, const char *key, char *out, size_t n);
+int console_get(const char *key, char *out, size_t n);
+int console_set(const char *key, const char *value);
+
+/* Retail bases (builds.c): folders holding a clean retail copy, the overlay's OverlayBase and the
+ * reference for XBE deltas. */
+struct base {
+    char path[PATH_MAX_MGR];
+    int installed; /* by TES3X, with a retail-base manifest; otherwise found by its XBE alone */
+    int has_xbe;   /* morrowind.xbe present with a known retail digest */
+};
+int find_bases(struct base *out, int max, progress_fn progress);
+
 /* The agent (agent.c), on when E:\TES3X\console.ini sets NetAgent. */
 void agent_start(void);
 void agent_poll(void);
@@ -54,6 +70,8 @@ const char *agent_status(void);
 
 /* XBE rebuild from the delta in a manifest's xbe entry (xbe.c). */
 int xbe_title_id(const char *path, unsigned *title_id);
+/* Whether the XBE at path is a retail image this manager knows, by its scene-form digest. */
+int xbe_known_retail(const char *path);
 const char *rebuild_xbe(const struct build *b, const char *xbe, const char *retail,
                         const char *delta, progress_fn progress);
 
