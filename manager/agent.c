@@ -31,7 +31,7 @@
 enum { HANDSHAKE1 = 1, HANDSHAKE2, HANDSHAKE3, SEALED };
 enum { WELCOME, HEARTBEAT, LOG, GOODBYE, REPLY, REQUEST };
 enum { OP_CONSOLE = 1, OP_READ, OP_REBOOT, OP_WRITE, OP_LIST, OP_DELETE, OP_RENAME, OP_MKDIR,
-       OP_LAUNCH };
+       OP_LAUNCH, OP_TIME, OP_SPACE };
 enum { ST_OK, ST_BUSY, ST_UNSUPPORTED, ST_FAILED, ST_BAD };
 enum { OFF, NET_WAIT, WANT, SENT1, SENT3, CONNECTED, UNTRUSTED };
 
@@ -76,9 +76,18 @@ static struct {
     /* contiguous writes held back: the disk takes about 1 ms for each small write */
     unsigned start, fill;
 } file = {INVALID_HANDLE_VALUE};
-static unsigned char held[WRITE_BUFFER];
+/* One buffer fills from requests while the writer thread puts the other on disk. */
+static unsigned char held[2][WRITE_BUFFER];
+static int filling;
+static struct {
+    HANDLE h;
+    unsigned start, fill;
+    const unsigned char *data;
+} job;
+static HANDLE job_ready, writer_idle;
 /* a held write that later failed; the next request that changes something reports it */
-static int write_failed;
+static volatile int write_failed;
+static volatile unsigned failed_at;
 
 /* Where a session's time went, in CPU cycles; logged when it ends. */
 static struct {
@@ -327,6 +336,7 @@ static int parse_network(const char *text)
 }
 
 static DWORD WINAPI agent_thread(LPVOID unused);
+static DWORD WINAPI writer_thread(LPVOID unused);
 
 void agent_start(void)
 {
@@ -352,31 +362,55 @@ void agent_start(void)
     mgr_log("agent: target %u.%u.%u.%u:%u\n", target >> 24, target >> 16 & 255, target >> 8 & 255,
             target & 255, target_port);
     InitializeCriticalSection(&lock);
+    job_ready = CreateEvent(NULL, FALSE, FALSE, NULL);
+    writer_idle = CreateEvent(NULL, FALSE, TRUE, NULL);
+    CreateThread(NULL, 0, writer_thread, NULL, 0, NULL);
     CreateThread(NULL, 0, agent_thread, NULL, 0, NULL);
 }
 
 /* --- requests --- */
 
-static int file_flush(void)
+static DWORD WINAPI writer_thread(LPVOID unused)
 {
     DWORD put;
-    int ok;
 
-    if (!file.fill)
-        return 1;
-    ok = SetFilePointer(file.h, (LONG)file.start, NULL, FILE_BEGIN) != INVALID_SET_FILE_POINTER
-         && WriteFile(file.h, held, file.fill, &put, NULL) && put == file.fill;
-    if (!ok) {
-        write_failed = 1;
-        mgr_log("agent: write %s at %u failed\n", file.path, file.start);
+    (void)unused;
+    for (;;) {
+        WaitForSingleObject(job_ready, INFINITE);
+        if (SetFilePointer(job.h, (LONG)job.start, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER
+            || !WriteFile(job.h, job.data, job.fill, &put, NULL) || put != job.fill) {
+            failed_at = job.start;
+            write_failed = 1;
+        }
+        SetEvent(writer_idle);
     }
+}
+
+/* Hands the held writes to the writer thread once it is free. */
+static void file_flush(void)
+{
+    if (!file.fill)
+        return;
+    WaitForSingleObject(writer_idle, INFINITE);
+    job.h = file.h, job.start = file.start, job.fill = file.fill, job.data = held[filling];
+    filling ^= 1;
     file.fill = 0;
-    return ok;
+    SetEvent(job_ready);
+}
+
+/* Returns once everything held is on disk; write_failed then says whether it all went. */
+static void file_sync(void)
+{
+    file_flush();
+    WaitForSingleObject(writer_idle, INFINITE);
+    SetEvent(writer_idle);
+    if (write_failed)
+        mgr_log("agent: write %s at %u failed\n", file.path, failed_at);
 }
 
 static void file_close(void)
 {
-    file_flush();
+    file_sync();
     if (file.h != INVALID_HANDLE_VALUE)
         CloseHandle(file.h);
     file.h = INVALID_HANDLE_VALUE;
@@ -498,9 +532,11 @@ static void op_write(unsigned id, const unsigned char *a, unsigned n)
         file_flush();
     if (!file.fill)
         file.start = offset;
-    memcpy(held + file.fill, a, n);
+    memcpy(held[filling] + file.fill, a, n);
     file.fill += n;
-    if (!n || file.fill == WRITE_BUFFER)
+    if (!n)
+        file_sync();
+    else if (file.fill == WRITE_BUFFER)
         file_flush();
     finish(id, write_failed ? ST_FAILED : ST_OK);
     write_failed = 0;
@@ -578,6 +614,51 @@ static void op_path(unsigned id, int op, const unsigned char *a, unsigned n)
     finish(id, ok ? ST_OK : ST_FAILED);
 }
 
+/* last-write time (FILETIME, UTC), path: plugin load order follows it */
+static void op_time(unsigned id, const unsigned char *a, unsigned n)
+{
+    char path[PATH_MAX_MGR];
+    FILETIME t;
+    HANDLE h;
+    int ok;
+
+    if (n < 9 || !take_path(a + 8, n - 8, path)) {
+        reply(id, ST_BAD, NULL, 0);
+        return;
+    }
+    file_close();
+    t.dwLowDateTime = get32(a);
+    t.dwHighDateTime = get32(a + 4);
+    h = CreateFileA(path, GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    ok = h != INVALID_HANDLE_VALUE && SetFileTime(h, NULL, NULL, &t);
+    if (h != INVALID_HANDLE_VALUE)
+        CloseHandle(h);
+    finish(id, ok ? ST_OK : ST_FAILED);
+}
+
+/* a folder's drive: free and total bytes */
+static void op_space(unsigned id, const unsigned char *a, unsigned n)
+{
+    unsigned char out[16];
+    char path[PATH_MAX_MGR];
+    ULARGE_INTEGER free_bytes, total;
+
+    if (!take_path(a, n, path)) {
+        reply(id, ST_BAD, NULL, 0);
+        return;
+    }
+    path[3] = 0;
+    if (!GetDiskFreeSpaceExA(path, &free_bytes, &total, NULL)) {
+        reply(id, ST_FAILED, NULL, 0);
+        return;
+    }
+    put32(out, free_bytes.LowPart);
+    put32(out + 4, free_bytes.HighPart);
+    put32(out + 8, total.LowPart);
+    put32(out + 12, total.HighPart);
+    reply(id, ST_OK, out, sizeof(out));
+}
+
 static void op_launch(unsigned id, const unsigned char *a, unsigned n)
 {
     char path[PATH_MAX_MGR];
@@ -612,11 +693,15 @@ static void request(const unsigned char *body, unsigned n)
         op_list(id, body, n);
         return;
     }
+    if (op == OP_SPACE) {
+        op_space(id, body, n);
+        return;
+    }
     if ((status = done_status(id)) >= 0) {
         reply(id, status, NULL, 0);
         return;
     }
-    if (op != OP_WRITE && (file_flush(), write_failed)) {
+    if (op != OP_WRITE && (file_sync(), write_failed)) {
         write_failed = 0;
         finish(id, ST_FAILED);
         return;
@@ -632,6 +717,9 @@ static void request(const unsigned char *body, unsigned n)
         break;
     case OP_LAUNCH:
         op_launch(id, body, n);
+        break;
+    case OP_TIME:
+        op_time(id, body, n);
         break;
     case OP_REBOOT:
         finish(id, ST_OK);
