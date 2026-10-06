@@ -6,6 +6,7 @@
 #include "tes3xnt.h"
 #include "tes3xlog.h"
 #include "tes3xini.h"
+#include "tes3xlaunch.h"
 #ifdef TES3X_DIAGNOSTICS
 #include "tes3xdiag.h"
 #endif
@@ -278,11 +279,8 @@ typedef void *(__stdcall *fn_MmAllocateContiguousMemory)(u32 bytes);
 typedef void(__stdcall *fn_MmPersistContiguousMemory)(void *base, u32 bytes, int persist);
 #define LAUNCH_PAGE 0x1000
 #define LAUNCH_DATA 0x400
-#define LAUNCH_PATH 8
-#define LAUNCH_PATH_MAX 520
 #define LDT_TITLE 0
 #define XBE_CERT_PTR 0x00010118
-#define HAL_QUICK_REBOOT_ROUTINE 2
 
 /* The engine's relaunch data: magic, pad port, a value it adds to a setting, mode, then the save
  * path to load (0x00092A93, 0x000959EC, 0x00095DCB read it). */
@@ -1132,37 +1130,14 @@ void tes3x_console_start(void)
     tes3x_log(mode == BXWM_LOAD ? "exec.start_load" : "exec.start_new", p);
 }
 
-/* `launch \Device\...\NAME.xbe`: start another title in any folder, as dashboards do, since
- * XLaunchNewImage takes only D:\ paths. The kernel reads "folder;file" from the persisted page
- * and maps D: to the folder. XGetLaunchInfo may have freed the old page, so take a new one. */
+/* `launch \Device\...\NAME.xbe` or `launch F:\...\NAME.xbe`: start another title in any
+ * folder. */
 static void exec_summary(void);
 static void exec_launch(const char *path)
 {
-    void **page_var = *(void ***)THUNK_LaunchDataPage;
-    unsigned char *page = MmAllocateContiguousMemory(LAUNCH_PAGE);
-    u32 i, slash = 0;
-
-    if (!page) {
-        tes3x_log("exec.launch_no_page", 0);
-        return;
-    }
-    for (i = 0; i < LAUNCH_PAGE; i++)
-        page[i] = 0;
-    ((u32 *)page)[0] = LDT_TITLE;
-    ((u32 *)page)[1] = *(u32 *)(*(u32 *)XBE_CERT_PTR + 8);
-    for (i = 0; path[i] && i < LAUNCH_PATH_MAX - 1; i++)
-        if ((page[LAUNCH_PATH + i] = (unsigned char)path[i]) == '\\')
-            slash = i;
-    if (!slash) {
-        tes3x_log("exec.launch_bad_path", i);
-        return;
-    }
-    page[LAUNCH_PATH + slash] = ';';
-    MmPersistContiguousMemory(page, LAUNCH_PAGE, 1);
-    *page_var = page;
     exec_summary();
-    tes3x_log("exec.launch", i);
-    HalReturnToFirmware(HAL_QUICK_REBOOT_ROUTINE);
+    tes3x_log("exec.launch", tes3x_strlen(path));
+    tes3x_launch(path);
 }
 
 static int menu_up(void *menu)

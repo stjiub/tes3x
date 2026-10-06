@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 HOOKS = ROOT / "hooks"
 HEADERS = ("tes3xdiag.h", "tes3xheap.h", "tes3xlog.h", "tes3xmem.h", "tes3xnt.h",
            "tes3xpager.h", "tes3xprof.h", "tes3xregion.h", "tes3x_thunks.h", "monocypher.h",
-           "tes3xnoise.h")
+           "tes3xnoise.h", "tes3xlaunch.h")
 DEFAULT_SOURCES = ("tes3xhook.c", "tes3xlog.c", "tes3xini.c", "tes3xdiag.c")
 BUNDLED_LLVM = ROOT / "externals" / "llvm" / "bin"
 LLVM_DIRS = (Path("C:/Program Files/LLVM/bin"), Path("C:/msys64/clang64/bin"),
@@ -226,6 +226,9 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
             if extra_source not in names:
                 sources.append(extra_source)
                 names.add(extra_source)
+    if names & {"tes3xconsole.c", "tes3xmulti.c"} and "tes3xlaunch.c" not in names:
+        sources.append("tes3xlaunch.c")
+        names.add("tes3xlaunch.c")
     clang, lld = (os.environ.get("CLANG") or find_tool("clang", llvm_dir),
                   os.environ.get("LLD") or find_tool("lld-link", llvm_dir))
     out.mkdir(parents=True, exist_ok=True)

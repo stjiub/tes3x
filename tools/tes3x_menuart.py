@@ -21,6 +21,7 @@ BUTTONS = {
     "menu_savegame": ("Save", 128), "menu_options": ("Options", 128),
     "menu_return": ("Return", 128), "menu_exitgame": ("Exit", 128),
     "menu_join": ("Join", 128), "menu_servers": ("Servers", 128),
+    "menu_manager": ("Manager", 128),
     "menu_newserver": ("New Server", 256),
     "menu_leave": ("Leave", 128), "menu_saveserver": ("Save to Server", 256),
 }

@@ -40,6 +40,7 @@
 #include "tes3x_thunks.h"
 #include "tes3xnt.h"
 #include "tes3xini.h"
+#include "tes3xlaunch.h"
 #include "tes3xnet.h"
 #include "monocypher.h"
 #include "tes3xnoise.h"
@@ -11834,7 +11835,7 @@ static void weather_stat(void)
 #define UI_FONT 0x164      /* 0 the small Century Gothic, 1 the big one */
 #define UI_IMAGE_FLAG 0x87 /* cleared on each main menu image */
 #define MENU_ROW 0x32      /* a main menu button's height */
-#define MENU_ROWS 5        /* New, Load, Join, Options, Exit */
+#define MENU_ROWS 6        /* New, Load, Join, Manager, Options, Exit */
 #define SERVERS_SHOWN 8
 #define LIST_VISIBLE 4   /* rows the list's box shows; the rest scroll */
 #define LIST_ROW 32
@@ -11863,7 +11864,7 @@ typedef void(__cdecl *fn_set_focus)(void *widget, int on);
 typedef char(__cdecl *fn_ui_handler)(void *owner, u32 id, int d0, int d1, void *source);
 static const char *const button_states[3] = {"TES3X_normal", "TES3X_over", "TES3X_pressed"};
 static const char *const main_rows[MENU_ROWS] = {
-    "MenuOptions_New_container", "MenuOptions_Load_container", "TES3X_Join",
+    "MenuOptions_New_container", "MenuOptions_Load_container", "TES3X_Join", "TES3X_Manager",
     "MenuOptions_Options_container", "MenuOptions_Exit_container"};
 static const char *const server_rows[SERVERS_SHOWN] = {
     "TES3X_Server1", "TES3X_Server2", "TES3X_Server3", "TES3X_Server4",
@@ -11883,6 +11884,8 @@ typedef char(__cdecl *fn_scroll_to)(void *element);
 #define SERVER_NEW SERVERS_SHOWN
 #define SERVER_RETURN (SERVERS_SHOWN + 1)
 #define SERVER_OPEN (SERVERS_SHOWN + 2)
+#define SERVER_MANAGER (SERVERS_SHOWN + 3)
+static char manager_path[128]; /* [Xbox] Manager, which installing the manager writes */
 
 static int same_server(const char *a, const char *b)
 {
@@ -12103,6 +12106,13 @@ static char __cdecl join_click(void *owner, u32 id, int d0, int d1, void *source
 {
     (void)owner, (void)id, (void)d0, (void)d1, (void)source;
     server_chosen = SERVER_OPEN;
+    return 1;
+}
+
+static char __cdecl manager_click(void *owner, u32 id, int d0, int d1, void *source)
+{
+    (void)owner, (void)id, (void)d0, (void)d1, (void)source;
+    server_chosen = SERVER_MANAGER;
     return 1;
 }
 
@@ -12472,12 +12482,29 @@ static void typing_frame(u8 *menu)
 #endif
 }
 
+/* A block added last to its column's children moves up to sit above `below`. */
+static void column_before(u8 *column, u8 *block, u8 *below)
+{
+    u8 **begin = *(u8 ***)(column + UI_CHILDREN), **end = *(u8 ***)(column + UI_CHILDREN + 4), **at;
+
+    if (!plausible(begin) || end <= begin || end[-1] != block)
+        return;
+    for (at = end - 1; at > begin && at[-1] != below; at--)
+        ;
+    if (at == begin)
+        return;
+    for (at = end - 1; at[-1] != below; at--)
+        at[0] = at[-1];
+    at[0] = at[-1];
+    at[-1] = block;
+}
+
 static void join_frame(void)
 {
     fn_ui_id ui_id = (fn_ui_id)TES3X_NET_UI_ID;
     fn_set_prop set = (fn_set_prop)TES3X_NET_SET_PROP;
     u16 up = *(const u16 *)TES3X_NET_NAV_UP_ID, down = *(const u16 *)TES3X_NET_NAV_DOWN_ID;
-    u8 *menu, *exit, *options, *load, *column, *button, **begin, **end, **at;
+    u8 *menu, *exit, *options, *load, *column, *button, *manager;
     int chosen;
 
     if (player_reference())
@@ -12493,29 +12520,28 @@ static void join_frame(void)
             !plausible(button = menu_button(column, ui_id("TES3X_Join"), "menu_join",
                                             *(const int *)(exit + UI_WIDTH), join_click)))
             return;
-        /* the menu's height is set, not fitted: one row more */
+        /* the menu's height is set, not fitted: a row more for each button added */
         menu_height = *(const int *)(menu + UI_HEIGHT) + MENU_ROW;
         menu_width = *(const int *)(menu + UI_WIDTH);
-        ((fn_set_size)TES3X_NET_SET_HEIGHT)(menu, (int)menu_height);
-        /* Join goes above Options: the block was added last to its column's children */
-        begin = *(u8 ***)(column + UI_CHILDREN);
-        end = *(u8 ***)(column + UI_CHILDREN + 4);
-        if (plausible(begin) && end > begin && end[-1] == button) {
-            for (at = end - 1; at > begin && at[-1] != options; at--)
-                ;
-            if (at > begin) {
-                for (at = end - 1; at[-1] != options; at--)
-                    at[0] = at[-1];
-                at[0] = at[-1];
-                at[-1] = button;
-            }
-        }
+        column_before(column, button, options);
         set(button, down, (int)options, UI_PROP_PTR);
         set(options, up, (int)button, UI_PROP_PTR);
         if (plausible(load)) {
             set(button, up, (int)load, UI_PROP_PTR);
             set(load, down, (int)button, UI_PROP_PTR);
         }
+        tes3x_ini_xbox("Manager", "", manager_path, sizeof(manager_path));
+        if (manager_path[0] &&
+            plausible(manager = menu_button(column, ui_id("TES3X_Manager"), "menu_manager",
+                                            *(const int *)(exit + UI_WIDTH), manager_click))) {
+            menu_height += MENU_ROW;
+            column_before(column, manager, options);
+            set(button, down, (int)manager, UI_PROP_PTR);
+            set(manager, up, (int)button, UI_PROP_PTR);
+            set(manager, down, (int)options, UI_PROP_PTR);
+            set(options, up, (int)manager, UI_PROP_PTR);
+        }
+        ((fn_set_size)TES3X_NET_SET_HEIGHT)(menu, (int)menu_height);
         servers_build(column, *(const int *)(exit + UI_WIDTH));
         servers_view = 0;
         ((fn_layout)TES3X_NET_PERFORM_LAYOUT)(menu, 0);
@@ -12536,6 +12562,10 @@ static void join_frame(void)
         servers_show(menu, 1);
     } else if (chosen == SERVER_RETURN) {
         servers_show(menu, 0);
+    } else if (chosen == SERVER_MANAGER) {
+        log_text("net.manager", manager_path);
+        multi_closing();
+        tes3x_launch(manager_path);
 #ifdef TES3X_CONSOLE
     } else if (chosen == SERVER_NEW) {
         typing = tes3x_console_text_begin_on(menu, "") ? TYPE_SERVER : 0;

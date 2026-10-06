@@ -90,7 +90,8 @@ python tools/tes3x_manager.py install [--target NAME] [--agent] [--dry-run]
 installs or updates the manager in `TES3XManager` under the target's `games_root` (`--folder`
 changes the name). The folder gets `default.xbe`, `_resources\default.xml` for the dashboard's
 list and a build manifest of layout `manager`, which the manager leaves out of its own build list;
-`E:\TES3X\console.ini` gets `Manager`, the manager's path, for the game. The first install goes
+`E:\TES3X\console.ini` gets `Manager`, the manager's path, which puts a **Manager** entry on a
+multiplayer build's main menu. The first install goes
 over FTP; once the manager runs, `--agent` updates it through its own agent, and the new version
 starts the next time it is launched. The XBE comes from `--xbe`, the copy a portable folder ships,
 or an nxdk build of `manager/` (`paths.nxdk`). `tes3x_manager.py stage OUT` writes the folder

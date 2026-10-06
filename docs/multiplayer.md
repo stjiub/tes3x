@@ -233,7 +233,9 @@ that runs xemu, or on Linux add `network_mode: host` to the service, which also 
 New Game and Load relaunch the title; the console leaves and joins again by itself, and the server
 prints `rejoined`. If the server stops answering for five seconds, the console keeps trying.
 
-The main menu has **Join** between Options and Exit. It opens a list of the servers this console
+The main menu has **Join** between Load and Options, and below it **Manager** once the
+[console manager](deployment.md#installing-the-console-manager) is installed, which starts the
+manager. Join opens a list of the servers this console
 knows: the one `NetServer` names and those in `U:\TES3X\servers.ini`, newest first. Choose one
 to connect without loading a game; the server lists that console's characters with "New
 character", and the chosen character is sent and loaded, joining the same server. **New Server**

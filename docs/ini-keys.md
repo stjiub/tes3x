@@ -11,7 +11,7 @@ a build in the profile, which the GUI's INI tab does for you:
 
 Each key is looked up in `E:\TES3X\console.ini` first, the [console's own
 settings](deployment.md#console-settings), and in `Morrowind.ini` only when that file does not set
-it. `NetAgent`, `OverlayBase`, `NetAddress`, `NetGateway` and `NetDns` describe the console, not
+it. `NetAgent`, `OverlayBase`, `Manager`, `NetAddress`, `NetGateway` and `NetDns` describe the console, not
 the build, so the pipeline writes them there at deploy instead of into `Morrowind.ini`.
 
 ## `console`
@@ -107,6 +107,7 @@ The offset affects only the first-person bow and arms while an arrow or bolt is 
 |---|---|---|
 | `NetServer` | the server, an address or a name, with `:PORT` if not `26500`, and `#FINGERPRINT` to pin its key | empty - answer ARP and UDP echo only |
 | `NetPassword` | the server's password, up to 64 printable ASCII characters | empty - for a server without one; a server asks for it only on a console's first join |
+| `Manager` | the console manager's XBE, `F:\Games\TES3XManager\default.xbe` (drives C, E, F, G) or a `\Device\...` path | empty - no Manager entry on the main menu; installing the manager sets it in `console.ini` |
 
 The keys are read on the first frame of each launch, including the relaunch on New Game and Load.
 A server name is looked up at each launch and again whenever the server stops answering.
