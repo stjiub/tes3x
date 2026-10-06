@@ -184,12 +184,13 @@ static int find_recipe(const struct json *j, const char *xbe)
     return -1;
 }
 
-const char *rebuild_xbe(const struct build *b, const char *xbe, const char *retail,
-                        const char *delta, progress_fn progress)
+const char *rebuild_xbe(const struct build *b, const char *xbe, const char *delta,
+                        progress_fn progress)
 {
     static char reason[160];
     struct json j;
     char *text, want_retail[65], want_delta[65], want_out[65], hex[65], target[PATH_MAX_MGR];
+    char base[PATH_MAX_MGR], retail[PATH_MAX_MGR];
     unsigned char *ref = NULL, *patch = NULL, *out = NULL;
     size_t ref_n, patch_n, out_n, got;
     unsigned long long size;
@@ -198,6 +199,10 @@ const char *rebuild_xbe(const struct build *b, const char *xbe, const char *reta
     const char *err = NULL;
     int recipe;
 
+    /* the reference whatever the build's layout: a full build's XBE is a delta too */
+    if (!console_get("OverlayBase", base, sizeof(base)))
+        return "no retail base set";
+    join_path(retail, sizeof(retail), base, "morrowind.xbe");
     if (manifest_load(b, &text, &j))
         return "manifest unreadable";
     if ((recipe = find_recipe(&j, xbe)) < 0) {
@@ -216,7 +221,7 @@ const char *rebuild_xbe(const struct build *b, const char *xbe, const char *reta
     if (progress)
         progress("retail XBE", 0, 3);
     if (read_file(retail, &ref, &ref_n))
-        return "cannot read the retail XBE";
+        return "the retail base has no morrowind.xbe";
     if (ref_n < 4 || memcmp(ref, "XBEH", 4)) {
         err = "the retail file is not an XBE";
         goto done;

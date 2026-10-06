@@ -3,9 +3,10 @@
  *
  * E:\tes3xmgrexec.txt, when present, is read once at start and deleted: one command a line,
  * run in order without input, for unattended tests:
- *   list | verify NAME | launch NAME | rebuild NAME XBE RETAIL DELTA | agent SECONDS
+ *   list | verify NAME | launch NAME | rebuild NAME XBE DELTA | agent SECONDS
  *   | base [use N] | shutdown | reboot
- * `base` lists the retail bases found; `base use N` makes the Nth one OverlayBase. */
+ * `base` lists the retail bases found; `base use N` makes the Nth one OverlayBase. `rebuild`
+ * decodes DELTA against OverlayBase's morrowind.xbe. */
 
 #include "mgr.h"
 
@@ -120,7 +121,8 @@ static void draw_bases(void)
     int i;
 
     pb_printat(0, 0, "Retail base");
-    pb_printat(1, 0, "Overlay builds read unchanged game files from it.");
+    pb_printat(1, 0, "Overlay builds read unchanged game files from it,");
+    pb_printat(2, 0, "and XBE updates are rebuilt from its morrowind.xbe.");
     if (!base_count) {
         pb_printat(3, 0, "No retail base found under C/E/F/G:\\Games.");
         pb_printat(4, 0, "Install one from the PC, or copy the game");
@@ -376,8 +378,8 @@ static void run_exec(void)
             free(data);
             launch(b);
             return;
-        } else if (!strcmp(arg[0], "rebuild") && argc == 5 && (b = find_build(arg[1]))) {
-            err = rebuild_xbe(b, arg[2], arg[3], arg[4], NULL);
+        } else if (!strcmp(arg[0], "rebuild") && argc == 4 && (b = find_build(arg[1]))) {
+            err = rebuild_xbe(b, arg[2], arg[3], NULL);
             mgr_log("exec: rebuild %s\n", err ? err : "ok");
         } else if (!strcmp(arg[0], "agent") && argc == 2) {
             /* serve the agent unattended, until the PC reboots or launches */

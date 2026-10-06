@@ -68,12 +68,13 @@ void agent_poll(void);
 void agent_goodbye(void);
 const char *agent_status(void);
 
-/* XBE rebuild from the delta in a manifest's xbe entry (xbe.c). */
+/* XBE rebuild from the delta in a manifest's xbe entry (xbe.c), against OverlayBase's
+ * morrowind.xbe. */
 int xbe_title_id(const char *path, unsigned *title_id);
 /* Whether the XBE at path is a retail image this manager knows, by its scene-form digest. */
 int xbe_known_retail(const char *path);
-const char *rebuild_xbe(const struct build *b, const char *xbe, const char *retail,
-                        const char *delta, progress_fn progress);
+const char *rebuild_xbe(const struct build *b, const char *xbe, const char *delta,
+                        progress_fn progress);
 
 int read_file(const char *path, unsigned char **data, size_t *n);
 int name_cmp(const char *a, const char *b);
