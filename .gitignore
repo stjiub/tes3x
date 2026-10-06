@@ -15,6 +15,7 @@ cache/
 *.log
 # ...except the documentation images
 !docs/images/*.png
+!assets/logo.png
 
 __pycache__/
 *.pyc

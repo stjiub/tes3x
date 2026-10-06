@@ -1,4 +1,4 @@
-# TES3X
+# ![TES3X](assets/logo.png)
 
 TES3X is a modding and patching toolkit for the original-Xbox release of *Morrowind Game of the
 Year Edition*, played on original hardware or in [XEMU](). It applies engine fixes to the retail XBE,
