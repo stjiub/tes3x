@@ -17,12 +17,12 @@ what each one is for and where it is explained; `--help` on any command lists it
 | `tes3x_nxdk.py` | build a standalone nxdk program, such as the console-side manager | [configuration](configuration.md) |
 | `tes3x_patch.py` | apply patches to an XBE directly; `--list` shows them | [patches](patches.md) |
 | `tes3x_deploy.py` | upload a game folder to the Xbox, over FTP or through the console manager | [deployment](deployment.md) |
-| `tes3x_manager.py` | install or update the console manager on the Xbox | [deployment](deployment.md#installing-the-console-manager) |
+| `tes3x_manager.py` | install the console manager on the Xbox, or send it a signed update | [deployment](deployment.md#installing-the-console-manager) |
 | `tes3x_manifest.py` | check a game folder against its build manifest | [deployment](deployment.md#build-manifest) |
 | `tes3x_fetch.py` | copy files or folders off the Xbox | [deployment](deployment.md#getting-files-back) |
 | `tes3x_saves.py` | list and move saves between the Xbox, an xemu disk and a PC save library | [GUI](gui.md) |
 | `tes3x_package.py` | build a portable TES3X folder that starts with `TES3X.exe` | [GUI](gui.md#portable-folder) |
-| `tes3x_release.py` | make the release signing key, sign a release file and check a signature | [deployment](deployment.md#installing-the-console-manager) |
+| `tes3x_release.py` | make and protect the release signing key, sign and check files, and make or check a signed manager release | [deployment](deployment.md#signed-updates) |
 
 ## Mods
 

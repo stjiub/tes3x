@@ -4,9 +4,11 @@
  * E:\tes3xmgrexec.txt, when present, is read once at start and deleted: one command a line,
  * run in order without input, for unattended tests:
  *   list | verify NAME | launch NAME | rebuild NAME XBE DELTA | agent SECONDS
- *   | base [use N] | shutdown | reboot
+ *   | base [use N] | update | fetch [FEED] | get URL FILE | run XBE | shutdown | reboot
  * `base` lists the retail bases found; `base use N` makes the Nth one OverlayBase. `rebuild`
- * decodes DELTA against OverlayBase's morrowind.xbe. */
+ * decodes DELTA against OverlayBase's morrowind.xbe. `update` installs a release waiting in
+ * E:\TES3X\update, as a start does; `fetch` checks the update feed and installs from it; `get`
+ * saves a URL to a file; `run` starts any XBE, leaving the lines after it for that XBE. */
 
 #include "mgr.h"
 
@@ -112,7 +114,7 @@ static void draw_list(void)
     }
     pb_printat(ROWS - 3, 0, "Retail base: %.45s", overlay_base[0] ? overlay_base : "not set");
     pb_printat(ROWS - 2, 0, "Agent: %.50s", agent_status());
-    pb_printat(ROWS - 1, 0, "A details  X retail base  Y rescan");
+    pb_printat(ROWS - 1, 0, "A details  X retail base  Y rescan  START update");
 }
 
 static void draw_bases(void)
@@ -334,6 +336,63 @@ void mgr_launch_xbe(const char *xbe)
     say("Cannot launch:", err);
 }
 
+static void check_update(void)
+{
+    char version[16], launcher[PATH_MAX_MGR];
+    const char *why = update_apply(version, sizeof(version), launcher, sizeof(launcher));
+
+    if (!why)
+        return;
+    if (*why) {
+        say("Update refused:", why);
+        return;
+    }
+    if (video_up) {
+        frame_begin();
+        pb_printat(4, 0, "Starting manager %s...", version);
+        frame_end();
+    }
+    mgr_launch_xbe(launcher);
+}
+
+/* Checks the update feed (or `feed`) and installs a newer manager from it. */
+static void fetch_update(const char *feed)
+{
+    char version[16];
+    const char *why;
+    int newer;
+
+    if (video_up) {
+        frame_begin();
+        pb_printat(4, 0, "Checking for a newer manager...");
+        frame_end();
+    }
+    why = update_fetch(feed, progress, version, sizeof(version), &newer);
+    if (newer)
+        check_update();
+    else if (!strncmp(why, "Manager ", 8))
+        say(why, NULL);
+    else
+        say("No update:", why);
+}
+
+/* Saves any URL to a file, for testing the network. */
+static void get_url(const char *url, const char *path)
+{
+    unsigned char *body;
+    size_t n;
+    const char *why = http_get(url, &body, &n, 64 << 20, NULL);
+    FILE *f;
+
+    if (!why && (f = fopen(path, "wb"))) {
+        if (fwrite(body, 1, n, f) != n)
+            why = "write failed";
+        fclose(f);
+    }
+    mgr_log("exec: get %s: %s, %u bytes\n", url, why ? why : "ok", (unsigned)n);
+    free(body);
+}
+
 static struct build *find_build(const char *name)
 {
     int i;
@@ -355,6 +414,7 @@ static void run_exec(void)
     const char *err;
     size_t n;
     int argc;
+    FILE *f;
 
     if (read_file(EXEC_PATH, &data, &n))
         return;
@@ -396,6 +456,19 @@ static void run_exec(void)
                 use_base(&bases[atoi(arg[2])]);
             else if (argc != 1)
                 mgr_log("exec: no such base\n");
+        } else if (!strcmp(arg[0], "update")) {
+            check_update();
+        } else if (!strcmp(arg[0], "fetch") && argc <= 2) {
+            fetch_update(argc == 2 ? arg[1] : NULL);
+        } else if (!strcmp(arg[0], "get") && argc == 3) {
+            get_url(arg[1], arg[2]);
+        } else if (!strcmp(arg[0], "run") && argc == 2) {
+            /* the lines left are for the manager it starts */
+            if (next && *next && (f = fopen(EXEC_PATH, "wb"))) {
+                fputs(next, f);
+                fclose(f);
+            }
+            mgr_launch_xbe(arg[1]);
         } else if (!strcmp(arg[0], "shutdown")) {
             mgr_log("exec: shutdown\n");
             HalInitiateShutdown();
@@ -426,6 +499,8 @@ static void press(int button)
             scan();
         else if (button == SDL_CONTROLLER_BUTTON_X)
             find_retail_bases(), screen = BASE;
+        else if (button == SDL_CONTROLLER_BUTTON_START)
+            fetch_update(NULL);
         if (selected < top)
             top = selected;
         else if (selected >= top + LIST_ROWS)
@@ -459,9 +534,11 @@ static void press(int button)
 int main(void)
 {
     SDL_Event e;
+    const char *news;
 
     mount_drives();
     mgr_log("manager %s start\n", MGR_VERSION);
+    update_locate();
     /* before the command file too: without a video mode the rig's capture sees no signal */
     XVideoSetMode(640, 480, 32, REFRESH_DEFAULT);
     if (SDL_Init(SDL_INIT_GAMECONTROLLER) || pb_init()) {
@@ -472,14 +549,18 @@ int main(void)
     pb_show_front_screen();
     video_up = 1;
     scan();
+    news = update_confirm();
     /* first run: offer the bases found, since overlay builds and XBE updates need one */
     if (!console_get("OverlayBase", overlay_base, sizeof(overlay_base))) {
         find_retail_bases();
         if (base_count)
             screen = BASE;
     }
+    if (news)
+        say(news, NULL);
     agent_start();
     draw();
+    check_update();
     run_exec();
     for (;;) {
         while (SDL_PollEvent(&e)) {

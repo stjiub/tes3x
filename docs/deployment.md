@@ -88,15 +88,62 @@ python tools/tes3x_manager.py install [--target NAME] [--agent] [--dry-run]
 ```
 
 installs or updates the manager in `TES3XManager` under the target's `games_root` (`--folder`
-changes the name). The folder gets `default.xbe`, `_resources\default.xml` for the dashboard's
-list and a build manifest of layout `manager`, which the manager leaves out of its own build list;
-`E:\TES3X\console.ini` gets `Manager`, the manager's path, which puts a **Manager** entry on a
-multiplayer build's main menu. The first install goes
-over FTP; once the manager runs, `--agent` updates it through its own agent, and the new version
-starts the next time it is launched. The XBE comes from `--xbe`, the copy a portable folder ships,
-or an nxdk build of `manager/` (`paths.nxdk`). `tes3x_manager.py stage OUT` writes the folder
+changes the name). The folder gets a small launcher as `default.xbe`, the manager in `a\`,
+`_resources\default.xml` for the dashboard's list and a build manifest of layout `manager`, which
+the manager leaves out of its own build list; `E:\TES3X\console.ini` gets `Manager`, the
+launcher's path, which puts a **Manager** entry on a multiplayer build's main menu. The first
+install goes over FTP; once the manager runs, `--agent` updates it through its own agent, and the
+new version starts the next time it is launched. Installing again puts the manager back in `a\`.
+The XBEs come from `--xbe` and `--launcher`, the copies a portable folder ships, or nxdk builds of
+`manager/` and `manager/launcher/` (`paths.nxdk`). `tes3x_manager.py stage OUT` writes the folder
 without sending it. In the GUI it is **Actions > Install console manager**, which goes through the
 manager when it is paired.
+
+### Signed updates
+
+The manager also updates itself from a signed release, which needs no PC trust beyond the release
+key:
+
+```
+python tools/tes3x_release.py manager OUT --key KEY --manager XBE --launcher XBE
+python tools/tes3x_manager.py update OUT [--agent] [--target NAME]
+```
+
+The first writes `release.json` (the manager's version, read from its XBE, and each file's size and
+SHA-256), its Ed25519 signature `release.json.sig`, `manager.xbe` and `launcher.xbe`;
+`tes3x_release.py check OUT` checks one. The second checks the release, sends it to
+`E:\TES3X\update` and, through the agent, restarts the manager. A release can also be copied there
+by FTP or USB.
+
+The manager fetches releases itself with **START** on its build list. It reads the four files
+from the update feed, `https://github.com/stjiub/tes3x/releases/latest/download/`, so every
+GitHub release carries them as assets:
+
+```
+gh release upload vX.Y.Z OUT/release.json OUT/release.json.sig OUT/manager.xbe OUT/launcher.xbe
+```
+
+`[Xbox] UpdateFeed` in `E:\TES3X\console.ini` points a console at another feed, any `http://` or
+`https://` folder holding those files; a fork sets its own as `MGR_FEED` in `manager/mgr.h`. The
+manager uses the network settings in `console.ini` (`NetAddress`, `NetGateway`, `NetDns`) or,
+without them, the dashboard's. It speaks TLS 1.2 and does not check certificates, since the
+console's clock is often wrong; a release is trusted by its signature alone, so a feed or
+network that is not trusted can withhold an update but not change one.
+
+On start, and after fetching one, the manager checks a release in `E:\TES3X\update` against the
+public key built into it (`keys/release.pub`), refuses one that is unsigned, signed by another
+key, or not newer than itself, and deletes it. Otherwise it writes the new manager into its other slot (`a\` or `b\`),
+replaces the launcher if the release's differs, marks the slot pending in `slots.ini` and restarts.
+The launcher starts a pending slot at most twice; the new manager marks itself good once it
+reaches its screen, and after two starts that did not, the launcher goes back to the previous slot
+and the manager says the update did not start. A release whose files are still arriving is left
+for the next start.
+
+The release key's private half stays out of every repository; `tes3x_release.py keygen KEY` makes
+one with a passphrase, `protect KEY` sets or changes it, and `TES3X_RELEASE_PASSPHRASE` supplies
+it to scripts. A fork makes its own key and puts the public half in `keys/release.pub`: its
+managers then take only its releases. A key is replaced by a release, signed with the old key,
+whose manager carries the new one.
 
 ## Through the console manager
 

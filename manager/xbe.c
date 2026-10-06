@@ -139,26 +139,15 @@ int xbe_known_retail(const char *path)
     return 0;
 }
 
-static int write_file(const char *path, const unsigned char *d, size_t n)
-{
-    FILE *f = fopen(path, "wb");
-    size_t put;
-
-    if (!f)
-        return -1;
-    put = fwrite(d, 1, n, f);
-    return fclose(f) || put != n ? -1 : 0;
-}
-
 /* The new XBE goes in under a staging name and replaces the old one, kept as .prev, only once
  * complete. */
-static const char *install(const char *target, const unsigned char *d, size_t n)
+const char *replace_file(const char *target, const unsigned char *d, size_t n)
 {
     char staged[PATH_MAX_MGR], prev[PATH_MAX_MGR];
 
     snprintf(staged, sizeof(staged), "%s.new", target);
     snprintf(prev, sizeof(prev), "%s.prev", target);
-    if (write_file(staged, d, n)) {
+    if (write_flushed(staged, d, n)) {
         DeleteFileA(staged);
         return "could not write the new XBE";
     }
@@ -169,6 +158,7 @@ static const char *install(const char *target, const unsigned char *d, size_t n)
         MoveFileA(prev, target);
         return "could not rename the new XBE in";
     }
+    flush_path(target);
     return NULL;
 }
 
@@ -274,7 +264,7 @@ const char *rebuild_xbe(const struct build *b, const char *xbe, const char *delt
         goto done;
     }
     join_path(target, sizeof(target), b->path, xbe);
-    err = install(target, out, out_n);
+    err = replace_file(target, out, out_n);
     mgr_log("rebuild %s: %s, %lu ms\n", target, err ? err : "done", KeTickCount - start);
 done:
     ZSTD_freeDCtx(dctx);

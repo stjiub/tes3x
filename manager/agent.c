@@ -271,7 +271,7 @@ static int parse_network(const char *text)
 {
     char value[32];
     const char *p;
-    unsigned ip, bits = 24, gw = 0;
+    unsigned ip, bits = 24, gw = 0, dns;
 
     memset(&net, 0, sizeof(net));
     net.ipv4_mode = NX_NET_AUTO;
@@ -288,12 +288,42 @@ static int parse_network(const char *text)
         bits = (unsigned)atoi(p + 1);
     if (ini_get(text, "NetGateway", value, sizeof(value)) && !address(value, &gw))
         return 0;
+    /* NetDns as the game reads it: the gateway when absent */
+    dns = gw;
+    if (ini_get(text, "NetDns", value, sizeof(value)) && !address(value, &dns))
+        return 0;
+    net.ipv4_dns1 = htonl(dns);
     /* nxdk wants each address with its first octet in the low byte */
     net.ipv4_mode = NX_NET_STATIC;
     net.ipv4_ip = htonl(ip);
     net.ipv4_gateway = htonl(gw);
     net.ipv4_netmask = htonl(bits ? 0xFFFFFFFFu << (32 - bits) : 0);
     return 1;
+}
+
+static volatile LONG net_state; /* 0 down, 1 starting, 2 started */
+static int net_result, net_parsed;
+
+int net_up(void)
+{
+    unsigned char *data = NULL;
+    size_t n;
+
+    if (InterlockedCompareExchange(&net_state, 1, 0) == 0) {
+        if (!net_parsed && (read_file(CONSOLE_INI, &data, &n) || !parse_network((char *)data))) {
+            if (data)
+                mgr_log("network: bad NetAddress or NetGateway; using the dashboard's\n");
+            parse_network("");
+        }
+        free(data);
+        net_result = nxNetInit(&net);
+        mgr_log("network: init %d\n", net_result);
+        net_state = 2;
+    }
+    while (net_state != 2)
+        Sleep(10);
+    /* -2 is DHCP still waiting; its lease may come later */
+    return net_result == 0 || net_result == -2 ? 0 : -1;
 }
 
 static DWORD WINAPI agent_thread(LPVOID unused);
@@ -318,6 +348,7 @@ void agent_start(void)
         return;
     }
     free(data);
+    net_parsed = 1;
     phase = NET_WAIT;
     snprintf(status_text, sizeof(status_text), "starting network");
     mgr_log("agent: target %u.%u.%u.%u:%u\n", target >> 24, target >> 16 & 255, target >> 8 & 255,
@@ -866,13 +897,10 @@ static DWORD WINAPI agent_thread(LPVOID unused)
     static unsigned char packet[AGENT_MAX + 1];
     struct sockaddr_in from;
     socklen_t from_n;
-    int r, got, heard;
+    int got, heard;
 
     (void)unused;
-    r = nxNetInit(&net);
-    /* -2 is DHCP still waiting; its lease may come later */
-    mgr_log("agent: network init %d\n", r);
-    if (r != 0 && r != -2)
+    if (net_up())
         return 0;
     while (sock < 0) {
         entropy_add();

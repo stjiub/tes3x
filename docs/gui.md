@@ -18,7 +18,8 @@ LLVM, for engine fixes, each with its license. Nothing needs installing on the P
 the **LLVM tools** setting still overrides the bundled LLVM.
 
 It also carries the [console manager](deployment.md#installing-the-console-manager) as
-`manager/default.xbe`, built with nxdk (`paths.nxdk`), or taken from `--manager XBE`.
+`manager/default.xbe` and its launcher as `manager/launcher.xbe`, built with nxdk
+(`paths.nxdk`), or taken from `--manager XBE` and `--launcher XBE`.
 
 Building the folder needs a C compiler for `TES3X.exe` (MSYS2's `gcc` or `clang`, or `--cc`). The
 first build downloads Python, 7-Zip and LLVM (about 880 MB, mostly the LLVM release), checks each

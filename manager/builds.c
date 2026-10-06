@@ -43,6 +43,50 @@ void mount_drives(void)
     }
 }
 
+/* The kernel caches writes; an update's files must be on the disk before a restart or power
+ * loss can find them half there. */
+int flush_path(const char *path)
+{
+    HANDLE h = CreateFileA(path, GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    IO_STATUS_BLOCK io;
+    NTSTATUS r;
+
+    if (h == INVALID_HANDLE_VALUE)
+        return -1;
+    r = NtFlushBuffersFile(h, &io);
+    CloseHandle(h);
+    return NT_SUCCESS(r) ? 0 : -1;
+}
+
+int write_flushed(const char *path, const void *d, size_t n)
+{
+    HANDLE h = CreateFileA(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    IO_STATUS_BLOCK io;
+    DWORD put = 0;
+    int ok;
+
+    if (h == INVALID_HANDLE_VALUE)
+        return -1;
+    ok = WriteFile(h, d, (DWORD)n, &put, NULL) && put == n && NT_SUCCESS(NtFlushBuffersFile(h, &io));
+    CloseHandle(h);
+    return ok ? 0 : -1;
+}
+
+int nt_to_drive(const char *nt, size_t len, char *out, size_t n)
+{
+    size_t i, k;
+
+    for (i = 0; i < sizeof(drives) / sizeof(*drives); i++) {
+        k = strlen(drives[i].device);
+        if (len > k && nt[k] == '\\' && !name_cmp_n(nt, drives[i].device, k)
+            && len - k + 3 <= n) {
+            snprintf(out, n, "%c:%.*s", drives[i].letter, (int)(len - k), nt + k);
+            return 0;
+        }
+    }
+    return -1;
+}
+
 int read_file(const char *path, unsigned char **data, size_t *n)
 {
     FILE *f = fopen(path, "rb");

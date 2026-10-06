@@ -60,6 +60,9 @@ Also included, outside this folder:
   (GNU LGPL 3), tomlkit (MIT), cryptography (Apache 2.0 or BSD), Pillow (MIT-CMU),
   zstandard (BSD).
 - `tools/vendor/mlox/`: mlox 1.0.3, MIT.
+- `manager/default.xbe`: the console manager, built with nxdk (MIT) and lwIP (BSD), includes
+  Monocypher 4.0.2 (CC0 or BSD 2-clause), the zstd 1.5.7 decoder (BSD, `manager/zstd/LICENSE`)
+  and Mbed TLS 3.6.7 (Apache 2.0, `manager/LICENSE-mbedtls.txt`).
 """
 CC_DIRS = (Path("C:/msys64/mingw64/bin"), Path("C:/msys64/clang64/bin"))
 
@@ -222,18 +225,22 @@ def build_launcher(cc, out):
                     str(ROOT / "launcher" / "tes3x.c"), "-lshlwapi"], check=True, env=env)
 
 
-def manager_xbe(given, out):
-    """The console manager the GUI installs: the given XBE, or an nxdk build of manager/."""
+def manager_xbe(given, out, launcher=False):
+    """The console manager the GUI installs, or its launcher: the given XBE, or an nxdk build of
+    manager/ (manager/launcher/)."""
     if given:
         return Path(given)
     import tes3x_nxdk
+    name = "launcher" if launcher else "manager"
+    source = ROOT / "manager" / "launcher" if launcher else ROOT / "manager"
     try:
-        return tes3x_nxdk.build(ROOT / "manager", Path(out) / "manager")
+        return tes3x_nxdk.build(source, Path(out) / name)
     except tes3x_nxdk.NxdkError as exc:
-        raise PackageError(f"console manager: {exc}; pass --manager XBE") from exc
+        raise PackageError(f"console {name}: {exc}; pass --{'launcher' if launcher else 'manager'} "
+                           "XBE") from exc
 
 
-def package(out, cc=None, make_zip=False, manager=None):
+def package(out, cc=None, make_zip=False, manager=None, launcher=None):
     label = version()
     stage = Path(out) / f"TES3X-{label}"
     if stage.exists():
@@ -245,6 +252,10 @@ def package(out, cc=None, make_zip=False, manager=None):
         shutil.copy2(ROOT / name, stage / name)
     (stage / "VERSION").write_text(label + "\n", encoding="utf-8")
     shutil.copyfile(manager_xbe(manager, out), stage / "manager" / "default.xbe")
+    shutil.copyfile(manager_xbe(launcher, out, True), stage / "manager" / "launcher.xbe")
+    import tes3x_nxdk
+    shutil.copyfile(tes3x_nxdk.vendor("mbedtls") / "LICENSE",
+                    stage / "manager" / "LICENSE-mbedtls.txt")
     print(f"TES3X {label}: {len(files)} files")
     embedded_python(stage / "python")
     externals(stage / "externals")
@@ -263,12 +274,14 @@ if __name__ == "__main__":
     ap.add_argument("--zip", action="store_true", help="also write TES3X-<version>.zip")
     ap.add_argument("--manager", metavar="XBE",
                     help="the console manager to ship (default: build manager/ with nxdk)")
+    ap.add_argument("--launcher", metavar="XBE",
+                    help="the manager's launcher to ship (default: build manager/launcher/)")
     ap.add_argument("--print-version", action="store_true")
     args = ap.parse_args()
     try:
         if args.print_version:
             print(version())
         else:
-            package(args.out, args.cc, args.zip, args.manager)
+            package(args.out, args.cc, args.zip, args.manager, args.launcher)
     except (PackageError, OSError, subprocess.CalledProcessError) as exc:
         sys.exit(f"tes3x_package: {exc}")
