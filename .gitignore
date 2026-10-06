@@ -10,12 +10,8 @@ cache/
 *.esp
 *.ess
 
-# Screenshots and run logs
-*.png
+# Run logs
 *.log
-# ...except the documentation images
-!docs/images/*.png
-!assets/logo.png
 
 __pycache__/
 *.pyc
