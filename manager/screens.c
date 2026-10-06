@@ -9,7 +9,7 @@
 #define LIST_TOP (UI_PANEL_TOP + 8)
 #define SCROLL_X (UI_RIGHT - 10)
 
-static const char *const tab_names[TAB_COUNT] = {"Builds", "Settings"};
+static const char *const tab_names[TAB_COUNT] = {"Builds", "Servers", "Settings"};
 
 /* A two-line row: title and an optional right-hand note, then a smaller line below. */
 static void row(int y, int selected, const char *title, const char *note, gfx_color note_color,
@@ -60,14 +60,39 @@ static void draw_builds(const struct view *v)
     ui_scrollbar(SCROLL_X, LIST_TOP, BUILD_ROWS * ROW_H, &v->build_list);
 }
 
-static void draw_details(const struct view *v)
+static void draw_servers(const struct view *v)
 {
-    const struct build *b = &v->builds[v->build_list.sel];
+    const struct server *s;
+    const char *build;
+    char sub[192];
+    int i, y;
+
+    if (!v->server_list.count) {
+        empty("No servers yet",
+              "Servers joined from the game's main menu appear here, with the keys the game "
+              "keeps for them.");
+        return;
+    }
+    for (i = v->server_list.top, y = LIST_TOP;
+         i < v->server_list.count && i < v->server_list.top + SERVER_ROWS; i++, y += ROW_H) {
+        s = &v->servers[i];
+        build = v->server_builds[i];
+        snprintf(sub, sizeof(sub), "%s%.16s  \xB7  %s",
+                 s->has_server_key ? "Key " : "Not contacted yet",
+                 s->has_server_key ? s->fingerprint : "", build ? build : "build not installed");
+        row(y, i == v->server_list.sel, s->name, build ? "Installed" : NULL, ui->accent, sub,
+            ui->dim);
+    }
+    ui_scrollbar(SCROLL_X, LIST_TOP, SERVER_ROWS * ROW_H, &v->server_list);
+}
+
+static void draw_lines(const struct view *v, const char *title, const char *sub)
+{
     const struct line *l;
     int i, y;
 
-    gfx_text_fit(ui->bold, IN_LEFT, UI_PANEL_TOP + 10, IN_RIGHT - IN_LEFT, ui->accent, b->name);
-    gfx_text_fit(ui->small, IN_LEFT, UI_PANEL_TOP + 32, IN_RIGHT - IN_LEFT, ui->dim, b->path);
+    gfx_text_fit(ui->bold, IN_LEFT, UI_PANEL_TOP + 10, IN_RIGHT - IN_LEFT, ui->accent, title);
+    gfx_text_fit(ui->small, IN_LEFT, UI_PANEL_TOP + 32, IN_RIGHT - IN_LEFT, ui->dim, sub);
     gfx_fill(IN_LEFT, UI_PANEL_TOP + 56, IN_RIGHT - IN_LEFT, 1, ui->line);
     for (i = v->line_list.top, y = UI_PANEL_TOP + 64;
          i < v->line_list.count && i < v->line_list.top + LINE_ROWS; i++, y += LINE_H) {
@@ -84,6 +109,13 @@ static void draw_details(const struct view *v)
         }
     }
     ui_scrollbar(SCROLL_X, UI_PANEL_TOP + 64, LINE_ROWS * LINE_H, &v->line_list);
+}
+
+static void draw_details(const struct view *v)
+{
+    const struct build *b = &v->builds[v->build_list.sel];
+
+    draw_lines(v, b->name, b->path);
 }
 
 static void draw_settings(const struct view *v)
@@ -172,6 +204,9 @@ static void draw_page(const struct view *v)
     static const struct ui_hint drives[] = {{UI_A, "Open"}, {UI_B, "Back"}};
     static const struct ui_hint change[] = {{UI_A, "Change"}};
     static const struct ui_hint update[] = {{UI_A, "Check for update"}};
+    static const struct ui_hint servers[] = {{UI_A, "Details"}, {UI_Y, "Rescan"}};
+    static const struct ui_hint server[] = {{UI_A, "Join"}, {UI_X, "Update build"},
+                                            {UI_B, "Back"}};
     const struct ui_hint *hints = NULL;
     char status[96];
     int n = 0;
@@ -190,6 +225,18 @@ static void draw_page(const struct view *v)
         hints = list, n = 2;
         if (!v->build_list.count)
             hints = list + 1, n = 1;
+    } else if (v->tab == TAB_SERVERS && v->page == PAGE_SERVER) {
+        const struct server *s = &v->servers[v->server_list.sel];
+
+        draw_lines(v, s->name, s->file);
+        hints = server, n = 3;
+        if (!v->server_builds[v->server_list.sel])
+            hints = server + 1, n = 2;
+    } else if (v->tab == TAB_SERVERS) {
+        draw_servers(v);
+        hints = servers, n = 2;
+        if (!v->server_list.count)
+            hints = servers + 1, n = 1;
     } else if (v->page == PAGE_BASES) {
         draw_bases(v);
         hints = v->base_list.sel == v->base_count ? choose : bases, n = 2;
@@ -216,6 +263,7 @@ static void draw_page(const struct view *v)
 void screen_draw(const struct view *v)
 {
     static const struct ui_hint close = {UI_B, "Close"};
+    static const struct ui_hint confirm[] = {{UI_A, "Go ahead"}, {UI_B, "Cancel"}};
     const char *lines[4];
     int i;
 
@@ -224,13 +272,16 @@ void screen_draw(const struct view *v)
         return;
     for (i = 0; i < 4; i++)
         lines[i] = v->text[i];
-    ui_dialog(v->title, lines, 4, 0, v->dismiss ? &close : NULL, v->dismiss ? 1 : 0);
+    if (v->confirm)
+        ui_dialog(v->title, lines, 4, 0, confirm, 2);
+    else
+        ui_dialog(v->title, lines, 4, 0, v->dismiss ? &close : NULL, v->dismiss ? 1 : 0);
 }
 
 void screen_busy(const struct view *v, const char *text)
 {
     draw_page(v);
-    ui_dialog("Working", &text, 1, 0, NULL, 0);
+    ui_spinner(GFX_W / 2, ui_dialog("Working", &text, 1, 40, NULL, 0) + 22);
 }
 
 void screen_progress(const struct view *v, const char *what, unsigned long long done,

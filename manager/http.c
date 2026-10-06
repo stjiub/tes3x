@@ -1,7 +1,9 @@
-/* HTTP and HTTPS GET into memory, following redirects, for the update feed. TLS is mbedTLS
- * (tls_config.h) without certificate checks: what is fetched is trusted by its signature. */
+/* HTTP and HTTPS GET into memory or a file, following redirects: the update feed and servers'
+ * builds. TLS is mbedTLS (tls_config.h) without certificate checks: what is fetched is trusted by
+ * a signature or by a hash that came through the server's session. */
 
 #include "mgr.h"
+#include "sha256.h"
 
 #include <lwip/netdb.h>
 #include <lwip/sockets.h>
@@ -301,20 +303,19 @@ static const char *read_body(struct conn *c, const char *head, unsigned char *bu
     return NULL;
 }
 
-const char *http_get(const char *url, unsigned char **body, size_t *n, size_t max,
-                     progress_fn progress)
+/* Sends GET for url, following redirects, and reads the head of a 200 reply into head; the
+ * body's first `*have` bytes follow it at head + *body_at. */
+static const char *open_get(const char *url, struct conn *c, char *head, size_t *body_at,
+                            size_t *have)
 {
-    static char head[HEAD_MAX + 1], path[URL_MAX], location[URL_MAX], current[URL_MAX];
+    static char path[URL_MAX], location[URL_MAX], current[URL_MAX];
     static char request[URL_MAX + 256];
     char host[128], port[8];
-    const char *err = NULL, *label = strrchr(url, '/') ? strrchr(url, '/') + 1 : url;
-    struct conn c;
+    const char *err;
     int tls, redirects, status, r, usual;
-    size_t got, end;
+    size_t got;
     char *blank;
 
-    *body = NULL;
-    *n = 0;
     if (net_up())
         return "the network did not start";
     snprintf(current, sizeof(current), "%s", url);
@@ -322,33 +323,34 @@ const char *http_get(const char *url, unsigned char **body, size_t *n, size_t ma
         if (split_url(current, &tls, host, sizeof(host), port, path, sizeof(path)))
             return "not an http or https address";
         mgr_log("http: GET %s\n", current);
-        if ((err = conn_open(&c, host, port, tls)))
+        if ((err = conn_open(c, host, port, tls)))
             return err;
         usual = !strcmp(port, tls ? "443" : "80");
         snprintf(request, sizeof(request),
                  "GET %s HTTP/1.1\r\nHost: %s%s%s\r\nUser-Agent: tes3x-manager/" MGR_VERSION
                  "\r\nAccept: */*\r\nConnection: close\r\n\r\n", path, host,
                  usual ? "" : ":", usual ? "" : port);
-        if (conn_write(&c, request, strlen(request))) {
-            conn_close(&c);
+        if (conn_write(c, request, strlen(request))) {
+            conn_close(c);
             return "the request could not be sent";
         }
         for (got = 0, blank = NULL; !blank && got < HEAD_MAX; got += (size_t)r) {
-            r = conn_read(&c, (unsigned char *)head + got, HEAD_MAX - got);
+            r = conn_read(c, (unsigned char *)head + got, HEAD_MAX - got);
             if (r <= 0)
                 break;
             head[got + (size_t)r] = 0;
             blank = strstr(head, "\r\n\r\n");
         }
         if (!blank || sscanf(head, "HTTP/1.%*d %d", &status) != 1) {
-            conn_close(&c);
+            conn_close(c);
             return "the server's reply was not understood";
         }
-        end = (size_t)(blank - head) + 4;
+        *body_at = (size_t)(blank - head) + 4;
+        *have = got - *body_at;
         blank[2] = 0;
         mgr_log("http: %d\n", status);
         if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
-            conn_close(&c);
+            conn_close(c);
             if (!header(head, "Location", location, sizeof(location)))
                 return "the server redirected nowhere";
             if (location[0] == '/')
@@ -359,18 +361,107 @@ const char *http_get(const char *url, unsigned char **body, size_t *n, size_t ma
             continue;
         }
         if (status != 200) {
-            conn_close(&c);
+            conn_close(c);
             return status == 404 ? "not found on the server" : "the server refused the request";
         }
-        err = read_body(&c, head, (unsigned char *)head + end, got - end, body, n, max, label,
-                        progress);
-        conn_close(&c);
-        if (err) {
-            free(*body);
-            *body = NULL;
-            *n = 0;
-        }
-        return err;
+        return NULL;
     }
     return "too many redirects";
+}
+
+const char *http_get(const char *url, unsigned char **body, size_t *n, size_t max,
+                     progress_fn progress)
+{
+    static char head[HEAD_MAX + 1];
+    const char *err, *label = strrchr(url, '/') ? strrchr(url, '/') + 1 : url;
+    struct conn c;
+    size_t at, have;
+
+    *body = NULL;
+    *n = 0;
+    if ((err = open_get(url, &c, head, &at, &have)))
+        return err;
+    err = read_body(&c, head, (unsigned char *)head + at, have, body, n, max, label, progress);
+    conn_close(&c);
+    if (err) {
+        free(*body);
+        *body = NULL;
+        *n = 0;
+    }
+    return err;
+}
+
+#define SAVE_BUFFER (256 * 1024)
+
+const char *http_save(const char *url, const char *path, unsigned long long size,
+                      const char *sha256, const char *label, unsigned long long *done,
+                      unsigned long long total, progress_fn progress)
+{
+    static char head[HEAD_MAX + 1];
+    static unsigned char *buf;
+    struct conn c;
+    struct sha256 s;
+    unsigned char digest[32];
+    char value[32], hex[65];
+    unsigned long long seen = 0;
+    size_t at, have, fill;
+    const char *err;
+    DWORD put;
+    HANDLE f;
+    int r;
+
+    if (!buf && !(buf = malloc(SAVE_BUFFER)))
+        return "out of memory";
+    if ((err = open_get(url, &c, head, &at, &have)))
+        return err;
+    if (!header(head, "Content-Length", value, sizeof(value))
+        || strtoull(value, NULL, 10) != size) {
+        conn_close(&c);
+        return "the server's file is not the size the manifest gives";
+    }
+    f = CreateFileA(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (f == INVALID_HANDLE_VALUE) {
+        conn_close(&c);
+        return "could not create the file";
+    }
+    sha256_init(&s);
+    memcpy(buf, head + at, have);
+    fill = have;
+    for (;;) {
+        if (fill == SAVE_BUFFER || seen + fill >= size) {
+            if (seen + fill > size) {
+                err = "the server sent more than the file";
+                break;
+            }
+            sha256_update(&s, buf, fill);
+            if (!WriteFile(f, buf, (DWORD)fill, &put, NULL) || put != fill) {
+                err = "could not write the file";
+                break;
+            }
+            seen += fill, *done += fill, fill = 0;
+            if (progress && progress(label, *done, total)) {
+                err = "cancelled";
+                break;
+            }
+            if (seen == size)
+                break;
+        }
+        r = conn_read(&c, buf + fill, SAVE_BUFFER - fill);
+        if (r <= 0) {
+            err = "the download was cut short";
+            break;
+        }
+        fill += (size_t)r;
+    }
+    conn_close(&c);
+    CloseHandle(f);
+    if (!err) {
+        sha256_final(&s, digest);
+        sha256_hex(digest, hex);
+        if (strcmp(hex, sha256))
+            err = "the file does not match the manifest";
+    }
+    if (err)
+        DeleteFileA(path);
+    return err;
 }

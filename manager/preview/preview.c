@@ -31,12 +31,13 @@ static void save(const char *name)
 
 static struct build builds[] = {
     {"F:\\Games\\MorrowindNet", "MorrowindNet", "net", "overlay", "2026-10-05", 7343, 18, 2,
-     1009254400ULL, ""},
+     1009254400ULL, "play.example.net", ""},
     {"F:\\Games\\MorrowindBasemods", "MorrowindBasemods", "basemods", "full", "2026-10-01", 9120,
-     64, 1, 2147483648ULL, ""},
+     64, 1, 2147483648ULL, "", ""},
     {"F:\\Games\\TR Preview", "TR Preview", "tr-masters", "overlay", "", 4410, 9, 1, 734003200ULL,
-     ""},
-    {"E:\\Games\\OldBuild", "OldBuild", "", "", "", 0, 0, 0, 0ULL, "manifest format 3 is newer"},
+     "", ""},
+    {"E:\\Games\\OldBuild", "OldBuild", "", "", "", 0, 0, 0, 0ULL, "",
+     "manifest format 3 is newer"},
 };
 
 static struct base bases[] = {
@@ -48,6 +49,23 @@ static struct base bases[] = {
 static struct folder folders[] = {
     {"Apps", 0}, {"Games", 0}, {"Morrowind GOTY Clean", 1}, {"Morrowind Ultimate", 1},
     {"Music", 0}, {"XBMC4Gamers", 0},
+};
+
+static struct server servers[] = {
+    {"play.example.net", "play.example.net", 26500, "E:\\UDATA\\42530005\\TES3X\\servers.ini", 1,
+     1, {0}, {0}, "", "4e1f0c9a7b2d55e0c3a1f9e8d7b6c5a4"},
+    {"10.0.0.7:26500", "10.0.0.7", 26500, "E:\\UDATA\\42530005\\TES3X\\servers.ini", 1, 1, {0},
+     {0}, "", "b81d2e44a09f3c7e1d5a6b4c3e2f1a09"},
+    {"friends.example.org:27000", "friends.example.org", 27000,
+     "E:\\UDATA\\42530005\\TES3X\\servers.ini", 0, 0, {0}, {0}, "", ""},
+};
+static const char *const server_builds[] = {"F:\\Games\\MorrowindNet", NULL, NULL};
+
+static const struct line server_lines[] = {
+    {"Address", "play.example.net, port 26500", 0},
+    {"Server key", "4e1f0c9a7b2d55e0c3a1f9e8d7b6c5a4", 0},
+    {"This console", "has an identity there", 0},
+    {"Build", "F:\\Games\\MorrowindNet", 0},
 };
 
 static struct line lines[MAX_LINES];
@@ -118,6 +136,45 @@ int main(int argc, char **argv)
     save("dialog");
     memset(v.title, 0, sizeof(v.title));
     memset(v.text, 0, sizeof(v.text));
+    v.tab = TAB_SERVERS;
+    v.page = PAGE_MAIN;
+    v.servers = servers;
+    v.server_builds = server_builds;
+    v.server_list = (struct ui_list){3, 0, 0, SERVER_ROWS};
+    screen_draw(&v);
+    save("servers");
+    v.page = PAGE_SERVER;
+    v.lines = server_lines;
+    v.line_list = (struct ui_list){4, 0, 0, LINE_ROWS};
+    screen_draw(&v);
+    save("server");
+    screen_progress(&v, "Data Files/TES3X Multiplayer.esp", 3ULL << 20, 7ULL << 20);
+    save("server-progress");
+    ui_tick = 3;
+    screen_progress(&v, "Asking the server for its build", 0, 0);
+    save("server-wait");
+    snprintf(v.title, sizeof(v.title), "Build up to date");
+    snprintf(v.text[0], sizeof(v.text[0]), "F:\\Games\\MorrowindNet");
+    snprintf(v.text[1], sizeof(v.text[1]), "3 downloaded, 0 from the base, 2 XBEs rebuilt, 33 kept");
+    v.dismiss = 1;
+    screen_draw(&v);
+    save("server-done");
+    v.server_list.sel = 2;
+    snprintf(v.title, sizeof(v.title), "Replace this folder?");
+    snprintf(v.text[0], sizeof(v.text[0]), "F:\\Games\\MorrowindNet");
+    snprintf(v.text[1], sizeof(v.text[1]), "It holds files that are not a TES3X build. Installing "
+             "removes nothing, but replaces any file the build has.");
+    v.confirm = 1;
+    screen_draw(&v);
+    save("server-confirm");
+    v.confirm = 0;
+    memset(v.title, 0, sizeof(v.title));
+    memset(v.text, 0, sizeof(v.text));
+    v.server_list.count = 0;
+    v.page = PAGE_MAIN;
+    screen_draw(&v);
+    save("servers-empty");
+    v.lines = lines;
     v.tab = TAB_SETTINGS;
     v.page = PAGE_MAIN;
     screen_draw(&v);

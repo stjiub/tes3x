@@ -172,6 +172,21 @@ int ui_dialog(const char *title, const char *const *lines, int n, int extra,
     return at;
 }
 
+unsigned ui_tick;
+
+void ui_spinner(int cx, int cy)
+{
+    static const signed char ring[8][2] = {{0, -13}, {9, -9}, {13, 0}, {9, 9},
+                                           {0, 13}, {-9, 9}, {-13, 0}, {-9, -9}};
+    unsigned i, age;
+
+    for (i = 0; i < 8; i++) {
+        age = (ui_tick - i) % 8;
+        gfx_disc(cx + ring[i][0], cy + ring[i][1], 4,
+                 (ui->accent & 0xFFFFFF) | (255 - age * 26) << 24);
+    }
+}
+
 void ui_progress(const char *what, unsigned long long done, unsigned long long total)
 {
     static const struct ui_hint cancel = {UI_B, "Cancel"};
@@ -179,6 +194,11 @@ void ui_progress(const char *what, unsigned long long done, unsigned long long t
     const char *lines[2];
     int bar = 460 - 48, x = (GFX_W - 460) / 2 + 24, y;
 
+    if (!total) {
+        y = ui_dialog("Working", &what, 1, 40, &cancel, 1);
+        ui_spinner(GFX_W / 2, y + 22);
+        return;
+    }
     snprintf(amount, sizeof(amount), "%llu of %llu MB", done >> 20, total >> 20);
     lines[0] = what;
     lines[1] = amount;

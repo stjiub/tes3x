@@ -174,6 +174,7 @@ static void summarize(struct build *b)
     json_string(&j, json_get(&j, 0, "profile"), b->profile, sizeof(b->profile));
     json_string(&j, json_get(&j, 0, "install_layout"), b->layout, sizeof(b->layout));
     json_string(&j, json_get(&j, 0, "deployed"), b->deployed, sizeof(b->deployed));
+    json_string(&j, json_get(&j, 0, "server"), b->server, sizeof(b->server));
     b->files = files < 0 ? 0 : j.t[files].count;
     for (i = json_child(&j, files); i >= 0; i = json_sibling(&j, files, i))
         b->bytes += (unsigned long long)json_number(&j, json_get(&j, j.t[i].next, "size"));
@@ -438,7 +439,40 @@ const char *launch_build(const struct build *b, void (*before)(void))
     return launch_xbe(xbe, before);
 }
 
+static const char *launch_with(const char *xbe, const unsigned char *data, size_t n,
+                               void (*before)(void));
+
 const char *launch_xbe(const char *xbe, void (*before)(void))
+{
+    return launch_with(xbe, NULL, 0, before);
+}
+
+/* The engine's relaunch data (tes3xmulti.c): magic, -, -, mode, then a join after the save path. */
+#define BXWM_MAGIC 0x4D575842u
+#define BXWM_NEW_GAME 0u
+#define JOIN_MAGIC 0x4A4D3354u
+#define JOIN_AT 0x110u
+#define JOIN_NAME 79u /* within the game's, as servers.ini names it */
+
+const char *join_server(const char *folder, const char *server, void (*before)(void))
+{
+    static unsigned char data[0xC00];
+    char xbe[PATH_MAX_MGR];
+
+    if (strlen(server) > JOIN_NAME)
+        return "the server's name is too long";
+    memset(data, 0, sizeof(data));
+    memcpy(data, &(unsigned){BXWM_MAGIC}, 4);
+    memcpy(data + 0xC, &(unsigned){BXWM_NEW_GAME}, 4);
+    memcpy(data + JOIN_AT, &(unsigned){JOIN_MAGIC}, 4);
+    memcpy(data + JOIN_AT + 4, server, strlen(server));
+    /* the engine itself: a full layout's default.xbe is the retail launcher */
+    join_path(xbe, sizeof(xbe), folder, "morrowind.xbe");
+    return launch_with(xbe, data, sizeof(data), before);
+}
+
+static const char *launch_with(const char *xbe, const unsigned char *data, size_t n,
+                               void (*before)(void))
 {
     PLAUNCH_DATA_PAGE page = LaunchDataPage;
     const char *slash = strrchr(xbe, '\\');
@@ -462,6 +496,8 @@ const char *launch_xbe(const char *xbe, void (*before)(void))
     /* the kernel takes "folder;file" and maps D: to the folder */
     snprintf(page->Header.szLaunchPath, sizeof(page->Header.szLaunchPath), "%s%.*s;%s",
              drives[i].device, (int)(slash - xbe - 2), xbe + 2, slash + 1);
+    if (n)
+        memcpy(page->LaunchData, data, n < sizeof(page->LaunchData) ? n : sizeof(page->LaunchData));
     mgr_log("launch %s title %08X\n", page->Header.szLaunchPath, title_id);
     if (before)
         before();

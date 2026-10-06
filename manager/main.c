@@ -5,13 +5,17 @@
  * run in order without input, for unattended tests:
  *   list | verify NAME | launch NAME | rebuild NAME XBE DELTA | agent SECONDS
  *   | base [use N | path FOLDER] | update | fetch [FEED] | get URL FILE | run XBE
+ *   | servers | server add NAME | install SERVER [replace] | join SERVER | wait SECONDS
  *   | press BUTTON... | shutdown | reboot
  * `base` lists the retail bases found; `base use N` makes the Nth one OverlayBase, `base path`
  * the folder named by the rest of the line, as choosing it on screen does. `rebuild`
  * decodes DELTA against OverlayBase's morrowind.xbe. `update` installs a release waiting in
  * E:\TES3X\update, as a start does; `fetch` checks the update feed and installs from it; `get`
  * saves a URL to a file; `run` starts any XBE, leaving the lines after it for that XBE; `press`
- * presses controller buttons (a b x y up down l r start), for screenshots of the screens. */
+ * presses controller buttons (a b x y up down l r start), for screenshots of the screens.
+ * `servers` lists the servers servers.ini knows; `server add` adds one ("host[:port]") to the
+ * game's pool; `install` installs or updates a server's build, `replace` going ahead over a
+ * folder that holds something else; `join` starts that build joining the server. */
 
 #include "mgr.h"
 #include "screens.h"
@@ -32,6 +36,7 @@
 #define MAX_BUILDS 64
 #define MAX_BASES 8
 #define MAX_FOLDERS 256
+#define MAX_SERVERS 32
 /* the agent's status can change without input */
 #define REDRAW_MS 500
 #define TRIGGER_DOWN 16000
@@ -41,6 +46,8 @@ static struct base bases[MAX_BASES];
 static struct folder folders[MAX_FOLDERS];
 static char browse_path[PATH_MAX_MGR];
 static struct line lines[MAX_LINES];
+static struct server servers[MAX_SERVERS];
+static const char *server_builds[MAX_SERVERS];
 static char overlay_base[PATH_MAX_MGR];
 static struct view v;
 static int video_up, dirty = 1;
@@ -109,6 +116,7 @@ static void draw(void)
     if (!video_up)
         return;
     v.agent = agent_status();
+    ui_tick = SDL_GetTicks() / 100;
     screen_draw(&v);
     present();
     dirty = 0;
@@ -119,6 +127,7 @@ static void busy(const char *text)
     if (!video_up)
         return;
     v.agent = agent_status();
+    ui_tick = SDL_GetTicks() / 100;
     screen_busy(&v, text);
     present();
     dirty = 1;
@@ -143,6 +152,7 @@ static int progress(const char *what, unsigned long long done, unsigned long lon
     if (!video_up || SDL_GetTicks() - last_draw < 100)
         return 0;
     v.agent = agent_status();
+    ui_tick = SDL_GetTicks() / 100;
     screen_progress(&v, what, done, total);
     present();
     dirty = 1;
@@ -164,12 +174,26 @@ static void scan(void)
                 builds[i].error[0] ? ", " : "", builds[i].error);
 }
 
+/* Redraws the busy dialog, for work that cannot be cancelled but takes a while. */
+static int spin(const char *what, unsigned long long done, unsigned long long total)
+{
+    char text[PATH_MAX_MGR + 16];
+
+    (void)done, (void)total;
+    agent_poll();
+    if (video_up && SDL_GetTicks() - last_draw >= 100) {
+        snprintf(text, sizeof(text), "Checking %s...", what);
+        busy(text);
+    }
+    return 0;
+}
+
 static void find_retail_bases(void)
 {
     int i;
 
     busy("Looking for a retail base...");
-    v.base_count = find_bases(bases, MAX_BASES - 1, NULL);
+    v.base_count = find_bases(bases, MAX_BASES - 1, spin);
     /* a base chosen by folder is outside the search */
     for (i = 0; i < v.base_count && name_cmp(bases[i].path, overlay_base); i++)
         ;
@@ -353,6 +377,76 @@ void mgr_launch_xbe(const char *xbe)
     say("Cannot launch", err, NULL);
 }
 
+/* servers.ini's servers, each with the build installed from it. */
+static void load_servers(void)
+{
+    int i, k;
+
+    v.server_list.count = servers_load(servers, MAX_SERVERS);
+    if (v.server_list.sel >= v.server_list.count)
+        v.server_list.sel = v.server_list.top = 0;
+    ui_list_move(&v.server_list, 0);
+    for (i = 0; i < v.server_list.count; i++) {
+        server_builds[i] = NULL;
+        for (k = 0; k < v.build_list.count; k++)
+            if (!strcmp(builds[k].server, servers[i].name))
+                server_builds[i] = builds[k].path;
+        mgr_log("server %d: %s in %s, key %s%s%s\n", i, servers[i].name, servers[i].file,
+                servers[i].has_server_key ? servers[i].fingerprint : "not pinned",
+                server_builds[i] ? ", build " : "", server_builds[i] ? server_builds[i] : "");
+    }
+}
+
+static void server_details(const struct server *s, const char *build)
+{
+    v.line_list.count = v.line_list.sel = v.line_list.top = 0;
+    add_line("Address", 0, "%s, port %u", s->host, s->port);
+    add_line("Server key", s->has_server_key ? 0 : LINE_BAD, "%s",
+             s->has_server_key ? s->fingerprint : "not pinned: the first contact pins it");
+    add_line("This console", 0, s->has_client_key ? "has an identity there"
+                                                  : "not yet known there");
+    if (s->password[0])
+        add_line("Password", 0, "kept");
+    add_line("Build", build ? 0 : LINE_BAD, "%s", build ? build : "not installed");
+}
+
+static struct server *chosen_server(void)
+{
+    return v.server_list.count ? &servers[v.server_list.sel] : NULL;
+}
+
+static void install_server(struct server *s, int replace)
+{
+    char folder[PATH_MAX_MGR], summary[128];
+    const char *err;
+
+    busy("Contacting the server...");
+    err = server_install(s, replace, folder, sizeof(folder), summary, sizeof(summary), progress);
+    scan();
+    load_servers();
+    if (v.page == PAGE_SERVER)
+        server_details(s, server_builds[v.server_list.sel]);
+    if (err == INSTALL_CONFIRM) {
+        say("Replace this folder?", folder,
+            "It holds files that are not a TES3X build. Installing removes nothing, but "
+            "replaces any file the build has.");
+        v.confirm = 1;
+        return;
+    }
+    if (err)
+        say("Update failed", err, NULL);
+    else
+        say("Build up to date", folder, summary);
+}
+
+static void join(const struct server *s, const char *build)
+{
+    const char *err = join_server(build, s->name, leaving);
+
+    mgr_log("join %s failed: %s\n", s->name, err);
+    say("Cannot join", err, NULL);
+}
+
 static void check_update(void)
 {
     char version[16], launcher[PATH_MAX_MGR], text[48];
@@ -513,6 +607,33 @@ static void run_exec(void)
                 fclose(f);
             }
             mgr_launch_xbe(arg[1]);
+        } else if (!strcmp(arg[0], "wait") && argc == 2) {
+            Sleep((DWORD)atoi(arg[1]) * 1000);
+        } else if (!strcmp(arg[0], "servers")) {
+            load_servers();
+        } else if (!strcmp(arg[0], "server") && argc == 3 && !strcmp(arg[1], "add")) {
+            struct server s;
+
+            mgr_log("exec: server add %s: %s\n", arg[2],
+                    server_add(arg[2], &s) ? "refused" : "ok");
+            load_servers();
+        } else if ((!strcmp(arg[0], "install") || !strcmp(arg[0], "join")) && argc >= 2) {
+            for (n = 0; n < (size_t)v.server_list.count && name_cmp(servers[n].name, arg[1]); n++)
+                ;
+            if (n == (size_t)v.server_list.count) {
+                mgr_log("exec: no server named %s\n", arg[1]);
+            } else if (arg[0][0] == 'i') {
+                v.server_list.sel = (int)n;
+                install_server(&servers[n], argc == 3 && !strcmp(arg[2], "replace"));
+                mgr_log("exec: install: %s: %s; %s\n", v.title, v.text[0], v.text[1]);
+                v.title[0] = 0, v.confirm = 0;
+            } else if (server_builds[n]) {
+                free(data);
+                join(&servers[n], server_builds[n]);
+                return;
+            } else {
+                mgr_log("exec: %s has no build installed\n", arg[1]);
+            }
         } else if (!strcmp(arg[0], "press")) {
             for (n = 1; n < (size_t)argc; n++)
                 press_named(arg[n]);
@@ -547,6 +668,13 @@ static void press(int button)
     if (v.title[0]) {
         if (button == SDL_CONTROLLER_BUTTON_B || button == SDL_CONTROLLER_BUTTON_A)
             v.title[0] = 0;
+        /* the one question asked: whether to install over a folder that is not a build */
+        if (v.confirm && button == SDL_CONTROLLER_BUTTON_A && chosen_server()) {
+            v.confirm = 0;
+            install_server(chosen_server(), 1);
+        } else if (!v.title[0]) {
+            v.confirm = 0;
+        }
         return;
     }
     if (button == SDL_CONTROLLER_BUTTON_LEFTSHOULDER) {
@@ -569,6 +697,23 @@ static void press(int button)
             verify(b);
         else if (button == SDL_CONTROLLER_BUTTON_A && !b->error[0])
             launch(b);
+    } else if (v.tab == TAB_SERVERS && v.page == PAGE_MAIN) {
+        if (step)
+            ui_list_move(&v.server_list, step);
+        else if (button == SDL_CONTROLLER_BUTTON_A && chosen_server())
+            server_details(chosen_server(), server_builds[v.server_list.sel]),
+                v.page = PAGE_SERVER;
+        else if (button == SDL_CONTROLLER_BUTTON_Y)
+            scan(), load_servers();
+    } else if (v.tab == TAB_SERVERS) {
+        if (step)
+            ui_list_move(&v.line_list, step);
+        else if (button == SDL_CONTROLLER_BUTTON_B)
+            v.page = PAGE_MAIN;
+        else if (button == SDL_CONTROLLER_BUTTON_X)
+            install_server(chosen_server(), 0);
+        else if (button == SDL_CONTROLLER_BUTTON_A && server_builds[v.server_list.sel])
+            join(chosen_server(), server_builds[v.server_list.sel]);
     } else if (v.page == PAGE_BROWSE) {
         if (step)
             ui_list_move(&v.folder_list, step);
@@ -632,6 +777,9 @@ int main(void)
     v.base_list.rows = BASE_ROWS;
     v.folder_list.rows = FOLDER_ROWS;
     v.settings.count = v.settings.rows = SET_COUNT;
+    v.servers = servers;
+    v.server_builds = server_builds;
+    v.server_list.rows = SERVER_ROWS;
     v.agent = agent_status();
     /* before the command file too: without a video mode the rig's capture sees no signal */
     XVideoSetMode(640, 480, 32, REFRESH_DEFAULT);
@@ -643,6 +791,7 @@ int main(void)
     pb_show_front_screen();
     video_up = 1;
     scan();
+    load_servers();
     news = update_confirm();
     /* first run: offer the bases found, since overlay builds and XBE updates need one */
     if (!console_get("OverlayBase", overlay_base, sizeof(overlay_base))) {

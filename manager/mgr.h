@@ -22,7 +22,8 @@ struct build {
     char deployed[24];
     int files, plugins, xbes;
     unsigned long long bytes;
-    char error[64]; /* why the manifest cannot be used; empty when it can */
+    char server[80]; /* the server the manager installed it from, as servers.ini names it */
+    char error[64];  /* why the manifest cannot be used; empty when it can */
 };
 
 struct verify {
@@ -82,13 +83,16 @@ void agent_poll(void);
 void agent_goodbye(void);
 const char *agent_status(void);
 
-/* XBE rebuild from the delta in a manifest's xbe entry (xbe.c), against OverlayBase's
- * morrowind.xbe. */
+/* XBE rebuild from the delta in a manifest's xbe entry (xbe.c), against the XBE in OverlayBase
+ * that has the recipe's retail digest. */
 int xbe_title_id(const char *path, unsigned *title_id);
 /* Whether the XBE at path is a retail image this manager knows, by its scene-form digest. */
 int xbe_known_retail(const char *path);
 const char *rebuild_xbe(const struct build *b, const char *xbe, const char *delta,
                         progress_fn progress);
+/* The output of a delta checked against its recipe's hashes, malloc'd into *out. */
+const char *xbe_decode(const char *want_retail, const unsigned char *patch, size_t patch_n,
+                       const char *want_out, unsigned char **out, size_t *out_n);
 /* Writes target as target.new, then renames it in, keeping the old file as target.prev. */
 const char *replace_file(const char *target, const unsigned char *d, size_t n);
 
@@ -117,6 +121,46 @@ int net_up(void);
  * bytes, NUL-terminated; NULL, or why it failed. */
 const char *http_get(const char *url, unsigned char **body, size_t *n, size_t max,
                      progress_fn progress);
+
+/* http.c: GET url into a file, checked against size and SHA-256 (hex) as it arrives; progress
+ * counts from *done towards total. */
+const char *http_save(const char *url, const char *path, unsigned long long size,
+                      const char *sha256, const char *label, unsigned long long *done,
+                      unsigned long long total, progress_fn progress);
+
+/* Multiplayer servers (servers.c): those in each save pool's U:\TES3X\servers.ini, which the
+ * game writes on joining one. */
+struct server {
+    char name[80]; /* the section, "host[:port]" as NetServer names it */
+    char host[64];
+    unsigned port;
+    char file[PATH_MAX_MGR]; /* the servers.ini it is in */
+    int has_server_key, has_client_key;
+    unsigned char server_key[32], client_key[32];
+    char password[65];
+    char fingerprint[33]; /* of the pinned server key */
+};
+/* What a server's BUILD hands the manager: its manifest's hash and size, and a ticket for the
+ * HTTP side at addr:port. */
+struct ticket {
+    unsigned char sha256[32], token[16];
+    unsigned size, port, addr;
+};
+int servers_load(struct server *out, int max);
+int server_add(const char *name, struct server *s);
+int server_save(const struct server *s);
+void server_fingerprint(const unsigned char key[32], char hex[33]);
+/* Pins the server's key on first contact and keeps a new identity key; NULL, or why not. */
+const char *server_ticket(struct server *s, struct ticket *t, progress_fn progress);
+
+/* install.c: the server's build into its folder, staged and hash-checked, the XBEs rebuilt from
+ * the retail base. NULL and a summary, INSTALL_CONFIRM when the folder holds something else
+ * (again with replace set to go ahead), or why not. The folder is filled in either way. */
+extern const char INSTALL_CONFIRM[];
+const char *server_install(struct server *s, int replace, char *folder, size_t folder_n,
+                           char *summary, size_t summary_n, progress_fn progress);
+/* Starts a build's engine with New Game and the server to join (the game's JOIN_MAGIC). */
+const char *join_server(const char *folder, const char *server, void (*before)(void));
 
 int read_file(const char *path, unsigned char **data, size_t *n);
 /* Writes a file and flushes it to the disk; flush_path flushes one already written. */

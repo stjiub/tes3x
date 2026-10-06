@@ -52,6 +52,11 @@ void ui_scrollbar(int x, int y, int h, const struct ui_list *l);
  * then the hints. Returns the y of the free space. */
 int ui_dialog(const char *title, const char *const *lines, int n, int extra,
               const struct ui_hint *hints, int nh);
+/* A bar when the total is known, else the spinner. */
 void ui_progress(const char *what, unsigned long long done, unsigned long long total);
+/* Dots around a ring with a bright head that moves each ui_tick, so a wait never looks frozen;
+ * main.c sets ui_tick from the clock before each draw. */
+extern unsigned ui_tick;
+void ui_spinner(int cx, int cy);
 
 #endif

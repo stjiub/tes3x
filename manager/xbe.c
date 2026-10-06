@@ -174,25 +174,94 @@ static int find_recipe(const struct json *j, const char *xbe)
     return -1;
 }
 
-const char *rebuild_xbe(const struct build *b, const char *xbe, const char *delta,
-                        progress_fn progress)
+/* The base's XBE with this retail digest, in scene form: morrowind.xbe for the engine, and
+ * default.xbe in a copied base for the retail launcher. */
+static const char *reference(const char *want_retail, unsigned char **ref, size_t *ref_n)
 {
-    static char reason[160];
-    struct json j;
-    char *text, want_retail[65], want_delta[65], want_out[65], hex[65], target[PATH_MAX_MGR];
-    char base[PATH_MAX_MGR], retail[PATH_MAX_MGR];
-    unsigned char *ref = NULL, *patch = NULL, *out = NULL;
-    size_t ref_n, patch_n, out_n, got;
-    unsigned long long size;
-    ZSTD_DCtx *dctx = NULL;
-    DWORD start = KeTickCount;
-    const char *err = NULL;
-    int recipe;
+    static const char *const names[] = {"morrowind.xbe", "default.xbe"};
+    static char reason[96];
+    char base[PATH_MAX_MGR], path[PATH_MAX_MGR], hex[65];
+    size_t i;
 
     /* the reference whatever the build's layout: a full build's XBE is a delta too */
     if (!console_get("OverlayBase", base, sizeof(base)))
         return "no retail base set";
-    join_path(retail, sizeof(retail), base, "morrowind.xbe");
+    for (i = 0; i < sizeof(names) / sizeof(*names); i++) {
+        join_path(path, sizeof(path), base, names[i]);
+        if (read_file(path, ref, ref_n))
+            continue;
+        if (*ref_n >= 4 && !memcmp(*ref, "XBEH", 4)) {
+            scene_form(*ref, *ref_n);
+            digest_hex(*ref, *ref_n, hex);
+            if (!strcmp(hex, want_retail))
+                return NULL;
+            mgr_log("rebuild: %s has retail digest %.16s\n", path, hex);
+        }
+        free(*ref);
+        *ref = NULL;
+    }
+    snprintf(reason, sizeof(reason), "the retail base has no XBE with digest %.16s", want_retail);
+    return reason;
+}
+
+const char *xbe_decode(const char *want_retail, const unsigned char *patch, size_t patch_n,
+                       const char *want_out, unsigned char **out, size_t *out_n)
+{
+    unsigned char *ref = NULL;
+    size_t ref_n, got;
+    unsigned long long size;
+    ZSTD_DCtx *dctx = NULL;
+    char hex[65];
+    const char *err;
+
+    *out = NULL;
+    if ((err = reference(want_retail, &ref, &ref_n)))
+        return err;
+    size = ZSTD_getFrameContentSize(patch, patch_n);
+    if (size == ZSTD_CONTENTSIZE_UNKNOWN || size == ZSTD_CONTENTSIZE_ERROR || size > 64u << 20) {
+        err = "the delta does not give its output size";
+        goto done;
+    }
+    *out_n = (size_t)size;
+    if (!(*out = malloc(*out_n ? *out_n : 1)) || !(dctx = ZSTD_createDCtx())) {
+        err = "not enough memory to rebuild the XBE";
+        goto done;
+    }
+    ZSTD_DCtx_setParameter(dctx, ZSTD_d_windowLogMax, 30);
+    if (ZSTD_isError(ZSTD_DCtx_refPrefix(dctx, ref, ref_n))) {
+        err = "the decoder refused the retail XBE";
+        goto done;
+    }
+    got = ZSTD_decompressDCtx(dctx, *out, *out_n, patch, patch_n);
+    if (ZSTD_isError(got) || got != *out_n) {
+        mgr_log("rebuild: zstd error %s\n", ZSTD_isError(got) ? "yes" : "short");
+        err = "the delta does not decode against this retail XBE";
+        goto done;
+    }
+    digest_hex(*out, *out_n, hex);
+    if (strcmp(hex, want_out))
+        err = "the rebuilt XBE does not match the manifest";
+done:
+    ZSTD_freeDCtx(dctx);
+    free(ref);
+    if (err) {
+        free(*out);
+        *out = NULL;
+    }
+    return err;
+}
+
+const char *rebuild_xbe(const struct build *b, const char *xbe, const char *delta,
+                        progress_fn progress)
+{
+    struct json j;
+    char *text, want_retail[65], want_delta[65], want_out[65], hex[65], target[PATH_MAX_MGR];
+    unsigned char *patch = NULL, *out = NULL;
+    size_t patch_n, out_n;
+    DWORD start = KeTickCount;
+    const char *err = NULL;
+    int recipe;
+
     if (manifest_load(b, &text, &j))
         return "manifest unreadable";
     if ((recipe = find_recipe(&j, xbe)) < 0) {
@@ -209,67 +278,24 @@ const char *rebuild_xbe(const struct build *b, const char *xbe, const char *delt
         return err;
 
     if (progress)
-        progress("retail XBE", 0, 3);
-    if (read_file(retail, &ref, &ref_n))
-        return "the retail base has no morrowind.xbe";
-    if (ref_n < 4 || memcmp(ref, "XBEH", 4)) {
-        err = "the retail file is not an XBE";
-        goto done;
-    }
-    scene_form(ref, ref_n);
-    digest_hex(ref, ref_n, hex);
-    mgr_log("rebuild %s\\%s: retail digest %s\n", b->path, xbe, hex);
-    if (strcmp(hex, want_retail)) {
-        snprintf(reason, sizeof(reason), "unknown retail image %.16s", hex);
-        err = reason;
-        goto done;
-    }
-    if (progress)
-        progress("delta", 1, 3);
-    if (read_file(delta, &patch, &patch_n)) {
-        err = "cannot read the delta";
-        goto done;
-    }
+        progress("delta", 0, 2);
+    if (read_file(delta, &patch, &patch_n))
+        return "cannot read the delta";
     digest_hex(patch, patch_n, hex);
     if (strcmp(hex, want_delta)) {
-        err = "the delta is not the one the manifest names";
-        goto done;
-    }
-    size = ZSTD_getFrameContentSize(patch, patch_n);
-    if (size == ZSTD_CONTENTSIZE_UNKNOWN || size == ZSTD_CONTENTSIZE_ERROR || size > 64u << 20) {
-        err = "the delta does not give its output size";
-        goto done;
-    }
-    out_n = (size_t)size;
-    if (!(out = malloc(out_n ? out_n : 1)) || !(dctx = ZSTD_createDCtx())) {
-        err = "not enough memory to rebuild the XBE";
-        goto done;
+        free(patch);
+        return "the delta is not the one the manifest names";
     }
     if (progress)
-        progress("decoding", 2, 3);
-    ZSTD_DCtx_setParameter(dctx, ZSTD_d_windowLogMax, 30);
-    if (ZSTD_isError(ZSTD_DCtx_refPrefix(dctx, ref, ref_n))) {
-        err = "the decoder refused the retail XBE";
-        goto done;
+        progress("decoding", 1, 2);
+    err = xbe_decode(want_retail, patch, patch_n, want_out, &out, &out_n);
+    if (!err) {
+        join_path(target, sizeof(target), b->path, xbe);
+        err = replace_file(target, out, out_n);
     }
-    got = ZSTD_decompressDCtx(dctx, out, out_n, patch, patch_n);
-    if (ZSTD_isError(got) || got != out_n) {
-        mgr_log("rebuild: zstd error %s\n", ZSTD_isError(got) ? "yes" : "short");
-        err = "the delta does not decode against this retail XBE";
-        goto done;
-    }
-    digest_hex(out, out_n, hex);
-    if (strcmp(hex, want_out)) {
-        err = "the rebuilt XBE does not match the manifest";
-        goto done;
-    }
-    join_path(target, sizeof(target), b->path, xbe);
-    err = replace_file(target, out, out_n);
-    mgr_log("rebuild %s: %s, %lu ms\n", target, err ? err : "done", KeTickCount - start);
-done:
-    ZSTD_freeDCtx(dctx);
+    mgr_log("rebuild %s\\%s: %s, %lu ms\n", b->path, xbe, err ? err : "done",
+            KeTickCount - start);
     free(out);
     free(patch);
-    free(ref);
     return err;
 }

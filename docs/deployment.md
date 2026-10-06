@@ -42,7 +42,8 @@ Every game folder the pipeline stages carries `tes3xbuild.json`, which says what
   players normally rebuild XBEs from their own retail copy;
 - the plugins in load order, the `Morrowind.ini` settings the build changed and the save pool;
 - for each XBE, the retail XBE it was made from, by its retail digest, the patches applied,
-  the result's SHA-256 and the delta that rebuilds it.
+  the result's SHA-256 and the delta that rebuilds it;
+- `folder`, the install folder's name, where the console manager puts the build.
 
 A retail digest is the SHA-256 of an XBE with the edits scene copies carry made to it: the
 certificate opened to any media and region, and the game's drive letters set to `D:`. A retail
@@ -172,6 +173,37 @@ free space itself; it needs room for the new copies before the old ones go.
 
 A full build of about 1 GB and 7,300 files takes about 7 minutes through the manager on wired
 Ethernet, and about 13 minutes over the dashboard's FTP server.
+
+## From a server
+
+A multiplayer server started with `--build` ([Handing out the
+build](multiplayer.md#handing-out-the-build)) hands its build to the console manager, so players
+need no PC. The manager's **Servers** tab lists the servers this console knows from each save
+pool's `U:\TES3X\servers.ini`, the ones joined from the game's main menu, with each one's key
+fingerprint and installed build. On a server, **Update build** installs or updates it and
+**Join** starts it, joining that server with a new game, as Join in the game's menu does.
+
+An update asks the server through the game's encrypted session, with this console's key for that
+server (made and kept in `servers.ini` if it has none, and the server's key pinned on first
+contact, as the game does) and the password the game keeps there. The server answers with its
+manifest's hash and serves the files over HTTP. Then, for each file the manifest lists:
+
+- one already present with the same SHA-256 is kept;
+- an XBE is rebuilt from its delta against the retail base's XBE with the recipe's retail digest;
+- a retail file is copied from the retail base;
+- anything else, or a rebuild or copy that fails, is downloaded.
+
+Every file arrives under a `~t3x` staging name and is checked against the manifest; only when all
+have arrived are they renamed into place, the replaced XBEs kept as `.prev`, so a failed or
+cancelled update leaves the installed build as it was. Files the old manifest listed and the new
+one drops are deleted; files no manifest listed are left alone. Plugins get modified times in the
+manifest's load order, and `tes3xbuild.json` is written last, with `server` naming the server it
+came from. The build goes into the folder it was installed into before, else the manifest's
+`folder` under the first `Games` folder on F, G, E or C; a folder there that holds files but no
+build manifest is replaced only after the manager asks.
+
+The retail base set under **Settings > Retail base** supplies the XBEs and retail files, so an
+overlay build is a download of its own files only.
 
 ## What a deploy does
 

@@ -3,7 +3,7 @@ XBE_TITLE = TES3X\ manager
 MBEDTLS = $(CURDIR)/../mbedtls
 SRCS = $(CURDIR)/main.c $(CURDIR)/builds.c $(CURDIR)/xbe.c $(CURDIR)/json.c \
        $(CURDIR)/sha256.c $(CURDIR)/agent.c $(CURDIR)/console.c $(CURDIR)/update.c \
-       $(CURDIR)/http.c $(CURDIR)/monocypher-ed25519.c $(CURDIR)/zstd/zstddeclib.c        $(CURDIR)/gfx.c $(CURDIR)/ui.c $(CURDIR)/screens.c $(CURDIR)/fontdata.c \
+       $(CURDIR)/http.c $(CURDIR)/servers.c $(CURDIR)/install.c $(CURDIR)/monocypher-ed25519.c $(CURDIR)/zstd/zstddeclib.c        $(CURDIR)/gfx.c $(CURDIR)/ui.c $(CURDIR)/screens.c $(CURDIR)/fontdata.c \
        $(CURDIR)/../hooks/monocypher.c $(CURDIR)/../hooks/tes3xnoise.c \
        $(wildcard $(MBEDTLS)/library/*.c)
 NXDK_DIR ?= $(CURDIR)/../../..
