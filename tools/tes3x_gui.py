@@ -2081,6 +2081,8 @@ class ProfileWindow(QMainWindow):
         self.action_smoke.triggered.connect(self.run_smoke_test)
         self.action_deploy = QAction("&Deploy to Xbox…", self)
         self.action_deploy.triggered.connect(self.deploy_profile)
+        self.action_manager = QAction("Install console &manager…", self)
+        self.action_manager.triggered.connect(self.install_manager)
         self.action_fetch = QAction("Pull Xbox &logs", self)
         self.action_fetch.triggered.connect(self.pull_logs)
         self.action_refresh_ftp = QAction("Refresh Xbox connection", self)
@@ -2101,7 +2103,8 @@ class ProfileWindow(QMainWindow):
         actions_menu.addActions([self.action_deploy, self.action_play, self.action_stop,
                                  self.action_reset_play])
         actions_menu.addSeparator()
-        actions_menu.addActions([self.action_fetch, self.action_refresh_ftp])
+        actions_menu.addActions([self.action_manager, self.action_fetch,
+                                 self.action_refresh_ftp])
         actions_menu.addSeparator()
         actions_menu.addAction(self.discard_after_deploy)
         command_group = QWidget()
@@ -2149,7 +2152,8 @@ class ProfileWindow(QMainWindow):
             "border-radius: 0; } QToolButton:first-child { border-top-left-radius: 4px; "
             "border-bottom-left-radius: 4px; }")
         self.command_actions = (self.action_check, self.action_build, self.action_deploy,
-                                self.action_play, self.action_smoke, self.action_fetch)
+                                self.action_play, self.action_smoke, self.action_fetch,
+                                self.action_manager)
         self.after_command = None
         self.conflict_retry = None
         self.space_retry = None
@@ -5718,6 +5722,60 @@ class ProfileWindow(QMainWindow):
                        first=False)
         if self.discard_after_deploy.isChecked():
             self.after_command = lambda: shutil.rmtree(self.build_output(), ignore_errors=True)
+
+    MANAGER_QUESTION = ("Install over existing files?", "The manager's folder holds:",
+                        "Files there that the manager does not have are deleted. "
+                        "Install anyway?")
+
+    def install_manager(self):
+        if self.process is not None:
+            self.error("A TES3X command is already running")
+            return
+        target = self.default_target("xbox")
+        if not target:
+            self.error("Configure an Xbox target before installing the manager")
+            return
+        name = target["name"]
+        manager = self.manager_paired(name)
+        answer = QMessageBox.question(
+            self, "Install console manager",
+            f"Install or update the TES3X console manager on {name}, in "
+            f"{target.get('games_root') or '<games_root>'}/TES3XManager?\n\n"
+            + ("The files go through the manager running on the Xbox; start the new version "
+               "from the dashboard or the manager's build list afterwards." if manager else
+               "The files go over the dashboard's FTP server."))
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        out = self.work_dir() / "build" / "manager" / "install"
+        config = ["--config", str(self.local_config_path()), "--target", name]
+        self.run_steps([(ROOT / "tools" / "tes3x_manager.py", ["stage", str(out), *config],
+                         "Preparing the console manager…")],
+                       then=lambda: self.deploy_manager(out, name, manager))
+
+    def deploy_manager(self, out, name, agent, *extra):
+        stage = Path(out)
+        try:
+            record = json.loads((stage / PIPELINE_MARKER).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            self.error(f"The manager was not staged: {exc}")
+            return
+        remote, version = record["remote"], record.get("version")
+        arguments = [str(stage / "deploy"), "--remote", remote, "--verify", "size",
+                     "--console-ini", str(stage / "console.ini"),
+                     "--config", str(self.local_config_path()), "--target", name, *extra]
+        if agent:
+            arguments.append("--agent")
+            self.lend_listener()
+        self.run_steps([(ROOT / "tools" / "tes3x_deploy.py", arguments,
+                         f"Installing manager {version} to {remote}…")], first=False)
+        self.command_kind = "manager"
+        if "--replace" not in extra:
+            self.conflict_retry = (lambda: self.deploy_manager(out, name, agent, *extra,
+                                                               "--replace"),
+                                   self.MANAGER_QUESTION)
+        if "--ignore-space" not in extra:
+            self.space_retry = lambda: self.deploy_manager(out, name, agent, *extra,
+                                                           "--ignore-space")
 
     def pull_logs(self):
         if self.process is not None:

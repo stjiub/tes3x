@@ -71,7 +71,8 @@ options, then the selected target, then the default `xbox`/`xbox`. Set
 
 Settings that belong to a console rather than a build live outside every game folder, in
 `E:\TES3X\console.ini`: `NetAgent` (the PC the console pairs with), `OverlayBase` (the retail base
-on this console) and the network keys `NetAddress`, `NetGateway` and `NetDns`. The game reads each
+on this console), `Manager` (the console manager's XBE, written when it is installed) and the
+network keys `NetAddress`, `NetGateway` and `NetDns`. The game reads each
 `[Xbox]` key there before `Morrowind.ini`, so one build's files are the same on every console and
 its manifest hashes hold everywhere.
 
@@ -79,6 +80,22 @@ The pipeline writes these keys, whether they come from the profile, `--ini-set` 
 `console.ini` beside `deploy/` instead of into `Morrowind.ini`. Deploy merges them into the
 console's file (`tes3x_deploy.py --console-ini FILE`), keeping the keys it does not set. The xemu
 runner puts them back into the disc's `Morrowind.ini`, since an xemu disc belongs to one run.
+
+## Installing the console manager
+
+```
+python tools/tes3x_manager.py install [--target NAME] [--agent] [--dry-run]
+```
+
+installs or updates the manager in `TES3XManager` under the target's `games_root` (`--folder`
+changes the name). The folder gets `default.xbe`, `_resources\default.xml` for the dashboard's
+list and a build manifest of layout `manager`, which the manager leaves out of its own build list;
+`E:\TES3X\console.ini` gets `Manager`, the manager's path, for the game. The first install goes
+over FTP; once the manager runs, `--agent` updates it through its own agent, and the new version
+starts the next time it is launched. The XBE comes from `--xbe`, the copy a portable folder ships,
+or an nxdk build of `manager/` (`paths.nxdk`). `tes3x_manager.py stage OUT` writes the folder
+without sending it. In the GUI it is **Actions > Install console manager**, which goes through the
+manager when it is paired.
 
 ## Through the console manager
 

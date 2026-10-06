@@ -17,6 +17,9 @@ that Python. `externals/` holds 7-Zip, for `.7z` and `.rar` mods, and clang and 
 LLVM, for engine fixes, each with its license. Nothing needs installing on the PC that runs it;
 the **LLVM tools** setting still overrides the bundled LLVM.
 
+It also carries the [console manager](deployment.md#installing-the-console-manager) as
+`manager/default.xbe`, built with nxdk (`paths.nxdk`), or taken from `--manager XBE`.
+
 Building the folder needs a C compiler for `TES3X.exe` (MSYS2's `gcc` or `clang`, or `--cc`). The
 first build downloads Python, 7-Zip and LLVM (about 880 MB, mostly the LLVM release), checks each
 against a pinned SHA-256, and keeps them in `%LOCALAPPDATA%\TES3X\package` for later builds.
@@ -95,7 +98,8 @@ before an Xbox is checked or for xemu, green while an Xbox answers, and red when
 the tooltip carries its address and reported free space. The joined Check, Build and Deploy buttons
 use grey, green, amber and red dots for not run, current, stale and failed. Deploy is unavailable
 for xemu targets. An Xbox whose [console manager](deployment.md#through-the-console-manager) is
-paired with this PC shows **Manager**, and Deploy then goes through the manager instead of FTP. **Actions** also smoke-tests the current profile. The status bar is reserved for
+paired with this PC shows **Manager**, and Deploy then goes through the manager instead of FTP.
+**Actions > Install console manager** installs or updates it. **Actions** also smoke-tests the current profile. The status bar is reserved for
 activity, transient messages and counts. Check and per-target Deploy results are
 remembered in the build output; like the Build state, they notice profile edits but not changes
 inside mod folders.

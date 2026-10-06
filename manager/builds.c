@@ -16,6 +16,7 @@
 #define CHUNK (256 * 1024)
 #define MAX_BASES 8
 #define BASE_LAYOUT "retail-base"
+#define MANAGER_LAYOUT "manager"
 #define RETAIL_TITLE_ID 0x42530005u
 
 /* Game partitions in the order they are scanned, and the kernel device each drive letter is. */
@@ -168,6 +169,8 @@ static int scan_folder(const char *root, struct build *out, int n, int max)
         if (!strcmp(b->layout, BASE_LAYOUT)) {
             if (installed_count < MAX_BASES)
                 snprintf(installed[installed_count++], PATH_MAX_MGR, "%s", b->path);
+            n--;
+        } else if (!strcmp(b->layout, MANAGER_LAYOUT)) {
             n--;
         }
     } while (FindNextFileA(h, &fd));

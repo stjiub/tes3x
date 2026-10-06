@@ -222,7 +222,18 @@ def build_launcher(cc, out):
                     str(ROOT / "launcher" / "tes3x.c"), "-lshlwapi"], check=True, env=env)
 
 
-def package(out, cc=None, make_zip=False):
+def manager_xbe(given, out):
+    """The console manager the GUI installs: the given XBE, or an nxdk build of manager/."""
+    if given:
+        return Path(given)
+    import tes3x_nxdk
+    try:
+        return tes3x_nxdk.build(ROOT / "manager", Path(out) / "manager")
+    except tes3x_nxdk.NxdkError as exc:
+        raise PackageError(f"console manager: {exc}; pass --manager XBE") from exc
+
+
+def package(out, cc=None, make_zip=False, manager=None):
     label = version()
     stage = Path(out) / f"TES3X-{label}"
     if stage.exists():
@@ -233,6 +244,7 @@ def package(out, cc=None, make_zip=False):
         (stage / name).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / name, stage / name)
     (stage / "VERSION").write_text(label + "\n", encoding="utf-8")
+    shutil.copyfile(manager_xbe(manager, out), stage / "manager" / "default.xbe")
     print(f"TES3X {label}: {len(files)} files")
     embedded_python(stage / "python")
     externals(stage / "externals")
@@ -249,12 +261,14 @@ if __name__ == "__main__":
     ap.add_argument("--out", default=str(ROOT / "build" / "package"))
     ap.add_argument("--cc", help="C compiler for TES3X.exe (default: gcc or clang)")
     ap.add_argument("--zip", action="store_true", help="also write TES3X-<version>.zip")
+    ap.add_argument("--manager", metavar="XBE",
+                    help="the console manager to ship (default: build manager/ with nxdk)")
     ap.add_argument("--print-version", action="store_true")
     args = ap.parse_args()
     try:
         if args.print_version:
             print(version())
         else:
-            package(args.out, args.cc, args.zip)
+            package(args.out, args.cc, args.zip, args.manager)
     except (PackageError, OSError, subprocess.CalledProcessError) as exc:
         sys.exit(f"tes3x_package: {exc}")
