@@ -38,9 +38,19 @@ def free_slot(fs, cluster):
                 return base + off, False
             if tag in (END_OF_DIR, 0x00) and end is None:
                 end = base + off
-    if end is None:
-        raise SystemExit("directory is full and extending it is not implemented")
     return end, True
+
+
+def extend_dir(img, reader, cluster):
+    """Image offset of the first entry of a new cluster linked onto a full directory."""
+    *_, last = reader.chain(cluster)
+    fs = Fatx.mount(img, reader.offset, reader.cluster_count * reader.cluster_size)
+    added, _n = fs.alloc_chain(fs.cluster_size)
+    fs.set_fat(last, added)
+    fs.flush_fat()
+    img.seek(fs.cluster_pos(added))
+    img.write(b"\xFF" * fs.cluster_size)
+    return fs.cluster_pos(added)
 
 
 def add_entry(img, reader, cluster, name, attrs, first, nbytes):
@@ -51,6 +61,8 @@ def add_entry(img, reader, cluster, name, attrs, first, nbytes):
         if existing.lower() == name.lower():
             raise SystemExit("%s already exists; remove it first" % name)
     slot, was_end = free_slot(reader, cluster)
+    if slot is None:
+        slot = extend_dir(img, reader, cluster)
     ent = bytearray(DIRENT)
     ent[0] = len(name)
     ent[1] = attrs
@@ -100,6 +112,21 @@ def put_file(img, src, dest, name, partition="E"):
     fs.flush_fat()
     add_entry(img, FatxReader(img, off).bind(size), cluster, name, 0, first, nbytes)
     return first, nbytes
+
+
+def put_dir(img, src, dest, name, partition="E"):
+    """Write host folder src, which dest does not hold yet, as dest/name in one pass over the FAT:
+    putting its files one by one rereads the FAT for each."""
+    off, size = PARTITIONS[partition]
+    parent = make_dirs(img, dest, partition)
+    reader = FatxReader(img, off).bind(size)
+    if any(e[0].lower() == name.lower() for e in reader.listdir(parent)):
+        raise SystemExit("%s already exists in %s; remove it first" % (name, dest or "/"))
+    fs = Fatx.mount(img, off, size)
+    first = fs.write_dir(fs.build_entries(src))
+    fs.flush_fat()
+    add_entry(img, FatxReader(img, off).bind(size), parent, name, ATTR_DIRECTORY, first, 0)
+    return first
 
 
 def main():

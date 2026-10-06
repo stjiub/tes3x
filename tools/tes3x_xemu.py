@@ -38,7 +38,7 @@ from pathlib import Path
 TOOLS = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS))
 from tes3x_fatx import PARTITIONS, FatxReader  # noqa: E402
-from tes3x_put import make_dirs, put_file  # noqa: E402
+from tes3x_put import make_dirs, put_dir, put_file  # noqa: E402
 from tes3x_qcow2 import CowView, Qcow2, create_overlay, is_qcow2, open_image  # noqa: E402
 import tes3x_savepool  # noqa: E402
 import tes3x_targets  # noqa: E402
@@ -194,11 +194,17 @@ def put_tree(disk, source, dest):
         make_dirs(disk, parent)
         put_file(disk, source, parent, name)
         return
-    for path in sorted(source.rglob("*")):
-        if path.is_file():
-            folder = "/".join([dest.strip("/"), *path.relative_to(source).parent.parts])
-            make_dirs(disk, folder)
-            put_file(disk, path, folder, path.name)
+    off, size = PARTITIONS["E"]
+    cluster = 1
+    for part in [*parent.split("/"), name] if parent else [name]:
+        hit = [e for e in FatxReader(disk, off).bind(size).listdir(cluster)
+               if e[0].lower() == part.lower()]
+        if not hit:
+            put_dir(disk, source, parent, name)
+            return
+        cluster = hit[0][2]
+    for path in sorted(source.iterdir()):
+        put_tree(disk, path, f"{dest.strip('/')}/{path.name}")
 
 
 def sha256_file(path):
