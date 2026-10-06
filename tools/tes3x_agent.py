@@ -710,7 +710,8 @@ def act(listener, events, host, args):
             data = Path(local).read_bytes()
             started, resent = time.monotonic(), listener.protocol.resent
             client.put(path, data, args.window)
-            seconds = time.monotonic() - started
+            # a small file can arrive within the clock's resolution
+            seconds = max(time.monotonic() - started, 1e-3)
             print(f"agent: put {local} -> {path} ({len(data)} bytes, {seconds:.1f} s, "
                   f"{len(data) / seconds / 1e6:.2f} MB/s, "
                   f"{listener.protocol.resent - resent} resent)", flush=True)
