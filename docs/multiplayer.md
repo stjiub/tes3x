@@ -204,6 +204,12 @@ without a clean retail copy; only do so where you may hand them out. The deltas 
 changes, so a new build can be staged while it runs; a manager that is mid-update when it changes
 stops without touching the installed build, and its next update gets the new one.
 
+A server with `--build` also refuses a console whose build is not that one, by the `build` id in
+each manifest. Joining from the main menu then asks "Build out of date. Update it in the TES3X
+Manager?": Open Manager starts the manager on that server's page, where X updates the build, and
+Back stays in the game. Without the manager installed the server's row just says "build out of
+date". A console with no manifest is checked by its load order only.
+
 ## Run the server in Docker
 
 `server/` holds a Docker Compose setup for a machine that should only run the server, with no
@@ -354,7 +360,7 @@ With `console` in the build, open the console (Back + right thumb click) and typ
 The log is `E:\tes3xlog.txt`. A console whose plugins differ from the session's logs
 `net.refused` and stops trying until the game is launched again; the server prints `refused`
 with both load order hashes. `net.refused_reason` says why: 1 the load order, 2 the server is
-full, 3 a wrong password, 4 kicked, 5 banned.
+full, 3 a wrong password, 4 kicked, 5 banned, 6 the build is not the one the server hands out.
 
 To see how much of a character the server could restore without its save, start the server with
 `--rebuild` and join from a different save. The server applies the character's kept state over

@@ -35,6 +35,9 @@ the GUI asks first.
 
 Every game folder the pipeline stages carries `tes3xbuild.json`, which says what the build is:
 
+- `build`, a SHA-256 over the files' hashes and the load order, first in the file. Deploys and
+  installs leave it as the pipeline wrote it, so a server compares it to tell a console whose
+  build is out of date; a deploy of a hand-assembled folder computes it from the files sent;
 - the profile, where it came from (the TES3X revision and the profile's SHA-256) and the install
   layout;
 - every file, with its size, SHA-256 and origin: `xbe`, `retail` for a byte copy of a retail

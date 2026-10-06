@@ -360,10 +360,11 @@ HANDSHAKES_PENDING = 1024
 CLIENT_RATE = (600, 600.0)  # sealed packets from one joined client; a console sends about 60/s
 # GameHour, Day, Month (0-11), Year, DaysPassed, TimeScale, as the game's float globals
 CLOCK_BODY = struct.Struct("<6f")
-# MAC, build id, load order hash, plugin count, then the client's clock; NetPassword follows.
+# MAC, build id, load order hash, plugin count, the client's clock, then its manifest's build id
+# (zero without one); NetPassword follows.
 # LOBBY in the plugin count: a console at the main menu, with no game and so no clock. It gets no
 # world, only what picks a character (GAME, CHARS or NEWCHAR, PICK, the checkpoint and LOAD).
-HELLO_BODY = struct.Struct("<6sIII" + CLOCK_BODY.format[1:])
+HELLO_BODY = struct.Struct("<6sIII" + CLOCK_BODY.format[1:] + "32s")
 LOBBY = 0x80000000
 # MANAGER in the plugin count: the console manager, asking for this server's build, not joining
 MANAGER = 0x40000000
@@ -372,6 +373,7 @@ PASSWORD_RATE = (5, 1 / 60)  # password tries from one address, (burst, per seco
 # REFUSE: the session's load order hash, its plugin count, and why
 REFUSE_BODY = struct.Struct("<III")
 REFUSED_LOAD_ORDER, REFUSED_FULL, REFUSED_PASSWORD, REFUSED_KICKED, REFUSED_BANNED = 1, 2, 3, 4, 5
+REFUSED_STALE = 6  # the console's build is not the one --build serves: its manager can update it
 BAN_KINDS = ("key", "mac", "address")
 MONTH_DAYS = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
 TIMEOUT = 5.0
@@ -3266,7 +3268,8 @@ def serve(args):
         now = time.time()
         if kind == HELLO and secure and len(packet) >= T3MP.size + HELLO_BODY.size:
             key, keys = secure
-            mac, build, order, plugins, *offered = HELLO_BODY.unpack_from(packet, T3MP.size)
+            mac, build, order, plugins, *offered, build_id = HELLO_BODY.unpack_from(packet,
+                                                                                  T3MP.size)
             manager = bool(plugins & MANAGER)
             mac, lobby, plugins = mac.hex(":"), bool(plugins & LOBBY), plugins & ~LOBBY & ~MANAGER
             if fingerprint(key) in bans["key"] or mac in bans["mac"]:
@@ -3294,6 +3297,12 @@ def serve(args):
                      tes3x_netbuild.BUILD_BODY.pack(bytes(32), 0, 0, bytes(16)))
                 print(f"{stamp} manager {fingerprint(key)} at {addr[0]} asked for the build"
                       + ("" if build_server else ", which is not served"), flush=True)
+                return
+            served = build_server.build_id() if build_server and any(build_id) else None
+            if served and build_id != served:
+                print(f"{stamp} refused {mac}: build {build_id.hex()[:16]}, the server's is "
+                      f"{served.hex()[:16]}", flush=True)
+                refuse(addr, session, keys, mac, REFUSED_STALE)
                 return
             if pinned is None and not lobby:
                 pinned = (order, plugins)
@@ -3838,7 +3847,8 @@ class FuzzClient:
         self.event_next = 1  # the next event number the server will deliver, from its acks
         self.refused = None  # a REFUSE's body
 
-    def join(self, timeout=2.0, password=b"", lobby=False, manager=False, secret=None):
+    def join(self, timeout=2.0, password=b"", lobby=False, manager=False, secret=None,
+             build_id=bytes(32)):
         """WELCOME's body, or with manager, BUILD's; None if the server sent neither."""
         secret, e = secret or self.rng.randbytes(32), self.rng.randbytes(32)
         noise = Noise(True, secret, e, PROLOGUE)
@@ -3849,7 +3859,7 @@ class FuzzClient:
         noise.read2(reply[OUTER.size:])
         hello = HELLO_BODY.pack(self.rng.randbytes(6), 0, 0x46555A5A,
                                 3 | (LOBBY if lobby else 0) | (MANAGER if manager else 0),
-                                12.0, 16.0, 7.0, 427.0, 1.0, 30.0)
+                                12.0, 16.0, 7.0, 427.0, 1.0, 30.0, build_id)
         self.handshake3 = (OUTER.pack(b"T3MP", T3MP_VERSION, HANDSHAKE3, 0, self.session, 0)
                            + noise.write3(hello + password))
         self.sock.sendto(self.handshake3, self.addr)

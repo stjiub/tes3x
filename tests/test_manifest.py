@@ -36,6 +36,20 @@ class ManifestTests(unittest.TestCase):
             self.assertEqual(manifest.diff(made, build),
                              (["Data Files/mod.esp"], ["Morrowind.ini"], ["extra.txt"]))
 
+    def test_the_build_id_leads_and_follows_only_files_and_load_order(self):
+        files = {"Data Files/mod.esp": {"size": 3, "sha256": "ab", "origin": "build"}}
+        made = manifest.create(None, profile="p", source={}, plugins=["mod.esp"], files=files)
+        self.assertEqual(list(made)[:2], ["format", "build"])
+        again = manifest.create(None, profile="q", source={"kind": "tree"}, plugins=["mod.esp"],
+                                files=files)
+        self.assertEqual(again["build"], made["build"])
+        installed = {"server": "10.0.0.7", "deployed": "2026-10-06", **made}
+        self.assertEqual(manifest.build_id(installed), made["build"])
+        self.assertNotEqual(manifest.create(None, profile="p", source={}, plugins=[],
+                                            files=files)["build"], made["build"])
+        self.assertIn('"build": "' + made["build"],
+                      manifest.write(Path(tempfile.mkdtemp()), made).read_text()[:120])
+
     def test_a_delta_rebuilds_the_output_from_the_reference(self):
         try:
             import zstandard  # noqa: F401

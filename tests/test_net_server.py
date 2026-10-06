@@ -225,6 +225,19 @@ class ServerTests(unittest.TestCase):
                          tes3x_net.REFUSED_PASSWORD)
         self.assertIsNotNone(self.client(2).join(manager=True, password=b'open sesame'))
 
+    def test_a_console_with_another_build_is_refused_as_stale(self):
+        game, _ = self.staged_build()
+        self.start('--build', str(game), '--http-port', '0')
+        import tes3x_manifest
+        build = bytes.fromhex(tes3x_manifest.load(game)['build'])
+        stale = self.client(1)
+        with self.assertRaises(RuntimeError):
+            stale.join(timeout=1.0, lobby=True, build_id=bytes(31) + b'1')
+        self.assertEqual(tes3x_net.REFUSE_BODY.unpack(stale.refused),
+                         (0, 0, tes3x_net.REFUSED_STALE))
+        self.client(2).join(build_id=build)
+        self.client(3).join()  # a console without a manifest is judged by its load order
+
     def test_a_server_without_a_build_says_so(self):
         self.start()
         self.assertEqual(tes3x_netbuild.BUILD_BODY.unpack(self.client(1).join(manager=True))[1], 0)

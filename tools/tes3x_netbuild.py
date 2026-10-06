@@ -41,6 +41,7 @@ class Build:
         manifest = tes3x_manifest.parse(data)
         self.data, self.stamp = data, stamp
         self.sha256 = hashlib.sha256(data).digest()
+        self.build_id = bytes.fromhex(manifest.get("build") or tes3x_manifest.build_id(manifest))
         self.files = {p.lower(): (p, e) for p, e in manifest["files"].items()}
         self.delta_files = {x["delta"]["sha256"]: x["delta"]["size"]
                             for x in manifest.get("xbe", ()) if x.get("delta")}
@@ -88,6 +89,15 @@ class BuildServer:
         self.http.daemon_threads = True
         self.port = self.http.server_address[1]
         threading.Thread(target=self.http.serve_forever, daemon=True).start()
+
+    def build_id(self):
+        """The served build's id, or None while its manifest is unreadable."""
+        try:
+            self.build.load()
+        except (OSError, ValueError) as error:
+            self.log(f"build unreadable: {error}")
+            return None
+        return self.build.build_id
 
     def ticket(self):
         """The BUILD body for a manager that has proved its key."""

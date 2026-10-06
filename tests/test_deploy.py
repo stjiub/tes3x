@@ -205,6 +205,10 @@ class DeployFtpTests(unittest.TestCase):
             made = deployed_manifest(None, {"profile": "hand"}, local, {"Data Files/a.esp": "h"})
             self.assertEqual((made["profile"], made["source"], list(made["files"])),
                              ("hand", {"kind": "tree"}, ["Data Files/a.esp"]))
+            # a server compares the id: the pipeline's stays, a hand-built tree's is its files
+            self.assertEqual(out["build"], built["build"])
+            self.assertEqual(made["build"], tes3x_manifest.build_id(made))
+            self.assertNotEqual(made["build"], tes3x_manifest.build_id({"files": {}}))
 
     def test_pool_plan_tells_our_pool_from_another_title(self):
         pool = {"name": "TR", "id": "5433ABCD"}

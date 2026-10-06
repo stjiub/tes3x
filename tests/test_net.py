@@ -285,7 +285,7 @@ class ClockTests(unittest.TestCase):
     def test_body_is_six_floats(self):
         body = tes3x_net.Clock(9.5, 16, 7, 427, 1, 30.0, now=0.0).body(0.0)
         self.assertEqual(tes3x_net.CLOCK_BODY.unpack(body), (9.5, 16, 7, 427, 1, 30.0))
-        self.assertEqual(tes3x_net.HELLO_BODY.size, 18 + tes3x_net.CLOCK_BODY.size)
+        self.assertEqual(tes3x_net.HELLO_BODY.size, 18 + tes3x_net.CLOCK_BODY.size + 32)
 
 
 class AuthorityTests(unittest.TestCase):

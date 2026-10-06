@@ -27,7 +27,7 @@
 #define INNER 16
 enum { HELLO = 1, REFUSE = 9, BUILD = 12, HANDSHAKE1 = 20, HANDSHAKE2, HANDSHAKE3, SEALED };
 #define HANDSHAKE_PAD 128
-#define HELLO_BYTES 42 /* MAC, build id, load order, plugin count, clock */
+#define HELLO_BYTES 74 /* MAC, XBE build, load order, plugin count, clock, manifest build */
 #define MANAGER_FLAG 0x40000000u
 #define BUILD_BYTES 56
 #define RETRY_MS 500

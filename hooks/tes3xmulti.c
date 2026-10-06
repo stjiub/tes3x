@@ -205,7 +205,10 @@ typedef long(__stdcall *fn_KeQueryBasePriorityThread)(void *);
  * carries the client's own, CLOCK the server's. */
 #define CLOCK_GLOBALS 6u
 #define CLOCK_BYTES (CLOCK_GLOBALS * 4u)
-#define HELLO_BYTES (18u + CLOCK_BYTES)
+#define BUILD_ID 32u /* the manifest's, after the clock: a server serving another refuses it */
+#define HELLO_BYTES (18u + CLOCK_BYTES + BUILD_ID)
+static u8 build_id[BUILD_ID];
+#define REFUSED_STALE 6u /* the build is not the server's: the manager updates it */
 #define PASSWORD_MAX 64u /* NetPassword, after HELLO */
 static char net_password[PASSWORD_MAX + 2]; /* read with the other keys: an ini read costs ms */
 static u32 net_password_n;
@@ -330,6 +333,7 @@ static void handshake_rx(const u8 *p, u32 n);
 static void handshake_reset(void);
 static void entropy_add(void);
 static int hex_read(const char *text, u8 *out, u32 n);
+static void build_id_load(void);
 static void trust_configure(const char *name, u32 n, const u8 *fingerprint);
 static void bulk_tick(void);
 void tes3x_multi_frame(void);
@@ -1611,6 +1615,7 @@ static void autostart(void)
     char line[24 + JOIN_NAME + 2 * 24];
     u32 n, server, i;
 
+    build_id_load();
     net_password_n = ini_text("NetPassword", net_password, sizeof(net_password));
     if (!(n = ini_text("NetAddress", line, 24))) {
         if (!join_server[0])
@@ -8306,6 +8311,40 @@ static void trust_configure(const char *name, u32 n, const u8 *fingerprint)
     trust.name[n] = 0;
 }
 
+/* Game thread, once: "build" from the head of D:\tes3xbuild.json, where the pipeline puts it
+ * first. Zero without a manifest, which a server judges by the load order alone. */
+static void build_id_load(void)
+{
+    static char path[] = "D:\\tes3xbuild.json";
+    static const char key[] = "\"build\": \"";
+    static char head[1024];
+    static u32 loaded;
+    IO_STATUS_BLOCK iosb;
+    u64 offset = 0;
+    u32 i, k, n = 0;
+    void *h;
+
+    if (loaded)
+        return;
+    loaded = 1;
+    if (bulk_open(path, GENERIC_READ, FILE_OPEN, 0, &h))
+        return;
+    if (!NtReadFile(h, 0, 0, 0, &iosb, head, sizeof(head), &offset))
+        n = iosb.Information;
+    NtClose(h);
+    for (i = 0; i + sizeof(key) - 1 + 2 * BUILD_ID <= n; i++) {
+        for (k = 0; key[k] && head[i + k] == key[k]; k++)
+            ;
+        if (key[k])
+            continue;
+        if (!hex_read(head + i + k, build_id, BUILD_ID))
+            for (k = 0; k < BUILD_ID; k++)
+                build_id[k] = 0;
+        break;
+    }
+    tes3x_log_hex3("net.build_id", get32(build_id), get32(build_id + 4), n);
+}
+
 /* Game thread, before the first handshake of each `up`. */
 static void trust_load(void)
 {
@@ -8649,6 +8688,7 @@ static void handshake_finish(void)
     put32le(hello + 10, ses.plugins_hash);
     put32le(hello + 14, ses.plugins | (lobby ? LOBBY_PLUGINS : 0));
     copy(hello + 18, game_clock.local, CLOCK_BYTES);
+    copy(hello + 18 + CLOCK_BYTES, build_id, BUILD_ID);
     unlock(flags);
     if ((password = trust.password_n))
         copy(hello + HELLO_BYTES, (const u8 *)trust.password, password);
@@ -12382,21 +12422,69 @@ static void password_ask(u8 *menu)
     join_failed(menu, "password needed");
 }
 
+/* The manager's launch data when the server refused this build as stale: it opens that server. */
+#define HANDOFF_MAGIC 0x484D3354u /* "T3MH" */
+#define HANDOFF_STALE 1u
+#define HANDOFF_ASKING 1u /* the box offers the manager */
+#define HANDOFF_GOING 2u
+static u32 handoff;
+
+/* The box's answer; then, once servers.ini holds this console's key for the server, which the
+ * manager asks with, the manager. */
+static void handoff_frame(u8 *menu)
+{
+    static u8 data[8 + JOIN_NAME + 1];
+    int button = *(int *)TES3X_NET_BUTTON;
+    u32 i;
+
+    if (handoff == HANDOFF_ASKING && button >= 0) {
+        *(int *)TES3X_NET_BUTTON = -1;
+        handoff = button == 0 ? HANDOFF_GOING : 0;
+        tes3x_log("net.handoff_answer", (u32)button);
+        if (!handoff)
+            row_text(menu, join_row, join_server, " - ", "build out of date");
+        if (!handoff)
+            join_row = 0;
+    }
+    if (handoff != HANDOFF_GOING ||
+        (net.up && ((trust.dirty && trust.has_server) || trust_job.pending)))
+        return;
+    handoff = 0;
+    put32le(data, HANDOFF_MAGIC);
+    put32le(data + 4, HANDOFF_STALE);
+    for (i = 0; join_server[i]; i++)
+        data[8 + i] = (u8)join_server[i];
+    data[8 + i] = 0;
+    log_text("net.handoff", manager_path);
+    multi_closing();
+    tes3x_launch_data(manager_path, data, sizeof(data));
+}
+
 /* Until WELCOME: what stopped the join, on its row. */
 static void join_watch(u8 *menu)
 {
-    static const char *const refused[6] = {"refused", "different mods", "server full",
-                                           "wrong password", "kicked", "banned"};
+    static const char *const refused[7] = {"refused", "different mods", "server full",
+                                           "wrong password", "kicked", "banned",
+                                           "build out of date"};
     u32 state = ses.state, reason = ses.refused_reason;
 
+    handoff_frame(menu);
     if (!lobby || !join_row)
         return;
     if (state == SESSION_JOINED) {
         join_row = 0;
     } else if (state == SESSION_REFUSED && reason == 3) {
         password_ask(menu);
+    } else if (state == SESSION_REFUSED && reason == REFUSED_STALE && manager_path[0]) {
+        lobby = 0;
+        handoff = HANDOFF_ASKING;
+        log_text("net.join_failed", "build out of date");
+        *(int *)TES3X_NET_BUTTON = -1;
+        ((fn_message_menu)TES3X_NET_MESSAGE_MENU)(
+            "Build out of date. Update it in the TES3X Manager?", "Open Manager", "Back",
+            (const char *)0);
     } else if (state == SESSION_REFUSED) {
-        join_failed(menu, refused[reason < 6 ? reason : 0]);
+        join_failed(menu, refused[reason < 7 ? reason : 0]);
     } else if (state == SESSION_UNTRUSTED) {
         join_failed(menu, "server key changed");
     } else if (now_us() - join_started > JOIN_WAIT_US) {

@@ -116,7 +116,10 @@ static unsigned title_id(const char *slot)
 static void launch(const char *slot)
 {
     PLAUNCH_DATA_PAGE page = LaunchDataPage;
+    static BYTE data[sizeof(page->LaunchData)];
     char folder[MAX_PATH];
+    /* what the title that started the manager handed it, such as the game's stale-build note */
+    int pass = page && page->Header.dwLaunchDataType == LDT_TITLE;
     size_t len = XeImageFileName->Length;
     char *slash;
 
@@ -127,11 +130,15 @@ static void launch(const char *slot)
     if (!(slash = strrchr(folder, '\\')))
         return;
     *slash = 0;
+    if (pass)
+        memcpy(data, page->LaunchData, sizeof(data));
     if (!page && !(page = MmAllocateContiguousMemory(LAUNCH_PAGE)))
         return;
     LaunchDataPage = page;
     MmPersistContiguousMemory(page, LAUNCH_PAGE, TRUE);
     memset(page, 0, LAUNCH_PAGE);
+    if (pass)
+        memcpy(page->LaunchData, data, sizeof(data));
     page->Header.dwLaunchDataType = LDT_TITLE;
     page->Header.dwTitleId = title_id(slot);
     snprintf(page->Header.szLaunchPath, sizeof(page->Header.szLaunchPath), "%s\\%s;default.xbe",

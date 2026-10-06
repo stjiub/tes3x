@@ -17,11 +17,17 @@ typedef void(__stdcall *fn_HalReturnToFirmware)(u32 routine);
 #define LAUNCH_PAGE 0x1000
 #define LAUNCH_PATH 8
 #define LAUNCH_PATH_MAX 520
+#define LAUNCH_DATA 0x400 /* the title's own data, after the header */
 #define LDT_TITLE 0
 #define XBE_CERT_PTR 0x00010118
 #define HAL_QUICK_REBOOT_ROUTINE 2
 
 void tes3x_launch(const char *path)
+{
+    tes3x_launch_data(path, 0, 0);
+}
+
+void tes3x_launch_data(const char *path, const void *data, u32 size)
 {
     static const char letters[] = "CEFG", partitions[] = "2167";
     static const char prefix[] = "\\Device\\Harddisk0\\Partition";
@@ -35,6 +41,8 @@ void tes3x_launch(const char *path)
     }
     for (i = 0; i < LAUNCH_PAGE; i++)
         page[i] = 0;
+    for (i = 0; i < size && i < LAUNCH_PAGE - LAUNCH_DATA; i++)
+        page[LAUNCH_DATA + i] = ((const unsigned char *)data)[i];
     /* the running title's ID: the engine accepts only its own, and the manager takes any */
     ((u32 *)page)[0] = LDT_TITLE;
     ((u32 *)page)[1] = *(u32 *)(*(u32 *)XBE_CERT_PTR + 8);

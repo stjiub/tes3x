@@ -114,6 +114,8 @@ def deployed_manifest(built, record, local, hashes, previous=None):
     manifest = {key: value for key, value in built.items() if key != "files"}
     manifest["deployed"] = time.strftime("%Y-%m-%d %H:%M")
     manifest["files"] = dict(sorted(files.items(), key=lambda item: item[0].lower()))
+    if manifest.get("source") == {"kind": "tree"}:  # no pipeline id: the files sent are the build
+        manifest["build"] = tes3x_manifest.build_id(manifest)
     return manifest
 
 

@@ -415,6 +415,40 @@ static struct server *chosen_server(void)
     return v.server_list.count ? &servers[v.server_list.sel] : NULL;
 }
 
+/* The game's launch data when a server refused its build as stale and the player chose the
+ * manager (HANDOFF_MAGIC in tes3xmulti.c): that server's page, where X updates. */
+#define HANDOFF_MAGIC 0x484D3354u
+
+static void handoff(void)
+{
+    PLAUNCH_DATA_PAGE page = LaunchDataPage;
+    unsigned magic, reason;
+    char name[sizeof(servers[0].name)];
+    int i;
+
+    if (!page || page->Header.dwLaunchDataType != LDT_TITLE)
+        return;
+    memcpy(&magic, page->LaunchData, 4);
+    memcpy(&reason, page->LaunchData + 4, 4);
+    if (magic != HANDOFF_MAGIC)
+        return;
+    snprintf(name, sizeof(name), "%.*s", (int)strcspn((char *)page->LaunchData + 8, "#"),
+             (char *)page->LaunchData + 8);
+    memset(page->LaunchData, 0, 8);
+    mgr_log("handoff %u from the game: %s\n", reason, name);
+    for (i = 0; i < v.server_list.count && name_cmp(servers[i].name, name); i++)
+        ;
+    if (i == v.server_list.count) {
+        say("Server not known", name, "The game named a server no servers.ini holds.");
+        return;
+    }
+    v.tab = TAB_SERVERS;
+    v.server_list.sel = i;
+    ui_list_move(&v.server_list, 0);
+    server_details(&servers[i], server_builds[i]);
+    v.page = PAGE_SERVER;
+}
+
 static void install_server(struct server *s, int replace)
 {
     char folder[PATH_MAX_MGR], summary[128];
@@ -801,6 +835,8 @@ int main(void)
     }
     if (news)
         say("Manager", news, NULL);
+    if (v.page != PAGE_BASES)
+        handoff();
     agent_start();
     draw();
     check_update();

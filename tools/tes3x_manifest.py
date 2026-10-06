@@ -102,7 +102,18 @@ def create(root, *, profile, source, plugins=(), ini=(), xbe=(), save_pool=None,
     }
     if folder:
         manifest["folder"] = folder
-    return manifest
+    # first, so the game finds it in the file's head
+    return {"format": FORMAT, "build": build_id(manifest), **manifest}
+
+
+def build_id(manifest):
+    """What a server compares to tell a stale console: the files and the load order, not what a
+    deploy or an install adds."""
+    content = {"files": {path.lower(): entry.get("sha256") or entry.get("sha1")
+                         for path, entry in manifest["files"].items()},
+               "plugins": manifest.get("plugins", [])}
+    return hashlib.sha256(json.dumps(content, sort_keys=True, separators=(",", ":"))
+                          .encode("utf-8")).hexdigest()
 
 
 def write(root, manifest):
