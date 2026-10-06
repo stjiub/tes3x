@@ -115,7 +115,7 @@ SHA-256), its Ed25519 signature `release.json.sig`, `manager.xbe` and `launcher.
 `E:\TES3X\update` and, through the agent, restarts the manager. A release can also be copied there
 by FTP or USB.
 
-The manager fetches releases itself with **START** on its build list. It reads the four files
+The manager fetches releases itself from **Settings > Manager**. It reads the four files
 from the update feed, `https://github.com/stjiub/tes3x/releases/latest/download/`, so every
 GitHub release carries them as assets:
 

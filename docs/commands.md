@@ -15,6 +15,7 @@ what each one is for and where it is explained; `--help` on any command lists it
 | `tes3x_pack.py` | pack a collected tree into archives and stage the game's `Data Files` | [packaging](packaging.md) |
 | `tes3x_payload.py` | compile the patch payload for one retail XBE | [payload](../patches/payload.md) |
 | `tes3x_nxdk.py` | build a standalone nxdk program, such as the console-side manager | [configuration](configuration.md) |
+| `tes3x_font.py` | bake the console manager's fonts into C, from pinned OFL fonts | [deployment](deployment.md#installing-the-console-manager) |
 | `tes3x_patch.py` | apply patches to an XBE directly; `--list` shows them | [patches](patches.md) |
 | `tes3x_deploy.py` | upload a game folder to the Xbox, over FTP or through the console manager | [deployment](deployment.md) |
 | `tes3x_manager.py` | install the console manager on the Xbox, or send it a signed update | [deployment](deployment.md#installing-the-console-manager) |

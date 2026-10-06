@@ -128,6 +128,11 @@ void update_locate(void)
     mgr_log("update: folder %s, slot %s\n", root, slot[0] ? slot : "none");
 }
 
+const char *update_slot(void)
+{
+    return slot;
+}
+
 const char *update_confirm(void)
 {
     static char news[64];

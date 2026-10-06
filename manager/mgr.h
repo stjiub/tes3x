@@ -85,6 +85,8 @@ const char *replace_file(const char *target, const unsigned char *d, size_t n);
  * update_apply installs a signed release from E:\TES3X\update into the other slot and returns
  * NULL when there is none, "" when the launcher it names should start it, or why not. */
 void update_locate(void);
+/* "a" or "b", empty when not running from a slot. */
+const char *update_slot(void);
 const char *update_confirm(void);
 const char *update_apply(char *version, size_t version_n, char *launcher, size_t launcher_n);
 /* Fetches the feed's release into E:\TES3X\update when it is newer (*newer set), else says why
