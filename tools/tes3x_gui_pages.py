@@ -2,19 +2,23 @@
 
 import argparse
 import datetime
+import ftplib
 import io
 import json
 from pathlib import Path, PureWindowsPath
 import queue
+import re
 import socket
 import sys
 import threading
+import tomllib
+import zipfile
 
 import tomlkit
 from PySide6.QtCore import QProcess, QTimer, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QFontDatabase
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout, QHeaderView,
+    QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout, QHeaderView,
     QInputDialog, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea,
     QSpinBox, QSplitter, QTabWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
@@ -23,7 +27,9 @@ import tes3x_deploy
 import tes3x_diag
 import tes3x_ftp
 import tes3x_net
-from tes3x_pipeline import MARKER as PIPELINE_MARKER
+import tes3x_targets
+from tes3x_pipeline import MARKER as PIPELINE_MARKER, PipelineError, validate_local_config
+from tes3x_xemu_setup import download_xemu, find_files as find_xemu_files
 
 ROOT = Path(__file__).resolve().parents[1]
 LOG_SUFFIXES = {".txt", ".log"}
@@ -34,7 +40,10 @@ CAPABILITY_REASONS = {
     "commands": "no game with the in-game agent is connected",
     "agent_fetch": "no game with the in-game agent is connected",
     "installed_builds": "the Xbox's FTP server is not answering",
+    "install_dashboard_agent": "the Xbox's FTP server is not answering",
+    "install_manager": "neither the Xbox's FTP server nor the manager is answering",
 }
+MANAGER_PROFILE = "manager"
 
 
 def heading(text, grow=4):
@@ -108,6 +117,15 @@ def log_catalog(work_dir):
     return entries
 
 
+def manager_version():
+    """The console manager version this PC would install, or None."""
+    try:
+        import tes3x_manager
+        return tes3x_manager.version()
+    except (ImportError, OSError):
+        return None
+
+
 def log_summary(text):
     """tes3x_diag's report of the latest session in a hook log."""
     stream = io.StringIO()
@@ -135,14 +153,19 @@ class TargetsPage(QWidget):
         header.addWidget(self.state, 1)
         layout.addLayout(header)
         self.tabs = QTabWidget()
+        self.setup = TargetSetup(window)
         self.tabs.addTab(self.create_overview(), "Overview")
+        self.tabs.addTab(self.setup, "Setup")
         self.tabs.addTab(self.create_console(), "Console")
-        self.tabs.addTab(self.create_logs(), "Logs")
-        self.tabs.addTab(self.create_builds(), "Builds")
+        self.logs_page = self.create_logs()
+        self.tabs.addTab(self.logs_page, "Logs")
+        self.builds_page = self.create_builds()
+        self.tabs.addTab(self.builds_page, "Builds")
         self.tabs.currentChanged.connect(self.tab_shown)
         layout.addWidget(self.tabs, 1)
         self.builds_listed.connect(self.show_builds)
         self.builds_busy = False
+        self.builds_tried = set()
 
     # Overview
 
@@ -165,20 +188,82 @@ class TargetsPage(QWidget):
                                        self.check_connection)
         self.pull_button = tip_button("Pull logs", "Copy E:\\tes3x* from the console",
                                       self.window.pull_logs)
-        self.restart_button = tip_button("Restart dashboard", "Restart XBMC4Gamers on the Xbox",
-                                         self.restart_dashboard)
         self.quit_button = tip_button("Quit to dashboard",
                                       "Ask the running game to return to the dashboard",
                                       self.quit_game)
         self.fetch_button = tip_button("Fetch file…", "Copy a file from the running game",
                                        self.fetch_file)
-        for button in (self.check_button, self.pull_button, self.restart_button,
-                       self.quit_button, self.fetch_button):
+        for button in (self.check_button, self.pull_button, self.quit_button,
+                       self.fetch_button):
             actions.addWidget(button)
         actions.addStretch()
         layout.addLayout(actions)
+        layout.addWidget(self.create_software())
         layout.addStretch()
         return page
+
+    def create_software(self):
+        """What TES3X has put on the Xbox: the dashboard agent and the console manager."""
+        self.software = QWidget()
+        layout = QVBoxLayout(self.software)
+        layout.setContentsMargins(0, 12, 0, 0)
+        layout.addWidget(heading("Agents", 1))
+        form = QFormLayout()
+        self.dashboard_version = QLabel()
+        self.agent_install = tip_button("Install / update", "Copy the dashboard agent to "
+                                        "XBMC4Gamers over FTP", lambda: self.run_agent("install"))
+        self.restart_button = tip_button("Restart dashboard", "Restart XBMC4Gamers on the Xbox",
+                                         self.restart_dashboard)
+        self.agent_remove = tip_button("Remove", "Remove the dashboard agent from XBMC4Gamers",
+                                       lambda: self.run_agent("uninstall"))
+        form.addRow("Dashboard agent", self.software_row(
+            self.dashboard_version, self.agent_install, self.restart_button, self.agent_remove))
+        self.manager_version = QLabel()
+        self.manager_install = tip_button("Install / update", "Stage the console manager and copy "
+                                          "it to the games folder", self.window.install_manager)
+        form.addRow("Console manager", self.software_row(self.manager_version,
+                                                         self.manager_install))
+        layout.addLayout(form)
+        return self.software
+
+    @staticmethod
+    def software_row(label, *buttons):
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(label)
+        layout.addSpacing(12)
+        for button in buttons:
+            layout.addWidget(button)
+        layout.addStretch()
+        return row
+
+    def run_agent(self, command):
+        name = self.name
+        if command == "uninstall" and QMessageBox.question(
+                self, "TES3X", f"Remove the dashboard agent from {name}?")                 != QMessageBox.StandardButton.Yes:
+            return
+        if self.window.process is not None:
+            self.window.error("A TES3X command is already running")
+            return
+        verb = "Installing the dashboard agent on" if command == "install" else             "Removing the dashboard agent from"
+        self.window.run_steps([(ROOT / "addons" / "console" / "console.py", [
+            command, "--config", str(self.window.local_config_path()), "--target", name],
+            f"{verb} {name}…")], then=lambda: self.window.refresh_dashboard_status(name))
+
+    def manager_text(self):
+        available = manager_version()
+        builds = self.window.target_builds.get(self.name)
+        if builds is None:
+            installed = "not checked yet"
+        else:
+            found = [(folder, record) for folder, record in builds.items()
+                     if record and record.get("profile") == MANAGER_PROFILE]
+            installed = ", ".join(f"{record.get('version') or 'unknown version'} in {folder}"
+                                  for folder, record in found) or "not installed"
+        if self.window.target_runtime.get(self.name, {}).get("game_kind") == "manager" and                 self.window.target_runtime.get(self.name, {}).get("game") == "connected":
+            installed += "; running now"
+        return installed + (f" · this PC has {available}" if available else "")
 
     def check_connection(self):
         self.window.refresh_ftp_status()
@@ -373,6 +458,7 @@ class TargetsPage(QWidget):
         target = self.window.target_settings(self.name)
         if target.get("kind") != "xbox" or self.builds_busy:
             return
+        self.builds_tried.add(self.name)
         games_root = target.get("games_root")
         if not games_root:
             self.builds_note.setText("This target has no games folder configured.")
@@ -407,6 +493,7 @@ class TargetsPage(QWidget):
         self.window.target_builds[name] = builds
         if name == self.name:
             self.populate_builds()
+            self.refresh()
 
     def populate_builds(self):
         self.builds_list.clear()
@@ -426,7 +513,10 @@ class TargetsPage(QWidget):
             if record is None:
                 continue
             tes3x_folders += 1
-            item = QTreeWidgetItem([folder, record.get("profile") or "unknown",
+            profile = record.get("profile") or "unknown"
+            if record.get("version"):
+                profile += " " + record["version"]
+            item = QTreeWidgetItem([folder, profile,
                                     record.get("save_pool") or "", record.get("deployed") or ""])
             if mine and record.get("profile") == mine:
                 font = item.font(0)
@@ -445,6 +535,7 @@ class TargetsPage(QWidget):
     def set_target(self, name):
         changed = name != self.name
         self.name = name
+        self.setup.set_target(name)
         if changed:
             self.console_view.setPlainText("\n".join(self.window.agent_logs.get(name, [])))
             self.console_view.moveCursor(self.console_view.textCursor().MoveOperation.End)
@@ -453,9 +544,9 @@ class TargetsPage(QWidget):
         self.refresh()
 
     def tab_shown(self, index):
-        if self.tabs.widget(index) is self.tabs.widget(2):
+        if self.tabs.widget(index) is self.logs_page:
             self.refresh_logs()
-        elif self.tabs.widget(index) is self.tabs.widget(3) and \
+        elif self.tabs.widget(index) is self.builds_page and \
                 self.window.target_builds.get(self.name) is None and \
                 "installed_builds" in self.window.target_features(self.name):
             self.refresh_builds()
@@ -488,21 +579,550 @@ class TargetsPage(QWidget):
             self.fields["heartbeat"].setText("—")
         self.fields["drives"].setText(self.window.target_drive_tips.get(name, "—"))
         xbox = kind == "xbox"
-        for button in (self.check_button, self.restart_button, self.builds_refresh):
+        for button in (self.check_button, self.builds_refresh):
             button.setVisible(xbox)
+        self.software.setVisible(xbox and bool(name))
+        self.dashboard_version.setText({
+            "current": "Installed and answering", "outdated": "Outdated",
+            "missing": "Not answering", "checking": "Checking…"}.get(
+                runtime.get("dashboard"), "Not checked yet") + (
+            f" · {runtime['dashboard_detail']}" if runtime.get("dashboard_detail") else ""))
+        if name and xbox:
+            self.manager_version.setText(self.manager_text())
+            if self.window.target_builds.get(name) is None and not self.builds_busy and                     name not in self.builds_tried and "installed_builds" in features:
+                self.refresh_builds()
         self.check_button.setEnabled(xbox and self.window.process is None)
         busy = self.window.process is not None
         gate(self.pull_button, features, "pull_logs")
         gate(self.log_pull, features, "pull_logs")
         gate(self.restart_button, features, "dashboard_control")
         gate(self.builds_refresh, features, "installed_builds")
-        for button in (self.pull_button, self.log_pull, self.restart_button):
+        gate(self.agent_install, features, "install_dashboard_agent")
+        gate(self.agent_remove, features, "install_dashboard_agent")
+        gate(self.manager_install, features, "install_manager")
+        for button in (self.pull_button, self.log_pull, self.restart_button, self.agent_install,
+                       self.agent_remove, self.manager_install):
             button.setEnabled(button.isEnabled() and not busy)
         for button in (self.quit_button, self.console_quit, self.send_button):
             gate(button, features, "commands")
         for button in (self.fetch_button, self.console_fetch):
             gate(button, features, "agent_fetch")
         self.console_entry.setEnabled("commands" in features)
+
+
+TARGET_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+XBOX_KEYS = {"kind", "host", "port", "user", "password", "games_root", "retail_root",
+             "dashboard", "ram"}
+
+
+def write_targets(document, values, use_targets, current=None):
+    """Write {name: target} into a tomlkit document of tes3x.local.toml; without `use_targets`
+    the first Xbox and xemu go back to the legacy [deploy] and [xemu] tables."""
+    def update_table(section, entries):
+        table = document.get(section)
+        if table is None:
+            table = tomlkit.table()
+            document[section] = table
+        for key, value in entries.items():
+            if value == "":
+                table.pop(key, None)
+            else:
+                table[key] = value
+
+    if not use_targets:
+        target = next((value for value in values.values() if value.get("kind") == "xbox"), {})
+        legacy_dir = target.get("legacy_install_dir", "")
+        games = target.get("games_root", "").rstrip("/\\")
+        entries = {key: target.get(key, "") for key in
+                   ("host", "port", "user", "password", "retail_root")}
+        entries["remote_root"] = games + "/" + legacy_dir if games and legacy_dir else ""
+        update_table("deploy", entries)
+        xemu = next((value for value in values.values() if value.get("kind") == "xemu"), None)
+        if xemu is not None:
+            update_table("xemu", {key: xemu.get(key, "") for key in tes3x_targets.XEMU_KEYS})
+        return
+
+    document.pop("deploy", None)
+    tables = document.get("targets")
+    if tables is None:
+        tables = tomlkit.table()
+        document["targets"] = tables
+    for name in list(tables):
+        if name not in values:
+            del tables[name]
+    keys = (*sorted(XBOX_KEYS), *sorted(tes3x_targets.XEMU_KEYS))
+    for name, value in values.items():
+        target = tables.get(name)
+        if target is None:
+            target = tomlkit.table()
+            tables[name] = target
+        kind = value.get("kind", "xbox")
+        clean = {key: value.get(key) for key in keys}
+        kind_keys = {"kind", "ram", *tes3x_targets.XEMU_KEYS} if kind == "xemu" else XBOX_KEYS
+        for key in list(target):
+            if key in keys and (key not in kind_keys or clean[key] in ("", None, False)):
+                del target[key]
+        target["kind"] = kind
+        for key, entry in clean.items():
+            if key == "kind" or key not in kind_keys or entry in ("", None, False):
+                continue
+            if kind == "xbox" and key == "ram" and entry == 64:
+                continue
+            target[key] = entry
+    if not tables:
+        del document["targets"]
+        document.pop("default_target", None)
+    elif document.get("default_target") not in values:
+        document["default_target"] = current if current in values else next(iter(values))
+
+
+class TargetSetup(QWidget):
+    """Edit the selected target's entry in tes3x.local.toml, and add or remove targets."""
+
+    probe_done = Signal(bool, str)
+    XEMU_FILES = (("exe", "Executable"), ("bootrom", "MCPX boot ROM"), ("bios", "BIOS"),
+                  ("bios_128mb", "BIOS for 128 MB runs"), ("eeprom", "EEPROM"),
+                  ("hdd", "Clean HDD image"))
+
+    def __init__(self, window):
+        super().__init__()
+        self.window = window
+        self.name = None
+        self.agent_testing = None
+        self.carried = {}
+        self.legacy = False
+        self.loading = False
+        self.dirty = False
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        body = QWidget()
+        layout = QVBoxLayout(body)
+        scroll.setWidget(body)
+        outer.addWidget(scroll, 1)
+
+        self.legacy_notice = QWidget()
+        notice = QHBoxLayout(self.legacy_notice)
+        notice.setContentsMargins(0, 0, 0, 6)
+        note = QLabel("This PC's settings still use [deploy]. Convert it to an Xbox target when "
+                      "you are ready.")
+        note.setWordWrap(True)
+        notice.addWidget(note, 1)
+        notice.addWidget(tip_button("Convert", "Rewrite [deploy] as a named Xbox target",
+                                    self.convert_legacy))
+        layout.addWidget(self.legacy_notice)
+
+        self.empty = QWidget()
+        empty = QHBoxLayout(self.empty)
+        empty.setContentsMargins(0, 0, 0, 0)
+        empty.addWidget(QLabel("No targets yet. Add each Xbox and xemu setup you deploy to."))
+        empty.addWidget(tip_button("Add target…", "Add an Xbox or xemu target", self.add_target))
+        empty.addStretch()
+        layout.addWidget(self.empty)
+
+        self.editor = QWidget()
+        editor = QVBoxLayout(self.editor)
+        editor.setContentsMargins(0, 0, 0, 0)
+        form = QFormLayout()
+        self.name_field = QLineEdit()
+        self.kind = QComboBox()
+        self.kind.addItem("Xbox", "xbox")
+        self.kind.addItem("xemu", "xemu")
+        self.ram = QComboBox()
+        self.ram.addItem("64 MB", 64)
+        self.ram.addItem("128 MB", 128)
+        form.addRow("Name", self.name_field)
+        form.addRow("Kind", self.kind)
+        form.addRow("Memory", self.ram)
+        editor.addLayout(form)
+        self.form = form
+        self.xbox_rows, self.xemu_rows = [], []
+        self.host = QLineEdit()
+        self.port = QSpinBox()
+        self.port.setRange(1, 65535)
+        self.user = QLineEdit()
+        self.password = QLineEdit()
+        self.password.setEchoMode(QLineEdit.EchoMode.Password)
+        self.games_root = QLineEdit()
+        self.games_root.setPlaceholderText("F:/Games")
+        self.retail_root = QLineEdit()
+        self.dashboard = QLineEdit()
+        self.dashboard.setPlaceholderText("Auto-detect")
+        self.games_root.textChanged.connect(self.update_retail_placeholder)
+        for label, field in (("Host", self.host), ("Port", self.port), ("User", self.user),
+                             ("Password", self.password), ("Games root", self.games_root),
+                             ("Shared retail base", self.retail_root),
+                             ("Dashboard root", self.dashboard)):
+            form.addRow(label, field)
+            self.xbox_rows.append(field)
+        probe = QHBoxLayout()
+        self.test_button = tip_button("Test FTP", "Log in to this address over FTP with the "
+                                      "details above", self.test_connection)
+        self.agent_test_button = tip_button("Test agent", "Ask the dashboard agent on the saved "
+                                            "target to answer", self.test_agent)
+        self.test_status = QLabel()
+        probe.addWidget(self.test_button)
+        probe.addWidget(self.agent_test_button)
+        probe.addWidget(self.test_status, 1)
+        form.addRow("", probe)
+        self.xbox_rows.append(probe)
+
+        self.xemu_fields = {}
+        for key, label in (("folder", "xemu folder"), *self.XEMU_FILES,
+                           ("extract_xiso", "extract-xiso"), ("gdb", "GDB"),
+                           ("template", "Config template")):
+            field = QLineEdit()
+            self.xemu_fields[key] = field
+            row = QHBoxLayout()
+            row.addWidget(field, 1)
+            browse = QPushButton("Browse…")
+            browse.clicked.connect(lambda _checked=False, key=key: self.browse_xemu(key))
+            row.addWidget(browse)
+            if key == "folder":
+                row.addWidget(tip_button("Download xemu", "Download the latest xemu release "
+                                         "into this folder", self.download_xemu))
+                field.textChanged.connect(self.show_xemu_files)
+            form.addRow(label, row)
+            self.xemu_rows.append(row)
+        layout.addWidget(self.editor)
+        layout.addStretch()
+
+        actions = QHBoxLayout()
+        actions.setContentsMargins(0, 4, 0, 0)
+        self.save_button = tip_button("Save", "Write this target to this PC's settings",
+                                      self.save)
+        self.revert_button = tip_button("Revert", "Discard unsaved changes", self.revert)
+        self.save_status = QLabel()
+        actions.addWidget(self.save_status, 1)
+        actions.addWidget(self.revert_button)
+        actions.addWidget(self.save_button)
+        outer.addLayout(actions)
+
+        for field in (self.name_field, self.host, self.user, self.password, self.games_root,
+                      self.retail_root, self.dashboard, *self.xemu_fields.values()):
+            field.textChanged.connect(self.changed)
+        self.port.valueChanged.connect(self.changed)
+        self.ram.currentIndexChanged.connect(self.changed)
+        self.kind.currentIndexChanged.connect(self.kind_changed)
+        self.probe_done.connect(self.probe_finished)
+        self.show_target(None)
+
+    # Reading and writing tes3x.local.toml
+
+    def config_path(self):
+        return Path(self.window.local_config_path())
+
+    def read(self):
+        path = self.config_path()
+        text = path.read_text(encoding="utf-8") if path.is_file() else ""
+        document = tomlkit.parse(text)
+        return document, tomllib.loads(tomlkit.dumps(document))
+
+    @staticmethod
+    def all_values(plain):
+        return {name: tes3x_targets.resolve(plain, name) for name in tes3x_targets.targets(plain)}
+
+    def write(self, document, values, use_targets, selected):
+        write_targets(document, values, use_targets, selected)
+        text = tomlkit.dumps(document)
+        validate_local_config(tomllib.loads(text))
+        path = self.config_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8", newline="")
+        self.dirty = False
+        self.name = None
+        self.window.targets_changed(selected)
+
+    def attempt(self, action, *args):
+        try:
+            action(*args)
+            return True
+        except (OSError, PipelineError, tomlkit.exceptions.ParseError,
+                tomllib.TOMLDecodeError) as exc:
+            QMessageBox.critical(self, "TES3X", f"Could not save the targets: {exc}")
+            return False
+
+    # The selected target
+
+    def set_target(self, name):
+        if name == self.name and not self.dirty:
+            return
+        if name != self.name and self.dirty and self.name:
+            answer = QMessageBox.question(
+                self, "TES3X", f"Save the changes to target {self.name}?",
+                QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard)
+            if answer == QMessageBox.StandardButton.Save and not self.save(select=False):
+                return
+        if name != self.name or not self.dirty:
+            self.show_target(name)
+
+    def show_target(self, name):
+        try:
+            _document, plain = self.read()
+        except (OSError, tomlkit.exceptions.ParseError, tomllib.TOMLDecodeError):
+            plain = {}
+        self.legacy = bool(plain.get("deploy")) and not plain.get("targets")
+        self.legacy_notice.setVisible(self.legacy)
+        target = self.all_values(plain).get(name) if name else None
+        self.empty.setVisible(not tes3x_targets.targets(plain))
+        self.editor.setVisible(target is not None)
+        self.save_button.setVisible(target is not None)
+        self.revert_button.setVisible(target is not None)
+        self.name = name if target is not None else None
+        self.dirty = False
+        self.save_status.clear()
+        self.test_status.clear()
+        if target is None:
+            return
+        self.carried = {key: target[key] for key in ("legacy", "legacy_install_dir",
+                                                     "legacy_xemu") if key in target}
+        self.loading = True
+        self.name_field.setText(name)
+        self.kind.setCurrentIndex(max(0, self.kind.findData(target.get("kind", "xbox"))))
+        self.ram.setCurrentIndex(max(0, self.ram.findData(target.get("ram", 64))))
+        self.host.setText(target.get("host", ""))
+        self.port.setValue(target.get("port", 21))
+        self.user.setText(target.get("user", "xbox"))
+        self.password.setText(target.get("password", "xbox"))
+        self.games_root.setText(target.get("games_root", ""))
+        self.retail_root.setText(target.get("retail_root", ""))
+        self.dashboard.setText(target.get("dashboard", ""))
+        for key, field in self.xemu_fields.items():
+            field.setText(str(target.get(key, "")))
+        self.loading = False
+        self.kind_changed()
+        self.dirty = False
+        self.save_status.clear()
+
+    def changed(self, *_args):
+        if not self.loading and self.name:
+            self.dirty = True
+            self.save_status.setText("Unsaved changes")
+
+    def kind_changed(self, *_args):
+        xbox = self.kind.currentData() == "xbox"
+        for row in self.xbox_rows:
+            self.form.setRowVisible(row, xbox)
+        for row in self.xemu_rows:
+            self.form.setRowVisible(row, not xbox)
+        if not xbox:
+            self.show_xemu_files()
+        self.changed()
+
+    def update_retail_placeholder(self, *_args):
+        games = self.games_root.text().strip().rstrip("/\\")
+        suggested = games + "/MorrowindRetail" if games else "F:/Games/MorrowindRetail"
+        self.retail_root.setPlaceholderText(
+            f"{suggested} (recommended for overlay profiles; set explicitly)")
+
+    def target_data(self):
+        return {
+            **self.carried,
+            "kind": self.kind.currentData(),
+            "ram": self.ram.currentData(),
+            "host": self.host.text().strip(),
+            "port": self.port.value(),
+            "user": self.user.text().strip(),
+            "password": self.password.text(),
+            "games_root": self.games_root.text().strip(),
+            "retail_root": self.retail_root.text().strip(),
+            "dashboard": self.dashboard.text().strip(),
+            **{key: field.text().strip() for key, field in self.xemu_fields.items()},
+        }
+
+    def save(self, select=True):
+        if not self.name:
+            return False
+        name = self.name_field.text().strip()
+        try:
+            document, plain = self.read()
+        except (OSError, tomlkit.exceptions.ParseError, tomllib.TOMLDecodeError) as exc:
+            QMessageBox.critical(self, "TES3X", f"Could not read the settings: {exc}")
+            return False
+        values = self.all_values(plain)
+        if not TARGET_NAME.fullmatch(name):
+            QMessageBox.warning(self, "TES3X", "Target names use letters, numbers, dot, "
+                                "underscore and dash.")
+            return False
+        if name != self.name and name in values:
+            QMessageBox.warning(self, "TES3X", f"Target {name} already exists.")
+            return False
+        data = self.target_data()
+        values = {(name if key == self.name else key): (data if key == self.name else value)
+                  for key, value in values.items()}
+        if name != self.name and document.get("default_target") == self.name:
+            document["default_target"] = name
+        selected = name if select else self.window.target_picker.currentData()
+        return self.attempt(self.write, document, values, not self.legacy, selected)
+
+    def revert(self):
+        self.show_target(self.name)
+
+    def edit(self, action):
+        """Apply `action(values)` to every target and save; it returns the target to select."""
+        if self.dirty and QMessageBox.question(
+                self, "TES3X", f"Discard the unsaved changes to {self.name}?") \
+                != QMessageBox.StandardButton.Yes:
+            return False
+        try:
+            document, plain = self.read()
+        except (OSError, tomlkit.exceptions.ParseError, tomllib.TOMLDecodeError) as exc:
+            QMessageBox.critical(self, "TES3X", f"Could not read the settings: {exc}")
+            return False
+        values = self.all_values(plain)
+        selected = action(values)
+        if selected is None:
+            return False
+        self.dirty = False
+        return self.attempt(self.write, document, values, True, selected)
+
+    def ask_name(self, title, suggested, values):
+        name, ok = QInputDialog.getText(self, title, "Target name", text=suggested)
+        name = name.strip()
+        if not ok:
+            return None
+        if not TARGET_NAME.fullmatch(name) or name in values:
+            QMessageBox.warning(self, "TES3X", "Choose a new target name using letters, "
+                                "numbers, dot, underscore or dash.")
+            return None
+        return name
+
+    def add_target(self, name=None):
+        def add(values):
+            chosen = name if isinstance(name, str) else self.ask_name("Add target", "", values)
+            if chosen:
+                values[chosen] = {"kind": "xbox", "ram": 64, "port": 21, "user": "xbox",
+                                  "password": "xbox", "games_root": "F:/Games"}
+            return chosen
+        if not self.edit(add):
+            return False
+        self.window.show_target_setup()
+        return True
+
+    def duplicate_target(self, name=None):
+        source = self.window.target_picker.currentData()
+        if not source:
+            return False
+
+        def duplicate(values):
+            chosen = name if isinstance(name, str) else self.ask_name(
+                "Duplicate target", source + "-copy", values)
+            if chosen and source in values:
+                values[chosen] = {key: value for key, value in values[source].items()
+                                  if not key.startswith("legacy")}
+            return chosen
+        return self.edit(duplicate)
+
+    def remove_target(self):
+        name = self.window.target_picker.currentData()
+        if not name or QMessageBox.question(
+                self, "TES3X", f"Remove target {name} from this PC's settings? Nothing on the "
+                "Xbox or in the xemu folder is deleted.") != QMessageBox.StandardButton.Yes:
+            return False
+
+        def remove(values):
+            values.pop(name, None)
+            return next(iter(values), "")
+        return self.edit(remove)
+
+    def convert_legacy(self):
+        return self.edit(lambda values: self.window.target_picker.currentData() or "")
+
+    # Connection test and xemu files
+
+    def test_connection(self):
+        host = self.host.text().strip()
+        if not host:
+            self.test_status.setText("Set a host first")
+            return
+        port, user, password = self.port.value(), self.user.text().strip(), self.password.text()
+        self.test_button.setEnabled(False)
+        self.test_status.setText("Connecting…")
+
+        def probe():
+            try:
+                ftp = ftplib.FTP(encoding="latin-1")
+                ftp.connect(host, port, timeout=5)
+                ftp.login(user or "xbox", password or "xbox")
+                ftp.quit()
+                self.probe_done.emit(True, f"Connected to {host}")
+            except (OSError, EOFError) + ftplib.all_errors as exc:
+                self.probe_done.emit(False, str(exc))
+
+        threading.Thread(target=probe, daemon=True).start()
+
+    def probe_finished(self, ok, message):
+        self.test_button.setEnabled(True)
+        self.test_status.setText(message if ok else "Could not connect: " + message)
+
+    def test_agent(self):
+        if self.dirty:
+            self.test_status.setText("Save first; the agent test uses the saved target")
+            return
+        if self.window.dashboard_status_command() is None:
+            self.test_status.setText("The dashboard agent add-on is not available")
+            return
+        self.agent_testing = self.name
+        self.agent_test_button.setEnabled(False)
+        self.test_status.setText("Asking the dashboard agent…")
+        self.window.refresh_dashboard_status(self.name)
+
+    def agent_tested(self, name, state, detail):
+        if name != self.agent_testing:
+            return
+        self.agent_testing = None
+        self.agent_test_button.setEnabled(True)
+        if name == self.name:
+            self.test_status.setText({
+                "current": "The dashboard agent answered",
+                "outdated": "The dashboard agent answered but is outdated",
+            }.get(state, "No answer from the dashboard agent") + (f": {detail}" if detail else ""))
+
+    def xemu_folder(self):
+        text = self.xemu_fields["folder"].text().strip()
+        folder = Path(text).expanduser() if text else None
+        return folder if folder is None or folder.is_absolute() else \
+            self.config_path().parent / folder
+
+    def browse_xemu(self, key):
+        field = self.xemu_fields[key]
+        if key == "folder":
+            selected = QFileDialog.getExistingDirectory(self, "Select xemu folder", field.text())
+        else:
+            selected, _ = QFileDialog.getOpenFileName(self, "Select file", field.text())
+        if selected:
+            field.setText(selected)
+
+    def show_xemu_files(self, *_args):
+        folder = self.xemu_folder()
+        found = find_xemu_files(folder) if folder else {}
+        for key, _label in self.XEMU_FILES:
+            self.xemu_fields[key].setPlaceholderText(
+                f"Found: {found[key].name}" if key in found
+                else "Made by xemu" if key == "eeprom" and folder
+                else "Optional" if key == "bios_128mb" else "Not found in the xemu folder"
+                if folder else "")
+
+    def download_xemu(self):
+        folder = self.xemu_folder() or self.config_path().parent / "xemu"
+        if find_xemu_files(folder).get("exe") and QMessageBox.question(
+                self, "TES3X", f"Replace the xemu in {folder} with the latest release?") \
+                != QMessageBox.StandardButton.Yes:
+            return
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            version = download_xemu(folder)
+        except (OSError, ValueError, KeyError, zipfile.BadZipFile) as exc:
+            QApplication.restoreOverrideCursor()
+            QMessageBox.critical(self, "TES3X", f"Could not download xemu: {exc}")
+            return
+        QApplication.restoreOverrideCursor()
+        self.xemu_fields["folder"].setText(folder.as_posix())
+        self.show_xemu_files()
+        QMessageBox.information(self, "TES3X", f"Downloaded xemu {version} to {folder}. Copy your "
+                                "MCPX boot ROM and BIOS there, then save the target.")
 
 
 SERVER_FIELDS = (

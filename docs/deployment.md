@@ -100,7 +100,8 @@ install goes over FTP; once the manager runs, `--agent` updates it through its o
 new version starts the next time it is launched. Installing again puts the manager back in `a\`.
 The XBEs come from `--xbe` and `--launcher`, the copies a portable folder ships, or nxdk builds of
 `manager/` and `manager/launcher/` (`paths.nxdk`). `tes3x_manager.py stage OUT` writes the folder
-without sending it. In the GUI it is **Actions > Install console manager**, which goes through the
+without sending it. In the GUI it is **Actions > Install console manager**, or the console manager's **Install /
+update** under **Targets > Overview**, which also shows the installed version; it goes through the
 manager when it is paired.
 
 ### Signed updates

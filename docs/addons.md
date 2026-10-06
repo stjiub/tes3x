@@ -27,8 +27,8 @@ it. Fetch logs afterwards with **Actions > Pull Xbox logs**.
 
 ### Setup
 
-1. Set the Xbox target's address under **File > Settings > Targets**; FTP must work.
-2. On that target, press **Install / update agent**. This copies the stable launcher and its
+1. Set the Xbox target's address under **Targets > Setup**; FTP must work.
+2. Under **Targets > Overview**, on that target, press the dashboard agent's **Install / update**. This copies the stable launcher and its
    reloadable body into the dashboard, makes an authentication token in the selected Xbox
    target's local configuration, and adds one line to the skin's `Startup.xml`, keeping the
    original under `build/console-backup/`.
@@ -45,7 +45,7 @@ installing again; until then the badge reads **Drives: unknown**.
 
 Later installs replace the body and ask the running launcher to reload it, without restarting the
 dashboard. An XBMC4Gamers update that replaces the skin removes the launch line; install again.
-**Restart Xbox dashboard** performs a dashboard-only restart, and **Remove agent** stops and
+**Restart dashboard** performs a dashboard-only restart, and **Remove** stops and
 removes the launcher, body, token and launch line. The installer detects common dashboard
 layouts. For another layout, set the root on that Xbox target:
 

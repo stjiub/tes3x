@@ -932,31 +932,46 @@ order = 10
         self.assertEqual([(arguments[0], arguments[arguments.index("--target") + 1])
                           for _s, arguments, _m in steps], [("pull", "spare"), ("push", "bench")])
 
-    def test_local_settings_dialog_preserves_xemu_and_writes_public_fields(self):
+    def test_local_settings_dialog_keeps_paths_and_add_ons_only(self):
         config = self.root / "local.toml"
-        config.write_text('# keep this comment\n[xemu]\nexe = "xemu.exe"\ncustom = "keep"\n',
-                          encoding="utf-8")
+        config.write_text('# keep this comment\n[targets.bench]\nkind = "xbox"\n'
+                          'host = "192.0.2.5"\ngames_root = "F:/Games"\n', encoding="utf-8")
         dialog = LocalSettingsDialog(config)
         self.addCleanup(dialog.close)
         self.assertEqual([dialog.categories.item(row).text()
-                          for row in range(dialog.categories.count())],
-                         ["Paths", "Targets", "Add-ons"])
-        self.assertEqual(dialog.target_values["xemu"]["exe"], "xemu.exe")
-        dialog.duplicate_target("xemu-new")
-        dialog.xemu_target_fields["exe"].setText("D:/xemu-new/xemu.exe")
-        dialog.xemu_target_fields["bios"].setText("D:/xemu-new/bios.bin")
+                          for row in range(dialog.categories.count())], ["Paths", "Add-ons"])
         dialog.fields["paths.mod_library"].setText("D:/Mods")
-        dialog.add_target("bench")
-        dialog.target_host.setText("192.0.2.5")
-        dialog.target_games_root.setText("F:/Games")
-        self.assertIn("F:/Games/MorrowindRetail", dialog.target_retail_root.placeholderText())
-        dialog.target_retail_root.setText("F:/Games/MorrowindRetail")
-        dialog.target_dashboard.setText("C:")
-        dialog.target_port.setValue(2121)
         self.assertTrue(dialog.save_settings())
-        with open(config, "rb") as stream:
-            values = tomllib.load(stream)
+        values = self.saved(config)
         self.assertEqual(values["paths"]["mod_library"], "D:/Mods")
+        self.assertEqual(values["targets"]["bench"]["host"], "192.0.2.5")
+        self.assertIn("# keep this comment", config.read_text(encoding="utf-8"))
+
+    def test_target_setup_preserves_xemu_and_writes_public_fields(self):
+        config = self.root / "local.toml"
+        config.write_text('# keep this comment\n[xemu]\nexe = "xemu.exe"\ncustom = "keep"\n',
+                          encoding="utf-8")
+        window = self.window(config=config)
+        self.enterContext(patch.object(window, "refresh_ftp_status"))
+        setup = window.targets_page.setup
+        self.assertEqual(window.target_picker.currentData(), "xemu")
+        self.assertEqual(setup.xemu_fields["exe"].text(), "xemu.exe")
+        self.assertTrue(setup.duplicate_target("xemu-new"))
+        self.assertEqual(window.target_picker.currentData(), "xemu-new")
+        setup.xemu_fields["exe"].setText("D:/xemu-new/xemu.exe")
+        setup.xemu_fields["bios"].setText("D:/xemu-new/bios.bin")
+        self.assertTrue(setup.dirty)
+        self.assertTrue(setup.save())
+        self.assertTrue(setup.add_target("bench"))
+        self.assertEqual(window.target_picker.currentData(), "bench")
+        setup.host.setText("192.0.2.5")
+        setup.games_root.setText("F:/Games")
+        self.assertIn("F:/Games/MorrowindRetail", setup.retail_root.placeholderText())
+        setup.retail_root.setText("F:/Games/MorrowindRetail")
+        setup.dashboard.setText("C:")
+        setup.port.setValue(2121)
+        self.assertTrue(setup.save())
+        values = self.saved(config)
         self.assertEqual(values["default_target"], "bench")
         self.assertEqual(values["targets"]["bench"]["host"], "192.0.2.5")
         self.assertEqual(values["targets"]["bench"]["games_root"], "F:/Games")
@@ -970,54 +985,58 @@ order = 10
         self.assertEqual(values["xemu"]["custom"], "keep")
         self.assertIn("# keep this comment", config.read_text(encoding="utf-8"))
 
-    def test_local_settings_offers_legacy_target_conversion(self):
+        setup.name_field.setText("bench2")
+        self.assertTrue(setup.save())
+        self.assertEqual(window.target_picker.currentData(), "bench2")
+        values = self.saved(config)
+        self.assertEqual(values["default_target"], "bench2")
+        self.assertNotIn("bench", values["targets"])
+        with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
+            self.assertTrue(setup.remove_target())
+        self.assertNotIn("bench2", self.saved(config)["targets"])
+
+    def test_target_setup_offers_legacy_target_conversion(self):
         config = self.root / "local.toml"
         config.write_text('[deploy]\nhost = "192.0.2.5"\n'
                           'remote_root = "F:/Games/MorrowindTest"\n', encoding="utf-8")
-        dialog = LocalSettingsDialog(config)
-        self.addCleanup(dialog.close)
-        self.assertFalse(dialog.use_targets)
-        self.assertFalse(dialog.legacy_notice.isHidden())
-        dialog.convert_legacy()
-        self.assertTrue(dialog.use_targets)
-        self.assertTrue(dialog.save_settings())
+        window = self.window(config=config)
+        self.enterContext(patch.object(window, "refresh_ftp_status"))
+        setup = window.targets_page.setup
+        self.assertTrue(setup.legacy)
+        self.assertFalse(setup.legacy_notice.isHidden())
+        self.assertTrue(setup.convert_legacy())
         values = self.saved(config)
         self.assertNotIn("deploy", values)
         self.assertEqual(values["targets"]["xbox"]["games_root"], "F:/Games")
+        self.assertTrue(setup.legacy_notice.isHidden())
 
     def test_dashboard_agent_action_uses_the_selected_target(self):
         config = self.root / "local.toml"
         config.write_text('default_target = "bench"\n[targets.bench]\nkind = "xbox"\n'
                           'host = "192.0.2.5"\ngames_root = "F:/Games"\n', encoding="utf-8")
-        dialog = LocalSettingsDialog(config)
-        self.addCleanup(dialog.close)
-
-        class Done:
-            returncode = 0
-            stdout = "installed; restart the dashboard once\n"
-            stderr = ""
-
-        with patch("tes3x_gui.subprocess.run", return_value=Done()) as run, \
-                patch.object(QMessageBox, "information"):
-            dialog.run_target_agent("Install / update agent", "install")
-        command = run.call_args.args[0]
-        self.assertEqual(Path(command[1]).name, "console.py")
-        self.assertIn("install", command)
-        self.assertEqual(command[command.index("--target") + 1], "bench")
-        self.assertIn("restart the dashboard", dialog.target_agent_status.text())
+        window = self.window(config=config)
+        self.enterContext(patch.object(window, "refresh_ftp_status"))
+        page = window.targets_page
+        self.assertFalse(page.software.isHidden())
+        with patch.object(window, "run_steps") as run:
+            page.run_agent("install")
+        (script, arguments, _message), = run.call_args.args[0]
+        self.assertEqual(Path(script).name, "console.py")
+        self.assertEqual(arguments[0], "install")
+        self.assertEqual(arguments[arguments.index("--target") + 1], "bench")
 
     def test_legacy_xemu_settings_can_change_without_converting_deploy(self):
         config = self.root / "local.toml"
         config.write_text('[deploy]\nhost = "192.0.2.5"\n'
                           'remote_root = "F:/Games/MorrowindTest"\n'
                           '[xemu]\nexe = "old/xemu.exe"\nbios = "bios.bin"\n', encoding="utf-8")
-        dialog = LocalSettingsDialog(config)
-        self.addCleanup(dialog.close)
-        row = next(index for index in range(dialog.target_list.count())
-                   if dialog.target_list.item(index).data(Qt.ItemDataRole.UserRole) == "xemu")
-        dialog.target_list.setCurrentRow(row)
-        dialog.xemu_target_fields["exe"].setText("new/xemu.exe")
-        self.assertTrue(dialog.save_settings())
+        window = self.window(config=config)
+        self.enterContext(patch.object(window, "refresh_ftp_status"))
+        window.target_picker.setCurrentIndex(window.target_picker.findData("xemu"))
+        window.target_selection_changed()
+        setup = window.targets_page.setup
+        setup.xemu_fields["exe"].setText("new/xemu.exe")
+        self.assertTrue(setup.save())
         values = self.saved(config)
         self.assertIn("deploy", values)
         self.assertNotIn("targets", values)
@@ -1044,14 +1063,28 @@ order = 10
         window.drive_probe_finished(1, None)
         self.assertIn("unknown command: drives", window.target_picker.toolTip())
 
-        window.agent_probe = Reply()
-        window.agent_probe.readAllStandardOutput = lambda: b"ok tes3xagent 5 mem=23"
-        window.agent_probe_target = "bench"
-        window.agent_probe_expected = 6
+        window.agent_probes["bench"] = Reply()
+        window.agent_probes["bench"].readAllStandardOutput = lambda: b"ok tes3xagent 5 mem=23"
         window.set_target_runtime("bench", ftp="connected")
-        window.dashboard_probe_finished(0, None)
+        window.dashboard_probe_finished("bench", 6, 0, None)
         self.assertEqual(window.target_runtime["bench"]["dashboard"], "outdated")
         self.assertIn("Dashboard agent outdated", window.target_picker.toolTip())
+
+    def test_every_xbox_target_is_probed_and_keeps_its_own_dot(self):
+        config = self.root / "local.toml"
+        config.write_text('default_target = "bench"\n[targets.bench]\nkind = "xbox"\n'
+                          'host = "192.0.2.5"\ngames_root = "F:/Games"\n[targets.spare]\n'
+                          'kind = "xbox"\nhost = "192.0.2.6"\ngames_root = "F:/Games"\n'
+                          '[targets.xemu]\nkind = "xemu"\n', encoding="utf-8")
+        window = self.window(config=config)
+        with patch.object(window, "refresh_ftp_status") as probe:
+            window.refresh_all_targets()
+        self.assertEqual([call.args[0] for call in probe.call_args_list], ["bench", "spare"])
+        window.set_target_runtime("spare", ftp="offline")
+        row = window.target_picker.findData("spare")
+        self.assertNotEqual(window.target_picker.currentIndex(), row)
+        self.assertEqual(window.target_picker.itemIcon(row).pixmap(12, 12).toImage().pixelColor(
+            6, 6).name(), "#b3261e")
 
     def test_in_game_events_drive_the_target_state_and_log_buffer(self):
         config = self.root / "local.toml"

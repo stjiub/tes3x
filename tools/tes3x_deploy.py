@@ -120,10 +120,13 @@ def deployed_manifest(built, record, local, hashes, previous=None):
 
 
 def build_summary(manifest):
-    """What a folder list shows about a build: profile, save pool ID, deploy time."""
+    """What a folder list shows about a build: profile, save pool ID, deploy time, and the
+    version of a tool such as the manager."""
     pool = manifest.get("save_pool") or {}
+    source = manifest.get("source") or {}
     return {"profile": manifest.get("profile"), "save_pool": pool.get("id"),
-            "deployed": manifest.get("deployed")}
+            "deployed": manifest.get("deployed"),
+            "version": source.get("version") if isinstance(source, dict) else None}
 
 
 def build_record(tree):

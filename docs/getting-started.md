@@ -38,15 +38,15 @@ You need:
    ```
 
 2. On first start the GUI opens **File > Settings**. Set the clean game root and your mod library,
-   then add an Xbox target with its IP address and games root. Set **LLVM tools** if `clang` is not
-   on `PATH`.
-3. Press **New** beside the profile list and name the build. On the **Build** tab, set its install
+   and **LLVM tools** if `clang` is not on `PATH`. Then add an Xbox target with the cog beside the
+   target list, and give it its IP address and games root under **Targets > Setup**.
+3. Choose **New** from the cog beside the profile list and name the build. On the **Build** tab, set its install
    folder, such as `MorrowindModded`.
 4. Tick mods on **Mods**, and check **Plugins** and **Patches**. **Install mod…** adds an archive to
    the library.
 5. **Actions > Check profile** resolves the profile without building.
 6. **Actions > Build profile** builds it.
-7. Optionally, **Play** runs it in xemu, once xemu is set up in **File > Settings**.
+7. Optionally, **Play** runs it in xemu, once an xemu target is set up under **Targets > Setup**.
 8. **Actions > Deploy to Xbox…** uploads it. It asks before replacing a folder that holds
    something other than this profile.
 

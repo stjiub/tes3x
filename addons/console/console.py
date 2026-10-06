@@ -130,7 +130,7 @@ def put(ftp, path, data):
 
 # While the agent runs, the dashboard holds its file open and the FTP server answers a write or
 # delete of it with 450.
-IN_USE = ("is in use by the old agent. Use Remove agent, restart the dashboard, then install "
+IN_USE = ("is in use by the old agent. Use Remove, restart the dashboard, then install "
           "again.")
 
 

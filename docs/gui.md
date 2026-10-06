@@ -29,7 +29,7 @@ The version is `X.Y.Z` at a `vX.Y.Z` tag, and `X.Y.Z-dev.N+gSHA` for a commit N 
 `.dirty` when the checkout has uncommitted changes. The GUI shows it in its title.
 
 The GUI opens the last profile you used and lists everything in `profiles/` for switching, with
-New, Duplicate, Rename and Delete beside the list. On first start, with no `tes3x.local.toml` yet, it opens the local settings.
+New, Duplicate, Rename and Delete under the cog beside the list. On first start, with no `tes3x.local.toml` yet, it opens the local settings.
 
 Three workspaces sit at the left of the toolbar: **Profile** edits the open profile (the tabs
 below), [**Targets**](#targets) shows what the selected Xbox or xemu target is doing, and
@@ -84,15 +84,8 @@ same in all three.
   file, which the game skips. Its details pane previews the current mod and plugin order, asset
   packaging, archives, engine patches and deployment destination before the profile is built.
 
-Settings left at their defaults stay out of the profile file. **File > Settings** uses categories
-for paths, targets and add-ons. Targets can be added, duplicated or removed. Choosing Xbox or xemu
-changes the editor beside the list: an Xbox target has its own FTP login, games root and optional
-shared retail base. It also owns that console's dashboard root and the controls to install, update,
-restart or remove its dashboard agent. Common XBMC4Gamers layouts are detected when the root is
-blank. An xemu target has its emulator version, firmware, clean disk and memory size. The
-connection button tests an Xbox's FTP login before saving. A legacy `[deploy]` configuration is
-left alone until **Convert** is pressed. Dashboard-agent status and drive-space probing are target
-capabilities and do not depend on enabling the separate Play integration under Add-ons.
+Settings left at their defaults stay out of the profile file. **File > Settings** holds the paths
+shared by every profile and the add-ons; targets are set up in the [Targets](#targets) workspace.
 
 The toolbar target chooses where checks, builds, deploys, saves, logs and Play go. Its dot is grey
 before an Xbox is checked or for xemu, green while an Xbox answers, and red when it is unreachable;
@@ -100,7 +93,8 @@ the tooltip carries its address and reported free space. The joined Check, Build
 use grey, green, amber and red dots for not run, current, stale and failed. Deploy is unavailable
 for xemu targets. An Xbox whose [console manager](deployment.md#through-the-console-manager) is
 paired with this PC shows **Manager**, and Deploy then goes through the manager instead of FTP.
-**Actions > Install console manager** installs or updates it. **Actions** also smoke-tests the current profile. The status bar is reserved for
+The cog beside the target list adds, duplicates or removes a target, or opens its Setup.
+**Actions** also smoke-tests the current profile. The status bar is reserved for
 activity, transient messages and counts. Check and per-target Deploy results are
 remembered in the build output; like the Build state, they notice profile edits but not changes
 inside mod folders.
@@ -110,7 +104,7 @@ shows that path before explicitly installing or synchronizing it, then sends the
 folder.
 
 **Play** runs the profile on the selected target, building it first when necessary. A 128 MB xemu
-target needs a BIOS that uses the extra memory, set in **File > Settings**. Each profile keeps its
+target needs a BIOS that uses the extra memory, set in the target's **Setup**. Each profile keeps its
 own xemu hard disk, so saves carry over between sessions; the Play menu can reset it, enable GDB,
 pull Xbox logs or refresh the selected Xbox connection. With the [console add-on](addons.md)
 switched on, Play on an Xbox target deploys the build and starts the game there. While xemu runs,
@@ -136,8 +130,10 @@ FTP, the dashboard agent, the in-game [agent](../patches/agent.md) or a running 
 unavailable action stays visible and its tooltip says what is missing.
 
 - **Overview** shows the address, state, dashboard agent, the in-game heartbeat (frame time, free
-  memory, dropped log lines) and drive space, with Check connection, Pull logs, Restart dashboard,
-  Quit to dashboard and Fetch file.
+  memory, dropped log lines) and drive space, with Check connection, Pull logs, Quit to dashboard
+  and Fetch file. On an Xbox, **Agents** lists what TES3X put there: the dashboard agent,
+  with Install / update, Restart dashboard and Remove, and the console manager's installed
+  version beside the one this PC would install, with Install / update.
 - **Console** streams the running game's log and runs console lines in it, such as
   `player->getpos x` or `tes3xnet stat`; Up and Down recall earlier lines. It needs a build with
   the `agent` and `console` patches. **Fetch file…** copies a file such as `E:\tes3xprof.bin` from
@@ -149,6 +145,13 @@ unavailable action stays visible and its tooltip says what is missing.
   the in-game agent instead.
 - **Builds** lists the game folders on an Xbox and, for those TES3X deployed, the profile, save
   pool and time of the deploy; the open profile's folder is bold.
+- **Setup** edits the target. An Xbox has its own FTP login, games root, optional shared retail
+  base and dashboard root; common XBMC4Gamers layouts are detected when the root is blank, and
+  **Test FTP** tries the FTP login before saving, and **Test agent** asks the saved target's
+  dashboard agent to answer. An xemu target has its emulator,
+  firmware, clean disk and memory size, and can download xemu. **Save** writes the target to
+  `tes3x.local.toml`, keeping its comments. A legacy `[deploy]` configuration is left alone until
+  **Convert** is pressed.
 
 ## Server
 
