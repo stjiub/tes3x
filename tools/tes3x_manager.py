@@ -123,7 +123,7 @@ def send_update(args):
     """Send a signed release to the console's update folder; through the agent, restart the
     manager so it installs it."""
     try:
-        release = tes3x_release.check_release(args.release)
+        release = tes3x_release.check_release(args.release, args.public)
     except tes3x_release.ReleaseError as exc:
         raise ManagerError(f"{args.release}: {exc}") from exc
     tes3x_ftp.resolve(args)
@@ -179,6 +179,8 @@ def main():
     p.add_argument("release", help="a signed release folder (tes3x_release.py manager)")
     p.add_argument("--agent", action="store_true",
                    help="send through the running manager's agent and restart it, instead of FTP")
+    p.add_argument("--public", default=str(tes3x_release.PUBLIC),
+                   help="the release key the manager embeds, hex or file (default: keys/release.pub)")
     p.add_argument("--agent-key", help="this PC's agent key (default: tes3x.agent.key beside "
                                        "the local config)")
     p.add_argument("--agent-port", type=int, default=tes3x_agent.PORT)
