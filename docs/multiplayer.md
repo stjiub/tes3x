@@ -84,6 +84,7 @@ The first client to join sets the session's load order and its game clock. Usefu
 | `--respawn temple\|shrine\|nearest` | where a player who dies comes back (default `nearest`) |
 | `--respawn-delay SECONDS` | how long a dead player lies before coming back (default 5) |
 | `--death-gold PERCENT` | the share of carried gold a death costs (default 10) |
+| `--build DIR` | hand this build to the console manager (below) |
 
 Stop the server with Ctrl+C, or the admin command `stop`. Before it exits it asks every
 joined console to save its character and waits, up to `--stop-wait`, for each save to arrive;
@@ -175,6 +176,33 @@ listener on the network can neither read nor replay them, nor send commands of i
 password is stretched with scrypt. Like a console's password, five wrong tries from one address
 allow one more a minute, and while that holds even the right password is refused. Keep the
 admin password apart from the console password: anyone with it can kick, ban and stop.
+
+### Handing out the build
+
+Players need the server's build: the same plugins in the same order and a matching XBE. With
+`--build DIR`, naming the pipeline's staged game folder (`deploy`, holding `tes3xbuild.json`), the
+server hands it to the [console manager](deployment.md#from-a-server), which installs it and
+joins:
+
+```
+python tools/tes3x_net.py serve --world world --build build/pipeline/net/deploy
+```
+
+The manager asks through the same encrypted session a console joins by, with the console's key
+for this server and the password if there is one, so a console the server would refuse gets no
+build. The server answers with its manifest's SHA-256 and a ticket, and serves the manifest and
+files over plain HTTP on TCP port 26500 (`--http-port` for another; allow it through the
+firewall too). The manager checks every file against the manifest and the manifest against the
+hash the session gave, so the HTTP side needs no encryption.
+
+What it serves is the admin's choice, by each file's origin in the manifest. By default only
+`build` files (plugins, archives, textures, `Morrowind.ini`) and the XBE deltas: the manager
+rebuilds the XBEs from the player's own retail copy and takes unchanged retail files from it.
+`--serve-origin retail` and `--serve-origin xbe` add retail files and whole XBEs, for players
+without a clean retail copy; only do so where you may hand them out. The deltas are read from
+`deltas` beside `DIR` (`--deltas` for another folder). The server rereads the manifest when it
+changes, so a new build can be staged while it runs; a manager that is mid-update when it changes
+stops without touching the installed build, and its next update gets the new one.
 
 ## Run the server in Docker
 

@@ -13,6 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 import tes3x_net
+import tes3x_netbuild
 
 NET = Path(__file__).resolve().parents[1] / 'tools' / 'tes3x_net.py'
 
@@ -172,6 +173,61 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(len((world / 'admitted.txt').read_text().splitlines()), 1)
         with self.assertRaises(RuntimeError):
             self.client(3).join(timeout=1.0)
+
+    def staged_build(self):
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root)
+        game = root / 'deploy'
+        (game / 'Data Files').mkdir(parents=True)
+        (game / 'Data Files' / 'Mod.esp').write_bytes(b'TES3 plugin')
+        (game / 'Data Files' / 'Morrowind.esm').write_bytes(b'retail master')
+        (root / 'deltas').mkdir()
+        delta = b'zstd frame'
+        digest = hashlib.sha256(delta).hexdigest()
+        (root / 'deltas' / f'{digest}.zst').write_bytes(delta)
+        sys.path.insert(0, str(NET.parent))
+        import tes3x_manifest
+        files = tes3x_manifest.file_entries(game)
+        files['Data Files/Morrowind.esm']['origin'] = 'retail'
+        tes3x_manifest.write(game, tes3x_manifest.create(
+            game, profile='net', source={}, files=files,
+            xbe=[{'path': 'morrowind.xbe', 'delta': {'sha256': digest, 'size': len(delta)}}]))
+        return game, digest
+
+    def test_a_manager_is_handed_the_build_and_not_joined(self):
+        game, digest = self.staged_build()
+        self.start('--build', str(game), '--http-port', '0', '--max-players', '1')
+        body = self.client(1).join(manager=True)
+        sha, size, port, ticket = tes3x_netbuild.BUILD_BODY.unpack(body)
+        manifest = tes3x_netbuild.fetch('127.0.0.1', port, ticket, 'manifest')
+        self.assertEqual(hashlib.sha256(manifest).digest(), sha)
+        self.assertEqual(len(manifest), size)
+        self.assertEqual(tes3x_netbuild.fetch('127.0.0.1', port, ticket, 'file/Data Files/mod.esp'),
+                         b'TES3 plugin')
+        self.assertEqual(tes3x_netbuild.fetch('127.0.0.1', port, ticket, f'delta/{digest}'),
+                         b'zstd frame')
+        # retail files are the admin's choice, and a ticket is needed at all
+        self.assertIsNone(tes3x_netbuild.fetch('127.0.0.1', port, ticket,
+                                               'file/Data Files/Morrowind.esm'))
+        self.assertIsNone(tes3x_netbuild.fetch('127.0.0.1', port, bytes(16), 'manifest'))
+        self.client(2).join()  # the manager took no player's place
+
+    def test_a_manager_without_the_password_gets_no_build(self):
+        game, _ = self.staged_build()
+        world = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, world)
+        (world / 'password.txt').write_text('open sesame')
+        self.start('--build', str(game), '--http-port', '0', '--world', str(world),
+                   '--password-file', str(world / 'password.txt'))
+        refused = self.client(1)
+        self.assertIsNone(refused.join(timeout=1.0, manager=True))
+        self.assertEqual(tes3x_net.REFUSE_BODY.unpack(refused.refused)[2],
+                         tes3x_net.REFUSED_PASSWORD)
+        self.assertIsNotNone(self.client(2).join(manager=True, password=b'open sesame'))
+
+    def test_a_server_without_a_build_says_so(self):
+        self.start()
+        self.assertEqual(tes3x_netbuild.BUILD_BODY.unpack(self.client(1).join(manager=True))[1], 0)
 
     def test_console_sends_a_file_through_loss(self):
         world = Path(tempfile.mkdtemp())

@@ -1216,7 +1216,8 @@ def main(argv=None):
                     "profile_sha256": record["profile_sha256"]},
             plugins=[plugin["name"] for plugin in plugins], ini=ini_items,
             xbe=recipes,
-            save_pool=record.get("save_pool"), retail=vanilla))
+            save_pool=record.get("save_pool"), retail=vanilla,
+            folder=tes3x_targets.install_dir(profile)))
         if console_items:
             (work / CONSOLE_INI).write_bytes(console_ini_text(console_items).encode("latin-1"))
             print(f"  {CONSOLE_INI}: " + ", ".join(item.partition(":")[2].partition("=")[0]

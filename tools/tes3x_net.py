@@ -35,6 +35,8 @@ import threading
 import time
 import traceback
 
+import tes3x_netbuild
+
 PORT = 26500
 AGENT_PORT = 26501
 ADMIN_PORT = 26502
@@ -341,6 +343,7 @@ def ping(args):
 T3MP = struct.Struct("<4sBBHIIIII")  # magic, version, type, 0, session, seq, ack, time, echo
 T3MP_VERSION = 18
 HELLO, WELCOME, HEARTBEAT, BYE, STATE, PEER, GONE, EVENTS, REFUSE, CLOCK, ACTORS = range(1, 12)
+BUILD = 12  # to a manager's HELLO: tes3x_netbuild.BUILD_BODY, then the server forgets it
 # On the wire every packet but the handshake is SEALED: OUTER in the clear (the AEAD's associated
 # data), then INNER and the body sealed under the session key with seq as the nonce.
 HANDSHAKE1, HANDSHAKE2, HANDSHAKE3, SEALED = range(20, 24)
@@ -362,6 +365,8 @@ CLOCK_BODY = struct.Struct("<6f")
 # world, only what picks a character (GAME, CHARS or NEWCHAR, PICK, the checkpoint and LOAD).
 HELLO_BODY = struct.Struct("<6sIII" + CLOCK_BODY.format[1:])
 LOBBY = 0x80000000
+# MANAGER in the plugin count: the console manager, asking for this server's build, not joining
+MANAGER = 0x40000000
 PASSWORD_MAX = 64
 PASSWORD_RATE = (5, 1 / 60)  # password tries from one address, (burst, per second)
 # REFUSE: the session's load order hash, its plugin count, and why
@@ -2208,6 +2213,13 @@ def serve(args):
     pending = {}  # session -> a handshake in progress or just done: {"noise", "e", "reply", ...}
     bursts = [(float(at), int(count)) for count, _, at in
               (spec.partition("@") for spec in args.burst)]
+    build_server = None
+    if args.build:
+        build = tes3x_netbuild.Build(args.build, args.deltas,
+                                     args.serve_origin or tes3x_netbuild.SERVED_BY_DEFAULT)
+        build_server = tes3x_netbuild.BuildServer(
+            build, args.bind, args.port if args.http_port is None else args.http_port)
+        print(f"{build.describe()}; HTTP on {args.bind}:{build_server.port}", flush=True)
     sending = None
     if args.send:
         name = os.path.basename(args.send)
@@ -3255,7 +3267,8 @@ def serve(args):
         if kind == HELLO and secure and len(packet) >= T3MP.size + HELLO_BODY.size:
             key, keys = secure
             mac, build, order, plugins, *offered = HELLO_BODY.unpack_from(packet, T3MP.size)
-            mac, lobby, plugins = mac.hex(":"), bool(plugins & LOBBY), plugins & ~LOBBY
+            manager = bool(plugins & MANAGER)
+            mac, lobby, plugins = mac.hex(":"), bool(plugins & LOBBY), plugins & ~LOBBY & ~MANAGER
             if fingerprint(key) in bans["key"] or mac in bans["mac"]:
                 print(f"{stamp} refused {mac} at {addr[0]}: banned", flush=True)
                 refuse(addr, session, keys, mac, REFUSED_BANNED)
@@ -3274,6 +3287,14 @@ def serve(args):
                     with open(admitted_path, "a", encoding="utf-8") as stream:
                         stream.write(f"{key.hex()} {mac} {time.strftime('%Y-%m-%d')}\n")
                 print(f"{stamp} admitted key {fingerprint(key)} ({mac})", flush=True)
+            if manager:
+                stranger = Client(0, mac)
+                stranger.addr, stranger.session, stranger.keys = addr, session, keys
+                send(stranger, BUILD, build_server.ticket() if build_server else
+                     tes3x_netbuild.BUILD_BODY.pack(bytes(32), 0, 0, bytes(16)))
+                print(f"{stamp} manager {fingerprint(key)} at {addr[0]} asked for the build"
+                      + ("" if build_server else ", which is not served"), flush=True)
+                return
             if pinned is None and not lobby:
                 pinned = (order, plugins)
                 print(f"{stamp} load order {order:#010x} ({plugins} plugins) set by {mac}",
@@ -3817,22 +3838,28 @@ class FuzzClient:
         self.event_next = 1  # the next event number the server will deliver, from its acks
         self.refused = None  # a REFUSE's body
 
-    def join(self, timeout=2.0, password=b"", lobby=False):
-        secret, e = self.rng.randbytes(32), self.rng.randbytes(32)
+    def join(self, timeout=2.0, password=b"", lobby=False, manager=False, secret=None):
+        """WELCOME's body, or with manager, BUILD's; None if the server sent neither."""
+        secret, e = secret or self.rng.randbytes(32), self.rng.randbytes(32)
         noise = Noise(True, secret, e, PROLOGUE)
         message1 = (OUTER.pack(b"T3MP", T3MP_VERSION, HANDSHAKE1, 0, self.session, 0)
                     + noise.write1()).ljust(HANDSHAKE_PAD, b"\0")
         self.sock.sendto(message1, self.addr)
         reply = self.receive_raw(timeout, HANDSHAKE2)
         noise.read2(reply[OUTER.size:])
-        hello = HELLO_BODY.pack(self.rng.randbytes(6), 0, 0x46555A5A, 3 | (LOBBY if lobby else 0),
+        hello = HELLO_BODY.pack(self.rng.randbytes(6), 0, 0x46555A5A,
+                                3 | (LOBBY if lobby else 0) | (MANAGER if manager else 0),
                                 12.0, 16.0, 7.0, 427.0, 1.0, 30.0)
         self.handshake3 = (OUTER.pack(b"T3MP", T3MP_VERSION, HANDSHAKE3, 0, self.session, 0)
                            + noise.write3(hello + password))
         self.sock.sendto(self.handshake3, self.addr)
         self.keys = noise.split()
-        if self.receive(timeout, WELCOME) is None:
+        if manager:
+            return self.receive(timeout, BUILD)
+        welcome = self.receive(timeout, WELCOME)
+        if welcome is None:
             raise RuntimeError("no WELCOME")
+        return welcome
 
     def receive_raw(self, timeout, kind):
         end = time.time() + timeout
@@ -4277,6 +4304,17 @@ def main(argv=None):
                    help="the remote admin password on this file's first line, at least "
                         f"{ADMIN_PASSWORD_MIN} characters (default: admin-password.txt in "
                         "--world)")
+    p.add_argument("--build", metavar="DIR",
+                   help="hand the console manager this staged game folder (the pipeline's "
+                        "deploy/, with tes3xbuild.json), over HTTP")
+    p.add_argument("--deltas", metavar="DIR",
+                   help="the XBE deltas for --build (default: deltas/ beside it)")
+    p.add_argument("--serve-origin", action="append", choices=tes3x_netbuild.ORIGINS,
+                   default=None, metavar="ORIGIN",
+                   help="files of this manifest origin are served (repeatable; default: build "
+                        "only; retail and xbe are the admin's choice)")
+    p.add_argument("--http-port", type=int, metavar="PORT",
+                   help="the TCP port --build is served on (default: --port; 0 for any)")
     p.add_argument("--send", metavar="FILE",
                    help="send FILE to each client that joins, into U:\\TES3X\\ under its name")
     p.add_argument("--burst", action="append", default=[], metavar="COUNT@SECONDS",

@@ -85,9 +85,10 @@ def file_entries(root, retail=None):
 
 
 def create(root, *, profile, source, plugins=(), ini=(), xbe=(), save_pool=None,
-           install_layout="full", retail=None, files=None):
-    """The manifest for a staged tree, or with `files` given, for those entries."""
-    return {
+           install_layout="full", retail=None, files=None, folder=None):
+    """The manifest for a staged tree, or with `files` given, for those entries. `folder` is the
+    install folder's name, where the console manager puts the build."""
+    manifest = {
         "format": FORMAT,
         "manager": MANAGER,
         "profile": profile,
@@ -99,6 +100,9 @@ def create(root, *, profile, source, plugins=(), ini=(), xbe=(), save_pool=None,
         "xbe": list(xbe),
         "files": file_entries(root, retail) if files is None else files,
     }
+    if folder:
+        manifest["folder"] = folder
+    return manifest
 
 
 def write(root, manifest):
