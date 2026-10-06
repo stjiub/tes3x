@@ -9,6 +9,7 @@
 #include "sha256.h"
 #include "monocypher-ed25519.h"
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -88,18 +89,24 @@ static int slots_write(const struct slots *s)
     return flush_path(path);
 }
 
+/* Dotted numbers compared field by field, a missing field as 0. A suffix after them marks a
+ * prerelease: 0.3.0-dev.5 comes before 0.3.0, and two prereleases of one version are equal. */
 static int version_cmp(const char *a, const char *b)
 {
     long x, y;
     char *end;
 
-    while (*a || *b) {
-        x = strtol(a, &end, 10), a = *end == '.' ? end + 1 : end;
-        y = strtol(b, &end, 10), b = *end == '.' ? end + 1 : end;
+    while (isdigit((unsigned char)*a) || isdigit((unsigned char)*b)) {
+        x = isdigit((unsigned char)*a) ? strtol(a, &end, 10) : 0;
+        a = isdigit((unsigned char)*a) ? end : a;
+        y = isdigit((unsigned char)*b) ? strtol(b, &end, 10) : 0;
+        b = isdigit((unsigned char)*b) ? end : b;
         if (x != y)
             return x < y ? -1 : 1;
+        a += *a == '.';
+        b += *b == '.';
     }
-    return 0;
+    return !*a == !*b ? 0 : *a ? -1 : 1;
 }
 
 void update_locate(void)
