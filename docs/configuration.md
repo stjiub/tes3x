@@ -92,6 +92,7 @@ use of the server does not read this table.
 | `hour` | number | server default | `--hour`; a negative value keeps the default. |
 | `timescale` | number | server default | `--timescale`; `0` keeps the default. |
 | `save_every` | integer | server default | `--save-every` in seconds; `0` keeps the default. |
+| `load_state` | boolean | `true` | `--load-state`: a character loads as a New Game built from the server's kept state, so the player spawns once; topics, factions and active effects start fresh. |
 | `hosts` | array of strings | `[]` | `--host NAME=ADDRESS` for each entry. |
 | `tunnels` | array of integers | `[]` | `--tunnel PORT` for each xemu guest. |
 | `remote_admin` | integer | `0` | `--remote-admin PORT`; `0` keeps admin to this PC. |

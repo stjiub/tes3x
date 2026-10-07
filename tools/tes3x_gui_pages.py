@@ -1235,6 +1235,13 @@ SERVER_FIELDS = (
     ("timescale", "Timescale", "float", 0.0, "0 keeps the server's default"),
     ("save_every", "Save every (s)", "int", 0, "Ask joined consoles to save this often; 0 for "
      "the server's default"),
+    ("welcome", "Welcome message", "string", "", "Shown to a player entering the world (80 "
+     "characters)"),
+    ("load_state", "Load from server state", "bool", True, "A character loads as a New Game "
+     "built from the server's kept state, so the player spawns once; topics and factions "
+     "start fresh"),
+    ("serve_retail", "Send retail files", "bool", False, "For testing: also serve the retail files "
+     "and the XBEs themselves, so a console without a retail base can install"),
     ("hosts", "DNS names", "lines", [], "NAME=ADDRESS, one per line, answered to consoles"),
     ("tunnels", "xemu tunnels", "text", "", "Tunnel ports for xemu guests, comma separated"),
     ("remote_admin", "Remote admin port", "int", 0, "Also take admin commands from other "
@@ -1283,6 +1290,12 @@ def server_arguments(values):
         args += ["--admin-password-file", str(values["admin_password_file"])]
     if values.get("build"):
         args += ["--build", str(values["build"])]
+    if values.get("welcome"):
+        args += ["--welcome", str(values["welcome"])]
+    if values.get("load_state", True):
+        args.append("--load-state")
+    if values.get("serve_retail"):
+        args += ["--serve-origin", "build", "--serve-origin", "retail", "--serve-origin", "xbe"]
     return args
 
 
@@ -1422,7 +1435,14 @@ class ServerPage(QWidget):
         self.save_button.clicked.connect(lambda: self.send_admin("save"))
         self.bans_button = QPushButton("Bans")
         self.bans_button.clicked.connect(lambda: self.send_admin("bans"))
-        for button in (self.kick_button, self.ban_button, self.save_button, self.bans_button):
+        self.say_button = QPushButton("Message all")
+        self.say_button.setToolTip("Show a message on every console")
+        self.say_button.clicked.connect(lambda: self.message_players(False))
+        self.tell_button = QPushButton("Message player")
+        self.tell_button.setToolTip("Show a message on the selected player's console")
+        self.tell_button.clicked.connect(lambda: self.message_players(True))
+        for button in (self.kick_button, self.ban_button, self.save_button, self.bans_button,
+                       self.say_button, self.tell_button):
             player_buttons.addWidget(button)
         player_buttons.addStretch()
         players_layout.addLayout(player_buttons)
@@ -1431,11 +1451,23 @@ class ServerPage(QWidget):
         self.log.setReadOnly(True)
         self.log.setMaximumBlockCount(5000)
         right.addWidget(self.log)
+        command_row = QWidget()
+        command_layout = QHBoxLayout(command_row)
+        command_layout.setContentsMargins(0, 0, 0, 0)
         self.command_entry = monospace(QLineEdit())
-        self.command_entry.setPlaceholderText("Admin command; help lists them")
+        self.command_entry.setPlaceholderText("Admin command (say TEXT, tell N TEXT, kick N, "
+                                              "...); help lists them")
         self.command_entry.returnPressed.connect(self.send_typed)
-        right.addWidget(self.command_entry)
-        right.setSizes([260, 400])
+        self.command_send = QPushButton("Send")
+        self.command_send.clicked.connect(self.send_typed)
+        command_layout.addWidget(self.command_entry, 1)
+        command_layout.addWidget(self.command_send)
+        right.addWidget(command_row)
+        right.setStretchFactor(0, 0)
+        right.setStretchFactor(1, 1)
+        right.setStretchFactor(2, 0)
+        right.setCollapsible(2, False)
+        right.setSizes([260, 360, 34])
         split.addWidget(right)
         split.setSizes([420, 700])
 
@@ -1459,6 +1491,9 @@ class ServerPage(QWidget):
         elif kind == "choice":
             widget = QComboBox()
             widget.addItems(["nearest", "shrine", "temple"])
+        elif kind == "bool":
+            widget = QCheckBox()
+            widget.setChecked(bool(default))
         elif kind == "lines":
             widget = QPlainTextEdit()
             widget.setFixedHeight(64)
@@ -1509,6 +1544,11 @@ class ServerPage(QWidget):
                     out[key] = text
             elif kind in ("int", "float"):
                 out[key] = widget.value()
+            elif kind == "bool":
+                out[key] = widget.isChecked()
+            elif kind == "string":
+                if widget.text().strip():
+                    out[key] = widget.text().strip()
             elif kind == "choice":
                 out[key] = widget.currentText()
             elif kind == "profile":
@@ -1544,6 +1584,10 @@ class ServerPage(QWidget):
                 widget.line.setText(str(value))
             elif kind in ("int", "float"):
                 widget.setValue(value)
+            elif kind == "bool":
+                widget.setChecked(bool(value))
+            elif kind == "string":
+                widget.setText(str(value))
             elif kind == "choice":
                 widget.setCurrentText(str(value))
             elif kind == "profile":
@@ -1827,6 +1871,15 @@ class ServerPage(QWidget):
         if QMessageBox.question(self, "TES3X", question) == QMessageBox.StandardButton.Yes:
             self.send_admin(f"{verb} {client}")
 
+    def message_players(self, one):
+        client = self.selected_client() if one else None
+        if one and client is None:
+            return
+        text, ok = QInputDialog.getText(
+            self, "TES3X", f"Message for client {client}:" if one else "Message for everyone:")
+        if ok and text.strip():
+            self.send_admin(f"tell {client} {text.strip()}" if one else f"say {text.strip()}")
+
     def update_buttons(self):
         running = self.process is not None
         remote = self.mode.currentData() == "remote"
@@ -1843,8 +1896,10 @@ class ServerPage(QWidget):
         for widget in (self.remote_address, self.remote_password, self.remember_password):
             widget.setEnabled(not connected)
         live = connected if remote else running and not self.stopping
-        for button in (self.kick_button, self.ban_button, self.save_button, self.bans_button):
+        for button in (self.kick_button, self.ban_button, self.save_button, self.bans_button,
+                       self.say_button, self.tell_button, self.command_send):
             button.setEnabled(live)
+        self.command_entry.setEnabled(live)
 
     def shutdown(self):
         """On closing the GUI: stop the server rather than orphan it."""

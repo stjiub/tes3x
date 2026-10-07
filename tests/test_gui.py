@@ -1287,7 +1287,8 @@ order = 10
         (script, arguments, _message), = run.call_args.args[0]
         self.assertEqual(Path(script).name, "tes3x_pipeline.py")
         self.assertEqual(arguments[0], str(self.profile.resolve()))
-        self.assertEqual(server_arguments({"build": build})[-2:], ["--build", str(build)])
+        self.assertEqual(server_arguments({"build": build, "load_state": False})[-2:],
+                         ["--build", str(build)])
 
 
     def test_server_page_manages_a_remote_server(self):
