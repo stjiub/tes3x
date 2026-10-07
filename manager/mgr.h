@@ -117,6 +117,8 @@ const char *update_fetch(const char *feed, progress_fn progress, char *version, 
 
 /* agent.c: starts the network once, from console.ini's network keys; 0 when it is up. */
 int net_up(void);
+/* Stops the NIC before another title starts; net_up fails after it. */
+void net_down(void);
 /* http.c: GET url (http or https, redirects followed) into a malloc'd *body of at most max
  * bytes, NUL-terminated; NULL, or why it failed. */
 const char *http_get(const char *url, unsigned char **body, size_t *n, size_t max,

@@ -29,6 +29,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <usbh_lib.h>
 #include <windows.h>
 #include <xboxkrnl/xboxkrnl.h>
 
@@ -357,6 +358,9 @@ static void verify(const struct build *b)
 static void leaving(void)
 {
     agent_goodbye();
+    net_down();
+    /* SDL leaves the USB host running, and it would keep writing into the next title */
+    usbh_core_deinit();
     if (video_up)
         pb_kill();
     video_up = 0;

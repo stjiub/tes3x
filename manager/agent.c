@@ -8,6 +8,7 @@
 #include <lwip/dhcp.h>
 #include <lwip/sockets.h>
 #include <nxdk/net.h>
+#include <nvnetdrv.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -301,7 +302,7 @@ static int parse_network(const char *text)
     return 1;
 }
 
-static volatile LONG net_state; /* 0 down, 1 starting, 2 started */
+static volatile LONG net_state; /* 0 down, 1 starting, 2 started, 3 stopped */
 static int net_result, net_parsed;
 
 int net_up(void)
@@ -320,10 +321,22 @@ int net_up(void)
         mgr_log("network: init %d\n", net_result);
         net_state = 2;
     }
-    while (net_state != 2)
+    while (net_state == 1)
         Sleep(10);
+    if (net_state == 3)
+        return -1;
     /* -2 is DHCP still waiting; its lease may come later */
     return net_result == 0 || net_result == -2 ? 0 : -1;
+}
+
+void net_down(void)
+{
+    /* nxNetShutdown is a stub; the NIC would keep writing its rings into the next title */
+    while (net_state == 1)
+        Sleep(10);
+    if (net_state == 2 && (net_result == 0 || net_result == -2))
+        nvnetdrv_stop();
+    net_state = 3;
 }
 
 static DWORD WINAPI agent_thread(LPVOID unused);
