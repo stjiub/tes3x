@@ -1067,6 +1067,13 @@
       "kind": "function"
     },
     {
+      "va": "0x000D4A50",
+      "name": "Archive::NormalizePath",
+      "confidence": "guess",
+      "provenance": "traced: ArchiveManager::Load's first call; copies the path into a 260-byte buffer, stripping leading backslashes unless it has a drive letter",
+      "note": "A path without a drive letter loses its leading backslashes, so \\Device\\... paths become relative and fail; use a drive letter."
+    },
+    {
       "va": "0x000D4D70",
       "name": "Archive::Init",
       "confidence": "verified",

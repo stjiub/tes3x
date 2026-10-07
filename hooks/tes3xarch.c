@@ -18,6 +18,9 @@
 #define NtClose KFN(THUNK_NtClose, fn_NtClose)
 #define MmAllocateSystemMemory KFN(THUNK_MmAllocateSystemMemory, fn_MmAllocateSystemMemory)
 #define MmFreeSystemMemory KFN(THUNK_MmFreeSystemMemory, fn_MmFreeSystemMemory)
+#define IoCreateSymbolicLink KFN(THUNK_IoCreateSymbolicLink, fn_IoCreateSymbolicLink)
+
+typedef u32(__stdcall *fn_IoCreateSymbolicLink)(ANSI_STRING *, ANSI_STRING *);
 
 typedef unsigned char(__attribute__((thiscall)) * fn_archive_load)(void *, const char *);
 
@@ -73,6 +76,52 @@ static void join(char *dst, const char *dir, u32 dirlen, const char *name, u32 n
     dst[dirlen + namelen] = 0;
 }
 
+/* A title maps only its own drives. The engine strips a leading backslash from any path
+ * without a drive letter, so a hard-disk partition must be reached through its letter. */
+static void map_drive(char letter)
+{
+    static char link[] = "\\??\\E:";
+    static char target[] = "\\Device\\Harddisk0\\Partition1";
+    static u8 mapped;
+    ANSI_STRING l, t;
+    u32 bit;
+    char part;
+
+    switch (letter | 0x20) {
+    case 'c': part = '2'; break;
+    case 'e': part = '1'; break;
+    case 'f': part = '6'; break;
+    case 'g': part = '7'; break;
+    default: return;
+    }
+    bit = 1u << (part - '0');
+    if (mapped & bit)
+        return;
+    mapped |= bit;
+    link[4] = letter;
+    target[sizeof(target) - 2] = part;
+    l.Buffer = link;
+    l.Length = l.MaximumLength = sizeof(link) - 1;
+    t.Buffer = target;
+    t.Length = t.MaximumLength = sizeof(target) - 1;
+    /* fails harmlessly when the letter already exists */
+    tes3x_log("arch.map", IoCreateSymbolicLink(&l, &t));
+}
+
+/* Copies an absolute list line into dst; 0 for a path relative to the archive folder. */
+static u32 absolute(char *dst, const char *s, u32 len)
+{
+    u32 i;
+
+    if (len < 3 || s[1] != ':' || s[2] != '\\')
+        return 0;
+    map_drive(s[0]);
+    for (i = 0; i < len; i++)
+        dst[i] = s[i];
+    dst[len] = 0;
+    return len;
+}
+
 void tes3x_archive_extra(void *self, const char *path)
 {
     fn_archive_load load = (fn_archive_load)TES3X_ARCHIVE_LOAD;
@@ -118,9 +167,10 @@ void tes3x_archive_extra(void *self, const char *path)
             hi--;
         if (lo == hi || buf[lo] == ';' || buf[lo] == '#')
             continue;
-        if (dirlen + (hi - lo) >= SCRATCH - 1)
+        if (dirlen + (hi - lo) >= SCRATCH - 64)
             continue;
-        join(full, path, dirlen, buf + lo, hi - lo);
+        if (!absolute(full, buf + lo, hi - lo))
+            join(full, path, dirlen, buf + lo, hi - lo);
         tes3x_log("arch.load", load(self, full));
         loaded++;
     }

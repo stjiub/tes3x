@@ -16,6 +16,10 @@ It then reads `tes3xarch.txt` from the same folder and loads each archive it nam
 through the engine's own `Archive::Load`. Blank lines and lines starting with `;` or `#` are
 skipped.
 
+A line is a path relative to that folder, or a full path with a drive letter, such as
+`E:\TES3X\lib\mod.bsa`, so several builds can load one copy of an archive. A game sees only its
+own drives, so the patch first makes `C:`, `E:`, `F:` or `G:` available when a line names it.
+
 `Archive::Load` puts each new archive at the front of the search chain, so a later line wins over
 an earlier one, and every listed archive wins over `Morrowind.bsa`.
 
