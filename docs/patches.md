@@ -14,7 +14,7 @@ The game-test column shows whether a public test definition exists, not its resu
 
 | title | patch key | what it does | from | category | channel | game test | included by |
 |---|---|---|---|---|---|---|---|
-| [Code payload injection](../patches/payload.md) | `payload=FILE.pe` | Inject a code section and run it from the entry point. | TES3X | infrastructure | dev | — | Injected-code patches or build option |
+| [Code payload injection](../patches/payload.md) | `payload=FILE.pe` | Inject a code section and run it from the entry point. | TES3X | infrastructure | preview | [test](../tests/game/payload.toml) | Injected-code patches or build option |
 | [Unrestricted boot media](../patches/boot-media.md) | `boot-media` | Permit booting from any media and region, not just a retail DVD. | TES3X | infrastructure | preview | [test](../tests/game/boot-media.toml) | **Always included** |
 | [Data Files drive redirect](../patches/drive-letters.md) | `drive-letters=LETTER` | Point every Data Files asset path at one drive. | TES3X | infrastructure | preview | [test](../tests/game/drive-letters.toml) | **Always included** |
 | [Same-volume save staging](../patches/save-staging.md) | `save-staging=LETTER` | Stage saves on one volume with UDATA so the commit renames instead of copying. | TES3X | infrastructure | preview | — | Build option |

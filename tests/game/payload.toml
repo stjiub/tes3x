@@ -1,0 +1,14 @@
+kind = "single"
+purpose = "The injected payload runs before the game starts, logs its session, and hands control back so the game plays."
+procedure = "Boot the engine directly from the test ISO, check the payload's entry line in the session log, start a new game and assert the player stands on the prison ship."
+limitations = "Every patch test also runs on the payload; this one adds only diagnostics and the console, which it needs to read the session log."
+timeout = 180
+script = '''
+@start new
+wait 30
+assert player->getpos x == 61.00
+exit
+'''
+
+[expect]
+test = ['entry\.free_kb', 'exec\.exit']
