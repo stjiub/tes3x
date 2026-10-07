@@ -492,7 +492,7 @@ def nexus_id(url=None, source=None):
 
 
 def seven_zip():
-    for candidate in (BUNDLED_7Z, shutil.which("7z"), shutil.which("7za"),
+    for candidate in (BUNDLED_7Z, shutil.which("7z"), shutil.which("7zz"), shutil.which("7za"),
                       *(Path(os.environ[key]) / "7-Zip" / "7z.exe"
                         for key in ("ProgramFiles", "ProgramW6432") if key in os.environ)):
         if candidate and Path(candidate).is_file():

@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import struct
 import subprocess
 import sys
@@ -15,8 +16,10 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from tes3x_inject import Xbe  # noqa: E402
 
-OBJCOPY = os.environ.get("LLVM_OBJCOPY", r"C:\msys64\mingw64\bin\llvm-objcopy.exe")
-OBJDUMP = os.environ.get("LLVM_OBJDUMP", r"C:\msys64\mingw64\bin\llvm-objdump.exe")
+OBJCOPY = (os.environ.get("LLVM_OBJCOPY") or shutil.which("llvm-objcopy")
+           or r"C:\msys64\mingw64\bin\llvm-objcopy.exe")
+OBJDUMP = (os.environ.get("LLVM_OBJDUMP") or shutil.which("llvm-objdump")
+           or r"C:\msys64\mingw64\bin\llvm-objdump.exe")
 
 
 def off_to_va(x, off):

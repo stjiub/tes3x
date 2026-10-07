@@ -90,7 +90,8 @@ def msvc_includes():
 
 def clang_exe():
     llvm = local_paths().get('llvm')
-    exe = Path(llvm) / 'clang++.exe' if llvm else shutil.which('clang++')
+    exe = Path(llvm) / ('clang++.exe' if os.name == 'nt' else 'clang++') if llvm \
+        else shutil.which('clang++')
     if not exe or not Path(exe).exists():
         raise SystemExit('clang++ not found: set [paths] llvm in tes3x.local.toml')
     return str(exe)

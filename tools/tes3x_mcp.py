@@ -4,12 +4,14 @@ import argparse
 import json
 import os
 import re
+import shutil
 import struct
 import subprocess
 import tempfile
 import tomllib
 
-STEAM_DEFAULT = r"C:\Program Files (x86)\Steam\steamapps\common\Morrowind"
+STEAM_DEFAULT = (r"C:\Program Files (x86)\Steam\steamapps\common\Morrowind" if os.name == "nt"
+                 else os.path.expanduser("~/.steam/steam/steamapps/common/Morrowind"))
 
 
 def pc_morrowind():
@@ -28,8 +30,10 @@ def pc_morrowind():
 
 
 MW = pc_morrowind()
-OBJCOPY = os.environ.get("LLVM_OBJCOPY", r"C:\msys64\mingw64\bin\llvm-objcopy.exe")
-OBJDUMP = os.environ.get("LLVM_OBJDUMP", r"C:\msys64\mingw64\bin\llvm-objdump.exe")
+OBJCOPY = (os.environ.get("LLVM_OBJCOPY") or shutil.which("llvm-objcopy")
+           or r"C:\msys64\mingw64\bin\llvm-objcopy.exe")
+OBJDUMP = (os.environ.get("LLVM_OBJDUMP") or shutil.which("llvm-objdump")
+           or r"C:\msys64\mingw64\bin\llvm-objdump.exe")
 
 
 class Pe:
