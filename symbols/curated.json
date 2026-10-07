@@ -1373,6 +1373,21 @@
       "kind": "function"
     },
     {
+      "va": "0x000E6270",
+      "name": "Archive::ctor",
+      "confidence": "verified",
+      "provenance": "traced: TES3Archive.cpp; reads the BSA header, size/offset table (+0x140) and hash table (+0x144)",
+      "note": "Resident per archive: 0x17C object, 0x130 GameFile, 8*count size/offset table (TES3Archive.cpp:0x154) and 8*count hash table. Filename tables are read only when hashOffset != 8*count, which the Xbox format never has. With TryArchiveFirst=0 the end of construction walks loose Meshes and Textures against the archive (Archive::InvalidateNewerLoose).",
+      "signature": "void __thiscall ctor(const char* path)"
+    },
+    {
+      "va": "0x000E65A0",
+      "name": "ArchiveManager::Load",
+      "confidence": "verified",
+      "provenance": "traced: Archive::Init calls it with Z:\\Data Files\\Morrowind.bsa; allocates a 0x17C Archive and prepends it to the chain at +0x150; multi-bsa hooks its call",
+      "signature": "bool __thiscall Load(const char* path)"
+    },
+    {
       "va": "0x000E67C0",
       "name": "PhysicalObject::getMobile",
       "kind": "function",
