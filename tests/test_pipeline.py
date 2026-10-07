@@ -14,7 +14,7 @@ from tes3x_build import materialize, plugin_masters
 from tes3x_pipeline import (PipelineError, agent_ini, agent_setting, console_ini_text,
                             copy_retail_root, link_or_copy, resolve_patch_plan, split_console,
                             preference_flags, sanitized_command, stage_default_xbe, stage_retail_base,
-                            strip_retail_files, validate_local_config, validate_profile)
+                            strip_retail_files, validate_local_config, validate_output, validate_profile)
 from tes3x_pipeline import main as pipeline_main
 from tes3x_patch import (MCP37_TREE_NEXT_SIG, PatchError, _mcp_3, _mcp_37, _mcp_92, _mcp_97,
                          _mcp_98, _mcp_102, _mcp_123, _mcp_125, _mcp_154, _test_mcp3,
@@ -59,6 +59,15 @@ class PipelineTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+
+    def test_output_holding_only_the_gui_check_is_usable(self):
+        out = self.root / "out"
+        out.mkdir()
+        (out / ".tes3x-check.json").write_text("{}")
+        validate_output(out)
+        (out / "stray.txt").write_text("")
+        with self.assertRaisesRegex(PipelineError, "not owned"):
+            validate_output(out)
 
     def test_stub_and_dependency_order(self):
         base = self.root / 'Morrowind.esm'

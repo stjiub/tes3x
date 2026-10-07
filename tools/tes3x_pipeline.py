@@ -33,6 +33,8 @@ import tes3x_targets
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "tools"
 MARKER = ".tes3x-pipeline.json"
+# The GUI's last check of the profile, kept in the output folder.
+CHECK_MARKER = ".tes3x-check.json"
 # tes3x_deploy exits with this when the target belongs to something else.
 DEPLOY_CONFLICT = 3
 # tes3x_deploy exits with this when the dashboard agent reports too little free space.
@@ -718,7 +720,8 @@ def validate_output(path):
     if path.exists():
         if not path.is_dir():
             raise PipelineError(f"output is not a directory: {path}")
-        if any(path.iterdir()) and not (path / MARKER).is_file():
+        # the GUI's check result may come before the first build
+        if any(p.name != CHECK_MARKER for p in path.iterdir()) and not (path / MARKER).is_file():
             raise PipelineError(f"existing output is not owned by tes3x_pipeline: {path}")
 
 

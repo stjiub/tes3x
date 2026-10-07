@@ -56,7 +56,7 @@ from tes3x_patches import (CATEGORIES as PATCH_CATEGORIES, PATCHES as PATCH_CATA
                            patch_spec)
 from tes3x_plugins import (BASE_MASTERS, collect, default_rules, dependency_order, fetch_rules,
                            rules_file, sort_files, warnings as mlox_notes)
-from tes3x_pipeline import (DEPLOY_CONFLICT, DEPLOY_NO_SPACE, MARKER as PIPELINE_MARKER, PipelineError,
+from tes3x_pipeline import (CHECK_MARKER, DEPLOY_CONFLICT, DEPLOY_NO_SPACE, MARKER as PIPELINE_MARKER, PipelineError,
                             resolve_patch_plan, validate_local_config, validate_profile)
 from tes3x_records import records, subrecords
 from tes3x_deploy import parse_drives
@@ -85,7 +85,6 @@ COMPAT = {"works": ("\u2713", QColor(60, 170, 60)),
           "works-with-requirements": ("*", QColor(215, 150, 20)),
           "broken": ("\u2717", WARNING), "not-possible": ("\u2717", WARNING)}
 XEMU_STARTED = "xemu: started"
-CHECK_MARKER = ".tes3x-check.json"
 DEPLOYS_MARKER = ".tes3x-deploys.json"
 
 
