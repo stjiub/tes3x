@@ -241,7 +241,7 @@ class PipelineTests(unittest.TestCase):
         self.assertTrue((staged / 'sound-cache' / 'voice.wav').samefile(
             vanilla / 'sound-cache' / 'voice.wav'))
 
-    def test_overlay_base_omits_dashboard_entry_and_strips_unchanged_files(self):
+    def test_overlay_base_keeps_retail_xbes_and_strips_unchanged_files(self):
         vanilla = self.root / 'vanilla'
         staged = self.root / 'staged'
         (vanilla / 'Data Files').mkdir(parents=True)
@@ -252,11 +252,12 @@ class PipelineTests(unittest.TestCase):
 
         base = self.root / 'base'
         count, _size = stage_retail_base(vanilla, base)
-        self.assertEqual(count, 3)
+        self.assertEqual(count, 4)
         self.assertTrue((base / 'Data Files' / 'Morrowind.bsa').is_file())
         self.assertTrue((base / 'movie.bik').is_file())
         self.assertTrue((base / 'morrowind.xbe').is_file())
-        self.assertFalse((base / 'Default.xbe').exists())
+        self.assertTrue((base / 'Default.xbe').is_file())
+        self.assertFalse((base / 'Morrowind.ini').exists())
 
         (staged / 'Data Files').mkdir(parents=True)
         (staged / 'Data Files' / 'Morrowind.bsa').write_bytes(b'retail')

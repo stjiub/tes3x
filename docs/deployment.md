@@ -248,8 +248,8 @@ python tools/tes3x_pipeline.py profiles/my-build.toml --deploy --install-retail-
 ```
 
 The GUI does this after showing the shared-base path in its deployment confirmation. The base
-carries the retail `morrowind.xbe`, which the console manager rebuilds a build's XBE from, but not
-`Default.xbe` or dashboard metadata, so it is not another launchable game. Never point
+carries the retail `morrowind.xbe` and `Default.xbe`, which the console manager rebuilds a build's
+XBEs from; the launcher also makes the base a dashboard entry that plays vanilla Morrowind. Never point
 `retail_root` at a working or modded installation: synchronizing the base makes that folder match
 the clean retail data. An overlay profile's `Default.xbe` is the patched engine, not the retail
 launcher, so starting its dashboard entry can activate the overlay before any base file is read.
