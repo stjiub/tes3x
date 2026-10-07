@@ -916,6 +916,10 @@ def main(argv=None):
     dashboards = dashboard_list(profile)
     ini_items = [f"{k}={v}" for k, v in profile.get("ini", {}).items()] + args.ini_set
     ini_items += agent_ini(plan["applied"], ini_items, base, target)
+    if "multiplayer" in plan["applied"]:
+        # every join is a New Game, whose movie would play each time
+        if ini_override(ini_items, "Movies", "New Game") is None:
+            ini_items.append("Movies:New Game=none.bik")
     overlay_base = ini_override(ini_items, "Xbox", "OverlayBase")
     if install_layout == "overlay":
         overlay_base = overlay_base or deploy.get("retail_root")
