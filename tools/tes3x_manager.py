@@ -2,7 +2,7 @@
 """Install and update the TES3X console manager on an Xbox.
 
 `stage OUT` writes the manager's folder as a deploy tree (OUT/deploy) with its manifest, and
-OUT/console.ini naming the manager for the game; `install` stages and deploys it, over FTP or
+OUT/console.ini naming the manager for the game and this PC as its agent (NetAgent); `install` stages and deploys it, over FTP or
 through a running manager's agent. The folder holds the launcher as default.xbe and the manager
 in slot a. The XBEs come from --xbe and --launcher, the copies a package ships
 (manager/default.xbe, manager/launcher.xbe), or nxdk builds of manager/ (paths.nxdk).
@@ -27,7 +27,7 @@ import tes3x_nxdk
 import tes3x_release
 import tes3x_targets
 from tes3x_paths import xbox_root
-from tes3x_pipeline import dashboard_xml
+from tes3x_pipeline import PipelineError, agent_setting, dashboard_xml
 from tes3x_xbe import Xbe
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -77,8 +77,9 @@ def remote_folder(target, folder=FOLDER):
     return xbox_root(games).rstrip("/") + "/" + folder
 
 
-def stage(out, xbe, launcher, remote):
-    """Write the manager's deploy tree and console.ini under `out`; returns the tree."""
+def stage(out, xbe, launcher, remote, agent=None):
+    """Write the manager's deploy tree and console.ini under `out`; returns the tree. `agent` is
+    the NetAgent value naming this PC, so the manager pairs without a game deploy first."""
     out = Path(out)
     tree = out / "deploy"
     if tree.exists():
@@ -103,7 +104,9 @@ def stage(out, xbe, launcher, remote):
         json.dumps({"profile": PROFILE, "install_layout": LAYOUT, "remote": remote,
                     "version": version()}) + "\n", encoding="utf-8")
     path = remote.replace("/", "\\") + "\\default.xbe"
-    (out / "console.ini").write_text(f"[Xbox]\r\nManager={path}\r\n", encoding="latin-1")
+    (out / "console.ini").write_text(
+        f"[Xbox]\r\nManager={path}\r\n" + (f"NetAgent={agent}\r\n" if agent else ""),
+        encoding="latin-1")
     return tree
 
 
@@ -175,6 +178,8 @@ def main():
         p.add_argument("--folder", default=FOLDER, help=f"folder under games_root ({FOLDER})")
         p.add_argument("--config", help="local config (default: ./tes3x.local.toml)")
         p.add_argument("--target", help="Xbox target (default: default_target)")
+        p.add_argument("--no-agent", action="store_true",
+                       help="leave the console's NetAgent alone instead of naming this PC")
     p = sub.add_parser("update")
     p.add_argument("release", help="a signed release folder (tes3x_release.py manager)")
     p.add_argument("--agent", action="store_true",
@@ -202,10 +207,12 @@ def main():
         remote = remote_folder(target, args.folder)
         xbe = find_xbe(args.xbe, args.config)
         launcher = find_xbe(args.launcher, args.config, launcher=True)
-    except (tes3x_targets.TargetError, ManagerError) as exc:
+        base = Path(args.config).parent if args.config else Path.cwd()
+        agent = None if args.no_agent else agent_setting(base, target)
+    except (tes3x_targets.TargetError, ManagerError, PipelineError) as exc:
         sys.exit(str(exc))
     out = Path(getattr(args, "out", None) or Path.cwd() / "build" / "manager" / "install")
-    stage(out, xbe, launcher, remote)
+    stage(out, xbe, launcher, remote, agent)
     print(f"manager {version()} staged for {remote}", flush=True)
     if args.command == "install":
         args.target = target["name"]
