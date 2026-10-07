@@ -192,10 +192,10 @@ static int make_folder(const char *path)
     return CreateDirectoryA(part, NULL) || GetLastError() == ERROR_ALREADY_EXISTS ? 0 : -1;
 }
 
-/* The file with the server's section rewritten last, as the game's trust_save writes it; the
- * other sections are kept. Through a new file, so a failed write never loses
+/* The file with the server's section rewritten last, as the game's trust_save writes it, or
+ * left out; the other sections are kept. Through a new file, so a failed write never loses
  * the keys there. */
-int server_save(const struct server *s)
+static int rewrite(const struct server *s, int keep)
 {
     unsigned char *data = NULL;
     char *out, key[65], folder[PATH_MAX_MGR], staged[PATH_MAX_MGR + 8], *slash;
@@ -218,17 +218,18 @@ int server_save(const struct server *s)
         o += len;
         out[o++] = '\r', out[o++] = '\n';
     }
-    o += (size_t)sprintf(out + o, "[%s]\r\n", s->name);
-    if (s->has_server_key) {
+    if (keep)
+        o += (size_t)sprintf(out + o, "[%s]\r\n", s->name);
+    if (keep && s->has_server_key) {
         hex_write(key, s->server_key, 32);
         o += (size_t)sprintf(out + o, "server_key=%s\r\n", key);
     }
-    if (s->has_client_key) {
+    if (keep && s->has_client_key) {
         hex_write(key, s->client_key, 32);
         o += (size_t)sprintf(out + o, "client_key=%s\r\n", key);
         crypto_wipe(key, sizeof(key));
     }
-    if (s->password[0])
+    if (keep && s->password[0])
         o += (size_t)sprintf(out + o, "password=%s\r\n", s->password);
     free(data);
     snprintf(folder, sizeof(folder), "%s", s->file);
@@ -245,6 +246,16 @@ int server_save(const struct server *s)
     if (!MoveFileA(staged, s->file))
         return -1;
     return 0;
+}
+
+int server_save(const struct server *s)
+{
+    return rewrite(s, 1);
+}
+
+int server_remove(const struct server *s)
+{
+    return rewrite(s, 0);
 }
 
 /* A server for the game's pool, from "host[:port]"; nonzero if the name is not one. */
@@ -409,6 +420,7 @@ const char *server_ticket(struct server *s, struct ticket *t, progress_fn progre
     t->addr = ntohl(to.sin_addr.s_addr);
     if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
         return "No socket for the session.";
+    s->character[0] = 0;
     if (!s->has_client_key) {
         random_bytes(s->client_key, 32, sock);
         s->has_client_key = dirty = 1;
@@ -490,6 +502,17 @@ const char *server_ticket(struct server *s, struct ticket *t, progress_fn progre
                 t->size = get32(plain + INNER + 32);
                 t->port = plain[INNER + 36] | (unsigned)plain[INNER + 37] << 8;
                 memcpy(t->token, plain + INNER + 40, 16);
+                /* the character the server keeps for this key follows, if it has one */
+                if (got > INNER + BUILD_BYTES) {
+                    size_t n = 0, room = (size_t)got - INNER - BUILD_BYTES;
+
+                    while (n < room && plain[INNER + BUILD_BYTES + n])
+                        n++;
+                    if (n < sizeof(s->character)) {
+                        memcpy(s->character, plain + INNER + BUILD_BYTES, n);
+                        s->character[n] = 0;
+                    }
+                }
                 phase = 0;
                 if (!t->size)
                     err = "The server hands out no build.";

@@ -189,7 +189,7 @@ pool's `U:\TES3X\servers.ini`, the ones joined from the game's main menu, with e
 fingerprint and installed build. **Add server** types one in on the on-screen keyboard, by name
 or address with `:port` when it is not 26500; **Password** on a server's page sets the password
 kept for it, and a server that refuses for want of one asks for it and then carries on. On a server, **Update build** installs or updates it and
-**Join** starts it, joining that server with a new game, as Join in the game's menu does.
+**Join** starts it, joining that server with a new game, as Join in the game's menu does. Press **Start** on the Builds or Servers list to launch or join the highlighted entry without opening its page, and **Back** to delete it: a build's folder is removed, a server's keys and password are forgotten (a build installed from it stays). Both ask first. A server that answers shows the character this console last played there.
 
 An update asks the server through the game's encrypted session, with this console's key for that
 server (made and kept in `servers.ini` if it has none, and the server's key pinned on first

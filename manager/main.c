@@ -197,6 +197,19 @@ static int spin(const char *what, unsigned long long done, unsigned long long to
     return 0;
 }
 
+static int spin_delete(const char *what, unsigned long long done, unsigned long long total)
+{
+    char text[PATH_MAX_MGR + 16];
+
+    (void)done, (void)total;
+    agent_poll();
+    if (video_up && SDL_GetTicks() - last_draw >= 100) {
+        snprintf(text, sizeof(text), "Deleting %s...", what);
+        busy(text);
+    }
+    return 0;
+}
+
 static void find_retail_bases(void)
 {
     int i;
@@ -389,22 +402,36 @@ void mgr_launch_xbe(const char *xbe)
     say("Cannot launch", err, NULL);
 }
 
-/* servers.ini's servers, each with the build installed from it. */
-static void load_servers(void)
+/* Each server's build: the one installed from it, among those the last scan found. */
+static void link_builds(void)
 {
     int i, k;
+
+    for (i = 0; i < v.server_list.count; i++) {
+        server_builds[i] = NULL;
+        for (k = 0; k < v.build_list.count; k++)
+            if (!strcmp(builds[k].server, servers[i].name))
+                server_builds[i] = builds[k].path;
+    }
+}
+
+/* servers.ini's servers, each with the build installed from it. A server that answers and whose
+ * keys are known is asked for the character this console last played there. */
+static void load_servers(void)
+{
+    struct ticket t;
+    int i;
 
     v.server_list.count = servers_load(servers, MAX_SERVERS);
     if (v.server_list.sel >= v.server_list.count)
         v.server_list.sel = v.server_list.top = 0;
     ui_list_move(&v.server_list, 0);
+    link_builds();
     for (i = 0; i < v.server_list.count; i++) {
         busy("Checking servers...");
         servers[i].online = server_probe(&servers[i]);
-        server_builds[i] = NULL;
-        for (k = 0; k < v.build_list.count; k++)
-            if (!strcmp(builds[k].server, servers[i].name))
-                server_builds[i] = builds[k].path;
+        if (servers[i].online > 0 && servers[i].has_server_key && servers[i].has_client_key)
+            server_ticket(&servers[i], &t, NULL);
         mgr_log("server %d: %s in %s, key %s%s%s\n", i, servers[i].name, servers[i].file,
                 servers[i].has_server_key ? servers[i].fingerprint : "not pinned",
                 server_builds[i] ? ", build " : "", server_builds[i] ? server_builds[i] : "");
@@ -417,8 +444,8 @@ static void server_details(const struct server *s, const char *build)
     add_line("Address", 0, "%s, port %u", s->host, s->port);
     add_line("Server key", s->has_server_key ? 0 : LINE_BAD, "%s",
              s->has_server_key ? s->fingerprint : "not pinned: the first contact pins it");
-    add_line("This console", 0, s->has_client_key ? "has an identity there"
-                                                  : "not yet known there");
+    add_line("Identity", 0, s->has_client_key ? "yes" : "no");
+    add_line("Character", 0, "%s", s->character[0] ? s->character : "?");
     if (s->password[0])
         add_line("Password", 0, "kept");
     add_line("Build", build ? 0 : LINE_BAD, "%s", build ? build : "not installed");
@@ -427,6 +454,68 @@ static void server_details(const struct server *s, const char *build)
 static struct server *chosen_server(void)
 {
     return v.server_list.count ? &servers[v.server_list.sel] : NULL;
+}
+
+/* Deleting asks first; A in the dialog goes ahead (v.confirm says which). */
+
+static void ask_delete(void)
+{
+    const struct build *b = v.build_list.count ? &builds[v.build_list.sel] : NULL;
+    const struct server *s = chosen_server();
+
+    if (v.tab == TAB_BUILDS && b) {
+        say("Delete this build?", b->name, b->path);
+        snprintf(v.text[2], sizeof(v.text[2]), "Its folder and every file in it are removed.");
+        v.confirm = CONFIRM_BUILD;
+    } else if (v.tab == TAB_SERVERS && s) {
+        say("Remove this server?", s->name, "Its keys and password are forgotten.");
+        snprintf(v.text[2], sizeof(v.text[2]), "A build installed from it stays.");
+        v.confirm = CONFIRM_SERVER;
+    }
+}
+
+static void delete_selected_build(void)
+{
+    struct build b = builds[v.build_list.sel];
+    int sel = v.build_list.sel;
+    const char *err;
+
+    busy("Deleting the build...");
+    err = delete_build(&b, spin_delete);
+    scan();
+    v.build_list.sel = sel < v.build_list.count ? sel : v.build_list.count - 1;
+    if (v.build_list.sel < 0)
+        v.build_list.sel = 0;
+    ui_list_move(&v.build_list, 0);
+    link_builds();
+    v.page = PAGE_MAIN;
+    if (err)
+        say("Delete failed", b.path, err);
+    else
+        say("Build deleted", b.name, NULL);
+}
+
+static void delete_selected_server(void)
+{
+    struct server gone = servers[v.server_list.sel];
+    int i;
+
+    if (server_remove(&gone)) {
+        say("Remove failed", gone.name, "servers.ini could not be written.");
+        return;
+    }
+    for (i = v.server_list.sel; i + 1 < v.server_list.count; i++) {
+        servers[i] = servers[i + 1];
+        server_builds[i] = server_builds[i + 1];
+    }
+    v.server_list.count--;
+    if (v.server_list.sel >= v.server_list.count)
+        v.server_list.sel = v.server_list.count ? v.server_list.count - 1 : 0;
+    ui_list_move(&v.server_list, 0);
+    link_builds();
+    v.page = PAGE_MAIN;
+    mgr_log("removed server %s\n", gone.name);
+    say("Server removed", gone.name, NULL);
 }
 
 /* What the open keyboard is typing. */
@@ -644,8 +733,10 @@ static int join_ready(struct server *s, const char *build)
     }
     if (!err && !build_current(build, &t)) {
         mgr_log("join %s: build out of date\n", s->name);
-        say("Build out of date", s->name, "The server's build has changed. Open the server and "
-                                          "press X to update it.");
+        say("Build out of date", s->name, "The server's build has changed.");
+        snprintf(v.text[2], sizeof(v.text[2]), "Update it now?");
+        v.server_list.sel = (int)(s - servers);
+        v.confirm = CONFIRM_UPDATE;
         return 0;
     }
     return 1;
@@ -735,7 +826,7 @@ static void press_named(const char *name)
         {"up", SDL_CONTROLLER_BUTTON_DPAD_UP}, {"down", SDL_CONTROLLER_BUTTON_DPAD_DOWN},
         {"left", SDL_CONTROLLER_BUTTON_DPAD_LEFT}, {"right", SDL_CONTROLLER_BUTTON_DPAD_RIGHT},
         {"l", SDL_CONTROLLER_BUTTON_LEFTSHOULDER}, {"r", SDL_CONTROLLER_BUTTON_RIGHTSHOULDER},
-        {"start", SDL_CONTROLLER_BUTTON_START},
+        {"start", SDL_CONTROLLER_BUTTON_START}, {"back", SDL_CONTROLLER_BUTTON_BACK},
     };
     unsigned i;
 
@@ -890,10 +981,28 @@ static void press(int button)
     if (v.title[0]) {
         if (button == SDL_CONTROLLER_BUTTON_B || button == SDL_CONTROLLER_BUTTON_A)
             v.title[0] = 0;
-        /* the one question asked: whether to install over a folder that is not a build */
-        if (v.confirm && button == SDL_CONTROLLER_BUTTON_A && chosen_server()) {
+        /* an out-of-date build is updated with X, B leaves it */
+        if (v.confirm == CONFIRM_UPDATE) {
+            if (button == SDL_CONTROLLER_BUTTON_X) {
+                v.title[0] = 0, v.confirm = 0;
+                install_server(chosen_server(), 0);
+            } else if (button == SDL_CONTROLLER_BUTTON_B) {
+                v.title[0] = 0, v.confirm = 0;
+            }
+            return;
+        }
+        /* the questions asked: install over a folder that is not a build, delete a build,
+         * remove a server */
+        if (v.confirm && button == SDL_CONTROLLER_BUTTON_A) {
+            int what = v.confirm;
+
             v.confirm = 0;
-            install_server(chosen_server(), 1);
+            if (what == CONFIRM_INSTALL && chosen_server())
+                install_server(chosen_server(), 1);
+            else if (what == CONFIRM_BUILD && v.build_list.count)
+                delete_selected_build();
+            else if (what == CONFIRM_SERVER && chosen_server())
+                delete_selected_server();
         } else if (!v.title[0]) {
             v.confirm = 0;
         }
@@ -912,6 +1021,12 @@ static void press(int button)
             ui_list_move(&v.build_list, step);
         else if (button == SDL_CONTROLLER_BUTTON_A && b)
             details(b), v.page = PAGE_DETAILS;
+        else if (button == SDL_CONTROLLER_BUTTON_START && b && !b->error[0])
+            launch(b);
+        else if (button == SDL_CONTROLLER_BUTTON_START && b)
+            say("Cannot launch", b->name, b->error);
+        else if (button == SDL_CONTROLLER_BUTTON_BACK)
+            ask_delete();
         else if (button == SDL_CONTROLLER_BUTTON_Y)
             scan();
     } else if (v.tab == TAB_BUILDS) {
@@ -919,6 +1034,8 @@ static void press(int button)
             ui_list_move(&v.line_list, step);
         else if (button == SDL_CONTROLLER_BUTTON_B)
             v.page = PAGE_MAIN;
+        else if (button == SDL_CONTROLLER_BUTTON_BACK)
+            ask_delete();
         else if (button == SDL_CONTROLLER_BUTTON_X && !b->error[0])
             verify(b);
         else if (button == SDL_CONTROLLER_BUTTON_A && !b->error[0])
@@ -929,6 +1046,14 @@ static void press(int button)
         else if (button == SDL_CONTROLLER_BUTTON_A && chosen_server())
             server_details(chosen_server(), server_builds[v.server_list.sel]),
                 v.page = PAGE_SERVER;
+        else if (button == SDL_CONTROLLER_BUTTON_START && chosen_server()
+                 && server_builds[v.server_list.sel])
+            join(chosen_server(), server_builds[v.server_list.sel]);
+        else if (button == SDL_CONTROLLER_BUTTON_START && chosen_server())
+            say("No build installed", chosen_server()->name,
+                "Open the server and press X to install its build.");
+        else if (button == SDL_CONTROLLER_BUTTON_BACK)
+            ask_delete();
         else if (button == SDL_CONTROLLER_BUTTON_X)
             ask_server();
         else if (button == SDL_CONTROLLER_BUTTON_Y)
@@ -938,6 +1063,8 @@ static void press(int button)
             ui_list_move(&v.line_list, step);
         else if (button == SDL_CONTROLLER_BUTTON_B)
             v.page = PAGE_MAIN;
+        else if (button == SDL_CONTROLLER_BUTTON_BACK)
+            ask_delete();
         else if (button == SDL_CONTROLLER_BUTTON_X)
             install_server(chosen_server(), 0);
         else if (button == SDL_CONTROLLER_BUTTON_Y)

@@ -45,6 +45,8 @@ void manifest_free(char *text, struct json *j);
 int verify_build(const struct build *b, struct verify *v, progress_fn progress);
 /* Starts the build's default.xbe; returns only on failure, with a reason. */
 const char *launch_build(const struct build *b, void (*before)(void));
+/* Deletes a build's folder and everything in it; NULL, or why not. */
+const char *delete_build(const struct build *b, progress_fn progress);
 const char *launch_xbe(const char *xbe, void (*before)(void));
 /* main.c: stops the screen and starts an XBE; returns only on failure. */
 void mgr_launch_xbe(const char *xbe);
@@ -144,6 +146,7 @@ struct server {
     char password[65];
     char fingerprint[33]; /* of the pinned server key */
     int online; /* -1 not asked, 0 no answer, 1 answered */
+    char character[48]; /* the character this console last played there, from the server */
 };
 /* What a server's BUILD hands the manager: its manifest's hash and size, and a ticket for the
  * HTTP side at addr:port. */
@@ -154,6 +157,8 @@ struct ticket {
 int servers_load(struct server *out, int max);
 int server_add(const char *name, struct server *s);
 int server_save(const struct server *s);
+/* Drops the server's section from its servers.ini; the keys go with it. */
+int server_remove(const struct server *s);
 void server_fingerprint(const unsigned char key[32], char hex[33]);
 /* Pins the server's key on first contact and keeps a new identity key; NULL, or why not:
  * SERVER_PASSWORD when the password is missing or wrong. */

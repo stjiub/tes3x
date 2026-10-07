@@ -77,9 +77,10 @@ static void draw_servers(const struct view *v)
          i < v->server_list.count && i < v->server_list.top + SERVER_ROWS; i++, y += ROW_H) {
         s = &v->servers[i];
         build = v->server_builds[i];
-        snprintf(sub, sizeof(sub), "%s%.16s  \xB7  %s",
+        snprintf(sub, sizeof(sub), "%s%.16s  \xB7  %s%s%s",
                  s->has_server_key ? "Key " : "Not contacted yet",
-                 s->has_server_key ? s->fingerprint : "", build ? build : "build not installed");
+                 s->has_server_key ? s->fingerprint : "", build ? build : "build not installed",
+                 s->character[0] ? "  \xB7  " : "", s->character);
         row(y, i == v->server_list.sel, s->name,
             s->online > 0 ? (build ? "Online  \xB7  Installed" : "Online") : "Offline",
             s->online > 0 ? ui->accent : ui->bad, sub, ui->dim);
@@ -196,8 +197,10 @@ static void draw_browse(const struct view *v)
 
 static void draw_page(const struct view *v)
 {
-    static const struct ui_hint list[] = {{UI_A, "Details"}, {UI_Y, "Rescan"}};
-    static const struct ui_hint details[] = {{UI_A, "Launch"}, {UI_X, "Verify"}, {UI_B, "Back"}};
+    static const struct ui_hint list[] = {{UI_A, "Details"}, {UI_Y, "Rescan"},
+                                          {UI_START, "Launch"}, {UI_BACK, "Delete"}};
+    static const struct ui_hint details[] = {{UI_A, "Launch"}, {UI_X, "Verify"}, {UI_B, "Back"},
+                                             {UI_BACK, "Delete"}};
     static const struct ui_hint bases[] = {{UI_A, "Use"}, {UI_B, "Back"}};
     static const struct ui_hint choose[] = {{UI_A, "Choose"}, {UI_B, "Back"}};
     static const struct ui_hint browse[] = {{UI_A, "Open"}, {UI_X, "Use this folder"},
@@ -205,10 +208,12 @@ static void draw_page(const struct view *v)
     static const struct ui_hint drives[] = {{UI_A, "Open"}, {UI_B, "Back"}};
     static const struct ui_hint change[] = {{UI_A, "Change"}};
     static const struct ui_hint update[] = {{UI_A, "Check for update"}};
-    static const struct ui_hint servers[] = {{UI_A, "Details"}, {UI_X, "Add server"},
-                                             {UI_Y, "Rescan"}};
+    static const struct ui_hint servers[] = {{UI_A, "Details"}, {UI_X, "Add"},
+                                             {UI_Y, "Rescan"}, {UI_START, "Join"},
+                                             {UI_BACK, "Delete"}};
     static const struct ui_hint server[] = {{UI_A, "Join"}, {UI_X, "Update build"},
-                                            {UI_Y, "Password"}, {UI_B, "Back"}};
+                                            {UI_Y, "Password"}, {UI_B, "Back"},
+                                            {UI_BACK, "Delete"}};
     const struct ui_hint *hints = NULL;
     char status[96];
     int n = 0;
@@ -219,24 +224,24 @@ static void draw_page(const struct view *v)
     gfx_clip(UI_LEFT, UI_PANEL_TOP, UI_WIDTH, UI_PANEL_BOTTOM - UI_PANEL_TOP);
     if (v->tab == TAB_BUILDS && v->page == PAGE_DETAILS) {
         draw_details(v);
-        hints = details, n = v->builds[v->build_list.sel].error[0] ? 1 : 3;
-        if (n == 1)
-            hints = details + 2;
+        hints = details, n = 4;
+        if (v->builds[v->build_list.sel].error[0])
+            hints = details + 2, n = 2;
     } else if (v->tab == TAB_BUILDS) {
         draw_builds(v);
-        hints = list, n = 2;
+        hints = list, n = 4;
         if (!v->build_list.count)
             hints = list + 1, n = 1;
     } else if (v->tab == TAB_SERVERS && v->page == PAGE_SERVER) {
         const struct server *s = &v->servers[v->server_list.sel];
 
         draw_lines(v, s->name, s->file);
-        hints = server, n = 4;
+        hints = server, n = 5;
         if (!v->server_builds[v->server_list.sel])
-            hints = server + 1, n = 3;
+            hints = server + 1, n = 4;
     } else if (v->tab == TAB_SERVERS) {
         draw_servers(v);
-        hints = servers, n = 3;
+        hints = servers, n = 5;
         if (!v->server_list.count)
             hints = servers + 1, n = 2;
     } else if (v->page == PAGE_BASES) {
@@ -266,6 +271,7 @@ void screen_draw(const struct view *v)
 {
     static const struct ui_hint close = {UI_B, "Close"};
     static const struct ui_hint confirm[] = {{UI_A, "Go ahead"}, {UI_B, "Cancel"}};
+    static const struct ui_hint update[] = {{UI_X, "Update"}, {UI_B, "Cancel"}};
     const char *lines[4];
     int i;
 
@@ -277,7 +283,7 @@ void screen_draw(const struct view *v)
     for (i = 0; i < 4; i++)
         lines[i] = v->text[i];
     if (v->confirm)
-        ui_dialog(v->title, lines, 4, 0, confirm, 2);
+        ui_dialog(v->title, lines, 4, 0, v->confirm == CONFIRM_UPDATE ? update : confirm, 2);
     else
         ui_dialog(v->title, lines, 4, 0, v->dismiss ? &close : NULL, v->dismiss ? 1 : 0);
 }

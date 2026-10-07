@@ -64,7 +64,8 @@ static const char *const server_builds[] = {"F:\\Games\\MorrowindNet", NULL, NUL
 static const struct line server_lines[] = {
     {"Address", "play.example.net, port 26500", 0},
     {"Server key", "4e1f0c9a7b2d55e0c3a1f9e8d7b6c5a4", 0},
-    {"This console", "has an identity there", 0},
+    {"Identity", "yes", 0},
+    {"Character", "Nerevar", 0},
     {"Build", "F:\\Games\\MorrowindNet", 0},
 };
 

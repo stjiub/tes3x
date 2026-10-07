@@ -56,7 +56,7 @@ void ui_size(char *out, size_t n, unsigned long long bytes)
 int ui_button(int button, int x, int y)
 {
     static const gfx_color face[] = {0xFF4E9A32, 0xFFC23A2A, 0xFF2D69C0, 0xFFD6A21C};
-    static const char *const name[] = {"A", "B", "X", "Y", "START", "L", "R"};
+    static const char *const name[] = {"A", "B", "X", "Y", "START", "L", "R", "BACK"};
     const struct font *f = ui->small;
     int w = gfx_text_width(f, name[button]);
 

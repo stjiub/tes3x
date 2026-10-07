@@ -28,7 +28,7 @@ extern const struct theme *ui;
 #define UI_PANEL_BOTTOM 428
 #define UI_PAD 16
 
-enum ui_button { UI_A, UI_B, UI_X, UI_Y, UI_START, UI_L, UI_R };
+enum ui_button { UI_A, UI_B, UI_X, UI_Y, UI_START, UI_L, UI_R, UI_BACK };
 
 struct ui_hint {
     int button;

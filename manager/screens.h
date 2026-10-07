@@ -21,6 +21,9 @@ struct line {
     int style;
 };
 
+/* What a dialog's v.confirm asks. */
+enum confirm { CONFIRM_NONE, CONFIRM_INSTALL, CONFIRM_BUILD, CONFIRM_SERVER, CONFIRM_UPDATE };
+
 struct view {
     int tab, page;
     const struct build *builds;

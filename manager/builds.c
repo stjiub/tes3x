@@ -238,6 +238,73 @@ int scan_builds(struct build *out, int max)
     return n;
 }
 
+/* Everything under `path` goes except `keep`, a file name at this level. Deleting while listing
+ * can skip entries on FATX, so a folder is listed again until a pass removes nothing. Returns
+ * whether the folder ended up empty of all but `keep`. */
+static int empty_folder(const char *path, const char *keep, progress_fn progress, int depth)
+{
+    WIN32_FIND_DATAA fd;
+    char pattern[PATH_MAX_MGR], item[PATH_MAX_MGR];
+    HANDLE h;
+    int removed, left;
+
+    do {
+        removed = left = 0;
+        snprintf(pattern, sizeof(pattern), "%s\\*", path);
+        if ((h = FindFirstFileA(pattern, &fd)) == INVALID_HANDLE_VALUE)
+            return 1;
+        do {
+            if (!strcmp(fd.cFileName, ".") || !strcmp(fd.cFileName, ".."))
+                continue;
+            if (keep && !name_cmp(fd.cFileName, keep))
+                continue;
+            join_path(item, sizeof(item), path, fd.cFileName);
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+                if (depth < 16 && empty_folder(item, NULL, progress, depth + 1)
+                    && RemoveDirectoryA(item))
+                    removed++;
+                else
+                    left++;
+            } else {
+                SetFileAttributesA(item, FILE_ATTRIBUTE_NORMAL);
+                if (DeleteFileA(item))
+                    removed++;
+                else
+                    left++;
+            }
+            if (progress)
+                progress(fd.cFileName, 0, 0);
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
+    } while (removed);
+    return !left;
+}
+
+/* A build's folder, manifest last: a deletion that stops part way leaves a build the list still
+ * shows, to delete again. Only a manifest-bearing folder one level under a Games folder goes. */
+const char *delete_build(const struct build *b, progress_fn progress)
+{
+    char manifest[PATH_MAX_MGR];
+    const char *name;
+
+    if (b->path[1] != ':' || strncmp(b->path + 2, "\\Games\\", 7) || !b->path[9]
+        || strchr(b->path + 9, '\\'))
+        return "Not a build folder.";
+    name = b->path + 9;
+    if (!name[0])
+        return "Not a build folder.";
+    join_path(manifest, sizeof(manifest), b->path, MANIFEST);
+    if (GetFileAttributesA(manifest) == INVALID_FILE_ATTRIBUTES)
+        return "Not a build folder.";
+    if (!empty_folder(b->path, MANIFEST, progress, 0))
+        return "Some files could not be deleted.";
+    SetFileAttributesA(manifest, FILE_ATTRIBUTE_NORMAL);
+    if (!DeleteFileA(manifest) || !RemoveDirectoryA(b->path))
+        return "The folder could not be removed.";
+    mgr_log("deleted build %s\n", b->path);
+    return NULL;
+}
+
 static int exists(const char *folder, const char *relative)
 {
     char path[PATH_MAX_MGR];
