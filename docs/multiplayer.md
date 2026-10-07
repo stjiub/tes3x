@@ -65,7 +65,8 @@ python tools/tes3x_net.py serve
 ```
 
 It listens on UDP 26500 on every interface and prints a line when a client joins, leaves or
-times out, and a status block every 30 seconds (`--report SECONDS`). Allow Python through the
+times out. The admin command `status` prints the clock, weather and each client's counters;
+`--report SECONDS` prints that block on a timer. Allow Python through the
 firewall for inbound UDP on port 26500.
 
 The first client to join sets the session's load order and its game clock. Useful options:
@@ -145,6 +146,8 @@ The server takes admin commands typed at its own window, or from the same PC wit
 | Command | Does |
 |---|---|
 | `list` | the clients: number, key fingerprint, MAC and address |
+| `status` | the clock, weather, each client's counters, and what the world holds |
+| `help` | the list of commands |
 | `kick N` | drop client N; its console stops trying until the game is launched again |
 | `ban N` | ban client N's key and MAC, and drop it |
 | `ban key FINGERPRINT`, `ban mac MAC`, `ban address A.B.C.D` | ban one of them; `unban` the same way lifts it |

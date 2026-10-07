@@ -3263,8 +3263,45 @@ def serve(args):
         if verb == "bans" and not rest:
             return "\n".join(f"{kind} {value}" for kind in BAN_KINDS
                              for value in sorted(bans[kind])) or "no bans"
-        return ("commands: list; kick N; save [N]; ban N (its key and MAC); "
-                "ban|unban key FINGERPRINT|mac MAC|address A.B.C.D; bans; stop")
+        return ("commands:\n"
+                "  list                  the clients\n"
+                "  status                the clock, weather, clients and world\n"
+                "  kick N                drop client N\n"
+                "  save [N]              ask every console, or client N, to save\n"
+                "  ban N                 ban client N's key and MAC, and drop it\n"
+                "  ban|unban key FINGERPRINT|mac MAC|address A.B.C.D\n"
+                "  bans                  the bans\n"
+                "  stop                  save every character, then stop the server")
+
+    def status(now):
+        """The server's state, one line each."""
+        out = []
+        if clock:
+            clock.advance(now)
+            out.append(f"  clock {clock}")
+        if weather:
+            out.append(f"  weather: {describe_weather(weather)}")
+        if limits["handshakes"]:
+            out.append(f"  handshakes refused over rate: {limits['handshakes']}")
+        for client in clients.values():
+            out.append(f"  client {client.id}: {'up' if client.alive else 'down'}"
+                  + (" (saving)" if client.busy is not None else "") + ", "
+                  + summary(client))
+        if objects:
+            out.append(f"  objects: {len(objects)} changed")
+        if spawns:
+            live = sum(not s["removed"] for s in spawns.values())
+            out.append(f"  spawns: {live} live, {len(spawns) - live} removed")
+        if actors:
+            out.append(f"  actors: {len(actors)} known; authorities "
+                  + ", ".join(f"{describe_key(k)} {c}" for k, c in sorted(
+                      owners.items(), key=lambda i: describe_key(i[0]))))
+            runs = {}
+            for client_id, _ in actor_owners.values():
+                runs[client_id] = runs.get(client_id, 0) + 1
+            out.append("  actors run by: " + ", ".join(
+                f"client {c} {n}" for c, n in sorted(runs.items())))
+        return "\n".join(out)
 
     def handle_plain(packet, addr, secure=None):
         nonlocal pinned, clock
@@ -3806,31 +3843,7 @@ def serve(args):
                     send(client, CLOCK, body)
         if args.report and now >= report:
             report = now + args.report
-            if clock:
-                clock.advance(now)
-                print(f"  clock {clock}", flush=True)
-            if weather:
-                print(f"  weather: {describe_weather(weather)}", flush=True)
-            if limits["handshakes"]:
-                print(f"  handshakes refused over rate: {limits['handshakes']}", flush=True)
-            for client in clients.values():
-                print(f"  client {client.id}: {'up' if client.alive else 'down'}"
-                      + (" (saving)" if client.busy is not None else "") + ", "
-                      + summary(client), flush=True)
-            if objects:
-                print(f"  objects: {len(objects)} changed", flush=True)
-            if spawns:
-                live = sum(not s["removed"] for s in spawns.values())
-                print(f"  spawns: {live} live, {len(spawns) - live} removed", flush=True)
-            if actors:
-                print(f"  actors: {len(actors)} known; authorities "
-                      + ", ".join(f"{describe_key(k)} {c}" for k, c in sorted(
-                          owners.items(), key=lambda i: describe_key(i[0]))), flush=True)
-                runs = {}
-                for client_id, _ in actor_owners.values():
-                    runs[client_id] = runs.get(client_id, 0) + 1
-                print("  actors run by: " + ", ".join(
-                    f"client {c} {n}" for c, n in sorted(runs.items())), flush=True)
+            print(status(now), flush=True)
     if world["path"]:
         write_world(time.time())
     for stream in streams.values():
@@ -4212,7 +4225,8 @@ def main(argv=None):
     p.add_argument("--dhcp-lease", type=int, default=3600, metavar="SECONDS",
                    help="lease time offered to xemu guests that ask for an address "
                         "(NetAddress=dhcp); each tunnel leases %s" % GUEST_IP)
-    p.add_argument("--report", type=float, default=30, help="seconds between status lines")
+    p.add_argument("--report", type=float, default=0,
+                   help="seconds between status blocks (0: only the admin status command)")
     p.add_argument("--host", action="append", default=[], metavar="NAME=ADDRESS",
                    help="answer DNS queries for NAME, on port 53 and through the tunnel "
                         "(repeatable)")
