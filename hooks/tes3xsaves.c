@@ -33,7 +33,7 @@
 
 typedef unsigned char(__attribute__((thiscall)) *fn_save_game)(void *, const char *, const char *);
 
-#ifdef TES3X_NET
+#ifdef TES3X_MULTIPLAYER
 /* The multiplayer patch wraps every save; the autosave call sites are this file's. */
 unsigned char __attribute__((thiscall)) tes3x_net_save(void *, const char *, const char *);
 #define SAVE_ENTRY tes3x_net_save
