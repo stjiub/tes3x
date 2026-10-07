@@ -11,6 +11,7 @@
  *   tes3xnet probe A.B.C.D  ARP for an address three times and log the replies
  *   tes3xnet stat         log the counters
  *   tes3xnet say TEXT     send TEXT to the other clients as a reliable event
+ *   tes3xnet notice TEXT  show TEXT on this console's screen
  *   tes3xnet send NAME    send U:\TES3X\NAME to the server
  *   tes3xnet menusim 0|1|auto  force the world paused or running under menus, or follow the
  *                         session (the default: running while joined)
@@ -71,6 +72,9 @@ const char *tes3x_console_text_now(void);
 #endif
 #ifndef TES3X_NET_SERVICE_ACTOR
 #error "define TES3X_NET_SERVICE_ACTOR to ui::getServiceActor"
+#endif
+#ifndef TES3X_NET_SHOW_MESSAGE
+#error "define TES3X_NET_SHOW_MESSAGE to showMessageBox"
 #endif
 #if !defined(TES3X_NET_FIND_MENU) || !defined(TES3X_NET_UI_ID) || !defined(TES3X_NET_TRIGGER_EVENT)
 #error "define TES3X_NET_FIND_MENU, TES3X_NET_UI_ID and TES3X_NET_TRIGGER_EVENT to the UI functions"
@@ -1147,6 +1151,10 @@ typedef void(__attribute__((thiscall)) *fn_trigger_event)(void *element, u32 eve
 #define EVENT_PAD_B 0xFFFF8081
 
 static void run_script(const char *text);
+static void notice(const char *text);
+static void notice_hold(const char *text);
+static void notice_release(void);
+static u32 notice_holding;
 static const u8 *player_reference(void);
 static u32 rest_blocked;
 
@@ -1164,7 +1172,7 @@ static void rest_block(void)
         return;
     /* The Xbox menu has no cancel button; B closes it. */
     ((fn_trigger_event)TES3X_NET_TRIGGER_EVENT)(menu, EVENT_PAD_B, 0, 0, menu);
-    run_script("MessageBox \"You cannot rest or wait in a multiplayer session.\"");
+    notice("You cannot rest or wait in a multiplayer session.");
     tes3x_log("net.rest_blocked", ++rest_blocked);
 }
 
@@ -1246,7 +1254,7 @@ static void hold_frame(void)
     *flags &= ~MOBILE_SIMULATED;
 }
 
-/* These are HUD notices: MessageBox without buttons fades on its own and does not stop play. */
+/* The connection's state on screen: lost stays up until the session is back. */
 static void connection_notice_frame(void)
 {
     static u32 joined_once, was_joined, slow;
@@ -1254,20 +1262,30 @@ static void connection_notice_frame(void)
 
     if (!player_reference())
         return;
-    if (was_joined && !joined)
-        run_script("MessageBox \"Connection lost. Reconnecting...\"");
-    else if (!was_joined && joined && joined_once)
-        run_script("MessageBox \"Connection restored.\"");
+    if (was_joined && !joined) {
+        tes3x_log_hex3("net.notice", 1, ses.state, 0);
+        notice_hold("Connection lost. Reconnecting to the server...");
+    } else if (!was_joined && joined && joined_once) {
+        tes3x_log_hex3("net.notice", 2, ses.state, 0);
+        notice_release();
+        notice("Connection restored.");
+    } else if (!joined && notice_holding && ses.state == SESSION_REFUSED) {
+        notice_release();
+        notice("The server refused the connection.");
+    } else if (!joined && notice_holding && ses.state == SESSION_UNTRUSTED) {
+        notice_release();
+        notice("The server's key has changed. Not reconnecting.");
+    }
     if (joined)
         joined_once = 1;
     was_joined = joined;
     if (joined && !slow && ses.rtt_last >= 500000u) {
         slow = 1;
-        run_script("MessageBox \"Connection is slow.\"");
+        notice("Connection is slow.");
     } else if (slow && (!joined || ses.rtt_last < 300000u)) {
         slow = 0;
         if (joined)
-            run_script("MessageBox \"Connection recovered.\"");
+            notice("Connection recovered.");
     }
 }
 
@@ -2035,6 +2053,82 @@ static void run_script_on(const char *text, void *ref)
 static void run_script(const char *text)
 {
     run_script_on(text, 0);
+}
+
+/* Messages on screen, one at a time, as the engine's own transient messages. A held message is a
+ * modal box without buttons, which never closes on its own here and stops the player walking, so
+ * it is hidden when released. */
+typedef void(__attribute__((thiscall)) *fn_notice_hide)(void *menu, u32 visible);
+#define NOTICES 4u
+#define NOTICE_LENGTH 96u
+#define NOTICE_SHOW_US 3500000u
+static char notice_text[NOTICES][NOTICE_LENGTH];
+static u32 notice_head, notice_count, notice_shown, notice_open;
+static char notice_held[NOTICE_LENGTH];
+
+static void notice(const char *text)
+{
+    char *slot;
+    u32 i;
+
+    if (notice_count == NOTICES) {
+        notice_head = (notice_head + 1) % NOTICES;
+        notice_count--;
+    }
+    slot = notice_text[(notice_head + notice_count++) % NOTICES];
+    for (i = 0; text[i] && i < NOTICE_LENGTH - 1; i++)
+        slot[i] = text[i];
+    slot[i] = 0;
+}
+
+/* A message that stays until released, and comes before the queued ones. */
+static void notice_hold(const char *text)
+{
+    u32 i;
+
+    for (i = 0; text[i] && i < NOTICE_LENGTH - 1; i++)
+        notice_held[i] = text[i];
+    notice_held[i] = 0;
+    notice_holding = 1;
+}
+
+static void notice_release(void)
+{
+    notice_holding = 0;
+}
+
+static void notice_frame(void)
+{
+    static u32 menu_id;
+    u8 *menu;
+    u32 visible;
+
+    if (!menu_id)
+        menu_id = ((fn_ui_id)TES3X_NET_UI_ID)("MenuMessage");
+    menu = ((fn_find_menu)TES3X_NET_FIND_MENU)(menu_id);
+    visible = menu && menu[MENU_VISIBLE];
+    if (notice_open) {
+        if (!visible)
+            notice_open = 0;
+        else if (!notice_holding)
+            ((fn_notice_hide)TES3X_NET_SET_VISIBLE)(menu, 0);
+        return;
+    }
+    if (visible || !player_reference())
+        return;
+    if (notice_holding) {
+        ((void(__cdecl *)(const char *, ...))TES3X_NET_MESSAGE_MENU)(notice_held, (const char *)0);
+        if ((menu = ((fn_find_menu)TES3X_NET_FIND_MENU)(menu_id)))
+            ((fn_notice_hide)TES3X_NET_SET_VISIBLE)(menu, 1); /* hidden by the last one */
+        notice_open = 1;
+    } else if (notice_count && now_us() - notice_shown >= NOTICE_SHOW_US) {
+        /* the engine's own transient message: off to the side, expires itself, holds no input */
+        ((void(__cdecl *)(const char *, int, int))TES3X_NET_SHOW_MESSAGE)(
+            notice_text[notice_head], 0, 1);
+        notice_head = (notice_head + 1) % NOTICES;
+        notice_count--;
+        notice_shown = now_us();
+    }
 }
 
 static char *put_text(char *out, const char *text)
@@ -3892,7 +3986,7 @@ static int hold_remote(u8 *actor)
     if (talk_broken) {
         dialogue_close();
         if (talk_broken == 3) {
-            run_script("MessageBox \"That person is already in conversation.\"");
+            notice("That person is already in conversation.");
             talk_broken = 1;
         }
     }
@@ -8943,6 +9037,18 @@ static void load_event(const struct event *e)
     log_text("net.load_wanted", load_name);
 }
 
+/* The title relaunches to load the server's copy of the character; say so once it is up. */
+static void launch_notice_frame(void)
+{
+    static u32 told;
+
+    if (told || ses.state != SESSION_JOINED || !game_launch || !game_loaded[0] ||
+        !player_reference())
+        return;
+    told = 1;
+    notice("Restored from the server's last saved state.");
+}
+
 static int is_character_file(const char *name)
 {
     u32 n = tes3x_strlen(name), i;
@@ -8999,8 +9105,8 @@ static void load_frame(void)
     if (load_wanted && bulk.state == BULK_NO_SPACE && same_name(bulk.name, load_name)) {
         load_wanted = 0;
         log_text("net.load_no_space", load_name);
-        run_script("MessageBox \"There is not enough free space on the hard disk to load your "
-                   "character from the server.\"");
+        notice("There is not enough free space on the hard disk to load your "
+               "character from the server.");
         return;
     }
     if (!load_wanted || bulk.state != BULK_DONE)
@@ -9056,7 +9162,7 @@ unsigned char __cdecl tes3x_net_quit(void)
     if (ses.state != SESSION_JOINED || leave_state)
         return ((fn_quit)TES3X_NET_QUIT)();
     if (player_dead) {
-        run_script("MessageBox \"You cannot leave while dead.\"");
+        notice("You cannot leave while dead.");
         return 1;
     }
     leave_state = LEAVE_SAVE;
@@ -9071,7 +9177,7 @@ static void save_to_server(void)
     if (ses.state != SESSION_JOINED || leave_state)
         return;
     if (player_dead) {
-        run_script("MessageBox \"You cannot save while dead.\"");
+        notice("You cannot save while dead.");
         return;
     }
     leave_state = LEAVE_SAVE;
@@ -9107,7 +9213,7 @@ static void leave_ask(const char *why)
     if (!leave_quits) {
         server_saves_failed++;
         leave_state = 0;
-        run_script("MessageBox \"The server has not confirmed your save.\"");
+        notice("The server has not confirmed your save.");
         return;
     }
     leave_state = LEAVE_ASK;
@@ -9132,7 +9238,7 @@ static void leave_frame(void)
         }
         if (!leave_told && leave_quits) {
             leave_told = 1;
-            run_script("MessageBox \"Saving to the server...\"");
+            notice("Saving to the server...");
             return;
         }
         if (up.state >= UP_WANT && up.state <= UP_SENDING && now_us() - leave_since <
@@ -9157,7 +9263,7 @@ static void leave_frame(void)
             server_saves++;
             leave_state = 0;
             log_text("net.server_saved", save_slot);
-            run_script("MessageBox \"Saved to the server.\"");
+            notice("Saved to the server.");
         } else if (saves_uploaded >= leave_upload && up.state == UP_DONE) {
             leaves_saved++;
             leave_state = 0;
@@ -9182,6 +9288,7 @@ static void leave_frame(void)
 /* Game thread: an upload already under way holds the save's until it ends. */
 static void chargen_frame(void);
 static void arrival_frame(void);
+static void refusal_frame(void);
 static void preload_frame(void);
 
 static void save_frame(void)
@@ -9192,6 +9299,7 @@ static void save_frame(void)
         chargen_frame();
     }
     arrival_frame();
+    refusal_frame();
     preload_frame();
     if (save_requested && ses.state == SESSION_JOINED)
         save_request_frame();
@@ -11264,13 +11372,13 @@ static void respawn(void)
         static const char *const messages[] = {
             "Death could not hold you. ", "The gods return you to life. ",
             "You awaken at sanctuary. "};
-        q = put_text(put_text(line, "MessageBox \""), messages[deaths_here % 3]);
+        q = put_text(line, messages[deaths_here % 3]);
         if (respawn_gold)
             q = put_text(put_int(put_text(q, "Penalty: "), (int)respawn_gold), " gold lost.");
         else
             q = put_text(q, "Penalty: none.");
-        *put_text(q, "\"") = 0;
-        run_script(line);
+        *q = 0;
+        notice(line);
     }
     player_dead = 0;
     respawns_done++;
@@ -11552,9 +11660,9 @@ static void event_handle(const struct event *e)
         tes3x_log_hex3("net.text_from", e->origin, e->seq, 0);
         log_text("net.text", text);
         /* The server's own notices (deaths) show on screen; players' lines only in the log. */
-        if (!e->origin && player_reference() && script_safe((const u8 *)text, sizeof(text))) {
-            *put_text(put_text(put_text(line, "MessageBox \""), text), "\"") = 0;
-            run_script(line);
+        if (!e->origin && player_reference()) {
+            tes3x_log_hex3("net.notice", 3, e->length, 0);
+            notice(text);
         }
     } else if ((e->kind >= EVENT_AUTHORITY && e->kind <= EVENT_DEATH) || e->kind == EVENT_OWNERS) {
         authority_event(e);
@@ -12465,6 +12573,61 @@ static void handoff_frame(u8 *menu)
     tes3x_launch_data(manager_path, data, sizeof(data));
 }
 
+/* A launch the manager's Join began: the server's refusal comes up as a box, then the manager or
+ * the main menu, instead of waiting out the arrival and landing on the prison ship. */
+static u32 refusal_asked, refusal_done;
+
+static void refusal_frame(void)
+{
+    static u8 data[8 + JOIN_NAME + 1];
+    static const char *const why[7] = {
+        "The server refused the connection.", "Your mods differ from the server's.",
+        "The server is full.", "Wrong password. Set it in the TES3X Manager.",
+        "You were kicked from the server.", "This console is banned from the server.",
+        "Build out of date. Update it in the TES3X Manager."};
+    u32 state = ses.state, reason = ses.refused_reason, i;
+    int button;
+
+    if (!join_server[0] || refusal_done)
+        return;
+    if (refusal_asked) {
+        if ((button = *(int *)TES3X_NET_BUTTON) < 0)
+            return;
+        *(int *)TES3X_NET_BUTTON = -1;
+        refusal_asked = 0;
+        refusal_done = 1;
+        tes3x_log("net.refusal_answer", (u32)button);
+        if (button != 0 || !manager_path[0]) {
+            ((fn_quit)TES3X_NET_QUIT)();
+            return;
+        }
+        multi_closing();
+        if (reason == REFUSED_STALE && state == SESSION_REFUSED) {
+            put32le(data, HANDOFF_MAGIC);
+            put32le(data + 4, HANDOFF_STALE);
+            for (i = 0; join_server[i]; i++)
+                data[8 + i] = (u8)join_server[i];
+            data[8 + i] = 0;
+            tes3x_launch_data(manager_path, data, sizeof(data));
+        } else {
+            tes3x_launch_data(manager_path, 0, 0);
+        }
+        return;
+    }
+    if ((state != SESSION_REFUSED && state != SESSION_UNTRUSTED) || !world_idle() ||
+        !player_reference())
+        return;
+    arrival_start = ARRIVAL_CLAIMED;
+    log_text("net.join_failed", state == SESSION_REFUSED ? why[reason < 7 ? reason : 0] : "key");
+    *(int *)TES3X_NET_BUTTON = -1;
+    ((fn_message_menu)TES3X_NET_MESSAGE_MENU)(
+        state == SESSION_UNTRUSTED ? "The server's key has changed since this console first met it."
+                                   : why[reason < 7 ? reason : 0],
+        manager_path[0] ? "Open Manager" : "Main Menu", manager_path[0] ? "Main Menu" : (const char *)0,
+        (const char *)0);
+    refusal_asked = 1;
+}
+
 /* Until WELCOME: what stopped the join, on its row. */
 static void join_watch(u8 *menu)
 {
@@ -12860,6 +13023,8 @@ void tes3x_multi_frame(void)
     }
     ref = player_reference();
     connection_notice_frame();
+    launch_notice_frame();
+    notice_frame();
     menu_frame(net.up && ref);
     pause_frame(net.up && ref);
     weather_frame(net.up && ref);
@@ -12968,6 +13133,8 @@ int tes3x_multi_command(const char *text)
         up_command(rest);
     } else if ((rest = word(text, "leave")) && !*skip(rest)) {
         ((fn_quit)*(const u32 *)TES3X_NET_QUIT_SITE)(); /* what Exit's Yes calls */
+    } else if ((rest = word(text, "notice")) && *(rest = skip(rest))) {
+        notice(rest);
     } else if ((rest = word(text, "say")) && *(rest = skip(rest))) {
         for (value = 0; rest[value] && value < EVENT_DATA; value++)
             ;

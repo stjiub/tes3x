@@ -591,6 +591,13 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
             raise PayloadError(f"message menu: {len(boxes)} calls in onDeath, expected 1")
         define("NET_MESSAGE_MENU", hexva(image.off_to_va(deaths[0].end() + boxes[0].end()) +
                                          struct.unpack("<i", boxes[0].group(1))[0]))
+        # showMessageBox(text, 0, 1): the toast for the "cannot rest" GMST, which blocks nothing
+        toasts = {image.off_to_va(m.end(1)) + struct.unpack("<i", m.group(1))[0]
+                  for m in re.finditer(rb"\x6a\x01\x6a\x00\x68\xfa\x01\x00\x00\xe8....\x50\xe8(....)"
+                                       rb"\x83\xc4\x0c", data, re.S)}
+        if len(toasts) != 1:
+            raise PayloadError(f"showMessageBox: {len(toasts)} targets, expected 1")
+        define("NET_SHOW_MESSAGE", hexva(toasts.pop()))
         define("NET_DEATH_SITE", hexva(image.off_to_va(site)))
         # New Game's first ini read of [PreLoad] Cell N (the menu's reads a constant "Cell 0"):
         # push key, push "PreLoad", call, add esp 0x18, test eax, je.
