@@ -32,7 +32,7 @@ The GUI opens the last profile you used and lists everything in `profiles/` for 
 New, Duplicate, Rename and Delete under the cog beside the list. On first start, with no `tes3x.local.toml` yet, it opens the local settings.
 
 Three workspaces sit at the left of the toolbar: **Profile** edits the open profile (the tabs
-below), [**Targets**](#targets) shows what the selected Xbox or xemu target is doing, and
+below), [**Target**](#target) shows what the selected Xbox or xemu target is doing, and
 [**Server**](#server) runs the multiplayer server. The toolbar and the command output stay the
 same in all three.
 
@@ -85,13 +85,13 @@ same in all three.
   packaging, archives, engine patches and deployment destination before the profile is built.
 
 Settings left at their defaults stay out of the profile file. **File > Settings** holds the paths
-shared by every profile and the add-ons; targets are set up in the [Targets](#targets) workspace.
+shared by every profile and the add-ons; targets are set up in the [Target](#target) workspace.
 
 The toolbar target chooses where checks, builds, deploys, saves, logs and Play go. Its dot is grey
 before an Xbox is checked or for xemu, green while an Xbox answers, and red when it is unreachable;
-the tooltip carries its address and reported free space. The joined Check, Build and Deploy buttons
-use grey, green, amber and red dots for not run, current, stale and failed. Deploy is unavailable
-for xemu targets. An Xbox whose [console manager](deployment.md#through-the-console-manager) is
+the tooltip carries its address and reported free space. One split button runs Deploy for an
+Xbox target and Build for xemu; its menu holds Check, Build and Deploy, with grey, green, amber and
+red dots for not run, current, stale and failed. Deploy is unavailable for xemu targets. An Xbox whose [console manager](deployment.md#through-the-console-manager) is
 paired with this PC shows **Manager**, and Deploy then goes through the manager instead of FTP.
 The cog beside the target list adds, duplicates or removes a target, or opens its Setup.
 **Actions** also smoke-tests the current profile. The status bar is reserved for
@@ -105,8 +105,8 @@ folder.
 
 **Play** runs the profile on the selected target, building it first when necessary. A 128 MB xemu
 target needs a BIOS that uses the extra memory, set in the target's **Setup**. Each profile keeps its
-own xemu hard disk, so saves carry over between sessions; the Play menu can reset it, enable GDB,
-pull Xbox logs or refresh the selected Xbox connection. With the [console add-on](addons.md)
+own xemu hard disk, so saves carry over between sessions; the Play menu can enable GDB or run the
+smoke test, and **Actions** resets the disk. With the [console add-on](addons.md)
 switched on, Play on an Xbox target deploys the build and starts the game there. While xemu runs,
 Play becomes **Stop** (`Shift+F9`). Check and Deploy remain available; Build waits until the
 running emulator releases that build.
@@ -123,9 +123,9 @@ for copying or moving saves to another pool where they are, or for deleting them
 the original only after the copy is complete; changes to the xemu disk are stacked on it as a new
 layer.
 
-## Targets
+## Target
 
-**Targets** follows the toolbar target. Its actions are offered by what the target can do now:
+**Target** follows the toolbar target. Its actions are offered by what the target can do now:
 FTP, the dashboard agent, the in-game [agent](../patches/agent.md) or a running xemu. An
 unavailable action stays visible and its tooltip says what is missing.
 
@@ -161,7 +161,8 @@ unavailable action stays visible and its tooltip says what is missing.
 `tes3x_net.py serve` with the settings in the form, which are kept in
 the `[server]` table of `tes3x.local.toml` (see [configuration](configuration.md#server)). It shows
 the server's output and polls the admin port for the connected consoles; Kick, Ban and Ask all to
-save act on them. **Stop** asks every console to save its character before the server exits;
+save act on them. The box under the output takes any
+[admin command](multiplayer.md#kicks-and-bans) typed in; `help` lists them. **Stop** asks every console to save its character before the server exits;
 pressing it again stops at once. Closing the GUI stops a server it started.
 **Build profile** (profiles with the `multiplayer` patch) names the build the server hands to consoles' managers
 ([handing out the build](multiplayer.md#handing-out-the-build)); Start offers to build it if it

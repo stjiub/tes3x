@@ -1528,7 +1528,7 @@ class ProfileWindow(QMainWindow):
         self.workspace_bar.setExpanding(False)
         self.workspace_bar.setUsesScrollButtons(False)
         self.workspace_bar.setElideMode(Qt.TextElideMode.ElideNone)
-        for label in ("Profile", "Targets", "Server"):
+        for label in ("Profile", "Target", "Server"):
             self.workspace_bar.addTab(label)
         profile_bar.addWidget(self.workspace_bar)
         profile_bar.addSpacing(16)
@@ -1711,50 +1711,35 @@ class ProfileWindow(QMainWindow):
                                  self.action_refresh_ftp])
         actions_menu.addSeparator()
         actions_menu.addAction(self.discard_after_deploy)
-        command_group = QWidget()
-        command_layout = QHBoxLayout(command_group)
-        command_layout.setContentsMargins(0, 0, 0, 0)
-        command_layout.setSpacing(0)
-        self.command_buttons = []
         for action, theme, fallback, accent in (
-                (self.action_check, None, QStyle.StandardPixmap.SP_DialogApplyButton, None),
-                (self.action_build, QIcon.ThemeIcon.ViewRefresh,
-                 QStyle.StandardPixmap.SP_BrowserReload, "#1976d2"),
-                (self.action_deploy, QIcon.ThemeIcon.DocumentSend,
-                 QStyle.StandardPixmap.SP_ArrowUp, "#d97706"),
                 (self.action_play, QIcon.ThemeIcon.MediaPlaybackStart,
-                 QStyle.StandardPixmap.SP_MediaPlay, "#2e7d32")):
-            standard = self.style().standardIcon(fallback)
-            icon = QIcon.fromTheme(theme, standard) if theme else standard
-            action.setIcon(tinted_icon(icon, accent) if accent else icon)
-            action.setProperty("accentColour", accent)
-            button = QToolButton()
-            button.setDefaultAction(action)
-            button.setText(action.text().replace("&", "").replace("…", "").split()[0])
-            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-            button.setToolTip(action.text().replace("&", "") + (
-                f" ({action.shortcut().toString()})" if not action.shortcut().isEmpty() else ""))
-            if action is self.action_play:
-                self.profile_bar.addWidget(command_group)
-                self.profile_bar.addWidget(button)
-                self.play_button = button
-                self.play_menu = QMenu(self)
-                self.play_menu.setToolTipsVisible(True)
-                button.setMenu(self.play_menu)
-                button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
-            else:
-                self.command_buttons.append(button)
-                command_layout.addWidget(button)
-                if action is self.action_check:
-                    self.check_button = button
-                elif action is self.action_build:
-                    self.build_button = button
-                elif action is self.action_deploy:
-                    self.deploy_button = button
-        command_group.setStyleSheet(
-            "QToolButton { border: 1px solid palette(mid); padding: 4px 8px; "
-            "border-radius: 0; } QToolButton:first-child { border-top-left-radius: 4px; "
-            "border-bottom-left-radius: 4px; }")
+                 QStyle.StandardPixmap.SP_MediaPlay, "#2e7d32"),):
+            icon = QIcon.fromTheme(theme, self.style().standardIcon(fallback))
+            action.setIcon(tinted_icon(icon, accent))
+        self.run_menu = QMenu(self)
+        self.run_menu.setToolTipsVisible(True)
+        self.run_menu.addActions([self.action_check, self.action_build, self.action_deploy])
+        self.run_button = QToolButton()
+        self.run_button.setMenu(self.run_menu)
+        self.run_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+        self.run_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.run_button.clicked.connect(lambda: self.run_default().trigger())
+        self.profile_bar.addWidget(self.run_button)
+        self.play_button = QToolButton()
+        self.play_button.setDefaultAction(self.action_play)
+        self.play_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.profile_bar.addWidget(self.play_button)
+        self.play_menu = QMenu(self)
+        self.play_menu.setToolTipsVisible(True)
+        self.play_button.setMenu(self.play_menu)
+        self.play_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+        for button in (self.run_button, self.play_button):
+            button.setStyleSheet("QToolButton { border: 1px solid palette(mid); "
+                                 "padding: 4px 8px; border-radius: 4px; }")
+        self.check_button, self.build_button, self.deploy_button = (
+            self.action_check, self.action_build, self.action_deploy)
+        for action in (self.action_check, self.action_build, self.action_deploy):
+            action.changed.connect(self.sync_run_button)
         self.command_actions = (self.action_check, self.action_build, self.action_deploy,
                                 self.action_play, self.action_smoke, self.action_fetch,
                                 self.action_manager)
@@ -3408,6 +3393,8 @@ class ProfileWindow(QMainWindow):
         self.action_deploy.setEnabled(xbox and self.process is None)
         self.action_fetch.setEnabled(xbox and self.process is None)
         self.discard_after_deploy.setEnabled(xbox)
+        if hasattr(self, "run_button"):
+            self.sync_run_button()
         if target:
             self.target_picker.setToolTip(self.target_tooltip(target["name"], target))
         if hasattr(self, "play_menu"):
@@ -4989,6 +4976,7 @@ class ProfileWindow(QMainWindow):
     def update_build_state(self):
         self.update_check_state()
         self.update_deploy_state()
+        self.sync_run_button()
         if self.command_kind == "build":
             self.set_action_state(self.build_button, "Build", "running",
                                   "The profile is being built")
@@ -5003,13 +4991,24 @@ class ProfileWindow(QMainWindow):
                                "missing": "idle"}[state], tip)
 
     @staticmethod
-    def set_action_state(button, label, state, tip):
+    def set_action_state(action, label, state, tip):
         colours = {"idle": "#616161", "current": "#2e7d32", "stale": "#a15c00",
                    "running": "#a15c00", "failed": "#b3261e"}
-        button.setText(label)
-        button.setIcon(dot_icon(colours[state]))
-        button.setProperty("state", state)
-        button.setToolTip(tip)
+        action.setIcon(dot_icon(colours[state]))
+        action.setProperty("state", state)
+        action.setToolTip(tip)
+
+    def run_default(self):
+        """Deploy for an Xbox target, Build otherwise."""
+        target = self.default_target()
+        return self.action_deploy if target and target.get("kind") == "xbox" else self.action_build
+
+    def sync_run_button(self):
+        action = self.run_default()
+        self.run_button.setText(action.text().replace("&", "").replace("…", "").split()[0])
+        self.run_button.setIcon(action.icon())
+        self.run_button.setToolTip(action.toolTip())
+        self.run_button.setEnabled(action.isEnabled())
 
     def update_check_state(self):
         if not hasattr(self, "check_button"):
@@ -5076,17 +5075,10 @@ class ProfileWindow(QMainWindow):
         gdb.setChecked(self.play_gdb)
         gdb.setEnabled(xemu)
         gdb.setToolTip("Open xemu's GDB stub; the status bar shows the port to attach to")
-        reset = self.play_menu.addAction("Reset xemu saves…", self.reset_play_disk)
-        reset.setEnabled(xemu)
-        self.play_menu.addSeparator()
-        pull = self.play_menu.addAction("Pull logs", self.pull_logs)
-        pull.setEnabled(xbox and self.process is None)
-        refresh = self.play_menu.addAction("Refresh connection", self.refresh_ftp_status)
-        refresh.setEnabled(xbox)
+        self.play_menu.addAction(self.action_smoke)
         name = target["name"] if target else "a target"
         if self.play_process is not None:
             self.action_play.setText("&Stop")
-            self.play_button.setText("Stop")
             self.play_button.setToolTip("Stop the xemu process started by this session")
             self.action_play.setEnabled(self.play_pid is not None)
             self.action_stop.setEnabled(self.play_pid is not None)
@@ -5094,7 +5086,6 @@ class ProfileWindow(QMainWindow):
             return
         reason = self.play_available()
         self.action_play.setText("&Play")
-        self.play_button.setText("Play")
         self.play_button.setToolTip(reason or f"Play on {name} (F9)")
         self.action_play.setEnabled(not reason and self.process is None)
         self.action_stop.setEnabled(False)
@@ -5110,7 +5101,7 @@ class ProfileWindow(QMainWindow):
         local = self.local_values()
         target = self.default_target()
         if target is None:
-            return "Add and select a target in the Targets tab"
+            return "Add and select a target in the Target tab"
         if target.get("kind") == "xbox":
             if not target.get("host"):
                 return "Set the Xbox target's address in the target's Setup tab"
@@ -5236,6 +5227,8 @@ class ProfileWindow(QMainWindow):
                                  "--config", str(self.local_config_path()),
                                  *(["--gdb"] if self.play_gdb else []),
                                  *(["--net-nat"] if self.play_network() else []),
+                                 *(["--direct-engine"] if not iso
+                                   and "multiplayer" in self.applied_patches else []),
                                  "--disk", str(self.play_disk())],
                                 f"Playing in {target['name']}…", environment)
 

@@ -158,6 +158,9 @@ class TargetsPage(QWidget):
         self.setup = TargetSetup(window)
         self.tabs.addTab(self.create_overview(), "Overview")
         self.tabs.addTab(self.setup, "Setup")
+        self.setup.dirty_changed.connect(
+            lambda dirty: self.tabs.setTabText(self.tabs.indexOf(self.setup),
+                                               "Setup *" if dirty else "Setup"))
         self.tabs.addTab(self.create_console(), "Console")
         self.logs_page = self.create_logs()
         self.tabs.addTab(self.logs_page, "Logs")
@@ -747,6 +750,19 @@ class TargetSetup(QWidget):
     """Edit the selected target's entry in tes3x.local.toml, and add or remove targets."""
 
     probe_done = Signal(bool, str)
+    dirty_changed = Signal(bool)
+
+    @property
+    def dirty(self):
+        return self._dirty
+
+    @dirty.setter
+    def dirty(self, value):
+        self._dirty = value
+        button = getattr(self, "revert_button", None)
+        if button is not None:
+            button.setEnabled(value)
+        self.dirty_changed.emit(value)
     XEMU_FILES = (("exe", "Executable"), ("bootrom", "MCPX boot ROM"), ("bios", "BIOS"),
                   ("bios_128mb", "BIOS for 128 MB runs"), ("eeprom", "EEPROM"),
                   ("hdd", "Clean HDD image"))
@@ -754,6 +770,7 @@ class TargetSetup(QWidget):
     def __init__(self, window):
         super().__init__()
         self.window = window
+        self._dirty = False
         self.name = None
         self.agent_testing = None
         self.carried = {}
@@ -860,11 +877,12 @@ class TargetSetup(QWidget):
         actions.setContentsMargins(0, 4, 0, 0)
         self.save_button = tip_button("Save", "Write this target to this PC's settings",
                                       self.save)
-        self.revert_button = tip_button("Revert", "Discard unsaved changes", self.revert)
+        self.revert_button = tip_button("Discard", "Discard unsaved changes", self.revert)
+        self.revert_button.setEnabled(False)
         self.save_status = QLabel()
-        actions.addWidget(self.save_status, 1)
-        actions.addWidget(self.revert_button)
         actions.addWidget(self.save_button)
+        actions.addWidget(self.revert_button)
+        actions.addWidget(self.save_status, 1)
         outer.addLayout(actions)
 
         for field in (self.name_field, self.host, self.user, self.password, self.games_root,
@@ -1292,10 +1310,40 @@ class ServerPage(QWidget):
         self.remote = None  # the command queue of a connected remote server
         self.remote_pending = set()
         self.remote_answer.connect(self.remote_answered)
-        layout = QHBoxLayout(self)
+        layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 8, 12, 4)
+        top = QHBoxLayout()
+        self.status = QLabel()
+        self.status.setMinimumWidth(180)
+        self.status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        top.addWidget(self.status)
+        self.local_bar = QWidget()
+        local_bar = QHBoxLayout(self.local_bar)
+        local_bar.setContentsMargins(0, 0, 0, 0)
+        self.start_button = QPushButton("Start")
+        self.start_button.clicked.connect(self.start)
+        self.stop_button = QPushButton("Stop")
+        self.stop_button.clicked.connect(self.stop)
+        save = QPushButton("Save settings")
+        save.clicked.connect(self.save)
+        for button in (self.start_button, self.stop_button, save):
+            local_bar.addWidget(button)
+        top.addWidget(self.local_bar)
+        self.remote_bar = QWidget()
+        remote_bar = QHBoxLayout(self.remote_bar)
+        remote_bar.setContentsMargins(0, 0, 0, 0)
+        self.connect_button = QPushButton("Connect")
+        self.connect_button.clicked.connect(self.toggle_remote)
+        self.remote_stop = QPushButton("Stop server")
+        self.remote_stop.setToolTip("Ask every console to save, then stop the remote server")
+        self.remote_stop.clicked.connect(self.stop_remote_server)
+        remote_bar.addWidget(self.connect_button)
+        remote_bar.addWidget(self.remote_stop)
+        top.addWidget(self.remote_bar)
+        top.addStretch()
+        layout.addLayout(top)
         split = QSplitter(Qt.Orientation.Horizontal)
-        layout.addWidget(split)
+        layout.addWidget(split, 1)
 
         form_page = QWidget()
         form_layout = QVBoxLayout(form_page)
@@ -1327,25 +1375,11 @@ class ServerPage(QWidget):
         remote_form.addRow("Admin password", self.remote_password)
         remote_form.addRow("", self.remember_password)
         remote_layout.addLayout(remote_form)
-        remote_buttons = QHBoxLayout()
-        self.connect_button = QPushButton("Connect")
-        self.connect_button.clicked.connect(self.toggle_remote)
-        self.remote_stop = QPushButton("Stop server")
-        self.remote_stop.setToolTip("Ask every console to save, then stop the remote server")
-        self.remote_stop.clicked.connect(self.stop_remote_server)
-        remote_buttons.addWidget(self.connect_button)
-        remote_buttons.addWidget(self.remote_stop)
-        remote_buttons.addStretch()
-        remote_layout.addLayout(remote_buttons)
         form_layout.addWidget(self.remote_box)
 
         self.local_box = QWidget()
         local_layout = QVBoxLayout(self.local_box)
         local_layout.setContentsMargins(0, 0, 0, 0)
-        about = QLabel("Runs tes3x_net.py serve on this machine. Settings are kept in the "
-                       "[server] table of the local config.")
-        about.setWordWrap(True)
-        local_layout.addWidget(about)
         form = QFormLayout()
         self.inputs = {}
         for key, label, kind, default, help_text in SERVER_FIELDS:
@@ -1355,20 +1389,7 @@ class ServerPage(QWidget):
             self.inputs[key] = (kind, widget)
             form.addRow(label, widget)
         local_layout.addLayout(form)
-        buttons = QHBoxLayout()
-        self.start_button = QPushButton("Start")
-        self.start_button.clicked.connect(self.start)
-        self.stop_button = QPushButton("Stop")
-        self.stop_button.clicked.connect(self.stop)
-        save = QPushButton("Save settings")
-        save.clicked.connect(self.save)
-        for button in (self.start_button, self.stop_button, save):
-            buttons.addWidget(button)
-        buttons.addStretch()
-        local_layout.addLayout(buttons)
         form_layout.addWidget(self.local_box)
-        self.status = QLabel("Stopped")
-        form_layout.addWidget(self.status)
         form_layout.addStretch()
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -1404,6 +1425,10 @@ class ServerPage(QWidget):
         self.log.setReadOnly(True)
         self.log.setMaximumBlockCount(5000)
         right.addWidget(self.log)
+        self.command_entry = monospace(QLineEdit())
+        self.command_entry.setPlaceholderText("Admin command; help lists them")
+        self.command_entry.returnPressed.connect(self.send_typed)
+        right.addWidget(self.command_entry)
         right.setSizes([260, 400])
         split.addWidget(right)
         split.setSizes([420, 700])
@@ -1597,7 +1622,7 @@ class ServerPage(QWidget):
         self.log.appendPlainText(f"$ tes3x_net.py {' '.join(server_arguments(values))}")
         process.start()
         self.poll.start()
-        self.status.setText("Running")
+        self.set_status("Running")
         self.update_buttons()
 
     def stop(self):
@@ -1607,7 +1632,7 @@ class ServerPage(QWidget):
             # A clean stop asks every console to save its character first.
             self.stopping = True
             self.send_admin("stop")
-            self.status.setText("Stopping: waiting for consoles to save…")
+            self.set_status("Stopping: waiting for consoles to save…")
             QTimer.singleShot(90_000, self.kill)
         else:
             self.kill()
@@ -1633,15 +1658,27 @@ class ServerPage(QWidget):
             self.admin.close()
             self.admin = None
         self.players.clear()
-        self.status.setText("Stopped")
+        self.set_status("Stopped")
         self.update_buttons()
+
+    STATUS_COLORS = (("Running", "#2e7d32"), ("Connected", "#2e7d32"),
+                     ("Stopping", "#b26a00"), ("Connecting", "#b26a00"),
+                     ("Stopped", "#616161"), ("Not connected", "#616161"))
+
+    def set_status(self, text):
+        color = next((c for prefix, c in self.STATUS_COLORS if text.startswith(prefix)), "#c62828")
+        self.status.setText(text)
+        self.status.setStyleSheet(f"background: {color}; color: white; font-weight: bold; "
+                                  "border-radius: 4px; padding: 4px 10px;")
 
     def mode_changed(self, *_args):
         remote = self.mode.currentData() == "remote"
         self.remote_box.setVisible(remote)
         self.local_box.setVisible(not remote)
+        self.remote_bar.setVisible(remote)
+        self.local_bar.setVisible(not remote)
         self.players.clear()
-        self.status.setText(("Connected" if self.remote else "Not connected") if remote else
+        self.set_status(("Connected" if self.remote else "Not connected") if remote else
                             ("Running" if self.process else "Stopped"))
         self.update_buttons()
 
@@ -1673,7 +1710,7 @@ class ServerPage(QWidget):
 
         threading.Thread(target=work, daemon=True).start()
         self.remote, self.remote_pending = jobs, set()
-        self.status.setText(f"Connecting to {host}:{port}…")
+        self.set_status(f"Connecting to {host}:{port}…")
         self.log.appendPlainText(f"remote admin {host}:{port}")
         self.send_admin("list")
         self.poll.start()
@@ -1686,7 +1723,7 @@ class ServerPage(QWidget):
         if self.process is None:
             self.poll.stop()
         self.players.clear()
-        self.status.setText("Not connected")
+        self.set_status("Not connected")
         self.update_buttons()
 
     def stop_remote_server(self):
@@ -1700,14 +1737,14 @@ class ServerPage(QWidget):
         if self.remote is None:
             return
         if error:
-            self.status.setText(f"Remote: {error}")
+            self.set_status(f"Remote: {error}")
             if line != "list" or "refused" in error:
                 self.log.appendPlainText(f"admin {line}: {error}")
             if "refused" in error:
                 self.disconnect_remote()
-                self.status.setText(f"Remote: {error}")
+                self.set_status(f"Remote: {error}")
             return
-        self.status.setText("Connected")
+        self.set_status("Connected")
         self.admin_reply(reply)
 
     def admin_reply(self, reply):
@@ -1715,6 +1752,12 @@ class ServerPage(QWidget):
             self.show_clients(parse_clients(reply))
         else:
             self.log.appendPlainText(f"admin: {reply}")
+
+    def send_typed(self):
+        line = self.command_entry.text().strip()
+        self.command_entry.clear()
+        if line:
+            self.send_admin(line)
 
     def send_admin(self, line):
         if self.mode.currentData() == "remote":
