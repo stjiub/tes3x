@@ -31,7 +31,7 @@ struct item {
     char path[PATH_MAX_MGR]; /* as the manifest spells it */
     char sha[65];
     unsigned long long size;
-    int action, xbe;
+    int action, xbe, retail, ready;
     char staged[PATH_MAX_MGR]; /* set once the staged file exists */
 };
 
@@ -384,12 +384,11 @@ const char *server_install(struct server *s, int replace, char *folder, size_t f
     unsigned char *text = NULL, *old_text = NULL, digest[32];
     unsigned long long need = 0, done = 0;
     ULARGE_INTEGER free_bytes, total_bytes;
-    unsigned staged_n = 0;
     size_t text_n, old_n;
     DWORD start = KeTickCount;
     struct sha256 sh;
     const char *err = NULL;
-    int n = 0, had_n = 0, want_n = 0, i, e, count[4] = {0}, owned, others = 0, removed = 0, no_base = 0;
+    int n = 0, had_n = 0, want_n = 0, i, e, count[4] = {0}, owned, others = 0, removed = 0, pass;
 
     folder[0] = summary[0] = 0;
     if ((err = server_ticket(s, &t, progress)))
@@ -474,21 +473,13 @@ const char *server_install(struct server *s, int replace, char *folder, size_t f
             it->action = COPY;
         else
             it->action = FETCH;
-        if (it->action == FETCH && !strcmp(origin, "retail"))
-            no_base++;
+        it->retail = !strcmp(origin, "retail");
         count[it->action]++;
         if (it->action != KEEP)
             need += it->size;
     }
     mgr_log("install %s into %s: %d kept, %d to download, %d from the base, %d XBEs, %llu bytes\n",
             s->name, folder, count[KEEP], count[FETCH], count[COPY], count[REBUILD], need);
-    if (no_base) {
-        snprintf(reason, sizeof(reason),
-                 "%d files come from your retail copy. Choose a retail base in Settings first.",
-                 no_base);
-        err = reason;
-        goto done;
-    }
 
     snprintf(drive, sizeof(drive), "%.2s\\", folder);
     if (GetDiskFreeSpaceExA(drive, &free_bytes, &total_bytes, NULL)
@@ -499,49 +490,72 @@ const char *server_install(struct server *s, int replace, char *folder, size_t f
         goto done;
     }
 
-    for (i = 0; i < n && !err; i++) {
-        struct item *it = &items[i];
-        const char *why = NULL;
-        char *slash;
+    /* XBEs first, then the files a server may refuse to send, so a missing base or a policy
+     * shows before the bulk downloads */
+    for (pass = 0; pass < 3 && !err; pass++)
+        for (i = 0; i < n && !err; i++) {
+            struct item *it = &items[i];
+            const char *why = NULL;
+            char *slash;
+            int k, same;
 
-        if (it->action == KEEP)
-            continue;
-        join_path(path, sizeof(path), folder, it->path);
-        make_parents(path);
-        slash = strrchr(path, '\\');
-        snprintf(it->staged, sizeof(it->staged), "%.*s\\~t3x%u.new", (int)(slash - path), path,
-                 staged_n++);
-        if (it->action == REBUILD) {
-            mgr_progress_title("Rebuilding");
-            if (progress)
-                progress(it->path, done, need);
-            why = rebuild(&j, it, url_base, it->staged);
-            if (!why)
-                done += it->size;
-            else
-                mgr_log("install: %s not rebuilt: %s\n", it->path, why);
-        } else if (it->action == COPY) {
-            join_path(from, sizeof(from), base, it->path);
-            mgr_progress_title("Copying");
-            why = copy_checked(from, it->staged, it, &done, need, progress);
-            if (why)
-                mgr_log("install: %s not copied from the base: %s\n", it->path, why);
-        }
-        if (why && !strcmp(why, "cancelled")) {
-            err = "Cancelled.";
-        } else if (it->action == FETCH || why) {
-            url_path(url, sizeof(url), url_base, "file/", it->path);
-            mgr_progress_title("Downloading");
-            if ((err = http_save(url, it->staged, it->size, it->sha, it->path, &done, need,
-                                 progress))) {
-                snprintf(reason, sizeof(reason), "%.80s: %s%s%s", it->path,
-                         why ? why : err, why ? ", and the server: " : "", why ? err : "");
-                err = !strcmp(err, "cancelled") ? "Cancelled." : reason;
+            if (it->action == KEEP || (it->action == REBUILD ? 0 : it->retail ? 1 : 2) != pass)
+                continue;
+            join_path(path, sizeof(path), folder, it->path);
+            make_parents(path);
+            slash = strrchr(path, '\\');
+            /* named by content, so what a failed install staged is found again */
+            for (same = 0;; same++) {
+                if (same)
+                    snprintf(it->staged, sizeof(it->staged), "%.*s\\~t3x%.16s_%d.new",
+                             (int)(slash - path), path, it->sha, same);
+                else
+                    snprintf(it->staged, sizeof(it->staged), "%.*s\\~t3x%.16s.new",
+                             (int)(slash - path), path, it->sha);
+                for (k = 0; k < n && (k == i || strcmp(items[k].staged, it->staged)); k++)
+                    ;
+                if (k == n)
+                    break;
             }
+            if (it->size && file_size(it->staged) == it->size) {
+                mgr_log("install: %s already staged\n", it->path);
+                done += it->size;
+                it->ready = 1;
+                continue;
+            }
+            if (it->action == REBUILD) {
+                mgr_progress_title("Rebuilding");
+                if (progress)
+                    progress(it->path, done, need);
+                why = rebuild(&j, it, url_base, it->staged);
+                if (!why)
+                    done += it->size;
+                else
+                    mgr_log("install: %s not rebuilt: %s\n", it->path, why);
+            } else if (it->action == COPY) {
+                join_path(from, sizeof(from), base, it->path);
+                mgr_progress_title("Copying");
+                why = copy_checked(from, it->staged, it, &done, need, progress);
+                if (why)
+                    mgr_log("install: %s not copied from %s: %s\n", it->path, from, why);
+            }
+            if (why && !strcmp(why, "cancelled")) {
+                err = "Cancelled.";
+            } else if (it->action == FETCH || why) {
+                url_path(url, sizeof(url), url_base, "file/", it->path);
+                mgr_progress_title("Downloading");
+                if ((err = http_save(url, it->staged, it->size, it->sha, it->path, &done, need,
+                                     progress))) {
+                    snprintf(reason, sizeof(reason), "%.80s: %s%s%s", it->path,
+                             why ? why : err, why ? ". Server: " : "", why ? err : "");
+                    err = !strcmp(err, "cancelled") ? "Cancelled." : reason;
+                }
+            }
+            if (err)
+                it->staged[0] = 0;
+            else
+                it->ready = 1;
         }
-        if (err)
-            it->staged[0] = 0;
-    }
 
     /* all here: rename them in, keeping the XBEs they replace */
     for (i = 0; i < n && !err; i++) {
@@ -584,9 +598,9 @@ const char *server_install(struct server *s, int replace, char *folder, size_t f
              removed ? ", old files removed" : "");
 done:
     mgr_progress_title(NULL);
-    /* a failed update leaves the old build as it was */
+    /* a failed update leaves the old build as it was; what it staged whole stays for the next try */
     for (i = 0; items && i < want_n; i++)
-        if (items[i].staged[0])
+        if (items[i].staged[0] && !(err && items[i].ready))
             DeleteFileA(items[i].staged);
     mgr_log("install %s: %s, %lu ms\n", s->name, err ? err : summary, KeTickCount - start);
     free(items);
