@@ -131,6 +131,10 @@ def stage_xemu(out, xbe, vanilla=None):
         tes3x_manifest.write(base, tes3x_manifest.create(
             base, profile="TES3X retail base", source={"kind": "xemu"},
             install_layout="retail-base"))
+    # a retail copy has its INI; stage_retail_base leaves it out, and a base staged before
+    # this still lacks it, so it is seeded as a file of its own
+    if vanilla and base.is_dir() and not (base / "Morrowind.ini").is_file():
+        shutil.copyfile(Path(vanilla) / "Morrowind.ini", base / "Morrowind.ini")
     return disc, seed
 
 

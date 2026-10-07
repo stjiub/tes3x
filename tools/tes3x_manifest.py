@@ -68,7 +68,8 @@ def origin(relative, path, retail=None):
     player's own retail copy by its delta), "retail" (a byte copy of a retail file) or "build"."""
     if relative.lower().endswith(".xbe"):
         return "xbe"
-    if retail is not None:
+    # The INI is the build's configuration, and a staged base (xemu's) leaves it out.
+    if retail is not None and relative.lower() != "morrowind.ini":
         original = Path(retail) / relative
         if (original.is_file() and original.stat().st_size == path.stat().st_size
                 and filecmp.cmp(path, original, shallow=False)):
