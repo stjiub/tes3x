@@ -126,7 +126,7 @@ int main(int argc, char **argv)
     ui_list_move(&v.line_list, 16);
     screen_draw(&v);
     save("details-end");
-    screen_progress(&v, "Verifying MorrowindNet", 412ULL << 20, 962ULL << 20);
+    screen_progress(&v, NULL, "Verifying MorrowindNet", 412ULL << 20, 962ULL << 20);
     save("progress");
     snprintf(v.title, sizeof(v.title), "Build differs from its manifest");
     snprintf(v.text[0], sizeof(v.text[0]), "7340 ok, 1 missing, 2 changed");
@@ -148,10 +148,10 @@ int main(int argc, char **argv)
     v.line_list = (struct ui_list){4, 0, 0, LINE_ROWS};
     screen_draw(&v);
     save("server");
-    screen_progress(&v, "Data Files/TES3X Multiplayer.esp", 3ULL << 20, 7ULL << 20);
+    screen_progress(&v, "Downloading", "Data Files/TES3X Multiplayer.esp", 3ULL << 20, 7ULL << 20);
     save("server-progress");
     ui_tick = 3;
-    screen_progress(&v, "Asking the server for its build", 0, 0);
+    screen_progress(&v, NULL, "Asking the server for its build", 0, 0);
     save("server-wait");
     snprintf(v.title, sizeof(v.title), "Build up to date");
     snprintf(v.text[0], sizeof(v.text[0]), "F:\\Games\\MorrowindNet");

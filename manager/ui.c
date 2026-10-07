@@ -188,7 +188,7 @@ void ui_spinner(int cx, int cy)
     }
 }
 
-void ui_progress(const char *what, unsigned long long done, unsigned long long total)
+void ui_progress(const char *title, const char *what, unsigned long long done, unsigned long long total)
 {
     static const struct ui_hint cancel = {UI_B, "Cancel"};
     char amount[64];
@@ -196,14 +196,14 @@ void ui_progress(const char *what, unsigned long long done, unsigned long long t
     int bar = 460 - 48, x = (GFX_W - 460) / 2 + 24, y;
 
     if (!total) {
-        y = ui_dialog("Working", &what, 1, 40, &cancel, 1);
+        y = ui_dialog(title, &what, 1, 40, &cancel, 1);
         ui_spinner(GFX_W / 2, y + 22);
         return;
     }
     snprintf(amount, sizeof(amount), "%llu of %llu MB", done >> 20, total >> 20);
     lines[0] = what;
     lines[1] = amount;
-    y = ui_dialog("Working", lines, 2, 20, &cancel, 1) + 8;
+    y = ui_dialog(title, lines, 2, 20, &cancel, 1) + 8;
     gfx_fill(x, y, bar, 8, 0xFF2A241A);
     gfx_fill(x, y, total ? (int)(bar * done / total) : 0, 8, ui->accent);
 }

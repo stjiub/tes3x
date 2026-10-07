@@ -287,9 +287,9 @@ void screen_busy(const struct view *v, const char *text)
     ui_spinner(GFX_W / 2, ui_dialog("Working", &text, 1, 40, NULL, 0) + 22);
 }
 
-void screen_progress(const struct view *v, const char *what, unsigned long long done,
+void screen_progress(const struct view *v, const char *title, const char *what, unsigned long long done,
                      unsigned long long total)
 {
     draw_page(v);
-    ui_progress(what, done, total);
+    ui_progress(title ? title : "Working", what, done, total);
 }

@@ -57,7 +57,7 @@ struct view {
 void screen_draw(const struct view *v);
 /* The page with a dialog of text and no buttons over it, for work that cannot be cancelled. */
 void screen_busy(const struct view *v, const char *text);
-void screen_progress(const struct view *v, const char *what, unsigned long long done,
+void screen_progress(const struct view *v, const char *title, const char *what, unsigned long long done,
                      unsigned long long total);
 
 #endif

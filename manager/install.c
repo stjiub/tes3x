@@ -503,6 +503,7 @@ const char *server_install(struct server *s, int replace, char *folder, size_t f
         snprintf(it->staged, sizeof(it->staged), "%.*s\\~t3x%u.new", (int)(slash - path), path,
                  staged_n++);
         if (it->action == REBUILD) {
+            mgr_progress_title("Rebuilding");
             if (progress)
                 progress(it->path, done, need);
             why = rebuild(&j, it, url_base, it->staged);
@@ -512,6 +513,7 @@ const char *server_install(struct server *s, int replace, char *folder, size_t f
                 mgr_log("install: %s not rebuilt: %s\n", it->path, why);
         } else if (it->action == COPY) {
             join_path(from, sizeof(from), base, it->path);
+            mgr_progress_title("Copying");
             why = copy_checked(from, it->staged, it, &done, need, progress);
             if (why)
                 mgr_log("install: %s not copied from the base: %s\n", it->path, why);
@@ -520,6 +522,7 @@ const char *server_install(struct server *s, int replace, char *folder, size_t f
             err = "Cancelled.";
         } else if (it->action == FETCH || why) {
             url_path(url, sizeof(url), url_base, "file/", it->path);
+            mgr_progress_title("Downloading");
             if ((err = http_save(url, it->staged, it->size, it->sha, it->path, &done, need,
                                  progress))) {
                 snprintf(reason, sizeof(reason), "%.80s: %s%s%s", it->path,
@@ -571,6 +574,7 @@ const char *server_install(struct server *s, int replace, char *folder, size_t f
              count[FETCH], count[COPY], count[REBUILD], count[KEEP],
              removed ? ", old files removed" : "");
 done:
+    mgr_progress_title(NULL);
     /* a failed update leaves the old build as it was */
     for (i = 0; items && i < want_n; i++)
         if (items[i].staged[0])

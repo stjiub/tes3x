@@ -48,6 +48,8 @@ const char *launch_build(const struct build *b, void (*before)(void));
 const char *launch_xbe(const char *xbe, void (*before)(void));
 /* main.c: stops the screen and starts an XBE; returns only on failure. */
 void mgr_launch_xbe(const char *xbe);
+/* The progress dialog's title until changed; NULL is "Working". */
+void mgr_progress_title(const char *title);
 
 /* console.c: [Xbox] keys of E:\TES3X\console.ini. Getters return the value's length, 0 when
  * absent; console_set keeps the file's other keys. */

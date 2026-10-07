@@ -54,6 +54,7 @@ static char overlay_base[PATH_MAX_MGR];
 static struct view v;
 static int video_up, dirty = 1;
 static Uint32 last_draw;
+static const char *progress_name;
 
 void mgr_log(const char *format, ...)
 {
@@ -148,6 +149,11 @@ static int cancel_pressed(void)
     return cancel;
 }
 
+void mgr_progress_title(const char *title)
+{
+    progress_name = title;
+}
+
 static int progress(const char *what, unsigned long long done, unsigned long long total)
 {
     agent_poll();
@@ -155,7 +161,7 @@ static int progress(const char *what, unsigned long long done, unsigned long lon
         return 0;
     v.agent = agent_status();
     ui_tick = SDL_GetTicks() / 100;
-    screen_progress(&v, what, done, total);
+    screen_progress(&v, progress_name, what, done, total);
     present();
     dirty = 1;
     return cancel_pressed();
