@@ -28,7 +28,8 @@ import tes3x_diag
 import tes3x_ftp
 import tes3x_net
 import tes3x_targets
-from tes3x_pipeline import MARKER as PIPELINE_MARKER, PipelineError, validate_local_config
+from tes3x_pipeline import (MARKER as PIPELINE_MARKER, PipelineError, resolve_patch_plan,
+                            validate_local_config)
 from tes3x_xemu_setup import download_xemu, find_files as find_xemu_files
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1195,6 +1196,8 @@ SERVER_FIELDS = (
     # key, label, kind, default, help
     ("world", "World folder", "folder", "", "Keeps the server key, password, characters, "
      "saves and bans; empty keeps nothing between runs"),
+    ("profile", "Build profile", "profile", "", "The build consoles' managers download on "
+     "joining; consoles with another build are refused"),
     ("port", "Game port", "int", tes3x_net.PORT, "UDP port consoles join"),
     ("admin_port", "Admin port", "int", tes3x_net.ADMIN_PORT, "Local UDP port for admin commands"),
     ("password_file", "Password file", "file", "", "Consoles with a new key must give this "
@@ -1217,6 +1220,15 @@ SERVER_FIELDS = (
      f"its first line, at least {tes3x_net.ADMIN_PASSWORD_MIN} characters"),
 )
 REMOTE_KEYS = ("mode", "remote_address", "remote_password")
+
+
+def multiplayer_profile(path):
+    """Whether the profile at `path` builds with the multiplayer patch, which joining needs."""
+    try:
+        profile = tomllib.loads(Path(path).read_text(encoding="utf-8"))
+        return "multiplayer" in resolve_patch_plan(profile)["applied"]
+    except (OSError, tomllib.TOMLDecodeError, PipelineError):
+        return False
 
 
 def server_arguments(values):
@@ -1245,6 +1257,8 @@ def server_arguments(values):
         args += ["--remote-admin", str(values["remote_admin"])]
     if values.get("admin_password_file"):
         args += ["--admin-password-file", str(values["admin_password_file"])]
+    if values.get("build"):
+        args += ["--build", str(values["build"])]
     return args
 
 
@@ -1417,6 +1431,22 @@ class ServerPage(QWidget):
         elif kind == "lines":
             widget = QPlainTextEdit()
             widget.setFixedHeight(64)
+        elif kind == "profile":
+            widget = QWidget()
+            row = QHBoxLayout(widget)
+            row.setContentsMargins(0, 0, 0, 0)
+            widget.combo = QComboBox()
+            widget.combo.addItem("None", "")
+            for path in self.window.profile_files():
+                if multiplayer_profile(path):
+                    widget.combo.addItem(path.stem, str(path.resolve()))
+            widget.combo.currentIndexChanged.connect(lambda *_: self.update_buttons())
+            self.build_button = QPushButton("Build")
+            self.build_button.setToolTip("Stage the profile; a running server serves the new "
+                                         "build to managers that update")
+            self.build_button.clicked.connect(lambda: self.build_profile())
+            row.addWidget(widget.combo, 1)
+            row.addWidget(self.build_button)
         elif kind in ("folder", "file"):
             widget = QWidget()
             row = QHBoxLayout(widget)
@@ -1450,6 +1480,9 @@ class ServerPage(QWidget):
                 out[key] = widget.value()
             elif kind == "choice":
                 out[key] = widget.currentText()
+            elif kind == "profile":
+                if widget.combo.currentData():
+                    out[key] = widget.combo.currentData()
             elif kind == "lines":
                 out[key] = [line.strip() for line in widget.toPlainText().splitlines()
                             if line.strip()]
@@ -1482,6 +1515,10 @@ class ServerPage(QWidget):
                 widget.setValue(value)
             elif kind == "choice":
                 widget.setCurrentText(str(value))
+            elif kind == "profile":
+                if widget.combo.findData(str(value)) < 0 and multiplayer_profile(value):
+                    widget.combo.addItem(Path(value).stem, str(value))
+                widget.combo.setCurrentIndex(max(0, widget.combo.findData(str(value))))
             elif kind == "lines":
                 widget.setPlainText("\n".join(value))
             elif key == "tunnels":
@@ -1507,10 +1544,43 @@ class ServerPage(QWidget):
             return False
         return True
 
+    def profile_deploy(self, profile):
+        """The staged game folder the pipeline publishes for `profile`."""
+        name = tomllib.loads(Path(profile).read_text(encoding="utf-8"))["profile"]["name"]
+        root = self.window.local_path("build_root") or self.window.work_dir() / "build"
+        return root / name / "deploy"
+
+    def build_profile(self, then=None):
+        profile = self.values().get("profile")
+        if not profile or not self.save():
+            return
+        if self.window.process is not None:
+            self.window.error("A TES3X command is already running")
+            return
+        config = self.window.local_config_path()
+        target = self.window.target_picker.currentData()
+        self.window.run_steps([(ROOT / "tools" / "tes3x_pipeline.py", [
+            profile, *(["--config", str(config)] if config.is_file() else []),
+            *(["--target", target] if target else [])],
+            f"Building {Path(profile).stem} for the server…")], then=then)
+
     def start(self):
         if self.process is not None or not self.save():
             return
         values = self.values()
+        if values.get("profile"):
+            try:
+                build = self.profile_deploy(values["profile"])
+            except (OSError, KeyError, tomllib.TOMLDecodeError) as exc:
+                self.window.error(f"Build profile: {exc}")
+                return
+            if not (build / "tes3xbuild.json").is_file():
+                if QMessageBox.question(self, "TES3X", f"{Path(values['profile']).stem} is not "
+                                        "built. Build it, then start?") \
+                        == QMessageBox.StandardButton.Yes:
+                    self.build_profile(then=self.start)
+                return
+            values["build"] = build
         process = QProcess(self)
         process.setWorkingDirectory(str(self.window.work_dir()))
         process.setProgram(sys.executable)
@@ -1716,8 +1786,9 @@ class ServerPage(QWidget):
         self.start_button.setEnabled(not running)
         self.stop_button.setEnabled(running)
         self.stop_button.setText("Force stop" if self.stopping else "Stop")
-        for key, (_, widget) in self.inputs.items():
-            widget.setEnabled(not running)
+        for key, (kind, widget) in self.inputs.items():
+            (widget.combo if kind == "profile" else widget).setEnabled(not running)
+        self.build_button.setEnabled(bool(self.values().get("profile")))
         self.connect_button.setText("Disconnect" if connected else "Connect")
         self.remote_stop.setEnabled(connected)
         for widget in (self.remote_address, self.remote_password, self.remember_password):

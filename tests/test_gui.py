@@ -1253,6 +1253,33 @@ order = 10
         saved = tomllib.loads(config.read_text(encoding="utf-8"))["server"]
         self.assertEqual((saved["max_players"], saved["tunnels"]), (4, [9369, 9371]))
 
+    def test_server_page_serves_the_profile_build(self):
+        config = self.root / "local.toml"
+        config.write_text(f'[paths]\nprofiles = "{self.root.as_posix()}"\n'
+                          f'build_root = "{(self.root / "out").as_posix()}"\n', encoding="utf-8")
+        with open(self.profile, "a", encoding="utf-8") as stream:
+            stream.write('\n[patches]\nenable = ["multiplayer"]\n')
+        (self.root / "solo.toml").write_text('[profile]\nname = "solo"\n', encoding="utf-8")
+        window = self.window(config=config)
+        page = window.server_page
+        combo = page.inputs["profile"][1].combo
+        self.assertEqual([combo.itemText(i) for i in range(combo.count())], ["None", "profile"])
+        combo.setCurrentIndex(combo.findData(str(self.profile.resolve())))
+        self.assertTrue(page.save())
+        self.assertEqual(tomllib.loads(config.read_text(encoding="utf-8"))["server"]["profile"],
+                         str(self.profile.resolve()))
+        build = self.root / "out" / "gui" / "deploy"
+        self.assertEqual(page.profile_deploy(self.profile), build)
+        with patch.object(QMessageBox, "question",
+                          return_value=QMessageBox.StandardButton.Yes), \
+                patch.object(window, "run_steps") as run:
+            page.start()
+        self.assertIsNone(page.process)
+        (script, arguments, _message), = run.call_args.args[0]
+        self.assertEqual(Path(script).name, "tes3x_pipeline.py")
+        self.assertEqual(arguments[0], str(self.profile.resolve()))
+        self.assertEqual(server_arguments({"build": build})[-2:], ["--build", str(build)])
+
 
     def test_server_page_manages_a_remote_server(self):
         import threading

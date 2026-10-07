@@ -81,6 +81,7 @@ use of the server does not read this table.
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `world` | string | none | `--world`: the folder that keeps the server key, password, characters, saves and bans. |
+| `profile` | string | none | `--build` with this multiplayer profile's staged `deploy` folder under `build_root`: the build consoles' managers download. |
 | `port` | integer | `26500` | `--port`: the UDP port consoles join. |
 | `admin_port` | integer | `26502` | `--admin-port`: the local admin port the GUI polls. |
 | `password_file` | string | none | `--password-file`. |

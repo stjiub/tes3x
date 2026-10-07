@@ -188,6 +188,8 @@ joins:
 python tools/tes3x_net.py serve --world world --build build/pipeline/net/deploy
 ```
 
+In the GUI, set **Build profile** on the Server page instead.
+
 The manager asks through the same encrypted session a console joins by, with the console's key
 for this server and the password if there is one, so a console the server would refuse gets no
 build. The server answers with its manifest's SHA-256 and a ticket, and serves the manifest and
