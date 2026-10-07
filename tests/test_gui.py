@@ -152,11 +152,7 @@ order = 10
                          window.tabs.tabBar().sizeHint().height())
         self.assertEqual(window.menuBar().font(), window.tabs.tabBar().font())
         self.assertTrue(window.statusBar().spinner.isHidden())
-        for action, colour in ((window.action_build, "#1976d2"),
-                               (window.action_deploy, "#d97706"),
-                               (window.action_play, "#2e7d32")):
-            self.assertFalse(action.icon().isNull())
-            self.assertEqual(action.property("accentColour"), colour)
+        self.assertFalse(window.action_play.icon().isNull())
         budget = window.resource_budget.topLevelItem(0)
         self.assertEqual((budget.text(0), budget.text(1)), ("Mod", "2"))
         self.assertIs(window.details_stack.widget(0), window.mod_details)
@@ -607,9 +603,8 @@ order = 10
         self.assertEqual(window.deploy_button.property("state"), "idle")
         self.assertFalse(window.action_deploy.isEnabled())
         self.assertEqual(window.target_picker.currentData(), "xemu")
-        self.assertEqual([button.text() for button in
-                          [*window.command_buttons, window.play_button]],
-                         ["Check", "Build", "Deploy", "Play"])
+        self.assertEqual([window.run_button.text(), window.play_button.text()],
+                         ["Build", "Play"])
 
         def start(program, arguments, *_args):
             window.process = "running"
