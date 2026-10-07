@@ -302,11 +302,13 @@ static void outer(unsigned char *p, int type, unsigned session, unsigned seq)
     put32(p + 12, seq);
 }
 
+const char SERVER_PASSWORD[] = "The server wants a password.";
+
 static const char *refusal(unsigned reason)
 {
     switch (reason) {
     case 2: return "The server is full.";
-    case 3: return "The server wants a password.";
+    case 3: return SERVER_PASSWORD;
     case 5: return "This console is banned there.";
     default: return "The server refused this console.";
     }

@@ -95,7 +95,9 @@ installs or updates the manager in `TES3XManager` under the target's `games_root
 changes the name). The folder gets a small launcher as `default.xbe`, the manager in `a\`,
 `_resources\default.xml` for the dashboard's list and a build manifest of layout `manager`, which
 the manager leaves out of its own build list; `E:\TES3X\console.ini` gets `Manager`, the
-launcher's path, which puts a **Manager** entry on a multiplayer build's main menu. The first
+launcher's path, which puts a **Manager** entry on a multiplayer build's main menu, and
+`NetAgent` naming this PC, so the manager pairs with it without a game deploy first
+(`--no-agent` leaves the console's `NetAgent` as it is). The first
 install goes over FTP; once the manager runs, `--agent` updates it through its own agent, and the
 new version starts the next time it is launched. Installing again puts the manager back in `a\`.
 The XBEs come from `--xbe` and `--launcher`, the copies a portable folder ships, or nxdk builds of
@@ -184,7 +186,9 @@ A multiplayer server started with `--build` ([Handing out the
 build](multiplayer.md#handing-out-the-build)) hands its build to the console manager, so players
 need no PC. The manager's **Servers** tab lists the servers this console knows from each save
 pool's `U:\TES3X\servers.ini`, the ones joined from the game's main menu, with each one's key
-fingerprint and installed build. On a server, **Update build** installs or updates it and
+fingerprint and installed build. **Add server** types one in on the on-screen keyboard, by name
+or address with `:port` when it is not 26500; **Password** on a server's page sets the password
+kept for it, and a server that refuses for want of one asks for it and then carries on. On a server, **Update build** installs or updates it and
 **Join** starts it, joining that server with a new game, as Join in the game's menu does.
 
 An update asks the server through the game's encrypted session, with this console's key for that

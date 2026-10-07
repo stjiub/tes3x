@@ -6,15 +6,16 @@
  *   list | verify NAME | launch NAME | rebuild NAME XBE DELTA | agent SECONDS
  *   | base [use N | path FOLDER] | update | fetch [FEED] | get URL FILE | run XBE
  *   | servers | server add NAME | install SERVER [replace] | join SERVER | wait SECONDS
- *   | press BUTTON... | shutdown | reboot
+ *   | press BUTTON... | type TEXT | shutdown | reboot
  * `base` lists the retail bases found; `base use N` makes the Nth one OverlayBase, `base path`
  * the folder named by the rest of the line, as choosing it on screen does. `rebuild`
  * decodes DELTA against OverlayBase's morrowind.xbe. `update` installs a release waiting in
  * E:\TES3X\update, as a start does; `fetch` checks the update feed and installs from it; `get`
  * saves a URL to a file; `run` starts any XBE, leaving the lines after it for that XBE; `press`
- * presses controller buttons (a b x y up down l r start), for screenshots of the screens.
+ * presses controller buttons (a b x y up down left right l r start), for screenshots of the
+ * screens; `type` types the rest of the line into the open keyboard.
  * `servers` lists the servers servers.ini knows; `server add` adds one ("host[:port]") to the
- * game's pool; `install` installs or updates a server's build, `replace` going ahead over a
+ * game's pool and opens its page; `install` installs or updates a server's build, `replace` going ahead over a
  * folder that holds something else; `join` starts that build joining the server. */
 
 #include "mgr.h"
@@ -415,6 +416,112 @@ static struct server *chosen_server(void)
     return v.server_list.count ? &servers[v.server_list.sel] : NULL;
 }
 
+/* What the open keyboard is typing. */
+enum { KB_SERVER, KB_PASSWORD };
+static int kb_purpose, kb_then_install;
+
+static void ask_server(void)
+{
+    ui_keyboard_open(&v.kb, "Add a server", "Its name or address, with :port when it is not 26500.",
+                     NULL, sizeof(servers[0].name) - 1, 0);
+    kb_purpose = KB_SERVER;
+}
+
+/* The password for the chosen server; then_install retries the update once it is typed. */
+static void ask_password(const char *why, int then_install)
+{
+    struct server *s = chosen_server();
+    char note[128];
+
+    snprintf(note, sizeof(note), "%s%s%s", s->name, why ? ": " : "", why ? why : "");
+    ui_keyboard_open(&v.kb, "Server password", note, s->password, sizeof(s->password) - 1, 1);
+    kb_purpose = KB_PASSWORD;
+    kb_then_install = then_install;
+}
+
+/* Selects a server, adding it to the game's pool first if no servers.ini has it, and opens its
+ * page; nonzero if the name is not a server's. */
+static int add_server(const char *name)
+{
+    struct server s;
+    int i;
+
+    for (i = 0; i < v.server_list.count && name_cmp(servers[i].name, name); i++)
+        ;
+    if (i == v.server_list.count) {
+        if (server_add(name, &s))
+            return -1;
+        mgr_log("server added: %s\n", name);
+        load_servers();
+        for (i = 0; i < v.server_list.count && name_cmp(servers[i].name, name); i++)
+            ;
+        if (i == v.server_list.count)
+            return -1;
+    }
+    v.tab = TAB_SERVERS;
+    v.server_list.sel = i;
+    ui_list_move(&v.server_list, 0);
+    server_details(&servers[i], server_builds[i]);
+    v.page = PAGE_SERVER;
+    return 0;
+}
+
+static void install_server(struct server *s, int replace);
+
+static void keyboard_done(void)
+{
+    struct server *s = chosen_server();
+    char *text = v.kb.text;
+    size_t n;
+
+    if (kb_purpose == KB_SERVER) {
+        text += strspn(text, " ");
+        for (n = strlen(text); n && text[n - 1] == ' '; n--)
+            text[n - 1] = 0;
+        if (!*text) {
+            v.kb.open = 0;
+        } else if (add_server(text)) {
+            /* the keyboard stays, to correct it */
+            say("Not a server address", text,
+                "Type a host name or IP address, with :port when the server does not use 26500.");
+        } else {
+            v.kb.open = 0;
+        }
+        return;
+    }
+    v.kb.open = 0;
+    if (!s)
+        return;
+    snprintf(s->password, sizeof(s->password), "%s", text);
+    memset(v.kb.text, 0, sizeof(v.kb.text));
+    if (server_save(s)) {
+        say("Password not kept", "Could not write", s->file);
+        return;
+    }
+    mgr_log("server %s: password %s\n", s->name, s->password[0] ? "set" : "cleared");
+    server_details(s, server_builds[v.server_list.sel]);
+    if (kb_then_install)
+        install_server(s, 0);
+}
+
+static void keyboard_press(int button)
+{
+    if (button == SDL_CONTROLLER_BUTTON_DPAD_UP || button == SDL_CONTROLLER_BUTTON_DPAD_DOWN)
+        ui_keyboard_move(&v.kb, 0, button == SDL_CONTROLLER_BUTTON_DPAD_UP ? -1 : 1);
+    else if (button == SDL_CONTROLLER_BUTTON_DPAD_LEFT || button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT)
+        ui_keyboard_move(&v.kb, button == SDL_CONTROLLER_BUTTON_DPAD_LEFT ? -1 : 1, 0);
+    else if (button == SDL_CONTROLLER_BUTTON_A && ui_keyboard_press(&v.kb, ui_keyboard_key(&v.kb)))
+        keyboard_done();
+    else if (button == SDL_CONTROLLER_BUTTON_X)
+        ui_keyboard_press(&v.kb, UI_KB_DELETE);
+    else if (button == SDL_CONTROLLER_BUTTON_Y)
+        ui_keyboard_press(&v.kb, UI_KB_SHIFT);
+    else if (button == SDL_CONTROLLER_BUTTON_START)
+        keyboard_done();
+    else if (button == SDL_CONTROLLER_BUTTON_B)
+        memset(&v.kb, 0, sizeof(v.kb));
+}
+
 /* The game's launch data when a server refused its build as stale and the player chose the
  * manager (HANDOFF_MAGIC in tes3xmulti.c): that server's page, where X updates. */
 #define HANDOFF_MAGIC 0x484D3354u
@@ -460,6 +567,10 @@ static void install_server(struct server *s, int replace)
     load_servers();
     if (v.page == PAGE_SERVER)
         server_details(s, server_builds[v.server_list.sel]);
+    if (err == SERVER_PASSWORD) {
+        ask_password(err, 1);
+        return;
+    }
     if (err == INSTALL_CONFIRM) {
         say("Replace this folder?", folder,
             "It holds files that are not a TES3X build. Installing removes nothing, but "
@@ -553,6 +664,7 @@ static void press_named(const char *name)
         {"a", SDL_CONTROLLER_BUTTON_A}, {"b", SDL_CONTROLLER_BUTTON_B},
         {"x", SDL_CONTROLLER_BUTTON_X}, {"y", SDL_CONTROLLER_BUTTON_Y},
         {"up", SDL_CONTROLLER_BUTTON_DPAD_UP}, {"down", SDL_CONTROLLER_BUTTON_DPAD_DOWN},
+        {"left", SDL_CONTROLLER_BUTTON_DPAD_LEFT}, {"right", SDL_CONTROLLER_BUTTON_DPAD_RIGHT},
         {"l", SDL_CONTROLLER_BUTTON_LEFTSHOULDER}, {"r", SDL_CONTROLLER_BUTTON_RIGHTSHOULDER},
         {"start", SDL_CONTROLLER_BUTTON_START},
     };
@@ -602,6 +714,17 @@ static void run_exec(void)
             use_folder(arg[2]);
             continue;
         }
+        if (!strcmp(arg[0], "type") && argc >= 2) {
+            for (n = arg[1] - line; n < len; n++)
+                if (!line[n])
+                    line[n] = ' ';
+            if (!v.kb.open)
+                mgr_log("exec: no keyboard open\n");
+            for (n = 0; v.kb.open && arg[1][n]; n++)
+                ui_keyboard_press(&v.kb, (unsigned char)arg[1][n]);
+            draw();
+            continue;
+        }
         if (!strcmp(arg[0], "list")) {
             scan();
         } else if (!strcmp(arg[0], "verify") && argc == 2 && (b = find_build(arg[1]))) {
@@ -646,11 +769,7 @@ static void run_exec(void)
         } else if (!strcmp(arg[0], "servers")) {
             load_servers();
         } else if (!strcmp(arg[0], "server") && argc == 3 && !strcmp(arg[1], "add")) {
-            struct server s;
-
-            mgr_log("exec: server add %s: %s\n", arg[2],
-                    server_add(arg[2], &s) ? "refused" : "ok");
-            load_servers();
+            mgr_log("exec: server add %s: %s\n", arg[2], add_server(arg[2]) ? "refused" : "ok");
         } else if ((!strcmp(arg[0], "install") || !strcmp(arg[0], "join")) && argc >= 2) {
             for (n = 0; n < (size_t)v.server_list.count && name_cmp(servers[n].name, arg[1]); n++)
                 ;
@@ -711,6 +830,10 @@ static void press(int button)
         }
         return;
     }
+    if (v.kb.open) {
+        keyboard_press(button);
+        return;
+    }
     if (button == SDL_CONTROLLER_BUTTON_LEFTSHOULDER) {
         switch_tab(-1);
     } else if (button == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER) {
@@ -737,6 +860,8 @@ static void press(int button)
         else if (button == SDL_CONTROLLER_BUTTON_A && chosen_server())
             server_details(chosen_server(), server_builds[v.server_list.sel]),
                 v.page = PAGE_SERVER;
+        else if (button == SDL_CONTROLLER_BUTTON_X)
+            ask_server();
         else if (button == SDL_CONTROLLER_BUTTON_Y)
             scan(), load_servers();
     } else if (v.tab == TAB_SERVERS) {
@@ -746,6 +871,8 @@ static void press(int button)
             v.page = PAGE_MAIN;
         else if (button == SDL_CONTROLLER_BUTTON_X)
             install_server(chosen_server(), 0);
+        else if (button == SDL_CONTROLLER_BUTTON_Y)
+            ask_password(NULL, 0);
         else if (button == SDL_CONTROLLER_BUTTON_A && server_builds[v.server_list.sel])
             join(chosen_server(), server_builds[v.server_list.sel]);
     } else if (v.page == PAGE_BROWSE) {

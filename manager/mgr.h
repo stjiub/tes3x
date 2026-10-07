@@ -150,7 +150,9 @@ int servers_load(struct server *out, int max);
 int server_add(const char *name, struct server *s);
 int server_save(const struct server *s);
 void server_fingerprint(const unsigned char key[32], char hex[33]);
-/* Pins the server's key on first contact and keeps a new identity key; NULL, or why not. */
+/* Pins the server's key on first contact and keeps a new identity key; NULL, or why not:
+ * SERVER_PASSWORD when the password is missing or wrong. */
+extern const char SERVER_PASSWORD[];
 const char *server_ticket(struct server *s, struct ticket *t, progress_fn progress);
 
 /* install.c: the server's build into its folder, staged and hash-checked, the XBEs rebuilt from

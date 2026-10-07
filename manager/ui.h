@@ -59,4 +59,28 @@ void ui_progress(const char *what, unsigned long long done, unsigned long long t
 extern unsigned ui_tick;
 void ui_spinner(int cx, int cy);
 
+/* An on-screen keyboard: four rows of characters in three layers (abc, ABC, symbols) and a row
+ * of Shift, Space, Delete and Done, which the D-pad moves over. */
+#define UI_KB_COLS 10
+#define UI_KB_ROWS 5
+enum { UI_KB_SHIFT = -1, UI_KB_SPACE = -2, UI_KB_DELETE = -3, UI_KB_DONE = -4, UI_KB_NONE = 0 };
+
+struct ui_keyboard {
+    int open, layer, row, col;
+    int masked; /* shows only the last character typed */
+    int max;    /* characters text may hold, below its size */
+    char title[48];
+    char note[128];
+    char text[80];
+};
+
+void ui_keyboard_open(struct ui_keyboard *k, const char *title, const char *note,
+                      const char *text, int max, int masked);
+void ui_keyboard_move(struct ui_keyboard *k, int dx, int dy);
+/* The selected key: a character or a UI_KB_ code. */
+int ui_keyboard_key(const struct ui_keyboard *k);
+/* Applies a key to the text; returns 1 for Done. */
+int ui_keyboard_press(struct ui_keyboard *k, int key);
+void ui_keyboard(const struct ui_keyboard *k);
+
 #endif

@@ -1,6 +1,7 @@
 #include "ui.h"
 
 #include <stdio.h>
+#include <string.h>
 
 #define GOLD 0xFFCAA560
 #define GOLD_DARK 0xFF6E5A36
@@ -205,4 +206,161 @@ void ui_progress(const char *what, unsigned long long done, unsigned long long t
     y = ui_dialog("Working", lines, 2, 20, &cancel, 1) + 8;
     gfx_fill(x, y, bar, 8, 0xFF2A241A);
     gfx_fill(x, y, total ? (int)(bar * done / total) : 0, 8, ui->accent);
+}
+
+#define KB_KEY_W 44
+#define KB_KEY_H 32
+#define KB_GAP 4
+#define KB_FIELD_H 36
+#define KB_GRID_W (UI_KB_COLS * (KB_KEY_W + KB_GAP) - KB_GAP)
+
+/* A space is a key that types nothing. */
+static const char *const kb_layers[3][UI_KB_ROWS - 1] = {
+    {"1234567890", "qwertyuiop", "asdfghjkl:", "zxcvbnm.-_"},
+    {"1234567890", "QWERTYUIOP", "ASDFGHJKL:", "ZXCVBNM.-_"},
+    {"!@#$%^&*()", "-_=+[]{}\\|", ";:'\",.<>/?", "`~        "},
+};
+static const char *const kb_shift_label[3] = {"ABC", "#+=", "abc"};
+static const struct {
+    int key, col, cols;
+    const char *label;
+} kb_wide[4] = {
+    {UI_KB_SHIFT, 0, 2, NULL},
+    {UI_KB_SPACE, 2, 4, "Space"},
+    {UI_KB_DELETE, 6, 2, "Delete"},
+    {UI_KB_DONE, 8, 2, "Done"},
+};
+
+static int kb_wide_at(int col)
+{
+    int i;
+
+    for (i = 3; i > 0 && col < kb_wide[i].col; i--)
+        ;
+    return i;
+}
+
+void ui_keyboard_open(struct ui_keyboard *k, const char *title, const char *note,
+                      const char *text, int max, int masked)
+{
+    memset(k, 0, sizeof(*k));
+    snprintf(k->title, sizeof(k->title), "%s", title);
+    snprintf(k->note, sizeof(k->note), "%s", note ? note : "");
+    snprintf(k->text, sizeof(k->text), "%s", text ? text : "");
+    k->max = max > 0 && max < (int)sizeof(k->text) ? max : (int)sizeof(k->text) - 1;
+    k->text[k->max] = 0;
+    k->masked = masked;
+    k->row = 1;
+    k->open = 1;
+}
+
+void ui_keyboard_move(struct ui_keyboard *k, int dx, int dy)
+{
+    if (dy)
+        k->row = (k->row + dy + UI_KB_ROWS) % UI_KB_ROWS;
+    if (dx && k->row == UI_KB_ROWS - 1)
+        k->col = kb_wide[(kb_wide_at(k->col) + dx + 4) % 4].col;
+    else if (dx)
+        k->col = (k->col + dx + UI_KB_COLS) % UI_KB_COLS;
+}
+
+int ui_keyboard_key(const struct ui_keyboard *k)
+{
+    char c;
+
+    if (k->row == UI_KB_ROWS - 1)
+        return kb_wide[kb_wide_at(k->col)].key;
+    c = kb_layers[k->layer][k->row][k->col];
+    return c == ' ' ? UI_KB_NONE : (unsigned char)c;
+}
+
+int ui_keyboard_press(struct ui_keyboard *k, int key)
+{
+    size_t n = strlen(k->text);
+
+    if (key == UI_KB_DONE)
+        return 1;
+    if (key == UI_KB_SHIFT)
+        k->layer = (k->layer + 1) % 3;
+    else if (key == UI_KB_DELETE && n)
+        k->text[n - 1] = 0;
+    else if (key == UI_KB_SPACE || key > 0) {
+        if ((int)n < k->max) {
+            k->text[n] = key > 0 ? (char)key : ' ';
+            k->text[n + 1] = 0;
+        }
+    }
+    return 0;
+}
+
+void ui_keyboard(const struct ui_keyboard *k)
+{
+    static const struct ui_hint hints[] = {{UI_A, "Type"},     {UI_X, "Delete"},
+                                           {UI_Y, "Shift"},    {UI_START, "Done"},
+                                           {UI_B, "Cancel"}};
+    char shown[sizeof(k->text)], key[2] = {0};
+    const char *label;
+    const struct font *f;
+    int w = KB_GRID_W + 48, x = (GFX_W - w) / 2, left = x + 24, notes, h, y, r, c, i, kx, ky, kw;
+    int sel;
+    size_t n = strlen(k->text);
+
+    notes = k->note[0] ? gfx_text_wrap(ui->small, 0, 0, KB_GRID_W, 0, k->note) : 0;
+    h = 20 + ui->title->line + 4 + notes * ui->small->line + 8 + KB_FIELD_H + 14
+        + UI_KB_ROWS * (KB_KEY_H + KB_GAP) - KB_GAP + 16 + 18 + 20;
+    y = (GFX_H - h) / 2;
+    gfx_noclip();
+    gfx_fill(0, 0, GFX_W, GFX_H, 0xA0000000);
+    ui->panel(x, y, w, h);
+    gfx_text(ui->title, left, y + 20, ui->accent, k->title);
+    y += 20 + ui->title->line + 4;
+    if (notes)
+        y += ui->small->line * gfx_text_wrap(ui->small, left, y, KB_GRID_W, ui->dim, k->note);
+    y += 8;
+
+    gfx_fill(left, y, KB_GRID_W, KB_FIELD_H, 0xFF0C0A07);
+    gfx_outline(left, y, KB_GRID_W, KB_FIELD_H, ui->line);
+    for (i = 0; i < (int)n; i++)
+        shown[i] = k->masked && i + 1 < (int)n ? '*' : k->text[i];
+    shown[n] = 0;
+    /* the end of a long text, where the typing is */
+    for (label = shown; *label && gfx_text_width(ui->body, label) > KB_GRID_W - 28; label++)
+        ;
+    kx = gfx_text(ui->body, left + 12, y + (KB_FIELD_H - ui->body->line) / 2, ui->bright, label);
+    gfx_fill(kx + 1, y + 8, 2, KB_FIELD_H - 16, ui->accent);
+    y += KB_FIELD_H + 14;
+
+    for (r = 0; r < UI_KB_ROWS; r++)
+        for (c = 0; c < UI_KB_COLS; c++) {
+            if (r == UI_KB_ROWS - 1) {
+                i = kb_wide_at(c);
+                if (c != kb_wide[i].col)
+                    continue;
+                kw = kb_wide[i].cols * (KB_KEY_W + KB_GAP) - KB_GAP;
+                label = kb_wide[i].label ? kb_wide[i].label : kb_shift_label[k->layer];
+                sel = r == k->row && i == kb_wide_at(k->col);
+            } else {
+                key[0] = kb_layers[k->layer][r][c];
+                kw = KB_KEY_W;
+                label = key[0] == ' ' ? "" : key;
+                sel = r == k->row && c == k->col;
+            }
+            kx = left + c * (KB_KEY_W + KB_GAP);
+            ky = y + r * (KB_KEY_H + KB_GAP);
+            if (sel) {
+                ui->select(kx, ky, kw, KB_KEY_H);
+                gfx_outline(kx, ky, kw, KB_KEY_H, ui->accent);
+            } else {
+                gfx_fill(kx, ky, kw, KB_KEY_H, 0x20CAA560);
+                gfx_outline(kx, ky, kw, KB_KEY_H, 0x40CAA560);
+            }
+            f = sel ? ui->bold : r == UI_KB_ROWS - 1 ? ui->small : ui->body;
+            gfx_text(f, kx + (kw - gfx_text_width(f, label)) / 2,
+                     ky + (KB_KEY_H - f->line) / 2 + 1, sel ? ui->bright : ui->text, label);
+        }
+    y += UI_KB_ROWS * (KB_KEY_H + KB_GAP) - KB_GAP + 16;
+    for (i = 0, kx = left; i < (int)(sizeof(hints) / sizeof(*hints)); i++) {
+        kx += ui_button(hints[i].button, kx, y) + 5;
+        kx = gfx_text(ui->small, kx, y, ui->text, hints[i].label) + 16;
+    }
 }

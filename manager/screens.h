@@ -39,7 +39,8 @@ struct view {
     struct ui_list server_list;
     struct ui_list settings;
     const char *overlay_base, *agent, *slot;
-    /* a dialog over the page, when title is set */
+    struct ui_keyboard kb; /* over the page when open */
+    /* a dialog over the page and the keyboard, when title is set */
     char title[48];
     char text[4][128];
     int dismiss; /* B closes it */

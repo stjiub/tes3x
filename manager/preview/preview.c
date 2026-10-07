@@ -170,6 +170,23 @@ int main(int argc, char **argv)
     v.confirm = 0;
     memset(v.title, 0, sizeof(v.title));
     memset(v.text, 0, sizeof(v.text));
+    v.page = PAGE_MAIN;
+    ui_keyboard_open(&v.kb, "Add a server", "Its name or address, with :port when it is not 26500.",
+                     "play.example.net:2", 79, 0);
+    ui_keyboard_move(&v.kb, 0, -1);
+    ui_keyboard_move(&v.kb, 5, 0);
+    screen_draw(&v);
+    save("keyboard");
+    ui_keyboard_open(&v.kb, "Server password",
+                     "friends.example.org:27000: The server wants a password.", "hunter2", 64, 1);
+    ui_keyboard_press(&v.kb, UI_KB_SHIFT);
+    ui_keyboard_press(&v.kb, UI_KB_SHIFT);
+    ui_keyboard_move(&v.kb, 0, 3);
+    ui_keyboard_move(&v.kb, 1, 0);
+    v.page = PAGE_SERVER;
+    screen_draw(&v);
+    save("keyboard-password");
+    memset(&v.kb, 0, sizeof(v.kb));
     v.server_list.count = 0;
     v.page = PAGE_MAIN;
     screen_draw(&v);

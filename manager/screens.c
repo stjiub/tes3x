@@ -70,7 +70,7 @@ static void draw_servers(const struct view *v)
     if (!v->server_list.count) {
         empty("No servers yet",
               "Servers joined from the game's main menu appear here, with the keys the game "
-              "keeps for them.");
+              "keeps for them. Add one by its address to install its build.");
         return;
     }
     for (i = v->server_list.top, y = LIST_TOP;
@@ -204,9 +204,10 @@ static void draw_page(const struct view *v)
     static const struct ui_hint drives[] = {{UI_A, "Open"}, {UI_B, "Back"}};
     static const struct ui_hint change[] = {{UI_A, "Change"}};
     static const struct ui_hint update[] = {{UI_A, "Check for update"}};
-    static const struct ui_hint servers[] = {{UI_A, "Details"}, {UI_Y, "Rescan"}};
+    static const struct ui_hint servers[] = {{UI_A, "Details"}, {UI_X, "Add server"},
+                                             {UI_Y, "Rescan"}};
     static const struct ui_hint server[] = {{UI_A, "Join"}, {UI_X, "Update build"},
-                                            {UI_B, "Back"}};
+                                            {UI_Y, "Password"}, {UI_B, "Back"}};
     const struct ui_hint *hints = NULL;
     char status[96];
     int n = 0;
@@ -229,14 +230,14 @@ static void draw_page(const struct view *v)
         const struct server *s = &v->servers[v->server_list.sel];
 
         draw_lines(v, s->name, s->file);
-        hints = server, n = 3;
+        hints = server, n = 4;
         if (!v->server_builds[v->server_list.sel])
-            hints = server + 1, n = 2;
+            hints = server + 1, n = 3;
     } else if (v->tab == TAB_SERVERS) {
         draw_servers(v);
-        hints = servers, n = 2;
+        hints = servers, n = 3;
         if (!v->server_list.count)
-            hints = servers + 1, n = 1;
+            hints = servers + 1, n = 2;
     } else if (v->page == PAGE_BASES) {
         draw_bases(v);
         hints = v->base_list.sel == v->base_count ? choose : bases, n = 2;
@@ -268,6 +269,8 @@ void screen_draw(const struct view *v)
     int i;
 
     draw_page(v);
+    if (v->kb.open)
+        ui_keyboard(&v->kb);
     if (!v->title[0])
         return;
     for (i = 0; i < 4; i++)
