@@ -5282,6 +5282,30 @@ class ProfileWindow(QMainWindow):
         name = f"manager-{target['name']}-{stamp}"
 
         def start():
+            port = self.local_values().get("server", {}).get("port", 26500)
+            # the profile's own build rides on the disc, so a rebuild needs no download
+            built = self.build_output() / "deploy" if self.profile_path else None
+            if built is not None and (built / "tes3xbuild.json").is_file():
+                profile = self.profile_plain["profile"]
+                folder = profile.get("install_dir") or profile["name"]
+
+                def link(source, target):
+                    try:
+                        os.link(source, target)
+                    except OSError:
+                        shutil.copy2(source, target)
+
+                staged = out / "disc" / "Games" / folder
+                shutil.copytree(built, staged, copy_function=link)
+                # the manager offers Join for the build installed from a server
+                manifest = staged / "tes3xbuild.json"
+                raw = manifest.read_bytes()
+                head = (f'{{\n "server": "10.0.2.2:{port}",\n "deployed": "'
+                        f'{datetime.datetime.now(datetime.timezone.utc):%Y-%m-%dT%H:%M:%SZ}",')
+                manifest.unlink()  # a hard link must not be written through
+                manifest.write_bytes(head.encode() + raw[raw.index(b"{") + 1:])
+            servers = out / "seed" / "servers.ini"
+            servers.write_text(f"[10.0.2.2:{port}]\r\n", encoding="latin-1", newline="")
             environment = QProcessEnvironment.systemEnvironment()
             environment.insert("TES3X_CONFIG", config)
             self.play_run = self.work_dir() / "build" / "xemu" / name
@@ -5290,7 +5314,9 @@ class ProfileWindow(QMainWindow):
                 [name, "--deploy", str(out / "disc"), "--target", target["name"],
                  "--config", config, "--net-nat", "--disk", str(self.play_disk()),
                  "--seed", f"Games/Base={out / 'seed' / 'Games' / 'Base'}",
-                 "--seed", f"TES3X/console.ini={out / 'seed' / 'console.ini'}"],
+                 "--seed", f"Games/Base/Morrowind.ini={out / 'seed' / 'Games' / 'Base' / 'Morrowind.ini'}",
+                 "--seed", f"TES3X/console.ini={out / 'seed' / 'console.ini'}",
+                 "--seed", f"UDATA/42530005/TES3X/servers.ini={servers}"],
                 f"Manager in {target['name']}…", environment)
 
         self.run_steps([(ROOT / "tools" / "tes3x_manager.py",
@@ -5476,6 +5502,10 @@ class ProfileWindow(QMainWindow):
                 if self.settings is not None:
                     self.settings.setValue(key, True)
             self.run_steps(steps)
+            return
+        if target.get("kind") == "xemu" and "multiplayer" in self.applied_patches:
+            # a multiplayer build comes from the server through the manager, on the shared disk
+            self.launch_manager_xemu(target)
             return
         ours = {str(s.pid) for s in self.plays.values() if s.pid}
         running = [pid for pid in running_xemu() if pid not in ours]
