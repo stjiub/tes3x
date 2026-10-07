@@ -1984,6 +1984,8 @@ class Client:
         self.synced = False  # that launch runs its character's latest checkpoint
         self.launch = 0  # GAME_NONE, GAME_LOAD or GAME_NEW
         self.character = None  # the folder of the character that launch runs
+        self.announced = False  # the others were told it joined
+        self.relaunching = False  # it was sent a character to load and is about to relaunch
         self.rebuild = None  # (checkpoint, when to ask for the save) under --rebuild
         self.place_hold = None  # (replayed place, until when) while STATE still shows the old one
         self.listed = []  # the folders CHARS offered, in order
@@ -2374,7 +2376,28 @@ def serve(args):
         save_world(world["path"], state)
         world["dirty"], world["saved"] = False, now
 
+    def notify(text, now, only=None, skip=None):
+        """Show text on the screen of every console in the world, or of one client."""
+        data = text[:EVENT_DATA].encode("latin-1", "replace")
+        for other in clients.values():
+            if other.in_world and other is not skip and (only is None or other is only):
+                other.rel.queue(EVENT_TEXT, 0, data)
+                flush(other, now)
+
+    def player_name(client):
+        return client.character or f"Player {client.id}"
+
+    def announce_join(client, now):
+        client.relaunching = False
+        if not client.announced:
+            client.announced = True
+            notify(f"{player_name(client)} has joined.", now, skip=client)
+
     def leave(client):
+        # a relaunch to load a character is not a departure
+        if client.in_world and client.announced and not client.relaunching:
+            notify(f"{player_name(client)} has left.", time.time(), skip=client)
+            client.announced = False
         client.alive = False
         for refid, (holder, target) in list(dialogues.items()):
             if holder == client.id:
@@ -2554,6 +2577,7 @@ def serve(args):
 
     def player_ready(client, replay, stamp, now):
         """Replay the kept player state over the checkpoint, or have the console send it all."""
+        announce_join(client, now)
         stream = player_stream(client)
         if stream is None:
             return
@@ -2596,6 +2620,7 @@ def serve(args):
         client.bulk = Outgoing(name, data)
         client.rel.queue(EVENT_OFFER, 0, client.bulk.offer())
         client.rel.queue(EVENT_LOAD, 0, zstr(name))
+        client.relaunching = True
         flush(client, now)
         print(f"{stamp} client {client.id} loaded {loaded or 'no save'}: sending "
               f"{os.path.basename(path)} as {name} ({len(data)} bytes) to load", flush=True)
@@ -2619,6 +2644,7 @@ def serve(args):
         client.bulk = Outgoing(name, data)
         client.rel.queue(EVENT_OFFER, 0, client.bulk.offer())
         client.rel.queue(EVENT_LOAD, 0, zstr(name))
+        client.relaunching = True
         flush(client, now)
         print(f"{stamp} client {client.id} loaded {loaded or 'no save'}: sending "
               f"{os.path.basename(folder)}'s state as {name} ({len(data)} bytes) to start from",
@@ -3295,6 +3321,12 @@ def serve(args):
             if rest:
                 detail["verbose"] = rest[0] == "verbose"
             return "log " + ("verbose" if detail["verbose"] else "normal")
+        if verb == "say" and rest:
+            notify(" ".join(rest), time.time())
+            return "sent to everyone"
+        if verb == "tell" and len(rest) >= 2 and rest[0] in by_id:
+            notify(" ".join(rest[1:]), time.time(), only=by_id[rest[0]])
+            return f"sent to client {rest[0]}"
         if verb == "stop" and not rest:
             begin_stop("admin stop", time.time())
             return "stopping"
@@ -3311,6 +3343,8 @@ def serve(args):
                 "  ban N                 ban client N's key and MAC, and drop it\n"
                 "  ban|unban key FINGERPRINT|mac MAC|address A.B.C.D\n"
                 "  bans                  the bans\n"
+                "  say TEXT              show TEXT on every console\n"
+                "  tell N TEXT           show TEXT on client N's console\n"
                 "  stop                  save every character, then stop the server")
 
     def status(now):
@@ -3476,6 +3510,10 @@ def serve(args):
                 client.rel.queue(EVENT_OFFER, 0, client.bulk.offer())
                 print(f"{stamp} offering {sending[0]} ({len(sending[1])} bytes, id "
                       f"{client.bulk.id:#010x}) to client {client.id}", flush=True)
+            if args.welcome:
+                client.rel.queue(EVENT_TEXT, 0, args.welcome[:EVENT_DATA].encode("latin-1", "replace"))
+            if not key_folder(client):  # with characters, it joins once it has one
+                announce_join(client, now)
             if client.rel.out:
                 flush(client, now)
             return
@@ -3562,6 +3600,7 @@ def serve(args):
         if stop["until"] is not None:
             return
         stop["until"] = now + args.stop_wait
+        notify("The server is shutting down.", now)
         stop["waiting"] = {c.id: c.kept for c in clients.values() if c.alive and c.synced}
         asked = ask_save([c for c in clients.values() if c.alive], now)
         print(f"{time.strftime('%H:%M:%S')} stopping ({why}): asked to save: {asked}; waiting "
@@ -4232,6 +4271,8 @@ def main(argv=None):
     p.add_argument("--stop-wait", type=float, default=60.0, metavar="SECONDS",
                    help="on stopping (Ctrl-C, --duration, admin stop) wait this long for every "
                         "joined console to save its character (default 60)")
+    p.add_argument("--welcome", metavar="TEXT",
+                   help="show this on a console when it enters the world (80 characters)")
     p.add_argument("--world", metavar="DIR",
                    help="keep the world in DIR, one file per load order: the clock, deaths, "
                         "changed objects, objects made at run time and weather, loaded when the "
