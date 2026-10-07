@@ -9341,7 +9341,12 @@ static const char *const chargen_finish[] = {
     "AddTopic \"specific place\"", "AddTopic \"someone in particular\"",
     "AddTopic \"services\"", "AddTopic \"my trade\"", "AddTopic \"little secret\"",
     "AddTopic \"latest rumors\"", "AddTopic \"little advice\"",
-    "set chargendoorjournal.done to 1", "set CharGenState to -1"};
+    "set chargendoorjournal.done to 1", "set \"chargen captain\".done to 1",
+    "set \"chargen captain\".state to -1", "set \"chargen class\".state to -1",
+    "set \"chargen name\".state to -1", "set \"chargen dock guard\".state to -1",
+    "set \"chargen boat guard 2\".state to -1", "set \"chargen door guard\".done to 1",
+    "set chargen_shipdoor.done to 1", "set \"chargen door captain\".done to 1",
+    "set \"CharGen Exit Door\".done to 1", "set CharGenState to -1"};
 
 static void names_event(struct names *list, const struct event *e)
 {

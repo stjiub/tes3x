@@ -319,7 +319,13 @@ class TargetsPage(QWidget):
         self.console_quit = tip_button("Quit to dashboard",
                                        "Ask the running game to return to the dashboard",
                                        self.quit_game)
+        self.console_memory = QCheckBox("Log memory")
+        self.console_memory.setToolTip(
+            "Print the game's free memory and frame time here every few seconds")
+        self.console_memory.toggled.connect(
+            lambda on: setattr(self.window, "log_memory", on))
         row.addWidget(self.console_entry, 1)
+        row.addWidget(self.console_memory)
         for button in (self.send_button, self.console_fetch, self.console_quit):
             row.addWidget(button)
         layout.addLayout(row)

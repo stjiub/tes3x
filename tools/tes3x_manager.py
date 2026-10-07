@@ -110,6 +110,30 @@ def stage(out, xbe, launcher, remote, agent=None):
     return tree
 
 
+def stage_xemu(out, xbe, vanilla=None):
+    """What an xemu session needs to start in the manager: OUT/disc, a disc folder whose
+    default.xbe is the manager, and OUT/seed, the files the session's disk gets once (a retail
+    base for the manager to build on, and a console.ini that brings the NIC up by DHCP)."""
+    out = Path(out)
+    disc, seed = out / "disc", out / "seed"
+    shutil.rmtree(disc, ignore_errors=True)
+    disc.mkdir(parents=True)
+    shutil.copyfile(xbe, disc / "default.xbe")
+    # an ISO needs a second file
+    (disc / "readme.txt").write_text("TES3X manager for xemu\n", encoding="utf-8")
+    seed.mkdir(parents=True, exist_ok=True)
+    (seed / "console.ini").write_bytes(b"[Xbox]\r\nNetAddress=dhcp\r\n")
+    base = seed / "Games" / "Base"
+    if vanilla and not base.is_dir():
+        from tes3x_pipeline import stage_retail_base
+        from tes3x_xemu import link_or_copy
+        stage_retail_base(vanilla, base, link_or_copy)
+        tes3x_manifest.write(base, tes3x_manifest.create(
+            base, profile="TES3X retail base", source={"kind": "xemu"},
+            install_layout="retail-base"))
+    return disc, seed
+
+
 def deploy_arguments(out, remote, args):
     arguments = [str(Path(out) / "deploy"), "--remote", remote, "--verify", "size",
                  "--console-ini", str(Path(out) / "console.ini")]
@@ -180,6 +204,11 @@ def main():
         p.add_argument("--target", help="Xbox target (default: default_target)")
         p.add_argument("--no-agent", action="store_true",
                        help="leave the console's NetAgent alone instead of naming this PC")
+    p = sub.add_parser("xemu", help="stage the manager as an xemu disc and the files its disk "
+                                    "is seeded with")
+    p.add_argument("out", help="folder for disc/ and seed/")
+    p.add_argument("--xbe", help="the manager XBE (default: packaged, else built)")
+    p.add_argument("--config", help="local config (default: ./tes3x.local.toml)")
     p = sub.add_parser("update")
     p.add_argument("release", help="a signed release folder (tes3x_release.py manager)")
     p.add_argument("--agent", action="store_true",
@@ -200,6 +229,18 @@ def main():
             send_update(args)
         except ManagerError as exc:
             sys.exit(str(exc))
+        return
+    if args.command == "xemu":
+        try:
+            xbe = find_xbe(args.xbe, args.config)
+        except ManagerError as exc:
+            sys.exit(str(exc))
+        root = tes3x_ftp.local_settings(args.config).get("paths", {}).get("vanilla_root")
+        base = Path(args.config).parent if args.config else Path.cwd()
+        vanilla = (base / root) if root else None
+        disc, seed = stage_xemu(args.out, xbe, vanilla if vanilla and vanilla.is_dir() else None)
+        print(f"manager {version()} staged for xemu in {disc}"
+              + ("" if vanilla else "; no [paths] vanilla_root, so no retail base"), flush=True)
         return
     local = tes3x_ftp.local_settings(args.config)
     try:

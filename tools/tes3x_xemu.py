@@ -526,6 +526,11 @@ def main():
                     help="keep the ISO and the build's deploy tree after the run")
     ap.add_argument("--keep-iso", action="store_true",
                     help="keep the ISO after the run, for a later run's --iso")
+    ap.add_argument("--seed", action="append", default=[], metavar="DEST=SOURCE",
+                    type=lambda v: tuple(v.split("=", 1)) if "=" in v else ap.error(
+                        f"--seed takes DEST=SOURCE, not {v}"),
+                    help="like --put, but only what --disk's E: drive does not hold yet; a kept "
+                         "disk gets it in a new overlay on top (repeatable)")
     ap.add_argument("--disk", metavar="FILE",
                     help="use and keep this overlay across runs, making it over the clean disk "
                          "the first time")
@@ -661,7 +666,7 @@ def main():
                     ini_text = set_ini_key(ini_text, "Xbox", key, value)
             ini_path.unlink()  # a hard link must not be written through
             ini_path.write_text(ini_text, encoding="latin-1")
-        if a.ram == 128:
+        if a.ram == 128 and (deploy / "morrowind.xbe").is_file():
             if packed == deploy and a.profile:
                 clear_limit64(packed / "morrowind.xbe")
             else:
@@ -703,11 +708,20 @@ def main():
     # Copy-on-write over the clean disk: the run writes only what the guest changes.
     hdd = Path(a.disk).resolve() if a.disk else out / "hdd.qcow2"
     clusters = None
-    if a.exec or a.save or a.put or (pool_paths and not hdd.is_file()):
+    puts = list(a.put)
+    seeds = []
+    for dest, source in a.seed:
+        parent, _, name = dest.replace("\\", "/").strip("/").rpartition("/")
+        if not (hdd.is_file() and has_file(hdd, parent, name)):
+            seeds.append((dest, source))
+    if not hdd.is_file():
+        puts += seeds
+        seeds = []
+    if a.exec or a.save or puts or (pool_paths and not hdd.is_file()):
         with CowView(str(clean)) as disk:
             if a.exec:
                 put_file(disk, a.exec, "", "tes3xexec.txt")
-            for dest, source in a.put:
+            for dest, source in puts:
                 put_tree(disk, Path(source), dest)
             if pool_paths:
                 make_dirs(disk, udata)
@@ -719,6 +733,16 @@ def main():
                 put_file(disk, save, f"{udata}/{SAVE_DIR}", Path(save).name)
                 print("save: @start load " + SAVE_PATH + Path(save).name)
             clusters = disk.changed()
+    elif seeds:
+        n = 1
+        while hdd.with_name(f"{hdd.stem}-{n}{hdd.suffix}").exists():
+            n += 1
+        below = hdd.rename(hdd.with_name(f"{hdd.stem}-{n}{hdd.suffix}"))
+        with CowView(str(below)) as disk:
+            for dest, source in seeds:
+                put_tree(disk, Path(source), dest)
+            create_overlay(str(hdd), str(below), disk.changed())
+        print("seeded " + ", ".join(dest for dest, _ in seeds) + f" onto {hdd.name}")
     elif pool_paths and not has_file(hdd, udata, "TitleImage.xbx"):
         # A kept disk from before this pool: its files go in an overlay stacked on top.
         n = 1

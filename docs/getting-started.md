@@ -1,18 +1,5 @@
 # Getting started
 
-This page takes you from a clean copy of the game to a modded build running on your Xbox. There are
-two routes to the same result: the [GUI](#with-the-gui), or [the command line](#from-the-command-line).
-Both follow the same steps:
-
-1. Supply a clean retail game.
-2. Tell TES3X where things are.
-3. Create a profile.
-4. Check it.
-5. Build it.
-6. Optionally, run it in xemu.
-7. Preview the deploy.
-8. Deploy it to its own folder on the Xbox.
-
 ## Before you start
 
 You need:

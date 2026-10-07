@@ -927,6 +927,26 @@ static void trigger(int axis, int value)
     }
 }
 
+/* The left stick steps through menus as the d-pad does: one press each time it leaves the centre. */
+#define STICK_ON 16000
+#define STICK_OFF 8000
+static void stick(int axis, int value)
+{
+    static int held[2];
+    int i = axis == SDL_CONTROLLER_AXIS_LEFTY, now = held[i];
+
+    if (value <= -STICK_ON)
+        now = -1;
+    else if (value >= STICK_ON)
+        now = 1;
+    else if (value > -STICK_OFF && value < STICK_OFF)
+        now = 0;
+    if (now && now != held[i])
+        press(i ? (now < 0 ? SDL_CONTROLLER_BUTTON_DPAD_UP : SDL_CONTROLLER_BUTTON_DPAD_DOWN)
+                : (now < 0 ? SDL_CONTROLLER_BUTTON_DPAD_LEFT : SDL_CONTROLLER_BUTTON_DPAD_RIGHT));
+    held[i] = now;
+}
+
 int main(void)
 {
     SDL_Event e;
@@ -984,6 +1004,10 @@ int main(void)
                 SDL_GameControllerOpen(e.cdevice.which);
             else if (e.type == SDL_CONTROLLERBUTTONDOWN)
                 press(e.cbutton.button);
+            else if (e.type == SDL_CONTROLLERAXISMOTION
+                     && (e.caxis.axis == SDL_CONTROLLER_AXIS_LEFTX
+                         || e.caxis.axis == SDL_CONTROLLER_AXIS_LEFTY))
+                stick(e.caxis.axis, e.caxis.value);
             else if (e.type == SDL_CONTROLLERAXISMOTION
                      && (e.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT
                          || e.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT))

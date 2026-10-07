@@ -4,7 +4,7 @@ Generated from [`nav.toml`](nav.toml) by `tools/tes3x_docs.py --write`; edit tha
 
 ## Start here
 
-- [Getting started](getting-started.md): This page takes you from a clean copy of the game to a modded build running on your Xbox.
+- [Getting started](getting-started.md): Everything you need to get started.
 
 ## Guides
 

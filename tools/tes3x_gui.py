@@ -19,15 +19,16 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import tomllib
 import uuid
 
 try:
     import tomlkit
-    from PySide6.QtCore import (QAbstractTableModel, QFile, QModelIndex, QProcess,
-                                QProcessEnvironment, QSettings, QSortFilterProxyModel, QTimer, Qt,
+    from PySide6.QtCore import (QAbstractTableModel, QEvent, QFile, QModelIndex, QProcess,
+                                QProcessEnvironment, QPointF, QSettings, QSortFilterProxyModel, QTimer, Qt,
                                 QUrl, Signal)
-    from PySide6.QtGui import (QAction, QColor, QDesktopServices, QIcon,
+    from PySide6.QtGui import (QAction, QActionGroup, QColor, QPolygonF, QDesktopServices, QIcon,
                                QKeySequence, QPainter, QPainterPath, QPen, QPixmap,
                                QTextCursor, QTransform)
     from PySide6.QtWidgets import (
@@ -81,6 +82,8 @@ EXPANSION_PLACEHOLDERS = {"tribunal.esm", "bloodmoon.esm"}
 WINS = QColor(60, 170, 60, 60)
 LOSES = QColor(210, 60, 60, 60)
 WARNING = QColor(200, 40, 40)
+CHANNEL_BADGES = {"dev": QColor(215, 150, 20, 110), "preview": QColor(50, 130, 220, 100),
+                  "release": QColor(60, 170, 60, 100)}
 COMPAT = {"works": ("\u2713", QColor(60, 170, 60)),
           "works-with-requirements": ("*", QColor(215, 150, 20)),
           "broken": ("\u2717", WARNING), "not-possible": ("\u2717", WARNING)}
@@ -155,6 +158,24 @@ def ftp_error(line):
     return re.sub(r"^\w+(Error|Exception): (\[\w+ \d+\] )?", "", line)
 
 
+MEMORY_LOG_SECONDS = 5
+
+
+class PlaySession:
+    """One xemu run this window started: its wrapper process, xemu's PID and output so far."""
+
+    def __init__(self, target):
+        self.target = target
+        self.process = self.pid = self.run = None
+        self.output = ""
+
+
+def heartbeat_text(beat):
+    """The in-game agent's last heartbeat: free memory, frame time, dropped log lines."""
+    text = f"{beat['free_kb'] / 1024:.1f} MB free, frame {beat['frame_us'] / 1000:.1f} ms"
+    return text + (f", {beat['dropped']} log lines dropped" if beat["dropped"] else "")
+
+
 def dashboard_agent_state(output, code, expected):
     """(state, detail) from the dashboard agent's authenticated ping."""
     match = re.search(r"\bok tes3xagent (\d+)\b", output) if code == 0 else None
@@ -179,6 +200,30 @@ def version_label():
     return f"TES3X {VERSION}" + (f" ({commit})" if commit else "")
 
 
+def play_icon(colour="#2ea043"):
+    """A solid triangle that stays visible on dark and light backgrounds."""
+    result = QPixmap(18, 18)
+    result.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(result)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor(colour))
+    painter.drawPolygon(QPolygonF([QPointF(3.5, 1.5), QPointF(16, 9), QPointF(3.5, 16.5)]))
+    painter.end()
+    return QIcon(result)
+
+
+def stop_icon(colour="#d32f2f"):
+    result = QPixmap(18, 18)
+    result.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(result)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor(colour))
+    painter.drawRoundedRect(3, 3, 12, 12, 1.5, 1.5)
+    painter.end()
+    return QIcon(result)
+
+
 def tinted_icon(icon, colour):
     """Keep a platform icon's shape while giving toolbar actions distinct accents."""
     source = icon.pixmap(18, 18)
@@ -196,6 +241,11 @@ def tinted_icon(icon, colour):
 
 def theme_icon(widget, theme, fallback):
     return QIcon.fromTheme(theme, widget.style().standardIcon(fallback))
+
+
+CATEGORY_ACCENTS = {"core": "#3d85d6", "correctness": "#d9534f", "compat": "#8a63d2",
+                    "performance": "#2ea043", "qol": "#2aa198", "balance": "#c9822b",
+                    "instrumentation": "#7a8794", "infrastructure": "#d9a21b"}
 
 
 def dot_icon(colour):
@@ -234,10 +284,25 @@ def gear_icon(colour):
     return QIcon(pixmap)
 
 
+class GearButton(QToolButton):
+    """A cog that is redrawn in the palette's text colour when the theme changes."""
+
+    def __init__(self):
+        super().__init__()
+        self.paint_icon()
+
+    def paint_icon(self):
+        self.setIcon(gear_icon(self.palette().buttonText().color()))
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.PaletteChange:
+            self.paint_icon()
+
+
 def menu_button(tip, actions):
     """A cog button that opens a menu of (label, handler) actions."""
-    button = QToolButton()
-    button.setIcon(gear_icon(button.palette().buttonText().color()))
+    button = GearButton()
     button.setToolTip(tip)
     button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
     button.setStyleSheet("QToolButton::menu-indicator { image: none; }")
@@ -1252,7 +1317,7 @@ class BuildSettings(QWidget):
         form.addRow("", self.skip_intro)
 
         self.mode = QComboBox()
-        for label, value in (("Delta archive (needs LLVM)", "delta-bsa"),
+        for label, value in (("Delta archive", "delta-bsa"),
                              ("Merged Morrowind.bsa", "merged-bsa"),
                              ("Loose files", "loose")):
             self.mode.addItem(label, value)
@@ -1467,9 +1532,7 @@ class ProfileWindow(QMainWindow):
         self.catalog = {}
         self.library_indexed = False
         self.process = None
-        self.play_process = None
-        self.play_pid = None
-        self.play_output_buffer = ""
+        self.plays = {}  # target name -> PlaySession; xemu targets run side by side
         self.ftp_probes = {}
         self.agent_probes = {}
         self.in_game_listener = None
@@ -1477,6 +1540,9 @@ class ProfileWindow(QMainWindow):
         self.listener_lent = False
         self.deploy_agent = False
         self.agent_logs = defaultdict(list)
+        self.log_memory = False
+        self.agent_keys = {}  # in-game agent key -> xemu target
+        self.memory_logged = {}
         self.agent_replies = {}
         self.agent_fetches = []
         self.target_builds = {}
@@ -1511,8 +1577,10 @@ class ProfileWindow(QMainWindow):
             self.compat = {}
         self.config_path = Path(config).resolve() if config else None
         self.settings = settings
-        self.developer_mode = (self.settings.value("developer_mode", False, bool)
-                               if self.settings else False)
+        saved = (str(self.settings.value("shown_channels", "preview,release"))
+                 if self.settings else "preview,release")
+        self.shown_channels = {name for name in saved.split(",") if name}
+        self.developer_mode = "dev" in self.shown_channels
         self.saved_text = None
         self.analysis_timer = QTimer(self)
         self.analysis_timer.setSingleShot(True)
@@ -1623,6 +1691,9 @@ class ProfileWindow(QMainWindow):
         self.setStatusBar(StatusBar())
         self.counts = QLabel()
         self.counts.setContentsMargins(0, 0, 8, 0)
+        self.build_state_label = QLabel()
+        self.build_state_label.setContentsMargins(8, 0, 8, 0)
+        self.statusBar().addPermanentWidget(self.build_state_label)
         self.statusBar().addPermanentWidget(self.counts)
         self.ftp_timer = QTimer(self)
         self.ftp_timer.setInterval(60_000)
@@ -1666,12 +1737,41 @@ class ProfileWindow(QMainWindow):
         file_menu.addAction(self.action_exit)
 
         view_menu = self.menuBar().addMenu("&View")
-        self.action_developer_mode = QAction("&Developer mode", self)
-        self.action_developer_mode.setCheckable(True)
-        self.action_developer_mode.setChecked(self.developer_mode)
-        self.action_developer_mode.setToolTip("Allow selecting development-channel patches")
-        self.action_developer_mode.toggled.connect(self.set_developer_mode)
-        view_menu.addAction(self.action_developer_mode)
+        theme_menu = view_menu.addMenu("&Theme")
+        self.theme_actions = {}
+        theme_group = QActionGroup(self)
+        saved_theme = str(self.settings.value("theme", "system")) if self.settings else "system"
+        for key, label in (("system", "System"), ("light", "Light"), ("dark", "Dark")):
+            action = QAction(label, self, checkable=True, checked=key == saved_theme)
+            action.triggered.connect(lambda _checked, key=key: self.set_theme(key))
+            theme_group.addAction(action)
+            theme_menu.addAction(action)
+            self.theme_actions[key] = action
+        self.set_theme(saved_theme, save=False)
+        channels_menu = view_menu.addMenu("Patch &channels")
+        self.channel_actions = {}
+        for channel in ("dev", "preview", "release"):
+            action = QAction(channel.capitalize(), self, checkable=True,
+                             checked=channel in self.shown_channels)
+            action.setToolTip(f"List {channel}-channel patches")
+            action.toggled.connect(lambda on, channel=channel: self.set_channel(channel, on))
+            channels_menu.addAction(action)
+            self.channel_actions[channel] = action
+        self.action_output = QAction("&Output panel", self, checkable=True)
+        self.action_output.setChecked(
+            bool(self.settings.value("show_output", True, bool)) if self.settings else True)
+        self.action_output.toggled.connect(self.set_output_visible)
+        view_menu.addAction(self.action_output)
+        self.set_output_visible(self.action_output.isChecked(), save=False)
+        columns_menu = view_menu.addMenu("&Mod columns")
+        hidden = (str(self.settings.value("hidden_mod_columns", "")) if self.settings
+                  else "").split(",")
+        for column in range(1, self.mod_list.columnCount()):
+            title = self.mod_list.headerItem().text(column)
+            action = QAction(title, self, checkable=True, checked=str(column) not in hidden)
+            action.toggled.connect(lambda on, column=column: self.set_mod_column(column, on))
+            columns_menu.addAction(action)
+            self.mod_list.setColumnHidden(column, not action.isChecked())
 
         actions_menu = self.menuBar().addMenu("&Actions")
         self.action_check = QAction("&Check profile", self)
@@ -1711,11 +1811,8 @@ class ProfileWindow(QMainWindow):
                                  self.action_refresh_ftp])
         actions_menu.addSeparator()
         actions_menu.addAction(self.discard_after_deploy)
-        for action, theme, fallback, accent in (
-                (self.action_play, QIcon.ThemeIcon.MediaPlaybackStart,
-                 QStyle.StandardPixmap.SP_MediaPlay, "#2e7d32"),):
-            icon = QIcon.fromTheme(theme, self.style().standardIcon(fallback))
-            action.setIcon(tinted_icon(icon, accent))
+        self.play_icon, self.stop_icon = play_icon(), stop_icon()
+        self.action_play.setIcon(self.play_icon)
         self.run_menu = QMenu(self)
         self.run_menu.setToolTipsVisible(True)
         self.run_menu.addActions([self.action_check, self.action_build, self.action_deploy])
@@ -1733,9 +1830,9 @@ class ProfileWindow(QMainWindow):
         self.play_menu.setToolTipsVisible(True)
         self.play_button.setMenu(self.play_menu)
         self.play_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
-        for button in (self.run_button, self.play_button):
-            button.setStyleSheet("QToolButton { border: 1px solid palette(mid); "
-                                 "padding: 4px 8px; border-radius: 4px; }")
+        self.style_toolbar_buttons()
+        QApplication.styleHints().colorSchemeChanged.connect(
+            lambda _scheme: QTimer.singleShot(0, self.style_toolbar_buttons))
         self.check_button, self.build_button, self.deploy_button = (
             self.action_check, self.action_build, self.action_deploy)
         for action in (self.action_check, self.action_build, self.action_deploy):
@@ -1747,7 +1844,6 @@ class ProfileWindow(QMainWindow):
         self.conflict_retry = None
         self.space_retry = None
         self.play_gdb = bool(self.settings and self.settings.value("play_gdb", False, bool))
-        self.play_run = None
         self.refresh_targets()
         self.refresh_play_menu()
         self.update_build_state()
@@ -2191,9 +2287,8 @@ class ProfileWindow(QMainWindow):
         item.setText(self.MOD_NOTES, ", ".join(notes))
         on = item.data(0, EXTRA) and entry.get("enabled", True)
         item.setCheckState(self.MOD_NAME, Qt.CheckState.Checked if on else Qt.CheckState.Unchecked)
-        colour = WARNING if problem else self.palette().text().color()
         for column in range(self.mod_list.columnCount()):
-            item.setForeground(column, colour)
+            item.setData(column, Qt.ItemDataRole.ForegroundRole, WARNING if problem else None)
         source = release.get("source") if release else None
         item.setToolTip(self.MOD_NAME, problem or (f"Installed from {source}" if source else ""))
         self.update_compat(item)
@@ -2204,7 +2299,7 @@ class ProfileWindow(QMainWindow):
         entry = item.data(0, ROLE)
         verdict = self.compat_verdict(item)
         status = verdict["status"] if verdict else "untested"
-        symbol, colour = COMPAT.get(status, ("?", self.palette().placeholderText().color()))
+        symbol, colour = COMPAT.get(status, ("?", None))
         lines = [f"Xbox compatibility: {COMPAT_LABELS[status]}" if verdict
                  else "Not in the compatibility catalog"]
         if verdict:
@@ -2219,7 +2314,7 @@ class ProfileWindow(QMainWindow):
             if verdict.get("notes"):
                 lines.append(verdict["notes"])
         item.setText(self.MOD_XBOX, symbol)
-        item.setForeground(self.MOD_XBOX, colour)
+        item.setData(self.MOD_XBOX, Qt.ItemDataRole.ForegroundRole, colour)
         item.setTextAlignment(self.MOD_XBOX, Qt.AlignmentFlag.AlignCenter)
         item.setToolTip(self.MOD_XBOX, "\n".join(lines))
 
@@ -3115,7 +3210,7 @@ class ProfileWindow(QMainWindow):
     def manager_paired(self, name):
         return bool(name) and "manager_agent" in self.target_features(name)
 
-    def in_game_target(self, address):
+    def in_game_target(self, address, key=None):
         """Map an agent's source address to a configured target."""
         host = address[0]
         targets = tes3x_targets.targets(self.local_values())
@@ -3128,7 +3223,18 @@ class ProfileWindow(QMainWindow):
             return matching[0]
         if host.startswith("127.") or host == "::1":
             # xemu reaches the listener through a local tunnel: the running session's target.
-            playing = getattr(self, "play_target", None) if self.play_process else None
+            running = [s.target for s in self.plays.values() if s.process is not None]
+            if len(running) > 1 and key is not None:
+                # Every xemu arrives from this PC; each has its own key, claimed by the oldest
+                # run that has none yet.
+                if key not in self.agent_keys:
+                    taken = set(self.agent_keys.values())
+                    free = [t for t in running if t not in taken]
+                    if free:
+                        self.agent_keys[key] = free[0]
+                if self.agent_keys.get(key) in running:
+                    return self.agent_keys[key]
+            playing = running[0] if running else None
             if playing in targets:
                 return playing
             target = targets.get(selected, {})
@@ -3141,7 +3247,7 @@ class ProfileWindow(QMainWindow):
         if kind == "reply":
             self.agent_reply(event)
             return
-        name = self.in_game_target(event["address"])
+        name = self.in_game_target(event["address"], event.get("client_key"))
         if not name:
             return
         if kind == "goodbye":
@@ -3165,6 +3271,10 @@ class ProfileWindow(QMainWindow):
         if kind == "heartbeat" and len(payload) >= 16:
             _, frame_us, free_kb, dropped = struct.unpack_from("<IIII", payload)
             values["heartbeat"] = {"frame_us": frame_us, "free_kb": free_kb, "dropped": dropped}
+            now = time.monotonic()
+            if self.log_memory and now - self.memory_logged.get(name, 0) >= MEMORY_LOG_SECONDS:
+                self.memory_logged[name] = now
+                self.agent_lines.emit(name, [f"mem {heartbeat_text(values['heartbeat'])}"])
         self.set_target_runtime(name, **values)
         if kind == "log":
             lines = payload.decode("cp1252", "replace").splitlines()
@@ -3348,6 +3458,8 @@ class ProfileWindow(QMainWindow):
                 lines.append(runtime["dashboard_detail"])
         if runtime.get("game_detail"):
             lines.append(runtime["game_detail"])
+        if runtime.get("game") == "connected" and runtime.get("heartbeat"):
+            lines.append(heartbeat_text(runtime["heartbeat"]))
         if self.target_drive_tips.get(name):
             lines.append(self.target_drive_tips[name])
         return "\n".join(lines)
@@ -4248,10 +4360,13 @@ class ProfileWindow(QMainWindow):
         self.patch_search = QLineEdit()
         self.patch_search.setPlaceholderText("Filter patches…")
         self.patch_search.textChanged.connect(self.filter_patches)
+        self.patch_only_enabled = QCheckBox("Only enabled")
+        self.patch_only_enabled.toggled.connect(lambda _on: self.filter_patches())
         top = QHBoxLayout()
         top.addWidget(QLabel("Start from"))
         top.addWidget(self.patch_preset)
         top.addWidget(self.patch_search, 1)
+        top.addWidget(self.patch_only_enabled)
 
         self.patch_tree = QTreeWidget()
         self.patch_tree.setHeaderLabels(["Title", "Patch key", "Status", "Included by"])
@@ -4269,12 +4384,17 @@ class ProfileWindow(QMainWindow):
             group = QTreeWidgetItem([category])
             group.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable)
             group.setData(0, ROLE, None)
+            group.setIcon(0, dot_icon(CATEGORY_ACCENTS.get(category, "#7a8794")))
             self.patch_tree.addTopLevelItem(group)
             self.patch_groups[category] = group
             for entry in entries:
                 item = QTreeWidgetItem([entry["title"], patch_spec(entry), entry["channel"], ""])
                 item.setData(0, ROLE, entry["name"])
                 item.setToolTip(0, entry["summary"])
+                badge = CHANNEL_BADGES.get(entry["channel"])
+                if badge:
+                    item.setBackground(2, badge)
+                    item.setTextAlignment(2, Qt.AlignmentFlag.AlignCenter)
                 flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
                 if entry["selection"] == "preset" and (entry["channel"] != "dev"
                                                          or self.developer_mode):
@@ -4356,6 +4476,9 @@ class ProfileWindow(QMainWindow):
                     and not (name == "data-overlay" and overlay_layout):
                 flags |= Qt.ItemFlag.ItemIsUserCheckable
             item.setFlags(flags)
+            item.setData(0, Qt.ItemDataRole.ForegroundRole,
+                         None if flags & Qt.ItemFlag.ItemIsUserCheckable
+                         else self.palette().placeholderText())
             on = name in applied
             item.setCheckState(0, Qt.CheckState.Checked if on else Qt.CheckState.Unchecked)
             mode = self.patch_modes.get(name)
@@ -4383,8 +4506,8 @@ class ProfileWindow(QMainWindow):
                 reason = f"{preset} preset" if on else ""
             item.setText(3, reason)
             item.setToolTip(3, why)
-            item.setForeground(3, WARNING if entry["selection"] == "always"
-                               else self.palette().text().color())
+            item.setData(3, Qt.ItemDataRole.ForegroundRole,
+                         WARNING if entry["selection"] == "always" else None)
         self.patch_loading = False
         self.patch_tree.resizeColumnToContents(3)
         self.sync_patch_ini(applied)
@@ -4459,14 +4582,52 @@ class ProfileWindow(QMainWindow):
                 name = entry["name"]
                 hidden = bool(query) and query not in (name + " " + entry["title"]
                                                        + " " + entry["summary"]).casefold()
+                if entry["channel"] not in self.shown_channels                         and child.checkState(0) != Qt.CheckState.Checked:
+                    hidden = True
+                if self.patch_only_enabled.isChecked() and child.checkState(0) != Qt.CheckState.Checked:
+                    hidden = True
                 child.setHidden(hidden)
                 visible += not hidden
             group.setHidden(visible == 0)
 
-    def set_developer_mode(self, enabled):
-        self.developer_mode = enabled
+    def style_toolbar_buttons(self):
+        """Stylesheets freeze a button's colours; set them again after a theme change."""
+        for button in (self.run_button, self.play_button):
+            button.setStyleSheet("")
+            button.setStyleSheet("QToolButton { border: 1px solid palette(mid); "
+                                 "color: palette(button-text); "
+                                 "padding: 4px 8px; border-radius: 4px; }")
+            button.style().unpolish(button)
+            button.style().polish(button)
+
+    def set_output_visible(self, visible, save=True):
+        self.output.setVisible(visible)
+        if save and self.settings is not None:
+            self.settings.setValue("show_output", visible)
+
+    def set_mod_column(self, column, visible):
+        self.mod_list.setColumnHidden(column, not visible)
         if self.settings is not None:
-            self.settings.setValue("developer_mode", enabled)
+            hidden = [str(value) for value in range(1, self.mod_list.columnCount())
+                      if self.mod_list.isColumnHidden(value)]
+            self.settings.setValue("hidden_mod_columns", ",".join(hidden))
+
+    def set_theme(self, key, save=True):
+        scheme = {"light": Qt.ColorScheme.Light, "dark": Qt.ColorScheme.Dark}.get(
+            key, Qt.ColorScheme.Unknown)
+        QApplication.styleHints().setColorScheme(scheme)
+        if hasattr(self, "play_button"):
+            self.style_toolbar_buttons()
+        if save and self.settings is not None:
+            self.settings.setValue("theme", key)
+
+    def set_channel(self, channel, shown):
+        self.shown_channels.discard(channel)
+        if shown:
+            self.shown_channels.add(channel)
+        self.developer_mode = "dev" in self.shown_channels
+        if self.settings is not None:
+            self.settings.setValue("shown_channels", ",".join(sorted(self.shown_channels)))
         self.refresh_patch_states()
 
     def show_patch_details(self, item, _previous):
@@ -4886,7 +5047,7 @@ class ProfileWindow(QMainWindow):
             return
         requested = ("check" if "--check" in extra else
                      "deploy" if "--deploy" in extra else "build")
-        if requested == "build" and self.play_process is not None:
+        if requested == "build" and any(s.process is not None for s in self.plays.values()):
             self.error("Stop xemu before replacing the build it is running")
             return
         if not self.save_profile():
@@ -4990,13 +5151,23 @@ class ProfileWindow(QMainWindow):
                               {"built": "current", "stale": "stale",
                                "missing": "idle"}[state], tip)
 
-    @staticmethod
-    def set_action_state(action, label, state, tip):
+    def update_build_label(self):
+        state = self.build_button.property("state") or "idle"
+        text = {"idle": "Not built", "current": "Build current", "stale": "Build out of date",
+                "running": "Building…", "failed": "Build failed"}[state]
+        colour = self.build_button.property("stateColour") or "#616161"
+        self.build_state_label.setText(f'<span style="color:{colour}">●</span> {text}')
+        self.build_state_label.setToolTip(self.build_button.toolTip())
+
+    def set_action_state(self, action, label, state, tip):
         colours = {"idle": "#616161", "current": "#2e7d32", "stale": "#a15c00",
                    "running": "#a15c00", "failed": "#b3261e"}
         action.setIcon(dot_icon(colours[state]))
         action.setProperty("state", state)
+        action.setProperty("stateColour", colours[state])
         action.setToolTip(tip)
+        if action is getattr(self, "build_button", None):
+            self.update_build_label()
 
     def run_default(self):
         """Deploy for an Xbox target, Build otherwise."""
@@ -5076,9 +5247,15 @@ class ProfileWindow(QMainWindow):
         gdb.setEnabled(xemu)
         gdb.setToolTip("Open xemu's GDB stub; the status bar shows the port to attach to")
         self.play_menu.addAction(self.action_smoke)
+        launch = self.play_menu.addAction("Launch manager", self.launch_manager)
+        launch.setEnabled(self.process is None and self.play_process is None and (
+            xemu or (xbox and "xbox" in self.play_addons)))
+        launch.setToolTip("Start the TES3X manager: on the Xbox through the dashboard agent, "
+                          "or as an xemu session that keeps its own disk")
         name = target["name"] if target else "a target"
         if self.play_process is not None:
             self.action_play.setText("&Stop")
+            self.action_play.setIcon(self.stop_icon)
             self.play_button.setToolTip("Stop the xemu process started by this session")
             self.action_play.setEnabled(self.play_pid is not None)
             self.action_stop.setEnabled(self.play_pid is not None)
@@ -5086,15 +5263,106 @@ class ProfileWindow(QMainWindow):
             return
         reason = self.play_available()
         self.action_play.setText("&Play")
+        self.action_play.setIcon(self.play_icon)
         self.play_button.setToolTip(reason or f"Play on {name} (F9)")
         self.action_play.setEnabled(not reason and self.process is None)
         self.action_stop.setEnabled(False)
         self.action_build.setEnabled(self.process is None)
 
+    def launch_manager_xemu(self, target):
+        """Boot xemu into the manager. The target's disk is seeded once with a retail base and a
+        console.ini, so the manager can install a server's build and join it, as on a console."""
+        reason = self.play_available()
+        if reason:
+            self.error(reason)
+            return
+        out = self.work_dir() / "build" / "manager" / "xemu"
+        config = str(self.local_config_path())
+        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        name = f"manager-{target['name']}-{stamp}"
+
+        def start():
+            environment = QProcessEnvironment.systemEnvironment()
+            environment.insert("TES3X_CONFIG", config)
+            self.play_run = self.work_dir() / "build" / "xemu" / name
+            self.start_play_process(
+                ROOT / "tools" / "tes3x_xemu.py",
+                [name, "--deploy", str(out / "disc"), "--target", target["name"],
+                 "--config", config, "--net-nat", "--disk", str(self.play_disk()),
+                 "--seed", f"Games/Base={out / 'seed' / 'Games' / 'Base'}",
+                 "--seed", f"TES3X/console.ini={out / 'seed' / 'console.ini'}"],
+                f"Manager in {target['name']}…", environment)
+
+        self.run_steps([(ROOT / "tools" / "tes3x_manager.py",
+                         ["xemu", str(out), "--config", config],
+                         "Staging the manager for xemu…")], then=start)
+
+    def launch_manager(self):
+        selected = self.default_target()
+        if selected and selected.get("kind") == "xemu":
+            self.launch_manager_xemu(selected)
+            return
+        target = self.default_target("xbox")
+        module = self.play_addons.get("xbox")
+        if target is None or module is None:
+            self.error("Select an Xbox target with the dashboard agent add-on enabled")
+            return
+        config = ["--config", str(self.local_config_path()), "--target", target["name"]]
+        import tes3x_manager
+        try:
+            remote = tes3x_manager.remote_folder(target)
+        except tes3x_manager.ManagerError as exc:
+            self.error(exc)
+            return
+        console = Path(module.HERE) / "console.py"
+        self.run_steps([(console, ["ping", *config], "Looking for the Xbox dashboard agent…"),
+                        (console, ["run", remote + "/default.xbe", *config],
+                         "Starting the manager on the Xbox…")])
+
     def set_play_gdb(self):
         self.play_gdb = not self.play_gdb
         if self.settings is not None:
             self.settings.setValue("play_gdb", self.play_gdb)
+
+    def play_session(self, create=False):
+        """The selected target's xemu run, if it has one."""
+        name = self.target_picker.currentData() or ""
+        if create:
+            return self.plays.setdefault(name, PlaySession(name))
+        return self.plays.get(name)
+
+    @property
+    def play_process(self):
+        session = self.play_session()
+        return session.process if session else None
+
+    @play_process.setter
+    def play_process(self, value):
+        if value is None:
+            self.plays.pop(self.target_picker.currentData() or "", None)
+        else:
+            self.play_session(True).process = value
+
+    @property
+    def play_pid(self):
+        session = self.play_session()
+        return session.pid if session else None
+
+    @play_pid.setter
+    def play_pid(self, value):
+        session = self.play_session()
+        if session:
+            session.pid = value
+
+    @property
+    def play_run(self):
+        session = self.play_session()
+        return session.run if session else None
+
+    @play_run.setter
+    def play_run(self, value):
+        if value is not None:
+            self.play_session(True).run = value
 
     def play_available(self):
         """Why the selected target cannot run, or None when it can."""
@@ -5209,7 +5477,8 @@ class ProfileWindow(QMainWindow):
                     self.settings.setValue(key, True)
             self.run_steps(steps)
             return
-        running = running_xemu()
+        ours = {str(s.pid) for s in self.plays.values() if s.pid}
+        running = [pid for pid in running_xemu() if pid not in ours]
         if running and QMessageBox.question(
                 self, "TES3X", f"xemu is already running (PID {', '.join(running)}). "
                 "Start another session?") != QMessageBox.StandardButton.Yes:
@@ -5239,11 +5508,13 @@ class ProfileWindow(QMainWindow):
 
     def play_disk(self):
         """The profile's own xemu disk, which keeps its saves between plays."""
-        return self.work_dir() / "build" / "play" / self.profile_path.stem / "hdd.qcow2"
+        target = self.target_picker.currentData() or "default"
+        return self.work_dir() / "build" / "play" / self.profile_path.stem / target / "hdd.qcow2"
 
     def reset_play_disk(self):
         if self.process is not None or self.play_process is not None:
-            self.error("Stop running TES3X commands and xemu before resetting its saves")
+            self.error("Stop running TES3X commands and this target's xemu before resetting "
+                       "its saves")
             return
         disk = self.play_disk() if self.profile_path else None
         if disk is None or not disk.is_file():
@@ -5452,33 +5723,32 @@ class ProfileWindow(QMainWindow):
         process.setProgram(sys.executable)
         process.setArguments([str(program), *arguments])
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
-        process.readyReadStandardOutput.connect(self.append_play_output)
-        process.finished.connect(self.play_finished)
-        self.play_process = process
-        self.play_target = self.target_picker.currentData()
-        self.play_pid = None
-        self.play_output_buffer = ""
+        session = self.play_session(True)
+        session.process, session.pid, session.output = process, None, ""
+        process.readyReadStandardOutput.connect(lambda: self.append_play_output(session))
+        process.finished.connect(lambda code, status: self.play_finished(session, code, status))
         self.statusBar().spinner.start()
-        if self.play_target:
-            self.set_target_runtime(self.play_target, process="starting")
+        if session.target:
+            self.set_target_runtime(session.target, process="starting")
         self.refresh_play_menu()
         process.start()
         self.statusBar().showMessage(message)
 
-    def append_play_output(self):
-        if self.play_process is None:
+    def append_play_output(self, session=None):
+        session = session or self.play_session()
+        if session is None or session.process is None:
             return
-        text = bytes(self.play_process.readAllStandardOutput()).decode(errors="replace")
+        text = bytes(session.process.readAllStandardOutput()).decode(errors="replace")
         self.output.moveCursor(QTextCursor.MoveOperation.End)
-        self.output.insertPlainText(text)
-        self.play_output_buffer = (self.play_output_buffer + text)[-512:]
-        match = re.search(r"xemu: started, pid (\d+)", self.play_output_buffer)
-        if match and self.play_pid is None:
-            self.play_pid = int(match.group(1))
-            if getattr(self, "play_target", None):
-                self.set_target_runtime(self.play_target, process="running")
+        self.output.insertPlainText(f"[{session.target}] {text}" if len(self.plays) > 1 else text)
+        session.output = (session.output + text)[-512:]
+        match = re.search(r"xemu: started, pid (\d+)", session.output)
+        if match and session.pid is None:
+            session.pid = int(match.group(1))
+            if session.target:
+                self.set_target_runtime(session.target, process="running")
             self.statusBar().spinner.stop()
-            port = self.play_run / "gdb.port" if self.play_gdb and self.play_run else None
+            port = session.run / "gdb.port" if self.play_gdb and session.run else None
             if port is not None and port.is_file():
                 value = port.read_text().strip()
                 attach = f'gdb -ex "target remote 127.0.0.1:{value}"'
@@ -5486,33 +5756,34 @@ class ProfileWindow(QMainWindow):
                                             f"{attach}\n")
                 self.statusBar().showMessage(f"Playing · GDB :{value}")
             else:
-                self.statusBar().showMessage(f"Playing in xemu · PID {self.play_pid}")
+                self.statusBar().showMessage(f"Playing in {session.target} · PID {session.pid}")
             self.refresh_play_menu()
 
     def stop_play(self):
-        if self.play_process is None:
+        session = self.play_session()
+        if session is None or session.process is None:
             return
-        if self.play_pid is None:
+        if session.pid is None:
             self.error("xemu is still starting; wait for its PID before stopping it")
             return
         try:
-            os.kill(self.play_pid, signal.SIGTERM)
+            os.kill(session.pid, signal.SIGTERM)
         except OSError as exc:
-            self.error(f"Could not stop xemu PID {self.play_pid}: {exc}")
+            self.error(f"Could not stop xemu PID {session.pid}: {exc}")
             return
-        self.statusBar().showMessage(f"Stopping xemu PID {self.play_pid}; recovering its log…")
-        if getattr(self, "play_target", None):
-            self.set_target_runtime(self.play_target, process="stopping")
+        self.statusBar().showMessage(f"Stopping {session.target} (PID {session.pid}); "
+                                     "recovering its log…")
+        if session.target:
+            self.set_target_runtime(session.target, process="stopping")
         self.action_play.setEnabled(False)
         self.action_stop.setEnabled(False)
 
-    def play_finished(self, code, _status):
-        self.append_play_output()
-        if getattr(self, "play_target", None):
-            self.set_target_runtime(self.play_target, process="stopped")
-        self.play_process = None
-        self.play_pid = None
-        self.play_output_buffer = ""
+    def play_finished(self, session, code, _status):
+        self.append_play_output(session)
+        if session.target:
+            self.set_target_runtime(session.target, process="stopped")
+        if self.plays.get(session.target) is session:
+            del self.plays[session.target]
         self.statusBar().spinner.stop()
         self.statusBar().showMessage(f"xemu session exited {code}; log recovery finished", 5000)
         self.refresh_play_menu()

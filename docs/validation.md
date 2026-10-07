@@ -141,15 +141,3 @@ that every committed definition is well formed, but they do not boot the game:
 ```powershell
 python -m unittest tests/test_game_tests.py tests/test_validate.py
 ```
-
-## Privacy and publication
-
-Game-test definitions and the runners are public. Validation records, logs, local profiles,
-hardware descriptions and save fixtures are local unless their owner deliberately shares them.
-The recorder replaces machine paths in provenance, stores fixture names and hashes instead of
-fixture contents, and defaults to an ignored build directory. Logs can still contain game or mod
-output, so inspect any record before publishing it.
-
-The public patch table links to available game tests but does not publish pass/fail/untested
-results. Channels are the stable public readiness signal; local validation standing can change
-whenever a test is edited or rerun.

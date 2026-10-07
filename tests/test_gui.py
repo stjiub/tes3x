@@ -276,15 +276,14 @@ order = 10
         heap = window.patch_items["heap-census"]
         profiler = window.patch_items["profile"]
         transition = window.patch_items["transition-autosaves"]
-        self.assertFalse(heap.isHidden())
+        self.assertTrue(heap.isHidden())
         self.assertFalse(profiler.isHidden())
-        self.assertFalse(transition.isHidden())
-        self.assertFalse(transition.flags() & Qt.ItemFlag.ItemIsUserCheckable)
         self.assertFalse(profiler.flags() & Qt.ItemFlag.ItemIsUserCheckable)
+        self.assertTrue(transition.isHidden())
         self.assertEqual(heap.text(2), "dev")
         self.assertEqual(window.patch_tree.headerItem().text(3), "Included by")
 
-        window.action_developer_mode.setChecked(True)
+        window.channel_actions["dev"].setChecked(True)
         self.assertFalse(heap.isHidden())
         self.assertTrue(transition.flags() & Qt.ItemFlag.ItemIsUserCheckable)
         self.assertEqual(heap.text(3), "Build option")
@@ -292,14 +291,24 @@ order = 10
         script_ext = window.patch_items["script-ext"]
         self.assertFalse(script_ext.flags() & Qt.ItemFlag.ItemIsUserCheckable)
         self.assertEqual(script_ext.text(3), "mwse-legacy")
-        self.assertTrue(settings.values["developer_mode"])
+        self.assertIn("dev", settings.values["shown_channels"])
+        window.channel_actions["dev"].setChecked(False)
+        self.assertTrue(heap.isHidden())
+        window.channel_actions["dev"].setChecked(True)
+        window.set_patch("heap-census", True)
+        window.channel_actions["dev"].setChecked(False)
+        self.assertFalse(heap.isHidden())
 
     def test_preview_patch_is_visible_without_developer_mode(self):
         window = self.window()
-        patch = window.patch_items["rotating-autosaves"]
+        patch = window.patch_items["mcp-3"]
         self.assertFalse(patch.isHidden())
-        window.set_patch("rotating-autosaves", True)
+        window.set_patch("mcp-3", True)
         self.assertFalse(patch.isHidden())
+        window.channel_actions["preview"].setChecked(False)
+        self.assertFalse(patch.isHidden())
+        window.set_patch("mcp-3", False)
+        self.assertTrue(patch.isHidden())
 
     def test_ini_panel_shows_retail_values_and_saves_changes(self):
         vanilla = self.root / "vanilla"
@@ -627,7 +636,7 @@ order = 10
         self.assertEqual(calls[1][0], "tes3x_xemu.py")
         self.assertEqual(calls[1][1][1:], ["--deploy", str(output / "deploy"), "--keep-iso",
                                            "--target", "xemu", "--config", str(config), "--disk",
-                                           str(self.root / "build/play/profile/hdd.qcow2")])
+                                           str(self.root / "build/play/profile/xemu/hdd.qcow2")])
 
         self.assertTrue(calls[1][1][0].startswith("play-profile-xemu-"))
 

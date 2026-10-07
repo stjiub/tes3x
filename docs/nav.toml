@@ -47,6 +47,7 @@ pages = [
 ]
 
 [summary]
+"getting-started.md" = "Everything you need to get started."
 "patches.md" = "Every patch TES3X can apply, with its channel and how a build selects it."
 "candidates.md" = "Fixes from other projects that were reviewed, and why each is not implemented."
 "catalog.md" = "Mods tried on the Xbox, and whether they work."

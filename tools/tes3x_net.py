@@ -18,6 +18,7 @@ answers ARP itself and resolves the console's MAC before it pings.
 """
 
 import argparse
+import glob
 import hashlib
 import hmac
 import json
@@ -55,6 +56,11 @@ BROADCAST = b"\xff" * 6
 def wire_text(data):
     """Text a client sent, safe to print and store: control characters become '?'."""
     return "".join(c if " " <= c < "\x7f" or c >= "\xa0" else "?" for c in data.decode("latin-1"))
+
+
+LOG_LEVELS = ("normal", "verbose")
+CAIUS_PACKAGE = "bk_a1_1_caiuspackage"
+SPYMASTER_QUEST, SPYMASTER_GIVEN, SPYMASTER_DONE = "a1_1_findspymaster", 1, 10
 
 
 def quiet_admin(line):
@@ -2151,6 +2157,7 @@ def serve(args):
                             int(condition[0]) if condition else 0, 0])
         bot_boxes.append((float(at), int(refid, 16), int(cell), entries))
     world = {"path": None, "dirty": False, "saved": 0.0, "next_spawn": 1}
+    detail = {"verbose": args.log == "verbose"}  # per-tick state changes in the console
     streams = {}  # character folder -> PlayerStream
     streams_saved = 0.0
     starts = load_starts(args.starts or STARTS)
@@ -2693,6 +2700,29 @@ def serve(args):
         print(f"{stamp} client {client.id} rebuilt {client.character}: {count} differences "
               f"from {os.path.basename(checkpoint)}, in {out}", flush=True)
 
+    def spymaster_done():
+        """Whether any kept character has finished the first main quest, which takes the package
+        away from Caius's desk: its journal reached the closing index."""
+        folders = list(streams)
+        if args.world:
+            for path in glob.glob(os.path.join(args.world, "characters", "*", "*", STREAM_NAME)):
+                folders.append(os.path.dirname(path))
+        for folder in dict.fromkeys(folders):
+            stream = streams.get(folder) or PlayerStream(os.path.join(folder, STREAM_NAME))
+            for quest, indices in stream.journal.items():
+                if quest.lower() == SPYMASTER_QUEST and any(i >= SPYMASTER_DONE for i in indices):
+                    return True
+        return False
+
+    def new_character_kit():
+        """What chargen's Sellus Gravius would have given: the starting gold, and unless another
+        character has already delivered it, Caius Cosades's package with the quest."""
+        lines = [f'Player->AddItem "Gold_001" {args.start_gold}'] if args.start_gold else []
+        if not spymaster_done():
+            lines += [f'Player->AddItem "{CAIUS_PACKAGE}" 1',
+                      f"Journal {SPYMASTER_QUEST} {SPYMASTER_GIVEN}"]
+        return lines
+
     def on_pick(client, what, index, stamp, now):
         if what == PICK_CHARACTER and index == PICK_NEW:
             offer_starts(client, stamp, now)
@@ -2705,7 +2735,7 @@ def serve(args):
         elif (what == PICK_START and index < len(starts) and client.synced
               and client.character is None):
             name, lines = starts[index]
-            for line in lines + [""]:
+            for line in lines + new_character_kit() + [""]:
                 client.rel.queue(EVENT_RUN, 0, zstr(line))
             flush(client, now)
             print(f"{stamp} client {client.id} starts at {name}", flush=True)
@@ -2766,7 +2796,7 @@ def serve(args):
         if kind == EVENT_PLAYER:
             stream = player_stream(client) if client.synced else None
             change = stream.take(data) if stream else None
-            if change:
+            if change and detail["verbose"]:
                 print(f"{stamp} client {client.id} {change}", flush=True)
             return
         if kind == EVENT_CONTENTS and len(data) >= CONTENTS_HEAD.size:
@@ -2873,18 +2903,22 @@ def serve(args):
             refid, *values = STATUS.unpack_from(data)
             statuses[refid] = tuple(values)
             world["dirty"] = True
-            print(f"{stamp} client {client.id}: {describe_status(refid, values)}", flush=True)
+            if detail["verbose"]:
+                print(f"{stamp} client {client.id}: {describe_status(refid, values)}", flush=True)
         if kind == EVENT_AFFECT and len(data) > 5:
             refid, index = struct.unpack_from("<IB", data)
             name = wire_text(data[5:].split(b"\0")[0])
-            print(f"{stamp} client {client.id}: {refid:#010x} takes effect {index} of {name}",
-                  flush=True)
+            if detail["verbose"]:
+                print(f"{stamp} client {client.id}: {refid:#010x} takes effect {index} of "
+                      f"{name}", flush=True)
         if kind == EVENT_OBJECTS and data:
             changed = unpack_objects(data)
             objects.update(changed)
             world["dirty"] = True
             for refid, rest in changed.items():
-                print(f"{stamp} client {client.id}: {describe_object(refid, *rest)}", flush=True)
+                if detail["verbose"]:
+                    print(f"{stamp} client {client.id}: {describe_object(refid, *rest)}",
+                          flush=True)
         if kind == EVENT_TEXT:
             print(f"{stamp} client {client.id} says: {wire_text(data)}", flush=True)
         if kind == EVENT_GAME and len(data) >= 5:
@@ -3257,6 +3291,10 @@ def serve(args):
         if verb == "save" and len(rest) <= 1 and all(r in by_id for r in rest):
             targets = [by_id[r] for r in rest] or list(clients.values())
             return "asked to save: " + ask_save(targets, time.time())
+        if verb == "log" and len(rest) <= 1 and (not rest or rest[0] in LOG_LEVELS):
+            if rest:
+                detail["verbose"] = rest[0] == "verbose"
+            return "log " + ("verbose" if detail["verbose"] else "normal")
         if verb == "stop" and not rest:
             begin_stop("admin stop", time.time())
             return "stopping"
@@ -3267,6 +3305,8 @@ def serve(args):
                 "  list                  the clients\n"
                 "  status                the clock, weather, clients and world\n"
                 "  kick N                drop client N\n"
+                "  log [normal|verbose]  show or set whether state changes (skills, vitals,\n"
+                "                        statuses, objects) are printed\n"
                 "  save [N]              ask every console, or client N, to save\n"
                 "  ban N                 ban client N's key and MAC, and drop it\n"
                 "  ban|unban key FINGERPRINT|mac MAC|address A.B.C.D\n"
@@ -4197,12 +4237,16 @@ def main(argv=None):
                         "changed objects, objects made at run time and weather, loaded when the "
                         "load order is set and "
                         "written every 10 seconds while it changes")
+    p.add_argument("--log", choices=LOG_LEVELS, default="normal",
+                   help="verbose also prints each player and actor state change")
     p.add_argument("--save-every", type=float, metavar="SECONDS",
                    help="ask every joined console this often to save its character into its "
                         "multiplayer slot and upload it")
     p.add_argument("--starts", metavar="FILE",
                    help="where new characters may begin ([[start]] tables; default "
                         "examples/starts.toml)")
+    p.add_argument("--start-gold", type=int, default=50, metavar="N",
+                   help="gold a new character starts with")
     p.add_argument("--respawn", choices=sorted(RESPAWN_PLACES), default="nearest",
                    help="where a player who dies comes back: the closest temple (TempleMarker), "
                         "Imperial shrine (DivineMarker) or either (default)")

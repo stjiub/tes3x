@@ -389,7 +389,7 @@ const char *server_install(struct server *s, int replace, char *folder, size_t f
     DWORD start = KeTickCount;
     struct sha256 sh;
     const char *err = NULL;
-    int n = 0, had_n = 0, want_n = 0, i, e, count[4] = {0}, owned, others = 0, removed = 0;
+    int n = 0, had_n = 0, want_n = 0, i, e, count[4] = {0}, owned, others = 0, removed = 0, no_base = 0;
 
     folder[0] = summary[0] = 0;
     if ((err = server_ticket(s, &t, progress)))
@@ -474,12 +474,21 @@ const char *server_install(struct server *s, int replace, char *folder, size_t f
             it->action = COPY;
         else
             it->action = FETCH;
+        if (it->action == FETCH && !strcmp(origin, "retail"))
+            no_base++;
         count[it->action]++;
         if (it->action != KEEP)
             need += it->size;
     }
     mgr_log("install %s into %s: %d kept, %d to download, %d from the base, %d XBEs, %llu bytes\n",
             s->name, folder, count[KEEP], count[FETCH], count[COPY], count[REBUILD], need);
+    if (no_base) {
+        snprintf(reason, sizeof(reason),
+                 "%d files come from your retail copy. Choose a retail base in Settings first.",
+                 no_base);
+        err = reason;
+        goto done;
+    }
 
     snprintf(drive, sizeof(drive), "%.2s\\", folder);
     if (GetDiskFreeSpaceExA(drive, &free_bytes, &total_bytes, NULL)
