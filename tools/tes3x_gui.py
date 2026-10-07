@@ -146,6 +146,15 @@ def target_runtime_label(target, runtime=None):
     return "Off" if runtime.get("ftp") == "offline" else "Unknown"
 
 
+def ftp_error(line):
+    """A failed FTP probe's last output line, without the exception class and errno."""
+    if "10061" in line or "ConnectionRefusedError" in line:
+        return "connection refused (no FTP server running)"
+    if "timed out" in line or "10060" in line or "TimeoutError" in line:
+        return "timed out"
+    return re.sub(r"^\w+(Error|Exception): (\[\w+ \d+\] )?", "", line)
+
+
 def dashboard_agent_state(output, code, expected):
     """(state, detail) from the dashboard agent's authenticated ping."""
     match = re.search(r"\bok tes3xagent (\d+)\b", output) if code == 0 else None
@@ -3342,7 +3351,9 @@ class ProfileWindow(QMainWindow):
             status = runtime.get("ftp")
             if status:
                 lines.append({"checking": "Checking connection…", "connected": "Connected",
-                              "offline": "Unreachable"}.get(status, status))
+                              "offline": "Unreachable"}.get(status, status)
+                             + (f": {runtime['ftp_detail']}" if status == "offline"
+                                and runtime.get("ftp_detail") else ""))
             agent = target_runtime_label(target, runtime)
             if runtime.get("game") in {"connected", "stalled"}:
                 lines.append(agent)
@@ -5530,8 +5541,8 @@ class ProfileWindow(QMainWindow):
             local = tomllib.loads(config.read_text(encoding="utf-8")) if config.is_file() else {}
         except (OSError, tomllib.TOMLDecodeError) as exc:
             if name:
-                self.set_target_runtime(name, ftp="offline", dashboard="unknown")
-                self.target_drive_tips[name] = f"Configuration error: {exc}"
+                self.set_target_runtime(name, ftp="offline", dashboard="unknown",
+                                        ftp_detail=f"Configuration error: {exc}")
             return
         try:
             target = tes3x_targets.resolve(local, name, kind="xbox")
@@ -5540,8 +5551,8 @@ class ProfileWindow(QMainWindow):
         host = target.get("host") if target else None
         if not host:
             if target:
-                self.set_target_runtime(target["name"], ftp="offline", dashboard="unknown")
-                self.target_drive_tips[target["name"]] = "Set the Xbox host in Setup"
+                self.set_target_runtime(target["name"], ftp="offline", dashboard="unknown",
+                                        ftp_detail="Set the Xbox host in Setup")
             return
         process = QProcess(self)
         process.setWorkingDirectory(str(self.work_dir()))
@@ -5560,10 +5571,13 @@ class ProfileWindow(QMainWindow):
         process = self.ftp_probes.pop(name, None)
         output = bytes(process.readAllStandardOutput()).decode(errors="replace").strip() \
             if process is not None else ""
+        lines = [line.strip() for line in output.splitlines() if line.strip()]
         self.set_target_runtime(name, ftp="connected" if code == 0 else "offline",
-                                dashboard="checking" if code == 0 else "unknown")
+                                dashboard="checking" if code == 0 else "unknown",
+                                ftp_detail=ftp_error(lines[-1]) if code != 0 and lines
+                                else None if code == 0 else f"FTP probe exited {code}")
         if code != 0:
-            self.target_drive_tips[name] = output or f"FTP probe exited {code}"
+            self.target_drive_tips.pop(name, None)
         else:
             self.refresh_dashboard_status(name)
 

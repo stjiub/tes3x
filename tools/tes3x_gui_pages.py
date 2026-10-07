@@ -19,7 +19,7 @@ from PySide6.QtCore import QProcess, QTimer, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QFontDatabase
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout, QHeaderView,
-    QInputDialog, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea,
+    QGroupBox, QInputDialog, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea,
     QSpinBox, QSplitter, QTabWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -172,73 +172,72 @@ class TargetsPage(QWidget):
     # Overview
 
     def create_overview(self):
+        """One section per thing that can answer on the target, each with its own actions."""
         page = QWidget()
         layout = QVBoxLayout(page)
-        form = QFormLayout()
         self.fields = {}
-        for key, label in (("kind", "Kind"), ("address", "Address"), ("state", "State"),
-                           ("dashboard", "Dashboard"), ("game", "In game"),
-                           ("heartbeat", "Heartbeat"), ("drives", "Drives")):
-            value = QLabel()
-            value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            value.setWordWrap(True)
-            self.fields[key] = value
-            form.addRow(label, value)
-        layout.addLayout(form)
-        actions = QHBoxLayout()
+        self.field_labels = {}
         self.check_button = tip_button("Check connection", "Probe FTP and the dashboard agent",
                                        self.check_connection)
         self.pull_button = tip_button("Pull logs", "Copy E:\\tes3x* from the console",
                                       self.window.pull_logs)
+        layout.addWidget(self.section("Connection", (("address", "Address"),
+                                                     ("memory", "Memory"), ("ftp", "FTP"),
+                                                     ("drives", "Drives")),
+                                      self.check_button, self.pull_button))
         self.quit_button = tip_button("Quit to dashboard",
                                       "Ask the running game to return to the dashboard",
                                       self.quit_game)
         self.fetch_button = tip_button("Fetch file…", "Copy a file from the running game",
                                        self.fetch_file)
-        for button in (self.check_button, self.pull_button, self.quit_button,
-                       self.fetch_button):
-            actions.addWidget(button)
-        actions.addStretch()
-        layout.addLayout(actions)
-        layout.addWidget(self.create_software())
-        layout.addStretch()
-        return page
-
-    def create_software(self):
-        """What TES3X has put on the Xbox: the dashboard agent and the console manager."""
+        layout.addWidget(self.section("Agent", (("game", "Status"),
+                                                ("heartbeat", "Heartbeat")),
+                                      self.quit_button, self.fetch_button))
         self.software = QWidget()
-        layout = QVBoxLayout(self.software)
-        layout.setContentsMargins(0, 12, 0, 0)
-        layout.addWidget(heading("Agents", 1))
-        form = QFormLayout()
-        self.dashboard_version = QLabel()
+        software = QVBoxLayout(self.software)
+        software.setContentsMargins(0, 0, 0, 0)
         self.agent_install = tip_button("Install / update", "Copy the dashboard agent to "
                                         "XBMC4Gamers over FTP", lambda: self.run_agent("install"))
         self.restart_button = tip_button("Restart dashboard", "Restart XBMC4Gamers on the Xbox",
                                          self.restart_dashboard)
         self.agent_remove = tip_button("Remove", "Remove the dashboard agent from XBMC4Gamers",
                                        lambda: self.run_agent("uninstall"))
-        form.addRow("Dashboard agent", self.software_row(
-            self.dashboard_version, self.agent_install, self.restart_button, self.agent_remove))
-        self.manager_version = QLabel()
+        software.addWidget(self.section("Dashboard agent", (("dashboard", "Status"),
+                                                            ("dashboard_version", "Version")),
+                                        self.agent_install, self.restart_button,
+                                        self.agent_remove))
         self.manager_install = tip_button("Install / update", "Stage the console manager and copy "
                                           "it to the games folder", self.window.install_manager)
-        form.addRow("Console manager", self.software_row(self.manager_version,
-                                                         self.manager_install))
-        layout.addLayout(form)
-        return self.software
-
-    @staticmethod
-    def software_row(label, *buttons):
-        row = QWidget()
-        layout = QHBoxLayout(row)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(label)
-        layout.addSpacing(12)
-        for button in buttons:
-            layout.addWidget(button)
+        software.addWidget(self.section("Console manager", (("manager", "Status"),
+                                                            ("manager_version", "Version")),
+                                        self.manager_install))
+        layout.addWidget(self.software)
         layout.addStretch()
-        return row
+        return page
+
+    def section(self, title, rows, *buttons):
+        box = QGroupBox(title)
+        form = QFormLayout(box)
+        for key, label in rows:
+            value = QLabel()
+            value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            value.setWordWrap(True)
+            self.fields[key] = value
+            self.field_labels[key] = QLabel(label)
+            form.addRow(self.field_labels[key], value)
+        if buttons:
+            row = QHBoxLayout()
+            for button in buttons:
+                row.addWidget(button)
+            row.addStretch()
+            form.addRow(row)
+        return box
+
+    def show_field(self, key, text):
+        """Set a field, hiding its row when there is nothing to say."""
+        self.fields[key].setText(text or "")
+        self.fields[key].setVisible(bool(text))
+        self.field_labels[key].setVisible(bool(text))
 
     def run_agent(self, command):
         name = self.name
@@ -253,19 +252,22 @@ class TargetsPage(QWidget):
             command, "--config", str(self.window.local_config_path()), "--target", name],
             f"{verb} {name}…")], then=lambda: self.window.refresh_dashboard_status(name))
 
-    def manager_text(self):
-        available = manager_version()
+    def manager_state(self, running):
+        """(status, version) of the console manager on the target."""
         builds = self.window.target_builds.get(self.name)
-        if builds is None:
-            installed = "not checked yet"
+        found = [record.get("version") or "?" for record in (builds or {}).values()
+                 if record and record.get("profile") == MANAGER_PROFILE]
+        if running:
+            status = "Running"
+        elif builds is None:
+            status = "?"
         else:
-            found = [(folder, record) for folder, record in builds.items()
-                     if record and record.get("profile") == MANAGER_PROFILE]
-            installed = ", ".join(f"{record.get('version') or 'unknown version'} in {folder}"
-                                  for folder, record in found) or "not installed"
-        if self.window.target_runtime.get(self.name, {}).get("game_kind") == "manager" and                 self.window.target_runtime.get(self.name, {}).get("game") == "connected":
-            installed += "; running now"
-        return installed + (f" · this PC has {available}" if available else "")
+            status = "Installed" if found else "Not installed"
+        version = ", ".join(found) or "?"
+        available = manager_version()
+        if available and found and version != available:
+            version += f" (PC: {available})"
+        return status, version
 
     def check_connection(self):
         self.window.refresh_ftp_status()
@@ -523,10 +525,10 @@ class TargetsPage(QWidget):
         self.builds_tried.add(self.name)
         games_root = target.get("games_root")
         if not games_root:
-            self.builds_note.setText("This target has no games folder configured.")
+            self.builds_note.setText("No games folder set")
             return
         self.builds_busy = True
-        self.builds_note.setText(f"Listing {games_root}…")
+        self.builds_note.setText("Listing…")
         name = self.name
         args = argparse.Namespace(host=target.get("host"), port=target.get("port", 21),
                                   user=target.get("user", tes3x_ftp.DEFAULT_USER),
@@ -550,7 +552,7 @@ class TargetsPage(QWidget):
         if error or builds is None:
             self.window.target_builds.pop(name, None)
             if name == self.name:
-                self.builds_note.setText(f"Could not list the console's games: {error}")
+                self.builds_note.setText(f"Failed: {error}")
             return
         self.window.target_builds[name] = builds
         if name == self.name:
@@ -561,24 +563,20 @@ class TargetsPage(QWidget):
         self.builds_list.clear()
         target = self.window.target_settings(self.name)
         if target.get("kind") != "xbox":
-            self.builds_note.setText("xemu boots the open profile's build directly; its "
-                                     "recovered run logs are under Logs.")
+            self.builds_note.clear()
             return
         builds = self.window.target_builds.get(self.name)
         if builds is None:
-            self.builds_note.setText(f"Game folders under {target.get('games_root', '?')} "
-                                     "appear here once listed.")
+            self.builds_note.clear()
             return
         mine = self.window.profile_name()
-        tes3x_folders = 0
         for folder, record in sorted(builds.items(), key=lambda item: item[0].casefold()):
             if record is None:
-                item = QTreeWidgetItem([folder, "not deployed by TES3X", "", ""])
+                item = QTreeWidgetItem([folder, "not TES3X", "", ""])
                 for column in range(4):
                     item.setForeground(column, self.palette().placeholderText())
                 self.builds_list.addTopLevelItem(item)
                 continue
-            tes3x_folders += 1
             profile = record.get("profile") or "unknown"
             if record.get("version"):
                 profile += " " + record["version"]
@@ -590,12 +588,7 @@ class TargetsPage(QWidget):
                 for column in range(4):
                     item.setFont(column, font)
             self.builds_list.addTopLevelItem(item)
-        other = len(builds) - tes3x_folders
-        self.builds_note.setText(
-            f"{tes3x_folders} TES3X build{'s' if tes3x_folders != 1 else ''} under "
-            f"{target.get('games_root')}" + (f"; {other} other folder{'s' if other != 1 else ''}"
-                                             " not deployed by TES3X" if other else "")
-            + ". Select one to remove it.")
+        self.builds_note.clear()
 
     # State
 
@@ -625,37 +618,43 @@ class TargetsPage(QWidget):
         features = self.window.target_features(name)
         kind = target.get("kind", "xbox")
         label = self.window.target_label(name)
-        self.title.setText(name or "No target")
-        self.state.setText(label)
-        self.fields["kind"].setText("Xbox" if kind == "xbox" else "xemu")
-        if kind == "xbox":
-            self.fields["address"].setText(f"{target.get('host') or 'not configured'}"
-                                           f" · {target.get('ram', 64)} MB")
-        else:
-            self.fields["address"].setText(f"local emulator · {target.get('ram', 64)} MB")
-        self.fields["state"].setText(label)
-        self.fields["dashboard"].setText(runtime.get("dashboard_detail", "") if kind == "xbox"
-                                         else "—")
-        self.fields["game"].setText(runtime.get("game_detail", "Not connected"))
-        beat = runtime.get("heartbeat")
-        if beat and runtime.get("game") == "connected":
-            self.fields["heartbeat"].setText(
-                f"{beat['frame_us'] / 1000:.1f} ms frame · {beat['free_kb']:,} KB free · "
-                f"{beat['dropped']} log lines dropped")
-        else:
-            self.fields["heartbeat"].setText("—")
-        self.fields["drives"].setText(self.window.target_drive_tips.get(name, "—"))
         xbox = kind == "xbox"
+        self.title.setText(name or "No target")
+        self.state.setText(("Xbox" if xbox else "xemu") + (f" · {label}" if name else ""))
+        self.show_field("address", target.get("host") or "?" if xbox else "Local")
+        self.show_field("memory", f"{target.get('ram', 64)} MB")
+        if xbox:
+            ftp = runtime.get("ftp")
+            self.show_field("ftp", {"checking": "Checking…", "connected": "On",
+                                    "offline": "Off"}.get(ftp, "?"))
+            self.fields["ftp"].setToolTip(runtime.get("ftp_detail") or "")
+            self.show_field("drives", self.window.target_drive_tips.get(name))
+        else:
+            self.show_field("ftp", None)
+            self.show_field("drives", None)
+        running = runtime.get("game") in {"connected", "stalled"}
+        manager = running and runtime.get("game_kind") == "manager"
+        self.show_field("game", ("Stalled" if runtime.get("game") == "stalled" else
+                                 "Manager" if manager else "Game") if running else "Off")
+        self.fields["game"].setToolTip(runtime.get("game_detail") or "")
+        beat = runtime.get("heartbeat")
+        self.show_field("heartbeat", f"{beat['frame_us'] / 1000:.1f} ms frame · "
+                        f"{beat['free_kb']:,} KB free · {beat['dropped']} dropped"
+                        if beat and running and not manager else None)
         for button in (self.check_button, self.builds_refresh):
             button.setVisible(xbox)
         self.software.setVisible(xbox and bool(name))
-        self.dashboard_version.setText({
-            "current": "Installed and answering", "outdated": "Outdated",
-            "missing": "Not answering", "checking": "Checking…"}.get(
-                runtime.get("dashboard"), "Not checked yet") + (
-            f" · {runtime['dashboard_detail']}" if runtime.get("dashboard_detail") else ""))
+        detail = runtime.get("dashboard_detail") or ""
+        version = re.search(r"\btes3xagent (\d+)\b", detail) or re.search(
+            r"Dashboard agent (\d+);", detail)
+        self.show_field("dashboard", {"current": "On", "outdated": "Outdated", "missing": "Off",
+                                      "checking": "Checking…"}.get(runtime.get("dashboard"), "?"))
+        self.fields["dashboard"].setToolTip(detail)
+        self.show_field("dashboard_version", version.group(1) if version else "?")
         if name and xbox:
-            self.manager_version.setText(self.manager_text())
+            status, installed = self.manager_state(manager)
+            self.show_field("manager", status)
+            self.show_field("manager_version", installed)
             if self.window.target_builds.get(name) is None and not self.builds_busy and                     name not in self.builds_tried and "installed_builds" in features:
                 self.refresh_builds()
         self.check_button.setEnabled(xbox and self.window.process is None)

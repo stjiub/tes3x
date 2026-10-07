@@ -129,11 +129,13 @@ layer.
 FTP, the dashboard agent, the in-game [agent](../patches/agent.md) or a running xemu. An
 unavailable action stays visible and its tooltip says what is missing.
 
-- **Overview** shows the address, state, dashboard agent, the in-game heartbeat (frame time, free
-  memory, dropped log lines) and drive space, with Check connection, Pull logs, Quit to dashboard
-  and Fetch file. On an Xbox, **Agents** lists what TES3X put there: the dashboard agent,
-  with Install / update, Restart dashboard and Remove, and the console manager's installed
-  version beside the one this PC would install, with Install / update.
+- **Overview** has one section for each thing that can answer, with that section's actions.
+  **Connection** shows the address, memory, FTP and drive space, with Check connection and Pull logs.
+  **Agent** shows whether a game or the console manager is connected and, for a game, its
+  heartbeat (frame time, free memory, dropped log lines), with Quit to dashboard and Fetch
+  file. On an Xbox, **Dashboard agent** has Install / update, Restart dashboard and Remove, and
+  **Console manager** shows the installed version beside the one this PC would install, with
+  Install / update.
 - **Console** streams the running game's log and runs console lines in it, such as
   `player->getpos x` or `tes3xnet stat`; Up and Down recall earlier lines. It needs a build with
   the `agent` and `console` patches. **Fetch file…** copies a file such as `E:\tes3xprof.bin` from
