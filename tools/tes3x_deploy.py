@@ -256,6 +256,31 @@ def installed_builds(ftp, games_root):
     return builds
 
 
+def remove_remote_folder(ftp, path):
+    """Delete a folder on the console with everything in it; returns the files deleted."""
+    removed = 0
+
+    def walk(folder):
+        nonlocal removed
+        ftp.cwd(folder)
+        entries = []
+        ftp.retrlines("LIST", entries.append)
+        for line in entries:
+            parts = line.split(maxsplit=8)
+            if len(parts) < 9 or parts[8] in (".", ".."):
+                continue
+            if line[0] == "d":
+                walk(posixpath.join(folder, parts[8]))
+                ftp.cwd(folder)
+            else:
+                ftp.delete(parts[8])
+                removed += 1
+        ftp.rmd(ftp_basename(ftp, folder))
+
+    walk(path.replace("\\", "/").rstrip("/"))
+    return removed
+
+
 def ensure_dirs(ftp, path, made):
     parent = posixpath.dirname(path)
     if parent in made:

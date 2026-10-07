@@ -137,6 +137,7 @@ class TargetsPage(QWidget):
     """Runtime view of the selected Xbox or xemu target."""
 
     builds_listed = Signal(str, object, str)
+    build_removed = Signal(str, str, str)
 
     def __init__(self, window):
         super().__init__()
@@ -164,6 +165,7 @@ class TargetsPage(QWidget):
         self.tabs.currentChanged.connect(self.tab_shown)
         layout.addWidget(self.tabs, 1)
         self.builds_listed.connect(self.show_builds)
+        self.build_removed.connect(self.removed_build)
         self.builds_busy = False
         self.builds_tried = set()
 
@@ -444,15 +446,75 @@ class TargetsPage(QWidget):
         self.builds_note.setWordWrap(True)
         self.builds_refresh = tip_button("Refresh", "List the game folders on the console",
                                          self.refresh_builds)
+        self.builds_remove = tip_button("Remove…", "Delete the selected folder from the console",
+                                        self.remove_build)
+        self.builds_remove.setEnabled(False)
         row.addWidget(self.builds_note, 1)
         row.addWidget(self.builds_refresh)
+        row.addWidget(self.builds_remove)
         layout.addLayout(row)
         self.builds_list = QTreeWidget()
         self.builds_list.setHeaderLabels(["Folder", "Profile", "Save pool", "Deployed"])
         self.builds_list.setRootIsDecorated(False)
         self.builds_list.header().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self.builds_list.itemSelectionChanged.connect(
+            lambda: self.builds_remove.setEnabled(bool(self.builds_list.selectedItems())
+                                                  and not self.builds_busy))
         layout.addWidget(self.builds_list, 1)
         return page
+
+    def remove_build(self):
+        items = self.builds_list.selectedItems()
+        target = self.window.target_settings(self.name)
+        if not items or self.builds_busy or target.get("kind") != "xbox":
+            return
+        folder = items[0].text(0)
+        record = (self.window.target_builds.get(self.name) or {}).get(folder)
+        games_root = target.get("games_root", "").replace("\\", "/").rstrip("/")
+        path = f"{games_root}/{folder}"
+        retail = target.get("retail_root", "").replace("\\", "/").rstrip("/")
+        warning = ""
+        if record is None:
+            warning = ("\n\nTES3X did not deploy this folder; it may be a game installed by hand, "
+                       "and its files cannot be restored from this PC.")
+        elif retail and retail.casefold() == path.casefold():
+            warning = ("\n\nThis is the target's retail base: overlay builds read their game "
+                       "files from it, and stop working until it is installed again.")
+        elif record.get("profile") == "manager":
+            warning = "\n\nThis is the console manager."
+        if QMessageBox.question(
+                self, "Remove build", f"Delete {path} and everything in it from {self.name}?"
+                + warning + "\n\nSaves are kept: they are under E:\\UDATA, not in the folder.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
+            return
+        self.builds_busy = True
+        self.builds_remove.setEnabled(False)
+        self.builds_note.setText(f"Removing {path}…")
+        name = self.name
+        args = argparse.Namespace(host=target.get("host"), port=target.get("port", 21),
+                                  user=target.get("user", tes3x_ftp.DEFAULT_USER),
+                                  password=target.get("password", tes3x_ftp.DEFAULT_PASSWORD))
+
+        def work():
+            try:
+                ftp = tes3x_ftp.connect(args)
+                try:
+                    count = tes3x_deploy.remove_remote_folder(ftp, path)
+                finally:
+                    ftp.quit()
+                self.build_removed.emit(name, path, f"{count} files deleted")
+            except (OSError, EOFError) + tes3x_deploy.ftplib.all_errors as exc:
+                self.build_removed.emit(name, path, f"failed: {exc}")
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def removed_build(self, name, path, result):
+        self.builds_busy = False
+        self.window.statusBar().showMessage(f"{name}: {path}: {result}", 10000)
+        self.window.target_builds.pop(name, None)
+        if name == self.name:
+            self.refresh_builds()
 
     def refresh_builds(self):
         target = self.window.target_settings(self.name)
@@ -511,6 +573,10 @@ class TargetsPage(QWidget):
         tes3x_folders = 0
         for folder, record in sorted(builds.items(), key=lambda item: item[0].casefold()):
             if record is None:
+                item = QTreeWidgetItem([folder, "not deployed by TES3X", "", ""])
+                for column in range(4):
+                    item.setForeground(column, self.palette().placeholderText())
+                self.builds_list.addTopLevelItem(item)
                 continue
             tes3x_folders += 1
             profile = record.get("profile") or "unknown"
@@ -528,7 +594,8 @@ class TargetsPage(QWidget):
         self.builds_note.setText(
             f"{tes3x_folders} TES3X build{'s' if tes3x_folders != 1 else ''} under "
             f"{target.get('games_root')}" + (f"; {other} other folder{'s' if other != 1 else ''}"
-                                             " not deployed by TES3X" if other else ""))
+                                             " not deployed by TES3X" if other else "")
+            + ". Select one to remove it.")
 
     # State
 

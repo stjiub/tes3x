@@ -13,7 +13,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from tes3x_agent import AgentError
 from tes3x_deploy import (CLUSTER, AgentTarget, deployed_manifest, ensure_dirs, ftp_basename,
                           legacy_manifest, local_tree, merge_console_ini, on_disk, owner_conflicts, parse_drives,
-                          pool_plan, read_manifest, remote_tree, sync, upload_file,
+                          pool_plan, read_manifest, remote_tree, remove_remote_folder, sync,
+                          upload_file,
                           verify_uploads)
 import tes3x_manifest
 
@@ -77,6 +78,23 @@ class FakeFtp:
             raise ftplib.error_perm("550 file not found")
         callback(self.files[path])
 
+    def delete(self, name):
+        if "/" in name or ":" in name:
+            raise ftplib.error_perm("550 relative names only")
+        self.calls.append(("delete", self.current, name))
+        self.entries[self.current] = [e for e in self.entries.get(self.current, [])
+                                      if e[1] != name]
+
+    def rmd(self, name):
+        target = self.resolve(name)
+        if "/" in name or self.entries.get(target):
+            raise ftplib.error_perm("550 not empty")
+        self.calls.append(("rmd", target))
+        self.dirs.discard(target)
+        parent = posixpath.dirname(target)
+        self.entries[parent] = [e for e in self.entries.get(parent, [])
+                                if e[1] != posixpath.basename(target)]
+
     def close(self):
         self.calls.append(("close",))
 
@@ -97,6 +115,20 @@ class DeployFtpTests(unittest.TestCase):
         self.assertEqual(ftp.current, base)
         self.assertTrue(all(call[-1] == "LIST" for call in ftp.calls
                             if call[0] == "retrlines"))
+
+    def test_remove_remote_folder_empties_and_removes_it(self):
+        ftp = FakeFtp()
+        base = "/F/Games/Old"
+        data = base + "/Data Files"
+        ftp.dirs.update((base, data))
+        ftp.entries["/F/Games"] = [("dir", "Old", 0), ("dir", "Keep", 0)]
+        ftp.entries[base] = [("file", "default.xbe", 100), ("dir", "Data Files", 0)]
+        ftp.entries[data] = [("file", "Morrowind.esm", 200), ("file", "Mod.esp", 3)]
+
+        self.assertEqual(remove_remote_folder(ftp, "F:/Games/Old"), 3)
+        self.assertNotIn(base, ftp.dirs)
+        self.assertNotIn(data, ftp.dirs)
+        self.assertEqual(ftp.entries["/F/Games"], [("dir", "Keep", 0)])
 
     def test_first_upload_creates_target_and_stores_relative(self):
         ftp = FakeFtp()
