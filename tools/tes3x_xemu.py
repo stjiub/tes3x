@@ -715,7 +715,10 @@ def main():
         if not (hdd.is_file() and has_file(hdd, parent, name)):
             seeds.append((dest, source))
     if not hdd.is_file():
-        puts += seeds
+        # a seed inside another seed's folder is already written with it
+        inner = {d.strip("/").lower() for d, _ in seeds}
+        puts += [(d, s) for d, s in seeds
+                 if not any(d.strip("/").lower().startswith(o + "/") for o in inner)]
         seeds = []
     if a.exec or a.save or puts or (pool_paths and not hdd.is_file()):
         with CowView(str(clean)) as disk:
