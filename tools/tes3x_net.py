@@ -57,6 +57,11 @@ def wire_text(data):
     return "".join(c if " " <= c < "\x7f" or c >= "\xa0" else "?" for c in data.decode("latin-1"))
 
 
+def quiet_admin(line):
+    """Whether an admin command goes unlogged: `list`, which the GUI polls."""
+    return line.strip().lower() == b"list"
+
+
 def decode(payload):
     """(seq, count, mac) of a broadcast test datagram, or None."""
     if len(payload) < 22 or payload[:8] != MAGIC:
@@ -3528,8 +3533,9 @@ def serve(args):
                 except ConnectionResetError:
                     continue
                 reply = admin(line.decode("utf-8", "replace"))
-                print(f"{time.strftime('%H:%M:%S')} admin: {wire_text(line)}: {reply}",
-                      flush=True)
+                if not quiet_admin(line):
+                    print(f"{time.strftime('%H:%M:%S')} admin: {wire_text(line)}: {reply}",
+                          flush=True)
                 admin_sock.sendto(reply.encode("utf-8"), addr)
                 continue
             if remote_admin and ready is remote_admin.sock:
@@ -3540,8 +3546,9 @@ def serve(args):
 
                 def run(line, addr=addr):
                     reply = admin(line)
-                    print(f"{time.strftime('%H:%M:%S')} remote admin from {addr[0]}: "
-                          f"{wire_text(line.encode('utf-8'))}: {reply}", flush=True)
+                    if not quiet_admin(line.encode("utf-8")):
+                        print(f"{time.strftime('%H:%M:%S')} remote admin from {addr[0]}: "
+                              f"{wire_text(line.encode('utf-8'))}: {reply}", flush=True)
                     return reply
 
                 reply = remote_admin.handle(data, addr, run)
