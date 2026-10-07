@@ -36,8 +36,9 @@ original hardware, but each patch matures at its own pace.
 
 ## Quick start
 
-You need Python 3.12 or newer with Pillow, a clean copy of the game's Xbox files, and for engine
-fixes [LLVM](https://releases.llvm.org). With the GUI:
+You need a Windows PC, a clean copy of the game's Xbox files, Python 3.12 or newer with the
+packages in `requirements-gui.txt`, and for engine fixes [LLVM](https://releases.llvm.org). With
+the GUI:
 
 ```powershell
 python -m pip install -r requirements-gui.txt

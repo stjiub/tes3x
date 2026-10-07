@@ -17,14 +17,25 @@ Both follow the same steps:
 
 You need:
 
-- Python 3.12 or newer and Pillow: `python -m pip install Pillow`.
+- A Windows PC. In a [portable folder](gui.md#portable-folder), which carries Python, its
+  packages, 7-Zip and LLVM, nothing else needs installing; skip the next three items. From a
+  checkout:
+  - Python 3.12 or newer, and its packages: `python -m pip install -r requirements-gui.txt`. The
+    command line needs only Pillow, `zstandard` (patched XBEs are stored as deltas) and, for
+    `multiplayer` and `agent` builds, `cryptography`; the GUI also needs PySide6 and tomlkit.
+  - [LLVM](https://releases.llvm.org) (`clang` and `lld-link`), for engine fixes and the default
+    `delta-bsa` packaging. Without it, build with no engine fixes and `merged-bsa` or `loose`
+    packaging.
+  - [7-Zip](https://www.7-zip.org), only to install `.7z` and `.rar` mods.
 - Your own copy of *Morrowind Game of the Year Edition* for the Xbox, unmodified: a folder
   containing `Default.xbe`, `morrowind.xbe`, `Morrowind.ini` and `Data Files`. TES3X never changes
   it; every build is a new folder.
-- [LLVM](https://releases.llvm.org) (`clang` and `lld-link`), for engine fixes and the default
-  `delta-bsa` packaging. Without it, build with no engine fixes and `merged-bsa` or `loose`
-  packaging.
 - A softmodded or hardmodded Xbox with an FTP server, or [xemu](xemu.md) to try builds on the PC.
+  xemu also needs an MCPX boot ROM and a BIOS you dump from your own console, and
+  [extract-xiso](https://github.com/XboxDev/extract-xiso); the GUI can download xemu and a blank
+  hard disk image.
+- An internet connection for the first build that sorts plugins with mlox, which downloads its
+  rules once; set `paths.mlox_rules` to work offline.
 - Optionally, mods: a [mod library](mod-library.md) is a folder with one folder per mod, each laid
   out the way the mod would sit in `Data Files`.
 
