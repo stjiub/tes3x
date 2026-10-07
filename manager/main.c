@@ -20,6 +20,7 @@
 
 #include "mgr.h"
 #include "screens.h"
+#include "sha256.h"
 
 #include <SDL.h>
 #include <hal/video.h>
@@ -398,6 +399,8 @@ static void load_servers(void)
         v.server_list.sel = v.server_list.top = 0;
     ui_list_move(&v.server_list, 0);
     for (i = 0; i < v.server_list.count; i++) {
+        busy("Checking servers...");
+        servers[i].online = server_probe(&servers[i]);
         server_builds[i] = NULL;
         for (k = 0; k < v.build_list.count; k++)
             if (!strcmp(builds[k].server, servers[i].name))
@@ -594,8 +597,64 @@ static void install_server(struct server *s, int replace)
         say("Build up to date", folder, summary);
 }
 
+/* Whether the build's manifest is the one the server hands out: as it is, or without the
+ * "server" and "deployed" lines an install puts in front (write_manifest). */
+static int build_current(const char *build, const struct ticket *t)
+{
+    char path[PATH_MAX_MGR];
+    unsigned char *text, digest[32];
+    struct sha256 sh;
+    char *head;
+    size_t n;
+    int same;
+
+    join_path(path, sizeof(path), build, MANIFEST);
+    if (read_file(path, &text, &n))
+        return 0;
+    sha256_init(&sh);
+    sha256_update(&sh, text, n);
+    sha256_final(&sh, digest);
+    same = n == t->size && !memcmp(digest, t->sha256, 32);
+    if (!same && (head = strstr((char *)text, "\"deployed\"")) && (head = strchr(head, ','))) {
+        sha256_init(&sh);
+        sha256_update(&sh, "{", 1);
+        sha256_update(&sh, head + 1, n - (size_t)(head + 1 - (char *)text));
+        sha256_final(&sh, digest);
+        same = n - (size_t)(head - (char *)text) == t->size && !memcmp(digest, t->sha256, 32);
+    }
+    free(text);
+    return same;
+}
+
+/* The game only shows a refusal once it is running, so the server is asked first. */
+static int join_ready(struct server *s, const char *build)
+{
+    struct ticket t;
+    const char *err;
+
+    busy("Checking the server...");
+    err = server_ticket(s, &t, progress);
+    if (err == SERVER_PASSWORD) {
+        say("Cannot join", err, "Set it on the server's page.");
+        return 0;
+    }
+    if (err && strcmp(err, "The server hands out no build.")) {
+        say("Cannot join", s->name, err);
+        return 0;
+    }
+    if (!err && !build_current(build, &t)) {
+        mgr_log("join %s: build out of date\n", s->name);
+        say("Build out of date", s->name, "The server's build has changed. Open the server and "
+                                          "press X to update it.");
+        return 0;
+    }
+    return 1;
+}
+
 static void join(const struct server *s, const char *build)
 {
+    if (!join_ready((struct server *)s, build))
+        return;
     const char *err = join_server(build, s->name, leaving);
 
     mgr_log("join %s failed: %s\n", s->name, err);

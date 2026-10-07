@@ -32,6 +32,7 @@ enum { HELLO = 1, REFUSE = 9, BUILD = 12, HANDSHAKE1 = 20, HANDSHAKE2, HANDSHAKE
 #define BUILD_BYTES 56
 #define RETRY_MS 500
 #define TRIES 12
+#define PROBE_TRIES 3
 #define ENTROPY_SAMPLES 256
 
 static const unsigned char prologue[] = "TES3X T3MP 11";
@@ -312,6 +313,64 @@ static const char *refusal(unsigned reason)
     case 5: return "This console is banned there.";
     default: return "The server refused this console.";
     }
+}
+
+/* A handshake's first packet is answered by the server's second, whoever asks. */
+int server_probe(const struct server *s)
+{
+    static unsigned char packet[1500];
+    static struct noise hs;
+    struct addrinfo hints = {0}, *res = NULL;
+    struct sockaddr_in to, from;
+    socklen_t from_n;
+    unsigned char e[32], id[4], key[32], sent[HANDSHAKE_PAD];
+    char port[8];
+    unsigned session;
+    DWORD at = 0;
+    int sock, tries = 0, got, up = 0;
+
+    if (net_up())
+        return 0;
+    snprintf(port, sizeof(port), "%u", s->port);
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_DGRAM;
+    if (getaddrinfo(s->host, port, &hints, &res) != 0 || !res)
+        return 0;
+    memcpy(&to, res->ai_addr, sizeof(to));
+    freeaddrinfo(res);
+    if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
+        return 0;
+    random_bytes(key, sizeof(key), sock);
+    random_bytes(e, sizeof(e), sock);
+    random_bytes(id, sizeof(id), sock);
+    session = get32(id) | 1;
+    noise_start(&hs, prologue, sizeof(prologue) - 1, key, e);
+    crypto_wipe(e, sizeof(e));
+    crypto_wipe(key, sizeof(key));
+    memset(sent, 0, sizeof(sent));
+    outer(sent, HANDSHAKE1, session, 0);
+    noise_write1(&hs, sent + OUTER, NULL, 0);
+    while (!up && tries <= PROBE_TRIES) {
+        struct timeval wait = {0, 50000};
+        fd_set readable;
+
+        if (!at || KeTickCount - at >= RETRY_MS) {
+            if (tries++ == PROBE_TRIES)
+                break;
+            sendto(sock, sent, sizeof(sent), 0, (struct sockaddr *)&to, sizeof(to));
+            at = KeTickCount;
+        }
+        FD_ZERO(&readable);
+        FD_SET(sock, &readable);
+        if (select(sock + 1, &readable, NULL, NULL, &wait) <= 0)
+            continue;
+        from_n = sizeof(from);
+        got = recvfrom(sock, packet, sizeof(packet), 0, (struct sockaddr *)&from, &from_n);
+        up = got >= OUTER && !memcmp(packet, "T3MP", 4) && get32(packet + 8) == session
+             && from.sin_addr.s_addr == to.sin_addr.s_addr;
+    }
+    closesocket(sock);
+    return up;
 }
 
 const char *server_ticket(struct server *s, struct ticket *t, progress_fn progress)

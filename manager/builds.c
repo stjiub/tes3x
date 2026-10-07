@@ -28,6 +28,7 @@ static const struct {
     {'G', "\\Device\\Harddisk0\\Partition7"},
     {'E', "\\Device\\Harddisk0\\Partition1"},
     {'C', "\\Device\\Harddisk0\\Partition2"},
+    {'D', "\\Device\\CdRom0"}, /* a disc, as in xemu */
 };
 
 void mount_drives(void)

@@ -80,8 +80,9 @@ static void draw_servers(const struct view *v)
         snprintf(sub, sizeof(sub), "%s%.16s  \xB7  %s",
                  s->has_server_key ? "Key " : "Not contacted yet",
                  s->has_server_key ? s->fingerprint : "", build ? build : "build not installed");
-        row(y, i == v->server_list.sel, s->name, build ? "Installed" : NULL, ui->accent, sub,
-            ui->dim);
+        row(y, i == v->server_list.sel, s->name,
+            s->online > 0 ? (build ? "Online  \xB7  Installed" : "Online") : "Offline",
+            s->online > 0 ? ui->accent : ui->bad, sub, ui->dim);
     }
     ui_scrollbar(SCROLL_X, LIST_TOP, SERVER_ROWS * ROW_H, &v->server_list);
 }

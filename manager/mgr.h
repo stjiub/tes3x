@@ -143,6 +143,7 @@ struct server {
     unsigned char server_key[32], client_key[32];
     char password[65];
     char fingerprint[33]; /* of the pinned server key */
+    int online; /* -1 not asked, 0 no answer, 1 answered */
 };
 /* What a server's BUILD hands the manager: its manifest's hash and size, and a ticket for the
  * HTTP side at addr:port. */
@@ -157,6 +158,8 @@ void server_fingerprint(const unsigned char key[32], char hex[33]);
 /* Pins the server's key on first contact and keeps a new identity key; NULL, or why not:
  * SERVER_PASSWORD when the password is missing or wrong. */
 extern const char SERVER_PASSWORD[];
+/* Whether the server answers a handshake; pins and changes nothing. */
+int server_probe(const struct server *s);
 const char *server_ticket(struct server *s, struct ticket *t, progress_fn progress);
 
 /* install.c: the server's build into its folder, staged and hash-checked, the XBEs rebuilt from
