@@ -167,7 +167,7 @@ typedef long(__stdcall *fn_KeQueryBasePriorityThread)(void *);
 #define TICK_MS 250u
 #define HELLO_TICKS 4u
 #define HEARTBEAT_TICKS 4u
-#define TIMEOUT_TICKS 20u
+#define TIMEOUT_TICKS 60u
 #define CPU_MHZ 733u
 #define CR0_WP 0x10000u
 
@@ -281,6 +281,7 @@ static struct {
 #define EVENT_OFFER 32u /* id, size, hash, then the file name */
 #define EVENT_IDENTITY 33u /* two parts: sex, then name/race or head/hair */
 #define EVENT_ACTOR_EQUIPMENT 34u /* actor id, part, parts, then equipped item ids */
+#define EVENT_WELCOME 35u /* the server's welcome text, shown in a box once the player is in */
 #define EVENT_HEADER 12u /* seq, kind, length, origin client */
 #define EVENT_DATA 80u
 #define EVENTS_OUT 16u
@@ -1271,7 +1272,6 @@ static void connection_notice_frame(void)
         notice("Connection restored.");
     } else if (!joined && notice_holding && ses.state == SESSION_REFUSED) {
         notice_release();
-        notice("The server refused the connection.");
     } else if (!joined && notice_holding && ses.state == SESSION_UNTRUSTED) {
         notice_release();
         notice("The server's key has changed. Not reconnecting.");
@@ -2055,15 +2055,13 @@ static void run_script(const char *text)
     run_script_on(text, 0);
 }
 
-/* Messages on screen, one at a time, as the engine's own transient messages. A held message is a
- * modal box without buttons, which never closes on its own here and stops the player walking, so
- * it is hidden when released. */
-typedef void(__attribute__((thiscall)) *fn_notice_hide)(void *menu, u32 visible);
+/* Messages on screen, one at a time, as the engine's own transient messages. A held message is
+ * shown again each time it expires, so the player can still walk and open the pause menu. */
 #define NOTICES 4u
 #define NOTICE_LENGTH 96u
 #define NOTICE_SHOW_US 3500000u
 static char notice_text[NOTICES][NOTICE_LENGTH];
-static u32 notice_head, notice_count, notice_shown, notice_open;
+static u32 notice_head, notice_count, notice_shown;
 static char notice_held[NOTICE_LENGTH];
 
 static void notice(const char *text)
@@ -2095,6 +2093,7 @@ static void notice_hold(const char *text)
 static void notice_release(void)
 {
     notice_holding = 0;
+    notice_shown = now_us() - NOTICE_SHOW_US;
 }
 
 static void notice_frame(void)
@@ -2107,20 +2106,13 @@ static void notice_frame(void)
         menu_id = ((fn_ui_id)TES3X_NET_UI_ID)("MenuMessage");
     menu = ((fn_find_menu)TES3X_NET_FIND_MENU)(menu_id);
     visible = menu && menu[MENU_VISIBLE];
-    if (notice_open) {
-        if (!visible)
-            notice_open = 0;
-        else if (!notice_holding)
-            ((fn_notice_hide)TES3X_NET_SET_VISIBLE)(menu, 0);
-        return;
-    }
     if (visible || !player_reference())
         return;
     if (notice_holding) {
-        ((void(__cdecl *)(const char *, ...))TES3X_NET_MESSAGE_MENU)(notice_held, (const char *)0);
-        if ((menu = ((fn_find_menu)TES3X_NET_FIND_MENU)(menu_id)))
-            ((fn_notice_hide)TES3X_NET_SET_VISIBLE)(menu, 1); /* hidden by the last one */
-        notice_open = 1;
+        if (now_us() - notice_shown >= NOTICE_SHOW_US) {
+            ((void(__cdecl *)(const char *, int, int))TES3X_NET_SHOW_MESSAGE)(notice_held, 0, 1);
+            notice_shown = now_us();
+        }
     } else if (notice_count && now_us() - notice_shown >= NOTICE_SHOW_US) {
         /* the engine's own transient message: off to the side, expires itself, holds no input */
         ((void(__cdecl *)(const char *, int, int))TES3X_NET_SHOW_MESSAGE)(
@@ -9289,6 +9281,8 @@ static void leave_frame(void)
 static void chargen_frame(void);
 static void arrival_frame(void);
 static void refusal_frame(void);
+static void session_ended_frame(void);
+static void welcome_frame(void);
 static void preload_frame(void);
 
 static void save_frame(void)
@@ -9300,6 +9294,8 @@ static void save_frame(void)
     }
     arrival_frame();
     refusal_frame();
+    session_ended_frame();
+    welcome_frame();
     preload_frame();
     if (save_requested && ses.state == SESSION_JOINED)
         save_request_frame();
@@ -11650,6 +11646,20 @@ static void player_stat(void)
     tes3x_log_hex3("net.player_worn_stat", worn_out, worn_applied, worn_removed);
 }
 
+/* The welcome waits for the player to be in the world as the character, then stays up until A. */
+static char welcome_text[EVENT_DATA + 1];
+static u32 welcome_pending;
+
+static void welcome_event(const struct event *e)
+{
+    if (!e->length)
+        return;
+    copy((u8 *)welcome_text, e->data, e->length);
+    welcome_text[e->length] = 0;
+    welcome_pending = 1;
+    log_text("net.welcome", welcome_text);
+}
+
 static void event_handle(const struct event *e)
 {
     char text[EVENT_DATA + 1], line[EVENT_DATA + 16];
@@ -11666,6 +11676,8 @@ static void event_handle(const struct event *e)
         }
     } else if ((e->kind >= EVENT_AUTHORITY && e->kind <= EVENT_DEATH) || e->kind == EVENT_OWNERS) {
         authority_event(e);
+    } else if (e->kind == EVENT_WELCOME) {
+        welcome_event(e);
     } else if (e->kind == EVENT_EQUIPMENT) {
         equipment_event(e);
     } else if (e->kind == EVENT_IDENTITY) {
@@ -12577,14 +12589,15 @@ static void handoff_frame(u8 *menu)
  * the main menu, instead of waiting out the arrival and landing on the prison ship. */
 static u32 refusal_asked, refusal_done;
 
+static const char *const refusal_why[7] = {
+    "The server refused the connection.", "Your mods differ from the server's.",
+    "The server is full.", "Wrong password. Set it in the TES3X Manager.",
+    "You were kicked from the server.", "This console is banned from the server.",
+    "Build out of date. Update it in the TES3X Manager."};
+
 static void refusal_frame(void)
 {
     static u8 data[8 + JOIN_NAME + 1];
-    static const char *const why[7] = {
-        "The server refused the connection.", "Your mods differ from the server's.",
-        "The server is full.", "Wrong password. Set it in the TES3X Manager.",
-        "You were kicked from the server.", "This console is banned from the server.",
-        "Build out of date. Update it in the TES3X Manager."};
     u32 state = ses.state, reason = ses.refused_reason, i;
     int button;
 
@@ -12618,14 +12631,79 @@ static void refusal_frame(void)
         !player_reference())
         return;
     arrival_start = ARRIVAL_CLAIMED;
-    log_text("net.join_failed", state == SESSION_REFUSED ? why[reason < 7 ? reason : 0] : "key");
+    log_text("net.join_failed", state == SESSION_REFUSED ? refusal_why[reason < 7 ? reason : 0] : "key");
     *(int *)TES3X_NET_BUTTON = -1;
     ((fn_message_menu)TES3X_NET_MESSAGE_MENU)(
         state == SESSION_UNTRUSTED ? "The server's key has changed since this console first met it."
-                                   : why[reason < 7 ? reason : 0],
+                                   : refusal_why[reason < 7 ? reason : 0],
         manager_path[0] ? "Open Manager" : "Main Menu", manager_path[0] ? "Main Menu" : (const char *)0,
         (const char *)0);
     refusal_asked = 1;
+}
+
+static void welcome_frame(void)
+{
+    static u32 asked;
+
+    if (asked) {
+        if (*(int *)TES3X_NET_BUTTON < 0)
+            return;
+        *(int *)TES3X_NET_BUTTON = -1;
+        asked = 0;
+        return;
+    }
+    if (!welcome_pending || ses.state != SESSION_JOINED || !world_idle())
+        return;
+    welcome_pending = 0;
+    *(int *)TES3X_NET_BUTTON = -1;
+    ((fn_message_menu)TES3X_NET_MESSAGE_MENU)(welcome_text, "Continue", (const char *)0,
+                                              (const char *)0);
+    asked = 1;
+}
+
+/* A session that was joined and is over: the server refused it (a kick or a ban), or it stayed
+ * unreachable for DROP_US. A box says so and leaves for the main menu. */
+#define DROP_US 60000000u
+
+static void session_ended_frame(void)
+{
+    static u32 joined_once, lost_timing, lost_since, asked;
+    const char *text = 0;
+
+    if (ses.state == SESSION_JOINED) {
+        joined_once = 1;
+        lost_timing = 0;
+        return;
+    }
+    if (asked) {
+        if (*(int *)TES3X_NET_BUTTON < 0 || asked == 2)
+            return;
+        *(int *)TES3X_NET_BUTTON = -1;
+        asked = 2;
+        ((fn_quit)TES3X_NET_QUIT)();
+        return;
+    }
+    if (!joined_once || ses.state == SESSION_UNTRUSTED)
+        return;
+    if (ses.state == SESSION_REFUSED) {
+        if (join_server[0]) /* refusal_frame's */
+            return;
+        text = refusal_why[ses.refused_reason < 7 ? ses.refused_reason : 0];
+    } else {
+        if (!lost_timing) {
+            lost_timing = 1;
+            lost_since = now_us();
+        }
+        if (now_us() - lost_since >= DROP_US)
+            text = "The connection to the server was lost.";
+    }
+    if (!text || !world_idle())
+        return;
+    log_text("net.session_ended", text);
+    *(int *)TES3X_NET_BUTTON = -1;
+    ((fn_message_menu)TES3X_NET_MESSAGE_MENU)(text, "Main Menu", (const char *)0,
+                                              (const char *)0);
+    asked = 1;
 }
 
 /* Until WELCOME: what stopped the join, on its row. */

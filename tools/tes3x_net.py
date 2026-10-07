@@ -387,12 +387,14 @@ REFUSED_LOAD_ORDER, REFUSED_FULL, REFUSED_PASSWORD, REFUSED_KICKED, REFUSED_BANN
 REFUSED_STALE = 6  # the console's build is not the one --build serves: its manager can update it
 BAN_KINDS = ("key", "mac", "address")
 MONTH_DAYS = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
-TIMEOUT = 5.0
+IDLE_TIMEOUT = 20.0  # silence after which a client is dropped; the console gives up at 15 s
+ANNOUNCE_WAIT = 6.0  # how long a join waits for the character's name before using a number
 EVENTS_HEAD = struct.Struct("<IB3x")  # the sender's last delivered event, event count
 EVENT = struct.Struct("<IHHI")  # seq, kind, length, origin client; the data follows
 EVENTS_BYTES = 512  # the client's largest EVENTS body
 EVENT_DATA = 80
 EVENT_TEXT = 1
+EVENT_WELCOME = 35  # the --welcome text, once per join as a character, shown in a box
 EVENT_IDENTITY = 33  # part, two parts, female, then two ids/text values ending in zero
 EVENT_ACTOR_EQUIPMENT = 34  # actor id, part, parts, then equipped item ids ending in zero
 EVENT_AUTHORITY, EVENT_HOLD, EVENT_HOLD_BROKEN, EVENT_HIT, EVENT_DEATH = 2, 3, 4, 5, 6
@@ -1985,6 +1987,7 @@ class Client:
         self.launch = 0  # GAME_NONE, GAME_LOAD or GAME_NEW
         self.character = None  # the folder of the character that launch runs
         self.announced = False  # the others were told it joined
+        self.announce_due = False  # that waits for its character's name
         self.relaunching = False  # it was sent a character to load and is about to relaunch
         self.rebuild = None  # (checkpoint, when to ask for the save) under --rebuild
         self.place_hold = None  # (replayed place, until when) while STATE still shows the old one
@@ -2385,13 +2388,25 @@ def serve(args):
                 flush(other, now)
 
     def player_name(client):
+        parts = identities.get(client.id)
+        if parts and parts[0]:
+            return unpack_identity(parts[0])[2]
         return client.character or f"Player {client.id}"
 
     def announce_join(client, now):
+        """Tell the others once the character's name is known, or after a few seconds without."""
         client.relaunching = False
-        if not client.announced:
-            client.announced = True
-            notify(f"{player_name(client)} has joined.", now, skip=client)
+        if client.announced or client.lobby:
+            return
+        parts = identities.get(client.id)
+        if not (parts and parts[1]) and now - client.joined < ANNOUNCE_WAIT:
+            client.announce_due = True
+            return
+        client.announced, client.announce_due = True, False
+        notify(f"{player_name(client)} has joined.", now, skip=client)
+        if args.welcome:
+            client.rel.queue(EVENT_WELCOME, 0, args.welcome[:EVENT_DATA].encode("latin-1", "replace"))
+            flush(client, now)
 
     def leave(client):
         # a relaunch to load a character is not a departure
@@ -2511,6 +2526,23 @@ def serve(args):
         return (os.path.join(args.world, "characters", fingerprint(client.key))
                 if args.world and client.key else None)
 
+    def manager_character(key):
+        """The character this key plays on the server: the one in the world now, else the newest
+        kept; what the console manager lists beside the server."""
+        for other in clients.values():
+            if other.alive and other.key == key and (
+                    other.character or identities.get(other.id)):
+                return player_name(other)
+        root = (os.path.join(args.world, "characters", fingerprint(key))
+                if args.world else None)
+        kept = kept_characters(root)
+        if not kept:
+            return ""
+        try:
+            return save_player(kept[0][1]) or kept[0][0]
+        except (OSError, ValueError):
+            return kept[0][0]
+
     def character_folder(client):
         root = key_folder(client)
         return os.path.join(root, client.character) if root and client.character else None
@@ -2552,7 +2584,7 @@ def serve(args):
 
     def on_player_death(client, alive, stamp, now):
         stream = player_stream(client) if client.synced else None
-        name = client.character or f"client {client.id}"
+        name = player_name(client)
         client.dead = not alive
         if stream:
             stream.dead, stream.dirty = not alive, True
@@ -2999,6 +3031,8 @@ def serve(args):
                 head, hair = unpack_identity(parts[1])[2:]
                 print(f"{stamp} client {client.id} is {name}: {race}, {head}, {hair}",
                       flush=True)
+                if client.announce_due:
+                    announce_join(client, time.time())
         if kind == EVENT_ACTOR_EQUIPMENT:
             try:
                 refid, part, count, items = unpack_actor_equipment(data)
@@ -3409,8 +3443,9 @@ def serve(args):
             if manager:
                 stranger = Client(0, mac)
                 stranger.addr, stranger.session, stranger.keys = addr, session, keys
-                send(stranger, BUILD, build_server.ticket() if build_server else
-                     tes3x_netbuild.BUILD_BODY.pack(bytes(32), 0, 0, bytes(16)))
+                body = build_server.ticket() if build_server else                     tes3x_netbuild.BUILD_BODY.pack(bytes(32), 0, 0, bytes(16))
+                who = manager_character(key).encode("latin-1", "replace")[:46]
+                send(stranger, BUILD, body + (who + b"\0" if who else b""))
                 print(f"{stamp} manager {fingerprint(key)} at {addr[0]} asked for the build"
                       + ("" if build_server else ", which is not served"), flush=True)
                 return
@@ -3510,8 +3545,6 @@ def serve(args):
                 client.rel.queue(EVENT_OFFER, 0, client.bulk.offer())
                 print(f"{stamp} offering {sending[0]} ({len(sending[1])} bytes, id "
                       f"{client.bulk.id:#010x}) to client {client.id}", flush=True)
-            if args.welcome:
-                client.rel.queue(EVENT_TEXT, 0, args.welcome[:EVENT_DATA].encode("latin-1", "replace"))
             if not key_folder(client):  # with characters, it joins once it has one
                 announce_join(client, now)
             if client.rel.out:
@@ -3741,7 +3774,9 @@ def serve(args):
         for client in clients.values():
             if client.queue:
                 pump(client)
-            if client.alive and now - client.last > TIMEOUT:
+            if client.alive and client.in_world and client.announce_due:
+                announce_join(client, now)
+            if client.alive and now - client.last > args.idle_timeout:
                 print(f"{time.strftime('%H:%M:%S')} client {client.id} timed out", flush=True)
                 leave(client)
         if world["path"] and now >= world["saved"] + (10 if world["dirty"] else 60):
@@ -4272,7 +4307,7 @@ def main(argv=None):
                    help="on stopping (Ctrl-C, --duration, admin stop) wait this long for every "
                         "joined console to save its character (default 60)")
     p.add_argument("--welcome", metavar="TEXT",
-                   help="show this on a console when it enters the world (80 characters)")
+                   help="show this in a box when a player is in the world as their character (80 characters)")
     p.add_argument("--world", metavar="DIR",
                    help="keep the world in DIR, one file per load order: the clock, deaths, "
                         "changed objects, objects made at run time and weather, loaded when the "
@@ -4291,6 +4326,8 @@ def main(argv=None):
     p.add_argument("--respawn", choices=sorted(RESPAWN_PLACES), default="nearest",
                    help="where a player who dies comes back: the closest temple (TempleMarker), "
                         "Imperial shrine (DivineMarker) or either (default)")
+    p.add_argument("--idle-timeout", type=float, default=IDLE_TIMEOUT, metavar="SECONDS",
+                   help="drop a client silent this long (default 20; consoles stop waiting at 15)")
     p.add_argument("--respawn-delay", type=float, default=5.0, metavar="SECONDS",
                    help="how long a dead player lies before coming back (default 5)")
     p.add_argument("--death-gold", type=int, default=10, metavar="PERCENT",

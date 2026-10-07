@@ -83,6 +83,7 @@ The first client to join sets the session's load order and its game clock. Usefu
 | `--duration SECONDS` | stop after a while |
 | `--stop-wait SECONDS` | how long stopping waits for consoles' saves (default 60) |
 | `--respawn temple\|shrine\|nearest` | where a player who dies comes back (default `nearest`) |
+| `--idle-timeout SECONDS` | drop a client silent this long (default 20; consoles stop waiting at 15) |
 | `--respawn-delay SECONDS` | how long a dead player lies before coming back (default 5) |
 | `--death-gold PERCENT` | the share of carried gold a death costs (default 10) |
 | `--build DIR` | hand this build to the console manager (below) |
@@ -270,7 +271,8 @@ that runs xemu, or on Linux add `network_mode: host` to the service, which also 
    same interior or within one exterior cell.
 
 New Game and Load relaunch the title; the console leaves and joins again by itself, and the server
-prints `rejoined`. If the server stops answering for five seconds, the console keeps trying.
+prints `rejoined`. If the server stops answering for 15 seconds, the console says the connection is lost and keeps
+reconnecting; after 60 seconds it offers the main menu.
 
 The main menu has **Join** between Load and Options, and below it **Manager** once the
 [console manager](deployment.md#installing-the-console-manager) is installed, which starts the

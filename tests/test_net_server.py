@@ -238,6 +238,21 @@ class ServerTests(unittest.TestCase):
         self.client(2).join(build_id=build)
         self.client(3).join()  # a console without a manifest is judged by its load order
 
+    def test_a_manager_is_told_its_key_character(self):
+        world = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, world)
+        self.start('--world', str(world), '--adopt')
+        console = self.client(1)
+        console.join()
+        self.game(console, 1, 7, b'')
+        self.upload(console, 2, 1, b'mp-hero.ess', self.save(b'Nerevar', 0))
+        manager = self.client(1)
+        manager.session ^= 2
+        body = manager.join(manager=True)
+        size = tes3x_netbuild.BUILD_BODY.size
+        self.assertEqual(body[size:], b'Nerevar\0')
+        self.assertEqual(tes3x_netbuild.BUILD_BODY.unpack(body[:size])[1], 0)
+
     def test_a_server_without_a_build_says_so(self):
         self.start()
         self.assertEqual(tes3x_netbuild.BUILD_BODY.unpack(self.client(1).join(manager=True))[1], 0)

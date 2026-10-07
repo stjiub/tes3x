@@ -88,6 +88,7 @@ use of the server does not read this table.
 | `max_players` | integer | `16` | `--max-players`. |
 | `respawn` | string | `nearest` | `--respawn`: `nearest`, `shrine` or `temple`. |
 | `respawn_delay` | number | server default | `--respawn-delay` in seconds; `0` keeps the default. |
+| `idle_timeout` | number | server default | `--idle-timeout` in seconds; `0` keeps the default (20). |
 | `death_gold` | integer | `10` | `--death-gold`, a percentage. |
 | `hour` | number | server default | `--hour`; a negative value keeps the default. |
 | `timescale` | number | server default | `--timescale`; `0` keeps the default. |

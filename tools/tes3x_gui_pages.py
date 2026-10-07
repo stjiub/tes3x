@@ -1229,13 +1229,15 @@ SERVER_FIELDS = (
     ("max_players", "Max players", "int", 16, ""),
     ("respawn", "Respawn", "choice", "nearest", "Where a dead player wakes"),
     ("respawn_delay", "Respawn delay (s)", "float", 0.0, "0 keeps the server's default"),
+    ("idle_timeout", "Idle timeout (s)", "float", 0.0, "Drop a silent console after this long; "
+     "0 keeps the server's default (20). Consoles stop waiting at 15"),
     ("death_gold", "Death gold (%)", "int", 10, "Share of carried gold a death costs"),
     ("hour", "Start hour", "float", -1.0, "Game hour when a new session starts; -1 for the "
      "server's default"),
     ("timescale", "Timescale", "float", 0.0, "0 keeps the server's default"),
     ("save_every", "Save every (s)", "int", 0, "Ask joined consoles to save this often; 0 for "
      "the server's default"),
-    ("welcome", "Welcome message", "string", "", "Shown to a player entering the world (80 "
+    ("welcome", "Welcome message", "string", "", "Shown in a box, to continue with A, once a player is in as their character (80 "
      "characters)"),
     ("load_state", "Load from server state", "bool", True, "A character loads as a New Game "
      "built from the server's kept state, so the player spawns once; topics and factions "
@@ -1274,7 +1276,8 @@ def server_arguments(values):
             args += [flag, str(values[key])]
     if values.get("respawn"):
         args += ["--respawn", values["respawn"]]
-    for key, flag in (("respawn_delay", "--respawn-delay"), ("timescale", "--timescale"),
+    for key, flag in (("respawn_delay", "--respawn-delay"), ("idle_timeout", "--idle-timeout"),
+                      ("timescale", "--timescale"),
                       ("save_every", "--save-every")):
         if values.get(key):
             args += [flag, str(values[key])]
