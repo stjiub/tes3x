@@ -16,6 +16,18 @@ def query(name, qtype=1):
         struct.pack('>HH', qtype, 1)
 
 
+class ProtocolVersionTests(unittest.TestCase):
+    def test_game_and_manager_match_server_protocol(self):
+        import re
+        root = Path(__file__).resolve().parents[1]
+        for name in ('hooks/tes3xmulti.c', 'manager/servers.c'):
+            with self.subTest(source=name):
+                source = (root / name).read_text(encoding='utf-8')
+                version = re.search(r'^#define T3MP_VERSION (\d+)', source, re.MULTILINE)
+                self.assertIsNotNone(version)
+                self.assertEqual(int(version.group(1)), tes3x_net.T3MP_VERSION)
+
+
 class DnsReplyTests(unittest.TestCase):
     def test_known_name_gets_one_a_record(self):
         reply = tes3x_net.dns_reply(query('mw.test'), {'mw.test': '10.0.2.2'})
