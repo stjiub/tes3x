@@ -187,6 +187,40 @@ static void host_prepare(int mode)
 unsigned char *guard_end(void);
 void binary_stdin(void);
 
+static int host_stats_replay(void)
+{
+    u8 mobile[0x800] = {0};
+    float strength = 51.0f, damaged = 36.524f, hand = 20.0f;
+    float *attribute = (float *)(mobile + MOBILE_ATTRIBUTES + STAT_BASE);
+    float *skill = (float *)(mobile + MOBILE_SKILLS + 5 * 0x10 + STAT_BASE);
+    float *last = (float *)(mobile + MOBILE_SKILLS + 26 * 0x10 + STAT_BASE);
+
+    ses.welcomes = 1;
+    replay_stat_keep(0, 0, (const u8 *)&strength);
+    replay_stat_keep(0, 1, (const u8 *)&strength);
+    replay_stat_keep(ATTRIBUTES + 5, 0, (const u8 *)&damaged);
+    replay_stat_keep(ATTRIBUTES + 5, 1, (const u8 *)&damaged);
+    replay_stat_keep(ATTRIBUTES + 26, 1, (const u8 *)&hand);
+    attribute[0] = attribute[1] = 62.0f;
+    skill[0] = skill[1] = 37.0f;
+    last[0] = 10.0f;
+    replay_stat_wait = 2;
+    if (!replay_stat_frame(mobile) || attribute[0] != 62.0f)
+        return 4;
+    if (replay_stat_frame(mobile) || attribute[0] != strength || attribute[1] != strength ||
+        skill[0] != damaged || skill[1] != damaged || last[0] != 10.0f || last[1] != hand)
+        return 5;
+    attribute[1] = 45.0f;
+    if (replay_stat_frame(mobile) || attribute[1] != 45.0f)
+        return 6;
+    replay_stat_wait = 2;
+    ses.welcomes++;
+    if (replay_stat_frame(mobile) || replay_stat_wait || attribute[1] != 45.0f)
+        return 7;
+    puts("ok stat replay");
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     static u8 frame[HOST_MTU];
@@ -194,6 +228,8 @@ int main(int argc, char **argv)
     u32 frames = 0, handshakes = 0, len;
     int mode, lo, hi;
 
+    if (argc == 2 && !strcmp(argv[1], "--stats-replay"))
+        return host_stats_replay();
     verbose = argc > 1;
     binary_stdin();
     if (!end)

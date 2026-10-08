@@ -738,6 +738,21 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(stream.modifiers, {0: 35.0, 7: 90.0, 13: 57.0})
         self.assertIn(modifiers, stream.replay())
 
+    def test_abilities_replay_before_absolute_statistics(self):
+        net = tes3x_net
+        with tempfile.TemporaryDirectory() as folder:
+            stream = net.PlayerStream(str(Path(folder) / 'stream.json'))
+        stream.spells = ['fortify ability']
+        stream.level = net.LEVEL.pack(7, 0, *([0] * 11), 45.0, 100.0, 200.0,
+                                      51.0, 50.0, 43.155, *([40.0] * 5))
+        stream.skills = {5: [36.524, 0.0]}
+        stream.modifiers = {0: 51.0, 2: 43.155, 13: 36.524}
+        kinds = [event[0] for event in stream.replay()]
+        self.assertLess(kinds.index(net.PLAYER_SPELLS), kinds.index(net.PLAYER_LEVEL))
+        self.assertLess(kinds.index(net.PLAYER_SPELLS), kinds.index(net.PLAYER_SKILLS))
+        self.assertLess(kinds.index(net.PLAYER_LEVEL), kinds.index(net.PLAYER_MODIFIERS))
+        self.assertLess(kinds.index(net.PLAYER_SKILLS), kinds.index(net.PLAYER_MODIFIERS))
+
     def admin(self, port, *words):
         run = subprocess.run([sys.executable, str(NET), 'admin', '--port', str(port), *words],
                              capture_output=True, text=True, timeout=10)

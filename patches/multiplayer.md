@@ -30,6 +30,11 @@ Other players appear as stand-ins from `TES3X Multiplayer.esp`, which the pipeli
 copies its player's movement, animation, drawn weapon or readied spell, and whatever the player
 has equipped; the server keeps each player's equipment and sends it to consoles that join later.
 
+The server retains the character's attribute and skill bases, current values and skill progress.
+Replay restores abilities before the statistic snapshots, then finalises those snapshots after
+the engine applies the abilities. This preserves fortification, drain and fractional damage
+without adding an ability's modifier twice.
+
 The server also names one client per loaded cell as its authority: that console runs the AI of
 the actors there and sends their positions ten times a second, and the other consoles stop those
 actors' AI and place them where the authority says. Damage done to such an actor, and a dialogue

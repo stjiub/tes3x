@@ -149,7 +149,8 @@ def report_bindings(paths):
 # checkpoint and its rebuild from the server's state alone needs no checkpoint.
 ROWS = (
     "Identity", "Position, cell, heading", "Inventory and gold", "Equipped items",
-    "Level and skills", "Player mobile (attributes, current stats, undecoded)",
+    "Level and skills", "Attributes (base, current)",
+    "Player mobile (current stats, undecoded)",
     "Player data (PNAM, SNAM, undecoded)", "Known spells", "Active effects", "Journal", "Topics",
     "Factions", "Player-made records", "Map exploration", "Player globals (PC*)",
     "Kills, stolen items", "Misc player data",
@@ -220,8 +221,15 @@ def save_units(path):
                     for i, k in enumerate(SKILLS):  # base, current
                         put("Level and skills", k, values[2 * i:2 * i + 2])
                     continue
+                if s == b"ACDT" and len(v) == 0x108:
+                    for i, attribute in enumerate(ATTRIBUTES):
+                        current, base = struct.unpack_from("<ff", v, 0x50 + 8 * i)
+                        put("Attributes (base, current)", attribute, (base, current))
+                    put("Player mobile (current stats, undecoded)", "REFR ACDT remainder",
+                        blob(v[:0x50] + v[0x90:]))
+                    continue
                 row = ("Position, cell, heading" if s in (b"DATA", b"STPR")
-                       else "Player mobile (attributes, current stats, undecoded)")
+                       else "Player mobile (current stats, undecoded)")
                 if s not in (b"FRMR", b"NAME", b"ND3D"):
                     put(row, f"REFR {s.decode('latin-1')}", blob(v))
         elif tag == b"SPLM":

@@ -3663,6 +3663,14 @@
       "pc_va": "0x0052D010"
     },
     {
+      "va": "0x0015C140",
+      "name": "MobileActor::saveActorState",
+      "confidence": "verified",
+      "provenance": "ACDT writer at 0x0015C420; serialises MobileActor statistics, AI and target state",
+      "note": "Writes 264-byte ACDT. Attribute pairs at +0x50 are current then base floats, copied from MobileActor +0x254 + 12*i (+8, getBase). The function continues through SEH catch blocks to ret 4 at 0x0015D110.",
+      "signature": "void __thiscall saveActorState(TES3::TES3File* file)"
+    },
+    {
       "va": "0x0015DF60",
       "name": "MobileActor::isNotKnockedDownOrOut",
       "kind": "function",

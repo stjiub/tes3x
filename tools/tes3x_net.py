@@ -1410,15 +1410,16 @@ class PlayerStream:
                    for part in pack_items(item, entries)]
         if self.worn is not None:
             events += pack_worn(self.worn)
+        # Abilities change statistic bases; restore them before the absolute stat snapshots.
+        if self.spells is not None:
+            events += [bytes([PLAYER_SPELLS, SPELLS_SNAPSHOT]) + part
+                       for part in pack_equipment(self.spells)]
         if self.level:
             events.append(bytes([PLAYER_LEVEL]) + self.level)
         if self.vitals:  # after LEVEL, which caps each current value at its base
             events.append(bytes([PLAYER_VITALS]) + VITALS.pack(*self.vitals))
         if self.place and not self.dead:  # the dead go to a marker instead
             events.append(bytes([PLAYER_PLACE]) + self.place)
-        if self.spells is not None:
-            events += [bytes([PLAYER_SPELLS, SPELLS_SNAPSHOT]) + part
-                       for part in pack_equipment(self.spells)]
         if self.bounty is not None:
             events.append(bytes([PLAYER_BOUNTY]) + struct.pack("<i", self.bounty))
         skills = sorted(self.skills.items())

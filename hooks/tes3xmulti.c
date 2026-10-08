@@ -9980,6 +9980,8 @@ static struct {
 static u8 carried_seen[CARRIED], level_sent[LEVEL_BYTES];
 static u32 skills_sent[SKILLS][2], skills_known, level_known, vitals_known;
 static u32 modifiers_sent[MODIFIERS], modifiers_known[2];
+static u32 replay_stats[MODIFIERS][2], replay_stat_known[2][2], replay_stat_welcome;
+static u32 replay_stat_wait;
 static float vitals_sent[3];
 static u16 journal_sent[JOURNALS];
 static const u8 *player_spells_sent[PLAYER_SPELLS_MAX], *player_spells_now[PLAYER_SPELLS_MAX];
@@ -11069,6 +11071,47 @@ static void worn_event(u8 *ref, const struct event *e)
     }
 }
 
+static void replay_stat_session(void)
+{
+    u32 i;
+
+    if (replay_stat_welcome == ses.welcomes)
+        return;
+    replay_stat_welcome = ses.welcomes;
+    replay_stat_wait = 0;
+    for (i = 0; i < 2; i++)
+        replay_stat_known[i][0] = replay_stat_known[i][1] = 0;
+}
+
+static void replay_stat_keep(u32 index, u32 current, const u8 *value)
+{
+    replay_stat_session();
+    replay_stats[index][current] = get32le(value);
+    replay_stat_known[current][index >> 5] |= 1u << (index & 31);
+}
+
+/* Let newly added abilities run before finalising the absolute stat snapshots. */
+static int replay_stat_frame(u8 *mobile)
+{
+    u8 *stat;
+    u32 i, current;
+
+    replay_stat_session();
+    if (!replay_stat_wait)
+        return 0;
+    if (--replay_stat_wait)
+        return 1;
+    for (i = 0; i < MODIFIERS; i++) {
+        stat = mobile + (i < ATTRIBUTES ? MOBILE_ATTRIBUTES + 0xC * i
+                                         : MOBILE_SKILLS + 0x10 * (i - ATTRIBUTES));
+        for (current = 0; current < 2; current++)
+            if (replay_stat_known[current][i >> 5] >> (i & 31) & 1)
+                put32le(stat + STAT_BASE + 4 * current, replay_stats[i][current]);
+    }
+    tes3x_log("net.player_stats_final", ses.welcomes);
+    return 0;
+}
+
 /* Game thread, in the world: after READY, the changes once a second. */
 static void player_frame(const u8 *ref)
 {
@@ -11077,6 +11120,8 @@ static void player_frame(const u8 *ref)
 
     if (ses.state != SESSION_JOINED || player_welcome != ses.welcomes || !player_mode ||
         !plausible(mobile) || !npc || !plausible(object))
+        return;
+    if (replay_stat_frame(mobile))
         return;
     if (player_mode != 3) {
         /* After a replay what the console has is what the server keeps; otherwise send it all. */
@@ -11116,7 +11161,7 @@ static void player_set(u8 *ref, const char *what, const char *name, int value)
     run_script_on(line, ref);
 }
 
-/* Attributes and the level through their script commands, which update what follows from them. */
+/* Commands update dependent fields; direct base writes retain fractional damage. */
 static void level_apply(u8 *ref, const u8 *body)
 {
     static const u32 stats[3] = {MOBILE_HEALTH_STAT, MOBILE_MAGICKA_STAT, MOBILE_FATIGUE_STAT};
@@ -11135,6 +11180,8 @@ static void level_apply(u8 *ref, const u8 *body)
         copy((u8 *)&value, body + 27 + 4 * i, 4);
         if (*(const float *)(mobile + MOBILE_ATTRIBUTES + 0xC * i + STAT_BASE) != value)
             player_set(ref, "Set", attribute_names[i], round_int(value));
+        copy(mobile + MOBILE_ATTRIBUTES + 0xC * i + STAT_BASE, body + 27 + 4 * i, 4);
+        replay_stat_keep(i, 0, body + 27 + 4 * i);
     }
     for (i = 0; i < 3; i++) {
         stat = (float *)(mobile + stats[i]);
@@ -11165,6 +11212,8 @@ static void skills_apply(u8 *ref, const u8 *p, u32 length)
         copy((u8 *)&base, p + 3 + i * SKILL_BYTES, 4);
         if (*(const float *)(mobile + MOBILE_SKILLS + 0x10 * skill + STAT_BASE) != base)
             player_set(ref, "Set", skill_names[skill], round_int(base));
+        copy(mobile + MOBILE_SKILLS + 0x10 * skill + STAT_BASE, p + 3 + i * SKILL_BYTES, 4);
+        replay_stat_keep(ATTRIBUTES + skill, 0, p + 3 + i * SKILL_BYTES);
         copy(mobile + PLAYER_SKILL_PROGRESS + 4 * skill, p + 7 + i * SKILL_BYTES, 4);
     }
     player_stats_in++;
@@ -11186,6 +11235,7 @@ static void modifiers_apply(const u8 *p, u32 length)
         stat = mobile + (index < ATTRIBUTES ? MOBILE_ATTRIBUTES + 0xC * index
                                              : MOBILE_SKILLS + 0x10 * (index - ATTRIBUTES));
         copy(stat + STAT_BASE + 4, p + 3 + i * MODIFIER_BYTES, 4);
+        replay_stat_keep(index, 1, p + 3 + i * MODIFIER_BYTES);
     }
     player_stats_in++;
 }
@@ -11657,6 +11707,10 @@ static void player_event(const struct event *e)
         return;
     }
     if (e->data[0] == PLAYER_READY) {
+        replay_stat_session();
+        if (replay_stat_known[0][0] || replay_stat_known[0][1] ||
+            replay_stat_known[1][0] || replay_stat_known[1][1])
+            replay_stat_wait = 2;
         player_mode = e->length >= 2 && e->data[1] ? 2 : 1;
         player_welcome = ses.welcomes;
         return;

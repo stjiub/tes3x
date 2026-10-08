@@ -375,6 +375,9 @@ the kept one. The report goes beside the upload as `uploads/KEY/NAME.diff.txt`, 
 of state; neither save is kept as the character. `tes3x_ess.py --diff KEPT OTHER` makes the same
 report from any two saves.
 
+The report separates attributes into base/current pairs and skills into base/current pairs,
+alongside their saved progress. Other mobile fields remain byte comparisons.
+
 `--load-state` is the normal character-loading path and is enabled by default by the GUI. The
 server sends identity, inventory, worn items and last place as a small `char-*.t3c` file. The
 console starts a New Game that becomes that character on the loading screen, in that place; the
