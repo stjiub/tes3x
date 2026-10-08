@@ -753,6 +753,73 @@ class ServerTests(unittest.TestCase):
         self.assertLess(kinds.index(net.PLAYER_LEVEL), kinds.index(net.PLAYER_MODIFIERS))
         self.assertLess(kinds.index(net.PLAYER_SKILLS), kinds.index(net.PLAYER_MODIFIERS))
 
+    def test_active_effect_snapshot_restart_and_removal(self):
+        net = tes3x_net
+        entry = dict(serial=17, source_type=1, index=0, caster_kind=1, flags=0, caster=0,
+                     corprus=0.0, source='timed fortify', item='',
+                     active=struct.pack('<BBhBBHHbB', 0, 0, 79, 0, 0, 60, 11, 0, 0).hex(),
+                     resisted=25.0, magnitude=11, elapsed=12.5, cumulative=8.25,
+                     state=5, condition=0, charge=0,
+                     definitions=(struct.pack('<Hbbiiiii', 79, -1, 0, 0, 0, 60, 11, 11)
+                                  + struct.pack('<h', -1).ljust(24, b'\0') * 7).hex(),
+                     source_name='Timed fortify', source_stats=(b'\0' * 12).hex())
+        one = b''.join(p[5:] for p in net.pack_player_effects([entry]))
+        for offset, bad_value in ((100, struct.pack('<f', -1)),
+                                  (124, struct.pack('<i', 3)),
+                                  (132, struct.pack('<i', -1)),
+                                  (140, struct.pack('<i', 10))):
+            damaged = bytearray(one)
+            damaged[offset:offset + 4] = bad_value
+            with self.subTest(offset=offset), self.assertRaises(ValueError):
+                net.unpack_player_effects(damaged)
+        with self.assertRaises(ValueError):
+            net.unpack_player_effects(one + one)
+        with self.assertRaises(ValueError):
+            net.pack_player_effects([dict(entry, source='x' * 32)])
+        entries = [dict(entry, serial=i + 1, source_type=1 + i % 3) for i in range(64)]
+        parts = net.pack_player_effects(entries)
+        self.assertGreater(len(parts), 16)  # larger than the console's reliable queue
+        with tempfile.TemporaryDirectory() as folder:
+            path = str(Path(folder) / 'stream.json')
+            stream = net.PlayerStream(path)
+            for part in parts[:-1]:
+                self.assertIsNone(stream.take(part))
+                self.assertIsNone(stream.effects)
+            self.assertEqual(stream.take(parts[-1]), 'has 64 active effects')
+            self.assertEqual(stream.effects, entries)
+            stream.save()
+            loaded = net.PlayerStream(path)
+            self.assertEqual(loaded.effects, entries)
+            self.assertEqual(loaded.replay(), parts)
+            # A changed total or an out-of-order part cannot replace the retained snapshot.
+            self.assertIsNone(loaded.take(parts[0]))
+            self.assertIsNone(loaded.take(parts[2]))
+            self.assertIsNone(loaded.take(parts[-1]))
+            self.assertEqual(loaded.effects, entries)
+            bad = bytearray(parts[1])
+            bad[3] -= 1
+            loaded.take(parts[0])
+            loaded.take(bad)
+            self.assertEqual(loaded.effects, entries)
+            empty = net.pack_player_effects([])[0]
+            self.assertEqual(loaded.take(empty), 'has 0 active effects')
+            loaded.save()
+            self.assertEqual(net.PlayerStream(path).effects, [])
+            loaded.reset()
+            self.assertIsNone(loaded.effects)
+
+    def test_active_effect_invalid_snapshot_is_atomic(self):
+        net = tes3x_net
+        with tempfile.TemporaryDirectory() as folder:
+            stream = net.PlayerStream(str(Path(folder) / 'stream.json'))
+        stream.effects = []
+        self.assertIsNone(stream.take(bytes([net.PLAYER_EFFECTS]) + struct.pack('<HH', 0, 1) + b'x'))
+        self.assertEqual(stream.effects, [])
+        with self.assertRaises(ValueError):
+            net.unpack_player_effects(b'\0' * net.PLAYER_EFFECT_BYTES)
+        self.assertIsNone(stream.take(bytes([net.PLAYER_EFFECTS]) + struct.pack('<HH', 0, 0)))
+        self.assertEqual(stream.effects, [])
+
     def admin(self, port, *words):
         run = subprocess.run([sys.executable, str(NET), 'admin', '--port', str(port), *words],
                              capture_output=True, text=True, timeout=10)

@@ -59,6 +59,11 @@ CAST_BOLT = 0x0014EB30  # a target effect's bolt at the cast, from process only
 SPELL_ADDRESSES = (
     ("ACTIVATE_SPELL", 0x000BE050), ("MAGIC_INSTANCE", 0x000BCD30),
     ("RESOLVE_OBJECT", 0x00104300),
+    ("SOURCE_EFFECTS", 0x000E7460), ("EFFECT_INSERT", 0x000BCA70),
+    ("ACTIVE_EFFECT_NODE", 0x000BCBA0), ("RETIRE_EFFECTS", 0x0014D900),
+    ("MAGIC_PROCESS", 0x00151350), ("EFFECT_CALLBACKS", 0x003B5FC8),
+    ("EFFECT_ICONS", 0x001EE460), ("ALCHEMY_NEW", 0x000FC650),
+    ("ADD_NEW_OBJECT", 0x0010CA40), ("SET_STRING_SLOT", 0x000D50E0),
 )
 # What the leveled creature spawn and Inventory::DropItem call to make a reference at run time,
 # put it in a cell, give it a stack count and attach it to the cell's scene.

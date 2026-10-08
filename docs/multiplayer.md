@@ -102,7 +102,7 @@ the data files and applies the server's world; it does not import changes from a
 With `--world` the server also keeps each character under `characters` in `DIR`. A joining
 console starts a New Game and receives the character's identity, inventory, worn items and last
 place in a small server-generated state file; the rest follows after it joins. The console sends
-inventory, equipment, level, attributes, skills and their current modifiers, journal, current
+inventory, equipment, level, attributes, skills and their current modifiers, active effects, journal, current
 health, magicka and fatigue as they change, and who the character is: name, race, sex, head, hair,
 birthsign and class, including
 a class made in character creation. The server keeps the latest supported state in `stream.json`.
@@ -382,17 +382,21 @@ alongside their saved progress. Other mobile fields remain byte comparisons.
 server sends identity, inventory, worn items and last place as a small `char-*.t3c` file. The
 console starts a New Game that becomes that character on the loading screen, in that place; the
 rest of the kept state follows once it joins. State the server does not keep yet, including
-topics, factions and active effects, starts at its New Game value.
+topics, factions and player globals, starts at its New Game value.
 
 ## Limits
 
 - Menus no longer pause the world while joined, and resting or waiting is refused.
 - A multiplayer character loads only from server state. The server restores inventory, equipment,
   level, base and current attributes and skills, journal, current health, magicka and fatigue
-  (health no lower than 1), position and identity. Active effects, topics, factions and player
-  globals are not retained yet and start at New Game values. A current attribute or skill caused
-  by a timed effect is restored without its timer, so it does not expire after a join. Restoring
-  a journal only moves a quest forward, never back.
+  (health no lower than 1), position, identity and active effects. Active effects retain their
+  source, rolled magnitude, resistance and elapsed game time; remaining duration resumes on join,
+  with time stopped while offline. At most 64 active effect entries are retained. Consumed
+  potions include their adjusted source definition. Custom spell and enchantment definitions
+  are not recreated; a source must exist in the build, and a missing caster cannot be resolved.
+  Ghost caster ids belong to the current session. Topics, factions and player globals are not
+  retained yet and start at New Game values. Restoring a journal only moves a quest forward,
+  never back.
 - Items taken, objects a script disables, locks, and items
   dropped or placed (by the console or a script) are shared, with their stack size, condition and
   charge, and so are containers' contents: the first player to open a container decides what it

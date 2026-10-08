@@ -221,6 +221,70 @@ static int host_stats_replay(void)
     return 0;
 }
 
+static int host_effect_parts(void)
+{
+    struct event e = {0};
+    u32 offset = 0, part = 0, n;
+    u32 parts = (PLAYER_EFFECT_BODY + EVENT_DATA - 6) / (EVENT_DATA - 5);
+
+    u8 definition[PLAYER_EFFECT_BYTES] = {0};
+    definition[4] = 1;
+    for (n = 0; n < 8; n++)
+        definition[120 + n * EFFECT_BYTES] = definition[121 + n * EFFECT_BYTES] = 0xFF;
+    definition[120] = 79;
+    definition[121] = 0;
+    definition[122] = 0xFF;
+    if (!player_effect_definition(definition))
+        return 13;
+    definition[124] = 3;
+    if (player_effect_definition(definition))
+        return 14;
+    definition[124] = 0;
+    definition[122] = 27;
+    if (player_effect_definition(definition))
+        return 15;
+    ses.welcomes = 1;
+    while (offset < PLAYER_EFFECT_BODY) {
+        n = PLAYER_EFFECT_BODY - offset;
+        if (n > EVENT_DATA - 5)
+            n = EVENT_DATA - 5;
+        e.length = n + 5;
+        e.data[0] = PLAYER_EFFECTS;
+        e.data[1] = (u8)part;
+        e.data[2] = (u8)(part >> 8);
+        e.data[3] = (u8)parts;
+        e.data[4] = (u8)(parts >> 8);
+        memset(e.data + 5, 0x42, n);
+        player_effect_event(&e);
+        offset += n;
+        part++;
+        if (offset < PLAYER_EFFECT_BODY && player_effect_pending)
+            return 8;
+    }
+    if (!player_effect_pending || player_effect_in_size != PLAYER_EFFECT_BODY ||
+        player_effect_in[PLAYER_EFFECT_BODY - 1] != 0x42)
+        return 9;
+    /* A short packet and an out-of-order part must not replace the completed snapshot. */
+    e.length = 4;
+    player_effect_event(&e);
+    if (!player_effect_pending || player_effect_in_size != PLAYER_EFFECT_BODY)
+        return 10;
+    e.length = 5;
+    e.data[1] = 1;
+    e.data[2] = 0;
+    player_effect_event(&e);
+    if (!player_effect_pending || player_effect_in_size != PLAYER_EFFECT_BODY)
+        return 11;
+    e.data[1] = 0;
+    e.data[3] = 1;
+    e.data[4] = 0;
+    player_effect_event(&e);
+    if (!player_effect_pending || player_effect_in_size != 0)
+        return 12;
+    puts("ok effect parts");
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     static u8 frame[HOST_MTU];
@@ -230,6 +294,8 @@ int main(int argc, char **argv)
 
     if (argc == 2 && !strcmp(argv[1], "--stats-replay"))
         return host_stats_replay();
+    if (argc == 2 && !strcmp(argv[1], "--effect-parts"))
+        return host_effect_parts();
     verbose = argc > 1;
     binary_stdin();
     if (!end)

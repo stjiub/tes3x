@@ -700,6 +700,20 @@
       "pc_va": "0x00453630"
     },
     {
+      "va": "0x000BCA70",
+      "name": "MagicEffectMap::insert",
+      "confidence": "verified",
+      "provenance": "spellHit, save loader and process insert a key plus an inline 0x38-byte value",
+      "signature": "void __thiscall insert(const char* key, TES3::MagicEffectInstance value)"
+    },
+    {
+      "va": "0x000BCBA0",
+      "name": "ActiveMagicEffects::makeNode",
+      "confidence": "verified",
+      "provenance": "spellHit 0x0015084F: next, previous and a 16-byte ActiveMagicEffect; allocates a 24-byte node",
+      "signature": "void* __thiscall makeNode(void* next, void* previous, TES3::ActiveMagicEffect* value)"
+    },
+    {
       "va": "0x000BCD30",
       "name": "MagicInstanceController::getInstanceFromSerial",
       "kind": "function",
@@ -730,6 +744,13 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_MagicInstanceController_removeSpellsByEffect",
       "pc_va": "0x00455880"
+    },
+    {
+      "va": "0x000BDD00",
+      "name": "MagicInstanceController::process",
+      "confidence": "verified",
+      "provenance": "mainLoopBeforeInput calls it with WorldController +0x2C; walks the instance tree and removes retired state 7",
+      "signature": "void __thiscall process(float deltaTime)"
     },
     {
       "va": "0x000BE050",
@@ -1478,9 +1499,10 @@
       "va": "0x000E7460",
       "name": "MagicSourceCombo::getSourceEffects",
       "kind": "function",
-      "confidence": "matched",
-      "provenance": "mwse:TES3_MagicSourceCombo_getSourceEffects",
-      "pc_va": "0x00496FA0"
+      "confidence": "verified",
+      "provenance": "Xbox dispatch by source type: Spell +0x34, Enchantment +0x34, Alchemy +0x4C",
+      "pc_va": "0x00496FA0",
+      "signature": "TES3::Effect* __thiscall getSourceEffects()"
     },
     {
       "va": "0x000E7930",
@@ -2012,9 +2034,10 @@
       "va": "0x000FC650",
       "name": "Alchemy::ctor",
       "kind": "function",
-      "confidence": "matched",
-      "provenance": "mwse:TES3_Alchemy_ctor",
-      "pc_va": "0x004ABA40"
+      "confidence": "verified",
+      "provenance": "Xbox constructor allocates the 0x110-byte ALCH layout; initializes eight effects at +0x4C",
+      "pc_va": "0x004ABA40",
+      "signature": "void __thiscall ctor()"
     },
     {
       "va": "0x000FC740",
@@ -2467,9 +2490,10 @@
       "va": "0x0010CA40",
       "name": "NonDynamicData::addNewObject",
       "kind": "function",
-      "confidence": "matched",
-      "provenance": "mwse:TES3_NonDynamicData_addNewObject",
-      "pc_va": "0x004B8980"
+      "confidence": "verified",
+      "provenance": "Xbox disassembly: one object argument, ret 4; inserts its type-specific record and sets the created flag",
+      "pc_va": "0x004B8980",
+      "signature": "bool __thiscall addNewObject(TES3::Object* object)"
     },
     {
       "va": "0x0010CCD0",
@@ -3349,7 +3373,9 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_MagicSourceInstance_retireEffectsOnReference",
-      "pc_va": "0x00512940"
+      "pc_va": "0x00512940",
+      "note": "Removes active-list entries for this target and marks its map values Ending (6); process must still run to reverse modifiers and release created data.",
+      "signature": "void __thiscall retireEffectsOnReference(TES3::Reference* reference)"
     },
     {
       "va": "0x0014E450",
@@ -3386,9 +3412,10 @@
     {
       "va": "0x00151350",
       "name": "MagicSourceInstance::process",
-      "confidence": "guess",
-      "provenance": "calls the cast bolt 0x0014EB30; switches on state +0xB4",
-      "note": "State 1 launches a target effect's bolt only if the instance has a target (+0x14), or the caster is the player, or the caster mobile has a combat target (+0xEC). State 0 plays the cast VFX and sound, rolls the chance and spends magicka."
+      "confidence": "verified",
+      "provenance": "effect lifecycle checked against disassembly and PC process; dt is the single stack argument",
+      "note": "State 1 launches a target effect's bolt only if the instance has a target (+0x14), or the caster is the player, or the caster mobile has a combat target (+0xEC). State 0 plays the cast VFX and sound, rolls the chance and spends magicka.",
+      "signature": "void __thiscall process(float deltaTime)"
     },
     {
       "va": "0x00152B90",
@@ -5689,6 +5716,15 @@
       "confidence": "guess",
       "provenance": "decompiled; matches width, height, refresh and present flags against the mode table at 0x00345CC0",
       "note": "with neither interlaced (0x20) nor progressive (0x40) asked, takes the first fitting entry; HDTV NTSC lists 640x480 progressive first, so retail gets 480p when the dashboard allows it"
+    },
+    {
+      "va": "0x003B5FC8",
+      "name": "MagicEffectCallbacks",
+      "confidence": "verified",
+      "provenance": "process 0x001529CA dispatches by source effect ID; cdecl(instance, deltaTime, MagicEffectInstance*, index)",
+      "kind": "data",
+      "type": "void*[143]",
+      "note": "143 cdecl callbacks: void callback(MagicSourceInstance* instance, float deltaTime, MagicEffectInstance* effect, int effectIndex)."
     },
     {
       "va": "0x003C4F04",

@@ -352,7 +352,7 @@ def ping(args):
 
 
 T3MP = struct.Struct("<4sBBHIIIII")  # magic, version, type, 0, session, seq, ack, time, echo
-T3MP_VERSION = 19
+T3MP_VERSION = 20
 HELLO, WELCOME, HEARTBEAT, BYE, STATE, PEER, GONE, EVENTS, REFUSE, CLOCK, ACTORS = range(1, 12)
 BUILD = 12  # to a manager's HELLO: tes3x_netbuild.BUILD_BODY, then the server forgets it
 # On the wire every packet but the handshake is SEALED: OUTER in the clear (the AEAD's associated
@@ -473,6 +473,9 @@ PLAYER_IDENTITY = 13
 # condition and charge when flags has ENTRY_DATA, item id ending in zero), every equipped stack. The
 # server keeps the latest and replays it after the items.
 PLAYER_WORN = 14
+PLAYER_EFFECTS = 16  # complete multipart active-effect snapshot
+PLAYER_EFFECT_BYTES = 388
+PLAYER_EFFECTS_MAX = 64
 PLAYER_MODIFIERS = 15  # current attribute/skill values: count, then MODIFIER entries
 IDENTITY_STATS = struct.Struct("<B13i")
 IDENTITY_FIELDS = ("name", "race", "head", "hair", "birthsign", "class", "class_name")
@@ -1227,9 +1230,94 @@ def describe_level(body):
             + ", ".join(f"{n} {v:.0f}" for n, v in zip(ATTRIBUTE_NAMES, attributes)))
 
 
+def unpack_player_effects(body):
+    """Validate a complete, pointer-free active-effect snapshot."""
+    body = bytes(body)
+    if len(body) % PLAYER_EFFECT_BYTES or len(body) > PLAYER_EFFECT_BYTES * PLAYER_EFFECTS_MAX:
+        raise ValueError("bad active-effect snapshot size")
+    effects, seen, sources, instances = [], set(), {}, {}
+    for off in range(0, len(body), PLAYER_EFFECT_BYTES):
+        serial, source_type, index, caster_kind, flags, caster, corprus = struct.unpack_from(
+            '<IBBBBIf', body, off)
+        source, item = body[off + 16:off + 48], body[off + 48:off + 80]
+        active = body[off + 80:off + 92]
+        resisted, magnitude, elapsed, cumulative, state, condition, charge = struct.unpack_from(
+            '<fiffiII', body, off + 92)
+        definitions = body[off + 120:off + 312]
+        source_name = body[off + 312:off + 376]
+        source_stats = body[off + 376:off + 388]
+        effect_id = struct.unpack_from('<h', active, 2)[0]
+        source_key = (source_type, source)
+        source_data = (definitions, source_name, source_stats)
+        if source_key in sources and sources[source_key] != source_data:
+            raise ValueError("inconsistent active-effect source")
+        sources[source_key] = source_data
+        if (not serial or source_type not in (1, 2, 3) or index >= 8 or caster_kind > 3
+                or flags & ~3 or not finite(corprus, resisted, elapsed, cumulative)
+                or corprus < 0 or elapsed < 0 or state != 5 or magnitude < 0
+                or active[0] != index or not 0 <= effect_id <= 142
+                or (serial, index) in seen or b'\0' not in source or not source[0]
+                or b'\0' not in item or b'\0' not in source_name
+                or struct.unpack_from('<h', definitions, index * 24)[0] != effect_id):
+            raise ValueError("bad active-effect entry")
+        metadata = (source_type, source, item, caster_kind, caster, flags, corprus,
+                    condition, charge)
+        if serial in instances and instances[serial] != metadata:
+            raise ValueError("inconsistent active-effect instance")
+        instances[serial] = metadata
+        for definition in struct.iter_unpack('<hbbiiiii', definitions):
+            effect, skill, attribute, range_, area, duration, low, high = definition
+            if effect == -1:
+                continue
+            if (not 0 <= effect <= 142 or not -1 <= skill < 27 or not -1 <= attribute < 8
+                    or range_ not in (0, 1, 2) or min(area, duration, low, high) < 0
+                    or max(area, duration, low, high) > 10000000 or low > high):
+                raise ValueError("bad active-effect source definition")
+        if source_type == 3:
+            weight = struct.unpack_from('<f', source_stats)[0]
+            if not finite(weight) or not 0 <= weight <= 10000000:
+                raise ValueError("bad active-effect source weight")
+        seen.add((serial, index))
+        effects.append(dict(serial=serial, source_type=source_type, index=index,
+                            caster_kind=caster_kind, flags=flags, caster=caster,
+                            corprus=corprus, source=wire_text(source.split(b'\0')[0]),
+                            item=wire_text(item.split(b'\0')[0]), active=active.hex(),
+                            resisted=resisted, magnitude=magnitude, elapsed=elapsed,
+                            cumulative=cumulative, state=state, condition=condition,
+                            charge=charge, definitions=definitions.hex(),
+                            source_name=wire_text(source_name.split(b'\0')[0]),
+                            source_stats=source_stats.hex()))
+    return effects
+
+
+def pack_player_effects(effects):
+    """Atomic snapshot parts; elapsed game time stops while the character is offline."""
+    body = b''
+    for e in effects:
+        if (len(e['source'].encode('latin-1')) >= 32
+                or len(e['item'].encode('latin-1')) >= 32
+                or len(e['source_name'].encode('latin-1')) >= 64):
+            raise ValueError('active-effect source text too long')
+        body += struct.pack('<IBBBBIf', e['serial'], e['source_type'], e['index'],
+                            e['caster_kind'], e['flags'], e['caster'], e['corprus'])
+        body += e['source'].encode('latin-1').ljust(32, b'\0')
+        body += e['item'].encode('latin-1').ljust(32, b'\0')
+        body += bytes.fromhex(e['active'])
+        body += struct.pack('<fiffiII', e['resisted'], e['magnitude'], e['elapsed'],
+                            e['cumulative'], e['state'], e['condition'], e['charge'])
+        body += bytes.fromhex(e['definitions'])
+        body += e['source_name'].encode('latin-1').ljust(64, b'\0')
+        body += bytes.fromhex(e['source_stats'])
+    unpack_player_effects(body)
+    size = EVENT_DATA - 5
+    parts = [body[i:i + size] for i in range(0, len(body), size)] or [b'']
+    return [bytes([PLAYER_EFFECTS]) + struct.pack('<HH', i, len(parts)) + p
+            for i, p in enumerate(parts)]
+
+
 class PlayerStream:
     """One character's state as its console streamed it: each item's stacks, the level block,
-    each skill and current modifier, each quest's indices in order and its known spells. It holds
+    each skill and current modifier, active effects, quest indices and known spells. It holds
     what changed since the character's first launch on this server and replays it when the
     character joins."""
 
@@ -1237,6 +1325,7 @@ class PlayerStream:
         self.path = path
         self.items, self.skills, self.modifiers, self.journal, self.level = {}, {}, {}, {}, None
         self.spells = None
+        self.effects = self.effects_parts = None
         self.vitals = self.place = None
         self.bounty = self.identity = self.worn = None
         self.dead = False  # died and not yet back
@@ -1257,6 +1346,7 @@ class PlayerStream:
         self.place = bytes.fromhex(kept["place"]) if kept.get("place") else None
         self.dead = kept.get("dead", False)
         self.spells = kept.get("spells")
+        self.effects = kept.get("effects")
         self.bounty = kept.get("bounty")
         self.identity = kept.get("identity")
         self.worn = kept.get("worn")
@@ -1265,6 +1355,7 @@ class PlayerStream:
         """A new character: nothing streamed so far belongs to it."""
         self.items, self.skills, self.modifiers, self.journal, self.level = {}, {}, {}, {}, None
         self.spells = None
+        self.effects = self.effects_parts = None
         self.vitals = self.place = self.arriving = None
         self.bounty = self.identity = self.identity_parts = None
         self.worn = self.worn_parts = None
@@ -1321,6 +1412,28 @@ class PlayerStream:
                     changed.append(f"{SKILL_NAMES[skill]} {base:.0f} ({progress:.2f})")
             self.dirty = self.dirty or bool(changed)
             return ", ".join(changed) or None
+        if kind == PLAYER_EFFECTS and len(data) >= 5:
+            part, parts = struct.unpack_from('<HH', data, 1)
+            if part == 0:
+                self.effects_parts = (b"", 0, parts)
+            pending = self.effects_parts
+            if (not pending or not parts or part >= parts or pending[1:] != (part, parts)
+                    or len(pending[0]) + len(data) - 5 > PLAYER_EFFECT_BYTES * PLAYER_EFFECTS_MAX):
+                self.effects_parts = None
+                return None
+            body = pending[0] + bytes(data[5:])
+            self.effects_parts = (body, part + 1, parts)
+            if part + 1 < parts:
+                return None
+            self.effects_parts = None
+            try:
+                effects = unpack_player_effects(body)
+            except ValueError:
+                return None
+            if effects == self.effects:
+                return None
+            self.effects, self.dirty = effects, True
+            return f"has {len(effects)} active effects"
         if kind == PLAYER_MODIFIERS and len(data) >= 2:
             changed = []
             for i in range(min(data[1], (len(data) - 2) // MODIFIER.size)):
@@ -1414,6 +1527,8 @@ class PlayerStream:
         if self.spells is not None:
             events += [bytes([PLAYER_SPELLS, SPELLS_SNAPSHOT]) + part
                        for part in pack_equipment(self.spells)]
+        if self.effects is not None:
+            events += pack_player_effects(self.effects)
         if self.level:
             events.append(bytes([PLAYER_LEVEL]) + self.level)
         if self.vitals:  # after LEVEL, which caps each current value at its base
@@ -1460,6 +1575,7 @@ class PlayerStream:
                                "journal": self.journal, "vitals": self.vitals,
                                "place": self.place.hex() if self.place else None,
                                "spells": self.spells,
+                               "effects": self.effects,
                                "bounty": self.bounty,
                                "identity": self.identity,
                                "worn": self.worn,

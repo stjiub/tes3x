@@ -203,6 +203,12 @@ class HostReceiveTests(unittest.TestCase):
             self.assertGreater(int(numbers['answers']), 0, result)
             self.assertGreater(int(numbers['offers']) + int(numbers['acks']), 0, result)
 
+    def test_effect_snapshot_parts_are_atomic_and_accept_empty_replacement(self):
+        run = subprocess.run([str(self.exe), '--effect-parts'], capture_output=True, text=True,
+                             timeout=10)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertIn('ok effect parts', run.stdout)
+
     def test_stat_replay_waits_for_abilities_and_keeps_fractional_values(self):
         run = subprocess.run([str(self.exe), '--stats-replay'], capture_output=True, text=True,
                              timeout=10)

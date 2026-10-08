@@ -2,7 +2,7 @@
   "structs": [
     {
       "name": "TES3::MobileActor",
-      "note": "Xbox matches the PC layout at the offsets tested: attributes (+0x254, Statistic {vtable, base, current} each), health, magicka and fatigue current (+0x2BC, +0x2C8, +0x2E0), animationController (+0x244)."
+      "note": "Xbox matches the PC layout at the offsets tested: attributes (+0x254, Statistic {vtable, base, current} each), health, magicka and fatigue current (+0x2BC, +0x2C8, +0x2E0), animationController (+0x244), activeEffects (+0x1C4; deque head +4, count +8)."
     },
     {
       "name": "TES3::MobileNPC",
@@ -142,10 +142,38 @@
       ]
     },
     {
-      "name": "TES3::WorldController",
-      "pc_valid_until": "0x6C",
-      "note": "4 bytes shorter than the PC somewhere in 0x6C..0xA4: the clock globals, CharGenState and menu mode sit 4 below their PC offsets. PC fields from 0x6C on are left out until placed.",
+      "name": "TES3::MagicSourceInstance",
+      "size": "0x128",
+      "pc_valid_until": "0x128",
+      "note": "Xbox allocation is 0x128; no PC MCP original-target field. The eight 0x10-byte effect maps begin at +0x1C; each node has key +0, inline MagicEffectInstance +4, next +0x3C. Source combo +0xA0, serial +0xA8, corprus hours +0xAC, state +0xB4, caster +0xB8, casting item +0xBC and item data +0xC0 match PC. Verified against activateSpell, process, SpellEffectEvent and the save loader."
+    },
+    {
+      "name": "TES3::MagicEffectInstance",
+      "note": "Xbox matches all 0x38 bytes of the PC layout: target +0, resistance +4, rolled magnitude +8, elapsed +0xC, cumulative magnitude +0x10, state +0x14, visual +0x18, created data +0x1C/+0x20 and last-used stacks +0x24..+0x34. The last seven pointers are rebuilt by callbacks, never serialized."
+    },
+    {
+      "name": "TES3::ActiveMagicEffect",
+      "note": "Xbox matches the 0x10-byte PC entry: serial +0, effect index +4, effect id +6, harmful +8, illegal +9, duration +0xA, magnitude +0xC, skill/attribute +0xE. Padding +5 and +0xF is uninitialized and must not enter snapshot comparisons."
+    },
+    {
+      "name": "TES3::Alchemy",
+      "size": "0x110",
+      "pc_valid_until": "0x30",
+      "note": "Xbox allocation is 0x110; fields after the common object header are 0x10 below PC. Constructor 0x000FC650 and getSourceEffects 0x000E7460 verify the layout.",
       "fields": [
+        {"offset": "0x34", "name": "name", "type": "char*", "confidence": "verified", "provenance": "Alchemy::ctor setStringSlot; consumed potion source"},
+        {"offset": "0x44", "name": "weight", "type": "float", "confidence": "verified", "provenance": "ALDT load and save"},
+        {"offset": "0x48", "name": "value", "type": "short", "confidence": "verified", "provenance": "ALDT load and save"},
+        {"offset": "0x4C", "name": "effects", "type": "TES3::Effect[8]", "confidence": "verified", "provenance": "getSourceEffects and constructor"},
+        {"offset": "0x10C", "name": "flags", "type": "short", "confidence": "verified", "provenance": "Alchemy::ctor and ALDT load/save"}
+      ]
+    },
+    {
+      "name": "TES3::WorldController",
+      "pc_valid_until": "0x70",
+      "note": "4 bytes shorter than the PC somewhere in 0x70..0xA4: the clock globals, CharGenState and menu mode sit 4 below their PC offsets. PC fields from 0x70 on are left out until placed.",
+      "fields": [
+        {"offset": "0x6C", "name": "magicInstanceController", "type": "TES3::MagicInstanceController*", "confidence": "verified", "provenance": "mainLoopBeforeInput calls process at 0x0008F119"},
         {"offset": "0xA4", "name": "gvarGameHour", "type": "TES3::GlobalVariable*", "confidence": "matched", "provenance": "PC order at -4; 0xA4..0xB8 read as the clock globals by the multiplayer clock"},
         {"offset": "0xA8", "name": "gvarYear", "type": "TES3::GlobalVariable*", "confidence": "matched", "provenance": "PC order at -4"},
         {"offset": "0xAC", "name": "gvarMonth", "type": "TES3::GlobalVariable*", "confidence": "matched", "provenance": "PC order at -4"},
