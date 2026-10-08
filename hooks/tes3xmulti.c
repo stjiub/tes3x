@@ -177,7 +177,7 @@ typedef long(__stdcall *fn_KeQueryBasePriorityThread)(void *);
  * session and seq in the clear (T3MP_OUTER, the AEAD's associated data) and seals the real type,
  * ack, times and body under the session's key, seq being the nonce. The receiver rebuilds the
  * T3MP_HEADER layout after opening it. */
-#define T3MP_VERSION 18u
+#define T3MP_VERSION 19u
 #define T3MP_HEADER 28u
 #define T3MP_OUTER 16u
 #define T3MP_INNER 16u
@@ -9922,6 +9922,7 @@ static void chargen_stat(void)
 #define PLAYER_BOUNTY 12u /* from the server: the character's last bounty as i32 */
 #define PLAYER_IDENTITY 13u /* part, parts, then a slice of IDENTITY_BODY */
 #define PLAYER_WORN 14u     /* part, parts, then a slice of WORN entries */
+#define PLAYER_MODIFIERS 15u /* count, then (attribute/skill index u8, current f32) */
 #define SPELLS_SNAPSHOT 0u
 #define SPELLS_ADD 1u
 #define SPELLS_REMOVE 2u
@@ -9932,6 +9933,9 @@ static void chargen_stat(void)
 #define ITEM_PARTS 12u
 #define SKILLS 27u
 #define SKILL_BYTES 9u
+#define MODIFIER_BYTES 5u
+#define MODIFIERS (ATTRIBUTES + SKILLS)
+#define MODIFIERS_PER_EVENT ((EVENT_DATA - 2) / MODIFIER_BYTES)
 #define SKILLS_PER_EVENT ((EVENT_DATA - 2) / SKILL_BYTES)
 #define JOURNALS 4096u
 #define JOURNAL_ENTRIES 16u
@@ -9975,6 +9979,7 @@ static struct {
 } carried[CARRIED];
 static u8 carried_seen[CARRIED], level_sent[LEVEL_BYTES];
 static u32 skills_sent[SKILLS][2], skills_known, level_known, vitals_known;
+static u32 modifiers_sent[MODIFIERS], modifiers_known[2];
 static float vitals_sent[3];
 static u16 journal_sent[JOURNALS];
 static const u8 *player_spells_sent[PLAYER_SPELLS_MAX], *player_spells_now[PLAYER_SPELLS_MAX];
@@ -10180,6 +10185,40 @@ static void skills_scan(const u8 *mobile, int send)
             skills_sent[pending[k]][0] = get32le(data + 3 + k * SKILL_BYTES);
             skills_sent[pending[k]][1] = get32le(data + 7 + k * SKILL_BYTES);
             skills_known |= 1u << pending[k];
+        }
+        player_stats_out += send;
+        n = 0;
+    }
+}
+
+/* Current attribute and skill values, including fortify, drain and damage. Base values and skill
+ * progress have their own events. */
+static void modifiers_scan(const u8 *mobile, int send)
+{
+    u8 data[EVENT_DATA];
+    const u8 *stat;
+    u32 i, n = 0, k, value, pending[MODIFIERS_PER_EVENT];
+
+    for (i = 0; i <= MODIFIERS; i++) {
+        if (i < MODIFIERS) {
+            stat = mobile + (i < ATTRIBUTES ? MOBILE_ATTRIBUTES + 0xC * i
+                                             : MOBILE_SKILLS + 0x10 * (i - ATTRIBUTES));
+            value = *(const u32 *)(stat + STAT_BASE + 4);
+            if ((modifiers_known[i >> 5] >> (i & 31) & 1) && modifiers_sent[i] == value)
+                continue;
+            data[2 + n * MODIFIER_BYTES] = (u8)i;
+            put32le(data + 3 + n * MODIFIER_BYTES, value);
+            pending[n++] = i;
+        }
+        if (!n || (n < MODIFIERS_PER_EVENT && i < MODIFIERS))
+            continue;
+        data[0] = PLAYER_MODIFIERS;
+        data[1] = (u8)n;
+        if (send && !event_queue(EVENT_PLAYER, data, 2 + n * MODIFIER_BYTES))
+            return;
+        for (k = 0; k < n; k++) {
+            modifiers_sent[pending[k]] = get32le(data + 3 + k * MODIFIER_BYTES);
+            modifiers_known[pending[k] >> 5] |= 1u << (pending[k] & 31);
         }
         player_stats_out += send;
         n = 0;
@@ -11046,6 +11085,7 @@ static void player_frame(const u8 *ref)
         for (i = 0; i < JOURNALS; i++)
             journal_sent[i] = 0;
         level_known = skills_known = vitals_known = player_spells_known = 0;
+        modifiers_known[0] = modifiers_known[1] = 0;
         player_identity_known = worn_known = 0;
         send = player_mode == 1;
         if (player_bounty_replayed != ses.welcomes)
@@ -11061,6 +11101,7 @@ static void player_frame(const u8 *ref)
     worn_scan(object, send);
     level_scan(mobile, npc, send);
     skills_scan(mobile, send);
+    modifiers_scan(mobile, send);
     vitals_scan(mobile, send);
     journal_scan(send);
     player_spells_scan(npc, send || player_spells_replayed != ses.welcomes);
@@ -11125,6 +11166,26 @@ static void skills_apply(u8 *ref, const u8 *p, u32 length)
         if (*(const float *)(mobile + MOBILE_SKILLS + 0x10 * skill + STAT_BASE) != base)
             player_set(ref, "Set", skill_names[skill], round_int(base));
         copy(mobile + PLAYER_SKILL_PROGRESS + 4 * skill, p + 7 + i * SKILL_BYTES, 4);
+    }
+    player_stats_in++;
+}
+
+static void modifiers_apply(const u8 *p, u32 length)
+{
+    u8 *mobile = player_mobile(), *stat;
+    u32 i, index;
+
+    if (!plausible(mobile)) {
+        player_apply_failures++;
+        return;
+    }
+    for (i = 0; i < p[1] && 2 + (i + 1) * MODIFIER_BYTES <= length; i++) {
+        index = p[2 + i * MODIFIER_BYTES];
+        if (index >= MODIFIERS || !float_within(p + 3 + i * MODIFIER_BYTES, 1, STAT_LIMIT))
+            continue;
+        stat = mobile + (index < ATTRIBUTES ? MOBILE_ATTRIBUTES + 0xC * index
+                                             : MOBILE_SKILLS + 0x10 * (index - ATTRIBUTES));
+        copy(stat + STAT_BASE + 4, p + 3 + i * MODIFIER_BYTES, 4);
     }
     player_stats_in++;
 }
@@ -11610,6 +11671,8 @@ static void player_event(const struct event *e)
         level_apply(ref, e->data + 1);
     else if (e->data[0] == PLAYER_SKILLS && e->length >= 2)
         skills_apply(ref, e->data, e->length);
+    else if (e->data[0] == PLAYER_MODIFIERS && e->length >= 2)
+        modifiers_apply(e->data, e->length);
     else if (e->data[0] == PLAYER_JOURNAL && e->length >= 2)
         journal_apply(e->data, e->length);
     else if (e->data[0] == PLAYER_VITALS && e->length >= 1 + 12)

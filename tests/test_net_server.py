@@ -434,6 +434,8 @@ class ServerTests(unittest.TestCase):
                *net.pack_items('iron longsword', swords),
                bytes([net.PLAYER_LEVEL]) + level,
                bytes([net.PLAYER_SKILLS, 1]) + net.SKILL.pack(5, 42.0, 0.5),
+               bytes([net.PLAYER_MODIFIERS, 2]) + net.MODIFIER.pack(0, 35.0)
+               + net.MODIFIER.pack(13, 57.0),
                bytes([net.PLAYER_VITALS]) + net.VITALS.pack(70.0, 60.0, 150.0),
                *net.pack_journal([('A1_1_FindSpymaster', 10)]))
         place = net.STATE_BODY.pack(net.IN_WORLD | net.INTERIOR, 100.0, 200.0, 30.0, 1.5,
@@ -474,6 +476,8 @@ class ServerTests(unittest.TestCase):
         vitals = bytes([net.PLAYER_VITALS]) + net.VITALS.pack(55.0, 60.0, 180.0)
         self.assertGreater(replay.index(vitals), replay.index(bytes([net.PLAYER_LEVEL]) + level))
         self.assertIn(bytes([net.PLAYER_SKILLS, 1]) + net.SKILL.pack(5, 42.0, 0.5), replay)
+        self.assertIn(bytes([net.PLAYER_MODIFIERS, 2]) + net.MODIFIER.pack(0, 35.0)
+                      + net.MODIFIER.pack(13, 57.0), replay)
         quests = [q for d in replay if d[0] == net.PLAYER_JOURNAL for q in net.unpack_journal(d)]
         self.assertEqual(quests, [('A1_1_FindSpymaster', 10), ('A1_1_FindSpymaster', 20)])
 
@@ -483,8 +487,10 @@ class ServerTests(unittest.TestCase):
         end = time.time() + 4
         while not stream.exists() and time.time() < end:
             time.sleep(0.2)
-        self.assertEqual(net.PlayerStream(str(stream)).items, {'Gold_001': [[150, 0, 0, 0]]})
-        self.assertEqual(net.PlayerStream(str(stream)).bounty, 4321)
+        saved = net.PlayerStream(str(stream))
+        self.assertEqual(saved.items, {'Gold_001': [[150, 0, 0, 0]]})
+        self.assertEqual(saved.modifiers, {0: 35.0, 13: 57.0})
+        self.assertEqual(saved.bounty, 4321)
 
     def test_rebuild_replays_the_kept_state_over_another_save_and_diffs_it(self):
         world = Path(tempfile.mkdtemp())
@@ -725,6 +731,12 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(stream.worn, worn)
         self.assertIn(parts[-1], stream.replay())
         self.assertEqual(stream.take(net.pack_worn([])[0]), 'wears nothing')
+        modifiers = bytes([net.PLAYER_MODIFIERS, 3]) + b''.join((
+            net.MODIFIER.pack(0, 35.0), net.MODIFIER.pack(7, 90.0),
+            net.MODIFIER.pack(8 + 5, 57.0)))
+        self.assertIn('Strength current 35', stream.take(modifiers))
+        self.assertEqual(stream.modifiers, {0: 35.0, 7: 90.0, 13: 57.0})
+        self.assertIn(modifiers, stream.replay())
 
     def admin(self, port, *words):
         run = subprocess.run([sys.executable, str(NET), 'admin', '--port', str(port), *words],

@@ -352,7 +352,7 @@ def ping(args):
 
 
 T3MP = struct.Struct("<4sBBHIIIII")  # magic, version, type, 0, session, seq, ack, time, echo
-T3MP_VERSION = 18
+T3MP_VERSION = 19
 HELLO, WELCOME, HEARTBEAT, BYE, STATE, PEER, GONE, EVENTS, REFUSE, CLOCK, ACTORS = range(1, 12)
 BUILD = 12  # to a manager's HELLO: tes3x_netbuild.BUILD_BODY, then the server forgets it
 # On the wire every packet but the handshake is SEALED: OUTER in the clear (the AEAD's associated
@@ -445,8 +445,9 @@ EVENT_BOUNTY = 30  # the player's bounty, i32: the latest of each client is kept
 EVENT_GAME, EVENT_LOAD = 23, 24
 # The player's own state, per character and never relayed: a sub-kind, then PLAYER_ITEMS (part,
 # parts, item id, then entries as in CONTENTS: every stack of that item, none once it is gone),
-# PLAYER_LEVEL (LEVEL), PLAYER_SKILLS (count, then SKILL each), PLAYER_JOURNAL (count, then
-# (index u16, quest id) each) or PLAYER_VITALS (VITALS). To a client only: PLAYER_PLACE (a
+# PLAYER_LEVEL (LEVEL), PLAYER_SKILLS (count, then SKILL each), PLAYER_MODIFIERS (count, then
+# MODIFIER each), PLAYER_JOURNAL (count, then (index u16, quest id) each) or PLAYER_VITALS
+# (VITALS). To a client only: PLAYER_PLACE (a
 # STATE_BODY: where the player last was, which the server takes from STATE), PLAYER_SPELLS (mode,
 # part, parts, ids ending in zero), the kept state, then PLAYER_READY (0: the console sends all of
 # its state, so a stream kept from before a field was streamed fills in; 1, which the console still
@@ -472,6 +473,7 @@ PLAYER_IDENTITY = 13
 # condition and charge when flags has ENTRY_DATA, item id ending in zero), every equipped stack. The
 # server keeps the latest and replays it after the items.
 PLAYER_WORN = 14
+PLAYER_MODIFIERS = 15  # current attribute/skill values: count, then MODIFIER entries
 IDENTITY_STATS = struct.Struct("<B13i")
 IDENTITY_FIELDS = ("name", "race", "head", "hair", "birthsign", "class", "class_name")
 SPELLS_SNAPSHOT, SPELLS_ADD, SPELLS_REMOVE = 0, 1, 2
@@ -495,6 +497,7 @@ STARTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "example
 # magicka and fatigue, base attributes (8)
 LEVEL = struct.Struct("<HH11B3f8f")
 SKILL = struct.Struct("<Bff")  # skill, base, progress
+MODIFIER = struct.Struct("<Bf")  # attribute 0..7, then skill 0..26, current value
 VITALS = struct.Struct("<3f")  # current health, magicka, fatigue
 ATTRIBUTE_NAMES = ("Strength", "Intelligence", "Willpower", "Agility", "Speed", "Endurance",
                    "Personality", "Luck")
@@ -1226,13 +1229,13 @@ def describe_level(body):
 
 class PlayerStream:
     """One character's state as its console streamed it: each item's stacks, the level block,
-    each skill, each quest's indices in order and its known spells. It holds what changed since
-    the character's first launch on this server, so it replays over whichever checkpoint a
-    console loads."""
+    each skill and current modifier, each quest's indices in order and its known spells. It holds
+    what changed since the character's first launch on this server and replays it when the
+    character joins."""
 
     def __init__(self, path):
         self.path = path
-        self.items, self.skills, self.journal, self.level = {}, {}, {}, None
+        self.items, self.skills, self.modifiers, self.journal, self.level = {}, {}, {}, {}, None
         self.spells = None
         self.vitals = self.place = None
         self.bounty = self.identity = self.worn = None
@@ -1247,6 +1250,7 @@ class PlayerStream:
             return
         self.items = kept.get("items", {})
         self.skills = {int(k): v for k, v in kept.get("skills", {}).items()}
+        self.modifiers = {int(k): v for k, v in kept.get("modifiers", {}).items()}
         self.journal = kept.get("journal", {})
         self.level = bytes.fromhex(kept["level"]) if kept.get("level") else None
         self.vitals = kept.get("vitals")
@@ -1259,7 +1263,7 @@ class PlayerStream:
 
     def reset(self):
         """A new character: nothing streamed so far belongs to it."""
-        self.items, self.skills, self.journal, self.level = {}, {}, {}, None
+        self.items, self.skills, self.modifiers, self.journal, self.level = {}, {}, {}, {}, None
         self.spells = None
         self.vitals = self.place = self.arriving = None
         self.bounty = self.identity = self.identity_parts = None
@@ -1315,6 +1319,16 @@ class PlayerStream:
                 if skill < len(SKILL_NAMES) and finite(base, progress):
                     self.skills[skill] = [base, progress]
                     changed.append(f"{SKILL_NAMES[skill]} {base:.0f} ({progress:.2f})")
+            self.dirty = self.dirty or bool(changed)
+            return ", ".join(changed) or None
+        if kind == PLAYER_MODIFIERS and len(data) >= 2:
+            changed = []
+            for i in range(min(data[1], (len(data) - 2) // MODIFIER.size)):
+                stat, current = MODIFIER.unpack_from(data, 2 + i * MODIFIER.size)
+                if stat < len(ATTRIBUTE_NAMES) + len(SKILL_NAMES) and finite(current):
+                    self.modifiers[stat] = current
+                    name = (ATTRIBUTE_NAMES + SKILL_NAMES)[stat]
+                    changed.append(f"{name} current {current:.0f}")
             self.dirty = self.dirty or bool(changed)
             return ", ".join(changed) or None
         if kind == PLAYER_JOURNAL and len(data) >= 2:
@@ -1413,6 +1427,12 @@ class PlayerStream:
             chunk = skills[i:i + per]
             events.append(bytes([PLAYER_SKILLS, len(chunk)]) + b"".join(
                 SKILL.pack(skill, *values) for skill, values in chunk))
+        modifiers = sorted(self.modifiers.items())
+        per = (EVENT_DATA - 2) // MODIFIER.size
+        for i in range(0, len(modifiers), per):
+            chunk = modifiers[i:i + per]
+            events.append(bytes([PLAYER_MODIFIERS, len(chunk)]) + b"".join(
+                MODIFIER.pack(stat, current) for stat, current in chunk))
         events += pack_journal([(q, i) for q, indices in sorted(self.journal.items())
                                 for i in indices])
         return events
@@ -1435,6 +1455,7 @@ class PlayerStream:
         save_world(self.path, {"items": self.items,
                                "level": self.level.hex() if self.level else None,
                                "skills": {str(k): v for k, v in self.skills.items()},
+                               "modifiers": {str(k): v for k, v in self.modifiers.items()},
                                "journal": self.journal, "vitals": self.vitals,
                                "place": self.place.hex() if self.place else None,
                                "spells": self.spells,

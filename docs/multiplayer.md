@@ -102,8 +102,9 @@ the data files and applies the server's world; it does not import changes from a
 With `--world` the server also keeps each character under `characters` in `DIR`. A joining
 console starts a New Game and receives the character's identity, inventory, worn items and last
 place in a small server-generated state file; the rest follows after it joins. The console sends
-inventory, equipment, level, attributes, skills, journal, current health, magicka and fatigue as
-they change, and who the character is: name, race, sex, head, hair, birthsign and class, including
+inventory, equipment, level, attributes, skills and their current modifiers, journal, current
+health, magicka and fatigue as they change, and who the character is: name, race, sex, head, hair,
+birthsign and class, including
 a class made in character creation. The server keeps the latest supported state in `stream.json`.
 It also keeps where the player last was, so a crash or power cut loses at most about one polling
 interval of supported state. The current Exit path also uploads a legacy checkpoint before it
@@ -384,10 +385,11 @@ topics, factions and active effects, starts at its New Game value.
 
 - Menus no longer pause the world while joined, and resting or waiting is refused.
 - A multiplayer character loads only from server state. The server restores inventory, equipment,
-  level, base attributes and skills, journal, current health, magicka and fatigue (health no lower
-  than 1), position and identity. Active effects, topics, factions, player globals and current
-  attribute modifiers are not retained yet and start at New Game values. Restoring a journal only
-  moves a quest forward, never back.
+  level, base and current attributes and skills, journal, current health, magicka and fatigue
+  (health no lower than 1), position and identity. Active effects, topics, factions and player
+  globals are not retained yet and start at New Game values. A current attribute or skill caused
+  by a timed effect is restored without its timer, so it does not expire after a join. Restoring
+  a journal only moves a quest forward, never back.
 - Items taken, objects a script disables, locks, and items
   dropped or placed (by the console or a script) are shared, with their stack size, condition and
   charge, and so are containers' contents: the first player to open a container decides what it
