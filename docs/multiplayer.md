@@ -88,29 +88,27 @@ The first client to join sets the session's load order and its game clock. Usefu
 | `--death-gold PERCENT` | the share of carried gold a death costs (default 10) |
 | `--build DIR` | hand this build to the console manager (below) |
 
-Stop the server with Ctrl+C, or the admin command `stop`. Before it exits it asks every
-joined console to save its character and waits, up to `--stop-wait`, for each save to arrive;
-it names any console that did not send one. A second Ctrl+C stops at once. Without `--world` the session lives only as long as the server
+Stop the server with Ctrl+C, or the admin command `stop`. The current stop path still asks every
+joined console for a legacy checkpoint and waits up to `--stop-wait`; server-owned loading does
+not consume that checkpoint. A second Ctrl+C stops at once. Without `--world` the session lives only as long as the server
 does: stop it and the deaths, objects and equipment it recorded are gone. With `--world DIR` it
 keeps the game clock, the deaths, the doors, locks and items taken, the items dropped or placed,
 containers' contents, actors' AI settings and disposition, and the weather in one file per
 load order in `DIR`, loads it when the
 first console joins and writes it every 10 seconds
-while it changes, so a restarted server carries on where it stopped. A console's own save is
-still loaded first; joining then applies what the world holds.
+while it changes, so a restarted server carries on where it stopped. A joined client starts from
+the data files and applies the server's world; it does not import changes from a local save.
 
-With `--world` the server also keeps each console's character under `characters` in `DIR`.
-Every save made while joined goes to one save slot per server and character and is uploaded; a
-console that joins running another game is sent the kept save and loads it. Between saves the
-console sends its inventory and what it wears, level, attributes, skills, journal and current health, magicka and
-fatigue as they change, and who the character is: name, race, sex, head, hair, birthsign and
-class, including a class made in character creation. The server
-keeps the latest of them in `stream.json` beside the save and applies them over it when the
-console next loads that save, so a crash loses at most about a second of those. It also keeps
-where the player last was and puts them back there, so a crash or a power cut does not return a
-player to where the save was made. Exit while joined saves and uploads first, and quits once
-the server has the save; if the server does not confirm it within 30 seconds, the player chooses
-to leave anyway or stay.
+With `--world` the server also keeps each character under `characters` in `DIR`. A joining
+console starts a New Game and receives the character's identity, inventory, worn items and last
+place in a small server-generated state file; the rest follows after it joins. The console sends
+inventory, equipment, level, attributes, skills, journal, current health, magicka and fatigue as
+they change, and who the character is: name, race, sex, head, hair, birthsign and class, including
+a class made in character creation. The server keeps the latest supported state in `stream.json`.
+It also keeps where the player last was, so a crash or power cut loses at most about one polling
+interval of supported state. The current Exit path also uploads a legacy checkpoint before it
+quits; if the server does not confirm it within 30 seconds, the player chooses to leave anyway or
+stay. That checkpoint is diagnostic and is not the character loaded on the next join.
 
 A player who dies while joined is not offered the last save. The others see a notice, and after
 `--respawn-delay` the player gets up at the closest temple or Imperial shrine (the markers
@@ -376,22 +374,20 @@ the kept one. The report goes beside the upload as `uploads/KEY/NAME.diff.txt`, 
 of state; neither save is kept as the character. `tes3x_ess.py --diff KEPT OTHER` makes the same
 report from any two saves.
 
-With `--load-state`, a console loading a character gets no save. The server sends the
-character's identity, inventory, worn items and last place as a small `char-*.t3c` file, and
-the console starts a New Game that becomes that character on the loading screen, in that place;
-the rest of the kept state follows once it joins. Everything the server does not keep yet
-(topics, factions, active effects) starts as in a new game, so this is for testing until it
-does. A character with no kept identity is still sent its save.
+`--load-state` is the normal character-loading path and is enabled by default by the GUI. The
+server sends identity, inventory, worn items and last place as a small `char-*.t3c` file. The
+console starts a New Game that becomes that character on the loading screen, in that place; the
+rest of the kept state follows once it joins. State the server does not keep yet, including
+topics, factions and active effects, starts at its New Game value.
 
 ## Limits
 
 - Menus no longer pause the world while joined, and resting or waiting is refused.
-- A console needs a save of its own to join. Over a kept character the server restores the
-  inventory, level, attributes, skills, journal, current health, magicka and fatigue (health
-  no lower than 1), the player's position and who the character is; active effects, topics and
-  factions come from the last save.
-  Restoring only moves a
-  quest forward, never back.
+- A multiplayer character loads only from server state. The server restores inventory, equipment,
+  level, base attributes and skills, journal, current health, magicka and fatigue (health no lower
+  than 1), position and identity. Active effects, topics, factions, player globals and current
+  attribute modifiers are not retained yet and start at New Game values. Restoring a journal only
+  moves a quest forward, never back.
 - Items taken, objects a script disables, locks, and items
   dropped or placed (by the console or a script) are shared, with their stack size, condition and
   charge, and so are containers' contents: the first player to open a container decides what it
@@ -400,4 +396,5 @@ does. A character with no kept identity is still sent its save.
 - Two players taking from the same container at the same moment can both get the same items.
 - If a script on every console places the same object at different moments, each console's copy
   is shared, so the object appears more than once.
-- Stand-ins look like a Dark Elf named "Player N", whatever the player's character.
+- Stand-ins receive the player's name, race, sex, head, hair and equipment. Some combinations,
+  including beast races and closed helmets, still need validation.
