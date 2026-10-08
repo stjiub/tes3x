@@ -658,6 +658,12 @@ static void handoff(void)
     v.page = PAGE_SERVER;
 }
 
+static void ask_manager_update(void)
+{
+    say("Manager update needed", SERVER_UPDATE, "Check for a newer manager now?");
+    v.confirm = CONFIRM_MANAGER_UPDATE;
+}
+
 static void install_server(struct server *s, int replace)
 {
     char folder[PATH_MAX_MGR], summary[128];
@@ -671,6 +677,10 @@ static void install_server(struct server *s, int replace)
         server_details(s, server_builds[v.server_list.sel]);
     if (err == SERVER_PASSWORD) {
         ask_password(err, 1);
+        return;
+    }
+    if (err == SERVER_UPDATE) {
+        ask_manager_update();
         return;
     }
     if (err == INSTALL_CONFIRM) {
@@ -725,6 +735,10 @@ static int join_ready(struct server *s, const char *build)
     err = server_ticket(s, &t, progress);
     if (err == SERVER_PASSWORD) {
         say("Cannot join", err, "Set it on the server's page.");
+        return 0;
+    }
+    if (err == SERVER_UPDATE) {
+        ask_manager_update();
         return 0;
     }
     if (err && strcmp(err, "The server hands out no build.")) {
@@ -982,6 +996,15 @@ static void press(int button)
         if (button == SDL_CONTROLLER_BUTTON_B || button == SDL_CONTROLLER_BUTTON_A)
             v.title[0] = 0;
         /* an out-of-date build is updated with X, B leaves it */
+        if (v.confirm == CONFIRM_MANAGER_UPDATE) {
+            if (button == SDL_CONTROLLER_BUTTON_X) {
+                v.title[0] = 0, v.confirm = 0;
+                fetch_update(NULL);
+            } else if (button == SDL_CONTROLLER_BUTTON_B) {
+                v.title[0] = 0, v.confirm = 0;
+            }
+            return;
+        }
         if (v.confirm == CONFIRM_UPDATE) {
             if (button == SDL_CONTROLLER_BUTTON_X) {
                 v.title[0] = 0, v.confirm = 0;

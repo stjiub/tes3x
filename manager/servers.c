@@ -22,7 +22,8 @@
 #define TRUST_MAX 4096
 #define SERVER_PORT 26500
 
-#define T3MP_VERSION 20
+#define T3MP_VERSION 1
+#define REFUSED_PROTOCOL 7
 #define OUTER 16
 #define INNER 16
 enum { HELLO = 1, REFUSE = 9, BUILD = 12, HANDSHAKE1 = 20, HANDSHAKE2, HANDSHAKE3, SEALED };
@@ -315,6 +316,7 @@ static void outer(unsigned char *p, int type, unsigned session, unsigned seq)
 }
 
 const char SERVER_PASSWORD[] = "The server wants a password.";
+const char SERVER_UPDATE[] = "Update the TES3X Manager to connect to this server.";
 
 static const char *refusal(unsigned reason)
 {
@@ -496,7 +498,16 @@ const char *server_ticket(struct server *s, struct ticket *t, progress_fn progre
                 continue;
             got -= OUTER + NOISE_TAG;
             if (plain[0] == REFUSE && got >= INNER + 12) {
-                err = refusal(get32(plain + INNER + 8));
+                if (get32(plain + INNER + 8) == REFUSED_PROTOCOL) {
+                    unsigned expected = get32(plain + INNER);
+                    s->online = expected > T3MP_VERSION ? 2 : 3;
+                    err = s->online == 2 ? SERVER_UPDATE
+                        : "The server needs an update to work with this manager.";
+                    mgr_log("server %s: manager protocol %u, server expects %u\n",
+                            s->name, T3MP_VERSION, expected);
+                } else {
+                    err = refusal(get32(plain + INNER + 8));
+                }
             } else if (plain[0] == BUILD && got >= INNER + BUILD_BYTES) {
                 memcpy(t->sha256, plain + INNER, 32);
                 t->size = get32(plain + INNER + 32);
@@ -514,6 +525,7 @@ const char *server_ticket(struct server *s, struct ticket *t, progress_fn progre
                     }
                 }
                 phase = 0;
+                s->online = 1;
                 if (!t->size)
                     err = "The server hands out no build.";
             }

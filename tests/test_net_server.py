@@ -45,11 +45,71 @@ class ServerTests(unittest.TestCase):
         _, err = self.server.communicate()
         self.assertNotIn('Traceback', err)
 
-    def client(self, seed):
+    def client(self, seed, version=None):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.bind(('127.0.0.1', 0))
         self.addCleanup(sock.close)
-        return tes3x_net.FuzzClient(sock, ('127.0.0.1', self.port), random.Random(seed))
+        return tes3x_net.FuzzClient(sock, ('127.0.0.1', self.port), random.Random(seed), version)
+
+    def test_incompatible_game_gets_an_authenticated_update_reason(self):
+        self.start()
+        net = tes3x_net
+        for version in (net.T3MP_VERSION - 1, net.T3MP_VERSION + 1):
+            with self.subTest(version=version):
+                client = self.client(version, version)
+                with self.assertRaisesRegex(RuntimeError, 'no WELCOME'):
+                    client.join(timeout=0.5)
+                self.assertEqual(net.REFUSE_BODY.unpack(client.refused),
+                                 (net.T3MP_VERSION, version, net.REFUSED_PROTOCOL))
+                self.assertIsNotNone(client.keys)
+        compatible = self.client(99)
+        compatible.join()
+        compatible.send(net.HEARTBEAT, b'')
+        self.assertIsNotNone(compatible.receive(1, net.HEARTBEAT))
+
+    def test_manager_protocol_is_independent_and_mismatch_is_explained(self):
+        self.start()
+        net = tes3x_net
+        compatible = self.client(1)
+        self.assertIsNotNone(compatible.join(manager=True))
+        self.assertEqual(compatible.version, net.MANAGER_VERSION)
+        for version in (net.MANAGER_VERSION + 1, net.T3MP_VERSION):
+            with self.subTest(version=version):
+                client = self.client(version, version)
+                self.assertIsNone(client.join(timeout=0.5, manager=True))
+                self.assertEqual(net.REFUSE_BODY.unpack(client.refused),
+                                 (net.MANAGER_VERSION, version, net.REFUSED_PROTOCOL))
+
+    def test_handshake_cannot_switch_protocol_mid_exchange(self):
+        self.start()
+        net = tes3x_net
+        client = self.client(1, net.T3MP_VERSION - 1)
+        with self.assertRaisesRegex(RuntimeError, 'no WELCOME'):
+            client.join(timeout=0.5)
+        altered = bytearray(client.handshake3)
+        altered[4] = net.T3MP_VERSION
+        client.sock.sendto(altered, client.addr)
+        self.assertIsNone(client.receive(0.3, net.WELCOME))
+        self.assertIsNotNone(self.client(2).join())
+
+    def test_repeated_protocol_refusal_keeps_nonce_and_destination_safe(self):
+        self.start()
+        net = tes3x_net
+        client = self.client(1, net.T3MP_VERSION - 1)
+        with self.assertRaisesRegex(RuntimeError, 'no WELCOME'):
+            client.join(timeout=0.5)
+        before = client.peer_seq
+        thief = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        thief.bind(('127.0.0.1', 0))
+        self.addCleanup(thief.close)
+        thief.sendto(client.handshake3, client.addr)
+        self.assertEqual(client.receive(0.5, net.REFUSE),
+                         net.REFUSE_BODY.pack(net.T3MP_VERSION, client.version,
+                                              net.REFUSED_PROTOCOL))
+        self.assertGreater(client.peer_seq, before)
+        thief.settimeout(0.2)
+        with self.assertRaises(socket.timeout):
+            thief.recvfrom(4096)
 
     def test_survives_the_fuzzer(self):
         self.start('--bot')

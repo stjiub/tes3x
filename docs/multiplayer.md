@@ -180,6 +180,23 @@ password is stretched with scrypt. Like a console's password, five wrong tries f
 allow one more a minute, and while that holds even the right password is refused. Keep the
 admin password apart from the console password: anyone with it can kick, ban and stop.
 
+### Protocol compatibility
+
+The game and manager have separate protocol versions. Gameplay state changes can require a new
+game protocol without changing the manager's build discovery and download protocol. These are
+compatibility numbers, separate from TES3X release versions; they change only when the relevant
+wire format becomes incompatible.
+
+The server checks compatibility after the authenticated handshake. An incompatible client gets
+an explicit refusal instead of a timeout. The manager shows **Manager update needed** and offers
+**Check for update**; if the server is older, it says the server needs an update. The game offers
+to open the manager to update its build when the server requires a newer game client.
+
+Restart the server process after updating server code. Rebuilding its staged game folder does
+not replace the running server or a manager already open on a console. Relaunch the manager after
+installing or rebuilding it. Old clients without these messages may still show a generic refusal
+or timeout; updating them once installs the clearer handling.
+
 ### Handing out the build
 
 Players need the server's build: the same plugins in the same order and a matching XBE. With

@@ -219,6 +219,7 @@ typedef long(__stdcall *fn_KeQueryBasePriorityThread)(void *);
 #define HELLO_BYTES (18u + CLOCK_BYTES + BUILD_ID)
 static u8 build_id[BUILD_ID];
 #define REFUSED_STALE 6u /* the build is not the server's: the manager updates it */
+#define REFUSED_PROTOCOL 7u
 #define PASSWORD_MAX 64u /* NetPassword, after HELLO */
 static char net_password[PASSWORD_MAX + 2]; /* read with the other keys: an ini read costs ms */
 static u32 net_password_n;
@@ -13231,11 +13232,19 @@ static void handoff_frame(u8 *menu)
  * the main menu, instead of waiting out the arrival and landing on the prison ship. */
 static u32 refusal_asked, refusal_done;
 
-static const char *const refusal_why[7] = {
+static const char *const refusal_why[8] = {
     "The server refused the connection.", "Your mods differ from the server's.",
     "The server is full.", "Wrong password. Set it in the TES3X Manager.",
     "You were kicked from the server.", "This console is banned from the server.",
-    "Build out of date. Update it in the TES3X Manager."};
+    "Build out of date. Update it in the TES3X Manager.",
+    "Update this game build in the TES3X Manager to connect."};
+
+static const char *refusal_text(u32 reason)
+{
+    if (reason == REFUSED_PROTOCOL && ses.refused_hash < T3MP_VERSION)
+        return "The server needs an update to work with this game build.";
+    return refusal_why[reason < 8 ? reason : 0];
+}
 
 static void refusal_frame(void)
 {
@@ -13257,7 +13266,8 @@ static void refusal_frame(void)
             return;
         }
         multi_closing();
-        if (reason == REFUSED_STALE && state == SESSION_REFUSED) {
+        if ((reason == REFUSED_STALE || (reason == REFUSED_PROTOCOL &&
+             ses.refused_hash > T3MP_VERSION)) && state == SESSION_REFUSED) {
             put32le(data, HANDOFF_MAGIC);
             put32le(data + 4, HANDOFF_STALE);
             for (i = 0; join_server[i]; i++)
@@ -13273,11 +13283,11 @@ static void refusal_frame(void)
         !player_reference())
         return;
     arrival_start = ARRIVAL_CLAIMED;
-    log_text("net.join_failed", state == SESSION_REFUSED ? refusal_why[reason < 7 ? reason : 0] : "key");
+    log_text("net.join_failed", state == SESSION_REFUSED ? refusal_text(reason) : "key");
     *(int *)TES3X_NET_BUTTON = -1;
     ((fn_message_menu)TES3X_NET_MESSAGE_MENU)(
         state == SESSION_UNTRUSTED ? "The server's key has changed since this console first met it."
-                                   : refusal_why[reason < 7 ? reason : 0],
+                                   : refusal_text(reason),
         manager_path[0] ? "Open Manager" : "Main Menu", manager_path[0] ? "Main Menu" : (const char *)0,
         (const char *)0);
     refusal_asked = 1;
@@ -13330,7 +13340,7 @@ static void session_ended_frame(void)
     if (ses.state == SESSION_REFUSED) {
         if (join_server[0]) /* refusal_frame's */
             return;
-        text = refusal_why[ses.refused_reason < 7 ? ses.refused_reason : 0];
+        text = refusal_text(ses.refused_reason);
     } else {
         if (!lost_timing) {
             lost_timing = 1;
@@ -13351,9 +13361,9 @@ static void session_ended_frame(void)
 /* Until WELCOME: what stopped the join, on its row. */
 static void join_watch(u8 *menu)
 {
-    static const char *const refused[7] = {"refused", "different mods", "server full",
+    static const char *const refused[8] = {"refused", "different mods", "server full",
                                            "wrong password", "kicked", "banned",
-                                           "build out of date"};
+                                           "build out of date", "client needs update"};
     u32 state = ses.state, reason = ses.refused_reason;
 
     handoff_frame(menu);
@@ -13363,16 +13373,20 @@ static void join_watch(u8 *menu)
         join_row = 0;
     } else if (state == SESSION_REFUSED && reason == 3) {
         password_ask(menu);
-    } else if (state == SESSION_REFUSED && reason == REFUSED_STALE && manager_path[0]) {
+    } else if (state == SESSION_REFUSED && (reason == REFUSED_STALE ||
+                 (reason == REFUSED_PROTOCOL && ses.refused_hash > T3MP_VERSION)) && manager_path[0]) {
         lobby = 0;
         handoff = HANDOFF_ASKING;
-        log_text("net.join_failed", "build out of date");
+        log_text("net.join_failed", reason == REFUSED_PROTOCOL ?
+                                      "client protocol needs update" : "build out of date");
         *(int *)TES3X_NET_BUTTON = -1;
         ((fn_message_menu)TES3X_NET_MESSAGE_MENU)(
-            "Build out of date. Update it in the TES3X Manager?", "Open Manager", "Back",
+            reason == REFUSED_PROTOCOL ? refusal_text(reason) :
+                "Build out of date. Update it in the TES3X Manager?", "Open Manager", "Back",
             (const char *)0);
     } else if (state == SESSION_REFUSED) {
-        join_failed(menu, refused[reason < 7 ? reason : 0]);
+        join_failed(menu, reason == REFUSED_PROTOCOL && ses.refused_hash < T3MP_VERSION ?
+                            "server needs update" : refused[reason < 8 ? reason : 0]);
     } else if (state == SESSION_UNTRUSTED) {
         join_failed(menu, "server key changed");
     } else if (now_us() - join_started > JOIN_WAIT_US) {

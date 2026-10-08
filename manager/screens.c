@@ -82,8 +82,9 @@ static void draw_servers(const struct view *v)
                  s->has_server_key ? s->fingerprint : "", build ? build : "build not installed",
                  s->character[0] ? "  \xB7  " : "", s->character);
         row(y, i == v->server_list.sel, s->name,
+            s->online == 2 ? "Manager update needed" : s->online == 3 ? "Server update needed" :
             s->online > 0 ? (build ? "Online  \xB7  Installed" : "Online") : "Offline",
-            s->online > 0 ? ui->accent : ui->bad, sub, ui->dim);
+            s->online == 1 ? ui->accent : ui->bad, sub, ui->dim);
     }
     ui_scrollbar(SCROLL_X, LIST_TOP, SERVER_ROWS * ROW_H, &v->server_list);
 }
@@ -272,6 +273,7 @@ void screen_draw(const struct view *v)
     static const struct ui_hint close = {UI_B, "Close"};
     static const struct ui_hint confirm[] = {{UI_A, "Go ahead"}, {UI_B, "Cancel"}};
     static const struct ui_hint update[] = {{UI_X, "Update"}, {UI_B, "Cancel"}};
+    static const struct ui_hint manager_update[] = {{UI_X, "Check for update"}, {UI_B, "Cancel"}};
     const char *lines[4];
     int i;
 
@@ -283,7 +285,8 @@ void screen_draw(const struct view *v)
     for (i = 0; i < 4; i++)
         lines[i] = v->text[i];
     if (v->confirm)
-        ui_dialog(v->title, lines, 4, 0, v->confirm == CONFIRM_UPDATE ? update : confirm, 2);
+        ui_dialog(v->title, lines, 4, 0, v->confirm == CONFIRM_MANAGER_UPDATE ? manager_update :
+                  v->confirm == CONFIRM_UPDATE ? update : confirm, 2);
     else
         ui_dialog(v->title, lines, 4, 0, v->dismiss ? &close : NULL, v->dismiss ? 1 : 0);
 }

@@ -17,15 +17,16 @@ def query(name, qtype=1):
 
 
 class ProtocolVersionTests(unittest.TestCase):
-    def test_game_and_manager_match_server_protocol(self):
+    def test_game_and_manager_match_their_server_protocols(self):
         import re
         root = Path(__file__).resolve().parents[1]
-        for name in ('hooks/tes3xmulti.c', 'manager/servers.c'):
+        for name, expected in (('hooks/tes3xmulti.c', tes3x_net.T3MP_VERSION),
+                               ('manager/servers.c', tes3x_net.MANAGER_VERSION)):
             with self.subTest(source=name):
                 source = (root / name).read_text(encoding='utf-8')
                 version = re.search(r'^#define T3MP_VERSION (\d+)', source, re.MULTILINE)
                 self.assertIsNotNone(version)
-                self.assertEqual(int(version.group(1)), tes3x_net.T3MP_VERSION)
+                self.assertEqual(int(version.group(1)), expected)
 
 
 class DnsReplyTests(unittest.TestCase):

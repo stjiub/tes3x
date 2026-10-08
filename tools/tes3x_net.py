@@ -353,6 +353,7 @@ def ping(args):
 
 T3MP = struct.Struct("<4sBBHIIIII")  # magic, version, type, 0, session, seq, ack, time, echo
 T3MP_VERSION = 20
+MANAGER_VERSION = 1  # build discovery stays independent of gameplay state
 HELLO, WELCOME, HEARTBEAT, BYE, STATE, PEER, GONE, EVENTS, REFUSE, CLOCK, ACTORS = range(1, 12)
 BUILD = 12  # to a manager's HELLO: tes3x_netbuild.BUILD_BODY, then the server forgets it
 # On the wire every packet but the handshake is SEALED: OUTER in the clear (the AEAD's associated
@@ -385,6 +386,7 @@ PASSWORD_RATE = (5, 1 / 60)  # password tries from one address, (burst, per seco
 REFUSE_BODY = struct.Struct("<III")
 REFUSED_LOAD_ORDER, REFUSED_FULL, REFUSED_PASSWORD, REFUSED_KICKED, REFUSED_BANNED = 1, 2, 3, 4, 5
 REFUSED_STALE = 6  # the console's build is not the one --build serves: its manager can update it
+REFUSED_PROTOCOL = 7  # expected version, offered version, reason (instead of load order/count)
 BAN_KINDS = ("key", "mac", "address")
 MONTH_DAYS = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
 IDLE_TIMEOUT = 20.0  # silence after which a client is dropped; the console gives up at 15 s
@@ -2112,6 +2114,7 @@ class Client:
         self.state = None
         self.last = time.time()
         self.alive = False
+        self.version = T3MP_VERSION
         self.dead = False  # its player died and has not respawned; relayed to peers
         self.rel = Reliable()
         self.events = 0
@@ -2409,7 +2412,7 @@ def serve(args):
         if client.keys is None:
             return
         inner = INNER.pack(kind, client.peer_seq, now_us(), client.peer_time) + body
-        outer = OUTER.pack(b"T3MP", T3MP_VERSION, SEALED, 0, client.session, client.seq)
+        outer = OUTER.pack(b"T3MP", client.version, SEALED, 0, client.session, client.seq)
         packet = outer + seal(client.keys[1], client.seq, outer, inner)
         if dropped("out"):
             return
@@ -3340,12 +3343,14 @@ def serve(args):
                 if other.in_world:
                     send(other, ACTORS, struct.pack("<I", BOT_ID) + body)
 
-    def handshake(kind, session, packet, addr, now):
+    def handshake(kind, session, packet, addr, now, version):
         """Answer HANDSHAKE1 with HANDSHAKE2; on HANDSHAKE3, the HELLO it carries, the console's
         key, the session keys and whether this HANDSHAKE3 came before."""
         for stale in [k for k, v in pending.items() if now - v["time"] > HANDSHAKE_KEEP]:
             del pending[stale]
         entry = pending.get(session)
+        if entry and entry["version"] != version:
+            return None
         if kind == HANDSHAKE1:
             e = packet[OUTER.size:OUTER.size + 32]
             if len(packet) < HANDSHAKE_PAD or entry and entry["e"] != e:
@@ -3354,8 +3359,8 @@ def serve(args):
                 noise = Noise(False, server_secret, os.urandom(32), PROLOGUE)
                 noise.read1(e)
                 entry = pending[session] = {
-                    "noise": noise, "e": e, "time": now, "done": None,
-                    "reply": OUTER.pack(b"T3MP", T3MP_VERSION, HANDSHAKE2, 0, session, 0)
+                    "noise": noise, "e": e, "time": now, "done": None, "version": version,
+                    "reply": OUTER.pack(b"T3MP", version, HANDSHAKE2, 0, session, 0)
                     + noise.write2()}
             transmit(addr, entry["reply"])
             return None
@@ -3389,7 +3394,7 @@ def serve(args):
         if len(packet) < OUTER.size or dropped("in") or addr[0] in bans["address"]:
             return
         magic, version, kind, _, session, seq = OUTER.unpack_from(packet)
-        if magic != b"T3MP" or version != T3MP_VERSION:
+        if magic != b"T3MP" or not version:
             return
         now = time.time()
         if kind in (HANDSHAKE1, HANDSHAKE3):
@@ -3401,19 +3406,30 @@ def serve(args):
                         or not handshake_bucket.take(now)):
                     limits["handshakes"] += 1
                     return
-            done = handshake(kind, session, packet, addr, now)
+            done = handshake(kind, session, packet, addr, now, version)
             if done:
                 hello, key, keys, again = done
+                if len(hello) < 18:
+                    return
+                manager = bool(struct.unpack_from("<I", hello, 14)[0] & MANAGER)
+                expected = MANAGER_VERSION if manager else T3MP_VERSION
+                if version != expected:
+                    stranger = handshake_client(addr, session, keys, hello[:6].hex(":"), version)
+                    send(stranger, REFUSE, REFUSE_BODY.pack(expected, version, REFUSED_PROTOCOL))
+                    print(f"{time.strftime('%H:%M:%S')} refused "
+                          f"{'manager' if manager else 'game'} at {addr[0]}: protocol "
+                          f"{version}, expected {expected}", flush=True)
+                    return
                 client = by_session.get(session)
                 if again and client is not None and client.keys == keys:
                     # The WELCOME was lost, or this is a replay: answer the address that joined.
                     send(client, WELCOME, struct.pack("<I", client.id))
                     return
-                handle_plain(T3MP.pack(b"T3MP", T3MP_VERSION, HELLO, 0, session, 0, 0, 0, 0)
+                handle_plain(T3MP.pack(b"T3MP", version, HELLO, 0, session, 0, 0, 0, 0)
                              + hello, addr, (key, keys))
             return
         client = by_session.get(session)
-        if kind != SEALED or client is None or client.keys is None or \
+        if version != T3MP_VERSION or kind != SEALED or client is None or client.keys is None or \
                 len(packet) < OUTER.size + INNER.size + NOISE_TAG:
             return
         top, seen = client.replay
@@ -3435,9 +3451,17 @@ def serve(args):
         handle_plain(T3MP.pack(b"T3MP", T3MP_VERSION, inner_kind, 0, session, seq, ack, sent,
                                echo) + inner[INNER.size:], addr)
 
-    def refuse(addr, session, keys, mac, reason):
-        stranger = Client(0, mac)
-        stranger.addr, stranger.session, stranger.keys = addr, session, keys
+    def handshake_client(addr, session, keys, mac, version):
+        # Repeated HANDSHAKE3 replies need distinct nonces and the original destination.
+        entry = pending[session]
+        if "reply_client" not in entry:
+            client = entry["reply_client"] = Client(0, mac)
+            client.addr, client.session, client.keys = addr, session, keys
+            client.version = version
+        return entry["reply_client"]
+
+    def refuse(addr, session, keys, mac, reason, version=T3MP_VERSION):
+        stranger = handshake_client(addr, session, keys, mac, version)
         order, plugins = pinned or (0, 0)
         send(stranger, REFUSE, REFUSE_BODY.pack(order, plugins or 0, reason))
 
@@ -3565,7 +3589,7 @@ def serve(args):
             mac, lobby, plugins = mac.hex(":"), bool(plugins & LOBBY), plugins & ~LOBBY & ~MANAGER
             if fingerprint(key) in bans["key"] or mac in bans["mac"]:
                 print(f"{stamp} refused {mac} at {addr[0]}: banned", flush=True)
-                refuse(addr, session, keys, mac, REFUSED_BANNED)
+                refuse(addr, session, keys, mac, REFUSED_BANNED, version)
                 return
             if password and key not in admitted:
                 if len(password_buckets) > HANDSHAKES_PENDING:
@@ -3574,7 +3598,7 @@ def serve(args):
                 given = packet[T3MP.size + HELLO_BODY.size:]
                 if not tries.take(now) or not hmac.compare_digest(given, password):
                     print(f"{stamp} refused {mac} at {addr[0]}: wrong password", flush=True)
-                    refuse(addr, session, keys, mac, REFUSED_PASSWORD)
+                    refuse(addr, session, keys, mac, REFUSED_PASSWORD, version)
                     return
                 admitted.add(key)
                 if admitted_path:
@@ -3582,8 +3606,7 @@ def serve(args):
                         stream.write(f"{key.hex()} {mac} {time.strftime('%Y-%m-%d')}\n")
                 print(f"{stamp} admitted key {fingerprint(key)} ({mac})", flush=True)
             if manager:
-                stranger = Client(0, mac)
-                stranger.addr, stranger.session, stranger.keys = addr, session, keys
+                stranger = handshake_client(addr, session, keys, mac, version)
                 body = build_server.ticket() if build_server else                     tes3x_netbuild.BUILD_BODY.pack(bytes(32), 0, 0, bytes(16))
                 who = manager_character(key).encode("latin-1", "replace")[:46]
                 send(stranger, BUILD, body + (who + b"\0" if who else b""))
@@ -4115,8 +4138,10 @@ def serve(args):
 class FuzzClient:
     """A console's session in Python: the handshake, then sealed packets of any content."""
 
-    def __init__(self, sock, addr, rng):
+    def __init__(self, sock, addr, rng, version=None):
         self.sock, self.addr, self.rng = sock, addr, rng
+        self.version = T3MP_VERSION if version is None else version
+        self.version_override = version is not None
         self.session = rng.getrandbits(32) | 1
         self.seq = self.peer_seq = 0
         self.keys = self.handshake3 = None
@@ -4126,9 +4151,11 @@ class FuzzClient:
     def join(self, timeout=2.0, password=b"", lobby=False, manager=False, secret=None,
              build_id=bytes(32)):
         """WELCOME's body, or with manager, BUILD's; None if the server sent neither."""
+        if manager and not self.version_override:
+            self.version = MANAGER_VERSION
         secret, e = secret or self.rng.randbytes(32), self.rng.randbytes(32)
         noise = Noise(True, secret, e, PROLOGUE)
-        message1 = (OUTER.pack(b"T3MP", T3MP_VERSION, HANDSHAKE1, 0, self.session, 0)
+        message1 = (OUTER.pack(b"T3MP", self.version, HANDSHAKE1, 0, self.session, 0)
                     + noise.write1()).ljust(HANDSHAKE_PAD, b"\0")
         self.sock.sendto(message1, self.addr)
         reply = self.receive_raw(timeout, HANDSHAKE2)
@@ -4136,7 +4163,7 @@ class FuzzClient:
         hello = HELLO_BODY.pack(self.rng.randbytes(6), 0, 0x46555A5A,
                                 3 | (LOBBY if lobby else 0) | (MANAGER if manager else 0),
                                 12.0, 16.0, 7.0, 427.0, 1.0, 30.0, build_id)
-        self.handshake3 = (OUTER.pack(b"T3MP", T3MP_VERSION, HANDSHAKE3, 0, self.session, 0)
+        self.handshake3 = (OUTER.pack(b"T3MP", self.version, HANDSHAKE3, 0, self.session, 0)
                            + noise.write3(hello + password))
         self.sock.sendto(self.handshake3, self.addr)
         self.keys = noise.split()
@@ -4181,7 +4208,7 @@ class FuzzClient:
 
     def send(self, kind, body):
         self.seq += 1
-        outer = OUTER.pack(b"T3MP", T3MP_VERSION, SEALED, 0, self.session, self.seq)
+        outer = OUTER.pack(b"T3MP", self.version, SEALED, 0, self.session, self.seq)
         inner = INNER.pack(kind, self.peer_seq, now_us(), 0) + body
         self.sock.sendto(outer + seal(self.keys[0], self.seq, outer, inner), self.addr)
 
