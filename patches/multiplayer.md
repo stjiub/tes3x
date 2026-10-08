@@ -27,8 +27,10 @@ order and resends until each is acknowledged. `tes3xnet say TEXT` on one console
 `net.text` on the others.
 
 Other players appear as stand-ins from `TES3X Multiplayer.esp`, which the pipeline writes. Each
-copies its player's movement, animation, drawn weapon or readied spell, and whatever the player
-has equipped; the server keeps each player's equipment and sends it to consoles that join later.
+copies its player's race, sex, head and hair, movement, animation, drawn weapon or readied spell,
+and equipment. The server retains identity and equipment for late joiners. Appearance uses the
+engine's complete model and equipment rebuild; held animations preserve each layer's phase,
+including full-body crouch and swimming when the source player uses first-person view.
 
 The server retains the character's attribute and skill bases, current values and skill progress.
 Replay restores abilities before the statistic snapshots, then finalises those snapshots after

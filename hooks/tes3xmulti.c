@@ -1743,6 +1743,7 @@ static void log_text(const char *tag, const char *text)
 }
 
 typedef void *(__attribute__((thiscall)) *fn_ref_part)(const void *ref);
+typedef u8(__attribute__((thiscall)) *fn_ref_update)(void *ref);
 
 /* A reference's attachments are a list of {kind, next, data...}; its mobile is kind 8. */
 #define REF_ATTACHMENTS 0x44
@@ -1850,6 +1851,9 @@ static void anim_capture(const u8 *ref, u8 *out)
 #define CONTROLLER_ANIMATION 0x3C
 #define ANIM_GROUP_OBJECTS 0x68
 #define ANIM_GROUP_COUNT 150u
+#define ANIM_SEQUENCES 0x2C4
+#define ANIM_SEQUENCE_LAYERS 0x308
+#define SEQUENCE_TIME_OFFSET 0x54
 #define GROUP_KEY_COUNT 0x14
 #define GROUP_KEY_TIMES 0x1C
 
@@ -1866,81 +1870,101 @@ static const float *anim_keys(const u8 *a, u32 g, u32 *n)
     return keys;
 }
 
+/* Start modes select an action section; they are not the current semantic key. */
+static int anim_start_mode(u32 group, u32 key)
+{
+    switch (((const u32 *)TES3X_NET_ANIM_GROUP_TYPES)[group]) {
+    case 3: return key < 3 ? 3 : key < 6 ? 4 : 5;
+    case 5: return key < 3 ? 3 : key < 6 ? 4 : 1;
+    case 6: return key < 3 ? 3 : key < 6 ? 4 : key < 9 ? 9 : key < 12 ? 10 : 11;
+    case 7: return key < 3 ? 3 : key < 6 ? 4 : key < 17 ? 5 : key < 28 ? 6 : 7;
+    default: return 1;
+    }
+}
+
+/* The controller jumps to a strength-specific follow without advancing the light-follow key. */
+static void anim_follow_key(const u8 *mobile, const u8 *controller, u8 *out)
+{
+    u32 state = mobile[0xDD], attack = mobile[0xE0], group = controller[8], l, end;
+
+    if (state < 5 || state > 7 || attack < 1 || attack > 3 ||
+        group >= ANIM_GROUP_COUNT || ((const u32 *)TES3X_NET_ANIM_GROUP_TYPES)[group] != 7)
+        return;
+    end = 12 + 11 * (attack - 1) + 2 * (state - 5);
+    for (l = 0; l < ANIM_LAYERS; l++)
+        if (out[l] == group)
+            out[4 + l] = (u8)end;
+}
+
+/* Keys are semantic slots (draw, swing, hit, follow), not a sorted timeline. */
 static int anim_retime(const u8 *from, const u8 *to, u32 g, u8 *key, float *t)
 {
     const float *kf, *kt;
-    u32 nf, nt, i = 0, j = 0, source_segment = 0, ahead;
+    u32 nf, nt, end = *key, start;
     float span, frac;
 
-    if (!(kf = anim_keys(from, g, &nf)) || !(kt = anim_keys(to, g, &nt)))
+    if (!(kf = anim_keys(from, g, &nf)) || !(kt = anim_keys(to, g, &nt)) ||
+        end >= nf || end >= nt)
         return 0;
-    if (*key >= nf)
-        return 0;
-    while (source_segment + 2 < nf && *t >= kf[source_segment + 1])
-        source_segment++;
-    if (nf == nt) {
-        i = source_segment;
-        j = i + 1 < nf ? i + 1 : i;
-    } else {
-        j = nf - 1;
-    }
-    span = kf[j] - kf[i];
-    frac = span > 0 ? (*t - kf[i]) / span : 0;
+    start = end ? end - 1 : end;
+    span = kf[end] - kf[start];
+    frac = span > 0 ? (*t - kf[start]) / span : 1;
     frac = frac < 0 ? 0 : frac > 1 ? 1 : frac;
-    if (nf != nt) {
-        ahead = *key > source_segment;
-        j = nt - 1;
-        *t = kt[0] + (kt[j] - kt[0]) * frac;
-        for (i = 0; i + 2 < nt && *t >= kt[i + 1]; i++)
-            ;
-        *key = (u8)(i + ahead < nt ? i + ahead : nt - 1);
-    } else {
-        *t = kt[i] + (kt[j] - kt[i]) * frac;
-    }
+    *t = kt[start] + (kt[end] - kt[start]) * frac;
     return 1;
 }
 
-/* The first-person model has no swim groups, and the controller picks none for it. The group the
- * third-person model would play is taken from the movement flags (mobile +0x8: forward 1, back 2,
- * left 4, right 8, run 0x200, swim 0x800), looped on its whole timeline. */
+/* First-person models can omit crouch and swim groups. Use the full model's loop and native
+ * movement flags, leaving attack and cast layers for semantic retiming. */
 #define MOBILE_MOVEMENT 0x8
 #define MOVE_RUN 0x200u
+#define MOVE_SNEAK 0x400u
+#define GROUP_IDLE_SNEAK 16u
+#define GROUP_SNEAK_WALK 63u
 #define MOVE_SWIM 0x800u
 #define GROUP_IDLE_SWIM 13u
 #define GROUP_SWIM_WALK 43u /* forward, back, left, right; running 4 further */
 #define GROUP_MOVE_FIRST 53u /* WalkForward to SneakRight */
 #define GROUP_MOVE_LAST 66u
 
-static int swim_capture(const u8 *mobile, const u8 *own, u8 *out)
+typedef u8(__attribute__((thiscall)) *fn_mobile_test)(const void *mobile);
+
+static u32 locomotion_capture(const u8 *mobile, const u8 *own, u8 *out)
 {
-    u32 f = *(const u16 *)(mobile + MOBILE_MOVEMENT), g, n, l, span, at;
+    u32 f = *(const u16 *)(mobile + MOBILE_MOVEMENT), g, n, l, span, at, layers = 0;
     const float *keys;
     float t;
 
-    if (!(f & MOVE_SWIM))
+    if (!(f & MOVE_SNEAK) && (!(f & MOVE_SWIM) ||
+        !((fn_mobile_test)TES3X_NET_BASE_UNDERWATER)(mobile)))
         return 0;
     g = f & 1 ? 0 : f & 2 ? 1 : f & 4 ? 2 : f & 8 ? 3 : 4;
-    g = g == 4 ? GROUP_IDLE_SWIM : GROUP_SWIM_WALK + (f & MOVE_RUN ? 4 : 0) + g;
-    if (!(keys = anim_keys(own, g, &n)))
+    if (f & MOVE_SNEAK)
+        g = g == 4 ? GROUP_IDLE_SNEAK : GROUP_SNEAK_WALK + g;
+    else
+        g = g == 4 ? GROUP_IDLE_SWIM : GROUP_SWIM_WALK + (f & MOVE_RUN ? 4 : 0) + g;
+    if (!(keys = anim_keys(own, g, &n)) || n < 4 || keys[3] <= keys[2])
         return 0;
-    span = (u32)((keys[n - 1] - keys[0]) * 1000000.0f);
+    span = (u32)((keys[3] - keys[2]) * 1000000.0f);
     at = span ? now_us() % span : 0;
-    t = keys[0] + (float)at / 1000000.0f;
+    t = keys[2] + (float)at / 1000000.0f;
     for (l = 0; l < ANIM_LAYERS; l++) {
-        if (out[l] && (out[l] < GROUP_MOVE_FIRST || out[l] > GROUP_MOVE_LAST))
+        if (out[l] > GROUP_IDLE_SNEAK &&
+            (out[l] < GROUP_MOVE_FIRST || out[l] > GROUP_MOVE_LAST))
             continue;
+        layers |= 1u << l;
         out[l] = (u8)g;
         out[4 + l] = 3;
         copy(out + 8 + 4 * l, (const u8 *)&t, 4);
     }
-    return 1;
+    return layers;
 }
 
 static void player_anim_capture(const u8 *ref, u8 *out)
 {
     const u8 *own = ref_animation(ref), *mobile = ref_mobile(ref), *controller, *run;
     float t;
-    u32 l;
+    u32 l, locomotion;
 
     if (!plausible(own) || !plausible(mobile) ||
         !plausible(controller = *(const u8 *const *)(mobile + MOBILE_ANIM_CONTROLLER)) ||
@@ -1949,11 +1973,11 @@ static void player_anim_capture(const u8 *ref, u8 *out)
         return;
     }
     anim_read(run, out);
+    anim_follow_key(mobile, controller, out);
     first_person_states++;
-    if (swim_capture(mobile, own, out))
-        return;
+    locomotion = locomotion_capture(mobile, own, out);
     for (l = 0; l < ANIM_LAYERS; l++) {
-        if (out[l] == 0xFF)
+        if (out[l] == 0xFF || (locomotion & (1u << l)))
             continue;
         copy((u8 *)&t, out + 8 + 4 * l, 4);
         if (anim_retime(run, own, out[l], out + 4 + l, &t))
@@ -2254,6 +2278,8 @@ static void anim_apply(u8 *ref, const u8 *older, const u8 *newer, float frac)
 {
     u8 *a = ref_animation(ref), *mobile = ref_mobile(ref);
     u32 l, g, keys;
+    int layer;
+    u8 *sequence;
     float from, to;
 
     if (!plausible(a))
@@ -2267,17 +2293,11 @@ static void anim_apply(u8 *ref, const u8 *older, const u8 *newer, float frac)
             refused_anims++;
             continue;
         }
-        /* Attack and cast groups take the key to start from where others take 1, at once. */
         if (a[ANIM_GROUP + l] != g) {
             if (!((fn_has_group)TES3X_NET_ANIM_HAS_GROUP)(a, (int)g))
                 continue;
             ((fn_play_group)TES3X_NET_ANIM_PLAY_GROUP)(a, (int)g, (int)l,
-                                                        newer[4 + l] >= 3 ? newer[4 + l] : 1,
-                                                        GROUP_LOOPS);
-            if (a[ANIM_GROUP + l] != g)
-                ((fn_play_group)TES3X_NET_ANIM_PLAY_GROUP)(a, (int)g, (int)l,
-                                                            newer[4 + l] >= 3 ? 1 : 3,
-                                                            GROUP_LOOPS);
+                anim_start_mode(g, newer[4 + l]), GROUP_LOOPS);
             if (a[ANIM_GROUP + l] != g)
                 continue;
         }
@@ -2294,6 +2314,15 @@ static void anim_apply(u8 *ref, const u8 *older, const u8 *newer, float frac)
         *(u32 *)(a + ANIM_KEY + 4 * l) = newer[4 + l];
         *(u32 *)(a + ANIM_LOOPS + 4 * l) = GROUP_LOOPS;
         *(float *)(a + ANIM_TIMING + 4 * l) = to;
+    }
+    /* Held mobiles take the frozen update path, which does not set upper/arm offsets. */
+    for (l = 1; l < ANIM_LAYERS; l++) {
+        layer = *(const int *)(a + ANIM_SEQUENCE_LAYERS + 4 * l);
+        if (layer < 0 || layer >= (int)ANIM_GROUP_COUNT ||
+            !plausible(sequence = *(u8 **)(a + ANIM_SEQUENCES + 12 * layer + 4 * l)))
+            continue;
+        *(float *)(sequence + SEQUENCE_TIME_OFFSET) =
+            *(const float *)(a + ANIM_TIMING + 4 * l) - *(const float *)(a + ANIM_TIMING);
     }
 }
 
@@ -2685,7 +2714,7 @@ static void equipment_apply(u32 i, u8 *ref)
             added++;
         }
     if (removed || added)
-        body_parts_update(ref);
+        ((fn_ref_update)TES3X_NET_UPDATE_BIPED_PARTS)(ref);
     equip_applied++;
     tes3x_log_hex3("net.ghost_equip", i + 1, removed << 16 | added,
                    equipment_ids(ref, worn) << 16 | looks[l].count);
@@ -2701,6 +2730,7 @@ static void equipment_apply(u32 i, u8 *ref)
 #define NPC_BASE 0x6C
 #define NPC_NAME 0x70
 #define NPC_LINKS 0x78
+#define RACE_ID 0x10
 #define NPC_RACE 0xB0
 #define NPC_HEAD 0xBC
 #define NPC_HAIR 0xC0
@@ -2820,7 +2850,7 @@ static u32 identity_put(u8 *part, u32 off, const char *text)
 static void identity_send(const u8 *ref)
 {
     static u32 last_check, sent_hash, sent_welcome;
-    const u8 *instance, *npc, *links;
+    const u8 *instance, *npc, *race, *head, *hair;
     const char *fields[4];
     u8 parts[2][EVENT_DATA];
     u32 lengths[2], female, hash = 2166136261u, i, k, flags, room, now = now_us();
@@ -2830,12 +2860,14 @@ static void identity_send(const u8 *ref)
     last_check = now;
     if (!plausible(instance = *(const u8 *const *)(ref + 0x28)) ||
         !plausible(npc = *(const u8 *const *)(instance + NPC_BASE)) ||
-        !plausible(links = *(const u8 *const *)(npc + NPC_LINKS)))
+        !plausible(race = *(const u8 *const *)(npc + NPC_RACE)) ||
+        !plausible(head = *(const u8 *const *)(npc + NPC_HEAD)) ||
+        !plausible(hair = *(const u8 *const *)(npc + NPC_HAIR)))
         return;
     fields[0] = *(const char *const *)(npc + NPC_NAME);
-    fields[1] = *(const char *const *)(links + 0);
-    fields[2] = *(const char *const *)(links + 12);
-    fields[3] = *(const char *const *)(links + 16);
+    fields[1] = (const char *)race + RACE_ID;
+    fields[2] = ((fn_object_id)(*(void *const *const *)head)[OBJECT_GET_ID / 4])(head);
+    fields[3] = ((fn_object_id)(*(void *const *const *)hair)[OBJECT_GET_ID / 4])(hair);
     female = (*(const u32 *)(instance + NPC_FLAGS) & NPC_FEMALE) != 0;
     for (i = 0; i < 2; i++) {
         parts[i][0] = (u8)i;
@@ -10502,7 +10534,6 @@ static void player_spells_scan(const u8 *npc, int send)
 #define IDENTITY_BIRTHSIGN 4u /* the one string that may be empty */
 #define RECORDS_CLASSES 0x30
 #define NPC_CLASS 0xB4
-#define RACE_ID 0x10
 #define CLASS_ID 0x10
 #define CLASS_NAME 0x30
 #define CLASS_STATS 0x50 /* attributes 2, specialisation, skills 10, as int */

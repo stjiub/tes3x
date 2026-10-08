@@ -1,8 +1,32 @@
 {
   "structs": [
     {
+      "name": "TES3::AnimationData",
+      "note": "Xbox verified offsets: groups +0x38, semantic next-key indices +0x3C, flags +0x54, layer times +0x58, sequence pointer triples +0x2C4 and selected sequence indices +0x308. update 0x000CEFB0 skips setting upper/arm sequence offsets when flags are 0xFFFF; held playback must set them explicitly. Key time tables are semantic slots, including unused zeros and nonchronological entries."
+    },
+    {
+      "name": "NI::Sequence",
+      "note": "Xbox time offset +0x54 verified in AnimationData::update 0x000CEFB0: upper/arm layer time minus lower-body time."
+    },
+    {
       "name": "TES3::MobileActor",
-      "note": "Xbox matches the PC layout at the offsets tested: attributes (+0x254, Statistic {vtable, base, current} each), health, magicka and fatigue current (+0x2BC, +0x2C8, +0x2E0), animationController (+0x244), activeEffects (+0x1C4; deque head +4, count +8)."
+      "note": "Xbox matches the PC layout at the offsets tested: attributes (+0x254, Statistic {vtable, base, current} each), health, magicka and fatigue current (+0x2BC, +0x2C8, +0x2E0), animationController (+0x244), animStateAttack (byte +0xDD: 5/6/7 light/medium/heavy follow-through), physicalAttackType (byte +0xE0: 1/2/3 slash/chop/thrust), activeEffects (+0x1C4; deque head +4, count +8).",
+      "fields": [
+        {
+          "offset": "0xDD",
+          "name": "animStateAttack",
+          "type": "unsigned char",
+          "confidence": "verified",
+          "provenance": "Xbox swingAnimationStateMachine 0x0016D710 and first-person held-punch trace: states 5/6/7 light/medium/heavy follow-through"
+        },
+        {
+          "offset": "0xE0",
+          "name": "physicalAttackType",
+          "type": "unsigned char",
+          "confidence": "verified",
+          "provenance": "Xbox startAttackAnimation 0x0016D3A0 and swingAnimationStateMachine 0x0016D710: slash/chop/thrust 1/2/3"
+        }
+      ]
     },
     {
       "name": "TES3::MobileNPC",
@@ -18,7 +42,7 @@
     },
     {
       "name": "TES3::NPC",
-      "note": "Xbox matches the PC at name (+0x70), level (+0x7C, short; SetLevel on the player writes it), spellList (+0xC4) and aiConfig (+0xE0: fight +2, alarm +4; an Imperial Guard reads fight 30). SpellList's IteratedList head is at NPC +0xD0; each node has next at +4 and a TES3::Spell* at +8. The player's links table (+0x78) survives loading: race, class, faction, head and hair ids, each a 32-byte buffer, which NPC::setClass writes and the save's RNAM/CNAM/BNAM/KNAM follow together with race (+0xB0), class (+0xB4), head (+0xBC) and hair (+0xC0) (xemu identity-a1, rebuild-c2).",
+      "note": "Xbox matches the PC at name (+0x70), level (+0x7C, short; SetLevel on the player writes it), spellList (+0xC4) and aiConfig (+0xE0: fight +2, alarm +4; an Imperial Guard reads fight 30). SpellList's IteratedList head is at NPC +0xD0; each node has next at +4 and a TES3::Spell* at +8. The links table (+0x78) can be null after loading a player; when present it holds race, class, faction, head and hair ids, each a 32-byte buffer, which NPC::setClass writes and the save's RNAM/CNAM/BNAM/KNAM follow together with race (+0xB0), class (+0xB4), head (+0xBC) and hair (+0xC0) (xemu identity-a1, rebuild-c2).",
       "fields": [
         {
           "offset": "0xC4",

@@ -943,6 +943,21 @@
       "pc_va": "0x00468620"
     },
     {
+      "va": "0x000CC2F0",
+      "name": "AnimationData::markLayersForUpdate",
+      "confidence": "verified",
+      "provenance": "Xbox decompile: OR layers into AnimationData flags +0x54",
+      "signature": "void __thiscall markLayersForUpdate(unsigned int layers)"
+    },
+    {
+      "va": "0x000CCA90",
+      "name": "AnimationData::initializeLayer",
+      "confidence": "verified",
+      "provenance": "Xbox/PC decompile: activates selected sequence and initializes key/timing section",
+      "note": "Type 7 modes 3/4/5/6/7 initialize keys 0/3/6/17/28. Type 6 modes 3/4/9/10/11 initialize keys 0/3/6/9/12.",
+      "signature": "void __thiscall initializeLayer(int layer, int mode)"
+    },
+    {
       "va": "0x000CDBD0",
       "name": "AnimationData::headTracking",
       "kind": "function",
@@ -970,9 +985,19 @@
       "va": "0x000CE5C0",
       "name": "AnimationData::playAnimationGroupForIndex",
       "kind": "function",
-      "confidence": "matched",
-      "provenance": "mwse:TES3_AnimationData_playAnimationGroupForIndex",
-      "pc_va": "0x00470AE0"
+      "confidence": "verified",
+      "provenance": "Xbox/PC decompile and live held/released attack capture",
+      "pc_va": "0x00470AE0",
+      "note": "Mode selects a section, not a semantic next-key index: type 7 accepts 3..7; type 6 accepts 3,4,9,10,11.",
+      "signature": "void __thiscall playAnimationGroupForIndex(unsigned int group, int layer, int mode, int loops)"
+    },
+    {
+      "va": "0x000CEFB0",
+      "name": "AnimationData::update",
+      "confidence": "verified",
+      "provenance": "Xbox decompile and held-ghost runtime memory",
+      "note": "flags +0x54 == 0xFFFF freezes at timing[0] and skips upper/arm sequence offsets; normal path sets selected sequences +0x54 to timing[layer]-timing[0]",
+      "signature": "void __thiscall update(TES3::Reference *reference, float deltaTime, float fixedTime, unsigned int unused, bool updateNode)"
     },
     {
       "va": "0x000CFCF0",
@@ -2720,6 +2745,14 @@
       "signature": "void __thiscall setClass(const char* id)"
     },
     {
+      "va": "0x00122120",
+      "name": "NPCInstance::rebuildBodyParts",
+      "confidence": "verified",
+      "provenance": "Xbox decompile: base race/head/hair, removeEquippedLayers, Clothing/Armor::setupBodyParts, updateForReference",
+      "note": "Rebuilds cached layers from current equipment before drawing them; BodyPartManager::updateForReference alone redraws cached parts",
+      "signature": "bool __thiscall rebuildBodyParts(TES3::Reference *reference)"
+    },
+    {
       "va": "0x00122A00",
       "name": "Cell::getIsInterior",
       "confidence": "verified",
@@ -3881,6 +3914,14 @@
       "pc_va": "0x0053B200"
     },
     {
+      "va": "0x0016BC90",
+      "name": "ActorAnimationController::selectIdleAnim",
+      "confidence": "verified",
+      "provenance": "Xbox decompile and PC match: movement bit 0x400 selects idle sneak 16; third-person swim selects 13",
+      "note": "Chooses idle group at controller +0x99; falls back when the active model lacks the group. First-person capture must resolve omitted full-body crouch groups.",
+      "signature": "void __thiscall selectIdleAnim(int group, bool exact)"
+    },
+    {
       "va": "0x0016BE70",
       "name": "ActorAnimationController::calculateMovementSpeed",
       "kind": "function",
@@ -3918,7 +3959,9 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_ActorAnimationController_swingAnimationStateMachine",
-      "pc_va": "0x005415F0"
+      "pc_va": "0x005415F0",
+      "note": "Follow-through states 5/6/7 select light/medium/heavy key times using physicalAttackType 1/2/3 (slash/chop/thrust). MobileActor bytes +0xDD/+0xE0 hold these states. The controller can jump to the selected strength timeline while AnimationData next-key remains on the light branch; first-person conversion must select the actual follow interval. End key = 12 + 11*(attackType-1) + 2*(state-5).",
+      "signature": "void __thiscall swingAnimationStateMachine()"
     },
     {
       "va": "0x0016DB90",
@@ -3983,6 +4026,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_PlayerAnimationController_updateCameraPosition",
       "pc_va": "0x00542E60"
+    },
+    {
+      "va": "0x001762A0",
+      "name": "MobileActor::getAttackAnimationGroup",
+      "confidence": "verified",
+      "provenance": "Player virtual slot +0xEC; Xbox/PC decompile and unarmed runtime capture",
+      "note": "No readiedWeapon at +0x388 returns group 137 (hand-to-hand); otherwise selects by weapon type, or group 145 for probe/lockpick.",
+      "signature": "unsigned char __thiscall getAttackAnimationGroup()"
     },
     {
       "va": "0x00177060",
@@ -5725,6 +5776,15 @@
       "kind": "data",
       "type": "void*[143]",
       "note": "143 cdecl callbacks: void callback(MagicSourceInstance* instance, float deltaTime, MagicEffectInstance* effect, int effectIndex)."
+    },
+    {
+      "va": "0x003B6F20",
+      "name": "AnimationGroupTypes",
+      "confidence": "verified",
+      "provenance": "playAnimationGroupForIndex and initializeLayer index this table by group; runtime action types 128=6, 137=7",
+      "note": "Action category controls accepted start modes; semantic next-key indices are not start modes.",
+      "kind": "data",
+      "type": "unsigned int[150]"
     },
     {
       "va": "0x003C4F04",
