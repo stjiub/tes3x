@@ -82,6 +82,7 @@ const char *tes3x_console_text_now(void);
 #if !defined(TES3X_NET_FIND_REFERENCE) || !defined(TES3X_NET_REF_ANIMATION) || \
     !defined(TES3X_NET_REF_ORIENTATION) || !defined(TES3X_NET_REF_ROTATION) || \
     !defined(TES3X_NET_NODE_SET_ROTATION) || !defined(TES3X_NET_NODE_UPDATE) || \
+    !defined(TES3X_NET_NODE_UPDATE_EFFECTS) || !defined(TES3X_NET_NODE_UPDATE_PROPERTIES) || \
     !defined(TES3X_NET_ANIM_HAS_GROUP) || !defined(TES3X_NET_ANIM_PLAY_GROUP) || \
     !defined(TES3X_NET_BODY_PART_UPDATE) || !defined(TES3X_NET_EXTERIOR_CHANGE) || \
     !defined(TES3X_NET_PRELOAD_FIND_SITE) || \
@@ -1859,17 +1860,20 @@ static const float *anim_keys(const u8 *a, u32 g, u32 *n)
     return keys;
 }
 
-static int anim_retime(const u8 *from, const u8 *to, u32 g, float *t)
+static int anim_retime(const u8 *from, const u8 *to, u32 g, u8 *key, float *t)
 {
     const float *kf, *kt;
-    u32 nf, nt, i = 0, j = 0;
+    u32 nf, nt, i = 0, j = 0, source_segment = 0, ahead;
     float span, frac;
 
     if (!(kf = anim_keys(from, g, &nf)) || !(kt = anim_keys(to, g, &nt)))
         return 0;
+    if (*key >= nf)
+        return 0;
+    while (source_segment + 2 < nf && *t >= kf[source_segment + 1])
+        source_segment++;
     if (nf == nt) {
-        while (i + 2 < nf && *t >= kf[i + 1])
-            i++;
+        i = source_segment;
         j = i + 1 < nf ? i + 1 : i;
     } else {
         j = nf - 1;
@@ -1877,9 +1881,16 @@ static int anim_retime(const u8 *from, const u8 *to, u32 g, float *t)
     span = kf[j] - kf[i];
     frac = span > 0 ? (*t - kf[i]) / span : 0;
     frac = frac < 0 ? 0 : frac > 1 ? 1 : frac;
-    if (nf != nt)
+    if (nf != nt) {
+        ahead = *key > source_segment;
         j = nt - 1;
-    *t = kt[i] + (kt[j] - kt[i]) * frac;
+        *t = kt[0] + (kt[j] - kt[0]) * frac;
+        for (i = 0; i + 2 < nt && *t >= kt[i + 1]; i++)
+            ;
+        *key = (u8)(i + ahead < nt ? i + ahead : nt - 1);
+    } else {
+        *t = kt[i] + (kt[j] - kt[i]) * frac;
+    }
     return 1;
 }
 
@@ -1939,7 +1950,7 @@ static void player_anim_capture(const u8 *ref, u8 *out)
         if (out[l] == 0xFF)
             continue;
         copy((u8 *)&t, out + 8 + 4 * l, 4);
-        if (anim_retime(run, own, out[l], &t))
+        if (anim_retime(run, own, out[l], out + 4 + l, &t))
             copy(out + 8 + 4 * l, (const u8 *)&t, 4);
         else
             out[l] = 0xFF;
@@ -2023,7 +2034,8 @@ static struct {
     float x, y, z, heading;
     u8 cell[CELL_NAME];
     u8 *ref;
-    u32 identity; /* the identity generation applied to its base NPC */
+    u32 identity;      /* the identity generation applied to its base NPC */
+    u32 identity_seen; /* the generation whose first apply failure was logged */
     u32 look;  /* the equipment generation it wears */
     u32 armed; /* its health is set to GHOST_HEALTH: a drop from there is a hit */
     u32 dead;  /* 0 alive, 1 dead, 2 not yet reconciled with the server */
@@ -2641,6 +2653,8 @@ static void ghost_item(u32 i, const char *verb, const char *id, const char *tail
     run_script(line);
 }
 
+static void body_parts_update(u8 *ref);
+
 /* Once per new set, on a placed ghost. */
 static void equipment_apply(u32 i, u8 *ref)
 {
@@ -2664,6 +2678,8 @@ static void equipment_apply(u32 i, u8 *ref)
             ghost_item(i, "Equip", looks[l].ids[k], "");
             added++;
         }
+    if (removed || added)
+        body_parts_update(ref);
     equip_applied++;
     tes3x_log_hex3("net.ghost_equip", i + 1, removed << 16 | added,
                    equipment_ids(ref, worn) << 16 | looks[l].count);
@@ -2671,8 +2687,8 @@ static void equipment_apply(u32 i, u8 *ref)
 
 /* A ghost's plugin NPC is only a placeholder. Each player sends the character name, sex and the
  * record ids that choose its race, head and hair. The server retains the two reliable parts and
- * replays them after WELCOME. The strings live in their identity slot because the ghost NPC and
- * its linked-id table point at them after the event has gone away. */
+ * replays them after WELCOME. The name lives in its identity slot because the ghost NPC points at
+ * it after the event has gone away; normal data-file NPCs do not retain the player's linked ids. */
 #define IDENTITY_PARTS 2u
 #define IDENTITY_TEXT 32u
 #define NPC_FLAGS 0x34
@@ -2686,6 +2702,18 @@ static void equipment_apply(u32 i, u8 *ref)
 #define ATTACHMENT_BODY_PARTS 1u
 
 typedef void(__attribute__((thiscall)) *fn_body_part_update)(void *manager, void *ref);
+typedef u8 *(__attribute__((thiscall)) *fn_scene_node)(void *object);
+typedef void(__attribute__((thiscall)) *fn_reset_visual)(void *object, void *node);
+typedef void(__attribute__((thiscall)) *fn_attach_child)(void *parent, void *child, u8 first);
+typedef void(__attribute__((thiscall)) *fn_node_call)(void *node);
+typedef void(__attribute__((thiscall)) *fn_mobile_simulation)(void *mobile, u8 entering);
+typedef void(__attribute__((thiscall)) *fn_ghost_add_mob)(void *mobs, void *ref);
+
+#define OBJECT_GET_SCENE_NODE 0x2Cu
+#define OBJECT_RESET_VISUAL_NODE 0x11Cu
+#define NODE_PARENT 0x18u
+#define NODE_ATTACH_CHILD 0x94u
+#define MOBILE_ENTER_SIMULATION 0x70u
 
 static struct {
     u32 client, used, generation, have, female;
@@ -2829,23 +2857,68 @@ static void identity_send(const u8 *ref)
 }
 
 static u8 *resolve_object(const char *id);
+static u8 *find_record(u32 finder, const char *id);
+
+/* Changing an NPC record does not replace a body already in the scene. Rebuild that reference's
+ * visual branch as Reference::reloadAnimation does, then put its mobile back in the mob manager. */
+static int ghost_model_rebuild(u8 *ref)
+{
+    u8 *node = *(u8 **)(ref + REF_NODE), *parent, *mobile, *world, *mobs;
+    void **vtable;
+
+    if (!plausible(node) || !plausible(parent = *(u8 **)(node + NODE_PARENT)) ||
+        !plausible(vtable = *(void ***)ref))
+        return 0;
+    ((fn_reset_visual)vtable[OBJECT_RESET_VISUAL_NODE / 4])(ref, 0);
+    vtable = *(void ***)ref;
+    if (!plausible(vtable) ||
+        !plausible(node = ((fn_scene_node)vtable[OBJECT_GET_SCENE_NODE / 4])(ref)) ||
+        !plausible(vtable = *(void ***)parent))
+        return 0;
+    ((fn_attach_child)vtable[NODE_ATTACH_CHILD / 4])(parent, node, 1);
+    ((fn_node_update)TES3X_NET_NODE_UPDATE)(parent, 0.0f, 0, 1);
+    ((fn_node_call)TES3X_NET_NODE_UPDATE_EFFECTS)(node);
+    ((fn_node_call)TES3X_NET_NODE_UPDATE_PROPERTIES)(node);
+    ((fn_node_update)TES3X_NET_NODE_UPDATE)(node, 0.0f, 0, 1);
+
+    mobile = ref_mobile(ref);
+    world = *(u8 **)TES3X_NET_WORLD;
+    if (plausible(mobile) && plausible(vtable = *(void ***)mobile))
+        ((fn_mobile_simulation)vtable[MOBILE_ENTER_SIMULATION / 4])(mobile, 1);
+    if (plausible(world) && plausible(mobs = *(u8 **)(world + 0x5C)))
+        ((fn_ghost_add_mob)TES3X_NET_ADD_MOB)(mobs, ref);
+    if (plausible(mobile))
+        *(u32 *)(mobile + MOBILE_FLAGS) &= ~MOBILE_SIMULATED;
+    return 1;
+}
 
 static void identity_apply(u32 i, u8 *ref)
 {
-    u8 *instance, *npc, *links, *race, *head, *hair, *attachment, *manager = 0;
-    u32 slot, guard, *flags;
+    u8 *instance, *npc, *race, *head, *hair, *attachment, *manager = 0;
+    u32 slot, guard, generation, reason = 0, *flags;
 
     for (slot = 0; slot < PEERS && identities[slot].client != ghosts[i].client; slot++)
         ;
-    if (slot == PEERS || identities[slot].have != 3 || !identities[slot].generation ||
-        identities[slot].generation == ghosts[i].identity ||
-        !plausible(instance = *(u8 **)(ref + 0x28)) ||
-        !plausible(npc = *(u8 **)(instance + NPC_BASE)) ||
-        !plausible(links = *(u8 **)(npc + NPC_LINKS)) ||
-        !plausible(race = resolve_object(identities[slot].race)) ||
-        !plausible(head = resolve_object(identities[slot].head)) ||
-        !plausible(hair = resolve_object(identities[slot].hair)))
+    if (slot == PEERS || identities[slot].have != 3 ||
+        !(generation = identities[slot].generation) || generation == ghosts[i].identity)
         return;
+    if (!plausible(instance = *(u8 **)(ref + 0x28)))
+        reason = 1;
+    else if (!plausible(npc = *(u8 **)(instance + NPC_BASE)))
+        reason = 2;
+    else if (!plausible(race = find_record(TES3X_NET_FIND_RACE, identities[slot].race)))
+        reason = 3;
+    else if (!plausible(head = resolve_object(identities[slot].head)))
+        reason = 4;
+    else if (!plausible(hair = resolve_object(identities[slot].hair)))
+        reason = 5;
+    if (reason) {
+        if (ghosts[i].identity_seen != generation) {
+            ghosts[i].identity_seen = generation;
+            tes3x_log_hex3("net.ghost_identity_bad", i + 1, ghosts[i].client, reason);
+        }
+        return;
+    }
     attachment = *(u8 **)(ref + REF_ATTACHMENTS);
     for (guard = 0; plausible(attachment) && guard < 32;
          attachment = *(u8 **)(attachment + 4), guard++)
@@ -2853,12 +2926,14 @@ static void identity_apply(u32 i, u8 *ref)
             manager = *(u8 **)(attachment + 8);
             break;
         }
-    if (!plausible(manager))
+    if (!plausible(manager)) {
+        if (ghosts[i].identity_seen != generation) {
+            ghosts[i].identity_seen = generation;
+            tes3x_log_hex3("net.ghost_identity_bad", i + 1, ghosts[i].client, 6);
+        }
         return;
+    }
     *(char **)(npc + NPC_NAME) = identities[slot].name;
-    *(char **)(links + 0) = identities[slot].race;
-    *(char **)(links + 12) = identities[slot].head;
-    *(char **)(links + 16) = identities[slot].hair;
     *(u8 **)(npc + NPC_RACE) = race;
     *(u8 **)(npc + NPC_HEAD) = head;
     *(u8 **)(npc + NPC_HAIR) = hair;
@@ -2866,8 +2941,16 @@ static void identity_apply(u32 i, u8 *ref)
     *flags = (*flags & ~NPC_FEMALE) | (identities[slot].female ? NPC_FEMALE : 0);
     flags = (u32 *)(instance + NPC_FLAGS);
     *flags = (*flags & ~NPC_FEMALE) | (identities[slot].female ? NPC_FEMALE : 0);
-    ((fn_body_part_update)TES3X_NET_BODY_PART_UPDATE)(manager, ref);
-    ghosts[i].identity = identities[slot].generation;
+    if (!ghost_model_rebuild(ref)) {
+        ((fn_body_part_update)TES3X_NET_BODY_PART_UPDATE)(manager, ref);
+        if (ghosts[i].identity_seen != generation) {
+            ghosts[i].identity_seen = generation;
+            tes3x_log_hex3("net.ghost_identity_bad", i + 1, ghosts[i].client, 7);
+        }
+        return;
+    }
+    ghosts[i].look = 0; /* the new branch starts in the plugin's default clothes */
+    ghosts[i].identity = ghosts[i].identity_seen = generation;
     identities[slot].used = ++identity_clock;
     identity_applied++;
     tes3x_log_hex3("net.ghost_identity", i + 1, ghosts[i].client, ghosts[i].identity);
@@ -3216,7 +3299,7 @@ static void ghost_update(u32 i, const struct pose *local)
         if (ghosts[i].placed)
             ghost_park(i);
         ghosts[i].client = client;
-        ghosts[i].identity = 0;
+        ghosts[i].identity = ghosts[i].identity_seen = 0;
         ghosts[i].look = 0;
         ghosts[i].dead = 2;
         if (client)

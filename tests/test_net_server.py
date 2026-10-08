@@ -123,6 +123,17 @@ class ServerTests(unittest.TestCase):
                                data[0] == 1)
         self.assertEqual([data for kind, data in replayed if kind == net.EVENT_IDENTITY], parts)
 
+    def test_bot_identity_is_replayed(self):
+        self.start('--bot')
+        net = tes3x_net
+        client = self.client(1)
+        client.join()
+        replayed = self.events(client, lambda kind, data: kind == net.EVENT_IDENTITY and
+                               data[0] == 1)
+        self.assertEqual([data for kind, data in replayed if kind == net.EVENT_IDENTITY],
+                         net.pack_identity('Bot', 'Imperial', 'b_n_imperial_m_head_01',
+                                           'b_n_imperial_m_hair_01'))
+
     def test_actor_equipment_is_relayed_and_replayed(self):
         self.start()
         net = tes3x_net

@@ -70,6 +70,30 @@
       "pc_va": "0x00564DF0"
     },
     {
+      "va": "0x00044170",
+      "name": "NiAVObject::update",
+      "confidence": "matched",
+      "provenance": "exact PC match 0x006EB000",
+      "pc_va": "0x006EB000",
+      "signature": "void __thiscall update(float time, int updateControllers, int updateChildren)"
+    },
+    {
+      "va": "0x00044260",
+      "name": "NiAVObject::updateProperties",
+      "confidence": "matched",
+      "provenance": "exact PC match 0x006EB0E0",
+      "pc_va": "0x006EB0E0",
+      "signature": "void __thiscall updateProperties()"
+    },
+    {
+      "va": "0x00044530",
+      "name": "NiAVObject::updateEffects",
+      "confidence": "matched",
+      "provenance": "exact PC match 0x006EB380",
+      "pc_va": "0x006EB380",
+      "signature": "void __thiscall updateEffects()"
+    },
+    {
       "va": "0x00053840",
       "name": "createViewerSectionText",
       "kind": "function",

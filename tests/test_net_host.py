@@ -43,8 +43,8 @@ def build(folder, clang):
         '#include <stdint.h>\nextern void *host_thunks[64];\n'
         + ''.join(f'#define {name} ((uintptr_t)&host_thunks[{i}])\n'
                   for i, name in enumerate(thunks)), encoding='utf-8')
-    for name in ('tes3xnt.h', 'tes3xlog.h', 'tes3xnet.h', 'monocypher.h', 'monocypher.c',
-                 'tes3xnoise.h', 'tes3xnoise.c'):
+    for name in ('tes3xnt.h', 'tes3xlog.h', 'tes3xini.h', 'tes3xlaunch.h', 'tes3xnet.h',
+                 'monocypher.h', 'monocypher.c', 'tes3xnoise.h', 'tes3xnoise.c'):
         shutil.copy(HOOKS / name, folder / name)
     for name in ('host.c', 'guard.c'):
         shutil.copy(HERE / name, folder / name)

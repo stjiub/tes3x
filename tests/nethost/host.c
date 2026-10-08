@@ -13,6 +13,27 @@ static int verbose;
 
 #include "tes3xnet.c"
 
+void tes3x_ini_xbox(const char *key, const char *dflt, char *out, u32 size)
+{
+    (void)key;
+    if (size) {
+        strncpy(out, dflt, size - 1);
+        out[size - 1] = 0;
+    }
+}
+
+void tes3x_launch(const char *path)
+{
+    (void)path;
+}
+
+void tes3x_launch_data(const char *path, const void *data, u32 size)
+{
+    (void)path;
+    (void)data;
+    (void)size;
+}
+
 /* The production sources are separate translation units. Give the few file-local helpers with
  * the same names distinct ones while this harness includes both to reach their parser state. */
 #define get16 multi_get16

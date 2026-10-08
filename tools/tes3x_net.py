@@ -2139,6 +2139,9 @@ def serve(args):
     identities = {}  # client -> its complete [name/race, head/hair] parts
     actor_equipment = {}  # actor id -> (authority, complete parts, arriving parts)
     bounties = {}
+    if args.bot:
+        identities[BOT_ID] = pack_identity("Bot", "Imperial", "b_n_imperial_m_head_01",
+                                           "b_n_imperial_m_hair_01")
     if args.bot_equip is not None:
         equipment[BOT_ID] = [pack_equipment([i for i in args.bot_equip.split(",") if i]), []]
     actors = {}  # refid -> (reporting client, cell, ACTOR bytes), the latest from an authority
@@ -2277,8 +2280,8 @@ def serve(args):
 
     def transmit(addr, packet, ident=0):
         if len(addr) == 4:  # a tunnel guest, by its MAC
-            ip, _port, mac, link = addr
-            link.send(udp_frame(mac, ip, packet, ident))
+            ip, port, mac, link = addr
+            link.send(udp_frame(mac, ip, packet, ident, sport=args.port, dport=port))
         else:
             sock.sendto(packet, addr)
 
@@ -3759,11 +3762,12 @@ def serve(args):
                           f"{'answered' if reply[7] else 'unknown name'}", flush=True)
                     link.send(udp_frame(frame[6:12], src, reply, sport=DNS_PORT))
                     continue
-                data = udp_from_frame(frame)
-                if data:
-                    guarded(data, (src, PORT, frame[6:12], link))
-                    continue
                 udp = 14 + (frame[14] & 0x0F) * 4 if len(frame) >= 42 else 0
+                sport = struct.unpack_from(">H", frame, udp)[0] if udp and frame[23] == 17 else 0
+                data = udp_from_frame(frame, args.port)
+                if data:
+                    guarded(data, (src, sport, frame[6:12], link))
+                    continue
                 if udp and frame[23] == 17:
                     sport, dport = struct.unpack_from(">HH", frame, udp)
                     data = udp_from_frame(frame, dport)
