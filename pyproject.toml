@@ -18,7 +18,7 @@ dependencies = [
 
 [project.optional-dependencies]
 gui = ["PySide6-Essentials>=6.8,<7", "tomlkit>=0.13,<1"]
-dev = ["pyflakes"]
+dev = ["ruff"]
 
 [project.scripts]
 tes3x = "tes3x.cli:main"
@@ -28,6 +28,12 @@ tes3x-gui = "tes3x.gui:main"
 
 [project.urls]
 Homepage = "https://github.com/stjiub/tes3x"
+
+[tool.ruff]
+extend-exclude = ["addons", "src/tes3x/_vendor"]
+
+[tool.ruff.lint]
+select = ["F"]  # pyflakes' rules
 
 [tool.setuptools.dynamic]
 version = { attr = "tes3x.__version__" }
