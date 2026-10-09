@@ -4,7 +4,7 @@ FROM python:3.12-slim
 
 RUN pip install --no-cache-dir "cryptography>=43,<47"
 WORKDIR /tes3x
-COPY src/tes3x/*.py src/tes3x/
+COPY src/tes3x/ src/tes3x/
 COPY examples/starts.toml examples/
 RUN useradd --system --uid 10001 tes3x && mkdir /world && chown tes3x /world
 USER tes3x

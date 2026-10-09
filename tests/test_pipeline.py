@@ -58,7 +58,7 @@ class PathTests(unittest.TestCase):
     def test_only_tes3x_paths_finds_the_repository(self):
         up = re.compile(r'__file__.*(parents\[1\]|parent\.parent|dirname\(os\.path\.dirname|"\.\.")')
         package = Path(__file__).resolve().parents[1] / 'src' / 'tes3x'
-        found = [f'{path.name}:{number}' for path in sorted(package.glob('*.py'))
+        found = [f'{path.relative_to(package)}:{number}' for path in sorted(package.rglob('*.py'))
                  if path.name != 'paths.py'
                  for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1)
                  if up.search(line)]
@@ -102,7 +102,7 @@ class PathTests(unittest.TestCase):
         data = next(ast.literal_eval(node.value) for node in setup.body
                     if isinstance(node, ast.Assign) and node.targets[0].id == 'DATA')
         named = {'/'.join(ast.literal_eval(arg) for arg in node.args)
-                 for path in (root / 'src' / 'tes3x').glob('*.py')
+                 for path in (root / 'src' / 'tes3x').rglob('*.py')
                  for node in ast.walk(ast.parse(path.read_text(encoding='utf-8')))
                  if isinstance(node, ast.Call) and getattr(node.func, 'id', '') == 'resource'
                  and node.args and all(isinstance(a, ast.Constant) for a in node.args)}

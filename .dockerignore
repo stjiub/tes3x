@@ -1,4 +1,7 @@
 # Only the server image builds from this folder; it needs the package and the start points.
 *
-!src/tes3x/*.py
+!src/
+!src/tes3x/
+!src/tes3x/**
+src/tes3x/**/__pycache__/
 !examples/starts.toml

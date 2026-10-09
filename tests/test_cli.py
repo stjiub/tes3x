@@ -16,6 +16,7 @@ class CommandTests(unittest.TestCase):
         found = {path.stem for path in PACKAGE.glob('*.py') if path.stem != 'cli'
                  and any(isinstance(node, ast.If) and '__name__' in ast.unparse(node.test)
                          for node in ast.parse(path.read_text(encoding='utf-8')).body)}
+        found.update(path.parent.name for path in PACKAGE.glob('*/__main__.py'))
         self.assertEqual(set(cli.COMMANDS), found)
 
     def test_help_lists_each_command_with_its_summary(self):

@@ -14,8 +14,14 @@ class DocsTests(unittest.TestCase):
     def test_every_command_is_listed(self):
         page = (docs.DOCS / 'commands.md').read_text(encoding='utf-8')
         package = docs.ROOT / 'src' / 'tes3x'
+
+        def takes_options(name):
+            module = package / f'{name}.py'
+            sources = [module] if module.is_file() else (package / name).rglob('*.py')
+            return any('ArgumentParser' in path.read_text(encoding='utf-8') for path in sources)
+
         missing = [name for name in cli.COMMANDS  # those with options of their own
-                   if 'ArgumentParser' in (package / f'{name}.py').read_text(encoding='utf-8')
+                   if takes_options(name)
                    and f"`tes3x {name.replace('_', '-')}`" not in page]
         self.assertEqual(missing, [])
 
@@ -30,7 +36,7 @@ class DocsTests(unittest.TestCase):
 
     def test_links_from_the_code_reach_a_page_and_heading(self):
         package = docs.ROOT / 'src' / 'tes3x'
-        links = {match.group(1) for path in package.glob('*.py')
+        links = {match.group(1) for path in package.rglob('*.py')
                  for match in re.finditer(r'docs_url\([\'"]([^\'"]+)[\'"]\)',
                                           path.read_text(encoding='utf-8'))}
         self.assertTrue(links)
