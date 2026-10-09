@@ -3870,138 +3870,7 @@ class Server:
         stamp = time.strftime("%H:%M:%S")
         now = time.monotonic()
         if kind == HELLO and secure and len(packet) >= T3MP.size + HELLO_BODY.size:
-            key, keys = secure
-            mac, build, order, plugins, *offered, build_id = HELLO_BODY.unpack_from(packet,
-                                                                                  T3MP.size)
-            manager = bool(plugins & MANAGER)
-            mac, lobby, plugins = mac.hex(":"), bool(plugins & LOBBY), plugins & ~LOBBY & ~MANAGER
-            if fingerprint(key) in self.bans["key"] or mac in self.bans["mac"]:
-                print(f"{stamp} refused {mac} at {addr[0]}: banned", flush=True)
-                self.refuse(addr, session, keys, mac, REFUSED_BANNED, version)
-                return
-            if self.password and key not in self.admitted:
-                if len(self.password_buckets) > HANDSHAKES_PENDING:
-                    self.password_buckets.clear()
-                tries = self.password_buckets.setdefault(addr[0], Bucket(*PASSWORD_RATE))
-                given = packet[T3MP.size + HELLO_BODY.size:]
-                if not tries.take(now) or not hmac.compare_digest(given, self.password):
-                    print(f"{stamp} refused {mac} at {addr[0]}: wrong password", flush=True)
-                    self.refuse(addr, session, keys, mac, REFUSED_PASSWORD, version)
-                    return
-                self.admitted.add(key)
-                if self.admitted_path:
-                    with open(self.admitted_path, "a", encoding="utf-8") as stream:
-                        stream.write(f"{key.hex()} {mac} {time.strftime('%Y-%m-%d')}\n")
-                print(f"{stamp} admitted key {fingerprint(key)} ({mac})", flush=True)
-            if manager:
-                stranger = self.handshake_client(addr, session, keys, mac, version)
-                body = self.build_server.ticket() if self.build_server else \
-                    tes3x_netbuild.BUILD_BODY.pack(bytes(32), 0, 0, bytes(16))
-                who = self.manager_character(key).encode("latin-1", "replace")[:46]
-                self.send(stranger, BUILD, body + (who + b"\0" if who else b""))
-                print(f"{stamp} manager {fingerprint(key)} at {addr[0]} asked for the build"
-                      + ("" if self.build_server else ", which is not served"), flush=True)
-                return
-            served = self.build_server.build_id() if self.build_server and any(build_id) else None
-            if served and build_id != served:
-                print(f"{stamp} refused {mac}: build {build_id.hex()[:16]}, the server's is "
-                      f"{served.hex()[:16]}", flush=True)
-                self.refuse(addr, session, keys, mac, REFUSED_STALE)
-                return
-            if self.pinned is None and not lobby:
-                self.pinned = (order, plugins)
-                print(f"{stamp} load order {order:#010x} ({plugins} plugins) set by {mac}",
-                      flush=True)
-                self.adopt_world(order, now)
-            if self.pinned and order != self.pinned[0]:
-                print(f"{stamp} refused {mac}: load order {order:#010x} ({plugins} plugins), "
-                      f"session has {self.pinned[0]:#010x}", flush=True)
-                self.refuse(addr, session, keys, mac, REFUSED_LOAD_ORDER)
-                return
-            # A console is known by its key for this server; the MAC is only a hint.
-            client = self.clients.get(key)
-            playing = sum(c.alive for c in self.clients.values() if c is not client)
-            if playing >= self.args.max_players:
-                print(f"{stamp} refused {mac}: {playing} players, the most allowed", flush=True)
-                self.refuse(addr, session, keys, mac, REFUSED_FULL)
-                return
-            if client is None:
-                client = self.clients[key] = Client(len(self.clients) + 1, mac)
-                client.key = key
-                print(f"{stamp} client {client.id} is key {fingerprint(key)}", flush=True)
-            client.mac = mac
-            self.by_session.pop(client.session, None)
-            client.session = session
-            self.by_session[client.session] = client
-            if client.keys != keys:  # a resent HANDSHAKE3 keeps the replay window
-                client.keys, client.replay = keys, (0, 0)
-            client.addr, client.peer_seq, client.peer_time = addr, seq, sent
-            client.joins += 1
-            client.alive, client.last = True, now
-            if client.rel.out:
-                print(f"{stamp} client {client.id}: {len(client.rel.out)} unacked events "
-                      f"dropped by the rejoin", flush=True)
-            client.rel = Reliable()
-            client.known = {}
-            client.owners_told = {}
-            client.busy = None
-            client.lobby = lobby
-            if client.joins == 1:
-                client.joined = now
-                client.bursts = sorted(self.bursts)
-            verb = "joined" if client.joins == 1 else "rejoined"
-            print(f"{stamp} client {client.id} {verb}: {mac} at {addr[0]}:{addr[1]}, "
-                  f"build {build:#010x}", flush=True)
-            self.send(client, WELCOME, struct.pack("<I", client.id))
-            if lobby:
-                print(f"{stamp} client {client.id} is at the main menu", flush=True)
-                return
-            if self.world.clock is None:
-                offered = sane_clock(offered)
-                if self.args.hour is not None:
-                    offered[0] = self.args.hour
-                if self.args.timescale is not None:
-                    offered[5] = self.args.timescale
-                self.world.clock = Clock(*offered, now)
-                print(f"{stamp} clock {self.world.clock}, from client {client.id}", flush=True)
-            self.send(client, CLOCK, self.world.clock.body(now))
-            for refid, origin in self.world.deaths.items():
-                client.rel.queue(EVENT_DEATH, origin, struct.pack("<I", refid))
-            for data in pack_objects(self.world.objects):
-                client.rel.queue(EVENT_OBJECTS, 0, data)
-            for refid, values in self.world.statuses.items():
-                client.rel.queue(EVENT_STATUS, 0, STATUS.pack(refid, *values))
-            for sid, spawn in sorted(self.world.spawns.items(), key=lambda s: s[1]["removed"]):
-                client.rel.queue(EVENT_SPAWN, spawn["origin"] if spawn.get("summon") else 0,
-                                 pack_spawn(sid, spawn))
-            for origin, (parts, _) in self.equipment.items():
-                if origin != client.id:
-                    for part in parts:
-                        client.rel.queue(EVENT_EQUIPMENT, origin, part)
-            for origin, parts in self.identities.items():
-                if origin != client.id and all(parts):
-                    for part in parts:
-                        client.rel.queue(EVENT_IDENTITY, origin, part)
-            for origin, parts, _ in self.actor_equipment.values():
-                for part in parts:
-                    client.rel.queue(EVENT_ACTOR_EQUIPMENT, origin, part)
-            for data in pack_weather(self.world.weather):
-                client.rel.queue(EVENT_WEATHER, 0, data)
-            for origin, data in self.bounties.items():
-                if origin != client.id:
-                    client.rel.queue(EVENT_BOUNTY, origin, data)
-            for other in self.clients.values():
-                if other is not client and other.in_world and other.dead:
-                    client.rel.queue(EVENT_PLAYER, other.id, bytes([PLAYER_DEATH]))
-            if self.sending and (client.bulk is None or client.bulk.status != 3):
-                client.bulk = Outgoing(*self.sending)
-                client.rel.queue(EVENT_OFFER, 0, client.bulk.offer())
-                print(f"{stamp} offering {self.sending[0]} ({len(self.sending[1])} bytes, id "
-                      f"{client.bulk.id:#010x}) to client {client.id}", flush=True)
-            if not self.key_folder(client):  # with characters, it joins once it has one
-                self.announce_join(client, now)
-            if client.rel.out:
-                self.flush(client, now)
+            self.hello(packet, addr, secure, version, session, seq, sent, stamp, now)
             return
         client = self.by_session.get(session)
         if client is None:
@@ -4013,70 +3882,235 @@ class Server:
         if not client.alive:
             print(f"{stamp} client {client.id} back", flush=True)
             client.alive = True
-        if kind == HEARTBEAT:
-            client.beats += 1
-            self.send(client, HEARTBEAT)
-        elif kind == STATE and len(packet) >= T3MP.size + STATE_SIZE:
-            if not placeable(*STATE_BODY.unpack_from(packet, T3MP.size)[1:5]):
+        handler = self.PACKET_HANDLERS.get(kind)
+        if handler:
+            handler(self, client, packet, session, stamp, now)
+
+    def hello(self, packet, addr, secure, version, session, seq, sent, stamp, now):
+        """A HELLO sealed by a finished handshake: admit, refuse or rejoin the console, and
+        send a joining one the shared world."""
+        key, keys = secure
+        mac, build, order, plugins, *offered, build_id = HELLO_BODY.unpack_from(packet,
+                                                                              T3MP.size)
+        manager = bool(plugins & MANAGER)
+        mac, lobby, plugins = mac.hex(":"), bool(plugins & LOBBY), plugins & ~LOBBY & ~MANAGER
+        if fingerprint(key) in self.bans["key"] or mac in self.bans["mac"]:
+            print(f"{stamp} refused {mac} at {addr[0]}: banned", flush=True)
+            self.refuse(addr, session, keys, mac, REFUSED_BANNED, version)
+            return
+        if self.password and key not in self.admitted:
+            if len(self.password_buckets) > HANDSHAKES_PENDING:
+                self.password_buckets.clear()
+            tries = self.password_buckets.setdefault(addr[0], Bucket(*PASSWORD_RATE))
+            given = packet[T3MP.size + HELLO_BODY.size:]
+            if not tries.take(now) or not hmac.compare_digest(given, self.password):
+                print(f"{stamp} refused {mac} at {addr[0]}: wrong password", flush=True)
+                self.refuse(addr, session, keys, mac, REFUSED_PASSWORD, version)
                 return
-            client.state = packet[T3MP.size:T3MP.size + STATE_SIZE]
-            client.states += 1
-            self.keep_place(client, now)
-            if self.args.bot:
-                self.bot.follow(client.state)
-                if self.args.bot_echo:
-                    self.bot.echo = client.state
-            for other in self.clients.values():
-                if other is not client and other.in_world:
-                    self.send(other, PEER, struct.pack("<I", client.id) + client.state)
-        elif kind == ACTORS and len(packet) >= T3MP.size + 4:
-            self.on_actors(client, packet[T3MP.size:])
-        elif kind == BULK_ACK and client.bulk and len(packet) >= T3MP.size + BULK_ACK_BODY.size:
-            bulk = client.bulk
-            first = bulk.first is None
-            status = bulk.on_ack(packet[T3MP.size:], now)
-            if first and bulk.first is not None:
-                print(f"{stamp} client {client.id} takes {bulk.name} from chunk {bulk.first} "
-                      f"of {bulk.chunks}", flush=True)
-            if status == BULK_NO_SPACE:
-                print(f"{stamp} client {client.id} has no room for {bulk.name} "
-                      f"({len(bulk.data)} bytes and its margin)", flush=True)
-            elif status is not None and status != BULK_RECEIVING:
-                took = now - bulk.started
-                size = len(bulk.data) - min(bulk.first, bulk.chunks) * BULK_CHUNK
-                print(f"{stamp} client {client.id} {bulk.name}: "
-                      f"{BULK_STATUS[status] if status < len(BULK_STATUS) else status}, "
-                      f"{max(size, 0)} bytes in {took:.1f} s "
-                      f"({max(size, 0) / 1024 / max(took, 0.001):.0f} KB/s), "
-                      f"chunks sent {bulk.sent}, resent {bulk.resent} ({bulk.fast} on a gap), "
-                      f"probes {bulk.probes}",
-                      flush=True)
-        elif kind == CHUNK and client.upload and len(packet) >= T3MP.size + 8:
-            upload = client.upload
-            ident, index = struct.unpack_from("<II", packet, T3MP.size)
-            if ident != upload.id:
-                return
-            receiving = upload.status == BULK_RECEIVING
-            if upload.on_chunk(index, packet[T3MP.size + 8:]):
-                self.send(client, BULK_ACK, upload.ack(now))
-            if receiving and upload.status != BULK_RECEIVING:
-                took = max(now - upload.started, 0.001)
-                size = upload.size - upload.first * BULK_CHUNK
-                print(f"{stamp} client {client.id} sent {upload.name}: "
-                      f"{BULK_STATUS[upload.status]}, {size} bytes in {took:.1f} s "
-                      f"({size / 1024 / took:.0f} KB/s)", flush=True)
-                if upload.status == BULK_DONE:
-                    self.received(client, stamp, now)
-        elif kind == EVENTS and len(packet) >= T3MP.size + EVENTS_HEAD.size:
-            ready, carried = client.rel.receive(packet[T3MP.size:])
-            if carried:
-                self.flush(client, now, resend=False)
-            for _, event_kind, _, data in ready:
-                self.on_event(client, event_kind, data, stamp, now)
-        elif kind == BYE:
-            print(f"{stamp} client {client.id} left", flush=True)
-            self.leave(client)
-            self.by_session.pop(session, None)
+            self.admitted.add(key)
+            if self.admitted_path:
+                with open(self.admitted_path, "a", encoding="utf-8") as stream:
+                    stream.write(f"{key.hex()} {mac} {time.strftime('%Y-%m-%d')}\n")
+            print(f"{stamp} admitted key {fingerprint(key)} ({mac})", flush=True)
+        if manager:
+            stranger = self.handshake_client(addr, session, keys, mac, version)
+            body = self.build_server.ticket() if self.build_server else \
+                tes3x_netbuild.BUILD_BODY.pack(bytes(32), 0, 0, bytes(16))
+            who = self.manager_character(key).encode("latin-1", "replace")[:46]
+            self.send(stranger, BUILD, body + (who + b"\0" if who else b""))
+            print(f"{stamp} manager {fingerprint(key)} at {addr[0]} asked for the build"
+                  + ("" if self.build_server else ", which is not served"), flush=True)
+            return
+        served = self.build_server.build_id() if self.build_server and any(build_id) else None
+        if served and build_id != served:
+            print(f"{stamp} refused {mac}: build {build_id.hex()[:16]}, the server's is "
+                  f"{served.hex()[:16]}", flush=True)
+            self.refuse(addr, session, keys, mac, REFUSED_STALE)
+            return
+        if self.pinned is None and not lobby:
+            self.pinned = (order, plugins)
+            print(f"{stamp} load order {order:#010x} ({plugins} plugins) set by {mac}",
+                  flush=True)
+            self.adopt_world(order, now)
+        if self.pinned and order != self.pinned[0]:
+            print(f"{stamp} refused {mac}: load order {order:#010x} ({plugins} plugins), "
+                  f"session has {self.pinned[0]:#010x}", flush=True)
+            self.refuse(addr, session, keys, mac, REFUSED_LOAD_ORDER)
+            return
+        # A console is known by its key for this server; the MAC is only a hint.
+        client = self.clients.get(key)
+        playing = sum(c.alive for c in self.clients.values() if c is not client)
+        if playing >= self.args.max_players:
+            print(f"{stamp} refused {mac}: {playing} players, the most allowed", flush=True)
+            self.refuse(addr, session, keys, mac, REFUSED_FULL)
+            return
+        if client is None:
+            client = self.clients[key] = Client(len(self.clients) + 1, mac)
+            client.key = key
+            print(f"{stamp} client {client.id} is key {fingerprint(key)}", flush=True)
+        client.mac = mac
+        self.by_session.pop(client.session, None)
+        client.session = session
+        self.by_session[client.session] = client
+        if client.keys != keys:  # a resent HANDSHAKE3 keeps the replay window
+            client.keys, client.replay = keys, (0, 0)
+        client.addr, client.peer_seq, client.peer_time = addr, seq, sent
+        client.joins += 1
+        client.alive, client.last = True, now
+        if client.rel.out:
+            print(f"{stamp} client {client.id}: {len(client.rel.out)} unacked events "
+                  f"dropped by the rejoin", flush=True)
+        client.rel = Reliable()
+        client.known = {}
+        client.owners_told = {}
+        client.busy = None
+        client.lobby = lobby
+        if client.joins == 1:
+            client.joined = now
+            client.bursts = sorted(self.bursts)
+        verb = "joined" if client.joins == 1 else "rejoined"
+        print(f"{stamp} client {client.id} {verb}: {mac} at {addr[0]}:{addr[1]}, "
+              f"build {build:#010x}", flush=True)
+        self.send(client, WELCOME, struct.pack("<I", client.id))
+        if lobby:
+            print(f"{stamp} client {client.id} is at the main menu", flush=True)
+            return
+        if self.world.clock is None:
+            offered = sane_clock(offered)
+            if self.args.hour is not None:
+                offered[0] = self.args.hour
+            if self.args.timescale is not None:
+                offered[5] = self.args.timescale
+            self.world.clock = Clock(*offered, now)
+            print(f"{stamp} clock {self.world.clock}, from client {client.id}", flush=True)
+        self.send(client, CLOCK, self.world.clock.body(now))
+        for refid, origin in self.world.deaths.items():
+            client.rel.queue(EVENT_DEATH, origin, struct.pack("<I", refid))
+        for data in pack_objects(self.world.objects):
+            client.rel.queue(EVENT_OBJECTS, 0, data)
+        for refid, values in self.world.statuses.items():
+            client.rel.queue(EVENT_STATUS, 0, STATUS.pack(refid, *values))
+        for sid, spawn in sorted(self.world.spawns.items(), key=lambda s: s[1]["removed"]):
+            client.rel.queue(EVENT_SPAWN, spawn["origin"] if spawn.get("summon") else 0,
+                             pack_spawn(sid, spawn))
+        for origin, (parts, _) in self.equipment.items():
+            if origin != client.id:
+                for part in parts:
+                    client.rel.queue(EVENT_EQUIPMENT, origin, part)
+        for origin, parts in self.identities.items():
+            if origin != client.id and all(parts):
+                for part in parts:
+                    client.rel.queue(EVENT_IDENTITY, origin, part)
+        for origin, parts, _ in self.actor_equipment.values():
+            for part in parts:
+                client.rel.queue(EVENT_ACTOR_EQUIPMENT, origin, part)
+        for data in pack_weather(self.world.weather):
+            client.rel.queue(EVENT_WEATHER, 0, data)
+        for origin, data in self.bounties.items():
+            if origin != client.id:
+                client.rel.queue(EVENT_BOUNTY, origin, data)
+        for other in self.clients.values():
+            if other is not client and other.in_world and other.dead:
+                client.rel.queue(EVENT_PLAYER, other.id, bytes([PLAYER_DEATH]))
+        if self.sending and (client.bulk is None or client.bulk.status != 3):
+            client.bulk = Outgoing(*self.sending)
+            client.rel.queue(EVENT_OFFER, 0, client.bulk.offer())
+            print(f"{stamp} offering {self.sending[0]} ({len(self.sending[1])} bytes, id "
+                  f"{client.bulk.id:#010x}) to client {client.id}", flush=True)
+        if not self.key_folder(client):  # with characters, it joins once it has one
+            self.announce_join(client, now)
+        if client.rel.out:
+            self.flush(client, now)
+
+    def packet_heartbeat(self, client, packet, session, stamp, now):
+        client.beats += 1
+        self.send(client, HEARTBEAT)
+
+    def packet_state(self, client, packet, session, stamp, now):
+        if len(packet) < T3MP.size + STATE_SIZE:
+            return
+        if not placeable(*STATE_BODY.unpack_from(packet, T3MP.size)[1:5]):
+            return
+        client.state = packet[T3MP.size:T3MP.size + STATE_SIZE]
+        client.states += 1
+        self.keep_place(client, now)
+        if self.args.bot:
+            self.bot.follow(client.state)
+            if self.args.bot_echo:
+                self.bot.echo = client.state
+        for other in self.clients.values():
+            if other is not client and other.in_world:
+                self.send(other, PEER, struct.pack("<I", client.id) + client.state)
+
+    def packet_actors(self, client, packet, session, stamp, now):
+        if len(packet) < T3MP.size + 4:
+            return
+        self.on_actors(client, packet[T3MP.size:])
+
+    def packet_bulk_ack(self, client, packet, session, stamp, now):
+        if not client.bulk or len(packet) < T3MP.size + BULK_ACK_BODY.size:
+            return
+        bulk = client.bulk
+        first = bulk.first is None
+        status = bulk.on_ack(packet[T3MP.size:], now)
+        if first and bulk.first is not None:
+            print(f"{stamp} client {client.id} takes {bulk.name} from chunk {bulk.first} "
+                  f"of {bulk.chunks}", flush=True)
+        if status == BULK_NO_SPACE:
+            print(f"{stamp} client {client.id} has no room for {bulk.name} "
+                  f"({len(bulk.data)} bytes and its margin)", flush=True)
+        elif status is not None and status != BULK_RECEIVING:
+            took = now - bulk.started
+            size = len(bulk.data) - min(bulk.first, bulk.chunks) * BULK_CHUNK
+            print(f"{stamp} client {client.id} {bulk.name}: "
+                  f"{BULK_STATUS[status] if status < len(BULK_STATUS) else status}, "
+                  f"{max(size, 0)} bytes in {took:.1f} s "
+                  f"({max(size, 0) / 1024 / max(took, 0.001):.0f} KB/s), "
+                  f"chunks sent {bulk.sent}, resent {bulk.resent} ({bulk.fast} on a gap), "
+                  f"probes {bulk.probes}",
+                  flush=True)
+
+    def packet_chunk(self, client, packet, session, stamp, now):
+        if not client.upload or len(packet) < T3MP.size + 8:
+            return
+        upload = client.upload
+        ident, index = struct.unpack_from("<II", packet, T3MP.size)
+        if ident != upload.id:
+            return
+        receiving = upload.status == BULK_RECEIVING
+        if upload.on_chunk(index, packet[T3MP.size + 8:]):
+            self.send(client, BULK_ACK, upload.ack(now))
+        if receiving and upload.status != BULK_RECEIVING:
+            took = max(now - upload.started, 0.001)
+            size = upload.size - upload.first * BULK_CHUNK
+            print(f"{stamp} client {client.id} sent {upload.name}: "
+                  f"{BULK_STATUS[upload.status]}, {size} bytes in {took:.1f} s "
+                  f"({size / 1024 / took:.0f} KB/s)", flush=True)
+            if upload.status == BULK_DONE:
+                self.received(client, stamp, now)
+
+    def packet_events(self, client, packet, session, stamp, now):
+        if len(packet) < T3MP.size + EVENTS_HEAD.size:
+            return
+        ready, carried = client.rel.receive(packet[T3MP.size:])
+        if carried:
+            self.flush(client, now, resend=False)
+        for _, event_kind, _, data in ready:
+            self.on_event(client, event_kind, data, stamp, now)
+
+    def packet_bye(self, client, packet, session, stamp, now):
+        print(f"{stamp} client {client.id} left", flush=True)
+        self.leave(client)
+        self.by_session.pop(session, None)
+
+    PACKET_HANDLERS = {HEARTBEAT: packet_heartbeat,
+                       STATE: packet_state,
+                       ACTORS: packet_actors,
+                       BULK_ACK: packet_bulk_ack,
+                       CHUNK: packet_chunk,
+                       EVENTS: packet_events,
+                       BYE: packet_bye}
+
 
     def begin_stop(self, why, now):
         if self.stop["until"] is not None:
