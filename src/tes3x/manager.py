@@ -26,7 +26,7 @@ import tes3x.agent as tes3x_agent
 import tes3x.nxdk as tes3x_nxdk
 import tes3x.release as tes3x_release
 import tes3x.targets as tes3x_targets
-from tes3x.paths import bundled, checkout, local_config, resource, xbox_root
+from tes3x.paths import CONFIG_HELP, bundled, checkout, local_config, resource, xbox_root
 from tes3x.pipeline import PipelineError, agent_setting, dashboard_xml
 from tes3x.xbe import Xbe
 
@@ -203,7 +203,7 @@ def main():
         p.add_argument("--xbe", help="the manager XBE (default: packaged, else built)")
         p.add_argument("--launcher", help="the launcher XBE (default: packaged, else built)")
         p.add_argument("--folder", default=FOLDER, help=f"folder under games_root ({FOLDER})")
-        p.add_argument("--config", help="local config (default: see docs/configuration.md)")
+        p.add_argument("--config", help=CONFIG_HELP)
         p.add_argument("--target", help="Xbox target (default: default_target)")
         p.add_argument("--no-agent", action="store_true",
                        help="leave the console's NetAgent alone instead of naming this PC")
@@ -211,7 +211,7 @@ def main():
                                     "is seeded with")
     p.add_argument("out", help="folder for disc/ and seed/")
     p.add_argument("--xbe", help="the manager XBE (default: packaged, else built)")
-    p.add_argument("--config", help="local config (default: see docs/configuration.md)")
+    p.add_argument("--config", help=CONFIG_HELP)
     p = sub.add_parser("update")
     p.add_argument("release", help="a signed release folder (tes3x release manager)")
     p.add_argument("--agent", action="store_true",

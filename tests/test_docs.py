@@ -28,6 +28,19 @@ class DocsTests(unittest.TestCase):
                  if re.search(r'tools[/\\]tes3x_|tes3x_\w+\.py', line)]
         self.assertEqual(found, [])
 
+    def test_links_from_the_code_reach_a_page_and_heading(self):
+        package = docs.ROOT / 'src' / 'tes3x'
+        links = {match.group(1) for path in package.glob('*.py')
+                 for match in re.finditer(r'docs_url\([\'"]([^\'"]+)[\'"]\)',
+                                          path.read_text(encoding='utf-8'))}
+        self.assertTrue(links)
+        for link in sorted(links):
+            page, _, anchor = link.partition('#')
+            text = (docs.DOCS / page).read_text(encoding='utf-8')
+            headings = {docs.slug(line.lstrip('#').strip()) for line in text.splitlines()
+                        if line.startswith('#')}
+            self.assertTrue(not anchor or anchor in headings, link)
+
     def test_slug_matches_rendered_anchors(self):
         self.assertEqual(docs.slug('2. Collect the winning files'), '2-collect-the-winning-files')
         self.assertEqual(docs.slug('`[paths]`'), 'paths')

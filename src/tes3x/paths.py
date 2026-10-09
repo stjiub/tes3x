@@ -107,6 +107,17 @@ def checkout(*parts):
     return CHECKOUT.joinpath(*parts)
 
 
+# The documentation, for messages and help: an installed TES3X has no docs/ folder.
+DOCS_URL = 'https://github.com/stjiub/tes3x/blob/main/docs/'
+
+
+def docs_url(page):
+    return DOCS_URL + page
+
+
+CONFIG_HELP = f"local config (default: see {docs_url('configuration.md#local-config')})"
+
+
 CONFIG_NAME = 'tes3x.local.toml'
 
 

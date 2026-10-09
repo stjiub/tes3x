@@ -44,7 +44,7 @@ from tes3x.xemu_setup import resolve  # noqa: E402
 from tes3x.readlog import read_file, read_log  # noqa: E402
 from tes3x.pipeline import CONSOLE_INI, set_ini_key, stage_retail_base  # noqa: E402
 from tes3x.deploy import ini_pairs  # noqa: E402
-from tes3x.paths import local_config  # noqa: E402
+from tes3x.paths import CONFIG_HELP, local_config  # noqa: E402
 
 TEST_INI = ["Xbox:Diagnostics=1", "Xbox:HangWatchdog=1", "Xbox:HangTimeoutSeconds=30",
             "General:Show FPS=1"]
@@ -480,7 +480,7 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("name", help="run folder under build/xemu/")
     ap.add_argument("profile", nargs="?", help="profile to build with tes3x pipeline")
-    ap.add_argument("--config", help="local config (default: see docs/configuration.md)")
+    ap.add_argument("--config", help=CONFIG_HELP)
     ap.add_argument("--target", help="xemu target (default: the first configured xemu target)")
     ap.add_argument("--deploy", help="use an existing deploy tree instead of building")
     ap.add_argument("--iso", help="reuse an existing ISO")

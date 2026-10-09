@@ -11,7 +11,7 @@ import getpass
 import os
 import tomllib
 
-from tes3x.paths import local_config
+from tes3x.paths import CONFIG_HELP, local_config
 import tes3x.targets as tes3x_targets
 
 DEFAULT_PORT = 21
@@ -28,7 +28,7 @@ def add_arguments(parser):
     parser.add_argument("--password", help=f"(default: {PASSWORD_ENV}, target password, "
                                            f"then {DEFAULT_PASSWORD})")
     parser.add_argument("--ask-password", action="store_true", help="type the password at a prompt")
-    parser.add_argument("--config", help="local config (default: see docs/configuration.md)")
+    parser.add_argument("--config", help=CONFIG_HELP)
 
 
 def local_settings(config=None):

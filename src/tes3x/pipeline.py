@@ -23,7 +23,8 @@ import tes3x.patches as registry
 from tes3x.payload import PayloadError, build_payload, find_tool
 from tes3x.net import write_ghost_plugin
 from tes3x.agent import key_fingerprint, load_or_create_key
-from tes3x.paths import DEFAULT_REMOTE_ROOT, checkout, local_config, require_paths, resource
+from tes3x.paths import (DEFAULT_REMOTE_ROOT, checkout, docs_url, local_config, require_paths,
+                         resource)
 from tes3x.plugins import rules_file
 import tes3x.manifest as tes3x_manifest
 import tes3x.savepool as tes3x_savepool
@@ -761,7 +762,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("profile")
     ap.add_argument("--config", help="local paths and Xbox settings "
-                                      "(default: see docs/configuration.md)")
+                                      "(default: see "
+                                      + docs_url("configuration.md#local-config") + ")")
     ap.add_argument("--target", help="machine target (default: default_target)")
     ap.add_argument("--vanilla", help="clean retail game root containing Data Files and both XBEs")
     ap.add_argument("--llvm", help="folder holding clang and lld-link, for engine fixes "

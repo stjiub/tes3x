@@ -20,7 +20,7 @@ import tarfile
 import tomllib
 import urllib.request
 
-from tes3x.paths import data_dir, local_config
+from tes3x.paths import CONFIG_HELP, data_dir, local_config
 
 MSYS2_DIRS = (Path("C:/msys64"),)
 # name: (url, SHA-256 of the archive, its top folder)
@@ -143,7 +143,7 @@ def main():
     ap.add_argument("out", help="build folder; bin/default.xbe is the result")
     ap.add_argument("-D", dest="defines", action="append", default=[], metavar="NAME=VALUE",
                     help="a C define (repeatable)")
-    ap.add_argument("--config", help="local config (default: see docs/configuration.md)")
+    ap.add_argument("--config", help=CONFIG_HELP)
     a = ap.parse_args()
     try:
         print(build(a.source, a.out, a.defines, a.config))

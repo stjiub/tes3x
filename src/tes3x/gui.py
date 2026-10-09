@@ -41,8 +41,8 @@ try:
     )
 except ImportError as exc:
     raise SystemExit(
-        "TES3X GUI dependencies are not installed; run "
-        "`python -m pip install -r requirements-gui.txt`"
+        "The TES3X GUI needs PySide6 and tomlkit: use a portable folder, or install TES3X with "
+        "its GUI (`python -m pip install -e .[gui]` in a checkout)"
     ) from exc
 
 from tes3x.build import DEFAULT_EXCLUDE, PLUGIN_EXT, Mod, plugin_masters, texture_dims
@@ -68,7 +68,7 @@ import tes3x.nexus as nexus
 import tes3x.saves as saves_tool
 import tes3x.savepool as tes3x_savepool
 import tes3x.targets as tes3x_targets
-from tes3x.paths import bundled, checkout, local_config, resource
+from tes3x.paths import bundled, checkout, docs_url, local_config, resource
 from tes3x.xemu_setup import resolve as resolve_xemu
 import tes3x
 
@@ -1100,8 +1100,9 @@ class IniPanel(QWidget):
         self.tree.setColumnWidth(1, 220)
         note = QLabel("Double-click a value to change it. Only changed values are saved in the "
                       "profile. Patch settings appear while their patch is on; "
-                      "docs/ini-keys.md explains them.")
+                      f'<a href="{docs_url("ini-keys.md")}">INI keys</a> explains them.')
         note.setWordWrap(True)
+        note.setOpenExternalLinks(True)
         layout = QVBoxLayout(self)
         layout.addLayout(bar)
         layout.addWidget(self.tree, 1)
