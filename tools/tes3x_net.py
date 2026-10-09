@@ -352,7 +352,7 @@ def ping(args):
 
 
 T3MP = struct.Struct("<4sBBHIIIII")  # magic, version, type, 0, session, seq, ack, time, echo
-T3MP_VERSION = 20
+T3MP_VERSION = 22
 MANAGER_VERSION = 1  # build discovery stays independent of gameplay state
 HELLO, WELCOME, HEARTBEAT, BYE, STATE, PEER, GONE, EVENTS, REFUSE, CLOCK, ACTORS = range(1, 12)
 BUILD = 12  # to a manager's HELLO: tes3x_netbuild.BUILD_BODY, then the server forgets it
@@ -439,7 +439,8 @@ OWNERS_PER_EVENT = (EVENT_DATA - 4) // OWNER_PAIR.size
 # client keeps its session but gives up its cells and actors to any other player loading them.
 EVENT_BUSY = 21
 BUSY_SAVING = 1
-EVENT_SAVE = 22  # to a client: save into its multiplayer slot and upload it
+EVENT_SAVE = 22  # request a state flush; byte 1 requests a diagnostic save upload
+EVENT_SNAPSHOT = 36  # token u32 + STATE_BODY; reply token u32 after durable storage
 EVENT_BOUNTY = 30  # the player's bounty, i32: the latest of each client is kept and replayed
 # From a client after each WELCOME: its launch token (new each title launch), then the name of the
 # save that launch loaded, or "". A console not running its character's latest checkpoint is sent
@@ -476,7 +477,7 @@ PLAYER_IDENTITY = 13
 # server keeps the latest and replays it after the items.
 PLAYER_WORN = 14
 PLAYER_EFFECTS = 16  # complete multipart active-effect snapshot
-PLAYER_EFFECT_BYTES = 388
+PLAYER_EFFECT_BYTES = 608
 PLAYER_EFFECTS_MAX = 64
 PLAYER_MODIFIERS = 15  # current attribute/skill values: count, then MODIFIER entries
 IDENTITY_STATS = struct.Struct("<B13i")
@@ -889,6 +890,8 @@ def save_world(path, world):
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path + ".tmp", "w", encoding="utf-8") as f:
         json.dump(world, f, indent=1, sort_keys=True)
+        f.flush()
+        os.fsync(f.fileno())
     os.replace(path + ".tmp", path)
 
 
@@ -1055,19 +1058,20 @@ def character_slug(name):
     return re.sub(r"[^A-Za-z0-9 _-]", "-", name or "").strip()[:24] or "character"
 
 
-def kept_characters(root):
-    """(folder name, latest save) of each character in a key's folder, newest first. Saves kept
-    in the key's folder itself, from before a key could hold several, move into one of their own."""
+def kept_characters(root, fixtures=False):
+    """Character folders with retained streams, newest first; optional save fixtures for tests."""
     if not root or not os.path.isdir(root):
         return []
-    loose = latest_character(root)
+    loose = latest_character(root) if fixtures else None
     if loose:
         folder = new_character_folder(root, save_player(loose))
         os.makedirs(folder)
         for f in os.listdir(root):
             if f.lower().endswith(".ess") or f == STREAM_NAME:
                 os.replace(os.path.join(root, f), os.path.join(folder, f))
-    found = [(f, latest_character(os.path.join(root, f))) for f in os.listdir(root)
+    found = [(f, (latest_character(os.path.join(root, f)) if fixtures else None) or
+              (os.path.join(root, f, STREAM_NAME) if os.path.isfile(
+                  os.path.join(root, f, STREAM_NAME)) else None)) for f in os.listdir(root)
              if os.path.isdir(os.path.join(root, f))]
     return sorted(((f, p) for f, p in found if p), key=lambda c: -os.path.getmtime(c[1]))
 
@@ -1232,6 +1236,11 @@ def describe_level(body):
             + ", ".join(f"{n} {v:.0f}" for n, v in zip(ATTRIBUTE_NAMES, attributes)))
 
 
+def effect_id_not_bound(active):
+    effect_id = struct.unpack_from('<h', active, 2)[0]
+    return not 120 <= effect_id <= 131 or effect_id == 126
+
+
 def unpack_player_effects(body):
     """Validate a complete, pointer-free active-effect snapshot."""
     body = bytes(body)
@@ -1248,6 +1257,19 @@ def unpack_player_effects(body):
         definitions = body[off + 120:off + 312]
         source_name = body[off + 312:off + 376]
         source_stats = body[off + 376:off + 388]
+        previous = []
+        for slot in range(5):
+            at = off + 388 + slot * 44
+            name, stack_flags, stack_condition, stack_charge = struct.unpack_from('<32sIII', body, at)
+            if b'\0' not in name or stack_flags & ~1:
+                raise ValueError('bad previous bound equipment')
+            name = wire_text(name.split(b'\0')[0])
+            if (name or stack_flags or stack_condition or stack_charge) and effect_id_not_bound(active):
+                raise ValueError('previous equipment on a non-bound effect')
+            if not name and (stack_flags or stack_condition or stack_charge):
+                raise ValueError('previous bound equipment has no item')
+            previous.append(dict(item=name, flags=stack_flags, condition=stack_condition,
+                                 charge=stack_charge))
         effect_id = struct.unpack_from('<h', active, 2)[0]
         source_key = (source_type, source)
         source_data = (definitions, source_name, source_stats)
@@ -1288,7 +1310,7 @@ def unpack_player_effects(body):
                             cumulative=cumulative, state=state, condition=condition,
                             charge=charge, definitions=definitions.hex(),
                             source_name=wire_text(source_name.split(b'\0')[0]),
-                            source_stats=source_stats.hex()))
+                            source_stats=source_stats.hex(), previous=previous))
     return effects
 
 
@@ -1310,6 +1332,16 @@ def pack_player_effects(effects):
         body += bytes.fromhex(e['definitions'])
         body += e['source_name'].encode('latin-1').ljust(64, b'\0')
         body += bytes.fromhex(e['source_stats'])
+        previous = e.get('previous', [])
+        if len(previous) > 5:
+            raise ValueError('too much previous bound equipment')
+        for slot in range(5):
+            entry = previous[slot] if slot < len(previous) else {}
+            name = entry.get('item', '').encode('latin-1')
+            if len(name) >= 32:
+                raise ValueError('previous bound item text too long')
+            body += struct.pack('<32sIII', name, entry.get('flags', 0),
+                                entry.get('condition', 0), entry.get('charge', 0))
     unpack_player_effects(body)
     size = EVENT_DATA - 5
     parts = [body[i:i + size] for i in range(0, len(body), size)] or [b'']
@@ -2131,6 +2163,10 @@ class Client:
         self.announce_due = False  # that waits for its character's name
         self.relaunching = False  # it was sent a character to load and is about to relaunch
         self.rebuild = None  # (checkpoint, when to ask for the save) under --rebuild
+        self.naming = False
+        self.snapshots = 0
+        self.snapshot_request = 0x80000000
+        self.snapshot_saved = None
         self.place_hold = None  # (replayed place, until when) while STATE still shows the old one
         self.listed = []  # the folders CHARS offered, in order
         self.actor_states = 0
@@ -2497,6 +2533,9 @@ def serve(args):
         world["next_spawn"] = max(world["next_spawn"], saved.get("next_spawn", 1))
         weather.update({int(k): v for k, v in saved.get("weather", {}).items()})
         statuses.update({int(k): tuple(v) for k, v in saved.get("statuses", {}).items()})
+        for spawn in spawns.values():
+            if spawn.get("summon"):
+                spawn["removed"] = True  # Active effects recreate summons for their target.
         if saved.get("clock") and args.hour is None:
             clock = Clock(*saved["clock"], now)
         print(f"world {world['path']}: {len(deaths)} deaths, {len(objects)} objects, "
@@ -2679,12 +2718,12 @@ def serve(args):
                 return player_name(other)
         root = (os.path.join(args.world, "characters", fingerprint(key))
                 if args.world else None)
-        kept = kept_characters(root)
+        kept = kept_characters(root, fixtures=args.adopt or args.rebuild is not None)
         if not kept:
             return ""
         try:
-            return save_player(kept[0][1]) or kept[0][0]
-        except (OSError, ValueError):
+            return PlayerStream(os.path.join(root, kept[0][0], STREAM_NAME)).identity["name"]
+        except (OSError, ValueError, TypeError, KeyError):
             return kept[0][0]
 
     def character_folder(client):
@@ -2752,8 +2791,12 @@ def serve(args):
                 flush(other, now)
 
     def player_ready(client, replay, stamp, now):
-        """Replay the kept player state over the checkpoint, or have the console send it all."""
+        """Replay retained state, or have the console publish its supported fields."""
         announce_join(client, now)
+        if replay:
+            for sid, spawn in list(spawns.items()):
+                if spawn.get("summon") and spawn["origin"] == client.id and not spawn["removed"]:
+                    remove_spawn(client.id, sid, stamp, now, to_origin=True)
         stream = player_stream(client)
         if stream is None:
             return
@@ -2789,27 +2832,15 @@ def serve(args):
         print(f"{stamp} client {client.id} makes a new character"
               + ("" if client.synced else ", after a New Game"), flush=True)
 
-    def send_checkpoint(client, path, loaded, stamp, now):
-        with open(path, "rb") as stream:
-            data = stream.read()
-        name = checkpoint_name(data)
-        client.bulk = Outgoing(name, data)
-        client.rel.queue(EVENT_OFFER, 0, client.bulk.offer())
-        client.rel.queue(EVENT_LOAD, 0, zstr(name))
-        client.relaunching = True
-        flush(client, now)
-        print(f"{stamp} client {client.id} loaded {loaded or 'no save'}: sending "
-              f"{os.path.basename(path)} as {name} ({len(data)} bytes) to load", flush=True)
-
     def send_character(client, folder, path, loaded, stamp, now):
-        """Under --load-state, the character's kept state as a file a New Game starts from; the
-        checkpoint when no identity is kept. The file stays in the folder, so a launch from it
-        is known after a restart."""
+        """The character seed for a New Game; a missing identity cannot load a character.
+        Keep its name in the folder to recognise the next launch after a restart."""
         if folder not in streams:
             streams[folder] = PlayerStream(os.path.join(folder, STREAM_NAME))
-        data = streams[folder].character_file() if args.load_state else None
+        data = streams[folder].character_file()
         if data is None:
-            send_checkpoint(client, path, loaded, stamp, now)
+            client.rel.queue(EVENT_TEXT, 0, b"This character has no retained identity.")
+            flush(client, now)
             return
         name = checkpoint_name(data, CHARACTER_FILE)
         for f in os.listdir(folder):
@@ -2839,7 +2870,7 @@ def serve(args):
             elif making:
                 offer_starts(client, stamp, now)
             return
-        kept = kept_characters(key_folder(client))
+        kept = kept_characters(key_folder(client), fixtures=args.adopt or args.rebuild is not None)
         for folder, path in kept:
             if loaded.lower().endswith(".t3c") and os.path.exists(
                     os.path.join(key_folder(client), folder, loaded.lower())):
@@ -2851,8 +2882,10 @@ def serve(args):
                       flush=True)
                 player_ready(client, True, stamp, now)
                 return
-            with open(path, "rb") as stream:
-                if loaded.lower() == checkpoint_name(stream.read()):
+            if args.rebuild is not None and path.lower().endswith(".ess"):
+                with open(path, "rb") as stream:
+                    matches = loaded.lower() == checkpoint_name(stream.read())
+                if matches:
                     client.synced, client.character = True, folder
                     creating.discard(fingerprint(client.key))
                     print(f"{stamp} client {client.id} runs {folder} ({os.path.basename(path)})",
@@ -2931,11 +2964,17 @@ def serve(args):
         elif what == PICK_CHARACTER and index < len(client.listed):
             creating.discard(fingerprint(client.key))
             folder = os.path.join(key_folder(client), client.listed[index])
-            path = latest_character(folder)
-            if path:
+            path = os.path.join(folder, STREAM_NAME)
+            if os.path.isfile(path):
                 send_character(client, folder, path, "the list", stamp, now)
         elif (what == PICK_START and index < len(starts) and client.synced
               and client.character is None):
+            folder = new_character_folder(key_folder(client), "character")
+            os.makedirs(folder)
+            client.character = os.path.basename(folder)
+            client.naming = True
+            player_stream(client).reset()
+            player_ready(client, False, stamp, now)
             name, lines = starts[index]
             for line in lines + new_character_kit() + [""]:
                 client.rel.queue(EVENT_RUN, 0, zstr(line))
@@ -2943,9 +2982,8 @@ def serve(args):
             print(f"{stamp} client {client.id} starts at {name}", flush=True)
 
     def received(client, stamp, now):
-        """A finished upload: a save is kept as the console's character, the first one of a new
-        character in a folder of its own."""
-        if not client.upload.name.lower().endswith(".ess"):
+        """Adopt or compare an uploaded save only in an explicit diagnostic session."""
+        if not client.upload.name.lower().endswith(".ess") or not (args.adopt or args.rebuild is not None):
             return
         if client.rebuild and client.rebuild[1] is None:
             compare_rebuild(client, stamp)
@@ -2995,9 +3033,36 @@ def serve(args):
         if kind == EVENT_PLAYER and data[:1] in (bytes([PLAYER_DEATH]), bytes([PLAYER_ALIVE])):
             on_player_death(client, data[0] == PLAYER_ALIVE, stamp, now)
             return
+        if kind == EVENT_SNAPSHOT and len(data) == 4 + STATE_BODY.size:
+            stream = player_stream(client) if client.synced else None
+            body = data[4:]
+            flags, x, y, z, heading, cell = STATE_BODY.unpack(body)
+            if (stream is None or not stream.identity or not flags & IN_WORLD or
+                    not placeable(x, y, z) or not finite(heading) or stream.arriving or
+                    stream.identity_parts or stream.worn_parts or stream.effects_parts):
+                return
+            stream.keep_place(body)
+            stream.save()
+            if world["path"]:
+                write_world(now)
+            client.snapshots += 1
+            client.snapshot_saved = struct.unpack_from("<I", data)[0]
+            client.rel.queue(EVENT_SNAPSHOT, 0, data[:4])
+            flush(client, now)
+            return
         if kind == EVENT_PLAYER:
             stream = player_stream(client) if client.synced else None
             change = stream.take(data) if stream else None
+            if stream and client.naming and stream.identity:
+                old = character_folder(client)
+                folder = new_character_folder(key_folder(client), stream.identity["name"])
+                stream.save()
+                os.rename(old, folder)
+                streams.pop(old)
+                stream.path = os.path.join(folder, STREAM_NAME)
+                streams[folder] = stream
+                client.character, client.naming = os.path.basename(folder), False
+                creating.discard(fingerprint(client.key))
             if change and detail["verbose"]:
                 print(f"{stamp} client {client.id} {change}", flush=True)
             return
@@ -3474,10 +3539,12 @@ def serve(args):
             leave(client)
         by_session.pop(client.session, None)
 
-    def ask_save(targets, now):
+    def ask_save(targets, now, diagnostic=False):
         for client in targets:
             if client.alive:
-                client.rel.queue(EVENT_SAVE, 0, b"")
+                client.snapshot_request = 0x80000000 | ((client.snapshot_request + 1) & 0x7fffffff)
+                client.rel.queue(EVENT_SAVE, 0, b"\x01" if diagnostic else
+                                 struct.pack("<I", client.snapshot_request))
                 flush(client, now)
         return ", ".join(f"client {c.id}" for c in targets if c.alive) or "nobody"
 
@@ -3798,8 +3865,9 @@ def serve(args):
             return
         stop["until"] = now + args.stop_wait
         notify("The server is shutting down.", now)
-        stop["waiting"] = {c.id: c.kept for c in clients.values() if c.alive and c.synced}
         asked = ask_save([c for c in clients.values() if c.alive], now)
+        stop["waiting"] = {c.id: c.snapshot_request for c in clients.values()
+                           if c.alive and c.synced}
         print(f"{time.strftime('%H:%M:%S')} stopping ({why}): asked to save: {asked}; waiting "
               f"up to {args.stop_wait:g} s for "
               + (", ".join(f"client {i}" for i in stop["waiting"]) or "nobody"), flush=True)
@@ -3812,10 +3880,10 @@ def serve(args):
             begin_stop("duration over", now)
         for ident, kept in list(stop["waiting"].items()):
             client = next(c for c in clients.values() if c.id == ident)
-            if client.kept > kept or not client.alive:
+            if client.snapshot_saved == kept or not client.alive:
                 del stop["waiting"][ident]
                 print(f"{time.strftime('%H:%M:%S')} client {ident} "
-                      + ("saved" if client.kept > kept else "left without saving"), flush=True)
+                      + ("saved" if client.snapshot_saved == kept else "left without saving"), flush=True)
         if stop["waiting"] and now < stop["until"]:
             return False
         for ident in stop["waiting"]:
@@ -4108,12 +4176,12 @@ def serve(args):
             if client.alive and client.rebuild and client.rebuild[1] and now >= client.rebuild[1]:
                 client.rebuild = (client.rebuild[0], None)
                 print(f"{time.strftime('%H:%M:%S')} asked client {client.id} for its rebuilt "
-                      f"character: {ask_save([client], now)}", flush=True)
+                      f"character: {ask_save([client], now, diagnostic=True)}", flush=True)
         if now >= save_next:
             save_next = now + args.save_every
             if any(c.alive for c in clients.values()):
                 print(f"{time.strftime('%H:%M:%S')} asked to save: "
-                      f"{ask_save(list(clients.values()), now)}", flush=True)
+                      f"{ask_save(list(clients.values()), now, diagnostic=args.adopt)}", flush=True)
         if clock and now >= clock_next:
             clock_next = now + CLOCK_INTERVAL
             body = clock.body(now)
@@ -4485,8 +4553,8 @@ def main(argv=None):
     p.add_argument("--log", choices=LOG_LEVELS, default="normal",
                    help="verbose also prints each player and actor state change")
     p.add_argument("--save-every", type=float, metavar="SECONDS",
-                   help="ask every joined console this often to save its character into its "
-                        "multiplayer slot and upload it")
+                   help="flush every joined character this often; with --adopt, upload "
+                        "diagnostic saves instead")
     p.add_argument("--starts", metavar="FILE",
                    help="where new characters may begin ([[start]] tables; default "
                         "examples/starts.toml)")
@@ -4507,9 +4575,7 @@ def main(argv=None):
                         "10), is asked for a save; the server diffs it against the checkpoint "
                         "(tes3x_ess.py --diff) into uploads/KEY/NAME.diff.txt and keeps neither")
     p.add_argument("--load-state", action="store_true",
-                   help="a console loads a character by a New Game built from the server's kept "
-                        "state (identity, items, worn, place) before its first frame, then the "
-                        "replay, instead of from the character's save")
+                   help="compatibility option; character loading always uses retained state")
     p.add_argument("--adopt", action="store_true",
                    help="a key with no character keeps whatever game its console runs instead "
                         "of making a new one (tests that start from a save)")

@@ -182,7 +182,7 @@ typedef long(__stdcall *fn_KeQueryBasePriorityThread)(void *);
  * session and seq in the clear (T3MP_OUTER, the AEAD's associated data) and seals the real type,
  * ack, times and body under the session's key, seq being the nonce. The receiver rebuilds the
  * T3MP_HEADER layout after opening it. */
-#define T3MP_VERSION 20u
+#define T3MP_VERSION 22u
 #define T3MP_HEADER 28u
 #define T3MP_OUTER 16u
 #define T3MP_INNER 16u
@@ -6258,11 +6258,11 @@ static void actor_local(u8 *ref, u32 summon, u32 player)
 /* The creature is the actor the call marks modified, as every run-time creation does. */
 static void __cdecl summon_hook(u8 *instance, void *data, int index, const char *id)
 {
-    const u8 *caster = plausible(instance) ? *(const u8 *const *)(instance + INSTANCE_CASTER) : 0;
+    const u8 *target = plausible(data) ? *(const u8 *const *)data : 0;
     u32 own, i, before = objects_dirty_count;
 
     ((fn_summon)TES3X_NET_SUMMON)(instance, data, index, id);
-    if (ses.state != SESSION_JOINED || !plausible(caster) || ref_owner(caster, &own))
+    if (ses.state != SESSION_JOINED || !plausible(target) || ref_owner(target, &own))
         return;
     for (i = before; i < objects_dirty_count; i++)
         actor_local(objects_dirty[i], 1, 1);
@@ -9022,7 +9022,24 @@ static void slot_upload(void)
 
 #define EVENT_SAVE 22u /* the server asks for a save */
 #define CHARGEN_STATE 0xBCu /* WorldController global, -1 once character generation is done */
-static u32 save_requested, saves_requested;
+static u32 save_requested, saves_requested, diagnostic_save;
+#define EVENT_SNAPSHOT 36u
+static u32 snapshot_token, snapshot_stage, snapshot_wait, snapshot_confirmed, snapshot_deferred;
+static u32 snapshot_welcome, snapshot_since, snapshot_request, snapshot_local;
+static void snapshot_begin(void)
+{
+    if (snapshot_stage || snapshot_wait)
+        return;
+    snapshot_local = (snapshot_local + 1) & 0x7fffffffu;
+    if (!snapshot_local)
+        snapshot_local++;
+    snapshot_token = snapshot_request ? snapshot_request : snapshot_local;
+    snapshot_request = 0;
+    snapshot_stage = 1;
+    snapshot_welcome = ses.welcomes;
+    snapshot_since = now_us();
+}
+
 unsigned char __attribute__((thiscall)) tes3x_net_save(void *game, const char *file,
                                                       const char *display);
 
@@ -9033,13 +9050,18 @@ static void save_request_frame(void)
 {
     const u8 *world = *(const u8 **)TES3X_NET_WORLD, *global;
 
-    if (!save_requested || player_dead || !plausible(world) || world[0xD2] ||
+    if (!save_requested || !plausible(world) || (diagnostic_save && (player_dead || world[0xD2])) ||
         !plausible(global = *(const u8 *const *)(world + CHARGEN_STATE)) ||
-        *(const u32 *)(global + 0x34) != 0xBF800000u || !slot_name())
+        *(const u32 *)(global + 0x34) != 0xBF800000u)
+        return;
+    if (!diagnostic_save && (snapshot_stage || snapshot_wait))
         return;
     save_requested = 0;
     saves_requested++;
-    tes3x_net_save(**(void ***)TES3X_NET_DATA_HANDLER, save_slot, save_slot);
+    if (diagnostic_save)
+        tes3x_net_save(**(void ***)TES3X_NET_DATA_HANDLER, save_slot, save_slot);
+    else
+        snapshot_begin();
 }
 
 /* Joining from the server's copy of the character. After each WELCOME the console reports this
@@ -9139,6 +9161,8 @@ void tes3x_multi_entry(void)
     game_loaded[i] = 0;
 }
 
+static int is_character_file(const char *name);
+
 static void load_event(const struct event *e)
 {
     u32 i;
@@ -9146,7 +9170,7 @@ static void load_event(const struct event *e)
     for (i = 0; i < e->length && i < BULK_NAME && e->data[i]; i++)
         load_name[i] = (char)e->data[i];
     load_name[i] = 0;
-    load_wanted = i != 0;
+    load_wanted = i != 0 && is_character_file(load_name);
     log_text("net.load_wanted", load_name);
 }
 
@@ -9172,14 +9196,12 @@ static int is_character_file(const char *name)
     return n > 4;
 }
 
-/* The title relaunch Load and New Game make: Load of U:\TES3X\name, New Game from that
- * character file, or New Game without a name. 0 while the world cannot give the pad port. */
+/* Relaunch a New Game, optionally seeded by the retained character file. */
 static int relaunch(const char *name)
 {
     static u8 data[LAUNCH_BYTES];
     const u8 *world = *(const u8 **)TES3X_NET_WORLD, *pads;
-    static const char dir[] = "U:\\TES3X\\";
-    u32 i, n = 0, r;
+    u32 i, r;
 
     if (!plausible(world) || !plausible(pads = *(const u8 *const *)(world + 0x4C)))
         return 0;
@@ -9187,16 +9209,11 @@ static int relaunch(const char *name)
         data[i] = 0;
     ((u32 *)data)[0] = BXWM_MAGIC;
     ((u32 *)data)[1] = *(const u32 *)(pads + 0x804); /* the pad port, as the Load menu passes */
-    ((u32 *)data)[3] = name && !is_character_file(name) ? BXWM_LOAD : BXWM_NEW_GAME;
+    ((u32 *)data)[3] = BXWM_NEW_GAME;
     if (name && is_character_file(name)) {
         *(u32 *)(data + CHAR_AT) = CHAR_MAGIC;
         for (i = 0; name[i] && i < BULK_NAME; i++)
             data[CHAR_AT + 4 + i] = (u8)name[i];
-    } else if (name) {
-        for (; dir[n]; n++)
-            data[BXWM_PATH + n] = (u8)dir[n];
-        for (i = 0; name[i]; i++)
-            data[BXWM_PATH + n + i] = (u8)name[i];
     }
     if (join_server[0]) {
         *(u32 *)(data + JOIN_AT) = JOIN_MAGIC;
@@ -9210,7 +9227,7 @@ static int relaunch(const char *name)
     return 1;
 }
 
-/* Once the file is here, the Load menu's relaunch with its path. */
+/* Once the character seed is here, relaunch into its New Game. */
 static void load_frame(void)
 {
     u32 i;
@@ -9248,9 +9265,7 @@ static void game_frame(void)
     }
 }
 
-/* Leaving while joined: Exit's Yes saves into the slot, uploads it and waits for the server to
- * have the whole file before the engine's own quit runs, so the server keeps where the player
- * stopped. If the server does not confirm, the player chooses to leave without it or stay. */
+/* Exit waits for a durable state flush. An unconfirmed leave offers Leave or Stay. */
 #define LEAVE_SAVE 1u
 #define LEAVE_UPLOAD 2u
 #define LEAVE_ASK 3u
@@ -9258,7 +9273,7 @@ static void game_frame(void)
 typedef unsigned char(__cdecl *fn_quit)(void);
 static u32 leave_state, leave_since, leave_upload, leave_told, quit_hooked;
 static u32 leaves_saved, leaves_forced, leaves_stayed;
-static u32 leave_quits = 1; /* 0 for the pause menu's Save to Server: the same save, no quit */
+static u32 leave_quits = 1; /* Save to Server uses the flush without quitting. */
 static u32 leave_idle;
 #define SAVE_IDLE_FRAMES 10
 static int world_idle(void);
@@ -9323,6 +9338,7 @@ static void quit_hook_install(void)
 static void leave_ask(const char *why)
 {
     log_text("net.leave_unconfirmed", why);
+    snapshot_stage = snapshot_wait = 0;
     if (!leave_quits) {
         server_saves_failed++;
         leave_state = 0;
@@ -9341,7 +9357,7 @@ static void leave_frame(void)
     int button;
 
     if (leave_state == LEAVE_SAVE) {
-        /* Save to Server saves once the pause menu has closed; the save frees it */
+        /* Give the closing pause menu time to release its player view. */
         if (!leave_quits && (!world_idle() || ++leave_idle < SAVE_IDLE_FRAMES)) {
             if (!world_idle())
                 leave_idle = 0;
@@ -9354,35 +9370,27 @@ static void leave_frame(void)
             notice("Saving to the server...");
             return;
         }
-        if (up.state >= UP_WANT && up.state <= UP_SENDING && now_us() - leave_since <
-                                                                 LEAVE_TIMEOUT_US)
-            return; /* an earlier save is still going up */
+
         if (ses.state != SESSION_JOINED || !plausible(world) ||
             !plausible(global = *(const u8 *const *)(world + CHARGEN_STATE)) ||
             *(const u32 *)(global + 0x34) != 0xBF800000u || !slot_name()) {
-            leave_ask("no save to make");
+            leave_ask("character creation is incomplete");
             return;
         }
-        leave_upload = saves_uploaded + 1;
-        save_pending = 0;
-        if (!tes3x_net_save(**(void ***)TES3X_NET_DATA_HANDLER, save_slot, save_slot) ||
-            !save_pending) {
-            leave_ask("the save failed");
-            return;
-        }
+        snapshot_begin();
+        leave_upload = snapshot_token;
         leave_state = LEAVE_UPLOAD;
     } else if (leave_state == LEAVE_UPLOAD) {
-        if (saves_uploaded >= leave_upload && up.state == UP_DONE && !leave_quits) {
+        if (snapshot_confirmed == leave_upload && !leave_quits) {
             server_saves++;
             leave_state = 0;
-            log_text("net.server_saved", save_slot);
+            tes3x_log("net.server_saved", snapshot_confirmed);
             notice("Saved to the server.");
-        } else if (saves_uploaded >= leave_upload && up.state == UP_DONE) {
+        } else if (snapshot_confirmed == leave_upload) {
             leaves_saved++;
             leave_state = 0;
             quit();
-        } else if (saves_uploaded >= leave_upload && up.state == UP_FAILED) {
-            leave_ask("the upload failed");
+
         } else if (now_us() - leave_since >= LEAVE_TIMEOUT_US) {
             leave_ask("no answer");
         }
@@ -9398,7 +9406,7 @@ static void leave_frame(void)
     }
 }
 
-/* Game thread: an upload already under way holds the save's until it ends. */
+/* Diagnostic fixture uploads run separately from normal state flushes. */
 static void chargen_frame(void);
 static void arrival_frame(void);
 static void refusal_frame(void);
@@ -9437,8 +9445,13 @@ unsigned char __attribute__((thiscall)) tes3x_net_save(void *game, const char *f
     int sent, slotted;
     unsigned char ok;
 
+    if (ses.state == SESSION_JOINED && !diagnostic_save) {
+        snapshot_begin();
+        return 1;
+    }
+    diagnostic_save = 0;
     if (player_dead && ses.state == SESSION_JOINED)
-        return 0; /* a corpse is no checkpoint */
+        return 0;
     sent = net.up && event_queue(EVENT_BUSY, &busy, 1);
     slotted = sent && slot_name();
     saves_seen++;
@@ -9497,6 +9510,7 @@ static void save_stat(void)
     tes3x_log_hex3("net.saves", saves_seen, saves_busy, save_hooked);
     tes3x_log_hex3("net.saves_slot", saves_slotted, saves_uploaded, save_pending);
     tes3x_log_hex3("net.saves_asked", saves_requested, save_requested, 0);
+    tes3x_log_hex3("net.snapshot", snapshot_stage, snapshot_wait, snapshot_confirmed);
     tes3x_log_hex3("net.game", game_token, load_wanted, loads_started);
     tes3x_log_hex3("net.leaves", leaves_saved, leaves_forced, leaves_stayed);
     tes3x_log_hex3("net.leave_state", leave_state, quit_hooked, leave_quits);
@@ -9941,8 +9955,8 @@ static void chargen_stat(void)
     tes3x_log_hex3("net.chargen_made", cg_made, cg_bad, chars_names.count);
 }
 
-/* The player's own state, streamed so that a crash loses only what the server has not seen since
- * the checkpoint. Once a second the console compares its inventory (per item object), level,
+/* Stream changed character fields once a second; a crash loses only the polling interval.
+ * The console compares its inventory (per item object), level,
  * attributes, skills, journal and known spells with what it last sent and sends the changes as PLAYER events;
  * the server keeps the latest of each per character. Current health, magicka and fatigue go out
  * only on a change of a point, or for fatigue of FATIGUE_STEP, so regeneration stays quiet. When a launch runs the character's
@@ -10108,8 +10122,10 @@ static int carried_send(const u8 *object, const char *id)
         lengths[count] += size;
     }
     count++;
-    if (events_room() < count + 2)
+    if (events_room() < count + 2) {
+        snapshot_deferred++;
         return 0;
+    }
     for (i = 0; i < count; i++) {
         parts[i][0] = PLAYER_ITEMS;
         parts[i][1] = (u8)i;
@@ -10456,8 +10472,12 @@ static void player_spells_delta(u32 mode, const u8 *const *now, u32 count)
         id = player_spell_id(spell);
         for (size = 0; id && id[size] && size < SPAWN_ID; size++)
             ;
-        if (!id || !size || size == SPAWN_ID || length + size + 1 > EVENT_DATA)
+        if (!id || !size || size == SPAWN_ID)
             continue;
+        if (length + size + 1 > EVENT_DATA) {
+            snapshot_deferred++;
+            continue;
+        }
         copy(data + length, (const u8 *)id, size + 1);
         length += size + 1;
         pending[n++] = spell;
@@ -10643,8 +10663,10 @@ static void player_identity_scan(const u8 *mobile, const u8 *npc, int send)
         return;
     parts = (n + IDENTITY_PER_EVENT - 1) / IDENTITY_PER_EVENT;
     if (send) {
-        if (events_room() < parts + 2)
+        if (events_room() < parts + 2) {
+            snapshot_deferred++;
             return;
+        }
         for (i = 0; i < parts; i++) {
             size = n - i * IDENTITY_PER_EVENT;
             size = size < IDENTITY_PER_EVENT ? size : IDENTITY_PER_EVENT;
@@ -10985,8 +11007,10 @@ static void worn_scan(const u8 *instance, int send)
         return;
     parts = n ? (n + IDENTITY_PER_EVENT - 1) / IDENTITY_PER_EVENT : 1;
     if (send) {
-        if (events_room() < parts + 2)
+        if (events_room() < parts + 2) {
+            snapshot_deferred++;
             return;
+        }
         for (i = 0; i < parts; i++) {
             size = n - i * IDENTITY_PER_EVENT;
             size = size < IDENTITY_PER_EVENT ? size : IDENTITY_PER_EVENT;
@@ -11022,6 +11046,10 @@ static int worn_find(const u8 *instance, void *object, const char *id, u32 flags
     return 0;
 }
 
+static int player_bound_item(const char *id);
+static u8 *player_worn_enchantment(const char *id);
+static u32 worn_pending;
+
 /* Wear what the body lists and nothing else. */
 static void worn_apply(u8 *ref, const u8 *body, u32 length)
 {
@@ -11030,6 +11058,7 @@ static void worn_apply(u8 *ref, const u8 *body, u32 length)
     const char *id;
     u32 off = 0, n = 0, m, i, k, flags, condition = 0, charge = 0, changed = 0;
     void *data;
+    u8 *enchantment;
 
     if (!plausible(instance) || !plausible(mobile) ||
         !plausible(npc = *(u8 **)(instance + NPC_BASE)) ||
@@ -11052,6 +11081,8 @@ static void worn_apply(u8 *ref, const u8 *body, u32 length)
         if (off + k == length || !k || k >= SPAWN_ID)
             break;
         off += k + 1;
+        if (player_bound_item(id))
+            continue; /* Its effect callback recreates and equips it. */
         data = 0;
         if (!plausible(object = resolve_object(id)) ||
             !worn_find(instance, object, id, flags, condition, charge, &data, want, n)) {
@@ -11075,7 +11106,12 @@ static void worn_apply(u8 *ref, const u8 *body, u32 length)
                 log_text("net.player_beast_bare", object_id(want[i][0]));
                 continue;
             }
+            enchantment = player_worn_enchantment(object_id(want[i][0]));
+            if (enchantment)
+                enchantment[0x2C] = 2; /* Its retained instance supplies the constant effects. */
             ((fn_equip_item)TES3X_NET_EQUIP_ITEM)(instance, want[i][0], want[i][1], 0, mobile);
+            if (enchantment)
+                enchantment[0x2C] = 3;
             ((fn_mobile_call)TES3X_NET_MOBILE_HANDS)(mobile);
             worn_equipped++, changed++;
         }
@@ -11105,12 +11141,12 @@ static void worn_event(u8 *ref, const struct event *e)
     worn_in_part = part + 1;
     if (worn_in_part == parts) {
         worn_in_part = 0;
-        worn_apply(ref, worn_in, worn_in_length);
+        worn_pending = 1;
     }
 }
 
 /* Complete snapshots keep removals and timers together; native pointers never cross the wire. */
-#define PLAYER_EFFECT_BYTES 388u
+#define PLAYER_EFFECT_BYTES 608u
 #define PLAYER_EFFECTS_MAX 64u
 #define PLAYER_EFFECT_BODY (PLAYER_EFFECT_BYTES * PLAYER_EFFECTS_MAX)
 #define MOBILE_ACTIVE_EFFECTS 0x1C4
@@ -11260,6 +11296,30 @@ static void player_effect_scan(u8 *mobile, int send)
         copy(p + 80, active + 4, 12);
         p[81] = p[91] = 0;
         copy(p + 92, value + 4, 20);
+        if (*(short *)(active + 6) >= 120 && *(short *)(active + 6) <= 131 &&
+            *(short *)(active + 6) != 126) {
+            for (i = 0; i < 5; i++) {
+                const u8 *stack = *(const u8 **)(value + 0x24 + i * 4);
+                const u8 *data;
+                u8 *kept = p + 388 + i * 44;
+                if (!stack)
+                    continue;
+                if (!plausible(stack) || !player_effect_id(kept, *(const u8 **)stack)) {
+                    player_effects_bad++;
+                    return;
+                }
+                data = *(const u8 **)(stack + 4);
+                if (data) {
+                    if (!plausible(data)) {
+                        player_effects_bad++;
+                        return;
+                    }
+                    put32le(kept + 32, ENTRY_DATA);
+                    copy(kept + 36, data + ITEM_CONDITION, 4);
+                    copy(kept + 40, data + ITEM_CHARGE, 4);
+                }
+            }
+        }
         if (plausible(condition = *(const u8 **)(instance + 0xC0))) {
             p[7] |= 2;
             copy(p + 112, condition + ITEM_CONDITION, 4);
@@ -11387,7 +11447,114 @@ static u8 *player_effect_source(const u8 *p)
     return source;
 }
 
-/* Finalise after newly learned abilities have appeared, before absolute stats are reapplied. */
+/* Bound callbacks create these GMST-selected items and their constant enchantments. */
+static u32 player_bound_items(const char **ids)
+{
+    u32 off, effect, first, last, i, n = 0;
+    const char *id;
+    for (off = 0; off < player_effect_in_size; off += PLAYER_EFFECT_BYTES) {
+        effect = player_effect_in[off + 82] | player_effect_in[off + 83] << 8;
+        if (effect >= 120 && effect <= 125)
+            first = last = 0x5CD + effect - 120;
+        else if (effect >= 127 && effect <= 130)
+            first = last = 0x5D3 + effect - 127;
+        else if (effect == 131)
+            first = 0x5D7, last = 0x5D8;
+        else
+            continue;
+        for (; first <= last; first++) {
+            id = ((fn_gmst_text)TES3X_NET_GMST_TEXT)(*(void **)TES3X_NET_WORLD, first);
+            if (!mapped(id) || !script_safe((const u8 *)id, SPAWN_ID))
+                continue;
+            for (i = 0; i < n && !same_name(ids[i], id); i++)
+                ;
+            if (i == n && n < 12)
+                ids[n++] = id;
+        }
+    }
+    return n;
+}
+
+static int player_bound_item(const char *id)
+{
+    const char *ids[12];
+    u32 i, n = player_bound_items(ids);
+    for (i = 0; i < n; i++)
+        if (same_name(ids[i], id))
+            return 1;
+    return 0;
+}
+
+static u8 *player_worn_enchantment(const char *id)
+{
+    u32 off;
+    u8 *source;
+    if (!id)
+        return 0;
+    for (off = 0; off < player_effect_in_size; off += PLAYER_EFFECT_BYTES)
+        if (player_effect_in[off + 4] == 2 &&
+            script_safe(player_effect_in + off + 16, 32) &&
+            script_safe(player_effect_in + off + 48, 32) &&
+            same_name((const char *)player_effect_in + off + 48, id) &&
+            plausible(source = resolve_object((const char *)player_effect_in + off + 16)) &&
+            *(u32 *)(source + OBJECT_TYPE) == 0x48434E45u && source[0x2C] == 3)
+            return source;
+    return 0;
+}
+
+/* Native retirement owns and frees these stack holders. */
+static int player_effect_previous(const u8 *p, const u8 *ref, struct effect_value *value)
+{
+    void *items[5], *data[5];
+    u8 *stacks[5];
+    u32 i, j;
+    int bound = *(short *)(p + 82) >= 120 && *(short *)(p + 82) <= 131 &&
+                *(short *)(p + 82) != 126;
+    for (i = 0; i < 5; i++) {
+        const u8 *kept = p + 388 + i * 44;
+        items[i] = data[i] = 0;
+        stacks[i] = 0;
+        if (!script_safe(kept, 32) || get32le(kept + 32) & ~ENTRY_DATA ||
+            (!bound && (kept[0] || get32le(kept + 32) || get32le(kept + 36) ||
+                        get32le(kept + 40))))
+            return 0;
+        if (!kept[0]) {
+            if (get32le(kept + 32) || get32le(kept + 36) || get32le(kept + 40))
+                return 0;
+            continue;
+        }
+        items[i] = resolve_object((const char *)kept);
+        if (!items[i] || !worn_find(*(const u8 **)(ref + REF_BASE), items[i],
+                                    (const char *)kept, get32le(kept + 32),
+                                    get32le(kept + 36), get32le(kept + 40),
+                                    &data[i], 0, 0))
+            return 0;
+    }
+    if (!value || !bound)
+        return 1;
+    for (i = 0; i < 5; i++)
+        if (items[i]) {
+            stacks[i] = ((fn_engine_allocate)TES3X_NET_ENGINE_ALLOCATE)(
+                (void *)TES3X_NET_HEAP, 8, "tes3xmulti.c", 0);
+            if (!plausible(stacks[i])) {
+                for (j = 0; j < i; j++)
+                    if (stacks[j])
+                        ((fn_heap_free)TES3X_NET_HEAP_FREE)((void *)TES3X_NET_HEAP, stacks[j]);
+                return 0;
+            }
+            *(void **)stacks[i] = items[i];
+            *(void **)(stacks[i] + 4) = data[i];
+        }
+    for (i = 0; i < 5; i++) {
+        if (value->words[9 + i])
+            ((fn_heap_free)TES3X_NET_HEAP_FREE)((void *)TES3X_NET_HEAP,
+                                               (void *)value->words[9 + i]);
+        value->words[9 + i] = (u32)stacks[i];
+    }
+    return 1;
+}
+
+/* Finalise native effects before absolute statistics are reapplied. */
 static void player_effect_apply(u8 *mobile)
 {
     u8 *ref, *controller, *instance, *source;
@@ -11400,6 +11567,8 @@ static void player_effect_apply(u8 *mobile)
     u32 count, off, index, serial, i, group, low, high;
     int effect_id;
     const u8 *p;
+    const char *bound_ids[12];
+    u32 bound_count, preparing = player_effect_pending == 1;
 
     if (!player_effect_pending)
         return;
@@ -11419,7 +11588,8 @@ static void player_effect_apply(u8 *mobile)
             !float_within(p + 12, 1, STAT_LIMIT) || !float_within(p + 92, 1, STAT_LIMIT) ||
             !float_within(p + 100, 2, STAT_LIMIT) || !script_safe(p + 16, 32) ||
             !script_safe(p + 312, 64) || !script_safe(p + 48, 32) ||
-            !player_effect_definition(p) || *(const float *)(p + 12) < 0.0f ||
+            !player_effect_definition(p) || !player_effect_previous(p, ref, 0) ||
+            *(const float *)(p + 12) < 0.0f ||
             *(const float *)(p + 100) < 0.0f || (int)get32le(p + 96) < 0 ||
             !plausible(source = combo.source = player_effect_source(p)) ||
             *(u32 *)(source + OBJECT_TYPE) != (p[4] == 1 ? TYPE_SPELL :
@@ -11435,7 +11605,7 @@ static void player_effect_apply(u8 *mobile)
     head = *(u8 **)(mobile + MOBILE_ACTIVE_EFFECTS + 4);
     if (!plausible(head))
         return;
-    for (count = 0; *(u8 **)head != head && count < 512; count++) {
+    for (count = 0; preparing && *(u8 **)head != head && count < 512; count++) {
         node = *(u8 **)head;
         serial = get32le(node + 8);
         instance = ((fn_magic_instance)TES3X_NET_MAGIC_INSTANCE)(controller, serial);
@@ -11443,9 +11613,24 @@ static void player_effect_apply(u8 *mobile)
             break;
         ((fn_retire_effects)TES3X_NET_RETIRE_EFFECTS)(instance, ref);
         ((fn_magic_process)TES3X_NET_MAGIC_PROCESS)(instance, 0.0f);
+        if (*(u32 *)(instance + INSTANCE_STATE) == 7)
+            ((void(__attribute__((thiscall)) *)(void *, u32))TES3X_NET_RETIRE_MAGIC_SERIAL)(
+                controller, serial); /* Clear the item-data mapping before reactivation. */
     }
+    bound_count = player_bound_items(bound_ids);
+    for (i = 0; preparing && i < bound_count; i++)
+        actor_item(ref, "RemoveItem", bound_ids[i], " 1");
     for (off = 0; off < player_effect_in_size; off += PLAYER_EFFECT_BYTES) {
         p = player_effect_in + off;
+        if (p[4] == 2) {
+            for (i = 0; i < bound_count && !same_name(bound_ids[i], (const char *)p + 48); i++)
+                ;
+            if (i < bound_count)
+                continue; /* Re-equipping the recreated bound item adds its enchantment. */
+        }
+        effect_id = (short)(p[82] | p[83] << 8);
+        if ((effect_id >= 120 && effect_id <= 131 && effect_id != 126) != preparing)
+            continue;
         serial = get32le(p);
         index = p[5];
         source = player_effect_source(p);
@@ -11522,6 +11707,9 @@ static void player_effect_apply(u8 *mobile)
         *(u32 *)(definition + 0x10) = low;
         *(u32 *)(definition + 0x14) = high;
         instance[0x18] = p[7] & 1;
+        copy(instance + 0xAC, p + 12, 4); /* Corprus Beginning resets this counter. */
+        if (!player_effect_previous(p, ref, &restored))
+            player_effects_bad++;
         copy((u8 *)restored.words + 4, p + 92, 20);
         ((fn_effect_insert)TES3X_NET_EFFECT_INSERT)(instance + 0x1C + index * 0x10,
                                                      object_id(ref), restored);
@@ -11529,6 +11717,7 @@ static void player_effect_apply(u8 *mobile)
         if (value)
             player_effects_applied++;
     }
+    player_effect_pending = preparing ? 2 : 0;
     ((void(__cdecl *)(void))TES3X_NET_EFFECT_ICONS)();
     tes3x_log_hex3("net.player_effects_restored", player_effect_in_size / PLAYER_EFFECT_BYTES,
                    player_effects_applied, player_effects_bad);
@@ -11563,9 +11752,11 @@ static int replay_stat_frame(u8 *mobile)
     replay_stat_session();
     if (!replay_stat_wait)
         return 0;
-    if (--replay_stat_wait)
+    if (--replay_stat_wait) {
+        if (replay_stat_wait <= 2)
+            player_effect_apply(mobile);
         return 1;
-    player_effect_apply(mobile);
+    }
     for (i = 0; i < MODIFIERS; i++) {
         stat = mobile + (i < ATTRIBUTES ? MOBILE_ATTRIBUTES + 0xC * i
                                          : MOBILE_SKILLS + 0x10 * (i - ATTRIBUTES));
@@ -11577,6 +11768,64 @@ static int replay_stat_frame(u8 *mobile)
     return 0;
 }
 
+/* Each scanner retries under queue pressure; the barrier follows every reliable part. */
+static void snapshot_frame(const u8 *ref, u8 *mobile, u8 *npc, u8 *object)
+{
+    u32 full = rel.full, deferred = snapshot_deferred, bad;
+    u8 data[4 + STATE_BYTES];
+
+    switch (snapshot_stage) {
+    case 1: player_identity_scan(mobile, npc, 1); break;
+    case 2: carried_scan(object, 1); break;
+    case 3: worn_scan(object, 1); break;
+    case 4: level_scan(mobile, npc, 1); break;
+    case 5: skills_scan(mobile, 1); break;
+    case 6: modifiers_scan(mobile, 1); break;
+    case 7: vitals_scan(mobile, 1); break;
+    case 8: journal_scan(1); break;
+    case 9: player_spells_scan(npc, 1); break;
+    case 10:
+        player_effect_send();
+        if (player_effect_parts)
+            return;
+        if (events_room() < 2 + (SKILLS + SKILLS_PER_EVENT - 1) / SKILLS_PER_EVENT +
+                            (MODIFIERS + MODIFIERS_PER_EVENT - 1) / MODIFIERS_PER_EVENT)
+            return;
+        bad = player_effects_bad;
+        player_effect_known = 0;
+        player_effect_scan(mobile, 1);
+        if (bad != player_effects_bad)
+            return; /* An invalid effect snapshot cannot be confirmed as a save. */
+        /* Freeze stat pairs with the effects that own their modifiers. */
+        level_known = skills_known = vitals_known = 0;
+        modifiers_known[0] = modifiers_known[1] = 0;
+        level_scan(mobile, npc, 1);
+        skills_scan(mobile, 1);
+        modifiers_scan(mobile, 1);
+        vitals_scan(mobile, 1);
+        snapshot_stage++;
+        return;
+    case 11:
+        player_effect_send();
+        if (player_effect_parts)
+            return;
+        break;
+    case 12: bounty_sent = -1; bounty_frame(); break;
+    case 13:
+        put32le(data, snapshot_token);
+        player_state(ref, data + 4);
+        if (!event_queue(EVENT_SNAPSHOT, data, 4 + PLACE_BYTES))
+            return;
+        snapshot_wait = snapshot_token;
+        snapshot_stage = 0;
+        tes3x_log("net.snapshot_sent", snapshot_token);
+        return;
+    default: return;
+    }
+    if (full == rel.full && deferred == snapshot_deferred)
+        snapshot_stage++;
+}
+
 /* Game thread, in the world: after READY, the changes once a second. */
 static void player_frame(const u8 *ref)
 {
@@ -11586,8 +11835,25 @@ static void player_frame(const u8 *ref)
     if (ses.state != SESSION_JOINED || player_welcome != ses.welcomes || !player_mode ||
         !plausible(mobile) || !npc || !plausible(object))
         return;
+    if (snapshot_welcome != ses.welcomes) {
+        snapshot_stage = snapshot_wait = 0;
+        snapshot_welcome = ses.welcomes;
+        if (leave_state == LEAVE_UPLOAD) {
+            snapshot_begin();
+            leave_upload = snapshot_token;
+        }
+    }
     if (replay_stat_frame(mobile))
         return;
+    if ((snapshot_stage || snapshot_wait) && now - snapshot_since >= LEAVE_TIMEOUT_US) {
+        tes3x_log("net.snapshot_timeout", snapshot_token);
+        snapshot_stage = snapshot_wait = 0;
+    }
+    if (player_mode == 3 && (snapshot_stage || snapshot_wait)) {
+        if (snapshot_stage)
+            snapshot_frame(ref, mobile, npc, object);
+        return;
+    }
     player_effect_send();
     if (player_mode != 3) {
         /* After a replay what the console has is what the server keeps; otherwise send it all. */
@@ -12174,10 +12440,15 @@ static void player_event(const struct event *e)
         return;
     }
     if (e->data[0] == PLAYER_READY) {
+        player_effect_session();
         replay_stat_session();
         if (replay_stat_known[0][0] || replay_stat_known[0][1] ||
             replay_stat_known[1][0] || replay_stat_known[1][1] || player_effect_pending)
-            replay_stat_wait = 2;
+            replay_stat_wait = 4;
+        if (worn_pending && ref) {
+            worn_apply(ref, worn_in, worn_in_length);
+            worn_pending = 0;
+        }
         player_mode = e->length >= 2 && e->data[1] ? 2 : 1;
         player_welcome = ses.welcomes;
         return;
@@ -12384,7 +12655,15 @@ static void event_handle(const struct event *e)
         bulk_offer(e);
     } else if (e->kind == EVENT_BUSY) {
         busy_event(e);
+    } else if (e->kind == EVENT_SNAPSHOT && e->length == 4) {
+        if (snapshot_wait && get32le(e->data) == snapshot_wait) {
+            snapshot_confirmed = snapshot_wait;
+            snapshot_wait = 0;
+            tes3x_log("net.snapshot_saved", snapshot_confirmed);
+        }
     } else if (e->kind == EVENT_SAVE) {
+        diagnostic_save = e->length == 1 && e->data[0] == 1;
+        snapshot_request = e->length == 4 ? get32le(e->data) : 0;
         save_requested = 1;
     } else if (e->kind == EVENT_LOAD) {
         load_event(e);
@@ -13896,6 +14175,8 @@ int tes3x_multi_command(const char *text)
         weather_forced = word(rest, "auto") ? 0 : 1 + (value != 0);
     } else if ((rest = word(text, "send")) && *(rest = skip(rest))) {
         up_command(rest);
+    } else if ((rest = word(text, "save")) && !*skip(rest)) {
+        save_to_server();
     } else if ((rest = word(text, "leave")) && !*skip(rest)) {
         ((fn_quit)*(const u32 *)TES3X_NET_QUIT_SITE)(); /* what Exit's Yes calls */
     } else if ((rest = word(text, "notice")) && *(rest = skip(rest))) {

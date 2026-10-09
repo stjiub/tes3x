@@ -166,6 +166,13 @@
       ]
     },
     {
+      "name": "TES3::Enchantment",
+      "note": "Xbox castType is the byte at +0x2C, verified by Actor::equipItem 0x000E84EF comparing it with 3 before constant activation. Effects begin at +0x34 (getSourceEffects).",
+      "fields": [
+        {"offset": "0x2C", "name": "castType", "type": "unsigned char", "confidence": "verified", "provenance": "Actor::equipItem constant enchantment activation at 0x000E84EF"}
+      ]
+    },
+    {
       "name": "TES3::MagicSourceInstance",
       "size": "0x128",
       "pc_valid_until": "0x128",
@@ -173,7 +180,7 @@
     },
     {
       "name": "TES3::MagicEffectInstance",
-      "note": "Xbox matches all 0x38 bytes of the PC layout: target +0, resistance +4, rolled magnitude +8, elapsed +0xC, cumulative magnitude +0x10, state +0x14, visual +0x18, created data +0x1C/+0x20 and last-used stacks +0x24..+0x34. The last seven pointers are rebuilt by callbacks, never serialized."
+      "note": "Xbox matches all 0x38 bytes of the PC layout: target +0, resistance +4, rolled magnitude +8, elapsed +0xC, cumulative magnitude +0x10, state +0x14, visual +0x18, created data +0x1C/+0x20 and last-used stacks +0x24..+0x34. The last seven pointers are rebuilt by callbacks, never serialized as addresses. Bound effects use +0x24/+0x28 for displaced EquipmentStacks; retain their logical item/data identities separately to restore pre-bound equipment. Replay resolves them against inventory and allocates native 8-byte stacks for the retirement callback."
     },
     {
       "name": "TES3::ActiveMagicEffect",

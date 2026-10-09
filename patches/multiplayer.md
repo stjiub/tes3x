@@ -32,10 +32,16 @@ and equipment. The server retains identity and equipment for late joiners. Appea
 engine's complete model and equipment rebuild; held animations preserve each layer's phase,
 including full-body crouch and swimming when the source player uses first-person view.
 
-The server retains the character's attribute and skill bases, current values and skill progress.
-Replay restores abilities before the statistic snapshots, then finalises those snapshots after
-the engine applies the abilities. This preserves fortification, drain and fractional damage
-without adding an ability's modifier twice.
+The server retains the character's attribute and skill bases, current values and skill progress,
+and the active effects with their sources, magnitudes and elapsed time. Replay rebuilds native
+effect instances before finalising the statistic snapshots. Effects resume with their retained
+time remaining; time spent offline does not count. This preserves fortification, drain and
+fractional damage without adding an ability's modifier twice.
+
+Characters load from structured server state through a New Game. Save to Server flushes the
+supported character state, and the server confirms it after writing the character and world.
+Leave waits for that confirmation before quitting; if the server does not confirm it within
+30 seconds, the player can leave anyway or stay.
 
 The server also names one client per loaded cell as its authority: that console runs the AI of
 the actors there and sends their positions ten times a second, and the other consoles stop those

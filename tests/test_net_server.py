@@ -37,12 +37,15 @@ class ServerTests(unittest.TestCase):
             [sys.executable, str(NET), 'serve', '--bind', '127.0.0.1', '--port', str(self.port),
              '--duration', '120', '--report', '0', *extra],
             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
-        self.addCleanup(self.stop)
+        self.addCleanup(self.stop, self.server)
         time.sleep(1.0)
 
-    def stop(self):
-        self.server.kill()
-        _, err = self.server.communicate()
+    def stop(self, server=None):
+        server = server or self.server
+        if server.stderr.closed:
+            return
+        server.kill()
+        _, err = server.communicate()
         self.assertNotIn('Traceback', err)
 
     def client(self, seed, version=None):
@@ -50,6 +53,11 @@ class ServerTests(unittest.TestCase):
         sock.bind(('127.0.0.1', 0))
         self.addCleanup(sock.close)
         return tes3x_net.FuzzClient(sock, ('127.0.0.1', self.port), random.Random(seed), version)
+
+    def test_event_numbers_are_unique(self):
+        events = {name: value for name, value in vars(tes3x_net).items()
+                  if name.startswith('EVENT_') and name != 'EVENT_DATA' and isinstance(value, int)}
+        self.assertEqual(len(events), len(set(events.values())), events)
 
     def test_incompatible_game_gets_an_authenticated_update_reason(self):
         self.start()
@@ -397,6 +405,33 @@ class ServerTests(unittest.TestCase):
             self.fail('no ack said done')
         time.sleep(0.2)
 
+    @staticmethod
+    def identity(name='Nerevar'):
+        return dict(name=name, race='Dark Elf', head='b_n_dark elf_m_head_01',
+                    hair='b_n_dark elf_m_hair_01', birthsign='', female=False,
+                    **{'class': 'Warrior', 'class_name': 'Warrior'},
+                    class_attributes=[0, 5], specialization=0, class_skills=list(range(10)))
+
+    def seed_identity(self, world, client, seq):
+        net = tes3x_net
+        parts = net.pack_player_identity(self.identity())
+        client.send(net.EVENTS, net.pack_events(0, [
+            (seq + i, net.EVENT_PLAYER, 0, part) for i, part in enumerate(parts)]))
+        path = self.character(world) / net.STREAM_NAME
+        end = time.time() + 4
+        while time.time() < end:
+            if path.exists() and net.PlayerStream(str(path)).identity:
+                break
+            time.sleep(0.1)
+        return seq + len(parts)
+
+    def character_load(self, world, client):
+        folder = self.character(world)
+        data = tes3x_net.PlayerStream(str(folder / tes3x_net.STREAM_NAME)).character_file()
+        name = tes3x_net.checkpoint_name(data, tes3x_net.CHARACTER_FILE)
+        (folder / name).write_bytes(data)
+        return name.encode()
+
     def test_a_save_is_kept_as_a_character(self):
         world = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, world)
@@ -414,7 +449,7 @@ class ServerTests(unittest.TestCase):
         self.assertEqual((folder / 'mp-hero.3.ess').read_bytes(), versions[1])
         self.assertEqual(list((world / 'uploads').rglob('*.ess')), [])
 
-    def test_a_new_launch_loads_the_kept_character(self):
+    def test_a_character_without_identity_has_no_save_fallback(self):
         world = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, world)
         self.start('--world', str(world), '--adopt')
@@ -423,33 +458,27 @@ class ServerTests(unittest.TestCase):
         self.game(first, 1, 7, b'')
         kept = self.save(b'Nerevar', 0)
         self.upload(first, 2, 1, b'mp-hero.ess', kept)
-        name = tes3x_net.CHECKPOINT_NAME.format(int.from_bytes(
-            hashlib.blake2b(kept, digest_size=32).digest()[:4], 'big')).encode()
+        name = b"unused.ess"
 
         stale = self.client(1)  # the same key after a relaunch into an older save
         stale.session ^= 2
         stale.join()
         self.game(stale, 1, 8, b'old.ess')
-        loads = []
+        loads, notices = [], []
         end = time.time() + 2
         while not loads and time.time() < end:
             body = stale.receive(0.5, tes3x_net.EVENTS)
             if body is not None:
-                loads = [data for _, kind, _, data in tes3x_net.unpack_events(body)[1]
-                         if kind == tes3x_net.EVENT_LOAD]
-        self.assertEqual(loads, [name + b'\0'])
+                entries = tes3x_net.unpack_events(body)[1]
+                loads += [data for _, kind, _, data in entries if kind == tes3x_net.EVENT_LOAD]
+                notices += [data for _, kind, _, data in entries if kind == tes3x_net.EVENT_TEXT]
+        self.assertEqual(loads, [])
+        self.assertIn(b'This character has no retained identity.', notices)
         self.upload(stale, 2, 2, b'mp-hero.ess', self.save(b'Nerevar', 1))
         folder = self.character(world)
         self.assertEqual((folder / 'mp-hero.ess').read_bytes(), kept)
         self.assertEqual(len(list((world / 'uploads').rglob('mp-hero.ess'))), 1)
 
-        loaded = self.client(1)  # relaunched into the checkpoint it was sent
-        loaded.session ^= 4
-        loaded.join()
-        self.game(loaded, 1, 9, name)
-        newer = self.save(b'Nerevar', 2)
-        self.upload(loaded, 2, 3, b'mp-hero.ess', newer)
-        self.assertEqual((folder / 'mp-hero.ess').read_bytes(), newer)
 
     def events(self, client, until, timeout=3.0):
         """Events the server sends, acked, in order, up to the first for which until is true."""
@@ -488,9 +517,10 @@ class ServerTests(unittest.TestCase):
         self.upload(first, 2, 1, b'mp-hero.ess', self.save(b'Nerevar', 0))
         # the first checkpoint makes the character, and the console sends its state from scratch
         self.assertEqual(self.events(first, ready)[-1][1], bytes([net.PLAYER_READY, 0]))
+        seq = self.seed_identity(world, first, 3)
         level = net.LEVEL.pack(9, 3, *range(11), 80.0, 60.0, 200.0, *[40.0] * 8)
         swords = [[1, net.ENTRY_DATA, 300 + i, 0] for i in range(12)]  # three parts
-        seq = player(first, 3, *net.pack_items('Gold_001', [[100, 0, 0, 0]]),
+        seq = player(first, seq, *net.pack_items('Gold_001', [[100, 0, 0, 0]]),
                *net.pack_items('iron longsword', swords),
                bytes([net.PLAYER_LEVEL]) + level,
                bytes([net.PLAYER_SKILLS, 1]) + net.SKILL.pack(5, 42.0, 0.5),
@@ -511,14 +541,14 @@ class ServerTests(unittest.TestCase):
                *net.pack_journal([('A1_1_FindSpymaster', 20)]))
         time.sleep(0.3)
         kept = (self.character(world) / 'mp-hero.ess').read_bytes()
-        name = net.CHECKPOINT_NAME.format(int.from_bytes(
-            hashlib.blake2b(kept, digest_size=32).digest()[:4], 'big')).encode()
+        name = self.character_load(world, first)
 
         stale = self.client(1)  # a relaunch into another save gets no replay, only LOAD
         stale.session ^= 2
         stale.join()
         self.game(stale, 1, 8, b'old.ess')
         sent = self.events(stale, lambda kind, _: kind == net.EVENT_LOAD)
+        name = next(d[:-1] for k, d in sent if k == net.EVENT_LOAD)
         self.assertFalse([d for k, d in sent if k == net.EVENT_PLAYER])
         player(stale, 2, *net.pack_items('Gold_001', [[1, 0, 0, 0]]))  # not its character's
 
@@ -543,6 +573,9 @@ class ServerTests(unittest.TestCase):
 
         self.game(loaded, 2, 9, name)  # a rejoin of the same launch: the console sends it all
         self.assertEqual(self.events(loaded, ready)[-1][1], bytes([net.PLAYER_READY, 0]))
+        loaded.send(net.EVENTS, net.pack_events(loaded.delivered, [
+            (3, net.EVENT_SNAPSHOT, 0, struct.pack('<I', 18) + place)]))
+        self.events(loaded, lambda k, d: k == net.EVENT_SNAPSHOT)
         stream = self.character(world) / net.STREAM_NAME
         end = time.time() + 4
         while not stream.exists() and time.time() < end:
@@ -623,13 +656,14 @@ class ServerTests(unittest.TestCase):
         second.join()
         self.game(first, 1, 7, b'')
         self.upload(first, 2, 1, b'mp-hero.ess', self.save(b'Nerevar', 0))
+        seq = self.seed_identity(world, first, 3)
         kind_wanted = [net.PLAYER_READY]
         self.events(first, player)
         first.send(net.EVENTS, net.pack_events(0, [
-            (3, net.EVENT_PLAYER, 0, net.pack_items('Gold_001', [[200, 0, 0, 0]])[0]),
-            (4, net.EVENT_PLAYER, 0, bytes([net.PLAYER_SPELLS, net.SPELLS_ADD, 0, 1])
+            (seq, net.EVENT_PLAYER, 0, net.pack_items('Gold_001', [[200, 0, 0, 0]])[0]),
+            (seq + 1, net.EVENT_PLAYER, 0, bytes([net.PLAYER_SPELLS, net.SPELLS_ADD, 0, 1])
              + b'fire bite\0'),
-            (5, net.EVENT_PLAYER, 0, bytes([net.PLAYER_DEATH]))]))
+            (seq + 2, net.EVENT_PLAYER, 0, bytes([net.PLAYER_DEATH]))]))
         kind_wanted = [net.PLAYER_RESPAWN]
         respawn = [d for k, d in self.events(first, player) if player(k, d)][0]
         self.assertEqual(net.RESPAWN.unpack(respawn[1:]), (3000, 0, 50))
@@ -644,8 +678,7 @@ class ServerTests(unittest.TestCase):
         self.assertIn((net.EVENT_PLAYER, bytes([net.PLAYER_DEATH])), replay)
 
         kept = (self.character(world) / 'mp-hero.ess').read_bytes()
-        name = net.CHECKPOINT_NAME.format(int.from_bytes(
-            hashlib.blake2b(kept, digest_size=32).digest()[:4], 'big')).encode()
+        name = self.character_load(world, first)
         again = self.client(1)  # the power went before the respawn
         again.session ^= 2
         again.join()
@@ -662,77 +695,60 @@ class ServerTests(unittest.TestCase):
         stream = self.character(world) / net.STREAM_NAME
         end = time.time() + 5
         while time.time() < end and (not stream.exists() or
-                                     net.PlayerStream(str(stream)).dead):
+                                     net.PlayerStream(str(stream)).dead or
+                                     net.PlayerStream(str(stream)).spells != ['fire bite']):
             time.sleep(0.2)
         self.assertFalse(net.PlayerStream(str(stream)).dead)
         self.assertEqual(net.PlayerStream(str(stream)).spells, ['fire bite'])
 
-    def test_a_new_character_is_made_listed_and_chosen(self):
+    def test_stream_only_character_creation_snapshot_and_restart(self):
         world = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, world)
         self.start('--world', str(world))
         net = tes3x_net
-
-        def kinds(*wanted):
-            return lambda kind, _: kind in wanted
-
-        def names(events, kind):
-            parts = [d for k, d in events if k == kind]
-            return [n.decode() for d in parts for n in d[2:].split(b'\0')[:-1]]
-
-        def pick(client, seq, what, index):
-            client.send(net.EVENTS, net.pack_events(client.delivered, [
-                (seq, net.EVENT_PICK, 0, bytes([what, index]))]))
-
-        starts = [name for name, _ in net.load_starts(net.STARTS)]
-        loaded = self.client(1)  # a key with no character, in someone else's save
-        loaded.join()
-        self.game(loaded, 1, 7, b'old.ess')
-        newchar = self.events(loaded, lambda k, d: k == net.EVENT_NEWCHAR and d[0] + 1 == d[1])
-        self.assertEqual(names(newchar, net.EVENT_NEWCHAR), starts)  # it relaunches to New Game
-        self.upload(loaded, 2, 1, b'mp-hero.ess', self.save(b'Nerevar', 0))
-        self.assertFalse((world / 'characters').exists())
-
-        new = self.client(1)
-        new.session ^= 2
-        new.join()
-        self.game(new, 1, 8, b'', net.GAME_NEW)
-        self.events(new, lambda k, d: k == net.EVENT_NEWCHAR and d[0] + 1 == d[1])
-        pick(new, 2, net.PICK_START, 1)
-        run = [d for k, d in self.events(new, lambda k, d: k == net.EVENT_RUN and d == b'\0')
-               if k == net.EVENT_RUN]
-        self.assertEqual(run[0], b'Player->PositionCell 505 -387 -752 205 '
-                                 b'"Balmora, Guild of Mages"\0')
-        self.upload(new, 3, 2, b'mp-hero.ess', self.save(b'Nerevar', 1))
-        self.events(new, lambda k, d: k == net.EVENT_PLAYER and d == bytes([net.PLAYER_READY, 0]))
-        self.assertTrue((self.character(world) / 'mp-hero.ess').exists())
-
-        again = self.client(1)  # in another save: the list, and a second character
-        again.session ^= 4
+        client = self.client(1)
+        client.join()
+        self.game(client, 1, 7, b'', net.GAME_NEW)
+        self.events(client, lambda k, d: k == net.EVENT_NEWCHAR and d[0] + 1 == d[1])
+        client.send(net.EVENTS, net.pack_events(client.delivered, [
+            (2, net.EVENT_PICK, 0, bytes([net.PICK_START, 1]))]))
+        self.events(client, lambda k, d: k == net.EVENT_RUN and d == b'\0')
+        seq = self.seed_identity(world, client, 3)
+        place = net.STATE_BODY.pack(net.IN_WORLD | net.INTERIOR,
+                                    100.0, 200.0, 30.0, 1.5, b"Arrille's Tradehouse")
+        items = net.pack_items('Gold_001', [[123, 0, 0, 0]])
+        client.send(net.EVENTS, net.pack_events(client.delivered, [
+            (seq, net.EVENT_PLAYER, 0, items[0]),
+            (seq + 1, net.EVENT_SNAPSHOT, 0, struct.pack('<I', 17) + place)]))
+        ack = self.events(client, lambda k, d: k == net.EVENT_SNAPSHOT)
+        self.assertIn((net.EVENT_SNAPSHOT, struct.pack('<I', 17)), ack)
+        folder = self.character(world)
+        self.assertEqual(list(folder.glob('*.ess')), [])
+        saved = net.PlayerStream(str(folder / net.STREAM_NAME))
+        self.assertEqual(saved.items, {'Gold_001': [[123, 0, 0, 0]]})
+        self.assertEqual(saved.place, place)
+        # Kill immediately after the acknowledgement: storage must already be complete.
+        self.server.kill()
+        self.server.communicate()
+        self.start('--world', str(world))
+        again = self.client(1)
         again.join()
-        self.game(again, 1, 9, b'old.ess')
-        self.assertEqual(names(self.events(again, kinds(net.EVENT_CHARS)), net.EVENT_CHARS),
-                         ['Nerevar'])
-        pick(again, 2, net.PICK_CHARACTER, net.PICK_NEW)
-        self.events(again, kinds(net.EVENT_NEWCHAR))
-        second = self.client(1)
-        second.session ^= 8
-        second.join()
-        self.game(second, 1, 10, b'', net.GAME_NEW)
-        self.events(second, kinds(net.EVENT_NEWCHAR))
-        self.upload(second, 2, 3, b'mp-hero.ess', self.save(b'Nerevar', 2))
-        self.assertTrue((self.character(world, 'Nerevar-2') / 'mp-hero.ess').exists())
-
+        self.game(again, 1, 8, b'old.ess')
+        names = self.events(again, lambda k, d: k == net.EVENT_CHARS)
+        self.assertIn((net.EVENT_CHARS, b'\0\1Nerevar\0'), names)
+        again.send(net.EVENTS, net.pack_events(again.delivered, [
+            (2, net.EVENT_PICK, 0, bytes([net.PICK_CHARACTER, 0]))]))
+        loads = self.events(again, lambda k, d: k == net.EVENT_LOAD)
+        load = next(d for k, d in loads if k == net.EVENT_LOAD)
+        self.assertTrue(load.endswith(b'.t3c\0'))
         third = self.client(1)
-        third.session ^= 16
+        third.session ^= 4
         third.join()
-        self.game(third, 1, 11, b'old.ess')
-        listed = names(self.events(third, kinds(net.EVENT_CHARS)), net.EVENT_CHARS)
-        self.assertEqual(listed, ['Nerevar-2', 'Nerevar'])
-        pick(third, 2, net.PICK_CHARACTER, 1)
-        loads = [d for k, d in self.events(third, kinds(net.EVENT_LOAD)) if k == net.EVENT_LOAD]
-        kept = (self.character(world) / 'mp-hero.ess').read_bytes()
-        self.assertEqual(loads, [net.checkpoint_name(kept).encode() + b'\0'])
+        self.game(third, 1, 9, load[:-1], net.GAME_NEW)
+        replay = self.events(third, lambda k, d: k == net.EVENT_PLAYER and
+                             d == bytes([net.PLAYER_READY, 0]))
+        self.assertIn((net.EVENT_PLAYER, bytes([net.PLAYER_PLACE]) + place), replay)
+        self.assertIn((net.EVENT_PLAYER, items[0]), replay)
 
     def test_characters_kept_before_the_list_move_into_a_folder(self):
         root = Path(tempfile.mkdtemp())
@@ -740,7 +756,7 @@ class ServerTests(unittest.TestCase):
         (root / 'mp-hero.ess').write_bytes(self.save(b'Nerevar', 0))
         (root / 'mp-hero.1.ess').write_bytes(self.save(b'Nerevar', 1))
         (root / tes3x_net.STREAM_NAME).write_text('{}')
-        kept = tes3x_net.kept_characters(str(root))
+        kept = tes3x_net.kept_characters(str(root), fixtures=True)
         self.assertEqual([(f, os.path.basename(p)) for f, p in kept], [('Nerevar', 'mp-hero.ess')])
         self.assertEqual(sorted(p.name for p in (root / 'Nerevar').iterdir()),
                          ['mp-hero.1.ess', 'mp-hero.ess', tes3x_net.STREAM_NAME])
@@ -815,14 +831,30 @@ class ServerTests(unittest.TestCase):
 
     def test_active_effect_snapshot_restart_and_removal(self):
         net = tes3x_net
-        entry = dict(serial=17, source_type=1, index=0, caster_kind=1, flags=0, caster=0,
+        entry = dict(serial=17, source_type=1, index=0, caster_kind=1, flags=3, caster=0,
                      corprus=0.0, source='timed fortify', item='',
                      active=struct.pack('<BBhBBHHbB', 0, 0, 79, 0, 0, 60, 11, 0, 0).hex(),
                      resisted=25.0, magnitude=11, elapsed=12.5, cumulative=8.25,
-                     state=5, condition=0, charge=0,
+                     state=5, condition=0x42c80000, charge=0x42480000,
                      definitions=(struct.pack('<Hbbiiiii', 79, -1, 0, 0, 0, 60, 11, 11)
                                   + struct.pack('<h', -1).ljust(24, b'\0') * 7).hex(),
-                     source_name='Timed fortify', source_stats=(b'\0' * 12).hex())
+                     source_name='Timed fortify', source_stats=(b'\0' * 12).hex(),
+                     previous=[dict(item='', flags=0, condition=0, charge=0) for _ in range(5)])
+        bound = dict(entry, source='bound dagger',
+                     active=struct.pack('<BBhBBHHbB', 0, 0, 120, 0, 0, 60, 1, -1, 0).hex(),
+                     definitions=(struct.pack('<Hbbiiiii', 120, -1, -1, 0, 0, 60, 1, 1)
+                                  + struct.pack('<h', -1).ljust(24, b'\0') * 7).hex(),
+                     previous=[dict(item='iron longsword', flags=1, condition=0x42c80000,
+                                    charge=0)] + entry['previous'][1:])
+        bound_body = b''.join(p[5:] for p in net.pack_player_effects([bound]))
+        self.assertEqual(net.unpack_player_effects(bound_body), [bound])
+        for offset, value in ((388, b'x' * 32), (420, struct.pack('<I', 2))):
+            damaged = bytearray(bound_body)
+            damaged[offset:offset + len(value)] = value
+            with self.subTest(previous_offset=offset), self.assertRaises(ValueError):
+                net.unpack_player_effects(damaged)
+        with self.assertRaises(ValueError):
+            net.pack_player_effects([dict(entry, previous=bound['previous'])])
         one = b''.join(p[5:] for p in net.pack_player_effects([entry]))
         for offset, bad_value in ((100, struct.pack('<f', -1)),
                                   (124, struct.pack('<i', 3)),
@@ -917,6 +949,7 @@ class ServerTests(unittest.TestCase):
         fourth.join()
 
     def test_stopping_waits_for_each_console_to_save(self):
+        net = tes3x_net
         world = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, world)
         admin = free_port()
@@ -927,12 +960,17 @@ class ServerTests(unittest.TestCase):
         self.game(client, 1, 7, b'')
         self.upload(client, 2, 1, b'mp-hero.ess', self.save(b'Nerevar', 0))
         self.assertIn('stopping', self.admin(admin, 'stop'))
-        self.events(client, lambda kind, _: kind == tes3x_net.EVENT_SAVE)
+        requested = self.events(client, lambda kind, _: kind == tes3x_net.EVENT_SAVE)
+        token = next(d for k, d in requested if k == net.EVENT_SAVE)
+        self.assertEqual(len(token), 4)
         self.assertIsNone(self.server.poll())
-        last = self.save(b'Nerevar', 1)
-        self.upload(client, 3, 2, b'mp-hero.ess', last)
+        seq = self.seed_identity(world, client, 3)
+        place = net.STATE_BODY.pack(net.IN_WORLD, 1.0, 2.0, 3.0, 0.0, b'')
+        client.send(net.EVENTS, net.pack_events(client.delivered, [
+            (seq, net.EVENT_SNAPSHOT, 0, token + place)]))
         self.assertEqual(self.server.wait(5), 0)
-        self.assertEqual((self.character(world) / 'mp-hero.ess').read_bytes(), last)
+        self.assertEqual(net.PlayerStream(str(self.character(world) / net.STREAM_NAME)).place,
+                         place)
 
     def test_stopping_gives_up_on_a_silent_console(self):
         world = Path(tempfile.mkdtemp())

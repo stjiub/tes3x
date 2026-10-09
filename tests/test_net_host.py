@@ -209,6 +209,18 @@ class HostReceiveTests(unittest.TestCase):
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertIn('ok effect parts', run.stdout)
 
+    def test_snapshot_waits_for_all_effect_parts_under_queue_pressure(self):
+        run = subprocess.run([str(self.exe), '--snapshot-parts'], capture_output=True, text=True,
+                             timeout=10)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertIn('ok snapshot parts', run.stdout)
+
+    def test_snapshot_ack_requires_the_matching_token(self):
+        run = subprocess.run([str(self.exe), '--snapshot-ack'], capture_output=True, text=True,
+                             timeout=10)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertIn('ok snapshot ack', run.stdout)
+
     def test_stat_replay_waits_for_abilities_and_keeps_fractional_values(self):
         run = subprocess.run([str(self.exe), '--stats-replay'], capture_output=True, text=True,
                              timeout=10)

@@ -10,7 +10,8 @@ run Morrowind and needs no game files. What the session shares is described in t
 - A PC with Python 3.12 to run the server, reachable over UDP port 26500.
 - One build of the game for every player, made from the same profile. Every client must load
   the same plugins in the same order, or the server refuses it.
-- A saved game for each player. A console joins only once a game is loaded.
+- A server world folder (`--world DIR`) to retain characters between sessions. Join creates or
+  loads a character from server state through a New Game.
 
 ## Build
 
@@ -81,16 +82,16 @@ The first client to join sets the session's load order and its game clock. Usefu
 | `--password-file FILE` | ask new consoles for the password on this file's first line (below) |
 | `--max-players N` | refuse consoles beyond this many (default 16) |
 | `--duration SECONDS` | stop after a while |
-| `--stop-wait SECONDS` | how long stopping waits for consoles' saves (default 60) |
+| `--stop-wait SECONDS` | how long stopping waits for consoles' state flushes (default 60) |
 | `--respawn temple\|shrine\|nearest` | where a player who dies comes back (default `nearest`) |
 | `--idle-timeout SECONDS` | drop a client silent this long (default 20; consoles stop waiting at 15) |
 | `--respawn-delay SECONDS` | how long a dead player lies before coming back (default 5) |
 | `--death-gold PERCENT` | the share of carried gold a death costs (default 10) |
 | `--build DIR` | hand this build to the console manager (below) |
 
-Stop the server with Ctrl+C, or the admin command `stop`. The current stop path still asks every
-joined console for a legacy checkpoint and waits up to `--stop-wait`; server-owned loading does
-not consume that checkpoint. A second Ctrl+C stops at once. Without `--world` the session lives only as long as the server
+Stop the server with Ctrl+C, or the admin command `stop`. It asks each joined console to flush
+its supported character state, writes that state and the world, and waits up to `--stop-wait` for
+the requested snapshots. A second Ctrl+C stops at once. Without `--world` the session lives only as long as the server
 does: stop it and the deaths, objects and equipment it recorded are gone. With `--world DIR` it
 keeps the game clock, the deaths, the doors, locks and items taken, the items dropped or placed,
 containers' contents, actors' AI settings and disposition, and the weather in one file per
@@ -107,9 +108,10 @@ health, magicka and fatigue as they change, and who the character is: name, race
 birthsign and class, including
 a class made in character creation. The server keeps the latest supported state in `stream.json`.
 It also keeps where the player last was, so a crash or power cut loses at most about one polling
-interval of supported state. The current Exit path also uploads a legacy checkpoint before it
-quits; if the server does not confirm it within 30 seconds, the player chooses to leave anyway or
-stay. That checkpoint is diagnostic and is not the character loaded on the next join.
+interval of supported state. Save to Server flushes every supported character field and the
+current place through the reliable queue. The server acknowledges the snapshot after writing
+the character and world. Leave waits for that acknowledgement before quitting; after 30 seconds
+without confirmation, the player chooses to leave anyway or stay.
 
 A player who dies while joined is not offered the last save. The others see a notice, and after
 `--respawn-delay` the player gets up at the closest temple or Imperial shrine (the markers
@@ -181,6 +183,10 @@ allow one more a minute, and while that holds even the right password is refused
 admin password apart from the console password: anyone with it can kick, ban and stop.
 
 ### Protocol compatibility
+
+Active effects retain their native source, magnitude and elapsed time, so their timers resume
+when the character joins again. Bound effects also retain the equipment they displaced, using
+item identities and condition/charge rather than engine pointers.
 
 The game and manager have separate protocol versions. Gameplay state changes can require a new
 game protocol without changing the manager's build discovery and download protocol. These are
@@ -281,8 +287,8 @@ that runs xemu, or on Linux add `network_mode: host` to the service, which also 
 ## Connect a console
 
 1. Start the server.
-2. Launch the build from the dashboard and load a save. The console joins by itself on the first
-   frame of the loaded game; the server prints `client 1 joined` with the console's MAC and address.
+2. Launch the build from the dashboard, choose Join and select the server. Choose a retained
+   character or create a new one; the console starts a New Game from server state.
 3. Other players do the same. Each shows up for the others as a stand-in once they are in the
    same interior or within one exterior cell.
 
@@ -302,9 +308,9 @@ an address). A join that fails says why on the server's row: no answer, no netwo
 not found, different mods, server full, kicked, banned or server key changed; a server that wants a
 password raises the keyboard for it. New and Load from the main menu still play alone.
 
-While joined, the pause menu has **Save to Server** in place of Save, which saves the character
-and sends it to the server, and **Leave** in place of Exit, which saves to the server and then
-quits; Load is gone, since a local save is not the server's character. A multiplayer build redraws the
+While joined, the pause menu has **Save to Server** in place of Save, which flushes the character
+state and waits for confirmation, and **Leave** in place of Exit, which flushes to the server and
+quits after confirmation; Load is gone, since a local save is not the server's character. A multiplayer build redraws the
 menu buttons so they match the ones it adds; `tools/tes3x_menuart.py` renders them from the
 bundled Fondamento font (SIL Open Font License, `assets/fonts`).
 
@@ -375,8 +381,9 @@ With `console` in the build, open the console (Back + right thumb click) and typ
 |---|---|
 | `tes3xnet stat` | write the network counters to the log |
 | `tes3xnet say TEXT` | send a line of text to the other players (logged there as `net.text`) |
-| `tes3xnet send NAME` | send `U:\TES3X\NAME` to the server; a save that names a player is kept as that console's character under `characters` in its `--world` folder, with three earlier versions, and any other file under `uploads` |
-| `tes3xnet leave` | what Exit's Yes does while joined: save, upload, and quit once the server has the save |
+| `tes3xnet send NAME` | send `U:\TES3X\NAME` to the server; files go under `uploads`; only explicit `--adopt` or `--rebuild` diagnostic sessions use uploaded saves as fixtures |
+| `tes3xnet save` | flush supported character state and wait for the server to confirm storage |
+| `tes3xnet leave` | flush supported character state and quit after the server confirms storage |
 | `tes3xnet down` | leave the session and stop the network card |
 | `tes3xnet up ADDRESS[/BITS] [SERVER[:PORT] [GATEWAY]]` | start it again by hand |
 
@@ -395,7 +402,7 @@ report from any two saves.
 The report separates attributes into base/current pairs and skills into base/current pairs,
 alongside their saved progress. Other mobile fields remain byte comparisons.
 
-`--load-state` is the normal character-loading path and is enabled by default by the GUI. The
+Character loading always uses server state; `--load-state` remains a compatibility option. The
 server sends identity, inventory, worn items and last place as a small `char-*.t3c` file. The
 console starts a New Game that becomes that character on the loading screen, in that place; the
 rest of the kept state follows once it joins. State the server does not keep yet, including

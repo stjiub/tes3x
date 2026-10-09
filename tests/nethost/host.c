@@ -285,6 +285,82 @@ static int host_effect_parts(void)
     return 0;
 }
 
+static int host_snapshot_parts(void)
+{
+    u32 seq, expected = 0, i;
+    host_setup();
+    ses.state = SESSION_JOINED;
+    ses.welcomes = player_effect_welcome = 1;
+    rel.out_first = 1;
+    rel.out_next = 1 + EVENTS_OUT;
+    snapshot_stage = 10;
+    snapshot_frame(0, 0, 0, 0);
+    if (snapshot_stage != 10)
+        return 21;
+    player_effect_size = PLAYER_EFFECT_BODY;
+    memset(player_effect_out, 0x42, player_effect_size);
+    player_effect_parts = (player_effect_size + EVENT_DATA - 6) / (EVENT_DATA - 5);
+    player_effect_part = 0;
+    snapshot_stage = 11;
+    snapshot_frame(0, 0, 0, 0);
+    if (snapshot_stage != 11 || player_effect_part)
+        return 22;
+    rel.out_first = rel.out_next;
+    while (snapshot_stage == 11) {
+        seq = rel.out_next;
+        snapshot_frame(0, 0, 0, 0);
+        for (; seq != rel.out_next; seq++) {
+            const struct event *e = &rel.out[seq % EVENTS_OUT];
+            if (e->kind != EVENT_PLAYER || e->data[0] != PLAYER_EFFECTS ||
+                (e->data[1] | e->data[2] << 8) != expected++)
+                return 23;
+            for (i = 5; i < e->length; i++)
+                if (e->data[i] != 0x42)
+                    return 24;
+        }
+        if (player_effect_parts && snapshot_stage != 11)
+            return 25;
+        rel.out_first = rel.out_next;
+    }
+    if (snapshot_stage != 12 || expected <= EVENTS_OUT || player_effect_parts)
+        return 26;
+    puts("ok snapshot parts");
+    return 0;
+}
+
+static int host_snapshot_ack(void)
+{
+    struct event e = {0};
+    snapshot_wait = 17;
+    e.kind = EVENT_SNAPSHOT;
+    e.length = 4;
+    put32le(e.data, 16);
+    event_handle(&e);
+    if (snapshot_wait != 17 || snapshot_confirmed)
+        return 16;
+    put32le(e.data, 17);
+    e.length = 3;
+    event_handle(&e);
+    if (snapshot_wait != 17 || snapshot_confirmed)
+        return 17;
+    e.length = 4;
+    event_handle(&e);
+    if (snapshot_wait || snapshot_confirmed != 17 || welcome_pending)
+        return 18;
+    e.kind = EVENT_LOAD;
+    e.length = 8;
+    memcpy(e.data, "old.ess", 8);
+    load_event(&e);
+    if (load_wanted)
+        return 19;
+    memcpy(e.data, "new.t3c", 8);
+    load_event(&e);
+    if (!load_wanted)
+        return 20;
+    puts("ok snapshot ack");
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     static u8 frame[HOST_MTU];
@@ -296,6 +372,10 @@ int main(int argc, char **argv)
         return host_stats_replay();
     if (argc == 2 && !strcmp(argv[1], "--effect-parts"))
         return host_effect_parts();
+    if (argc == 2 && !strcmp(argv[1], "--snapshot-parts"))
+        return host_snapshot_parts();
+    if (argc == 2 && !strcmp(argv[1], "--snapshot-ack"))
+        return host_snapshot_ack();
     verbose = argc > 1;
     binary_stdin();
     if (!end)

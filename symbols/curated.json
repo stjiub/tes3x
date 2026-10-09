@@ -746,6 +746,14 @@
       "pc_va": "0x00455880"
     },
     {
+      "va": "0x000BDB10",
+      "name": "MagicInstanceController::retireMagicBySerial",
+      "confidence": "verified",
+      "provenance": "Native controller process calls this for state 7; disassembly removes serial, item-data and caster map entries",
+      "note": "Effect replay must erase retired casting-item mappings before activating the replacement instance.",
+      "signature": "void __thiscall retireMagicBySerial(unsigned int serial)"
+    },
+    {
       "va": "0x000BDD00",
       "name": "MagicInstanceController::process",
       "confidence": "verified",
@@ -810,9 +818,11 @@
       "va": "0x000C7490",
       "name": "EquipmentStack::CanonicalCopy",
       "kind": "function",
-      "confidence": "matched",
-      "provenance": "mwse:TES3_EquipmentStack_CanonicalCopy",
-      "pc_va": "0x00465420"
+      "confidence": "verified",
+      "provenance": "Disassembly at 0x000C74A6 allocates eight bytes; 0x000C76D7..0x000C76F3 checks stackability and copies item data",
+      "pc_va": "0x00465420",
+      "note": "Allocates an eight-byte holder with object +0 and item data +4. Retains the data pointer unless IsItemDataStackable permits dropping it; no additional reference count is taken. Bound callbacks own and free the holder.",
+      "signature": "TES3::EquipmentStack* __cdecl CanonicalCopy(const TES3::EquipmentStack* stack)"
     },
     {
       "va": "0x000C7A50",
@@ -823,6 +833,22 @@
       "pc_va": "0x00465DE0"
     },
     {
+      "va": "0x000C83B0",
+      "name": "CorprusEffect",
+      "confidence": "verified",
+      "provenance": "MagicEffectCallbacks[132]; native disassembly at 0x000C8428 resets instance +0xAC on Beginning",
+      "note": "Beginning resets corprusHoursSinceLastWorsen; retained replay must restore that counter after the callback.",
+      "signature": "void __cdecl CorprusEffect(TES3::MagicSourceInstance* instance, float deltaTime, TES3::MagicEffectInstance* effect, int index)"
+    },
+    {
+      "va": "0x000C8B00",
+      "name": "CreateSummonedCreature",
+      "confidence": "verified",
+      "provenance": "Disassembly: target is effect instance +0, passed to getMobile at 0x000C8B44",
+      "note": "The summoned creature is placed relative to the affected actor in effect->target; caster is not the ownership target.",
+      "signature": "void __cdecl CreateSummonedCreature(TES3::MagicSourceInstance* instance, TES3::MagicEffectInstance* effect, int index, const char* id)"
+    },
+    {
       "va": "0x000C8DC0",
       "name": "TriggerSpellSummonEvent",
       "kind": "function",
@@ -831,12 +857,21 @@
       "pc_va": "0x00466950"
     },
     {
+      "va": "0x000C94C0",
+      "name": "RetireBoundWeapon",
+      "confidence": "verified",
+      "provenance": "TriggerSpellBoundWeaponEvent retirement dispatch; re-equips and frees previous EquipmentStacks",
+      "note": "Restores effect +0x24/+0x28 previous stacks through MobileActor::wearItem; frees the 8-byte stack holders through Memory_Heap::Free.",
+      "signature": "void __cdecl RetireBoundWeapon(TES3::MagicEffectInstance* effect)"
+    },
+    {
       "va": "0x000C9710",
       "name": "TriggerSpellBoundWeaponEvent",
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_TriggerSpellBoundWeaponEvent",
-      "pc_va": "0x00465B70"
+      "pc_va": "0x00465B70",
+      "note": "Dispatches Beginning to 0x000C77E0 and Retired to 0x000C94C0. Retired restores displaced EquipmentStacks from effect +0x24/+0x28; pointer-free replay must retain their logical item identities to restore pre-bound equipment."
     },
     {
       "va": "0x000C99E0",
@@ -845,6 +880,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_TriggerSpellBoundArmorEvent",
       "pc_va": "0x00466270"
+    },
+    {
+      "va": "0x000C9D80",
+      "name": "BoundDaggerEffect",
+      "confidence": "verified",
+      "provenance": "Callback 120 at 0x003B5FC8; wrapper passes GMST 0x5CD to TriggerSpellBoundWeaponEvent",
+      "note": "Uses sMagicBoundDaggerID (GMST 0x5CD); bound weapons 120..125 use 0x5CD..0x5D2, armour 127..130 uses 0x5D3..0x5D6, gloves use both 0x5D7 and 0x5D8.",
+      "signature": "void __cdecl BoundDaggerEffect(TES3::MagicSourceInstance* instance, float deltaTime, TES3::MagicEffectInstance* effect, int index)"
     },
     {
       "va": "0x000CA580",
@@ -1543,7 +1586,8 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_Actor_equipItem",
-      "pc_va": "0x004958B0"
+      "pc_va": "0x004958B0",
+      "note": "Constant enchantment activation uses item virtual +0xD0 and Enchantment cast type byte +0x2C == 3 (0x000E84D7..0x000E852A). Retained-effect replay suppresses this synchronous activation while restoring worn equipment to avoid a second instance."
     },
     {
       "va": "0x000E88D0",
