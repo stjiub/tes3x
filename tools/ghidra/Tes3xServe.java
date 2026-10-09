@@ -1,5 +1,5 @@
-// Serves decompilation and references for tes3x_sym.py over a loopback socket, one JSON
-// request per line. Run by tes3x_ghidra.py; arguments: port, idle seconds, then tag:program.
+// Serves decompilation and references for tes3x sym over a loopback socket, one JSON
+// request per line. Run by tes3x ghidra; arguments: port, idle seconds, then tag:program.
 //@category TES3X
 import java.io.*;
 import java.net.*;

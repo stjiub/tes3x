@@ -4,7 +4,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-TOOLS = Path(__file__).resolve().parents[1] / 'tools'
 from tes3x.build import Mod, find_data_root
 from tes3x.bsa import write_bsa
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -51,7 +50,7 @@ class BuildTests(unittest.TestCase):
         profile = self.root / 'p.toml'
         profile.write_text(f'[profile]\nname = "p"\nlibrary = "{self.library.as_posix()}"\n'
                            + mods, encoding='utf-8')
-        return subprocess.run([sys.executable, str(TOOLS / 'tes3x_build.py'), str(profile)],
+        return subprocess.run([sys.executable, '-m', 'tes3x', 'build', str(profile)],
                               capture_output=True, text=True)
 
     def test_missing_mod_stops_the_build(self):

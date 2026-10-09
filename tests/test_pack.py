@@ -6,7 +6,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-TOOLS = Path(__file__).resolve().parents[1] / 'tools'
 from tes3x.bsa import Bsa, write_bsa
 from tes3x.build import plugin_masters
 from tes3x.plugins import xbox_name, xbox_renames
@@ -45,7 +44,7 @@ class LooseModTests(unittest.TestCase):
         self.temp.cleanup()
 
     def pack(self, out, *extra):
-        subprocess.run([sys.executable, str(TOOLS / 'tes3x_pack.py'), str(self.tree),
+        subprocess.run([sys.executable, '-m', 'tes3x', 'pack', str(self.tree),
                         '--vanilla', str(self.vanilla / 'Data Files'),
                         '--ini', str(self.vanilla / 'Morrowind.ini'), '--out', str(out),
                         '--manifest', str(self.manifest), '--loose-mod', 'Loose', *extra],

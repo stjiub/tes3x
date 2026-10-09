@@ -26,7 +26,7 @@ class DocsTests(unittest.TestCase):
         self.assertEqual(missing, [])
 
     def test_the_docs_name_commands_not_tool_scripts(self):
-        # The tools/ shims go in step 7; nothing a reader follows may point at them.
+        # Command examples use the installed CLI.
         pages = [docs.ROOT / 'README.md', *sorted(docs.DOCS.glob('*.md')),
                  *sorted((docs.ROOT / 'patches').glob('*.md'))]
         found = [f'{page.name}:{number}' for page in pages

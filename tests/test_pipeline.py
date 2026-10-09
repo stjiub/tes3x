@@ -84,17 +84,6 @@ class PathTests(unittest.TestCase):
             self.assertEqual(local_config(), folder / 'chosen.toml')
             self.assertEqual(local_config(folder / 'given.toml'), folder / 'given.toml')
 
-    def test_each_old_tool_name_is_the_package_module(self):
-        import importlib
-        tools = Path(__file__).resolve().parents[1] / 'tools'
-        for shim in sorted(tools.glob('tes3x_*.py')):
-            with self.subTest(shim.name), mock.patch.object(sys, 'path', [str(tools), *sys.path]):
-                try:
-                    module = importlib.import_module(shim.stem)
-                except (ImportError, SystemExit) as exc:  # an optional dependency, as capstone
-                    self.skipTest(str(exc))
-                self.assertIs(module, importlib.import_module('tes3x.' + shim.stem[6:]))
-
     def test_the_wheel_carries_every_named_resource(self):
         import ast
         root = Path(__file__).resolve().parents[1]

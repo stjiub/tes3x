@@ -102,7 +102,7 @@ def bundled(*parts):
 
 
 def checkout(*parts):
-    """What only a source checkout has: docs, the tools launched by path, the sources that the
+    """What only a source checkout has: docs, development scripts, the sources that the
     maintainer's generators rewrite, git, and the maintainer's build output (build/)."""
     return CHECKOUT.joinpath(*parts)
 

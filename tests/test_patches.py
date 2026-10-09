@@ -133,7 +133,7 @@ class PatchOwnershipTests(unittest.TestCase):
         self.assertEqual(claims, [(2, 2)])
 
     def test_rejects_duplicate_apply_before_opening_the_image(self):
-        argv = ["tes3x_patch.py", "missing.xbe",
+        argv = ["tes3x patch", "missing.xbe",
                 "--apply", "boot-media", "--apply", "boot-media"]
         with mock_patch.object(sys, "argv", argv):
             with self.assertRaisesRegex(SystemExit, "duplicate --apply 'boot-media'"):

@@ -20,7 +20,7 @@ import tes3x.net as tes3x_net
 import tes3x.netbuild as tes3x_netbuild
 from tes3x.payload import source_text
 
-NET = Path(__file__).resolve().parents[1] / 'tools' / 'tes3x_net.py'
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def free_port():
@@ -39,7 +39,8 @@ class ServerTests(unittest.TestCase):
             self.skipTest('cryptography is not installed')
         self.port = free_port()
         self.server = subprocess.Popen(
-            [sys.executable, str(NET), 'serve', '--bind', '127.0.0.1', '--port', str(self.port),
+            [sys.executable, '-m', 'tes3x', 'net', 'serve', '--bind', '127.0.0.1',
+             '--port', str(self.port),
              '--duration', '120', '--report', '0', *extra],
             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
         self.addCleanup(self.stop, self.server)
@@ -126,7 +127,8 @@ class ServerTests(unittest.TestCase):
 
     def test_survives_the_fuzzer(self):
         self.start('--bot')
-        fuzz = subprocess.run([sys.executable, str(NET), 'fuzz', f'127.0.0.1:{self.port}',
+        fuzz = subprocess.run([sys.executable, '-m', 'tes3x', 'net', 'fuzz',
+                               f'127.0.0.1:{self.port}',
                                '--count', '1500', '--seed', '7'],
                               capture_output=True, text=True, timeout=300)
         self.assertEqual(fuzz.returncode, 0, fuzz.stdout + fuzz.stderr)
@@ -929,7 +931,8 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(stream.effects, [])
 
     def admin(self, port, *words):
-        run = subprocess.run([sys.executable, str(NET), 'admin', '--port', str(port), *words],
+        run = subprocess.run([sys.executable, '-m', 'tes3x', 'net', 'admin',
+                              '--port', str(port), *words],
                              capture_output=True, text=True, timeout=10)
         self.assertEqual(run.returncode, 0, run.stderr)
         return run.stdout
@@ -1119,7 +1122,7 @@ class ServerTests(unittest.TestCase):
         self.assertIs(signal.getsignal(signal.SIGINT), caller)
 
     def test_consoles_ignore_server_events_another_console_sent(self):
-        source = source_text(NET.parents[1] / 'hooks' / 'tes3xmulti.c')
+        source = source_text(ROOT / 'hooks' / 'tes3xmulti.c')
         handler = source[source.index('static void event_handle('):]
         guard = handler[:handler.index('net.event_forged')]
         names = set(re.findall(r'\bEVENT_[A-Z_]+', guard)) - {'EVENT_DATA'}

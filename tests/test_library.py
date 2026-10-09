@@ -5,7 +5,6 @@ import unittest
 import zipfile
 from pathlib import Path
 
-TOOLS = Path(__file__).resolve().parents[1] / "tools"
 
 from tes3x.build import Mod, materialize, resolve  # noqa: E402
 from tes3x.library import (LibraryError, available_plugins, convert_profile, dependency_order,  # noqa: E402
@@ -155,13 +154,13 @@ roots = ["Optional"]
         profile = self.root / "profile.toml"
         head = f'[profile]\nname = "p"\nlibrary = "{self.root.as_posix()}"\n'
         profile.write_text(head + '[[mods]]\nid = "travel"\n', encoding="utf-8")
-        result = subprocess.run([sys.executable, str(TOOLS / "tes3x_build.py"), str(profile)],
+        result = subprocess.run([sys.executable, '-m', 'tes3x', 'build', str(profile)],
                                 capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("needs profile mod ids base", result.stderr)
         profile.write_text(head + '[[mods]]\nid = "base"\norder = 10\n'
                            '[[mods]]\nid = "travel"\norder = 20\n', encoding="utf-8")
-        result = subprocess.run([sys.executable, str(TOOLS / "tes3x_build.py"), str(profile)],
+        result = subprocess.run([sys.executable, '-m', 'tes3x', 'build', str(profile)],
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
