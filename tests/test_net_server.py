@@ -359,10 +359,13 @@ class ServerTests(unittest.TestCase):
                   for i in range(0, len(data), tes3x_net.BULK_CHUNK)]
         for index in (0, 2, 3, 4, 5, 6, 7):  # 1 lost
             client.send(tes3x_net.CHUNK, struct.pack('<II', 9, index) + chunks[index])
+        # The fourth arrival is acked at once; 5 to 7 wait for a timed ack, up to two ticks.
         acks = []
-        while (body := client.receive(0.5, tes3x_net.BULK_ACK)) is not None:
-            acks.append(tes3x_net.BULK_ACK_BODY.unpack(body))
-        self.assertEqual(acks[-1][1:3], (1, 0b1111110))  # needs 1; 2 to 7 held
+        while (body := client.receive(1.5, tes3x_net.BULK_ACK)) is not None:
+            acks.append(tes3x_net.BULK_ACK_BODY.unpack(body)[1:3])
+            if acks[-1] == (1, 0b1111110):  # needs 1; 2 to 7 held
+                break
+        self.assertIn((1, 0b1111110), acks)
         for index in range(1, len(chunks)):
             client.send(tes3x_net.CHUNK, struct.pack('<II', 9, index) + chunks[index])
         while (body := client.receive(1.0, tes3x_net.BULK_ACK)) is not None:
