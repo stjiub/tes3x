@@ -464,7 +464,7 @@ def tool_version(path):
 
 def sanitized_command(invocation, profile_name, profile_arg):
     """Keep the effective command shape while removing local filesystem locations."""
-    result = ["python", "tools/tes3x_pipeline.py"]
+    result = ["tes3x", "pipeline"]
     path_options = {"--config", "--vanilla", "--llvm", "--build-root", "--out"}
     replace_next, replaced_profile = False, False
     for value in invocation:

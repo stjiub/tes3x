@@ -239,7 +239,7 @@ def safe_value(value):
 
 
 def run_command(args, passthru, pipeline):
-    command = ["python", "tools/tes3x_xemu.py", "<run>"]
+    command = ["tes3x", "xemu", "<run>"]
     if args.profile:
         command.append("profile:" + pipeline.get("profile", Path(args.profile).stem))
     elif args.deploy:

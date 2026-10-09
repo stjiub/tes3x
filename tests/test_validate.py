@@ -37,7 +37,7 @@ class ValidationTests(unittest.TestCase):
         marker = {
             'schema': 2, 'profile': 'validation', 'profile_sha256': '1' * 64,
             'preset': 'minimal', 'patches': patches or ['diagnostics'],
-            'package_mode': 'retail', 'command': ['python', 'tools/tes3x_pipeline.py'],
+            'package_mode': 'retail', 'command': ['tes3x', 'pipeline'],
             'ini': {'base_sha256': '2' * 64, 'staged_sha256': ini, 'overrides': []},
             'mods': [], 'plugins': [], 'data_files_sha256': '3' * 64,
             'toolchain': {}, 'deploy_tree': 'deploy', 'tes3x': 'abcdef123456',
@@ -47,7 +47,7 @@ class ValidationTests(unittest.TestCase):
         (folder / 'pipeline' / validation.MARKER).write_text(json.dumps(marker))
         run_marker = {
             'schema': 1, 'environment': 'xemu',
-            'command': ['python', 'tools/tes3x_xemu.py', '<run>'],
+            'command': ['tes3x', 'xemu', '<run>'],
             'platform': {'kind': 'xemu', 'version': 'test', 'bios': 'test.bin',
                          'guest_ram_mb': 64},
             'fixtures': {'script': {'name': 'validation.txt', 'size': 1, 'sha256': '5' * 64}},

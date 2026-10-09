@@ -416,7 +416,7 @@ class PipelineTests(unittest.TestCase):
              '--out=D:/private/build', '--enable', 'mcp-102'],
             'validation', 'profiles/validation.toml')
         self.assertEqual(command, [
-            'python', 'tools/tes3x_pipeline.py', '--vanilla', '<local-path>',
+            'tes3x', 'pipeline', '--vanilla', '<local-path>',
             'profile:validation', '--out=<local-path>', '--enable', 'mcp-102',
         ])
 
