@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 import random
 import shutil
@@ -1025,6 +1026,120 @@ class ServerTests(unittest.TestCase):
             self.assertLessEqual(len(data), tes3x_net.HANDSHAKE_PAD)
         self.assertGreater(replies, 0)
         self.assertLessEqual(replies, tes3x_net.HANDSHAKE_RATE[0] + 2)
+
+    def send_events(self, client, *events):
+        """Send (kind, data) events from client, numbered on from its last."""
+        first = getattr(client, 'sent', 0) + 1
+        client.sent = first + len(events) - 1
+        client.send(tes3x_net.EVENTS, tes3x_net.pack_events(getattr(client, 'delivered', 0), [
+            (first + i, kind, 0, data) for i, (kind, data) in enumerate(events)]))
+
+    def drain(self, client):
+        while (body := client.receive(0.05, tes3x_net.EVENTS)) is not None:
+            for seq, *_ in tes3x_net.unpack_events(body)[1]:
+                if seq == getattr(client, 'delivered', 0) + 1:
+                    client.delivered = seq
+            client.send(tes3x_net.EVENTS,
+                        tes3x_net.pack_events(getattr(client, 'delivered', 0), []))
+
+    def relayed(self, sender, receiver, kind, data):
+        """Whether an event reaches another console unchanged, judged by a TEXT marker after it."""
+        marker = b'marker %d' % (getattr(sender, 'sent', 0) + 2)
+        self.send_events(sender, (kind, data), (tes3x_net.EVENT_TEXT, marker))
+        got = self.events(receiver, lambda k, d: k == tes3x_net.EVENT_TEXT and d == marker)
+        self.drain(sender)
+        return (kind, data) in got[:-1]
+
+    def test_which_events_reach_other_consoles(self):
+        # Records the server's relay decisions as they stand, malformed events included.
+        self.start()
+        net = tes3x_net
+        sender, receiver = self.client(1), self.client(2)
+        sender.join()
+        receiver.join()
+        kinds = {name: value for name, value in vars(net).items()
+                 if name.startswith('EVENT_') and name != 'EVENT_DATA' and isinstance(value, int)}
+        kept = {'EVENT_PLAYER', 'EVENT_IDENTITY', 'EVENT_ACTOR_EQUIPMENT'}
+        for name, kind in sorted(kinds.items()) + [('unknown', 200), ('unknown', 65535)]:
+            for data in (b'', b'\x01'):
+                expected = name not in kept and not (
+                    data and name in ('EVENT_REMOVE', 'EVENT_WANT'))
+                with self.subTest(name, data=data):
+                    self.assertEqual(self.relayed(sender, receiver, kind, data), expected)
+        refid = 0x0101F7C4
+        spell = net.SPELL.pack(refid, 0, 0, net.SOURCE_SPELL, 1) + b'fireball\0'
+        for name, kind, data, expected in (
+                ('cast', net.EVENT_CAST, spell, True),
+                ('spell', net.EVENT_SPELL, spell, False),
+                ('shot', net.EVENT_SHOT, net.SHOT.pack(0, 1.0, 0.0, 1) + b'iron arrow\0', True),
+                ('death', net.EVENT_DEATH, struct.pack('<I', refid), True),
+                ('status', net.EVENT_STATUS, net.STATUS.pack(refid, 10, 20, 30, 40, 50), True),
+                ('affect', net.EVENT_AFFECT, struct.pack('<IB', refid, 1) + b'fireball\0', True),
+                ('objects', net.EVENT_OBJECTS, bytes([1]) + net.OBJECT.pack(refid + 1, 3, 1, 0),
+                 True),
+                ('busy', net.EVENT_BUSY, bytes([net.BUSY_SAVING]), True),
+                ('bounty', net.EVENT_BOUNTY, struct.pack('<i', 40), True),
+                ('equipment', net.EVENT_EQUIPMENT, net.pack_equipment(['iron cuirass'])[0], True),
+                ('weather', net.EVENT_WEATHER, bytes([0, 1]) + struct.pack('<HB', 3, 2), True),
+                ('remove', net.EVENT_REMOVE, bytes([1]) + struct.pack('<I', 77), False),
+                ('want', net.EVENT_WANT, bytes([1]) + struct.pack('<H', 5), False),
+                ('hit on the receiver', net.EVENT_HIT, struct.pack('<IIf', refid, 2, 5.0), True),
+                ('text', net.EVENT_TEXT, b'hello', True)):
+            with self.subTest(name):
+                self.assertEqual(self.relayed(sender, receiver, kind, data), expected)
+
+    def test_world_is_saved_and_restored(self):
+        net = tes3x_net
+        world = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, world)
+        admin = free_port()
+        self.start('--world', str(world), '--adopt', '--admin-port', str(admin),
+                   '--stop-wait', '1')
+        client = self.client(1)
+        client.join()
+        refid = 0x0101F7C4
+        made = {'cell': 4, 'count': 1, 'removed': False, 'pos': [1.0, 2.0, 3.0],
+                'rot': [0.0, 0.0, 0.5], 'id': 'gold_001'}
+        status = net.STATUS.pack(refid + 2, 10, 20, 30, 40, 50)
+        self.send_events(
+            client,
+            (net.EVENT_DEATH, struct.pack('<I', refid)),
+            (net.EVENT_OBJECTS, bytes([1]) + net.OBJECT.pack(refid + 1, 3, net.OBJECT_DISABLED, 0)),
+            (net.EVENT_WEATHER, bytes([0, 1]) + struct.pack('<HB', 3, 2)),
+            (net.EVENT_STATUS, status),
+            (net.EVENT_SPAWN, net.pack_spawn(1, made)),
+            (net.EVENT_SPAWN, net.pack_spawn(2, dict(made, id='atronach_flame', summon=True))))
+        self.drain(client)
+        self.admin(admin, 'stop')
+        self.assertEqual(self.server.wait(10), 0)
+
+        saved = next(world.glob('*.json'))
+        state = json.loads(saved.read_text(encoding='utf-8'))
+        self.assertEqual(sorted(state), ['clock', 'contents', 'deaths', 'next_spawn', 'objects',
+                                         'spawns', 'statuses', 'weather'])
+        self.assertEqual(len(state['clock']), 6)  # hour, day, month, year, days passed, scale
+        self.assertEqual(state['deaths'], {str(refid): 1})
+        self.assertEqual(state['objects'], {str(refid + 1): [3, net.OBJECT_DISABLED, 0]})
+        self.assertEqual(state['weather'], {'3': 2})
+        self.assertEqual(state['statuses'], {str(refid + 2): [10, 20, 30, 40, 50]})
+        spawns = sorted(state['spawns'].values(), key=lambda s: s['id'])
+        self.assertEqual([(s['id'], s['summon'], s['removed'], s['origin']) for s in spawns],
+                         [('atronach_flame', True, False, 1), ('gold_001', False, False, 1)])
+        self.assertEqual(state['next_spawn'], len(spawns) + 1)
+
+        self.start('--world', str(world), '--adopt')
+        late = self.client(3)
+        late.join()
+        spawned = set()
+        got = self.events(late, lambda kind, data: kind == net.EVENT_SPAWN and
+                          not spawned.add(data) and len(spawned) == 2)
+        self.assertIn((net.EVENT_DEATH, struct.pack('<I', refid)), got)
+        self.assertIn((net.EVENT_STATUS, status), got)
+        replayed = {net.unpack_spawn(data)[1]['id']: net.unpack_spawn(data)[1]
+                    for kind, data in got if kind == net.EVENT_SPAWN}
+        self.assertFalse(replayed['gold_001']['removed'])
+        # A saved summon comes back removed: its caster's active effect makes it again.
+        self.assertTrue(replayed['atronach_flame']['removed'])
 
 
 if __name__ == '__main__':
