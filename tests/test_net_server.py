@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 import random
+import re
 import shutil
 import socket
 import struct
@@ -1062,7 +1063,7 @@ class ServerTests(unittest.TestCase):
         kept = {'EVENT_PLAYER', 'EVENT_IDENTITY', 'EVENT_ACTOR_EQUIPMENT'}
         for name, kind in sorted(kinds.items()) + [('unknown', 200), ('unknown', 65535)]:
             for data in (b'', b'\x01'):
-                expected = name not in kept and not (
+                expected = name not in kept and kind not in net.SERVER_EVENTS and not (
                     data and name in ('EVENT_REMOVE', 'EVENT_WANT'))
                 with self.subTest(name, data=data):
                     self.assertEqual(self.relayed(sender, receiver, kind, data), expected)
@@ -1087,6 +1088,13 @@ class ServerTests(unittest.TestCase):
                 ('text', net.EVENT_TEXT, b'hello', True)):
             with self.subTest(name):
                 self.assertEqual(self.relayed(sender, receiver, kind, data), expected)
+
+    def test_consoles_ignore_server_events_another_console_sent(self):
+        source = (NET.parents[1] / 'hooks' / 'tes3xmulti.c').read_text(encoding='utf-8')
+        handler = source[source.index('static void event_handle('):]
+        guard = handler[:handler.index('net.event_forged')]
+        names = set(re.findall(r'\bEVENT_[A-Z_]+', guard)) - {'EVENT_DATA'}
+        self.assertEqual({getattr(tes3x_net, name) for name in names}, tes3x_net.SERVER_EVENTS)
 
     def test_world_is_saved_and_restored(self):
         net = tes3x_net

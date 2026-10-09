@@ -536,6 +536,9 @@ WEATHERS = ("clear", "cloudy", "foggy", "overcast", "rain", "thunder", "ash", "b
 # refid, target client, then a word: on, reason, or the damage as a float
 TARGETED = {EVENT_HOLD: "holds", EVENT_HOLD_BROKEN: "breaks the hold on", EVENT_HIT: "hits",
             EVENT_PLAYER_HIT: "hits the player of"}
+# Events only the server sends. A console acts on them, so one from a client is never relayed.
+SERVER_EVENTS = {EVENT_WELCOME, EVENT_AUTHORITY, EVENT_OWNERS, EVENT_SAVE, EVENT_LOAD,
+                 EVENT_CHARS, EVENT_NEWCHAR, EVENT_RUN}
 KEY = struct.Struct("<Iii32s")  # kind, grid x, grid y, interior name
 KEY_EXTERIOR, KEY_INTERIOR = 1, 2
 ANIM_BYTES = 20  # per layer: 3 groups, pad, 3 keys, pad, 3 times (tes3xnet.c anim_capture)
@@ -3014,6 +3017,9 @@ def serve(args):
 
     def on_event(client, kind, data, stamp, now):
         client.events += 1
+        if kind in SERVER_EVENTS:
+            print(f"{stamp} client {client.id} sent server event {kind}: dropped", flush=True)
+            return
         if kind == EVENT_OFFER and len(data) > BULK_OFFER.size:
             ident, size, digest = BULK_OFFER.unpack_from(data)
             name = wire_text(data[BULK_OFFER.size:].split(b"\0", 1)[0])

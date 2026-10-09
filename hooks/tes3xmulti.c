@@ -12609,6 +12609,14 @@ static void event_handle(const struct event *e)
 {
     char text[EVENT_DATA + 1], line[EVENT_DATA + 16];
 
+    /* Only the server sends these, with no origin; one with an origin came from another console
+     * through a server that relays everything. */
+    if (e->origin && e->kind < 64 && (1ull << e->kind & (1ull << EVENT_WELCOME |
+            1ull << EVENT_AUTHORITY | 1ull << EVENT_OWNERS | 1ull << EVENT_SAVE |
+            1ull << EVENT_LOAD | 1ull << EVENT_CHARS | 1ull << EVENT_NEWCHAR | 1ull << EVENT_RUN))) {
+        tes3x_log_hex3("net.event_forged", e->kind, e->origin, e->length);
+        return;
+    }
     if (e->kind == EVENT_TEXT) {
         copy((u8 *)text, e->data, e->length);
         text[e->length] = 0;
