@@ -21,13 +21,12 @@ optimizes and deploys a modlist. It also includes support for multiplayer.
 ## Status and limitations
 
 - TES3X is under active development and is subject to frequent (possibly breaking) changes. 
-- It is developed against the retail **GOTY** release and tested in both XEMU and
-original hardware, but each patch matures at its own pace.
+- It is developed against the retail **GOTY** NTSC release and tested in both XEMU and
+original hardware. PAL is not currently supported, but is planned.
 - The original Xbox only has 64 MB of memory, and a stock console cannot load everything the PC can. The
   largest mods, such as the complete Tamriel Rebuilt, require a console upgraded to 128 MB.
 - Expect crashes when you are testing new mods and pushing the limits of 25+ year old hardware.
 - TES3X includes no game files. You supply your own copy of the game.
-- Currently only works for the NTSC version, but PAL support is planned.
 - Engine fixes are compiled using your own XBE when you build.
 - The [compatibility catalog](docs/catalog.md) lists mods tried on the Xbox and how they fared;
   many PC mods depend on features the Xbox build lacks.
