@@ -1024,7 +1024,9 @@ class ProfileWindow(QMainWindow):
 
     def first_run(self):
         QMessageBox.information(
-            self, "TES3X", "Set where your retail game files are, and how to reach your Xbox.")
+            self, "Welcome to TES3X",
+            "Choose where your retail game files and mod library are in Settings.\n\n"
+            "Then use the Target workspace to add and set up your Xbox or xemu.")
         self.edit_local_settings()
 
     def edit_local_settings(self):

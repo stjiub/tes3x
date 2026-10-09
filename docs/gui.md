@@ -31,7 +31,9 @@ The version is `X.Y.Z` at a `vX.Y.Z` tag, and `X.Y.Z-dev.N+gSHA` for a commit N 
 `.dirty` when the checkout has uncommitted changes. The GUI shows it in its title.
 
 The GUI opens the last profile you used and lists everything in `profiles/` for switching, with
-New, Duplicate, Rename and Delete under the cog beside the list. On first start, with no `tes3x.local.toml` yet, it opens the local settings.
+New, Duplicate, Rename and Delete under the cog beside the list. On first start, with no
+`tes3x.local.toml` yet, it opens Settings for your game and mod library paths. Add and set up
+your Xbox or xemu in the **Target** workspace afterward.
 
 Three workspaces sit at the left of the toolbar: **Profile** edits the open profile (the tabs
 below), [**Target**](#target) shows what the selected Xbox or xemu target is doing, and
