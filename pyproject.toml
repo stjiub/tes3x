@@ -20,6 +20,12 @@ dependencies = [
 gui = ["PySide6-Essentials>=6.8,<7", "tomlkit>=0.13,<1"]
 dev = ["pyflakes"]
 
+[project.scripts]
+tes3x = "tes3x.cli:main"
+
+[project.gui-scripts]
+tes3x-gui = "tes3x.gui:main"
+
 [project.urls]
 Homepage = "https://github.com/stjiub/tes3x"
 
