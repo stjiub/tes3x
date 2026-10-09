@@ -33,16 +33,6 @@ optimizes and deploys a mod list. It also adds multiplayer.
 - The [compatibility catalog](docs/catalog.md) lists mods tried on the Xbox and how they fared;
   many PC mods depend on features the Xbox build lacks.
 
-## Quick start
-
-- **Windows:** download `TES3X-<version>.zip` from the
-  [releases page](https://github.com/stjiub/tes3x/releases), unpack it and run `TES3X.exe`.
-  Nothing else needs installing.
-- **With Python 3.12 or newer, on Windows or Linux:**
-  `pipx install "tes3x[gui] @ git+https://github.com/stjiub/tes3x"`, then `tes3x gui`.
-
-[Getting started](docs/getting-started.md) covers both, what else you need and a first build.
-
 ## Docs
 
 - [Getting started](docs/getting-started.md)
