@@ -898,6 +898,73 @@ def save_world(path, world):
     os.replace(path + ".tmp", path)
 
 
+class World:
+    """What --world keeps for one load order; each joining client is sent all of it."""
+
+    SPAWN_FIELDS = ("cell", "count", "removed", "pos", "rot", "id", "origin", "token", "data",
+                    "condition", "charge", "leveled", "summon")
+
+    def __init__(self):
+        self.path = None
+        self.dirty = False
+        self.saved = 0.0
+        self.next_spawn = 1
+        self.deaths = {}  # refid -> the client that reported it; replayed to each joining client
+        self.weather = {}  # region index -> weather, the session's; replayed to each joining client
+        # refid -> (cell index, state, lock level); replayed to each joining client
+        self.objects = {}
+        # actor id -> STATUS values after the id; replayed to each joining client
+        self.statuses = {}
+        # spawn id -> reference made at run time (unpack_spawn), removed ones too; replayed likewise
+        self.spawns = {}
+        # refid -> {"cell", "entries", "origin"}: a container's latest contents; sent to whoever
+        # loads its cell (WANT)
+        self.contents = {}
+        self.clock = None
+
+    def load(self, path, now, clock=True):
+        """Add what path holds, and its clock unless clock is false; false when there is none."""
+        self.path = path
+        saved = load_world(path)
+        if not saved:
+            return False
+        self.deaths.update({int(k): v for k, v in saved.get("deaths", {}).items()})
+        self.objects.update({int(k): tuple(v) for k, v in saved.get("objects", {}).items()})
+        self.spawns.update({int(k): v for k, v in saved.get("spawns", {}).items()})
+        self.contents.update({int(k): v for k, v in saved.get("contents", {}).items()})
+        self.next_spawn = max(self.next_spawn, saved.get("next_spawn", 1))
+        self.weather.update({int(k): v for k, v in saved.get("weather", {}).items()})
+        self.statuses.update({int(k): tuple(v) for k, v in saved.get("statuses", {}).items()})
+        for spawn in self.spawns.values():
+            if spawn.get("summon"):
+                spawn["removed"] = True  # Active effects recreate summons for their target.
+        if saved.get("clock") and clock:
+            self.clock = Clock(*saved["clock"], now)
+        return True
+
+    def save(self, now):
+        state = {"deaths": {str(k): v for k, v in self.deaths.items()},
+                 "objects": {str(k): list(v) for k, v in self.objects.items()},
+                 "spawns": {str(k): {f: v.get(f, 0) for f in self.SPAWN_FIELDS}
+                            for k, v in self.spawns.items()},
+                 "next_spawn": self.next_spawn,
+                 "contents": {str(k): v for k, v in self.contents.items()},
+                 "weather": {str(k): v for k, v in self.weather.items()},
+                 "statuses": {str(k): list(v) for k, v in self.statuses.items()}}
+        if self.clock:
+            self.clock.advance(now)
+            state["clock"] = [self.clock.hour, self.clock.day, self.clock.month, self.clock.year,
+                              self.clock.days_passed, self.clock.scale]
+        save_world(self.path, state)
+        self.dirty, self.saved = False, now
+
+    def __str__(self):
+        return (f"{len(self.deaths)} deaths, {len(self.objects)} objects, "
+                f"{len(self.spawns)} spawns, {len(self.contents)} containers, "
+                f"{len(self.weather)} regions, {len(self.statuses)} statuses"
+                + (f", clock {self.clock}" if self.clock else ""))
+
+
 def unpack_weather(data):
     """(flags, {region index: weather}) of a WEATHER event."""
     flags, count = data[0], data[1]
@@ -2373,48 +2440,11 @@ class Server:
         """Load what --world holds for this load order: the clock, deaths, objects, weather."""
         if not self.args.world:
             return
-        self.world["path"] = os.path.join(self.args.world, f"{order:08x}.json")
-        saved = load_world(self.world["path"])
-        if not saved:
-            print(f"world {self.world['path']}: new", flush=True)
+        path = os.path.join(self.args.world, f"{order:08x}.json")
+        if not self.world.load(path, now, clock=self.args.hour is None):
+            print(f"world {path}: new", flush=True)
             return
-        self.deaths.update({int(k): v for k, v in saved.get("deaths", {}).items()})
-        self.objects.update({int(k): tuple(v) for k, v in saved.get("objects", {}).items()})
-        self.spawns.update({int(k): v for k, v in saved.get("spawns", {}).items()})
-        self.contents.update({int(k): v for k, v in saved.get("contents", {}).items()})
-        self.world["next_spawn"] = max(self.world["next_spawn"], saved.get("next_spawn", 1))
-        self.weather.update({int(k): v for k, v in saved.get("weather", {}).items()})
-        self.statuses.update({int(k): tuple(v) for k, v in saved.get("statuses", {}).items()})
-        for spawn in self.spawns.values():
-            if spawn.get("summon"):
-                spawn["removed"] = True  # Active effects recreate summons for their target.
-        if saved.get("clock") and self.args.hour is None:
-            self.clock = Clock(*saved["clock"], now)
-        print(f"world {self.world['path']}: {len(self.deaths)} deaths, "
-              f"{len(self.objects)} objects, {len(self.spawns)} spawns, "
-              f"{len(self.contents)} containers, {len(self.weather)} regions, "
-              f"{len(self.statuses)} statuses"
-              + (f", clock {self.clock}" if self.clock else ""), flush=True)
-
-    def write_world(self, now):
-        state = {"deaths": {str(k): v for k, v in self.deaths.items()},
-                 "objects": {str(k): list(v) for k, v in self.objects.items()},
-                 "spawns": {str(k): {f: v.get(f, 0) for f in ("cell", "count", "removed", "pos",
-                                                              "rot", "id", "origin", "token",
-                                                              "data", "condition", "charge",
-                                                              "leveled", "summon")}
-                            for k, v in self.spawns.items()},
-                 "next_spawn": self.world["next_spawn"],
-                 "contents": {str(k): v for k, v in self.contents.items()},
-                 "weather": {str(k): v for k, v in self.weather.items()},
-                 "statuses": {str(k): list(v) for k, v in self.statuses.items()}}
-        if self.clock:
-            self.clock.advance(now)
-            state["clock"] = [self.clock.hour, self.clock.day, self.clock.month, self.clock.year,
-                              self.clock.days_passed,
-                              self.clock.scale]
-        save_world(self.world["path"], state)
-        self.world["dirty"], self.world["saved"] = False, now
+        print(f"world {path}: {self.world}", flush=True)
 
     def notify(self, text, now, only=None, skip=None):
         """Show text on the screen of every console in the world, or of one client."""
@@ -2484,11 +2514,11 @@ class Server:
 
     def set_weather(self, origin, entries, stamp, now, to_origin=True):
         """Record the regions whose weather changes and send them to every client."""
-        changed = {i: w for i, w in entries.items() if self.weather.get(i) != w}
+        changed = {i: w for i, w in entries.items() if self.world.weather.get(i) != w}
         if not changed:
             return
-        self.weather.update(changed)
-        self.world["dirty"] = True
+        self.world.weather.update(changed)
+        self.world.dirty = True
         print(f"{stamp} weather from client {origin}: {describe_weather(changed)}", flush=True)
         for other in self.clients.values():
             if other.in_world and (to_origin or other.id != origin):
@@ -2500,24 +2530,26 @@ class Server:
         """Name a reference made at run time and send it to every client, its maker too, which
         knows it as its own by cell, object and place. A repeat gets the id it already has, and
         goes to the maker only."""
-        sid = spawn_twin(self.spawns, spawn, origin, token, now, self.deaths)
+        sid = spawn_twin(self.world.spawns, spawn, origin, token, now, self.world.deaths)
         if sid is not None:
-            print(f"{stamp} client {origin} repeats {describe_spawn(sid, self.spawns[sid])}",
+            print(f"{stamp} client {origin} repeats {describe_spawn(sid, self.world.spawns[sid])}",
                   flush=True)
-            self.send_event(origin, self.spawns[sid]["origin"], EVENT_SPAWN,
-                            pack_spawn(sid, self.spawns[sid]),
+            self.send_event(origin, self.world.spawns[sid]["origin"], EVENT_SPAWN,
+                            pack_spawn(sid, self.world.spawns[sid]),
                             now)
             return sid
-        for old, known in list(self.spawns.items()):  # a dead creature's placeholder rolled again
+        # a dead creature's placeholder rolled again
+        for old, known in list(self.world.spawns.items()):
             if spawn.get("leveled") and known.get("leveled") == spawn["leveled"] and \
                     not known["removed"]:
                 self.remove_spawn(origin, old, stamp, now, to_origin=True)
-        sid = SPAWN_IDS | self.world["next_spawn"]
-        self.world["next_spawn"] += 1
-        self.spawns[sid] = dict(spawn, origin=origin, token=token, made=now, removed=False)
-        self.world["dirty"] = True
-        print(f"{stamp} client {origin} made {describe_spawn(sid, self.spawns[sid])}", flush=True)
-        data = pack_spawn(sid, self.spawns[sid])
+        sid = SPAWN_IDS | self.world.next_spawn
+        self.world.next_spawn += 1
+        self.world.spawns[sid] = dict(spawn, origin=origin, token=token, made=now, removed=False)
+        self.world.dirty = True
+        print(f"{stamp} client {origin} made {describe_spawn(sid, self.world.spawns[sid])}",
+              flush=True)
+        data = pack_spawn(sid, self.world.spawns[sid])
         for other in self.clients.values():
             if other.in_world:
                 other.rel.queue(EVENT_SPAWN, origin, data)
@@ -2525,18 +2557,18 @@ class Server:
         return sid
 
     def remove_spawn(self, origin, sid, stamp, now, to_origin=False):
-        spawn = self.spawns.get(sid)
+        spawn = self.world.spawns.get(sid)
         if spawn is None or spawn["removed"]:
             return
         spawn["removed"] = True
-        self.world["dirty"] = True
+        self.world.dirty = True
         print(f"{stamp} client {origin} removed {describe_spawn(sid, spawn)}", flush=True)
         if to_origin:
             self.send_event(origin, 0, EVENT_SPAWN, pack_spawn(sid, spawn), now)
         self.broadcast_event(origin, EVENT_SPAWN, pack_spawn(sid, spawn), now)
 
     def send_contents(self, target, refid, now, flags=0):
-        box = self.contents[refid]
+        box = self.world.contents[refid]
         for other in self.clients.values():
             if other.alive and other.id == target:
                 for part in pack_contents(refid, box["cell"], box["entries"], flags):
@@ -2546,15 +2578,15 @@ class Server:
     def set_contents(self, origin, refid, cell, entries, rolled, stamp, now):
         """Keep a container's contents and send them to the other clients. A console's first
         reading of a container the server already holds gets the server's contents back."""
-        known = self.contents.get(refid)
+        known = self.world.contents.get(refid)
         if rolled and known:
             if known["entries"] != entries:
                 print(f"{stamp} client {origin} opened {refid:#010x}: keeps "
                       f"{describe_contents(known['entries'])}", flush=True)
                 self.send_contents(origin, refid, now)
             return
-        self.contents[refid] = {"cell": cell, "entries": entries, "origin": origin}
-        self.world["dirty"] = True
+        self.world.contents[refid] = {"cell": cell, "entries": entries, "origin": origin}
+        self.world.dirty = True
         print(f"{stamp} client {origin} {'opened' if rolled else 'changed'} {refid:#010x} in cell "
               f"{cell}: {describe_contents(entries)}", flush=True)
         for other in self.clients.values():
@@ -2651,7 +2683,7 @@ class Server:
         """Replay retained state, or have the console publish its supported fields."""
         self.announce_join(client, now)
         if replay:
-            for sid, spawn in list(self.spawns.items()):
+            for sid, spawn in list(self.world.spawns.items()):
                 if spawn.get("summon") and spawn["origin"] == client.id and not spawn["removed"]:
                     self.remove_spawn(client.id, sid, stamp, now, to_origin=True)
         stream = self.player_stream(client)
@@ -2908,8 +2940,8 @@ class Server:
                 return
             stream.keep_place(body)
             stream.save()
-            if self.world["path"]:
-                self.write_world(now)
+            if self.world.path:
+                self.world.save(now)
             client.snapshots += 1
             client.snapshot_saved = struct.unpack_from("<I", data)[0]
             client.rel.queue(EVENT_SNAPSHOT, 0, data[:4])
@@ -2946,7 +2978,7 @@ class Server:
             return
         if kind == EVENT_WANT and data:
             cells = set(struct.unpack_from(f"<{min(data[0], (len(data) - 1) // 2)}H", data, 1))
-            wanted = [refid for refid, box in self.contents.items() if box["cell"] in cells]
+            wanted = [refid for refid, box in self.world.contents.items() if box["cell"] in cells]
             for refid in wanted:
                 self.send_contents(client.id, refid, now)
             if wanted:
@@ -2965,7 +2997,7 @@ class Server:
         if kind == EVENT_WEATHER and len(data) >= 2:
             flags, entries = unpack_weather(data)
             if flags & WEATHER_OFFER:
-                entries = {i: w for i, w in entries.items() if i not in self.weather}
+                entries = {i: w for i, w in entries.items() if i not in self.world.weather}
             self.set_weather(client.id, entries, stamp, now, not flags & WEATHER_OFFER)
             return
         if kind == EVENT_SPELL and len(data) > SPELL.size:
@@ -3026,15 +3058,15 @@ class Server:
             return
         if kind == EVENT_DEATH and len(data) >= 4:
             refid = struct.unpack_from("<I", data)[0]
-            if refid in self.deaths:
+            if refid in self.world.deaths:
                 return
-            self.deaths[refid] = client.id
-            self.world["dirty"] = True
+            self.world.deaths[refid] = client.id
+            self.world.dirty = True
             print(f"{stamp} client {client.id}: {refid:#010x} died", flush=True)
         if kind == EVENT_STATUS and len(data) >= STATUS.size:
             refid, *values = STATUS.unpack_from(data)
-            self.statuses[refid] = tuple(values)
-            self.world["dirty"] = True
+            self.world.statuses[refid] = tuple(values)
+            self.world.dirty = True
             if self.detail["verbose"]:
                 print(f"{stamp} client {client.id}: {describe_status(refid, values)}", flush=True)
         if kind == EVENT_AFFECT and len(data) > 5:
@@ -3045,8 +3077,8 @@ class Server:
                       f"{name}", flush=True)
         if kind == EVENT_OBJECTS and data:
             changed = unpack_objects(data)
-            self.objects.update(changed)
-            self.world["dirty"] = True
+            self.world.objects.update(changed)
+            self.world.dirty = True
             for refid, rest in changed.items():
                 if self.detail["verbose"]:
                     print(f"{stamp} client {client.id}: {describe_object(refid, *rest)}",
@@ -3180,7 +3212,7 @@ class Server:
             del self.actor_seen[refid]
         live = {}
         for refid in self.actor_seen:
-            spawn = self.spawns.get(refid)
+            spawn = self.world.spawns.get(refid)
             if spawn and spawn.get("summon"):
                 continue  # run by its maker
             _, key, record = self.actors[refid]
@@ -3484,22 +3516,22 @@ class Server:
     def status(self, now):
         """The server's state, one line each."""
         out = []
-        if self.clock:
-            self.clock.advance(now)
-            out.append(f"  clock {self.clock}")
-        if self.weather:
-            out.append(f"  weather: {describe_weather(self.weather)}")
+        if self.world.clock:
+            self.world.clock.advance(now)
+            out.append(f"  clock {self.world.clock}")
+        if self.world.weather:
+            out.append(f"  weather: {describe_weather(self.world.weather)}")
         if self.limits["handshakes"]:
             out.append(f"  handshakes refused over rate: {self.limits['handshakes']}")
         for client in self.clients.values():
             out.append(f"  client {client.id}: {'up' if client.alive else 'down'}"
                   + (" (saving)" if client.busy is not None else "") + ", "
                   + summary(client))
-        if self.objects:
-            out.append(f"  objects: {len(self.objects)} changed")
-        if self.spawns:
-            live = sum(not s["removed"] for s in self.spawns.values())
-            out.append(f"  spawns: {live} live, {len(self.spawns) - live} removed")
+        if self.world.objects:
+            out.append(f"  objects: {len(self.world.objects)} changed")
+        if self.world.spawns:
+            live = sum(not s["removed"] for s in self.world.spawns.values())
+            out.append(f"  spawns: {live} live, {len(self.world.spawns) - live} removed")
         if self.actors:
             out.append(f"  actors: {len(self.actors)} known; authorities "
                   + ", ".join(f"{describe_key(k)} {c}" for k, c in sorted(
@@ -3602,22 +3634,22 @@ class Server:
             if lobby:
                 print(f"{stamp} client {client.id} is at the main menu", flush=True)
                 return
-            if self.clock is None:
+            if self.world.clock is None:
                 offered = sane_clock(offered)
                 if self.args.hour is not None:
                     offered[0] = self.args.hour
                 if self.args.timescale is not None:
                     offered[5] = self.args.timescale
-                self.clock = Clock(*offered, now)
-                print(f"{stamp} clock {self.clock}, from client {client.id}", flush=True)
-            self.send(client, CLOCK, self.clock.body(now))
-            for refid, origin in self.deaths.items():
+                self.world.clock = Clock(*offered, now)
+                print(f"{stamp} clock {self.world.clock}, from client {client.id}", flush=True)
+            self.send(client, CLOCK, self.world.clock.body(now))
+            for refid, origin in self.world.deaths.items():
                 client.rel.queue(EVENT_DEATH, origin, struct.pack("<I", refid))
-            for data in pack_objects(self.objects):
+            for data in pack_objects(self.world.objects):
                 client.rel.queue(EVENT_OBJECTS, 0, data)
-            for refid, values in self.statuses.items():
+            for refid, values in self.world.statuses.items():
                 client.rel.queue(EVENT_STATUS, 0, STATUS.pack(refid, *values))
-            for sid, spawn in sorted(self.spawns.items(), key=lambda s: s[1]["removed"]):
+            for sid, spawn in sorted(self.world.spawns.items(), key=lambda s: s[1]["removed"]):
                 client.rel.queue(EVENT_SPAWN, spawn["origin"] if spawn.get("summon") else 0,
                                  pack_spawn(sid, spawn))
             for origin, (parts, _) in self.equipment.items():
@@ -3631,7 +3663,7 @@ class Server:
             for origin, parts, _ in self.actor_equipment.values():
                 for part in parts:
                     client.rel.queue(EVENT_ACTOR_EQUIPMENT, origin, part)
-            for data in pack_weather(self.weather):
+            for data in pack_weather(self.world.weather):
                 client.rel.queue(EVENT_WEATHER, 0, data)
             for origin, data in self.bounties.items():
                 if origin != client.id:
@@ -3781,13 +3813,12 @@ class Server:
         if self.args.load_order:
             self.pinned = (int(self.args.load_order, 16), None)
         self.lost = {"in": 0, "out": 0}
-        self.clock, clock_next = None, 0.0
+        clock_next = 0.0
         save_next = time.monotonic() + self.args.save_every if self.args.save_every else math.inf
         self.owners = {}  # cell -> authority client
         self.actor_owners = {}  # actor id -> (client, since): its owner by proximity
         self.actor_seen = {}  # actor id -> when a state of it last came
         self.dialogues = {}  # actor id -> (talking client, authority client)
-        self.deaths = {}  # refid -> the client that reported it; replayed to each joining client
         # client -> [parts of its latest whole equipment set, parts of the set arriving]
         self.equipment = {}
         self.identities = {}  # client -> its complete [name/race, head/hair] parts
@@ -3801,16 +3832,6 @@ class Server:
                 pack_equipment([i for i in self.args.bot_equip.split(",") if i]), []]
         # refid -> (reporting client, cell, ACTOR bytes), the latest from an authority
         self.actors = {}
-        self.weather = {}  # region index -> weather, the session's; replayed to each joining client
-        # refid -> (cell index, state, lock level); replayed to each joining client
-        self.objects = {}
-        # actor id -> STATUS values after the id; replayed to each joining client
-        self.statuses = {}
-        # spawn id -> reference made at run time (unpack_spawn), removed ones too; replayed likewise
-        self.spawns = {}
-        # refid -> {"cell", "entries", "origin"}: a container's latest contents; sent to whoever
-        # loads its cell (WANT)
-        self.contents = {}
         self.arriving = {}  # client id -> (refid, entries so far, next part)
         bot_boxes = []
         for spec in self.args.bot_contents:
@@ -3822,7 +3843,7 @@ class Server:
                 entries.append([name, int(count), ENTRY_DATA if condition else 0,
                                 int(condition[0]) if condition else 0, 0])
             bot_boxes.append((float(at), int(refid, 16), int(cell), entries))
-        self.world = {"path": None, "dirty": False, "saved": 0.0, "next_spawn": 1}
+        self.world = World()
         # per-tick state changes in the console
         self.detail = {"verbose": self.args.log == "verbose"}
         self.streams = {}  # character folder -> PlayerStream
@@ -4050,9 +4071,9 @@ class Server:
                 if client.alive and now - client.last > self.args.idle_timeout:
                     print(f"{time.strftime('%H:%M:%S')} client {client.id} timed out", flush=True)
                     self.leave(client)
-            if self.world["path"] and \
-                    now >= self.world["saved"] + (10 if self.world["dirty"] else 60):
-                self.write_world(now)
+            if self.world.path and \
+                    now >= self.world.saved + (10 if self.world.dirty else 60):
+                self.world.save(now)
             if now >= streams_saved + 2:
                 streams_saved = now
                 for stream in self.streams.values():
@@ -4112,14 +4133,14 @@ class Server:
                 refid = int(refid, 16)
                 if self.window(at, now):
                     self.bot["killed"] = True
-                    self.deaths[refid] = BOT_ID
+                    self.world.deaths[refid] = BOT_ID
                     print(f"{time.strftime('%H:%M:%S')} bot kills {refid:#010x}", flush=True)
                     self.broadcast_event(BOT_ID, EVENT_DEATH, struct.pack("<I", refid), now)
             for spec in [b for b in bot_statuses if self.window(b.partition("@")[2], now)]:
                 bot_statuses.remove(spec)
                 refid, _, values = spec.partition("@")[0].partition(":")
                 refid, values = int(refid, 16), tuple(int(v) for v in values.split(","))
-                self.statuses[refid] = values
+                self.world.statuses[refid] = values
                 print(f"{time.strftime('%H:%M:%S')} bot sets {describe_status(refid, values)}",
                       flush=True)
                 self.broadcast_event(BOT_ID, EVENT_STATUS, STATUS.pack(refid, *values), now)
@@ -4194,7 +4215,7 @@ class Server:
                                   now)
             for at in [t for t in bot_takes if self.window(f"{t}:", now)]:
                 bot_takes.remove(at)
-                for sid in [s for s, v in self.spawns.items() if v["origin"] != BOT_ID]:
+                for sid in [s for s, v in self.world.spawns.items() if v["origin"] != BOT_ID]:
                     self.remove_spawn(BOT_ID, sid, time.strftime("%H:%M:%S"), now)
             for shot in [s for s in bot_shots if self.window(f"{s[0]}:", now)]:
                 bot_shots.remove(shot)
@@ -4239,17 +4260,17 @@ class Server:
                     print(f"{time.strftime('%H:%M:%S')} asked to save: "
                           f"{self.ask_save(list(self.clients.values()), now, diagnostic=self.args.adopt)}",
                           flush=True)
-            if self.clock and now >= clock_next:
+            if self.world.clock and now >= clock_next:
                 clock_next = now + CLOCK_INTERVAL
-                body = self.clock.body(now)
+                body = self.world.clock.body(now)
                 for client in self.clients.values():
                     if client.alive and not client.lobby:
                         self.send(client, CLOCK, body)
             if self.args.report and now >= report:
                 report = now + self.args.report
                 print(self.status(now), flush=True)
-        if self.world["path"]:
-            self.write_world(time.monotonic())
+        if self.world.path:
+            self.world.save(time.monotonic())
         for stream in self.streams.values():
             if stream.dirty:
                 stream.save()

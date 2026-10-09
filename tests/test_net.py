@@ -301,6 +301,68 @@ class ClockTests(unittest.TestCase):
         self.assertEqual(tes3x_net.HELLO_BODY.size, 18 + tes3x_net.CLOCK_BODY.size + 32)
 
 
+class WorldTests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.path = str(Path(temp.name) / '0000abcd.json')
+
+    def saved_world(self):
+        world = tes3x_net.World()
+        world.path = self.path
+        world.deaths[0x0101F7C4] = 2
+        world.objects[0x0101F7C5] = (3, tes3x_net.OBJECT_DISABLED, 0)
+        world.weather[3] = 2
+        world.statuses[0x0101F7C6] = (10, 20, 30, 40, 50)
+        made = {'cell': 4, 'count': 1, 'removed': False, 'pos': [1.0, 2.0, 3.0],
+                'rot': [0.0, 0.0, 0.5], 'id': 'gold_001', 'origin': 2}
+        world.spawns[tes3x_net.SPAWN_IDS | 1] = made
+        world.spawns[tes3x_net.SPAWN_IDS | 2] = dict(made, id='atronach_flame', summon=True)
+        world.next_spawn = 3
+        world.contents[0x0101F7C7] = {'cell': 4, 'entries': [], 'origin': 2}
+        world.clock = tes3x_net.Clock(9.5, 16, 7, 427, 1, 30.0, now=0.0)
+        world.dirty = True
+        world.save(0.0)
+        return world
+
+    def test_save_writes_the_world_and_marks_it_clean(self):
+        world = self.saved_world()
+        self.assertFalse(world.dirty)
+        saved = tes3x_net.load_world(self.path)
+        self.assertEqual(sorted(saved), ['clock', 'contents', 'deaths', 'next_spawn', 'objects',
+                                         'spawns', 'statuses', 'weather'])
+        self.assertEqual(saved['clock'], [9.5, 16, 7, 427, 1, 30.0])
+        self.assertEqual(sorted(saved['spawns'][str(tes3x_net.SPAWN_IDS | 1)]),
+                         sorted(tes3x_net.World.SPAWN_FIELDS))
+
+    def test_load_restores_the_world_and_removes_summons(self):
+        self.saved_world()
+        world = tes3x_net.World()
+        self.assertTrue(world.load(self.path, now=0.0))
+        self.assertEqual(world.path, self.path)
+        self.assertEqual(world.deaths, {0x0101F7C4: 2})
+        self.assertEqual(world.objects, {0x0101F7C5: (3, tes3x_net.OBJECT_DISABLED, 0)})
+        self.assertEqual(world.weather, {3: 2})
+        self.assertEqual(world.statuses, {0x0101F7C6: (10, 20, 30, 40, 50)})
+        self.assertEqual(world.next_spawn, 3)
+        removed = {s['id']: s['removed'] for s in world.spawns.values()}
+        self.assertEqual(removed, {'gold_001': False, 'atronach_flame': True})
+        self.assertEqual(str(world.clock), str(tes3x_net.Clock(9.5, 16, 7, 427, 1, 30.0, now=0.0)))
+
+    def test_load_can_leave_the_clock_to_the_server(self):
+        self.saved_world()
+        world = tes3x_net.World()
+        self.assertTrue(world.load(self.path, now=0.0, clock=False))
+        self.assertIsNone(world.clock)
+
+    def test_a_missing_world_is_new(self):
+        world = tes3x_net.World()
+        self.assertFalse(world.load(self.path, now=0.0))
+        self.assertEqual(world.path, self.path)
+        self.assertEqual(str(world), '0 deaths, 0 objects, 0 spawns, 0 containers, 0 regions, '
+                                     '0 statuses')
+
+
 class AuthorityTests(unittest.TestCase):
     def state(self, x, y, cell=b''):
         flags = tes3x_net.IN_WORLD | (tes3x_net.INTERIOR if cell else 0)
