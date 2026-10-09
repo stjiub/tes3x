@@ -58,9 +58,9 @@ class PathTests(unittest.TestCase):
 
     def test_only_tes3x_paths_finds_the_repository(self):
         up = re.compile(r'__file__.*(parents\[1\]|parent\.parent|dirname\(os\.path\.dirname|"\.\.")')
-        tools = Path(__file__).resolve().parents[1] / 'tools'
-        found = [f'{path.name}:{number}' for path in sorted(tools.glob('*.py'))
-                 if path.name != 'tes3x_paths.py'
+        package = Path(__file__).resolve().parents[1] / 'src' / 'tes3x'
+        found = [f'{path.name}:{number}' for path in sorted(package.glob('*.py'))
+                 if path.name != 'paths.py'
                  for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1)
                  if up.search(line)]
         self.assertEqual(found, [])
@@ -84,6 +84,17 @@ class PathTests(unittest.TestCase):
             os.environ['TES3X_CONFIG'] = str(folder / 'chosen.toml')
             self.assertEqual(local_config(), folder / 'chosen.toml')
             self.assertEqual(local_config(folder / 'given.toml'), folder / 'given.toml')
+
+    def test_each_old_tool_name_is_the_package_module(self):
+        import importlib
+        tools = Path(__file__).resolve().parents[1] / 'tools'
+        for shim in sorted(tools.glob('tes3x_*.py')):
+            with self.subTest(shim.name):
+                try:
+                    module = importlib.import_module(shim.stem)
+                except (ImportError, SystemExit) as exc:  # an optional dependency, as capstone
+                    self.skipTest(str(exc))
+                self.assertIs(module, importlib.import_module('tes3x.' + shim.stem[6:]))
 
     def test_named_resources_exist(self):
         # VERSION and the manager's XBEs exist only in a packaged folder.

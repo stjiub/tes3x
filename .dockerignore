@@ -1,4 +1,5 @@
 # Only the server image builds from this folder; it needs the Python tools and the start points.
 *
+!src/tes3x/*.py
 !tools/*.py
 !examples/starts.toml

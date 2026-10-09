@@ -13,9 +13,10 @@ class DocsTests(unittest.TestCase):
 
     def test_every_command_is_listed(self):
         page = (docs.DOCS / 'commands.md').read_text(encoding='utf-8')
-        missing = [path.name for path in sorted((docs.ROOT / 'tools').glob('*.py'))
+        missing = [f'tes3x_{path.stem}.py'
+                   for path in sorted((docs.ROOT / 'src' / 'tes3x').glob('*.py'))
                    if 'ArgumentParser' in (text := path.read_text(encoding='utf-8'))
-                   and '__main__' in text and f'`{path.name}`' not in page]
+                   and '__main__' in text and f'`tes3x_{path.stem}.py`' not in page]
         self.assertEqual(missing, [])
 
     def test_slug_matches_rendered_anchors(self):
