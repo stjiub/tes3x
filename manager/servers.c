@@ -203,9 +203,13 @@ static int rewrite(const struct server *s, int keep)
     const char *p;
     size_t len, size = 0, o = 0;
     int inside = 0, r;
+    /* The kept lines stop at size + 256, LF endings having grown to CRLF; then the section at
+     * its longest: "[name]", both keys and the password, each with CRLF, and sprintf's NUL */
+    size_t tail = sizeof s->name + 3 + 2 * (sizeof "server_key=" + 64 + 1) +
+                  sizeof "password=" + sizeof s->password + 1;
 
     read_file(s->file, &data, &size);
-    if (!(out = malloc(size + 512))) {
+    if (!(out = malloc(size + 256 + tail))) {
         free(data);
         return -1;
     }
