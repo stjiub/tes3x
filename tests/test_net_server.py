@@ -32,19 +32,60 @@ def free_port():
 class ServerTests(unittest.TestCase):
     """A real `serve` on the loopback, driven by the fuzzer's console client."""
 
+    def wait_for(self, condition, message, timeout=5.0):
+        end = time.monotonic() + timeout
+        while True:
+            result = condition()
+            if result:
+                return result
+            left = end - time.monotonic()
+            if left <= 0:
+                self.fail(message)
+            time.sleep(min(0.05, left))
+
+    def wait_stream(self, world, **expected):
+        path = self.character(world) / tes3x_net.STREAM_NAME
+
+        def persisted():
+            if not path.exists():
+                return False
+            stream = tes3x_net.PlayerStream(str(path))
+            return all(getattr(stream, key) == value for key, value in expected.items())
+
+        self.wait_for(persisted, f'character stream did not reach {expected}')
+
     def start(self, *extra):
         try:
             tes3x_net.crypto()
         except SystemExit:
             self.skipTest('cryptography is not installed')
         self.port = free_port()
+        self.admin_port = free_port()
+        if '--admin-port' in extra:
+            self.admin_port = int(extra[extra.index('--admin-port') + 1])
         self.server = subprocess.Popen(
             [sys.executable, '-m', 'tes3x', 'net', 'serve', '--bind', '127.0.0.1',
              '--port', str(self.port),
+             '--admin-port', str(self.admin_port),
              '--duration', '120', '--report', '0', *extra],
             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
         self.addCleanup(self.stop, self.server)
-        time.sleep(1.0)
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.settimeout(0.05)
+
+            def ready():
+                if self.server.poll() is not None:
+                    self.fail('server exited before its admin listener became ready: '
+                              + self.server.stderr.read())
+                # list is read-only; commands that change state must not be blindly retried.
+                probe.sendto(b'list', ('127.0.0.1', self.admin_port))
+                try:
+                    probe.recvfrom(4096)
+                except (socket.timeout, ConnectionResetError):
+                    return False
+                return True
+
+            self.wait_for(ready, 'server admin listener did not become ready')
 
     def stop(self, server=None):
         server = server or self.server
@@ -436,11 +477,8 @@ class ServerTests(unittest.TestCase):
         client.send(net.EVENTS, net.pack_events(0, [
             (seq + i, net.EVENT_PLAYER, 0, part) for i, part in enumerate(parts)]))
         path = self.character(world) / net.STREAM_NAME
-        end = time.time() + 4
-        while time.time() < end:
-            if path.exists() and net.PlayerStream(str(path)).identity:
-                break
-            time.sleep(0.1)
+        self.wait_for(lambda: path.exists() and net.PlayerStream(str(path)).identity,
+                      'character identity was not persisted')
         return seq + len(parts)
 
     def character_load(self, world, client):
@@ -482,8 +520,8 @@ class ServerTests(unittest.TestCase):
         stale.join()
         self.game(stale, 1, 8, b'old.ess')
         loads, notices = [], []
-        end = time.time() + 2
-        while not loads and time.time() < end:
+        end = time.monotonic() + 2
+        while not loads and time.monotonic() < end:
             body = stale.receive(0.5, tes3x_net.EVENTS)
             if body is not None:
                 entries = tes3x_net.unpack_events(body)[1]
@@ -499,10 +537,10 @@ class ServerTests(unittest.TestCase):
 
     def events(self, client, until, timeout=3.0):
         """Events the server sends, acked, in order, up to the first for which until is true."""
-        got, end = [], time.time() + timeout
+        got, end = [], time.monotonic() + timeout
         delivered = getattr(client, 'delivered', 0)
-        while time.time() < end:
-            body = client.receive(0.5, tes3x_net.EVENTS)
+        while (left := end - time.monotonic()) > 0:
+            body = client.receive(min(0.5, left), tes3x_net.EVENTS)
             if body is None:
                 continue
             for seq, kind, _, data in tes3x_net.unpack_events(body)[1]:
@@ -551,12 +589,14 @@ class ServerTests(unittest.TestCase):
         first.send(net.EVENTS, net.pack_events(0, [
             (seq, net.EVENT_BOUNTY, 0, struct.pack('<i', 4321))]))
         seq += 1
-        time.sleep(0.3)
+        self.wait_stream(world, items={'Gold_001': [[100, 0, 0, 0]], 'iron longsword': swords},
+                         bounty=4321)
         player(first, seq, *net.pack_items('Gold_001', [[150, 0, 0, 0]]),
                *net.pack_items('iron longsword', []),
                bytes([net.PLAYER_VITALS]) + net.VITALS.pack(55.0, 60.0, 180.0),
                *net.pack_journal([('A1_1_FindSpymaster', 20)]))
-        time.sleep(0.3)
+        self.wait_stream(world, items={'Gold_001': [[150, 0, 0, 0]]},
+                         vitals=[55.0, 60.0, 180.0], journal={'A1_1_FindSpymaster': [10, 20]})
         name = self.character_load(world, first)
 
         stale = self.client(1)  # a relaunch into another save gets no replay, only LOAD
@@ -593,9 +633,7 @@ class ServerTests(unittest.TestCase):
             (3, net.EVENT_SNAPSHOT, 0, struct.pack('<I', 18) + place)]))
         self.events(loaded, lambda k, d: k == net.EVENT_SNAPSHOT)
         stream = self.character(world) / net.STREAM_NAME
-        end = time.time() + 4
-        while not stream.exists() and time.time() < end:
-            time.sleep(0.2)
+        self.wait_for(stream.exists, 'character stream was not persisted')
         saved = net.PlayerStream(str(stream))
         self.assertEqual(saved.items, {'Gold_001': [[150, 0, 0, 0]]})
         self.assertEqual(saved.modifiers, {0: 35.0, 13: 57.0})
@@ -622,7 +660,7 @@ class ServerTests(unittest.TestCase):
         self.events(first, lambda k, d: k == net.EVENT_PLAYER and d[:1] == bytes([net.PLAYER_READY]))
         first.send(net.EVENTS, net.pack_events(0, [
             (3, net.EVENT_PLAYER, 0, body) for body in net.pack_items('Gold_001', [[150, 0, 0, 0]])]))
-        time.sleep(0.3)
+        self.wait_stream(world, items={'Gold_001': [[150, 0, 0, 0]]})
 
         other = self.client(1)  # a launch running another save gets the character's state
         other.session ^= 2
@@ -634,10 +672,8 @@ class ServerTests(unittest.TestCase):
                          [('Gold_001', [[150, 0, 0, 0]])])
         self.assertIn(bytes([net.PLAYER_READY, 0]), replay)
         self.upload(other, 2, 2, b'mp-hero.ess', save(1))
-        end = time.time() + 3
-        while not (found := list((world / 'uploads').rglob('mp-hero.diff.txt')))                 and time.time() < end:
-            time.sleep(0.1)
-        self.assertTrue(found, 'no diff report')
+        found = self.wait_for(lambda: list((world / 'uploads').rglob('mp-hero.diff.txt')),
+                              'no diff report')
         report = found[0].read_text(encoding='utf-8')
         self.assertRegex(report, r'Journal\s+1\s+1')
         self.assertEqual((self.character(world) / 'mp-hero.ess').read_bytes(), kept)
@@ -708,11 +744,9 @@ class ServerTests(unittest.TestCase):
         alive = self.events(second, lambda kind, _: kind == net.EVENT_PLAYER)
         self.assertIn((net.EVENT_PLAYER, bytes([net.PLAYER_ALIVE])), alive)
         stream = self.character(world) / net.STREAM_NAME
-        end = time.time() + 5
-        while time.time() < end and (not stream.exists() or
-                                     net.PlayerStream(str(stream)).dead or
-                                     net.PlayerStream(str(stream)).spells != ['fire bite']):
-            time.sleep(0.2)
+        self.wait_for(lambda: stream.exists() and not net.PlayerStream(str(stream)).dead
+                      and net.PlayerStream(str(stream)).spells == ['fire bite'],
+                      'revived character state was not persisted')
         self.assertFalse(net.PlayerStream(str(stream)).dead)
         self.assertEqual(net.PlayerStream(str(stream)).spells, ['fire bite'])
 
@@ -998,10 +1032,10 @@ class ServerTests(unittest.TestCase):
         client.join()
         self.game(client, 1, 7, b'')
         self.upload(client, 2, 1, b'mp-hero.ess', self.save(b'Nerevar', 0))
-        started = time.time()
+        started = time.monotonic()
         self.admin(admin, 'stop')
         self.assertEqual(self.server.wait(5), 0)
-        self.assertGreaterEqual(time.time() - started, 0.9)
+        self.assertGreaterEqual(time.monotonic() - started, 0.9)
 
     def test_replayed_handshake3_does_not_move_the_session(self):
         self.start()
@@ -1030,9 +1064,9 @@ class ServerTests(unittest.TestCase):
                                               tes3x_net.HANDSHAKE1, 0, session, 0)
                          + noise.write1()).ljust(tes3x_net.HANDSHAKE_PAD, b'\0'),
                         ('127.0.0.1', self.port))
-        replies, end = 0, time.time() + 1.0
+        replies, end = 0, time.monotonic() + 1.0
         sock.settimeout(0.2)
-        while time.time() < end:
+        while time.monotonic() < end:
             try:
                 data, _ = sock.recvfrom(4096)
             except socket.timeout:
@@ -1050,12 +1084,17 @@ class ServerTests(unittest.TestCase):
             (first + i, kind, 0, data) for i, (kind, data) in enumerate(events)]))
 
     def drain(self, client):
-        while (body := client.receive(0.05, tes3x_net.EVENTS)) is not None:
+        end = time.monotonic() + 3.0
+        while (left := end - time.monotonic()) > 0:
+            body = client.receive(min(0.05, left), tes3x_net.EVENTS)
+            if body is None:
+                return
             for seq, *_ in tes3x_net.unpack_events(body)[1]:
                 if seq == getattr(client, 'delivered', 0) + 1:
                     client.delivered = seq
             client.send(tes3x_net.EVENTS,
                         tes3x_net.pack_events(getattr(client, 'delivered', 0), []))
+        self.fail('event stream did not drain')
 
     def relayed(self, sender, receiver, kind, data):
         """Whether an event reaches another console unchanged, judged by a TEXT marker after it."""
