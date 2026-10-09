@@ -103,7 +103,7 @@ order = 10
         self.addCleanup(window.close)
         # Cleanups run last-first: drop unsaved changes so closing does not ask to save them.
         self.addCleanup(setattr, window, "document", None)
-        window.refresh_analysis()
+        window.mods.refresh_analysis()
         return window
 
     def saved(self, path=None):
@@ -111,7 +111,7 @@ order = 10
             return tomllib.load(stream)
 
     def row(self, window, name):
-        return next(item for item in window.mod_rows() if item.text(0) == name)
+        return next(item for item in window.mods.mod_rows() if item.text(0) == name)
 
     def test_target_capabilities_follow_available_agents(self):
         xbox = {"name": "bench", "kind": "xbox", "host": "192.0.2.5",
@@ -162,26 +162,26 @@ order = 10
         self.assertEqual(window.menuBar().font(), window.tabs.tabBar().font())
         self.assertTrue(window.statusBar().spinner.isHidden())
         self.assertFalse(window.action_play.icon().isNull())
-        budget = window.resource_budget.topLevelItem(0)
+        budget = window.resources.resource_budget.topLevelItem(0)
         self.assertEqual((budget.text(0), budget.text(1)), ("Mod", "2"))
-        self.assertIs(window.details_stack.widget(0), window.mod_details)
-        self.assertEqual([item.text(0) for item in window.mod_rows()], ["Mod", "Other"])
+        self.assertIs(window.details_stack.widget(0), window.mods.mod_details)
+        self.assertEqual([item.text(0) for item in window.mods.mod_rows()], ["Mod", "Other"])
         self.assertEqual(self.row(window, "Other").text(1), "")
         self.assertEqual(self.row(window, "Mod").checkState(0), Qt.CheckState.Checked)
         self.assertEqual(self.row(window, "Other").checkState(0), Qt.CheckState.Unchecked)
         self.assertFalse(window.is_dirty())
 
         self.row(window, "Other").setCheckState(0, Qt.CheckState.Checked)
-        window.refresh_analysis()
+        window.mods.refresh_analysis()
         self.assertEqual(self.row(window, "Other").text(2), "+1")
         self.assertEqual(self.row(window, "Mod").text(2), "-1")
-        self.assertEqual(window.files_model.rowCount(), 3)
+        self.assertEqual(window.files.files_model.rowCount(), 3)
 
-        file_row = next(index for index, value in enumerate(window.files_model.entries)
+        file_row = next(index for index, value in enumerate(window.files.files_model.entries)
                         if value[0] == "meshes/a.nif")
         window.tabs.setCurrentIndex(3)
-        window.files_view.selectRow(window.files_filter.mapFromSource(
-            window.files_model.index(file_row, 0)).row())
+        window.files.files_view.selectRow(window.files.files_filter.mapFromSource(
+            window.files.files_model.index(file_row, 0)).row())
         details = window.context_info.toPlainText()
         self.assertIn("Build result: Packed in tes3xmods.bsa", details)
         self.assertIn("1. Mod — overridden", details)
@@ -191,7 +191,7 @@ order = 10
         self.assertEqual([mod["id"] for mod in self.saved()["mods"]], ["mod", "other"])
 
         self.row(window, "Mod").setCheckState(0, Qt.CheckState.Unchecked)
-        window.mod_list.move_items([self.row(window, "Other")], 0)
+        window.mods.mod_list.move_items([self.row(window, "Other")], 0)
         self.assertTrue(window.save_profile())
         mods = self.saved()["mods"]
         self.assertEqual([mod["id"] for mod in mods], ["other", "mod"])
@@ -200,17 +200,17 @@ order = 10
     def test_plugins_panel_filters_and_orders_plugins(self):
         window = self.window()
         self.row(window, "Other").setCheckState(0, Qt.CheckState.Checked)
-        window.refresh_analysis()
-        rows = window.plugin_list.rows()
+        window.mods.refresh_analysis()
+        rows = window.plugins.plugin_list.rows()
         self.assertEqual([item.text(0) for item in rows][3:], ["mod.esp", "other.esp"])
         self.assertEqual(rows[0].text(1), "Retail")
         self.assertEqual(rows[1].text(1), "Placeholder")
         self.assertEqual(rows[2].text(1), "Placeholder")
-        self.assertIn("four-byte expansion placeholders", window.plugin_note.text())
+        self.assertIn("four-byte expansion placeholders", window.plugins.plugin_note.text())
         self.assertEqual(rows[4].text(2), "04")
 
-        dependencies = [window.resource_dependencies.topLevelItem(i)
-                        for i in range(window.resource_dependencies.topLevelItemCount())]
+        dependencies = [window.resources.resource_dependencies.topLevelItem(i)
+                        for i in range(window.resources.resource_dependencies.topLevelItemCount())]
         other_master = next(item for item in dependencies if item.text(1) == "other.esp")
         self.assertEqual((other_master.text(2), other_master.text(3)),
                          ("Morrowind.esm", "Present"))
@@ -222,14 +222,14 @@ order = 10
 
         rows[3].setCheckState(0, Qt.CheckState.Unchecked)
         self.assertEqual(self.row(window, "Mod").data(0, 0x0100)["plugins"], [])
-        window.plugin_list.move_items([window.plugin_list.rows()[4]], 3)
-        self.assertEqual(window.plugin_order, ["other.esp", "mod.esp"])
+        window.plugins.plugin_list.move_items([window.plugins.plugin_list.rows()[4]], 3)
+        self.assertEqual(window.plugins.plugin_order, ["other.esp", "mod.esp"])
         self.assertTrue(window.save_profile())
         saved = self.saved()
         self.assertEqual(saved["plugins"]["order"], ["other.esp", "mod.esp"])
         self.assertEqual(saved["mods"][0]["plugins"], [])
 
-        window.mlox_at_build.setChecked(True)
+        window.plugins.mlox_at_build.setChecked(True)
         self.assertTrue(window.save_profile())
         saved = self.saved()
         self.assertNotIn("plugins", saved)
@@ -238,32 +238,32 @@ order = 10
     def test_patches_are_a_checklist_and_carry_their_ini_keys(self):
         window = self.window()
         window.tabs.setCurrentIndex(4)
-        self.assertEqual(window.patch_items["mcp-92"].text(0),
+        self.assertEqual(window.patches.patch_items["mcp-92"].text(0),
                          "Summoned creature crash fix")
-        self.assertEqual(window.patch_items["mcp-92"].text(1), "mcp-92")
-        window.patch_tree.setCurrentItem(window.patch_items["rotating-autosaves"])
+        self.assertEqual(window.patches.patch_items["mcp-92"].text(1), "mcp-92")
+        window.patches.patch_tree.setCurrentItem(window.patches.patch_items["rotating-autosaves"])
         self.assertIn("Rotate automatic saves", window.context_info.toPlainText())
-        window.set_patch("rotating-autosaves", True)
-        self.assertEqual(window.patch_configuration()["enable"], ["rotating-autosaves"])
-        self.assertEqual(window.patch_items["rotating-autosaves"].text(3), "Profile")
+        window.patches.set_patch("rotating-autosaves", True)
+        self.assertEqual(window.patches.patch_configuration()["enable"], ["rotating-autosaves"])
+        self.assertEqual(window.patches.patch_items["rotating-autosaves"].text(3), "Profile")
         self.assertIn(("xbox", "autosaveslots"), window.ini.patch_keys)
         window.ini.set_value("Xbox:AutosaveSlots", 5)
         self.assertTrue(window.save_profile())
         self.assertEqual(self.saved()["ini"], {"Xbox:AutosaveSlots": 5})
 
-        window.set_patch("rotating-autosaves", False)
-        self.assertEqual(window.patch_configuration()["enable"], [])
+        window.patches.set_patch("rotating-autosaves", False)
+        self.assertEqual(window.patches.patch_configuration()["enable"], [])
         self.assertNotIn(("xbox", "autosaveslots"), window.ini.patch_keys)
         self.assertEqual(window.ini.values, {})
-        window.set_patch("rotating-autosaves", True)
+        window.patches.set_patch("rotating-autosaves", True)
         self.assertEqual(window.ini.values, {"Xbox:AutosaveSlots": 5})
 
         # Turning off a patch the preset includes records a disable.
-        window.patch_preset.setCurrentText("testing")
-        window.set_patch("console", False)
-        self.assertEqual(window.patch_configuration()["disable"], ["console"])
-        window.set_patch("console", True)
-        self.assertEqual(window.patch_configuration()["disable"], [])
+        window.patches.patch_preset.setCurrentText("testing")
+        window.patches.set_patch("console", False)
+        self.assertEqual(window.patches.patch_configuration()["disable"], ["console"])
+        window.patches.set_patch("console", True)
+        self.assertEqual(window.patches.patch_configuration()["disable"], [])
 
     def test_developer_mode_allows_selecting_visible_dev_patches(self):
         class Settings:
@@ -278,41 +278,41 @@ order = 10
 
         settings = Settings()
         window = self.window(settings=settings)
-        heap = window.patch_items["heap-census"]
-        profiler = window.patch_items["profile"]
-        transition = window.patch_items["transition-autosaves"]
+        heap = window.patches.patch_items["heap-census"]
+        profiler = window.patches.patch_items["profile"]
+        transition = window.patches.patch_items["transition-autosaves"]
         self.assertTrue(heap.isHidden())
         self.assertFalse(profiler.isHidden())
         self.assertFalse(profiler.flags() & Qt.ItemFlag.ItemIsUserCheckable)
         self.assertTrue(transition.isHidden())
         self.assertEqual(heap.text(2), "dev")
-        self.assertEqual(window.patch_tree.headerItem().text(3), "Included by")
+        self.assertEqual(window.patches.patch_tree.headerItem().text(3), "Included by")
 
         window.channel_actions["dev"].setChecked(True)
         self.assertFalse(heap.isHidden())
         self.assertTrue(transition.flags() & Qt.ItemFlag.ItemIsUserCheckable)
         self.assertEqual(heap.text(3), "Build option")
-        window.set_patch("mwse-legacy", True)
-        script_ext = window.patch_items["script-ext"]
+        window.patches.set_patch("mwse-legacy", True)
+        script_ext = window.patches.patch_items["script-ext"]
         self.assertFalse(script_ext.flags() & Qt.ItemFlag.ItemIsUserCheckable)
         self.assertEqual(script_ext.text(3), "mwse-legacy")
         self.assertIn("dev", settings.values["shown_channels"])
         window.channel_actions["dev"].setChecked(False)
         self.assertTrue(heap.isHidden())
         window.channel_actions["dev"].setChecked(True)
-        window.set_patch("heap-census", True)
+        window.patches.set_patch("heap-census", True)
         window.channel_actions["dev"].setChecked(False)
         self.assertFalse(heap.isHidden())
 
     def test_preview_patch_is_visible_without_developer_mode(self):
         window = self.window()
-        patch = window.patch_items["mcp-3"]
+        patch = window.patches.patch_items["mcp-3"]
         self.assertFalse(patch.isHidden())
-        window.set_patch("mcp-3", True)
+        window.patches.set_patch("mcp-3", True)
         self.assertFalse(patch.isHidden())
         window.channel_actions["preview"].setChecked(False)
         self.assertFalse(patch.isHidden())
-        window.set_patch("mcp-3", False)
+        window.patches.set_patch("mcp-3", False)
         self.assertTrue(patch.isHidden())
 
     def test_ini_panel_shows_retail_values_and_saves_changes(self):
@@ -342,33 +342,33 @@ order = 10
                                    "yes, after Morrowind.bsa"],
                                   ["Mod.bsa", "Mod", "unpacked"]])
         window.build.select(window.build.mode, "loose")
-        window.toggle_archives(self.row(window, "Mod"))
-        window.refresh_analysis()
+        window.mods.toggle_archives(self.row(window, "Mod"))
+        window.mods.refresh_analysis()
         self.assertEqual(rows(), [["Morrowind.bsa", "Retail", "yes"],
                                   ["Mod.bsa", "Mod", "yes, via multi-bsa"]])
-        self.assertEqual(window.patch_items["multi-bsa"].text(3), "Delta-BSA packaging")
+        self.assertEqual(window.patches.patch_items["multi-bsa"].text(3), "Delta-BSA packaging")
         self.assertTrue(window.save_profile())
         self.assertEqual(self.saved()["mods"][0]["archives"], "load")
 
     def test_xbox_column_shows_catalog_verdicts_and_unmet_patches(self):
         window = self.window()
         other = self.row(window, "Other")
-        self.assertEqual(other.text(window.MOD_XBOX), "?")
+        self.assertEqual(other.text(window.mods.MOD_XBOX), "?")
         window.compat = {"mod": {"id": "mod", "name": "Mod", "folder": "Mod",
                                  "status": "works-with-requirements", "patches": ["dxt5-size"]}}
-        window.refresh_patch_states()
+        window.patches.refresh_patch_states()
         mod = self.row(window, "Mod")
-        self.assertEqual(mod.text(window.MOD_XBOX), "*")
-        self.assertIn("Turn on in Patches: dxt5-size", mod.toolTip(window.MOD_XBOX))
-        window.set_patch("dxt5-size", True)
-        self.assertNotIn("Turn on", mod.toolTip(window.MOD_XBOX))
+        self.assertEqual(mod.text(window.mods.MOD_XBOX), "*")
+        self.assertIn("Turn on in Patches: dxt5-size", mod.toolTip(window.mods.MOD_XBOX))
+        window.patches.set_patch("dxt5-size", True)
+        self.assertNotIn("Turn on", mod.toolTip(window.mods.MOD_XBOX))
 
         # Ticking a mod turns on the patches it needs.
-        window.set_patch("dxt5-size", False)
+        window.patches.set_patch("dxt5-size", False)
         window.compat["other"] = {"id": "other", "name": "Other", "folder": "Other",
                                   "status": "works-with-requirements", "patches": ["mcp-154"]}
         self.row(window, "Other").setCheckState(0, Qt.CheckState.Checked)
-        self.assertEqual(window.patch_configuration()["enable"], ["mcp-154"])
+        self.assertEqual(window.patches.patch_configuration()["enable"], ["mcp-154"])
 
     def test_build_tab_writes_profile_settings(self):
         window = self.window()
@@ -383,14 +383,16 @@ order = 10
         build.title.setText("Modded")
         build.install_dir.setText("MorrowindModded")
         build.select(build.install_layout, "overlay")
-        self.assertEqual(window.patch_items["data-overlay"].text(3), "Overlay install layout")
-        self.assertFalse(window.patch_items["data-overlay"].flags()
+        self.assertEqual(
+            window.patches.patch_items["data-overlay"].text(3), "Overlay install layout"
+        )
+        self.assertFalse(window.patches.patch_items["data-overlay"].flags()
                          & Qt.ItemFlag.ItemIsUserCheckable)
         build.select(build.mode, "loose")
         build.archive_only.setChecked(True)
         build.select(build.invert_look, True)
-        window.toggle_flag(self.row(window, "Mod"), "loose")
-        window.refresh_analysis()
+        window.mods.toggle_flag(self.row(window, "Mod"), "loose")
+        window.mods.refresh_analysis()
         window.tabs.setCurrentIndex(
             [window.tabs.tabText(i) for i in range(window.tabs.count())].index("Build"))
         preview = window.context_info.toPlainText()
@@ -490,7 +492,7 @@ order = 10
                           for i in range(window.profile_picker.count())], ["a", "b"])
         self.assertFalse(window.is_dirty())
 
-        window.patch_preset.setCurrentText("minimal")
+        window.patches.patch_preset.setCurrentText("minimal")
         self.assertTrue(window.is_dirty())
         with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Save):
             window.picker_activated(1)
@@ -517,8 +519,8 @@ order = 10
         profile.write_text(f'[profile]\nname = "folders"\nlibrary = "{plain.as_posix()}"\n\n'
                            '[[mods]]\nname = "Folder Mod"\norder = 10\n', encoding="utf-8")
         window = self.window(profile)
-        self.assertEqual([item.text(0) for item in window.mod_rows()], ["Folder Mod", "Other"])
-        self.assertEqual(window.plugin_list.topLevelItemCount(), 4)
+        self.assertEqual([item.text(0) for item in window.mods.mod_rows()], ["Folder Mod", "Other"])
+        self.assertEqual(window.plugins.plugin_list.topLevelItemCount(), 4)
         self.assertFalse(window.is_dirty())
 
         self.row(window, "Other").setCheckState(0, Qt.CheckState.Checked)
@@ -532,7 +534,7 @@ order = 10
             window.convert_to_ids()
         self.assertEqual([mod["id"] for mod in self.saved(profile)["mods"]],
                          ["folder-mod", "other"])
-        self.assertEqual(len(window.mod_rows()), 2)
+        self.assertEqual(len(window.mods.mod_rows()), 2)
 
     def test_installs_an_archive_with_option_folders(self):
         archive = self.root / "Travel Mod-1234-1-2-1700000000.zip"
@@ -553,7 +555,7 @@ order = 10
             return QDialog.DialogCode.Accepted
 
         with patch.object(InstallDialog, "exec", accept):
-            window.install_paths([str(archive)])
+            window.mods.install_paths([str(archive)])
         self.assertEqual(seen, {"name": "Travel Mod", "version": "1.2",
                                 "roots": ["Travel Mod/00 Core", "Travel Mod/01 Music"]})
         installed = self.library / "Travel Mod"
@@ -580,28 +582,30 @@ order = 10
         page = "https://www.nexusmods.com/morrowind/mods/123"
         window.compat = {"other": {"id": "other", "name": "Other", "folder": "Other",
                                    "status": "works", "url": page}}
-        with patch.object(window, "nexus_lookup") as lookup:
+        with patch.object(window.mods, "nexus_lookup") as lookup:
             self.row(window, "Other").setSelected(True)
         self.assertEqual(lookup.call_args.args[0], "id:123")
-        shown = window.mod_info.toPlainText()
+        shown = window.mods.mod_info.toPlainText()
         for text in ("Other", page, "Find on Nexus", "Xbox compatibility: Confirmed"):
             self.assertIn(text, shown)
-        self.assertIn("1 plugin · 0 archives · 1 other file", window.mod_contents_summary.text())
-        plugin_row = window.mod_plugins.topLevelItem(0)
+        self.assertIn(
+            "1 plugin · 0 archives · 1 other file", window.mods.mod_contents_summary.text()
+        )
+        plugin_row = window.mods.mod_plugins.topLevelItem(0)
         self.assertEqual((plugin_row.text(0), plugin_row.text(1)),
                          ("other.esp", "Not active"))
         self.assertIn("Someone", plugin_row.text(2))
         self.assertIn("Adds a thing", plugin_row.text(2))
 
-        window.nexus_finished("id:123", {"id": 123, "name": "Other", "summary": "From Nexus",
+        window.mods.nexus_finished("id:123", {"id": 123, "name": "Other", "summary": "From Nexus",
                                          "author": "Author", "version": "1", "url": page}, None)
-        self.assertIn("From Nexus", window.mod_info.toPlainText())
+        self.assertIn("From Nexus", window.mods.mod_info.toPlainText())
         with open(self.library / "library.toml", "rb") as stream:
             other = next(mod for mod in tomllib.load(stream)["mod"] if mod["id"] == "other")
         self.assertEqual((other["url"], other["summary"], other["author"]),
                          (page, "From Nexus", "Author"))
 
-    @patch("tes3x.gui.running_xemu", return_value=[])
+    @patch("tes3x.gui.play_controller.running_xemu", return_value=[])
     def test_play_builds_first_then_boots_the_build(self, _running):
         import hashlib
         import json
@@ -626,13 +630,13 @@ order = 10
             calls.append((Path(program).name, arguments))
 
         def start_play(program, arguments, *_args):
-            window.play_process = "running"
+            window.play_controller.play_process = "running"
             calls.append((Path(program).name, arguments))
 
         calls = []
         with patch.object(window, "start_command", side_effect=start), \
-                patch.object(window, "start_play_process", side_effect=start_play):
-            window.play()
+                patch.object(window.play_controller, "start_play_process", side_effect=start_play):
+            window.play_controller.play()
             self.assertEqual(calls[0][0], "pipeline")
             output = self.root / "out" / "gui"
             (output / "deploy").mkdir(parents=True)
@@ -651,21 +655,21 @@ order = 10
         self.assertTrue(calls[1][1][0].startswith("play-profile-xemu-"))
 
         # RAM comes from the selected target; a 128 MB target needs its BIOS set.
-        window.play_process = None
+        window.play_controller.play_process = None
         window.target_picker.setCurrentIndex(window.target_picker.findData("xemu-128"))
         window.target_selection_changed()
         with patch.object(window, "error") as error:
-            window.play()
+            window.play_controller.play()
         self.assertIn("128 MB BIOS", error.call_args.args[0])
         config.write_text(config.read_text(encoding="utf-8").replace(
             'ram = 128\nexe = "xemu-new.exe"',
             'ram = 128\nexe = "xemu-new.exe"\nbios_128mb = "cerbios.bin"'), encoding="utf-8")
         window.process = None
-        window.play_process = None
+        window.play_controller.play_process = None
         window.refresh_play_menu()
         self.assertTrue(window.action_play.isEnabled())
-        with patch.object(window, "start_play_process", side_effect=start_play):
-            window.play()
+        with patch.object(window.play_controller, "start_play_process", side_effect=start_play):
+            window.play_controller.play()
         self.assertEqual(calls[2][1][calls[2][1].index("--target") + 1], "xemu-128")
         self.assertEqual(window.play_button.text(), "Play")
         with patch.object(window, "error") as error:
@@ -673,24 +677,25 @@ order = 10
         self.assertIn("Stop xemu", error.call_args.args[0])
 
         # Debug with GDB opens the stub; the transient status names the runner's port.
-        window.play_process = None
-        window.set_play_gdb()
-        with patch.object(window, "start_play_process", side_effect=start_play):
-            window.play()
+        window.play_controller.play_process = None
+        window.play_controller.set_play_gdb()
+        with patch.object(window.play_controller, "start_play_process", side_effect=start_play):
+            window.play_controller.play()
         self.assertIn("--gdb", calls[3][1])
-        window.play_run.mkdir(parents=True)
-        (window.play_run / "gdb.port").write_text("1234")
-        window.play_process = type("Process", (), {"readAllStandardOutput": lambda self:
-                                                   b"xemu: started, pid 1\n"})()
-        window.append_play_output()
+        window.play_controller.play_run.mkdir(parents=True)
+        (window.play_controller.play_run / "gdb.port").write_text("1234")
+        window.play_controller.play_process = type(
+            "Process", (), {"readAllStandardOutput": lambda self: b"xemu: started, pid 1\n"}
+        )()
+        window.play_controller.append_play_output()
         self.assertEqual(window.statusBar().message.text(), "Playing · GDB :1234")
-        self.assertEqual(window.play_pid, 1)
+        self.assertEqual(window.play_controller.play_pid, 1)
         with patch("tes3x.gui.os.kill") as kill:
-            window.stop_play()
+            window.play_controller.stop_play()
         kill.assert_called_once_with(1, signal.SIGTERM)
-        window.play_process = None
-        window.play_pid = None
-        window.set_play_gdb()
+        window.play_controller.play_process = None
+        window.play_controller.play_pid = None
+        window.play_controller.set_play_gdb()
 
         self.profile.write_text(self.profile.read_text(encoding="utf-8") + "\n", encoding="utf-8")
         self.assertEqual(window.build_status()[0], "stale")
@@ -744,7 +749,7 @@ order = 10
         window.update_build_state()
         self.assertEqual(window.deploy_button.property("state"), "stale")
 
-        with patch("tes3x.gui.QProcess"):
+        with patch("tes3x.gui.window.QProcess"):
             window.start_command("tool.py", [], "Working…")
         self.assertFalse(window.statusBar().spinner.isHidden())
         window.process.readAllStandardOutput.return_value = b"xemu: started, pid 1\n"
@@ -785,7 +790,7 @@ order = 10
 
         with patch.object(window, "start_command", side_effect=start), \
                 patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
-            window.play()
+            window.play_controller.play()
             for _ in range(2):
                 window.process = None
                 window.command_finished(0, None)
@@ -798,7 +803,7 @@ order = 10
         window.process = None
         calls.clear()
         with patch.object(window, "start_command", side_effect=start),                 patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
-            window.play()
+            window.play_controller.play()
             window.process = None
             window.command_finished(1, None)
         self.assertEqual([call[1] for call in calls], ["ping"])
@@ -814,7 +819,7 @@ order = 10
 
         warning = patch.object(QMessageBox, "warning", return_value=QMessageBox.StandardButton.Yes)
         with patch.object(window, "start_command", side_effect=start_full), warning as asked:
-            window.play()
+            window.play_controller.play()
             window.process = None
             window.command_finished(0, None)
             window.output.setPlainText("  conflict: F:/Games/Test holds 3 files (1.0 KB) that "
@@ -839,15 +844,15 @@ order = 10
         config.write_text('[deploy]\nhost = "192.0.2.5"\nremote_root = "F:/Games/Test"\n'
                           "[paths]\n", encoding="utf-8")
         window = self.window(config=config)
-        self.assertEqual(window.current_pool(), (0x42530005, None))
+        self.assertEqual(window.saves.current_pool(), (0x42530005, None))
         with patch.object(QInputDialog, "getText", return_value=("TR test", True)):
-            window.new_pool()
-        value, name = window.current_pool()
+            window.saves.new_pool()
+        value, name = window.saves.current_pool()
         self.assertEqual((value >> 16, name), (0x5433, "TR test"))
         self.assertTrue(window.save_profile())
         self.assertEqual(self.saved()["profile"]["save_pool"], "TR test")
         self.assertEqual(self.saved()["profile"]["save_pool_id"], f"{value:08X}")
-        self.assertIn(f"E:\\UDATA\\{value:08X}", window.pool_note.text())
+        self.assertIn(f"E:\\UDATA\\{value:08X}", window.saves.pool_note.text())
 
         saves = [{"source": "pc", "folder": "A", "name": "fits", "size": 1 << 20,
                   "masters": ["Morrowind.esm", "mod.esp"]},
@@ -856,18 +861,18 @@ order = 10
                  {"source": "xbox", "target": "xbox", "folder": "C", "name": "reordered",
                   "size": 1 << 20, "masters": ["mod.esp", "Morrowind.esm"]}]
         devices = [("pc", "PC library"), ("xemu", "xemu disk"), ("xbox:xbox", "Xbox · xbox")]
-        with patch.object(window, "save_devices", return_value=devices):
-            window.populate_saves(saves)
-        children = [window.save_list.topLevelItem(i).child(j)
-                    for i in range(window.save_list.topLevelItemCount())
-                    for j in range(window.save_list.topLevelItem(i).childCount())]
-        fits = {item.text(0): item.text(window.SAVE_FIT) for item in children}
+        with patch.object(window.saves, "save_devices", return_value=devices):
+            window.saves.populate_saves(saves)
+        children = [window.saves.save_list.topLevelItem(i).child(j)
+                    for i in range(window.saves.save_list.topLevelItemCount())
+                    for j in range(window.saves.save_list.topLevelItem(i).childCount())]
+        fits = {item.text(0): item.text(window.saves.SAVE_FIT) for item in children}
         self.assertEqual(fits, {"fits": "Compatible", "lacks": "Missing gone.esp",
                                 "reordered": "Compatible"})
-        self.assertIn("1 of 3 saves need plugins", window.pool_note.text())
+        self.assertIn("1 of 3 saves need plugins", window.saves.pool_note.text())
 
         # A copy to an Xbox goes through the PC: pull what is elsewhere, then push.
-        steps = window.send_steps(saves, "xbox:xbox")
+        steps = window.saves.send_steps(saves, "xbox:xbox")
         self.assertEqual([arguments[0] for _script, arguments, _message in steps],
                          ["pull", "push"])
         self.assertIn("xemu", steps[0][1])
@@ -875,35 +880,37 @@ order = 10
         self.assertEqual(push[1:3], ["A", "B"])
         self.assertEqual(push[push.index("--pool-name") + 1], "TR test")
         self.assertEqual(push[push.index("--target") + 1], "xbox")
-        self.assertEqual([arguments[0] for _s, arguments, _m in window.send_steps(saves, "pc")],
-                         ["pull", "pull"])
+        self.assertEqual(
+            [arguments[0] for _s, arguments, _m in window.saves.send_steps(saves, "pc")],
+            ["pull", "pull"],
+        )
 
         # Each save changes pool where it is: on the Xbox, on the PC or on the xemu disk.
-        moves = window.transfer_steps(saves, 0x42530005, None, True)
+        moves = window.saves.transfer_steps(saves, 0x42530005, None, True)
         self.assertEqual(sorted(arguments[arguments.index("--where") + 1]
                                 for _s, arguments, _m in moves), ["pc", "xbox", "xemu"])
         self.assertTrue(all("--move" in arguments for _s, arguments, _m in moves))
-        copies = window.transfer_steps(saves, 0x42530005, None, False)
+        copies = window.saves.transfer_steps(saves, 0x42530005, None, False)
         self.assertEqual(len(copies), 3)
 
         # Back to the shared pool: the new pool stays on the list to choose again.
-        window.pool_chosen(window.pool_combo.findData(0x42530005))
+        window.saves.pool_chosen(window.saves.pool_combo.findData(0x42530005))
         self.assertTrue(window.save_profile())
         self.assertNotIn("save_pool", self.saved()["profile"])
-        self.assertNotEqual(window.pool_combo.findData(value), -1)
-        window.pool_chosen(window.pool_combo.findData(value))
-        self.assertEqual(window.current_pool(), (value, "TR test"))
+        self.assertNotEqual(window.saves.pool_combo.findData(value), -1)
+        window.saves.pool_chosen(window.saves.pool_combo.findData(value))
+        self.assertEqual(window.saves.current_pool(), (value, "TR test"))
 
         # The Xbox's last listing of a pool shows until the Xbox answers again.
-        saves_tool.write_index(window.save_library(), {
+        saves_tool.write_index(window.saves.save_library(), {
             "pools": {f"{value:08X}": "TR test"},
             "xbox": {f"{value:08X}": {"time": "2026-09-28 20:00", "saves": saves[2:]}}})
-        window.saves_xbox = {}
-        window.refresh_saves(False)
-        self.assertEqual(len(window.all_saves()), 1)
-        group = window.save_list.topLevelItem(1)
+        window.saves.saves_xbox = {}
+        window.saves.refresh_saves(False)
+        self.assertEqual(len(window.saves.all_saves()), 1)
+        group = window.saves.save_list.topLevelItem(1)
         self.assertEqual(group.text(0), "Xbox · xbox")
-        self.assertIn("listed 2026-09-28 20:00", group.text(window.SAVE_PLAYER))
+        self.assertIn("listed 2026-09-28 20:00", group.text(window.saves.SAVE_PLAYER))
 
     def test_saves_list_every_target_by_device(self):
         config = self.root / "local.toml"
@@ -912,11 +919,11 @@ order = 10
                           '[targets.spare]\nkind = "xbox"\nhost = "192.0.2.6"\n'
                           'games_root = "E:/Games"\n', encoding="utf-8")
         window = self.window(config=config)
-        value = window.current_pool()[0]
+        value = window.saves.current_pool()[0]
         make_save = lambda source, folder: {
             "source": source, "folder": folder, "name": folder, "size": 1,
             "date": "2026-10-03 12:00", "masters": ["Morrowind.esm"]}
-        saves_tool.write_index(window.save_library(), {
+        saves_tool.write_index(window.saves.save_library(), {
             "pools": {}, "xbox": {}, "targets": {
                 "bench": {f"{value:08X}": {"time": "one", "saves": [
                     make_save("xbox", "bench-save")]}},
@@ -927,27 +934,29 @@ order = 10
         window.tabs.setCurrentIndex(next(index for index in range(window.tabs.count())
                                          if window.tabs.tabText(index) == "Saves"))
         window.tabs.blockSignals(False)
-        window.saves_xbox = {}
-        window.refresh_saves(False)
-        groups = {window.save_list.topLevelItem(i).text(0): window.save_list.topLevelItem(i)
-                  for i in range(window.save_list.topLevelItemCount())}
+        window.saves.saves_xbox = {}
+        window.saves.refresh_saves(False)
+        groups = {
+            window.saves.save_list.topLevelItem(i).text(0): window.saves.save_list.topLevelItem(i)
+            for i in range(window.saves.save_list.topLevelItemCount())
+        }
         self.assertEqual(list(groups), ["PC library", "Xbox · bench", "Xbox · spare"])
         self.assertEqual(groups["Xbox · bench"].child(0).text(0), "bench-save")
         self.assertEqual(groups["Xbox · spare"].child(0).text(0), "spare-save")
-        self.assertIn("listed two", groups["Xbox · spare"].text(window.SAVE_PLAYER))
+        self.assertIn("listed two", groups["Xbox · spare"].text(window.saves.SAVE_PLAYER))
 
         # Each Xbox is asked once per pool and session, whichever target is selected.
-        with patch.object(window, "list_xbox_saves") as listing:
-            window.refresh_saves(None)
+        with patch.object(window.saves, "list_xbox_saves") as listing:
+            window.saves.refresh_saves(None)
         self.assertEqual(sorted(call.args for call in listing.call_args_list),
                          [(value, "bench"), (value, "spare")])
 
         # A copy between Xboxes goes through the PC: pull from one, push to the other.
-        spare = next(window.save_list.topLevelItem(i) for i in
-                     range(window.save_list.topLevelItemCount())
-                     if window.save_list.topLevelItem(i).text(0) == "Xbox · spare")
+        spare = next(window.saves.save_list.topLevelItem(i) for i in
+                     range(window.saves.save_list.topLevelItemCount())
+                     if window.saves.save_list.topLevelItem(i).text(0) == "Xbox · spare")
         spare.child(0).setSelected(True)
-        steps = window.send_steps(window.selected_saves(), "xbox:bench")
+        steps = window.saves.send_steps(window.saves.selected_saves(), "xbox:bench")
         self.assertEqual([(arguments[0], arguments[arguments.index("--target") + 1])
                           for _s, arguments, _m in steps], [("pull", "spare"), ("push", "bench")])
 
@@ -971,7 +980,7 @@ order = 10
         config.write_text('# keep this comment\n[xemu]\nexe = "xemu.exe"\ncustom = "keep"\n',
                           encoding="utf-8")
         window = self.window(config=config)
-        self.enterContext(patch.object(window, "refresh_ftp_status"))
+        self.enterContext(patch.object(window.play_controller, "refresh_ftp_status"))
         setup = window.targets_page.setup
         self.assertEqual(window.target_picker.currentData(), "xemu")
         self.assertEqual(setup.xemu_fields["exe"].text(), "xemu.exe")
@@ -1019,7 +1028,7 @@ order = 10
         config.write_text('[deploy]\nhost = "192.0.2.5"\n'
                           'remote_root = "F:/Games/MorrowindTest"\n', encoding="utf-8")
         window = self.window(config=config)
-        self.enterContext(patch.object(window, "refresh_ftp_status"))
+        self.enterContext(patch.object(window.play_controller, "refresh_ftp_status"))
         setup = window.targets_page.setup
         self.assertTrue(setup.legacy)
         self.assertFalse(setup.legacy_notice.isHidden())
@@ -1034,7 +1043,7 @@ order = 10
         config.write_text('default_target = "bench"\n[targets.bench]\nkind = "xbox"\n'
                           'host = "192.0.2.5"\ngames_root = "F:/Games"\n', encoding="utf-8")
         window = self.window(config=config)
-        self.enterContext(patch.object(window, "refresh_ftp_status"))
+        self.enterContext(patch.object(window.play_controller, "refresh_ftp_status"))
         page = window.targets_page
         self.assertFalse(page.software.isHidden())
         with patch.object(window, "run_steps") as run:
@@ -1050,7 +1059,7 @@ order = 10
                           'remote_root = "F:/Games/MorrowindTest"\n'
                           '[xemu]\nexe = "old/xemu.exe"\nbios = "bios.bin"\n', encoding="utf-8")
         window = self.window(config=config)
-        self.enterContext(patch.object(window, "refresh_ftp_status"))
+        self.enterContext(patch.object(window.play_controller, "refresh_ftp_status"))
         window.target_picker.setCurrentIndex(window.target_picker.findData("xemu"))
         window.target_selection_changed()
         setup = window.targets_page.setup
@@ -1071,21 +1080,25 @@ order = 10
             def readAllStandardOutput(self):
                 return b"ok C=120/480 E=3000/4882 F=1536/60000 G=?/?"
 
-        window.drive_probe = Reply()
-        window.drive_probe_target = "bench"
-        window.drive_probe_finished(0, None)
+        window.play_controller.drive_probe = Reply()
+        window.play_controller.drive_probe_target = "bench"
+        window.play_controller.drive_probe_finished(0, None)
         self.assertIn("F: 1.5 GB free of 58.6 GB", window.target_picker.toolTip())
         self.assertIn("E: 2.9 GB free of 4.8 GB, 39% used", window.target_picker.toolTip())
-        window.drive_probe = Reply()
-        window.drive_probe_target = "bench"
-        window.drive_probe.readAllStandardOutput = lambda: b"err unknown command: drives"
-        window.drive_probe_finished(1, None)
+        window.play_controller.drive_probe = Reply()
+        window.play_controller.drive_probe_target = "bench"
+        window.play_controller.drive_probe.readAllStandardOutput = (
+            lambda: b"err unknown command: drives"
+        )
+        window.play_controller.drive_probe_finished(1, None)
         self.assertIn("unknown command: drives", window.target_picker.toolTip())
 
-        window.agent_probes["bench"] = Reply()
-        window.agent_probes["bench"].readAllStandardOutput = lambda: b"ok tes3xagent 5 mem=23"
+        window.play_controller.agent_probes["bench"] = Reply()
+        window.play_controller.agent_probes["bench"].readAllStandardOutput = (
+            lambda: b"ok tes3xagent 5 mem=23"
+        )
         window.set_target_runtime("bench", ftp="connected")
-        window.dashboard_probe_finished("bench", 6, 0, None)
+        window.play_controller.dashboard_probe_finished("bench", 6, 0, None)
         self.assertEqual(window.target_runtime["bench"]["dashboard"], "outdated")
         self.assertIn("Dashboard agent outdated", window.target_picker.toolTip())
 
@@ -1096,8 +1109,8 @@ order = 10
                           'kind = "xbox"\nhost = "192.0.2.6"\ngames_root = "F:/Games"\n'
                           '[targets.xemu]\nkind = "xemu"\n', encoding="utf-8")
         window = self.window(config=config)
-        with patch.object(window, "refresh_ftp_status") as probe:
-            window.refresh_all_targets()
+        with patch.object(window.play_controller, "refresh_ftp_status") as probe:
+            window.play_controller.refresh_all_targets()
         self.assertEqual([call.args[0] for call in probe.call_args_list], ["bench", "spare"])
         window.set_target_runtime("spare", ftp="offline")
         row = window.target_picker.findData("spare")
@@ -1113,15 +1126,17 @@ order = 10
         window.set_target_runtime("bench", ftp="offline")
         base = {"address": ("192.0.2.5", 40000), "session": 1, "client_key": "abc",
                 "payload": b""}
-        window.handle_in_game_event({**base, "kind": "connected"})
+        window.play_controller.handle_in_game_event({**base, "kind": "connected"})
         self.assertEqual(window.target_runtime["bench"]["game"], "connected")
         self.assertEqual(target_runtime_label(
             {"kind": "xbox"}, window.target_runtime["bench"]), "In game")
         self.assertIn("In game", window.target_picker.toolTip())
 
-        window.handle_in_game_event({**base, "kind": "log", "payload": b"one\ntwo\n"})
-        self.assertEqual(window.agent_logs["bench"], ["one", "two"])
-        window.handle_in_game_event({**base, "kind": "stalled"})
+        window.play_controller.handle_in_game_event(
+            {**base, "kind": "log", "payload": b"one\ntwo\n"}
+        )
+        self.assertEqual(window.play_controller.agent_logs["bench"], ["one", "two"])
+        window.play_controller.handle_in_game_event({**base, "kind": "stalled"})
         self.assertEqual(window.target_runtime["bench"]["game"], "stalled")
         self.assertIn("heartbeat stopped", window.target_picker.toolTip())
 
@@ -1131,24 +1146,26 @@ order = 10
                           'host = "192.0.2.5"\ngames_root = "F:/Games"\n', encoding="utf-8")
         window = self.window(config=config)
         base = {"address": ("192.0.2.5", 26501), "session": 1, "client_key": "abc"}
-        window.handle_in_game_event({**base, "kind": "connected",
+        window.play_controller.handle_in_game_event({**base, "kind": "connected",
                                      "payload": b"\0\0\0\0mgr1"})
-        window.handle_in_game_event({**base, "kind": "heartbeat", "payload": bytes(16)})
+        window.play_controller.handle_in_game_event(
+            {**base, "kind": "heartbeat", "payload": bytes(16)}
+        )
         self.assertEqual(target_runtime_label(
             {"kind": "xbox"}, window.target_runtime["bench"]), "Manager")
         self.assertIn("manager_agent", window.target_features("bench"))
         self.assertNotIn("commands", window.target_features("bench"))
 
-        listener = window.in_game_listener = MagicMock()
+        listener = window.play_controller.in_game_listener = MagicMock()
         with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes), \
                 patch.object(window, "start_command") as start, \
-                patch.object(window, "start_in_game_listener") as restart:
+                patch.object(window.play_controller, "start_in_game_listener") as restart:
             window.process = None
             start.side_effect = lambda *a, **k: setattr(window, "process", MagicMock())
             window.deploy_profile()
             self.assertIn("--deploy-agent", start.call_args.args[1])
             listener.close.assert_called_once()
-            self.assertIsNone(window.in_game_listener)
+            self.assertIsNone(window.play_controller.in_game_listener)
             self.assertNotIn("manager_agent", window.target_features("bench"))
             window.command_finished(1, None)
             restart.assert_called_once()
@@ -1157,7 +1174,7 @@ order = 10
             window.process = None
             window.deploy_built("--ignore-space")
             self.assertIn("--agent", start.call_args.args[1])
-            self.assertTrue(window.listener_lent)
+            self.assertTrue(window.play_controller.listener_lent)
 
 
     def test_targets_page_sends_commands_and_fetches_through_the_agent(self):
@@ -1179,7 +1196,7 @@ order = 10
             def close(self):
                 pass
 
-        window.in_game_listener = listener = Listener()
+        window.play_controller.in_game_listener = listener = Listener()
         page = window.targets_page
         window.workspace_bar.setCurrentIndex(1)
         self.assertIs(window.workspaces.currentWidget(), page)
@@ -1187,45 +1204,54 @@ order = 10
         self.assertIn("no game", page.send_button.toolTip())
 
         base = {"address": ("192.0.2.5", 26501), "session": 1, "client_key": "abc"}
-        window.handle_in_game_event({**base, "kind": "heartbeat",
+        window.play_controller.handle_in_game_event({**base, "kind": "heartbeat",
                                      "payload": struct.pack("<IIII", 1, 33400, 5444, 2)})
         self.assertTrue(page.send_button.isEnabled())
         self.assertIn("33.4 ms frame", page.fields["heartbeat"].text())
-        window.handle_in_game_event({**base, "kind": "log", "payload": b"live> fps"})
+        window.play_controller.handle_in_game_event(
+            {**base, "kind": "log", "payload": b"live> fps"}
+        )
         self.assertIn("live> fps", page.console_view.toPlainText())
 
         page.console_entry.setText("tes3xnet stat")
         page.send_command()
         self.assertEqual(listener.sent[-1], ("192.0.2.5", 26501, OP_CONSOLE, b"tes3xnet stat"))
         self.assertEqual(page.history, ["tes3xnet stat"])
-        window.handle_in_game_event({**base, "kind": "reply", "id": 1, "status": "unsupported",
-                                     "payload": b""})
+        window.play_controller.handle_in_game_event(
+            {**base, "kind": "reply", "id": 1, "status": "unsupported", "payload": b""}
+        )
         self.assertIn("tes3xnet stat: unsupported", page.console_view.toPlainText())
 
         content = b"x" * 1500
         destination = self.root / "fetched" / "tes3xprof.bin"
-        window.agent_fetch("bench", "E:\\tes3xprof.bin", destination)
+        window.play_controller.agent_fetch("bench", "E:\\tes3xprof.bin", destination)
         answered = 1  # the console line
-        while window.agent_fetches and answered < len(listener.sent):
+        while window.play_controller.agent_fetches and answered < len(listener.sent):
             answered += 1
             _host, _port, op, args = listener.sent[answered - 1]
             self.assertEqual(op, OP_READ)
             at = struct.unpack_from("<I", args)[0]
-            window.handle_in_game_event({**base, "kind": "reply", "id": answered, "status": "ok",
-                                         "payload": struct.pack("<II", len(content), at)
-                                         + content[at:at + 1024]})
+            window.play_controller.handle_in_game_event(
+                {
+                    **base,
+                    "kind": "reply",
+                    "id": answered,
+                    "status": "ok",
+                    "payload": struct.pack("<II", len(content), at) + content[at : at + 1024],
+                }
+            )
         self.assertEqual(destination.read_bytes(), content)
-        self.assertEqual(window.agent_fetches, [])
+        self.assertEqual(window.play_controller.agent_fetches, [])
 
         with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
             page.quit_game()
         self.assertEqual(listener.sent[-1][2], OP_REBOOT)
 
         # xemu needs its NIC, on xemu's NAT, only for builds with a network patch.
-        window.applied_patches = {"diagnostics"}
-        self.assertFalse(window.play_network())
-        window.applied_patches = {"diagnostics", "net", "agent"}
-        self.assertTrue(window.play_network())
+        window.patches.applied_patches = {"diagnostics"}
+        self.assertFalse(window.play_controller.play_network())
+        window.patches.applied_patches = {"diagnostics", "net", "agent"}
+        self.assertTrue(window.play_controller.play_network())
 
     def test_log_catalog_reads_pull_records_and_xemu_runs(self):
         pulled = self.root / "build" / "xbox-logs" / "bench" / "20261004-120000"

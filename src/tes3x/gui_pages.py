@@ -252,9 +252,16 @@ class TargetsPage(QWidget):
             self.window.error("A TES3X command is already running")
             return
         verb = "Installing the dashboard agent on" if command == "install" else             "Removing the dashboard agent from"
-        self.window.run_steps([(resource("addons", "console", "console.py"), [
-            command, "--config", str(self.window.local_config_path()), "--target", name],
-            f"{verb} {name}…")], then=lambda: self.window.refresh_dashboard_status(name))
+        self.window.run_steps(
+            [
+                (
+                    resource("addons", "console", "console.py"),
+                    [command, "--config", str(self.window.local_config_path()), "--target", name],
+                    f"{verb} {name}…",
+                )
+            ],
+            then=lambda: self.window.play_controller.refresh_dashboard_status(name),
+        )
 
     def manager_state(self, running):
         """(status, version) of the console manager on the target."""
@@ -274,7 +281,7 @@ class TargetsPage(QWidget):
         return status, version
 
     def check_connection(self):
-        self.window.refresh_ftp_status()
+        self.window.play_controller.refresh_ftp_status()
 
     def restart_dashboard(self):
         if QMessageBox.question(self, "TES3X", f"Restart the dashboard on {self.name}?") \
@@ -288,13 +295,13 @@ class TargetsPage(QWidget):
         if QMessageBox.question(self, "TES3X", f"Quit the game on {self.name} to the dashboard?"
                                 " Unsaved progress is lost.") != QMessageBox.StandardButton.Yes:
             return
-        self.window.agent_reboot(self.name)
+        self.window.play_controller.agent_reboot(self.name)
 
     def fetch_file(self):
         path, ok = QInputDialog.getText(self, "Fetch from the game", "Console path:",
                                         text="E:\\tes3xprof.bin")
         if ok and path.strip():
-            self.window.agent_fetch(self.name, path.strip())
+            self.window.play_controller.agent_fetch(self.name, path.strip())
 
     # Console
 
@@ -323,7 +330,7 @@ class TargetsPage(QWidget):
         self.console_memory.setToolTip(
             "Print the game's free memory and frame time here every few seconds")
         self.console_memory.toggled.connect(
-            lambda on: setattr(self.window, "log_memory", on))
+            lambda on: setattr(self.window.play_controller, "log_memory", on))
         row.addWidget(self.console_entry, 1)
         row.addWidget(self.console_memory)
         for button in (self.send_button, self.console_fetch, self.console_quit):
@@ -350,7 +357,7 @@ class TargetsPage(QWidget):
         self.history_at = len(self.history)
         self.console_entry.clear()
         self.console_view.appendPlainText(f"» {line}")
-        self.window.agent_console(self.name, line)
+        self.window.play_controller.agent_console(self.name, line)
 
     def append_lines(self, name, lines):
         if name == self.name:
@@ -607,7 +614,9 @@ class TargetsPage(QWidget):
         self.name = name
         self.setup.set_target(name)
         if changed:
-            self.console_view.setPlainText("\n".join(self.window.agent_logs.get(name, [])))
+            self.console_view.setPlainText(
+                "\n".join(self.window.play_controller.agent_logs.get(name, []))
+            )
             self.console_view.moveCursor(self.console_view.textCursor().MoveOperation.End)
             self.populate_builds()
             self.refresh_logs()
@@ -1152,13 +1161,13 @@ class TargetSetup(QWidget):
         if self.dirty:
             self.test_status.setText("Save first; the agent test uses the saved target")
             return
-        if self.window.dashboard_status_command() is None:
+        if self.window.play_controller.dashboard_status_command() is None:
             self.test_status.setText("The dashboard agent add-on is not available")
             return
         self.agent_testing = self.name
         self.agent_test_button.setEnabled(False)
         self.test_status.setText("Asking the dashboard agent…")
-        self.window.refresh_dashboard_status(self.name)
+        self.window.play_controller.refresh_dashboard_status(self.name)
 
     def agent_tested(self, name, state, detail):
         if name != self.agent_testing:
@@ -1914,4 +1923,3 @@ class ServerPage(QWidget):
 def fetch_destination(work_dir, target, path):
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     return Path(work_dir) / "build" / "agent-fetch" / target / stamp / PureWindowsPath(path).name
-
