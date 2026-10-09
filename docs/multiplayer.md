@@ -138,7 +138,11 @@ With `--password-file FILE`, a console whose key the server has not seen must gi
 password is kept in that server's section of `servers.ini` and used in place of `NetPassword`.
 The server remembers each key that gave it
 in `admitted.txt` in the `--world` folder and does not ask again; delete a line there to ask that
-console again. A wrong password is refused, and one address gets five tries, then one a minute.
+console again. A wrong password is refused. Each IPv4 address or IPv6 /64 gets five tries,
+then one a minute; changing an IPv6 address within that subnet does not replenish the budget.
+Join password, handshake and remote admin limits each keep at most 1,024 source buckets.
+When a table fills, new sources are refused until a bucket's entire burst has recovered;
+existing limits are preserved. Previously admitted keys bypass the join password limit.
 On a server that faces the internet, give players the fingerprint as well: the password travels
 encrypted to the server's key, so a console that has pinned the key cannot give it to an
 impostor on its first join.
@@ -182,7 +186,7 @@ takes every command above. The GUI's Server workspace does the same under **A re
 Each command asks the server for a single-use challenge first; the command and its reply are
 encrypted and authenticated with a key made from the password and that challenge, so a
 listener on the network can neither read nor replay them, nor send commands of its own. The
-password is stretched with scrypt. Like a console's password, five wrong tries from one address
+password is stretched with scrypt. Five wrong tries from one IPv4 address or IPv6 /64
 allow one more a minute, and while that holds even the right password is refused. Keep the
 admin password apart from the console password: anyone with it can kick, ban and stop.
 

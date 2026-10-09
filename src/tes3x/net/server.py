@@ -3,6 +3,7 @@
 import glob
 import hashlib
 import hmac
+import ipaddress
 import json
 import math
 import os
@@ -840,6 +841,37 @@ class Bucket:
     def available(self, now):
         """Whether take() would succeed now, without spending a token."""
         return min(self.burst, self.tokens + (now - self.last) * self.rate) >= 1
+
+
+class SourceBuckets:
+    """Bounded source limits; evict only buckets whose entire burst has recovered."""
+
+    def __init__(self, burst, rate, limit=HANDSHAKES_PENDING):
+        self.burst, self.rate, self.limit = burst, rate, limit
+        self.buckets = {}
+
+    @staticmethod
+    def source(host):
+        address = ipaddress.ip_address(host.split('%', 1)[0])
+        if isinstance(address, ipaddress.IPv6Address):
+            if address.ipv4_mapped:
+                return str(address.ipv4_mapped)
+            return str(ipaddress.ip_network((address, 64), strict=False))
+        return str(address)
+
+    def get(self, host, now):
+        source = self.source(host)
+        if source in self.buckets:
+            return self.buckets[source]
+        if len(self.buckets) >= self.limit:
+            recovered = next((key for key, bucket in self.buckets.items()
+                              if bucket.tokens + (now - bucket.last) * bucket.rate
+                              >= bucket.burst), None)
+            if recovered is None:
+                return None
+            del self.buckets[recovered]
+        bucket = self.buckets[source] = Bucket(self.burst, self.rate, now)
+        return bucket
 
 
 class Client:
@@ -2317,10 +2349,8 @@ class Server:
         now = time.monotonic()
         if kind in (HANDSHAKE1, HANDSHAKE3):
             if kind == HANDSHAKE1 and session not in self.pending:
-                if len(self.handshake_buckets) > HANDSHAKES_PENDING:  # forged sources, most likely
-                    self.handshake_buckets.clear()
-                source = self.handshake_buckets.setdefault(addr[0], Bucket(*HANDSHAKE_RATE))
-                if (len(self.pending) >= HANDSHAKES_PENDING or not source.take(now)
+                source = self.handshake_buckets.get(addr[0], now)
+                if (len(self.pending) >= HANDSHAKES_PENDING or source is None or not source.take(now)
                         or not self.handshake_bucket.take(now)):
                     self.limits["handshakes"] += 1
                     return
@@ -2532,11 +2562,9 @@ class Server:
             self.refuse(addr, session, keys, mac, REFUSED_BANNED, version)
             return
         if self.password and key not in self.admitted:
-            if len(self.password_buckets) > HANDSHAKES_PENDING:
-                self.password_buckets.clear()
-            tries = self.password_buckets.setdefault(addr[0], Bucket(*PASSWORD_RATE))
+            tries = self.password_buckets.get(addr[0], now)
             given = packet[T3MP.size + HELLO_BODY.size:]
-            if not tries.take(now) or not hmac.compare_digest(given, self.password):
+            if tries is None or not tries.take(now) or not hmac.compare_digest(given, self.password):
                 print(f"{stamp} refused {mac} at {addr[0]}: wrong password", flush=True)
                 self.refuse(addr, session, keys, mac, REFUSED_PASSWORD, version)
                 return
@@ -2831,7 +2859,8 @@ class Server:
         self.password = load_password(self.args)
         self.admitted_path = (os.path.join(self.args.world, "admitted.txt") if self.args.world
                               else None)
-        self.admitted, self.password_buckets = load_admitted(self.admitted_path), {}
+        self.admitted = load_admitted(self.admitted_path)
+        self.password_buckets = SourceBuckets(*PASSWORD_RATE)
         self.bans_path = os.path.join(self.args.world, "bans.txt") if self.args.world else None
         self.bans = load_bans(self.bans_path)
         self.admin_sock, commands = None, queue.Queue()
@@ -2865,7 +2894,8 @@ class Server:
         if self.password:
             print(f"password asked of new consoles; {len(self.admitted)} admitted"
                   + ("" if self.admitted_path else " (not kept: give --world)"), flush=True)
-        self.handshake_bucket, self.handshake_buckets = Bucket(*HANDSHAKE_RATE_ALL), {}
+        self.handshake_bucket = Bucket(*HANDSHAKE_RATE_ALL)
+        self.handshake_buckets = SourceBuckets(*HANDSHAKE_RATE)
         self.limits = {"handshakes": 0}
         # session -> a handshake in progress or just done: {"noise", "e", "reply", ...}
         self.pending = {}
@@ -3115,7 +3145,7 @@ class RemoteAdmin:
     def __init__(self, secret, sock, clock=time.monotonic):
         self.secret, self.sock, self.clock = secret, sock, clock
         self.nonces = {}  # nonce -> (address, issued)
-        self.failures = {}  # address -> Bucket
+        self.failures = SourceBuckets(*PASSWORD_RATE)
 
     def handle(self, data, addr, run):
         """The reply datagram for one request, or None; run(line) executes a command."""
@@ -3136,10 +3166,10 @@ class RemoteAdmin:
             return REMOTE_HEAD.pack(REMOTE_MAGIC, REMOTE_VERSION, REMOTE_CHALLENGE) + nonce
         if kind != REMOTE_COMMAND or len(data) < REMOTE_HEAD.size + REMOTE_NONCE + 16:
             return None
-        bucket = self.failures.setdefault(addr[0], Bucket(*PASSWORD_RATE, now))
+        bucket = self.failures.get(addr[0], now)
         nonce = data[REMOTE_HEAD.size:REMOTE_HEAD.size + REMOTE_NONCE]
         issued = self.nonces.pop(nonce, None)
-        if not bucket.available(now):
+        if bucket is None or not bucket.available(now):
             # Not even tried: a right guess while slowed would otherwise still get through.
             return self.refuse(nonce, "slow down")
         head = data[:REMOTE_HEAD.size + REMOTE_NONCE]

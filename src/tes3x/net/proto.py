@@ -130,7 +130,7 @@ MANAGER = 0x40000000
 PASSWORD_MAX = 64
 
 
-PASSWORD_RATE = (5, 1 / 60)  # password tries from one address, (burst, per second)
+PASSWORD_RATE = (5, 1 / 60)  # tries per IPv4 address or IPv6 /64, (burst, per second)
 
 
 # REFUSE: the session's load order hash, its plugin count, and why
