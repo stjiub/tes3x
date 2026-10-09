@@ -24,7 +24,7 @@ is none yet. Relative paths are relative to the file.
 | `mlox_rules` | string | downloaded | mlox's `mlox_base.txt`, for `rules.plugin_order = "mlox"`. Without it TES3X downloads the current rules on first use. |
 | `tes3merge` | string | none | `TES3Merge.exe`, for `rules.tes3merge = true`. |
 | `build_root` | string | `build` | Parent directory for profile output folders. |
-| `llvm` | string | `PATH` | Directory containing `clang` and `lld-link`. |
+| `llvm` | string | automatic | Directory containing `clang` and `lld-link`. Without an override, use bundled tools first, then `PATH` and known installation folders. |
 | `nxdk` | string | none | nxdk checkout with its libraries built, for `tes3x nxdk`. `NXDK_DIR` takes precedence. |
 | `msys2` | string | `C:/msys64` | MSYS2 install whose `make`, `clang` and `lld` build nxdk programs on Windows. |
 | `hardlink_retail` | boolean | `false` | Hardlink unchanged retail files when source and output are on the same volume. |

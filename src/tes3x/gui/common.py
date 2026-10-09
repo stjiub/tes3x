@@ -484,6 +484,7 @@ class LocalSettingsDialog(QDialog):
         content.addWidget(self.pages, 1)
         layout.addLayout(content, 1)
         for label, page in (("Paths", self.path_group(paths)),
+                            ("Advanced", self.advanced_group(paths)),
                             ("Add-ons", self.addons_group(plain.get("addons", {})))):
             self.add_page(label, page)
         self.categories.currentRowChanged.connect(self.pages.setCurrentIndex)
@@ -539,7 +540,7 @@ class LocalSettingsDialog(QDialog):
             field.setEchoMode(QLineEdit.EchoMode.Password)
         return field
 
-    def browse_row(self, key, value, files=False):
+    def browse_row(self, key, value, files=False, default=None):
         field = self.line(value)
         self.fields[key] = field
         button = QPushButton("Browse…")
@@ -558,27 +559,55 @@ class LocalSettingsDialog(QDialog):
         row_layout.setContentsMargins(0, 0, 0, 0)
         row_layout.addWidget(field)
         row_layout.addWidget(button)
+        if default is not None:
+            field.setPlaceholderText(default)
+            reset = QPushButton("Use default")
+            reset.clicked.connect(field.clear)
+            reset.setEnabled(bool(field.text()))
+            field.textChanged.connect(lambda text: reset.setEnabled(bool(text)))
+            row_layout.addWidget(reset)
+            container = QWidget()
+            layout = QVBoxLayout(container)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.addWidget(row)
+            hint = QLabel("Default: " + default)
+            hint.setWordWrap(True)
+            hint.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            layout.addWidget(hint)
+            return container
         return row
 
     def path_group(self, values):
         group, layout = self.page("Paths", "Folders and tools shared by every profile.")
-        form = self.form_section(layout, "Project paths")
+        form = self.form_section(layout, "Your files")
         for key, label in (("vanilla_root", "Clean game root"),
-                           ("mod_library", "Mod library"),
-                           ("profiles", "Profiles"),
-                           ("build_root", "Build output"),
-                           ("llvm", "LLVM tools")):
+                           ("mod_library", "Mod library")):
             form.addRow(label, self.browse_row("paths." + key, values.get(key, "")))
-        rules_row = self.browse_row("paths.mlox_rules", values.get("mlox_rules", ""), files=True)
-        download = QPushButton("Download")
-        download.setToolTip("Download the current mlox rules")
-        download.clicked.connect(self.download_mlox_rules)
-        rules_row.layout().addWidget(download)
-        self.fields["paths.mlox_rules"].setPlaceholderText(
-            "Downloaded automatically when first needed")
-        form.addRow("mlox rules (optional)", rules_row)
+        form = self.form_section(layout, "TES3X folders and tools")
+        for key, label, folder in (("profiles", "Profiles", "profiles"),
+                                   ("build_root", "Build output", "build")):
+            form.addRow(label, self.browse_row("paths." + key, values.get(key, ""),
+                                              default=str(self.path.parent / folder)))
+        llvm_bin = bundled("externals", "llvm", "bin")
+        suffix = ".exe" if os.name == "nt" else ""
+        llvm_default = (f"Bundled LLVM: {llvm_bin}"
+                        if all((llvm_bin / (name + suffix)).is_file()
+                               for name in ("clang", "lld-link"))
+                        else "Automatically find LLVM on this PC")
+        form.addRow("LLVM tools (optional)",
+                    self.browse_row("paths.llvm", values.get("llvm", ""), default=llvm_default))
+        layout.addStretch()
+        return group
+
+    def advanced_group(self, values):
+        group, layout = self.page("Advanced", "Optional overrides and file handling.")
+        form = self.form_section(layout, "External tools")
+        form.addRow("mlox rules (optional)",
+                    self.browse_row("paths.mlox_rules", values.get("mlox_rules", ""), files=True,
+                                    default="Downloaded automatically when first needed"))
         form.addRow("TES3Merge (optional)",
                     self.browse_row("paths.tes3merge", values.get("tes3merge", ""), files=True))
+        form = self.form_section(layout, "File handling")
         hardlink = QCheckBox("Hardlink unchanged retail files")
         hardlink.setChecked(values.get("hardlink_retail", False))
         self.fields["paths.hardlink_retail"] = hardlink
@@ -640,22 +669,6 @@ class LocalSettingsDialog(QDialog):
         finally:
             QApplication.restoreOverrideCursor()
         (QMessageBox.information if ok else QMessageBox.critical)(self, label, output or "Done.")
-
-    def download_mlox_rules(self):
-        field = self.fields["paths.mlox_rules"]
-        target = Path(field.text().strip() or default_rules())
-        if not target.is_absolute():
-            target = self.path.parent / target
-        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-        try:
-            size = fetch_rules(target)
-        except (OSError, ValueError) as exc:
-            QApplication.restoreOverrideCursor()
-            QMessageBox.critical(self, "TES3X", f"Could not download the mlox rules: {exc}")
-            return
-        QApplication.restoreOverrideCursor()
-        QMessageBox.information(self, "TES3X", f"Saved the mlox rules ({size // 1024} KB) to "
-                                f"{target}.")
 
     def update_table(self, section, values):
         table = self.document.get(section)

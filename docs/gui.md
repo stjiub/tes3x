@@ -91,6 +91,12 @@ same in all three.
 Settings left at their defaults stay out of the profile file. **File > Settings** holds the paths
 shared by every profile and the add-ons; targets are set up in the [Target](#target) workspace.
 
+Settings shows the default Profiles and Build output folders beside their overrides. With no
+override, these folders live beside your local config. LLVM is automatic: portable folders use
+their bundled tools. **Use default** clears an override without saving the displayed default
+into your config. **Advanced** holds optional custom mlox rules, TES3Merge and hardlinking.
+mlox rules download automatically when first needed; select a rules file only to override them.
+
 The toolbar target chooses where checks, builds, deploys, saves, logs and Play go. Its dot is grey
 before an Xbox is checked or for xemu, green while an Xbox answers, and red when it is unreachable;
 the tooltip carries its address and reported free space. One split button runs Deploy for an

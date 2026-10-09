@@ -11,3 +11,5 @@ No official releases yet. The first public release is in preparation.
 - A normal multiplayer server shutdown returns success even when no clients joined.
 - First-run guidance points to Settings for file paths and the Target workspace for Xbox
   and xemu setup.
+- Settings shows folder defaults and automatic LLVM selection, with **Use default** actions.
+  Custom mlox rules are under **Advanced**; normal use downloads rules automatically.

@@ -18,7 +18,7 @@ import tes3x.saves as saves_tool  # noqa: E402
 
 try:
     from PySide6.QtCore import QEvent, Qt
-    from PySide6.QtWidgets import QApplication, QDialog, QInputDialog, QMessageBox
+    from PySide6.QtWidgets import QApplication, QDialog, QInputDialog, QMessageBox, QPushButton
     from tes3x.gui import (InstallDialog, LocalSettingsDialog, ProfileWindow,
                            dashboard_agent_state, launch, target_capabilities,
                            target_runtime_label)
@@ -967,13 +967,55 @@ order = 10
         dialog = LocalSettingsDialog(config)
         self.addCleanup(dialog.close)
         self.assertEqual([dialog.categories.item(row).text()
-                          for row in range(dialog.categories.count())], ["Paths", "Add-ons"])
+                          for row in range(dialog.categories.count())],
+                         ["Paths", "Advanced", "Add-ons"])
         dialog.fields["paths.mod_library"].setText("D:/Mods")
         self.assertTrue(dialog.save_settings())
         values = self.saved(config)
         self.assertEqual(values["paths"]["mod_library"], "D:/Mods")
         self.assertEqual(values["targets"]["bench"]["host"], "192.0.2.5")
         self.assertIn("# keep this comment", config.read_text(encoding="utf-8"))
+
+    def test_local_settings_defaults_follow_config_without_saving_overrides(self):
+        config = self.root / "local.toml"
+        dialog = LocalSettingsDialog(config)
+        self.addCleanup(dialog.close)
+        for key, folder in (("profiles", "profiles"), ("build_root", "build")):
+            field = dialog.fields["paths." + key]
+            self.assertEqual(field.placeholderText(), str(config.parent / folder))
+        dialog.save_settings()
+        self.assertFalse(set(self.saved(config)["paths"]) & {"profiles", "build_root", "llvm"})
+
+    def test_local_settings_use_default_removes_existing_overrides(self):
+        config = self.root / "local.toml"
+        config.write_text('[paths]\nprofiles = "custom"\nbuild_root = "out"\n'
+                          'llvm = "tools"\nmlox_rules = "rules.txt"\n', encoding="utf-8")
+        dialog = LocalSettingsDialog(config)
+        self.addCleanup(dialog.close)
+        for key in ("profiles", "build_root", "llvm", "mlox_rules"):
+            field = dialog.fields["paths." + key]
+            reset = next(button for button in field.parentWidget().findChildren(QPushButton)
+                         if button.text() == "Use default")
+            self.assertTrue(reset.isEnabled())
+            reset.click()
+            self.assertEqual(field.text(), "")
+            self.assertFalse(reset.isEnabled())
+        dialog.save_settings()
+        self.assertFalse(set(self.saved(config)["paths"]) &
+                         {"profiles", "build_root", "llvm", "mlox_rules"})
+
+    def test_local_settings_identifies_bundled_llvm_without_an_override(self):
+        tools = self.root / "llvm" / "bin"
+        tools.mkdir(parents=True)
+        suffix = ".exe" if os.name == "nt" else ""
+        for name in ("clang", "lld-link"):
+            (tools / (name + suffix)).write_bytes(b"")
+        with patch("tes3x.gui.common.bundled", return_value=tools):
+            dialog = LocalSettingsDialog(self.root / "local.toml")
+        self.addCleanup(dialog.close)
+        field = dialog.fields["paths.llvm"]
+        self.assertEqual(field.text(), "")
+        self.assertIn("Bundled LLVM", field.placeholderText())
 
     def test_target_setup_preserves_xemu_and_writes_public_fields(self):
         config = self.root / "local.toml"
