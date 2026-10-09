@@ -6,9 +6,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch as mock_patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-import tes3x_patches as registry
-from tes3x_patch import (ALLOWED_PATCH_OVERLAPS, ASSET_PATHS, PATCHES as PATCHER, PatchError,
+import tes3x.patches as registry
+from tes3x.patch import (ALLOWED_PATCH_OVERLAPS, ASSET_PATHS, PATCHES as PATCHER, PatchError,
                          _validate_patch_changes, main as patch_main, retail_digest)
 
 
@@ -40,7 +39,7 @@ class RegistryTests(unittest.TestCase):
                 self.assertIn(f'`{key}`', sections.get(entry['name'], ''), entry['name'])
 
     def test_catalog_loads_and_matches_folder_or_plugin_names(self):
-        import tes3x_catalog
+        import tes3x.catalog as tes3x_catalog
         catalog = tes3x_catalog.load(patch_names=registry.BY_NAME)
         self.assertEqual(tes3x_catalog.match(catalog, 'mop')['id'], 'mop')
         self.assertEqual(tes3x_catalog.match(catalog, 'Graphic Herbalism.ESP')['id'],

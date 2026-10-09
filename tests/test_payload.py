@@ -1,11 +1,9 @@
 import shutil
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-from tes3x_payload import PayloadError, build_id, find_tool, link_symbol, source_text
+from tes3x.payload import PayloadError, build_id, find_tool, link_symbol, source_text
 
 LINK_MAP = [
     ' Address         Publics by Value              Rva+Base               Lib:Object',

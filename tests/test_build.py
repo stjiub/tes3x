@@ -5,9 +5,8 @@ import unittest
 from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parents[1] / 'tools'
-sys.path.insert(0, str(TOOLS))
-from tes3x_build import Mod, find_data_root
-from tes3x_bsa import write_bsa
+from tes3x.build import Mod, find_data_root
+from tes3x.bsa import write_bsa
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_bsa import pc_bsa  # noqa: E402
 

@@ -1,15 +1,13 @@
 import json
 import struct
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-import tes3x_manager
-import tes3x_release
-from tes3x_release import ReleaseError, check_release, make_manager_release
+import tes3x.manager as tes3x_manager
+import tes3x.release as tes3x_release
+from tes3x.release import ReleaseError, check_release, make_manager_release
 
 
 def xbe(title_id, tail=b''):

@@ -1,12 +1,10 @@
 import json
 import re
-import sys
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tools"))
-import tes3x_layouts  # noqa: E402
+import tes3x.layouts as tes3x_layouts  # noqa: E402
 
 CURATED = ROOT / "symbols" / "curated.json"
 STRUCTS = ROOT / "symbols" / "structs.json"

@@ -1,10 +1,8 @@
 import struct
-import sys
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-from tes3x_mwse import (
+from tes3x.mwse import (
     COMMANDS, RUNTIME_COMMANDS, RUNTIME_VM_OPS, VM_OPS, corroborated_instructions,
     opcode_info, scan_bytecode, source_command_names,
 )

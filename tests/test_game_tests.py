@@ -1,10 +1,7 @@
-import sys
 import unittest
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-import tes3x_patches as registry  # noqa: E402
-from tes3x_test import (GAME_TESTS, comparison_failures, game_test_problems,  # noqa: E402
+import tes3x.patches as registry  # noqa: E402
+from tes3x.test import (GAME_TESTS, comparison_failures, game_test_problems,  # noqa: E402
                         read_toml, sequence_failures)
 
 

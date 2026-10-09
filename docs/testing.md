@@ -14,10 +14,12 @@ what the one before cannot, and costs more to run.
 ## Unit tests
 
 ```powershell
+python -m pip install -e .[gui,dev]
 python -m unittest discover -s tests
 ```
 
-They run without game files or an emulator. They also fail when a generated page such as
+They import the installed `tes3x` package, so install the checkout first, editable, as above;
+the GUI tests skip without PySide6. They run without game files or an emulator. They also fail when a generated page such as
 [patches.md](patches.md) is out of date, or a patch's notes break the
 [patch page contract](../patches/README.md).
 

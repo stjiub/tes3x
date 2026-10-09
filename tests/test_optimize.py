@@ -1,14 +1,12 @@
 import json
 import struct
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from tes3x_optimize import (OptimizeError, inspect_plugins, plan_scripts, state_signature,
+from tes3x.optimize import (OptimizeError, inspect_plugins, plan_scripts, state_signature,
                             verify, write_plugins)
-from tes3x_records import records, subrecords
+from tes3x.records import records, subrecords
 
 
 def sub(tag, data):

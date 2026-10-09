@@ -1,11 +1,9 @@
 import argparse
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-import tes3x_ftp
+import tes3x.ftp as tes3x_ftp
 
 
 class FtpSettingsTests(unittest.TestCase):

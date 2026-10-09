@@ -1,10 +1,8 @@
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from tes3x_qcow2 import (OVERLAY_CLUSTER_BITS, CowView, Qcow2, create_overlay,  # noqa: E402
+from tes3x.qcow2 import (OVERLAY_CLUSTER_BITS, CowView, Qcow2, create_overlay,  # noqa: E402
                          image_size, open_image)
 
 CLUSTER = 1 << OVERLAY_CLUSTER_BITS

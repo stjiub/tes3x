@@ -1,11 +1,9 @@
 import hashlib
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-import tes3x_manifest as manifest
+import tes3x.manifest as manifest
 
 
 class ManifestTests(unittest.TestCase):

@@ -5,14 +5,12 @@ import re
 import shutil
 import struct
 import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-import tes3x_net
-from tes3x_payload import source_text
+import tes3x.net as tes3x_net
+from tes3x.payload import source_text
 
 HOOKS = Path(__file__).resolve().parents[1] / 'hooks'
 
@@ -172,7 +170,7 @@ class HostReceiveTests(unittest.TestCase):
     def setUpClass(cls):
         try:
             tes3x_net.crypto()
-            from tes3x_payload import find_tool  # where the payload build finds clang
+            from tes3x.payload import find_tool  # where the payload build finds clang
             clang = find_tool('clang')
         except (SystemExit, Exception) as error:
             raise unittest.SkipTest(f'needs clang and the cryptography package: {error!r}')

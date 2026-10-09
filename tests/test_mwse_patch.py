@@ -1,11 +1,8 @@
 import struct
-import sys
 import unittest
-from pathlib import Path
 from types import SimpleNamespace
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-from tes3x_patch import (DIAGNOSTICS_UPDATE_SIG, PatchError, _mwse_legacy, find_game_instance,
+from tes3x.patch import (DIAGNOSTICS_UPDATE_SIG, PatchError, _mwse_legacy, find_game_instance,
                          find_script_decode_state, find_script_fixup_call,
                          find_script_ip_restore_call)
 

@@ -1,13 +1,11 @@
 import json
 import shutil
-import sys
 import unittest
 import uuid
 from pathlib import Path
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-import tes3x_validate as validation
+import tes3x.validate as validation
 
 MCP102_BIT = 1 << 12
 

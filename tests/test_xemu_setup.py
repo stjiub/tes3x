@@ -3,10 +3,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 
-from tes3x_xemu import xemu_config  # noqa: E402
-from tes3x_xemu_setup import find_files, release_asset, resolve  # noqa: E402
+from tes3x.xemu import xemu_config  # noqa: E402
+from tes3x.xemu_setup import find_files, release_asset, resolve  # noqa: E402
 
 
 class XemuSetupTests(unittest.TestCase):

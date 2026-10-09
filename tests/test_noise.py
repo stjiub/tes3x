@@ -1,13 +1,11 @@
 import ctypes
 import os
 import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-import tes3x_net
+import tes3x.net as tes3x_net
 
 HOOKS = Path(__file__).resolve().parents[1] / 'hooks'
 
@@ -69,7 +67,7 @@ class CNoiseTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         try:
-            from tes3x_payload import find_tool  # where the payload build finds clang
+            from tes3x.payload import find_tool  # where the payload build finds clang
             clang = find_tool('clang')
         except Exception as error:
             raise unittest.SkipTest(f'clang not found: {error!r}')

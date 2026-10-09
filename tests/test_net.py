@@ -1,14 +1,12 @@
 import socket
 import struct
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-import tes3x_net
-from tes3x_payload import source_text
-from tes3x_records import records, subrecords
+import tes3x.net as tes3x_net
+from tes3x.payload import source_text
+from tes3x.records import records, subrecords
 
 
 def query(name, qtype=1):

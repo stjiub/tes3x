@@ -1,11 +1,8 @@
 import io
-import sys
 import unittest
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from tes3x_diag import PATCH_BITS, assertion_failures, parse_log, report, sessions
-from tes3x_patch import PATCH_BITS as PATCHER_BITS
+from tes3x.diag import PATCH_BITS, assertion_failures, parse_log, report, sessions
+from tes3x.patch import PATCH_BITS as PATCHER_BITS
 
 
 class DiagnosticsTests(unittest.TestCase):

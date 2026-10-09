@@ -1,4 +1,3 @@
-import sys
 import argparse
 import tempfile
 import tomllib
@@ -6,9 +5,8 @@ import unittest
 from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parents[1] / "tools"
-sys.path.insert(0, str(TOOLS))
 
-from tes3x_test import (TestError, check_log, load_scenario, run_library,  # noqa: E402
+from tes3x.test import (TestError, check_log, load_scenario, run_library,  # noqa: E402
                         write_profile)
 
 
@@ -73,7 +71,7 @@ test = ['exec\\.exit', '!crash\\.']
             pipeline_arg=[], record=False, results=str(self.root / "results"),
             keep_artifacts="never")
         from unittest.mock import patch
-        with patch("tes3x_test.run_profile", return_value=0) as run:
+        with patch("tes3x.test.run_profile", return_value=0) as run:
             self.assertEqual(run_library(args), 0)
         generated = Path(run.call_args.args[0].profile)
         with open(generated, "rb") as stream:

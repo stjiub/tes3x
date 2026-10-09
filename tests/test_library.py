@@ -6,14 +6,13 @@ import zipfile
 from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parents[1] / "tools"
-sys.path.insert(0, str(TOOLS))
 
-from tes3x_build import Mod, materialize, resolve  # noqa: E402
-from tes3x_library import (LibraryError, available_plugins, convert_profile, dependency_order,  # noqa: E402
+from tes3x.build import Mod, materialize, resolve  # noqa: E402
+from tes3x.library import (LibraryError, available_plugins, convert_profile, dependency_order,  # noqa: E402
                            discover_library, extract_archive, guess_release, index_library,
                            install_files, install_layout, load_library, nexus_id,
                            resolve_selection, write_library)
-from tes3x_pipeline import PipelineError, validate_profile  # noqa: E402
+from tes3x.pipeline import PipelineError, validate_profile  # noqa: E402
 
 
 CATALOG = '''

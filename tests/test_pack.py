@@ -7,10 +7,9 @@ import unittest
 from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parents[1] / 'tools'
-sys.path.insert(0, str(TOOLS))
-from tes3x_bsa import Bsa, write_bsa
-from tes3x_build import plugin_masters
-from tes3x_plugins import xbox_name, xbox_renames
+from tes3x.bsa import Bsa, write_bsa
+from tes3x.build import plugin_masters
+from tes3x.plugins import xbox_name, xbox_renames
 
 
 class LooseModTests(unittest.TestCase):

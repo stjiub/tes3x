@@ -1,13 +1,11 @@
 import struct
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-from tes3x_bsa import write_bsa
-from tes3x_reach import nif_textures, plugin_paths, prune
-from tes3x_records import records, subrecords
+from tes3x.bsa import write_bsa
+from tes3x.reach import nif_textures, plugin_paths, prune
+from tes3x.records import records, subrecords
 
 
 def sub(tag, data):

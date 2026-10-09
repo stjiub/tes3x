@@ -1,12 +1,10 @@
 import io
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-import tes3x_put
-from tes3x_fatx import Fatx, FatxReader
+import tes3x.put as tes3x_put
+from tes3x.fatx import Fatx, FatxReader
 
 SIZE = 64 << 20
 

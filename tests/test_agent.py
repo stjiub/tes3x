@@ -1,18 +1,16 @@
 import tempfile
 import unittest
 from pathlib import Path
-import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import struct
 
-from tes3x_agent import (AgentProtocol, Fetch, HANDSHAKE1, HANDSHAKE2, HANDSHAKE3, HEADER,
+from tes3x.agent import (AgentProtocol, Fetch, HANDSHAKE1, HANDSHAKE2, HANDSHAKE3, HEADER,
                          HEARTBEAT, MAGIC, OP_CONSOLE, OP_MKDIR, OP_LIST, OP_READ, OP_RENAME,
                          OP_WRITE, PROLOGUE, Put, READ_CHUNK, REPLY, REQUEST, RETRIES,
                          RETRY_SECONDS, SEALED, VERSION, WELCOME, console_request, decode, encode,
                          key_fingerprint, list_request, load_or_create_key, parse_list,
                          path_request, read_request, rename_request, write_request)
-from tes3x_net import Noise, fingerprint, seal, unseal
+from tes3x.net import Noise, fingerprint, seal, unseal
 
 
 class AgentProtocolTests(unittest.TestCase):
@@ -68,7 +66,7 @@ class AgentListenerTests(unittest.TestCase):
     def test_listener_survives_a_console_that_went_away(self):
         import socket
         import time
-        from tes3x_agent import AgentListener
+        from tes3x.agent import AgentListener
         closed = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         closed.bind(("127.0.0.1", 0))
         gone = closed.getsockname()

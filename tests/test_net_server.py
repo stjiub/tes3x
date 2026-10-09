@@ -16,10 +16,9 @@ import time
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-import tes3x_net
-import tes3x_netbuild
-from tes3x_payload import source_text
+import tes3x.net as tes3x_net
+import tes3x.netbuild as tes3x_netbuild
+from tes3x.payload import source_text
 
 NET = Path(__file__).resolve().parents[1] / 'tools' / 'tes3x_net.py'
 
@@ -270,8 +269,7 @@ class ServerTests(unittest.TestCase):
         delta = b'zstd frame'
         digest = hashlib.sha256(delta).hexdigest()
         (root / 'deltas' / f'{digest}.zst').write_bytes(delta)
-        sys.path.insert(0, str(NET.parent))
-        import tes3x_manifest
+        import tes3x.manifest as tes3x_manifest
         files = tes3x_manifest.file_entries(game)
         files['Data Files/Morrowind.esm']['origin'] = 'retail'
         tes3x_manifest.write(game, tes3x_manifest.create(
@@ -313,7 +311,7 @@ class ServerTests(unittest.TestCase):
     def test_a_console_with_another_build_is_refused_as_stale(self):
         game, _ = self.staged_build()
         self.start('--build', str(game), '--http-port', '0')
-        import tes3x_manifest
+        import tes3x.manifest as tes3x_manifest
         build = bytes.fromhex(tes3x_manifest.load(game)['build'])
         stale = self.client(1)
         with self.assertRaises(RuntimeError):

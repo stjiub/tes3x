@@ -2,21 +2,19 @@ import ftplib
 import io
 import os
 import posixpath
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from tes3x_agent import AgentError
-from tes3x_deploy import (CLUSTER, AgentTarget, deployed_manifest, ensure_dirs, ftp_basename,
+from tes3x.agent import AgentError
+from tes3x.deploy import (CLUSTER, AgentTarget, deployed_manifest, ensure_dirs, ftp_basename,
                           legacy_manifest, local_tree, merge_console_ini, on_disk, owner_conflicts, parse_drives,
                           pool_plan, read_manifest, remote_tree, remove_remote_folder, sync,
                           upload_file,
                           verify_uploads)
-import tes3x_manifest
+import tes3x.manifest as tes3x_manifest
 
 
 class FakeFtp:
@@ -178,8 +176,8 @@ class DeployFtpTests(unittest.TestCase):
             first.dirs.add("/F/Games/Test")
             second.dirs.add("/F/Games/Test")
             progress = []
-            with patch("tes3x_deploy.tes3x_ftp.connect", return_value=second), \
-                    patch("tes3x_deploy.time.sleep"):
+            with patch("tes3x.deploy.tes3x_ftp.connect", return_value=second), \
+                    patch("tes3x.deploy.time.sleep"):
                 result = upload_file(first, SimpleNamespace(), "F:/Games/Test/asset.bin",
                                      source, set(), lambda amount, reset:
                                      progress.append((amount, reset)), retries=1)

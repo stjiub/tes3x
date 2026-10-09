@@ -7,8 +7,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / 'tools'))
-from tes3x_payload import find_tool, source_text
+from tes3x.payload import find_tool, source_text
 
 
 class AnimationPhaseTests(unittest.TestCase):

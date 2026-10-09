@@ -12,17 +12,16 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 TOOLS = Path(__file__).resolve().parents[1] / "tools"
-sys.path.insert(0, str(TOOLS))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_bsa import pc_bsa  # noqa: E402
-import tes3x_saves as saves_tool  # noqa: E402
+import tes3x.saves as saves_tool  # noqa: E402
 
 try:
     from PySide6.QtCore import QEvent, Qt
     from PySide6.QtWidgets import QApplication, QDialog, QInputDialog, QMessageBox
-    from tes3x_gui import (InstallDialog, LocalSettingsDialog, ProfileWindow,
+    from tes3x.gui import (InstallDialog, LocalSettingsDialog, ProfileWindow,
                            dashboard_agent_state, target_capabilities, target_runtime_label)
-    from tes3x_gui_pages import log_catalog, parse_clients, server_arguments
+    from tes3x.gui_pages import log_catalog, parse_clients, server_arguments
 except ImportError:
     QApplication = None
     LocalSettingsDialog = None
@@ -595,7 +594,7 @@ order = 10
         self.assertEqual((other["url"], other["summary"], other["author"]),
                          (page, "From Nexus", "Author"))
 
-    @patch("tes3x_gui.running_xemu", return_value=[])
+    @patch("tes3x.gui.running_xemu", return_value=[])
     def test_play_builds_first_then_boots_the_build(self, _running):
         import hashlib
         import json
@@ -679,7 +678,7 @@ order = 10
         window.append_play_output()
         self.assertEqual(window.statusBar().message.text(), "Playing · GDB :1234")
         self.assertEqual(window.play_pid, 1)
-        with patch("tes3x_gui.os.kill") as kill:
+        with patch("tes3x.gui.os.kill") as kill:
             window.stop_play()
         kill.assert_called_once_with(1, signal.SIGTERM)
         window.play_process = None
@@ -738,7 +737,7 @@ order = 10
         window.update_build_state()
         self.assertEqual(window.deploy_button.property("state"), "stale")
 
-        with patch("tes3x_gui.QProcess"):
+        with patch("tes3x.gui.QProcess"):
             window.start_command("tool.py", [], "Working…")
         self.assertFalse(window.statusBar().spinner.isHidden())
         window.process.readAllStandardOutput.return_value = b"xemu: started, pid 1\n"
@@ -1156,7 +1155,7 @@ order = 10
 
     def test_targets_page_sends_commands_and_fetches_through_the_agent(self):
         import struct
-        from tes3x_agent import OP_CONSOLE, OP_READ, OP_REBOOT
+        from tes3x.agent import OP_CONSOLE, OP_READ, OP_REBOOT
         config = self.root / "local.toml"
         config.write_text('default_target = "bench"\n[targets.bench]\nkind = "xbox"\n'
                           'host = "192.0.2.5"\ngames_root = "F:/Games"\n', encoding="utf-8")
@@ -1298,7 +1297,7 @@ order = 10
     def test_server_page_manages_a_remote_server(self):
         import threading
         import time
-        import tes3x_net
+        import tes3x.net as tes3x_net
         secret = tes3x_net.admin_secret(b'correct horse')
         sock = tes3x_net.udp_socket()
         sock.bind(('127.0.0.1', 0))

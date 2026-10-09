@@ -1,10 +1,7 @@
 import struct
-import sys
 import unittest
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-from tes3x_patch import PatchError, find_save_allowed_context
+from tes3x.patch import PatchError, find_save_allowed_context
 
 
 class Image:

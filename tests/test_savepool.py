@@ -1,11 +1,8 @@
 import struct
-import sys
 import unittest
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-import tes3x_savepool as pool
-from tes3x_patch import CERT_TITLE_ID, PatchError, _title_id
+import tes3x.savepool as pool
+from tes3x.patch import CERT_TITLE_ID, PatchError, _title_id
 
 
 class SavePoolTests(unittest.TestCase):

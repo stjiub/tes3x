@@ -9,20 +9,19 @@ import unittest
 from unittest import mock
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-import tes3x_paths
-from tes3x_paths import check_paths, local_config, require_paths, resource
-from tes3x_pack import write_invalidation
-from tes3x_build import materialize, plugin_masters
-from tes3x_pipeline import (PipelineError, agent_ini, agent_setting, console_ini_text,
+import tes3x.paths as tes3x_paths
+from tes3x.paths import check_paths, local_config, require_paths, resource
+from tes3x.pack import write_invalidation
+from tes3x.build import materialize, plugin_masters
+from tes3x.pipeline import (PipelineError, agent_ini, agent_setting, console_ini_text,
                             copy_retail_root, link_or_copy, resolve_patch_plan, split_console,
                             preference_flags, sanitized_command, stage_default_xbe, stage_retail_base,
                             strip_retail_files, validate_local_config, validate_output, validate_profile)
-from tes3x_pipeline import main as pipeline_main
-from tes3x_patch import (MCP37_TREE_NEXT_SIG, PatchError, _mcp_3, _mcp_37, _mcp_92, _mcp_97,
+from tes3x.pipeline import main as pipeline_main
+from tes3x.patch import (MCP37_TREE_NEXT_SIG, PatchError, _mcp_3, _mcp_37, _mcp_92, _mcp_97,
                          _mcp_98, _mcp_102, _mcp_123, _mcp_125, _mcp_154, _test_mcp3,
                          _test_mcp97, _test_mcp102)
-from tes3x_plugins import (collect, dependency_order, fetch_rules, rules_file, run_arrange,
+from tes3x.plugins import (collect, dependency_order, fetch_rules, rules_file, run_arrange,
                            validate_order, warnings as mlox_warnings)
 from test_reach import rec, sub
 
@@ -89,7 +88,7 @@ class PathTests(unittest.TestCase):
         import importlib
         tools = Path(__file__).resolve().parents[1] / 'tools'
         for shim in sorted(tools.glob('tes3x_*.py')):
-            with self.subTest(shim.name):
+            with self.subTest(shim.name), mock.patch.object(sys, 'path', [str(tools), *sys.path]):
                 try:
                     module = importlib.import_module(shim.stem)
                 except (ImportError, SystemExit) as exc:  # an optional dependency, as capstone
@@ -183,7 +182,7 @@ class PipelineTests(unittest.TestCase):
         source.write_bytes(b'[Order]\nMorrowind.esm\n')
         data = {'TES3X_DATA': str(self.root / 'data')}
         with mock.patch.dict(os.environ, data), \
-                mock.patch('tes3x_plugins.RULES_URL', source.as_uri()):
+                mock.patch('tes3x.plugins.RULES_URL', source.as_uri()):
             path = rules_file()
             self.assertEqual(path, self.root / 'data' / 'mlox' / 'mlox_base.txt')
             source.unlink()
@@ -265,11 +264,11 @@ class PipelineTests(unittest.TestCase):
 
     def test_deploy_checks_actual_destination_before_ftp(self):
         from unittest.mock import patch
-        from tes3x_deploy import main
+        from tes3x.deploy import main
         (self.root / 'file.txt').write_text('test')
         args = ['tes3x_deploy', str(self.root), '--host', 'invalid.example',
                 '--remote', 'F:/' + 'x' * 43, '--dry-run']
-        with patch.object(sys, 'argv', args), patch('tes3x_deploy.ftplib.FTP') as ftp:
+        with patch.object(sys, 'argv', args), patch('tes3x.deploy.ftplib.FTP') as ftp:
             with self.assertRaises(ValueError):
                 main()
             ftp.assert_not_called()
@@ -352,7 +351,7 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(output.read_bytes(), b'launcher')
 
     def test_patches_only_stages_retail_data_and_ini_keys(self):
-        from tes3x_pipeline import stage_retail
+        from tes3x.pipeline import stage_retail
         data = self.root / 'Data Files'
         data.mkdir()
         (data / 'Morrowind.bsa').write_bytes(b'retail')
@@ -370,7 +369,7 @@ class PipelineTests(unittest.TestCase):
             stage_retail(data, ini, self.root / 'again', ['no-section'])
 
     def test_dashboard_xml_names_the_folder_and_escapes_the_title(self):
-        from tes3x_pipeline import dashboard_xml
+        from tes3x.pipeline import dashboard_xml
         text = dashboard_xml('Morrowind & Mods', 'MorrowindModded')
         self.assertIn('<title>Morrowind &amp; Mods</title>', text)
         self.assertIn('<foldername>MorrowindModded</foldername>', text)
@@ -387,7 +386,7 @@ class PipelineTests(unittest.TestCase):
                 validate_profile({'profile': identity})
 
     def test_dashboard_files_are_chosen_per_profile(self):
-        from tes3x_pipeline import dashboard_list, write_dashboard_files
+        from tes3x.pipeline import dashboard_list, write_dashboard_files
         self.assertEqual(dashboard_list({}), ['xbmc4gamers'])
         self.assertEqual(dashboard_list({'profile': {'dashboards': []}}), [])
         with self.assertRaises(PipelineError):
@@ -397,7 +396,7 @@ class PipelineTests(unittest.TestCase):
                       (self.root / '_resources' / 'default.xml').read_bytes())
 
     def test_deploy_never_deletes_the_dashboard_folder(self):
-        from tes3x_deploy import orphans
+        from tes3x.deploy import orphans
         remote = {'_resources/default.xml': 1, '_Resources/artwork/x.jpg': 2, 'old.esp': 3,
                   'morrowind.xbe': 4}
         self.assertEqual(orphans(remote, {'morrowind.xbe'}), ['old.esp'])
@@ -580,7 +579,7 @@ class PipelinePlanTests(unittest.TestCase):
             self.assertIn('target: xbox x F:/Games/Profile', out.getvalue())
 
     def test_targets_resolve_install_folder_and_longest_path_root(self):
-        from tes3x_targets import path_check_root, remote_root, resolve
+        from tes3x.targets import path_check_root, remote_root, resolve
         local = {
             'default_target': 'bench',
             'targets': {
@@ -597,7 +596,7 @@ class PipelinePlanTests(unittest.TestCase):
         self.assertEqual(path_check_root(local, profile, 'bench'), 'F:/Games/MorrowindMods')
 
     def test_xemu_targets_hold_their_own_emulator_files(self):
-        from tes3x_targets import resolve
+        from tes3x.targets import resolve
         local = {
             'xemu': {'bootrom': 'legacy.bin'},
             'targets': {
@@ -615,7 +614,7 @@ class PipelinePlanTests(unittest.TestCase):
         self.assertEqual((legacy['name'], legacy['exe']), ('xemu', 'old-xemu.exe'))
 
     def test_legacy_deploy_is_an_implicit_target(self):
-        from tes3x_targets import remote_root, resolve
+        from tes3x.targets import remote_root, resolve
         local = {'deploy': {'host': 'x', 'remote_root': 'F:/Games/LegacyFolder'}}
         target = resolve(local)
         self.assertEqual((target['name'], target['kind']), ('xbox', 'xbox'))
