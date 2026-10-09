@@ -395,17 +395,26 @@ class ServerTests(unittest.TestCase):
         return key / name
 
     def upload(self, client, seq, ident, name, data):
+        """Send a file as a console does: the offer, then the chunks its last ack lacks, again
+        until an ack says done; a lost datagram or a slow runner only delays it."""
+        net = tes3x_net
         digest = hashlib.blake2b(data, digest_size=32).digest()
-        offer = tes3x_net.BULK_OFFER.pack(ident, len(data), digest) + name + b'\0'
-        client.send(tes3x_net.EVENTS, tes3x_net.pack_events(
-            0, [(seq, tes3x_net.EVENT_OFFER, 0, offer)]))
-        client.receive(1.0, tes3x_net.BULK_ACK)
-        for index in range(0, len(data), tes3x_net.BULK_CHUNK):
-            client.send(tes3x_net.CHUNK, struct.pack('<II', ident, index // tes3x_net.BULK_CHUNK)
-                        + data[index:index + tes3x_net.BULK_CHUNK])
-        while (body := client.receive(1.0, tes3x_net.BULK_ACK)) is not None:
-            if tes3x_net.BULK_ACK_BODY.unpack(body)[4] == tes3x_net.BULK_DONE:
-                break
+        offer = net.BULK_OFFER.pack(ident, len(data), digest) + name + b'\0'
+        chunks = [data[i:i + net.BULK_CHUNK] for i in range(0, len(data), net.BULK_CHUNK)]
+        acked, end = None, time.monotonic() + 10
+        while time.monotonic() < end:
+            if acked is None:
+                client.send(net.EVENTS, net.pack_events(0, [(seq, net.EVENT_OFFER, 0, offer)]))
+            else:
+                _, first, held, window, _ = acked
+                for index in range(first, min(first + window, len(chunks))):
+                    if not held >> (index - first) & 1:
+                        client.send(net.CHUNK, struct.pack('<II', ident, index) + chunks[index])
+            body = client.receive(1.0, net.BULK_ACK)
+            if body is not None:
+                acked = net.BULK_ACK_BODY.unpack(body)
+                if acked[4] == net.BULK_DONE:
+                    break
         else:
             self.fail('no ack said done')
         time.sleep(0.2)
