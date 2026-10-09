@@ -31,8 +31,8 @@ import tes3x_targets
 from tes3x_pipeline import (MARKER as PIPELINE_MARKER, PipelineError, resolve_patch_plan,
                             validate_local_config)
 from tes3x_xemu_setup import download_xemu, find_files as find_xemu_files
+from tes3x_paths import checkout, resource
 
-ROOT = Path(__file__).resolve().parents[1]
 LOG_SUFFIXES = {".txt", ".log"}
 CAPABILITY_REASONS = {
     "ftp": "the Xbox's FTP server is not answering",
@@ -252,7 +252,7 @@ class TargetsPage(QWidget):
             self.window.error("A TES3X command is already running")
             return
         verb = "Installing the dashboard agent on" if command == "install" else             "Removing the dashboard agent from"
-        self.window.run_steps([(ROOT / "addons" / "console" / "console.py", [
+        self.window.run_steps([(resource("addons", "console", "console.py"), [
             command, "--config", str(self.window.local_config_path()), "--target", name],
             f"{verb} {name}…")], then=lambda: self.window.refresh_dashboard_status(name))
 
@@ -280,7 +280,7 @@ class TargetsPage(QWidget):
         if QMessageBox.question(self, "TES3X", f"Restart the dashboard on {self.name}?") \
                 != QMessageBox.StandardButton.Yes:
             return
-        self.window.start_command(ROOT / "addons" / "console" / "console.py", [
+        self.window.start_command(resource("addons", "console", "console.py"), [
             "restart", "--config", str(self.window.local_config_path()), "--target", self.name],
             f"Restarting the dashboard on {self.name}…")
 
@@ -1637,7 +1637,7 @@ class ServerPage(QWidget):
             return
         config = self.window.local_config_path()
         target = self.window.target_picker.currentData()
-        self.window.run_steps([(ROOT / "tools" / "tes3x_pipeline.py", [
+        self.window.run_steps([(checkout("tools", "tes3x_pipeline.py"), [
             profile, *(["--config", str(config)] if config.is_file() else []),
             *(["--target", target] if target else [])],
             f"Building {Path(profile).stem} for the server…")], then=then)
@@ -1662,7 +1662,7 @@ class ServerPage(QWidget):
         process = QProcess(self)
         process.setWorkingDirectory(str(self.window.work_dir()))
         process.setProgram(sys.executable)
-        process.setArguments(["-u", str(ROOT / "tools" / "tes3x_net.py"),
+        process.setArguments(["-u", str(checkout("tools", "tes3x_net.py")),
                               *server_arguments(values)])
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         process.readyReadStandardOutput.connect(self.read_output)

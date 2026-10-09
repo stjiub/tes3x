@@ -1,9 +1,10 @@
 """Inject an XBE section and rebuild its packed header tail."""
 
 import argparse
-import os
 import re
 import struct
+
+from tes3x_paths import resource
 
 ENTRY_XOR = {"retail": 0xA8FC57AB, "debug": 0x94859D4B}
 THUNK_XOR = {"retail": 0x5B6D40B6, "debug": 0xEFB1F152}
@@ -21,8 +22,7 @@ HDR_THUNK = 0x158
 SECHDR_SIZE = 56
 PAGE = 0x1000
 
-DEFAULT_KRNL_DEF = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                                "hooks", "xboxkrnl.exe.def")
+DEFAULT_KRNL_DEF = str(resource("hooks", "xboxkrnl.exe.def"))
 
 
 def _u32(b, o):

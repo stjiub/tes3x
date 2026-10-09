@@ -68,14 +68,14 @@ import tes3x_nexus as nexus
 import tes3x_saves as saves_tool
 import tes3x_savepool
 import tes3x_targets
+from tes3x_paths import checkout, resource, writable
 from tes3x_xemu_setup import resolve as resolve_xemu
 
 
-ROOT = Path(__file__).resolve().parents[1]
 VERSION = "0.1.0"
 ROLE = Qt.ItemDataRole.UserRole
 EXTRA = Qt.ItemDataRole.UserRole + 1
-TEMPLATE = ROOT / "examples" / "profile.toml"
+TEMPLATE = resource("examples", "profile.toml")
 PROFILE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 RETAIL_PLUGINS = ("Morrowind.esm", "Tribunal.esm", "Bloodmoon.esm")
 EXPANSION_PLACEHOLDERS = {"tribunal.esm", "bloodmoon.esm"}
@@ -189,12 +189,13 @@ def dashboard_agent_state(output, code, expected):
 
 def version_label():
     """The packaged version, or the base version with the commit when run from a checkout."""
-    packaged = ROOT / "VERSION"
+    packaged = resource("VERSION")
     if packaged.is_file():
         return "TES3X " + packaged.read_text(encoding="utf-8").strip()
     try:
-        commit = subprocess.run(["git", "-C", str(ROOT), "describe", "--always", "--dirty"],
-                                capture_output=True, text=True, timeout=5).stdout.strip()
+        commit = subprocess.run(["git", "-C", str(checkout()), "describe", "--always",
+                                 "--dirty"], capture_output=True, text=True,
+                                timeout=5).stdout.strip()
     except OSError:
         commit = ""
     return f"TES3X {VERSION}" + (f" ({commit})" if commit else "")
@@ -412,8 +413,8 @@ def sha256_file(path):
 
 
 def addon_registry():
-    if str(ROOT) not in sys.path:
-        sys.path.insert(0, str(ROOT))
+    if str(resource()) not in sys.path:
+        sys.path.insert(0, str(resource()))
     import addons
     return addons
 
@@ -446,7 +447,7 @@ def drop_empty(document, section):
 
 def default_config_path():
     local = Path.cwd() / "tes3x.local.toml"
-    return (local if local.is_file() else ROOT / "tes3x.local.toml").resolve()
+    return (local if local.is_file() else writable("tes3x.local.toml")).resolve()
 
 
 class LocalSettingsDialog(QDialog):
@@ -4037,7 +4038,7 @@ class ProfileWindow(QMainWindow):
         process = QProcess(self)
         process.setWorkingDirectory(str(self.work_dir()))
         process.setProgram(sys.executable)
-        process.setArguments([str(ROOT / "tools" / "tes3x_saves.py"), "list", "--pool",
+        process.setArguments([str(checkout("tools", "tes3x_saves.py")), "list", "--pool",
                               f"{value:08X}", "--xbox", "--library", str(self.save_library()),
                               "--config", str(self.local_config_path()),
                               "--target", target_name])
@@ -4184,7 +4185,7 @@ class ProfileWindow(QMainWindow):
 
     def saves_command(self, command, folders, *extra, target=None):
         value, _name = self.current_pool()
-        return (ROOT / "tools" / "tes3x_saves.py",
+        return (checkout("tools", "tes3x_saves.py"),
                 [command, *folders, "--pool", f"{value:08X}", "--library",
                  str(self.save_library()), "--config", str(self.local_config_path()),
                  *(["--target", target] if target else []), *extra])
@@ -5054,7 +5055,7 @@ class ProfileWindow(QMainWindow):
             return
         self.command_kind = requested
         self.command_target = self.target_picker.currentData()
-        self.start_command(ROOT / "tools" / "tes3x_pipeline.py", [
+        self.start_command(checkout("tools", "tes3x_pipeline.py"), [
             str(self.profile_path),
             *(["--config", str(self.local_config_path())]
               if self.local_config_path().is_file() else []),
@@ -5310,7 +5311,7 @@ class ProfileWindow(QMainWindow):
             environment.insert("TES3X_CONFIG", config)
             self.play_run = self.work_dir() / "build" / "xemu" / name
             self.start_play_process(
-                ROOT / "tools" / "tes3x_xemu.py",
+                checkout("tools", "tes3x_xemu.py"),
                 [name, "--deploy", str(out / "disc"), "--target", target["name"],
                  "--config", config, "--net-nat", "--disk", str(self.play_disk()),
                  "--seed", f"Games/Base={out / 'seed' / 'Games' / 'Base'}",
@@ -5319,7 +5320,7 @@ class ProfileWindow(QMainWindow):
                  "--seed", f"UDATA/42530005/TES3X/servers.ini={servers}"],
                 f"Manager in {target['name']}…", environment)
 
-        self.run_steps([(ROOT / "tools" / "tes3x_manager.py",
+        self.run_steps([(checkout("tools", "tes3x_manager.py"),
                          ["xemu", str(out), "--config", config],
                          "Staging the manager for xemu…")], then=start)
 
@@ -5521,7 +5522,7 @@ class ProfileWindow(QMainWindow):
         environment.insert("TES3X_CONFIG", str(self.local_config_path()))
         name = f"play-{self.profile_path.stem}-{target['name']}-{stamp}"
         self.play_run = self.work_dir() / "build" / "xemu" / name
-        self.start_play_process(ROOT / "tools" / "tes3x_xemu.py",
+        self.start_play_process(checkout("tools", "tes3x_xemu.py"),
                                 [name, *source, "--target", target["name"],
                                  "--config", str(self.local_config_path()),
                                  *(["--gdb"] if self.play_gdb else []),
@@ -5566,7 +5567,7 @@ class ProfileWindow(QMainWindow):
             return
         if not self.save_profile():
             return
-        self.start_command(ROOT / "tools" / "tes3x_test.py", [
+        self.start_command(checkout("tools", "tes3x_test.py"), [
             str(self.profile_path),
             *(["--config", str(self.local_config_path())]
               if self.local_config_path().is_file() else []),
@@ -5628,8 +5629,8 @@ class ProfileWindow(QMainWindow):
         if self.deploy_agent or self.manager_paired(target.get("name")):
             arguments.append("--agent")
             self.lend_listener()
-        self.run_steps([(ROOT / "tools" / "tes3x_deploy.py", arguments, f"Deploying to {remote}…")],
-                       first=False)
+        self.run_steps([(checkout("tools", "tes3x_deploy.py"), arguments,
+                         f"Deploying to {remote}…")], first=False)
         if self.discard_after_deploy.isChecked():
             self.after_command = lambda: shutil.rmtree(self.build_output(), ignore_errors=True)
 
@@ -5658,7 +5659,7 @@ class ProfileWindow(QMainWindow):
             return
         out = self.work_dir() / "build" / "manager" / "install"
         config = ["--config", str(self.local_config_path()), "--target", name]
-        self.run_steps([(ROOT / "tools" / "tes3x_manager.py", ["stage", str(out), *config],
+        self.run_steps([(checkout("tools", "tes3x_manager.py"), ["stage", str(out), *config],
                          "Preparing the console manager…")],
                        then=lambda: self.deploy_manager(out, name, manager))
 
@@ -5676,7 +5677,7 @@ class ProfileWindow(QMainWindow):
         if agent:
             arguments.append("--agent")
             self.lend_listener()
-        self.run_steps([(ROOT / "tools" / "tes3x_deploy.py", arguments,
+        self.run_steps([(checkout("tools", "tes3x_deploy.py"), arguments,
                          f"Installing manager {version} to {remote}…")], first=False)
         self.command_kind = "manager"
         if "--replace" not in extra:
@@ -5701,7 +5702,7 @@ class ProfileWindow(QMainWindow):
             return
         self.write_pull_record(destination, name)
         config = self.local_config_path()
-        self.start_command(ROOT / "tools" / "tes3x_fetch.py", [
+        self.start_command(checkout("tools", "tes3x_fetch.py"), [
             "E:/tes3x*", "--out", str(destination),
             *(["--config", str(config)] if config.is_file() else []),
             *(["--target", self.target_picker.currentData()]
@@ -5851,7 +5852,7 @@ class ProfileWindow(QMainWindow):
         process = QProcess(self)
         process.setWorkingDirectory(str(self.work_dir()))
         process.setProgram(sys.executable)
-        process.setArguments([str(ROOT / "tools" / "tes3x_fetch.py"), "E:/", "--list",
+        process.setArguments([str(checkout("tools", "tes3x_fetch.py")), "E:/", "--list",
                               "--config", str(config), "--target", target["name"]])
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         name = target["name"]

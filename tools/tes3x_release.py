@@ -24,8 +24,9 @@ import re
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-PUBLIC = ROOT / "keys" / "release.pub"
+from tes3x_paths import resource
+
+PUBLIC = resource("keys", "release.pub")
 PASSPHRASE_ENV = "TES3X_RELEASE_PASSPHRASE"
 
 # A manager release, as the manager's update.c reads it.

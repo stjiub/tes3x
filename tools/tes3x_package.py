@@ -13,9 +13,9 @@ import tarfile
 import urllib.request
 import zipfile
 
-from tes3x_paths import data_dir
+from tes3x_paths import checkout, data_dir, writable
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = checkout()
 PYTHON = "3.12.9"
 EMBED_URL = "https://www.python.org/ftp/python/{0}/python-{0}-embed-amd64.zip"
 SKIP = ("tests/", "launcher/", ".gitea/", ".github/")
@@ -269,7 +269,7 @@ def package(out, cc=None, make_zip=False, manager=None, launcher=None):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--out", default=str(ROOT / "build" / "package"))
+    ap.add_argument("--out", default=str(writable("build", "package")))
     ap.add_argument("--cc", help="C compiler for TES3X.exe (default: gcc or clang)")
     ap.add_argument("--zip", action="store_true", help="also write TES3X-<version>.zip")
     ap.add_argument("--manager", metavar="XBE",

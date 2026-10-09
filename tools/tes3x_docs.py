@@ -10,9 +10,10 @@ import argparse
 import re
 import sys
 import tomllib
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+from tes3x_paths import checkout
+
+ROOT = checkout()
 DOCS = ROOT / "docs"
 NAV = DOCS / "nav.toml"
 INDEX = DOCS / "index.md"

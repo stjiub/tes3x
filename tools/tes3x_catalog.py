@@ -6,12 +6,13 @@ from it by `tes3x_patches.py --write`.
 """
 
 from pathlib import Path
+
+from tes3x_paths import checkout, resource
 import re
 import tomllib
 
-ROOT = Path(__file__).resolve().parents[1]
-CATALOG = ROOT / "catalog.toml"
-PAGE = ROOT / "docs" / "catalog.md"
+CATALOG = resource("catalog.toml")
+PAGE = checkout("docs", "catalog.md")
 
 STATUSES = {
     "works": "Confirmed working on the Xbox.",

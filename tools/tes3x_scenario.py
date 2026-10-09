@@ -55,11 +55,11 @@ import re
 import subprocess
 import sys
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from tes3x_agent import key_fingerprint, load_or_create_key  # noqa: E402
 from tes3x_diag import assertion_failures  # noqa: E402
 from tes3x_net import free_udp_ports  # noqa: E402
+from tes3x_paths import checkout  # noqa: E402
 import tes3x_patches as registry  # noqa: E402
 from tes3x_test import (GAME_TESTS, TestError, game_test_profile, load_game_test,  # noqa: E402
                         make_fixture, read_toml, write_profile, comparison_failures,
@@ -168,7 +168,7 @@ def start_agent(spec, folder, timeout, env, workspace):
     key = folder.with_name(folder.name + ".agent.key")
     key.unlink(missing_ok=True)
     fingerprint = key_fingerprint(load_or_create_key(key))
-    tools = ROOT / "tools"
+    tools = checkout("tools")
     serve = [sys.executable, str(tools / "tes3x_net.py"), "serve", "--tunnel", str(tunnel),
              "--forward", str(agent), "--port", str(server), "--admin-port", str(admin),
              "--duration", str(timeout + BUILD_SECONDS)]
@@ -230,7 +230,7 @@ def main():
     spec = load(a.patch)
     config = Path(a.config or Path.cwd() / "tes3x.local.toml").resolve()
     workspace = config.parent
-    runner = Path(a.runner).resolve() if a.runner else ROOT / "tools" / "tes3x_xemu.py"
+    runner = Path(a.runner).resolve() if a.runner else checkout("tools", "tes3x_xemu.py")
     if not runner.is_file():
         sys.exit(f"xemu runner not found: {runner}")
     runs = workspace / "build" / "xemu"
@@ -329,7 +329,7 @@ def main():
     if a.record:
         if set(results) != set(wanted):
             sys.exit("--record needs the complete scenario")
-        cmd = [sys.executable, str(ROOT / "tools" / "tes3x_validate.py"),
+        cmd = [sys.executable, str(checkout("tools", "tes3x_validate.py")),
                "--results", str(results_root), "record",
                a.patch, "--env", "xemu",
                "--scenario", str(GAME_TESTS / f"{a.patch}.toml"),

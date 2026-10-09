@@ -1,4 +1,5 @@
-"""Validate FATX component and full-path limits; locate TES3X's per-user data."""
+"""Validate FATX component and full-path limits; locate TES3X's own files and per-user
+data."""
 import os
 import re
 from pathlib import Path
@@ -68,3 +69,26 @@ def data_dir():
     if os.name == 'nt':
         return Path(os.environ.get('LOCALAPPDATA') or Path.home() / 'AppData' / 'Local') / 'TES3X'
     return Path(os.environ.get('XDG_DATA_HOME') or Path.home() / '.local' / 'share') / 'tes3x'
+
+
+# Where TES3X's own files come from, by kind. All three are the checkout today; installed as a
+# package, resources come from the package and writable files from data_dir().
+CHECKOUT = Path(__file__).resolve().parents[1]
+
+
+def resource(*parts):
+    """Read-only data a command needs wherever TES3X is installed: the registries, hooks,
+    symbols, examples, assets, add-ons, game tests, the manager's XBEs and the release key."""
+    return CHECKOUT.joinpath(*parts)
+
+
+def checkout(*parts):
+    """What only a source checkout has: docs, the tools launched by path, the sources that the
+    maintainer's generators rewrite, and git."""
+    return CHECKOUT.joinpath(*parts)
+
+
+def writable(*parts):
+    """What TES3X writes beside the checkout (build output, downloads, the local config), bound
+    for data_dir()."""
+    return CHECKOUT.joinpath(*parts)

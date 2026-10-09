@@ -26,14 +26,13 @@ import tes3x_agent
 import tes3x_nxdk
 import tes3x_release
 import tes3x_targets
-from tes3x_paths import xbox_root
+from tes3x_paths import checkout, resource, xbox_root
 from tes3x_pipeline import PipelineError, agent_setting, dashboard_xml
 from tes3x_xbe import Xbe
 
-ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / "manager"
-PACKAGED = SOURCE / "default.xbe"
-PACKAGED_LAUNCHER = SOURCE / "launcher.xbe"
+SOURCE = checkout("manager")
+PACKAGED = resource("manager", "default.xbe")
+PACKAGED_LAUNCHER = resource("manager", "launcher.xbe")
 INBOX = "E:/TES3X/update"
 FOLDER = "TES3XManager"
 TITLE = "TES3X Manager"
@@ -48,7 +47,7 @@ class ManagerError(Exception):
 
 def version():
     match = re.search(r'#define MGR_VERSION "([^"]+)"',
-                      (SOURCE / "mgr.h").read_text(encoding="utf-8"))
+                      (resource("manager", "mgr.h")).read_text(encoding="utf-8"))
     return match.group(1) if match else None
 
 

@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import struct
 import sys
 import tempfile
@@ -8,7 +9,7 @@ from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-from tes3x_paths import check_paths, require_paths
+from tes3x_paths import check_paths, require_paths, resource
 from tes3x_pack import write_invalidation
 from tes3x_build import materialize, plugin_masters
 from tes3x_pipeline import (PipelineError, agent_ini, agent_setting, console_ini_text,
@@ -52,6 +53,25 @@ class PathTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             require_paths(['x'], 'E:/', '../outside')
         self.assertFalse(check_paths([], 'E:/')['problems'])
+
+    def test_only_tes3x_paths_finds_the_repository(self):
+        up = re.compile(r'__file__.*(parents\[1\]|parent\.parent|dirname\(os\.path\.dirname|"\.\.")')
+        tools = Path(__file__).resolve().parents[1] / 'tools'
+        found = [f'{path.name}:{number}' for path in sorted(tools.glob('*.py'))
+                 if path.name != 'tes3x_paths.py'
+                 for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1)
+                 if up.search(line)]
+        self.assertEqual(found, [])
+
+    def test_named_resources_exist(self):
+        # VERSION and the manager's XBEs exist only in a packaged folder.
+        for parts in (('patches.toml',), ('candidates.toml',), ('catalog.toml',),
+                      ('hooks', 'xboxkrnl.exe.def'), ('symbols', 'curated.json'),
+                      ('symbols', 'structs.json'), ('examples', 'profile.toml'),
+                      ('examples', 'starts.toml'), ('assets', 'menu'),
+                      ('addons', 'console', 'console.py'), ('tests', 'game'),
+                      ('manager', 'mgr.h'), ('keys', 'release.pub')):
+            self.assertTrue(resource(*parts).exists(), parts)
 
 
 class PipelineTests(unittest.TestCase):

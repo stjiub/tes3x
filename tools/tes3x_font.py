@@ -10,13 +10,12 @@ The output is committed, so building the manager needs neither the fonts nor Pil
 
 import argparse
 import hashlib
-from pathlib import Path
 import sys
 import urllib.request
 
-from tes3x_paths import data_dir
+from tes3x_paths import checkout, data_dir
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = checkout()
 OUT = ROOT / "manager" / "fontdata.c"
 LICENCES = ROOT / "manager" / "fonts"
 BASE = "https://raw.githubusercontent.com/google/fonts/7085eb89a950e85db5b166b7a58d414544b4140c/"

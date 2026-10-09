@@ -12,7 +12,9 @@ import struct
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+from tes3x_paths import checkout
+
+ROOT = checkout()
 FONT = ROOT / "assets" / "fonts" / "Fondamento-Regular.ttf"
 OUT = ROOT / "assets" / "menu"
 # texture name -> label, width; the retail buttons are 128x64

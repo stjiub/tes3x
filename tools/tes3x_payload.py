@@ -16,18 +16,18 @@ import struct
 import subprocess
 
 import tes3x_inject
+from tes3x_paths import resource, writable
 from tes3x_patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, find_call_sites, find_mcp37_context,
                          find_mcp125_context, find_save_allowed_context,
                          find_script_ip_restore_call, find_transition_calls)
 
-ROOT = Path(__file__).resolve().parents[1]
-HOOKS = ROOT / "hooks"
+HOOKS = resource("hooks")
 HEADERS = ("tes3xdiag.h", "tes3xheap.h", "tes3xlog.h", "tes3xmem.h", "tes3xnt.h",
            "tes3xpager.h", "tes3xprof.h", "tes3xregion.h", "tes3x_thunks.h", "monocypher.h",
            "tes3xnoise.h", "tes3xlaunch.h")
 SECTION = re.compile(r'^#include "(multi/\w+\.c)"$', re.M)
 DEFAULT_SOURCES = ("tes3xhook.c", "tes3xlog.c", "tes3xini.c", "tes3xdiag.c")
-BUNDLED_LLVM = ROOT / "externals" / "llvm" / "bin"
+BUNDLED_LLVM = writable("externals", "llvm", "bin")
 LLVM_DIRS = (Path("C:/Program Files/LLVM/bin"), Path("C:/msys64/clang64/bin"),
              Path("C:/msys64/mingw64/bin"))
 CFLAGS = ("-target", "i386-pc-win32", "-march=pentium3", "-Os", "-ffreestanding", "-nostdlib",
@@ -910,7 +910,7 @@ def main(argv=None):
     ap.add_argument("--src", action="append", metavar="FILE.c",
                     help="payload source, in hooks/ or a path (repeatable; default: %s)"
                          % " ".join(DEFAULT_SOURCES))
-    ap.add_argument("--out", default=str(ROOT / "build" / "hooks"), help="output folder")
+    ap.add_argument("--out", default=str(writable("build", "hooks")), help="output folder")
     ap.add_argument("--cflags", default=os.environ.get("EXTRA_CFLAGS", ""),
                     help="extra compiler flags, such as -DNAME=VALUE")
     ap.add_argument("--llvm", help="folder holding clang and lld-link (default: search PATH)")

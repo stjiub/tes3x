@@ -23,18 +23,16 @@ import json
 from pathlib import Path
 import re
 import shutil
-import sys
 import tomllib
 
-TES3X = Path(__file__).resolve().parents[1]
-VALIDATION = TES3X / "build" / "validation"
-PATCH_DIRS = VALIDATION / "patches"
-
-sys.path.insert(0, str(TES3X / "tools"))
 import tes3x_patches as registry
+from tes3x_paths import checkout, writable
 from tes3x_diag import assertion_failures, latest_values, parse_log
 from tes3x_test import (GAME_TESTS, comparison_failures, game_test_problems,
                         sequence_failures)
+
+VALIDATION = writable("build", "validation")
+PATCH_DIRS = VALIDATION / "patches"
 
 GATED_CHANNELS = ("preview", "release")
 
@@ -108,7 +106,7 @@ def cited_scenarios(patch):
 def relative(path):
     """A display path that never exposes an absolute workstation path."""
     path = Path(path).resolve()
-    for root, prefix in ((TES3X, ""), (VALIDATION.resolve(), "results"),
+    for root, prefix in ((checkout(), ""), (VALIDATION.resolve(), "results"),
                          (Path.cwd().resolve(), "")):
         if path.is_relative_to(root):
             rel = path.relative_to(root).as_posix()

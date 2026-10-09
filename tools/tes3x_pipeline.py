@@ -23,15 +23,14 @@ import tes3x_patches as registry
 from tes3x_payload import PayloadError, build_payload, find_tool
 from tes3x_net import write_ghost_plugin
 from tes3x_agent import key_fingerprint, load_or_create_key
-from tes3x_paths import DEFAULT_REMOTE_ROOT, require_paths
+from tes3x_paths import DEFAULT_REMOTE_ROOT, checkout, require_paths, resource
 from tes3x_plugins import rules_file
 import tes3x_manifest
 import tes3x_savepool
 import tes3x_targets
 
 
-ROOT = Path(__file__).resolve().parents[1]
-TOOLS = ROOT / "tools"
+TOOLS = checkout("tools")
 MARKER = ".tes3x-pipeline.json"
 # The GUI's last check of the profile, kept in the output folder.
 CHECK_MARKER = ".tes3x-check.json"
@@ -403,9 +402,9 @@ def run(command):
 def source_revision():
     """The TES3X commit a build came from, marked dirty when files differ from it."""
     try:
-        commit = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--short=12", "HEAD"],
+        commit = subprocess.run(["git", "-C", str(checkout()), "rev-parse", "--short=12", "HEAD"],
                                 capture_output=True, text=True, check=True).stdout.strip()
-        dirty = subprocess.run(["git", "-C", str(ROOT), "status", "--porcelain",
+        dirty = subprocess.run(["git", "-C", str(checkout()), "status", "--porcelain",
                                 "--untracked-files=no"],
                                capture_output=True, text=True, check=True).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
@@ -1142,7 +1141,7 @@ def main(argv=None):
             # them.
             textures = staged / "Data Files" / "Textures"
             textures.mkdir(parents=True, exist_ok=True)
-            art = sorted((ROOT / "assets" / "menu").glob("*.dds"))
+            art = sorted(resource("assets", "menu").glob("*.dds"))
             for path in art:
                 texture_target = textures / path.name
                 if texture_target.exists():

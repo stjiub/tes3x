@@ -37,6 +37,7 @@ import time
 import traceback
 
 import tes3x_netbuild
+from tes3x_paths import resource
 
 PORT = 26500
 AGENT_PORT = 26501
@@ -497,8 +498,7 @@ GAME_NONE, GAME_LOAD, GAME_NEW = 0, 1, 2
 PICK_CHARACTER, PICK_START, PICK_NEW = 1, 2, 255
 CHARACTERS_LISTED = 8  # buttons on the console's list, with "New character"
 START_NAME = 31
-STARTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "examples",
-                      "starts.toml")
+STARTS = str(resource("examples", "starts.toml"))
 # level, level progress, level-ups per attribute (8) and per specialisation (3), base health,
 # magicka and fatigue, base attributes (8)
 LEVEL = struct.Struct("<HH11B3f8f")

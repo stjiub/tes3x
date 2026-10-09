@@ -11,9 +11,10 @@ import struct
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+from tes3x_paths import resource
+
 DB_PATH = Path.cwd() / 'build' / 'symbols.db'
-CURATED = ROOT / 'symbols' / 'curated.json'
+CURATED = resource('symbols', 'curated.json')
 
 MAGIC = 0x50583354  # "T3XP"
 VERSION = 2

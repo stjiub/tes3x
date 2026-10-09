@@ -11,9 +11,11 @@ import subprocess
 import tomllib
 import zipfile
 
+from tes3x_paths import writable
+
 
 CATALOG_NAME = "library.toml"
-BUNDLED_7Z = Path(__file__).resolve().parents[1] / "externals" / "7zip" / "7z.exe"
+BUNDLED_7Z = writable("externals", "7zip", "7z.exe")
 IDENTIFIER = re.compile(r"[a-z0-9][a-z0-9._-]*\Z")
 # Optional mod-level text: where the mod comes from and what it is.
 MOD_TEXT = ("url", "author", "summary")

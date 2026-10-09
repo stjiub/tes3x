@@ -16,6 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from tes3x_inject import Xbe  # noqa: E402
+from tes3x_paths import resource
 
 try:
     from capstone import Cs, CS_ARCH_X86, CS_MODE_32, CS_OP_IMM, CS_OP_MEM
@@ -24,10 +25,9 @@ except ImportError as exc:
     raise SystemExit('the symbol map needs capstone; run `python -m pip install capstone`') \
         from exc
 
-ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = Path.cwd() / 'build' / 'symbols.db'
-CURATED = ROOT / 'symbols' / 'curated.json'
-STRUCTS = ROOT / 'symbols' / 'structs.json'
+CURATED = resource('symbols', 'curated.json')
+STRUCTS = resource('symbols', 'structs.json')
 
 MAX_FUNC = 0x10000
 BODY_GAP = 64

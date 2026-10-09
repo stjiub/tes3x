@@ -6,6 +6,7 @@ String searches report file offsets; use --off2va before finding references.
 import argparse
 import json
 import os
+from tes3x_paths import resource
 import re
 import shutil
 import struct
@@ -57,7 +58,7 @@ def disasm(x, va, length):
 
 
 def symbols():
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "symbols", "curated.json")
+    path = resource("symbols", "curated.json")
     try:
         records = json.load(open(path, encoding="utf-8"))["records"]
     except (OSError, ValueError, KeyError):

@@ -7,16 +7,18 @@ implemented. docs/patches.md and docs/candidates.md are generated from them.
 
 import argparse
 from pathlib import Path
+
+from tes3x_paths import checkout, resource
 import sys
 import tomllib
 
-ROOT = Path(__file__).resolve().parents[1]
-REGISTRY = ROOT / "patches.toml"
-CANDIDATE_LIST = ROOT / "candidates.toml"
+ROOT = checkout()
+REGISTRY = resource("patches.toml")
+CANDIDATE_LIST = resource("candidates.toml")
 TABLE = ROOT / "docs" / "patches.md"
 CANDIDATE_PAGE = ROOT / "docs" / "candidates.md"
 PATCH_DOCS = ROOT / "patches"
-GAME_TESTS = ROOT / "tests" / "game"
+GAME_TESTS = resource("tests", "game")
 
 CATEGORIES = ("core", "correctness", "compat", "performance", "qol", "balance",
               "instrumentation", "infrastructure")

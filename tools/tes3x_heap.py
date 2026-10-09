@@ -16,12 +16,12 @@ import tomllib
 from collections import defaultdict
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tes3x_inject  # noqa: E402
+from tes3x_paths import resource, writable  # noqa: E402
 
 DB_PATH = Path.cwd() / 'build' / 'symbols.db'
-CURATED = ROOT / 'symbols' / 'curated.json'
+CURATED = resource('symbols', 'curated.json')
 MAGIC = 0x48583354  # "T3XH"
 VERSIONS = (2, 3)
 HEADER = '<4I2Q12I9II24I'
@@ -46,7 +46,7 @@ REASONS = {1: 'console', 2: 'first frame'}
 def default_xbe():
     local = Path.cwd() / 'tes3x.local.toml'
     if not local.exists():
-        local = ROOT / 'tes3x.local.toml'
+        local = writable('tes3x.local.toml')
     if local.exists():
         root = tomllib.loads(local.read_text()).get('paths', {}).get('vanilla_root')
         if root:

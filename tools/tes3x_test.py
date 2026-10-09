@@ -20,9 +20,9 @@ import tomllib
 from tes3x_diag import assertion_failures
 from tes3x_pipeline import validate_profile
 from tes3x_library import CATALOG_NAME, dependency_order, discover_library, load_library
+from tes3x_paths import checkout, resource
 
 
-ROOT = Path(__file__).resolve().parents[1]
 GLOBAL_FAILURES = (r"crash\.", r"hang\.detected", r"fatal\.")
 
 
@@ -48,7 +48,7 @@ def read_toml(path):
         raise TestError(f"{path}: {exc}") from exc
 
 
-GAME_TESTS = ROOT / "tests" / "game"
+GAME_TESTS = resource("tests", "game")
 KINDS = {"single": ("test",), "comparison": ("control", "test")}
 REQUIRED = ("kind", "purpose", "procedure", "script", "expect")
 OPTIONAL = ("limitations", "watch", "timeout", "xemu", "save", "enable", "apply", "pipeline",
@@ -311,7 +311,7 @@ def find_runner(value):
         if not path.is_file():
             raise TestError(f"xemu runner not found: {path}")
         return path
-    candidates = [ROOT / "tools" / "tes3x_xemu.py"]
+    candidates = [checkout("tools", "tes3x_xemu.py")]
     for path in candidates:
         if path.is_file() and path.resolve() != Path(__file__).resolve():
             return path.resolve()
