@@ -18,7 +18,7 @@ from tes3x.inject import Xbe  # noqa: E402
 from tes3x.paths import resource
 
 try:
-    from capstone import Cs, CS_ARCH_X86, CS_MODE_32, CS_OP_IMM, CS_OP_MEM
+    from capstone import Cs, CS_ARCH_X86, CS_MODE_32, CS_OP_IMM
     from capstone.x86 import X86_OP_MEM
 except ImportError as exc:
     raise SystemExit('the symbol map needs capstone; run `python -m pip install capstone`') \
@@ -227,7 +227,6 @@ def descend(md, code, code_va, start, lo, hi, entries):
                 op = ins.operands[0] if ins.operands else None
                 if op is not None and op.type == CS_OP_IMM:
                     edges.append((ins.address, op.imm, 'call'))
-                break_after = False
             elif m == 'jmp':
                 op = ins.operands[0] if ins.operands else None
                 if op is not None and op.type == CS_OP_IMM:

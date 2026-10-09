@@ -36,6 +36,8 @@ options. This page says what each one is for and where it is explained.
 | `tes3x assets` | check NIF texture references and WAV formats; resample WAVs | [packaging](packaging.md#sound-and-mesh-checks) |
 | `tes3x mwse` | find legacy MWSE bytecode in compiled plugins | [legacy MWSE bytecode](../patches/mwse-legacy.md) |
 | `tes3x map` | inspect a map companion file such as `Morrowind.esm.map` | [packaging](packaging.md#sound-and-mesh-checks) |
+| `tes3x bsa` | report the entry count and content size of an Xbox BSA archive | |
+| `tes3x convert` | preview texture conversion sizes without writing files | [packaging](packaging.md) |
 
 ## Testing
 
@@ -85,6 +87,8 @@ options. This page says what each one is for and where it is explained.
 
 ## Disk images
 
-`tes3x fatx`, `tes3x put` and `tes3x qcow2` create, fill and convert raw and qcow2 Xbox
-hard-disk images for xemu; the xemu runner and the save tools use them. The other scripts in `tools/` are libraries the
-commands above share.
+| command | job | see |
+|---|---|---|
+| `tes3x fatx` | create and inspect FATX partitions | [xemu](xemu.md) |
+| `tes3x put` | write files into an Xbox hard-disk image | [xemu](xemu.md) |
+| `tes3x qcow2` | inspect a qcow2 image, or convert it to raw with an output path | [xemu](xemu.md) |

@@ -476,7 +476,6 @@ class ServerTests(unittest.TestCase):
         self.game(first, 1, 7, b'')
         kept = self.save(b'Nerevar', 0)
         self.upload(first, 2, 1, b'mp-hero.ess', kept)
-        name = b"unused.ess"
 
         stale = self.client(1)  # the same key after a relaunch into an older save
         stale.session ^= 2
@@ -558,7 +557,6 @@ class ServerTests(unittest.TestCase):
                bytes([net.PLAYER_VITALS]) + net.VITALS.pack(55.0, 60.0, 180.0),
                *net.pack_journal([('A1_1_FindSpymaster', 20)]))
         time.sleep(0.3)
-        kept = (self.character(world) / 'mp-hero.ess').read_bytes()
         name = self.character_load(world, first)
 
         stale = self.client(1)  # a relaunch into another save gets no replay, only LOAD
@@ -695,7 +693,6 @@ class ServerTests(unittest.TestCase):
         replay = self.events(late, lambda kind, _: kind == net.EVENT_PLAYER)
         self.assertIn((net.EVENT_PLAYER, bytes([net.PLAYER_DEATH])), replay)
 
-        kept = (self.character(world) / 'mp-hero.ess').read_bytes()
         name = self.character_load(world, first)
         again = self.client(1)  # the power went before the respawn
         again.session ^= 2
@@ -1117,8 +1114,10 @@ class ServerTests(unittest.TestCase):
         self.addCleanup(signal.signal, signal.SIGINT, signal.signal(signal.SIGINT, caller))
         out = io.TextIOWrapper(io.BytesIO())  # run() reconfigures stdout, so not a StringIO
         with contextlib.redirect_stdout(out):
-            tes3x_net.main(['serve', '--bind', '127.0.0.1', '--port', str(free_port()),
-                            '--admin-port', str(free_port()), '--duration', '0.3', '--report', '0'])
+            result = tes3x_net.main(['serve', '--bind', '127.0.0.1', '--port', str(free_port()),
+                                    '--admin-port', str(free_port()), '--duration', '0.3',
+                                    '--report', '0'])
+        self.assertEqual(result, 0)
         self.assertIs(signal.getsignal(signal.SIGINT), caller)
 
     def test_consoles_ignore_server_events_another_console_sent(self):

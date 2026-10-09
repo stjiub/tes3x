@@ -2922,7 +2922,7 @@ class Server:
                 print(f"client {client.id} {client.mac}: " + summary(client, "last "))
             if self.args.drop:
                 print(f"dropped {self.lost['in']} packets in, {self.lost['out']} out")
-            return 0 if self.clients else 1
+            return 0
         finally:
             if previous is not None:
                 signal.signal(signal.SIGINT, previous)

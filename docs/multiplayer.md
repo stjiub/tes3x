@@ -90,9 +90,13 @@ The first client to join sets the session's load order and its game clock. Usefu
 | `--build DIR` | hand this build to the console manager (below) |
 
 Stop the server with Ctrl+C, or the admin command `stop`. It asks each joined console to flush
-its supported character state, writes that state and the world, and waits up to `--stop-wait` for
-the requested snapshots. A second Ctrl+C stops at once. Without `--world` the session lives only as long as the server
-does: stop it and the deaths, objects and equipment it recorded are gone. With `--world DIR` it
+its state before exiting. A normal shutdown, including `--duration`, returns exit code 0 even
+when no clients joined. Startup errors and unhandled failures return a nonzero code.
+
+During shutdown, the server writes the supported character state and the world, and waits up
+to `--stop-wait` for the requested snapshots. A second Ctrl+C stops at once. Without `--world`
+the session lives only as long as the server does: stop it and the deaths, objects and equipment
+it recorded are gone. With `--world DIR` it
 keeps the game clock, the deaths, the doors, locks and items taken, the items dropped or placed,
 containers' contents, actors' AI settings and disposition, and the weather in one file per
 load order in `DIR`, loads it when the

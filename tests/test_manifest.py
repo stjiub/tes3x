@@ -50,7 +50,7 @@ class ManifestTests(unittest.TestCase):
 
     def test_a_delta_rebuilds_the_output_from_the_reference(self):
         try:
-            import zstandard  # noqa: F401
+            __import__("zstandard")
         except ImportError:
             self.skipTest("zstandard is not installed")
         reference = bytes(range(256)) * 4096

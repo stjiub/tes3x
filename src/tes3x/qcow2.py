@@ -279,12 +279,16 @@ def open_image(path):
 
 
 if __name__ == "__main__":
-    import sys
-    q = Qcow2(sys.argv[1])
+    import argparse
+    parser = argparse.ArgumentParser(description="Inspect a qcow2 image or convert it to raw.")
+    parser.add_argument("image", help="source qcow2 image")
+    parser.add_argument("output", nargs="?", help="write a raw image to this path")
+    args = parser.parse_args()
+    q = Qcow2(args.image)
     print(f"qcow2 v{q.version}  virtual {q.size/2**30:.1f} GB  "
           f"cluster {q.cluster_size}  L1 entries {q.l1_size}")
-    if len(sys.argv) > 2:
+    if args.output:
         def prog(c, t, w):
             print(f"\r  {100*c//t}%  {w} clusters", end="", flush=True)
-        w, t = q.to_raw(sys.argv[2], prog)
+        w, t = q.to_raw(args.output, prog)
         print(f"\r  wrote {w} allocated clusters of {t}")

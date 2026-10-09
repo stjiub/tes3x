@@ -137,7 +137,10 @@ def write_bsa(out_path, files, base=None, progress=None, drop=()):
 
 
 if __name__ == "__main__":
-    import sys
-    b = Bsa(sys.argv[1])
+    import argparse
+    parser = argparse.ArgumentParser(description="Summarize an Xbox BSA archive.")
+    parser.add_argument("archive", help="Xbox BSA file")
+    args = parser.parse_args()
+    b = Bsa(args.archive)
     print(f"{b.count} files, data at 0x{b.data_start:X}, "
           f"{sum(e['size'] for e in b.entries)/1048576:.1f} MB of content")

@@ -15,6 +15,7 @@ what the one before cannot, and costs more to run.
 
 ```powershell
 python -m pip install -e .[gui,dev]
+python tools/lint.py
 python -m unittest discover -s tests
 ```
 
@@ -24,7 +25,8 @@ the GUI tests skip without PySide6. They run without game files or an emulator. 
 [patch page contract](../patches/README.md).
 
 GitHub Actions runs them on Windows and Linux, with Python 3.12 and 3.13, for every push to
-`main` and every pull request (`.github/workflows/tests.yml`).
+`main` and every pull request (`.github/workflows/tests.yml`). It also checks project Python
+files with pyflakes; bundled third-party code is excluded.
 
 ## Profile check
 

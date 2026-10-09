@@ -47,8 +47,9 @@ jobs:
           $env:TES3X_EXPECT_PORTABLE = "1"
           Get-Content "$env:GITHUB_WORKSPACE/tests/installed_check.py" | & $python -
           if ($LASTEXITCODE) { exit 1 }
-          # No console joins, so serve stops after a second with exit code 1
+          # A normal timed shutdown succeeds even when no console joins
           $out = & $cli net serve --bind 127.0.0.1 --port 0 --admin-port 0 --duration 1 --report 0
+          if ($LASTEXITCODE) { exit 1 }
           $out
           if (-not ($out -match "serving on")) { exit 1 }
           exit 0

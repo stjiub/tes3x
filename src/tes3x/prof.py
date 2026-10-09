@@ -8,7 +8,6 @@ import argparse
 import json
 import sqlite3
 import struct
-import sys
 from pathlib import Path
 
 from tes3x.paths import resource

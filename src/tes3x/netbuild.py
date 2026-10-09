@@ -165,7 +165,3 @@ def fetch(host, port, ticket, what, timeout=30):
         return body if response.status == 200 else None
     finally:
         connection.close()
-
-
-if __name__ == "__main__":
-    raise SystemExit("used by tes3x net serve --build")

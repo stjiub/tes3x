@@ -42,6 +42,14 @@ class CommandTests(unittest.TestCase):
                               capture_output=True, text=True)
         self.assertTrue(done.stdout.startswith('usage: tes3x xemu-setup'), done.stdout[:80])
 
+    def test_archive_texture_and_image_help_needs_no_input_files(self):
+        for name in ('bsa', 'convert', 'qcow2'):
+            with self.subTest(command=name):
+                done = subprocess.run([sys.executable, '-m', 'tes3x', name, '--help'],
+                                      capture_output=True, text=True)
+                self.assertEqual(done.returncode, 0, done.stderr)
+                self.assertTrue(done.stdout.startswith(f'usage: tes3x {name}'), done.stdout)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -109,8 +109,11 @@ def convert_cached(src, cache_dir, max_size=512, force_fourcc=None):
 
 
 if __name__ == "__main__":
-    import sys
-    for src in sys.argv[1:]:
+    import argparse
+    parser = argparse.ArgumentParser(description="Report Xbox texture conversion sizes.")
+    parser.add_argument("textures", nargs="+", help="source textures (no files are written)")
+    args = parser.parse_args()
+    for src in args.textures:
         before = os.path.getsize(src)
         data, note = convert_texture(src)
         img = Image.open(src)
