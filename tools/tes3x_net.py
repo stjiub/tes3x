@@ -216,8 +216,8 @@ def listen(args):
     mode = "xemu tunnel" if args.tunnel else "udp"
     print(f"listening on {args.bind}:{port} ({mode})", flush=True)
     seen, frames, expected = set(), 0, None
-    deadline = time.time() + args.timeout if args.timeout else None
-    while deadline is None or time.time() < deadline:
+    deadline = time.monotonic() + args.timeout if args.timeout else None
+    while deadline is None or time.monotonic() < deadline:
         if args.tunnel:
             data = link.recv(0.5)
             if data is None:
@@ -257,15 +257,15 @@ def resolve(link, host, timeout):
     until the guest's gratuitous ARP shows it can receive.
     """
     target = socket.inet_aton(host)
-    deadline = time.time() + timeout
-    while time.time() < deadline:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
         frame = link.recv(0.5)
         if frame and frame[12:14] == b"\x08\x06" and frame[28:32] == target:
             break
-    while time.time() < deadline:
+    while time.monotonic() < deadline:
         link.send(arp_frame(1, BROADCAST, b"\0" * 6, host))
-        end = time.time() + 1.0
-        while time.time() < end:
+        end = time.monotonic() + 1.0
+        while time.monotonic() < end:
             frame = link.recv(0.2)
             if frame is None or frame[12:14] != b"\x08\x06" or len(frame) < 42:
                 continue
@@ -279,19 +279,19 @@ def ping(args):
     link = Tunnel(args.tunnel) if args.tunnel else None
     if link:
         print(f"arp {args.host} through the tunnel (up to {args.wait:.0f} s)", flush=True)
-        t0 = time.time()
+        t0 = time.monotonic()
         mac = resolve(link, args.host, args.wait)
         if mac is None:
             print("no ARP reply")
             return 1
-        print(f"arp reply from {mac.hex(':')} after {time.time() - t0:.1f} s", flush=True)
+        print(f"arp reply from {mac.hex(':')} after {time.monotonic() - t0:.1f} s", flush=True)
     else:
         sock = udp_socket()
         sock.bind(("0.0.0.0", 0))
         print(f"probing {args.host} until it answers (up to {args.wait:.0f} s)", flush=True)
-        t0 = time.time()
+        t0 = time.monotonic()
         while True:
-            if time.time() - t0 > args.wait:
+            if time.monotonic() - t0 > args.wait:
                 print("no echo reply")
                 return 1
             sock.sendto(PING + struct.pack("<I", 0xFFFFFFFF), (args.host, PORT))
@@ -301,7 +301,7 @@ def ping(args):
                     break
             except (socket.timeout, ConnectionResetError):
                 pass
-        print(f"first reply after {time.time() - t0:.1f} s", flush=True)
+        print(f"first reply after {time.monotonic() - t0:.1f} s", flush=True)
     rtts, lost, runs, run = [], 0, [], 0
     for seq in range(args.count):
         payload = PING + struct.pack("<I", seq) + b"\0" * args.pad
@@ -2122,7 +2122,7 @@ class Bucket:
 
     def __init__(self, burst, rate, now=None):
         self.burst, self.rate = burst, rate
-        self.tokens, self.last = float(burst), time.time() if now is None else now
+        self.tokens, self.last = float(burst), time.monotonic() if now is None else now
 
     def take(self, now):
         self.tokens = min(self.burst, self.tokens + (now - self.last) * self.rate)
@@ -2144,7 +2144,7 @@ class Client:
         self.addr = None
         self.joins = self.beats = self.gaps = self.states = 0
         self.state = None
-        self.last = time.time()
+        self.last = time.monotonic()
         self.alive = False
         self.version = T3MP_VERSION
         self.dead = False  # its player died and has not respawned; relayed to peers
@@ -2297,15 +2297,15 @@ def serve(args):
         dns.bind((args.bind, DNS_PORT))
         print(f"answering DNS on {args.bind}:{DNS_PORT} for {', '.join(sorted(hosts))}",
               flush=True)
-    deadline = time.time() + args.duration if args.duration else None
-    report = time.time() + args.report
+    deadline = time.monotonic() + args.duration if args.duration else None
+    report = time.monotonic() + args.report
     loss = random.Random(args.seed)
     pinned = None
     if args.load_order:
         pinned = (int(args.load_order, 16), None)
     lost = {"in": 0, "out": 0}
     clock, clock_next = None, 0.0
-    save_next = time.time() + args.save_every if args.save_every else math.inf
+    save_next = time.monotonic() + args.save_every if args.save_every else math.inf
     owners = {}  # cell -> authority client
     actor_owners = {}  # actor id -> (client, since): its owner by proximity
     actor_seen = {}  # actor id -> when a state of it last came
@@ -2464,7 +2464,7 @@ def serve(args):
 
     def pump(client):
         """Send what PACE_PACKETS allows of the client's queue."""
-        now = time.time()
+        now = time.monotonic()
         start, count = client.window
         if now - start >= PACE_WINDOW:
             start, count = now, 0
@@ -2474,7 +2474,7 @@ def serve(args):
             count += 1
         client.window = (start, count)
 
-    bot = {"anchor": None, "next": 0.0, "start": time.time(), "said": 0.0, "line": 0,
+    bot = {"anchor": None, "next": 0.0, "start": time.monotonic(), "said": 0.0, "line": 0,
            "anchored": None, "state": None, "breaks": [], "held": 0, "hit": False,
            "killed": False, "mirror": None, "hit_player": False, "echo": None, "busy": False,
            "dead": False}
@@ -2489,7 +2489,7 @@ def serve(args):
                                  or math.hypot(x - anchor[1], y - anchor[2]) > 2048):
             bot["anchor"] = ((flags, cell), x, y, z)
             if bot["anchored"] is None:
-                bot["anchored"] = time.time()
+                bot["anchored"] = time.monotonic()
             print(f"{time.strftime('%H:%M:%S')} bot circles {describe_state(state)}",
                   flush=True)
 
@@ -2594,7 +2594,7 @@ def serve(args):
     def leave(client):
         # a relaunch to load a character is not a departure
         if client.in_world and client.announced and not client.relaunching:
-            notify(f"{player_name(client)} has left.", time.time(), skip=client)
+            notify(f"{player_name(client)} has left.", time.monotonic(), skip=client)
             client.announced = False
         client.alive = False
         for refid, (holder, target) in list(dialogues.items()):
@@ -2602,7 +2602,7 @@ def serve(args):
                 del dialogues[refid]
                 if target != holder:
                     send_event(target, holder, EVENT_HOLD,
-                               struct.pack("<III", refid, target, 0), time.time())
+                               struct.pack("<III", refid, target, 0), time.monotonic())
         for other in clients.values():
             if other.alive:
                 send(other, GONE, struct.pack("<I", client.id))
@@ -3241,7 +3241,7 @@ def serve(args):
                 print(f"{stamp} client {client.id} is {name}: {race}, {head}, {hair}",
                       flush=True)
                 if client.announce_due:
-                    announce_join(client, time.time())
+                    announce_join(client, time.monotonic())
         if kind == EVENT_ACTOR_EQUIPMENT:
             try:
                 refid, part, count, items = unpack_actor_equipment(data)
@@ -3365,7 +3365,7 @@ def serve(args):
             key = own if own and own[0] == KEY_INTERIOR else (
                 KEY_EXTERIOR, math.floor(x / CELL_UNITS), math.floor(y / CELL_UNITS), b"")
             actors[refid] = (client.id, key, record)
-            actor_seen[refid] = time.time()
+            actor_seen[refid] = time.monotonic()
             if refid == args.bot_mirror:
                 bot["mirror"] = record
             client.actor_states += 1
@@ -3461,7 +3461,7 @@ def serve(args):
         magic, version, kind, _, session, seq = OUTER.unpack_from(packet)
         if magic != b"T3MP" or not version:
             return
-        now = time.time()
+        now = time.monotonic()
         if kind in (HANDSHAKE1, HANDSHAKE3):
             if kind == HANDSHAKE1 and session not in pending:
                 if len(handshake_buckets) > HANDSHAKES_PENDING:  # forged sources, most likely
@@ -3582,19 +3582,19 @@ def serve(args):
                     "" if bans_path else " (not kept: give --world)")
         if verb == "save" and len(rest) <= 1 and all(r in by_id for r in rest):
             targets = [by_id[r] for r in rest] or list(clients.values())
-            return "asked to save: " + ask_save(targets, time.time())
+            return "asked to save: " + ask_save(targets, time.monotonic())
         if verb == "log" and len(rest) <= 1 and (not rest or rest[0] in LOG_LEVELS):
             if rest:
                 detail["verbose"] = rest[0] == "verbose"
             return "log " + ("verbose" if detail["verbose"] else "normal")
         if verb == "say" and rest:
-            notify(" ".join(rest), time.time())
+            notify(" ".join(rest), time.monotonic())
             return "sent to everyone"
         if verb == "tell" and len(rest) >= 2 and rest[0] in by_id:
-            notify(" ".join(rest[1:]), time.time(), only=by_id[rest[0]])
+            notify(" ".join(rest[1:]), time.monotonic(), only=by_id[rest[0]])
             return f"sent to client {rest[0]}"
         if verb == "stop" and not rest:
-            begin_stop("admin stop", time.time())
+            begin_stop("admin stop", time.monotonic())
             return "stopping"
         if verb == "bans" and not rest:
             return "\n".join(f"{kind} {value}" for kind in BAN_KINDS
@@ -3647,7 +3647,7 @@ def serve(args):
         nonlocal pinned, clock
         magic, version, kind, _, session, seq, _, sent, _ = T3MP.unpack_from(packet)
         stamp = time.strftime("%H:%M:%S")
-        now = time.time()
+        now = time.monotonic()
         if kind == HELLO and secure and len(packet) >= T3MP.size + HELLO_BODY.size:
             key, keys = secure
             mac, build, order, plugins, *offered, build_id = HELLO_BODY.unpack_from(packet,
@@ -3787,7 +3787,7 @@ def serve(args):
         if seq > client.peer_seq + 1:
             client.gaps += seq - client.peer_seq - 1
         client.peer_seq = max(client.peer_seq, seq)
-        client.peer_time, client.addr, client.last = sent, addr, time.time()
+        client.peer_time, client.addr, client.last = sent, addr, time.monotonic()
         if not client.alive:
             print(f"{stamp} client {client.id} back", flush=True)
             client.alive = True
@@ -3893,8 +3893,8 @@ def serve(args):
 
     signal.signal(signal.SIGINT, lambda *_: commands.put("stop"))
     if pinned:
-        adopt_world(pinned[0], time.time())
-    while not stopped(time.time()):
+        adopt_world(pinned[0], time.monotonic())
+    while not stopped(time.monotonic()):
         while not commands.empty():
             print(admin(commands.get()), flush=True)
         waiting = [sock] + [link.sock for link in links] + [link.forward for link in links] + (
@@ -4003,7 +4003,7 @@ def serve(args):
                     if data is not None and dport in args.forward_ports:
                         link.forward_guest[dport] = (frame[6:12], src, sport)
                         link.forward.sendto(data, ("127.0.0.1", dport))
-        now = time.time()
+        now = time.monotonic()
         for client in clients.values():
             if client.queue:
                 pump(client)
@@ -4192,7 +4192,7 @@ def serve(args):
             report = now + args.report
             print(status(now), flush=True)
     if world["path"]:
-        write_world(time.time())
+        write_world(time.monotonic())
     for stream in streams.values():
         if stream.dirty:
             stream.save()
@@ -4243,9 +4243,9 @@ class FuzzClient:
         return welcome
 
     def receive_raw(self, timeout, kind):
-        end = time.time() + timeout
-        while time.time() < end:
-            self.sock.settimeout(max(end - time.time(), 0.01))
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            self.sock.settimeout(max(end - time.monotonic(), 0.01))
             try:
                 data, _ = self.sock.recvfrom(4096)
             except (socket.timeout, ConnectionResetError):
@@ -4256,10 +4256,10 @@ class FuzzClient:
 
     def receive(self, timeout, kind):
         """The body of the next sealed packet of this kind, or None."""
-        end = time.time() + timeout
-        while time.time() < end:
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
             try:
-                data = self.receive_raw(end - time.time(), SEALED)
+                data = self.receive_raw(end - time.monotonic(), SEALED)
             except RuntimeError:
                 return None
             seq = OUTER.unpack_from(data)[5]
@@ -4347,7 +4347,7 @@ def load_admin_password(path):
 class RemoteAdmin:
     """The server's remote admin listener; run(line) answers an authenticated command."""
 
-    def __init__(self, secret, sock, clock=time.time):
+    def __init__(self, secret, sock, clock=time.monotonic):
         self.secret, self.sock, self.clock = secret, sock, clock
         self.nonces = {}  # nonce -> (address, issued)
         self.failures = {}  # address -> Bucket

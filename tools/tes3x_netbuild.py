@@ -107,7 +107,7 @@ class BuildServer:
             self.log(f"build unreadable: {error}")
             return BUILD_BODY.pack(bytes(32), 0, self.port, bytes(16))
         token = secrets.token_bytes(16)
-        now = time.time()
+        now = time.monotonic()
         with self.lock:
             for old in [t for t, end in self.tickets.items() if end < now]:
                 del self.tickets[old]
@@ -118,7 +118,7 @@ class BuildServer:
 
     def valid(self, token):
         with self.lock:
-            return self.tickets.get(token, 0) >= time.time()
+            return self.tickets.get(token, 0) >= time.monotonic()
 
     def get(self, request):
         parts = urllib.parse.unquote(urllib.parse.urlsplit(request.path).path).split("/", 3)
