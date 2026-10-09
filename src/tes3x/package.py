@@ -59,6 +59,8 @@ Also included, outside this folder:
   each with its license in its `.dist-info` folder: PySide6 and Qt (GNU LGPL 3), tomlkit (MIT),
   cryptography (Apache 2.0 or BSD), Pillow (MIT-CMU), zstandard (BSD).
 - `python/Lib/site-packages/tes3x/_vendor/mlox/`: mlox 1.0.3, MIT.
+"""
+MANAGER_NOTICE = """\
 - `manager/default.xbe`: the console manager, built with nxdk (MIT) and lwIP (BSD), includes
   Monocypher 4.0.2 (CC0 or BSD 2-clause), the zstd 1.5.7 decoder (BSD,
   `manager/LICENSE-zstd.txt`) and Mbed TLS 3.6.7 (Apache 2.0, `manager/LICENSE-mbedtls.txt`).
@@ -177,10 +179,11 @@ def llvm_files():
     return folder
 
 
-def externals(target):
+def externals(target, manager=True):
     shutil.copytree(seven_zip_files(), target / "7zip")
     shutil.copytree(llvm_files(), target / "llvm")
-    (target / "README.md").write_text(NOTICES, encoding="utf-8")
+    (target / "README.md").write_text(NOTICES + (MANAGER_NOTICE if manager else ""),
+                                      encoding="utf-8")
 
 
 def embedded_python(target, package):
@@ -261,7 +264,7 @@ def manager_xbe(given, out, launcher=False):
                            "XBE") from exc
 
 
-def package(out, cc=None, make_zip=False, manager=None, launcher=None):
+def package(out, cc=None, make_zip=False, manager=None, launcher=None, with_manager=True):
     label = version()
     stage = Path(out) / f"TES3X-{label}"
     if stage.exists():
@@ -269,16 +272,18 @@ def package(out, cc=None, make_zip=False, manager=None, launcher=None):
     stage.mkdir(parents=True)
     (stage / "VERSION").write_text(label + "\n", encoding="utf-8")
     shutil.copyfile(ROOT / "LICENSE", stage / "LICENSE.txt")
-    (stage / "manager").mkdir()
-    shutil.copyfile(manager_xbe(manager, out), stage / "manager" / "default.xbe")
-    shutil.copyfile(manager_xbe(launcher, out, True), stage / "manager" / "launcher.xbe")
-    import tes3x.nxdk as tes3x_nxdk
-    shutil.copyfile(tes3x_nxdk.vendor("mbedtls") / "LICENSE",
-                    stage / "manager" / "LICENSE-mbedtls.txt")
-    shutil.copyfile(ROOT / "manager" / "zstd" / "LICENSE", stage / "manager" / "LICENSE-zstd.txt")
-    print(f"TES3X {label}")
+    if with_manager:
+        (stage / "manager").mkdir()
+        shutil.copyfile(manager_xbe(manager, out), stage / "manager" / "default.xbe")
+        shutil.copyfile(manager_xbe(launcher, out, True), stage / "manager" / "launcher.xbe")
+        import tes3x.nxdk as tes3x_nxdk
+        shutil.copyfile(tes3x_nxdk.vendor("mbedtls") / "LICENSE",
+                        stage / "manager" / "LICENSE-mbedtls.txt")
+        shutil.copyfile(ROOT / "manager" / "zstd" / "LICENSE",
+                        stage / "manager" / "LICENSE-zstd.txt")
+    print(f"TES3X {label}" + ("" if with_manager else ", without the console manager"))
     embedded_python(stage / "python", wheel(out))
-    externals(stage / "externals")
+    externals(stage / "externals", with_manager)
     build_launchers(find_cc(cc), stage)
     (stage / "README.txt").write_text(README.format(version=label), encoding="utf-8",
                                       newline="\r\n")
@@ -298,12 +303,15 @@ if __name__ == "__main__":
                     help="the console manager to ship (default: build manager/ with nxdk)")
     ap.add_argument("--launcher", metavar="XBE",
                     help="the manager's launcher to ship (default: build manager/launcher/)")
+    ap.add_argument("--no-manager", action="store_true",
+                    help="leave the console manager out, for a test build without nxdk")
     ap.add_argument("--print-version", action="store_true")
     args = ap.parse_args()
     try:
         if args.print_version:
             print(version())
         else:
-            package(args.out, args.cc, args.zip, args.manager, args.launcher)
+            package(args.out, args.cc, args.zip, args.manager, args.launcher,
+                    not args.no_manager)
     except (PackageError, OSError, subprocess.CalledProcessError) as exc:
         sys.exit(f"tes3x_package: {exc}")

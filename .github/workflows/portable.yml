@@ -1,0 +1,60 @@
+# The portable folder (TES3X-<version>.zip), built on Windows, checked unpacked, and kept as this
+# run's artifact. It publishes nothing: releases are made by hand from a downloaded, tested zip.
+# Run it from the Actions tab ("Run workflow"); a vX.Y.Z tag runs it too.
+name: portable
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  zip:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # the version counts commits since the last vX.Y.Z tag
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      # Python, 7-Zip and LLVM, about 880 MB, each checked against a pinned SHA-256
+      - uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\TES3X\package
+          key: portable-downloads-${{ hashFiles('src/tes3x/package.py') }}
+      - run: python -m pip install -e .
+      # No nxdk here yet: the zip leaves out the console manager
+      - run: tes3x package --zip --no-manager --out build/package
+      - name: Check the unpacked folder
+        shell: pwsh
+        run: |
+          $zip = Get-Item build/package/TES3X-*.zip
+          $folder = Join-Path $env:RUNNER_TEMP "portable"
+          Expand-Archive $zip.FullName $folder
+          $root = Get-Item (Join-Path $folder "TES3X-*")
+          $python = Join-Path $root "python/python.exe"
+          $cli = Join-Path $root "tes3x-cli.exe"
+          Set-Location $env:RUNNER_TEMP  # outside the checkout
+          & $cli --help; if ($LASTEXITCODE) { exit 1 }
+          & $cli --version; if ($LASTEXITCODE) { exit 1 }
+          $env:TES3X_EXPECT_PORTABLE = "1"
+          Get-Content "$env:GITHUB_WORKSPACE/tests/installed_check.py" | & $python -
+          if ($LASTEXITCODE) { exit 1 }
+          # No console joins, so serve stops after a second with exit code 1
+          $out = & $cli net serve --bind 127.0.0.1 --port 0 --admin-port 0 --duration 1 --report 0
+          $out
+          if (-not ($out -match "serving on")) { exit 1 }
+          exit 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TES3X-portable
+          path: build/package/TES3X-*.zip
+          retention-days: 14
+          compression-level: 0  # already a zip
