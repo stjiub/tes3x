@@ -19,7 +19,6 @@ pages = [
     "deployment.md",
     "testing.md",
     "xemu.md",
-    "validation.md",
     "diagnostics.md",
     "multiplayer.md",
     "addons.md",
@@ -31,7 +30,6 @@ pages = [
     "configuration.md",
     "commands.md",
     "exec-scripts.md",
-    "game-tests.md",
     "ini-keys.md",
     "patches.md",
     "candidates.md",
@@ -41,13 +39,17 @@ pages = [
 [[section]]
 title = "Development"
 pages = [
+    "development.md",
+    "validation.md",
+    "game-tests.md",
     "patch-policy.md",
     "../patches/README.md",
     "symbol-map.md",
 ]
 
 [summary]
-"getting-started.md" = "Everything you need to get started."
+"getting-started.md" = "Install TES3X, find where it keeps your files, and make a first build."
+"development.md" = "Working on TES3X: a checkout, tests, generated pages and releases."
 "patches.md" = "Every patch TES3X can apply, with its channel and how a build selects it."
 "candidates.md" = "Fixes from other projects that were reviewed, and why each is not implemented."
 "catalog.md" = "Mods tried on the Xbox, and whether they work."

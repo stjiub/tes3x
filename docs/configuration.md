@@ -6,6 +6,13 @@ retail game, mods and tools are, and the Xbox and xemu targets that can run a bu
 `tes3x pipeline profiles/my-build.toml --check` checks both files and prints
 what would be built.
 
+- [Local config](#local-config): [`[paths]`](#paths), [targets](#targets),
+  [`[addons]`](#addons), [`[console]`](#console), [`[server]`](#server)
+- [Profile](#profile): [`[profile]`](#profile-1), [`[patches]`](#patches),
+  [`[preferences]`](#preferences), [`[package]`](#package), [`[rules]`](#rules),
+  [`[plugins]`](#plugins), [`[[mods]]`](#mods), [`[ini]`](#ini)
+- [Command-line precedence](#command-line-precedence)
+
 ## Local config
 
 `--config PATH` picks the file, and so does the `TES3X_CONFIG` environment variable. Otherwise

@@ -1,42 +1,19 @@
 # GUI
 
 The GUI edits everything a profile and the local config hold, installs mods into the library, and
-checks, builds, tests and deploys. In a [portable folder](#portable-folder), double-click
-`TES3X.exe`. From a checkout [installed](getting-started.md#installing-from-a-checkout) with
-`[gui]`, start it with `tes3x gui`.
+checks, builds, tests and deploys. In a portable folder, double-click `TES3X.exe`; otherwise run
+`tes3x gui`.
 
 **Help > About TES3X** shows the full version, author and license, with links to documentation,
 the GitHub project, [release notes](../CHANGELOG.md) and issue reporting. The version text can
 be selected and copied when reporting a problem.
 
-### Portable folder
-
-`tes3x package --zip` writes `build/package/TES3X-<version>/` and its zip: an
-embedded Python 3.12 with TES3X and its packages installed (a wheel built from the checkout), and
-`TES3X.exe`, which starts the GUI with that Python, and `tes3x-cli.exe`, which runs `tes3x`
-commands in a terminal. `externals/` holds 7-Zip, for `.7z` and
-`.rar` mods, and clang and lld-link from LLVM, for engine fixes, each with its license. Nothing
-needs installing on the PC that runs it; the **LLVM tools** setting still overrides the bundled
-LLVM.
-
-It also carries the [console manager](deployment.md#installing-the-console-manager) as
-`manager/default.xbe` and its launcher as `manager/launcher.xbe`, built with nxdk
-(`paths.nxdk`), or taken from `--manager XBE` and `--launcher XBE`.
-
-Building the folder needs a C compiler for `TES3X.exe` (MSYS2's `gcc` or `clang`, or `--cc`). The
-first build downloads Python, 7-Zip and LLVM (about 880 MB, mostly the LLVM release), checks each
-against a pinned SHA-256, and keeps them in `%LOCALAPPDATA%\TES3X\package` for later builds.
-
-The version is `X.Y.Z` at a `vX.Y.Z` tag, and `X.Y.Z-dev.N+gSHA` for a commit N past it, with
-`.dirty` when the checkout has uncommitted changes. The GUI shows it in its title.
-
-PySide6's unused CMake object files are left out, and the build fails if a path, counted from
-`TES3X-<version>/`, is over 180 characters, so the zip unpacks within Windows' path limit.
-
-The GUI opens the last profile you used and lists everything in `profiles/` for switching, with
-New, Duplicate, Rename and Delete under the cog beside the list. On first start, with no
-`tes3x.local.toml` yet, it opens Settings for your game and mod library paths. Add and set up
-your Xbox or xemu in the **Target** workspace afterward.
+The GUI opens the last profile you used and lists the profiles folder for switching, with New,
+Duplicate, Rename and Delete under the cog beside the list. The profiles folder is `profiles`
+beside the local config unless **File > Settings** names another. On first start, with no
+`tes3x.local.toml` yet, it opens Settings for your game and mod library paths and saves them in
+the [data folder](getting-started.md#where-tes3x-keeps-your-files). Add and set up your Xbox or
+xemu in the **Target** workspace afterward.
 
 Three workspaces sit at the left of the toolbar: **Profile** edits the open profile (the tabs
 below), [**Target**](#target) shows what the selected Xbox or xemu target is doing, and
@@ -85,11 +62,11 @@ same in all three.
 - **Resources** shows each active mod's source file and texture footprint before conversion and
   packing. Its dependency view combines mod dependencies and plugin masters and marks anything
   missing or ordered too late.
-- **Build** holds everything else in the profile: dashboard title, install folder, full or shared-base
-  install layout, mod library, packaging mode, texture and file-name rules and player preferences.
-  **Skip the logo and New Game movies** sets the two `[Movies]` keys in the INI tab to a missing
-  file, which the game skips. Its details pane previews the current mod and plugin order, asset
-  packaging, archives, engine patches and deployment destination before the profile is built.
+- **Build** holds everything else in the profile: dashboard title, install folder, full or
+  shared-base install layout, mod library, packaging mode, texture and file-name rules and player
+  preferences. **Skip the logo and New Game movies** sets the two `[Movies]` keys in the INI tab to
+  a missing file, which the game skips. Its details pane previews the current mod and plugin order,
+  asset packaging, archives, engine patches and deployment destination before the profile is built.
 
 Settings left at their defaults stay out of the profile file. **File > Settings** holds the paths
 shared by every profile and the add-ons; targets are set up in the [Target](#target) workspace.
@@ -102,27 +79,27 @@ mlox rules download automatically when first needed; select a rules file only to
 
 The toolbar target chooses where checks, builds, deploys, saves, logs and Play go. Its dot is grey
 before an Xbox is checked or for xemu, green while an Xbox answers, and red when it is unreachable;
-the tooltip carries its address and reported free space. One split button runs Deploy for an
-Xbox target and Build for xemu; its menu holds Check, Build and Deploy, with grey, green, amber and
-red dots for not run, current, stale and failed. Deploy is unavailable for xemu targets. An Xbox whose [console manager](deployment.md#through-the-console-manager) is
-paired with this PC shows **Manager**, and Deploy then goes through the manager instead of FTP.
-The cog beside the target list adds, duplicates or removes a target, or opens its Setup.
-**Actions** also smoke-tests the current profile. The status bar is reserved for
-activity, transient messages and counts. Check and per-target Deploy results are
-remembered in the build output; like the Build state, they notice profile edits but not changes
-inside mod folders.
+the tooltip carries its address and reported free space. One split button runs Deploy for an Xbox
+target and Build for xemu; its menu holds Check, Build and Deploy, with grey, green, amber and red
+dots for not run, current, stale and failed. Deploy is unavailable for xemu targets. An Xbox whose
+[console manager](deployment.md#through-the-console-manager) is paired with this PC shows
+**Manager**, and Deploy then goes through the manager instead of FTP. The cog beside the target list
+adds, duplicates or removes a target, or opens its Setup. **Actions** also smoke-tests the current
+profile. The status bar is reserved for activity, transient messages and counts. Check and
+per-target Deploy results are remembered in the build output; like the Build state, they notice
+profile edits but not changes inside mod folders.
 
 For a shared-base layout, local settings also name the clean retail folder on the Xbox. Deployment
 shows that path before explicitly installing or synchronizing it, then sends the smaller profile
 folder.
 
 **Play** runs the profile on the selected target, building it first when necessary. A 128 MB xemu
-target needs a BIOS that uses the extra memory, set in the target's **Setup**. Each profile keeps its
-own xemu hard disk, so saves carry over between sessions; the Play menu can enable GDB or run the
-smoke test, and **Actions** resets the disk. With the [console add-on](addons.md)
-switched on, Play on an Xbox target deploys the build and starts the game there. While xemu runs,
-Play becomes **Stop** (`Shift+F9`). Check and Deploy remain available; Build waits until the
-running emulator releases that build.
+target needs a BIOS that uses the extra memory, set in the target's **Setup**. Each profile keeps
+its own xemu hard disk, so saves carry over between sessions; the Play menu can enable GDB or run
+the smoke test, and **Actions** resets the disk. With the [console add-on](addons.md) switched on,
+Play on an Xbox target deploys the build and starts the game there. While xemu runs, Play becomes
+**Stop** (`Shift+F9`). Check and Deploy remain available; Build waits until the running emulator
+releases that build.
 
 **Saves** chooses the profile's save pool: the retail game's shared saves, or a pool of its own
 that keeps its saves apart from other builds (see `save_pool` in
@@ -143,12 +120,11 @@ FTP, the dashboard agent, the in-game [agent](../patches/agent.md) or a running 
 unavailable action stays visible and its tooltip says what is missing.
 
 - **Overview** has one section for each thing that can answer, with that section's actions.
-  **Connection** shows the address, memory, FTP and drive space, with Check connection and Pull logs.
-  **Agent** shows whether a game or the console manager is connected and, for a game, its
-  heartbeat (frame time, free memory, dropped log lines), with Quit to dashboard and Fetch
-  file. On an Xbox, **Dashboard agent** has Install / update, Restart dashboard and Remove, and
-  **Console manager** shows the installed version beside the one this PC would install, with
-  Install / update.
+  **Connection** shows the address, memory, FTP and drive space, with Check connection and Pull
+  logs. **Agent** shows whether a game or the console manager is connected and, for a game, its
+  heartbeat (frame time, free memory, dropped log lines), with Quit to dashboard and Fetch file. On
+  an Xbox, **Dashboard agent** has Install / update, Restart dashboard and Remove, and **Console
+  manager** shows the installed version beside the one this PC would install, with Install / update.
 - **Console** streams the running game's log and runs console lines in it, such as
   `player->getpos x` or `tes3xnet stat`; Up and Down recall earlier lines. It needs a build with
   the `agent` and `console` patches. **Fetch file…** copies a file such as `E:\tes3xprof.bin` from
@@ -170,18 +146,21 @@ unavailable action stays visible and its tooltip says what is missing.
 
 ## Server
 
-**Server** manages either a server on this PC or a remote one. **A server on this PC** starts
-`tes3x net serve` with the settings in the form, which are kept in
-the `[server]` table of `tes3x.local.toml` (see [configuration](configuration.md#server)). It shows
-the server's output and polls the admin port for the connected consoles; Kick, Ban and Ask all to
-save act on them. The box under the output takes any
-[admin command](multiplayer.md#kicks-and-bans) typed in; `help` lists them. **Stop** asks every console to save its character before the server exits;
-pressing it again stops at once. Closing the GUI stops a server it started.
-**Build profile** (profiles with the `multiplayer` patch) names the build the server hands to consoles' managers
-([handing out the build](multiplayer.md#handing-out-the-build)); Start offers to build it if it
-has not been, and **Build** restages it while the server runs. **A remote server**
-connects to a server's remote admin port (see
-[remote admin](multiplayer.md#remote-admin)) with its address and admin password, then lists
-the consoles and offers the same Kick, Ban, Ask all to save and Bans, and Stop server. The
-password is kept in the local config only if you tick **Remember**. See
-[multiplayer](multiplayer.md) for what the settings mean.
+**Server** manages either a server on this PC or a remote one.
+
+**A server on this PC** starts `tes3x net serve` with the settings in the form, which are kept in
+the `[server]` table of `tes3x.local.toml` (see [configuration](configuration.md#server)). It
+shows the server's output and polls the admin port for the connected consoles; Kick, Ban and Ask
+all to save act on them. The box under the output takes any
+[admin command](multiplayer.md#kicks-and-bans); an unknown word lists them. **Stop** asks every
+console to save its character before the server exits; pressing it again stops at once. Closing
+the GUI stops a server it started.
+
+**Build profile** (profiles with the `multiplayer` patch) names the build the server hands to
+consoles' managers (see [handing out the build](multiplayer.md#handing-out-the-build)). Start
+offers to build it if it has not been, and **Build** restages it while the server runs.
+
+**A remote server** connects to a server's [remote admin](multiplayer.md#remote-admin) port with
+its address and admin password, then lists the consoles and offers the same Kick, Ban, Ask all to
+save and Bans, and Stop server. The password is kept in the local config only if you tick
+**Remember**. See [multiplayer](multiplayer.md) for what the settings mean.

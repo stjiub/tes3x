@@ -34,9 +34,9 @@ TES3 BSA entries are addressed by hash rather than full path. If selected assets
 the packer automatically keeps every member of that collision group loose so none are discarded.
 This also enables loose-first lookup in the staged INI; no profile exception is needed.
 
-`tes3x pack --loose-asset "textures/example.dds"` does the same for one file outside a profile:
-the file goes both in the archive and loose, and is listed in `ArchiveInvalidationList.txt` so the
-loose copy wins.
+Outside a profile, `tes3x pack TREE --vanilla DATA --out DIR --loose-asset "textures/example.dds"`
+does the same: matching files ship loose instead of in the archive, with the same handling of
+the retail copies they replace.
 
 ## Mod archives
 
@@ -48,18 +48,19 @@ archives in `tes3xarch.txt` and applies [multi-BSA loading](../patches/multi-bsa
 ## Expansion master placeholders
 
 Xbox GOTY keeps the expansion content in `Morrowind.esm`, while plugins still name `Tribunal.esm`
-and `Bloodmoon.esm` as masters. For a modded build, TES3X copies either file when a mod supplies it
-and otherwise generates a four-byte file containing only `TES3`. These placeholders satisfy the
-dependency names; they do not add or replace expansion content. A profile with no mods stages the
-retail `Data Files` unchanged and does not generate them.
+and `Bloodmoon.esm` as masters. For a modded build, TES3X copies either file when a mod or the
+retail `Data Files` supplies it, and otherwise generates a four-byte file containing only `TES3`.
+These placeholders satisfy the dependency names; they do not add or replace expansion content. A
+profile with no mods stages the retail `Data Files` unchanged and does not generate them.
 
 ## Pruning unused assets
 
 ```powershell
-tes3x build profiles/my-build.toml --prune `
-  --vanilla "build/vanilla/Data Files" `
-  --out build/pruned-tree --reachability-json build/reachability.json
+tes3x build profiles/my-build.toml --prune --library "D:/Morrowind Mods" --vanilla "D:/Morrowind/Data Files" --out pruned --reachability-json reachability.json
 ```
+
+`tes3x build` reads the library from the profile's `library` or `--library`, not from the local
+config, and `--vanilla` is the clean game's `Data Files`.
 
 `--prune` drops mod assets that nothing refers to. It follows references from records in the
 masters and plugins, from meshes to their textures and animations, from books to their images and
@@ -76,7 +77,7 @@ and what was removed.
 [SoX](https://sourceforge.net/projects/sox/). It never raises the sample rate and keeps the channel
 count. Compressed WAVs are left alone.
 
-`tes3x assets build/pruned-tree --json build/assets.json` flags malformed NIF
+`tes3x assets pruned --json assets.json` flags malformed NIF
 headers and missing texture references, and lists WAV formats. It doesn't check geometry, skinning
 or anything else that can crash the renderer.
 

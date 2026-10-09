@@ -46,11 +46,12 @@ Treat only `verified` as fact. Most records are `matched` names from MWSE.
 
 ## Using it
 
-The tool needs [capstone](https://www.capstone-engine.org/) (`python -m pip install capstone`) and
-the binaries it analyses, which you supply: your retail `morrowind.xbe` and, for matching, the PC
-`Morrowind.exe` 1.6.1820 without Code Patch changes (a Steam install with Code Patch keeps it as
-`Morrowind.Original.exe`). The analysis goes to `build/symbols.db` under the working folder; it is
-rebuilt from the binaries, never edited and never committed.
+The tool needs [capstone](https://www.capstone-engine.org/) (`python -m pip install capstone` in a
+checkout, `pipx inject tes3x capstone` for pipx) and the binaries it analyses, which you supply:
+your retail `morrowind.xbe` and, for matching, the PC `Morrowind.exe` 1.6.1820 without Code Patch
+changes (a Steam install with Code Patch keeps it as `Morrowind.Original.exe`). The analysis goes to
+`build/symbols.db` under the working folder; it is rebuilt from the binaries, never edited and never
+committed.
 
 ```
 tes3x sym build morrowind.xbe --tag xbe       # function inventory
@@ -116,7 +117,7 @@ session learns goes into the files above.
 
 MWSE describes the PC engine's structs in C++ headers. `tes3x layouts` compiles them for 32-bit
 MSVC with libclang and writes the exact layouts to `build/ghidra/types-mwse.json`; it needs
-`python -m pip install libclang`, clang (`[paths] llvm`) and the MSVC and Windows SDK headers of a
+`libclang` installed the same way, clang (`[paths] llvm`) and the MSVC and Windows SDK headers of a
 Visual Studio C++ install. MWSE asserts its own sizes and offsets, and the tool reports any that
 fail.
 
@@ -144,6 +145,9 @@ overlaps; a struct the PC does not have takes a `size`. Types are C++ names (unq
 looked up in `TES3` and then `NI`) with `*` and `[N]`.
 
 ## Adding a name
+
+`annotate` rewrites `symbols/curated.json`, so run it in a
+[checkout](development.md#setting-up-a-checkout).
 
 ```
 tes3x sym annotate 0x00193710 Ini::ReadInt --confidence verified \

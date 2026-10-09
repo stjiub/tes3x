@@ -15,14 +15,14 @@ run Morrowind and needs no game files. What the session shares is described in t
 
 ## Build
 
-Enable the patch in the profile. It needs `diagnostics`, which the pipeline adds, and `console`
-gives you the `tes3xnet` commands below:
+Enable the patch in the profile. It requires `net`, which requires `diagnostics`; the pipeline
+adds both. `console` gives you the `tes3xnet` commands below:
 
 ```toml
 [profile]
 name = "net"
 title = "Morrowind Net"
-remote_root = "F:/Games/MorrowindNet"
+install_dir = "MorrowindNet"
 
 [patches]
 preset = "minimal"
@@ -34,7 +34,7 @@ enable = ["multiplayer", "console"]
 ```
 
 The pipeline also writes `TES3X Multiplayer.esp`, which holds the stand-ins that show the other
-players. Deploy with `--deploy` as usual, to its own `remote_root` apart from your normal game:
+players. Deploy with `--deploy` as usual, to its own `install_dir` apart from your normal game:
 saves made with this build depend on that plugin.
 
 ## Network settings
@@ -51,7 +51,8 @@ in `console.ini`:
 | `NetDns` | the DNS server, when `NetServer` is a name; with `dhcp` the router's answer is used |
 | `NetPassword` | the server's password, if it has one |
 
-Leaving `NetAddress` empty turns the network off, and the build plays as a normal game.
+With `NetAddress` empty the network stays off and the build plays as a normal game, until you
+choose Join, which asks the router for an address by DHCP.
 
 Every console can share one build. A fixed address belongs to one console: deploy writes it to
 that console's `console.ini`, so a second console takes the same build deployed with its own
@@ -67,8 +68,8 @@ tes3x net serve
 
 It listens on UDP 26500 on every interface and prints a line when a client joins, leaves or
 times out. The admin command `status` prints the clock, weather and each client's counters;
-`--report SECONDS` prints that block on a timer. Allow Python through the
-firewall for inbound UDP on port 26500.
+`--report SECONDS` prints that block on a timer. Allow the server through the firewall for
+inbound UDP on port 26500: Python, or `python\python.exe` in a portable folder.
 
 The first client to join sets the session's load order and its game clock. Useful options:
 
@@ -88,6 +89,11 @@ The first client to join sets the session's load order and its game clock. Usefu
 | `--respawn-delay SECONDS` | how long a dead player lies before coming back (default 5) |
 | `--death-gold PERCENT` | the share of carried gold a death costs (default 10) |
 | `--build DIR` | hand this build to the console manager (below) |
+| `--welcome TEXT` | show a line of up to 80 characters when a player is in the world |
+| `--starts FILE` | where new characters may begin (`[[start]]` tables; default: the bundled list) |
+| `--start-gold N` | the gold a new character starts with (default 50) |
+| `--save-every SECONDS` | flush every joined character this often |
+| `--bind ADDRESS` | listen on one address instead of every interface |
 
 Stop the server with Ctrl+C, or the admin command `stop`. It asks each joined console to flush
 its state before exiting. A normal shutdown, including `--duration`, returns exit code 0 even
@@ -104,18 +110,17 @@ first console joins and writes it every 10 seconds
 while it changes, so a restarted server carries on where it stopped. A joined client starts from
 the data files and applies the server's world; it does not import changes from a local save.
 
-With `--world` the server also keeps each character under `characters` in `DIR`. A joining
-console starts a New Game and receives the character's identity, inventory, worn items and last
-place in a small server-generated state file; the rest follows after it joins. The console sends
-inventory, equipment, level, attributes, skills and their current modifiers, active effects, journal, current
+With `--world` the server also keeps each character under `characters` in `DIR`. A joining console
+starts a New Game and receives the character's identity, inventory, worn items and last place in a
+small server-generated state file; the rest follows after it joins. The console sends inventory,
+equipment, level, attributes, skills and their current modifiers, active effects, journal, current
 health, magicka and fatigue as they change, and who the character is: name, race, sex, head, hair,
-birthsign and class, including
-a class made in character creation. The server keeps the latest supported state in `stream.json`.
-It also keeps where the player last was, so a crash or power cut loses at most about one polling
-interval of supported state. Save to Server flushes every supported character field and the
-current place through the reliable queue. The server acknowledges the snapshot after writing
-the character and world. Leave waits for that acknowledgement before quitting; after 30 seconds
-without confirmation, the player chooses to leave anyway or stay.
+birthsign and class, including a class made in character creation. The server keeps the latest
+supported state in `stream.json`. It also keeps where the player last was, so a crash or power cut
+loses at most about one polling interval of supported state. Save to Server flushes every supported
+character field and the current place through the reliable queue. The server acknowledges the
+snapshot after writing the character and world. Leave waits for that acknowledgement before
+quitting; after 30 seconds without confirmation, the player chooses to leave anyway or stay.
 
 World and character state files are replaced atomically. The server retries brief Windows
 file locks for up to 0.25 seconds; lasting write failures remain errors.
@@ -160,13 +165,16 @@ The server takes admin commands typed at its own window, or from the same PC wit
 |---|---|
 | `list` | the clients: number, key fingerprint, MAC and address |
 | `status` | the clock, weather, each client's counters, and what the world holds |
-| `help` | the list of commands |
 | `kick N` | drop client N; its console stops trying until the game is launched again |
 | `ban N` | ban client N's key and MAC, and drop it |
 | `ban key FINGERPRINT`, `ban mac MAC`, `ban address A.B.C.D` | ban one of them; `unban` the same way lifts it |
 | `bans` | the bans |
 | `save [N]` | ask every console, or client N, to save its character now |
 | `stop` | ask every console for its character, wait for the saves, then stop |
+| `say TEXT`, `tell N TEXT` | show a line of text to every player, or to client N |
+| `log [normal\|verbose]` | show or change how much the server prints |
+
+Any other word prints the list of commands.
 
 Bans are kept in `bans.txt` in the `--world` folder. A key is a player's identity, but a player
 can make a new one by deleting `servers.ini`; on a server with a password, a new key needs the
@@ -269,10 +277,10 @@ server hands it to the [console manager](deployment.md#from-a-server), which ins
 joins:
 
 ```
-tes3x net serve --world world --build build/pipeline/net/deploy
+tes3x net serve --world world --build build/net/deploy
 ```
 
-In the GUI, set **Build profile** on the Server page instead.
+In the GUI, set **Build profile** in the **Server** workspace instead.
 
 The manager asks through the same encrypted session a console joins by, with the console's key
 for this server and the password if there is one, so a console the server would refuse gets no
@@ -298,10 +306,10 @@ date". A console with no manifest is checked by its load order only.
 
 ## Run the server in Docker
 
-`server/` holds a Docker Compose setup for a machine that should only run the server, with no
-Python install and no GUI. It runs the same `tes3x net serve` with `--world` on a Docker volume,
-so the server key, characters, saves, admitted keys and bans survive restarts and rebuilds. From
-the repository:
+`server/` in a [checkout](development.md#setting-up-a-checkout) holds a Docker Compose setup for a
+machine that should only run the server, with no Python install and no GUI. It runs the same
+`tes3x net serve` with `--world` on a Docker volume, so the server key, characters, saves,
+admitted keys and bans survive restarts and rebuilds. From the checkout:
 
 ```
 cd server
@@ -310,6 +318,8 @@ docker compose logs -f
 ```
 
 The server publishes UDP 26500; point each console's `NetServer` at the Docker host's address.
+The setup has no build folder and publishes no HTTP port, so it does not hand out a build with
+`--build` as it stands.
 Add server options under `command:` in `server/compose.yaml`, one per line, and run
 `docker compose up -d` again. Admin commands run inside the container:
 
@@ -351,8 +361,8 @@ that runs xemu, or on Linux add `network_mode: host` to the service, which also 
    same interior or within one exterior cell.
 
 New Game and Load relaunch the title; the console leaves and joins again by itself, and the server
-prints `rejoined`. If the server stops answering for 15 seconds, the console says the connection is lost and keeps
-reconnecting; after 60 seconds it offers the main menu.
+prints `rejoined`. If the server stops answering for 15 seconds, the console says the connection is
+lost and keeps reconnecting; after 60 seconds it offers the main menu.
 
 The main menu has **Join** between Load and Options, and below it **Manager** once the
 [console manager](deployment.md#installing-the-console-manager) is installed, which starts the
@@ -368,9 +378,8 @@ password raises the keyboard for it. New and Load from the main menu still play 
 
 While joined, the pause menu has **Save to Server** in place of Save, which flushes the character
 state and waits for confirmation, and **Leave** in place of Exit, which flushes to the server and
-quits after confirmation; Load is gone, since a local save is not the server's character. A multiplayer build redraws the
-menu buttons so they match the ones it adds; `tes3x menuart` renders them from the
-bundled Fondamento font (SIL Open Font License, `assets/fonts`).
+quits after confirmation; Load is gone, since a local save is not the server's character. A
+multiplayer build redraws the menu buttons so they match the ones it adds.
 
 ## Connect xemu
 
@@ -378,13 +387,13 @@ xemu can join any server, on this PC, the LAN or the internet, through its own N
 xemu runner with `--net-nat` and give the build `NetAddress=dhcp` and the server's address:
 
 ```
-tes3x xemu player2 profiles/net.toml --direct-engine --skip-intro --net-nat -- --ini-set Xbox:NetAddress=dhcp --ini-set Xbox:NetServer=my.server.net
+tes3x xemu player2 net.toml --direct-engine --skip-intro --net-nat -- --ini-set Xbox:NetAddress=dhcp --ini-set Xbox:NetServer=my.server.net
 ```
 
 xemu's NAT answers DHCP with `10.0.2.15`, resolves names through the PC and sends the session's
 UDP out from the PC, so the server sees the PC's address. `10.0.2.2` there is the PC itself:
 `NetServer=10.0.2.2` reaches a server running on the same PC. Each run's MAC is made from its
-run name, so two xemus on one PC are two clients. The GUI's Play uses the NAT for any build with
+run name, so two xemus on one PC are two clients. The GUI's **Play** uses the NAT for any build with
 `multiplayer` or `agent`.
 
 A tunnel instead hands the guest's raw frames to a server on this PC, which is how the
@@ -398,7 +407,7 @@ serves the LAN and one xemu at once, so a console and xemu can play together. Th
 the tunnel on the same port, giving the guest its own addresses:
 
 ```
-tes3x xemu player2 profiles/net.toml --direct-engine --skip-intro --net-tunnel 9369 --save my-save.ess --exec load.txt -- --ini-set Xbox:NetAddress=10.0.2.15 --ini-set Xbox:NetServer=10.0.2.2
+tes3x xemu player2 net.toml --direct-engine --skip-intro --net-tunnel 9369 --save my-save.ess --exec load.txt -- --ini-set Xbox:NetAddress=10.0.2.15 --ini-set Xbox:NetServer=10.0.2.2
 ```
 
 where `load.txt` loads the save:
@@ -417,8 +426,8 @@ on one PC, give the server a tunnel per xemu and start each xemu on its own:
 
 ```
 tes3x net serve --tunnel 9369 --tunnel 9371
-tes3x xemu player1 profiles/net.toml ... --net-tunnel 9369 ...
-tes3x xemu player2 profiles/net.toml ... --net-tunnel 9371 ...
+tes3x xemu player1 net.toml ... --net-tunnel 9369 ...
+tes3x xemu player2 net.toml ... --net-tunnel 9371 ...
 ```
 
 Each tunnelled xemu gets a MAC made from its port (`02:00:00:00:24:99` for 9369), since the server
@@ -445,10 +454,11 @@ With `console` in the build, open the console (Back + right thumb click) and typ
 | `tes3xnet down` | leave the session and stop the network card |
 | `tes3xnet up ADDRESS[/BITS] [SERVER[:PORT] [GATEWAY]]` | start it again by hand |
 
-The log is `E:\tes3xlog.txt`. A console whose plugins differ from the session's logs
-`net.refused` and stops trying until the game is launched again; the server prints `refused`
-with both load order hashes. `net.refused_reason` says why: 1 the load order, 2 the server is
-full, 3 a wrong password, 4 kicked, 5 banned, 6 the build is not the one the server hands out.
+The log is `E:\tes3xlog.txt`. A console whose plugins differ from the session's logs `net.refused`
+and stops trying until the game is launched again; the server prints `refused` with both load order
+hashes. `net.refused_reason` says why: 1 the load order, 2 the server is full, 3 a wrong password, 4
+kicked, 5 banned, 6 the build is not the one the server hands out, 7 a protocol version the server
+does not speak.
 
 To see how much of a character the server could restore without its save, start the server with
 `--rebuild` and join from a different save. The server applies the character's kept state over

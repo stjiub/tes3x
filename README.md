@@ -1,43 +1,56 @@
 # ![TES3X](assets/logo.png)
 
 TES3X is a modding and patching toolkit for the original Xbox release of *Morrowind Game of the
-Year Edition*. It applies engine fixes to the retail XBE, extends engine capabilites, and manages, 
-optimizes and deploys a modlist. It also includes support for multiplayer.
+Year Edition*. It applies engine fixes to the retail XBE, extends the engine, and manages,
+optimizes and deploys a mod list. It also adds multiplayer.
 
 ## Features
-- **Engine fixes.** - Performance and stability improvements, porting bug fixes from the
-  [Morrowind Code Patch](https://www.nexusmods.com/morrowind/mods/19510)
-  and similar projects, and Xbox specific patches.
-- **Engine extensions.** New script opcodes, support for legacy MWSE (0.9.X),
-  multi-BSA loading, in-game console, diagnostics/profiling, 128MB RAM and 720p video support,
-  PC mod compatibility patches, and multiplayer. 
-- **Mod management/pipeline.** Profile based mod library with the usual management features,
-  plus those specific to the Xbox: texture shrinking, optimizations for FATX's limitations, building and
-  deployment to Xbox (via FTP) or XEMU.
-- **Mod compatibility.** A growing list of tested mods that are compatible as well as patches for
-  some that aren't.
-- **Modularity.** TES3X contains many components and makes many changes, but strives to make each piece an optional component vs an all-or-nothing approach.
+
+- **Engine fixes.** Performance and stability improvements, bug fixes ported from the
+  [Morrowind Code Patch](https://www.nexusmods.com/morrowind/mods/19510) and similar projects,
+  and Xbox-specific patches.
+- **Engine extensions.** New script opcodes, legacy MWSE (0.9.x) support, multi-BSA loading, an
+  in-game console, diagnostics and profiling, 128 MB RAM and 720p video, PC mod compatibility
+  patches, and multiplayer.
+- **Mod management.** A profile-based mod library with the usual management features, plus what
+  the Xbox needs: texture shrinking, fixes for FATX's limits, and building and deploying to an
+  Xbox over FTP or to xemu.
+- **Mod compatibility.** A growing list of mods tested on the Xbox, and patches for some that
+  don't work as they are.
+- **Modularity.** TES3X makes many changes, but each piece is optional rather than
+  all-or-nothing.
+
+## Getting TES3X
+
+- **Windows:** download `TES3X-<version>.zip` from the
+  [releases page](https://github.com/stjiub/tes3x/releases), unpack it and run `TES3X.exe`.
+  Nothing else needs installing.
+- **With Python 3.12 or newer, on Windows or Linux:**
+  `pipx install "tes3x[gui] @ git+https://github.com/stjiub/tes3x"`, then `tes3x gui`.
+
+[Getting started](docs/getting-started.md) covers both, what else you need and a first build.
 
 ## Status and limitations
 
-- TES3X is under active development and is subject to frequent (possibly breaking) changes. 
-- It is developed against the retail **GOTY** NTSC release and tested in both XEMU and
-original hardware. PAL is not currently supported, but is planned.
-- The original Xbox only has 64 MB of memory, and a stock console cannot load everything the PC can. The
-  largest mods, such as the complete Tamriel Rebuilt, require a console upgraded to 128 MB.
-- Expect crashes when you are testing new mods and pushing the limits of 25+ year old hardware.
-- TES3X includes no game files. You supply your own copy of the game.
-- Engine fixes are compiled using your own XBE when you build.
+- TES3X is under active development and changes often, sometimes in breaking ways.
+- It is developed against the retail **GOTY** NTSC release and tested in both xemu and on
+  original hardware. PAL is not supported yet, but is planned.
+- The original Xbox has 64 MB of memory, and a stock console cannot load everything the PC can.
+  The largest mods, such as the complete Tamriel Rebuilt, need a console upgraded to 128 MB.
+- Expect crashes while testing new mods and pushing the limits of 25-year-old hardware.
+- TES3X includes no game files. You supply your own copy of the game, and engine fixes are built
+  from your own XBE.
 - The [compatibility catalog](docs/catalog.md) lists mods tried on the Xbox and how they fared;
   many PC mods depend on features the Xbox build lacks.
 
 ## Docs
 
-- [Getting Started](docs/getting-started.md)
-- [Patches](docs/patches.md)
-- [Candidates](docs/candidates.md)
+- [Getting started](docs/getting-started.md)
+- [GUI](docs/gui.md)
 - [Pipeline](docs/pipeline.md)
-- [Full TES3X Documentation](docs/index.md)
+- [Patches](docs/patches.md)
+- [All documentation](docs/index.md)
+- [Development](docs/development.md), for working on TES3X itself
 
 ## License
 

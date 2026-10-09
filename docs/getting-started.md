@@ -1,135 +1,172 @@
 # Getting started
 
-## Before you start
+TES3X builds a modded copy of Xbox Morrowind on your PC, then copies it to a modded Xbox or runs
+it in xemu. This page gets TES3X onto your PC and takes you through a first build.
 
-You need:
+The examples use Windows and PowerShell. On Linux, TES3X runs from pipx or a checkout: write
+paths with `/`, and the data folder is `~/.local/share/tes3x`.
 
-- A Windows PC. In a [portable folder](gui.md#portable-folder), which carries Python, its
-  packages, 7-Zip and LLVM, nothing else needs installing; skip the next three items. From a
-  checkout:
-  - Python 3.12 or newer, with TES3X installed into a virtual environment from the checkout
-    (see [installing from a checkout](#installing-from-a-checkout)). The command line needs only
-    Pillow, `zstandard` (patched XBEs are stored as deltas) and, for
-    `multiplayer` and `agent` builds, `cryptography`; the GUI also needs PySide6 and tomlkit.
-  - [LLVM](https://releases.llvm.org) (`clang` and `lld-link`), for engine fixes and the default
-    `delta-bsa` packaging. Without it, build with no engine fixes and `merged-bsa` or `loose`
-    packaging.
-  - [7-Zip](https://www.7-zip.org), only to install `.7z` and `.rar` mods.
+## What you need
+
 - Your own copy of *Morrowind Game of the Year Edition* for the Xbox, unmodified: a folder
-  containing `Default.xbe`, `morrowind.xbe`, `Morrowind.ini` and `Data Files`. TES3X never changes
+  holding `Default.xbe`, `morrowind.xbe`, `Morrowind.ini` and `Data Files`. TES3X never changes
   it; every build is a new folder.
-- A softmodded or hardmodded Xbox with an FTP server, or [xemu](xemu.md) to try builds on the PC.
-  xemu also needs an MCPX boot ROM and a BIOS you dump from your own console, and
-  [extract-xiso](https://github.com/XboxDev/extract-xiso); the GUI can download xemu and a blank
-  hard disk image.
-- An internet connection for the first build that sorts plugins with mlox, which downloads its
-  rules once; set `paths.mlox_rules` to work offline.
-- Optionally, mods: a [mod library](mod-library.md) is a folder with one folder per mod, each laid
-  out the way the mod would sit in `Data Files`.
+- Somewhere to play:
+  - a softmodded or hardmodded Xbox running an FTP server, as most modded dashboards do; or
+  - [xemu](xemu.md), to try builds on the PC. It needs an MCPX boot ROM and a BIOS dumped from
+    your own console, and [extract-xiso](https://github.com/XboxDev/extract-xiso). The GUI can
+    download xemu and a blank hard disk image.
+- Optionally, mods. TES3X installs them into a [mod library](mod-library.md), a folder with one
+  folder per mod.
+- An internet connection the first time a profile sorts its plugins with mlox, which downloads
+  its rules once.
 
-## Installing from a checkout
+## Install TES3X
 
-Skip this in a portable folder. Otherwise, once:
+Pick one:
+
+| Setup | For | You run |
+|---|---|---|
+| [Portable folder](#portable-folder) | Windows; nothing else to install | `TES3X.exe`, `tes3x-cli.exe` |
+| [pipx](#pipx) | Windows or Linux, with Python already installed | `tes3x gui`, `tes3x` |
+| [Checkout](development.md#setting-up-a-checkout) | working on TES3X itself | `tes3x`, in its virtual environment |
+
+The rest of the docs write commands as `tes3x COMMAND`. In a portable folder, type
+`.\tes3x-cli.exe COMMAND` in a terminal opened in that folder instead.
+
+### Portable folder
+
+Download `TES3X-<version>.zip` from the
+[releases page](https://github.com/stjiub/tes3x/releases) and unpack it into a short path, such
+as `C:\TES3X`. It carries Python, 7-Zip and LLVM, so nothing else needs installing.
+
+- `TES3X.exe` starts the GUI.
+- `tes3x-cli.exe` runs commands: `.\tes3x-cli.exe --help` lists them.
+
+To update, unpack the new release beside the old one and delete the old folder. Your settings,
+profiles and builds are kept in the [data folder](#where-tes3x-keeps-your-files), not in the
+portable folder.
+
+### pipx
+
+You need Python 3.12 or newer and [pipx](https://pipx.pypa.io), and:
+
+- [LLVM](https://releases.llvm.org) (`clang` and `lld-link`), for engine fixes and the default
+  `delta-bsa` packaging. Without it, build with no engine fixes and `merged-bsa` or `loose`
+  packaging. Put it on `PATH`, or set **LLVM tools** in the GUI's settings.
+- [7-Zip](https://www.7-zip.org), only to install `.7z` and `.rar` mods.
 
 ```powershell
-git clone https://github.com/stjiub/tes3x
-cd tes3x
-python -m venv .venv
-.venv\Scripts\activate
-python -m pip install -e .[gui]
+pipx install "tes3x[gui] @ git+https://github.com/stjiub/tes3x"
 ```
 
-Activate the environment (`.venv\Scripts\activate`) in each new terminal; the `tes3x` command
-is on `PATH` while it is active. Without `[gui]` it installs the command line alone.
+`tes3x gui` starts the GUI; `tes3x --help` lists the commands. Leave out `[gui]` for the command
+line alone. `pipx reinstall tes3x` updates it.
 
-## With the GUI
+## Where TES3X keeps your files
 
-1. Start it: in a portable folder, double-click `TES3X.exe`; from a checkout, with its
-   environment active:
+TES3X keeps your settings, profiles and builds in its data folder, `%LOCALAPPDATA%\TES3X` on
+Windows (`~/.local/share/tes3x` on Linux, or `TES3X_DATA` when set):
 
-   ```powershell
-   tes3x gui
-   ```
+| In the data folder | What it is |
+|---|---|
+| `tes3x.local.toml` | the **local config**: where your game and mods are, and your Xbox and xemu targets |
+| `profiles\` | one **profile** per build: its mods, plugin order, patches and settings |
+| `build\` | one folder per built profile; the game folder itself is its `deploy\` folder |
 
-2. On first start the GUI opens **File > Settings**. Set the clean game root and your mod library,
-   and **LLVM tools** if `clang` is not on `PATH`. Then add an Xbox target with the cog beside the
-   target list, and give it its IP address and games root under **Targets > Setup**.
-3. Choose **New** from the cog beside the profile list and name the build. On the **Build** tab, set its install
-   folder, such as `MorrowindModded`.
-4. Tick mods on **Mods**, and check **Plugins** and **Patches**. **Install mod…** adds an archive to
-   the library.
-5. **Actions > Check profile** resolves the profile without building.
-6. **Actions > Build profile** builds it.
-7. Optionally, **Play** runs it in xemu, once an xemu target is set up under **Targets > Setup**.
-8. **Actions > Deploy to Xbox…** uploads it. It asks before replacing a folder that holds
-   something other than this profile.
+The GUI creates them there. On the command line, work from the data folder, so that `tes3x` finds
+the same files:
 
-The [GUI guide](gui.md) describes every tab.
+```powershell
+mkdir -Force $env:LOCALAPPDATA\TES3X\profiles
+cd $env:LOCALAPPDATA\TES3X
+```
 
-## From the command line
+`--config FILE` uses another local config for one command, and `paths.profiles` and
+`paths.build_root` in it move the other two; see the [configuration reference](configuration.md).
 
-These steps run in a checkout with its environment active (see
-[installing from a checkout](#installing-from-a-checkout)). In a portable folder, run
-`tes3x-cli.exe` from it in place of `tes3x`.
+Words the docs use:
 
-1. Copy the example local config and an example profile:
+- **Clean game root**: your unmodified game folder (`paths.vanilla_root`).
+- **Mod library**: the folder your mods are installed into (`paths.mod_library`).
+- **Target**: a machine that runs builds, an Xbox or an xemu setup, named in the local config.
+- **Games root**: the folder on an Xbox that holds game folders, such as `F:/Games`.
+- **Install folder**: the folder a profile is deployed to, below the games root, such as
+  `MorrowindModded`.
 
-   ```powershell
-   cp examples/local.toml tes3x.local.toml
-   mkdir profiles
-   cp examples/profile.toml profiles/my-build.toml
-   ```
+## Your first build
 
-2. In `tes3x.local.toml`, set `paths.vanilla_root` to the retail game folder, then set the Xbox
-   target's `host` and `games_root`. Set `paths.llvm` if `clang` is not on `PATH`.
-3. In `profiles/my-build.toml`, set `profile.name`, `profile.library` and `profile.install_dir`,
-   the folder created below the target's games root, and list your mods as `[[mods]]` blocks.
-   For engine fixes only, remove `library` and every `[[mods]]` block. The example's comments
-   explain each option; the [configuration reference](configuration.md) lists them all.
-4. Check the profile:
+Each step is shown in the GUI first, then on the command line.
 
-   ```powershell
-   tes3x pipeline profiles/my-build.toml --check
-   ```
+1. **Set your paths.** On first start the GUI opens **File > Settings**: set the **Clean game
+   root** and the **Mod library**.
 
-5. Build it. The game folder is written to `<build_root>/my-build/deploy`:
+   On the command line, download the example
+   [local config](https://raw.githubusercontent.com/stjiub/tes3x/main/examples/local.toml) into
+   the data folder as `tes3x.local.toml`, and set `paths.vanilla_root` and `paths.mod_library`.
 
-   ```powershell
-   tes3x pipeline profiles/my-build.toml
-   ```
+2. **Add a target.** In the **Target** workspace, add an Xbox or xemu target with the cog beside
+   the target list, and fill it in on the **Setup** tab: for an Xbox, its IP address and games
+   root. **Test FTP** tries the login.
 
-6. Optionally, boot it in xemu and walk to Balmora (see [xemu](xemu.md) for the setup):
+   On the command line, set the example's `[targets.xbox]` `host` and `games_root`. For xemu, see
+   [xemu](xemu.md).
 
-   ```powershell
-   tes3x test profiles/my-build.toml
-   ```
+3. **Make a profile.** Choose **New** from the cog beside the profile list and name the build.
+   On the **Build** tab, set its install folder. Tick mods on **Mods**, then look over
+   **Plugins** and **Patches**. **Install mod…** adds an archive to the library.
 
-7. Build and preview the upload. This lists what is already in the Xbox folder and what would
-   change:
+   On the command line, download the example
+   [profile](https://raw.githubusercontent.com/stjiub/tes3x/main/examples/profile.toml) into
+   `profiles\` as `my-build.toml`. Set `profile.name` and `profile.install_dir`, remove
+   `profile.library` to use the local config's mod library, and list your mods as `[[mods]]`
+   blocks; for engine fixes only, remove every `[[mods]]` block. The example's comments explain
+   each option.
+
+4. **Check it.** **Actions > Check profile** resolves the profile without building: mods, missing
+   masters, patches and paths.
 
    ```powershell
-   tes3x pipeline profiles/my-build.toml --dry-run
+   tes3x pipeline profiles\my-build.toml --check
    ```
 
-8. Deploy:
+5. **Build it.** **Actions > Build profile**. The game folder is written to
+   `build\my-build\deploy`.
 
    ```powershell
-   tes3x pipeline profiles/my-build.toml --deploy
+   tes3x pipeline profiles\my-build.toml
    ```
 
-## Deploy to a folder of its own
+6. **Try it in xemu** (optional). With an xemu target selected, **Play** runs the build.
 
-A deploy makes the Xbox folder match the build: files there that are not in the build are
-deleted. Give every build its own folder, never the folder of an install you want to keep. Saves
-and the dashboard's `_resources` folder are not touched, and deploy refuses a folder that holds
-another profile until you confirm with `--replace-remote`.
+   ```powershell
+   tes3x test profiles\my-build.toml
+   ```
 
-The FTP login defaults to `xbox`/`xbox`. Set `TES3X_FTP_PASSWORD` or pass `--ask-password` to keep
-a password out of the config file. Any other FTP client can also copy the build folder.
+   boots it, starts a new game and walks to Balmora; see [xemu](xemu.md) for its setup.
+
+7. **Deploy it.** A deploy makes the install folder on the Xbox match the build: files there that
+   are not in the build are deleted. Give every build its own install folder, never the folder of
+   an install you want to keep. Saves and the dashboard's `_resources` folder are not touched,
+   and TES3X asks before replacing a folder that holds something other than this profile.
+
+   **Actions > Deploy to Xbox…** uploads the build. On the command line, `--dry-run` first lists
+   what is in the Xbox folder and what would change, without changing anything:
+
+   ```powershell
+   tes3x pipeline profiles\my-build.toml --dry-run
+   tes3x pipeline profiles\my-build.toml --deploy
+   ```
+
+   The FTP login defaults to `xbox`/`xbox`. Set `TES3X_FTP_PASSWORD` or pass `--ask-password` to
+   keep a password out of the local config.
+
+Then start the install folder's `default.xbe` from the Xbox's dashboard.
 
 ## Next
 
-- [Pipeline](pipeline.md): what each build step does, packaging modes and plugin ordering.
+- [GUI](gui.md): every tab and workspace.
+- [Mod library](mod-library.md): installing mods, versions and optional parts.
+- [Pipeline](pipeline.md): what each build step does, packaging and plugin ordering.
 - [Patches](patches.md): the engine fixes, and the presets that select them.
-- [Testing](testing.md): from unit tests to game tests on a console.
-- [Add-ons](addons.md): launching builds on the Xbox from the PC.
+- [Deployment](deployment.md): the console manager, shared retail bases and getting files back.

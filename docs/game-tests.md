@@ -4,6 +4,7 @@ A game test is a TOML file in `tests/game/`, named after the patch it tests: `mc
 `mcp-37`. `smoke.toml` is the [profile smoke test](testing.md#profile-smoke-tests). A game test
 boots the game, so it never runs with the unit tests; they only check that each file is well
 formed. Running, recording and checking game tests is covered in [validation](validation.md).
+Game tests ship with TES3X; writing one needs a [checkout](development.md#setting-up-a-checkout).
 
 ## Example
 
@@ -93,7 +94,8 @@ tables, such as `profile = { save_pool = "TES3X Test" }`.
 
 `[fixture]` generates a test mod from your own `Morrowind.esm` and makes it the build's only mod:
 `opcodes = [0x2001]` appends those opcode calls to the global script `Main` (or `script`), and
-`texture = true` adds one 4x4 texture so there is an asset to pack.
+`texture = true` adds one 4x4 texture so there is an asset to pack, and `dialogue = "TOPIC"` adds
+a plugin repeating that retail topic with one new response.
 
 ## Driving the agent
 

@@ -1,13 +1,16 @@
-# Paths on this PC and the machines that run builds. Copy to tes3x.local.toml in the folder you run
-# the commands from; profiles stay free of machine-specific paths.
+# Paths on this PC and the machines that run builds. Save it as tes3x.local.toml in TES3X's data
+# folder (%LOCALAPPDATA%\TES3X, or ~/.local/share/tes3x on Linux); profiles stay free of
+# machine-specific paths. Relative paths are relative to this file.
 default_target = "xbox"
 
 [paths]
 # Your own clean, unmodified copy of the game folder: it holds Default.xbe, morrowind.xbe,
 # Morrowind.ini and Data Files.
 vanilla_root = "C:/path/to/clean-retail-game"
+# Your mod library: one folder per mod. A profile's own library overrides it.
+mod_library = "C:/path/to/mod-library"
 # Where finished builds go. Each profile gets its own folder inside.
-build_root = "build/pipeline"
+# build_root = "build"
 # Folder holding clang and lld-link, for engine fixes and delta-bsa packing. Only needed when
 # LLVM is not on PATH.
 # llvm = "C:/Program Files/LLVM/bin"

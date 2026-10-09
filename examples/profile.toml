@@ -2,7 +2,7 @@
 # with its default; uncomment one to change it. docs/configuration.md describes them all.
 
 [profile]
-name = "my-build"                    # output: build/pipeline/my-build
+name = "my-build"                    # output: BUILD_ROOT/my-build
 library = "C:/path/to/mod-library"  # remove for a patches-only build
 # title = "Morrowind Modded"         # dashboard title; default: the retail title
 # dashboards = ["xbmc4gamers"]       # dashboard metadata written when title is set; [] for none

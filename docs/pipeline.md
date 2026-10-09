@@ -2,8 +2,9 @@
 
 `tes3x pipeline` turns one mod library profile into a complete game folder, and optionally deploys
 it. It runs a fixed series of stages, each implemented by a tool you can also run individually (see
-[commands](commands.md)). Every profile and local-config key is in the
-[configuration reference](configuration.md).
+[commands](commands.md)). They are described here in the order their results fit together; the
+payload and XBE patching run before plugins are ordered and packed. Every profile and local-config
+key is in the [configuration reference](configuration.md).
 
 ```powershell
 tes3x pipeline profiles/my-build.toml --check
@@ -15,17 +16,19 @@ tes3x pipeline profiles/my-build.toml --deploy
 ## 1. Resolve and check
 
 Reads `tes3x.local.toml` and the profile, resolves the preset and patch selection, the mods and the
-package mode, and prints what would be built. `--check` stops here.
+package mode, and prints what would be built. `--check` stops here, so it checks the profile and
+the patch selection but not the paths and tools a build needs; those are checked when the build
+starts.
 
 A profile with no mods is a patches-only build: stages 2 and 3 are skipped and the retail
 `Data Files` ship unchanged. `[ini]` settings still apply.
 
 Common failures:
 
+- `unknown selectable patches: ...`, or patches both enabled and disabled: reported by `--check`.
 - `set paths.vanilla_root in local config or pass --vanilla`: the local config does not name the
   clean game folder.
-- `unknown selectable patches: ...`, or patches both enabled and disabled.
-- `rules.plugin_order = 'mlox' needs mlox` or `needs paths.mlox_rules`: see
+- `could not download the mlox rules from ...` or `mlox rules not found: PATH`: see
   [sorting plugins with mlox](#sorting-plugins-with-mlox).
 - `deployment requires an Xbox target with host and games_root`.
 
@@ -40,12 +43,13 @@ The profile's `[patches] preset` selects a baseline:
 | `testing` | `recommended`, preview fixes, diagnostics and the console |
 
 `enable` and `disable` add or remove individual patches, and `categories` adds every patch in a
-category; the [example profile](../examples/profile.toml) lists them all. `--preset`, `--enable`
-and `--disable` on the command line override the profile. Some patches are added when something
-needs them: `delta-bsa` packing adds `multi-bsa`, `mwse-legacy` adds `script-ext`, and
-`multiplayer` adds `diagnostics`. Every build gets [`boot-media`](../patches/boot-media.md) and
-[`drive-letters`](../patches/drive-letters.md). See the [patch table](patches.md), the
-[`[Xbox]` ini keys](ini-keys.md) patches read, or `tes3x patch --list`.
+category; the [example profile](../examples/profile.toml) lists them all. `--preset`, `--enable` and
+`--disable` on the command line override the profile. Some patches are added when something needs
+them: `delta-bsa` packing (the default; see [packaging](packaging.md)) adds `multi-bsa`,
+`mwse-legacy` adds `script-ext`, and `multiplayer` adds `net` and `diagnostics`. Every build gets
+[`boot-media`](../patches/boot-media.md) and [`drive-letters`](../patches/drive-letters.md). See the
+[patch table](patches.md), the [`[Xbox]` ini keys](ini-keys.md) patches read, or
+`tes3x patch --list`.
 
 ## 2. Collect the winning files
 
@@ -88,10 +92,9 @@ mlox only changes the plugin load order.
 
 TES3X includes mlox's sorter, so there is nothing to install. The rules come from the
 [mlox-rules project](https://github.com/DanaePlays/mlox-rules): the first sort downloads them to
-TES3X's data folder (`%LOCALAPPDATA%\TES3X\mlox` on Windows, or `TES3X_DATA` when set) and later
-sorts reuse that copy. The rules change often; **Download** next to "mlox rules" in the GUI's
-local settings, or `tes3x plugins fetch-rules`, fetches the current ones. To use
-your own rules file instead, set `paths.mlox_rules`.
+TES3X's data folder (see [local config](configuration.md#local-config)), in `mlox`, and later
+sorts reuse that copy. The rules change often; `tes3x plugins fetch-rules` fetches the current
+ones. To use your own rules file instead, set `paths.mlox_rules`.
 
 mlox runs on a copy of the build's plugins and never touches your library. Its conflict and
 missing-requirement warnings are printed during the build. Everything it said, including notes,
@@ -121,7 +124,8 @@ or `arrange`.
 When a selected patch needs code, `tes3x payload` compiles the [payload](../patches/payload.md)
 for your `morrowind.xbe` with clang and lld-link. `tes3x patch` then applies every selected
 patch to a copy of the XBE, each located by content. `--title` and a save pool also patch the
-launcher, `Default.xbe`.
+launcher, `Default.xbe`; a save pool gives the build its own saves (see `save_pool` in the
+[configuration reference](configuration.md#profile)).
 
 This stage needs LLVM whenever a patch needs code; the pipeline checks for it before copying
 anything. `clang not found` means LLVM is not installed or `paths.llvm` points elsewhere. A
@@ -139,8 +143,8 @@ With a title set, dashboard metadata is written too. The game folder carries its
 The pipeline only overwrites an empty folder or one it built before (`existing output is not owned
 by tes3x_pipeline` otherwise). A build is assembled beside the output and moved into place when it
 is complete; if a stage fails, what it produced so far is kept and the path is printed. Set
-`paths.hardlink_retail = true` to hardlink unchanged retail files instead of copying them, when the
-build and the retail folder are on the same NTFS volume.
+`paths.hardlink_retail = true`, or pass `--hardlink`, to hardlink unchanged retail files instead
+of copying them; where the build and the retail folder are on different volumes they are copied.
 
 ## 6. Play, test, preview or deploy
 

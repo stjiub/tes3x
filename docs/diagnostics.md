@@ -36,7 +36,8 @@ and:
 The console command `tes3xdiag` writes a snapshot; `tes3xdiag 0`, `1` or `2` changes the level.
 A build made with the pipeline's `--diag-test-faults` also has `tes3xdiag hang`, which stalls the
 update loop for 15 seconds, and `tes3xdiag crash`, which writes to unmapped memory; both exist to
-test the watchdog and the crash record.
+test the watchdog and the crash record. The hang trips the watchdog only with `HangTimeoutSeconds`
+below 15, such as 10.
 
 `tes3x diag pull` fetches the log and summarises it; `report` does the same for a copy.
 
@@ -75,10 +76,10 @@ host scheduling can make a bucket longer. A failed heap-region commit also write
 
 ## Profiling
 
-`--apply profile=VA[,VA...]`, or the pipeline's `--profile-target VA`, times up to 16 functions at
-every direct call site. Counters go to `E:\tes3xprof.bin` on the console command `tes3xprof`, on
-`tes3xprof mark` (dump, then reset), at loader checkpoints, and every `[Xbox] ProfileDumpFrames`
-frames. `tes3xprof reset` clears them.
+The pipeline's `--profile-target VA`, or `tes3x patch --apply profile=VA[,VA...]`, times up to 16
+functions at every direct call site. Counters go to `E:\tes3xprof.bin` on the console command
+`tes3xprof`, on `tes3xprof mark` (dump, then reset), at loader checkpoints, and every
+`[Xbox] ProfileDumpFrames` frames. `tes3xprof reset` clears them.
 
 `tes3x prof targets NAME` looks a function up in the [symbol map](symbol-map.md) and prints
 the `--apply profile=` value for it; `tes3x prof report tes3xprof.bin` renders the dump.
@@ -89,13 +90,12 @@ of frames, then `tes3xprof mark`.
 
 ## Heap census
 
-`--apply heap-census`, or the pipeline's `--heap-census`, counts what the engine's main heap holds.
-Every direct call to `Memory_Heap::Allocate` and `::Free` is redirected; each allocation is
-attributed to the source file and line the engine passes, or, where it passes none, to its call
+The pipeline's `--heap-census`, or `tes3x patch --apply heap-census`, counts what the engine's main
+heap holds. Every direct call to `Memory_Heap::Allocate` and `::Free` is redirected; each allocation
+is attributed to the source file and line the engine passes, or, where it passes none, to its call
 site. Allocation counts are exact, and live blocks are tracked for one address in four. A snapshot
-is appended to `E:\tes3xheap.bin` at the first frame (with `diagnostics`) and on the console
-command `tes3xheap`; each also records the kernel's memory statistics. The record layout is
-`heap_header` and `heap_site` in `hooks/tes3xheap.c`.
+is appended to `E:\tes3xheap.bin` at the first frame (with `diagnostics`) and on the console command
+`tes3xheap`; each also records the kernel's memory statistics.
 
 `tes3x heap tes3xheap.bin` renders it, naming call sites from the
 [symbol map](symbol-map.md): `--by-file` groups by source file, `--last` shows only the last
@@ -107,11 +107,11 @@ Allocations outside that heap, such as the texture and vertex-buffer arena, are 
 
 ## Memory census
 
-`--apply mem-census`, or the pipeline's `--mem-census`, covers memory outside the engine heap:
-committed virtual memory, contiguous and pool allocations and the XAPI heap, each by caller.
+The pipeline's `--mem-census`, or `tes3x patch --apply mem-census`, covers memory outside the engine
+heap: committed virtual memory, contiguous and pool allocations and the XAPI heap, each by caller.
 Snapshots append to `E:\tes3xmem.bin` at the first frame (with `diagnostics`) and on the console
-command `tes3xmem`. `tes3x mem tes3xmem.bin` renders them; `--skip NAME` leaves a
-function out of caller chains.
+command `tes3xmem`. `tes3x mem tes3xmem.bin` renders them; `--skip NAME` leaves a function out of
+caller chains.
 
 ## Demand pager test
 

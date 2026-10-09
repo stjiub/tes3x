@@ -10,7 +10,8 @@ A profile can pick a mod in two ways, and the command line and the GUI handle bo
 - **By id:** `id = "folder-mod"` looks the mod up in a `library.toml` at the top of the library,
   which can list several versions of a mod and its optional installer folders.
 
-A profile can mix the two. See [`examples/library.toml`](../examples/library.toml).
+A profile can mix the two. See the [example `library.toml`](../examples/library.toml). In a
+profile, a mod's `order` decides which mod wins when two ship the same file: higher wins.
 
 ## Indexing a library
 
@@ -27,8 +28,10 @@ new library folders**.
 To switch a profile from folder names to ids:
 
 ```powershell
-tes3x library convert profiles/my-build.toml
+tes3x library convert profiles/my-build.toml --library "D:/Morrowind Mods"
 ```
+
+`--library` can be left out when the profile sets its own `library`.
 
 It converts each mod whose folder is indexed as a whole, with no optional components, so the
 build stays the same. Others keep their folder name, with the reason printed. `--dry-run` only
@@ -82,7 +85,7 @@ Set the library in the local config:
 mod_library = "D:/Morrowind Mods"
 ```
 
-A profile's own `library` overrides it.
+`library` in the profile's `[profile]` table overrides it for that profile.
 
 The [GUI](gui.md) installs archives into the library, indexes it and picks mods, versions and
 components for a profile.

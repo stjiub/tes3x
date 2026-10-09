@@ -20,8 +20,11 @@ promotes a patch.
 ## Prerequisites
 
 Set up a normal build profile and an xemu target in `tes3x.local.toml` first. See
-[configuration](configuration.md) and [running in xemu](xemu.md). Run the
-commands below from the public repository root.
+[configuration](configuration.md) and [running in xemu](xemu.md). Run the commands below from
+the folder that holds your `tes3x.local.toml`, or pass `--config PATH`: `tes3x scenario` does not
+look anywhere else, and the `build/` paths below are relative to that folder. A passing record
+names the git revision that ran, so recording needs a
+[checkout](development.md#setting-up-a-checkout).
 
 ## Run a patch's game test
 
@@ -66,8 +69,7 @@ need durable evidence.
 Use another local result store when needed:
 
 ```powershell
-tes3x scenario PATCH profiles/my-build.toml `
-  --record --results path/to/local-results
+tes3x scenario PATCH profiles/my-build.toml --record --results path/to/local-results
 ```
 
 `--results` paths are local state, not part of the public repository.
@@ -78,8 +80,7 @@ Give a run a stable prefix if you may want to inspect or record it later:
 
 ```powershell
 tes3x scenario PATCH profiles/my-build.toml --name scenario-PATCH-1
-tes3x scenario PATCH profiles/my-build.toml `
-  --name scenario-PATCH-1 --reuse --record
+tes3x scenario PATCH profiles/my-build.toml --name scenario-PATCH-1 --reuse --record
 ```
 
 `--reuse` reads `build/xemu/scenario-PATCH-1-control` and/or `-test` without booting xemu again.
@@ -120,8 +121,7 @@ The scenario runner calls the recorder automatically, but existing xemu run fold
 recorded directly:
 
 ```powershell
-tes3x validate record PATCH --env xemu `
-  --control build/xemu/CONTROL --test build/xemu/TEST
+tes3x validate record PATCH --env xemu --control build/xemu/CONTROL --test build/xemu/TEST
 ```
 
 Omit `--control` for a `single` game test. Original-Xbox logs can also be recorded with

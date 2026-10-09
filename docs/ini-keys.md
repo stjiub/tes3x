@@ -11,8 +11,9 @@ a build in the profile, which the GUI's INI tab does for you:
 
 Each key is looked up in `E:\TES3X\console.ini` first, the [console's own
 settings](deployment.md#console-settings), and in `Morrowind.ini` only when that file does not set
-it. `NetAgent`, `OverlayBase`, `Manager`, `NetAddress`, `NetGateway` and `NetDns` describe the console, not
-the build, so the pipeline writes them there at deploy instead of into `Morrowind.ini`.
+it. `NetAgent`, `OverlayBase`, `NetAddress`, `NetGateway` and `NetDns` describe the console, not the
+build, so the pipeline writes them there at deploy instead of into `Morrowind.ini`. Installing the
+console manager writes `Manager` there.
 
 ## `console`
 
@@ -127,6 +128,6 @@ refuses a listener whose key does not match it.
 |---|---|---|
 | `OverlayBase` | a game folder, `F:\Games\Morrowind Game of the Year` (drives C, E, F, G) or a `\Device\...` path | empty - the overlay stays off |
 
-Read from the build's own `Morrowind.ini` on the first access to `D:\`. With
+Read on the first access to `D:\`, from `console.ini` and then the build's `Morrowind.ini`. With
 `profile.install_layout = "overlay"`, the pipeline writes it from the local
 `deploy.retail_root`; xemu runs substitute the base carried on their disc image.

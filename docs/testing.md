@@ -13,21 +13,7 @@ what the one before cannot, and costs more to run.
 
 ## Unit tests
 
-```powershell
-python -m pip install -e .[gui,dev]
-ruff check
-python -m unittest discover -s tests
-```
-
-They import the installed `tes3x` package, so install the checkout first, editable, as above;
-the GUI tests skip without PySide6. They run without game files or an emulator. They also fail when a generated page such as
-[patches.md](patches.md) is out of date, or a patch's notes break the
-[patch page contract](../patches/README.md).
-
-GitHub Actions runs them on Windows and Linux, with Python 3.12 and 3.13, for every push to
-`main` and every pull request (`.github/workflows/tests.yml`). It also checks project Python
-files with Ruff, using pyflakes' rules only (`[tool.ruff]` in `pyproject.toml`); bundled
-third-party code is excluded.
+The unit tests run from a checkout; see [tests and lint](development.md#tests-and-lint).
 
 ## Profile check
 
@@ -40,18 +26,18 @@ selection and local paths. See [pipeline](pipeline.md).
 
 ## Profile smoke tests
 
-Boot a profile in xemu, start a new game, walk to Balmora and check the log for crashes and
-hangs:
+Boot a profile in xemu, start a new game, check the player's position, travel to Balmora and
+check again, and check the log for crashes and hangs:
 
 ```powershell
 tes3x test profiles/my-build.toml --record
 tes3x test profiles/my-build.toml --keep-artifacts always
 tes3x test profiles/my-build.toml --library-all --record
-tes3x test profiles/my-build.toml --library-all --library "D:/Mods To Test"
+tes3x test profiles/my-build.toml --library-all --library "D:/Mods to test"
 ```
 
-The test build adds `diagnostics` and `console` to the profile, and runs the exec script in
-`tests/game/smoke.toml`. A pass only means that one route worked; it isn't a full playthrough.
+The test build adds `diagnostics` and `console` to the profile, and runs the bundled smoke test,
+`smoke.toml`. A pass only means that one route worked; it isn't a full playthrough.
 
 A run's log and build record are kept when a test fails and deleted when it passes. The ISO and
 the built game files, about 2 GB a run, are deleted either way. `--keep-artifacts never` or
