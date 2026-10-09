@@ -207,6 +207,53 @@ not replace the running server or a manager already open on a console. Relaunch 
 installing or rebuilding it. Old clients without these messages may still show a generic refusal
 or timeout; updating them once installs the clearer handling.
 
+### Accepted client events
+
+The server drops unknown kinds, server-only kinds and malformed payloads before applying
+or forwarding them. Rejected events still consume their delivery sequence, so they cannot
+block later events. Each event carries at most 80 data bytes. Counts must describe the entire
+payload; fixed records accept no trailing bytes. Multipart headers require a nonzero part
+count and an index below it. Object and spell ids are 1–31 bytes followed by a zero, with no
+control characters. Empty equipment lists are allowed.
+
+| Client kind | Accepted payload | Delivery |
+|---|---|---|
+| `TEXT` | Up to 80 text bytes, including empty text | Broadcast |
+| `HOLD`, `HOLD_BROKEN` | Reference and target u32, then u32 on/off (0–1) or reason (0–3) | Targeted |
+| `HIT`, `PLAYER_HIT` | Reference and target u32, finite health damage float, optional finite fatigue damage float | Targeted |
+| `DEATH` | Reference u32 | Broadcast once |
+| `STATUS` | Reference u32 and five signed i16 stats | Retained and broadcast |
+| `BOUNTY` | Signed i32 bounty | Retained and broadcast |
+| `BUSY` | One byte, 0 or 1 | Broadcast |
+| `SPELL`, `CAST` | `SPELL` record, source type 1, player flag 0–1, one spell id | Targeted / broadcast |
+| `SHOT` | `SHOT` record with finite shot values, player flag 0–1, one ammunition id | Broadcast |
+| `AFFECT` | Reference u32, effect index 0–7, one spell id | Broadcast |
+| `EQUIPMENT` | Part/count bytes followed by zero-terminated item ids | Retained and broadcast |
+| `IDENTITY` | Part 0–1, count 2, female 0–1, exactly two zero-terminated values | Retained and broadcast |
+| `ACTOR_EQUIPMENT` | Nonzero reference u32, part/count bytes, item ids | Retained and broadcast |
+| `OBJECTS` | Count byte followed by `OBJECT` records, state bits limited to 0–15 | Retained and broadcast |
+| `REMOVE`, `WANT` | Count byte followed by spawn ids u32 / cell indices u16 | Server handles |
+| `WEATHER` | Flags 0–1, count byte, then region u16/weather 0–9 pairs | Retained and broadcast |
+| `SPAWN` | `SPAWN` record, optional leveled reference u32, one base id; finite rotation and valid position | Server assigns id and broadcasts |
+| `CONTENTS` | `CONTENTS_HEAD`, valid part/count, rolled flag 0–1, complete item entries | Retained and broadcast on completion |
+| `OFFER` | `BULK_OFFER` record and one zero-terminated filename | Server handles |
+| `GAME` | Launch token u32, zero-terminated filename (possibly empty), optional launch kind 0–2 | Server handles |
+| `PICK` | Selection kind (`PICK_CHARACTER`, `PICK_START`, `PICK_NEW`) and index bytes | Server handles |
+| `SNAPSHOT` | Token u32 and `STATE_BODY` with finite position and heading | Server handles |
+| `PLAYER` | One accepted sub-kind followed by its shape below | Retained, never relayed |
+
+`PLAYER` accepts `ITEMS` (part/count, one item id, complete stack entries), `LEVEL` (one
+`LEVEL` record), `SKILLS` and `MODIFIERS` (count and complete records with valid indices and
+finite values), `JOURNAL` (count and complete index u16/quest id pairs), `VITALS` (three finite
+floats), `SPELLS` (add/remove, part/count and spell ids), `IDENTITY` and `WORN` (part/count
+and snapshot fragment), `EFFECTS` (u16 part/count and snapshot fragment), and `DEATH` or
+`ALIVE` (no body). Identity, worn and effect snapshots are also checked when reassembled;
+effects are capped at 64 entries. Server-to-client player sub-kinds are rejected.
+
+Inventory entries carry a signed i32 count and a flags byte (only `ENTRY_DATA`), optional
+condition/charge u32 values, and, for containers, an item id. These checks define payload
+shape; they do not establish whether a client is entitled to change a particular reference.
+
 ### Handing out the build
 
 Players need the server's build: the same plugins in the same order and a matching XBE. With

@@ -4,6 +4,8 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- Multiplayer servers reject unknown event kinds and malformed client payloads before
+  applying or relaying them. See [accepted events](docs/multiplayer.md#accepted-client-events).
 - The GUI includes **Help > About TES3X**, with the version, author, license and links to
   documentation, release notes, the project and issue reporting.
 - `bsa`, `convert` and `qcow2` support `--help`. Texture conversion reports sizes without

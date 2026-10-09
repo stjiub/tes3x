@@ -1066,7 +1066,7 @@ class ServerTests(unittest.TestCase):
         return (kind, data) in got[:-1]
 
     def test_which_events_reach_other_consoles(self):
-        # Records the server's relay decisions as they stand, malformed events included.
+        # Only valid client events may reach another console.
         self.start()
         net = tes3x_net
         sender, receiver = self.client(1), self.client(2)
@@ -1074,11 +1074,9 @@ class ServerTests(unittest.TestCase):
         receiver.join()
         kinds = {name: value for name, value in vars(net).items()
                  if name.startswith('EVENT_') and name != 'EVENT_DATA' and isinstance(value, int)}
-        kept = {'EVENT_PLAYER', 'EVENT_IDENTITY', 'EVENT_ACTOR_EQUIPMENT'}
         for name, kind in sorted(kinds.items()) + [('unknown', 200), ('unknown', 65535)]:
             for data in (b'', b'\x01'):
-                expected = name not in kept and kind not in net.SERVER_EVENTS and not (
-                    data and name in ('EVENT_REMOVE', 'EVENT_WANT'))
+                expected = kind == net.EVENT_TEXT or (kind == net.EVENT_BUSY and data == b'\x01')
                 with self.subTest(name, data=data):
                     self.assertEqual(self.relayed(sender, receiver, kind, data), expected)
         refid = 0x0101F7C4

@@ -70,6 +70,7 @@ from .proto import (ACTOR, ACTORS, ACTORS_PER_PACKET, ACTOR_DEAD, ACTOR_IN_COMBA
                     unpack_weather, unpack_worn, unseal, wire_text, x25519_public, zstr)
 from .tunnel import (Tunnel, arp_frame, dhcp_reply, dns_reply, udp_frame, udp_from_frame,
                      udp_socket)
+from .validation import valid_client_event
 
 def quiet_admin(line):
     """Whether an admin command goes unlogged: `list`, which the GUI polls."""
@@ -1782,14 +1783,15 @@ class Server:
             self.player_stream(client).checkpoint()
 
     def on_event(self, client, kind, data, stamp, now):
-        """Handle a client's event. It goes on to the other clients when its handler
-        returns RELAY, and when no handler takes its kind or its handler cannot read it."""
+        """Validate a client's event before handling or relaying it."""
         client.events += 1
         if kind in SERVER_EVENTS:
             print(f"{stamp} client {client.id} sent server event {kind}: dropped", flush=True)
             return
+        if not valid_client_event(kind, data):
+            return
         handler = self.EVENT_HANDLERS.get(kind)
-        relay = handler(self, client, kind, data, stamp, now) if handler else RELAY
+        relay = handler(self, client, kind, data, stamp, now) if handler else KEEP
         if relay:
             self.broadcast_event(client.id, kind, data, now)
 
