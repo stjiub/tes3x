@@ -2457,7 +2457,7 @@ class Server:
                 del self.dialogues[refid]
                 if target != holder:
                     self.send_event(target, holder, EVENT_HOLD,
-                               struct.pack("<III", refid, target, 0), time.monotonic())
+                                    struct.pack("<III", refid, target, 0), time.monotonic())
         for other in self.clients.values():
             if other.alive:
                 self.send(other, GONE, struct.pack("<I", client.id))
@@ -2506,7 +2506,7 @@ class Server:
                   flush=True)
             self.send_event(origin, self.spawns[sid]["origin"], EVENT_SPAWN,
                             pack_spawn(sid, self.spawns[sid]),
-                       now)
+                            now)
             return sid
         for old, known in list(self.spawns.items()):  # a dead creature's placeholder rolled again
             if spawn.get("leveled") and known.get("leveled") == spawn["leveled"] and \
@@ -2767,7 +2767,7 @@ class Server:
         if self.args.adopt:
             self.send_character(client, os.path.join(self.key_folder(client), kept[0][0]),
                                 kept[0][1],
-                           loaded, stamp, now)
+                                loaded, stamp, now)
             return
         client.listed = [folder for folder, _ in kept[:CHARACTERS_LISTED]]
         self.send_names(client, EVENT_CHARS, client.listed, now)
@@ -2942,7 +2942,7 @@ class Server:
             if part + 1 == parts:
                 del self.arriving[client.id]
                 self.set_contents(client.id, refid, cell, have[1] + entries,
-                             bool(flags & CONTENTS_ROLLED), stamp, now)
+                                  bool(flags & CONTENTS_ROLLED), stamp, now)
             return
         if kind == EVENT_WANT and data:
             cells = set(struct.unpack_from(f"<{min(data[0], (len(data) - 1) // 2)}H", data, 1))
@@ -3011,7 +3011,7 @@ class Server:
                     print(f"{stamp} client {client.id} is refused dialogue with {refid:#010x}: "
                           f"client {held[0]} is talking", flush=True)
                     self.send_event(client.id, 0, EVENT_HOLD_BROKEN,
-                               struct.pack("<III", refid, client.id, 3), now)
+                                    struct.pack("<III", refid, client.id, 3), now)
                     return
                 if on:
                     self.dialogues[refid] = (client.id, target)
@@ -3056,7 +3056,7 @@ class Server:
         if kind == EVENT_GAME and len(data) >= 5:
             loaded, _, rest = data[4:].partition(b"\0")
             self.on_game(client, struct.unpack_from("<I", data)[0], wire_text(loaded),
-                    rest[0] if rest else GAME_NONE, stamp, now)
+                         rest[0] if rest else GAME_NONE, stamp, now)
             return
         if kind == EVENT_PICK and len(data) >= 2:
             self.on_pick(client, data[0], data[1], stamp, now)
@@ -3359,7 +3359,7 @@ class Server:
                     self.send(client, WELCOME, struct.pack("<I", client.id))
                     return
                 self.handle_plain(T3MP.pack(b"T3MP", version, HELLO, 0, session, 0, 0, 0, 0)
-                             + hello, addr, (key, keys))
+                                  + hello, addr, (key, keys))
             return
         client = self.by_session.get(session)
         if version != T3MP_VERSION or kind != SEALED or client is None or client.keys is None or \
@@ -3382,7 +3382,7 @@ class Server:
             client.replay = (top, seen | 1 << (top - seq))
         inner_kind, ack, sent, echo = INNER.unpack_from(inner)
         self.handle_plain(T3MP.pack(b"T3MP", T3MP_VERSION, inner_kind, 0, session, seq, ack, sent,
-                               echo) + inner[INNER.size:], addr)
+                                    echo) + inner[INNER.size:], addr)
 
     def handshake_client(self, addr, session, keys, mac, version):
         # Repeated HANDSHAKE3 replies need distinct nonces and the original destination.
@@ -3731,7 +3731,7 @@ class Server:
         self.notify("The server is shutting down.", now)
         asked = self.ask_save([c for c in self.clients.values() if c.alive], now)
         self.stop["waiting"] = {c.id: c.snapshot_request for c in self.clients.values()
-                           if c.alive and c.synced}
+                                if c.alive and c.synced}
         print(f"{time.strftime('%H:%M:%S')} stopping ({why}): asked to save: {asked}; waiting "
               f"up to {self.args.stop_wait:g} s for "
               + (", ".join(f"client {i}" for i in self.stop["waiting"]) or "nobody"), flush=True)
@@ -3795,7 +3795,7 @@ class Server:
         self.bounties = {}
         if self.args.bot:
             self.identities[BOT_ID] = pack_identity("Bot", "Imperial", "b_n_imperial_m_head_01",
-                                               "b_n_imperial_m_hair_01")
+                                                    "b_n_imperial_m_hair_01")
         if self.args.bot_equip is not None:
             self.equipment[BOT_ID] = [
                 pack_equipment([i for i in self.args.bot_equip.split(",") if i]), []]
@@ -3809,8 +3809,7 @@ class Server:
         # spawn id -> reference made at run time (unpack_spawn), removed ones too; replayed likewise
         self.spawns = {}
         # refid -> {"cell", "entries", "origin"}: a container's latest contents; sent to whoever
-        # loads
-        # its cell (WANT)
+        # loads its cell (WANT)
         self.contents = {}
         self.arriving = {}  # client id -> (refid, entries so far, next part)
         bot_boxes = []
@@ -3838,7 +3837,7 @@ class Server:
                                int(condition[0]) if condition else None))
         bot_takes = [float(at) for at in self.args.bot_take]
         self.bot_fights = {int(refid, 16): int(client) for refid, _, client in
-                      (spec.partition(":") for spec in self.args.bot_fights)}
+                           (spec.partition(":") for spec in self.args.bot_fights)}
         bot_weather = []
         bot_statuses = list(self.args.bot_status)
         bot_affects = list(self.args.bot_affect)
@@ -3901,7 +3900,7 @@ class Server:
         # session -> a handshake in progress or just done: {"noise", "e", "reply", ...}
         self.pending = {}
         self.bursts = [(float(at), int(count)) for count, _, at in
-                  (spec.partition("@") for spec in self.args.burst)]
+                       (spec.partition("@") for spec in self.args.burst)]
         self.build_server = None
         if self.args.build:
             build = tes3x_netbuild.Build(self.args.build, self.args.deltas,
@@ -3920,10 +3919,10 @@ class Server:
             with open(self.args.send, "rb") as stream:
                 self.sending = (name, stream.read())
 
-        self.bot = {"anchor": None, "next": 0.0, "start": time.monotonic(), "said": 0.0, "line": 0,
-               "anchored": None, "state": None, "breaks": [], "held": 0, "hit": False,
-               "killed": False, "mirror": None, "hit_player": False, "echo": None, "busy": False,
-               "dead": False}
+        self.bot = {"anchor": None, "next": 0.0, "start": time.monotonic(), "said": 0.0,
+                    "line": 0, "anchored": None, "state": None, "breaks": [], "held": 0,
+                    "hit": False, "killed": False, "mirror": None, "hit_player": False,
+                    "echo": None, "busy": False, "dead": False}
 
         # Stopping asks every joined console for its character and waits, up to --stop-wait, for the
         # saves of those running one; a second Ctrl-C stops at once.
@@ -4078,7 +4077,8 @@ class Server:
                       f"{'dies' if self.bot['dead'] else 'respawns'}",
                       flush=True)
                 self.broadcast_event(BOT_ID, EVENT_PLAYER,
-                                bytes([PLAYER_DEATH if self.bot["dead"] else PLAYER_ALIVE]), now)
+                                     bytes([PLAYER_DEATH if self.bot["dead"] else PLAYER_ALIVE]),
+                                     now)
             if self.args.bot and self.bot["anchor"] and now >= self.bot["next"] and \
                     not self.bot["busy"]:
                 self.bot["next"] = now + 1 / self.args.bot_rate
@@ -4095,7 +4095,7 @@ class Server:
                       f"{refid:#010x}", flush=True)
                 self.send_event(holder, BOT_ID, EVENT_HOLD_BROKEN,
                                 struct.pack("<III", refid, holder, 2),
-                           now)
+                                now)
             if self.args.bot_hold:
                 refid, _, span = self.args.bot_hold.partition("@")
                 refid = int(refid, 16)
@@ -4130,7 +4130,7 @@ class Server:
                       flush=True)
                 self.broadcast_event(BOT_ID, EVENT_AFFECT,
                                      struct.pack("<IB", int(refid, 16), int(index))
-                                + name.encode("latin-1") + b"\0", now)
+                                     + name.encode("latin-1") + b"\0", now)
             if self.args.bot_hit and not self.bot["hit"]:
                 refid, _, at = self.args.bot_hit.partition("@")
                 refid = int(refid, 16)
@@ -4153,7 +4153,7 @@ class Server:
                         print(f"{time.strftime('%H:%M:%S')} bot hits client {other.id} for {damage}"
                               f" health, {fatigue or 0} fatigue", flush=True)
                         self.send_event(other.id, BOT_ID, EVENT_PLAYER_HIT,
-                                   struct.pack("<IIff", 0, other.id, float(damage),
+                                        struct.pack("<IIff", 0, other.id, float(damage),
                                                float(fatigue or 0)), now)
             for spell in [s for s in bot_spells if self.window(f"{s[0]}:", now)]:
                 _, kind, name, refid = spell
@@ -4170,7 +4170,7 @@ class Server:
                     print(f"{time.strftime('%H:%M:%S')} bot {verb} {name} at nothing", flush=True)
                     self.broadcast_event(BOT_ID, kind,
                                          SPELL.pack(0, 0, 0, SOURCE_SPELL, 1) + zstr(name),
-                                    now)
+                                         now)
                     continue
                 on = f"{refid:#010x}" if refid else "the player"
                 print(f"{time.strftime('%H:%M:%S')} bot {verb} {name} on {on} of client {target}",
@@ -4184,10 +4184,10 @@ class Server:
                 bot_spawns.remove(spec)
                 _, x, y, z = self.bot["anchor"]
                 self.add_spawn(BOT_ID, {"cell": spec[2], "count": 1, "pos": [x + 64, y, z],
-                                   "rot": [0.0, 0.0, 0.0], "id": spec[1],
-                                   "data": spec[3] is not None, "condition": spec[3] or 0,
-                                   "charge": 0},
-                          time.strftime("%H:%M:%S"), now)
+                                        "rot": [0.0, 0.0, 0.0], "id": spec[1],
+                                        "data": spec[3] is not None, "condition": spec[3] or 0,
+                                        "charge": 0},
+                               time.strftime("%H:%M:%S"), now)
             for box in [b for b in bot_boxes if self.window(f"{b[0]}:", now)]:
                 bot_boxes.remove(box)
                 self.set_contents(BOT_ID, box[1], box[2], box[3], False, time.strftime("%H:%M:%S"),
