@@ -1,9 +1,12 @@
+import contextlib
 import hashlib
+import io
 import json
 import os
 import random
 import re
 import shutil
+import signal
 import socket
 import struct
 import subprocess
@@ -1088,6 +1091,21 @@ class ServerTests(unittest.TestCase):
                 ('text', net.EVENT_TEXT, b'hello', True)):
             with self.subTest(name):
                 self.assertEqual(self.relayed(sender, receiver, kind, data), expected)
+
+    def test_run_puts_back_the_interrupt_handler(self):
+        try:
+            tes3x_net.crypto()
+        except SystemExit:
+            self.skipTest('cryptography is not installed')
+        def caller(*_):
+            pass
+
+        self.addCleanup(signal.signal, signal.SIGINT, signal.signal(signal.SIGINT, caller))
+        out = io.TextIOWrapper(io.BytesIO())  # run() reconfigures stdout, so not a StringIO
+        with contextlib.redirect_stdout(out):
+            tes3x_net.main(['serve', '--bind', '127.0.0.1', '--port', str(free_port()),
+                            '--admin-port', str(free_port()), '--duration', '0.3', '--report', '0'])
+        self.assertIs(signal.getsignal(signal.SIGINT), caller)
 
     def test_consoles_ignore_server_events_another_console_sent(self):
         source = (NET.parents[1] / 'hooks' / 'tes3xmulti.c').read_text(encoding='utf-8')
