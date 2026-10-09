@@ -78,13 +78,14 @@ CHECKOUT = Path(__file__).resolve().parents[1]
 
 def resource(*parts):
     """Read-only data a command needs wherever TES3X is installed: the registries, hooks,
-    symbols, examples, assets, add-ons, game tests, the manager's XBEs and the release key."""
+    symbols, examples, assets, add-ons, game tests, the manager's XBEs and the release key; and
+    what the portable folder bundles (externals/: 7-Zip and LLVM), absent elsewhere."""
     return CHECKOUT.joinpath(*parts)
 
 
 def checkout(*parts):
     """What only a source checkout has: docs, the tools launched by path, the sources that the
-    maintainer's generators rewrite, and git."""
+    maintainer's generators rewrite, git, and the maintainer's build output (build/)."""
     return CHECKOUT.joinpath(*parts)
 
 

@@ -26,12 +26,12 @@ import shutil
 import tomllib
 
 import tes3x_patches as registry
-from tes3x_paths import checkout, writable
+from tes3x_paths import checkout
 from tes3x_diag import assertion_failures, latest_values, parse_log
 from tes3x_test import (GAME_TESTS, comparison_failures, game_test_problems,
                         sequence_failures)
 
-VALIDATION = writable("build", "validation")
+VALIDATION = checkout("build", "validation")
 PATCH_DIRS = VALIDATION / "patches"
 
 GATED_CHANNELS = ("preview", "release")

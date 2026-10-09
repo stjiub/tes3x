@@ -13,7 +13,7 @@ import tarfile
 import urllib.request
 import zipfile
 
-from tes3x_paths import checkout, data_dir, writable
+from tes3x_paths import checkout, data_dir
 
 ROOT = checkout()
 PYTHON = "3.12.9"
@@ -269,7 +269,7 @@ def package(out, cc=None, make_zip=False, manager=None, launcher=None):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--out", default=str(writable("build", "package")))
+    ap.add_argument("--out", default=str(checkout("build", "package")))
     ap.add_argument("--cc", help="C compiler for TES3X.exe (default: gcc or clang)")
     ap.add_argument("--zip", action="store_true", help="also write TES3X-<version>.zip")
     ap.add_argument("--manager", metavar="XBE",
