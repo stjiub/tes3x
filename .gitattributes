@@ -1,2 +1,5 @@
-# Preserve line endings exactly as committed; no autocrlf conversion
-* -text
+# LF in the repository and on checkout, whatever the platform
+* text=auto eol=lf
+*.dds binary
+*.png binary
+*.ttf binary
