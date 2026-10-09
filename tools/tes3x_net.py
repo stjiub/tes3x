@@ -539,6 +539,8 @@ TARGETED = {EVENT_HOLD: "holds", EVENT_HOLD_BROKEN: "breaks the hold on", EVENT_
 # Events only the server sends. A console acts on them, so one from a client is never relayed.
 SERVER_EVENTS = {EVENT_WELCOME, EVENT_AUTHORITY, EVENT_OWNERS, EVENT_SAVE, EVENT_LOAD,
                  EVENT_CHARS, EVENT_NEWCHAR, EVENT_RUN}
+# What an event handler returns: whether the event goes on to the other clients.
+RELAY, KEEP = True, False
 KEY = struct.Struct("<Iii32s")  # kind, grid x, grid y, interior name
 KEY_EXTERIOR, KEY_INTERIOR = 1, 2
 ANIM_BYTES = 20  # per layer: 3 groups, pad, 3 keys, pad, 3 times (tes3xnet.c anim_capture)
@@ -3149,256 +3151,385 @@ class Server:
             self.player_stream(client).checkpoint()
 
     def on_event(self, client, kind, data, stamp, now):
+        """Handle a client's event. It goes on to the other clients when its handler
+        returns RELAY, and when no handler takes its kind or its handler cannot read it."""
         client.events += 1
         if kind in SERVER_EVENTS:
             print(f"{stamp} client {client.id} sent server event {kind}: dropped", flush=True)
             return
-        if kind == EVENT_OFFER and len(data) > BULK_OFFER.size:
-            ident, size, digest = BULK_OFFER.unpack_from(data)
-            name = wire_text(data[BULK_OFFER.size:].split(b"\0", 1)[0])
-            if client.upload and client.upload.stream:
-                client.upload.stream.close()
-            folder = (os.path.join(self.args.world, "uploads", fingerprint(client.key))
-                      if self.args.world and client.key else None)
-            client.upload = Incoming(folder, ident, size, digest, name, now)
-            print(f"{stamp} client {client.id} offers {name} ({size} bytes, id {ident:#010x}): "
-                  f"{BULK_STATUS[client.upload.status]}"
-                  + (f" from chunk {client.upload.next}"
-                     if client.upload.status == BULK_RECEIVING else ""), flush=True)
-            self.send(client, BULK_ACK, client.upload.ack(now))
-            if client.upload.status == BULK_DONE:
-                self.received(client, stamp, now)
-            return
-        if kind == EVENT_PLAYER and data[:1] in (bytes([PLAYER_DEATH]), bytes([PLAYER_ALIVE])):
+        if kind == EVENT_OFFER:
+            relay = self.event_offer(client, kind, data, stamp, now)
+        elif kind == EVENT_PLAYER:
+            relay = self.event_player(client, kind, data, stamp, now)
+        elif kind == EVENT_SNAPSHOT:
+            relay = self.event_snapshot(client, kind, data, stamp, now)
+        elif kind == EVENT_CONTENTS:
+            relay = self.event_contents(client, kind, data, stamp, now)
+        elif kind == EVENT_WANT:
+            relay = self.event_want(client, kind, data, stamp, now)
+        elif kind == EVENT_SPAWN:
+            relay = self.event_spawn(client, kind, data, stamp, now)
+        elif kind == EVENT_REMOVE:
+            relay = self.event_remove(client, kind, data, stamp, now)
+        elif kind == EVENT_WEATHER:
+            relay = self.event_weather(client, kind, data, stamp, now)
+        elif kind == EVENT_SPELL:
+            relay = self.event_spell(client, kind, data, stamp, now)
+        elif kind == EVENT_CAST:
+            relay = self.event_cast(client, kind, data, stamp, now)
+        elif kind == EVENT_SHOT:
+            relay = self.event_shot(client, kind, data, stamp, now)
+        elif kind in TARGETED:
+            relay = self.event_targeted(client, kind, data, stamp, now)
+        elif kind == EVENT_DEATH:
+            relay = self.event_death(client, kind, data, stamp, now)
+        elif kind == EVENT_STATUS:
+            relay = self.event_status(client, kind, data, stamp, now)
+        elif kind == EVENT_AFFECT:
+            relay = self.event_affect(client, kind, data, stamp, now)
+        elif kind == EVENT_OBJECTS:
+            relay = self.event_objects(client, kind, data, stamp, now)
+        elif kind == EVENT_TEXT:
+            relay = self.event_text(client, kind, data, stamp, now)
+        elif kind == EVENT_GAME:
+            relay = self.event_game(client, kind, data, stamp, now)
+        elif kind == EVENT_PICK:
+            relay = self.event_pick(client, kind, data, stamp, now)
+        elif kind == EVENT_BUSY:
+            relay = self.event_busy(client, kind, data, stamp, now)
+        elif kind == EVENT_BOUNTY:
+            relay = self.event_bounty(client, kind, data, stamp, now)
+        elif kind == EVENT_EQUIPMENT:
+            relay = self.event_equipment(client, kind, data, stamp, now)
+        elif kind == EVENT_IDENTITY:
+            relay = self.event_identity(client, kind, data, stamp, now)
+        elif kind == EVENT_ACTOR_EQUIPMENT:
+            relay = self.event_actor_equipment(client, kind, data, stamp, now)
+        else:
+            relay = RELAY
+        if relay:
+            self.broadcast_event(client.id, kind, data, now)
+
+    def event_offer(self, client, kind, data, stamp, now):
+        if len(data) <= BULK_OFFER.size:
+            return RELAY
+        ident, size, digest = BULK_OFFER.unpack_from(data)
+        name = wire_text(data[BULK_OFFER.size:].split(b"\0", 1)[0])
+        if client.upload and client.upload.stream:
+            client.upload.stream.close()
+        folder = (os.path.join(self.args.world, "uploads", fingerprint(client.key))
+                  if self.args.world and client.key else None)
+        client.upload = Incoming(folder, ident, size, digest, name, now)
+        print(f"{stamp} client {client.id} offers {name} ({size} bytes, id {ident:#010x}): "
+              f"{BULK_STATUS[client.upload.status]}"
+              + (f" from chunk {client.upload.next}"
+                 if client.upload.status == BULK_RECEIVING else ""), flush=True)
+        self.send(client, BULK_ACK, client.upload.ack(now))
+        if client.upload.status == BULK_DONE:
+            self.received(client, stamp, now)
+        return KEEP
+
+    def event_player(self, client, kind, data, stamp, now):
+        if data[:1] in (bytes([PLAYER_DEATH]), bytes([PLAYER_ALIVE])):
             self.on_player_death(client, data[0] == PLAYER_ALIVE, stamp, now)
-            return
-        if kind == EVENT_SNAPSHOT and len(data) == 4 + STATE_BODY.size:
-            stream = self.player_stream(client) if client.synced else None
-            body = data[4:]
-            flags, x, y, z, heading, cell = STATE_BODY.unpack(body)
-            if (stream is None or not stream.identity or not flags & IN_WORLD or
-                    not placeable(x, y, z) or not finite(heading) or stream.arriving or
-                    stream.identity_parts or stream.worn_parts or stream.effects_parts):
-                return
-            stream.keep_place(body)
+            return KEEP
+        stream = self.player_stream(client) if client.synced else None
+        change = stream.take(data) if stream else None
+        if stream and client.naming and stream.identity:
+            old = self.character_folder(client)
+            folder = new_character_folder(self.key_folder(client), stream.identity["name"])
             stream.save()
-            if self.world.path:
-                self.world.save(now)
-            client.snapshots += 1
-            client.snapshot_saved = struct.unpack_from("<I", data)[0]
-            client.rel.queue(EVENT_SNAPSHOT, 0, data[:4])
-            self.flush(client, now)
-            return
-        if kind == EVENT_PLAYER:
-            stream = self.player_stream(client) if client.synced else None
-            change = stream.take(data) if stream else None
-            if stream and client.naming and stream.identity:
-                old = self.character_folder(client)
-                folder = new_character_folder(self.key_folder(client), stream.identity["name"])
-                stream.save()
-                os.rename(old, folder)
-                self.streams.pop(old)
-                stream.path = os.path.join(folder, STREAM_NAME)
-                self.streams[folder] = stream
-                client.character, client.naming = os.path.basename(folder), False
-                self.creating.discard(fingerprint(client.key))
-            if change and self.detail["verbose"]:
-                print(f"{stamp} client {client.id} {change}", flush=True)
-            return
-        if kind == EVENT_CONTENTS and len(data) >= CONTENTS_HEAD.size:
-            refid, cell, part, parts, flags, entries = unpack_contents(data)
-            have = self.arriving.get(client.id)
-            if part == 0:
-                have = self.arriving[client.id] = (refid, [], 0)
-            if not have or have[0] != refid or have[2] != part:
-                return
-            self.arriving[client.id] = (refid, have[1] + entries, part + 1)
-            if part + 1 == parts:
-                del self.arriving[client.id]
-                self.set_contents(client.id, refid, cell, have[1] + entries,
-                                  bool(flags & CONTENTS_ROLLED), stamp, now)
-            return
-        if kind == EVENT_WANT and data:
-            cells = set(struct.unpack_from(f"<{min(data[0], (len(data) - 1) // 2)}H", data, 1))
-            wanted = [refid for refid, box in self.world.contents.items() if box["cell"] in cells]
-            for refid in wanted:
-                self.send_contents(client.id, refid, now)
-            if wanted:
-                print(f"{stamp} client {client.id} loads cells {sorted(cells)}: sent "
-                      f"{len(wanted)} containers", flush=True)
-            return
-        if kind == EVENT_SPAWN and len(data) > SPAWN.size:
-            token, spawn = unpack_spawn(data)
-            if placeable(*spawn["pos"]) and finite(*spawn["rot"]):
-                self.add_spawn(client.id, spawn, stamp, now, token)
-            return
-        if kind == EVENT_REMOVE and data:
-            for sid in unpack_removes(data):
-                self.remove_spawn(client.id, sid, stamp, now)
-            return
-        if kind == EVENT_WEATHER and len(data) >= 2:
-            flags, entries = unpack_weather(data)
-            if flags & WEATHER_OFFER:
-                entries = {i: w for i, w in entries.items() if i not in self.world.weather}
-            self.set_weather(client.id, entries, stamp, now, not flags & WEATHER_OFFER)
-            return
-        if kind == EVENT_SPELL and len(data) > SPELL.size:
-            caster, target, refid, _, player = SPELL.unpack_from(data)
-            name = wire_text(data[SPELL.size:].split(b"\0")[0])
-            who = f"client {client.id}" if player else f"{caster:#010x} of client {client.id}"
-            on = (f"{refid:#010x} (authority {target})" if refid
-                  else f"the player of client {target}")
-            print(f"{stamp} {who} casts {name} on {on}", flush=True)
-            if target != BOT_ID:
-                self.send_event(target, client.id, kind, data, now)
-            return
-        if kind == EVENT_CAST and len(data) > SPELL.size:
-            caster, target, refid, _, player = SPELL.unpack_from(data)
-            name = wire_text(data[SPELL.size:].split(b"\0")[0])
-            who = f"client {client.id}" if player else f"{caster:#010x} of client {client.id}"
-            at = (f" at {refid:#010x} (client {target})" if refid
-                  else f" at the player of client {target}" if target else "")
-            print(f"{stamp} {who} casts {name}{at}", flush=True)
-        if kind == EVENT_SHOT and len(data) > SHOT.size:
-            firer, swing, other, player = SHOT.unpack_from(data)
-            name = wire_text(data[SHOT.size:].split(b"\0")[0])
-            who = f"client {client.id}" if player else f"{firer:#010x} of client {client.id}"
-            print(f"{stamp} {who} shoots {name} ({swing:.2f}, {other:.2f})", flush=True)
-        if kind in TARGETED and len(data) >= 12:
-            refid, target = struct.unpack_from("<II", data)
-            word = (f"damage {struct.unpack_from('<f', data, 8)[0]:.0f}"
-                    if kind in (EVENT_HIT, EVENT_PLAYER_HIT)
-                    else f"{struct.unpack_from('<I', data, 8)[0]}")
-            if kind in (EVENT_HIT, EVENT_PLAYER_HIT) and len(data) >= 16:
-                word += f", fatigue {struct.unpack_from('<f', data, 12)[0]:.0f}"
-            if kind == EVENT_PLAYER_HIT:
-                by = f" (attacker {refid:#010x})" if refid else ""
-                print(f"{stamp} client {client.id} {TARGETED[kind]} client {target}{by}: {word}",
-                      flush=True)
-            else:
-                print(f"{stamp} client {client.id} {TARGETED[kind]} {refid:#010x} "
-                      f"(authority {target}): {word}", flush=True)
-            if kind == EVENT_HOLD:
-                on = struct.unpack_from("<I", data, 8)[0]
-                held = self.dialogues.get(refid)
-                if on and held and held[0] != client.id:
-                    print(f"{stamp} client {client.id} is refused dialogue with {refid:#010x}: "
-                          f"client {held[0]} is talking", flush=True)
-                    self.send_event(client.id, 0, EVENT_HOLD_BROKEN,
-                                    struct.pack("<III", refid, client.id, 3), now)
-                    return
-                if on:
-                    self.dialogues[refid] = (client.id, target)
-                elif held and held[0] == client.id:
-                    del self.dialogues[refid]
-            if target != BOT_ID:
-                if kind != EVENT_HOLD or target != client.id:
-                    self.send_event(target, client.id, kind, data, now)
-            elif kind == EVENT_HOLD and struct.unpack_from("<I", data, 8)[0] and \
-                    self.args.bot_break_hold is not None:
-                self.bot.breaks.append((now + self.args.bot_break_hold, client.id, refid))
-            return
-        if kind == EVENT_DEATH and len(data) >= 4:
-            refid = struct.unpack_from("<I", data)[0]
-            if refid in self.world.deaths:
-                return
-            self.world.deaths[refid] = client.id
-            self.world.dirty = True
-            print(f"{stamp} client {client.id}: {refid:#010x} died", flush=True)
-        if kind == EVENT_STATUS and len(data) >= STATUS.size:
-            refid, *values = STATUS.unpack_from(data)
-            self.world.statuses[refid] = tuple(values)
-            self.world.dirty = True
-            if self.detail["verbose"]:
-                print(f"{stamp} client {client.id}: {describe_status(refid, values)}", flush=True)
-        if kind == EVENT_AFFECT and len(data) > 5:
-            refid, index = struct.unpack_from("<IB", data)
-            name = wire_text(data[5:].split(b"\0")[0])
-            if self.detail["verbose"]:
-                print(f"{stamp} client {client.id}: {refid:#010x} takes effect {index} of "
-                      f"{name}", flush=True)
-        if kind == EVENT_OBJECTS and data:
-            changed = unpack_objects(data)
-            self.world.objects.update(changed)
-            self.world.dirty = True
-            for refid, rest in changed.items():
-                if self.detail["verbose"]:
-                    print(f"{stamp} client {client.id}: {describe_object(refid, *rest)}",
-                          flush=True)
-        if kind == EVENT_TEXT:
-            print(f"{stamp} client {client.id} says: {wire_text(data)}", flush=True)
-        if kind == EVENT_GAME and len(data) >= 5:
-            loaded, _, rest = data[4:].partition(b"\0")
-            self.on_game(client, struct.unpack_from("<I", data)[0], wire_text(loaded),
-                         rest[0] if rest else GAME_NONE, stamp, now)
-            return
-        if kind == EVENT_PICK and len(data) >= 2:
-            self.on_pick(client, data[0], data[1], stamp, now)
-            return
-        if kind == EVENT_BUSY and data:
-            if data[0] and client.busy is None:
-                client.busy = now
-                print(f"{stamp} client {client.id} is saving: its cells and actors go to others",
-                      flush=True)
-            elif not data[0] and client.busy is not None:
-                print(f"{stamp} client {client.id} is back after {now - client.busy:.1f} s",
-                      flush=True)
-                client.busy = None
-        if kind == EVENT_BOUNTY and len(data) >= 4:
-            bounty = struct.unpack_from("<i", data)[0]
-            self.bounties[client.id] = data[:4]
-            stream = self.player_stream(client) if client.synced else None
-            if stream and stream.bounty != bounty:
-                stream.bounty, stream.dirty = bounty, True
-            print(f"{stamp} client {client.id} bounty {bounty}",
+            os.rename(old, folder)
+            self.streams.pop(old)
+            stream.path = os.path.join(folder, STREAM_NAME)
+            self.streams[folder] = stream
+            client.character, client.naming = os.path.basename(folder), False
+            self.creating.discard(fingerprint(client.key))
+        if change and self.detail["verbose"]:
+            print(f"{stamp} client {client.id} {change}", flush=True)
+        return KEEP
+
+    def event_snapshot(self, client, kind, data, stamp, now):
+        if len(data) != 4 + STATE_BODY.size:
+            return RELAY
+        stream = self.player_stream(client) if client.synced else None
+        body = data[4:]
+        flags, x, y, z, heading, cell = STATE_BODY.unpack(body)
+        if (stream is None or not stream.identity or not flags & IN_WORLD or
+                not placeable(x, y, z) or not finite(heading) or stream.arriving or
+                stream.identity_parts or stream.worn_parts or stream.effects_parts):
+            return KEEP
+        stream.keep_place(body)
+        stream.save()
+        if self.world.path:
+            self.world.save(now)
+        client.snapshots += 1
+        client.snapshot_saved = struct.unpack_from("<I", data)[0]
+        client.rel.queue(EVENT_SNAPSHOT, 0, data[:4])
+        self.flush(client, now)
+        return KEEP
+
+    def event_contents(self, client, kind, data, stamp, now):
+        if len(data) < CONTENTS_HEAD.size:
+            return RELAY
+        refid, cell, part, parts, flags, entries = unpack_contents(data)
+        have = self.arriving.get(client.id)
+        if part == 0:
+            have = self.arriving[client.id] = (refid, [], 0)
+        if not have or have[0] != refid or have[2] != part:
+            return KEEP
+        self.arriving[client.id] = (refid, have[1] + entries, part + 1)
+        if part + 1 == parts:
+            del self.arriving[client.id]
+            self.set_contents(client.id, refid, cell, have[1] + entries,
+                              bool(flags & CONTENTS_ROLLED), stamp, now)
+        return KEEP
+
+    def event_want(self, client, kind, data, stamp, now):
+        if not data:
+            return RELAY
+        cells = set(struct.unpack_from(f"<{min(data[0], (len(data) - 1) // 2)}H", data, 1))
+        wanted = [refid for refid, box in self.world.contents.items() if box["cell"] in cells]
+        for refid in wanted:
+            self.send_contents(client.id, refid, now)
+        if wanted:
+            print(f"{stamp} client {client.id} loads cells {sorted(cells)}: sent "
+                  f"{len(wanted)} containers", flush=True)
+        return KEEP
+
+    def event_spawn(self, client, kind, data, stamp, now):
+        if len(data) <= SPAWN.size:
+            return RELAY
+        token, spawn = unpack_spawn(data)
+        if placeable(*spawn["pos"]) and finite(*spawn["rot"]):
+            self.add_spawn(client.id, spawn, stamp, now, token)
+        return KEEP
+
+    def event_remove(self, client, kind, data, stamp, now):
+        if not data:
+            return RELAY
+        for sid in unpack_removes(data):
+            self.remove_spawn(client.id, sid, stamp, now)
+        return KEEP
+
+    def event_weather(self, client, kind, data, stamp, now):
+        if len(data) < 2:
+            return RELAY
+        flags, entries = unpack_weather(data)
+        if flags & WEATHER_OFFER:
+            entries = {i: w for i, w in entries.items() if i not in self.world.weather}
+        self.set_weather(client.id, entries, stamp, now, not flags & WEATHER_OFFER)
+        return KEEP
+
+    def event_spell(self, client, kind, data, stamp, now):
+        if len(data) <= SPELL.size:
+            return RELAY
+        caster, target, refid, _, player = SPELL.unpack_from(data)
+        name = wire_text(data[SPELL.size:].split(b"\0")[0])
+        who = f"client {client.id}" if player else f"{caster:#010x} of client {client.id}"
+        on = (f"{refid:#010x} (authority {target})" if refid
+              else f"the player of client {target}")
+        print(f"{stamp} {who} casts {name} on {on}", flush=True)
+        if target != BOT_ID:
+            self.send_event(target, client.id, kind, data, now)
+        return KEEP
+
+    def event_cast(self, client, kind, data, stamp, now):
+        if len(data) <= SPELL.size:
+            return RELAY
+        caster, target, refid, _, player = SPELL.unpack_from(data)
+        name = wire_text(data[SPELL.size:].split(b"\0")[0])
+        who = f"client {client.id}" if player else f"{caster:#010x} of client {client.id}"
+        at = (f" at {refid:#010x} (client {target})" if refid
+              else f" at the player of client {target}" if target else "")
+        print(f"{stamp} {who} casts {name}{at}", flush=True)
+        return RELAY
+
+    def event_shot(self, client, kind, data, stamp, now):
+        if len(data) <= SHOT.size:
+            return RELAY
+        firer, swing, other, player = SHOT.unpack_from(data)
+        name = wire_text(data[SHOT.size:].split(b"\0")[0])
+        who = f"client {client.id}" if player else f"{firer:#010x} of client {client.id}"
+        print(f"{stamp} {who} shoots {name} ({swing:.2f}, {other:.2f})", flush=True)
+        return RELAY
+
+    def event_targeted(self, client, kind, data, stamp, now):
+        if len(data) < 12:
+            return RELAY
+        refid, target = struct.unpack_from("<II", data)
+        word = (f"damage {struct.unpack_from('<f', data, 8)[0]:.0f}"
+                if kind in (EVENT_HIT, EVENT_PLAYER_HIT)
+                else f"{struct.unpack_from('<I', data, 8)[0]}")
+        if kind in (EVENT_HIT, EVENT_PLAYER_HIT) and len(data) >= 16:
+            word += f", fatigue {struct.unpack_from('<f', data, 12)[0]:.0f}"
+        if kind == EVENT_PLAYER_HIT:
+            by = f" (attacker {refid:#010x})" if refid else ""
+            print(f"{stamp} client {client.id} {TARGETED[kind]} client {target}{by}: {word}",
                   flush=True)
-        if kind == EVENT_EQUIPMENT and len(data) >= 2:
-            sets = self.equipment.setdefault(client.id, [[], []])
-            if data[0] == 0:
-                sets[1] = []
-            sets[1].append(data)
-            if data[0] + 1 == data[1]:
-                sets[0], sets[1] = sets[1], []
-                items = [i for part in sets[0] for i in unpack_equipment(part)]
-                print(f"{stamp} client {client.id} wears {len(items)}: {', '.join(items)}",
+        else:
+            print(f"{stamp} client {client.id} {TARGETED[kind]} {refid:#010x} "
+                  f"(authority {target}): {word}", flush=True)
+        if kind == EVENT_HOLD:
+            on = struct.unpack_from("<I", data, 8)[0]
+            held = self.dialogues.get(refid)
+            if on and held and held[0] != client.id:
+                print(f"{stamp} client {client.id} is refused dialogue with {refid:#010x}: "
+                      f"client {held[0]} is talking", flush=True)
+                self.send_event(client.id, 0, EVENT_HOLD_BROKEN,
+                                struct.pack("<III", refid, client.id, 3), now)
+                return KEEP
+            if on:
+                self.dialogues[refid] = (client.id, target)
+            elif held and held[0] == client.id:
+                del self.dialogues[refid]
+        if target != BOT_ID:
+            if kind != EVENT_HOLD or target != client.id:
+                self.send_event(target, client.id, kind, data, now)
+        elif kind == EVENT_HOLD and struct.unpack_from("<I", data, 8)[0] and \
+                self.args.bot_break_hold is not None:
+            self.bot.breaks.append((now + self.args.bot_break_hold, client.id, refid))
+        return KEEP
+
+    def event_death(self, client, kind, data, stamp, now):
+        if len(data) < 4:
+            return RELAY
+        refid = struct.unpack_from("<I", data)[0]
+        if refid in self.world.deaths:
+            return KEEP
+        self.world.deaths[refid] = client.id
+        self.world.dirty = True
+        print(f"{stamp} client {client.id}: {refid:#010x} died", flush=True)
+        return RELAY
+
+    def event_status(self, client, kind, data, stamp, now):
+        if len(data) < STATUS.size:
+            return RELAY
+        refid, *values = STATUS.unpack_from(data)
+        self.world.statuses[refid] = tuple(values)
+        self.world.dirty = True
+        if self.detail["verbose"]:
+            print(f"{stamp} client {client.id}: {describe_status(refid, values)}", flush=True)
+        return RELAY
+
+    def event_affect(self, client, kind, data, stamp, now):
+        if len(data) <= 5:
+            return RELAY
+        refid, index = struct.unpack_from("<IB", data)
+        name = wire_text(data[5:].split(b"\0")[0])
+        if self.detail["verbose"]:
+            print(f"{stamp} client {client.id}: {refid:#010x} takes effect {index} of "
+                  f"{name}", flush=True)
+        return RELAY
+
+    def event_objects(self, client, kind, data, stamp, now):
+        if not data:
+            return RELAY
+        changed = unpack_objects(data)
+        self.world.objects.update(changed)
+        self.world.dirty = True
+        for refid, rest in changed.items():
+            if self.detail["verbose"]:
+                print(f"{stamp} client {client.id}: {describe_object(refid, *rest)}",
                       flush=True)
-        if kind == EVENT_IDENTITY:
-            try:
-                part, female, first, second = unpack_identity(data)
-            except ValueError:
-                return
-            parts = self.identities.get(client.id)
-            if part == 0:
-                parts = self.identities[client.id] = [data, None]
-            elif not parts or not parts[0] or bool(parts[0][2]) != female:
-                return
-            else:
-                parts[1] = data
-            if parts[1]:
-                name, race = unpack_identity(parts[0])[2:]
-                head, hair = unpack_identity(parts[1])[2:]
-                print(f"{stamp} client {client.id} is {name}: {race}, {head}, {hair}",
-                      flush=True)
-                if client.announce_due:
-                    self.announce_join(client, time.monotonic())
-        if kind == EVENT_ACTOR_EQUIPMENT:
-            try:
-                refid, part, count, items = unpack_actor_equipment(data)
-            except ValueError:
-                return
-            have = self.actor_equipment.get(refid)
-            if part == 0:
-                have = self.actor_equipment[refid] = [client.id, have[1] if have else [], []]
-            elif not have or have[0] != client.id or len(have[2]) != part or \
-                    have[2][0][5] != count:
-                return
-            have[2].append(data)
-            if part + 1 == count:
-                have[1], have[2] = have[2], []
-                worn = [item for body in have[1] for item in unpack_actor_equipment(body)[3]]
-                print(f"{stamp} client {client.id}: {refid:#010x} wears {len(worn)}: "
-                      f"{', '.join(worn)}", flush=True)
-        self.broadcast_event(client.id, kind, data, now)
+        return RELAY
+
+    def event_text(self, client, kind, data, stamp, now):
+        print(f"{stamp} client {client.id} says: {wire_text(data)}", flush=True)
+        return RELAY
+
+    def event_game(self, client, kind, data, stamp, now):
+        if len(data) < 5:
+            return RELAY
+        loaded, _, rest = data[4:].partition(b"\0")
+        self.on_game(client, struct.unpack_from("<I", data)[0], wire_text(loaded),
+                     rest[0] if rest else GAME_NONE, stamp, now)
+        return KEEP
+
+    def event_pick(self, client, kind, data, stamp, now):
+        if len(data) < 2:
+            return RELAY
+        self.on_pick(client, data[0], data[1], stamp, now)
+        return KEEP
+
+    def event_busy(self, client, kind, data, stamp, now):
+        if not data:
+            return RELAY
+        if data[0] and client.busy is None:
+            client.busy = now
+            print(f"{stamp} client {client.id} is saving: its cells and actors go to others",
+                  flush=True)
+        elif not data[0] and client.busy is not None:
+            print(f"{stamp} client {client.id} is back after {now - client.busy:.1f} s",
+                  flush=True)
+            client.busy = None
+        return RELAY
+
+    def event_bounty(self, client, kind, data, stamp, now):
+        if len(data) < 4:
+            return RELAY
+        bounty = struct.unpack_from("<i", data)[0]
+        self.bounties[client.id] = data[:4]
+        stream = self.player_stream(client) if client.synced else None
+        if stream and stream.bounty != bounty:
+            stream.bounty, stream.dirty = bounty, True
+        print(f"{stamp} client {client.id} bounty {bounty}",
+              flush=True)
+        return RELAY
+
+    def event_equipment(self, client, kind, data, stamp, now):
+        if len(data) < 2:
+            return RELAY
+        sets = self.equipment.setdefault(client.id, [[], []])
+        if data[0] == 0:
+            sets[1] = []
+        sets[1].append(data)
+        if data[0] + 1 == data[1]:
+            sets[0], sets[1] = sets[1], []
+            items = [i for part in sets[0] for i in unpack_equipment(part)]
+            print(f"{stamp} client {client.id} wears {len(items)}: {', '.join(items)}",
+                  flush=True)
+        return RELAY
+
+    def event_identity(self, client, kind, data, stamp, now):
+        try:
+            part, female, first, second = unpack_identity(data)
+        except ValueError:
+            return KEEP
+        parts = self.identities.get(client.id)
+        if part == 0:
+            parts = self.identities[client.id] = [data, None]
+        elif not parts or not parts[0] or bool(parts[0][2]) != female:
+            return KEEP
+        else:
+            parts[1] = data
+        if parts[1]:
+            name, race = unpack_identity(parts[0])[2:]
+            head, hair = unpack_identity(parts[1])[2:]
+            print(f"{stamp} client {client.id} is {name}: {race}, {head}, {hair}",
+                  flush=True)
+            if client.announce_due:
+                self.announce_join(client, time.monotonic())
+        return RELAY
+
+    def event_actor_equipment(self, client, kind, data, stamp, now):
+        try:
+            refid, part, count, items = unpack_actor_equipment(data)
+        except ValueError:
+            return KEEP
+        have = self.actor_equipment.get(refid)
+        if part == 0:
+            have = self.actor_equipment[refid] = [client.id, have[1] if have else [], []]
+        elif not have or have[0] != client.id or len(have[2]) != part or \
+                have[2][0][5] != count:
+            return KEEP
+        have[2].append(data)
+        if part + 1 == count:
+            have[1], have[2] = have[2], []
+            worn = [item for body in have[1] for item in unpack_actor_equipment(body)[3]]
+            print(f"{stamp} client {client.id}: {refid:#010x} wears {len(worn)}: "
+                  f"{', '.join(worn)}", flush=True)
+        return RELAY
 
     def update_authority(self, now):
         """Name each loaded cell's authority and tell every client that has the cell loaded."""
