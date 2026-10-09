@@ -5,6 +5,10 @@ checks, builds, tests and deploys. In a [portable folder](#portable-folder), dou
 `TES3X.exe`. From a checkout [installed](getting-started.md#installing-from-a-checkout) with
 `[gui]`, start it with `tes3x gui`.
 
+**Help > About TES3X** shows the full version, author and license, with links to documentation,
+the GitHub project, [release notes](../CHANGELOG.md) and issue reporting. The version text can
+be selected and copied when reporting a problem.
+
 ### Portable folder
 
 `tes3x package --zip` writes `build/package/TES3X-<version>/` and its zip: an

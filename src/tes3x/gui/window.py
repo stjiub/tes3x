@@ -1,5 +1,7 @@
 """TES3X GUI. It edits the same TOML the command-line tools read."""
 
+from html import escape
+
 from .common import (Bsa, BuildSettings, CATALOG_NAME, CHECK_MARKER, CatalogError, DEPLOYS_MARKER,
                      DEPLOY_CONFLICT, DEPLOY_NO_SPACE, IniPanel, LibraryError,
                      LocalSettingsDialog, PIPELINE_MARKER, PLUGIN_EXT, PROFILE_NAME, Path,
@@ -22,6 +24,7 @@ from .plugins import PluginsPanel
 from .files import FilesPanel
 from .mods import ModsTab
 from .play_controller import PlayController
+from tes3x.paths import docs_url
 
 
 class ProfileWindow(QMainWindow):
@@ -327,6 +330,10 @@ class ProfileWindow(QMainWindow):
                                  self.action_refresh_ftp])
         actions_menu.addSeparator()
         actions_menu.addAction(self.discard_after_deploy)
+        help_menu = self.menuBar().addMenu("&Help")
+        self.action_about = QAction("&About TES3X…", self)
+        self.action_about.triggered.connect(self.show_about)
+        help_menu.addAction(self.action_about)
         self.play_icon, self.stop_icon = play_icon(), stop_icon()
         self.action_play.setIcon(self.play_icon)
         self.run_menu = QMenu(self)
@@ -382,6 +389,29 @@ class ProfileWindow(QMainWindow):
                 QTimer.singleShot(0, self.first_run)
             QTimer.singleShot(0, self.play_controller.refresh_all_targets)
             self.ftp_timer.start()
+
+    def show_about(self):
+        project = "https://github.com/stjiub/tes3x"
+        links = (
+            ("Documentation", docs_url("index.md")),
+            ("Project on GitHub", project),
+            ("Release notes", project + "/blob/main/CHANGELOG.md"),
+            ("Report an issue", project + "/issues"),
+        )
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle("About TES3X")
+        dialog.setTextFormat(Qt.TextFormat.RichText)
+        dialog.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+        dialog.setText(
+            f"<h3>{escape(version_label())}</h3>"
+            "<p>Modding and patching toolkit for Morrowind GOTY on original Xbox.</p>"
+            "<p>Author: stjiub<br>"
+            f'<a href="{project}/blob/main/LICENSE">GPL-3.0-or-later</a></p>'
+            "<p>" + "<br>".join(f'<a href="{url}">{label}</a>' for label, url in links)
+            + "</p>"
+        )
+        dialog.setStandardButtons(QMessageBox.StandardButton.Close)
+        dialog.exec()
 
     def show_context_info(self, *_args):
         """Show details for the selected item in the current primary tab."""
