@@ -8,12 +8,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
-from tes3x_payload import find_tool
+from tes3x_payload import find_tool, source_text
 
 
 class AnimationPhaseTests(unittest.TestCase):
     def test_sparse_attack_keys_and_idle_loop(self):
-        source = (ROOT / 'hooks/tes3xmulti.c').read_text()
+        source = source_text(ROOT / 'hooks/tes3xmulti.c')
         start = source.index('static const float *anim_keys(')
         end = source.index('static void player_anim_capture(', start)
         harness = r'''

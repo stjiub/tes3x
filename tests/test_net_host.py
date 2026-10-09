@@ -12,6 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 import tes3x_net
+from tes3x_payload import source_text
 
 HOOKS = Path(__file__).resolve().parents[1] / 'hooks'
 
@@ -30,7 +31,7 @@ def build(folder, clang):
     folder = Path(folder)
     sources = {}
     for filename in ('tes3xnet.c', 'tes3xmulti.c'):
-        source = (HOOKS / filename).read_text(encoding='utf-8')
+        source = source_text(HOOKS / filename)
         source = re.sub(r'^(\s*)__asm__ volatile\(.*\);[ \t]*$', r'\1;', source, flags=re.M)
         source = re.sub(
             r'__attribute__\(\(naked\)\) void tes3x_net_death_gate\(void\)\s*\{.*?^\}',

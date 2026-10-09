@@ -19,6 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 import tes3x_net
 import tes3x_netbuild
+from tes3x_payload import source_text
 
 NET = Path(__file__).resolve().parents[1] / 'tools' / 'tes3x_net.py'
 
@@ -1117,7 +1118,7 @@ class ServerTests(unittest.TestCase):
         self.assertIs(signal.getsignal(signal.SIGINT), caller)
 
     def test_consoles_ignore_server_events_another_console_sent(self):
-        source = (NET.parents[1] / 'hooks' / 'tes3xmulti.c').read_text(encoding='utf-8')
+        source = source_text(NET.parents[1] / 'hooks' / 'tes3xmulti.c')
         handler = source[source.index('static void event_handle('):]
         guard = handler[:handler.index('net.event_forged')]
         names = set(re.findall(r'\bEVENT_[A-Z_]+', guard)) - {'EVENT_DATA'}

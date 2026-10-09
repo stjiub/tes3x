@@ -7,6 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 import tes3x_net
+from tes3x_payload import source_text
 from tes3x_records import records, subrecords
 
 
@@ -23,7 +24,7 @@ class ProtocolVersionTests(unittest.TestCase):
         for name, expected in (('hooks/tes3xmulti.c', tes3x_net.T3MP_VERSION),
                                ('manager/servers.c', tes3x_net.MANAGER_VERSION)):
             with self.subTest(source=name):
-                source = (root / name).read_text(encoding='utf-8')
+                source = source_text(root / name)
                 version = re.search(r'^#define T3MP_VERSION (\d+)', source, re.MULTILINE)
                 self.assertIsNotNone(version)
                 self.assertEqual(int(version.group(1)), expected)

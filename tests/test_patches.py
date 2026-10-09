@@ -25,7 +25,7 @@ class RegistryTests(unittest.TestCase):
     def test_every_ini_key_is_documented(self):
         read = re.compile(r'(?:ini_uint|prof_uint|ini_text|tes3x_ini_xbox)\("(\w+)"')
         keys = set()
-        for source in (registry.ROOT / 'hooks').glob('*.c'):
+        for source in (registry.ROOT / 'hooks').rglob('*.c'):
             for match in read.finditer(source.read_text(encoding='utf-8')):
                 keys.add(match.group(1))
         page = (registry.ROOT / 'docs' / 'ini-keys.md').read_text(encoding='utf-8')

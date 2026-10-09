@@ -1,9 +1,11 @@
+import shutil
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-from tes3x_payload import PayloadError, find_tool, link_symbol
+from tes3x_payload import PayloadError, build_id, find_tool, link_symbol, source_text
 
 LINK_MAP = [
     ' Address         Publics by Value              Rva+Base               Lib:Object',
@@ -25,6 +27,18 @@ class PayloadTests(unittest.TestCase):
     def test_an_explicit_llvm_folder_must_hold_the_tool(self):
         with self.assertRaises(PayloadError):
             find_tool('clang', Path(__file__).parent)
+
+    def test_section_files_are_part_of_their_source(self):
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder)
+        (folder / 'multi').mkdir()
+        main, section = folder / 'main.c', folder / 'multi' / 'part.c'
+        main.write_text('int a;\n#include "multi/part.c"\nint c;\n', encoding='utf-8')
+        section.write_text('int b;\n', encoding='utf-8')
+        self.assertEqual(source_text(main).split(), ['int', 'a;', 'int', 'b;', 'int', 'c;'])
+        before = build_id([str(main)], '')
+        section.write_text('int b2;\n', encoding='utf-8')
+        self.assertNotEqual(build_id([str(main)], ''), before)
 
 
 if __name__ == '__main__':

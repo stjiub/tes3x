@@ -25,6 +25,7 @@ HOOKS = ROOT / "hooks"
 HEADERS = ("tes3xdiag.h", "tes3xheap.h", "tes3xlog.h", "tes3xmem.h", "tes3xnt.h",
            "tes3xpager.h", "tes3xprof.h", "tes3xregion.h", "tes3x_thunks.h", "monocypher.h",
            "tes3xnoise.h", "tes3xlaunch.h")
+SECTION = re.compile(r'^#include "(multi/\w+\.c)"$', re.M)
 DEFAULT_SOURCES = ("tes3xhook.c", "tes3xlog.c", "tes3xini.c", "tes3xdiag.c")
 BUNDLED_LLVM = ROOT / "externals" / "llvm" / "bin"
 LLVM_DIRS = (Path("C:/Program Files/LLVM/bin"), Path("C:/msys64/clang64/bin"),
@@ -196,6 +197,18 @@ def source_path(name):
     return path if path.is_absolute() or path.parent != Path(".") else HOOKS / name
 
 
+def section_names(path):
+    """The section files a source includes from multi/, as relative names."""
+    return SECTION.findall(path.read_text(encoding="utf-8")) if path.exists() else []
+
+
+def source_text(name):
+    """A source's text with each section file it includes in place of its #include."""
+    path = source_path(name)
+    return SECTION.sub(lambda m: (path.parent / m.group(1)).read_text(encoding="utf-8"),
+                       path.read_text(encoding="utf-8"))
+
+
 def define_value(source, name):
     match = re.search(r"^#define %s +(.*)$" % name, source_path(source).read_text(), re.M)
     if not match:
@@ -207,6 +220,8 @@ def build_id(sources, user_flags):
     digest = hashlib.sha256()
     digest.update(b"flags\0" + user_flags.encode("utf-8") + b"\0")
     files = {Path(s).name: source_path(s) for s in sources}
+    for source in list(files.values()):
+        files.update({name: source.parent / name for name in section_names(source)})
     files.update({name: HOOKS / name for name in HEADERS})
     files[Path(__file__).name] = Path(__file__)
     for name in sorted(files):
