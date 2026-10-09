@@ -26,7 +26,7 @@ import tes3x_agent
 import tes3x_nxdk
 import tes3x_release
 import tes3x_targets
-from tes3x_paths import checkout, resource, xbox_root
+from tes3x_paths import checkout, local_config, resource, xbox_root
 from tes3x_pipeline import PipelineError, agent_setting, dashboard_xml
 from tes3x_xbe import Xbe
 
@@ -161,7 +161,7 @@ def send_update(args):
         tes3x_ftp.local_settings(args.config), args.target, "xbox", required=True), args.folder)
     if args.agent:
         args.agent_key = args.agent_key or str(
-            Path(args.config or Path.cwd() / "tes3x.local.toml").with_name("tes3x.agent.key"))
+            local_config(args.config).with_name("tes3x.agent.key"))
         print(f"waiting for the manager at {args.host} to pair", flush=True)
     try:
         target = tes3x_deploy.AgentTarget(args) if args.agent else tes3x_deploy.FtpTarget(args)
@@ -203,7 +203,7 @@ def main():
         p.add_argument("--xbe", help="the manager XBE (default: packaged, else built)")
         p.add_argument("--launcher", help="the launcher XBE (default: packaged, else built)")
         p.add_argument("--folder", default=FOLDER, help=f"folder under games_root ({FOLDER})")
-        p.add_argument("--config", help="local config (default: ./tes3x.local.toml)")
+        p.add_argument("--config", help="local config (default: see docs/configuration.md)")
         p.add_argument("--target", help="Xbox target (default: default_target)")
         p.add_argument("--no-agent", action="store_true",
                        help="leave the console's NetAgent alone instead of naming this PC")
@@ -211,7 +211,7 @@ def main():
                                     "is seeded with")
     p.add_argument("out", help="folder for disc/ and seed/")
     p.add_argument("--xbe", help="the manager XBE (default: packaged, else built)")
-    p.add_argument("--config", help="local config (default: ./tes3x.local.toml)")
+    p.add_argument("--config", help="local config (default: see docs/configuration.md)")
     p = sub.add_parser("update")
     p.add_argument("release", help="a signed release folder (tes3x_release.py manager)")
     p.add_argument("--agent", action="store_true",

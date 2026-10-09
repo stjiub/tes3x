@@ -18,7 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tes3x_inject  # noqa: E402
-from tes3x_paths import resource, writable  # noqa: E402
+from tes3x_paths import local_config, resource  # noqa: E402
 
 DB_PATH = Path.cwd() / 'build' / 'symbols.db'
 CURATED = resource('symbols', 'curated.json')
@@ -44,9 +44,7 @@ REASONS = {1: 'console', 2: 'first frame'}
 
 
 def default_xbe():
-    local = Path.cwd() / 'tes3x.local.toml'
-    if not local.exists():
-        local = writable('tes3x.local.toml')
+    local = local_config()
     if local.exists():
         root = tomllib.loads(local.read_text()).get('paths', {}).get('vanilla_root')
         if root:

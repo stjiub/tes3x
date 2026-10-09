@@ -40,6 +40,7 @@ from tes3x_put import make_dirs, put_file  # noqa: E402
 from tes3x_qcow2 import CowView, create_overlay, open_image  # noqa: E402
 import tes3x_ftp  # noqa: E402
 import tes3x_savepool  # noqa: E402
+from tes3x_paths import local_config  # noqa: E402
 
 META = "SaveMeta.xbx"
 DELETED = 0xE5
@@ -543,7 +544,7 @@ def remember_pool(library, value, name):
 
 def retail_launcher(config=None):
     """The retail Default.xbe, whose title image a new pool folder gets."""
-    config = Path(config or os.environ.get("TES3X_CONFIG") or Path.cwd() / "tes3x.local.toml")
+    config = local_config(config)
     with open(config, "rb") as f:
         root = tomllib.load(f).get("paths", {}).get("vanilla_root")
     if not root:

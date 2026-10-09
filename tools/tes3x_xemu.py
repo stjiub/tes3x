@@ -46,6 +46,7 @@ from tes3x_xemu_setup import resolve  # noqa: E402
 from tes3x_readlog import read_file, read_log  # noqa: E402
 from tes3x_pipeline import CONSOLE_INI, set_ini_key, stage_retail_base  # noqa: E402
 from tes3x_deploy import ini_pairs  # noqa: E402
+from tes3x_paths import local_config  # noqa: E402
 
 TEST_INI = ["Xbox:Diagnostics=1", "Xbox:HangWatchdog=1", "Xbox:HangTimeoutSeconds=30",
             "General:Show FPS=1"]
@@ -109,7 +110,7 @@ $bmp.Save($Out, [System.Drawing.Imaging.ImageFormat]::Png)
 
 def load_config(path=None, target_name=None):
     """The selected xemu target, with legacy [xemu] defaults and paths resolved locally."""
-    path = Path(path or Path.cwd() / "tes3x.local.toml").resolve()
+    path = local_config(path).resolve()
     try:
         with open(path, "rb") as stream:
             local = tomllib.load(stream)
@@ -126,7 +127,7 @@ def load_config(path=None, target_name=None):
     return resolve(values, path.parent)
 
 
-CONFIG_PATH = Path(os.environ.get("TES3X_CONFIG") or Path.cwd() / "tes3x.local.toml").resolve()
+CONFIG_PATH = local_config().resolve()
 CONFIG = load_config(CONFIG_PATH)
 GDB = Path(CONFIG.get("gdb") or shutil.which("gdb") or "gdb")
 
@@ -481,7 +482,7 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("name", help="run folder under build/xemu/")
     ap.add_argument("profile", nargs="?", help="profile to build with tes3x_pipeline.py")
-    ap.add_argument("--config", help="local config (default: ./tes3x.local.toml)")
+    ap.add_argument("--config", help="local config (default: see docs/configuration.md)")
     ap.add_argument("--target", help="xemu target (default: the first configured xemu target)")
     ap.add_argument("--deploy", help="use an existing deploy tree instead of building")
     ap.add_argument("--iso", help="reuse an existing ISO")
@@ -551,7 +552,7 @@ def main():
                     help="dashboard HDTV setting to boot with, on an HDTV AV pack "
                          "(default: the configured EEPROM and xemu's AV pack)")
     a = ap.parse_args(argv)
-    config_path = Path(a.config or Path.cwd() / "tes3x.local.toml").resolve()
+    config_path = local_config(a.config).resolve()
     CONFIG_PATH = config_path
     try:
         with open(config_path, "rb") as stream:

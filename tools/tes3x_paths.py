@@ -71,8 +71,8 @@ def data_dir():
     return Path(os.environ.get('XDG_DATA_HOME') or Path.home() / '.local' / 'share') / 'tes3x'
 
 
-# Where TES3X's own files come from, by kind. All three are the checkout today; installed as a
-# package, resources come from the package and writable files from data_dir().
+# Where TES3X's own files come from, by kind. Both are the checkout today; installed as a
+# package, resources come from the package. What TES3X writes goes to data_dir() or where asked.
 CHECKOUT = Path(__file__).resolve().parents[1]
 
 
@@ -89,7 +89,17 @@ def checkout(*parts):
     return CHECKOUT.joinpath(*parts)
 
 
-def writable(*parts):
-    """What TES3X writes beside the checkout (build output, downloads, the local config), bound
-    for data_dir()."""
-    return CHECKOUT.joinpath(*parts)
+CONFIG_NAME = 'tes3x.local.toml'
+
+
+def local_config(given=None):
+    """The local config: given, else TES3X_CONFIG, else tes3x.local.toml in the working
+    directory, else a checkout's, else the per-user one in data_dir(), which may not exist yet."""
+    if given:
+        return Path(given)
+    if os.environ.get('TES3X_CONFIG'):
+        return Path(os.environ['TES3X_CONFIG'])
+    for path in (Path.cwd() / CONFIG_NAME, CHECKOUT / CONFIG_NAME):
+        if path.is_file():
+            return path
+    return data_dir() / CONFIG_NAME

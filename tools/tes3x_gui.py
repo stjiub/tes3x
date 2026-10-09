@@ -68,7 +68,7 @@ import tes3x_nexus as nexus
 import tes3x_saves as saves_tool
 import tes3x_savepool
 import tes3x_targets
-from tes3x_paths import checkout, resource, writable
+from tes3x_paths import checkout, local_config, resource
 from tes3x_xemu_setup import resolve as resolve_xemu
 
 
@@ -446,8 +446,7 @@ def drop_empty(document, section):
 
 
 def default_config_path():
-    local = Path.cwd() / "tes3x.local.toml"
-    return (local if local.is_file() else writable("tes3x.local.toml")).resolve()
+    return local_config().resolve()
 
 
 class LocalSettingsDialog(QDialog):

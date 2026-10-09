@@ -9,9 +9,9 @@ variable, which beats the config file, or be typed at a prompt with --ask-passwo
 import ftplib
 import getpass
 import os
-from pathlib import Path
 import tomllib
 
+from tes3x_paths import local_config
 import tes3x_targets
 
 DEFAULT_PORT = 21
@@ -28,11 +28,11 @@ def add_arguments(parser):
     parser.add_argument("--password", help=f"(default: {PASSWORD_ENV}, target password, "
                                            f"then {DEFAULT_PASSWORD})")
     parser.add_argument("--ask-password", action="store_true", help="type the password at a prompt")
-    parser.add_argument("--config", help="local config (default: ./tes3x.local.toml)")
+    parser.add_argument("--config", help="local config (default: see docs/configuration.md)")
 
 
 def local_settings(config=None):
-    path = Path(config) if config else Path.cwd() / "tes3x.local.toml"
+    path = local_config(config)
     if not path.is_file():
         if config:
             raise SystemExit(f"config not found: {path}")

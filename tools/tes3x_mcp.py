@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 import tomllib
 
-from tes3x_paths import writable
+from tes3x_paths import local_config
 
 STEAM_DEFAULT = (r"C:\Program Files (x86)\Steam\steamapps\common\Morrowind" if os.name == "nt"
                  else os.path.expanduser("~/.steam/steam/steamapps/common/Morrowind"))
@@ -20,13 +20,12 @@ def pc_morrowind():
     """TES3X_PC_MORROWIND, else [paths] pc_morrowind in tes3x.local.toml, else Steam's default."""
     if os.environ.get("TES3X_PC_MORROWIND"):
         return os.environ["TES3X_PC_MORROWIND"]
-    for config in (os.path.join(os.getcwd(), "tes3x.local.toml"),
-                   writable("tes3x.local.toml")):
-        if os.path.isfile(config):
-            with open(config, "rb") as f:
-                path = tomllib.load(f).get("paths", {}).get("pc_morrowind")
-            if path:
-                return os.path.join(os.path.dirname(os.path.abspath(config)), path)
+    config = local_config()
+    if config.is_file():
+        with open(config, "rb") as f:
+            path = tomllib.load(f).get("paths", {}).get("pc_morrowind")
+        if path:
+            return os.path.join(os.path.dirname(os.path.abspath(config)), path)
     return STEAM_DEFAULT
 
 

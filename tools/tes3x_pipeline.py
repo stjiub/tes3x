@@ -23,7 +23,7 @@ import tes3x_patches as registry
 from tes3x_payload import PayloadError, build_payload, find_tool
 from tes3x_net import write_ghost_plugin
 from tes3x_agent import key_fingerprint, load_or_create_key
-from tes3x_paths import DEFAULT_REMOTE_ROOT, checkout, require_paths, resource
+from tes3x_paths import DEFAULT_REMOTE_ROOT, checkout, local_config, require_paths, resource
 from tes3x_plugins import rules_file
 import tes3x_manifest
 import tes3x_savepool
@@ -761,7 +761,8 @@ def main(argv=None):
     invocation = list(argv) if argv is not None else sys.argv[1:]
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("profile")
-    ap.add_argument("--config", help="local paths and Xbox settings (default: ./tes3x.local.toml if present)")
+    ap.add_argument("--config", help="local paths and Xbox settings "
+                                      "(default: see docs/configuration.md)")
     ap.add_argument("--target", help="machine target (default: default_target)")
     ap.add_argument("--vanilla", help="clean retail game root containing Data Files and both XBEs")
     ap.add_argument("--llvm", help="folder holding clang and lld-link, for engine fixes "
@@ -847,8 +848,8 @@ def main(argv=None):
     if args.config:
         local_path = Path(args.config).resolve()
     else:
-        candidate = Path.cwd() / "tes3x.local.toml"
-        local_path = candidate if candidate.is_file() else None
+        candidate = local_config()
+        local_path = candidate.resolve() if candidate.is_file() else None
     local = read_toml(local_path) if local_path else {}
     validate_local_config(local)
     base = local_path.parent if local_path else Path.cwd()

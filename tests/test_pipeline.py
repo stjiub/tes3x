@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import shutil
 import struct
 import sys
 import tempfile
@@ -9,7 +10,8 @@ from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-from tes3x_paths import check_paths, require_paths, resource
+import tes3x_paths
+from tes3x_paths import check_paths, local_config, require_paths, resource
 from tes3x_pack import write_invalidation
 from tes3x_build import materialize, plugin_masters
 from tes3x_pipeline import (PipelineError, agent_ini, agent_setting, console_ini_text,
@@ -62,6 +64,26 @@ class PathTests(unittest.TestCase):
                  for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1)
                  if up.search(line)]
         self.assertEqual(found, [])
+
+    def test_local_config_order(self):
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder)
+        here, checkout, data = folder / 'here', folder / 'checkout', folder / 'data'
+        here.mkdir()
+        checkout.mkdir()
+        name = 'tes3x.local.toml'
+        with mock.patch.dict(os.environ, {'TES3X_DATA': str(data)}), \
+                mock.patch.object(Path, 'cwd', return_value=here), \
+                mock.patch.object(tes3x_paths, 'CHECKOUT', checkout):
+            os.environ.pop('TES3X_CONFIG', None)
+            self.assertEqual(local_config(), data / name)
+            (checkout / name).write_text('', encoding='utf-8')
+            self.assertEqual(local_config(), checkout / name)
+            (here / name).write_text('', encoding='utf-8')
+            self.assertEqual(local_config(), here / name)
+            os.environ['TES3X_CONFIG'] = str(folder / 'chosen.toml')
+            self.assertEqual(local_config(), folder / 'chosen.toml')
+            self.assertEqual(local_config(folder / 'given.toml'), folder / 'given.toml')
 
     def test_named_resources_exist(self):
         # VERSION and the manager's XBEs exist only in a packaged folder.
@@ -756,10 +778,14 @@ class PipelinePlanTests(unittest.TestCase):
             profile = Path(tmp) / 'p.toml'
             profile.write_text('[profile]\nname = "p"\n[patches]\npreset = "minimal"\n',
                                encoding='utf-8')
+            config = Path(tmp) / 'tes3x.local.toml'  # none of this computer's settings
+            config.write_text('', encoding='utf-8')
             with self.assertRaisesRegex(PipelineError, 'needs the console patch'):
-                pipeline_main([str(profile), '--test-probe', 'mcp-3', '--check'])
+                pipeline_main([str(profile), '--test-probe', 'mcp-3', '--check',
+                               '--config', str(config)])
             self.assertEqual(pipeline_main([
-                str(profile), '--test-probe', 'mcp-3', '--enable', 'console', '--check'
+                str(profile), '--test-probe', 'mcp-3', '--enable', 'console', '--check',
+                '--config', str(config)
             ]), 0)
 
     def test_mcp_97_patches_both_cursor_advances(self):

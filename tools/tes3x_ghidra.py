@@ -13,6 +13,8 @@ import time
 import tomllib
 from pathlib import Path
 
+from tes3x_paths import local_config
+
 HERE = Path(__file__).resolve().parent
 PROJECT_DIR = Path.cwd() / 'build' / 'ghidra'
 PROJECT = 'tes3x'
@@ -24,7 +26,7 @@ START_TIMEOUT = 300
 
 def ghidra_home():
     home = os.environ.get('GHIDRA_INSTALL_DIR')
-    local = Path.cwd() / 'tes3x.local.toml'
+    local = local_config()
     if not home and local.exists():
         home = tomllib.loads(local.read_text(encoding='utf-8')).get('paths', {}).get('ghidra')
     if not home:

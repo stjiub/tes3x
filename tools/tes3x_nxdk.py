@@ -20,7 +20,7 @@ import tarfile
 import tomllib
 import urllib.request
 
-from tes3x_paths import data_dir
+from tes3x_paths import data_dir, local_config
 
 MSYS2_DIRS = (Path("C:/msys64"),)
 # name: (url, SHA-256 of the archive, its top folder)
@@ -37,7 +37,7 @@ class NxdkError(Exception):
 
 
 def local_paths(config=None):
-    path = Path(config) if config else Path.cwd() / "tes3x.local.toml"
+    path = local_config(config)
     try:
         with open(path, "rb") as stream:
             return tomllib.load(stream).get("paths", {})
@@ -143,7 +143,7 @@ def main():
     ap.add_argument("out", help="build folder; bin/default.xbe is the result")
     ap.add_argument("-D", dest="defines", action="append", default=[], metavar="NAME=VALUE",
                     help="a C define (repeatable)")
-    ap.add_argument("--config", help="local config (default: ./tes3x.local.toml)")
+    ap.add_argument("--config", help="local config (default: see docs/configuration.md)")
     a = ap.parse_args()
     try:
         print(build(a.source, a.out, a.defines, a.config))

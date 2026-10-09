@@ -18,7 +18,7 @@ import tes3x_agent
 import tes3x_ftp
 import tes3x_manifest
 from tes3x_pack import set_ini_key
-from tes3x_paths import require_paths
+from tes3x_paths import local_config, require_paths
 import tes3x_savepool
 
 PLUGIN_EXT = (".esm", ".esp")
@@ -694,7 +694,7 @@ def main():
     tes3x_ftp.resolve(args)
     if args.agent:
         args.agent_key = args.agent_key or str(
-            Path(args.config or Path.cwd() / "tes3x.local.toml").with_name("tes3x.agent.key"))
+            local_config(args.config).with_name("tes3x.agent.key"))
         secret = tes3x_agent.load_or_create_key(args.agent_key)
         print(f"waiting for the manager at {args.host} to pair "
               f"(agent key {tes3x_agent.key_fingerprint(secret)})", flush=True)

@@ -17,6 +17,8 @@ import subprocess
 import tomllib
 from pathlib import Path
 
+from tes3x_paths import local_config
+
 try:
     import clang.cindex as ci
 except ImportError:
@@ -76,7 +78,7 @@ KEYWORDS = re.compile(r'\b(const|volatile|struct|class|union|enum)\s+')
 
 
 def local_paths():
-    f = Path.cwd() / 'tes3x.local.toml'
+    f = local_config()
     return tomllib.loads(f.read_text(encoding='utf-8')).get('paths', {}) if f.exists() else {}
 
 

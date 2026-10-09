@@ -8,8 +8,11 @@ what would be built.
 
 ## Local config
 
-The default is `tes3x.local.toml` in the current directory; the GUI falls back to the
-one in the TES3X folder. `--config PATH` picks another. Relative paths are relative to the file.
+`--config PATH` picks the file, and so does the `TES3X_CONFIG` environment variable. Otherwise
+it is `tes3x.local.toml` in the current directory, then the one in a TES3X checkout, then the
+per-user one in TES3X's data folder (`%LOCALAPPDATA%\TES3X` on Windows,
+`~/.local/share/tes3x` elsewhere, or `TES3X_DATA` when set), where the GUI creates it when there
+is none yet. Relative paths are relative to the file.
 
 ### `[paths]`
 
