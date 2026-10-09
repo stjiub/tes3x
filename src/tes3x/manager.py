@@ -26,13 +26,13 @@ import tes3x.agent as tes3x_agent
 import tes3x.nxdk as tes3x_nxdk
 import tes3x.release as tes3x_release
 import tes3x.targets as tes3x_targets
-from tes3x.paths import checkout, local_config, resource, xbox_root
+from tes3x.paths import bundled, checkout, local_config, resource, xbox_root
 from tes3x.pipeline import PipelineError, agent_setting, dashboard_xml
 from tes3x.xbe import Xbe
 
 SOURCE = checkout("manager")
-PACKAGED = resource("manager", "default.xbe")
-PACKAGED_LAUNCHER = resource("manager", "launcher.xbe")
+PACKAGED = bundled("manager", "default.xbe")
+PACKAGED_LAUNCHER = bundled("manager", "launcher.xbe")
 INBOX = "E:/TES3X/update"
 FOLDER = "TES3XManager"
 TITLE = "TES3X Manager"

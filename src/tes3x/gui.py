@@ -68,7 +68,7 @@ import tes3x.nexus as nexus
 import tes3x.saves as saves_tool
 import tes3x.savepool as tes3x_savepool
 import tes3x.targets as tes3x_targets
-from tes3x.paths import checkout, local_config, resource
+from tes3x.paths import bundled, checkout, local_config, resource
 from tes3x.xemu_setup import resolve as resolve_xemu
 import tes3x
 
@@ -190,7 +190,7 @@ def dashboard_agent_state(output, code, expected):
 
 def version_label():
     """The packaged version, or the base version with the commit when run from a checkout."""
-    packaged = resource("VERSION")
+    packaged = bundled("VERSION")
     if packaged.is_file():
         return "TES3X " + packaged.read_text(encoding="utf-8").strip()
     try:

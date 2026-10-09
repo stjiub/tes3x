@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a portable TES3X folder: TES3X.exe, the tools, an embedded Python, 7-Zip and LLVM."""
+"""Build a portable TES3X folder: TES3X.exe, an embedded Python holding TES3X, 7-Zip and LLVM."""
 
 import argparse
 import hashlib
@@ -18,7 +18,6 @@ from tes3x.paths import checkout, data_dir
 ROOT = checkout()
 PYTHON = "3.12.9"
 EMBED_URL = "https://www.python.org/ftp/python/{0}/python-{0}-embed-amd64.zip"
-SKIP = ("tests/", "launcher/", ".gitea/", ".github/")
 SEVEN_ZIP = "26.03"
 SEVEN_ZIP_URL = "https://github.com/ip7z/7zip/releases/download/26.03/"
 LLVM = "22.1.8"
@@ -55,14 +54,14 @@ This folder holds programs TES3X runs, unmodified, each with its license.
 
 Also included, outside this folder:
 
-- `python/`: Python {PYTHON}, PSF License (`python/LICENSE.txt`), and the GUI's packages in
-  `python/Lib/site-packages`, each with its license in its `.dist-info` folder: PySide6 and Qt
-  (GNU LGPL 3), tomlkit (MIT), cryptography (Apache 2.0 or BSD), Pillow (MIT-CMU),
-  zstandard (BSD).
-- `src/tes3x/_vendor/mlox/`: mlox 1.0.3, MIT.
+- `python/`: Python {PYTHON}, PSF License (`python/LICENSE.txt`), and in
+  `python/Lib/site-packages` TES3X itself (GPL 3.0 or later, `LICENSE.txt`) and its packages,
+  each with its license in its `.dist-info` folder: PySide6 and Qt (GNU LGPL 3), tomlkit (MIT),
+  cryptography (Apache 2.0 or BSD), Pillow (MIT-CMU), zstandard (BSD).
+- `python/Lib/site-packages/tes3x/_vendor/mlox/`: mlox 1.0.3, MIT.
 - `manager/default.xbe`: the console manager, built with nxdk (MIT) and lwIP (BSD), includes
-  Monocypher 4.0.2 (CC0 or BSD 2-clause), the zstd 1.5.7 decoder (BSD, `manager/zstd/LICENSE`)
-  and Mbed TLS 3.6.7 (Apache 2.0, `manager/LICENSE-mbedtls.txt`).
+  Monocypher 4.0.2 (CC0 or BSD 2-clause), the zstd 1.5.7 decoder (BSD,
+  `manager/LICENSE-zstd.txt`) and Mbed TLS 3.6.7 (Apache 2.0, `manager/LICENSE-mbedtls.txt`).
 """
 CC_DIRS = (Path("C:/msys64/mingw64/bin"), Path("C:/msys64/clang64/bin"))
 
@@ -98,9 +97,13 @@ def version():
     return f"{base}-dev.{count}+g{sha}" + (".dirty" if dirty else "")
 
 
-def tracked_files():
-    names = git("ls-files", "--cached", "--others", "--exclude-standard", "-z").split("\0")
-    return sorted(n for n in names if n and not n.startswith(SKIP) and (ROOT / n).is_file())
+def wheel(out):
+    """A wheel of this checkout, built afresh: the package and the data it reads (setup.py)."""
+    folder = Path(out) / "wheel"
+    shutil.rmtree(folder, ignore_errors=True)
+    subprocess.run([sys.executable, "-m", "pip", "wheel", "--quiet", "--no-deps",
+                    "--disable-pip-version-check", "-w", str(folder), str(ROOT)], check=True)
+    return next(folder.glob("tes3x-*.whl"))
 
 
 def cache_dir():
@@ -180,7 +183,7 @@ def externals(target):
     (target / "README.md").write_text(NOTICES, encoding="utf-8")
 
 
-def embedded_python(target):
+def embedded_python(target, package):
     cache = cache_dir() / f"python-{PYTHON}-embed-amd64.zip"
     if not cache.is_file():
         cache.parent.mkdir(parents=True, exist_ok=True)
@@ -191,19 +194,18 @@ def embedded_python(target):
         os.replace(cache.with_suffix(".part"), cache)
     with zipfile.ZipFile(cache) as archive:
         archive.extractall(target)
-    # The embedded build takes sys.path only from this file: it ignores site-packages and does not
-    # add a script's own folder. ..\src holds the package (`python -m tes3x`), ..\tools its shims.
+    # The embedded build takes sys.path only from this file, which leaves out site-packages.
     pth = next(target.glob("python3*._pth"))
     lines = pth.read_text(encoding="utf-8").splitlines()
-    paths = ["Lib\\site-packages", "..\\src", "..\\tools"]
-    pth.write_text("\n".join(lines[:2] + paths + lines[2:]) + "\n", encoding="utf-8")
+    pth.write_text("\n".join(lines[:2] + ["Lib\\site-packages"] + lines[2:]) + "\n",
+                   encoding="utf-8")
     short = "".join(PYTHON.split(".")[:2])
-    print("installing the GUI's packages")
+    print(f"installing {package.name} and its packages")
     subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "--disable-pip-version-check",
                     "--no-warn-conflicts",
                     "--target", str(target / "Lib" / "site-packages"), "--platform", "win_amd64",
                     "--python-version", short, "--implementation", "cp", "--only-binary=:all:",
-                    "-r", str(ROOT / "requirements-gui.txt")], check=True)
+                    f"{package}[gui]"], check=True)
 
 
 def find_cc(cc):
@@ -246,18 +248,17 @@ def package(out, cc=None, make_zip=False, manager=None, launcher=None):
     if stage.exists():
         shutil.rmtree(stage)
     stage.mkdir(parents=True)
-    files = tracked_files()
-    for name in files:
-        (stage / name).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(ROOT / name, stage / name)
     (stage / "VERSION").write_text(label + "\n", encoding="utf-8")
+    shutil.copyfile(ROOT / "LICENSE", stage / "LICENSE.txt")
+    (stage / "manager").mkdir()
     shutil.copyfile(manager_xbe(manager, out), stage / "manager" / "default.xbe")
     shutil.copyfile(manager_xbe(launcher, out, True), stage / "manager" / "launcher.xbe")
     import tes3x.nxdk as tes3x_nxdk
     shutil.copyfile(tes3x_nxdk.vendor("mbedtls") / "LICENSE",
                     stage / "manager" / "LICENSE-mbedtls.txt")
-    print(f"TES3X {label}: {len(files)} files")
-    embedded_python(stage / "python")
+    shutil.copyfile(ROOT / "manager" / "zstd" / "LICENSE", stage / "manager" / "LICENSE-zstd.txt")
+    print(f"TES3X {label}")
+    embedded_python(stage / "python", wheel(out))
     externals(stage / "externals")
     build_launcher(find_cc(cc), stage / "TES3X.exe")
     if make_zip:

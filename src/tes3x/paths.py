@@ -2,6 +2,7 @@
 data."""
 import os
 import re
+import sys
 from pathlib import Path
 
 DEFAULT_REMOTE_ROOT = 'F:/Games/Morrowind'
@@ -78,11 +79,26 @@ CHECKOUT = Path(__file__).resolve().parents[2]
 PACKAGED = Path(__file__).resolve().parent / '_data'
 
 
+def portable_folder(prefix=sys.prefix):
+    """The portable folder whose python/ is running this, with TES3X.exe beside it; or None."""
+    folder = Path(prefix).resolve().parent
+    return folder if (folder / 'TES3X.exe').is_file() else None
+
+
+PORTABLE = portable_folder()
+
+
 def resource(*parts):
     """Read-only data a command needs wherever TES3X is installed: the registries, hooks,
-    symbols, examples, assets, add-ons, game tests, the manager's XBEs and the release key; and
-    what the portable folder bundles (externals/: 7-Zip and LLVM), absent elsewhere."""
+    symbols, examples, assets, add-ons, game tests, the manager's header and the release key."""
     return (PACKAGED if PACKAGED.is_dir() else CHECKOUT).joinpath(*parts)
+
+
+def bundled(*parts):
+    """What a portable folder carries beside the package: externals/ (7-Zip and LLVM), the
+    manager's XBEs and VERSION. Elsewhere the checkout's, which has them only once built there;
+    otherwise the tools fall back to PATH or a build."""
+    return (PORTABLE or CHECKOUT).joinpath(*parts)
 
 
 def checkout(*parts):

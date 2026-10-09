@@ -16,7 +16,7 @@ import struct
 import subprocess
 
 import tes3x.inject as tes3x_inject
-from tes3x.paths import checkout, resource
+from tes3x.paths import bundled, checkout, resource
 from tes3x.patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, find_call_sites, find_mcp37_context,
                          find_mcp125_context, find_save_allowed_context,
                          find_script_ip_restore_call, find_transition_calls)
@@ -27,7 +27,7 @@ HEADERS = ("tes3xdiag.h", "tes3xheap.h", "tes3xlog.h", "tes3xmem.h", "tes3xnt.h"
            "tes3xlaunch.h")
 SECTION = re.compile(r'^#include "(multi/\w+\.c)"$', re.M)
 DEFAULT_SOURCES = ("tes3xhook.c", "tes3xlog.c", "tes3xini.c", "tes3xdiag.c")
-BUNDLED_LLVM = resource("externals", "llvm", "bin")
+BUNDLED_LLVM = bundled("externals", "llvm", "bin")
 LLVM_DIRS = (Path("C:/Program Files/LLVM/bin"), Path("C:/msys64/clang64/bin"),
              Path("C:/msys64/mingw64/bin"))
 CFLAGS = ("-target", "i386-pc-win32", "-march=pentium3", "-Os", "-ffreestanding", "-nostdlib",

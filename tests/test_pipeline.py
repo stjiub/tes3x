@@ -101,16 +101,23 @@ class PathTests(unittest.TestCase):
         setup = ast.parse((root / 'setup.py').read_text(encoding='utf-8'))
         data = next(ast.literal_eval(node.value) for node in setup.body
                     if isinstance(node, ast.Assign) and node.targets[0].id == 'DATA')
-        portable = ('VERSION', 'externals/', 'manager/default.xbe', 'manager/launcher.xbe')
         named = {'/'.join(ast.literal_eval(arg) for arg in node.args)
                  for path in (root / 'src' / 'tes3x').glob('*.py')
                  for node in ast.walk(ast.parse(path.read_text(encoding='utf-8')))
                  if isinstance(node, ast.Call) and getattr(node.func, 'id', '') == 'resource'
                  and node.args and all(isinstance(a, ast.Constant) for a in node.args)}
-        missing = sorted(name for name in named if not name.startswith(portable)
-                         and not any(name == d or name.startswith(d + '/') for d in data))
+        missing = sorted(name for name in named
+                         if not any(name == d or name.startswith(d + '/') for d in data))
         self.assertTrue(named)
         self.assertEqual(missing, [])
+
+    def test_a_portable_folder_is_found_by_its_launcher(self):
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder)
+        (folder / 'python').mkdir()
+        self.assertIsNone(tes3x_paths.portable_folder(folder / 'python'))
+        (folder / 'TES3X.exe').write_bytes(b'')
+        self.assertEqual(tes3x_paths.portable_folder(folder / 'python'), folder.resolve())
 
     def test_named_resources_exist(self):
         # VERSION and the manager's XBEs exist only in a packaged folder.
