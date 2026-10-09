@@ -3157,56 +3157,8 @@ class Server:
         if kind in SERVER_EVENTS:
             print(f"{stamp} client {client.id} sent server event {kind}: dropped", flush=True)
             return
-        if kind == EVENT_OFFER:
-            relay = self.event_offer(client, kind, data, stamp, now)
-        elif kind == EVENT_PLAYER:
-            relay = self.event_player(client, kind, data, stamp, now)
-        elif kind == EVENT_SNAPSHOT:
-            relay = self.event_snapshot(client, kind, data, stamp, now)
-        elif kind == EVENT_CONTENTS:
-            relay = self.event_contents(client, kind, data, stamp, now)
-        elif kind == EVENT_WANT:
-            relay = self.event_want(client, kind, data, stamp, now)
-        elif kind == EVENT_SPAWN:
-            relay = self.event_spawn(client, kind, data, stamp, now)
-        elif kind == EVENT_REMOVE:
-            relay = self.event_remove(client, kind, data, stamp, now)
-        elif kind == EVENT_WEATHER:
-            relay = self.event_weather(client, kind, data, stamp, now)
-        elif kind == EVENT_SPELL:
-            relay = self.event_spell(client, kind, data, stamp, now)
-        elif kind == EVENT_CAST:
-            relay = self.event_cast(client, kind, data, stamp, now)
-        elif kind == EVENT_SHOT:
-            relay = self.event_shot(client, kind, data, stamp, now)
-        elif kind in TARGETED:
-            relay = self.event_targeted(client, kind, data, stamp, now)
-        elif kind == EVENT_DEATH:
-            relay = self.event_death(client, kind, data, stamp, now)
-        elif kind == EVENT_STATUS:
-            relay = self.event_status(client, kind, data, stamp, now)
-        elif kind == EVENT_AFFECT:
-            relay = self.event_affect(client, kind, data, stamp, now)
-        elif kind == EVENT_OBJECTS:
-            relay = self.event_objects(client, kind, data, stamp, now)
-        elif kind == EVENT_TEXT:
-            relay = self.event_text(client, kind, data, stamp, now)
-        elif kind == EVENT_GAME:
-            relay = self.event_game(client, kind, data, stamp, now)
-        elif kind == EVENT_PICK:
-            relay = self.event_pick(client, kind, data, stamp, now)
-        elif kind == EVENT_BUSY:
-            relay = self.event_busy(client, kind, data, stamp, now)
-        elif kind == EVENT_BOUNTY:
-            relay = self.event_bounty(client, kind, data, stamp, now)
-        elif kind == EVENT_EQUIPMENT:
-            relay = self.event_equipment(client, kind, data, stamp, now)
-        elif kind == EVENT_IDENTITY:
-            relay = self.event_identity(client, kind, data, stamp, now)
-        elif kind == EVENT_ACTOR_EQUIPMENT:
-            relay = self.event_actor_equipment(client, kind, data, stamp, now)
-        else:
-            relay = RELAY
+        handler = self.EVENT_HANDLERS.get(kind)
+        relay = handler(self, client, kind, data, stamp, now) if handler else RELAY
         if relay:
             self.broadcast_event(client.id, kind, data, now)
 
@@ -3530,6 +3482,31 @@ class Server:
             print(f"{stamp} client {client.id}: {refid:#010x} wears {len(worn)}: "
                   f"{', '.join(worn)}", flush=True)
         return RELAY
+
+    EVENT_HANDLERS = {EVENT_OFFER: event_offer,
+                      EVENT_PLAYER: event_player,
+                      EVENT_SNAPSHOT: event_snapshot,
+                      EVENT_CONTENTS: event_contents,
+                      EVENT_WANT: event_want,
+                      EVENT_SPAWN: event_spawn,
+                      EVENT_REMOVE: event_remove,
+                      EVENT_WEATHER: event_weather,
+                      EVENT_SPELL: event_spell,
+                      EVENT_CAST: event_cast,
+                      EVENT_SHOT: event_shot,
+                      **dict.fromkeys(TARGETED, event_targeted),
+                      EVENT_DEATH: event_death,
+                      EVENT_STATUS: event_status,
+                      EVENT_AFFECT: event_affect,
+                      EVENT_OBJECTS: event_objects,
+                      EVENT_TEXT: event_text,
+                      EVENT_GAME: event_game,
+                      EVENT_PICK: event_pick,
+                      EVENT_BUSY: event_busy,
+                      EVENT_BOUNTY: event_bounty,
+                      EVENT_EQUIPMENT: event_equipment,
+                      EVENT_IDENTITY: event_identity,
+                      EVENT_ACTOR_EQUIPMENT: event_actor_equipment}
 
     def update_authority(self, now):
         """Name each loaded cell's authority and tell every client that has the cell loaded."""
