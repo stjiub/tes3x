@@ -30,6 +30,9 @@ against a pinned SHA-256, and keeps them in `%LOCALAPPDATA%\TES3X\package` for l
 The version is `X.Y.Z` at a `vX.Y.Z` tag, and `X.Y.Z-dev.N+gSHA` for a commit N past it, with
 `.dirty` when the checkout has uncommitted changes. The GUI shows it in its title.
 
+PySide6's unused CMake object files are left out, and the build fails if a path, counted from
+`TES3X-<version>/`, is over 180 characters, so the zip unpacks within Windows' path limit.
+
 The GUI opens the last profile you used and lists everything in `profiles/` for switching, with
 New, Duplicate, Rename and Delete under the cog beside the list. On first start, with no
 `tes3x.local.toml` yet, it opens Settings for your game and mod library paths. Add and set up

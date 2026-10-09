@@ -19,3 +19,4 @@ No official releases yet. The first public release is in preparation.
   and xemu setup.
 - Settings shows folder defaults and automatic LLVM selection, with **Use default** actions.
   Custom mlox rules are under **Advanced**; normal use downloads rules automatically.
+- The portable zip unpacks with Windows' built-in extractor; paths no longer exceed its limit.

@@ -66,6 +66,9 @@ MANAGER_NOTICE = """\
   `manager/LICENSE-zstd.txt`) and Mbed TLS 3.6.7 (Apache 2.0, `manager/LICENSE-mbedtls.txt`).
 """
 CC_DIRS = (Path("C:/msys64/mingw64/bin"), Path("C:/msys64/clang64/bin"))
+# Longest path from the folder's own name; Windows' unzip stops at 260 characters, and the rest is
+# left for where it is unpacked, such as C:\Users\<name>\Downloads\TES3X-<version>\.
+MAX_PATH = 180
 
 
 class PackageError(Exception):
@@ -209,6 +212,9 @@ def embedded_python(target, package):
                     "--target", str(target / "Lib" / "site-packages"), "--platform", "win_amd64",
                     "--python-version", short, "--implementation", "cp", "--only-binary=:all:",
                     f"{package}[gui]"], check=True)
+    # Unused CMake object files, with the longest paths in the folder
+    for leftover in list((target / "Lib" / "site-packages" / "PySide6").rglob("objects-*")):
+        shutil.rmtree(leftover)
 
 
 def find_cc(cc):
@@ -249,6 +255,15 @@ License: LICENSE.txt (GPL 3.0 or later). Bundled programs: externals/README.md.
 """
 
 
+def check_paths(stage):
+    """Fail on a path too long to unpack on Windows; see MAX_PATH."""
+    longest = max((path.relative_to(stage.parent).as_posix() for path in stage.rglob("*")),
+                  key=len)
+    if len(longest) > MAX_PATH:
+        raise PackageError(f"{longest}: {len(longest)} characters, over {MAX_PATH}; Windows "
+                           "cannot unpack it under a typical folder")
+
+
 def manager_xbe(given, out, launcher=False):
     """The console manager the GUI installs, or its launcher: the given XBE, or an nxdk build of
     manager/ (manager/launcher/)."""
@@ -287,6 +302,7 @@ def package(out, cc=None, make_zip=False, manager=None, launcher=None, with_mana
     build_launchers(find_cc(cc), stage)
     (stage / "README.txt").write_text(README.format(version=label), encoding="utf-8",
                                       newline="\r\n")
+    check_paths(stage)
     if make_zip:
         archive = shutil.make_archive(str(stage), "zip", stage.parent, stage.name)
         print(f"wrote {archive}")

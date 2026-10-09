@@ -53,9 +53,9 @@ jobs:
           $out
           if (-not ($out -match "serving on")) { exit 1 }
           exit 0
+      # Not zipped again, so the download is TES3X-<version>.zip itself
       - uses: actions/upload-artifact@v7
         with:
-          name: TES3X-portable
           path: build/package/TES3X-*.zip
+          archive: false
           retention-days: 14
-          compression-level: 0  # already a zip
