@@ -18,7 +18,7 @@ stack arguments.
 ## Using it
 
 Choose targets with `--apply profile=VA[,VA...]`, or the pipeline's repeatable
-`--profile-target VA`. `tools/tes3x_prof.py` picks targets by symbol name and renders the dump.
+`--profile-target VA`. `tes3x prof` picks targets by symbol name and renders the dump.
 
 ## Configuration
 

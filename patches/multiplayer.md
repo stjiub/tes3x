@@ -3,7 +3,7 @@
 Patch key: `multiplayer`
 
 This patch adds a session with a TES3X server over the shared [network foundation](net.md)
-(`tools/tes3x_net.py serve`), so several consoles, or consoles and xemu, can play in one world.
+(`tes3x net serve`), so several consoles, or consoles and xemu, can play in one world.
 Starting a server and connecting players is covered in [multiplayer](../docs/multiplayer.md).
 
 See the [patch table](../docs/patches.md) for availability and selection.

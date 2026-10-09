@@ -62,7 +62,7 @@ address. Give the server PC a fixed address, or a DHCP reservation, so `NetServe
 On the PC:
 
 ```
-python tools/tes3x_net.py serve
+tes3x net serve
 ```
 
 It listens on UDP 26500 on every interface and prints a line when a client joins, leaves or
@@ -142,7 +142,7 @@ impostor on its first join.
 ### Kicks and bans
 
 The server takes admin commands typed at its own window, or from the same PC with
-`python tools/tes3x_net.py admin COMMAND` (the server listens for them on `127.0.0.1` only, at
+`tes3x net admin COMMAND` (the server listens for them on `127.0.0.1` only, at
 `--admin-port`, by default `26502`; `--admin-port 0` turns that off):
 
 | Command | Does |
@@ -171,7 +171,7 @@ line of `admin-password.txt` in its `--world` folder (or `--admin-password-file 
 from anywhere that reaches that UDP port:
 
 ```
-python tools/tes3x_net.py admin --server my.server.net --password-file admin-password.txt list
+tes3x net admin --server my.server.net --password-file admin-password.txt list
 ```
 
 takes every command above. The GUI's Server workspace does the same under **A remote server**.
@@ -211,7 +211,7 @@ server hands it to the [console manager](deployment.md#from-a-server), which ins
 joins:
 
 ```
-python tools/tes3x_net.py serve --world world --build build/pipeline/net/deploy
+tes3x net serve --world world --build build/pipeline/net/deploy
 ```
 
 In the GUI, set **Build profile** on the Server page instead.
@@ -241,7 +241,7 @@ date". A console with no manifest is checked by its load order only.
 ## Run the server in Docker
 
 `server/` holds a Docker Compose setup for a machine that should only run the server, with no
-Python install and no GUI. It runs the same `tes3x_net.py serve` with `--world` on a Docker volume,
+Python install and no GUI. It runs the same `tes3x net serve` with `--world` on a Docker volume,
 so the server key, characters, saves, admitted keys and bans survive restarts and rebuilds. From
 the repository:
 
@@ -256,7 +256,7 @@ Add server options under `command:` in `server/compose.yaml`, one per line, and 
 `docker compose up -d` again. Admin commands run inside the container:
 
 ```
-docker compose exec server python tools/tes3x_net.py admin list
+docker compose exec server python -m tes3x net admin list
 ```
 
 To require a password, copy the file into the volume, uncomment `--password-file` in
@@ -311,7 +311,7 @@ password raises the keyboard for it. New and Load from the main menu still play 
 While joined, the pause menu has **Save to Server** in place of Save, which flushes the character
 state and waits for confirmation, and **Leave** in place of Exit, which flushes to the server and
 quits after confirmation; Load is gone, since a local save is not the server's character. A multiplayer build redraws the
-menu buttons so they match the ones it adds; `tools/tes3x_menuart.py` renders them from the
+menu buttons so they match the ones it adds; `tes3x menuart` renders them from the
 bundled Fondamento font (SIL Open Font License, `assets/fonts`).
 
 ## Connect xemu
@@ -320,7 +320,7 @@ xemu can join any server, on this PC, the LAN or the internet, through its own N
 xemu runner with `--net-nat` and give the build `NetAddress=dhcp` and the server's address:
 
 ```
-python tools/tes3x_xemu.py player2 profiles/net.toml --direct-engine --skip-intro --net-nat -- --ini-set Xbox:NetAddress=dhcp --ini-set Xbox:NetServer=my.server.net
+tes3x xemu player2 profiles/net.toml --direct-engine --skip-intro --net-nat -- --ini-set Xbox:NetAddress=dhcp --ini-set Xbox:NetServer=my.server.net
 ```
 
 xemu's NAT answers DHCP with `10.0.2.15`, resolves names through the PC and sends the session's
@@ -333,14 +333,14 @@ A tunnel instead hands the guest's raw frames to a server on this PC, which is h
 automated tests run. On the PC that runs xemu:
 
 ```
-python tools/tes3x_net.py serve --tunnel 9369
+tes3x net serve --tunnel 9369
 ```
 
 serves the LAN and one xemu at once, so a console and xemu can play together. Then run xemu with
 the tunnel on the same port, giving the guest its own addresses:
 
 ```
-python tools/tes3x_xemu.py player2 profiles/net.toml --direct-engine --skip-intro --net-tunnel 9369 --save my-save.ess --exec load.txt -- --ini-set Xbox:NetAddress=10.0.2.15 --ini-set Xbox:NetServer=10.0.2.2
+tes3x xemu player2 profiles/net.toml --direct-engine --skip-intro --net-tunnel 9369 --save my-save.ess --exec load.txt -- --ini-set Xbox:NetAddress=10.0.2.15 --ini-set Xbox:NetServer=10.0.2.2
 ```
 
 where `load.txt` loads the save:
@@ -358,9 +358,9 @@ Each tunnel serves one xemu, and a tunnel takes two ports (`PORT` and `PORT+1`).
 on one PC, give the server a tunnel per xemu and start each xemu on its own:
 
 ```
-python tools/tes3x_net.py serve --tunnel 9369 --tunnel 9371
-python tools/tes3x_xemu.py player1 profiles/net.toml ... --net-tunnel 9369 ...
-python tools/tes3x_xemu.py player2 profiles/net.toml ... --net-tunnel 9371 ...
+tes3x net serve --tunnel 9369 --tunnel 9371
+tes3x xemu player1 profiles/net.toml ... --net-tunnel 9369 ...
+tes3x xemu player2 profiles/net.toml ... --net-tunnel 9371 ...
 ```
 
 Each tunnelled xemu gets a MAC made from its port (`02:00:00:00:24:99` for 9369), since the server
@@ -396,7 +396,7 @@ To see how much of a character the server could restore without its save, start 
 `--rebuild` and join from a different save. The server applies the character's kept state over
 that save, asks the console to save 10 seconds later, and compares the save that arrives with
 the kept one. The report goes beside the upload as `uploads/KEY/NAME.diff.txt`, one row per kind
-of state; neither save is kept as the character. `tes3x_ess.py --diff KEPT OTHER` makes the same
+of state; neither save is kept as the character. `tes3x ess --diff KEPT OTHER` makes the same
 report from any two saves.
 
 The report separates attributes into base/current pairs and skills into base/current pairs,

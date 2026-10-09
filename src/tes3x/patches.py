@@ -192,7 +192,7 @@ def render_patches():
     lines = [
         "# Patches",
         "",
-        "Generated from [`patches.toml`](../patches.toml) by `tools/tes3x_patches.py --write`;",
+        "Generated from [`patches.toml`](../patches.toml) by `tes3x patches --write`;",
         "edit that file, not this one. Fixes that are not implemented are in",
         "[candidates.md](candidates.md). A linked title opens the patch's notes; a game-test link",
         "opens the runnable test definition.",
@@ -229,7 +229,7 @@ def render_candidates():
     lines = [
         "# Candidate fixes",
         "",
-        "Generated from [`candidates.toml`](../candidates.toml) by `tools/tes3x_patches.py --write`;",
+        "Generated from [`candidates.toml`](../candidates.toml) by `tes3x patches --write`;",
         "edit that file, not this one.",
         "",
         "Fixes from other projects that we've looked at, and why each isn't implemented, yet or at",
@@ -292,7 +292,7 @@ def main(argv=None):
         stale = stale_pages()
         if stale:
             problems.append("out of date: " + ", ".join(p.name for p in stale)
-                            + "; run tes3x_patches.py --write")
+                            + "; run tes3x patches --write")
         if problems:
             sys.exit("\n".join(problems))
     else:

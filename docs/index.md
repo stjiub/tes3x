@@ -1,6 +1,6 @@
 # TES3X documentation
 
-Generated from [`nav.toml`](nav.toml) by `tools/tes3x_docs.py --write`; edit that file, not this one.
+Generated from [`nav.toml`](nav.toml) by `tes3x docs --write`; edit that file, not this one.
 
 ## Start here
 
@@ -10,10 +10,10 @@ Generated from [`nav.toml`](nav.toml) by `tools/tes3x_docs.py --write`; edit tha
 
 - [GUI](gui.md): The GUI edits everything a profile and the local config hold, installs mods into the library, and checks, builds, tests and deploys.
 - [Mod library](mod-library.md): The mod library is a folder of mods, one folder each, laid out the way each mod would sit in `Data Files`.
-- [Pipeline](pipeline.md): `tools/tes3x_pipeline.py` turns one mod library profile into a complete game folder, and optionally deploys it.
+- [Pipeline](pipeline.md): `tes3x pipeline` turns one mod library profile into a complete game folder, and optionally deploys it.
 - [Packaging](packaging.md): The pipeline's packing stage turns the collected mod files and the retail `Data Files` into what ships to the Xbox.
 - [Plugin optimizer](optimizer.md): The plugin optimizer writes derived copies of a load order that produce the same modeled Xbox engine state while making the loader construct fewer records.
-- [Deployment](deployment.md): `--deploy` uploads a finished build to the Xbox over FTP with `tools/tes3x_deploy.py`.
+- [Deployment](deployment.md): `--deploy` uploads a finished build to the Xbox over FTP with `tes3x deploy`.
 - [Testing](testing.md): TES3X is tested in steps, from fast checks on the PC to play on an original Xbox.
 - [Running in xemu](xemu.md): Set up xemu to play profiles or run them from scripts.
 - [Patch game tests and validation](validation.md): Each patch can have a repeatable in-game test in `tests/game/PATCH.toml`.
@@ -24,7 +24,7 @@ Generated from [`nav.toml`](nav.toml) by `tools/tes3x_docs.py --write`; edit tha
 ## Reference
 
 - [Configuration reference](configuration.md): Every key in a profile and in the local config.
-- [Commands](commands.md): Every TES3X command is a Python script in `tools/`, run from the repository root.
+- [Commands](commands.md): Every TES3X command is a subcommand of `tes3x`: `tes3x COMMAND [ARGS]`, or `python -m tes3x COMMAND [ARGS]`.
 - [Exec scripts](exec-scripts.md): With the console patch, a build runs console commands from a script file once per launch, with no controller.
 - [Game tests](game-tests.md): A game test is a TOML file in `tests/game/`, named after the patch it tests: `mcp-37.toml` tests `mcp-37`.
 - [Ini keys](ini-keys.md): Keys TES3X patches read from the `[Xbox]` section of `Morrowind.ini`.

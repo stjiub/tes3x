@@ -12,7 +12,7 @@ services:
       # - "26503:26503/udp"  # with --remote-admin
     volumes:
       - world:/world
-    # Options after `serve --world /world`, one per line; `tes3x_net.py serve --help` lists them.
+    # Options after `serve --world /world`, one per line; `tes3x net serve --help` lists them.
     command:
       # - --password-file=/world/password.txt
       # - --max-players=8

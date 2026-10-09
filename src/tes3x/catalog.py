@@ -2,7 +2,7 @@
 """Read the mod compatibility catalog and render its page.
 
 catalog.toml lists mods tried on the Xbox build and how they fared; docs/catalog.md is generated
-from it by `tes3x_patches.py --write`.
+from it by `tes3x patches --write`.
 """
 
 from pathlib import Path
@@ -111,7 +111,7 @@ def cell(text):
 
 def render(catalog):
     lines = ["# Mod compatibility", "",
-             "Generated from [`catalog.toml`](../catalog.toml) by `tools/tes3x_patches.py "
+             "Generated from [`catalog.toml`](../catalog.toml) by `tes3x patches "
              "--write`;", "edit that file, not this one.", "",
              "Mods tried on the Xbox build and how they fared. A scripted test only shows that a "
              "build starts and loads a few cells; only playing a mod marks it as working. The "

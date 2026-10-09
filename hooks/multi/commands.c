@@ -261,7 +261,7 @@ static int plausible(const void *p)
 }
 
 /* FNV-1a over the loaded plugins' names in load order, lowercased and each ended by a zero, as
- * tes3x_net.py load_order_hash. The file list is [DataHandler]: count +0xC, files +0xAE70; a
+ * tes3x.net load_order_hash. The file list is [DataHandler]: count +0xC, files +0xAE70; a
  * file's name is inline at +0xC. */
 #define FILES_COUNT 0xC
 #define FILES_ARRAY 0xAE70

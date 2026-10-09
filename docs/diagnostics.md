@@ -1,7 +1,7 @@
 # Diagnostics and profiling
 
 A patched build can record what it does, time engine functions and count where memory goes.
-Everything it writes goes to the root of `E:`; copy it off the Xbox with `tools/tes3x_fetch.py`, or
+Everything it writes goes to the root of `E:`; copy it off the Xbox with `tes3x fetch`, or
 read it from an emulator's disk.
 
 | Patch or option | Gives you | Writes |
@@ -38,19 +38,19 @@ A build made with the pipeline's `--diag-test-faults` also has `tes3xdiag hang`,
 update loop for 15 seconds, and `tes3xdiag crash`, which writes to unmapped memory; both exist to
 test the watchdog and the crash record.
 
-`tools/tes3x_diag.py pull` fetches the log and summarises it; `report` does the same for a copy.
+`tes3x diag pull` fetches the log and summarises it; `report` does the same for a copy.
 
 ## Memory tours
 
-`tools/tes3x_tour.py make` writes an exec script that moves through a plugin's cells and marks
+`tes3x tour make` writes an exec script that moves through a plugin's cells and marks
 free memory after each move; `report` turns the log into a table and, if the game did not get to
 the end, names the last command and any crash or hang.
 
 ```
-python tools/tes3x_tour.py make TR_Mainland.esm --exteriors --step 3 -o tes3xexec.txt
-python tools/tes3x_tour.py make TR_Mainland.esm --interiors --prefix "Narsis" -o tes3xexec.txt
-python tools/tes3x_tour.py make TR_Mainland.esm --interiors --prefix "Narsis" --working-set -o tes3xexec.txt
-python tools/tes3x_tour.py report tes3xlog.txt
+tes3x tour make TR_Mainland.esm --exteriors --step 3 -o tes3xexec.txt
+tes3x tour make TR_Mainland.esm --interiors --prefix "Narsis" -o tes3xexec.txt
+tes3x tour make TR_Mainland.esm --interiors --prefix "Narsis" --working-set -o tes3xexec.txt
+tes3x tour report tes3xlog.txt
 ```
 
 Exteriors are visited row by row, alternating direction, so each move is to a nearby cell.
@@ -80,8 +80,8 @@ every direct call site. Counters go to `E:\tes3xprof.bin` on the console command
 `tes3xprof mark` (dump, then reset), at loader checkpoints, and every `[Xbox] ProfileDumpFrames`
 frames. `tes3xprof reset` clears them.
 
-`tools/tes3x_prof.py targets NAME` looks a function up in the [symbol map](symbol-map.md) and prints
-the `--apply profile=` value for it; `tools/tes3x_prof.py report tes3xprof.bin` renders the dump.
+`tes3x prof targets NAME` looks a function up in the [symbol map](symbol-map.md) and prints
+the `--apply profile=` value for it; `tes3x prof report tes3xprof.bin` renders the dump.
 
 Only an original Xbox gives meaningful timings; an emulator run shows only that the build does not
 crash. An exec script makes measurements repeatable: move to the same place, wait the same number
@@ -97,7 +97,7 @@ is appended to `E:\tes3xheap.bin` at the first frame (with `diagnostics`) and on
 command `tes3xheap`; each also records the kernel's memory statistics. The record layout is
 `heap_header` and `heap_site` in `hooks/tes3xheap.c`.
 
-`tools/tes3x_heap.py tes3xheap.bin` renders it, naming call sites from the
+`tes3x heap tes3xheap.bin` renders it, naming call sites from the
 [symbol map](symbol-map.md): `--by-file` groups by source file, `--last` shows only the last
 snapshot, and `--compare BASELINE.bin` subtracts another census, such as retail's.
 
@@ -110,7 +110,7 @@ Allocations outside that heap, such as the texture and vertex-buffer arena, are 
 `--apply mem-census`, or the pipeline's `--mem-census`, covers memory outside the engine heap:
 committed virtual memory, contiguous and pool allocations and the XAPI heap, each by caller.
 Snapshots append to `E:\tes3xmem.bin` at the first frame (with `diagnostics`) and on the console
-command `tes3xmem`. `tools/tes3x_mem.py tes3xmem.bin` renders them; `--skip NAME` leaves a
+command `tes3xmem`. `tes3x mem tes3xmem.bin` renders them; `--skip NAME` leaves a
 function out of caller chains.
 
 ## Demand pager test

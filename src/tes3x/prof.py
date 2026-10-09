@@ -1,7 +1,7 @@
 """Pick profiler targets by name and symbolize the counters the console writes.
 
 It reads the symbol map (docs/symbol-map.md). `targets` turns curated names into the address
-list `tes3x_patch.py --apply profile=` wants; `report` renders E:\\tes3xprof.bin.
+list `tes3x patch --apply profile=` wants; `report` renders E:\\tes3xprof.bin.
 """
 
 import argparse

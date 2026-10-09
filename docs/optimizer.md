@@ -13,7 +13,7 @@ state digests match.
 Pass every master and plugin in the order the Xbox loads them:
 
 ```
-python tools/tes3x_optimize.py --output build/optimized Morrowind.esm Mod.esm Patch.esp
+tes3x optimize --output build/optimized Morrowind.esm Mod.esm Patch.esp
 ```
 
 The output contains the derived plugins and `tes3x-optimize.json`, which records the model,
@@ -30,7 +30,7 @@ equivalence digest as an unchanged stream.
 Use the same original load order and name the directory containing derived copies:
 
 ```
-python tools/tes3x_optimize.py --check build/optimized Morrowind.esm Mod.esm Patch.esp
+tes3x optimize --check build/optimized Morrowind.esm Mod.esm Patch.esp
 ```
 
 The current model proves equivalence only for implemented transformations. Removing definitions

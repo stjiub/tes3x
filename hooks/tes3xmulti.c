@@ -398,7 +398,7 @@ static u32 get32le(const u8 *p)
 /* Received numbers are checked before the engine sees them, on their bits: a float's magnitude
  * bits order as its values do, and NaN and the infinities lie above every finite limit. Integer
  * only, because the receive DPC must not touch the FPU state of the thread it interrupts. The
- * limits are tes3x_net.py's placeable and sane_clock. */
+ * limits are tes3x.net's placeable and sane_clock. */
 #define POSITION_LIMIT 0x4B189680u /* 1e7 */
 #define ANGLE_LIMIT 0x42800000u    /* 64 */
 #define STAT_LIMIT 0x4B189680u     /* 1e7, statistics and damage */

@@ -97,7 +97,7 @@ tables, such as `profile = { save_pool = "TES3X Test" }`.
 
 ## Driving the agent
 
-`[agent]` runs a tunnel (`tes3x_net.py serve`) and a listener (`tes3x_agent.py`) with a throwaway
+`[agent]` runs a tunnel (`tes3x net serve`) and a listener (`tes3x agent`) with a throwaway
 key beside each xemu, and points the build's `NetAgent` at it. Once a game log line matches
 `after`, the listener runs each `console` line, copies each `fetch` path into
 `build/xemu/NAME.fetched/`, then sends `exit` when `exit = true`:

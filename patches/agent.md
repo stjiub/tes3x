@@ -36,7 +36,7 @@ frames and answers a repeated ID without running it again.
 - **Reboot**: returns to the dashboard through the firmware, as an exec script's `reboot` does.
 
 A hard hang stops the frame loop, so commands then go unanswered; the stalled heartbeat shows
-why. `tes3x_agent.py` offers the same requests from the command line (`--console`, `--fetch`,
+why. `tes3x agent` offers the same requests from the command line (`--console`, `--fetch`,
 `--exit`, `--reboot`, `--until-end`); it listens on the GUI's port, so run it while the GUI is
 closed.
 
@@ -55,5 +55,5 @@ multiplayer build keeps the profile's own network settings.
 
 In xemu the pipeline points `NetAgent` at `10.0.2.2`. The GUI's Play turns on xemu's NAT for an
 agent build, where that address is the PC's own loopback; from the command line pass `--net-nat`
-to the xemu runner. A tunnel (`tes3x_net.py serve --tunnel PORT` and `--net-tunnel PORT`) works
+to the xemu runner. A tunnel (`tes3x net serve --tunnel PORT` and `--net-tunnel PORT`) works
 too: it forwards agent port `26501` to localhost, and `--forward AGENT_PORT` adds another.

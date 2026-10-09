@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """The project's release signing key (Ed25519), which the console manager checks updates against.
 
-    tes3x_release.py keygen KEY            write a new private key; prints its public key
-    tes3x_release.py protect KEY           set or change the passphrase of a private key
-    tes3x_release.py public KEY            print the public key of a private key
-    tes3x_release.py sign KEY FILE         write FILE.sig (64 bytes)
-    tes3x_release.py verify PUBLIC FILE    check FILE.sig against a public key (hex or file)
-    tes3x_release.py manager OUT --key KEY --manager XBE --launcher XBE
+    tes3x release keygen KEY            write a new private key; prints its public key
+    tes3x release protect KEY           set or change the passphrase of a private key
+    tes3x release public KEY            print the public key of a private key
+    tes3x release sign KEY FILE         write FILE.sig (64 bytes)
+    tes3x release verify PUBLIC FILE    check FILE.sig against a public key (hex or file)
+    tes3x release manager OUT --key KEY --manager XBE --launcher XBE
                                            write a signed manager release into OUT
-    tes3x_release.py check DIR             check a manager release against keys/release.pub
+    tes3x release check DIR             check a manager release against keys/release.pub
 
 The private key never goes into a repository. A key with a passphrase asks for it, or reads
 TES3X_RELEASE_PASSPHRASE. The public key the manager embeds is keys/release.pub; a fork makes

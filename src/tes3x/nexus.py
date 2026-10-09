@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Look up Morrowind mods on Nexus Mods through its public GraphQL API. No key is needed.
 
-    python tools/tes3x_nexus.py 45384
-    python tools/tes3x_nexus.py "Optimization Patch"
+    tes3x nexus 45384
+    tes3x nexus "Optimization Patch"
 """
 
 import argparse

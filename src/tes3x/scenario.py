@@ -1,10 +1,10 @@
 """Run a patch's game test in xemu, check its logs, and optionally record the result.
 
-    python tools/tes3x_scenario.py console profiles/one-mod.toml
-    python tools/tes3x_scenario.py console profiles/one-mod.toml --record
+    tes3x scenario console profiles/one-mod.toml
+    tes3x scenario console profiles/one-mod.toml --record
 
 A game test is tests/game/<patch>.toml. By default, --record writes a local result under
-build/validation/patches/<patch>/ with tools/tes3x_validate.py; --results selects another local
+build/validation/patches/<patch>/ with tes3x validate; --results selects another local
 result store.
 
     kind = "single"                                 # or "comparison"
@@ -23,7 +23,7 @@ result store.
                                                      # loads it with `@start load` and its U: path
     enable = ["diagnostics", "console"]              # every build, besides the patch; default shown
     apply = "profile=0x00137C50"                      # optional valued patch spec
-    xemu = ["--skip-intro", "--no-reboot"]           # tes3x_xemu.py options; default shown
+    xemu = ["--skip-intro", "--no-reboot"]           # tes3x xemu options; default shown
     timeout = 300
 
     [expect]
@@ -40,7 +40,7 @@ result store.
     fetch = ["E:\\tes3xlog.txt"]                     # then copy these files back,
     exit = true                                      # then end the game
 
-An `agent` scenario runs a tunnel (`tes3x_net.py serve`) and a listener (`tes3x_agent.py`) with a
+An `agent` scenario runs a tunnel (`tes3x net serve`) and a listener (`tes3x agent`) with a
 throwaway key beside each xemu; the run fails unless every agent request succeeds.
 
 A single scenario runs only the test build. A comparison scenario runs control and test builds

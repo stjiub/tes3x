@@ -1,7 +1,9 @@
+import re
 import tempfile
 import unittest
 from pathlib import Path
 
+import tes3x.cli as cli
 import tes3x.docs as docs
 
 
@@ -11,11 +13,20 @@ class DocsTests(unittest.TestCase):
 
     def test_every_command_is_listed(self):
         page = (docs.DOCS / 'commands.md').read_text(encoding='utf-8')
-        missing = [f'tes3x_{path.stem}.py'
-                   for path in sorted((docs.ROOT / 'src' / 'tes3x').glob('*.py'))
-                   if 'ArgumentParser' in (text := path.read_text(encoding='utf-8'))
-                   and '__main__' in text and f'`tes3x_{path.stem}.py`' not in page]
+        package = docs.ROOT / 'src' / 'tes3x'
+        missing = [name for name in cli.COMMANDS  # those with options of their own
+                   if 'ArgumentParser' in (package / f'{name}.py').read_text(encoding='utf-8')
+                   and f"`tes3x {name.replace('_', '-')}`" not in page]
         self.assertEqual(missing, [])
+
+    def test_the_docs_name_commands_not_tool_scripts(self):
+        # The tools/ shims go in step 7; nothing a reader follows may point at them.
+        pages = [docs.ROOT / 'README.md', *sorted(docs.DOCS.glob('*.md')),
+                 *sorted((docs.ROOT / 'patches').glob('*.md'))]
+        found = [f'{page.name}:{number}' for page in pages
+                 for number, line in enumerate(page.read_text(encoding='utf-8').splitlines(), 1)
+                 if re.search(r'tools[/\\]tes3x_|tes3x_\w+\.py', line)]
+        self.assertEqual(found, [])
 
     def test_slug_matches_rendered_anchors(self):
         self.assertEqual(docs.slug('2. Collect the winning files'), '2-collect-the-winning-files')

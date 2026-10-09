@@ -34,7 +34,7 @@ TES3 BSA entries are addressed by hash rather than full path. If selected assets
 the packer automatically keeps every member of that collision group loose so none are discarded.
 This also enables loose-first lookup in the staged INI; no profile exception is needed.
 
-`tes3x_pack.py --loose-asset "textures/example.dds"` does the same for one file outside a profile:
+`tes3x pack --loose-asset "textures/example.dds"` does the same for one file outside a profile:
 the file goes both in the archive and loose, and is listed in `ArchiveInvalidationList.txt` so the
 loose copy wins.
 
@@ -56,7 +56,7 @@ retail `Data Files` unchanged and does not generate them.
 ## Pruning unused assets
 
 ```powershell
-python tools/tes3x_build.py profiles/my-build.toml --prune `
+tes3x build profiles/my-build.toml --prune `
   --vanilla "build/vanilla/Data Files" `
   --out build/pruned-tree --reachability-json build/reachability.json
 ```
@@ -72,14 +72,14 @@ and what was removed.
 
 ## Sound and mesh checks
 
-`tes3x_build.py --sox PATH --sound-rate 22050` resamples mod WAVs to at most that rate with
+`tes3x build --sox PATH --sound-rate 22050` resamples mod WAVs to at most that rate with
 [SoX](https://sourceforge.net/projects/sox/). It never raises the sample rate and keeps the channel
 count. Compressed WAVs are left alone.
 
-`python tools/tes3x_assets.py build/pruned-tree --json build/assets.json` flags malformed NIF
+`tes3x assets build/pruned-tree --json build/assets.json` flags malformed NIF
 headers and missing texture references, and lists WAV formats. It doesn't check geometry, skinning
 or anything else that can crash the renderer.
 
-`python tools/tes3x_map.py "Data Files/Morrowind.esm.map"` dumps a map companion file and can save
-the first map image with `--preview tile.png`. `python tools/tes3x_audit.py "Data Files"` checks any
+`tes3x map "Data Files/Morrowind.esm.map"` dumps a map companion file and can save
+the first map image with `--preview tile.png`. `tes3x audit "Data Files"` checks any
 `Data Files` folder for long names, junk files and duplicates.

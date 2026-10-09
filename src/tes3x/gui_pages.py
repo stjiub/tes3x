@@ -1265,7 +1265,7 @@ def multiplayer_profile(path):
 
 
 def server_arguments(values):
-    """`tes3x_net.py serve` arguments for the saved [server] settings."""
+    """`tes3x net serve` arguments for the saved [server] settings."""
     args = ["serve"]
     for key, flag in (("world", "--world"), ("password_file", "--password-file")):
         if values.get(key):
@@ -1318,7 +1318,7 @@ def parse_clients(reply):
 
 
 class ServerPage(QWidget):
-    """Run `tes3x_net.py serve` locally, or reach one elsewhere through its remote admin port,
+    """Run `tes3x net serve` locally, or reach one elsewhere through its remote admin port,
     and manage its players."""
 
     remote_answer = Signal(str, str, str)
@@ -1671,7 +1671,7 @@ class ServerPage(QWidget):
         self.admin = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.admin.bind(("127.0.0.1", 0))
         self.admin.setblocking(False)
-        self.log.appendPlainText(f"$ tes3x_net.py {' '.join(server_arguments(values))}")
+        self.log.appendPlainText(f"$ tes3x net {' '.join(server_arguments(values))}")
         process.start()
         self.poll.start()
         self.set_status("Running")

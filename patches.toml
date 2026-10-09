@@ -1,8 +1,8 @@
 # Every XBE patch TES3X can apply, in the order it applies them.
 #
-# tes3x_patch.py, the pipeline and the diagnostics log reader all read this file, so a patch's
+# tes3x patch, the pipeline and the diagnostics log reader all read this file, so a patch's
 # name, bit, category and channel are set here and nowhere else. docs/patches.md is generated
-# from it: run `python tools/tes3x_patches.py --write` after editing.
+# from it: run `tes3x patches --write` after editing.
 #
 # name       what --apply and profiles call it
 # title      short human-facing name

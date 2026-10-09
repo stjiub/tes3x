@@ -5,7 +5,7 @@ exact layout the PC build uses, which the Xbox build shares except where its sou
 `symbols/structs.json` records the Xbox's own corrections and additions. Needs libclang
 (`python -m pip install libclang`), clang, and MSVC and Windows SDK headers.
 
-    python tools/tes3x_layouts.py MWSE_TREE [--out build/ghidra/types-mwse.json]
+    tes3x layouts MWSE_TREE [--out build/ghidra/types-mwse.json]
 """
 import argparse
 import glob

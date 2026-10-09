@@ -1,6 +1,6 @@
 # Patches
 
-Generated from [`patches.toml`](../patches.toml) by `tools/tes3x_patches.py --write`;
+Generated from [`patches.toml`](../patches.toml) by `tes3x patches --write`;
 edit that file, not this one. Fixes that are not implemented are in
 [candidates.md](candidates.md). A linked title opens the patch's notes; a game-test link
 opens the runnable test definition.

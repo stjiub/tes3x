@@ -1,7 +1,7 @@
 # Mods tried on the Xbox build, and how they fared.
 #
 # The GUI's mod list and docs/catalog.md are generated from this file: run
-# `python tools/tes3x_patches.py --write` after editing it.
+# `tes3x patches --write` after editing it.
 #
 # id            stable name for the mod
 # name, url     what it is called and where it comes from

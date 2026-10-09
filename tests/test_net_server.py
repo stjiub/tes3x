@@ -607,7 +607,7 @@ class ServerTests(unittest.TestCase):
         self.start('--world', str(world), '--adopt', '--rebuild', '0.5')
         net = tes3x_net
 
-        def save(seed):  # a header, then a journal record tes3x_ess.py can read
+        def save(seed):  # a header, then a journal record tes3x ess can read
             data = self.save(b'Nerevar', seed)
             head = 16 + struct.unpack_from('<I', data, 4)[0]
             text = random.Random(seed).randbytes(3 * net.BULK_CHUNK)

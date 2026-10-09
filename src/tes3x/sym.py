@@ -984,7 +984,7 @@ def cmd_ghidra_setup(a):
     rows = db.execute('SELECT tag, path FROM image WHERE tag IN (%s)' %
                       ','.join('?' * len(a.tag)), a.tag).fetchall()
     if not rows:
-        raise SystemExit('build the images first (`tes3x_sym.py build IMAGE --tag ...`)')
+        raise SystemExit('build the images first (`tes3x sym build IMAGE --tag ...`)')
     tes3x_ghidra.setup(rows)
 
 

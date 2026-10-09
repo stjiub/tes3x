@@ -6,10 +6,10 @@ build/validation/patches/<patch>/ by default; --results selects another store. S
 hashed provenance with sanitized commands, inputs and platform details. A single test exercises
 one build; a comparison test runs a control and a test build.
 
-  python tools/tes3x_validate.py record mcp-102 --env xemu --control RUN --test RUN
-  python tools/tes3x_validate.py check
-  python tools/tes3x_validate.py --results PATH check --gate
-  python tools/tes3x_validate.py status
+  tes3x validate record mcp-102 --env xemu --control RUN --test RUN
+  tes3x validate check
+  tes3x validate --results PATH check --gate
+  tes3x validate status
 
 RUN is a diagnostics log, or an xemu run folder holding tes3xlog.txt and .tes3x-run.json. Results
 record observations; they do not change a patch's channel. `check --gate` also fails while a
@@ -645,7 +645,7 @@ def toml_value(value):
 
 def record(args):
     if args.patch not in registry.BY_NAME:
-        raise ValidationError(f"unknown patch {args.patch!r}; see tes3x/tools/tes3x_patch.py --list")
+        raise ValidationError(f"unknown patch {args.patch!r}; see tes3x/tes3x patch --list")
     if args.control_build and not args.control:
         raise ValidationError("--control-build needs --control")
     if args.hardware_config and args.env != "hardware":

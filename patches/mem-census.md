@@ -27,7 +27,7 @@ how much of a reservation is committed.
 
 Build with `--apply mem-census`, or the pipeline's `--mem-census`. Snapshots append to
 `E:\tes3xmem.bin` at the first frame (which needs `diagnostics`) and on the console command
-`tes3xmem`; `tools/tes3x_mem.py` renders them.
+`tes3xmem`; `tes3x mem` renders them.
 
 ## Compatibility and limits
 

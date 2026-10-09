@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build and smoke-test an exact TES3X profile in xemu.
 
-Runs go through tools/tes3x_xemu.py, which reads [xemu] from the local config.
+Runs go through tes3x xemu, which reads [xemu] from the local config.
 """
 
 import argparse
@@ -514,7 +514,7 @@ def main(argv=None):
     parser.add_argument("--keep-artifacts", choices=("always", "failure", "never"),
                         default="failure", help="retain ISO/pipeline output (default: failure)")
     parser.add_argument("--pipeline-arg", action="append", default=[],
-                        help="argument passed to tes3x_pipeline.py (repeatable)")
+                        help="argument passed to tes3x pipeline (repeatable)")
     args = parser.parse_args(argv)
     try:
         return run_library(args) if args.library_all else run_profile(args)

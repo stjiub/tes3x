@@ -85,7 +85,7 @@ def main():
                     help="set TryArchiveFirst=1 (skips loose lookups entirely)")
     ap.add_argument("--ini-set", action="append", default=[], metavar="SECTION:KEY=VALUE",
                     help="set a key in the staged Morrowind.ini (repeatable). "
-                         "tools/tes3x_ini.py lists every key the engine actually reads")
+                         "tes3x ini lists every key the engine actually reads")
     ap.add_argument("--quickstart", nargs="?", const=True, metavar="CELL",
                     help="[General] QuickStart=1, with Starting Cell=CELL if given - boots "
                          "straight into a game instead of the menu, for unattended test cycles")

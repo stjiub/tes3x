@@ -10,7 +10,7 @@ See the [patch table](../docs/patches.md) for availability and selection.
 
 ## How it works
 
-`tools/tes3x_payload.py` compiles the selected sources in `hooks/` with clang and links them with
+`tes3x payload` compiles the selected sources in `hooks/` with clang and links them with
 lld-link into a small PE image. The code is freestanding: it cannot link the Xbox SDK libraries
 the game already contains, so it calls the kernel through the game's own import thunks and reaches
 engine functions by address. The addresses come from the patcher's content searches of the same

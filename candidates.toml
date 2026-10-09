@@ -2,7 +2,7 @@
 #
 # Every Morrowind Code Patch id has an entry, plus fixes from MWSE, OpenMW and TES3X's own
 # measurements. docs/candidates.md is generated from this file with the patch table: run
-# `python tools/tes3x_patches.py --write` after editing. When a fix is implemented, delete its
+# `tes3x patches --write` after editing. When a fix is implemented, delete its
 # entry here and add a [[patch]] entry to patches.toml under the same name.
 #
 # status     researching, located, candidate, deferred, not-applicable (PC-only), infeasible

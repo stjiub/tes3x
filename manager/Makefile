@@ -1,5 +1,5 @@
 XBE_TITLE = TES3X\ manager
-# mbedTLS, for the update feed over HTTPS; tes3x_nxdk.py fetches it beside the build
+# mbedTLS, for the update feed over HTTPS; tes3x nxdk fetches it beside the build
 MBEDTLS = $(CURDIR)/../mbedtls
 SRCS = $(CURDIR)/main.c $(CURDIR)/builds.c $(CURDIR)/xbe.c $(CURDIR)/json.c \
        $(CURDIR)/sha256.c $(CURDIR)/agent.c $(CURDIR)/console.c $(CURDIR)/update.c \

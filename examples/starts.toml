@@ -1,4 +1,4 @@
-# Where a new multiplayer character may begin: `tes3x_net.py serve --starts FILE`. Without
+# Where a new multiplayer character may begin: `tes3x net serve --starts FILE`. Without
 # --starts the server offers this list. With one entry there is no choice.
 #
 # name      the button the player picks, at most 31 characters, no double quotes

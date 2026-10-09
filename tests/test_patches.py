@@ -59,7 +59,7 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(missing, [])
 
     def test_generated_pages_are_current(self):
-        self.assertEqual(registry.stale_pages(), [], 'run tools/tes3x_patches.py --write')
+        self.assertEqual(registry.stale_pages(), [], 'run tes3x patches --write')
 
     def test_every_patch_page_follows_the_contract(self):
         self.assertEqual(registry.page_problems(), [])

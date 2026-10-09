@@ -26,7 +26,7 @@
 #define PRODUCT "tes3x-manager"
 #define RELEASE_FORMAT 1
 
-/* tes3x_release.py reads a release's version from here */
+/* tes3x release reads a release's version from here */
 __attribute__((used)) const char mgr_version_tag[] = "TES3X-MANAGER-VERSION " MGR_VERSION;
 
 static char root[PATH_MAX_MGR]; /* the manager folder, empty when not installed on a disk */

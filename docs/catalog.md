@@ -1,6 +1,6 @@
 # Mod compatibility
 
-Generated from [`catalog.toml`](../catalog.toml) by `tools/tes3x_patches.py --write`;
+Generated from [`catalog.toml`](../catalog.toml) by `tes3x patches --write`;
 edit that file, not this one.
 
 Mods tried on the Xbox build and how they fared. A scripted test only shows that a build starts and loads a few cells; only playing a mod marks it as working. The GUI's mod list shows the same verdicts.

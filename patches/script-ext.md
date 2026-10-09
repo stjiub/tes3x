@@ -28,7 +28,7 @@ The payload currently provides:
 
 ## Using it
 
-`tools/tes3x_scriptasm.py` writes a plugin that calls an opcode by extending a script the engine
+`tes3x scriptasm` writes a plugin that calls an opcode by extending a script the engine
 already runs. Script compilers do not know the new commands' names, so a script cannot name them
 in source.
 

@@ -4,8 +4,8 @@
 The MCPX boot ROM and the BIOS are Microsoft's and are not downloadable; copy dumps from your
 own console into the folder.
 
-    python tools/tes3x_xemu_setup.py download FOLDER
-    python tools/tes3x_xemu_setup.py find FOLDER
+    tes3x xemu-setup download FOLDER
+    tes3x xemu-setup find FOLDER
 """
 
 import argparse

@@ -898,7 +898,7 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
     for key, symbols in wanted.items():
         hooks[key] = link_symbol(link_map, *symbols)
         hooks.update(extra.get(key, {}))
-    # Beside the payload, so tes3x_patch.py can apply it without a toolchain or the map.
+    # Beside the payload, so tes3x patch can apply it without a toolchain or the map.
     manifest = out / "tes3xhook.json"
     with open(manifest, "w", encoding="utf-8") as stream:
         json.dump({"base": va, "hooks": hooks}, stream, indent=2)

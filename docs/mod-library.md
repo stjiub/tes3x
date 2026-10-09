@@ -15,8 +15,8 @@ A profile can mix the two. See [`examples/library.toml`](../examples/library.tom
 ## Indexing a library
 
 ```powershell
-python tools/tes3x_library.py scan "D:/Morrowind Mods"          # list folders not indexed yet
-python tools/tes3x_library.py scan "D:/Morrowind Mods" --write  # add them to library.toml
+tes3x library scan "D:/Morrowind Mods"          # list folders not indexed yet
+tes3x library scan "D:/Morrowind Mods" --write  # add them to library.toml
 ```
 
 Each new folder or loose plugin becomes one mod with version `unknown`. Entries already in
@@ -27,7 +27,7 @@ new library folders**.
 To switch a profile from folder names to ids:
 
 ```powershell
-python tools/tes3x_library.py convert profiles/my-build.toml
+tes3x library convert profiles/my-build.toml
 ```
 
 It converts each mod whose folder is indexed as a whole, with no optional components, so the

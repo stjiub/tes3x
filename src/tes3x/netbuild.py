@@ -168,4 +168,4 @@ def fetch(host, port, ticket, what, timeout=30):
 
 
 if __name__ == "__main__":
-    raise SystemExit("used by tes3x_net.py serve --build")
+    raise SystemExit("used by tes3x net serve --build")

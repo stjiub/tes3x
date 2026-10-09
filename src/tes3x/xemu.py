@@ -1,10 +1,10 @@
 """Build and run a profile in xemu, optionally driving it with a script and recovering its log.
 
-    python tools/tes3x_xemu.py NAME profiles/my-build.toml -- --preset minimal --enable diagnostics
-    python tools/tes3x_xemu.py NAME --deploy build/some/deploy
-    python tools/tes3x_xemu.py NAME2 --iso build/xemu/NAME/game.iso    (NAME ran with --keep-iso)
+    tes3x xemu NAME profiles/my-build.toml -- --preset minimal --enable diagnostics
+    tes3x xemu NAME --deploy build/some/deploy
+    tes3x xemu NAME2 --iso build/xemu/NAME/game.iso    (NAME ran with --keep-iso)
 
-Everything after `--` goes to tes3x_pipeline.py. Diagnostics, the hang watchdog and Show FPS are
+Everything after `--` goes to tes3x pipeline. Diagnostics, the hang watchdog and Show FPS are
 switched on in the ini unless --no-diag. Each run gets its own folder under build/xemu/ holding
 xemu's output and the recovered log. The ISO and the build's deploy tree, most of a run's size, are
 deleted when the run ends unless --keep-build (or --keep-iso, to pass the ISO to a later run's
@@ -479,7 +479,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("name", help="run folder under build/xemu/")
-    ap.add_argument("profile", nargs="?", help="profile to build with tes3x_pipeline.py")
+    ap.add_argument("profile", nargs="?", help="profile to build with tes3x pipeline")
     ap.add_argument("--config", help="local config (default: see docs/configuration.md)")
     ap.add_argument("--target", help="xemu target (default: the first configured xemu target)")
     ap.add_argument("--deploy", help="use an existing deploy tree instead of building")
@@ -538,7 +538,7 @@ def main():
     ap.add_argument("--net-tunnel", type=int, metavar="PORT",
                     help="attach the NIC to xemu's udp backend: guest frames go to "
                          "127.0.0.1:PORT and frames sent to PORT+1 reach the guest "
-                         "(tes3x_net.py --tunnel PORT); the guest's MAC becomes "
+                         "(tes3x net --tunnel PORT); the guest's MAC becomes "
                          "02:00:00:00 and PORT, so each tunnel is a separate client")
     ap.add_argument("--net-nat", action="store_true",
                     help="attach the NIC to xemu's nat backend: DHCP gives 10.0.2.15, UDP "

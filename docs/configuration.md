@@ -3,7 +3,7 @@
 A profile says what to build. `tes3x.local.toml` holds the settings for your computer: where the
 retail game, mods and tools are, and the Xbox and xemu targets that can run a build.
 
-`python tools/tes3x_pipeline.py profiles/my-build.toml --check` checks both files and prints
+`tes3x pipeline profiles/my-build.toml --check` checks both files and prints
 what would be built.
 
 ## Local config
@@ -25,11 +25,11 @@ is none yet. Relative paths are relative to the file.
 | `tes3merge` | string | none | `TES3Merge.exe`, for `rules.tes3merge = true`. |
 | `build_root` | string | `build` | Parent directory for profile output folders. |
 | `llvm` | string | `PATH` | Directory containing `clang` and `lld-link`. |
-| `nxdk` | string | none | nxdk checkout with its libraries built, for `tes3x_nxdk.py`. `NXDK_DIR` takes precedence. |
+| `nxdk` | string | none | nxdk checkout with its libraries built, for `tes3x nxdk`. `NXDK_DIR` takes precedence. |
 | `msys2` | string | `C:/msys64` | MSYS2 install whose `make`, `clang` and `lld` build nxdk programs on Windows. |
 | `hardlink_retail` | boolean | `false` | Hardlink unchanged retail files when source and output are on the same volume. |
-| `ghidra` | string | none | Ghidra install folder, for `tes3x_sym.py decompile` and `refs`. `GHIDRA_INSTALL_DIR` takes precedence. |
-| `pc_morrowind` | string | Steam's default folder | PC Morrowind with Code Patch installed, for `tes3x_mcp.py`. `TES3X_PC_MORROWIND` takes precedence. |
+| `ghidra` | string | none | Ghidra install folder, for `tes3x sym decompile` and `refs`. `GHIDRA_INSTALL_DIR` takes precedence. |
+| `pc_morrowind` | string | Steam's default folder | PC Morrowind with Code Patch installed, for `tes3x mcp`. `TES3X_PC_MORROWIND` takes precedence. |
 
 ### Targets
 
@@ -78,7 +78,7 @@ should use targets.
 ### `[server]`
 
 The GUI's **Server** workspace keeps its settings here and turns them into
-`tes3x_net.py serve` options (see [multiplayer](multiplayer.md#start-the-server)). Command-line
+`tes3x net serve` options (see [multiplayer](multiplayer.md#start-the-server)). Command-line
 use of the server does not read this table.
 
 | Key | Type | Default | Meaning |
@@ -219,4 +219,4 @@ Command-line values override the profile and local config. `--target NAME` picks
 main build overrides are `--preset`,
 `--enable`, `--disable`, `--package-mode`, `--drive`, `--title`, `--ini-set`, `--vanilla`,
 `--llvm`, `--build-root`, `--out` and `--hardlink`. Run
-`python tools/tes3x_pipeline.py --help` for their exact syntax.
+`tes3x pipeline --help` for their exact syntax.

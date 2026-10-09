@@ -2,16 +2,12 @@
 
 The GUI edits everything a profile and the local config hold, installs mods into the library, and
 checks, builds, tests and deploys. In a [portable folder](#portable-folder), double-click
-`TES3X.exe`. From a checkout, install its packages and start it with Python:
-
-```powershell
-python -m pip install -e .[gui]
-python tools/tes3x_gui.py
-```
+`TES3X.exe`. From a checkout [installed](getting-started.md#installing-from-a-checkout) with
+`[gui]`, start it with `tes3x gui`.
 
 ### Portable folder
 
-`python tools/tes3x_package.py --zip` writes `build/package/TES3X-<version>/` and its zip: the
+`tes3x package --zip` writes `build/package/TES3X-<version>/` and its zip: the
 tools, an embedded Python 3.12 with the GUI's packages, and `TES3X.exe`, which starts the GUI with
 that Python. `externals/` holds 7-Zip, for `.7z` and `.rar` mods, and clang and lld-link from
 LLVM, for engine fixes, each with its license. Nothing needs installing on the PC that runs it;
@@ -158,7 +154,7 @@ unavailable action stays visible and its tooltip says what is missing.
 ## Server
 
 **Server** manages either a server on this PC or a remote one. **A server on this PC** starts
-`tes3x_net.py serve` with the settings in the form, which are kept in
+`tes3x net serve` with the settings in the form, which are kept in
 the `[server]` table of `tes3x.local.toml` (see [configuration](configuration.md#server)). It shows
 the server's output and polls the admin port for the connected consoles; Kick, Ban and Ask all to
 save act on them. The box under the output takes any

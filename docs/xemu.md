@@ -50,11 +50,11 @@ runner's `--net-nat` does the same for scripted runs; see
 
 ## Scripted and automated runs
 
-`tools/tes3x_xemu.py` builds a profile, packs it as a disc image, boots it on a fresh copy of the
+`tes3x xemu` builds a profile, packs it as a disc image, boots it on a fresh copy of the
 clean hard disk, and copies the log back out:
 
 ```powershell
-python tools/tes3x_xemu.py first-run profiles/my-build.toml --direct-engine --skip-intro --exec script.txt
+tes3x xemu first-run profiles/my-build.toml --direct-engine --skip-intro --exec script.txt
 ```
 
 - `--exec` puts an [exec script](exec-scripts.md) on the disk.

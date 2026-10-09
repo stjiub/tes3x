@@ -26,13 +26,13 @@ commands below from the public repository root.
 ## Run a patch's game test
 
 ```powershell
-python tools/tes3x_scenario.py PATCH profiles/my-build.toml
+tes3x scenario PATCH profiles/my-build.toml
 ```
 
 For example:
 
 ```powershell
-python tools/tes3x_scenario.py dxt5-size profiles/my-build.toml
+tes3x scenario dxt5-size profiles/my-build.toml
 ```
 
 The runner reads `tests/game/PATCH.toml`. A `single` test builds and runs the patch once. A
@@ -55,7 +55,7 @@ file; a completed scenario prints each failed expectation and the matching line,
 Add `--record` to retain sanitized logs and provenance:
 
 ```powershell
-python tools/tes3x_scenario.py PATCH profiles/my-build.toml --record
+tes3x scenario PATCH profiles/my-build.toml --record
 ```
 
 Records go to the ignored `build/validation/patches/PATCH/` directory by default. A passing record
@@ -66,7 +66,7 @@ need durable evidence.
 Use another local result store when needed:
 
 ```powershell
-python tools/tes3x_scenario.py PATCH profiles/my-build.toml `
+tes3x scenario PATCH profiles/my-build.toml `
   --record --results path/to/local-results
 ```
 
@@ -77,8 +77,8 @@ python tools/tes3x_scenario.py PATCH profiles/my-build.toml `
 Give a run a stable prefix if you may want to inspect or record it later:
 
 ```powershell
-python tools/tes3x_scenario.py PATCH profiles/my-build.toml --name scenario-PATCH-1
-python tools/tes3x_scenario.py PATCH profiles/my-build.toml `
+tes3x scenario PATCH profiles/my-build.toml --name scenario-PATCH-1
+tes3x scenario PATCH profiles/my-build.toml `
   --name scenario-PATCH-1 --reuse --record
 ```
 
@@ -89,8 +89,8 @@ the scenario.
 ## Inspect and check local records
 
 ```powershell
-python tools/tes3x_validate.py status
-python tools/tes3x_validate.py check
+tes3x validate status
+tes3x validate check
 ```
 
 `status` reports each patch's local standing, chronological last result, most recent pass, and
@@ -107,7 +107,7 @@ whether a game-test definition exists. `test exists = yes` does not mean the tes
 Maintainers with a complete result store can also enforce the channel gate:
 
 ```powershell
-python tools/tes3x_validate.py --results path/to/local-results check --gate
+tes3x validate --results path/to/local-results check --gate
 ```
 
 Global `--results` goes before `status`, `check` or `record`. `check --gate` requires every
@@ -120,13 +120,13 @@ The scenario runner calls the recorder automatically, but existing xemu run fold
 recorded directly:
 
 ```powershell
-python tools/tes3x_validate.py record PATCH --env xemu `
+tes3x validate record PATCH --env xemu `
   --control build/xemu/CONTROL --test build/xemu/TEST
 ```
 
 Omit `--control` for a `single` game test. Original-Xbox logs can also be recorded with
 `--env hardware`, the corresponding pipeline build folders and a local hardware description; see
-`python tools/tes3x_validate.py record --help`.
+`tes3x validate record --help`.
 
 The scenario runner records only a complete pass. To preserve a failed completed run for local
 diagnosis, call the recorder directly with `--result fail`. A failure record remains valid evidence

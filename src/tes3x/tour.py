@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Walk the game through a plugin's cells and log free memory at each, to find where it runs out.
 
-  tes3x_tour.py make Data/TR_Mainland.esm --bounds=0,-20,30,10 --step 2 -o tes3xexec.txt
-  tes3x_tour.py make Data/TR_Mainland.esm --interiors --prefix "Firewatch" -o tes3xexec.txt
-  tes3x_tour.py report tes3xlog.txt
+  tes3x tour make Data/TR_Mainland.esm --bounds=0,-20,30,10 --step 2 -o tes3xexec.txt
+  tes3x tour make Data/TR_Mainland.esm --interiors --prefix "Firewatch" -o tes3xexec.txt
+  tes3x tour report tes3xlog.txt
 
 `make` writes a command file for the console patch: an optional `@start` line, then for each cell
 a `coe X, Y` or `coc "NAME"`, a wait, and `mark LABEL`, which logs `mem.LABEL <free KB>`.

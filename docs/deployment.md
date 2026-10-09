@@ -1,11 +1,11 @@
 # Deployment
 
-`--deploy` uploads a finished build to the Xbox over FTP with `tools/tes3x_deploy.py`. You need a
+`--deploy` uploads a finished build to the Xbox over FTP with `tes3x deploy`. You need a
 softmodded or hardmodded Xbox running an FTP server, such as the one in most modded dashboards.
 
 ```powershell
-python tools/tes3x_pipeline.py profiles/my-build.toml --dry-run
-python tools/tes3x_pipeline.py profiles/my-build.toml --deploy
+tes3x pipeline profiles/my-build.toml --dry-run
+tes3x pipeline profiles/my-build.toml --deploy
 ```
 
 Run `--dry-run` first: it lists what is already in the Xbox folder and what an upload would change,
@@ -28,7 +28,7 @@ never deploy over an install you want to keep.
 
 Deploy stops without changing anything, with exit status 3, when the folder has files but no
 [build manifest](#build-manifest), holds another profile, or when the profile's save pool folder
-belongs to another title or pool. `--replace-remote` (or `tes3x_deploy.py --replace`) goes ahead;
+belongs to another title or pool. `--replace-remote` (or `tes3x deploy --replace`) goes ahead;
 the GUI asks first.
 
 ## Build manifest
@@ -51,7 +51,7 @@ Every game folder the pipeline stages carries `tes3xbuild.json`, which says what
 A retail digest is the SHA-256 of an XBE with the edits scene copies carry made to it: the
 certificate opened to any media and region, and the game's drive letters set to `D:`. A retail
 copy and a scene copy of the same image therefore share one digest.
-`python tools/tes3x_patch.py XBE --digest` prints it.
+`tes3x patch XBE --digest` prints it.
 
 The delta is a zstd frame, as `zstd --patch-from` makes, that turns the retail XBE with those
 edits made into the patched one: about 90 KB for the engine. The pipeline writes it to
@@ -62,7 +62,7 @@ and checks that it rebuilds the XBE. Deltas need the `zstandard` package
 Deploy compares the console's copy of the manifest with the build, sends what differs and writes
 the manifest last, with the time of the deploy, so it describes what the console holds. A folder
 deployed before the manifest existed has `tes3xdeploy.json` instead; deploy still trusts its
-SHA-1s and replaces it. `python tools/tes3x_manifest.py FOLDER` checks a local game folder
+SHA-1s and replaces it. `tes3x manifest FOLDER` checks a local game folder
 against its manifest.
 
 ## Connecting
@@ -82,13 +82,13 @@ its manifest hashes hold everywhere.
 
 The pipeline writes these keys, whether they come from the profile, `--ini-set` or the target, to
 `console.ini` beside `deploy/` instead of into `Morrowind.ini`. Deploy merges them into the
-console's file (`tes3x_deploy.py --console-ini FILE`), keeping the keys it does not set. The xemu
+console's file (`tes3x deploy --console-ini FILE`), keeping the keys it does not set. The xemu
 runner puts them back into the disc's `Morrowind.ini`, since an xemu disc belongs to one run.
 
 ## Installing the console manager
 
 ```
-python tools/tes3x_manager.py install [--target NAME] [--agent] [--dry-run]
+tes3x manager install [--target NAME] [--agent] [--dry-run]
 ```
 
 installs or updates the manager in `TES3XManager` under the target's `games_root` (`--folder`
@@ -101,7 +101,7 @@ launcher's path, which puts a **Manager** entry on a multiplayer build's main me
 install goes over FTP; once the manager runs, `--agent` updates it through its own agent, and the
 new version starts the next time it is launched. Installing again puts the manager back in `a\`.
 The XBEs come from `--xbe` and `--launcher`, the copies a portable folder ships, or nxdk builds of
-`manager/` and `manager/launcher/` (`paths.nxdk`). `tes3x_manager.py stage OUT` writes the folder
+`manager/` and `manager/launcher/` (`paths.nxdk`). `tes3x manager stage OUT` writes the folder
 without sending it. In the GUI it is **Actions > Install console manager**, or the console manager's **Install /
 update** under **Targets > Overview**, which also shows the installed version; it goes through the
 manager when it is paired.
@@ -112,13 +112,13 @@ The manager also updates itself from a signed release, which needs no PC trust b
 key:
 
 ```
-python tools/tes3x_release.py manager OUT --key KEY --manager XBE --launcher XBE
-python tools/tes3x_manager.py update OUT [--agent] [--target NAME]
+tes3x release manager OUT --key KEY --manager XBE --launcher XBE
+tes3x manager update OUT [--agent] [--target NAME]
 ```
 
 The first writes `release.json` (the manager's version, read from its XBE, and each file's size and
 SHA-256), its Ed25519 signature `release.json.sig`, `manager.xbe` and `launcher.xbe`;
-`tes3x_release.py check OUT` checks one. The second checks the release, sends it to
+`tes3x release check OUT` checks one. The second checks the release, sends it to
 `E:\TES3X\update` and, through the agent, restarts the manager. A release can also be copied there
 by FTP or USB.
 
@@ -146,7 +146,7 @@ reaches its screen, and after two starts that did not, the launcher goes back to
 and the manager says the update did not start. A release whose files are still arriving is left
 for the next start.
 
-The release key's private half stays out of every repository; `tes3x_release.py keygen KEY` makes
+The release key's private half stays out of every repository; `tes3x release keygen KEY` makes
 one with a passphrase, `protect KEY` sets or changes it, and `TES3X_RELEASE_PASSPHRASE` supplies
 it to scripts. A fork makes its own key and puts the public half in `keys/release.pub`: its
 managers then take only its releases. A key is replaced by a release, signed with the old key,
@@ -154,7 +154,7 @@ whose manager carries the new one.
 
 ## Through the console manager
 
-`--deploy-agent` (or `tes3x_deploy.py --agent`) deploys through the TES3X console manager
+`--deploy-agent` (or `tes3x deploy --agent`) deploys through the TES3X console manager
 instead of FTP. Start the manager on the Xbox with `E:\TES3X\console.ini` naming this PC:
 
 ```ini
@@ -244,7 +244,7 @@ An overlay deploy checks that the shared base already matches the local clean ga
 the profile folder. Install or synchronize it explicitly with:
 
 ```powershell
-python tools/tes3x_pipeline.py profiles/my-build.toml --deploy --install-retail-base
+tes3x pipeline profiles/my-build.toml --deploy --install-retail-base
 ```
 
 The GUI does this after showing the shared-base path in its deployment confirmation. The base
@@ -260,7 +260,7 @@ When the console manager or the console add-on's agent is answering, a deploy as
 space is free on the target drive and compares that with what the deploy adds: each uploaded file
 in whole 16 KB clusters, less the files it replaces or deletes. It stops without changing
 anything, with exit status 4, when the deploy will not fit, and warns when less than 256 MB would
-be left. `--ignore-space` (on `tes3x_pipeline.py` or `tes3x_deploy.py`) goes ahead; the GUI asks
+be left. `--ignore-space` (on `tes3x pipeline` or `tes3x deploy`) goes ahead; the GUI asks
 first. Without either agent the deploy says the free space is unknown and carries on.
 
 ## Limits
@@ -276,8 +276,8 @@ and the master references to them; see [ordering plugins](pipeline.md#3-order-pl
 ## Verifying and discarding the build
 
 ```powershell
-python tools/tes3x_pipeline.py profiles/my-build.toml --deploy --verify-deploy size --discard-build
-python tools/tes3x_pipeline.py profiles/my-build.toml --deploy --verify-deploy hash --discard-build
+tes3x pipeline profiles/my-build.toml --deploy --verify-deploy size --discard-build
+tes3x pipeline profiles/my-build.toml --deploy --verify-deploy hash --discard-build
 ```
 
 `size` lists the uploaded files again. `hash` downloads every file again and compares it, which
@@ -287,7 +287,7 @@ FTP upload command having returned successfully.
 
 ## Getting files back
 
-`tools/tes3x_fetch.py` copies files or folders off the Xbox, such as saves or logs;
-`tools/tes3x_diag.py pull` fetches and summarises the diagnostics log. `T:` and `U:` are per-title
+`tes3x fetch` copies files or folders off the Xbox, such as saves or logs;
+`tes3x diag pull` fetches and summarises the diagnostics log. `T:` and `U:` are per-title
 drives that a dashboard's FTP server may refuse; their contents are under `E:/TDATA/<title ID>` and
 `E:/UDATA/<title ID>`.

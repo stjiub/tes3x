@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """Talk to the payload's network driver (the `multiplayer` patch).
 
-    python tools/tes3x_net.py listen                     # console broadcasts on UDP 26500
-    python tools/tes3x_net.py ping 192.0.2.50             # echo round trips to `tes3xnet up`
-    python tools/tes3x_net.py listen --tunnel 9369       # the same through xemu's udp backend
-    python tools/tes3x_net.py ping 10.0.2.15 --tunnel 9369
-    python tools/tes3x_net.py serve --tunnel 9369 --bot   # plus a player circling the first client
-    python tools/tes3x_net.py serve --tunnel 9369 --bot --bot-say 2 --drop 0.2   # events under loss
-    python tools/tes3x_net.py serve --tunnel 9369 --bot --bot-owns 20:60   # the bot runs the cell
-    python tools/tes3x_net.py serve --tunnel 9369 --tunnel 9371   # two xemus, one per tunnel
-    python tools/tes3x_net.py serve --tunnel 9369 --send FILE   # to TES3X on each console's U:
-    python tools/tes3x_net.py plugin OUT.esp --master Morrowind.esm   # the ghost plugin
+    tes3x net listen                     # console broadcasts on UDP 26500
+    tes3x net ping 192.0.2.50             # echo round trips to `tes3xnet up`
+    tes3x net listen --tunnel 9369       # the same through xemu's udp backend
+    tes3x net ping 10.0.2.15 --tunnel 9369
+    tes3x net serve --tunnel 9369 --bot   # plus a player circling the first client
+    tes3x net serve --tunnel 9369 --bot --bot-say 2 --drop 0.2   # events under loss
+    tes3x net serve --tunnel 9369 --bot --bot-owns 20:60   # the bot runs the cell
+    tes3x net serve --tunnel 9369 --tunnel 9371   # two xemus, one per tunnel
+    tes3x net serve --tunnel 9369 --send FILE   # to TES3X on each console's U:
+    tes3x net plugin OUT.esp --master Morrowind.esm   # the ghost plugin
 
 With --tunnel PORT this tool is the guest's only peer: xemu sends each guest Ethernet frame to
-PORT as one datagram and accepts frames on PORT+1 (`tes3x_xemu.py --net-tunnel PORT`), so ping
+PORT as one datagram and accepts frames on PORT+1 (`tes3x xemu --net-tunnel PORT`), so ping
 answers ARP itself and resolves the console's MAC before it pings.
 """
 
@@ -4207,7 +4207,7 @@ class Server:
             self.admin_sock = udp_socket()
             try:
                 self.admin_sock.bind(("127.0.0.1", admin_port))
-                print(f"admin commands on 127.0.0.1:{admin_port} (tes3x_net.py admin)"
+                print(f"admin commands on 127.0.0.1:{admin_port} (tes3x net admin)"
                       + (", and here" if sys.stdin and sys.stdin.isatty() else ""), flush=True)
             except OSError as error:
                 self.admin_sock = None
@@ -4836,7 +4836,7 @@ def main(argv=None):
                    help="a launch not running its key's newest character gets that character's "
                         "kept state replayed over whatever it runs and, SECONDS later (default "
                         "10), is asked for a save; the server diffs it against the checkpoint "
-                        "(tes3x_ess.py --diff) into uploads/KEY/NAME.diff.txt and keeps neither")
+                        "(tes3x ess --diff) into uploads/KEY/NAME.diff.txt and keeps neither")
     p.add_argument("--load-state", action="store_true",
                    help="compatibility option; character loading always uses retained state")
     p.add_argument("--adopt", action="store_true",
@@ -4943,7 +4943,7 @@ def main(argv=None):
                    help="the server's secret key, made on first use (default: server.key in "
                         "--world; without either, a new key each run)")
     p.add_argument("--admin-port", type=int, metavar="PORT",
-                   help="take admin commands (tes3x_net.py admin) on this port of 127.0.0.1 "
+                   help="take admin commands (tes3x net admin) on this port of 127.0.0.1 "
                         "only; 0 for none (default: 26502)")
     p.add_argument("--password-file", metavar="FILE",
                    help="a console whose key is new must give the password on this file's first "
@@ -4992,7 +4992,7 @@ def main(argv=None):
     p.add_argument("--password-file", metavar="FILE",
                    help="with --server, the admin password on this file's first line")
     p = sub.add_parser("fuzz", help="join a server and send it mutated packets")
-    p.add_argument("address", help="HOST[:PORT] of a tes3x_net.py server")
+    p.add_argument("address", help="HOST[:PORT] of a tes3x net server")
     p.add_argument("--count", type=int, default=2000)
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--rate", type=float, default=300, help="packets per second")

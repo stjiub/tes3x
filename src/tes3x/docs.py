@@ -92,7 +92,7 @@ def render_index(nav_path=NAV, docs=DOCS):
     lines = [
         "# TES3X documentation",
         "",
-        "Generated from [`nav.toml`](nav.toml) by `tools/tes3x_docs.py --write`; edit that file, "
+        "Generated from [`nav.toml`](nav.toml) by `tes3x docs --write`; edit that file, "
         "not this one.",
     ]
     for section in sections:
@@ -148,7 +148,7 @@ def problems(root=ROOT):
     index = docs / "index.md"
     if not index.is_file() or index.read_text(encoding="utf-8") != render_index(
             docs / "nav.toml", docs):
-        found.append("docs/index.md: out of date; run tools/tes3x_docs.py --write")
+        found.append("docs/index.md: out of date; run tes3x docs --write")
     return found
 
 

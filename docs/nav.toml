@@ -1,5 +1,5 @@
 # The documentation's table of contents. docs/index.md is generated from it by
-# `python tools/tes3x_docs.py --write`; every page in docs/ must be listed exactly once.
+# `tes3x docs --write`; every page in docs/ must be listed exactly once.
 #
 # A page's entry in the index is its title and the first sentence of its first paragraph, or
 # its line in [summary] when that sentence does not describe it.

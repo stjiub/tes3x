@@ -1,6 +1,6 @@
 # Candidate fixes
 
-Generated from [`candidates.toml`](../candidates.toml) by `tools/tes3x_patches.py --write`;
+Generated from [`candidates.toml`](../candidates.toml) by `tes3x patches --write`;
 edit that file, not this one.
 
 Fixes from other projects that we've looked at, and why each isn't implemented, yet or at

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """List and move Morrowind saves between the Xbox, an xemu disk and a PC save library.
 
-    python tools/tes3x_saves.py list --pool 42530005 --xbox --disk build/play/p/hdd.qcow2 \\
+    tes3x saves list --pool 42530005 --xbox --disk build/play/p/hdd.qcow2 \\
         --library build/saves
-    python tools/tes3x_saves.py pull --pool 42530005 --from xbox 1B22410A51D3 --library build/saves
-    python tools/tes3x_saves.py push --pool 5433A1F2 --pool-name "TR test" 1B22410A51D3 \\
+    tes3x saves pull --pool 42530005 --from xbox 1B22410A51D3 --library build/saves
+    tes3x saves push --pool 5433A1F2 --pool-name "TR test" 1B22410A51D3 \\
         --library build/saves
-    python tools/tes3x_saves.py copy --pool 42530005 --to 5433A1F2 --to-name "TR test" \\
+    tes3x saves copy --pool 42530005 --to 5433A1F2 --to-name "TR test" \\
         --where xbox --move 1B22410A51D3 --library build/saves
-    python tools/tes3x_saves.py delete --pool 42530005 1B22410A51D3
+    tes3x saves delete --pool 42530005 1B22410A51D3
 
 A save is its folder under E:/UDATA/<pool>: <name>.ess, SaveMeta.xbx, saveimage.xbx and vv.dat.
 It is moved whole; the game finds it by the name in SaveMeta.xbx and checks vv.dat. A folder

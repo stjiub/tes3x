@@ -4,7 +4,7 @@ ones: a gold fill lit from the upper left, a dark edge and an orange glow. The r
 Save, Options and Exit are redrawn too, so they match the buttons multiplayer adds. The result is
 committed under assets/menu, so a build needs neither Pillow nor the font.
 
-    python tools/tes3x_menuart.py [--out assets/menu] [--sheet preview.png]
+    tes3x menuart [--out assets/menu] [--sheet preview.png]
 """
 
 import argparse
@@ -46,7 +46,7 @@ def imports():
         import numpy
         from PIL import Image, ImageDraw, ImageFilter, ImageFont
     except ImportError:
-        raise SystemExit("tes3x_menuart.py needs numpy and Pillow")
+        raise SystemExit("tes3x menuart needs numpy and Pillow")
     return numpy, Image, ImageDraw, ImageFilter, ImageFont
 
 

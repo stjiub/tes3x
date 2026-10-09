@@ -7,9 +7,9 @@ You need:
 - A Windows PC. In a [portable folder](gui.md#portable-folder), which carries Python, its
   packages, 7-Zip and LLVM, nothing else needs installing; skip the next three items. From a
   checkout:
-  - Python 3.12 or newer, and TES3X installed into it from the checkout:
-    `python -m pip install -e .[gui]` (best in a venv: `python -m venv .venv`). The
-    command line needs only Pillow, `zstandard` (patched XBEs are stored as deltas) and, for
+  - Python 3.12 or newer, with TES3X installed into a virtual environment from the checkout
+    (see [installing from a checkout](#installing-from-a-checkout)). The command line needs only
+    Pillow, `zstandard` (patched XBEs are stored as deltas) and, for
     `multiplayer` and `agent` builds, `cryptography`; the GUI also needs PySide6 and tomlkit.
   - [LLVM](https://releases.llvm.org) (`clang` and `lld-link`), for engine fixes and the default
     `delta-bsa` packaging. Without it, build with no engine fixes and `merged-bsa` or `loose`
@@ -27,13 +27,28 @@ You need:
 - Optionally, mods: a [mod library](mod-library.md) is a folder with one folder per mod, each laid
   out the way the mod would sit in `Data Files`.
 
+## Installing from a checkout
+
+Skip this in a portable folder. Otherwise, once:
+
+```powershell
+git clone https://github.com/stjiub/tes3x
+cd tes3x
+python -m venv .venv
+.venv\Scripts\activate
+python -m pip install -e .[gui]
+```
+
+Activate the environment (`.venv\Scripts\activate`) in each new terminal; the `tes3x` command
+is on `PATH` while it is active. Without `[gui]` it installs the command line alone.
+
 ## With the GUI
 
-1. Install the GUI's packages and start it:
+1. Start it: in a portable folder, double-click `TES3X.exe`; from a checkout, with its
+   environment active:
 
    ```powershell
-   python -m pip install -e .[gui]
-   python tools/tes3x_gui.py
+   tes3x gui
    ```
 
 2. On first start the GUI opens **File > Settings**. Set the clean game root and your mod library,
@@ -53,6 +68,10 @@ The [GUI guide](gui.md) describes every tab.
 
 ## From the command line
 
+These steps run in a checkout with its environment active (see
+[installing from a checkout](#installing-from-a-checkout)); the portable folder has no command
+line yet.
+
 1. Copy the example local config and an example profile:
 
    ```powershell
@@ -70,32 +89,32 @@ The [GUI guide](gui.md) describes every tab.
 4. Check the profile:
 
    ```powershell
-   python tools/tes3x_pipeline.py profiles/my-build.toml --check
+   tes3x pipeline profiles/my-build.toml --check
    ```
 
 5. Build it. The game folder is written to `<build_root>/my-build/deploy`:
 
    ```powershell
-   python tools/tes3x_pipeline.py profiles/my-build.toml
+   tes3x pipeline profiles/my-build.toml
    ```
 
 6. Optionally, boot it in xemu and walk to Balmora (see [xemu](xemu.md) for the setup):
 
    ```powershell
-   python tools/tes3x_test.py profiles/my-build.toml
+   tes3x test profiles/my-build.toml
    ```
 
 7. Build and preview the upload. This lists what is already in the Xbox folder and what would
    change:
 
    ```powershell
-   python tools/tes3x_pipeline.py profiles/my-build.toml --dry-run
+   tes3x pipeline profiles/my-build.toml --dry-run
    ```
 
 8. Deploy:
 
    ```powershell
-   python tools/tes3x_pipeline.py profiles/my-build.toml --deploy
+   tes3x pipeline profiles/my-build.toml --deploy
    ```
 
 ## Deploy to a folder of its own

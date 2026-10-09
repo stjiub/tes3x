@@ -1,4 +1,4 @@
-/* Ghosts: each peer slot drives one persistent NPC of the ghost plugin (tes3x_net.py plugin),
+/* Ghosts: each peer slot drives one persistent NPC of the ghost plugin (tes3x net plugin),
  * moved into a cell through the engine's script compiler, as the console does, and within it by
  * writing its position. Each is drawn GHOST_DELAY_US in the past, between the two states around
  * that moment, so jitter and a lost state do not show. */

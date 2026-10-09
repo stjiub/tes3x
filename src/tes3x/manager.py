@@ -7,7 +7,7 @@ through a running manager's agent. The folder holds the launcher as default.xbe 
 in slot a. The XBEs come from --xbe and --launcher, the copies a package ships
 (manager/default.xbe, manager/launcher.xbe), or nxdk builds of manager/ (paths.nxdk).
 
-`update RELEASE` sends a signed release (tes3x_release.py manager) to E:/TES3X/update; through
+`update RELEASE` sends a signed release (tes3x release manager) to E:/TES3X/update; through
 the agent it then restarts the manager, which installs the release into its other slot.
 """
 
@@ -213,7 +213,7 @@ def main():
     p.add_argument("--xbe", help="the manager XBE (default: packaged, else built)")
     p.add_argument("--config", help="local config (default: see docs/configuration.md)")
     p = sub.add_parser("update")
-    p.add_argument("release", help="a signed release folder (tes3x_release.py manager)")
+    p.add_argument("release", help="a signed release folder (tes3x release manager)")
     p.add_argument("--agent", action="store_true",
                    help="send through the running manager's agent and restart it, instead of FTP")
     p.add_argument("--public", default=str(tes3x_release.PUBLIC),

@@ -25,7 +25,7 @@ network features bring this patch with them.
 
 ## Using it
 
-Read a log with `tools/tes3x_diag.py pull` (from the Xbox) or `report` (a copied file).
+Read a log with `tes3x diag pull` (from the Xbox) or `report` (a copied file).
 
 ## Configuration
 

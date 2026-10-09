@@ -1,4 +1,4 @@
-"""Ghidra decompiler behind tes3x_sym.py.
+"""Ghidra decompiler behind tes3x sym.
 
 One headless Ghidra process keeps the analysed project open and answers on a loopback port, so a
 request costs well under a second instead of Ghidra's start-up. It starts on first use and exits
@@ -81,7 +81,7 @@ def _connect(port):
 
 def _start():
     if not PROGRAMS.exists():
-        raise SystemExit('no Ghidra project yet; run `tes3x_sym.py ghidra-setup` first')
+        raise SystemExit('no Ghidra project yet; run `tes3x sym ghidra-setup` first')
     progs = json.loads(PROGRAMS.read_text())
     with socket.socket() as s:
         s.bind(('127.0.0.1', 0))

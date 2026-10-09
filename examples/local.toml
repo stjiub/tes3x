@@ -17,7 +17,7 @@ build_root = "build/pipeline"
 # Your own mlox rules file, for profiles that set rules.plugin_order = "mlox". Without it TES3X
 # downloads the current rules from https://github.com/DanaePlays/mlox-rules on first use.
 # mlox_rules = "C:/Tools/mlox/mlox_base.txt"
-# Ghidra 11.3 or later with the ghidra-xbe loader, for tools/tes3x_sym.py decompile and refs.
+# Ghidra 11.3 or later with the ghidra-xbe loader, for tes3x sym decompile and refs.
 # ghidra = "C:/Tools/ghidra_11.3_PUBLIC"
 
 [targets.xbox]

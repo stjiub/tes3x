@@ -1,7 +1,7 @@
 # Symbol map
 
 `symbols/curated.json` names functions and code sites in the retail Xbox `morrowind.xbe`, so that
-an address in a crash log, a profile or a disassembly means something. `tools/tes3x_sym.py` builds
+an address in a crash log, a profile or a disassembly means something. `tes3x sym` builds
 the analysis the names hang on and answers questions about it; the profiler and census renderers
 use it to label what they print.
 
@@ -53,23 +53,23 @@ the binaries it analyses, which you supply: your retail `morrowind.xbe` and, for
 rebuilt from the binaries, never edited and never committed.
 
 ```
-python tools/tes3x_sym.py build morrowind.xbe --tag xbe       # function inventory
-python tools/tes3x_sym.py build Morrowind.exe --tag pc
-python tools/tes3x_sym.py match                               # pair by shared strings
-python tools/tes3x_sym.py propagate                           # extend through the call graph
-python tools/tes3x_sym.py body-match                          # exact bodies and references in Ghidra
-python tools/tes3x_sym.py propagate                           # extend from the body matches
-python tools/tes3x_sym.py seed morrowind.xbe                  # addresses the patcher finds
-python tools/tes3x_sym.py names path/to/MWSE                  # MWSE names onto matched functions
+tes3x sym build morrowind.xbe --tag xbe       # function inventory
+tes3x sym build Morrowind.exe --tag pc
+tes3x sym match                               # pair by shared strings
+tes3x sym propagate                           # extend through the call graph
+tes3x sym body-match                          # exact bodies and references in Ghidra
+tes3x sym propagate                           # extend from the body matches
+tes3x sym seed morrowind.xbe                  # addresses the patcher finds
+tes3x sym names path/to/MWSE                  # MWSE names onto matched functions
 ```
 
 Then query it:
 
 ```
-python tools/tes3x_sym.py lookup 0x00098430                   # the function holding an address
-python tools/tes3x_sym.py disasm 0x0013D370 --len 0x40        # disassembly with names
-python tools/tes3x_sym.py callers 0x0013D370                  # or --callees
-python tools/tes3x_sym.py stats
+tes3x sym lookup 0x00098430                   # the function holding an address
+tes3x sym disasm 0x0013D370 --len 0x40        # disassembly with names
+tes3x sym callers 0x0013D370                  # or --callees
+tes3x sym stats
 ```
 
 The queries need the database; `build` of the XBE alone is enough for `lookup`, `disasm` and
@@ -84,12 +84,12 @@ only when `build/symbols.db` exists, and print bare addresses otherwise.
 once; it takes several minutes per image:
 
 ```
-python tools/tes3x_sym.py ghidra-setup                        # both images in symbols.db
-python tools/tes3x_sym.py decompile 0x00111920                # pseudo-C of the function
-python tools/tes3x_sym.py decompile 0x00111920 --pc           # and its PC counterpart
-python tools/tes3x_sym.py refs 0x003CB5F4                     # code and data references
-python tools/tes3x_sym.py ghidra-sync                         # apply now, list rejections
-python tools/tes3x_sym.py ghidra-stop
+tes3x sym ghidra-setup                        # both images in symbols.db
+tes3x sym decompile 0x00111920                # pseudo-C of the function
+tes3x sym decompile 0x00111920 --pc           # and its PC counterpart
+tes3x sym refs 0x003CB5F4                     # code and data references
+tes3x sym ghidra-sync                         # apply now, list rejections
+tes3x sym ghidra-stop
 ```
 
 The first request starts a headless Ghidra in the background that keeps the project open; later
@@ -114,14 +114,14 @@ session learns goes into the files above.
 
 ## Types
 
-MWSE describes the PC engine's structs in C++ headers. `tes3x_layouts.py` compiles them for 32-bit
+MWSE describes the PC engine's structs in C++ headers. `tes3x layouts` compiles them for 32-bit
 MSVC with libclang and writes the exact layouts to `build/ghidra/types-mwse.json`; it needs
 `python -m pip install libclang`, clang (`[paths] llvm`) and the MSVC and Windows SDK headers of a
 Visual Studio C++ install. MWSE asserts its own sizes and offsets, and the tool reports any that
 fail.
 
 ```
-python tools/tes3x_layouts.py path/to/MWSE
+tes3x layouts path/to/MWSE
 ```
 
 The Xbox build shares most layouts with the PC, not all. `symbols/structs.json` corrects them for
@@ -146,11 +146,11 @@ looked up in `TES3` and then `NI`) with `*` and `[N]`.
 ## Adding a name
 
 ```
-python tools/tes3x_sym.py annotate 0x00193710 Ini::ReadInt --confidence verified \
+tes3x sym annotate 0x00193710 Ini::ReadInt --confidence verified \
     --provenance "traced: 4 args cdecl (section, key, default, file), returns int"
-python tools/tes3x_sym.py annotate 0x003CB5F4 WorldController::instance --kind data \
+tes3x sym annotate 0x003CB5F4 WorldController::instance --kind data \
     --type "TES3::WorldController*" --confidence verified --provenance "..."
-python tools/tes3x_sym.py annotate 0x0017C3D0 MobileActor::applyHealthDamage \
+tes3x sym annotate 0x0017C3D0 MobileActor::applyHealthDamage \
     --signature "bool __thiscall applyHealthDamage(float damage, bool isPlayerAttack, bool scaleWithDifficulty, bool doNotChangeHealth)"
 ```
 
@@ -182,15 +182,15 @@ partitions and the controller) has no PC counterpart at all, so it is named only
 
 ## Where the numbers go
 
-- `tools/tes3x_prof.py targets NAME` turns a name into the address list for
+- `tes3x prof targets NAME` turns a name into the address list for
   `--apply profile=`, and `report FILE` renders `E:\tes3xprof.bin`
   ([Profiling](diagnostics.md#profiling)).
-- `tools/tes3x_heap.py` and `tools/tes3x_mem.py` render the heap and memory censuses, naming call
+- `tes3x heap` and `tes3x mem` render the heap and memory censuses, naming call
   sites from the map ([Heap census](diagnostics.md#heap-census)).
 
 ## Credit and limits
 
 `mwse:` names come from [MWSE](https://github.com/MWSE/MWSE)'s address definitions (MIT licence),
-carried across by the matching above, and so do the struct layouts `tes3x_layouts.py` compiles from
+carried across by the matching above, and so do the struct layouts `tes3x layouts` compiles from
 its headers. The map holds addresses, names, types and signatures only: no bytes of the game, no
 decompiled code.

@@ -29,7 +29,7 @@ GitHub Actions runs them on Windows and Linux, with Python 3.12 and 3.13, for ev
 ## Profile check
 
 ```powershell
-python tools/tes3x_pipeline.py profiles/my-build.toml --check
+tes3x pipeline profiles/my-build.toml --check
 ```
 
 Resolves and validates the profile without building it: mod folders, missing masters, patch
@@ -41,10 +41,10 @@ Boot a profile in xemu, start a new game, walk to Balmora and check the log for 
 hangs:
 
 ```powershell
-python tools/tes3x_test.py profiles/my-build.toml --record
-python tools/tes3x_test.py profiles/my-build.toml --keep-artifacts always
-python tools/tes3x_test.py profiles/my-build.toml --library-all --record
-python tools/tes3x_test.py profiles/my-build.toml --library-all --library "D:/Mods To Test"
+tes3x test profiles/my-build.toml --record
+tes3x test profiles/my-build.toml --keep-artifacts always
+tes3x test profiles/my-build.toml --library-all --record
+tes3x test profiles/my-build.toml --library-all --library "D:/Mods To Test"
 ```
 
 The test build adds `diagnostics` and `console` to the profile, and runs the exec script in
@@ -62,7 +62,7 @@ the log lines it must produce. The scenario runner builds the variants the test 
 in xemu and decides whether the logs satisfy it:
 
 ```powershell
-python tools/tes3x_scenario.py PATCH profiles/my-build.toml
+tes3x scenario PATCH profiles/my-build.toml
 ```
 
 The file format is in [game tests](game-tests.md); running, recording and checking results in
@@ -73,6 +73,6 @@ The file format is in [game tests](game-tests.md); running, recording and checki
 xemu shows whether a build runs, not how fast or in how much memory. Timings, memory pressure and
 anything that depends on the real hardware need a console. Deploy a build to its own folder (see
 [pipeline](pipeline.md)), play or run an exec script on it, then fetch the log with
-`tools/tes3x_diag.py pull`. [Diagnostics and profiling](diagnostics.md) covers the log, the
+`tes3x diag pull`. [Diagnostics and profiling](diagnostics.md) covers the log, the
 profiler and the memory censuses; [validation](validation.md) covers recording a hardware run as
 evidence.

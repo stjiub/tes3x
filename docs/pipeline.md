@@ -1,15 +1,15 @@
 # Pipeline
 
-`tools/tes3x_pipeline.py` turns one mod library profile into a complete game folder, and optionally deploys
+`tes3x pipeline` turns one mod library profile into a complete game folder, and optionally deploys
 it. It runs a fixed series of stages, each implemented by a tool you can also run individually (see
 [commands](commands.md)). Every profile and local-config key is in the
 [configuration reference](configuration.md).
 
 ```powershell
-python tools/tes3x_pipeline.py profiles/my-build.toml --check
-python tools/tes3x_pipeline.py profiles/my-build.toml
-python tools/tes3x_pipeline.py profiles/my-build.toml --dry-run
-python tools/tes3x_pipeline.py profiles/my-build.toml --deploy
+tes3x pipeline profiles/my-build.toml --check
+tes3x pipeline profiles/my-build.toml
+tes3x pipeline profiles/my-build.toml --dry-run
+tes3x pipeline profiles/my-build.toml --deploy
 ```
 
 ## 1. Resolve and check
@@ -45,11 +45,11 @@ and `--disable` on the command line override the profile. Some patches are added
 needs them: `delta-bsa` packing adds `multi-bsa`, `mwse-legacy` adds `script-ext`, and
 `multiplayer` adds `diagnostics`. Every build gets [`boot-media`](../patches/boot-media.md) and
 [`drive-letters`](../patches/drive-letters.md). See the [patch table](patches.md), the
-[`[Xbox]` ini keys](ini-keys.md) patches read, or `python tools/tes3x_patch.py --list`.
+[`[Xbox]` ini keys](ini-keys.md) patches read, or `tes3x patch --list`.
 
 ## 2. Collect the winning files
 
-`tes3x_build.py` stacks the profile's mods in order, later mods winning when two ship the same
+`tes3x build` stacks the profile's mods in order, later mods winning when two ship the same
 file, and writes the result as one `Data Files` tree. On the way it:
 
 - drops files matching `rules.exclude` (by default documentation, images and stray `.ini` files);
@@ -67,7 +67,7 @@ not have.
 Plugins load in the order set by their file times. By default, masters load first, then plugins
 in mod order. A profile can list its own order in `[plugins] order`; the GUI writes it when you
 drag plugins or press **Sort**. With `rules.plugin_order = "mlox"`, mlox sorts them at build time.
-`tes3x_plugins.py` does the ordering.
+`tes3x plugins` does the ordering.
 
 The Xbox never loads a plugin whose name has more than one dot, such as
 `Ports Of Vvardenfell V1.6.ESP`: the file is skipped without an error, and a plugin that needs it
@@ -77,7 +77,7 @@ points every plugin that names it as a master at the new name. The build prints 
 order is unaffected, since it comes from file times. Plugins that were never loaded under the old
 name appear in no save.
 
-`tes3x_pack.py` then packages the tree with the retail files according to `package.mode`:
+`tes3x pack` then packages the tree with the retail files according to `package.mode`:
 `delta-bsa` (the default), `merged-bsa` or `loose`. See [packaging](packaging.md).
 
 ### Sorting plugins with mlox
@@ -90,7 +90,7 @@ TES3X includes mlox's sorter, so there is nothing to install. The rules come fro
 [mlox-rules project](https://github.com/DanaePlays/mlox-rules): the first sort downloads them to
 TES3X's data folder (`%LOCALAPPDATA%\TES3X\mlox` on Windows, or `TES3X_DATA` when set) and later
 sorts reuse that copy. The rules change often; **Download** next to "mlox rules" in the GUI's
-local settings, or `python tools/tes3x_plugins.py fetch-rules`, fetches the current ones. To use
+local settings, or `tes3x plugins fetch-rules`, fetches the current ones. To use
 your own rules file instead, set `paths.mlox_rules`.
 
 mlox runs on a copy of the build's plugins and never touches your library. Its conflict and
@@ -112,14 +112,14 @@ Morrowind install are left alone. Its log stays in the build's `tes3merge` folde
 target .NET 6; the build lets a newer installed .NET runtime run it. When nothing conflicts,
 no patch is shipped.
 
-`python tools/tes3x_plugins.py merge TREE --vanilla "Data Files" --tool TES3Merge.exe --work DIR
+`tes3x plugins merge TREE --vanilla "Data Files" --tool TES3Merge.exe --work DIR
 --out "Merged Objects.esp"` runs the same step alone; `--order` takes an order file from `order`
 or `arrange`.
 
 ## 4. Build the payload and patch the XBE
 
-When a selected patch needs code, `tes3x_payload.py` compiles the [payload](../patches/payload.md)
-for your `morrowind.xbe` with clang and lld-link. `tes3x_patch.py` then applies every selected
+When a selected patch needs code, `tes3x payload` compiles the [payload](../patches/payload.md)
+for your `morrowind.xbe` with clang and lld-link. `tes3x patch` then applies every selected
 patch to a copy of the XBE, each located by content. `--title` and a save pool also patch the
 launcher, `Default.xbe`.
 
@@ -145,7 +145,7 @@ build and the retail folder are on the same NTFS volume.
 ## 6. Play, test, preview or deploy
 
 - The GUI's **Play** action runs the profile in xemu with its persistent saves; see [xemu](xemu.md).
-- `tools/tes3x_test.py` runs a scripted smoke test of the same profile in xemu; see
+- `tes3x test` runs a scripted smoke test of the same profile in xemu; see
   [testing](testing.md).
 - `--dry-run` lists what is in the Xbox folder and what an upload would change.
 - `--deploy` uploads the build, over FTP or with `--deploy-agent` through the console manager;
@@ -158,9 +158,9 @@ You can also copy `<build_root>/<profile name>/deploy` to the Xbox with any FTP 
 Command-line values override the profile:
 
 ```powershell
-python tools/tes3x_pipeline.py profiles/my-build.toml --preset testing --enable video-arena
-python tools/tes3x_pipeline.py profiles/my-build.toml --ini-set "General:Show FPS=1"
-python tools/tes3x_pipeline.py profiles/my-build.toml --package-mode loose
+tes3x pipeline profiles/my-build.toml --preset testing --enable video-arena
+tes3x pipeline profiles/my-build.toml --ini-set "General:Show FPS=1"
+tes3x pipeline profiles/my-build.toml --package-mode loose
 ```
 
 `--help` lists every option, including the instrumentation options described in

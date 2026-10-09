@@ -1,5 +1,5 @@
 /* Freestanding XBE payload.
- * Kernel calls use host import thunks emitted by tes3x_inject.py.
+ * Kernel calls use host import thunks emitted by tes3x.inject.
  */
 
 #include "tes3x_thunks.h"
