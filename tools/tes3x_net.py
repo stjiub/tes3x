@@ -2346,20 +2346,299 @@ def load_admitted(path):
     return admitted
 
 
+class Bot:
+    """A scripted player for tests (--bot and the --bot-* options). It circles where the
+    first client entered the world and acts on a schedule counted from when it first
+    placed itself."""
+
+    def __init__(self, server, now):
+        self.server, self.args = server, server.args
+        self.start = now
+        self.anchor = None  # ((flags, cell), x, y, z) of the client it circles
+        self.anchored = None  # when it first placed itself; the schedule's zero
+        self.state = None
+        self.next_step = self.said = 0.0
+        self.line = self.held = 0
+        self.breaks = []  # (due, holder, refid) of holds it breaks
+        self.hit = self.killed = self.hit_player = self.busy = self.dead = False
+        self.mirror = self.echo = None
+        self.actor_next = 0.0
+        if self.args.bot:
+            self.server.identities[BOT_ID] = pack_identity("Bot", "Imperial",
+                                                           "b_n_imperial_m_head_01",
+                                                           "b_n_imperial_m_hair_01")
+        if self.args.bot_equip is not None:
+            self.server.equipment[BOT_ID] = [
+                pack_equipment([i for i in self.args.bot_equip.split(",") if i]), []]
+        self.boxes = []
+        for spec in self.args.bot_contents:
+            what, _, at = spec.rpartition("@")
+            refid, cell, items = what.split(":", 2)
+            entries = []
+            for item in items.split(","):
+                name, count, *condition = item.split("*")
+                entries.append([name, int(count), ENTRY_DATA if condition else 0,
+                                int(condition[0]) if condition else 0, 0])
+            self.boxes.append((float(at), int(refid, 16), int(cell), entries))
+        self.spawns = []
+        for spec in self.args.bot_spawn:
+            what, _, at = spec.rpartition("@")
+            name, cell, *condition = what.split(":")
+            self.spawns.append((float(at), name, int(cell),
+                                int(condition[0]) if condition else None))
+        self.takes = [float(at) for at in self.args.bot_take]
+        self.fights = {int(refid, 16): int(client) for refid, _, client in
+                       (spec.partition(":") for spec in self.args.bot_fights)}
+        self.weather = []
+        self.statuses = list(self.args.bot_status)
+        self.affects = list(self.args.bot_affect)
+        self.spells = []
+        self.bounties = [(float(at), int(value)) for value, _, at in
+                         (s.rpartition("@") for s in self.args.bot_bounty)]
+        self.shots = [(float(at), ammo)
+                      for ammo, _, at in (s.rpartition("@") for s in self.args.bot_shoot)]
+        for kind, specs in ((EVENT_SPELL, self.args.bot_spell), (EVENT_CAST, self.args.bot_cast)):
+            for spec in specs:
+                cast, _, at = spec.partition("@")
+                name, _, refid = cast.partition(":")
+                target = None if refid == "none" else int(refid, 16) if refid else 0
+                self.spells.append((float(at), kind, name, target))
+        for spec in self.args.bot_weather:
+            change, _, at = spec.partition("@")
+            index, _, value = change.partition(":")
+            self.weather.append((float(at), int(index), int(value)))
+
+    def window(self, spec, now):
+        """Whether now falls in START:END seconds after the bot first placed itself."""
+        if not spec or self.anchored is None:
+            return False
+        start, _, end = spec.partition(":")
+        t = now - self.anchored
+        return float(start) <= t < (float(end) if end else math.inf)
+
+    def follow(self, state):
+        """The bot circles where the first client entered the world, and follows it to a new
+        cell or across a long jump."""
+        flags, x, y, z, _, cell = STATE_BODY.unpack_from(state)
+        flags &= PLACE
+        anchor = self.anchor
+        if flags & IN_WORLD and (anchor is None or anchor[0] != (flags, cell)
+                                 or math.hypot(x - anchor[1], y - anchor[2]) > 2048):
+            self.anchor = ((flags, cell), x, y, z)
+            if self.anchored is None:
+                self.anchored = time.monotonic()
+            print(f"{time.strftime('%H:%M:%S')} bot circles {describe_state(state)}",
+                  flush=True)
+
+    def step(self, now):
+        (flags, cell), cx, cy, cz = self.anchor
+        if self.args.bot_at:
+            dx, dy = (float(v) for v in self.args.bot_at.split(","))
+            cx, cy = cx + dx, cy + dy
+        t = (now - self.start) * 2 * math.pi / self.args.bot_period
+        if self.mirror:
+            _, x, y, z, heading, _, actor_flags, _, _, _, anim = ACTOR.unpack(self.mirror)
+            state = STATE_BODY.pack(flags | actor_flags & STANCE, x + self.args.bot_shift, y, z,
+                                    heading, cell) + anim
+        elif self.echo:
+            echo_flags, x, y, z, heading, echo_cell = STATE_BODY.unpack_from(self.echo)
+            state = STATE_BODY.pack(echo_flags, x + self.args.bot_shift, y, z, heading,
+                                    echo_cell) + self.echo[STATE_BODY.size:]
+        else:
+            state = STATE_BODY.pack(flags, cx + self.args.bot_radius * math.cos(t),
+                                    cy + self.args.bot_radius * math.sin(t), cz, -t % (2 * math.pi),
+                                    cell) + NO_ANIM
+        self.state = state
+        for other in self.server.clients.values():
+            if other.in_world:
+                self.server.send(other, PEER, struct.pack("<I", BOT_ID) + state)
+
+    def move_actors(self, now):
+        """As the authority, the bot places each actor of its cells bot_shift units east of where
+        the last authority left it, swaying east and west by bot_sway once per bot_period."""
+        server = self.server
+        owned = [refid for refid, (_, key, _) in server.actors.items()
+                 if server.actor_owners.get(refid, (server.owners.get(key),))[0] == BOT_ID]
+        for refid in owned:
+            server.actor_seen[refid] = now  # a client's states of it have stopped
+        owned = [server.actors[refid][2] for refid in owned]
+        phase = (now - self.start) * 2 * math.pi / self.args.bot_period
+        sway = self.args.bot_sway * math.sin(phase)
+        facing = math.pi / 2 if math.cos(phase) >= 0 else 3 * math.pi / 2
+        for i in range(0, len(owned), ACTORS_PER_PACKET):
+            chunk = owned[i:i + ACTORS_PER_PACKET]
+            body = struct.pack("<I", len(chunk))
+            for record in chunk:
+                refid, x, y, z, heading, health, flags, magicka, fatigue, target, anim = \
+                    ACTOR.unpack(record)
+                if refid in self.fights:
+                    flags, target = flags | ACTOR_IN_COMBAT, self.fights[refid]
+                    server.actors[refid] = (BOT_ID, server.actors[refid][1], ACTOR.pack(
+                        refid, x, y, z, heading, health, flags, magicka, fatigue, target, anim))
+                if self.args.bot_sway:
+                    heading = facing
+                if self.args.bot_stats:
+                    health, magicka, fatigue = (float(v) for v in self.args.bot_stats.split(","))
+                body += ACTOR.pack(refid, x + self.args.bot_shift + sway, y, z, heading, health,
+                                   flags, magicka, fatigue, target, anim)
+            for other in server.clients.values():
+                if other.in_world:
+                    server.send(other, ACTORS, struct.pack("<I", BOT_ID) + body)
+
+    def move(self, now):
+        """The schedule's bounty, busy and death changes, then a step; before authority."""
+        for spec in [b for b in self.bounties if self.args.bot and self.window(f"{b[0]}:", now)]:
+            self.bounties.remove(spec)
+            print(f"{time.strftime('%H:%M:%S')} bot bounty {spec[1]}", flush=True)
+            self.server.broadcast_event(BOT_ID, EVENT_BOUNTY, struct.pack("<i", spec[1]), now)
+        if self.args.bot and self.anchor and self.window(self.args.bot_busy, now) != self.busy:
+            self.busy = not self.busy
+            print(f"{time.strftime('%H:%M:%S')} bot {'saves' if self.busy else 'is back'}",
+                  flush=True)
+            self.server.broadcast_event(BOT_ID, EVENT_BUSY,
+                                        bytes([BUSY_SAVING if self.busy else 0]), now)
+        if self.args.bot and self.anchor and self.window(self.args.bot_dead, now) != self.dead:
+            self.dead = not self.dead
+            print(f"{time.strftime('%H:%M:%S')} bot {'dies' if self.dead else 'respawns'}",
+                  flush=True)
+            self.server.broadcast_event(BOT_ID, EVENT_PLAYER,
+                                        bytes([PLAYER_DEATH if self.dead else PLAYER_ALIVE]),
+                                        now)
+        if self.args.bot and self.anchor and now >= self.next_step and not self.busy:
+            self.next_step = now + 1 / self.args.bot_rate
+            self.step(now)
+
+    def act(self, now):
+        """Its actors, then the rest of the schedule; after authority."""
+        if self.args.bot and now >= self.actor_next:
+            self.actor_next = now + ACTOR_PERIOD
+            self.move_actors(now)
+        for due, holder, refid in [b for b in self.breaks if now >= b[0]]:
+            self.breaks.remove((due, holder, refid))
+            print(f"{time.strftime('%H:%M:%S')} bot breaks client {holder}'s hold on "
+                  f"{refid:#010x}", flush=True)
+            self.server.send_event(holder, BOT_ID, EVENT_HOLD_BROKEN,
+                                   struct.pack("<III", refid, holder, 2),
+                                   now)
+        if self.args.bot_hold:
+            refid, _, span = self.args.bot_hold.partition("@")
+            refid = int(refid, 16)
+            want = self.window(span, now)
+            owner = self.server.actor_authority(refid)
+            if want != self.held and owner:
+                self.held = want
+                print(f"{time.strftime('%H:%M:%S')} bot {'holds' if want else 'releases'} "
+                      f"{refid:#010x} (authority {owner})", flush=True)
+                self.server.send_event(owner, BOT_ID, EVENT_HOLD,
+                                       struct.pack("<III", refid, owner, want), now)
+        if self.args.bot_kill and not self.killed:
+            refid, _, at = self.args.bot_kill.partition("@")
+            refid = int(refid, 16)
+            if self.window(at, now):
+                self.killed = True
+                self.server.world.deaths[refid] = BOT_ID
+                print(f"{time.strftime('%H:%M:%S')} bot kills {refid:#010x}", flush=True)
+                self.server.broadcast_event(BOT_ID, EVENT_DEATH, struct.pack("<I", refid), now)
+        for spec in [b for b in self.statuses if self.window(b.partition("@")[2], now)]:
+            self.statuses.remove(spec)
+            refid, _, values = spec.partition("@")[0].partition(":")
+            refid, values = int(refid, 16), tuple(int(v) for v in values.split(","))
+            self.server.world.statuses[refid] = values
+            print(f"{time.strftime('%H:%M:%S')} bot sets {describe_status(refid, values)}",
+                  flush=True)
+            self.server.broadcast_event(BOT_ID, EVENT_STATUS, STATUS.pack(refid, *values), now)
+        for spec in [b for b in self.affects if self.window(b.rpartition("@")[2], now)]:
+            self.affects.remove(spec)
+            refid, index, name = spec.rpartition("@")[0].split(":", 2)
+            print(f"{time.strftime('%H:%M:%S')} bot gives {refid} effect {index} of {name}",
+                  flush=True)
+            self.server.broadcast_event(BOT_ID, EVENT_AFFECT,
+                                        struct.pack("<IB", int(refid, 16), int(index))
+                                        + name.encode("latin-1") + b"\0", now)
+        if self.args.bot_hit and not self.hit:
+            refid, _, at = self.args.bot_hit.partition("@")
+            refid = int(refid, 16)
+            owner = self.server.actor_authority(refid)
+            if owner and self.window(at, now):
+                self.hit = True
+                print(f"{time.strftime('%H:%M:%S')} bot hits {refid:#010x} for 5 (authority "
+                      f"{owner})", flush=True)
+                self.server.send_event(owner, BOT_ID, EVENT_HIT,
+                                       struct.pack("<IIf", refid, owner, 5.0), now)
+        for due, index, value in [w for w in self.weather if self.window(f"{w[0]}:", now)]:
+            self.weather.remove((due, index, value))
+            self.server.set_weather(BOT_ID, {index: value}, time.strftime("%H:%M:%S"), now)
+        if self.args.bot_hit_player and not self.hit_player:
+            damage, _, at = self.args.bot_hit_player.partition("@")
+            damage, _, fatigue = damage.partition(":")
+            if self.window(at, now):
+                self.hit_player = True
+                for other in [c for c in self.server.clients.values() if c.alive]:
+                    print(f"{time.strftime('%H:%M:%S')} bot hits client {other.id} for {damage}"
+                          f" health, {fatigue or 0} fatigue", flush=True)
+                    self.server.send_event(other.id, BOT_ID, EVENT_PLAYER_HIT,
+                                           struct.pack("<IIff", 0, other.id, float(damage),
+                                                float(fatigue or 0)), now)
+        for spell in [s for s in self.spells if self.window(f"{s[0]}:", now)]:
+            _, kind, name, refid = spell
+            if refid:
+                target = self.server.actor_authority(refid)
+            else:
+                target = next((c.id for c in self.server.clients.values() if c.alive), None)
+            if not target or target == BOT_ID:
+                continue
+            self.spells.remove(spell)
+            verb = "casts" if kind == EVENT_SPELL else "is seen casting"
+            if refid is None:
+                print(f"{time.strftime('%H:%M:%S')} bot {verb} {name} at nothing", flush=True)
+                self.server.broadcast_event(BOT_ID, kind,
+                                            SPELL.pack(0, 0, 0, SOURCE_SPELL, 1) + zstr(name),
+                                            now)
+                continue
+            on = f"{refid:#010x}" if refid else "the player"
+            print(f"{time.strftime('%H:%M:%S')} bot {verb} {name} on {on} of client {target}",
+                  flush=True)
+            data = SPELL.pack(0, target, refid, SOURCE_SPELL, 1) + zstr(name)
+            if kind == EVENT_SPELL:
+                self.server.send_event(target, BOT_ID, kind, data, now)
+            else:
+                self.server.broadcast_event(BOT_ID, kind, data, now)
+        for spec in [s for s in self.spawns if self.window(f"{s[0]}:", now)]:
+            self.spawns.remove(spec)
+            _, x, y, z = self.anchor
+            self.server.add_spawn(BOT_ID, {"cell": spec[2], "count": 1, "pos": [x + 64, y, z],
+                                           "rot": [0.0, 0.0, 0.0], "id": spec[1],
+                                           "data": spec[3] is not None, "condition": spec[3] or 0,
+                                           "charge": 0},
+                                  time.strftime("%H:%M:%S"), now)
+        for box in [b for b in self.boxes if self.window(f"{b[0]}:", now)]:
+            self.boxes.remove(box)
+            self.server.set_contents(BOT_ID, box[1], box[2], box[3], False,
+                                     time.strftime("%H:%M:%S"),
+                                     now)
+        for at in [t for t in self.takes if self.window(f"{t}:", now)]:
+            self.takes.remove(at)
+            for sid in [s for s, v in self.server.world.spawns.items() if v["origin"] != BOT_ID]:
+                self.server.remove_spawn(BOT_ID, sid, time.strftime("%H:%M:%S"), now)
+        for shot in [s for s in self.shots if self.window(f"{s[0]}:", now)]:
+            self.shots.remove(shot)
+            print(f"{time.strftime('%H:%M:%S')} bot shoots {shot[1]}", flush=True)
+            self.server.broadcast_event(BOT_ID, EVENT_SHOT,
+                                        SHOT.pack(0, 1.0, 0.0, 1) + zstr(shot[1]),
+                                        now)
+        if self.args.bot_say and self.anchor and \
+                now >= self.said + self.args.bot_say:
+            self.said = now
+            self.line += 1
+            self.server.broadcast_event(BOT_ID, EVENT_TEXT, b"bot %d" % self.line, now)
+
+
 class Server:
     """A session server: welcomes consoles by their key, answers each heartbeat at once and relays
     each client's state to the others. Each --tunnel also serves an xemu guest."""
 
     def __init__(self, args):
         self.args = args
-
-    def window(self, spec, now):
-        """Whether now falls in START:END seconds after the bot first placed itself."""
-        if not spec or self.bot["anchored"] is None:
-            return False
-        start, _, end = spec.partition(":")
-        t = now - self.bot["anchored"]
-        return float(start) <= t < (float(end) if end else math.inf)
 
     def dropped(self, direction):
         if self.args.drop and self.loss.random() < self.args.drop:
@@ -2398,43 +2677,6 @@ class Server:
             self.transmit(addr, packet, seq)
             count += 1
         client.window = (start, count)
-
-    def bot_anchor(self, state):
-        """The bot circles where the first client entered the world, and follows it to a new
-        cell or across a long jump."""
-        flags, x, y, z, _, cell = STATE_BODY.unpack_from(state)
-        flags &= PLACE
-        anchor = self.bot["anchor"]
-        if flags & IN_WORLD and (anchor is None or anchor[0] != (flags, cell)
-                                 or math.hypot(x - anchor[1], y - anchor[2]) > 2048):
-            self.bot["anchor"] = ((flags, cell), x, y, z)
-            if self.bot["anchored"] is None:
-                self.bot["anchored"] = time.monotonic()
-            print(f"{time.strftime('%H:%M:%S')} bot circles {describe_state(state)}",
-                  flush=True)
-
-    def bot_step(self, now):
-        (flags, cell), cx, cy, cz = self.bot["anchor"]
-        if self.args.bot_at:
-            dx, dy = (float(v) for v in self.args.bot_at.split(","))
-            cx, cy = cx + dx, cy + dy
-        t = (now - self.bot["start"]) * 2 * math.pi / self.args.bot_period
-        if self.bot["mirror"]:
-            _, x, y, z, heading, _, actor_flags, _, _, _, anim = ACTOR.unpack(self.bot["mirror"])
-            state = STATE_BODY.pack(flags | actor_flags & STANCE, x + self.args.bot_shift, y, z,
-                                    heading, cell) + anim
-        elif self.bot["echo"]:
-            echo_flags, x, y, z, heading, echo_cell = STATE_BODY.unpack_from(self.bot["echo"])
-            state = STATE_BODY.pack(echo_flags, x + self.args.bot_shift, y, z, heading,
-                                    echo_cell) + self.bot["echo"][STATE_BODY.size:]
-        else:
-            state = STATE_BODY.pack(flags, cx + self.args.bot_radius * math.cos(t),
-                                    cy + self.args.bot_radius * math.sin(t), cz, -t % (2 * math.pi),
-                                    cell) + NO_ANIM
-        self.bot["state"] = state
-        for other in self.clients.values():
-            if other.in_world:
-                self.send(other, PEER, struct.pack("<I", BOT_ID) + state)
 
     def adopt_world(self, order, now):
         """Load what --world holds for this load order: the clock, deaths, objects, weather."""
@@ -3054,7 +3296,7 @@ class Server:
                     self.send_event(target, client.id, kind, data, now)
             elif kind == EVENT_HOLD and struct.unpack_from("<I", data, 8)[0] and \
                     self.args.bot_break_hold is not None:
-                self.bot["breaks"].append((now + self.args.bot_break_hold, client.id, refid))
+                self.bot.breaks.append((now + self.args.bot_break_hold, client.id, refid))
             return
         if kind == EVENT_DEATH and len(data) >= 4:
             refid = struct.unpack_from("<I", data)[0]
@@ -3173,8 +3415,8 @@ class Server:
             if any(c not in busy for c, _ in cands):
                 candidates[key] = [c for c in cands if c[0] not in busy]
         forced = None
-        if self.bot["state"] and self.window(self.args.bot_owns, now):
-            own, loaded = cell_keys(self.bot["state"])
+        if self.bot.state and self.bot.window(self.args.bot_owns, now):
+            own, loaded = cell_keys(self.bot.state)
             for key in loaded:
                 candidates.setdefault(key, []).append((BOT_ID, key == own))
             forced = BOT_ID
@@ -3205,9 +3447,9 @@ class Server:
         for client in self.clients.values():
             if client.alive and client.state and client.loaded and client.busy is None:
                 players[client.id] = (client.loaded,) + STATE_BODY.unpack_from(client.state)[1:3]
-        if self.args.bot_at and self.bot["state"] and not self.bot["busy"]:
-            players[BOT_ID] = (cell_keys(self.bot["state"])[1],) + \
-                STATE_BODY.unpack_from(self.bot["state"])[1:3]
+        if self.args.bot_at and self.bot.state and not self.bot.busy:
+            players[BOT_ID] = (cell_keys(self.bot.state)[1],) + \
+                STATE_BODY.unpack_from(self.bot.state)[1:3]
         for refid in [r for r, seen in self.actor_seen.items() if now - seen > OWNER_STALE]:
             del self.actor_seen[refid]
         live = {}
@@ -3248,6 +3490,10 @@ class Server:
             if changes:
                 self.flush(client, now)
 
+    def actor_authority(self, refid):
+        """The authority of the cell an actor was last reported in, or None."""
+        return self.owners.get(self.actors[refid][1]) if refid in self.actors else None
+
     def on_actors(self, client, body):
         """Keep an authority's actor states and relay them to the other clients."""
         count = struct.unpack_from("<I", body)[0]
@@ -3264,7 +3510,7 @@ class Server:
             self.actors[refid] = (client.id, key, record)
             self.actor_seen[refid] = time.monotonic()
             if refid == self.args.bot_mirror:
-                self.bot["mirror"] = record
+                self.bot.mirror = record
             client.actor_states += 1
             kept.append(record)
         if not kept:
@@ -3273,38 +3519,6 @@ class Server:
         for other in self.clients.values():
             if other is not client and other.in_world:
                 self.send(other, ACTORS, struct.pack("<I", client.id) + body)
-
-    def bot_actors(self, now):
-        """As the authority, the bot places each actor of its cells bot_shift units east of where
-        the last authority left it, swaying east and west by bot_sway once per bot_period."""
-        owned = [refid for refid, (_, key, _) in self.actors.items()
-                 if self.actor_owners.get(refid, (self.owners.get(key),))[0] == BOT_ID]
-        for refid in owned:
-            self.actor_seen[refid] = now  # a client's states of it have stopped
-        owned = [self.actors[refid][2] for refid in owned]
-        phase = (now - self.bot["start"]) * 2 * math.pi / self.args.bot_period
-        sway = self.args.bot_sway * math.sin(phase)
-        facing = math.pi / 2 if math.cos(phase) >= 0 else 3 * math.pi / 2
-        for i in range(0, len(owned), ACTORS_PER_PACKET):
-            chunk = owned[i:i + ACTORS_PER_PACKET]
-            body = struct.pack("<I", len(chunk))
-            for record in chunk:
-                refid, x, y, z, heading, health, flags, magicka, fatigue, target, anim = \
-                    ACTOR.unpack(record)
-                if refid in self.bot_fights:
-                    flags, target = flags | ACTOR_IN_COMBAT, self.bot_fights[refid]
-                    self.actors[refid] = (BOT_ID, self.actors[refid][1], ACTOR.pack(
-                        refid, x, y, z, heading, health, flags, magicka, fatigue, target, anim))
-                if self.args.bot_sway:
-                    heading = facing
-                if self.args.bot_stats:
-                    health, magicka, fatigue = (float(v) for v in self.args.bot_stats.split(","))
-                body += ACTOR.pack(refid, x + self.args.bot_shift + sway, y, z, heading, health,
-                                   flags,
-                                   magicka, fatigue, target, anim)
-            for other in self.clients.values():
-                if other.in_world:
-                    self.send(other, ACTORS, struct.pack("<I", BOT_ID) + body)
 
     def handshake(self, kind, session, packet, addr, now, version):
         """Answer HANDSHAKE1 with HANDSHAKE2; on HANDSHAKE3, the HELLO it carries, the console's
@@ -3701,9 +3915,9 @@ class Server:
             client.states += 1
             self.keep_place(client, now)
             if self.args.bot:
-                self.bot_anchor(client.state)
+                self.bot.follow(client.state)
                 if self.args.bot_echo:
-                    self.bot["echo"] = client.state
+                    self.bot.echo = client.state
             for other in self.clients.values():
                 if other is not client and other.in_world:
                     self.send(other, PEER, struct.pack("<I", client.id) + client.state)
@@ -3826,25 +4040,10 @@ class Server:
         self.identities = {}  # client -> its complete [name/race, head/hair] parts
         self.actor_equipment = {}  # actor id -> (authority, complete parts, arriving parts)
         self.bounties = {}
-        if self.args.bot:
-            self.identities[BOT_ID] = pack_identity("Bot", "Imperial", "b_n_imperial_m_head_01",
-                                                    "b_n_imperial_m_hair_01")
-        if self.args.bot_equip is not None:
-            self.equipment[BOT_ID] = [
-                pack_equipment([i for i in self.args.bot_equip.split(",") if i]), []]
         # refid -> (reporting client, cell, ACTOR bytes), the latest from an authority
         self.actors = {}
         self.arriving = {}  # client id -> (refid, entries so far, next part)
-        self.bot_boxes = []
-        for spec in self.args.bot_contents:
-            what, _, at = spec.rpartition("@")
-            refid, cell, items = what.split(":", 2)
-            entries = []
-            for item in items.split(","):
-                name, count, *condition = item.split("*")
-                entries.append([name, int(count), ENTRY_DATA if condition else 0,
-                                int(condition[0]) if condition else 0, 0])
-            self.bot_boxes.append((float(at), int(refid, 16), int(cell), entries))
+        self.bot = Bot(self, time.monotonic())
         self.world = World()
         # per-tick state changes in the console
         self.detail = {"verbose": self.args.log == "verbose"}
@@ -3852,34 +4051,7 @@ class Server:
         self.streams_saved = 0.0
         self.starts = load_starts(self.args.starts or STARTS)
         self.creating = set()  # key fingerprints making a new character
-        self.bot_spawns = []
-        for spec in self.args.bot_spawn:
-            what, _, at = spec.rpartition("@")
-            name, cell, *condition = what.split(":")
-            self.bot_spawns.append((float(at), name, int(cell),
-                                    int(condition[0]) if condition else None))
-        self.bot_takes = [float(at) for at in self.args.bot_take]
-        self.bot_fights = {int(refid, 16): int(client) for refid, _, client in
-                           (spec.partition(":") for spec in self.args.bot_fights)}
-        self.bot_weather = []
-        self.bot_statuses = list(self.args.bot_status)
-        self.bot_affects = list(self.args.bot_affect)
-        self.bot_spells = []
-        self.bot_bounties = [(float(at), int(value)) for value, _, at in
-                             (s.rpartition("@") for s in self.args.bot_bounty)]
-        self.bot_shots = [(float(at), ammo)
-                          for ammo, _, at in (s.rpartition("@") for s in self.args.bot_shoot)]
-        for kind, specs in ((EVENT_SPELL, self.args.bot_spell), (EVENT_CAST, self.args.bot_cast)):
-            for spec in specs:
-                cast, _, at = spec.partition("@")
-                name, _, refid = cast.partition(":")
-                target = None if refid == "none" else int(refid, 16) if refid else 0
-                self.bot_spells.append((float(at), kind, name, target))
-        for spec in self.args.bot_weather:
-            change, _, at = spec.partition("@")
-            index, _, value = change.partition(":")
-            self.bot_weather.append((float(at), int(index), int(value)))
-        self.authority_next = self.actor_next = 0.0
+        self.authority_next = 0.0
         self.server_secret = load_server_key(self.args)
         self.password = load_password(self.args)
         self.admitted_path = (os.path.join(self.args.world, "admitted.txt") if self.args.world
@@ -3941,11 +4113,6 @@ class Server:
                                  "characters")
             with open(self.args.send, "rb") as stream:
                 self.sending = (name, stream.read())
-
-        self.bot = {"anchor": None, "next": 0.0, "start": time.monotonic(), "said": 0.0,
-                    "line": 0, "anchored": None, "state": None, "breaks": [], "held": 0,
-                    "hit": False, "killed": False, "mirror": None, "hit_player": False,
-                    "echo": None, "busy": False, "dead": False}
 
         # Stopping asks every joined console for its character and waits, up to --stop-wait, for the
         # saves of those running one; a second Ctrl-C stops at once.
@@ -4104,155 +4271,11 @@ class Server:
             for stream in self.streams.values():
                 if stream.dirty:
                     stream.save()
-        for spec in [b for b in self.bot_bounties
-                     if self.args.bot and self.window(f"{b[0]}:", now)]:
-            self.bot_bounties.remove(spec)
-            print(f"{time.strftime('%H:%M:%S')} bot bounty {spec[1]}", flush=True)
-            self.broadcast_event(BOT_ID, EVENT_BOUNTY, struct.pack("<i", spec[1]), now)
-        if self.args.bot and self.bot["anchor"] and \
-                self.window(self.args.bot_busy, now) != self.bot["busy"]:
-            self.bot["busy"] = not self.bot["busy"]
-            print(f"{time.strftime('%H:%M:%S')} bot "
-                  f"{'saves' if self.bot['busy'] else 'is back'}",
-                  flush=True)
-            self.broadcast_event(BOT_ID, EVENT_BUSY,
-                                 bytes([BUSY_SAVING if self.bot["busy"] else 0]), now)
-        if self.args.bot and self.bot["anchor"] and \
-                self.window(self.args.bot_dead, now) != self.bot["dead"]:
-            self.bot["dead"] = not self.bot["dead"]
-            print(f"{time.strftime('%H:%M:%S')} bot "
-                  f"{'dies' if self.bot['dead'] else 'respawns'}",
-                  flush=True)
-            self.broadcast_event(BOT_ID, EVENT_PLAYER,
-                                 bytes([PLAYER_DEATH if self.bot["dead"] else PLAYER_ALIVE]),
-                                 now)
-        if self.args.bot and self.bot["anchor"] and now >= self.bot["next"] and \
-                not self.bot["busy"]:
-            self.bot["next"] = now + 1 / self.args.bot_rate
-            self.bot_step(now)
+        self.bot.move(now)
         if now >= self.authority_next:
             self.authority_next = now + AUTHORITY_PERIOD
             self.update_authority(now)
-        if self.args.bot and now >= self.actor_next:
-            self.actor_next = now + ACTOR_PERIOD
-            self.bot_actors(now)
-        for due, holder, refid in [b for b in self.bot["breaks"] if now >= b[0]]:
-            self.bot["breaks"].remove((due, holder, refid))
-            print(f"{time.strftime('%H:%M:%S')} bot breaks client {holder}'s hold on "
-                  f"{refid:#010x}", flush=True)
-            self.send_event(holder, BOT_ID, EVENT_HOLD_BROKEN,
-                            struct.pack("<III", refid, holder, 2),
-                            now)
-        if self.args.bot_hold:
-            refid, _, span = self.args.bot_hold.partition("@")
-            refid = int(refid, 16)
-            want = self.window(span, now)
-            owner = self.owners.get(self.actors[refid][1]) if refid in self.actors else None
-            if want != self.bot["held"] and owner:
-                self.bot["held"] = want
-                print(f"{time.strftime('%H:%M:%S')} bot {'holds' if want else 'releases'} "
-                      f"{refid:#010x} (authority {owner})", flush=True)
-                self.send_event(owner, BOT_ID, EVENT_HOLD,
-                                struct.pack("<III", refid, owner, want), now)
-        if self.args.bot_kill and not self.bot["killed"]:
-            refid, _, at = self.args.bot_kill.partition("@")
-            refid = int(refid, 16)
-            if self.window(at, now):
-                self.bot["killed"] = True
-                self.world.deaths[refid] = BOT_ID
-                print(f"{time.strftime('%H:%M:%S')} bot kills {refid:#010x}", flush=True)
-                self.broadcast_event(BOT_ID, EVENT_DEATH, struct.pack("<I", refid), now)
-        for spec in [b for b in self.bot_statuses if self.window(b.partition("@")[2], now)]:
-            self.bot_statuses.remove(spec)
-            refid, _, values = spec.partition("@")[0].partition(":")
-            refid, values = int(refid, 16), tuple(int(v) for v in values.split(","))
-            self.world.statuses[refid] = values
-            print(f"{time.strftime('%H:%M:%S')} bot sets {describe_status(refid, values)}",
-                  flush=True)
-            self.broadcast_event(BOT_ID, EVENT_STATUS, STATUS.pack(refid, *values), now)
-        for spec in [b for b in self.bot_affects if self.window(b.rpartition("@")[2], now)]:
-            self.bot_affects.remove(spec)
-            refid, index, name = spec.rpartition("@")[0].split(":", 2)
-            print(f"{time.strftime('%H:%M:%S')} bot gives {refid} effect {index} of {name}",
-                  flush=True)
-            self.broadcast_event(BOT_ID, EVENT_AFFECT,
-                                 struct.pack("<IB", int(refid, 16), int(index))
-                                 + name.encode("latin-1") + b"\0", now)
-        if self.args.bot_hit and not self.bot["hit"]:
-            refid, _, at = self.args.bot_hit.partition("@")
-            refid = int(refid, 16)
-            owner = self.owners.get(self.actors[refid][1]) if refid in self.actors else None
-            if owner and self.window(at, now):
-                self.bot["hit"] = True
-                print(f"{time.strftime('%H:%M:%S')} bot hits {refid:#010x} for 5 (authority "
-                      f"{owner})", flush=True)
-                self.send_event(owner, BOT_ID, EVENT_HIT,
-                                struct.pack("<IIf", refid, owner, 5.0), now)
-        for due, index, value in [w for w in self.bot_weather if self.window(f"{w[0]}:", now)]:
-            self.bot_weather.remove((due, index, value))
-            self.set_weather(BOT_ID, {index: value}, time.strftime("%H:%M:%S"), now)
-        if self.args.bot_hit_player and not self.bot["hit_player"]:
-            damage, _, at = self.args.bot_hit_player.partition("@")
-            damage, _, fatigue = damage.partition(":")
-            if self.window(at, now):
-                self.bot["hit_player"] = True
-                for other in [c for c in self.clients.values() if c.alive]:
-                    print(f"{time.strftime('%H:%M:%S')} bot hits client {other.id} for {damage}"
-                          f" health, {fatigue or 0} fatigue", flush=True)
-                    self.send_event(other.id, BOT_ID, EVENT_PLAYER_HIT,
-                                    struct.pack("<IIff", 0, other.id, float(damage),
-                                           float(fatigue or 0)), now)
-        for spell in [s for s in self.bot_spells if self.window(f"{s[0]}:", now)]:
-            _, kind, name, refid = spell
-            if refid:
-                target = (self.owners.get(self.actors[refid][1]) if refid in self.actors
-                          else None)
-            else:
-                target = next((c.id for c in self.clients.values() if c.alive), None)
-            if not target or target == BOT_ID:
-                continue
-            self.bot_spells.remove(spell)
-            verb = "casts" if kind == EVENT_SPELL else "is seen casting"
-            if refid is None:
-                print(f"{time.strftime('%H:%M:%S')} bot {verb} {name} at nothing", flush=True)
-                self.broadcast_event(BOT_ID, kind,
-                                     SPELL.pack(0, 0, 0, SOURCE_SPELL, 1) + zstr(name),
-                                     now)
-                continue
-            on = f"{refid:#010x}" if refid else "the player"
-            print(f"{time.strftime('%H:%M:%S')} bot {verb} {name} on {on} of client {target}",
-                  flush=True)
-            data = SPELL.pack(0, target, refid, SOURCE_SPELL, 1) + zstr(name)
-            if kind == EVENT_SPELL:
-                self.send_event(target, BOT_ID, kind, data, now)
-            else:
-                self.broadcast_event(BOT_ID, kind, data, now)
-        for spec in [s for s in self.bot_spawns if self.window(f"{s[0]}:", now)]:
-            self.bot_spawns.remove(spec)
-            _, x, y, z = self.bot["anchor"]
-            self.add_spawn(BOT_ID, {"cell": spec[2], "count": 1, "pos": [x + 64, y, z],
-                                    "rot": [0.0, 0.0, 0.0], "id": spec[1],
-                                    "data": spec[3] is not None, "condition": spec[3] or 0,
-                                    "charge": 0},
-                           time.strftime("%H:%M:%S"), now)
-        for box in [b for b in self.bot_boxes if self.window(f"{b[0]}:", now)]:
-            self.bot_boxes.remove(box)
-            self.set_contents(BOT_ID, box[1], box[2], box[3], False, time.strftime("%H:%M:%S"),
-                              now)
-        for at in [t for t in self.bot_takes if self.window(f"{t}:", now)]:
-            self.bot_takes.remove(at)
-            for sid in [s for s, v in self.world.spawns.items() if v["origin"] != BOT_ID]:
-                self.remove_spawn(BOT_ID, sid, time.strftime("%H:%M:%S"), now)
-        for shot in [s for s in self.bot_shots if self.window(f"{s[0]}:", now)]:
-            self.bot_shots.remove(shot)
-            print(f"{time.strftime('%H:%M:%S')} bot shoots {shot[1]}", flush=True)
-            self.broadcast_event(BOT_ID, EVENT_SHOT, SHOT.pack(0, 1.0, 0.0, 1) + zstr(shot[1]),
-                                 now)
-        if self.args.bot_say and self.bot["anchor"] and \
-                now >= self.bot["said"] + self.args.bot_say:
-            self.bot["said"] = now
-            self.bot["line"] += 1
-            self.broadcast_event(BOT_ID, EVENT_TEXT, b"bot %d" % self.bot["line"], now)
+        self.bot.act(now)
         for client in [c for c in self.clients.values() if c.alive and c.bursts]:
             if now - client.joined >= client.bursts[0][0]:
                 _, count = client.bursts.pop(0)
