@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import ntpath
 import os
 import re
 import shutil
@@ -205,13 +206,13 @@ def main():
     from tes3x_plugins import xbox_renames, rename_masters
     is_plugin = lambda rel: rel.lower().endswith(('.esm', '.esp'))
     try:
-        renames = xbox_renames([os.path.basename(rel) for rel, _ in loose if is_plugin(rel)])
+        renames = xbox_renames([ntpath.basename(rel) for rel, _ in loose if is_plugin(rel)])
     except ValueError as error:
         ap.error(str(error))
     for old, new in renames.items():
         print(f"  renaming plugin {old} -> {new}: the Xbox skips a name with two dots")
-    loose = [(os.path.join(os.path.dirname(rel), renames[os.path.basename(rel).lower()])
-              if is_plugin(rel) and os.path.basename(rel).lower() in renames else rel, full)
+    loose = [(ntpath.join(ntpath.dirname(rel), renames[ntpath.basename(rel).lower()])
+              if is_plugin(rel) and ntpath.basename(rel).lower() in renames else rel, full)
              for rel, full in loose]
 
     seen = {}
@@ -268,7 +269,8 @@ def main():
 
     copied = 0
     for rel, full in loose:
-        dst = os.path.join(out_df, rel)
+        # rel is the engine's backslash path; split it so POSIX hosts create folders
+        dst = os.path.join(out_df, *rel.split("\\"))
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         if full is None:
             with open(dst, "wb") as f:
@@ -281,7 +283,8 @@ def main():
 
     from pathlib import Path
     from tes3x_plugins import validate_order, STAMP_BASE, STAMP_STEP
-    plugins = {Path(rel).name.lower(): Path(out_df) / rel for rel, _ in loose if is_plugin(rel)}
+    plugins = {ntpath.basename(rel).lower(): Path(out_df, *rel.split("\\"))
+               for rel, _ in loose if is_plugin(rel)}
     if renames:
         for path in plugins.values():
             for old in rename_masters(path, renames):
@@ -333,7 +336,7 @@ def main():
     print(f"  {copied} loose files copied")
     fanout = {}
     for rel, _ in loose:
-        fanout[os.path.dirname(rel) or "."] = fanout.get(os.path.dirname(rel) or ".", 0) + 1
+        fanout[ntpath.dirname(rel) or "."] = fanout.get(ntpath.dirname(rel) or ".", 0) + 1
     print("\n  loose fanout (FATX cost):")
     for d, n in sorted(fanout.items(), key=lambda e: -e[1])[:6]:
         print(f"    {n:>5}  {d or 'Data Files'}")
