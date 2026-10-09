@@ -54,6 +54,9 @@ class GuiTests(unittest.TestCase):
         QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
     def setUp(self):
+        # Off the network: a late answer from a background lookup lands in a later test
+        for name in ("tes3x.ftp.connect", "tes3x.nexus.query"):
+            self.enterContext(patch(name, side_effect=OSError("no network in GUI tests")))
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         # resolved, as the tools resolve it: Windows may name temp by its 8.3 short form
@@ -100,11 +103,18 @@ order = 10
 
     def window(self, path=None, **kwargs):
         window = ProfileWindow(path or self.profile, **kwargs)
-        self.addCleanup(window.close)
+        # A closed window lives on, its timers still running into later tests
+        self.addCleanup(self.dispose, window)
         # Cleanups run last-first: drop unsaved changes so closing does not ask to save them.
         self.addCleanup(setattr, window, "document", None)
         window.mods.refresh_analysis()
         return window
+
+    @staticmethod
+    def dispose(window):
+        window.close()
+        window.deleteLater()
+        QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
     def saved(self, path=None):
         with open(path or self.profile, "rb") as stream:
@@ -486,7 +496,7 @@ order = 10
         config = self.root / "local.toml"
         config.write_text("", encoding="utf-8")
         window = ProfileWindow(config=config)
-        self.addCleanup(window.close)
+        self.addCleanup(self.dispose, window)
         self.assertEqual(window.profile_path, (profiles / "a.toml").resolve())
         self.assertEqual([window.profile_picker.itemText(i)
                           for i in range(window.profile_picker.count())], ["a", "b"])
