@@ -41,4 +41,4 @@ original hardware. PAL is not currently supported, but is planned.
 
 ## License
 
-[GPL-3.0](LICENSE).
+[GPL-3.0-or-later](LICENSE): the GNU General Public License, version 3 or any later version.

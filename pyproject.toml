@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "tes3x"
 description = "Modding and patching toolkit for the original Xbox Morrowind"
 readme = "README.md"
+license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dynamic = ["version"]
