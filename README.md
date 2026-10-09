@@ -20,16 +20,6 @@ optimizes and deploys a mod list. It also adds multiplayer.
 - **Modularity.** TES3X makes many changes, but each piece is optional rather than
   all-or-nothing.
 
-## Getting TES3X
-
-- **Windows:** download `TES3X-<version>.zip` from the
-  [releases page](https://github.com/stjiub/tes3x/releases), unpack it and run `TES3X.exe`.
-  Nothing else needs installing.
-- **With Python 3.12 or newer, on Windows or Linux:**
-  `pipx install "tes3x[gui] @ git+https://github.com/stjiub/tes3x"`, then `tes3x gui`.
-
-[Getting started](docs/getting-started.md) covers both, what else you need and a first build.
-
 ## Status and limitations
 
 - TES3X is under active development and changes often, sometimes in breaking ways.
@@ -43,6 +33,16 @@ optimizes and deploys a mod list. It also adds multiplayer.
 - The [compatibility catalog](docs/catalog.md) lists mods tried on the Xbox and how they fared;
   many PC mods depend on features the Xbox build lacks.
 
+## Quick start
+
+- **Windows:** download `TES3X-<version>.zip` from the
+  [releases page](https://github.com/stjiub/tes3x/releases), unpack it and run `TES3X.exe`.
+  Nothing else needs installing.
+- **With Python 3.12 or newer, on Windows or Linux:**
+  `pipx install "tes3x[gui] @ git+https://github.com/stjiub/tes3x"`, then `tes3x gui`.
+
+[Getting started](docs/getting-started.md) covers both, what else you need and a first build.
+
 ## Docs
 
 - [Getting started](docs/getting-started.md)
@@ -50,7 +50,7 @@ optimizes and deploys a mod list. It also adds multiplayer.
 - [Pipeline](docs/pipeline.md)
 - [Patches](docs/patches.md)
 - [All documentation](docs/index.md)
-- [Development](docs/development.md), for working on TES3X itself
+- [Development](docs/development.md)
 
 ## License
 
