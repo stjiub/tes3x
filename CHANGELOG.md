@@ -4,6 +4,7 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- Multiplayer state saves tolerate brief Windows file locks instead of stopping the server.
 - Multiplayer join and remote admin password limits share tries across each IPv6 /64.
   Filling the bounded address table no longer resets existing limits; new sources wait
   until a slot recovers. Handshake limits use the same source grouping and bounded storage.

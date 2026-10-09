@@ -127,7 +127,17 @@ def save_world(path, world):
         json.dump(world, f, indent=1, sort_keys=True)
         f.flush()
         os.fsync(f.fileno())
-    os.replace(path + ".tmp", path)
+    deadline = time.monotonic() + 0.25
+    while True:
+        try:
+            os.replace(path + ".tmp", path)
+            break
+        except PermissionError as error:
+            # Windows readers can temporarily deny replacement of an otherwise writable file.
+            if getattr(error, "winerror", None) not in (5, 32, 33) or \
+                    time.monotonic() >= deadline:
+                raise
+            time.sleep(0.01)
 
 
 class World:

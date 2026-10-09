@@ -117,6 +117,9 @@ current place through the reliable queue. The server acknowledges the snapshot a
 the character and world. Leave waits for that acknowledgement before quitting; after 30 seconds
 without confirmation, the player chooses to leave anyway or stay.
 
+World and character state files are replaced atomically. The server retries brief Windows
+file locks for up to 0.25 seconds; lasting write failures remain errors.
+
 A player who dies while joined is not offered the last save. The others see a notice, and after
 `--respawn-delay` the player gets up at the closest temple or Imperial shrine (the markers
 Almsivi and Divine Intervention use), with full health, magicka and fatigue, the same bounty, and
