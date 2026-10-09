@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tes3x"
+description = "Modding and patching toolkit for the original Xbox Morrowind"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.12"
+dynamic = ["version"]
+dependencies = [
+    "cryptography>=43,<47",
+    "Pillow>=10,<13",
+    "zstandard>=0.22,<1",
+]
+
+[project.optional-dependencies]
+gui = ["PySide6-Essentials>=6.8,<7", "tomlkit>=0.13,<1"]
+dev = ["pyflakes"]
+
+[project.urls]
+Homepage = "https://github.com/stjiub/tes3x"
+
+[tool.setuptools.dynamic]
+version = { attr = "tes3x.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]

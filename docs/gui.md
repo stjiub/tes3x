@@ -5,7 +5,7 @@ checks, builds, tests and deploys. In a [portable folder](#portable-folder), dou
 `TES3X.exe`. From a checkout, install its packages and start it with Python:
 
 ```powershell
-python -m pip install -r requirements-gui.txt
+python -m pip install -e .[gui]
 python tools/tes3x_gui.py
 ```
 

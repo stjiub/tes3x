@@ -7,7 +7,8 @@ You need:
 - A Windows PC. In a [portable folder](gui.md#portable-folder), which carries Python, its
   packages, 7-Zip and LLVM, nothing else needs installing; skip the next three items. From a
   checkout:
-  - Python 3.12 or newer, and its packages: `python -m pip install -r requirements-gui.txt`. The
+  - Python 3.12 or newer, and TES3X installed into it from the checkout:
+    `python -m pip install -e .[gui]` (best in a venv: `python -m venv .venv`). The
     command line needs only Pillow, `zstandard` (patched XBEs are stored as deltas) and, for
     `multiplayer` and `agent` builds, `cryptography`; the GUI also needs PySide6 and tomlkit.
   - [LLVM](https://releases.llvm.org) (`clang` and `lld-link`), for engine fixes and the default
@@ -31,7 +32,7 @@ You need:
 1. Install the GUI's packages and start it:
 
    ```powershell
-   python -m pip install -r requirements-gui.txt
+   python -m pip install -e .[gui]
    python tools/tes3x_gui.py
    ```
 

@@ -15,6 +15,7 @@ cache/
 
 __pycache__/
 *.pyc
+*.egg-info/
 tes3x.local.toml
 tes3x.agent.key
 profiles/
