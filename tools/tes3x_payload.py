@@ -23,8 +23,8 @@ from tes3x_patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, find_call_sites, find
 
 HOOKS = resource("hooks")
 HEADERS = ("tes3xdiag.h", "tes3xheap.h", "tes3xlog.h", "tes3xmem.h", "tes3xnt.h",
-           "tes3xpager.h", "tes3xprof.h", "tes3xregion.h", "tes3x_thunks.h", "monocypher.h",
-           "tes3xnoise.h", "tes3xlaunch.h")
+           "tes3xpager.h", "tes3xprof.h", "tes3xregion.h", "monocypher.h", "tes3xnoise.h",
+           "tes3xlaunch.h")
 SECTION = re.compile(r'^#include "(multi/\w+\.c)"$', re.M)
 DEFAULT_SOURCES = ("tes3xhook.c", "tes3xlog.c", "tes3xini.c", "tes3xdiag.c")
 BUNDLED_LLVM = writable("externals", "llvm", "bin")
@@ -216,13 +216,16 @@ def define_value(source, name):
     return match.group(1)
 
 
-def build_id(sources, user_flags):
+def build_id(sources, user_flags, generated=()):
+    """The ID a server matches consoles by: the flags, the sources with their sections, the
+    headers, generated ones (the XBE's thunks) and this file."""
     digest = hashlib.sha256()
     digest.update(b"flags\0" + user_flags.encode("utf-8") + b"\0")
     files = {Path(s).name: source_path(s) for s in sources}
     for source in list(files.values()):
         files.update({name: source.parent / name for name in section_names(source)})
     files.update({name: HOOKS / name for name in HEADERS})
+    files.update({Path(path).name: Path(path) for path in generated})
     files[Path(__file__).name] = Path(__file__)
     for name in sorted(files):
         if files[name].exists():
@@ -262,9 +265,11 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
     va = hexva(image.next_va())
     entry = hexva(image.entry)
     print(f"section VA {va}   original entry {entry}")
-    tes3x_inject.write_thunks(image, HOOKS / "tes3x_thunks.h", tes3x_inject.DEFAULT_KRNL_DEF)
+    # Generated per XBE into the build, never into hooks/, which an install may not let us write.
+    thunks = out / "tes3x_thunks.h"
+    tes3x_inject.write_thunks(image, thunks, tes3x_inject.DEFAULT_KRNL_DEF)
 
-    ident = forced_build_id or build_id(sources, user_flags)
+    ident = forced_build_id or build_id(sources, user_flags, [thunks])
     print(f"payload build id {ident}")
     flags = user_flags.split() + [f"-DTES3X_BUILD_ID={ident}"]
 
@@ -880,7 +885,8 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         # Monocypher is vendored whole; the linker keeps only the functions the payload calls.
         sections = ["-ffunction-sections", "-fdata-sections"] if source == "monocypher.c" else []
         subprocess.run([clang, *CFLAGS, *sections, f"-DTES3X_ORIG_ENTRY={entry}", *flags,
-                        f"-I{HOOKS}", "-c", str(source_path(source)), "-o", str(obj)], check=True)
+                        f"-I{out}", f"-I{HOOKS}", "-c", str(source_path(source)), "-o", str(obj)],
+                       check=True)
         objects.append(str(obj))
     payload, map_path = out / "tes3xhook.pe", out / "tes3xhook.map"
     subprocess.run([lld, "/nologo", "/subsystem:native", "/entry:tes3x_entry", "/fixed",

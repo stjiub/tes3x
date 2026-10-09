@@ -40,6 +40,16 @@ class PayloadTests(unittest.TestCase):
         section.write_text('int b2;\n', encoding='utf-8')
         self.assertNotEqual(build_id([str(main)], ''), before)
 
+    def test_generated_headers_are_part_of_the_build_id(self):
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder)
+        main, thunks = folder / 'main.c', folder / 'tes3x_thunks.h'
+        main.write_text('int a;\n', encoding='utf-8')
+        thunks.write_text('#define THUNK_A 0x1\n', encoding='utf-8')
+        before = build_id([str(main)], '', [thunks])
+        thunks.write_text('#define THUNK_A 0x2\n', encoding='utf-8')
+        self.assertNotEqual(build_id([str(main)], '', [thunks]), before)
+
 
 if __name__ == '__main__':
     unittest.main()
