@@ -44,7 +44,7 @@ from tes3x.xemu_setup import resolve  # noqa: E402
 from tes3x.readlog import read_file, read_log  # noqa: E402
 from tes3x.pipeline import CONSOLE_INI, set_ini_key, stage_retail_base  # noqa: E402
 from tes3x.deploy import ini_pairs  # noqa: E402
-from tes3x.paths import checkout, local_config  # noqa: E402
+from tes3x.paths import local_config  # noqa: E402
 
 TEST_INI = ["Xbox:Diagnostics=1", "Xbox:HangWatchdog=1", "Xbox:HangTimeoutSeconds=30",
             "General:Show FPS=1"]
@@ -617,7 +617,7 @@ def main():
                 ini += ["--ini-set", r"Xbox:OverlayBase=\Device\CdRom0\Base"]
             target_args = (["--target", a.target] if a.target else [])
             config_args = (["--config", config_path] if config_path.is_file() else [])
-            run([sys.executable, checkout("tools", "tes3x_pipeline.py"), a.profile,
+            run([sys.executable, "-m", "tes3x", "pipeline", a.profile,
                  "--out", out / "pipeline", *config_args, *target_args, *ini, *passthru])
         marker = deploy.parent / PIPELINE_MARKER
         pipeline = json.loads(marker.read_text(encoding="utf-8")) if marker.is_file() else {}

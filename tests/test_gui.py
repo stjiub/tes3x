@@ -20,7 +20,8 @@ try:
     from PySide6.QtCore import QEvent, Qt
     from PySide6.QtWidgets import QApplication, QDialog, QInputDialog, QMessageBox
     from tes3x.gui import (InstallDialog, LocalSettingsDialog, ProfileWindow,
-                           dashboard_agent_state, target_capabilities, target_runtime_label)
+                           dashboard_agent_state, launch, target_capabilities,
+                           target_runtime_label)
     from tes3x.gui_pages import log_catalog, parse_clients, server_arguments
 except ImportError:
     QApplication = None
@@ -407,6 +408,12 @@ order = 10
         self.assertEqual(saved["preferences"], {"invert_look": True})
         self.assertTrue(saved["mods"][0]["loose"])
 
+    def test_a_command_runs_from_the_package_and_a_path_as_a_script(self):
+        self.assertEqual(launch("deploy", ["out", "--replace"]),
+                         ["-m", "tes3x", "deploy", "out", "--replace"])
+        script = Path("addons") / "console" / "console.py"
+        self.assertEqual(launch(script, ["ping"]), [str(script), "ping"])
+
     def test_skip_intro_writes_movie_keys(self):
         window = self.window()
         window.build.skip_intro.setChecked(True)
@@ -626,7 +633,7 @@ order = 10
         with patch.object(window, "start_command", side_effect=start), \
                 patch.object(window, "start_play_process", side_effect=start_play):
             window.play()
-            self.assertEqual(calls[0][0], "tes3x_pipeline.py")
+            self.assertEqual(calls[0][0], "pipeline")
             output = self.root / "out" / "gui"
             (output / "deploy").mkdir(parents=True)
             (output / ".tes3x-pipeline.json").write_text(json.dumps(
@@ -636,7 +643,7 @@ order = 10
             window.command_finished(0, None)
         self.assertEqual(window.build_status()[0], "built")
         self.assertEqual(window.build_button.property("state"), "current")
-        self.assertEqual(calls[1][0], "tes3x_xemu.py")
+        self.assertEqual(calls[1][0], "xemu")
         self.assertEqual(calls[1][1][1:], ["--deploy", str(output / "deploy"), "--keep-iso",
                                            "--target", "xemu", "--config", str(config), "--disk",
                                            str(self.root / "build/play/profile/xemu/hdd.qcow2")])
@@ -783,7 +790,7 @@ order = 10
                 window.process = None
                 window.command_finished(0, None)
         self.assertEqual(calls, [("console.py", "ping", True),
-                                 ("tes3x_deploy.py", str(output / "deploy"), False),
+                                 ("deploy", str(output / "deploy"), False),
                                  ("console.py", "run", False)])
         self.assertEqual(window.play_button.text(), "Play")
 
@@ -1288,7 +1295,7 @@ order = 10
             page.start()
         self.assertIsNone(page.process)
         (script, arguments, _message), = run.call_args.args[0]
-        self.assertEqual(Path(script).name, "tes3x_pipeline.py")
+        self.assertEqual(script, "pipeline")
         self.assertEqual(arguments[0], str(self.profile.resolve()))
         self.assertEqual(server_arguments({"build": build, "load_state": False})[-2:],
                          ["--build", str(build)])

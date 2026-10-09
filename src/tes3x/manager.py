@@ -260,7 +260,7 @@ def main():
     print(f"manager {version()} staged for {remote}", flush=True)
     if args.command == "install":
         args.target = target["name"]
-        sys.exit(subprocess.call([sys.executable, str(checkout("tools", "tes3x_deploy.py")),
+        sys.exit(subprocess.call([sys.executable, "-m", "tes3x", "deploy",
                                   *deploy_arguments(out, remote, args)]))
 
 

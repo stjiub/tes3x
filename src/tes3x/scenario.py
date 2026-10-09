@@ -58,7 +58,6 @@ import sys
 from tes3x.agent import key_fingerprint, load_or_create_key  # noqa: E402
 from tes3x.diag import assertion_failures  # noqa: E402
 from tes3x.net import free_udp_ports  # noqa: E402
-from tes3x.paths import checkout  # noqa: E402
 import tes3x.patches as registry  # noqa: E402
 from tes3x.test import (GAME_TESTS, TestError, game_test_profile, load_game_test,  # noqa: E402
                         make_fixture, read_toml, write_profile, comparison_failures,
@@ -167,11 +166,10 @@ def start_agent(spec, folder, timeout, env, workspace):
     key = folder.with_name(folder.name + ".agent.key")
     key.unlink(missing_ok=True)
     fingerprint = key_fingerprint(load_or_create_key(key))
-    tools = checkout("tools")
-    serve = [sys.executable, str(tools / "tes3x_net.py"), "serve", "--tunnel", str(tunnel),
+    serve = [sys.executable, "-m", "tes3x", "net", "serve", "--tunnel", str(tunnel),
              "--forward", str(agent), "--port", str(server), "--admin-port", str(admin),
              "--duration", str(timeout + BUILD_SECONDS)]
-    listen = [sys.executable, str(tools / "tes3x_agent.py"), "--key", str(key),
+    listen = [sys.executable, "-m", "tes3x", "agent", "--key", str(key),
               "--port", str(agent), "--wait", str(timeout + BUILD_SECONDS), "--quiet",
               "--out", str(folder.with_name(folder.name + ".fetched"))]
     settings = spec["agent"]
@@ -219,7 +217,7 @@ def main():
                     help="check existing run folders of --name instead of booting them again")
     ap.add_argument("--record", action="store_true",
                     help="write a validation result when the complete scenario passes")
-    ap.add_argument("--runner", help="xemu runner (default: tools/tes3x_xemu.py)")
+    ap.add_argument("--runner", help="xemu runner script (default: tes3x xemu)")
     ap.add_argument("--config", help="local config (default: tes3x.local.toml in the working directory)")
     ap.add_argument("--save-root", help="private save fixtures (default: build/saves)")
     ap.add_argument("--results", default="build/validation",
@@ -229,9 +227,11 @@ def main():
     spec = load(a.patch)
     config = Path(a.config or Path.cwd() / "tes3x.local.toml").resolve()
     workspace = config.parent
-    runner = Path(a.runner).resolve() if a.runner else checkout("tools", "tes3x_xemu.py")
-    if not runner.is_file():
-        sys.exit(f"xemu runner not found: {runner}")
+    runner = [sys.executable, "-m", "tes3x", "xemu"]
+    if a.runner:
+        runner = [sys.executable, str(Path(a.runner).resolve())]
+        if not Path(runner[1]).is_file():
+            sys.exit(f"xemu runner not found: {runner[1]}")
     runs = workspace / "build" / "xemu"
     results_root = Path(a.results)
     if not results_root.is_absolute():
@@ -280,7 +280,7 @@ def main():
         if spec.get("agent"):
             agents[role], xemu_extra, build_extra = start_agent(
                 spec, folder, spec.get("timeout", 300), env, workspace)
-        cmd = [sys.executable, str(runner), folder.name, profile,
+        cmd = [*runner, folder.name, profile,
                "--direct-engine", "--exec", str(script), *saves,
                "--timeout", str(spec.get("timeout", 300)),
                *spec.get("xemu", DEFAULT_XEMU), *xemu_extra,
@@ -328,7 +328,7 @@ def main():
     if a.record:
         if set(results) != set(wanted):
             sys.exit("--record needs the complete scenario")
-        cmd = [sys.executable, str(checkout("tools", "tes3x_validate.py")),
+        cmd = [sys.executable, "-m", "tes3x", "validate",
                "--results", str(results_root), "record",
                a.patch, "--env", "xemu",
                "--scenario", str(GAME_TESTS / f"{a.patch}.toml"),

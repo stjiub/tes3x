@@ -30,7 +30,6 @@ import tes3x.savepool as tes3x_savepool
 import tes3x.targets as tes3x_targets
 
 
-TOOLS = checkout("tools")
 MARKER = ".tes3x-pipeline.json"
 # The GUI's last check of the profile, kept in the output folder.
 CHECK_MARKER = ".tes3x-check.json"
@@ -1036,7 +1035,7 @@ def main(argv=None):
     has_mods = plan["package_mode"] != "retail"
     try:
         if has_mods:
-            build_cmd = [sys.executable, TOOLS / "tes3x_build.py", profile_path,
+            build_cmd = [sys.executable, "-m", "tes3x", "build", profile_path,
                          "--out", tree, "--json", manifest, "--vanilla", data_files,
                          "--archive-list", mod_archives]
             if library:
@@ -1075,7 +1074,7 @@ def main(argv=None):
             patch_specs.append("heap-census")
         if args.mem_census:
             patch_specs.append("mem-census")
-        patch_cmd = [sys.executable, TOOLS / "tes3x_patch.py", retail_xbe]
+        patch_cmd = [sys.executable, "-m", "tes3x", "patch", retail_xbe]
         for spec in patch_specs:
             patch_cmd += ["--apply", spec]
         patch_cmd += ["--out", patched]
@@ -1083,20 +1082,20 @@ def main(argv=None):
 
         if use_mlox:
             load_order = work / "mlox-order.json"
-            run([sys.executable, TOOLS / "tes3x_plugins.py", "order", tree,
+            run([sys.executable, "-m", "tes3x", "plugins", "order", tree,
                  "--vanilla", data_files, "--rules", mlox_rules,
                  "--work", work / "mlox", "--out", load_order])
         elif listed_order:
             load_order = work / "profile-order.json"
             listed = work / "profile-order-input.json"
             listed.write_text(json.dumps(listed_order), encoding="utf-8")
-            run([sys.executable, TOOLS / "tes3x_plugins.py", "arrange", tree,
+            run([sys.executable, "-m", "tes3x", "plugins", "arrange", tree,
                  "--vanilla", data_files, "--order", listed,
                  "--work", work / "arrange", "--out", load_order])
 
         if has_mods and use_merge:
             merged = tree / "Merged Objects.esp"
-            merge_cmd = [sys.executable, TOOLS / "tes3x_plugins.py", "merge", tree,
+            merge_cmd = [sys.executable, "-m", "tes3x", "plugins", "merge", tree,
                          "--vanilla", data_files, "--tool", tes3merge,
                          "--work", work / "tes3merge", "--out", merged]
             if use_mlox or listed_order:
@@ -1108,7 +1107,7 @@ def main(argv=None):
                 load_order.write_text(json.dumps(order_record, indent=2), encoding="utf-8")
 
         if has_mods:
-            pack_cmd = [sys.executable, TOOLS / "tes3x_pack.py", tree,
+            pack_cmd = [sys.executable, "-m", "tes3x", "pack", tree,
                         "--vanilla", data_files, "--ini", ini, "--out", staged,
                         "--mod-archives", mod_archives]
             if use_mlox or listed_order:
@@ -1163,7 +1162,7 @@ def main(argv=None):
         if install_layout == "overlay":
             stage_default_xbe(launcher, patched, staged / "Default.xbe", install_layout)
         elif launcher_specs:
-            run([sys.executable, TOOLS / "tes3x_patch.py", launcher,
+            run([sys.executable, "-m", "tes3x", "patch", launcher,
                  *[x for spec in launcher_specs for x in ("--apply", spec)],
                  "--out", staged / "Default.xbe"])
         else:
@@ -1253,7 +1252,7 @@ def main(argv=None):
                     "deploy_tree": "deploy",
                 }, indent=2) + "\n", encoding="utf-8")
                 print(f"\nretail base: {files} files, {size / 1048576:.1f} MB")
-                base_cmd = [sys.executable, TOOLS / "tes3x_deploy.py", base_tree,
+                base_cmd = [sys.executable, "-m", "tes3x", "deploy", base_tree,
                             "--config", local_path, "--remote", deploy["retail_root"]]
                 if target:
                     base_cmd += ["--target", target["name"]]
@@ -1276,7 +1275,7 @@ def main(argv=None):
 
         # The deploy tool reads the login from the config itself, keeping the password off
         # the command line.
-        deploy_cmd = [sys.executable, TOOLS / "tes3x_deploy.py", output / "deploy",
+        deploy_cmd = [sys.executable, "-m", "tes3x", "deploy", output / "deploy",
                       "--config", local_path, "--remote", remote]
         if target:
             deploy_cmd += ["--target", target["name"]]

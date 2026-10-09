@@ -32,12 +32,12 @@ import sys
 import time
 import tomllib
 
+from tes3x.deploy import AGENT_PORT as PORT, agent_request as raw_request
+from tes3x.deploy import ensure_dirs, ftp_basename
+import tes3x.ftp as tes3x_ftp
+import tes3x.targets as tes3x_targets
+
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parents[1] / "tools"))
-from tes3x_deploy import AGENT_PORT as PORT, agent_request as raw_request  # noqa: E402
-from tes3x_deploy import ensure_dirs, ftp_basename  # noqa: E402
-import tes3x_ftp  # noqa: E402
-import tes3x_targets  # noqa: E402
 
 AGENT = HERE / "agent.py"
 BODY = HERE / "agent_body.py"

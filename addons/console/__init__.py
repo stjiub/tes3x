@@ -2,10 +2,9 @@
 
 from pathlib import Path
 
-import tes3x_targets
+import tes3x.targets as tes3x_targets
 
 HERE = Path(__file__).resolve().parent
-TOOLS = HERE.parents[1] / "tools"
 LABEL = "Xbox dashboard agent (XBMC4Gamers)"
 DESCRIPTION = ("Adds Play on Xbox: deploy the build over FTP and start it through an agent in the "
                "XBMC4Gamers dashboard. Manage the agent on each Xbox target.")
@@ -45,6 +44,6 @@ def play_steps(key, context):
         deploy += ["--console-ini", str(console_ini)]
     console = HERE / "console.py"
     return [(console, ["ping", *config, *selected], "Looking for the Xbox dashboard agent…"),
-            (TOOLS / "tes3x_deploy.py", deploy, f"Deploying to {remote}…"),
+            ("deploy", deploy, f"Deploying to {remote}…"),
             (console, ["run", remote.rstrip("/") + "/default.xbe", *config, *selected],
              "Starting the game on the Xbox…")]

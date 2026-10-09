@@ -192,11 +192,11 @@ def embedded_python(target):
     with zipfile.ZipFile(cache) as archive:
         archive.extractall(target)
     # The embedded build takes sys.path only from this file: it ignores site-packages and does not
-    # add a script's own folder, which the tools need to import each other.
+    # add a script's own folder. ..\src holds the package (`python -m tes3x`), ..\tools its shims.
     pth = next(target.glob("python3*._pth"))
     lines = pth.read_text(encoding="utf-8").splitlines()
-    pth.write_text("\n".join(lines[:2] + ["Lib\\site-packages", "..\\tools"] + lines[2:]) + "\n",
-                   encoding="utf-8")
+    paths = ["Lib\\site-packages", "..\\src", "..\\tools"]
+    pth.write_text("\n".join(lines[:2] + paths + lines[2:]) + "\n", encoding="utf-8")
     short = "".join(PYTHON.split(".")[:2])
     print("installing the GUI's packages")
     subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "--disable-pip-version-check",

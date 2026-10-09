@@ -20,7 +20,7 @@ import tomllib
 from tes3x.diag import assertion_failures
 from tes3x.pipeline import validate_profile
 from tes3x.library import CATALOG_NAME, dependency_order, discover_library, load_library
-from tes3x.paths import checkout, resource
+from tes3x.paths import resource
 
 
 GLOBAL_FAILURES = (r"crash\.", r"hang\.detected", r"fatal\.")
@@ -306,16 +306,13 @@ def check_log(path, scenario):
 
 
 def find_runner(value):
-    if value:
-        path = Path(value).resolve()
-        if not path.is_file():
-            raise TestError(f"xemu runner not found: {path}")
-        return path
-    candidates = [checkout("tools", "tes3x_xemu.py")]
-    for path in candidates:
-        if path.is_file() and path.resolve() != Path(__file__).resolve():
-            return path.resolve()
-    raise TestError("xemu runner not found; pass --runner PATH")
+    """The command that runs xemu: the --runner script, else `tes3x xemu`."""
+    if not value:
+        return [sys.executable, "-m", "tes3x", "xemu"]
+    path = Path(value).resolve()
+    if not path.is_file():
+        raise TestError(f"xemu runner not found: {path}")
+    return [sys.executable, str(path)]
 
 
 def safe_name(value):
@@ -378,7 +375,7 @@ def run_profile(args):
     script = work_root / f"{run_name}.exec.txt"
     script.write_text(scenario["script"].strip() + "\n", encoding="ascii", newline="\n")
 
-    command = [sys.executable, str(runner), run_name, str(profile_path), "--direct-engine",
+    command = [*runner, run_name, str(profile_path), "--direct-engine",
                "--exec", str(script), "--timeout", str(scenario.get("timeout", 300)),
                *scenario.get("xemu", [])]
     if args.keep_artifacts == "always":
@@ -500,7 +497,7 @@ def main(argv=None):
     parser.add_argument("profile", help="the exact profile to build and test")
     parser.add_argument("--scenario", default=GAME_TESTS / "smoke.toml",
                         help="single-run scenario TOML (default: tests/game/smoke.toml)")
-    parser.add_argument("--runner", help="xemu runner to use instead of tools/tes3x_xemu.py")
+    parser.add_argument("--runner", help="xemu runner script to use instead of tes3x xemu")
     parser.add_argument("--config", help="local TES3X config passed to the build pipeline")
     parser.add_argument("--work-root", default="build/profile-tests",
                         help="small transient scripts/results (default: build/profile-tests)")

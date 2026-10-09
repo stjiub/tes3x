@@ -31,7 +31,7 @@ import tes3x.targets as tes3x_targets
 from tes3x.pipeline import (MARKER as PIPELINE_MARKER, PipelineError, resolve_patch_plan,
                             validate_local_config)
 from tes3x.xemu_setup import download_xemu, find_files as find_xemu_files
-from tes3x.paths import checkout, resource
+from tes3x.paths import resource
 
 LOG_SUFFIXES = {".txt", ".log"}
 CAPABILITY_REASONS = {
@@ -1637,7 +1637,7 @@ class ServerPage(QWidget):
             return
         config = self.window.local_config_path()
         target = self.window.target_picker.currentData()
-        self.window.run_steps([(checkout("tools", "tes3x_pipeline.py"), [
+        self.window.run_steps([("pipeline", [
             profile, *(["--config", str(config)] if config.is_file() else []),
             *(["--target", target] if target else [])],
             f"Building {Path(profile).stem} for the server…")], then=then)
@@ -1662,8 +1662,7 @@ class ServerPage(QWidget):
         process = QProcess(self)
         process.setWorkingDirectory(str(self.window.work_dir()))
         process.setProgram(sys.executable)
-        process.setArguments(["-u", str(checkout("tools", "tes3x_net.py")),
-                              *server_arguments(values)])
+        process.setArguments(["-u", "-m", "tes3x", "net", *server_arguments(values)])
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         process.readyReadStandardOutput.connect(self.read_output)
         process.finished.connect(self.finished)
