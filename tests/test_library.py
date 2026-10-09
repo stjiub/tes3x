@@ -62,7 +62,8 @@ class LibraryTests(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
-        self.root = Path(temp.name)
+        # resolved, as the tools resolve it: Windows may name temp by its 8.3 short form
+        self.root = Path(temp.name).resolve()
         (self.root / "library.toml").write_text(CATALOG, encoding="utf-8")
         for relative in ("Travel 1.0/00 Core/meshes", "Travel 1.0/10 Music/music",
                          "Travel 1.0/20 Boats/Vanilla/meshes",
@@ -211,7 +212,8 @@ class InstallTests(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
-        self.root = Path(temp.name)
+        # resolved, as the tools resolve it: Windows may name temp by its 8.3 short form
+        self.root = Path(temp.name).resolve()
 
     def tree(self, *files):
         base = Path(tempfile.mkdtemp(dir=self.root))

@@ -18,7 +18,7 @@ from test_bsa import pc_bsa  # noqa: E402
 import tes3x_saves as saves_tool  # noqa: E402
 
 try:
-    from PySide6.QtCore import Qt
+    from PySide6.QtCore import QEvent, Qt
     from PySide6.QtWidgets import QApplication, QDialog, QInputDialog, QMessageBox
     from tes3x_gui import (InstallDialog, LocalSettingsDialog, ProfileWindow,
                            dashboard_agent_state, target_capabilities, target_runtime_label)
@@ -45,10 +45,19 @@ class GuiTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
 
+    @classmethod
+    def tearDownClass(cls):
+        # Windows left open at exit are torn down after Qt is, which can crash the interpreter
+        for widget in QApplication.topLevelWidgets():
+            widget.close()
+            widget.deleteLater()
+        QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
-        self.root = Path(temp.name)
+        # resolved, as the tools resolve it: Windows may name temp by its 8.3 short form
+        self.root = Path(temp.name).resolve()
         self.library = library = self.root / "library"
         (library / "Mod/00 Core").mkdir(parents=True)
         plugin(library / "Mod/00 Core/mod.esp")

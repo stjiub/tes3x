@@ -75,8 +75,13 @@ class CNoiseTests(unittest.TestCase):
             raise unittest.SkipTest(f'clang not found: {error!r}')
         cls.folder = tempfile.TemporaryDirectory()
         dll = Path(cls.folder.name) / 'tes3xnoise.dll'
+        # an MSVC-target clang exports nothing from a DLL unless asked; a mingw one exports all
+        target = subprocess.run([clang, '-dumpmachine'], capture_output=True, text=True).stdout
+        exports = [f'-Wl,/EXPORT:noise_{name}' for name in
+                   ('start', 'write1', 'read2', 'write3', 'split', 'seal', 'open')
+                   ] if 'msvc' in target else []
         built = subprocess.run([clang, '-shared', '-O2', '-o', str(dll), str(HOOKS / 'tes3xnoise.c'),
-                                str(HOOKS / 'monocypher.c')], capture_output=True, text=True)
+                                str(HOOKS / 'monocypher.c'), *exports], capture_output=True, text=True)
         if built.returncode:
             raise unittest.SkipTest('clang could not build a PC library: ' + built.stderr[-200:])
         cls.lib = ctypes.CDLL(str(dll))

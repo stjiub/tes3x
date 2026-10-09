@@ -16,7 +16,8 @@ class ProfileTestTests(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
-        self.root = Path(temp.name)
+        # resolved, as the tools resolve it: Windows may name temp by its 8.3 short form
+        self.root = Path(temp.name).resolve()
         self.scenario = self.root / "scenario.toml"
         self.scenario.write_text('''
 kind = "single"
