@@ -69,8 +69,8 @@ The [GUI guide](gui.md) describes every tab.
 ## From the command line
 
 These steps run in a checkout with its environment active (see
-[installing from a checkout](#installing-from-a-checkout)); the portable folder has no command
-line yet.
+[installing from a checkout](#installing-from-a-checkout)). In a portable folder, run
+`tes3x-cli.exe` from it in place of `tes3x`.
 
 1. Copy the example local config and an example profile:
 

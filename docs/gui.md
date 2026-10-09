@@ -9,7 +9,8 @@ checks, builds, tests and deploys. In a [portable folder](#portable-folder), dou
 
 `tes3x package --zip` writes `build/package/TES3X-<version>/` and its zip: an
 embedded Python 3.12 with TES3X and its packages installed (a wheel built from the checkout), and
-`TES3X.exe`, which starts the GUI with that Python. `externals/` holds 7-Zip, for `.7z` and
+`TES3X.exe`, which starts the GUI with that Python, and `tes3x-cli.exe`, which runs `tes3x`
+commands in a terminal. `externals/` holds 7-Zip, for `.7z` and
 `.rar` mods, and clang and lld-link from LLVM, for engine fixes, each with its license. Nothing
 needs installing on the PC that runs it; the **LLVM tools** setting still overrides the bundled
 LLVM.

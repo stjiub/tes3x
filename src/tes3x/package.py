@@ -218,13 +218,32 @@ def find_cc(cc):
         for folder in CC_DIRS:
             if (folder / f"{name}.exe").is_file():
                 return str(folder / f"{name}.exe")
-    raise PackageError("no C compiler for the launcher; pass --cc or install MSYS2 mingw64 gcc")
+    raise PackageError("no C compiler for the launchers; pass --cc or install MSYS2 mingw64 gcc")
 
 
-def build_launcher(cc, out):
+def build_launchers(cc, stage):
+    """TES3X.exe starts the GUI with no console; tes3x-cli.exe runs commands in the console it is
+    started from, which a GUI program cannot print to."""
     env = dict(os.environ, PATH=str(Path(cc).parent) + os.pathsep + os.environ.get("PATH", ""))
-    subprocess.run([cc, "-O2", "-s", "-municode", "-mwindows", "-static", "-o", str(out),
-                    str(ROOT / "launcher" / "tes3x.c"), "-lshlwapi"], check=True, env=env)
+    for source, name, subsystem in (("tes3x.c", "TES3X.exe", "-mwindows"),
+                                    ("tes3x-cli.c", "tes3x-cli.exe", "-mconsole")):
+        subprocess.run([cc, "-O2", "-s", "-municode", subsystem, "-static", "-o", str(stage / name),
+                        str(ROOT / "launcher" / source), "-lshlwapi"], check=True, env=env)
+
+
+README = """TES3X {version}
+
+TES3X.exe       starts the GUI.
+tes3x-cli.exe   runs TES3X's commands in a terminal, as `tes3x` does elsewhere:
+                  tes3x-cli.exe --help
+                  tes3x-cli.exe pipeline profiles\\my-build.toml --check
+
+Settings, profiles and downloads live in %LOCALAPPDATA%\\TES3X, not here, so a newer release can
+replace this folder. Nothing is added to PATH or the registry.
+
+Documentation: https://github.com/stjiub/tes3x/blob/main/docs/index.md
+License: LICENSE.txt (GPL 3.0 or later). Bundled programs: externals/README.md.
+"""
 
 
 def manager_xbe(given, out, launcher=False):
@@ -260,7 +279,9 @@ def package(out, cc=None, make_zip=False, manager=None, launcher=None):
     print(f"TES3X {label}")
     embedded_python(stage / "python", wheel(out))
     externals(stage / "externals")
-    build_launcher(find_cc(cc), stage / "TES3X.exe")
+    build_launchers(find_cc(cc), stage)
+    (stage / "README.txt").write_text(README.format(version=label), encoding="utf-8",
+                                      newline="\r\n")
     if make_zip:
         archive = shutil.make_archive(str(stage), "zip", stage.parent, stage.name)
         print(f"wrote {archive}")
@@ -271,7 +292,7 @@ def package(out, cc=None, make_zip=False, manager=None, launcher=None):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", default=str(checkout("build", "package")))
-    ap.add_argument("--cc", help="C compiler for TES3X.exe (default: gcc or clang)")
+    ap.add_argument("--cc", help="C compiler for the launchers (default: gcc or clang)")
     ap.add_argument("--zip", action="store_true", help="also write TES3X-<version>.zip")
     ap.add_argument("--manager", metavar="XBE",
                     help="the console manager to ship (default: build manager/ with nxdk)")
