@@ -71,16 +71,18 @@ def data_dir():
     return Path(os.environ.get('XDG_DATA_HOME') or Path.home() / '.local' / 'share') / 'tes3x'
 
 
-# Where TES3X's own files come from, by kind. Both are the checkout today; installed as a
-# package, resources come from the package. What TES3X writes goes to data_dir() or where asked.
+# Where TES3X's own files come from, by kind. A wheel carries the resources in _data (setup.py);
+# a checkout, or an editable install of one, reads them where they are. What TES3X writes goes to
+# data_dir() or where asked.
 CHECKOUT = Path(__file__).resolve().parents[2]
+PACKAGED = Path(__file__).resolve().parent / '_data'
 
 
 def resource(*parts):
     """Read-only data a command needs wherever TES3X is installed: the registries, hooks,
     symbols, examples, assets, add-ons, game tests, the manager's XBEs and the release key; and
     what the portable folder bundles (externals/: 7-Zip and LLVM), absent elsewhere."""
-    return CHECKOUT.joinpath(*parts)
+    return (PACKAGED if PACKAGED.is_dir() else CHECKOUT).joinpath(*parts)
 
 
 def checkout(*parts):

@@ -1,0 +1,9 @@
+# The data setup.py copies into the wheel, so a wheel built from the sdist has it too.
+include patches.toml candidates.toml catalog.toml keys/release.pub manager/mgr.h
+graft hooks
+graft symbols
+graft examples
+graft assets/menu
+graft addons
+graft tests/game
+global-exclude *.pyc
