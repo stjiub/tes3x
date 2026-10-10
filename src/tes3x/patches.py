@@ -18,7 +18,6 @@ CANDIDATE_LIST = resource("candidates.toml")
 TABLE = ROOT / "docs" / "patches.md"
 CANDIDATE_PAGE = ROOT / "docs" / "candidates.md"
 PATCH_DOCS = ROOT / "patches"
-GAME_TESTS = resource("tests", "game")
 
 CATEGORIES = ("core", "correctness", "compat", "performance", "qol", "balance",
               "instrumentation", "infrastructure")
@@ -168,11 +167,6 @@ def page_problems(patches=None, docs=PATCH_DOCS):
     return problems
 
 
-def game_test_text(entry):
-    path = GAME_TESTS / f"{entry['name']}.toml"
-    return f"[test](../tests/game/{entry['name']}.toml)" if path.is_file() else "—"
-
-
 def cell(text):
     return text.replace("|", "\\|")
 
@@ -194,18 +188,16 @@ def render_patches():
         "",
         "Generated from [`patches.toml`](../patches.toml) by `tes3x patches --write`;",
         "edit that file, not this one. Fixes that are not implemented are in",
-        "[candidates.md](candidates.md). A linked title opens the patch's notes; a game-test link",
-        "opens the runnable test definition.",
+        "[candidates.md](candidates.md). A linked title opens the patch's notes.",
         "",
         "`dev` patches are contributor-only, `preview` patches work but need broader testing,",
         "and `release` patches are ready for general use.",
         "\"By name\" patches are only applied when a profile enables them.",
         "\"Included by\" says what selects a patch; requirements are contextual rather than a",
         "single required/not-required flag.",
-        "The game-test column shows whether a public test definition exists, not its result.",
         "",
-        "| title | patch key | what it does | from | category | channel | game test | included by |",
-        "|---|---|---|---|---|---|---|---|",
+        "| title | patch key | what it does | from | category | channel | included by |",
+        "|---|---|---|---|---|---|---|",
     ]
     for entry in PATCHES:
         chosen = selection.get(entry["selection"]) or presets.get(entry["name"], "By name")
@@ -218,7 +210,7 @@ def render_patches():
             chosen += "; " + ", ".join(f"`{name}`" for name in dependents)
         lines.append(f"| {title_text(entry)} | `{patch_spec(entry)}` | "
                      f"{cell(entry['summary'])} | {origin_text(entry)} | "
-                     f"{entry['category']} | {entry['channel']} | {game_test_text(entry)} | "
+                     f"{entry['category']} | {entry['channel']} | "
                      f"{chosen} |")
     return "\n".join(lines) + "\n"
 

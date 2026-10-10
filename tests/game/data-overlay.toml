@@ -1,0 +1,27 @@
+kind = "single"
+purpose = "An overlay installation loads retail data through base-file fallback and enters an exterior and an interior cell."
+procedure = "Build an overlay layout with retail files in the disc's Base folder, start a new game, visit Balmora and Caius Cosades' house, and check the player at each destination."
+limitations = "Does not test duplicate directory entries, write isolation or original-Xbox paths."
+timeout = 240
+watch = 'overlay\.|exec[.>]|assert[.>]|console<'
+script = '''
+@start new
+wait 30
+assert player->getpos x == 61.00
+coc "Balmora"
+wait 90
+assert player->getpos x == -12288.00
+coc "Balmora, Caius Cosades' House"
+wait 90
+player->getpos x
+exit
+'''
+
+[profile.profile]
+install_layout = "overlay"
+
+[expect]
+test = ['overlay\.installed 1', 'overlay\.on [1-9][0-9]*', 'overlay\.(create|open) [1-9][0-9]*', 'exec\.exit 0', '!overlay\.(off|bad_base|base_missing)']
+
+[sequence]
+test = ['console< GetPos >> 61\.00', 'console< GetPos >> -12288\.00', 'console< GetPos >> 128\.00', 'exec\.exit 0']

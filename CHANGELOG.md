@@ -4,6 +4,10 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- Patch promotion accepts maintainer-reviewed play and manual checks; scripted tests are optional.
+  `validate check --gate` reports missing scripted evidence as warnings. The patch table shows
+  availability without a game-test column. See [patch policy](docs/patch-policy.md).
+
 - `tes3x init` creates the example config and profile from bundled files, keeping existing files.
 - `build` and `library convert` honor `paths.mod_library` and accept `--config`.
 - Texture/archive caches, manager staging, dashboard backups and xemu runs default to the data

@@ -108,15 +108,20 @@ whether a game-test definition exists. `test exists = yes` does not mean the tes
 | `none` | No local pass is recorded. A recorded failure does not count as a pass. |
 
 `check` validates every public game-test definition and every record in the selected local store.
-Maintainers with a complete result store can also enforce the channel gate:
+Maintainers can also review gaps in scripted evidence for promoted patches:
 
 ```powershell
 tes3x validate --results path/to/local-results check --gate
 ```
 
-Global `--results` goes before `status`, `check` or `record`. `check --gate` requires every
-`preview` and `release` patch to have a current pass. It is not useful with a contributor's empty
-or partial result store.
+Global `--results` goes before `status`, `check` or `record`. `check --gate` warns about missing,
+outdated or older scripted passes for `preview` and `release` patches. Those warnings do not fail
+the command; malformed tests or invalid records still do. An empty or partial result store cannot
+describe all the maintainer's evidence.
+
+Repeated play and manual checks also support promotion. Keep their setup, observations and limits
+in private notes; `record` is specifically for checking scripted runs. A game-test definition or
+a recorded pass is not required for promotion. See [patch policy](patch-policy.md#channels).
 
 ## Record completed runs directly
 

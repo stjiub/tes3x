@@ -218,15 +218,31 @@ bios = "retail"
         }
         self.assertEqual(validation.latest_result('mcp-102', records)['result'], 'fail')
 
-    def test_gate_fails_preview_patches_without_a_current_pass(self):
+    def test_gate_reports_missing_scripted_evidence_without_blocking_promotion(self):
         entries = [{'name': 'mcp-102', 'channel': 'preview'},
                    {'name': 'mcp-97', 'channel': 'preview'},
                    {'name': 'mcp-37', 'channel': 'dev'}]
         path = self.record(0x5, 0x5 | MCP102_BIT)
         with patch.object(validation.registry, 'PATCHES', entries):
             failures, warnings = validation.gate({'r': validation.load_record(path)})
-        self.assertEqual(failures, ['mcp-97 (preview): no passing result'])
-        self.assertEqual(warnings, [])
+        self.assertEqual(failures, [])
+        self.assertEqual(warnings, ['mcp-97 (preview): no scripted passing result in this store'])
+
+    def test_gate_reports_stale_and_legacy_passes_without_blocking_promotion(self):
+        path = self.record(0x5, 0x5 | MCP102_BIT)
+        current = validation.load_record(path)
+        game_test = self.games / 'mcp-102.toml'
+        game_test.write_text(game_test.read_text() + '# changed\n')
+        legacy = {'patch': 'mcp-97', 'result': 'pass', 'date': current['date']}
+        entries = [{'name': 'mcp-102', 'channel': 'preview'},
+                   {'name': 'mcp-97', 'channel': 'release'}]
+        with patch.object(validation.registry, 'PATCHES', entries):
+            failures, warnings = validation.gate({'r': current, 'l': legacy})
+        self.assertEqual(failures, [])
+        self.assertEqual(warnings, [
+            'mcp-102 (preview): its game test changed since the last scripted pass',
+            'mcp-97 (release): passing evidence predates hashed game tests',
+        ])
 
 
 class RepositoryValidationTests(unittest.TestCase):

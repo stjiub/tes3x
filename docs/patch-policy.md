@@ -23,16 +23,16 @@ Which engine fixes TES3X takes on and what each one defaults to. The fixes thems
 - `release`: validated and ready for general use.
 
 Every implemented patch starts in `dev`. Promotion to `preview` or `release` is a maintainer
-decision, and a patch reaches `preview` only after its game test in
-[`tests/game/`](game-tests.md) has passed. A patch whose game test changes has to pass it
-again. See [patch game tests and validation](validation.md) for how to run the public tests and
-interpret local standing.
+decision based on reviewed evidence. Repeated use in real games, manual checks and scripted
+game tests all count; a scripted test is not required. Evidence should cover the patch's intended
+use, and performance claims need measurements on an original Xbox.
 
-The public patch table links to a game test when one exists, but does not publish validation
-results. Results and logs can contain local mod or hardware details, and `current`, `stale` and
-`none` are properties of a particular result store rather than permanent patch metadata. The
-channel is the public readiness statement: `preview` and `release` are gated on maintainer-held
-validation, while `dev` makes no public pass claim.
+[Game tests](game-tests.md) provide repeatable regression checks where practical. A pass covers
+the behaviour exercised by that test. When a test changes, rerun it before treating the older
+pass as evidence for the new checks. See [validation](validation.md) for the runner and local records.
+
+The channel is the public readiness statement. Validation results and logs stay local; they can
+contain personal mod or hardware details. Local scripted-test standing does not determine a channel.
 
 Every fix can be turned on or off by itself. Fixes taken from another project keep its numbering,
 so Morrowind Code Patch fix 97 is `mcp-97`.

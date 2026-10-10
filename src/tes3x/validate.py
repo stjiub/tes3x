@@ -12,8 +12,8 @@ one build; a comparison test runs a control and a test build.
   tes3x validate status
 
 RUN is a diagnostics log, or an xemu run folder holding tes3xlog.txt and .tes3x-run.json. Results
-record observations; they do not change a patch's channel. `check --gate` also fails while a
-preview or release patch has no pass against its current game test.
+record observations; they do not change a patch's channel. `check --gate` reports gaps in
+scripted evidence for preview and release patches without blocking maintainer promotion.
 """
 
 import argparse
@@ -453,7 +453,7 @@ def latest_result(patch, records):
 
 
 def gate(records):
-    """(failures, warnings) for patches in a gated channel."""
+    """(failures, warnings) for scripted evidence in promoted channels."""
     failures, warnings = [], []
     for entry in registry.PATCHES:
         if entry["channel"] not in GATED_CHANNELS:
@@ -461,13 +461,11 @@ def gate(records):
         state, _record = standing(entry["name"], records)
         where = f"{entry['name']} ({entry['channel']})"
         if state == "none":
-            failures.append(f"{where}: no passing result")
+            warnings.append(f"{where}: no scripted passing result in this store")
         elif state == "stale":
-            failures.append(f"{where}: its game test changed since the last pass")
+            warnings.append(f"{where}: its game test changed since the last scripted pass")
         elif state == "legacy":
-            test = scenario_path(entry["name"])
-            warnings.append(f"{where}: passed only before game tests; "
-                            f"{'rerun' if test.is_file() else 'write'} {relative(test)}")
+            warnings.append(f"{where}: passing evidence predates hashed game tests")
     return failures, warnings
 
 
@@ -765,7 +763,7 @@ def main(argv=None):
     rec.add_argument("--date", help="YYYY-MM-DD (default: today)")
     check = sub.add_parser("check", help="validate every game test and local result")
     check.add_argument("--gate", action="store_true",
-                       help="also require current passes for preview and release patches")
+                       help="also report scripted-evidence gaps for preview and release patches")
     sub.add_parser("status", help="list each patch's channel and latest pass")
     args = ap.parse_args(argv)
     global VALIDATION, PATCH_DIRS
@@ -785,7 +783,7 @@ def main(argv=None):
             if problems or failures:
                 raise SystemExit(1)
             print("all game tests and local records valid"
-                  + ("; every gated patch has passed" if args.gate else ""))
+                  + ("; scripted-evidence gaps reported" if args.gate else ""))
     except ValidationError as exc:
         raise SystemExit(str(exc))
 

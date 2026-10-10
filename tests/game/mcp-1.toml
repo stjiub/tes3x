@@ -1,0 +1,19 @@
+kind = "single"
+purpose = "A saved game with legitimate runtime references still loads and permits cell transitions with reference cleanup enabled."
+procedure = "Load the Seyda Neen save fixture, check its player level and the reference hook, then move to Balmora and check the player position."
+limitations = "A compatibility regression test; it does not exercise dropping unresolved references from a missing mod."
+save = "vanilla-seyda-neen.ess"
+timeout = 240
+watch = 'refs\.|exec[.>]|assert[.>]|console<'
+script = '''
+@start load U:\TES3X\vanilla-seyda-neen.ess
+wait 180
+assert player->getlevel == 7.00
+coc "Balmora"
+wait 90
+assert player->getpos x == -12288.00
+exit
+'''
+
+[expect]
+test = ['refs\.first 1', 'exec\.exit 0']
