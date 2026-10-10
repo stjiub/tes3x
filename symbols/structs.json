@@ -166,6 +166,13 @@
       ]
     },
     {
+      "name": "TES3::Spell",
+      "note": "Xbox castType +0x30 is read by MagicInstanceController::clearSpellEffect; 2 is blight and 3 is common disease, as in the PC SpellCastType enum.",
+      "fields": [
+        {"offset": "0x30", "name": "castType", "type": "unsigned char", "confidence": "verified", "provenance": "MagicInstanceController::clearSpellEffect reads source +0x30 at 0x000BCF4A"}
+      ]
+    },
+    {
       "name": "TES3::Enchantment",
       "note": "Xbox castType is the byte at +0x2C, verified by Actor::equipItem 0x000E84EF comparing it with 3 before constant activation. Effects begin at +0x34 (getSourceEffects).",
       "fields": [

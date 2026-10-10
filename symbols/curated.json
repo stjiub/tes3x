@@ -733,9 +733,11 @@
       "va": "0x000BCE80",
       "name": "MagicInstanceController::clearSpellEffect",
       "kind": "function",
-      "confidence": "matched",
-      "provenance": "mwse:TES3_MagicInstanceController_clearSpellEffect",
-      "pc_va": "0x004556C0"
+      "confidence": "verified",
+      "provenance": "Xbox disassembly: selects source spell +0x30 by castType, retires target effects, optionally removes the known spell; returns 16 argument bytes",
+      "pc_va": "0x004556C0",
+      "note": "Disease cure selects Spell castType: 2 blight, 3 common disease. Retires matching source instances on the target; removeSpell also removes their sources from its learned list.",
+      "signature": "void __thiscall clearSpellEffect(TES3::Reference* reference, int castType, int percentChance, bool removeSpell)"
     },
     {
       "va": "0x000BD030",
