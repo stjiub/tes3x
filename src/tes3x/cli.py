@@ -12,7 +12,7 @@ from tes3x import __version__
 # The modules with a command line, run as `python -m tes3x.NAME` would run them. On the command
 # line a hyphen may stand for an underscore: `tes3x xemu-setup`.
 COMMANDS = ("agent", "assets", "audit", "bsa", "build", "convert", "deploy", "diag", "disasm",
-            "docs", "ess", "fatx", "fetch", "font", "gui", "heap", "ini", "inject", "layouts",
+            "docs", "ess", "fatx", "fetch", "font", "gui", "heap", "ini", "init", "inject", "layouts",
             "library", "manager", "manifest", "map", "mcp", "mem", "menuart", "mwse", "net",
             "nexus", "nxdk", "optimize", "orphan", "pack", "package", "patch",
             "patches", "payload", "pipeline", "plugins", "prof", "put", "qcow2", "readlog",

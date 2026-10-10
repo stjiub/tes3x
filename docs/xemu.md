@@ -74,9 +74,12 @@ tes3x xemu first-run profiles/my-build.toml --direct-engine --skip-intro --exec 
 - Everything after `--` goes to the pipeline, such as `-- --preset minimal`.
 - `--help` lists the rest, including screenshots (Windows only), saves, memory size and GDB.
 
-Each run gets a new folder under `build/xemu/` in the current folder, holding the recovered log,
+Each run gets a new folder under `build/xemu/` in the TES3X data folder, holding the recovered log,
 the build record and xemu's output. The disc image is deleted unless `--keep-iso` or
 `--keep-build` is given.
+
+Use `--work-root FOLDER` to keep `build/xemu/` elsewhere. `TES3X_DATA` changes the default data
+folder for all commands. Existing runs are not moved automatically.
 
 ## What to expect
 

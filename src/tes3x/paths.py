@@ -64,7 +64,7 @@ def require_paths(relative_paths, root=DEFAULT_REMOTE_ROOT, prefix=''):
 
 
 def data_dir():
-    """Per-user folder for what TES3X downloads or caches; TES3X_DATA overrides it."""
+    """Per-user folder for settings, builds and caches; TES3X_DATA overrides it."""
     if os.environ.get('TES3X_DATA'):
         return Path(os.environ['TES3X_DATA'])
     if os.name == 'nt':
@@ -132,3 +132,17 @@ def local_config(given=None):
         if path.is_file():
             return path
     return data_dir() / CONFIG_NAME
+
+
+def mod_library(profile, given=None, config=None):
+    """Resolve the CLI/profile/config library using the local config's path base."""
+    import tomllib
+
+    path = local_config(config).resolve()
+    local = tomllib.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
+    value = given or profile.get('profile', {}).get('library') or local.get('paths', {}).get('mod_library')
+    if not value:
+        raise ValueError('set profile.library or paths.mod_library, or pass --library')
+    library = Path(value).expanduser()
+    base = path.parent if path.is_file() else Path.cwd()
+    return (library if library.is_absolute() else base / library).resolve()

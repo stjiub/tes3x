@@ -17,7 +17,7 @@ agent.py is a stable launcher; install replaces agent_body.py and asks the launc
 so only the first install needs a dashboard restart. Requests carry the random token kept in the
 selected target's tes3x.local.toml entry and uploaded beside the agent. The skin's Startup window
 closes once per dashboard start, after the network is up; install adds a marked onunload line that
-starts the launcher 30 s later and keeps the original under build/console-backup. [console]
+starts the launcher 30 s later and keeps the original under the data folder's build/console-backup. [console]
 The dashboard root can be set per target, with [console] as a fallback, and common layouts are
 detected before files are made.
 """
@@ -36,6 +36,7 @@ from tes3x.deploy import AGENT_PORT as PORT, agent_request as raw_request
 from tes3x.deploy import ensure_dirs, ftp_basename
 import tes3x.ftp as tes3x_ftp
 import tes3x.targets as tes3x_targets
+from tes3x.paths import data_dir
 
 HERE = Path(__file__).resolve().parent
 
@@ -166,7 +167,7 @@ def install(args):
                          "selected Xbox target")
     agent, body, token_path, startup_path, _old = paths(args.dashboard)
     dashboard_name = args.dashboard.replace(":", "").strip("/").replace("/", "_") or "root"
-    backup = (Path.cwd() / "build" / "console-backup" / (args.target or "xbox")
+    backup = (data_dir() / "build" / "console-backup" / (args.target or "xbox")
               / dashboard_name / "Startup.xml")
     remote_agent = remote_file(ftp, agent)
     remote_token = remote_file(ftp, token_path)

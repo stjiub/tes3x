@@ -1,0 +1,31 @@
+kind = "single"
+purpose = "Save staging on T: permits repeated successful saves, including replacing the first rotating slot."
+procedure = "Start a new game, check the player position, write four autosaves through the retail save routine with staging on T:, then check the player again."
+limitations = "Does not reload the written saves or prove the commit uses a rename on hardware."
+apply = "save-staging=T"
+enable = ["diagnostics", "console", "rotating-autosaves"]
+timeout = 300
+script = '''
+@start new
+wait 30
+assert player->getpos x == 61.00
+tes3xautosave
+wait 90
+tes3xautosave
+wait 90
+tes3xautosave
+wait 90
+tes3xautosave
+wait 90
+assert player->getpos x == 61.00
+exit
+'''
+
+[profile]
+ini = { "Xbox:AutosaveSlots" = 3, "Xbox:RotatingAutosaves" = 1 }
+
+[expect]
+test = ['autosave\.enabled 1', 'autosave\.slots 3', 'exec\.exit 0', '!autosave\.state_error']
+
+[sequence]
+test = ['autosave\.slot 1', 'autosave\.command 1', 'autosave\.slot 2', 'autosave\.command 1', 'autosave\.slot 3', 'autosave\.command 1', 'autosave\.slot 1', 'autosave\.command 1']

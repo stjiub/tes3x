@@ -1,0 +1,21 @@
+kind = "single"
+purpose = "On 128 MB the video arena honors an explicit size and remains usable across a cell change."
+procedure = "Set VideoMemoryKB to 22528, boot under Cerbios with 128 MB, start a new game and travel to Balmora."
+limitations = "Does not cover 64 MB fallback, size clamping or texture-heavy mod loads on hardware."
+xemu = ["--skip-intro", "--no-reboot", "--ram", "128", "--bios", "cerbios"]
+timeout = 300
+script = '''
+@start new
+wait 30
+assert player->getpos x == 61.00
+coc "Balmora"
+wait 60
+assert player->getpos x == -12288.00
+exit
+'''
+
+[profile]
+ini = { "Xbox:VideoMemoryKB" = 22528 }
+
+[expect]
+test = ['arena\.kb_ini 22528', 'exec\.exit 0']

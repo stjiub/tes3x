@@ -11,7 +11,7 @@ import sys
 import tomllib
 from collections import defaultdict
 from tes3x.library import LibraryError, load_library, resolve_selection
-from tes3x.paths import DEFAULT_REMOTE_ROOT, require_paths
+from tes3x.paths import CONFIG_HELP, DEFAULT_REMOTE_ROOT, data_dir, mod_library, require_paths
 
 FATX_NAME_MAX = 42
 # Retail includes a 1024x512 texture; on 64 MB hardware, total texture size is the useful limit.
@@ -289,9 +289,10 @@ def report(mods, filemap, conflicts, problems):
     print()
 
 
-def materialize(filemap, mods, out, rules, cache="cache/tex", load_order=None, sox=None, sound_rate=None):
+def materialize(filemap, mods, out, rules, cache=None, load_order=None, sox=None, sound_rate=None):
     """Write the resolved tree, converting textures and stamping load order."""
     from tes3x.convert import convert_cached
+    cache = cache if cache is not None else data_dir() / "cache" / "tex"
 
     # This is a budget target; retail proves larger textures are valid.
     cap = rules.get("max_texture_size", 512)
@@ -355,6 +356,7 @@ def materialize(filemap, mods, out, rules, cache="cache/tex", load_order=None, s
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("profile")
+    ap.add_argument("--config", help=CONFIG_HELP)
     ap.add_argument("--library", help="override profile.library (normally from local config)")
     ap.add_argument("--json", help="write manifest to this path")
     ap.add_argument("--out", help="materialize the resolved tree into this directory")
@@ -379,9 +381,10 @@ def main():
         ap.error("--sound-rate requires --sox")
 
     prof = load_profile(args.profile)
-    library = args.library or prof.get("profile", {}).get("library")
-    if not library:
-        sys.exit("profile.library is required: the folder holding one directory per mod")
+    try:
+        library = mod_library(prof, args.library, args.config)
+    except (ValueError, OSError) as exc:
+        sys.exit(str(exc))
 
     rules = dict(prof.get("rules", {}))
     if args.max_texture_size is not None:
@@ -426,7 +429,7 @@ def main():
             mods.append(Mod(label, selection.get("layers", selection["roots"]),
                             entry.get("order", 0), entry.get("plugins"), exclude,
                             None if entry.get("archives") == "load"
-                            else os.path.join("cache", "bsa")))
+                            else data_dir() / "cache" / "bsa"))
         except ValueError as exc:
             sys.exit(str(exc))
     if missing:

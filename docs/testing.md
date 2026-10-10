@@ -39,6 +39,10 @@ tes3x test profiles/my-build.toml --library-all --library "D:/Mods to test"
 The test build adds `diagnostics` and `console` to the profile, and runs the bundled smoke test,
 `smoke.toml`. A pass only means that one route worked; it isn't a full playthrough.
 
+Runs, transient scripts and recorded results default to the TES3X data folder, under
+`build/xemu/`, `build/profile-tests/` and `profile-tests/results/`. `--work-root` changes
+the transient script/result folder; `--results` changes the durable record folder.
+
 A run's log and build record are kept when a test fails and deleted when it passes. The ISO and
 the built game files, about 2 GB a run, are deleted either way. `--keep-artifacts never` or
 `always` changes that; `always` keeps the ISO and game files too. `--library-all` tests every mod

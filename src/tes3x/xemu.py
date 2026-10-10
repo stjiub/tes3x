@@ -5,7 +5,7 @@
     tes3x xemu NAME2 --iso build/xemu/NAME/game.iso    (NAME ran with --keep-iso)
 
 Everything after `--` goes to tes3x pipeline. Diagnostics, the hang watchdog and Show FPS are
-switched on in the ini unless --no-diag. Each run gets its own folder under build/xemu/ holding
+switched on in the ini unless --no-diag. Each run gets its own folder under the data folder's build/xemu/ holding
 xemu's output and the recovered log. The ISO and the build's deploy tree, most of a run's size, are
 deleted when the run ends unless --keep-build (or --keep-iso, to pass the ISO to a later run's
 --iso); the build record, link map and patched XBE stay. The disk is a copy-on-write overlay on
@@ -44,7 +44,7 @@ from tes3x.xemu_setup import resolve  # noqa: E402
 from tes3x.readlog import read_file, read_log  # noqa: E402
 from tes3x.pipeline import CONSOLE_INI, set_ini_key, stage_retail_base  # noqa: E402
 from tes3x.deploy import ini_pairs  # noqa: E402
-from tes3x.paths import CONFIG_HELP, local_config  # noqa: E402
+from tes3x.paths import CONFIG_HELP, data_dir, local_config  # noqa: E402
 
 TEST_INI = ["Xbox:Diagnostics=1", "Xbox:HangWatchdog=1", "Xbox:HangTimeoutSeconds=30",
             "General:Show FPS=1"]
@@ -221,7 +221,7 @@ def fixture(path):
 
 def safe_passthru(values):
     """Keep pipeline switches while removing local paths from the run record."""
-    path_options = {"--config", "--vanilla", "--llvm", "--build-root", "--out"}
+    path_options = {"--config", "--vanilla", "--llvm", "--build-root", "--out", "--work-root"}
     result, replace_next = [], False
     for value in values:
         if replace_next:
@@ -478,7 +478,8 @@ def main():
         argv, passthru = argv[:i], argv[i + 1:]
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("name", help="run folder under build/xemu/")
+    ap.add_argument("name", help="run folder under the data folder's build/xemu/")
+    ap.add_argument("--work-root", help="output root (default: TES3X data folder)")
     ap.add_argument("profile", nargs="?", help="profile to build with tes3x pipeline")
     ap.add_argument("--config", help=CONFIG_HELP)
     ap.add_argument("--target", help="xemu target (default: the first configured xemu target)")
@@ -596,7 +597,7 @@ def main():
     if a.net_nat and a.net_tunnel:
         ap.error("--net-nat and --net-tunnel are two backends for one NIC; pick one")
 
-    runs = Path.cwd() / "build" / "xemu"
+    runs = (Path(a.work_root) if a.work_root else data_dir()).resolve() / "build" / "xemu"
     out = runs / a.name
     if out.exists():
         sys.exit(f"{out} exists; pick a new name")

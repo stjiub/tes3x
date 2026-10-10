@@ -20,7 +20,7 @@ def status(local):
     except tes3x_targets.TargetError as exc:
         return str(exc)
     if not target.get("host"):
-        return "Set the Xbox target's address in Targets > Setup"
+        return "Set the Xbox target's address in Target > Setup"
     return None
 
 

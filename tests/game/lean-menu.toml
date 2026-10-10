@@ -1,0 +1,23 @@
+kind = "comparison"
+purpose = "Skipping non-GMST records leaves fewer live engine heap bytes at the main menu than the same build without lean-menu."
+procedure = "Instrument both builds with the heap census on 128 MB, boot with retail relaunch behavior and compare the first-frame live heap counters at the menu."
+limitations = "Does not exercise New Game or Load relaunches, or measure hardware loading time."
+xemu = ["--skip-intro", "--ram", "128", "--bios", "cerbios"]
+pipeline = ["--heap-census"]
+timeout = 300
+script = '''
+@menu wait 60
+@menu mark lean-ready
+@menu exit
+'''
+
+[profile]
+ini = { "Debug:No Reboot On New Game" = 0, "Debug:No Reboot On Load Game" = 0 }
+
+[expect]
+control = ['!lean\.menu', 'heap\.live_kb [1-9][0-9]*', '!heap\.table_failed', '!heap\.dump_open_failed', 'mem\.lean-ready [0-9]+', 'exec\.exit 0']
+test = ['lean\.menu 1', 'lean\.skipped [1-9][0-9]*', 'heap\.live_kb [1-9][0-9]*', '!heap\.table_failed', '!heap\.dump_open_failed', 'mem\.lean-ready [0-9]+', 'exec\.exit 0']
+
+[[compare]]
+pattern = 'heap\.live_kb ([0-9]+)'
+relation = "<"

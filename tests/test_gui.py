@@ -290,17 +290,17 @@ order = 10
         window = self.window(settings=settings)
         heap = window.patches.patch_items["heap-census"]
         profiler = window.patches.patch_items["profile"]
-        transition = window.patches.patch_items["transition-autosaves"]
+        reference_index = window.patches.patch_items["ref-index"]
         self.assertTrue(heap.isHidden())
         self.assertFalse(profiler.isHidden())
         self.assertFalse(profiler.flags() & Qt.ItemFlag.ItemIsUserCheckable)
-        self.assertTrue(transition.isHidden())
+        self.assertTrue(reference_index.isHidden())
         self.assertEqual(heap.text(2), "dev")
         self.assertEqual(window.patches.patch_tree.headerItem().text(3), "Included by")
 
         window.channel_actions["dev"].setChecked(True)
         self.assertFalse(heap.isHidden())
-        self.assertTrue(transition.flags() & Qt.ItemFlag.ItemIsUserCheckable)
+        self.assertTrue(reference_index.flags() & Qt.ItemFlag.ItemIsUserCheckable)
         self.assertEqual(heap.text(3), "Build option")
         window.patches.set_patch("mwse-legacy", True)
         script_ext = window.patches.patch_items["script-ext"]

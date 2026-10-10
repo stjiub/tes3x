@@ -3,7 +3,7 @@
 
 [profile]
 name = "my-build"                    # output: BUILD_ROOT/my-build
-library = "C:/path/to/mod-library"  # remove for a patches-only build
+# library = "/path/to/mod-library"  # override paths.mod_library in the local config
 # title = "Morrowind Modded"         # dashboard title; default: the retail title
 # dashboards = ["xbmc4gamers"]       # dashboard metadata written when title is set; [] for none
 # install_dir = "MorrowindModded"   # folder below each Xbox target's games_root; default: name

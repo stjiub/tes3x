@@ -134,6 +134,10 @@ version beside the one this PC would install. On the command line:
 tes3x manager install [--target NAME] [--agent] [--dry-run]
 ```
 
+Manager installation stages files in the TES3X data folder's `build/manager/install/`;
+`--out FOLDER` chooses another staging folder. Source builds of the manager and its launcher
+also go under the data folder's `build/manager/`.
+
 It installs or updates the manager in `TES3XManager` under the target's `games_root` (`--folder`
 changes the name), where the dashboard lists it. It also names the manager and this PC in the
 console's [settings](#console-settings), so the manager pairs with this PC without a game deploy

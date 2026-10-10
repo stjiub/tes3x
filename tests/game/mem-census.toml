@@ -1,0 +1,21 @@
+kind = "single"
+purpose = "The kernel memory census initializes its tables and writes successive dumps during a real session."
+procedure = "Start a new game, request a memory dump, change cell and request another dump."
+limitations = "Does not validate dump contents against an independent allocation count or measure hardware overhead."
+timeout = 300
+script = '''
+@start new
+wait 30
+assert player->getpos x == 61.00
+tes3xmem
+coc "Balmora, Caius Cosades' House"
+wait 60
+tes3xmem
+exit
+'''
+
+[expect]
+test = ['mem\.table_kb [1-9][0-9]*', '!mem\.table_failed', '!mem\.dump_open_failed', 'exec\.exit 0']
+
+[sequence]
+test = ['exec> tes3xmem', 'mem\.dump [1-9][0-9]*', 'exec> tes3xmem', 'mem\.dump [1-9][0-9]*']

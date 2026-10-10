@@ -31,7 +31,7 @@ it. Fetch logs afterwards with **Actions > Pull Xbox logs**.
 2. On the **Overview** tab, press **Install / update** under **Dashboard agent**. This copies the
    stable launcher and its reloadable body into the dashboard, makes an authentication token in the
    selected Xbox target's local configuration, and adds one line to the skin's `Startup.xml`,
-   keeping the original under `build/console-backup/` in the folder TES3X was started from.
+   keeping the original under `build/console-backup/` in the TES3X data folder.
 3. Restart the dashboard once. The agent starts about 30 seconds after the dashboard's startup
    screen closes.
 4. Tick **Xbox dashboard agent (XBMC4Gamers)** on the **Add-ons** page of **File > Settings** for

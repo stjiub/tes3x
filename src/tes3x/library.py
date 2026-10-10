@@ -11,7 +11,7 @@ import subprocess
 import tomllib
 import zipfile
 
-from tes3x.paths import bundled
+from tes3x.paths import CONFIG_HELP, bundled, mod_library
 
 
 CATALOG_NAME = "library.toml"
@@ -560,7 +560,8 @@ def main(argv=None):
                       help="add them to library.toml; existing entries are kept as written")
     convert = sub.add_parser("convert", help="rewrite a profile's folder names as library ids")
     convert.add_argument("profile")
-    convert.add_argument("--library", help="library root (default: the profile's library)")
+    convert.add_argument("--library", help="override profile.library or paths.mod_library")
+    convert.add_argument("--config", help=CONFIG_HELP)
     convert.add_argument("--dry-run", action="store_true", help="report without writing")
     args = parser.parse_args(argv)
     try:
@@ -580,9 +581,7 @@ def main(argv=None):
             profile = Path(args.profile)
             with open(profile, encoding="utf-8", newline="") as stream:
                 text = stream.read()
-            library = args.library or tomllib.loads(text).get("profile", {}).get("library")
-            if not library:
-                raise LibraryError("the profile has no library; pass --library")
+            library = mod_library(tomllib.loads(text), args.library, args.config)
             new_text, converted, skipped = convert_profile(text, load_library(library))
             for name in converted:
                 print(f"  converted {name}")
@@ -593,7 +592,7 @@ def main(argv=None):
                     stream.write(new_text)
             print(f"{len(converted)} converted, {len(skipped)} kept as folder names")
         return 0
-    except (LibraryError, OSError) as exc:
+    except (LibraryError, ValueError, OSError) as exc:
         raise SystemExit(str(exc)) from exc
 
 

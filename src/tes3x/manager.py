@@ -26,7 +26,7 @@ import tes3x.agent as tes3x_agent
 import tes3x.nxdk as tes3x_nxdk
 import tes3x.release as tes3x_release
 import tes3x.targets as tes3x_targets
-from tes3x.paths import CONFIG_HELP, bundled, checkout, local_config, resource, xbox_root
+from tes3x.paths import CONFIG_HELP, bundled, checkout, data_dir, local_config, resource, xbox_root
 from tes3x.pipeline import PipelineError, agent_setting, dashboard_xml
 from tes3x.xbe import Xbe
 
@@ -61,7 +61,7 @@ def find_xbe(given=None, config=None, work=None, launcher=False):
                               else (PACKAGED, SOURCE, "app"))
     if packaged.is_file():
         return packaged
-    out = Path(work or Path.cwd()) / "build" / "manager" / name
+    out = Path(work or data_dir()) / "build" / "manager" / name
     print(f"building the manager{' launcher' if launcher else ''} in {out}", flush=True)
     try:
         return tes3x_nxdk.build(source, out, config=config)
@@ -194,7 +194,7 @@ def main():
         if name == "stage":
             p.add_argument("out", help="folder for deploy/ and console.ini")
         else:
-            p.add_argument("--out", help="staging folder (default: build/manager/install)")
+            p.add_argument("--out", help="staging folder (default: data folder's build/manager/install)")
             p.add_argument("--dry-run", action="store_true")
             p.add_argument("--replace", action="store_true",
                            help="install over a folder that holds something else")
@@ -239,7 +239,7 @@ def main():
         except ManagerError as exc:
             sys.exit(str(exc))
         root = tes3x_ftp.local_settings(args.config).get("paths", {}).get("vanilla_root")
-        base = Path(args.config).parent if args.config else Path.cwd()
+        base = local_config(args.config).resolve().parent
         vanilla = (base / root) if root else None
         disc, seed = stage_xemu(args.out, xbe, vanilla if vanilla and vanilla.is_dir() else None)
         print(f"manager {version()} staged for xemu in {disc}"
@@ -251,11 +251,11 @@ def main():
         remote = remote_folder(target, args.folder)
         xbe = find_xbe(args.xbe, args.config)
         launcher = find_xbe(args.launcher, args.config, launcher=True)
-        base = Path(args.config).parent if args.config else Path.cwd()
+        base = local_config(args.config).resolve().parent
         agent = None if args.no_agent else agent_setting(base, target)
     except (tes3x_targets.TargetError, ManagerError, PipelineError) as exc:
         sys.exit(str(exc))
-    out = Path(getattr(args, "out", None) or Path.cwd() / "build" / "manager" / "install")
+    out = Path(getattr(args, "out", None) or data_dir() / "build" / "manager" / "install")
     stage(out, xbe, launcher, remote, agent)
     print(f"manager {version()} staged for {remote}", flush=True)
     if args.command == "install":

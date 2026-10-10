@@ -31,7 +31,9 @@ To switch a profile from folder names to ids:
 tes3x library convert profiles/my-build.toml --library "D:/Morrowind Mods"
 ```
 
-`--library` can be left out when the profile sets its own `library`.
+`--library` can be left out when the profile sets `profile.library` or the local config sets
+`paths.mod_library`. `--config FILE` selects another config. Relative library paths use the
+local config's folder, as in the pipeline; `--library` overrides both settings.
 
 It converts each mod whose folder is indexed as a whole, with no optional components, so the
 build stays the same. Others keep their folder name, with the reason printed. `--dry-run` only

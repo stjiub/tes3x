@@ -1,0 +1,22 @@
+kind = "single"
+purpose = "The engine heap census tracks allocations during loading and writes two successive dumps in a real session."
+procedure = "Boot with 128 MB, start a new game, request a heap dump, change cell and request another dump."
+limitations = "Does not validate dump contents against an independent allocation count or measure hardware overhead."
+xemu = ["--skip-intro", "--no-reboot", "--ram", "128", "--bios", "cerbios"]
+timeout = 300
+script = '''
+@start new
+wait 30
+assert player->getpos x == 61.00
+tes3xheap
+coc "Balmora, Caius Cosades' House"
+wait 60
+tes3xheap
+exit
+'''
+
+[expect]
+test = ['heap\.table_kb [1-9][0-9]*', 'heap\.live_kb [1-9][0-9]*', 'heap\.sites [1-9][0-9]*', '!heap\.table_failed', '!heap\.dump_open_failed', 'exec\.exit 0']
+
+[sequence]
+test = ['exec> tes3xheap', 'heap\.dump [1-9][0-9]*', 'exec> tes3xheap', 'heap\.dump [1-9][0-9]*']

@@ -4,6 +4,13 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- `tes3x init` creates the example config and profile from bundled files, keeping existing files.
+- `build` and `library convert` honor `paths.mod_library` and accept `--config`.
+- Texture/archive caches, manager staging, dashboard backups and xemu runs default to the data
+  folder. `scenario` uses normal config discovery; `xemu` and `scenario` accept `--work-root`.
+  Move old run folders there, or select their old root explicitly when reusing them.
+- The `testing` preset includes additional engine fixes. Autosaves, overlay support and the
+  low-memory menu are visible in the GUI's default patch view. See the [patch table](docs/patches.md).
 - Multiplayer state saves tolerate brief Windows file locks instead of stopping the server.
 - Multiplayer join and remote admin password limits share tries across each IPv6 /64.
   Filling the bounded address table no longer resets existing limits; new sources wait

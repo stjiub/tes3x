@@ -1,0 +1,25 @@
+kind = "single"
+purpose = "The shared network layer carries authenticated UDP console requests and a file transfer during a real session."
+procedure = "Start a new game through an xemu tunnel with a paired agent, request the player position and a log file, then exit remotely."
+limitations = "Exercises the network through the agent and a tunnel; direct LAN routing, packet loss and hardware remain separate tests."
+enable = ["diagnostics", "console", "agent"]
+timeout = 240
+script = '''
+@start new
+wait 30
+assert player->getpos x == 61.00
+mark net-ready
+wait 9000
+'''
+
+[agent]
+after = 'mem\.net-ready '
+console = ["player->getpos x"]
+fetch = ['E:\tes3xlog.txt']
+exit = true
+
+[expect]
+test = ['agent\.connected ', 'agent\.file ', 'live\.exit']
+
+[sequence]
+test = ['mem\.net-ready ', 'live> player->getpos x', 'console< GetPos >> 61\.00', 'agent\.file ', 'live\.exit']

@@ -20,9 +20,12 @@ promotes a patch.
 ## Prerequisites
 
 Set up a normal build profile and an xemu target in `tes3x.local.toml` first. See
-[configuration](configuration.md) and [running in xemu](xemu.md). Run the commands below from
-the folder that holds your `tes3x.local.toml`, or pass `--config PATH`: `tes3x scenario` does not
-look anywhere else, and the `build/` paths below are relative to that folder. A passing record
+[configuration](configuration.md) and [running in xemu](xemu.md). `tes3x scenario` uses the
+normal [local config search](configuration.md#local-config), or `--config PATH`. The `build/`
+paths below are in the TES3X data folder; `--work-root FOLDER` selects another output root for
+both the scenario and its xemu runs. `tes3x validate` also defaults to the data folder's
+`build/validation/`. Explicit `--save-root` and `--results` paths are relative
+to the calling directory. A passing record
 names the git revision that ran, so recording needs a
 [checkout](development.md#setting-up-a-checkout).
 

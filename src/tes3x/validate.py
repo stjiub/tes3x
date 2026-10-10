@@ -2,7 +2,7 @@
 """Record and check repeatable validation runs for an implemented patch.
 
 A patch's game test is tests/game/<patch>.toml. Results are local files under
-build/validation/patches/<patch>/ by default; --results selects another store. Schema 3 writes
+the data folder's build/validation/patches/<patch>/ by default; --results selects another store. Schema 3 writes
 hashed provenance with sanitized commands, inputs and platform details. A single test exercises
 one build; a comparison test runs a control and a test build.
 
@@ -26,12 +26,12 @@ import shutil
 import tomllib
 
 import tes3x.patches as registry
-from tes3x.paths import checkout
+from tes3x.paths import checkout, data_dir
 from tes3x.diag import assertion_failures, latest_values, parse_log
 from tes3x.test import (GAME_TESTS, comparison_failures, game_test_problems,
                         sequence_failures)
 
-VALIDATION = checkout("build", "validation")
+VALIDATION = data_dir() / "build" / "validation"
 PATCH_DIRS = VALIDATION / "patches"
 
 GATED_CHANNELS = ("preview", "release")
@@ -745,7 +745,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--results", metavar="DIR",
-                    help="local result store (default: build/validation)")
+                    help="local result store (default: data folder's build/validation)")
     sub = ap.add_subparsers(dest="command", required=True)
     rec = sub.add_parser("record", help="write a validation result from completed scenario runs")
     rec.add_argument("patch")

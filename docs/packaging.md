@@ -59,8 +59,11 @@ profile with no mods stages the retail `Data Files` unchanged and does not gener
 tes3x build profiles/my-build.toml --prune --library "D:/Morrowind Mods" --vanilla "D:/Morrowind/Data Files" --out pruned --reachability-json reachability.json
 ```
 
-`tes3x build` reads the library from the profile's `library` or `--library`, not from the local
-config, and `--vanilla` is the clean game's `Data Files`.
+`tes3x build` uses `--library`, then `profile.library`, then the local config's
+`paths.mod_library`. `--config FILE` selects another local config; relative library paths
+use its folder. `--vanilla` is the clean game's `Data Files`.
+Extracted archives and converted textures are cached under `cache/bsa/` and `cache/tex/`
+in the TES3X data folder, regardless of the working directory.
 
 `--prune` drops mod assets that nothing refers to. It follows references from records in the
 masters and plugins, from meshes to their textures and animations, from books to their images and

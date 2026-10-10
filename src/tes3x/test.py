@@ -20,7 +20,7 @@ import tomllib
 from tes3x.diag import assertion_failures
 from tes3x.pipeline import validate_profile
 from tes3x.library import CATALOG_NAME, dependency_order, discover_library, load_library
-from tes3x.paths import resource
+from tes3x.paths import data_dir, local_config, resource
 
 
 GLOBAL_FAILURES = (r"crash\.", r"hang\.detected", r"fatal\.")
@@ -362,11 +362,12 @@ def run_profile(args):
     scenario_path = Path(args.scenario).resolve()
     scenario = load_scenario(scenario_path)
     runner = find_runner(args.runner)
-    # The runner writes build/xemu/ under its working folder and reads the config found there.
-    workspace = Path(args.config).resolve().parent if getattr(args, "config", None) else Path.cwd()
+    config = local_config(getattr(args, "config", None)).resolve()
+    workspace = data_dir().resolve()
     run_root = workspace / "build" / "xemu"
     work_root = Path(args.work_root).resolve()
     work_root.mkdir(parents=True, exist_ok=True)
+    workspace.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     scenario_name = safe_name(scenario_path.stem)
     profile_name = profile["profile"]["name"]
@@ -375,7 +376,7 @@ def run_profile(args):
     script = work_root / f"{run_name}.exec.txt"
     script.write_text(scenario["script"].strip() + "\n", encoding="ascii", newline="\n")
 
-    command = [*runner, run_name, str(profile_path), "--direct-engine",
+    command = [*runner, run_name, str(profile_path), "--work-root", str(workspace), "--direct-engine",
                "--exec", str(script), "--timeout", str(scenario.get("timeout", 300)),
                *scenario.get("xemu", [])]
     if args.keep_artifacts == "always":
@@ -390,8 +391,8 @@ def run_profile(args):
                 *args.pipeline_arg]
     print("==", " ".join(command[1:]), flush=True)
     env = dict(os.environ)
-    if getattr(args, "config", None):
-        env["TES3X_CONFIG"] = str(Path(args.config).resolve())
+    env["TES3X_CONFIG"] = str(config)
+    env["TES3X_DATA"] = str(data_dir().resolve())
     process = subprocess.run(command, cwd=workspace, env=env)
     log = run_dir / "tes3xlog.txt"
     passed, failures, observed = check_log(log, scenario)
@@ -499,10 +500,10 @@ def main(argv=None):
                         help="single-run scenario TOML (default: tests/game/smoke.toml)")
     parser.add_argument("--runner", help="xemu runner script to use instead of tes3x xemu")
     parser.add_argument("--config", help="local TES3X config passed to the build pipeline")
-    parser.add_argument("--work-root", default="build/profile-tests",
-                        help="small transient scripts/results (default: build/profile-tests)")
-    parser.add_argument("--results", default="profile-tests/results",
-                        help="durable --record destination (default: profile-tests/results)")
+    parser.add_argument("--work-root", default=data_dir() / "build" / "profile-tests",
+                        help="small transient scripts/results (default: data folder's build/profile-tests)")
+    parser.add_argument("--results", default=data_dir() / "profile-tests" / "results",
+                        help="durable --record destination (default: data folder's profile-tests/results)")
     parser.add_argument("--record", action="store_true", help="retain compact result and log")
     parser.add_argument("--library-all", action="store_true",
                         help="use PROFILE as a template and test each managed library mod alone")

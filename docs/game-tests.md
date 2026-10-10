@@ -6,6 +6,9 @@ boots the game, so it never runs with the unit tests; they only check that each 
 formed. Running, recording and checking game tests is covered in [validation](validation.md).
 Game tests ship with TES3X; writing one needs a [checkout](development.md#setting-up-a-checkout).
 
+Paths under `build/` on this page are in the TES3X data folder by default. `scenario --work-root`
+selects another root for runs and private save fixtures.
+
 ## Example
 
 ```toml

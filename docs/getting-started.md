@@ -74,11 +74,13 @@ Windows (`~/.local/share/tes3x` on Linux, or `TES3X_DATA` when set):
 | `profiles\` | one **profile** per build: its mods, plugin order, patches and settings |
 | `build\` | one folder per built profile; the game folder itself is its `deploy\` folder |
 
-The GUI creates them there. On the command line, work from the data folder, so that `tes3x` finds
-the same files:
+The GUI creates them there. On the command line, `tes3x init` copies the bundled example config
+and profile into the data folder, keeping any files that already exist. `tes3x init FOLDER`
+creates them elsewhere. Config discovery works from any directory; the examples below use
+the data folder so profile paths stay short:
 
 ```powershell
-mkdir -Force $env:LOCALAPPDATA\TES3X\profiles
+tes3x init
 cd $env:LOCALAPPDATA\TES3X
 ```
 
@@ -101,9 +103,8 @@ Each step is shown in the GUI first, then on the command line.
 1. **Set your paths.** On first start the GUI opens **File > Settings**: set the **Clean game
    root** and the **Mod library**.
 
-   On the command line, download the example
-   [local config](https://raw.githubusercontent.com/stjiub/tes3x/main/examples/local.toml) into
-   the data folder as `tes3x.local.toml`, and set `paths.vanilla_root` and `paths.mod_library`.
+   On the command line, run `tes3x init`, then edit `tes3x.local.toml` in the data folder
+   and set `paths.vanilla_root` and `paths.mod_library`.
 
 2. **Add a target.** In the **Target** workspace, add an Xbox or xemu target with the cog beside
    the target list, and fill it in on the **Setup** tab: for an Xbox, its IP address and games
@@ -116,10 +117,8 @@ Each step is shown in the GUI first, then on the command line.
    On the **Build** tab, set its install folder. Tick mods on **Mods**, then look over
    **Plugins** and **Patches**. **Install mod…** adds an archive to the library.
 
-   On the command line, download the example
-   [profile](https://raw.githubusercontent.com/stjiub/tes3x/main/examples/profile.toml) into
-   `profiles\` as `my-build.toml`. Set `profile.name` and `profile.install_dir`, remove
-   `profile.library` to use the local config's mod library, and list your mods as `[[mods]]`
+   On the command line, edit the `profiles/my-build.toml` created by `tes3x init`.
+   Set `profile.name` and `profile.install_dir`, and list your mods as `[[mods]]`
    blocks; for engine fixes only, remove every `[[mods]]` block. The example's comments explain
    each option.
 

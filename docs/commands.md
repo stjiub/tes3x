@@ -9,6 +9,7 @@ options. This page says what each one is for and where it is explained.
 | command | job | see |
 |---|---|---|
 | `tes3x gui` | the GUI: profiles, mods, plugins, patches, INI, build, play and deploy | [GUI](gui.md) |
+| `tes3x init` | copy the bundled example config and profile into the data folder, or a chosen folder; keep existing files | [getting started](getting-started.md#where-tes3x-keeps-your-files) |
 | `tes3x pipeline` | build one profile into a game folder, and optionally deploy it | [pipeline](pipeline.md) |
 | `tes3x build` | collect a profile's mods into one `Data Files` tree; report conflicts, textures and missing masters; prune unused assets | [pipeline](pipeline.md#2-collect-the-winning-files), [packaging](packaging.md#pruning-unused-assets) |
 | `tes3x plugins` | order plugins with mlox or a saved order; download the mlox rules; run TES3Merge | [pipeline](pipeline.md#sorting-plugins-with-mlox) |

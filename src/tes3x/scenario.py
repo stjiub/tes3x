@@ -55,6 +55,8 @@ import re
 import subprocess
 import sys
 
+from tes3x.paths import CONFIG_HELP, data_dir, local_config
+
 from tes3x.agent import key_fingerprint, load_or_create_key  # noqa: E402
 from tes3x.diag import assertion_failures  # noqa: E402
 from tes3x.net import free_udp_ports  # noqa: E402
@@ -89,6 +91,8 @@ def build_flags(spec, patch, role):
         flags += ["--enable", name]
     if role == "control" and by_name:
         flags += ["--disable", patch]
+    if role == "test" and patch in {"heap-census", "mem-census"}:
+        flags.append("--" + patch)
     if role == "test" and applied:
         name, separator, value = applied.partition("=")
         if not separator or name != patch or not value:
@@ -211,37 +215,35 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("patch")
     ap.add_argument("profile", help="build profile the scenario run or runs use")
-    ap.add_argument("--name", help="run name prefix under build/xemu/ (default: scenario-PATCH-N)")
+    ap.add_argument("--name", help="run name prefix under the data folder's build/xemu/ (default: scenario-PATCH-N)")
     ap.add_argument("--only", choices=("control", "test"), help="run one side")
     ap.add_argument("--reuse", action="store_true",
                     help="check existing run folders of --name instead of booting them again")
     ap.add_argument("--record", action="store_true",
                     help="write a validation result when the complete scenario passes")
     ap.add_argument("--runner", help="xemu runner script (default: tes3x xemu)")
-    ap.add_argument("--config", help="local config (default: tes3x.local.toml in the working directory)")
-    ap.add_argument("--save-root", help="private save fixtures (default: build/saves)")
-    ap.add_argument("--results", default="build/validation",
-                    help="local validation store (default: build/validation)")
+    ap.add_argument("--config", help=CONFIG_HELP)
+    ap.add_argument("--work-root", help="output root (default: TES3X data folder)")
+    ap.add_argument("--save-root", help="private save fixtures (default: output root's build/saves)")
+    ap.add_argument("--results",
+                    help="local validation store (default: output root's build/validation)")
     a = ap.parse_args()
 
     spec = load(a.patch)
-    config = Path(a.config or Path.cwd() / "tes3x.local.toml").resolve()
-    workspace = config.parent
+    config = local_config(a.config).resolve()
+    workspace = (Path(a.work_root) if a.work_root else data_dir()).resolve()
     runner = [sys.executable, "-m", "tes3x", "xemu"]
     if a.runner:
         runner = [sys.executable, str(Path(a.runner).resolve())]
         if not Path(runner[1]).is_file():
             sys.exit(f"xemu runner not found: {runner[1]}")
     runs = workspace / "build" / "xemu"
-    results_root = Path(a.results)
-    if not results_root.is_absolute():
-        results_root = workspace / results_root
-    save_root = Path(a.save_root) if a.save_root else workspace / "build" / "saves"
-    if not save_root.is_absolute():
-        save_root = workspace / save_root
+    results_root = Path(a.results).resolve() if a.results else workspace / "build" / "validation"
+    save_root = Path(a.save_root).resolve() if a.save_root else workspace / "build" / "saves"
     profile_arg = str(Path(a.profile).resolve())
     env = dict(os.environ)
     env["TES3X_CONFIG"] = str(config)
+    env["TES3X_DATA"] = str(data_dir().resolve())
     prefix = a.name
     if a.reuse and not prefix:
         sys.exit("--reuse needs --name")
@@ -280,7 +282,7 @@ def main():
         if spec.get("agent"):
             agents[role], xemu_extra, build_extra = start_agent(
                 spec, folder, spec.get("timeout", 300), env, workspace)
-        cmd = [*runner, folder.name, profile,
+        cmd = [*runner, folder.name, profile, "--work-root", str(workspace),
                "--direct-engine", "--exec", str(script), *saves,
                "--timeout", str(spec.get("timeout", 300)),
                *spec.get("xemu", DEFAULT_XEMU), *xemu_extra,

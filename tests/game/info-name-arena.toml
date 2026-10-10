@@ -1,0 +1,17 @@
+kind = "single"
+purpose = "Dialogue link names allocate in the paged arena, finish linking without fallback, and leave a playable session."
+procedure = "Load retail dialogue, start a new game and travel to Balmora after checking the arena counters."
+limitations = "Does not check individual dialogue responses or paging under large mod load orders."
+timeout = 300
+script = '''
+@start new
+wait 30
+assert player->getpos x == 61.00
+coc "Balmora"
+wait 60
+assert player->getpos x == -12288.00
+exit
+'''
+
+[expect]
+test = ['info\.allocations [1-9][0-9]*', 'info\.groups [1-9][0-9]*', 'info\.arena_kb [1-9][0-9]*', 'info\.fallbacks 0', '!info\.pager_failed', 'exec\.exit 0']

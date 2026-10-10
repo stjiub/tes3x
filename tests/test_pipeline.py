@@ -515,9 +515,9 @@ class PipelinePlanTests(unittest.TestCase):
     def test_testing_includes_preview_defaults_but_not_dev_patches(self):
         plan = resolve_patch_plan({'patches': {'preset': 'testing'},
                                    'package': {'mode': 'merged-bsa'}})
-        self.assertTrue({'mcp-97', 'mcp-102', 'dxt5-size', 'diagnostics', 'console'}
+        self.assertTrue({'mcp-1', 'mcp-97', 'mcp-102', 'dxt5-size', 'diagnostics', 'console'}
                         <= set(plan['selected']))
-        self.assertTrue({'mcp-1', 'mcp-154'}.isdisjoint(plan['selected']))
+        self.assertNotIn('mcp-154', plan['selected'])
 
     def test_old_preset_names_remain_compatible(self):
         standard = resolve_patch_plan({'patches': {'preset': 'standard'}})
@@ -1175,8 +1175,8 @@ class PipelinePlanTests(unittest.TestCase):
                    'package': {'mode': 'merged-bsa'}}
         plan = resolve_patch_plan(profile)
         self.assertEqual(plan['selected'],
-                         ['mcp-3', 'dialogue-merge', 'mcp-97', 'mcp-102', 'dxt5-size',
-                          'console'])
+                         ['mcp-1', 'mcp-3', 'dialogue-merge', 'mcp-37', 'mcp-92', 'mcp-97',
+                          'mcp-98', 'mcp-102', 'mcp-123', 'mcp-125', 'dxt5-size', 'console'])
 
     def test_pipeline_rejects_unknown_categories_and_patches(self):
         with self.assertRaises(PipelineError):
