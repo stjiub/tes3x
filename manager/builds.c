@@ -427,7 +427,7 @@ int list_folders(const char *path, struct folder *out, int max)
     return n;
 }
 
-static int hash_file(const char *path, unsigned long long size, char hex[65],
+int mgr_hash_file(const char *path, unsigned long long size, char hex[65],
                      unsigned long long *done, unsigned long long total, const char *name,
                      progress_fn progress)
 {
@@ -476,7 +476,7 @@ int verify_build(const struct build *b, struct verify *v, progress_fn progress)
         json_string(&j, i, name, sizeof(name));
         json_string(&j, json_get(&j, e, "sha256"), want, sizeof(want));
         join_path(path, sizeof(path), b->path, name);
-        r = hash_file(path, (unsigned long long)json_number(&j, json_get(&j, e, "size")), got,
+        r = mgr_hash_file(path, (unsigned long long)json_number(&j, json_get(&j, e, "size")), got,
                       &done, b->bytes, name, progress);
         if (r == -2) {
             v->cancelled = 1;

@@ -369,6 +369,151 @@ static const char *write_manifest(const char *folder, const char *text, size_t n
     return MoveFileA(staged, path) ? NULL : "could not write the manifest";
 }
 
+/* An overlay's retail dependency is installed separately before rebuilding its XBEs. */
+static const char *install_base(const struct json *build, const char *url_base,
+                                const char *folder, progress_fn progress)
+{
+    struct json j = {0}, old = {0};
+    struct item *items = NULL;
+    unsigned char *old_text = NULL;
+    char base[PATH_MAX_MGR], path[PATH_MAX_MGR], url[PATH_MAX_MGR + 128], hex[65], layout[32];
+    static char reason[192];
+    size_t old_n;
+    unsigned long long total = 0, done = 0, need = 0, checked;
+    ULARGE_INTEGER available;
+    const char *err = NULL;
+    int root = json_get(build, 0, "retail_base"), files, i, n = 0, count, owned = 0, result;
+    char *slash;
+
+    console_get("OverlayBase", base, sizeof(base));
+    if (!base[0]) {
+        snprintf(base, sizeof(base), "%s", folder);
+        if (!(slash = strrchr(base, '\\')))
+            return "The build has no parent folder.";
+        snprintf(slash + 1, sizeof(base) - (size_t)(slash + 1 - base), "MorrowindRetail");
+    }
+    if ((!name_cmp_n(base, folder, strlen(folder))
+         && (!base[strlen(folder)] || base[strlen(folder)] == '\\'))
+        || (!name_cmp_n(folder, base, strlen(base))
+            && (!folder[strlen(base)] || folder[strlen(base)] == '\\')))
+        return "The retail base must be separate from the build folder.";
+    if (root < 0) {
+        struct base existing;
+        if (check_base(base, &existing))
+            return "This overlay needs a retail base. Configure the server's --retail-base.";
+        return console_set("OverlayBase", base) ? "Could not select the retail base." : NULL;
+    }
+    if (json_parse(&j, build->s + build->t[root].start,
+                   (size_t)(build->t[root].end - build->t[root].start)) < 0)
+        return "The server's retail manifest is unreadable.";
+    files = json_get(&j, 0, "files");
+    if (files < 0 || j.t[files].type != JSON_OBJECT || !j.t[files].count) {
+        err = "The server's retail manifest has no files.";
+        goto finished;
+    }
+    join_path(path, sizeof(path), base, MANIFEST);
+    if (!read_file(path, &old_text, &old_n) && json_parse(&old, (char *)old_text, old_n) >= 0) {
+        json_string(&old, json_get(&old, 0, "install_layout"), layout, sizeof(layout));
+        if (strcmp(layout, "retail-base")) {
+            err = "The selected retail folder holds a TES3X build.";
+            goto finished;
+        }
+        owned = 1;
+    }
+    count = j.t[files].count;
+    if (!(items = calloc((size_t)count + 1, sizeof(*items)))) {
+        err = "Out of memory.";
+        goto finished;
+    }
+    for (i = json_child(&j, files); i >= 0; i = json_sibling(&j, files, i)) {
+        struct item *it = &items[n++];
+        int value = j.t[i].next;
+
+        json_string(&j, i, it->path, sizeof(it->path));
+        json_string(&j, json_get(&j, value, "sha256"), it->sha, sizeof(it->sha));
+        it->size = (unsigned long long)json_number(&j, json_get(&j, value, "size"));
+        if (!safe_path(it->path) || !name_cmp(it->path, MANIFEST)) {
+            err = "The retail manifest names an invalid path.";
+            goto finished;
+        }
+        total += it->size;
+    }
+    /* Verify every dependency, including an existing base with an old manifest. */
+    for (i = 0; i < n; i++) {
+        struct item *it = &items[i];
+
+        join_path(path, sizeof(path), base, it->path);
+        checked = done;
+        mgr_progress_title("Checking retail base");
+        result = file_size(path) == it->size
+            ? mgr_hash_file(path, it->size, hex, &checked, total, it->path, progress) : -1;
+        if (result == -2) {
+            err = "Cancelled.";
+            goto finished;
+        }
+        if (!result && !strcmp(hex, it->sha)) {
+            it->action = KEEP;
+            done += it->size;
+        } else {
+            if (!owned && file_size(path) != ~0ull) {
+                snprintf(reason, sizeof(reason),
+                         "The retail base's %.80s differs. Select a separate clean retail folder.",
+                         it->path);
+                err = reason;
+                goto finished;
+            }
+            it->action = FETCH;
+            need += it->size;
+        }
+    }
+    snprintf(path, sizeof(path), "%.2s\\", base);
+    if (GetDiskFreeSpaceExA(path, &available, NULL, NULL) && available.QuadPart < need + SPACE_MARGIN) {
+        err = "Not enough free space for the retail base.";
+        goto finished;
+    }
+    for (i = 0; i < n; i++) {
+        struct item *it = &items[i];
+
+        if (it->action == KEEP)
+            continue;
+        join_path(path, sizeof(path), base, it->path);
+        make_parents(path);
+        slash = strrchr(path, '\\');
+        snprintf(it->staged, sizeof(it->staged), "%.*s\\~t3x%.16s_%d.new",
+                 (int)(slash - path), path, it->sha, i);
+        url_path(url, sizeof(url), url_base, "retail/", it->path);
+        err = http_save(url, it->staged, it->size, it->sha, it->path, &done, total, progress);
+        if (err) {
+            snprintf(reason, sizeof(reason), "Retail %.80s: %.90s", it->path, err);
+            err = reason;
+            goto finished;
+        }
+    }
+    for (i = 0; i < n; i++) {
+        struct item *it = &items[i];
+
+        if (it->action == KEEP)
+            continue;
+        join_path(path, sizeof(path), base, it->path);
+        DeleteFileA(path);
+        if (!MoveFileA(it->staged, path)) {
+            err = "Could not rename a retail file in.";
+            goto finished;
+        }
+        flush_path(path);
+    }
+    err = write_manifest(base, j.s, (size_t)(build->t[root].end - build->t[root].start), "");
+    if (!err && console_set("OverlayBase", base))
+        err = "Could not select the completed retail base.";
+finished:
+    mgr_log("retail base %s: %s\n", base, err ? err : "complete");
+    free(items);
+    free(old_text);
+    json_free(&old);
+    json_free(&j);
+    return err;
+}
+
 const char *server_install(struct server *s, int replace, char *folder, size_t folder_n,
                            char *summary, size_t summary_n, progress_fn progress)
 {
@@ -380,7 +525,7 @@ const char *server_install(struct server *s, int replace, char *folder, size_t f
     struct known *had = NULL, *want = NULL;
     const struct known *k;
     char url_base[96], url[PATH_MAX_MGR + 128], base[PATH_MAX_MGR];
-    char path[PATH_MAX_MGR], from[PATH_MAX_MGR], prev[PATH_MAX_MGR], origin[16], drive[4];
+    char path[PATH_MAX_MGR], from[PATH_MAX_MGR], prev[PATH_MAX_MGR], origin[16], drive[4], hex[65];
     unsigned char *text = NULL, *old_text = NULL, digest[32];
     unsigned long long need = 0, done = 0;
     ULARGE_INTEGER free_bytes, total_bytes;
@@ -440,6 +585,9 @@ const char *server_install(struct server *s, int replace, char *folder, size_t f
         err = INSTALL_CONFIRM;
         goto done;
     }
+    if (json_equals(&j, json_get(&j, 0, "install_layout"), "overlay")
+        && (err = install_base(&j, url_base, folder, progress)))
+        goto done;
 
     if (!(items = calloc((size_t)want_n + 1, sizeof(*items)))) {
         err = "Out of memory.";
@@ -518,10 +666,23 @@ const char *server_install(struct server *s, int replace, char *folder, size_t f
                     break;
             }
             if (it->size && file_size(it->staged) == it->size) {
-                mgr_log("install: %s already staged\n", it->path);
-                done += it->size;
-                it->ready = 1;
-                continue;
+                unsigned long long checked = done;
+                int result;
+
+                mgr_progress_title("Checking saved download");
+                result = mgr_hash_file(it->staged, it->size, hex, &checked, need, it->path, progress);
+                if (result == -2) {
+                    err = "Cancelled.";
+                    it->ready = 1;
+                    break;
+                }
+                if (!result && !strcmp(hex, it->sha)) {
+                    mgr_log("install: %s already staged\n", it->path);
+                    done = checked;
+                    it->ready = 1;
+                    continue;
+                }
+                DeleteFileA(it->staged);
             }
             if (it->action == REBUILD) {
                 mgr_progress_title("Rebuilding");
@@ -535,7 +696,14 @@ const char *server_install(struct server *s, int replace, char *folder, size_t f
             } else if (it->action == COPY) {
                 join_path(from, sizeof(from), base, it->path);
                 mgr_progress_title("Copying");
-                why = copy_checked(from, it->staged, it, &done, need, progress);
+                if (file_size(it->staged) != ~0ull)
+                    why = "resuming the saved download";
+                else {
+                    unsigned long long before = done;
+                    why = copy_checked(from, it->staged, it, &done, need, progress);
+                    if (why)
+                        done = before;
+                }
                 if (why)
                     mgr_log("install: %s not copied from %s: %s\n", it->path, from, why);
             }

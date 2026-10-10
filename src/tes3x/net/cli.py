@@ -556,6 +556,9 @@ def main(argv=None):
                         "deploy/, with tes3xbuild.json), over HTTP")
     p.add_argument("--deltas", metavar="DIR",
                    help="the XBE deltas for --build (default: deltas/ beside it)")
+    p.add_argument("--retail-base", metavar="DIR",
+                   help="clean retail files required by an overlay build; default: paths.vanilla_root "
+                        "in the local config (downloads still follow --serve-origin)")
     p.add_argument("--serve-origin", action="append", choices=tes3x_netbuild.ORIGINS,
                    default=None, metavar="ORIGIN",
                    help="files of this manifest origin are served (repeatable; default: build "

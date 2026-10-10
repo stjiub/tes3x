@@ -2959,8 +2959,19 @@ class Server:
                        (spec.partition("@") for spec in self.args.burst)]
         self.build_server = None
         if self.args.build:
+            retail_base = self.args.retail_base
+            if not retail_base:
+                import tomllib
+                from tes3x.paths import local_config
+                config_path = local_config()
+                if config_path.is_file():
+                    with config_path.open('rb') as stream:
+                        retail_base = tomllib.load(stream).get('paths', {}).get('vanilla_root')
+                    if retail_base:
+                        retail_base = config_path.parent / retail_base
             build = tes3x_netbuild.Build(self.args.build, self.args.deltas,
-                                         self.args.serve_origin or tes3x_netbuild.SERVED_BY_DEFAULT)
+                                         self.args.serve_origin or tes3x_netbuild.SERVED_BY_DEFAULT,
+                                         retail_base=retail_base)
             self.build_server = tes3x_netbuild.BuildServer(
                 build, self.args.bind,
                 self.args.port if self.args.http_port is None else self.args.http_port)

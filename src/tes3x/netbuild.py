@@ -5,6 +5,7 @@ file only by the hash in a manifest whose own hash came through the session."""
 
 import hashlib
 import http.server
+import json
 import secrets
 import struct
 import threading
@@ -22,13 +23,29 @@ ORIGINS = ("build", "retail", "xbe")
 SERVED_BY_DEFAULT = ("build",)
 
 
+def retail_entries(root):
+    entries = {}
+    for name, path in tes3x_manifest.tree_files(root).items():
+        top = Path(name.split('/')[0])
+        suffix = top.suffix.lower()
+        release_part = len(suffix) == 4 and suffix[1] == 'r' and suffix[2:].isdigit()
+        if (top.name.lower() in {'morrowind.ini', '_resources'}
+                or suffix in {'.iso', '.nfo', '.rar', '.sfv'} or release_part):
+            continue
+        entries[name] = {'size': path.stat().st_size,
+                         'sha256': tes3x_manifest.sha256_file(path),
+                         'origin': 'xbe' if name.lower().endswith('.xbe') else 'retail'}
+    return entries
+
+
 class Build:
     """The staged game folder a server hands out, reread when its manifest changes."""
 
-    def __init__(self, root, deltas=None, origins=SERVED_BY_DEFAULT):
+    def __init__(self, root, deltas=None, origins=SERVED_BY_DEFAULT, retail_base=None):
         self.root = Path(root)
         self.deltas = Path(deltas) if deltas else self.root.parent / "deltas"
         self.origins = set(origins)
+        self.retail_base = Path(retail_base) if retail_base else None
         self.stamp = None
         self.load()
 
@@ -39,6 +56,19 @@ class Build:
             return
         data = path.read_bytes()
         manifest = tes3x_manifest.parse(data)
+        self.retail_files = {}
+        if manifest.get("install_layout") == "overlay" and self.retail_base:
+            entries = retail_entries(self.retail_base)
+            required = {'morrowind.xbe', 'data files/morrowind.esm', 'data files/morrowind.bsa'}
+            if not required <= {name.lower() for name in entries}:
+                raise ValueError('the server retail base lacks Morrowind.xbe, '
+                                 'Morrowind.esm or Morrowind.bsa')
+            manifest["retail_base"] = tes3x_manifest.create(
+                self.retail_base, profile='retail', source={'kind': 'retail'},
+                install_layout='retail-base', files=entries)
+            manifest['manager'] = max(manifest.get('manager', 1), 2)
+            self.retail_files = {name.lower(): (name, entry) for name, entry in entries.items()}
+            data = (json.dumps(manifest, indent=1) + '\n').encode('utf-8')
         self.data, self.stamp = data, stamp
         self.sha256 = hashlib.sha256(data).digest()
         self.build_id = bytes.fromhex(manifest.get("build") or tes3x_manifest.build_id(manifest))
@@ -66,6 +96,13 @@ class Build:
         path = self.deltas / f"{digest}.zst"
         return path if path.is_file() and path.stat().st_size == self.delta_files[digest] else None
 
+    def retail_file(self, relative):
+        entry = self.retail_files.get(relative.replace('\\', '/').lower())
+        if not entry or entry[1]['origin'] not in self.origins:
+            return None
+        path = self.retail_base / entry[0]
+        return path if path.is_file() and path.stat().st_size == entry[1]['size'] else None
+
 
 class BuildServer:
     """The HTTP side: GET /TICKET/manifest, /TICKET/file/PATH and /TICKET/delta/SHA256."""
@@ -80,7 +117,11 @@ class BuildServer:
             protocol_version = "HTTP/1.1"
 
             def do_GET(self):
-                owner.get(self)
+                try:
+                    owner.get(self)
+                except (ConnectionError, TimeoutError) as error:
+                    owner.log(f"build download disconnected: {self.client_address[0]}: {error}")
+                    self.close_connection = True
 
             def log_message(self, *args):
                 pass
@@ -130,6 +171,8 @@ class BuildServer:
         path = None
         if what == "file" and len(parts) == 4:
             path = self.build.file(parts[3])
+        elif what == "retail" and len(parts) == 4:
+            path = self.build.retail_file(parts[3])
         elif what == "delta" and len(parts) == 4:
             path = self.build.delta(parts[3])
         if path is None:
@@ -138,16 +181,39 @@ class BuildServer:
 
     def reply(self, request, status, data=b"", path=None):
         size = path.stat().st_size if path else len(data)
+        start = 0
+        byte_range = request.headers.get("Range") if path and status == 200 else None
+        if byte_range:
+            prefix, _, offset = byte_range.partition("=")
+            digits = offset[:-1] if offset.endswith("-") else ""
+            if (prefix != "bytes" or len(digits) > 20
+                    or not digits.isascii() or not digits.isdecimal()):
+                return self.reply(request, 416)
+            start = int(digits)
+            if start >= size:
+                request.send_response(416)
+                request.send_header("Content-Range", f"bytes */{size}")
+                request.send_header("Content-Length", "0")
+                request.end_headers()
+                return
+            status = 206
         request.send_response(status)
         request.send_header("Content-Type", "application/octet-stream")
-        request.send_header("Content-Length", str(size))
+        request.send_header("Content-Length", str(size - start))
+        if path:
+            request.send_header("Accept-Ranges", "bytes")
+        if status == 206:
+            request.send_header("Content-Range", f"bytes {start}-{size - 1}/{size}")
         request.end_headers()
         if path is None:
             request.wfile.write(data)
             return
         with open(path, "rb") as stream:
-            while chunk := stream.read(1 << 16):
+            stream.seek(start)
+            left = size - start
+            while left and (chunk := stream.read(min(left, 1 << 16))):
                 request.wfile.write(chunk)
+                left -= len(chunk)
 
     def close(self):
         self.http.shutdown()

@@ -54,6 +54,7 @@ int ui_dialog(const char *title, const char *const *lines, int n, int extra,
               const struct ui_hint *hints, int nh);
 /* A bar when the total is known, else the spinner. */
 void ui_progress(const char *title, const char *what, unsigned long long done, unsigned long long total);
+void ui_download_speed(unsigned long long bytes_per_second);
 /* Dots around a ring with a bright head that moves each ui_tick, so a wait never looks frozen;
  * main.c sets ui_tick from the clock before each draw. */
 extern unsigned ui_tick;

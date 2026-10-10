@@ -188,6 +188,13 @@ void ui_spinner(int cx, int cy)
     }
 }
 
+static unsigned long long download_speed;
+
+void ui_download_speed(unsigned long long bytes_per_second)
+{
+    download_speed = bytes_per_second;
+}
+
 void ui_progress(const char *title, const char *what, unsigned long long done, unsigned long long total)
 {
     static const struct ui_hint cancel = {UI_B, "Cancel"};
@@ -201,6 +208,9 @@ void ui_progress(const char *title, const char *what, unsigned long long done, u
         return;
     }
     snprintf(amount, sizeof(amount), "%llu of %llu MB", done >> 20, total >> 20);
+    if (download_speed)
+        snprintf(amount + strlen(amount), sizeof(amount) - strlen(amount), "  %llu KB/s",
+                 download_speed / 1024);
     lines[0] = what;
     lines[1] = amount;
     y = ui_dialog(title, lines, 2, 20, &cancel, 1) + 8;

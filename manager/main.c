@@ -57,6 +57,11 @@ static int video_up, dirty = 1;
 static Uint32 last_draw;
 static const char *progress_name;
 
+void mgr_progress_speed(unsigned long long bytes_per_second)
+{
+    ui_download_speed(bytes_per_second);
+}
+
 void mgr_log(const char *format, ...)
 {
     va_list args;

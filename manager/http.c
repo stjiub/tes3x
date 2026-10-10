@@ -306,11 +306,11 @@ static const char *read_body(struct conn *c, const char *head, unsigned char *bu
 /* Sends GET for url, following redirects, and reads the head of a 200 reply into head; the
  * body's first `*have` bytes follow it at head + *body_at. */
 static const char *open_get(const char *url, struct conn *c, char *head, size_t *body_at,
-                            size_t *have)
+                            size_t *have, unsigned long long offset, int *response)
 {
     static char path[URL_MAX], location[URL_MAX], current[URL_MAX];
     static char request[URL_MAX + 256];
-    char host[128], port[8];
+    char host[128], port[8], range[64] = "";
     const char *err;
     int tls, redirects, status, r, usual;
     size_t got;
@@ -319,6 +319,8 @@ static const char *open_get(const char *url, struct conn *c, char *head, size_t 
     if (net_up())
         return "the network did not start";
     snprintf(current, sizeof(current), "%s", url);
+    if (offset)
+        snprintf(range, sizeof(range), "Range: bytes=%llu-\r\n", offset);
     for (redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
         if (split_url(current, &tls, host, sizeof(host), port, path, sizeof(path)))
             return "not an http or https address";
@@ -328,8 +330,8 @@ static const char *open_get(const char *url, struct conn *c, char *head, size_t 
         usual = !strcmp(port, tls ? "443" : "80");
         snprintf(request, sizeof(request),
                  "GET %s HTTP/1.1\r\nHost: %s%s%s\r\nUser-Agent: tes3x-manager/" MGR_VERSION
-                 "\r\nAccept: */*\r\nConnection: close\r\n\r\n", path, host,
-                 usual ? "" : ":", usual ? "" : port);
+                 "\r\nAccept: */*\r\n%sConnection: close\r\n\r\n", path, host,
+                 usual ? "" : ":", usual ? "" : port, range);
         if (conn_write(c, request, strlen(request))) {
             conn_close(c);
             return "the request could not be sent";
@@ -360,10 +362,12 @@ static const char *open_get(const char *url, struct conn *c, char *head, size_t 
                 snprintf(current, sizeof(current), "%s", location);
             continue;
         }
-        if (status != 200) {
+        if (status != 200 && !(offset && status == 206)) {
             conn_close(c);
             return status == 404 ? "not found on the server" : "the server refused the request";
         }
+        if (response)
+            *response = status;
         return NULL;
     }
     return "too many redirects";
@@ -379,7 +383,7 @@ const char *http_get(const char *url, unsigned char **body, size_t *n, size_t ma
 
     *body = NULL;
     *n = 0;
-    if ((err = open_get(url, &c, head, &at, &have)))
+    if ((err = open_get(url, &c, head, &at, &have, 0, NULL)))
         return err;
     err = read_body(&c, head, (unsigned char *)head + at, have, body, n, max, label, progress);
     conn_close(&c);
@@ -402,66 +406,157 @@ const char *http_save(const char *url, const char *path, unsigned long long size
     struct conn c;
     struct sha256 s;
     unsigned char digest[32];
-    char value[32], hex[65];
-    unsigned long long seen = 0;
+    char value[96], expected[96], hex[65];
+    unsigned long long seen = 0, sample_bytes = 0, resumed;
     size_t at, have, fill;
-    const char *err;
-    DWORD put;
+    const char *err = NULL;
+    DWORD got, put, sample_at;
+    LARGE_INTEGER length, zero = {0};
     HANDLE f;
-    int r;
+    int r, status, retries = 0, keep = 0, i;
 
     if (!buf && !(buf = malloc(SAVE_BUFFER)))
         return "out of memory";
-    if ((err = open_get(url, &c, head, &at, &have)))
-        return err;
-    if (!header(head, "Content-Length", value, sizeof(value))
-        || strtoull(value, NULL, 10) != size) {
-        conn_close(&c);
-        return "the server's file is not the size the manifest gives";
-    }
-    f = CreateFileA(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (f == INVALID_HANDLE_VALUE) {
-        conn_close(&c);
+    f = CreateFileA(path, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_ALWAYS,
+                   FILE_ATTRIBUTE_NORMAL, NULL);
+    if (f == INVALID_HANDLE_VALUE)
         return "could not create the file";
-    }
+    mgr_progress_speed(0);
     sha256_init(&s);
-    memcpy(buf, head + at, have);
-    fill = have;
-    for (;;) {
-        if (fill == SAVE_BUFFER || seen + fill >= size) {
-            if (seen + fill > size) {
-                err = "the server sent more than the file";
+    if (!GetFileSizeEx(f, &length)) {
+        err = "could not read the staged file";
+        goto finished;
+    }
+    if ((unsigned long long)length.QuadPart > size && !SetEndOfFile(f)) {
+        err = "could not truncate the staged file";
+        goto finished;
+    }
+    resumed = (unsigned long long)length.QuadPart > size ? 0 : length.QuadPart;
+    mgr_progress_title("Checking saved download");
+    while (seen < resumed) {
+        DWORD want = resumed - seen < SAVE_BUFFER ? (DWORD)(resumed - seen) : SAVE_BUFFER;
+
+        if (!ReadFile(f, buf, want, &got, NULL) || !got) {
+            err = "could not read the staged file";
+            goto finished;
+        }
+        sha256_update(&s, buf, got);
+        seen += got, *done += got;
+        if (progress && progress(label, *done, total)) {
+            err = "cancelled", keep = 1;
+            goto finished;
+        }
+    }
+    if (seen)
+        mgr_log("http: resuming %s at %llu of %llu bytes\n", label, seen, size);
+    sample_at = KeTickCount;
+    while (seen < size || !size) {
+        mgr_progress_title("Downloading");
+        err = open_get(url, &c, head, &at, &have, seen, &status);
+        if (err) {
+            if (strcmp(err, "could not connect to the server")
+                && strcmp(err, "the request could not be sent")
+                && strcmp(err, "the server's reply was not understood"))
+                goto finished;
+            goto reconnect;
+        }
+        keep = 0;
+        if (seen && status == 200) {
+            /* Older servers ignore Range; restart rather than append a full response. */
+            *done -= seen;
+            seen = 0;
+            sha256_init(&s);
+            if (!SetFilePointerEx(f, zero, NULL, FILE_BEGIN) || !SetEndOfFile(f))
+                err = "could not truncate the staged file";
+        }
+        if (!err && status == 206) {
+            snprintf(expected, sizeof(expected), "bytes %llu-%llu/%llu", seen, size - 1, size);
+            if (!header(head, "Content-Range", value, sizeof(value)) || strcmp(value, expected))
+                err = "the server resumed at the wrong position";
+        }
+        if (!err && (!header(head, "Content-Length", value, sizeof(value))
+                     || strtoull(value, NULL, 10) != size - seen))
+            err = "the server's file is not the size the manifest gives";
+        if (err) {
+            conn_close(&c);
+            goto finished;
+        }
+        memcpy(buf, head + at, have);
+        fill = have;
+        for (;;) {
+            if (fill == SAVE_BUFFER || seen + fill >= size) {
+                if (seen + fill > size) {
+                    err = "the server sent more than the file";
+                    break;
+                }
+                if (!WriteFile(f, buf, (DWORD)fill, &put, NULL) || put != fill) {
+                    err = "could not write the file";
+                    break;
+                }
+                sha256_update(&s, buf, fill);
+                seen += fill, *done += fill, sample_bytes += fill, fill = 0;
+                if (KeTickCount - sample_at >= 1000) {
+                    mgr_progress_speed(sample_bytes * 1000 / (KeTickCount - sample_at));
+                    sample_at = KeTickCount, sample_bytes = 0;
+                }
+                if (progress && progress(label, *done, total)) {
+                    err = "cancelled", keep = 1;
+                    break;
+                }
+                if (seen == size)
+                    break;
+            }
+            r = conn_read(&c, buf + fill, SAVE_BUFFER - fill);
+            if (r <= 0) {
+                mgr_log("http: %s stopped at %llu of %llu bytes (read %d)\n",
+                        label, seen + fill, size, r);
+                /* Commit the received tail before asking for the remaining bytes. */
+                if (fill) {
+                    if (!WriteFile(f, buf, (DWORD)fill, &put, NULL) || put != fill) {
+                        err = "could not write the file";
+                        break;
+                    }
+                    sha256_update(&s, buf, fill);
+                    seen += fill, *done += fill;
+                }
+                err = "the download was cut short";
                 break;
             }
-            sha256_update(&s, buf, fill);
-            if (!WriteFile(f, buf, (DWORD)fill, &put, NULL) || put != fill) {
-                err = "could not write the file";
-                break;
-            }
-            seen += fill, *done += fill, fill = 0;
+            fill += (size_t)r;
+        }
+        conn_close(&c);
+        if (!err)
+            break;
+        if (strcmp(err, "the download was cut short"))
+            goto finished;
+reconnect:
+        keep = 1;
+        mgr_progress_speed(0);
+        if (++retries > 5)
+            goto finished;
+        mgr_log("http: reconnecting %s at %llu bytes, attempt %d\n", label, seen, retries);
+        mgr_progress_title("Reconnecting");
+        for (i = 0; i < retries * 10; i++) {
             if (progress && progress(label, *done, total)) {
                 err = "cancelled";
-                break;
+                goto finished;
             }
-            if (seen == size)
-                break;
+            Sleep(100);
         }
-        r = conn_read(&c, buf + fill, SAVE_BUFFER - fill);
-        if (r <= 0) {
-            err = "the download was cut short";
-            break;
-        }
-        fill += (size_t)r;
+        sample_at = KeTickCount, sample_bytes = 0;
     }
-    conn_close(&c);
+    sha256_final(&s, digest);
+    sha256_hex(digest, hex);
+    if (strcmp(hex, sha256)) {
+        err = "the file does not match the manifest";
+        keep = 0;
+    }
+finished:
+    mgr_progress_speed(0);
     CloseHandle(f);
-    if (!err) {
-        sha256_final(&s, digest);
-        sha256_hex(digest, hex);
-        if (strcmp(hex, sha256))
-            err = "the file does not match the manifest";
-    }
-    if (err)
+    if (err && !keep)
         DeleteFileA(path);
+    else
+        flush_path(path);
     return err;
 }

@@ -45,6 +45,7 @@ The first client to join sets the session's load order and its game clock. Usefu
 | `--respawn-delay SECONDS` | how long a dead player lies before coming back (default 5) |
 | `--death-gold PERCENT` | the share of carried gold a death costs (default 10) |
 | `--build DIR` | hand this build to the console manager (below) |
+| `--retail-base DIR` | clean retail source for an overlay build; defaults to `paths.vanilla_root` |
 | `--welcome TEXT` | show a line of up to 80 characters when a player is in the world |
 | `--starts FILE` | where new characters may begin (`[[start]]` tables; default: the bundled list) |
 | `--start-gold N` | the gold a new character starts with (default 50) |
@@ -181,6 +182,19 @@ without a clean retail copy; only do so where you may hand them out. The deltas 
 `deltas` beside `DIR` (`--deltas` for another folder). The server rereads the manifest when it
 changes, so a new build can be staged while it runs; a manager that is mid-update when it changes
 stops without touching the installed build, and its next update gets the new one.
+
+For an overlay build, the server also publishes the required retail files' sizes and hashes
+from `--retail-base DIR`, defaulting to `paths.vanilla_root` in the local config. The manager
+checks and completes a separate retail folder before installing the overlay. Downloads from
+that source follow the same retail/XBE policy; an existing complete base needs no retail
+downloads. Update the manager for this dependency format (manager level 2), and restart the
+server after changing its clean retail source. A full build continues to install its retail
+files into the build folder.
+
+The download server supports byte ranges. On a connection interruption, the manager retries
+from the last saved byte up to five times, then keeps the partial file for the next attempt.
+It verifies the complete file against the manifest's SHA-256. Disconnects produce a short log
+message and leave the server running.
 
 A server with `--build` also refuses a console whose build is not that one, by the `build` id in
 each manifest. Joining from the main menu then asks "Build out of date. Update it in the TES3X

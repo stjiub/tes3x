@@ -220,8 +220,23 @@ came from. The build goes into the folder it was installed into before, else the
 `folder` under the first `Games` folder on F, G, E or C; a folder there that holds files but no
 build manifest is replaced only after the manager asks.
 
-The retail base set under **Settings > Retail base** supplies the XBEs and retail files, so an
-overlay build is a download of its own files only.
+For an overlay build, the manager first verifies every file in the server's retail dependency
+manifest and downloads missing or changed files into a separate shared retail folder. It uses
+the folder selected under **Settings > Retail base**, or `MorrowindRetail` beside the new build
+when none is selected. It selects the completed base before rebuilding the game's XBEs. A
+folder with a retail-base manifest can be repaired; differing files in a folder without that
+manifest are refused, so a modified game copy is not overwritten. The build and base folders
+must be separate. Full builds continue to hold their own retail files.
+
+The server gets this dependency from `--retail-base DIR`, or `paths.vanilla_root` in its local
+config. Retail files and whole XBEs are downloaded only when the server's corresponding
+`--serve-origin` policy allows them. A server without that dependency requires an existing base.
+
+Downloads show KB/s and retry a dropped connection up to five times, requesting the remaining
+bytes. A failed or cancelled download keeps its partial staging file for the next install;
+saved bytes are rehashed before resuming, and the complete file must pass its SHA-256 check.
+An older server that ignores byte ranges restarts that file from zero. Completed staging files
+are also checked before reuse. Restart the server and update the manager to use these changes.
 
 ### Signed updates
 

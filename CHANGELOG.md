@@ -4,6 +4,14 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- Manager downloads reconnect after network interruptions and resume saved partial files on
+  the next attempt, with SHA-256 verification and a download-speed indicator. Update the server
+  for byte-range support; older servers restart the current file.
+- Overlay installs check and complete a separate shared retail base before installing the build.
+  Update both manager and server, and configure the server's clean retail source with
+  `--retail-base` or `paths.vanilla_root`. Downloads still follow the server's retail/XBE policy.
+  See [server builds](docs/multiplayer-server.md#handing-out-the-build).
+
 - Multiplayer shares learned dialogue topics and restores them when joining after a server restart.
   Update both server and game builds for gameplay protocol 23; existing character streams
   acquire topics on their next join. See [character state](docs/multiplayer-client.md#saving-and-character-state).

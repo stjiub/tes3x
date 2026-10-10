@@ -11,7 +11,7 @@
 #define MANIFEST "tes3xbuild.json"
 /* The newest build manifest format this manager reads (tes3x_manifest.FORMAT). */
 #define MANIFEST_FORMAT 1
-#define MANAGER_LEVEL 1
+#define MANAGER_LEVEL 2
 #define PATH_MAX_MGR 260
 
 struct build {
@@ -52,6 +52,10 @@ const char *launch_xbe(const char *xbe, void (*before)(void));
 void mgr_launch_xbe(const char *xbe);
 /* The progress dialog's title until changed; NULL is "Working". */
 void mgr_progress_title(const char *title);
+void mgr_progress_speed(unsigned long long bytes_per_second);
+int mgr_hash_file(const char *path, unsigned long long size, char hex[65],
+                  unsigned long long *done, unsigned long long total, const char *name,
+                  progress_fn progress);
 
 /* console.c: [Xbox] keys of E:\TES3X\console.ini. Getters return the value's length, 0 when
  * absent; console_set keeps the file's other keys. */
