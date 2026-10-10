@@ -63,7 +63,7 @@ SPYMASTER_QUEST, SPYMASTER_GIVEN, SPYMASTER_DONE = "a1_1_findspymaster", 1, 10
 T3MP = struct.Struct("<4sBBHIIIII")  # magic, version, type, 0, session, seq, ack, time, echo
 
 
-T3MP_VERSION = 22
+T3MP_VERSION = 23
 
 
 MANAGER_VERSION = 1  # build discovery stays independent of gameplay state
@@ -320,6 +320,9 @@ PLAYER_DEATH, PLAYER_RESPAWN, PLAYER_ALIVE = 8, 9, 10
 
 
 PLAYER_SPELLS = 11
+PLAYER_TOPICS = 17  # count, then learned topic names ending in zero; additions only
+TOPIC_NAME_MAX = 63
+PLAYER_TOPICS_MAX = 4096
 
 
 PLAYER_BOUNTY = 12  # from the server: the character's last streamed crime bounty, i32
@@ -1038,6 +1041,26 @@ def unpack_items(data):
             off += 8
         entries.append([count, flags & ENTRY_DATA, condition, charge])
     return part, parts, wire_text(raw), entries
+
+
+def pack_topics(names):
+    """Learned topics in bounded events; never truncate a dialogue name."""
+    events, body, count = [], b"", 0
+    if len(names) > PLAYER_TOPICS_MAX:
+        raise ValueError("too many learned topics")
+    for name in names:
+        raw = name.encode("latin-1")
+        if (not raw or len(raw) > TOPIC_NAME_MAX or
+                any(c < 32 or c == 127 or c == 34 for c in raw)):
+            raise ValueError("topic names must be 1..63 bytes without controls or quotes")
+        if 2 + len(body) + len(raw) + 1 > EVENT_DATA:
+            events.append(bytes([PLAYER_TOPICS, count]) + body)
+            body, count = b"", 0
+        body += raw + b"\0"
+        count += 1
+    if body or not events:
+        events.append(bytes([PLAYER_TOPICS, count]) + body)
+    return events
 
 
 def pack_journal(quests):

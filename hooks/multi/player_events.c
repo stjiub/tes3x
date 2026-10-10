@@ -122,6 +122,8 @@ static void player_event(const struct event *e)
         player_effect_event(e);
     else if (e->data[0] == PLAYER_JOURNAL && e->length >= 2)
         journal_apply(e->data, e->length);
+    else if (e->data[0] == PLAYER_TOPICS && e->length >= 2)
+        topics_apply(e->data, e->length);
     else if (e->data[0] == PLAYER_VITALS && e->length >= 1 + 12)
         vitals_apply(ref, e->data + 1);
     else if (e->data[0] == PLAYER_PLACE && e->length >= 1 + PLACE_BYTES)

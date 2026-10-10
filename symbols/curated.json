@@ -4425,8 +4425,10 @@
       "name": "MobilePlayer::addTopic",
       "kind": "function",
       "confidence": "matched",
-      "provenance": "mwse:TES3_MobilePlayer_addTopic",
-      "pc_va": "0x0056A470"
+      "provenance": "Xbox disassembly 0x00185E90 and topic comparator 0x000FD2E0",
+      "pc_va": "0x0056A470",
+      "note": "Insert a Dialogue pointer into the sorted known-topic list at MobilePlayer +0x674; duplicate pointers are ignored. Nodes have next +4 and data +8.",
+      "signature": "void __thiscall addTopic(TES3::Dialogue* topic)"
     },
     {
       "va": "0x00185F40",

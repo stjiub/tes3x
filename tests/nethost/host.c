@@ -361,6 +361,35 @@ static int host_snapshot_ack(void)
     return 0;
 }
 
+static int host_topics(void)
+{
+    u8 mobile[0x800] = {0};
+    u8 malformed[] = {PLAYER_TOPICS, 2, 'o', 'k', 0, 'b', 'a', 'd'};
+    u32 bad;
+    const struct event *e;
+
+    host_setup();
+    ses.state = SESSION_JOINED;
+    rel.out_first = 1;
+    rel.out_next = 1 + EVENTS_OUT;
+    snapshot_stage = 13;
+    snapshot_frame(0, mobile, 0, 0);
+    if (snapshot_stage != 13 || topics_known)
+        return 31;
+    rel.out_first++;
+    snapshot_frame(0, mobile, 0, 0);
+    e = &rel.out[(rel.out_next - 1) % EVENTS_OUT];
+    if (snapshot_stage != 14 || !topics_known || e->kind != EVENT_PLAYER ||
+        e->length != 2 || e->data[0] != PLAYER_TOPICS || e->data[1])
+        return 32;
+    bad = topics_bad;
+    topics_apply(malformed, sizeof(malformed));
+    if (topics_bad != bad + 1 || topics_in)
+        return 33;
+    puts("ok topics");
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     static u8 frame[HOST_MTU];
@@ -370,6 +399,8 @@ int main(int argc, char **argv)
 
     if (argc == 2 && !strcmp(argv[1], "--stats-replay"))
         return host_stats_replay();
+    if (argc == 2 && !strcmp(argv[1], "--topics"))
+        return host_topics();
     if (argc == 2 && !strcmp(argv[1], "--effect-parts"))
         return host_effect_parts();
     if (argc == 2 && !strcmp(argv[1], "--snapshot-parts"))

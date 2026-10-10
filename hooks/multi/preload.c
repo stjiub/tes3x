@@ -99,6 +99,7 @@ static void player_stat(void)
                        *(u32 *)(player_effect_out + 100));
     tes3x_log_hex3("net.player_spells", player_spells_out, player_spells_in,
                    player_spells_omitted);
+    tes3x_log_hex3("net.player_topics", topics_out, topics_in, topics_bad);
     tes3x_log_hex3("net.player_identity_stat", player_identity_out, player_identity_applied,
                    player_classes_made);
     tes3x_log_hex3("net.player_worn_stat", worn_out, worn_applied, worn_removed);

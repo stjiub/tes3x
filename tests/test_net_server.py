@@ -750,6 +750,47 @@ class ServerTests(unittest.TestCase):
         self.assertFalse(net.PlayerStream(str(stream)).dead)
         self.assertEqual(net.PlayerStream(str(stream)).spells, ['fire bite'])
 
+    def test_topics_are_shared_between_characters_and_replayed_to_a_late_join(self):
+        net = tes3x_net
+        world = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, world)
+        self.start('--world', str(world), '--adopt')
+        ready = lambda k, d: k == net.EVENT_PLAYER and d == bytes([net.PLAYER_READY, 0])
+        first, second = self.client(1), self.client(2)
+        first.join()
+        self.game(first, 1, 7, b'')
+        self.upload(first, 2, 1, b'mp-first.ess', self.save(b'Nerevar', 0))
+        self.events(first, ready)
+        seq = self.seed_identity(world, first, 3)
+        second.join()
+        self.game(second, 1, 8, b'')
+        self.upload(second, 2, 2, b'mp-second.ess', self.save(b'Second', 1))
+        self.events(second, ready)
+        identity = net.pack_player_identity(self.identity('Second'))
+        second.send(net.EVENTS, net.pack_events(second.delivered, [
+            (3 + i, net.EVENT_PLAYER, 0, data) for i, data in enumerate(identity)]))
+        folder = next((world / 'characters').glob('*/Second'))
+        path = folder / net.STREAM_NAME
+        self.wait_for(lambda: path.exists() and net.PlayerStream(str(path)).identity,
+                      'second character identity was not persisted')
+        topic = net.pack_topics(['Caius Cosades'])[0]
+        first.send(net.EVENTS, net.pack_events(first.delivered,
+                                              [(seq, net.EVENT_PLAYER, 0, topic)]))
+        shared = self.events(second, lambda k, d: k == net.EVENT_PLAYER and d == topic)
+        self.assertIn((net.EVENT_PLAYER, topic), shared)
+        # A topic received from the world does not depend on the recipient publishing it.
+        saved = net.PlayerStream(str(folder / net.STREAM_NAME))
+        self.assertIsNone(saved.topics)
+        again = self.client(2)
+        again.session ^= 4
+        again.join()
+        data = saved.character_file()
+        name = net.checkpoint_name(data, net.CHARACTER_FILE)
+        (folder / name).write_bytes(data)
+        self.game(again, 1, 9, name.encode(), net.GAME_NEW)
+        replay = self.events(again, ready)
+        self.assertIn((net.EVENT_PLAYER, topic), replay)
+
     def test_stream_only_character_creation_snapshot_and_restart(self):
         world = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, world)
@@ -766,9 +807,14 @@ class ServerTests(unittest.TestCase):
         place = net.STATE_BODY.pack(net.IN_WORLD | net.INTERIOR,
                                     100.0, 200.0, 30.0, 1.5, b"Arrille's Tradehouse")
         items = net.pack_items('Gold_001', [[123, 0, 0, 0]])
+        topics = [f'learned topic {i} with a long name' for i in range(9)]
+        topic_events = net.pack_topics(topics)
         client.send(net.EVENTS, net.pack_events(client.delivered, [
             (seq, net.EVENT_PLAYER, 0, items[0]),
-            (seq + 1, net.EVENT_SNAPSHOT, 0, struct.pack('<I', 17) + place)]))
+            *((seq + 1 + i, net.EVENT_PLAYER, 0, data)
+              for i, data in enumerate(topic_events)),
+            (seq + 1 + len(topic_events), net.EVENT_SNAPSHOT, 0,
+             struct.pack('<I', 17) + place)]))
         ack = self.events(client, lambda k, d: k == net.EVENT_SNAPSHOT)
         self.assertIn((net.EVENT_SNAPSHOT, struct.pack('<I', 17)), ack)
         folder = self.character(world)
@@ -776,6 +822,9 @@ class ServerTests(unittest.TestCase):
         saved = net.PlayerStream(str(folder / net.STREAM_NAME))
         self.assertEqual(saved.items, {'Gold_001': [[123, 0, 0, 0]]})
         self.assertEqual(saved.place, place)
+        self.assertEqual(saved.topics, topics)
+        state = json.loads(next(world.glob('*.json')).read_text())
+        self.assertEqual(state['topics'], topics)
         # Kill immediately after the acknowledgement: storage must already be complete.
         self.server.kill()
         self.server.communicate()
@@ -798,6 +847,8 @@ class ServerTests(unittest.TestCase):
                              d == bytes([net.PLAYER_READY, 0]))
         self.assertIn((net.EVENT_PLAYER, bytes([net.PLAYER_PLACE]) + place), replay)
         self.assertIn((net.EVENT_PLAYER, items[0]), replay)
+        self.assertEqual([d for k, d in replay if k == net.EVENT_PLAYER and
+                          d[0] == net.PLAYER_TOPICS], topic_events)
 
     def test_characters_kept_before_the_list_move_into_a_folder(self):
         root = Path(tempfile.mkdtemp())
@@ -862,6 +913,42 @@ class ServerTests(unittest.TestCase):
         self.assertIn('Strength current 35', stream.take(modifiers))
         self.assertEqual(stream.modifiers, {0: 35.0, 7: 90.0, 13: 57.0})
         self.assertIn(modifiers, stream.replay())
+
+    def test_topics_survive_restart_without_a_checkpoint(self):
+        net = tes3x_net
+        names = ['topic ' + str(i) + ' with a long name' for i in range(18)]
+        names += ['x' * 63, 'a\x92b']
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'stream.json'
+            stream = net.PlayerStream(str(path))
+            self.assertIsNone(stream.topics)
+            stream.take(bytes([net.PLAYER_TOPICS, 0]))
+            self.assertEqual(stream.topics, [])
+            for data in net.pack_topics(names):
+                self.assertLessEqual(len(data), net.EVENT_DATA)
+                stream.take(data)
+            stream.take(net.pack_topics([names[0].upper()])[0])
+            self.assertEqual(len(stream.topics), len(names))
+            stream.save()
+            restored = net.PlayerStream(str(path))
+            self.assertEqual(restored.topics, stream.topics)
+            replay = [p for p in restored.replay() if p[0] == net.PLAYER_TOPICS]
+            receiver = net.PlayerStream(Path(folder) / 'new.json')
+            for part in replay:
+                receiver.take(part)
+            self.assertEqual(receiver.topics, restored.topics)
+            before = list(receiver.topics)
+            for invalid in (bytes([net.PLAYER_TOPICS, 2]) + b'one\0',
+                            bytes([net.PLAYER_TOPICS, 1]) + b'one',
+                            bytes([net.PLAYER_TOPICS, 1]) + b'bad"name\0'):
+                receiver.take(invalid)
+                self.assertEqual(receiver.topics, before)
+            restored.reset()
+            restored.save()
+            self.assertIsNone(net.PlayerStream(path).topics)
+            # Existing worlds acquire topics on the next READY publication.
+            path.write_text('{}', encoding='utf-8')
+            self.assertIsNone(net.PlayerStream(path).topics)
 
     def test_abilities_replay_before_absolute_statistics(self):
         net = tes3x_net
@@ -1192,7 +1279,7 @@ class ServerTests(unittest.TestCase):
         saved = next(world.glob('*.json'))
         state = json.loads(saved.read_text(encoding='utf-8'))
         self.assertEqual(sorted(state), ['clock', 'contents', 'deaths', 'next_spawn', 'objects',
-                                         'spawns', 'statuses', 'weather'])
+                                         'spawns', 'statuses', 'topics', 'weather'])
         self.assertEqual(len(state['clock']), 6)  # hour, day, month, year, days passed, scale
         self.assertEqual(state['deaths'], {str(refid): 1})
         self.assertEqual(state['objects'], {str(refid + 1): [3, net.OBJECT_DISABLED, 0]})

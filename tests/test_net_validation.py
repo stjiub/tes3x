@@ -72,6 +72,10 @@ class EventValidationTests(unittest.TestCase):
             (p.EVENT_CONTENTS, p.CONTENTS_HEAD.pack(1, 2, 0, 1, 0) + p.ENTRY.pack(1, 1)),
             (p.EVENT_PLAYER, bytes([p.PLAYER_SKILLS, 2]) + p.SKILL.pack(1, 2., 3.)),
             (p.EVENT_PLAYER, bytes([p.PLAYER_RESPAWN]) + bytes(p.RESPAWN.size)),
+            (p.EVENT_PLAYER, bytes([p.PLAYER_TOPICS, 2]) + b'one\0'),
+            (p.EVENT_PLAYER, bytes([p.PLAYER_TOPICS, 1]) + b'x' * 64 + b'\0'),
+            (p.EVENT_PLAYER, bytes([p.PLAYER_TOPICS, 1]) + b'bad"name\0'),
+            (p.EVENT_PLAYER, bytes([p.PLAYER_TOPICS, 1]) + b'bad\x7fname\0'),
         ]
         for kind, data in bad:
             with self.subTest(kind=kind, data=data):
@@ -91,6 +95,8 @@ class EventValidationTests(unittest.TestCase):
             *p.pack_items('gold', [[1, 0, 0, 0], [2, 1, 3, 4]]),
             *p.pack_journal([('quest', 10)]),
             *p.pack_worn([]),
+            *p.pack_topics(['a topic', 'x' * p.TOPIC_NAME_MAX]),
+            *p.pack_topics([]),
             bytes([p.PLAYER_SKILLS, 1]) + p.SKILL.pack(26, 20., 3.),
             bytes([p.PLAYER_MODIFIERS, 1]) + p.MODIFIER.pack(34, 20.),
             bytes([p.PLAYER_VITALS]) + p.VITALS.pack(1., 2., 3.),

@@ -664,7 +664,8 @@ static void snapshot_frame(const u8 *ref, u8 *mobile, u8 *npc, u8 *object)
             return;
         break;
     case 12: bounty_sent = -1; bounty_frame(); break;
-    case 13:
+    case 13: topics_scan(mobile, 1); break;
+    case 14:
         put32le(data, snapshot_token);
         player_state(ref, data + 4);
         if (!event_queue(EVENT_SNAPSHOT, data, 4 + PLACE_BYTES))
@@ -715,6 +716,7 @@ static void player_frame(const u8 *ref)
         for (i = 0; i < JOURNALS; i++)
             journal_sent[i] = 0;
         level_known = skills_known = vitals_known = player_spells_known = 0;
+        topics_count = topics_known = 0;
         modifiers_known[0] = modifiers_known[1] = 0;
         player_identity_known = worn_known = 0;
         send = player_mode == 1;
@@ -736,4 +738,5 @@ static void player_frame(const u8 *ref)
     player_effect_scan(mobile, send);
     journal_scan(send);
     player_spells_scan(npc, send || player_spells_replayed != ses.welcomes);
+    topics_scan(mobile, send);
 }

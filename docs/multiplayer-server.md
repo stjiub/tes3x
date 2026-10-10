@@ -71,7 +71,7 @@ the data files and applies the server's world; it does not import changes from a
 With `--world` the server also keeps each character under `characters` in `DIR`. A joining console
 starts a New Game and receives the character's identity, inventory, worn items and last place in a
 small server-generated state file; the rest follows after it joins. The console sends inventory,
-equipment, level, attributes, skills and their current modifiers, active effects, journal, current
+equipment, level, attributes, skills and their current modifiers, active effects, journal, learned topics, current
 health, magicka and fatigue as they change, and who the character is: name, race, sex, head, hair,
 birthsign and class, including a class made in character creation. The server keeps the latest
 supported state in `stream.json`. It also keeps where the player last was, so a crash or power cut
@@ -355,14 +355,17 @@ control characters. Empty equipment lists are allowed.
 | `GAME` | Launch token u32, zero-terminated filename (possibly empty), optional launch kind 0–2 | Server handles |
 | `PICK` | Selection kind (`PICK_CHARACTER`, `PICK_START`, `PICK_NEW`) and index bytes | Server handles |
 | `SNAPSHOT` | Token u32 and `STATE_BODY` with finite position and heading | Server handles |
-| `PLAYER` | One accepted sub-kind followed by its shape below | Retained, never relayed |
+| `PLAYER` | One accepted sub-kind followed by its shape below | Retained; learned topics also reach other joined characters |
 
 `PLAYER` accepts `ITEMS` (part/count, one item id, complete stack entries), `LEVEL` (one
 `LEVEL` record), `SKILLS` and `MODIFIERS` (count and complete records with valid indices and
 finite values), `JOURNAL` (count and complete index u16/quest id pairs), `VITALS` (three finite
 floats), `SPELLS` (add/remove, part/count and spell ids), `IDENTITY` and `WORN` (part/count
 and snapshot fragment), `EFFECTS` (u16 part/count and snapshot fragment), and `DEATH` or
-`ALIVE` (no body). Identity, worn and effect snapshots are also checked when reassembled;
+`ALIVE` (no body), and `TOPICS` (count and complete zero-terminated names of at most 63 bytes,
+without controls or double quotes). Topics are additions to the shared world's learned list,
+capped at 4,096 names; new topics reach other joined characters, and the whole list is replayed
+before character READY. Character streams also retain their learned topics. Identity, worn and effect snapshots are checked when reassembled;
 effects are capped at 64 entries. Server-to-client player sub-kinds are rejected.
 
 Inventory entries carry a signed i32 count and a flags byte (only `ENTRY_DATA`), optional

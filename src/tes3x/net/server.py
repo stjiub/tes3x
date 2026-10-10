@@ -47,7 +47,8 @@ from .proto import (ACTOR, ACTORS, ACTORS_PER_PACKET, ACTOR_DEAD, ACTOR_IN_COMBA
                     PLAYER_BOUNTY, PLAYER_DEATH, PLAYER_EFFECTS, PLAYER_EFFECTS_MAX,
                     PLAYER_EFFECT_BYTES, PLAYER_IDENTITY, PLAYER_ITEMS, PLAYER_JOURNAL,
                     PLAYER_LEVEL, PLAYER_MODIFIERS, PLAYER_PLACE, PLAYER_READY, PLAYER_RESPAWN,
-                    PLAYER_SKILLS, PLAYER_SPELLS, PLAYER_VITALS, PLAYER_WORN, PROLOGUE,
+                    PLAYER_SKILLS, PLAYER_SPELLS, PLAYER_TOPICS, PLAYER_TOPICS_MAX,
+                    PLAYER_VITALS, PLAYER_WORN, PROLOGUE,
                     QUEST_INDICES, REFUSE, REFUSED_BANNED, REFUSED_FULL, REFUSED_KICKED,
                     REFUSED_LOAD_ORDER, REFUSED_PASSWORD, REFUSED_PROTOCOL, REFUSED_STALE,
                     REFUSE_BODY, RELAY, REMOTE_CHALLENGE, REMOTE_COMMAND, REMOTE_HEAD,
@@ -62,7 +63,7 @@ from .proto import (ACTOR, ACTORS, ACTORS_PER_PACKET, ACTOR_DEAD, ACTOR_IN_COMBA
                     describe_identity, describe_key, describe_level, describe_object,
                     describe_spawn, describe_state, describe_status, describe_weather,
                     fingerprint, finite, now_us, pack_contents, pack_equipment, pack_events,
-                    pack_identity, pack_items, pack_journal, pack_names, pack_objects,
+                    pack_identity, pack_items, pack_journal, pack_topics, pack_names, pack_objects,
                     pack_player_effects, pack_player_identity, pack_spawn, pack_weather,
                     pack_worn, placeable, plain_name, remote_key, same_place, sane_clock, seal,
                     unpack_actor_equipment, unpack_contents, unpack_equipment, unpack_events,
@@ -157,6 +158,7 @@ class World:
         self.objects = {}
         # actor id -> STATUS values after the id; replayed to each joining client
         self.statuses = {}
+        self.topics = []
         # spawn id -> reference made at run time (unpack_spawn), removed ones too; replayed likewise
         self.spawns = {}
         # refid -> {"cell", "entries", "origin"}: a container's latest contents; sent to whoever
@@ -177,6 +179,9 @@ class World:
         self.next_spawn = max(self.next_spawn, saved.get("next_spawn", 1))
         self.weather.update({int(k): v for k, v in saved.get("weather", {}).items()})
         self.statuses.update({int(k): tuple(v) for k, v in saved.get("statuses", {}).items()})
+        known = {name.lower(): name for name in self.topics}
+        known.update((name.lower(), name) for name in saved.get("topics", []))
+        self.topics = list(known.values())
         for spawn in self.spawns.values():
             if spawn.get("summon"):
                 spawn["removed"] = True  # Active effects recreate summons for their target.
@@ -192,7 +197,8 @@ class World:
                  "next_spawn": self.next_spawn,
                  "contents": {str(k): v for k, v in self.contents.items()},
                  "weather": {str(k): v for k, v in self.weather.items()},
-                 "statuses": {str(k): list(v) for k, v in self.statuses.items()}}
+                 "statuses": {str(k): list(v) for k, v in self.statuses.items()},
+                 "topics": self.topics}
         if self.clock:
             self.clock.advance(now)
             state["clock"] = [self.clock.hour, self.clock.day, self.clock.month, self.clock.year,
@@ -355,7 +361,7 @@ class PlayerStream:
     def __init__(self, path):
         self.path = path
         self.items, self.skills, self.modifiers, self.journal, self.level = {}, {}, {}, {}, None
-        self.spells = None
+        self.spells = self.topics = None
         self.effects = self.effects_parts = None
         self.vitals = self.place = None
         self.bounty = self.identity = self.worn = None
@@ -377,6 +383,7 @@ class PlayerStream:
         self.place = bytes.fromhex(kept["place"]) if kept.get("place") else None
         self.dead = kept.get("dead", False)
         self.spells = kept.get("spells")
+        self.topics = kept.get("topics")
         self.effects = kept.get("effects")
         self.bounty = kept.get("bounty")
         self.identity = kept.get("identity")
@@ -385,7 +392,7 @@ class PlayerStream:
     def reset(self):
         """A new character: nothing streamed so far belongs to it."""
         self.items, self.skills, self.modifiers, self.journal, self.level = {}, {}, {}, {}, None
-        self.spells = None
+        self.spells = self.topics = None
         self.effects = self.effects_parts = None
         self.vitals = self.place = self.arriving = None
         self.bounty = self.identity = self.identity_parts = None
@@ -490,6 +497,19 @@ class PlayerStream:
                 return None
             self.vitals, self.dirty = vitals, True
             return "now health {:.0f}, magicka {:.0f}, fatigue {:.0f}".format(*vitals)
+        if kind == PLAYER_TOPICS:
+            from .validation import player
+            if not player(data):
+                return None
+            names = [raw.decode("latin-1") for raw in data[2:].split(b"\0") if raw]
+            known = {name.lower(): name for name in (self.topics or [])}
+            added = [name for name in names if name.lower() not in known]
+            if len(set(known) | {name.lower() for name in names}) > PLAYER_TOPICS_MAX:
+                return None
+            if self.topics is None or added:
+                known.update((name.lower(), name) for name in names)
+                self.topics, self.dirty = list(known.values()), True
+            return "topics " + ", ".join(added) if added else None
         if kind == PLAYER_SPELLS and len(data) >= 4 and data[1] in (SPELLS_ADD, SPELLS_REMOVE):
             names = unpack_equipment(data[2:])
             if not names:
@@ -582,6 +602,8 @@ class PlayerStream:
                 MODIFIER.pack(stat, current) for stat, current in chunk))
         events += pack_journal([(q, i) for q, indices in sorted(self.journal.items())
                                 for i in indices])
+        if self.topics is not None:
+            events += pack_topics(self.topics)
         return events
 
     def character_file(self):
@@ -606,6 +628,7 @@ class PlayerStream:
                                "journal": self.journal, "vitals": self.vitals,
                                "place": self.place.hex() if self.place else None,
                                "spells": self.spells,
+                               "topics": self.topics,
                                "effects": self.effects,
                                "bounty": self.bounty,
                                "identity": self.identity,
@@ -1597,6 +1620,25 @@ class Server:
                 other.rel.queue(EVENT_TEXT, 0, notice)
                 self.flush(other, now)
 
+    def share_topics(self, names, now, origin=None):
+        """The world owns learned topics; additions reach players already in the world."""
+        known = {name.lower(): name for name in self.world.topics}
+        added = []
+        for name in names:
+            if name.lower() not in known:
+                if len(known) == PLAYER_TOPICS_MAX:
+                    break
+                known[name.lower()] = name
+                added.append(name)
+        if not added:
+            return
+        self.world.topics, self.world.dirty = list(known.values()), True
+        for other in self.clients.values():
+            if other is not origin and other.in_world and other.synced:
+                for data in pack_topics(added):
+                    other.rel.queue(EVENT_PLAYER, 0, data)
+                self.flush(other, now)
+
     def player_ready(self, client, replay, stamp, now):
         """Replay retained state, or have the console publish its supported fields."""
         self.announce_join(client, now)
@@ -1607,7 +1649,9 @@ class Server:
         stream = self.player_stream(client)
         if stream is None:
             return
-        events = stream.replay() if replay else []
+        self.share_topics(stream.topics or [], now, origin=client)
+        events = [data for data in stream.replay() if data[0] != PLAYER_TOPICS] if replay else []
+        events += pack_topics(self.world.topics)
         client.place_hold = (stream.place, now + PLACE_HOLD) if (
             replay and stream.place and not stream.dead) else None
         for data in events:
@@ -1862,6 +1906,8 @@ class Server:
             return KEEP
         stream = self.player_stream(client) if client.synced else None
         change = stream.take(data) if stream else None
+        if stream and data[:1] == bytes([PLAYER_TOPICS]):
+            self.share_topics(stream.topics or [], now, origin=client)
         if stream and client.naming and stream.identity:
             old = self.character_folder(client)
             folder = new_character_folder(self.key_folder(client), stream.identity["name"])

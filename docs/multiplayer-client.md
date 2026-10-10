@@ -48,8 +48,10 @@ multiplayer build redraws the menu buttons so they match the ones it adds.
 ## Saving and character state
 
 Joining starts a New Game with your character's identity, inventory, worn items and last place
-restored from the server. The rest of the supported state follows once you join. Topics,
-factions and player globals are not retained yet and start at their New Game values.
+restored from the server. The rest of the supported state, including learned dialogue topics,
+follows once you join. Factions and player globals start at their New Game values.
+Learned topics are shared: a topic learned by one player becomes available to the others,
+including players who join later.
 
 **Save to Server** flushes every supported character field and your current place. The server
 confirms the save after writing the character and world. **Leave** waits for that confirmation
@@ -73,15 +75,16 @@ back at the marker on its next join.
 
 - Menus no longer pause the world while joined, and resting or waiting is refused.
 - A multiplayer character loads only from server state. The server restores inventory, equipment,
-  level, base and current attributes and skills, journal, current health, magicka and fatigue
+  level, base and current attributes and skills, journal, learned topics, current health, magicka and fatigue
   (health no lower than 1), position, identity and active effects. Active effects retain their
   source, rolled magnitude, resistance and elapsed game time; remaining duration resumes on join,
   with time stopped while offline. At most 64 active effect entries are retained. Consumed
   potions include their adjusted source definition. Custom spell and enchantment definitions
   are not recreated; a source must exist in the build, and a missing caster cannot be resolved.
-  Ghost caster ids belong to the current session. Topics, factions and player globals are not
+  Ghost caster ids belong to the current session. Factions and player globals are not
   retained yet and start at New Game values. Restoring a journal only moves a quest forward,
   never back.
+  The world keeps up to 4,096 learned topic names of at most 63 bytes each.
 - Items taken, objects a script disables, locks, and items
   dropped or placed (by the console or a script) are shared, with their stack size, condition and
   charge, and so are containers' contents: the first player to open a container decides what it
@@ -169,6 +172,7 @@ With `console` in the build, open the console (Back + right thumb click) and typ
 | Command | Does |
 |---|---|
 | `tes3xnet stat` | write the network counters to the log |
+| `tes3xnet topic NAME` | log `net.topic_known` as 1 or 0 for a learned dialogue topic; spaces need no quotes |
 | `tes3xnet say TEXT` | send a line of text to the other players (logged there as `net.text`) |
 | `tes3xnet send NAME` | send `U:\TES3X\NAME` to the server when the admin asks for a diagnostic file; this does not save your multiplayer character |
 | `tes3xnet save` | flush supported character state and wait for the server to confirm storage |

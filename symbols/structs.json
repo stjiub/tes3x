@@ -34,7 +34,16 @@
     },
     {
       "name": "TES3::MobilePlayer",
-      "note": "Xbox matches the PC at clawMultiplier (+0x5AC), skillProgress (+0x5F4), firstPersonReference (+0x660), birthsign (+0x670) and lastPositionOfFogOfWarUpdate (+0x67C). restWaitPosition (+0x5D8) holds stale bytes until the player rests. Writing birthsign (from NonDynamicData::findBirthsign) is what the save's PCDT BNAM follows (xemu identity-a1)."
+      "note": "Xbox matches the PC at clawMultiplier (+0x5AC), skillProgress (+0x5F4), firstPersonReference (+0x660), birthsign (+0x670) and lastPositionOfFogOfWarUpdate (+0x67C). restWaitPosition (+0x5D8) holds stale bytes until the player rests. Writing birthsign (from NonDynamicData::findBirthsign) is what the save's PCDT BNAM follows (xemu identity-a1).",
+      "fields": [
+        {
+          "offset": "0x674",
+          "name": "dialogueTopics",
+          "type": "NI::IteratedList<TES3::Dialogue*>*",
+          "confidence": "verified",
+          "provenance": "MobilePlayer::addTopic 0x00185E90: sorted Dialogue pointers; list head +8, node next +4, data +8"
+        }
+      ]
     },
     {
       "name": "TES3::NPCInstance",

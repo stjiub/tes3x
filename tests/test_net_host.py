@@ -192,6 +192,12 @@ class HostReceiveTests(unittest.TestCase):
                          + run.stderr.decode(errors='replace'))
         return run.stdout.decode()
 
+    def test_topics_wait_for_queue_space_and_validate_before_applying(self):
+        run = subprocess.run([str(self.exe), '--topics'], capture_output=True, text=True,
+                             timeout=10)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertIn('ok topics', run.stdout)
+
     def test_receive_path_survives_mutated_frames(self):
         for seed in range(1, 6):
             result = self.feed(seed, 4000)

@@ -182,7 +182,7 @@ typedef long(__stdcall *fn_KeQueryBasePriorityThread)(void *);
  * session and seq in the clear (T3MP_OUTER, the AEAD's associated data) and seals the real type,
  * ack, times and body under the session's key, seq being the nonce. The receiver rebuilds the
  * T3MP_HEADER layout after opening it. */
-#define T3MP_VERSION 22u
+#define T3MP_VERSION 23u
 #define T3MP_HEADER 28u
 #define T3MP_OUTER 16u
 #define T3MP_INNER 16u
@@ -451,6 +451,7 @@ static int script_safe(const u8 *text, u32 max)
 #include "multi/checkpoint.c"
 #include "multi/characters.c"
 #include "multi/player.c"
+#include "multi/player_topics.c"
 #include "multi/player_identity.c"
 #include "multi/player_effects.c"
 #include "multi/player_apply.c"
@@ -625,6 +626,8 @@ int tes3x_multi_command(const char *text)
     } else if ((rest = word(text, "weather")) && (rest = word(skip(rest), "roll")) &&
                (rest = skip(rest)) && (word(rest, "auto") || number(rest, &value))) {
         weather_forced = word(rest, "auto") ? 0 : 1 + (value != 0);
+    } else if ((rest = word(text, "topic")) && *(rest = skip(rest))) {
+        topic_query(rest);
     } else if ((rest = word(text, "send")) && *(rest = skip(rest))) {
         up_command(rest);
     } else if ((rest = word(text, "save")) && !*skip(rest)) {

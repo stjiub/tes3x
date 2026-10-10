@@ -68,6 +68,9 @@ def player(data):
     if kind == p.PLAYER_SPELLS:
         return (len(data) >= 4 and data[1] in (p.SPELLS_ADD, p.SPELLS_REMOVE)
                 and multipart(data, 2) and strings(data[4:]))
+    if kind == p.PLAYER_TOPICS:
+        return (len(data) >= 2 and data[2:].count(b"\0") == data[1]
+                and strings(data[2:], p.TOPIC_NAME_MAX) and b'"' not in data[2:])
     if kind in (p.PLAYER_IDENTITY, p.PLAYER_WORN):
         return multipart(data, 1) and (kind == p.PLAYER_WORN or len(data) > 3)
     if kind == p.PLAYER_EFFECTS:

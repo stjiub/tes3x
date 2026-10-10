@@ -313,6 +313,7 @@ class WorldTests(unittest.TestCase):
         world.objects[0x0101F7C5] = (3, tes3x_net.OBJECT_DISABLED, 0)
         world.weather[3] = 2
         world.statuses[0x0101F7C6] = (10, 20, 30, 40, 50)
+        world.topics = ['Caius Cosades', 'Balmora']
         made = {'cell': 4, 'count': 1, 'removed': False, 'pos': [1.0, 2.0, 3.0],
                 'rot': [0.0, 0.0, 0.5], 'id': 'gold_001', 'origin': 2}
         world.spawns[tes3x_net.SPAWN_IDS | 1] = made
@@ -329,8 +330,9 @@ class WorldTests(unittest.TestCase):
         self.assertFalse(world.dirty)
         saved = tes3x_net.load_world(self.path)
         self.assertEqual(sorted(saved), ['clock', 'contents', 'deaths', 'next_spawn', 'objects',
-                                         'spawns', 'statuses', 'weather'])
+                                         'spawns', 'statuses', 'topics', 'weather'])
         self.assertEqual(saved['clock'], [9.5, 16, 7, 427, 1, 30.0])
+        self.assertEqual(saved['topics'], ['Caius Cosades', 'Balmora'])
         self.assertEqual(sorted(saved['spawns'][str(tes3x_net.SPAWN_IDS | 1)]),
                          sorted(tes3x_net.World.SPAWN_FIELDS))
 
@@ -343,6 +345,7 @@ class WorldTests(unittest.TestCase):
         self.assertEqual(world.objects, {0x0101F7C5: (3, tes3x_net.OBJECT_DISABLED, 0)})
         self.assertEqual(world.weather, {3: 2})
         self.assertEqual(world.statuses, {0x0101F7C6: (10, 20, 30, 40, 50)})
+        self.assertEqual(world.topics, ['Caius Cosades', 'Balmora'])
         self.assertEqual(world.next_spawn, 3)
         removed = {s['id']: s['removed'] for s in world.spawns.values()}
         self.assertEqual(removed, {'gold_001': False, 'atronach_flame': True})
