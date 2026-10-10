@@ -81,8 +81,13 @@ static void draw_servers(const struct view *v)
                  s->has_server_key ? "Key " : "Not contacted yet",
                  s->has_server_key ? s->fingerprint : "", build ? build : "build not installed",
                  s->character[0] ? "  \xB7  " : "", s->character);
-        row(y, i == v->server_list.sel, s->name,
+        if (s->has_info)
+            snprintf(sub, sizeof(sub), "%u / %u players  \xB7  %s%s%s",
+                     s->players, s->max_players, build ? build : "build not installed",
+                     s->character[0] ? "  \xB7  " : "", s->character);
+        row(y, i == v->server_list.sel, s->display_name[0] ? s->display_name : s->name,
             s->online == 2 ? "Manager update needed" : s->online == 3 ? "Server update needed" :
+            s->online == 4 ? "Key changed" :
             s->online > 0 ? (build ? "Online  \xB7  Installed" : "Online") : "Offline",
             s->online == 1 ? ui->accent : ui->bad, sub, ui->dim);
     }
@@ -236,7 +241,7 @@ static void draw_page(const struct view *v)
     } else if (v->tab == TAB_SERVERS && v->page == PAGE_SERVER) {
         const struct server *s = &v->servers[v->server_list.sel];
 
-        draw_lines(v, s->name, s->file);
+        draw_lines(v, s->display_name[0] ? s->display_name : s->name, s->name);
         hints = server, n = 5;
         if (!v->server_builds[v->server_list.sel])
             hints = server + 1, n = 4;
@@ -274,6 +279,7 @@ void screen_draw(const struct view *v)
     static const struct ui_hint confirm[] = {{UI_A, "Go ahead"}, {UI_B, "Cancel"}};
     static const struct ui_hint update[] = {{UI_X, "Update"}, {UI_B, "Cancel"}};
     static const struct ui_hint manager_update[] = {{UI_X, "Check for update"}, {UI_B, "Cancel"}};
+    static const struct ui_hint server_key[] = {{UI_A, "Accept new key"}, {UI_B, "Cancel"}};
     const char *lines[4];
     int i;
 
@@ -286,6 +292,7 @@ void screen_draw(const struct view *v)
         lines[i] = v->text[i];
     if (v->confirm)
         ui_dialog(v->title, lines, 4, 0, v->confirm == CONFIRM_MANAGER_UPDATE ? manager_update :
+                  v->confirm == CONFIRM_SERVER_KEY ? server_key :
                   v->confirm == CONFIRM_UPDATE ? update : confirm, 2);
     else
         ui_dialog(v->title, lines, 4, 0, v->dismiss ? &close : NULL, v->dismiss ? 1 : 0);

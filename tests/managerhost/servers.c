@@ -149,6 +149,32 @@ int main(void)
     deleted = moved = 0;
     assert(rewrite(&s, 1) == -1);
     assert(!deleted && !moved);
+    s.has_pending_key = 1;
+    memset(s.pending_key, 0xee, 32);
+    memset(s.pending_fingerprint, 'e', 32);
+    s.pending_fingerprint[32] = 0;
+    assert(server_accept_key(&s) == -1);
+    assert(s.has_pending_key && s.server_key[0] == 0xab && s.client_key[0] == 0xcd);
+    fail_write = 0;
+    assert(server_accept_key(&s) == 0);
+    assert(!s.has_pending_key && s.server_key[0] == 0xee && s.client_key[0] == 0xcd);
+    assert(strstr(written, key2) && strstr(written, s.password));
+    assert(server_accept_key(&s) == -1);
+    {
+        const unsigned char info[] = "Nerevar\0INFO\x02\x00\x04\x00" "Balmora\0Shared quests\0";
+        size_t cut;
+
+        server_info(&s, info, sizeof(info) - 1);
+        assert(s.has_info && s.players == 2 && s.max_players == 4);
+        assert(!strcmp(s.character, "Nerevar") && !strcmp(s.display_name, "Balmora"));
+        assert(!strcmp(s.description, "Shared quests"));
+        for (cut = 0; cut < sizeof(info) - 1; cut++) {
+            server_info(&s, info, cut);
+            assert(!s.has_info);
+        }
+        server_info(&s, (const unsigned char *)"Old character", 14);
+        assert(!s.has_info && !strcmp(s.character, "Old character"));
+    }
     puts("maximum fields, LF expansion, replacement, removal and write failure passed");
     return 0;
 }

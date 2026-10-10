@@ -23,7 +23,7 @@ struct line {
 
 /* What a dialog's v.confirm asks. */
 enum confirm { CONFIRM_NONE, CONFIRM_INSTALL, CONFIRM_BUILD, CONFIRM_SERVER, CONFIRM_UPDATE,
-               CONFIRM_MANAGER_UPDATE };
+               CONFIRM_MANAGER_UPDATE, CONFIRM_SERVER_KEY };
 
 struct view {
     int tab, page;

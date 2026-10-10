@@ -17,6 +17,16 @@ import tes3x.manifest as tes3x_manifest
 
 # BUILD: the manifest's SHA-256, its size (0: no build served), the HTTP port, a ticket
 BUILD_BODY = struct.Struct("<32sIH2x16s")
+MANAGER_INFO = struct.Struct('<4sHH')
+
+
+def manager_info(name, description, players, maximum):
+    def field(value, limit):
+        return value.replace('\0', '').encode('latin-1', 'replace')[:limit] + b'\0'
+    return (MANAGER_INFO.pack(b'INFO', min(65535, max(0, players)), min(65535, max(0, maximum)))
+            + field(name, 63) + field(description, 191))
+
+
 TICKET_SECONDS = 6 * 3600
 TICKETS = 4096
 ORIGINS = ("build", "retail", "xbe")

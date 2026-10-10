@@ -1226,6 +1226,8 @@ class TargetSetup(QWidget):
 
 
 SERVER_FIELDS = (
+    ('name', 'Server name', 'string', '', 'Display name shown in the console manager'),
+    ('description', 'Description', 'string', '', 'Optional description shown in the console manager'),
     # key, label, kind, default, help
     ("world", "World folder", "folder", "", "Keeps the server key, password, characters, "
      "saves and bans; empty keeps nothing between runs"),
@@ -1302,6 +1304,9 @@ def server_arguments(values):
         args += ["--admin-password-file", str(values["admin_password_file"])]
     if values.get("build"):
         args += ["--build", str(values["build"])]
+    for key in ('name', 'description'):
+        if values.get(key):
+            args += ['--' + key, values[key]]
     if values.get("welcome"):
         args += ["--welcome", str(values["welcome"])]
     if values.get("load_state", True):

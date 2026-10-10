@@ -211,6 +211,16 @@ manifest's hash and serves the files over HTTP. Then, for each file the manifest
 - a retail file is copied from the retail base;
 - anything else, or a rebuild or copy that fails, is downloaded.
 
+Servers can advertise an optional name and description with `--name` and `--description`.
+The manager shows these along with the number of connected players in game and the player
+limit; consoles in the lobby and manager connections are excluded from that count. Details
+refresh when the server list is checked. Older servers continue to show their address.
+
+If a server's key changes, Install or Join shows the saved and new fingerprints before
+continuing. **Accept new key** updates the pin and retries; **Cancel** keeps the existing pin.
+Accept only an expected identity change, such as the administrator replacing the server key.
+The manager preserves this console's player identity, password and saved server entry.
+
 Every file arrives under a `~t3x` staging name and is checked against the manifest; only when all
 have arrived are they renamed into place, the replaced XBEs kept as `.prev`, so a failed or
 cancelled update leaves the installed build as it was. Files the old manifest listed and the new

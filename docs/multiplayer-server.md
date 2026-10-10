@@ -32,6 +32,8 @@ The first client to join sets the session's load order and its game clock. Usefu
 | Option | Does |
 |---|---|
 | `--port N` | listen on another port (set `NetServer` to `ADDRESS:N` to match) |
+| `--name TEXT` | optional display name in the console manager |
+| `--description TEXT` | optional server description in the console manager |
 | `--hour H`, `--timescale T` | start the clock at a game hour or speed instead of the first client's |
 | `--load-order HASH` | fix the load order instead of taking the first client's |
 | `--host NAME=ADDRESS` | answer DNS for a name, so `NetServer` can be that name |

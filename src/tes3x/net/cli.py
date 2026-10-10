@@ -554,6 +554,8 @@ def main(argv=None):
     p.add_argument("--build", metavar="DIR",
                    help="hand the console manager this staged game folder (the pipeline's "
                         "deploy/, with tes3xbuild.json), over HTTP")
+    p.add_argument('--name', default='', help='display name shown in the console manager')
+    p.add_argument('--description', default='', help='optional description shown in the console manager')
     p.add_argument("--deltas", metavar="DIR",
                    help="the XBE deltas for --build (default: deltas/ beside it)")
     p.add_argument("--retail-base", metavar="DIR",

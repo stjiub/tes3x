@@ -1311,6 +1311,9 @@ class BuildSettings(QWidget):
         self.install_layout = QComboBox()
         self.install_layout.addItem("Full game folder", "full")
         self.install_layout.addItem("Overlay on shared retail base", "overlay")
+        self.install_layout.setToolTip("Full includes the retail files in this game folder. "
+                                       "Overlay shares a separate retail base and automatically "
+                                       "enables the data-overlay patch.")
         self.library_path = QLineEdit()
         self.library_path.setPlaceholderText("From Settings")
         self.library_path.editingFinished.connect(lambda: self.on_library())
@@ -1333,6 +1336,10 @@ class BuildSettings(QWidget):
         form.addRow("Dashboard title", self.title)
         form.addRow("Install folder", self.install_dir)
         form.addRow("Install layout", self.install_layout)
+        layout_help = QLabel("Choose Overlay here to share retail files. "
+                             "The data-overlay patch alone keeps a full game folder.")
+        layout_help.setWordWrap(True)
+        form.addRow("", layout_help)
         form.addRow("Mod library", library_widget)
         form.addRow("", self.dashboard)
         form.addRow("", self.skip_intro)

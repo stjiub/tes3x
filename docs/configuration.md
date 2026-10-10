@@ -130,6 +130,10 @@ The annotated [example profile](../examples/profile.toml) is the shortest starti
 | `save_pool` | string | shared | Name of the save pool. Builds in a pool save to their own `E:\UDATA` folder; profiles that name the same pool share its saves. Omit it to use the retail game's saves. |
 | `save_pool_id` | string | from the name | The pool's title ID, eight hex digits. By default it is derived from `save_pool`, in the `5433xxxx` range. |
 
+Choose **Overlay on shared retail base** under the GUI's **Install layout** to share the retail
+files. This enables the `data-overlay` patch automatically. Selecting that patch by itself
+adds fallback support but leaves the layout at `full`, with retail files in each build folder.
+
 A save copied whole from one pool's folder into another loads there. Deploying creates the pool's
 folder first; the game hangs if it has to create a new title's folder itself.
 

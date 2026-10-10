@@ -2634,7 +2634,10 @@ class Server:
             body = self.build_server.ticket() if self.build_server else \
                 tes3x_netbuild.BUILD_BODY.pack(bytes(32), 0, 0, bytes(16))
             who = self.manager_character(key).encode("latin-1", "replace")[:46]
-            self.send(stranger, BUILD, body + (who + b"\0" if who else b""))
+            playing = sum(c.alive and not c.lobby for c in self.clients.values())
+            info = tes3x_netbuild.manager_info(self.args.name, self.args.description,
+                                               playing, self.args.max_players)
+            self.send(stranger, BUILD, body + who + b'\0' + info)
             print(f"{stamp} manager {fingerprint(key)} at {addr[0]} asked for the build"
                   + ("" if self.build_server else ", which is not served"), flush=True)
             return

@@ -1326,10 +1326,12 @@ order = 10
                   "respawn": "temple", "respawn_delay": 0.0, "death_gold": 10, "hour": -1.0,
                   "timescale": 0.0, "save_every": 300, "hosts": ["mp.local=192.0.2.2"],
                   "tunnels": [9369]}
+        values.update(name='Balmora', description='Shared quests')
         args = server_arguments(values)
         self.assertEqual(args[:3], ["serve", "--world", "D:/world"])
         for pair in (["--max-players", "4"], ["--respawn", "temple"], ["--save-every", "300"],
-                     ["--host", "mp.local=192.0.2.2"], ["--tunnel", "9369"]):
+                     ["--host", "mp.local=192.0.2.2"], ["--tunnel", "9369"],
+                     ["--name", "Balmora"], ["--description", "Shared quests"]):
             self.assertIn(pair, [args[i:i + 2] for i in range(len(args) - 1)])
         self.assertNotIn("--hour", args)
         self.assertNotIn("--timescale", args)

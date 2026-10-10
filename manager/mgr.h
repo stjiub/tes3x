@@ -149,8 +149,13 @@ struct server {
     unsigned char server_key[32], client_key[32];
     char password[65];
     char fingerprint[33]; /* of the pinned server key */
-    int online; /* -1 not asked, 0 no answer, 1 answered, 2 manager update, 3 server update */
+    int online; /* -1 unknown, 0 offline, 1 online, 2 manager update, 3 server update, 4 key changed */
     char character[48]; /* the character this console last played there, from the server */
+    char display_name[64], description[192];
+    unsigned players, max_players;
+    int has_info, has_pending_key;
+    unsigned char pending_key[32];
+    char pending_fingerprint[33];
 };
 /* What a server's BUILD hands the manager: its manifest's hash and size, and a ticket for the
  * HTTP side at addr:port. */
@@ -161,6 +166,7 @@ struct ticket {
 int servers_load(struct server *out, int max);
 int server_add(const char *name, struct server *s);
 int server_save(const struct server *s);
+int server_accept_key(struct server *s);
 /* Drops the server's section from its servers.ini; the keys go with it. */
 int server_remove(const struct server *s);
 void server_fingerprint(const unsigned char key[32], char hex[33]);
@@ -168,6 +174,7 @@ void server_fingerprint(const unsigned char key[32], char hex[33]);
  * SERVER_PASSWORD when the password is missing or wrong. */
 extern const char SERVER_PASSWORD[];
 extern const char SERVER_UPDATE[];
+extern const char SERVER_KEY_CHANGED[];
 /* Whether the server answers a handshake; pins and changes nothing. */
 int server_probe(const struct server *s);
 const char *server_ticket(struct server *s, struct ticket *t, progress_fn progress);

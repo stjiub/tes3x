@@ -324,7 +324,7 @@ class ServerTests(unittest.TestCase):
         game, digest = self.staged_build()
         self.start('--build', str(game), '--http-port', '0', '--max-players', '1')
         body = self.client(1).join(manager=True)
-        sha, size, port, ticket = tes3x_netbuild.BUILD_BODY.unpack(body)
+        sha, size, port, ticket = tes3x_netbuild.BUILD_BODY.unpack_from(body)
         manifest = tes3x_netbuild.fetch('127.0.0.1', port, ticket, 'manifest')
         self.assertEqual(hashlib.sha256(manifest).digest(), sha)
         self.assertEqual(len(manifest), size)
@@ -376,12 +376,21 @@ class ServerTests(unittest.TestCase):
         manager.session ^= 2
         body = manager.join(manager=True)
         size = tes3x_netbuild.BUILD_BODY.size
-        self.assertEqual(body[size:], b'Nerevar\0')
+        self.assertTrue(body[size:].startswith(b'Nerevar\0INFO'))
         self.assertEqual(tes3x_netbuild.BUILD_BODY.unpack(body[:size])[1], 0)
 
     def test_a_server_without_a_build_says_so(self):
         self.start()
-        self.assertEqual(tes3x_netbuild.BUILD_BODY.unpack(self.client(1).join(manager=True))[1], 0)
+        self.assertEqual(tes3x_netbuild.BUILD_BODY.unpack_from(self.client(1).join(manager=True))[1], 0)
+
+    def test_manager_server_details_exclude_lobby_and_manager_from_players(self):
+        self.start('--name', 'Balmora', '--description', 'Shared quests', '--max-players', '4')
+        self.client(1).join()
+        self.client(2).join(lobby=True)
+        body = self.client(3).join(manager=True)
+        info = body[tes3x_netbuild.BUILD_BODY.size + 1:]
+        self.assertEqual(tes3x_netbuild.MANAGER_INFO.unpack_from(info), (b'INFO', 1, 4))
+        self.assertEqual(info[tes3x_netbuild.MANAGER_INFO.size:], b'Balmora\0Shared quests\0')
 
     def test_console_sends_a_file_through_loss(self):
         world = Path(tempfile.mkdtemp())

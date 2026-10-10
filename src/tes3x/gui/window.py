@@ -533,8 +533,9 @@ class ProfileWindow(QMainWindow):
         destination = self.xbox_destination() or "Not set"
         title = self.build.title.text().strip() or "Retail title"
         profile = self.profile_path.stem if self.profile_path else "New"
-        layout = ("Shared retail base" if self.build.install_layout.currentData() == "overlay"
-                  else "Full game folder")
+        layout = ("Overlay: changed files only, with a shared retail base"
+                  if self.build.install_layout.currentData() == "overlay"
+                  else "Full: retail files included in this game folder")
         lines = ["Build preview", "", f"Profile: {profile}", f"Dashboard title: {title}",
                  f"Xbox destination: {destination}", f"Install layout: {layout}",
                  f"Packaging: {mode_text}"]

@@ -4,6 +4,13 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- The manager shows optional server names and descriptions plus current player counts.
+  Set these with the server's `--name` and `--description` options or in the GUI.
+- A changed server key shows both fingerprints and offers **Accept new key** or **Cancel**.
+  Acceptance keeps the saved server, player identity and password.
+- The build UI explains that Overlay layout shares retail files and enables `data-overlay`
+  automatically; enabling the patch alone still builds a full game folder.
+
 - Manager downloads reconnect after network interruptions and resume saved partial files on
   the next attempt, with SHA-256 verification and a download-speed indicator. Update the server
   for byte-range support; older servers restart the current file.

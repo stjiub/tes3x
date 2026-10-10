@@ -56,6 +56,7 @@ static struct view v;
 static int video_up, dirty = 1;
 static Uint32 last_draw;
 static const char *progress_name;
+static int key_then_install;
 
 void mgr_progress_speed(unsigned long long bytes_per_second)
 {
@@ -435,7 +436,7 @@ static void load_servers(void)
     for (i = 0; i < v.server_list.count; i++) {
         busy("Checking servers...");
         servers[i].online = server_probe(&servers[i]);
-        if (servers[i].online > 0 && servers[i].has_server_key && servers[i].has_client_key)
+        if (servers[i].online > 0)
             server_ticket(&servers[i], &t, NULL);
         mgr_log("server %d: %s in %s, key %s%s%s\n", i, servers[i].name, servers[i].file,
                 servers[i].has_server_key ? servers[i].fingerprint : "not pinned",
@@ -446,9 +447,33 @@ static void load_servers(void)
 static void server_details(const struct server *s, const char *build)
 {
     v.line_list.count = v.line_list.sel = v.line_list.top = 0;
+    if (s->display_name[0])
+        add_line("Name", 0, "%s", s->display_name);
+    if (s->description[0]) {
+        const char *text = s->description;
+        add_line("", LINE_HEAD, "Description");
+        while (*text) {
+            size_t n = strlen(text), split;
+            if (n > 56) {
+                n = 56;
+                for (split = n; split && text[split] != ' '; split--)
+                    ;
+                if (split)
+                    n = split;
+            }
+            add_line("", 0, "%.*s", (int)n, text);
+            text += n;
+            while (*text == ' ')
+                text++;
+        }
+    }
+    if (s->has_info)
+        add_line("Players", 0, "%u / %u", s->players, s->max_players);
     add_line("Address", 0, "%s, port %u", s->host, s->port);
     add_line("Server key", s->has_server_key ? 0 : LINE_BAD, "%s",
              s->has_server_key ? s->fingerprint : "not pinned: the first contact pins it");
+    if (s->has_pending_key)
+        add_line("Key changed", LINE_BAD, "Install or Join to review the new key.");
     add_line("Identity", 0, s->has_client_key ? "yes" : "no");
     add_line("Character", 0, "%s", s->character[0] ? s->character : "?");
     if (s->password[0])
@@ -669,6 +694,17 @@ static void ask_manager_update(void)
     v.confirm = CONFIRM_MANAGER_UPDATE;
 }
 
+static void ask_server_key(struct server *s, int install)
+{
+    key_then_install = install;
+    v.server_list.sel = (int)(s - servers);
+    say("Server key changed", "Accept only if you expected the server's identity to change.", NULL);
+    snprintf(v.text[1], sizeof(v.text[1]), "Saved: %s", s->fingerprint);
+    snprintf(v.text[2], sizeof(v.text[2]), "New: %s", s->pending_fingerprint);
+    snprintf(v.text[3], sizeof(v.text[3]), "Your player identity and password will be kept.");
+    v.confirm = CONFIRM_SERVER_KEY;
+}
+
 static void install_server(struct server *s, int replace)
 {
     char folder[PATH_MAX_MGR], summary[128];
@@ -676,6 +712,10 @@ static void install_server(struct server *s, int replace)
 
     busy("Contacting the server...");
     err = server_install(s, replace, folder, sizeof(folder), summary, sizeof(summary), progress);
+    if (err == SERVER_KEY_CHANGED) {
+        ask_server_key(s, 1);
+        return;
+    }
     scan();
     load_servers();
     if (v.page == PAGE_SERVER)
@@ -738,6 +778,10 @@ static int join_ready(struct server *s, const char *build)
 
     busy("Checking the server...");
     err = server_ticket(s, &t, progress);
+    if (err == SERVER_KEY_CHANGED) {
+        ask_server_key(s, 0);
+        return 0;
+    }
     if (err == SERVER_PASSWORD) {
         say("Cannot join", err, "Set it on the server's page.");
         return 0;
@@ -1031,6 +1075,14 @@ static void press(int button)
                 delete_selected_build();
             else if (what == CONFIRM_SERVER && chosen_server())
                 delete_selected_server();
+            else if (what == CONFIRM_SERVER_KEY && chosen_server()) {
+                if (server_accept_key(chosen_server()))
+                    say("Key not changed", "Could not save the accepted server key.", NULL);
+                else if (key_then_install)
+                    install_server(chosen_server(), 0);
+                else if (server_builds[v.server_list.sel])
+                    join(chosen_server(), server_builds[v.server_list.sel]);
+            }
         } else if (!v.title[0]) {
             v.confirm = 0;
         }

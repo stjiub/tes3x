@@ -258,6 +258,23 @@ int server_save(const struct server *s)
     return rewrite(s, 1);
 }
 
+int server_accept_key(struct server *s)
+{
+    struct server accepted = *s;
+
+    if (!s->has_pending_key)
+        return -1;
+    memcpy(accepted.server_key, s->pending_key, 32);
+    memcpy(accepted.fingerprint, s->pending_fingerprint, sizeof(accepted.fingerprint));
+    accepted.has_server_key = 1;
+    accepted.has_pending_key = 0;
+    accepted.online = -1;
+    if (server_save(&accepted))
+        return -1;
+    *s = accepted;
+    return 0;
+}
+
 int server_remove(const struct server *s)
 {
     return rewrite(s, 0);
@@ -272,6 +289,42 @@ int server_add(const char *name, struct server *s)
     snprintf(s->name, sizeof(s->name), "%s", name);
     snprintf(s->file, sizeof(s->file), GAME_POOL "\\servers.ini");
     return split_name(s) ? server_save(s) : -1;
+}
+
+static void server_info(struct server *s, const unsigned char *body, size_t n)
+{
+    size_t who = 0, a = 0, b = 0;
+
+    s->character[0] = 0;
+    s->has_info = 0;
+    s->display_name[0] = s->description[0] = 0;
+    while (who < n && body[who])
+        who++;
+    if (who == n)
+        return;
+    if (who < sizeof(s->character)) {
+        memcpy(s->character, body, who);
+        s->character[who] = 0;
+    }
+    body += who + 1;
+    n -= who + 1;
+    if (n < 10 || memcmp(body, "INFO", 4))
+        return;
+    while (8 + a < n && body[8 + a])
+        a++;
+    if (8 + a == n)
+        return;
+    while (9 + a + b < n && body[9 + a + b])
+        b++;
+    if (9 + a + b >= n || a >= sizeof(s->display_name) || b >= sizeof(s->description))
+        return;
+    s->players = body[4] | (unsigned)body[5] << 8;
+    s->max_players = body[6] | (unsigned)body[7] << 8;
+    memcpy(s->display_name, body + 8, a);
+    s->display_name[a] = 0;
+    memcpy(s->description, body + 9 + a, b);
+    s->description[b] = 0;
+    s->has_info = 1;
 }
 
 /* --- the session --- */
@@ -321,6 +374,7 @@ static void outer(unsigned char *p, int type, unsigned session, unsigned seq)
 
 const char SERVER_PASSWORD[] = "The server wants a password.";
 const char SERVER_UPDATE[] = "Update the TES3X Manager to connect to this server.";
+const char SERVER_KEY_CHANGED[] = "The server's key has changed.";
 
 static const char *refusal(unsigned reason)
 {
@@ -477,7 +531,11 @@ const char *server_ticket(struct server *s, struct ticket *t, progress_fn progre
             if (s->has_server_key && crypto_verify32(hs.rs, s->server_key)) {
                 mgr_log("server %s: key %s is not the one pinned (%s)\n", s->name, fp,
                         s->fingerprint);
-                err = "The server's key has changed since this console first met it.";
+                memcpy(s->pending_key, hs.rs, 32);
+                memcpy(s->pending_fingerprint, fp, sizeof(fp));
+                s->has_pending_key = 1;
+                s->online = 4;
+                err = SERVER_KEY_CHANGED;
                 break;
             }
             if (!s->has_server_key) {
@@ -486,6 +544,7 @@ const char *server_ticket(struct server *s, struct ticket *t, progress_fn progre
                 s->has_server_key = dirty = 1;
                 mgr_log("server %s: pinned key %s\n", s->name, fp);
             }
+            s->has_pending_key = 0;
             memset(hello, 0, sizeof(hello));
             put32(hello + 14, MANAGER_FLAG);
             pw = strlen(s->password);
@@ -517,17 +576,7 @@ const char *server_ticket(struct server *s, struct ticket *t, progress_fn progre
                 t->size = get32(plain + INNER + 32);
                 t->port = plain[INNER + 36] | (unsigned)plain[INNER + 37] << 8;
                 memcpy(t->token, plain + INNER + 40, 16);
-                /* the character the server keeps for this key follows, if it has one */
-                if (got > INNER + BUILD_BYTES) {
-                    size_t n = 0, room = (size_t)got - INNER - BUILD_BYTES;
-
-                    while (n < room && plain[INNER + BUILD_BYTES + n])
-                        n++;
-                    if (n < sizeof(s->character)) {
-                        memcpy(s->character, plain + INNER + BUILD_BYTES, n);
-                        s->character[n] = 0;
-                    }
-                }
+                server_info(s, plain + INNER + BUILD_BYTES, (size_t)got - INNER - BUILD_BYTES);
                 phase = 0;
                 s->online = 1;
                 if (!t->size)
