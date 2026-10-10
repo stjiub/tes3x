@@ -152,15 +152,15 @@ unavailable action stays visible and its tooltip says what is missing.
 the `[server]` table of `tes3x.local.toml` (see [configuration](configuration.md#server)). It
 shows the server's output and polls the admin port for the connected consoles; Kick, Ban and Ask
 all to save act on them. The box under the output takes any
-[admin command](multiplayer.md#kicks-and-bans); an unknown word lists them. **Stop** asks every
+[admin command](multiplayer-server.md#kicks-and-bans); an unknown word lists them. **Stop** asks every
 console to save its character before the server exits; pressing it again stops at once. Closing
 the GUI stops a server it started.
 
 **Build profile** (profiles with the `multiplayer` patch) names the build the server hands to
-consoles' managers (see [handing out the build](multiplayer.md#handing-out-the-build)). Start
+consoles' managers (see [handing out the build](multiplayer-server.md#handing-out-the-build)). Start
 offers to build it if it has not been, and **Build** restages it while the server runs.
 
-**A remote server** connects to a server's [remote admin](multiplayer.md#remote-admin) port with
+**A remote server** connects to a server's [remote admin](multiplayer-server.md#remote-admin) port with
 its address and admin password, then lists the consoles and offers the same Kick, Ban, Ask all to
 save and Bans, and Stop server. The password is kept in the local config only if you tick
-**Remember**. See [multiplayer](multiplayer.md) for what the settings mean.
+**Remember**. See [hosting a multiplayer server](multiplayer-server.md) for what the settings mean.

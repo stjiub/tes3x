@@ -17,8 +17,13 @@ Generated from [`nav.toml`](nav.toml) by `tes3x docs --write`; edit that file, n
 - [Testing](testing.md): TES3X is tested in steps, from fast checks on the PC to play on an original Xbox.
 - [Running in xemu](xemu.md): Set up xemu to play profiles or run them from scripts.
 - [Diagnostics and profiling](diagnostics.md): A patched build can record what it does, time engine functions and count where memory goes.
-- [Multiplayer](multiplayer.md): Run a TES3X server and connect consoles and xemu to it.
 - [Add-ons](addons.md): Add-ons are optional parts of TES3X for particular setups.
+
+## Multiplayer
+
+- [Multiplayer](multiplayer.md): Choose the player or server admin guide.
+- [Playing multiplayer](multiplayer-client.md): Join from Xbox or xemu, save your character, and check gameplay limits.
+- [Hosting a multiplayer server](multiplayer-server.md): Host a server, retain the world, administer players, and distribute builds.
 
 ## Reference
 

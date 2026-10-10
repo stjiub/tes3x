@@ -4,6 +4,9 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- Multiplayer documentation has separate [player](docs/multiplayer-client.md) and
+  [server admin](docs/multiplayer-server.md) guides.
+
 - Patch promotion accepts maintainer-reviewed play and manual checks; scripted tests are optional.
   `validate check --gate` reports missing scripted evidence as warnings. The patch table shows
   availability without a game-test column. See [patch policy](docs/patch-policy.md).
@@ -20,7 +23,7 @@ No official releases yet. The first public release is in preparation.
   Filling the bounded address table no longer resets existing limits; new sources wait
   until a slot recovers. Handshake limits use the same source grouping and bounded storage.
 - Multiplayer servers reject unknown event kinds and malformed client payloads before
-  applying or relaying them. See [accepted events](docs/multiplayer.md#accepted-client-events).
+  applying or relaying them. See [accepted events](docs/multiplayer-server.md#accepted-client-events).
 - The GUI includes **Help > About TES3X**, with the version, author, license and links to
   documentation, release notes, the project and issue reporting.
 - `bsa`, `convert` and `qcow2` support `--help`. Texture conversion reports sizes without

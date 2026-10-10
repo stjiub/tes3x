@@ -62,7 +62,7 @@ options. This page says what each one is for and where it is explained.
 | `tes3x heap` | render the engine heap census | [diagnostics](diagnostics.md#heap-census) |
 | `tes3x mem` | render the kernel memory census | [diagnostics](diagnostics.md#memory-census) |
 | `tes3x readlog` | read the log or another file from an xemu disk image | [xemu](xemu.md) |
-| `tes3x ess` | break a save into record types, changed references and inventories; `--diff` compares two saves by kind of state | [multiplayer](multiplayer.md#checking-a-session) |
+| `tes3x ess` | break a save into record types, changed references and inventories; `--diff` compares two saves by kind of state | [character restore diagnostics](multiplayer-server.md#character-restore-diagnostics) |
 
 ## Multiplayer
 

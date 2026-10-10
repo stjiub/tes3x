@@ -1,5 +1,5 @@
 # TES3X multiplayer server. From this folder: docker compose up -d
-# Consoles set [Xbox] NetServer to this machine's LAN address; see docs/multiplayer.md.
+# Consoles set [Xbox] NetServer to this machine's LAN address; see docs/multiplayer-client.md.
 services:
   server:
     build:

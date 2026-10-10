@@ -20,9 +20,12 @@ pages = [
     "testing.md",
     "xemu.md",
     "diagnostics.md",
-    "multiplayer.md",
     "addons.md",
 ]
+
+[[section]]
+title = "Multiplayer"
+pages = ["multiplayer.md", "multiplayer-client.md", "multiplayer-server.md"]
 
 [[section]]
 title = "Reference"
@@ -54,6 +57,8 @@ pages = [
 "candidates.md" = "Fixes from other projects that were reviewed, and why each is not implemented."
 "catalog.md" = "Mods tried on the Xbox, and whether they work."
 "xemu.md" = "Set up xemu to play profiles or run them from scripts."
-"multiplayer.md" = "Run a TES3X server and connect consoles and xemu to it."
+"multiplayer.md" = "Choose the player or server admin guide."
+"multiplayer-client.md" = "Join from Xbox or xemu, save your character, and check gameplay limits."
+"multiplayer-server.md" = "Host a server, retain the world, administer players, and distribute builds."
 "configuration.md" = "Every key in a profile and in the local config."
 "../patches/README.md" = "What a patch's notes page contains, and its template."

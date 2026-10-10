@@ -49,7 +49,7 @@ image for that run; it does not need the Xbox's shared-base path.
 A build with `multiplayer` or `agent` plays with xemu's NAT network: the game gets an address by
 DHCP, joins servers anywhere, and reaches the GUI's in-game agent listener at `10.0.2.2`. The
 runner's `--net-nat` does the same for scripted runs; see
-[multiplayer](multiplayer.md#connect-xemu).
+[multiplayer](multiplayer-client.md#connect-xemu).
 
 ## Scripted and automated runs
 

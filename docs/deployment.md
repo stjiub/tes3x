@@ -189,7 +189,7 @@ Ethernet, and about 13 minutes over the dashboard's FTP server.
 ### From a server
 
 A multiplayer server started with `--build` ([Handing out the
-build](multiplayer.md#handing-out-the-build)) hands its build to the console manager, so players
+build](multiplayer-server.md#handing-out-the-build)) hands its build to the console manager, so players
 need no PC. The manager's **Servers** tab lists the servers this console knows from each save pool's
 `U:\TES3X\servers.ini`, the ones joined from the game's main menu, with each one's key fingerprint
 and installed build. **Add server** types one in on the on-screen keyboard, by name or address with

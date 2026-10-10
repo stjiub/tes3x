@@ -85,7 +85,7 @@ should use targets.
 ### `[server]`
 
 The GUI's **Server** workspace keeps its settings here and turns them into
-`tes3x net serve` options (see [multiplayer](multiplayer.md#start-the-server)). Command-line
+`tes3x net serve` options (see [multiplayer](multiplayer-server.md#start-the-server)). Command-line
 use of the server does not read this table.
 
 | Key | Type | Default | Meaning |
