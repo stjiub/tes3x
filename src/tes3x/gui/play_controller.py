@@ -5,7 +5,7 @@ from .common import (AgentListener, Fetch, MEMORY_LOG_SECONDS, OP_REBOOT, PIPELI
                      addon_registry, console_request, dashboard_agent_state, datetime,
                      fetch_destination, ftp_error, heartbeat_text, is_dash, key_fingerprint,
                      launch, load_or_create_key, os, parse_drives, re, resolve_xemu, running_xemu,
-                     shutil, signal, struct, sys, tes3x_targets, time, tomllib)
+                     signal, struct, sys, tes3x_targets, time, tomllib)
 from PySide6.QtCore import QObject
 
 
@@ -201,7 +201,8 @@ class PlayController(QObject):
 
     def launch_dash_xemu(self, target):
         """Boot xemu into the Dash. The target's disk is seeded once with a retail base and a
-        xbox.ini, so the Dash can install a server's build and join it, as on a console."""
+        xbox.ini, so the Dash can install a server's build and join it, as on a console. The
+        build itself comes from the server onto the disk, never from the read-only disc."""
         reason = self.play_available()
         if reason:
             self.window.error(reason)
@@ -213,27 +214,6 @@ class PlayController(QObject):
 
         def start():
             port = self.window.local_values().get("server", {}).get("port", 26500)
-            # the profile's own build rides on the disc, so a rebuild needs no download
-            built = self.window.build_output() / "deploy" if self.window.profile_path else None
-            if built is not None and (built / "tes3xbuild.json").is_file():
-                profile = self.window.profile_plain["profile"]
-                folder = profile.get("install_dir") or profile["name"]
-
-                def link(source, target):
-                    try:
-                        os.link(source, target)
-                    except OSError:
-                        shutil.copy2(source, target)
-
-                staged = out / "disc" / "Games" / folder
-                shutil.copytree(built, staged, copy_function=link)
-                # the Dash offers Join for the build installed from a server
-                manifest = staged / "tes3xbuild.json"
-                raw = manifest.read_bytes()
-                head = (f'{{\n "server": "10.0.2.2:{port}",\n "deployed": "'
-                        f'{datetime.datetime.now(datetime.timezone.utc):%Y-%m-%dT%H:%M:%SZ}",')
-                manifest.unlink()  # a hard link must not be written through
-                manifest.write_bytes(head.encode() + raw[raw.index(b"{") + 1:])
             servers = out / "seed" / "servers.ini"
             servers.write_text(f"[10.0.2.2:{port}]\r\n", encoding="latin-1", newline="")
             environment = QProcessEnvironment.systemEnvironment()
