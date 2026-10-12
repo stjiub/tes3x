@@ -99,6 +99,7 @@ class EventValidationTests(unittest.TestCase):
             *p.pack_topics([]),
             *p.pack_factions([('Fighters Guild', p.FACTION_ALL | p.FACTION_JOINED, -1, -40),
                               ('x' * p.FACTION_ID_MAX, p.FACTION_ALL, 9, 2 ** 31 - 1)]),
+            *p.pack_globals([('PCVampire', -1.0), ('x' * p.GLOBAL_NAME_MAX, 3.5)]),
             bytes([p.PLAYER_SKILLS, 1]) + p.SKILL.pack(26, 20., 3.),
             bytes([p.PLAYER_MODIFIERS, 1]) + p.MODIFIER.pack(34, 20.),
             bytes([p.PLAYER_VITALS]) + p.VITALS.pack(1., 2., 3.),

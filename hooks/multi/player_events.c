@@ -126,6 +126,8 @@ static void player_event(const struct event *e)
         topics_apply(e->data, e->length);
     else if (e->data[0] == PLAYER_FACTIONS && e->length >= 2)
         factions_apply(e->data, e->length);
+    else if (e->data[0] == PLAYER_GLOBALS && e->length >= 2)
+        globals_apply(e->data, e->length);
     else if (e->data[0] == PLAYER_VITALS && e->length >= 1 + 12)
         vitals_apply(ref, e->data + 1);
     else if (e->data[0] == PLAYER_PLACE && e->length >= 1 + PLACE_BYTES)

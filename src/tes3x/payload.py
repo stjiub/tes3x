@@ -125,6 +125,7 @@ IDENTITY_ADDRESSES = (
     ("INVENTORY_BUILD", 0x001DEC90), ("MENU_TAB", 0x001FB4C0),
     # NonDynamicData::findFaction, Faction::loadPlayerData (the save load's restore), UpdateStatsPane
     ("FIND_FACTION", 0x00105DF0), ("FACTION_LOAD", 0x000F0910), ("UPDATE_STATS_PANE", 0x0021E7E0),
+    ("FIND_GLOBAL", 0x00106000),  # NonDynamicData::findGlobalVariable
 )
 PLAYER_CONTROL = 0x001717E0  # PlayerAnimationController's update: look, controls, animation
 CONSOLE_ADDRESSES = (

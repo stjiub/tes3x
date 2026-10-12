@@ -1052,6 +1052,45 @@ class ServerTests(unittest.TestCase):
             restored.save()
             self.assertIsNone(net.PlayerStream(path).factions)
 
+    def test_player_globals_survive_restart_and_seed_the_new_game(self):
+        net = tes3x_net
+        entries = [(f'PCGlobal{i:02}WithALongerName', float(i) - 0.5) for i in range(12)]
+        entries.append(('PCVampire', -1.0))
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'stream.json'
+            stream = net.PlayerStream(str(path))
+            self.assertIsNone(stream.globals)
+            events = net.pack_globals(entries)
+            self.assertGreater(len(events), 1)
+            for data in events:
+                self.assertLessEqual(len(data), net.EVENT_DATA)
+                self.assertTrue(valid_client_event(net.EVENT_PLAYER, data))
+                stream.take(data)
+            self.assertEqual(stream.take(net.pack_globals([('pcvampire', 1.0)])[0]),
+                             'globals pcvampire 1')
+            self.assertIsNone(stream.take(net.pack_globals([('PCVampire', 1.0)])[0]))
+            stream.save()
+            restored = net.PlayerStream(str(path))
+            self.assertEqual(restored.globals['pcvampire'], ['pcvampire', 1.0])
+            self.assertEqual(len(restored.globals), len(entries))
+            replayed = dict(e for data in restored.replay() if data[0] == net.PLAYER_GLOBALS
+                            for e in net.unpack_globals(data))
+            self.assertEqual(replayed, dict(restored.globals.values()))
+            restored.identity = self.identity('Nerevar')
+            seed = restored.character_file()
+            for data in net.pack_globals(sorted(restored.globals.values())):
+                self.assertIn(struct.pack('<H', len(data)) + data, seed)
+            for invalid in (bytes([net.PLAYER_GLOBALS, 1]) + struct.pack('<f', 1.0) + b'PC',
+                            bytes([net.PLAYER_GLOBALS, 1]) + struct.pack('<f', float('nan'))
+                            + b'PCRace\0',
+                            bytes([net.PLAYER_GLOBALS, 1]) + struct.pack('<f', 1.0) + b'x' * 32
+                            + b'\0'):
+                self.assertFalse(valid_client_event(net.EVENT_PLAYER, invalid))
+                self.assertIsNone(restored.take(invalid))
+            restored.reset()
+            restored.save()
+            self.assertIsNone(net.PlayerStream(path).globals)
+
     def test_abilities_replay_before_absolute_statistics(self):
         net = tes3x_net
         with tempfile.TemporaryDirectory() as folder:

@@ -32,6 +32,11 @@ No official releases yet. The first public release is in preparation.
   and expulsion stay with each character, and all of them survive a server restart. Update both
   server and game builds; existing characters publish their factions on their next join. See
   [character state](docs/multiplayer-client.md#saving-and-character-state).
+- Multiplayer keeps each character's own globals, such as vampirism, lycanthropy and guild
+  expulsion counts, across leaving and server restarts; they are never shared with other
+  players. Update both server and game builds; existing characters publish theirs on their next
+  join. See [character state](docs/multiplayer-client.md#saving-and-character-state).
+- `tes3xnet global NAME` prints a global's value to the console, so exec scripts can assert it.
 
 - Multiplayer documentation has separate [player](docs/multiplayer-client.md) and
   [server admin](docs/multiplayer-server.md) guides.

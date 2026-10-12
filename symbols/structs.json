@@ -33,6 +33,10 @@
       "note": "Xbox matches the PC at objectID (+0x10), rank names (+0x50), playerRank (+0x294), playerReputation (+0x298) and playerMembershipFlags (+0x29C: 1 joined, 2 expelled); Faction::copy 0x000FCE20 and loadPlayerData 0x000F0910 use them. The player's faction state lives on the record, not the player. Native commands never make playerRank negative."
     },
     {
+      "name": "TES3::GlobalVariable",
+      "note": "Xbox matches the PC: name char[32] at +0x10, valueType char at +0x30 ('s', 'l', 'f'), value float at +0x34 whatever the type; GlobalVariable::copy 0x000FA670 uses them. The engine caches some (WorldController::InitGlobals: the clock, CharGenState; MobilePlayer: PCKnownWerewolf) and derives the crime-gold ones at each dialogue start (0x0015BC70)."
+    },
+    {
       "name": "TES3::MobileNPC",
       "note": "Xbox matches the PC at skills (+0x3B0, 27 SkillStatistic of 0x10; type +0xC is major, minor or misc, not the skill index)."
     },
@@ -152,8 +156,8 @@
           "offset": "0x44",
           "name": "globals",
           "type": "NI::IteratedList<TES3::GlobalVariable*>*",
-          "confidence": "matched",
-          "provenance": "PC +0x38, at the same 0xC shift as its neighbours"
+          "confidence": "verified",
+          "provenance": "PC +0x38; NonDynamicData::findGlobalVariable 0x00106000 walks it"
         },
         {
           "offset": "0x48",

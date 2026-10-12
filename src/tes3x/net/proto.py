@@ -339,6 +339,14 @@ FACTION_ID_MAX = 31
 FACTIONS_MAX = 512
 
 
+# The character's own globals (PC* and a few vanilla per-player ones; the console chooses), both
+# ways: count, then each value (f32) and the global's name ending in zero. Absolute; a console
+# sends what changed since its last scan, all of them first after READY.
+PLAYER_GLOBALS = 19
+GLOBAL_NAME_MAX = 31
+PLAYER_GLOBALS_MAX = 128
+
+
 PLAYER_BOUNTY = 12  # from the server: the character's last streamed crime bounty, i32
 
 
@@ -1114,6 +1122,45 @@ def unpack_factions(data):
         off = end + 1
     if off != len(data):
         raise ValueError("trailing faction bytes")
+    return entries
+
+
+def pack_globals(entries):
+    """PLAYER_GLOBALS events for (name, value) pairs."""
+    events, body, count = [], b"", 0
+    for name, value in entries:
+        raw = name.encode("latin-1")
+        if not raw or len(raw) > GLOBAL_NAME_MAX or any(c < 32 or c == 34 for c in raw):
+            raise ValueError(f"bad global {name!r}")
+        entry = struct.pack("<f", value) + raw + b"\0"
+        if count and 2 + len(body) + len(entry) > EVENT_DATA:
+            events.append(bytes([PLAYER_GLOBALS, count]) + body)
+            body, count = b"", 0
+        body += entry
+        count += 1
+    if count:
+        events.append(bytes([PLAYER_GLOBALS, count]) + body)
+    return events
+
+
+def unpack_globals(data):
+    """(name, value) pairs from a PLAYER_GLOBALS event; ValueError if malformed."""
+    if len(data) < 2 or data[0] != PLAYER_GLOBALS:
+        raise ValueError("not a globals event")
+    entries, off = [], 2
+    for _ in range(data[1]):
+        if off + 4 >= len(data):
+            raise ValueError("short global entry")
+        value, = struct.unpack_from("<f", data, off)
+        end = data.find(b"\0", off + 4)
+        raw = bytes(data[off + 4:end]) if end >= 0 else b""
+        if (not raw or len(raw) > GLOBAL_NAME_MAX or any(c < 32 or c == 34 for c in raw)
+                or not finite(value)):
+            raise ValueError("bad global entry")
+        entries.append((raw.decode("latin-1"), value))
+        off = end + 1
+    if off != len(data):
+        raise ValueError("trailing global bytes")
     return entries
 
 

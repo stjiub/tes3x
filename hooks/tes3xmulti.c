@@ -50,6 +50,7 @@ int tes3x_console_text_begin_on(void *menu, const char *initial);
 void *tes3x_console_text_field(void);
 int tes3x_console_text_poll(char *out, u32 size);
 const char *tes3x_console_text_now(void);
+void __cdecl tes3x_console_reply(const char *fmt, ...);
 #endif
 
 #ifndef TES3X_NET_WORLD
@@ -139,7 +140,8 @@ const char *tes3x_console_text_now(void);
     !defined(TES3X_NET_RACE_SEX_OK) || !defined(TES3X_NET_UNEQUIP_ITEM) || \
     !defined(TES3X_NET_EQUIP_ITEM) || !defined(TES3X_NET_INVENTORY_BUILD) || \
     !defined(TES3X_NET_MENU_TAB) || !defined(TES3X_NET_FIND_FACTION) || \
-    !defined(TES3X_NET_FACTION_LOAD) || !defined(TES3X_NET_UPDATE_STATS_PANE)
+    !defined(TES3X_NET_FACTION_LOAD) || !defined(TES3X_NET_UPDATE_STATS_PANE) || \
+    !defined(TES3X_NET_FIND_GLOBAL)
 #error "define the TES3X_NET_ record lookups, the class functions chargen uses and the faction restore"
 #endif
 
@@ -454,6 +456,7 @@ static int script_safe(const u8 *text, u32 max)
 #include "multi/player.c"
 #include "multi/player_topics.c"
 #include "multi/player_factions.c"
+#include "multi/player_globals.c"
 #include "multi/player_identity.c"
 #include "multi/player_effects.c"
 #include "multi/player_apply.c"
@@ -632,6 +635,8 @@ int tes3x_multi_command(const char *text)
         topic_query(rest);
     } else if ((rest = word(text, "faction")) && *(rest = skip(rest))) {
         faction_query(rest);
+    } else if ((rest = word(text, "global")) && *(rest = skip(rest))) {
+        global_query(rest);
     } else if ((rest = word(text, "send")) && *(rest = skip(rest))) {
         up_command(rest);
     } else if ((rest = word(text, "save")) && !*skip(rest)) {

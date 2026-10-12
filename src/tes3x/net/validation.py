@@ -77,6 +77,11 @@ def player(data):
                        p.unpack_factions(data))
         except ValueError:
             return False
+    if kind == p.PLAYER_GLOBALS:
+        try:
+            return bool(p.unpack_globals(data))
+        except ValueError:
+            return False
     if kind in (p.PLAYER_IDENTITY, p.PLAYER_WORN):
         return multipart(data, 1) and (kind == p.PLAYER_WORN or len(data) > 3)
     if kind == p.PLAYER_EFFECTS:

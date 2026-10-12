@@ -45,7 +45,7 @@ from .proto import (ACTOR, ACTORS, ACTORS_PER_PACKET, ACTOR_DEAD, ACTOR_IN_COMBA
                     PACE_PACKETS, PACE_WINDOW, PASSWORD_MAX, PASSWORD_RATE, PEER, PEER_IP,
                     PICK_CHARACTER, PICK_NEW, PICK_START, PLACE, PLACE_HOLD, PLAYER_ALIVE,
                     PLAYER_BOUNTY, PLAYER_DEATH, PLAYER_EFFECTS, PLAYER_EFFECTS_MAX,
-                    PLAYER_EFFECT_BYTES, PLAYER_FACTIONS, FACTIONS_MAX, FACTION_ALL, FACTION_EXPELLED,
+                    PLAYER_EFFECT_BYTES, PLAYER_FACTIONS, PLAYER_GLOBALS, PLAYER_GLOBALS_MAX, FACTIONS_MAX, FACTION_ALL, FACTION_EXPELLED,
                     FACTION_JOINED, FACTION_RANK, FACTION_REPUTATION, PLAYER_IDENTITY, PLAYER_ITEMS, PLAYER_JOURNAL,
                     PLAYER_LEVEL, PLAYER_MODIFIERS, PLAYER_PLACE, PLAYER_READY, PLAYER_RESPAWN,
                     PLAYER_SKILLS, PLAYER_SPELLS, PLAYER_TOPICS, PLAYER_TOPICS_MAX,
@@ -64,11 +64,11 @@ from .proto import (ACTOR, ACTORS, ACTORS_PER_PACKET, ACTOR_DEAD, ACTOR_IN_COMBA
                     describe_identity, describe_key, describe_level, describe_object,
                     describe_spawn, describe_state, describe_status, describe_weather,
                     fingerprint, finite, now_us, pack_contents, pack_equipment, pack_events,
-                    pack_factions, pack_identity, pack_items, pack_journal, pack_topics, pack_names, pack_objects,
+                    pack_factions, pack_globals, pack_identity, pack_items, pack_journal, pack_topics, pack_names, pack_objects,
                     pack_player_effects, pack_player_identity, pack_spawn, pack_weather,
                     pack_worn, placeable, plain_name, remote_key, same_place, sane_clock, seal,
                     unpack_actor_equipment, unpack_contents, unpack_equipment, unpack_events,
-                    unpack_factions, unpack_identity, unpack_items, unpack_journal, unpack_objects,
+                    unpack_factions, unpack_globals, unpack_identity, unpack_items, unpack_journal, unpack_objects,
                     unpack_player_effects, unpack_player_identity, unpack_removes, unpack_spawn,
                     unpack_weather, unpack_worn, unseal, wire_text, x25519_public, zstr)
 from .tunnel import (Tunnel, arp_frame, dhcp_reply, dns_reply, udp_frame, udp_from_frame,
@@ -366,7 +366,7 @@ class PlayerStream:
     def __init__(self, path):
         self.path = path
         self.items, self.skills, self.modifiers, self.journal, self.level = {}, {}, {}, {}, None
-        self.spells = self.topics = self.factions = None
+        self.spells = self.topics = self.factions = self.globals = None
         self.effects = self.effects_parts = None
         self.vitals = self.place = None
         self.bounty = self.identity = self.worn = None
@@ -390,6 +390,7 @@ class PlayerStream:
         self.spells = kept.get("spells")
         self.topics = kept.get("topics")
         self.factions = kept.get("factions")
+        self.globals = kept.get("globals")
         self.effects = kept.get("effects")
         self.bounty = kept.get("bounty")
         self.identity = kept.get("identity")
@@ -398,7 +399,7 @@ class PlayerStream:
     def reset(self):
         """A new character: nothing streamed so far belongs to it."""
         self.items, self.skills, self.modifiers, self.journal, self.level = {}, {}, {}, {}, None
-        self.spells = self.topics = self.factions = None
+        self.spells = self.topics = self.factions = self.globals = None
         self.effects = self.effects_parts = None
         self.vitals = self.place = self.arriving = None
         self.bounty = self.identity = self.identity_parts = None
@@ -533,6 +534,22 @@ class PlayerStream:
             if self.factions is None or changed:
                 self.factions, self.dirty = kept, True
             return "factions " + ", ".join(changed) if changed else None
+        if kind == PLAYER_GLOBALS:
+            try:
+                entries = unpack_globals(data)
+            except ValueError:
+                return None
+            kept = dict(self.globals or {})
+            changed = []
+            for name, value in entries:
+                if (kept.get(name.lower()) or [None, None])[1] != value:
+                    kept[name.lower()] = [name, value]
+                    changed.append(f"{name} {value:g}")
+            if len(kept) > PLAYER_GLOBALS_MAX:
+                return None
+            if self.globals is None or changed:
+                self.globals, self.dirty = kept, True
+            return "globals " + ", ".join(changed) if changed else None
         if kind == PLAYER_SPELLS and len(data) >= 4 and data[1] in (SPELLS_ADD, SPELLS_REMOVE):
             names = unpack_equipment(data[2:])
             if not names:
@@ -597,6 +614,8 @@ class PlayerStream:
                    for part in pack_items(item, entries)]
         if self.worn is not None:
             events += pack_worn(self.worn)
+        if self.globals:
+            events += pack_globals(sorted(self.globals.values()))
         # Abilities change statistic bases; restore them before the absolute stat snapshots.
         if self.spells is not None:
             events += [bytes([PLAYER_SPELLS, SPELLS_SNAPSHOT]) + part
@@ -639,6 +658,8 @@ class PlayerStream:
                    for part in pack_items(item, entries)]
         if self.worn is not None:
             events += pack_worn(self.worn)
+        if self.globals:  # before the global scripts the [PreLoad] read starts
+            events += pack_globals(sorted(self.globals.values()))
         if self.place and not self.dead:
             events.append(bytes([PLAYER_PLACE]) + self.place)
         return CHARACTER_MAGIC + b"".join(struct.pack("<H", len(e)) + e for e in events)
@@ -653,6 +674,7 @@ class PlayerStream:
                                "spells": self.spells,
                                "topics": self.topics,
                                "factions": self.factions,
+                               "globals": self.globals,
                                "effects": self.effects,
                                "bounty": self.bounty,
                                "identity": self.identity,

@@ -62,7 +62,7 @@ static int preload_character(void)
         if (e.data[0] == PLAYER_PLACE && e.length >= 1 + sizeof(preload_place))
             copy(preload_place, e.data + 1, sizeof(preload_place));
         else if (e.data[0] == PLAYER_IDENTITY || e.data[0] == PLAYER_ITEMS ||
-                 e.data[0] == PLAYER_WORN)
+                 e.data[0] == PLAYER_WORN || e.data[0] == PLAYER_GLOBALS)
             player_event(&e);
     }
     NtClose(h);
@@ -101,6 +101,7 @@ static void player_stat(void)
                    player_spells_omitted);
     tes3x_log_hex3("net.player_topics", topics_out, topics_in, topics_bad);
     tes3x_log_hex3("net.player_factions", factions_out, factions_in, factions_bad);
+    tes3x_log_hex3("net.player_globals", globals_out, globals_in, globals_bad);
     tes3x_log_hex3("net.player_identity_stat", player_identity_out, player_identity_applied,
                    player_classes_made);
     tes3x_log_hex3("net.player_worn_stat", worn_out, worn_applied, worn_removed);

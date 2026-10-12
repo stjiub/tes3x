@@ -74,7 +74,7 @@ the data files and applies the server's world; it does not import changes from a
 With `--world` the server also keeps each character under `characters` in `DIR`. A joining console
 starts a New Game and receives the character's identity, inventory, worn items and last place in a
 small server-generated state file; the rest follows after it joins. The console sends inventory,
-equipment, level, attributes, skills and their current modifiers, active effects, journal, learned topics, factions, current
+equipment, level, attributes, skills and their current modifiers, active effects, journal, learned topics, factions, its own globals, current
 health, magicka and fatigue as they change, and who the character is: name, race, sex, head, hair,
 birthsign and class, including a class made in character creation. The server keeps the latest
 supported state in `stream.json`. It also keeps where the player last was, so a crash or power cut
@@ -386,7 +386,11 @@ count and entries of a flags byte, rank i32 and reputation i32, each followed by
 at most 31 bytes; a console must send all three values. The world keeps each faction's rank and
 reputation (up to 512 factions) and sends changes to the other joined characters; each character
 keeps its own membership and expulsion. Only a character that already was a member moves the
-world's rank; one that has just joined is sent the world's rank instead. Identity, worn and effect snapshots are checked when reassembled;
+world's rank; one that has just joined is sent the world's rank instead. `GLOBALS` carries a
+count and entries of a finite f32 value followed by a global's name of at most 31 bytes. They
+belong to the character alone: the server keeps up to 128 in `stream.json`, puts them in the
+New Game's state file, so they are set before global scripts first run, and replays them before
+READY. The console chooses which globals are the character's. Identity, worn and effect snapshots are checked when reassembled;
 effects are capped at 64 entries. Server-to-client player sub-kinds are rejected.
 
 Inventory entries carry a signed i32 count and a flags byte (only `ENTRY_DATA`), optional

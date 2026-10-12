@@ -3849,6 +3849,15 @@
       "pc_va": "0x0052D010"
     },
     {
+      "va": "0x0015BC70",
+      "name": "updateCrimeGoldGlobals",
+      "confidence": "matched",
+      "provenance": "string match to pc 0x0052D7A0; called from MobileActor::startDialogue",
+      "note": "Sets PCHasCrimeGold, PCHasGoldDiscount, PCHasTurnIn, CrimeGoldDiscount and CrimeGoldTurnIn from the player's bounty, gold and GMSTs 0x4A0/0x4A1; derived, so multiplayer never keeps them.",
+      "pc_va": "0x0052D7A0",
+      "signature": "void __cdecl updateCrimeGoldGlobals(void)"
+    },
+    {
       "va": "0x0015C140",
       "name": "MobileActor::saveActorState",
       "confidence": "verified",
