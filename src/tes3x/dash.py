@@ -2,7 +2,7 @@
 """Install and update the Dash on an Xbox.
 
 `stage OUT` writes the Dash's folder as a deploy tree (OUT/deploy) with its manifest, and
-OUT/console.ini naming the Dash for the game and this PC as its agent (NetAgent); `install` stages and deploys it, over FTP or
+OUT/xbox.ini naming the Dash for the game and this PC as its agent (NetAgent); `install` stages and deploys it, over FTP or
 through a running Dash's agent. The folder holds the launcher as default.xbe and the Dash
 in slot a. The XBEs come from --xbe and --launcher, the copies a package ships
 (dash/default.xbe, dash/launcher.xbe), or nxdk builds of dash/ (paths.nxdk).
@@ -34,8 +34,8 @@ SOURCE = checkout("dash")
 PACKAGED = bundled("dash", "default.xbe")
 PACKAGED_LAUNCHER = bundled("dash", "launcher.xbe")
 INBOX = "E:/TES3X/update"
-FOLDER = "TES3XManager"
-TITLE = "TES3X Manager"
+FOLDER = "TES3XDash"
+TITLE = "TES3X Dash"
 PROFILE = "dash"
 # The Dash does not list a folder of this layout among the builds.
 LAYOUT = "dash"
@@ -77,7 +77,7 @@ def remote_folder(target, folder=FOLDER):
 
 
 def stage(out, xbe, launcher, remote, agent=None):
-    """Write the Dash's deploy tree and console.ini under `out`; returns the tree. `agent` is
+    """Write the Dash's deploy tree and xbox.ini under `out`; returns the tree. `agent` is
     the NetAgent value naming this PC, so the Dash pairs without a game deploy first."""
     out = Path(out)
     tree = out / "deploy"
@@ -103,8 +103,8 @@ def stage(out, xbe, launcher, remote, agent=None):
         json.dumps({"profile": PROFILE, "install_layout": LAYOUT, "remote": remote,
                     "version": version()}) + "\n", encoding="utf-8")
     path = remote.replace("/", "\\") + "\\default.xbe"
-    (out / "console.ini").write_text(
-        f"[Xbox]\r\nManager={path}\r\n" + (f"NetAgent={agent}\r\n" if agent else ""),
+    (out / "xbox.ini").write_text(
+        f"[Xbox]\r\nDash={path}\r\n" + (f"NetAgent={agent}\r\n" if agent else ""),
         encoding="latin-1")
     return tree
 
@@ -112,7 +112,7 @@ def stage(out, xbe, launcher, remote, agent=None):
 def stage_xemu(out, xbe, vanilla=None):
     """What an xemu session needs to start in the Dash: OUT/disc, a disc folder whose
     default.xbe is the Dash, and OUT/seed, the files the session's disk gets once (a retail
-    base for the Dash to build on, and a console.ini that brings the NIC up by DHCP)."""
+    base for the Dash to build on, and an xbox.ini that brings the NIC up by DHCP)."""
     out = Path(out)
     disc, seed = out / "disc", out / "seed"
     shutil.rmtree(disc, ignore_errors=True)
@@ -121,7 +121,7 @@ def stage_xemu(out, xbe, vanilla=None):
     # an ISO needs a second file
     (disc / "readme.txt").write_text("TES3X Dash for xemu\n", encoding="utf-8")
     seed.mkdir(parents=True, exist_ok=True)
-    (seed / "console.ini").write_bytes(b"[Xbox]\r\nNetAddress=dhcp\r\n")
+    (seed / "xbox.ini").write_bytes(b"[Xbox]\r\nNetAddress=dhcp\r\n")
     base = seed / "Games" / "Base"
     if vanilla and not base.is_dir():
         from tes3x.pipeline import stage_retail_base
@@ -139,7 +139,7 @@ def stage_xemu(out, xbe, vanilla=None):
 
 def deploy_arguments(out, remote, args):
     arguments = [str(Path(out) / "deploy"), "--remote", remote, "--verify", "size",
-                 "--console-ini", str(Path(out) / "console.ini")]
+                 "--xbox-ini", str(Path(out) / "xbox.ini")]
     for name in ("config", "target"):
         if getattr(args, name):
             arguments += [f"--{name}", getattr(args, name)]
@@ -192,7 +192,7 @@ def main():
     for name in ("stage", "install"):
         p = sub.add_parser(name)
         if name == "stage":
-            p.add_argument("out", help="folder for deploy/ and console.ini")
+            p.add_argument("out", help="folder for deploy/ and xbox.ini")
         else:
             p.add_argument("--out", help="staging folder (default: data folder's build/dash/install)")
             p.add_argument("--dry-run", action="store_true")

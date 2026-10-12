@@ -46,7 +46,7 @@ REMOTE_ERRORS = ftplib.all_errors + (tes3x_agent.AgentError,)
 # Through the Dash, files arrive under this prefix and are renamed in once all are complete.
 STAGING_PREFIX = "~t3x"
 # [Xbox] settings of the console rather than a build; the payload reads them before Morrowind.ini.
-CONSOLE_INI = "E:/TES3X/console.ini"
+XBOX_INI = "E:/TES3X/xbox.ini"
 
 
 def sha1(path):
@@ -584,29 +584,29 @@ def ini_pairs(text):
     return pairs
 
 
-def merge_console_ini(remote, wanted):
-    """The console's console.ini with the build's keys set; its other keys are kept."""
+def merge_xbox_ini(remote, wanted):
+    """The console's xbox.ini with the build's keys set; its other keys are kept."""
     text = remote.replace("\r\n", "\n").strip("\n")
     for key, value in ini_pairs(wanted):
         text = set_ini_key(text, "Xbox", key, value)
     return text.strip("\n").replace("\n", "\r\n") + "\r\n"
 
 
-def write_console_ini(target, source, dry_run):
+def write_xbox_ini(target, source, dry_run):
     wanted = Path(source).read_text(encoding="latin-1")
     try:
-        remote = target.read(CONSOLE_INI).decode("latin-1")
+        remote = target.read(XBOX_INI).decode("latin-1")
     except REMOTE_ERRORS:
         remote = ""
-    merged = merge_console_ini(remote, wanted)
+    merged = merge_xbox_ini(remote, wanted)
     keys = ", ".join(key for key, _ in ini_pairs(wanted))
     if ini_pairs(merged) == ini_pairs(remote):
-        print(f"  {CONSOLE_INI}: {keys} already set")
+        print(f"  {XBOX_INI}: {keys} already set")
     elif dry_run:
-        print(f"  {CONSOLE_INI}: would set {keys}")
+        print(f"  {XBOX_INI}: would set {keys}")
     else:
-        put_file(target, CONSOLE_INI, merged.encode("latin-1"))
-        print(f"  {CONSOLE_INI}: set {keys}")
+        put_file(target, XBOX_INI, merged.encode("latin-1"))
+        print(f"  {XBOX_INI}: set {keys}")
 
 
 def staging_name(path, index):
@@ -661,8 +661,8 @@ def main():
                     help=f"UDP port NetAgent names (default: {tes3x_agent.PORT})")
     ap.add_argument("--agent-wait", type=float, default=60,
                     help="seconds to wait for the Dash to pair (default: 60)")
-    ap.add_argument("--console-ini", metavar="FILE",
-                    help=f"merge this file's [Xbox] keys into the console's {CONSOLE_INI}")
+    ap.add_argument("--xbox-ini", metavar="FILE",
+                    help=f"merge this file's [Xbox] keys into the console's {XBOX_INI}")
     args = ap.parse_args()
     if args.require_current and not args.dry_run:
         ap.error("--require-current needs --dry-run")
@@ -705,8 +705,8 @@ def main():
     print(target.label)
     try:
         sync(args, target, base, local, built)
-        if args.console_ini:
-            write_console_ini(target, args.console_ini, args.dry_run)
+        if args.xbox_ini:
+            write_xbox_ini(target, args.xbox_ini, args.dry_run)
     except tes3x_agent.AgentError as exc:
         sys.exit(f"agent: {exc}")
     finally:

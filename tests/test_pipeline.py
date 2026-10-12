@@ -13,7 +13,7 @@ import tes3x.paths as tes3x_paths
 from tes3x.paths import check_paths, local_config, require_paths, resource
 from tes3x.pack import write_invalidation
 from tes3x.build import materialize, plugin_masters
-from tes3x.pipeline import (PipelineError, agent_ini, agent_setting, console_ini_text,
+from tes3x.pipeline import (PipelineError, agent_ini, agent_setting, xbox_ini_text,
                             copy_retail_root, link_or_copy, resolve_patch_plan, split_console,
                             preference_flags, sanitized_command, stage_default_xbe, stage_retail_base,
                             strip_retail_files, validate_local_config, validate_output, validate_profile)
@@ -497,7 +497,7 @@ class PipelinePlanTests(unittest.TestCase):
                                         'General:NetAddress=x', 'xbox:netaddress=dhcp',
                                         'Xbox:NetAddress=192.0.2.9/24'])
         self.assertEqual(build, ['Xbox:NetServer=a', 'General:NetAddress=x'])
-        self.assertEqual(console_ini_text(console),
+        self.assertEqual(xbox_ini_text(console),
                          '[Xbox]\r\nNetAgent=1.2.3.4#00\r\nNetAddress=192.0.2.9/24\r\n')
 
     def test_agent_setting_uses_xemu_gateway_and_persistent_key(self):

@@ -1,4 +1,4 @@
-/* E:\TES3X\console.ini: the [Xbox] settings that belong to this console rather than a build. */
+/* E:\TES3X\xbox.ini: the [Xbox] settings that belong to this console rather than a build. */
 
 #include "mgr.h"
 
@@ -7,7 +7,7 @@
 #include <string.h>
 #include <windows.h>
 
-#define CONSOLE_DIR "E:\\TES3X"
+#define XBOX_DIR "E:\\TES3X"
 
 /* Walks text's lines; for the [Xbox] line setting `key` (NULL for none) gives its start, value and
  * end. *insert, when given, ends up at the end of the section's last line, or NULL if there is no
@@ -66,13 +66,13 @@ int ini_get(const char *text, const char *key, char *out, size_t n)
     return (int)len;
 }
 
-int console_get(const char *key, char *out, size_t n)
+int xboxini_get(const char *key, char *out, size_t n)
 {
     unsigned char *data;
     size_t size;
     int len;
 
-    if (read_file(CONSOLE_INI, &data, &size))
+    if (read_file(XBOX_INI, &data, &size))
         return 0;
     len = ini_get((char *)data, key, out, n);
     free(data);
@@ -80,7 +80,7 @@ int console_get(const char *key, char *out, size_t n)
 }
 
 /* Sets one key and keeps the rest, as tes3x_deploy.merge_console_ini does. */
-int console_set(const char *key, const char *value)
+int xboxini_set(const char *key, const char *value)
 {
     unsigned char *data;
     const char *text, *line, *v, *end, *insert;
@@ -89,7 +89,7 @@ int console_set(const char *key, const char *value)
     FILE *f;
     int put;
 
-    if (read_file(CONSOLE_INI, &data, &n))
+    if (read_file(XBOX_INI, &data, &n))
         data = NULL, n = 0;
     text = data ? (const char *)data : "";
     cap = n + strlen(key) + strlen(value) + 16;
@@ -106,20 +106,20 @@ int console_set(const char *key, const char *value)
         n = (size_t)snprintf(out, cap, "%s%s[Xbox]\r\n%s=%s\r\n", text,
                              n && text[n - 1] != '\n' ? "\r\n" : "", key, value);
     free(data);
-    CreateDirectoryA(CONSOLE_DIR, NULL);
-    if (!(f = fopen(CONSOLE_INI ".new", "wb"))) {
+    CreateDirectoryA(XBOX_DIR, NULL);
+    if (!(f = fopen(XBOX_INI ".new", "wb"))) {
         free(out);
         return -1;
     }
     put = fwrite(out, 1, n, f) == n;
     free(out);
     if (fclose(f) || !put) {
-        DeleteFileA(CONSOLE_INI ".new");
+        DeleteFileA(XBOX_INI ".new");
         return -1;
     }
-    DeleteFileA(CONSOLE_INI);
-    if (!MoveFileA(CONSOLE_INI ".new", CONSOLE_INI))
+    DeleteFileA(XBOX_INI);
+    if (!MoveFileA(XBOX_INI ".new", XBOX_INI))
         return -1;
-    mgr_log("console.ini: %s=%s\n", key, value);
+    mgr_log("xbox.ini: %s=%s\n", key, value);
     return 0;
 }

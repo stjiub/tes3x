@@ -24,11 +24,11 @@ struct item {
 struct base { int unused; };
 static int selected;
 static int name_cmp(const char *a, const char *b) { return strcmp(a, b); }
-static void console_get(const char *key, char *out, size_t n)
+static void xboxini_get(const char *key, char *out, size_t n)
 {
     (void)key; snprintf(out, n, "base");
 }
-static int console_set(const char *key, const char *value)
+static int xboxini_set(const char *key, const char *value)
 {
     (void)key; assert(!strcmp(value, "base")); selected++; return 0;
 }

@@ -1,5 +1,5 @@
 /* [Xbox] settings. Those that belong to a console rather than a build (NetAgent, OverlayBase,
- * the network keys) live in E:\TES3X\console.ini, which is read ahead of Morrowind.ini so a
+ * the network keys) live in E:\TES3X\xbox.ini, which is read ahead of Morrowind.ini so a
  * build's files stay the same on every console.
  */
 
@@ -14,7 +14,7 @@
 typedef int(__cdecl *fn_ini_get_string)(const char *, const char *, const char *, char *, int,
                                         const char *);
 
-static char console_path[] = "\\Device\\Harddisk0\\Partition1\\TES3X\\console.ini";
+static char console_path[] = "\\Device\\Harddisk0\\Partition1\\TES3X\\xbox.ini";
 static char console_text[2048];
 static volatile int console_loaded;
 
@@ -75,7 +75,7 @@ static void console_load(void)
     console_loaded = 1;
 }
 
-int tes3x_console_ini(const char *key, char *out, u32 size)
+int tes3x_xbox_ini(const char *key, char *out, u32 size)
 {
     char line[300];
     const char *p;
@@ -104,7 +104,7 @@ void tes3x_ini_xbox(const char *key, const char *dflt, char *out, u32 size)
 
     for (i = 0; i < size; i++)
         out[i] = 0;
-    if (tes3x_console_ini(key, out, size))
+    if (tes3x_xbox_ini(key, out, size))
         return;
 #ifdef TES3X_INI_GET_STRING
     ((fn_ini_get_string)TES3X_INI_GET_STRING)("Xbox", key, dflt, out, (int)size - 1,

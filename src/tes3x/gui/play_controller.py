@@ -201,7 +201,7 @@ class PlayController(QObject):
 
     def launch_dash_xemu(self, target):
         """Boot xemu into the Dash. The target's disk is seeded once with a retail base and a
-        console.ini, so the Dash can install a server's build and join it, as on a console."""
+        xbox.ini, so the Dash can install a server's build and join it, as on a console."""
         reason = self.play_available()
         if reason:
             self.window.error(reason)
@@ -245,7 +245,7 @@ class PlayController(QObject):
                  "--config", config, "--net-nat", "--disk", str(self.play_disk()),
                  "--seed", f"Games/Base={out / 'seed' / 'Games' / 'Base'}",
                  "--seed", f"Games/Base/Morrowind.ini={out / 'seed' / 'Games' / 'Base' / 'Morrowind.ini'}",
-                 "--seed", f"TES3X/console.ini={out / 'seed' / 'console.ini'}",
+                 "--seed", f"TES3X/xbox.ini={out / 'seed' / 'xbox.ini'}",
                  "--seed", f"UDATA/42530005/TES3X/servers.ini={servers}"],
                 f"Dash in {target['name']}…", environment)
 

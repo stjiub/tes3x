@@ -90,14 +90,14 @@ class StageTests(unittest.TestCase):
             (tmp / 'm.xbe').write_bytes(xbe(0xFFFF0002, b'manager'))
             (tmp / 'l.xbe').write_bytes(xbe(0xFFFF0002, b'launcher'))
             tree = tes3x_dash.stage(tmp / 'out', tmp / 'm.xbe', tmp / 'l.xbe',
-                                       'F:/Games/TES3XManager', '10.0.0.7#ab12')
+                                       'F:/Games/TES3XDash', '10.0.0.7#ab12')
             self.assertTrue((tree / 'default.xbe').read_bytes().endswith(b'launcher'))
             self.assertTrue((tree / 'a' / 'default.xbe').read_bytes().endswith(b'manager'))
             manifest = json.loads((tree / 'tes3xbuild.json').read_text(encoding='utf-8'))
             self.assertEqual({manifest['files'][n]['origin'] for n in
                               ('default.xbe', 'a/default.xbe')}, {'build'})
-            ini = (tmp / 'out' / 'console.ini').read_text(encoding='latin-1')
-            self.assertIn('Manager=F:\\Games\\TES3XManager\\default.xbe', ini)
+            ini = (tmp / 'out' / 'xbox.ini').read_text(encoding='latin-1')
+            self.assertIn('Dash=F:\\Games\\TES3XDash\\default.xbe', ini)
             self.assertIn('NetAgent=10.0.0.7#ab12', ini)
 
 

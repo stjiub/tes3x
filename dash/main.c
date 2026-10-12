@@ -242,8 +242,8 @@ static void find_retail_bases(void)
 
 static void use_base(const struct base *b)
 {
-    if (console_set("OverlayBase", b->path)) {
-        say("Retail base", "Could not write " CONSOLE_INI ".", NULL);
+    if (xboxini_set("OverlayBase", b->path)) {
+        say("Retail base", "Could not write " XBOX_INI ".", NULL);
         return;
     }
     /* the first run's choice leads on to the builds */
@@ -1251,7 +1251,7 @@ int main(void)
     load_servers();
     news = update_confirm();
     /* first run: offer the bases found, since overlay builds and XBE updates need one */
-    if (!console_get("OverlayBase", overlay_base, sizeof(overlay_base))) {
+    if (!xboxini_get("OverlayBase", overlay_base, sizeof(overlay_base))) {
         find_retail_bases();
         if (v.base_count)
             v.tab = TAB_SETTINGS, v.page = PAGE_BASES;

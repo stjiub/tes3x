@@ -385,7 +385,7 @@ static const char *install_base(const struct json *build, const char *url_base,
     int root = json_get(build, 0, "retail_base"), files, i, n = 0, count, owned = 0, result;
     char *slash;
 
-    console_get("OverlayBase", base, sizeof(base));
+    xboxini_get("OverlayBase", base, sizeof(base));
     if (!base[0]) {
         snprintf(base, sizeof(base), "%s", folder);
         if (!(slash = strrchr(base, '\\')))
@@ -401,7 +401,7 @@ static const char *install_base(const struct json *build, const char *url_base,
         struct base existing;
         if (check_base(base, &existing))
             return "This overlay needs a retail base. Configure the server's --retail-base.";
-        return console_set("OverlayBase", base) ? "Could not select the retail base." : NULL;
+        return xboxini_set("OverlayBase", base) ? "Could not select the retail base." : NULL;
     }
     if (json_parse(&j, build->s + build->t[root].start,
                    (size_t)(build->t[root].end - build->t[root].start)) < 0)
@@ -503,7 +503,7 @@ static const char *install_base(const struct json *build, const char *url_base,
         flush_path(path);
     }
     err = write_manifest(base, j.s, (size_t)(build->t[root].end - build->t[root].start), "");
-    if (!err && console_set("OverlayBase", base))
+    if (!err && xboxini_set("OverlayBase", base))
         err = "Could not select the completed retail base.";
 finished:
     mgr_log("retail base %s: %s\n", base, err ? err : "complete");
@@ -593,7 +593,7 @@ const char *server_install(struct server *s, int replace, char *folder, size_t f
         err = "Out of memory.";
         goto done;
     }
-    console_get("OverlayBase", base, sizeof(base));
+    xboxini_get("OverlayBase", base, sizeof(base));
     n = 0;
     for (i = json_child(&j, json_get(&j, 0, "files")); i >= 0;
          i = json_sibling(&j, json_get(&j, 0, "files"), i)) {

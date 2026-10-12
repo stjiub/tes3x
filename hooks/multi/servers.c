@@ -28,7 +28,7 @@
 #define UI_FONT 0x164      /* 0 the small Century Gothic, 1 the big one */
 #define UI_IMAGE_FLAG 0x87 /* cleared on each main menu image */
 #define MENU_ROW 0x32      /* a main menu button's height */
-#define MENU_ROWS 6        /* New, Load, Join, Manager, Options, Exit */
+#define MENU_ROWS 6        /* New, Load, Join, Dash, Options, Exit */
 #define SERVERS_SHOWN 8
 #define LIST_VISIBLE 4   /* rows the list's box shows; the rest scroll */
 #define LIST_ROW 32
@@ -57,7 +57,7 @@ typedef void(__cdecl *fn_set_focus)(void *widget, int on);
 typedef char(__cdecl *fn_ui_handler)(void *owner, u32 id, int d0, int d1, void *source);
 static const char *const button_states[3] = {"TES3X_normal", "TES3X_over", "TES3X_pressed"};
 static const char *const main_rows[MENU_ROWS] = {
-    "MenuOptions_New_container", "MenuOptions_Load_container", "TES3X_Join", "TES3X_Manager",
+    "MenuOptions_New_container", "MenuOptions_Load_container", "TES3X_Join", "TES3X_Dash",
     "MenuOptions_Options_container", "MenuOptions_Exit_container"};
 static const char *const server_rows[SERVERS_SHOWN] = {
     "TES3X_Server1", "TES3X_Server2", "TES3X_Server3", "TES3X_Server4",
@@ -77,8 +77,8 @@ typedef char(__cdecl *fn_scroll_to)(void *element);
 #define SERVER_NEW SERVERS_SHOWN
 #define SERVER_RETURN (SERVERS_SHOWN + 1)
 #define SERVER_OPEN (SERVERS_SHOWN + 2)
-#define SERVER_MANAGER (SERVERS_SHOWN + 3)
-static char manager_path[128]; /* [Xbox] Manager, which installing the manager writes */
+#define SERVER_DASH (SERVERS_SHOWN + 3)
+static char dash_path[128]; /* [Xbox] Dash, which installing the Dash writes */
 
 static int same_server(const char *a, const char *b)
 {
@@ -302,10 +302,10 @@ static char __cdecl join_click(void *owner, u32 id, int d0, int d1, void *source
     return 1;
 }
 
-static char __cdecl manager_click(void *owner, u32 id, int d0, int d1, void *source)
+static char __cdecl dash_click(void *owner, u32 id, int d0, int d1, void *source)
 {
     (void)owner, (void)id, (void)d0, (void)d1, (void)source;
-    server_chosen = SERVER_MANAGER;
+    server_chosen = SERVER_DASH;
     return 1;
 }
 
@@ -575,15 +575,15 @@ static void password_ask(u8 *menu)
     join_failed(menu, "password needed");
 }
 
-/* The manager's launch data when the server refused this build as stale: it opens that server. */
+/* The Dash's launch data when the server refused this build as stale: it opens that server. */
 #define HANDOFF_MAGIC 0x484D3354u /* "T3MH" */
 #define HANDOFF_STALE 1u
-#define HANDOFF_ASKING 1u /* the box offers the manager */
+#define HANDOFF_ASKING 1u /* the box offers the Dash */
 #define HANDOFF_GOING 2u
 static u32 handoff;
 
 /* The box's answer; then, once servers.ini holds this console's key for the server, which the
- * manager asks with, the manager. */
+ * Dash asks with, the Dash. */
 static void handoff_frame(u8 *menu)
 {
     static u8 data[8 + JOIN_NAME + 1];
@@ -608,21 +608,21 @@ static void handoff_frame(u8 *menu)
     for (i = 0; join_server[i]; i++)
         data[8 + i] = (u8)join_server[i];
     data[8 + i] = 0;
-    log_text("net.handoff", manager_path);
+    log_text("net.handoff", dash_path);
     multi_closing();
-    tes3x_launch_data(manager_path, data, sizeof(data));
+    tes3x_launch_data(dash_path, data, sizeof(data));
 }
 
-/* A launch the manager's Join began: the server's refusal comes up as a box, then the manager or
+/* A launch the Dash's Join began: the server's refusal comes up as a box, then the Dash or
  * the main menu, instead of waiting out the arrival and landing on the prison ship. */
 static u32 refusal_asked, refusal_done;
 
 static const char *const refusal_why[8] = {
     "The server refused the connection.", "Your mods differ from the server's.",
-    "The server is full.", "Wrong password. Set it in the TES3X Manager.",
+    "The server is full.", "Wrong password. Set it in the TES3X Dash.",
     "You were kicked from the server.", "This console is banned from the server.",
-    "Build out of date. Update it in the TES3X Manager.",
-    "Update this game build in the TES3X Manager to connect."};
+    "Build out of date. Update it in the TES3X Dash.",
+    "Update this game build in the TES3X Dash to connect."};
 
 static const char *refusal_text(u32 reason)
 {
@@ -646,7 +646,7 @@ static void refusal_frame(void)
         refusal_asked = 0;
         refusal_done = 1;
         tes3x_log("net.refusal_answer", (u32)button);
-        if (button != 0 || !manager_path[0]) {
+        if (button != 0 || !dash_path[0]) {
             ((fn_quit)TES3X_NET_QUIT)();
             return;
         }
@@ -658,9 +658,9 @@ static void refusal_frame(void)
             for (i = 0; join_server[i]; i++)
                 data[8 + i] = (u8)join_server[i];
             data[8 + i] = 0;
-            tes3x_launch_data(manager_path, data, sizeof(data));
+            tes3x_launch_data(dash_path, data, sizeof(data));
         } else {
-            tes3x_launch_data(manager_path, 0, 0);
+            tes3x_launch_data(dash_path, 0, 0);
         }
         return;
     }
@@ -673,7 +673,7 @@ static void refusal_frame(void)
     ((fn_message_menu)TES3X_NET_MESSAGE_MENU)(
         state == SESSION_UNTRUSTED ? "The server's key has changed since this console first met it."
                                    : refusal_text(reason),
-        manager_path[0] ? "Open Manager" : "Main Menu", manager_path[0] ? "Main Menu" : (const char *)0,
+        dash_path[0] ? "Open Dash" : "Main Menu", dash_path[0] ? "Main Menu" : (const char *)0,
         (const char *)0);
     refusal_asked = 1;
 }
@@ -759,7 +759,7 @@ static void join_watch(u8 *menu)
     } else if (state == SESSION_REFUSED && reason == 3) {
         password_ask(menu);
     } else if (state == SESSION_REFUSED && (reason == REFUSED_STALE ||
-                 (reason == REFUSED_PROTOCOL && ses.refused_hash > T3MP_VERSION)) && manager_path[0]) {
+                 (reason == REFUSED_PROTOCOL && ses.refused_hash > T3MP_VERSION)) && dash_path[0]) {
         lobby = 0;
         handoff = HANDOFF_ASKING;
         log_text("net.join_failed", reason == REFUSED_PROTOCOL ?
@@ -767,7 +767,7 @@ static void join_watch(u8 *menu)
         *(int *)TES3X_NET_BUTTON = -1;
         ((fn_message_menu)TES3X_NET_MESSAGE_MENU)(
             reason == REFUSED_PROTOCOL ? refusal_text(reason) :
-                "Build out of date. Update it in the TES3X Manager?", "Open Manager", "Back",
+                "Build out of date. Update it in the TES3X Dash?", "Open Dash", "Back",
             (const char *)0);
     } else if (state == SESSION_REFUSED) {
         join_failed(menu, reason == REFUSED_PROTOCOL && ses.refused_hash < T3MP_VERSION ?
@@ -879,7 +879,7 @@ static void join_frame(void)
     fn_ui_id ui_id = (fn_ui_id)TES3X_NET_UI_ID;
     fn_set_prop set = (fn_set_prop)TES3X_NET_SET_PROP;
     u16 up = *(const u16 *)TES3X_NET_NAV_UP_ID, down = *(const u16 *)TES3X_NET_NAV_DOWN_ID;
-    u8 *menu, *exit, *options, *load, *column, *button, *manager;
+    u8 *menu, *exit, *options, *load, *column, *button, *dash;
     int chosen;
 
     if (player_reference())
@@ -905,16 +905,16 @@ static void join_frame(void)
             set(button, up, (int)load, UI_PROP_PTR);
             set(load, down, (int)button, UI_PROP_PTR);
         }
-        tes3x_ini_xbox("Manager", "", manager_path, sizeof(manager_path));
-        if (manager_path[0] &&
-            plausible(manager = menu_button(column, ui_id("TES3X_Manager"), "menu_manager",
-                                            *(const int *)(exit + UI_WIDTH), manager_click))) {
+        tes3x_ini_xbox("Dash", "", dash_path, sizeof(dash_path));
+        if (dash_path[0] &&
+            plausible(dash = menu_button(column, ui_id("TES3X_Dash"), "menu_manager",
+                                            *(const int *)(exit + UI_WIDTH), dash_click))) {
             menu_height += MENU_ROW;
-            column_before(column, manager, options);
-            set(button, down, (int)manager, UI_PROP_PTR);
-            set(manager, up, (int)button, UI_PROP_PTR);
-            set(manager, down, (int)options, UI_PROP_PTR);
-            set(options, up, (int)manager, UI_PROP_PTR);
+            column_before(column, dash, options);
+            set(button, down, (int)dash, UI_PROP_PTR);
+            set(dash, up, (int)button, UI_PROP_PTR);
+            set(dash, down, (int)options, UI_PROP_PTR);
+            set(options, up, (int)dash, UI_PROP_PTR);
         }
         ((fn_set_size)TES3X_NET_SET_HEIGHT)(menu, (int)menu_height);
         servers_build(column, *(const int *)(exit + UI_WIDTH));
@@ -937,10 +937,10 @@ static void join_frame(void)
         servers_show(menu, 1);
     } else if (chosen == SERVER_RETURN) {
         servers_show(menu, 0);
-    } else if (chosen == SERVER_MANAGER) {
-        log_text("net.manager", manager_path);
+    } else if (chosen == SERVER_DASH) {
+        log_text("net.dash", dash_path);
         multi_closing();
-        tes3x_launch(manager_path);
+        tes3x_launch(dash_path);
 #ifdef TES3X_CONSOLE
     } else if (chosen == SERVER_NEW) {
         typing = tes3x_console_text_begin_on(menu, "") ? TYPE_SERVER : 0;

@@ -1567,8 +1567,8 @@ class ProfileWindow(QMainWindow):
             arguments += ["--target", target["name"]]
         if self.profile_plain.get("rules", {}).get("clear_cache_partitions", False):
             arguments.append("--clear-cache")
-        if (self.build_output() / "console.ini").is_file():
-            arguments += ["--console-ini", str(self.build_output() / "console.ini")]
+        if (self.build_output() / "xbox.ini").is_file():
+            arguments += ["--xbox-ini", str(self.build_output() / "xbox.ini")]
         # The Dash re-pairs with the GUI only seconds after the first attempt ends.
         if self.deploy_agent or self.play_controller.dash_paired(target.get("name")):
             arguments.append("--agent")
@@ -1595,7 +1595,7 @@ class ProfileWindow(QMainWindow):
         answer = QMessageBox.question(
             self, "Install TES3X Dash",
             f"Install or update the Dash on {name}, in "
-            f"{target.get('games_root') or '<games_root>'}/TES3XManager?\n\n"
+            f"{target.get('games_root') or '<games_root>'}/TES3XDash?\n\n"
             + ("The files go through the Dash running on the Xbox; start the new version "
                "from the dashboard or the Dash's build list afterwards." if dash else
                "The files go over the dashboard's FTP server."))
@@ -1616,7 +1616,7 @@ class ProfileWindow(QMainWindow):
             return
         remote, version = record["remote"], record.get("version")
         arguments = [str(stage / "deploy"), "--remote", remote, "--verify", "size",
-                     "--console-ini", str(stage / "console.ini"),
+                     "--xbox-ini", str(stage / "xbox.ini"),
                      "--config", str(self.local_config_path()), "--target", name, *extra]
         if agent:
             arguments.append("--agent")

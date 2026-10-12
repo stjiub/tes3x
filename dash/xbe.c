@@ -184,7 +184,7 @@ static const char *reference(const char *want_retail, unsigned char **ref, size_
     size_t i;
 
     /* the reference whatever the build's layout: a full build's XBE is a delta too */
-    if (!console_get("OverlayBase", base, sizeof(base)))
+    if (!xboxini_get("OverlayBase", base, sizeof(base)))
         return "no retail base set";
     for (i = 0; i < sizeof(names) / sizeof(*names); i++) {
         join_path(path, sizeof(path), base, names[i]);

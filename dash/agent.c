@@ -1,5 +1,5 @@
 /* The Dash's side of the TES3X agent: the in-game agent's sealed protocol (tes3xagent.c), with
- * file operations and launch added. NetAgent and the network keys come from E:\TES3X\console.ini. */
+ * file operations and launch added. NetAgent and the network keys come from E:\TES3X\xbox.ini. */
 
 #include "mgr.h"
 
@@ -311,7 +311,7 @@ int net_up(void)
     size_t n;
 
     if (InterlockedCompareExchange(&net_state, 1, 0) == 0) {
-        if (!net_parsed && (read_file(CONSOLE_INI, &data, &n) || !parse_network((char *)data))) {
+        if (!net_parsed && (read_file(XBOX_INI, &data, &n) || !parse_network((char *)data))) {
             if (data)
                 mgr_log("network: bad NetAddress or NetGateway; using the dashboard's\n");
             parse_network("");
@@ -348,7 +348,7 @@ void agent_start(void)
     char spec[96];
     size_t n;
 
-    if (read_file(CONSOLE_INI, &data, &n))
+    if (read_file(XBOX_INI, &data, &n))
         return;
     if (!ini_get((char *)data, "NetAgent", spec, sizeof(spec))) {
         free(data);

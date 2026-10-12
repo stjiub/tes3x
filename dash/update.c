@@ -361,7 +361,7 @@ const char *update_fetch(const char *feed, progress_fn progress, char *version, 
         return "this Dash is not installed on a disk";
     if (feed && *feed)
         snprintf(base, sizeof(base), "%s", feed);
-    else if (!console_get("UpdateFeed", base, sizeof(base)))
+    else if (!xboxini_get("UpdateFeed", base, sizeof(base)))
         snprintf(base, sizeof(base), "%s", MGR_FEED);
     if (base[0] && base[strlen(base) - 1] != '/')
         strncat(base, "/", sizeof(base) - strlen(base) - 1);

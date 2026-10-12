@@ -436,7 +436,7 @@ static int ini_text(const char *key, char *out, u32 size)
     int in_xbox = 0, found = 0;
     void *h = 0;
 
-    if (tes3x_console_ini(key, out, size))
+    if (tes3x_xbox_ini(key, out, size))
         return 1;
     tes3x_dos_attributes(&oa, &name, path);
     if (orig_create(&h, GENERIC_READ | SYNCHRONIZE, &oa, &iosb, 0, FILE_ATTRIBUTE_NORMAL,

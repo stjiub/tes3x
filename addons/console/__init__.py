@@ -39,9 +39,9 @@ def play_steps(key, context):
               *selected]
     if context["plain"].get("rules", {}).get("clear_cache_partitions", False):
         deploy.append("--clear-cache")
-    console_ini = Path(context["deploy"]).parent / "console.ini"
-    if console_ini.is_file():
-        deploy += ["--console-ini", str(console_ini)]
+    xbox_ini = Path(context["deploy"]).parent / "xbox.ini"
+    if xbox_ini.is_file():
+        deploy += ["--xbox-ini", str(xbox_ini)]
     console = HERE / "console.py"
     return [(console, ["ping", *config, *selected], "Looking for the Xbox dashboard agent…"),
             ("deploy", deploy, f"Deploying to {remote}…"),

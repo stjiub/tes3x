@@ -9,11 +9,11 @@ a build in the profile, which the GUI's INI tab does for you:
 "Xbox:AutosaveSlots" = 5
 ```
 
-Each key is looked up in `E:\TES3X\console.ini` first, the [console's own
+Each key is looked up in `E:\TES3X\xbox.ini` first, the [console's own
 settings](deployment.md#console-settings), and in `Morrowind.ini` only when that file does not set
 it. `NetAgent`, `OverlayBase`, `NetAddress`, `NetGateway` and `NetDns` describe the console, not the
 build, so the pipeline writes them there at deploy instead of into `Morrowind.ini`. Installing the
-console manager writes `Manager` there.
+TES3X Dash writes `Dash` there.
 
 ## `console`
 
@@ -108,7 +108,7 @@ The offset affects only the first-person bow and arms while an arrow or bolt is 
 |---|---|---|
 | `NetServer` | the server, an address or a name, with `:PORT` if not `26500`, and `#FINGERPRINT` to pin its key | empty - answer ARP and UDP echo only |
 | `NetPassword` | the server's password, up to 64 printable ASCII characters | empty - for a server without one; a server asks for it only on a console's first join |
-| `Manager` | the console manager's XBE, `F:\Games\TES3XManager\default.xbe` (drives C, E, F, G) or a `\Device\...` path | empty - no Manager entry on the main menu; installing the manager sets it in `console.ini` |
+| `Dash` | the Dash's XBE, `F:\Games\TES3XDash\default.xbe` (drives C, E, F, G) or a `\Device\...` path | empty - no Dash entry on the main menu; installing the Dash sets it in `xbox.ini` |
 
 The keys are read on the first frame of each launch, including the relaunch on New Game and Load.
 A server name is looked up at each launch and again whenever the server stops answering.
@@ -128,6 +128,6 @@ refuses a listener whose key does not match it.
 |---|---|---|
 | `OverlayBase` | a game folder, `F:\Games\Morrowind Game of the Year` (drives C, E, F, G) or a `\Device\...` path | empty - the overlay stays off |
 
-Read on the first access to `D:\`, from `console.ini` and then the build's `Morrowind.ini`. With
+Read on the first access to `D:\`, from `xbox.ini` and then the build's `Morrowind.ini`. With
 `profile.install_layout = "overlay"`, the pipeline writes it from the local
 `deploy.retail_root`; xemu runs substitute the base carried on their disc image.

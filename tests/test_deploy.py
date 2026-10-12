@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from tes3x.agent import AgentError
 from tes3x.deploy import (CLUSTER, AgentTarget, deployed_manifest, ensure_dirs, ftp_basename,
-                          legacy_manifest, local_tree, merge_console_ini, on_disk, owner_conflicts, parse_drives,
+                          legacy_manifest, local_tree, merge_xbox_ini, on_disk, owner_conflicts, parse_drives,
                           pool_plan, read_manifest, remote_tree, remove_remote_folder, sync,
                           upload_file,
                           verify_uploads)
@@ -139,12 +139,12 @@ class DeployFtpTests(unittest.TestCase):
         self.assertEqual(ftp.files[ftp.current + "/canary.txt"], b"probe")
         self.assertEqual(name, "canary.txt")
 
-    def test_console_ini_keeps_the_consoles_other_keys(self):
+    def test_xbox_ini_keeps_the_consoles_other_keys(self):
         remote = "[Xbox]\r\nNetAgent=192.0.2.7#aa\r\nNetServer=x\r\n"
-        merged = merge_console_ini(remote, "[Xbox]\r\nNetAgent=192.0.2.8#bb\r\nNetDns=1.1.1.1\r\n")
+        merged = merge_xbox_ini(remote, "[Xbox]\r\nNetAgent=192.0.2.8#bb\r\nNetDns=1.1.1.1\r\n")
         self.assertEqual(merged, "[Xbox]\r\nNetAgent=192.0.2.8#bb\r\nNetServer=x\r\n"
                                  "NetDns=1.1.1.1\r\n")
-        self.assertEqual(merge_console_ini("", "[Xbox]\r\nNetAddress=dhcp\r\n"),
+        self.assertEqual(merge_xbox_ini("", "[Xbox]\r\nNetAddress=dhcp\r\n"),
                          "[Xbox]\r\nNetAddress=dhcp\r\n")
 
     def test_missing_remote_tree_is_empty(self):

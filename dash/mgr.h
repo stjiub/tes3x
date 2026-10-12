@@ -57,12 +57,12 @@ int mgr_hash_file(const char *path, unsigned long long size, char hex[65],
                   unsigned long long *done, unsigned long long total, const char *name,
                   progress_fn progress);
 
-/* console.c: [Xbox] keys of E:\TES3X\console.ini. Getters return the value's length, 0 when
- * absent; console_set keeps the file's other keys. */
-#define CONSOLE_INI "E:\\TES3X\\console.ini"
+/* xboxini.c: [Xbox] keys of E:\TES3X\xbox.ini. Getters return the value's length, 0 when
+ * absent; xboxini_set keeps the file's other keys. */
+#define XBOX_INI "E:\\TES3X\\xbox.ini"
 int ini_get(const char *text, const char *key, char *out, size_t n);
-int console_get(const char *key, char *out, size_t n);
-int console_set(const char *key, const char *value);
+int xboxini_get(const char *key, char *out, size_t n);
+int xboxini_set(const char *key, const char *value);
 
 /* Retail bases (builds.c): folders holding a clean retail copy, the overlay's OverlayBase and the
  * reference for XBE deltas. */
@@ -85,7 +85,7 @@ struct folder {
 /* The subfolders of `path` sorted by name, or the drives when it is empty. */
 int list_folders(const char *path, struct folder *out, int max);
 
-/* The agent (agent.c), on when E:\TES3X\console.ini sets NetAgent. */
+/* The agent (agent.c), on when E:\TES3X\xbox.ini sets NetAgent. */
 void agent_start(void);
 void agent_poll(void);
 void agent_goodbye(void);
@@ -114,7 +114,7 @@ const char *update_slot(void);
 const char *update_confirm(void);
 const char *update_apply(char *version, size_t version_n, char *launcher, size_t launcher_n);
 /* Fetches the feed's release into E:\TES3X\update when it is newer (*newer set), else says why
- * not. The feed is `feed`, else console.ini's UpdateFeed, else MGR_FEED. */
+ * not. The feed is `feed`, else xbox.ini's UpdateFeed, else MGR_FEED. */
 const char *update_fetch(const char *feed, progress_fn progress, char *version, size_t version_n,
                          int *newer);
 
@@ -123,7 +123,7 @@ const char *update_fetch(const char *feed, progress_fn progress, char *version, 
 #define MGR_FEED "https://github.com/stjiub/tes3x/releases/latest/download/"
 #endif
 
-/* agent.c: starts the network once, from console.ini's network keys; 0 when it is up. */
+/* agent.c: starts the network once, from xbox.ini's network keys; 0 when it is up. */
 int net_up(void);
 /* Stops the NIC before another title starts; net_up fails after it. */
 void net_down(void);
