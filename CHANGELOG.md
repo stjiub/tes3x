@@ -4,6 +4,8 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- Building an overlay-layout profile for an xemu target no longer needs `retail_root`; Play uses
+  the retail base staged on its disc.
 - The GUI toolbar's main button is Deploy for an Xbox target and Play for an xemu target. Its
   menu holds Play on Xbox (with the dashboard agent add-on) and Launch Dash; the Build button's
   menu holds Check and Build.
