@@ -408,7 +408,8 @@ void mgr_launch_xbe(const char *xbe)
     say("Cannot launch", err, NULL);
 }
 
-/* Each server's build: the one installed from it, among those the last scan found. */
+/* Each server's build: the one installed from it, among those the last scan found. One on D:,
+ * the disc, loses to any other, since only the other can be updated. */
 static void link_builds(void)
 {
     int i, k;
@@ -416,7 +417,8 @@ static void link_builds(void)
     for (i = 0; i < v.server_list.count; i++) {
         server_builds[i] = NULL;
         for (k = 0; k < v.build_list.count; k++)
-            if (!strcmp(builds[k].server, servers[i].name))
+            if (!strcmp(builds[k].server, servers[i].name)
+                && (!server_builds[i] || (server_builds[i][0] & ~0x20) == 'D'))
                 server_builds[i] = builds[k].path;
     }
 }
