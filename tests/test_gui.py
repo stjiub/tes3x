@@ -1374,9 +1374,12 @@ order = 10
         self.assertNotIn("--timescale", args)
         self.assertEqual(parse_clients(
             "client 1: playing, key abc, mac 02:00:00:00:00:01, address 192.0.2.9\n"
-            "client 2: away, key -, mac 02:00:00:00:00:02, address -"),
-            [("1", "playing", "abc", "02:00:00:00:00:01", "192.0.2.9"),
-             ("2", "away", "-", "02:00:00:00:00:02", "-")])
+            "client 2: away, key -, mac 02:00:00:00:00:02, address -\n"
+            "client 3: playing, key def, mac 02:00:00:00:00:03, address 192.0.2.7, "
+            "name Dagoth Ur, the Last"),
+            [("1", "-", "playing", "abc", "02:00:00:00:00:01", "192.0.2.9"),
+             ("2", "-", "away", "-", "02:00:00:00:00:02", "-"),
+             ("3", "Dagoth Ur, the Last", "playing", "def", "02:00:00:00:00:03", "192.0.2.7")])
         self.assertEqual(parse_clients("no clients"), [])
 
         config = self.root / "local.toml"
@@ -1470,7 +1473,7 @@ order = 10
 
         page.toggle_remote()
         until(lambda: page.players.topLevelItemCount() == 1)
-        self.assertEqual(page.players.topLevelItem(0).text(4), "192.0.2.9")
+        self.assertEqual(page.players.topLevelItem(0).text(5), "192.0.2.9")
         self.assertEqual(page.status.text(), "Connected")
         self.assertTrue(page.kick_button.isEnabled())
         self.assertFalse(page.mode.isEnabled())

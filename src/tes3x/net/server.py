@@ -1454,6 +1454,11 @@ class Server:
                 other.rel.queue(EVENT_TEXT, 0, data)
                 self.flush(other, now)
 
+    def listed_name(self, client):
+        """The player's name for `admin list`, or empty before the server knows it."""
+        parts = self.identities.get(client.id)
+        return self.player_name(client) if (parts and parts[0]) or client.character else ""
+
     def player_name(self, client):
         parts = self.identities.get(client.id)
         if parts and parts[0]:
@@ -2671,6 +2676,7 @@ class Server:
                 f"client {c.id}: {'playing' if c.alive else 'away'}, key "
                 f"{fingerprint(c.key) if c.key else '-'}, mac {c.mac}, address "
                 f"{c.addr[0] if c.addr else '-'}"
+                + (f", name {self.listed_name(c)}" if self.listed_name(c) else "")
                 for c in sorted(self.clients.values(), key=lambda c: c.id)) or "no clients"
         if verb == "kick" and len(rest) == 1 and rest[0] in by_id:
             self.kick(by_id[rest[0]], REFUSED_KICKED)

@@ -1338,17 +1338,19 @@ def server_arguments(values):
 
 
 def parse_clients(reply):
-    """Rows of `admin list`: (id, state, key, mac, address)."""
+    """Rows of `admin list`: (id, player, state, key, mac, address)."""
     rows = []
     for line in reply.splitlines():
         head, _, rest = line.partition(": ")
         if not head.startswith("client ") or not rest:
             continue
+        # the name comes last and may hold commas
+        rest, _, name = rest.partition(", name ")
         fields = [part.strip() for part in rest.split(",")]
         state = fields[0]
         values = dict(part.split(" ", 1) for part in fields[1:] if " " in part)
-        rows.append((head[7:], state, values.get("key", "-"), values.get("mac", "-"),
-                     values.get("address", "-")))
+        rows.append((head[7:], name.strip() or "-", state, values.get("key", "-"),
+                     values.get("mac", "-"), values.get("address", "-")))
     return rows
 
 
@@ -1459,7 +1461,7 @@ class ServerPage(QWidget):
         players_layout.setContentsMargins(0, 0, 0, 0)
         players_layout.addWidget(heading("Players", 1))
         self.players = QTreeWidget()
-        self.players.setHeaderLabels(["Client", "State", "Key", "MAC", "Address"])
+        self.players.setHeaderLabels(["Client", "Player", "State", "Key", "MAC", "Address"])
         self.players.setRootIsDecorated(False)
         self.players.header().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         players_layout.addWidget(self.players, 1)

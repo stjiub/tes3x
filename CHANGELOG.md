@@ -4,6 +4,8 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- The server page's player list has a Player column with each client's character name, and
+  the server's `list` admin command prints it as `name NAME` after the address.
 - The Dash no longer hashes a retail base again once the server's file list has verified it;
   it only checks that each file is there at its size. A different folder or list is still
   hashed. Delete the base's `tes3xbuild.json` to force a full check. Install the Dash again.
