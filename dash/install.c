@@ -291,8 +291,9 @@ static const char *choose_folder(const struct server *s, const struct json *j, c
     char name[64], games[16];
     int count = scan_builds(builds, MAX_BUILDS), i;
 
+    /* D: is the disc, which an update cannot write to */
     for (i = 0; i < count; i++)
-        if (!strcmp(builds[i].server, s->name)) {
+        if (!strcmp(builds[i].server, s->name) && (builds[i].path[0] & ~0x20) != 'D') {
             snprintf(out, n, "%s", builds[i].path);
             return NULL;
         }
