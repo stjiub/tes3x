@@ -1192,7 +1192,7 @@ order = 10
         self.assertEqual(window.target_runtime["bench"]["game"], "stalled")
         self.assertIn("heartbeat stopped", window.target_picker.toolTip())
 
-    def test_deploy_goes_through_a_paired_manager(self):
+    def test_deploy_goes_through_a_paired_dash(self):
         config = self.root / "local.toml"
         config.write_text('default_target = "bench"\n[targets.bench]\nkind = "xbox"\n'
                           'host = "192.0.2.5"\ngames_root = "F:/Games"\n', encoding="utf-8")
@@ -1204,8 +1204,8 @@ order = 10
             {**base, "kind": "heartbeat", "payload": bytes(16)}
         )
         self.assertEqual(target_runtime_label(
-            {"kind": "xbox"}, window.target_runtime["bench"]), "Manager")
-        self.assertIn("manager_agent", window.target_features("bench"))
+            {"kind": "xbox"}, window.target_runtime["bench"]), "Dash")
+        self.assertIn("dash_agent", window.target_features("bench"))
         self.assertNotIn("commands", window.target_features("bench"))
 
         listener = window.play_controller.in_game_listener = MagicMock()
@@ -1218,11 +1218,11 @@ order = 10
             self.assertIn("--deploy-agent", start.call_args.args[1])
             listener.close.assert_called_once()
             self.assertIsNone(window.play_controller.in_game_listener)
-            self.assertNotIn("manager_agent", window.target_features("bench"))
+            self.assertNotIn("dash_agent", window.target_features("bench"))
             window.command_finished(1, None)
             restart.assert_called_once()
 
-            # A retry after the manager dropped from the GUI still goes through it.
+            # A retry after the Dash dropped from the GUI still goes through it.
             window.process = None
             window.deploy_built("--ignore-space")
             self.assertIn("--agent", start.call_args.args[1])

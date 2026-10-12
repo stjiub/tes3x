@@ -304,8 +304,8 @@ class ProfileWindow(QMainWindow):
         self.action_smoke.triggered.connect(self.run_smoke_test)
         self.action_deploy = QAction("&Deploy to Xbox…", self)
         self.action_deploy.triggered.connect(self.deploy_profile)
-        self.action_manager = QAction("Install console &manager…", self)
-        self.action_manager.triggered.connect(self.install_manager)
+        self.action_dash = QAction("Install TES3X &Dash…", self)
+        self.action_dash.triggered.connect(self.install_dash)
         self.action_fetch = QAction("Pull Xbox &logs", self)
         self.action_fetch.triggered.connect(self.pull_logs)
         self.action_refresh_ftp = QAction("Refresh Xbox connection", self)
@@ -326,7 +326,7 @@ class ProfileWindow(QMainWindow):
         actions_menu.addActions([self.action_deploy, self.action_play, self.action_stop,
                                  self.action_reset_play])
         actions_menu.addSeparator()
-        actions_menu.addActions([self.action_manager, self.action_fetch,
+        actions_menu.addActions([self.action_dash, self.action_fetch,
                                  self.action_refresh_ftp])
         actions_menu.addSeparator()
         actions_menu.addAction(self.discard_after_deploy)
@@ -362,7 +362,7 @@ class ProfileWindow(QMainWindow):
             action.changed.connect(self.sync_run_button)
         self.command_actions = (self.action_check, self.action_build, self.action_deploy,
                                 self.action_play, self.action_smoke, self.action_fetch,
-                                self.action_manager)
+                                self.action_dash)
         self.after_command = None
         self.conflict_retry = None
         self.space_retry = None
@@ -699,7 +699,7 @@ class ProfileWindow(QMainWindow):
     def target_colour(self, name, target=None):
         target = target or tes3x_targets.targets(self.local_values()).get(name, {})
         label = target_runtime_label(target, self.target_runtime_state(name, target))
-        if label in {"In game", "Manager", "Dashboard", "Dashboard reachable",
+        if label in {"In game", "Dash", "Dashboard", "Dashboard reachable",
                      "xemu running"}:
             return "#2e7d32"
         if label in {"Checking", "Checking agent", "Starting", "Stopping",
@@ -1454,10 +1454,10 @@ class ProfileWindow(QMainWindow):
         gdb.setEnabled(xemu)
         gdb.setToolTip("Open xemu's GDB stub; the status bar shows the port to attach to")
         self.play_menu.addAction(self.action_smoke)
-        launch = self.play_menu.addAction("Launch manager", self.play_controller.launch_manager)
+        launch = self.play_menu.addAction("Launch Dash", self.play_controller.launch_dash)
         launch.setEnabled(self.process is None and self.play_controller.play_process is None and (
             xemu or (xbox and "xbox" in self.play_addons)))
-        launch.setToolTip("Start the TES3X manager: on the Xbox through the dashboard agent, "
+        launch.setToolTip("Start the Dash: on the Xbox through the dashboard agent, "
                           "or as an xemu session that keeps its own disk")
         name = target["name"] if target else "a target"
         if self.play_controller.play_process is not None:
@@ -1527,14 +1527,14 @@ class ProfileWindow(QMainWindow):
         retail = target.get("retail_root")
         overlay_note = (f"\n\nThe shared retail base at {retail or '<not configured>'} will be "
                         "installed or synchronized first." if overlay else "")
-        manager = self.play_controller.manager_paired(target.get("name"))
-        manager_note = ("\n\nThe files go through the TES3X manager running on the Xbox."
-                        if manager else "")
+        dash = self.play_controller.dash_paired(target.get("name"))
+        dash_note = ("\n\nThe files go through the Dash running on the Xbox."
+                     if dash else "")
         answer = QMessageBox.question(
             self, "Deploy profile",
             "Build this profile and synchronize it to the configured Xbox destination?\n\n"
             "Files absent from the build are removed from that destination. Uploaded files are "
-            "verified by size before the command succeeds." + overlay_note + manager_note)
+            "verified by size before the command succeeds." + overlay_note + dash_note)
         if answer != QMessageBox.StandardButton.Yes:
             return
         arguments = ["--deploy", "--verify-deploy", "size"]
@@ -1542,12 +1542,12 @@ class ProfileWindow(QMainWindow):
             arguments.append("--install-retail-base")
         if self.discard_after_deploy.isChecked():
             arguments.append("--discard-build")
-        self.deploy_agent = manager
-        if manager:
+        self.deploy_agent = dash
+        if dash:
             arguments.append("--deploy-agent")
         self.run_pipeline(arguments)
         if self.process is not None:
-            if manager:
+            if dash:
                 self.play_controller.lend_listener()
             self.conflict_retry = (self.deploy_built, self.DEPLOY_QUESTION)
             self.space_retry = lambda: self.deploy_built("--ignore-space")
@@ -1569,8 +1569,8 @@ class ProfileWindow(QMainWindow):
             arguments.append("--clear-cache")
         if (self.build_output() / "console.ini").is_file():
             arguments += ["--console-ini", str(self.build_output() / "console.ini")]
-        # The manager re-pairs with the GUI only seconds after the first attempt ends.
-        if self.deploy_agent or self.play_controller.manager_paired(target.get("name")):
+        # The Dash re-pairs with the GUI only seconds after the first attempt ends.
+        if self.deploy_agent or self.play_controller.dash_paired(target.get("name")):
             arguments.append("--agent")
             self.play_controller.lend_listener()
         self.run_steps([("deploy", arguments,
@@ -1578,41 +1578,41 @@ class ProfileWindow(QMainWindow):
         if self.discard_after_deploy.isChecked():
             self.after_command = lambda: shutil.rmtree(self.build_output(), ignore_errors=True)
 
-    MANAGER_QUESTION = ("Install over existing files?", "The manager's folder holds:",
-                        "Files there that the manager does not have are deleted. "
+    DASH_QUESTION = ("Install over existing files?", "The Dash's folder holds:",
+                        "Files there that the Dash does not have are deleted. "
                         "Install anyway?")
 
-    def install_manager(self):
+    def install_dash(self):
         if self.process is not None:
             self.error("A TES3X command is already running")
             return
         target = self.default_target("xbox")
         if not target:
-            self.error("Configure an Xbox target before installing the manager")
+            self.error("Configure an Xbox target before installing the Dash")
             return
         name = target["name"]
-        manager = self.play_controller.manager_paired(name)
+        dash = self.play_controller.dash_paired(name)
         answer = QMessageBox.question(
-            self, "Install console manager",
-            f"Install or update the TES3X console manager on {name}, in "
+            self, "Install TES3X Dash",
+            f"Install or update the Dash on {name}, in "
             f"{target.get('games_root') or '<games_root>'}/TES3XManager?\n\n"
-            + ("The files go through the manager running on the Xbox; start the new version "
-               "from the dashboard or the manager's build list afterwards." if manager else
+            + ("The files go through the Dash running on the Xbox; start the new version "
+               "from the dashboard or the Dash's build list afterwards." if dash else
                "The files go over the dashboard's FTP server."))
         if answer != QMessageBox.StandardButton.Yes:
             return
         out = self.work_dir() / "build" / "manager" / "install"
         config = ["--config", str(self.local_config_path()), "--target", name]
-        self.run_steps([("manager", ["stage", str(out), *config],
-                         "Preparing the console manager…")],
-                       then=lambda: self.deploy_manager(out, name, manager))
+        self.run_steps([("dash", ["stage", str(out), *config],
+                         "Preparing the Dash…")],
+                       then=lambda: self.deploy_dash(out, name, dash))
 
-    def deploy_manager(self, out, name, agent, *extra):
+    def deploy_dash(self, out, name, agent, *extra):
         stage = Path(out)
         try:
             record = json.loads((stage / PIPELINE_MARKER).read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
-            self.error(f"The manager was not staged: {exc}")
+            self.error(f"The Dash was not staged: {exc}")
             return
         remote, version = record["remote"], record.get("version")
         arguments = [str(stage / "deploy"), "--remote", remote, "--verify", "size",
@@ -1622,14 +1622,14 @@ class ProfileWindow(QMainWindow):
             arguments.append("--agent")
             self.play_controller.lend_listener()
         self.run_steps([("deploy", arguments,
-                         f"Installing manager {version} to {remote}…")], first=False)
-        self.command_kind = "manager"
+                         f"Installing Dash {version} to {remote}…")], first=False)
+        self.command_kind = "dash"
         if "--replace" not in extra:
-            self.conflict_retry = (lambda: self.deploy_manager(out, name, agent, *extra,
+            self.conflict_retry = (lambda: self.deploy_dash(out, name, agent, *extra,
                                                                "--replace"),
-                                   self.MANAGER_QUESTION)
+                                   self.DASH_QUESTION)
         if "--ignore-space" not in extra:
-            self.space_retry = lambda: self.deploy_manager(out, name, agent, *extra,
+            self.space_retry = lambda: self.deploy_dash(out, name, agent, *extra,
                                                            "--ignore-space")
 
     def pull_logs(self):

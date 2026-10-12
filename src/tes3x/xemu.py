@@ -494,7 +494,7 @@ def main():
     ap.add_argument("--add", action="append", default=[], metavar="DISC=FILE",
                     type=lambda v: tuple(v.split("=", 1)) if "=" in v else ap.error(
                         f"--add takes DISC=FILE, not {v}"),
-                    help="put FILE on the disc at DISC, e.g. Manager/default.xbe (repeatable)")
+                    help="put FILE on the disc at DISC, e.g. Dash/default.xbe (repeatable)")
     ap.add_argument("--put", action="append", default=[], metavar="DEST=SOURCE",
                     type=lambda v: tuple(v.split("=", 1)) if "=" in v else ap.error(
                         f"--put takes DEST=SOURCE, not {v}"),
@@ -832,7 +832,7 @@ def main():
     else:
         print("  no hook log on the disk")
     for name, label in (("tes3xprof.bin", "profiler dump"), ("tes3xheap.bin", "heap census"),
-                        ("tes3xmem.bin", "memory census"), ("tes3xmgr.txt", "manager log")):
+                        ("tes3xmem.bin", "memory census"), ("tes3xmgr.txt", "Dash log")):
         data = read_file(str(hdd), name)
         if data:
             (out / name).write_bytes(data)

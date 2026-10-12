@@ -3,7 +3,7 @@
 from .common import (AgentListener, Fetch, MEMORY_LOG_SECONDS, OP_REBOOT, PIPELINE_MARKER, Path,
                      PlaySession, QMessageBox, QProcess, QProcessEnvironment, QTextCursor,
                      addon_registry, console_request, dashboard_agent_state, datetime,
-                     fetch_destination, ftp_error, heartbeat_text, is_manager, key_fingerprint,
+                     fetch_destination, ftp_error, heartbeat_text, is_dash, key_fingerprint,
                      launch, load_or_create_key, os, parse_drives, re, resolve_xemu, running_xemu,
                      shutil, signal, struct, sys, tes3x_targets, time, tomllib)
 from PySide6.QtCore import QObject
@@ -30,14 +30,14 @@ class PlayController(QObject):
         self.agent_fingerprint = key_fingerprint(secret)
 
     def lend_listener(self):
-        """Close the agent listener so a deploy through the manager can bind its port. The
-        manager pairs with the deploy, and with the GUI again once the deploy ends."""
+        """Close the agent listener so a deploy through the Dash can bind its port. The
+        Dash pairs with the deploy, and with the GUI again once the deploy ends."""
         if self.in_game_listener is not None:
             self.in_game_listener.close()
             self.in_game_listener = None
         for name, state in self.window.target_runtime.items():
             if state.get("game_kind") == "manager" and state.pop("game", None):
-                state["game_detail"] = "Manager's agent lent to the deploy"
+                state["game_detail"] = "Dash's agent lent to the deploy"
                 self.window.refresh_target_item(name)
         self.listener_lent = True
 
@@ -46,8 +46,8 @@ class PlayController(QObject):
             self.listener_lent = False
             self.start_in_game_listener()
 
-    def manager_paired(self, name):
-        return bool(name) and "manager_agent" in self.window.target_features(name)
+    def dash_paired(self, name):
+        return bool(name) and "dash_agent" in self.window.target_features(name)
 
     def in_game_target(self, address, key=None):
         """Map an agent's source address to a configured target."""
@@ -102,9 +102,9 @@ class PlayController(QObject):
         values = {"game": "connected", "game_key": event.get("client_key"),
                   "game_address": event["address"]}
         if kind == "connected":
-            manager = is_manager(event.get("payload", b""))
-            values["game_kind"] = "manager" if manager else "game"
-            values["game_detail"] = (f"{'Manager' if manager else 'In-game'} agent from "
+            dash = is_dash(event.get("payload", b""))
+            values["game_kind"] = "manager" if dash else "game"
+            values["game_detail"] = (f"{'Dash' if dash else 'In-game'} agent from "
                                      f"{event['address'][0]}:{event['address'][1]}")
         payload = event.get("payload", b"")
         if kind == "heartbeat" and len(payload) >= 16:
@@ -199,9 +199,9 @@ class PlayController(QObject):
             self.window.statusBar().showMessage(
                 f"Fetching {job['path']}: {fetch.received:,}{size} bytes…")
 
-    def launch_manager_xemu(self, target):
-        """Boot xemu into the manager. The target's disk is seeded once with a retail base and a
-        console.ini, so the manager can install a server's build and join it, as on a console."""
+    def launch_dash_xemu(self, target):
+        """Boot xemu into the Dash. The target's disk is seeded once with a retail base and a
+        console.ini, so the Dash can install a server's build and join it, as on a console."""
         reason = self.play_available()
         if reason:
             self.window.error(reason)
@@ -209,7 +209,7 @@ class PlayController(QObject):
         out = self.window.work_dir() / "build" / "manager" / "xemu"
         config = str(self.window.local_config_path())
         stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        name = f"manager-{target['name']}-{stamp}"
+        name = f"dash-{target['name']}-{stamp}"
 
         def start():
             port = self.window.local_values().get("server", {}).get("port", 26500)
@@ -227,7 +227,7 @@ class PlayController(QObject):
 
                 staged = out / "disc" / "Games" / folder
                 shutil.copytree(built, staged, copy_function=link)
-                # the manager offers Join for the build installed from a server
+                # the Dash offers Join for the build installed from a server
                 manifest = staged / "tes3xbuild.json"
                 raw = manifest.read_bytes()
                 head = (f'{{\n "server": "10.0.2.2:{port}",\n "deployed": "'
@@ -247,16 +247,16 @@ class PlayController(QObject):
                  "--seed", f"Games/Base/Morrowind.ini={out / 'seed' / 'Games' / 'Base' / 'Morrowind.ini'}",
                  "--seed", f"TES3X/console.ini={out / 'seed' / 'console.ini'}",
                  "--seed", f"UDATA/42530005/TES3X/servers.ini={servers}"],
-                f"Manager in {target['name']}…", environment)
+                f"Dash in {target['name']}…", environment)
 
-        self.window.run_steps([("manager",
+        self.window.run_steps([("dash",
                          ["xemu", str(out), "--config", config],
-                         "Staging the manager for xemu…")], then=start)
+                         "Staging the Dash for xemu…")], then=start)
 
-    def launch_manager(self):
+    def launch_dash(self):
         selected = self.window.default_target()
         if selected and selected.get("kind") == "xemu":
-            self.launch_manager_xemu(selected)
+            self.launch_dash_xemu(selected)
             return
         target = self.window.default_target("xbox")
         module = self.window.play_addons.get("xbox")
@@ -264,10 +264,10 @@ class PlayController(QObject):
             self.window.error("Select an Xbox target with the dashboard agent add-on enabled")
             return
         config = ["--config", str(self.window.local_config_path()), "--target", target["name"]]
-        import tes3x.manager as tes3x_manager
+        import tes3x.dash as tes3x_dash
         try:
-            remote = tes3x_manager.remote_folder(target)
-        except tes3x_manager.ManagerError as exc:
+            remote = tes3x_dash.remote_folder(target)
+        except tes3x_dash.DashError as exc:
             self.window.error(exc)
             return
         console = Path(module.HERE) / "console.py"
@@ -277,7 +277,7 @@ class PlayController(QObject):
                 (
                     console,
                     ["run", remote + "/default.xbe", *config],
-                    "Starting the manager on the Xbox…",
+                    "Starting the Dash on the Xbox…",
                 ),
             ]
         )
@@ -420,8 +420,8 @@ class PlayController(QObject):
             self.window.run_steps(steps)
             return
         if target.get("kind") == "xemu" and "multiplayer" in self.window.patches.applied_patches:
-            # a multiplayer build comes from the server through the manager, on the shared disk
-            self.launch_manager_xemu(target)
+            # a multiplayer build comes from the server through the Dash, on the shared disk
+            self.launch_dash_xemu(target)
             return
         ours = {str(s.pid) for s in self.plays.values() if s.pid}
         running = [pid for pid in running_xemu() if pid not in ours]

@@ -20,7 +20,7 @@ options. This page says what each one is for and where it is explained.
 | `tes3x font` | bake the console manager's fonts into C, from pinned OFL fonts | [development](development.md#generated-files) |
 | `tes3x patch` | apply patches to an XBE directly; `--list` shows them | [patches](patches.md) |
 | `tes3x deploy` | upload a game folder to the Xbox, over FTP or through the console manager | [deployment](deployment.md) |
-| `tes3x manager` | install the console manager on the Xbox, or send it a signed update | [deployment](deployment.md#installing-the-console-manager) |
+| `tes3x dash` | install TES3X Dash on the Xbox, or send it a signed update | [deployment](deployment.md#installing-the-console-manager) |
 | `tes3x manifest` | check a game folder against its build manifest | [deployment](deployment.md#build-manifest) |
 | `tes3x fetch` | copy files or folders off the Xbox | [deployment](deployment.md#getting-files-back) |
 | `tes3x saves` | list and move saves between the Xbox, an xemu disk and a PC save library | [GUI](gui.md) |

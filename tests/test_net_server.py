@@ -122,16 +122,16 @@ class ServerTests(unittest.TestCase):
         compatible.send(net.HEARTBEAT, b'')
         self.assertIsNotNone(compatible.receive(1, net.HEARTBEAT))
 
-    def test_manager_protocol_is_independent_and_mismatch_is_explained(self):
+    def test_dash_protocol_is_independent_and_mismatch_is_explained(self):
         self.start()
         net = tes3x_net
         compatible = self.client(1)
-        self.assertIsNotNone(compatible.join(manager=True))
+        self.assertIsNotNone(compatible.join(dash=True))
         self.assertEqual(compatible.version, net.MANAGER_VERSION)
         for version in (net.MANAGER_VERSION + 1, net.T3MP_VERSION):
             with self.subTest(version=version):
                 client = self.client(version, version)
-                self.assertIsNone(client.join(timeout=0.5, manager=True))
+                self.assertIsNone(client.join(timeout=0.5, dash=True))
                 self.assertEqual(net.REFUSE_BODY.unpack(client.refused),
                                  (net.MANAGER_VERSION, version, net.REFUSED_PROTOCOL))
 
@@ -320,10 +320,10 @@ class ServerTests(unittest.TestCase):
             xbe=[{'path': 'morrowind.xbe', 'delta': {'sha256': digest, 'size': len(delta)}}]))
         return game, digest
 
-    def test_a_manager_is_handed_the_build_and_not_joined(self):
+    def test_a_dash_is_handed_the_build_and_not_joined(self):
         game, digest = self.staged_build()
         self.start('--build', str(game), '--http-port', '0', '--max-players', '1')
-        body = self.client(1).join(manager=True)
+        body = self.client(1).join(dash=True)
         sha, size, port, ticket = tes3x_netbuild.BUILD_BODY.unpack_from(body)
         manifest = tes3x_netbuild.fetch('127.0.0.1', port, ticket, 'manifest')
         self.assertEqual(hashlib.sha256(manifest).digest(), sha)
@@ -336,9 +336,9 @@ class ServerTests(unittest.TestCase):
         self.assertIsNone(tes3x_netbuild.fetch('127.0.0.1', port, ticket,
                                                'file/Data Files/Morrowind.esm'))
         self.assertIsNone(tes3x_netbuild.fetch('127.0.0.1', port, bytes(16), 'manifest'))
-        self.client(2).join()  # the manager took no player's place
+        self.client(2).join()  # the Dash took no player's place
 
-    def test_a_manager_without_the_password_gets_no_build(self):
+    def test_a_dash_without_the_password_gets_no_build(self):
         game, _ = self.staged_build()
         world = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, world)
@@ -346,10 +346,10 @@ class ServerTests(unittest.TestCase):
         self.start('--build', str(game), '--http-port', '0', '--world', str(world),
                    '--password-file', str(world / 'password.txt'))
         refused = self.client(1)
-        self.assertIsNone(refused.join(timeout=1.0, manager=True))
+        self.assertIsNone(refused.join(timeout=1.0, dash=True))
         self.assertEqual(tes3x_net.REFUSE_BODY.unpack(refused.refused)[2],
                          tes3x_net.REFUSED_PASSWORD)
-        self.assertIsNotNone(self.client(2).join(manager=True, password=b'open sesame'))
+        self.assertIsNotNone(self.client(2).join(dash=True, password=b'open sesame'))
 
     def test_a_console_with_another_build_is_refused_as_stale(self):
         game, _ = self.staged_build()
@@ -364,7 +364,7 @@ class ServerTests(unittest.TestCase):
         self.client(2).join(build_id=build)
         self.client(3).join()  # a console without a manifest is judged by its load order
 
-    def test_a_manager_is_told_its_key_character(self):
+    def test_a_dash_is_told_its_key_character(self):
         world = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, world)
         self.start('--world', str(world), '--adopt')
@@ -372,25 +372,25 @@ class ServerTests(unittest.TestCase):
         console.join()
         self.game(console, 1, 7, b'')
         self.upload(console, 2, 1, b'mp-hero.ess', self.save(b'Nerevar', 0))
-        manager = self.client(1)
-        manager.session ^= 2
-        body = manager.join(manager=True)
+        dash = self.client(1)
+        dash.session ^= 2
+        body = dash.join(dash=True)
         size = tes3x_netbuild.BUILD_BODY.size
         self.assertTrue(body[size:].startswith(b'Nerevar\0INFO'))
         self.assertEqual(tes3x_netbuild.BUILD_BODY.unpack(body[:size])[1], 0)
 
     def test_a_server_without_a_build_says_so(self):
         self.start()
-        self.assertEqual(tes3x_netbuild.BUILD_BODY.unpack_from(self.client(1).join(manager=True))[1], 0)
+        self.assertEqual(tes3x_netbuild.BUILD_BODY.unpack_from(self.client(1).join(dash=True))[1], 0)
 
-    def test_manager_server_details_exclude_lobby_and_manager_from_players(self):
+    def test_dash_server_details_exclude_lobby_and_dash_from_players(self):
         self.start('--name', 'Balmora', '--description', 'Shared quests', '--max-players', '4')
         self.client(1).join()
         self.client(2).join(lobby=True)
-        body = self.client(3).join(manager=True)
+        body = self.client(3).join(dash=True)
         info = body[tes3x_netbuild.BUILD_BODY.size + 1:]
-        self.assertEqual(tes3x_netbuild.MANAGER_INFO.unpack_from(info), (b'INFO', 1, 4))
-        self.assertEqual(info[tes3x_netbuild.MANAGER_INFO.size:], b'Balmora\0Shared quests\0')
+        self.assertEqual(tes3x_netbuild.DASH_INFO.unpack_from(info), (b'INFO', 1, 4))
+        self.assertEqual(info[tes3x_netbuild.DASH_INFO.size:], b'Balmora\0Shared quests\0')
 
     def test_console_sends_a_file_through_loss(self):
         world = Path(tempfile.mkdtemp())

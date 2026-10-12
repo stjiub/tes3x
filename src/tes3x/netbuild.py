@@ -1,6 +1,6 @@
-"""A server's build, handed to the console manager: the session tells an authenticated manager
+"""A server's build, handed to the Dash: the session tells an authenticated Dash
 the manifest's SHA-256 and a ticket, and this serves the manifest, the files and the XBE deltas
-over plain HTTP. Nothing here needs to be secret or authentic on the wire: the manager trusts a
+over plain HTTP. Nothing here needs to be secret or authentic on the wire: the Dash trusts a
 file only by the hash in a manifest whose own hash came through the session."""
 
 import hashlib
@@ -17,13 +17,13 @@ import tes3x.manifest as tes3x_manifest
 
 # BUILD: the manifest's SHA-256, its size (0: no build served), the HTTP port, a ticket
 BUILD_BODY = struct.Struct("<32sIH2x16s")
-MANAGER_INFO = struct.Struct('<4sHH')
+DASH_INFO = struct.Struct('<4sHH')
 
 
-def manager_info(name, description, players, maximum):
+def dash_info(name, description, players, maximum):
     def field(value, limit):
         return value.replace('\0', '').encode('latin-1', 'replace')[:limit] + b'\0'
-    return (MANAGER_INFO.pack(b'INFO', min(65535, max(0, players)), min(65535, max(0, maximum)))
+    return (DASH_INFO.pack(b'INFO', min(65535, max(0, players)), min(65535, max(0, maximum)))
             + field(name, 63) + field(description, 191))
 
 
@@ -151,7 +151,7 @@ class BuildServer:
         return self.build.build_id
 
     def ticket(self):
-        """The BUILD body for a manager that has proved its key."""
+        """The BUILD body for a Dash that has proved its key."""
         try:
             self.build.load()
         except (OSError, ValueError) as error:

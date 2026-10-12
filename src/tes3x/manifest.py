@@ -10,7 +10,7 @@ from pathlib import Path
 
 NAME = "tes3xbuild.json"
 FORMAT = 1
-# The oldest console manager that understands this format.
+# The oldest TES3X Dash that understands this format.
 MANAGER = 1
 
 
@@ -88,7 +88,7 @@ def file_entries(root, retail=None):
 def create(root, *, profile, source, plugins=(), ini=(), xbe=(), save_pool=None,
            install_layout="full", retail=None, files=None, folder=None):
     """The manifest for a staged tree, or with `files` given, for those entries. `folder` is the
-    install folder's name, where the console manager puts the build."""
+    install folder's name, where the Dash puts the build."""
     manifest = {
         "format": FORMAT,
         "manager": MANAGER,

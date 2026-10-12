@@ -72,7 +72,7 @@ MANAGER_VERSION = 1  # build discovery stays independent of gameplay state
 HELLO, WELCOME, HEARTBEAT, BYE, STATE, PEER, GONE, EVENTS, REFUSE, CLOCK, ACTORS = range(1, 12)
 
 
-BUILD = 12  # to a manager's HELLO: tes3x_netbuild.BUILD_BODY, then the server forgets it
+BUILD = 12  # to a Dash's HELLO: tes3x_netbuild.BUILD_BODY, then the server forgets it
 
 
 # On the wire every packet but the handshake is SEALED: OUTER in the clear (the AEAD's associated
@@ -123,7 +123,7 @@ HELLO_BODY = struct.Struct("<6sIII" + CLOCK_BODY.format[1:] + "32s")
 LOBBY = 0x80000000
 
 
-# MANAGER in the plugin count: the console manager, asking for this server's build, not joining
+# MANAGER in the plugin count: the Dash, asking for this server's build, not joining
 MANAGER = 0x40000000
 
 

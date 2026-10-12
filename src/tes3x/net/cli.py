@@ -171,10 +171,10 @@ class FuzzClient:
         self.event_next = 1  # the next event number the server will deliver, from its acks
         self.refused = None  # a REFUSE's body
 
-    def join(self, timeout=2.0, password=b"", lobby=False, manager=False, secret=None,
+    def join(self, timeout=2.0, password=b"", lobby=False, dash=False, secret=None,
              build_id=bytes(32)):
-        """WELCOME's body, or with manager, BUILD's; None if the server sent neither."""
-        if manager and not self.version_override:
+        """WELCOME's body, or with dash, BUILD's; None if the server sent neither."""
+        if dash and not self.version_override:
             self.version = MANAGER_VERSION
         secret, e = secret or self.rng.randbytes(32), self.rng.randbytes(32)
         noise = Noise(True, secret, e, PROLOGUE)
@@ -184,13 +184,13 @@ class FuzzClient:
         reply = self.receive_raw(timeout, HANDSHAKE2)
         noise.read2(reply[OUTER.size:])
         hello = HELLO_BODY.pack(self.rng.randbytes(6), 0, 0x46555A5A,
-                                3 | (LOBBY if lobby else 0) | (MANAGER if manager else 0),
+                                3 | (LOBBY if lobby else 0) | (MANAGER if dash else 0),
                                 12.0, 16.0, 7.0, 427.0, 1.0, 30.0, build_id)
         self.handshake3 = (OUTER.pack(b"T3MP", self.version, HANDSHAKE3, 0, self.session, 0)
                            + noise.write3(hello + password))
         self.sock.sendto(self.handshake3, self.addr)
         self.keys = noise.split()
-        if manager:
+        if dash:
             return self.receive(timeout, BUILD)
         welcome = self.receive(timeout, WELCOME)
         if welcome is None:
@@ -552,10 +552,10 @@ def main(argv=None):
                         f"{ADMIN_PASSWORD_MIN} characters (default: admin-password.txt in "
                         "--world)")
     p.add_argument("--build", metavar="DIR",
-                   help="hand the console manager this staged game folder (the pipeline's "
+                   help="hand the Dash this staged game folder (the pipeline's "
                         "deploy/, with tes3xbuild.json), over HTTP")
-    p.add_argument('--name', default='', help='display name shown in the console manager')
-    p.add_argument('--description', default='', help='optional description shown in the console manager')
+    p.add_argument('--name', default='', help='display name shown in TES3X Dash')
+    p.add_argument('--description', default='', help='optional description shown in TES3X Dash')
     p.add_argument("--deltas", metavar="DIR",
                    help="the XBE deltas for --build (default: deltas/ beside it)")
     p.add_argument("--retail-base", metavar="DIR",

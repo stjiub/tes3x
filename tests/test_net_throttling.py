@@ -54,7 +54,7 @@ class PasswordLimitTests(unittest.TestCase):
         self.server.admitted, self.server.admitted_path = set(), None
         self.server.refuse = Mock()
         self.server.handshake_client = Mock()
-        self.server.manager_character = Mock(return_value='')
+        self.server.dash_character = Mock(return_value='')
         self.server.build_server = None
         self.server.send = Mock()
 

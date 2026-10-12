@@ -42,9 +42,10 @@ CAPABILITY_REASONS = {
     "agent_fetch": "no game with the in-game agent is connected",
     "installed_builds": "the Xbox's FTP server is not answering",
     "install_dashboard_agent": "the Xbox's FTP server is not answering",
-    "install_manager": "neither the Xbox's FTP server nor the manager is answering",
+    "install_dash": "neither the Xbox's FTP server nor the Dash is answering",
 }
-MANAGER_PROFILE = "manager"
+# "manager" is what a Dash installed before the rename wrote
+DASH_PROFILES = ("dash", "manager")
 
 
 def heading(text, grow=4):
@@ -118,11 +119,11 @@ def log_catalog(work_dir):
     return entries
 
 
-def manager_version():
-    """The console manager version this PC would install, or None."""
+def dash_version():
+    """The Dash version this PC would install, or None."""
     try:
-        import tes3x.manager as tes3x_manager
-        return tes3x_manager.version()
+        import tes3x.dash as tes3x_dash
+        return tes3x_dash.version()
     except (ImportError, OSError):
         return None
 
@@ -210,11 +211,11 @@ class TargetsPage(QWidget):
                                                             ("dashboard_version", "Version")),
                                         self.agent_install, self.restart_button,
                                         self.agent_remove))
-        self.manager_install = tip_button("Install / update", "Stage the console manager and copy "
-                                          "it to the games folder", self.window.install_manager)
-        software.addWidget(self.section("Console manager", (("manager", "Status"),
-                                                            ("manager_version", "Version")),
-                                        self.manager_install))
+        self.dash_install = tip_button("Install / update", "Stage the Dash and copy "
+                                          "it to the games folder", self.window.install_dash)
+        software.addWidget(self.section("TES3X Dash", (("dash", "Status"),
+                                                            ("dash_version", "Version")),
+                                        self.dash_install))
         layout.addWidget(self.software)
         layout.addStretch()
         return page
@@ -263,11 +264,11 @@ class TargetsPage(QWidget):
             then=lambda: self.window.play_controller.refresh_dashboard_status(name),
         )
 
-    def manager_state(self, running):
-        """(status, version) of the console manager on the target."""
+    def dash_state(self, running):
+        """(status, version) of the Dash on the target."""
         builds = self.window.target_builds.get(self.name)
         found = [record.get("version") or "?" for record in (builds or {}).values()
-                 if record and record.get("profile") == MANAGER_PROFILE]
+                 if record and record.get("profile") in DASH_PROFILES]
         if running:
             status = "Running"
         elif builds is None:
@@ -275,7 +276,7 @@ class TargetsPage(QWidget):
         else:
             status = "Installed" if found else "Not installed"
         version = ", ".join(found) or "?"
-        available = manager_version()
+        available = dash_version()
         if available and found and version != available:
             version += f" (PC: {available})"
         return status, version
@@ -499,8 +500,8 @@ class TargetsPage(QWidget):
         elif retail and retail.casefold() == path.casefold():
             warning = ("\n\nThis is the target's retail base: overlay builds read their game "
                        "files from it, and stop working until it is installed again.")
-        elif record.get("profile") == "manager":
-            warning = "\n\nThis is the console manager."
+        elif record.get("profile") in DASH_PROFILES:
+            warning = "\n\nThis is TES3X Dash."
         if QMessageBox.question(
                 self, "Remove build", f"Delete {path} and everything in it from {self.name}?"
                 + warning + "\n\nSaves are kept: they are under E:\\UDATA, not in the folder.",
@@ -652,14 +653,14 @@ class TargetsPage(QWidget):
             self.show_field("ftp", None)
             self.show_field("drives", None)
         running = runtime.get("game") in {"connected", "stalled"}
-        manager = running and runtime.get("game_kind") == "manager"
+        dash = running and runtime.get("game_kind") == "manager"
         self.show_field("game", ("Stalled" if runtime.get("game") == "stalled" else
-                                 "Manager" if manager else "Game") if running else "Off")
+                                 "Dash" if dash else "Game") if running else "Off")
         self.fields["game"].setToolTip(runtime.get("game_detail") or "")
         beat = runtime.get("heartbeat")
         self.show_field("heartbeat", f"{beat['frame_us'] / 1000:.1f} ms frame · "
                         f"{beat['free_kb']:,} KB free · {beat['dropped']} dropped"
-                        if beat and running and not manager else None)
+                        if beat and running and not dash else None)
         for button in (self.check_button, self.builds_refresh):
             button.setVisible(xbox)
         self.software.setVisible(xbox and bool(name))
@@ -671,9 +672,9 @@ class TargetsPage(QWidget):
         self.fields["dashboard"].setToolTip(detail)
         self.show_field("dashboard_version", version.group(1) if version else "?")
         if name and xbox:
-            status, installed = self.manager_state(manager)
-            self.show_field("manager", status)
-            self.show_field("manager_version", installed)
+            status, installed = self.dash_state(dash)
+            self.show_field("dash", status)
+            self.show_field("dash_version", installed)
             if self.window.target_builds.get(name) is None and not self.builds_busy and                     name not in self.builds_tried and "installed_builds" in features:
                 self.refresh_builds()
         self.check_button.setEnabled(xbox and self.window.process is None)
@@ -684,9 +685,9 @@ class TargetsPage(QWidget):
         gate(self.builds_refresh, features, "installed_builds")
         gate(self.agent_install, features, "install_dashboard_agent")
         gate(self.agent_remove, features, "install_dashboard_agent")
-        gate(self.manager_install, features, "install_manager")
+        gate(self.dash_install, features, "install_dash")
         for button in (self.pull_button, self.log_pull, self.restart_button, self.agent_install,
-                       self.agent_remove, self.manager_install):
+                       self.agent_remove, self.dash_install):
             button.setEnabled(button.isEnabled() and not busy)
         for button in (self.quit_button, self.console_quit, self.send_button):
             gate(button, features, "commands")
@@ -1226,12 +1227,12 @@ class TargetSetup(QWidget):
 
 
 SERVER_FIELDS = (
-    ('name', 'Server name', 'string', '', 'Display name shown in the console manager'),
-    ('description', 'Description', 'string', '', 'Optional description shown in the console manager'),
+    ('name', 'Server name', 'string', '', 'Display name shown in TES3X Dash'),
+    ('description', 'Description', 'string', '', 'Optional description shown in TES3X Dash'),
     # key, label, kind, default, help
     ("world", "World folder", "folder", "", "Keeps the server key, password, characters, "
      "saves and bans; empty keeps nothing between runs"),
-    ("profile", "Build profile", "profile", "", "The build consoles' managers download on "
+    ("profile", "Build profile", "profile", "", "The build Xboxes' Dashes download on "
      "joining; consoles with another build are refused"),
     ("port", "Game port", "int", tes3x_net.PORT, "UDP port consoles join"),
     ("admin_port", "Admin port", "int", tes3x_net.ADMIN_PORT, "Local UDP port for admin commands"),
@@ -1526,7 +1527,7 @@ class ServerPage(QWidget):
             widget.combo.currentIndexChanged.connect(lambda *_: self.update_buttons())
             self.build_button = QPushButton("Build")
             self.build_button.setToolTip("Stage the profile; a running server serves the new "
-                                         "build to managers that update")
+                                         "build to Dashes that update")
             self.build_button.clicked.connect(lambda: self.build_profile())
             row.addWidget(widget.combo, 1)
             row.addWidget(self.build_button)

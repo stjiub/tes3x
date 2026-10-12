@@ -109,7 +109,7 @@ class PathTests(unittest.TestCase):
         self.assertEqual(tes3x_paths.portable_folder(folder / 'python'), folder.resolve())
 
     def test_named_resources_exist(self):
-        # VERSION and the manager's XBEs exist only in a packaged folder.
+        # VERSION and the Dash's XBEs exist only in a packaged folder.
         for parts in (('patches.toml',), ('candidates.toml',), ('catalog.toml',),
                       ('hooks', 'xboxkrnl.exe.def'), ('symbols', 'curated.json'),
                       ('symbols', 'structs.json'), ('examples', 'profile.toml'),

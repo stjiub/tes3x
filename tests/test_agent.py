@@ -222,10 +222,10 @@ class AgentRequestTests(unittest.TestCase):
             self.assertLessEqual(len(put.outstanding), 2)
         self.assertTrue(put.done)
         self.assertEqual(bytes(written), content)
-        # the last write is empty, so its answer covers what the manager held back
+        # the last write is empty, so its answer covers what the Dash held back
         self.assertEqual(last, (len(content), 0))
 
-    def test_list_reply_and_manager_requests(self):
+    def test_list_reply_and_dash_requests(self):
         payload = struct.pack("<IH", 3, 2) + struct.pack("<BIB", 1, 0, 4) + b"Data" + \
             struct.pack("<BIB", 0, 1234, 7) + b"Mod.esp"
         self.assertEqual(parse_list(payload), (3, [("Data", True, 0), ("Mod.esp", False, 1234)]))

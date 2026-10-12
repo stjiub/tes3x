@@ -43,7 +43,7 @@ SPACE_WARN = 256 * 1024 * 1024  # left free below this after a deploy, say so
 AGENT_PORT = 7353
 RETRYABLE_FTP = (ftplib.error_temp, ftplib.error_reply, ftplib.error_proto, EOFError, OSError)
 REMOTE_ERRORS = ftplib.all_errors + (tes3x_agent.AgentError,)
-# Through the manager, files arrive under this prefix and are renamed in once all are complete.
+# Through the Dash, files arrive under this prefix and are renamed in once all are complete.
 STAGING_PREFIX = "~t3x"
 # [Xbox] settings of the console rather than a build; the payload reads them before Morrowind.ini.
 CONSOLE_INI = "E:/TES3X/console.ini"
@@ -485,7 +485,7 @@ class FtpTarget:
 
 
 class AgentTarget:
-    """The console through the TES3X manager's agent. Uploads are staged: each file goes to a
+    """The console through the Dash's agent. Uploads are staged: each file goes to a
     temporary name and all are renamed in at the end, so an interrupted deploy leaves the build
     as it was."""
 
@@ -495,7 +495,7 @@ class AgentTarget:
     def __init__(self, args):
         self.listener, self.client = tes3x_agent.connect(args.agent_key, args.host,
                                                          args.agent_port, args.agent_wait)
-        self.label = f"paired with the manager at {self.client.host}"
+        self.label = f"paired with the Dash at {self.client.host}"
         self.dirs = set()
 
     def tree(self, base):
@@ -653,14 +653,14 @@ def main():
     ap.add_argument("--retries", type=int, default=2,
                     help="times to retry a file after a transient FTP failure (default: 2)")
     ap.add_argument("--agent", action="store_true",
-                    help="deploy through the TES3X manager's agent instead of FTP; the manager "
+                    help="deploy through the Dash's agent instead of FTP; the Dash "
                          "must be running with NetAgent naming this PC")
     ap.add_argument("--agent-key", help="this PC's agent key (default: tes3x.agent.key beside "
                                         "the local config)")
     ap.add_argument("--agent-port", type=int, default=tes3x_agent.PORT,
                     help=f"UDP port NetAgent names (default: {tes3x_agent.PORT})")
     ap.add_argument("--agent-wait", type=float, default=60,
-                    help="seconds to wait for the manager to pair (default: 60)")
+                    help="seconds to wait for the Dash to pair (default: 60)")
     ap.add_argument("--console-ini", metavar="FILE",
                     help=f"merge this file's [Xbox] keys into the console's {CONSOLE_INI}")
     args = ap.parse_args()
@@ -696,7 +696,7 @@ def main():
         args.agent_key = args.agent_key or str(
             local_config(args.config).with_name("tes3x.agent.key"))
         secret = tes3x_agent.load_or_create_key(args.agent_key)
-        print(f"waiting for the manager at {args.host} to pair "
+        print(f"waiting for the Dash at {args.host} to pair "
               f"(agent key {tes3x_agent.key_fingerprint(secret)})", flush=True)
     try:
         target = AgentTarget(args) if args.agent else FtpTarget(args)

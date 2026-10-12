@@ -1538,9 +1538,9 @@ class Server:
         return (os.path.join(self.args.world, "characters", fingerprint(client.key))
                 if self.args.world and client.key else None)
 
-    def manager_character(self, key):
+    def dash_character(self, key):
         """The character this key plays on the server: the one in the world now, else the newest
-        kept; what the console manager lists beside the server."""
+        kept; what the Dash lists beside the server."""
         for other in self.clients.values():
             if other.alive and other.key == key and (
                     other.character or self.identities.get(other.id)):
@@ -2415,15 +2415,15 @@ class Server:
                 hello, key, keys, again = done
                 if len(hello) < 18:
                     return
-                manager = bool(struct.unpack_from("<I", hello, 14)[0] & MANAGER)
-                expected = MANAGER_VERSION if manager else T3MP_VERSION
+                dash = bool(struct.unpack_from("<I", hello, 14)[0] & MANAGER)
+                expected = MANAGER_VERSION if dash else T3MP_VERSION
                 if version != expected:
                     stranger = self.handshake_client(addr, session, keys, hello[:6].hex(":"),
                                                      version)
                     self.send(stranger, REFUSE,
                               REFUSE_BODY.pack(expected, version, REFUSED_PROTOCOL))
                     print(f"{time.strftime('%H:%M:%S')} refused "
-                          f"{'manager' if manager else 'game'} at {addr[0]}: protocol "
+                          f"{'Dash' if dash else 'game'} at {addr[0]}: protocol "
                           f"{version}, expected {expected}", flush=True)
                     return
                 client = self.by_session.get(session)
@@ -2611,7 +2611,7 @@ class Server:
         key, keys = secure
         mac, build, order, plugins, *offered, build_id = HELLO_BODY.unpack_from(packet,
                                                                               T3MP.size)
-        manager = bool(plugins & MANAGER)
+        dash = bool(plugins & MANAGER)
         mac, lobby, plugins = mac.hex(":"), bool(plugins & LOBBY), plugins & ~LOBBY & ~MANAGER
         if fingerprint(key) in self.bans["key"] or mac in self.bans["mac"]:
             print(f"{stamp} refused {mac} at {addr[0]}: banned", flush=True)
@@ -2629,16 +2629,16 @@ class Server:
                 with open(self.admitted_path, "a", encoding="utf-8") as stream:
                     stream.write(f"{key.hex()} {mac} {time.strftime('%Y-%m-%d')}\n")
             print(f"{stamp} admitted key {fingerprint(key)} ({mac})", flush=True)
-        if manager:
+        if dash:
             stranger = self.handshake_client(addr, session, keys, mac, version)
             body = self.build_server.ticket() if self.build_server else \
                 tes3x_netbuild.BUILD_BODY.pack(bytes(32), 0, 0, bytes(16))
-            who = self.manager_character(key).encode("latin-1", "replace")[:46]
+            who = self.dash_character(key).encode("latin-1", "replace")[:46]
             playing = sum(c.alive and not c.lobby for c in self.clients.values())
-            info = tes3x_netbuild.manager_info(self.args.name, self.args.description,
+            info = tes3x_netbuild.dash_info(self.args.name, self.args.description,
                                                playing, self.args.max_players)
             self.send(stranger, BUILD, body + who + b'\0' + info)
-            print(f"{stamp} manager {fingerprint(key)} at {addr[0]} asked for the build"
+            print(f"{stamp} Dash {fingerprint(key)} at {addr[0]} asked for the build"
                   + ("" if self.build_server else ", which is not served"), flush=True)
             return
         served = self.build_server.build_id() if self.build_server and any(build_id) else None

@@ -5,9 +5,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import tes3x.manager as tes3x_manager
+import tes3x.dash as tes3x_dash
 import tes3x.release as tes3x_release
-from tes3x.release import ReleaseError, check_release, make_manager_release
+from tes3x.release import ReleaseError, check_release, make_dash_release
 
 
 def xbe(title_id, tail=b''):
@@ -34,11 +34,11 @@ class ReleaseTests(unittest.TestCase):
 
     def release(self):
         out = self.dir / 'out'
-        version = make_manager_release(out, self.key, self.dir / 'm.xbe', self.dir / 'l.xbe',
+        version = make_dash_release(out, self.key, self.dir / 'm.xbe', self.dir / 'l.xbe',
                                        'correct horse')
         return out, version
 
-    def test_a_release_carries_the_managers_own_version_and_checks(self):
+    def test_a_release_carries_the_dashs_own_version_and_checks(self):
         out, version = self.release()
         self.assertEqual(version, '0.12.3')
         release = check_release(out, self.public)
@@ -62,12 +62,12 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaisesRegex(ReleaseError, 'signature'):
             check_release(out, other.hex())
 
-    def test_xbes_must_be_a_manager_and_a_launcher(self):
-        with self.assertRaisesRegex(ReleaseError, 'no manager version'):
-            make_manager_release(self.dir / 'x', self.key, self.dir / 'l.xbe',
+    def test_xbes_must_be_the_dash_and_a_launcher(self):
+        with self.assertRaisesRegex(ReleaseError, 'no Dash version'):
+            make_dash_release(self.dir / 'x', self.key, self.dir / 'l.xbe',
                                  self.dir / 'l.xbe', 'correct horse')
-        with self.assertRaisesRegex(ReleaseError, 'is a manager'):
-            make_manager_release(self.dir / 'x', self.key, self.dir / 'm.xbe',
+        with self.assertRaisesRegex(ReleaseError, 'is the Dash'):
+            make_dash_release(self.dir / 'x', self.key, self.dir / 'm.xbe',
                                  self.dir / 'm.xbe', 'correct horse')
 
     def test_passphrase_is_required_and_can_change(self):
@@ -84,12 +84,12 @@ class ReleaseTests(unittest.TestCase):
 
 
 class StageTests(unittest.TestCase):
-    def test_the_launcher_is_default_xbe_and_the_manager_slot_a(self):
+    def test_the_launcher_is_default_xbe_and_the_dash_slot_a(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             (tmp / 'm.xbe').write_bytes(xbe(0xFFFF0002, b'manager'))
             (tmp / 'l.xbe').write_bytes(xbe(0xFFFF0002, b'launcher'))
-            tree = tes3x_manager.stage(tmp / 'out', tmp / 'm.xbe', tmp / 'l.xbe',
+            tree = tes3x_dash.stage(tmp / 'out', tmp / 'm.xbe', tmp / 'l.xbe',
                                        'F:/Games/TES3XManager', '10.0.0.7#ab12')
             self.assertTrue((tree / 'default.xbe').read_bytes().endswith(b'launcher'))
             self.assertTrue((tree / 'a' / 'default.xbe').read_bytes().endswith(b'manager'))

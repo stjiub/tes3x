@@ -61,7 +61,7 @@ from tes3x.pipeline import (CHECK_MARKER, DEPLOY_CONFLICT, DEPLOY_NO_SPACE, MARK
                             resolve_patch_plan, validate_local_config, validate_profile)
 from tes3x.records import records, subrecords
 from tes3x.deploy import parse_drives
-from tes3x.agent import (AgentListener, Fetch, OP_REBOOT, console_request, is_manager,
+from tes3x.agent import (AgentListener, Fetch, OP_REBOOT, console_request, is_dash,
                          key_fingerprint, load_or_create_key)
 from tes3x.gui_pages import ServerPage, TargetsPage, fetch_destination
 import tes3x.nexus as nexus
@@ -119,9 +119,9 @@ def target_capabilities(target, runtime=None):
 
     if kind == "xbox" and ("ftp" in capabilities or (
             game == "connected" and runtime.get("game_kind") == "manager")):
-        capabilities.add("install_manager")
+        capabilities.add("install_dash")
     if game == "connected" and runtime.get("game_kind") == "manager":
-        capabilities.update({"manager_agent", "agent_fetch", "pull_logs"})
+        capabilities.update({"dash_agent", "agent_fetch", "pull_logs"})
     elif game == "connected":
         capabilities.update({"in_game_agent", "live_status", "live_logs", "commands",
                              "agent_fetch", "pull_logs"})
@@ -134,7 +134,7 @@ def target_runtime_label(target, runtime=None):
     """Short state label shared by target badges and capability-driven pages."""
     runtime = runtime or {}
     if runtime.get("game") == "connected":
-        return "Manager" if runtime.get("game_kind") == "manager" else "In game"
+        return "Dash" if runtime.get("game_kind") == "manager" else "In game"
     if runtime.get("game") == "stalled":
         return "Stalled"
     if target and target.get("kind") == "xemu":
@@ -1699,7 +1699,7 @@ __all__ = [
     'ini_value',
     'install_files',
     'install_layout',
-    'is_manager',
+    'is_dash',
     'json',
     'key_fingerprint',
     'launch',

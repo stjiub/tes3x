@@ -16,7 +16,7 @@ def query(name, qtype=1):
 
 
 class ProtocolVersionTests(unittest.TestCase):
-    def test_game_and_manager_match_their_server_protocols(self):
+    def test_game_and_dash_match_their_server_protocols(self):
         import re
         root = Path(__file__).resolve().parents[1]
         for name, expected in (('hooks/tes3xmulti.c', tes3x_net.T3MP_VERSION),

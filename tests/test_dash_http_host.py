@@ -1,4 +1,4 @@
-"""Exercise the manager's file receiver with dropped connections and saved prefixes."""
+"""Exercise the Dash's file receiver with dropped connections and saved prefixes."""
 
 import os
 from pathlib import Path
@@ -12,7 +12,7 @@ from tes3x.payload import PayloadError, find_tool
 ROOT = Path(__file__).resolve().parents[1]
 
 
-class ManagerDownloadTests(unittest.TestCase):
+class DashDownloadTests(unittest.TestCase):
     def build_and_run(self, harness, base=False):
         try:
             clang = find_tool('clang')

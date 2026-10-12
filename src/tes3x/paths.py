@@ -90,13 +90,13 @@ PORTABLE = portable_folder()
 
 def resource(*parts):
     """Read-only data a command needs wherever TES3X is installed: the registries, hooks,
-    symbols, examples, assets, add-ons, game tests, the manager's header and the release key."""
+    symbols, examples, assets, add-ons, game tests, the Dash's header and the release key."""
     return (PACKAGED if PACKAGED.is_dir() else CHECKOUT).joinpath(*parts)
 
 
 def bundled(*parts):
     """What a portable folder carries beside the package: externals/ (7-Zip and LLVM), the
-    manager's XBEs and VERSION. Elsewhere the checkout's, which has them only once built there;
+    Dash's XBEs and VERSION. Elsewhere the checkout's, which has them only once built there;
     otherwise the tools fall back to PATH or a build."""
     return (PORTABLE or CHECKOUT).joinpath(*parts)
 

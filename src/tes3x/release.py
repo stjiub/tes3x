@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""The project's release signing key (Ed25519), which the console manager checks updates against.
+"""The project's release signing key (Ed25519), which the Dash checks updates against.
 
     tes3x release keygen KEY            write a new private key; prints its public key
     tes3x release protect KEY           set or change the passphrase of a private key
     tes3x release public KEY            print the public key of a private key
     tes3x release sign KEY FILE         write FILE.sig (64 bytes)
     tes3x release verify PUBLIC FILE    check FILE.sig against a public key (hex or file)
-    tes3x release manager OUT --key KEY --manager XBE --launcher XBE
-                                           write a signed manager release into OUT
-    tes3x release check DIR             check a manager release against keys/release.pub
+    tes3x release dash OUT --key KEY --dash XBE --launcher XBE
+                                           write a signed Dash release into OUT
+    tes3x release check DIR             check a Dash release against keys/release.pub
 
 The private key never goes into a repository. A key with a passphrase asks for it, or reads
-TES3X_RELEASE_PASSPHRASE. The public key the manager embeds is keys/release.pub; a fork makes
+TES3X_RELEASE_PASSPHRASE. The public key the Dash embeds is keys/release.pub; a fork makes
 its own key and replaces that file.
 """
 
@@ -29,7 +29,7 @@ from tes3x.paths import resource
 PUBLIC = resource("keys", "release.pub")
 PASSPHRASE_ENV = "TES3X_RELEASE_PASSPHRASE"
 
-# A manager release, as the manager's update.c reads it.
+# A Dash release, as the Dash's update.c reads it.
 RELEASE = "release.json"
 RELEASE_FORMAT = 1
 PRODUCT = "tes3x-manager"
@@ -117,19 +117,19 @@ def protect(path, private, passphrase):
     return public_bytes(private)
 
 
-def manager_version(xbe):
+def dash_version(xbe):
     match = VERSION_TAG.search(xbe)
     if not match:
-        raise ReleaseError("no manager version in the XBE; is it the manager?")
+        raise ReleaseError("no Dash version in the XBE; is it the Dash?")
     return match.group(1).decode()
 
 
-def make_manager_release(out, key, manager, launcher, passphrase=None):
+def make_dash_release(out, key, dash, launcher, passphrase=None):
     """Write release.json, its signature and the two XBEs into `out`; returns the version."""
-    data = {"manager.xbe": Path(manager).read_bytes(), "launcher.xbe": Path(launcher).read_bytes()}
-    version = manager_version(data["manager.xbe"])
+    data = {"manager.xbe": Path(dash).read_bytes(), "launcher.xbe": Path(launcher).read_bytes()}
+    version = dash_version(data["manager.xbe"])
     if VERSION_TAG.search(data["launcher.xbe"]):
-        raise ReleaseError("the launcher given is a manager")
+        raise ReleaseError("the launcher given is the Dash")
     release = {"format": RELEASE_FORMAT, "product": PRODUCT, "version": version,
                "files": {name: {"size": len(d), "sha256": hashlib.sha256(d).hexdigest()}
                          for name, d in data.items()}}
@@ -145,7 +145,7 @@ def make_manager_release(out, key, manager, launcher, passphrase=None):
 
 
 def check_release(folder, public=PUBLIC):
-    """The release in `folder` as a dict, after the checks the manager makes; ReleaseError if not."""
+    """The release in `folder` as a dict, after the checks the Dash makes; ReleaseError if not."""
     from cryptography.exceptions import InvalidSignature
     folder = Path(folder)
     try:
@@ -159,7 +159,7 @@ def check_release(folder, public=PUBLIC):
         raise ReleaseError("the signature is not the release key's") from None
     release = json.loads(text)
     if release.get("format") != RELEASE_FORMAT or release.get("product") != PRODUCT:
-        raise ReleaseError("not a manager release this version reads")
+        raise ReleaseError("not a Dash release this version reads")
     for name in RELEASE_FILES:
         entry = release.get("files", {}).get(name)
         path = folder / name
@@ -186,10 +186,10 @@ def main():
     p = sub.add_parser("verify")
     p.add_argument("public", nargs="?", default=str(PUBLIC))
     p.add_argument("file")
-    p = sub.add_parser("manager")
+    p = sub.add_parser("dash", aliases=["manager"])
     p.add_argument("out")
     p.add_argument("--key", required=True, help="the private release key")
-    p.add_argument("--manager", required=True, help="the manager XBE")
+    p.add_argument("--dash", "--manager", dest="dash", required=True, help="the Dash XBE")
     p.add_argument("--launcher", required=True, help="the launcher XBE")
     p = sub.add_parser("check")
     p.add_argument("folder")
@@ -218,12 +218,12 @@ def main():
             except (InvalidSignature, OSError) as exc:
                 sys.exit(f"bad signature: {str(exc) or 'does not match'}")
             print("good signature")
-        elif args.command == "manager":
-            version = make_manager_release(args.out, args.key, args.manager, args.launcher)
-            print(f"manager {version} release in {args.out}")
+        elif args.command in ("dash", "manager"):
+            version = make_dash_release(args.out, args.key, args.dash, args.launcher)
+            print(f"Dash {version} release in {args.out}")
         else:
             release = check_release(args.folder, args.public)
-            print(f"good manager {release['version']} release")
+            print(f"good Dash {release['version']} release")
     except ReleaseError as exc:
         sys.exit(str(exc))
 

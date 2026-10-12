@@ -30,8 +30,8 @@ jobs:
           path: ~\AppData\Local\TES3X\package
           key: portable-downloads-${{ hashFiles('src/tes3x/package.py') }}
       - run: python -m pip install -e .
-      # No nxdk here yet: the zip leaves out the console manager
-      - run: tes3x package --zip --no-manager --out build/package
+      # No nxdk here yet: the zip leaves out TES3X Dash
+      - run: tes3x package --zip --no-dash --out build/package
       - name: Check the unpacked folder
         shell: pwsh
         run: |

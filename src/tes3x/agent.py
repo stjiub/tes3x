@@ -23,14 +23,14 @@ HEADER = struct.Struct("<4sBBHII")  # magic, version, kind, body bytes, session,
 HANDSHAKE1, HANDSHAKE2, HANDSHAKE3, SEALED = range(1, 5)
 WELCOME, HEARTBEAT, LOG, GOODBYE, REPLY, REQUEST = range(6)
 OP_CONSOLE, OP_READ, OP_REBOOT = range(1, 4)
-# The console manager's file operations and launch; the game answers them "bad request".
+# The Dash's file operations and launch; the game answers them "bad request".
 OP_WRITE, OP_LIST, OP_DELETE, OP_RENAME, OP_MKDIR, OP_LAUNCH, OP_TIME, OP_SPACE = range(4, 12)
-# The manager's handshake payload ends in this; the game's is its 4-byte build ID.
+# The Dash's handshake payload ends in this; the game's is its 4-byte build ID.
 MANAGER_HELLO = b"mgr1"
 STATUS = {0: "ok", 1: "busy", 2: "unsupported", 3: "failed", 4: "bad request"}
 MAX_PACKET = 1400
 MAX_REQUEST = 200  # what the game accepts
-# what one sealed packet carries: the manager accepts requests up to this
+# what one sealed packet carries: the Dash accepts requests up to this
 MAX_SEALED_REQUEST = MAX_PACKET - 16 - 16 - 1
 WRITE_CHUNK = 1024
 PATH_MAX = 255
@@ -442,7 +442,7 @@ class Fetch:
 
 class Put:
     """Write one console file in chunks: the first alone, since it truncates the file, then the
-    rest windowed, then an empty write whose answer covers the writes the manager held back.
+    rest windowed, then an empty write whose answer covers the writes the Dash held back.
     Pass every reply event to `handle`."""
 
     def __init__(self, send, path, data, window=8):
@@ -561,7 +561,7 @@ class Client:
         return struct.unpack("<QQ", self.call(*space_request(path), f"space {path}")[:16])
 
 
-def is_manager(hello):
+def is_dash(hello):
     return hello[4:8] == MANAGER_HELLO
 
 
@@ -611,20 +611,20 @@ def main(argv=None):
                     help="copy a console file, such as E:/tes3xprof.bin (repeatable)")
     ap.add_argument("--out", default=".", help="folder for fetched files")
     ap.add_argument("--mkdir", action="append", default=[], metavar="PATH",
-                    help="manager: make a folder (repeatable)")
+                    help="Dash: make a folder (repeatable)")
     ap.add_argument("--put", action="append", default=[], metavar="PATH=LOCAL",
-                    help="manager: write a local file to the console (repeatable)")
+                    help="Dash: write a local file to the console (repeatable)")
     ap.add_argument("--window", type=int, default=8,
-                    help="manager: writes in flight during --put (default 8)")
+                    help="Dash: writes in flight during --put (default 8)")
     ap.add_argument("--rename", action="append", default=[], metavar="FROM=TO",
-                    help="manager: rename a console file or folder (repeatable)")
+                    help="Dash: rename a console file or folder (repeatable)")
     ap.add_argument("--list", action="append", default=[], metavar="PATH",
-                    help="manager: list a console folder (repeatable)")
+                    help="Dash: list a console folder (repeatable)")
     ap.add_argument("--space", action="append", default=[], metavar="PATH",
-                    help="manager: free and total bytes of a console drive (repeatable)")
+                    help="Dash: free and total bytes of a console drive (repeatable)")
     ap.add_argument("--delete", action="append", default=[], metavar="PATH",
-                    help="manager: delete a console file or empty folder (repeatable)")
-    ap.add_argument("--launch", metavar="XBE", help="manager: start an XBE on the console")
+                    help="Dash: delete a console file or empty folder (repeatable)")
+    ap.add_argument("--launch", metavar="XBE", help="Dash: start an XBE on the console")
     ap.add_argument("--exit", action="store_true",
                     help="after the rest, shut the console down (needs the console patch)")
     ap.add_argument("--reboot", action="store_true", help="return the console to its dashboard")

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Bake the console manager's fonts into C: 8-bit coverage atlases and glyph metrics.
+"""Bake the Dash's fonts into C: 8-bit coverage atlases and glyph metrics.
 
 The fonts are downloaded once at a pinned SHA-256 into the per-user cache, rasterised with
 Pillow's FreeType and written to manager/fontdata.c, with their licences in manager/fonts/.
-The output is committed, so building the manager needs neither the fonts nor Pillow.
+The output is committed, so building the Dash needs neither the fonts nor Pillow.
 
     tes3x font [--check]
 """

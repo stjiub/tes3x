@@ -825,7 +825,7 @@ def main(argv=None):
                     help="deploy even when the Xbox's dashboard agent reports too little free "
                          "space")
     ap.add_argument("--deploy-agent", action="store_true",
-                    help="deploy through the TES3X manager's agent instead of FTP; the manager "
+                    help="deploy through the Dash's agent instead of FTP; the Dash "
                          "must be running on the Xbox with NetAgent naming this PC")
     ap.add_argument("--discard-build", action="store_true",
                     help="delete the regenerable pipeline output after a verified deployment")

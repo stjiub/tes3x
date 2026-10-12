@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Install and update the TES3X console manager on an Xbox.
+"""Install and update the Dash on an Xbox.
 
-`stage OUT` writes the manager's folder as a deploy tree (OUT/deploy) with its manifest, and
-OUT/console.ini naming the manager for the game and this PC as its agent (NetAgent); `install` stages and deploys it, over FTP or
-through a running manager's agent. The folder holds the launcher as default.xbe and the manager
+`stage OUT` writes the Dash's folder as a deploy tree (OUT/deploy) with its manifest, and
+OUT/console.ini naming the Dash for the game and this PC as its agent (NetAgent); `install` stages and deploys it, over FTP or
+through a running Dash's agent. The folder holds the launcher as default.xbe and the Dash
 in slot a. The XBEs come from --xbe and --launcher, the copies a package ships
 (manager/default.xbe, manager/launcher.xbe), or nxdk builds of manager/ (paths.nxdk).
 
-`update RELEASE` sends a signed release (tes3x release manager) to E:/TES3X/update; through
-the agent it then restarts the manager, which installs the release into its other slot.
+`update RELEASE` sends a signed release (tes3x release dash) to E:/TES3X/update; through
+the agent it then restarts the Dash, which installs the release into its other slot.
 """
 
 import argparse
@@ -36,12 +36,12 @@ PACKAGED_LAUNCHER = bundled("manager", "launcher.xbe")
 INBOX = "E:/TES3X/update"
 FOLDER = "TES3XManager"
 TITLE = "TES3X Manager"
-PROFILE = "manager"
-# The manager does not list a folder of this layout among the builds.
-LAYOUT = "manager"
+PROFILE = "dash"
+# The Dash does not list a folder of this layout among the builds.
+LAYOUT = "dash"
 
 
-class ManagerError(Exception):
+class DashError(Exception):
     pass
 
 
@@ -52,33 +52,33 @@ def version():
 
 
 def find_xbe(given=None, config=None, work=None, launcher=False):
-    """The manager XBE, or with `launcher` the launcher's: given, packaged, else built."""
+    """The Dash XBE, or with `launcher` the launcher's: given, packaged, else built."""
     if given:
         if not Path(given).is_file():
-            raise ManagerError(f"not found: {given}")
+            raise DashError(f"not found: {given}")
         return Path(given)
     packaged, source, name = ((PACKAGED_LAUNCHER, SOURCE / "launcher", "launcher") if launcher
                               else (PACKAGED, SOURCE, "app"))
     if packaged.is_file():
         return packaged
     out = Path(work or data_dir()) / "build" / "manager" / name
-    print(f"building the manager{' launcher' if launcher else ''} in {out}", flush=True)
+    print(f"building the Dash{' launcher' if launcher else ''} in {out}", flush=True)
     try:
         return tes3x_nxdk.build(source, out, config=config)
     except tes3x_nxdk.NxdkError as exc:
-        raise ManagerError(f"no {'launcher' if launcher else 'manager'} XBE: {exc}") from exc
+        raise DashError(f"no {'launcher' if launcher else 'Dash'} XBE: {exc}") from exc
 
 
 def remote_folder(target, folder=FOLDER):
     games = target.get("games_root")
     if not games:
-        raise ManagerError(f"target {target['name']!r} needs games_root")
+        raise DashError(f"target {target['name']!r} needs games_root")
     return xbox_root(games).rstrip("/") + "/" + folder
 
 
 def stage(out, xbe, launcher, remote, agent=None):
-    """Write the manager's deploy tree and console.ini under `out`; returns the tree. `agent` is
-    the NetAgent value naming this PC, so the manager pairs without a game deploy first."""
+    """Write the Dash's deploy tree and console.ini under `out`; returns the tree. `agent` is
+    the NetAgent value naming this PC, so the Dash pairs without a game deploy first."""
     out = Path(out)
     tree = out / "deploy"
     if tree.exists():
@@ -92,13 +92,13 @@ def stage(out, xbe, launcher, remote, agent=None):
     (tree / "_resources" / "default.xml").write_text(dashboard_xml(TITLE, folder, title_id),
                                                      encoding="utf-8")
     manifest = tes3x_manifest.create(
-        tree, profile=PROFILE, source={"kind": "manager", "version": version()},
+        tree, profile=PROFILE, source={"kind": "dash", "version": version()},
         install_layout=LAYOUT)
     # Not rebuilt from a retail image, whatever their suffix says.
     for name in ("default.xbe", "a/default.xbe"):
         manifest["files"][name]["origin"] = "build"
     tes3x_manifest.write(tree, manifest)
-    # Deploy takes the folder's owner from this; a manager folder belongs to no other profile.
+    # Deploy takes the folder's owner from this; a Dash folder belongs to no other profile.
     (out / tes3x_deploy.PIPELINE_MARKER).write_text(
         json.dumps({"profile": PROFILE, "install_layout": LAYOUT, "remote": remote,
                     "version": version()}) + "\n", encoding="utf-8")
@@ -110,16 +110,16 @@ def stage(out, xbe, launcher, remote, agent=None):
 
 
 def stage_xemu(out, xbe, vanilla=None):
-    """What an xemu session needs to start in the manager: OUT/disc, a disc folder whose
-    default.xbe is the manager, and OUT/seed, the files the session's disk gets once (a retail
-    base for the manager to build on, and a console.ini that brings the NIC up by DHCP)."""
+    """What an xemu session needs to start in the Dash: OUT/disc, a disc folder whose
+    default.xbe is the Dash, and OUT/seed, the files the session's disk gets once (a retail
+    base for the Dash to build on, and a console.ini that brings the NIC up by DHCP)."""
     out = Path(out)
     disc, seed = out / "disc", out / "seed"
     shutil.rmtree(disc, ignore_errors=True)
     disc.mkdir(parents=True)
     shutil.copyfile(xbe, disc / "default.xbe")
     # an ISO needs a second file
-    (disc / "readme.txt").write_text("TES3X manager for xemu\n", encoding="utf-8")
+    (disc / "readme.txt").write_text("TES3X Dash for xemu\n", encoding="utf-8")
     seed.mkdir(parents=True, exist_ok=True)
     (seed / "console.ini").write_bytes(b"[Xbox]\r\nNetAddress=dhcp\r\n")
     base = seed / "Games" / "Base"
@@ -151,37 +151,37 @@ def deploy_arguments(out, remote, args):
 
 def send_update(args):
     """Send a signed release to the console's update folder; through the agent, restart the
-    manager so it installs it."""
+    Dash so it installs it."""
     try:
         release = tes3x_release.check_release(args.release, args.public)
     except tes3x_release.ReleaseError as exc:
-        raise ManagerError(f"{args.release}: {exc}") from exc
+        raise DashError(f"{args.release}: {exc}") from exc
     tes3x_ftp.resolve(args)
     remote = remote_folder(tes3x_targets.resolve(
         tes3x_ftp.local_settings(args.config), args.target, "xbox", required=True), args.folder)
     if args.agent:
         args.agent_key = args.agent_key or str(
             local_config(args.config).with_name("tes3x.agent.key"))
-        print(f"waiting for the manager at {args.host} to pair", flush=True)
+        print(f"waiting for the Dash at {args.host} to pair", flush=True)
     try:
         target = tes3x_deploy.AgentTarget(args) if args.agent else tes3x_deploy.FtpTarget(args)
     except tes3x_agent.AgentError as exc:
-        raise ManagerError(str(exc)) from exc
+        raise DashError(str(exc)) from exc
     try:
-        # release.json last: the manager keeps a release whose files are still arriving
+        # release.json last: the Dash keeps a release whose files are still arriving
         for name in (*tes3x_release.RELEASE_FILES, tes3x_release.RELEASE + ".sig",
                      tes3x_release.RELEASE):
             target.write(f"{INBOX}/{name}", (Path(args.release) / name).read_bytes())
-        print(f"manager {release['version']} sent to {INBOX}", flush=True)
+        print(f"Dash {release['version']} sent to {INBOX}", flush=True)
         if args.agent:
             launcher = remote.replace("/", "\\") + "\\default.xbe"
             target.client.call(*tes3x_agent.path_request(tes3x_agent.OP_LAUNCH, launcher),
                                f"launch {launcher}")
-            print("the manager restarts and installs it")
+            print("the Dash restarts and installs it")
         else:
-            print("it is installed the next time the manager starts")
+            print("it is installed the next time the Dash starts")
     except tes3x_agent.AgentError as exc:
-        raise ManagerError(f"agent: {exc}") from exc
+        raise DashError(f"agent: {exc}") from exc
     finally:
         target.close()
 
@@ -199,25 +199,25 @@ def main():
             p.add_argument("--replace", action="store_true",
                            help="install over a folder that holds something else")
             p.add_argument("--agent", action="store_true",
-                           help="send through the running manager's agent instead of FTP")
-        p.add_argument("--xbe", help="the manager XBE (default: packaged, else built)")
+                           help="send through the running Dash's agent instead of FTP")
+        p.add_argument("--xbe", help="the Dash XBE (default: packaged, else built)")
         p.add_argument("--launcher", help="the launcher XBE (default: packaged, else built)")
         p.add_argument("--folder", default=FOLDER, help=f"folder under games_root ({FOLDER})")
         p.add_argument("--config", help=CONFIG_HELP)
         p.add_argument("--target", help="Xbox target (default: default_target)")
         p.add_argument("--no-agent", action="store_true",
                        help="leave the console's NetAgent alone instead of naming this PC")
-    p = sub.add_parser("xemu", help="stage the manager as an xemu disc and the files its disk "
+    p = sub.add_parser("xemu", help="stage the Dash as an xemu disc and the files its disk "
                                     "is seeded with")
     p.add_argument("out", help="folder for disc/ and seed/")
-    p.add_argument("--xbe", help="the manager XBE (default: packaged, else built)")
+    p.add_argument("--xbe", help="the Dash XBE (default: packaged, else built)")
     p.add_argument("--config", help=CONFIG_HELP)
     p = sub.add_parser("update")
-    p.add_argument("release", help="a signed release folder (tes3x release manager)")
+    p.add_argument("release", help="a signed release folder (tes3x release dash)")
     p.add_argument("--agent", action="store_true",
-                   help="send through the running manager's agent and restart it, instead of FTP")
+                   help="send through the running Dash's agent and restart it, instead of FTP")
     p.add_argument("--public", default=str(tes3x_release.PUBLIC),
-                   help="the release key the manager embeds, hex or file (default: keys/release.pub)")
+                   help="the release key the Dash embeds, hex or file (default: keys/release.pub)")
     p.add_argument("--agent-key", help="this PC's agent key (default: tes3x.agent.key beside "
                                        "the local config)")
     p.add_argument("--agent-port", type=int, default=tes3x_agent.PORT)
@@ -230,19 +230,19 @@ def main():
     if args.command == "update":
         try:
             send_update(args)
-        except ManagerError as exc:
+        except DashError as exc:
             sys.exit(str(exc))
         return
     if args.command == "xemu":
         try:
             xbe = find_xbe(args.xbe, args.config)
-        except ManagerError as exc:
+        except DashError as exc:
             sys.exit(str(exc))
         root = tes3x_ftp.local_settings(args.config).get("paths", {}).get("vanilla_root")
         base = local_config(args.config).resolve().parent
         vanilla = (base / root) if root else None
         disc, seed = stage_xemu(args.out, xbe, vanilla if vanilla and vanilla.is_dir() else None)
-        print(f"manager {version()} staged for xemu in {disc}"
+        print(f"Dash {version()} staged for xemu in {disc}"
               + ("" if vanilla else "; no [paths] vanilla_root, so no retail base"), flush=True)
         return
     local = tes3x_ftp.local_settings(args.config)
@@ -253,11 +253,11 @@ def main():
         launcher = find_xbe(args.launcher, args.config, launcher=True)
         base = local_config(args.config).resolve().parent
         agent = None if args.no_agent else agent_setting(base, target)
-    except (tes3x_targets.TargetError, ManagerError, PipelineError) as exc:
+    except (tes3x_targets.TargetError, DashError, PipelineError) as exc:
         sys.exit(str(exc))
     out = Path(getattr(args, "out", None) or data_dir() / "build" / "manager" / "install")
     stage(out, xbe, launcher, remote, agent)
-    print(f"manager {version()} staged for {remote}", flush=True)
+    print(f"Dash {version()} staged for {remote}", flush=True)
     if args.command == "install":
         args.target = target["name"]
         sys.exit(subprocess.call([sys.executable, "-m", "tes3x", "deploy",

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build an nxdk program (the manager, its probes) into its own output folder.
+"""Build an nxdk program (the Dash, its probes) into its own output folder.
 
 nxdk's Makefile writes objects beside the sources, so the sources are copied to OUT first, and
 the payload's sources (hooks/) beside it, for a program that shares its portable files, and the

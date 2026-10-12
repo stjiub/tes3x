@@ -1,4 +1,4 @@
-"""Run the manager's real servers.ini rewrite with bounded host allocations."""
+"""Run the Dash's real servers.ini rewrite with bounded host allocations."""
 
 import os
 from pathlib import Path
@@ -41,7 +41,7 @@ def build(folder, clang, source=None):
     return exe
 
 
-class ManagerServersHostTests(unittest.TestCase):
+class DashServersHostTests(unittest.TestCase):
     def test_rewrite_with_maximum_fields(self):
         try:
             clang = find_tool('clang')
