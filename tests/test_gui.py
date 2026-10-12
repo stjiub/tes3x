@@ -5,6 +5,7 @@ import json
 import signal
 import sys
 import tempfile
+import time
 import tomllib
 import unittest
 import zipfile
@@ -109,6 +110,19 @@ order = 10
         self.addCleanup(setattr, window, "document", None)
         window.mods.refresh_analysis()
         return window
+
+    def test_analysis_scans_off_the_gui_thread(self):
+        window = self.window()
+        window.mods.scans.clear()
+        window.mods.analysis_again = False
+        window.mods.start_analysis()
+        self.assertTrue(window.mods.analysis_busy)
+        deadline = time.monotonic() + 10
+        while window.mods.analysis_busy and time.monotonic() < deadline:
+            QApplication.processEvents()
+        self.assertFalse(window.mods.analysis_busy)
+        self.assertEqual(len(window.mods.analysis["active"]), 1)
+        self.assertIsNotNone(window.mods.analysis["active"][0][1].stats)
 
     @staticmethod
     def dispose(window):
@@ -807,7 +821,10 @@ order = 10
         self.assertEqual(calls, [("console.py", "ping", True),
                                  ("deploy", str(output / "deploy"), False),
                                  ("console.py", "run", False)])
-        self.assertEqual(window.play_button.text(), "Play")
+        self.assertEqual([window.run_button.text(), window.play_button.text()],
+                         ["Build", "Deploy"])
+        self.assertIn(window.action_play, window.play_menu.actions())
+        self.assertEqual(window.action_play.text(), "&Play on Xbox")
 
         # A failed step stops the rest.
         window.process = None
@@ -1153,6 +1170,26 @@ order = 10
         window.play_controller.dashboard_probe_finished("bench", 6, 0, None)
         self.assertEqual(window.target_runtime["bench"]["dashboard"], "outdated")
         self.assertIn("Dashboard agent outdated", window.target_picker.toolTip())
+
+    def test_agent_versions_are_remembered_per_target(self):
+        class Settings:
+            def __init__(self):
+                self.values = {}
+
+            def value(self, key, default=None, *_args):
+                return self.values.get(key, default)
+
+            def setValue(self, key, value):
+                self.values[key] = value
+
+        window = self.window(settings=Settings())
+        page = window.targets_page
+        page.name = "bench"
+        self.assertEqual(page.remembered("dashboard", ""), "?")
+        self.assertEqual(page.remembered("dashboard", "6"), "6")
+        self.assertEqual(page.remembered("dashboard", ""), "6 (last seen)")
+        page.name = "spare"
+        self.assertEqual(page.remembered("dashboard", ""), "?")
 
     def test_every_xbox_target_is_probed_and_keeps_its_own_dot(self):
         config = self.root / "local.toml"

@@ -85,6 +85,7 @@ class Mod:
         self.want = {p.lower() for p in plugins} if plugins is not None else None
         self.skipped_plugins = []
         self.excluded = 0
+        self.stats = None
         self.files = {}
         self.relative = {}
         for (source, blocked), root in zip(layers, self.roots):
@@ -122,6 +123,25 @@ class Mod:
         self.unpacked = []
         if unpack is not None:
             self.unpack_archives(unpack, exclude)
+
+    def source_stats(self):
+        """(bytes, textures, texture bytes, largest texture side) of the files, measured once."""
+        if self.stats is None:
+            size = textures = texture_size = largest = 0
+            for key, source in self.files.items():
+                try:
+                    file_size = os.path.getsize(source)
+                except OSError:
+                    file_size = 0
+                size += file_size
+                if key.startswith("textures/") or key.endswith((".dds", ".tga", ".bmp")):
+                    textures += 1
+                    texture_size += file_size
+                    dims = texture_dims(source)
+                    if dims:
+                        largest = max(largest, *dims)
+            self.stats = (size, textures, texture_size, largest)
+        return self.stats
 
     def unpack_archives(self, cache, exclude):
         """Replace the mod's archives with their files; its loose files still win."""

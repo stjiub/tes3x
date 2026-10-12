@@ -4,6 +4,13 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- The GUI toolbar's main button is Deploy for an Xbox target and Play for an xemu target. Its
+  menu holds Play on Xbox (with the dashboard agent add-on) and Launch Dash; the Build button's
+  menu holds Check and Build.
+- Installing and enabling a large mod such as Tamriel Data or Tamriel Rebuilt no longer freezes
+  the GUI: unpacking, copying and scanning its files run in the background.
+- The Dash's Settings tab has **Quit to dashboard**, which restarts the Xbox. Install the Dash
+  again to get it.
 - The console manager is now TES3X Dash. `tes3x dash` replaces `tes3x manager`, which still
   works, as do `tes3x release manager`, `--manager` and `--no-manager`. The Dash installs to
   `TES3XDash`, the Xbox's own settings live in `E:/TES3X/xbox.ini` (was `console.ini`) and the

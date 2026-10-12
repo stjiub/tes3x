@@ -149,7 +149,7 @@ Each step is shown in the GUI first, then on the command line.
    an install you want to keep. Saves and the dashboard's `_resources` folder are not touched,
    and TES3X asks before replacing a folder that holds something other than this profile.
 
-   **Actions > Deploy to Xbox…** uploads the build. On the command line, `--dry-run` first lists
+   **Actions > Deploy** uploads the build. On the command line, `--dry-run` first lists
    what is in the Xbox folder and what would change, without changing anything:
 
    ```powershell

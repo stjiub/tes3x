@@ -1176,6 +1176,10 @@ static void press(int button)
             find_retail_bases(), v.page = PAGE_BASES;
         else if (button == SDL_CONTROLLER_BUTTON_A && v.settings.sel == SET_DASH)
             fetch_update(NULL);
+        else if (button == SDL_CONTROLLER_BUTTON_A && v.settings.sel == SET_QUIT) {
+            mgr_log("quit to dashboard\n");
+            HalReturnToFirmware(HalRebootRoutine);
+        }
     }
 }
 

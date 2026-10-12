@@ -6,7 +6,7 @@ is faster and leaves the old build in place until the new one has fully arrived.
 
 ## Deploying a build
 
-In the GUI, select an Xbox target and choose **Actions > Deploy to Xbox…**, or press Deploy on
+In the GUI, select an Xbox target and choose **Actions > Deploy**, or press Deploy on
 the toolbar. It asks before replacing a folder that holds something else. On the command line:
 
 ```powershell

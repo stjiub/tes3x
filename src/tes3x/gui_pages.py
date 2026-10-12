@@ -37,7 +37,7 @@ LOG_SUFFIXES = {".txt", ".log"}
 CAPABILITY_REASONS = {
     "ftp": "the Xbox's FTP server is not answering",
     "pull_logs": "neither FTP nor the in-game agent is available",
-    "dashboard_control": "the dashboard agent is not answering or is outdated",
+    "dashboard_control": "the XBMC4Gamers agent is not answering or is outdated",
     "commands": "no game with the in-game agent is connected",
     "agent_fetch": "no game with the in-game agent is connected",
     "installed_builds": "the Xbox's FTP server is not answering",
@@ -181,7 +181,7 @@ class TargetsPage(QWidget):
         layout = QVBoxLayout(page)
         self.fields = {}
         self.field_labels = {}
-        self.check_button = tip_button("Check connection", "Probe FTP and the dashboard agent",
+        self.check_button = tip_button("Check connection", "Probe FTP and the XBMC4Gamers agent",
                                        self.check_connection)
         self.pull_button = tip_button("Pull logs", "Copy E:\\tes3x* from the console",
                                       self.window.pull_logs)
@@ -194,27 +194,29 @@ class TargetsPage(QWidget):
                                       self.quit_game)
         self.fetch_button = tip_button("Fetch file…", "Copy a file from the running game",
                                        self.fetch_file)
-        layout.addWidget(self.section("Agent", (("game", "Status"),
+        layout.addWidget(self.section("In-game agent", (("game", "Status"),
                                                 ("heartbeat", "Heartbeat")),
                                       self.quit_button, self.fetch_button))
         self.software = QWidget()
         software = QVBoxLayout(self.software)
         software.setContentsMargins(0, 0, 0, 0)
-        self.agent_install = tip_button("Install / update", "Copy the dashboard agent to "
+        self.dash_install = tip_button("Install / update", "Stage the Dash and copy "
+                                       "it to the games folder", self.window.install_dash)
+        self.dash_quit = tip_button("Quit to dashboard", "Restart the Xbox from the running Dash",
+                                    self.quit_dash)
+        software.addWidget(self.section("TES3X Dash agent", (("dash", "Status"),
+                                                             ("dash_version", "Version")),
+                                        self.dash_install, self.dash_quit))
+        self.agent_install = tip_button("Install / update", "Copy the agent to "
                                         "XBMC4Gamers over FTP", lambda: self.run_agent("install"))
         self.restart_button = tip_button("Restart dashboard", "Restart XBMC4Gamers on the Xbox",
                                          self.restart_dashboard)
-        self.agent_remove = tip_button("Remove", "Remove the dashboard agent from XBMC4Gamers",
+        self.agent_remove = tip_button("Remove", "Remove the agent from XBMC4Gamers",
                                        lambda: self.run_agent("uninstall"))
-        software.addWidget(self.section("Dashboard agent", (("dashboard", "Status"),
-                                                            ("dashboard_version", "Version")),
+        software.addWidget(self.section("XBMC4Gamers agent", (("dashboard", "Status"),
+                                                              ("dashboard_version", "Version")),
                                         self.agent_install, self.restart_button,
                                         self.agent_remove))
-        self.dash_install = tip_button("Install / update", "Stage the Dash and copy "
-                                          "it to the games folder", self.window.install_dash)
-        software.addWidget(self.section("TES3X Dash", (("dash", "Status"),
-                                                            ("dash_version", "Version")),
-                                        self.dash_install))
         layout.addWidget(self.software)
         layout.addStretch()
         return page
@@ -246,12 +248,12 @@ class TargetsPage(QWidget):
     def run_agent(self, command):
         name = self.name
         if command == "uninstall" and QMessageBox.question(
-                self, "TES3X", f"Remove the dashboard agent from {name}?")                 != QMessageBox.StandardButton.Yes:
+                self, "TES3X", f"Remove the XBMC4Gamers agent from {name}?")                 != QMessageBox.StandardButton.Yes:
             return
         if self.window.process is not None:
             self.window.error("A TES3X command is already running")
             return
-        verb = "Installing the dashboard agent on" if command == "install" else             "Removing the dashboard agent from"
+        verb = "Installing the XBMC4Gamers agent on" if command == "install" else             "Removing the XBMC4Gamers agent from"
         self.window.run_steps(
             [
                 (
@@ -274,11 +276,23 @@ class TargetsPage(QWidget):
             status = "?"
         else:
             status = "Installed" if found else "Not installed"
-        version = ", ".join(found) or "?"
+        version = self.remembered("dash", ", ".join(found))
         available = dash_version()
-        if available and found and version != available:
+        if available and version != "?" and version.split(" (")[0] != available:
             version += f" (PC: {available})"
         return status, version
+
+    def remembered(self, key, fresh):
+        """A version seen now, else the last one seen on this target, marked as such."""
+        settings = self.window.settings
+        name = f"agent_versions/{self.name}/{key}"
+        if settings is None:
+            return fresh or "?"
+        if fresh and fresh != "?":
+            settings.setValue(name, fresh)
+            return fresh
+        last = settings.value(name, "")
+        return f"{last} (last seen)" if last else "?"
 
     def check_connection(self):
         self.window.play_controller.refresh_ftp_status()
@@ -294,6 +308,12 @@ class TargetsPage(QWidget):
     def quit_game(self):
         if QMessageBox.question(self, "TES3X", f"Quit the game on {self.name} to the dashboard?"
                                 " Unsaved progress is lost.") != QMessageBox.StandardButton.Yes:
+            return
+        self.window.play_controller.agent_reboot(self.name)
+
+    def quit_dash(self):
+        question = f"Restart {self.name} to its dashboard?"
+        if QMessageBox.question(self, "TES3X", question) != QMessageBox.StandardButton.Yes:
             return
         self.window.play_controller.agent_reboot(self.name)
 
@@ -669,7 +689,8 @@ class TargetsPage(QWidget):
         self.show_field("dashboard", {"current": "On", "outdated": "Outdated", "missing": "Off",
                                       "checking": "Checking…"}.get(runtime.get("dashboard"), "?"))
         self.fields["dashboard"].setToolTip(detail)
-        self.show_field("dashboard_version", version.group(1) if version else "?")
+        self.show_field("dashboard_version",
+                        self.remembered("dashboard", version.group(1) if version else ""))
         if name and xbox:
             status, installed = self.dash_state(dash)
             self.show_field("dash", status)
@@ -688,7 +709,7 @@ class TargetsPage(QWidget):
         for button in (self.pull_button, self.log_pull, self.restart_button, self.agent_install,
                        self.agent_remove, self.dash_install):
             button.setEnabled(button.isEnabled() and not busy)
-        for button in (self.quit_button, self.console_quit, self.send_button):
+        for button in (self.quit_button, self.dash_quit, self.console_quit, self.send_button):
             gate(button, features, "commands")
         for button in (self.fetch_button, self.console_fetch):
             gate(button, features, "agent_fetch")
@@ -859,7 +880,7 @@ class TargetSetup(QWidget):
         probe = QHBoxLayout()
         self.test_button = tip_button("Test FTP", "Log in to this address over FTP with the "
                                       "details above", self.test_connection)
-        self.agent_test_button = tip_button("Test agent", "Ask the dashboard agent on the saved "
+        self.agent_test_button = tip_button("Test agent", "Ask the XBMC4Gamers agent on the saved "
                                             "target to answer", self.test_agent)
         self.test_status = QLabel()
         probe.addWidget(self.test_button)
@@ -1162,11 +1183,11 @@ class TargetSetup(QWidget):
             self.test_status.setText("Save first; the agent test uses the saved target")
             return
         if self.window.play_controller.dashboard_status_command() is None:
-            self.test_status.setText("The dashboard agent add-on is not available")
+            self.test_status.setText("The XBMC4Gamers agent add-on is not available")
             return
         self.agent_testing = self.name
         self.agent_test_button.setEnabled(False)
-        self.test_status.setText("Asking the dashboard agent…")
+        self.test_status.setText("Asking the XBMC4Gamers agent…")
         self.window.play_controller.refresh_dashboard_status(self.name)
 
     def agent_tested(self, name, state, detail):
@@ -1176,9 +1197,9 @@ class TargetSetup(QWidget):
         self.agent_test_button.setEnabled(True)
         if name == self.name:
             self.test_status.setText({
-                "current": "The dashboard agent answered",
-                "outdated": "The dashboard agent answered but is outdated",
-            }.get(state, "No answer from the dashboard agent") + (f": {detail}" if detail else ""))
+                "current": "The XBMC4Gamers agent answered",
+                "outdated": "The XBMC4Gamers agent answered but is outdated",
+            }.get(state, "No answer from the XBMC4Gamers agent") + (f": {detail}" if detail else ""))
 
     def xemu_folder(self):
         text = self.xemu_fields["folder"].text().strip()
