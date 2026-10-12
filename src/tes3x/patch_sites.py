@@ -1020,10 +1020,11 @@ def find_autosave_calls(x):
     text = text_section(x)
     body = bytes(x.data[text.raw:text.raw + text.rsize])
     init = list(init_sig.finditer(body))
-    if len(init) != 1:
-        raise PatchError("rotating-autosaves: %d autosave name initializers, expected 1"
-                         % len(init))
-    buf_va = struct.unpack("<I", init[0].group("buf"))[0]
+    buffers = {struct.unpack("<I", match.group("buf"))[0] for match in init}
+    if len(buffers) != 1:
+        raise PatchError("rotating-autosaves: %d name buffers from %d initializers, expected 1"
+                         % (len(buffers), len(init)))
+    buf_va = buffers.pop()
 
     call_sig = re.compile(
         re.escape(b"\x68" + struct.pack("<I", buf_va)) * 2 + rb"\xe8(?P<rel>....)", re.S)
@@ -1518,8 +1519,11 @@ CONSOLE_PRINT_VSPRINTF = 0x30                  # offset of its `call vsprintf`
 
 
 def find_console_print(x):
-    off = find_unique(x.data, CONSOLE_PRINT_SIG, "console printf")
-    return x.off_to_va(off)
+    pattern = re.escape(CONSOLE_PRINT_SIG[:4]) + rb"...." + re.escape(CONSOLE_PRINT_SIG[8:])
+    matches = list(re.finditer(pattern, x.data, re.S))
+    if len(matches) != 1:
+        raise PatchError("console printf: %d matches, expected exactly 1" % len(matches))
+    return x.off_to_va(matches[0].start())
 
 
 # Content-located engine addresses, shared with the payload build so the two cannot disagree.

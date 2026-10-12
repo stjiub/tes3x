@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Compile the injected payload for one retail XBE and write its hook manifest.
 
-The payload is linked at the exact VA the new XBE section will land at, so absolute references
-resolve without relocations. Needs clang and lld-link from any LLVM install.
+The payload carries PE32 relocations so its section can move within the same engine image.
+Engine addresses and kernel thunk slots are still bound at build time. Needs clang and lld-link.
 """
 
 import argparse
@@ -27,6 +27,7 @@ HEADERS = ("tes3xdiag.h", "tes3xheap.h", "tes3xlog.h", "tes3xmem.h", "tes3xnt.h"
            "tes3xlaunch.h")
 SECTION = re.compile(r'^#include "(multi/\w+\.c)"$', re.M)
 DEFAULT_SOURCES = ("tes3xhook.c", "tes3xlog.c", "tes3xini.c", "tes3xdiag.c")
+LINK_BASE = 0x00400000
 BUNDLED_LLVM = bundled("externals", "llvm", "bin")
 LLVM_DIRS = (Path("C:/Program Files/LLVM/bin"), Path("C:/msys64/clang64/bin"),
              Path("C:/msys64/mingw64/bin"))
@@ -262,9 +263,9 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
     out.mkdir(parents=True, exist_ok=True)
 
     image = tes3x_inject.Xbe(xbe.read_bytes())
-    va = hexva(image.next_va())
+    va = hexva(LINK_BASE)
     entry = hexva(image.entry)
-    print(f"section VA {va}   original entry {entry}")
+    print(f"section VA {hexva(image.next_va())}   link base {va}   original entry {entry}")
     # Generated per XBE into the build, never into hooks/, which an install may not let us write.
     thunks = out / "tes3x_thunks.h"
     tes3x_inject.write_thunks(image, thunks, tes3x_inject.DEFAULT_KRNL_DEF)
@@ -889,7 +890,7 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
                        check=True)
         objects.append(str(obj))
     payload, map_path = out / "tes3xhook.pe", out / "tes3xhook.map"
-    subprocess.run([lld, "/nologo", "/subsystem:native", "/entry:tes3x_entry", "/fixed",
+    subprocess.run([lld, "/nologo", "/subsystem:native", "/entry:tes3x_entry", "/fixed:no",
                     "/nodefaultlib", f"/base:{va}", f"/map:{map_path}", f"/out:{payload}",
                     *objects], check=True)
 
@@ -901,10 +902,12 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
     # Beside the payload, so tes3x patch can apply it without a toolchain or the map.
     manifest = out / "tes3xhook.json"
     with open(manifest, "w", encoding="utf-8") as stream:
-        json.dump({"base": va, "hooks": hooks}, stream, indent=2)
+        json.dump({"base": int(va, 16), "payload_hooks": list(wanted), "hooks": hooks},
+                  stream, indent=2)
 
     if check_xbe:
-        calls = [(arch_site, int(hooks["archive_load"], 16))] if "archive_load" in hooks else []
+        calls = [(arch_site, int(hooks["archive_load"], 16) + image.next_va() - LINK_BASE)] \
+            if "archive_load" in hooks else []
         tes3x_inject.inject(xbe, payload, check_xbe, hook_entry=True, patch_calls=calls)
     return payload, manifest
 

@@ -15,7 +15,7 @@ options. This page says what each one is for and where it is explained.
 | `tes3x plugins` | order plugins with mlox or a saved order; download the mlox rules; run TES3Merge | [pipeline](pipeline.md#sorting-plugins-with-mlox) |
 | `tes3x optimize` | write equivalence-checked derived copies that make the Xbox load fewer records | [plugin optimizer](optimizer.md) |
 | `tes3x pack` | pack a collected tree into archives and stage the game's `Data Files` | [packaging](packaging.md) |
-| `tes3x payload` | compile the patch payload for one retail XBE | [payload](../patches/payload.md) |
+| `tes3x payload` | compile a relocatable patch payload bound to one retail engine | [payload](../patches/payload.md) |
 | `tes3x nxdk` | build a standalone nxdk program, such as the Dash | [configuration](configuration.md) |
 | `tes3x font` | bake the Dash's fonts into C, from pinned OFL fonts | [development](development.md#generated-files) |
 | `tes3x patch` | apply patches to an XBE directly; `--list` shows them | [patches](patches.md) |
@@ -80,7 +80,7 @@ options. This page says what each one is for and where it is explained.
 | `tes3x layouts` | compile MWSE's struct layouts into data types for Ghidra | [symbol map](symbol-map.md#types) |
 | `tes3x xbe` | print an XBE's header, certificate, sections and strings | |
 | `tes3x disasm` | disassemble an address range, naming calls from the symbol map, and find references and direct calls to an address | |
-| `tes3x inject` | add a section to an XBE and retarget its entry point | [payload](../patches/payload.md) |
+| `tes3x inject` | relocate a payload into an XBE section and retarget its entry point | [payload](../patches/payload.md) |
 | `tes3x ini` | list every `Morrowind.ini` key the XBE reads, with its default | [ini keys](ini-keys.md) |
 | `tes3x mcp` | read a Morrowind Code Patch fix against the original PC executable | [patch policy](patch-policy.md) |
 | `tes3x patches` | check the patch table and regenerate its pages | [development](development.md#generated-files) |

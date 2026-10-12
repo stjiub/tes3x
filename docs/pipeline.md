@@ -123,7 +123,9 @@ or `arrange`.
 
 When a selected patch needs code, `tes3x payload` compiles the [payload](../patches/payload.md)
 for your `morrowind.xbe` with clang and lld-link. `tes3x patch` then applies every selected
-patch to a copy of the XBE, each located by content. `--title` and a save pool also patch the
+patch to a copy of the XBE. Payload pointers and hook addresses relocate to the added section;
+engine bindings still require a build for the input engine. Byte-pattern patches locate their
+sites by content. `--title` and a save pool also patch the
 launcher, `Default.xbe`; a save pool gives the build its own saves (see `save_pool` in the
 [configuration reference](configuration.md#profile)).
 

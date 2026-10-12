@@ -281,14 +281,20 @@ def verify(orig, new, patched=()):
     return problems
 
 
-def load_pe(path):
-    """Flatten a linked PE into an image blob plus its entry RVA and image base."""
-    d = open(path, "rb").read()
+def load_pe(path, base=None):
+    """Flatten PE32, optionally relocating to base; return its original link base."""
+    with open(path, "rb") as stream:
+        d = stream.read()
     pe = _u32(d, 0x3C)
     if d[pe:pe + 4] != b"PE\0\0":
         raise ValueError("not a PE")
+    if struct.unpack_from("<H", d, pe + 4)[0] != 0x14C or \
+            struct.unpack_from("<H", d, pe + 24)[0] != 0x10B:
+        raise ValueError("payload must be an i386 PE32 image")
     nsec = struct.unpack_from("<H", d, pe + 6)[0]
     optsz = struct.unpack_from("<H", d, pe + 20)[0]
+    if optsz < 144 or pe + 24 + optsz + nsec * 40 > len(d):
+        raise ValueError("truncated PE32 headers")
     entry_rva = _u32(d, pe + 40)
     imgbase = _u32(d, pe + 52)
     sectab = pe + 24 + optsz
@@ -306,8 +312,64 @@ def load_pe(path):
     for va, body in parts:
         blob[va:va + len(body)] = body
     assert len(blob) == end
+    if base is not None and base != imgbase:
+        reloc_rva, reloc_size = struct.unpack_from("<II", d, pe + 24 + 96 + 5 * 8)
+        if not reloc_rva or not reloc_size:
+            raise ValueError("payload linked at 0x%08X but the section lands at 0x%08X; "
+                             "fixed payload has no relocations; relink with /base:0x%X"
+                             % (imgbase, base, base))
+        apply_relocations(blob, reloc_rva, reloc_size, base - imgbase)
     # Back bss with file zeroes instead of relying on the loader.
     return bytes(blob), end, entry_rva, imgbase
+
+
+def apply_relocations(blob, rva, size, delta):
+    """Apply checked PE32 HIGHLOW fixups; ABSOLUTE entries are alignment padding."""
+    end = rva + size
+    directory_start = rva
+    if rva < 0 or size < 0 or end > len(blob):
+        raise ValueError("payload relocation directory is outside the image")
+    fixups = []
+    seen = set()
+    while rva < end:
+        if end - rva < 8:
+            raise ValueError("truncated payload relocation block")
+        page, length = struct.unpack_from("<II", blob, rva)
+        if page % PAGE or length < 8 or length % 4 or rva + length > end:
+            raise ValueError("invalid payload relocation block size")
+        for at in range(rva + 8, rva + length, 2):
+            entry = struct.unpack_from("<H", blob, at)[0]
+            kind, offset = entry >> 12, entry & 0xFFF
+            if kind == 0:
+                continue
+            if kind != 3:
+                raise ValueError("unsupported payload relocation type %d" % kind)
+            target = page + offset
+            if target + 4 > len(blob) or target < 0 or any(
+                    target + shift in seen for shift in range(-3, 4)) or \
+                    (target < end and target + 4 > directory_start):
+                raise ValueError("invalid or duplicate payload relocation target")
+            seen.add(target)
+            fixups.append(target)
+        rva += length
+    for target in fixups:
+        struct.pack_into("<I", blob, target, (_u32(blob, target) + delta) & 0xFFFFFFFF)
+
+
+def rebase_hooks(manifest, base, vsize):
+    """Move payload symbols while retaining opcode limits and engine-site metadata."""
+    linked = manifest["base"]
+    linked = int(linked, 0) if isinstance(linked, str) else linked
+    keys = manifest.get("payload_hooks")
+    hooks = dict(manifest.get("hooks", {}))
+    for key, value in hooks.items():
+        address = int(str(value), 16)
+        is_payload = key in keys if keys is not None else linked <= address < linked + vsize
+        if is_payload:
+            if not linked <= address < linked + vsize:
+                raise ValueError("payload hook %s is outside the linked image" % key)
+            hooks[key] = "0x%08X" % (address + base - linked)
+    return hooks
 
 
 def write_thunks(x, path, kernel_def):
@@ -340,20 +402,17 @@ def inject(xbe, payload, out, name=".tes3xhk", hook_entry=False, patch_calls=())
     """Add a linked payload as a new section of xbe and write the result to out."""
     raw = open(xbe, "rb").read()
     x = Xbe(raw)
-    blob, vsize, entry_rva, imgbase = load_pe(payload)
     va = x.next_va()
-    if imgbase != va:
-        raise ValueError("payload linked at 0x%08X but the section lands at 0x%08X; "
-                         "relink with /base:0x%X" % (imgbase, va, va))
+    blob, vsize, entry_rva, imgbase = load_pe(payload, base=va)
 
     orig_entry = x.entry
     x.add_section(name, blob, vsize, SEC_PRELOAD | SEC_EXECUTABLE | SEC_WRITABLE)
     print("  + section %s VA 0x%08X vsize 0x%X raw 0x%X" % (name, va, vsize, len(blob)))
 
     if hook_entry:
-        x.set_entry(imgbase + entry_rva)
+        x.set_entry(va + entry_rva)
         print("  entry 0x%08X -> 0x%08X (payload must tail-jump back)"
-              % (orig_entry, imgbase + entry_rva))
+              % (orig_entry, va + entry_rva))
 
     patched = []
     for site, target in patch_calls:

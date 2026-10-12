@@ -4,6 +4,11 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- Payload sections and hook addresses can relocate within the same engine image. Existing
+  fixed payloads still require their linked address; builds still need LLVM and remain bound
+  to the input engine. See [payload injection](patches/payload.md).
+- xemu disc additions and direct-engine boot break staging hardlinks before replacing files,
+  preserving the source game folder when runs share a deploy tree.
 - The console manager is now TES3X Dash. `tes3x dash` replaces `tes3x manager`, which still
   works, as do `tes3x release manager`, `--manager` and `--no-manager`. The Dash installs to
   `TES3XDash`, the Xbox's own settings live in `E:/TES3X/xbox.ini` (was `console.ini`) and the

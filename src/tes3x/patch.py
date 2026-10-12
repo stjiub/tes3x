@@ -310,20 +310,29 @@ def _payload(x, value, ctx):
     """Inject a code section and run it from the entry point."""
     if not value:
         raise PatchError("payload: needs a linked PE")
-    blob, vsize, entry_rva, imgbase = tes3x_inject.load_pe(value)
     va = x.next_va()
-    if imgbase != va:
-        raise PatchError("payload linked at 0x%08X but the section lands at 0x%08X; "
-                         "relink with /base:0x%X" % (imgbase, va, va))
+    try:
+        blob, vsize, entry_rva, imgbase = tes3x_inject.load_pe(value, base=va)
+    except ValueError as exc:
+        raise PatchError(str(exc)) from exc
     x.add_section(ctx["section"], blob, vsize, 0x02 | 0x04 | 0x01)
-    x.set_entry(imgbase + entry_rva)
+    x.set_entry(va + entry_rva)
     ctx["payload"] = value
     manifest = os.path.splitext(value)[0] + ".json"
     if os.path.exists(manifest):
         with open(manifest, encoding="utf-8") as f:
-            ctx["hooks"] = json.load(f).get("hooks", {})
+            manifest_data = json.load(f)
+        manifest_base = manifest_data.get("base")
+        if isinstance(manifest_base, str):
+            manifest_base = int(manifest_base, 0)
+        if manifest_base != imgbase:
+            raise PatchError("payload manifest base does not match the PE")
+        try:
+            ctx["hooks"] = tes3x_inject.rebase_hooks(manifest_data, va, vsize)
+        except ValueError as exc:
+            raise PatchError(str(exc)) from exc
     return [(tes3x_inject.HDR_ENTRY, 4, "section %s at 0x%08X, entry -> 0x%08X"
-             % (ctx["section"], va, imgbase + entry_rva))]
+             % (ctx["section"], va, va + entry_rva))]
 
 
 @patch("multi-bsa")
