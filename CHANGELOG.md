@@ -4,6 +4,11 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- The Dash no longer hashes a retail base again once the server's file list has verified it;
+  it only checks that each file is there at its size. A different folder or list is still
+  hashed. Delete the base's `tes3xbuild.json` to force a full check. Install the Dash again.
+- Launching the Dash for xemu now selects its seeded retail base and installs the server's build
+  to the xemu disk instead of staging a copy on the read-only disc.
 - Building an overlay-layout profile for an xemu target no longer needs `retail_root`; Play uses
   the retail base staged on its disc.
 - The GUI toolbar's main button is Deploy for an Xbox target and Play for an xemu target. Its
