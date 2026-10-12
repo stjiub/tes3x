@@ -396,7 +396,11 @@ def require_file(path, label):
 
 def run(command):
     print("\n== " + " ".join(str(part) for part in command), flush=True)
-    subprocess.run([str(part) for part in command], check=True)
+    # a child of a console-less parent gets no standard handles unless they are passed on
+    streams = {name: stream if stream is not None else subprocess.DEVNULL
+               for name, stream in (("stdout", sys.stdout), ("stderr", sys.stderr))}
+    subprocess.run([str(part) for part in command], check=True, stdin=subprocess.DEVNULL,
+                   **streams)
 
 
 def source_revision():
