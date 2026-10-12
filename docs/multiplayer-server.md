@@ -66,7 +66,7 @@ the session lives only as long as the server does: stop it and the deaths, objec
 it recorded are gone. With `--world DIR` it
 keeps the game clock, the deaths, the doors, locks and items taken, the items dropped or placed,
 containers' contents, actors' AI settings and disposition, the weather, learned topics,
-faction ranks and the world's globals in one file per load order in `DIR`, loads it when the
+faction ranks, the world's globals and references' script locals in one file per load order in `DIR`, loads it when the
 first console joins in game and writes it every 10 seconds
 while it changes, so a restarted server carries on where it stopped. A joined client starts from
 the data files and applies the server's world; it does not import changes from a local save.
@@ -395,7 +395,10 @@ form and carries every other global the console keeps (not the clock, `Random100
 or derived ones). The world file keeps the latest value of each, up to 1,024, and sends a
 change to the other joined characters; the later of two changes wins. The server replays
 them before READY and puts them in the state file when the world is loaded, which after a
-restart happens once a console is in game. Identity, worn and effect snapshots are checked when reassembled;
+restart happens once a console is in game. `LOCALS` (event 37) carries a data-file
+reference's refid, a count and entries of a slot (kind << 14 | index; short, long, float) and
+a raw u32 value. The server keeps the latest of each, up to 16,384 values, relays the event
+and replays all of them after WELCOME. Identity, worn and effect snapshots are checked when reassembled;
 effects are capped at 64 entries. Server-to-client player sub-kinds are rejected.
 
 Inventory entries carry a signed i32 count and a flags byte (only `ENTRY_DATA`), optional

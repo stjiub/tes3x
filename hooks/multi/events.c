@@ -56,6 +56,8 @@ static void event_handle(const struct event *e)
         shot_event(e);
     } else if (e->kind == EVENT_OBJECTS && e->length >= 1) {
         objects_event(e);
+    } else if (e->kind == EVENT_LOCALS) {
+        locals_event(e);
     } else if (e->kind == EVENT_SPAWN) {
         spawn_event(e);
     } else if (e->kind == EVENT_CONTENTS) {

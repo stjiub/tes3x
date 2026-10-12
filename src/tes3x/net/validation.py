@@ -140,6 +140,11 @@ def valid_client_event(kind, data):
     if kind == p.EVENT_OBJECTS:
         return (bool(data) and len(data) == 1 + data[0] * p.OBJECT.size
                 and all(state & ~15 == 0 for _, _, state, _ in p.OBJECT.iter_unpack(data[1:])))
+    if kind == p.EVENT_LOCALS:
+        try:
+            return bool(p.unpack_locals(data))
+        except ValueError:
+            return False
     if kind in (p.EVENT_REMOVE, p.EVENT_WANT):
         return bool(data) and len(data) == 1 + data[0] * (4 if kind == p.EVENT_REMOVE else 2)
     if kind == p.EVENT_WEATHER:

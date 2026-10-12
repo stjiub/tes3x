@@ -938,6 +938,31 @@ class ServerTests(unittest.TestCase):
                             bytes([net.WORLD_GLOBALS, 2]) + struct.pack('<f', 1.0) + b'x\0'):
                 self.assertFalse(valid_client_event(net.EVENT_PLAYER, invalid))
 
+    def test_script_locals_events_are_checked_and_bounded(self):
+        net = tes3x_net
+        values = {i: i for i in range(net.LOCALS_PER_EVENT + 1)}
+        events = net.pack_locals(0x0101F7C4, values)
+        self.assertEqual(len(events), 2)
+        for data in events:
+            self.assertLessEqual(len(data), net.EVENT_DATA)
+            self.assertTrue(valid_client_event(net.EVENT_LOCALS, data))
+        self.assertEqual(dict(kv for data in events for kv in net.unpack_locals(data)[1].items()),
+                         values)
+        self.assertEqual(net.describe_local(net.LOCAL_SHORT << 14 | 2, 0xFFFFFFFF), 's2 -1')
+        self.assertEqual(net.describe_local(net.LOCAL_FLOAT << 14, 0x41480000), 'f0 12.5')
+        for invalid in (b'', struct.pack('<IB', 1, 0), struct.pack('<IB', 1, 2) + net.LOCAL.pack(0, 1),
+                        struct.pack('<IB', 1, 1) + net.LOCAL.pack(3 << 14, 1),
+                        struct.pack('<IB', 1, 2) + net.LOCAL.pack(0, 1) * 2):
+            self.assertFalse(valid_client_event(net.EVENT_LOCALS, invalid))
+        server = net.Server.__new__(net.Server)
+        server.world, server.detail = net.World(), {'verbose': False}
+        client = SimpleNamespace(id=1)
+        server.world.locals = {1: {i: 0 for i in range(net.LOCALS_MAX - 1)}}
+        server.event_locals(client, net.EVENT_LOCALS, net.pack_locals(2, {0: 5, 1: 6})[0], '', 0.0)
+        self.assertEqual(server.world.locals[2], {0: 5})
+        server.event_locals(client, net.EVENT_LOCALS, net.pack_locals(2, {0: 7})[0], '', 0.0)
+        self.assertEqual(server.world.locals[2], {0: 7})
+
     def test_stream_only_character_creation_snapshot_and_restart(self):
         world = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, world)
@@ -1483,12 +1508,15 @@ class ServerTests(unittest.TestCase):
         made = {'cell': 4, 'count': 1, 'removed': False, 'pos': [1.0, 2.0, 3.0],
                 'rot': [0.0, 0.0, 0.5], 'id': 'gold_001'}
         status = net.STATUS.pack(refid + 2, 10, 20, 30, 40, 50)
+        float_slot = net.LOCAL_FLOAT << 14 | 3
+        locals_event = net.pack_locals(refid, {0: 1, float_slot: 0x41480000})[0]
         self.send_events(
             client,
             (net.EVENT_DEATH, struct.pack('<I', refid)),
             (net.EVENT_OBJECTS, bytes([1]) + net.OBJECT.pack(refid + 1, 3, net.OBJECT_DISABLED, 0)),
             (net.EVENT_WEATHER, bytes([0, 1]) + struct.pack('<HB', 3, 2)),
             (net.EVENT_STATUS, status),
+            (net.EVENT_LOCALS, locals_event),
             (net.EVENT_SPAWN, net.pack_spawn(1, made)),
             (net.EVENT_SPAWN, net.pack_spawn(2, dict(made, id='atronach_flame', summon=True))))
         self.drain(client)
@@ -1497,13 +1525,14 @@ class ServerTests(unittest.TestCase):
 
         saved = next(world.glob('*.json'))
         state = json.loads(saved.read_text(encoding='utf-8'))
-        self.assertEqual(sorted(state), ['clock', 'contents', 'deaths', 'factions', 'globals', 'next_spawn', 'objects',
+        self.assertEqual(sorted(state), ['clock', 'contents', 'deaths', 'factions', 'globals', 'locals', 'next_spawn', 'objects',
                                          'spawns', 'statuses', 'topics', 'weather'])
         self.assertEqual(len(state['clock']), 6)  # hour, day, month, year, days passed, scale
         self.assertEqual(state['deaths'], {str(refid): 1})
         self.assertEqual(state['objects'], {str(refid + 1): [3, net.OBJECT_DISABLED, 0]})
         self.assertEqual(state['weather'], {'3': 2})
         self.assertEqual(state['statuses'], {str(refid + 2): [10, 20, 30, 40, 50]})
+        self.assertEqual(state['locals'], {str(refid): {'0': 1, str(float_slot): 0x41480000}})
         spawns = sorted(state['spawns'].values(), key=lambda s: s['id'])
         self.assertEqual([(s['id'], s['summon'], s['removed'], s['origin']) for s in spawns],
                          [('atronach_flame', True, False, 1), ('gold_001', False, False, 1)])
@@ -1517,6 +1546,7 @@ class ServerTests(unittest.TestCase):
                           not spawned.add(data) and len(spawned) == 2)
         self.assertIn((net.EVENT_DEATH, struct.pack('<I', refid)), got)
         self.assertIn((net.EVENT_STATUS, status), got)
+        self.assertIn((net.EVENT_LOCALS, locals_event), got)
         replayed = {net.unpack_spawn(data)[1]['id']: net.unpack_spawn(data)[1]
                     for kind, data in got if kind == net.EVENT_SPAWN}
         self.assertFalse(replayed['gold_001']['removed'])

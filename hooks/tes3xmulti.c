@@ -457,6 +457,7 @@ static int script_safe(const u8 *text, u32 max)
 #include "multi/player_topics.c"
 #include "multi/player_factions.c"
 #include "multi/player_globals.c"
+#include "multi/locals.c"
 #include "multi/player_identity.c"
 #include "multi/player_effects.c"
 #include "multi/player_apply.c"
@@ -576,6 +577,7 @@ void tes3x_multi_frame(void)
     ghosts_frame(state);
     authority_frame(ref, state);
     objects_frame();
+    locals_frame(state);
     spawns_frame();
     containers_frame();
     player_frame(ref);
@@ -610,6 +612,7 @@ int tes3x_multi_command(const char *text)
         bounty_stat();
         shot_stat();
         objects_stat();
+        locals_stat();
         spawns_stat();
         containers_stat();
         bulk_stat();
@@ -637,6 +640,8 @@ int tes3x_multi_command(const char *text)
         faction_query(rest);
     } else if ((rest = word(text, "global")) && *(rest = skip(rest))) {
         global_query(rest);
+    } else if ((rest = word(text, "local")) && *(rest = skip(rest))) {
+        local_query(rest);
     } else if ((rest = word(text, "send")) && *(rest = skip(rest))) {
         up_command(rest);
     } else if ((rest = word(text, "save")) && !*skip(rest)) {

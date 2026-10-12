@@ -765,6 +765,8 @@ static int spawn_takes_over(const struct spawn *s, u32 cell, const char *id, con
            dx * dx + dy * dy <= HOLD_NEAR * HOLD_NEAR;
 }
 
+static void locals_touched_ref(const u8 *ref);
+
 static int __attribute__((thiscall)) player_script_hook(void *self, void *scratch, const char *text,
                                                        int a2, int ref, int a4, int a5, int a6)
 {
@@ -773,6 +775,7 @@ static int __attribute__((thiscall)) player_script_hook(void *self, void *scratc
     player_acting++;
     r = ((fn_compile_run)TES3X_NET_COMPILE_RUN)(self, scratch, text, a2, ref, a4, a5, a6);
     player_acting--;
+    locals_touched_ref((const u8 *)ref);
     return r;
 }
 

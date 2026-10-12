@@ -45,7 +45,8 @@ from .proto import (ACTOR, ACTORS, ACTORS_PER_PACKET, ACTOR_DEAD, ACTOR_IN_COMBA
                     PACE_PACKETS, PACE_WINDOW, PASSWORD_MAX, PASSWORD_RATE, PEER, PEER_IP,
                     PICK_CHARACTER, PICK_NEW, PICK_START, PLACE, PLACE_HOLD, PLAYER_ALIVE,
                     PLAYER_BOUNTY, PLAYER_DEATH, PLAYER_EFFECTS, PLAYER_EFFECTS_MAX,
-                    PLAYER_EFFECT_BYTES, PLAYER_FACTIONS, PLAYER_GLOBALS, PLAYER_GLOBALS_MAX, WORLD_GLOBALS, WORLD_GLOBALS_MAX, FACTIONS_MAX, FACTION_ALL, FACTION_EXPELLED,
+                    PLAYER_EFFECT_BYTES, PLAYER_FACTIONS, PLAYER_GLOBALS, PLAYER_GLOBALS_MAX, WORLD_GLOBALS, WORLD_GLOBALS_MAX, FACTIONS_MAX,
+                    EVENT_LOCALS, LOCALS_MAX, describe_local, pack_locals, unpack_locals, FACTION_ALL, FACTION_EXPELLED,
                     FACTION_JOINED, FACTION_RANK, FACTION_REPUTATION, PLAYER_IDENTITY, PLAYER_ITEMS, PLAYER_JOURNAL,
                     PLAYER_LEVEL, PLAYER_MODIFIERS, PLAYER_PLACE, PLAYER_READY, PLAYER_RESPAWN,
                     PLAYER_SKILLS, PLAYER_SPELLS, PLAYER_TOPICS, PLAYER_TOPICS_MAX,
@@ -164,6 +165,8 @@ class World:
         self.factions = {}
         # global name lowered -> [name, value]: the world's globals, as consoles last set them
         self.globals = {}
+        # refid -> {slot: raw value}: data-file references' script locals; replayed likewise
+        self.locals = {}
         # spawn id -> reference made at run time (unpack_spawn), removed ones too; replayed likewise
         self.spawns = {}
         # refid -> {"cell", "entries", "origin"}: a container's latest contents; sent to whoever
@@ -189,6 +192,8 @@ class World:
         self.topics = list(known.values())
         self.factions.update(saved.get("factions", {}))
         self.globals.update(saved.get("globals", {}))
+        self.locals.update({int(k): {int(s): v for s, v in values.items()}
+                            for k, values in saved.get("locals", {}).items()})
         for spawn in self.spawns.values():
             if spawn.get("summon"):
                 spawn["removed"] = True  # Active effects recreate summons for their target.
@@ -207,7 +212,9 @@ class World:
                  "statuses": {str(k): list(v) for k, v in self.statuses.items()},
                  "topics": self.topics,
                  "factions": self.factions,
-                 "globals": self.globals}
+                 "globals": self.globals,
+                 "locals": {str(k): {str(s): v for s, v in values.items()}
+                            for k, values in self.locals.items()}}
         if self.clock:
             self.clock.advance(now)
             state["clock"] = [self.clock.hour, self.clock.day, self.clock.month, self.clock.year,
@@ -219,7 +226,7 @@ class World:
         return (f"{len(self.deaths)} deaths, {len(self.objects)} objects, "
                 f"{len(self.spawns)} spawns, {len(self.contents)} containers, "
                 f"{len(self.weather)} regions, {len(self.statuses)} statuses, "
-                f"{len(self.globals)} globals"
+                f"{len(self.globals)} globals, {len(self.locals)} scripted references"
                 + (f", clock {self.clock}" if self.clock else ""))
 
 
@@ -2250,6 +2257,27 @@ class Server:
                       flush=True)
         return RELAY
 
+    def event_locals(self, client, kind, data, stamp, now):
+        """The latest value of each local, bounded; the event goes on to the others as it is."""
+        refid, values = unpack_locals(data)
+        kept = self.world.locals.get(refid, {})
+        room = LOCALS_MAX - sum(len(v) for v in self.world.locals.values())
+        changed = {}
+        for slot, value in values.items():
+            if kept.get(slot) == value or (slot not in kept and room <= 0):
+                continue
+            room -= slot not in kept
+            changed[slot] = value
+        if not changed:
+            return RELAY
+        kept.update(changed)
+        self.world.locals[refid] = kept
+        self.world.dirty = True
+        if self.detail["verbose"]:
+            print(f"{stamp} client {client.id}: {refid:#010x} locals "
+                  + ", ".join(describe_local(*v) for v in sorted(changed.items())), flush=True)
+        return RELAY
+
     def event_text(self, client, kind, data, stamp, now):
         print(f"{stamp} client {client.id} says: {wire_text(data)}", flush=True)
         return RELAY
@@ -2363,6 +2391,7 @@ class Server:
                       EVENT_STATUS: event_status,
                       EVENT_AFFECT: event_affect,
                       EVENT_OBJECTS: event_objects,
+                      EVENT_LOCALS: event_locals,
                       EVENT_TEXT: event_text,
                       EVENT_GAME: event_game,
                       EVENT_PICK: event_pick,
@@ -2851,6 +2880,9 @@ class Server:
             client.rel.queue(EVENT_DEATH, origin, struct.pack("<I", refid))
         for data in pack_objects(self.world.objects):
             client.rel.queue(EVENT_OBJECTS, 0, data)
+        for refid, values in sorted(self.world.locals.items()):
+            for data in pack_locals(refid, values):
+                client.rel.queue(EVENT_LOCALS, 0, data)
         for refid, values in self.world.statuses.items():
             client.rel.queue(EVENT_STATUS, 0, STATUS.pack(refid, *values))
         for sid, spawn in sorted(self.world.spawns.items(), key=lambda s: s[1]["removed"]):

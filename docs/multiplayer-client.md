@@ -70,6 +70,11 @@ Every other global belongs to the world and is shared: quest counters such as
 and is kept across server restarts. The clock, `Random100`, character creation's and those the
 game works out again from your bounty, gold or Morag Tong writs are not kept.
 
+Variables that scripts keep on people and objects from the data files (local variables, such
+as where a quest giver is in their story) are shared too. Whoever runs that area for the
+group sends their changes, and so does any player whose dialogue changed them; they are kept
+across server restarts and set again when the area loads.
+
 **Save to Server** flushes every supported character field and your current place. The server
 confirms the save after writing the character and world. **Leave** waits for that confirmation
 before quitting; after 30 seconds without confirmation, you can choose to leave anyway or stay.
@@ -99,11 +104,12 @@ back at the marker on its next join.
   with time stopped while offline. At most 64 active effect entries are retained. Consumed
   potions include their adjusted source definition. Custom spell and enchantment definitions
   are not recreated; a source must exist in the build, and a missing caster cannot be resolved.
-  Ghost caster ids belong to the current session. Variables that scripts keep on objects
-  (local variables) are not retained yet and start at New Game values. Restoring a journal
-  only moves a quest forward, never back.
+  Ghost caster ids belong to the current session. Local variables of objects made during play
+  are not kept, and decimal ones (mostly timers) are compared only every 10 seconds. Restoring
+  a journal only moves a quest forward, never back.
   The world keeps up to 4,096 learned topic names of at most 63 bytes each, and up to 512
-  factions, up to 128 of a character's own globals and up to 1,024 world globals.
+  factions, up to 128 of a character's own globals, up to 1,024 world globals and up to 16,384
+  local variable values.
   When two players change the same faction or world global at the same moment, the later
   change wins; within about a second of each other, the two consoles can end up with each
   other's value until the next change.
@@ -197,6 +203,7 @@ With `console` in the build, open the console (Back + right thumb click) and typ
 | `tes3xnet topic NAME` | log `net.topic_known` as 1 or 0 for a learned dialogue topic; spaces need no quotes |
 | `tes3xnet faction ID` | log `net.faction` with the faction's stored rank, reputation and membership flags (1 joined, 2 expelled) |
 | `tes3xnet global NAME` | print a global's value to the console (`NAME >> 1.00`) and log `net.global` with its raw value, type and 1 if it is the character's own, 2 if the world's |
+| `tes3xnet local ID NAME` | print a script local of a reference in the loaded area (`ID.NAME >> 1.00`), by object id or by refid as `0x` hex, which an NPC needs; logs `net.local` with refid, slot and raw value |
 | `tes3xnet say TEXT` | send a line of text to the other players (logged there as `net.text`) |
 | `tes3xnet send NAME` | send `U:\TES3X\NAME` to the server when the admin asks for a diagnostic file; this does not save your multiplayer character |
 | `tes3xnet save` | flush supported character state and wait for the server to confirm storage |

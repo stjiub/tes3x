@@ -287,6 +287,18 @@ EVENT_SNAPSHOT = 36  # token u32 + STATE_BODY; reply token u32 after durable sto
 EVENT_BOUNTY = 30  # the player's bounty, i32: the latest of each client is kept and replayed
 
 
+# Script locals of data-file references: refid, count, then LOCAL (slot: kind << 14 | index, the
+# raw value; a short sign-extended). The cell's authority sends changes, any console those of a
+# reference its player's dialogue ran on. The server keeps the latest of each, relays them and
+# replays all after WELCOME.
+EVENT_LOCALS = 37
+LOCAL = struct.Struct("<HI")
+LOCAL_SHORT, LOCAL_LONG, LOCAL_FLOAT = 0, 1, 2
+LOCAL_INDEX = 0x3FFF
+LOCALS_PER_EVENT = (EVENT_DATA - 5) // LOCAL.size
+LOCALS_MAX = 16384  # values kept in all
+
+
 # From a client after each WELCOME: its launch token (new each title launch), then the name of the
 # save that launch loaded, or "". A console not running its character's latest checkpoint is sent
 # the checkpoint as CHECKPOINT_NAME and LOAD (to a client: load that file once it has it).
@@ -779,6 +791,33 @@ def pack_weather(entries, flags=0):
     return [bytes((flags, len(chunk))) + b"".join(WEATHER_ENTRY.pack(*e) for e in chunk)
             for chunk in (items[i:i + WEATHER_PER_EVENT]
                           for i in range(0, len(items), WEATHER_PER_EVENT))]
+
+
+def pack_locals(refid, values):
+    """LOCALS events for one reference's {slot: raw value}."""
+    items = sorted(values.items())
+    return [struct.pack("<IB", refid, len(chunk)) + b"".join(LOCAL.pack(*v) for v in chunk)
+            for chunk in (items[i:i + LOCALS_PER_EVENT]
+                          for i in range(0, len(items), LOCALS_PER_EVENT))]
+
+
+def unpack_locals(data):
+    """(refid, {slot: raw value}) of a LOCALS event; ValueError if malformed."""
+    if len(data) < 5 or len(data) != 5 + data[4] * LOCAL.size or not data[4]:
+        raise ValueError("bad locals event")
+    values = dict(LOCAL.iter_unpack(data[5:]))
+    if len(values) != data[4] or any(slot >> 14 > LOCAL_FLOAT for slot in values):
+        raise ValueError("bad local slot")
+    return struct.unpack_from("<I", data)[0], values
+
+
+def describe_local(slot, value):
+    kind, index = slot >> 14, slot & LOCAL_INDEX
+    if kind == LOCAL_FLOAT:
+        shown = f"{struct.unpack('<f', struct.pack('<I', value))[0]:g}"
+    else:
+        shown = str(struct.unpack("<i", struct.pack("<I", value))[0])
+    return f"{'slf'[kind]}{index} {shown}"
 
 
 def pack_objects(objects):

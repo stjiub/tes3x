@@ -48,6 +48,9 @@ No official releases yet. The first public release is in preparation.
   one player reaches the others and survives a server restart. Update both server and game
   builds; values set before this update are not imported. See
   [character state](docs/multiplayer-client.md#saving-and-character-state).
+- Multiplayer shares the variables that scripts keep on people and objects, such as quest
+  progress: they reach the other players and survive a server restart. Update both server and
+  game builds. `tes3xnet local ID NAME` prints one.
 
 - Multiplayer documentation has separate [player](docs/multiplayer-client.md) and
   [server admin](docs/multiplayer-server.md) guides.

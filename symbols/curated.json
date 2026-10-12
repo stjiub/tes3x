@@ -3048,9 +3048,10 @@
       "va": "0x0012A9B0",
       "name": "Reference::getScriptVariables",
       "kind": "function",
-      "confidence": "matched",
-      "provenance": "mwse:TES3_Reference_getScriptVariables",
-      "pc_va": "0x004E7020"
+      "confidence": "verified",
+      "provenance": "mwse:TES3_Reference_getScriptVariables; decompile matches",
+      "pc_va": "0x004E7020",
+      "signature": "TES3::ScriptVariables* __thiscall getScriptVariables()"
     },
     {
       "va": "0x0012AC50",
@@ -3118,11 +3119,12 @@
     },
     {
       "va": "0x0012DAC0",
-      "name": "CS::AddTopicToList",
+      "name": "Reference::ensureScriptDataIsInstanced",
       "kind": "function",
-      "confidence": "matched",
-      "provenance": "mwse:CS_AddTopicToList",
-      "pc_va": "0x004E7050"
+      "confidence": "verified",
+      "provenance": "decompile: finds attachment 6, sets item data +0x14 script and +0x18 variables; MWSE TES3_Reference_ensureScriptDataIsInstanced (CS_AddTopicToList is a Construction Set address)",
+      "pc_va": "0x004E7050",
+      "signature": "void __thiscall ensureScriptDataIsInstanced()"
     },
     {
       "va": "0x0012DD90",
@@ -3305,6 +3307,13 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_Script_resetEventsAndVars",
       "pc_va": "0x004FF450"
+    },
+    {
+      "va": "0x00137B30",
+      "name": "Script::createVariables",
+      "confidence": "verified",
+      "provenance": "decompile: allocates ScriptVariables (0x14) and copies the script's default shorts +0x5C, longs +0x60, floats +0x64 by counts +0x30/+0x34/+0x38",
+      "signature": "TES3::ScriptVariables* __thiscall createVariables()"
     },
     {
       "va": "0x00137C50",
