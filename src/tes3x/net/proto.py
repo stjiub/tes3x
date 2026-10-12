@@ -299,6 +299,15 @@ LOCALS_PER_EVENT = (EVENT_DATA - 5) // LOCAL.size
 LOCALS_MAX = 16384  # values kept in all
 
 
+# To a cell's new authority, before its AUTHORITY, when nobody had the cell: count, then the kept
+# state of each actor last reported in it (refid, x, y, z, heading, health, magicka, fatigue,
+# ACTOR flags). The console places each one the first frame it runs it.
+EVENT_ACTOR_PLACE = 38
+ACTOR_PLACE = struct.Struct("<I7fI")
+ACTOR_PLACES_PER_EVENT = (EVENT_DATA - 4) // ACTOR_PLACE.size
+ACTORS_KEPT_MAX = 8192
+
+
 # From a client after each WELCOME: its launch token (new each title launch), then the name of the
 # save that launch loaded, or "". A console not running its character's latest checkpoint is sent
 # the checkpoint as CHECKPOINT_NAME and LOAD (to a client: load that file once it has it).
@@ -522,7 +531,7 @@ TARGETED = {EVENT_HOLD: "holds", EVENT_HOLD_BROKEN: "breaks the hold on", EVENT_
 
 # Events only the server sends. A console acts on them, so one from a client is never relayed.
 SERVER_EVENTS = {EVENT_WELCOME, EVENT_AUTHORITY, EVENT_OWNERS, EVENT_SAVE, EVENT_LOAD,
-                 EVENT_CHARS, EVENT_NEWCHAR, EVENT_RUN}
+                 EVENT_CHARS, EVENT_NEWCHAR, EVENT_RUN, EVENT_ACTOR_PLACE}
 
 
 # What an event handler returns: whether the event goes on to the other clients.

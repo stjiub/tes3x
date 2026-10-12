@@ -642,6 +642,8 @@ int tes3x_multi_command(const char *text)
         global_query(rest);
     } else if ((rest = word(text, "local")) && *(rest = skip(rest))) {
         local_query(rest);
+    } else if ((rest = word(text, "actor")) && *(rest = skip(rest))) {
+        actor_query(rest);
     } else if ((rest = word(text, "send")) && *(rest = skip(rest))) {
         up_command(rest);
     } else if ((rest = word(text, "save")) && !*skip(rest)) {

@@ -75,6 +75,11 @@ as where a quest giver is in their story) are shared too. Whoever runs that area
 group sends their changes, and so does any player whose dialogue changed them; they are kept
 across server restarts and set again when the area loads.
 
+People and creatures keep where they were and how hurt they were. When you enter an area no
+other player is in, or join after a server restart, they stand where they were last seen rather
+than where the game starts them; their AI begins its current task again from there. The dead
+stay dead.
+
 **Save to Server** flushes every supported character field and your current place. The server
 confirms the save after writing the character and world. **Leave** waits for that confirmation
 before quitting; after 30 seconds without confirmation, you can choose to leave anyway or stay.
@@ -204,6 +209,7 @@ With `console` in the build, open the console (Back + right thumb click) and typ
 | `tes3xnet faction ID` | log `net.faction` with the faction's stored rank, reputation and membership flags (1 joined, 2 expelled) |
 | `tes3xnet global NAME` | print a global's value to the console (`NAME >> 1.00`) and log `net.global` with its raw value, type and 1 if it is the character's own, 2 if the world's |
 | `tes3xnet local ID NAME` | print a script local of a reference in the loaded area (`ID.NAME >> 1.00`), by object id or by refid as `0x` hex, which an NPC needs; logs `net.local` with refid, slot and raw value |
+| `tes3xnet actor 0xREFID` | print an actor's health (`REFID >> 25.00`); with `near X Y R` instead print 1.00 if it stands within R units of X, Y, else 0.00. Logs `net.actor_at` with its position |
 | `tes3xnet say TEXT` | send a line of text to the other players (logged there as `net.text`) |
 | `tes3xnet send NAME` | send `U:\TES3X\NAME` to the server when the admin asks for a diagnostic file; this does not save your multiplayer character |
 | `tes3xnet save` | flush supported character state and wait for the server to confirm storage |

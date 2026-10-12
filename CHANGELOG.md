@@ -60,6 +60,10 @@ No official releases yet. The first public release is in preparation.
 - Multiplayer shares the variables that scripts keep on people and objects, such as quest
   progress: they reach the other players and survive a server restart. Update both server and
   game builds. `tes3xnet local ID NAME` prints one.
+- Multiplayer keeps where people and creatures were and how hurt they were: after a server
+  restart, or when someone enters a place nobody was in, they stand where they were left instead
+  of where the game starts them. Their AI starts its current task again from there. Update both
+  server and game builds. `tes3xnet actor 0xREFID` prints an actor's health.
 
 - Multiplayer documentation has separate [player](docs/multiplayer-client.md) and
   [server admin](docs/multiplayer-server.md) guides.

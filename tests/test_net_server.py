@@ -963,6 +963,75 @@ class ServerTests(unittest.TestCase):
         server.event_locals(client, net.EVENT_LOCALS, net.pack_locals(2, {0: 7})[0], '', 0.0)
         self.assertEqual(server.world.locals[2], {0: 7})
 
+    def test_actor_states_are_kept_and_sent_to_a_cell_s_next_authority(self):
+        net = tes3x_net
+        server = net.Server.__new__(net.Server)
+        server.world, server.detail = net.World(), {'verbose': False}
+        key = (net.KEY_EXTERIOR, -2, -9, b'')
+        values = (0x0101F7C4, -11000.0, -70800.0, 233.0, 1.5, 25.0, 0, 82.0, 154.0, 0,
+                  net.NO_ANIM)
+        server.keep_actor(0x0101F7C4, key, values)
+        server.world.spawns[0xFF000001] = {'summon': True, 'removed': False}
+        server.keep_actor(0xFF000001, key, (0xFF000001,) + values[1:])
+        server.world.spawns[0xFF000002] = {'removed': True}
+        server.keep_actor(0xFF000002, key, (0xFF000002,) + values[1:])
+        self.assertEqual(set(server.world.actors), {0x0101F7C4, 0xFF000002})
+        # A removed spawn is kept but not placed; another cell's actors are not sent.
+        events = server.actor_places(key)
+        self.assertEqual(events, [struct.pack('<I', 1) + net.ACTOR_PLACE.pack(
+            0x0101F7C4, -11000.0, -70800.0, 233.0, 1.5, 25.0, 82.0, 154.0, 0)])
+        self.assertEqual(server.actor_places((net.KEY_EXTERIOR, -2, -8, b'')), [])
+        self.assertLessEqual(4 + net.ACTOR_PLACES_PER_EVENT * net.ACTOR_PLACE.size,
+                             net.EVENT_DATA)
+        inside = (net.KEY_INTERIOR, 0, 0, b"Arrille's Tradehouse")
+        for refid in range(1, 4):
+            server.keep_actor(refid, inside, (refid,) + values[1:])
+        self.assertEqual([struct.unpack_from('<I', d)[0] for d in server.actor_places(inside)],
+                         [2, 1])
+
+        # Through the world file.
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder)
+        server.world.path = str(folder / 'world.json')
+        server.world.save(0.0)
+        restored = net.World()
+        restored.load(server.world.path, 0.0)
+        restored.spawns = server.world.spawns
+        server.world = restored
+        self.assertEqual(server.actor_places(key), events)
+
+        # Bounded: a new actor past the limit is dropped, a known one still changes.
+        server.world.actors.update({0x02000000 + i: list(restored.actors[0x0101F7C4])
+                                    for i in range(net.ACTORS_KEPT_MAX - len(restored.actors))})
+        server.keep_actor(0x03000000, key, (0x03000000,) + values[1:])
+        self.assertNotIn(0x03000000, server.world.actors)
+        server.keep_actor(0x0101F7C4, key, values[:5] + (10.0,) + values[6:])
+        self.assertEqual(server.world.actors[0x0101F7C4][8], 10.0)
+        for refid in [r for r in server.world.actors if r >= 0x02000000]:
+            del server.world.actors[refid]
+
+        # Only a cell nobody had sends them, to its new authority, before AUTHORITY.
+        def client(cid, state):
+            queued = []
+            return SimpleNamespace(id=cid, alive=True, state=state, busy=None, known={},
+                                   loaded=set(), rel=SimpleNamespace(
+                                       queue=lambda k, s, d: queued.append(k)), queued=queued)
+        state = net.STATE_BODY.pack(net.IN_WORLD, -10500.0, -71000.0, 200.0, 0.0, b'')
+        first = client(1, state)
+        server.clients = {1: first}
+        server.owners, server.bot = {}, SimpleNamespace(state=None)
+        server.flush = server.update_owners = lambda *a: None
+        server.update_authority(0.0)
+        place_at = first.queued.index(net.EVENT_ACTOR_PLACE)
+        self.assertEqual(first.queued[place_at + 1:].count(net.EVENT_ACTOR_PLACE), 0)
+        self.assertEqual(first.queued[place_at + 1], net.EVENT_AUTHORITY)
+        second = client(2, state)
+        server.clients[2] = second
+        server.update_authority(0.0)
+        self.assertNotIn(net.EVENT_ACTOR_PLACE, second.queued)
+        self.assertIn(net.EVENT_AUTHORITY, second.queued)
+        self.assertFalse(valid_client_event(net.EVENT_ACTOR_PLACE, events[0]))
+
     def test_stream_only_character_creation_snapshot_and_restart(self):
         world = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, world)
@@ -1525,7 +1594,7 @@ class ServerTests(unittest.TestCase):
 
         saved = next(world.glob('*.json'))
         state = json.loads(saved.read_text(encoding='utf-8'))
-        self.assertEqual(sorted(state), ['clock', 'contents', 'deaths', 'factions', 'globals', 'locals', 'next_spawn', 'objects',
+        self.assertEqual(sorted(state), ['actors', 'clock', 'contents', 'deaths', 'factions', 'globals', 'locals', 'next_spawn', 'objects',
                                          'spawns', 'statuses', 'topics', 'weather'])
         self.assertEqual(len(state['clock']), 6)  # hour, day, month, year, days passed, scale
         self.assertEqual(state['deaths'], {str(refid): 1})

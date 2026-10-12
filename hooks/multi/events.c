@@ -20,7 +20,8 @@ static void event_handle(const struct event *e)
      * through a server that relays everything. */
     if (e->origin && e->kind < 64 && (1ull << e->kind & (1ull << EVENT_WELCOME |
             1ull << EVENT_AUTHORITY | 1ull << EVENT_OWNERS | 1ull << EVENT_SAVE |
-            1ull << EVENT_LOAD | 1ull << EVENT_CHARS | 1ull << EVENT_NEWCHAR | 1ull << EVENT_RUN))) {
+            1ull << EVENT_LOAD | 1ull << EVENT_CHARS | 1ull << EVENT_NEWCHAR | 1ull << EVENT_RUN |
+            1ull << EVENT_ACTOR_PLACE))) {
         tes3x_log_hex3("net.event_forged", e->kind, e->origin, e->length);
         return;
     }
@@ -34,7 +35,8 @@ static void event_handle(const struct event *e)
             tes3x_log_hex3("net.notice", 3, e->length, 0);
             notice(text);
         }
-    } else if ((e->kind >= EVENT_AUTHORITY && e->kind <= EVENT_DEATH) || e->kind == EVENT_OWNERS) {
+    } else if ((e->kind >= EVENT_AUTHORITY && e->kind <= EVENT_DEATH) || e->kind == EVENT_OWNERS ||
+               e->kind == EVENT_ACTOR_PLACE) {
         authority_event(e);
     } else if (e->kind == EVENT_WELCOME) {
         welcome_event(e);

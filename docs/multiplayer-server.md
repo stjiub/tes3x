@@ -65,7 +65,8 @@ to `--stop-wait` for the requested snapshots. A second Ctrl+C stops at once. Wit
 the session lives only as long as the server does: stop it and the deaths, objects and equipment
 it recorded are gone. With `--world DIR` it
 keeps the game clock, the deaths, the doors, locks and items taken, the items dropped or placed,
-containers' contents, actors' AI settings and disposition, the weather, learned topics,
+containers' contents, actors' AI settings and disposition, actors' last place and health,
+the weather, learned topics,
 faction ranks, the world's globals and references' script locals in one file per load order in `DIR`, loads it when the
 first console joins in game and writes it every 10 seconds
 while it changes, so a restarted server carries on where it stopped. A joined client starts from
@@ -398,7 +399,11 @@ them before READY and puts them in the state file when the world is loaded, whic
 restart happens once a console is in game. `LOCALS` (event 37) carries a data-file
 reference's refid, a count and entries of a slot (kind << 14 | index; short, long, float) and
 a raw u32 value. The server keeps the latest of each, up to 16,384 values, relays the event
-and replays all of them after WELCOME. Identity, worn and effect snapshots are checked when reassembled;
+and replays all of them after WELCOME. The world file also keeps each actor's latest state from
+its authority (up to 8,192 actors). When a cell gets an authority and nobody had it before, the
+server sends that client `ACTOR_PLACE` (event 38, server only) before `AUTHORITY`: a count and
+up to two entries of refid, position, heading, health, magicka, fatigue and the actor flags,
+for the actors last reported in that cell. Identity, worn and effect snapshots are checked when reassembled;
 effects are capped at 64 entries. Server-to-client player sub-kinds are rejected.
 
 Inventory entries carry a signed i32 count and a flags byte (only `ENTRY_DATA`), optional

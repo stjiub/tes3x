@@ -46,7 +46,8 @@ from .proto import (ACTOR, ACTORS, ACTORS_PER_PACKET, ACTOR_DEAD, ACTOR_IN_COMBA
                     PICK_CHARACTER, PICK_NEW, PICK_START, PLACE, PLACE_HOLD, PLAYER_ALIVE,
                     PLAYER_BOUNTY, PLAYER_DEATH, PLAYER_EFFECTS, PLAYER_EFFECTS_MAX,
                     PLAYER_EFFECT_BYTES, PLAYER_FACTIONS, PLAYER_GLOBALS, PLAYER_GLOBALS_MAX, WORLD_GLOBALS, WORLD_GLOBALS_MAX, FACTIONS_MAX,
-                    EVENT_LOCALS, LOCALS_MAX, describe_local, pack_locals, unpack_locals, FACTION_ALL, FACTION_EXPELLED,
+                    EVENT_LOCALS, LOCALS_MAX, EVENT_ACTOR_PLACE, ACTOR_PLACE,
+                    ACTOR_PLACES_PER_EVENT, ACTORS_KEPT_MAX, describe_local, pack_locals, unpack_locals, FACTION_ALL, FACTION_EXPELLED,
                     FACTION_JOINED, FACTION_RANK, FACTION_REPUTATION, PLAYER_IDENTITY, PLAYER_ITEMS, PLAYER_JOURNAL,
                     PLAYER_LEVEL, PLAYER_MODIFIERS, PLAYER_PLACE, PLAYER_READY, PLAYER_RESPAWN,
                     PLAYER_SKILLS, PLAYER_SPELLS, PLAYER_TOPICS, PLAYER_TOPICS_MAX,
@@ -167,6 +168,9 @@ class World:
         self.globals = {}
         # refid -> {slot: raw value}: data-file references' script locals; replayed likewise
         self.locals = {}
+        # refid -> [cell kind, grid x, grid y, interior, x, y, z, heading, health, magicka,
+        # fatigue, flags]: each actor's latest state; sent to a cell's next authority
+        self.actors = {}
         # spawn id -> reference made at run time (unpack_spawn), removed ones too; replayed likewise
         self.spawns = {}
         # refid -> {"cell", "entries", "origin"}: a container's latest contents; sent to whoever
@@ -194,6 +198,7 @@ class World:
         self.globals.update(saved.get("globals", {}))
         self.locals.update({int(k): {int(s): v for s, v in values.items()}
                             for k, values in saved.get("locals", {}).items()})
+        self.actors.update({int(k): v for k, v in saved.get("actors", {}).items()})
         for spawn in self.spawns.values():
             if spawn.get("summon"):
                 spawn["removed"] = True  # Active effects recreate summons for their target.
@@ -214,7 +219,8 @@ class World:
                  "factions": self.factions,
                  "globals": self.globals,
                  "locals": {str(k): {str(s): v for s, v in values.items()}
-                            for k, values in self.locals.items()}}
+                            for k, values in self.locals.items()},
+                 "actors": {str(k): v for k, v in self.actors.items()}}
         if self.clock:
             self.clock.advance(now)
             state["clock"] = [self.clock.hour, self.clock.day, self.clock.month, self.clock.year,
@@ -226,7 +232,8 @@ class World:
         return (f"{len(self.deaths)} deaths, {len(self.objects)} objects, "
                 f"{len(self.spawns)} spawns, {len(self.contents)} containers, "
                 f"{len(self.weather)} regions, {len(self.statuses)} statuses, "
-                f"{len(self.globals)} globals, {len(self.locals)} scripted references"
+                f"{len(self.globals)} globals, {len(self.locals)} scripted references, "
+                f"{len(self.actors)} actors"
                 + (f", clock {self.clock}" if self.clock else ""))
 
 
@@ -2431,6 +2438,7 @@ class Server:
         for key in sorted(standing & set(new), key=describe_key):  # the rest only follow
             if self.owners.get(key) != new[key]:
                 print(f"{stamp} authority {describe_key(key)}: client {new[key]}", flush=True)
+        previous = dict(self.owners)
         self.owners.clear()
         self.owners.update(new)
         for client in self.clients.values():
@@ -2438,6 +2446,13 @@ class Server:
             for key in client.loaded:
                 if key in new and client.known.get(key) != new[key]:
                     client.known[key] = new[key]
+                    if new[key] == client.id and key not in previous:
+                        places = self.actor_places(key)
+                        for data in places:
+                            client.rel.queue(EVENT_ACTOR_PLACE, 0, data)
+                        if places and self.detail["verbose"]:
+                            print(f"{stamp} client {client.id}: kept actors of "
+                                  f"{describe_key(key)} sent", flush=True)
                     client.rel.queue(EVENT_AUTHORITY, 0, KEY.pack(*key) + struct.pack("<I", new[key]))
                     told = True
             for key in [k for k in client.known if k not in client.loaded]:
@@ -2515,6 +2530,7 @@ class Server:
                 KEY_EXTERIOR, math.floor(x / CELL_UNITS), math.floor(y / CELL_UNITS), b"")
             self.actors[refid] = (client.id, key, record)
             self.actor_seen[refid] = time.monotonic()
+            self.keep_actor(refid, key, values)
             if refid == self.args.bot_mirror:
                 self.bot.mirror = record
             client.actor_states += 1
@@ -2525,6 +2541,29 @@ class Server:
         for other in self.clients.values():
             if other is not client and other.in_world:
                 self.send(other, ACTORS, struct.pack("<I", client.id) + body)
+
+    def keep_actor(self, refid, key, values):
+        """Keep an actor's latest state for the next authority of its cell; summons are made
+        again by their effects."""
+        kept = self.world.actors
+        spawn = self.world.spawns.get(refid)
+        if spawn and spawn.get("summon") or refid not in kept and len(kept) >= ACTORS_KEPT_MAX:
+            return
+        kept[refid] = [key[0], key[1], key[2], key[3].decode("latin-1"), *values[1:6],
+                       values[7], values[8], values[6]]
+        self.world.dirty = True
+
+    def actor_places(self, key):
+        """ACTOR_PLACE events for the kept actors last reported in a cell."""
+        cell = [key[0], key[1], key[2], key[3].decode("latin-1")]
+        records = []
+        for refid, kept in sorted(self.world.actors.items()):
+            spawn = self.world.spawns.get(refid)
+            if kept[:4] == cell and not (spawn and spawn["removed"]):
+                records.append(ACTOR_PLACE.pack(refid, *kept[4:11], int(kept[11])))
+        return [struct.pack("<I", len(chunk)) + b"".join(chunk)
+                for chunk in (records[i:i + ACTOR_PLACES_PER_EVENT]
+                              for i in range(0, len(records), ACTOR_PLACES_PER_EVENT))]
 
     def handshake(self, kind, session, packet, addr, now, version):
         """Answer HANDSHAKE1 with HANDSHAKE2; on HANDSHAKE3, the HELLO it carries, the console's
