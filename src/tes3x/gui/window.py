@@ -1601,7 +1601,7 @@ class ProfileWindow(QMainWindow):
                "The files go over the dashboard's FTP server."))
         if answer != QMessageBox.StandardButton.Yes:
             return
-        out = self.work_dir() / "build" / "manager" / "install"
+        out = self.work_dir() / "build" / "dash" / "install"
         config = ["--config", str(self.local_config_path()), "--target", name]
         self.run_steps([("dash", ["stage", str(out), *config],
                          "Preparing the Dash…")],

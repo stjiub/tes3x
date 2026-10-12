@@ -281,7 +281,7 @@ static int staging_name(const char *rel)
            && !name_cmp(name + strlen(name) - 4, ".new");
 }
 
-/* Where the build goes: the build the manager installed from this server before, else the
+/* Where the build goes: the build the Dash installed from this server before, else the
  * manifest's folder name under the first Games folder there is. */
 static const char *choose_folder(const struct server *s, const struct json *j, char *out,
                                  size_t n)
@@ -562,7 +562,7 @@ const char *server_install(struct server *s, int replace, char *folder, size_t f
     }
     if (json_number(&j, json_get(&j, 0, "format")) > MANIFEST_FORMAT
         || json_number(&j, json_get(&j, 0, "manager")) > MANAGER_LEVEL) {
-        err = "The build needs a newer manager.";
+        err = "The build needs a newer Dash.";
         goto done;
     }
     if ((err = choose_folder(s, &j, folder, folder_n)))

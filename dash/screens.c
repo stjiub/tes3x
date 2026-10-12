@@ -43,7 +43,7 @@ static void draw_builds(const struct view *v)
 
     if (!v->build_list.count) {
         empty("No builds found",
-              "Builds installed from the PC appear here. The manager looks for " MANIFEST
+              "Builds installed from the PC appear here. The Dash looks for " MANIFEST
               " in the folders under C, E, F and G:\\Games.");
         return;
     }
@@ -86,7 +86,7 @@ static void draw_servers(const struct view *v)
                      s->players, s->max_players, build ? build : "build not installed",
                      s->character[0] ? "  \xB7  " : "", s->character);
         row(y, i == v->server_list.sel, s->display_name[0] ? s->display_name : s->name,
-            s->online == 2 ? "Manager update needed" : s->online == 3 ? "Server update needed" :
+            s->online == 2 ? "Dash update needed" : s->online == 3 ? "Server update needed" :
             s->online == 4 ? "Key changed" :
             s->online > 0 ? (build ? "Online  \xB7  Installed" : "Online") : "Offline",
             s->online == 1 ? ui->accent : ui->bad, sub, ui->dim);
@@ -137,7 +137,7 @@ static void draw_settings(const struct view *v)
         v->overlay_base[0] ? v->overlay_base : "Not set: overlay builds and XBE updates need one",
         v->overlay_base[0] ? ui->dim : ui->bad);
     row(y += ROW_H, v->settings.sel == SET_AGENT, "PC agent", NULL, 0, v->agent, ui->dim);
-    row(y += ROW_H, v->settings.sel == SET_MANAGER, "Manager", NULL, 0, version, ui->dim);
+    row(y += ROW_H, v->settings.sel == SET_DASH, "Dash", NULL, 0, version, ui->dim);
 }
 
 static void draw_bases(const struct view *v)
@@ -265,7 +265,7 @@ static void draw_page(const struct view *v)
         draw_settings(v);
         if (v->settings.sel == SET_BASE)
             hints = change, n = 1;
-        else if (v->settings.sel == SET_MANAGER)
+        else if (v->settings.sel == SET_DASH)
             hints = update, n = 1;
     }
     gfx_noclip();
@@ -278,7 +278,7 @@ void screen_draw(const struct view *v)
     static const struct ui_hint close = {UI_B, "Close"};
     static const struct ui_hint confirm[] = {{UI_A, "Go ahead"}, {UI_B, "Cancel"}};
     static const struct ui_hint update[] = {{UI_X, "Update"}, {UI_B, "Cancel"}};
-    static const struct ui_hint manager_update[] = {{UI_X, "Check for update"}, {UI_B, "Cancel"}};
+    static const struct ui_hint dash_update[] = {{UI_X, "Check for update"}, {UI_B, "Cancel"}};
     static const struct ui_hint server_key[] = {{UI_A, "Accept new key"}, {UI_B, "Cancel"}};
     const char *lines[4];
     int i;
@@ -291,7 +291,7 @@ void screen_draw(const struct view *v)
     for (i = 0; i < 4; i++)
         lines[i] = v->text[i];
     if (v->confirm)
-        ui_dialog(v->title, lines, 4, 0, v->confirm == CONFIRM_MANAGER_UPDATE ? manager_update :
+        ui_dialog(v->title, lines, 4, 0, v->confirm == CONFIRM_DASH_UPDATE ? dash_update :
                   v->confirm == CONFIRM_SERVER_KEY ? server_key :
                   v->confirm == CONFIRM_UPDATE ? update : confirm, 2);
     else

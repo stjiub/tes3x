@@ -1,4 +1,4 @@
-XBE_TITLE = TES3X\ manager
+XBE_TITLE = TES3X\ Dash
 SRCS = $(CURDIR)/main.c
 NXDK_DIR ?= $(CURDIR)/../../..
 

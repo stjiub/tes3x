@@ -9,7 +9,7 @@
 #define MGR_VERSION "0.2"
 #endif
 #define MANIFEST "tes3xbuild.json"
-/* The newest build manifest format this manager reads (tes3x_manifest.FORMAT). */
+/* The newest build manifest format this Dash reads (tes3x_manifest.FORMAT). */
 #define MANIFEST_FORMAT 1
 #define MANAGER_LEVEL 2
 #define PATH_MAX_MGR 260
@@ -22,7 +22,7 @@ struct build {
     char deployed[24];
     int files, plugins, xbes;
     unsigned long long bytes;
-    char server[80]; /* the server the manager installed it from, as servers.ini names it */
+    char server[80]; /* the server the Dash installed it from, as servers.ini names it */
     char error[64];  /* why the manifest cannot be used; empty when it can */
 };
 
@@ -94,7 +94,7 @@ const char *agent_status(void);
 /* XBE rebuild from the delta in a manifest's xbe entry (xbe.c), against the XBE in OverlayBase
  * that has the recipe's retail digest. */
 int xbe_title_id(const char *path, unsigned *title_id);
-/* Whether the XBE at path is a retail image this manager knows, by its scene-form digest. */
+/* Whether the XBE at path is a retail image this Dash knows, by its scene-form digest. */
 int xbe_known_retail(const char *path);
 const char *rebuild_xbe(const struct build *b, const char *xbe, const char *delta,
                         progress_fn progress);
@@ -104,7 +104,7 @@ const char *xbe_decode(const char *want_retail, const unsigned char *patch, size
 /* Writes target as target.new, then renames it in, keeping the old file as target.prev. */
 const char *replace_file(const char *target, const unsigned char *d, size_t n);
 
-/* Self-update (update.c). update_locate finds the manager folder and slot it runs from;
+/* Self-update (update.c). update_locate finds the Dash folder and slot it runs from;
  * update_confirm marks a pending slot good and returns news for the screen, or NULL;
  * update_apply installs a signed release from E:\TES3X\update into the other slot and returns
  * NULL when there is none, "" when the launcher it names should start it, or why not. */
@@ -149,7 +149,7 @@ struct server {
     unsigned char server_key[32], client_key[32];
     char password[65];
     char fingerprint[33]; /* of the pinned server key */
-    int online; /* -1 unknown, 0 offline, 1 online, 2 manager update, 3 server update, 4 key changed */
+    int online; /* -1 unknown, 0 offline, 1 online, 2 Dash update, 3 server update, 4 key changed */
     char character[48]; /* the character this console last played there, from the server */
     char display_name[64], description[192];
     unsigned players, max_players;
@@ -157,7 +157,7 @@ struct server {
     unsigned char pending_key[32];
     char pending_fingerprint[33];
 };
-/* What a server's BUILD hands the manager: its manifest's hash and size, and a ticket for the
+/* What a server's BUILD hands the Dash: its manifest's hash and size, and a ticket for the
  * HTTP side at addr:port. */
 struct ticket {
     unsigned char sha256[32], token[16];
@@ -192,7 +192,7 @@ int read_file(const char *path, unsigned char **data, size_t *n);
 /* Writes a file and flushes it to the disk; flush_path flushes one already written. */
 int write_flushed(const char *path, const void *d, size_t n);
 int flush_path(const char *path);
-/* "\Device\Harddisk0\Partition6\x" as "F:\x"; -1 off the partitions the manager knows. */
+/* "\Device\Harddisk0\Partition6\x" as "F:\x"; -1 off the partitions the Dash knows. */
 int nt_to_drive(const char *nt, size_t len, char *out, size_t n);
 int name_cmp(const char *a, const char *b);
 int name_cmp_n(const char *a, const char *b, size_t n);

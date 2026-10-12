@@ -5,7 +5,7 @@
 OUT/console.ini naming the Dash for the game and this PC as its agent (NetAgent); `install` stages and deploys it, over FTP or
 through a running Dash's agent. The folder holds the launcher as default.xbe and the Dash
 in slot a. The XBEs come from --xbe and --launcher, the copies a package ships
-(manager/default.xbe, manager/launcher.xbe), or nxdk builds of manager/ (paths.nxdk).
+(dash/default.xbe, dash/launcher.xbe), or nxdk builds of dash/ (paths.nxdk).
 
 `update RELEASE` sends a signed release (tes3x release dash) to E:/TES3X/update; through
 the agent it then restarts the Dash, which installs the release into its other slot.
@@ -30,9 +30,9 @@ from tes3x.paths import CONFIG_HELP, bundled, checkout, data_dir, local_config, 
 from tes3x.pipeline import PipelineError, agent_setting, dashboard_xml
 from tes3x.xbe import Xbe
 
-SOURCE = checkout("manager")
-PACKAGED = bundled("manager", "default.xbe")
-PACKAGED_LAUNCHER = bundled("manager", "launcher.xbe")
+SOURCE = checkout("dash")
+PACKAGED = bundled("dash", "default.xbe")
+PACKAGED_LAUNCHER = bundled("dash", "launcher.xbe")
 INBOX = "E:/TES3X/update"
 FOLDER = "TES3XManager"
 TITLE = "TES3X Manager"
@@ -47,7 +47,7 @@ class DashError(Exception):
 
 def version():
     match = re.search(r'#define MGR_VERSION "([^"]+)"',
-                      (resource("manager", "mgr.h")).read_text(encoding="utf-8"))
+                      (resource("dash", "mgr.h")).read_text(encoding="utf-8"))
     return match.group(1) if match else None
 
 
@@ -61,7 +61,7 @@ def find_xbe(given=None, config=None, work=None, launcher=False):
                               else (PACKAGED, SOURCE, "app"))
     if packaged.is_file():
         return packaged
-    out = Path(work or data_dir()) / "build" / "manager" / name
+    out = Path(work or data_dir()) / "build" / "dash" / name
     print(f"building the Dash{' launcher' if launcher else ''} in {out}", flush=True)
     try:
         return tes3x_nxdk.build(source, out, config=config)
@@ -194,7 +194,7 @@ def main():
         if name == "stage":
             p.add_argument("out", help="folder for deploy/ and console.ini")
         else:
-            p.add_argument("--out", help="staging folder (default: data folder's build/manager/install)")
+            p.add_argument("--out", help="staging folder (default: data folder's build/dash/install)")
             p.add_argument("--dry-run", action="store_true")
             p.add_argument("--replace", action="store_true",
                            help="install over a folder that holds something else")
@@ -255,7 +255,7 @@ def main():
         agent = None if args.no_agent else agent_setting(base, target)
     except (tes3x_targets.TargetError, DashError, PipelineError) as exc:
         sys.exit(str(exc))
-    out = Path(getattr(args, "out", None) or data_dir() / "build" / "manager" / "install")
+    out = Path(getattr(args, "out", None) or data_dir() / "build" / "dash" / "install")
     stage(out, xbe, launcher, remote, agent)
     print(f"Dash {version()} staged for {remote}", flush=True)
     if args.command == "install":

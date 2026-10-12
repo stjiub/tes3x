@@ -206,7 +206,7 @@ class PlayController(QObject):
         if reason:
             self.window.error(reason)
             return
-        out = self.window.work_dir() / "build" / "manager" / "xemu"
+        out = self.window.work_dir() / "build" / "dash" / "xemu"
         config = str(self.window.local_config_path())
         stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         name = f"dash-{target['name']}-{stamp}"

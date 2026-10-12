@@ -2,7 +2,7 @@
 """Bake the Dash's fonts into C: 8-bit coverage atlases and glyph metrics.
 
 The fonts are downloaded once at a pinned SHA-256 into the per-user cache, rasterised with
-Pillow's FreeType and written to manager/fontdata.c, with their licences in manager/fonts/.
+Pillow's FreeType and written to dash/fontdata.c, with their licences in dash/fonts/.
 The output is committed, so building the Dash needs neither the fonts nor Pillow.
 
     tes3x font [--check]
@@ -16,8 +16,8 @@ import urllib.request
 from tes3x.paths import checkout, data_dir
 
 ROOT = checkout()
-OUT = ROOT / "manager" / "fontdata.c"
-LICENCES = ROOT / "manager" / "fonts"
+OUT = ROOT / "dash" / "fontdata.c"
+LICENCES = ROOT / "dash" / "fonts"
 BASE = "https://raw.githubusercontent.com/google/fonts/7085eb89a950e85db5b166b7a58d414544b4140c/"
 # file: (path under BASE, SHA-256)
 FILES = {

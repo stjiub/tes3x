@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def build(folder, clang, source=None):
     folder = Path(folder)
-    header = (ROOT / 'manager' / 'mgr.h').read_text(encoding='utf-8')
+    header = (ROOT / 'dash' / 'mgr.h').read_text(encoding='utf-8')
     layout = re.search(r'struct server \{.*?\n\};', header, re.S).group()
     path_size = re.search(r'^#define PATH_MAX_MGR \d+', header, re.M).group()
     (folder / 'mgr.h').write_text(
@@ -24,7 +24,7 @@ def build(folder, clang, source=None):
         'int write_flushed(const char *, const void *, size_t);\n'
         'int name_cmp(const char *, const char *);\n'
         'int name_cmp_n(const char *, const char *, size_t);\n', encoding='utf-8')
-    source = source or (ROOT / 'manager' / 'servers.c').read_text(encoding='utf-8')
+    source = source or (ROOT / 'dash' / 'servers.c').read_text(encoding='utf-8')
     source = source.split('/* --- the session --- */')[0]
     source = re.sub(r'^#include <(?:lwip/[^>]+|windows.h|xboxkrnl/[^>]+)>\n', '',
                     source, flags=re.M)
@@ -35,7 +35,7 @@ def build(folder, clang, source=None):
         shutil.copyfile(ROOT / 'hooks' / name, folder / name)
     exe = folder / ('servershost.exe' if os.name == 'nt' else 'servershost')
     subprocess.run([clang, '-std=c11', '-O0', '-g', f'-I{folder}',
-                    str(ROOT / 'tests' / 'managerhost' / 'servers.c'),
+                    str(ROOT / 'tests' / 'dashhost' / 'servers.c'),
                     str(folder / 'monocypher.c'), '-o', str(exe)],
                    capture_output=True, text=True, check=True)
     return exe

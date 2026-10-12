@@ -1,4 +1,4 @@
-/* The manager's side of the TES3X agent: the in-game agent's sealed protocol (tes3xagent.c), with
+/* The Dash's side of the TES3X agent: the in-game agent's sealed protocol (tes3xagent.c), with
  * file operations and launch added. NetAgent and the network keys come from E:\TES3X\console.ini. */
 
 #include "mgr.h"
@@ -422,7 +422,7 @@ static void file_close(void)
     file.path[0] = 0;
 }
 
-/* A request's path as the manager opens it: C/E/F/G/X/Y/Z, or D: for the manager's own folder. */
+/* A request's path as the Dash opens it: C/E/F/G/X/Y/Z, or D: for the Dash's own folder. */
 static int take_path(const unsigned char *p, unsigned n, char *out)
 {
     unsigned i;

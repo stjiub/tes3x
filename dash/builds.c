@@ -16,7 +16,7 @@
 #define CHUNK (256 * 1024)
 #define MAX_BASES 8
 #define BASE_LAYOUT "retail-base"
-#define MANAGER_LAYOUT "manager"
+#define LAYOUT_DASH "dash"
 #define RETAIL_TITLE_ID 0x42530005u
 
 /* Game partitions in the order they are scanned, and the kernel device each drive letter is. */
@@ -168,7 +168,7 @@ static void summarize(struct build *b)
     }
     if (json_number(&j, json_get(&j, 0, "format")) > MANIFEST_FORMAT
         || json_number(&j, json_get(&j, 0, "manager")) > MANAGER_LEVEL)
-        snprintf(b->error, sizeof(b->error), "needs a newer manager");
+        snprintf(b->error, sizeof(b->error), "needs a newer Dash");
     files = json_get(&j, 0, "files");
     if (files < 0 || j.t[files].type != JSON_OBJECT)
         snprintf(b->error, sizeof(b->error), "manifest has no file list");
@@ -216,7 +216,7 @@ static int scan_folder(const char *root, struct build *out, int n, int max)
             if (installed_count < MAX_BASES)
                 snprintf(installed[installed_count++], PATH_MAX_MGR, "%s", b->path);
             n--;
-        } else if (!strcmp(b->layout, MANAGER_LAYOUT)) {
+        } else if (!strcmp(b->layout, LAYOUT_DASH)) {
             n--;
         }
     } while (FindNextFileA(h, &fd));
@@ -386,7 +386,7 @@ const char *check_base(const char *folder, struct base *out)
     if (!exists(folder, "Data Files\\Morrowind.esm"))
         return "It has no Data Files\\Morrowind.esm.";
     if (!xbe_known_retail(xbe))
-        return "Its morrowind.xbe is not a retail image this manager knows.";
+        return "Its morrowind.xbe is not a retail image this Dash knows.";
     add_base(out, 0, 1, folder, installed_base, 1);
     return NULL;
 }

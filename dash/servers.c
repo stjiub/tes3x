@@ -373,7 +373,7 @@ static void outer(unsigned char *p, int type, unsigned session, unsigned seq)
 }
 
 const char SERVER_PASSWORD[] = "The server wants a password.";
-const char SERVER_UPDATE[] = "Update the TES3X Manager to connect to this server.";
+const char SERVER_UPDATE[] = "Update the TES3X Dash to connect to this server.";
 const char SERVER_KEY_CHANGED[] = "The server's key has changed.";
 
 static const char *refusal(unsigned reason)
@@ -565,8 +565,8 @@ const char *server_ticket(struct server *s, struct ticket *t, progress_fn progre
                     unsigned expected = get32(plain + INNER);
                     s->online = expected > T3MP_VERSION ? 2 : 3;
                     err = s->online == 2 ? SERVER_UPDATE
-                        : "The server needs an update to work with this manager.";
-                    mgr_log("server %s: manager protocol %u, server expects %u\n",
+                        : "The server needs an update to work with this Dash.";
+                    mgr_log("server %s: Dash protocol %u, server expects %u\n",
                             s->name, T3MP_VERSION, expected);
                 } else {
                     err = refusal(get32(plain + INNER + 8));

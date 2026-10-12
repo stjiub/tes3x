@@ -329,7 +329,7 @@ static const char *open_get(const char *url, struct conn *c, char *head, size_t 
             return err;
         usual = !strcmp(port, tls ? "443" : "80");
         snprintf(request, sizeof(request),
-                 "GET %s HTTP/1.1\r\nHost: %s%s%s\r\nUser-Agent: tes3x-manager/" MGR_VERSION
+                 "GET %s HTTP/1.1\r\nHost: %s%s%s\r\nUser-Agent: tes3x-dash/" MGR_VERSION
                  "\r\nAccept: */*\r\n%sConnection: close\r\n\r\n", path, host,
                  usual ? "" : ":", usual ? "" : port, range);
         if (conn_write(c, request, strlen(request))) {

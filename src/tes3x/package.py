@@ -61,9 +61,9 @@ Also included, outside this folder:
 - `python/Lib/site-packages/tes3x/_vendor/mlox/`: mlox 1.0.3, MIT.
 """
 DASH_NOTICE = """\
-- `manager/default.xbe`: the Dash, built with nxdk (MIT) and lwIP (BSD), includes
+- `dash/default.xbe`: the Dash, built with nxdk (MIT) and lwIP (BSD), includes
   Monocypher 4.0.2 (CC0 or BSD 2-clause), the zstd 1.5.7 decoder (BSD,
-  `manager/LICENSE-zstd.txt`) and Mbed TLS 3.6.7 (Apache 2.0, `manager/LICENSE-mbedtls.txt`).
+  `dash/LICENSE-zstd.txt`) and Mbed TLS 3.6.7 (Apache 2.0, `dash/LICENSE-mbedtls.txt`).
 """
 CC_DIRS = (Path("C:/msys64/mingw64/bin"), Path("C:/msys64/clang64/bin"))
 # Longest path from the folder's own name; Windows' unzip stops at 260 characters, and the rest is
@@ -266,12 +266,12 @@ def check_paths(stage):
 
 def dash_xbe(given, out, launcher=False):
     """The Dash the GUI installs, or its launcher: the given XBE, or an nxdk build of
-    manager/ (manager/launcher/)."""
+    dash/ (dash/launcher/)."""
     if given:
         return Path(given)
     import tes3x.nxdk as tes3x_nxdk
-    name = "launcher" if launcher else "manager"
-    source = ROOT / "manager" / "launcher" if launcher else ROOT / "manager"
+    name = "launcher" if launcher else "dash"
+    source = ROOT / "dash" / "launcher" if launcher else ROOT / "dash"
     try:
         return tes3x_nxdk.build(source, Path(out) / name)
     except tes3x_nxdk.NxdkError as exc:
@@ -288,14 +288,14 @@ def package(out, cc=None, make_zip=False, dash=None, launcher=None, with_dash=Tr
     (stage / "VERSION").write_text(label + "\n", encoding="utf-8")
     shutil.copyfile(ROOT / "LICENSE", stage / "LICENSE.txt")
     if with_dash:
-        (stage / "manager").mkdir()
-        shutil.copyfile(dash_xbe(dash, out), stage / "manager" / "default.xbe")
-        shutil.copyfile(dash_xbe(launcher, out, True), stage / "manager" / "launcher.xbe")
+        (stage / "dash").mkdir()
+        shutil.copyfile(dash_xbe(dash, out), stage / "dash" / "default.xbe")
+        shutil.copyfile(dash_xbe(launcher, out, True), stage / "dash" / "launcher.xbe")
         import tes3x.nxdk as tes3x_nxdk
         shutil.copyfile(tes3x_nxdk.vendor("mbedtls") / "LICENSE",
-                        stage / "manager" / "LICENSE-mbedtls.txt")
-        shutil.copyfile(ROOT / "manager" / "zstd" / "LICENSE",
-                        stage / "manager" / "LICENSE-zstd.txt")
+                        stage / "dash" / "LICENSE-mbedtls.txt")
+        shutil.copyfile(ROOT / "dash" / "zstd" / "LICENSE",
+                        stage / "dash" / "LICENSE-zstd.txt")
     print(f"TES3X {label}" + ("" if with_dash else ", without TES3X Dash"))
     embedded_python(stage / "python", wheel(out))
     externals(stage / "externals", with_dash)
@@ -316,9 +316,9 @@ if __name__ == "__main__":
     ap.add_argument("--cc", help="C compiler for the launchers (default: gcc or clang)")
     ap.add_argument("--zip", action="store_true", help="also write TES3X-<version>.zip")
     ap.add_argument("--dash", "--manager", dest="dash", metavar="XBE",
-                    help="the Dash to ship (default: build manager/ with nxdk)")
+                    help="the Dash to ship (default: build dash/ with nxdk)")
     ap.add_argument("--launcher", metavar="XBE",
-                    help="the Dash's launcher to ship (default: build manager/launcher/)")
+                    help="the Dash's launcher to ship (default: build dash/launcher/)")
     ap.add_argument("--no-dash", "--no-manager", action="store_true",
                     help="leave the Dash out, for a test build without nxdk")
     ap.add_argument("--print-version", action="store_true")

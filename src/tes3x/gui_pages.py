@@ -44,8 +44,7 @@ CAPABILITY_REASONS = {
     "install_dashboard_agent": "the Xbox's FTP server is not answering",
     "install_dash": "neither the Xbox's FTP server nor the Dash is answering",
 }
-# "manager" is what a Dash installed before the rename wrote
-DASH_PROFILES = ("dash", "manager")
+DASH_PROFILE = "dash"
 
 
 def heading(text, grow=4):
@@ -268,7 +267,7 @@ class TargetsPage(QWidget):
         """(status, version) of the Dash on the target."""
         builds = self.window.target_builds.get(self.name)
         found = [record.get("version") or "?" for record in (builds or {}).values()
-                 if record and record.get("profile") in DASH_PROFILES]
+                 if record and record.get("profile") == DASH_PROFILE]
         if running:
             status = "Running"
         elif builds is None:
@@ -500,7 +499,7 @@ class TargetsPage(QWidget):
         elif retail and retail.casefold() == path.casefold():
             warning = ("\n\nThis is the target's retail base: overlay builds read their game "
                        "files from it, and stop working until it is installed again.")
-        elif record.get("profile") in DASH_PROFILES:
+        elif record.get("profile") == DASH_PROFILE:
             warning = "\n\nThis is TES3X Dash."
         if QMessageBox.question(
                 self, "Remove build", f"Delete {path} and everything in it from {self.name}?"

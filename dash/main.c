@@ -1,4 +1,4 @@
-/* TES3X manager: lists the TES3X builds on the console, shows what each holds, checks them
+/* TES3X Dash: lists the TES3X builds on the console, shows what each holds, checks them
  * against their manifests and starts them. E:\tes3xmgr.txt logs what it does.
  *
  * E:\tes3xmgrexec.txt, when present, is read once at start and deleted: one command a line,
@@ -655,7 +655,7 @@ static void keyboard_press(int button)
 }
 
 /* The game's launch data when a server refused its build as stale and the player chose the
- * manager (HANDOFF_MAGIC in tes3xmulti.c): that server's page, where X updates. */
+ * Dash (HANDOFF_MAGIC in tes3xmulti.c): that server's page, where X updates. */
 #define HANDOFF_MAGIC 0x484D3354u
 
 static void handoff(void)
@@ -688,10 +688,10 @@ static void handoff(void)
     v.page = PAGE_SERVER;
 }
 
-static void ask_manager_update(void)
+static void ask_dash_update(void)
 {
-    say("Manager update needed", SERVER_UPDATE, "Check for a newer manager now?");
-    v.confirm = CONFIRM_MANAGER_UPDATE;
+    say("Dash update needed", SERVER_UPDATE, "Check for a newer Dash now?");
+    v.confirm = CONFIRM_DASH_UPDATE;
 }
 
 static void ask_server_key(struct server *s, int install)
@@ -725,7 +725,7 @@ static void install_server(struct server *s, int replace)
         return;
     }
     if (err == SERVER_UPDATE) {
-        ask_manager_update();
+        ask_dash_update();
         return;
     }
     if (err == INSTALL_CONFIRM) {
@@ -787,7 +787,7 @@ static int join_ready(struct server *s, const char *build)
         return 0;
     }
     if (err == SERVER_UPDATE) {
-        ask_manager_update();
+        ask_dash_update();
         return 0;
     }
     if (err && strcmp(err, "The server hands out no build.")) {
@@ -826,23 +826,23 @@ static void check_update(void)
         say("Update refused", why, NULL);
         return;
     }
-    snprintf(text, sizeof(text), "Starting manager %s...", version);
+    snprintf(text, sizeof(text), "Starting Dash %s...", version);
     busy(text);
     mgr_launch_xbe(launcher);
 }
 
-/* Checks the update feed (or `feed`) and installs a newer manager from it. */
+/* Checks the update feed (or `feed`) and installs a newer Dash from it. */
 static void fetch_update(const char *feed)
 {
     char version[16];
     const char *why;
     int newer;
 
-    busy("Checking for a newer manager...");
+    busy("Checking for a newer Dash...");
     why = update_fetch(feed, progress, version, sizeof(version), &newer);
     if (newer)
         check_update();
-    else if (!strncmp(why, "Manager ", 8))
+    else if (!strncmp(why, "Dash ", 5))
         say("Up to date", why, NULL);
     else
         say("No update", why, NULL);
@@ -981,7 +981,7 @@ static void run_exec(void)
         } else if (!strcmp(arg[0], "get") && argc == 3) {
             get_url(arg[1], arg[2]);
         } else if (!strcmp(arg[0], "run") && argc == 2) {
-            /* the lines left are for the manager it starts */
+            /* the lines left are for the Dash it starts */
             if (next && *next && (f = fopen(EXEC_PATH, "wb"))) {
                 fputs(next, f);
                 fclose(f);
@@ -1045,7 +1045,7 @@ static void press(int button)
         if (button == SDL_CONTROLLER_BUTTON_B || button == SDL_CONTROLLER_BUTTON_A)
             v.title[0] = 0;
         /* an out-of-date build is updated with X, B leaves it */
-        if (v.confirm == CONFIRM_MANAGER_UPDATE) {
+        if (v.confirm == CONFIRM_DASH_UPDATE) {
             if (button == SDL_CONTROLLER_BUTTON_X) {
                 v.title[0] = 0, v.confirm = 0;
                 fetch_update(NULL);
@@ -1174,7 +1174,7 @@ static void press(int button)
             ui_list_move(&v.settings, step);
         else if (button == SDL_CONTROLLER_BUTTON_A && v.settings.sel == SET_BASE)
             find_retail_bases(), v.page = PAGE_BASES;
-        else if (button == SDL_CONTROLLER_BUTTON_A && v.settings.sel == SET_MANAGER)
+        else if (button == SDL_CONTROLLER_BUTTON_A && v.settings.sel == SET_DASH)
             fetch_update(NULL);
     }
 }
@@ -1219,7 +1219,7 @@ int main(void)
     const char *news;
 
     mount_drives();
-    mgr_log("manager %s start\n", MGR_VERSION);
+    mgr_log("Dash %s start\n", MGR_VERSION);
     update_locate();
     v.builds = builds;
     v.bases = bases;
@@ -1257,7 +1257,7 @@ int main(void)
             v.tab = TAB_SETTINGS, v.page = PAGE_BASES;
     }
     if (news)
-        say("Manager", news, NULL);
+        say("Dash", news, NULL);
     if (v.page != PAGE_BASES)
         handoff();
     agent_start();

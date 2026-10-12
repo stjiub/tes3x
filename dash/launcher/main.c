@@ -1,6 +1,6 @@
-/* The manager folder's default.xbe: starts the manager in slot a or b as D:\slots.ini says. A
+/* The Dash folder's default.xbe: starts the Dash in slot a or b as D:\slots.ini says. A
  * pending slot, a self-update not yet confirmed, is tried twice; after that the launcher goes back
- * to the active slot and names the failed one, which the manager reports. Kept small and rarely
+ * to the active slot and names the failed one, which the Dash reports. Kept small and rarely
  * changed, since it is the one file an update cannot roll back. */
 
 #include <hal/xbox.h>
@@ -118,7 +118,7 @@ static void launch(const char *slot)
     PLAUNCH_DATA_PAGE page = LaunchDataPage;
     static BYTE data[sizeof(page->LaunchData)];
     char folder[MAX_PATH];
-    /* what the title that started the manager handed it, such as the game's stale-build note */
+    /* what the title that started the Dash handed it, such as the game's stale-build note */
     int pass = page && page->Header.dwLaunchDataType == LDT_TITLE;
     size_t len = XeImageFileName->Length;
     char *slash;
@@ -191,7 +191,7 @@ int main(void)
     if (!slot_present(slot))
         slot = slot[0] == 'a' ? "b" : "a";
     launch(slot);
-    say("no manager to start\n");
+    say("no Dash to start\n");
     Sleep(3000);
     return 1;
 }

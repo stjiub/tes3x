@@ -20,7 +20,7 @@ class ProtocolVersionTests(unittest.TestCase):
         import re
         root = Path(__file__).resolve().parents[1]
         for name, expected in (('hooks/tes3xmulti.c', tes3x_net.T3MP_VERSION),
-                               ('manager/servers.c', tes3x_net.MANAGER_VERSION)):
+                               ('dash/servers.c', tes3x_net.MANAGER_VERSION)):
             with self.subTest(source=name):
                 source = source_text(root / name)
                 version = re.search(r'^#define T3MP_VERSION (\d+)', source, re.MULTILINE)

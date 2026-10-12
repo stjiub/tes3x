@@ -1,4 +1,4 @@
-/* mbedTLS 3.6 for the manager's downloads: a TLS 1.2 client, ECDHE with AES-GCM or
+/* mbedTLS 3.6 for the Dash's downloads: a TLS 1.2 client, ECDHE with AES-GCM or
  * ChaCha20-Poly1305. Certificates are parsed but not checked: the console's clock is often wrong
  * and a release is trusted by its signature, not by where it came from. */
 
@@ -42,7 +42,7 @@
 #define MBEDTLS_ASN1_WRITE_C
 #define MBEDTLS_OID_C
 
-/* randomness comes from the manager's own source through mbedtls_ssl_conf_rng */
+/* randomness comes from the Dash's own source through mbedtls_ssl_conf_rng */
 #define MBEDTLS_NO_PLATFORM_ENTROPY
 
 /* nxdk's clang claims to be MSVC, which mbedTLS would answer with sal.h */

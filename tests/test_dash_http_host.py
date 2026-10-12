@@ -20,25 +20,25 @@ class DashDownloadTests(unittest.TestCase):
             self.skipTest(f'needs clang: {error}')
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)
-            source = (ROOT / 'manager/http.c').read_text(encoding='utf-8')
+            source = (ROOT / 'dash/http.c').read_text(encoding='utf-8')
             header = source[source.index('static const char *header('):
                             source.index('/* A chunked body')]
             receiver = source[source.index('#define SAVE_BUFFER'):]
             (folder / 'receiver.c').write_text(header + receiver, encoding='utf-8')
             for name in ('sha256.c', 'sha256.h'):
-                shutil.copyfile(ROOT / 'manager' / name, folder / name)
+                shutil.copyfile(ROOT / 'dash' / name, folder / name)
             sources = [str(folder / 'sha256.c')]
             if base:
-                install = (ROOT / 'manager/install.c').read_text(encoding='utf-8')
+                install = (ROOT / 'dash/install.c').read_text(encoding='utf-8')
                 start = install.index('static const char *install_base(')
                 end = install.index('const char *server_install(', start)
                 (folder / 'base-under-test.c').write_text(install[start:end], encoding='utf-8')
                 for name in ('json.h', 'json.c'):
-                    shutil.copyfile(ROOT / 'manager' / name, folder / name)
+                    shutil.copyfile(ROOT / 'dash' / name, folder / name)
                 sources.append(str(folder / 'json.c'))
             exe = folder / ('http-test.exe' if os.name == 'nt' else 'http-test')
             compiled = subprocess.run([clang, '-std=c11', '-O0', f'-I{folder}',
-                                       str(ROOT / 'tests/managerhost' / harness),
+                                       str(ROOT / 'tests/dashhost' / harness),
                                        *sources, '-o', str(exe)],
                                       capture_output=True, text=True)
             self.assertEqual(compiled.returncode, 0, compiled.stderr)

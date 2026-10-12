@@ -1,9 +1,9 @@
-/* Self-update. The manager folder holds the launcher as default.xbe and the manager in slots a and
+/* Self-update. The Dash folder holds the launcher as default.xbe and the Dash in slots a and
  * b; slots.ini names the active slot and a pending one, which the launcher tries twice before
  * going back. A release arrives in E:\TES3X\update, signed with the project's release key: the
- * manager fetches it from the update feed, the PC writes it there through the agent, or anyone
- * by FTP or USB. A release replaces the manager
- * and with it the embedded key, so a key changes by shipping a manager that holds the next one. */
+ * the Dash fetches it from the update feed, the PC writes it there through the agent, or anyone
+ * by FTP or USB. A release replaces the Dash
+ * and with it the embedded key, so a key changes by shipping a Dash that holds the next one. */
 
 #include "mgr.h"
 #include "sha256.h"
@@ -29,7 +29,7 @@
 /* tes3x release reads a release's version from here */
 __attribute__((used)) const char mgr_version_tag[] = "TES3X-MANAGER-VERSION " MGR_VERSION;
 
-static char root[PATH_MAX_MGR]; /* the manager folder, empty when not installed on a disk */
+static char root[PATH_MAX_MGR]; /* the Dash folder, empty when not installed on a disk */
 static char slot[2];            /* "a" or "b", empty for a folder from before slots */
 
 struct slots {
@@ -153,10 +153,10 @@ const char *update_confirm(void)
         s.pending[0] = 0;
         s.tries = 0;
         mgr_log("update: slot %s confirmed\n", slot);
-        snprintf(news, sizeof(news), "Updated to manager %s.", MGR_VERSION);
+        snprintf(news, sizeof(news), "Updated to Dash %s.", MGR_VERSION);
     } else if (s.failed[0]) {
         mgr_log("update: slot %s failed to start; running slot %s\n", s.failed, slot);
-        snprintf(news, sizeof(news), "An update did not start; kept manager %s.", MGR_VERSION);
+        snprintf(news, sizeof(news), "An update did not start; kept Dash %s.", MGR_VERSION);
         s.failed[0] = 0;
     } else {
         return NULL;
@@ -200,7 +200,7 @@ static int hex_key(unsigned char key[32])
     return 0;
 }
 
-/* Whether the release's text is signed with the release key and is a manager release; its
+/* Whether the release's text is signed with the release key and is a Dash release; its
  * version goes into `version`. Why not, or NULL. */
 static const char *release_check(const unsigned char *text, size_t n, const unsigned char *sig,
                                  size_t sig_n, struct json *j, char *version, size_t version_n)
@@ -215,7 +215,7 @@ static const char *release_check(const unsigned char *text, size_t n, const unsi
         || json_number(j, json_get(j, 0, "format")) != RELEASE_FORMAT
         || !json_equals(j, json_get(j, 0, "product"), PRODUCT)
         || json_string(j, json_get(j, 0, "version"), version, version_n) <= 0)
-        return "the release is not a manager release this manager reads";
+        return "the release is not a Dash release this Dash reads";
     return NULL;
 }
 
@@ -273,15 +273,15 @@ static int same_file(const char *path, const unsigned char *d, size_t n)
 
 const char *update_apply(char *version, size_t version_n, char *launcher, size_t launcher_n)
 {
-    unsigned char *text = NULL, *sig = NULL, *manager = NULL, *boot = NULL;
+    unsigned char *text = NULL, *sig = NULL, *dash = NULL, *boot = NULL;
     char target[PATH_MAX_MGR], folder[PATH_MAX_MGR];
     const char *why;
-    size_t n, sig_n = 0, manager_n, boot_n;
+    size_t n, sig_n = 0, dash_n, boot_n;
     struct json j = {0};
     struct slots s;
     int discard = 1;
 
-    /* a manager run from elsewhere, a disc say, leaves the release to the installed one */
+    /* a Dash run from elsewhere, a disc say, leaves the release to the installed one */
     if (!root[0] || read_file(RELEASE, &text, &n))
         return NULL;
     mgr_log("update: release in " INBOX "\n");
@@ -289,12 +289,12 @@ const char *update_apply(char *version, size_t version_n, char *launcher, size_t
     if ((why = release_check(text, n, sig, sig_n, &j, version, version_n)))
         goto done;
     if (version_cmp(version, MGR_VERSION) <= 0) {
-        why = "the release is not newer than this manager";
+        why = "the release is not newer than this Dash";
         goto done;
     }
     /* a release still arriving lacks or mismatches a file; keep it for the next start */
     discard = 0;
-    if (!(manager = release_file(&j, "manager.xbe", &manager_n, &why))
+    if (!(dash = release_file(&j, "manager.xbe", &dash_n, &why))
         || !(boot = release_file(&j, "launcher.xbe", &boot_n, &why)))
         goto done;
     discard = 1;
@@ -305,7 +305,7 @@ const char *update_apply(char *version, size_t version_n, char *launcher, size_t
     join_path(folder, sizeof(folder), root, s.pending);
     CreateDirectoryA(folder, NULL);
     join_path(target, sizeof(target), folder, "default.xbe");
-    if ((why = replace_file(target, manager, manager_n)))
+    if ((why = replace_file(target, dash, dash_n)))
         goto done;
     join_path(launcher, launcher_n, root, "default.xbe");
     if (!same_file(launcher, boot, boot_n) && (why = replace_file(launcher, boot, boot_n)))
@@ -315,7 +315,7 @@ const char *update_apply(char *version, size_t version_n, char *launcher, size_t
     if (slots_write(&s))
         why = "could not write slots.ini";
     else
-        mgr_log("update: manager %s in slot %s, pending\n", version, s.pending);
+        mgr_log("update: Dash %s in slot %s, pending\n", version, s.pending);
 done:
     if (why)
         mgr_log("update: refused, %s\n", why);
@@ -324,7 +324,7 @@ done:
     json_free(&j);
     free(text);
     free(sig);
-    free(manager);
+    free(dash);
     free(boot);
     return why ? why : "";
 }
@@ -358,7 +358,7 @@ const char *update_fetch(const char *feed, progress_fn progress, char *version, 
 
     *newer = 0;
     if (!root[0])
-        return "this manager is not installed on a disk";
+        return "this Dash is not installed on a disk";
     if (feed && *feed)
         snprintf(base, sizeof(base), "%s", feed);
     else if (!console_get("UpdateFeed", base, sizeof(base)))
@@ -374,7 +374,7 @@ const char *update_fetch(const char *feed, progress_fn progress, char *version, 
     if (!why)
         why = release_check(text, n, sig, sig_n, &j, version, version_n);
     if (!why && version_cmp(version, MGR_VERSION) <= 0) {
-        snprintf(message, sizeof(message), "Manager %s is the newest; the feed has %s.",
+        snprintf(message, sizeof(message), "Dash %s is the newest; the feed has %s.",
                  MGR_VERSION, version);
         why = message;
     }
@@ -387,12 +387,12 @@ const char *update_fetch(const char *feed, progress_fn progress, char *version, 
         free(file);
         file = NULL;
     }
-    /* release.json last, as the PC sends it: the manager keeps a release still arriving */
+    /* release.json last, as the PC sends it: the Dash keeps a release still arriving */
     if (!why && (write_inbox(RELEASE_NAME ".sig", sig, sig_n) || write_inbox(RELEASE_NAME, text, n)))
         why = "could not write " INBOX;
     if (!why) {
         *newer = 1;
-        mgr_log("update: manager %s fetched\n", version);
+        mgr_log("update: Dash %s fetched\n", version);
     } else {
         mgr_log("update: fetch: %s\n", why);
     }

@@ -1,5 +1,5 @@
-/* Renders the manager's screens with sample data to OUT/NAME.ppm, for looking at the UI on the
- * PC. Build from manager/:
+/* Renders the Dash's screens with sample data to OUT/NAME.ppm, for looking at the UI on the
+ * PC. Build from dash/:
  *   clang -O2 -I. preview/preview.c screens.c ui.c gfx.c fontdata.c -o preview.exe
  *   preview.exe OUT */
 
@@ -169,12 +169,12 @@ int main(int argc, char **argv)
     screen_draw(&v);
     save("server-confirm");
     memset(v.text, 0, sizeof(v.text));
-    snprintf(v.title, sizeof(v.title), "Manager update needed");
-    snprintf(v.text[0], sizeof(v.text[0]), "Update the TES3X Manager to connect to this server.");
-    snprintf(v.text[1], sizeof(v.text[1]), "Check for a newer manager now?");
-    v.confirm = CONFIRM_MANAGER_UPDATE;
+    snprintf(v.title, sizeof(v.title), "Dash update needed");
+    snprintf(v.text[0], sizeof(v.text[0]), "Update the TES3X Dash to connect to this server.");
+    snprintf(v.text[1], sizeof(v.text[1]), "Check for a newer Dash now?");
+    v.confirm = CONFIRM_DASH_UPDATE;
     screen_draw(&v);
-    save("manager-update-needed");
+    save("dash-update-needed");
     v.confirm = 0;
     memset(v.title, 0, sizeof(v.title));
     memset(v.text, 0, sizeof(v.text));

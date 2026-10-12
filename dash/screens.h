@@ -1,7 +1,7 @@
 #ifndef SCREENS_H
 #define SCREENS_H
 
-/* The manager's screens, drawn from a view main.c keeps; portable, so preview/ renders them
+/* The Dash's screens, drawn from a view main.c keeps; portable, so preview/ renders them
  * on the PC. */
 
 #include "mgr.h"
@@ -9,7 +9,7 @@
 
 enum tab { TAB_BUILDS, TAB_SERVERS, TAB_SETTINGS, TAB_COUNT };
 enum page { PAGE_MAIN, PAGE_DETAILS, PAGE_BASES, PAGE_BROWSE, PAGE_SERVER };
-enum setting { SET_BASE, SET_AGENT, SET_MANAGER, SET_COUNT };
+enum setting { SET_BASE, SET_AGENT, SET_DASH, SET_COUNT };
 
 #define LINE_HEAD 1
 #define LINE_BAD 2
@@ -23,7 +23,7 @@ struct line {
 
 /* What a dialog's v.confirm asks. */
 enum confirm { CONFIRM_NONE, CONFIRM_INSTALL, CONFIRM_BUILD, CONFIRM_SERVER, CONFIRM_UPDATE,
-               CONFIRM_MANAGER_UPDATE, CONFIRM_SERVER_KEY };
+               CONFIRM_DASH_UPDATE, CONFIRM_SERVER_KEY };
 
 struct view {
     int tab, page;
