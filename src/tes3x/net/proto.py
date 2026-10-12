@@ -347,6 +347,13 @@ GLOBAL_NAME_MAX = 31
 PLAYER_GLOBALS_MAX = 128
 
 
+# The world's globals, every one neither the character's nor derived (the console chooses), in
+# PLAYER_GLOBALS's form. A console sends what changed since READY; the server keeps the latest of
+# each, relays it to the other players and replays them all before READY and in the character file.
+WORLD_GLOBALS = 20
+WORLD_GLOBALS_MAX = 1024
+
+
 PLAYER_BOUNTY = 12  # from the server: the character's last streamed crime bounty, i32
 
 
@@ -1125,8 +1132,8 @@ def unpack_factions(data):
     return entries
 
 
-def pack_globals(entries):
-    """PLAYER_GLOBALS events for (name, value) pairs."""
+def pack_globals(entries, kind=PLAYER_GLOBALS):
+    """PLAYER_GLOBALS (or WORLD_GLOBALS) events for (name, value) pairs."""
     events, body, count = [], b"", 0
     for name, value in entries:
         raw = name.encode("latin-1")
@@ -1134,18 +1141,19 @@ def pack_globals(entries):
             raise ValueError(f"bad global {name!r}")
         entry = struct.pack("<f", value) + raw + b"\0"
         if count and 2 + len(body) + len(entry) > EVENT_DATA:
-            events.append(bytes([PLAYER_GLOBALS, count]) + body)
+            events.append(bytes([kind, count]) + body)
             body, count = b"", 0
         body += entry
         count += 1
     if count:
-        events.append(bytes([PLAYER_GLOBALS, count]) + body)
+        events.append(bytes([kind, count]) + body)
     return events
 
 
-def unpack_globals(data):
-    """(name, value) pairs from a PLAYER_GLOBALS event; ValueError if malformed."""
-    if len(data) < 2 or data[0] != PLAYER_GLOBALS:
+def unpack_globals(data, kind=PLAYER_GLOBALS):
+    """(name, value) pairs from a PLAYER_GLOBALS (or WORLD_GLOBALS) event; ValueError if
+    malformed."""
+    if len(data) < 2 or data[0] != kind:
         raise ValueError("not a globals event")
     entries, off = [], 2
     for _ in range(data[1]):

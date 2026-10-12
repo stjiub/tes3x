@@ -65,9 +65,9 @@ to `--stop-wait` for the requested snapshots. A second Ctrl+C stops at once. Wit
 the session lives only as long as the server does: stop it and the deaths, objects and equipment
 it recorded are gone. With `--world DIR` it
 keeps the game clock, the deaths, the doors, locks and items taken, the items dropped or placed,
-containers' contents, actors' AI settings and disposition, and the weather in one file per
-load order in `DIR`, loads it when the
-first console joins and writes it every 10 seconds
+containers' contents, actors' AI settings and disposition, the weather, learned topics,
+faction ranks and the world's globals in one file per load order in `DIR`, loads it when the
+first console joins in game and writes it every 10 seconds
 while it changes, so a restarted server carries on where it stopped. A joined client starts from
 the data files and applies the server's world; it does not import changes from a local save.
 
@@ -390,7 +390,12 @@ world's rank; one that has just joined is sent the world's rank instead. `GLOBAL
 count and entries of a finite f32 value followed by a global's name of at most 31 bytes. They
 belong to the character alone: the server keeps up to 128 in `stream.json`, puts them in the
 New Game's state file, so they are set before global scripts first run, and replays them before
-READY. The console chooses which globals are the character's. Identity, worn and effect snapshots are checked when reassembled;
+READY. The console chooses which globals are the character's. `WORLD_GLOBALS` has the same
+form and carries every other global the console keeps (not the clock, `Random100`, chargen's
+or derived ones). The world file keeps the latest value of each, up to 1,024, and sends a
+change to the other joined characters; the later of two changes wins. The server replays
+them before READY and puts them in the state file when the world is loaded, which after a
+restart happens once a console is in game. Identity, worn and effect snapshots are checked when reassembled;
 effects are capped at 64 entries. Server-to-client player sub-kinds are rejected.
 
 Inventory entries carry a signed i32 count and a flags byte (only `ENTRY_DATA`), optional

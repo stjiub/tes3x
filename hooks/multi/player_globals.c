@@ -1,5 +1,7 @@
 #define PLAYER_GLOBALS 19u
+#define WORLD_GLOBALS 20u
 #define PLAYER_GLOBALS_MAX 128u
+#define WORLD_GLOBALS_MAX 1024u
 #define GLOBAL_NAME 32u
 #define GLOBAL_ENTRY 4u /* value f32, then the name ending in zero */
 #define RECORDS_GLOBALS 0x44 /* list: head +0x8; node: next +0x4, global +0x8 */
@@ -15,11 +17,25 @@ static const char *const globals_player[] = {
     "VampClan", "ExpFightersGuild", "ExpImperialCult", "ExpImperialLegion", "ExpMagesGuild",
     "ExpMoragTong", "ExpRedoran", "ExpTemple", "ExpThievesGuild", "WearingLegionUni",
     "WearingOrdinatorUni", "wearingHelmHHDA", "wraithguardEquipped"};
-static const char *const globals_derived[] = {"PCGold", "PCHasCrimeGold", "PCHasGoldDiscount",
-                                              "PCHasTurnIn"};
+/* Kept by neither set: derived from other state, owned by the clock or chargen, or rolled each
+ * frame. The Morag Tong pair is recomputed from the player's journal and writs. */
+static const char *const globals_unshared[] = {
+    "PCGold", "PCHasCrimeGold", "PCHasGoldDiscount", "PCHasTurnIn", "CrimeGoldDiscount",
+    "CrimeGoldTurnIn", "MT_LegitKills", "MT_NewCrimeLevel", "GameHour", "Day", "Month", "Year",
+    "DaysPassed", "TimeScale", "Random100", "CharGenState", "CharGenBreadState"};
 
-static u32 globals_sent[PLAYER_GLOBALS_MAX];
-static u32 globals_known, globals_out, globals_in, globals_bad;
+/* What a console last sent or applied, by the global's place among the set's members. */
+struct global_set {
+    u8 kind;
+    u32 max, known, out, in, bad;
+    u32 *sent;
+};
+
+static u32 player_globals_sent[PLAYER_GLOBALS_MAX], world_globals_sent[WORLD_GLOBALS_MAX];
+static struct global_set player_globals = {PLAYER_GLOBALS, PLAYER_GLOBALS_MAX, 0, 0, 0, 0,
+                                           player_globals_sent};
+static struct global_set world_globals = {WORLD_GLOBALS, WORLD_GLOBALS_MAX, 0, 0, 0, 0,
+                                          world_globals_sent};
 
 static int global_name_is(const u8 *name, const char *want)
 {
@@ -34,19 +50,35 @@ static int global_name_is(const u8 *name, const char *want)
     return a == b;
 }
 
+static int global_unshared(const u8 *name)
+{
+    u32 i;
+
+    for (i = 0; i < sizeof(globals_unshared) / sizeof(*globals_unshared); i++)
+        if (global_name_is(name, globals_unshared[i]))
+            return 1;
+    return 0;
+}
+
 static int global_is_player(const u8 *name)
 {
     u32 i;
 
-    for (i = 0; i < sizeof(globals_derived) / sizeof(*globals_derived); i++)
-        if (global_name_is(name, globals_derived[i]))
-            return 0;
+    if (global_unshared(name))
+        return 0;
     if ((name[0] | 32) == 'p' && (name[1] | 32) == 'c')
         return 1;
     for (i = 0; i < sizeof(globals_player) / sizeof(*globals_player); i++)
         if (global_name_is(name, globals_player[i]))
             return 1;
     return 0;
+}
+
+static int global_member(const struct global_set *set, const u8 *name)
+{
+    if (set->kind == PLAYER_GLOBALS)
+        return global_is_player(name);
+    return !global_unshared(name) && !global_is_player(name);
 }
 
 static const u8 *globals_head(void)
@@ -67,8 +99,8 @@ static u32 global_name_length(const u8 *global)
     return n < GLOBAL_NAME && n && script_safe(global + GLOBAL_OBJECT_ID, n + 1) ? n : 0;
 }
 
-/* The player's globals, absolute, once each changes; kept by their order among them. */
-static void globals_scan(int send)
+/* A set's globals, absolute, once each changes. Unsent, a scan only takes the baseline. */
+static void globals_scan(struct global_set *set, int send)
 {
     const u8 *node = globals_head(), *global = 0;
     u8 data[EVENT_DATA];
@@ -81,25 +113,26 @@ static void globals_scan(int send)
             global = *(const u8 *const *)(node + 8);
             node = *(const u8 *const *)(node + 4);
             if (!plausible(global) || !(size = global_name_length(global)) ||
-                !global_is_player(global + GLOBAL_OBJECT_ID)) {
+                !global_member(set, global + GLOBAL_OBJECT_ID)) {
                 global = 0;
                 continue;
             }
-            if (k == PLAYER_GLOBALS_MAX) {
-                globals_bad++;
+            if (k == set->max) {
+                if (!set->known)
+                    set->bad++;
                 global = 0;
                 node = 0;
                 break;
             }
             now = get32le(global + GLOBAL_VALUE);
             if ((now & 0x7F800000u) == 0x7F800000u) { /* not finite: nothing can keep it */
-                if (!globals_known)
-                    globals_bad++;
+                if (!set->known)
+                    set->bad++;
                 k++;
                 global = 0;
                 continue;
             }
-            if (globals_known && now == globals_sent[k]) {
+            if (set->known && now == set->sent[k]) {
                 k++;
                 global = 0;
                 continue;
@@ -107,15 +140,15 @@ static void globals_scan(int send)
             break;
         }
         if (n && (!global || length + GLOBAL_ENTRY + size + 1 > EVENT_DATA)) {
-            data[0] = PLAYER_GLOBALS;
+            data[0] = set->kind;
             data[1] = (u8)n;
             if (send && !event_queue(EVENT_PLAYER, data, length)) {
                 snapshot_deferred++;
                 return;
             }
             for (i = 0; i < n; i++)
-                globals_sent[pending[i]] = values[i];
-            globals_out += send;
+                set->sent[pending[i]] = values[i];
+            set->out += send;
             n = 0;
             length = 2;
         }
@@ -128,15 +161,35 @@ static void globals_scan(int send)
         values[n] = now;
         pending[n++] = k++;
     }
-    globals_known = 1;
+    set->known = 1;
 }
 
-/* Direct writes, as a save load restores them; only the player's are accepted. */
-static void globals_apply(const u8 *data, u32 length)
+/* A global's place among the set's members, or the set's size if it is not one. */
+static u32 global_index(const struct global_set *set, const u8 *want)
+{
+    const u8 *node = globals_head(), *global;
+    u32 guard, k = 0;
+
+    for (guard = 0; plausible(node) && guard < 65536 && k < set->max; guard++) {
+        global = *(const u8 *const *)(node + 8);
+        node = *(const u8 *const *)(node + 4);
+        if (!plausible(global) || !global_name_length(global) ||
+            !global_member(set, global + GLOBAL_OBJECT_ID))
+            continue;
+        if (global == want)
+            return k;
+        k++;
+    }
+    return set->max;
+}
+
+/* Direct writes, as a save load restores them; only the set's members are accepted. A value
+ * applied after the baseline becomes it, so another console's change is not sent back. */
+static void globals_apply(struct global_set *set, const u8 *data, u32 length)
 {
     void *records = faction_records();
     u8 *global;
-    u32 off = 2, end, i;
+    u32 off = 2, end, i, k;
 
     for (i = 0; i < data[1]; i++) {
         if (off + GLOBAL_ENTRY >= length)
@@ -149,24 +202,27 @@ static void globals_apply(const u8 *data, u32 length)
         off = end + 1;
     }
     if (i != data[1] || off != length || !records) {
-        globals_bad++;
+        set->bad++;
         return;
     }
     for (i = 0, off = 2; i < data[1]; i++) {
         global = ((fn_find_global)TES3X_NET_FIND_GLOBAL)(records,
                                                           (const char *)data + off + GLOBAL_ENTRY);
-        if (!plausible(global) || !global_is_player(data + off + GLOBAL_ENTRY)) {
-            globals_bad++;
+        if (!plausible(global) || !global_member(set, data + off + GLOBAL_ENTRY)) {
+            set->bad++;
             log_text("net.global_unknown", (const char *)data + off + GLOBAL_ENTRY);
         } else {
             copy(global + GLOBAL_VALUE, data + off, 4);
-            globals_in++;
+            if (set->known && (k = global_index(set, global)) < set->max)
+                set->sent[k] = get32le(data + off);
+            set->in++;
         }
         while (data[off + GLOBAL_ENTRY])
             off++;
         off += GLOBAL_ENTRY + 1;
     }
-    tes3x_log("net.player_globals_applied", data[1]);
+    tes3x_log(set->kind == PLAYER_GLOBALS ? "net.player_globals_applied" :
+              "net.world_globals_applied", data[1]);
 }
 
 static void global_query(const char *id)
@@ -178,8 +234,10 @@ static void global_query(const char *id)
         log_text("net.global_unknown", id);
         return;
     }
+    /* 1 the character's, 2 the world's, 0 kept by neither */
     tes3x_log_hex3("net.global", get32le(global + GLOBAL_VALUE), global[0x30],
-                   (u32)global_is_player(global + GLOBAL_OBJECT_ID));
+                   global_is_player(global + GLOBAL_OBJECT_ID) ? 1u :
+                   global_member(&world_globals, global + GLOBAL_OBJECT_ID) ? 2u : 0u);
 #ifdef TES3X_CONSOLE
     tes3x_console_reply("%s >> %.2f", id, (double)*(const float *)(global + GLOBAL_VALUE));
 #endif

@@ -45,7 +45,7 @@ from .proto import (ACTOR, ACTORS, ACTORS_PER_PACKET, ACTOR_DEAD, ACTOR_IN_COMBA
                     PACE_PACKETS, PACE_WINDOW, PASSWORD_MAX, PASSWORD_RATE, PEER, PEER_IP,
                     PICK_CHARACTER, PICK_NEW, PICK_START, PLACE, PLACE_HOLD, PLAYER_ALIVE,
                     PLAYER_BOUNTY, PLAYER_DEATH, PLAYER_EFFECTS, PLAYER_EFFECTS_MAX,
-                    PLAYER_EFFECT_BYTES, PLAYER_FACTIONS, PLAYER_GLOBALS, PLAYER_GLOBALS_MAX, FACTIONS_MAX, FACTION_ALL, FACTION_EXPELLED,
+                    PLAYER_EFFECT_BYTES, PLAYER_FACTIONS, PLAYER_GLOBALS, PLAYER_GLOBALS_MAX, WORLD_GLOBALS, WORLD_GLOBALS_MAX, FACTIONS_MAX, FACTION_ALL, FACTION_EXPELLED,
                     FACTION_JOINED, FACTION_RANK, FACTION_REPUTATION, PLAYER_IDENTITY, PLAYER_ITEMS, PLAYER_JOURNAL,
                     PLAYER_LEVEL, PLAYER_MODIFIERS, PLAYER_PLACE, PLAYER_READY, PLAYER_RESPAWN,
                     PLAYER_SKILLS, PLAYER_SPELLS, PLAYER_TOPICS, PLAYER_TOPICS_MAX,
@@ -162,6 +162,8 @@ class World:
         self.topics = []
         # faction id lowered -> {"id", "rank" (None until a member sets it), "reputation"}
         self.factions = {}
+        # global name lowered -> [name, value]: the world's globals, as consoles last set them
+        self.globals = {}
         # spawn id -> reference made at run time (unpack_spawn), removed ones too; replayed likewise
         self.spawns = {}
         # refid -> {"cell", "entries", "origin"}: a container's latest contents; sent to whoever
@@ -186,6 +188,7 @@ class World:
         known.update((name.lower(), name) for name in saved.get("topics", []))
         self.topics = list(known.values())
         self.factions.update(saved.get("factions", {}))
+        self.globals.update(saved.get("globals", {}))
         for spawn in self.spawns.values():
             if spawn.get("summon"):
                 spawn["removed"] = True  # Active effects recreate summons for their target.
@@ -203,7 +206,8 @@ class World:
                  "weather": {str(k): v for k, v in self.weather.items()},
                  "statuses": {str(k): list(v) for k, v in self.statuses.items()},
                  "topics": self.topics,
-                 "factions": self.factions}
+                 "factions": self.factions,
+                 "globals": self.globals}
         if self.clock:
             self.clock.advance(now)
             state["clock"] = [self.clock.hour, self.clock.day, self.clock.month, self.clock.year,
@@ -214,7 +218,8 @@ class World:
     def __str__(self):
         return (f"{len(self.deaths)} deaths, {len(self.objects)} objects, "
                 f"{len(self.spawns)} spawns, {len(self.contents)} containers, "
-                f"{len(self.weather)} regions, {len(self.statuses)} statuses"
+                f"{len(self.weather)} regions, {len(self.statuses)} statuses, "
+                f"{len(self.globals)} globals"
                 + (f", clock {self.clock}" if self.clock else ""))
 
 
@@ -648,7 +653,7 @@ class PlayerStream:
             events += pack_topics(self.topics)
         return events
 
-    def character_file(self):
+    def character_file(self, world_globals=()):
         """What a New Game builds the player from before its first frame; None without an
         identity. The rest comes with the replay after the console joins."""
         if not self.identity:
@@ -660,6 +665,7 @@ class PlayerStream:
             events += pack_worn(self.worn)
         if self.globals:  # before the global scripts the [PreLoad] read starts
             events += pack_globals(sorted(self.globals.values()))
+        events += pack_globals(world_globals, WORLD_GLOBALS)
         if self.place and not self.dead:
             events.append(bytes([PLAYER_PLACE]) + self.place)
         return CHARACTER_MAGIC + b"".join(struct.pack("<H", len(e)) + e for e in events)
@@ -1725,6 +1731,29 @@ class Server:
                     other.rel.queue(EVENT_PLAYER, 0, data)
                 self.flush(other, now)
 
+    def share_globals(self, client, entries, now):
+        """The world keeps each global as its latest writer left it; changes reach the other
+        players already in the world. Two consoles writing one at once can end apart."""
+        changed = []
+        for name, value in entries:
+            key = name.lower()
+            kept = self.world.globals.get(key)
+            if kept and struct.pack("<f", kept[1]) == struct.pack("<f", value):
+                continue
+            if kept is None and len(self.world.globals) >= WORLD_GLOBALS_MAX:
+                continue
+            self.world.globals[key] = [kept[0] if kept else name, value]
+            changed.append((self.world.globals[key][0], value))
+        if not changed:
+            return None
+        self.world.dirty = True
+        for other in self.clients.values():
+            if other is not client and other.in_world and other.synced:
+                for data in pack_globals(changed, WORLD_GLOBALS):
+                    other.rel.queue(EVENT_PLAYER, 0, data)
+                self.flush(other, now)
+        return "world globals " + ", ".join(f"{name} {value:g}" for name, value in changed)
+
     def faction_replay(self, stream, replay):
         """Each faction's world rank and reputation, with the character's own flags on a replay."""
         own = (stream.factions or {}) if replay else {}
@@ -1760,6 +1789,7 @@ class Server:
         events = [data for data in stream.replay() if data[0] != PLAYER_TOPICS] if replay else []
         events += pack_topics(self.world.topics)
         events += self.faction_replay(stream, replay)
+        events += pack_globals(sorted(self.world.globals.values()), WORLD_GLOBALS)
         client.place_hold = (stream.place, now + PLACE_HOLD) if (
             replay and stream.place and not stream.dead) else None
         for data in events:
@@ -1796,7 +1826,7 @@ class Server:
         Keep its name in the folder to recognise the next launch after a restart."""
         if folder not in self.streams:
             self.streams[folder] = PlayerStream(os.path.join(folder, STREAM_NAME))
-        data = self.streams[folder].character_file()
+        data = self.streams[folder].character_file(sorted(self.world.globals.values()))
         if data is None:
             client.rel.queue(EVENT_TEXT, 0, b"This character has no retained identity.")
             self.flush(client, now)
@@ -2019,6 +2049,8 @@ class Server:
             self.share_topics(stream.topics or [], now, origin=client)
         if stream and data[:1] == bytes([PLAYER_FACTIONS]):
             self.share_factions(client, unpack_factions(data), before, now)
+        if stream and data[:1] == bytes([WORLD_GLOBALS]):
+            change = self.share_globals(client, unpack_globals(data, WORLD_GLOBALS), now)
         if stream and client.naming and stream.identity:
             old = self.character_folder(client)
             folder = new_character_folder(self.key_folder(client), stream.identity["name"])

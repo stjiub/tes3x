@@ -77,9 +77,9 @@ def player(data):
                        p.unpack_factions(data))
         except ValueError:
             return False
-    if kind == p.PLAYER_GLOBALS:
+    if kind in (p.PLAYER_GLOBALS, p.WORLD_GLOBALS):
         try:
-            return bool(p.unpack_globals(data))
+            return bool(p.unpack_globals(data, kind))
         except ValueError:
             return False
     if kind in (p.PLAYER_IDENTITY, p.PLAYER_WORN):

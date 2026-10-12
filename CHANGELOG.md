@@ -37,6 +37,10 @@ No official releases yet. The first public release is in preparation.
   players. Update both server and game builds; existing characters publish theirs on their next
   join. See [character state](docs/multiplayer-client.md#saving-and-character-state).
 - `tes3xnet global NAME` prints a global's value to the console, so exec scripts can assert it.
+- Multiplayer shares the world's globals, such as quest counters and rent flags: a change by
+  one player reaches the others and survives a server restart. Update both server and game
+  builds; values set before this update are not imported. See
+  [character state](docs/multiplayer-client.md#saving-and-character-state).
 
 - Multiplayer documentation has separate [player](docs/multiplayer-client.md) and
   [server admin](docs/multiplayer-server.md) guides.

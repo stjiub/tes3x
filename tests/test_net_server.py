@@ -15,6 +15,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 import tes3x.net as tes3x_net
 import tes3x.netbuild as tes3x_netbuild
@@ -860,6 +861,83 @@ class ServerTests(unittest.TestCase):
         replay = self.events(again, ready)
         self.assertIn((net.EVENT_PLAYER, net.pack_factions([(guild, member, 3, 12)])[0]), replay)
 
+    def test_world_globals_are_shared_and_replayed(self):
+        net = tes3x_net
+        world = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, world)
+        self.start('--world', str(world), '--adopt')
+        ready = lambda k, d: k == net.EVENT_PLAYER and d == bytes([net.PLAYER_READY, 0])
+        first, second = self.client(1), self.client(2)
+        first.join()
+        self.game(first, 1, 7, b'')
+        self.upload(first, 2, 1, b'mp-first.ess', self.save(b'Nerevar', 0))
+        self.events(first, ready)
+        seq = self.seed_identity(world, first, 3)
+        second.join()
+        self.game(second, 1, 8, b'')
+        self.upload(second, 2, 2, b'mp-second.ess', self.save(b'Second', 1))
+        self.events(second, ready)
+        later = 3
+
+        def player(data):
+            return lambda k, d: k == net.EVENT_PLAYER and d == data
+
+        votes = net.pack_globals([('HortatorVotes', 3.0)], net.WORLD_GLOBALS)[0]
+        self.assertTrue(valid_client_event(net.EVENT_PLAYER, votes))
+        first.send(net.EVENTS, net.pack_events(first.delivered, [
+            (seq, net.EVENT_PLAYER, 0, votes)]))
+        self.assertIn((net.EVENT_PLAYER, votes), self.events(second, player(votes)))
+        # The latest writer wins and reaches the first console.
+        five = net.pack_globals([('hortatorvotes', 5.0)], net.WORLD_GLOBALS)[0]
+        second.send(net.EVENTS, net.pack_events(second.delivered, [
+            (later, net.EVENT_PLAYER, 0, five)]))
+        kept = net.pack_globals([('HortatorVotes', 5.0)], net.WORLD_GLOBALS)[0]
+        self.assertIn((net.EVENT_PLAYER, kept), self.events(first, player(kept)))
+        mine = next((world / 'characters').glob('*/Nerevar'))
+        stream = net.PlayerStream(str(mine / net.STREAM_NAME))
+        data = stream.character_file([('HortatorVotes', 5.0)])
+        self.assertIn(struct.pack('<H', len(kept)) + kept, data)
+        name = net.checkpoint_name(data, net.CHARACTER_FILE)
+        (mine / name).write_bytes(data)
+        again = self.client(1)
+        again.session ^= 4
+        again.join()
+        self.game(again, 1, 9, name.encode(), net.GAME_NEW)
+        replay = self.events(again, ready)
+        self.assertIn((net.EVENT_PLAYER, kept), replay)
+        self.assertLess(replay.index((net.EVENT_PLAYER, kept)),
+                        replay.index((net.EVENT_PLAYER, bytes([net.PLAYER_READY, 0]))))
+
+    def test_world_globals_keep_bits_through_a_restart(self):
+        net = tes3x_net
+        tiny = struct.unpack('<f', struct.pack('<I', 0x002E6000))[0]  # VampClan's master bits
+        with tempfile.TemporaryDirectory() as folder:
+            path = str(Path(folder) / 'world.json')
+            world = net.World()
+            world.path = path
+            server = net.Server.__new__(net.Server)
+            server.world, server.clients = world, {}
+            client = SimpleNamespace(id=1)
+            entries = [('VampClanLike', tiny), ('wearingHelmHHDALike', 2.3e20)]
+            self.assertEqual(server.share_globals(client, entries, 0.0),
+                             f'world globals VampClanLike {tiny:g}, wearingHelmHHDALike 2.3e+20')
+            self.assertIsNone(server.share_globals(client, [('vampclanlike', tiny)], 0.0))
+            world.save(0.0)
+            restored = net.World()
+            self.assertTrue(restored.load(path, 0.0))
+            self.assertEqual(struct.pack('<f', restored.globals['vampclanlike'][1]),
+                             struct.pack('<I', 0x002E6000))
+            # Bounded: past the limit new names are dropped, known ones still change.
+            restored.globals.update({f'g{i}': [f'g{i}', 0.0]
+                                     for i in range(net.WORLD_GLOBALS_MAX - 2)})
+            server.world = restored
+            self.assertIsNone(server.share_globals(client, [('NewGlobal', 1.0)], 0.0))
+            self.assertIsNotNone(server.share_globals(client, [('g0', 1.0)], 0.0))
+            for invalid in (bytes([net.WORLD_GLOBALS, 1]) + struct.pack('<f', float('inf'))
+                            + b'HortatorVotes\0',
+                            bytes([net.WORLD_GLOBALS, 2]) + struct.pack('<f', 1.0) + b'x\0'):
+                self.assertFalse(valid_client_event(net.EVENT_PLAYER, invalid))
+
     def test_stream_only_character_creation_snapshot_and_restart(self):
         world = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, world)
@@ -1419,7 +1497,7 @@ class ServerTests(unittest.TestCase):
 
         saved = next(world.glob('*.json'))
         state = json.loads(saved.read_text(encoding='utf-8'))
-        self.assertEqual(sorted(state), ['clock', 'contents', 'deaths', 'factions', 'next_spawn', 'objects',
+        self.assertEqual(sorted(state), ['clock', 'contents', 'deaths', 'factions', 'globals', 'next_spawn', 'objects',
                                          'spawns', 'statuses', 'topics', 'weather'])
         self.assertEqual(len(state['clock']), 6)  # hour, day, month, year, days passed, scale
         self.assertEqual(state['deaths'], {str(refid): 1})

@@ -49,7 +49,7 @@ multiplayer build redraws the menu buttons so they match the ones it adds.
 
 Joining starts a New Game with your character's identity, inventory, worn items and last place
 restored from the server. The rest of the supported state, including learned dialogue topics,
-factions and your character's own globals, follows once you join.
+factions and globals, follows once you join.
 Learned topics are shared: a topic learned by one player becomes available to the others,
 including players who join later.
 
@@ -63,7 +63,12 @@ Your character's own globals stay with your character and are never shared: the 
 under other names (`VampClan`, the guild expulsion counters such as `ExpFightersGuild`, and the
 uniform and Wraithguard flags). Values the game works out again from your gold or bounty
 (`PCGold`, `PCHasCrimeGold`, `PCHasGoldDiscount`, `PCHasTurnIn`) and `CharGenState` are not
-kept. Other globals, the quest and world ones, are not kept yet.
+kept.
+
+Every other global belongs to the world and is shared: quest counters such as
+`HortatorVotes`, rent flags, and those a mod adds. A change by one player reaches the others
+and is kept across server restarts. The clock, `Random100`, character creation's and those the
+game works out again from your bounty, gold or Morag Tong writs are not kept.
 
 **Save to Server** flushes every supported character field and your current place. The server
 confirms the save after writing the character and world. **Leave** waits for that confirmation
@@ -94,11 +99,14 @@ back at the marker on its next join.
   with time stopped while offline. At most 64 active effect entries are retained. Consumed
   potions include their adjusted source definition. Custom spell and enchantment definitions
   are not recreated; a source must exist in the build, and a missing caster cannot be resolved.
-  Ghost caster ids belong to the current session. World globals are not retained yet and
-  start at New Game values. Restoring a journal only moves a quest forward, never back.
+  Ghost caster ids belong to the current session. Variables that scripts keep on objects
+  (local variables) are not retained yet and start at New Game values. Restoring a journal
+  only moves a quest forward, never back.
   The world keeps up to 4,096 learned topic names of at most 63 bytes each, and up to 512
-  factions, and up to 128 of a character's own globals.
-  When two players change the same faction at the same moment, the later change wins.
+  factions, up to 128 of a character's own globals and up to 1,024 world globals.
+  When two players change the same faction or world global at the same moment, the later
+  change wins; within about a second of each other, the two consoles can end up with each
+  other's value until the next change.
 - Items taken, objects a script disables, locks, and items
   dropped or placed (by the console or a script) are shared, with their stack size, condition and
   charge, and so are containers' contents: the first player to open a container decides what it
@@ -188,7 +196,7 @@ With `console` in the build, open the console (Back + right thumb click) and typ
 | `tes3xnet stat` | write the network counters to the log |
 | `tes3xnet topic NAME` | log `net.topic_known` as 1 or 0 for a learned dialogue topic; spaces need no quotes |
 | `tes3xnet faction ID` | log `net.faction` with the faction's stored rank, reputation and membership flags (1 joined, 2 expelled) |
-| `tes3xnet global NAME` | print a global's value to the console (`NAME >> 1.00`) and log `net.global` with its raw value, type and 1 if it is the character's own |
+| `tes3xnet global NAME` | print a global's value to the console (`NAME >> 1.00`) and log `net.global` with its raw value, type and 1 if it is the character's own, 2 if the world's |
 | `tes3xnet say TEXT` | send a line of text to the other players (logged there as `net.text`) |
 | `tes3xnet send NAME` | send `U:\TES3X\NAME` to the server when the admin asks for a diagnostic file; this does not save your multiplayer character |
 | `tes3xnet save` | flush supported character state and wait for the server to confirm storage |
