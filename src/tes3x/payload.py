@@ -275,8 +275,20 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
 
     image = tes3x_inject.Xbe(xbe.read_bytes())
     known_image = has_ntsc_fixed_bindings(image)
+    resolved_addresses = {}
 
     def engine_address(name, default):
+        if name in os.environ:
+            return os.environ[name]
+        key = name.lower().replace("_", "-")
+        if name in ("GET_FOCUS", "LIST_APPEND", "SET_VISIBLE"):
+            key = "multi-" + key
+        elif not key.startswith("console-"):
+            key = "console-" + key
+        if key in LOCATORS:
+            if name not in resolved_addresses:
+                resolved_addresses[name] = hexva(LOCATORS[key](image))
+            return resolved_addresses[name]
         return resolve_address(name, default, known_image)
 
     address = engine_address
@@ -864,12 +876,7 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
     if "tes3xconsole.c" in names:
         print("console hook: keyboard and print sites located by content")
         for name, default in CONSOLE_ADDRESSES:
-            key = name.lower().replace("_", "-")
-            if not key.startswith("console-"):
-                key = "console-" + key
-            value = os.environ.get(name) or (hexva(locate(key)) if key in LOCATORS else
-                                              address(name, default))
-            define(name, value)
+            define(name, address(name, default))
         flags.append("-DTES3X_CONSOLE")
         console_print = locate("console-print")
         vsprintf = tes3x_inject.call_target(image, console_print + CONSOLE_PRINT_VSPRINTF)

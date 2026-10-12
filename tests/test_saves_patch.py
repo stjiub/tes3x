@@ -63,6 +63,7 @@ class SavePatchTests(unittest.TestCase):
         image = entry + b'\x90' * 60 + b'\xb8\xb8\x80\xff\xff'
         data = nif.ljust(0x100, b'\x90') + image
         self.assertEqual(find_console_widget_entry(Image(data), 'CREATE_IMAGE'), 0x10100)
+        self.assertEqual(find_console_widget_entry(Image(data), 'CREATE_NIF'), 0x10000)
 
     def test_chargen_save_gate_fields_are_content_located(self):
         data = (b'\x90' * 20 + b'\x8b\x35' + struct.pack('<I', 0x12345678)

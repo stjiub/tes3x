@@ -4,9 +4,9 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
-- PAL GOTY diagnostics now bind to that engine's INI reader; console keyboard and INFO arena
-  patch sites also locate on PAL. Payload builds reject unbound fixed engine addresses on other
-  variants, so console and multiplayer still require developer-supplied PAL bindings.
+- On the sampled PAL GOTY engine, diagnostics, INFO arena and console payloads now locate their
+  engine bindings; the console and virtual keyboard work in a game session. Other features,
+  including multiplayer, still need reviewed PAL bindings.
 - Payload sections and hook addresses can relocate within the same engine image. Existing
   fixed payloads still require their linked address; builds still need LLVM and remain bound
   to the input engine. See [payload injection](patches/payload.md).
