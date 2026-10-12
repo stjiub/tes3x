@@ -39,3 +39,7 @@ Building the payload needs LLVM (`clang` and `lld-link`). Relocations allow the 
 within the same engine image; the original entry, kernel thunk slots and engine addresses still
 require a build for each engine variant. An older fixed payload must land at its linked address.
 Relocations do not adapt engine bindings between regional releases.
+The INI reader and path are located in each input image. Fixed engine bindings are used only when
+the engine's code matches the known NTSC GOTY build; other images need those bindings supplied
+explicitly for research builds. PAL diagnostics can be built from content-located sites, but
+console and multiplayer payload builds still need PAL engine bindings.

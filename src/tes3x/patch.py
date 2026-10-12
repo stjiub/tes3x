@@ -1087,13 +1087,12 @@ def _console(x, value, ctx):
     site = find_console_gate(x)
     was, off = x.patch_call(site, target)
     edits = [(off, 5, "console gate 0x%08X: 0x%08X -> 0x%08X" % (site, was, target))]
-    for what, sig, hook in (("key", VK_KEY_LIMIT_SIG, "console_vk_key"),
-                            ("space", VK_SPACE_LIMIT_SIG, "console_vk_space")):
-        stub = ctx["hooks"].get(hook)
-        if not stub:
-            continue
-        stub = int(str(stub), 16)
-        site = find_vk_limit(x, sig, what)
+    limits = [(what, find_vk_limit(x, sig, what), hook)
+              for what, sig, hook in (("key", VK_KEY_LIMIT_SIG, "console_vk_key"),
+                                      ("space", VK_SPACE_LIMIT_SIG, "console_vk_space"))
+              if ctx["hooks"].get(hook)]
+    for what, site, hook in limits:
+        stub = int(str(ctx["hooks"][hook]), 16)
         off = x.va_to_off(site)
         x.data[off:off + 5] = b"\xe8" + struct.pack("<i", stub - (site + 5))
         edits.append((off, 5, "keyboard %s length check 0x%08X -> 0x%08X" % (what, site, stub)))

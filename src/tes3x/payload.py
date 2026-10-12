@@ -19,7 +19,7 @@ import tes3x.inject as tes3x_inject
 from tes3x.paths import bundled, checkout, resource
 from tes3x.patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, find_call_sites, find_mcp37_context,
                          find_mcp125_context, find_save_allowed_context,
-                         find_script_ip_restore_call, find_transition_calls)
+                         find_script_ip_restore_call, find_transition_calls, scene_form)
 
 HOOKS = resource("hooks")
 HEADERS = ("tes3xdiag.h", "tes3xheap.h", "tes3xlog.h", "tes3xmem.h", "tes3xnt.h",
@@ -28,6 +28,7 @@ HEADERS = ("tes3xdiag.h", "tes3xheap.h", "tes3xlog.h", "tes3xmem.h", "tes3xnt.h"
 SECTION = re.compile(r'^#include "(multi/\w+\.c)"$', re.M)
 DEFAULT_SOURCES = ("tes3xhook.c", "tes3xlog.c", "tes3xini.c", "tes3xdiag.c")
 LINK_BASE = 0x00400000
+NTSC_TEXT_SHA256 = "38b922df5461b195c61fb2fdb62d893810ef8482ec813d9f6a7a064fb75493d8"
 BUNDLED_LLVM = bundled("externals", "llvm", "bin")
 LLVM_DIRS = (Path("C:/Program Files/LLVM/bin"), Path("C:/msys64/clang64/bin"),
              Path("C:/msys64/mingw64/bin"))
@@ -36,10 +37,7 @@ CFLAGS = ("-target", "i386-pc-win32", "-march=pentium3", "-Os", "-ffreestanding"
 
 # The archive hook replaces the call to Archive::Load at this site.
 ARCH_SITE = 0x000D4E06
-INI_GET = 0x001933E0
-INI_PATH = 0x0035E364
 DATA_HANDLER = 0x003CB5F8
-CONSOLE_SITE = 0x00098430
 SERVICE_ACTOR = 0x001CD530  # ui::getServiceActor: the MenuDialog partner's mobile, or 0
 # What the SetPos, SetAngle and PlayGroup handlers call, to place and animate a reference without
 # the script compiler.
@@ -169,9 +167,22 @@ def hexva(value):
     return "0x%08X" % value
 
 
-def address(name, default):
-    """A fixed engine address, overridable from the environment for research builds."""
-    return os.environ.get(name, hexva(default))
+def resolve_address(name, default, known_image=True):
+    """A fixed engine address, overridable for research builds on other images."""
+    if name in os.environ:
+        return os.environ[name]
+    if not known_image:
+        raise PayloadError(f"no binding for {name} in this engine; set {name} for a research build")
+    return hexva(default)
+
+
+def has_ntsc_fixed_bindings(image):
+    """Accept retail/scene NTSC text, including XBEs with extra sections."""
+    text = next((s for s in image.sections if s.name == ".text"), None)
+    if text is None:
+        return False
+    raw = scene_form(bytes(image.data))
+    return hashlib.sha256(raw[text.raw:text.raw + text.rsize]).hexdigest() == NTSC_TEXT_SHA256
 
 
 def find_tool(name, llvm_dir=None):
@@ -263,6 +274,12 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
     out.mkdir(parents=True, exist_ok=True)
 
     image = tes3x_inject.Xbe(xbe.read_bytes())
+    known_image = has_ntsc_fixed_bindings(image)
+
+    def engine_address(name, default):
+        return resolve_address(name, default, known_image)
+
+    address = engine_address
     va = hexva(LINK_BASE)
     entry = hexva(image.entry)
     print(f"section VA {hexva(image.next_va())}   link base {va}   original entry {entry}")
@@ -281,8 +298,8 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         return LOCATORS[name](image)
 
     wanted, extra = {}, {}
-    arch_site = int(address("ARCH_SITE", ARCH_SITE), 16)
     if "tes3xarch.c" in names:
+        arch_site = int(address("ARCH_SITE", ARCH_SITE), 16)
         load = tes3x_inject.call_target(image, arch_site)
         print(f"archive hook: call site {hexva(arch_site)} -> Archive::Load {hexva(load)}")
         define("ARCHIVE_LOAD", hexva(load))
@@ -341,7 +358,8 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         flags.append("-DTES3X_MWSE")
         wanted["mwse_fixup"] = ("@tes3x_mwse_fixup_hook@8", "_tes3x_mwse_fixup_hook")
     if names & INI_USERS:
-        ini_get, ini_path = address("INI_GET", INI_GET), address("INI_PATH", INI_PATH)
+        ini_get = os.environ.get("INI_GET") or hexva(locate("ini-get-string"))
+        ini_path = os.environ.get("INI_PATH") or hexva(locate("ini-path"))
         print(f"ini reader {ini_get}, ini path {ini_path}")
         define("INI_GET_STRING", ini_get)
         define("INI_PATH", ini_path)
@@ -844,7 +862,7 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         wanted["region_carve"] = ("_tes3x_region_carve_hook",)
         wanted["region_release"] = ("@tes3x_region_release@12",)
     if "tes3xconsole.c" in names:
-        print(f"console hook: gate {address('CONSOLE_SITE', CONSOLE_SITE)}")
+        print("console hook: keyboard and print sites located by content")
         for name, default in CONSOLE_ADDRESSES:
             define(name, address(name, default))
         flags.append("-DTES3X_CONSOLE")

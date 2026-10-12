@@ -1361,8 +1361,18 @@ def find_info_arena_sites(x):
     data = bytes(x.data)
     heap = find_heap_object(x)
     heap_bytes = struct.pack("<I", heap)
-    constructor_store = find_unique(data, b"\xc7\x06\x88\x80\x36\x00",
-                                    "INFO constructor vtable")
+    constructor_sig = re.compile(
+        rb"\xc7\x06(?P<vtable>....)\xe8....\x68\xdb\x0e\x00\x00"
+        rb"\x68(?P<names>....)\x6a\x20\x6a\x03\x89\x46\x10\xe8", re.S)
+    constructors = list(constructor_sig.finditer(data))
+    if len(constructors) != 1:
+        raise PatchError("info-name-arena: %d INFO constructors, expected 1" % len(constructors))
+    constructor = constructors[0]
+    vtable = struct.unpack("<I", constructor.group("vtable"))[0]
+    names = struct.unpack("<I", constructor.group("names"))[0]
+    if names != vtable - 0x20 or x.va_to_off(vtable) is None:
+        raise PatchError("info-name-arena: INFO table pointers changed")
+    constructor_store = constructor.start()
     constructor_start = data.rfind(b"\x6a\xff", constructor_store - 0x60, constructor_store)
     if constructor_start < 0:
         raise PatchError("info-name-arena: INFO constructor start not found")
@@ -1375,11 +1385,9 @@ def find_info_arena_sites(x):
         raise PatchError("info-name-arena: expected one INFO table allocation")
     table_allocate = table_calls[0]
     table_off = x.va_to_off(table_allocate)
-    names_sig = (b"\x68\xdb\x0e\x00\x00\x68\x68\x80\x36\x00\x6a\x20\x6a\x03"
-                 b"\x89\x46\x10\xe8")
-    names_off = table_off + 5 + find_unique(
-        data[table_off + 5:constructor_end], names_sig,
-        "INFO name allocation sequence") + len(names_sig) - 1
+    names_off = constructor.end() - 1
+    if not table_off < names_off < constructor_end:
+        raise PatchError("info-name-arena: INFO allocation order changed")
     names_allocate = x.off_to_va(names_off)
 
     constructor_calls = find_call_sites(x, constructor_va)
@@ -1483,15 +1491,16 @@ def find_console_gate(x):
 
 
 # The on-screen keyboard's key and space handlers cap its text at 31 characters with a
-# `cmp dword [esp+N], 0x1F`. A second keyboard has identical handlers, so each signature is
-# anchored on the text-entry id global only this keyboard's handler reads beforehand.
+# `cmp dword [esp+N], 0x1F`. A second keyboard has identical handlers; this one's key and space
+# handlers read id globals 12 bytes apart.
 VK_KEY_LIMIT_SIG = re.compile(
-    re.escape(bytes.fromhex("668b0d68c73d00b801000000505051 8bce e8".replace(" ", "")))
+    re.escape(bytes.fromhex("668b0d")) + b".{4}" +
+    re.escape(bytes.fromhex("b8010000005050518bcee8"))
     + b".{4}" + re.escape(bytes.fromhex("837c24241f")), re.S)
 
 
 VK_SPACE_LIMIT_SIG = re.compile(
-    re.escape(bytes.fromhex("668b155cc73d00")) + b".{67}"
+    re.escape(bytes.fromhex("668b15")) + b".{4}" + b".{67}"
     + re.escape(bytes.fromhex("837c242c1f")), re.S)
 
 
@@ -1499,7 +1508,12 @@ def find_vk_limit(x, sig, what):
     """The 5-byte length compare at the end of a keyboard-handler signature."""
     text = text_section(x)
     blob = bytes(x.data[text.raw:text.raw + text.rsize])
-    hits = [m.end() - 5 for m in sig.finditer(blob)]
+    partner = VK_SPACE_LIMIT_SIG if what == "key" else VK_KEY_LIMIT_SIG
+    partner_ids = {struct.unpack_from("<I", blob, m.start() + 3)[0]
+                   for m in partner.finditer(blob)}
+    delta = -12 if what == "key" else 12
+    hits = [m.end() - 5 for m in sig.finditer(blob)
+            if struct.unpack_from("<I", blob, m.start() + 3)[0] + delta in partner_ids]
     if len(hits) != 1:
         raise PatchError("console: %d keyboard %s length check(s), expected 1" % (len(hits), what))
     return text.va + hits[0]
@@ -1524,6 +1538,20 @@ def find_console_print(x):
     if len(matches) != 1:
         raise PatchError("console printf: %d matches, expected exactly 1" % len(matches))
     return x.off_to_va(matches[0].start())
+
+
+def find_ini_get_string(x):
+    """Locate the engine's INI string reader by its stack frame and early null check."""
+    sig = re.compile(rb"\x55\x8b\xec\x83\xe4\xf8\xb8\x04\x10\x00\x00\xe8...."
+                     rb"\x53\x56\x57\x8b\x7d\x18\x85\xff\x0f\x84", re.S)
+    matches = list(sig.finditer(bytes(x.data)))
+    if len(matches) != 1:
+        raise PatchError("INI reader: %d matches, expected 1" % len(matches))
+    return x.off_to_va(matches[0].start())
+
+
+def find_ini_path(x):
+    return x.off_to_va(find_unique(bytes(x.data), b"D:\\Morrowind.ini\0", "INI path"))
 
 
 # Content-located engine addresses, shared with the payload build so the two cannot disagree.
@@ -1574,6 +1602,8 @@ LOCATORS = {
     "temple-marker": lambda image: find_marker(image)[1],
     "divine-marker": lambda image: find_marker(image)[2],
     "console-print": find_console_print,
+    "ini-get-string": find_ini_get_string,
+    "ini-path": find_ini_path,
     "heap-allocate": lambda image: find_heap_function(image, "allocate")[0],
     "heap-free": lambda image: find_heap_function(image, "free")[0],
     "heap-object": find_heap_object,
