@@ -1,12 +1,11 @@
 """SavesTab: profile window saves."""
 
-from tes3x.paths import child_python
 from .common import (BuildSettings, EXPANSION_PLACEHOLDERS, EXTRA, QAbstractItemView, QAction,
                      QColor, QComboBox, QDesktopServices, QHBoxLayout, QHeaderView, QIcon,
                      QInputDialog, QKeySequence, QLabel, QMenu, QMessageBox, QProcess,
                      QPushButton, QStyle, QTreeWidget, QTreeWidgetItem, QUrl, QVBoxLayout,
                      QWidget, Qt, ROLE, collections, icon_button, json, saves_tool, shutil,
-                     struct, tes3x_savepool, tes3x_targets, theme_icon, tomllib, trash)
+                     struct, sys, tes3x_savepool, tes3x_targets, theme_icon, tomllib, trash)
 
 
 class SavesTab(QWidget):
@@ -275,7 +274,7 @@ class SavesTab(QWidget):
             self.saves_probes.pop(target_name).kill()
         process = QProcess(self)
         process.setWorkingDirectory(str(self.window.work_dir()))
-        process.setProgram(child_python())
+        process.setProgram(sys.executable)
         process.setArguments(["-m", "tes3x", "saves", "list", "--pool", f"{value:08X}",
                               "--xbox", "--library", str(self.save_library()),
                               "--config", str(self.window.local_config_path()),

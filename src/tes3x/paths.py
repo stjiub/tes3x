@@ -146,12 +146,3 @@ def mod_library(profile, given=None, config=None):
     library = Path(value).expanduser()
     base = path.parent if path.is_file() else Path.cwd()
     return (library if library.is_absolute() else base / library).resolve()
-
-
-def child_python():
-    """The interpreter for child commands; on Windows pythonw, so none opens a console window."""
-    if sys.platform == "win32":
-        quiet = Path(sys.executable).with_name("pythonw.exe")
-        if quiet.is_file():
-            return str(quiet)
-    return sys.executable

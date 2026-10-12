@@ -68,7 +68,7 @@ import tes3x.nexus as nexus
 import tes3x.saves as saves_tool
 import tes3x.savepool as tes3x_savepool
 import tes3x.targets as tes3x_targets
-from tes3x.paths import bundled, checkout, child_python, docs_url, local_config, resource
+from tes3x.paths import bundled, checkout, docs_url, local_config, resource
 from tes3x.xemu_setup import resolve as resolve_xemu
 import tes3x
 
@@ -692,7 +692,7 @@ class LocalSettingsDialog(QDialog):
             return
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
-            done = subprocess.run([child_python(), str(script), *arguments,
+            done = subprocess.run([sys.executable, str(script), *arguments,
                                    "--config", str(self.path)], cwd=self.path.parent,
                                   capture_output=True, text=True, timeout=120)
             output, ok = (done.stdout + done.stderr).strip(), done.returncode == 0

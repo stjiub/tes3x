@@ -1,12 +1,11 @@
 """PlayController: profile window play controller."""
 
-from tes3x.paths import child_python
 from .common import (AgentListener, Fetch, MEMORY_LOG_SECONDS, OP_REBOOT, PIPELINE_MARKER, Path,
                      PlaySession, QMessageBox, QProcess, QProcessEnvironment, QTextCursor,
                      addon_registry, console_request, dashboard_agent_state, datetime,
                      fetch_destination, ftp_error, heartbeat_text, is_dash, key_fingerprint,
                      launch, load_or_create_key, os, parse_drives, re, resolve_xemu, running_xemu,
-                     shutil, signal, struct, tes3x_targets, time, tomllib)
+                     shutil, signal, struct, sys, tes3x_targets, time, tomllib)
 from PySide6.QtCore import QObject
 
 
@@ -506,7 +505,7 @@ class PlayController(QObject):
         process.setWorkingDirectory(str(self.window.work_dir()))
         if environment is not None:
             process.setProcessEnvironment(environment)
-        process.setProgram(child_python())
+        process.setProgram(sys.executable)
         process.setArguments(launch(program, arguments))
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         session = self.play_session(True)
@@ -612,7 +611,7 @@ class PlayController(QObject):
             return
         process = QProcess(self.window)
         process.setWorkingDirectory(str(self.window.work_dir()))
-        process.setProgram(child_python())
+        process.setProgram(sys.executable)
         process.setArguments(["-m", "tes3x", "fetch", "E:/", "--list",
                               "--config", str(config), "--target", target["name"]])
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
@@ -655,7 +654,7 @@ class PlayController(QObject):
         script, arguments, expected = command
         process = QProcess(self.window)
         process.setWorkingDirectory(str(self.window.work_dir()))
-        process.setProgram(child_python())
+        process.setProgram(sys.executable)
         process.setArguments(
             [
                 str(script),
@@ -703,7 +702,7 @@ class PlayController(QObject):
         script, arguments = command
         process = QProcess(self.window)
         process.setWorkingDirectory(str(self.window.work_dir()))
-        process.setProgram(child_python())
+        process.setProgram(sys.executable)
         name = self.window.target_picker.currentData()
         process.setArguments(
             [

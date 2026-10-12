@@ -24,7 +24,7 @@ from .plugins import PluginsPanel
 from .files import FilesPanel
 from .mods import ModsTab
 from .play_controller import PlayController
-from tes3x.paths import child_python, docs_url
+from tes3x.paths import docs_url
 
 
 class ProfileWindow(QMainWindow):
@@ -1674,7 +1674,7 @@ class ProfileWindow(QMainWindow):
         process.setWorkingDirectory(str(self.work_dir()))
         if environment is not None:
             process.setProcessEnvironment(environment)
-        process.setProgram(child_python())
+        process.setProgram(sys.executable)
         process.setArguments(launch(program, arguments))
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         process.readyReadStandardOutput.connect(self.append_process_output)
