@@ -382,7 +382,8 @@ static const char *install_base(const struct json *build, const char *url_base,
     unsigned long long total = 0, done = 0, need = 0, checked;
     ULARGE_INTEGER available;
     const char *err = NULL;
-    int root = json_get(build, 0, "retail_base"), files, i, n = 0, count, owned = 0, result;
+    int root = json_get(build, 0, "retail_base"), files, i, n = 0, count, owned = 0, trusted = 0,
+        result;
     char *slash;
 
     xboxini_get("OverlayBase", base, sizeof(base));
@@ -438,13 +439,28 @@ static const char *install_base(const struct json *build, const char *url_base,
         }
         total += it->size;
     }
+    /* A base this server's list already verified is not hashed again: its saved list is the
+     * same and each file is still there at its size. Another folder, another list or a missing
+     * or resized file is hashed. */
+    if (owned) {
+        int saved = json_get(&old, 0, "files");
+        size_t len = (size_t)(j.t[files].end - j.t[files].start);
+
+        trusted = saved >= 0 && (size_t)(old.t[saved].end - old.t[saved].start) == len
+            && !memcmp(old.s + old.t[saved].start, j.s + j.t[files].start, len);
+    }
     /* Verify every dependency, including an existing base with an old manifest. */
     for (i = 0; i < n; i++) {
         struct item *it = &items[i];
 
         join_path(path, sizeof(path), base, it->path);
+        if (trusted && file_size(path) == it->size) {
+            it->action = KEEP;
+            done += it->size;
+            continue;
+        }
         checked = done;
-        mgr_progress_title("Checking retail base");
+        mgr_progress_title("Verifying retail base");
         result = file_size(path) == it->size
             ? mgr_hash_file(path, it->size, hex, &checked, total, it->path, progress) : -1;
         if (result == -2) {

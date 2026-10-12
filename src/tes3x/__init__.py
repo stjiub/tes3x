@@ -17,6 +17,16 @@ def _hide_child_consoles():
 
     def init(self, *args, **kwargs):
         kwargs["creationflags"] = kwargs.get("creationflags", 0) | subprocess.CREATE_NO_WINDOW
+        if len(args) < 4:
+            # a hidden console would swallow what the child writes: hand on our own streams
+            for name, stream in (("stdin", sys.stdin), ("stdout", sys.stdout),
+                                 ("stderr", sys.stderr)):
+                if kwargs.get(name) is None:
+                    try:
+                        stream.fileno()
+                    except (AttributeError, OSError, ValueError):
+                        stream = subprocess.DEVNULL
+                    kwargs[name] = stream
         original(self, *args, **kwargs)
 
     subprocess.Popen.__init__ = init
