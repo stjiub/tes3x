@@ -55,7 +55,7 @@ Some pages and sources are generated; edit their source and regenerate them:
 |---|---|---|
 | `tes3x patches --write` | [patches.md](patches.md), [candidates.md](candidates.md), [catalog.md](catalog.md) | `patches.toml`, `candidates.toml`, `catalog.toml` |
 | `tes3x docs --write` | [index.md](index.md) | `docs/nav.toml` |
-| `tes3x font` | `manager/fontdata.c` | pinned OFL fonts, downloaded once |
+| `tes3x font` | `dash/fontdata.c` | pinned OFL fonts, downloaded once |
 | `tes3x menuart` | the menu buttons in `assets/menu` | one font; needs Pillow and numpy |
 
 `tes3x patches --check` and `tes3x docs` check without writing. `tes3x docs` also resolves every
@@ -75,9 +75,9 @@ TES3X and its packages installed from a wheel built from the checkout, `TES3X.ex
 the GUI with that Python, and `tes3x-cli.exe`, which runs `tes3x` commands in a terminal.
 `externals/` holds 7-Zip and LLVM's `clang` and `lld-link`, each with its license.
 
-It also carries the [console manager](deployment.md#installing-the-console-manager) as
-`manager/default.xbe` and its launcher as `manager/launcher.xbe`, built with nxdk (`paths.nxdk`),
-or taken from `--manager XBE` and `--launcher XBE`. `--no-manager` leaves both out.
+It also carries the [TES3X Dash](deployment.md#installing-tes3x-dash) as
+`dash/default.xbe` and its launcher as `dash/launcher.xbe`, built with nxdk (`paths.nxdk`),
+or taken from `--dash XBE` and `--launcher XBE`. `--no-dash` leaves both out.
 
 Building the folder needs a C compiler for the two launchers (MSYS2's `gcc` or `clang`, or
 `--cc`). The first build downloads Python, 7-Zip and LLVM, about 880 MB, mostly the LLVM release,
@@ -94,21 +94,21 @@ PySide6's unused CMake object files are left out, and the build fails if a path,
 
 The `portable` workflow (`.github/workflows/portable.yml`) builds the zip on Windows when run from
 the Actions tab or for a `vX.Y.Z` tag, unpacks it and checks it, and keeps it as the run's
-artifact. It has no nxdk, so its zip has no console manager.
+artifact. It has no nxdk, so its zip has no TES3X Dash.
 
 ## Releases
 
-A release is published by hand on GitHub from a downloaded, tested zip. The console manager
-fetches its own updates from the latest release, so every release also carries a signed manager
+A release is published by hand on GitHub from a downloaded, tested zip. The Dash
+fetches its own updates from the latest release, so every release also carries a signed Dash
 release:
 
 ```powershell
-tes3x release manager OUT --key KEY --manager XBE --launcher XBE
+tes3x release dash OUT --key KEY --dash XBE --launcher XBE
 tes3x release check OUT
 gh release upload vX.Y.Z OUT/release.json OUT/release.json.sig OUT/manager.xbe OUT/launcher.xbe
 ```
 
-`release manager` writes `release.json` (the manager's version, read from its XBE, and each
+`release Dash` writes `release.json` (the Dash's version, read from its XBE, and each
 file's size and SHA-256), its Ed25519 signature `release.json.sig`, `manager.xbe` and
 `launcher.xbe`. `release check` checks them against `keys/release.pub`. How a console finds,
 checks and installs a release is in [signed updates](deployment.md#signed-updates).
@@ -118,14 +118,14 @@ checks and installs a release is in [signed updates](deployment.md#signed-update
 The private half of the release key stays out of every repository. `tes3x release keygen KEY`
 makes one with a passphrase, `tes3x release protect KEY` sets or changes the passphrase, and
 `TES3X_RELEASE_PASSPHRASE` supplies it to scripts. The public half is `keys/release.pub`, which
-the manager is built with.
+the Dash is built with.
 
-A key is replaced by a release, signed with the old key, whose manager carries the new one.
+A key is replaced by a release, signed with the old key, whose Dash carries the new one.
 
 ### Forks
 
-A fork makes its own key and puts the public half in `keys/release.pub`; its managers then take
-only its releases. It sets its own update feed as `MGR_FEED` in `manager/mgr.h`.
+A fork makes its own key and puts the public half in `keys/release.pub`; its Dashes then take
+only its releases. It sets its own update feed as `MGR_FEED` in `dash/mgr.h`.
 
 ## More
 

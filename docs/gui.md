@@ -82,8 +82,8 @@ before an Xbox is checked or for xemu, green while an Xbox answers, and red when
 the tooltip carries its address and reported free space. One split button runs Deploy for an Xbox
 target and Build for xemu; its menu holds Check, Build and Deploy, with grey, green, amber and red
 dots for not run, current, stale and failed. Deploy is unavailable for xemu targets. An Xbox whose
-[console manager](deployment.md#through-the-console-manager) is paired with this PC shows
-**Manager**, and Deploy then goes through the manager instead of FTP. The cog beside the target list
+[TES3X Dash](deployment.md#through-the-dash) is paired with this PC shows
+**Dash**, and Deploy then goes through the Dash instead of FTP. The cog beside the target list
 adds, duplicates or removes a target, or opens its Setup. **Actions** also smoke-tests the current
 profile. The status bar is reserved for activity, transient messages and counts. Check and
 per-target Deploy results are remembered in the build output; like the Build state, they notice
@@ -96,7 +96,7 @@ folder.
 **Play** runs the profile on the selected target, building it first when necessary. A 128 MB xemu
 target needs a BIOS that uses the extra memory, set in the target's **Setup**. Each profile keeps
 its own xemu hard disk, so saves carry over between sessions; the Play menu can enable GDB or run
-the smoke test, and **Actions** resets the disk. With the [console add-on](addons.md) switched on,
+the smoke test, and **Actions** resets the disk. With the [XBMC4Gamers add-on](addons.md) switched on,
 Play on an Xbox target deploys the build and starts the game there. While xemu runs, Play becomes
 **Stop** (`Shift+F9`). Check and Deploy remain available; Build waits until the running emulator
 releases that build.
@@ -121,10 +121,10 @@ unavailable action stays visible and its tooltip says what is missing.
 
 - **Overview** has one section for each thing that can answer, with that section's actions.
   **Connection** shows the address, memory, FTP and drive space, with Check connection and Pull
-  logs. **Agent** shows whether a game or the console manager is connected and, for a game, its
+  logs. **Agent** shows whether a game or the Dash is connected and, for a game, its
   heartbeat (frame time, free memory, dropped log lines), with Quit to dashboard and Fetch file. On
   an Xbox, **Dashboard agent** has Install / update, Restart dashboard and Remove, and **Console
-  manager** shows the installed version beside the one this PC would install, with Install / update.
+  Dash** shows the installed version beside the one this PC would install, with Install / update.
 - **Console** streams the running game's log and runs console lines in it, such as
   `player->getpos x` or `tes3xnet stat`; Up and Down recall earlier lines. It needs a build with
   the `agent` and `console` patches. **Fetch file…** copies a file such as `E:\tes3xprof.bin` from
@@ -157,7 +157,7 @@ console to save its character before the server exits; pressing it again stops a
 the GUI stops a server it started.
 
 **Build profile** (profiles with the `multiplayer` patch) names the build the server hands to
-consoles' managers (see [handing out the build](multiplayer-server.md#handing-out-the-build)). Start
+consoles' Dashes (see [handing out the build](multiplayer-server.md#handing-out-the-build)). Start
 offers to build it if it has not been, and **Build** restages it while the server runs.
 
 **A remote server** connects to a server's [remote admin](multiplayer-server.md#remote-admin) port with

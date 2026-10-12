@@ -6,10 +6,10 @@ Add-ons are optional parts of TES3X for particular setups. Each lives in its own
 
 ```toml
 [addons]
-console = true
+xbmc = true
 ```
 
-## `console`: Play on Xbox
+## `xbmc`: Play on Xbox
 
 For a softmodded Xbox running the [XBMC4Gamers](https://github.com/Rocky5/XBMC4Gamers) dashboard.
 A small agent inside the dashboard starts games on request, so a build can go from the PC to the
@@ -58,15 +58,15 @@ dashboard = "E:/XBMC4Gamers"
 These run from a [checkout](development.md#setting-up-a-checkout):
 
 ```
-python addons/console/console.py ping
-python addons/console/console.py run "F:/Games/Morrowind/default.xbe"
-python addons/console/console.py stat "E:/tes3xlog.txt"
-python addons/console/console.py drives                    # free/total MB per drive
-python addons/console/console.py reload | stop             # reload its body, or end the agent
-python addons/console/console.py wait --timeout 120        # until the agent answers
-python addons/console/console.py restart                   # restart XBMC4Gamers
-python addons/console/console.py reboot | shutdown         # restart or power off the Xbox
-python addons/console/console.py install | uninstall
+python addons/xbmc/console.py ping
+python addons/xbmc/console.py run "F:/Games/Morrowind/default.xbe"
+python addons/xbmc/console.py stat "E:/tes3xlog.txt"
+python addons/xbmc/console.py drives                    # free/total MB per drive
+python addons/xbmc/console.py reload | stop             # reload its body, or end the agent
+python addons/xbmc/console.py wait --timeout 120        # until the agent answers
+python addons/xbmc/console.py restart                   # restart XBMC4Gamers
+python addons/xbmc/console.py reboot | shutdown         # restart or power off the Xbox
+python addons/xbmc/console.py install | uninstall
 ```
 
 ### Security

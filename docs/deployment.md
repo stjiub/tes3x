@@ -1,7 +1,7 @@
 # Deployment
 
 A deploy copies a finished build to the install folder on a modded Xbox. It goes over FTP, which
-most modded dashboards serve, or through the TES3X [console manager](#the-console-manager), which
+most modded dashboards serve, or through the [TES3X Dash](#tes3x-dash), which
 is faster and leaves the old build in place until the new one has fully arrived.
 
 ## Deploying a build
@@ -61,7 +61,7 @@ options, then the selected target, then the default `xbox`/`xbox`. Set
 
 ## Free space
 
-When the console manager or the console add-on's agent is answering, a deploy asks it how much
+When the Dash or the XBMC4Gamers add-on's agent is answering, a deploy asks it how much
 space is free on the target drive and compares that with what the deploy adds: each uploaded file
 in whole 16 KB clusters, less the files it replaces or deletes. It stops without changing
 anything, with exit status 4, when the deploy will not fit, and warns when less than 256 MB would
@@ -111,57 +111,57 @@ tes3x pipeline profiles/my-build.toml --deploy --install-retail-base
 ```
 
 The GUI does this after showing the shared-base path in its deployment confirmation. The base
-carries the retail `morrowind.xbe` and `Default.xbe`, which the console manager rebuilds a build's
+carries the retail `morrowind.xbe` and `Default.xbe`, which the Dash rebuilds a build's
 XBEs from; the launcher also makes the base a dashboard entry that plays vanilla Morrowind. Never
 point `retail_root` at a working or modded installation: synchronizing the base makes that folder
 match the clean retail data. An overlay profile's `Default.xbe` is the patched engine, not the
 retail launcher, so starting its dashboard entry can activate the overlay before any base file is
 read.
 
-## The console manager
+## TES3X Dash
 
-The console manager is a TES3X program on the Xbox, started from the dashboard like a game. It
+The Dash is a TES3X program on the Xbox, started from the dashboard like a game. It
 receives deploys from the PC, keeps several builds and installs a build from a multiplayer server
 with no PC at all. A multiplayer build's main menu also offers it.
 
-### Installing the console manager
+### Installing TES3X Dash
 
-In the GUI, choose **Actions > Install console manager…**, or **Install / update** under
-**Console manager** on the **Target** workspace's **Overview** tab, which also shows the installed
+In the GUI, choose **Actions > Install TES3X Dash…**, or **Install / update** under
+**TES3X Dash** on the **Target** workspace's **Overview** tab, which also shows the installed
 version beside the one this PC would install. On the command line:
 
 ```
-tes3x manager install [--target NAME] [--agent] [--dry-run]
+tes3x dash install [--target NAME] [--agent] [--dry-run]
 ```
 
-Manager installation stages files in the TES3X data folder's `build/manager/install/`;
-`--out FOLDER` chooses another staging folder. Source builds of the manager and its launcher
-also go under the data folder's `build/manager/`.
+Dash installation stages files in the TES3X data folder's `build/dash/install/`;
+`--out FOLDER` chooses another staging folder. Source builds of the Dash and its launcher
+also go under the data folder's `build/dash/`.
 
-It installs or updates the manager in `TES3XManager` under the target's `games_root` (`--folder`
-changes the name), where the dashboard lists it. It also names the manager and this PC in the
-console's [settings](#console-settings), so the manager pairs with this PC without a game deploy
+It installs or updates the Dash in `TES3XDash` under the target's `games_root` (`--folder`
+changes the name), where the dashboard lists it. It also names the Dash and this PC in the
+the Xbox's [settings](#xbox-settings), so the Dash pairs with this PC without a game deploy
 first (`--no-agent` leaves the PC setting as it is) and a multiplayer build's main menu gets a
-**Manager** entry.
+**Dash** entry.
 
-The first install goes over FTP. Once the manager runs, `--agent`, or the GUI when the manager is
-paired, updates it through the manager itself, and the new version starts the next time it is
+The first install goes over FTP. Once the Dash runs, `--agent`, or the GUI when the Dash is
+paired, updates it through the Dash itself, and the new version starts the next time it is
 launched.
 
-A portable folder carries the manager. With pipx, download `manager.xbe` and `launcher.xbe` from
+A portable folder carries the Dash. With pipx, download `manager.xbe` and `launcher.xbe` from
 the [releases page](https://github.com/stjiub/tes3x/releases) and pass them as
 `--xbe manager.xbe --launcher launcher.xbe`. In a checkout, TES3X builds them with nxdk
-(`paths.nxdk`) when neither is given. `tes3x manager stage OUT` writes the folder without sending
+(`paths.nxdk`) when neither is given. `tes3x dash stage OUT` writes the folder without sending
 it.
 
-The folder holds a small launcher as `default.xbe`, the manager in `a\` or `b\`, the dashboard's
-`_resources\default.xml` and a [build manifest](#build-manifest) of layout `manager`, which the
-manager leaves out of its own build list. Installing again puts the manager back in `a\`.
+The folder holds a small launcher as `default.xbe`, the Dash in `a\` or `b\`, the dashboard's
+`_resources\default.xml` and a [build manifest](#build-manifest) of layout `dash`, which the
+Dash leaves out of its own build list. Installing again puts the Dash back in `a\`.
 
-### Through the console manager
+### Through the Dash
 
-`--deploy-agent` (or `tes3x deploy --agent`) deploys through the TES3X console manager
-instead of FTP. Start the manager on the Xbox with `E:\TES3X\console.ini` naming this PC:
+`--deploy-agent` (or `tes3x deploy --agent`) deploys through the Dash
+instead of FTP. Start the Dash on the Xbox with `E:\TES3X\xbox.ini` naming this PC:
 
 ```ini
 [Xbox]
@@ -169,28 +169,28 @@ NetAgent=192.0.2.7:26501#FINGERPRINT
 ```
 
 The fingerprint is this PC's agent key, `tes3x.agent.key` beside the local config, which the deploy
-prints while it waits for the manager to pair. `--agent-port` changes the port deploy listens on,
+prints while it waits for the Dash to pair. `--agent-port` changes the port deploy listens on,
 for when the GUI holds 26501.
 
-The GUI uses the manager by itself: when the manager is paired with the GUI, the target shows
-**Manager** and Deploy goes through it. The GUI hands its port to the deploy for the duration;
-the manager pairs with the deploy, then with the GUI again, about 6 seconds each way.
+The GUI uses the Dash by itself: when the Dash is paired with the GUI, the target shows
+**Dash** and Deploy goes through it. The GUI hands its port to the deploy for the duration;
+the Dash pairs with the deploy, then with the GUI again, about 6 seconds each way.
 
 When the folder already holds files, each file is written under a temporary `~t3x` name and
 renamed into place only once every file has arrived, so an interrupted deploy leaves the build as
 it was; the next deploy deletes the leftovers. Into an empty folder there is no build to keep, so
 files are written in place: a rename in a folder of a few hundred files is slow on FATX. Each
-file's time is set once it is in place, plugins included, so load order holds. The manager reports
+file's time is set once it is in place, plugins included, so load order holds. The Dash reports
 free space itself; it needs room for the new copies before the old ones go.
 
-A full build of about 1 GB and 7,300 files takes about 7 minutes through the manager on wired
+A full build of about 1 GB and 7,300 files takes about 7 minutes through the Dash on wired
 Ethernet, and about 13 minutes over the dashboard's FTP server.
 
 ### From a server
 
 A multiplayer server started with `--build` ([Handing out the
-build](multiplayer-server.md#handing-out-the-build)) hands its build to the console manager, so players
-need no PC. The manager's **Servers** tab lists the servers this console knows from each save pool's
+build](multiplayer-server.md#handing-out-the-build)) hands its build to the Dash, so players
+need no PC. The Dash's **Servers** tab lists the servers this console knows from each save pool's
 `U:\TES3X\servers.ini`, the ones joined from the game's main menu, with each one's key fingerprint
 and installed build. **Add server** types one in on the on-screen keyboard, by name or address with
 `:port` when it is not 26500; **Password** on a server's page sets the password kept for it, and a
@@ -212,14 +212,14 @@ manifest's hash and serves the files over HTTP. Then, for each file the manifest
 - anything else, or a rebuild or copy that fails, is downloaded.
 
 Servers can advertise an optional name and description with `--name` and `--description`.
-The manager shows these along with the number of connected players in game and the player
-limit; consoles in the lobby and manager connections are excluded from that count. Details
+The Dash shows these along with the number of connected players in game and the player
+limit; consoles in the lobby and Dash connections are excluded from that count. Details
 refresh when the server list is checked. Older servers continue to show their address.
 
 If a server's key changes, Install or Join shows the saved and new fingerprints before
 continuing. **Accept new key** updates the pin and retries; **Cancel** keeps the existing pin.
 Accept only an expected identity change, such as the administrator replacing the server key.
-The manager preserves this console's player identity, password and saved server entry.
+The Dash preserves this console's player identity, password and saved server entry.
 
 Every file arrives under a `~t3x` staging name and is checked against the manifest; only when all
 have arrived are they renamed into place, the replaced XBEs kept as `.prev`, so a failed or
@@ -228,9 +228,9 @@ one drops are deleted; files no manifest listed are left alone. Plugins get modi
 manifest's load order, and `tes3xbuild.json` is written last, with `server` naming the server it
 came from. The build goes into the folder it was installed into before, else the manifest's
 `folder` under the first `Games` folder on F, G, E or C; a folder there that holds files but no
-build manifest is replaced only after the manager asks.
+build manifest is replaced only after the Dash asks.
 
-For an overlay build, the manager first verifies every file in the server's retail dependency
+For an overlay build, the Dash first verifies every file in the server's retail dependency
 manifest and downloads missing or changed files into a separate shared retail folder. It uses
 the folder selected under **Settings > Retail base**, or `MorrowindRetail` beside the new build
 when none is selected. It selects the completed base before rebuilding the game's XBEs. A
@@ -246,38 +246,38 @@ Downloads show KB/s and retry a dropped connection up to five times, requesting 
 bytes. A failed or cancelled download keeps its partial staging file for the next install;
 saved bytes are rehashed before resuming, and the complete file must pass its SHA-256 check.
 An older server that ignores byte ranges restarts that file from zero. Completed staging files
-are also checked before reuse. Restart the server and update the manager to use these changes.
+are also checked before reuse. Restart the server and update the Dash to use these changes.
 
 ### Signed updates
 
-The manager updates itself from a signed release, which needs no PC trust beyond the release key.
-It fetches releases itself from **Settings > Manager**, reading `release.json`,
+The Dash updates itself from a signed release, which needs no PC trust beyond the release key.
+It fetches releases itself from **Settings > Dash**, reading `release.json`,
 `release.json.sig`, `manager.xbe` and `launcher.xbe` from the update feed,
 `https://github.com/stjiub/tes3x/releases/latest/download/`. A release downloaded to the PC can be
 sent instead:
 
 ```
-tes3x manager update RELEASE [--agent] [--target NAME]
+tes3x dash update RELEASE [--agent] [--target NAME]
 ```
 
-checks the release, sends it to `E:\TES3X\update` and, through the agent, restarts the manager. A
+checks the release, sends it to `E:\TES3X\update` and, through the agent, restarts the Dash. A
 release can also be copied there by FTP or USB. Making a release is in
 [development](development.md#releases).
 
-`[Xbox] UpdateFeed` in `E:\TES3X\console.ini` points a console at another feed, any `http://` or
+`[Xbox] UpdateFeed` in `E:\TES3X\xbox.ini` points a console at another feed, any `http://` or
 `https://` folder holding those files. The
-manager uses the network settings in `console.ini` (`NetAddress`, `NetGateway`, `NetDns`) or,
+Dash uses the network settings in `xbox.ini` (`NetAddress`, `NetGateway`, `NetDns`) or,
 without them, the dashboard's. It speaks TLS 1.2 and does not check certificates, since the
 console's clock is often wrong; a release is trusted by its signature alone, so a feed or
 network that is not trusted can withhold an update but not change one.
 
-On start, and after fetching one, the manager checks a release in `E:\TES3X\update` against the
+On start, and after fetching one, the Dash checks a release in `E:\TES3X\update` against the
 public key built into it (`keys/release.pub`), refuses one that is unsigned, signed by another key,
-or not newer than itself, and deletes it. Otherwise it writes the new manager into its other slot
+or not newer than itself, and deletes it. Otherwise it writes the new Dash into its other slot
 (`a\` or `b\`), replaces the launcher if the release's differs, marks the slot pending in
-`slots.ini` and restarts. The launcher starts a pending slot at most twice; the new manager marks
+`slots.ini` and restarts. The launcher starts a pending slot at most twice; the new Dash marks
 itself good once it reaches its screen, and after two starts that did not, the launcher goes back to
-the previous slot and the manager says the update did not start. A release whose files are still
+the previous slot and the Dash says the update did not start. A release whose files are still
 arriving is left for the next start.
 
 ## Getting files back
@@ -287,17 +287,17 @@ arriving is left for the next start.
 drives that a dashboard's FTP server may refuse; their contents are under `E:/TDATA/<title ID>` and
 `E:/UDATA/<title ID>`.
 
-## Console settings
+## Xbox settings
 
-Settings that belong to a console rather than a build live outside every game folder, in
-`E:\TES3X\console.ini`: `NetAgent` (the PC the console pairs with), `OverlayBase` (the retail base
-on this console), `Manager` (the console manager's XBE, written when it is installed) and the
+Settings that belong to one Xbox rather than a build live outside every game folder, in
+`E:\TES3X\xbox.ini`: `NetAgent` (the PC the console pairs with), `OverlayBase` (the retail base
+on this console), `Dash` (the Dash's XBE, written when it is installed) and the
 network keys `NetAddress`, `NetGateway` and `NetDns`. The game reads each
 `[Xbox]` key there before `Morrowind.ini`, so one build's files are the same on every console and
 its manifest hashes hold everywhere.
 
 The pipeline writes these keys, whether they come from the profile, `--ini-set` or the target, to
-`console.ini` beside `deploy/` instead of into `Morrowind.ini`. Deploy merges them into the
+`xbox.ini` beside `deploy/` instead of into `Morrowind.ini`. Deploy merges them into the
 console's file (`tes3x deploy --console-ini FILE`), keeping the keys it does not set. The xemu
 runner puts them back into the disc's `Morrowind.ini`, since an xemu disc belongs to one run.
 
@@ -316,7 +316,7 @@ Every game folder the pipeline stages carries `tes3xbuild.json`, which says what
 - the plugins in load order, the `Morrowind.ini` settings the build changed and the save pool;
 - for each XBE, the retail XBE it was made from, by its retail digest, the patches applied,
   the result's SHA-256 and the delta that rebuilds it;
-- `folder`, the install folder's name, where the console manager puts the build.
+- `folder`, the install folder's name, where the Dash puts the build.
 
 A retail digest is the SHA-256 of an XBE with the edits scene copies carry made to it: the
 certificate opened to any media and region, and the game's drive letters set to `D:`. A retail

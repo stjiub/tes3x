@@ -12,7 +12,7 @@ same world as other players. The multiplayer patch is experimental; see the
 - The server's address or name, with `:PORT` if it uses a port other than 26500.
 - The password and server key fingerprint, if the admin supplies them.
 
-If the admin serves a build, use the [console manager](deployment.md#from-a-server) to install
+If the admin serves a build, use the [TES3X Dash](deployment.md#from-a-server) to install
 it and join. Otherwise deploy the supplied profile to its own folder. If you need to make the
 build yourself, see [building a client](#building-a-client).
 
@@ -28,9 +28,9 @@ New Game and Load relaunch the title; the console leaves and joins again by itse
 prints `rejoined`. If the server stops answering for 15 seconds, the console says the connection is
 lost and keeps reconnecting; after 60 seconds it offers the main menu.
 
-The main menu has **Join** between Load and Options, and below it **Manager** once the
-[console manager](deployment.md#installing-the-console-manager) is installed, which starts the
-manager. Join opens a list of the servers this console
+The main menu has **Join** between Load and Options, and below it **Dash** once the
+[TES3X Dash](deployment.md#installing-tes3x-dash) is installed, which starts the
+Dash. Join opens a list of the servers this console
 knows: the one `NetServer` names and those in `U:\TES3X\servers.ini`, newest first. Choose one
 to connect without loading a game; the server lists that console's characters with "New
 character", and the chosen character is sent and loaded, joining the same server. **New Server**
@@ -98,9 +98,9 @@ back at the marker on its next join.
 
 ## Network settings
 
-The keys are read at each launch, from the console's `E:\TES3X\console.ini` and then
+The keys are read at each launch, from the console's `E:\TES3X\xbox.ini` and then
 `Morrowind.ini` (see [ini keys](ini-keys.md)); deploy puts `NetAddress`, `NetGateway` and `NetDns`
-in `console.ini`:
+in `xbox.ini`:
 
 | Key | Set to |
 |---|---|
@@ -114,7 +114,7 @@ With `NetAddress` empty the network stays off and the build plays as a normal ga
 choose Join, which asks the router for an address by DHCP.
 
 Every console can share one build. A fixed address belongs to one console: deploy writes it to
-that console's `console.ini`, so a second console takes the same build deployed with its own
+that console's `xbox.ini`, so a second console takes the same build deployed with its own
 address. Ask the admin for a stable server address or name so `NetServer` stays right.
 
 ## Server keys and passwords
@@ -186,8 +186,8 @@ hashes. `net.refused_reason` says why: 1 the load order, 2 the server is full, 3
 kicked, 5 banned, 6 the build is not the one the server hands out, 7 a protocol version the server
 does not speak.
 
-For build or protocol mismatches, update the game through the console manager. If the
-manager itself needs an update, it offers **Check for update**. A message that the server
+For build or protocol mismatches, update the game through TES3X Dash. If the
+Dash itself needs an update, it offers **Check for update**. A message that the server
 needs an update must be resolved by its admin. See
 [protocol compatibility](multiplayer-server.md#protocol-compatibility) for update handling.
 

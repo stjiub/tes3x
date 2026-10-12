@@ -32,8 +32,8 @@ The first client to join sets the session's load order and its game clock. Usefu
 | Option | Does |
 |---|---|
 | `--port N` | listen on another port (set `NetServer` to `ADDRESS:N` to match) |
-| `--name TEXT` | optional display name in the console manager |
-| `--description TEXT` | optional server description in the console manager |
+| `--name TEXT` | optional display name in the Dash |
+| `--description TEXT` | optional server description in the Dash |
 | `--hour H`, `--timescale T` | start the clock at a game hour or speed instead of the first client's |
 | `--load-order HASH` | fix the load order instead of taking the first client's |
 | `--host NAME=ADDRESS` | answer DNS for a name, so `NetServer` can be that name |
@@ -46,7 +46,7 @@ The first client to join sets the session's load order and its game clock. Usefu
 | `--idle-timeout SECONDS` | drop a client silent this long (default 20; consoles stop waiting at 15) |
 | `--respawn-delay SECONDS` | how long a dead player lies before coming back (default 5) |
 | `--death-gold PERCENT` | the share of carried gold a death costs (default 10) |
-| `--build DIR` | hand this build to the console manager (below) |
+| `--build DIR` | hand this build to the Dash (below) |
 | `--retail-base DIR` | clean retail source for an overlay build; defaults to `paths.vanilla_root` |
 | `--welcome TEXT` | show a line of up to 80 characters when a player is in the world |
 | `--starts FILE` | where new characters may begin (`[[start]]` tables; default: the bundled list) |
@@ -160,7 +160,7 @@ admin password apart from the console password: anyone with it can kick, ban and
 
 Players need the server's build: the same plugins in the same order and a matching XBE. With
 `--build DIR`, naming the pipeline's staged game folder (`deploy`, holding `tes3xbuild.json`), the
-server hands it to the [console manager](deployment.md#from-a-server), which installs it and
+server hands it to the [TES3X Dash](deployment.md#from-a-server), which installs it and
 joins:
 
 ```
@@ -169,39 +169,39 @@ tes3x net serve --world world --build build/net/deploy
 
 In the GUI, set **Build profile** in the **Server** workspace instead.
 
-The manager asks through the same encrypted session a console joins by, with the console's key
+The Dash asks through the same encrypted session a console joins by, with the console's key
 for this server and the password if there is one, so a console the server would refuse gets no
 build. The server answers with its manifest's SHA-256 and a ticket, and serves the manifest and
 files over plain HTTP on TCP port 26500 (`--http-port` for another; allow it through the
-firewall too). The manager checks every file against the manifest and the manifest against the
+firewall too). The Dash checks every file against the manifest and the manifest against the
 hash the session gave, so the HTTP side needs no encryption.
 
 What it serves is the admin's choice, by each file's origin in the manifest. By default only
-`build` files (plugins, archives, textures, `Morrowind.ini`) and the XBE deltas: the manager
+`build` files (plugins, archives, textures, `Morrowind.ini`) and the XBE deltas: the Dash
 rebuilds the XBEs from the player's own retail copy and takes unchanged retail files from it.
 `--serve-origin retail` and `--serve-origin xbe` add retail files and whole XBEs, for players
 without a clean retail copy; only do so where you may hand them out. The deltas are read from
 `deltas` beside `DIR` (`--deltas` for another folder). The server rereads the manifest when it
-changes, so a new build can be staged while it runs; a manager that is mid-update when it changes
+changes, so a new build can be staged while it runs; a Dash that is mid-update when it changes
 stops without touching the installed build, and its next update gets the new one.
 
 For an overlay build, the server also publishes the required retail files' sizes and hashes
-from `--retail-base DIR`, defaulting to `paths.vanilla_root` in the local config. The manager
+from `--retail-base DIR`, defaulting to `paths.vanilla_root` in the local config. The Dash
 checks and completes a separate retail folder before installing the overlay. Downloads from
 that source follow the same retail/XBE policy; an existing complete base needs no retail
-downloads. Update the manager for this dependency format (manager level 2), and restart the
+downloads. Update the Dash for this dependency format (Dash level 2), and restart the
 server after changing its clean retail source. A full build continues to install its retail
 files into the build folder.
 
-The download server supports byte ranges. On a connection interruption, the manager retries
+The download server supports byte ranges. On a connection interruption, the Dash retries
 from the last saved byte up to five times, then keeps the partial file for the next attempt.
 It verifies the complete file against the manifest's SHA-256. Disconnects produce a short log
 message and leave the server running.
 
 A server with `--build` also refuses a console whose build is not that one, by the `build` id in
 each manifest. Joining from the main menu then asks "Build out of date. Update it in the TES3X
-Manager?": Open Manager starts the manager on that server's page, where X updates the build, and
-Back stays in the game. Without the manager installed the server's row just says "build out of
+Dash?": Open Dash starts the Dash on that server's page, where X updates the build, and
+Back stays in the game. Without the Dash installed the server's row just says "build out of
 date". A console with no manifest is checked by its load order only.
 
 ## Run the server in Docker
@@ -323,18 +323,18 @@ Active effects retain their native source, magnitude and elapsed time, so their 
 when the character joins again. Bound effects also retain the equipment they displaced, using
 item identities and condition/charge rather than engine pointers.
 
-The game and manager have separate protocol versions. Gameplay state changes can require a new
-game protocol without changing the manager's build discovery and download protocol. These are
+The game and Dash have separate protocol versions. Gameplay state changes can require a new
+game protocol without changing the Dash's build discovery and download protocol. These are
 compatibility numbers, separate from TES3X release versions; they change only when the relevant
 wire format becomes incompatible.
 
 The server checks compatibility after the authenticated handshake. An incompatible client gets
-an explicit refusal instead of a timeout. The manager shows **Manager update needed** and offers
+an explicit refusal instead of a timeout. The Dash shows **Dash update needed** and offers
 **Check for update**; if the server is older, it says the server needs an update. The game offers
-to open the manager to update its build when the server requires a newer game client.
+to open the Dash to update its build when the server requires a newer game client.
 
 Restart the server process after updating server code. Rebuilding its staged game folder does
-not replace the running server or a manager already open on a console. Relaunch the manager after
+not replace the running server or a Dash already open on a console. Relaunch the Dash after
 installing or rebuilding it. Old clients without these messages may still show a generic refusal
 or timeout; updating them once installs the clearer handling.
 

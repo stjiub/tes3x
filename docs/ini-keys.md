@@ -9,8 +9,8 @@ a build in the profile, which the GUI's INI tab does for you:
 "Xbox:AutosaveSlots" = 5
 ```
 
-Each key is looked up in `E:\TES3X\xbox.ini` first, the [console's own
-settings](deployment.md#console-settings), and in `Morrowind.ini` only when that file does not set
+Each key is looked up in `E:\TES3X\xbox.ini` first, the [Xbox's own
+settings](deployment.md#xbox-settings), and in `Morrowind.ini` only when that file does not set
 it. `NetAgent`, `OverlayBase`, `NetAddress`, `NetGateway` and `NetDns` describe the console, not the
 build, so the pipeline writes them there at deploy instead of into `Morrowind.ini`. Installing the
 TES3X Dash writes `Dash` there.

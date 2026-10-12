@@ -16,16 +16,16 @@ options. This page says what each one is for and where it is explained.
 | `tes3x optimize` | write equivalence-checked derived copies that make the Xbox load fewer records | [plugin optimizer](optimizer.md) |
 | `tes3x pack` | pack a collected tree into archives and stage the game's `Data Files` | [packaging](packaging.md) |
 | `tes3x payload` | compile the patch payload for one retail XBE | [payload](../patches/payload.md) |
-| `tes3x nxdk` | build a standalone nxdk program, such as the console-side manager | [configuration](configuration.md) |
-| `tes3x font` | bake the console manager's fonts into C, from pinned OFL fonts | [development](development.md#generated-files) |
+| `tes3x nxdk` | build a standalone nxdk program, such as the Dash | [configuration](configuration.md) |
+| `tes3x font` | bake the Dash's fonts into C, from pinned OFL fonts | [development](development.md#generated-files) |
 | `tes3x patch` | apply patches to an XBE directly; `--list` shows them | [patches](patches.md) |
-| `tes3x deploy` | upload a game folder to the Xbox, over FTP or through the console manager | [deployment](deployment.md) |
-| `tes3x dash` | install TES3X Dash on the Xbox, or send it a signed update | [deployment](deployment.md#installing-the-console-manager) |
+| `tes3x deploy` | upload a game folder to the Xbox, over FTP or through the Dash | [deployment](deployment.md) |
+| `tes3x dash` | install TES3X Dash on the Xbox, or send it a signed update | [deployment](deployment.md#installing-tes3x-dash) |
 | `tes3x manifest` | check a game folder against its build manifest | [deployment](deployment.md#build-manifest) |
 | `tes3x fetch` | copy files or folders off the Xbox | [deployment](deployment.md#getting-files-back) |
 | `tes3x saves` | list and move saves between the Xbox, an xemu disk and a PC save library | [GUI](gui.md) |
 | `tes3x package` | build a portable TES3X folder that starts with `TES3X.exe` | [development](development.md#building-the-portable-folder) |
-| `tes3x release` | make and protect the release signing key, sign and check files, and make or check a signed manager release | [development](development.md#releases) |
+| `tes3x release` | make and protect the release signing key, sign and check files, and make or check a signed Dash release | [development](development.md#releases) |
 
 ## Mods
 
@@ -69,7 +69,7 @@ options. This page says what each one is for and where it is explained.
 | command | job | see |
 |---|---|---|
 | `tes3x net` | run a multiplayer server, administer it, and test the network driver | [multiplayer](multiplayer.md) |
-| `tes3x agent` | listen for the in-game agent; run console lines, fetch files or reboot through it, and through the console manager write, list, rename and delete files, report free space and launch an XBE | [in-game agent](../patches/agent.md) |
+| `tes3x agent` | listen for the in-game agent; run console lines, fetch files or reboot through it, and through the Dash write, list, rename and delete files, report free space and launch an XBE | [in-game agent](../patches/agent.md) |
 | `tes3x menuart` | redraw the menu buttons multiplayer ships, in `assets/menu` (needs Pillow and numpy) | [development](development.md#generated-files) |
 
 ## Reverse engineering

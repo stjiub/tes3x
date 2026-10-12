@@ -53,9 +53,9 @@ Counters are logged at each power of two.
 ## Configuration
 
 For an overlay-layout deployment, `deploy.retail_root` in the local config names the base folder
-and deploy writes `[Xbox] OverlayBase` to the console's `E:\TES3X\console.ini` automatically. The value may be a drive path
+and deploy writes `[Xbox] OverlayBase` to the console's `E:\TES3X\xbox.ini` automatically. The value may be a drive path
 (`F:\Games\MorrowindRetail`; drives C, E, F and G) or a device path
-(`\Device\Harddisk0\Partition6\Games\...`). The console manager offers the retail bases it finds
+(`\Device\Harddisk0\Partition6\Games\...`). The Dash offers the retail bases it finds
 on first start and writes the one chosen there too. A direct patch user may still set `OverlayBase`
 manually. Without it, or when the folder does not exist, the patch does nothing.
 

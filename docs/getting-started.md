@@ -168,4 +168,4 @@ Then start the install folder's `default.xbe` from the Xbox's dashboard.
 - [Mod library](mod-library.md): installing mods, versions and optional parts.
 - [Pipeline](pipeline.md): what each build step does, packaging and plugin ordering.
 - [Patches](patches.md): the engine fixes, and the presets that select them.
-- [Deployment](deployment.md): the console manager, shared retail bases and getting files back.
+- [Deployment](deployment.md): the Dash, shared retail bases and getting files back.

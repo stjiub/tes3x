@@ -47,7 +47,7 @@ Set `NetAgent` to the GUI host and its fingerprint, for example
 before the fingerprint to change it. The pipeline makes this setting from the selected target
 and the persistent GUI key unless the profile supplies an explicit value, and deploy writes it to
 the console's `E:\TES3X\console.ini`, not the build (see
-[console settings](../docs/deployment.md#console-settings)).
+[console settings](../docs/deployment.md#xbox-settings)).
 
 `NetAddress` is `dhcp` or a static console address as described for the shared [`net`](net.md)
 transport. An agent build without `multiplayer` uses `dhcp` unless the profile sets it; a
