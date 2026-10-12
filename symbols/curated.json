@@ -1767,6 +1767,23 @@
       "pc_va": "0x004A9EA0"
     },
     {
+      "va": "0x000F08F0",
+      "name": "Faction::clearPlayerData",
+      "confidence": "verified",
+      "provenance": "zeroes +0x294/+0x298/+0x29C; same body as PC",
+      "pc_va": "0x004AD8A0",
+      "signature": "void __thiscall clearPlayerData()"
+    },
+    {
+      "va": "0x000F0910",
+      "name": "Faction::loadPlayerData",
+      "confidence": "verified",
+      "provenance": "the save loader's FNAM restore (0x00187FA0) calls it after findFaction",
+      "note": "Writes rank, reputation and membership flags as a save load does; a negative rank becomes 0.",
+      "pc_va": "0x004AD910",
+      "signature": "void __thiscall loadPlayerData(int* rankReputationFlags)"
+    },
+    {
       "va": "0x000F0B10",
       "name": "Activator::ctor",
       "kind": "function",
@@ -1997,6 +2014,38 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_SpellList_removeByObject",
       "pc_va": "0x004ACBE0"
+    },
+    {
+      "va": "0x000F9F90",
+      "name": "Faction::setPlayerExpelled",
+      "confidence": "verified",
+      "provenance": "PCExpell/PCClearExpelled in Script::RunFunction; toggles flag 2, shows sExpelledMessage + name, UpdateStatsPane",
+      "note": "Expelling shows the native expelled message box.",
+      "signature": "void __thiscall setPlayerExpelled(bool expelled)"
+    },
+    {
+      "va": "0x000FA000",
+      "name": "Faction::raisePlayerRank",
+      "confidence": "verified",
+      "provenance": "PCRaiseRank in Script::RunFunction",
+      "note": "A non-member only joins, keeping playerRank; a member rises one rank while the next rank has a name.",
+      "signature": "void __thiscall raisePlayerRank()"
+    },
+    {
+      "va": "0x000FA050",
+      "name": "Faction::setPlayerRank",
+      "confidence": "matched",
+      "provenance": "same shape as PC 0x004AD3B0; joins, then sets rank when that rank has a name",
+      "pc_va": "0x004AD3B0",
+      "signature": "void __thiscall setPlayerRank(int rank)"
+    },
+    {
+      "va": "0x000FA0A0",
+      "name": "Faction::lowerPlayerRank",
+      "confidence": "verified",
+      "provenance": "PCLowerRank in Script::RunFunction",
+      "note": "Members only; stops at rank 0.",
+      "signature": "void __thiscall lowerPlayerRank()"
     },
     {
       "va": "0x000FA0C0",
@@ -3233,6 +3282,13 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_Script_getLocalVarIndexAndType",
       "pc_va": "0x0050E7B0"
+    },
+    {
+      "va": "0x00137100",
+      "name": "Faction::modPlayerReputation",
+      "confidence": "verified",
+      "provenance": "ModPCFacRep in Script::RunFunction",
+      "signature": "void __thiscall modPlayerReputation(int amount)"
     },
     {
       "va": "0x00137120",

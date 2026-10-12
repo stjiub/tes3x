@@ -325,6 +325,20 @@ TOPIC_NAME_MAX = 63
 PLAYER_TOPICS_MAX = 4096
 
 
+# The player's faction state, both ways: count, then FACTION entries, each followed by the faction id
+# ending in zero. The low two bits are the membership flags (FACTION_JOINED, FACTION_EXPELLED);
+# FACTION_RANK, FACTION_REPUTATION and FACTION_FLAGS say which values a receiver applies. A
+# console always sends all three, absolute. Rank and reputation are the world's; membership and
+# expulsion are each character's.
+PLAYER_FACTIONS = 18
+FACTION = struct.Struct("<Bii")
+FACTION_JOINED, FACTION_EXPELLED = 1, 2
+FACTION_RANK, FACTION_REPUTATION, FACTION_FLAGS = 0x10, 0x20, 0x40
+FACTION_ALL = FACTION_RANK | FACTION_REPUTATION | FACTION_FLAGS
+FACTION_ID_MAX = 31
+FACTIONS_MAX = 512
+
+
 PLAYER_BOUNTY = 12  # from the server: the character's last streamed crime bounty, i32
 
 
@@ -1061,6 +1075,52 @@ def pack_topics(names):
     if body or not events:
         events.append(bytes([PLAYER_TOPICS, count]) + body)
     return events
+
+
+def pack_factions(entries):
+    """PLAYER_FACTIONS events for (faction id, bits, rank, reputation) tuples."""
+    events, body, count = [], b"", 0
+    for faction, bits, rank, reputation in entries:
+        raw = faction.encode("latin-1")
+        if (not raw or len(raw) > FACTION_ID_MAX or any(c < 32 or c == 34 for c in raw)
+                or bits & ~(FACTION_ALL | FACTION_JOINED | FACTION_EXPELLED)):
+            raise ValueError(f"bad faction entry {faction!r}")
+        entry = FACTION.pack(bits, rank, reputation) + raw + b"\0"
+        if count and 2 + len(body) + len(entry) > EVENT_DATA:
+            events.append(bytes([PLAYER_FACTIONS, count]) + body)
+            body, count = b"", 0
+        body += entry
+        count += 1
+    if count:
+        events.append(bytes([PLAYER_FACTIONS, count]) + body)
+    return events
+
+
+def unpack_factions(data):
+    """(faction id, bits, rank, reputation) from a PLAYER_FACTIONS event; ValueError if malformed."""
+    if len(data) < 2 or data[0] != PLAYER_FACTIONS:
+        raise ValueError("not a faction event")
+    entries, off = [], 2
+    for _ in range(data[1]):
+        if off + FACTION.size >= len(data):
+            raise ValueError("short faction entry")
+        bits, rank, reputation = FACTION.unpack_from(data, off)
+        end = data.find(b"\0", off + FACTION.size)
+        raw = bytes(data[off + FACTION.size:end]) if end >= 0 else b""
+        if (not raw or len(raw) > FACTION_ID_MAX or any(c < 32 or c == 34 for c in raw)
+                or bits & ~(FACTION_ALL | FACTION_JOINED | FACTION_EXPELLED)):
+            raise ValueError("bad faction entry")
+        entries.append((raw.decode("latin-1"), bits, rank, reputation))
+        off = end + 1
+    if off != len(data):
+        raise ValueError("trailing faction bytes")
+    return entries
+
+
+def describe_faction(faction, rank, reputation, flags):
+    return (f"{faction} rank {rank} reputation {reputation}"
+            + (" member" if flags & FACTION_JOINED else "")
+            + (" expelled" if flags & FACTION_EXPELLED else ""))
 
 
 def pack_journal(quests):

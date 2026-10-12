@@ -138,8 +138,9 @@ const char *tes3x_console_text_now(void);
     !defined(TES3X_NET_LIST_APPEND) || !defined(TES3X_NET_GMST_TEXT) || \
     !defined(TES3X_NET_RACE_SEX_OK) || !defined(TES3X_NET_UNEQUIP_ITEM) || \
     !defined(TES3X_NET_EQUIP_ITEM) || !defined(TES3X_NET_INVENTORY_BUILD) || \
-    !defined(TES3X_NET_MENU_TAB)
-#error "define the TES3X_NET_ record lookups and the class functions chargen uses"
+    !defined(TES3X_NET_MENU_TAB) || !defined(TES3X_NET_FIND_FACTION) || \
+    !defined(TES3X_NET_FACTION_LOAD) || !defined(TES3X_NET_UPDATE_STATS_PANE)
+#error "define the TES3X_NET_ record lookups, the class functions chargen uses and the faction restore"
 #endif
 
 typedef unsigned short u16;
@@ -452,6 +453,7 @@ static int script_safe(const u8 *text, u32 max)
 #include "multi/characters.c"
 #include "multi/player.c"
 #include "multi/player_topics.c"
+#include "multi/player_factions.c"
 #include "multi/player_identity.c"
 #include "multi/player_effects.c"
 #include "multi/player_apply.c"
@@ -628,6 +630,8 @@ int tes3x_multi_command(const char *text)
         weather_forced = word(rest, "auto") ? 0 : 1 + (value != 0);
     } else if ((rest = word(text, "topic")) && *(rest = skip(rest))) {
         topic_query(rest);
+    } else if ((rest = word(text, "faction")) && *(rest = skip(rest))) {
+        faction_query(rest);
     } else if ((rest = word(text, "send")) && *(rest = skip(rest))) {
         up_command(rest);
     } else if ((rest = word(text, "save")) && !*skip(rest)) {

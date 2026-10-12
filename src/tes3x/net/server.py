@@ -45,7 +45,8 @@ from .proto import (ACTOR, ACTORS, ACTORS_PER_PACKET, ACTOR_DEAD, ACTOR_IN_COMBA
                     PACE_PACKETS, PACE_WINDOW, PASSWORD_MAX, PASSWORD_RATE, PEER, PEER_IP,
                     PICK_CHARACTER, PICK_NEW, PICK_START, PLACE, PLACE_HOLD, PLAYER_ALIVE,
                     PLAYER_BOUNTY, PLAYER_DEATH, PLAYER_EFFECTS, PLAYER_EFFECTS_MAX,
-                    PLAYER_EFFECT_BYTES, PLAYER_IDENTITY, PLAYER_ITEMS, PLAYER_JOURNAL,
+                    PLAYER_EFFECT_BYTES, PLAYER_FACTIONS, FACTIONS_MAX, FACTION_ALL, FACTION_EXPELLED,
+                    FACTION_JOINED, FACTION_RANK, FACTION_REPUTATION, PLAYER_IDENTITY, PLAYER_ITEMS, PLAYER_JOURNAL,
                     PLAYER_LEVEL, PLAYER_MODIFIERS, PLAYER_PLACE, PLAYER_READY, PLAYER_RESPAWN,
                     PLAYER_SKILLS, PLAYER_SPELLS, PLAYER_TOPICS, PLAYER_TOPICS_MAX,
                     PLAYER_VITALS, PLAYER_WORN, PROLOGUE,
@@ -59,15 +60,15 @@ from .proto import (ACTOR, ACTORS, ACTORS_PER_PACKET, ACTOR_DEAD, ACTOR_IN_COMBA
                     SPELLS_SNAPSHOT, SPYMASTER_DONE, SPYMASTER_GIVEN, SPYMASTER_QUEST, STANCE,
                     STARTS, START_NAME, STATE, STATE_BODY, STATE_SIZE, STATUS, STREAM_NAME, T3MP,
                     T3MP_VERSION, TARGETED, UPLOAD_FILES, VITALS, WEATHER_OFFER, WELCOME,
-                    admin_secret, cell_keys, checkpoint_name, crypto, describe_contents,
+                    admin_secret, cell_keys, checkpoint_name, crypto, describe_contents, describe_faction,
                     describe_identity, describe_key, describe_level, describe_object,
                     describe_spawn, describe_state, describe_status, describe_weather,
                     fingerprint, finite, now_us, pack_contents, pack_equipment, pack_events,
-                    pack_identity, pack_items, pack_journal, pack_topics, pack_names, pack_objects,
+                    pack_factions, pack_identity, pack_items, pack_journal, pack_topics, pack_names, pack_objects,
                     pack_player_effects, pack_player_identity, pack_spawn, pack_weather,
                     pack_worn, placeable, plain_name, remote_key, same_place, sane_clock, seal,
                     unpack_actor_equipment, unpack_contents, unpack_equipment, unpack_events,
-                    unpack_identity, unpack_items, unpack_journal, unpack_objects,
+                    unpack_factions, unpack_identity, unpack_items, unpack_journal, unpack_objects,
                     unpack_player_effects, unpack_player_identity, unpack_removes, unpack_spawn,
                     unpack_weather, unpack_worn, unseal, wire_text, x25519_public, zstr)
 from .tunnel import (Tunnel, arp_frame, dhcp_reply, dns_reply, udp_frame, udp_from_frame,
@@ -159,6 +160,8 @@ class World:
         # actor id -> STATUS values after the id; replayed to each joining client
         self.statuses = {}
         self.topics = []
+        # faction id lowered -> {"id", "rank" (None until a member sets it), "reputation"}
+        self.factions = {}
         # spawn id -> reference made at run time (unpack_spawn), removed ones too; replayed likewise
         self.spawns = {}
         # refid -> {"cell", "entries", "origin"}: a container's latest contents; sent to whoever
@@ -182,6 +185,7 @@ class World:
         known = {name.lower(): name for name in self.topics}
         known.update((name.lower(), name) for name in saved.get("topics", []))
         self.topics = list(known.values())
+        self.factions.update(saved.get("factions", {}))
         for spawn in self.spawns.values():
             if spawn.get("summon"):
                 spawn["removed"] = True  # Active effects recreate summons for their target.
@@ -198,7 +202,8 @@ class World:
                  "contents": {str(k): v for k, v in self.contents.items()},
                  "weather": {str(k): v for k, v in self.weather.items()},
                  "statuses": {str(k): list(v) for k, v in self.statuses.items()},
-                 "topics": self.topics}
+                 "topics": self.topics,
+                 "factions": self.factions}
         if self.clock:
             self.clock.advance(now)
             state["clock"] = [self.clock.hour, self.clock.day, self.clock.month, self.clock.year,
@@ -361,7 +366,7 @@ class PlayerStream:
     def __init__(self, path):
         self.path = path
         self.items, self.skills, self.modifiers, self.journal, self.level = {}, {}, {}, {}, None
-        self.spells = self.topics = None
+        self.spells = self.topics = self.factions = None
         self.effects = self.effects_parts = None
         self.vitals = self.place = None
         self.bounty = self.identity = self.worn = None
@@ -384,6 +389,7 @@ class PlayerStream:
         self.dead = kept.get("dead", False)
         self.spells = kept.get("spells")
         self.topics = kept.get("topics")
+        self.factions = kept.get("factions")
         self.effects = kept.get("effects")
         self.bounty = kept.get("bounty")
         self.identity = kept.get("identity")
@@ -392,7 +398,7 @@ class PlayerStream:
     def reset(self):
         """A new character: nothing streamed so far belongs to it."""
         self.items, self.skills, self.modifiers, self.journal, self.level = {}, {}, {}, {}, None
-        self.spells = self.topics = None
+        self.spells = self.topics = self.factions = None
         self.effects = self.effects_parts = None
         self.vitals = self.place = self.arriving = None
         self.bounty = self.identity = self.identity_parts = None
@@ -510,6 +516,23 @@ class PlayerStream:
                 known.update((name.lower(), name) for name in names)
                 self.topics, self.dirty = list(known.values()), True
             return "topics " + ", ".join(added) if added else None
+        if kind == PLAYER_FACTIONS:
+            try:
+                entries = unpack_factions(data)
+            except ValueError:
+                return None
+            kept = dict(self.factions or {})
+            changed = []
+            for faction, bits, rank, reputation in entries:
+                value = [faction, rank, reputation, bits & (FACTION_JOINED | FACTION_EXPELLED)]
+                if kept.get(faction.lower()) != value:
+                    kept[faction.lower()] = value
+                    changed.append(describe_faction(*value))
+            if len(kept) > FACTIONS_MAX:
+                return None
+            if self.factions is None or changed:
+                self.factions, self.dirty = kept, True
+            return "factions " + ", ".join(changed) if changed else None
         if kind == PLAYER_SPELLS and len(data) >= 4 and data[1] in (SPELLS_ADD, SPELLS_REMOVE):
             names = unpack_equipment(data[2:])
             if not names:
@@ -629,6 +652,7 @@ class PlayerStream:
                                "place": self.place.hex() if self.place else None,
                                "spells": self.spells,
                                "topics": self.topics,
+                               "factions": self.factions,
                                "effects": self.effects,
                                "bounty": self.bounty,
                                "identity": self.identity,
@@ -1639,6 +1663,67 @@ class Server:
                     other.rel.queue(EVENT_PLAYER, 0, data)
                 self.flush(other, now)
 
+    def share_factions(self, client, entries, before, now):
+        """Rank and reputation are the world's, membership and expulsion each character's.
+        A member who already was one moves the world rank; a character who has just joined
+        takes the world's rank instead."""
+        shared, corrections = [], []
+        for faction, bits, rank, reputation in entries:
+            key = faction.lower()
+            world = self.world.factions.get(key)
+            if world is None:
+                if len(self.world.factions) >= FACTIONS_MAX:
+                    continue
+                world = self.world.factions[key] = {"id": faction, "rank": None,
+                                                    "reputation": 0}
+                self.world.dirty = True
+            member = bits & FACTION_JOINED
+            was_member = (before.get(key) or [None, 0, 0, 0])[3] & FACTION_JOINED
+            changed = False
+            if world["reputation"] != reputation:
+                world["reputation"], changed = reputation, True
+            if member and (was_member or world["rank"] is None) and world["rank"] != rank:
+                world["rank"], changed = rank, True
+            elif member and not was_member and world["rank"] != rank:
+                corrections.append((world["id"], FACTION_RANK, world["rank"], reputation))
+            if changed:
+                self.world.dirty = True
+                shared.append((world["id"], FACTION_REPUTATION | (
+                    FACTION_RANK if world["rank"] is not None else 0), world["rank"] or 0,
+                    world["reputation"]))
+        for data in pack_factions(corrections):
+            client.rel.queue(EVENT_PLAYER, 0, data)
+        if corrections:
+            self.flush(client, now)
+        if not shared:
+            return
+        for other in self.clients.values():
+            if other is not client and other.in_world and other.synced:
+                for data in pack_factions(shared):
+                    other.rel.queue(EVENT_PLAYER, 0, data)
+                self.flush(other, now)
+
+    def faction_replay(self, stream, replay):
+        """Each faction's world rank and reputation, with the character's own flags on a replay."""
+        own = (stream.factions or {}) if replay else {}
+        for key, (faction, rank, reputation, flags) in own.items():
+            if key not in self.world.factions and len(self.world.factions) < FACTIONS_MAX:
+                self.world.factions[key] = {"id": faction, "rank": rank if flags & FACTION_JOINED
+                                            else None, "reputation": reputation}
+                self.world.dirty = True
+        entries = []
+        for key, world in sorted(self.world.factions.items()):
+            kept = own.get(key)
+            if replay:
+                rank = world["rank"] if world["rank"] is not None else kept[1] if kept else 0
+                entries.append((world["id"], FACTION_ALL | (kept[3] if kept else 0), rank,
+                                world["reputation"]))
+            else:
+                entries.append((world["id"], FACTION_REPUTATION | (
+                    FACTION_RANK if world["rank"] is not None else 0), world["rank"] or 0,
+                    world["reputation"]))
+        return pack_factions(entries)
+
     def player_ready(self, client, replay, stamp, now):
         """Replay retained state, or have the console publish its supported fields."""
         self.announce_join(client, now)
@@ -1652,6 +1737,7 @@ class Server:
         self.share_topics(stream.topics or [], now, origin=client)
         events = [data for data in stream.replay() if data[0] != PLAYER_TOPICS] if replay else []
         events += pack_topics(self.world.topics)
+        events += self.faction_replay(stream, replay)
         client.place_hold = (stream.place, now + PLACE_HOLD) if (
             replay and stream.place and not stream.dead) else None
         for data in events:
@@ -1905,9 +1991,12 @@ class Server:
             self.on_player_death(client, data[0] == PLAYER_ALIVE, stamp, now)
             return KEEP
         stream = self.player_stream(client) if client.synced else None
+        before = dict(stream.factions or {}) if stream else {}
         change = stream.take(data) if stream else None
         if stream and data[:1] == bytes([PLAYER_TOPICS]):
             self.share_topics(stream.topics or [], now, origin=client)
+        if stream and data[:1] == bytes([PLAYER_FACTIONS]):
+            self.share_factions(client, unpack_factions(data), before, now)
         if stream and client.naming and stream.identity:
             old = self.character_folder(client)
             folder = new_character_folder(self.key_folder(client), stream.identity["name"])

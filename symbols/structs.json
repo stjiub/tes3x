@@ -29,6 +29,10 @@
       ]
     },
     {
+      "name": "TES3::Faction",
+      "note": "Xbox matches the PC at objectID (+0x10), rank names (+0x50), playerRank (+0x294), playerReputation (+0x298) and playerMembershipFlags (+0x29C: 1 joined, 2 expelled); Faction::copy 0x000FCE20 and loadPlayerData 0x000F0910 use them. The player's faction state lives on the record, not the player. Native commands never make playerRank negative."
+    },
+    {
       "name": "TES3::MobileNPC",
       "note": "Xbox matches the PC at skills (+0x3B0, 27 SkillStatistic of 0x10; type +0xC is major, minor or misc, not the skill index)."
     },
@@ -136,6 +140,13 @@
           "type": "NI::IteratedList<TES3::Class*>*",
           "confidence": "verified",
           "provenance": "PC +0x24; MenuCreateClass::onOk appends chargen's class to it"
+        },
+        {
+          "offset": "0x34",
+          "name": "factions",
+          "type": "NI::IteratedList<TES3::Faction*>*",
+          "confidence": "verified",
+          "provenance": "PC +0x28; NonDynamicData::findFaction 0x00105DF0 walks it"
         },
         {
           "offset": "0x44",

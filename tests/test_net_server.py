@@ -18,6 +18,7 @@ from pathlib import Path
 
 import tes3x.net as tes3x_net
 import tes3x.netbuild as tes3x_netbuild
+from tes3x.net.validation import valid_client_event
 from tes3x.payload import source_text
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -800,6 +801,65 @@ class ServerTests(unittest.TestCase):
         replay = self.events(again, ready)
         self.assertIn((net.EVENT_PLAYER, topic), replay)
 
+    def test_faction_rank_and_reputation_are_shared_and_membership_is_per_character(self):
+        net = tes3x_net
+        world = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, world)
+        self.start('--world', str(world), '--adopt')
+        ready = lambda k, d: k == net.EVENT_PLAYER and d == bytes([net.PLAYER_READY, 0])
+        first, second = self.client(1), self.client(2)
+        first.join()
+        self.game(first, 1, 7, b'')
+        self.upload(first, 2, 1, b'mp-first.ess', self.save(b'Nerevar', 0))
+        self.events(first, ready)
+        seq = self.seed_identity(world, first, 3)
+        second.join()
+        self.game(second, 1, 8, b'')
+        self.upload(second, 2, 2, b'mp-second.ess', self.save(b'Second', 1))
+        self.events(second, ready)
+        identity = net.pack_player_identity(self.identity('Second'))
+        second.send(net.EVENTS, net.pack_events(second.delivered, [
+            (3 + i, net.EVENT_PLAYER, 0, data) for i, data in enumerate(identity)]))
+        folder = next((world / 'characters').glob('*/Second'))
+        self.wait_for(lambda: net.PlayerStream(str(folder / net.STREAM_NAME)).identity,
+                      'second character identity was not persisted')
+        later = 3 + len(identity)
+        guild, member = 'Fighters Guild', net.FACTION_ALL | net.FACTION_JOINED
+
+        def player(data):
+            return lambda k, d: k == net.EVENT_PLAYER and d == data
+
+        def send(client, seq, *entries):
+            client.send(net.EVENTS, net.pack_events(client.delivered, [
+                (seq, net.EVENT_PLAYER, 0, net.pack_factions(entries)[0])]))
+
+        send(first, seq, (guild, member, 2, 10))
+        shared = net.pack_factions([(guild, net.FACTION_RANK | net.FACTION_REPUTATION, 2, 10)])[0]
+        self.assertIn((net.EVENT_PLAYER, shared), self.events(second, player(shared)))
+        # Joining natively keeps the stored rank; a joiner who reports another gets the world's.
+        send(second, later, (guild, member, 0, 10))
+        corrected = net.pack_factions([(guild, net.FACTION_RANK, 2, 10)])[0]
+        self.assertIn((net.EVENT_PLAYER, corrected), self.events(second, player(corrected)))
+        # A member's promotion is the world's; expulsion stays with the character.
+        send(second, later + 1, (guild, member | net.FACTION_EXPELLED, 3, 12))
+        promoted = net.pack_factions([(guild, net.FACTION_RANK | net.FACTION_REPUTATION,
+                                       3, 12)])[0]
+        self.assertIn((net.EVENT_PLAYER, promoted), self.events(first, player(promoted)))
+        path = folder / net.STREAM_NAME
+        self.wait_for(lambda: (net.PlayerStream(str(path)).factions or {}).get('fighters guild')
+                      == [guild, 3, 12, net.FACTION_JOINED | net.FACTION_EXPELLED],
+                      'second character factions were not persisted')
+        mine = next((world / 'characters').glob('*/Nerevar'))
+        data = net.PlayerStream(str(mine / net.STREAM_NAME)).character_file()
+        name = net.checkpoint_name(data, net.CHARACTER_FILE)
+        (mine / name).write_bytes(data)
+        again = self.client(1)
+        again.session ^= 4
+        again.join()
+        self.game(again, 1, 9, name.encode(), net.GAME_NEW)
+        replay = self.events(again, ready)
+        self.assertIn((net.EVENT_PLAYER, net.pack_factions([(guild, member, 3, 12)])[0]), replay)
+
     def test_stream_only_character_creation_snapshot_and_restart(self):
         world = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, world)
@@ -958,6 +1018,39 @@ class ServerTests(unittest.TestCase):
             # Existing worlds acquire topics on the next READY publication.
             path.write_text('{}', encoding='utf-8')
             self.assertIsNone(net.PlayerStream(path).topics)
+
+    def test_factions_survive_restart_and_the_world_replays_them(self):
+        net = tes3x_net
+        entries = [(f'Faction {i:02} long id', net.FACTION_ALL | net.FACTION_JOINED, i, -i)
+                   for i in range(9)]
+        entries.append(('Imperial Legion', net.FACTION_ALL | net.FACTION_EXPELLED, -1, 3))
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'stream.json'
+            stream = net.PlayerStream(str(path))
+            self.assertIsNone(stream.factions)
+            for data in net.pack_factions(entries):
+                self.assertLessEqual(len(data), net.EVENT_DATA)
+                self.assertTrue(valid_client_event(net.EVENT_PLAYER, data))
+                stream.take(data)
+            stream.save()
+            restored = net.PlayerStream(str(path))
+            self.assertEqual(restored.factions['imperial legion'],
+                             ['Imperial Legion', -1, 3, net.FACTION_EXPELLED])
+            self.assertEqual(len(restored.factions), len(entries))
+            partial = net.pack_factions([('Faction 01 long id', net.FACTION_RANK, 5, 0)])[0]
+            self.assertFalse(valid_client_event(net.EVENT_PLAYER, partial))
+            server = net.Server.__new__(net.Server)
+            server.world = net.World()
+            replay = [e for data in server.faction_replay(restored, True)
+                      for e in net.unpack_factions(data)]
+            self.assertEqual(sorted(replay), sorted(entries))
+            # Without a replay only the world's values go out, never a non-member's rank.
+            replay = [e for data in server.faction_replay(restored, False)
+                      for e in net.unpack_factions(data)]
+            self.assertIn(('Imperial Legion', net.FACTION_REPUTATION, 0, 3), replay)
+            restored.reset()
+            restored.save()
+            self.assertIsNone(net.PlayerStream(path).factions)
 
     def test_abilities_replay_before_absolute_statistics(self):
         net = tes3x_net
@@ -1287,7 +1380,7 @@ class ServerTests(unittest.TestCase):
 
         saved = next(world.glob('*.json'))
         state = json.loads(saved.read_text(encoding='utf-8'))
-        self.assertEqual(sorted(state), ['clock', 'contents', 'deaths', 'next_spawn', 'objects',
+        self.assertEqual(sorted(state), ['clock', 'contents', 'deaths', 'factions', 'next_spawn', 'objects',
                                          'spawns', 'statuses', 'topics', 'weather'])
         self.assertEqual(len(state['clock']), 6)  # hour, day, month, year, days passed, scale
         self.assertEqual(state['deaths'], {str(refid): 1})

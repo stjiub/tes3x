@@ -123,6 +123,8 @@ IDENTITY_ADDRESSES = (
     ("LIST_APPEND", 0x000D5A60), ("GMST_TEXT", 0x0008BB50), ("RACE_SEX_OK", 0x00206570),
     ("UNEQUIP_ITEM", 0x000E6B90), ("EQUIP_ITEM", 0x000E7E90),
     ("INVENTORY_BUILD", 0x001DEC90), ("MENU_TAB", 0x001FB4C0),
+    # NonDynamicData::findFaction, Faction::loadPlayerData (the save load's restore), UpdateStatsPane
+    ("FIND_FACTION", 0x00105DF0), ("FACTION_LOAD", 0x000F0910), ("UPDATE_STATS_PANE", 0x0021E7E0),
 )
 PLAYER_CONTROL = 0x001717E0  # PlayerAnimationController's update: look, controls, animation
 CONSOLE_ADDRESSES = (

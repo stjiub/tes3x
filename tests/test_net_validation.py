@@ -97,6 +97,8 @@ class EventValidationTests(unittest.TestCase):
             *p.pack_worn([]),
             *p.pack_topics(['a topic', 'x' * p.TOPIC_NAME_MAX]),
             *p.pack_topics([]),
+            *p.pack_factions([('Fighters Guild', p.FACTION_ALL | p.FACTION_JOINED, -1, -40),
+                              ('x' * p.FACTION_ID_MAX, p.FACTION_ALL, 9, 2 ** 31 - 1)]),
             bytes([p.PLAYER_SKILLS, 1]) + p.SKILL.pack(26, 20., 3.),
             bytes([p.PLAYER_MODIFIERS, 1]) + p.MODIFIER.pack(34, 20.),
             bytes([p.PLAYER_VITALS]) + p.VITALS.pack(1., 2., 3.),

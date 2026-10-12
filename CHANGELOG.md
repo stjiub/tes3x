@@ -28,6 +28,10 @@ No official releases yet. The first public release is in preparation.
 - Multiplayer shares learned dialogue topics and restores them when joining after a server restart.
   Update both server and game builds for gameplay protocol 23; existing character streams
   acquire topics on their next join. See [character state](docs/multiplayer-client.md#saving-and-character-state).
+- Multiplayer keeps factions: rank and reputation are shared by all players, while membership
+  and expulsion stay with each character, and all of them survive a server restart. Update both
+  server and game builds; existing characters publish their factions on their next join. See
+  [character state](docs/multiplayer-client.md#saving-and-character-state).
 
 - Multiplayer documentation has separate [player](docs/multiplayer-client.md) and
   [server admin](docs/multiplayer-server.md) guides.
