@@ -3,8 +3,10 @@ import unittest
 from types import SimpleNamespace
 
 from tes3x.patch import PatchError, find_save_allowed_context
-from tes3x.patch_sites import (AUTOSAVE_NAME_SIG, CONSOLE_PRINT_SIG, find_autosave_calls,
-                              find_console_print)
+from tes3x.patch_sites import (AUTOSAVE_NAME_SIG, CONSOLE_PRINT_SIG,
+                              CONSOLE_WIDGET_ENTRIES, find_autosave_calls,
+                              find_console_menu_id, find_console_print,
+                              find_console_widget_entry)
 
 
 class Image:
@@ -14,6 +16,9 @@ class Image:
 
     def off_to_va(self, off):
         return 0x10000 + off
+
+    def va_to_off(self, va):
+        return va - 0x10000
 
 
 class SavePatchTests(unittest.TestCase):
@@ -48,8 +53,16 @@ class SavePatchTests(unittest.TestCase):
     def test_console_print_locates_a_moved_menu_id(self):
         signature = CONSOLE_PRINT_SIG[:4] + struct.pack('<I', 0x3D940C) + CONSOLE_PRINT_SIG[8:]
         self.assertEqual(find_console_print(Image(b'\x90' * 8 + signature)), 0x10008)
+        self.assertEqual(find_console_menu_id(Image(b'\x90' * 8 + signature)), 0x3D940C)
         with self.assertRaisesRegex(PatchError, '2 matches'):
             find_console_print(Image(signature * 2))
+
+    def test_image_factory_is_distinguished_from_nif_factory(self):
+        entry = CONSOLE_WIDGET_ENTRIES['CREATE_IMAGE'][1]
+        nif = entry + b'\x90' * 60 + b'\xb8\xb5\x80\xff\xff'
+        image = entry + b'\x90' * 60 + b'\xb8\xb8\x80\xff\xff'
+        data = nif.ljust(0x100, b'\x90') + image
+        self.assertEqual(find_console_widget_entry(Image(data), 'CREATE_IMAGE'), 0x10100)
 
     def test_chargen_save_gate_fields_are_content_located(self):
         data = (b'\x90' * 20 + b'\x8b\x35' + struct.pack('<I', 0x12345678)

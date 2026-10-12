@@ -1519,6 +1519,19 @@ def find_vk_limit(x, sig, what):
     return text.va + hits[0]
 
 
+def find_vk_text_id(x):
+    """The text field id read by the paired console keyboard space handler."""
+    text = text_section(x)
+    blob = bytes(x.data[text.raw:text.raw + text.rsize])
+    key_ids = {struct.unpack_from("<I", blob, m.start() + 3)[0]
+               for m in VK_KEY_LIMIT_SIG.finditer(blob)}
+    values = {space_id for m in VK_SPACE_LIMIT_SIG.finditer(blob)
+              if (space_id := struct.unpack_from("<I", blob, m.start() + 3)[0]) + 12 in key_ids}
+    if len(values) != 1:
+        raise PatchError("console: %d text field ids, expected 1" % len(values))
+    return values.pop()
+
+
 # The console's printf: find the console menu, vsprintf into a 0x104-byte buffer, append the line.
 CONSOLE_PRINT_SIG = bytes([
     0x33, 0xC0,                                # xor eax,eax
@@ -1538,6 +1551,50 @@ def find_console_print(x):
     if len(matches) != 1:
         raise PatchError("console printf: %d matches, expected exactly 1" % len(matches))
     return x.off_to_va(matches[0].start())
+
+
+def find_console_menu_id(x):
+    off = x.va_to_off(find_console_print(x))
+    return struct.unpack_from("<I", x.data, off + 4)[0]
+
+
+# Widget methods used by the console keyboard. The two retail compilers produce different
+# entries for the property setter and factories, so each entry has its own checked prologue.
+CONSOLE_WIDGET_ENTRIES = {
+    "SET_PROP": (
+        bytes.fromhex("53 8b 5c 24 08 55 56 57 8b 7c 24 18 8d 44 24 1c 50 57 53 8b f1"),
+        bytes.fromhex("53 8b 5c 24 0c 55 56 57 8b 7c 24 14 8d 44 24 1c 50 53 57 8b f1"),
+    ),
+    "SET_AUTO_WIDTH": (
+        bytes.fromhex("8a 44 24 04 84 c0 88 81 1c 01 00 00 74 19 81 b9 fc 00 00 00"),
+        bytes.fromhex("8a 44 24 04 84 c0 88 81 1c 01 00 00 74 29 8b 81 fc 00 00 00"),
+    ),
+    "SET_AUTO_HEIGHT": (
+        bytes.fromhex("8a 44 24 04 84 c0 88 81 1d 01 00 00 74 19 81 b9 00 01 00 00"),
+        bytes.fromhex("8a 44 24 04 84 c0 88 81 1d 01 00 00 74 2a 8b 81 00 01 00 00"),
+    ),
+    "CREATE_WIDGET": (
+        bytes.fromhex("56 8b f1 80 3e 58 74 06 33 c0 5e c2 0c 00 8a 44 24 10 84 c0"),
+        bytes.fromhex("53 55 56 8b f1 80 3e 58 57 74 09 33 c0 5f 5e 5d 5b c2 0c 00"),
+    ),
+    "CREATE_IMAGE": (
+        bytes.fromhex("57 8b f9 80 3f 58 74 06 33 c0 5f c2 0c 00 8a 44 24 10 84 c0"),
+        bytes.fromhex("53 55 56 57 8b f9 80 3f 58 74 09 33 c0 5f 5e 5d 5b c2 0c 00"),
+    ),
+}
+
+
+def find_console_widget_entry(x, name):
+    text = text_section(x)
+    blob = bytes(x.data[text.raw:text.raw + text.rsize])
+    hits = [m.start() for sig in CONSOLE_WIDGET_ENTRIES[name]
+            for m in re.finditer(re.escape(sig), blob)]
+    if name == "CREATE_IMAGE":
+        # Image and NIF factories begin alike; the image class id is 0x80B8.
+        hits = [off for off in hits if b"\xB8\xB8\x80" in blob[off:off + 0xC0]]
+    if len(hits) != 1:
+        raise PatchError("console %s: %d entries, expected 1" % (name, len(hits)))
+    return text.va + hits[0]
 
 
 def find_ini_get_string(x):
@@ -1602,6 +1659,11 @@ LOCATORS = {
     "temple-marker": lambda image: find_marker(image)[1],
     "divine-marker": lambda image: find_marker(image)[2],
     "console-print": find_console_print,
+    "console-menu-id": find_console_menu_id,
+    "console-vk-text-id": find_vk_text_id,
+    **{"console-" + name.lower().replace("_", "-"):
+       (lambda image, key=name: find_console_widget_entry(image, key))
+       for name in CONSOLE_WIDGET_ENTRIES},
     "ini-get-string": find_ini_get_string,
     "ini-path": find_ini_path,
     "heap-allocate": lambda image: find_heap_function(image, "allocate")[0],
