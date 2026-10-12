@@ -23,7 +23,7 @@ and optionally:
 
 import importlib
 
-NAMES = ("console",)
+NAMES = ("xbmc",)
 
 
 def enabled(local):

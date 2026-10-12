@@ -255,7 +255,7 @@ class TargetsPage(QWidget):
         self.window.run_steps(
             [
                 (
-                    resource("addons", "console", "console.py"),
+                    resource("addons", "xbmc", "console.py"),
                     [command, "--config", str(self.window.local_config_path()), "--target", name],
                     f"{verb} {name}…",
                 )
@@ -287,7 +287,7 @@ class TargetsPage(QWidget):
         if QMessageBox.question(self, "TES3X", f"Restart the dashboard on {self.name}?") \
                 != QMessageBox.StandardButton.Yes:
             return
-        self.window.start_command(resource("addons", "console", "console.py"), [
+        self.window.start_command(resource("addons", "xbmc", "console.py"), [
             "restart", "--config", str(self.window.local_config_path()), "--target", self.name],
             f"Restarting the dashboard on {self.name}…")
 

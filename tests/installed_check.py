@@ -19,7 +19,7 @@ assert PACKAGED.is_dir(), f"no _data in {Path(tes3x.__file__).parent}"
 for parts in (('patches.toml',), ('candidates.toml',), ('catalog.toml',),
               ('hooks', 'xboxkrnl.exe.def'), ('symbols', 'curated.json'),
               ('symbols', 'structs.json'), ('examples', 'profile.toml'),
-              ('examples', 'starts.toml'), ('assets', 'menu'), ('addons', 'console', 'console.py'),
+              ('examples', 'starts.toml'), ('assets', 'menu'), ('addons', 'xbmc', 'console.py'),
               ('tests', 'game', 'smoke.toml'), ('dash', 'mgr.h'), ('keys', 'release.pub')):
     assert resource(*parts).exists(), parts
 if os.environ.get('TES3X_EXPECT_PORTABLE'):

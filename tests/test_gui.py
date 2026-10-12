@@ -423,7 +423,7 @@ order = 10
     def test_a_command_runs_from_the_package_and_a_path_as_a_script(self):
         self.assertEqual(launch("deploy", ["out", "--replace"]),
                          ["-m", "tes3x", "deploy", "out", "--replace"])
-        script = Path("addons") / "console" / "console.py"
+        script = Path("addons") / "xbmc" / "console.py"
         self.assertEqual(launch(script, ["ping"]), [str(script), "ping"])
 
     def test_skip_intro_writes_movie_keys(self):
@@ -779,10 +779,10 @@ order = 10
 
         dialog = LocalSettingsDialog(config)
         self.addCleanup(dialog.close)
-        dialog.fields["addons.console"].setChecked(True)
+        dialog.fields["addons.xbmc"].setChecked(True)
         self.assertTrue(dialog.save_settings())
         with open(config, "rb") as stream:
-            self.assertEqual(tomllib.load(stream)["addons"], {"console": True})
+            self.assertEqual(tomllib.load(stream)["addons"], {"xbmc": True})
         window.refresh_targets()
         self.assertTrue(window.action_play.isEnabled())
 
@@ -844,7 +844,7 @@ order = 10
         self.assertNotIn("--replace", full[1])
         self.assertIn("--replace", full[2])
 
-        dialog.fields["addons.console"].setChecked(False)
+        dialog.fields["addons.xbmc"].setChecked(False)
         self.assertTrue(dialog.save_settings())
         with open(config, "rb") as stream:
             self.assertNotIn("addons", tomllib.load(stream))

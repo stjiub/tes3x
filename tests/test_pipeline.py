@@ -114,7 +114,7 @@ class PathTests(unittest.TestCase):
                       ('hooks', 'xboxkrnl.exe.def'), ('symbols', 'curated.json'),
                       ('symbols', 'structs.json'), ('examples', 'profile.toml'),
                       ('examples', 'starts.toml'), ('assets', 'menu'),
-                      ('addons', 'console', 'console.py'), ('tests', 'game'),
+                      ('addons', 'xbmc', 'console.py'), ('tests', 'game'),
                       ('dash', 'mgr.h'), ('keys', 'release.pub')):
             self.assertTrue(resource(*parts).exists(), parts)
 

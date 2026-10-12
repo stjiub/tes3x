@@ -39,7 +39,7 @@ CONFLICT = 3
 NO_SPACE = 4
 CLUSTER = 16 * 1024  # FATX's unit of allocation on the console's partitions
 SPACE_WARN = 256 * 1024 * 1024  # left free below this after a deploy, say so
-# The XBMC4Gamers dashboard agent (addons/console), when installed: one line in, one line out.
+# The XBMC4Gamers dashboard agent (addons/xbmc), when installed: one line in, one line out.
 AGENT_PORT = 7353
 RETRYABLE_FTP = (ftplib.error_temp, ftplib.error_reply, ftplib.error_proto, EOFError, OSError)
 REMOTE_ERRORS = ftplib.all_errors + (tes3x_agent.AgentError,)

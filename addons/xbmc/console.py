@@ -1,17 +1,17 @@
 """Drive the Xbox's XBMC4Gamers dashboard through the TES3X agent.
 
-    python addons/console/console.py install          # agent + one AlarmClock line in the skin
-    python addons/console/console.py ping
-    python addons/console/console.py run "F:/Games/Morrowind/default.xbe"
-    python addons/console/console.py builtin "XBMC.ActivateWindow(Home)"
-    python addons/console/console.py stat "E:/tes3xlog.txt"
-    python addons/console/console.py drives            # free/total MB per drive
-    python addons/console/console.py reload            # load an updated agent body
-    python addons/console/console.py stop              # end the agent
-    python addons/console/console.py restart           # restart XBMC4Gamers
-    python addons/console/console.py reboot | shutdown
-    python addons/console/console.py wait [--timeout S]   # until the agent answers
-    python addons/console/console.py uninstall
+    python addons/xbmc/console.py install          # agent + one AlarmClock line in the skin
+    python addons/xbmc/console.py ping
+    python addons/xbmc/console.py run "F:/Games/Morrowind/default.xbe"
+    python addons/xbmc/console.py builtin "XBMC.ActivateWindow(Home)"
+    python addons/xbmc/console.py stat "E:/tes3xlog.txt"
+    python addons/xbmc/console.py drives            # free/total MB per drive
+    python addons/xbmc/console.py reload            # load an updated agent body
+    python addons/xbmc/console.py stop              # end the agent
+    python addons/xbmc/console.py restart           # restart XBMC4Gamers
+    python addons/xbmc/console.py reboot | shutdown
+    python addons/xbmc/console.py wait [--timeout S]   # until the agent answers
+    python addons/xbmc/console.py uninstall
 
 agent.py is a stable launcher; install replaces agent_body.py and asks the launcher to reload it,
 so only the first install needs a dashboard restart. Requests carry the random token kept in the

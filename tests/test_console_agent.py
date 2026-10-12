@@ -44,7 +44,7 @@ class FakeDashboardFtp:
 class DashboardAgentTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.body = load('tes3x_agent_body', ROOT / 'addons' / 'console' / 'agent_body.py')
+        cls.body = load('tes3x_agent_body', ROOT / 'addons' / 'xbmc' / 'agent_body.py')
 
     def test_only_private_lan_peers_are_allowed(self):
         allowed = ('10.0.0.1', '172.16.0.1', '172.31.255.255', '192.168.1.2')
@@ -71,7 +71,7 @@ class DashboardAgentTests(unittest.TestCase):
         self.assertEqual(self.body.handle('restart'), ('ok', 'XBMC.RestartApp'))
 
     def test_install_token_is_kept_in_the_selected_target(self):
-        console = load('tes3x_console_client', ROOT / 'addons' / 'console' / 'console.py')
+        console = load('tes3x_console_client', ROOT / 'addons' / 'xbmc' / 'console.py')
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'local.toml'
             path.write_text('[deploy]\nhost = "192.0.2.50"\n# keep this\n', encoding='utf-8')
@@ -86,7 +86,7 @@ class DashboardAgentTests(unittest.TestCase):
             self.assertEqual(tomllib.loads(text)['deploy']['agent_token'], 'd' * 64)
 
     def test_dashboard_setting_prefers_the_selected_target(self):
-        console = load('tes3x_console_settings', ROOT / 'addons' / 'console' / 'console.py')
+        console = load('tes3x_console_settings', ROOT / 'addons' / 'xbmc' / 'console.py')
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'local.toml'
             path.write_text(
@@ -96,7 +96,7 @@ class DashboardAgentTests(unittest.TestCase):
             self.assertEqual(console.dashboard_setting(path, 'bench'), 'C:')
 
     def test_dashboard_detection_checks_before_creating_files(self):
-        console = load('tes3x_console_detect', ROOT / 'addons' / 'console' / 'console.py')
+        console = load('tes3x_console_detect', ROOT / 'addons' / 'xbmc' / 'console.py')
         self.assertEqual(console.detect_dashboard(FakeDashboardFtp()), 'C:')
 
 
