@@ -2238,6 +2238,22 @@
       "pc_va": "0x004B5CF0"
     },
     {
+      "va": "0x001015C0",
+      "name": "TES3File::isMaster",
+      "confidence": "verified",
+      "provenance": "Xbox disassembly and registerFoundGameFile grouping",
+      "note": "Reads bit 0 of the 32-bit file flags at +0x4D8; game-file registration groups masters before comparing timestamps.",
+      "signature": "bool __thiscall isMaster()"
+    },
+    {
+      "va": "0x001015D0",
+      "name": "TES3File::setMaster",
+      "confidence": "verified",
+      "provenance": "Xbox disassembly",
+      "note": "Sets or clears bit 0 of the 32-bit flags at +0x4D8.",
+      "signature": "void __thiscall setMaster(bool enabled)"
+    },
+    {
       "va": "0x00101640",
       "name": "TES3File::getFlag20",
       "kind": "function",
@@ -2542,6 +2558,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_NonDynamicData_getCellByGrid",
       "pc_va": "0x004BAA10"
+    },
+    {
+      "va": "0x0010A150",
+      "name": "NonDynamicData::registerFoundGameFile",
+      "confidence": "verified",
+      "provenance": "Xbox decompile and disassembly; called by findGameFiles",
+      "note": "find_data is WIN32_FIND_DATAA. Ignores zero-sized files and registered names; constructs a TES3File and inserts it into the list at this+0xAE6C. Orders master/plugin groups before comparing last-write times at TES3File+0x280 against find_data+0x14.",
+      "signature": "TES3::TES3File* __thiscall registerFoundGameFile(const void* find_data, const char* folder)"
     },
     {
       "va": "0x0010A2B0",

@@ -166,11 +166,37 @@
           "provenance": "PC +0x44; NonDynamicData::findBirthsign 0x00105CB0 walks it"
         },
         {
+          "offset": "0xAE6C",
+          "name": "gameFiles",
+          "type": "void*",
+          "confidence": "verified",
+          "provenance": "NonDynamicData::registerFoundGameFile 0x0010A150 passes this list to iteration and insertion helpers"
+        },
+        {
           "offset": "0xB270",
           "name": "cells",
           "type": "void*",
           "confidence": "verified",
           "provenance": "PC +0xB264; ref-index and the multiplayer cell list"
+        }
+      ]
+    },
+    {
+      "name": "TES3::TES3File",
+      "fields": [
+        {
+          "offset": "0x280",
+          "name": "lastWriteTime",
+          "type": "unsigned long long",
+          "confidence": "verified",
+          "provenance": "NonDynamicData::registerFoundGameFile 0x0010A150 compares this FILETIME with WIN32_FIND_DATAA.ftLastWriteTime"
+        },
+        {
+          "offset": "0x4D8",
+          "name": "fileFlags",
+          "type": "unsigned int",
+          "confidence": "verified",
+          "provenance": "TES3File::isMaster 0x001015C0 reads bit 0; setMaster 0x001015D0 sets or clears it with 32-bit operations"
         }
       ]
     },
