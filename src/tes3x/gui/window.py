@@ -1453,11 +1453,13 @@ class ProfileWindow(QMainWindow):
         self.play_button.setDefaultAction(self.action_deploy if xbox else self.action_play)
         if xbox and "xbox" in self.play_addons:
             self.play_menu.addAction(self.action_play)
-        launch = self.play_menu.addAction("Launch Dash", self.play_controller.launch_dash)
+        launch = self.play_menu.addAction("Launch TES3X Dash", self.play_controller.launch_dash)
         launch.setEnabled(self.process is None and self.play_controller.play_process is None and (
             xemu or (xbox and "xbox" in self.play_addons)))
-        launch.setToolTip("Start the Dash: on the Xbox through the dashboard agent, "
-                          "or as an xemu session that keeps its own disk")
+        launch.setToolTip("Start the Dash: on the Xbox through the XBMC4Gamers agent, "
+                          "or as an xemu session that keeps its own disk"
+                          if xemu or "xbox" in self.play_addons else
+                          "Enable the xbmc add-on in File > Settings to start the Dash on the Xbox")
         name = target["name"] if target else "a target"
         if self.play_controller.play_process is not None:
             self.action_play.setText("&Stop")

@@ -24,10 +24,12 @@ and optionally:
 import importlib
 
 NAMES = ("xbmc",)
+OLD_NAMES = {"xbmc": "console"}
 
 
 def enabled(local):
-    return [name for name in NAMES if local.get("addons", {}).get(name)]
+    section = local.get("addons", {})
+    return [name for name in NAMES if section.get(name) or section.get(OLD_NAMES.get(name))]
 
 
 def load(name):
