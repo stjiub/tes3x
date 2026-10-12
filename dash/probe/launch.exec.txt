@@ -1,5 +1,5 @@
 @menu wait 300
-@menu launch \Device\CdRom0\Manager\default.xbe
+@menu launch \Device\CdRom0\TES3XDash\default.xbe
 wait 1200
 tes3xnet stat
-launch \Device\CdRom0\Manager\default.xbe
+launch \Device\CdRom0\TES3XDash\default.xbe
