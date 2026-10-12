@@ -1,6 +1,7 @@
 import contextlib
 import io
 import unittest
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 from tes3x.net import proto as p
@@ -56,6 +57,8 @@ class PasswordLimitTests(unittest.TestCase):
         self.server.handshake_client = Mock()
         self.server.dash_character = Mock(return_value='')
         self.server.build_server = None
+        self.server.clients = {}
+        self.server.args = SimpleNamespace(name='Test', description='', max_players=8)
         self.server.send = Mock()
 
     def hello(self, host, key, password, now=100.):
