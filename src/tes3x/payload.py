@@ -16,6 +16,7 @@ import struct
 import subprocess
 
 import tes3x.inject as tes3x_inject
+from tes3x.multi_signatures import SIGNATURES as MULTI_SIGNATURES, find_multi_signature
 from tes3x.paths import bundled, checkout, resource
 from tes3x.patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, find_call_sites, find_mcp37_context,
                          find_mcp125_context, find_save_allowed_context,
@@ -288,6 +289,10 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         if key in LOCATORS:
             if name not in resolved_addresses:
                 resolved_addresses[name] = hexva(LOCATORS[key](image))
+            return resolved_addresses[name]
+        if name in MULTI_SIGNATURES:
+            if name not in resolved_addresses:
+                resolved_addresses[name] = hexva(find_multi_signature(image, name))
             return resolved_addresses[name]
         return resolve_address(name, default, known_image)
 
