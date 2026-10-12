@@ -9,7 +9,6 @@ from pathlib import Path, PureWindowsPath
 import queue
 import re
 import socket
-import sys
 import threading
 import tomllib
 import zipfile
@@ -31,7 +30,7 @@ import tes3x.targets as tes3x_targets
 from tes3x.pipeline import (MARKER as PIPELINE_MARKER, PipelineError, resolve_patch_plan,
                             validate_local_config)
 from tes3x.xemu_setup import download_xemu, find_files as find_xemu_files
-from tes3x.paths import resource
+from tes3x.paths import child_python, resource
 
 LOG_SUFFIXES = {".txt", ".log"}
 CAPABILITY_REASONS = {
@@ -1696,7 +1695,7 @@ class ServerPage(QWidget):
             values["build"] = build
         process = QProcess(self)
         process.setWorkingDirectory(str(self.window.work_dir()))
-        process.setProgram(sys.executable)
+        process.setProgram(child_python())
         process.setArguments(["-u", "-m", "tes3x", "net", *server_arguments(values)])
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         process.readyReadStandardOutput.connect(self.read_output)

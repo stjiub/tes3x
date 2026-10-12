@@ -24,7 +24,7 @@ from .plugins import PluginsPanel
 from .files import FilesPanel
 from .mods import ModsTab
 from .play_controller import PlayController
-from tes3x.paths import docs_url
+from tes3x.paths import child_python, docs_url
 
 
 class ProfileWindow(QMainWindow):
@@ -1444,12 +1444,6 @@ class ProfileWindow(QMainWindow):
         xemu = bool(target and target.get("kind") == "xemu")
         xbox = bool(target and target.get("kind") == "xbox")
         self.play_menu.clear()
-        gdb = self.play_menu.addAction("Debug with GDB", self.play_controller.set_play_gdb)
-        gdb.setCheckable(True)
-        gdb.setChecked(self.play_controller.play_gdb)
-        gdb.setEnabled(xemu)
-        gdb.setToolTip("Open xemu's GDB stub; the status bar shows the port to attach to")
-        self.play_menu.addAction(self.action_smoke)
         self.play_button.setDefaultAction(self.action_deploy if xbox else self.action_play)
         if xbox and "xbox" in self.play_addons:
             self.play_menu.addAction(self.action_play)
@@ -1460,6 +1454,13 @@ class ProfileWindow(QMainWindow):
                           "or as an xemu session that keeps its own disk"
                           if xemu or "xbox" in self.play_addons else
                           "Enable the xbmc add-on in File > Settings to start the Dash on the Xbox")
+        self.play_menu.addSeparator()
+        gdb = self.play_menu.addAction("Debug with GDB", self.play_controller.set_play_gdb)
+        gdb.setCheckable(True)
+        gdb.setChecked(self.play_controller.play_gdb)
+        gdb.setEnabled(xemu)
+        gdb.setToolTip("Open xemu's GDB stub; the status bar shows the port to attach to")
+        self.play_menu.addAction(self.action_smoke)
         name = target["name"] if target else "a target"
         if self.play_controller.play_process is not None:
             self.action_play.setText("&Stop")
@@ -1673,7 +1674,7 @@ class ProfileWindow(QMainWindow):
         process.setWorkingDirectory(str(self.work_dir()))
         if environment is not None:
             process.setProcessEnvironment(environment)
-        process.setProgram(sys.executable)
+        process.setProgram(child_python())
         process.setArguments(launch(program, arguments))
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         process.readyReadStandardOutput.connect(self.append_process_output)
