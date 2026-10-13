@@ -21,6 +21,9 @@ No official releases yet. The first public release is in preparation.
   build under the build root. Installing the same entry again updates it from its latest revision.
   Content downloads use signed catalogs and the existing staged, checked installer. See
   [content servers](docs/content.md).
+- The Content workspace now shows recent Dash install stages, progress, bytes sent and final
+  results while its server runs. Update the Dash and content server together to see install results.
+  See [content servers](docs/content.md).
 
 - `tes3x game-tests` runs every game test against the retail engines named in the local
   config's new `[engines]` table, several at once, and prints what passed and failed. See

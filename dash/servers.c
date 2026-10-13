@@ -364,6 +364,20 @@ static void random_bytes(unsigned char *out, size_t n, int sock)
     crypto_wipe(block, sizeof(block));
 }
 
+int server_random(unsigned char *out, size_t n)
+{
+    int sock;
+
+    if (n > 64 || net_up())
+        return -1;
+    sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock < 0)
+        return -1;
+    random_bytes(out, n, sock);
+    closesocket(sock);
+    return 0;
+}
+
 static void outer(unsigned char *p, int type, unsigned session, unsigned seq)
 {
     memcpy(p, "T3MP", 4);

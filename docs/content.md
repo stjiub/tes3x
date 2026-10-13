@@ -36,6 +36,14 @@ repeatable `--serve-origin build|retail|xbe` to set the same hosting options. Th
 is `build` only. For an overlay build, `--retail-base` supplies the separate retail dependency
 that the Dash can install when retail serving is enabled.
 
+The GUI's **Recent install activity** list shows the build, console address, reported stage and
+progress, bytes sent by the server, and the current file. A completed row means the Dash reported
+that it committed the install; transferred bytes alone do not establish success. If reports stop
+for 90 seconds, the row becomes **unknown**. The list keeps up to 128 attempts during this server
+run. It is cleared when the content server restarts. The Dash signs reports with its content
+identity in `E:\TES3X\content-id.key`; keep that file if you move its content settings to another
+Xbox. Older Dashes can still download, but cannot report a completed install.
+
 ## Browse on the Xbox
 
 Open the Dash's **Content** tab and press **X** to add a host name or IP address. Include
@@ -58,6 +66,7 @@ your multiplayer player identity.
 Content browsing is a standalone download path. A multiplayer server still serves its own
 single build through **Servers**; it does not yet point clients at a separate content library.
 The content server currently keeps old copied revisions in its state folder until the admin
-removes them manually while the server is stopped. Download activity reporting, shared archive
-storage, access control, remote content sources for multiplayer, and Docker service profiles are
-planned separately.
+removes them manually while the server is stopped. Activity reports are signed by a stable Dash
+identity and bound to the transfer ticket. Durable retry of a lost final report and linking a
+resumed download to its earlier attempt are still pending. Shared archive storage, access control,
+remote content sources for multiplayer, and Docker service profiles are planned separately.

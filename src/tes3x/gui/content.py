@@ -1,5 +1,6 @@
 """The GUI's standalone content library and server controls."""
 
+import json
 import sys
 from pathlib import Path
 
@@ -18,6 +19,8 @@ class ContentPage(QWidget):
         self.window = window
         self.process = None
         self.manual = []
+        self.output_pending = ""
+        self.activity_rows = {}
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("Content library"))
         form = QFormLayout()
@@ -58,6 +61,12 @@ class ContentPage(QWidget):
         layout.addLayout(buttons)
         self.status = QLabel("Stopped")
         layout.addWidget(self.status)
+        layout.addWidget(QLabel("Recent install activity"))
+        self.activity_tree = QTreeWidget()
+        self.activity_tree.setHeaderLabels(["Build", "Client", "Stage", "Progress", "Sent", "File"])
+        self.activity_tree.setRootIsDecorated(False)
+        self.activity_tree.setMaximumHeight(190)
+        layout.addWidget(self.activity_tree)
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
         self.log.setMaximumBlockCount(2000)
@@ -187,16 +196,48 @@ class ContentPage(QWidget):
         process.readyReadStandardOutput.connect(self.read_output)
         process.finished.connect(self.finished)
         self.process = process
+        self.output_pending = ""
+        self.activity_rows.clear()
+        self.activity_tree.clear()
         process.start()
         self.status.setText("Starting…")
         self.start_button.setEnabled(False)
 
     def read_output(self):
         if self.process is not None:
-            text = bytes(self.process.readAllStandardOutput()).decode("utf-8", "replace")
-            self.log.insertPlainText(text)
-            if "content server on " in text:
+            output = bytes(self.process.readAllStandardOutput()).decode("utf-8", "replace")
+            self.output_pending += output
+            while "\n" in self.output_pending:
+                line, self.output_pending = self.output_pending.split("\n", 1)
+                if line.startswith("activity "):
+                    try:
+                        self.show_activity(json.loads(line[9:]))
+                    except (ValueError, KeyError, TypeError):
+                        continue
+                else:
+                    self.log.appendPlainText(line)
+            if "content server on " in output:
                 self.status.setText("Running")
+
+    def show_activity(self, activity):
+        key = activity["attempt"]
+        row = self.activity_rows.get(key)
+        if row is None:
+            row = QTreeWidgetItem()
+            self.activity_rows[key] = row
+            self.activity_tree.insertTopLevelItem(0, row)
+            if len(self.activity_rows) > 128:
+                oldest = self.activity_tree.takeTopLevelItem(self.activity_tree.topLevelItemCount() - 1)
+                self.activity_rows.pop(oldest.data(0, 0x0100), None)
+            row.setData(0, 0x0100, key)
+        done, total = activity["done"], activity["total"]
+        progress = f"{done * 100 // total}%" if total else "—"
+        row.setText(0, activity["entry"])
+        row.setText(1, activity["client"])
+        row.setText(2, activity["stage"])
+        row.setText(3, progress)
+        row.setText(4, f"{activity['wire'] / (1 << 20):.1f} MB")
+        row.setText(5, activity["file"])
 
     def finished(self, code, _status):
         self.read_output()

@@ -1,10 +1,13 @@
 import http.client
 import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (Ed25519PrivateKey,
+                                                                 Ed25519PublicKey)
 
 from tes3x import content, manifest
 
@@ -66,6 +69,40 @@ class ContentTests(unittest.TestCase):
         self.assertEqual(self.request(f"/{'0' * 32}/file/mod.esp")[0], 403)
         self.assertFalse(content.safe_relative("../escape"))
         self.assertFalse(content.safe_relative("a/../../escape"))
+
+    def test_activity_requires_ticket_and_keeps_terminal_result(self):
+        private = Ed25519PrivateKey.generate()
+        public = private.public_key().public_bytes(serialization.Encoding.Raw,
+                                                   serialization.PublicFormat.Raw).hex()
+        _, body = self.request(f"/v1/ticket/sample?client={public}")
+        token = self.signed(body)[1]["token"]
+
+        def report(stage, done=0, total=0, key=private):
+            message = f"{token}:{stage}:{done}:{total}".encode()
+            signature = key.sign(message).hex()
+            return self.request(f"/v1/report/{token}?stage={stage}&done={done}"
+                                f"&total={total}&sig={signature}")[0]
+
+        self.assertEqual(self.server.activity_snapshot(), [])
+        self.assertEqual(self.request(f"/v1/report/{'0' * 32}?stage=complete")[0], 403)
+        self.assertEqual(report("bogus"), 400)
+        self.assertEqual(report("downloading", 2, 5, Ed25519PrivateKey.generate()), 403)
+        self.assertEqual(report("downloading", 2, 5), 200)
+        self.assertEqual(self.request(f"/{token}/file/mod.esp")[0], 200)
+        deadline = time.monotonic() + 2
+        while self.server.activity_snapshot()[0]["wire"] == 0 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        row = self.server.activity_snapshot()[0]
+        self.assertEqual((row["stage"], row["done"], row["wire"], row["file"]),
+                         ("downloading", 2, len(b"first revision"), "mod.esp"))
+        self.assertNotIn(token, row.values())
+        self.assertEqual(report("complete"), 200)
+        self.assertEqual(report("failed"), 200)
+        self.assertEqual(self.server.activity_snapshot()[0]["stage"], "complete")
+        with self.server.lock:
+            self.server.activity.clear()
+        self.assertEqual(report("complete"), 200)
+        self.assertEqual(self.server.activity_snapshot(), [])
 
 
 if __name__ == "__main__":

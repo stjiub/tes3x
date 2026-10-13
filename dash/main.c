@@ -60,6 +60,10 @@ static struct view v;
 static int video_up, dirty = 1;
 static Uint32 last_draw;
 static const char *progress_name;
+static struct content_host *active_content_host;
+static struct ticket *active_content_ticket;
+static unsigned content_report_time;
+static const char *content_report_stage;
 static int key_then_install;
 static int content_key_install;
 
@@ -177,6 +181,27 @@ static int progress(const char *what, unsigned long long done, unsigned long lon
     present();
     dirty = 1;
     return cancel_pressed();
+}
+
+static int content_progress(const char *what, unsigned long long done, unsigned long long total)
+{
+    const char *stage = "planning";
+    unsigned now = SDL_GetTicks();
+
+    if (progress_name) {
+        if (strstr(progress_name, "retail")) stage = "retail";
+        else if (strstr(progress_name, "Downloading")) stage = "downloading";
+        else if (strstr(progress_name, "Rebuilding")) stage = "rebuilding";
+        else if (strstr(progress_name, "Copying")) stage = "copying";
+        else if (strstr(progress_name, "Checking")) stage = "verifying";
+    }
+    if (active_content_host && (stage != content_report_stage
+                                || now - content_report_time >= 2000)) {
+        content_report(active_content_host, active_content_ticket, stage, done, total);
+        content_report_stage = stage;
+        content_report_time = now;
+    }
+    return progress(what, done, total);
 }
 
 static void scan(void)
@@ -592,8 +617,16 @@ static void install_content(int replace)
         return;
     }
     snprintf(label, sizeof(label), "%s/%.40s", host->name, entry->id);
+    active_content_host = host;
+    active_content_ticket = &ticket;
+    content_report_stage = NULL;
+    content_report(host, &ticket, "planning", 0, 0);
     err = install_ticket(&ticket, host->host, label, replace, folder, sizeof(folder),
-                         summary, sizeof(summary), progress);
+                         summary, sizeof(summary), content_progress);
+    content_report(host, &ticket, err ? !strcmp(err, "Cancelled.") ? "cancelled" : "failed"
+                                      : "complete", 0, 0);
+    active_content_host = NULL;
+    active_content_ticket = NULL;
     if (err == INSTALL_CONFIRM) {
         say("Replace this folder?", folder, "It holds files that are not a TES3X build.");
         v.confirm = CONFIRM_CONTENT_INSTALL;

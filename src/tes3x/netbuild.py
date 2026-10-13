@@ -181,7 +181,7 @@ class BuildServer:
             return self.reply(request, 403)
         what = parts[2]
         if what == "manifest" and len(parts) == 3:
-            return self.reply(request, 200, build.data)
+            return self.reply(request, 200, build.data, token=parts[1], what="manifest")
         path = None
         if what == "file" and len(parts) == 4:
             path = build.file(parts[3])
@@ -191,9 +191,12 @@ class BuildServer:
             path = build.delta(parts[3])
         if path is None:
             return self.reply(request, 404)
-        self.reply(request, 200, path=path)
+        self.reply(request, 200, path=path, token=parts[1], what=parts[3])
 
-    def reply(self, request, status, data=b"", path=None):
+    def on_transfer(self, token, what, sent):
+        pass
+
+    def reply(self, request, status, data=b"", path=None, token=None, what=""):
         size = path.stat().st_size if path else len(data)
         start = 0
         byte_range = request.headers.get("Range") if path and status == 200 else None
@@ -221,6 +224,8 @@ class BuildServer:
         request.end_headers()
         if path is None:
             request.wfile.write(data)
+            if token:
+                self.on_transfer(token, what, len(data))
             return
         with open(path, "rb") as stream:
             stream.seek(start)
@@ -228,6 +233,8 @@ class BuildServer:
             while left and (chunk := stream.read(min(left, 1 << 16))):
                 request.wfile.write(chunk)
                 left -= len(chunk)
+                if token:
+                    self.on_transfer(token, what, len(chunk))
 
     def close(self):
         self.http.shutdown()

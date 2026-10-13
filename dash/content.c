@@ -2,6 +2,7 @@
 
 #include "mgr.h"
 #include "monocypher-ed25519.h"
+#include "../hooks/monocypher.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,11 +10,14 @@
 #include <windows.h>
 
 #define CONTENT_FILE "E:\\TES3X\\content.ini"
+#define CONTENT_ID_FILE "E:\\TES3X\\content-id.key"
 #define CONTENT_MAX (64 * 1024 + 96)
 #define CONTENT_PORT 26510
 
 const char CONTENT_KEY_CHANGED[] = "The content server's key has changed.";
 const char CONTENT_BUILD_CHANGED[] = "The offered build has changed.";
+static unsigned char content_secret[64], content_public[32];
+static int content_identity_loaded;
 
 static int digit(char c)
 {
@@ -44,6 +48,39 @@ static void hex(char *out, const unsigned char *data, size_t n)
     for (i = 0; i < n; i++)
         out[i * 2] = abc[data[i] >> 4], out[i * 2 + 1] = abc[data[i] & 15];
     out[n * 2] = 0;
+}
+
+static int content_identity(void)
+{
+    unsigned char *saved = NULL, seed[32];
+    size_t n = 0;
+    int created = 0;
+
+    if (content_identity_loaded)
+        return 0;
+    if (!read_file(CONTENT_ID_FILE, &saved, &n)) {
+        if (n != sizeof(seed)) {
+            free(saved);
+            return -1;
+        }
+        memcpy(seed, saved, sizeof(seed));
+        free(saved);
+    } else {
+        if (server_random(seed, sizeof(seed)))
+            return -1;
+        created = 1;
+    }
+    if (created) {
+        CreateDirectoryA("E:\\TES3X", NULL);
+        if (write_flushed(CONTENT_ID_FILE, seed, sizeof(seed))) {
+            crypto_wipe(seed, sizeof(seed));
+            return -1;
+        }
+    }
+    crypto_ed25519_key_pair(content_secret, content_public, seed);
+    crypto_wipe(seed, sizeof(seed));
+    content_identity_loaded = 1;
+    return 0;
 }
 
 static int split(struct content_host *host)
@@ -276,10 +313,13 @@ const char *content_ticket(struct content_host *host, const struct content_entry
 {
     struct json j = {0};
     unsigned char *body = NULL;
-    char path[96], hex_sha[65], hex_token[33], build[65];
+    char path[180], hex_sha[65], hex_token[33], build[65], pub[65];
     const char *err;
 
-    snprintf(path, sizeof(path), "/v1/ticket/%s", entry->id);
+    if (content_identity())
+        return "Could not load the Dash content identity.";
+    hex(pub, content_public, 32);
+    snprintf(path, sizeof(path), "/v1/ticket/%s?client=%s", entry->id, pub);
     err = get_signed(host, path, &j, &body);
     if (err)
         goto done;
@@ -305,4 +345,25 @@ done:
     json_free(&j);
     free(body);
     return err;
+}
+
+int content_report(const struct content_host *host, const struct ticket *ticket,
+                   const char *stage, unsigned long long done, unsigned long long total)
+{
+    char token[33], signature[129], message[128], url[512];
+    unsigned char sig[64];
+    unsigned char *body = NULL;
+    size_t n;
+    const char *err;
+
+    hex(token, ticket->token, 16);
+    snprintf(message, sizeof(message), "%s:%s:%llu:%llu", token, stage, done, total);
+    crypto_ed25519_sign(sig, content_secret, (const unsigned char *)message, strlen(message));
+    hex(signature, sig, sizeof(sig));
+    snprintf(url, sizeof(url),
+             "http://%s:%u/v1/report/%s?stage=%s&done=%llu&total=%llu&sig=%s",
+             host->host, host->port, token, stage, done, total, signature);
+    err = http_get(url, &body, &n, 128, NULL);
+    free(body);
+    return err ? -1 : 0;
 }

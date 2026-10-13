@@ -170,6 +170,7 @@ int server_accept_key(struct server *s);
 /* Drops the server's section from its servers.ini; the keys go with it. */
 int server_remove(const struct server *s);
 void server_fingerprint(const unsigned char key[32], char hex[33]);
+int server_random(unsigned char *out, size_t n);
 /* Pins the server's key on first contact and keeps a new identity key; NULL, or why not:
  * SERVER_PASSWORD when the password is missing or wrong. */
 extern const char SERVER_PASSWORD[];
@@ -215,6 +216,8 @@ const char *content_catalog(struct content_host *host, struct content_entry *out
                             int *count);
 const char *content_ticket(struct content_host *host, const struct content_entry *entry,
                            struct ticket *out);
+int content_report(const struct content_host *host, const struct ticket *ticket,
+                   const char *stage, unsigned long long done, unsigned long long total);
 
 int read_file(const char *path, unsigned char **data, size_t *n);
 /* Writes a file and flushes it to the disk; flush_path flushes one already written. */

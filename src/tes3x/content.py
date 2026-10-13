@@ -12,6 +12,7 @@ import time
 import urllib.parse
 from pathlib import Path, PurePosixPath
 
+from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
@@ -20,6 +21,10 @@ from tes3x import manifest, netbuild
 PORT = 26510
 MAX_ENTRIES = 64
 MAX_CATALOG = 64 * 1024
+MAX_ACTIVITY = 128
+ACTIVITY_IDLE = 90
+STAGES = {"planning", "retail", "downloading", "verifying", "rebuilding",
+          "copying", "retrying", "complete", "failed", "cancelled"}
 ENTRY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,41}\Z")
 
 
@@ -176,7 +181,80 @@ class ContentServer(netbuild.BuildServer):
 
     def __init__(self, library, bind, port, log=print):
         self.library = library
+        self.activity = {}
+        self.completed = {}
         super().__init__(None, bind, port, log=log)
+
+    def activity_start(self, token):
+        with self.lock:
+            found = self.tickets.get(token)
+            if not found or found[0] < time.monotonic() or token in self.completed:
+                return None
+            if token not in self.activity:
+                now = time.monotonic()
+                self.activity[token] = {"attempt": secrets.token_hex(8),
+                                        "client": ((hashlib.sha256(found[5]).hexdigest()[:12]
+                                                    + " @ " + found[3]) if found[5] else found[3]),
+                                        "entry": found[2],
+                                        "build": found[4], "stage": "planning",
+                                        "done": 0, "total": 0, "wire": 0,
+                                        "file": "", "seen": now}
+                while len(self.activity) > MAX_ACTIVITY:
+                    self.activity.pop(next(iter(self.activity)))
+            return self.activity[token]
+
+    def activity_update(self, token, **fields):
+        now = time.monotonic()
+        with self.lock:
+            row = self.activity.get(token)
+            if row is None or row["stage"] in ("complete", "failed", "cancelled"):
+                return
+            if fields.get("stage") in ("complete", "failed", "cancelled") \
+                    and not fields.get("total"):
+                fields["done"], fields["total"] = row["done"], row["total"]
+            row.update(fields)
+            row["seen"] = now
+            if row["stage"] in ("complete", "failed", "cancelled"):
+                self.completed[token] = self.tickets.get(token, (now,))[0]
+                while len(self.completed) > netbuild.TICKETS:
+                    self.completed.pop(next(iter(self.completed)))
+            visible = {key: value for key, value in row.items()
+                       if key not in ("seen", "emitted")}
+        self.log("activity " + json.dumps(visible, separators=(",", ":")))
+
+    def on_transfer(self, token, what, sent):
+        now = time.monotonic()
+        self.activity_start(token)
+        with self.lock:
+            row = self.activity.get(token)
+            if row is None or row["stage"] in ("complete", "failed", "cancelled"):
+                return
+            row["wire"] += sent
+            row["file"] = what[:80]
+            row["seen"] = now
+            if now - row.get("emitted", 0) < 1:
+                return
+            row["emitted"] = now
+            visible = {key: value for key, value in row.items()
+                       if key not in ("seen", "emitted")}
+        self.log("activity " + json.dumps(visible, separators=(",", ":")))
+
+    def activity_snapshot(self):
+        now = time.monotonic()
+        expired = []
+        with self.lock:
+            for row in self.activity.values():
+                if row["stage"] not in ("complete", "failed", "cancelled", "unknown") \
+                        and now - row["seen"] > ACTIVITY_IDLE:
+                    row["stage"] = "unknown"
+                    expired.append({key: value for key, value in row.items()
+                                    if key not in ("seen", "emitted")})
+            snapshot = [{key: value for key, value in row.items()
+                         if key not in ("seen", "emitted")}
+                        for row in self.activity.values()]
+        for row in expired:
+            self.log("activity " + json.dumps(row, separators=(",", ":")))
+        return snapshot
 
     def build_for(self, token):
         with self.lock:
@@ -185,6 +263,42 @@ class ContentServer(netbuild.BuildServer):
 
     def get(self, request):
         path = urllib.parse.urlsplit(request.path).path
+        if path.startswith("/v1/report/"):
+            if len(request.path) > 256:
+                return self.reply(request, 400)
+            token = path[len("/v1/report/"):]
+            if not re.fullmatch(r"[0-9a-f]{32}", token) or self.build_for(token) is None:
+                return self.reply(request, 403)
+            with self.lock:
+                ticket = self.tickets.get(token)
+            if ticket is None or ticket[3] != request.client_address[0] or ticket[5] is None:
+                return self.reply(request, 403)
+            try:
+                params = urllib.parse.parse_qs(urllib.parse.urlsplit(request.path).query,
+                                               max_num_fields=4)
+                stage = params["stage"][0]
+                done = int(params.get("done", ["0"])[0])
+                total = int(params.get("total", ["0"])[0])
+                signature = params["sig"][0]
+            except (KeyError, ValueError, IndexError):
+                return self.reply(request, 400)
+            if (stage not in STAGES or not 0 <= done <= 1 << 45
+                    or not 0 <= total <= 1 << 45 or done > total and total
+                    or not re.fullmatch(r"[0-9a-f]{128}", signature)):
+                return self.reply(request, 400)
+            message = f"{token}:{stage}:{done}:{total}".encode()
+            try:
+                ed25519.Ed25519PublicKey.from_public_bytes(ticket[5]).verify(
+                    bytes.fromhex(signature), message)
+            except InvalidSignature:
+                return self.reply(request, 403)
+            with self.lock:
+                already_complete = token in self.completed
+            if already_complete:
+                return self.reply(request, 200)
+            self.activity_start(token)
+            self.activity_update(token, stage=stage, done=done, total=total)
+            return self.reply(request, 200)
         if path == "/v1/catalog":
             try:
                 return self.reply(request, 200, self.library.catalog())
@@ -193,6 +307,15 @@ class ContentServer(netbuild.BuildServer):
                 return self.reply(request, 503)
         if path.startswith("/v1/ticket/"):
             entry_id = path[len("/v1/ticket/"):]
+            try:
+                params = urllib.parse.parse_qs(urllib.parse.urlsplit(request.path).query,
+                                               max_num_fields=2)
+            except ValueError:
+                return self.reply(request, 400)
+            client = params.get("client", [None])[0]
+            if client is not None and not re.fullmatch(r"[0-9a-f]{64}", client):
+                return self.reply(request, 400)
+            client_key = bytes.fromhex(client) if client else None
             with self.library.lock:
                 entry = self.library.entries.get(entry_id)
                 build = self.library.revisions.get(entry["revision"]) if entry else None
@@ -205,7 +328,9 @@ class ContentServer(netbuild.BuildServer):
                                 if value[0] >= now}
                 if len(self.tickets) >= netbuild.TICKETS:
                     self.tickets.pop(next(iter(self.tickets)))
-                self.tickets[token.hex()] = (now + netbuild.TICKET_SECONDS, build)
+                self.tickets[token.hex()] = (now + netbuild.TICKET_SECONDS, build, entry_id,
+                                             request.client_address[0], entry["build"][:12],
+                                             client_key)
             body = json.dumps({"format": 1, "build": entry["build"],
                                "sha256": build.sha256.hex(), "size": len(build.data),
                                "token": token.hex()}, separators=(",", ":")).encode()
@@ -244,6 +369,7 @@ def main(argv=None):
                 library.refresh()
             except (OSError, ValueError, KeyError) as error:
                 print(f"content library: {error}", flush=True)
+            server.activity_snapshot()
 
     threading.Thread(target=watch, daemon=True).start()
     try:

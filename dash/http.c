@@ -324,7 +324,12 @@ static const char *open_get(const char *url, struct conn *c, char *head, size_t 
     for (redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
         if (split_url(current, &tls, host, sizeof(host), port, path, sizeof(path)))
             return "not an http or https address";
-        mgr_log("http: GET %s\n", current);
+        /* Ticket URLs are bearer credentials; keep them out of local logs. */
+        if (strstr(path, "/v1/report/")
+            || (strlen(path) > 34 && path[0] == '/' && path[33] == '/'))
+            mgr_log("http: GET ticket resource\n");
+        else
+            mgr_log("http: GET %s\n", current);
         if ((err = conn_open(c, host, port, tls)))
             return err;
         usual = !strcmp(port, tls ? "443" : "80");
