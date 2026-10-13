@@ -24,10 +24,6 @@
 #ifndef TES3X_MEM_CODE_START
 #error "define TES3X_MEM_CODE_START and TES3X_MEM_CODE_END to the XBE's .text range"
 #endif
-#ifndef TES3X_BUILD_ID
-#define TES3X_BUILD_ID 0
-#endif
-
 #define NtCreateFile KFN(THUNK_NtCreateFile, fn_NtCreateFile)
 #define NtWriteFile KFN(THUNK_NtWriteFile, fn_NtWriteFile)
 #define NtClose KFN(THUNK_NtClose, fn_NtClose)

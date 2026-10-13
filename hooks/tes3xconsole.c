@@ -7,36 +7,26 @@
 #include "tes3xlog.h"
 #include "tes3xini.h"
 #include "tes3xlaunch.h"
-#ifdef TES3X_DIAGNOSTICS
 #include "tes3xdiag.h"
-#endif
-#ifdef TES3X_PROFILE
 #include "tes3xprof.h"
-#endif
-#ifdef TES3X_HEAP
 #include "tes3xheap.h"
-#endif
-#ifdef TES3X_MEM
 #include "tes3xmem.h"
-#endif
-#ifdef TES3X_PAGER
 #include "tes3xpager.h"
-#endif
-#ifdef TES3X_REGION
 #include "tes3xregion.h"
-#endif
-#ifdef TES3X_NET
-int tes3x_net_command(const char *text);
-#endif
-#ifdef TES3X_MCP3_TEST
-int tes3x_mcp3_test_command(const char *text);
-#endif
-#ifdef TES3X_DIALMERGE_TEST
-int tes3x_dialmerge_test_command(const char *text);
-#endif
-#ifdef TES3X_SAVES
-int tes3x_autosave_command(void *game, const char *text);
-#endif
+
+/* Other features' commands: 0 unless their patches are linked in. */
+TES3X_OPTIONAL int tes3x_prof_command(const char *text);
+TES3X_OPTIONAL int tes3x_heap_command(const char *text);
+TES3X_OPTIONAL int tes3x_mem_command(const char *text);
+TES3X_OPTIONAL int tes3x_pager_command(const char *text);
+TES3X_OPTIONAL int tes3x_net_command(const char *text);
+TES3X_OPTIONAL int tes3x_region_command(const char *text);
+TES3X_OPTIONAL int tes3x_mcp3_test_command(const char *text);
+TES3X_OPTIONAL int tes3x_dialmerge_test_command(const char *text);
+TES3X_OPTIONAL int tes3x_diag_command(const char *text);
+TES3X_OPTIONAL int tes3x_autosave_command(void *game, const char *text);
+TES3X_OPTIONAL void tes3x_region_mark(const char *label);
+TES3X_OPTIONAL void tes3x_diag_note(u32 code, u32 value);
 
 #ifndef TES3X_INI_GET_STRING
 #error "define TES3X_INI_GET_STRING to the VA of the ini string reader"
@@ -892,50 +882,30 @@ static void run_command(const char *text)
     void *ctx, *script;
 
     first_len = 0;
-#ifdef TES3X_PROFILE
-    if (tes3x_prof_command(text))
+    if (tes3x_prof_command && tes3x_prof_command(text))
         return;
-#endif
-#ifdef TES3X_HEAP
-    if (tes3x_heap_command(text))
+    if (tes3x_heap_command && tes3x_heap_command(text))
         return;
-#endif
-#ifdef TES3X_MEM
-    if (tes3x_mem_command(text))
+    if (tes3x_mem_command && tes3x_mem_command(text))
         return;
-#endif
-#ifdef TES3X_PAGER
-    if (tes3x_pager_command(text))
+    if (tes3x_pager_command && tes3x_pager_command(text))
         return;
-#endif
-#ifdef TES3X_NET
-    if (tes3x_net_command(text))
+    if (tes3x_net_command && tes3x_net_command(text))
         return;
-#endif
-#ifdef TES3X_REGION
-    if (tes3x_region_command(text))
+    if (tes3x_region_command && tes3x_region_command(text))
         return;
-#endif
-#ifdef TES3X_MCP3_TEST
-    if (tes3x_mcp3_test_command(text))
+    if (tes3x_mcp3_test_command && tes3x_mcp3_test_command(text))
         return;
-#endif
-#ifdef TES3X_DIALMERGE_TEST
-    if (tes3x_dialmerge_test_command(text))
+    if (tes3x_dialmerge_test_command && tes3x_dialmerge_test_command(text))
         return;
-#endif
-#ifdef TES3X_DIAGNOSTICS
-    if (tes3x_diag_command(text))
+    if (tes3x_diag_command && tes3x_diag_command(text))
         return;
-#endif
     if (!game) {
         tes3x_log("console.no_game", 0);
         return;
     }
-#ifdef TES3X_SAVES
-    if (tes3x_autosave_command(game, text))
+    if (tes3x_autosave_command && tes3x_autosave_command(game, text))
         return;
-#endif
     mgr = *(unsigned char **)(game + GAME_MENUMGR);
     script = *(void **)(game + GAME_SCRIPT);
     ctx = mgr ? *(void **)(mgr + MENUMGR_CTX) : 0;
@@ -1293,9 +1263,7 @@ static int exec_number(const char *s)
 static void exec_mark(const char *label)
 {
     MM_STATS st;
-#ifdef TES3X_REGION
     const char *ws_label = label;
-#endif
     char tag[64];
     u32 n;
 
@@ -1310,9 +1278,8 @@ static void exec_mark(const char *label)
     if (MmQueryStatistics(&st) != 0)
         st.AvailablePages = 0;
     tes3x_log(tag, st.AvailablePages * 4);
-#ifdef TES3X_REGION
-    tes3x_region_mark(ws_label);
-#endif
+    if (tes3x_region_mark)
+        tes3x_region_mark(ws_label);
 }
 
 static u32 assert_total, assert_failed;
@@ -1839,9 +1806,8 @@ unsigned int __attribute__((thiscall)) tes3x_console_hook(void *ctrl, int action
         tes3x_vk_limit = VK_TEXT_LIMIT;
     }
     tes3x_log("console.toggle", (u32)console_open);
-#ifdef TES3X_DIAGNOSTICS
-    tes3x_diag_note(TES3X_DIAG_NOTE_CONSOLE, (u32)console_open);
-#endif
+    if (tes3x_diag_note)
+        tes3x_diag_note(TES3X_DIAG_NOTE_CONSOLE, (u32)console_open);
     return 1;
 }
 

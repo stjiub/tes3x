@@ -22,8 +22,6 @@
 #error "define TES3X_INI_PATH to the VA of the engine's ini filename string"
 #endif
 
-#define TES3X_STR_(x) #x
-#define TES3X_STR(x) TES3X_STR_(x)
 
 /* __cdecl: 0x001933E0 ends `mov esp,ebp; pop ebp; ret`, so the caller clears the arguments. */
 /* MCP drops unconditionally - clean saving. This is an escape hatch, not MCP's Keep Replaced
@@ -105,7 +103,7 @@ __attribute__((naked)) void tes3x_ref_load_hook(void)
         "popal\n\t"
         "1:\n\t"
         "movl 0x4dc(%ebp), %eax\n\t" /* the instruction the patch replaced */
-        "pushl $" TES3X_STR(TES3X_REF_RESUME) "\n\t"
+        "pushl $" TES3X_SYM(REF_RESUME) "\n\t"
         "ret\n\t"
         "2:\n\t"
         "pushal\n\t"
@@ -120,6 +118,6 @@ __attribute__((naked)) void tes3x_ref_load_hook(void)
         "movb $0x0, 0x12(%esp)\n\t" /* do not create a reference */
         "movb $0x1, 0x13(%esp)\n\t" /* take the skip branch */
         "movb $0x0, 0x20(%esp)\n\t"
-        "pushl $" TES3X_STR(TES3X_REF_SKIP) "\n\t"
+        "pushl $" TES3X_SYM(REF_SKIP) "\n\t"
         "ret\n\t");
 }

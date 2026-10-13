@@ -18,9 +18,8 @@ typedef unsigned short u16;
 typedef u32(__stdcall *fn_MmQueryStatistics)(void *);
 typedef void(__stdcall *fn_HalReturnToFirmware)(u32);
 
-#ifdef TES3X_CONSOLE
-int tes3x_console_submit(const char *text, u32 n);
-#endif
+TES3X_OPTIONAL int tes3x_console_submit(const char *text, u32 n);
+TES3X_OPTIONAL void tes3x_multi_entry(void);
 
 #define MmQueryStatistics KFN(THUNK_MmQueryStatistics, fn_MmQueryStatistics)
 #define NtCreateFile KFN(THUNK_NtCreateFile, fn_NtCreateFile)
@@ -326,12 +325,12 @@ static void configure(void)
             return;
         }
     }
-#ifndef TES3X_MULTIPLAYER
-    if (!tes3x_net_autostart())
-        return;
-    if (!gateway)
-        gateway = tes3x_net_gateway();
-#endif
+    if (!tes3x_multi_entry) {
+        if (!tes3x_net_autostart())
+            return;
+        if (!gateway)
+            gateway = tes3x_net_gateway();
+    }
     if (!tes3x_net.up)
         return;
     tes3x_net_route(&agent_channel, target, gateway);
@@ -660,7 +659,10 @@ static void request(const u8 *body, u32 n)
         reply(id, ST_BAD, 0, 0);
         return;
     }
-#ifdef TES3X_CONSOLE
+    if (!tes3x_console_submit) {
+        reply(id, ST_UNSUPPORTED, 0, 0);
+        return;
+    }
     if (done_has(id)) {
         reply(id, ST_OK, 0, 0);
         return;
@@ -671,9 +673,6 @@ static void request(const u8 *body, u32 n)
     }
     done.id[done.next++ % AGENT_DONE] = id;
     reply(id, ST_OK, 0, 0);
-#else
-    reply(id, ST_UNSUPPORTED, 0, 0);
-#endif
 }
 
 static void requests_step(void)

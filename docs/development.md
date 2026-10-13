@@ -6,10 +6,9 @@ regenerating the generated pages and making releases. Playing builds needs none 
 
 ## Setting up a checkout
 
-You need Python 3.12 or newer and git. Source payload builds need
-[LLVM](https://releases.llvm.org) (`clang` and `lld-link`) on `PATH` or in `paths.llvm`, and
-installing `.7z` and `.rar` mods
-needs [7-Zip](https://www.7-zip.org).
+You need Python 3.12 or newer and git. Changing payload sources in `hooks/` needs
+[LLVM](https://releases.llvm.org)'s `clang` on `PATH` or in `paths.llvm`, and installing `.7z`
+and `.rar` mods needs [7-Zip](https://www.7-zip.org).
 
 ```powershell
 git clone https://github.com/stjiub/tes3x
@@ -74,7 +73,7 @@ tes3x package --zip
 writes `build/package/TES3X-<version>/` and `TES3X-<version>.zip`: an embedded Python 3.12 with
 TES3X and its packages installed from a wheel built from the checkout, `TES3X.exe`, which starts
 the GUI with that Python, and `tes3x-cli.exe`, which runs `tes3x` commands in a terminal.
-`externals/` holds 7-Zip with its license. The wheel carries the checked prebuilt payloads.
+`externals/` holds 7-Zip with its license. The wheel carries the payload objects.
 
 It also carries the [TES3X Dash](deployment.md#installing-tes3x-dash) as
 `dash/default.xbe` and its launcher as `dash/launcher.xbe`, built with nxdk (`paths.nxdk`),
@@ -82,13 +81,29 @@ or taken from `--dash XBE` and `--launcher XBE`. `--no-dash` leaves both out.
 
 Building the folder needs a C compiler for the two launchers (MSYS2's `gcc` or `clang`, or
 `--cc`). The first build downloads Python and 7-Zip, checks each against a pinned SHA-256, and
-keeps them in the data folder's `package` folder for later builds. Developers who use
-`--build-payload` or unsupported source sets provide LLVM separately.
+keeps them in the data folder's `package` folder for later builds. Developers who change payload sources provide LLVM separately.
 
-To rebuild the seven bundled payloads after changing their sources, run
-`python tools/build_prebuilt_payloads.py RETAIL_XBE payloads --work build/prebuilt` with a
-locally supplied GOTY engine and LLVM available. The script writes the PE files, binding
-manifests and SHA-256 index; review and commit them together. It does not copy the input XBE.
+## Payload objects
+
+`payloads/objects/` holds one object per payload source, compiled once, and `index.json` with
+each object's SHA-256 and a digest of the source, headers and compiler flags it came from.
+A build links the objects of the selected patches with `tes3x.link`; engine addresses, kernel
+thunk slots and the original entry are undefined symbols there, resolved for the target XBE.
+A source whose digest no longer matches is compiled again, which needs clang, and the test
+suite fails until the bundled objects are current. After changing anything in `hooks/`, run
+
+```powershell
+python tools/build_payload_objects.py NTSC_XBE --llvm LLVM_BIN
+```
+
+with the NTSC GOTY `morrowind.xbe`, the one engine every patch binds on, and commit the
+objects with the source change. The XBE only sets the element counts of call-site lists in the
+generated header; the objects hold no engine values, and they rebuild byte for byte.
+
+Code in one source that uses another patch's feature declares that function
+`TES3X_OPTIONAL` (a weak reference) and checks it before calling, so an object never depends
+on which other patches are selected. Engine values used in inline assembly are written
+`TES3X_SYM(NAME)`.
 
 The folder's version, in its `VERSION` file, is `X.Y.Z` at a `vX.Y.Z` tag, and
 `X.Y.Z-dev.N+gSHA` for a commit N past it, with `.dirty` when the checkout has uncommitted

@@ -45,12 +45,7 @@ __attribute__((naked)) void tes3x_net_death_gate(void)
     __asm__ volatile("call _tes3x_net_death\n\t"
                      "testl %eax, %eax\n\t"
                      "jnz 1f\n\t"
-#ifdef TES3X_PORTABLE_BINDINGS
-                     "movl _tes3x_binding_values+"
-                     TES3X_NET_STR(TES3X_NET_DATA_HANDLER_BIND_OFFSET) ", %eax\n\t"
-#else
-                     "movl " TES3X_NET_STR(TES3X_NET_DATA_HANDLER) ", %eax\n\t"
-#endif
+                     "movl " TES3X_SYM(NET_DATA_HANDLER) ", %eax\n\t"
                      "ret\n\t"
                      "1:\n\t"
                      "addl $4, %esp\n\t"

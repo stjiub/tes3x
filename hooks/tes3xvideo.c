@@ -18,8 +18,6 @@
 #error "define TES3X_VIDEO_ENUM_MODES to Direct3D_EnumAdapterModes"
 #endif
 
-#define TES3X_STR_(x) #x
-#define TES3X_STR(x) TES3X_STR_(x)
 
 #define KFN(slot, type) (*(type *)(slot))
 
@@ -102,7 +100,7 @@ __attribute__((naked)) void tes3x_video_renderer_hook(void)
         "movl %eax, 4(%esp)\n\t"
         "movl 12(%esi), %eax\n\t"
         "movl %eax, 8(%esp)\n\t"
-        "pushl $" TES3X_STR(TES3X_VIDEO_RENDERER_CREATE) "\n\t"
+        "pushl $" TES3X_SYM(VIDEO_RENDERER_CREATE) "\n\t"
         "ret\n\t");
 }
 
@@ -116,6 +114,6 @@ __attribute__((naked)) void tes3x_video_create_hook(void)
         "pushl 36(%esp)\n\t"
         "call _tes3x_video_present@4\n\t"
         "popal\n\t"
-        "pushl $" TES3X_STR(TES3X_VIDEO_CREATE_DEVICE) "\n\t"
+        "pushl $" TES3X_SYM(VIDEO_CREATE_DEVICE) "\n\t"
         "ret\n\t");
 }

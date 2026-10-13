@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a portable TES3X folder with launchers, Python, 7-Zip and prebuilt payloads."""
+"""Build a portable TES3X folder with launchers, Python, 7-Zip and payload objects."""
 
 import argparse
 import hashlib

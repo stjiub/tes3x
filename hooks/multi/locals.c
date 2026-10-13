@@ -345,9 +345,8 @@ static void local_query(const char *text)
                                 copy((u8 *)&shown, (const u8 *)&value, 4);
                             else
                                 shown = (float)(int)value;
-#ifdef TES3X_CONSOLE
-                            tes3x_console_reply("%s.%s >> %.2f", id, text, (double)shown);
-#endif
+                            if (HAS_CONSOLE)
+                                tes3x_console_reply("%s.%s >> %.2f", id, text, (double)shown);
                             (void)shown;
                             return;
                         }

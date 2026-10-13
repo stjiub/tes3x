@@ -369,9 +369,8 @@ static void ai_query(const char *text)
         }
     }
     tes3x_log_hex3("net.ai", refid, (u32)value, 0);
-#ifdef TES3X_CONSOLE
-    tes3x_console_reply("%s >> %.2f", text, (double)value);
-#endif
+    if (HAS_CONSOLE)
+        tes3x_console_reply("%s >> %.2f", text, (double)value);
 }
 
 static void ai_packages_stat(void)

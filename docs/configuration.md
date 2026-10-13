@@ -33,7 +33,7 @@ is none yet. Relative paths are relative to the file.
 | `tes3merge` | string | none | `TES3Merge.exe`, for `rules.tes3merge = true`. |
 | `build_root` | string | `build` | Parent directory for profile output folders. |
 | `worlds` | string | `worlds` | Folder holding the GUI's server worlds, one folder each, and their shared `server.key`. |
-| `llvm` | string | automatic | Directory containing `clang` and `lld-link` for source payload builds. Without an override, search `PATH` and known installation folders. |
+| `llvm` | string | automatic | Directory containing `clang`, for payload sources changed since their bundled objects. Without an override, search `PATH` and known installation folders. |
 | `nxdk` | string | none | nxdk checkout with its libraries built, for `tes3x nxdk`. `NXDK_DIR` takes precedence. |
 | `msys2` | string | `C:/msys64` | MSYS2 install whose `make`, `clang` and `lld` build nxdk programs on Windows. |
 | `hardlink_retail` | boolean | `false` | Hardlink unchanged retail files when source and output are on the same volume. |
@@ -213,8 +213,8 @@ every build.
 | `drive_letter` | string | `D` | Drive used for game-directory asset paths. |
 | `loose_assets` | array of strings | `[]` | Path patterns kept loose in an archive build. |
 
-`delta-bsa` and engine patches use a matching prebuilt payload when available; other combinations
-require LLVM. A patches-only profile does not package `Data Files`;
+`delta-bsa` and engine patches need no compiler: the payload links from bundled objects.
+A patches-only profile does not package `Data Files`;
 it stages the retail directory unchanged. The install layout is independent of package mode: an
 overlay may still use delta archives, a merged archive or loose mod files.
 

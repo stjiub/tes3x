@@ -31,8 +31,6 @@
 #error "define TES3X_INFO_FINISH_ORIGINAL to the displaced post-pass call"
 #endif
 
-#define STR_(x) #x
-#define STR(x) STR_(x)
 #define PAGE 4096u
 #define BLOCK 112u /* owner, three pointers, and three 32-byte names */
 
@@ -105,7 +103,7 @@ __attribute__((naked)) void tes3x_info_names_allocate_hook(void)
         "jz 1f\n\t"
         "retl\n\t"
         "1:\n\t"
-        "pushl $" STR(TES3X_INFO_NAMES_ALLOCATE) "\n\t"
+        "pushl $" TES3X_SYM(INFO_NAMES_ALLOCATE) "\n\t"
         "retl\n\t");
 }
 
@@ -170,6 +168,6 @@ __attribute__((naked)) void tes3x_info_finish_hook(void)
         "call _info_finish\n\t"
         "popal\n\t"
         "popfl\n\t"
-        "pushl $" STR(TES3X_INFO_FINISH_ORIGINAL) "\n\t"
+        "pushl $" TES3X_SYM(INFO_FINISH_ORIGINAL) "\n\t"
         "retl\n\t");
 }

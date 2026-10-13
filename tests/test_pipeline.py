@@ -15,7 +15,7 @@ from tes3x.pack import write_invalidation
 from tes3x.build import materialize, plugin_masters
 from tes3x.pipeline import (PipelineError, agent_ini, agent_setting, xbox_ini_text,
                             copy_retail_root, link_or_copy, resolve_patch_plan, split_console,
-                            preference_flags, sanitized_command, stage_default_xbe, stage_retail_base,
+                            sanitized_command, stage_default_xbe, stage_retail_base,
                             strip_retail_files, validate_local_config, validate_output, validate_profile)
 from tes3x.pipeline import main as pipeline_main
 from tes3x.patch import (MCP37_TREE_NEXT_SIG, PatchError, _mcp_3, _mcp_37, _mcp_92, _mcp_97,
@@ -116,7 +116,7 @@ class PathTests(unittest.TestCase):
                       ('symbols', 'structs.json'), ('examples', 'profile.toml'),
                       ('examples', 'starts.toml'), ('assets', 'menu'),
                       ('addons', 'xbmc', 'console.py'), ('tests', 'game'),
-                      ('dash', 'mgr.h'), ('keys', 'release.pub'), ('payloads', 'index.json')):
+                      ('dash', 'mgr.h'), ('keys', 'release.pub'), ('payloads', 'objects', 'index.json')):
             self.assertTrue(resource(*parts).exists(), parts)
 
 
@@ -698,8 +698,6 @@ class PipelinePlanTests(unittest.TestCase):
         plan = resolve_patch_plan(profile)
         self.assertEqual(plan['applied'], ['build-preferences'])
         self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xini.c', 'tes3xprefs.c'])
-        self.assertEqual(preference_flags(profile), '-DTES3X_INVERT_LOOK=0')
-        self.assertEqual(preference_flags({'profile': {'name': 'p'}}), '')
 
         control = resolve_patch_plan(profile, disable=['build-preferences'])
         self.assertNotIn('build-preferences', control['applied'])

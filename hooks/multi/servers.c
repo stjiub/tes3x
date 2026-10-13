@@ -409,11 +409,10 @@ static void servers_build(u8 *column, int width)
         gold_label(row, "TES3X_label", "-");
     }
     visible(box, 0);
-#ifdef TES3X_CONSOLE
-    if (plausible(row = menu_button(column, ui_id("TES3X_NewServer"), "menu_newserver", 2 * width,
-                                    new_server_click)))
+    if (HAS_CONSOLE && plausible(row = menu_button(column, ui_id("TES3X_NewServer"),
+                                                   "menu_newserver", 2 * width,
+                                                   new_server_click)))
         visible(row, 0);
-#endif
     if (plausible(row = menu_button(column, ui_id("TES3X_Return"), "menu_return", width,
                                     return_click)))
         visible(row, 0);
@@ -556,14 +555,12 @@ static void join_failed(u8 *menu, const char *why)
 static void password_ask(u8 *menu)
 {
     lobby = 0;
-#ifdef TES3X_CONSOLE
-    if (tes3x_console_text_begin_on(menu, "")) {
+    if (HAS_CONSOLE && tes3x_console_text_begin_on(menu, "")) {
         typing = TYPE_PASSWORD;
         typing_show(menu, 1);
         tes3x_log("net.join_password", trust.password_n);
         return;
     }
-#endif
     join_failed(menu, "password needed");
 }
 
@@ -801,12 +798,19 @@ static void list_follow(u8 *menu)
  * the server's section of servers.ini and the join is made again. */
 static void typing_frame(u8 *menu)
 {
-#ifdef TES3X_CONSOLE
     char text[JOIN_NAME + 1];
-    const char *now = tes3x_console_text_now();
-    u8 *field = tes3x_console_text_field();
+    const char *now;
+    u8 *field;
     u32 i, n = 0, kind = typing;
-    int status = tes3x_console_text_poll(text, sizeof(text));
+    int status;
+
+    if (!HAS_CONSOLE) {
+        typing = 0;
+        return;
+    }
+    now = tes3x_console_text_now();
+    field = tes3x_console_text_field();
+    status = tes3x_console_text_poll(text, sizeof(text));
 
     if (!status) {
         if (now)
@@ -843,10 +847,6 @@ static void typing_frame(u8 *menu)
     server_add(text, n);
     servers_show(menu, 1);
     join_server_now(menu, servers[0], menu_part(menu, server_rows[0]));
-#else
-    (void)menu;
-    typing = 0;
-#endif
 }
 
 /* A block added last to its column's children moves up to sit above `below`. */
@@ -922,13 +922,11 @@ static void join_frame(void)
         servers_show(menu, 1);
     } else if (chosen == SERVER_RETURN) {
         servers_show(menu, 0);
-#ifdef TES3X_CONSOLE
-    } else if (chosen == SERVER_NEW) {
+    } else if (chosen == SERVER_NEW && HAS_CONSOLE) {
         typing = tes3x_console_text_begin_on(menu, "") ? TYPE_SERVER : 0;
         tes3x_log("net.join_keyboard", typing);
         if (typing)
             typing_show(menu, 1);
-#endif
     } else if (chosen >= 0 && chosen < (int)servers_n) {
         join_server_now(menu, servers[chosen], menu_part(menu, server_rows[chosen]));
     }

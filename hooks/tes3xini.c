@@ -106,11 +106,6 @@ void tes3x_ini_xbox(const char *key, const char *dflt, char *out, u32 size)
         out[i] = 0;
     if (tes3x_xbox_ini(key, out, size))
         return;
-#ifdef TES3X_INI_GET_STRING
     ((fn_ini_get_string)TES3X_INI_GET_STRING)("Xbox", key, dflt, out, (int)size - 1,
                                               (const char *)TES3X_INI_PATH);
-#else
-    for (i = 0; dflt[i] && i < size - 1; i++)
-        out[i] = dflt[i];
-#endif
 }

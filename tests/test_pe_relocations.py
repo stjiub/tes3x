@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 import unittest
 
-from tes3x.inject import apply_relocations, bind_payload, load_pe, rebase_hooks
+from tes3x.inject import apply_relocations, check_manifest, load_pe, rebase_hooks
 from tes3x.payload import PayloadError, find_tool, link_symbol
 
 
@@ -68,28 +68,10 @@ class RelocationTests(unittest.TestCase):
                                      engine_site='0x401010', prof_count='16'))
         self.assertEqual(json.dumps(manifest), before)
 
-    def test_bind_payload_uses_original_entry_and_host_thunk_order(self):
-        class Host:
-            entry = 0x123456
-            thunk = 0x234000
-
-            @staticmethod
-            def thunk_ordinals():
-                return [9, 2, 7]
-
-        manifest = dict(base=0x400000, bindings=dict(orig_entry='0x400008',
-                        thunk_slots='0x400010', thunk_count=10, required_thunks=[2, 9]))
-        original = bytes(64)
-        bound = bind_payload(original, manifest, 0x500000, Host())
-        self.assertEqual(original, bytes(64))
-        self.assertEqual(struct.unpack_from('<I', bound, 8)[0], Host.entry)
-        self.assertEqual(struct.unpack_from('<I', bound, 16 + 9 * 4)[0], Host.thunk)
-        self.assertEqual(struct.unpack_from('<I', bound, 16 + 2 * 4)[0], Host.thunk + 4)
-        self.assertEqual(struct.unpack_from('<I', bound, 16 + 7 * 4)[0], Host.thunk + 8)
-        self.assertEqual(struct.unpack_from('<I', bound, 16 + 3 * 4)[0], 0)
-        manifest['bindings']['required_thunks'] = [3]
-        with self.assertRaisesRegex(ValueError, 'ordinal.*3'):
-            bind_payload(original, manifest, 0x500000, Host())
+    def test_manifest_with_patch_time_bindings_is_refused(self):
+        with self.assertRaisesRegex(ValueError, 'older TES3X'):
+            check_manifest(dict(base=0x400000, bindings=dict(orig_entry='0x400008')))
+        check_manifest(dict(base=0x400000, hooks={}))
 
 
 class LinkedRelocationTests(unittest.TestCase):
@@ -131,5 +113,5 @@ class LinkedRelocationTests(unittest.TestCase):
             hooks = rebase_hooks(manifest, 0x502000, len(blob))
             self.assertEqual({name: int(value, 16) for name, value in hooks.items()},
                              {name: int(link_symbol(maps[1], name), 16) for name in names})
-            with self.assertRaisesRegex(ValueError, 'fixed payload has no relocations'):
+            with self.assertRaisesRegex(ValueError, 'has no relocations; link it again'):
                 load_pe(paths[1], base=0x600000)

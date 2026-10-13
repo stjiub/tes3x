@@ -3,3 +3,4 @@
 *.dds binary
 *.png binary
 *.ttf binary
+*.obj binary

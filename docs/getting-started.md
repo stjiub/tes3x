@@ -38,8 +38,8 @@ The rest of the docs write commands as `tes3x COMMAND`. In a portable folder, ty
 
 Download `TES3X-<version>.zip` from the
 [releases page](https://github.com/stjiub/tes3x/releases) and unpack it into a short path, such
-as `C:\TES3X`. It carries Python, 7-Zip and supported prebuilt payloads. Install LLVM
-separately only for patch combinations that need a source build.
+as `C:\TES3X`. It carries Python, 7-Zip and the compiled payload code, so every patch combination
+builds without a compiler.
 
 - `TES3X.exe` starts the GUI.
 - `tes3x-cli.exe` runs commands: `.\tes3x-cli.exe --help` lists them.
@@ -52,10 +52,6 @@ portable folder.
 
 You need Python 3.12 or newer and [pipx](https://pipx.pypa.io), and:
 
-- [LLVM](https://releases.llvm.org) (`clang` and `lld-link`) for patch combinations outside the
-  [prebuilt payload sets](pipeline.md#4-build-the-payload-and-patch-the-xbe). The bundled sets
-  include `multi-bsa` for default `delta-bsa` packaging. Put LLVM on `PATH`, or set **LLVM
-  tools** in the GUI's settings when a source build is needed.
 - [7-Zip](https://www.7-zip.org), only to install `.7z` and `.rar` mods.
 
 ```powershell

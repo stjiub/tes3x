@@ -45,13 +45,13 @@
 #include "tes3xnet.h"
 #include "monocypher.h"
 #include "tes3xnoise.h"
-#ifdef TES3X_CONSOLE
-int tes3x_console_text_begin_on(void *menu, const char *initial);
-void *tes3x_console_text_field(void);
-int tes3x_console_text_poll(char *out, u32 size);
-const char *tes3x_console_text_now(void);
-void __cdecl tes3x_console_reply(const char *fmt, ...);
-#endif
+/* The console's typing and replies: 0 unless the console patch is linked in. */
+TES3X_OPTIONAL int tes3x_console_text_begin_on(void *menu, const char *initial);
+TES3X_OPTIONAL void *tes3x_console_text_field(void);
+TES3X_OPTIONAL int tes3x_console_text_poll(char *out, u32 size);
+TES3X_OPTIONAL const char *tes3x_console_text_now(void);
+TES3X_OPTIONAL void __cdecl tes3x_console_reply(const char *fmt, ...);
+#define HAS_CONSOLE (tes3x_console_reply != 0)
 
 #ifndef TES3X_NET_WORLD
 #error "define TES3X_NET_WORLD to the WorldController pointer"
@@ -171,8 +171,6 @@ typedef long(__stdcall *fn_KeQueryBasePriorityThread)(void *);
 #define KeQueryBasePriorityThread \
     KFN(THUNK_KeQueryBasePriorityThread, fn_KeQueryBasePriorityThread)
 
-#define TES3X_NET_STR_(x) #x
-#define TES3X_NET_STR(x) TES3X_NET_STR_(x)
 #define BUF 2048u
 #define PORT TES3X_NET_PORT
 #define net tes3x_net

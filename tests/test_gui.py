@@ -1036,8 +1036,7 @@ order = 10
         tools = self.root / "llvm" / "bin"
         tools.mkdir(parents=True)
         suffix = ".exe" if os.name == "nt" else ""
-        for name in ("clang", "lld-link"):
-            (tools / (name + suffix)).write_bytes(b"")
+        (tools / ("clang" + suffix)).write_bytes(b"")
         with patch("tes3x.gui.common.bundled", return_value=tools):
             dialog = LocalSettingsDialog(self.root / "local.toml")
         self.addCleanup(dialog.close)

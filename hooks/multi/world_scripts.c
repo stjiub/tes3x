@@ -395,9 +395,8 @@ static void script_query(const char *text)
     if (!*text) {
         tes3x_log_hex3("net.script", script_running(script), script_based(script),
                        script_entry(script, 0) != 0);
-#ifdef TES3X_CONSOLE
-        tes3x_console_reply("%s >> %.2f", id, (double)script_running(script));
-#endif
+        if (HAS_CONSOLE)
+            tes3x_console_reply("%s >> %.2f", id, (double)script_running(script));
         return;
     }
     for (i = 0; text[i] && text[i] != ' '; i++)
@@ -427,9 +426,8 @@ static void script_query(const char *text)
             else
                 shown = (float)(int)value;
             tes3x_log_hex3("net.script_local", t << 14 | i, value, set);
-#ifdef TES3X_CONSOLE
-            tes3x_console_reply("%s.%s >> %.2f", id, names[i], (double)shown);
-#endif
+            if (HAS_CONSOLE)
+                tes3x_console_reply("%s.%s >> %.2f", id, names[i], (double)shown);
             (void)shown;
             return;
         }

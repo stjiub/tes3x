@@ -33,13 +33,10 @@
 
 typedef unsigned char(__attribute__((thiscall)) *fn_save_game)(void *, const char *, const char *);
 
-#ifdef TES3X_MULTIPLAYER
 /* The multiplayer patch wraps every save; the autosave call sites are this file's. */
-unsigned char __attribute__((thiscall)) tes3x_net_save(void *, const char *, const char *);
-#define SAVE_ENTRY tes3x_net_save
-#else
-#define SAVE_ENTRY ((fn_save_game)TES3X_SAVE_GAME)
-#endif
+TES3X_OPTIONAL unsigned char __attribute__((thiscall)) tes3x_net_save(void *, const char *,
+                                                                      const char *);
+#define SAVE_ENTRY (tes3x_net_save ? tes3x_net_save : (fn_save_game)TES3X_SAVE_GAME)
 
 static char state_path[] = "T:\\tes3x-autosave.dat";
 static char autosave_name[] = "autosave";
@@ -233,14 +230,14 @@ void tes3x_transition_save(u32 kind, u32 site)
             "addl $8, %esp\n\t" \
             "popfl\n\t" \
             "popal\n\t" \
-            "pushl $" TES3X_SAVE_STR(target) "\n\t" \
+            "pushl $" TES3X_SYM(target) "\n\t" \
             "ret\n\t"); \
     }
 
-TRANSITION_HOOK(tes3x_transition_cell_hook, 1, TES3X_CELL_CHANGE)
-TRANSITION_HOOK(tes3x_transition_cell_companions_hook, 1, TES3X_CELL_CHANGE_COMPANIONS)
-TRANSITION_HOOK(tes3x_transition_teleport_hook, 2, TES3X_CELL_CHANGE)
-TRANSITION_HOOK(tes3x_transition_travel_hook, 3, TES3X_CELL_CHANGE)
+TRANSITION_HOOK(tes3x_transition_cell_hook, 1, CELL_CHANGE)
+TRANSITION_HOOK(tes3x_transition_cell_companions_hook, 1, CELL_CHANGE_COMPANIONS)
+TRANSITION_HOOK(tes3x_transition_teleport_hook, 2, CELL_CHANGE)
+TRANSITION_HOOK(tes3x_transition_travel_hook, 3, CELL_CHANGE)
 
 int tes3x_autosave_command(void *game, const char *text)
 {

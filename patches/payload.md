@@ -10,41 +10,42 @@ See the [patch table](../docs/patches.md) for availability and selection.
 
 ## How it works
 
-`tes3x payload` compiles the selected sources in `hooks/` with clang and links them with
-lld-link into a small PE image. The code is freestanding: it cannot link the Xbox SDK libraries
+Each payload source in `hooks/` is compiled once into an object file, and TES3X ships those
+objects in `payloads/objects/`. The code is freestanding: it cannot link the Xbox SDK libraries
 the game already contains, so it calls the kernel through the game's own import thunks and reaches
-engine functions by address. Some addresses come from content searches; others are constants for
-the supported engine. By default the payload is built for that exact image. With
-`--portable-bindings`, the original entry, kernel thunk slots and supported engine addresses are
-stored in a binding table filled from the target XBE at patch time. Beside the PE,
-`tes3xhook.json` lists its hooks and binding layout.
+engine functions by address. None of those addresses is compiled in. Each is an undefined symbol
+in the object, so the same objects serve every supported engine.
+
+`tes3x payload` builds a payload for one XBE. It finds every engine address the selected
+sources need, mostly by content search, and links only those sources' objects with TES3X's own
+linker. The link places the code at the section address the XBE will give it and fills in the
+engine addresses, kernel thunk slots and original entry point for that image. A feature whose
+patch is not selected is not linked, and code that calls it skips the call. Beside the PE,
+`tes3xhook.json` lists the hooks later patches redirect to.
 
 The patch then:
 
-- appends the image as a new section (`.tes3xhk` by default), applying its PE32 relocations
-  when the section lands at a different address;
-- fills any binding table from the target XBE, checking required kernel ordinals and engine sites;
+- appends the image as a new section (`.tes3xhk` by default);
 - points the XBE's entry at the payload. The payload's entry initializes the selected features,
   logs the session to `E:\tes3xlog.txt`, and jumps to the game's original entry point.
 
-Patches applied after it read `tes3xhook.json` to find their hooks, rebase the payload's hook
-addresses, and redirect calls or branches in the engine to them. Engine-site metadata and opcode
-limits keep their original values.
+Patches applied after it read `tes3xhook.json` to find their hooks and redirect calls or
+branches in the engine to them.
 
 ## Using it
 
-The pipeline selects a matching prebuilt payload or builds one from source when a selected patch
-needs code. Directly, it is
-`--apply payload=FILE.pe`, applied before any patch that uses a hook.
+The pipeline builds the payload when a selected patch needs code. Directly:
 
-For a payload using diagnostics, console, networking and multiplayer, pass
-`--portable-bindings` to `tes3x payload` with those sources. Apply the resulting PE and adjacent
-manifest to either supported GOTY engine with `tes3x patch`. The
-[pipeline](../docs/pipeline.md#4-build-the-payload-and-patch-the-xbe) lists its prebuilt choices.
+```
+tes3x payload morrowind.xbe --src tes3xhook.c --src tes3xlog.c --src tes3xini.c --src tes3xdiag.c
+tes3x patch morrowind.xbe --apply payload=build/hooks/tes3xhook.pe --out patched.xbe
+```
+
+Apply `payload` to the same XBE it was built for, before any patch that uses a hook.
 
 ## Compatibility and limits
 
-Building from source needs LLVM (`clang` and `lld-link`). An older fixed payload must land at its
-linked address. The runtime binding table covers `multi-bsa`, diagnostics, console, networking
-and multiplayer on the sampled NTSC and PAL GOTY engines; other source sets still use
-image-specific builds. Content locators reject an engine whose expected sites do not match.
+Linking needs no compiler. A source edited since its bundled object was built is compiled again,
+which needs LLVM's `clang`, as do `--cflags` and `--rebuild`. A payload is linked for one XBE's
+section address and is refused by any other. Content locators reject an engine whose expected
+sites do not match, and an address that has no locator is accepted only on the NTSC GOTY engine.

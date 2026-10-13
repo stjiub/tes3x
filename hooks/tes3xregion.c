@@ -30,8 +30,6 @@
 #error "define TES3X_REGION_SPILL to where Allocate falls back to CRT malloc"
 #endif
 
-#define TES3X_STR_(x) #x
-#define TES3X_STR(x) TES3X_STR_(x)
 
 #define NtAllocateVirtualMemory KFN(THUNK_NtAllocateVirtualMemory, fn_NtAllocateVirtualMemory)
 #define NtFreeVirtualMemory KFN(THUNK_NtFreeVirtualMemory, fn_NtFreeVirtualMemory)
@@ -383,10 +381,10 @@ __attribute__((naked)) void tes3x_region_carve_hook(void)
         "call _tes3x_region_commit@4\n\t"
         "testl %eax, %eax\n\t"
         "jz 1f\n\t"
-        "pushl $" TES3X_STR(TES3X_REGION_CARVE) "\n\t"
+        "pushl $" TES3X_SYM(REGION_CARVE) "\n\t"
         "ret\n"
         "1:\n\t"
-        "pushl $" TES3X_STR(TES3X_REGION_SPILL) "\n\t"
+        "pushl $" TES3X_SYM(REGION_SPILL) "\n\t"
         "ret\n\t");
 }
 

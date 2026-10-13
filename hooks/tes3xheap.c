@@ -21,10 +21,6 @@
 #ifndef TES3X_HEAP_OBJECT
 #error "define TES3X_HEAP_OBJECT to the global Memory_Heap"
 #endif
-#ifndef TES3X_BUILD_ID
-#define TES3X_BUILD_ID 0
-#endif
-
 #define NtCreateFile KFN(THUNK_NtCreateFile, fn_NtCreateFile)
 #define NtWriteFile KFN(THUNK_NtWriteFile, fn_NtWriteFile)
 #define NtClose KFN(THUNK_NtClose, fn_NtClose)

@@ -4,37 +4,22 @@
 
 #include "tes3x_thunks.h"
 #include "tes3xlog.h"
-#ifdef TES3X_DIAGNOSTICS
 #include "tes3xdiag.h"
-#endif
-#ifdef TES3X_PROFILE
 #include "tes3xprof.h"
-#endif
-#ifdef TES3X_HEAP
 #include "tes3xheap.h"
-#endif
-#ifdef TES3X_MEM
 #include "tes3xmem.h"
-#endif
-#ifdef TES3X_INFO_ARENA
-void tes3x_info_arena_init(void);
-#endif
-#ifdef TES3X_OVERLAY
-void tes3x_overlay_init(void);
-#endif
 
-#if !defined(TES3X_ORIG_ENTRY) && !defined(TES3X_PORTABLE_BINDINGS)
-#error "define TES3X_ORIG_ENTRY to the XBE's original entry point"
-#endif
-
-#ifdef TES3X_PORTABLE_BINDINGS
-u32 tes3x_orig_entry;
-u32 tes3x_thunk_slots[TES3X_THUNK_COUNT];
-u32 tes3x_binding_values[TES3X_BINDING_COUNT];
-#endif
-
-#define TES3X_STR_(x) #x
-#define TES3X_STR(x) TES3X_STR_(x)
+/* Each feature's start is a weak reference: 0 unless its patch is linked in. */
+TES3X_OPTIONAL extern volatile u32 tes3x_diag_installed;
+TES3X_OPTIONAL void tes3x_diag_init(void);
+TES3X_OPTIONAL void tes3x_prof_init(void);
+TES3X_OPTIONAL void tes3x_heap_init(void);
+TES3X_OPTIONAL void tes3x_mem_init(void);
+TES3X_OPTIONAL void tes3x_info_arena_init(void);
+TES3X_OPTIONAL void tes3x_overlay_init(void);
+TES3X_OPTIONAL void tes3x_frag_probe(void);
+TES3X_OPTIONAL void tes3x_console_start(void);
+TES3X_OPTIONAL void tes3x_net_entry(void);
 
 /* A thunk slot holds the resolved function pointer once the kernel has fixed up imports. */
 #define KFN(slot, type) (*(type *)(slot))
@@ -62,16 +47,6 @@ typedef struct {
 
 u64 tes3x_boot_time;
 
-#ifdef TES3X_FRAG_PROBE
-void tes3x_frag_probe(void);
-#endif
-#ifdef TES3X_CONSOLE
-void tes3x_console_start(void);
-#endif
-#ifdef TES3X_NET
-void tes3x_net_entry(void);
-#endif
-
 static u32 tes3x_free_kb(void)
 {
     MM_STATISTICS st;
@@ -88,34 +63,24 @@ void tes3x_init(void)
     tes3x_log_prepare();
     DbgPrint("tes3x: hook alive, section at 0x%08x\n", (u32)&tes3x_init);
     tes3x_log("entry.free_kb", tes3x_free_kb());
-#ifdef TES3X_OVERLAY
-    tes3x_overlay_init();
-#endif
-#ifdef TES3X_MEM
-    tes3x_mem_init();
-#endif
-#ifdef TES3X_HEAP
-    tes3x_heap_init();
-#endif
-#ifdef TES3X_INFO_ARENA
-    tes3x_info_arena_init();
-#endif
-#ifdef TES3X_PROFILE
-    tes3x_prof_init();
-#endif
-#ifdef TES3X_DIAGNOSTICS
-    if (tes3x_diag_installed)
+    if (tes3x_overlay_init)
+        tes3x_overlay_init();
+    if (tes3x_mem_init)
+        tes3x_mem_init();
+    if (tes3x_heap_init)
+        tes3x_heap_init();
+    if (tes3x_info_arena_init)
+        tes3x_info_arena_init();
+    if (tes3x_prof_init)
+        tes3x_prof_init();
+    if (&tes3x_diag_installed && tes3x_diag_installed)
         tes3x_diag_init();
-#endif
-#ifdef TES3X_FRAG_PROBE
-    tes3x_frag_probe();
-#endif
-#ifdef TES3X_CONSOLE
-    tes3x_console_start();
-#endif
-#ifdef TES3X_NET
-    tes3x_net_entry();
-#endif
+    if (tes3x_frag_probe)
+        tes3x_frag_probe();
+    if (tes3x_console_start)
+        tes3x_console_start();
+    if (tes3x_net_entry)
+        tes3x_net_entry();
 }
 
 __attribute__((naked)) void tes3x_entry(void)
@@ -126,10 +91,6 @@ __attribute__((naked)) void tes3x_entry(void)
         "call _tes3x_init\n\t"  /* i386 COFF prefixes cdecl symbols with an underscore */
         "popfl\n\t"
         "popal\n\t"
-#ifdef TES3X_PORTABLE_BINDINGS
-        "pushl _tes3x_orig_entry\n\t"
-#else
-        "pushl $" TES3X_STR(TES3X_ORIG_ENTRY) "\n\t"
-#endif
+        "pushl $" TES3X_SYM(ORIG_ENTRY) "\n\t"
         "ret\n\t");
 }

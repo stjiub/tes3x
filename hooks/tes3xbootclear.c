@@ -15,8 +15,6 @@
 #error "define TES3X_BOOTCLEAR_NEXT to the function Game::createRenderer calls after create"
 #endif
 
-#define TES3X_STR_(x) #x
-#define TES3X_STR(x) TES3X_STR_(x)
 
 /* Replaces Game::createRenderer's call after NiXBoxRenderer::create, with the renderer in esi.
  * Clears to opaque black, not the renderer's own grey, and presents twice, so both buffers of a
@@ -34,15 +32,15 @@ __attribute__((naked)) void tes3x_bootclear_hook(void)
         "pushl $1\n\t"
         "pushl $0\n\t"
         "movl %esi, %ecx\n\t"
-        "movl $" TES3X_STR(TES3X_BOOTCLEAR_CLEAR) ", %eax\n\t"
+        "movl $" TES3X_SYM(BOOTCLEAR_CLEAR) ", %eax\n\t"
         "call *%eax\n\t"
         "movl %esi, %ecx\n\t"
-        "movl $" TES3X_STR(TES3X_BOOTCLEAR_DISPLAY) ", %eax\n\t"
+        "movl $" TES3X_SYM(BOOTCLEAR_DISPLAY) ", %eax\n\t"
         "call *%eax\n\t"
         "decl %ebx\n\t"
         "jnz 1b\n\t"
         "movl %edi, 0x2dc(%esi)\n\t"
         "popal\n\t"
-        "pushl $" TES3X_STR(TES3X_BOOTCLEAR_NEXT) "\n\t"
+        "pushl $" TES3X_SYM(BOOTCLEAR_NEXT) "\n\t"
         "ret\n\t");
 }

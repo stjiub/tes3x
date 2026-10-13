@@ -4,8 +4,6 @@
 #error "define TES3X_MCP97_RESUME to the VA after the replaced scan instructions"
 #endif
 
-#define TES3X_STR_(x) #x
-#define TES3X_STR(x) TES3X_STR_(x)
 
 /* Entered by jmp with eax at the length-prefixed operand and ecx at its opcode. */
 __attribute__((naked)) void tes3x_mcp97_scan_hook(void)
@@ -14,6 +12,6 @@ __attribute__((naked)) void tes3x_mcp97_scan_hook(void)
         "movsbl 0x1(%eax), %eax\n\t"
         "addl %eax, %ecx\n\t"
         "incl %ecx\n\t"
-        "pushl $" TES3X_STR(TES3X_MCP97_RESUME) "\n\t"
+        "pushl $" TES3X_SYM(MCP97_RESUME) "\n\t"
         "ret\n\t");
 }

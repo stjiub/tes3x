@@ -238,7 +238,6 @@ static void global_query(const char *id)
     tes3x_log_hex3("net.global", get32le(global + GLOBAL_VALUE), global[0x30],
                    global_is_player(global + GLOBAL_OBJECT_ID) ? 1u :
                    global_member(&world_globals, global + GLOBAL_OBJECT_ID) ? 2u : 0u);
-#ifdef TES3X_CONSOLE
-    tes3x_console_reply("%s >> %.2f", id, (double)*(const float *)(global + GLOBAL_VALUE));
-#endif
+    if (HAS_CONSOLE)
+        tes3x_console_reply("%s >> %.2f", id, (double)*(const float *)(global + GLOBAL_VALUE));
 }

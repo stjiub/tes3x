@@ -5,7 +5,7 @@ from unittest.mock import patch
 from pathlib import Path
 
 from tes3x.payload import (PayloadError, build_id, find_tool, link_symbol, resolve_address,
-                           source_text)
+                           source_digest, source_text)
 
 LINK_MAP = [
     ' Address         Publics by Value              Rva+Base               Lib:Object',
@@ -44,19 +44,19 @@ class PayloadTests(unittest.TestCase):
         main.write_text('int a;\n#include "multi/part.c"\nint c;\n', encoding='utf-8')
         section.write_text('int b;\n', encoding='utf-8')
         self.assertEqual(source_text(main).split(), ['int', 'a;', 'int', 'b;', 'int', 'c;'])
-        before = build_id([str(main)], '')
+        before = source_digest(str(main))
         section.write_text('int b2;\n', encoding='utf-8')
-        self.assertNotEqual(build_id([str(main)], ''), before)
+        self.assertNotEqual(source_digest(str(main)), before)
 
-    def test_generated_headers_are_part_of_the_build_id(self):
+    def test_build_id_follows_the_linked_objects_and_flags(self):
         folder = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, folder)
-        main, thunks = folder / 'main.c', folder / 'tes3x_thunks.h'
-        main.write_text('int a;\n', encoding='utf-8')
-        thunks.write_text('#define THUNK_A 0x1\n', encoding='utf-8')
-        before = build_id([str(main)], '', [thunks])
-        thunks.write_text('#define THUNK_A 0x2\n', encoding='utf-8')
-        self.assertNotEqual(build_id([str(main)], '', [thunks]), before)
+        obj = folder / 'main.obj'
+        obj.write_bytes(b'one')
+        before = build_id([obj], '')
+        self.assertNotEqual(build_id([obj], '-DTES3X_DIAG_TEST_FAULTS'), before)
+        obj.write_bytes(b'two')
+        self.assertNotEqual(build_id([obj], ''), before)
 
 
 if __name__ == '__main__':

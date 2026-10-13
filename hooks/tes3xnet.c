@@ -9,14 +9,10 @@
 
 typedef unsigned short u16;
 
-#if defined(TES3X_AGENT) && !defined(TES3X_MULTIPLAYER)
-#ifndef TES3X_INI_GET_STRING
-#error "define TES3X_INI_GET_STRING to the VA of the ini string reader"
-#endif
-#ifndef TES3X_INI_PATH
-#error "define TES3X_INI_PATH to the VA of the engine's ini filename string"
-#endif
-#endif
+/* The agent alone starts the network itself; with multiplayer, multiplayer does. */
+TES3X_OPTIONAL void tes3x_multi_entry(void);
+TES3X_OPTIONAL void tes3x_agent_entry(void);
+#define AGENT_ONLY (tes3x_agent_entry && !tes3x_multi_entry)
 
 typedef void *(__stdcall *fn_MmAllocateContiguousMemoryEx)(u32, u32, u32, u32, u32);
 typedef void(__stdcall *fn_MmFreeContiguousMemory)(void *);
@@ -157,13 +153,11 @@ static u32 rx_head, tx_tail, interrupt[0x70 / 4], dpc[0x1C / 4];
 static fn_HalReturnToFirmware firmware_original;
 static u32 probe_ip, probe_hits, network_gateway;
 
-#if defined(TES3X_AGENT) && !defined(TES3X_MULTIPLAYER)
 static struct tes3x_net_channel dhcp_channel;
 static u32 autostart_tried;
 static struct {
     u32 state, xid, ticks, tries, offered, server, lease;
 } dhcp;
-#endif
 
 u32 tes3x_net_lock(void)
 {
@@ -193,7 +187,6 @@ static void put32le(u8 *p, u32 v)
 }
 static void copy(u8 *d, const u8 *s, u32 n) { while (n--) *d++ = *s++; }
 
-#if defined(TES3X_AGENT) && !defined(TES3X_MULTIPLAYER)
 static u32 net_ini_text(const char *key, char *out, u32 size)
 {
     u32 i;
@@ -315,7 +308,6 @@ static void dhcp_tick(void)
         dhcp_send(3);
     }
 }
-#endif
 
 static void ip_checksum(u8 *ip)
 {
@@ -756,11 +748,12 @@ int tes3x_net_start(u32 ip, int irq)
 
 int tes3x_net_autostart(void)
 {
-#if defined(TES3X_AGENT) && !defined(TES3X_MULTIPLAYER)
     char address_text[32], gateway_text[24];
     const char *p;
     u32 ip, bits = 24, flags;
 
+    if (!AGENT_ONLY)
+        return tes3x_net.up != 0;
     if (autostart_tried)
         return tes3x_net.up != 0;
     autostart_tried = 1;
@@ -807,9 +800,6 @@ int tes3x_net_autostart(void)
     tes3x_net_set_mask(0xFFFFFFFFu << (32 - bits));
     tes3x_net_announce();
     return 1;
-#else
-    return tes3x_net.up != 0;
-#endif
 }
 
 u32 tes3x_net_gateway(void)
@@ -885,21 +875,12 @@ void tes3x_net_stat(void)
     tes3x_log_hex3("net.tx", tes3x_net.tx, tes3x_net.tx_full, tes3x_net.tx_errors);
 }
 
-#ifdef TES3X_MULTIPLAYER
-void tes3x_multi_entry(void);
-#endif
-#ifdef TES3X_AGENT
-void tes3x_agent_entry(void);
-#endif
-
 void tes3x_net_entry(void)
 {
-#ifdef TES3X_MULTIPLAYER
-    tes3x_multi_entry();
-#endif
-#ifdef TES3X_AGENT
-    tes3x_agent_entry();
-#endif
+    if (tes3x_multi_entry)
+        tes3x_multi_entry();
+    if (tes3x_agent_entry)
+        tes3x_agent_entry();
 }
 
 void tes3x_net_frame(void)

@@ -12,8 +12,6 @@
 #error "define TES3X_MCP37_TREE_NEXT to std::_Tree::iterator::operator++"
 #endif
 
-#define TES3X_STR_(x) #x
-#define TES3X_STR(x) TES3X_STR_(x)
 
 typedef void *(__attribute__((thiscall)) *fn_get_player)(void *);
 typedef void(__attribute__((thiscall)) *fn_tree_next)(void **);
@@ -66,6 +64,6 @@ __attribute__((naked)) void tes3x_mcp37_hook(void)
         "call _tes3x_mcp37_fix\n\t"
         "popfl\n\t"
         "popal\n\t"
-        "movl " TES3X_STR(TES3X_MCP37_GAME) ", %ecx\n\t"
+        "movl " TES3X_SYM(MCP37_GAME) ", %ecx\n\t"
         "ret\n\t");
 }

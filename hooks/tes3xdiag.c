@@ -5,18 +5,15 @@
 #include "tes3xlog.h"
 #include "tes3xini.h"
 #include "tes3xdiag.h"
-#ifdef TES3X_PROFILE
 #include "tes3xprof.h"
-#endif
-#ifdef TES3X_HEAP
 #include "tes3xheap.h"
-#endif
-#ifdef TES3X_MEM
 #include "tes3xmem.h"
-#endif
-#ifdef TES3X_NET
-void tes3x_net_frame(void);
-#endif
+
+/* Per-frame work of other features: 0 unless their patches are linked in. */
+TES3X_OPTIONAL void tes3x_prof_frame(void);
+TES3X_OPTIONAL void tes3x_heap_frame(void);
+TES3X_OPTIONAL void tes3x_mem_frame(void);
+TES3X_OPTIONAL void tes3x_net_frame(void);
 
 #ifndef TES3X_INI_GET_STRING
 #error "define TES3X_INI_GET_STRING to the VA of the ini string reader"
@@ -27,12 +24,6 @@ void tes3x_net_frame(void);
 #ifndef TES3X_DIAG_UPDATE
 #error "define TES3X_DIAG_UPDATE to Game::Update"
 #endif
-#ifndef TES3X_BUILD_ID
-#define TES3X_BUILD_ID 0
-#endif
-
-#define TES3X_STR_(x) #x
-#define TES3X_STR(x) TES3X_STR_(x)
 
 /* Frame at which to fire each fault from the update loop; 0 leaves them console-only. */
 #ifdef TES3X_DIAG_TEST_FAULTS
@@ -377,19 +368,15 @@ void tes3x_diag_init(void)
 
 void tes3x_diag_tick(void)
 {
-#ifdef TES3X_PROFILE
     /* The sole once-per-frame call site, so tick to tick is one whole frame. */
-    tes3x_prof_frame();
-#endif
-#ifdef TES3X_HEAP
-    tes3x_heap_frame();
-#endif
-#ifdef TES3X_MEM
-    tes3x_mem_frame();
-#endif
-#ifdef TES3X_NET
-    tes3x_net_frame();
-#endif
+    if (tes3x_prof_frame)
+        tes3x_prof_frame();
+    if (tes3x_heap_frame)
+        tes3x_heap_frame();
+    if (tes3x_mem_frame)
+        tes3x_mem_frame();
+    if (tes3x_net_frame)
+        tes3x_net_frame();
     diag_heartbeat++;
     if (!diag_ready)
         load_config();
@@ -473,11 +460,7 @@ __attribute__((naked)) void tes3x_diag_update_hook(void)
         "popfl\n\t"
         "movl 8(%esp), %ecx\n\t"
         "pushl $1f\n\t"
-#ifdef TES3X_PORTABLE_BINDINGS
-        "pushl _tes3x_binding_values+" TES3X_STR(TES3X_DIAG_UPDATE_BIND_OFFSET) "\n\t"
-#else
-        "pushl $" TES3X_STR(TES3X_DIAG_UPDATE) "\n\t"
-#endif
+        "pushl $" TES3X_SYM(DIAG_UPDATE) "\n\t"
         "ret\n\t"
         "1:\n\t"
         "pushl %eax\n\t"

@@ -6,9 +6,7 @@
 #include "tes3xnt.h"
 #include "tes3xlog.h"
 
-#ifdef TES3X_AGENT
-void tes3x_agent_log_raw(const char *, u32);
-#endif
+TES3X_OPTIONAL void tes3x_agent_log_raw(const char *, u32);
 
 #define NtCreateFile KFN(THUNK_NtCreateFile, fn_NtCreateFile)
 #define NtWriteFile KFN(THUNK_NtWriteFile, fn_NtWriteFile)
@@ -213,9 +211,8 @@ void tes3x_log_raw(const char *buf, u32 len)
     void *h = 0;
     u32 done = 0, status;
 
-#ifdef TES3X_AGENT
-    tes3x_agent_log_raw(buf, len);
-#endif
+    if (tes3x_agent_log_raw)
+        tes3x_agent_log_raw(buf, len);
 
     if (!tes3x_log_size_known)
         tes3x_log_prepare();

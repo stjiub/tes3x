@@ -121,33 +121,20 @@ or `arrange`.
 
 ## 4. Build the payload and patch the XBE
 
-When a selected patch needs code, the pipeline uses a bundled [payload](../patches/payload.md)
-when the profile matches one of these source sets exactly:
-
-| Base patches | Also available with |
-|---|---|
-| Diagnostics | `multi-bsa` |
-| Diagnostics and console | `multi-bsa` |
-| Diagnostics, console, network and multiplayer | `multi-bsa` |
-| `multi-bsa` alone | — |
-
-These seven exact sets cover console play, multiplayer and the default modded `delta-bsa` path
-without compiling unused developer patches into every build. The largest section is 762,176
-bytes (about 0.73 MiB). They use
-patch-time bindings for the sampled NTSC and PAL GOTY engines. A
-matching profile with no compile-time flags needs no compiler. Other patch sets still use
-`tes3x payload` with clang and lld-link; `--build-payload` forces that source build even when a
-prebuilt payload matches. `tes3x patch` applies the selected patches to a copy of the XBE.
-Payload pointers and hook addresses relocate to the added section, and the patcher fills the
-engine binding table from the input XBE. Region selection is automatic; no PAL/NTSC profile
-setting is needed. An engine whose required sites cannot be found stops with an error.
+When a selected patch needs code, the pipeline links a [payload](../patches/payload.md) from
+the bundled objects of exactly the selected patches, for the retail XBE it is building from.
+Any combination of patches builds without a compiler. Region selection is automatic; no
+PAL/NTSC profile setting is needed. A payload source changed
+since its bundled object was built is compiled again with clang, as is every source when
+`--build-payload` or compile flags are given. `tes3x patch` then applies the selected patches to
+a copy of the XBE. An engine whose required sites cannot be found stops with an error.
 Byte-pattern patches locate their sites by content.
 `--title` and a save pool also patch the
 launcher, `Default.xbe`; a save pool gives the build its own saves (see `save_pool` in the
 [configuration reference](configuration.md#profile)).
 
-When a source build is needed, the pipeline checks for LLVM before copying anything. `clang not
-found` means LLVM is not installed or `paths.llvm` points elsewhere. A
+When a payload source must be compiled, the pipeline checks for LLVM before copying anything.
+`clang not found` means LLVM is not installed or `paths.llvm` points elsewhere. A
 patch that cannot find its site fails with the number of matches it found, which means the XBE is
 not the retail GOTY build the patch expects.
 

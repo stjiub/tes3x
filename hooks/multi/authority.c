@@ -1092,10 +1092,9 @@ static void actor_query(const char *text)
     at = (const float *)(ref + REF_POSITION);
     tes3x_log_hex3("net.actor_at", refid, (u32)round_int(at[0]), (u32)round_int(at[1]));
     if (!*text) {
-#ifdef TES3X_CONSOLE
-        tes3x_console_reply("%08x >> %.2f", refid,
-                            (double)*(const float *)(mobile + MOBILE_HEALTH));
-#endif
+        if (HAS_CONSOLE)
+            tes3x_console_reply("%08x >> %.2f", refid,
+                                (double)*(const float *)(mobile + MOBILE_HEALTH));
         return;
     }
     if (!(text = word(text, "near")) || !(text = signed_number(skip(text), &x)) ||
@@ -1105,7 +1104,6 @@ static void actor_query(const char *text)
     dy = at[1] - (float)y;
     near = dx * dx + dy * dy <= (float)r * (float)r;
     tes3x_log_hex3("net.actor_near", refid, (u32)near, (u32)r);
-#ifdef TES3X_CONSOLE
-    tes3x_console_reply("%08x near >> %.2f", refid, near ? 1.0 : 0.0);
-#endif
+    if (HAS_CONSOLE)
+        tes3x_console_reply("%08x near >> %.2f", refid, near ? 1.0 : 0.0);
 }

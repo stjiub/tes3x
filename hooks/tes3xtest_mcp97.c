@@ -11,8 +11,6 @@
 
 #define SKIP_MAX 48
 
-#define TES3X_STR_(x) #x
-#define TES3X_STR(x) TES3X_STR_(x)
 
 static u32 skips;
 static u32 next;
@@ -37,9 +35,9 @@ __attribute__((naked)) void tes3x_mcp97_test_hook(void)
         "incl %ecx\n\t"
         "testl %ebp, %ebp\n\t"
         "je 1f\n\t"
-        "pushl $" TES3X_STR(TES3X_MCP97_TEST_EXIT) "\n\t"
+        "pushl $" TES3X_SYM(MCP97_TEST_EXIT) "\n\t"
         "ret\n\t"
         "1:\n\t"
-        "pushl $" TES3X_STR(TES3X_MCP97_TEST_LOOP) "\n\t"
+        "pushl $" TES3X_SYM(MCP97_TEST_LOOP) "\n\t"
         "ret\n\t");
 }

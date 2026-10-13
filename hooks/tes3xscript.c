@@ -50,15 +50,9 @@ typedef struct {
     u32 opcode;
 } tes3x_command;
 
-#ifdef TES3X_MWSE
-int tes3x_mwse_run(void *script, u32 opcode, u32 a2, u32 a3);
-#ifndef TES3X_SCRIPT_IP
-#error "define TES3X_SCRIPT_IP to the VA of the script instruction pointer"
-#endif
-#ifndef TES3X_MWSE_IP_RESTORE_RETURN
-#error "define TES3X_MWSE_IP_RESTORE_RETURN to the runtime caller's return VA"
-#endif
-#endif
+/* The legacy MWSE patch, and the engine values only it binds: 0 unless it is linked in. */
+TES3X_OPTIONAL int tes3x_mwse_run(void *script, u32 opcode, u32 a2, u32 a3);
+__asm__(".weak _tes3x_abs_SCRIPT_IP\n.weak _tes3x_abs_MWSE_IP_RESTORE_RETURN\n");
 
 /* Sample the first calls and powers of ten to limit log growth. */
 static int tes3x_should_log(u32 n)
@@ -137,12 +131,10 @@ float tes3x_script_run(void *self, u32 opcode, u32 a2, u32 a3)
             tes3x_dump_profile();
         return (float)tes3x_profile_calls;
     default:
-#ifdef TES3X_MWSE
-        if (opcode >= 0x3800) {
+        if (tes3x_mwse_run && opcode >= 0x3800) {
             tes3x_mwse_run(self, opcode, a2, a3);
             return 0.0f;
         }
-#endif
         tes3x_unknown++;
         if (tes3x_should_log(tes3x_unknown))
             tes3x_log("script.unknown_opcode", opcode);
@@ -174,15 +166,16 @@ __attribute__((naked)) void tes3x_script_hook(void)
         "pushl %ecx\n\t" /* this */
         "call _tes3x_script_run\n\t"
         "addl $0x10, %esp\n\t"
-#ifdef TES3X_MWSE
-        /* This caller restores the decoder IP from ESI after RunFunction. */
-        "cmpl $" TES3X_STR(TES3X_MWSE_IP_RESTORE_RETURN) ", (%esp)\n\t"
+        /* With legacy MWSE, this caller restores the decoder IP from ESI after RunFunction. */
+        "movl $_tes3x_mwse_run, %edx\n\t"
+        "testl %edx, %edx\n\t"
+        "jz 3f\n\t"
+        "cmpl $" TES3X_SYM(MWSE_IP_RESTORE_RETURN) ", (%esp)\n\t"
         "jne 3f\n\t"
-        "movl " TES3X_STR(TES3X_SCRIPT_IP) ", %esi\n\t"
+        "movl " TES3X_SYM(SCRIPT_IP) ", %esi\n\t"
         "3:\n\t"
-#endif
         "ret $0xC\n\t"
         "1:\n\t"
-        "movl $" TES3X_STR(TES3X_RUN_FUNCTION) ", %eax\n\t"
+        "movl $" TES3X_SYM(RUN_FUNCTION) ", %eax\n\t"
         "jmp *%eax\n\t");
 }

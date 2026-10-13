@@ -18,8 +18,6 @@
 #error "define TES3X_REFINDEX_START_SCRIPTS to WorldController::startGlobalScripts"
 #endif
 
-#define TES3X_STR_(x) #x
-#define TES3X_STR(x) TES3X_STR_(x)
 
 #define MmAllocateSystemMemory KFN(THUNK_MmAllocateSystemMemory, fn_MmAllocateSystemMemory)
 #define MmFreeSystemMemory KFN(THUNK_MmFreeSystemMemory, fn_MmFreeSystemMemory)
@@ -253,7 +251,7 @@ __attribute__((naked)) void tes3x_refindex_scripts_hook(void)
         "pushl %ecx\n\t"
         "call _tes3x_refindex_begin\n\t"
         "popl %ecx\n\t"
-        "movl $" TES3X_STR(TES3X_REFINDEX_START_SCRIPTS) ", %eax\n\t"
+        "movl $" TES3X_SYM(REFINDEX_START_SCRIPTS) ", %eax\n\t"
         "call *%eax\n\t"
         "jmp _tes3x_refindex_end\n\t");
 }

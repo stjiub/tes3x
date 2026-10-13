@@ -20,9 +20,6 @@
 #ifndef TES3X_INI_PATH
 #error "define TES3X_INI_PATH to the VA of the engine's ini filename string"
 #endif
-#ifndef TES3X_BUILD_ID
-#define TES3X_BUILD_ID 0
-#endif
 #define TES3X_PROF_SLOTS 16
 #define TES3X_PROF_CALIB TES3X_PROF_SLOTS /* the extra slot, an empty instrumented call */
 #define TES3X_PROF_TOTAL (TES3X_PROF_SLOTS + 1)

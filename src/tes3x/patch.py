@@ -326,7 +326,7 @@ def _payload(x, value, ctx):
         if manifest_base != imgbase:
             raise PatchError("payload manifest base does not match the PE")
         try:
-            blob = tes3x_inject.bind_payload(blob, manifest_data, va, x)
+            tes3x_inject.check_manifest(manifest_data)
             ctx["hooks"] = tes3x_inject.rebase_hooks(manifest_data, va, vsize)
         except (ValueError, RuntimeError) as exc:
             raise PatchError(str(exc)) from exc

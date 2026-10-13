@@ -92,10 +92,8 @@ typedef void (__attribute__((thiscall)) *tes3x_attach_scene_fn)(
 typedef void (__attribute__((thiscall)) *tes3x_ref_modified_fn)(void *, int);
 typedef void (__attribute__((thiscall)) *tes3x_update_lighting_fn)(void *, void *);
 typedef void (__attribute__((thiscall)) *tes3x_add_mob_fn)(void *, void *);
-#ifdef TES3X_CONSOLE
-int tes3x_console_text_begin(const char *initial);
-int tes3x_console_text_poll(char *out, u32 size);
-#endif
+TES3X_OPTIONAL int tes3x_console_text_begin(const char *initial);
+TES3X_OPTIONAL int tes3x_console_text_poll(char *out, u32 size);
 
 #define NtCreateFile KFN(THUNK_NtCreateFile, fn_NtCreateFile)
 #define NtWriteFile KFN(THUNK_NtWriteFile, fn_NtWriteFile)
@@ -161,27 +159,27 @@ static int tes3x_mwse_text_input(void *script)
         for (i = 0; initial[i] && i < TES3X_MWSE_STRING_SIZE - 1; i++)
             tes3x_mwse_input_buffer[i] = initial[i];
         tes3x_mwse_input_buffer[i] = 0;
-#ifdef TES3X_CONSOLE
-        if (!tes3x_console_text_begin(tes3x_mwse_input_buffer))
-            return 0;
-        tes3x_mwse_input_active = 1;
-#else
-        tes3x_mwse_input_active = 0;
-#endif
+        if (tes3x_console_text_begin) {
+            if (!tes3x_console_text_begin(tes3x_mwse_input_buffer))
+                return 0;
+            tes3x_mwse_input_active = 1;
+        } else {
+            tes3x_mwse_input_active = 0;
+        }
         return tes3x_mwse_push((u32)tes3x_mwse_input_buffer)
                && tes3x_mwse_push(0);
     }
-#ifdef TES3X_CONSOLE
-    status = tes3x_console_text_poll(
-        tes3x_mwse_input_buffer, sizeof(tes3x_mwse_input_buffer));
-    if (!status)
-        return tes3x_mwse_push((u32)tes3x_mwse_input_buffer)
-               && tes3x_mwse_push(0);
-    if (status == -2)
-        return 0;
-#else
-    status = 1;
-#endif
+    if (tes3x_console_text_poll) {
+        status = tes3x_console_text_poll(
+            tes3x_mwse_input_buffer, sizeof(tes3x_mwse_input_buffer));
+        if (!status)
+            return tes3x_mwse_push((u32)tes3x_mwse_input_buffer)
+                   && tes3x_mwse_push(0);
+        if (status == -2)
+            return 0;
+    } else {
+        status = 1;
+    }
     tes3x_mwse_input_active = 0;
     result = tes3x_mwse_save_string(tes3x_mwse_input_buffer);
     return tes3x_mwse_push((u32)result)

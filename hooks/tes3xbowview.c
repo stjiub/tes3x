@@ -15,8 +15,6 @@
 #error "define TES3X_INI_PATH to the VA of the engine's ini filename string"
 #endif
 
-#define TES3X_STR_(x) #x
-#define TES3X_STR(x) TES3X_STR_(x)
 
 #define DEFAULT_OFFSET_Z (-12)
 #define MIN_OFFSET_Z (-64)
@@ -75,7 +73,7 @@ void *__stdcall tes3x_bow_view_target(void *player)
 __attribute__((naked)) void tes3x_bow_view_hook(void)
 {
     __asm__ volatile(
-        "movl $" TES3X_STR(TES3X_BOW_VIEW_UPDATE) ", %eax\n\t"
+        "movl $" TES3X_SYM(BOW_VIEW_UPDATE) ", %eax\n\t"
         "call *%eax\n\t"
         "pushfl\n\t"
         "pushal\n\t"

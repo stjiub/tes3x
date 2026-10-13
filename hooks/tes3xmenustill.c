@@ -27,8 +27,6 @@
 #error "define TES3X_STILL_BLOCK to D3D_BlockOnTime"
 #endif
 
-#define TES3X_STR_(x) #x
-#define TES3X_STR(x) TES3X_STR_(x)
 
 #define NtCreateFile KFN(THUNK_NtCreateFile, fn_NtCreateFile)
 #define NtReadFile KFN(THUNK_NtReadFile, fn_NtReadFile)
@@ -170,7 +168,7 @@ __attribute__((naked)) void tes3x_still_open_hook(void)
         "jz 1f\n\t"
         "ret $0x1c\n"
         "1:\n\t"
-        "pushl $" TES3X_STR(TES3X_STILL_OPEN) "\n\t"
+        "pushl $" TES3X_SYM(STILL_OPEN) "\n\t"
         "ret\n\t");
 }
 
@@ -188,7 +186,7 @@ __attribute__((naked)) void tes3x_still_end_hook(void)
         "pushal\n\t"
         "call _tes3x_still_end\n\t"
         "popal\n\t"
-        "pushl $" TES3X_STR(TES3X_STILL_OPEN) "\n\t"
+        "pushl $" TES3X_SYM(STILL_OPEN) "\n\t"
         "ret\n\t");
 }
 
@@ -202,6 +200,6 @@ __attribute__((naked)) void tes3x_still_clear_hook(void)
         "je 1f\n\t"
         "andl $0xfffffffe, 8(%esp)\n"
         "1:\n\t"
-        "pushl $" TES3X_STR(TES3X_STILL_CLEAR) "\n\t"
+        "pushl $" TES3X_SYM(STILL_CLEAR) "\n\t"
         "ret\n\t");
 }

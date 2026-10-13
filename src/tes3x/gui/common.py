@@ -623,9 +623,7 @@ class LocalSettingsDialog(QDialog):
                                               default=str(self.path.parent / folder)))
         llvm_bin = bundled("externals", "llvm", "bin")
         suffix = ".exe" if os.name == "nt" else ""
-        llvm_default = (f"Bundled LLVM: {llvm_bin}"
-                        if all((llvm_bin / (name + suffix)).is_file()
-                               for name in ("clang", "lld-link"))
+        llvm_default = (f"Bundled LLVM: {llvm_bin}" if (llvm_bin / ("clang" + suffix)).is_file()
                         else "Automatically find LLVM on this PC")
         form.addRow("LLVM tools (optional)",
                     self.browse_row("paths.llvm", values.get("llvm", ""), default=llvm_default))

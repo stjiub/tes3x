@@ -8,8 +8,6 @@
 #error "define TES3X_TEXTURE_SIZE to the VA of the texture-size function"
 #endif
 
-#define TES3X_STR_(x) #x
-#define TES3X_STR(x) TES3X_STR_(x)
 
 /* Called in place of the size function: format in eax, width ecx, height edx, levels on the
  * stack. Tail-jumps, so the caller's argument and return address are left as they were. */
@@ -20,6 +18,6 @@ __attribute__((naked)) void tes3x_dxt5_size_hook(void)
         "jne 1f\n\t"
         "movl $0xe, %eax\n\t"
         "1:\n\t"
-        "pushl $" TES3X_STR(TES3X_TEXTURE_SIZE) "\n\t"
+        "pushl $" TES3X_SYM(TEXTURE_SIZE) "\n\t"
         "ret\n\t");
 }

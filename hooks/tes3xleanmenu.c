@@ -23,8 +23,6 @@
 #error "define TES3X_LEAN_NO_REBOOT to the VA of the No Reboot On New Game byte"
 #endif
 
-#define TES3X_STR_(x) #x
-#define TES3X_STR(x) TES3X_STR_(x)
 
 #define BXWM 0x4D575842
 #define TAG_TES3 0x33534554
@@ -71,7 +69,7 @@ __attribute__((naked)) void tes3x_lean_record_hook(void)
         "jz 1f\n\t"
         "ret $0xc\n\t" /* eax is 1 */
         "1:\n\t"
-        "pushl $" TES3X_STR(TES3X_LEAN_LOAD_RECORD) "\n\t"
+        "pushl $" TES3X_SYM(LEAN_LOAD_RECORD) "\n\t"
         "ret\n\t");
 }
 
@@ -85,7 +83,7 @@ __attribute__((naked)) void tes3x_lean_preload_hook(void)
         "movl $1, %eax\n\t"
         "ret $0x4\n\t"
         "1:\n\t"
-        "pushl $" TES3X_STR(TES3X_LEAN_CELL_BY_NAME) "\n\t"
+        "pushl $" TES3X_SYM(LEAN_CELL_BY_NAME) "\n\t"
         "ret\n\t");
 }
 
@@ -98,6 +96,6 @@ __attribute__((naked)) void tes3x_lean_player_hook(void)
         "jne 1f\n\t"
         "ret\n\t"
         "1:\n\t"
-        "pushl $" TES3X_STR(TES3X_LEAN_CREATE_PLAYER) "\n\t"
+        "pushl $" TES3X_SYM(LEAN_CREATE_PLAYER) "\n\t"
         "ret\n\t");
 }

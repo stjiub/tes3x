@@ -211,9 +211,8 @@ static void where_query(const char *text)
         if ((ref = move_reference(*(u8 *const *)node, refid))) {
             copy((u8 *)&x, ref + REF_POSITION, 4);
             tes3x_log_hex3("net.where", refid, i, (u32)round_int(x));
-#ifdef TES3X_CONSOLE
-            tes3x_console_reply("%s >> %.2f", text, (double)x);
-#endif
+            if (HAS_CONSOLE)
+                tes3x_console_reply("%s >> %.2f", text, (double)x);
             return;
         }
     tes3x_log("net.where_unknown", refid);

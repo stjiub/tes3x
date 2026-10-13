@@ -259,7 +259,7 @@ __attribute__((naked)) void tes3x_dashbutton_height_hook(void)
         "je 1f\n\t"
         "addl $" TES3X_STR(MENU_ROW) ", 4(%esp)\n"
         "1:\n\t"
-        "pushl $" TES3X_STR(TES3X_DASHBTN_SET_HEIGHT) "\n\t"
+        "pushl $" TES3X_SYM(DASHBTN_SET_HEIGHT) "\n\t"
         "ret\n\t");
 }
 
@@ -268,7 +268,7 @@ __attribute__((naked)) void tes3x_dashbutton_hook(void)
 {
     __asm__ volatile(
         "pushl 4(%esp)\n\t"
-        "movl $" TES3X_STR(TES3X_DASHBTN_BUILD) ", %eax\n\t"
+        "movl $" TES3X_SYM(DASHBTN_BUILD) ", %eax\n\t"
         "call *%eax\n\t"
         "addl $4, %esp\n\t"
         "pushal\n\t"
