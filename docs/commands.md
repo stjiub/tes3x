@@ -48,6 +48,7 @@ options. This page says what each one is for and where it is explained.
 | `tes3x xemu-setup` | find xemu's files in one folder, or download xemu and a blank disk | [xemu](xemu.md) |
 | `tes3x test` | smoke-test a profile in xemu, or every library mod on its own | [testing](testing.md#profile-smoke-tests) |
 | `tes3x scenario` | run a patch's game test and apply its verdict | [validation](validation.md) |
+| `tes3x game-tests` | run every game test on one or more retail engines and report each result | [testing](testing.md#every-game-test) |
 | `tes3x validate` | record and check local game-test results | [validation](validation.md) |
 | `tes3x tour` | write a script that tours a plugin's cells logging memory; summarise the log | [diagnostics](diagnostics.md#memory-tours) |
 | `tes3x orphan` | write a test plugin with references that cannot resolve | [unresolvable reference cleanup](../patches/mcp-1.md) |

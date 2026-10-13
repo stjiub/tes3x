@@ -25,7 +25,7 @@ from tes3x.prebuilt_payload import select_prebuilt
 from tes3x.net import write_ghost_plugin
 from tes3x.agent import key_fingerprint, load_or_create_key
 from tes3x.paths import (DEFAULT_REMOTE_ROOT, checkout, docs_url, local_config, require_paths,
-                         resource)
+                         resource, vanilla_override)
 from tes3x.plugins import rules_file
 import tes3x.manifest as tes3x_manifest
 import tes3x.savepool as tes3x_savepool
@@ -207,9 +207,12 @@ def validate_profile(profile):
 def validate_local_config(local):
     """Validate the public tables while leaving private extension tables alone."""
     unknown = set(local) - {"default_target", "targets", "paths", "deploy", "xemu", "rig",
-                            "addons", "console", "server"}
+                            "addons", "console", "server", "engines"}
     if unknown:
         raise PipelineError("unknown local config sections: " + ", ".join(sorted(unknown)))
+    engines = local.get("engines", {})
+    if not isinstance(engines, dict) or any(type(value) is not str for value in engines.values()):
+        raise PipelineError("engines must map engine names to clean retail roots")
     addons = local.get("addons", {})
     if not isinstance(addons, dict) or any(type(value) is not bool for value in addons.values()):
         raise PipelineError("addons must map add-on names to true or false")
@@ -998,7 +1001,7 @@ def main(argv=None):
     if args.check:
         return 0
 
-    vanilla_value = args.vanilla or paths.get("vanilla_root")
+    vanilla_value = args.vanilla or vanilla_override() or paths.get("vanilla_root")
     if not vanilla_value:
         raise PipelineError("set paths.vanilla_root in local config or pass --vanilla")
     vanilla = config_path(vanilla_value, base).resolve()

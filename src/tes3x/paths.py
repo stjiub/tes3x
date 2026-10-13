@@ -121,6 +121,13 @@ CONFIG_HELP = f"local config (default: see {docs_url('configuration.md#local-con
 CONFIG_NAME = 'tes3x.local.toml'
 
 
+def vanilla_override():
+    """The clean retail root from TES3X_VANILLA_ROOT, which takes precedence over [paths]
+    vanilla_root so one config can test several engine variants."""
+    value = os.environ.get('TES3X_VANILLA_ROOT')
+    return Path(value).expanduser().resolve() if value else None
+
+
 def local_config(given=None):
     """The local config: given, else TES3X_CONFIG, else tes3x.local.toml in the working
     directory, else a checkout's, else the per-user one in data_dir(), which may not exist yet."""

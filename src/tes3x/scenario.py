@@ -55,7 +55,7 @@ import re
 import subprocess
 import sys
 
-from tes3x.paths import CONFIG_HELP, data_dir, local_config
+from tes3x.paths import CONFIG_HELP, data_dir, local_config, vanilla_override
 
 from tes3x.agent import key_fingerprint, load_or_create_key  # noqa: E402
 from tes3x.diag import assertion_failures  # noqa: E402
@@ -83,7 +83,7 @@ def build_flags(spec, patch, role):
     from every build, packaging, the profile, or `apply`."""
     enable = [n for n in spec.get("enable", DEFAULT_ENABLE) if n != patch]
     applied = spec.get("apply")
-    by_name = registry.BY_NAME[patch]["selection"] == "preset"
+    by_name = registry.BY_NAME.get(patch, {}).get("selection") == "preset"
     if role == "test" and by_name:
         enable.append(patch)
     flags = ["--preset", "minimal"]
@@ -120,11 +120,13 @@ def test_profile(spec, profile, prefix, runs, config):
     library = None
     if spec.get("fixture"):
         paths = read_toml(config).get("paths", {})
-        if "vanilla_root" not in paths:
-            sys.exit(f"fixture game tests need paths.vanilla_root in {config}")
-        vanilla = Path(paths["vanilla_root"]).expanduser()
-        if not vanilla.is_absolute():
-            vanilla = config.parent / vanilla
+        vanilla = vanilla_override()
+        if not vanilla:
+            if "vanilla_root" not in paths:
+                sys.exit(f"fixture game tests need paths.vanilla_root in {config}")
+            vanilla = Path(paths["vanilla_root"]).expanduser()
+            if not vanilla.is_absolute():
+                vanilla = config.parent / vanilla
         esm = vanilla / "Data Files" / "Morrowind.esm"
         library = runs / f"{prefix}.library"
         make_fixture(spec["fixture"], esm, library)

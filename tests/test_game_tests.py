@@ -1,4 +1,9 @@
+from pathlib import Path
+import tempfile
 import unittest
+
+from tes3x.game_tests import engines, first_failure, missing_mods
+from tes3x.pipeline import PipelineError, validate_local_config
 
 import tes3x.patches as registry  # noqa: E402
 from tes3x.test import (GAME_TESTS, comparison_failures, game_test_problems,  # noqa: E402
@@ -48,6 +53,43 @@ class GameTestFileTests(unittest.TestCase):
         self.assertEqual(comparison_failures(logs, comparison), [])
         comparison[0]["relation"] = "<"
         self.assertTrue(comparison_failures(logs, comparison))
+
+
+class GameTestRunnerTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        for name in ("ntsc", "pal"):
+            (self.root / name).mkdir()
+            (self.root / name / "morrowind.xbe").write_bytes(b"XBEH" + name.encode())
+        self.config = self.root / "tes3x.local.toml"
+        self.config.write_text('[engines]\nntsc = "ntsc"\npal = "pal"\n', encoding="utf-8")
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def test_engines_resolve_names_relative_to_the_config(self):
+        self.assertEqual(engines(self.config, []), [("default", None)])
+        self.assertEqual(engines(self.config, ["pal"]), [("pal", (self.root / "pal").resolve())])
+        self.assertEqual([name for name, _ in engines(self.config, ["all"])], ["ntsc", "pal"])
+        with self.assertRaises(SystemExit):
+            engines(self.config, ["jp"])
+
+    def test_required_mods_are_matched_by_name_or_id(self):
+        profile = self.root / "p.toml"
+        profile.write_text('[profile]\nname = "p"\n[[mods]]\nid = "mop"\n', encoding="utf-8")
+        self.assertEqual(missing_mods({"required_mods": ["MOP"]}, profile), [])
+        self.assertEqual(missing_mods({"required_mods": ["TR"]}, profile), ["tr"])
+
+    def test_failure_reason_is_the_first_failed_check(self):
+        output = "control: pass\ntest: FAIL\n  ok   x\n  FAIL mcp37 1\nscenario failed\n"
+        self.assertEqual(first_failure(output), "test: FAIL mcp37 1")
+        self.assertEqual(first_failure("KeyError: 'smoke'\n"), "KeyError: 'smoke'")
+
+    def test_local_config_engines_are_folder_names(self):
+        validate_local_config({"engines": {"pal": "D:/PAL"}})
+        with self.assertRaises(PipelineError):
+            validate_local_config({"engines": {"pal": 1}})
 
 
 if __name__ == "__main__":

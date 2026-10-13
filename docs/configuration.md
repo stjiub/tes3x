@@ -39,6 +39,21 @@ is none yet. Relative paths are relative to the file.
 | `ghidra` | string | none | Ghidra install folder, for `tes3x sym decompile` and `refs`. `GHIDRA_INSTALL_DIR` takes precedence. |
 | `pc_morrowind` | string | Steam's default folder | PC Morrowind with Code Patch installed, for `tes3x mcp`. `TES3X_PC_MORROWIND` takes precedence. |
 
+`TES3X_VANILLA_ROOT` takes precedence over `vanilla_root` for builds and xemu runs;
+`tes3x game-tests` sets it for each engine.
+
+### `[engines]`
+
+Optional names for clean retail game folders, each laid out like `vanilla_root`, for testing
+more than one engine release with [`tes3x game-tests`](testing.md#every-game-test). Builds still
+use `vanilla_root`.
+
+```toml
+[engines]
+ntsc = "D:/Morrowind/NTSC"
+pal = "D:/Morrowind/PAL"
+```
+
 ### Targets
 
 `default_target` names the target used when `--target` is omitted. Each `[targets.NAME]` table has

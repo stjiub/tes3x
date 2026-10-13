@@ -44,7 +44,7 @@ from tes3x.xemu_setup import resolve  # noqa: E402
 from tes3x.readlog import read_file, read_log  # noqa: E402
 from tes3x.pipeline import XBOX_INI, set_ini_key, stage_retail_base  # noqa: E402
 from tes3x.deploy import ini_pairs  # noqa: E402
-from tes3x.paths import CONFIG_HELP, data_dir, local_config  # noqa: E402
+from tes3x.paths import CONFIG_HELP, data_dir, local_config, vanilla_override  # noqa: E402
 
 TEST_INI = ["Xbox:Diagnostics=1", "Xbox:HangWatchdog=1", "Xbox:HangTimeoutSeconds=30",
             "General:Show FPS=1"]
@@ -132,6 +132,8 @@ GDB = Path(CONFIG.get("gdb") or shutil.which("gdb") or "gdb")
 
 def vanilla_root():
     """Clean retail root named by [paths] vanilla_root in the local config, if any."""
+    if vanilla_override():
+        return vanilla_override()
     path = CONFIG_PATH
     try:
         with open(path, "rb") as stream:

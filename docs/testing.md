@@ -61,6 +61,25 @@ tes3x scenario PATCH profiles/my-build.toml
 The file format is in [game tests](game-tests.md); running, recording and checking results in
 [validation](validation.md).
 
+## Every game test
+
+`tes3x game-tests` runs every game test, or those named with `--only`, against one or more
+retail engines and prints a pass/fail table. Name the engines' clean game folders in the
+[local config](configuration.md#engines):
+
+```powershell
+tes3x game-tests profiles/my-build.toml --engine all --jobs 3
+tes3x game-tests profiles/my-build.toml --engine pal --only mcp-37 --only console
+```
+
+Without `--engine` it uses `[paths] vanilla_root`. `--jobs` counts tests, and a comparison test
+boots two emulators, so `--jobs 3` can run six. Timing-sensitive tests are more likely to fail
+when the host is busy; rerun a failure with `--only` before reading it as a regression. A test
+whose `required_mods` the profile does not enable is skipped; `--profile-for TEST=PROFILE` builds
+it from a profile that does. Each run's scenario output is beside its folder in `build/xemu/`, and
+`build/xemu/NAME.summary.json` records every result with the engines' SHA-256. The command does
+not record validation results; use `tes3x scenario --record` for that.
+
 ## Original Xbox
 
 xemu shows whether a build runs, not how fast or in how much memory. Timings, memory pressure and

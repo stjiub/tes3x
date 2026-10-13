@@ -4,6 +4,9 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- `tes3x game-tests` runs every game test against the retail engines named in the local
+  config's new `[engines]` table, several at once, and prints what passed and failed. See
+  [testing](docs/testing.md#every-game-test).
 - The sampled PAL GOTY engine now resolves console and multiplayer bindings automatically;
   its virtual keyboard and server join work. Other retail engine revisions still need
   compatibility checks.
