@@ -141,8 +141,8 @@ void __cdecl tes3x_console_reply(const char *fmt, ...);
     !defined(TES3X_NET_EQUIP_ITEM) || !defined(TES3X_NET_INVENTORY_BUILD) || \
     !defined(TES3X_NET_MENU_TAB) || !defined(TES3X_NET_FIND_FACTION) || \
     !defined(TES3X_NET_FACTION_LOAD) || !defined(TES3X_NET_UPDATE_STATS_PANE) || \
-    !defined(TES3X_NET_FIND_GLOBAL)
-#error "define the TES3X_NET_ record lookups, the class functions chargen uses and the faction restore"
+    !defined(TES3X_NET_FIND_GLOBAL) || !defined(TES3X_NET_JOURNAL_ADD)
+#error "define the TES3X_NET_ record lookups, the class functions chargen uses, the faction restore and journalAdd"
 #endif
 
 typedef unsigned short u16;

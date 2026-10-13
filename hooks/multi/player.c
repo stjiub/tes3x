@@ -395,7 +395,7 @@ static void journal_scan(int send)
         size = 0;
         index = 0;
         if (dialogue && k < JOURNALS) {
-            index = *(const int *)(dialogue + DIALOGUE_INDEX);
+            index = *(const short *)(dialogue + DIALOGUE_INDEX);
             index = index < 0 ? 0 : index > 0xFFFF ? 0xFFFF : index;
             name = dialogue_name(dialogue);
             for (size = 0; name && name[size] && size < SPAWN_ID - 1; size++)

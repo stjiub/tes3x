@@ -478,6 +478,7 @@ SKILL_NAMES = ("Block", "Armorer", "MediumArmor", "HeavyArmor", "BluntWeapon", "
 
 
 QUEST_INDICES = 32  # a quest's latest indices kept for the replay
+JOURNAL_QUESTS_MAX = 4096  # quests a world's journal keeps, as many as a console tracks
 
 
 STREAM_NAME = "stream.json"

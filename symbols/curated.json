@@ -2260,7 +2260,9 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_Dialogue_journalAdd",
-      "pc_va": "0x004B2F80"
+      "pc_va": "0x004B2F80",
+      "note": "Adds the INFO for index to the journal (JournalHTML::updateJournal, which adds the 'journal updated' line to an open dialogue) and raises journalIndex. The Journal command (0x0013FEEF) shows the sJournalEntry toast itself, through showMessageBox, only when MenuDialog is closed.",
+      "signature": "bool __thiscall journalAdd(int index, TES3::MobileActor* actor)"
     },
     {
       "va": "0x00101090",
@@ -5012,6 +5014,13 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_ui_getMenuOnTop",
       "pc_va": "0x00595290"
+    },
+    {
+      "va": "0x001AD340",
+      "name": "TES3UI::findMenu",
+      "confidence": "verified",
+      "provenance": "walks the menu list for the word id at +0x20; MenuDialog id 0x003D869C and the console's id are passed to it",
+      "signature": "TES3UI::Element* __cdecl findMenu(unsigned short id)"
     },
     {
       "va": "0x001AD4A0",

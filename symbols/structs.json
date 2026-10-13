@@ -105,9 +105,9 @@
         {
           "offset": "0x1C",
           "name": "journalIndex",
-          "type": "int",
+          "type": "short",
           "confidence": "verified",
-          "provenance": "xemu peek: 10 for A1_1_FindSpymaster after Journal A1_1_FindSpymaster 10"
+          "provenance": "xemu peek: 10 for A1_1_FindSpymaster after Journal A1_1_FindSpymaster 10; Dialogue::journalAdd 0x000FFE00 reads and writes it as a word"
         }
       ]
     },

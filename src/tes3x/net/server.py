@@ -53,7 +53,7 @@ from .proto import (ACTOR, ACTORS, ACTORS_PER_PACKET, ACTOR_DEAD, ACTOR_IN_COMBA
                     PLAYER_LEVEL, PLAYER_MODIFIERS, PLAYER_PLACE, PLAYER_READY, PLAYER_RESPAWN,
                     PLAYER_SKILLS, PLAYER_SPELLS, PLAYER_TOPICS, PLAYER_TOPICS_MAX,
                     PLAYER_VITALS, PLAYER_WORN, PROLOGUE,
-                    QUEST_INDICES, REFUSE, REFUSED_BANNED, REFUSED_FULL, REFUSED_KICKED,
+                    QUEST_INDICES, JOURNAL_QUESTS_MAX, REFUSE, REFUSED_BANNED, REFUSED_FULL, REFUSED_KICKED,
                     REFUSED_LOAD_ORDER, REFUSED_PASSWORD, REFUSED_PROTOCOL, REFUSED_STALE,
                     REFUSE_BODY, RELAY, REMOTE_CHALLENGE, REMOTE_COMMAND, REMOTE_HEAD,
                     REMOTE_HELLO, REMOTE_MAGIC, REMOTE_NONCE, REMOTE_NONCES, REMOTE_NONCE_SECONDS,
@@ -164,6 +164,8 @@ class World:
         # actor id -> STATUS values after the id; replayed to each joining client
         self.statuses = {}
         self.topics = []
+        # quest id lowered -> [quest id, indices reached, ascending]: the world's journal
+        self.journal = {}
         # faction id lowered -> {"id", "rank" (None until a member sets it), "reputation"}
         self.factions = {}
         # global name lowered -> [name, value]: the world's globals, as consoles last set them
@@ -196,6 +198,7 @@ class World:
         known = {name.lower(): name for name in self.topics}
         known.update((name.lower(), name) for name in saved.get("topics", []))
         self.topics = list(known.values())
+        self.journal.update(saved.get("journal", {}))
         self.factions.update(saved.get("factions", {}))
         self.globals.update(saved.get("globals", {}))
         self.locals.update({int(k): {int(s): v for s, v in values.items()}
@@ -218,6 +221,7 @@ class World:
                  "weather": {str(k): v for k, v in self.weather.items()},
                  "statuses": {str(k): list(v) for k, v in self.statuses.items()},
                  "topics": self.topics,
+                 "journal": self.journal,
                  "factions": self.factions,
                  "globals": self.globals,
                  "locals": {str(k): {str(s): v for s, v in values.items()}
@@ -234,6 +238,7 @@ class World:
         return (f"{len(self.deaths)} deaths, {len(self.objects)} objects, "
                 f"{len(self.spawns)} spawns, {len(self.contents)} containers, "
                 f"{len(self.weather)} regions, {len(self.statuses)} statuses, "
+                f"{len(self.journal)} quests, "
                 f"{len(self.globals)} globals, {len(self.locals)} scripted references, "
                 f"{len(self.actors)} actors"
                 + (f", clock {self.clock}" if self.clock else ""))
@@ -1162,6 +1167,11 @@ class Bot:
         self.spells = []
         self.bounties = [(float(at), int(value)) for value, _, at in
                          (s.rpartition("@") for s in self.args.bot_bounty)]
+        self.journal = []
+        for spec in self.args.bot_journal:
+            what, _, at = spec.rpartition("@")
+            quest, _, index = what.rpartition(":")
+            self.journal.append((float(at), quest, int(index)))
         self.shots = [(float(at), ammo)
                       for ammo, _, at in (s.rpartition("@") for s in self.args.bot_shoot)]
         for kind, specs in ((EVENT_SPELL, self.args.bot_spell), (EVENT_CAST, self.args.bot_cast)):
@@ -1258,6 +1268,10 @@ class Bot:
             self.bounties.remove(spec)
             print(f"{time.strftime('%H:%M:%S')} bot bounty {spec[1]}", flush=True)
             self.server.broadcast_event(BOT_ID, EVENT_BOUNTY, struct.pack("<i", spec[1]), now)
+        for spec in [j for j in self.journal if self.args.bot and self.window(f"{j[0]}:", now)]:
+            self.journal.remove(spec)
+            print(f"{time.strftime('%H:%M:%S')} bot journal {spec[1]} {spec[2]}", flush=True)
+            self.server.share_journal(None, [spec[1:]], now)
         if self.args.bot and self.anchor and self.window(self.args.bot_busy, now) != self.busy:
             self.busy = not self.busy
             print(f"{time.strftime('%H:%M:%S')} bot {'saves' if self.busy else 'is back'}",
@@ -1715,6 +1729,35 @@ class Server:
                     other.rel.queue(EVENT_PLAYER, 0, data)
                 self.flush(other, now)
 
+    def share_journal(self, client, quests, now):
+        """The journal is the world's and only moves forward: a quest keeps the indices players
+        reached, and a new one reaches the other players already in the world."""
+        changed = []
+        for quest, index in quests:
+            kept = self.world.journal.get(quest.lower())
+            if kept is None:
+                if len(self.world.journal) >= JOURNAL_QUESTS_MAX:
+                    continue
+                kept = self.world.journal[quest.lower()] = [quest, []]
+            if kept[1] and index <= kept[1][-1]:
+                continue
+            kept[1].append(index)
+            del kept[1][:-QUEST_INDICES]
+            changed.append((kept[0], index))
+        if not changed:
+            return
+        self.world.dirty = True
+        for other in self.clients.values():
+            if other is not client and other.in_world and other.synced:
+                for data in pack_journal(changed):
+                    other.rel.queue(EVENT_PLAYER, 0, data)
+                self.flush(other, now)
+
+    def journal_replay(self):
+        return pack_journal([(quest, index) for quest, indices in
+                             sorted(self.world.journal.values(), key=lambda q: q[0].lower())
+                             for index in indices])
+
     def share_factions(self, client, entries, before, now):
         """Rank and reputation are the world's, membership and expulsion each character's.
         A member who already was one moves the world rank; a character who has just joined
@@ -1810,7 +1853,11 @@ class Server:
         if stream is None:
             return
         self.share_topics(stream.topics or [], now, origin=client)
-        events = [data for data in stream.replay() if data[0] != PLAYER_TOPICS] if replay else []
+        self.share_journal(client, [(quest, index) for quest, indices in stream.journal.items()
+                                    for index in indices], now)
+        events = [data for data in stream.replay()
+                  if data[0] not in (PLAYER_TOPICS, PLAYER_JOURNAL)] if replay else []
+        events += self.journal_replay()
         events += pack_topics(self.world.topics)
         events += self.faction_replay(stream, replay)
         events += pack_globals(sorted(self.world.globals.values()), WORLD_GLOBALS)
@@ -1827,7 +1874,7 @@ class Server:
         print(f"{stamp} client {client.id}: " + (
             "replayed " + (f"{stream.identity['name']}'s identity, " if stream.identity else "")
             + f"{len(stream.items)} items, {len(stream.skills)} skills, "
-            f"{len(stream.journal)} quests" + (", the level" if stream.level else "")
+            f"{len(self.world.journal)} quests" + (", the level" if stream.level else "")
             + (f", the place ({describe_state(stream.place)})" if stream.place else "")
             if replay else "streams its player from scratch"), flush=True)
 
@@ -2071,6 +2118,8 @@ class Server:
         change = stream.take(data) if stream else None
         if stream and data[:1] == bytes([PLAYER_TOPICS]):
             self.share_topics(stream.topics or [], now, origin=client)
+        if stream and data[:1] == bytes([PLAYER_JOURNAL]):
+            self.share_journal(client, unpack_journal(data), now)
         if stream and data[:1] == bytes([PLAYER_FACTIONS]):
             self.share_factions(client, unpack_factions(data), before, now)
         if stream and data[:1] == bytes([WORLD_GLOBALS]):

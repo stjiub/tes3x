@@ -126,6 +126,7 @@ IDENTITY_ADDRESSES = (
     # NonDynamicData::findFaction, Faction::loadPlayerData (the save load's restore), UpdateStatsPane
     ("FIND_FACTION", 0x00105DF0), ("FACTION_LOAD", 0x000F0910), ("UPDATE_STATS_PANE", 0x0021E7E0),
     ("FIND_GLOBAL", 0x00106000),  # NonDynamicData::findGlobalVariable
+    ("JOURNAL_ADD", 0x000FFE00),  # Dialogue::journalAdd: the Journal command without its toast
 )
 PLAYER_CONTROL = 0x001717E0  # PlayerAnimationController's update: look, controls, animation
 CONSOLE_ADDRESSES = (

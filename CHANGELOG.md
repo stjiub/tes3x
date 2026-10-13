@@ -4,6 +4,11 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- The journal is shared in multiplayer: a quest one player moves on gives the other players the
+  same entry, and the server keeps it in the world, so characters who join later or are new get
+  it too. Joining no longer shows a "journal updated" message for each restored entry. Update the
+  server and install the build again. See
+  [saving and character state](docs/multiplayer-client.md#saving-and-character-state).
 - The GUI's Server workspace keeps a list of worlds beside **Start**: make, duplicate, rename and
   delete them, each with its own settings, characters and world state, so the server always keeps
   them between runs. A **Characters** tab lists and deletes the selected world's characters.

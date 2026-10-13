@@ -66,7 +66,7 @@ the session lives only as long as the server does: stop it and the deaths, objec
 it recorded are gone. With `--world DIR` it
 keeps the game clock, the deaths, the doors, locks and items taken, the items dropped or placed,
 containers' contents, actors' AI settings and disposition, actors' last place and health,
-the weather, learned topics,
+the weather, learned topics, the journal,
 faction ranks, the world's globals and references' script locals in one file per load order in `DIR`, loads it when the
 first console joins in game and writes it every 10 seconds
 while it changes, so a restarted server carries on where it stopped. A joined client starts from
@@ -393,7 +393,7 @@ control characters. Empty equipment lists are allowed.
 | `GAME` | Launch token u32, zero-terminated filename (possibly empty), optional launch kind 0–2 | Server handles |
 | `PICK` | Selection kind (`PICK_CHARACTER`, `PICK_START`, `PICK_NEW`) and index bytes | Server handles |
 | `SNAPSHOT` | Token u32 and `STATE_BODY` with finite position and heading | Server handles |
-| `PLAYER` | One accepted sub-kind followed by its shape below | Retained; learned topics and faction rank and reputation also reach other joined characters |
+| `PLAYER` | One accepted sub-kind followed by its shape below | Retained; learned topics, journal indices and faction rank and reputation also reach other joined characters |
 
 `PLAYER` accepts `ITEMS` (part/count, one item id, complete stack entries), `LEVEL` (one
 `LEVEL` record), `SKILLS` and `MODIFIERS` (count and complete records with valid indices and

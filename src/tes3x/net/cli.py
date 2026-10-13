@@ -467,6 +467,9 @@ def main(argv=None):
                    help="the bot's bounty becomes VALUE this long after it first appears; 0 after "
                         "a bounty ends the fights of actors that would not attack it otherwise "
                         "(repeatable)")
+    p.add_argument("--bot-journal", action="append", default=[], metavar="QUEST:INDEX@SECONDS",
+                   help="the bot moves the world's journal to INDEX of QUEST this long after it "
+                        "first appears, as another player would (repeatable)")
     p.add_argument("--bot-busy", metavar="START:END",
                    help="the bot saves from START to END seconds after it first appears: it sends "
                         "BUSY, stops its states and gives up the actors it owns")

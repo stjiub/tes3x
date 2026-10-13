@@ -53,6 +53,12 @@ factions and globals, follows once you join.
 Learned topics are shared: a topic learned by one player becomes available to the others,
 including players who join later.
 
+The journal is shared too. When one player moves a quest on, the others get the same journal
+entry, with the usual "journal updated" message, and a character who joins later or is new to
+the server gets every entry the group has reached. Joining adds them without the message. A
+quest only moves forward: when two players take a quest to different stages, the later stage
+wins.
+
 Faction rank and reputation are shared by everyone on the server; membership and expulsion are
 your own. A promotion or reputation change reaches the other players, and a character who joins
 a faction the group already ranks in starts at that rank. Being expelled affects only the
@@ -111,8 +117,8 @@ back at the marker on its next join.
   are not recreated; a source must exist in the build, and a missing caster cannot be resolved.
   Ghost caster ids belong to the current session. Local variables of objects made during play
   are not kept, and decimal ones (mostly timers) are compared only every 10 seconds. Restoring
-  a journal only moves a quest forward, never back.
-  The world keeps up to 4,096 learned topic names of at most 63 bytes each, and up to 512
+  a journal only moves a quest forward, never back, and keeps each quest's latest 32 entries.
+  The world keeps up to 4,096 learned topic names of at most 63 bytes each, 4,096 quests, up to 512
   factions, up to 128 of a character's own globals, up to 1,024 world globals and up to 16,384
   local variable values.
   When two players change the same faction or world global at the same moment, the later

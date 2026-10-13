@@ -802,6 +802,75 @@ class ServerTests(unittest.TestCase):
         replay = self.events(again, ready)
         self.assertIn((net.EVENT_PLAYER, topic), replay)
 
+    def test_journal_is_shared_between_characters_and_replayed_to_a_late_join(self):
+        net = tes3x_net
+        world = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, world)
+        self.start('--world', str(world), '--adopt')
+        ready = lambda k, d: k == net.EVENT_PLAYER and d == bytes([net.PLAYER_READY, 0])
+        first, second = self.client(1), self.client(2)
+        first.join()
+        self.game(first, 1, 7, b'')
+        self.upload(first, 2, 1, b'mp-first.ess', self.save(b'Nerevar', 0))
+        self.events(first, ready)
+        seq = self.seed_identity(world, first, 3)
+        second.join()
+        self.game(second, 1, 8, b'')
+        self.upload(second, 2, 2, b'mp-second.ess', self.save(b'Second', 1))
+        self.events(second, ready)
+        identity = net.pack_player_identity(self.identity('Second'))
+        second.send(net.EVENTS, net.pack_events(second.delivered, [
+            (3 + i, net.EVENT_PLAYER, 0, data) for i, data in enumerate(identity)]))
+        folder = next((world / 'characters').glob('*/Second'))
+        self.wait_for(lambda: net.PlayerStream(str(folder / net.STREAM_NAME)).identity,
+                      'second character identity was not persisted')
+        later = 3 + len(identity)
+        quest = 'A1_1_FindSpymaster'
+        step = net.pack_journal([(quest, 10)])[0]
+        first.send(net.EVENTS, net.pack_events(first.delivered,
+                                              [(seq, net.EVENT_PLAYER, 0, step)]))
+        self.assertIn((net.EVENT_PLAYER, step),
+                      self.events(second, lambda k, d: k == net.EVENT_PLAYER and d == step))
+        # The applied index coming back, or an older one, is not news; a later one is.
+        onward = net.pack_journal([(quest, 10), (quest, 5), ('A2_1_MeetSulMatuul', 1)])[0]
+        second.send(net.EVENTS, net.pack_events(second.delivered,
+                                               [(later, net.EVENT_PLAYER, 0, onward)]))
+        news = net.pack_journal([('A2_1_MeetSulMatuul', 1)])[0]
+        self.assertIn((net.EVENT_PLAYER, news),
+                      self.events(first, lambda k, d: k == net.EVENT_PLAYER and d == news))
+        mine = next((world / 'characters').glob('*/Nerevar'))
+        data = net.PlayerStream(str(mine / net.STREAM_NAME)).character_file()
+        name = net.checkpoint_name(data, net.CHARACTER_FILE)
+        (mine / name).write_bytes(data)
+        again = self.client(1)
+        again.session ^= 4
+        again.join()
+        self.game(again, 1, 9, name.encode(), net.GAME_NEW)
+        replay = [d for k, d in self.events(again, ready) if k == net.EVENT_PLAYER]
+        quests = [q for d in replay if d[0] == net.PLAYER_JOURNAL for q in net.unpack_journal(d)]
+        self.assertEqual(quests, [(quest, 10), ('A2_1_MeetSulMatuul', 1)])
+
+    def test_world_journal_moves_forward_and_survives_restart(self):
+        net = tes3x_net
+        with tempfile.TemporaryDirectory() as folder:
+            server = net.Server.__new__(net.Server)
+            server.world, server.clients = net.World(), {}
+            server.world.path = str(Path(folder) / 'world.json')
+            server.share_journal(None, [('MS_Quest', 10), ('ms_quest', 30), ('MS_Quest', 20)], 0)
+            server.share_journal(None, [(f'Q{i}', 1) for i in range(net.QUEST_INDICES + 2)], 0)
+            server.share_journal(None, [('Long', i) for i in range(net.QUEST_INDICES + 5)], 0)
+            self.assertEqual(server.world.journal['ms_quest'], ['MS_Quest', [10, 30]])
+            self.assertEqual(len(server.world.journal['long'][1]), net.QUEST_INDICES)
+            server.world.save(0)
+            restored = net.World()
+            self.assertTrue(restored.load(server.world.path, 0))
+            self.assertEqual(restored.journal, server.world.journal)
+            server.world = restored
+            replay = [q for d in server.journal_replay() for q in net.unpack_journal(d)]
+            self.assertEqual(replay[net.QUEST_INDICES:net.QUEST_INDICES + 2],
+                             [('MS_Quest', 10), ('MS_Quest', 30)])
+            self.assertEqual(len(replay), net.QUEST_INDICES + 2 + net.QUEST_INDICES + 2)
+
     def test_faction_rank_and_reputation_are_shared_and_membership_is_per_character(self):
         net = tes3x_net
         world = Path(tempfile.mkdtemp())
@@ -1643,7 +1712,7 @@ class ServerTests(unittest.TestCase):
 
         saved = next(world.glob('*.json'))
         state = json.loads(saved.read_text(encoding='utf-8'))
-        self.assertEqual(sorted(state), ['actors', 'clock', 'contents', 'deaths', 'factions', 'globals', 'locals', 'next_spawn', 'objects',
+        self.assertEqual(sorted(state), ['actors', 'clock', 'contents', 'deaths', 'factions', 'globals', 'journal', 'locals', 'next_spawn', 'objects',
                                          'spawns', 'statuses', 'topics', 'weather'])
         self.assertEqual(len(state['clock']), 6)  # hour, day, month, year, days passed, scale
         self.assertEqual(state['deaths'], {str(refid): 1})
