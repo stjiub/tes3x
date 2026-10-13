@@ -36,16 +36,25 @@ repeatable `--serve-origin build|retail|xbe` to set the same hosting options. Th
 is `build` only. For an overlay build, `--retail-base` supplies the separate retail dependency
 that the Dash can install when retail serving is enabled.
 
-The GUI's **Recent install activity** list shows the build, console address, reported stage and
-progress, bytes sent by the server, and the current file. A completed row means the Dash reported
-that it committed the install; transferred bytes alone do not establish success. If reports stop
+The GUI's **Recent install activity** list shows the build, console address, reported stage,
+ticket count, progress, bytes sent by the server, and the current file. A completed row means
+the Dash reported that it committed the install; transferred bytes alone do not establish
+success. If reports stop
 for 90 seconds, the row becomes **unknown**. The list keeps up to 128 attempts during this server
 run. It is cleared when the content server restarts. The Dash signs reports with its content
 identity in `E:\TES3X\content-id.key`; keep that file if you move its content settings to another
 Xbox. If a final report is not acknowledged, the Dash keeps it locally and retries on its next
 contact with that library. It keeps at most 16 results. A report cannot be recovered after its
-six-hour ticket expires or the server restarts. Older Dashes can still download, but cannot report
-a completed install.
+six-hour ticket expires or the server restarts. Update the Dash and content server together:
+content tickets now require a signed install attempt.
+
+The Dash keeps the attempt for each library and exact build revision in
+`E:\TES3X\content-attempts.txt`. If an install fails or is cancelled, a later Install request
+gets a new transfer ticket for the same attempt. The server shows **retrying**, increments the
+ticket count and keeps the row's cumulative bytes sent. A successful install clears the saved
+attempt, so installing that revision again starts a new row. Keep both the attempt file and
+`content-id.key` when moving the Dash's content settings to another Xbox. Server activity history
+still lasts only until the content server restarts.
 
 ## Browse on the Xbox
 
@@ -70,6 +79,5 @@ Content browsing is a standalone download path. A multiplayer server still serve
 single build through **Servers**; it does not yet point clients at a separate content library.
 The content server currently keeps old copied revisions in its state folder until the admin
 removes them manually while the server is stopped. Activity reports are signed by a stable Dash
-identity and bound to the transfer ticket. Linking a resumed download to its earlier attempt is
-still pending. Shared archive storage, access control, remote content sources for multiplayer,
-and Docker service profiles are planned separately.
+identity and bound to the transfer ticket. Shared archive storage, access control, remote content
+sources for multiplayer, and Docker service profiles are planned separately.

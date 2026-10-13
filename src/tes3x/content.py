@@ -22,6 +22,7 @@ PORT = 26510
 MAX_ENTRIES = 64
 MAX_CATALOG = 64 * 1024
 MAX_ACTIVITY = 128
+MAX_BINDINGS = 4096
 ACTIVITY_IDLE = 90
 STAGES = {"planning", "retail", "downloading", "verifying", "rebuilding",
           "copying", "retrying", "complete", "failed", "cancelled"}
@@ -183,6 +184,7 @@ class ContentServer(netbuild.BuildServer):
         self.library = library
         self.activity = {}
         self.completed = {}
+        self.bindings = {}
         super().__init__(None, bind, port, log=log)
 
     def activity_start(self, token):
@@ -190,24 +192,29 @@ class ContentServer(netbuild.BuildServer):
             found = self.tickets.get(token)
             if not found or found[0] < time.monotonic() or token in self.completed:
                 return None
-            if token not in self.activity:
+            attempt = found[6]
+            if attempt not in self.activity:
                 now = time.monotonic()
-                self.activity[token] = {"attempt": secrets.token_hex(8),
+                self.activity[attempt] = {"attempt": attempt,
+                                        "_binding": (found[5], found[2], found[7]),
+                                        "_token": token,
                                         "client": ((hashlib.sha256(found[5]).hexdigest()[:12]
                                                     + " @ " + found[3]) if found[5] else found[3]),
                                         "entry": found[2],
                                         "build": found[4], "stage": "planning",
                                         "done": 0, "total": 0, "wire": 0,
-                                        "file": "", "seen": now}
+                                        "file": "", "tickets": 1, "seen": now}
                 while len(self.activity) > MAX_ACTIVITY:
                     self.activity.pop(next(iter(self.activity)))
-            return self.activity[token]
+            return self.activity[attempt]
 
     def activity_update(self, token, **fields):
         now = time.monotonic()
         with self.lock:
-            row = self.activity.get(token)
-            if row is None or row["stage"] in ("complete", "failed", "cancelled"):
+            ticket = self.tickets.get(token)
+            row = self.activity.get(ticket[6]) if ticket else None
+            if (row is None or row["_token"] != token
+                    or row["stage"] in ("complete", "failed", "cancelled")):
                 return
             if fields.get("stage") in ("complete", "failed", "cancelled") \
                     and not fields.get("total"):
@@ -219,15 +226,17 @@ class ContentServer(netbuild.BuildServer):
                 while len(self.completed) > netbuild.TICKETS:
                     self.completed.pop(next(iter(self.completed)))
             visible = {key: value for key, value in row.items()
-                       if key not in ("seen", "emitted")}
+                       if key not in ("seen", "emitted", "_binding", "_token")}
         self.log("activity " + json.dumps(visible, separators=(",", ":")))
 
     def on_transfer(self, token, what, sent):
         now = time.monotonic()
         self.activity_start(token)
         with self.lock:
-            row = self.activity.get(token)
-            if row is None or row["stage"] in ("complete", "failed", "cancelled"):
+            ticket = self.tickets.get(token)
+            row = self.activity.get(ticket[6]) if ticket else None
+            if (row is None or row["_token"] != token
+                    or row["stage"] in ("complete", "failed", "cancelled")):
                 return
             row["wire"] += sent
             row["file"] = what[:80]
@@ -236,7 +245,7 @@ class ContentServer(netbuild.BuildServer):
                 return
             row["emitted"] = now
             visible = {key: value for key, value in row.items()
-                       if key not in ("seen", "emitted")}
+                       if key not in ("seen", "emitted", "_binding", "_token")}
         self.log("activity " + json.dumps(visible, separators=(",", ":")))
 
     def activity_snapshot(self):
@@ -248,9 +257,9 @@ class ContentServer(netbuild.BuildServer):
                         and now - row["seen"] > ACTIVITY_IDLE:
                     row["stage"] = "unknown"
                     expired.append({key: value for key, value in row.items()
-                                    if key not in ("seen", "emitted")})
+                                    if key not in ("seen", "emitted", "_binding", "_token")})
             snapshot = [{key: value for key, value in row.items()
-                         if key not in ("seen", "emitted")}
+                         if key not in ("seen", "emitted", "_binding", "_token")}
                         for row in self.activity.values()]
         for row in expired:
             self.log("activity " + json.dumps(row, separators=(",", ":")))
@@ -307,33 +316,69 @@ class ContentServer(netbuild.BuildServer):
                 return self.reply(request, 503)
         if path.startswith("/v1/ticket/"):
             entry_id = path[len("/v1/ticket/"):]
+            if len(request.path) > 512 or not ENTRY.fullmatch(entry_id):
+                return self.reply(request, 400)
             try:
                 params = urllib.parse.parse_qs(urllib.parse.urlsplit(request.path).query,
-                                               max_num_fields=2)
-            except ValueError:
+                                               max_num_fields=4)
+                client, requested_build, attempt, signature = (
+                    params[name][0] for name in ("client", "build", "attempt", "sig"))
+            except (KeyError, IndexError, ValueError):
                 return self.reply(request, 400)
-            client = params.get("client", [None])[0]
-            if client is not None and not re.fullmatch(r"[0-9a-f]{64}", client):
+            if (not re.fullmatch(r"[0-9a-f]{64}", client)
+                    or not re.fullmatch(r"[0-9a-f]{64}", requested_build)
+                    or not re.fullmatch(r"[0-9a-f]{16}", attempt)
+                    or not re.fullmatch(r"[0-9a-f]{128}", signature)):
                 return self.reply(request, 400)
-            client_key = bytes.fromhex(client) if client else None
+            client_key = bytes.fromhex(client)
+            message = f"ticket:{entry_id}:{requested_build}:{attempt}".encode()
+            try:
+                ed25519.Ed25519PublicKey.from_public_bytes(client_key).verify(
+                    bytes.fromhex(signature), message)
+            except (InvalidSignature, ValueError):
+                return self.reply(request, 403)
             with self.library.lock:
                 entry = self.library.entries.get(entry_id)
                 build = self.library.revisions.get(entry["revision"]) if entry else None
             if build is None:
                 return self.reply(request, 404)
+            if requested_build != entry["build"]:
+                body = json.dumps({"format": 1, "build": entry["build"]},
+                                  separators=(",", ":")).encode()
+                return self.reply(request, 200, signed(self.library.key, body))
             token = secrets.token_bytes(16)
+            renewed = None
             with self.lock:
                 now = time.monotonic()
+                binding = (client_key, entry_id, requested_build)
+                row = self.activity.get(attempt)
+                if ((attempt in self.bindings and self.bindings[attempt] != binding)
+                        or (row is not None and row["_binding"] != binding)):
+                    return self.reply(request, 403)
+                self.bindings[attempt] = binding
+                while len(self.bindings) > MAX_BINDINGS:
+                    self.bindings.pop(next(iter(self.bindings)))
                 self.tickets = {key: value for key, value in self.tickets.items()
                                 if value[0] >= now}
                 if len(self.tickets) >= netbuild.TICKETS:
                     self.tickets.pop(next(iter(self.tickets)))
                 self.tickets[token.hex()] = (now + netbuild.TICKET_SECONDS, build, entry_id,
                                              request.client_address[0], entry["build"][:12],
-                                             client_key)
+                                             client_key, attempt, requested_build)
+                if row is not None:
+                    row.update(stage="retrying", done=0, total=0, file="", seen=now,
+                               _token=token.hex(),
+                               client=(hashlib.sha256(client_key).hexdigest()[:12] + " @ "
+                                       + request.client_address[0]),
+                               tickets=row["tickets"] + 1)
+                    renewed = {key: value for key, value in row.items()
+                               if key not in ("seen", "emitted", "_binding", "_token")}
             body = json.dumps({"format": 1, "build": entry["build"],
                                "sha256": build.sha256.hex(), "size": len(build.data),
-                               "token": token.hex()}, separators=(",", ":")).encode()
+                               "token": token.hex(), "attempt": attempt},
+                              separators=(",", ":")).encode()
+            if renewed is not None:
+                self.log("activity " + json.dumps(renewed, separators=(",", ":")))
             self.log(f"content ticket {entry_id}: {entry['build'][:12]}")
             return self.reply(request, 200, signed(self.library.key, body))
         return super().get(request)

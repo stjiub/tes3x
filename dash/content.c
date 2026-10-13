@@ -13,6 +13,8 @@
 #define CONTENT_ID_FILE "E:\\TES3X\\content-id.key"
 #define CONTENT_RESULTS_FILE "E:\\TES3X\\content-results.txt"
 #define CONTENT_RESULTS_MAX 16
+#define CONTENT_ATTEMPTS_FILE "E:\\TES3X\\content-attempts.txt"
+#define CONTENT_ATTEMPTS_MAX 16
 #define CONTENT_MAX (64 * 1024 + 96)
 #define CONTENT_PORT 26510
 
@@ -25,6 +27,12 @@ struct pending_result {
     char host[64], stage[10];
     unsigned port;
     unsigned char token[16], key[32];
+};
+
+struct pending_attempt {
+    char host[64], entry[43], build[65];
+    unsigned port;
+    unsigned char key[32], attempt[8];
 };
 
 static void retry_results(const struct content_host *host);
@@ -336,6 +344,131 @@ static int valid_id(const char *id)
     return 1;
 }
 
+static int load_attempts(struct pending_attempt rows[CONTENT_ATTEMPTS_MAX])
+{
+    unsigned char *data = NULL;
+    size_t size;
+    char *line, *next, key[65], attempt[17], extra;
+    int count = 0;
+
+    if (read_file(CONTENT_ATTEMPTS_FILE, &data, &size))
+        return 0;
+    if (size > 8192) {
+        free(data);
+        return -1;
+    }
+    for (line = (char *)data; *line && count < CONTENT_ATTEMPTS_MAX; line = next) {
+        next = strpbrk(line, "\r\n");
+        if (next) {
+            *next++ = 0;
+            next += strspn(next, "\r\n");
+        } else {
+            next = line + strlen(line);
+        }
+        if (sscanf(line, "%63s %u %64s %42s %64s %16s %c", rows[count].host,
+                   &rows[count].port, key, rows[count].entry, rows[count].build,
+                   attempt, &extra) != 6
+            || !rows[count].port || rows[count].port > 65535
+            || !valid_id(rows[count].entry) || strlen(rows[count].build) != 64
+            || unhex(rows[count].build, (unsigned char[32]){0}, 32)
+            || unhex(key, rows[count].key, 32)
+            || unhex(attempt, rows[count].attempt, 8))
+            continue;
+        count++;
+    }
+    free(data);
+    return count;
+}
+
+static int save_attempts(const struct pending_attempt *rows, int count)
+{
+    char text[8192], key[65], attempt[17], staged[sizeof CONTENT_ATTEMPTS_FILE + 8];
+    size_t used = 0;
+    int i, n;
+
+    if (!count) {
+        DeleteFileA(CONTENT_ATTEMPTS_FILE);
+        return 0;
+    }
+    for (i = 0; i < count; i++) {
+        hex(key, rows[i].key, 32);
+        hex(attempt, rows[i].attempt, 8);
+        n = snprintf(text + used, sizeof(text) - used, "%s %u %s %s %s %s\n",
+                     rows[i].host, rows[i].port, key, rows[i].entry, rows[i].build,
+                     attempt);
+        if (n < 0 || (size_t)n >= sizeof(text) - used)
+            return -1;
+        used += (size_t)n;
+    }
+    CreateDirectoryA("E:\\TES3X", NULL);
+    snprintf(staged, sizeof(staged), "%s.new", CONTENT_ATTEMPTS_FILE);
+    if (write_flushed(staged, text, used))
+        return -1;
+    DeleteFileA(CONTENT_ATTEMPTS_FILE);
+    return MoveFileA(staged, CONTENT_ATTEMPTS_FILE) ? 0 : -1;
+}
+
+static int find_attempt(const struct pending_attempt *rows, int count,
+                        const struct content_host *host, const struct content_entry *entry)
+{
+    int i;
+    for (i = 0; i < count; i++)
+        if (!strcmp(rows[i].host, host->host) && rows[i].port == host->port
+            && !memcmp(rows[i].key, host->key, 32)
+            && !strcmp(rows[i].entry, entry->id)
+            && !strcmp(rows[i].build, entry->build))
+            return i;
+    return -1;
+}
+
+static int get_attempt(const struct content_host *host, const struct content_entry *entry,
+                       unsigned char attempt[8])
+{
+    struct pending_attempt rows[CONTENT_ATTEMPTS_MAX], *row;
+    int count = load_attempts(rows), i;
+
+    if (count < 0 || !host->has_key)
+        return -1;
+    i = find_attempt(rows, count, host, entry);
+    if (i >= 0) {
+        memcpy(attempt, rows[i].attempt, 8);
+        return 0;
+    }
+    if (server_random(attempt, 8))
+        return -1;
+    if (count == CONTENT_ATTEMPTS_MAX) {
+        memmove(rows, rows + 1, sizeof(rows[0]) * (CONTENT_ATTEMPTS_MAX - 1));
+        i = count - 1;
+    } else {
+        i = count++;
+    }
+    row = &rows[i];
+    memset(row, 0, sizeof(*row));
+    snprintf(row->host, sizeof(row->host), "%s", host->host);
+    snprintf(row->entry, sizeof(row->entry), "%s", entry->id);
+    snprintf(row->build, sizeof(row->build), "%s", entry->build);
+    row->port = host->port;
+    memcpy(row->key, host->key, 32);
+    memcpy(row->attempt, attempt, 8);
+    return save_attempts(rows, count);
+}
+
+void content_attempt_done(const struct content_host *host, const struct content_entry *entry,
+                          const struct ticket *ticket)
+{
+    struct pending_attempt rows[CONTENT_ATTEMPTS_MAX];
+    int count = load_attempts(rows), i, kept = 0;
+
+    if (count < 0)
+        return;
+    for (i = 0; i < count; i++)
+        if (find_attempt(rows + i, 1, host, entry) < 0
+            || memcmp(rows[i].attempt, ticket->attempt, 8))
+            rows[kept++] = rows[i];
+    if (kept != count && save_attempts(rows, kept))
+        mgr_log("content: could not clear a finished install attempt\n");
+}
+
 int content_remove(const struct content_host *host)
 {
     return save_host(host, 1);
@@ -355,7 +488,7 @@ int content_accept_key(struct content_host *host)
 static const char *get_signed(struct content_host *host, const char *path, struct json *j,
                               unsigned char **body)
 {
-    char url[256];
+    char url[512];
     size_t size;
     const char *error;
 
@@ -429,13 +562,23 @@ const char *content_ticket(struct content_host *host, const struct content_entry
 {
     struct json j = {0};
     unsigned char *body = NULL;
-    char path[180], hex_sha[65], hex_token[33], build[65], pub[65];
+    char path[400], hex_sha[65], hex_token[33], hex_attempt[17], build[65];
+    char pub[65], signature[129], message[160];
+    unsigned char attempt[8], sig[64];
     const char *err;
 
     if (content_identity())
         return "Could not load the Dash content identity.";
+    if (get_attempt(host, entry, attempt))
+        return "Could not keep the content install attempt.";
     hex(pub, content_public, 32);
-    snprintf(path, sizeof(path), "/v1/ticket/%s?client=%s", entry->id, pub);
+    hex(hex_attempt, attempt, 8);
+    snprintf(message, sizeof(message), "ticket:%s:%s:%s", entry->id, entry->build,
+             hex_attempt);
+    crypto_ed25519_sign(sig, content_secret, (const unsigned char *)message, strlen(message));
+    hex(signature, sig, 64);
+    snprintf(path, sizeof(path), "/v1/ticket/%s?client=%s&build=%s&attempt=%s&sig=%s",
+             entry->id, pub, entry->build, hex_attempt, signature);
     err = get_signed(host, path, &j, &body);
     if (err)
         goto done;
@@ -449,7 +592,10 @@ const char *content_ticket(struct content_host *host, const struct content_entry
     }
     if (json_string(&j, json_get(&j, 0, "sha256"), hex_sha, sizeof(hex_sha)) != 64
         || json_string(&j, json_get(&j, 0, "token"), hex_token, sizeof(hex_token)) != 32
-        || unhex(hex_sha, out->sha256, 32) || unhex(hex_token, out->token, 16)) {
+        || json_string(&j, json_get(&j, 0, "attempt"), hex_attempt,
+                       sizeof(hex_attempt)) != 16
+        || unhex(hex_sha, out->sha256, 32) || unhex(hex_token, out->token, 16)
+        || unhex(hex_attempt, out->attempt, 8) || memcmp(out->attempt, attempt, 8)) {
         err = "The content ticket is invalid.";
         goto done;
     }

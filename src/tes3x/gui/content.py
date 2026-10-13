@@ -63,7 +63,8 @@ class ContentPage(QWidget):
         layout.addWidget(self.status)
         layout.addWidget(QLabel("Recent install activity"))
         self.activity_tree = QTreeWidget()
-        self.activity_tree.setHeaderLabels(["Build", "Client", "Stage", "Progress", "Sent", "File"])
+        self.activity_tree.setHeaderLabels(["Build", "Client", "Stage", "Tickets",
+                                            "Progress", "Sent", "File"])
         self.activity_tree.setRootIsDecorated(False)
         self.activity_tree.setMaximumHeight(190)
         layout.addWidget(self.activity_tree)
@@ -235,9 +236,10 @@ class ContentPage(QWidget):
         row.setText(0, activity["entry"])
         row.setText(1, activity["client"])
         row.setText(2, activity["stage"])
-        row.setText(3, progress)
-        row.setText(4, f"{activity['wire'] / (1 << 20):.1f} MB")
-        row.setText(5, activity["file"])
+        row.setText(3, str(activity["tickets"]))
+        row.setText(4, progress)
+        row.setText(5, f"{activity['wire'] / (1 << 20):.1f} MB")
+        row.setText(6, activity["file"])
 
     def finished(self, code, _status):
         self.read_output()

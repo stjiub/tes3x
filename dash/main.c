@@ -636,6 +636,7 @@ static void install_content(int replace)
         say("Install failed", entry->name, err);
         return;
     }
+    content_attempt_done(host, entry, &ticket);
     scan();
     link_builds();
     v.tab = TAB_BUILDS;

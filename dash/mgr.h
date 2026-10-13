@@ -160,7 +160,7 @@ struct server {
 /* What a server's BUILD hands the Dash: its manifest's hash and size, and a ticket for the
  * HTTP side at addr:port. */
 struct ticket {
-    unsigned char sha256[32], token[16];
+    unsigned char sha256[32], token[16], attempt[8];
     unsigned size, port, addr;
 };
 int servers_load(struct server *out, int max);
@@ -218,6 +218,8 @@ const char *content_ticket(struct content_host *host, const struct content_entry
                            struct ticket *out);
 int content_report(const struct content_host *host, const struct ticket *ticket,
                    const char *stage, unsigned long long done, unsigned long long total);
+void content_attempt_done(const struct content_host *host, const struct content_entry *entry,
+                          const struct ticket *ticket);
 
 int read_file(const char *path, unsigned char **data, size_t *n);
 /* Writes a file and flushes it to the disk; flush_path flushes one already written. */

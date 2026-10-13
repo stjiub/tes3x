@@ -27,6 +27,9 @@ No official releases yet. The first public release is in preparation.
 - The Dash now saves an unacknowledged content install result and retries it when it next contacts
   that library, while its transfer ticket is valid. See [content servers](docs/content.md).
 - Updating a published content build now serves its new files when its XBE delta has not changed.
+- Retrying a content install now keeps one activity row across new download tickets, with the
+  ticket count and total bytes sent. Update the Dash and content server together; the new ticket
+  request requires a signed install attempt. See [content servers](docs/content.md).
 
 - `tes3x game-tests` runs every game test against the retail engines named in the local
   config's new `[engines]` table, several at once, and prints what passed and failed. See

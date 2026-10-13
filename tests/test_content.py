@@ -45,16 +45,27 @@ class ContentTests(unittest.TestCase):
         Ed25519PublicKey.from_public_bytes(public).verify(signature, data)
         return public, json.loads(data)
 
+    def ticket(self, entry="sample", build=None, attempt="0123456789abcdef", key=None):
+        key = key or Ed25519PrivateKey.generate()
+        public = key.public_key().public_bytes(serialization.Encoding.Raw,
+                                               serialization.PublicFormat.Raw).hex()
+        if build is None:
+            build = self.signed(self.request("/v1/catalog")[1])[1]["entries"][0]["build"]
+        message = f"ticket:{entry}:{build}:{attempt}".encode()
+        path = (f"/v1/ticket/{entry}?client={public}&build={build}&attempt={attempt}"
+                f"&sig={key.sign(message).hex()}")
+        status, body = self.request(path)
+        return status, self.signed(body)[1] if status == 200 else body, key
+
     def test_catalog_ticket_and_frozen_revision(self):
         status, body = self.request("/v1/catalog")
         self.assertEqual(status, 200)
         key, catalog = self.signed(body)
         entry = catalog["entries"][0]
         self.assertEqual((entry["id"], entry["name"]), ("sample", "Sample"))
-        status, body = self.request("/v1/ticket/sample")
+        status, ticket, _ = self.ticket(build=entry["build"])
         self.assertEqual(status, 200)
-        self.assertEqual(self.signed(body)[0], key)
-        ticket = self.signed(body)[1]
+        self.assertEqual(self.signed(self.request("/v1/catalog")[1])[0], key)
         self.assertEqual(ticket["build"], entry["build"])
         status, data = self.request(f"/{ticket['token']}/file/mod.esp")
         self.assertEqual((status, data), (200, b"first revision"))
@@ -67,8 +78,7 @@ class ContentTests(unittest.TestCase):
         self.assertEqual(status, 200)
         newer = self.signed(body)[1]["entries"][0]
         self.assertNotEqual(newer["build"], entry["build"])
-        _, body = self.request("/v1/ticket/sample")
-        newer_ticket = self.signed(body)[1]
+        _, newer_ticket, _ = self.ticket(build=newer["build"], attempt="fedcba9876543210")
         self.assertEqual(newer_ticket["build"], newer["build"])
         status, data = self.request(f"/{newer_ticket['token']}/file/mod.esp")
         self.assertEqual((status, data), (200, b"second revision"))
@@ -76,17 +86,15 @@ class ContentTests(unittest.TestCase):
         self.assertEqual((status, data), (200, b"first revision"))
 
     def test_unknown_ticket_and_unsafe_manifest(self):
-        self.assertEqual(self.request("/v1/ticket/missing")[0], 404)
+        self.assertEqual(self.ticket(entry="missing")[0], 404)
         self.assertEqual(self.request(f"/{'0' * 32}/file/mod.esp")[0], 403)
         self.assertFalse(content.safe_relative("../escape"))
         self.assertFalse(content.safe_relative("a/../../escape"))
 
     def test_activity_requires_ticket_and_keeps_terminal_result(self):
         private = Ed25519PrivateKey.generate()
-        public = private.public_key().public_bytes(serialization.Encoding.Raw,
-                                                   serialization.PublicFormat.Raw).hex()
-        _, body = self.request(f"/v1/ticket/sample?client={public}")
-        token = self.signed(body)[1]["token"]
+        _, ticket, _ = self.ticket(key=private)
+        token = ticket["token"]
 
         def report(stage, done=0, total=0, key=private):
             message = f"{token}:{stage}:{done}:{total}".encode()
@@ -114,6 +122,29 @@ class ContentTests(unittest.TestCase):
             self.server.activity.clear()
         self.assertEqual(report("complete"), 200)
         self.assertEqual(self.server.activity_snapshot(), [])
+
+    def test_renewed_ticket_keeps_attempt_and_rejects_other_bindings(self):
+        private = Ed25519PrivateKey.generate()
+        status, first, _ = self.ticket(key=private)
+        self.assertEqual(status, 200)
+        attempt = first["attempt"]
+        token = first["token"]
+        self.assertEqual(self.request(f"/{token}/file/mod.esp")[0], 200)
+        message = f"{token}:failed:0:0".encode()
+        self.assertEqual(self.request(f"/v1/report/{token}?stage=failed&done=0&total=0"
+                                      f"&sig={private.sign(message).hex()}")[0], 200)
+        status, second, _ = self.ticket(key=private, attempt=attempt)
+        self.assertEqual(status, 200)
+        self.assertNotEqual(first["token"], second["token"])
+        self.assertEqual(second["attempt"], attempt)
+        row = self.server.activity_snapshot()[0]
+        self.assertEqual((row["stage"], row["tickets"]), ("retrying", 2))
+        self.assertEqual(row["wire"], len(b"first revision"))
+        self.assertEqual(self.request(f"/v1/report/{token}?stage=failed&done=0&total=0"
+                                      f"&sig={private.sign(message).hex()}")[0], 200)
+        self.assertEqual(self.server.activity_snapshot()[0]["stage"], "retrying")
+        self.assertEqual(self.ticket(attempt=attempt)[0], 403)
+        self.assertEqual(len(self.server.activity_snapshot()), 1)
 
 
 if __name__ == "__main__":
