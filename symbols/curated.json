@@ -38,6 +38,25 @@
       "note": "cdecl (width, height, bpp, backBufferCount, flags, depthBits, refresh, interval); present Flags fixed at 1 (lockable back buffer); hd-video hooks its call and the CreateDevice call"
     },
     {
+      "va": "0x00016B30",
+      "name": "NiXBoxRenderer::display",
+      "confidence": "guess",
+      "provenance": "vtable method; calls D3DDevice_Swap(0) when [this+0x58]+0x10 is 0. First call on a direct boot precedes the first clear (xemu gdb)"
+    },
+    {
+      "va": "0x00016B50",
+      "name": "NiXBoxRenderer::clear",
+      "confidence": "guess",
+      "provenance": "vtable method; sets viewport then D3DDevice_Clear. param_2 bit0 = colour, bit1 = stencil, bit2 = depth; observed flags 0x6 on every frame, never colour"
+    },
+    {
+      "va": "0x0002FB40",
+      "name": "Renderer::clearViewport",
+      "confidence": "guess",
+      "provenance": "wrapper over [this+0x144] vtable +0x44 (NiXBoxRenderer::clear); every colour/depth clear of a frame goes through it",
+      "note": "flags 7 = colour+stencil+depth. Menu frames clear colour to black every frame; menu-still strips bit 0 in the vtable slot while the still is up"
+    },
+    {
       "va": "0x00030A40",
       "name": "SE::NI_CAMERA_FNADDR_LOOKATWORLDPOINT",
       "kind": "function",
@@ -1592,6 +1611,15 @@
       "signature": "TES3::Effect* __thiscall getSourceEffects()"
     },
     {
+      "va": "0x000E7610",
+      "name": "Actor::setAIPackage",
+      "confidence": "verified",
+      "provenance": "mwse:TES3_Actor_setAIPackage(vtable+0x17C,xbox+0x184)",
+      "note": "Base version: clones the actor for the reference (0x000E74B0) and calls the instance's +0x184.",
+      "pc_va": "0x00497150",
+      "signature": "void __thiscall setAIPackage(TES3::AIPackageConfig* config, TES3::Reference* reference)"
+    },
+    {
       "va": "0x000E7930",
       "name": "Actor::unequipAllItems",
       "kind": "function",
@@ -1610,15 +1638,6 @@
     },
     {
       "va": "0x000E88D0",
-    {
-      "va": "0x000E7610",
-      "name": "Actor::setAIPackage",
-      "confidence": "verified",
-      "provenance": "mwse:TES3_Actor_setAIPackage(vtable+0x17C,xbox+0x184)",
-      "note": "Base version: clones the actor for the reference (0x000E74B0) and calls the instance's +0x184.",
-      "pc_va": "0x00497150",
-      "signature": "void __thiscall setAIPackage(TES3::AIPackageConfig* config, TES3::Reference* reference)"
-    },
       "name": "Inventory::removeItemData",
       "kind": "function",
       "confidence": "matched",
@@ -1716,6 +1735,23 @@
       "pc_va": "0x0049EF60"
     },
     {
+      "va": "0x000ECA90",
+      "name": "CreatureInstance::setAIPackage",
+      "confidence": "verified",
+      "provenance": "mwse:TES3_Actor_setAIPackage(vtable+0x17C,xbox+0x184)",
+      "note": "Actor vtable +0x184 (PC +0x17C); config at +0x88.",
+      "pc_va": "0x0049F090",
+      "signature": "void __thiscall setAIPackage(TES3::AIPackageConfig* config, TES3::Reference* reference)"
+    },
+    {
+      "va": "0x000ED920",
+      "name": "CreatureInstance::getAIPackageConfig",
+      "confidence": "verified",
+      "provenance": "mwse:TES3_Actor_getAIPackageConfig(vtable+0x178,xbox+0x180)",
+      "pc_va": "0x0049F960",
+      "signature": "TES3::AIPackageConfig* __thiscall getAIPackageConfig()"
+    },
+    {
       "va": "0x000EF000",
       "name": "Armor::getWeightClass",
       "kind": "function",
@@ -1734,23 +1770,6 @@
     {
       "va": "0x000EFD60",
       "name": "Static::copy",
-    {
-      "va": "0x000ECA90",
-      "name": "CreatureInstance::setAIPackage",
-      "confidence": "verified",
-      "provenance": "mwse:TES3_Actor_setAIPackage(vtable+0x17C,xbox+0x184)",
-      "note": "Actor vtable +0x184 (PC +0x17C); config at +0x88.",
-      "pc_va": "0x0049F090",
-      "signature": "void __thiscall setAIPackage(TES3::AIPackageConfig* config, TES3::Reference* reference)"
-    },
-    {
-      "va": "0x000ED920",
-      "name": "CreatureInstance::getAIPackageConfig",
-      "confidence": "verified",
-      "provenance": "mwse:TES3_Actor_getAIPackageConfig(vtable+0x178,xbox+0x180)",
-      "pc_va": "0x0049F960",
-      "signature": "TES3::AIPackageConfig* __thiscall getAIPackageConfig()"
-    },
       "confidence": "matched",
       "provenance": "Object vtable +0x24 (vtable 0x00366F48); same body as PC 0x004A74D0",
       "pc_va": "0x004A74D0",
@@ -2877,6 +2896,14 @@
       "pc_va": "0x004D51B0"
     },
     {
+      "va": "0x0011E060",
+      "name": "NPCInstance::getAIPackageConfig",
+      "confidence": "verified",
+      "provenance": "mwse:TES3_Actor_getAIPackageConfig(vtable+0x178,xbox+0x180)",
+      "pc_va": "0x004DB0D0",
+      "signature": "TES3::AIPackageConfig* __thiscall getAIPackageConfig()"
+    },
+    {
       "va": "0x0011E210",
       "name": "NPCorNPCInstance::calculateDisposition",
       "kind": "function",
@@ -2895,14 +2922,6 @@
     {
       "va": "0x0011E660",
       "name": "NPC::copy",
-    {
-      "va": "0x0011E060",
-      "name": "NPCInstance::getAIPackageConfig",
-      "confidence": "verified",
-      "provenance": "mwse:TES3_Actor_getAIPackageConfig(vtable+0x178,xbox+0x180)",
-      "pc_va": "0x004DB0D0",
-      "signature": "TES3::AIPackageConfig* __thiscall getAIPackageConfig()"
-    },
       "confidence": "matched",
       "provenance": "Object vtable +0x24 (vtable 0x00375100); same body as PC 0x004D7340",
       "pc_va": "0x004D7340",
@@ -2915,6 +2934,15 @@
       "provenance": "traced: MenuCreateClass OK calls it on the player's base NPC; copies the id into the links' 32-byte class buffer and calls resolveLinks, else findClass",
       "pc_va": "0x004D77D0",
       "signature": "void __thiscall setClass(const char* id)"
+    },
+    {
+      "va": "0x0011FBB0",
+      "name": "NPCInstance::setAIPackage",
+      "confidence": "verified",
+      "provenance": "mwse:TES3_Actor_setAIPackage(vtable+0x17C,xbox+0x184)",
+      "note": "Actor vtable +0x184 (PC +0x17C). Frees the old config at +0x74, keeps the new one and hands it to the mobile's AIPlanner; tes3x multiplayer hooks its one vtable slot.",
+      "pc_va": "0x004DA210",
+      "signature": "void __thiscall setAIPackage(TES3::AIPackageConfig* config, TES3::Reference* reference)"
     },
     {
       "va": "0x00122120",
@@ -2935,15 +2963,6 @@
     {
       "va": "0x00122A50",
       "name": "Cell::setLand",
-    {
-      "va": "0x0011FBB0",
-      "name": "NPCInstance::setAIPackage",
-      "confidence": "verified",
-      "provenance": "mwse:TES3_Actor_setAIPackage(vtable+0x17C,xbox+0x184)",
-      "note": "Actor vtable +0x184 (PC +0x17C). Frees the old config at +0x74, keeps the new one and hands it to the mobile's AIPlanner; tes3x multiplayer hooks its one vtable slot.",
-      "pc_va": "0x004DA210",
-      "signature": "void __thiscall setAIPackage(TES3::AIPackageConfig* config, TES3::Reference* reference)"
-    },
       "confidence": "matched",
       "provenance": "same body as PC; a later LAND replaces the cell's land",
       "pc_va": "0x004E2820"
@@ -4665,6 +4684,14 @@
       "signature": "int __thiscall getBounty()"
     },
     {
+      "va": "0x0018CFF0",
+      "name": "AIPlanner::packageFromConfig",
+      "confidence": "guess",
+      "provenance": "xbe:switch on AIPackageConfig type building each AIPackage",
+      "note": "Switches on the config type (1 travel .. 5 activate) and builds that package; a follow or escort target is the config's Actor resolved by PhysicalObject::getMobile.",
+      "pc_va": "0x0056EBF0"
+    },
+    {
       "va": "0x0018D900",
       "name": "ProcessManager::checkNearbyEnemiesAllowRest",
       "kind": "function",
@@ -4683,14 +4710,6 @@
     {
       "va": "0x0018E020",
       "name": "ProcessManager::checkAlarmRadius",
-    {
-      "va": "0x0018CFF0",
-      "name": "AIPlanner::packageFromConfig",
-      "confidence": "guess",
-      "provenance": "xbe:switch on AIPackageConfig type building each AIPackage",
-      "note": "Switches on the config type (1 travel .. 5 activate) and builds that package; a follow or escort target is the config's Actor resolved by PhysicalObject::getMobile.",
-      "pc_va": "0x0056EBF0"
-    },
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_ProcessManager_checkAlarmRadius",
@@ -5701,7 +5720,7 @@
       "confidence": "guess",
       "provenance": "builds MenuOptions through 0x00200990; called by onDeath and the pad handler",
       "signature": "void __cdecl f(char skip)",
-      "note": "The pad handler follows it with ui::requestMenuModeOn(MenuOptions id); called alone from an exec command it showed New, Load, Options, Exit over the game and a click on Exit did not reach onExitClick"
+      "note": "first open with CharGenState != 0 plays [Movies] Morrowind Logo (call 0x00201943 to LoadScreenManager::open, 7 stack args, ret 0x1C), then a render loop until it ends. menu-still replaces that call"
     },
     {
       "va": "0x00206570",
@@ -6000,6 +6019,18 @@
       "name": "D3DDevice_PersistDisplay?",
       "confidence": "guess",
       "provenance": "reads the D3D device (0x348D78); called right before every XLaunchNewImage"
+    },
+    {
+      "va": "0x0033C1E0",
+      "name": "D3D_SetFence",
+      "confidence": "verified",
+      "provenance": "Ghidra D3D8LTCG name; returns the fence value; Swap waits on the previous one"
+    },
+    {
+      "va": "0x0033C4D0",
+      "name": "D3D_BlockOnTime",
+      "confidence": "verified",
+      "provenance": "Ghidra D3D8LTCG name; (fence, flag), returns when the GPU reached the fence. SetFence(0) then BlockOnTime(fence,1) is a wait for idle"
     },
     {
       "va": "0x00340A2B",
