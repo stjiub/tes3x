@@ -121,8 +121,10 @@ def stage_xemu(out, xbe, vanilla=None):
     # an ISO needs a second file
     (disc / "readme.txt").write_text("TES3X Dash for xemu\n", encoding="utf-8")
     seed.mkdir(parents=True, exist_ok=True)
-    (seed / "xbox.ini").write_bytes(b"[Xbox]\r\nNetAddress=dhcp\r\n")
     base = seed / "Games" / "Base"
+    # the seeded base is selected, or the Dash would build a second one from the server
+    selected = b"OverlayBase=E:\\Games\\Base\r\n" if vanilla or base.is_dir() else b""
+    (seed / "xbox.ini").write_bytes(b"[Xbox]\r\nNetAddress=dhcp\r\n" + selected)
     if vanilla and not base.is_dir():
         from tes3x.pipeline import stage_retail_base
         from tes3x.xemu import link_or_copy

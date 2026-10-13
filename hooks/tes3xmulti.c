@@ -50,6 +50,7 @@ int tes3x_console_text_begin_on(void *menu, const char *initial);
 void *tes3x_console_text_field(void);
 int tes3x_console_text_poll(char *out, u32 size);
 const char *tes3x_console_text_now(void);
+void __cdecl tes3x_console_reply(const char *fmt, ...);
 #endif
 
 #ifndef TES3X_NET_WORLD
@@ -138,8 +139,13 @@ const char *tes3x_console_text_now(void);
     !defined(TES3X_NET_LIST_APPEND) || !defined(TES3X_NET_GMST_TEXT) || \
     !defined(TES3X_NET_RACE_SEX_OK) || !defined(TES3X_NET_UNEQUIP_ITEM) || \
     !defined(TES3X_NET_EQUIP_ITEM) || !defined(TES3X_NET_INVENTORY_BUILD) || \
-    !defined(TES3X_NET_MENU_TAB)
-#error "define the TES3X_NET_ record lookups and the class functions chargen uses"
+    !defined(TES3X_NET_MENU_TAB) || !defined(TES3X_NET_FIND_FACTION) || \
+    !defined(TES3X_NET_FACTION_LOAD) || !defined(TES3X_NET_UPDATE_STATS_PANE) || \
+    !defined(TES3X_NET_FIND_GLOBAL) || !defined(TES3X_NET_JOURNAL_ADD) || \
+    !defined(TES3X_NET_RELOCATE) || !defined(TES3X_NET_RELOCATE_SITES) || \
+    !defined(TES3X_NET_SCRIPT_EXECUTE) || !defined(TES3X_NET_GLOBAL_SCRIPT_SITES) || \
+    !defined(TES3X_NET_ADD_GLOBAL_SCRIPT) || !defined(TES3X_NET_FIND_SCRIPT)
+#error "define the TES3X_NET_ record lookups, the class functions chargen uses, the faction restore, journalAdd and the script and move hooks"
 #endif
 
 typedef unsigned short u16;
@@ -452,6 +458,11 @@ static int script_safe(const u8 *text, u32 max)
 #include "multi/characters.c"
 #include "multi/player.c"
 #include "multi/player_topics.c"
+#include "multi/player_factions.c"
+#include "multi/player_globals.c"
+#include "multi/locals.c"
+#include "multi/world_scripts.c"
+#include "multi/moves.c"
 #include "multi/player_identity.c"
 #include "multi/player_effects.c"
 #include "multi/player_apply.c"
@@ -510,7 +521,10 @@ void tes3x_multi_frame(void)
         save_hook_install();
         quit_hook_install();
         death_hook_install();
+        scripts_hook_install();
+        moves_hook_install();
         authority_session();
+        moves_session();
         spawns_session();
         events_frame();
         save_frame();
@@ -571,9 +585,68 @@ void tes3x_multi_frame(void)
     ghosts_frame(state);
     authority_frame(ref, state);
     objects_frame();
+    moves_frame();
+    locals_frame(state);
     spawns_frame();
     containers_frame();
     player_frame(ref);
+}
+
+#define TEXT_PRIVATE 1u
+
+/* Appends text to a TEXT event at *n, dropping one pair of quotes around all of it. */
+static void text_append(u8 *data, u32 *n, const char *text)
+{
+    u32 length;
+
+    text = skip(text);
+    for (length = 0; text[length]; length++)
+        ;
+    while (length && text[length - 1] == ' ')
+        length--;
+    if (length >= 2 && text[0] == '"' && text[length - 1] == '"') {
+        text++;
+        length -= 2;
+    }
+    while (length-- && *n < EVENT_DATA)
+        data[(*n)++] = (u8)*text++;
+}
+
+/* chat TEXT, or msg NAME TEXT for one player (or "admin"); NAME is one word or quoted. */
+static void chat(const char *text, int private_to)
+{
+    u8 data[EVENT_DATA];
+    u32 n = 0, start;
+    char end = ' ';
+
+    text = skip(text);
+    if (private_to) {
+        data[n++] = TEXT_PRIVATE;
+        if (*text == '"') {
+            end = '"';
+            text++;
+        }
+        for (; *text && *text != end; text++)
+            if (n < EVENT_DATA - 2)
+                data[n++] = (u8)*text;
+        if (*text == '"')
+            text++;
+        if (n == 1) {
+            tes3x_log("net.usage", 0);
+            return;
+        }
+        data[n++] = 0;
+    }
+    start = n;
+    text_append(data, &n, text);
+    if (n == start) {
+        tes3x_log("net.usage", 0);
+        return;
+    }
+    if (!net.up)
+        notice("Not connected to a server.");
+    else if (!event_queue(EVENT_TEXT, data, n))
+        tes3x_log("net.event_full", rel.out_next - rel.out_first);
 }
 
 int tes3x_multi_command(const char *text)
@@ -581,6 +654,14 @@ int tes3x_multi_command(const char *text)
     const char *rest;
     u32 value;
 
+    if ((rest = word(skip(text), "chat")) && *skip(rest)) {
+        chat(rest, 0);
+        return 1;
+    }
+    if ((rest = word(skip(text), "msg")) && *skip(rest)) {
+        chat(rest, 1);
+        return 1;
+    }
     if (!(text = word(text, "tes3xnet")))
         return 0;
     text = skip(text);
@@ -605,6 +686,9 @@ int tes3x_multi_command(const char *text)
         bounty_stat();
         shot_stat();
         objects_stat();
+        locals_stat();
+        world_scripts_stat();
+        moves_stat();
         spawns_stat();
         containers_stat();
         bulk_stat();
@@ -628,6 +712,18 @@ int tes3x_multi_command(const char *text)
         weather_forced = word(rest, "auto") ? 0 : 1 + (value != 0);
     } else if ((rest = word(text, "topic")) && *(rest = skip(rest))) {
         topic_query(rest);
+    } else if ((rest = word(text, "faction")) && *(rest = skip(rest))) {
+        faction_query(rest);
+    } else if ((rest = word(text, "global")) && *(rest = skip(rest))) {
+        global_query(rest);
+    } else if ((rest = word(text, "local")) && *(rest = skip(rest))) {
+        local_query(rest);
+    } else if ((rest = word(text, "actor")) && *(rest = skip(rest))) {
+        actor_query(rest);
+    } else if ((rest = word(text, "script")) && *(rest = skip(rest))) {
+        script_query(rest);
+    } else if ((rest = word(text, "where")) && *(rest = skip(rest))) {
+        where_query(rest);
     } else if ((rest = word(text, "send")) && *(rest = skip(rest))) {
         up_command(rest);
     } else if ((rest = word(text, "save")) && !*skip(rest)) {
@@ -637,10 +733,7 @@ int tes3x_multi_command(const char *text)
     } else if ((rest = word(text, "notice")) && *(rest = skip(rest))) {
         notice(rest);
     } else if ((rest = word(text, "say")) && *(rest = skip(rest))) {
-        for (value = 0; rest[value] && value < EVENT_DATA; value++)
-            ;
-        if (!event_queue(EVENT_TEXT, (const u8 *)rest, value))
-            tes3x_log("net.event_full", rel.out_next - rel.out_first);
+        chat(rest, 0);
     } else if (!*text) {
         tes3x_net_broadcast(8);
     } else if ((rest = number(text, &value)) && !*skip(rest) && value) {

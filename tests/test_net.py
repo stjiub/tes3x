@@ -314,6 +314,7 @@ class WorldTests(unittest.TestCase):
         world.weather[3] = 2
         world.statuses[0x0101F7C6] = (10, 20, 30, 40, 50)
         world.topics = ['Caius Cosades', 'Balmora']
+        world.factions = {'fighters guild': {'id': 'Fighters Guild', 'rank': 2, 'reputation': 7}}
         made = {'cell': 4, 'count': 1, 'removed': False, 'pos': [1.0, 2.0, 3.0],
                 'rot': [0.0, 0.0, 0.5], 'id': 'gold_001', 'origin': 2}
         world.spawns[tes3x_net.SPAWN_IDS | 1] = made
@@ -329,8 +330,8 @@ class WorldTests(unittest.TestCase):
         world = self.saved_world()
         self.assertFalse(world.dirty)
         saved = tes3x_net.load_world(self.path)
-        self.assertEqual(sorted(saved), ['clock', 'contents', 'deaths', 'next_spawn', 'objects',
-                                         'spawns', 'statuses', 'topics', 'weather'])
+        self.assertEqual(sorted(saved), ['actors', 'clock', 'contents', 'deaths', 'factions', 'globals', 'journal', 'locals', 'moves', 'next_spawn', 'objects',
+                                         'scripts', 'spawns', 'statuses', 'topics', 'weather'])
         self.assertEqual(saved['clock'], [9.5, 16, 7, 427, 1, 30.0])
         self.assertEqual(saved['topics'], ['Caius Cosades', 'Balmora'])
         self.assertEqual(sorted(saved['spawns'][str(tes3x_net.SPAWN_IDS | 1)]),
@@ -346,6 +347,8 @@ class WorldTests(unittest.TestCase):
         self.assertEqual(world.weather, {3: 2})
         self.assertEqual(world.statuses, {0x0101F7C6: (10, 20, 30, 40, 50)})
         self.assertEqual(world.topics, ['Caius Cosades', 'Balmora'])
+        self.assertEqual(world.factions['fighters guild'], {'id': 'Fighters Guild', 'rank': 2,
+                                                            'reputation': 7})
         self.assertEqual(world.next_spawn, 3)
         removed = {s['id']: s['removed'] for s in world.spawns.values()}
         self.assertEqual(removed, {'gold_001': False, 'atronach_flame': True})
@@ -362,7 +365,8 @@ class WorldTests(unittest.TestCase):
         self.assertFalse(world.load(self.path, now=0.0))
         self.assertEqual(world.path, self.path)
         self.assertEqual(str(world), '0 deaths, 0 objects, 0 spawns, 0 containers, 0 regions, '
-                                     '0 statuses')
+                                     '0 statuses, 0 quests, 0 globals, 0 scripted references, 0 actors, '
+                                     '0 moved, 0 scripts')
 
 
 class AuthorityTests(unittest.TestCase):

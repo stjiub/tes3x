@@ -74,7 +74,8 @@ invert_look = false
 
 [package]
 # How mod files are shipped:
-#   "delta-bsa":  mod files in their own archive beside the retail one. Needs LLVM.
+#   "delta-bsa":  mod files in their own archive beside the retail one. Uses a prebuilt payload
+#                 for supported patch sets; other combinations need LLVM.
 #   "merged-bsa": mod files merged into a rebuilt Morrowind.bsa.
 #   "loose":      every mod file loose in Data Files. No LLVM or archive needed and easy to
 #                 inspect, but the Xbox searches large folders for every file.

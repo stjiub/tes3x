@@ -65,16 +65,18 @@ to `--stop-wait` for the requested snapshots. A second Ctrl+C stops at once. Wit
 the session lives only as long as the server does: stop it and the deaths, objects and equipment
 it recorded are gone. With `--world DIR` it
 keeps the game clock, the deaths, the doors, locks and items taken, the items dropped or placed,
-containers' contents, actors' AI settings and disposition, and the weather in one file per
-load order in `DIR`, loads it when the
-first console joins and writes it every 10 seconds
+containers' contents, actors' AI settings and disposition, actors' last place and health,
+the weather, learned topics, the journal,
+faction ranks, the world's globals, references' script locals, the quest scripts still running
+and characters that scripts moved in one file per load order in `DIR`, loads it when the
+first console joins in game and writes it every 10 seconds
 while it changes, so a restarted server carries on where it stopped. A joined client starts from
 the data files and applies the server's world; it does not import changes from a local save.
 
 With `--world` the server also keeps each character under `characters` in `DIR`. A joining console
 starts a New Game and receives the character's identity, inventory, worn items and last place in a
 small server-generated state file; the rest follows after it joins. The console sends inventory,
-equipment, level, attributes, skills and their current modifiers, active effects, journal, learned topics, current
+equipment, level, attributes, skills and their current modifiers, active effects, journal, learned topics, factions, its own globals, current
 health, magicka and fatigue as they change, and who the character is: name, race, sex, head, hair,
 birthsign and class, including a class made in character creation. The server keeps the latest
 supported state in `stream.json`. It also keeps where the player last was, so a crash or power cut
@@ -85,6 +87,25 @@ quitting; after 30 seconds without confirmation, the player chooses to leave any
 
 World and character state files are replaced atomically. The server retries brief Windows
 file locks for up to 0.25 seconds; lasting write failures remain errors.
+
+### Worlds in the GUI
+
+The GUI's **Server** workspace keeps a list of worlds, picked beside **Start**. Each is a folder
+under **Settings > Paths > Server worlds** (`worlds` beside the local config by default), with its
+settings in `world.toml` and everything `--world` keeps. The cog next to the list makes a new
+world, duplicates one (with or without its characters), renames or deletes it, or opens its folder.
+**World settings** belong to the selected world; **This PC** settings, such as the ports, stay in
+the local config and apply to every world. Starting the server serves the selected world, so
+characters and world state carry over every stop and start.
+
+All worlds share one server key, `server.key` in the worlds folder, because a console refuses a
+different key at the same address. The first time the GUI opens without worlds, it makes
+`Default` from the earlier settings and copies an earlier world folder into it, its key included;
+the earlier folder is left as it was.
+
+The **Characters** tab lists the selected world's characters: name, race, class, level, when the
+server last wrote them, and the fingerprint of the console key that plays them. **Delete** removes
+one while the server is stopped; that console makes a new character there on its next join.
 
 ## Keys and passwords
 
@@ -126,10 +147,12 @@ The server takes admin commands typed at its own window, or from the same PC wit
 | `bans` | the bans |
 | `save [N]` | ask every console, or client N, to save its character now |
 | `stop` | ask every console for its character, wait for the saves, then stop |
-| `say TEXT`, `tell N TEXT` | show a line of text to every player, or to client N |
+| `say TEXT`, `tell N TEXT` | show a line of text, prefixed `Admin:`, to every player or to client N |
 | `log [normal\|verbose]` | show or change how much the server prints |
 
-Any other word prints the list of commands.
+Any other word prints the list of commands. Players' chat appears in the server's output as
+`client N (NAME) says: TEXT`, private messages as `client N (NAME) to client M (NAME): TEXT`,
+and a player's `msg admin TEXT` as `client N (NAME) to admin: TEXT`.
 
 Bans are kept in `bans.txt` in the `--world` folder. A key is a player's identity, but a player
 can make a new one by deleting `servers.ini`; on a server with a password, a new key needs the
@@ -371,7 +394,7 @@ control characters. Empty equipment lists are allowed.
 | `GAME` | Launch token u32, zero-terminated filename (possibly empty), optional launch kind 0–2 | Server handles |
 | `PICK` | Selection kind (`PICK_CHARACTER`, `PICK_START`, `PICK_NEW`) and index bytes | Server handles |
 | `SNAPSHOT` | Token u32 and `STATE_BODY` with finite position and heading | Server handles |
-| `PLAYER` | One accepted sub-kind followed by its shape below | Retained; learned topics also reach other joined characters |
+| `PLAYER` | One accepted sub-kind followed by its shape below | Retained; learned topics, journal indices and faction rank and reputation also reach other joined characters |
 
 `PLAYER` accepts `ITEMS` (part/count, one item id, complete stack entries), `LEVEL` (one
 `LEVEL` record), `SKILLS` and `MODIFIERS` (count and complete records with valid indices and
@@ -381,7 +404,36 @@ and snapshot fragment), `EFFECTS` (u16 part/count and snapshot fragment), and `D
 `ALIVE` (no body), and `TOPICS` (count and complete zero-terminated names of at most 63 bytes,
 without controls or double quotes). Topics are additions to the shared world's learned list,
 capped at 4,096 names; new topics reach other joined characters, and the whole list is replayed
-before character READY. Character streams also retain their learned topics. Identity, worn and effect snapshots are checked when reassembled;
+before character READY. Character streams also retain their learned topics. `FACTIONS` carries a
+count and entries of a flags byte, rank i32 and reputation i32, each followed by a faction id of
+at most 31 bytes; a console must send all three values. The world keeps each faction's rank and
+reputation (up to 512 factions) and sends changes to the other joined characters; each character
+keeps its own membership and expulsion. Only a character that already was a member moves the
+world's rank; one that has just joined is sent the world's rank instead. `GLOBALS` carries a
+count and entries of a finite f32 value followed by a global's name of at most 31 bytes. They
+belong to the character alone: the server keeps up to 128 in `stream.json`, puts them in the
+New Game's state file, so they are set before global scripts first run, and replays them before
+READY. The console chooses which globals are the character's. `WORLD_GLOBALS` has the same
+form and carries every other global the console keeps (not the clock, `Random100`, chargen's
+or derived ones). The world file keeps the latest value of each, up to 1,024, and sends a
+change to the other joined characters; the later of two changes wins. The server replays
+them before READY and puts them in the state file when the world is loaded, which after a
+restart happens once a console is in game. `LOCALS` (event 37) carries a data-file
+reference's refid, a count and entries of a slot (kind << 14 | index; short, long, float) and
+a raw u32 value. The server keeps the latest of each, up to 16,384 values, relays the event
+and replays all of them after WELCOME. The world file also keeps each actor's latest state from
+its authority (up to 8,192 actors). When a cell gets an authority and nobody had it before, the
+server sends that client `ACTOR_PLACE` (event 38, server only) before `AUTHORITY`: a count and
+up to two entries of refid, position, heading, health, magicka, fatigue and the actor flags,
+for the actors last reported in that cell. `ACTOR_MOVE` (event 39) is an actor a script or a
+dialogue moved: refid, the cell index it left, the cell index it is in, position and rotation
+(radians, as Position and PositionCell give it). The server keeps the latest of each (up to 4,096) with the first cell it left, relays it
+in that form and replays all of them after WELCOME. `WORLD_SCRIPTS` (player sub-kind 21) is a
+global script a console started after its first READY: op (1 running, 2 stopped, 3 values),
+the script's reference (refid; 1 the player), the script id, a count and `LOCALS` entries. The
+server keeps each script (up to 512, 64 locals each) with the locals of the first console
+running it, drops it when the last one stops it, and hands one nobody runs any more to a
+player before READY, values first, then running. Identity, worn and effect snapshots are checked when reassembled;
 effects are capped at 64 entries. Server-to-client player sub-kinds are rejected.
 
 Inventory entries carry a signed i32 count and a flags byte (only `ENTRY_DATA`), optional

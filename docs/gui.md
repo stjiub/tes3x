@@ -117,15 +117,16 @@ layer.
 ## Target
 
 **Target** follows the toolbar target. Its actions are offered by what the target can do now:
-FTP, the dashboard agent, the in-game [agent](../patches/agent.md) or a running xemu. An
+FTP, the XBMC4Gamers agent, the in-game [agent](../patches/agent.md) or a running xemu. An
 unavailable action stays visible and its tooltip says what is missing.
 
 - **Overview** has one section for each thing that can answer, with that section's actions.
   **Connection** shows the address, memory, FTP and drive space, with Check connection and Pull
-  logs. **Agent** shows whether a game or the Dash is connected and, for a game, its
+  logs. **In-game agent** shows whether a game or the Dash is connected and, for a game, its
   heartbeat (frame time, free memory, dropped log lines), with Quit to dashboard and Fetch file. On
-  an Xbox, **Dashboard agent** has Install / update, Restart dashboard and Remove, and **Console
-  Dash** shows the installed version beside the one this PC would install, with Install / update.
+  an Xbox, **TES3X Dash agent** shows the installed Dash version beside the one this PC would
+  install, with Install / update, and **XBMC4Gamers agent** has Install / update, Restart
+  dashboard and Remove.
 - **Console** streams the running game's log and runs console lines in it, such as
   `player->getpos x` or `tes3xnet stat`; Up and Down recall earlier lines. It needs a build with
   the `agent` and `console` patches. **Fetch file…** copies a file such as `E:\tes3xprof.bin` from
@@ -140,7 +141,7 @@ unavailable action stays visible and its tooltip says what is missing.
 - **Setup** edits the target. An Xbox has its own FTP login, games root, optional shared retail
   base and dashboard root; common XBMC4Gamers layouts are detected when the root is blank, and
   **Test FTP** tries the FTP login before saving, and **Test agent** asks the saved target's
-  dashboard agent to answer. An xemu target has its emulator,
+  XBMC4Gamers agent to answer. An xemu target has its emulator,
   firmware, clean disk and memory size, and can download xemu. **Save** writes the target to
   `tes3x.local.toml`, keeping its comments. A legacy `[deploy]` configuration is left alone until
   **Convert** is pressed.

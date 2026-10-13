@@ -138,6 +138,8 @@ static void draw_settings(const struct view *v)
         v->overlay_base[0] ? ui->dim : ui->bad);
     row(y += ROW_H, v->settings.sel == SET_AGENT, "PC agent", NULL, 0, v->agent, ui->dim);
     row(y += ROW_H, v->settings.sel == SET_DASH, "Dash", NULL, 0, version, ui->dim);
+    row(y += ROW_H, v->settings.sel == SET_QUIT, "Quit to dashboard", NULL, 0, "Restarts the Xbox",
+        ui->dim);
 }
 
 static void draw_bases(const struct view *v)
@@ -214,6 +216,7 @@ static void draw_page(const struct view *v)
     static const struct ui_hint drives[] = {{UI_A, "Open"}, {UI_B, "Back"}};
     static const struct ui_hint change[] = {{UI_A, "Change"}};
     static const struct ui_hint update[] = {{UI_A, "Check for update"}};
+    static const struct ui_hint quit[] = {{UI_A, "Restart"}};
     static const struct ui_hint servers[] = {{UI_A, "Details"}, {UI_X, "Add"},
                                              {UI_Y, "Rescan"}, {UI_START, "Join"},
                                              {UI_BACK, "Delete"}};
@@ -267,6 +270,8 @@ static void draw_page(const struct view *v)
             hints = change, n = 1;
         else if (v->settings.sel == SET_DASH)
             hints = update, n = 1;
+        else if (v->settings.sel == SET_QUIT)
+            hints = quit, n = 1;
     }
     gfx_noclip();
     snprintf(status, sizeof(status), "Agent: %s", v->agent);

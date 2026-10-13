@@ -49,9 +49,48 @@ multiplayer build redraws the menu buttons so they match the ones it adds.
 
 Joining starts a New Game with your character's identity, inventory, worn items and last place
 restored from the server. The rest of the supported state, including learned dialogue topics,
-follows once you join. Factions and player globals start at their New Game values.
+factions and globals, follows once you join.
 Learned topics are shared: a topic learned by one player becomes available to the others,
 including players who join later.
+
+The journal is shared too. When one player moves a quest on, the others get the same journal
+entry, with the usual "journal updated" message, and a character who joins later or is new to
+the server gets every entry the group has reached. Joining adds them without the message. A
+quest only moves forward: when two players take a quest to different stages, the later stage
+wins.
+
+Faction rank and reputation are shared by everyone on the server; membership and expulsion are
+your own. A promotion or reputation change reaches the other players, and a character who joins
+a faction the group already ranks in starts at that rank. Being expelled affects only the
+character who was expelled.
+
+Your character's own globals stay with your character and are never shared: the `PC` ones
+(`PCVampire`, `PCWerewolf`, `PCRace` and any a mod adds) and the few that vanilla keeps per player
+under other names (`VampClan`, the guild expulsion counters such as `ExpFightersGuild`, and the
+uniform and Wraithguard flags). Values the game works out again from your gold or bounty
+(`PCGold`, `PCHasCrimeGold`, `PCHasGoldDiscount`, `PCHasTurnIn`) and `CharGenState` are not
+kept.
+
+Every other global belongs to the world and is shared: quest counters such as
+`HortatorVotes`, rent flags, and those a mod adds. A change by one player reaches the others
+and is kept across server restarts. The clock, `Random100`, character creation's and those the
+game works out again from your bounty, gold or Morag Tong writs are not kept.
+
+Variables that scripts keep on people and objects from the data files (local variables, such
+as where a quest giver is in their story) are shared too. Whoever runs that area for the
+group sends their changes, and so does any player whose dialogue changed them; they are kept
+across server restarts and set again when the area loads.
+
+People and creatures keep where they were and how hurt they were. When you enter an area no
+other player is in, or join after a server restart, they stand where they were last seen rather
+than where the game starts them; their AI begins its current task again from there. The dead
+stay dead. When a script or a conversation moves someone to another place, every player sees
+them there, including players who join later.
+
+Quest scripts that keep running belong to the world too. When a conversation or a quest starts
+one (a timer that counts days, a script waiting to move someone once you leave), the server
+keeps it with its progress; if you leave or the server restarts, another player's game, or
+yours on your next join, carries it on from where it was.
 
 **Save to Server** flushes every supported character field and your current place. The server
 confirms the save after writing the character and world. **Leave** waits for that confirmation
@@ -75,16 +114,24 @@ back at the marker on its next join.
 
 - Menus no longer pause the world while joined, and resting or waiting is refused.
 - A multiplayer character loads only from server state. The server restores inventory, equipment,
-  level, base and current attributes and skills, journal, learned topics, current health, magicka and fatigue
+  level, base and current attributes and skills, journal, learned topics, factions, the
+  character's own globals, current health, magicka and fatigue
   (health no lower than 1), position, identity and active effects. Active effects retain their
   source, rolled magnitude, resistance and elapsed game time; remaining duration resumes on join,
   with time stopped while offline. At most 64 active effect entries are retained. Consumed
   potions include their adjusted source definition. Custom spell and enchantment definitions
   are not recreated; a source must exist in the build, and a missing caster cannot be resolved.
-  Ghost caster ids belong to the current session. Factions and player globals are not
-  retained yet and start at New Game values. Restoring a journal only moves a quest forward,
-  never back.
-  The world keeps up to 4,096 learned topic names of at most 63 bytes each.
+  Ghost caster ids belong to the current session. A quest script that a player leaves running
+  carries on in another player's game, so anything it gives or shows goes to that player.
+  Local variables of objects made during play
+  are not kept, and decimal ones (mostly timers) are compared only every 10 seconds. Restoring
+  a journal only moves a quest forward, never back, and keeps each quest's latest 32 entries.
+  The world keeps up to 4,096 learned topic names of at most 63 bytes each, 4,096 quests, up to 512
+  factions, up to 128 of a character's own globals, up to 1,024 world globals and up to 16,384
+  local variable values.
+  When two players change the same faction or world global at the same moment, the later
+  change wins; within about a second of each other, the two consoles can end up with each
+  other's value until the next change.
 - Items taken, objects a script disables, locks, and items
   dropped or placed (by the console or a script) are shared, with their stack size, condition and
   charge, and so are containers' contents: the first player to open a container decides what it
@@ -173,7 +220,12 @@ With `console` in the build, open the console (Back + right thumb click) and typ
 |---|---|
 | `tes3xnet stat` | write the network counters to the log |
 | `tes3xnet topic NAME` | log `net.topic_known` as 1 or 0 for a learned dialogue topic; spaces need no quotes |
-| `tes3xnet say TEXT` | send a line of text to the other players (logged there as `net.text`) |
+| `tes3xnet faction ID` | log `net.faction` with the faction's stored rank, reputation and membership flags (1 joined, 2 expelled) |
+| `tes3xnet global NAME` | print a global's value to the console (`NAME >> 1.00`) and log `net.global` with its raw value, type and 1 if it is the character's own, 2 if the world's |
+| `tes3xnet local ID NAME` | print a script local of a reference in the loaded area (`ID.NAME >> 1.00`), by object id or by refid as `0x` hex, which an NPC needs; logs `net.local` with refid, slot and raw value |
+| `tes3xnet actor 0xREFID` | print an actor's health (`REFID >> 25.00`); with `near X Y R` instead print 1.00 if it stands within R units of X, Y, else 0.00. Logs `net.actor_at` with its position |
+| `chat TEXT` | every player, you included, sees `NAME: TEXT` on screen, and the server's admin sees it in the server output. Up to 80 characters; quotes around the whole text are dropped. `tes3xnet say TEXT` does the same |
+| `msg NAME TEXT` | only that player sees `YOURNAME to you: TEXT`, and you see `You to NAME: TEXT`. Quote a name with spaces (`msg "Dagoth Ur" hello`); the start of a name is enough when only one player's name starts that way. `msg admin TEXT` goes to the server's output only |
 | `tes3xnet send NAME` | send `U:\TES3X\NAME` to the server when the admin asks for a diagnostic file; this does not save your multiplayer character |
 | `tes3xnet save` | flush supported character state and wait for the server to confirm storage |
 | `tes3xnet leave` | flush supported character state and quit after the server confirms storage |

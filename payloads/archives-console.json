@@ -14,19 +14,19 @@
   ],
   "hooks": {
     "archive_load": "0x0000000000401dbe",
-    "console_gate": "0x0000000000403089",
-    "console_vk_key": "0x0000000000403ab3",
-    "console_vk_space": "0x0000000000403abf",
+    "console_gate": "0x0000000000403111",
+    "console_vk_key": "0x0000000000403b45",
+    "console_vk_space": "0x0000000000403b51",
     "console_print": "0x00000000004020ec",
-    "console_mailbox": "0x0000000000406080",
-    "diagnostics_update": "0x0000000000404cba",
-    "diagnostics_flag": "0x000000000040758c",
-    "patch_mask": "0x0000000000407570",
-    "patch_mask_hi": "0x0000000000407574"
+    "console_mailbox": "0x0000000000407080",
+    "diagnostics_update": "0x0000000000404d4a",
+    "diagnostics_flag": "0x000000000040858c",
+    "patch_mask": "0x0000000000408570",
+    "patch_mask_hi": "0x0000000000408574"
   },
   "bindings": {
-    "orig_entry": "0x0000000000406750",
-    "thunk_slots": "0x0000000000406158",
+    "orig_entry": "0x0000000000407750",
+    "thunk_slots": "0x0000000000407158",
     "thunk_count": 379,
     "required_thunks": [
       8,
@@ -51,7 +51,7 @@
       258,
       360
     ],
-    "engine_values": "0x0000000000406754",
+    "engine_values": "0x0000000000407754",
     "engine_names": [
       "ARCHIVE_LOAD[0]",
       "INI_GET_STRING[0]",

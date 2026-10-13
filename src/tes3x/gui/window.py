@@ -29,6 +29,7 @@ from tes3x.paths import docs_url
 
 class ProfileWindow(QMainWindow):
     nexus_done = Signal(str, object, object)
+    analysis_ready = Signal()
 
     in_game_event = Signal(object)
 
@@ -88,6 +89,7 @@ class ProfileWindow(QMainWindow):
         self.mods.nexus_links = {}
         self.mods.nexus_pending = set()
         self.nexus_done.connect(self.mods.nexus_finished)
+        self.analysis_ready.connect(self.mods.analysis_finished)
         self.in_game_event.connect(self.play_controller.handle_in_game_event)
         self.mods.forget_analysis()
         try:
@@ -104,7 +106,7 @@ class ProfileWindow(QMainWindow):
         self.mods.analysis_timer = QTimer(self)
         self.mods.analysis_timer.setSingleShot(True)
         self.mods.analysis_timer.setInterval(150)
-        self.mods.analysis_timer.timeout.connect(self.mods.refresh_analysis)
+        self.mods.analysis_timer.timeout.connect(self.mods.start_analysis)
 
         self.profile_picker = QComboBox()
         self.profile_picker.setMinimumWidth(260)
@@ -302,7 +304,7 @@ class ProfileWindow(QMainWindow):
         self.action_smoke = QAction("Run &smoke test", self)
         self.action_smoke.setShortcut("Ctrl+T")
         self.action_smoke.triggered.connect(self.run_smoke_test)
-        self.action_deploy = QAction("&Deploy to Xbox…", self)
+        self.action_deploy = QAction("&Deploy", self)
         self.action_deploy.triggered.connect(self.deploy_profile)
         self.action_dash = QAction("Install TES3X &Dash…", self)
         self.action_dash.triggered.connect(self.install_dash)
@@ -338,12 +340,12 @@ class ProfileWindow(QMainWindow):
         self.action_play.setIcon(self.play_icon)
         self.run_menu = QMenu(self)
         self.run_menu.setToolTipsVisible(True)
-        self.run_menu.addActions([self.action_check, self.action_build, self.action_deploy])
+        self.run_menu.addActions([self.action_check, self.action_build])
         self.run_button = QToolButton()
         self.run_button.setMenu(self.run_menu)
         self.run_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
         self.run_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self.run_button.clicked.connect(lambda: self.run_default().trigger())
+        self.run_button.clicked.connect(lambda: self.action_build.trigger())
         self.profile_bar.addWidget(self.run_button)
         self.play_button = QToolButton()
         self.play_button.setDefaultAction(self.action_play)
@@ -358,8 +360,7 @@ class ProfileWindow(QMainWindow):
             lambda _scheme: QTimer.singleShot(0, self.style_toolbar_buttons))
         self.check_button, self.build_button, self.deploy_button = (
             self.action_check, self.action_build, self.action_deploy)
-        for action in (self.action_check, self.action_build, self.action_deploy):
-            action.changed.connect(self.sync_run_button)
+        self.action_build.changed.connect(self.sync_run_button)
         self.command_actions = (self.action_check, self.action_build, self.action_deploy,
                                 self.action_play, self.action_smoke, self.action_fetch,
                                 self.action_dash)
@@ -1376,13 +1377,8 @@ class ProfileWindow(QMainWindow):
         if action is getattr(self, "build_button", None):
             self.update_build_label()
 
-    def run_default(self):
-        """Deploy for an Xbox target, Build otherwise."""
-        target = self.default_target()
-        return self.action_deploy if target and target.get("kind") == "xbox" else self.action_build
-
     def sync_run_button(self):
-        action = self.run_default()
+        action = self.action_build
         self.run_button.setText(action.text().replace("&", "").replace("…", "").split()[0])
         self.run_button.setIcon(action.icon())
         self.run_button.setToolTip(action.toolTip())
@@ -1448,17 +1444,23 @@ class ProfileWindow(QMainWindow):
         xemu = bool(target and target.get("kind") == "xemu")
         xbox = bool(target and target.get("kind") == "xbox")
         self.play_menu.clear()
+        self.play_button.setDefaultAction(self.action_deploy if xbox else self.action_play)
+        if xbox and "xbox" in self.play_addons:
+            self.play_menu.addAction(self.action_play)
+        launch = self.play_menu.addAction("Launch TES3X Dash", self.play_controller.launch_dash)
+        launch.setEnabled(self.process is None and self.play_controller.play_process is None and (
+            xemu or (xbox and "xbox" in self.play_addons)))
+        launch.setToolTip("Start the Dash: on the Xbox through the XBMC4Gamers agent, "
+                          "or as an xemu session that keeps its own disk"
+                          if xemu or "xbox" in self.play_addons else
+                          "Enable the xbmc add-on in File > Settings to start the Dash on the Xbox")
+        self.play_menu.addSeparator()
         gdb = self.play_menu.addAction("Debug with GDB", self.play_controller.set_play_gdb)
         gdb.setCheckable(True)
         gdb.setChecked(self.play_controller.play_gdb)
         gdb.setEnabled(xemu)
         gdb.setToolTip("Open xemu's GDB stub; the status bar shows the port to attach to")
         self.play_menu.addAction(self.action_smoke)
-        launch = self.play_menu.addAction("Launch Dash", self.play_controller.launch_dash)
-        launch.setEnabled(self.process is None and self.play_controller.play_process is None and (
-            xemu or (xbox and "xbox" in self.play_addons)))
-        launch.setToolTip("Start the Dash: on the Xbox through the dashboard agent, "
-                          "or as an xemu session that keeps its own disk")
         name = target["name"] if target else "a target"
         if self.play_controller.play_process is not None:
             self.action_play.setText("&Stop")
@@ -1469,9 +1471,10 @@ class ProfileWindow(QMainWindow):
             self.action_build.setEnabled(False)
             return
         reason = self.play_controller.play_available()
-        self.action_play.setText("&Play")
+        self.action_play.setText("&Play on Xbox" if xbox else "&Play")
         self.action_play.setIcon(self.play_icon)
-        self.play_button.setToolTip(reason or f"Play on {name} (F9)")
+        if not xbox:
+            self.play_button.setToolTip(reason or f"Play on {name} (F9)")
         self.action_play.setEnabled(not reason and self.process is None)
         self.action_stop.setEnabled(False)
         self.action_build.setEnabled(self.process is None)

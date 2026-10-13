@@ -220,11 +220,11 @@ def validate_local_config(local):
     paths = local.get("paths", {})
     extra = set(paths) - {"vanilla_root", "mod_library", "build_root", "llvm", "hardlink_retail",
                           "profiles", "mlox_rules", "pc_morrowind", "ghidra", "tes3merge", "nxdk",
-                          "msys2"}
+                          "msys2", "worlds"}
     if extra:
         raise PipelineError("unknown paths keys: " + ", ".join(sorted(extra)))
     for key in ("vanilla_root", "mod_library", "build_root", "llvm", "profiles", "mlox_rules",
-                "pc_morrowind", "tes3merge", "nxdk", "msys2"):
+                "pc_morrowind", "tes3merge", "nxdk", "msys2", "worlds"):
         if key in paths and type(paths[key]) is not str:
             raise PipelineError(f"paths.{key} must be a string")
     if "hardlink_retail" in paths and type(paths["hardlink_retail"]) is not bool:
@@ -397,7 +397,11 @@ def require_file(path, label):
 
 def run(command):
     print("\n== " + " ".join(str(part) for part in command), flush=True)
-    subprocess.run([str(part) for part in command], check=True)
+    # a child of a console-less parent gets no standard handles unless they are passed on
+    streams = {name: stream if stream is not None else subprocess.DEVNULL
+               for name, stream in (("stdout", sys.stdout), ("stderr", sys.stderr))}
+    subprocess.run([str(part) for part in command], check=True, stdin=subprocess.DEVNULL,
+                   **streams)
 
 
 def source_revision():
@@ -493,6 +497,9 @@ def link_or_copy(source, target):
     except OSError:
         shutil.copy2(source, target)
     return target
+
+
+XEMU_OVERLAY_BASE = r"\Device\CdRom0\Base"
 
 
 def copy_retail_root(vanilla, staged, copy=shutil.copy2):
@@ -927,6 +934,8 @@ def main(argv=None):
     overlay_base = ini_override(ini_items, "Xbox", "OverlayBase")
     if install_layout == "overlay":
         overlay_base = overlay_base or deploy.get("retail_root")
+        if not overlay_base and target and target.get("kind") == "xemu":
+            overlay_base = XEMU_OVERLAY_BASE  # xemu's disc carries the base; Play stages it
         if not overlay_base:
             raise PipelineError("the overlay install layout needs target.retail_root in the "
                                 "local config, or an Xbox:OverlayBase INI override")

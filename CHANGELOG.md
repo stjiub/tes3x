@@ -7,8 +7,9 @@ No official releases yet. The first public release is in preparation.
 - The sampled PAL GOTY engine now resolves console and multiplayer bindings automatically;
   its virtual keyboard and server join work. Other retail engine revisions still need
   compatibility checks.
-- `tes3x payload --portable-bindings` can build a diagnostics, console and multiplayer payload
-  once for the sampled NTSC and PAL GOTY engines; `tes3x patch` fills the engine addresses,
+- `tes3x payload --portable-bindings` can build the supported diagnostics, console, multiplayer
+  and `multi-bsa` sets once for the sampled NTSC and PAL GOTY engines; `tes3x patch` fills the
+  engine addresses,
   original entry and kernel import slots from the user's XBE. Other payload source sets still
   need an image-specific build. See [payload injection](patches/payload.md).
 - The pipeline uses a matching prebuilt payload for diagnostics, console and multiplayer, with
@@ -21,6 +22,46 @@ No official releases yet. The first public release is in preparation.
   See [payload injection](patches/payload.md).
 - xemu disc additions and direct-engine boot break staging hardlinks before replacing files,
   preserving the source game folder when runs share a deploy tree.
+- Quest scripts and the characters they move are shared in multiplayer: a script a conversation
+  or quest starts is kept by the server with its progress and carries on in another player's
+  game when you leave or after a restart, and a character moved by a script or a conversation
+  is in the same place for every player, including players who join later. Update the server and
+  install the build again. See
+  [saving and character state](docs/multiplayer-client.md#saving-and-character-state).
+- The journal is shared in multiplayer: a quest one player moves on gives the other players the
+  same entry, and the server keeps it in the world, so characters who join later or are new get
+  it too. Joining no longer shows a "journal updated" message for each restored entry. Update the
+  server and install the build again. See
+  [saving and character state](docs/multiplayer-client.md#saving-and-character-state).
+- The GUI's Server workspace keeps a list of worlds beside **Start**: make, duplicate, rename and
+  delete them, each with its own settings, characters and world state, so the server always keeps
+  them between runs. A **Characters** tab lists and deletes the selected world's characters.
+  The worlds folder is under **Settings > Paths**. On first open the GUI makes `Default` from
+  the earlier server settings and copies the earlier world folder into it, its server key
+  included, so consoles keep trusting the server. See
+  [Worlds in the GUI](docs/multiplayer-server.md#worlds-in-the-gui).
+- Chat works: type `chat TEXT` in the console (or `tes3xnet say TEXT`), and every player sees
+  `NAME: TEXT` on screen; the server prints it too. `msg NAME TEXT` sends to one player, and
+  `msg admin TEXT` to the server's admin; quote a name with spaces. Admin `say` and `tell`
+  messages now start with `Admin:`. Update the server, and install the build again for `chat`
+  and `msg`. See [console commands](docs/multiplayer-client.md).
+
+- The server page's player list has a Player column with each client's character name, and
+  the server's `list` admin command prints it as `name NAME` after the address.
+- The Dash no longer hashes a retail base again once the server's file list has verified it;
+  it only checks that each file is there at its size. A different folder or list is still
+  hashed. Delete the base's `tes3xbuild.json` to force a full check. Install the Dash again.
+- Launching the Dash for xemu now selects its seeded retail base and installs the server's build
+  to the xemu disk instead of staging a copy on the read-only disc.
+- Building an overlay-layout profile for an xemu target no longer needs `retail_root`; Play uses
+  the retail base staged on its disc.
+- The GUI toolbar's main button is Deploy for an Xbox target and Play for an xemu target. Its
+  menu holds Play on Xbox (with the dashboard agent add-on) and Launch Dash; the Build button's
+  menu holds Check and Build.
+- Installing and enabling a large mod such as Tamriel Data or Tamriel Rebuilt no longer freezes
+  the GUI: unpacking, copying and scanning its files run in the background.
+- The Dash's Settings tab has **Quit to dashboard**, which restarts the Xbox. Install the Dash
+  again to get it.
 - The console manager is now TES3X Dash. `tes3x dash` replaces `tes3x manager`, which still
   works, as do `tes3x release manager`, `--manager` and `--no-manager`. The Dash installs to
   `TES3XDash`, the Xbox's own settings live in `E:/TES3X/xbox.ini` (was `console.ini`) and the
@@ -45,6 +86,26 @@ No official releases yet. The first public release is in preparation.
 - Multiplayer shares learned dialogue topics and restores them when joining after a server restart.
   Update both server and game builds for gameplay protocol 23; existing character streams
   acquire topics on their next join. See [character state](docs/multiplayer-client.md#saving-and-character-state).
+- Multiplayer keeps factions: rank and reputation are shared by all players, while membership
+  and expulsion stay with each character, and all of them survive a server restart. Update both
+  server and game builds; existing characters publish their factions on their next join. See
+  [character state](docs/multiplayer-client.md#saving-and-character-state).
+- Multiplayer keeps each character's own globals, such as vampirism, lycanthropy and guild
+  expulsion counts, across leaving and server restarts; they are never shared with other
+  players. Update both server and game builds; existing characters publish theirs on their next
+  join. See [character state](docs/multiplayer-client.md#saving-and-character-state).
+- `tes3xnet global NAME` prints a global's value to the console, so exec scripts can assert it.
+- Multiplayer shares the world's globals, such as quest counters and rent flags: a change by
+  one player reaches the others and survives a server restart. Update both server and game
+  builds; values set before this update are not imported. See
+  [character state](docs/multiplayer-client.md#saving-and-character-state).
+- Multiplayer shares the variables that scripts keep on people and objects, such as quest
+  progress: they reach the other players and survive a server restart. Update both server and
+  game builds. `tes3xnet local ID NAME` prints one.
+- Multiplayer keeps where people and creatures were and how hurt they were: after a server
+  restart, or when someone enters a place nobody was in, they stand where they were left instead
+  of where the game starts them. Their AI starts its current task again from there. Update both
+  server and game builds. `tes3xnet actor 0xREFID` prints an actor's health.
 
 - Multiplayer documentation has separate [player](docs/multiplayer-client.md) and
   [server admin](docs/multiplayer-server.md) guides.

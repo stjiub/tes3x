@@ -28,7 +28,7 @@ class CuratedSymbolTests(unittest.TestCase):
             if "pc_va" in record:
                 self.assertRegex(record["pc_va"], ADDRESS, where)
             if str(record.get("provenance", "")).startswith("mwse:"):
-                self.assertEqual(record["confidence"], "matched", where)
+                self.assertIn(record["confidence"], ("matched", "verified"), where)
             if "signature" in record:
                 self.assertIn("(", record["signature"], where)
 

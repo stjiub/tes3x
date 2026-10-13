@@ -16,6 +16,7 @@ import socket
 import struct
 import sys
 import tes3x.netbuild as tes3x_netbuild
+import textwrap
 import threading
 import time
 import traceback
@@ -45,11 +46,17 @@ from .proto import (ACTOR, ACTORS, ACTORS_PER_PACKET, ACTOR_DEAD, ACTOR_IN_COMBA
                     PACE_PACKETS, PACE_WINDOW, PASSWORD_MAX, PASSWORD_RATE, PEER, PEER_IP,
                     PICK_CHARACTER, PICK_NEW, PICK_START, PLACE, PLACE_HOLD, PLAYER_ALIVE,
                     PLAYER_BOUNTY, PLAYER_DEATH, PLAYER_EFFECTS, PLAYER_EFFECTS_MAX,
-                    PLAYER_EFFECT_BYTES, PLAYER_IDENTITY, PLAYER_ITEMS, PLAYER_JOURNAL,
+                    PLAYER_EFFECT_BYTES, PLAYER_FACTIONS, PLAYER_GLOBALS, PLAYER_GLOBALS_MAX, WORLD_GLOBALS, WORLD_GLOBALS_MAX, FACTIONS_MAX,
+                    EVENT_LOCALS, LOCALS_MAX, EVENT_ACTOR_PLACE, ACTOR_PLACE,
+                    ACTOR_PLACES_PER_EVENT, ACTORS_KEPT_MAX, describe_local, pack_locals, unpack_locals, FACTION_ALL, FACTION_EXPELLED,
+                    EVENT_ACTOR_MOVE, ACTOR_MOVE, ACTOR_MOVES_MAX, WORLD_SCRIPTS, SCRIPT_RUNNING,
+                    SCRIPT_STOPPED, SCRIPT_VALUES, WORLD_SCRIPTS_MAX, SCRIPT_VALUES_MAX,
+                    pack_world_script, unpack_world_script,
+                    FACTION_JOINED, FACTION_RANK, FACTION_REPUTATION, PLAYER_IDENTITY, PLAYER_ITEMS, PLAYER_JOURNAL,
                     PLAYER_LEVEL, PLAYER_MODIFIERS, PLAYER_PLACE, PLAYER_READY, PLAYER_RESPAWN,
                     PLAYER_SKILLS, PLAYER_SPELLS, PLAYER_TOPICS, PLAYER_TOPICS_MAX,
                     PLAYER_VITALS, PLAYER_WORN, PROLOGUE,
-                    QUEST_INDICES, REFUSE, REFUSED_BANNED, REFUSED_FULL, REFUSED_KICKED,
+                    QUEST_INDICES, JOURNAL_QUESTS_MAX, REFUSE, REFUSED_BANNED, REFUSED_FULL, REFUSED_KICKED,
                     REFUSED_LOAD_ORDER, REFUSED_PASSWORD, REFUSED_PROTOCOL, REFUSED_STALE,
                     REFUSE_BODY, RELAY, REMOTE_CHALLENGE, REMOTE_COMMAND, REMOTE_HEAD,
                     REMOTE_HELLO, REMOTE_MAGIC, REMOTE_NONCE, REMOTE_NONCES, REMOTE_NONCE_SECONDS,
@@ -58,16 +65,17 @@ from .proto import (ACTOR, ACTORS, ACTORS_PER_PACKET, ACTOR_DEAD, ACTOR_IN_COMBA
                     SPAWN_IDS, SPAWN_TWIN, SPAWN_TWIN_SECONDS, SPELL, SPELLS_ADD, SPELLS_REMOVE,
                     SPELLS_SNAPSHOT, SPYMASTER_DONE, SPYMASTER_GIVEN, SPYMASTER_QUEST, STANCE,
                     STARTS, START_NAME, STATE, STATE_BODY, STATE_SIZE, STATUS, STREAM_NAME, T3MP,
-                    T3MP_VERSION, TARGETED, UPLOAD_FILES, VITALS, WEATHER_OFFER, WELCOME,
-                    admin_secret, cell_keys, checkpoint_name, crypto, describe_contents,
+                    T3MP_VERSION, TARGETED, TEXT_PRIVATE, UPLOAD_FILES, VITALS, WEATHER_OFFER,
+                    WELCOME,
+                    admin_secret, cell_keys, checkpoint_name, crypto, describe_contents, describe_faction,
                     describe_identity, describe_key, describe_level, describe_object,
                     describe_spawn, describe_state, describe_status, describe_weather,
                     fingerprint, finite, now_us, pack_contents, pack_equipment, pack_events,
-                    pack_identity, pack_items, pack_journal, pack_topics, pack_names, pack_objects,
+                    pack_factions, pack_globals, pack_identity, pack_items, pack_journal, pack_topics, pack_names, pack_objects,
                     pack_player_effects, pack_player_identity, pack_spawn, pack_weather,
                     pack_worn, placeable, plain_name, remote_key, same_place, sane_clock, seal,
                     unpack_actor_equipment, unpack_contents, unpack_equipment, unpack_events,
-                    unpack_identity, unpack_items, unpack_journal, unpack_objects,
+                    unpack_factions, unpack_globals, unpack_identity, unpack_items, unpack_journal, unpack_objects,
                     unpack_player_effects, unpack_player_identity, unpack_removes, unpack_spawn,
                     unpack_weather, unpack_worn, unseal, wire_text, x25519_public, zstr)
 from .tunnel import (Tunnel, arp_frame, dhcp_reply, dns_reply, udp_frame, udp_from_frame,
@@ -159,6 +167,22 @@ class World:
         # actor id -> STATUS values after the id; replayed to each joining client
         self.statuses = {}
         self.topics = []
+        # quest id lowered -> [quest id, indices reached, ascending]: the world's journal
+        self.journal = {}
+        # faction id lowered -> {"id", "rank" (None until a member sets it), "reputation"}
+        self.factions = {}
+        # global name lowered -> [name, value]: the world's globals, as consoles last set them
+        self.globals = {}
+        # refid -> {slot: raw value}: data-file references' script locals; replayed likewise
+        self.locals = {}
+        # refid -> [cell kind, grid x, grid y, interior, x, y, z, heading, health, magicka,
+        # fatigue, flags]: each actor's latest state; sent to a cell's next authority
+        self.actors = {}
+        # refid -> [cell it first left, cell it is in, x, y, z, heading]: actors a script moved;
+        # replayed to each joining client
+        self.moves = {}
+        # script id lowered -> {"id", "ref", "values": {slot: raw value}}: running world scripts
+        self.scripts = {}
         # spawn id -> reference made at run time (unpack_spawn), removed ones too; replayed likewise
         self.spawns = {}
         # refid -> {"cell", "entries", "origin"}: a container's latest contents; sent to whoever
@@ -182,6 +206,15 @@ class World:
         known = {name.lower(): name for name in self.topics}
         known.update((name.lower(), name) for name in saved.get("topics", []))
         self.topics = list(known.values())
+        self.journal.update(saved.get("journal", {}))
+        self.factions.update(saved.get("factions", {}))
+        self.globals.update(saved.get("globals", {}))
+        self.locals.update({int(k): {int(s): v for s, v in values.items()}
+                            for k, values in saved.get("locals", {}).items()})
+        self.actors.update({int(k): v for k, v in saved.get("actors", {}).items()})
+        self.moves.update({int(k): v for k, v in saved.get("moves", {}).items()})
+        self.scripts.update({k: dict(v, values={int(s): x for s, x in v["values"].items()})
+                             for k, v in saved.get("scripts", {}).items()})
         for spawn in self.spawns.values():
             if spawn.get("summon"):
                 spawn["removed"] = True  # Active effects recreate summons for their target.
@@ -198,7 +231,16 @@ class World:
                  "contents": {str(k): v for k, v in self.contents.items()},
                  "weather": {str(k): v for k, v in self.weather.items()},
                  "statuses": {str(k): list(v) for k, v in self.statuses.items()},
-                 "topics": self.topics}
+                 "topics": self.topics,
+                 "journal": self.journal,
+                 "factions": self.factions,
+                 "globals": self.globals,
+                 "locals": {str(k): {str(s): v for s, v in values.items()}
+                            for k, values in self.locals.items()},
+                 "actors": {str(k): v for k, v in self.actors.items()},
+                 "moves": {str(k): v for k, v in self.moves.items()},
+                 "scripts": {k: dict(v, values={str(s): x for s, x in v["values"].items()})
+                             for k, v in self.scripts.items()}}
         if self.clock:
             self.clock.advance(now)
             state["clock"] = [self.clock.hour, self.clock.day, self.clock.month, self.clock.year,
@@ -209,7 +251,11 @@ class World:
     def __str__(self):
         return (f"{len(self.deaths)} deaths, {len(self.objects)} objects, "
                 f"{len(self.spawns)} spawns, {len(self.contents)} containers, "
-                f"{len(self.weather)} regions, {len(self.statuses)} statuses"
+                f"{len(self.weather)} regions, {len(self.statuses)} statuses, "
+                f"{len(self.journal)} quests, "
+                f"{len(self.globals)} globals, {len(self.locals)} scripted references, "
+                f"{len(self.actors)} actors, {len(self.moves)} moved, "
+                f"{len(self.scripts)} scripts"
                 + (f", clock {self.clock}" if self.clock else ""))
 
 
@@ -361,7 +407,7 @@ class PlayerStream:
     def __init__(self, path):
         self.path = path
         self.items, self.skills, self.modifiers, self.journal, self.level = {}, {}, {}, {}, None
-        self.spells = self.topics = None
+        self.spells = self.topics = self.factions = self.globals = None
         self.effects = self.effects_parts = None
         self.vitals = self.place = None
         self.bounty = self.identity = self.worn = None
@@ -384,6 +430,8 @@ class PlayerStream:
         self.dead = kept.get("dead", False)
         self.spells = kept.get("spells")
         self.topics = kept.get("topics")
+        self.factions = kept.get("factions")
+        self.globals = kept.get("globals")
         self.effects = kept.get("effects")
         self.bounty = kept.get("bounty")
         self.identity = kept.get("identity")
@@ -392,7 +440,7 @@ class PlayerStream:
     def reset(self):
         """A new character: nothing streamed so far belongs to it."""
         self.items, self.skills, self.modifiers, self.journal, self.level = {}, {}, {}, {}, None
-        self.spells = self.topics = None
+        self.spells = self.topics = self.factions = self.globals = None
         self.effects = self.effects_parts = None
         self.vitals = self.place = self.arriving = None
         self.bounty = self.identity = self.identity_parts = None
@@ -510,6 +558,39 @@ class PlayerStream:
                 known.update((name.lower(), name) for name in names)
                 self.topics, self.dirty = list(known.values()), True
             return "topics " + ", ".join(added) if added else None
+        if kind == PLAYER_FACTIONS:
+            try:
+                entries = unpack_factions(data)
+            except ValueError:
+                return None
+            kept = dict(self.factions or {})
+            changed = []
+            for faction, bits, rank, reputation in entries:
+                value = [faction, rank, reputation, bits & (FACTION_JOINED | FACTION_EXPELLED)]
+                if kept.get(faction.lower()) != value:
+                    kept[faction.lower()] = value
+                    changed.append(describe_faction(*value))
+            if len(kept) > FACTIONS_MAX:
+                return None
+            if self.factions is None or changed:
+                self.factions, self.dirty = kept, True
+            return "factions " + ", ".join(changed) if changed else None
+        if kind == PLAYER_GLOBALS:
+            try:
+                entries = unpack_globals(data)
+            except ValueError:
+                return None
+            kept = dict(self.globals or {})
+            changed = []
+            for name, value in entries:
+                if (kept.get(name.lower()) or [None, None])[1] != value:
+                    kept[name.lower()] = [name, value]
+                    changed.append(f"{name} {value:g}")
+            if len(kept) > PLAYER_GLOBALS_MAX:
+                return None
+            if self.globals is None or changed:
+                self.globals, self.dirty = kept, True
+            return "globals " + ", ".join(changed) if changed else None
         if kind == PLAYER_SPELLS and len(data) >= 4 and data[1] in (SPELLS_ADD, SPELLS_REMOVE):
             names = unpack_equipment(data[2:])
             if not names:
@@ -574,6 +655,8 @@ class PlayerStream:
                    for part in pack_items(item, entries)]
         if self.worn is not None:
             events += pack_worn(self.worn)
+        if self.globals:
+            events += pack_globals(sorted(self.globals.values()))
         # Abilities change statistic bases; restore them before the absolute stat snapshots.
         if self.spells is not None:
             events += [bytes([PLAYER_SPELLS, SPELLS_SNAPSHOT]) + part
@@ -606,7 +689,7 @@ class PlayerStream:
             events += pack_topics(self.topics)
         return events
 
-    def character_file(self):
+    def character_file(self, world_globals=()):
         """What a New Game builds the player from before its first frame; None without an
         identity. The rest comes with the replay after the console joins."""
         if not self.identity:
@@ -616,6 +699,9 @@ class PlayerStream:
                    for part in pack_items(item, entries)]
         if self.worn is not None:
             events += pack_worn(self.worn)
+        if self.globals:  # before the global scripts the [PreLoad] read starts
+            events += pack_globals(sorted(self.globals.values()))
+        events += pack_globals(world_globals, WORLD_GLOBALS)
         if self.place and not self.dead:
             events.append(bytes([PLAYER_PLACE]) + self.place)
         return CHARACTER_MAGIC + b"".join(struct.pack("<H", len(e)) + e for e in events)
@@ -629,6 +715,8 @@ class PlayerStream:
                                "place": self.place.hex() if self.place else None,
                                "spells": self.spells,
                                "topics": self.topics,
+                               "factions": self.factions,
+                               "globals": self.globals,
                                "effects": self.effects,
                                "bounty": self.bounty,
                                "identity": self.identity,
@@ -1094,6 +1182,11 @@ class Bot:
         self.spells = []
         self.bounties = [(float(at), int(value)) for value, _, at in
                          (s.rpartition("@") for s in self.args.bot_bounty)]
+        self.journal = []
+        for spec in self.args.bot_journal:
+            what, _, at = spec.rpartition("@")
+            quest, _, index = what.rpartition(":")
+            self.journal.append((float(at), quest, int(index)))
         self.shots = [(float(at), ammo)
                       for ammo, _, at in (s.rpartition("@") for s in self.args.bot_shoot)]
         for kind, specs in ((EVENT_SPELL, self.args.bot_spell), (EVENT_CAST, self.args.bot_cast)):
@@ -1190,6 +1283,10 @@ class Bot:
             self.bounties.remove(spec)
             print(f"{time.strftime('%H:%M:%S')} bot bounty {spec[1]}", flush=True)
             self.server.broadcast_event(BOT_ID, EVENT_BOUNTY, struct.pack("<i", spec[1]), now)
+        for spec in [j for j in self.journal if self.args.bot and self.window(f"{j[0]}:", now)]:
+            self.journal.remove(spec)
+            print(f"{time.strftime('%H:%M:%S')} bot journal {spec[1]} {spec[2]}", flush=True)
+            self.server.share_journal(None, [spec[1:]], now)
         if self.args.bot and self.anchor and self.window(self.args.bot_busy, now) != self.busy:
             self.busy = not self.busy
             print(f"{time.strftime('%H:%M:%S')} bot {'saves' if self.busy else 'is back'}",
@@ -1388,12 +1485,20 @@ class Server:
         print(f"world {path}: {self.world}", flush=True)
 
     def notify(self, text, now, only=None, skip=None):
-        """Show text on the screen of every console in the world, or of one client."""
-        data = text[:EVENT_DATA].encode("latin-1", "replace")
+        """Show text on the screen of every console in the world, or of one client, in as many
+        notices as it needs."""
+        lines = [line.encode("latin-1", "replace")
+                 for line in textwrap.wrap(text, EVENT_DATA, break_on_hyphens=False)]
         for other in self.clients.values():
             if other.in_world and other is not skip and (only is None or other is only):
-                other.rel.queue(EVENT_TEXT, 0, data)
+                for data in lines:
+                    other.rel.queue(EVENT_TEXT, 0, data)
                 self.flush(other, now)
+
+    def listed_name(self, client):
+        """The player's name for `admin list`, or empty before the server knows it."""
+        parts = self.identities.get(client.id)
+        return self.player_name(client) if (parts and parts[0]) or client.character else ""
 
     def player_name(self, client):
         parts = self.identities.get(client.id)
@@ -1423,6 +1528,7 @@ class Server:
             self.notify(f"{self.player_name(client)} has left.", time.monotonic(), skip=client)
             client.announced = False
         client.alive = False
+        self.scripts_orphaned(client.id, time.monotonic())
         for refid, (holder, target) in list(self.dialogues.items()):
             if holder == client.id:
                 del self.dialogues[refid]
@@ -1639,6 +1745,119 @@ class Server:
                     other.rel.queue(EVENT_PLAYER, 0, data)
                 self.flush(other, now)
 
+    def share_journal(self, client, quests, now):
+        """The journal is the world's and only moves forward: a quest keeps the indices players
+        reached, and a new one reaches the other players already in the world."""
+        changed = []
+        for quest, index in quests:
+            kept = self.world.journal.get(quest.lower())
+            if kept is None:
+                if len(self.world.journal) >= JOURNAL_QUESTS_MAX:
+                    continue
+                kept = self.world.journal[quest.lower()] = [quest, []]
+            if kept[1] and index <= kept[1][-1]:
+                continue
+            kept[1].append(index)
+            del kept[1][:-QUEST_INDICES]
+            changed.append((kept[0], index))
+        if not changed:
+            return
+        self.world.dirty = True
+        for other in self.clients.values():
+            if other is not client and other.in_world and other.synced:
+                for data in pack_journal(changed):
+                    other.rel.queue(EVENT_PLAYER, 0, data)
+                self.flush(other, now)
+
+    def journal_replay(self):
+        return pack_journal([(quest, index) for quest, indices in
+                             sorted(self.world.journal.values(), key=lambda q: q[0].lower())
+                             for index in indices])
+
+    def share_factions(self, client, entries, before, now):
+        """Rank and reputation are the world's, membership and expulsion each character's.
+        A member who already was one moves the world rank; a character who has just joined
+        takes the world's rank instead."""
+        shared, corrections = [], []
+        for faction, bits, rank, reputation in entries:
+            key = faction.lower()
+            world = self.world.factions.get(key)
+            if world is None:
+                if len(self.world.factions) >= FACTIONS_MAX:
+                    continue
+                world = self.world.factions[key] = {"id": faction, "rank": None,
+                                                    "reputation": 0}
+                self.world.dirty = True
+            member = bits & FACTION_JOINED
+            was_member = (before.get(key) or [None, 0, 0, 0])[3] & FACTION_JOINED
+            changed = False
+            if world["reputation"] != reputation:
+                world["reputation"], changed = reputation, True
+            if member and (was_member or world["rank"] is None) and world["rank"] != rank:
+                world["rank"], changed = rank, True
+            elif member and not was_member and world["rank"] != rank:
+                corrections.append((world["id"], FACTION_RANK, world["rank"], reputation))
+            if changed:
+                self.world.dirty = True
+                shared.append((world["id"], FACTION_REPUTATION | (
+                    FACTION_RANK if world["rank"] is not None else 0), world["rank"] or 0,
+                    world["reputation"]))
+        for data in pack_factions(corrections):
+            client.rel.queue(EVENT_PLAYER, 0, data)
+        if corrections:
+            self.flush(client, now)
+        if not shared:
+            return
+        for other in self.clients.values():
+            if other is not client and other.in_world and other.synced:
+                for data in pack_factions(shared):
+                    other.rel.queue(EVENT_PLAYER, 0, data)
+                self.flush(other, now)
+
+    def share_globals(self, client, entries, now):
+        """The world keeps each global as its latest writer left it; changes reach the other
+        players already in the world. Two consoles writing one at once can end apart."""
+        changed = []
+        for name, value in entries:
+            key = name.lower()
+            kept = self.world.globals.get(key)
+            if kept and struct.pack("<f", kept[1]) == struct.pack("<f", value):
+                continue
+            if kept is None and len(self.world.globals) >= WORLD_GLOBALS_MAX:
+                continue
+            self.world.globals[key] = [kept[0] if kept else name, value]
+            changed.append((self.world.globals[key][0], value))
+        if not changed:
+            return None
+        self.world.dirty = True
+        for other in self.clients.values():
+            if other is not client and other.in_world and other.synced:
+                for data in pack_globals(changed, WORLD_GLOBALS):
+                    other.rel.queue(EVENT_PLAYER, 0, data)
+                self.flush(other, now)
+        return "world globals " + ", ".join(f"{name} {value:g}" for name, value in changed)
+
+    def faction_replay(self, stream, replay):
+        """Each faction's world rank and reputation, with the character's own flags on a replay."""
+        own = (stream.factions or {}) if replay else {}
+        for key, (faction, rank, reputation, flags) in own.items():
+            if key not in self.world.factions and len(self.world.factions) < FACTIONS_MAX:
+                self.world.factions[key] = {"id": faction, "rank": rank if flags & FACTION_JOINED
+                                            else None, "reputation": reputation}
+                self.world.dirty = True
+        entries = []
+        for key, world in sorted(self.world.factions.items()):
+            kept = own.get(key)
+            if replay:
+                rank = world["rank"] if world["rank"] is not None else kept[1] if kept else 0
+                entries.append((world["id"], FACTION_ALL | (kept[3] if kept else 0), rank,
+                                world["reputation"]))
+            else:
+                entries.append((world["id"], FACTION_REPUTATION | (
+                    FACTION_RANK if world["rank"] is not None else 0), world["rank"] or 0,
+                    world["reputation"]))
+        return pack_factions(entries)
+
     def player_ready(self, client, replay, stamp, now):
         """Replay retained state, or have the console publish its supported fields."""
         self.announce_join(client, now)
@@ -1650,8 +1869,15 @@ class Server:
         if stream is None:
             return
         self.share_topics(stream.topics or [], now, origin=client)
-        events = [data for data in stream.replay() if data[0] != PLAYER_TOPICS] if replay else []
+        self.share_journal(client, [(quest, index) for quest, indices in stream.journal.items()
+                                    for index in indices], now)
+        events = [data for data in stream.replay()
+                  if data[0] not in (PLAYER_TOPICS, PLAYER_JOURNAL)] if replay else []
+        events += self.journal_replay()
         events += pack_topics(self.world.topics)
+        events += self.faction_replay(stream, replay)
+        events += pack_globals(sorted(self.world.globals.values()), WORLD_GLOBALS)
+        events += self.scripts_assign(client)
         client.place_hold = (stream.place, now + PLACE_HOLD) if (
             replay and stream.place and not stream.dead) else None
         for data in events:
@@ -1665,7 +1891,7 @@ class Server:
         print(f"{stamp} client {client.id}: " + (
             "replayed " + (f"{stream.identity['name']}'s identity, " if stream.identity else "")
             + f"{len(stream.items)} items, {len(stream.skills)} skills, "
-            f"{len(stream.journal)} quests" + (", the level" if stream.level else "")
+            f"{len(self.world.journal)} quests" + (", the level" if stream.level else "")
             + (f", the place ({describe_state(stream.place)})" if stream.place else "")
             if replay else "streams its player from scratch"), flush=True)
 
@@ -1688,7 +1914,7 @@ class Server:
         Keep its name in the folder to recognise the next launch after a restart."""
         if folder not in self.streams:
             self.streams[folder] = PlayerStream(os.path.join(folder, STREAM_NAME))
-        data = self.streams[folder].character_file()
+        data = self.streams[folder].character_file(sorted(self.world.globals.values()))
         if data is None:
             client.rel.queue(EVENT_TEXT, 0, b"This character has no retained identity.")
             self.flush(client, now)
@@ -1905,9 +2131,18 @@ class Server:
             self.on_player_death(client, data[0] == PLAYER_ALIVE, stamp, now)
             return KEEP
         stream = self.player_stream(client) if client.synced else None
+        before = dict(stream.factions or {}) if stream else {}
         change = stream.take(data) if stream else None
         if stream and data[:1] == bytes([PLAYER_TOPICS]):
             self.share_topics(stream.topics or [], now, origin=client)
+        if stream and data[:1] == bytes([PLAYER_JOURNAL]):
+            self.share_journal(client, unpack_journal(data), now)
+        if stream and data[:1] == bytes([PLAYER_FACTIONS]):
+            self.share_factions(client, unpack_factions(data), before, now)
+        if stream and data[:1] == bytes([WORLD_GLOBALS]):
+            change = self.share_globals(client, unpack_globals(data, WORLD_GLOBALS), now)
+        if stream and data[:1] == bytes([WORLD_SCRIPTS]):
+            change = self.world_script(client, *unpack_world_script(data), now)
         if stream and client.naming and stream.identity:
             old = self.character_folder(client)
             folder = new_character_folder(self.key_folder(client), stream.identity["name"])
@@ -2107,9 +2342,151 @@ class Server:
                       flush=True)
         return RELAY
 
-    def event_text(self, client, kind, data, stamp, now):
-        print(f"{stamp} client {client.id} says: {wire_text(data)}", flush=True)
+    def event_locals(self, client, kind, data, stamp, now):
+        """The latest value of each local, bounded; the event goes on to the others as it is."""
+        refid, values = unpack_locals(data)
+        kept = self.world.locals.get(refid, {})
+        room = LOCALS_MAX - sum(len(v) for v in self.world.locals.values())
+        changed = {}
+        for slot, value in values.items():
+            if kept.get(slot) == value or (slot not in kept and room <= 0):
+                continue
+            room -= slot not in kept
+            changed[slot] = value
+        if not changed:
+            return RELAY
+        kept.update(changed)
+        self.world.locals[refid] = kept
+        self.world.dirty = True
+        if self.detail["verbose"]:
+            print(f"{stamp} client {client.id}: {refid:#010x} locals "
+                  + ", ".join(describe_local(*v) for v in sorted(changed.items())), flush=True)
         return RELAY
+
+    def event_actor_move(self, client, kind, data, stamp, now):
+        """Keep an actor's latest move with the cell it first left, and relay it in that form;
+        a cell move drops its kept state, which the next report from its new cell replaces."""
+        refid, origin, cell, x, y, z, heading = ACTOR_MOVE.unpack(data)
+        kept = self.world.moves.get(refid)
+        if kept is None and len(self.world.moves) >= ACTOR_MOVES_MAX:
+            return KEEP
+        if kept and kept[1] == cell and math.dist(kept[2:5], (x, y, z)) < 1 and \
+                abs(kept[5] - heading) < 0.5:
+            return KEEP
+        move = [kept[0] if kept else origin, cell, x, y, z, heading]
+        self.world.moves[refid] = move
+        if origin != cell:
+            self.world.actors.pop(refid, None)
+        self.world.dirty = True
+        if self.detail["verbose"]:
+            print(f"{stamp} client {client.id}: {refid:#010x} moved to cell {cell} "
+                  f"({x:.0f}, {y:.0f}, {z:.0f})", flush=True)
+        self.broadcast_event(client.id, kind, ACTOR_MOVE.pack(refid, *move), now)
+        return KEEP
+
+    def world_script(self, client, op, refid, name, values, now):
+        """Keep a running world script with its first runner's locals; it ends when the last
+        console running it stops it."""
+        key = name.lower()
+        kept = self.world.scripts.get(key)
+        runners = self.script_runners.setdefault(key, [])
+        if op == SCRIPT_STOPPED:
+            if client.id in runners:
+                runners.remove(client.id)
+            if kept is None or runners:
+                return None
+            del self.world.scripts[key]
+            self.world.dirty = True
+            return f"ended script {name}"
+        if kept is None:
+            if len(self.world.scripts) >= WORLD_SCRIPTS_MAX:
+                return None
+            kept = self.world.scripts[key] = {"id": name, "ref": refid, "values": {}}
+            self.world.dirty = True
+        if client.id not in runners:
+            runners.append(client.id)
+        if runners[0] != client.id or not values:
+            return f"runs script {name}" if op == SCRIPT_RUNNING else None
+        room = SCRIPT_VALUES_MAX - len(kept["values"])
+        changed = {}
+        for slot, value in values.items():
+            if kept["values"].get(slot) == value or slot not in kept["values"] and room <= 0:
+                continue
+            room -= slot not in kept["values"]
+            changed[slot] = value
+        if not changed:
+            return None
+        kept["values"].update(changed)
+        self.world.dirty = True
+        return f"script {name} " + ", ".join(describe_local(*v) for v in sorted(changed.items()))
+
+    def scripts_assign(self, client):
+        """WORLD_SCRIPTS events handing the world scripts nobody runs to this client."""
+        events = []
+        for key, kept in sorted(self.world.scripts.items()):
+            runners = self.script_runners.setdefault(key, [])
+            if runners:
+                continue
+            runners.append(client.id)
+            if kept["values"]:
+                events += pack_world_script(SCRIPT_VALUES, kept["ref"], kept["id"], kept["values"])
+            events += pack_world_script(SCRIPT_RUNNING, kept["ref"], kept["id"])
+            print(f"{time.strftime('%H:%M:%S')} client {client.id} runs script {kept['id']}"
+                  f" ({len(kept['values'])} locals)", flush=True)
+        return events
+
+    def scripts_orphaned(self, client_id, now):
+        """A client that leaves stops running its world scripts; the lowest client still playing
+        takes the ones nobody else runs."""
+        orphaned = False
+        for runners in self.script_runners.values():
+            if client_id in runners:
+                runners.remove(client_id)
+                orphaned |= not runners
+        if not orphaned:
+            return
+        for other in sorted(self.clients.values(), key=lambda c: c.id):
+            if other.id != client_id and other.alive and other.in_world and other.synced:
+                for data in self.scripts_assign(other):
+                    other.rel.queue(EVENT_PLAYER, 0, data)
+                self.flush(other, now)
+                return
+
+    def event_text(self, client, kind, data, stamp, now):
+        """A player's line, shown as a server notice under their name: consoles put only the
+        server's text on screen. A private one goes to one player, or only to the admin."""
+        target = None
+        if data[:1] == bytes([TEXT_PRIVATE]):
+            target, _, data = data[1:].partition(b"\0")
+            target = " ".join(wire_text(target).split())
+        text = " ".join(wire_text(data).split())
+        if not text or target == "":
+            return KEEP
+        name = self.player_name(client)
+        if target is None:
+            print(f"{stamp} client {client.id} ({name}) says: {text}", flush=True)
+            self.notify(f"{name}: {text}", now)
+            return KEEP
+        if target.lower() == "admin":
+            print(f"{stamp} client {client.id} ({name}) to admin: {text}", flush=True)
+            self.notify(f"You to Admin: {text}", now, only=client)
+            return KEEP
+        players = [other for other in self.clients.values() if other.in_world]
+        found = [other for other in players if self.player_name(other).lower() == target.lower()]
+        if not found:
+            found = [other for other in players
+                     if self.player_name(other).lower().startswith(target.lower())]
+        if len(found) != 1:
+            self.notify(f"No player is called {target}." if not found else
+                        f"{len(found)} players' names start with {target}.", now, only=client)
+            return KEEP
+        other = found[0]
+        print(f"{stamp} client {client.id} ({name}) to client {other.id} "
+              f"({self.player_name(other)}): {text}", flush=True)
+        self.notify(f"{name} to you: {text}", now, only=other)
+        if other is not client:
+            self.notify(f"You to {self.player_name(other)}: {text}", now, only=client)
+        return KEEP
 
     def event_game(self, client, kind, data, stamp, now):
         if len(data) < 5:
@@ -2220,6 +2597,7 @@ class Server:
                       EVENT_STATUS: event_status,
                       EVENT_AFFECT: event_affect,
                       EVENT_OBJECTS: event_objects,
+                      EVENT_LOCALS: event_locals,
                       EVENT_TEXT: event_text,
                       EVENT_GAME: event_game,
                       EVENT_PICK: event_pick,
@@ -2227,7 +2605,8 @@ class Server:
                       EVENT_BOUNTY: event_bounty,
                       EVENT_EQUIPMENT: event_equipment,
                       EVENT_IDENTITY: event_identity,
-                      EVENT_ACTOR_EQUIPMENT: event_actor_equipment}
+                      EVENT_ACTOR_EQUIPMENT: event_actor_equipment,
+                      EVENT_ACTOR_MOVE: event_actor_move}
 
     def update_authority(self, now):
         """Name each loaded cell's authority and tell every client that has the cell loaded."""
@@ -2254,6 +2633,7 @@ class Server:
         for key in sorted(standing & set(new), key=describe_key):  # the rest only follow
             if self.owners.get(key) != new[key]:
                 print(f"{stamp} authority {describe_key(key)}: client {new[key]}", flush=True)
+        previous = dict(self.owners)
         self.owners.clear()
         self.owners.update(new)
         for client in self.clients.values():
@@ -2261,6 +2641,13 @@ class Server:
             for key in client.loaded:
                 if key in new and client.known.get(key) != new[key]:
                     client.known[key] = new[key]
+                    if new[key] == client.id and key not in previous:
+                        places = self.actor_places(key)
+                        for data in places:
+                            client.rel.queue(EVENT_ACTOR_PLACE, 0, data)
+                        if places and self.detail["verbose"]:
+                            print(f"{stamp} client {client.id}: kept actors of "
+                                  f"{describe_key(key)} sent", flush=True)
                     client.rel.queue(EVENT_AUTHORITY, 0, KEY.pack(*key) + struct.pack("<I", new[key]))
                     told = True
             for key in [k for k in client.known if k not in client.loaded]:
@@ -2338,6 +2725,7 @@ class Server:
                 KEY_EXTERIOR, math.floor(x / CELL_UNITS), math.floor(y / CELL_UNITS), b"")
             self.actors[refid] = (client.id, key, record)
             self.actor_seen[refid] = time.monotonic()
+            self.keep_actor(refid, key, values)
             if refid == self.args.bot_mirror:
                 self.bot.mirror = record
             client.actor_states += 1
@@ -2348,6 +2736,29 @@ class Server:
         for other in self.clients.values():
             if other is not client and other.in_world:
                 self.send(other, ACTORS, struct.pack("<I", client.id) + body)
+
+    def keep_actor(self, refid, key, values):
+        """Keep an actor's latest state for the next authority of its cell; summons are made
+        again by their effects."""
+        kept = self.world.actors
+        spawn = self.world.spawns.get(refid)
+        if spawn and spawn.get("summon") or refid not in kept and len(kept) >= ACTORS_KEPT_MAX:
+            return
+        kept[refid] = [key[0], key[1], key[2], key[3].decode("latin-1"), *values[1:6],
+                       values[7], values[8], values[6]]
+        self.world.dirty = True
+
+    def actor_places(self, key):
+        """ACTOR_PLACE events for the kept actors last reported in a cell."""
+        cell = [key[0], key[1], key[2], key[3].decode("latin-1")]
+        records = []
+        for refid, kept in sorted(self.world.actors.items()):
+            spawn = self.world.spawns.get(refid)
+            if kept[:4] == cell and not (spawn and spawn["removed"]):
+                records.append(ACTOR_PLACE.pack(refid, *kept[4:11], int(kept[11])))
+        return [struct.pack("<I", len(chunk)) + b"".join(chunk)
+                for chunk in (records[i:i + ACTOR_PLACES_PER_EVENT]
+                              for i in range(0, len(records), ACTOR_PLACES_PER_EVENT))]
 
     def handshake(self, kind, session, packet, addr, now, version):
         """Answer HANDSHAKE1 with HANDSHAKE2; on HANDSHAKE3, the HELLO it carries, the console's
@@ -2499,6 +2910,7 @@ class Server:
                 f"client {c.id}: {'playing' if c.alive else 'away'}, key "
                 f"{fingerprint(c.key) if c.key else '-'}, mac {c.mac}, address "
                 f"{c.addr[0] if c.addr else '-'}"
+                + (f", name {self.listed_name(c)}" if self.listed_name(c) else "")
                 for c in sorted(self.clients.values(), key=lambda c: c.id)) or "no clients"
         if verb == "kick" and len(rest) == 1 and rest[0] in by_id:
             self.kick(by_id[rest[0]], REFUSED_KICKED)
@@ -2529,10 +2941,10 @@ class Server:
                 self.detail["verbose"] = rest[0] == "verbose"
             return "log " + ("verbose" if self.detail["verbose"] else "normal")
         if verb == "say" and rest:
-            self.notify(" ".join(rest), time.monotonic())
+            self.notify("Admin: " + " ".join(rest), time.monotonic())
             return "sent to everyone"
         if verb == "tell" and len(rest) >= 2 and rest[0] in by_id:
-            self.notify(" ".join(rest[1:]), time.monotonic(), only=by_id[rest[0]])
+            self.notify("Admin: " + " ".join(rest[1:]), time.monotonic(), only=by_id[rest[0]])
             return f"sent to client {rest[0]}"
         if verb == "stop" and not rest:
             self.begin_stop("admin stop", time.monotonic())
@@ -2708,6 +3120,11 @@ class Server:
             client.rel.queue(EVENT_DEATH, origin, struct.pack("<I", refid))
         for data in pack_objects(self.world.objects):
             client.rel.queue(EVENT_OBJECTS, 0, data)
+        for refid, values in sorted(self.world.locals.items()):
+            for data in pack_locals(refid, values):
+                client.rel.queue(EVENT_LOCALS, 0, data)
+        for refid, move in sorted(self.world.moves.items()):
+            client.rel.queue(EVENT_ACTOR_MOVE, 0, ACTOR_MOVE.pack(refid, *move))
         for refid, values in self.world.statuses.items():
             client.rel.queue(EVENT_STATUS, 0, STATUS.pack(refid, *values))
         for sid, spawn in sorted(self.world.spawns.items(), key=lambda s: s[1]["removed"]):
@@ -2897,6 +3314,8 @@ class Server:
         self.actor_owners = {}  # actor id -> (client, since): its owner by proximity
         self.actor_seen = {}  # actor id -> when a state of it last came
         self.dialogues = {}  # actor id -> (talking client, authority client)
+        # world script id lowered -> clients running it, the first one's locals kept
+        self.script_runners = {}
         # client -> [parts of its latest whole equipment set, parts of the set arriving]
         self.equipment = {}
         self.identities = {}  # client -> its complete [name/race, head/hair] parts

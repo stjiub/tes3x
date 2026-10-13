@@ -12,12 +12,12 @@
     "patch_mask_hi"
   ],
   "hooks": {
-    "console_gate": "0x0000000000402c4d",
-    "console_vk_key": "0x0000000000403677",
-    "console_vk_space": "0x0000000000403683",
+    "console_gate": "0x0000000000402cd5",
+    "console_vk_key": "0x0000000000403709",
+    "console_vk_space": "0x0000000000403715",
     "console_print": "0x0000000000401cb0",
     "console_mailbox": "0x000000000040605c",
-    "diagnostics_update": "0x000000000040487e",
+    "diagnostics_update": "0x000000000040490e",
     "diagnostics_flag": "0x0000000000407558",
     "patch_mask": "0x000000000040753c",
     "patch_mask_hi": "0x0000000000407540"

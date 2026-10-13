@@ -1,11 +1,14 @@
-/* A quest only moves forward: the checkpoint already holds the entries up to its own index. */
+typedef char(__attribute__((thiscall)) *fn_journal_add)(void *dialogue, int index, void *actor);
+
+/* A quest only moves forward. The replay before READY adds entries without the "journal updated"
+ * toast the Journal command shows; another player's progress later shows it. */
 static void journal_apply(const u8 *p, u32 length)
 {
     char line[64], *out;
-    const u8 *node, *dialogue = 0;
+    u8 *node, *dialogue = 0, *mobile;
     const char *id, *name;
-    u32 off = 2, i, guard, max;
-    int index;
+    u32 off = 2, i, k, guard, max;
+    int index, quiet = player_mode != 3 || player_welcome != ses.welcomes;
 
     for (i = 0; i < p[1] && off + 3 <= length; i++) {
         index = p[off] | p[off + 1] << 8;
@@ -16,22 +19,31 @@ static void journal_apply(const u8 *p, u32 length)
         for (off += 2; p[off]; off++)
             ;
         off++;
-        for (node = dialogues_head(), guard = 0; plausible(node) && guard < 65536;
-             node = *(const u8 *const *)(node + 4), guard++)
-            if (plausible(dialogue = *(const u8 *const *)(node + 8)) &&
-                dialogue[DIALOGUE_TYPE] == DIALOGUE_JOURNAL && (name = dialogue_name(dialogue)) &&
-                same_name(name, id))
+        for (node = (u8 *)dialogues_head(), guard = k = 0; plausible(node) && guard < 65536;
+             node = *(u8 **)(node + 4), guard++) {
+            if (!plausible(dialogue = *(u8 **)(node + 8)) ||
+                dialogue[DIALOGUE_TYPE] != DIALOGUE_JOURNAL)
+                continue;
+            if ((name = dialogue_name(dialogue)) && same_name(name, id))
                 break;
+            k++;
+        }
         if (!plausible(node)) {
             player_apply_failures++;
             log_text("net.player_quest_unknown", id);
             continue;
         }
-        if (*(const int *)(dialogue + DIALOGUE_INDEX) >= index)
+        if (*(const short *)(dialogue + DIALOGUE_INDEX) >= index)
             continue;
-        out = put_int(put_text(put_text(put_text(line, "Journal \""), id), "\" "), index);
-        *out = 0;
-        run_script(line);
+        if (quiet && plausible(mobile = player_mobile())) {
+            ((fn_journal_add)TES3X_NET_JOURNAL_ADD)(dialogue, index, mobile);
+        } else {
+            out = put_int(put_text(put_text(put_text(line, "Journal \""), id), "\" "), index);
+            *out = 0;
+            run_script(line);
+        }
+        if (k < JOURNALS) /* not sent back */
+            journal_sent[k] = (u16)*(const short *)(dialogue + DIALOGUE_INDEX);
         player_journal_in++;
     }
 }
@@ -124,6 +136,14 @@ static void player_event(const struct event *e)
         journal_apply(e->data, e->length);
     else if (e->data[0] == PLAYER_TOPICS && e->length >= 2)
         topics_apply(e->data, e->length);
+    else if (e->data[0] == PLAYER_FACTIONS && e->length >= 2)
+        factions_apply(e->data, e->length);
+    else if (e->data[0] == WORLD_SCRIPTS && e->length >= 8)
+        world_script_event(e->data, e->length);
+    else if (e->data[0] == PLAYER_GLOBALS && e->length >= 2)
+        globals_apply(&player_globals, e->data, e->length);
+    else if (e->data[0] == WORLD_GLOBALS && e->length >= 2)
+        globals_apply(&world_globals, e->data, e->length);
     else if (e->data[0] == PLAYER_VITALS && e->length >= 1 + 12)
         vitals_apply(ref, e->data + 1);
     else if (e->data[0] == PLAYER_PLACE && e->length >= 1 + PLACE_BYTES)

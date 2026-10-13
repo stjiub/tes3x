@@ -11,6 +11,12 @@
 /* count, then (actor id, client) pairs: the player nearest an actor runs it, since the engine runs
  * actors only within aiDistance of its own player; client 0 hands it back to its cell's authority */
 #define EVENT_OWNERS 20u
+/* Before AUTHORITY for a cell nobody had: count, then each actor's kept state (refid, x, y, z,
+ * heading, health, magicka, fatigue, ACTOR flags), placed the first frame this console runs it */
+#define EVENT_ACTOR_PLACE 38u
+#define ACTOR_PLACE_BYTES 36u
+#define PLACES 256u
+#define PLACE_KEEP_US 30000000u /* an actor not run here by then is in a cell not loaded */
 #define OWNERS 256u
 #define KEY_EXTERIOR 1u
 #define KEY_INTERIOR 2u
@@ -82,6 +88,11 @@ static struct {
 static u32 hit_count, talk_refid, talk_owner, talk_broken;
 static u32 actor_states_out, actor_states_in, actor_moves, follows, follows_full;
 static u32 hits_out, hits_in, remote_holds_in, remote_breaks_out, remote_breaks_in, retaliations;
+static struct {
+    u32 refid, time;
+    u8 state[ACTOR_PLACE_BYTES];
+} places[PLACES];
+static u32 place_count, places_in, places_applied, places_dropped;
 /* Every death this session has seen, reported here or told by the server. */
 static u32 deaths[DEATHS], death_count, deaths_reported, deaths_applied;
 
@@ -680,6 +691,9 @@ static void authority_session(void)
         remote_holds[i].release = 1;
     talk_refid = 0;
     death_count = 0; /* the server replays its deaths after WELCOME */
+    for (i = 0; i < PLACES; i++)
+        places[i].refid = 0;
+    place_count = 0;
     for (i = 0; i < PEERS; i++) {
         ghost_lives[i].client = 0;
         ghost_lives[i].dead = 0;
@@ -752,6 +766,64 @@ static void combat_take(u8 *mobile, void *ref, u32 refid, u32 from)
 
 static void peace_check(const u8 *mobile, void *ref, u32 refid);
 
+/* An actor's kept state, once: where it was and its statistics, unless it died. Its AI packages
+ * start again from there. An actor another console runs is placed by that console's states. */
+static void place_kept(u8 *mobile, u8 *ref, u32 refid, int here)
+{
+    float xyzh[4], stats[3];
+    u32 i;
+
+    for (i = 0; i < PLACES && places[i].refid != refid; i++)
+        ;
+    if (i == PLACES)
+        return;
+    places[i].refid = 0;
+    place_count--;
+    if (!here)
+        return;
+    copy((u8 *)xyzh, places[i].state + 4, 16);
+    copy((u8 *)stats, places[i].state + 20, 12);
+    place_ref(ref, xyzh);
+    if (!(get32le(places[i].state + 32) & ACTOR_DEAD) && stats[0] > 0) {
+        *(float *)(mobile + MOBILE_HEALTH) = stats[0];
+        *(float *)(mobile + MOBILE_MAGICKA) = stats[1];
+        *(float *)(mobile + MOBILE_FATIGUE) = stats[2];
+    }
+    places_applied++;
+    tes3x_log_hex3("net.actor_placed", refid, (u32)round_int(xyzh[0]), (u32)round_int(xyzh[1]));
+}
+
+static void places_event(const struct event *e)
+{
+    u32 count = e->length >= 4 ? get32le(e->data) : 0, i, j, refid;
+    const u8 *a;
+
+    for (i = 0; i < count && 4 + (i + 1) * ACTOR_PLACE_BYTES <= e->length; i++) {
+        a = e->data + 4 + i * ACTOR_PLACE_BYTES;
+        refid = get32le(a);
+        if (!refid || !float_within(a + 4, 3, POSITION_LIMIT) ||
+            !float_within(a + 16, 1, ANGLE_LIMIT) || !float_within(a + 20, 3, STAT_LIMIT)) {
+            refused_events++;
+            continue;
+        }
+        for (j = 0; j < PLACES && places[j].refid != refid; j++)
+            ;
+        if (j == PLACES)
+            for (j = 0; j < PLACES && places[j].refid; j++)
+                ;
+        if (j == PLACES) {
+            places_dropped++;
+            continue;
+        }
+        if (!places[j].refid)
+            place_count++;
+        places[j].refid = refid;
+        places[j].time = now_us();
+        copy(places[j].state, a, ACTOR_PLACE_BYTES);
+        places_in++;
+    }
+}
+
 /* Once per frame in the world: follow, send or hold each actor the AI planners hold. */
 static void authority_frame(const u8 *player, const u8 *state)
 {
@@ -766,6 +838,12 @@ static void authority_frame(const u8 *player, const u8 *state)
     for (i = 0; i < authorities; i++)
         if (!key_loaded(&authority[i].key, &local))
             authority_remove(i--);
+    for (i = 0; place_count && i < PLACES; i++)
+        if (places[i].refid && now - places[i].time > PLACE_KEEP_US) {
+            places[i].refid = 0;
+            place_count--;
+            places_dropped++;
+        }
     send = ses.state == SESSION_JOINED && now - last_send >= ACTOR_PERIOD_US;
     if (send)
         last_send = now;
@@ -786,6 +864,8 @@ static void authority_frame(const u8 *player, const u8 *state)
             continue;
         actor_key(&local, *(const float *)(ref + 0x38), *(const float *)(ref + 0x3C), &key);
         owner = actor_owner(refid, authority_of(&key));
+        if (place_count && owner)
+            place_kept(mobile, ref, refid, owner == ses.client);
         death_frame(mobile, ref, refid, owner);
         if (send)
             status_frame(mobile, ref, refid);
@@ -893,6 +973,10 @@ static void authority_event(const struct event *e)
         owners_event(e);
         return;
     }
+    if (e->kind == EVENT_ACTOR_PLACE) {
+        places_event(e);
+        return;
+    }
     if (e->kind == EVENT_DEATH) {
         if (e->length >= 4 && !death_known(refid)) {
             death_add(refid);
@@ -969,5 +1053,59 @@ static void authority_stat(void)
     tes3x_log("net.player_hits_unseen", player_hits_unseen);
     tes3x_log_hex3("net.hostiles", hostiles, bloodied, 0);
     tes3x_log_hex3("net.actor_deaths", death_count, deaths_reported, deaths_applied);
+    tes3x_log_hex3("net.actor_places", places_in, places_applied, places_dropped);
     tes3x_log_hex3("net.actor_holds", remote_holds_in, remote_breaks_out, remote_breaks_in);
+}
+
+static const char *signed_number(const char *text, int *value)
+{
+    u32 magnitude;
+    int negative = *text == '-';
+
+    if (!(text = number(text + negative, &magnitude)))
+        return 0;
+    *value = negative ? -(int)magnitude : (int)magnitude;
+    return text;
+}
+
+/* tes3xnet actor 0xREFID [near X Y R]: the actor's health, or 1 if it stands within R units of
+ * X, Y; for exec asserts on an actor that wanders. */
+static void actor_query(const char *text)
+{
+    u32 refid = 0, digit, i;
+    int x, y, r, near;
+    const float *at;
+    const u8 *ref, *mobile;
+    float dx, dy;
+
+    if (text[0] != '0' || (text[1] | 32) != 'x')
+        return;
+    for (i = 2; text[i] && text[i] != ' '; i++) {
+        digit = (u32)(text[i] | 32);
+        refid = refid << 4 | (digit <= '9' ? digit - '0' : digit - 'a' + 10);
+    }
+    text = skip(text + i);
+    if (!plausible(ref = actor_ref(refid)) || !plausible(mobile = ref_mobile((u8 *)ref))) {
+        tes3x_log("net.actor_unknown", refid);
+        return;
+    }
+    at = (const float *)(ref + REF_POSITION);
+    tes3x_log_hex3("net.actor_at", refid, (u32)round_int(at[0]), (u32)round_int(at[1]));
+    if (!*text) {
+#ifdef TES3X_CONSOLE
+        tes3x_console_reply("%08x >> %.2f", refid,
+                            (double)*(const float *)(mobile + MOBILE_HEALTH));
+#endif
+        return;
+    }
+    if (!(text = word(text, "near")) || !(text = signed_number(skip(text), &x)) ||
+        !(text = signed_number(skip(text), &y)) || !(text = signed_number(skip(text), &r)))
+        return;
+    dx = at[0] - (float)x;
+    dy = at[1] - (float)y;
+    near = dx * dx + dy * dy <= (float)r * (float)r;
+    tes3x_log_hex3("net.actor_near", refid, (u32)near, (u32)r);
+#ifdef TES3X_CONSOLE
+    tes3x_console_reply("%08x near >> %.2f", refid, near ? 1.0 : 0.0);
+#endif
 }

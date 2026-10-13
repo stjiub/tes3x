@@ -27,6 +27,7 @@ import tes3x.deploy as tes3x_deploy
 import tes3x.diag as tes3x_diag
 import tes3x.ftp as tes3x_ftp
 import tes3x.net as tes3x_net
+import tes3x.net.worlds as tes3x_worlds
 import tes3x.targets as tes3x_targets
 from tes3x.pipeline import (MARKER as PIPELINE_MARKER, PipelineError, resolve_patch_plan,
                             validate_local_config)
@@ -37,7 +38,7 @@ LOG_SUFFIXES = {".txt", ".log"}
 CAPABILITY_REASONS = {
     "ftp": "the Xbox's FTP server is not answering",
     "pull_logs": "neither FTP nor the in-game agent is available",
-    "dashboard_control": "the dashboard agent is not answering or is outdated",
+    "dashboard_control": "the XBMC4Gamers agent is not answering or is outdated",
     "commands": "no game with the in-game agent is connected",
     "agent_fetch": "no game with the in-game agent is connected",
     "installed_builds": "the Xbox's FTP server is not answering",
@@ -181,7 +182,7 @@ class TargetsPage(QWidget):
         layout = QVBoxLayout(page)
         self.fields = {}
         self.field_labels = {}
-        self.check_button = tip_button("Check connection", "Probe FTP and the dashboard agent",
+        self.check_button = tip_button("Check connection", "Probe FTP and the XBMC4Gamers agent",
                                        self.check_connection)
         self.pull_button = tip_button("Pull logs", "Copy E:\\tes3x* from the console",
                                       self.window.pull_logs)
@@ -194,27 +195,29 @@ class TargetsPage(QWidget):
                                       self.quit_game)
         self.fetch_button = tip_button("Fetch file…", "Copy a file from the running game",
                                        self.fetch_file)
-        layout.addWidget(self.section("Agent", (("game", "Status"),
+        layout.addWidget(self.section("In-game agent", (("game", "Status"),
                                                 ("heartbeat", "Heartbeat")),
                                       self.quit_button, self.fetch_button))
         self.software = QWidget()
         software = QVBoxLayout(self.software)
         software.setContentsMargins(0, 0, 0, 0)
-        self.agent_install = tip_button("Install / update", "Copy the dashboard agent to "
+        self.dash_install = tip_button("Install / update", "Stage the Dash and copy "
+                                       "it to the games folder", self.window.install_dash)
+        self.dash_quit = tip_button("Quit to dashboard", "Restart the Xbox from the running Dash",
+                                    self.quit_dash)
+        software.addWidget(self.section("TES3X Dash agent", (("dash", "Status"),
+                                                             ("dash_version", "Version")),
+                                        self.dash_install, self.dash_quit))
+        self.agent_install = tip_button("Install / update", "Copy the agent to "
                                         "XBMC4Gamers over FTP", lambda: self.run_agent("install"))
         self.restart_button = tip_button("Restart dashboard", "Restart XBMC4Gamers on the Xbox",
                                          self.restart_dashboard)
-        self.agent_remove = tip_button("Remove", "Remove the dashboard agent from XBMC4Gamers",
+        self.agent_remove = tip_button("Remove", "Remove the agent from XBMC4Gamers",
                                        lambda: self.run_agent("uninstall"))
-        software.addWidget(self.section("Dashboard agent", (("dashboard", "Status"),
-                                                            ("dashboard_version", "Version")),
+        software.addWidget(self.section("XBMC4Gamers agent", (("dashboard", "Status"),
+                                                              ("dashboard_version", "Version")),
                                         self.agent_install, self.restart_button,
                                         self.agent_remove))
-        self.dash_install = tip_button("Install / update", "Stage the Dash and copy "
-                                          "it to the games folder", self.window.install_dash)
-        software.addWidget(self.section("TES3X Dash", (("dash", "Status"),
-                                                            ("dash_version", "Version")),
-                                        self.dash_install))
         layout.addWidget(self.software)
         layout.addStretch()
         return page
@@ -246,12 +249,12 @@ class TargetsPage(QWidget):
     def run_agent(self, command):
         name = self.name
         if command == "uninstall" and QMessageBox.question(
-                self, "TES3X", f"Remove the dashboard agent from {name}?")                 != QMessageBox.StandardButton.Yes:
+                self, "TES3X", f"Remove the XBMC4Gamers agent from {name}?")                 != QMessageBox.StandardButton.Yes:
             return
         if self.window.process is not None:
             self.window.error("A TES3X command is already running")
             return
-        verb = "Installing the dashboard agent on" if command == "install" else             "Removing the dashboard agent from"
+        verb = "Installing the XBMC4Gamers agent on" if command == "install" else             "Removing the XBMC4Gamers agent from"
         self.window.run_steps(
             [
                 (
@@ -274,11 +277,23 @@ class TargetsPage(QWidget):
             status = "?"
         else:
             status = "Installed" if found else "Not installed"
-        version = ", ".join(found) or "?"
+        version = self.remembered("dash", ", ".join(found))
         available = dash_version()
-        if available and found and version != available:
+        if available and version != "?" and version.split(" (")[0] != available:
             version += f" (PC: {available})"
         return status, version
+
+    def remembered(self, key, fresh):
+        """A version seen now, else the last one seen on this target, marked as such."""
+        settings = self.window.settings
+        name = f"agent_versions/{self.name}/{key}"
+        if settings is None:
+            return fresh or "?"
+        if fresh and fresh != "?":
+            settings.setValue(name, fresh)
+            return fresh
+        last = settings.value(name, "")
+        return f"{last} (last seen)" if last else "?"
 
     def check_connection(self):
         self.window.play_controller.refresh_ftp_status()
@@ -294,6 +309,12 @@ class TargetsPage(QWidget):
     def quit_game(self):
         if QMessageBox.question(self, "TES3X", f"Quit the game on {self.name} to the dashboard?"
                                 " Unsaved progress is lost.") != QMessageBox.StandardButton.Yes:
+            return
+        self.window.play_controller.agent_reboot(self.name)
+
+    def quit_dash(self):
+        question = f"Restart {self.name} to its dashboard?"
+        if QMessageBox.question(self, "TES3X", question) != QMessageBox.StandardButton.Yes:
             return
         self.window.play_controller.agent_reboot(self.name)
 
@@ -669,7 +690,8 @@ class TargetsPage(QWidget):
         self.show_field("dashboard", {"current": "On", "outdated": "Outdated", "missing": "Off",
                                       "checking": "Checking…"}.get(runtime.get("dashboard"), "?"))
         self.fields["dashboard"].setToolTip(detail)
-        self.show_field("dashboard_version", version.group(1) if version else "?")
+        self.show_field("dashboard_version",
+                        self.remembered("dashboard", version.group(1) if version else ""))
         if name and xbox:
             status, installed = self.dash_state(dash)
             self.show_field("dash", status)
@@ -688,7 +710,7 @@ class TargetsPage(QWidget):
         for button in (self.pull_button, self.log_pull, self.restart_button, self.agent_install,
                        self.agent_remove, self.dash_install):
             button.setEnabled(button.isEnabled() and not busy)
-        for button in (self.quit_button, self.console_quit, self.send_button):
+        for button in (self.quit_button, self.dash_quit, self.console_quit, self.send_button):
             gate(button, features, "commands")
         for button in (self.fetch_button, self.console_fetch):
             gate(button, features, "agent_fetch")
@@ -859,7 +881,7 @@ class TargetSetup(QWidget):
         probe = QHBoxLayout()
         self.test_button = tip_button("Test FTP", "Log in to this address over FTP with the "
                                       "details above", self.test_connection)
-        self.agent_test_button = tip_button("Test agent", "Ask the dashboard agent on the saved "
+        self.agent_test_button = tip_button("Test agent", "Ask the XBMC4Gamers agent on the saved "
                                             "target to answer", self.test_agent)
         self.test_status = QLabel()
         probe.addWidget(self.test_button)
@@ -1162,11 +1184,11 @@ class TargetSetup(QWidget):
             self.test_status.setText("Save first; the agent test uses the saved target")
             return
         if self.window.play_controller.dashboard_status_command() is None:
-            self.test_status.setText("The dashboard agent add-on is not available")
+            self.test_status.setText("The XBMC4Gamers agent add-on is not available")
             return
         self.agent_testing = self.name
         self.agent_test_button.setEnabled(False)
-        self.test_status.setText("Asking the dashboard agent…")
+        self.test_status.setText("Asking the XBMC4Gamers agent…")
         self.window.play_controller.refresh_dashboard_status(self.name)
 
     def agent_tested(self, name, state, detail):
@@ -1176,9 +1198,9 @@ class TargetSetup(QWidget):
         self.agent_test_button.setEnabled(True)
         if name == self.name:
             self.test_status.setText({
-                "current": "The dashboard agent answered",
-                "outdated": "The dashboard agent answered but is outdated",
-            }.get(state, "No answer from the dashboard agent") + (f": {detail}" if detail else ""))
+                "current": "The XBMC4Gamers agent answered",
+                "outdated": "The XBMC4Gamers agent answered but is outdated",
+            }.get(state, "No answer from the XBMC4Gamers agent") + (f": {detail}" if detail else ""))
 
     def xemu_folder(self):
         text = self.xemu_fields["folder"].text().strip()
@@ -1225,16 +1247,12 @@ class TargetSetup(QWidget):
                                 "MCPX boot ROM and BIOS there, then save the target.")
 
 
-SERVER_FIELDS = (
+# key, label, kind, default, help. These are kept in the world's world.toml.
+WORLD_FIELDS = (
     ('name', 'Server name', 'string', '', 'Display name shown in TES3X Dash'),
     ('description', 'Description', 'string', '', 'Optional description shown in TES3X Dash'),
-    # key, label, kind, default, help
-    ("world", "World folder", "folder", "", "Keeps the server key, password, characters, "
-     "saves and bans; empty keeps nothing between runs"),
     ("profile", "Build profile", "profile", "", "The build Xboxes' Dashes download on "
      "joining; consoles with another build are refused"),
-    ("port", "Game port", "int", tes3x_net.PORT, "UDP port consoles join"),
-    ("admin_port", "Admin port", "int", tes3x_net.ADMIN_PORT, "Local UDP port for admin commands"),
     ("password_file", "Password file", "file", "", "Consoles with a new key must give this "
      "password"),
     ("max_players", "Max players", "int", 16, ""),
@@ -1255,6 +1273,11 @@ SERVER_FIELDS = (
      "start fresh"),
     ("serve_retail", "Send retail files", "bool", False, "For testing: also serve the retail files "
      "and the XBEs themselves, so a console without a retail base can install"),
+)
+# These belong to this PC and stay in the local config's [server].
+HOST_FIELDS = (
+    ("port", "Game port", "int", tes3x_net.PORT, "UDP port consoles join"),
+    ("admin_port", "Admin port", "int", tes3x_net.ADMIN_PORT, "Local UDP port for admin commands"),
     ("hosts", "DNS names", "lines", [], "NAME=ADDRESS, one per line, answered to consoles"),
     ("tunnels", "xemu tunnels", "text", "", "Tunnel ports for xemu guests, comma separated"),
     ("remote_admin", "Remote admin port", "int", 0, "Also take admin commands from other "
@@ -1263,7 +1286,9 @@ SERVER_FIELDS = (
     ("admin_password_file", "Admin password file", "file", "", "The remote admin password on "
      f"its first line, at least {tes3x_net.ADMIN_PASSWORD_MIN} characters"),
 )
-REMOTE_KEYS = ("mode", "remote_address", "remote_password")
+SERVER_FIELDS = WORLD_FIELDS + HOST_FIELDS
+WORLD_KEYS = {key for key, *_ in WORLD_FIELDS}
+DEFAULT_WORLD = "Default"
 
 
 def multiplayer_profile(path):
@@ -1278,7 +1303,7 @@ def multiplayer_profile(path):
 def server_arguments(values):
     """`tes3x net serve` arguments for the saved [server] settings."""
     args = ["serve"]
-    for key, flag in (("world", "--world"), ("password_file", "--password-file")):
+    for key, flag in (("world", "--world"), ("key", "--key"), ("password_file", "--password-file")):
         if values.get(key):
             args += [flag, str(values[key])]
     for key, flag in (("port", "--port"), ("admin_port", "--admin-port"),
@@ -1317,17 +1342,19 @@ def server_arguments(values):
 
 
 def parse_clients(reply):
-    """Rows of `admin list`: (id, state, key, mac, address)."""
+    """Rows of `admin list`: (id, player, state, key, mac, address)."""
     rows = []
     for line in reply.splitlines():
         head, _, rest = line.partition(": ")
         if not head.startswith("client ") or not rest:
             continue
+        # the name comes last and may hold commas
+        rest, _, name = rest.partition(", name ")
         fields = [part.strip() for part in rest.split(",")]
         state = fields[0]
         values = dict(part.split(" ", 1) for part in fields[1:] if " " in part)
-        rows.append((head[7:], state, values.get("key", "-"), values.get("mac", "-"),
-                     values.get("address", "-")))
+        rows.append((head[7:], name.strip() or "-", state, values.get("key", "-"),
+                     values.get("mac", "-"), values.get("address", "-")))
     return rows
 
 
@@ -1356,6 +1383,19 @@ class ServerPage(QWidget):
         self.local_bar = QWidget()
         local_bar = QHBoxLayout(self.local_bar)
         local_bar.setContentsMargins(0, 0, 0, 0)
+        from tes3x.gui.common import menu_button
+        local_bar.addWidget(QLabel("World"))
+        self.world_picker = QComboBox()
+        self.world_picker.setMinimumWidth(180)
+        self.world_picker.activated.connect(self.world_activated)
+        local_bar.addWidget(self.world_picker)
+        self.world_actions = menu_button("Manage worlds", (
+            ("New…", self.new_world), ("Duplicate…", self.duplicate_world),
+            ("Rename…", self.rename_world), ("Delete", self.delete_world),
+            ("Open folder", self.open_world_folder)))
+        local_bar.addWidget(self.world_actions)
+        local_bar.addSpacing(12)
+        self.world = None
         self.start_button = QPushButton("Start")
         self.start_button.clicked.connect(self.start)
         self.stop_button = QPushButton("Stop")
@@ -1416,15 +1456,17 @@ class ServerPage(QWidget):
         self.local_box = QWidget()
         local_layout = QVBoxLayout(self.local_box)
         local_layout.setContentsMargins(0, 0, 0, 0)
-        form = QFormLayout()
         self.inputs = {}
-        for key, label, kind, default, help_text in SERVER_FIELDS:
-            widget = self.field(kind, default)
-            if help_text:
-                widget.setToolTip(help_text)
-            self.inputs[key] = (kind, widget)
-            form.addRow(label, widget)
-        local_layout.addLayout(form)
+        for title, fields in (("World settings", WORLD_FIELDS), ("This PC", HOST_FIELDS)):
+            local_layout.addWidget(heading(title, 1))
+            form = QFormLayout()
+            for key, label, kind, default, help_text in fields:
+                widget = self.field(kind, default)
+                if help_text:
+                    widget.setToolTip(help_text)
+                self.inputs[key] = (kind, widget)
+                form.addRow(label, widget)
+            local_layout.addLayout(form)
         form_layout.addWidget(self.local_box)
         form_layout.addStretch()
         scroll = QScrollArea()
@@ -1433,12 +1475,12 @@ class ServerPage(QWidget):
         split.addWidget(scroll)
 
         right = QSplitter(Qt.Orientation.Vertical)
+        self.lists = QTabWidget()
         players = QWidget()
         players_layout = QVBoxLayout(players)
         players_layout.setContentsMargins(0, 0, 0, 0)
-        players_layout.addWidget(heading("Players", 1))
         self.players = QTreeWidget()
-        self.players.setHeaderLabels(["Client", "State", "Key", "MAC", "Address"])
+        self.players.setHeaderLabels(["Client", "Player", "State", "Key", "MAC", "Address"])
         self.players.setRootIsDecorated(False)
         self.players.header().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         players_layout.addWidget(self.players, 1)
@@ -1463,7 +1505,31 @@ class ServerPage(QWidget):
             player_buttons.addWidget(button)
         player_buttons.addStretch()
         players_layout.addLayout(player_buttons)
-        right.addWidget(players)
+        self.lists.addTab(players, "Players")
+
+        characters = QWidget()
+        characters_layout = QVBoxLayout(characters)
+        characters_layout.setContentsMargins(0, 0, 0, 0)
+        self.characters = QTreeWidget()
+        self.characters.setHeaderLabels(["Character", "Race", "Class", "Level", "Last played",
+                                         "State", "Key"])
+        self.characters.setRootIsDecorated(False)
+        self.characters.header().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self.characters.itemSelectionChanged.connect(lambda: self.update_buttons())
+        characters_layout.addWidget(self.characters, 1)
+        character_buttons = QHBoxLayout()
+        refresh = QPushButton("Refresh")
+        refresh.clicked.connect(self.show_characters)
+        self.delete_character_button = QPushButton("Delete")
+        self.delete_character_button.clicked.connect(self.delete_character)
+        self.character_folder_button = QPushButton("Open folder")
+        self.character_folder_button.clicked.connect(self.open_character_folder)
+        for button in (refresh, self.delete_character_button, self.character_folder_button):
+            character_buttons.addWidget(button)
+        character_buttons.addStretch()
+        characters_layout.addLayout(character_buttons)
+        self.characters_tab = self.lists.addTab(characters, "Characters")
+        right.addWidget(self.lists)
         self.log = monospace(QPlainTextEdit())
         self.log.setReadOnly(True)
         self.log.setMaximumBlockCount(5000)
@@ -1547,7 +1613,7 @@ class ServerPage(QWidget):
 
     def browse(self, line, kind):
         start = line.text() or str(self.window.work_dir())
-        chosen = (QFileDialog.getExistingDirectory(self, "World folder", start) if kind == "folder"
+        chosen = (QFileDialog.getExistingDirectory(self, "Folder", start) if kind == "folder"
                   else QFileDialog.getOpenFileName(self, "Password file", start)[0])
         if chosen:
             line.setText(chosen)
@@ -1587,12 +1653,185 @@ class ServerPage(QWidget):
             out["remote_password"] = self.remote_password.text()
         return out
 
+    def worlds_root(self):
+        return self.window.local_path("worlds") or self.window.work_dir() / "worlds"
+
+    def world_folder(self):
+        return tes3x_worlds.folder(self.worlds_root(), self.world) if self.world else None
+
     def load(self):
         saved = self.window.local_values().get("server", {})
         self.mode.setCurrentIndex(max(0, self.mode.findData(saved.get("mode", "local"))))
         self.remote_address.setText(str(saved.get("remote_address", "")))
         self.remote_password.setText(str(saved.get("remote_password", "")))
         self.remember_password.setChecked("remote_password" in saved)
+        self.show_values({key: value for key, value in saved.items() if key not in WORLD_KEYS})
+        self.refresh_worlds(self.first_world(saved))
+
+    def first_world(self, saved):
+        """The world to show: the saved one, else a Default world made from the settings this
+        PC kept before worlds, with what an old world folder held."""
+        root = self.worlds_root()
+        names = tes3x_worlds.worlds(root)
+        chosen = str(saved.get("world", ""))
+        if chosen in names:
+            return chosen
+        if names:
+            return names[0]
+        settings = {key: value for key, value in saved.items() if key in WORLD_KEYS}
+        try:
+            if chosen and Path(chosen).is_dir():
+                tes3x_worlds.adopt(root, DEFAULT_WORLD, chosen, settings)
+                self.log.appendPlainText(f"copied world folder {chosen} into world "
+                                         f"{DEFAULT_WORLD} in {root}")
+            else:
+                tes3x_worlds.create(root, DEFAULT_WORLD, settings)
+        except (OSError, tes3x_worlds.WorldError) as exc:
+            self.log.appendPlainText(f"could not make world {DEFAULT_WORLD} in {root}: {exc}")
+            return None
+        return DEFAULT_WORLD
+
+    def refresh_worlds(self, select=None):
+        names = tes3x_worlds.worlds(self.worlds_root())
+        self.world_picker.blockSignals(True)
+        self.world_picker.clear()
+        self.world_picker.addItems(names)
+        self.world = select if select in names else (names[0] if names else None)
+        self.world_picker.setCurrentIndex(names.index(self.world) if self.world else -1)
+        self.world_picker.blockSignals(False)
+        self.load_world()
+
+    def load_world(self):
+        try:
+            values = tes3x_worlds.load(self.worlds_root(), self.world) if self.world else {}
+        except tes3x_worlds.WorldError as exc:
+            self.log.appendPlainText(str(exc))
+            values = {}
+        self.show_values({key: values.get(key, default) for key, _, _, default, _ in WORLD_FIELDS})
+        self.show_characters()
+        self.update_buttons()
+
+    def world_activated(self, index):
+        name = self.world_picker.itemText(index)
+        if name == self.world:
+            return
+        if not self.save():  # keep the edits made to the world being left
+            self.world_picker.setCurrentIndex(self.world_picker.findText(self.world or ""))
+            return
+        self.world = name
+        self.load_world()
+        self.save()
+
+    def ask_world_name(self, title, suggested):
+        name, ok = QInputDialog.getText(self, title, "World name:", text=suggested)
+        return name.strip() if ok and name.strip() else None
+
+    def world_action(self, action, select):
+        try:
+            name = action()
+        except (OSError, tes3x_worlds.WorldError) as exc:
+            QMessageBox.critical(self, "TES3X", str(exc))
+            return
+        self.refresh_worlds(name if select else None)
+        self.save()
+
+    def new_world(self):
+        name = self.ask_world_name("New world", "")
+        if name and self.save():
+            self.world_action(lambda: tes3x_worlds.create(self.worlds_root(), name, {}), True)
+
+    def duplicate_world(self):
+        if not self.world:
+            return
+        name = self.ask_world_name("Duplicate world", self.world + " copy")
+        if not name or not self.save():
+            return
+        keep = QMessageBox.question(
+            self, "TES3X", f"Copy {self.world}'s characters too? No copies its settings and "
+            "world state only.", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No |
+            QMessageBox.StandardButton.Cancel)
+        if keep == QMessageBox.StandardButton.Cancel:
+            return
+        source = self.world
+        self.world_action(lambda: tes3x_worlds.duplicate(
+            self.worlds_root(), source, name, keep == QMessageBox.StandardButton.Yes), True)
+
+    def rename_world(self):
+        if not self.world:
+            return
+        name = self.ask_world_name("Rename world", self.world)
+        if name and name != self.world and self.save():
+            source = self.world
+            self.world_action(lambda: tes3x_worlds.rename(self.worlds_root(), source, name), True)
+
+    def delete_world(self):
+        if not self.world:
+            return
+        count = len(tes3x_worlds.characters(self.world_folder()))
+        if QMessageBox.question(
+                self, "TES3X", f"Delete world {self.world} and everything it keeps"
+                + (f", including {count} character{'s' * (count != 1)}" if count else "")
+                + "? This cannot be undone.") != QMessageBox.StandardButton.Yes:
+            return
+        name = self.world
+        self.world_action(lambda: tes3x_worlds.delete(self.worlds_root(), name), False)
+
+    def open_world_folder(self):
+        folder = self.world_folder() or self.worlds_root()
+        if folder.is_dir():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+
+    def show_characters(self):
+        selected = self.selected_character()
+        self.characters.clear()
+        for character in tes3x_worlds.characters(self.world_folder()) if self.world else []:
+            played = datetime.datetime.fromtimestamp(character["played"])
+            item = QTreeWidgetItem([
+                character["name"], character["race"], character["class"],
+                "?" if character["level"] is None else str(character["level"]),
+                played.strftime("%Y-%m-%d %H:%M"), "dead" if character["dead"] else "alive",
+                character["key"][:16]])
+            item.setData(0, Qt.ItemDataRole.UserRole, str(character["folder"]))
+            item.setToolTip(6, character["key"])
+            self.characters.addTopLevelItem(item)
+            if str(character["folder"]) == selected:
+                item.setSelected(True)
+        self.update_buttons()
+
+    def selected_character(self):
+        items = self.characters.selectedItems()
+        return items[0].data(0, Qt.ItemDataRole.UserRole) if items else None
+
+    def delete_character(self):
+        folder = self.selected_character()
+        if folder is None or self.process is not None:
+            return
+        name = self.characters.selectedItems()[0].text(0)
+        if QMessageBox.question(self, "TES3X", f"Delete {name} from world {self.world}? Its "
+                                "console starts a new character there next time. This cannot "
+                                "be undone.") != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            tes3x_worlds.delete_character(self.world_folder(), folder)
+        except (OSError, tes3x_worlds.WorldError) as exc:
+            QMessageBox.critical(self, "TES3X", f"Could not delete {name}: {exc}")
+        self.show_characters()
+
+    def open_character_folder(self):
+        folder = self.selected_character()
+        if folder:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Settings may have moved the worlds folder.
+        if self.process is None and [self.world_picker.itemText(i) for i in range(
+                self.world_picker.count())] != tes3x_worlds.worlds(self.worlds_root()):
+            self.refresh_worlds(self.world)
+        elif self.process is None:
+            self.show_characters()
+
+    def show_values(self, saved):
         for key, (kind, widget) in self.inputs.items():
             if key not in saved:
                 continue
@@ -1625,10 +1864,17 @@ class ServerPage(QWidget):
             if table is None:
                 table = tomlkit.table()
                 document["server"] = table
-            values = {**self.values(), **self.remote_values()}
-            for key, value in values.items():
+            values = self.values()
+            local = {key: value for key, value in values.items() if key not in WORLD_KEYS}
+            local.update(self.remote_values())
+            if self.world:
+                local["world"] = self.world
+                tes3x_worlds.save(self.worlds_root(), self.world,
+                                  {key: value for key, value in values.items()
+                                   if key in WORLD_KEYS})
+            for key, value in local.items():
                 table[key] = value
-            for key in [key for key in table if key not in values]:
+            for key in [key for key in table if key not in local]:
                 del table[key]
             path.write_text(tomlkit.dumps(document), encoding="utf-8", newline="")
         except (OSError, tomlkit.exceptions.ParseError) as exc:
@@ -1673,6 +1919,9 @@ class ServerPage(QWidget):
                     self.build_profile(then=self.start)
                 return
             values["build"] = build
+        if self.world:
+            values["world"] = self.world_folder()
+            values["key"] = self.worlds_root() / tes3x_worlds.SERVER_KEY
         process = QProcess(self)
         process.setWorkingDirectory(str(self.window.work_dir()))
         process.setProgram(sys.executable)
@@ -1725,7 +1974,7 @@ class ServerPage(QWidget):
             self.admin = None
         self.players.clear()
         self.set_status("Stopped")
-        self.update_buttons()
+        self.show_characters()
 
     STATUS_COLORS = (("Running", "#2e7d32"), ("Connected", "#2e7d32"),
                      ("Stopping", "#b26a00"), ("Connecting", "#b26a00"),
@@ -1863,6 +2112,8 @@ class ServerPage(QWidget):
         self.ticks += 1
         if self.ticks % 6 == 1 and not self.stopping:
             self.send_admin("list")
+        if self.ticks % 20 == 0:
+            self.show_characters()
 
     def show_clients(self, rows):
         selected = self.selected_client()
@@ -1901,6 +2152,14 @@ class ServerPage(QWidget):
         remote = self.mode.currentData() == "remote"
         connected = self.remote is not None
         self.mode.setEnabled(not running and not connected)
+        self.world_picker.setEnabled(not running)
+        self.world_actions.setEnabled(not running)
+        self.lists.setTabVisible(self.characters_tab, not remote)
+        chosen = self.selected_character() is not None
+        self.delete_character_button.setEnabled(chosen and not running)
+        self.delete_character_button.setToolTip(
+            "Stop the server first: it keeps its characters in memory" if running else "")
+        self.character_folder_button.setEnabled(chosen)
         self.start_button.setEnabled(not running)
         self.stop_button.setEnabled(running)
         self.stop_button.setText("Force stop" if self.stopping else "Stop")

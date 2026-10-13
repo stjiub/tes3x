@@ -3,7 +3,7 @@
 from .common import (ARCHIVES, BASE_MASTERS, CATALOG_NAME, COMPAT, COMPAT_LABELS,
                      ComponentsDialog, DragList, EXTRA, FilesFilter, FilesModel, InstallDialog,
                      LOSES, LibraryError, Mod, PLUGIN_EXT, Path, PipelineError, QAbstractItemView,
-                     QAction, QApplication, QDesktopServices, QDialog, QFileDialog, QHBoxLayout,
+                     QAction, QDesktopServices, QDialog, QFileDialog, QHBoxLayout,
                      QHeaderView, QIcon, QInputDialog, QLabel, QLineEdit, QMenu, QMessageBox,
                      QPushButton, QSplitter, QStyle, QTabWidget, QTableView, QTextBrowser,
                      QTreeWidget, QTreeWidgetItem, QUrl, QVBoxLayout, QWidget, Qt, ROLE,
@@ -11,13 +11,15 @@ from .common import (ARCHIVES, BASE_MASTERS, CATALOG_NAME, COMPAT, COMPAT_LABELS
                      extract_archive, fnmatch, folder_name, free_id, guess_release, html,
                      icon_button, install_files, install_layout, json, load_library,
                      match_catalog, nexus, nexus_id, os, plugin_header, resolve_selection, shutil,
-                     theme_icon, threading, tomlkit, tomllib, trash, uuid)
+                     run_in_thread, theme_icon, threading, tomlkit, tomllib, trash, uuid)
 
 
 class ModsTab(QWidget):
     def __init__(self, window):
         super().__init__(window)
         self.window = window
+
+    analysis_busy = analysis_again = False
 
     MOD_NAME, MOD_VERSION, MOD_CONFLICTS, MOD_NOTES, MOD_PRIORITY, MOD_XBOX = range(6)
 
@@ -705,11 +707,56 @@ class ModsTab(QWidget):
     def schedule_analysis(self):
         self.analysis_timer.start()
 
-    def scan(self, entry):
+    def start_analysis(self):
+        """Walk and measure the enabled mods off the GUI thread, then refresh_analysis."""
+        if self.window.library_root is None:
+            self.refresh_analysis()
+            return
+        if self.analysis_busy:
+            self.analysis_again = True
+            return
         exclude = self.window.build.excluded()
-        key = json.dumps([{name: entry.get(name) for name in ("id", "name", "version",
-                                                              "components")}, exclude],
-                         sort_keys=True)
+        entries = [item.data(0, ROLE) for item in self.mod_rows()
+                   if item.checkState(self.MOD_NAME) == Qt.CheckState.Checked]
+        def ready(entry):
+            mod = self.scans.get(self.scan_key(entry, exclude))
+            return mod is not None and (not isinstance(mod, Mod) or mod.stats is not None)
+
+        if all(ready(entry) for entry in entries):
+            self.refresh_analysis()
+            return
+        self.analysis_busy = True
+        self.window.statusBar().showMessage("Scanning mod files…")
+        self.window.statusBar().spinner.start()
+
+        def work():
+            for entry in entries:
+                mod = self.scan(entry, exclude)
+                if isinstance(mod, Mod):
+                    mod.source_stats()
+            self.window.analysis_ready.emit()
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def analysis_finished(self):
+        self.analysis_busy = False
+        if self.window.process is None:
+            self.window.statusBar().spinner.stop()
+        self.window.statusBar().clearMessage()
+        again, self.analysis_again = self.analysis_again, False
+        if again:
+            self.start_analysis()
+        else:
+            self.refresh_analysis()
+
+    def scan_key(self, entry, exclude):
+        return json.dumps([{name: entry.get(name) for name in ("id", "name", "version",
+                                                               "components")}, exclude],
+                          sort_keys=True)
+
+    def scan(self, entry, exclude=None):
+        exclude = self.window.build.excluded() if exclude is None else exclude
+        key = self.scan_key(entry, exclude)
         if key not in self.scans:
             try:
                 selection = resolve_selection(entry, self.window.library_root, self.window.catalog)
@@ -856,11 +903,8 @@ class ModsTab(QWidget):
             if source.is_dir():
                 unpacked = source
             elif source.suffix.lower() in ARCHIVES:
-                QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-                try:
-                    unpacked = extract_archive(source, work / "unpacked")
-                finally:
-                    QApplication.restoreOverrideCursor()
+                unpacked = run_in_thread(self, f"Unpacking {source.name}…", extract_archive,
+                                         source, work / "unpacked")
             elif source.suffix.lower() in (".esp", ".esm", ".bsa"):
                 unpacked = work / "unpacked"
                 unpacked.mkdir(parents=True)
@@ -881,7 +925,8 @@ class ModsTab(QWidget):
             if replace:
                 target = self.window.library_root / replace["folder"]
                 staged = work / "installed"
-                install_files(unpacked, dialog.selection(), staged)
+                run_in_thread(self, f"Installing {name}…", install_files, unpacked,
+                              dialog.selection(), staged)
                 target.rename(work / "previous")
                 staged.rename(target)
                 if self.window.library_indexed and replace.get("id") and source.is_file():
@@ -890,7 +935,8 @@ class ModsTab(QWidget):
                             "source", str(source)))
             else:
                 folder = folder_name(name)
-                install_files(unpacked, dialog.selection(), self.window.library_root / folder)
+                run_in_thread(self, f"Installing {name}…", install_files, unpacked,
+                              dialog.selection(), self.window.library_root / folder)
                 if self.window.library_indexed:
                     mod_id = free_id(self.window.catalog, name)
                     release = {"version": version or "unknown", "folder": folder,
@@ -905,7 +951,8 @@ class ModsTab(QWidget):
             self.window.error(exc)
             return None
         finally:
-            shutil.rmtree(work, ignore_errors=True)
+            if work.exists():
+                run_in_thread(self, "Cleaning up…", shutil.rmtree, work, True)
 
     def reinstall_mod(self, item):
         entry = item.data(0, ROLE)

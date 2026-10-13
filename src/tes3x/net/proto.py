@@ -171,6 +171,10 @@ EVENT_DATA = 80
 
 
 EVENT_TEXT = 1
+# A console's TEXT is chat for every player. One starting with TEXT_PRIVATE is NAME, a zero, then
+# the text, for one player, or for the server's admin when NAME is `admin`. The server sends
+# every line to consoles as its own notice.
+TEXT_PRIVATE = 1
 
 
 EVENT_WELCOME = 35  # the --welcome text, once per join as a character, shown in a box
@@ -287,6 +291,38 @@ EVENT_SNAPSHOT = 36  # token u32 + STATE_BODY; reply token u32 after durable sto
 EVENT_BOUNTY = 30  # the player's bounty, i32: the latest of each client is kept and replayed
 
 
+# Script locals of data-file references: refid, count, then LOCAL (slot: kind << 14 | index, the
+# raw value; a short sign-extended). The cell's authority sends changes, any console those of a
+# reference its player's dialogue ran on. The server keeps the latest of each, relays them and
+# replays all after WELCOME.
+EVENT_LOCALS = 37
+LOCAL = struct.Struct("<HI")
+LOCAL_SHORT, LOCAL_LONG, LOCAL_FLOAT = 0, 1, 2
+LOCAL_INDEX = 0x3FFF
+LOCALS_PER_EVENT = (EVENT_DATA - 5) // LOCAL.size
+LOCALS_MAX = 16384  # values kept in all
+
+
+# To a cell's new authority, before its AUTHORITY, when nobody had the cell: count, then the kept
+# state of each actor last reported in it (refid, x, y, z, heading, health, magicka, fatigue,
+# ACTOR flags). The console places each one the first frame it runs it.
+EVENT_ACTOR_PLACE = 38
+ACTOR_PLACE = struct.Struct("<I7fI")
+ACTOR_PLACES_PER_EVENT = (EVENT_DATA - 4) // ACTOR_PLACE.size
+ACTORS_KEPT_MAX = 8192
+
+
+# An actor a script moved to another cell, or that a player's dialogue result moved: refid, the
+# cell index it left (the server keeps the first, where the data files put it), the cell index it
+# is in, position and the rotation relocateReference was given (Position and PositionCell pass
+# radians). The server keeps the latest per actor, relays it and replays it after WELCOME; each
+# console moves the actor once it finds it.
+EVENT_ACTOR_MOVE = 39
+ACTOR_MOVE = struct.Struct("<IHH4f")
+ACTOR_MOVES_MAX = 4096
+NO_CELL = 0xFFFF
+
+
 # From a client after each WELCOME: its launch token (new each title launch), then the name of the
 # save that launch loaded, or "". A console not running its character's latest checkpoint is sent
 # the checkpoint as CHECKPOINT_NAME and LOAD (to a client: load that file once it has it).
@@ -323,6 +359,48 @@ PLAYER_SPELLS = 11
 PLAYER_TOPICS = 17  # count, then learned topic names ending in zero; additions only
 TOPIC_NAME_MAX = 63
 PLAYER_TOPICS_MAX = 4096
+
+
+# The player's faction state, both ways: count, then FACTION entries, each followed by the faction id
+# ending in zero. The low two bits are the membership flags (FACTION_JOINED, FACTION_EXPELLED);
+# FACTION_RANK, FACTION_REPUTATION and FACTION_FLAGS say which values a receiver applies. A
+# console always sends all three, absolute. Rank and reputation are the world's; membership and
+# expulsion are each character's.
+PLAYER_FACTIONS = 18
+FACTION = struct.Struct("<Bii")
+FACTION_JOINED, FACTION_EXPELLED = 1, 2
+FACTION_RANK, FACTION_REPUTATION, FACTION_FLAGS = 0x10, 0x20, 0x40
+FACTION_ALL = FACTION_RANK | FACTION_REPUTATION | FACTION_FLAGS
+FACTION_ID_MAX = 31
+FACTIONS_MAX = 512
+
+
+# The character's own globals (PC* and a few vanilla per-player ones; the console chooses), both
+# ways: count, then each value (f32) and the global's name ending in zero. Absolute; a console
+# sends what changed since its last scan, all of them first after READY.
+PLAYER_GLOBALS = 19
+GLOBAL_NAME_MAX = 31
+PLAYER_GLOBALS_MAX = 128
+
+
+# The world's globals, every one neither the character's nor derived (the console chooses), in
+# PLAYER_GLOBALS's form. A console sends what changed since READY; the server keeps the latest of
+# each, relays it to the other players and replays them all before READY and in the character file.
+WORLD_GLOBALS = 20
+WORLD_GLOBALS_MAX = 1024
+
+
+# The world's scripts: global scripts a console started after its first READY of a launch (a
+# dialogue result, a quest script), not the data files' start scripts. Op, the script's reference
+# (refid; 0 none, WORLD_SCRIPT_PLAYER the runner's own player), the script id ending in zero,
+# count, then LOCAL entries. To the server: SCRIPT_RUNNING, SCRIPT_STOPPED, or SCRIPT_VALUES with
+# the locals that changed. From it: SCRIPT_VALUES, then SCRIPT_RUNNING: run it with those locals.
+WORLD_SCRIPTS = 21
+SCRIPT_RUNNING, SCRIPT_STOPPED, SCRIPT_VALUES = 1, 2, 3
+WORLD_SCRIPT_PLAYER = 1
+WORLD_SCRIPTS_MAX = 512
+SCRIPT_VALUES_MAX = 64
+SCRIPT_ID_MAX = 31
 
 
 PLAYER_BOUNTY = 12  # from the server: the character's last streamed crime bounty, i32
@@ -424,6 +502,7 @@ SKILL_NAMES = ("Block", "Armorer", "MediumArmor", "HeavyArmor", "BluntWeapon", "
 
 
 QUEST_INDICES = 32  # a quest's latest indices kept for the replay
+JOURNAL_QUESTS_MAX = 4096  # quests a world's journal keeps, as many as a console tracks
 
 
 STREAM_NAME = "stream.json"
@@ -481,7 +560,7 @@ TARGETED = {EVENT_HOLD: "holds", EVENT_HOLD_BROKEN: "breaks the hold on", EVENT_
 
 # Events only the server sends. A console acts on them, so one from a client is never relayed.
 SERVER_EVENTS = {EVENT_WELCOME, EVENT_AUTHORITY, EVENT_OWNERS, EVENT_SAVE, EVENT_LOAD,
-                 EVENT_CHARS, EVENT_NEWCHAR, EVENT_RUN}
+                 EVENT_CHARS, EVENT_NEWCHAR, EVENT_RUN, EVENT_ACTOR_PLACE}
 
 
 # What an event handler returns: whether the event goes on to the other clients.
@@ -750,6 +829,62 @@ def pack_weather(entries, flags=0):
     return [bytes((flags, len(chunk))) + b"".join(WEATHER_ENTRY.pack(*e) for e in chunk)
             for chunk in (items[i:i + WEATHER_PER_EVENT]
                           for i in range(0, len(items), WEATHER_PER_EVENT))]
+
+
+def pack_locals(refid, values):
+    """LOCALS events for one reference's {slot: raw value}."""
+    items = sorted(values.items())
+    return [struct.pack("<IB", refid, len(chunk)) + b"".join(LOCAL.pack(*v) for v in chunk)
+            for chunk in (items[i:i + LOCALS_PER_EVENT]
+                          for i in range(0, len(items), LOCALS_PER_EVENT))]
+
+
+def unpack_locals(data):
+    """(refid, {slot: raw value}) of a LOCALS event; ValueError if malformed."""
+    if len(data) < 5 or len(data) != 5 + data[4] * LOCAL.size or not data[4]:
+        raise ValueError("bad locals event")
+    values = dict(LOCAL.iter_unpack(data[5:]))
+    if len(values) != data[4] or any(slot >> 14 > LOCAL_FLOAT for slot in values):
+        raise ValueError("bad local slot")
+    return struct.unpack_from("<I", data)[0], values
+
+
+def pack_world_script(op, refid, name, values=None):
+    """WORLD_SCRIPTS events: one with no values, or as many as {slot: raw value} needs."""
+    raw = name.encode("latin-1")
+    if not raw or len(raw) > SCRIPT_ID_MAX or any(c < 32 or c in (34, 127) for c in raw):
+        raise ValueError(f"bad script id {name!r}")
+    head = struct.pack("<BBI", WORLD_SCRIPTS, op, refid) + raw + b"\0"
+    per = (EVENT_DATA - len(head) - 1) // LOCAL.size
+    items = sorted((values or {}).items())
+    return [head + bytes([len(chunk)]) + b"".join(LOCAL.pack(*v) for v in chunk)
+            for chunk in ([items[i:i + per] for i in range(0, len(items), per)] or [[]])]
+
+
+def unpack_world_script(data):
+    """(op, refid, script id, {slot: raw value}) of a WORLD_SCRIPTS event; ValueError if
+    malformed."""
+    if len(data) < 8 or data[0] != WORLD_SCRIPTS or data[1] not in (
+            SCRIPT_RUNNING, SCRIPT_STOPPED, SCRIPT_VALUES):
+        raise ValueError("not a world script event")
+    end = data.find(b"\0", 6)
+    raw = bytes(data[6:end]) if end > 6 else b""
+    if (not raw or len(raw) > SCRIPT_ID_MAX or any(c < 32 or c in (34, 127) for c in raw)
+            or end + 2 > len(data) or len(data) != end + 2 + data[end + 1] * LOCAL.size):
+        raise ValueError("bad world script event")
+    values = dict(LOCAL.iter_unpack(data[end + 2:]))
+    if len(values) != data[end + 1] or any(slot >> 14 > LOCAL_FLOAT for slot in values):
+        raise ValueError("bad world script local")
+    return data[1], struct.unpack_from("<I", data, 2)[0], raw.decode("latin-1"), values
+
+
+def describe_local(slot, value):
+    kind, index = slot >> 14, slot & LOCAL_INDEX
+    if kind == LOCAL_FLOAT:
+        shown = f"{struct.unpack('<f', struct.pack('<I', value))[0]:g}"
+    else:
+        shown = str(struct.unpack("<i", struct.pack("<I", value))[0])
+    return f"{'slf'[kind]}{index} {shown}"
 
 
 def pack_objects(objects):
@@ -1061,6 +1196,92 @@ def pack_topics(names):
     if body or not events:
         events.append(bytes([PLAYER_TOPICS, count]) + body)
     return events
+
+
+def pack_factions(entries):
+    """PLAYER_FACTIONS events for (faction id, bits, rank, reputation) tuples."""
+    events, body, count = [], b"", 0
+    for faction, bits, rank, reputation in entries:
+        raw = faction.encode("latin-1")
+        if (not raw or len(raw) > FACTION_ID_MAX or any(c < 32 or c == 34 for c in raw)
+                or bits & ~(FACTION_ALL | FACTION_JOINED | FACTION_EXPELLED)):
+            raise ValueError(f"bad faction entry {faction!r}")
+        entry = FACTION.pack(bits, rank, reputation) + raw + b"\0"
+        if count and 2 + len(body) + len(entry) > EVENT_DATA:
+            events.append(bytes([PLAYER_FACTIONS, count]) + body)
+            body, count = b"", 0
+        body += entry
+        count += 1
+    if count:
+        events.append(bytes([PLAYER_FACTIONS, count]) + body)
+    return events
+
+
+def unpack_factions(data):
+    """(faction id, bits, rank, reputation) from a PLAYER_FACTIONS event; ValueError if malformed."""
+    if len(data) < 2 or data[0] != PLAYER_FACTIONS:
+        raise ValueError("not a faction event")
+    entries, off = [], 2
+    for _ in range(data[1]):
+        if off + FACTION.size >= len(data):
+            raise ValueError("short faction entry")
+        bits, rank, reputation = FACTION.unpack_from(data, off)
+        end = data.find(b"\0", off + FACTION.size)
+        raw = bytes(data[off + FACTION.size:end]) if end >= 0 else b""
+        if (not raw or len(raw) > FACTION_ID_MAX or any(c < 32 or c == 34 for c in raw)
+                or bits & ~(FACTION_ALL | FACTION_JOINED | FACTION_EXPELLED)):
+            raise ValueError("bad faction entry")
+        entries.append((raw.decode("latin-1"), bits, rank, reputation))
+        off = end + 1
+    if off != len(data):
+        raise ValueError("trailing faction bytes")
+    return entries
+
+
+def pack_globals(entries, kind=PLAYER_GLOBALS):
+    """PLAYER_GLOBALS (or WORLD_GLOBALS) events for (name, value) pairs."""
+    events, body, count = [], b"", 0
+    for name, value in entries:
+        raw = name.encode("latin-1")
+        if not raw or len(raw) > GLOBAL_NAME_MAX or any(c < 32 or c == 34 for c in raw):
+            raise ValueError(f"bad global {name!r}")
+        entry = struct.pack("<f", value) + raw + b"\0"
+        if count and 2 + len(body) + len(entry) > EVENT_DATA:
+            events.append(bytes([kind, count]) + body)
+            body, count = b"", 0
+        body += entry
+        count += 1
+    if count:
+        events.append(bytes([kind, count]) + body)
+    return events
+
+
+def unpack_globals(data, kind=PLAYER_GLOBALS):
+    """(name, value) pairs from a PLAYER_GLOBALS (or WORLD_GLOBALS) event; ValueError if
+    malformed."""
+    if len(data) < 2 or data[0] != kind:
+        raise ValueError("not a globals event")
+    entries, off = [], 2
+    for _ in range(data[1]):
+        if off + 4 >= len(data):
+            raise ValueError("short global entry")
+        value, = struct.unpack_from("<f", data, off)
+        end = data.find(b"\0", off + 4)
+        raw = bytes(data[off + 4:end]) if end >= 0 else b""
+        if (not raw or len(raw) > GLOBAL_NAME_MAX or any(c < 32 or c == 34 for c in raw)
+                or not finite(value)):
+            raise ValueError("bad global entry")
+        entries.append((raw.decode("latin-1"), value))
+        off = end + 1
+    if off != len(data):
+        raise ValueError("trailing global bytes")
+    return entries
+
+
+def describe_faction(faction, rank, reputation, flags):
+    return (f"{faction} rank {rank} reputation {reputation}"
+            + (" member" if flags & FACTION_JOINED else "")
+            + (" expelled" if flags & FACTION_EXPELLED else ""))
 
 
 def pack_journal(quests):

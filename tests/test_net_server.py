@@ -15,9 +15,11 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 import tes3x.net as tes3x_net
 import tes3x.netbuild as tes3x_netbuild
+from tes3x.net.validation import valid_client_event
 from tes3x.payload import source_text
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -800,6 +802,431 @@ class ServerTests(unittest.TestCase):
         replay = self.events(again, ready)
         self.assertIn((net.EVENT_PLAYER, topic), replay)
 
+    def test_journal_is_shared_between_characters_and_replayed_to_a_late_join(self):
+        net = tes3x_net
+        world = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, world)
+        self.start('--world', str(world), '--adopt')
+        ready = lambda k, d: k == net.EVENT_PLAYER and d == bytes([net.PLAYER_READY, 0])
+        first, second = self.client(1), self.client(2)
+        first.join()
+        self.game(first, 1, 7, b'')
+        self.upload(first, 2, 1, b'mp-first.ess', self.save(b'Nerevar', 0))
+        self.events(first, ready)
+        seq = self.seed_identity(world, first, 3)
+        second.join()
+        self.game(second, 1, 8, b'')
+        self.upload(second, 2, 2, b'mp-second.ess', self.save(b'Second', 1))
+        self.events(second, ready)
+        identity = net.pack_player_identity(self.identity('Second'))
+        second.send(net.EVENTS, net.pack_events(second.delivered, [
+            (3 + i, net.EVENT_PLAYER, 0, data) for i, data in enumerate(identity)]))
+        folder = next((world / 'characters').glob('*/Second'))
+        self.wait_for(lambda: net.PlayerStream(str(folder / net.STREAM_NAME)).identity,
+                      'second character identity was not persisted')
+        later = 3 + len(identity)
+        quest = 'A1_1_FindSpymaster'
+        step = net.pack_journal([(quest, 10)])[0]
+        first.send(net.EVENTS, net.pack_events(first.delivered,
+                                              [(seq, net.EVENT_PLAYER, 0, step)]))
+        self.assertIn((net.EVENT_PLAYER, step),
+                      self.events(second, lambda k, d: k == net.EVENT_PLAYER and d == step))
+        # The applied index coming back, or an older one, is not news; a later one is.
+        onward = net.pack_journal([(quest, 10), (quest, 5), ('A2_1_MeetSulMatuul', 1)])[0]
+        second.send(net.EVENTS, net.pack_events(second.delivered,
+                                               [(later, net.EVENT_PLAYER, 0, onward)]))
+        news = net.pack_journal([('A2_1_MeetSulMatuul', 1)])[0]
+        self.assertIn((net.EVENT_PLAYER, news),
+                      self.events(first, lambda k, d: k == net.EVENT_PLAYER and d == news))
+        mine = next((world / 'characters').glob('*/Nerevar'))
+        data = net.PlayerStream(str(mine / net.STREAM_NAME)).character_file()
+        name = net.checkpoint_name(data, net.CHARACTER_FILE)
+        (mine / name).write_bytes(data)
+        again = self.client(1)
+        again.session ^= 4
+        again.join()
+        self.game(again, 1, 9, name.encode(), net.GAME_NEW)
+        replay = [d for k, d in self.events(again, ready) if k == net.EVENT_PLAYER]
+        quests = [q for d in replay if d[0] == net.PLAYER_JOURNAL for q in net.unpack_journal(d)]
+        self.assertEqual(quests, [(quest, 10), ('A2_1_MeetSulMatuul', 1)])
+
+    def test_world_journal_moves_forward_and_survives_restart(self):
+        net = tes3x_net
+        with tempfile.TemporaryDirectory() as folder:
+            server = net.Server.__new__(net.Server)
+            server.world, server.clients = net.World(), {}
+            server.world.path = str(Path(folder) / 'world.json')
+            server.share_journal(None, [('MS_Quest', 10), ('ms_quest', 30), ('MS_Quest', 20)], 0)
+            server.share_journal(None, [(f'Q{i}', 1) for i in range(net.QUEST_INDICES + 2)], 0)
+            server.share_journal(None, [('Long', i) for i in range(net.QUEST_INDICES + 5)], 0)
+            self.assertEqual(server.world.journal['ms_quest'], ['MS_Quest', [10, 30]])
+            self.assertEqual(len(server.world.journal['long'][1]), net.QUEST_INDICES)
+            server.world.save(0)
+            restored = net.World()
+            self.assertTrue(restored.load(server.world.path, 0))
+            self.assertEqual(restored.journal, server.world.journal)
+            server.world = restored
+            replay = [q for d in server.journal_replay() for q in net.unpack_journal(d)]
+            self.assertEqual(replay[net.QUEST_INDICES:net.QUEST_INDICES + 2],
+                             [('MS_Quest', 10), ('MS_Quest', 30)])
+            self.assertEqual(len(replay), net.QUEST_INDICES + 2 + net.QUEST_INDICES + 2)
+
+    def test_faction_rank_and_reputation_are_shared_and_membership_is_per_character(self):
+        net = tes3x_net
+        world = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, world)
+        self.start('--world', str(world), '--adopt')
+        ready = lambda k, d: k == net.EVENT_PLAYER and d == bytes([net.PLAYER_READY, 0])
+        first, second = self.client(1), self.client(2)
+        first.join()
+        self.game(first, 1, 7, b'')
+        self.upload(first, 2, 1, b'mp-first.ess', self.save(b'Nerevar', 0))
+        self.events(first, ready)
+        seq = self.seed_identity(world, first, 3)
+        second.join()
+        self.game(second, 1, 8, b'')
+        self.upload(second, 2, 2, b'mp-second.ess', self.save(b'Second', 1))
+        self.events(second, ready)
+        identity = net.pack_player_identity(self.identity('Second'))
+        second.send(net.EVENTS, net.pack_events(second.delivered, [
+            (3 + i, net.EVENT_PLAYER, 0, data) for i, data in enumerate(identity)]))
+        folder = next((world / 'characters').glob('*/Second'))
+        self.wait_for(lambda: net.PlayerStream(str(folder / net.STREAM_NAME)).identity,
+                      'second character identity was not persisted')
+        later = 3 + len(identity)
+        guild, member = 'Fighters Guild', net.FACTION_ALL | net.FACTION_JOINED
+
+        def player(data):
+            return lambda k, d: k == net.EVENT_PLAYER and d == data
+
+        def send(client, seq, *entries):
+            client.send(net.EVENTS, net.pack_events(client.delivered, [
+                (seq, net.EVENT_PLAYER, 0, net.pack_factions(entries)[0])]))
+
+        send(first, seq, (guild, member, 2, 10))
+        shared = net.pack_factions([(guild, net.FACTION_RANK | net.FACTION_REPUTATION, 2, 10)])[0]
+        self.assertIn((net.EVENT_PLAYER, shared), self.events(second, player(shared)))
+        # Joining natively keeps the stored rank; a joiner who reports another gets the world's.
+        send(second, later, (guild, member, 0, 10))
+        corrected = net.pack_factions([(guild, net.FACTION_RANK, 2, 10)])[0]
+        self.assertIn((net.EVENT_PLAYER, corrected), self.events(second, player(corrected)))
+        # A member's promotion is the world's; expulsion stays with the character.
+        send(second, later + 1, (guild, member | net.FACTION_EXPELLED, 3, 12))
+        promoted = net.pack_factions([(guild, net.FACTION_RANK | net.FACTION_REPUTATION,
+                                       3, 12)])[0]
+        self.assertIn((net.EVENT_PLAYER, promoted), self.events(first, player(promoted)))
+        path = folder / net.STREAM_NAME
+        self.wait_for(lambda: (net.PlayerStream(str(path)).factions or {}).get('fighters guild')
+                      == [guild, 3, 12, net.FACTION_JOINED | net.FACTION_EXPELLED],
+                      'second character factions were not persisted')
+        mine = next((world / 'characters').glob('*/Nerevar'))
+        data = net.PlayerStream(str(mine / net.STREAM_NAME)).character_file()
+        name = net.checkpoint_name(data, net.CHARACTER_FILE)
+        (mine / name).write_bytes(data)
+        again = self.client(1)
+        again.session ^= 4
+        again.join()
+        self.game(again, 1, 9, name.encode(), net.GAME_NEW)
+        replay = self.events(again, ready)
+        self.assertIn((net.EVENT_PLAYER, net.pack_factions([(guild, member, 3, 12)])[0]), replay)
+
+    def test_world_globals_are_shared_and_replayed(self):
+        net = tes3x_net
+        world = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, world)
+        self.start('--world', str(world), '--adopt')
+        ready = lambda k, d: k == net.EVENT_PLAYER and d == bytes([net.PLAYER_READY, 0])
+        first, second = self.client(1), self.client(2)
+        first.join()
+        self.game(first, 1, 7, b'')
+        self.upload(first, 2, 1, b'mp-first.ess', self.save(b'Nerevar', 0))
+        self.events(first, ready)
+        seq = self.seed_identity(world, first, 3)
+        second.join()
+        self.game(second, 1, 8, b'')
+        self.upload(second, 2, 2, b'mp-second.ess', self.save(b'Second', 1))
+        self.events(second, ready)
+        later = 3
+
+        def player(data):
+            return lambda k, d: k == net.EVENT_PLAYER and d == data
+
+        votes = net.pack_globals([('HortatorVotes', 3.0)], net.WORLD_GLOBALS)[0]
+        self.assertTrue(valid_client_event(net.EVENT_PLAYER, votes))
+        first.send(net.EVENTS, net.pack_events(first.delivered, [
+            (seq, net.EVENT_PLAYER, 0, votes)]))
+        self.assertIn((net.EVENT_PLAYER, votes), self.events(second, player(votes)))
+        # The latest writer wins and reaches the first console.
+        five = net.pack_globals([('hortatorvotes', 5.0)], net.WORLD_GLOBALS)[0]
+        second.send(net.EVENTS, net.pack_events(second.delivered, [
+            (later, net.EVENT_PLAYER, 0, five)]))
+        kept = net.pack_globals([('HortatorVotes', 5.0)], net.WORLD_GLOBALS)[0]
+        self.assertIn((net.EVENT_PLAYER, kept), self.events(first, player(kept)))
+        mine = next((world / 'characters').glob('*/Nerevar'))
+        stream = net.PlayerStream(str(mine / net.STREAM_NAME))
+        data = stream.character_file([('HortatorVotes', 5.0)])
+        self.assertIn(struct.pack('<H', len(kept)) + kept, data)
+        name = net.checkpoint_name(data, net.CHARACTER_FILE)
+        (mine / name).write_bytes(data)
+        again = self.client(1)
+        again.session ^= 4
+        again.join()
+        self.game(again, 1, 9, name.encode(), net.GAME_NEW)
+        replay = self.events(again, ready)
+        self.assertIn((net.EVENT_PLAYER, kept), replay)
+        self.assertLess(replay.index((net.EVENT_PLAYER, kept)),
+                        replay.index((net.EVENT_PLAYER, bytes([net.PLAYER_READY, 0]))))
+
+    def test_world_globals_keep_bits_through_a_restart(self):
+        net = tes3x_net
+        tiny = struct.unpack('<f', struct.pack('<I', 0x002E6000))[0]  # VampClan's master bits
+        with tempfile.TemporaryDirectory() as folder:
+            path = str(Path(folder) / 'world.json')
+            world = net.World()
+            world.path = path
+            server = net.Server.__new__(net.Server)
+            server.world, server.clients = world, {}
+            client = SimpleNamespace(id=1)
+            entries = [('VampClanLike', tiny), ('wearingHelmHHDALike', 2.3e20)]
+            self.assertEqual(server.share_globals(client, entries, 0.0),
+                             f'world globals VampClanLike {tiny:g}, wearingHelmHHDALike 2.3e+20')
+            self.assertIsNone(server.share_globals(client, [('vampclanlike', tiny)], 0.0))
+            world.save(0.0)
+            restored = net.World()
+            self.assertTrue(restored.load(path, 0.0))
+            self.assertEqual(struct.pack('<f', restored.globals['vampclanlike'][1]),
+                             struct.pack('<I', 0x002E6000))
+            # Bounded: past the limit new names are dropped, known ones still change.
+            restored.globals.update({f'g{i}': [f'g{i}', 0.0]
+                                     for i in range(net.WORLD_GLOBALS_MAX - 2)})
+            server.world = restored
+            self.assertIsNone(server.share_globals(client, [('NewGlobal', 1.0)], 0.0))
+            self.assertIsNotNone(server.share_globals(client, [('g0', 1.0)], 0.0))
+            for invalid in (bytes([net.WORLD_GLOBALS, 1]) + struct.pack('<f', float('inf'))
+                            + b'HortatorVotes\0',
+                            bytes([net.WORLD_GLOBALS, 2]) + struct.pack('<f', 1.0) + b'x\0'):
+                self.assertFalse(valid_client_event(net.EVENT_PLAYER, invalid))
+
+    def test_script_locals_events_are_checked_and_bounded(self):
+        net = tes3x_net
+        values = {i: i for i in range(net.LOCALS_PER_EVENT + 1)}
+        events = net.pack_locals(0x0101F7C4, values)
+        self.assertEqual(len(events), 2)
+        for data in events:
+            self.assertLessEqual(len(data), net.EVENT_DATA)
+            self.assertTrue(valid_client_event(net.EVENT_LOCALS, data))
+        self.assertEqual(dict(kv for data in events for kv in net.unpack_locals(data)[1].items()),
+                         values)
+        self.assertEqual(net.describe_local(net.LOCAL_SHORT << 14 | 2, 0xFFFFFFFF), 's2 -1')
+        self.assertEqual(net.describe_local(net.LOCAL_FLOAT << 14, 0x41480000), 'f0 12.5')
+        for invalid in (b'', struct.pack('<IB', 1, 0), struct.pack('<IB', 1, 2) + net.LOCAL.pack(0, 1),
+                        struct.pack('<IB', 1, 1) + net.LOCAL.pack(3 << 14, 1),
+                        struct.pack('<IB', 1, 2) + net.LOCAL.pack(0, 1) * 2):
+            self.assertFalse(valid_client_event(net.EVENT_LOCALS, invalid))
+        server = net.Server.__new__(net.Server)
+        server.world, server.detail = net.World(), {'verbose': False}
+        client = SimpleNamespace(id=1)
+        server.world.locals = {1: {i: 0 for i in range(net.LOCALS_MAX - 1)}}
+        server.event_locals(client, net.EVENT_LOCALS, net.pack_locals(2, {0: 5, 1: 6})[0], '', 0.0)
+        self.assertEqual(server.world.locals[2], {0: 5})
+        server.event_locals(client, net.EVENT_LOCALS, net.pack_locals(2, {0: 7})[0], '', 0.0)
+        self.assertEqual(server.world.locals[2], {0: 7})
+
+    def test_actor_states_are_kept_and_sent_to_a_cell_s_next_authority(self):
+        net = tes3x_net
+        server = net.Server.__new__(net.Server)
+        server.world, server.detail = net.World(), {'verbose': False}
+        key = (net.KEY_EXTERIOR, -2, -9, b'')
+        values = (0x0101F7C4, -11000.0, -70800.0, 233.0, 1.5, 25.0, 0, 82.0, 154.0, 0,
+                  net.NO_ANIM)
+        server.keep_actor(0x0101F7C4, key, values)
+        server.world.spawns[0xFF000001] = {'summon': True, 'removed': False}
+        server.keep_actor(0xFF000001, key, (0xFF000001,) + values[1:])
+        server.world.spawns[0xFF000002] = {'removed': True}
+        server.keep_actor(0xFF000002, key, (0xFF000002,) + values[1:])
+        self.assertEqual(set(server.world.actors), {0x0101F7C4, 0xFF000002})
+        # A removed spawn is kept but not placed; another cell's actors are not sent.
+        events = server.actor_places(key)
+        self.assertEqual(events, [struct.pack('<I', 1) + net.ACTOR_PLACE.pack(
+            0x0101F7C4, -11000.0, -70800.0, 233.0, 1.5, 25.0, 82.0, 154.0, 0)])
+        self.assertEqual(server.actor_places((net.KEY_EXTERIOR, -2, -8, b'')), [])
+        self.assertLessEqual(4 + net.ACTOR_PLACES_PER_EVENT * net.ACTOR_PLACE.size,
+                             net.EVENT_DATA)
+        inside = (net.KEY_INTERIOR, 0, 0, b"Arrille's Tradehouse")
+        for refid in range(1, 4):
+            server.keep_actor(refid, inside, (refid,) + values[1:])
+        self.assertEqual([struct.unpack_from('<I', d)[0] for d in server.actor_places(inside)],
+                         [2, 1])
+
+        # Through the world file.
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder)
+        server.world.path = str(folder / 'world.json')
+        server.world.save(0.0)
+        restored = net.World()
+        restored.load(server.world.path, 0.0)
+        restored.spawns = server.world.spawns
+        server.world = restored
+        self.assertEqual(server.actor_places(key), events)
+
+        # Bounded: a new actor past the limit is dropped, a known one still changes.
+        server.world.actors.update({0x02000000 + i: list(restored.actors[0x0101F7C4])
+                                    for i in range(net.ACTORS_KEPT_MAX - len(restored.actors))})
+        server.keep_actor(0x03000000, key, (0x03000000,) + values[1:])
+        self.assertNotIn(0x03000000, server.world.actors)
+        server.keep_actor(0x0101F7C4, key, values[:5] + (10.0,) + values[6:])
+        self.assertEqual(server.world.actors[0x0101F7C4][8], 10.0)
+        for refid in [r for r in server.world.actors if r >= 0x02000000]:
+            del server.world.actors[refid]
+
+        # Only a cell nobody had sends them, to its new authority, before AUTHORITY.
+        def client(cid, state):
+            queued = []
+            return SimpleNamespace(id=cid, alive=True, state=state, busy=None, known={},
+                                   loaded=set(), rel=SimpleNamespace(
+                                       queue=lambda k, s, d: queued.append(k)), queued=queued)
+        state = net.STATE_BODY.pack(net.IN_WORLD, -10500.0, -71000.0, 200.0, 0.0, b'')
+        first = client(1, state)
+        server.clients = {1: first}
+        server.owners, server.bot = {}, SimpleNamespace(state=None)
+        server.flush = server.update_owners = lambda *a: None
+        server.update_authority(0.0)
+        place_at = first.queued.index(net.EVENT_ACTOR_PLACE)
+        self.assertEqual(first.queued[place_at + 1:].count(net.EVENT_ACTOR_PLACE), 0)
+        self.assertEqual(first.queued[place_at + 1], net.EVENT_AUTHORITY)
+        second = client(2, state)
+        server.clients[2] = second
+        server.update_authority(0.0)
+        self.assertNotIn(net.EVENT_ACTOR_PLACE, second.queued)
+        self.assertIn(net.EVENT_AUTHORITY, second.queued)
+        self.assertFalse(valid_client_event(net.EVENT_ACTOR_PLACE, events[0]))
+
+    def fake_server(self):
+        net = tes3x_net
+        server = net.Server.__new__(net.Server)
+        server.world, server.detail, server.clients = net.World(), {'verbose': False}, {}
+        server.script_runners = {}
+        server.flush = lambda *a, **k: None
+        return server
+
+    def fake_client(self, server, client_id):
+        sent = []
+        client = SimpleNamespace(id=client_id, alive=True, in_world=True, synced=True, sent=sent,
+                                 rel=SimpleNamespace(queue=lambda k, o, d: sent.append((k, o, d))))
+        server.clients[client_id] = client
+        return client
+
+    def test_actor_moves_keep_their_first_cell_and_reach_late_joins(self):
+        net = tes3x_net
+        server = self.fake_server()
+        first, second = self.fake_client(server, 1), self.fake_client(server, 2)
+        fargoth = 0x0101F7C4
+        server.world.actors[fargoth] = [net.KEY_EXTERIOR, -2, -9, '', 0, 0, 0, 0, 25, 0, 0, 0]
+        move = net.ACTOR_MOVE.pack(fargoth, 40, 900, 4733.0, 3911.0, 14328.0, 0.0)
+        self.assertTrue(valid_client_event(net.EVENT_ACTOR_MOVE, move))
+        server.event_actor_move(first, net.EVENT_ACTOR_MOVE, move, '', 0.0)
+        self.assertEqual(server.world.moves[fargoth], [40, 900, 4733.0, 3911.0, 14328.0, 0.0])
+        self.assertNotIn(fargoth, server.world.actors)  # its next cell's report replaces it
+        self.assertEqual(second.sent, [(net.EVENT_ACTOR_MOVE, 1, move)])
+        self.assertEqual(first.sent, [])
+        # The same move again is not news; a later one keeps the cell the actor first left.
+        server.event_actor_move(second, net.EVENT_ACTOR_MOVE, move, '', 0.0)
+        self.assertEqual(first.sent, [])
+        onward = net.ACTOR_MOVE.pack(fargoth, 900, 901, 620.13, -1160.73, 284.33, 189.1)
+        server.event_actor_move(second, net.EVENT_ACTOR_MOVE, onward, '', 0.0)
+        relayed = net.ACTOR_MOVE.pack(fargoth, 40, 901, 620.13, -1160.73, 284.33, 189.1)
+        self.assertEqual(first.sent, [(net.EVENT_ACTOR_MOVE, 2, relayed)])
+        # Through the world file; bounded.
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder)
+        server.world.path = str(folder / 'world.json')
+        server.world.save(0.0)
+        restored = net.World()
+        restored.load(server.world.path, 0.0)
+        self.assertEqual(net.ACTOR_MOVE.pack(fargoth, *restored.moves[fargoth]), relayed)
+        server.world = restored
+        server.world.moves.update({0x02000000 + i: [1, 2, 0.0, 0.0, 0.0, 0.0]
+                                   for i in range(net.ACTOR_MOVES_MAX - 1)})
+        extra = net.ACTOR_MOVE.pack(0x03000000, 1, 2, 0.0, 0.0, 0.0, 0.0)
+        server.event_actor_move(first, net.EVENT_ACTOR_MOVE, extra, '', 0.0)
+        self.assertNotIn(0x03000000, server.world.moves)
+        for invalid in (net.ACTOR_MOVE.pack(5, 1, 2, 0.0, 0.0, 0.0, 0.0),
+                        net.ACTOR_MOVE.pack(fargoth, 1, net.NO_CELL, 0.0, 0.0, 0.0, 0.0),
+                        net.ACTOR_MOVE.pack(fargoth, 1, 2, float('nan'), 0.0, 0.0, 0.0),
+                        net.ACTOR_MOVE.pack(fargoth, 1, 2, 0.0, 0.0, 0.0, 1e6), move[:-1]):
+            self.assertFalse(valid_client_event(net.EVENT_ACTOR_MOVE, invalid))
+
+    def test_world_scripts_are_kept_handed_on_and_end_with_their_last_runner(self):
+        net = tes3x_net
+        server = self.fake_server()
+        first, second = self.fake_client(server, 1), self.fake_client(server, 2)
+
+        def take(client, data):
+            self.assertTrue(valid_client_event(net.EVENT_PLAYER, data))
+            return server.world_script(client, *net.unpack_world_script(data), 0.0)
+
+        def handed(client):
+            events = [net.unpack_world_script(d) for k, _, d in client.sent
+                      if k == net.EVENT_PLAYER and d[0] == net.WORLD_SCRIPTS]
+            client.sent.clear()
+            return events
+
+        timer, values = 'MatchMakerTimer', {0: 3, 1: 15}
+        take(first, net.pack_world_script(net.SCRIPT_RUNNING, 0, timer)[0])
+        for data in net.pack_world_script(net.SCRIPT_VALUES, 0, timer, values):
+            take(first, data)
+        # A second runner's locals are not the world's while the first runs it.
+        take(second, net.pack_world_script(net.SCRIPT_RUNNING, 0, timer)[0])
+        take(second, net.pack_world_script(net.SCRIPT_VALUES, 0, timer, {0: 9})[0])
+        self.assertEqual(server.world.scripts['matchmakertimer'],
+                         {'id': timer, 'ref': 0, 'values': values})
+        # The first runner leaving leaves it with the second; a script nobody else runs is
+        # handed on with its locals first.
+        fons = 'MatchMakeFons'
+        take(first, net.pack_world_script(net.SCRIPT_RUNNING, 0x0101F7C4, fons)[0])
+        take(first, net.pack_world_script(net.SCRIPT_VALUES, 0x0101F7C4, fons, {0x8000: 7})[0])
+        server.scripts_orphaned(1, 0.0)
+        self.assertEqual(handed(second), [(net.SCRIPT_VALUES, 0x0101F7C4, fons, {0x8000: 7}),
+                                          (net.SCRIPT_RUNNING, 0x0101F7C4, fons, {})])
+        self.assertEqual(server.script_runners['matchmakertimer'], [2])
+        take(second, net.pack_world_script(net.SCRIPT_VALUES, 0, timer, {0: 4})[0])
+        self.assertEqual(server.world.scripts['matchmakertimer']['values'], {0: 4, 1: 15})
+        # It ends when its last runner stops it.
+        take(second, net.pack_world_script(net.SCRIPT_STOPPED, 0, fons)[0])
+        self.assertNotIn('matchmakefons', server.world.scripts)
+        # After a restart nobody runs the rest: the first player ready takes them.
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder)
+        server.world.path = str(folder / 'world.json')
+        server.world.save(0.0)
+        restored = net.World()
+        restored.load(server.world.path, 0.0)
+        self.assertEqual(restored.scripts, server.world.scripts)
+        server.world, server.script_runners = restored, {}
+        replay = [net.unpack_world_script(d) for d in server.scripts_assign(first)]
+        self.assertEqual(replay, [(net.SCRIPT_VALUES, 0, timer, {0: 4, 1: 15}),
+                                  (net.SCRIPT_RUNNING, 0, timer, {})])
+        self.assertEqual(server.scripts_assign(second), [])
+        # Bounded in scripts and in locals per script.
+        many = {i: i for i in range(net.SCRIPT_VALUES_MAX + 5)}
+        for data in net.pack_world_script(net.SCRIPT_VALUES, 0, timer, many):
+            self.assertLessEqual(len(data), net.EVENT_DATA)
+            take(first, data)
+        self.assertEqual(len(server.world.scripts['matchmakertimer']['values']),
+                         net.SCRIPT_VALUES_MAX)
+        server.world.scripts.update({f's{i}': {'id': f's{i}', 'ref': 0, 'values': {}}
+                                     for i in range(net.WORLD_SCRIPTS_MAX - 1)})
+        take(first, net.pack_world_script(net.SCRIPT_RUNNING, 0, 'OneTooMany')[0])
+        self.assertNotIn('onetoomany', server.world.scripts)
+        for invalid in (bytes([net.WORLD_SCRIPTS, 4, 0, 0, 0, 0]) + b'x\0\0',
+                        bytes([net.WORLD_SCRIPTS, 1, 0, 0, 0, 0]) + b'\0\0',
+                        bytes([net.WORLD_SCRIPTS, 3, 0, 0, 0, 0]) + b'x\0\1',
+                        bytes([net.WORLD_SCRIPTS, 3, 0, 0, 0, 0]) + b'x\0\1'
+                        + net.LOCAL.pack(3 << 14, 0)):
+            self.assertFalse(valid_client_event(net.EVENT_PLAYER, invalid))
+        with self.assertRaises(ValueError):
+            net.pack_world_script(net.SCRIPT_RUNNING, 0, 'x' * (net.SCRIPT_ID_MAX + 1))
+
     def test_stream_only_character_creation_snapshot_and_restart(self):
         world = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, world)
@@ -958,6 +1385,78 @@ class ServerTests(unittest.TestCase):
             # Existing worlds acquire topics on the next READY publication.
             path.write_text('{}', encoding='utf-8')
             self.assertIsNone(net.PlayerStream(path).topics)
+
+    def test_factions_survive_restart_and_the_world_replays_them(self):
+        net = tes3x_net
+        entries = [(f'Faction {i:02} long id', net.FACTION_ALL | net.FACTION_JOINED, i, -i)
+                   for i in range(9)]
+        entries.append(('Imperial Legion', net.FACTION_ALL | net.FACTION_EXPELLED, -1, 3))
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'stream.json'
+            stream = net.PlayerStream(str(path))
+            self.assertIsNone(stream.factions)
+            for data in net.pack_factions(entries):
+                self.assertLessEqual(len(data), net.EVENT_DATA)
+                self.assertTrue(valid_client_event(net.EVENT_PLAYER, data))
+                stream.take(data)
+            stream.save()
+            restored = net.PlayerStream(str(path))
+            self.assertEqual(restored.factions['imperial legion'],
+                             ['Imperial Legion', -1, 3, net.FACTION_EXPELLED])
+            self.assertEqual(len(restored.factions), len(entries))
+            partial = net.pack_factions([('Faction 01 long id', net.FACTION_RANK, 5, 0)])[0]
+            self.assertFalse(valid_client_event(net.EVENT_PLAYER, partial))
+            server = net.Server.__new__(net.Server)
+            server.world = net.World()
+            replay = [e for data in server.faction_replay(restored, True)
+                      for e in net.unpack_factions(data)]
+            self.assertEqual(sorted(replay), sorted(entries))
+            # Without a replay only the world's values go out, never a non-member's rank.
+            replay = [e for data in server.faction_replay(restored, False)
+                      for e in net.unpack_factions(data)]
+            self.assertIn(('Imperial Legion', net.FACTION_REPUTATION, 0, 3), replay)
+            restored.reset()
+            restored.save()
+            self.assertIsNone(net.PlayerStream(path).factions)
+
+    def test_player_globals_survive_restart_and_seed_the_new_game(self):
+        net = tes3x_net
+        entries = [(f'PCGlobal{i:02}WithALongerName', float(i) - 0.5) for i in range(12)]
+        entries.append(('PCVampire', -1.0))
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'stream.json'
+            stream = net.PlayerStream(str(path))
+            self.assertIsNone(stream.globals)
+            events = net.pack_globals(entries)
+            self.assertGreater(len(events), 1)
+            for data in events:
+                self.assertLessEqual(len(data), net.EVENT_DATA)
+                self.assertTrue(valid_client_event(net.EVENT_PLAYER, data))
+                stream.take(data)
+            self.assertEqual(stream.take(net.pack_globals([('pcvampire', 1.0)])[0]),
+                             'globals pcvampire 1')
+            self.assertIsNone(stream.take(net.pack_globals([('PCVampire', 1.0)])[0]))
+            stream.save()
+            restored = net.PlayerStream(str(path))
+            self.assertEqual(restored.globals['pcvampire'], ['pcvampire', 1.0])
+            self.assertEqual(len(restored.globals), len(entries))
+            replayed = dict(e for data in restored.replay() if data[0] == net.PLAYER_GLOBALS
+                            for e in net.unpack_globals(data))
+            self.assertEqual(replayed, dict(restored.globals.values()))
+            restored.identity = self.identity('Nerevar')
+            seed = restored.character_file()
+            for data in net.pack_globals(sorted(restored.globals.values())):
+                self.assertIn(struct.pack('<H', len(data)) + data, seed)
+            for invalid in (bytes([net.PLAYER_GLOBALS, 1]) + struct.pack('<f', 1.0) + b'PC',
+                            bytes([net.PLAYER_GLOBALS, 1]) + struct.pack('<f', float('nan'))
+                            + b'PCRace\0',
+                            bytes([net.PLAYER_GLOBALS, 1]) + struct.pack('<f', 1.0) + b'x' * 32
+                            + b'\0'):
+                self.assertFalse(valid_client_event(net.EVENT_PLAYER, invalid))
+                self.assertIsNone(restored.take(invalid))
+            restored.reset()
+            restored.save()
+            self.assertIsNone(net.PlayerStream(path).globals)
 
     def test_abilities_replay_before_absolute_statistics(self):
         net = tes3x_net
@@ -1193,10 +1692,11 @@ class ServerTests(unittest.TestCase):
         self.fail('event stream did not drain')
 
     def relayed(self, sender, receiver, kind, data):
-        """Whether an event reaches another console unchanged, judged by a TEXT marker after it."""
+        """Whether an event reaches another console unchanged, judged by a TEXT marker after it,
+        which arrives as the server's notice."""
         marker = b'marker %d' % (getattr(sender, 'sent', 0) + 2)
         self.send_events(sender, (kind, data), (tes3x_net.EVENT_TEXT, marker))
-        got = self.events(receiver, lambda k, d: k == tes3x_net.EVENT_TEXT and d == marker)
+        got = self.events(receiver, lambda k, d: k == tes3x_net.EVENT_TEXT and d.endswith(marker))
         self.drain(sender)
         return (kind, data) in got[:-1]
 
@@ -1211,7 +1711,7 @@ class ServerTests(unittest.TestCase):
                  if name.startswith('EVENT_') and name != 'EVENT_DATA' and isinstance(value, int)}
         for name, kind in sorted(kinds.items()) + [('unknown', 200), ('unknown', 65535)]:
             for data in (b'', b'\x01'):
-                expected = kind == net.EVENT_TEXT or (kind == net.EVENT_BUSY and data == b'\x01')
+                expected = kind == net.EVENT_BUSY and data == b'\x01'
                 with self.subTest(name, data=data):
                     self.assertEqual(self.relayed(sender, receiver, kind, data), expected)
         refid = 0x0101F7C4
@@ -1232,9 +1732,57 @@ class ServerTests(unittest.TestCase):
                 ('remove', net.EVENT_REMOVE, bytes([1]) + struct.pack('<I', 77), False),
                 ('want', net.EVENT_WANT, bytes([1]) + struct.pack('<H', 5), False),
                 ('hit on the receiver', net.EVENT_HIT, struct.pack('<IIf', refid, 2, 5.0), True),
-                ('text', net.EVENT_TEXT, b'hello', True)):
+                ('text', net.EVENT_TEXT, b'hello', False)):
             with self.subTest(name):
                 self.assertEqual(self.relayed(sender, receiver, kind, data), expected)
+
+    def test_chat_reaches_every_console_as_a_named_notice(self):
+        self.start()
+        sender, receiver = self.client(1), self.client(2)
+        sender.join()
+        receiver.join()
+        self.send_events(sender, (tes3x_net.EVENT_TEXT, b'  well   met  '))
+        for client in (sender, receiver):
+            got = self.events(client, lambda k, d: k == tes3x_net.EVENT_TEXT)
+            self.assertEqual(got[-1], (tes3x_net.EVENT_TEXT, b'Player 1: well met'))
+
+    def test_private_messages_reach_one_player_or_the_admin(self):
+        from tes3x.net.proto import TEXT_PRIVATE
+        self.start()
+        sender, receiver, other = self.client(1), self.client(2), self.client(3)
+        for client in (sender, receiver, other):
+            client.join()
+
+        def private(name, text):
+            return (tes3x_net.EVENT_TEXT, bytes([TEXT_PRIVATE]) + name + b'\0' + text)
+
+        def last_text(client):
+            return self.events(client, lambda k, d: k == tes3x_net.EVENT_TEXT)[-1][1]
+
+        self.send_events(sender, private(b'player 2', b'psst'))
+        self.assertEqual(last_text(receiver), b'Player 1 to you: psst')
+        self.assertEqual(last_text(sender), b'You to Player 2: psst')
+        self.send_events(sender, private(b'Admin', b'help'))
+        self.assertEqual(last_text(sender), b'You to Admin: help')
+        self.send_events(sender, private(b'Player', b'who'))
+        self.assertEqual(last_text(sender), b"3 players' names start with Player.")
+        self.send_events(sender, private(b'Vivec', b'hi'))
+        self.assertEqual(last_text(sender), b'No player is called Vivec.')
+        with self.assertRaises(AssertionError):  # nothing reached the third player
+            self.events(other, lambda k, d: k == tes3x_net.EVENT_TEXT, timeout=0.5)
+
+    def test_admin_messages_say_they_are_from_the_admin(self):
+        admin = free_port()
+        self.start('--admin-port', str(admin))
+        first = self.client(1)
+        first.join()
+        self.admin(admin, 'say', 'restart', 'soon')
+        got = self.events(first, lambda k, d: k == tes3x_net.EVENT_TEXT)
+        self.assertEqual(got[-1], (tes3x_net.EVENT_TEXT, b'Admin: restart soon'))
+        self.admin(admin, 'tell', '1', 'x' * 90)
+        got = self.events(first, lambda k, d: k == tes3x_net.EVENT_TEXT and d == b'x' * 17)
+        self.assertEqual(got[-2:], [(tes3x_net.EVENT_TEXT, b'Admin: ' + b'x' * 73),
+                                    (tes3x_net.EVENT_TEXT, b'x' * 17)])
 
     def test_run_puts_back_the_interrupt_handler(self):
         try:
@@ -1273,12 +1821,15 @@ class ServerTests(unittest.TestCase):
         made = {'cell': 4, 'count': 1, 'removed': False, 'pos': [1.0, 2.0, 3.0],
                 'rot': [0.0, 0.0, 0.5], 'id': 'gold_001'}
         status = net.STATUS.pack(refid + 2, 10, 20, 30, 40, 50)
+        float_slot = net.LOCAL_FLOAT << 14 | 3
+        locals_event = net.pack_locals(refid, {0: 1, float_slot: 0x41480000})[0]
         self.send_events(
             client,
             (net.EVENT_DEATH, struct.pack('<I', refid)),
             (net.EVENT_OBJECTS, bytes([1]) + net.OBJECT.pack(refid + 1, 3, net.OBJECT_DISABLED, 0)),
             (net.EVENT_WEATHER, bytes([0, 1]) + struct.pack('<HB', 3, 2)),
             (net.EVENT_STATUS, status),
+            (net.EVENT_LOCALS, locals_event),
             (net.EVENT_SPAWN, net.pack_spawn(1, made)),
             (net.EVENT_SPAWN, net.pack_spawn(2, dict(made, id='atronach_flame', summon=True))))
         self.drain(client)
@@ -1287,13 +1838,14 @@ class ServerTests(unittest.TestCase):
 
         saved = next(world.glob('*.json'))
         state = json.loads(saved.read_text(encoding='utf-8'))
-        self.assertEqual(sorted(state), ['clock', 'contents', 'deaths', 'next_spawn', 'objects',
-                                         'spawns', 'statuses', 'topics', 'weather'])
+        self.assertEqual(sorted(state), ['actors', 'clock', 'contents', 'deaths', 'factions', 'globals', 'journal', 'locals', 'moves', 'next_spawn', 'objects',
+                                         'scripts', 'spawns', 'statuses', 'topics', 'weather'])
         self.assertEqual(len(state['clock']), 6)  # hour, day, month, year, days passed, scale
         self.assertEqual(state['deaths'], {str(refid): 1})
         self.assertEqual(state['objects'], {str(refid + 1): [3, net.OBJECT_DISABLED, 0]})
         self.assertEqual(state['weather'], {'3': 2})
         self.assertEqual(state['statuses'], {str(refid + 2): [10, 20, 30, 40, 50]})
+        self.assertEqual(state['locals'], {str(refid): {'0': 1, str(float_slot): 0x41480000}})
         spawns = sorted(state['spawns'].values(), key=lambda s: s['id'])
         self.assertEqual([(s['id'], s['summon'], s['removed'], s['origin']) for s in spawns],
                          [('atronach_flame', True, False, 1), ('gold_001', False, False, 1)])
@@ -1307,6 +1859,7 @@ class ServerTests(unittest.TestCase):
                           not spawned.add(data) and len(spawned) == 2)
         self.assertIn((net.EVENT_DEATH, struct.pack('<I', refid)), got)
         self.assertIn((net.EVENT_STATUS, status), got)
+        self.assertIn((net.EVENT_LOCALS, locals_event), got)
         replayed = {net.unpack_spawn(data)[1]['id']: net.unpack_spawn(data)[1]
                     for kind, data in got if kind == net.EVENT_SPAWN}
         self.assertFalse(replayed['gold_001']['removed'])

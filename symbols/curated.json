@@ -399,6 +399,14 @@
       "pc_va": "0x0040E920"
     },
     {
+      "va": "0x0008C820",
+      "name": "WorldController::removeGlobalScript",
+      "confidence": "matched",
+      "provenance": "StopScript opcode at 0x0013EA71; removes the +0x314 entry whose script matches and frees it",
+      "pc_va": "0x0040FB00",
+      "signature": "void __thiscall removeGlobalScript(TES3::Script* script)"
+    },
+    {
       "va": "0x0008C8B0",
       "name": "WorldController::isGlobalScriptRunning",
       "kind": "function",
@@ -412,7 +420,8 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_WorldController_processGlobalScripts",
-      "pc_va": "0x0040FBE0"
+      "pc_va": "0x0040FBE0",
+      "note": "skipped while the toggles' 0x400000 bit is set; its single Script::execute call (0x0008C94D) is hooked by multiplayer to know which global script is running"
     },
     {
       "va": "0x0008C970",
@@ -461,6 +470,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_WorldController_CreateFilters",
       "pc_va": "0x00411400"
+    },
+    {
+      "va": "0x0008E6E0",
+      "name": "WorldController::addGlobalScript",
+      "confidence": "matched",
+      "provenance": "StartScript opcode at 0x0013EA5A; allocates an 8-byte GlobalScript {reference, script}, appends to +0x314 unless isGlobalScriptRunning",
+      "pc_va": "0x0040FA80",
+      "signature": "void __thiscall addGlobalScript(TES3::Script* script, TES3::Reference* reference)"
     },
     {
       "va": "0x0008E730",
@@ -1767,6 +1784,23 @@
       "pc_va": "0x004A9EA0"
     },
     {
+      "va": "0x000F08F0",
+      "name": "Faction::clearPlayerData",
+      "confidence": "verified",
+      "provenance": "zeroes +0x294/+0x298/+0x29C; same body as PC",
+      "pc_va": "0x004AD8A0",
+      "signature": "void __thiscall clearPlayerData()"
+    },
+    {
+      "va": "0x000F0910",
+      "name": "Faction::loadPlayerData",
+      "confidence": "verified",
+      "provenance": "the save loader's FNAM restore (0x00187FA0) calls it after findFaction",
+      "note": "Writes rank, reputation and membership flags as a save load does; a negative rank becomes 0.",
+      "pc_va": "0x004AD910",
+      "signature": "void __thiscall loadPlayerData(int* rankReputationFlags)"
+    },
+    {
       "va": "0x000F0B10",
       "name": "Activator::ctor",
       "kind": "function",
@@ -1999,6 +2033,38 @@
       "pc_va": "0x004ACBE0"
     },
     {
+      "va": "0x000F9F90",
+      "name": "Faction::setPlayerExpelled",
+      "confidence": "verified",
+      "provenance": "PCExpell/PCClearExpelled in Script::RunFunction; toggles flag 2, shows sExpelledMessage + name, UpdateStatsPane",
+      "note": "Expelling shows the native expelled message box.",
+      "signature": "void __thiscall setPlayerExpelled(bool expelled)"
+    },
+    {
+      "va": "0x000FA000",
+      "name": "Faction::raisePlayerRank",
+      "confidence": "verified",
+      "provenance": "PCRaiseRank in Script::RunFunction",
+      "note": "A non-member only joins, keeping playerRank; a member rises one rank while the next rank has a name.",
+      "signature": "void __thiscall raisePlayerRank()"
+    },
+    {
+      "va": "0x000FA050",
+      "name": "Faction::setPlayerRank",
+      "confidence": "matched",
+      "provenance": "same shape as PC 0x004AD3B0; joins, then sets rank when that rank has a name",
+      "pc_va": "0x004AD3B0",
+      "signature": "void __thiscall setPlayerRank(int rank)"
+    },
+    {
+      "va": "0x000FA0A0",
+      "name": "Faction::lowerPlayerRank",
+      "confidence": "verified",
+      "provenance": "PCLowerRank in Script::RunFunction",
+      "note": "Members only; stops at rank 0.",
+      "signature": "void __thiscall lowerPlayerRank()"
+    },
+    {
       "va": "0x000FA0C0",
       "name": "Faction::getAdvancementPotential",
       "kind": "function",
@@ -2211,7 +2277,9 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_Dialogue_journalAdd",
-      "pc_va": "0x004B2F80"
+      "pc_va": "0x004B2F80",
+      "note": "Adds the INFO for index to the journal (JournalHTML::updateJournal, which adds the 'journal updated' line to an open dialogue) and raises journalIndex. The Journal command (0x0013FEEF) shows the sJournalEntry toast itself, through showMessageBox, only when MenuDialog is closed.",
+      "signature": "bool __thiscall journalAdd(int index, TES3::MobileActor* actor)"
     },
     {
       "va": "0x00101090",
@@ -2999,9 +3067,10 @@
       "va": "0x0012A9B0",
       "name": "Reference::getScriptVariables",
       "kind": "function",
-      "confidence": "matched",
-      "provenance": "mwse:TES3_Reference_getScriptVariables",
-      "pc_va": "0x004E7020"
+      "confidence": "verified",
+      "provenance": "mwse:TES3_Reference_getScriptVariables; decompile matches",
+      "pc_va": "0x004E7020",
+      "signature": "TES3::ScriptVariables* __thiscall getScriptVariables()"
     },
     {
       "va": "0x0012AC50",
@@ -3069,11 +3138,12 @@
     },
     {
       "va": "0x0012DAC0",
-      "name": "CS::AddTopicToList",
+      "name": "Reference::ensureScriptDataIsInstanced",
       "kind": "function",
-      "confidence": "matched",
-      "provenance": "mwse:CS_AddTopicToList",
-      "pc_va": "0x004E7050"
+      "confidence": "verified",
+      "provenance": "decompile: finds attachment 6, sets item data +0x14 script and +0x18 variables; MWSE TES3_Reference_ensureScriptDataIsInstanced (CS_AddTopicToList is a Construction Set address)",
+      "pc_va": "0x004E7050",
+      "signature": "void __thiscall ensureScriptDataIsInstanced()"
     },
     {
       "va": "0x0012DD90",
@@ -3235,6 +3305,13 @@
       "pc_va": "0x0050E7B0"
     },
     {
+      "va": "0x00137100",
+      "name": "Faction::modPlayerReputation",
+      "confidence": "verified",
+      "provenance": "ModPCFacRep in Script::RunFunction",
+      "signature": "void __thiscall modPlayerReputation(int amount)"
+    },
+    {
       "va": "0x00137120",
       "name": "Statistic::getBase",
       "kind": "function",
@@ -3249,6 +3326,13 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_Script_resetEventsAndVars",
       "pc_va": "0x004FF450"
+    },
+    {
+      "va": "0x00137B30",
+      "name": "Script::createVariables",
+      "confidence": "verified",
+      "provenance": "decompile: allocates ScriptVariables (0x14) and copies the script's default shorts +0x5C, longs +0x60, floats +0x64 by counts +0x30/+0x34/+0x38",
+      "signature": "TES3::ScriptVariables* __thiscall createVariables()"
     },
     {
       "va": "0x00137C50",
@@ -3271,6 +3355,15 @@
       "kind": "site",
       "confidence": "verified",
       "provenance": "find_mcp154_reload; mcp-154 SCDT allocation"
+    },
+    {
+      "va": "0x00138AA0",
+      "name": "relocateReference",
+      "confidence": "matched",
+      "provenance": "calls the seven callees of PC 0x0050EDD0 (isCellInMemory, addReference, addMob, removeMob, getOrCreateActivatorsNode, getLeveledBaseReference, setFootPoint); MWSE TES3_game_relocateReference",
+      "note": "Position and PositionCell (0x0013DB7B, 0x0013DCAD, reference from 0x003D36D4, rotation from 0x003D3734) and PlaceItemCell (0x00141255, a new reference) call it. It multiplies the rotation by pi/180 as the PC's does, yet PositionCell passes radians (131.8 in a script arrives as 2.30). Multiplayer hooks all three for ACTOR_MOVE",
+      "pc_va": "0x0050EDD0",
+      "signature": "void __cdecl relocateReference(TES3::Reference* reference, TES3::Cell* cell, NI::Point3* position, float rotation)"
     },
     {
       "va": "0x00138C17",
@@ -3366,6 +3459,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_Script_executeScriptOpCode",
       "pc_va": "0x00505770"
+    },
+    {
+      "va": "0x00148A70",
+      "name": "Script::execute",
+      "confidence": "matched",
+      "provenance": "processGlobalScripts calls it per GlobalScript with ecx = script and (reference or 0, 0, 0, 0); the local-variable range errors",
+      "pc_va": "0x005028A0",
+      "signature": "void __thiscall execute(TES3::Reference* reference, TES3::ScriptVariables* variables, TES3::DialogueInfo* info, TES3::Reference* reference2)"
     },
     {
       "va": "0x0014B102",
@@ -3791,6 +3892,15 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_MobileActor_removeEquippedConstantEffectEnchs",
       "pc_va": "0x0052D010"
+    },
+    {
+      "va": "0x0015BC70",
+      "name": "updateCrimeGoldGlobals",
+      "confidence": "matched",
+      "provenance": "string match to pc 0x0052D7A0; called from MobileActor::startDialogue",
+      "note": "Sets PCHasCrimeGold, PCHasGoldDiscount, PCHasTurnIn, CrimeGoldDiscount and CrimeGoldTurnIn from the player's bounty, gold and GMSTs 0x4A0/0x4A1; derived, so multiplayer never keeps them.",
+      "pc_va": "0x0052D7A0",
+      "signature": "void __cdecl updateCrimeGoldGlobals(void)"
     },
     {
       "va": "0x0015C140",
@@ -4938,6 +5048,13 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_ui_getMenuOnTop",
       "pc_va": "0x00595290"
+    },
+    {
+      "va": "0x001AD340",
+      "name": "TES3UI::findMenu",
+      "confidence": "verified",
+      "provenance": "walks the menu list for the word id at +0x20; MenuDialog id 0x003D869C and the console's id are passed to it",
+      "signature": "TES3UI::Element* __cdecl findMenu(unsigned short id)"
     },
     {
       "va": "0x001AD4A0",

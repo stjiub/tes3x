@@ -891,6 +891,7 @@ static void run_command(const char *text)
     unsigned char *mgr;
     void *ctx, *script;
 
+    first_len = 0;
 #ifdef TES3X_PROFILE
     if (tes3x_prof_command(text))
         return;
@@ -1470,6 +1471,30 @@ void __cdecl tes3x_console_print(void *game, const char *fmt, ...)
         tes3x_log_raw("\n", 1);
     }
     ((fn_console_print)TES3X_CONSOLE_PRINT)(game, "%s", buf);
+}
+
+/* A module command's answer, printed as the engine's commands print theirs, so `assert` reads it. */
+void __cdecl tes3x_console_reply(const char *fmt, ...)
+{
+    unsigned char *game = *(unsigned char **)TES3X_GAME_PTR;
+    char buf[0x104];
+    __builtin_va_list args;
+    int n;
+
+    __builtin_va_start(args, fmt);
+    n = ((fn_vsprintf)TES3X_VSPRINTF)(buf, fmt, args);
+    __builtin_va_end(args);
+    if (n < 0 || n >= (int)sizeof(buf))
+        return;
+    if (!game) {
+        for (first_len = 0; first_len < (u32)n; first_len++)
+            first_output[first_len] = buf[first_len];
+        return;
+    }
+    running = 1;
+    output_lines = 0;
+    tes3x_console_print(game, "%s", buf);
+    running = 0;
 }
 
 /* A debugger writes `text`, then changes `seq`; the next frame runs it and sets `done` to match,

@@ -9,7 +9,7 @@
         "tes3xini.c",
         "tes3xdiag.c"
       ],
-      "pe_sha256": "335c327f2f426713de045f07a27f6782b841b6abc15f033d6d201cfb9e037e24",
+      "pe_sha256": "d1122b07e7dce7786c17ee957bb59840a44304480bc4da5d1c0b7935ef11b4ba",
       "manifest_sha256": "86eb65b25fc9344c42e386b68896c9c6634cae07c9ebe2368f1fbaab398bf0f3"
     },
     {
@@ -21,8 +21,8 @@
         "tes3xconsole.c",
         "tes3xdiag.c"
       ],
-      "pe_sha256": "fc6a552a409388ca92af7fb0b423be9d9f794de87124acce31529899d01e34e2",
-      "manifest_sha256": "5caf2374664f79549f434e2ac334062245d257f0e42098f2b2fbfdd4f0b3da6e"
+      "pe_sha256": "c7e8bb35eb4c2df37e18d8ea4887249e9e4fcb49fb58ef24b2ac9aa8bf142042",
+      "manifest_sha256": "2914ebbee8bdd0dcd6423f34bf1abe8ba5cdda0f7dff7f5b3858ff004745f698"
     },
     {
       "name": "multiplayer",
@@ -35,8 +35,8 @@
         "tes3xnet.c",
         "tes3xmulti.c"
       ],
-      "pe_sha256": "ac552bb0603b4513f2e18db972199bdd995db947acda6e69f569c5ad3780d770",
-      "manifest_sha256": "071d7804bb786b89212cdda583a58080f1372204dd9b6b2477b4a727982095c3"
+      "pe_sha256": "e0ca1e165295c0151bb98b5f2c36ee2c4338589faedea3d648d8cf7f4f812e96",
+      "manifest_sha256": "ec4f5706048d69ed5d60608e34de94633e938a3e66571ddb4a6a72b8b4120010"
     },
     {
       "name": "archives",
@@ -46,7 +46,7 @@
         "tes3xini.c",
         "tes3xarch.c"
       ],
-      "pe_sha256": "3bbf3967a3055fb6faa9a03eea59fc618eb18db8cfaf3959e8e9f7c524557768",
+      "pe_sha256": "4f5c353539dd266198afd72bedfdc3fb8052b400a05cf0f7fe01bc99da1c3a92",
       "manifest_sha256": "3f187437c3982ce47349a550259998e104e0168404685cfa3dcfc00afb9cefc2"
     },
     {
@@ -58,7 +58,7 @@
         "tes3xarch.c",
         "tes3xdiag.c"
       ],
-      "pe_sha256": "e5491ed78ea7fc9e1c18d6e260ed4a85d5e76c01754f1e9d28cc3a3e3a64288e",
+      "pe_sha256": "04ae5860fc92731266614d7010147d9f510cb45921c5c8a999fc7b7af8b4ab2f",
       "manifest_sha256": "eba26b8631e5e62eae1a4ca4094ac1722f923945432f7a305244bc00067b5c5a"
     },
     {
@@ -71,8 +71,8 @@
         "tes3xconsole.c",
         "tes3xdiag.c"
       ],
-      "pe_sha256": "f72cfdb536c8dd37c9bcb7934c40b7a6a947f71637d6c67f9e6de3e20e4cef55",
-      "manifest_sha256": "ed398c77329d6f8555811d6dd1fe6c543f7a006488b8a7994ba56ffafa95e31e"
+      "pe_sha256": "6e61fb36cf40bb6255fe8a4bedda21c676b13a1cd488cc51935990b9f9b2ed41",
+      "manifest_sha256": "91ea090b32d75a2150c5c1228669f887462d33d32e546ffd3d5429acad3d8082"
     },
     {
       "name": "archives-multiplayer",
@@ -86,8 +86,8 @@
         "tes3xnet.c",
         "tes3xmulti.c"
       ],
-      "pe_sha256": "88184a968a9573d97acb98e392ff5d57b3f534d517ede6597b286af87db11585",
-      "manifest_sha256": "8cd626c4f7e2fb64b44dd8b1d77a46c3ccf7e945a58f3d1e1251a6d0dfb9865a"
+      "pe_sha256": "f9f11071850c8d580c83bc7f85d3ae6e049792eacd8852d5cfb213dd13147270",
+      "manifest_sha256": "a205776e3e9bdc9fa4188cd9a83a9e38dfad11da94305824dbe5252c1e0552bc"
     }
   ]
 }

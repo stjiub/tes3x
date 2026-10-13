@@ -25,7 +25,7 @@ import uuid
 
 try:
     import tomlkit
-    from PySide6.QtCore import (QAbstractTableModel, QEvent, QFile, QModelIndex, QProcess,
+    from PySide6.QtCore import (QAbstractTableModel, QEvent, QEventLoop, QFile, QModelIndex, QProcess,
                                 QProcessEnvironment, QPointF, QSettings, QSortFilterProxyModel, QTimer, Qt,
                                 QUrl, Signal)
     from PySide6.QtGui import (QAction, QActionGroup, QColor, QPolygonF, QDesktopServices, QIcon,
@@ -35,7 +35,7 @@ try:
         QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
         QFileDialog, QFormLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
         QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox,
-        QPushButton, QScrollArea, QSpinBox, QSplitter, QStackedWidget, QStatusBar, QStyle,
+        QProgressDialog, QPushButton, QScrollArea, QSpinBox, QSplitter, QStackedWidget, QStatusBar, QStyle,
         QTabBar, QTableView, QTabWidget, QTextBrowser, QTextEdit, QToolButton, QTreeWidget, QTreeWidgetItem,
         QVBoxLayout, QWidget,
     )
@@ -411,6 +411,38 @@ def plugin_header(path):
     return text[0], text[1]
 
 
+def run_in_thread(parent, label, function, *args):
+    """Run function off the GUI thread behind a modal busy dialog; return its result or raise."""
+    outcome = {}
+
+    def work():
+        try:
+            outcome["value"] = function(*args)
+        except BaseException as exc:  # re-raised on the GUI thread
+            outcome["error"] = exc
+
+    worker = threading.Thread(target=work, daemon=True)
+    dialog = QProgressDialog(label, None, 0, 0, parent)
+    dialog.setWindowTitle("TES3X")
+    dialog.setWindowModality(Qt.WindowModality.WindowModal)
+    dialog.setMinimumDuration(0)
+    dialog.setAutoClose(False)
+    dialog.setAutoReset(False)
+    loop = QEventLoop()
+    timer = QTimer()
+    timer.setInterval(50)
+    timer.timeout.connect(lambda: None if worker.is_alive() else loop.quit())
+    worker.start()
+    dialog.show()
+    timer.start()
+    loop.exec()
+    timer.stop()
+    dialog.close()
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome["value"]
+
+
 def sha256_file(path):
     digest = hashlib.sha256()
     with open(path, "rb") as stream:
@@ -585,7 +617,8 @@ class LocalSettingsDialog(QDialog):
             form.addRow(label, self.browse_row("paths." + key, values.get(key, "")))
         form = self.form_section(layout, "TES3X folders and tools")
         for key, label, folder in (("profiles", "Profiles", "profiles"),
-                                   ("build_root", "Build output", "build")):
+                                   ("build_root", "Build output", "build"),
+                                   ("worlds", "Server worlds", "worlds")):
             form.addRow(label, self.browse_row("paths." + key, values.get(key, ""),
                                               default=str(self.path.parent / folder)))
         llvm_bin = bundled("externals", "llvm", "bin")
@@ -923,10 +956,11 @@ class InstallDialog(QDialog):
         top.setData(0, ROLE, ".")
         self.tree.addTopLevelItem(top)
         self.items = {".": top}
+        self.folders = {"."}
         self.add_children(top, self.unpacked, "")
         for rel, item in self.items.items():
             root = self.root_of(rel)
-            is_dir = (self.unpacked / rel).is_dir()
+            is_dir = rel in self.folders
             if root is None:
                 item.setFlags(Qt.ItemFlag.ItemIsEnabled)
                 if not is_dir or not any(value.startswith(rel + "/") or rel == "."
@@ -968,6 +1002,7 @@ class InstallDialog(QDialog):
             parent.addChild(item)
             self.items[rel] = item
             if entry.is_dir():
+                self.folders.add(rel)
                 self.add_children(item, entry, rel + "/")
 
     def root_of(self, rel):
@@ -1024,7 +1059,7 @@ class InstallDialog(QDialog):
             files = []
             prefix = "" if root == "." else root + "/"
             for rel, item in self.items.items():
-                if (rel.startswith(prefix) and rel != root and (self.unpacked / rel).is_file()
+                if (rel.startswith(prefix) and rel != root and rel not in self.folders
                         and item.checkState(0) == Qt.CheckState.Checked):
                     files.append(rel[len(prefix):])
             if files:
@@ -1718,6 +1753,7 @@ __all__ = [
     'patch_spec',
     'play_icon',
     'plugin_header',
+    'run_in_thread',
     'plugin_masters',
     're',
     'read_ini',

@@ -132,14 +132,16 @@ when the profile matches one of these source sets exactly:
 | `multi-bsa` alone | — |
 
 These seven exact sets cover console play, multiplayer and the default modded `delta-bsa` path
-without compiling unused developer patches into every build. The largest section is 654,860
-bytes (about 0.63 MiB). They use
+without compiling unused developer patches into every build. The largest section is 762,176
+bytes (about 0.73 MiB). They use
 patch-time bindings for the sampled NTSC and PAL GOTY engines. A
 matching profile with no compile-time flags needs no compiler. Other patch sets still use
 `tes3x payload` with clang and lld-link; `--build-payload` forces that source build even when a
 prebuilt payload matches. `tes3x patch` applies the selected patches to a copy of the XBE.
 Payload pointers and hook addresses relocate to the added section, and the patcher fills the
-engine binding table from the input XBE. Byte-pattern patches locate their sites by content.
+engine binding table from the input XBE. Region selection is automatic; no PAL/NTSC profile
+setting is needed. An engine whose required sites cannot be found stops with an error.
+Byte-pattern patches locate their sites by content.
 `--title` and a save pool also patch the
 launcher, `Default.xbe`; a save pool gives the build its own saves (see `save_pool` in the
 [configuration reference](configuration.md#profile)).

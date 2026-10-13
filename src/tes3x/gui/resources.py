@@ -1,7 +1,7 @@
 """ResourcesPanel: profile window resources."""
 
 from .common import (QHeaderView, QLabel, QTabWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
-                     QWidget, Qt, ROLE, WARNING, os, texture_dims)
+                     QWidget, Qt, ROLE, WARNING)
 
 
 class ResourcesPanel(QWidget):
@@ -49,19 +49,7 @@ class ResourcesPanel(QWidget):
         active_ids = {item.data(0, ROLE).get("id"): item.text(0)
                       for item, _mod in self.window.mods.analysis["active"]}
         for item, mod in self.window.mods.analysis["active"]:
-            size = texture_size = textures = largest = 0
-            for key, source in mod.files.items():
-                try:
-                    file_size = os.path.getsize(source)
-                except OSError:
-                    file_size = 0
-                size += file_size
-                if key.startswith("textures/") or key.endswith((".dds", ".tga", ".bmp")):
-                    textures += 1
-                    texture_size += file_size
-                    dims = texture_dims(source)
-                    if dims:
-                        largest = max(largest, *dims)
+            size, textures, texture_size, largest = mod.source_stats()
             total_files += len(mod.files)
             total_bytes += size
             total_textures += textures
