@@ -1040,7 +1040,9 @@ def source_digest(name):
     files = [path] + [path.parent / section for section in section_names(path)]
     files += sorted(HOOKS.glob("*.h")) + [Path(tes3x_inject.DEFAULT_KRNL_DEF)]
     for file in files:
-        digest.update(file.name.encode("utf-8") + b"\0" + file.read_bytes())
+        # A checkout with CRLF line endings compiles to the same object
+        text = file.read_bytes().replace(b"\r\n", b"\n")
+        digest.update(file.name.encode("utf-8") + b"\0" + text)
     return digest.hexdigest()
 
 

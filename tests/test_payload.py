@@ -48,6 +48,15 @@ class PayloadTests(unittest.TestCase):
         section.write_text('int b2;\n', encoding='utf-8')
         self.assertNotEqual(source_digest(str(main)), before)
 
+    def test_source_digest_ignores_line_endings(self):
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder)
+        main = folder / 'main.c'
+        main.write_bytes(b'int a;\nint b;\n')
+        before = source_digest(str(main))
+        main.write_bytes(b'int a;\r\nint b;\r\n')
+        self.assertEqual(source_digest(str(main)), before)
+
     def test_build_id_follows_the_linked_objects_and_flags(self):
         folder = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, folder)
