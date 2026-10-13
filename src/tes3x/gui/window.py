@@ -24,6 +24,7 @@ from .plugins import PluginsPanel
 from .files import FilesPanel
 from .mods import ModsTab
 from .play_controller import PlayController
+from .content import ContentPage
 from tes3x.paths import docs_url
 
 
@@ -117,7 +118,7 @@ class ProfileWindow(QMainWindow):
         self.workspace_bar.setExpanding(False)
         self.workspace_bar.setUsesScrollButtons(False)
         self.workspace_bar.setElideMode(Qt.TextElideMode.ElideNone)
-        for label in ("Profile", "Target", "Server"):
+        for label in ("Profile", "Target", "Server", "Content"):
             self.workspace_bar.addTab(label)
         profile_bar.addWidget(self.workspace_bar)
         profile_bar.addSpacing(16)
@@ -197,8 +198,10 @@ class ProfileWindow(QMainWindow):
         self.targets_page = TargetsPage(self)
         self.agent_lines.connect(self.targets_page.append_lines)
         self.server_page = ServerPage(self)
+        self.content_page = ContentPage(self)
         self.workspaces = QStackedWidget()
-        for page in (self.content_split, self.targets_page, self.server_page):
+        for page in (self.content_split, self.targets_page, self.server_page,
+                     self.content_page):
             self.workspaces.addWidget(page)
         self.workspace_bar.currentChanged.connect(self.workspace_changed)
         self.body_split = QSplitter(Qt.Orientation.Vertical)
@@ -649,6 +652,8 @@ class ProfileWindow(QMainWindow):
             self.settings.setValue("workspace", index)
         if index == 1:
             self.targets_page.set_target(self.target_picker.currentData())
+        elif index == 3:
+            self.content_page.refresh()
 
     def default_target(self, kind=None):
         name = self.target_picker.currentData() if hasattr(self, "target_picker") else None
@@ -938,6 +943,7 @@ class ProfileWindow(QMainWindow):
     def closeEvent(self, event):
         if self.maybe_save():
             self.server_page.shutdown()
+            self.content_page.shutdown()
             if self.play_controller.in_game_listener is not None:
                 self.play_controller.in_game_listener.close()
                 self.play_controller.in_game_listener = None

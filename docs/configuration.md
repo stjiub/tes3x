@@ -7,7 +7,8 @@ retail game, mods and tools are, and the Xbox and xemu targets that can run a bu
 what would be built.
 
 - [Local config](#local-config): [`[paths]`](#paths), [targets](#targets),
-  [`[addons]`](#addons), [`[console]`](#console), [`[server]`](#server)
+  [`[addons]`](#addons), [`[console]`](#console), [`[server]`](#server),
+  [`[content]`](#content)
 - [Profile](#profile): [`[profile]`](#profile-1), [`[patches]`](#patches),
   [`[preferences]`](#preferences), [`[package]`](#package), [`[rules]`](#rules),
   [`[plugins]`](#plugins), [`[[mods]]`](#mods), [`[ini]`](#ini)
@@ -118,6 +119,20 @@ Command-line use of the server reads neither file.
 | `mode` | string | `local` | `local` manages a server on this PC, `remote` one at `remote_address`. |
 | `remote_address` | string | none | A remote server's `HOST` or `HOST:PORT` (port 26503 by default). |
 | `remote_password` | string | none | Its admin password, kept only when **Remember** is ticked. Do not copy it into a public file. |
+
+### `[content]`
+
+The GUI's **Content** workspace saves its independent [content server](content.md) settings here.
+The CLI `tes3x content serve` uses its own options and does not read this table.
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `all_builds` | boolean | `false` | Publish completed builds under `paths.build_root` automatically. |
+| `build` | array of strings | `[]` | Additional completed deploy folders to publish. |
+| `bind` | string | `0.0.0.0` | Listen address. |
+| `port` | integer | `26510` | Content server TCP port. |
+| `retail` | boolean | `false` | Offer retail files from `paths.vanilla_root`. |
+| `xbe` | boolean | `false` | Offer whole XBEs. |
 
 In a world's `world.toml`:
 

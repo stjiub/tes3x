@@ -14,6 +14,7 @@ Generated from [`nav.toml`](nav.toml) by `tes3x docs --write`; edit that file, n
 - [Packaging](packaging.md): The pipeline's packing stage turns the collected mod files and the retail `Data Files` into what ships to the Xbox.
 - [Plugin optimizer](optimizer.md): The plugin optimizer writes derived copies of a load order that produce the same modeled Xbox engine state while making the loader construct fewer records.
 - [Deployment](deployment.md): A deploy copies a finished build to the install folder on a modded Xbox.
+- [Content servers](content.md): A content server lets the TES3X Dash browse and install completed builds without joining a multiplayer world.
 - [Testing](testing.md): TES3X is tested in steps, from fast checks on the PC to play on an original Xbox.
 - [Running in xemu](xemu.md): Set up xemu to play profiles or run them from scripts.
 - [Diagnostics and profiling](diagnostics.md): A patched build can record what it does, time engine functions and count where memory goes.

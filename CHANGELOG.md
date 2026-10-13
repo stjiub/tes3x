@@ -4,6 +4,12 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- The Dash can browse standalone content servers and install offered builds into its Builds list.
+  The GUI's Content workspace can host chosen completed builds or always share every completed
+  build under the build root. Installing the same entry again updates it from its latest revision.
+  Content downloads use signed catalogs and the existing staged, checked installer. See
+  [content servers](docs/content.md).
+
 - `tes3x game-tests` runs every game test against the retail engines named in the local
   config's new `[engines]` table, several at once, and prints what passed and failed. See
   [testing](docs/testing.md#every-game-test).

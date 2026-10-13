@@ -185,8 +185,36 @@ const char *server_ticket(struct server *s, struct ticket *t, progress_fn progre
 extern const char INSTALL_CONFIRM[];
 const char *server_install(struct server *s, int replace, char *folder, size_t folder_n,
                            char *summary, size_t summary_n, progress_fn progress);
+/* The same installer for a content-library ticket. The label identifies this entry on disk. */
+const char *install_ticket(const struct ticket *ticket, const char *host, const char *label,
+                           int replace, char *folder, size_t folder_n, char *summary,
+                           size_t summary_n, progress_fn progress);
 /* Starts a build's engine with New Game and the server to join (the game's JOIN_MAGIC). */
 const char *join_server(const char *folder, const char *server, void (*before)(void));
+
+/* Signed standalone libraries, kept separately from the game's multiplayer servers. */
+#define CONTENT_ENTRIES 64
+struct content_host {
+    char name[80], host[64];
+    unsigned port;
+    unsigned char key[32], pending_key[32];
+    int has_key, has_pending;
+    char fingerprint[33], pending_fingerprint[33];
+};
+struct content_entry {
+    char id[43], name[48], layout[16], build[65];
+    unsigned long long bytes;
+};
+extern const char CONTENT_KEY_CHANGED[];
+extern const char CONTENT_BUILD_CHANGED[];
+int content_load(struct content_host *out, int max);
+int content_add(const char *name, struct content_host *out);
+int content_remove(const struct content_host *host);
+int content_accept_key(struct content_host *host);
+const char *content_catalog(struct content_host *host, struct content_entry *out, int max,
+                            int *count);
+const char *content_ticket(struct content_host *host, const struct content_entry *entry,
+                           struct ticket *out);
 
 int read_file(const char *path, unsigned char **data, size_t *n);
 /* Writes a file and flushes it to the disk; flush_path flushes one already written. */

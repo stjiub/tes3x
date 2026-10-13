@@ -6,6 +6,7 @@
  *   list | verify NAME | launch NAME | rebuild NAME XBE DELTA | agent SECONDS
  *   | base [use N | path FOLDER] | update | fetch [FEED] | get URL FILE | run XBE
  *   | servers | server add NAME | install SERVER [replace] | join SERVER | wait SECONDS
+ *   | content add HOST | content browse HOST | content install ID [replace]
  *   | press BUTTON... | type TEXT | shutdown | reboot
  * `base` lists the retail bases found; `base use N` makes the Nth one OverlayBase, `base path`
  * the folder named by the rest of the line, as choosing it on screen does. `rebuild`
@@ -40,6 +41,7 @@
 #define MAX_BASES 8
 #define MAX_FOLDERS 256
 #define MAX_SERVERS 32
+#define MAX_CONTENT 32
 /* the agent's status can change without input */
 #define REDRAW_MS 500
 #define TRIGGER_DOWN 16000
@@ -51,12 +53,15 @@ static char browse_path[PATH_MAX_MGR];
 static struct line lines[MAX_LINES];
 static struct server servers[MAX_SERVERS];
 static const char *server_builds[MAX_SERVERS];
+static struct content_host content_hosts[MAX_CONTENT];
+static struct content_entry content_entries[CONTENT_ENTRIES];
 static char overlay_base[PATH_MAX_MGR];
 static struct view v;
 static int video_up, dirty = 1;
 static Uint32 last_draw;
 static const char *progress_name;
 static int key_then_install;
+static int content_key_install;
 
 void mgr_progress_speed(unsigned long long bytes_per_second)
 {
@@ -488,6 +493,123 @@ static struct server *chosen_server(void)
     return v.server_list.count ? &servers[v.server_list.sel] : NULL;
 }
 
+static struct content_host *chosen_content(void)
+{
+    return v.content_hosts_list.count ? &content_hosts[v.content_hosts_list.sel] : NULL;
+}
+
+static void load_content(void)
+{
+    v.content_hosts_list.count = content_load(content_hosts, MAX_CONTENT);
+    if (v.content_hosts_list.sel >= v.content_hosts_list.count)
+        v.content_hosts_list.sel = v.content_hosts_list.top = 0;
+    ui_list_move(&v.content_hosts_list, 0);
+}
+
+static void show_content_key_change(const struct content_host *host, int then_install)
+{
+    content_key_install = then_install;
+    say("Content key changed", "Accept only if you expected the library's identity to change.",
+        NULL);
+    snprintf(v.text[1], sizeof(v.text[1]), "Saved: %s", host->fingerprint);
+    snprintf(v.text[2], sizeof(v.text[2]), "New: %s", host->pending_fingerprint);
+    v.confirm = CONFIRM_CONTENT_KEY;
+}
+
+static void browse_content(void)
+{
+    struct content_host *host = chosen_content();
+    const char *err;
+    int count = 0;
+
+    if (!host)
+        return;
+    busy("Reading the content library...");
+    err = content_catalog(host, content_entries, CONTENT_ENTRIES, &count);
+    if (err == CONTENT_KEY_CHANGED) {
+        show_content_key_change(host, 0);
+    } else if (err) {
+        say("Cannot browse", host->name, err);
+    } else {
+        v.content_entries_list.count = count;
+        v.content_entries_list.sel = v.content_entries_list.top = 0;
+        v.page = PAGE_CONTENT;
+        mgr_log("content %s: %d builds\n", host->name, count);
+    }
+}
+
+static void install_content(int replace)
+{
+    struct content_host *host = chosen_content();
+    struct content_entry *entry;
+    struct ticket ticket;
+    char folder[PATH_MAX_MGR], summary[128], label[80], id[43];
+    const char *err;
+    int count, i;
+
+    if (!host || !v.content_entries_list.count)
+        return;
+    entry = &content_entries[v.content_entries_list.sel];
+    snprintf(id, sizeof(id), "%s", entry->id);
+    busy("Contacting the content server...");
+    err = content_ticket(host, entry, &ticket);
+    if (err == CONTENT_KEY_CHANGED) {
+        show_content_key_change(host, 1);
+        return;
+    }
+    if (err == CONTENT_BUILD_CHANGED) {
+        busy("Refreshing the content library...");
+        err = content_catalog(host, content_entries, CONTENT_ENTRIES, &count);
+        if (err == CONTENT_KEY_CHANGED) {
+            show_content_key_change(host, 1);
+            return;
+        }
+        if (err) {
+            say("Cannot refresh", host->name, err);
+            return;
+        }
+        v.content_entries_list.count = count;
+        for (i = 0; i < count && strcmp(content_entries[i].id, id); i++)
+            ;
+        if (i == count) {
+            v.content_entries_list.sel = v.content_entries_list.top = 0;
+            say("Build withdrawn", id, "It is no longer offered by this content server.");
+            return;
+        }
+        v.content_entries_list.sel = i;
+        ui_list_move(&v.content_entries_list, 0);
+        entry = &content_entries[i];
+        err = content_ticket(host, entry, &ticket);
+        if (err == CONTENT_KEY_CHANGED) {
+            show_content_key_change(host, 1);
+            return;
+        }
+        if (err == CONTENT_BUILD_CHANGED)
+            err = "The build changed again. Try Install once more.";
+    }
+    if (err) {
+        say("Cannot install", entry->name, err);
+        return;
+    }
+    snprintf(label, sizeof(label), "%s/%.40s", host->name, entry->id);
+    err = install_ticket(&ticket, host->host, label, replace, folder, sizeof(folder),
+                         summary, sizeof(summary), progress);
+    if (err == INSTALL_CONFIRM) {
+        say("Replace this folder?", folder, "It holds files that are not a TES3X build.");
+        v.confirm = CONFIRM_CONTENT_INSTALL;
+        return;
+    }
+    if (err) {
+        say("Install failed", entry->name, err);
+        return;
+    }
+    scan();
+    link_builds();
+    v.tab = TAB_BUILDS;
+    say("Build installed", entry->name, "Find it in Builds to verify or play.");
+    mgr_log("content %s: installed %s in %s: %s\n", host->name, entry->id, folder, summary);
+}
+
 /* Deleting asks first; A in the dialog goes ahead (v.confirm says which). */
 
 static void ask_delete(void)
@@ -503,6 +625,10 @@ static void ask_delete(void)
         say("Remove this server?", s->name, "Its keys and password are forgotten.");
         snprintf(v.text[2], sizeof(v.text[2]), "A build installed from it stays.");
         v.confirm = CONFIRM_SERVER;
+    } else if (v.tab == TAB_CONTENT && v.page == PAGE_MAIN && chosen_content()) {
+        say("Remove content server?", chosen_content()->name,
+            "Its downloaded builds stay installed.");
+        v.confirm = CONFIRM_CONTENT_REMOVE;
     }
 }
 
@@ -551,7 +677,7 @@ static void delete_selected_server(void)
 }
 
 /* What the open keyboard is typing. */
-enum { KB_SERVER, KB_PASSWORD };
+enum { KB_SERVER, KB_PASSWORD, KB_CONTENT };
 static int kb_purpose, kb_then_install;
 
 static void ask_server(void)
@@ -559,6 +685,13 @@ static void ask_server(void)
     ui_keyboard_open(&v.kb, "Add a server", "Its name or address, with :port when it is not 26500.",
                      NULL, sizeof(servers[0].name) - 1, 0);
     kb_purpose = KB_SERVER;
+}
+
+static void ask_content(void)
+{
+    ui_keyboard_open(&v.kb, "Add content server", "Host or address, with :port if not 26510.",
+                     NULL, sizeof(content_hosts[0].name) - 1, 0);
+    kb_purpose = KB_CONTENT;
 }
 
 /* The password for the chosen server; then_install retries the update once it is typed. */
@@ -608,6 +741,28 @@ static void keyboard_done(void)
     char *text = v.kb.text;
     size_t n;
 
+    if (kb_purpose == KB_CONTENT) {
+        struct content_host host;
+
+        text += strspn(text, " ");
+        for (n = strlen(text); n && text[n - 1] == ' '; n--)
+            text[n - 1] = 0;
+        if (!*text) {
+            v.kb.open = 0;
+        } else if (content_add(text, &host)) {
+            say("Not a content address", text, "Type a host name or IP address, with :port if needed.");
+        } else {
+            v.kb.open = 0;
+            load_content();
+            for (n = 0; n < (size_t)v.content_hosts_list.count
+                 && name_cmp(content_hosts[n].name, text); n++)
+                ;
+            if (n < (size_t)v.content_hosts_list.count)
+                v.content_hosts_list.sel = (int)n;
+            browse_content();
+        }
+        return;
+    }
     if (kb_purpose == KB_SERVER) {
         text += strspn(text, " ");
         for (n = strlen(text); n && text[n - 1] == ' '; n--)
@@ -993,6 +1148,29 @@ static void run_exec(void)
             Sleep((DWORD)atoi(arg[1]) * 1000);
         } else if (!strcmp(arg[0], "servers")) {
             load_servers();
+        } else if (!strcmp(arg[0], "content") && argc == 3 && !strcmp(arg[1], "add")) {
+            struct content_host host;
+            mgr_log("exec: content add %s: %s\n", arg[2],
+                    content_add(arg[2], &host) ? "refused" : "ok");
+            load_content();
+        } else if (!strcmp(arg[0], "content") && argc == 3 && !strcmp(arg[1], "browse")) {
+            for (n = 0; n < (size_t)v.content_hosts_list.count
+                 && name_cmp(content_hosts[n].name, arg[2]); n++)
+                ;
+            if (n < (size_t)v.content_hosts_list.count) {
+                v.content_hosts_list.sel = (int)n;
+                browse_content();
+            }
+        } else if (!strcmp(arg[0], "content") && argc >= 3 && !strcmp(arg[1], "install")) {
+            for (n = 0; n < (size_t)v.content_entries_list.count
+                 && name_cmp(content_entries[n].id, arg[2]); n++)
+                ;
+            if (n < (size_t)v.content_entries_list.count) {
+                v.content_entries_list.sel = (int)n;
+                install_content(argc == 4 && !strcmp(arg[3], "replace"));
+                mgr_log("exec: content install: %s: %s\n", v.title, v.text[0]);
+                v.title[0] = 0, v.confirm = 0;
+            }
         } else if (!strcmp(arg[0], "server") && argc == 3 && !strcmp(arg[1], "add")) {
             mgr_log("exec: server add %s: %s\n", arg[2], add_server(arg[2]) ? "refused" : "ok");
         } else if ((!strcmp(arg[0], "install") || !strcmp(arg[0], "join")) && argc >= 2) {
@@ -1077,7 +1255,23 @@ static void press(int button)
                 delete_selected_build();
             else if (what == CONFIRM_SERVER && chosen_server())
                 delete_selected_server();
-            else if (what == CONFIRM_SERVER_KEY && chosen_server()) {
+            else if (what == CONFIRM_CONTENT_INSTALL)
+                install_content(1);
+            else if (what == CONFIRM_CONTENT_REMOVE && chosen_content()) {
+                struct content_host gone = *chosen_content();
+
+                if (content_remove(&gone))
+                    say("Remove failed", gone.name, "Could not write the content list.");
+                else
+                    load_content();
+            } else if (what == CONFIRM_CONTENT_KEY && chosen_content()) {
+                if (content_accept_key(chosen_content()))
+                    say("Key not changed", "Could not save the accepted content key.", NULL);
+                else if (content_key_install)
+                    install_content(0);
+                else
+                    browse_content();
+            } else if (what == CONFIRM_SERVER_KEY && chosen_server()) {
                 if (server_accept_key(chosen_server()))
                     say("Key not changed", "Could not save the accepted server key.", NULL);
                 else if (key_then_install)
@@ -1153,6 +1347,26 @@ static void press(int button)
             ask_password(NULL, 0);
         else if (button == SDL_CONTROLLER_BUTTON_A && server_builds[v.server_list.sel])
             join(chosen_server(), server_builds[v.server_list.sel]);
+    } else if (v.tab == TAB_CONTENT && v.page == PAGE_MAIN) {
+        if (step)
+            ui_list_move(&v.content_hosts_list, step);
+        else if (button == SDL_CONTROLLER_BUTTON_A)
+            browse_content();
+        else if (button == SDL_CONTROLLER_BUTTON_X)
+            ask_content();
+        else if (button == SDL_CONTROLLER_BUTTON_Y)
+            load_content();
+        else if (button == SDL_CONTROLLER_BUTTON_BACK)
+            ask_delete();
+    } else if (v.tab == TAB_CONTENT) {
+        if (step)
+            ui_list_move(&v.content_entries_list, step);
+        else if (button == SDL_CONTROLLER_BUTTON_A)
+            install_content(0);
+        else if (button == SDL_CONTROLLER_BUTTON_Y)
+            browse_content();
+        else if (button == SDL_CONTROLLER_BUTTON_B)
+            v.page = PAGE_MAIN;
     } else if (v.page == PAGE_BROWSE) {
         if (step)
             ui_list_move(&v.folder_list, step);
@@ -1243,6 +1457,10 @@ int main(void)
     v.servers = servers;
     v.server_builds = server_builds;
     v.server_list.rows = SERVER_ROWS;
+    v.content_hosts = content_hosts;
+    v.content_entries = content_entries;
+    v.content_hosts_list.rows = SERVER_ROWS;
+    v.content_entries_list.rows = SERVER_ROWS;
     v.agent = agent_status();
     /* before the command file too: without a video mode the rig's capture sees no signal */
     XVideoSetMode(640, 480, 32, REFRESH_DEFAULT);
@@ -1255,6 +1473,7 @@ int main(void)
     video_up = 1;
     scan();
     load_servers();
+    load_content();
     news = update_confirm();
     /* first run: offer the bases found, since overlay builds and XBE updates need one */
     if (!xboxini_get("OverlayBase", overlay_base, sizeof(overlay_base))) {

@@ -15,10 +15,11 @@ beside the local config unless **File > Settings** names another. On first start
 the [data folder](getting-started.md#where-tes3x-keeps-your-files). Add and set up your Xbox or
 xemu in the **Target** workspace afterward.
 
-Three workspaces sit at the left of the toolbar: **Profile** edits the open profile (the tabs
+Four workspaces sit at the left of the toolbar: **Profile** edits the open profile (the tabs
 below), [**Target**](#target) shows what the selected Xbox or xemu target is doing, and
-[**Server**](#server) runs the multiplayer server. The toolbar and the command output stay the
-same in all three.
+[**Server**](#server) runs the multiplayer server. **Content** publishes completed builds and
+runs a separate [content server](content.md). The toolbar and the command output stay the same
+in all four.
 
 ## Profile
 

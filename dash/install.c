@@ -283,7 +283,7 @@ static int staging_name(const char *rel)
 
 /* Where the build goes: the build the Dash installed from this server before, else the
  * manifest's folder name under the first Games folder there is. */
-static const char *choose_folder(const struct server *s, const struct json *j, char *out,
+static const char *choose_folder(const char *source, const struct json *j, char *out,
                                  size_t n)
 {
     static struct build builds[MAX_BUILDS];
@@ -293,7 +293,7 @@ static const char *choose_folder(const struct server *s, const struct json *j, c
 
     /* D: is the disc, which an update cannot write to */
     for (i = 0; i < count; i++)
-        if (!strcmp(builds[i].server, s->name) && (builds[i].path[0] & ~0x20) != 'D') {
+        if (!strcmp(builds[i].server, source) && (builds[i].path[0] & ~0x20) != 'D') {
             snprintf(out, n, "%s", builds[i].path);
             return NULL;
         }
@@ -531,17 +531,17 @@ finished:
     return err;
 }
 
-const char *server_install(struct server *s, int replace, char *folder, size_t folder_n,
-                           char *summary, size_t summary_n, progress_fn progress)
+const char *install_ticket(const struct ticket *ticket, const char *host, const char *label,
+                           int replace, char *folder, size_t folder_n, char *summary,
+                           size_t summary_n, progress_fn progress)
 {
     static char (*files)[PATH_MAX_MGR];
     static char reason[160];
-    struct ticket t;
     struct json j = {0}, old = {0};
     struct item *items = NULL;
     struct known *had = NULL, *want = NULL;
     const struct known *k;
-    char url_base[96], url[PATH_MAX_MGR + 128], base[PATH_MAX_MGR];
+    char url_base[160], url[PATH_MAX_MGR + 128], base[PATH_MAX_MGR];
     char path[PATH_MAX_MGR], from[PATH_MAX_MGR], prev[PATH_MAX_MGR], origin[16], drive[4], hex[65];
     unsigned char *text = NULL, *old_text = NULL, digest[32];
     unsigned long long need = 0, done = 0;
@@ -553,12 +553,9 @@ const char *server_install(struct server *s, int replace, char *folder, size_t f
     int n = 0, had_n = 0, want_n = 0, i, e, count[4] = {0}, owned, others = 0, removed = 0, pass;
 
     folder[0] = summary[0] = 0;
-    if ((err = server_ticket(s, &t, progress)))
-        return err;
-    snprintf(url_base, sizeof(url_base), "http://%u.%u.%u.%u:%u/", t.addr >> 24,
-             t.addr >> 16 & 255, t.addr >> 8 & 255, t.addr & 255, t.port);
+    snprintf(url_base, sizeof(url_base), "http://%s:%u/", host, ticket->port);
     for (i = 0; i < 16; i++)
-        snprintf(url_base + strlen(url_base), 3, "%02x", t.token[i]);
+        snprintf(url_base + strlen(url_base), 3, "%02x", ticket->token[i]);
     strcat(url_base, "/");
     if (progress)
         progress("Reading the build's manifest", 0, 0);
@@ -568,7 +565,7 @@ const char *server_install(struct server *s, int replace, char *folder, size_t f
     sha256_init(&sh);
     sha256_update(&sh, text, text_n);
     sha256_final(&sh, digest);
-    if (text_n != t.size || memcmp(digest, t.sha256, 32)) {
+    if (text_n != ticket->size || memcmp(digest, ticket->sha256, 32)) {
         err = "The manifest is not the one the server named.";
         goto done;
     }
@@ -582,7 +579,7 @@ const char *server_install(struct server *s, int replace, char *folder, size_t f
         err = "The build needs a newer Dash.";
         goto done;
     }
-    if ((err = choose_folder(s, &j, folder, folder_n)))
+    if ((err = choose_folder(label, &j, folder, folder_n)))
         goto done;
 
     /* what the folder holds now; a folder without a TES3X manifest is not ours to write */
@@ -644,7 +641,7 @@ const char *server_install(struct server *s, int replace, char *folder, size_t f
             need += it->size;
     }
     mgr_log("install %s into %s: %d kept, %d to download, %d from the base, %d XBEs, %llu bytes\n",
-            s->name, folder, count[KEEP], count[FETCH], count[COPY], count[REBUILD], need);
+            label, folder, count[KEEP], count[FETCH], count[COPY], count[REBUILD], need);
 
     snprintf(drive, sizeof(drive), "%.2s\\", folder);
     if (GetDiskFreeSpaceExA(drive, &free_bytes, &total_bytes, NULL)
@@ -777,7 +774,7 @@ const char *server_install(struct server *s, int replace, char *folder, size_t f
             mgr_log("install: removed %s\n", files[i]);
         }
     stamp_load_order(&j, folder);
-    err = write_manifest(folder, (const char *)text, text_n, s->name);
+    err = write_manifest(folder, (const char *)text, text_n, label);
     snprintf(summary, summary_n, "%d downloaded, %d from the base, %d XBEs rebuilt, %d kept%s",
              count[FETCH], count[COPY], count[REBUILD], count[KEEP],
              removed ? ", old files removed" : "");
@@ -787,7 +784,7 @@ done:
     for (i = 0; items && i < want_n; i++)
         if (items[i].staged[0] && !(err && items[i].ready))
             DeleteFileA(items[i].staged);
-    mgr_log("install %s: %s, %lu ms\n", s->name, err ? err : summary, KeTickCount - start);
+    mgr_log("install %s: %s, %lu ms\n", label, err ? err : summary, KeTickCount - start);
     free(items);
     index_free(had, had_n);
     index_free(want, want_n);
@@ -796,4 +793,19 @@ done:
     free(text);
     free(old_text);
     return err;
+}
+
+const char *server_install(struct server *s, int replace, char *folder, size_t folder_n,
+                           char *summary, size_t summary_n, progress_fn progress)
+{
+    struct ticket ticket;
+    char host[32];
+    const char *err = server_ticket(s, &ticket, progress);
+
+    if (err)
+        return err;
+    snprintf(host, sizeof(host), "%u.%u.%u.%u", ticket.addr >> 24,
+             ticket.addr >> 16 & 255, ticket.addr >> 8 & 255, ticket.addr & 255);
+    return install_ticket(&ticket, host, s->name, replace, folder, folder_n, summary,
+                          summary_n, progress);
 }

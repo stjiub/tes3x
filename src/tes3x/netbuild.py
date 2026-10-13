@@ -171,20 +171,24 @@ class BuildServer:
         with self.lock:
             return self.tickets.get(token, 0) >= time.monotonic()
 
+    def build_for(self, token):
+        return self.build if self.valid(token) else None
+
     def get(self, request):
         parts = urllib.parse.unquote(urllib.parse.urlsplit(request.path).path).split("/", 3)
-        if len(parts) < 3 or parts[0] or not self.valid(parts[1]):
+        build = self.build_for(parts[1]) if len(parts) >= 3 and not parts[0] else None
+        if build is None:
             return self.reply(request, 403)
         what = parts[2]
         if what == "manifest" and len(parts) == 3:
-            return self.reply(request, 200, self.build.data)
+            return self.reply(request, 200, build.data)
         path = None
         if what == "file" and len(parts) == 4:
-            path = self.build.file(parts[3])
+            path = build.file(parts[3])
         elif what == "retail" and len(parts) == 4:
-            path = self.build.retail_file(parts[3])
+            path = build.retail_file(parts[3])
         elif what == "delta" and len(parts) == 4:
-            path = self.build.delta(parts[3])
+            path = build.delta(parts[3])
         if path is None:
             return self.reply(request, 404)
         self.reply(request, 200, path=path)

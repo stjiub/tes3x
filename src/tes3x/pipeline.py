@@ -207,7 +207,7 @@ def validate_profile(profile):
 def validate_local_config(local):
     """Validate the public tables while leaving private extension tables alone."""
     unknown = set(local) - {"default_target", "targets", "paths", "deploy", "xemu", "rig",
-                            "addons", "console", "server", "engines"}
+                            "addons", "console", "server", "content", "engines"}
     if unknown:
         raise PipelineError("unknown local config sections: " + ", ".join(sorted(unknown)))
     engines = local.get("engines", {})
@@ -232,6 +232,22 @@ def validate_local_config(local):
             raise PipelineError(f"paths.{key} must be a string")
     if "hardlink_retail" in paths and type(paths["hardlink_retail"]) is not bool:
         raise PipelineError("paths.hardlink_retail must be a boolean")
+
+    content = local.get("content", {})
+    if not isinstance(content, dict) or set(content) - {
+            "all_builds", "build", "bind", "port", "retail", "xbe"}:
+        raise PipelineError("content must be a table of content-server settings")
+    for key in ("all_builds", "retail", "xbe"):
+        if key in content and type(content[key]) is not bool:
+            raise PipelineError(f"content.{key} must be a boolean")
+    if "build" in content and (not isinstance(content["build"], list)
+                               or any(type(value) is not str for value in content["build"])):
+        raise PipelineError("content.build must be a list of paths")
+    if "bind" in content and type(content["bind"]) is not str:
+        raise PipelineError("content.bind must be a string")
+    if "port" in content and (type(content["port"]) is not int
+                              or not 1 <= content["port"] <= 65535):
+        raise PipelineError("content.port must be an integer from 1 to 65535")
 
     deploy = local.get("deploy", {})
     extra = set(deploy) - {"host", "port", "user", "password", "remote_root", "retail_root",

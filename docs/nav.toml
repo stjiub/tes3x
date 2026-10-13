@@ -17,6 +17,7 @@ pages = [
     "packaging.md",
     "optimizer.md",
     "deployment.md",
+    "content.md",
     "testing.md",
     "xemu.md",
     "diagnostics.md",

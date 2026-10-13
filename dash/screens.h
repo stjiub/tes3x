@@ -7,8 +7,8 @@
 #include "mgr.h"
 #include "ui.h"
 
-enum tab { TAB_BUILDS, TAB_SERVERS, TAB_SETTINGS, TAB_COUNT };
-enum page { PAGE_MAIN, PAGE_DETAILS, PAGE_BASES, PAGE_BROWSE, PAGE_SERVER };
+enum tab { TAB_BUILDS, TAB_SERVERS, TAB_CONTENT, TAB_SETTINGS, TAB_COUNT };
+enum page { PAGE_MAIN, PAGE_DETAILS, PAGE_BASES, PAGE_BROWSE, PAGE_SERVER, PAGE_CONTENT };
 enum setting { SET_BASE, SET_AGENT, SET_DASH, SET_QUIT, SET_COUNT };
 
 #define LINE_HEAD 1
@@ -23,7 +23,8 @@ struct line {
 
 /* What a dialog's v.confirm asks. */
 enum confirm { CONFIRM_NONE, CONFIRM_INSTALL, CONFIRM_BUILD, CONFIRM_SERVER, CONFIRM_UPDATE,
-               CONFIRM_DASH_UPDATE, CONFIRM_SERVER_KEY };
+               CONFIRM_DASH_UPDATE, CONFIRM_SERVER_KEY, CONFIRM_CONTENT_KEY,
+               CONFIRM_CONTENT_INSTALL, CONFIRM_CONTENT_REMOVE };
 
 struct view {
     int tab, page;
@@ -41,6 +42,10 @@ struct view {
     const struct server *servers;
     const char *const *server_builds; /* each server's installed build folder, or NULL */
     struct ui_list server_list;
+    const struct content_host *content_hosts;
+    struct ui_list content_hosts_list;
+    const struct content_entry *content_entries;
+    struct ui_list content_entries_list;
     struct ui_list settings;
     const char *overlay_base, *agent, *slot;
     struct ui_keyboard kb; /* over the page when open */

@@ -9,7 +9,7 @@
 #define LIST_TOP (UI_PANEL_TOP + 8)
 #define SCROLL_X (UI_RIGHT - 10)
 
-static const char *const tab_names[TAB_COUNT] = {"Builds", "Servers", "Settings"};
+static const char *const tab_names[TAB_COUNT] = {"Builds", "Servers", "Content", "Settings"};
 
 /* A two-line row: title and an optional right-hand note, then a smaller line below. */
 static void row(int y, int selected, const char *title, const char *note, gfx_color note_color,
@@ -92,6 +92,48 @@ static void draw_servers(const struct view *v)
             s->online == 1 ? ui->accent : ui->bad, sub, ui->dim);
     }
     ui_scrollbar(SCROLL_X, LIST_TOP, SERVER_ROWS * ROW_H, &v->server_list);
+}
+
+static void draw_content_hosts(const struct view *v)
+{
+    const struct content_host *host;
+    int i, y;
+
+    if (!v->content_hosts_list.count) {
+        empty("No content servers", "Add a content server by its address to browse builds and "
+              "install them for standalone play.");
+        return;
+    }
+    for (i = v->content_hosts_list.top, y = LIST_TOP;
+         i < v->content_hosts_list.count && i < v->content_hosts_list.top + SERVER_ROWS;
+         i++, y += ROW_H) {
+        host = &v->content_hosts[i];
+        row(y, i == v->content_hosts_list.sel, host->name, NULL, ui->dim,
+            host->has_key ? host->fingerprint : "Not contacted yet", ui->dim);
+    }
+    ui_scrollbar(SCROLL_X, LIST_TOP, SERVER_ROWS * ROW_H, &v->content_hosts_list);
+}
+
+static void draw_content_entries(const struct view *v)
+{
+    const struct content_entry *entry;
+    char size[24], sub[128];
+    int i, y;
+
+    if (!v->content_entries_list.count) {
+        empty("No builds offered", "This content server currently offers no completed builds.");
+        return;
+    }
+    for (i = v->content_entries_list.top, y = LIST_TOP;
+         i < v->content_entries_list.count && i < v->content_entries_list.top + SERVER_ROWS;
+         i++, y += ROW_H) {
+        entry = &v->content_entries[i];
+        ui_size(size, sizeof(size), entry->bytes);
+        snprintf(sub, sizeof(sub), "%s  \xB7  %s layout  \xB7  %.12s", entry->id,
+                 entry->layout, entry->build);
+        row(y, i == v->content_entries_list.sel, entry->name, size, ui->dim, sub, ui->dim);
+    }
+    ui_scrollbar(SCROLL_X, LIST_TOP, SERVER_ROWS * ROW_H, &v->content_entries_list);
 }
 
 static void draw_lines(const struct view *v, const char *title, const char *sub)
@@ -223,6 +265,10 @@ static void draw_page(const struct view *v)
     static const struct ui_hint server[] = {{UI_A, "Join"}, {UI_X, "Update build"},
                                             {UI_Y, "Password"}, {UI_B, "Back"},
                                             {UI_BACK, "Delete"}};
+    static const struct ui_hint content[] = {{UI_A, "Browse"}, {UI_X, "Add"},
+                                              {UI_Y, "Reload"}, {UI_BACK, "Delete"}};
+    static const struct ui_hint entries[] = {{UI_A, "Install"}, {UI_Y, "Reload"},
+                                              {UI_B, "Back"}};
     const struct ui_hint *hints = NULL;
     char status[96];
     int n = 0;
@@ -253,6 +299,14 @@ static void draw_page(const struct view *v)
         hints = servers, n = 5;
         if (!v->server_list.count)
             hints = servers + 1, n = 2;
+    } else if (v->tab == TAB_CONTENT && v->page == PAGE_CONTENT) {
+        draw_content_entries(v);
+        hints = entries, n = 3;
+    } else if (v->tab == TAB_CONTENT) {
+        draw_content_hosts(v);
+        hints = content, n = 4;
+        if (!v->content_hosts_list.count)
+            hints = content + 1, n = 1;
     } else if (v->page == PAGE_BASES) {
         draw_bases(v);
         hints = v->base_list.sel == v->base_count ? choose : bases, n = 2;
@@ -297,7 +351,7 @@ void screen_draw(const struct view *v)
         lines[i] = v->text[i];
     if (v->confirm)
         ui_dialog(v->title, lines, 4, 0, v->confirm == CONFIRM_DASH_UPDATE ? dash_update :
-                  v->confirm == CONFIRM_SERVER_KEY ? server_key :
+                  v->confirm == CONFIRM_SERVER_KEY || v->confirm == CONFIRM_CONTENT_KEY ? server_key :
                   v->confirm == CONFIRM_UPDATE ? update : confirm, 2);
     else
         ui_dialog(v->title, lines, 4, 0, v->dismiss ? &close : NULL, v->dismiss ? 1 : 0);
