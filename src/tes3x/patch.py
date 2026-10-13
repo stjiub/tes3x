@@ -344,6 +344,13 @@ def _multi_bsa(x, value, ctx):
         raise PatchError("multi-bsa: needs `payload` first, with an archive_load hook in its "
                          "manifest")
     target = int(str(target), 16)
+    site_va = archive_load_site(x)
+    was, call_off = x.patch_call(site_va, target)
+    return [(call_off, 5, "Archive::Load call 0x%08X: 0x%08X -> 0x%08X" % (site_va, was, target))]
+
+
+def archive_load_site(x):
+    """The sole call following the retail archive path literal."""
     off = find_unique(x.data, b":\\Data Files\\Morrowind.bsa\x00", "archive path")
     string_va = x.off_to_va(off - 1)
     if string_va is None:
@@ -354,9 +361,7 @@ def _multi_bsa(x, value, ctx):
     if len(sites) != 1:
         raise PatchError("multi-bsa: %d push/call site(s) for the archive path, expected 1"
                          % len(sites))
-    site_va = x.off_to_va(sites[0]) + 5
-    was, call_off = x.patch_call(site_va, target)
-    return [(call_off, 5, "Archive::Load call 0x%08X: 0x%08X -> 0x%08X" % (site_va, was, target))]
+    return x.off_to_va(sites[0]) + 5
 
 
 def widen_opcode_bounds(x, ceiling):

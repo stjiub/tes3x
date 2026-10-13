@@ -188,7 +188,11 @@ __attribute__((naked)) void tes3x_archive_hook(void)
         "movl 0x8(%esp), %ebx\n\t" /* the path argument */
         "pushl %ecx\n\t"           /* save this across the call */
         "pushl %ebx\n\t"
+#ifdef TES3X_PORTABLE_BINDINGS
+        "movl _tes3x_binding_values+" TES3X_STR(TES3X_ARCHIVE_LOAD_BIND_OFFSET) ", %eax\n\t"
+#else
         "movl $" TES3X_STR(TES3X_ARCHIVE_LOAD) ", %eax\n\t"
+#endif
         "call *%eax\n\t" /* pops its own argument */
         "popl %edx\n\t"
         "pushl %eax\n\t" /* preserve the original's result */

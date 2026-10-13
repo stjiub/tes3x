@@ -33,17 +33,18 @@ limits keep their original values.
 
 ## Using it
 
-The pipeline builds and applies the payload whenever a selected patch needs one. Directly, it is
+The pipeline selects a matching prebuilt payload or builds one from source when a selected patch
+needs code. Directly, it is
 `--apply payload=FILE.pe`, applied before any patch that uses a hook.
 
 For a payload using diagnostics, console, networking and multiplayer, pass
 `--portable-bindings` to `tes3x payload` with those sources. Apply the resulting PE and adjacent
-manifest to either supported GOTY engine with `tes3x patch`. The pipeline currently builds its
-payload from source for each profile.
+manifest to either supported GOTY engine with `tes3x patch`. The
+[pipeline](../docs/pipeline.md#4-build-the-payload-and-patch-the-xbe) lists its prebuilt choices.
 
 ## Compatibility and limits
 
 Building from source needs LLVM (`clang` and `lld-link`). An older fixed payload must land at its
-linked address. The runtime binding table covers the diagnostics, console, networking and
-multiplayer source set on the sampled NTSC and PAL GOTY engines; other source sets still use
+linked address. The runtime binding table covers `multi-bsa`, diagnostics, console, networking
+and multiplayer on the sampled NTSC and PAL GOTY engines; other source sets still use
 image-specific builds. Content locators reject an engine whose expected sites do not match.

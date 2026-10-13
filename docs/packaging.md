@@ -10,7 +10,7 @@ lookup scans the whole folder, so how files are packaged matters for load times 
 
 | mode | what ships | needs |
 |---|---|---|
-| `delta-bsa` (default) | retail `Morrowind.bsa` unchanged, plus the mod files in their own archive, `tes3xmods.bsa` | LLVM, for [multi-BSA loading](../patches/multi-bsa.md) |
+| `delta-bsa` (default) | retail `Morrowind.bsa` unchanged, plus the mod files in their own archive, `tes3xmods.bsa` | a matching prebuilt payload, or LLVM for [multi-BSA loading](../patches/multi-bsa.md) |
 | `merged-bsa` | mod files merged into a rebuilt `Morrowind.bsa` | nothing extra |
 | `loose` | every mod file loose in `Data Files`, retail archive unchanged | nothing extra |
 

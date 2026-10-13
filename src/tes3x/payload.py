@@ -18,7 +18,8 @@ import subprocess
 import tes3x.inject as tes3x_inject
 from tes3x.multi_signatures import SIGNATURES as MULTI_SIGNATURES, find_multi_signature
 from tes3x.paths import bundled, checkout, resource
-from tes3x.patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, find_call_sites, find_mcp37_context,
+from tes3x.patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, archive_load_site,
+                         find_call_sites, find_mcp37_context,
                          find_mcp125_context, find_save_allowed_context,
                          find_script_ip_restore_call, find_transition_calls, scene_form)
 
@@ -36,8 +37,6 @@ LLVM_DIRS = (Path("C:/Program Files/LLVM/bin"), Path("C:/msys64/clang64/bin"),
 CFLAGS = ("-target", "i386-pc-win32", "-march=pentium3", "-Os", "-ffreestanding", "-nostdlib",
           "-fno-builtin", "-fno-stack-protector", "-fno-asynchronous-unwind-tables")
 
-# The archive hook replaces the call to Archive::Load at this site.
-ARCH_SITE = 0x000D4E06
 DATA_HANDLER = 0x003CB5F8
 SERVICE_ACTOR = 0x001CD530  # ui::getServiceActor: the MenuDialog partner's mobile, or 0
 # What the SetPos, SetAngle and PlayGroup handlers call, to place and animate a reference without
@@ -266,7 +265,7 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
     if portable_bindings:
         supported = {"tes3xhook.c", "tes3xlog.c", "tes3xini.c", "tes3xdiag.c",
                      "tes3xconsole.c", "tes3xnet.c", "tes3xmulti.c", "tes3xlaunch.c",
-                     "monocypher.c", "tes3xnoise.c", "tes3xcrt.c"}
+                     "monocypher.c", "tes3xnoise.c", "tes3xcrt.c", "tes3xarch.c"}
         if unsupported := names - supported:
             raise PayloadError("portable bindings do not cover " + ", ".join(sorted(unsupported)))
     if "tes3xnet.c" in names:
@@ -343,7 +342,7 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
 
     wanted, extra = {}, {}
     if "tes3xarch.c" in names:
-        arch_site = int(address("ARCH_SITE", ARCH_SITE), 16)
+        arch_site = int(os.environ.get("ARCH_SITE", hexva(archive_load_site(image))), 16)
         load = tes3x_inject.call_target(image, arch_site)
         print(f"archive hook: call site {hexva(arch_site)} -> Archive::Load {hexva(load)}")
         define("ARCHIVE_LOAD", hexva(load))
@@ -957,7 +956,7 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
                 expression = refs[0] if len(refs) == 1 and not name.endswith(("_SITES", "_SLOTS")) \
                     else "{" + ",".join(refs) + "}"
                 stream.write(f"#define TES3X_{name} {expression}\n")
-                if name in ("DIAG_UPDATE", "NET_DATA_HANDLER"):
+                if name in ("DIAG_UPDATE", "NET_DATA_HANDLER", "ARCHIVE_LOAD"):
                     stream.write(f"#define TES3X_{name}_BIND_OFFSET {first * 4}\n")
             stream.write(f"#define TES3X_BINDING_COUNT {len(binding_names)}\n")
     objects = []
@@ -1000,7 +999,7 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
                     "engine_names": binding_names, "sources": sources}
     # Beside the payload, so tes3x patch can apply it without a toolchain or the map.
     manifest = out / "tes3xhook.json"
-    with open(manifest, "w", encoding="utf-8") as stream:
+    with open(manifest, "w", encoding="utf-8", newline="\n") as stream:
         json.dump({"base": int(va, 16), "payload_hooks": list(wanted), "hooks": hooks,
                    **({"bindings": bindings} if bindings else {})},
                   stream, indent=2)

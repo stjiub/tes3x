@@ -6,8 +6,9 @@ regenerating the generated pages and making releases. Playing builds needs none 
 
 ## Setting up a checkout
 
-You need Python 3.12 or newer and git. Building needs [LLVM](https://releases.llvm.org)
-(`clang` and `lld-link`) on `PATH` or in `paths.llvm`, and installing `.7z` and `.rar` mods
+You need Python 3.12 or newer and git. Source payload builds need
+[LLVM](https://releases.llvm.org) (`clang` and `lld-link`) on `PATH` or in `paths.llvm`, and
+installing `.7z` and `.rar` mods
 needs [7-Zip](https://www.7-zip.org).
 
 ```powershell
@@ -73,16 +74,21 @@ tes3x package --zip
 writes `build/package/TES3X-<version>/` and `TES3X-<version>.zip`: an embedded Python 3.12 with
 TES3X and its packages installed from a wheel built from the checkout, `TES3X.exe`, which starts
 the GUI with that Python, and `tes3x-cli.exe`, which runs `tes3x` commands in a terminal.
-`externals/` holds 7-Zip and LLVM's `clang` and `lld-link`, each with its license.
+`externals/` holds 7-Zip with its license. The wheel carries the checked prebuilt payloads.
 
 It also carries the [TES3X Dash](deployment.md#installing-tes3x-dash) as
 `dash/default.xbe` and its launcher as `dash/launcher.xbe`, built with nxdk (`paths.nxdk`),
 or taken from `--dash XBE` and `--launcher XBE`. `--no-dash` leaves both out.
 
 Building the folder needs a C compiler for the two launchers (MSYS2's `gcc` or `clang`, or
-`--cc`). The first build downloads Python, 7-Zip and LLVM, about 880 MB, mostly the LLVM release,
-checks each against a pinned SHA-256, and keeps them in the data folder's `package` folder for
-later builds.
+`--cc`). The first build downloads Python and 7-Zip, checks each against a pinned SHA-256, and
+keeps them in the data folder's `package` folder for later builds. Developers who use
+`--build-payload` or unsupported source sets provide LLVM separately.
+
+To rebuild the seven bundled payloads after changing their sources, run
+`python tools/build_prebuilt_payloads.py RETAIL_XBE payloads --work build/prebuilt` with a
+locally supplied GOTY engine and LLVM available. The script writes the PE files, binding
+manifests and SHA-256 index; review and commit them together. It does not copy the input XBE.
 
 The folder's version, in its `VERSION` file, is `X.Y.Z` at a `vX.Y.Z` tag, and
 `X.Y.Z-dev.N+gSHA` for a commit N past it, with `.dirty` when the checkout has uncommitted

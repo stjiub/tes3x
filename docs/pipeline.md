@@ -121,16 +121,31 @@ or `arrange`.
 
 ## 4. Build the payload and patch the XBE
 
-When a selected patch needs code, `tes3x payload` compiles the [payload](../patches/payload.md)
-for your `morrowind.xbe` with clang and lld-link. `tes3x patch` then applies every selected
-patch to a copy of the XBE. Payload pointers and hook addresses relocate to the added section;
-engine bindings still require a build for the input engine. Byte-pattern patches locate their
-sites by content. `--title` and a save pool also patch the
+When a selected patch needs code, the pipeline uses a bundled [payload](../patches/payload.md)
+when the profile matches one of these source sets exactly:
+
+| Base patches | Also available with |
+|---|---|
+| Diagnostics | `multi-bsa` |
+| Diagnostics and console | `multi-bsa` |
+| Diagnostics, console, network and multiplayer | `multi-bsa` |
+| `multi-bsa` alone | — |
+
+These seven exact sets cover console play, multiplayer and the default modded `delta-bsa` path
+without compiling unused developer patches into every build. The largest section is 654,860
+bytes (about 0.63 MiB). They use
+patch-time bindings for the sampled NTSC and PAL GOTY engines. A
+matching profile with no compile-time flags needs no compiler. Other patch sets still use
+`tes3x payload` with clang and lld-link; `--build-payload` forces that source build even when a
+prebuilt payload matches. `tes3x patch` applies the selected patches to a copy of the XBE.
+Payload pointers and hook addresses relocate to the added section, and the patcher fills the
+engine binding table from the input XBE. Byte-pattern patches locate their sites by content.
+`--title` and a save pool also patch the
 launcher, `Default.xbe`; a save pool gives the build its own saves (see `save_pool` in the
 [configuration reference](configuration.md#profile)).
 
-This stage needs LLVM whenever a patch needs code; the pipeline checks for it before copying
-anything. `clang not found` means LLVM is not installed or `paths.llvm` points elsewhere. A
+When a source build is needed, the pipeline checks for LLVM before copying anything. `clang not
+found` means LLVM is not installed or `paths.llvm` points elsewhere. A
 patch that cannot find its site fails with the number of matches it found, which means the XBE is
 not the retail GOTY build the patch expects.
 

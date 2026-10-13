@@ -1,0 +1,38 @@
+{
+  "base": 4194304,
+  "payload_hooks": [
+    "archive_load"
+  ],
+  "hooks": {
+    "archive_load": "0x0000000000401db2"
+  },
+  "bindings": {
+    "orig_entry": "0x0000000000403678",
+    "thunk_slots": "0x0000000000403080",
+    "thunk_count": 379,
+    "required_thunks": [
+      8,
+      67,
+      128,
+      167,
+      172,
+      181,
+      187,
+      190,
+      198,
+      211,
+      219,
+      236
+    ],
+    "engine_values": "0x000000000040367c",
+    "engine_names": [
+      "ARCHIVE_LOAD[0]"
+    ],
+    "sources": [
+      "tes3xhook.c",
+      "tes3xlog.c",
+      "tes3xini.c",
+      "tes3xarch.c"
+    ]
+  }
+}

@@ -21,6 +21,7 @@ from tes3x.pack import set_ini_key, write_invalidation
 from tes3x.patch import scene_form
 import tes3x.patches as registry
 from tes3x.payload import PayloadError, build_payload, find_tool
+from tes3x.prebuilt_payload import select_prebuilt
 from tes3x.net import write_ghost_plugin
 from tes3x.agent import key_fingerprint, load_or_create_key
 from tes3x.paths import (DEFAULT_REMOTE_ROOT, checkout, docs_url, local_config, require_paths,
@@ -768,6 +769,8 @@ def main(argv=None):
     ap.add_argument("--vanilla", help="clean retail game root containing Data Files and both XBEs")
     ap.add_argument("--llvm", help="folder holding clang and lld-link, for engine fixes "
                                    "(default: paths.llvm, then PATH)")
+    ap.add_argument("--build-payload", action="store_true",
+                    help="compile the payload from source even when a prebuilt variant matches")
     ap.add_argument("--build-root", help="parent for profile outputs")
     ap.add_argument("--out", help="complete pipeline output (default: BUILD_ROOT/PROFILE_NAME)")
     ap.add_argument("--preset", choices=PRESETS + tuple(PRESET_ALIASES))
@@ -1004,8 +1007,17 @@ def main(argv=None):
     copy = link_or_copy if hardlink else shutil.copy2
     llvm_value = args.llvm or paths.get("llvm")
     llvm = config_path(llvm_value, base).resolve() if llvm_value else None
+    payload_flags = " ".join(filter(None, [
+        preference_flags(profile),
+        "-DTES3X_DIAG_TEST_FAULTS" if args.diag_test_faults else "",
+        os.environ.get("EXTRA_CFLAGS", "")]))
+    try:
+        prebuilt = (select_prebuilt(plan["sources"], payload_flags)
+                    if plan["needs_payload"] and not args.build_payload else None)
+    except (OSError, ValueError) as exc:
+        raise PipelineError(str(exc)) from exc
     toolchain = {}
-    if plan["needs_payload"]:
+    if plan["needs_payload"] and prebuilt is None:
         # Fail before any copying, not halfway through the build.
         clang = os.environ.get("CLANG") or find_tool("clang", llvm)
         lld = os.environ.get("LLD") or find_tool("lld-link", llvm)
@@ -1048,14 +1060,17 @@ def main(argv=None):
 
         payload = hook_out / "tes3xhook.pe"
         if plan["needs_payload"]:
-            print("\n== payload: " + " ".join(plan["sources"]), flush=True)
-            build_payload(retail_xbe, plan["sources"], hook_out,
-                          user_flags=" ".join(filter(None, [
-                              preference_flags(profile),
-                              "-DTES3X_DIAG_TEST_FAULTS" if args.diag_test_faults else "",
-                              os.environ.get("EXTRA_CFLAGS", "")])),
-                          llvm_dir=llvm,
-                          check_xbe=hook_out / "injected-check.xbe")
+            if prebuilt:
+                name, pe, manifest = prebuilt
+                print(f"\n== payload: prebuilt {name}", flush=True)
+                hook_out.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(pe, payload)
+                shutil.copy2(manifest, hook_out / "tes3xhook.json")
+            else:
+                print("\n== payload: " + " ".join(plan["sources"]), flush=True)
+                build_payload(retail_xbe, plan["sources"], hook_out,
+                              user_flags=payload_flags, llvm_dir=llvm,
+                              check_xbe=hook_out / "injected-check.xbe")
 
         patch_specs = []
         if plan["needs_payload"]:
@@ -1211,6 +1226,9 @@ def main(argv=None):
             "retail_xbe_sha1": hashlib.sha1(retail_xbe.read_bytes()).hexdigest(),
             "morrowind_xbe_sha256": sha256_file(staged / "morrowind.xbe"),
         }
+        if prebuilt:
+            record["prebuilt_payload"] = {"name": prebuilt[0],
+                                          "sha256": sha256_file(prebuilt[1])}
         if pool:
             record["save_pool"] = {"name": pool_name, "id": f"{pool:08X}"}
         deltas = work / "deltas"

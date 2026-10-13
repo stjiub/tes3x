@@ -11,6 +11,11 @@ No official releases yet. The first public release is in preparation.
   once for the sampled NTSC and PAL GOTY engines; `tes3x patch` fills the engine addresses,
   original entry and kernel import slots from the user's XBE. Other payload source sets still
   need an image-specific build. See [payload injection](patches/payload.md).
+- The pipeline uses a matching prebuilt payload for diagnostics, console and multiplayer, with
+  or without `multi-bsa`; these builds no longer need a local compiler. Use `--build-payload` to
+  compile from source. Other patch combinations still require LLVM. See [pipeline](docs/pipeline.md).
+- The portable folder now carries checked prebuilt payloads instead of LLVM. Install LLVM
+  separately for source builds or patch combinations outside the bundled sets.
 - Payload sections and hook addresses can relocate within the same engine image. Existing
   fixed payloads still require their linked address; building from source still needs LLVM.
   See [payload injection](patches/payload.md).
