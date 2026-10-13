@@ -7,6 +7,7 @@ import hashlib
 import http.server
 import json
 import secrets
+import ssl
 import struct
 import threading
 import time
@@ -30,6 +31,7 @@ def dash_info(name, description, players, maximum):
 TICKET_SECONDS = 6 * 3600
 TICKETS = 4096
 MAX_CONNECTIONS = 32
+MAX_PER_CLIENT = 8
 IDLE_TIMEOUT = 30
 ORIGINS = ("build", "retail", "xbe")
 SERVED_BY_DEFAULT = ("build",)
@@ -119,7 +121,8 @@ class Build:
 class BuildServer:
     """The HTTP side: GET /TICKET/manifest, /TICKET/file/PATH and /TICKET/delta/SHA256."""
 
-    def __init__(self, build, bind, port, log=print, max_connections=MAX_CONNECTIONS):
+    def __init__(self, build, bind, port, log=print, max_connections=MAX_CONNECTIONS, tls=None,
+                 per_client=MAX_PER_CLIENT):
         self.build, self.log = build, log
         self.tickets = {}
         self.lock = threading.Lock()
@@ -141,6 +144,7 @@ class BuildServer:
         class LimitedHTTPServer(http.server.ThreadingHTTPServer):
             def __init__(self, address, handler):
                 self.slots = threading.BoundedSemaphore(max_connections)
+                self.clients = {}
                 super().__init__(address, handler)
 
             def get_request(self):
@@ -149,20 +153,42 @@ class BuildServer:
                 return request, address
 
             def process_request(self, request, address):
+                with owner.lock:
+                    if self.clients.get(address[0], 0) >= per_client:
+                        request.close()
+                        return
+                    self.clients[address[0]] = self.clients.get(address[0], 0) + 1
                 if not self.slots.acquire(blocking=False):
+                    self.release_client(address)
                     self.shutdown_request(request)
                     return
                 try:
                     super().process_request(request, address)
                 except Exception:
                     self.slots.release()
+                    self.release_client(address)
                     raise
+
+            def release_client(self, address):
+                with owner.lock:
+                    left = self.clients.get(address[0], 1) - 1
+                    if left:
+                        self.clients[address[0]] = left
+                    else:
+                        self.clients.pop(address[0], None)
 
             def process_request_thread(self, request, address):
                 try:
+                    if tls is not None:
+                        try:
+                            request = tls.wrap_socket(request, server_side=True)
+                        except (OSError, ssl.SSLError):
+                            request.close()
+                            return
                     super().process_request_thread(request, address)
                 finally:
                     self.slots.release()
+                    self.release_client(address)
 
         self.http = LimitedHTTPServer((bind, port), Handler)
         self.http.daemon_threads = True
@@ -224,6 +250,9 @@ class BuildServer:
     def on_transfer(self, token, what, sent):
         pass
 
+    def pace(self, address, sent):
+        """Called after each chunk sent to address; a subclass may sleep to cap bandwidth."""
+
     def reply(self, request, status, data=b"", path=None, token=None, what=""):
         size = path.stat().st_size if path else len(data)
         start = 0
@@ -263,6 +292,7 @@ class BuildServer:
                 left -= len(chunk)
                 if token:
                     self.on_transfer(token, what, len(chunk))
+                self.pace(request.client_address[0], len(chunk))
 
     def close(self):
         self.http.shutdown()

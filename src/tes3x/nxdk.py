@@ -108,8 +108,12 @@ def build(source, out, defines=(), config=None):
     flags = cflags + "\n" + (Path(source) / "Makefile").read_text(encoding="utf-8")
     if (keys / "release.pub").is_file():
         flags += (keys / "release.pub").read_text(encoding="ascii")
+    # vendored libraries are configured by a header here, but their objects do not depend on it
+    for config_header in sorted(Path(source).glob("*_config.h")):
+        flags += config_header.read_text(encoding="utf-8")
     if stamp.is_file() and stamp.read_text(encoding="utf-8") != flags:
-        for obj in [*out.rglob("*.obj"), *(out.parent / "hooks").glob("*.obj")]:
+        for obj in [*out.rglob("*.obj"), *(out.parent / "hooks").glob("*.obj"),
+                    *(obj for name in VENDOR for obj in (out.parent / name).rglob("*.obj"))]:
             obj.unlink()
     shutil.copytree(source, out, dirs_exist_ok=True)
     hooks = Path(source).resolve().parent / "hooks"

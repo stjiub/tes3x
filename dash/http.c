@@ -1,6 +1,8 @@
 /* HTTP and HTTPS GET into memory or a file, following redirects: the update feed and servers'
  * builds. TLS is mbedTLS (tls_config.h) without certificate checks: what is fetched is trusted by
- * a signature or by a hash that came through the server's session. */
+ * a signature or by a hash that came through the server's session. A content library is the
+ * exception: its signed replies name its certificate's SHA-256, and http_pin makes every
+ * connection to it present that certificate before a ticket is sent. */
 
 #include "mgr.h"
 #include "sha256.h"
@@ -26,6 +28,39 @@ struct conn {
     mbedtls_ssl_context ssl;
     mbedtls_ssl_config conf;
 };
+
+static struct {
+    char host[64], port[8];
+    unsigned char cert[32];
+    int on;
+} pin;
+static unsigned char seen_cert[32];
+static int seen_valid;
+/* The pinned server's last session, so each file's connection skips the key exchange. */
+static struct {
+    char host[64], port[8];
+    mbedtls_ssl_session session;
+    int valid;
+} resume;
+
+void http_pin(const char *host, unsigned port, const unsigned char cert[32])
+{
+    pin.on = 0;
+    if (!cert || strlen(host) >= sizeof(pin.host))
+        return;
+    snprintf(pin.host, sizeof(pin.host), "%s", host);
+    snprintf(pin.port, sizeof(pin.port), "%u", port);
+    memcpy(pin.cert, cert, 32);
+    pin.on = 1;
+}
+
+int http_last_cert(unsigned char out[32])
+{
+    if (!seen_valid)
+        return -1;
+    memcpy(out, seen_cert, 32);
+    return 0;
+}
 
 /* Session keys for public downloads need not be secret, only fresh: BLAKE2b over the cycle
  * counter, sampled as network waits make it vary. */
@@ -128,7 +163,9 @@ static void conn_close(struct conn *c)
 static const char *conn_open(struct conn *c, const char *host, const char *port, int tls)
 {
     struct addrinfo hints = {0}, *res = NULL;
-    int r, tries;
+    const mbedtls_x509_crt *peer;
+    struct sha256 sh;
+    int r, tries, pinned = pin.on && !strcmp(pin.host, host) && !strcmp(pin.port, port);
 
     memset(c, 0, sizeof(*c));
     c->sock = -1;
@@ -162,12 +199,34 @@ static const char *conn_open(struct conn *c, const char *host, const char *port,
         return "TLS setup failed";
     }
     mbedtls_ssl_set_bio(&c->ssl, &c->sock, bio_send, bio_recv, NULL);
+    if (pinned && resume.valid && !strcmp(resume.host, host) && !strcmp(resume.port, port))
+        mbedtls_ssl_set_session(&c->ssl, &resume.session);
     while ((r = mbedtls_ssl_handshake(&c->ssl)) != 0)
         if (r != MBEDTLS_ERR_SSL_WANT_READ && r != MBEDTLS_ERR_SSL_WANT_WRITE) {
             mgr_log("http: TLS handshake with %s: -0x%04X\n", host, (unsigned)-r);
             conn_close(c);
             return "the secure connection failed";
         }
+    seen_valid = 0;
+    if ((peer = mbedtls_ssl_get_peer_cert(&c->ssl)) != NULL) {
+        sha256_init(&sh);
+        sha256_update(&sh, peer->raw.p, peer->raw.len);
+        sha256_final(&sh, seen_cert);
+        seen_valid = 1;
+    }
+    if (pinned && (!seen_valid || crypto_verify32(seen_cert, pin.cert))) {
+        mgr_log("http: %s presented a certificate its key did not sign\n", host);
+        conn_close(c);
+        return "the server's certificate is not the one its key signed";
+    }
+    if (pinned) {
+        if (resume.valid)
+            mbedtls_ssl_session_free(&resume.session);
+        mbedtls_ssl_session_init(&resume.session);
+        resume.valid = !mbedtls_ssl_get_session(&c->ssl, &resume.session);
+        snprintf(resume.host, sizeof(resume.host), "%s", host);
+        snprintf(resume.port, sizeof(resume.port), "%s", port);
+    }
     return NULL;
 }
 

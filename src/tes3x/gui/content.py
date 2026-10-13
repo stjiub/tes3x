@@ -5,11 +5,13 @@ import sys
 from pathlib import Path
 
 import tomlkit
-from PySide6.QtCore import QProcess, Qt
-from PySide6.QtWidgets import (QCheckBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel,
-                               QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox,
-                               QSplitter, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
+from PySide6.QtCore import QProcess, Qt, QTimer
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
+                               QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
+                               QPlainTextEdit, QPushButton, QSpinBox, QSplitter, QTabWidget,
+                               QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
+from tes3x import content as tes3x_content
 from tes3x import manifest
 
 
@@ -47,16 +49,33 @@ class ContentPage(QWidget):
         self.port.setValue(26510)
         self.retail = QCheckBox("Serve retail files")
         self.xbe = QCheckBox("Serve whole XBEs")
+        self.access = QComboBox()
+        self.access.addItem("Private", "private")
+        self.access.addItem("Public", "public")
+        self.access.setToolTip("Private: approved Xboxes only. Public: any Xbox that reaches "
+                               "the port.")
+        self.client_rate = QSpinBox()
+        self.client_rate.setRange(0, 10000)
+        self.client_rate.setSuffix(" Mbit/s")
+        self.client_rate.setSpecialValueText("Unlimited")
         self.with_multiplayer = QCheckBox("Start content server with multiplayer server")
         self.with_multiplayer.setToolTip("Starts this library when a local multiplayer server "
                                         "starts. Each server still stops independently.")
         form.addRow("Library", self.all_builds)
         form.addRow("", self.with_multiplayer)
-        form.addRow("Listen address", self.bind)
-        form.addRow("Port", self.port)
         form.addRow("Files", self.retail)
         form.addRow("", self.xbe)
-        layout.addLayout(form)
+        network = QFormLayout()
+        network.addRow("Listen address", self.bind)
+        network.addRow("Port", self.port)
+        network.addRow("Access", self.access)
+        network.addRow("Per Xbox", self.client_rate)
+        columns = QHBoxLayout()
+        columns.addLayout(form)
+        columns.addSpacing(24)
+        columns.addLayout(network)
+        columns.addStretch()
+        layout.addLayout(columns)
         self.splitter = QSplitter(Qt.Orientation.Vertical)
         self.splitter.setChildrenCollapsible(False)
         layout.addWidget(self.splitter, 1)
@@ -78,7 +97,12 @@ class ContentPage(QWidget):
             buttons.addWidget(button)
         buttons.addStretch()
         builds_layout.addLayout(buttons)
-        self.splitter.addWidget(builds_panel)
+        self.tabs = QTabWidget()
+        self.tabs.addTab(builds_panel, "Sources")
+        self.tabs.addTab(self.revisions_panel(), "Revisions")
+        self.tabs.addTab(self.xboxes_panel(), "Xboxes")
+        self.tabs.currentChanged.connect(lambda _index: self.refresh_library())
+        self.splitter.addWidget(self.tabs)
         activity_panel = QWidget()
         activity_layout = QVBoxLayout(activity_panel)
         activity_layout.setContentsMargins(0, 0, 0, 0)
@@ -106,7 +130,208 @@ class ContentPage(QWidget):
         self.retail.toggled.connect(self.save)
         self.xbe.toggled.connect(self.save)
         self.with_multiplayer.toggled.connect(self.save)
+        self.access.currentIndexChanged.connect(lambda _index: self.save())
+        self.client_rate.editingFinished.connect(self.save)
+        self.library_timer = QTimer(self)
+        self.library_timer.setInterval(5000)
+        self.library_timer.timeout.connect(self.refresh_library)
         self.set_status("Stopped")
+
+    def revisions_panel(self):
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.revisions = QTreeWidget()
+        self.revisions.setHeaderLabels(["Entry", "Name", "Revision", "Build", "State",
+                                        "Description"])
+        self.revisions.setRootIsDecorated(False)
+        layout.addWidget(self.revisions, 1)
+        buttons = QHBoxLayout()
+        self.edit_button = QPushButton("Edit…")
+        self.edit_button.clicked.connect(self.edit_entry)
+        self.withdraw_button = QPushButton("Withdraw")
+        self.withdraw_button.clicked.connect(lambda: self.set_listed(False))
+        self.restore_button = QPushButton("Restore")
+        self.restore_button.clicked.connect(lambda: self.set_listed(True))
+        self.prune_button = QPushButton("Delete withdrawn…")
+        self.prune_button.clicked.connect(self.prune)
+        for button in (self.edit_button, self.withdraw_button, self.restore_button,
+                       self.prune_button):
+            buttons.addWidget(button)
+        buttons.addStretch()
+        layout.addLayout(buttons)
+        return panel
+
+    def xboxes_panel(self):
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.xboxes = QTreeWidget()
+        self.xboxes.setHeaderLabels(["Fingerprint", "State", "Label", "Since"])
+        self.xboxes.setRootIsDecorated(False)
+        layout.addWidget(self.xboxes, 1)
+        buttons = QHBoxLayout()
+        self.approve_button = QPushButton("Approve…")
+        self.approve_button.clicked.connect(self.approve)
+        self.revoke_button = QPushButton("Revoke")
+        self.revoke_button.clicked.connect(self.revoke)
+        buttons.addWidget(self.approve_button)
+        buttons.addWidget(self.revoke_button)
+        buttons.addStretch()
+        layout.addLayout(buttons)
+        return panel
+
+    def state_dir(self):
+        return self.window.work_dir() / "content-state"
+
+    def library(self):
+        return tes3x_content.Library(self.state_dir(), self.state_dir(), [], False, ("build",))
+
+    def refresh_library(self):
+        state = self.state_dir()
+        try:
+            history = tes3x_content.read_publications(state)
+            access = tes3x_content.read_access(state)
+            pending = tes3x_content.read_pending(state)
+        except (OSError, ValueError) as error:
+            self.log.appendPlainText(f"content library: {error}")
+            return
+        selected = self.revisions.currentItem()
+        selected = selected.data(0, 0x0100) if selected else None
+        self.revisions.clear()
+        for entry_id, rows in history.items():
+            for row in reversed(rows):
+                item = QTreeWidgetItem([entry_id, row["name"], row["revision"][:12],
+                                        row["build"][:12],
+                                        "Listed" if row["listed"] else "Withdrawn",
+                                        row["description"]])
+                item.setData(0, 0x0100, (entry_id, row["revision"]))
+                item.setToolTip(2, row["revision"])
+                self.revisions.addTopLevelItem(item)
+                if (entry_id, row["revision"]) == selected:
+                    self.revisions.setCurrentItem(item)
+        for column in range(5):
+            self.revisions.resizeColumnToContents(column)
+        selected = self.xboxes.currentItem()
+        selected = selected.data(0, 0x0100) if selected else None
+        self.xboxes.clear()
+        rows = [(key, "Approved", row["label"], row.get("added", ""))
+                for key, row in access["clients"].items()]
+        rows += [(key, "Waiting", row.get("address", ""), row.get("seen", ""))
+                 for key, row in pending.items() if key not in access["clients"]]
+        for key, state_name, label, since in rows:
+            item = QTreeWidgetItem([tes3x_content.fingerprint(bytes.fromhex(key)), state_name,
+                                    label, since])
+            item.setData(0, 0x0100, key)
+            self.xboxes.addTopLevelItem(item)
+            if key == selected:
+                self.xboxes.setCurrentItem(item)
+        for column in range(4):
+            self.xboxes.resizeColumnToContents(column)
+        waiting = sum(state_name == "Waiting" for _, state_name, _, _ in rows)
+        self.tabs.setTabText(2, f"Xboxes ({waiting} waiting)" if waiting else "Xboxes")
+
+    def chosen_revision(self):
+        item = self.revisions.currentItem()
+        return item.data(0, 0x0100) if item else None
+
+    def edit_entry(self):
+        chosen = self.chosen_revision()
+        if chosen is None:
+            return
+        row = next(row for row in tes3x_content.read_publications(self.state_dir())[chosen[0]]
+                   if row["revision"] == chosen[1])
+        dialog = QDialog(self)
+        dialog.setWindowTitle(chosen[0])
+        form = QFormLayout(dialog)
+        name = QLineEdit(row["name"])
+        name.setMaxLength(47)
+        description = QLineEdit(row["description"])
+        description.setMaxLength(191)
+        form.addRow("Name", name)
+        form.addRow("Description", description)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
+                                   | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            self.library().set_metadata(chosen[0], name.text(), description.text())
+        except (OSError, ValueError) as error:
+            QMessageBox.warning(self, "TES3X", str(error))
+        self.refresh_library()
+
+    def set_listed(self, listed):
+        chosen = self.chosen_revision()
+        if chosen is None:
+            return
+        try:
+            self.library().set_listed(chosen[0], chosen[1], listed)
+        except (OSError, ValueError) as error:
+            QMessageBox.warning(self, "TES3X", str(error))
+        self.refresh_library()
+
+    def prune(self):
+        if self.process is not None:
+            QMessageBox.information(self, "TES3X", "Stop the content server first.")
+            return
+        held = tes3x_content.serving_lock(self.state_dir())
+        if held is None:
+            QMessageBox.information(self, "TES3X", "Another content server uses this library.")
+            return
+        try:
+            history = tes3x_content.read_publications(self.state_dir())
+            withdrawn = sum(not row["listed"] for rows in history.values() for row in rows)
+            if not withdrawn:
+                QMessageBox.information(self, "TES3X", "No withdrawn revisions.")
+                return
+            if QMessageBox.question(
+                    self, "TES3X", f"Delete {withdrawn} withdrawn revision(s)? Revisions a "
+                    "multiplayer world uses are kept. Deleted revisions cannot be restored.") \
+                    != QMessageBox.StandardButton.Yes:
+                return
+            removed = self.library().prune()
+            self.log.appendPlainText(f"deleted {len(removed)} withdrawn revision(s)")
+        except (OSError, ValueError) as error:
+            QMessageBox.warning(self, "TES3X", str(error))
+        finally:
+            held.close()
+        self.refresh_library()
+
+    def approve(self):
+        item = self.xboxes.currentItem()
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Approve Xbox")
+        form = QFormLayout(dialog)
+        which = QLineEdit(item.text(0) if item else "")
+        label = QLineEdit(item.text(2) if item and item.text(1) == "Waiting" else "")
+        label.setMaxLength(47)
+        form.addRow("Fingerprint", which)
+        form.addRow("Label", label)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
+                                   | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            tes3x_content.approve(self.state_dir(), which.text(), label.text().strip())
+        except (OSError, ValueError) as error:
+            QMessageBox.warning(self, "TES3X", str(error))
+        self.refresh_library()
+
+    def revoke(self):
+        item = self.xboxes.currentItem()
+        if item is None or item.text(1) != "Approved":
+            return
+        try:
+            tes3x_content.revoke(self.state_dir(), item.data(0, 0x0100))
+        except (OSError, ValueError) as error:
+            QMessageBox.warning(self, "TES3X", str(error))
+        self.refresh_library()
 
     def build_root(self):
         return self.window.local_path("build_root") or self.window.work_dir() / "build"
@@ -122,7 +347,10 @@ class ContentPage(QWidget):
         self.retail.setChecked(bool(saved.get("retail", False)))
         self.xbe.setChecked(bool(saved.get("xbe", False)))
         self.with_multiplayer.setChecked(bool(saved.get("with_multiplayer", False)))
+        self.access.setCurrentIndex(max(0, self.access.findData(saved.get("access", "private"))))
+        self.client_rate.setValue(int(saved.get("client_rate", 0)))
         self.refresh()
+        self.refresh_library()
 
     def save(self):
         path = self.window.local_config_path()
@@ -134,6 +362,7 @@ class ContentPage(QWidget):
                 "bind": self.bind.text().strip() or "0.0.0.0", "port": self.port.value(),
                 "retail": self.retail.isChecked(), "xbe": self.xbe.isChecked(),
                 "with_multiplayer": self.with_multiplayer.isChecked(),
+                "access": self.access.currentData(), "client_rate": self.client_rate.value(),
             }
             table = document.get("content")
             if table is None:
@@ -203,9 +432,10 @@ class ContentPage(QWidget):
             QMessageBox.warning(self, "TES3X", "Choose completed builds or turn on sharing all builds")
             return
         args = ["-u", "-m", "tes3x", "content", "serve", "--state",
-                str(self.window.work_dir() / "content-state"), "--build-root",
+                str(self.state_dir()), "--build-root",
                 str(self.build_root()), "--bind", self.bind.text().strip(),
-                "--port", str(self.port.value())]
+                "--port", str(self.port.value()), "--access", self.access.currentData(),
+                "--client-rate", str(self.client_rate.value())]
         if self.all_builds.isChecked():
             args.append("--all-builds")
         for path in self.manual:
@@ -231,6 +461,7 @@ class ContentPage(QWidget):
         self.activity_rows.clear()
         self.activity_tree.clear()
         process.start()
+        self.library_timer.start()
         self.set_status("Starting… copying new builds")
 
     def read_output(self):
@@ -248,6 +479,10 @@ class ContentPage(QWidget):
                     self.log.appendPlainText(line)
                     if line.startswith("content server on "):
                         self.set_status("Running")
+                        self.refresh_library()
+                    elif line.startswith("access pending "):
+                        self.refresh_library()
+                        self.tabs.setCurrentIndex(2)
 
     def show_activity(self, activity):
         key = activity["attempt"]
@@ -274,6 +509,7 @@ class ContentPage(QWidget):
         self.read_output()
         self.log.appendPlainText(f"content server exited ({code})")
         self.process = None
+        self.library_timer.stop()
         self.set_status("Stopped")
 
     def process_error(self, _error):

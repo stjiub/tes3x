@@ -31,7 +31,7 @@ class DashDownloadTests(unittest.TestCase):
             if base:
                 install = (ROOT / 'dash/install.c').read_text(encoding='utf-8')
                 start = install.index('static const char *install_base(')
-                end = install.index('const char *server_install(', start)
+                end = install.index('const char *install_ticket(', start)
                 (folder / 'base-under-test.c').write_text(install[start:end], encoding='utf-8')
                 for name in ('json.h', 'json.c'):
                     shutil.copyfile(ROOT / 'dash' / name, folder / name)

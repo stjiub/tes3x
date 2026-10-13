@@ -3,6 +3,7 @@ import http.client
 import hashlib
 import io
 import json
+import ssl
 import tempfile
 import time
 import unittest
@@ -37,11 +38,18 @@ class ContentTests(unittest.TestCase):
         self.addCleanup(self.server.close)
 
     def request(self, path):
-        conn = http.client.HTTPConnection("127.0.0.1", self.server.port, timeout=5)
-        self.addCleanup(conn.close)
-        conn.request("GET", path)
-        response = conn.getresponse()
-        return response.status, response.read()
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        conn = http.client.HTTPSConnection("127.0.0.1", self.server.port, timeout=5,
+                                           context=context)
+        try:
+            conn.request("GET", path)
+            response = conn.getresponse()
+            self.peer = hashlib.sha256(conn.sock.getpeercert(binary_form=True)).hexdigest()
+            return response.status, response.read()
+        finally:
+            conn.close()
 
     def signed(self, body):
         public, signature, data = body[:32], body[32:96], body[96:]
@@ -49,7 +57,7 @@ class ContentTests(unittest.TestCase):
         return public, json.loads(data)
 
     def ticket(self, entry="sample", build=None, revision=None,
-               attempt="0123456789abcdef", key=None, latest=1):
+               attempt="0123456789abcdef", key=None, latest=1, world=""):
         key = key or Ed25519PrivateKey.generate()
         public = key.public_key().public_bytes(serialization.Encoding.Raw,
                                                serialization.PublicFormat.Raw).hex()
@@ -57,10 +65,11 @@ class ContentTests(unittest.TestCase):
             offered = self.signed(self.request("/v1/catalog")[1])[1]["entries"][0]
             build = build or offered["build"]
             revision = revision or offered["revision"]
-        message = f"ticket:{entry}:{build}:{revision}:{attempt}:{latest}".encode()
+        message = (f"ticket:{entry}:{build}:{revision}:{attempt}:{latest}:"
+                   f"{self.library.tls}").encode()
         path = (f"/v1/ticket/{entry}?client={public}&build={build}&revision={revision}"
                 f"&attempt={attempt}&latest={latest}"
-                f"&sig={key.sign(message).hex()}")
+                f"&sig={key.sign(message).hex()}{world}")
         status, body = self.request(path)
         return status, self.signed(body)[1] if status == 200 else body, key
 
@@ -68,6 +77,7 @@ class ContentTests(unittest.TestCase):
         status, body = self.request("/v1/catalog")
         self.assertEqual(status, 200)
         key, catalog = self.signed(body)
+        self.assertEqual((catalog["tls"], catalog["access"]), (self.peer, "public"))
         entry = catalog["entries"][0]
         self.assertEqual((entry["id"], entry["name"]), ("sample", "Sample"))
         self.assertEqual(entry["sources"],
@@ -125,7 +135,7 @@ class ContentTests(unittest.TestCase):
         self.assertEqual(self.signed(self.request("/v1/catalog")[1])[1]["entries"], [])
         status, stale, _ = self.ticket(build=first["build"], revision=first["revision"])
         self.assertEqual((status, stale),
-                         (200, {"format": 1, "build": first["build"],
+                         (200, {"format": 1, "tls": self.library.tls, "build": first["build"],
                                 "revision": first["revision"]}))
 
         self.library = content.Library(self.root / "state", self.root / "build", [], True,
@@ -178,7 +188,7 @@ class ContentTests(unittest.TestCase):
         public = content.public_key(self.library.key)
         self.assertEqual(output.getvalue().splitlines(),
                          [f"public key {public.hex()}",
-                          f"fingerprint {hashlib.sha256(public).hexdigest()[:16]}"])
+                          f"fingerprint {hashlib.blake2b(public, digest_size=16).hexdigest()}"])
 
     def test_activity_requires_ticket_and_keeps_terminal_result(self):
         private = Ed25519PrivateKey.generate()
@@ -234,6 +244,114 @@ class ContentTests(unittest.TestCase):
         self.assertEqual(self.server.activity_snapshot()[0]["stage"], "retrying")
         self.assertEqual(self.ticket(attempt=attempt)[0], 403)
         self.assertEqual(len(self.server.activity_snapshot()), 1)
+
+    def private(self):
+        self.server.access = content.Access(self.root / "state", "private")
+
+    def catalog_as(self, key):
+        public = key.public_key().public_bytes(serialization.Encoding.Raw,
+                                               serialization.PublicFormat.Raw).hex()
+        signature = key.sign(f"catalog:{self.library.tls}".encode()).hex()
+        status, body = self.request(f"/v1/catalog?client={public}&sig={signature}")
+        return status, self.signed(body)[1] if status == 200 else body
+
+    def test_private_library_admits_approved_dashes(self):
+        self.private()
+        offered = self.signed(self.request("/v1/catalog")[1])[1]
+        self.assertEqual((offered["access"], offered["entries"]), ("private", []))
+        dash = Ed25519PrivateKey.generate()
+        status, waiting = self.catalog_as(dash)
+        self.assertEqual((status, waiting["access"], waiting["entries"]), (200, "pending", []))
+        build, revision = (self.library.entries["sample"][key] for key in ("build", "revision"))
+        self.assertEqual(self.ticket(key=dash, build=build, revision=revision)[0], 403)
+        self.assertEqual(content.approve(self.root / "state", waiting["client"][:10], "mine"),
+                         dash.public_key().public_bytes(serialization.Encoding.Raw,
+                                                        serialization.PublicFormat.Raw).hex())
+        status, approved = self.catalog_as(dash)
+        self.assertEqual((approved["access"], len(approved["entries"])), ("approved", 1))
+        self.assertEqual(self.ticket(key=dash, build=build, revision=revision)[0], 200)
+        content.revoke(self.root / "state", waiting["client"])
+        self.assertEqual(self.ticket(key=dash, build=build, revision=revision,
+                                     attempt="2222222222222222")[0], 403)
+
+    def test_ticket_signature_names_this_certificate(self):
+        key = Ed25519PrivateKey.generate()
+        public = key.public_key().public_bytes(serialization.Encoding.Raw,
+                                               serialization.PublicFormat.Raw).hex()
+        entry = self.library.entries["sample"]
+        message = (f"ticket:sample:{entry['build']}:{entry['revision']}:0123456789abcdef:1:"
+                   f"{'0' * 64}").encode()
+        status, _ = self.request(f"/v1/ticket/sample?client={public}&build={entry['build']}"
+                                 f"&revision={entry['revision']}&attempt=0123456789abcdef"
+                                 f"&latest=1&sig={key.sign(message).hex()}")
+        self.assertEqual(status, 403)
+
+    def test_world_authorization_reaches_an_exact_withdrawn_revision(self):
+        self.private()
+        world = Ed25519PrivateKey.generate()
+        world_hex = world.public_key().public_bytes(serialization.Encoding.Raw,
+                                                    serialization.PublicFormat.Raw).hex()
+        dash = Ed25519PrivateKey.generate()
+        client = dash.public_key().public_bytes(serialization.Encoding.Raw,
+                                                serialization.PublicFormat.Raw).hex()
+        service = content.public_key(self.library.key).hex()
+        entry = self.library.entries["sample"]
+        build, revision = entry["build"], entry["revision"]
+
+        def authorized(expires, revision=revision, signer=world):
+            message = content.delegation_message(client, service, "sample", build, revision,
+                                                 expires)
+            return (f"&world={world_hex}&expires={expires}"
+                    f"&wsig={signer.sign(message).hex()}")
+
+        soon = int(time.time()) + 600
+        self.assertEqual(self.ticket(key=dash, build=build, revision=revision,
+                                     world=authorized(soon))[0], 403)
+        content.delegate(self.root / "state", world_hex, "sample", revision, "World")
+        self.library.set_listed("sample", revision, False)
+        status, ticket, _ = self.ticket(key=dash, build=build, revision=revision, latest=0,
+                                        world=authorized(soon))
+        self.assertEqual((status, ticket["revision"]), (200, revision))
+        self.assertEqual(self.request(f"/{ticket['token']}/file/mod.esp"),
+                         (200, b"first revision"))
+        for bad in (authorized(int(time.time()) - 1),
+                    authorized(int(time.time()) + 3 * 86400),
+                    authorized(soon, signer=Ed25519PrivateKey.generate())):
+            self.assertEqual(self.ticket(key=dash, build=build, revision=revision, latest=0,
+                                         attempt="3333333333333333", world=bad)[0], 403)
+        self.assertEqual(self.library.prune(), [])
+        content.undelegate(self.root / "state", world_hex)
+        self.assertEqual(self.library.prune(), [revision])
+        self.assertFalse((self.root / "state" / "revisions" / revision).exists())
+        self.assertNotIn("sample", self.library.history)
+
+    def test_other_process_edits_reach_the_running_catalog(self):
+        other = content.Library(self.root / "state", self.root / "state", [], False, ("build",))
+        other.set_metadata("sample", "Edited elsewhere")
+        offered = self.signed(self.request("/v1/catalog")[1])[1]["entries"]
+        self.assertEqual(offered[0]["name"], "Edited elsewhere")
+        other.set_listed("sample", offered[0]["revision"], False)
+        self.assertEqual(self.signed(self.request("/v1/catalog")[1])[1]["entries"], [])
+
+    def test_catalog_requests_are_rate_limited(self):
+        statuses = [self.request("/v1/catalog")[0] for _ in range(content.CATALOG_RATE[0] + 2)]
+        self.assertEqual(statuses[0], 200)
+        self.assertEqual(statuses[-1], 429)
+
+    def test_bandwidth_cap_is_shared_by_an_address(self):
+        self.server.client_rate = 1_000_000
+        started = time.monotonic()
+        self.server.pace("192.0.2.1", 100_000)
+        self.server.pace("192.0.2.1", 100_000)
+        self.assertGreaterEqual(time.monotonic() - started, 0.15)
+        started = time.monotonic()
+        self.server.pace("192.0.2.2", 10_000)
+        self.assertLess(time.monotonic() - started, 0.05)
+
+    def test_one_server_per_state(self):
+        held = content.serving_lock(self.root / "state")
+        self.addCleanup(held.close)
+        self.assertIsNone(content.serving_lock(self.root / "state"))
 
 
 if __name__ == "__main__":

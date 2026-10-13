@@ -474,6 +474,7 @@ const char *server_ticket(struct server *s, struct ticket *t, progress_fn progre
     const char *err = NULL;
     int sock = -1, tries, got, phase = 1, dirty = 0;
 
+    memset(t, 0, sizeof(*t));
     if (net_up())
         return "The network did not start.";
     if (progress)

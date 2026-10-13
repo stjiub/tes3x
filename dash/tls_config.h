@@ -1,12 +1,15 @@
 /* mbedTLS 3.6 for the Dash's downloads: a TLS 1.2 client, ECDHE with AES-GCM or
  * ChaCha20-Poly1305. Certificates are parsed but not checked: the console's clock is often wrong
- * and a release is trusted by its signature, not by where it came from. */
+ * and a release is trusted by its signature, not by where it came from. A content library's
+ * certificate is compared with the digest its signed replies name instead (http.c). */
 
 #define MBEDTLS_SSL_CLI_C
 #define MBEDTLS_SSL_TLS_C
 #define MBEDTLS_SSL_PROTO_TLS1_2
 #define MBEDTLS_SSL_SERVER_NAME_INDICATION
 #define MBEDTLS_SSL_EXTENDED_MASTER_SECRET
+/* a content library's certificate is pinned by its SHA-256 */
+#define MBEDTLS_SSL_KEEP_PEER_CERTIFICATE
 #define MBEDTLS_KEY_EXCHANGE_ECDHE_RSA_ENABLED
 #define MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED
 

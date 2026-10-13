@@ -1424,6 +1424,42 @@ order = 10
         self.assertEqual(window.multiplayer_state_label.text(), "Multiplayer: Running")
         server.process = None
 
+    def test_content_revisions_and_xboxes(self):
+        import json
+        from tes3x import content as tes3x_content
+        from tes3x import manifest
+        config = self.root / "local.toml"
+        config.write_text("[paths]\n", encoding="utf-8")
+        page = self.window(config=config).content_page
+        deploy = self.root / "build" / "sample" / "deploy"
+        deploy.mkdir(parents=True)
+        (deploy / "mod.esp").write_bytes(b"plugin")
+        manifest.write(deploy, manifest.create(deploy, profile="Sample", source={}))
+        state = page.state_dir()
+        tes3x_content.Library(state, self.root / "build", [deploy], False, ("build",))
+        key = "ab" * 32
+        (state / "pending.json").write_text(json.dumps(
+            {key: {"address": "10.0.0.5", "seen": "2026-10-13 12:00"}}), encoding="utf-8")
+        page.refresh_library()
+        self.assertEqual(page.revisions.topLevelItemCount(), 1)
+        self.assertEqual(page.revisions.topLevelItem(0).text(4), "Listed")
+        self.assertEqual(page.xboxes.topLevelItem(0).text(1), "Waiting")
+        self.assertEqual(page.tabs.tabText(2), "Xboxes (1 waiting)")
+        page.revisions.setCurrentItem(page.revisions.topLevelItem(0))
+        page.set_listed(False)
+        self.assertEqual(page.revisions.topLevelItem(0).text(4), "Withdrawn")
+        tes3x_content.approve(state, page.xboxes.topLevelItem(0).text(0)[:8], "Living room")
+        page.refresh_library()
+        self.assertEqual((page.xboxes.topLevelItem(0).text(1),
+                          page.xboxes.topLevelItem(0).text(2)), ("Approved", "Living room"))
+        self.assertEqual(page.tabs.tabText(2), "Xboxes")
+        page.xboxes.setCurrentItem(page.xboxes.topLevelItem(0))
+        page.revoke()
+        self.assertEqual(page.xboxes.topLevelItem(0).text(1), "Waiting")
+        with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
+            page.prune()
+        self.assertEqual(page.revisions.topLevelItemCount(), 0)
+
     def test_server_page_keeps_settings_and_characters_per_world(self):
         import json
         old = self.root / "old-world"

@@ -132,6 +132,11 @@ void net_down(void);
 const char *http_get(const char *url, unsigned char **body, size_t *n, size_t max,
                      progress_fn progress);
 
+/* http.c: connections to host:port must present the certificate with this SHA-256 (NULL: stop
+ * pinning); http_last_cert gives the one the latest TLS connection presented. */
+void http_pin(const char *host, unsigned port, const unsigned char cert[32]);
+int http_last_cert(unsigned char out[32]);
+
 /* http.c: GET url into a file, checked against size and SHA-256 (hex) as it arrives; progress
  * counts from *done towards total. */
 const char *http_save(const char *url, const char *path, unsigned long long size,
@@ -162,6 +167,9 @@ struct server {
 struct ticket {
     unsigned char sha256[32], token[16], attempt[8];
     unsigned size, port, addr;
+    unsigned char tls[32]; /* a content library's certificate; files come over pinned HTTPS */
+    int has_tls;
+    char revision[65]; /* the signed published revision; empty: the manifest's own digest */
 };
 int servers_load(struct server *out, int max);
 int server_add(const char *name, struct server *s);
@@ -199,7 +207,8 @@ struct content_host {
     char name[80], host[64];
     unsigned port;
     unsigned char key[32], pending_key[32];
-    int has_key, has_pending;
+    unsigned char tls[32]; /* the certificate the latest signed reply named */
+    int has_key, has_pending, has_tls;
     char fingerprint[33], pending_fingerprint[33];
 };
 struct content_entry {
@@ -207,8 +216,16 @@ struct content_entry {
     unsigned long long bytes;
     int latest;
 };
+/* A multiplayer world's authorization for one exact revision, from its signed descriptor. */
+struct content_auth {
+    char world[65], signature[129];
+    unsigned long long expires;
+};
 extern const char CONTENT_KEY_CHANGED[];
 extern const char CONTENT_BUILD_CHANGED[];
+/* The library is private and has not approved this Dash: content_fingerprint names it. */
+extern const char CONTENT_PENDING[];
+const char *content_fingerprint(void);
 int content_load(struct content_host *out, int max);
 int content_add(const char *name, struct content_host *out);
 int content_remove(const struct content_host *host);
@@ -216,7 +233,7 @@ int content_accept_key(struct content_host *host);
 const char *content_catalog(struct content_host *host, struct content_entry *out, int max,
                             int *count);
 const char *content_ticket(struct content_host *host, const struct content_entry *entry,
-                           struct ticket *out);
+                           const struct content_auth *auth, struct ticket *out);
 int content_report(const struct content_host *host, const struct ticket *ticket,
                    const char *stage, unsigned long long done, unsigned long long total);
 void content_attempt_done(const struct content_host *host, const struct content_entry *entry,

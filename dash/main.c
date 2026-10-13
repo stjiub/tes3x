@@ -541,6 +541,13 @@ static void show_content_key_change(const struct content_host *host, int then_in
     v.confirm = CONFIRM_CONTENT_KEY;
 }
 
+/* A private library: the admin approves this Dash by the fingerprint shown. */
+static void say_pending(const struct content_host *host)
+{
+    say("Waiting for approval", host->name, "Approve this Xbox in TES3X, then browse again.");
+    snprintf(v.text[2], sizeof(v.text[2]), "This Xbox: %s", content_fingerprint());
+}
+
 static void browse_content(void)
 {
     struct content_host *host = chosen_content();
@@ -553,6 +560,8 @@ static void browse_content(void)
     err = content_catalog(host, content_entries, CONTENT_ENTRIES, &count);
     if (err == CONTENT_KEY_CHANGED) {
         show_content_key_change(host, 0);
+    } else if (err == CONTENT_PENDING) {
+        say_pending(host);
     } else if (err) {
         say("Cannot browse", host->name, err);
     } else {
@@ -577,7 +586,7 @@ static void install_content(int replace)
     entry = &content_entries[v.content_entries_list.sel];
     snprintf(id, sizeof(id), "%s", entry->id);
     busy("Contacting the content server...");
-    err = content_ticket(host, entry, &ticket);
+    err = content_ticket(host, entry, NULL, &ticket);
     if (err == CONTENT_KEY_CHANGED) {
         show_content_key_change(host, 1);
         return;
@@ -587,6 +596,10 @@ static void install_content(int replace)
         err = content_catalog(host, content_entries, CONTENT_ENTRIES, &count);
         if (err == CONTENT_KEY_CHANGED) {
             show_content_key_change(host, 1);
+            return;
+        }
+        if (err == CONTENT_PENDING) {
+            say_pending(host);
             return;
         }
         if (err) {
@@ -604,7 +617,7 @@ static void install_content(int replace)
         v.content_entries_list.sel = i;
         ui_list_move(&v.content_entries_list, 0);
         entry = &content_entries[i];
-        err = content_ticket(host, entry, &ticket);
+        err = content_ticket(host, entry, NULL, &ticket);
         if (err == CONTENT_KEY_CHANGED) {
             show_content_key_change(host, 1);
             return;
@@ -1194,6 +1207,10 @@ static void run_exec(void)
             if (n < (size_t)v.content_hosts_list.count) {
                 v.content_hosts_list.sel = (int)n;
                 browse_content();
+                if (v.title[0])
+                    mgr_log("exec: content browse: %s: %s; %s\n", v.title, v.text[1],
+                            v.text[2]);
+                v.title[0] = 0, v.confirm = 0;
             }
         } else if (!strcmp(arg[0], "content") && argc >= 3 && !strcmp(arg[1], "install")) {
             const char *revision = argc >= 4 && strcmp(arg[3], "replace") ? arg[3] : NULL;

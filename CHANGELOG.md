@@ -37,6 +37,11 @@ No official releases yet. The first public release is in preparation.
 - The GUI's Content tab now gives the build list a resizable area, puts server controls and status
   at the top, and can start content hosting with a local multiplayer server. Both server states
   remain visible in the bottom status bar. See [content servers](docs/content.md).
+- Content servers now use HTTPS, pinned through the library's signed catalog, and are private
+  by default: a new Xbox waits until it is approved in the GUI or with `tes3x content approve`.
+  Start the server with `--access public` to keep the earlier open behaviour. Each address is
+  rate limited, `--client-rate` caps its bandwidth, and `tes3x content prune` deletes withdrawn
+  revisions. Update the Dash and content server together. See [content servers](docs/content.md).
 - New pipeline builds record their source profile and file hash in the build manifest and signed
   content catalog. Publishing one creates a new revision even if its game files match an older
   build; the game-content build ID stays the same. See [content servers](docs/content.md).

@@ -86,10 +86,10 @@ static int MoveFileA(const char *from, const char *to)
     return !rename(saved, host_path(to));
 }
 static const char *write_manifest(const char *folder, const char *text, size_t n,
-                                  const char *server)
+                                  const char *server, const char *revision)
 {
     char path[512]; FILE *f;
-    (void)server;
+    (void)server; (void)revision;
     snprintf(path, sizeof(path), "%s/%s", folder, MANIFEST);
     f = fopen(path, "wb"); assert(f); fwrite(text, 1, n, f); fclose(f); return NULL;
 }

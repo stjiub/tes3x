@@ -1,4 +1,6 @@
-/* Standalone content libraries: signed catalogs and tickets with a pinned server key. */
+/* Content libraries: signed catalogs and tickets with a pinned server key, over HTTPS whose
+ * certificate the signed replies name. A private library lists builds only to approved Dashes;
+ * a multiplayer world's authorization reaches the one revision it requires. */
 
 #include "mgr.h"
 #include "monocypher-ed25519.h"
@@ -20,6 +22,7 @@
 
 const char CONTENT_KEY_CHANGED[] = "The content server's key has changed.";
 const char CONTENT_BUILD_CHANGED[] = "The offered build has changed.";
+const char CONTENT_PENDING[] = "The library has not approved this Xbox.";
 static unsigned char content_secret[64], content_public[32];
 static int content_identity_loaded;
 
@@ -244,7 +247,7 @@ int content_load(struct content_host *out, int max)
 {
     unsigned char *data;
     size_t size;
-    char *line, *next, *space;
+    char *line, *next, *space, *tls;
     int count = 0;
 
     if (read_file(CONTENT_FILE, &data, &size))
@@ -260,6 +263,9 @@ int content_load(struct content_host *out, int max)
         space = strchr(line, ' ');
         if (space)
             *space++ = 0;
+        tls = space ? strchr(space, ' ') : NULL;
+        if (tls)
+            *tls++ = 0;
         if (strlen(line) >= sizeof(out[count].name))
             continue;
         memset(&out[count], 0, sizeof(out[count]));
@@ -269,6 +275,7 @@ int content_load(struct content_host *out, int max)
         if (space && !unhex(space, out[count].key, 32)) {
             out[count].has_key = 1;
             fingerprint(out[count].key, out[count].fingerprint);
+            out[count].has_tls = tls && !unhex(tls, out[count].tls, 32);
         }
         count++;
     }
@@ -279,7 +286,7 @@ int content_load(struct content_host *out, int max)
 static int save_host(const struct content_host *host, int remove)
 {
     struct content_host hosts[32];
-    char text[8192], key[65], staged[sizeof CONTENT_FILE + 8];
+    char text[12288], key[65], tls[66], staged[sizeof CONTENT_FILE + 8];
     int count = content_load(hosts, 32), i, found = 0;
     size_t n = 0;
 
@@ -296,12 +303,15 @@ static int save_host(const struct content_host *host, int remove)
     for (i = 0; i < count; i++) {
         if (remove && !name_cmp(hosts[i].name, host->name))
             continue;
+        key[0] = tls[0] = 0;
         if (hosts[i].has_key)
             hex(key, hosts[i].key, 32);
-        else
-            key[0] = 0;
-        n += (size_t)snprintf(text + n, sizeof(text) - n, "%s%s%s\n", hosts[i].name,
-                              key[0] ? " " : "", key);
+        if (hosts[i].has_key && hosts[i].has_tls) {
+            tls[0] = ' ';
+            hex(tls + 1, hosts[i].tls, 32);
+        }
+        n += (size_t)snprintf(text + n, sizeof(text) - n, "%s%s%s%s\n", hosts[i].name,
+                              key[0] ? " " : "", key, tls);
         if (n >= sizeof(text))
             return -1;
     }
@@ -484,21 +494,33 @@ int content_accept_key(struct content_host *host)
         return -1;
     memcpy(host->key, host->pending_key, 32);
     host->has_key = 1;
-    host->has_pending = 0;
+    host->has_pending = host->has_tls = 0;
     fingerprint(host->key, host->fingerprint);
     return save_host(host, 0);
 }
 
-static const char *get_signed(struct content_host *host, const char *path, struct json *j,
-                              unsigned char **body)
+/* A signed reply over HTTPS. Pinned: the connection must present the certificate the last
+ * signed reply named, as before anything that carries a ticket. The reply's own "tls" must name
+ * the certificate this connection presented. */
+static const char *get_signed(struct content_host *host, const char *path, int pinned,
+                              struct json *j, unsigned char **body)
 {
-    char url[640];
+    char url[1280], named_hex[65];
+    unsigned char seen[32], named[32];
     size_t size;
     const char *error;
+    int dirty = 0;
 
-    snprintf(url, sizeof(url), "http://%s:%u%s", host->host, host->port, path);
-    if ((error = http_get(url, body, &size, CONTENT_MAX, NULL)))
+    if (pinned && !host->has_tls)
+        return "The content server's certificate is not known yet.";
+    snprintf(url, sizeof(url), "https://%s:%u%s", host->host, host->port, path);
+    http_pin(host->host, host->port, pinned ? host->tls : NULL);
+    error = http_get(url, body, &size, CONTENT_MAX, NULL);
+    http_pin(host->host, host->port, NULL);
+    if (error)
         return error;
+    if (http_last_cert(seen))
+        return "The content server did not offer a secure connection.";
     if (size < 98 || crypto_ed25519_check(*body + 32, *body, *body + 96, size - 96))
         return "The content response has an invalid signature.";
     if (host->has_key && memcmp(host->key, *body, 32)) {
@@ -511,15 +533,51 @@ static const char *get_signed(struct content_host *host, const char *path, struc
         || j->t[0].type != JSON_OBJECT
         || json_number(j, json_get(j, 0, "format")) != 1)
         return "The content response is unreadable.";
+    if (json_string(j, json_get(j, 0, "tls"), named_hex, sizeof(named_hex)) != 64
+        || unhex(named_hex, named, 32) || crypto_verify32(named, seen))
+        return "The content server's certificate does not match its key.";
     if (!host->has_key) {
         memcpy(host->key, *body, 32);
         host->has_key = 1;
         fingerprint(host->key, host->fingerprint);
-        if (save_host(host, 0))
-            return "Could not keep the content server's key.";
+        dirty = 1;
     }
+    if (!host->has_tls || crypto_verify32(host->tls, named)) {
+        memcpy(host->tls, named, 32);
+        host->has_tls = dirty = 1;
+    }
+    if (dirty && save_host(host, 0))
+        return "Could not keep the content server's key.";
     retry_results(host);
     return NULL;
+}
+
+const char *content_fingerprint(void)
+{
+    static char fp[33];
+
+    if (content_identity())
+        return "?";
+    fingerprint(content_public, fp);
+    return fp;
+}
+
+/* The catalog request, signed by this Dash for the certificate its library last named. */
+static const char *catalog_request(struct content_host *host, struct json *j,
+                                   unsigned char **body)
+{
+    char path[320], pub[65], signature[129], tls[65], message[80];
+    unsigned char sig[64];
+
+    if (!host->has_tls || content_identity())
+        return get_signed(host, "/v1/catalog", 0, j, body);
+    hex(pub, content_public, 32);
+    hex(tls, host->tls, 32);
+    snprintf(message, sizeof(message), "catalog:%s", tls);
+    crypto_ed25519_sign(sig, content_secret, (const unsigned char *)message, strlen(message));
+    hex(signature, sig, 64);
+    snprintf(path, sizeof(path), "/v1/catalog?client=%s&sig=%s", pub, signature);
+    return get_signed(host, path, 1, j, body);
 }
 
 const char *content_catalog(struct content_host *host, struct content_entry *out, int max,
@@ -528,12 +586,26 @@ const char *content_catalog(struct content_host *host, struct content_entry *out
     struct json j = {0};
     unsigned char *body = NULL;
     const char *err;
-    int list, i, value;
+    char access[16];
+    int list, i, value, signed_request = host->has_tls;
 
     *count = 0;
-    err = get_signed(host, "/v1/catalog", &j, &body);
+    err = catalog_request(host, &j, &body);
+    if (!err && json_string(&j, json_get(&j, 0, "access"), access, sizeof(access)) > 0
+        && !strcmp(access, "private") && !signed_request) {
+        /* the first reply named the certificate; ask again as this Dash */
+        json_free(&j);
+        free(body);
+        body = NULL;
+        err = catalog_request(host, &j, &body);
+    }
     if (err)
         goto done;
+    if (json_string(&j, json_get(&j, 0, "access"), access, sizeof(access)) <= 0
+        || (strcmp(access, "public") && strcmp(access, "approved"))) {
+        err = CONTENT_PENDING;
+        goto done;
+    }
     list = json_get(&j, 0, "entries");
     if (list < 0 || j.t[list].type != JSON_ARRAY || j.t[list].count > max) {
         err = "The content catalog is too large or invalid.";
@@ -571,30 +643,37 @@ done:
 }
 
 const char *content_ticket(struct content_host *host, const struct content_entry *entry,
-                           struct ticket *out)
+                           const struct content_auth *auth, struct ticket *out)
 {
     struct json j = {0};
     unsigned char *body = NULL;
-    char path[512], hex_sha[65], hex_token[33], hex_attempt[17], build[65], revision[65];
-    char pub[65], signature[129], message[256];
+    char path[1024], hex_sha[65], hex_token[33], hex_attempt[17], build[65], revision[65];
+    char pub[65], signature[129], message[320], tls[65], world[256] = "";
     unsigned char attempt[8], sig[64];
     const char *err;
 
+    memset(out, 0, sizeof(*out));
     if (content_identity())
         return "Could not load the Dash content identity.";
+    if (!host->has_tls)
+        return "Browse the content library first.";
     if (get_attempt(host, entry, attempt))
         return "Could not keep the content install attempt.";
     hex(pub, content_public, 32);
     hex(hex_attempt, attempt, 8);
-    snprintf(message, sizeof(message), "ticket:%s:%s:%s:%s:%d", entry->id, entry->build,
-             entry->revision, hex_attempt, entry->latest);
+    hex(tls, host->tls, 32);
+    snprintf(message, sizeof(message), "ticket:%s:%s:%s:%s:%d:%s", entry->id, entry->build,
+             entry->revision, hex_attempt, entry->latest, tls);
     crypto_ed25519_sign(sig, content_secret, (const unsigned char *)message, strlen(message));
     hex(signature, sig, 64);
+    if (auth)
+        snprintf(world, sizeof(world), "&world=%s&expires=%llu&wsig=%s", auth->world,
+                 auth->expires, auth->signature);
     snprintf(path, sizeof(path),
-             "/v1/ticket/%s?client=%s&build=%s&revision=%s&attempt=%s&latest=%d&sig=%s",
+             "/v1/ticket/%s?client=%s&build=%s&revision=%s&attempt=%s&latest=%d&sig=%s%s",
              entry->id, pub, entry->build, entry->revision, hex_attempt,
-             entry->latest, signature);
-    err = get_signed(host, path, &j, &body);
+             entry->latest, signature, world);
+    err = get_signed(host, path, 1, &j, &body);
     if (err)
         goto done;
     if (json_string(&j, json_get(&j, 0, "build"), build, sizeof(build)) != 64
@@ -618,6 +697,9 @@ const char *content_ticket(struct content_host *host, const struct content_entry
     }
     out->size = (unsigned)json_number(&j, json_get(&j, 0, "size"));
     out->port = host->port;
+    memcpy(out->tls, host->tls, 32);
+    out->has_tls = 1;
+    snprintf(out->revision, sizeof(out->revision), "%s", revision);
     if (!out->size || out->size > 16u << 20)
         err = "The content ticket has an invalid manifest size.";
 done:
@@ -639,10 +721,14 @@ static int send_report(const struct content_host *host, const struct ticket *tic
     snprintf(message, sizeof(message), "%s:%s:%llu:%llu", token, stage, done, total);
     crypto_ed25519_sign(sig, content_secret, (const unsigned char *)message, strlen(message));
     hex(signature, sig, sizeof(sig));
+    if (!host->has_tls)
+        return -1;
     snprintf(url, sizeof(url),
-             "http://%s:%u/v1/report/%s?stage=%s&done=%llu&total=%llu&sig=%s",
+             "https://%s:%u/v1/report/%s?stage=%s&done=%llu&total=%llu&sig=%s",
              host->host, host->port, token, stage, done, total, signature);
+    http_pin(host->host, host->port, host->tls);
     err = http_get(url, &body, &n, 128, NULL);
+    http_pin(host->host, host->port, NULL);
     free(body);
     return err ? -1 : 0;
 }

@@ -26,7 +26,10 @@ class BuildDownloadTests(unittest.TestCase):
         self.token = netbuild.BUILD_BODY.unpack(self.server.ticket())[-1].hex()
 
     def request(self, byte_range=None, token=None):
-        conn = http.client.HTTPConnection('127.0.0.1', self.server.port, timeout=5)
+        # one at a time: the server caps connections per address
+        if getattr(self, 'conn', None):
+            self.conn.close()
+        conn = self.conn = http.client.HTTPConnection('127.0.0.1', self.server.port, timeout=5)
         self.addCleanup(conn.close)
         headers = {'Range': byte_range} if byte_range else {}
         conn.request('GET', f'/{token or self.token}/file/archive.bsa', headers=headers)

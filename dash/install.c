@@ -334,11 +334,13 @@ static void stamp_load_order(const struct json *j, const char *folder)
     }
 }
 
-/* The server's manifest as received, with where it came from and when added at the front. */
+/* The server's manifest as received, with where it came from, its published revision and when
+ * added at the front. The game reports "revision" when it joins a server; "deployed" stays last
+ * of the three (build_current). */
 static const char *write_manifest(const char *folder, const char *text, size_t n,
-                                  const char *server)
+                                  const char *server, const char *revision)
 {
-    char head[192], name[80], path[PATH_MAX_MGR], staged[PATH_MAX_MGR];
+    char head[288], name[80], path[PATH_MAX_MGR], staged[PATH_MAX_MGR];
     LARGE_INTEGER now;
     TIME_FIELDS tf;
     char *out;
@@ -351,8 +353,9 @@ static const char *write_manifest(const char *folder, const char *text, size_t n
     KeQuerySystemTime(&now);
     RtlTimeToTimeFields(&now, &tf);
     snprintf(head, sizeof(head),
-             "{\n \"server\": \"%s\",\n \"deployed\": \"%04d-%02d-%02dT%02d:%02d:%02dZ\",", name,
-             tf.Year, tf.Month, tf.Day, tf.Hour, tf.Minute, tf.Second);
+             "{\n \"server\": \"%s\",%s%s%s\n \"deployed\": \"%04d-%02d-%02dT%02d:%02d:%02dZ\",",
+             name, revision ? "\n \"revision\": \"" : "", revision ? revision : "",
+             revision ? "\"," : "", tf.Year, tf.Month, tf.Day, tf.Hour, tf.Minute, tf.Second);
     for (i = 0; i < n && text[i] != '{'; i++)
         ;
     if (i == n || !(out = malloc(strlen(head) + n)))
@@ -519,7 +522,8 @@ static const char *install_base(const struct json *build, const char *url_base,
         }
         flush_path(path);
     }
-    err = write_manifest(base, j.s, (size_t)(build->t[root].end - build->t[root].start), "");
+    err = write_manifest(base, j.s, (size_t)(build->t[root].end - build->t[root].start), "",
+                         NULL);
     if (!err && xboxini_set("OverlayBase", base))
         err = "Could not select the completed retail base.";
 finished:
@@ -543,6 +547,7 @@ const char *install_ticket(const struct ticket *ticket, const char *host, const 
     const struct known *k;
     char url_base[160], url[PATH_MAX_MGR + 128], base[PATH_MAX_MGR];
     char path[PATH_MAX_MGR], from[PATH_MAX_MGR], prev[PATH_MAX_MGR], origin[16], drive[4], hex[65];
+    char revision[65];
     unsigned char *text = NULL, *old_text = NULL, digest[32];
     unsigned long long need = 0, done = 0;
     ULARGE_INTEGER free_bytes, total_bytes;
@@ -553,7 +558,9 @@ const char *install_ticket(const struct ticket *ticket, const char *host, const 
     int n = 0, had_n = 0, want_n = 0, i, e, count[4] = {0}, owned, others = 0, removed = 0, pass;
 
     folder[0] = summary[0] = 0;
-    snprintf(url_base, sizeof(url_base), "http://%s:%u/", host, ticket->port);
+    snprintf(url_base, sizeof(url_base), "%s://%s:%u/", ticket->has_tls ? "https" : "http", host,
+             ticket->port);
+    http_pin(host, ticket->port, ticket->has_tls ? ticket->tls : NULL);
     for (i = 0; i < 16; i++)
         snprintf(url_base + strlen(url_base), 3, "%02x", ticket->token[i]);
     strcat(url_base, "/");
@@ -774,11 +781,15 @@ const char *install_ticket(const struct ticket *ticket, const char *host, const 
             mgr_log("install: removed %s\n", files[i]);
         }
     stamp_load_order(&j, folder);
-    err = write_manifest(folder, (const char *)text, text_n, label);
+    if (!ticket->revision[0])
+        sha256_hex(ticket->sha256, revision);
+    err = write_manifest(folder, (const char *)text, text_n, label,
+                         ticket->revision[0] ? ticket->revision : revision);
     snprintf(summary, summary_n, "%d downloaded, %d from the base, %d XBEs rebuilt, %d kept%s",
              count[FETCH], count[COPY], count[REBUILD], count[KEEP],
              removed ? ", old files removed" : "");
 done:
+    http_pin(host, ticket->port, NULL);
     mgr_progress_title(NULL);
     /* a failed update leaves the old build as it was; what it staged whole stays for the next try */
     for (i = 0; items && i < want_n; i++)
