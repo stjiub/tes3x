@@ -4,6 +4,13 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- The GUI's Server workspace keeps a list of worlds beside **Start**: make, duplicate, rename and
+  delete them, each with its own settings, characters and world state, so the server always keeps
+  them between runs. A **Characters** tab lists and deletes the selected world's characters.
+  The worlds folder is under **Settings > Paths**. On first open the GUI makes `Default` from
+  the earlier server settings and copies the earlier world folder into it, its server key
+  included, so consoles keep trusting the server. See
+  [Worlds in the GUI](docs/multiplayer-server.md#worlds-in-the-gui).
 - Chat works: type `chat TEXT` in the console (or `tes3xnet say TEXT`), and every player sees
   `NAME: TEXT` on screen; the server prints it too. `msg NAME TEXT` sends to one player, and
   `msg admin TEXT` to the server's admin; quote a name with spaces. Admin `say` and `tell`

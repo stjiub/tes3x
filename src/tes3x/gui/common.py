@@ -617,7 +617,8 @@ class LocalSettingsDialog(QDialog):
             form.addRow(label, self.browse_row("paths." + key, values.get(key, "")))
         form = self.form_section(layout, "TES3X folders and tools")
         for key, label, folder in (("profiles", "Profiles", "profiles"),
-                                   ("build_root", "Build output", "build")):
+                                   ("build_root", "Build output", "build"),
+                                   ("worlds", "Server worlds", "worlds")):
             form.addRow(label, self.browse_row("paths." + key, values.get(key, ""),
                                               default=str(self.path.parent / folder)))
         llvm_bin = bundled("externals", "llvm", "bin")

@@ -1390,7 +1390,62 @@ order = 10
         page.inputs["tunnels"][1].setText("9369, 9371")
         self.assertTrue(page.save())
         saved = tomllib.loads(config.read_text(encoding="utf-8"))["server"]
-        self.assertEqual((saved["max_players"], saved["tunnels"]), (4, [9369, 9371]))
+        self.assertEqual((saved["world"], saved["tunnels"]), ("Default", [9369, 9371]))
+        self.assertNotIn("max_players", saved)
+        world = tomllib.loads((self.root / "worlds" / "Default" / "world.toml").read_text(
+            encoding="utf-8"))
+        self.assertEqual(world["max_players"], 4)
+
+    def test_server_page_keeps_settings_and_characters_per_world(self):
+        import json
+        old = self.root / "old-world"
+        (old / "characters" / "abc" / "Nerevar").mkdir(parents=True)
+        (old / "characters" / "abc" / "Nerevar" / "stream.json").write_text(json.dumps(
+            {"identity": {"name": "Nerevar", "race": "Dark Elf", "class_name": "Warrior"},
+             "level": "0700", "dead": False}), encoding="utf-8")
+        key = "00" * 32 + "\n"
+        (old / "server.key").write_text(key, encoding="ascii")
+        config = self.root / "local.toml"
+        config.write_text(f'[paths]\n[server]\nworld = "{old.as_posix()}"\nmax_players = 6\n'
+                          'port = 26510\n', encoding="utf-8")
+        window = self.window(config=config)
+        page = window.server_page
+        worlds = self.root / "worlds"
+        self.assertEqual(page.world, "Default")
+        self.assertEqual((worlds / "server.key").read_text(encoding="ascii"), key)
+        self.assertEqual(page.inputs["max_players"][1].value(), 6)
+        self.assertEqual(page.characters.topLevelItemCount(), 1)
+        self.assertEqual([page.characters.topLevelItem(0).text(i) for i in range(4)],
+                         ["Nerevar", "Dark Elf", "Warrior", "7"])
+        self.assertTrue((old / "characters").is_dir())  # left as it was
+
+        with patch.object(QInputDialog, "getText", return_value=("Second", True)), \
+                patch.object(QMessageBox, "question",
+                             return_value=QMessageBox.StandardButton.No):
+            page.duplicate_world()
+        self.assertEqual(page.world, "Second")
+        self.assertEqual(page.inputs["max_players"][1].value(), 6)
+        self.assertEqual(page.characters.topLevelItemCount(), 0)
+        page.inputs["max_players"][1].setValue(2)
+        page.world_activated(page.world_picker.findText("Default"))
+        self.assertEqual(page.inputs["max_players"][1].value(), 6)
+        page.world_activated(page.world_picker.findText("Second"))
+        self.assertEqual(page.inputs["max_players"][1].value(), 2)
+        self.assertEqual(page.inputs["port"][1].value(), 26510)
+        self.assertEqual(tomllib.loads(config.read_text(encoding="utf-8"))["server"]["world"],
+                         "Second")
+
+        page.world_activated(page.world_picker.findText("Default"))
+        page.characters.topLevelItem(0).setSelected(True)
+        with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
+            page.delete_character()
+        self.assertEqual(page.characters.topLevelItemCount(), 0)
+        self.assertFalse((worlds / "Default" / "characters" / "abc").exists())
+        with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
+            page.delete_world()
+        self.assertEqual([page.world_picker.itemText(i) for i in range(
+            page.world_picker.count())], ["Second"])
+        self.assertEqual(page.world, "Second")
 
     def test_server_page_serves_the_profile_build(self):
         config = self.root / "local.toml"
@@ -1405,7 +1460,8 @@ order = 10
         self.assertEqual([combo.itemText(i) for i in range(combo.count())], ["None", "profile"])
         combo.setCurrentIndex(combo.findData(str(self.profile.resolve())))
         self.assertTrue(page.save())
-        self.assertEqual(tomllib.loads(config.read_text(encoding="utf-8"))["server"]["profile"],
+        world = self.root / "worlds" / "Default" / "world.toml"
+        self.assertEqual(tomllib.loads(world.read_text(encoding="utf-8"))["profile"],
                          str(self.profile.resolve()))
         build = self.root / "out" / "gui" / "deploy"
         self.assertEqual(page.profile_deploy(self.profile), build)

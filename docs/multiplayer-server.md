@@ -87,6 +87,25 @@ quitting; after 30 seconds without confirmation, the player chooses to leave any
 World and character state files are replaced atomically. The server retries brief Windows
 file locks for up to 0.25 seconds; lasting write failures remain errors.
 
+### Worlds in the GUI
+
+The GUI's **Server** workspace keeps a list of worlds, picked beside **Start**. Each is a folder
+under **Settings > Paths > Server worlds** (`worlds` beside the local config by default), with its
+settings in `world.toml` and everything `--world` keeps. The cog next to the list makes a new
+world, duplicates one (with or without its characters), renames or deletes it, or opens its folder.
+**World settings** belong to the selected world; **This PC** settings, such as the ports, stay in
+the local config and apply to every world. Starting the server serves the selected world, so
+characters and world state carry over every stop and start.
+
+All worlds share one server key, `server.key` in the worlds folder, because a console refuses a
+different key at the same address. The first time the GUI opens without worlds, it makes
+`Default` from the earlier settings and copies an earlier world folder into it, its key included;
+the earlier folder is left as it was.
+
+The **Characters** tab lists the selected world's characters: name, race, class, level, when the
+server last wrote them, and the fingerprint of the console key that plays them. **Delete** removes
+one while the server is stopped; that console makes a new character there on its next join.
+
 ## Keys and passwords
 
 Traffic between a console and the server is encrypted. The server has a key of its own, kept in

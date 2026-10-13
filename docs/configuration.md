@@ -31,6 +31,7 @@ is none yet. Relative paths are relative to the file.
 | `mlox_rules` | string | downloaded | mlox's `mlox_base.txt`, for `rules.plugin_order = "mlox"`. Without it TES3X downloads the current rules on first use. |
 | `tes3merge` | string | none | `TES3Merge.exe`, for `rules.tes3merge = true`. |
 | `build_root` | string | `build` | Parent directory for profile output folders. |
+| `worlds` | string | `worlds` | Folder holding the GUI's server worlds, one folder each, and their shared `server.key`. |
 | `llvm` | string | automatic | Directory containing `clang` and `lld-link`. Without an override, use bundled tools first, then `PATH` and known installation folders. |
 | `nxdk` | string | none | nxdk checkout with its libraries built, for `tes3x nxdk`. `NXDK_DIR` takes precedence. |
 | `msys2` | string | `C:/msys64` | MSYS2 install whose `make`, `clang` and `lld` build nxdk programs on Windows. |
@@ -84,16 +85,31 @@ should use targets.
 
 ### `[server]`
 
-The GUI's **Server** workspace keeps its settings here and turns them into
-`tes3x net serve` options (see [multiplayer](multiplayer-server.md#start-the-server)). Command-line
-use of the server does not read this table.
+The GUI's **Server** workspace turns its settings into `tes3x net serve` options (see
+[multiplayer](multiplayer-server.md#worlds-in-the-gui)). This table holds the settings of this PC;
+each world's own are in `world.toml` in its folder under `paths.worlds` (below). The server runs
+with `--world` set to the world's folder and `--key` to `server.key` in the worlds folder.
+Command-line use of the server reads neither file.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `world` | string | none | `--world`: the folder that keeps the server key, password, characters, saves and bans. |
-| `profile` | string | none | `--build` with this multiplayer profile's staged `deploy` folder under `build_root`: the build consoles' Dashes download. |
+| `world` | string | `Default` | The selected world's name. |
 | `port` | integer | `26500` | `--port`: the UDP port consoles join. |
 | `admin_port` | integer | `26502` | `--admin-port`: the local admin port the GUI polls. |
+| `hosts` | array of strings | `[]` | `--host NAME=ADDRESS` for each entry. |
+| `tunnels` | array of integers | `[]` | `--tunnel PORT` for each xemu guest. |
+| `remote_admin` | integer | `0` | `--remote-admin PORT`; `0` keeps admin to this PC. |
+| `admin_password_file` | string | none | `--admin-password-file`. |
+| `mode` | string | `local` | `local` manages a server on this PC, `remote` one at `remote_address`. |
+| `remote_address` | string | none | A remote server's `HOST` or `HOST:PORT` (port 26503 by default). |
+| `remote_password` | string | none | Its admin password, kept only when **Remember** is ticked. Do not copy it into a public file. |
+
+In a world's `world.toml`:
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `name`, `description` | string | none | `--name`, `--description`: shown in TES3X Dash. |
+| `profile` | string | none | `--build` with this multiplayer profile's staged `deploy` folder under `build_root`: the build consoles' Dashes download. |
 | `password_file` | string | none | `--password-file`. |
 | `max_players` | integer | `16` | `--max-players`. |
 | `respawn` | string | `nearest` | `--respawn`: `nearest`, `shrine` or `temple`. |
@@ -103,14 +119,9 @@ use of the server does not read this table.
 | `hour` | number | server default | `--hour`; a negative value keeps the default. |
 | `timescale` | number | server default | `--timescale`; `0` keeps the default. |
 | `save_every` | integer | server default | `--save-every` in seconds; `0` keeps the default. |
+| `welcome` | string | none | `--welcome`. |
+| `serve_retail` | boolean | `false` | `--serve-origin` for the build, retail files and XBEs. |
 | `load_state` | boolean | `true` | `--load-state`: a character loads as a New Game built from the server's kept state, so the player spawns once; topics, factions and active effects start fresh. |
-| `hosts` | array of strings | `[]` | `--host NAME=ADDRESS` for each entry. |
-| `tunnels` | array of integers | `[]` | `--tunnel PORT` for each xemu guest. |
-| `remote_admin` | integer | `0` | `--remote-admin PORT`; `0` keeps admin to this PC. |
-| `admin_password_file` | string | none | `--admin-password-file`. |
-| `mode` | string | `local` | `local` manages a server on this PC, `remote` one at `remote_address`. |
-| `remote_address` | string | none | A remote server's `HOST` or `HOST:PORT` (port 26503 by default). |
-| `remote_password` | string | none | Its admin password, kept only when **Remember** is ticked. Do not copy it into a public file. |
 
 ## Profile
 
