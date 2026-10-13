@@ -3,7 +3,7 @@
  * the world run under menus. The simulation clock is the fld operand 0x1A bytes past the first. */
 #define WORLD_MENU_MODE 0xD2
 #define GATE_CLOCK 0x1A
-static u8 *const gates[2] = {(u8 *)TES3X_NET_MENU_GATE, (u8 *)TES3X_NET_MOB_GATE};
+#define gates ((u8 *const[2]){(u8 *)TES3X_NET_MENU_GATE, (u8 *)TES3X_NET_MOB_GATE})
 static u8 gate_original[2][6];
 #define GATES_UNEXPECTED 2
 static u32 gate_saved, gates_open;
@@ -196,7 +196,7 @@ typedef void(__attribute__((thiscall)) *fn_game_call)(void *game);
 typedef void(__attribute__((thiscall)) *fn_controller_update)(void *controller, u32 time);
 
 static int redirect_calls(const u32 *sites, u32 n, u32 original, const void *hook);
-static const u32 target_sites[] = TES3X_NET_ACTIVATION_TARGET_SITES;
+#define target_sites ((const u32[])TES3X_NET_ACTIVATION_TARGET_SITES)
 static u32 target_hooked, control_hooked, controls_held;
 
 static int menu_open(void)
@@ -217,7 +217,7 @@ static void __attribute__((thiscall)) activation_target_hook(void *game)
  * without which activation takes the default path and opens the dialogue. */
 typedef void(__attribute__((thiscall)) *fn_activate)(void *target, void *activator, int a2);
 static int is_ghost(const u8 *ref);
-static const u32 activate_sites[] = TES3X_NET_PLAYER_ACTIVATE_SITES;
+#define activate_sites ((const u32[])TES3X_NET_PLAYER_ACTIVATE_SITES)
 static u32 ghost_activations;
 
 static void __attribute__((thiscall)) player_activate_hook(u8 *target, void *activator, int a2)

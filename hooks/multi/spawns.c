@@ -707,7 +707,7 @@ static void leveled_event(u32 sid, u32 leveled, u32 cell, u32 count, const u8 *p
  * it) goes out as REMOVE. */
 typedef void(__cdecl *fn_summon)(void *instance, void *data, int index, const char *id);
 
-static const u32 summon_sites[] = TES3X_NET_SUMMON_SITES;
+#define summon_sites ((const u32[])TES3X_NET_SUMMON_SITES)
 static u32 summon_hooked, summons_sent, actors_made, actors_removed;
 
 static int actor_object(const u8 *object)
@@ -727,8 +727,8 @@ static int actor_object(const u8 *object)
 typedef u32(__attribute__((thiscall)) *fn_drop)(void *mobile, void *item, void *data, int count,
                                                  int flag);
 
-static const u32 player_script_sites[] = TES3X_NET_PLAYER_SCRIPT_SITES;
-static const u32 player_drop_sites[] = TES3X_NET_PLAYER_DROP_SITES;
+#define player_script_sites ((const u32[])TES3X_NET_PLAYER_SCRIPT_SITES)
+#define player_drop_sites ((const u32[])TES3X_NET_PLAYER_DROP_SITES)
 static u32 player_hooked, spawns_held, spawns_taken_over, spawns_released;
 
 static int lowest_client(void)

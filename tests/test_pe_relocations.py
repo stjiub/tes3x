@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 import unittest
 
-from tes3x.inject import apply_relocations, load_pe, rebase_hooks
+from tes3x.inject import apply_relocations, bind_payload, load_pe, rebase_hooks
 from tes3x.payload import PayloadError, find_tool, link_symbol
 
 
@@ -67,6 +67,29 @@ class RelocationTests(unittest.TestCase):
         self.assertEqual(hooks, dict(entry='0x00501000', opcode_base='0x2000',
                                      engine_site='0x401010', prof_count='16'))
         self.assertEqual(json.dumps(manifest), before)
+
+    def test_bind_payload_uses_original_entry_and_host_thunk_order(self):
+        class Host:
+            entry = 0x123456
+            thunk = 0x234000
+
+            @staticmethod
+            def thunk_ordinals():
+                return [9, 2, 7]
+
+        manifest = dict(base=0x400000, bindings=dict(orig_entry='0x400008',
+                        thunk_slots='0x400010', thunk_count=10, required_thunks=[2, 9]))
+        original = bytes(64)
+        bound = bind_payload(original, manifest, 0x500000, Host())
+        self.assertEqual(original, bytes(64))
+        self.assertEqual(struct.unpack_from('<I', bound, 8)[0], Host.entry)
+        self.assertEqual(struct.unpack_from('<I', bound, 16 + 9 * 4)[0], Host.thunk)
+        self.assertEqual(struct.unpack_from('<I', bound, 16 + 2 * 4)[0], Host.thunk + 4)
+        self.assertEqual(struct.unpack_from('<I', bound, 16 + 7 * 4)[0], Host.thunk + 8)
+        self.assertEqual(struct.unpack_from('<I', bound, 16 + 3 * 4)[0], 0)
+        manifest['bindings']['required_thunks'] = [3]
+        with self.assertRaisesRegex(ValueError, 'ordinal.*3'):
+            bind_payload(original, manifest, 0x500000, Host())
 
 
 class LinkedRelocationTests(unittest.TestCase):

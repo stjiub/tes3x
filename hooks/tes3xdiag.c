@@ -473,7 +473,11 @@ __attribute__((naked)) void tes3x_diag_update_hook(void)
         "popfl\n\t"
         "movl 8(%esp), %ecx\n\t"
         "pushl $1f\n\t"
+#ifdef TES3X_PORTABLE_BINDINGS
+        "pushl _tes3x_binding_values+" TES3X_STR(TES3X_DIAG_UPDATE_BIND_OFFSET) "\n\t"
+#else
         "pushl $" TES3X_STR(TES3X_DIAG_UPDATE) "\n\t"
+#endif
         "ret\n\t"
         "1:\n\t"
         "pushl %eax\n\t"

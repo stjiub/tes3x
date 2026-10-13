@@ -7,9 +7,13 @@ No official releases yet. The first public release is in preparation.
 - The sampled PAL GOTY engine now resolves console and multiplayer bindings automatically;
   its virtual keyboard and server join work. Other retail engine revisions still need
   compatibility checks.
+- `tes3x payload --portable-bindings` can build a diagnostics, console and multiplayer payload
+  once for the sampled NTSC and PAL GOTY engines; `tes3x patch` fills the engine addresses,
+  original entry and kernel import slots from the user's XBE. Other payload source sets still
+  need an image-specific build. See [payload injection](patches/payload.md).
 - Payload sections and hook addresses can relocate within the same engine image. Existing
-  fixed payloads still require their linked address; builds still need LLVM and remain bound
-  to the input engine. See [payload injection](patches/payload.md).
+  fixed payloads still require their linked address; building from source still needs LLVM.
+  See [payload injection](patches/payload.md).
 - xemu disc additions and direct-engine boot break staging hardlinks before replacing files,
   preserving the source game folder when runs share a deploy tree.
 - The console manager is now TES3X Dash. `tes3x dash` replaces `tes3x manager`, which still

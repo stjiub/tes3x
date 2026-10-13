@@ -315,9 +315,6 @@ def _payload(x, value, ctx):
         blob, vsize, entry_rva, imgbase = tes3x_inject.load_pe(value, base=va)
     except ValueError as exc:
         raise PatchError(str(exc)) from exc
-    x.add_section(ctx["section"], blob, vsize, 0x02 | 0x04 | 0x01)
-    x.set_entry(va + entry_rva)
-    ctx["payload"] = value
     manifest = os.path.splitext(value)[0] + ".json"
     if os.path.exists(manifest):
         with open(manifest, encoding="utf-8") as f:
@@ -328,9 +325,13 @@ def _payload(x, value, ctx):
         if manifest_base != imgbase:
             raise PatchError("payload manifest base does not match the PE")
         try:
+            blob = tes3x_inject.bind_payload(blob, manifest_data, va, x)
             ctx["hooks"] = tes3x_inject.rebase_hooks(manifest_data, va, vsize)
-        except ValueError as exc:
+        except (ValueError, RuntimeError) as exc:
             raise PatchError(str(exc)) from exc
+    x.add_section(ctx["section"], blob, vsize, 0x02 | 0x04 | 0x01)
+    x.set_entry(va + entry_rva)
+    ctx["payload"] = value
     return [(tes3x_inject.HDR_ENTRY, 4, "section %s at 0x%08X, entry -> 0x%08X"
              % (ctx["section"], va, va + entry_rva))]
 
