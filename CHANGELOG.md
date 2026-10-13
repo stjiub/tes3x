@@ -37,6 +37,13 @@ No official releases yet. The first public release is in preparation.
 - The GUI's Content tab now gives the build list a resizable area, puts server controls and status
   at the top, and can start content hosting with a local multiplayer server. Both server states
   remain visible in the bottom status bar. See [content servers](docs/content.md).
+- A multiplayer world can require an exact revision from a content library, on this PC or
+  another, and authorize its players' Dashes to download it there. The game now reports the
+  installed revision when it joins, and a console with a different revision or a local patch
+  selection is refused. Update the game build, Dash and server together. See
+  [builds from a content library](docs/multiplayer-server.md#builds-from-a-content-library).
+- Fixed: a pipeline run failed with "content must be a table of content-server settings" once
+  the GUI had saved the content server's multiplayer autostart setting.
 - Content servers now use HTTPS, pinned through the library's signed catalog, and are private
   by default: a new Xbox waits until it is approved in the GUI or with `tes3x content approve`.
   Start the server with `--access public` to keep the earlier open behaviour. Each address is

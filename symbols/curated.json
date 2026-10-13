@@ -4885,12 +4885,40 @@
       "pc_va": "0x00582EF0"
     },
     {
+      "va": "0x00197860",
+      "name": "ui::setX",
+      "confidence": "verified",
+      "provenance": "Xbox decompile: stores pixel x at Element +0xE4 and adjusts +0x9C",
+      "signature": "void __thiscall setX(int pixels)"
+    },
+    {
+      "va": "0x00197890",
+      "name": "ui::setY",
+      "confidence": "verified",
+      "provenance": "Xbox decompile: stores pixel y at Element +0xE8 and adjusts +0xA0",
+      "signature": "void __thiscall setY(int pixels)"
+    },
+    {
       "va": "0x001983B0",
       "name": "ui::getPaletteColour",
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_ui_getPaletteColour",
       "pc_va": "0x0057F610"
+    },
+    {
+      "va": "0x00198980",
+      "name": "ui::setWidth",
+      "confidence": "verified",
+      "provenance": "Xbox decompile: stores pixel width at Element +0xF4 with min/max clamps",
+      "signature": "void __thiscall setWidth(int pixels)"
+    },
+    {
+      "va": "0x00198A60",
+      "name": "ui::setHeight",
+      "confidence": "verified",
+      "provenance": "Xbox decompile: stores pixel height at Element +0xF8 with min/max clamps",
+      "signature": "void __thiscall setHeight(int pixels)"
     },
     {
       "va": "0x00199660",
@@ -5188,7 +5216,8 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_ui_loadMenuPosition",
-      "pc_va": "0x005972C0"
+      "pc_va": "0x005972C0",
+      "note": "Xbox parses nine floats in MenuStates but never uses them; only flags affect an existing entry. A missing entry sets default pixel geometry through ui::setWidth/Height/X/Y."
     },
     {
       "va": "0x001AF010",
@@ -5634,6 +5663,13 @@
       "provenance": "called by the MessageBox command with text then 10 button pointers and 0, and by MobilePlayer::onDeath; used at the main menu by join-a4",
       "note": "Buttons are a NULL-terminated list of strings. Unlike the MessageBox command it expands no text macros, so it works with no player (the command reads [mobile player+0x560] and faults at the main menu).",
       "signature": "void __cdecl showMessageMenu(const char* text, ...)"
+    },
+    {
+      "va": "0x001F74F0",
+      "name": "SaveLastMenuUpWas",
+      "confidence": "verified",
+      "provenance": "Xbox disassembly and Ghidra decompile: writes MenuStates/LastMenuUpWas as one integer",
+      "note": "Writes only LastMenuUpWas to MenuStates; it does not save window geometry."
     },
     {
       "va": "0x001F7650",

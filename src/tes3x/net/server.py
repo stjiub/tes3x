@@ -3097,6 +3097,15 @@ class Server:
                 f"client {c} {n}" for c, n in sorted(runs.items())))
         return "\n".join(out)
 
+    def required_build(self):
+        """The (build ID, revision) a joining console must have, or None. A served build's revision
+        is the digest of the manifest it hands out, which its Dash install records."""
+        if self.content_source:
+            return (bytes.fromhex(self.content_source.build),
+                    bytes.fromhex(self.content_source.revision))
+        served = self.build_server.build_id() if self.build_server else None
+        return (served, self.build_server.build.sha256) if served else None
+
     def handle_plain(self, packet, addr, secure=None):
         magic, version, kind, _, session, seq, _, sent, _ = T3MP.unpack_from(packet)
         stamp = time.strftime("%H:%M:%S")
@@ -3122,8 +3131,8 @@ class Server:
         """A HELLO sealed by a finished handshake: admit, refuse or rejoin the console, and
         send a joining one the shared world."""
         key, keys = secure
-        mac, build, order, plugins, *offered, build_id = HELLO_BODY.unpack_from(packet,
-                                                                              T3MP.size)
+        mac, build, order, plugins, *offered, build_id, revision, selection = \
+            HELLO_BODY.unpack_from(packet, T3MP.size)
         dash = bool(plugins & MANAGER)
         mac, lobby, plugins = mac.hex(":"), bool(plugins & LOBBY), plugins & ~LOBBY & ~MANAGER
         if fingerprint(key) in self.bans["key"] or mac in self.bans["mac"]:
@@ -3150,14 +3159,27 @@ class Server:
             playing = sum(c.alive and not c.lobby for c in self.clients.values())
             info = tes3x_netbuild.dash_info(self.args.name, self.args.description,
                                                playing, self.args.max_players)
-            self.send(stranger, BUILD, body + who + b'\0' + info)
+            source = self.content_source.block(revision) if self.content_source else b""
+            self.send(stranger, BUILD, body + who + b'\0' + info + source)
             print(f"{stamp} Dash {fingerprint(key)} at {addr[0]} asked for the build"
-                  + ("" if self.build_server else ", which is not served"), flush=True)
+                  + (", served by its content library" if self.content_source
+                     else "" if self.build_server else ", which is not served"), flush=True)
             return
-        served = self.build_server.build_id() if self.build_server and any(build_id) else None
-        if served and build_id != served:
+        required = self.required_build() if any(build_id) else None
+        if required and build_id != required[0]:
             print(f"{stamp} refused {mac}: build {build_id.hex()[:16]}, the server's is "
-                  f"{served.hex()[:16]}", flush=True)
+                  f"{required[0].hex()[:16]}", flush=True)
+            self.refuse(addr, session, keys, mac, REFUSED_STALE)
+            return
+        if required and any(revision) and revision != required[1]:
+            print(f"{stamp} refused {mac}: revision {revision.hex()[:16]}, the server's is "
+                  f"{required[1].hex()[:16]}", flush=True)
+            self.refuse(addr, session, keys, mac, REFUSED_STALE)
+            return
+        if required and any(selection):
+            # until patches say which must match, any local selection is another build
+            print(f"{stamp} refused {mac}: a local patch selection "
+                  f"{selection.hex()[:16]}", flush=True)
             self.refuse(addr, session, keys, mac, REFUSED_STALE)
             return
         if self.pinned is None and not lobby:
@@ -3481,6 +3503,34 @@ class Server:
         self.bursts = [(float(at), int(count)) for count, _, at in
                        (spec.partition("@") for spec in self.args.burst)]
         self.build_server = None
+        self.content_source = None
+        content_options = (self.args.content_source or self.args.content_key
+                           or self.args.content_entry or self.args.content_state)
+        if content_options and self.args.build:
+            sys.exit("--build and a content source are alternatives: choose one")
+        if content_options:
+            from tes3x import content as tes3x_content
+            if not self.args.content_entry:
+                sys.exit("a content source needs --content-entry")
+            key_path = self.args.content_delegation_key or (
+                os.path.join(self.args.world, "content-delegation.key") if self.args.world
+                else None)
+            if not key_path:
+                sys.exit("a content source needs --world or --content-delegation-key")
+            try:
+                self.content_source = tes3x_content.WorldSource.configure(
+                    tes3x_content.delegation_identity(key_path), self.args.content_source,
+                    self.args.content_key, self.args.content_entry, self.args.content_build,
+                    self.args.content_revision, self.args.content_state,
+                    self.args.name or os.path.basename(os.path.normpath(self.args.world or "")))
+            except (OSError, ValueError) as error:
+                sys.exit(f"content source: {error}")
+            source = self.content_source
+            print(f"content source {source.host or '(this host)'}:{source.port} "
+                  f"{source.entry} revision {source.revision[:16]}; delegation key "
+                  f"{source.delegate}"
+                  + ("" if self.args.content_state else
+                     " (the library must trust it: tes3x content delegate)"), flush=True)
         if self.args.build:
             retail_base = self.args.retail_base
             if not retail_base:

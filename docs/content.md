@@ -146,6 +146,17 @@ it came from.
 
 Content browsing is a standalone download path. A multiplayer server still serves its own
 single build through **Servers**; it does not yet point clients at a separate content library.
+A multiplayer world can require one revision from a library and authorize its players'
+Dashes to download it; see [builds from a content library](multiplayer-server.md#builds-from-a-content-library).
 Activity reports are signed by a stable Dash identity and bound to the transfer ticket. Shared
-archive storage, remote content sources for multiplayer, and Docker service profiles are planned
-separately.
+archive storage and Docker service profiles are planned separately.
+
+### Before exposing a library to the Internet
+
+HTTPS, approval and the rate limits protect what the library hands out, but the service has had
+no independent security review and runs on Python's standard HTTP server. Its 32 connections
+are shared by everyone, so many addresses together can still keep real consoles out. The Dash
+trusts a library's key the first time it contacts it; add a library over your own network or a
+VPN first, or reach it through a world, which names the key. A private library reached through
+a VPN or a port forwarded only to people you approve is the intended remote setup. Do not
+expose a public library, and never one that serves retail files or XBEs.

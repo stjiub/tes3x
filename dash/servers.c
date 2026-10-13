@@ -28,7 +28,10 @@
 #define INNER 16
 enum { HELLO = 1, REFUSE = 9, BUILD = 12, HANDSHAKE1 = 20, HANDSHAKE2, HANDSHAKE3, SEALED };
 #define HANDSHAKE_PAD 128
-#define HELLO_BYTES 74 /* MAC, XBE build, load order, plugin count, clock, manifest build */
+/* MAC, XBE build, load order, plugin count, clock, manifest build, then a revision and a patch
+ * selection, where a Dash puts its content identity and zeros */
+#define HELLO_BYTES 138
+#define HELLO_REVISION 74
 #define MANAGER_FLAG 0x40000000u
 #define BUILD_BYTES 56
 #define RETRY_MS 500
@@ -291,12 +294,55 @@ int server_add(const char *name, struct server *s)
     return split_name(s) ? server_save(s) : -1;
 }
 
+/* The length of the NUL-terminated string at p[at], or len when it has no NUL before p[len]. */
+static size_t field_len(const unsigned char *p, size_t at, size_t len)
+{
+    const unsigned char *nul = at < len ? memchr(p + at, 0, len - at) : NULL;
+
+    return nul ? (size_t)(nul - p) - at : len;
+}
+
+/* A CSRC block (tes3x.content.WorldSource) after INFO. */
+static void server_source(struct server *s, const unsigned char *p, size_t n)
+{
+    size_t len, host, entry;
+    unsigned i;
+
+    s->has_source = 0;
+    if (n < 6 || memcmp(p, "CSRC", 4) || (len = p[4] | (size_t)p[5] << 8) > n - 6)
+        return;
+    p += 6;
+    if (len < 34)
+        return;
+    host = field_len(p, 34, len);
+    if (34 + host >= len || host >= sizeof(s->source_host))
+        return;
+    entry = field_len(p, 35 + host, len);
+    if (35 + host + entry >= len || !entry || entry >= sizeof(s->source_entry)
+        || len != 36 + host + entry + 168)
+        return;
+    memcpy(s->source_key, p, 32);
+    s->source_port = p[32] | (unsigned)p[33] << 8;
+    memcpy(s->source_host, p + 34, host);
+    s->source_host[host] = 0;
+    memcpy(s->source_entry, p + 35 + host, entry);
+    s->source_entry[entry] = 0;
+    p += 36 + host + entry;
+    hex_write(s->source_build, p, 32);
+    hex_write(s->source_revision, p + 32, 32);
+    hex_write(s->source_world, p + 64, 32);
+    for (s->source_expires = 0, i = 0; i < 8; i++)
+        s->source_expires |= (unsigned long long)p[96 + i] << (8 * i);
+    hex_write(s->source_signature, p + 104, 64);
+    s->has_source = s->source_port != 0;
+}
+
 static void server_info(struct server *s, const unsigned char *body, size_t n)
 {
     size_t who = 0, a = 0, b = 0;
 
     s->character[0] = 0;
-    s->has_info = 0;
+    s->has_info = s->has_source = 0;
     s->display_name[0] = s->description[0] = 0;
     while (who < n && body[who])
         who++;
@@ -325,6 +371,7 @@ static void server_info(struct server *s, const unsigned char *body, size_t n)
     memcpy(s->description, body + 9 + a, b);
     s->description[b] = 0;
     s->has_info = 1;
+    server_source(s, body + 10 + a + b, n - 10 - a - b);
 }
 
 /* --- the session --- */
@@ -562,6 +609,7 @@ const char *server_ticket(struct server *s, struct ticket *t, progress_fn progre
             s->has_pending_key = 0;
             memset(hello, 0, sizeof(hello));
             put32(hello + 14, MANAGER_FLAG);
+            content_public_key(hello + HELLO_REVISION);
             pw = strlen(s->password);
             memcpy(hello + HELLO_BYTES, s->password, pw);
             outer(sent, HANDSHAKE3, session, 0);

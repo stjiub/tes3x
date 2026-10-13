@@ -909,6 +909,41 @@ static void ask_server_key(struct server *s, int install)
     v.confirm = CONFIRM_SERVER_KEY;
 }
 
+/* The world's exact revision from the content library it names, under its authorization. The
+ * build is labelled with the world, as a build the world served itself would be. */
+static const char *install_from_library(struct server *s, int replace, char *folder,
+                                        size_t folder_n, char *summary, size_t summary_n)
+{
+    static struct content_host host;
+    struct ticket ticket;
+    const char *err;
+
+    busy("Contacting the world's content library...");
+    if ((err = content_world_host(s, &host)) || (err = content_world_ticket(&host, s, &ticket)))
+        return err;
+    active_content_host = &host;
+    active_content_ticket = &ticket;
+    content_report_stage = NULL;
+    content_report(&host, &ticket, "planning", 0, 0);
+    err = install_ticket(&ticket, host.host, s->name, replace, folder, folder_n, summary,
+                         summary_n, content_progress);
+    content_report(&host, &ticket, err ? !strcmp(err, "Cancelled.") ? "cancelled" : "failed"
+                                       : "complete", 0, 0);
+    active_content_host = NULL;
+    active_content_ticket = NULL;
+    if (!err) {
+        struct content_entry entry;
+
+        memset(&entry, 0, sizeof(entry));
+        snprintf(entry.id, sizeof(entry.id), "%s", s->source_entry);
+        snprintf(entry.build, sizeof(entry.build), "%s", s->source_build);
+        snprintf(entry.revision, sizeof(entry.revision), "%s", s->source_revision);
+        content_attempt_done(&host, &entry, &ticket);
+        load_content();
+    }
+    return err;
+}
+
 static void install_server(struct server *s, int replace)
 {
     char folder[PATH_MAX_MGR], summary[128];
@@ -916,6 +951,9 @@ static void install_server(struct server *s, int replace)
 
     busy("Contacting the server...");
     err = server_install(s, replace, folder, sizeof(folder), summary, sizeof(summary), progress);
+    if (err == SERVER_FROM_LIBRARY)
+        err = install_from_library(s, replace, folder, sizeof(folder), summary,
+                                   sizeof(summary));
     if (err == SERVER_KEY_CHANGED) {
         ask_server_key(s, 1);
         return;
@@ -997,6 +1035,20 @@ static int join_ready(struct server *s, const char *build)
     if (err && strcmp(err, "The server hands out no build.")) {
         say("Cannot join", s->name, err);
         return 0;
+    }
+    if (err && s->has_source) {
+        char installed[65];
+
+        build_revision(build, installed);
+        if (strcmp(installed, s->source_revision)) {
+            mgr_log("join %s: revision %.16s installed, world requires %.16s\n", s->name,
+                    installed[0] ? installed : "none", s->source_revision);
+            say("Build out of date", s->name, "The world requires another revision.");
+            snprintf(v.text[2], sizeof(v.text[2]), "Install it from its library now?");
+            v.server_list.sel = (int)(s - servers);
+            v.confirm = CONFIRM_UPDATE;
+            return 0;
+        }
     }
     if (!err && !build_current(build, &t)) {
         mgr_log("join %s: build out of date\n", s->name);

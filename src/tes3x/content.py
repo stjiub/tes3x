@@ -218,6 +218,87 @@ def delegation_message(client, service, entry, build, revision, expires):
     return f"delegate:{client}:{service}:{entry}:{build}:{revision}:{expires}".encode()
 
 
+AUTHORIZATION_SECONDS = 3600
+
+
+def delegation_identity(path):
+    """A world's Ed25519 delegation key, kept beside its other state."""
+    path = Path(path)
+    if path.exists():
+        key = serialization.load_pem_private_key(path.read_bytes(), password=None)
+        if not isinstance(key, ed25519.Ed25519PrivateKey):
+            raise ValueError(f"{path} is not an Ed25519 key")
+        return key
+    key = ed25519.Ed25519PrivateKey.generate()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("xb") as out:
+        out.write(key.private_bytes(serialization.Encoding.PEM,
+                                    serialization.PrivateFormat.PKCS8,
+                                    serialization.NoEncryption()))
+    if os.name != "nt":
+        path.chmod(0o600)
+    return key
+
+
+class WorldSource:
+    """A multiplayer world's required revision and the library that serves it. The BUILD reply to
+    a Dash carries it as a CSRC block, with an authorization for that Dash's content identity:
+
+        "CSRC", u16 length of the rest, content key (32), port (u16), host and entry (each
+        NUL-terminated; an empty host is the world's own), build (32), revision (32), world
+        delegation key (32), expiry (u64 Unix seconds), signature (64; zero without a Dash key)
+    """
+
+    def __init__(self, host, port, service_key, entry, build, revision, signer):
+        if (len(host) > 63 or not re.fullmatch(r"[A-Za-z0-9.-]*", host)
+                or not 0 < port < 65536 or not hex64(service_key) or not ENTRY.fullmatch(entry)
+                or not hex64(build) or not hex64(revision)):
+            raise ValueError("invalid content source")
+        self.host, self.port, self.service_key = host, port, service_key
+        self.entry, self.build, self.revision, self.signer = entry, build, revision, signer
+
+    @property
+    def delegate(self):
+        return public_key(self.signer).hex()
+
+    def block(self, dash_key):
+        expires = int(time.time()) + AUTHORIZATION_SECONDS if any(dash_key) else 0
+        signature = self.signer.sign(delegation_message(
+            dash_key.hex(), self.service_key, self.entry, self.build, self.revision,
+            expires)) if expires else bytes(64)
+        body = (bytes.fromhex(self.service_key) + self.port.to_bytes(2, "little")
+                + self.host.encode() + b"\0" + self.entry.encode() + b"\0"
+                + bytes.fromhex(self.build) + bytes.fromhex(self.revision)
+                + public_key(self.signer) + expires.to_bytes(8, "little") + signature)
+        return b"CSRC" + len(body).to_bytes(2, "little") + body
+
+    @classmethod
+    def configure(cls, signer, source=None, key=None, entry=None, build=None, revision=None,
+                  state=None, label=""):
+        """From explicit values, filling what is missing from a local library's state; a local
+        library also starts trusting this world for the revision."""
+        host, _, port = (source or ":").rpartition(":")
+        port = int(port or PORT)
+        if state is not None:
+            state = Path(state)
+            with (state / "content.key").open("rb") as stream:
+                local = serialization.load_pem_private_key(stream.read(), password=None)
+            key = key or public_key(local).hex()
+            rows = read_publications(state).get(entry, [])
+            row = next((row for row in rows if row["revision"] == revision), None) if revision \
+                else next((row for row in reversed(rows) if row["listed"]), None)
+            if row is None:
+                raise ValueError(f"the library has no revision {revision or '(latest)'} of "
+                                 f"{entry!r}")
+            build, revision = build or row["build"], row["revision"]
+        if not (key and entry and build and revision):
+            raise ValueError("a content source needs its key, entry, build and revision")
+        world = cls(host, port, key, entry, build, revision, signer)
+        if state is not None:
+            delegate(state, world.delegate, entry, revision, label)
+        return world
+
+
 class Access:
     """The library's admission policy, reread when access.json changes so the GUI and CLI can
     approve Dashes while the server runs. Requests from unknown Dashes are kept in pending.json."""

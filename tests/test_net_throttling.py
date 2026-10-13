@@ -56,14 +56,15 @@ class PasswordLimitTests(unittest.TestCase):
         self.server.refuse = Mock()
         self.server.handshake_client = Mock()
         self.server.dash_character = Mock(return_value='')
-        self.server.build_server = None
+        self.server.build_server = self.server.content_source = None
         self.server.clients = {}
         self.server.args = SimpleNamespace(name='Test', description='', max_players=8)
         self.server.send = Mock()
 
     def hello(self, host, key, password, now=100.):
         packet = bytes(p.T3MP.size) + p.HELLO_BODY.pack(bytes(6), 0, 0, p.MANAGER,
-                                                      *[0.] * 6, bytes(32)) + password
+                                                      *[0.] * 6, bytes(32), bytes(32),
+                                                      bytes(32)) + password
         with contextlib.redirect_stdout(io.StringIO()):
             self.server.hello(packet, (host, 1000), (key, (bytes(32), bytes(32))),
                               p.MANAGER_VERSION, 1, 0, 0, '', now)

@@ -128,6 +128,8 @@ static void handshake_finish(void)
     put32le(hello + 14, ses.plugins | (lobby ? LOBBY_PLUGINS : 0));
     copy(hello + 18, game_clock.local, CLOCK_BYTES);
     copy(hello + 18 + CLOCK_BYTES, build_id, BUILD_ID);
+    copy(hello + 18 + CLOCK_BYTES + BUILD_ID, build_revision, BUILD_ID);
+    copy(hello + 18 + CLOCK_BYTES + 2 * BUILD_ID, patch_selection, BUILD_ID);
     unlock(flags);
     if ((password = trust.password_n))
         copy(hello + HELLO_BYTES, (const u8 *)trust.password, password);

@@ -535,6 +535,8 @@ finished:
     return err;
 }
 
+const char SERVER_FROM_LIBRARY[] = "The world's build comes from its content library.";
+
 const char *install_ticket(const struct ticket *ticket, const char *host, const char *label,
                            int replace, char *folder, size_t folder_n, char *summary,
                            size_t summary_n, progress_fn progress)
@@ -813,6 +815,8 @@ const char *server_install(struct server *s, int replace, char *folder, size_t f
     char host[32];
     const char *err = server_ticket(s, &ticket, progress);
 
+    if (err && !ticket.size && s->has_source)
+        return SERVER_FROM_LIBRARY;
     if (err)
         return err;
     snprintf(host, sizeof(host), "%u.%u.%u.%u", ticket.addr >> 24,

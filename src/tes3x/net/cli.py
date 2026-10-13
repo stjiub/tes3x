@@ -172,8 +172,9 @@ class FuzzClient:
         self.refused = None  # a REFUSE's body
 
     def join(self, timeout=2.0, password=b"", lobby=False, dash=False, secret=None,
-             build_id=bytes(32)):
-        """WELCOME's body, or with dash, BUILD's; None if the server sent neither."""
+             build_id=bytes(32), revision=bytes(32), selection=bytes(32)):
+        """WELCOME's body, or with dash, BUILD's; None if the server sent neither. A Dash's
+        revision is its content identity."""
         if dash and not self.version_override:
             self.version = MANAGER_VERSION
         secret, e = secret or self.rng.randbytes(32), self.rng.randbytes(32)
@@ -185,7 +186,8 @@ class FuzzClient:
         noise.read2(reply[OUTER.size:])
         hello = HELLO_BODY.pack(self.rng.randbytes(6), 0, 0x46555A5A,
                                 3 | (LOBBY if lobby else 0) | (MANAGER if dash else 0),
-                                12.0, 16.0, 7.0, 427.0, 1.0, 30.0, build_id)
+                                12.0, 16.0, 7.0, 427.0, 1.0, 30.0, build_id, revision,
+                                selection)
         self.handshake3 = (OUTER.pack(b"T3MP", self.version, HANDSHAKE3, 0, self.session, 0)
                            + noise.write3(hello + password))
         self.sock.sendto(self.handshake3, self.addr)
@@ -576,6 +578,26 @@ def main(argv=None):
                         "only; retail and xbe are the admin's choice)")
     p.add_argument("--http-port", type=int, metavar="PORT",
                    help="the TCP port --build is served on (default: --port; 0 for any)")
+    p.add_argument("--content-entry", metavar="ID",
+                   help="instead of --build: require this content library entry, which Dashes "
+                        "download from the library")
+    p.add_argument("--content-revision", metavar="HEX",
+                   help="the entry's exact revision (default with --content-state: its latest "
+                        "listed one)")
+    p.add_argument("--content-build", metavar="HEX",
+                   help="the revision's build ID (read from --content-state when given)")
+    p.add_argument("--content-source", metavar="[HOST]:PORT",
+                   help="where Dashes reach the library (default: this server's host, port "
+                        "26510)")
+    p.add_argument("--content-key", metavar="HEX",
+                   help="the library's public key, from tes3x content key (read from "
+                        "--content-state when given)")
+    p.add_argument("--content-state", metavar="DIR",
+                   help="a library on this PC: fills the key, build and revision, and lets this "
+                        "world authorize Dashes for that revision")
+    p.add_argument("--content-delegation-key", metavar="FILE",
+                   help="the world's delegation signing key (default: content-delegation.key in "
+                        "--world)")
     p.add_argument("--send", metavar="FILE",
                    help="send FILE to each client that joins, into U:\\TES3X\\ under its name")
     p.add_argument("--burst", action="append", default=[], metavar="COUNT@SECONDS",

@@ -159,38 +159,66 @@ static void trust_configure(const char *name, u32 n, const u8 *fingerprint)
     trust.name[n] = 0;
 }
 
-/* Game thread, once: "build" from the head of D:\tes3xbuild.json, where the pipeline puts it
- * first. Zero without a manifest, which a server judges by the load order alone. */
+/* The 32-byte hex value of the first "key": "..." in head, or zeros. */
+static void manifest_field(const char *head, u32 n, const char *key, u8 *out)
+{
+    u32 i, k;
+
+    for (i = 0; key[0]; i++) {
+        for (k = 0; key[k] && i + k < n && head[i + k] == key[k]; k++)
+            ;
+        if (i + k + 2 * BUILD_ID > n)
+            break;
+        if (key[k])
+            continue;
+        if (hex_read(head + i + k, out, BUILD_ID))
+            return;
+        break;
+    }
+    for (k = 0; k < BUILD_ID; k++)
+        out[k] = 0;
+}
+
+/* Game thread, once: "build" and "revision" from the head of D:\tes3xbuild.json, where the
+ * pipeline puts the build first and the Dash the revision it installed, and the local patch
+ * selection's BLAKE2b. Zero without them; a server then judges by the build or the load order. */
 static void build_id_load(void)
 {
-    static char path[] = "D:\\tes3xbuild.json";
-    static const char key[] = "\"build\": \"";
+    static char path[] = "D:\\tes3xbuild.json", patches[] = "D:\\tes3xpatches.json";
     static char head[1024];
     static u32 loaded;
     IO_STATUS_BLOCK iosb;
     u64 offset = 0;
-    u32 i, k, n = 0;
+    u32 k, n = 0;
     void *h;
 
     if (loaded)
         return;
     loaded = 1;
-    if (bulk_open(path, GENERIC_READ, FILE_OPEN, 0, &h))
-        return;
-    if (!NtReadFile(h, 0, 0, 0, &iosb, head, sizeof(head), &offset))
-        n = iosb.Information;
-    NtClose(h);
-    for (i = 0; i + sizeof(key) - 1 + 2 * BUILD_ID <= n; i++) {
-        for (k = 0; key[k] && head[i + k] == key[k]; k++)
-            ;
-        if (key[k])
-            continue;
-        if (!hex_read(head + i + k, build_id, BUILD_ID))
-            for (k = 0; k < BUILD_ID; k++)
-                build_id[k] = 0;
-        break;
+    if (!bulk_open(path, GENERIC_READ, FILE_OPEN, 0, &h)) {
+        if (!NtReadFile(h, 0, 0, 0, &iosb, head, sizeof(head), &offset))
+            n = iosb.Information;
+        NtClose(h);
     }
+    manifest_field(head, n, "\"build\": \"", build_id);
+    manifest_field(head, n, "\"revision\": \"", build_revision);
     tes3x_log_hex3("net.build_id", get32(build_id), get32(build_id + 4), n);
+    if (!bulk_open(patches, GENERIC_READ, FILE_OPEN, 0, &h)) {
+        n = 0;
+        offset = 0;
+        /* one too large to read whole still counts as a selection */
+        if (bulk_size(h) <= sizeof(head) && !NtReadFile(h, 0, 0, 0, &iosb, head, sizeof(head),
+                                                        &offset))
+            n = iosb.Information;
+        NtClose(h);
+        if (n)
+            crypto_blake2b(patch_selection, BUILD_ID, (const u8 *)head, n);
+        else
+            for (k = 0; k < BUILD_ID; k++)
+                patch_selection[k] = 0xff;
+    }
+    tes3x_log_hex3("net.revision", get32(build_revision), get32(build_revision + 4),
+                   get32(patch_selection));
 }
 
 /* Game thread, before the first handshake of each `up`. */

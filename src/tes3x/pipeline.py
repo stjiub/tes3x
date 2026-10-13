@@ -232,9 +232,15 @@ def validate_local_config(local):
 
     content = local.get("content", {})
     if not isinstance(content, dict) or set(content) - {
-            "all_builds", "build", "bind", "port", "retail", "xbe"}:
+            "all_builds", "build", "bind", "port", "retail", "xbe", "with_multiplayer",
+            "access", "client_rate"}:
         raise PipelineError("content must be a table of content-server settings")
-    for key in ("all_builds", "retail", "xbe"):
+    if "access" in content and content["access"] not in ("private", "public"):
+        raise PipelineError("content.access must be private or public")
+    if "client_rate" in content and (type(content["client_rate"]) is not int
+                                     or content["client_rate"] < 0):
+        raise PipelineError("content.client_rate must be a whole number of Mbit/s")
+    for key in ("all_builds", "retail", "xbe", "with_multiplayer"):
         if key in content and type(content[key]) is not bool:
             raise PipelineError(f"content.{key} must be a boolean")
     if "build" in content and (not isinstance(content["build"], list)

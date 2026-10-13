@@ -224,8 +224,10 @@ typedef long(__stdcall *fn_KeQueryBasePriorityThread)(void *);
 #define CLOCK_GLOBALS 6u
 #define CLOCK_BYTES (CLOCK_GLOBALS * 4u)
 #define BUILD_ID 32u /* the manifest's, after the clock: a server serving another refuses it */
-#define HELLO_BYTES (18u + CLOCK_BYTES + BUILD_ID)
-static u8 build_id[BUILD_ID];
+/* After the build ID: the published revision the Dash installed, then the BLAKE2b of a local patch
+ * selection (D:\tes3xpatches.json); each zero when absent. */
+#define HELLO_BYTES (18u + CLOCK_BYTES + 3u * BUILD_ID)
+static u8 build_id[BUILD_ID], build_revision[BUILD_ID], patch_selection[BUILD_ID];
 #define REFUSED_STALE 6u /* the build is not the server's: the Dash updates it */
 #define REFUSED_PROTOCOL 7u
 #define PASSWORD_MAX 64u /* NetPassword, after HELLO */

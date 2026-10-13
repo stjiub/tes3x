@@ -161,6 +161,14 @@ struct server {
     int has_info, has_pending_key;
     unsigned char pending_key[32];
     char pending_fingerprint[33];
+    /* The world's required revision and the content library serving it (its CSRC), with the
+     * world's authorization for this Dash; source_host empty is the server's own host. */
+    int has_source;
+    char source_host[64], source_entry[43], source_build[65], source_revision[65];
+    unsigned source_port;
+    unsigned char source_key[32];
+    char source_world[65], source_signature[129];
+    unsigned long long source_expires;
 };
 /* What a server's BUILD hands the Dash: its manifest's hash and size, and a ticket for the
  * HTTP side at addr:port. */
@@ -192,6 +200,8 @@ const char *server_ticket(struct server *s, struct ticket *t, progress_fn progre
  * the retail base. NULL and a summary, INSTALL_CONFIRM when the folder holds something else
  * (again with replace set to go ahead), or why not. The folder is filled in either way. */
 extern const char INSTALL_CONFIRM[];
+/* server_install: the world's build comes from its content library (content_world_install). */
+extern const char SERVER_FROM_LIBRARY[];
 const char *server_install(struct server *s, int replace, char *folder, size_t folder_n,
                            char *summary, size_t summary_n, progress_fn progress);
 /* The same installer for a content-library ticket. The label identifies this entry on disk. */
@@ -201,6 +211,7 @@ const char *install_ticket(const struct ticket *ticket, const char *host, const 
 /* Starts a build's engine with New Game and the server to join (the game's JOIN_MAGIC). */
 const char *join_server(const char *folder, const char *server, void (*before)(void));
 
+struct content_host;
 /* Signed standalone libraries, kept separately from the game's multiplayer servers. */
 #define CONTENT_ENTRIES 64
 struct content_host {
@@ -226,6 +237,16 @@ extern const char CONTENT_BUILD_CHANGED[];
 /* The library is private and has not approved this Dash: content_fingerprint names it. */
 extern const char CONTENT_PENDING[];
 const char *content_fingerprint(void);
+/* This Dash's content identity, sent in place of the revision when it asks a world for its
+ * build; zero when it cannot be loaded. */
+void content_public_key(unsigned char out[32]);
+/* The world's library, saved with the key the world names; NULL, or why not. */
+const char *content_world_host(const struct server *s, struct content_host *host);
+/* A ticket for the world's exact revision under its authorization. */
+const char *content_world_ticket(struct content_host *host, const struct server *s,
+                                 struct ticket *out);
+/* The "revision" an installed build's manifest records; empty when none. */
+void build_revision(const char *folder, char out[65]);
 int content_load(struct content_host *out, int max);
 int content_add(const char *name, struct content_host *out);
 int content_remove(const struct content_host *host);

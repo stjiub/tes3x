@@ -113,11 +113,13 @@ CLIENT_RATE = (600, 600.0)  # sealed packets from one joined client; a console s
 CLOCK_BODY = struct.Struct("<6f")
 
 
-# MAC, build id, load order hash, plugin count, the client's clock, then its manifest's build id
-# (zero without one); NetPassword follows.
+# MAC, build id, load order hash, plugin count, the client's clock, then its manifest's build id,
+# the published revision the Dash installed and its local patch selection's BLAKE2b (each zero
+# without one); NetPassword follows. A Dash's HELLO carries its content identity (an Ed25519 public
+# key) in place of the revision.
 # LOBBY in the plugin count: a console at the main menu, with no game and so no clock. It gets no
 # world, only what picks a character (GAME, CHARS or NEWCHAR, PICK, the checkpoint and LOAD).
-HELLO_BODY = struct.Struct("<6sIII" + CLOCK_BODY.format[1:] + "32s")
+HELLO_BODY = struct.Struct("<6sIII" + CLOCK_BODY.format[1:] + "32s32s32s")
 
 
 LOBBY = 0x80000000
@@ -140,7 +142,7 @@ REFUSE_BODY = struct.Struct("<III")
 REFUSED_LOAD_ORDER, REFUSED_FULL, REFUSED_PASSWORD, REFUSED_KICKED, REFUSED_BANNED = 1, 2, 3, 4, 5
 
 
-REFUSED_STALE = 6  # the console's build is not the one --build serves: its Dash can update it
+REFUSED_STALE = 6  # the console's build or revision is not the world's: its Dash can update it
 
 
 REFUSED_PROTOCOL = 7  # expected version, offered version, reason (instead of load order/count)

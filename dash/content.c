@@ -768,3 +768,82 @@ static void retry_results(const struct content_host *host)
     if (kept != count && save_results(keep, kept))
         mgr_log("content: could not clear acknowledged install results\n");
 }
+
+void content_public_key(unsigned char out[32])
+{
+    if (content_identity())
+        memset(out, 0, 32);
+    else
+        memcpy(out, content_public, 32);
+}
+
+const char *content_world_host(const struct server *s, struct content_host *host)
+{
+    char name[80];
+    struct json j = {0};
+    unsigned char *body = NULL;
+    const char *err;
+
+    snprintf(name, sizeof(name), "%s:%u", s->source_host[0] ? s->source_host : s->host,
+             s->source_port);
+    if (content_add(name, host))
+        return "Could not keep the world's content library.";
+    if (host->has_key && crypto_verify32(host->key, s->source_key))
+        return "The world names another key for its content library than the one saved.";
+    if (!host->has_key) {
+        /* pinned by the world's authenticated session, not by first contact */
+        memcpy(host->key, s->source_key, 32);
+        host->has_key = 1;
+        fingerprint(host->key, host->fingerprint);
+        if (save_host(host, 0))
+            return "Could not keep the content library's key.";
+    }
+    /* an unsigned catalog request names the certificate without asking to be approved */
+    err = get_signed(host, "/v1/catalog", 0, &j, &body);
+    json_free(&j);
+    free(body);
+    if (err == CONTENT_KEY_CHANGED)
+        err = "The content library's key is not the one the world names.";
+    return err;
+}
+
+const char *content_world_ticket(struct content_host *host, const struct server *s,
+                                 struct ticket *out)
+{
+    struct content_entry entry;
+    struct content_auth auth;
+
+    memset(&entry, 0, sizeof(entry));
+    snprintf(entry.id, sizeof(entry.id), "%s", s->source_entry);
+    snprintf(entry.name, sizeof(entry.name), "%s", s->source_entry);
+    snprintf(entry.build, sizeof(entry.build), "%s", s->source_build);
+    snprintf(entry.revision, sizeof(entry.revision), "%s", s->source_revision);
+    snprintf(auth.world, sizeof(auth.world), "%s", s->source_world);
+    snprintf(auth.signature, sizeof(auth.signature), "%s", s->source_signature);
+    auth.expires = s->source_expires;
+    if (!auth.expires)
+        return "The world did not authorize this Dash.";
+    return content_ticket(host, &entry, &auth, out);
+}
+
+void build_revision(const char *folder, char out[65])
+{
+    static const char key[] = "\"revision\": \"";
+    char path[PATH_MAX_MGR];
+    unsigned char *text;
+    const char *at;
+    size_t n;
+
+    out[0] = 0;
+    join_path(path, sizeof(path), folder, MANIFEST);
+    if (read_file(path, &text, &n))
+        return;
+    if ((at = strstr((const char *)text, key)) && (size_t)(at - (const char *)text) < 1024) {
+        at += sizeof(key) - 1;
+        if (strspn(at, "0123456789abcdef") >= 64 && at[64] == '"') {
+            memcpy(out, at, 64);
+            out[64] = 0;
+        }
+    }
+    free(text);
+}

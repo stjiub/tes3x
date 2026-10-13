@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QSpinBox, QSplitter, QTabWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
+import tes3x.content as tes3x_content
 import tes3x.deploy as tes3x_deploy
 import tes3x.diag as tes3x_diag
 import tes3x.ftp as tes3x_ftp
@@ -1253,6 +1254,16 @@ WORLD_FIELDS = (
     ('description', 'Description', 'string', '', 'Optional description shown in TES3X Dash'),
     ("profile", "Build profile", "profile", "", "The build Xboxes' Dashes download on "
      "joining; consoles with another build are refused"),
+    ("content_entry", "Library entry", "string", "", "Instead of a build profile: the content "
+     "library entry this world requires; Dashes download it from the library"),
+    ("content_revision", "Library revision", "string", "", "The entry's exact revision; empty "
+     "takes the latest listed one at the next start and keeps it"),
+    ("content_source", "Library address", "string", "", "[HOST]:PORT of a library on another "
+     "PC; empty is this PC's library"),
+    ("content_key", "Library key", "string", "", "The other PC's library key (tes3x content "
+     "key)"),
+    ("content_build", "Library build", "string", "", "The revision's build ID, for a library on "
+     "another PC"),
     ("password_file", "Password file", "file", "", "Consoles with a new key must give this "
      "password"),
     ("max_players", "Max players", "int", 16, ""),
@@ -1329,6 +1340,13 @@ def server_arguments(values):
         args += ["--admin-password-file", str(values["admin_password_file"])]
     if values.get("build"):
         args += ["--build", str(values["build"])]
+    if values.get("content_entry"):
+        args += ["--content-entry", values["content_entry"]]
+        for key in ("content_revision", "content_source", "content_key", "content_build"):
+            if values.get(key):
+                args += ["--" + key.replace("_", "-"), values[key]]
+        if values.get("content_state"):
+            args += ["--content-state", str(values["content_state"])]
     for key in ('name', 'description'):
         if values.get(key):
             args += ['--' + key, values[key]]
@@ -1907,6 +1925,30 @@ class ServerPage(QWidget):
         if self.process is not None or not self.save():
             return
         values = self.values()
+        if values.get("profile") and values.get("content_entry"):
+            self.window.error("Choose a build profile or a library entry, not both")
+            return
+        if values.get("content_entry") and not values.get("content_source"):
+            state = self.window.work_dir() / "content-state"
+            try:
+                rows = tes3x_content.read_publications(state).get(values["content_entry"], [])
+            except (OSError, ValueError) as exc:
+                self.window.error(f"Content library: {exc}")
+                return
+            wanted = values.get("content_revision")
+            row = next((row for row in rows if row["revision"] == wanted), None) if wanted \
+                else next((row for row in reversed(rows) if row["listed"]), None)
+            if row is None:
+                self.window.error(f"The content library has no revision "
+                                  f"{wanted or '(listed)'} of {values['content_entry']}")
+                return
+            if not wanted:
+                # keep it: a later publication must not change what the world requires
+                self.inputs["content_revision"][1].setText(row["revision"])
+                if not self.save():
+                    return
+                values["content_revision"] = row["revision"]
+            values["content_state"] = state
         if values.get("profile"):
             try:
                 build = self.profile_deploy(values["profile"])

@@ -280,6 +280,10 @@
       "fields": [
         {"offset": "0x7D", "name": "visible", "type": "bool", "confidence": "matched", "provenance": "ui::navigate 0x001B1050 skips menus with it clear; PC 0x75"},
         {"offset": "0x7F", "name": "flagColourChanged", "type": "bool", "confidence": "verified", "provenance": "a label's new colour shows only once it is set (Join server rows); PC 0x77"},
+        {"offset": "0xE4", "name": "x", "type": "int", "confidence": "verified", "provenance": "ui::setX 0x00197860 stores pixel x and adjusts layout x at +0x9C"},
+        {"offset": "0xE8", "name": "y", "type": "int", "confidence": "verified", "provenance": "ui::setY 0x00197890 stores pixel y and adjusts layout y at +0xA0"},
+        {"offset": "0xF4", "name": "width", "type": "int", "confidence": "verified", "provenance": "ui::setWidth 0x00198980 stores clamped pixel width"},
+        {"offset": "0xF8", "name": "height", "type": "int", "confidence": "verified", "provenance": "ui::setHeight 0x00198A60 stores clamped pixel height"},
         {"offset": "0x154", "name": "colour", "type": "float[4]", "confidence": "verified", "provenance": "Join server rows' gold; PC 0x14C"}
       ]
     },

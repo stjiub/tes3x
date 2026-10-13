@@ -50,6 +50,7 @@ The first client to join sets the session's load order and its game clock. Usefu
 | `--respawn-delay SECONDS` | how long a dead player lies before coming back (default 5) |
 | `--death-gold PERCENT` | the share of carried gold a death costs (default 10) |
 | `--build DIR` | hand this build to the Dash (below) |
+| `--content-entry ID` | instead of `--build`, require a content library's entry ([below](#builds-from-a-content-library)) |
 | `--retail-base DIR` | clean retail source for an overlay build; defaults to `paths.vanilla_root` |
 | `--welcome TEXT` | show a line of up to 80 characters when a player is in the world |
 | `--starts FILE` | where new characters may begin (`[[start]]` tables; default: the bundled list) |
@@ -101,6 +102,12 @@ world, duplicates one (with or without its characters), renames or deletes it, o
 **World settings** belong to the selected world; **This PC** settings, such as the ports, stay in
 the local config and apply to every world. Starting the server serves the selected world, so
 characters and world state carry over every stop and start.
+
+Instead of a **Build profile**, a world can name a **Library entry** from the Content workspace's
+library. With **Library revision** empty, the next Start fills in the entry's latest listed
+revision and keeps it, so a later publication does not change the world's build; clear the field
+to move to the newest one. For a library on another PC, also fill in its address, key and the
+revision's build ID ([builds from a content library](#builds-from-a-content-library)).
 
 All worlds share one server key, `server.key` in the worlds folder, because a console refuses a
 different key at the same address. The first time the GUI opens without worlds, it makes
@@ -230,6 +237,43 @@ each manifest. Joining from the main menu then asks "Build out of date. Update i
 Dash?": Open Dash starts the Dash on that server's page, where X updates the build, and
 Back stays in the game. Without the Dash installed the server's row just says "build out of
 date". A console with no manifest is checked by its load order only.
+
+The Dash records the exact revision it installed, and the game reports it, with a digest of any
+local patch selection, when it joins. A console whose revision differs from the world's, or that
+has a local patch selection, is refused the same way. A build copied to the console without the
+Dash records no revision and is checked by its build ID alone.
+
+### Builds from a content library
+
+A world can instead require one exact revision of a [content library](content.md) entry. The
+Dash then downloads the build from that library, on this PC or another, and the world's
+authorization lets it do so even when the library is private and has not approved that Xbox:
+
+```sh
+tes3x net serve --world world --content-state content-state --content-entry my-profile
+```
+
+`--content-state` names a library on this PC. The world reads the library's key and the entry's
+latest listed revision (or `--content-revision HEX`), and records in the library that this world
+may authorize that revision. The Dash reaches the library at this server's host on port 26510,
+or at `--content-source HOST:PORT`. For a library on another PC, give `--content-source`,
+`--content-key` (from `tes3x content key` there), `--content-entry`, `--content-build` and
+`--content-revision`, then run the command the server prints on the library's PC:
+
+```sh
+tes3x content delegate WORLD_KEY my-profile REVISION --label "My world"
+```
+
+The world signs authorizations with `content-delegation.key` in `--world`; keep it with the
+world. Each authorization names one Xbox's content identity, the library's key and the exact
+revision, and expires after an hour. The library keeps a delegated revision even when it is
+withdrawn, and `prune` does not delete it. Publishing a newer revision does not change what the
+world requires; restart the world with the new revision to move it. `--build` and a content
+source are alternatives.
+
+The Dash's **Install** on the server's page fetches the world's revision from the library, and
+**Join** checks the installed revision first and offers to install the required one. A console
+that already has the revision joins without contacting the library.
 
 ## Run the server in Docker
 

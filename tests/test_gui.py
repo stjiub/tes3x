@@ -1539,6 +1539,16 @@ order = 10
         self.assertEqual(arguments[0], str(self.profile.resolve()))
         self.assertEqual(server_arguments({"build": build, "load_state": False})[-2:],
                          ["--build", str(build)])
+        self.assertEqual(server_arguments({"content_entry": "net", "content_revision": "ab",
+                                           "content_state": "state", "load_state": False})[1:],
+                         ["--content-entry", "net", "--content-revision", "ab",
+                          "--content-state", "state"])
+        self.assertEqual(server_arguments({"content_entry": "net", "content_source": "pc:26510",
+                                           "content_key": "k", "content_build": "b",
+                                           "content_revision": "r", "load_state": False})[1:],
+                         ["--content-entry", "net", "--content-revision", "r",
+                          "--content-source", "pc:26510", "--content-key", "k",
+                          "--content-build", "b"])
 
 
     def test_server_page_manages_a_remote_server(self):
