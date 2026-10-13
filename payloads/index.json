@@ -9,7 +9,7 @@
         "tes3xini.c",
         "tes3xdiag.c"
       ],
-      "pe_sha256": "d1122b07e7dce7786c17ee957bb59840a44304480bc4da5d1c0b7935ef11b4ba",
+      "pe_sha256": "23f22c8108a36db0b3326b41279545c6e2b47a03f39d5e4aff5aa2aec9abd771",
       "manifest_sha256": "86eb65b25fc9344c42e386b68896c9c6634cae07c9ebe2368f1fbaab398bf0f3"
     },
     {
@@ -21,7 +21,7 @@
         "tes3xconsole.c",
         "tes3xdiag.c"
       ],
-      "pe_sha256": "c7e8bb35eb4c2df37e18d8ea4887249e9e4fcb49fb58ef24b2ac9aa8bf142042",
+      "pe_sha256": "bf7c5875f1140712365bf4fdf0db316b83059c61413f69871be5fae23b67136e",
       "manifest_sha256": "2914ebbee8bdd0dcd6423f34bf1abe8ba5cdda0f7dff7f5b3858ff004745f698"
     },
     {
@@ -35,7 +35,7 @@
         "tes3xnet.c",
         "tes3xmulti.c"
       ],
-      "pe_sha256": "e0ca1e165295c0151bb98b5f2c36ee2c4338589faedea3d648d8cf7f4f812e96",
+      "pe_sha256": "5fb34bd3fbb32358cbfedb0429f1d2be2ce64ec9c63c0ad9b90c9e5001d1c3dc",
       "manifest_sha256": "ec4f5706048d69ed5d60608e34de94633e938a3e66571ddb4a6a72b8b4120010"
     },
     {
@@ -46,7 +46,7 @@
         "tes3xini.c",
         "tes3xarch.c"
       ],
-      "pe_sha256": "4f5c353539dd266198afd72bedfdc3fb8052b400a05cf0f7fe01bc99da1c3a92",
+      "pe_sha256": "70b3dcd7d171f6e0640e95c24f85e4d2cd455cfc02a548c462cfa87f61e80b09",
       "manifest_sha256": "3f187437c3982ce47349a550259998e104e0168404685cfa3dcfc00afb9cefc2"
     },
     {
@@ -58,7 +58,7 @@
         "tes3xarch.c",
         "tes3xdiag.c"
       ],
-      "pe_sha256": "04ae5860fc92731266614d7010147d9f510cb45921c5c8a999fc7b7af8b4ab2f",
+      "pe_sha256": "70b2f069a789a0b5cad9e5aee524a98f80cab7619ace48f30afb24f6452299c6",
       "manifest_sha256": "eba26b8631e5e62eae1a4ca4094ac1722f923945432f7a305244bc00067b5c5a"
     },
     {
@@ -71,7 +71,7 @@
         "tes3xconsole.c",
         "tes3xdiag.c"
       ],
-      "pe_sha256": "6e61fb36cf40bb6255fe8a4bedda21c676b13a1cd488cc51935990b9f9b2ed41",
+      "pe_sha256": "8b5705e31b506c68688040b3caee7c633903498eb9a4dea24d3df8c75815c2a1",
       "manifest_sha256": "91ea090b32d75a2150c5c1228669f887462d33d32e546ffd3d5429acad3d8082"
     },
     {
@@ -86,7 +86,7 @@
         "tes3xnet.c",
         "tes3xmulti.c"
       ],
-      "pe_sha256": "f9f11071850c8d580c83bc7f85d3ae6e049792eacd8852d5cfb213dd13147270",
+      "pe_sha256": "08d0ab4432355f3fbfc8f3d8bcefc839e5b820b61a97d501fe1bbc4ffc36c998",
       "manifest_sha256": "a205776e3e9bdc9fa4188cd9a83a9e38dfad11da94305824dbe5252c1e0552bc"
     }
   ]
