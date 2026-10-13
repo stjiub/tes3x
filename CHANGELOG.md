@@ -4,6 +4,24 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- The sampled PAL GOTY engine now resolves console and multiplayer bindings automatically;
+  its virtual keyboard and server join work. Other retail engine revisions still need
+  compatibility checks.
+- `tes3x payload --portable-bindings` can build the supported diagnostics, console, multiplayer
+  and `multi-bsa` sets once for the sampled NTSC and PAL GOTY engines; `tes3x patch` fills the
+  engine addresses,
+  original entry and kernel import slots from the user's XBE. Other payload source sets still
+  need an image-specific build. See [payload injection](patches/payload.md).
+- The pipeline uses a matching prebuilt payload for diagnostics, console and multiplayer, with
+  or without `multi-bsa`; these builds no longer need a local compiler. Use `--build-payload` to
+  compile from source. Other patch combinations still require LLVM. See [pipeline](docs/pipeline.md).
+- The portable folder now carries checked prebuilt payloads instead of LLVM. Install LLVM
+  separately for source builds or patch combinations outside the bundled sets.
+- Payload sections and hook addresses can relocate within the same engine image. Existing
+  fixed payloads still require their linked address; building from source still needs LLVM.
+  See [payload injection](patches/payload.md).
+- xemu disc additions and direct-engine boot break staging hardlinks before replacing files,
+  preserving the source game folder when runs share a deploy tree.
 - Quest scripts and the characters they move are shared in multiplayer: a script a conversation
   or quest starts is kept by the server with its progress and carries on in another player's
   game when you leave or after a restart, and a character moved by a script or a conversation

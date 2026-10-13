@@ -33,7 +33,7 @@ struct world_script {
     u8 used, sent, assigned;
 };
 
-static const u32 global_script_sites[] = TES3X_NET_GLOBAL_SCRIPT_SITES;
+#define global_script_sites ((const u32[])TES3X_NET_GLOBAL_SCRIPT_SITES)
 static const u8 *scripts_base[SCRIPTS_BASE];
 static struct world_script scripts_run[SCRIPTS_RUN];
 static const u8 *script_now; /* the global script processGlobalScripts is running */

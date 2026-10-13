@@ -1,9 +1,11 @@
 import shutil
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
-from tes3x.payload import PayloadError, build_id, find_tool, link_symbol, source_text
+from tes3x.payload import (PayloadError, build_id, find_tool, link_symbol, resolve_address,
+                           source_text)
 
 LINK_MAP = [
     ' Address         Publics by Value              Rva+Base               Lib:Object',
@@ -13,6 +15,14 @@ LINK_MAP = [
 
 
 class PayloadTests(unittest.TestCase):
+    def test_unknown_image_requires_explicit_fixed_binding(self):
+        name = "TES3X_TEST_BINDING"
+        with patch.dict("os.environ", {name: "0x00123456"}):
+            self.assertEqual(resolve_address(name, 0x1000, False), "0x00123456")
+        with self.assertRaisesRegex(PayloadError, "no binding for TES3X_TEST_BINDING"):
+            resolve_address(name, 0x1000, False)
+        self.assertEqual(resolve_address(name, 0x1000), "0x00001000")
+
     def test_link_map_symbol_is_the_second_to_last_field(self):
         self.assertEqual(link_symbol(LINK_MAP, '_tes3x_entry'), '0x0000000000406053')
 

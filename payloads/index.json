@@ -1,0 +1,93 @@
+{
+  "schema": 1,
+  "variants": [
+    {
+      "name": "diagnostics",
+      "sources": [
+        "tes3xhook.c",
+        "tes3xlog.c",
+        "tes3xini.c",
+        "tes3xdiag.c"
+      ],
+      "pe_sha256": "23f22c8108a36db0b3326b41279545c6e2b47a03f39d5e4aff5aa2aec9abd771",
+      "manifest_sha256": "86eb65b25fc9344c42e386b68896c9c6634cae07c9ebe2368f1fbaab398bf0f3"
+    },
+    {
+      "name": "console",
+      "sources": [
+        "tes3xhook.c",
+        "tes3xlog.c",
+        "tes3xini.c",
+        "tes3xconsole.c",
+        "tes3xdiag.c"
+      ],
+      "pe_sha256": "bf7c5875f1140712365bf4fdf0db316b83059c61413f69871be5fae23b67136e",
+      "manifest_sha256": "2914ebbee8bdd0dcd6423f34bf1abe8ba5cdda0f7dff7f5b3858ff004745f698"
+    },
+    {
+      "name": "multiplayer",
+      "sources": [
+        "tes3xhook.c",
+        "tes3xlog.c",
+        "tes3xini.c",
+        "tes3xconsole.c",
+        "tes3xdiag.c",
+        "tes3xnet.c",
+        "tes3xmulti.c"
+      ],
+      "pe_sha256": "5fb34bd3fbb32358cbfedb0429f1d2be2ce64ec9c63c0ad9b90c9e5001d1c3dc",
+      "manifest_sha256": "ec4f5706048d69ed5d60608e34de94633e938a3e66571ddb4a6a72b8b4120010"
+    },
+    {
+      "name": "archives",
+      "sources": [
+        "tes3xhook.c",
+        "tes3xlog.c",
+        "tes3xini.c",
+        "tes3xarch.c"
+      ],
+      "pe_sha256": "70b3dcd7d171f6e0640e95c24f85e4d2cd455cfc02a548c462cfa87f61e80b09",
+      "manifest_sha256": "3f187437c3982ce47349a550259998e104e0168404685cfa3dcfc00afb9cefc2"
+    },
+    {
+      "name": "archives-diagnostics",
+      "sources": [
+        "tes3xhook.c",
+        "tes3xlog.c",
+        "tes3xini.c",
+        "tes3xarch.c",
+        "tes3xdiag.c"
+      ],
+      "pe_sha256": "70b2f069a789a0b5cad9e5aee524a98f80cab7619ace48f30afb24f6452299c6",
+      "manifest_sha256": "eba26b8631e5e62eae1a4ca4094ac1722f923945432f7a305244bc00067b5c5a"
+    },
+    {
+      "name": "archives-console",
+      "sources": [
+        "tes3xhook.c",
+        "tes3xlog.c",
+        "tes3xini.c",
+        "tes3xarch.c",
+        "tes3xconsole.c",
+        "tes3xdiag.c"
+      ],
+      "pe_sha256": "8b5705e31b506c68688040b3caee7c633903498eb9a4dea24d3df8c75815c2a1",
+      "manifest_sha256": "91ea090b32d75a2150c5c1228669f887462d33d32e546ffd3d5429acad3d8082"
+    },
+    {
+      "name": "archives-multiplayer",
+      "sources": [
+        "tes3xhook.c",
+        "tes3xlog.c",
+        "tes3xini.c",
+        "tes3xarch.c",
+        "tes3xconsole.c",
+        "tes3xdiag.c",
+        "tes3xnet.c",
+        "tes3xmulti.c"
+      ],
+      "pe_sha256": "08d0ab4432355f3fbfc8f3d8bcefc839e5b820b61a97d501fe1bbc4ffc36c998",
+      "manifest_sha256": "a205776e3e9bdc9fa4188cd9a83a9e38dfad11da94305824dbe5252c1e0552bc"
+    }
+  ]
+}

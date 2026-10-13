@@ -6,7 +6,7 @@
 typedef unsigned char(__attribute__((thiscall)) *fn_save_game)(void *, const char *, const char *);
 typedef u32(__attribute__((stdcall)) *fn_create_save)(const char *root, const u16 *name, u32 how,
                                                       u32 options, char *path, u32 size);
-static const u32 save_sites[] = TES3X_NET_SAVE_SITES;
+#define save_sites ((const u32[])TES3X_NET_SAVE_SITES)
 static u32 save_hooked, saves_seen, saves_busy, saves_slotted, saves_uploaded, save_pending;
 #define OPEN_EXISTING 3u
 /* While joined every save goes to one slot per server and character, "MP <character>

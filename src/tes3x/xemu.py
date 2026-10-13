@@ -681,9 +681,12 @@ def main():
                 packed = out / "stage"
                 shutil.copytree(deploy, packed, copy_function=link_or_copy)
             for disc, source in a.add:
-                (packed / disc).parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(source, packed / disc)
+                target = packed / disc
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.unlink(missing_ok=True)
+                shutil.copy2(source, target)
         if a.direct_engine:
+            (packed / "Default.xbe").unlink(missing_ok=True)
             shutil.copy2(packed / "morrowind.xbe", packed / "Default.xbe")
         run([CONFIG["extract_xiso"], "-c", str(packed), str(iso)], stdout=subprocess.DEVNULL)
         if packed != deploy:

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Compile the injected payload for one retail XBE and write its hook manifest.
+"""Compile an injected payload and write its hook and binding manifest.
 
-The payload is linked at the exact VA the new XBE section will land at, so absolute references
-resolve without relocations. Needs clang and lld-link from any LLVM install.
+The payload carries PE32 relocations. Portable builds bind supported engine addresses,
+the original entry and kernel thunk slots when applied to a retail XBE.
 """
 
 import argparse
@@ -16,10 +16,12 @@ import struct
 import subprocess
 
 import tes3x.inject as tes3x_inject
+from tes3x.multi_signatures import SIGNATURES as MULTI_SIGNATURES, find_multi_signature
 from tes3x.paths import bundled, checkout, resource
-from tes3x.patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, find_call_sites, find_mcp37_context,
+from tes3x.patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, archive_load_site,
+                         find_call_sites, find_mcp37_context,
                          find_mcp125_context, find_save_allowed_context,
-                         find_script_ip_restore_call, find_transition_calls)
+                         find_script_ip_restore_call, find_transition_calls, scene_form)
 
 HOOKS = resource("hooks")
 HEADERS = ("tes3xdiag.h", "tes3xheap.h", "tes3xlog.h", "tes3xmem.h", "tes3xnt.h",
@@ -27,18 +29,15 @@ HEADERS = ("tes3xdiag.h", "tes3xheap.h", "tes3xlog.h", "tes3xmem.h", "tes3xnt.h"
            "tes3xlaunch.h")
 SECTION = re.compile(r'^#include "(multi/\w+\.c)"$', re.M)
 DEFAULT_SOURCES = ("tes3xhook.c", "tes3xlog.c", "tes3xini.c", "tes3xdiag.c")
+LINK_BASE = 0x00400000
+NTSC_TEXT_SHA256 = "38b922df5461b195c61fb2fdb62d893810ef8482ec813d9f6a7a064fb75493d8"
 BUNDLED_LLVM = bundled("externals", "llvm", "bin")
 LLVM_DIRS = (Path("C:/Program Files/LLVM/bin"), Path("C:/msys64/clang64/bin"),
              Path("C:/msys64/mingw64/bin"))
 CFLAGS = ("-target", "i386-pc-win32", "-march=pentium3", "-Os", "-ffreestanding", "-nostdlib",
           "-fno-builtin", "-fno-stack-protector", "-fno-asynchronous-unwind-tables")
 
-# The archive hook replaces the call to Archive::Load at this site.
-ARCH_SITE = 0x000D4E06
-INI_GET = 0x001933E0
-INI_PATH = 0x0035E364
 DATA_HANDLER = 0x003CB5F8
-CONSOLE_SITE = 0x00098430
 SERVICE_ACTOR = 0x001CD530  # ui::getServiceActor: the MenuDialog partner's mobile, or 0
 # What the SetPos, SetAngle and PlayGroup handlers call, to place and animate a reference without
 # the script compiler.
@@ -179,9 +178,22 @@ def hexva(value):
     return "0x%08X" % value
 
 
-def address(name, default):
-    """A fixed engine address, overridable from the environment for research builds."""
-    return os.environ.get(name, hexva(default))
+def resolve_address(name, default, known_image=True):
+    """A fixed engine address, overridable for research builds on other images."""
+    if name in os.environ:
+        return os.environ[name]
+    if not known_image:
+        raise PayloadError(f"no binding for {name} in this engine; set {name} for a research build")
+    return hexva(default)
+
+
+def has_ntsc_fixed_bindings(image):
+    """Accept retail/scene NTSC text, including XBEs with extra sections."""
+    text = next((s for s in image.sections if s.name == ".text"), None)
+    if text is None:
+        return False
+    raw = scene_form(bytes(image.data))
+    return hashlib.sha256(raw[text.raw:text.raw + text.rsize]).hexdigest() == NTSC_TEXT_SHA256
 
 
 def find_tool(name, llvm_dir=None):
@@ -255,11 +267,18 @@ def link_symbol(link_map, *names):
 
 
 def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "hooks",
-                  user_flags="", llvm_dir=None, check_xbe=None, forced_build_id=None):
+                  user_flags="", llvm_dir=None, check_xbe=None, forced_build_id=None,
+                  portable_bindings=False, bindings_only=False):
     """Compile and link sources against xbe. Returns the paths of the payload and its manifest."""
-    xbe, out = Path(xbe), Path(out)
+    out = Path(out)
     sources = list(sources)
     names = {Path(s).name for s in sources}
+    if portable_bindings:
+        supported = {"tes3xhook.c", "tes3xlog.c", "tes3xini.c", "tes3xdiag.c",
+                     "tes3xconsole.c", "tes3xnet.c", "tes3xmulti.c", "tes3xlaunch.c",
+                     "monocypher.c", "tes3xnoise.c", "tes3xcrt.c", "tes3xarch.c"}
+        if unsupported := names - supported:
+            raise PayloadError("portable bindings do not cover " + ", ".join(sorted(unsupported)))
     if "tes3xnet.c" in names:
         for extra_source in ("monocypher.c", "tes3xnoise.c", "tes3xcrt.c"):
             if extra_source not in names:
@@ -268,31 +287,73 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
     if names & {"tes3xconsole.c", "tes3xmulti.c"} and "tes3xlaunch.c" not in names:
         sources.append("tes3xlaunch.c")
         names.add("tes3xlaunch.c")
-    clang, lld = (os.environ.get("CLANG") or find_tool("clang", llvm_dir),
-                  os.environ.get("LLD") or find_tool("lld-link", llvm_dir))
-    out.mkdir(parents=True, exist_ok=True)
+    if not bindings_only:
+        clang, lld = (os.environ.get("CLANG") or find_tool("clang", llvm_dir),
+                      os.environ.get("LLD") or find_tool("lld-link", llvm_dir))
+        out.mkdir(parents=True, exist_ok=True)
+    image = xbe if isinstance(xbe, tes3x_inject.Xbe) else tes3x_inject.Xbe(Path(xbe).read_bytes())
+    known_image = has_ntsc_fixed_bindings(image)
+    resolved_addresses = {}
 
-    image = tes3x_inject.Xbe(xbe.read_bytes())
-    va = hexva(image.next_va())
+    def engine_address(name, default):
+        if name in os.environ:
+            return os.environ[name]
+        key = name.lower().replace("_", "-")
+        if name in ("GET_FOCUS", "LIST_APPEND", "SET_VISIBLE"):
+            key = "multi-" + key
+        elif not key.startswith("console-"):
+            key = "console-" + key
+        if key in LOCATORS:
+            if name not in resolved_addresses:
+                resolved_addresses[name] = hexva(LOCATORS[key](image))
+            return resolved_addresses[name]
+        if name in MULTI_SIGNATURES:
+            if name not in resolved_addresses:
+                resolved_addresses[name] = hexva(find_multi_signature(image, name))
+            return resolved_addresses[name]
+        return resolve_address(name, default, known_image)
+
+    address = engine_address
+    va = hexva(LINK_BASE)
     entry = hexva(image.entry)
-    print(f"section VA {va}   original entry {entry}")
+    print(f"section VA {hexva(image.next_va())}   link base {va}   original entry {entry}")
     # Generated per XBE into the build, never into hooks/, which an install may not let us write.
     thunks = out / "tes3x_thunks.h"
-    tes3x_inject.write_thunks(image, thunks, tes3x_inject.DEFAULT_KRNL_DEF)
+    if bindings_only:
+        kernel_names = {}
+    elif portable_bindings:
+        kernel_names = tes3x_inject.write_portable_thunks(
+            thunks, tes3x_inject.DEFAULT_KRNL_DEF)
+    else:
+        tes3x_inject.write_thunks(image, thunks, tes3x_inject.DEFAULT_KRNL_DEF)
 
-    ident = forced_build_id or build_id(sources, user_flags, [thunks])
+    ident = forced_build_id or ("0" if bindings_only else build_id(sources, user_flags, [thunks]))
     print(f"payload build id {ident}")
     flags = user_flags.split() + [f"-DTES3X_BUILD_ID={ident}"]
+    if portable_bindings:
+        flags.append("-DTES3X_PORTABLE_BINDINGS")
+
+    engine_bindings = {}
 
     def define(name, value):
+        value = str(value)
+        if portable_bindings:
+            scalar = re.fullmatch(r"0x[0-9a-fA-F]+", value)
+            items = re.fullmatch(r"\{(0x[0-9a-fA-F]+(?:,0x[0-9a-fA-F]+)*)\}", value)
+            if scalar and int(value, 16) >= 0x10000:
+                engine_bindings[name] = [int(value, 16)]
+                return
+            if items:
+                engine_bindings[name] = [int(item, 16) for item in items.group(1).split(",")]
+                return
         flags.append(f"-DTES3X_{name}={value}")
 
     def locate(name):
         return LOCATORS[name](image)
 
     wanted, extra = {}, {}
-    arch_site = int(address("ARCH_SITE", ARCH_SITE), 16)
     if "tes3xarch.c" in names:
+        arch_site = int(os.environ.get("ARCH_SITE", hexva(archive_load_site(image))), 16)
         load = tes3x_inject.call_target(image, arch_site)
         print(f"archive hook: call site {hexva(arch_site)} -> Archive::Load {hexva(load)}")
         define("ARCHIVE_LOAD", hexva(load))
@@ -351,7 +412,8 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         flags.append("-DTES3X_MWSE")
         wanted["mwse_fixup"] = ("@tes3x_mwse_fixup_hook@8", "_tes3x_mwse_fixup_hook")
     if names & INI_USERS:
-        ini_get, ini_path = address("INI_GET", INI_GET), address("INI_PATH", INI_PATH)
+        ini_get = os.environ.get("INI_GET") or hexva(locate("ini-get-string"))
+        ini_path = os.environ.get("INI_PATH") or hexva(locate("ini-path"))
         print(f"ini reader {ini_get}, ini path {ini_path}")
         define("INI_GET_STRING", ini_get)
         define("INI_PATH", ini_path)
@@ -871,7 +933,7 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         wanted["region_carve"] = ("_tes3x_region_carve_hook",)
         wanted["region_release"] = ("@tes3x_region_release@12",)
     if "tes3xconsole.c" in names:
-        print(f"console hook: gate {address('CONSOLE_SITE', CONSOLE_SITE)}")
+        print("console hook: keyboard and print sites located by content")
         for name, default in CONSOLE_ADDRESSES:
             define(name, address(name, default))
         flags.append("-DTES3X_CONSOLE")
@@ -907,17 +969,37 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         wanted["preferences_load"] = ("@tes3x_preferences_hook@4",
                                       "_tes3x_preferences_hook")
 
+    if bindings_only:
+        return engine_bindings
+    binding_names = []
+    if portable_bindings:
+        binding_header = out / "tes3x_engine_bindings.h"
+        with open(binding_header, "w", newline="\n") as stream:
+            stream.write("/* generated by tes3x.payload - engine values supplied at patch time */\n")
+            stream.write("extern unsigned long tes3x_binding_values[];\n")
+            for name, values in engine_bindings.items():
+                first = len(binding_names)
+                binding_names.extend(f"{name}[{i}]" for i in range(len(values)))
+                refs = [f"(tes3x_binding_values[{first + i}])" for i in range(len(values))]
+                expression = refs[0] if len(refs) == 1 and not name.endswith(("_SITES", "_SLOTS")) \
+                    else "{" + ",".join(refs) + "}"
+                stream.write(f"#define TES3X_{name} {expression}\n")
+                if name in ("DIAG_UPDATE", "NET_DATA_HANDLER", "ARCHIVE_LOAD"):
+                    stream.write(f"#define TES3X_{name}_BIND_OFFSET {first * 4}\n")
+            stream.write(f"#define TES3X_BINDING_COUNT {len(binding_names)}\n")
     objects = []
     for source in sources:
         obj = out / (Path(source).stem + ".obj")
         # Monocypher is vendored whole; the linker keeps only the functions the payload calls.
         sections = ["-ffunction-sections", "-fdata-sections"] if source == "monocypher.c" else []
-        subprocess.run([clang, *CFLAGS, *sections, f"-DTES3X_ORIG_ENTRY={entry}", *flags,
+        entry_flag = [] if portable_bindings else [f"-DTES3X_ORIG_ENTRY={entry}"]
+        binding_flag = ["-include", str(binding_header)] if portable_bindings else []
+        subprocess.run([clang, *CFLAGS, *sections, *entry_flag, *flags, *binding_flag,
                         f"-I{out}", f"-I{HOOKS}", "-c", str(source_path(source)), "-o", str(obj)],
                        check=True)
         objects.append(str(obj))
     payload, map_path = out / "tes3xhook.pe", out / "tes3xhook.map"
-    subprocess.run([lld, "/nologo", "/subsystem:native", "/entry:tes3x_entry", "/fixed",
+    subprocess.run([lld, "/nologo", "/subsystem:native", "/entry:tes3x_entry", "/fixed:no",
                     "/nodefaultlib", f"/base:{va}", f"/map:{map_path}", f"/out:{payload}",
                     *objects], check=True)
 
@@ -926,13 +1008,33 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
     for key, symbols in wanted.items():
         hooks[key] = link_symbol(link_map, *symbols)
         hooks.update(extra.get(key, {}))
+    bindings = None
+    if portable_bindings:
+        ordinal_by_name = {name: ordinal for ordinal, name in kernel_names.items()}
+        used = set()
+        for source in sources:
+            used.update(re.findall(r"\bTHUNK_(\w+)\b", source_path(source).read_text()))
+        for header in HEADERS:
+            used.update(re.findall(r"\bTHUNK_(\w+)\b", (HOOKS / header).read_text()))
+        unknown = used - ordinal_by_name.keys()
+        if unknown:
+            raise PayloadError("unknown kernel thunk name(s): " + ", ".join(sorted(unknown)))
+        bindings = {"orig_entry": link_symbol(link_map, "_tes3x_orig_entry"),
+                    "thunk_slots": link_symbol(link_map, "_tes3x_thunk_slots"),
+                    "thunk_count": max(kernel_names) + 1,
+                    "required_thunks": sorted(ordinal_by_name[name] for name in used),
+                    "engine_values": link_symbol(link_map, "_tes3x_binding_values"),
+                    "engine_names": binding_names, "sources": sources}
     # Beside the payload, so tes3x patch can apply it without a toolchain or the map.
     manifest = out / "tes3xhook.json"
-    with open(manifest, "w", encoding="utf-8") as stream:
-        json.dump({"base": va, "hooks": hooks}, stream, indent=2)
+    with open(manifest, "w", encoding="utf-8", newline="\n") as stream:
+        json.dump({"base": int(va, 16), "payload_hooks": list(wanted), "hooks": hooks,
+                   **({"bindings": bindings} if bindings else {})},
+                  stream, indent=2)
 
     if check_xbe:
-        calls = [(arch_site, int(hooks["archive_load"], 16))] if "archive_load" in hooks else []
+        calls = [(arch_site, int(hooks["archive_load"], 16) + image.next_va() - LINK_BASE)] \
+            if "archive_load" in hooks else []
         tes3x_inject.inject(xbe, payload, check_xbe, hook_entry=True, patch_calls=calls)
     return payload, manifest
 
@@ -948,11 +1050,14 @@ def main(argv=None):
     ap.add_argument("--cflags", default=os.environ.get("EXTRA_CFLAGS", ""),
                     help="extra compiler flags, such as -DNAME=VALUE")
     ap.add_argument("--llvm", help="folder holding clang and lld-link (default: search PATH)")
+    ap.add_argument("--portable-bindings", action="store_true",
+                    help="bind supported engine addresses, entry and kernel slots when patching")
     ap.add_argument("--check", metavar="OUT.xbe",
                     help="also inject the payload into a copy of the XBE, as a structural check")
     a = ap.parse_args(argv)
     try:
-        build_payload(a.xbe, a.src or DEFAULT_SOURCES, a.out, a.cflags, a.llvm, a.check)
+        build_payload(a.xbe, a.src or DEFAULT_SOURCES, a.out, a.cflags, a.llvm, a.check,
+                      portable_bindings=a.portable_bindings)
     except (PayloadError, ValueError, subprocess.CalledProcessError) as exc:
         raise SystemExit(str(exc))
 

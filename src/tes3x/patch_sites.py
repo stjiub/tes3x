@@ -3,6 +3,7 @@
 import re
 import struct
 import tes3x.inject as tes3x_inject  # noqa: E402
+from tes3x.console_signatures import SIGNATURES as CONSOLE_SIGNATURES, find_console_signature
 
 TITLE_ID = 0x42530005
 
@@ -1020,10 +1021,11 @@ def find_autosave_calls(x):
     text = text_section(x)
     body = bytes(x.data[text.raw:text.raw + text.rsize])
     init = list(init_sig.finditer(body))
-    if len(init) != 1:
-        raise PatchError("rotating-autosaves: %d autosave name initializers, expected 1"
-                         % len(init))
-    buf_va = struct.unpack("<I", init[0].group("buf"))[0]
+    buffers = {struct.unpack("<I", match.group("buf"))[0] for match in init}
+    if len(buffers) != 1:
+        raise PatchError("rotating-autosaves: %d name buffers from %d initializers, expected 1"
+                         % (len(buffers), len(init)))
+    buf_va = buffers.pop()
 
     call_sig = re.compile(
         re.escape(b"\x68" + struct.pack("<I", buf_va)) * 2 + rb"\xe8(?P<rel>....)", re.S)
@@ -1360,8 +1362,18 @@ def find_info_arena_sites(x):
     data = bytes(x.data)
     heap = find_heap_object(x)
     heap_bytes = struct.pack("<I", heap)
-    constructor_store = find_unique(data, b"\xc7\x06\x88\x80\x36\x00",
-                                    "INFO constructor vtable")
+    constructor_sig = re.compile(
+        rb"\xc7\x06(?P<vtable>....)\xe8....\x68\xdb\x0e\x00\x00"
+        rb"\x68(?P<names>....)\x6a\x20\x6a\x03\x89\x46\x10\xe8", re.S)
+    constructors = list(constructor_sig.finditer(data))
+    if len(constructors) != 1:
+        raise PatchError("info-name-arena: %d INFO constructors, expected 1" % len(constructors))
+    constructor = constructors[0]
+    vtable = struct.unpack("<I", constructor.group("vtable"))[0]
+    names = struct.unpack("<I", constructor.group("names"))[0]
+    if names != vtable - 0x20 or x.va_to_off(vtable) is None:
+        raise PatchError("info-name-arena: INFO table pointers changed")
+    constructor_store = constructor.start()
     constructor_start = data.rfind(b"\x6a\xff", constructor_store - 0x60, constructor_store)
     if constructor_start < 0:
         raise PatchError("info-name-arena: INFO constructor start not found")
@@ -1374,11 +1386,9 @@ def find_info_arena_sites(x):
         raise PatchError("info-name-arena: expected one INFO table allocation")
     table_allocate = table_calls[0]
     table_off = x.va_to_off(table_allocate)
-    names_sig = (b"\x68\xdb\x0e\x00\x00\x68\x68\x80\x36\x00\x6a\x20\x6a\x03"
-                 b"\x89\x46\x10\xe8")
-    names_off = table_off + 5 + find_unique(
-        data[table_off + 5:constructor_end], names_sig,
-        "INFO name allocation sequence") + len(names_sig) - 1
+    names_off = constructor.end() - 1
+    if not table_off < names_off < constructor_end:
+        raise PatchError("info-name-arena: INFO allocation order changed")
     names_allocate = x.off_to_va(names_off)
 
     constructor_calls = find_call_sites(x, constructor_va)
@@ -1482,15 +1492,16 @@ def find_console_gate(x):
 
 
 # The on-screen keyboard's key and space handlers cap its text at 31 characters with a
-# `cmp dword [esp+N], 0x1F`. A second keyboard has identical handlers, so each signature is
-# anchored on the text-entry id global only this keyboard's handler reads beforehand.
+# `cmp dword [esp+N], 0x1F`. A second keyboard has identical handlers; this one's key and space
+# handlers read id globals 12 bytes apart.
 VK_KEY_LIMIT_SIG = re.compile(
-    re.escape(bytes.fromhex("668b0d68c73d00b801000000505051 8bce e8".replace(" ", "")))
+    re.escape(bytes.fromhex("668b0d")) + b".{4}" +
+    re.escape(bytes.fromhex("b8010000005050518bcee8"))
     + b".{4}" + re.escape(bytes.fromhex("837c24241f")), re.S)
 
 
 VK_SPACE_LIMIT_SIG = re.compile(
-    re.escape(bytes.fromhex("668b155cc73d00")) + b".{67}"
+    re.escape(bytes.fromhex("668b15")) + b".{4}" + b".{67}"
     + re.escape(bytes.fromhex("837c242c1f")), re.S)
 
 
@@ -1498,10 +1509,54 @@ def find_vk_limit(x, sig, what):
     """The 5-byte length compare at the end of a keyboard-handler signature."""
     text = text_section(x)
     blob = bytes(x.data[text.raw:text.raw + text.rsize])
-    hits = [m.end() - 5 for m in sig.finditer(blob)]
+    partner = VK_SPACE_LIMIT_SIG if what == "key" else VK_KEY_LIMIT_SIG
+    partner_ids = {struct.unpack_from("<I", blob, m.start() + 3)[0]
+                   for m in partner.finditer(blob)}
+    delta = -12 if what == "key" else 12
+    hits = [m.end() - 5 for m in sig.finditer(blob)
+            if struct.unpack_from("<I", blob, m.start() + 3)[0] + delta in partner_ids]
     if len(hits) != 1:
         raise PatchError("console: %d keyboard %s length check(s), expected 1" % (len(hits), what))
     return text.va + hits[0]
+
+
+def find_vk_text_id(x):
+    """The text field id read by the paired console keyboard space handler."""
+    text = text_section(x)
+    blob = bytes(x.data[text.raw:text.raw + text.rsize])
+    key_ids = {struct.unpack_from("<I", blob, m.start() + 3)[0]
+               for m in VK_KEY_LIMIT_SIG.finditer(blob)}
+    values = {space_id for m in VK_SPACE_LIMIT_SIG.finditer(blob)
+              if (space_id := struct.unpack_from("<I", blob, m.start() + 3)[0]) + 12 in key_ids}
+    if len(values) != 1:
+        raise PatchError("console: %d text field ids, expected 1" % len(values))
+    return values.pop()
+
+
+# The console keyboard's space-bar setup reads its id, pushes the button factory and then
+# loads the game pointer. All three operands vary between the retail images.
+VK_SPACE_SETUP_SIG = re.compile(
+    rb"\x33\xc0\x66\xa1(?P<space>....)\x6a\x00\x68(?P<button>....)"
+    rb"\x8b\xcb\x50\xe8....\x8b\x0d(?P<game>....)", re.S)
+
+
+def find_vk_space_setup(x):
+    text = text_section(x)
+    blob = bytes(x.data[text.raw:text.raw + text.rsize])
+    field = find_vk_text_id(x)
+    # The keyboard's text and space ids are 0x8C apart in both retail UI id blocks.
+    hits = [m for m in VK_SPACE_SETUP_SIG.finditer(blob)
+            if struct.unpack("<I", m.group("space"))[0] == field + 0x8C]
+    if len(hits) != 1:
+        raise PatchError("console: %d keyboard space setups, expected 1" % len(hits))
+    values = {name: struct.unpack("<I", hits[0].group(name))[0]
+              for name in ("space", "button", "game")}
+    for name, va in values.items():
+        section = next((s for s in x.sections if s.va <= va < s.va + s.vsize), None)
+        expected = ".text" if name == "button" else ".data"
+        if section is None or section.name != expected:
+            raise PatchError("console: %s operand is not in %s" % (name, expected))
+    return values
 
 
 # The console's printf: find the console menu, vsprintf into a 0x104-byte buffer, append the line.
@@ -1518,8 +1573,135 @@ CONSOLE_PRINT_VSPRINTF = 0x30                  # offset of its `call vsprintf`
 
 
 def find_console_print(x):
-    off = find_unique(x.data, CONSOLE_PRINT_SIG, "console printf")
-    return x.off_to_va(off)
+    pattern = re.escape(CONSOLE_PRINT_SIG[:4]) + rb"...." + re.escape(CONSOLE_PRINT_SIG[8:])
+    matches = list(re.finditer(pattern, x.data, re.S))
+    if len(matches) != 1:
+        raise PatchError("console printf: %d matches, expected exactly 1" % len(matches))
+    return x.off_to_va(matches[0].start())
+
+
+def find_console_menu_id(x):
+    off = x.va_to_off(find_console_print(x))
+    return struct.unpack_from("<I", x.data, off + 4)[0]
+
+
+# Widget methods used by the console keyboard and multiplayer menus. The two retail compilers
+# produce different entries for the property setter and factories.
+CONSOLE_WIDGET_ENTRIES = {
+    "SET_PROP": (
+        bytes.fromhex("53 8b 5c 24 08 55 56 57 8b 7c 24 18 8d 44 24 1c 50 57 53 8b f1"),
+        bytes.fromhex("53 8b 5c 24 0c 55 56 57 8b 7c 24 14 8d 44 24 1c 50 53 57 8b f1"),
+    ),
+    "SET_AUTO_WIDTH": (
+        bytes.fromhex("8a 44 24 04 84 c0 88 81 1c 01 00 00 74 19 81 b9 fc 00 00 00"),
+        bytes.fromhex("8a 44 24 04 84 c0 88 81 1c 01 00 00 74 29 8b 81 fc 00 00 00"),
+    ),
+    "SET_AUTO_HEIGHT": (
+        bytes.fromhex("8a 44 24 04 84 c0 88 81 1d 01 00 00 74 19 81 b9 00 01 00 00"),
+        bytes.fromhex("8a 44 24 04 84 c0 88 81 1d 01 00 00 74 2a 8b 81 00 01 00 00"),
+    ),
+    "CREATE_WIDGET": (
+        bytes.fromhex("56 8b f1 80 3e 58 74 06 33 c0 5e c2 0c 00 8a 44 24 10 84 c0"),
+        bytes.fromhex("53 55 56 8b f1 80 3e 58 57 74 09 33 c0 5f 5e 5d 5b c2 0c 00"),
+    ),
+    "CREATE_IMAGE": (
+        bytes.fromhex("57 8b f9 80 3f 58 74 06 33 c0 5f c2 0c 00 8a 44 24 10 84 c0"),
+        bytes.fromhex("53 55 56 57 8b f9 80 3f 58 74 09 33 c0 5f 5e 5d 5b c2 0c 00"),
+    ),
+    "CREATE_NIF": (
+        bytes.fromhex("57 8b f9 80 3f 58 74 06 33 c0 5f c2 0c 00 8a 44 24 10 84 c0"),
+        bytes.fromhex("53 55 56 57 8b f9 80 3f 58 74 09 33 c0 5f 5e 5d 5b c2 0c 00"),
+    ),
+    "CREATE_BLOCK": (
+        bytes.fromhex("56 8b f1 80 3e 58 74 06 33 c0 5e c2 08 00 8a 44 24 0c"),
+        bytes.fromhex("53 55 56 8b f1 80 3e 58 57 74 09 33 c0 5f 5e 5d 5b c2 08 00"),
+    ),
+    "CREATE_LABEL": (
+        bytes.fromhex("56 8b f1 80 3e 58 74 06 33 c0 5e c2 10 00 8a 44 24 14"),
+        bytes.fromhex("53 55 56 8b f1 80 3e 58 57 74 09 33 c0 5f 5e 5d 5b c2 10 00"),
+    ),
+}
+
+
+def find_console_widget_entry(x, name):
+    text = text_section(x)
+    blob = bytes(x.data[text.raw:text.raw + text.rsize])
+    hits = [m.start() for sig in CONSOLE_WIDGET_ENTRIES[name]
+            for m in re.finditer(re.escape(sig), blob)]
+    if name in ("CREATE_IMAGE", "CREATE_NIF"):
+        # These factories begin alike; their class ids distinguish the constructors.
+        class_id = b"\xB8\xB8\x80" if name == "CREATE_IMAGE" else b"\xB8\xB5\x80"
+        hits = [off for off in hits if class_id in blob[off:off + 0xC0]]
+    if len(hits) != 1:
+        raise PatchError("console %s: %d entries, expected 1" % (name, len(hits)))
+    return text.va + hits[0]
+
+
+GET_FOCUS_PROP = bytes.fromhex("6a 00 6a 00 6a 08 68 9b 80 ff ff")
+
+
+def find_get_focus(x):
+    """Find the focus-property getter despite PAL inlining its parent traversal."""
+    text = text_section(x)
+    blob = bytes(x.data[text.raw:text.raw + text.rsize])
+    hits = list(re.finditer(re.escape(GET_FOCUS_PROP), blob))
+    if len(hits) != 1:
+        raise PatchError("get focus: %d property reads, expected 1" % len(hits))
+    at = hits[0].start()
+    starts = [i for i in range(max(1, at - 0x60), at)
+              if blob[i - 1] == 0xCC and blob[i:i + 1] != b"\xCC"]
+    if len(starts) != 1 or blob[starts[0]] != 0x51:
+        raise PatchError("get focus: no unique function entry above property read")
+    return text.va + starts[0]
+
+
+LIST_APPEND_BODY = re.compile(rb"\x19\x8b\x4e\x0c\x89\x46\x0c\x89\x41\x04\x89\x08", re.S)
+
+
+def find_list_append(x):
+    """Find the list append with the class-link write, then its entry prologue."""
+    text = text_section(x)
+    blob = bytes(x.data[text.raw:text.raw + text.rsize])
+    hits = list(LIST_APPEND_BODY.finditer(blob))
+    if len(hits) != 1:
+        raise PatchError("list append: %d class-link writes, expected 1" % len(hits))
+    at = hits[0].start()
+    prologue = re.compile(rb"\x56\x6a\x00\x68....\x8b\xf1\x6a\x0c\xb9", re.S)
+    starts = [m.start() for m in prologue.finditer(blob[max(0, at - 0x80):at])]
+    if len(starts) != 1:
+        raise PatchError("list append: %d entries above class-link write, expected 1"
+                         % len(starts))
+    return text.va + max(0, at - 0x80) + starts[0]
+
+
+VISIBLE_STATE_SIG = bytes.fromhex("38 5e 7e 75 05 38 5e 7d")
+
+
+def find_set_visible(x):
+    """Find the menu visibility setter by its paired visibility-state checks."""
+    text = text_section(x)
+    blob = bytes(x.data[text.raw:text.raw + text.rsize])
+    hits = [m.start() for m in re.finditer(re.escape(VISIBLE_STATE_SIG), blob)]
+    if len(hits) != 2 or hits[1] - hits[0] not in (0x36, 0x38):
+        raise PatchError("set visible: expected paired state checks")
+    start = blob.rfind(b"\xC3\x53", max(0, hits[0] - 0x80), hits[0])
+    if start < 0:
+        raise PatchError("set visible: no function entry above state check")
+    return text.va + start + 1
+
+
+def find_ini_get_string(x):
+    """Locate the engine's INI string reader by its stack frame and early null check."""
+    sig = re.compile(rb"\x55\x8b\xec\x83\xe4\xf8\xb8\x04\x10\x00\x00\xe8...."
+                     rb"\x53\x56\x57\x8b\x7d\x18\x85\xff\x0f\x84", re.S)
+    matches = list(sig.finditer(bytes(x.data)))
+    if len(matches) != 1:
+        raise PatchError("INI reader: %d matches, expected 1" % len(matches))
+    return x.off_to_va(matches[0].start())
+
+
+def find_ini_path(x):
+    return x.off_to_va(find_unique(bytes(x.data), b"D:\\Morrowind.ini\0", "INI path"))
 
 
 # Content-located engine addresses, shared with the payload build so the two cannot disagree.
@@ -1570,6 +1752,22 @@ LOCATORS = {
     "temple-marker": lambda image: find_marker(image)[1],
     "divine-marker": lambda image: find_marker(image)[2],
     "console-print": find_console_print,
+    "console-menu-id": find_console_menu_id,
+    "console-vk-text-id": find_vk_text_id,
+    "console-vk-space-id": lambda image: find_vk_space_setup(image)["space"],
+    "console-vk-button": lambda image: find_vk_space_setup(image)["button"],
+    "console-game-ptr": lambda image: find_vk_space_setup(image)["game"],
+    **{"console-" + name.lower().replace("_", "-"):
+       (lambda image, key=name: find_console_signature(image, key))
+       for name in CONSOLE_SIGNATURES},
+    **{"console-" + name.lower().replace("_", "-"):
+       (lambda image, key=name: find_console_widget_entry(image, key))
+       for name in CONSOLE_WIDGET_ENTRIES},
+    "multi-get-focus": find_get_focus,
+    "multi-list-append": find_list_append,
+    "multi-set-visible": find_set_visible,
+    "ini-get-string": find_ini_get_string,
+    "ini-path": find_ini_path,
     "heap-allocate": lambda image: find_heap_function(image, "allocate")[0],
     "heap-free": lambda image: find_heap_function(image, "free")[0],
     "heap-object": find_heap_object,

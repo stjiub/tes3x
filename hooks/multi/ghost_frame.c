@@ -8,7 +8,7 @@ typedef u8(__attribute__((thiscall)) *fn_apply_health)(void *mobile, float damag
 typedef float(__attribute__((thiscall)) *fn_apply_fatigue)(void *mobile, float damage, float swing,
                                                            u8 voice);
 typedef void(__attribute__((thiscall)) *fn_hit_stun)(void *mobile, float damage, u8 died);
-static const u32 hit_stun_sites[] = TES3X_NET_HIT_STUN_SITES;
+#define hit_stun_sites ((const u32[])TES3X_NET_HIT_STUN_SITES)
 
 /* A ghost is another player, not an NPC victim. Keep the engine's hit reaction but suppress the
  * assault report that would give the attacker a bounty and turn witnesses hostile. */

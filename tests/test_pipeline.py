@@ -115,7 +115,7 @@ class PathTests(unittest.TestCase):
                       ('symbols', 'structs.json'), ('examples', 'profile.toml'),
                       ('examples', 'starts.toml'), ('assets', 'menu'),
                       ('addons', 'xbmc', 'console.py'), ('tests', 'game'),
-                      ('dash', 'mgr.h'), ('keys', 'release.pub')):
+                      ('dash', 'mgr.h'), ('keys', 'release.pub'), ('payloads', 'index.json')):
             self.assertTrue(resource(*parts).exists(), parts)
 
 

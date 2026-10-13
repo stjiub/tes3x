@@ -13,7 +13,7 @@
 
 typedef void(__cdecl *fn_relocate)(void *ref, void *cell, const float *position, float rotation);
 
-static const u32 relocate_sites[] = TES3X_NET_RELOCATE_SITES;
+#define relocate_sites ((const u32[])TES3X_NET_RELOCATE_SITES)
 static struct {
     u32 refid;
     u8 *from, *to, *last; /* last: the cell a move put it in here */

@@ -310,20 +310,30 @@ def _payload(x, value, ctx):
     """Inject a code section and run it from the entry point."""
     if not value:
         raise PatchError("payload: needs a linked PE")
-    blob, vsize, entry_rva, imgbase = tes3x_inject.load_pe(value)
     va = x.next_va()
-    if imgbase != va:
-        raise PatchError("payload linked at 0x%08X but the section lands at 0x%08X; "
-                         "relink with /base:0x%X" % (imgbase, va, va))
-    x.add_section(ctx["section"], blob, vsize, 0x02 | 0x04 | 0x01)
-    x.set_entry(imgbase + entry_rva)
-    ctx["payload"] = value
+    try:
+        blob, vsize, entry_rva, imgbase = tes3x_inject.load_pe(value, base=va)
+    except ValueError as exc:
+        raise PatchError(str(exc)) from exc
     manifest = os.path.splitext(value)[0] + ".json"
     if os.path.exists(manifest):
         with open(manifest, encoding="utf-8") as f:
-            ctx["hooks"] = json.load(f).get("hooks", {})
+            manifest_data = json.load(f)
+        manifest_base = manifest_data.get("base")
+        if isinstance(manifest_base, str):
+            manifest_base = int(manifest_base, 0)
+        if manifest_base != imgbase:
+            raise PatchError("payload manifest base does not match the PE")
+        try:
+            blob = tes3x_inject.bind_payload(blob, manifest_data, va, x)
+            ctx["hooks"] = tes3x_inject.rebase_hooks(manifest_data, va, vsize)
+        except (ValueError, RuntimeError) as exc:
+            raise PatchError(str(exc)) from exc
+    x.add_section(ctx["section"], blob, vsize, 0x02 | 0x04 | 0x01)
+    x.set_entry(va + entry_rva)
+    ctx["payload"] = value
     return [(tes3x_inject.HDR_ENTRY, 4, "section %s at 0x%08X, entry -> 0x%08X"
-             % (ctx["section"], va, imgbase + entry_rva))]
+             % (ctx["section"], va, va + entry_rva))]
 
 
 @patch("multi-bsa")
@@ -334,6 +344,13 @@ def _multi_bsa(x, value, ctx):
         raise PatchError("multi-bsa: needs `payload` first, with an archive_load hook in its "
                          "manifest")
     target = int(str(target), 16)
+    site_va = archive_load_site(x)
+    was, call_off = x.patch_call(site_va, target)
+    return [(call_off, 5, "Archive::Load call 0x%08X: 0x%08X -> 0x%08X" % (site_va, was, target))]
+
+
+def archive_load_site(x):
+    """The sole call following the retail archive path literal."""
     off = find_unique(x.data, b":\\Data Files\\Morrowind.bsa\x00", "archive path")
     string_va = x.off_to_va(off - 1)
     if string_va is None:
@@ -344,9 +361,7 @@ def _multi_bsa(x, value, ctx):
     if len(sites) != 1:
         raise PatchError("multi-bsa: %d push/call site(s) for the archive path, expected 1"
                          % len(sites))
-    site_va = x.off_to_va(sites[0]) + 5
-    was, call_off = x.patch_call(site_va, target)
-    return [(call_off, 5, "Archive::Load call 0x%08X: 0x%08X -> 0x%08X" % (site_va, was, target))]
+    return x.off_to_va(sites[0]) + 5
 
 
 def widen_opcode_bounds(x, ceiling):
@@ -1078,13 +1093,12 @@ def _console(x, value, ctx):
     site = find_console_gate(x)
     was, off = x.patch_call(site, target)
     edits = [(off, 5, "console gate 0x%08X: 0x%08X -> 0x%08X" % (site, was, target))]
-    for what, sig, hook in (("key", VK_KEY_LIMIT_SIG, "console_vk_key"),
-                            ("space", VK_SPACE_LIMIT_SIG, "console_vk_space")):
-        stub = ctx["hooks"].get(hook)
-        if not stub:
-            continue
-        stub = int(str(stub), 16)
-        site = find_vk_limit(x, sig, what)
+    limits = [(what, find_vk_limit(x, sig, what), hook)
+              for what, sig, hook in (("key", VK_KEY_LIMIT_SIG, "console_vk_key"),
+                                      ("space", VK_SPACE_LIMIT_SIG, "console_vk_space"))
+              if ctx["hooks"].get(hook)]
+    for what, site, hook in limits:
+        stub = int(str(ctx["hooks"][hook]), 16)
         off = x.va_to_off(site)
         x.data[off:off + 5] = b"\xe8" + struct.pack("<i", stub - (site + 5))
         edits.append((off, 5, "keyboard %s length check 0x%08X -> 0x%08X" % (what, site, stub)))

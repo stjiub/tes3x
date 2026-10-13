@@ -11,7 +11,8 @@
 
 typedef u8(__cdecl *fn_hit_roll)(void *attacker, void *projectile, int a2);
 
-static const u32 shoot_slots[] = TES3X_NET_SHOOT_SLOTS, shot_roll_sites[] = TES3X_NET_SHOT_ROLL_SITES;
+#define shoot_slots ((const u32[])TES3X_NET_SHOOT_SLOTS)
+#define shot_roll_sites ((const u32[])TES3X_NET_SHOT_ROLL_SITES)
 static u32 shot_hooked, shots_sent, shots_received, shots_replayed, shots_missed, shot_failures;
 
 /* What the release about to happen sends as SHOT, or 0 when it sends nothing. */

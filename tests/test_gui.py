@@ -421,7 +421,8 @@ order = 10
             [window.tabs.tabText(i) for i in range(window.tabs.count())].index("Build"))
         preview = window.context_info.toPlainText()
         self.assertIn("Dashboard title: Modded", preview)
-        self.assertIn("Install layout: Shared retail base", preview)
+        self.assertIn("Install layout: Overlay: changed files only, with a shared retail base",
+                      preview)
         self.assertIn("Packaging: Loose files", preview)
         self.assertIn("Mods: 1 active", preview)
         self.assertTrue(window.is_dirty())

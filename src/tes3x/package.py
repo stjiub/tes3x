@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a portable TES3X folder: TES3X.exe, an embedded Python holding TES3X, 7-Zip and LLVM."""
+"""Build a portable TES3X folder with launchers, Python, 7-Zip and prebuilt payloads."""
 
 import argparse
 import hashlib
@@ -9,7 +9,6 @@ import re
 import shutil
 import subprocess
 import sys
-import tarfile
 import urllib.request
 import zipfile
 
@@ -20,28 +19,12 @@ PYTHON = "3.12.9"
 EMBED_URL = "https://www.python.org/ftp/python/{0}/python-{0}-embed-amd64.zip"
 SEVEN_ZIP = "26.03"
 SEVEN_ZIP_URL = "https://github.com/ip7z/7zip/releases/download/26.03/"
-LLVM = "22.1.8"
-LLVM_ARCHIVE = f"clang+llvm-{LLVM}-x86_64-pc-windows-msvc"
 DOWNLOADS = {
     "7zr.exe": (SEVEN_ZIP_URL + "7zr.exe",
                 "ad4c82fadcbdf93c03b4fc440f300509c7d60c5c2f4d183e35d9d70d6957037d"),
     "7z2603-x64.exe": (SEVEN_ZIP_URL + "7z2603-x64.exe",
                        "0859c524b8a63551848f0c246abddcb1d0b7b656b0fbfe879f8d85e61a9e6edd"),
-    LLVM_ARCHIVE + ".tar.xz": (
-        f"https://github.com/llvm/llvm-project/releases/download/llvmorg-{LLVM}/"
-        f"{LLVM_ARCHIVE}.tar.xz",
-        "d96c2cc1736f4eb7fa43cb9bbdf56d93551a9ae0a9aadb9c99c3c3b2b712a234"),
 }
-# The binary release carries no license; ship each component's from the same tag.
-LLVM_LICENSES = {
-    "llvm": "8d85c1057d742e597985c7d4e6320b015a9139385cff4cbae06ffc0ebe89afee",
-    "clang": "ebcd9bbf783a73d05c53ba4d586b8d5813dcdf3bbec50265860ccc885e606f47",
-    "lld": "f7891568956e34643eb6a0db1462db30820d40d7266e2a78063f2fe233ece5a0",
-}
-for _part, _sha in LLVM_LICENSES.items():
-    DOWNLOADS[f"LICENSE-{_part}-{LLVM}.TXT"] = (
-        f"https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-{LLVM}/{_part}/LICENSE.TXT",
-        _sha)
 NOTICES = f"""# Third-party software
 
 This folder holds programs TES3X runs, unmodified, each with its license.
@@ -49,8 +32,6 @@ This folder holds programs TES3X runs, unmodified, each with its license.
 - `7zip/`: 7-Zip {SEVEN_ZIP} by Igor Pavlov, <https://www.7-zip.org>, which unpacks `.7z` and `.rar`
   mods. GNU LGPL 2.1 with the unRAR restriction, BSD 3-clause in parts; see
   `7zip/License.txt`. Source: {SEVEN_ZIP_URL}7z2603-src.7z
-- `llvm/`: clang and lld-link from LLVM {LLVM}, <https://llvm.org>, which compile the engine
-  patches for your XBE. Apache License 2.0 with LLVM Exceptions; see `llvm/LICENSE-*.TXT`.
 
 Also included, outside this folder:
 
@@ -147,44 +128,8 @@ def seven_zip_files():
     return folder
 
 
-def llvm_files():
-    """clang, lld-link, clang's own headers and the license from the LLVM release."""
-    folder = cache_dir() / f"llvm-{LLVM}"
-    if (folder / "bin" / "clang.exe").is_file():
-        return folder
-    archive = download(LLVM_ARCHIVE + ".tar.xz")
-    shutil.rmtree(folder, ignore_errors=True)
-    print(f"unpacking LLVM {LLVM}")
-    prefix = LLVM_ARCHIVE + "/"
-    wanted = ("bin/clang.exe", "bin/lld-link.exe", "bin/lld.exe")
-    links = {}
-    with tarfile.open(archive, "r|xz") as tar:
-        for member in tar:
-            name = member.name.removeprefix(prefix)
-            if not (name in wanted or name.startswith("lib/clang/") and "/include/" in name):
-                continue
-            target = folder / name
-            if member.issym() or member.islnk():
-                links[target] = folder / member.linkname.removeprefix(prefix)
-            elif member.isfile():
-                target.parent.mkdir(parents=True, exist_ok=True)
-                with tar.extractfile(member) as source, open(target, "wb") as out:
-                    shutil.copyfileobj(source, out)
-    for target, source in links.items():
-        if not source.is_absolute() or not source.is_file():
-            source = target.parent / source.name
-        shutil.copyfile(source, target)
-    (folder / "bin" / "lld.exe").unlink(missing_ok=True)
-    if not (folder / "bin" / "lld-link.exe").is_file():
-        raise PackageError(f"{archive.name} has no bin/lld-link.exe")
-    for part in LLVM_LICENSES:
-        shutil.copyfile(download(f"LICENSE-{part}-{LLVM}.TXT"), folder / f"LICENSE-{part}.TXT")
-    return folder
-
-
 def externals(target, dash=True):
     shutil.copytree(seven_zip_files(), target / "7zip")
-    shutil.copytree(llvm_files(), target / "llvm")
     (target / "README.md").write_text(NOTICES + (DASH_NOTICE if dash else ""),
                                       encoding="utf-8")
 

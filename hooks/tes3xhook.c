@@ -23,8 +23,14 @@ void tes3x_info_arena_init(void);
 void tes3x_overlay_init(void);
 #endif
 
-#ifndef TES3X_ORIG_ENTRY
+#if !defined(TES3X_ORIG_ENTRY) && !defined(TES3X_PORTABLE_BINDINGS)
 #error "define TES3X_ORIG_ENTRY to the XBE's original entry point"
+#endif
+
+#ifdef TES3X_PORTABLE_BINDINGS
+u32 tes3x_orig_entry;
+u32 tes3x_thunk_slots[TES3X_THUNK_COUNT];
+u32 tes3x_binding_values[TES3X_BINDING_COUNT];
 #endif
 
 #define TES3X_STR_(x) #x
@@ -120,6 +126,10 @@ __attribute__((naked)) void tes3x_entry(void)
         "call _tes3x_init\n\t"  /* i386 COFF prefixes cdecl symbols with an underscore */
         "popfl\n\t"
         "popal\n\t"
+#ifdef TES3X_PORTABLE_BINDINGS
+        "pushl _tes3x_orig_entry\n\t"
+#else
         "pushl $" TES3X_STR(TES3X_ORIG_ENTRY) "\n\t"
+#endif
         "ret\n\t");
 }

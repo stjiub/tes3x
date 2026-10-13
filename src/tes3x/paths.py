@@ -95,7 +95,7 @@ def resource(*parts):
 
 
 def bundled(*parts):
-    """What a portable folder carries beside the package: externals/ (7-Zip and LLVM), the
+    """What a portable folder carries beside the package: externals/ (7-Zip), the
     Dash's XBEs and VERSION. Elsewhere the checkout's, which has them only once built there;
     otherwise the tools fall back to PATH or a build."""
     return (PORTABLE or CHECKOUT).joinpath(*parts)

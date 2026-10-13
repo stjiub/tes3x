@@ -267,7 +267,7 @@ static void unfollow(u32 i, int restore)
 #define TOGGLES_FLAGS 0x24
 #define TOGGLE_AI_OFF 8u
 
-static const u32 ai_step_slots[] = TES3X_NET_AI_STEP_SLOTS;
+#define ai_step_slots ((const u32[])TES3X_NET_AI_STEP_SLOTS)
 static u32 ai_hooked, ai_held;
 
 static void __attribute__((thiscall)) ai_step_hook(u8 *mobile)

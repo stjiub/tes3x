@@ -75,7 +75,7 @@ static void clock_stat(void)
 
 typedef void(__attribute__((thiscall)) *fn_object_flag)(void *object, int on);
 
-static u8 *const weather_roll = (u8 *)TES3X_NET_WEATHER_ROLL;
+#define weather_roll ((u8 *)TES3X_NET_WEATHER_ROLL)
 static u8 weather_call[5], weather_seen[REGIONS];
 static u8 *regions[REGIONS];
 static u32 weather_saved, weather_blocked, weather_welcome, weather_forced;

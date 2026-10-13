@@ -33,7 +33,7 @@ typedef int(__attribute__((thiscall)) *fn_activate_spell)(void *controller, void
 typedef u8 *(__attribute__((thiscall)) *fn_magic_instance)(void *controller, int serial);
 typedef u8 *(__attribute__((thiscall)) *fn_resolve_object)(void *records, const char *id);
 
-static const u32 spell_sites[] = TES3X_NET_SPELL_HIT_SITES;
+#define spell_sites ((const u32[])TES3X_NET_SPELL_HIT_SITES)
 static u32 spell_hooked, spells_sent, spells_received, spells_applied, spells_withheld;
 static u32 spell_failures;
 static const u8 *spell_withheld_last;
@@ -182,7 +182,7 @@ static u8 *ref_named(u32 client, u32 refid)
 
 typedef void(__cdecl *fn_cast_bolt)(void *instance, int effect, int index, int count);
 
-static const u32 bolt_sites[] = TES3X_NET_CAST_BOLT_SITES;
+#define bolt_sites ((const u32[])TES3X_NET_CAST_BOLT_SITES)
 static u32 casts_sent, casts_received, casts_replayed, casts_bolted;
 static const u8 *cast_sent_last;
 
