@@ -42,7 +42,10 @@ that it committed the install; transferred bytes alone do not establish success.
 for 90 seconds, the row becomes **unknown**. The list keeps up to 128 attempts during this server
 run. It is cleared when the content server restarts. The Dash signs reports with its content
 identity in `E:\TES3X\content-id.key`; keep that file if you move its content settings to another
-Xbox. Older Dashes can still download, but cannot report a completed install.
+Xbox. If a final report is not acknowledged, the Dash keeps it locally and retries on its next
+contact with that library. It keeps at most 16 results. A report cannot be recovered after its
+six-hour ticket expires or the server restarts. Older Dashes can still download, but cannot report
+a completed install.
 
 ## Browse on the Xbox
 
@@ -67,6 +70,6 @@ Content browsing is a standalone download path. A multiplayer server still serve
 single build through **Servers**; it does not yet point clients at a separate content library.
 The content server currently keeps old copied revisions in its state folder until the admin
 removes them manually while the server is stopped. Activity reports are signed by a stable Dash
-identity and bound to the transfer ticket. Durable retry of a lost final report and linking a
-resumed download to its earlier attempt are still pending. Shared archive storage, access control,
-remote content sources for multiplayer, and Docker service profiles are planned separately.
+identity and bound to the transfer ticket. Linking a resumed download to its earlier attempt is
+still pending. Shared archive storage, access control, remote content sources for multiplayer,
+and Docker service profiles are planned separately.

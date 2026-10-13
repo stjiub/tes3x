@@ -1,4 +1,5 @@
 import http.client
+import hashlib
 import json
 import tempfile
 import time
@@ -20,8 +21,13 @@ class ContentTests(unittest.TestCase):
         self.deploy = self.root / "build" / "sample" / "deploy"
         self.deploy.mkdir(parents=True)
         (self.deploy / "mod.esp").write_bytes(b"first revision")
+        delta = b"unchanged XBE recipe"
+        delta_hash = hashlib.sha256(delta).hexdigest()
+        (self.deploy.parent / "deltas").mkdir()
+        (self.deploy.parent / "deltas" / f"{delta_hash}.zst").write_bytes(delta)
+        self.xbe = [{"delta": {"sha256": delta_hash, "size": len(delta)}}]
         manifest.write(self.deploy, manifest.create(
-            self.deploy, profile="Sample", source={}, folder="Sample"))
+            self.deploy, profile="Sample", source={}, folder="Sample", xbe=self.xbe))
         self.library = content.Library(self.root / "state", self.root / "build", [], True,
                                        ("build",))
         self.server = content.ContentServer(self.library, "127.0.0.1", 0, log=lambda _: None)
@@ -55,12 +61,17 @@ class ContentTests(unittest.TestCase):
 
         (self.deploy / "mod.esp").write_bytes(b"second revision")
         manifest.write(self.deploy, manifest.create(
-            self.deploy, profile="Sample", source={}, folder="Sample"))
+            self.deploy, profile="Sample", source={}, folder="Sample", xbe=self.xbe))
         self.library.refresh()
         status, body = self.request("/v1/catalog")
         self.assertEqual(status, 200)
         newer = self.signed(body)[1]["entries"][0]
         self.assertNotEqual(newer["build"], entry["build"])
+        _, body = self.request("/v1/ticket/sample")
+        newer_ticket = self.signed(body)[1]
+        self.assertEqual(newer_ticket["build"], newer["build"])
+        status, data = self.request(f"/{newer_ticket['token']}/file/mod.esp")
+        self.assertEqual((status, data), (200, b"second revision"))
         status, data = self.request(f"/{ticket['token']}/file/mod.esp")
         self.assertEqual((status, data), (200, b"first revision"))
 

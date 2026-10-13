@@ -24,6 +24,9 @@ No official releases yet. The first public release is in preparation.
 - The Content workspace now shows recent Dash install stages, progress, bytes sent and final
   results while its server runs. Update the Dash and content server together to see install results.
   See [content servers](docs/content.md).
+- The Dash now saves an unacknowledged content install result and retries it when it next contacts
+  that library, while its transfer ticket is valid. See [content servers](docs/content.md).
+- Updating a published content build now serves its new files when its XBE delta has not changed.
 
 - `tes3x game-tests` runs every game test against the retail engines named in the local
   config's new `[engines]` table, several at once, and prints what passed and failed. See

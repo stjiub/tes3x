@@ -11,6 +11,8 @@
 
 #define CONTENT_FILE "E:\\TES3X\\content.ini"
 #define CONTENT_ID_FILE "E:\\TES3X\\content-id.key"
+#define CONTENT_RESULTS_FILE "E:\\TES3X\\content-results.txt"
+#define CONTENT_RESULTS_MAX 16
 #define CONTENT_MAX (64 * 1024 + 96)
 #define CONTENT_PORT 26510
 
@@ -18,6 +20,14 @@ const char CONTENT_KEY_CHANGED[] = "The content server's key has changed.";
 const char CONTENT_BUILD_CHANGED[] = "The offered build has changed.";
 static unsigned char content_secret[64], content_public[32];
 static int content_identity_loaded;
+
+struct pending_result {
+    char host[64], stage[10];
+    unsigned port;
+    unsigned char token[16], key[32];
+};
+
+static void retry_results(const struct content_host *host);
 
 static int digit(char c)
 {
@@ -81,6 +91,111 @@ static int content_identity(void)
     crypto_wipe(seed, sizeof(seed));
     content_identity_loaded = 1;
     return 0;
+}
+
+static int load_results(struct pending_result rows[CONTENT_RESULTS_MAX])
+{
+    unsigned char *data = NULL;
+    size_t size;
+    char *line, *next, token[33], key[65], extra;
+    int count = 0;
+
+    if (read_file(CONTENT_RESULTS_FILE, &data, &size))
+        return 0;
+    if (size > 4096) {
+        free(data);
+        return -1;
+    }
+    for (line = (char *)data; *line && count < CONTENT_RESULTS_MAX; line = next) {
+        next = strpbrk(line, "\r\n");
+        if (next) {
+            *next++ = 0;
+            next += strspn(next, "\r\n");
+        } else {
+            next = line + strlen(line);
+        }
+        if (sscanf(line, "%63s %u %32s %64s %9s %c", rows[count].host,
+                   &rows[count].port, token, key, rows[count].stage, &extra) != 5
+            || !rows[count].port || rows[count].port > 65535
+            || unhex(token, rows[count].token, 16) || unhex(key, rows[count].key, 32)
+            || (strcmp(rows[count].stage, "complete")
+                && strcmp(rows[count].stage, "failed")
+                && strcmp(rows[count].stage, "cancelled")))
+            continue;
+        count++;
+    }
+    free(data);
+    return count;
+}
+
+static int save_results(const struct pending_result *rows, int count)
+{
+    char text[4096], token[33], key[65], staged[sizeof CONTENT_RESULTS_FILE + 8];
+    size_t used = 0;
+    int i, n;
+
+    if (!count) {
+        DeleteFileA(CONTENT_RESULTS_FILE);
+        return 0;
+    }
+    for (i = 0; i < count; i++) {
+        hex(token, rows[i].token, 16);
+        hex(key, rows[i].key, 32);
+        n = snprintf(text + used, sizeof(text) - used, "%s %u %s %s %s\n",
+                     rows[i].host, rows[i].port, token, key, rows[i].stage);
+        if (n < 0 || (size_t)n >= sizeof(text) - used)
+            return -1;
+        used += (size_t)n;
+    }
+    CreateDirectoryA("E:\\TES3X", NULL);
+    snprintf(staged, sizeof(staged), "%s.new", CONTENT_RESULTS_FILE);
+    if (write_flushed(staged, text, used))
+        return -1;
+    DeleteFileA(CONTENT_RESULTS_FILE);
+    return MoveFileA(staged, CONTENT_RESULTS_FILE) ? 0 : -1;
+}
+
+static int queue_result(const struct content_host *host, const struct ticket *ticket,
+                        const char *stage)
+{
+    struct pending_result rows[CONTENT_RESULTS_MAX], *row;
+    int count = load_results(rows), i;
+
+    if (count < 0 || !host->has_key)
+        return -1;
+    for (i = 0; i < count; i++)
+        if (!memcmp(rows[i].token, ticket->token, 16) && !memcmp(rows[i].key, host->key, 32))
+            break;
+    if (i == count) {
+        if (count == CONTENT_RESULTS_MAX) {
+            memmove(rows, rows + 1, sizeof(rows[0]) * (CONTENT_RESULTS_MAX - 1));
+            i = count - 1;
+        } else {
+            count++;
+        }
+    }
+    row = &rows[i];
+    memset(row, 0, sizeof(*row));
+    snprintf(row->host, sizeof(row->host), "%s", host->host);
+    snprintf(row->stage, sizeof(row->stage), "%s", stage);
+    row->port = host->port;
+    memcpy(row->token, ticket->token, 16);
+    memcpy(row->key, host->key, 32);
+    return save_results(rows, count);
+}
+
+static void remove_result(const struct content_host *host, const struct ticket *ticket)
+{
+    struct pending_result rows[CONTENT_RESULTS_MAX];
+    int count = load_results(rows), i, kept = 0;
+
+    if (count < 0)
+        return;
+    for (i = 0; i < count; i++)
+        if (memcmp(rows[i].token, ticket->token, 16) || memcmp(rows[i].key, host->key, 32))
+            rows[kept++] = rows[i];
+    if (kept != count && save_results(rows, kept))
+        mgr_log("content: could not clear an acknowledged result\n");
 }
 
 static int split(struct content_host *host)
@@ -266,6 +381,7 @@ static const char *get_signed(struct content_host *host, const char *path, struc
         if (save_host(host, 0))
             return "Could not keep the content server's key.";
     }
+    retry_results(host);
     return NULL;
 }
 
@@ -347,8 +463,8 @@ done:
     return err;
 }
 
-int content_report(const struct content_host *host, const struct ticket *ticket,
-                   const char *stage, unsigned long long done, unsigned long long total)
+static int send_report(const struct content_host *host, const struct ticket *ticket,
+                       const char *stage, unsigned long long done, unsigned long long total)
 {
     char token[33], signature[129], message[128], url[512];
     unsigned char sig[64];
@@ -366,4 +482,40 @@ int content_report(const struct content_host *host, const struct ticket *ticket,
     err = http_get(url, &body, &n, 128, NULL);
     free(body);
     return err ? -1 : 0;
+}
+
+int content_report(const struct content_host *host, const struct ticket *ticket,
+                   const char *stage, unsigned long long done, unsigned long long total)
+{
+    int terminal = !strcmp(stage, "complete") || !strcmp(stage, "failed")
+                   || !strcmp(stage, "cancelled");
+    int queued = 0, result;
+
+    if (terminal && (queued = queue_result(host, ticket, stage)))
+        mgr_log("content: could not keep the final install result\n");
+    result = send_report(host, ticket, stage, done, total);
+    if (terminal && !result && !queued)
+        remove_result(host, ticket);
+    return result;
+}
+
+static void retry_results(const struct content_host *host)
+{
+    struct pending_result rows[CONTENT_RESULTS_MAX], keep[CONTENT_RESULTS_MAX];
+    struct ticket ticket = {0};
+    int count, i, kept = 0;
+
+    if (!host->has_key || content_identity() || (count = load_results(rows)) <= 0)
+        return;
+    for (i = 0; i < count; i++) {
+        if (!strcmp(rows[i].host, host->host) && rows[i].port == host->port
+            && !memcmp(rows[i].key, host->key, 32)) {
+            memcpy(ticket.token, rows[i].token, 16);
+            if (!send_report(host, &ticket, rows[i].stage, 0, 0))
+                continue;
+        }
+        keep[kept++] = rows[i];
+    }
+    if (kept != count && save_results(keep, kept))
+        mgr_log("content: could not clear acknowledged install results\n");
 }

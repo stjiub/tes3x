@@ -92,8 +92,8 @@ class Library:
         if (not re.fullmatch(r"[0-9a-f]{64}", build_id)
                 or build_id != manifest.build_id(parsed)):
             raise ValueError(f"{source} has an invalid build ID")
-        digest = hashlib.sha256(data).hexdigest()
-        revision = self.state / "revisions" / digest
+        manifest_digest = hashlib.sha256(data).hexdigest()
+        revision = self.state / "revisions" / manifest_digest
         if not revision.is_dir():
             staged = revision.with_name(build_id + "." + secrets.token_hex(6) + ".new")
             staged.mkdir(parents=True)
@@ -120,31 +120,31 @@ class Library:
                     delta = recipe.get("delta")
                     if not delta:
                         continue
-                    digest = delta["sha256"]
-                    if not re.fullmatch(r"[0-9a-f]{64}", digest):
+                    delta_digest = delta["sha256"]
+                    if not re.fullmatch(r"[0-9a-f]{64}", delta_digest):
                         raise ValueError("invalid XBE delta digest")
-                    original = source.parent / "deltas" / f"{digest}.zst"
+                    original = source.parent / "deltas" / f"{delta_digest}.zst"
                     if not original.is_file() or original.is_symlink():
                         raise ValueError(f"missing XBE delta {original}")
                     destination = deltas / original.name
                     shutil.copyfile(original, destination)
                     if (destination.stat().st_size != delta["size"]
-                            or manifest.sha256_file(destination) != digest):
+                            or manifest.sha256_file(destination) != delta_digest):
                         raise ValueError(f"XBE delta changed while publishing: {original}")
                 revision.parent.mkdir(parents=True, exist_ok=True)
                 staged.rename(revision)
             finally:
                 if staged.exists():
                     shutil.rmtree(staged)
-        build = self.revisions.get(digest)
+        build = self.revisions.get(manifest_digest)
         if build is None:
             build = netbuild.Build(revision / "deploy", deltas=revision / "deltas",
                                    origins=self.origins, retail_base=self.retail_base)
         name = str(parsed.get("profile") or entry_id)[:47]
         with self.lock:
-            self.revisions[digest] = build
+            self.revisions[manifest_digest] = build
             self.entries[entry_id] = {"id": entry_id, "name": name, "description": "",
-                                      "build": build_id, "revision": digest,
+                                      "build": build_id, "revision": manifest_digest,
                                       "layout": parsed.get("install_layout", "full"),
                                       "bytes": sum(item["size"] for item in parsed["files"].values()),
                                       "sha256": build.sha256.hex(), "size": len(build.data)}
