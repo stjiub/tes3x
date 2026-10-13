@@ -4,6 +4,12 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- Chat works: type `chat TEXT` in the console (or `tes3xnet say TEXT`), and every player sees
+  `NAME: TEXT` on screen; the server prints it too. `msg NAME TEXT` sends to one player, and
+  `msg admin TEXT` to the server's admin; quote a name with spaces. Admin `say` and `tell`
+  messages now start with `Admin:`. Update the server, and install the build again for `chat`
+  and `msg`. See [console commands](docs/multiplayer-client.md).
+
 - The server page's player list has a Player column with each client's character name, and
   the server's `list` admin command prints it as `name NAME` after the address.
 - The Dash no longer hashes a retail base again once the server's file list has verified it;

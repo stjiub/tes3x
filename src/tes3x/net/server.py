@@ -16,6 +16,7 @@ import socket
 import struct
 import sys
 import tes3x.netbuild as tes3x_netbuild
+import textwrap
 import threading
 import time
 import traceback
@@ -61,7 +62,8 @@ from .proto import (ACTOR, ACTORS, ACTORS_PER_PACKET, ACTOR_DEAD, ACTOR_IN_COMBA
                     SPAWN_IDS, SPAWN_TWIN, SPAWN_TWIN_SECONDS, SPELL, SPELLS_ADD, SPELLS_REMOVE,
                     SPELLS_SNAPSHOT, SPYMASTER_DONE, SPYMASTER_GIVEN, SPYMASTER_QUEST, STANCE,
                     STARTS, START_NAME, STATE, STATE_BODY, STATE_SIZE, STATUS, STREAM_NAME, T3MP,
-                    T3MP_VERSION, TARGETED, UPLOAD_FILES, VITALS, WEATHER_OFFER, WELCOME,
+                    T3MP_VERSION, TARGETED, TEXT_PRIVATE, UPLOAD_FILES, VITALS, WEATHER_OFFER,
+                    WELCOME,
                     admin_secret, cell_keys, checkpoint_name, crypto, describe_contents, describe_faction,
                     describe_identity, describe_key, describe_level, describe_object,
                     describe_spawn, describe_state, describe_status, describe_weather,
@@ -1454,11 +1456,14 @@ class Server:
         print(f"world {path}: {self.world}", flush=True)
 
     def notify(self, text, now, only=None, skip=None):
-        """Show text on the screen of every console in the world, or of one client."""
-        data = text[:EVENT_DATA].encode("latin-1", "replace")
+        """Show text on the screen of every console in the world, or of one client, in as many
+        notices as it needs."""
+        lines = [line.encode("latin-1", "replace")
+                 for line in textwrap.wrap(text, EVENT_DATA, break_on_hyphens=False)]
         for other in self.clients.values():
             if other.in_world and other is not skip and (only is None or other is only):
-                other.rel.queue(EVENT_TEXT, 0, data)
+                for data in lines:
+                    other.rel.queue(EVENT_TEXT, 0, data)
                 self.flush(other, now)
 
     def listed_name(self, client):
@@ -2291,8 +2296,40 @@ class Server:
         return RELAY
 
     def event_text(self, client, kind, data, stamp, now):
-        print(f"{stamp} client {client.id} says: {wire_text(data)}", flush=True)
-        return RELAY
+        """A player's line, shown as a server notice under their name: consoles put only the
+        server's text on screen. A private one goes to one player, or only to the admin."""
+        target = None
+        if data[:1] == bytes([TEXT_PRIVATE]):
+            target, _, data = data[1:].partition(b"\0")
+            target = " ".join(wire_text(target).split())
+        text = " ".join(wire_text(data).split())
+        if not text or target == "":
+            return KEEP
+        name = self.player_name(client)
+        if target is None:
+            print(f"{stamp} client {client.id} ({name}) says: {text}", flush=True)
+            self.notify(f"{name}: {text}", now)
+            return KEEP
+        if target.lower() == "admin":
+            print(f"{stamp} client {client.id} ({name}) to admin: {text}", flush=True)
+            self.notify(f"You to Admin: {text}", now, only=client)
+            return KEEP
+        players = [other for other in self.clients.values() if other.in_world]
+        found = [other for other in players if self.player_name(other).lower() == target.lower()]
+        if not found:
+            found = [other for other in players
+                     if self.player_name(other).lower().startswith(target.lower())]
+        if len(found) != 1:
+            self.notify(f"No player is called {target}." if not found else
+                        f"{len(found)} players' names start with {target}.", now, only=client)
+            return KEEP
+        other = found[0]
+        print(f"{stamp} client {client.id} ({name}) to client {other.id} "
+              f"({self.player_name(other)}): {text}", flush=True)
+        self.notify(f"{name} to you: {text}", now, only=other)
+        if other is not client:
+            self.notify(f"You to {self.player_name(other)}: {text}", now, only=client)
+        return KEEP
 
     def event_game(self, client, kind, data, stamp, now):
         if len(data) < 5:
@@ -2746,10 +2783,10 @@ class Server:
                 self.detail["verbose"] = rest[0] == "verbose"
             return "log " + ("verbose" if self.detail["verbose"] else "normal")
         if verb == "say" and rest:
-            self.notify(" ".join(rest), time.monotonic())
+            self.notify("Admin: " + " ".join(rest), time.monotonic())
             return "sent to everyone"
         if verb == "tell" and len(rest) >= 2 and rest[0] in by_id:
-            self.notify(" ".join(rest[1:]), time.monotonic(), only=by_id[rest[0]])
+            self.notify("Admin: " + " ".join(rest[1:]), time.monotonic(), only=by_id[rest[0]])
             return f"sent to client {rest[0]}"
         if verb == "stop" and not rest:
             self.begin_stop("admin stop", time.monotonic())

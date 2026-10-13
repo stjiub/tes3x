@@ -1497,10 +1497,11 @@ class ServerTests(unittest.TestCase):
         self.fail('event stream did not drain')
 
     def relayed(self, sender, receiver, kind, data):
-        """Whether an event reaches another console unchanged, judged by a TEXT marker after it."""
+        """Whether an event reaches another console unchanged, judged by a TEXT marker after it,
+        which arrives as the server's notice."""
         marker = b'marker %d' % (getattr(sender, 'sent', 0) + 2)
         self.send_events(sender, (kind, data), (tes3x_net.EVENT_TEXT, marker))
-        got = self.events(receiver, lambda k, d: k == tes3x_net.EVENT_TEXT and d == marker)
+        got = self.events(receiver, lambda k, d: k == tes3x_net.EVENT_TEXT and d.endswith(marker))
         self.drain(sender)
         return (kind, data) in got[:-1]
 
@@ -1515,7 +1516,7 @@ class ServerTests(unittest.TestCase):
                  if name.startswith('EVENT_') and name != 'EVENT_DATA' and isinstance(value, int)}
         for name, kind in sorted(kinds.items()) + [('unknown', 200), ('unknown', 65535)]:
             for data in (b'', b'\x01'):
-                expected = kind == net.EVENT_TEXT or (kind == net.EVENT_BUSY and data == b'\x01')
+                expected = kind == net.EVENT_BUSY and data == b'\x01'
                 with self.subTest(name, data=data):
                     self.assertEqual(self.relayed(sender, receiver, kind, data), expected)
         refid = 0x0101F7C4
@@ -1536,9 +1537,57 @@ class ServerTests(unittest.TestCase):
                 ('remove', net.EVENT_REMOVE, bytes([1]) + struct.pack('<I', 77), False),
                 ('want', net.EVENT_WANT, bytes([1]) + struct.pack('<H', 5), False),
                 ('hit on the receiver', net.EVENT_HIT, struct.pack('<IIf', refid, 2, 5.0), True),
-                ('text', net.EVENT_TEXT, b'hello', True)):
+                ('text', net.EVENT_TEXT, b'hello', False)):
             with self.subTest(name):
                 self.assertEqual(self.relayed(sender, receiver, kind, data), expected)
+
+    def test_chat_reaches_every_console_as_a_named_notice(self):
+        self.start()
+        sender, receiver = self.client(1), self.client(2)
+        sender.join()
+        receiver.join()
+        self.send_events(sender, (tes3x_net.EVENT_TEXT, b'  well   met  '))
+        for client in (sender, receiver):
+            got = self.events(client, lambda k, d: k == tes3x_net.EVENT_TEXT)
+            self.assertEqual(got[-1], (tes3x_net.EVENT_TEXT, b'Player 1: well met'))
+
+    def test_private_messages_reach_one_player_or_the_admin(self):
+        from tes3x.net.proto import TEXT_PRIVATE
+        self.start()
+        sender, receiver, other = self.client(1), self.client(2), self.client(3)
+        for client in (sender, receiver, other):
+            client.join()
+
+        def private(name, text):
+            return (tes3x_net.EVENT_TEXT, bytes([TEXT_PRIVATE]) + name + b'\0' + text)
+
+        def last_text(client):
+            return self.events(client, lambda k, d: k == tes3x_net.EVENT_TEXT)[-1][1]
+
+        self.send_events(sender, private(b'player 2', b'psst'))
+        self.assertEqual(last_text(receiver), b'Player 1 to you: psst')
+        self.assertEqual(last_text(sender), b'You to Player 2: psst')
+        self.send_events(sender, private(b'Admin', b'help'))
+        self.assertEqual(last_text(sender), b'You to Admin: help')
+        self.send_events(sender, private(b'Player', b'who'))
+        self.assertEqual(last_text(sender), b"3 players' names start with Player.")
+        self.send_events(sender, private(b'Vivec', b'hi'))
+        self.assertEqual(last_text(sender), b'No player is called Vivec.')
+        with self.assertRaises(AssertionError):  # nothing reached the third player
+            self.events(other, lambda k, d: k == tes3x_net.EVENT_TEXT, timeout=0.5)
+
+    def test_admin_messages_say_they_are_from_the_admin(self):
+        admin = free_port()
+        self.start('--admin-port', str(admin))
+        first = self.client(1)
+        first.join()
+        self.admin(admin, 'say', 'restart', 'soon')
+        got = self.events(first, lambda k, d: k == tes3x_net.EVENT_TEXT)
+        self.assertEqual(got[-1], (tes3x_net.EVENT_TEXT, b'Admin: restart soon'))
+        self.admin(admin, 'tell', '1', 'x' * 90)
+        got = self.events(first, lambda k, d: k == tes3x_net.EVENT_TEXT and d == b'x' * 17)
+        self.assertEqual(got[-2:], [(tes3x_net.EVENT_TEXT, b'Admin: ' + b'x' * 73),
+                                    (tes3x_net.EVENT_TEXT, b'x' * 17)])
 
     def test_run_puts_back_the_interrupt_handler(self):
         try:

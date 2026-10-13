@@ -583,11 +583,76 @@ void tes3x_multi_frame(void)
     player_frame(ref);
 }
 
+#define TEXT_PRIVATE 1u
+
+/* Appends text to a TEXT event at *n, dropping one pair of quotes around all of it. */
+static void text_append(u8 *data, u32 *n, const char *text)
+{
+    u32 length;
+
+    text = skip(text);
+    for (length = 0; text[length]; length++)
+        ;
+    while (length && text[length - 1] == ' ')
+        length--;
+    if (length >= 2 && text[0] == '"' && text[length - 1] == '"') {
+        text++;
+        length -= 2;
+    }
+    while (length-- && *n < EVENT_DATA)
+        data[(*n)++] = (u8)*text++;
+}
+
+/* chat TEXT, or msg NAME TEXT for one player (or "admin"); NAME is one word or quoted. */
+static void chat(const char *text, int private_to)
+{
+    u8 data[EVENT_DATA];
+    u32 n = 0, start;
+    char end = ' ';
+
+    text = skip(text);
+    if (private_to) {
+        data[n++] = TEXT_PRIVATE;
+        if (*text == '"') {
+            end = '"';
+            text++;
+        }
+        for (; *text && *text != end; text++)
+            if (n < EVENT_DATA - 2)
+                data[n++] = (u8)*text;
+        if (*text == '"')
+            text++;
+        if (n == 1) {
+            tes3x_log("net.usage", 0);
+            return;
+        }
+        data[n++] = 0;
+    }
+    start = n;
+    text_append(data, &n, text);
+    if (n == start) {
+        tes3x_log("net.usage", 0);
+        return;
+    }
+    if (!net.up)
+        notice("Not connected to a server.");
+    else if (!event_queue(EVENT_TEXT, data, n))
+        tes3x_log("net.event_full", rel.out_next - rel.out_first);
+}
+
 int tes3x_multi_command(const char *text)
 {
     const char *rest;
     u32 value;
 
+    if ((rest = word(skip(text), "chat")) && *skip(rest)) {
+        chat(rest, 0);
+        return 1;
+    }
+    if ((rest = word(skip(text), "msg")) && *skip(rest)) {
+        chat(rest, 1);
+        return 1;
+    }
     if (!(text = word(text, "tes3xnet")))
         return 0;
     text = skip(text);
@@ -653,10 +718,7 @@ int tes3x_multi_command(const char *text)
     } else if ((rest = word(text, "notice")) && *(rest = skip(rest))) {
         notice(rest);
     } else if ((rest = word(text, "say")) && *(rest = skip(rest))) {
-        for (value = 0; rest[value] && value < EVENT_DATA; value++)
-            ;
-        if (!event_queue(EVENT_TEXT, (const u8 *)rest, value))
-            tes3x_log("net.event_full", rel.out_next - rel.out_first);
+        chat(rest, 0);
     } else if (!*text) {
         tes3x_net_broadcast(8);
     } else if ((rest = number(text, &value)) && !*skip(rest) && value) {

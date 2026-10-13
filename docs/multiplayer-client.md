@@ -210,7 +210,8 @@ With `console` in the build, open the console (Back + right thumb click) and typ
 | `tes3xnet global NAME` | print a global's value to the console (`NAME >> 1.00`) and log `net.global` with its raw value, type and 1 if it is the character's own, 2 if the world's |
 | `tes3xnet local ID NAME` | print a script local of a reference in the loaded area (`ID.NAME >> 1.00`), by object id or by refid as `0x` hex, which an NPC needs; logs `net.local` with refid, slot and raw value |
 | `tes3xnet actor 0xREFID` | print an actor's health (`REFID >> 25.00`); with `near X Y R` instead print 1.00 if it stands within R units of X, Y, else 0.00. Logs `net.actor_at` with its position |
-| `tes3xnet say TEXT` | send a line of text to the other players (logged there as `net.text`) |
+| `chat TEXT` | every player, you included, sees `NAME: TEXT` on screen, and the server's admin sees it in the server output. Up to 80 characters; quotes around the whole text are dropped. `tes3xnet say TEXT` does the same |
+| `msg NAME TEXT` | only that player sees `YOURNAME to you: TEXT`, and you see `You to NAME: TEXT`. Quote a name with spaces (`msg "Dagoth Ur" hello`); the start of a name is enough when only one player's name starts that way. `msg admin TEXT` goes to the server's output only |
 | `tes3xnet send NAME` | send `U:\TES3X\NAME` to the server when the admin asks for a diagnostic file; this does not save your multiplayer character |
 | `tes3xnet save` | flush supported character state and wait for the server to confirm storage |
 | `tes3xnet leave` | flush supported character state and quit after the server confirms storage |

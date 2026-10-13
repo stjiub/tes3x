@@ -171,6 +171,10 @@ EVENT_DATA = 80
 
 
 EVENT_TEXT = 1
+# A console's TEXT is chat for every player. One starting with TEXT_PRIVATE is NAME, a zero, then
+# the text, for one player, or for the server's admin when NAME is `admin`. The server sends
+# every line to consoles as its own notice.
+TEXT_PRIVATE = 1
 
 
 EVENT_WELCOME = 35  # the --welcome text, once per join as a character, shown in a box

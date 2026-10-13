@@ -127,10 +127,12 @@ The server takes admin commands typed at its own window, or from the same PC wit
 | `bans` | the bans |
 | `save [N]` | ask every console, or client N, to save its character now |
 | `stop` | ask every console for its character, wait for the saves, then stop |
-| `say TEXT`, `tell N TEXT` | show a line of text to every player, or to client N |
+| `say TEXT`, `tell N TEXT` | show a line of text, prefixed `Admin:`, to every player or to client N |
 | `log [normal\|verbose]` | show or change how much the server prints |
 
-Any other word prints the list of commands.
+Any other word prints the list of commands. Players' chat appears in the server's output as
+`client N (NAME) says: TEXT`, private messages as `client N (NAME) to client M (NAME): TEXT`,
+and a player's `msg admin TEXT` as `client N (NAME) to admin: TEXT`.
 
 Bans are kept in `bans.txt` in the `--world` folder. A key is a player's identity, but a player
 can make a new one by deleting `servers.ini`; on a server with a password, a new key needs the
