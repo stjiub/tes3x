@@ -20,6 +20,7 @@ import tes3x.manifest as tes3x_manifest
 from tes3x.pack import set_ini_key
 from tes3x.paths import local_config, require_paths
 import tes3x.savepool as tes3x_savepool
+import tes3x.store as tes3x_store
 
 PLUGIN_EXT = (".esm", ".esp")
 MTIME_SLACK = 3
@@ -609,6 +610,42 @@ def write_xbox_ini(target, source, dry_run):
         print(f"  {XBOX_INI}: set {keys}")
 
 
+STORE_LIB = "E:/TES3X/lib"
+
+
+def sync_store(args, target, built):
+    """Send the store archives a build lists that the console lacks. An archive counts as
+    present with its sidecar, which is written after it, as the Dash does."""
+    entries = tes3x_store.check_entries((built or {}).get("store", []))
+    if not entries:
+        return
+    store = Path(args.store) if args.store else tes3x_store.pc_store(args.tree)
+    try:
+        remote = {name.lower(): size for name, size in target.tree(STORE_LIB).items()}
+    except REMOTE_ERRORS:
+        remote = {}
+    missing = [entry for entry in entries
+               if remote.get(tes3x_store.xbox_name(entry["sha256"]) + ".bsa") != entry["size"]
+               or tes3x_store.xbox_name(entry["sha256"]) + ".json" not in remote]
+    print(f"  store: {len(entries) - len(missing)} of {len(entries)} archives on the console, "
+          f"{human(sum(entry['size'] for entry in missing))} to send to {STORE_LIB}")
+    if args.dry_run:
+        for entry in missing:
+            print(f"    + {entry['name']}  {human(entry['size'])}")
+        return
+    for entry in missing:
+        source = store / f"{entry['sha256']}.bsa"
+        if tes3x_store.read_entry(store, entry["sha256"]) is None:
+            sys.exit(f"store archive {source} is missing; rebuild the profile")
+        name = posixpath.join(STORE_LIB, tes3x_store.xbox_name(entry["sha256"]))
+        print(f"  store: {entry['name']} ({human(entry['size'])})", flush=True)
+        try:
+            target.upload(name + ".bsa", source, lambda _amount, _reset: None)
+        except RuntimeError as exc:
+            sys.exit(str(exc))
+        put_file(target, name + ".json", json.dumps(entry).encode("utf-8"))
+
+
 def staging_name(path, index):
     return posixpath.join(posixpath.dirname(path), f"{STAGING_PREFIX}{index}.new")
 
@@ -661,6 +698,9 @@ def main():
                     help=f"UDP port NetAgent names (default: {tes3x_agent.PORT})")
     ap.add_argument("--agent-wait", type=float, default=60,
                     help="seconds to wait for the Dash to pair (default: 60)")
+    ap.add_argument("--store", metavar="DIR",
+                    help="the PC's shared archive store (default: store/ in the build root, "
+                         "two folders above the tree)")
     ap.add_argument("--xbox-ini", metavar="FILE",
                     help=f"merge this file's [Xbox] keys into the console's {XBOX_INI}")
     args = ap.parse_args()
@@ -794,6 +834,7 @@ def sync(args, target, base, local, built):
             print(f"  warning: {human(free - grow)} will be left free on {drive}:")
 
     if args.dry_run:
+        sync_store(args, target, built)
         for name in pool_missing:
             print(f"    + {pool_base}/{name}")
         for r in sorted(delete)[:20]:
@@ -869,6 +910,8 @@ def sync(args, target, base, local, built):
     check_uploads(target.tree, target.read, base, local, assets + plugins, args.verify)
     if args.verify != "none":
         print(f"  verified {len(assets) + len(plugins)} uploaded files by {args.verify}")
+    # before the manifest, so a build whose manifest arrived finds its archives
+    sync_store(args, target, built)
 
     put_file(target, posixpath.join(base, MANIFEST), manifest_bytes(deployed_manifest(
         built, record, local, hashes, manifest if args.only else None)))

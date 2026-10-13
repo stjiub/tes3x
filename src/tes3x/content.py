@@ -511,6 +511,14 @@ class Library:
                     del self.history[entry_id]
             for revision in removed:
                 shutil.rmtree(self.state / "revisions" / revision, ignore_errors=True)
+            listed = set()
+            for kept in (self.state / "revisions").glob("*/deploy"):
+                listed |= {entry["sha256"]
+                           for entry in (manifest.load(kept) or {}).get("store", [])}
+            for archive in (self.state / "store").glob("*.bsa"):
+                if archive.stem not in listed:
+                    archive.unlink()
+                    archive.with_suffix(".json").unlink(missing_ok=True)
         return removed
 
     def set_metadata(self, entry_id, name=None, description=None):
@@ -595,6 +603,7 @@ class Library:
                     if (destination.stat().st_size != delta["size"]
                             or manifest.sha256_file(destination) != delta_digest):
                         raise ValueError(f"XBE delta changed while publishing: {original}")
+                self.copy_store(parsed, source)
                 revision.parent.mkdir(parents=True, exist_ok=True)
                 staged.rename(revision)
             finally:
@@ -602,8 +611,7 @@ class Library:
                     shutil.rmtree(staged)
         build = self.revisions.get(manifest_digest)
         if build is None:
-            build = netbuild.Build(revision / "deploy", deltas=revision / "deltas",
-                                   origins=self.origins, retail_base=self.retail_base)
+            build = self.build(revision)
         name = str(parsed.get("profile") or entry_id)[:47]
         with self.lock:
             self.revisions[manifest_digest] = build
@@ -625,6 +633,34 @@ class Library:
                             "listed": True}
                 rows.append(previous)
             self.entries[entry_id] = previous
+
+    def build(self, revision):
+        return netbuild.Build(revision / "deploy", deltas=revision / "deltas",
+                              origins=self.origins, retail_base=self.retail_base,
+                              store=self.state / "store")
+
+    def copy_store(self, parsed, source):
+        """Store archives into the library's one shared store, kept while any revision lists
+        them; the pipeline's store is beside the source's profile folder."""
+        from tes3x import store
+        entries = store.check_entries(parsed.get("store", []))
+        shared = self.state / "store"
+        for entry in entries:
+            if store.read_entry(shared, entry["sha256"]):
+                continue
+            original = store.pc_store(source) / f"{entry['sha256']}.bsa"
+            if not original.is_file() or original.is_symlink():
+                raise ValueError(f"missing store archive {original}")
+            shared.mkdir(parents=True, exist_ok=True)
+            staged = shared / f"{entry['sha256']}.bsa.new"
+            shutil.copyfile(original, staged)
+            if (staged.stat().st_size != entry["size"]
+                    or manifest.sha256_file(staged) != entry["sha256"]):
+                staged.unlink()
+                raise ValueError(f"store archive changed while publishing: {original}")
+            staged.replace(shared / f"{entry['sha256']}.bsa")
+            (shared / f"{entry['sha256']}.json").write_text(json.dumps(entry),
+                                                           encoding="utf-8")
 
     def refresh(self):
         candidates = self.candidates()
@@ -678,8 +714,7 @@ class Library:
                 revision = self.state / "revisions" / row["revision"]
                 if not revision.is_dir():
                     return None
-                build = netbuild.Build(revision / "deploy", deltas=revision / "deltas",
-                                       origins=self.origins, retail_base=self.retail_base)
+                build = self.build(revision)
                 self.revisions[row["revision"]] = build
             return row, build
 

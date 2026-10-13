@@ -373,6 +373,39 @@ def materialize(filemap, mods, out, rules, cache=None, load_order=None, sox=None
     return stats, renames
 
 
+def store_mods(mods, filemap, prof, rules, args):
+    """Pack the profile's store mods into the shared store and take the assets they win out of
+    the tree; their archives, in load order."""
+    from tes3x import store
+    threshold = prof.get("package", {}).get("store_threshold_mb", 0) * 1048576
+    chosen = []
+    for mod in sorted(mods, key=lambda mod: mod.order):
+        wanted, tier = getattr(mod, "store", (None, None))
+        if wanted is None and threshold:
+            wanted = sum(os.path.getsize(source) for key, source in mod.files.items()
+                         if store.packable(key)) >= threshold
+        if wanted:
+            chosen.append((mod, tier or store.tier_for(rules.get("max_texture_size", 512))))
+    if not chosen:
+        return []
+    if not args.store_dir:
+        sys.exit("store mods need --store-dir")
+    entries = []
+    for mod, tier in chosen:
+        try:
+            entry = store.pack_mod(mod, tier, args.store_dir)
+        except ValueError as exc:
+            sys.exit(str(exc))
+        won = [key for key, (winner, _source) in filemap.items()
+               if winner is mod and store.packable(key)]
+        for key in won:
+            del filemap[key]
+        entries.append(entry)
+        print(f"  store: {mod.name} at {tier}, {entry['size'] / 1048576:.1f} MB, "
+              f"{entry['sha256'][:12]} ({len(won)} assets win)")
+    return entries
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("profile")
@@ -385,6 +418,8 @@ def main():
     ap.add_argument("--reachability-json", help="write pruning decisions and missing references")
     ap.add_argument("--load-order", help="validated tes3x_plugins order JSON; requires --vanilla")
     ap.add_argument("--archive-list", help="write the mod archives shipped, in load order, as JSON")
+    ap.add_argument("--store-dir", help="pack store mods into this shared archive store")
+    ap.add_argument("--store-list", help="write the store archives this build lists, as JSON")
     ap.add_argument("--max-texture-size", type=int, metavar="N",
                     help="downscale target for mod textures (profile: max_texture_size)")
     ap.add_argument("--convert-all-textures", dest="convert_all", action="store_true",
@@ -450,6 +485,7 @@ def main():
                             entry.get("order", 0), entry.get("plugins"), exclude,
                             None if entry.get("archives") == "load"
                             else data_dir() / "cache" / "bsa"))
+            mods[-1].store = (entry.get("store"), entry.get("store_tier"))
         except ValueError as exc:
             sys.exit(str(exc))
     if missing:
@@ -491,6 +527,7 @@ def main():
             import json
             with open(args.reachability_json, "w", encoding="utf-8") as stream:
                 json.dump(reach, stream, indent=2)
+    stored = store_mods(mods, filemap, prof, rules, args)
     problems = check(filemap)
     report(mods, filemap, conflicts, problems)
     remote_root = args.remote_root or prof['profile'].get('remote_root', DEFAULT_REMOTE_ROOT)
@@ -508,6 +545,11 @@ def main():
             print(f"  SoX: {stats['sound_converted']} WAVs converted, {stats['sound_bytes_saved']} bytes saved")
         print(f"  load order stamped across {len([k for k in filemap if k.endswith(PLUGIN_EXT)])} plugins")
         print()
+
+    if args.store_list:
+        import json
+        with open(args.store_list, "w", encoding="utf-8") as stream:
+            json.dump(stored, stream)
 
     if args.archive_list:
         import json

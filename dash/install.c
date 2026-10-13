@@ -558,6 +558,7 @@ const char *install_ticket(const struct ticket *ticket, const char *host, const 
     struct sha256 sh;
     const char *err = NULL;
     int n = 0, had_n = 0, want_n = 0, i, e, count[4] = {0}, owned, others = 0, removed = 0, pass;
+    int store_reused = 0, store_fetched = 0;
 
     folder[0] = summary[0] = 0;
     snprintf(url_base, sizeof(url_base), "%s://%s:%u/", ticket->has_tls ? "https" : "http", host,
@@ -660,6 +661,9 @@ const char *install_ticket(const struct ticket *ticket, const char *host, const 
         err = reason;
         goto done;
     }
+
+    if ((err = store_install(&j, url_base, &store_reused, &store_fetched, progress)))
+        goto done;
 
     /* XBEs first, then the files a server may refuse to send, so a missing base or a policy
      * shows before the bulk downloads */
@@ -790,6 +794,9 @@ const char *install_ticket(const struct ticket *ticket, const char *host, const 
     snprintf(summary, summary_n, "%d downloaded, %d from the base, %d XBEs rebuilt, %d kept%s",
              count[FETCH], count[COPY], count[REBUILD], count[KEEP],
              removed ? ", old files removed" : "");
+    if (store_reused + store_fetched)
+        snprintf(summary + strlen(summary), summary_n - strlen(summary),
+                 "; shared archives: %d downloaded, %d reused", store_fetched, store_reused);
 done:
     http_pin(host, ticket->port, NULL);
     mgr_progress_title(NULL);

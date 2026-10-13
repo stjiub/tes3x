@@ -10,8 +10,9 @@ from pathlib import Path
 
 NAME = "tes3xbuild.json"
 FORMAT = 1
-# The oldest TES3X Dash that understands this format.
+# The oldest TES3X Dash that understands this format, and one that lists store archives.
 MANAGER = 1
+MANAGER_STORE = 3
 
 
 def _zstd():
@@ -86,7 +87,8 @@ def file_entries(root, retail=None):
 
 
 def create(root, *, profile, source, plugins=(), ini=(), xbe=(), save_pool=None,
-           install_layout="full", retail=None, files=None, folder=None, sources=None):
+           install_layout="full", retail=None, files=None, folder=None, sources=None,
+           store=None):
     """The manifest for a staged tree, or with `files` given, for those entries. `folder` is the
     install folder's name, where the Dash puts the build."""
     manifest = {
@@ -105,6 +107,10 @@ def create(root, *, profile, source, plugins=(), ini=(), xbe=(), save_pool=None,
         manifest["folder"] = folder
     if sources is not None:
         manifest["sources"] = list(sources)
+    if store:
+        # shared archives in E:\TES3X\lib, in tes3xarch.txt order (tes3x.store)
+        manifest["store"] = list(store)
+        manifest["manager"] = MANAGER_STORE
     # first, so the game finds it in the file's head
     return {"format": FORMAT, "build": build_id(manifest), **manifest}
 
@@ -115,6 +121,8 @@ def build_id(manifest):
     content = {"files": {path.lower(): entry.get("sha256") or entry.get("sha1")
                          for path, entry in manifest["files"].items()},
                "plugins": manifest.get("plugins", [])}
+    if manifest.get("store"):
+        content["store"] = [entry["sha256"] for entry in manifest["store"]]
     return hashlib.sha256(json.dumps(content, sort_keys=True, separators=(",", ":"))
                           .encode("utf-8")).hexdigest()
 

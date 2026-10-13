@@ -355,6 +355,38 @@ class AgentDeployTests(unittest.TestCase):
             renames = [i for i, e in enumerate(dash.log) if e[0] == "rename"]
             self.assertLess(puts[1], renames[0])  # every file arrives before any is renamed
 
+    def test_store_archives_go_to_the_shared_library_once(self):
+        import hashlib
+        import json
+        from tes3x import manifest as tes3x_manifest
+        dash = FakeDash()
+        dash.dirs.add("e:")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "build" / "p" / "deploy"
+            (root / "Data Files").mkdir(parents=True)
+            (root / "Data Files" / "a.esp").write_bytes(b"plugin")
+            archive = b"archive"
+            digest = hashlib.sha256(archive).hexdigest()
+            store = Path(tmp) / "build" / "store"
+            store.mkdir()
+            (store / f"{digest}.bsa").write_bytes(archive)
+            entry = {"sha256": digest, "size": len(archive), "name": "Big", "tier": 512}
+            (store / f"{digest}.json").write_text(json.dumps(entry), encoding="utf-8")
+            built = tes3x_manifest.create(root, profile="p", source={}, store=[entry])
+            target = AgentTarget.__new__(AgentTarget)
+            target.client, target.dirs, target.listener = dash, set(), None
+            args = SimpleNamespace(tree=str(root), only=[], dry_run=False, replace=True,
+                                   require_current=False, verify="size", ignore_space=False,
+                                   plugin_delay=0, clear_cache=False, store=None)
+            for _ in range(2):
+                with patch("sys.stdout", io.StringIO()):
+                    sync(args, target, "F:/Games/M", local_tree(root), built)
+            name = f"e:/tes3x/lib/{digest[:32]}"
+            self.assertEqual(dash.files[name + ".bsa"], archive)
+            self.assertEqual(json.loads(dash.files[name + ".json"])["sha256"], digest)
+            self.assertEqual([e for e in dash.log if e[0] == "put" and e[1].endswith(".bsa")],
+                             [("put", f"{digest[:32]}.bsa")])
+
 
 
 class DriveSpaceTests(unittest.TestCase):

@@ -8,8 +8,9 @@
 #include "ui.h"
 
 enum tab { TAB_BUILDS, TAB_SERVERS, TAB_CONTENT, TAB_SETTINGS, TAB_COUNT };
-enum page { PAGE_MAIN, PAGE_DETAILS, PAGE_BASES, PAGE_BROWSE, PAGE_SERVER, PAGE_CONTENT };
-enum setting { SET_BASE, SET_AGENT, SET_DASH, SET_QUIT, SET_COUNT };
+enum page { PAGE_MAIN, PAGE_DETAILS, PAGE_BASES, PAGE_BROWSE, PAGE_SERVER, PAGE_CONTENT,
+            PAGE_STORE };
+enum setting { SET_BASE, SET_AGENT, SET_STORE, SET_DASH, SET_QUIT, SET_COUNT };
 
 #define LINE_HEAD 1
 #define LINE_BAD 2
@@ -24,7 +25,7 @@ struct line {
 /* What a dialog's v.confirm asks. */
 enum confirm { CONFIRM_NONE, CONFIRM_INSTALL, CONFIRM_BUILD, CONFIRM_SERVER, CONFIRM_UPDATE,
                CONFIRM_DASH_UPDATE, CONFIRM_SERVER_KEY, CONFIRM_CONTENT_KEY,
-               CONFIRM_CONTENT_INSTALL, CONFIRM_CONTENT_REMOVE };
+               CONFIRM_CONTENT_INSTALL, CONFIRM_CONTENT_REMOVE, CONFIRM_STORE_DELETE };
 
 struct view {
     int tab, page;
@@ -48,6 +49,8 @@ struct view {
     struct ui_list content_entries_list;
     struct ui_list settings;
     const char *overlay_base, *agent, *slot;
+    const char *store_summary; /* the shared archives, for Settings */
+    int store_unused;          /* shared archives no installed build lists */
     struct ui_keyboard kb; /* over the page when open */
     /* a dialog over the page and the keyboard, when title is set */
     char title[48];

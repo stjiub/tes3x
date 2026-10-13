@@ -27,6 +27,7 @@ extern const struct theme *ui;
 #define UI_PANEL_TOP 68
 #define UI_PANEL_BOTTOM 428
 #define UI_PAD 16
+#define UI_TABS_SHOWN 3 /* tabs in the header at once */
 
 enum ui_button { UI_A, UI_B, UI_X, UI_Y, UI_START, UI_L, UI_R, UI_BACK };
 

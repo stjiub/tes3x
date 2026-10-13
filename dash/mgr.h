@@ -11,7 +11,7 @@
 #define MANIFEST "tes3xbuild.json"
 /* The newest build manifest format this Dash reads (tes3x_manifest.FORMAT). */
 #define MANIFEST_FORMAT 1
-#define MANAGER_LEVEL 2
+#define MANAGER_LEVEL 3
 #define PATH_MAX_MGR 260
 
 struct build {
@@ -259,6 +259,22 @@ int content_report(const struct content_host *host, const struct ticket *ticket,
                    const char *stage, unsigned long long done, unsigned long long total);
 void content_attempt_done(const struct content_host *host, const struct content_entry *entry,
                           const struct ticket *ticket);
+
+/* store.c: shared archives in E:\TES3X\lib that builds list in their manifest's "store". */
+struct store_item {
+    char sha[65], name[48];
+    unsigned long long size;
+    int tier, users; /* users: installed builds listing it */
+};
+int store_present(const char *sha, unsigned long long size);
+/* Downloads the archives a manifest lists that are not here; NULL, or why not. */
+const char *store_install(const struct json *j, const char *url_base, int *reused,
+                          int *fetched, progress_fn progress);
+/* The archives a manifest lists, and how many are missing. */
+int store_check(const struct json *j, int *missing);
+int store_scan(struct store_item *out, int max, const struct build *builds, int build_count);
+/* Deletes the archives no build lists; how many, and their bytes. */
+int store_delete_unused(const struct store_item *items, int count, unsigned long long *bytes);
 
 int read_file(const char *path, unsigned char **data, size_t *n);
 /* Writes a file and flushes it to the disk; flush_path flushes one already written. */

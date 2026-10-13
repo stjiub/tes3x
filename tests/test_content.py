@@ -348,6 +348,27 @@ class ContentTests(unittest.TestCase):
         self.server.pace("192.0.2.2", 10_000)
         self.assertLess(time.monotonic() - started, 0.05)
 
+    def test_store_archives_are_shared_served_and_pruned(self):
+        archive = b"store archive bytes"
+        digest = hashlib.sha256(archive).hexdigest()
+        (self.root / "build" / "store").mkdir()
+        (self.root / "build" / "store" / f"{digest}.bsa").write_bytes(archive)
+        entry = {"sha256": digest, "size": len(archive), "name": "Big", "tier": 512}
+        manifest.write(self.deploy, manifest.create(
+            self.deploy, profile="Sample", source={}, folder="Sample", xbe=self.xbe,
+            store=[entry]))
+        self.library.refresh()
+        shared = self.root / "state" / "store" / f"{digest}.bsa"
+        self.assertEqual(shared.read_bytes(), archive)
+        stored = self.library.entries["sample"]
+        status, ticket, _ = self.ticket(build=stored["build"], revision=stored["revision"])
+        self.assertEqual(status, 200)
+        self.assertEqual(self.request(f"/{ticket['token']}/store/{digest}"), (200, archive))
+        self.assertEqual(self.request(f"/{ticket['token']}/store/{'0' * 64}")[0], 404)
+        self.library.set_listed("sample", stored["revision"], False)
+        self.assertEqual(self.library.prune(), [stored["revision"]])
+        self.assertFalse(shared.exists())
+
     def test_one_server_per_state(self):
         held = content.serving_lock(self.root / "state")
         self.addCleanup(held.close)

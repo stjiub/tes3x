@@ -418,6 +418,13 @@
       "pc_va": "0x0040E920"
     },
     {
+      "va": "0x0008C680",
+      "name": "LoadFontsFromIni",
+      "confidence": "verified",
+      "provenance": "Xbox decompile: loops i=0..2, reads [Fonts] Font %d and loads each .fnt from Data Files/Fonts",
+      "note": "All three configured fonts are loaded during initialization; a missing key takes the fatal-error path."
+    },
+    {
       "va": "0x0008C820",
       "name": "WorldController::removeGlobalScript",
       "confidence": "matched",
@@ -4929,12 +4936,32 @@
       "pc_va": "0x00583B60"
     },
     {
+      "va": "0x00199670",
+      "name": "ui::updateClipBounds",
+      "confidence": "verified",
+      "provenance": "Xbox decompile 0x00199670: intersects element rectangle with parent +0x130..+0x13C and writes own +0x130..+0x13C",
+      "note": "Recomputes clipping from cached absolute position, dimensions, padding and parent clip bounds."
+    },
+    {
       "va": "0x0019A170",
       "name": "ui::findChildElement",
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_ui_findChildElement",
       "pc_va": "0x00582DE0"
+    },
+    {
+      "va": "0x0019A380",
+      "name": "ui::updateAbsolutePosition",
+      "confidence": "verified",
+      "provenance": "Xbox decompile: sets Element +0xEC/+0xF0 from parent absolute position plus local +0xE4/+0xE8"
+    },
+    {
+      "va": "0x0019A410",
+      "name": "ui::updateClipBoundsTree",
+      "confidence": "verified",
+      "provenance": "Xbox decompile 0x0019A410: checks own dirty flags, calls ui::updateClipBounds, and recurses through children",
+      "note": "Runs after updateAbsolutePosition during performLayout; recalculates clipping for visible elements when geometry is dirty."
     },
     {
       "va": "0x0019A770",
@@ -4973,6 +5000,29 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_ui_findMenu",
       "pc_va": "0x00595370"
+    },
+    {
+      "va": "0x0019CE50",
+      "name": "ui::layoutAnchoredChildren",
+      "confidence": "verified",
+      "provenance": "Xbox decompile: computes child x/y from parent available width/height and Element +0x128/+0x12C fractions",
+      "note": "Uses Element +0x128/+0x12C position alignment fractions; negative values disable the axis."
+    },
+    {
+      "va": "0x0019D060",
+      "name": "ui::layoutScreenAnchors",
+      "confidence": "verified",
+      "provenance": "Xbox decompile: computes screen-relative layout properties using screen dimensions and Element +0x128/+0x12C fractions",
+      "note": "Uses Element +0x128/+0x12C screen position alignment fractions; negative values disable the axis."
+    },
+    {
+      "va": "0x0019D330",
+      "name": "ui::checkMouseEventInElement",
+      "confidence": "verified",
+      "provenance": "Xbox decompile 0x0019D330 and PC 0x00587730; tested against call sites in menu input controller",
+      "note": "Tests visible element against cached absolute position and width/height, then clips against parent +0x130..+0x13C; coordinate scaling must update the element rectangle used by layout and input.",
+      "pc_va": "0x00587730",
+      "signature": "bool __thiscall checkMouseEventInElement(int mouseX, int mouseY)"
     },
     {
       "va": "0x0019D850",
@@ -5680,6 +5730,13 @@
       "pc_va": "0x005F5500"
     },
     {
+      "va": "0x001F89F0",
+      "name": "BuildMenuMultiElements",
+      "confidence": "verified",
+      "provenance": "Xbox decompile: constructs MenuMulti pane, compass, meters, icons and buttons",
+      "note": "Sets the menu initial width/height to about 85% of the screen; EnsureMenuMulti later replaces these with about 89%. MenuMulti_main uses proportional width/height (+0x120/+0x124) of 1.0 to fill its parent. Builds compass, meters, icons and buttons."
+    },
+    {
       "va": "0x001FA5F0",
       "name": "UI::UpdateCurrentMagicFromEquipmentStack",
       "kind": "function",
@@ -5694,6 +5751,13 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_UI_UpdateCurrentMagicFromSpell",
       "pc_va": "0x005F4E70"
+    },
+    {
+      "va": "0x001FACA0",
+      "name": "EnsureMenuMulti",
+      "confidence": "verified",
+      "provenance": "Xbox decompile: creates MenuMulti if absent, then positions it from screen dimensions",
+      "note": "Creates MenuMulti if absent, then replaces its initial 85% screen dimensions with about 89%, relayouts and caches MenuMulti_main pixel dimensions and absolute position."
     },
     {
       "va": "0x001FB4C0",

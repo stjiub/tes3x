@@ -179,6 +179,8 @@ static void draw_settings(const struct view *v)
         v->overlay_base[0] ? v->overlay_base : "Not set: overlay builds and XBE updates need one",
         v->overlay_base[0] ? ui->dim : ui->bad);
     row(y += ROW_H, v->settings.sel == SET_AGENT, "PC agent", NULL, 0, v->agent, ui->dim);
+    row(y += ROW_H, v->settings.sel == SET_STORE, "Shared archives", NULL, 0,
+        v->store_summary ? v->store_summary : "?", ui->dim);
     row(y += ROW_H, v->settings.sel == SET_DASH, "Dash", NULL, 0, version, ui->dim);
     row(y += ROW_H, v->settings.sel == SET_QUIT, "Quit to dashboard", NULL, 0, "Restarts the Xbox",
         ui->dim);
@@ -259,6 +261,8 @@ static void draw_page(const struct view *v)
     static const struct ui_hint change[] = {{UI_A, "Change"}};
     static const struct ui_hint update[] = {{UI_A, "Check for update"}};
     static const struct ui_hint quit[] = {{UI_A, "Restart"}};
+    static const struct ui_hint open[] = {{UI_A, "Open"}};
+    static const struct ui_hint store[] = {{UI_X, "Delete unused"}, {UI_B, "Back"}};
     static const struct ui_hint servers[] = {{UI_A, "Details"}, {UI_X, "Add"},
                                              {UI_Y, "Rescan"}, {UI_START, "Join"},
                                              {UI_BACK, "Delete"}};
@@ -307,6 +311,9 @@ static void draw_page(const struct view *v)
         hints = content, n = 4;
         if (!v->content_hosts_list.count)
             hints = content + 1, n = 1;
+    } else if (v->page == PAGE_STORE) {
+        draw_lines(v, "Shared archives", "E:\\TES3X\\lib");
+        hints = v->store_unused ? store : store + 1, n = v->store_unused ? 2 : 1;
     } else if (v->page == PAGE_BASES) {
         draw_bases(v);
         hints = v->base_list.sel == v->base_count ? choose : bases, n = 2;
@@ -326,6 +333,8 @@ static void draw_page(const struct view *v)
             hints = update, n = 1;
         else if (v->settings.sel == SET_QUIT)
             hints = quit, n = 1;
+        else if (v->settings.sel == SET_STORE)
+            hints = open, n = 1;
     }
     gfx_noclip();
     snprintf(status, sizeof(status), "Agent: %s", v->agent);

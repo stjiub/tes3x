@@ -76,6 +76,9 @@ def main():
     ap.add_argument("--mod-archives", metavar="JSON",
                     help="mod archives in the tree, in load order, for tes3xarch.txt "
                          "(needs the multi-BSA hook)")
+    ap.add_argument("--store-list", metavar="JSON",
+                    help="shared store archives this build lists from E:\\TES3X\\lib "
+                         "(tes3x build --store-list; needs the multi-BSA hook)")
     ap.add_argument("--no-archive", action="store_true",
                     help="stage every mod asset loose and leave vanilla Morrowind.bsa untouched")
     ap.add_argument("--stubs", choices=("auto", "require", "force"), default="auto",
@@ -106,6 +109,11 @@ def main():
         ap.error('--no-archive and --delta-archive are alternatives')
     if args.loose_mod and not args.manifest:
         ap.error('--loose-mod needs --manifest')
+    stored = (json.loads(open(args.store_list, encoding="utf-8").read())
+              if args.store_list else [])
+    if stored and not (args.delta_archive or args.no_archive):
+        # Archives listed after Morrowind.bsa would override the mod assets merged into it.
+        ap.error('store archives need package mode delta-bsa or loose')
     if os.path.isdir(args.out) and os.listdir(args.out):
         ap.error("output must be new or empty; stale files would invalidate the deployment")
 
@@ -226,10 +234,15 @@ def main():
     paths += ['Data Files/Morrowind.bsa', 'Morrowind.ini']
     extra_archives = (json.loads(open(args.mod_archives, encoding="utf-8").read())
                       if args.mod_archives else [])
-    # Loose files beat every archive, so the delta archive, which stands in for them, loads last.
-    listed = extra_archives + ([args.delta_archive] if args.delta_archive else [])
-    if args.delta_archive:
-        paths.append('Data Files/' + args.delta_archive)
+    # Loose files beat every archive, so the delta archive, which stands in for them, loads last;
+    # store archives hold whole mods, including assets a later mod wins in the delta archive.
+    from tes3x.store import xbox_path
+    # the engine refuses an archive with no entries, as when store archives took every asset
+    delta = args.delta_archive if pack else None
+    listed = (extra_archives + [xbox_path(entry["sha256"]) for entry in stored]
+              + ([delta] if delta else []))
+    if delta:
+        paths.append('Data Files/' + delta)
     if listed:
         paths.append('Data Files/tes3xarch.txt')
     if invalidated and (args.delta_archive or args.no_archive):
@@ -244,6 +257,9 @@ def main():
     if args.no_archive:
         shutil.copyfile(base_bsa, out_bsa)
         print(f"  Morrowind.bsa: vanilla unchanged, {os.path.getsize(out_bsa)/1048576:.1f} MB")
+    elif args.delta_archive and not delta:
+        shutil.copyfile(base_bsa, out_bsa)
+        print(f"  Morrowind.bsa: vanilla unchanged; no mod assets for {args.delta_archive}")
     elif args.delta_archive:
         # The hook loads the mod archive second; prepending makes its entries override vanilla.
         shutil.copyfile(base_bsa, out_bsa)

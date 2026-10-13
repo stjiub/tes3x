@@ -188,6 +188,25 @@ def has_file(image, directory, name):
         return any(e[0].lower() == name.lower() for e in fs.listdir(cluster))
 
 
+def store_seeds(deploy, staging):
+    """(E: destination, source) for the shared store archives a build lists, each with its
+    sidecar, which the build reads from E:\\TES3X\\lib."""
+    from tes3x import manifest as tes3x_manifest
+    from tes3x import store as tes3x_store
+    built = tes3x_manifest.load(deploy) or {}
+    store = tes3x_store.pc_store(deploy)
+    out = []
+    for entry in tes3x_store.check_entries(built.get("store", [])):
+        if tes3x_store.read_entry(store, entry["sha256"]) is None:
+            sys.exit(f"store archive {entry['sha256']} is not in {store}")
+        name = tes3x_store.xbox_name(entry["sha256"])
+        sidecar = staging / f"{name}.json"
+        sidecar.write_text(json.dumps(entry), encoding="utf-8")
+        out += [(f"TES3X/lib/{name}.bsa", str(store / f"{entry['sha256']}.bsa")),
+                (f"TES3X/lib/{name}.json", str(sidecar))]
+    return out
+
+
 def put_tree(disk, source, dest):
     """A host file or folder at E:/dest."""
     parent, _, name = dest.replace("\\", "/").strip("/").rpartition("/")
@@ -732,7 +751,7 @@ def main():
     clusters = None
     puts = list(a.put)
     seeds = []
-    for dest, source in a.seed:
+    for dest, source in list(a.seed) + (store_seeds(deploy, staging) if deploy else []):
         parent, _, name = dest.replace("\\", "/").strip("/").rpartition("/")
         if not (hdd.is_file() and has_file(hdd, parent, name)):
             seeds.append((dest, source))

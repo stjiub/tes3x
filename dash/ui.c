@@ -75,20 +75,25 @@ int ui_button(int button, int x, int y)
 void ui_header(const char *const *names, int n, int active)
 {
     const struct font *f = ui->title;
-    int i, x, total = 0, gap = 28, w, baseline = 46;
+    int i, k, x, total = 0, gap = 28, w, baseline = 46;
+    /* a carousel: the tabs either side of the active one, wrapping as LB and RB do, so the
+     * row never reaches the title */
+    int shown = n < UI_TABS_SHOWN ? n : UI_TABS_SHOWN;
+    int first = n > UI_TABS_SHOWN ? active - UI_TABS_SHOWN / 2 + n : 0;
 
     gfx_text(&font_logo, UI_LEFT, baseline - font_logo.ascent, ui->accent, "TES3X");
-    for (i = 0; i < n; i++)
-        total += gfx_text_width(f, names[i]) + gap;
+    for (k = 0; k < shown; k++)
+        total += gfx_text_width(f, names[(first + k) % n]) + gap;
     x = UI_RIGHT - total - (n > 1 ? 2 * 24 - gap : 0) + (n > 1 ? 0 : gap);
     if (n > 1)
         x += ui_button(UI_L, x, baseline - 16) + 14;
-    for (i = 0; i < n; i++) {
+    for (k = 0; k < shown; k++) {
+        i = (first + k) % n;
         w = gfx_text_width(f, names[i]);
         gfx_text(f, x, baseline - f->ascent, i == active ? ui->accent : ui->dim, names[i]);
         if (i == active)
             gfx_fill(x, baseline + 6, w, 2, ui->accent);
-        x += w + (i + 1 < n ? gap : 14);
+        x += w + (k + 1 < shown ? gap : 14);
     }
     if (n > 1)
         ui_button(UI_R, x, baseline - 16);

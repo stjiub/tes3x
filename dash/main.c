@@ -51,6 +51,10 @@ static struct base bases[MAX_BASES];
 static struct folder folders[MAX_FOLDERS];
 static char browse_path[PATH_MAX_MGR];
 static struct line lines[MAX_LINES];
+#define MAX_STORE 64
+static struct store_item store_items[MAX_STORE];
+static int store_count;
+static char store_summary[64];
 static struct server servers[MAX_SERVERS];
 static const char *server_builds[MAX_SERVERS];
 static struct content_host content_hosts[MAX_CONTENT];
@@ -657,6 +661,54 @@ static void install_content(int replace)
     mgr_log("content %s: installed %s in %s: %s\n", host->name, entry->id, folder, summary);
 }
 
+/* "12.3 MB": the Dash's printf has no floating point. */
+static const char *megabytes(char out[24], unsigned long long bytes)
+{
+    snprintf(out, 24, "%llu.%llu MB", bytes >> 20, ((bytes & 0xFFFFF) * 10) >> 20);
+    return out;
+}
+
+/* The shared archives with the installed builds that list them, as the store page's lines. */
+static void load_store(void)
+{
+    unsigned long long total = 0;
+    char size[24];
+    int i;
+
+    store_count = store_scan(store_items, MAX_STORE, builds, v.build_list.count);
+    v.line_list.count = v.line_list.sel = v.line_list.top = 0;
+    v.store_unused = 0;
+    for (i = 0; i < store_count; i++) {
+        const struct store_item *s = &store_items[i];
+
+        total += s->size;
+        v.store_unused += !s->users;
+        if (s->users)
+            add_line("", 0, "%s: %s, textures to %d, used by %d build%s",
+                     s->name[0] ? s->name : s->sha, megabytes(size, s->size), s->tier,
+                     s->users, s->users == 1 ? "" : "s");
+        else
+            add_line("", LINE_BAD, "%s: %s, not used by any build",
+                     s->name[0] ? s->name : s->sha, megabytes(size, s->size));
+    }
+    if (!store_count)
+        add_line("", 0, "None. Builds that share a large mod keep it here once.");
+    snprintf(store_summary, sizeof(store_summary), "%d, %s%s", store_count,
+             megabytes(size, total), v.store_unused ? ", some unused" : "");
+    mgr_log("store: %d archives, %llu bytes, %d unused\n", store_count, total, v.store_unused);
+}
+
+static void delete_unused_store(void)
+{
+    unsigned long long bytes;
+    char text[64], size[24];
+    int n = store_delete_unused(store_items, store_count, &bytes);
+
+    load_store();
+    snprintf(text, sizeof(text), "%d deleted, %s freed", n, megabytes(size, bytes));
+    say("Shared archives", text, NULL);
+}
+
 /* Deleting asks first; A in the dialog goes ahead (v.confirm says which). */
 
 static void ask_delete(void)
@@ -1208,6 +1260,10 @@ static void run_exec(void)
             scan();
         } else if (!strcmp(arg[0], "verify") && argc == 2 && (b = find_build(arg[1]))) {
             verify_build(b, &r, NULL);
+        } else if (!strcmp(arg[0], "delete") && argc == 2 && (b = find_build(arg[1]))) {
+            err = delete_build(b, NULL);
+            mgr_log("exec: delete %s: %s\n", arg[1], err ? err : "ok");
+            scan();
         } else if (!strcmp(arg[0], "launch") && argc == 2 && (b = find_build(arg[1]))) {
             free(data);
             launch(b);
@@ -1247,6 +1303,14 @@ static void run_exec(void)
             Sleep((DWORD)atoi(arg[1]) * 1000);
         } else if (!strcmp(arg[0], "servers")) {
             load_servers();
+        } else if (!strcmp(arg[0], "store")) {
+            scan();
+            load_store();
+            for (n = 0; n < (size_t)store_count; n++)
+                mgr_log("exec: store %s %.16s %llu bytes, %d users\n", store_items[n].name,
+                        store_items[n].sha, store_items[n].size, store_items[n].users);
+            if (argc == 2 && !strcmp(arg[1], "clean"))
+                delete_unused_store();
         } else if (!strcmp(arg[0], "content") && argc == 3 && !strcmp(arg[1], "add")) {
             struct content_host host;
             mgr_log("exec: content add %s: %s\n", arg[2],
@@ -1365,6 +1429,8 @@ static void press(int button)
                 delete_selected_server();
             else if (what == CONFIRM_CONTENT_INSTALL)
                 install_content(1);
+            else if (what == CONFIRM_STORE_DELETE)
+                delete_unused_store();
             else if (what == CONFIRM_CONTENT_REMOVE && chosen_content()) {
                 struct content_host gone = *chosen_content();
 
@@ -1484,6 +1550,16 @@ static void press(int button)
             use_folder(browse_path);
         else if (button == SDL_CONTROLLER_BUTTON_B)
             browse_up();
+    } else if (v.page == PAGE_STORE) {
+        if (step)
+            ui_list_move(&v.line_list, step);
+        else if (button == SDL_CONTROLLER_BUTTON_B)
+            v.page = PAGE_MAIN;
+        else if (button == SDL_CONTROLLER_BUTTON_X && v.store_unused) {
+            say("Delete unused archives?", "No installed build lists them.",
+                "A build that needs one later downloads it again.");
+            v.confirm = CONFIRM_STORE_DELETE;
+        }
     } else if (v.page == PAGE_BASES) {
         if (step)
             ui_list_move(&v.base_list, step);
@@ -1500,6 +1576,8 @@ static void press(int button)
             find_retail_bases(), v.page = PAGE_BASES;
         else if (button == SDL_CONTROLLER_BUTTON_A && v.settings.sel == SET_DASH)
             fetch_update(NULL);
+        else if (button == SDL_CONTROLLER_BUTTON_A && v.settings.sel == SET_STORE)
+            load_store(), v.page = PAGE_STORE;
         else if (button == SDL_CONTROLLER_BUTTON_A && v.settings.sel == SET_QUIT) {
             mgr_log("quit to dashboard\n");
             HalReturnToFirmware(HalRebootRoutine);
@@ -1555,6 +1633,7 @@ int main(void)
     v.browse_path = browse_path;
     v.lines = lines;
     v.overlay_base = overlay_base;
+    v.store_summary = store_summary;
     v.slot = update_slot();
     v.base_current = -1;
     v.build_list.rows = BUILD_ROWS;

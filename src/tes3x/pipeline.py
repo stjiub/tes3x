@@ -28,6 +28,7 @@ from tes3x.agent import key_fingerprint, load_or_create_key
 from tes3x.paths import (DEFAULT_REMOTE_ROOT, checkout, docs_url, local_config, require_paths,
                          resource, vanilla_override)
 from tes3x.plugins import rules_file
+from tes3x.store import TIERS as STORE_TIERS
 import tes3x.manifest as tes3x_manifest
 import tes3x.savepool as tes3x_savepool
 import tes3x.targets as tes3x_targets
@@ -159,8 +160,11 @@ def validate_profile(profile):
     typed(preferences, "invert_look", (bool,), "preferences")
 
     package = table("package")
-    known(package, {"mode", "archive_name", "archive_only", "drive_letter", "loose_assets"},
-          "package")
+    known(package, {"mode", "archive_name", "archive_only", "drive_letter", "loose_assets",
+                    "store_threshold_mb"}, "package")
+    if "store_threshold_mb" in package and (type(package["store_threshold_mb"]) is not int
+                                            or package["store_threshold_mb"] < 0):
+        raise PipelineError("package.store_threshold_mb must be a whole number of MB")
     for key in ("mode", "archive_name", "drive_letter"):
         typed(package, key, (str,), "package")
     if package.get("mode", "delta-bsa") not in PACKAGE_MODES:
@@ -186,7 +190,14 @@ def validate_profile(profile):
         if not isinstance(mod, dict):
             raise PipelineError(f"{field} must be a table")
         known(mod, {"name", "id", "version", "components", "order", "enabled", "optional",
-                    "plugins", "loose", "archives"}, field)
+                    "plugins", "loose", "archives", "store", "store_tier"}, field)
+        typed(mod, "store", (bool,), field)
+        if "store_tier" in mod and mod["store_tier"] not in STORE_TIERS:
+            raise PipelineError(f"{field}.store_tier must be one of "
+                                + ", ".join(map(str, STORE_TIERS)))
+        if (mod.get("store") or package.get("store_threshold_mb")) \
+                and package.get("mode") == "merged-bsa":
+            raise PipelineError("store archives need package.mode delta-bsa or loose")
         if mod.get("archives", "unpack") not in {"unpack", "load"}:
             raise PipelineError(f"{field}.archives must be 'unpack' or 'load'")
         typed(mod, "name", (str,), field)
@@ -378,8 +389,10 @@ def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), pac
     else:
         mode = "retail"
     applied = set(selected)
-    if mode == "delta-bsa" or (mode != "retail" and any(
-            mod.get("archives") == "load" for mod in enabled_mods(profile))):
+    if mode == "delta-bsa" or (mode != "retail" and (
+            any(mod.get("archives") == "load" or mod.get("store")
+                for mod in enabled_mods(profile))
+            or profile.get("package", {}).get("store_threshold_mb"))):
         applied.add("multi-bsa")
     if profile.get("preferences") and "build-preferences" not in disabled \
             and "build-preferences" not in disable:
@@ -1072,6 +1085,7 @@ def main(argv=None):
     tree = work / "tree"
     manifest = work / "manifest.json"
     mod_archives = work / "archives.json"
+    store_list = work / "store.json"
     hook_out = work / "hooks"
     patched = work / "morrowind.xbe"
     staged = work / "deploy"
@@ -1080,7 +1094,8 @@ def main(argv=None):
         if has_mods:
             build_cmd = [sys.executable, "-m", "tes3x", "build", profile_path,
                          "--out", tree, "--json", manifest, "--vanilla", data_files,
-                         "--archive-list", mod_archives]
+                         "--archive-list", mod_archives,
+                         "--store-dir", build_root / "store", "--store-list", store_list]
             if library:
                 build_cmd += ["--library", library]
             if path_remote:
@@ -1151,7 +1166,7 @@ def main(argv=None):
         if has_mods:
             pack_cmd = [sys.executable, "-m", "tes3x", "pack", tree,
                         "--vanilla", data_files, "--ini", ini, "--out", staged,
-                        "--mod-archives", mod_archives]
+                        "--mod-archives", mod_archives, "--store-list", store_list]
             if use_mlox or listed_order:
                 pack_cmd += ["--load-order", load_order]
             if plan["package_mode"] == "loose":
@@ -1239,6 +1254,7 @@ def main(argv=None):
                         for spec in patch_specs],
             "package_mode": plan["package_mode"],
             "install_layout": install_layout,
+            "store": str(build_root / "store"),
             "preferences": profile.get("preferences", {}),
             "command": sanitized_command(invocation, profile_name, args.profile),
             "ini": {
@@ -1274,7 +1290,9 @@ def main(argv=None):
             plugins=[plugin["name"] for plugin in plugins], ini=ini_items,
             xbe=recipes,
             save_pool=record.get("save_pool"), retail=vanilla,
-            folder=tes3x_targets.install_dir(profile)))
+            folder=tes3x_targets.install_dir(profile),
+            store=json.loads(store_list.read_text(encoding="utf-8"))
+            if store_list.is_file() else None))
         if console_items:
             (work / XBOX_INI).write_bytes(xbox_ini_text(console_items).encode("latin-1"))
             print(f"  {XBOX_INI}: " + ", ".join(item.partition(":")[2].partition("=")[0]

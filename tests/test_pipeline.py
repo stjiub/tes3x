@@ -450,7 +450,8 @@ class PipelinePlanTests(unittest.TestCase):
         profile = {'profile': {'install_layout': 'overlay'},
                    'patches': {'preset': 'minimal'}}
         plan = resolve_patch_plan(profile)
-        self.assertEqual(plan['selected'], ['data-overlay'])
+        self.assertEqual(plan['selected'],
+                         ['data-overlay', 'boot-clear', 'menu-still', 'dash-button'])
         self.assertIn('tes3xoverlay.c', plan['sources'])
         profile['patches']['disable'] = ['data-overlay']
         with self.assertRaisesRegex(PipelineError, 'requires data-overlay'):
@@ -467,9 +468,11 @@ class PipelinePlanTests(unittest.TestCase):
     def test_multiplayer_adds_network_foundation(self):
         profile = {'patches': {'preset': 'minimal', 'enable': ['multiplayer']}}
         plan = resolve_patch_plan(profile)
-        self.assertEqual(plan['selected'], ['diagnostics', 'net', 'multiplayer'])
+        self.assertEqual(plan['selected'], ['diagnostics', 'boot-clear', 'menu-still',
+                                            'dash-button', 'net', 'multiplayer'])
         self.assertEqual(plan['sources'], [
-            'tes3xhook.c', 'tes3xlog.c', 'tes3xini.c', 'tes3xdiag.c', 'tes3xnet.c', 'tes3xmulti.c'
+            'tes3xhook.c', 'tes3xlog.c', 'tes3xini.c', 'tes3xdiag.c', 'tes3xbootclear.c',
+            'tes3xmenustill.c', 'tes3xdashbutton.c', 'tes3xnet.c', 'tes3xmulti.c'
         ])
 
     def test_agent_adds_network_foundation(self):

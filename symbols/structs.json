@@ -278,12 +278,23 @@
       "pc_valid_until": "0x38",
       "note": "8 bytes longer than the PC before 0x7D: the flags and the colour sit 8 above their PC offsets. Laying out the element above the top-level menus lays out every menu, and the HUD loses its place.",
       "fields": [
+        {"offset": "0x34", "name": "parent", "type": "TES3::UI::Element*", "confidence": "verified", "provenance": "ui::updateAbsolutePosition 0x0019A380 adds parent +0xEC/+0xF0 to local x/y"},
         {"offset": "0x7D", "name": "visible", "type": "bool", "confidence": "matched", "provenance": "ui::navigate 0x001B1050 skips menus with it clear; PC 0x75"},
         {"offset": "0x7F", "name": "flagColourChanged", "type": "bool", "confidence": "verified", "provenance": "a label's new colour shows only once it is set (Join server rows); PC 0x77"},
         {"offset": "0xE4", "name": "x", "type": "int", "confidence": "verified", "provenance": "ui::setX 0x00197860 stores pixel x and adjusts layout x at +0x9C"},
         {"offset": "0xE8", "name": "y", "type": "int", "confidence": "verified", "provenance": "ui::setY 0x00197890 stores pixel y and adjusts layout y at +0xA0"},
+        {"offset": "0xEC", "name": "absoluteX", "type": "int", "confidence": "verified", "provenance": "ui::updateAbsolutePosition 0x0019A380 adds parent absoluteX and local x"},
+        {"offset": "0xF0", "name": "absoluteY", "type": "int", "confidence": "verified", "provenance": "ui::updateAbsolutePosition 0x0019A380 adds parent absoluteY and local y"},
         {"offset": "0xF4", "name": "width", "type": "int", "confidence": "verified", "provenance": "ui::setWidth 0x00198980 stores clamped pixel width"},
         {"offset": "0xF8", "name": "height", "type": "int", "confidence": "verified", "provenance": "ui::setHeight 0x00198A60 stores clamped pixel height"},
+        {"offset": "0x120", "name": "widthProportional", "type": "float", "confidence": "verified", "provenance": "BuildMenuMultiElements 0x001F89F0 sets 1.0 for MenuMulti_main; PC +0x118"},
+        {"offset": "0x124", "name": "heightProportional", "type": "float", "confidence": "verified", "provenance": "BuildMenuMultiElements 0x001F89F0 sets 1.0 for MenuMulti_main; PC +0x11C"},
+        {"offset": "0x128", "name": "horizontalAnchor", "type": "float", "confidence": "verified", "provenance": "ui::layoutAnchoredChildren 0x0019CE50 and ui::layoutScreenAnchors 0x0019D060; negative disables axis"},
+        {"offset": "0x12C", "name": "verticalAnchor", "type": "float", "confidence": "verified", "provenance": "ui::layoutAnchoredChildren 0x0019CE50 and ui::layoutScreenAnchors 0x0019D060; negative disables axis"},
+        {"offset": "0x130", "name": "clipMinX", "type": "int", "confidence": "verified", "provenance": "ui::checkMouseEventInElement 0x0019D330 bounds mouse X against parent clip"},
+        {"offset": "0x134", "name": "clipMaxX", "type": "int", "confidence": "verified", "provenance": "ui::checkMouseEventInElement 0x0019D330 bounds mouse X against parent clip"},
+        {"offset": "0x138", "name": "clipMinY", "type": "int", "confidence": "verified", "provenance": "ui::checkMouseEventInElement 0x0019D330 bounds mouse Y against parent clip"},
+        {"offset": "0x13C", "name": "clipMaxY", "type": "int", "confidence": "verified", "provenance": "ui::checkMouseEventInElement 0x0019D330 bounds mouse Y against parent clip"},
         {"offset": "0x154", "name": "colour", "type": "float[4]", "confidence": "verified", "provenance": "Join server rows' gold; PC 0x14C"}
       ]
     },

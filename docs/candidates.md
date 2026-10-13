@@ -13,10 +13,19 @@ on, `low` for minor ones, and `none` for fixes we won't port.
 
 | status | fixes |
 |---|---|
+| researching | 1 |
 | candidate | 190 |
 | deferred | 13 |
 | not-applicable | 15 |
 | rejected | 2 |
+
+## researching
+
+Being decoded or reproduced now.
+
+| fix | from | priority | category | notes |
+|---|---|---|---|---|
+| `ui-scale` | TES3X | low | qol (opt in) | **Scale window and HUD geometry for widescreen output.** The Xbox lays out menus in pixels and anchors HUD elements separately. The shared layout and input paths must be mapped before choosing a hook. |
 
 ## candidate
 

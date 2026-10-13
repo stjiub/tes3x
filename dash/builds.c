@@ -492,6 +492,14 @@ int verify_build(const struct build *b, struct verify *v, progress_fn progress)
             v->ok++;
         }
     }
+    if (!v->cancelled) {
+        int shared = store_check(&j, &i);
+
+        v->ok += shared - i;
+        v->missing += i;
+        if (i)
+            mgr_log("  missing: %d of %d shared archives\n", i, shared);
+    }
     v->bytes = done;
     mgr_log("verify %s: %d ok, %d missing, %d changed%s, %lu ms\n", b->path, v->ok,
             v->missing, v->changed, v->cancelled ? ", cancelled" : "", KeTickCount - start);

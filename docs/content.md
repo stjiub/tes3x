@@ -148,8 +148,11 @@ Content browsing is a standalone download path. A multiplayer server still serve
 single build through **Servers**; it does not yet point clients at a separate content library.
 A multiplayer world can require one revision from a library and authorize its players'
 Dashes to download it; see [builds from a content library](multiplayer-server.md#builds-from-a-content-library).
-Activity reports are signed by a stable Dash identity and bound to the transfer ticket. Shared
-archive storage and Docker service profiles are planned separately.
+Activity reports are signed by a stable Dash identity and bound to the transfer ticket. A
+build's [shared store archives](configuration.md#shared-archive-store) are copied into
+`content-state/store/` when it is published, kept while any retained revision lists them, and
+downloaded by the Dash only when the console does not already have them; `prune` deletes those no
+remaining revision lists.
 
 ### Before exposing a library to the Internet
 

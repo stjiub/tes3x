@@ -37,6 +37,14 @@ No official releases yet. The first public release is in preparation.
 - The GUI's Content tab now gives the build list a resizable area, puts server controls and status
   at the top, and can start content hosting with a local multiplayer server. Both server states
   remain visible in the bottom status bar. See [content servers](docs/content.md).
+- Large mods can go in a shared archive store (`store = true` on a mod, or
+  `package.store_threshold_mb`): packed once into their own archive in `E:\TES3X\lib`, which
+  every build using the mod shares, so the Xbox downloads it once. Deploy, xemu runs, content and
+  multiplayer servers carry them; the Dash's **Settings > Shared archives** deletes unused ones.
+  Builds that use the store need the updated Dash. See
+  [shared archive store](docs/configuration.md#shared-archive-store).
+- The Dash's tab bar now shows the previous, current and next tab, so it no longer reaches the
+  title.
 - A multiplayer world can require an exact revision from a content library, on this PC or
   another, and authorize its players' Dashes to download it there. The game now reports the
   installed revision when it joins, and a console with a different revision or a local patch

@@ -133,6 +133,9 @@ The CLI `tes3x content serve` uses its own options and does not read this table.
 | `port` | integer | `26510` | Content server TCP port. |
 | `retail` | boolean | `false` | Offer retail files from `paths.vanilla_root`. |
 | `xbe` | boolean | `false` | Offer whole XBEs. |
+| `with_multiplayer` | boolean | `false` | Start the content server when the GUI starts a local multiplayer server. |
+| `access` | string | `private` | `private` admits approved Xboxes only; `public` admits any. |
+| `client_rate` | integer | `0` | Each Xbox's download cap in Mbit/s; `0` is unlimited. |
 
 In a world's `world.toml`:
 
@@ -140,6 +143,9 @@ In a world's `world.toml`:
 |---|---|---|---|
 | `name`, `description` | string | none | `--name`, `--description`: shown in TES3X Dash. |
 | `profile` | string | none | `--build` with this multiplayer profile's staged `deploy` folder under `build_root`: the build consoles' Dashes download. |
+| `content_entry` | string | none | `--content-entry`: instead of `profile`, the content library entry the world requires. |
+| `content_revision` | string | latest at start | `--content-revision`; the GUI fills it in at the first start and keeps it. |
+| `content_source`, `content_key`, `content_build` | string | this PC's library | A library on another PC: `--content-source`, `--content-key`, `--content-build`. |
 | `password_file` | string | none | `--password-file`. |
 | `max_players` | integer | `16` | `--max-players`. |
 | `respawn` | string | `nearest` | `--respawn`: `nearest`, `shrine` or `temple`. |
@@ -212,6 +218,7 @@ every build.
 | `archive_only` | boolean | `false` | Set `TryArchiveFirst=1` and skip loose asset lookups. Not with `loose`. |
 | `drive_letter` | string | `D` | Drive used for game-directory asset paths. |
 | `loose_assets` | array of strings | `[]` | Path patterns kept loose in an archive build. |
+| `store_threshold_mb` | integer | `0` | Put every mod with at least this many MB of archivable assets in the [shared archive store](#shared-archive-store); `0` leaves it to each mod's `store`. |
 
 `delta-bsa` and engine patches need no compiler: the payload links from bundled objects.
 A patches-only profile does not package `Data Files`;
@@ -253,8 +260,28 @@ Add one table per mod. Remove all mod tables and `profile.library` for a patches
 | `plugins` | array of strings | all | Include only these plugins from the mod folder. |
 | `loose` | boolean | `false` | Ship this mod's winning assets loose instead of archiving them. |
 | `archives` | string | `unpack` | `unpack` adds the files in the mod's `.bsa` archives to the build, beneath its loose files. `load` ships the archives and has the `multi-bsa` patch open them; archives that store no file names can only be loaded. |
+| `store` | boolean | by `store_threshold_mb` | Pack this mod into the [shared archive store](#shared-archive-store); `false` keeps it in the build whatever its size. |
+| `store_tier` | integer | `rules.max_texture_size`, rounded down | Texture cap of the stored archive: `256`, `512` or `1024`. |
 
 Every entry needs exactly one of `name` or `id`. See [the mod library](mod-library.md).
+
+#### Shared archive store
+
+A large mod can be packed once into its own archive and shared by every build that uses it, so
+the Xbox downloads it once. The pipeline packs it into `store/` in the build root, named by its
+SHA-256, and the build's `tes3xarch.txt` loads it from `E:\TES3X\lib` on the Xbox, before the
+build's own mod archive, so a later mod's files still win. The archive holds every archivable
+file of the mod, whichever wins in this profile, with textures converted only above its tier;
+the same mod at the same tier packs to the same bytes in any profile, and an unchanged mod is not
+packed again. Store archives need `package.mode` `delta-bsa` or `loose` and add the `multi-bsa`
+patch. An archive's index costs 16 bytes per file in Xbox memory, so many store archives are
+cheap.
+
+A deploy sends missing store archives to `E:/TES3X/lib`, xemu runs put them on the virtual disk,
+and the [content server](content.md) and a multiplayer server's `--build` serve them, where the
+Dash downloads each one only if it is not already on the console. The Dash's **Settings >
+Shared archives** lists them with the builds that use them and deletes those no build lists.
+Deleting a build never deletes a shared archive.
 
 ### `[ini]`
 

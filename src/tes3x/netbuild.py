@@ -55,9 +55,14 @@ def retail_entries(root):
 class Build:
     """The staged game folder a server hands out, reread when its manifest changes."""
 
-    def __init__(self, root, deltas=None, origins=SERVED_BY_DEFAULT, retail_base=None):
+    def __init__(self, root, deltas=None, origins=SERVED_BY_DEFAULT, retail_base=None,
+                 store=None):
         self.root = Path(root)
         self.deltas = Path(deltas) if deltas else self.root.parent / "deltas"
+        if store is None:
+            from tes3x.store import pc_store
+            store = pc_store(self.root)
+        self.store = Path(store)
         self.origins = set(origins)
         self.retail_base = Path(retail_base) if retail_base else None
         self.stamp = None
@@ -89,6 +94,8 @@ class Build:
         self.files = {p.lower(): (p, e) for p, e in manifest["files"].items()}
         self.delta_files = {x["delta"]["sha256"]: x["delta"]["size"]
                             for x in manifest.get("xbe", ()) if x.get("delta")}
+        self.store_files = {entry["sha256"]: entry["size"]
+                            for entry in manifest.get("store", ())}
         self.profile = manifest.get("profile")
 
     def describe(self):
@@ -110,6 +117,14 @@ class Build:
         path = self.deltas / f"{digest}.zst"
         return path if path.is_file() and path.stat().st_size == self.delta_files[digest] else None
 
+    def store_file(self, digest):
+        """A store archive the manifest lists; mod content, so served like build files."""
+        if digest not in self.store_files:
+            return None
+        path = self.store / f"{digest}.bsa"
+        return path if path.is_file() and path.stat().st_size == self.store_files[digest] \
+            else None
+
     def retail_file(self, relative):
         entry = self.retail_files.get(relative.replace('\\', '/').lower())
         if not entry or entry[1]['origin'] not in self.origins:
@@ -119,7 +134,8 @@ class Build:
 
 
 class BuildServer:
-    """The HTTP side: GET /TICKET/manifest, /TICKET/file/PATH and /TICKET/delta/SHA256."""
+    """The HTTP side: GET /TICKET/manifest, /TICKET/file/PATH, /TICKET/delta/SHA256 and
+    /TICKET/store/SHA256."""
 
     def __init__(self, build, bind, port, log=print, max_connections=MAX_CONNECTIONS, tls=None,
                  per_client=MAX_PER_CLIENT):
@@ -243,6 +259,8 @@ class BuildServer:
             path = build.retail_file(parts[3])
         elif what == "delta" and len(parts) == 4:
             path = build.delta(parts[3])
+        elif what == "store" and len(parts) == 4:
+            path = build.store_file(parts[3])
         if path is None:
             return self.reply(request, 404)
         self.reply(request, 200, path=path, token=parts[1], what=parts[3])
