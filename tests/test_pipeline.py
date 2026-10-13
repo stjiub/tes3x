@@ -21,6 +21,7 @@ from tes3x.pipeline import main as pipeline_main
 from tes3x.patch import (MCP37_TREE_NEXT_SIG, PatchError, _mcp_3, _mcp_37, _mcp_92, _mcp_97,
                          _mcp_98, _mcp_102, _mcp_123, _mcp_125, _mcp_154, _test_mcp3,
                          _test_mcp97, _test_mcp102)
+from tes3x.patch_sites import find_chunk_read
 from tes3x.plugins import (collect, dependency_order, fetch_rules, rules_file, run_arrange,
                            validate_order, warnings as mlox_warnings)
 from test_reach import rec, sub
@@ -747,6 +748,24 @@ class PipelinePlanTests(unittest.TestCase):
         rel = struct.unpack_from('<i', image.data, site + 1)[0]
         self.assertEqual(image.off_to_va(site) + 5 + rel, target)
         self.assertEqual([(offset, length) for offset, length, _label in edits], [(site, 6)])
+
+    def test_chunk_read_locator_ignores_the_global_it_reads(self):
+        def prologue(global_va):
+            return (bytes.fromhex('cc83ec1053568bf18b865002000085c057762a8b15')
+                    + struct.pack('<I', global_va) + bytes.fromhex('8bbe480200008b4e'))
+
+        class Image:
+            def __init__(self, data):
+                self.data = bytearray(data)
+
+            def off_to_va(self, offset):
+                return 0x11000 + offset
+
+        for global_va in (0x003919F4, 0x00392C14):
+            image = Image(b'\x90' * 32 + prologue(global_va) + b'\xcc' * 8)
+            self.assertEqual(find_chunk_read(image), 0x11000 + 33)
+        with self.assertRaises(PatchError):
+            find_chunk_read(Image(prologue(0) + prologue(4)))
 
     def test_mcp_37_adds_its_hook_source(self):
         plan = resolve_patch_plan({

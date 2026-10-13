@@ -19,6 +19,10 @@ stack arguments.
 
 Choose targets with `--apply profile=VA[,VA...]`, or the pipeline's repeatable
 `--profile-target VA`. `tes3x prof` picks targets by symbol name and renders the dump.
+An address names a function in one engine release only. `%NAME` names one of the patcher's
+content locators instead (`tes3x patch --locate`), such as `%chunk-read` for
+`TES3File::readChunkData`, and finds it in any supported engine; `@NAME` times an installed
+payload hook.
 
 ## Configuration
 

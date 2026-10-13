@@ -1007,6 +1007,11 @@ def _profile(x, value, ctx):
             if item[1:] not in hooks:
                 raise PatchError("profile: no %r in the payload manifest" % item[1:])
             targets.append((item, int(str(hooks[item[1:]]), 16)))
+        # `%name` is a content locator, so one target names the same function in every engine.
+        elif item.startswith("%"):
+            if item[1:] not in LOCATORS:
+                raise PatchError("profile: no locator %r" % item[1:])
+            targets.append((item, LOCATORS[item[1:]](x)))
         else:
             targets.append((item, int(item, 0)))
     if not targets:
@@ -1022,7 +1027,7 @@ def _profile(x, value, ctx):
             raise PatchError("profile: 0x%08X listed twice" % va)
         seen.add(va)
         # Virtual dispatch is invisible to call-site hooking; say so rather than time nothing.
-        label = "%s " % item if item.startswith("@") else ""
+        label = "%s " % item if item[0] in "@%" else ""
         sites = find_call_sites(x, va)
         if not sites:
             raise PatchError("profile: no direct call site reaches %s0x%08X" % (label, va))

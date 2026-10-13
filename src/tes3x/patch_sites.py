@@ -1700,6 +1700,22 @@ def find_ini_get_string(x):
     return x.off_to_va(matches[0].start())
 
 
+# TES3File::readChunkData's prologue; the masked word is a global that moves between engines.
+CHUNK_READ_SIG = re.compile(
+    rb"\xcc\x83\xec\x10\x53\x56\x8b\xf1\x8b\x86\x50\x02\x00\x00\x85\xc0\x57\x76\x2a"
+    rb"\x8b\x15....\x8b\xbe\x48\x02\x00\x00\x8b\x4e", re.S)
+
+
+def find_chunk_read(x):
+    hits = list(CHUNK_READ_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("TES3File::readChunkData: %d match(es), expected 1" % len(hits))
+    va = x.off_to_va(hits[0].start() + 1)
+    if va is None:
+        raise PatchError("TES3File::readChunkData is outside any section")
+    return va
+
+
 def find_ini_path(x):
     return x.off_to_va(find_unique(bytes(x.data), b"D:\\Morrowind.ini\0", "INI path"))
 
@@ -1707,6 +1723,7 @@ def find_ini_path(x):
 # Content-located engine addresses, shared with the payload build so the two cannot disagree.
 LOCATORS = {
     "run-function": find_run_function,
+    "chunk-read": find_chunk_read,
     "command-table": find_command_table,
     "script-decode": lambda image: find_script_decode_state(image)[0],
     "script-ip": lambda image: find_script_decode_state(image)[1],

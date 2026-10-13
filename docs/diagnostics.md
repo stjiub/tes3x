@@ -81,6 +81,8 @@ functions at every direct call site. Counters go to `E:\tes3xprof.bin` on the co
 `tes3xprof`, on `tes3xprof mark` (dump, then reset), at loader checkpoints, and every
 `[Xbox] ProfileDumpFrames` frames. `tes3xprof reset` clears them.
 
+A target can also be `%NAME`, a content locator that finds the same function in every supported
+engine, such as `%chunk-read`; see the [profiler](../patches/profile.md#using-it).
 `tes3x prof targets NAME` looks a function up in the [symbol map](symbol-map.md) and prints
 the `--apply profile=` value for it; `tes3x prof report tes3xprof.bin` renders the dump.
 
