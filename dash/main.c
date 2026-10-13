@@ -6,7 +6,7 @@
  *   list | verify NAME | launch NAME | rebuild NAME XBE DELTA | agent SECONDS
  *   | base [use N | path FOLDER] | update | fetch [FEED] | get URL FILE | run XBE
  *   | servers | server add NAME | install SERVER [replace] | join SERVER | wait SECONDS
- *   | content add HOST | content browse HOST | content install ID [replace]
+ *   | content add HOST | content browse HOST | content install ID [REVISION] [replace]
  *   | press BUTTON... | type TEXT | shutdown | reboot
  * `base` lists the retail bases found; `base use N` makes the Nth one OverlayBase, `base path`
  * the folder named by the rest of the line, as choosing it on screen does. `rebuild`
@@ -1196,15 +1196,20 @@ static void run_exec(void)
                 browse_content();
             }
         } else if (!strcmp(arg[0], "content") && argc >= 3 && !strcmp(arg[1], "install")) {
+            const char *revision = argc >= 4 && strcmp(arg[3], "replace") ? arg[3] : NULL;
             for (n = 0; n < (size_t)v.content_entries_list.count
-                 && name_cmp(content_entries[n].id, arg[2]); n++)
+                 && (name_cmp(content_entries[n].id, arg[2])
+                     || (revision && strcmp(content_entries[n].revision, revision))); n++)
                 ;
             if (n < (size_t)v.content_entries_list.count) {
                 v.content_entries_list.sel = (int)n;
-                install_content(argc == 4 && !strcmp(arg[3], "replace"));
+                install_content((argc == 4 && !strcmp(arg[3], "replace"))
+                                || (argc == 5 && !strcmp(arg[4], "replace")));
                 mgr_log("exec: content install: %s: %s\n", v.title, v.text[0]);
                 v.title[0] = 0, v.confirm = 0;
-            }
+            } else
+                mgr_log("exec: content install: no entry %s revision %s\n", arg[2],
+                        revision ? revision : "(latest)");
         } else if (!strcmp(arg[0], "server") && argc == 3 && !strcmp(arg[1], "add")) {
             mgr_log("exec: server add %s: %s\n", arg[2], add_server(arg[2]) ? "refused" : "ok");
         } else if ((!strcmp(arg[0], "install") || !strcmp(arg[0], "join")) && argc >= 2) {

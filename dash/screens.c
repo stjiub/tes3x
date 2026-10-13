@@ -129,8 +129,8 @@ static void draw_content_entries(const struct view *v)
          i++, y += ROW_H) {
         entry = &v->content_entries[i];
         ui_size(size, sizeof(size), entry->bytes);
-        snprintf(sub, sizeof(sub), "%s  \xB7  %s layout  \xB7  %.12s", entry->id,
-                 entry->layout, entry->build);
+        snprintf(sub, sizeof(sub), "%s  \xB7  %s layout  \xB7  %.8s/%.8s", entry->id,
+                 entry->layout, entry->build, entry->revision);
         row(y, i == v->content_entries_list.sel, entry->name, size, ui->dim, sub, ui->dim);
     }
     ui_scrollbar(SCROLL_X, LIST_TOP, SERVER_ROWS * ROW_H, &v->content_entries_list);

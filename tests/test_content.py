@@ -45,14 +45,18 @@ class ContentTests(unittest.TestCase):
         Ed25519PublicKey.from_public_bytes(public).verify(signature, data)
         return public, json.loads(data)
 
-    def ticket(self, entry="sample", build=None, attempt="0123456789abcdef", key=None):
+    def ticket(self, entry="sample", build=None, revision=None,
+               attempt="0123456789abcdef", key=None, latest=1):
         key = key or Ed25519PrivateKey.generate()
         public = key.public_key().public_bytes(serialization.Encoding.Raw,
                                                serialization.PublicFormat.Raw).hex()
-        if build is None:
-            build = self.signed(self.request("/v1/catalog")[1])[1]["entries"][0]["build"]
-        message = f"ticket:{entry}:{build}:{attempt}".encode()
-        path = (f"/v1/ticket/{entry}?client={public}&build={build}&attempt={attempt}"
+        if build is None or revision is None:
+            offered = self.signed(self.request("/v1/catalog")[1])[1]["entries"][0]
+            build = build or offered["build"]
+            revision = revision or offered["revision"]
+        message = f"ticket:{entry}:{build}:{revision}:{attempt}:{latest}".encode()
+        path = (f"/v1/ticket/{entry}?client={public}&build={build}&revision={revision}"
+                f"&attempt={attempt}&latest={latest}"
                 f"&sig={key.sign(message).hex()}")
         status, body = self.request(path)
         return status, self.signed(body)[1] if status == 200 else body, key
@@ -63,7 +67,7 @@ class ContentTests(unittest.TestCase):
         key, catalog = self.signed(body)
         entry = catalog["entries"][0]
         self.assertEqual((entry["id"], entry["name"]), ("sample", "Sample"))
-        status, ticket, _ = self.ticket(build=entry["build"])
+        status, ticket, _ = self.ticket(build=entry["build"], revision=entry["revision"])
         self.assertEqual(status, 200)
         self.assertEqual(self.signed(self.request("/v1/catalog")[1])[0], key)
         self.assertEqual(ticket["build"], entry["build"])
@@ -76,20 +80,72 @@ class ContentTests(unittest.TestCase):
         self.library.refresh()
         status, body = self.request("/v1/catalog")
         self.assertEqual(status, 200)
-        newer = self.signed(body)[1]["entries"][0]
+        offered = self.signed(body)[1]["entries"]
+        self.assertEqual(len(offered), 2)
+        newer = offered[0]
         self.assertNotEqual(newer["build"], entry["build"])
-        _, newer_ticket, _ = self.ticket(build=newer["build"], attempt="fedcba9876543210")
+        self.assertEqual(offered[1]["revision"], entry["revision"])
+        status, stale, _ = self.ticket(build=entry["build"], revision=entry["revision"],
+                                       attempt="1111111111111111")
+        self.assertEqual((status, stale["revision"]), (200, newer["revision"]))
+        _, newer_ticket, _ = self.ticket(build=newer["build"],
+                                         revision=newer["revision"],
+                                         attempt="fedcba9876543210")
         self.assertEqual(newer_ticket["build"], newer["build"])
         status, data = self.request(f"/{newer_ticket['token']}/file/mod.esp")
         self.assertEqual((status, data), (200, b"second revision"))
         status, data = self.request(f"/{ticket['token']}/file/mod.esp")
         self.assertEqual((status, data), (200, b"first revision"))
+        status, old_ticket, _ = self.ticket(build=entry["build"],
+                                            revision=entry["revision"],
+                                            attempt="abcdef0123456789", latest=0)
+        self.assertEqual(status, 200)
+        self.assertEqual(self.request(f"/{old_ticket['token']}/file/mod.esp"),
+                         (200, b"first revision"))
 
     def test_unknown_ticket_and_unsafe_manifest(self):
         self.assertEqual(self.ticket(entry="missing")[0], 404)
         self.assertEqual(self.request(f"/{'0' * 32}/file/mod.esp")[0], 403)
         self.assertFalse(content.safe_relative("../escape"))
         self.assertFalse(content.safe_relative("a/../../escape"))
+
+    def test_publication_metadata_withdrawal_and_restart(self):
+        first = self.signed(self.request("/v1/catalog")[1])[1]["entries"][0]
+        self.library.set_metadata("sample", "Library Sample", "The original build")
+        listed = self.signed(self.request("/v1/catalog")[1])[1]["entries"]
+        self.assertEqual((listed[0]["name"], listed[0]["description"]),
+                         ("Library Sample", "The original build"))
+
+        self.library.set_listed("sample", first["revision"], False)
+        self.assertEqual(self.signed(self.request("/v1/catalog")[1])[1]["entries"], [])
+        status, stale, _ = self.ticket(build=first["build"], revision=first["revision"])
+        self.assertEqual((status, stale),
+                         (200, {"format": 1, "build": first["build"],
+                                "revision": first["revision"]}))
+
+        self.library = content.Library(self.root / "state", self.root / "build", [], True,
+                                       ("build",))
+        self.server.library = self.library
+        self.assertEqual(self.signed(self.request("/v1/catalog")[1])[1]["entries"], [])
+        self.library.set_listed("sample", first["revision"], True)
+        restored = self.signed(self.request("/v1/catalog")[1])[1]["entries"][0]
+        self.assertEqual((restored["revision"], restored["name"]),
+                         (first["revision"], "Library Sample"))
+
+    def test_same_build_id_can_have_two_manifest_revisions(self):
+        first = self.signed(self.request("/v1/catalog")[1])[1]["entries"][0]
+        manifest.write(self.deploy, manifest.create(
+            self.deploy, profile="Renamed", source={}, folder="Sample", xbe=self.xbe))
+        self.library.refresh()
+        offered = self.signed(self.request("/v1/catalog")[1])[1]["entries"]
+        self.assertEqual(len(offered), 2)
+        self.assertEqual(offered[0]["build"], first["build"])
+        self.assertNotEqual(offered[0]["revision"], first["revision"])
+        status, ticket, _ = self.ticket(build=first["build"], revision=first["revision"],
+                                        latest=0)
+        self.assertEqual(status, 200)
+        status, body = self.request(f"/{ticket['token']}/manifest")
+        self.assertEqual((status, json.loads(body)["profile"]), (200, "Sample"))
 
     def test_activity_requires_ticket_and_keeps_terminal_result(self):
         private = Ed25519PrivateKey.generate()

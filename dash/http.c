@@ -325,7 +325,7 @@ static const char *open_get(const char *url, struct conn *c, char *head, size_t 
         if (split_url(current, &tls, host, sizeof(host), port, path, sizeof(path)))
             return "not an http or https address";
         /* Ticket URLs are bearer credentials; keep them out of local logs. */
-        if (strstr(path, "/v1/report/")
+        if (strstr(path, "/v1/report/") || strstr(path, "/v1/ticket/")
             || (strlen(path) > 34 && path[0] == '/' && path[33] == '/'))
             mgr_log("http: GET ticket resource\n");
         else

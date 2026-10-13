@@ -17,6 +17,10 @@ server's state folder so that an active download keeps reading the same files af
 rebuilt. Keep enough PC disk space for those copies. The state folder also holds the content
 server's private identity key; preserve it when moving the library to another PC. Removing a
 build from the source list stops advertising it, while old snapshots remain for active tickets.
+Each rebuilt profile adds a selectable revision to `content-state/publications.json`. The Dash
+lists the newest revision first, with the build and manifest revision prefixes beneath its name.
+The signed ticket names the exact listed revision, so a later rebuild does not change an older
+selection. Up to 64 listed revisions can appear in one catalog.
 
 The server listens on TCP port 26510 by default. Configure its listen address and port in the
 GUI, and allow that TCP port through the host firewall for consoles that need it. **Serve retail
@@ -35,6 +39,20 @@ Repeat `--build` to share several chosen folders. Use `--bind`, `--port`, `--ret
 repeatable `--serve-origin build|retail|xbe` to set the same hosting options. The default origin
 is `build` only. For an overlay build, `--retail-base` supplies the separate retail dependency
 that the Dash can install when retail serving is enabled.
+
+Stop the content server before editing publications. `list` prints each full manifest revision
+ID, which the other commands use:
+
+```sh
+tes3x content list --state content-state
+tes3x content set my-profile --name "My profile" --description "Optional library note" --state content-state
+tes3x content withdraw my-profile REVISION --state content-state
+tes3x content restore my-profile REVISION --state content-state
+```
+
+Withdrawal removes one revision from the catalog and blocks new tickets for it. Tickets already
+issued can finish. A later scan does not relist a withdrawn revision. Published snapshots stay on
+disk, including withdrawn ones, so they can be restored; there is no automatic deletion.
 
 The GUI's **Recent install activity** list shows the build, console address, reported stage,
 ticket count, progress, bytes sent by the server, and the current file. A completed row means
@@ -63,7 +81,8 @@ Open the Dash's **Content** tab and press **X** to add a host name or IP address
 **A** on a build to install it. An installed build is listed in **Builds** and launches from
 there without multiplayer join data. Open the library and install the same entry again to update
 it after the PC rebuilds it. If the entry changes while its list is open, Install refreshes that
-entry and uses its latest revision. Press **Back** on the host list to forget a content server;
+entry and uses its latest revision. Older published revisions appear as separate rows and can be
+installed directly. Press **Back** on the host list to forget a content server;
 this leaves downloaded builds installed. Installed builds are not updated in the background.
 
 The Dash pins a content server's signing key on first contact. If its key later changes, the Dash

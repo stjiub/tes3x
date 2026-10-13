@@ -30,6 +30,10 @@ No official releases yet. The first public release is in preparation.
 - Retrying a content install now keeps one activity row across new download tickets, with the
   ticket count and total bytes sent. Update the Dash and content server together; the new ticket
   request requires a signed install attempt. See [content servers](docs/content.md).
+- Content libraries now retain listed build revisions for selection in the Dash. The server can
+  edit entry names and descriptions, withdraw revisions, and restore them. Update the Dash and
+  server together; tickets now identify the selected manifest revision. See
+  [content servers](docs/content.md).
 
 - `tes3x game-tests` runs every game test against the retail engines named in the local
   config's new `[engines]` table, several at once, and prints what passed and failed. See

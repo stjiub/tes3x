@@ -203,8 +203,9 @@ struct content_host {
     char fingerprint[33], pending_fingerprint[33];
 };
 struct content_entry {
-    char id[43], name[48], layout[16], build[65];
+    char id[43], name[48], layout[16], build[65], revision[65];
     unsigned long long bytes;
+    int latest;
 };
 extern const char CONTENT_KEY_CHANGED[];
 extern const char CONTENT_BUILD_CHANGED[];

@@ -30,7 +30,7 @@ struct pending_result {
 };
 
 struct pending_attempt {
-    char host[64], entry[43], build[65];
+    char host[64], entry[43], build[65], revision[65];
     unsigned port;
     unsigned char key[32], attempt[8];
 };
@@ -365,12 +365,14 @@ static int load_attempts(struct pending_attempt rows[CONTENT_ATTEMPTS_MAX])
         } else {
             next = line + strlen(line);
         }
-        if (sscanf(line, "%63s %u %64s %42s %64s %16s %c", rows[count].host,
+        if (sscanf(line, "%63s %u %64s %42s %64s %64s %16s %c", rows[count].host,
                    &rows[count].port, key, rows[count].entry, rows[count].build,
-                   attempt, &extra) != 6
+                   rows[count].revision, attempt, &extra) != 7
             || !rows[count].port || rows[count].port > 65535
             || !valid_id(rows[count].entry) || strlen(rows[count].build) != 64
+            || strlen(rows[count].revision) != 64
             || unhex(rows[count].build, (unsigned char[32]){0}, 32)
+            || unhex(rows[count].revision, (unsigned char[32]){0}, 32)
             || unhex(key, rows[count].key, 32)
             || unhex(attempt, rows[count].attempt, 8))
             continue;
@@ -393,9 +395,9 @@ static int save_attempts(const struct pending_attempt *rows, int count)
     for (i = 0; i < count; i++) {
         hex(key, rows[i].key, 32);
         hex(attempt, rows[i].attempt, 8);
-        n = snprintf(text + used, sizeof(text) - used, "%s %u %s %s %s %s\n",
+        n = snprintf(text + used, sizeof(text) - used, "%s %u %s %s %s %s %s\n",
                      rows[i].host, rows[i].port, key, rows[i].entry, rows[i].build,
-                     attempt);
+                     rows[i].revision, attempt);
         if (n < 0 || (size_t)n >= sizeof(text) - used)
             return -1;
         used += (size_t)n;
@@ -416,7 +418,8 @@ static int find_attempt(const struct pending_attempt *rows, int count,
         if (!strcmp(rows[i].host, host->host) && rows[i].port == host->port
             && !memcmp(rows[i].key, host->key, 32)
             && !strcmp(rows[i].entry, entry->id)
-            && !strcmp(rows[i].build, entry->build))
+            && !strcmp(rows[i].build, entry->build)
+            && !strcmp(rows[i].revision, entry->revision))
             return i;
     return -1;
 }
@@ -447,6 +450,7 @@ static int get_attempt(const struct content_host *host, const struct content_ent
     snprintf(row->host, sizeof(row->host), "%s", host->host);
     snprintf(row->entry, sizeof(row->entry), "%s", entry->id);
     snprintf(row->build, sizeof(row->build), "%s", entry->build);
+    snprintf(row->revision, sizeof(row->revision), "%s", entry->revision);
     row->port = host->port;
     memcpy(row->key, host->key, 32);
     memcpy(row->attempt, attempt, 8);
@@ -488,7 +492,7 @@ int content_accept_key(struct content_host *host)
 static const char *get_signed(struct content_host *host, const char *path, struct json *j,
                               unsigned char **body)
 {
-    char url[512];
+    char url[640];
     size_t size;
     const char *error;
 
@@ -542,6 +546,8 @@ const char *content_catalog(struct content_host *host, struct content_entry *out
             || !valid_id(entry->id)
             || json_string(&j, json_get(&j, i, "name"), entry->name, sizeof(entry->name)) <= 0
             || json_string(&j, json_get(&j, i, "build"), entry->build, sizeof(entry->build)) != 64
+            || json_string(&j, json_get(&j, i, "revision"), entry->revision,
+                           sizeof(entry->revision)) != 64
             || json_string(&j, json_get(&j, i, "layout"), entry->layout,
                            sizeof(entry->layout)) <= 0) {
             err = "The content catalog has an invalid build.";
@@ -549,6 +555,13 @@ const char *content_catalog(struct content_host *host, struct content_entry *out
         }
         value = json_get(&j, i, "bytes");
         entry->bytes = (unsigned long long)json_number(&j, value);
+        value = json_get(&j, i, "latest");
+        if (value < 0 || j.t[value].type != JSON_NUMBER
+            || (json_number(&j, value) != 0 && json_number(&j, value) != 1)) {
+            err = "The content catalog has an invalid revision.";
+            goto done;
+        }
+        entry->latest = (int)json_number(&j, value);
         (*count)++;
     }
 done:
@@ -562,8 +575,8 @@ const char *content_ticket(struct content_host *host, const struct content_entry
 {
     struct json j = {0};
     unsigned char *body = NULL;
-    char path[400], hex_sha[65], hex_token[33], hex_attempt[17], build[65];
-    char pub[65], signature[129], message[160];
+    char path[512], hex_sha[65], hex_token[33], hex_attempt[17], build[65], revision[65];
+    char pub[65], signature[129], message[256];
     unsigned char attempt[8], sig[64];
     const char *err;
 
@@ -573,20 +586,24 @@ const char *content_ticket(struct content_host *host, const struct content_entry
         return "Could not keep the content install attempt.";
     hex(pub, content_public, 32);
     hex(hex_attempt, attempt, 8);
-    snprintf(message, sizeof(message), "ticket:%s:%s:%s", entry->id, entry->build,
-             hex_attempt);
+    snprintf(message, sizeof(message), "ticket:%s:%s:%s:%s:%d", entry->id, entry->build,
+             entry->revision, hex_attempt, entry->latest);
     crypto_ed25519_sign(sig, content_secret, (const unsigned char *)message, strlen(message));
     hex(signature, sig, 64);
-    snprintf(path, sizeof(path), "/v1/ticket/%s?client=%s&build=%s&attempt=%s&sig=%s",
-             entry->id, pub, entry->build, hex_attempt, signature);
+    snprintf(path, sizeof(path),
+             "/v1/ticket/%s?client=%s&build=%s&revision=%s&attempt=%s&latest=%d&sig=%s",
+             entry->id, pub, entry->build, entry->revision, hex_attempt,
+             entry->latest, signature);
     err = get_signed(host, path, &j, &body);
     if (err)
         goto done;
-    if (json_string(&j, json_get(&j, 0, "build"), build, sizeof(build)) != 64) {
+    if (json_string(&j, json_get(&j, 0, "build"), build, sizeof(build)) != 64
+        || json_string(&j, json_get(&j, 0, "revision"), revision,
+                       sizeof(revision)) != 64) {
         err = "The content ticket is invalid.";
         goto done;
     }
-    if (strcmp(build, entry->build)) {
+    if (strcmp(build, entry->build) || strcmp(revision, entry->revision)) {
         err = CONTENT_BUILD_CHANGED;
         goto done;
     }

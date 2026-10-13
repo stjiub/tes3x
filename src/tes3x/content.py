@@ -29,6 +29,10 @@ STAGES = {"planning", "retail", "downloading", "verifying", "rebuilding",
 ENTRY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,41}\Z")
 
 
+def hex64(value):
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value)
+
+
 def identity(state):
     key_path = state / "content.key"
     if key_path.exists():
@@ -73,9 +77,77 @@ class Library:
         self.origins = origins
         self.retail_base = retail_base
         self.entries = {}
+        self.history = self.load_index()
         self.revisions = {}
         self.lock = threading.RLock()
         self.refresh()
+
+    def load_index(self):
+        path = self.state / "publications.json"
+        if not path.exists():
+            return {}
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if (not isinstance(data, dict) or data.get("format") != 1
+                or not isinstance(data.get("entries"), dict)):
+            raise ValueError("invalid content publication index")
+        history = data["entries"]
+        for entry_id, rows in history.items():
+            if not isinstance(entry_id, str) or not ENTRY.fullmatch(entry_id) \
+                    or not isinstance(rows, list):
+                raise ValueError("invalid content publication entry")
+            for row in rows:
+                if (not isinstance(row, dict) or row.get("id") != entry_id
+                        or not hex64(row.get("build"))
+                        or not hex64(row.get("revision"))
+                        or not hex64(row.get("sha256"))
+                        or not isinstance(row.get("listed"), bool)
+                        or not isinstance(row.get("name"), str)
+                        or not 1 <= len(row["name"]) <= 47
+                        or not isinstance(row.get("description"), str)
+                        or len(row["description"]) > 191
+                        or not isinstance(row.get("layout"), str)
+                        or len(row["layout"]) > 15
+                        or not isinstance(row.get("bytes"), int)
+                        or row["bytes"] < 0
+                        or not isinstance(row.get("size"), int)
+                        or not 0 < row["size"] <= 16 << 20):
+                    raise ValueError("invalid content publication revision")
+        return history
+
+    def save_index(self):
+        path = self.state / "publications.json"
+        staged = path.with_suffix(".json.new")
+        staged.write_text(json.dumps({"format": 1, "entries": self.history},
+                                     separators=(",", ":")), encoding="utf-8")
+        staged.replace(path)
+
+    def set_metadata(self, entry_id, name=None, description=None):
+        if name is not None and (not name.strip() or len(name) > 47):
+            raise ValueError("content name must have 1-47 characters")
+        if description is not None and len(description) > 191:
+            raise ValueError("content description must have at most 191 characters")
+        with self.lock:
+            rows = self.history.get(entry_id)
+            if not rows:
+                raise ValueError(f"unknown content entry {entry_id!r}")
+            for row in rows:
+                if name is not None:
+                    row["name"] = name.strip()
+                if description is not None:
+                    row["description"] = description
+            self.save_index()
+
+    def set_listed(self, entry_id, revision, listed):
+        with self.lock:
+            row = next((row for row in self.history.get(entry_id, [])
+                        if row["revision"] == revision), None)
+            if row is None:
+                raise ValueError(f"unknown published revision {entry_id}/{revision}")
+            if listed and not row["listed"] and sum(item["listed"] for rows in self.history.values()
+                              for item in rows) >= MAX_ENTRIES:
+                raise ValueError("content catalog has 64 listed revisions; withdraw one")
+            row["listed"] = listed
+            self.save_index()
 
     def candidates(self):
         folders = list(self.folders)
@@ -144,11 +216,23 @@ class Library:
         name = str(parsed.get("profile") or entry_id)[:47]
         with self.lock:
             self.revisions[manifest_digest] = build
-            self.entries[entry_id] = {"id": entry_id, "name": name, "description": "",
-                                      "build": build_id, "revision": manifest_digest,
-                                      "layout": parsed.get("install_layout", "full"),
-                                      "bytes": sum(item["size"] for item in parsed["files"].values()),
-                                      "sha256": build.sha256.hex(), "size": len(build.data)}
+            rows = self.history.setdefault(entry_id, [])
+            previous = next((row for row in rows if row["revision"] == manifest_digest), None)
+            if previous is None:
+                if sum(row["listed"] for eid, group in self.history.items()
+                       if eid == entry_id or eid in self.entries for row in group) \
+                        >= MAX_ENTRIES:
+                    raise ValueError("content catalog has 64 listed revisions; withdraw one")
+                previous = {"id": entry_id, "name": rows[-1]["name"] if rows else name,
+                            "description": rows[-1]["description"] if rows else "",
+                            "build": build_id, "revision": manifest_digest,
+                            "layout": parsed.get("install_layout", "full"),
+                            "bytes": sum(item["size"] for item in parsed["files"].values()),
+                            "sha256": build.sha256.hex(), "size": len(build.data),
+                            "listed": True}
+                rows.append(previous)
+                self.save_index()
+            self.entries[entry_id] = previous
 
     def refresh(self):
         candidates = self.candidates()
@@ -170,11 +254,32 @@ class Library:
 
     def catalog(self):
         with self.lock:
-            body = json.dumps({"format": 1, "entries": list(self.entries.values())},
+            rows = [{**{key: value for key, value in row.items() if key != "listed"},
+                     "latest": int(row["revision"] == self.entries[entry_id]["revision"])}
+                    for entry_id in self.entries for row in reversed(self.history[entry_id])
+                    if row["listed"]]
+            body = json.dumps({"format": 1, "entries": rows},
                               separators=(",", ":")).encode()
         if len(body) > MAX_CATALOG:
             raise ValueError("content catalog exceeds the Dash limit")
         return signed(self.key, body)
+
+    def select(self, entry_id, build_id, revision_id):
+        with self.lock:
+            if entry_id not in self.entries:
+                return None
+            row = next((row for row in self.history[entry_id]
+                        if row["build"] == build_id and row["revision"] == revision_id
+                        and row["listed"]), None)
+            if row is None:
+                return None
+            build = self.revisions.get(row["revision"])
+            if build is None:
+                revision = self.state / "revisions" / row["revision"]
+                build = netbuild.Build(revision / "deploy", deltas=revision / "deltas",
+                                       origins=self.origins, retail_base=self.retail_base)
+                self.revisions[row["revision"]] = build
+            return row, build
 
 
 class ContentServer(netbuild.BuildServer):
@@ -196,7 +301,7 @@ class ContentServer(netbuild.BuildServer):
             if attempt not in self.activity:
                 now = time.monotonic()
                 self.activity[attempt] = {"attempt": attempt,
-                                        "_binding": (found[5], found[2], found[7]),
+                                        "_binding": (found[5], found[2], found[8], found[7]),
                                         "_token": token,
                                         "client": ((hashlib.sha256(found[5]).hexdigest()[:12]
                                                     + " @ " + found[3]) if found[5] else found[3]),
@@ -316,22 +421,25 @@ class ContentServer(netbuild.BuildServer):
                 return self.reply(request, 503)
         if path.startswith("/v1/ticket/"):
             entry_id = path[len("/v1/ticket/"):]
-            if len(request.path) > 512 or not ENTRY.fullmatch(entry_id):
+            if len(request.path) > 640 or not ENTRY.fullmatch(entry_id):
                 return self.reply(request, 400)
             try:
                 params = urllib.parse.parse_qs(urllib.parse.urlsplit(request.path).query,
-                                               max_num_fields=4)
-                client, requested_build, attempt, signature = (
-                    params[name][0] for name in ("client", "build", "attempt", "sig"))
+                                               max_num_fields=6)
+                client, requested_build, revision, attempt, latest, signature = (
+                    params[name][0] for name in ("client", "build", "revision", "attempt",
+                                                "latest", "sig"))
             except (KeyError, IndexError, ValueError):
                 return self.reply(request, 400)
             if (not re.fullmatch(r"[0-9a-f]{64}", client)
                     or not re.fullmatch(r"[0-9a-f]{64}", requested_build)
+                    or not re.fullmatch(r"[0-9a-f]{64}", revision)
                     or not re.fullmatch(r"[0-9a-f]{16}", attempt)
+                    or latest not in ("0", "1")
                     or not re.fullmatch(r"[0-9a-f]{128}", signature)):
                 return self.reply(request, 400)
             client_key = bytes.fromhex(client)
-            message = f"ticket:{entry_id}:{requested_build}:{attempt}".encode()
+            message = f"ticket:{entry_id}:{requested_build}:{revision}:{attempt}:{latest}".encode()
             try:
                 ed25519.Ed25519PublicKey.from_public_bytes(client_key).verify(
                     bytes.fromhex(signature), message)
@@ -339,18 +447,24 @@ class ContentServer(netbuild.BuildServer):
                 return self.reply(request, 403)
             with self.library.lock:
                 entry = self.library.entries.get(entry_id)
-                build = self.library.revisions.get(entry["revision"]) if entry else None
-            if build is None:
+            if entry is None:
                 return self.reply(request, 404)
-            if requested_build != entry["build"]:
-                body = json.dumps({"format": 1, "build": entry["build"]},
+            try:
+                selected = self.library.select(entry_id, requested_build, revision)
+            except (OSError, ValueError, KeyError) as error:
+                self.log(f"content revision unavailable: {error}")
+                return self.reply(request, 503)
+            if selected is None or (latest == "1" and entry["revision"] != revision):
+                body = json.dumps({"format": 1, "build": entry["build"],
+                                   "revision": entry["revision"]},
                                   separators=(",", ":")).encode()
                 return self.reply(request, 200, signed(self.library.key, body))
+            row_selected, build = selected
             token = secrets.token_bytes(16)
             renewed = None
             with self.lock:
                 now = time.monotonic()
-                binding = (client_key, entry_id, requested_build)
+                binding = (client_key, entry_id, requested_build, revision)
                 row = self.activity.get(attempt)
                 if ((attempt in self.bindings and self.bindings[attempt] != binding)
                         or (row is not None and row["_binding"] != binding)):
@@ -363,8 +477,8 @@ class ContentServer(netbuild.BuildServer):
                 if len(self.tickets) >= netbuild.TICKETS:
                     self.tickets.pop(next(iter(self.tickets)))
                 self.tickets[token.hex()] = (now + netbuild.TICKET_SECONDS, build, entry_id,
-                                             request.client_address[0], entry["build"][:12],
-                                             client_key, attempt, requested_build)
+                                             request.client_address[0], requested_build[:12],
+                                             client_key, attempt, revision, requested_build)
                 if row is not None:
                     row.update(stage="retrying", done=0, total=0, file="", seen=now,
                                _token=token.hex(),
@@ -373,13 +487,14 @@ class ContentServer(netbuild.BuildServer):
                                tickets=row["tickets"] + 1)
                     renewed = {key: value for key, value in row.items()
                                if key not in ("seen", "emitted", "_binding", "_token")}
-            body = json.dumps({"format": 1, "build": entry["build"],
+            body = json.dumps({"format": 1, "build": requested_build,
+                               "revision": revision,
                                "sha256": build.sha256.hex(), "size": len(build.data),
                                "token": token.hex(), "attempt": attempt},
                               separators=(",", ":")).encode()
             if renewed is not None:
                 self.log("activity " + json.dumps(renewed, separators=(",", ":")))
-            self.log(f"content ticket {entry_id}: {entry['build'][:12]}")
+            self.log(f"content ticket {entry_id}: {row_selected['build'][:12]}")
             return self.reply(request, 200, signed(self.library.key, body))
         return super().get(request)
 
@@ -398,7 +513,36 @@ def main(argv=None):
     serve.add_argument("--port", type=int, default=PORT)
     serve.add_argument("--retail-base", type=Path)
     serve.add_argument("--serve-origin", action="append", choices=netbuild.ORIGINS)
+    listing = sub.add_parser("list", help="list stored content publications")
+    listing.add_argument("--state", type=Path, default=Path("content-state"))
+    edit = sub.add_parser("set", help="edit a published entry's display metadata")
+    edit.add_argument("entry")
+    edit.add_argument("--state", type=Path, default=Path("content-state"))
+    edit.add_argument("--name")
+    edit.add_argument("--description")
+    for command in ("withdraw", "restore"):
+        change = sub.add_parser(command, help=f"{command} one published revision")
+        change.add_argument("entry")
+        change.add_argument("revision")
+        change.add_argument("--state", type=Path, default=Path("content-state"))
     args = parser.parse_args(argv)
+    if args.command != "serve":
+        try:
+            library = Library(args.state, args.state, [], False, netbuild.SERVED_BY_DEFAULT)
+            if args.command == "list":
+                for entry_id, rows in library.history.items():
+                    for row in reversed(rows):
+                        print(f"{entry_id} {row['revision']} {row['build'][:12]} "
+                              f"{'listed' if row['listed'] else 'withdrawn'} {row['name']}")
+            elif args.command == "set":
+                if args.name is None and args.description is None:
+                    parser.error("set requires --name or --description")
+                library.set_metadata(args.entry, args.name, args.description)
+            else:
+                library.set_listed(args.entry, args.revision, args.command == "restore")
+        except (OSError, ValueError) as error:
+            parser.error(str(error))
+        return
     if not args.all_builds and not args.build:
         parser.error("choose --all-builds or at least one --build")
     library = Library(args.state, args.build_root, args.build, args.all_builds,
