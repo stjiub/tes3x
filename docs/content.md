@@ -122,6 +122,23 @@ attempt, so installing that revision again starts a new row. Keep both the attem
 `content-id.key` when moving the Dash's content settings to another Xbox. Server activity history
 still lasts only until the content server restarts.
 
+## Run the library in Docker
+
+The `content` profile of the [Docker setup](multiplayer-server.md#run-the-server-in-docker) runs
+`tes3x content serve --all-builds` on its own:
+
+```
+cd server
+TES3X_BUILDS=/path/to/build docker compose --profile content up -d
+```
+
+It reads the pipeline's build root read-only (`TES3X_BUILDS`, default `../build`), including its
+`store/` folder, and keeps its identity, certificate, publications, approvals and snapshots in the
+`content-state` volume. It publishes TCP 26510 and is private: approve a waiting Xbox with
+`docker compose exec content python -m tes3x content approve FINGERPRINT --state /state`. Add
+`--access=public` or `--client-rate` under `command:` to change that. The GUI is not needed to
+run it, and the multiplayer service does not depend on it.
+
 ## Browse on the Xbox
 
 Open the Dash's **Content** tab and press **X** to add a host name or IP address. Include

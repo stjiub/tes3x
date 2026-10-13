@@ -278,31 +278,37 @@ that already has the revision joins without contacting the library.
 ## Run the server in Docker
 
 `server/` in a [checkout](development.md#setting-up-a-checkout) holds a Docker Compose setup for a
-machine that should only run the server, with no Python install and no GUI. It runs the same
-`tes3x net serve` with `--world` on a Docker volume, so the server key, characters, saves,
-admitted keys and bans survive restarts and rebuilds. From the checkout:
+machine that should only run TES3X's servers, with no Python install and no GUI. One image holds
+both; the `multiplayer` and `content` profiles each start one service, and either runs without
+the other. The multiplayer service runs `tes3x net serve` with `--world` on a Docker volume, so
+the server key, characters, saves, admitted keys and bans survive restarts and rebuilds. From the
+checkout:
 
 ```
 cd server
-docker compose up -d
-docker compose logs -f
+docker compose --profile multiplayer up -d
+docker compose --profile multiplayer logs -f
 ```
 
 The server publishes UDP 26500; point each console's `NetServer` at the Docker host's address.
-The setup has no build folder and publishes no HTTP port, so it does not hand out a build with
-`--build` as it stands.
-Add server options under `command:` in `server/compose.yaml`, one per line, and run
-`docker compose up -d` again. Admin commands run inside the container:
+Add server options under the service's `command:` in `server/compose.yaml`, one per line, and
+run `docker compose --profile multiplayer up -d` again. Admin commands run inside the container:
 
 ```
-docker compose exec server python -m tes3x net admin list
+docker compose exec multiplayer python -m tes3x net admin list
 ```
+
+The `content` profile runs a [content library](content.md#run-the-library-in-docker). To have
+the world require one of its builds, start the content service first, then uncomment the
+multiplayer service's `/state` volume and its `--content-state=/state` and `--content-entry`
+lines: the Dash downloads the world's build from the library at the same address. Stopping either
+service leaves the other running. There is no `--build` here: the library hands out builds.
 
 To require a password, copy the file into the volume, uncomment `--password-file` in
 `compose.yaml` and start again:
 
 ```
-docker compose cp password.txt server:/world/password.txt
+docker compose cp password.txt multiplayer:/world/password.txt
 docker compose up -d
 ```
 
@@ -310,12 +316,13 @@ To manage it from the GUI or another PC, put an admin password in the volume, un
 `--remote-admin` line and its port in `compose.yaml`, and start again:
 
 ```
-docker compose cp admin-password.txt server:/world/admin-password.txt
+docker compose cp admin-password.txt multiplayer:/world/admin-password.txt
 docker compose up -d
 ```
 
-`docker compose stop` stops the server as Ctrl+C does: it asks every joined console to save and
-waits up to 60 seconds. `docker compose cp server:/world ./world-backup` copies the world out.
+`docker compose stop multiplayer` stops the server as Ctrl+C does: it asks every joined console
+to save and waits up to 60 seconds. `docker compose cp multiplayer:/world ./world-backup` copies
+the world out.
 
 [xemu](multiplayer-client.md#connect-xemu) on its NAT joins the container like a console does,
 at the Docker host's address (or `10.0.2.2` when xemu runs on that host). A tunnel cannot reach the container: it

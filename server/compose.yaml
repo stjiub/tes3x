@@ -1,7 +1,12 @@
-# TES3X multiplayer server. From this folder: docker compose up -d
-# Consoles set [Xbox] NetServer to this machine's LAN address; see docs/multiplayer-client.md.
+# TES3X servers. From this folder, start either or both:
+#   docker compose --profile multiplayer up -d
+#   docker compose --profile content up -d
+#   docker compose --profile content --profile multiplayer up -d
+# Consoles set [Xbox] NetServer to this machine's LAN address; the Dash adds the content library
+# by the same address. See docs/multiplayer-server.md and docs/content.md.
 services:
-  server:
+  multiplayer:
+    profiles: [multiplayer]
     build:
       context: ..
       dockerfile: server/Dockerfile
@@ -12,15 +17,45 @@ services:
       # - "26503:26503/udp"  # with --remote-admin
     volumes:
       - world:/world
-    # Options after `serve --world /world`, one per line; `tes3x net serve --help` lists them.
+      # - content-state:/state  # with --content-state=/state below
+    # Options after `net serve`, one per line; `tes3x net serve --help` lists them.
     command:
+      - net
+      - serve
+      - --world=/world
       # - --password-file=/world/password.txt
       # - --max-players=8
-      # - --respawn=temple
       # - --remote-admin=26503  # needs /world/admin-password.txt
+      # The build the world requires, from the content service here:
+      # - --content-state=/state
+      # - --content-entry=my-profile
       - --report=60
     # A clean stop waits up to --stop-wait (60 s) for every console's save.
     stop_grace_period: 90s
 
+  content:
+    profiles: [content]
+    image: tes3x-server
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "26510:26510/tcp"
+    volumes:
+      # The pipeline's build root, with each profile's deploy folder and the shared store
+      - ${TES3X_BUILDS:-../build}:/builds:ro
+      - content-state:/state
+    command:
+      - content
+      - serve
+      - --state=/state
+      - --build-root=/builds
+      - --all-builds
+      # - --access=public
+      # - --client-rate=50
+    stop_grace_period: 10s
+
 volumes:
   world:
+  content-state:

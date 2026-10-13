@@ -45,6 +45,10 @@ No official releases yet. The first public release is in preparation.
   [shared archive store](docs/configuration.md#shared-archive-store).
 - The Dash's tab bar now shows the previous, current and next tab, so it no longer reaches the
   title.
+- The Docker setup now starts the multiplayer server and the content library as separate
+  Compose profiles: `docker compose --profile multiplayer up -d`, `--profile content`, or both.
+  The service formerly named `server` is now `multiplayer`. See
+  [Docker](docs/multiplayer-server.md#run-the-server-in-docker).
 - A multiplayer world can require an exact revision from a content library, on this PC or
   another, and authorize its players' Dashes to download it there. The game now reports the
   installed revision when it joins, and a console with a different revision or a local patch

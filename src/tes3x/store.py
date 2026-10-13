@@ -43,12 +43,13 @@ def xbox_path(digest):
 
 def pc_store(deploy):
     """The PC store a staged build's archives are in: the one its pipeline record names, else
-    store/ in the build root two folders above it."""
+    store/ in the build root two folders above it (as in a container, where the recorded path
+    is the host's)."""
     deploy = Path(deploy).resolve()
     try:
         named = json.loads((deploy.parent / ".tes3x-pipeline.json").read_text(
             encoding="utf-8")).get("store")
-        if named:
+        if named and Path(named).is_dir():
             return Path(named)
     except (OSError, ValueError):
         pass
