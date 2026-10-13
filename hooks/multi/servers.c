@@ -77,7 +77,6 @@ typedef char(__cdecl *fn_scroll_to)(void *element);
 #define SERVER_NEW SERVERS_SHOWN
 #define SERVER_RETURN (SERVERS_SHOWN + 1)
 #define SERVER_OPEN (SERVERS_SHOWN + 2)
-#define SERVER_DASH (SERVERS_SHOWN + 3)
 static char dash_path[128]; /* [Xbox] Dash, which installing the Dash writes */
 
 static int same_server(const char *a, const char *b)
@@ -299,13 +298,6 @@ static char __cdecl join_click(void *owner, u32 id, int d0, int d1, void *source
 {
     (void)owner, (void)id, (void)d0, (void)d1, (void)source;
     server_chosen = SERVER_OPEN;
-    return 1;
-}
-
-static char __cdecl dash_click(void *owner, u32 id, int d0, int d1, void *source)
-{
-    (void)owner, (void)id, (void)d0, (void)d1, (void)source;
-    server_chosen = SERVER_DASH;
     return 1;
 }
 
@@ -898,23 +890,16 @@ static void join_frame(void)
         /* the menu's height is set, not fitted: a row more for each button added */
         menu_height = *(const int *)(menu + UI_HEIGHT) + MENU_ROW;
         menu_width = *(const int *)(menu + UI_WIDTH);
-        column_before(column, button, options);
-        set(button, down, (int)options, UI_PROP_PTR);
-        set(options, up, (int)button, UI_PROP_PTR);
+        tes3x_ini_xbox("Dash", "", dash_path, sizeof(dash_path));
+        /* the dash-button patch put its row, already counted in the height, above Options */
+        dash = menu_part(menu, "TES3X_Dash");
+        dash = plausible(dash) ? dash : options;
+        column_before(column, button, dash);
+        set(button, down, (int)dash, UI_PROP_PTR);
+        set(dash, up, (int)button, UI_PROP_PTR);
         if (plausible(load)) {
             set(button, up, (int)load, UI_PROP_PTR);
             set(load, down, (int)button, UI_PROP_PTR);
-        }
-        tes3x_ini_xbox("Dash", "", dash_path, sizeof(dash_path));
-        if (dash_path[0] &&
-            plausible(dash = menu_button(column, ui_id("TES3X_Dash"), "menu_manager",
-                                            *(const int *)(exit + UI_WIDTH), dash_click))) {
-            menu_height += MENU_ROW;
-            column_before(column, dash, options);
-            set(button, down, (int)dash, UI_PROP_PTR);
-            set(dash, up, (int)button, UI_PROP_PTR);
-            set(dash, down, (int)options, UI_PROP_PTR);
-            set(options, up, (int)dash, UI_PROP_PTR);
         }
         ((fn_set_size)TES3X_NET_SET_HEIGHT)(menu, (int)menu_height);
         servers_build(column, *(const int *)(exit + UI_WIDTH));
@@ -937,10 +922,6 @@ static void join_frame(void)
         servers_show(menu, 1);
     } else if (chosen == SERVER_RETURN) {
         servers_show(menu, 0);
-    } else if (chosen == SERVER_DASH) {
-        log_text("net.dash", dash_path);
-        multi_closing();
-        tes3x_launch(dash_path);
 #ifdef TES3X_CONSOLE
     } else if (chosen == SERVER_NEW) {
         typing = tes3x_console_text_begin_on(menu, "") ? TYPE_SERVER : 0;

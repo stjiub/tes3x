@@ -1,0 +1,16 @@
+kind = "single"
+purpose = "A build with the TES3X button hook adds the button when the main menu opens."
+procedure = "Boot a direct-engine build with dash-button and a Dash path, wait at the main menu, then exit through the command script. Separately look for the TES3X button above Options, press it, and check the Dash starts; do the same from the pause menu in a game."
+limitations = "The log shows the button was added, not that it is visible or that its press leaves for the Dash; the pause menu needs a manual check."
+watch = 'dashbutton\.|still\.|diag\.patches|crash\.|hang\.detected|fatal\.'
+timeout = 120
+script = '''
+@menu wait 200
+@menu exit
+'''
+
+[profile]
+ini = { "Xbox:Dash" = 'F:\Games\TES3X Dash\default.xbe' }
+
+[expect]
+test = ['dashbutton\.path 1', 'dashbutton\.added', 'still\.painted', 'exec\.exit 0']

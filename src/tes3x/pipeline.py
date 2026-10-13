@@ -18,6 +18,7 @@ import tomllib
 from xml.sax.saxutils import escape
 
 from tes3x.pack import set_ini_key, write_invalidation
+from tes3x.menustill import NAME as STILL_NAME, VIDEO, make_still
 from tes3x.patch import scene_form
 import tes3x.patches as registry
 from tes3x.payload import PayloadError, build_payload, find_tool
@@ -50,6 +51,8 @@ PATCHES = {entry["name"]: entry for entry in registry.PATCHES if entry["selectio
 PATCH_ORDER = tuple(entry["name"] for entry in registry.PATCHES
                     if entry["selection"] in ("packaging", "preset")
                     or entry["name"] == "build-preferences")
+# A build whose engine starts without the retail launcher gets the whole menu, or none of it.
+DIRECT_ENGINE_PATCHES = ("boot-clear", "menu-still", "dash-button")
 HOOK_SOURCES = {entry["name"]: entry.get("source") for entry in registry.PATCHES}
 SOURCE_DEPENDENCIES = {
     "tes3xinfoarena.c": ("tes3xpager.c",),
@@ -355,6 +358,9 @@ def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), pac
         selected.add("data-overlay")
 
     blocked = disabled | set(disable)
+    if layout == "overlay":
+        # The engine is the build's Default.xbe, so nothing hands it a picture to start from.
+        selected.update(name for name in DIRECT_ENGINE_PATCHES if name not in blocked)
     pending = list(selected)
     while pending:
         name = pending.pop()
@@ -1181,9 +1187,10 @@ def main(argv=None):
         if "multiplayer" in plan["applied"]:
             ghost = write_ghost_plugin(staged / "Data Files", data_files / "Morrowind.esm")
             print(f"  ghost plugin: {Path(ghost).name}")
-            # The retail menu buttons are redrawn to match the ones multiplayer adds. A loose file
-            # beats the archive only when newer, and an ISO has no file times, so the list names
-            # them.
+        if {"multiplayer", "dash-button"} & set(plan["applied"]):
+            # The retail menu buttons are redrawn to match the ones TES3X adds, all together: a
+            # menu is either the retail one or this one. A loose file beats the archive only when
+            # newer, and an ISO has no file times, so the list names them.
             textures = staged / "Data Files" / "Textures"
             textures.mkdir(parents=True, exist_ok=True)
             art = sorted(resource("assets", "menu").glob("*.dds"))
@@ -1198,6 +1205,10 @@ def main(argv=None):
                 listed.unlink()
             write_invalidation(listed, kept + [f"textures\\{p.name}" for p in art])
             print(f"  menu buttons: {len(art)} textures")
+
+        if "menu-still" in plan["applied"]:
+            make_still(data_files / "Video" / VIDEO,
+                       staged / "Data Files" / "Textures" / STILL_NAME)
 
         retail_files, retail_bytes = copy_retail_root(vanilla, staged, copy)
         # A data-only overlay cannot support the unpatched retail launcher. Use the engine as its

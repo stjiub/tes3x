@@ -23,7 +23,7 @@ BUTTONS = {
     "menu_savegame": ("Save", 128), "menu_options": ("Options", 128),
     "menu_return": ("Return", 128), "menu_exitgame": ("Exit", 128),
     "menu_join": ("Join", 128), "menu_servers": ("Servers", 128),
-    "menu_manager": ("Dash", 128),
+    "menu_tes3x": ("TES3X", 128),
     "menu_newserver": ("New Server", 256),
     "menu_leave": ("Leave", 128), "menu_saveserver": ("Save to Server", 256),
 }
@@ -91,6 +91,10 @@ def styled(m, state):
         a = a[..., None]
         out[..., :3] = out[..., :3] * (1 - a) + np.asarray(rgb) * a
         out[..., 3:] = out[..., 3:] * (1 - a) + a
+    # The layers are blended premultiplied; the texture is straight alpha, so a soft edge would
+    # otherwise darken towards black.
+    alpha = out[..., 3:]
+    out[..., :3] = np.where(alpha > 1e-4, out[..., :3] / np.maximum(alpha, 1e-4), 0)
     return np.clip(out * [1, 1, 1, 255], 0, 255).astype(np.uint8)
 
 

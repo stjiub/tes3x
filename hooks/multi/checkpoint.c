@@ -28,6 +28,8 @@ static char load_name[BULK_NAME + 1];
 typedef u32(__attribute__((stdcall)) *fn_launch)(const char *xbe, void *data);
 typedef u32(__cdecl *fn_persist)(void);
 static void preload_hook_install(void);
+/* Defined by the TES3X button's hook, which ends the session before leaving for the Dash. */
+extern void (*tes3x_dash_closing)(void) __attribute__((weak));
 
 /* XBE entry, before the engine reads its launch data. */
 static void multi_started(void)
@@ -55,6 +57,8 @@ void tes3x_multi_entry(void)
     multi_channel.frame = tes3x_multi_frame;
     multi_channel.command = tes3x_multi_command;
     multi_channel.closing = multi_closing;
+    if (&tes3x_dash_closing)
+        tes3x_dash_closing = multi_closing;
     multi_channel.stopping = worker_stop;
     multi_channel.started = multi_started;
     dhcp_channel.port = DHCP_CLIENT;

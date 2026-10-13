@@ -412,6 +412,38 @@ requires = ["mcp-94"]
 summary = "Follow the dashboard's HDTV settings: 720p when enabled, otherwise the retail 480p or 480i."
 
 [[patch]]
+name = "boot-clear"
+title = "Clear video memory at boot"
+bit = 36
+category = "qol"
+channel = "dev"
+selection = "preset"
+source = "tes3xbootclear.c"
+summary = "Clear the screen before the first frame, so a boot without the retail launcher does not flash green lines."
+
+[[patch]]
+name = "menu-still"
+title = "Main menu still"
+bit = 37
+category = "qol"
+channel = "dev"
+selection = "preset"
+source = "tes3xmenustill.c"
+summary = "Show a still image behind the main menu instead of playing the logo movie."
+
+[[patch]]
+name = "dash-button"
+title = "TES3X button"
+bit = 38
+category = "qol"
+channel = "dev"
+selection = "preset"
+source = "tes3xdashbutton.c"
+requires = ["boot-clear", "menu-still"]
+ini = { Dash = "" }
+summary = "Add a TES3X button to the main and pause menus that leaves for the Dash."
+
+[[patch]]
 name = "net"
 title = "Xbox network foundation"
 bit = 32
@@ -431,7 +463,7 @@ category = "infrastructure"
 channel = "dev"
 selection = "preset"
 source = "tes3xmulti.c"
-requires = ["net"]
+requires = ["net", "boot-clear", "menu-still", "dash-button"]
 ini = { NetServer = "", NetPassword = "", Dash = "" }
 summary = "Join a TES3X server from [Xbox] NetAddress and exchange player states every frame."
 

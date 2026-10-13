@@ -51,6 +51,9 @@ enable = [
     # "mcp-146",                # qol: remove a fully nocked arrow with Ready Weapon
     # "bow-view",               # qol: lower the first-person bow and arms while an arrow is nocked
     # "hd-video",              # qol: 720p when the dashboard enables it, else 480p/480i (128 MB advised)
+    # "boot-clear",            # qol: clear the screen before the first frame, no green flicker without the launcher
+    # "menu-still",            # qol: a still behind the main menu instead of the logo movie (needs ffmpeg)
+    # "dash-button",           # qol: a TES3X button in the main and pause menus that leaves for the Dash
     # "rotating-autosaves",    # qol: rotate autosaves through several slots
     # "transition-autosaves",  # qol: autosave before doors, teleports and travel
     # "console",               # qol: in-game console (already in testing)

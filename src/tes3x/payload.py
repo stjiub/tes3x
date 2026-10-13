@@ -171,7 +171,7 @@ NET_UI_ADDRESSES = (
 )
 INI_USERS = {"tes3xconsole.c", "tes3xrefs.c", "tes3xdiag.c", "tes3xsaves.c", "tes3xprof.c",
              "tes3xarena.c", "tes3xregion.c", "tes3xbowview.c", "tes3xnet.c",
-             "tes3xmulti.c", "tes3xagent.c"}
+             "tes3xmulti.c", "tes3xagent.c", "tes3xdashbutton.c"}
 
 
 class PayloadError(RuntimeError):
@@ -288,7 +288,7 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
             if extra_source not in names:
                 sources.append(extra_source)
                 names.add(extra_source)
-    if names & {"tes3xconsole.c", "tes3xmulti.c"} and "tes3xlaunch.c" not in names:
+    if names & {"tes3xconsole.c", "tes3xmulti.c", "tes3xdashbutton.c"}             and "tes3xlaunch.c" not in names:
         sources.append("tes3xlaunch.c")
         names.add("tes3xlaunch.c")
     if not bindings_only:
@@ -909,6 +909,42 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         define("VIDEO_ENUM_MODES", hexva(enum))
         wanted["video_renderer"] = ("_tes3x_video_renderer_hook",)
         wanted["video_create"] = ("_tes3x_video_create_hook",)
+    if "tes3xbootclear.c" in names:
+        site, clear, display = locate("boot-clear")
+        nxt = tes3x_inject.call_target(image, site)
+        print(f"boot-clear hook: call {hexva(site)} -> {hexva(nxt)}, clear {hexva(clear)}, "
+              f"display {hexva(display)}")
+        define("BOOTCLEAR_CLEAR", hexva(clear))
+        define("BOOTCLEAR_DISPLAY", hexva(display))
+        define("BOOTCLEAR_NEXT", hexva(nxt))
+        wanted["bootclear"] = ("_tes3x_bootclear_hook",)
+    if "tes3xdashbutton.c" in names:
+        site, height_site = locate("dash-button")
+        build = tes3x_inject.call_target(image, site)
+        define("DASHBTN_SET_HEIGHT", hexva(tes3x_inject.call_target(image, height_site)))
+        print(f"dash-button hook: MenuOptions::build call {hexva(site)} -> {hexva(build)}")
+        define("DASHBTN_BUILD", hexva(build))
+        for name in ("UI_ID", "FIND_CHILD", "FIND_MENU", "SET_PROP", "PERFORM_LAYOUT",
+                     "NAV_UP_ID", "NAV_DOWN_ID"):
+            define("DASHBTN_" + name, address(name, dict(CONSOLE_ADDRESSES)[name]))
+        for name in ("CREATE_BLOCK", "CREATE_IMAGE", "SET_WIDTH", "SET_VISIBLE"):
+            define("DASHBTN_" + name, address(name, dict(NET_UI_ADDRESSES)[name]))
+        wanted["dashbutton"] = ("_tes3x_dashbutton_hook",)
+        wanted["dashbutton_height"] = ("_tes3x_dashbutton_height_hook",)
+    if "tes3xmenustill.c" in names:
+        menu, new_game, load, slot, clear, display, fence, block = locate("menu-still")
+        define("STILL_FENCE", hexva(tes3x_inject.call_target(image, fence)))
+        define("STILL_BLOCK", hexva(tes3x_inject.call_target(image, block)))
+        opened = tes3x_inject.call_target(image, menu)
+        print(f"menu-still hook: open {hexva(opened)} from {hexva(menu)}, {hexva(new_game)}, "
+              f"{hexva(load)}; clear slot {hexva(slot)}, clear {hexva(clear)}, "
+              f"display {hexva(display)}")
+        define("STILL_OPEN", hexva(opened))
+        define("STILL_CLEAR", hexva(clear))
+        define("STILL_DISPLAY", hexva(display))
+        wanted["still_open"] = ("_tes3x_still_open_hook",)
+        wanted["still_end"] = ("_tes3x_still_end_hook",)
+        wanted["still_clear"] = ("_tes3x_still_clear_hook",)
     if "tes3xleanmenu.c" in names:
         site, tag, launch, no_reboot, preload, player = locate("lean-menu")
         load = tes3x_inject.call_target(image, site)

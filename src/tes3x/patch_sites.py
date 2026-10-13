@@ -598,6 +598,121 @@ def find_mcp94(x):
     return sites
 
 
+# The call after NiXBoxRenderer::create in Game::createRenderer (push 5 and the flicker filter),
+# and the renderer's display and clear methods.
+BOOT_CLEAR_SIG = re.compile(
+    rb"\x8b\xf0\x6a\x05\x89\xbe\xd0\x02\x00\x00(?P<site>\xe8....)\x6a\x00\xe8....\x8b\x4c\x24\x1c",
+    re.S,
+)
+BOOT_CLEAR_DISPLAY_SIG = re.compile(
+    rb"\x56\x8b\xf1\x8b\x46\x58\x8b\x48\x10\x85\xc9\x75\x0e\x6a\x00\xe8....\xc7\x46\x74"
+    rb"\x00\x00\x00\x00\x5e\xc3",
+    re.S,
+)
+BOOT_CLEAR_CLEAR_SIG = re.compile(
+    rb"\x8b\x44\x24\x08\x53\x56\x8b\xf1\x8b\xc8\x80\xe1\x01\xf6\xd9\x57\x1b\xc9\x81\xe1"
+    rb"\xf0\x00\x00\x00",
+    re.S,
+)
+
+
+def find_boot_clear(x):
+    """The call after NiXBoxRenderer::create in Game::createRenderer, then the renderer's clear
+    and display methods."""
+    data = bytes(x.data)
+    tails = list(BOOT_CLEAR_SIG.finditer(data))
+    clears = list(BOOT_CLEAR_CLEAR_SIG.finditer(data))
+    displays = list(BOOT_CLEAR_DISPLAY_SIG.finditer(data))
+    if len(tails) != 1 or len(clears) != 1 or len(displays) != 1:
+        raise PatchError("boot-clear: found %d createRenderer tails, %d clear and %d display "
+                         "methods, expected 1" % (len(tails), len(clears), len(displays)))
+    sites = [x.off_to_va(m.start(g)) for m, g in ((tails[0], "site"), (clears[0], 0),
+                                                  (displays[0], 0))]
+    if None in sites:
+        raise PatchError("boot-clear: a site is outside any section")
+    return sites
+
+
+# The three callers of LoadScreenManager::open: the main menu's logo movie, New Game and a load.
+MENU_STILL_MENU_SIG = re.compile(
+    rb"\x8b\x88\xf0\x00\x00\x00\x6a\x00\x6a\x00\x6a\x00\x6a\x00\x6a\x00\x6a\x01\x57(?P<site>\xe8....)",
+    re.S,
+)
+MENU_STILL_NEW_SIG = re.compile(
+    rb"\x8b\x88\xf0\x00\x00\x00\x6a\x01\x6a\x00\x6a\x00\x6a\x00\x6a\x00\x6a\x01\x56(?P<site>\xe8....)",
+    re.S,
+)
+MENU_STILL_LOAD_SIG = re.compile(
+    rb"\x6a\x01\x6a\x00\x84\xc0\x6a\x00\x0f\x95\xc0\x6a\x00\x6a\x00\x50\x68....(?P<site>\xe8....)",
+    re.S,
+)
+
+
+# D3DDevice_Swap's fence wait: D3D_SetFence(0), then D3D_BlockOnTime(previous fence, 1).
+MENU_STILL_FENCE_SIG = re.compile(
+    rb"\x6a\x00(?P<fence>\xe8....)\x8b\x86\x78\x24\x00\x00\x48\x83\xe0\x01\x8b\x84\x86\x74\x19"
+    rb"\x00\x00\x85\xc0\x74.\x6a\x01\x50(?P<block>\xe8....)",
+    re.S,
+)
+
+
+# The call to MenuOptions::build in MenuOptions::open: the new menu in esi is its argument.
+DASH_BUTTON_SIG = re.compile(
+    rb"\x55\x56\x57\x51\xe8....\x8b\xf0\x56(?P<site>\xe8....)\xa0....\x83\xc4\x08\x84\xc0",
+    re.S,
+)
+
+
+# The call in MenuOptions::open that sets the built menu's height: 250 before a game, else 300.
+DASH_HEIGHT_SIG = re.compile(
+    rb"\x83\xc3\xce\x53\x8b\xce(?P<site>\xe8....)\x8b\x4c\x24\x10\x51\x8b\xce\xe8....\x6a\x01\x8b\xce"
+    rb"\xe8",
+    re.S,
+)
+
+
+def find_dash_button(x):
+    """The call that builds the engine's main and pause menu, then the call that sets the built
+    menu's height."""
+    data = bytes(x.data)
+    hits = list(DASH_BUTTON_SIG.finditer(data))
+    heights = list(DASH_HEIGHT_SIG.finditer(data))
+    if len(hits) != 1 or len(heights) != 1:
+        raise PatchError("dash-button: %d MenuOptions::build call(s) and %d height call(s), "
+                         "expected 1 each" % (len(hits), len(heights)))
+    sites = [x.off_to_va(hits[0].start("site")), x.off_to_va(heights[0].start("site"))]
+    if None in sites:
+        raise PatchError("dash-button: a call is outside any section")
+    return sites
+
+
+def find_menu_still(x):
+    """The three LoadScreenManager::open calls, the renderer's clear slot in its vtable, and the
+    clear and display methods."""
+    data = bytes(x.data)
+    calls = []
+    for what, sig in (("menu", MENU_STILL_MENU_SIG), ("new game", MENU_STILL_NEW_SIG),
+                      ("load", MENU_STILL_LOAD_SIG)):
+        hits = list(sig.finditer(data))
+        if len(hits) != 1:
+            raise PatchError("menu-still: %d %s open call(s), expected 1" % (len(hits), what))
+        calls.append(x.off_to_va(hits[0].start("site")))
+    _, clear, display = find_boot_clear(x)
+    pair = struct.pack("<II", display, clear)
+    hits = [m.start() for m in re.finditer(re.escape(pair), data)]
+    if len(hits) != 1:
+        raise PatchError("menu-still: %d renderer vtables, expected 1" % len(hits))
+    slot = x.off_to_va(hits[0] + 4)
+    waits = list(MENU_STILL_FENCE_SIG.finditer(data))
+    if len(waits) != 1:
+        raise PatchError("menu-still: %d swap fence waits, expected 1" % len(waits))
+    fence = x.off_to_va(waits[0].start("fence"))
+    block = x.off_to_va(waits[0].start("block"))
+    if None in calls or None in (slot, fence, block):
+        raise PatchError("menu-still: a site is outside any section")
+    return calls + [slot, clear, display, fence, block]
+
+
 def find_hd_video(x):
     """The renderer and CreateDevice calls, and the D3D mode count and enumeration functions."""
     data = bytes(x.data)
@@ -1749,6 +1864,9 @@ LOCATORS = {
     "mcp-146-resume": lambda image: find_mcp146_context(image)[3],
     "bow-view": find_bow_view,
     "hd-video": find_hd_video,
+    "boot-clear": find_boot_clear,
+    "menu-still": find_menu_still,
+    "dash-button": find_dash_button,
     "ref-index": lambda image: find_ref_index(image)[0],
     "ref-index-find": lambda image: find_ref_index(image)[1],
     "ref-index-scripts": lambda image: find_ref_index(image)[2],

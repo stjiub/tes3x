@@ -1,0 +1,14 @@
+kind = "single"
+purpose = "A build with the boot clear hook reaches a playable session without a crash."
+procedure = "Boot a direct-engine build with boot-clear, start a new game, wait in game, then exit through the command script. Separately watch the first splash for green lines."
+limitations = "The script cannot see the screen, so the flicker itself needs a person watching the first splash."
+watch = 'diag\.patches|exec\.exit|crash\.|hang\.detected|fatal\.'
+timeout = 180
+script = '''
+@start new
+wait 60
+exit
+'''
+
+[expect]
+test = ['diag\.patches', 'exec\.exit 0']

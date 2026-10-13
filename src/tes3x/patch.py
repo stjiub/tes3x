@@ -38,8 +38,9 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                TITLE_ID, TRANSITION_CALL_SIGS, VIDEO_CREATE_SIG, VIDEO_MODES_SIG,
                                VIDEO_RENDERER_SIG, VK_KEY_LIMIT_SIG, VK_SPACE_LIMIT_SIG,
                                WEATHER_ROLL_RE, XAPI_HEAP_FREE, _find_in, _find_mcp154_site,
-                               _unique_call, find_arena_size, find_autosave_calls, find_bow_view,
-                               find_button_pressed, find_call_sites, find_command_table,
+                               _unique_call, find_arena_size, find_autosave_calls, find_boot_clear,
+                               find_dash_button, find_menu_still,
+                               find_bow_view, find_button_pressed, find_call_sites, find_command_table,
                                find_console_gate, find_console_print, find_controls_table,
                                find_diagnostics_update, find_dialogue_merge, find_dxt5_size,
                                find_game_instance, find_hd_video, find_heap_function,
@@ -714,6 +715,57 @@ def _hd_video(x, value, ctx):
     return edits
 
 
+@patch("boot-clear")
+def _boot_clear(x, value, ctx):
+    """Clear the colour buffers before the first frame is presented."""
+    target = ctx.get("hooks", {}).get("bootclear")
+    if not target:
+        raise PatchError("boot-clear: needs `payload` first, with a bootclear hook in its manifest")
+    site = find_boot_clear(x)[0]
+    was, off = x.patch_call(site, int(str(target), 16))
+    return [(off, 5, "createRenderer tail call 0x%08X: 0x%08X -> %s" % (site, was, target))]
+
+
+@patch("dash-button")
+def _dash_button(x, value, ctx):
+    """Add a TES3X button to the engine's menu that leaves for the Dash."""
+    target = ctx.get("hooks", {}).get("dashbutton")
+    if not target:
+        raise PatchError("dash-button: needs `payload` first, with a dashbutton hook in its "
+                         "manifest")
+    height = ctx.get("hooks", {}).get("dashbutton_height")
+    if not height:
+        raise PatchError("dash-button: needs a dashbutton_height hook in the payload manifest")
+    edits = []
+    for site, hook, what in zip(find_dash_button(x), (target, height),
+                                ("MenuOptions::build", "menu height")):
+        was, off = x.patch_call(site, int(str(hook), 16))
+        edits.append((off, 5, "%s call 0x%08X: 0x%08X -> %s" % (what, site, was, hook)))
+    return edits
+
+
+@patch("menu-still")
+def _menu_still(x, value, ctx):
+    """Show a still behind the main menu instead of the logo movie."""
+    hooks = ctx.get("hooks", {})
+    if not all(hooks.get(k) for k in ("still_open", "still_end", "still_clear")):
+        raise PatchError("menu-still: needs `payload` first, with still_open, still_end and "
+                         "still_clear hooks in its manifest")
+    menu, new_game, load, slot = find_menu_still(x)[:4]
+    edits = []
+    for site, key, what in ((menu, "still_open", "main menu movie"),
+                            (new_game, "still_end", "New Game loading screen"),
+                            (load, "still_end", "load loading screen")):
+        was, off = x.patch_call(site, int(str(hooks[key]), 16))
+        edits.append((off, 5, "%s call 0x%08X: 0x%08X -> %s" % (what, site, was, hooks[key])))
+    off = x.va_to_off(slot)
+    was = struct.unpack_from("<I", x.data, off)[0]
+    x.data[off:off + 4] = struct.pack("<I", int(str(hooks["still_clear"]), 16))
+    edits.append((off, 4, "renderer clear slot 0x%08X: 0x%08X -> %s" % (slot, was,
+                                                                         hooks["still_clear"])))
+    return edits
+
+
 @patch("lean-menu")
 def _lean_menu(x, value, ctx):
     """Load only game settings for the main menu; the relaunch loads the rest."""
@@ -1344,6 +1396,9 @@ __all__ = [
     'XAPI_HEAP_FREE',
     '_agent',
     '_boot_media',
+    '_boot_clear',
+    '_dash_button',
+    '_menu_still',
     '_bow_view',
     '_build_preferences',
     '_console',
@@ -1397,6 +1452,9 @@ __all__ = [
     'drive_letter',
     'find_arena_size',
     'find_autosave_calls',
+    'find_boot_clear',
+    'find_dash_button',
+    'find_menu_still',
     'find_bow_view',
     'find_button_pressed',
     'find_call_sites',

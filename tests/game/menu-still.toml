@@ -1,0 +1,13 @@
+kind = "single"
+purpose = "A build with the menu still hook paints the still when the main menu opens and stays up."
+procedure = "Boot a direct-engine build with menu-still, wait at the main menu, then exit through the command script. Separately look at the main menu for the still behind the buttons, and start New Game and Load by hand to check the still goes away."
+limitations = "The log shows the still was painted, not that it is visible, and the script cannot press New Game or Load, so the release is a manual check. ffmpeg must be on the PATH when the build is made."
+watch = 'still\.|diag\.patches|exec\.exit|crash\.|hang\.detected|fatal\.'
+timeout = 120
+script = '''
+@menu wait 200
+@menu exit
+'''
+
+[expect]
+test = ['still\.painted', 'exec\.exit 0']

@@ -240,6 +240,22 @@ def safe_value(value):
     return "<local-path>" if re.match(r"^(?:[A-Za-z]:[\\/]|[\\/]{1,2})", value) else value
 
 
+
+
+def direct_engine_patches(passthru):
+    """--enable for the patches a build started without the retail launcher needs, unless the
+    command line disables them."""
+    from tes3x.pipeline import DIRECT_ENGINE_PATCHES
+    disabled = set()
+    for i, value in enumerate(passthru):
+        if value == "--disable" and i + 1 < len(passthru):
+            disabled.add(passthru[i + 1])
+        elif value.startswith("--disable="):
+            disabled.add(value.partition("=")[2])
+    return [x for name in DIRECT_ENGINE_PATCHES if name not in disabled
+            for x in ("--enable", name)]
+
+
 def run_command(args, passthru, pipeline):
     command = ["tes3x", "xemu", "<run>"]
     if args.profile:
@@ -621,7 +637,8 @@ def main():
             target_args = (["--target", a.target] if a.target else [])
             config_args = (["--config", config_path] if config_path.is_file() else [])
             run([sys.executable, "-m", "tes3x", "pipeline", a.profile,
-                 "--out", out / "pipeline", *config_args, *target_args, *ini, *passthru])
+                 "--out", out / "pipeline", *config_args, *target_args, *ini, *passthru,
+                 *(direct_engine_patches(passthru) if a.direct_engine else ())])
         marker = deploy.parent / PIPELINE_MARKER
         pipeline = json.loads(marker.read_text(encoding="utf-8")) if marker.is_file() else {}
         overlay = pipeline.get("install_layout") == "overlay"

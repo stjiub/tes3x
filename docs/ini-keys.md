@@ -102,13 +102,19 @@ The offset affects only the first-person bow and arms while an arrow or bolt is 
 | `NetGateway` | the router, `A.B.C.D` | empty, or the lease's router with `dhcp` - needed only when the server or DNS is on another subnet |
 | `NetDns` | the DNS server, `A.B.C.D` | the lease's with `dhcp`, else `NetGateway`; used only when `NetServer` is a name |
 
+## `dash-button`
+
+| key | values | default |
+|---|---|---|
+| `Dash` | the Dash's XBE, `F:\Games\TES3XDash\default.xbe` (drives C, E, F, G) or a `\Device\...` path | empty - no TES3X button; installing the Dash sets it in `xbox.ini` |
+
 ## `multiplayer`
 
 | key | values | default |
 |---|---|---|
 | `NetServer` | the server, an address or a name, with `:PORT` if not `26500`, and `#FINGERPRINT` to pin its key | empty - answer ARP and UDP echo only |
 | `NetPassword` | the server's password, up to 64 printable ASCII characters | empty - for a server without one; a server asks for it only on a console's first join |
-| `Dash` | the Dash's XBE, `F:\Games\TES3XDash\default.xbe` (drives C, E, F, G) or a `\Device\...` path | empty - no Dash entry on the main menu; installing the Dash sets it in `xbox.ini` |
+| `Dash` | the Dash's XBE, `F:\Games\TES3XDash\default.xbe` (drives C, E, F, G) or a `\Device\...` path | empty - a refused join offers no way to the Dash; installing the Dash sets it in `xbox.ini` |
 
 The keys are read on the first frame of each launch, including the relaunch on New Game and Load.
 A server name is looked up at each launch and again whenever the server stops answering.
