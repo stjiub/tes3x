@@ -673,7 +673,7 @@ static void snapshot_frame(const u8 *ref, u8 *mobile, u8 *npc, u8 *object)
     case 19:
         put32le(data, snapshot_token);
         player_state(ref, data + 4);
-        if (!event_queue(EVENT_SNAPSHOT, data, 4 + PLACE_BYTES))
+        if (!event_queue(EVENT_SNAPSHOT, data, 4 + PLAYER_PLACE_BYTES))
             return;
         snapshot_wait = snapshot_token;
         snapshot_stage = 0;

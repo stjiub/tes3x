@@ -22,7 +22,7 @@
 #define SPELLS_SNAPSHOT 0u
 #define SPELLS_ADD 1u
 #define SPELLS_REMOVE 2u
-#define PLACE_BYTES (20 + CELL_NAME)
+#define PLAYER_PLACE_BYTES (20 + CELL_NAME)
 #define FATIGUE_STEP 8    /* fatigue regenerates: send a change of an eighth of its base */
 #define PLAYER_POLL_US 1000000u
 #define CARRIED 256u

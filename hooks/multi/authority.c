@@ -14,7 +14,7 @@
 /* Before AUTHORITY for a cell nobody had: count, then each actor's kept state (refid, x, y, z,
  * heading, health, magicka, fatigue, ACTOR flags), placed the first frame this console runs it */
 #define EVENT_ACTOR_PLACE 38u
-#define PLACE_BYTES 36u
+#define ACTOR_PLACE_BYTES 36u
 #define PLACES 256u
 #define PLACE_KEEP_US 30000000u /* an actor not run here by then is in a cell not loaded */
 #define OWNERS 256u
@@ -90,7 +90,7 @@ static u32 actor_states_out, actor_states_in, actor_moves, follows, follows_full
 static u32 hits_out, hits_in, remote_holds_in, remote_breaks_out, remote_breaks_in, retaliations;
 static struct {
     u32 refid, time;
-    u8 state[PLACE_BYTES];
+    u8 state[ACTOR_PLACE_BYTES];
 } places[PLACES];
 static u32 place_count, places_in, places_applied, places_dropped;
 /* Every death this session has seen, reported here or told by the server. */
@@ -798,8 +798,8 @@ static void places_event(const struct event *e)
     u32 count = e->length >= 4 ? get32le(e->data) : 0, i, j, refid;
     const u8 *a;
 
-    for (i = 0; i < count && 4 + (i + 1) * PLACE_BYTES <= e->length; i++) {
-        a = e->data + 4 + i * PLACE_BYTES;
+    for (i = 0; i < count && 4 + (i + 1) * ACTOR_PLACE_BYTES <= e->length; i++) {
+        a = e->data + 4 + i * ACTOR_PLACE_BYTES;
         refid = get32le(a);
         if (!refid || !float_within(a + 4, 3, POSITION_LIMIT) ||
             !float_within(a + 16, 1, ANGLE_LIMIT) || !float_within(a + 20, 3, STAT_LIMIT)) {
@@ -819,7 +819,7 @@ static void places_event(const struct event *e)
             place_count++;
         places[j].refid = refid;
         places[j].time = now_us();
-        copy(places[j].state, a, PLACE_BYTES);
+        copy(places[j].state, a, ACTOR_PLACE_BYTES);
         places_in++;
     }
 }
