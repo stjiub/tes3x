@@ -1156,6 +1156,70 @@ class ServerTests(unittest.TestCase):
                         net.ACTOR_MOVE.pack(fargoth, 1, 2, 0.0, 0.0, 0.0, 1e6), move[:-1]):
             self.assertFalse(valid_client_event(net.EVENT_ACTOR_MOVE, invalid))
 
+    def test_ai_packages_name_a_player_target_per_console_and_reach_late_joins(self):
+        net = tes3x_net
+        server = self.fake_server()
+        first, second = self.fake_client(server, 1), self.fake_client(server, 2)
+        first.character, second.character = 'Nerevar', 'Vivec'
+        fargoth = 0x0101F7C4
+        anywhere = struct.pack('<3fB3x', net.AI_NO_DESTINATION, net.AI_NO_DESTINATION, 0.0, 0)
+        follow = net.pack_ai_package(fargoth, net.AI_FOLLOW, net.AI_TARGET_PLAYER, net.NO_CELL, 0,
+                                     anywhere, 1)
+        self.assertTrue(valid_client_event(net.EVENT_AI_PACKAGE, follow))
+        server.event_ai_package(first, net.EVENT_AI_PACKAGE, follow, '', 0.0)
+        self.assertEqual(server.world.ai[fargoth]['target'], ['player', 'Nerevar'])
+        # The others follow the sender's ghost; the sender is not told.
+        as_ghost = net.pack_ai_package(fargoth, net.AI_FOLLOW, net.AI_TARGET_CLIENT, net.NO_CELL,
+                                       1, anywhere, 1)
+        self.assertEqual(second.sent, [(net.EVENT_AI_PACKAGE, 0, as_ghost)])
+        self.assertEqual(first.sent, [])
+        # A package without a target, and one naming an actor, are relayed as they are.
+        wander = struct.pack('<HBB8B4x', 512, 0, 0, 40, 20, 20, 0, 0, 0, 0, 0)
+        server.event_ai_package(second, net.EVENT_AI_PACKAGE, net.pack_ai_package(
+            0x01077190, net.AI_WANDER, 0, net.NO_CELL, 0, wander, 0), '', 0.0)
+        escort = net.pack_ai_package(0x0107718F, net.AI_ESCORT, net.AI_TARGET_OBJECT, 900, 0,
+                                     struct.pack('<3fB3x', 620.0, -1160.0, 284.0, 2), 1,
+                                     'marena gilnith')
+        server.event_ai_package(second, net.EVENT_AI_PACKAGE, escort, '', 0.0)
+        self.assertEqual([d for _, _, d in first.sent][-1], escort)
+        # Through the world file; after a restart the sender's character is told it is the
+        # target, and a console that joins while it is away is not sent that package.
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder)
+        server.world.path = str(folder / 'world.json')
+        server.world.save(0.0)
+        restored = net.World()
+        restored.load(server.world.path, 0.0)
+        self.assertEqual(restored.ai, server.world.ai)
+        later = self.fake_server()
+        later.world = restored
+        third = self.fake_client(later, 3)
+        third.character = 'Vivec'
+        self.assertIsNone(later.ai_package_for(third, fargoth, restored.ai[fargoth]))
+        own = net.pack_ai_package(fargoth, net.AI_FOLLOW, net.AI_TARGET_PLAYER, net.NO_CELL, 0,
+                                  anywhere, 1)
+        third.character = 'Nerevar'
+        self.assertEqual(later.ai_package_for(third, fargoth, restored.ai[fargoth]), own)
+        # A player target with no character is not kept; the table is bounded.
+        first.character = None
+        server.event_ai_package(first, net.EVENT_AI_PACKAGE, net.pack_ai_package(
+            0x01000005, net.AI_FOLLOW, net.AI_TARGET_PLAYER, net.NO_CELL, 0, anywhere, 1), '', 0.0)
+        self.assertNotIn(0x01000005, server.world.ai)
+        server.world.ai.update({0x02000000 + i: server.world.ai[fargoth]
+                                for i in range(net.AI_PACKAGES_MAX - len(server.world.ai))})
+        server.event_ai_package(second, net.EVENT_AI_PACKAGE, net.pack_ai_package(
+            0x03000000, net.AI_WANDER, 0, net.NO_CELL, 0, wander, 0), '', 0.0)
+        self.assertNotIn(0x03000000, server.world.ai)
+        nowhere = struct.pack('<3fB3x', float('nan'), 0.0, 0.0, 0)
+        for invalid in (follow[:-1], follow + b'x\0',
+                        net.pack_ai_package(5, net.AI_WANDER, 0, net.NO_CELL, 0, wander, 0),
+                        net.pack_ai_package(fargoth, 5, 0, net.NO_CELL, 0, wander, 0),
+                        net.pack_ai_package(fargoth, net.AI_FOLLOW, 0, net.NO_CELL, 0, anywhere, 1),
+                        net.pack_ai_package(fargoth, net.AI_TRAVEL, 0, net.NO_CELL, 0, nowhere, 0),
+                        net.pack_ai_package(fargoth, net.AI_FOLLOW, net.AI_TARGET_OBJECT,
+                                            net.NO_CELL, 0, anywhere, 1)):
+            self.assertFalse(valid_client_event(net.EVENT_AI_PACKAGE, invalid))
+
     def test_world_scripts_are_kept_handed_on_and_end_with_their_last_runner(self):
         net = tes3x_net
         server = self.fake_server()
@@ -1838,7 +1902,7 @@ class ServerTests(unittest.TestCase):
 
         saved = next(world.glob('*.json'))
         state = json.loads(saved.read_text(encoding='utf-8'))
-        self.assertEqual(sorted(state), ['actors', 'clock', 'contents', 'deaths', 'factions', 'globals', 'journal', 'locals', 'moves', 'next_spawn', 'objects',
+        self.assertEqual(sorted(state), ['actors', 'ai', 'clock', 'contents', 'deaths', 'factions', 'globals', 'journal', 'locals', 'moves', 'next_spawn', 'objects',
                                          'scripts', 'spawns', 'statuses', 'topics', 'weather'])
         self.assertEqual(len(state['clock']), 6)  # hour, day, month, year, days passed, scale
         self.assertEqual(state['deaths'], {str(refid): 1})

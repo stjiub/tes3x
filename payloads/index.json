@@ -35,8 +35,8 @@
         "tes3xnet.c",
         "tes3xmulti.c"
       ],
-      "pe_sha256": "5fb34bd3fbb32358cbfedb0429f1d2be2ce64ec9c63c0ad9b90c9e5001d1c3dc",
-      "manifest_sha256": "ec4f5706048d69ed5d60608e34de94633e938a3e66571ddb4a6a72b8b4120010"
+      "pe_sha256": "6be5a8536654b2dee4195692b72265c7e0541d67f949d14e76232c9709671825",
+      "manifest_sha256": "216cbc9a0275191b9514c3bdcc32a79a20fa73d5d2181d1a59beda9429ca1fdf"
     },
     {
       "name": "archives",
@@ -86,8 +86,8 @@
         "tes3xnet.c",
         "tes3xmulti.c"
       ],
-      "pe_sha256": "08d0ab4432355f3fbfc8f3d8bcefc839e5b820b61a97d501fe1bbc4ffc36c998",
-      "manifest_sha256": "a205776e3e9bdc9fa4188cd9a83a9e38dfad11da94305824dbe5252c1e0552bc"
+      "pe_sha256": "ed46c8229be1e879497c894ed955fd054fc1608275294ca800aa463a9821e61f",
+      "manifest_sha256": "d79f1381eeaddc372da38e2c9f776a68dc4f088d9cec3c367676c61feb26e859"
     }
   ]
 }

@@ -470,9 +470,15 @@ def main(argv=None):
     p.add_argument("--bot-journal", action="append", default=[], metavar="QUEST:INDEX@SECONDS",
                    help="the bot moves the world's journal to INDEX of QUEST this long after it "
                         "first appears, as another player would (repeatable)")
+    p.add_argument("--bot-follower", action="append", default=[], metavar="REFID@SECONDS",
+                   help="the data-file actor REFID (hex) follows the bot this long after it first "
+                        "appears, as AIFollow from its dialogue would (repeatable)")
     p.add_argument("--bot-busy", metavar="START:END",
                    help="the bot saves from START to END seconds after it first appears: it sends "
                         "BUSY, stops its states and gives up the actors it owns")
+    p.add_argument("--bot-away", metavar="START:END",
+                   help="the bot stops its states from START to END seconds after it first "
+                        "appears, so consoles take it for gone")
     p.add_argument("--bot-dead", metavar="START:END",
                    help="the bot falls dead from START to END seconds after it first appears")
     p.add_argument("--bot-shift", type=float, default=128,

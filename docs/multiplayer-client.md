@@ -87,6 +87,14 @@ than where the game starts them; their AI begins its current task again from the
 stay dead. When a script or a conversation moves someone to another place, every player sees
 them there, including players who join later.
 
+When a conversation or a quest script tells someone to follow, escort, travel or wander, that
+order is shared and kept. A companion who follows you keeps following you whichever player's
+game runs them, follows your character in the other players' games, and takes up following you
+again when you join after a server restart. While you are away the companion waits where it
+stands, and another player can talk to it and take it on. After a restart the order starts
+again from where the person stands. Followers can still stand still after a server restart
+until they are asked again; this is a known problem.
+
 Quest scripts that keep running belong to the world too. When a conversation or a quest starts
 one (a timer that counts days, a script waiting to move someone once you leave), the server
 keeps it with its progress; if you leave or the server restarts, another player's game, or

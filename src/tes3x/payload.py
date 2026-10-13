@@ -112,6 +112,10 @@ SCRIPT_EXECUTE = 0x00148A70  # Script::execute(reference, variables, info, refer
 PROCESS_GLOBAL_SCRIPTS = 0x0008C910  # calls Script::execute once per running global script
 ADD_GLOBAL_SCRIPT = 0x0008E6E0  # WorldController::addGlobalScript(script, reference)
 FIND_SCRIPT = 0x00105DA0  # NonDynamicData::findScriptByName
+# NPCInstance and CreatureInstance setAIPackage (Actor vtable +0x184), each in one vtable only:
+# what AITravel, AIWander, AIEscort and AIFollow end in.
+NPC_SET_AI = 0x0011FBB0
+CREATURE_SET_AI = 0x000ECA90
 SAVE_CALLS = 7  # SaveGame's callers: quicksave, three autosaves, the save menu's two, fatal error
 ACTOR_ADDRESSES = (
     ("LEVELED_RESOLVE", 0x0011A740), ("LEVELED_LINKED", 0x0012AEE0),
@@ -617,6 +621,15 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         define("NET_GLOBAL_SCRIPT_SITES", "{" + hexva(sites[0]) + "}")
         define("NET_ADD_GLOBAL_SCRIPT", address("ADD_GLOBAL_SCRIPT", ADD_GLOBAL_SCRIPT))
         define("NET_FIND_SCRIPT", address("FIND_SCRIPT", FIND_SCRIPT))
+        for name, default in (("NPC_SET_AI", NPC_SET_AI), ("CREATURE_SET_AI", CREATURE_SET_AI)):
+            set_ai = int(address(name, default), 16)
+            slots = [image.off_to_va(m.start()) for m in re.finditer(
+                re.escape(struct.pack("<I", set_ai)), bytes(image.data))]
+            if len(slots) != 1 or None in slots:
+                raise PayloadError(f"{name} {hexva(set_ai)}: {len(slots)} vtable slots, "
+                                   "expected 1")
+            define(f"NET_{name}", hexva(set_ai))
+            define(f"NET_{name}_SLOT", hexva(slots[0]))
         drop = int(address("DROP_ITEM", DROP_ITEM), 16)
         player_mobile = int(address("PLAYER_MOBILE", dict(CONSOLE_ADDRESSES)["PLAYER_MOBILE"]), 16)
         data = bytes(image.data)

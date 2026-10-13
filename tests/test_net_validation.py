@@ -32,6 +32,8 @@ class EventValidationTests(unittest.TestCase):
             p.EVENT_OBJECTS: p.pack_objects({1: (2, p.OBJECT_DISABLED, 0)})[0],
             p.EVENT_LOCALS: p.pack_locals(1, {p.LOCAL_FLOAT << 14 | 1: 0x3F800000})[0],
             p.EVENT_ACTOR_MOVE: p.ACTOR_MOVE.pack(0x0101F7C4, 1, 2, 3., 4., 5., 90.),
+            p.EVENT_AI_PACKAGE: p.pack_ai_package(0x0101F7C4, p.AI_TRAVEL, 0, p.NO_CELL, 0,
+                                                  bytes(16), 0),
             p.EVENT_REMOVE: p.pack_removes([1])[0],
             p.EVENT_WANT: b'\1\1\0',
             p.EVENT_WEATHER: p.pack_weather({1: 2})[0],

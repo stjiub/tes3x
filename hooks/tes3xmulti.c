@@ -147,6 +147,10 @@ void __cdecl tes3x_console_reply(const char *fmt, ...);
     !defined(TES3X_NET_ADD_GLOBAL_SCRIPT) || !defined(TES3X_NET_FIND_SCRIPT)
 #error "define the TES3X_NET_ record lookups, the class functions chargen uses, the faction restore, journalAdd and the script and move hooks"
 #endif
+#if !defined(TES3X_NET_NPC_SET_AI) || !defined(TES3X_NET_NPC_SET_AI_SLOT) || \
+    !defined(TES3X_NET_CREATURE_SET_AI) || !defined(TES3X_NET_CREATURE_SET_AI_SLOT)
+#error "define the TES3X_NET_ NPC and creature instances' setAIPackage and their vtable slots"
+#endif
 
 typedef unsigned short u16;
 typedef void(__stdcall *fn_KeStallExecutionProcessor)(u32);
@@ -466,6 +470,7 @@ static int script_safe(const u8 *text, u32 max)
 #include "multi/player_identity.c"
 #include "multi/player_effects.c"
 #include "multi/player_apply.c"
+#include "multi/ai_packages.c"
 #include "multi/death.c"
 #include "multi/player_events.c"
 #include "multi/preload.c"
@@ -523,8 +528,10 @@ void tes3x_multi_frame(void)
         death_hook_install();
         scripts_hook_install();
         moves_hook_install();
+        ai_packages_hook_install();
         authority_session();
         moves_session();
+        ai_packages_session();
         spawns_session();
         events_frame();
         save_frame();
@@ -586,6 +593,7 @@ void tes3x_multi_frame(void)
     authority_frame(ref, state);
     objects_frame();
     moves_frame();
+    ai_packages_frame();
     locals_frame(state);
     spawns_frame();
     containers_frame();
@@ -689,6 +697,7 @@ int tes3x_multi_command(const char *text)
         locals_stat();
         world_scripts_stat();
         moves_stat();
+        ai_packages_stat();
         spawns_stat();
         containers_stat();
         bulk_stat();
@@ -724,6 +733,10 @@ int tes3x_multi_command(const char *text)
         script_query(rest);
     } else if ((rest = word(text, "where")) && *(rest = skip(rest))) {
         where_query(rest);
+    } else if ((rest = word(text, "ai")) && *(rest = skip(rest))) {
+        ai_query(rest);
+    } else if ((rest = word(text, "act")) && *(rest = skip(rest))) {
+        act_command(rest);
     } else if ((rest = word(text, "send")) && *(rest = skip(rest))) {
         up_command(rest);
     } else if ((rest = word(text, "save")) && !*skip(rest)) {

@@ -39,6 +39,10 @@ No official releases yet. The first public release is in preparation.
   is in the same place for every player, including players who join later. Update the server and
   install the build again. See
   [saving and character state](docs/multiplayer-client.md#saving-and-character-state).
+- Follow, escort, travel and wander orders from conversations and quest scripts are shared in
+  multiplayer: a companion keeps following the player who hired them in every player's game and
+  after a server restart. Update the server and install the build again. See
+  [saving and character state](docs/multiplayer-client.md#saving-and-character-state).
 - The journal is shared in multiplayer: a quest one player moves on gives the other players the
   same entry, and the server keeps it in the world, so characters who join later or are new get
   it too. Joining no longer shows a "journal updated" message for each restored entry. Update the

@@ -24,9 +24,9 @@
     "console_print": "0x00000000004020f4",
     "console_mailbox": "0x0000000000434080",
     "diagnostics_update": "0x0000000000404d6b",
-    "diagnostics_flag": "0x00000000004358fc",
-    "patch_mask": "0x00000000004358e0",
-    "patch_mask_hi": "0x00000000004358e4"
+    "diagnostics_flag": "0x000000000043590c",
+    "patch_mask": "0x00000000004358f0",
+    "patch_mask_hi": "0x00000000004358f4"
   },
   "bindings": {
     "orig_entry": "0x00000000004347d0",
@@ -234,6 +234,10 @@
       "NET_GLOBAL_SCRIPT_SITES[0]",
       "NET_ADD_GLOBAL_SCRIPT[0]",
       "NET_FIND_SCRIPT[0]",
+      "NET_NPC_SET_AI[0]",
+      "NET_NPC_SET_AI_SLOT[0]",
+      "NET_CREATURE_SET_AI[0]",
+      "NET_CREATURE_SET_AI_SLOT[0]",
       "NET_DROP_ITEM[0]",
       "NET_PLAYER_DROP_SITES[0]",
       "NET_PLAYER_DROP_SITES[1]",

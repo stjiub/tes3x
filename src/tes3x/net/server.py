@@ -50,6 +50,9 @@ from .proto import (ACTOR, ACTORS, ACTORS_PER_PACKET, ACTOR_DEAD, ACTOR_IN_COMBA
                     EVENT_LOCALS, LOCALS_MAX, EVENT_ACTOR_PLACE, ACTOR_PLACE,
                     ACTOR_PLACES_PER_EVENT, ACTORS_KEPT_MAX, describe_local, pack_locals, unpack_locals, FACTION_ALL, FACTION_EXPELLED,
                     EVENT_ACTOR_MOVE, ACTOR_MOVE, ACTOR_MOVES_MAX, WORLD_SCRIPTS, SCRIPT_RUNNING,
+                    EVENT_AI_PACKAGE, AI_FOLLOW, AI_TARGET_PLAYER, AI_TARGET_CLIENT,
+                    AI_TARGET_OBJECT, AI_NO_DESTINATION, NO_CELL,
+                    AI_PACKAGES_MAX, pack_ai_package, unpack_ai_package,
                     SCRIPT_STOPPED, SCRIPT_VALUES, WORLD_SCRIPTS_MAX, SCRIPT_VALUES_MAX,
                     pack_world_script, unpack_world_script,
                     FACTION_JOINED, FACTION_RANK, FACTION_REPUTATION, PLAYER_IDENTITY, PLAYER_ITEMS, PLAYER_JOURNAL,
@@ -183,6 +186,10 @@ class World:
         self.moves = {}
         # script id lowered -> {"id", "ref", "values": {slot: raw value}}: running world scripts
         self.scripts = {}
+        # refid -> {"kind", "cell", "config" (hex), "reset", "target"}: each actor's latest AI
+        # package from a player or a world script; target is None, ["player", character],
+        # ["object", id] or ["bot"]
+        self.ai = {}
         # spawn id -> reference made at run time (unpack_spawn), removed ones too; replayed likewise
         self.spawns = {}
         # refid -> {"cell", "entries", "origin"}: a container's latest contents; sent to whoever
@@ -213,6 +220,7 @@ class World:
                             for k, values in saved.get("locals", {}).items()})
         self.actors.update({int(k): v for k, v in saved.get("actors", {}).items()})
         self.moves.update({int(k): v for k, v in saved.get("moves", {}).items()})
+        self.ai.update({int(k): v for k, v in saved.get("ai", {}).items()})
         self.scripts.update({k: dict(v, values={int(s): x for s, x in v["values"].items()})
                              for k, v in saved.get("scripts", {}).items()})
         for spawn in self.spawns.values():
@@ -239,6 +247,7 @@ class World:
                             for k, values in self.locals.items()},
                  "actors": {str(k): v for k, v in self.actors.items()},
                  "moves": {str(k): v for k, v in self.moves.items()},
+                 "ai": {str(k): v for k, v in self.ai.items()},
                  "scripts": {k: dict(v, values={str(s): x for s, x in v["values"].items()})
                              for k, v in self.scripts.items()}}
         if self.clock:
@@ -255,6 +264,7 @@ class World:
                 f"{len(self.journal)} quests, "
                 f"{len(self.globals)} globals, {len(self.locals)} scripted references, "
                 f"{len(self.actors)} actors, {len(self.moves)} moved, "
+                f"{len(self.ai)} AI packages, "
                 f"{len(self.scripts)} scripts"
                 + (f", clock {self.clock}" if self.clock else ""))
 
@@ -1148,6 +1158,7 @@ class Bot:
         self.line = self.held = 0
         self.breaks = []  # (due, holder, refid) of holds it breaks
         self.hit = self.killed = self.hit_player = self.busy = self.dead = False
+        self.away = False
         self.mirror = self.echo = None
         self.actor_next = 0.0
         if self.args.bot:
@@ -1187,6 +1198,8 @@ class Bot:
             what, _, at = spec.rpartition("@")
             quest, _, index = what.rpartition(":")
             self.journal.append((float(at), quest, int(index)))
+        self.followers = [(float(at), int(refid, 16))
+                          for refid, _, at in (s.rpartition("@") for s in self.args.bot_follower)]
         self.shots = [(float(at), ammo)
                       for ammo, _, at in (s.rpartition("@") for s in self.args.bot_shoot)]
         for kind, specs in ((EVENT_SPELL, self.args.bot_spell), (EVENT_CAST, self.args.bot_cast)):
@@ -1287,6 +1300,10 @@ class Bot:
             self.journal.remove(spec)
             print(f"{time.strftime('%H:%M:%S')} bot journal {spec[1]} {spec[2]}", flush=True)
             self.server.share_journal(None, [spec[1:]], now)
+        for spec in [f for f in self.followers if self.args.bot and self.window(f"{f[0]}:", now)]:
+            self.followers.remove(spec)
+            print(f"{time.strftime('%H:%M:%S')} bot is followed by {spec[1]:#010x}", flush=True)
+            self.server.follow_bot(spec[1], now)
         if self.args.bot and self.anchor and self.window(self.args.bot_busy, now) != self.busy:
             self.busy = not self.busy
             print(f"{time.strftime('%H:%M:%S')} bot {'saves' if self.busy else 'is back'}",
@@ -1300,7 +1317,12 @@ class Bot:
             self.server.broadcast_event(BOT_ID, EVENT_PLAYER,
                                         bytes([PLAYER_DEATH if self.dead else PLAYER_ALIVE]),
                                         now)
-        if self.args.bot and self.anchor and now >= self.next_step and not self.busy:
+        away = self.window(self.args.bot_away, now)
+        if self.args.bot and self.anchor and away != self.away:
+            self.away = away
+            print(f"{time.strftime('%H:%M:%S')} bot {'is away' if away else 'is back'}",
+                  flush=True)
+        if self.args.bot and self.anchor and now >= self.next_step and not self.busy                 and not away:
             self.next_step = now + 1 / self.args.bot_rate
             self.step(now)
 
@@ -1882,6 +1904,14 @@ class Server:
             replay and stream.place and not stream.dead) else None
         for data in events:
             client.rel.queue(EVENT_PLAYER, 0, data)
+        for refid, entry in sorted(self.world.ai.items()):
+            data = self.ai_package_for(client, refid, entry)
+            if data is not None:
+                client.rel.queue(EVENT_AI_PACKAGE, 0, data)
+            if entry["target"] == ["player", client.character]:
+                for other in self.clients.values():
+                    if other.in_world and other.id != client.id:
+                        self.send_ai_package(other, refid, entry, now)
         if replay and stream.dead:
             print(f"{stamp} client {client.id} died before its last stop: respawns now",
                   flush=True)
@@ -2384,6 +2414,76 @@ class Server:
         self.broadcast_event(client.id, kind, ACTOR_MOVE.pack(refid, *move), now)
         return KEEP
 
+    def event_ai_package(self, client, kind, data, stamp, now):
+        """Keep an actor's latest AI package, a player target by character, and send it to
+        every other console as that console names its target."""
+        refid, ai_kind, target, cell, other, config, reset, ident = unpack_ai_package(data)
+        if target == AI_TARGET_OBJECT:
+            target = ["object", ident]
+        elif target:
+            named = client if target == AI_TARGET_PLAYER else (
+                None if other == BOT_ID else self.clients.get(other))
+            if other == BOT_ID and target == AI_TARGET_CLIENT:
+                target = ["bot"]
+            elif named is None or not named.character:
+                print(f"{stamp} client {client.id}: {refid:#010x} AI package for a player with "
+                      "no character, not kept", flush=True)
+                return KEEP
+            else:
+                target = ["player", named.character]
+        else:
+            target = None
+        if refid not in self.world.ai and len(self.world.ai) >= AI_PACKAGES_MAX:
+            return KEEP
+        entry = {"kind": ai_kind, "cell": cell, "config": config.hex(), "reset": reset,
+                 "target": target}
+        self.world.ai[refid] = entry
+        self.world.dirty = True
+        if self.detail["verbose"]:
+            print(f"{stamp} client {client.id}: {refid:#010x} AI package {ai_kind}"
+                  + (f" for {target[-1]}" if target else ""), flush=True)
+        for recipient in self.clients.values():
+            if recipient.in_world and recipient.id != client.id:
+                self.send_ai_package(recipient, refid, entry, now)
+        return KEEP
+
+    def follow_bot(self, refid, now):
+        """As AIFollow from the bot's dialogue: refid follows the bot's ghost."""
+        config = struct.pack("<3fB3x", AI_NO_DESTINATION, AI_NO_DESTINATION, 0.0, 0)
+        entry = {"kind": AI_FOLLOW, "cell": NO_CELL, "config": config.hex(), "reset": 1,
+                 "target": ["bot"]}
+        self.world.ai[refid] = entry
+        self.world.dirty = True
+        for recipient in self.clients.values():
+            if recipient.in_world:
+                self.send_ai_package(recipient, refid, entry, now)
+
+    def ai_package_for(self, recipient, refid, entry):
+        """The package as recipient names its target, or None while that player is away."""
+        target, other, ident = entry["target"], 0, ""
+        if target is None:
+            named = 0
+        elif target[0] == "object":
+            named, ident = AI_TARGET_OBJECT, target[1]
+        elif target[0] == "bot":
+            named, other = AI_TARGET_CLIENT, BOT_ID
+        elif recipient.character == target[1]:
+            named = AI_TARGET_PLAYER
+        else:
+            present = [c for c in self.clients.values()
+                       if c.in_world and c.character == target[1]]
+            if not present:
+                return None
+            named, other = AI_TARGET_CLIENT, present[0].id
+        return pack_ai_package(refid, entry["kind"], named, entry["cell"], other,
+                               bytes.fromhex(entry["config"]), entry["reset"], ident)
+
+    def send_ai_package(self, recipient, refid, entry, now):
+        data = self.ai_package_for(recipient, refid, entry)
+        if data is not None:
+            recipient.rel.queue(EVENT_AI_PACKAGE, 0, data)
+            self.flush(recipient, now)
+
     def world_script(self, client, op, refid, name, values, now):
         """Keep a running world script with its first runner's locals; it ends when the last
         console running it stops it."""
@@ -2606,7 +2706,8 @@ class Server:
                       EVENT_EQUIPMENT: event_equipment,
                       EVENT_IDENTITY: event_identity,
                       EVENT_ACTOR_EQUIPMENT: event_actor_equipment,
-                      EVENT_ACTOR_MOVE: event_actor_move}
+                      EVENT_ACTOR_MOVE: event_actor_move,
+                      EVENT_AI_PACKAGE: event_ai_package}
 
     def update_authority(self, now):
         """Name each loaded cell's authority and tell every client that has the cell loaded."""

@@ -20,15 +20,15 @@
     "console_vk_key": "0x0000000000403722",
     "console_vk_space": "0x000000000040372e",
     "console_print": "0x0000000000401cb8",
-    "console_mailbox": "0x000000000043305c",
+    "console_mailbox": "0x000000000043405c",
     "diagnostics_update": "0x000000000040492f",
-    "diagnostics_flag": "0x00000000004348d0",
-    "patch_mask": "0x00000000004348b4",
-    "patch_mask_hi": "0x00000000004348b8"
+    "diagnostics_flag": "0x00000000004358e0",
+    "patch_mask": "0x00000000004358c4",
+    "patch_mask_hi": "0x00000000004358c8"
   },
   "bindings": {
-    "orig_entry": "0x00000000004337b0",
-    "thunk_slots": "0x00000000004331b8",
+    "orig_entry": "0x00000000004347b0",
+    "thunk_slots": "0x00000000004341b8",
     "thunk_count": 379,
     "required_thunks": [
       8,
@@ -69,7 +69,7 @@
       258,
       360
     ],
-    "engine_values": "0x00000000004337b4",
+    "engine_values": "0x00000000004347b4",
     "engine_names": [
       "INI_GET_STRING[0]",
       "INI_PATH[0]",
@@ -230,6 +230,10 @@
       "NET_GLOBAL_SCRIPT_SITES[0]",
       "NET_ADD_GLOBAL_SCRIPT[0]",
       "NET_FIND_SCRIPT[0]",
+      "NET_NPC_SET_AI[0]",
+      "NET_NPC_SET_AI_SLOT[0]",
+      "NET_CREATURE_SET_AI[0]",
+      "NET_CREATURE_SET_AI_SLOT[0]",
       "NET_DROP_ITEM[0]",
       "NET_PLAYER_DROP_SITES[0]",
       "NET_PLAYER_DROP_SITES[1]",

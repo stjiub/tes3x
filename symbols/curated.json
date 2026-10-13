@@ -1610,6 +1610,15 @@
     },
     {
       "va": "0x000E88D0",
+    {
+      "va": "0x000E7610",
+      "name": "Actor::setAIPackage",
+      "confidence": "verified",
+      "provenance": "mwse:TES3_Actor_setAIPackage(vtable+0x17C,xbox+0x184)",
+      "note": "Base version: clones the actor for the reference (0x000E74B0) and calls the instance's +0x184.",
+      "pc_va": "0x00497150",
+      "signature": "void __thiscall setAIPackage(TES3::AIPackageConfig* config, TES3::Reference* reference)"
+    },
       "name": "Inventory::removeItemData",
       "kind": "function",
       "confidence": "matched",
@@ -1725,6 +1734,23 @@
     {
       "va": "0x000EFD60",
       "name": "Static::copy",
+    {
+      "va": "0x000ECA90",
+      "name": "CreatureInstance::setAIPackage",
+      "confidence": "verified",
+      "provenance": "mwse:TES3_Actor_setAIPackage(vtable+0x17C,xbox+0x184)",
+      "note": "Actor vtable +0x184 (PC +0x17C); config at +0x88.",
+      "pc_va": "0x0049F090",
+      "signature": "void __thiscall setAIPackage(TES3::AIPackageConfig* config, TES3::Reference* reference)"
+    },
+    {
+      "va": "0x000ED920",
+      "name": "CreatureInstance::getAIPackageConfig",
+      "confidence": "verified",
+      "provenance": "mwse:TES3_Actor_getAIPackageConfig(vtable+0x178,xbox+0x180)",
+      "pc_va": "0x0049F960",
+      "signature": "TES3::AIPackageConfig* __thiscall getAIPackageConfig()"
+    },
       "confidence": "matched",
       "provenance": "Object vtable +0x24 (vtable 0x00366F48); same body as PC 0x004A74D0",
       "pc_va": "0x004A74D0",
@@ -2869,6 +2895,14 @@
     {
       "va": "0x0011E660",
       "name": "NPC::copy",
+    {
+      "va": "0x0011E060",
+      "name": "NPCInstance::getAIPackageConfig",
+      "confidence": "verified",
+      "provenance": "mwse:TES3_Actor_getAIPackageConfig(vtable+0x178,xbox+0x180)",
+      "pc_va": "0x004DB0D0",
+      "signature": "TES3::AIPackageConfig* __thiscall getAIPackageConfig()"
+    },
       "confidence": "matched",
       "provenance": "Object vtable +0x24 (vtable 0x00375100); same body as PC 0x004D7340",
       "pc_va": "0x004D7340",
@@ -2901,6 +2935,15 @@
     {
       "va": "0x00122A50",
       "name": "Cell::setLand",
+    {
+      "va": "0x0011FBB0",
+      "name": "NPCInstance::setAIPackage",
+      "confidence": "verified",
+      "provenance": "mwse:TES3_Actor_setAIPackage(vtable+0x17C,xbox+0x184)",
+      "note": "Actor vtable +0x184 (PC +0x17C). Frees the old config at +0x74, keeps the new one and hands it to the mobile's AIPlanner; tes3x multiplayer hooks its one vtable slot.",
+      "pc_va": "0x004DA210",
+      "signature": "void __thiscall setAIPackage(TES3::AIPackageConfig* config, TES3::Reference* reference)"
+    },
       "confidence": "matched",
       "provenance": "same body as PC; a later LAND replaces the cell's land",
       "pc_va": "0x004E2820"
@@ -4640,6 +4683,14 @@
     {
       "va": "0x0018E020",
       "name": "ProcessManager::checkAlarmRadius",
+    {
+      "va": "0x0018CFF0",
+      "name": "AIPlanner::packageFromConfig",
+      "confidence": "guess",
+      "provenance": "xbe:switch on AIPackageConfig type building each AIPackage",
+      "note": "Switches on the config type (1 travel .. 5 activate) and builds that package; a follow or escort target is the config's Actor resolved by PhysicalObject::getMobile.",
+      "pc_va": "0x0056EBF0"
+    },
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_ProcessManager_checkAlarmRadius",

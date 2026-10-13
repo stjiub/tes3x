@@ -67,8 +67,9 @@ it recorded are gone. With `--world DIR` it
 keeps the game clock, the deaths, the doors, locks and items taken, the items dropped or placed,
 containers' contents, actors' AI settings and disposition, actors' last place and health,
 the weather, learned topics, the journal,
-faction ranks, the world's globals, references' script locals, the quest scripts still running
-and characters that scripts moved in one file per load order in `DIR`, loads it when the
+faction ranks, the world's globals, references' script locals, the quest scripts still running,
+characters that scripts moved and the follow, escort, travel and wander orders players and quest
+scripts gave them in one file per load order in `DIR`, loads it when the
 first console joins in game and writes it every 10 seconds
 while it changes, so a restarted server carries on where it stopped. A joined client starts from
 the data files and applies the server's world; it does not import changes from a local save.
@@ -428,7 +429,16 @@ up to two entries of refid, position, heading, health, magicka, fatigue and the 
 for the actors last reported in that cell. `ACTOR_MOVE` (event 39) is an actor a script or a
 dialogue moved: refid, the cell index it left, the cell index it is in, position and rotation
 (radians, as Position and PositionCell give it). The server keeps the latest of each (up to 4,096) with the first cell it left, relays it
-in that form and replays all of them after WELCOME. `WORLD_SCRIPTS` (player sub-kind 21) is a
+in that form and replays all of them after WELCOME. `AI_PACKAGE` (event 40) is an AI package
+a player's dialogue or a quest script gave a data-file actor: refid, type (1 travel, 2 wander,
+3 escort, 4 follow), target kind, the escort or follow cell index, a client, the package's
+settings (destination, or wander range, duration, time and idle chances), reset, then the
+target actor's id of at most 31 bytes. Escort and follow need a target, travel and wander have
+none. A console names its own player as target kind 1 and another player's stand-in as kind 2
+with that player's client. The server keeps the latest package of each actor (up to 4,096) and
+a player target by character; it sends the package to that character's console as kind 1 and
+to the others as kind 2, replays all of them before READY, and holds back one whose target
+player is away until that player joins. `WORLD_SCRIPTS` (player sub-kind 21) is a
 global script a console started after its first READY: op (1 running, 2 stopped, 3 values),
 the script's reference (refid; 1 the player), the script id, a count and `LOCALS` entries. The
 server keeps each script (up to 512, 64 locals each) with the locals of the first console

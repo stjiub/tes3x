@@ -323,6 +323,43 @@ ACTOR_MOVES_MAX = 4096
 NO_CELL = 0xFFFF
 
 
+# An AI package a player's dialogue result or console, or a world script, gave a data-file actor:
+# refid, config type, target kind, the escort or follow cell index (NO_CELL for none), a client,
+# the config's bytes from +4 (destination, or wander range, duration, time and idles), reset,
+# then the target actor's id ending in zero. A console names its own player as AI_TARGET_PLAYER
+# and another's ghost as AI_TARGET_CLIENT. The server keeps the latest package of each actor and a
+# player target by character; it sends AI_TARGET_PLAYER to that character's console and
+# AI_TARGET_CLIENT with its client to the others, and replays every package before READY.
+EVENT_AI_PACKAGE = 40
+AI_PACKAGE = struct.Struct("<IBBHI16sB")
+AI_TRAVEL, AI_WANDER, AI_ESCORT, AI_FOLLOW = 1, 2, 3, 4
+AI_TARGET_NONE, AI_TARGET_PLAYER, AI_TARGET_CLIENT, AI_TARGET_OBJECT = 0, 1, 2, 3
+AI_ID_MAX = 31
+AI_NO_DESTINATION = struct.unpack("<f", struct.pack("<I", 0x7F7FFFFF))[0]  # AIFollow's FLT_MAX
+AI_PACKAGES_MAX = 4096
+
+
+def pack_ai_package(refid, kind, target, cell, client, config, reset, ident=""):
+    return AI_PACKAGE.pack(refid, kind, target, cell, client, config, reset) + zstr(ident)
+
+
+def unpack_ai_package(data):
+    """(refid, kind, target, cell, client, config, reset, id); ValueError if malformed."""
+    if not AI_PACKAGE.size < len(data) <= AI_PACKAGE.size + AI_ID_MAX + 1 or data[-1] \
+            or data.count(0, AI_PACKAGE.size) != 1:
+        raise ValueError("AI package length or id")
+    refid, kind, target, cell, client, config, reset = AI_PACKAGE.unpack_from(data)
+    ident = data[AI_PACKAGE.size:-1].decode("latin-1")
+    if refid < 0x01000000 or kind not in (AI_TRAVEL, AI_WANDER, AI_ESCORT, AI_FOLLOW):
+        raise ValueError("AI package actor or type")
+    if (target != AI_TARGET_NONE) != (kind >= AI_ESCORT) or target > AI_TARGET_OBJECT \
+            or (target == AI_TARGET_OBJECT) != bool(ident) or reset > 1:
+        raise ValueError("AI package target")
+    if kind != AI_WANDER and not finite(*struct.unpack_from("<3f", config)):
+        raise ValueError("AI package destination")
+    return refid, kind, target, cell, client, config, reset, ident
+
+
 # From a client after each WELCOME: its launch token (new each title launch), then the name of the
 # save that launch loaded, or "". A console not running its character's latest checkpoint is sent
 # the checkpoint as CHECKPOINT_NAME and LOAD (to a client: load that file once it has it).

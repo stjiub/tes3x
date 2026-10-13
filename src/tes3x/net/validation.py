@@ -157,6 +157,12 @@ def valid_client_event(kind, data):
         refid, _, cell, x, y, z, heading = p.ACTOR_MOVE.unpack(data)
         return (refid >= 0x01000000 and cell != p.NO_CELL and p.placeable(x, y, z, heading)
                 and abs(heading) <= 3600)
+    if kind == p.EVENT_AI_PACKAGE:
+        try:
+            p.unpack_ai_package(data)
+        except ValueError:
+            return False
+        return True
     if kind in (p.EVENT_REMOVE, p.EVENT_WANT):
         return bool(data) and len(data) == 1 + data[0] * (4 if kind == p.EVENT_REMOVE else 2)
     if kind == p.EVENT_WEATHER:
