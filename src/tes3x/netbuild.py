@@ -29,6 +29,8 @@ def dash_info(name, description, players, maximum):
 
 TICKET_SECONDS = 6 * 3600
 TICKETS = 4096
+MAX_CONNECTIONS = 32
+IDLE_TIMEOUT = 30
 ORIGINS = ("build", "retail", "xbe")
 SERVED_BY_DEFAULT = ("build",)
 
@@ -117,7 +119,7 @@ class Build:
 class BuildServer:
     """The HTTP side: GET /TICKET/manifest, /TICKET/file/PATH and /TICKET/delta/SHA256."""
 
-    def __init__(self, build, bind, port, log=print):
+    def __init__(self, build, bind, port, log=print, max_connections=MAX_CONNECTIONS):
         self.build, self.log = build, log
         self.tickets = {}
         self.lock = threading.Lock()
@@ -136,7 +138,33 @@ class BuildServer:
             def log_message(self, *args):
                 pass
 
-        self.http = http.server.ThreadingHTTPServer((bind, port), Handler)
+        class LimitedHTTPServer(http.server.ThreadingHTTPServer):
+            def __init__(self, address, handler):
+                self.slots = threading.BoundedSemaphore(max_connections)
+                super().__init__(address, handler)
+
+            def get_request(self):
+                request, address = super().get_request()
+                request.settimeout(IDLE_TIMEOUT)
+                return request, address
+
+            def process_request(self, request, address):
+                if not self.slots.acquire(blocking=False):
+                    self.shutdown_request(request)
+                    return
+                try:
+                    super().process_request(request, address)
+                except Exception:
+                    self.slots.release()
+                    raise
+
+            def process_request_thread(self, request, address):
+                try:
+                    super().process_request_thread(request, address)
+                finally:
+                    self.slots.release()
+
+        self.http = LimitedHTTPServer((bind, port), Handler)
         self.http.daemon_threads = True
         self.port = self.http.server_address[1]
         threading.Thread(target=self.http.serve_forever, daemon=True).start()

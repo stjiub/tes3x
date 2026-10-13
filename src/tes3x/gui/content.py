@@ -5,10 +5,10 @@ import sys
 from pathlib import Path
 
 import tomlkit
-from PySide6.QtCore import QProcess
+from PySide6.QtCore import QProcess, Qt
 from PySide6.QtWidgets import (QCheckBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel,
                                QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox,
-                               QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
+                               QSplitter, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from tes3x import manifest
 
@@ -22,27 +22,51 @@ class ContentPage(QWidget):
         self.output_pending = ""
         self.activity_rows = {}
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 8, 12, 4)
+        top = QHBoxLayout()
+        self.status = QLabel()
+        self.status.setMinimumWidth(180)
+        self.status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        top.addWidget(self.status)
+        self.start_button = QPushButton("Start")
+        self.start_button.clicked.connect(self.start)
+        self.stop_button = QPushButton("Stop")
+        self.stop_button.clicked.connect(self.stop)
+        top.addWidget(self.start_button)
+        top.addWidget(self.stop_button)
+        top.addStretch()
+        layout.addLayout(top)
         layout.addWidget(QLabel("Content library"))
         form = QFormLayout()
         self.all_builds = QCheckBox("Always share every completed build")
         self.all_builds.setToolTip("Publishes deploy folders under the configured build root "
-                                   "when the Dash requests the catalog.")
+                                   "while the content server runs.")
         self.bind = QLineEdit("0.0.0.0")
         self.port = QSpinBox()
         self.port.setRange(1, 65535)
         self.port.setValue(26510)
         self.retail = QCheckBox("Serve retail files")
         self.xbe = QCheckBox("Serve whole XBEs")
+        self.with_multiplayer = QCheckBox("Start content server with multiplayer server")
+        self.with_multiplayer.setToolTip("Starts this library when a local multiplayer server "
+                                        "starts. Each server still stops independently.")
         form.addRow("Library", self.all_builds)
+        form.addRow("", self.with_multiplayer)
         form.addRow("Listen address", self.bind)
         form.addRow("Port", self.port)
         form.addRow("Files", self.retail)
         form.addRow("", self.xbe)
         layout.addLayout(form)
+        self.splitter = QSplitter(Qt.Orientation.Vertical)
+        self.splitter.setChildrenCollapsible(False)
+        layout.addWidget(self.splitter, 1)
+        builds_panel = QWidget()
+        builds_layout = QVBoxLayout(builds_panel)
+        builds_layout.setContentsMargins(0, 0, 0, 0)
         self.tree = QTreeWidget()
         self.tree.setHeaderLabels(["Build", "Revision", "Layout", "Source", "Status"])
         self.tree.setRootIsDecorated(False)
-        layout.addWidget(self.tree, 1)
+        builds_layout.addWidget(self.tree, 1)
         buttons = QHBoxLayout()
         self.add_button = QPushButton("Add completed build…")
         self.add_button.clicked.connect(self.add_build)
@@ -50,29 +74,30 @@ class ContentPage(QWidget):
         self.remove_button.clicked.connect(self.remove_build)
         self.refresh_button = QPushButton("Refresh")
         self.refresh_button.clicked.connect(self.refresh)
-        self.start_button = QPushButton("Start content server")
-        self.start_button.clicked.connect(self.start)
-        self.stop_button = QPushButton("Stop")
-        self.stop_button.clicked.connect(self.stop)
-        for button in (self.add_button, self.remove_button, self.refresh_button,
-                       self.start_button, self.stop_button):
+        for button in (self.add_button, self.remove_button, self.refresh_button):
             buttons.addWidget(button)
         buttons.addStretch()
-        layout.addLayout(buttons)
-        self.status = QLabel("Stopped")
-        layout.addWidget(self.status)
-        layout.addWidget(QLabel("Recent install activity"))
+        builds_layout.addLayout(buttons)
+        self.splitter.addWidget(builds_panel)
+        activity_panel = QWidget()
+        activity_layout = QVBoxLayout(activity_panel)
+        activity_layout.setContentsMargins(0, 0, 0, 0)
+        activity_layout.addWidget(QLabel("Recent install activity"))
         self.activity_tree = QTreeWidget()
         self.activity_tree.setHeaderLabels(["Build", "Client", "Stage", "Tickets",
                                             "Progress", "Sent", "File"])
         self.activity_tree.setRootIsDecorated(False)
         self.activity_tree.setMaximumHeight(190)
-        layout.addWidget(self.activity_tree)
+        activity_layout.addWidget(self.activity_tree)
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
         self.log.setMaximumBlockCount(2000)
         self.log.setMaximumHeight(150)
-        layout.addWidget(self.log)
+        activity_layout.addWidget(self.log)
+        self.splitter.addWidget(activity_panel)
+        self.splitter.setStretchFactor(0, 3)
+        self.splitter.setStretchFactor(1, 1)
+        self.splitter.setSizes([450, 180])
         self.load()
         self.all_builds.toggled.connect(self.save)
         self.all_builds.toggled.connect(lambda _checked: self.refresh())
@@ -80,6 +105,8 @@ class ContentPage(QWidget):
         self.port.editingFinished.connect(self.save)
         self.retail.toggled.connect(self.save)
         self.xbe.toggled.connect(self.save)
+        self.with_multiplayer.toggled.connect(self.save)
+        self.set_status("Stopped")
 
     def build_root(self):
         return self.window.local_path("build_root") or self.window.work_dir() / "build"
@@ -94,6 +121,7 @@ class ContentPage(QWidget):
         self.port.setValue(int(saved.get("port", 26510)))
         self.retail.setChecked(bool(saved.get("retail", False)))
         self.xbe.setChecked(bool(saved.get("xbe", False)))
+        self.with_multiplayer.setChecked(bool(saved.get("with_multiplayer", False)))
         self.refresh()
 
     def save(self):
@@ -105,6 +133,7 @@ class ContentPage(QWidget):
                 "all_builds": self.all_builds.isChecked(), "build": [str(p) for p in self.manual],
                 "bind": self.bind.text().strip() or "0.0.0.0", "port": self.port.value(),
                 "retail": self.retail.isChecked(), "xbe": self.xbe.isChecked(),
+                "with_multiplayer": self.with_multiplayer.isChecked(),
             }
             table = document.get("content")
             if table is None:
@@ -196,13 +225,13 @@ class ContentPage(QWidget):
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         process.readyReadStandardOutput.connect(self.read_output)
         process.finished.connect(self.finished)
+        process.errorOccurred.connect(self.process_error)
         self.process = process
         self.output_pending = ""
         self.activity_rows.clear()
         self.activity_tree.clear()
         process.start()
-        self.status.setText("Starting…")
-        self.start_button.setEnabled(False)
+        self.set_status("Starting… copying new builds")
 
     def read_output(self):
         if self.process is not None:
@@ -217,8 +246,8 @@ class ContentPage(QWidget):
                         continue
                 else:
                     self.log.appendPlainText(line)
-            if "content server on " in output:
-                self.status.setText("Running")
+                    if line.startswith("content server on "):
+                        self.set_status("Running")
 
     def show_activity(self, activity):
         key = activity["attempt"]
@@ -245,11 +274,28 @@ class ContentPage(QWidget):
         self.read_output()
         self.log.appendPlainText(f"content server exited ({code})")
         self.process = None
-        self.status.setText("Stopped")
-        self.start_button.setEnabled(True)
+        self.set_status("Stopped")
+
+    def process_error(self, _error):
+        if self.process is not None:
+            self.log.appendPlainText(self.process.errorString())
+            if self.process.error() == QProcess.ProcessError.FailedToStart:
+                self.process = None
+                self.set_status("Stopped")
+
+    def set_status(self, value):
+        color = ("#2e7d32" if value.startswith("Running") else
+                 "#b26a00" if value.startswith(("Starting", "Stopping")) else "#616161")
+        self.status.setText(value)
+        self.status.setStyleSheet(f"background: {color}; color: white; font-weight: bold; "
+                                  "border-radius: 4px; padding: 4px 10px;")
+        self.start_button.setEnabled(self.process is None)
+        self.stop_button.setEnabled(self.process is not None)
+        self.window.update_server_status()
 
     def stop(self):
         if self.process is not None:
+            self.set_status("Stopping…")
             self.process.kill()
 
     def shutdown(self):

@@ -1396,6 +1396,34 @@ order = 10
             encoding="utf-8"))
         self.assertEqual(world["max_players"], 4)
 
+    def test_server_status_and_content_autostart(self):
+        config = self.root / "local.toml"
+        config.write_text("[paths]\n", encoding="utf-8")
+        window = self.window(config=config)
+        content = window.content_page
+        server = window.server_page
+        self.assertEqual(window.content_state_label.text(), "Content: Stopped")
+        self.assertEqual(window.multiplayer_state_label.text(), "Multiplayer: Stopped")
+        window.workspace_bar.setCurrentIndex(3)
+        window.show()
+        QApplication.processEvents()
+        self.assertEqual(content.splitter.orientation(), Qt.Orientation.Vertical)
+        self.assertGreater(content.tree.height(), 150)
+        content.with_multiplayer.setChecked(True)
+        self.assertTrue(tomllib.loads(config.read_text(encoding="utf-8"))["content"]
+                        ["with_multiplayer"])
+        content.set_status("Starting… copying new builds")
+        self.assertIn("Starting", window.content_state_label.text())
+        server.process = MagicMock()
+        server.content_autostart_pending = True
+        server.set_status("Starting…")
+        with patch.object(content, "start") as start:
+            server.server_started()
+            server.server_started()
+        self.assertEqual(start.call_count, 1)
+        self.assertEqual(window.multiplayer_state_label.text(), "Multiplayer: Running")
+        server.process = None
+
     def test_server_page_keeps_settings_and_characters_per_world(self):
         import json
         old = self.root / "old-world"

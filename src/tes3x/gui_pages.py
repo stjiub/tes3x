@@ -1370,6 +1370,7 @@ class ServerPage(QWidget):
         self.process = None
         self.admin = None
         self.stopping = False
+        self.content_autostart_pending = False
         self.remote = None  # the command queue of a connected remote server
         self.remote_pending = set()
         self.remote_answer.connect(self.remote_answered)
@@ -1929,7 +1930,9 @@ class ServerPage(QWidget):
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         process.readyReadStandardOutput.connect(self.read_output)
         process.finished.connect(self.finished)
+        process.errorOccurred.connect(self.process_error)
         self.process, self.stopping = process, False
+        self.content_autostart_pending = self.window.content_page.with_multiplayer.isChecked()
         self.admin_port = values.get("admin_port", tes3x_net.ADMIN_PORT)
         self.admin = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.admin.bind(("127.0.0.1", 0))
@@ -1937,7 +1940,7 @@ class ServerPage(QWidget):
         self.log.appendPlainText(f"$ tes3x net {' '.join(server_arguments(values))}")
         process.start()
         self.poll.start()
-        self.set_status("Running")
+        self.set_status("Starting…")
         self.update_buttons()
 
     def stop(self):
@@ -1946,6 +1949,7 @@ class ServerPage(QWidget):
         if not self.stopping:
             # A clean stop asks every console to save its character first.
             self.stopping = True
+            self.content_autostart_pending = False
             self.send_admin("stop")
             self.set_status("Stopping: waiting for consoles to save…")
             QTimer.singleShot(90_000, self.kill)
@@ -1963,8 +1967,25 @@ class ServerPage(QWidget):
         text = bytes(self.process.readAllStandardOutput()).decode("utf-8", "replace")
         for line in text.splitlines():
             self.log.appendPlainText(line)
+            if line.startswith("serving on "):
+                self.server_started()
+
+    def process_error(self, _error):
+        if self.process is not None:
+            self.log.appendPlainText(self.process.errorString())
+            if self.process.error() == QProcess.ProcessError.FailedToStart:
+                self.finished(-1, None)
+
+    def server_started(self):
+        if self.process is not None and self.status.text().startswith("Starting"):
+            self.set_status("Running")
+        if self.content_autostart_pending:
+            self.content_autostart_pending = False
+            if self.window.content_page.with_multiplayer.isChecked():
+                self.window.content_page.start()
 
     def finished(self, code, _status):
+        self.content_autostart_pending = False
         self.read_output()
         self.log.appendPlainText(f"server exited ({code})")
         self.process = None
@@ -1977,7 +1998,8 @@ class ServerPage(QWidget):
         self.show_characters()
 
     STATUS_COLORS = (("Running", "#2e7d32"), ("Connected", "#2e7d32"),
-                     ("Stopping", "#b26a00"), ("Connecting", "#b26a00"),
+                     ("Starting", "#b26a00"), ("Stopping", "#b26a00"),
+                     ("Connecting", "#b26a00"),
                      ("Stopped", "#616161"), ("Not connected", "#616161"))
 
     def set_status(self, text):
@@ -1985,6 +2007,7 @@ class ServerPage(QWidget):
         self.status.setText(text)
         self.status.setStyleSheet(f"background: {color}; color: white; font-weight: bold; "
                                   "border-radius: 4px; padding: 4px 10px;")
+        self.window.update_server_status()
 
     def mode_changed(self, *_args):
         remote = self.mode.currentData() == "remote"
@@ -2064,6 +2087,7 @@ class ServerPage(QWidget):
 
     def admin_reply(self, reply):
         if reply.startswith("client ") or reply == "no clients":
+            self.server_started()
             self.show_clients(parse_clients(reply))
         else:
             self.log.appendPlainText(f"admin: {reply}")

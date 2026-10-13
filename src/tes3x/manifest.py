@@ -86,7 +86,7 @@ def file_entries(root, retail=None):
 
 
 def create(root, *, profile, source, plugins=(), ini=(), xbe=(), save_pool=None,
-           install_layout="full", retail=None, files=None, folder=None):
+           install_layout="full", retail=None, files=None, folder=None, sources=None):
     """The manifest for a staged tree, or with `files` given, for those entries. `folder` is the
     install folder's name, where the Dash puts the build."""
     manifest = {
@@ -103,6 +103,8 @@ def create(root, *, profile, source, plugins=(), ini=(), xbe=(), save_pool=None,
     }
     if folder:
         manifest["folder"] = folder
+    if sources is not None:
+        manifest["sources"] = list(sources)
     # first, so the game finds it in the file's head
     return {"format": FORMAT, "build": build_id(manifest), **manifest}
 

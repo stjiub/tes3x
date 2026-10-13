@@ -1,5 +1,7 @@
+import contextlib
 import http.client
 import hashlib
+import io
 import json
 import tempfile
 import time
@@ -27,7 +29,8 @@ class ContentTests(unittest.TestCase):
         (self.deploy.parent / "deltas" / f"{delta_hash}.zst").write_bytes(delta)
         self.xbe = [{"delta": {"sha256": delta_hash, "size": len(delta)}}]
         manifest.write(self.deploy, manifest.create(
-            self.deploy, profile="Sample", source={}, folder="Sample", xbe=self.xbe))
+            self.deploy, profile="Sample", source={}, folder="Sample", xbe=self.xbe,
+            sources=[{"kind": "profile", "name": "Sample", "version": "v1"}]))
         self.library = content.Library(self.root / "state", self.root / "build", [], True,
                                        ("build",))
         self.server = content.ContentServer(self.library, "127.0.0.1", 0, log=lambda _: None)
@@ -67,6 +70,8 @@ class ContentTests(unittest.TestCase):
         key, catalog = self.signed(body)
         entry = catalog["entries"][0]
         self.assertEqual((entry["id"], entry["name"]), ("sample", "Sample"))
+        self.assertEqual(entry["sources"],
+                         [{"kind": "profile", "name": "Sample", "version": "v1"}])
         status, ticket, _ = self.ticket(build=entry["build"], revision=entry["revision"])
         self.assertEqual(status, 200)
         self.assertEqual(self.signed(self.request("/v1/catalog")[1])[0], key)
@@ -135,17 +140,45 @@ class ContentTests(unittest.TestCase):
     def test_same_build_id_can_have_two_manifest_revisions(self):
         first = self.signed(self.request("/v1/catalog")[1])[1]["entries"][0]
         manifest.write(self.deploy, manifest.create(
-            self.deploy, profile="Renamed", source={}, folder="Sample", xbe=self.xbe))
+            self.deploy, profile="Sample", source={}, folder="Sample", xbe=self.xbe,
+            sources=[{"kind": "profile", "name": "Sample", "version": "v2"}]))
         self.library.refresh()
         offered = self.signed(self.request("/v1/catalog")[1])[1]["entries"]
         self.assertEqual(len(offered), 2)
         self.assertEqual(offered[0]["build"], first["build"])
         self.assertNotEqual(offered[0]["revision"], first["revision"])
+        self.assertEqual(offered[0]["sources"][0]["version"], "v2")
         status, ticket, _ = self.ticket(build=first["build"], revision=first["revision"],
                                         latest=0)
         self.assertEqual(status, 200)
         status, body = self.request(f"/{ticket['token']}/manifest")
-        self.assertEqual((status, json.loads(body)["profile"]), (200, "Sample"))
+        self.assertEqual((status, json.loads(body)["sources"][0]["version"]), (200, "v1"))
+
+    def test_legacy_revision_has_no_sources(self):
+        manifest.write(self.deploy, manifest.create(
+            self.deploy, profile="Sample", source={}, folder="Sample", xbe=self.xbe))
+        self.library.refresh()
+        self.library = content.Library(self.root / "state", self.root / "build", [], True,
+                                       ("build",))
+        self.server.library = self.library
+        offered = self.signed(self.request("/v1/catalog")[1])[1]["entries"]
+        self.assertEqual(offered[0]["sources"], [])
+
+    def test_invalid_source_metadata_is_not_published(self):
+        manifest.write(self.deploy, manifest.create(
+            self.deploy, profile="Sample", source={}, folder="Sample", xbe=self.xbe,
+            sources=[{"kind": "profile", "name": "Sample", "version": ""}]))
+        with self.assertRaisesRegex(ValueError, "revision source"):
+            self.library.refresh()
+
+    def test_key_command_reports_existing_public_identity(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            content.main(["key", "--state", str(self.root / "state")])
+        public = content.public_key(self.library.key)
+        self.assertEqual(output.getvalue().splitlines(),
+                         [f"public key {public.hex()}",
+                          f"fingerprint {hashlib.sha256(public).hexdigest()[:16]}"])
 
     def test_activity_requires_ticket_and_keeps_terminal_result(self):
         private = Ed25519PrivateKey.generate()

@@ -5,6 +5,7 @@ from pathlib import Path
 import socket
 import struct
 import tempfile
+import time
 import unittest
 
 from tes3x import manifest, netbuild
@@ -70,6 +71,38 @@ class BuildDownloadTests(unittest.TestCase):
         response = self.request('bytes=1-')
         self.assertEqual(response.status, 404)
         response.read()
+
+    def test_idle_clients_cannot_open_unbounded_connections(self):
+        limited = netbuild.BuildServer(self.server.build, '127.0.0.1', 0,
+                                       log=self.logs.append, max_connections=1)
+        self.addCleanup(limited.close)
+        first = socket.create_connection(('127.0.0.1', limited.port), timeout=2)
+        self.addCleanup(first.close)
+        first.sendall(b'GET /')
+        deadline = time.monotonic() + 2
+        while limited.http.slots.acquire(blocking=False):
+            limited.http.slots.release()
+            if time.monotonic() >= deadline:
+                self.fail('idle connection did not occupy the server slot')
+            time.sleep(0.01)
+        with socket.create_connection(('127.0.0.1', limited.port), timeout=2) as extra:
+            extra.sendall(b'GET / HTTP/1.1\r\nHost: localhost\r\n\r\n')
+            try:
+                response = extra.recv(1)
+            except ConnectionResetError:
+                response = b''
+            self.assertEqual(response, b'')
+        first.close()
+        deadline = time.monotonic() + 2
+        while not limited.http.slots.acquire(blocking=False):
+            if time.monotonic() >= deadline:
+                self.fail('closed connection did not release the server slot')
+            time.sleep(0.01)
+        limited.http.slots.release()
+        conn = http.client.HTTPConnection('127.0.0.1', limited.port, timeout=2)
+        self.addCleanup(conn.close)
+        conn.request('GET', '/invalid/manifest')
+        self.assertEqual(conn.getresponse().status, 403)
 
     def test_overlay_advertises_separate_retail_dependency(self):
         root = Path(self.temp.name)

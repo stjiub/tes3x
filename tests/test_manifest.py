@@ -39,8 +39,10 @@ class ManifestTests(unittest.TestCase):
         made = manifest.create(None, profile="p", source={}, plugins=["mod.esp"], files=files)
         self.assertEqual(list(made)[:2], ["format", "build"])
         again = manifest.create(None, profile="q", source={"kind": "tree"}, plugins=["mod.esp"],
+                                sources=[{"kind": "profile", "name": "q", "version": "v2"}],
                                 files=files)
         self.assertEqual(again["build"], made["build"])
+        self.assertEqual(again["sources"][0]["version"], "v2")
         installed = {"server": "10.0.0.7", "deployed": "2026-10-06", **made}
         self.assertEqual(manifest.build_id(installed), made["build"])
         self.assertNotEqual(manifest.create(None, profile="p", source={}, plugins=[],

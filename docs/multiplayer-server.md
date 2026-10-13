@@ -27,6 +27,9 @@ times out. The admin command `status` prints the clock, weather and each client'
 inbound UDP on port 26500 for the Python process running the server. Without `--world`,
 the session is temporary and its state is lost when the server stops.
 
+In the GUI, the **Content** tab can start its library automatically with a local multiplayer
+server. The bottom status bar shows the multiplayer and content server states from every tab.
+
 The first client to join sets the session's load order and its game clock. Useful options:
 
 | Option | Does |

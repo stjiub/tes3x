@@ -23,6 +23,7 @@ MAX_ENTRIES = 64
 MAX_CATALOG = 64 * 1024
 MAX_ACTIVITY = 128
 MAX_BINDINGS = 4096
+MAX_SOURCES = 16
 ACTIVITY_IDLE = 90
 STAGES = {"planning", "retail", "downloading", "verifying", "rebuilding",
           "copying", "retrying", "complete", "failed", "cancelled"}
@@ -62,6 +63,21 @@ def safe_relative(name):
     return (name and "\\" not in name and ":" not in name and not path.is_absolute()
             and all(part not in ("", ".", "..") and len(part) <= 42
                     for part in name.split("/")))
+
+
+def revision_sources(value):
+    if value is None:
+        return []
+    if not isinstance(value, list) or len(value) > MAX_SOURCES:
+        raise ValueError("invalid revision sources")
+    for row in value:
+        if (not isinstance(row, dict) or row.get("kind") not in ("profile", "pack")
+                or not isinstance(row.get("name"), str)
+                or not 1 <= len(row["name"]) <= 191
+                or not isinstance(row.get("version"), str)
+                or not 1 <= len(row["version"]) <= 64):
+            raise ValueError("invalid revision source")
+    return [{key: row[key] for key in ("kind", "name", "version")} for row in value]
 
 
 class Library:
@@ -112,6 +128,7 @@ class Library:
                         or not isinstance(row.get("size"), int)
                         or not 0 < row["size"] <= 16 << 20):
                     raise ValueError("invalid content publication revision")
+                row["sources"] = revision_sources(row.get("sources"))
         return history
 
     def save_index(self):
@@ -165,6 +182,7 @@ class Library:
         if (not re.fullmatch(r"[0-9a-f]{64}", build_id)
                 or build_id != manifest.build_id(parsed)):
             raise ValueError(f"{source} has an invalid build ID")
+        sources = revision_sources(parsed.get("sources"))
         manifest_digest = hashlib.sha256(data).hexdigest()
         revision = self.state / "revisions" / manifest_digest
         if not revision.is_dir():
@@ -227,6 +245,7 @@ class Library:
                             "description": rows[-1]["description"] if rows else "",
                             "build": build_id, "revision": manifest_digest,
                             "layout": parsed.get("install_layout", "full"),
+                            "sources": sources,
                             "bytes": sum(item["size"] for item in parsed["files"].values()),
                             "sha256": build.sha256.hex(), "size": len(build.data),
                             "listed": True}
@@ -515,6 +534,8 @@ def main(argv=None):
     serve.add_argument("--serve-origin", action="append", choices=netbuild.ORIGINS)
     listing = sub.add_parser("list", help="list stored content publications")
     listing.add_argument("--state", type=Path, default=Path("content-state"))
+    key_command = sub.add_parser("key", help="print the existing content service's public key")
+    key_command.add_argument("--state", type=Path, default=Path("content-state"))
     edit = sub.add_parser("set", help="edit a published entry's display metadata")
     edit.add_argument("entry")
     edit.add_argument("--state", type=Path, default=Path("content-state"))
@@ -526,6 +547,19 @@ def main(argv=None):
         change.add_argument("revision")
         change.add_argument("--state", type=Path, default=Path("content-state"))
     args = parser.parse_args(argv)
+    if args.command == "key":
+        try:
+            path = args.state / "content.key"
+            with path.open("rb") as stream:
+                key = serialization.load_pem_private_key(stream.read(), password=None)
+            if not isinstance(key, ed25519.Ed25519PrivateKey):
+                raise ValueError("content identity is not an Ed25519 key")
+        except (OSError, ValueError) as error:
+            parser.error(str(error))
+        public = public_key(key)
+        print(f"public key {public.hex()}")
+        print(f"fingerprint {hashlib.sha256(public).hexdigest()[:16]}")
+        return
     if args.command != "serve":
         try:
             library = Library(args.state, args.state, [], False, netbuild.SERVED_BY_DEFAULT)

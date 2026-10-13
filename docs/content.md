@@ -9,8 +9,14 @@ launched normally. Multiplayer servers and content servers have separate saved a
 Open **Content** in the GUI. Turn on **Always share every completed build** to publish every
 `deploy` folder under the configured `paths.build_root` (normally `build`). New builds appear
 after the server's next library scan. You can also use **Add completed build** to publish a
-particular deploy folder. The list shows each build's revision and source folder. Press **Start
-content server** to host it independently of the multiplayer server.
+particular deploy folder. The list shows each build's revision and source folder. Drag the divider
+below the build list to give builds or recent activity more space. Use **Start** at the top of
+Content to host it independently of the multiplayer server. The status shows **Starting** while
+new build revisions are copied, then **Running** when the server is ready.
+
+Turn on **Start content server with multiplayer server** to start the local content server when
+the GUI starts a local multiplayer server. The two servers stop independently. The GUI's bottom
+status bar shows both server states on every tab, including when one has stopped unexpectedly.
 
 Only completed pipeline outputs are published. Publishing copies a revision to the content
 server's state folder so that an active download keeps reading the same files after a profile is
@@ -20,13 +26,20 @@ build from the source list stops advertising it, while old snapshots remain for 
 Each rebuilt profile adds a selectable revision to `content-state/publications.json`. The Dash
 lists the newest revision first, with the build and manifest revision prefixes beneath its name.
 The signed ticket names the exact listed revision, so a later rebuild does not change an older
-selection. Up to 64 listed revisions can appear in one catalog.
+selection. A new pipeline build records its source profile and profile-file hash in the manifest
+and signed catalog. This source record is part of the revision ID; it does not change the
+game-content build ID. Older builds without a source record remain available. Up to 64 listed
+revisions can appear in one catalog.
 
 The server listens on TCP port 26510 by default. Configure its listen address and port in the
 GUI, and allow that TCP port through the host firewall for consoles that need it. **Serve retail
 files** and **Serve whole XBEs** are separate choices and are off by default. The server always
-serves build-origin files and XBE deltas. Retail files are offered to anyone who can reach this
-content server when retail serving is enabled, so choose a network appropriate for your library.
+serves build-origin files and XBE deltas. At present, anyone who can reach the port can browse
+the catalog and download offered files; there is no content password or client allowlist. The
+Dash uses plain HTTP for this service. Keep the port on a trusted LAN or private network, and do
+not forward it directly to the public Internet. This applies especially when retail serving is
+enabled. The transfer host accepts at most 32 simultaneous connections and closes idle
+connections after 30 seconds; this does not provide access control or encrypted transport.
 
 The same service can be started without the GUI:
 
@@ -48,11 +61,15 @@ tes3x content list --state content-state
 tes3x content set my-profile --name "My profile" --description "Optional library note" --state content-state
 tes3x content withdraw my-profile REVISION --state content-state
 tes3x content restore my-profile REVISION --state content-state
+tes3x content key --state content-state
 ```
 
 Withdrawal removes one revision from the catalog and blocks new tickets for it. Tickets already
 issued can finish. A later scan does not relist a withdrawn revision. Published snapshots stay on
 disk, including withdrawn ones, so they can be restored; there is no automatic deletion.
+`key` prints the existing service's full public signing key and short fingerprint without
+creating a new identity. Keep `content.key` private; another host can use the public key to
+identify this content source when remote multiplayer downloads are supported.
 
 The GUI's **Recent install activity** list shows the build, console address, reported stage,
 ticket count, progress, bytes sent by the server, and the current file. A completed row means

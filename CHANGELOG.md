@@ -34,6 +34,17 @@ No official releases yet. The first public release is in preparation.
   edit entry names and descriptions, withdraw revisions, and restore them. Update the Dash and
   server together; tickets now identify the selected manifest revision. See
   [content servers](docs/content.md).
+- The GUI's Content tab now gives the build list a resizable area, puts server controls and status
+  at the top, and can start content hosting with a local multiplayer server. Both server states
+  remain visible in the bottom status bar. See [content servers](docs/content.md).
+- New pipeline builds record their source profile and file hash in the build manifest and signed
+  content catalog. Publishing one creates a new revision even if its game files match an older
+  build; the game-content build ID stays the same. See [content servers](docs/content.md).
+- Content and legacy multiplayer downloads now cap simultaneous HTTP connections at 32 and close
+  idle connections after 30 seconds. Extra connection attempts must retry. See
+  [content servers](docs/content.md).
+- `tes3x content key` prints an existing content service's public signing key and fingerprint
+  for configuring a remote source. See [content servers](docs/content.md).
 
 - `tes3x game-tests` runs every game test against the retail engines named in the local
   config's new `[engines]` table, several at once, and prints what passed and failed. See
@@ -51,15 +62,15 @@ No official releases yet. The first public release is in preparation.
 - A payload built by an earlier TES3X is refused by `tes3x patch`; build it again.
 - xemu disc additions and direct-engine boot break staging hardlinks before replacing files,
   preserving the source game folder when runs share a deploy tree.
+- Follow, escort, travel and wander orders from conversations and quest scripts are shared in
+  multiplayer: a companion keeps following the player who hired them in every player's game and
+  after a server restart. Update the server and install the build again. See
+  [saving and character state](docs/multiplayer-client.md#saving-and-character-state).
 - Quest scripts and the characters they move are shared in multiplayer: a script a conversation
   or quest starts is kept by the server with its progress and carries on in another player's
   game when you leave or after a restart, and a character moved by a script or a conversation
   is in the same place for every player, including players who join later. Update the server and
   install the build again. See
-  [saving and character state](docs/multiplayer-client.md#saving-and-character-state).
-- Follow, escort, travel and wander orders from conversations and quest scripts are shared in
-  multiplayer: a companion keeps following the player who hired them in every player's game and
-  after a server restart. Update the server and install the build again. See
   [saving and character state](docs/multiplayer-client.md#saving-and-character-state).
 - The journal is shared in multiplayer: a quest one player moves on gives the other players the
   same entry, and the server keeps it in the world, so characters who join later or are new get

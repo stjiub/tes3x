@@ -145,6 +145,8 @@ and the rest of the retail game folder are assembled into `<build_root>/<profile
 With a title set, dashboard metadata is written too. The game folder carries its
 [build manifest](deployment.md#build-manifest), `tes3xbuild.json`; the build folder also holds
 `.tes3x-pipeline.json`, a record of what was built from what.
+The manifest records the source profile's name and file hash. Content libraries include that
+record in each published revision.
 
 The pipeline only overwrites an empty folder or one it built before (`existing output is not owned
 by tes3x_pipeline` otherwise). A build is assembled beside the output and moved into place when it

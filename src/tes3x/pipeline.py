@@ -1263,6 +1263,8 @@ def main(argv=None):
             staged, profile=profile_name, install_layout=install_layout,
             source={"kind": "pipeline", "tes3x": record["tes3x"],
                     "profile_sha256": record["profile_sha256"]},
+            sources=[{"kind": "profile", "name": profile_name,
+                      "version": record["profile_sha256"]}],
             plugins=[plugin["name"] for plugin in plugins], ini=ini_items,
             xbe=recipes,
             save_pool=record.get("save_pool"), retail=vanilla,
