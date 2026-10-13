@@ -60,6 +60,8 @@ static void event_handle(const struct event *e)
         objects_event(e);
     } else if (e->kind == EVENT_LOCALS) {
         locals_event(e);
+    } else if (e->kind == EVENT_ACTOR_MOVE) {
+        moves_event(e);
     } else if (e->kind == EVENT_SPAWN) {
         spawn_event(e);
     } else if (e->kind == EVENT_CONTENTS) {

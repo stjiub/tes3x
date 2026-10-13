@@ -399,6 +399,14 @@
       "pc_va": "0x0040E920"
     },
     {
+      "va": "0x0008C820",
+      "name": "WorldController::removeGlobalScript",
+      "confidence": "matched",
+      "provenance": "StopScript opcode at 0x0013EA71; removes the +0x314 entry whose script matches and frees it",
+      "pc_va": "0x0040FB00",
+      "signature": "void __thiscall removeGlobalScript(TES3::Script* script)"
+    },
+    {
       "va": "0x0008C8B0",
       "name": "WorldController::isGlobalScriptRunning",
       "kind": "function",
@@ -412,7 +420,8 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_WorldController_processGlobalScripts",
-      "pc_va": "0x0040FBE0"
+      "pc_va": "0x0040FBE0",
+      "note": "skipped while the toggles' 0x400000 bit is set; its single Script::execute call (0x0008C94D) is hooked by multiplayer to know which global script is running"
     },
     {
       "va": "0x0008C970",
@@ -461,6 +470,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_WorldController_CreateFilters",
       "pc_va": "0x00411400"
+    },
+    {
+      "va": "0x0008E6E0",
+      "name": "WorldController::addGlobalScript",
+      "confidence": "matched",
+      "provenance": "StartScript opcode at 0x0013EA5A; allocates an 8-byte GlobalScript {reference, script}, appends to +0x314 unless isGlobalScriptRunning",
+      "pc_va": "0x0040FA80",
+      "signature": "void __thiscall addGlobalScript(TES3::Script* script, TES3::Reference* reference)"
     },
     {
       "va": "0x0008E730",
@@ -3340,6 +3357,15 @@
       "provenance": "find_mcp154_reload; mcp-154 SCDT allocation"
     },
     {
+      "va": "0x00138AA0",
+      "name": "relocateReference",
+      "confidence": "matched",
+      "provenance": "calls the seven callees of PC 0x0050EDD0 (isCellInMemory, addReference, addMob, removeMob, getOrCreateActivatorsNode, getLeveledBaseReference, setFootPoint); MWSE TES3_game_relocateReference",
+      "note": "Position and PositionCell (0x0013DB7B, 0x0013DCAD, reference from 0x003D36D4, rotation from 0x003D3734) and PlaceItemCell (0x00141255, a new reference) call it. It multiplies the rotation by pi/180 as the PC's does, yet PositionCell passes radians (131.8 in a script arrives as 2.30). Multiplayer hooks all three for ACTOR_MOVE",
+      "pc_va": "0x0050EDD0",
+      "signature": "void __cdecl relocateReference(TES3::Reference* reference, TES3::Cell* cell, NI::Point3* position, float rotation)"
+    },
+    {
       "va": "0x00138C17",
       "name": "PlaceItem.addReference",
       "kind": "site",
@@ -3433,6 +3459,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_Script_executeScriptOpCode",
       "pc_va": "0x00505770"
+    },
+    {
+      "va": "0x00148A70",
+      "name": "Script::execute",
+      "confidence": "matched",
+      "provenance": "processGlobalScripts calls it per GlobalScript with ecx = script and (reference or 0, 0, 0, 0); the local-variable range errors",
+      "pc_va": "0x005028A0",
+      "signature": "void __thiscall execute(TES3::Reference* reference, TES3::ScriptVariables* variables, TES3::DialogueInfo* info, TES3::Reference* reference2)"
     },
     {
       "va": "0x0014B102",

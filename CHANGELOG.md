@@ -4,6 +4,12 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- Quest scripts and the characters they move are shared in multiplayer: a script a conversation
+  or quest starts is kept by the server with its progress and carries on in another player's
+  game when you leave or after a restart, and a character moved by a script or a conversation
+  is in the same place for every player, including players who join later. Update the server and
+  install the build again. See
+  [saving and character state](docs/multiplayer-client.md#saving-and-character-state).
 - The journal is shared in multiplayer: a quest one player moves on gives the other players the
   same entry, and the server keeps it in the world, so characters who join later or are new get
   it too. Joining no longer shows a "journal updated" message for each restored entry. Update the

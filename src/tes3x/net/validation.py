@@ -84,6 +84,12 @@ def player(data):
             return False
     if kind in (p.PLAYER_IDENTITY, p.PLAYER_WORN):
         return multipart(data, 1) and (kind == p.PLAYER_WORN or len(data) > 3)
+    if kind == p.WORLD_SCRIPTS:
+        try:
+            p.unpack_world_script(data)
+            return True
+        except ValueError:
+            return False
     if kind == p.PLAYER_EFFECTS:
         if len(data) < 5:
             return False
@@ -145,6 +151,12 @@ def valid_client_event(kind, data):
             return bool(p.unpack_locals(data))
         except ValueError:
             return False
+    if kind == p.EVENT_ACTOR_MOVE:
+        if len(data) != p.ACTOR_MOVE.size:
+            return False
+        refid, _, cell, x, y, z, heading = p.ACTOR_MOVE.unpack(data)
+        return (refid >= 0x01000000 and cell != p.NO_CELL and p.placeable(x, y, z, heading)
+                and abs(heading) <= 3600)
     if kind in (p.EVENT_REMOVE, p.EVENT_WANT):
         return bool(data) and len(data) == 1 + data[0] * (4 if kind == p.EVENT_REMOVE else 2)
     if kind == p.EVENT_WEATHER:

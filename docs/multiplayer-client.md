@@ -84,7 +84,13 @@ across server restarts and set again when the area loads.
 People and creatures keep where they were and how hurt they were. When you enter an area no
 other player is in, or join after a server restart, they stand where they were last seen rather
 than where the game starts them; their AI begins its current task again from there. The dead
-stay dead.
+stay dead. When a script or a conversation moves someone to another place, every player sees
+them there, including players who join later.
+
+Quest scripts that keep running belong to the world too. When a conversation or a quest starts
+one (a timer that counts days, a script waiting to move someone once you leave), the server
+keeps it with its progress; if you leave or the server restarts, another player's game, or
+yours on your next join, carries it on from where it was.
 
 **Save to Server** flushes every supported character field and your current place. The server
 confirms the save after writing the character and world. **Leave** waits for that confirmation
@@ -115,7 +121,9 @@ back at the marker on its next join.
   with time stopped while offline. At most 64 active effect entries are retained. Consumed
   potions include their adjusted source definition. Custom spell and enchantment definitions
   are not recreated; a source must exist in the build, and a missing caster cannot be resolved.
-  Ghost caster ids belong to the current session. Local variables of objects made during play
+  Ghost caster ids belong to the current session. A quest script that a player leaves running
+  carries on in another player's game, so anything it gives or shows goes to that player.
+  Local variables of objects made during play
   are not kept, and decimal ones (mostly timers) are compared only every 10 seconds. Restoring
   a journal only moves a quest forward, never back, and keeps each quest's latest 32 entries.
   The world keeps up to 4,096 learned topic names of at most 63 bytes each, 4,096 quests, up to 512

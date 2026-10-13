@@ -312,6 +312,17 @@ ACTOR_PLACES_PER_EVENT = (EVENT_DATA - 4) // ACTOR_PLACE.size
 ACTORS_KEPT_MAX = 8192
 
 
+# An actor a script moved to another cell, or that a player's dialogue result moved: refid, the
+# cell index it left (the server keeps the first, where the data files put it), the cell index it
+# is in, position and the rotation relocateReference was given (Position and PositionCell pass
+# radians). The server keeps the latest per actor, relays it and replays it after WELCOME; each
+# console moves the actor once it finds it.
+EVENT_ACTOR_MOVE = 39
+ACTOR_MOVE = struct.Struct("<IHH4f")
+ACTOR_MOVES_MAX = 4096
+NO_CELL = 0xFFFF
+
+
 # From a client after each WELCOME: its launch token (new each title launch), then the name of the
 # save that launch loaded, or "". A console not running its character's latest checkpoint is sent
 # the checkpoint as CHECKPOINT_NAME and LOAD (to a client: load that file once it has it).
@@ -377,6 +388,19 @@ PLAYER_GLOBALS_MAX = 128
 # each, relays it to the other players and replays them all before READY and in the character file.
 WORLD_GLOBALS = 20
 WORLD_GLOBALS_MAX = 1024
+
+
+# The world's scripts: global scripts a console started after its first READY of a launch (a
+# dialogue result, a quest script), not the data files' start scripts. Op, the script's reference
+# (refid; 0 none, WORLD_SCRIPT_PLAYER the runner's own player), the script id ending in zero,
+# count, then LOCAL entries. To the server: SCRIPT_RUNNING, SCRIPT_STOPPED, or SCRIPT_VALUES with
+# the locals that changed. From it: SCRIPT_VALUES, then SCRIPT_RUNNING: run it with those locals.
+WORLD_SCRIPTS = 21
+SCRIPT_RUNNING, SCRIPT_STOPPED, SCRIPT_VALUES = 1, 2, 3
+WORLD_SCRIPT_PLAYER = 1
+WORLD_SCRIPTS_MAX = 512
+SCRIPT_VALUES_MAX = 64
+SCRIPT_ID_MAX = 31
 
 
 PLAYER_BOUNTY = 12  # from the server: the character's last streamed crime bounty, i32
@@ -823,6 +847,35 @@ def unpack_locals(data):
     if len(values) != data[4] or any(slot >> 14 > LOCAL_FLOAT for slot in values):
         raise ValueError("bad local slot")
     return struct.unpack_from("<I", data)[0], values
+
+
+def pack_world_script(op, refid, name, values=None):
+    """WORLD_SCRIPTS events: one with no values, or as many as {slot: raw value} needs."""
+    raw = name.encode("latin-1")
+    if not raw or len(raw) > SCRIPT_ID_MAX or any(c < 32 or c in (34, 127) for c in raw):
+        raise ValueError(f"bad script id {name!r}")
+    head = struct.pack("<BBI", WORLD_SCRIPTS, op, refid) + raw + b"\0"
+    per = (EVENT_DATA - len(head) - 1) // LOCAL.size
+    items = sorted((values or {}).items())
+    return [head + bytes([len(chunk)]) + b"".join(LOCAL.pack(*v) for v in chunk)
+            for chunk in ([items[i:i + per] for i in range(0, len(items), per)] or [[]])]
+
+
+def unpack_world_script(data):
+    """(op, refid, script id, {slot: raw value}) of a WORLD_SCRIPTS event; ValueError if
+    malformed."""
+    if len(data) < 8 or data[0] != WORLD_SCRIPTS or data[1] not in (
+            SCRIPT_RUNNING, SCRIPT_STOPPED, SCRIPT_VALUES):
+        raise ValueError("not a world script event")
+    end = data.find(b"\0", 6)
+    raw = bytes(data[6:end]) if end > 6 else b""
+    if (not raw or len(raw) > SCRIPT_ID_MAX or any(c < 32 or c in (34, 127) for c in raw)
+            or end + 2 > len(data) or len(data) != end + 2 + data[end + 1] * LOCAL.size):
+        raise ValueError("bad world script event")
+    values = dict(LOCAL.iter_unpack(data[end + 2:]))
+    if len(values) != data[end + 1] or any(slot >> 14 > LOCAL_FLOAT for slot in values):
+        raise ValueError("bad world script local")
+    return data[1], struct.unpack_from("<I", data, 2)[0], raw.decode("latin-1"), values
 
 
 def describe_local(slot, value):

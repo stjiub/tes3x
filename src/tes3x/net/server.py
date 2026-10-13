@@ -49,6 +49,9 @@ from .proto import (ACTOR, ACTORS, ACTORS_PER_PACKET, ACTOR_DEAD, ACTOR_IN_COMBA
                     PLAYER_EFFECT_BYTES, PLAYER_FACTIONS, PLAYER_GLOBALS, PLAYER_GLOBALS_MAX, WORLD_GLOBALS, WORLD_GLOBALS_MAX, FACTIONS_MAX,
                     EVENT_LOCALS, LOCALS_MAX, EVENT_ACTOR_PLACE, ACTOR_PLACE,
                     ACTOR_PLACES_PER_EVENT, ACTORS_KEPT_MAX, describe_local, pack_locals, unpack_locals, FACTION_ALL, FACTION_EXPELLED,
+                    EVENT_ACTOR_MOVE, ACTOR_MOVE, ACTOR_MOVES_MAX, WORLD_SCRIPTS, SCRIPT_RUNNING,
+                    SCRIPT_STOPPED, SCRIPT_VALUES, WORLD_SCRIPTS_MAX, SCRIPT_VALUES_MAX,
+                    pack_world_script, unpack_world_script,
                     FACTION_JOINED, FACTION_RANK, FACTION_REPUTATION, PLAYER_IDENTITY, PLAYER_ITEMS, PLAYER_JOURNAL,
                     PLAYER_LEVEL, PLAYER_MODIFIERS, PLAYER_PLACE, PLAYER_READY, PLAYER_RESPAWN,
                     PLAYER_SKILLS, PLAYER_SPELLS, PLAYER_TOPICS, PLAYER_TOPICS_MAX,
@@ -175,6 +178,11 @@ class World:
         # refid -> [cell kind, grid x, grid y, interior, x, y, z, heading, health, magicka,
         # fatigue, flags]: each actor's latest state; sent to a cell's next authority
         self.actors = {}
+        # refid -> [cell it first left, cell it is in, x, y, z, heading]: actors a script moved;
+        # replayed to each joining client
+        self.moves = {}
+        # script id lowered -> {"id", "ref", "values": {slot: raw value}}: running world scripts
+        self.scripts = {}
         # spawn id -> reference made at run time (unpack_spawn), removed ones too; replayed likewise
         self.spawns = {}
         # refid -> {"cell", "entries", "origin"}: a container's latest contents; sent to whoever
@@ -204,6 +212,9 @@ class World:
         self.locals.update({int(k): {int(s): v for s, v in values.items()}
                             for k, values in saved.get("locals", {}).items()})
         self.actors.update({int(k): v for k, v in saved.get("actors", {}).items()})
+        self.moves.update({int(k): v for k, v in saved.get("moves", {}).items()})
+        self.scripts.update({k: dict(v, values={int(s): x for s, x in v["values"].items()})
+                             for k, v in saved.get("scripts", {}).items()})
         for spawn in self.spawns.values():
             if spawn.get("summon"):
                 spawn["removed"] = True  # Active effects recreate summons for their target.
@@ -226,7 +237,10 @@ class World:
                  "globals": self.globals,
                  "locals": {str(k): {str(s): v for s, v in values.items()}
                             for k, values in self.locals.items()},
-                 "actors": {str(k): v for k, v in self.actors.items()}}
+                 "actors": {str(k): v for k, v in self.actors.items()},
+                 "moves": {str(k): v for k, v in self.moves.items()},
+                 "scripts": {k: dict(v, values={str(s): x for s, x in v["values"].items()})
+                             for k, v in self.scripts.items()}}
         if self.clock:
             self.clock.advance(now)
             state["clock"] = [self.clock.hour, self.clock.day, self.clock.month, self.clock.year,
@@ -240,7 +254,8 @@ class World:
                 f"{len(self.weather)} regions, {len(self.statuses)} statuses, "
                 f"{len(self.journal)} quests, "
                 f"{len(self.globals)} globals, {len(self.locals)} scripted references, "
-                f"{len(self.actors)} actors"
+                f"{len(self.actors)} actors, {len(self.moves)} moved, "
+                f"{len(self.scripts)} scripts"
                 + (f", clock {self.clock}" if self.clock else ""))
 
 
@@ -1513,6 +1528,7 @@ class Server:
             self.notify(f"{self.player_name(client)} has left.", time.monotonic(), skip=client)
             client.announced = False
         client.alive = False
+        self.scripts_orphaned(client.id, time.monotonic())
         for refid, (holder, target) in list(self.dialogues.items()):
             if holder == client.id:
                 del self.dialogues[refid]
@@ -1861,6 +1877,7 @@ class Server:
         events += pack_topics(self.world.topics)
         events += self.faction_replay(stream, replay)
         events += pack_globals(sorted(self.world.globals.values()), WORLD_GLOBALS)
+        events += self.scripts_assign(client)
         client.place_hold = (stream.place, now + PLACE_HOLD) if (
             replay and stream.place and not stream.dead) else None
         for data in events:
@@ -2124,6 +2141,8 @@ class Server:
             self.share_factions(client, unpack_factions(data), before, now)
         if stream and data[:1] == bytes([WORLD_GLOBALS]):
             change = self.share_globals(client, unpack_globals(data, WORLD_GLOBALS), now)
+        if stream and data[:1] == bytes([WORLD_SCRIPTS]):
+            change = self.world_script(client, *unpack_world_script(data), now)
         if stream and client.naming and stream.identity:
             old = self.character_folder(client)
             folder = new_character_folder(self.key_folder(client), stream.identity["name"])
@@ -2344,6 +2363,95 @@ class Server:
                   + ", ".join(describe_local(*v) for v in sorted(changed.items())), flush=True)
         return RELAY
 
+    def event_actor_move(self, client, kind, data, stamp, now):
+        """Keep an actor's latest move with the cell it first left, and relay it in that form;
+        a cell move drops its kept state, which the next report from its new cell replaces."""
+        refid, origin, cell, x, y, z, heading = ACTOR_MOVE.unpack(data)
+        kept = self.world.moves.get(refid)
+        if kept is None and len(self.world.moves) >= ACTOR_MOVES_MAX:
+            return KEEP
+        if kept and kept[1] == cell and math.dist(kept[2:5], (x, y, z)) < 1 and \
+                abs(kept[5] - heading) < 0.5:
+            return KEEP
+        move = [kept[0] if kept else origin, cell, x, y, z, heading]
+        self.world.moves[refid] = move
+        if origin != cell:
+            self.world.actors.pop(refid, None)
+        self.world.dirty = True
+        if self.detail["verbose"]:
+            print(f"{stamp} client {client.id}: {refid:#010x} moved to cell {cell} "
+                  f"({x:.0f}, {y:.0f}, {z:.0f})", flush=True)
+        self.broadcast_event(client.id, kind, ACTOR_MOVE.pack(refid, *move), now)
+        return KEEP
+
+    def world_script(self, client, op, refid, name, values, now):
+        """Keep a running world script with its first runner's locals; it ends when the last
+        console running it stops it."""
+        key = name.lower()
+        kept = self.world.scripts.get(key)
+        runners = self.script_runners.setdefault(key, [])
+        if op == SCRIPT_STOPPED:
+            if client.id in runners:
+                runners.remove(client.id)
+            if kept is None or runners:
+                return None
+            del self.world.scripts[key]
+            self.world.dirty = True
+            return f"ended script {name}"
+        if kept is None:
+            if len(self.world.scripts) >= WORLD_SCRIPTS_MAX:
+                return None
+            kept = self.world.scripts[key] = {"id": name, "ref": refid, "values": {}}
+            self.world.dirty = True
+        if client.id not in runners:
+            runners.append(client.id)
+        if runners[0] != client.id or not values:
+            return f"runs script {name}" if op == SCRIPT_RUNNING else None
+        room = SCRIPT_VALUES_MAX - len(kept["values"])
+        changed = {}
+        for slot, value in values.items():
+            if kept["values"].get(slot) == value or slot not in kept["values"] and room <= 0:
+                continue
+            room -= slot not in kept["values"]
+            changed[slot] = value
+        if not changed:
+            return None
+        kept["values"].update(changed)
+        self.world.dirty = True
+        return f"script {name} " + ", ".join(describe_local(*v) for v in sorted(changed.items()))
+
+    def scripts_assign(self, client):
+        """WORLD_SCRIPTS events handing the world scripts nobody runs to this client."""
+        events = []
+        for key, kept in sorted(self.world.scripts.items()):
+            runners = self.script_runners.setdefault(key, [])
+            if runners:
+                continue
+            runners.append(client.id)
+            if kept["values"]:
+                events += pack_world_script(SCRIPT_VALUES, kept["ref"], kept["id"], kept["values"])
+            events += pack_world_script(SCRIPT_RUNNING, kept["ref"], kept["id"])
+            print(f"{time.strftime('%H:%M:%S')} client {client.id} runs script {kept['id']}"
+                  f" ({len(kept['values'])} locals)", flush=True)
+        return events
+
+    def scripts_orphaned(self, client_id, now):
+        """A client that leaves stops running its world scripts; the lowest client still playing
+        takes the ones nobody else runs."""
+        orphaned = False
+        for runners in self.script_runners.values():
+            if client_id in runners:
+                runners.remove(client_id)
+                orphaned |= not runners
+        if not orphaned:
+            return
+        for other in sorted(self.clients.values(), key=lambda c: c.id):
+            if other.id != client_id and other.alive and other.in_world and other.synced:
+                for data in self.scripts_assign(other):
+                    other.rel.queue(EVENT_PLAYER, 0, data)
+                self.flush(other, now)
+                return
+
     def event_text(self, client, kind, data, stamp, now):
         """A player's line, shown as a server notice under their name: consoles put only the
         server's text on screen. A private one goes to one player, or only to the admin."""
@@ -2497,7 +2605,8 @@ class Server:
                       EVENT_BOUNTY: event_bounty,
                       EVENT_EQUIPMENT: event_equipment,
                       EVENT_IDENTITY: event_identity,
-                      EVENT_ACTOR_EQUIPMENT: event_actor_equipment}
+                      EVENT_ACTOR_EQUIPMENT: event_actor_equipment,
+                      EVENT_ACTOR_MOVE: event_actor_move}
 
     def update_authority(self, now):
         """Name each loaded cell's authority and tell every client that has the cell loaded."""
@@ -3014,6 +3123,8 @@ class Server:
         for refid, values in sorted(self.world.locals.items()):
             for data in pack_locals(refid, values):
                 client.rel.queue(EVENT_LOCALS, 0, data)
+        for refid, move in sorted(self.world.moves.items()):
+            client.rel.queue(EVENT_ACTOR_MOVE, 0, ACTOR_MOVE.pack(refid, *move))
         for refid, values in self.world.statuses.items():
             client.rel.queue(EVENT_STATUS, 0, STATUS.pack(refid, *values))
         for sid, spawn in sorted(self.world.spawns.items(), key=lambda s: s[1]["removed"]):
@@ -3203,6 +3314,8 @@ class Server:
         self.actor_owners = {}  # actor id -> (client, since): its owner by proximity
         self.actor_seen = {}  # actor id -> when a state of it last came
         self.dialogues = {}  # actor id -> (talking client, authority client)
+        # world script id lowered -> clients running it, the first one's locals kept
+        self.script_runners = {}
         # client -> [parts of its latest whole equipment set, parts of the set arriving]
         self.equipment = {}
         self.identities = {}  # client -> its complete [name/race, head/hair] parts

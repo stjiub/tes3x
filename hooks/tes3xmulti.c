@@ -141,8 +141,11 @@ void __cdecl tes3x_console_reply(const char *fmt, ...);
     !defined(TES3X_NET_EQUIP_ITEM) || !defined(TES3X_NET_INVENTORY_BUILD) || \
     !defined(TES3X_NET_MENU_TAB) || !defined(TES3X_NET_FIND_FACTION) || \
     !defined(TES3X_NET_FACTION_LOAD) || !defined(TES3X_NET_UPDATE_STATS_PANE) || \
-    !defined(TES3X_NET_FIND_GLOBAL) || !defined(TES3X_NET_JOURNAL_ADD)
-#error "define the TES3X_NET_ record lookups, the class functions chargen uses, the faction restore and journalAdd"
+    !defined(TES3X_NET_FIND_GLOBAL) || !defined(TES3X_NET_JOURNAL_ADD) || \
+    !defined(TES3X_NET_RELOCATE) || !defined(TES3X_NET_RELOCATE_SITES) || \
+    !defined(TES3X_NET_SCRIPT_EXECUTE) || !defined(TES3X_NET_GLOBAL_SCRIPT_SITES) || \
+    !defined(TES3X_NET_ADD_GLOBAL_SCRIPT) || !defined(TES3X_NET_FIND_SCRIPT)
+#error "define the TES3X_NET_ record lookups, the class functions chargen uses, the faction restore, journalAdd and the script and move hooks"
 #endif
 
 typedef unsigned short u16;
@@ -458,6 +461,8 @@ static int script_safe(const u8 *text, u32 max)
 #include "multi/player_factions.c"
 #include "multi/player_globals.c"
 #include "multi/locals.c"
+#include "multi/world_scripts.c"
+#include "multi/moves.c"
 #include "multi/player_identity.c"
 #include "multi/player_effects.c"
 #include "multi/player_apply.c"
@@ -516,7 +521,10 @@ void tes3x_multi_frame(void)
         save_hook_install();
         quit_hook_install();
         death_hook_install();
+        scripts_hook_install();
+        moves_hook_install();
         authority_session();
+        moves_session();
         spawns_session();
         events_frame();
         save_frame();
@@ -577,6 +585,7 @@ void tes3x_multi_frame(void)
     ghosts_frame(state);
     authority_frame(ref, state);
     objects_frame();
+    moves_frame();
     locals_frame(state);
     spawns_frame();
     containers_frame();
@@ -678,6 +687,8 @@ int tes3x_multi_command(const char *text)
         shot_stat();
         objects_stat();
         locals_stat();
+        world_scripts_stat();
+        moves_stat();
         spawns_stat();
         containers_stat();
         bulk_stat();
@@ -709,6 +720,10 @@ int tes3x_multi_command(const char *text)
         local_query(rest);
     } else if ((rest = word(text, "actor")) && *(rest = skip(rest))) {
         actor_query(rest);
+    } else if ((rest = word(text, "script")) && *(rest = skip(rest))) {
+        script_query(rest);
+    } else if ((rest = word(text, "where")) && *(rest = skip(rest))) {
+        where_query(rest);
     } else if ((rest = word(text, "send")) && *(rest = skip(rest))) {
         up_command(rest);
     } else if ((rest = word(text, "save")) && !*skip(rest)) {

@@ -1101,6 +1101,132 @@ class ServerTests(unittest.TestCase):
         self.assertIn(net.EVENT_AUTHORITY, second.queued)
         self.assertFalse(valid_client_event(net.EVENT_ACTOR_PLACE, events[0]))
 
+    def fake_server(self):
+        net = tes3x_net
+        server = net.Server.__new__(net.Server)
+        server.world, server.detail, server.clients = net.World(), {'verbose': False}, {}
+        server.script_runners = {}
+        server.flush = lambda *a, **k: None
+        return server
+
+    def fake_client(self, server, client_id):
+        sent = []
+        client = SimpleNamespace(id=client_id, alive=True, in_world=True, synced=True, sent=sent,
+                                 rel=SimpleNamespace(queue=lambda k, o, d: sent.append((k, o, d))))
+        server.clients[client_id] = client
+        return client
+
+    def test_actor_moves_keep_their_first_cell_and_reach_late_joins(self):
+        net = tes3x_net
+        server = self.fake_server()
+        first, second = self.fake_client(server, 1), self.fake_client(server, 2)
+        fargoth = 0x0101F7C4
+        server.world.actors[fargoth] = [net.KEY_EXTERIOR, -2, -9, '', 0, 0, 0, 0, 25, 0, 0, 0]
+        move = net.ACTOR_MOVE.pack(fargoth, 40, 900, 4733.0, 3911.0, 14328.0, 0.0)
+        self.assertTrue(valid_client_event(net.EVENT_ACTOR_MOVE, move))
+        server.event_actor_move(first, net.EVENT_ACTOR_MOVE, move, '', 0.0)
+        self.assertEqual(server.world.moves[fargoth], [40, 900, 4733.0, 3911.0, 14328.0, 0.0])
+        self.assertNotIn(fargoth, server.world.actors)  # its next cell's report replaces it
+        self.assertEqual(second.sent, [(net.EVENT_ACTOR_MOVE, 1, move)])
+        self.assertEqual(first.sent, [])
+        # The same move again is not news; a later one keeps the cell the actor first left.
+        server.event_actor_move(second, net.EVENT_ACTOR_MOVE, move, '', 0.0)
+        self.assertEqual(first.sent, [])
+        onward = net.ACTOR_MOVE.pack(fargoth, 900, 901, 620.13, -1160.73, 284.33, 189.1)
+        server.event_actor_move(second, net.EVENT_ACTOR_MOVE, onward, '', 0.0)
+        relayed = net.ACTOR_MOVE.pack(fargoth, 40, 901, 620.13, -1160.73, 284.33, 189.1)
+        self.assertEqual(first.sent, [(net.EVENT_ACTOR_MOVE, 2, relayed)])
+        # Through the world file; bounded.
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder)
+        server.world.path = str(folder / 'world.json')
+        server.world.save(0.0)
+        restored = net.World()
+        restored.load(server.world.path, 0.0)
+        self.assertEqual(net.ACTOR_MOVE.pack(fargoth, *restored.moves[fargoth]), relayed)
+        server.world = restored
+        server.world.moves.update({0x02000000 + i: [1, 2, 0.0, 0.0, 0.0, 0.0]
+                                   for i in range(net.ACTOR_MOVES_MAX - 1)})
+        extra = net.ACTOR_MOVE.pack(0x03000000, 1, 2, 0.0, 0.0, 0.0, 0.0)
+        server.event_actor_move(first, net.EVENT_ACTOR_MOVE, extra, '', 0.0)
+        self.assertNotIn(0x03000000, server.world.moves)
+        for invalid in (net.ACTOR_MOVE.pack(5, 1, 2, 0.0, 0.0, 0.0, 0.0),
+                        net.ACTOR_MOVE.pack(fargoth, 1, net.NO_CELL, 0.0, 0.0, 0.0, 0.0),
+                        net.ACTOR_MOVE.pack(fargoth, 1, 2, float('nan'), 0.0, 0.0, 0.0),
+                        net.ACTOR_MOVE.pack(fargoth, 1, 2, 0.0, 0.0, 0.0, 1e6), move[:-1]):
+            self.assertFalse(valid_client_event(net.EVENT_ACTOR_MOVE, invalid))
+
+    def test_world_scripts_are_kept_handed_on_and_end_with_their_last_runner(self):
+        net = tes3x_net
+        server = self.fake_server()
+        first, second = self.fake_client(server, 1), self.fake_client(server, 2)
+
+        def take(client, data):
+            self.assertTrue(valid_client_event(net.EVENT_PLAYER, data))
+            return server.world_script(client, *net.unpack_world_script(data), 0.0)
+
+        def handed(client):
+            events = [net.unpack_world_script(d) for k, _, d in client.sent
+                      if k == net.EVENT_PLAYER and d[0] == net.WORLD_SCRIPTS]
+            client.sent.clear()
+            return events
+
+        timer, values = 'MatchMakerTimer', {0: 3, 1: 15}
+        take(first, net.pack_world_script(net.SCRIPT_RUNNING, 0, timer)[0])
+        for data in net.pack_world_script(net.SCRIPT_VALUES, 0, timer, values):
+            take(first, data)
+        # A second runner's locals are not the world's while the first runs it.
+        take(second, net.pack_world_script(net.SCRIPT_RUNNING, 0, timer)[0])
+        take(second, net.pack_world_script(net.SCRIPT_VALUES, 0, timer, {0: 9})[0])
+        self.assertEqual(server.world.scripts['matchmakertimer'],
+                         {'id': timer, 'ref': 0, 'values': values})
+        # The first runner leaving leaves it with the second; a script nobody else runs is
+        # handed on with its locals first.
+        fons = 'MatchMakeFons'
+        take(first, net.pack_world_script(net.SCRIPT_RUNNING, 0x0101F7C4, fons)[0])
+        take(first, net.pack_world_script(net.SCRIPT_VALUES, 0x0101F7C4, fons, {0x8000: 7})[0])
+        server.scripts_orphaned(1, 0.0)
+        self.assertEqual(handed(second), [(net.SCRIPT_VALUES, 0x0101F7C4, fons, {0x8000: 7}),
+                                          (net.SCRIPT_RUNNING, 0x0101F7C4, fons, {})])
+        self.assertEqual(server.script_runners['matchmakertimer'], [2])
+        take(second, net.pack_world_script(net.SCRIPT_VALUES, 0, timer, {0: 4})[0])
+        self.assertEqual(server.world.scripts['matchmakertimer']['values'], {0: 4, 1: 15})
+        # It ends when its last runner stops it.
+        take(second, net.pack_world_script(net.SCRIPT_STOPPED, 0, fons)[0])
+        self.assertNotIn('matchmakefons', server.world.scripts)
+        # After a restart nobody runs the rest: the first player ready takes them.
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder)
+        server.world.path = str(folder / 'world.json')
+        server.world.save(0.0)
+        restored = net.World()
+        restored.load(server.world.path, 0.0)
+        self.assertEqual(restored.scripts, server.world.scripts)
+        server.world, server.script_runners = restored, {}
+        replay = [net.unpack_world_script(d) for d in server.scripts_assign(first)]
+        self.assertEqual(replay, [(net.SCRIPT_VALUES, 0, timer, {0: 4, 1: 15}),
+                                  (net.SCRIPT_RUNNING, 0, timer, {})])
+        self.assertEqual(server.scripts_assign(second), [])
+        # Bounded in scripts and in locals per script.
+        many = {i: i for i in range(net.SCRIPT_VALUES_MAX + 5)}
+        for data in net.pack_world_script(net.SCRIPT_VALUES, 0, timer, many):
+            self.assertLessEqual(len(data), net.EVENT_DATA)
+            take(first, data)
+        self.assertEqual(len(server.world.scripts['matchmakertimer']['values']),
+                         net.SCRIPT_VALUES_MAX)
+        server.world.scripts.update({f's{i}': {'id': f's{i}', 'ref': 0, 'values': {}}
+                                     for i in range(net.WORLD_SCRIPTS_MAX - 1)})
+        take(first, net.pack_world_script(net.SCRIPT_RUNNING, 0, 'OneTooMany')[0])
+        self.assertNotIn('onetoomany', server.world.scripts)
+        for invalid in (bytes([net.WORLD_SCRIPTS, 4, 0, 0, 0, 0]) + b'x\0\0',
+                        bytes([net.WORLD_SCRIPTS, 1, 0, 0, 0, 0]) + b'\0\0',
+                        bytes([net.WORLD_SCRIPTS, 3, 0, 0, 0, 0]) + b'x\0\1',
+                        bytes([net.WORLD_SCRIPTS, 3, 0, 0, 0, 0]) + b'x\0\1'
+                        + net.LOCAL.pack(3 << 14, 0)):
+            self.assertFalse(valid_client_event(net.EVENT_PLAYER, invalid))
+        with self.assertRaises(ValueError):
+            net.pack_world_script(net.SCRIPT_RUNNING, 0, 'x' * (net.SCRIPT_ID_MAX + 1))
+
     def test_stream_only_character_creation_snapshot_and_restart(self):
         world = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, world)
@@ -1712,8 +1838,8 @@ class ServerTests(unittest.TestCase):
 
         saved = next(world.glob('*.json'))
         state = json.loads(saved.read_text(encoding='utf-8'))
-        self.assertEqual(sorted(state), ['actors', 'clock', 'contents', 'deaths', 'factions', 'globals', 'journal', 'locals', 'next_spawn', 'objects',
-                                         'spawns', 'statuses', 'topics', 'weather'])
+        self.assertEqual(sorted(state), ['actors', 'clock', 'contents', 'deaths', 'factions', 'globals', 'journal', 'locals', 'moves', 'next_spawn', 'objects',
+                                         'scripts', 'spawns', 'statuses', 'topics', 'weather'])
         self.assertEqual(len(state['clock']), 6)  # hour, day, month, year, days passed, scale
         self.assertEqual(state['deaths'], {str(refid): 1})
         self.assertEqual(state['objects'], {str(refid + 1): [3, net.OBJECT_DISABLED, 0]})

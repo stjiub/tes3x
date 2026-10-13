@@ -669,7 +669,8 @@ static void snapshot_frame(const u8 *ref, u8 *mobile, u8 *npc, u8 *object)
     case 15: globals_scan(&player_globals, 1); break;
     case 16: globals_scan(&world_globals, world_globals.known); break;
     case 17: locals_scan(1); break;
-    case 18:
+    case 18: world_scripts_scan(1, 1); break;
+    case 19:
         put32le(data, snapshot_token);
         player_state(ref, data + 4);
         if (!event_queue(EVENT_SNAPSHOT, data, 4 + PLACE_BYTES))
@@ -748,4 +749,5 @@ static void player_frame(const u8 *ref)
     globals_scan(&player_globals, send);
     /* The world's globals are the server's after the replay: the first scan is the baseline. */
     globals_scan(&world_globals, world_globals.known);
+    world_scripts_scan(scripts_known, 0);
 }

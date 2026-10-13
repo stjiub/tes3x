@@ -67,7 +67,8 @@ it recorded are gone. With `--world DIR` it
 keeps the game clock, the deaths, the doors, locks and items taken, the items dropped or placed,
 containers' contents, actors' AI settings and disposition, actors' last place and health,
 the weather, learned topics, the journal,
-faction ranks, the world's globals and references' script locals in one file per load order in `DIR`, loads it when the
+faction ranks, the world's globals, references' script locals, the quest scripts still running
+and characters that scripts moved in one file per load order in `DIR`, loads it when the
 first console joins in game and writes it every 10 seconds
 while it changes, so a restarted server carries on where it stopped. A joined client starts from
 the data files and applies the server's world; it does not import changes from a local save.
@@ -424,7 +425,15 @@ and replays all of them after WELCOME. The world file also keeps each actor's la
 its authority (up to 8,192 actors). When a cell gets an authority and nobody had it before, the
 server sends that client `ACTOR_PLACE` (event 38, server only) before `AUTHORITY`: a count and
 up to two entries of refid, position, heading, health, magicka, fatigue and the actor flags,
-for the actors last reported in that cell. Identity, worn and effect snapshots are checked when reassembled;
+for the actors last reported in that cell. `ACTOR_MOVE` (event 39) is an actor a script or a
+dialogue moved: refid, the cell index it left, the cell index it is in, position and rotation
+(radians, as Position and PositionCell give it). The server keeps the latest of each (up to 4,096) with the first cell it left, relays it
+in that form and replays all of them after WELCOME. `WORLD_SCRIPTS` (player sub-kind 21) is a
+global script a console started after its first READY: op (1 running, 2 stopped, 3 values),
+the script's reference (refid; 1 the player), the script id, a count and `LOCALS` entries. The
+server keeps each script (up to 512, 64 locals each) with the locals of the first console
+running it, drops it when the last one stops it, and hands one nobody runs any more to a
+player before READY, values first, then running. Identity, worn and effect snapshots are checked when reassembled;
 effects are capped at 64 entries. Server-to-client player sub-kinds are rejected.
 
 Inventory entries carry a signed i32 count and a flags byte (only `ENTRY_DATA`), optional

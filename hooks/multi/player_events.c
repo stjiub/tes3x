@@ -138,6 +138,8 @@ static void player_event(const struct event *e)
         topics_apply(e->data, e->length);
     else if (e->data[0] == PLAYER_FACTIONS && e->length >= 2)
         factions_apply(e->data, e->length);
+    else if (e->data[0] == WORLD_SCRIPTS && e->length >= 8)
+        world_script_event(e->data, e->length);
     else if (e->data[0] == PLAYER_GLOBALS && e->length >= 2)
         globals_apply(&player_globals, e->data, e->length);
     else if (e->data[0] == WORLD_GLOBALS && e->length >= 2)

@@ -269,7 +269,8 @@
         {"offset": "0xB4", "name": "gvarDaysPassed", "type": "TES3::GlobalVariable*", "confidence": "matched", "provenance": "PC order at -4"},
         {"offset": "0xB8", "name": "gvarTimescale", "type": "TES3::GlobalVariable*", "confidence": "matched", "provenance": "PC order at -4"},
         {"offset": "0xBC", "name": "gvarCharGenState", "type": "TES3::GlobalVariable*", "confidence": "verified", "provenance": "transition-autosaves gates saving on [+0xBC]+0x34 != -1"},
-        {"offset": "0xD2", "name": "flagMenuMode", "type": "bool", "confidence": "verified", "provenance": "menu pause: two jne skip the world while set"}
+        {"offset": "0xD2", "name": "flagMenuMode", "type": "bool", "confidence": "verified", "provenance": "menu pause: two jne skip the world while set"},
+        {"offset": "0x314", "name": "globalScripts", "type": "NI::IteratedList<TES3::GlobalScript*>*", "confidence": "verified", "provenance": "isGlobalScriptRunning 0x0008C8B0, addGlobalScript 0x0008E6E0 and processGlobalScripts 0x0008C910; PC +0x338. GlobalScript is {reference +0, script +4}"}
       ]
     },
     {
@@ -292,7 +293,7 @@
     },
     {
       "name": "TES3::Script",
-      "note": "Xbox matches the PC at shortCount +0x30, longCount +0x34, floatCount +0x38, the variable name arrays +0x44/+0x48/+0x4C (tes3xnet local reads them) and default values +0x5C/+0x60/+0x64 (Script::createVariables 0x00137B30)."
+      "note": "Xbox matches the PC at shortCount +0x30, longCount +0x34, floatCount +0x38, the variable name arrays +0x44/+0x48/+0x4C (tes3xnet local reads them) and default values +0x5C/+0x60/+0x64 (Script::createVariables 0x00137B30). For a global script those three arrays are its running locals: Script::getShortValue 0x00136DF0 reads +0x5C unless a reference's variables are current, and addGlobalScript does not reset them, so a stopped script keeps its values."
     }
   ]
 }

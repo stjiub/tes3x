@@ -106,6 +106,13 @@ SUMMON = 0x000C8B00  # makes a summoned creature, from the summon effect's start
 PLAYER_SCRIPTS = 3  # CompileAndRun's callers: a dialogue result and the console
 DROP_ITEM = 0x0015B0D0  # MobileActor::dropItem; the inventory menus call it on the player
 PLAYER_DROPS = 2
+# relocateReference(ref, cell, position, rotation): Position, PositionCell and PlaceItemCell
+RELOCATE = 0x00138AA0
+RELOCATE_CALLS = 3
+SCRIPT_EXECUTE = 0x00148A70  # Script::execute(reference, variables, info, reference)
+PROCESS_GLOBAL_SCRIPTS = 0x0008C910  # calls Script::execute once per running global script
+ADD_GLOBAL_SCRIPT = 0x0008E6E0  # WorldController::addGlobalScript(script, reference)
+FIND_SCRIPT = 0x00105DA0  # NonDynamicData::findScriptByName
 SAVE_CALLS = 7  # SaveGame's callers: quicksave, three autosaves, the save menu's two, fatal error
 ACTOR_ADDRESSES = (
     ("LEVELED_RESOLVE", 0x0011A740), ("LEVELED_LINKED", 0x0012AEE0),
@@ -531,6 +538,23 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
         if len(sites) != PLAYER_SCRIPTS:
             raise PayloadError(f"CompileAndRun: {len(sites)} call sites, expected {PLAYER_SCRIPTS}")
         define("NET_PLAYER_SCRIPT_SITES", "{" + ",".join(hexva(s) for s in sites) + "}")
+        relocate = int(address("RELOCATE", RELOCATE), 16)
+        sites = find_call_sites(image, relocate)
+        if len(sites) != RELOCATE_CALLS:
+            raise PayloadError(f"relocateReference {hexva(relocate)}: {len(sites)} call sites, "
+                               f"expected {RELOCATE_CALLS}")
+        define("NET_RELOCATE", hexva(relocate))
+        define("NET_RELOCATE_SITES", "{" + ",".join(hexva(s) for s in sites) + "}")
+        execute = int(address("SCRIPT_EXECUTE", SCRIPT_EXECUTE), 16)
+        process = int(address("PROCESS_GLOBAL_SCRIPTS", PROCESS_GLOBAL_SCRIPTS), 16)
+        sites = [s for s in find_call_sites(image, execute) if process <= s < process + 0x60]
+        if len(sites) != 1:
+            raise PayloadError(f"Script::execute in processGlobalScripts: {len(sites)} call "
+                               "sites, expected 1")
+        define("NET_SCRIPT_EXECUTE", hexva(execute))
+        define("NET_GLOBAL_SCRIPT_SITES", "{" + hexva(sites[0]) + "}")
+        define("NET_ADD_GLOBAL_SCRIPT", address("ADD_GLOBAL_SCRIPT", ADD_GLOBAL_SCRIPT))
+        define("NET_FIND_SCRIPT", address("FIND_SCRIPT", FIND_SCRIPT))
         drop = int(address("DROP_ITEM", DROP_ITEM), 16)
         player_mobile = int(address("PLAYER_MOBILE", dict(CONSOLE_ADDRESSES)["PLAYER_MOBILE"]), 16)
         data = bytes(image.data)

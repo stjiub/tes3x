@@ -330,8 +330,8 @@ class WorldTests(unittest.TestCase):
         world = self.saved_world()
         self.assertFalse(world.dirty)
         saved = tes3x_net.load_world(self.path)
-        self.assertEqual(sorted(saved), ['actors', 'clock', 'contents', 'deaths', 'factions', 'globals', 'journal', 'locals', 'next_spawn', 'objects',
-                                         'spawns', 'statuses', 'topics', 'weather'])
+        self.assertEqual(sorted(saved), ['actors', 'clock', 'contents', 'deaths', 'factions', 'globals', 'journal', 'locals', 'moves', 'next_spawn', 'objects',
+                                         'scripts', 'spawns', 'statuses', 'topics', 'weather'])
         self.assertEqual(saved['clock'], [9.5, 16, 7, 427, 1, 30.0])
         self.assertEqual(saved['topics'], ['Caius Cosades', 'Balmora'])
         self.assertEqual(sorted(saved['spawns'][str(tes3x_net.SPAWN_IDS | 1)]),
@@ -365,7 +365,8 @@ class WorldTests(unittest.TestCase):
         self.assertFalse(world.load(self.path, now=0.0))
         self.assertEqual(world.path, self.path)
         self.assertEqual(str(world), '0 deaths, 0 objects, 0 spawns, 0 containers, 0 regions, '
-                                     '0 statuses, 0 quests, 0 globals, 0 scripted references, 0 actors')
+                                     '0 statuses, 0 quests, 0 globals, 0 scripted references, 0 actors, '
+                                     '0 moved, 0 scripts')
 
 
 class AuthorityTests(unittest.TestCase):
