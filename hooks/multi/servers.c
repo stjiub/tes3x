@@ -39,6 +39,7 @@
 #define TYPE_ALIGN_Y 0.12f
 typedef void *(__attribute__((thiscall)) *fn_find_child)(void *widget, u32 id);
 typedef void *(__attribute__((thiscall)) *fn_create_block)(void *parent, u32 id, int a0);
+typedef void *(__attribute__((thiscall)) *fn_create_rect)(void *parent, u32 id, int a0, int a1);
 typedef void *(__attribute__((thiscall)) *fn_create_image)(void *parent, u32 id, const char *path,
                                                            int a0);
 typedef void *(__attribute__((thiscall)) *fn_create_label)(void *parent, u32 id, const char *text,
@@ -336,19 +337,32 @@ static void typing_text(u8 *menu, const char *text)
     ((fn_layout)TES3X_NET_PERFORM_LAYOUT)(menu, 1);
 }
 
-/* A backed box whose children flow top to bottom. */
+/* A dark panel and the same thin border the retail HUD uses. */
 static u8 *bordered(u8 *parent, const char *name, int width, int height)
 {
+    static const float shade[4] = {0.03f, 0.02f, 0.015f, 0.88f};
     fn_set_prop set = (fn_set_prop)TES3X_NET_SET_PROP;
-    u8 *box = ((fn_create_nif)TES3X_NET_CREATE_NIF)(parent, ((fn_ui_id)TES3X_NET_UI_ID)(name),
-                                                    "menu_messagebox.nif", 0);
+    u8 *box = ((fn_create_rect)TES3X_NET_CREATE_RECT)(
+        parent, ((fn_ui_id)TES3X_NET_UI_ID)(name), 0, 0);
+    u8 *edge;
 
     if (!plausible(box))
         return 0;
     ((fn_set_size)TES3X_NET_SET_WIDTH)(box, width);
     ((fn_set_size)TES3X_NET_SET_HEIGHT)(box, height);
-    set(box, UI_FLOW, (int)UI_TOP_DOWN, UI_PROP_ENUM);
-    set(box, UI_CHILD_ALIGN_X, UI_HALF, UI_PROP_FLOAT);
+    copy(box + UI_COLOUR, (const u8 *)shade, sizeof(shade));
+    box[UI_COLOUR_CHANGED] = 1;
+    edge = ((fn_create_nif)TES3X_NET_CREATE_NIF)(
+        box, ((fn_ui_id)TES3X_NET_UI_ID)("TES3X_PanelFrame"), "menu_thin_border.NIF", 0);
+    if (!plausible(edge)) {
+        ((fn_set_visible)TES3X_NET_SET_VISIBLE)(box, 0);
+        return 0;
+    }
+    ((fn_set_size)TES3X_NET_SET_WIDTH)(edge, width);
+    ((fn_set_size)TES3X_NET_SET_HEIGHT)(edge, height);
+    edge[UI_IMAGE_FLAG] = 0;
+    set(edge, UI_FLOW, (int)UI_TOP_DOWN, UI_PROP_ENUM);
+    set(edge, UI_CHILD_ALIGN_X, UI_HALF, UI_PROP_FLOAT);
     return box;
 }
 
@@ -374,18 +388,22 @@ static void servers_build(u8 *column, int width)
     u8 *box, *pane, *content, *row, *text;
     u32 i;
 
-    if (plausible(box = bordered(column, "TES3X_TypeBox", 3 * width, 2 * LIST_ROW + 2 * BOX_PAD))) {
+    if (plausible(box = bordered(column, "TES3X_TypeBox", 3 * width, 2 * LIST_ROW + 2 * BOX_PAD)) &&
+        plausible(content = menu_part(box, "TES3X_PanelFrame"))) {
         /* the small font: the big one draws ':' as ';' */
-        if (plausible(text = gold_label(box, "TES3X_TypeTitle", "IP/DNS:PORT")))
+        if (plausible(text = gold_label(content, "TES3X_TypeTitle", "IP/DNS:PORT")))
             *(int *)(text + UI_FONT) = 0;
-        if (plausible(text = gold_label(box, "TES3X_TypeText", "_")))
+        if (plausible(text = gold_label(content, "TES3X_TypeText", "_")))
             *(int *)(text + UI_FONT) = 0;
         visible(box, 0);
     }
     if (!plausible(box = bordered(column, "TES3X_ServerBox", 3 * width,
                                   LIST_VISIBLE * LIST_ROW + 2 * BOX_PAD)))
         return;
-    pane = ((fn_create_widget)TES3X_NET_CREATE_WIDGET)(box, ui_id("TES3X_ServerPane"),
+    content = menu_part(box, "TES3X_PanelFrame");
+    if (!plausible(content))
+        return;
+    pane = ((fn_create_widget)TES3X_NET_CREATE_WIDGET)(content, ui_id("TES3X_ServerPane"),
                                                        TES3X_NET_SCROLL_PANE, 0);
     if (!plausible(pane))
         return;

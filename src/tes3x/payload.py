@@ -176,7 +176,8 @@ CONSOLE_ADDRESSES = (
 )
 # The main menu builder's own calls (0x00200990), for buttons made the way it makes them
 NET_UI_ADDRESSES = (
-    ("CREATE_BLOCK", 0x001A7240), ("CREATE_IMAGE", 0x001A7080), ("SET_WIDTH", 0x00198980),
+    ("CREATE_BLOCK", 0x001A7240), ("CREATE_RECT", 0x001A6EA0),
+    ("CREATE_IMAGE", 0x001A7080), ("SET_WIDTH", 0x00198980),
     ("SET_HEIGHT", 0x00198A60), ("SET_VISIBLE", 0x001A63C0), ("CREATE_LABEL", 0x001A7300),
     ("SET_FOCUS", 0x001AF6E0), ("SET_AUTO_WIDTH", 0x00197710), ("CREATE_NIF", 0x001A7170),
     ("SCROLL_PANE", 0x002357B0),  # the factory registered as PartScrollPaneVert
@@ -190,6 +191,26 @@ class PayloadError(RuntimeError):
 
 def hexva(value):
     return "0x%08X" % value
+
+
+def find_ui_rect(image, create_image):
+    """Find the rectangle factory just before the image factory by its widget type."""
+    end = image.va_to_off(create_image)
+    if end is None:
+        raise PayloadError("UI image factory is outside the XBE")
+    start = max(0, end - 0x300)
+    marker = b"\xB8\xB7\x80\xFF\xFF"  # mov eax, UI rectangle type
+    hits = [m.start() for m in re.finditer(re.escape(marker), image.data[start:end])]
+    if len(hits) != 1:
+        raise PayloadError(f"UI rectangle factory: {len(hits)} type markers")
+    entry = image.data.rfind(b"\xCC", start, start + hits[0]) + 1
+    head = bytes(image.data[entry:entry + 16])
+    if not head.startswith(b"\x51") or b"\x8B\xF9\x80\x3F\x58" not in head:
+        raise PayloadError("UI rectangle factory has an unexpected entry")
+    va = image.off_to_va(entry)
+    if va is None:
+        raise PayloadError("UI rectangle factory is outside the XBE")
+    return va
 
 
 def resolve_address(name, default, known_image=True):
@@ -306,6 +327,9 @@ def engine_bindings(xbe, sources):
     def engine_address(name, default):
         if name in os.environ:
             return os.environ[name]
+        if name == "CREATE_RECT":
+            create_image = int(engine_address("CREATE_IMAGE", 0x001A7080), 16)
+            return hexva(find_ui_rect(image, create_image))
         key = name.lower().replace("_", "-")
         if name in ("GET_FOCUS", "LIST_APPEND", "SET_VISIBLE"):
             key = "multi-" + key

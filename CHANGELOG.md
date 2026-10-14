@@ -6,8 +6,8 @@ No official releases yet. The first public release is in preparation.
 
 - Profiles can set `ui.font_scale` to make in-game text smaller without adding font textures.
   Existing profiles keep the retail font size. See [configuration](docs/configuration.md#ui).
-- The multiplayer server list and address entry now have a filled popup background, keeping the
-  main menu text from showing through them.
+- The multiplayer server list and address entry now have a dark backing with a thin gold border.
+  Their former backing could show a bright placeholder texture on Xbox.
 - Typing a new server's address opens the keyboard on the digits with `.`, `:` and `-`; the
   letter keys are one switch away.
 - xemu screenshots now capture the run's own window when another xemu session is open.

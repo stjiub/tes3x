@@ -140,6 +140,7 @@
     "NET_CREATE_IMAGE": null,
     "NET_CREATE_LABEL": null,
     "NET_CREATE_NIF": null,
+    "NET_CREATE_RECT": null,
     "NET_CREATE_REFERENCE": null,
     "NET_CREATE_SAVE": null,
     "NET_CREATE_WIDGET": null,
@@ -436,8 +437,8 @@
       "sha256": "d9a8a2c10299820e822d83a0e6310a584ff24c77240e51eeb06af6a480bdefa5"
     },
     "tes3xmulti.c": {
-      "digest": "d963e5deb4f198b90bfb7ea66cd5dd161cbd861b5037804ae89f6d44d4acc876",
-      "sha256": "538d8448b06b108b7d28224f70667322535e91295b09bbf4ca5726a1217094f3"
+      "digest": "40d3a19997416e2abbd19fc8a91fb48740ce4af238f0e8af2bbca49ba308b1cc",
+      "sha256": "c5acf938e69ae43991418f4422669b5bf5442c651b11c210b177a5d097cfba97"
     },
     "tes3xmwse.c": {
       "digest": "1f8fc8bf1ff75208c7eb24a4105a6e3cfb18d597b159710d97b3ef7a16a36288",
