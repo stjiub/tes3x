@@ -356,8 +356,8 @@
       "sha256": "38411f8b5f805eec763cec3029b75b383e4b418a8ed0a40c435d326b1decb15f"
     },
     "tes3xconsole.c": {
-      "digest": "113f897812ed1ecd2ccb37deb7efb559f793893d53cebb3aed8fc41f6a9c2acc",
-      "sha256": "d7d762e29c5fefbd0722bd4d19dda5ab40b277ecb04f6fdb8244f9a3f2a63e07"
+      "digest": "92e2aa445db09557979a012c763f9ac447496512642f010a8737e5ddbc6b3e60",
+      "sha256": "18d9a2711ed8c39e47d2bf2f27383f9b5700e45a9079368e38748917b18f6521"
     },
     "tes3xcrt.c": {
       "digest": "ab9729dcc446374ec954de0d10deca152784a663760f54b6a52b16dec5173c39",
@@ -436,8 +436,8 @@
       "sha256": "d9a8a2c10299820e822d83a0e6310a584ff24c77240e51eeb06af6a480bdefa5"
     },
     "tes3xmulti.c": {
-      "digest": "96e7abd0dabc722c77a32febbbd76ae7633e3d26b579238ca8bbbb49a4980ba1",
-      "sha256": "4bf40b7d08202c3f12d2d067fbee7002615275cb15dc8cf30c000b70c9d664b0"
+      "digest": "d963e5deb4f198b90bfb7ea66cd5dd161cbd861b5037804ae89f6d44d4acc876",
+      "sha256": "538d8448b06b108b7d28224f70667322535e91295b09bbf4ca5726a1217094f3"
     },
     "tes3xmwse.c": {
       "digest": "1f8fc8bf1ff75208c7eb24a4105a6e3cfb18d597b159710d97b3ef7a16a36288",

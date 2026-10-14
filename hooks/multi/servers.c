@@ -336,12 +336,12 @@ static void typing_text(u8 *menu, const char *text)
     ((fn_layout)TES3X_NET_PERFORM_LAYOUT)(menu, 1);
 }
 
-/* A box with the thin border the settings lists have, its children top to bottom. */
+/* A backed box whose children flow top to bottom. */
 static u8 *bordered(u8 *parent, const char *name, int width, int height)
 {
     fn_set_prop set = (fn_set_prop)TES3X_NET_SET_PROP;
     u8 *box = ((fn_create_nif)TES3X_NET_CREATE_NIF)(parent, ((fn_ui_id)TES3X_NET_UI_ID)(name),
-                                                    "menu_thin_border.nif", 0);
+                                                    "menu_messagebox.nif", 0);
 
     if (!plausible(box))
         return 0;
@@ -925,6 +925,8 @@ static void join_frame(void)
     } else if (chosen == SERVER_NEW && HAS_CONSOLE) {
         typing = tes3x_console_text_begin_on(menu, "") ? TYPE_SERVER : 0;
         tes3x_log("net.join_keyboard", typing);
+        if (typing && tes3x_console_text_address)
+            tes3x_console_text_address();
         if (typing)
             typing_show(menu, 1);
     } else if (chosen >= 0 && chosen < (int)servers_n) {

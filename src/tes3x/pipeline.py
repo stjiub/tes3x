@@ -19,6 +19,7 @@ from xml.sax.saxutils import escape
 
 from tes3x.pack import set_ini_key, write_invalidation
 from tes3x.menustill import NAME as STILL_NAME, VIDEO, make_still
+from tes3x.fontscale import stage_scaled_fonts
 from tes3x.patch import scene_form
 import tes3x.patches as registry
 from tes3x.payload import (SOURCE_DEPENDENCIES, PayloadError, build_payload, find_tool,
@@ -84,8 +85,8 @@ def validate_profile(profile):
     if not isinstance(profile, dict):
         raise PipelineError("profile must be a TOML table")
 
-    allowed_sections = {"profile", "rules", "patches", "preferences", "package", "ini", "mods",
-                        "plugins"}
+    allowed_sections = {"profile", "rules", "patches", "preferences", "package", "ui", "ini",
+                        "mods", "plugins"}
     unknown = set(profile) - allowed_sections
     if unknown:
         raise PipelineError("unknown profile sections: " + ", ".join(sorted(unknown)))
@@ -158,6 +159,12 @@ def validate_profile(profile):
     preferences = table("preferences")
     known(preferences, {"invert_look"}, "preferences")
     typed(preferences, "invert_look", (bool,), "preferences")
+
+    ui = table("ui")
+    known(ui, {"font_scale"}, "ui")
+    if "font_scale" in ui and (type(ui["font_scale"]) not in (int, float)
+                               or not 0 < ui["font_scale"] <= 1):
+        raise PipelineError("ui.font_scale must be greater than zero and at most one")
 
     package = table("package")
     known(package, {"mode", "archive_name", "archive_only", "drive_letter", "loose_assets",
@@ -991,6 +998,9 @@ def main(argv=None):
     if profile.get("preferences"):
         print("preferences: invert_look=%s" % str(
             profile["preferences"].get("invert_look", True)).lower())
+    font_scale = profile.get("ui", {}).get("font_scale", 1)
+    if font_scale != 1:
+        print(f"UI font scale: {font_scale:g}")
     if title:
         print(f"title: {title}; dashboard files: {', '.join(dashboards) or 'none'}")
     if pool:
@@ -1189,6 +1199,13 @@ def main(argv=None):
             run(pack_cmd)
         else:
             stage_retail(data_files, ini, staged, ini_items, copy)
+
+        if font_scale != 1:
+            try:
+                fonts = stage_scaled_fonts(staged / "Data Files", font_scale)
+            except ValueError as exc:
+                raise PipelineError(str(exc)) from exc
+            print(f"  scaled {len(fonts)} UI fonts to {font_scale:g}")
 
         if "multiplayer" in plan["applied"]:
             ghost = write_ghost_plugin(staged / "Data Files", data_files / "Morrowind.esm")

@@ -4,6 +4,13 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- Profiles can set `ui.font_scale` to make in-game text smaller without adding font textures.
+  Existing profiles keep the retail font size. See [configuration](docs/configuration.md#ui).
+- The multiplayer server list and address entry now have a filled popup background, keeping the
+  main menu text from showing through them.
+- Typing a new server's address opens the keyboard on the digits with `.`, `:` and `-`; the
+  letter keys are one switch away.
+- xemu screenshots now capture the run's own window when another xemu session is open.
 - New `boot-clear` patch: a build that starts the engine without the retail launcher no longer
   flashes green lines before its first splash. See [the patch](patches/boot-clear.md).
 - New `dash-button` patch: a TES3X button in the main and pause menus that leaves for the Dash,
@@ -87,8 +94,9 @@ No official releases yet. The first public release is in preparation.
 - xemu disc additions and direct-engine boot break staging hardlinks before replacing files,
   preserving the source game folder when runs share a deploy tree.
 - Follow, escort, travel and wander orders from conversations and quest scripts are shared in
-  multiplayer: a companion keeps following the player who hired them in every player's game and
-  after a server restart. Update the server and install the build again. See
+  multiplayer: a companion keeps following the player who hired them in every player's game, and
+  after a server restart waits where it was until that player comes back to it. Update the server
+  and install the build again. See
   [saving and character state](docs/multiplayer-client.md#saving-and-character-state).
 - Quest scripts and the characters they move are shared in multiplayer: a script a conversation
   or quest starts is kept by the server with its progress and carries on in another player's

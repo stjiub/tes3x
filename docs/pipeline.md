@@ -83,6 +83,8 @@ name appear in no save.
 
 `tes3x pack` then packages the tree with the retail files according to `package.mode`:
 `delta-bsa` (the default), `merged-bsa` or `loose`. See [packaging](packaging.md).
+If the profile sets [`ui.font_scale`](configuration.md#ui), the pipeline writes smaller bitmap
+font metrics into the staged `.fnt` files. The game keeps the same font texture atlases.
 
 ### Sorting plugins with mlox
 

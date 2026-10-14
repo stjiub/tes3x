@@ -47,6 +47,7 @@
 #include "tes3xnoise.h"
 /* The console's typing and replies: 0 unless the console patch is linked in. */
 TES3X_OPTIONAL int tes3x_console_text_begin_on(void *menu, const char *initial);
+TES3X_OPTIONAL void tes3x_console_text_address(void);
 TES3X_OPTIONAL void *tes3x_console_text_field(void);
 TES3X_OPTIONAL int tes3x_console_text_poll(char *out, u32 size);
 TES3X_OPTIONAL const char *tes3x_console_text_now(void);

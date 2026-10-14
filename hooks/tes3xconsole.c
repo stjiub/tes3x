@@ -362,6 +362,15 @@ static const char *const symbol_keys[KEY_COUNT] = {
     "->", "~", "`", "<=", ">=", "!=",
 };
 
+/* Typing a server address: the symbol layer keeps the digits, with . : - first after them. */
+static const char *const address_keys[KEY_COUNT] = {
+    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+    ".", ":", "-", "_", "/", "[", "]", "@", "=", "+",
+    ";", "'", "\"", ",", "<", ">", "?", "!", "#", "$",
+    "%", "^", "&", "*", "(", ")",
+};
+static int vk_address;
+
 /* "7,9". Anything unparseable leaves the defaults. */
 static int parse_combo(const char *s)
 {
@@ -528,7 +537,7 @@ static void label_keys(void *vk, int symbols)
             if (k >= KEY_COUNT || !keys[col])
                 break;
             if (symbols) {
-                set(keys[col], symbol_keys[k]);
+                set(keys[col], vk_address ? address_keys[k] : symbol_keys[k]);
                 continue;
             }
             buf[0] = k < 10 ? (char)('0' + k) : (char)(letter + k - 10);
@@ -827,6 +836,8 @@ static void layout_keyboard(void *vk)
         }
     }
     extend_bottom_row(vk, kw);
+    if (vk_address && !symbols_on)
+        toggle_symbols(vk);
     relayout(vk);
     tes3x_log("console.vk_layout", (u32)kw);
 }
@@ -868,6 +879,7 @@ static void raise_keyboard(void)
     vk_wait = 0;
     vk_cancel = 0;
     symbols_on = 0;
+    vk_address = 0;
     hist_sel = -1;
     cmd[0] = 0;
     tes3x_vk_limit = CMD_MAX - 1;
@@ -1659,6 +1671,7 @@ static int text_begin(void *owner, const char *initial)
     vk_wait = 0;
     vk_cancel = 0;
     symbols_on = 0;
+    vk_address = 0;
     hist_sel = -1;
     vk_text_client = 1;
     tes3x_vk_limit = CMD_MAX - 1;
@@ -1675,6 +1688,13 @@ int tes3x_console_text_begin(const char *initial)
 int tes3x_console_text_begin_on(void *menu, const char *initial)
 {
     return text_begin(menu, initial);
+}
+
+/* The keyboard just begun is for an address: it opens on the digit and address-symbol layer. */
+void tes3x_console_text_address(void)
+{
+    if (vk_text_client == 1)
+        vk_address = 1;
 }
 
 /* The text typed so far, while a client's keyboard is up. */

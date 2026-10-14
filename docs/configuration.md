@@ -10,7 +10,7 @@ what would be built.
   [`[addons]`](#addons), [`[console]`](#console), [`[server]`](#server),
   [`[content]`](#content)
 - [Profile](#profile): [`[profile]`](#profile-1), [`[patches]`](#patches),
-  [`[preferences]`](#preferences), [`[package]`](#package), [`[rules]`](#rules),
+  [`[preferences]`](#preferences), [`[ui]`](#ui), [`[package]`](#package), [`[rules]`](#rules),
   [`[plugins]`](#plugins), [`[[mods]]`](#mods), [`[ini]`](#ini)
 - [Command-line precedence](#command-line-precedence)
 
@@ -205,6 +205,16 @@ settings.
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `invert_look` | boolean | stored/retail value | Set right-stick vertical look to inverted or normal. |
+
+### `[ui]`
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `font_scale` | number greater than 0, at most 1 | `1` | Scale bitmap font line and glyph metrics. `0.8` makes dialog text smaller while keeping the original texture atlases. |
+
+The pipeline writes scaled copies of the build's loose `.fnt` files. It keeps the source files
+unchanged, including when the retail files were staged with hard links. This option affects text
+and wrapping; it does not resize windows or HUD art.
 
 ### `[package]`
 

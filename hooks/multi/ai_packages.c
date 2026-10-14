@@ -257,11 +257,12 @@ static int ai_try(u32 i)
     ai_zero(config, type >= AI_ESCORT ? 0x20 : 0x14);
     *(u32 *)config = type;
     copy(config + 4, data + 12, 16);
-    /* Reset, so the package replaces what the actor runs here (its data-file AI after a load). */
+    /* Reset, so a travel or wander replaces what the actor runs here (its data-file AI after a
+     * load). A follow or escort keeps the giver's: one reset here starts and never moves. */
     if (type >= AI_ESCORT) {
         *(u8 **)(config + CONFIG_ACTOR) = target;
         *(u8 **)(config + CONFIG_CELL) = cell == OBJECT_NO_CELL ? 0 : cell_at(cell);
-        config[CONFIG_RESET] = 1;
+        config[CONFIG_RESET] = data[28];
     } else {
         config[0x10] = 1;
     }

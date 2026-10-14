@@ -84,7 +84,7 @@ hdd_path = '{hdd}'
 dvd_path = '{dvd}'
 """
 # Captures the xemu window itself, so windows covering it are never grabbed.
-SHOT_SCRIPT = r"""param([string]$Out)
+SHOT_SCRIPT = r"""param([string]$Out, [int]$TargetPid)
 Add-Type -AssemblyName System.Drawing
 Add-Type @"
 using System;using System.Runtime.InteropServices;
@@ -94,8 +94,8 @@ public class W {
   [StructLayout(LayoutKind.Sequential)] public struct R { public int L,T,Rt,B; }
 }
 "@
-$p = Get-Process xemu -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
-if (-not $p) { exit 1 }
+$p = Get-Process -Id $TargetPid -ErrorAction SilentlyContinue
+if (-not $p -or $p.MainWindowHandle -eq 0) { exit 1 }
 $r = New-Object W+R; [W]::GetWindowRect($p.MainWindowHandle, [ref]$r) | Out-Null
 $bmp = New-Object System.Drawing.Bitmap ($r.Rt - $r.L), ($r.B - $r.T)
 $g = [System.Drawing.Graphics]::FromImage($bmp)
@@ -339,14 +339,14 @@ def xemu_events(since):
     return out.stdout.strip()
 
 
-def screenshot(png):
+def screenshot(png, pid):
     if os.name != "nt":
         return
     with tempfile.NamedTemporaryFile("w", suffix=".ps1", delete=False) as script:
         script.write(SHOT_SCRIPT)
     try:
         subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-                        script.name, "-Out", str(png)], capture_output=True)
+                        script.name, "-Out", str(png), "-TargetPid", str(pid)], capture_output=True)
     finally:
         os.unlink(script.name)
 
@@ -845,7 +845,7 @@ def main():
         while proc.poll() is None:
             el = time.time() - t0
             if shots and el >= shots[0]:
-                screenshot(out / f"shot-{int(shots.pop(0)):04d}s.png")
+                screenshot(out / f"shot-{int(shots.pop(0)):04d}s.png", proc.pid)
             if a.gdb_capture is not None and not captured and el >= a.gdb_capture:
                 gdb_capture(out / "gdb.txt", a.gdb_port)
                 captured = True
