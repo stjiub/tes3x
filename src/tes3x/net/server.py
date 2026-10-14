@@ -50,6 +50,7 @@ from .proto import (ACTOR, ACTORS, ACTORS_PER_PACKET, ACTOR_DEAD, ACTOR_IN_COMBA
                     EVENT_LOCALS, LOCALS_MAX, EVENT_ACTOR_PLACE, ACTOR_PLACE,
                     ACTOR_PLACES_PER_EVENT, ACTORS_KEPT_MAX, describe_local, pack_locals, unpack_locals, FACTION_ALL, FACTION_EXPELLED,
                     EVENT_ACTOR_MOVE, ACTOR_MOVE, ACTOR_MOVES_MAX, WORLD_SCRIPTS, SCRIPT_RUNNING,
+                    EVENT_RULES, RULE_AUTO_LEVEL,
                     EVENT_AI_PACKAGE, AI_FOLLOW, AI_TARGET_PLAYER, AI_TARGET_CLIENT,
                     AI_TARGET_OBJECT, AI_NO_DESTINATION, NO_CELL,
                     AI_PACKAGES_MAX, pack_ai_package, unpack_ai_package,
@@ -1516,6 +1517,10 @@ class Server:
                 for data in lines:
                     other.rel.queue(EVENT_TEXT, 0, data)
                 self.flush(other, now)
+
+    def rules(self):
+        """The flags EVENT_RULES gives each console."""
+        return RULE_AUTO_LEVEL if getattr(self.args, "level_up", "rest") == "auto" else 0
 
     def listed_name(self, client):
         """The player's name for `admin list`, or empty before the server knows it."""
@@ -3239,6 +3244,7 @@ class Server:
             self.world.clock = Clock(*offered, now)
             print(f"{stamp} clock {self.world.clock}, from client {client.id}", flush=True)
         self.send(client, CLOCK, self.world.clock.body(now))
+        client.rel.queue(EVENT_RULES, 0, bytes([self.rules()]))
         for refid, origin in self.world.deaths.items():
             client.rel.queue(EVENT_DEATH, origin, struct.pack("<I", refid))
         for data in pack_objects(self.world.objects):

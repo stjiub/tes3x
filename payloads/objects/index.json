@@ -192,6 +192,7 @@
     "NET_LEVELED_RESOLVE": null,
     "NET_LEVELED_SPAWN": null,
     "NET_LEVELED_SPAWN_SLOT": null,
+    "NET_LEVELUP_MENU": null,
     "NET_LIST_APPEND": null,
     "NET_LOAD_ID": null,
     "NET_MAGIC_INSTANCE": null,
@@ -437,8 +438,8 @@
       "sha256": "d9a8a2c10299820e822d83a0e6310a584ff24c77240e51eeb06af6a480bdefa5"
     },
     "tes3xmulti.c": {
-      "digest": "40d3a19997416e2abbd19fc8a91fb48740ce4af238f0e8af2bbca49ba308b1cc",
-      "sha256": "c5acf938e69ae43991418f4422669b5bf5442c651b11c210b177a5d097cfba97"
+      "digest": "a735ef9bb39a837583b1ef2d2ed5652c5db94387a3c5f61117a844d2d43068b9",
+      "sha256": "121f5b41a2e5662ad10ea5ffecc8e1f7a38bcd6811aa5796207c94871c317f85"
     },
     "tes3xmwse.c": {
       "digest": "1f8fc8bf1ff75208c7eb24a4105a6e3cfb18d597b159710d97b3ef7a16a36288",

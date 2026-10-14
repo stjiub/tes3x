@@ -1272,6 +1272,7 @@ WORLD_FIELDS = (
     ("idle_timeout", "Idle timeout (s)", "float", 0.0, "Drop a silent console after this long; "
      "0 keeps the server's default (20). Consoles stop waiting at 15"),
     ("death_gold", "Death gold (%)", "int", 10, "Share of carried gold a death costs"),
+    ("auto_level", "Level up without resting", "bool", False, "Off: the level-up screen comes at the end of a rest"),
     ("hour", "Start hour", "float", -1.0, "Game hour when a new session starts; -1 for the "
      "server's default"),
     ("timescale", "Timescale", "float", 0.0, "0 keeps the server's default"),
@@ -1321,6 +1322,8 @@ def server_arguments(values):
                       ("max_players", "--max-players"), ("death_gold", "--death-gold")):
         if key in values:
             args += [flag, str(values[key])]
+    if values.get("auto_level"):
+        args += ["--level-up", "auto"]
     if values.get("respawn"):
         args += ["--respawn", values["respawn"]]
     for key, flag in (("respawn_delay", "--respawn-delay"), ("idle_timeout", "--idle-timeout"),

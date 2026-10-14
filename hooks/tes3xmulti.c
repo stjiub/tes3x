@@ -15,6 +15,7 @@
  *   tes3xnet send NAME    send U:\TES3X\NAME to the server
  *   tes3xnet menusim 0|1|auto  force the world paused or running under menus, or follow the
  *                         session (the default: running while joined)
+ *   tes3xnet levelprogress N  set the player's level progress (skill raises toward a level), for tests
  *   tes3xnet weather roll 0|1|auto  force this console's own weather rolls off or on, or follow
  *                         the session (the default: only the lowest client id rolls)
  *   tes3xnet down         stop the NIC
@@ -74,6 +75,9 @@ TES3X_OPTIONAL void __cdecl tes3x_console_reply(const char *fmt, ...);
 #endif
 #ifndef TES3X_NET_SERVICE_ACTOR
 #error "define TES3X_NET_SERVICE_ACTOR to ui::getServiceActor"
+#endif
+#ifndef TES3X_NET_LEVELUP_MENU
+#error "define TES3X_NET_LEVELUP_MENU to the function EnableLevelupMenu runs"
 #endif
 #ifndef TES3X_NET_SHOW_MESSAGE
 #error "define TES3X_NET_SHOW_MESSAGE to showMessageBox"
@@ -471,6 +475,7 @@ static int script_safe(const u8 *text, u32 max)
 #include "multi/player_identity.c"
 #include "multi/player_effects.c"
 #include "multi/player_apply.c"
+#include "multi/levelup.c"
 #include "multi/ai_packages.c"
 #include "multi/death.c"
 #include "multi/player_events.c"
@@ -687,6 +692,7 @@ int tes3x_multi_command(const char *text)
     } else if ((rest = word(text, "stat")) && !*skip(rest)) {
         stat();
         menu_stat();
+        tes3x_log_hex3("net.rules_state", rules_flags, level_ups_opened, 0);
         clock_stat();
         weather_stat();
         authority_stat();
@@ -720,6 +726,9 @@ int tes3x_multi_command(const char *text)
     } else if ((rest = word(text, "weather")) && (rest = word(skip(rest), "roll")) &&
                (rest = skip(rest)) && (word(rest, "auto") || number(rest, &value))) {
         weather_forced = word(rest, "auto") ? 0 : 1 + (value != 0);
+    } else if ((rest = word(text, "levelprogress")) && (rest = number(skip(rest), &value)) &&
+               !*skip(rest)) {
+        level_progress_set(value);
     } else if ((rest = word(text, "topic")) && *(rest = skip(rest))) {
         topic_query(rest);
     } else if ((rest = word(text, "faction")) && *(rest = skip(rest))) {

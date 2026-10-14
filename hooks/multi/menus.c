@@ -50,6 +50,7 @@ static void run_script(const char *text);
 static void notice(const char *text);
 static void notice_hold(const char *text);
 static void notice_release(void);
+static void level_up_frame(void);
 static u32 notice_holding;
 static const u8 *player_reference(void);
 static u32 rest_blocked;
@@ -281,8 +282,10 @@ static void menu_frame(int in_world)
             control_hooked |= 4;
     }
     menu_sim(menu_forced ? menu_forced - 1 : joined);
-    if (joined)
+    if (joined) {
         rest_block();
+        level_up_frame();
+    }
     hold_frame();
 }
 

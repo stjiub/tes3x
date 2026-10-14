@@ -21,7 +21,7 @@ static void event_handle(const struct event *e)
     if (e->origin && e->kind < 64 && (1ull << e->kind & (1ull << EVENT_WELCOME |
             1ull << EVENT_AUTHORITY | 1ull << EVENT_OWNERS | 1ull << EVENT_SAVE |
             1ull << EVENT_LOAD | 1ull << EVENT_CHARS | 1ull << EVENT_NEWCHAR | 1ull << EVENT_RUN |
-            1ull << EVENT_ACTOR_PLACE))) {
+            1ull << EVENT_ACTOR_PLACE | 1ull << EVENT_RULES))) {
         tes3x_log_hex3("net.event_forged", e->kind, e->origin, e->length);
         return;
     }
@@ -40,6 +40,8 @@ static void event_handle(const struct event *e)
         authority_event(e);
     } else if (e->kind == EVENT_WELCOME) {
         welcome_event(e);
+    } else if (e->kind == EVENT_RULES) {
+        rules_event(e);
     } else if (e->kind == EVENT_EQUIPMENT) {
         equipment_event(e);
     } else if (e->kind == EVENT_IDENTITY) {

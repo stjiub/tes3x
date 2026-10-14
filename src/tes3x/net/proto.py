@@ -597,9 +597,14 @@ TARGETED = {EVENT_HOLD: "holds", EVENT_HOLD_BROKEN: "breaks the hold on", EVENT_
             EVENT_PLAYER_HIT: "hits the player of"}
 
 
+# From the server after each join: the rules a console follows, one byte of flags.
+EVENT_RULES = 41
+RULE_AUTO_LEVEL = 1  # a character levels up as soon as the level is earned, without resting
+
+
 # Events only the server sends. A console acts on them, so one from a client is never relayed.
 SERVER_EVENTS = {EVENT_WELCOME, EVENT_AUTHORITY, EVENT_OWNERS, EVENT_SAVE, EVENT_LOAD,
-                 EVENT_CHARS, EVENT_NEWCHAR, EVENT_RUN, EVENT_ACTOR_PLACE}
+                 EVENT_CHARS, EVENT_NEWCHAR, EVENT_RUN, EVENT_ACTOR_PLACE, EVENT_RULES}
 
 
 # What an event handler returns: whether the event goes on to the other clients.

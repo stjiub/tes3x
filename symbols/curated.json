@@ -5647,6 +5647,14 @@
       "pc_va": "0x0047A960"
     },
     {
+      "va": "0x001E68F0",
+      "name": "ui::showLevelUpMenu",
+      "confidence": "verified",
+      "provenance": "EnableLevelupMenu handler (opcode 0x1158), PC 0x005DA820; opened in xemu",
+      "note": "Opens or re-shows MenuLevelUp (id at 0x003D90E8). The rest-wait update near 0x00229490 opens it when MobilePlayer+0x5E8 >= iLevelupTotal (GMST 0x446).",
+      "signature": "void __cdecl f()"
+    },
+    {
       "va": "0x001E923F",
       "name": "Loading::Redraw",
       "kind": "site",

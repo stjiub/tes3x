@@ -428,6 +428,9 @@ def main(argv=None):
                    help="drop a client silent this long (default 20; consoles stop waiting at 15)")
     p.add_argument("--respawn-delay", type=float, default=5.0, metavar="SECONDS",
                    help="how long a dead player lies before coming back (default 5)")
+    p.add_argument("--level-up", choices=("rest", "auto"), default="rest",
+                   help="rest: a level is gained at the end of a rest, as in the retail game "
+                        "(default); auto: the level-up screen opens as soon as it is earned")
     p.add_argument("--death-gold", type=int, default=10, metavar="PERCENT",
                    help="the share of carried gold a death costs (default 10)")
     p.add_argument("--rebuild", type=float, nargs="?", const=10.0, metavar="SECONDS",

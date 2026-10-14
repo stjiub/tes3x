@@ -4,6 +4,9 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- Multiplayer servers can set `--level-up auto` (GUI: "Level up without resting") so players get
+  the level-up screen as soon as they earn a level, without resting. The default keeps the retail
+  rule. See [the server guide](docs/multiplayer-server.md).
 - Profiles can set `ui.font_scale` to make in-game text smaller without adding font textures.
   Existing profiles keep the retail font size. See [configuration](docs/configuration.md#ui).
 - The multiplayer server list and address entry now have a dark backing with a thin gold border.

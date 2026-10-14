@@ -54,6 +54,7 @@ OBJECTS_SCHEMA = 1
 
 DATA_HANDLER = 0x003CB5F8
 SERVICE_ACTOR = 0x001CD530  # ui::getServiceActor: the MenuDialog partner's mobile, or 0
+LEVELUP_MENU = 0x001E68F0  # what EnableLevelupMenu runs: opens or re-shows MenuLevelUp
 # What the SetPos, SetAngle and PlayGroup handlers call, to place and animate a reference without
 # the script compiler.
 PLACE_ADDRESSES = (
@@ -492,6 +493,7 @@ def engine_bindings(xbe, sources):
         for name, default in NET_UI_ADDRESSES:
             define("NET_" + name, address(name, default))
         define("NET_SERVICE_ACTOR", address("SERVICE_ACTOR", SERVICE_ACTOR))
+        define("NET_LEVELUP_MENU", address("LEVELUP_MENU", LEVELUP_MENU))
         for name, default in (PLACE_ADDRESSES + SPELL_ADDRESSES + SPAWN_ADDRESSES
                               + CONTAINER_ADDRESSES + ACTOR_ADDRESSES + IDENTITY_ADDRESSES):
             define("NET_" + name, address(name, default))

@@ -1116,6 +1116,15 @@ class ServerTests(unittest.TestCase):
         server.clients[client_id] = client
         return client
 
+    def test_rules_flags_follow_the_level_up_option_and_are_server_only(self):
+        net = tes3x_net
+        server = self.fake_server()
+        server.args = SimpleNamespace(level_up='rest')
+        self.assertEqual(server.rules(), 0)
+        server.args.level_up = 'auto'
+        self.assertEqual(server.rules(), net.RULE_AUTO_LEVEL)
+        self.assertFalse(valid_client_event(net.EVENT_RULES, b''))
+
     def test_actor_moves_keep_their_first_cell_and_reach_late_joins(self):
         net = tes3x_net
         server = self.fake_server()
