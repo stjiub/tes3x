@@ -4972,6 +4972,13 @@
       "note": "Recomputes clipping from cached absolute position, dimensions, padding and parent clip bounds."
     },
     {
+      "va": "0x00199930",
+      "name": "ui::updateVisualTransform",
+      "confidence": "verified",
+      "provenance": "Xbox decompile 0x00199930",
+      "note": "Updates the attached visual transform from this element and ancestor local positions (+0xE4/+0xE8)."
+    },
+    {
       "va": "0x0019A170",
       "name": "ui::findChildElement",
       "kind": "function",
@@ -5009,6 +5016,13 @@
       "pc_va": "0x00582AD0"
     },
     {
+      "va": "0x0019AA30",
+      "name": "ui::updateVisualGeometry",
+      "confidence": "verified",
+      "provenance": "Xbox decompile 0x0019AA30",
+      "note": "When geometry is dirty, reads cached absolute position (+0xEC/+0xF0), pixel size (+0xF4/+0xF8) and parent clip bounds (+0x130..+0x13C) to update drawable geometry."
+    },
+    {
       "va": "0x0019B350",
       "name": "ui::getText",
       "kind": "function",
@@ -5043,6 +5057,13 @@
       "confidence": "verified",
       "provenance": "Xbox decompile: computes screen-relative layout properties using screen dimensions and Element +0x128/+0x12C fractions",
       "note": "Uses Element +0x128/+0x12C screen position alignment fractions; negative values disable the axis."
+    },
+    {
+      "va": "0x0019D210",
+      "name": "ui::updateVisualTree",
+      "confidence": "verified",
+      "provenance": "Xbox decompile 0x0019D210",
+      "note": "Recurses visible children after layout and clipping; updates visual transforms and geometry before scene update."
     },
     {
       "va": "0x0019D330",
@@ -5106,7 +5127,8 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_ui_performLayout",
-      "pc_va": "0x00583B70"
+      "pc_va": "0x00583B70",
+      "note": "Runs anchored-child and screen-anchor layout, updates cached absolute positions and clip bounds, then traverses the visual tree; with redraw enabled, visual geometry reads those same cached rectangles."
     },
     {
       "va": "0x001A63C0",
