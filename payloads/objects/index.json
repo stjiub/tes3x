@@ -172,6 +172,7 @@
     "NET_FIND_SCRIPT": null,
     "NET_GET_BOUNTY": null,
     "NET_GET_FOCUS": null,
+    "NET_GET_PROP": null,
     "NET_GLOBAL_SCRIPT_SITES": 1,
     "NET_GMST_TEXT": null,
     "NET_HEALTH_BAR": null,
@@ -234,6 +235,9 @@
     "NET_RELOCATE": null,
     "NET_RELOCATE_SITES": 3,
     "NET_RESOLVE_OBJECT": null,
+    "NET_REST_BUTTONS": 3,
+    "NET_REST_HEAL_HOURS": null,
+    "NET_REST_HOURS_ID": null,
     "NET_RETIRE_EFFECTS": null,
     "NET_RETIRE_MAGIC_SERIAL": null,
     "NET_SAVE_GAME": null,
@@ -438,8 +442,8 @@
       "sha256": "d9a8a2c10299820e822d83a0e6310a584ff24c77240e51eeb06af6a480bdefa5"
     },
     "tes3xmulti.c": {
-      "digest": "a735ef9bb39a837583b1ef2d2ed5652c5db94387a3c5f61117a844d2d43068b9",
-      "sha256": "121f5b41a2e5662ad10ea5ffecc8e1f7a38bcd6811aa5796207c94871c317f85"
+      "digest": "dfeb0621c966a010087c30f94242d26897c81d6c3ae561bf4844016c16f898e1",
+      "sha256": "09ea6289b188ec804e69d24efe9d67a1a9e55c7cf77246f6ae30faf33030a3ee"
     },
     "tes3xmwse.c": {
       "digest": "1f8fc8bf1ff75208c7eb24a4105a6e3cfb18d597b159710d97b3ef7a16a36288",

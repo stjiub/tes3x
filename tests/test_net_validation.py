@@ -21,6 +21,7 @@ class EventValidationTests(unittest.TestCase):
             p.EVENT_DEATH: struct.pack('<I', 1),
             p.EVENT_STATUS: p.STATUS.pack(1, 2, 3, 4, 5, 6),
             p.EVENT_BOUNTY: struct.pack('<i', 42),
+            p.EVENT_REST: struct.pack('<BH', p.REST_ASK, 8),
             p.EVENT_BUSY: b'\1',
             p.EVENT_SPELL: p.SPELL.pack(1, 2, 3, p.SOURCE_SPELL, 1) + b'fireball\0',
             p.EVENT_CAST: p.SPELL.pack(1, 0, 0, p.SOURCE_SPELL, 1) + b'fireball\0',

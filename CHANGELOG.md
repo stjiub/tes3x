@@ -4,6 +4,10 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- Waiting and resting now work in multiplayer. Pressing Rest, Wait or Until Healed asks the other
+  players to rest; each agrees by opening their own rest menu, and then everyone waits or rests
+  for the same hours while the shared clock moves on. Before, the menu was refused while joined.
+  See [the player guide](docs/multiplayer-client.md#limits).
 - Multiplayer servers can set `--level-up auto` (GUI: "Level up without resting") so players get
   the level-up screen as soon as they earn a level, without resting. The default keeps the retail
   rule. See [the server guide](docs/multiplayer-server.md).

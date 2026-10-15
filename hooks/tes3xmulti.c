@@ -79,6 +79,10 @@ TES3X_OPTIONAL void __cdecl tes3x_console_reply(const char *fmt, ...);
 #ifndef TES3X_NET_LEVELUP_MENU
 #error "define TES3X_NET_LEVELUP_MENU to the function EnableLevelupMenu runs"
 #endif
+#if !defined(TES3X_NET_REST_BUTTONS) || !defined(TES3X_NET_REST_HEAL_HOURS) || \
+    !defined(TES3X_NET_REST_HOURS_ID) || !defined(TES3X_NET_GET_PROP)
+#error "define TES3X_NET_REST_BUTTONS, _REST_HEAL_HOURS, _REST_HOURS_ID and _GET_PROP for the shared rest"
+#endif
 #ifndef TES3X_NET_SHOW_MESSAGE
 #error "define TES3X_NET_SHOW_MESSAGE to showMessageBox"
 #endif
@@ -476,6 +480,7 @@ static int script_safe(const u8 *text, u32 max)
 #include "multi/player_effects.c"
 #include "multi/player_apply.c"
 #include "multi/levelup.c"
+#include "multi/rest.c"
 #include "multi/ai_packages.c"
 #include "multi/death.c"
 #include "multi/player_events.c"
@@ -694,6 +699,7 @@ int tes3x_multi_command(const char *text)
         menu_stat();
         tes3x_log_hex3("net.rules_state", rules_flags, level_ups_opened, 0);
         clock_stat();
+        rest_stat();
         weather_stat();
         authority_stat();
         spell_stat();

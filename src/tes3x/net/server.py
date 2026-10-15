@@ -50,7 +50,8 @@ from .proto import (ACTOR, ACTORS, ACTORS_PER_PACKET, ACTOR_DEAD, ACTOR_IN_COMBA
                     EVENT_LOCALS, LOCALS_MAX, EVENT_ACTOR_PLACE, ACTOR_PLACE,
                     ACTOR_PLACES_PER_EVENT, ACTORS_KEPT_MAX, describe_local, pack_locals, unpack_locals, FACTION_ALL, FACTION_EXPELLED,
                     EVENT_ACTOR_MOVE, ACTOR_MOVE, ACTOR_MOVES_MAX, WORLD_SCRIPTS, SCRIPT_RUNNING,
-                    EVENT_RULES, RULE_AUTO_LEVEL,
+                    EVENT_RULES, RULE_AUTO_LEVEL, EVENT_REST, REST_OPEN, REST_CLOSE, REST_ASK,
+                    REST_START,
                     EVENT_AI_PACKAGE, AI_FOLLOW, AI_TARGET_PLAYER, AI_TARGET_CLIENT,
                     AI_TARGET_OBJECT, AI_NO_DESTINATION, NO_CELL,
                     AI_PACKAGES_MAX, pack_ai_package, unpack_ai_package,
@@ -931,8 +932,12 @@ class Clock:
         self.days_passed, self.scale, self.last = int(days_passed), scale, now
 
     def advance(self, now):
-        self.hour += (now - self.last) * self.scale / 3600
+        self.skip((now - self.last) * self.scale / 3600)
         self.last = now
+
+    def skip(self, hours):
+        """Move the time on by hours, rolling days, months and years over."""
+        self.hour += hours
         while self.hour >= 24:
             self.hour -= 24
             self.days_passed += 1
@@ -1565,6 +1570,11 @@ class Server:
         for other in self.clients.values():
             if other.alive:
                 self.send(other, GONE, struct.pack("<I", client.id))
+        self.rest_menus.discard(client.id)
+        if self.rest_by == client.id:
+            self.rest_cancel(client, time.monotonic())
+        else:
+            self.rest_check(time.monotonic())
 
     def flush(self, client, now, resend=True):
         """Send the ack and the unacked events, or hold them until EVENTS_GAP has passed."""
@@ -2632,6 +2642,58 @@ class Server:
               flush=True)
         return RELAY
 
+    def event_rest(self, client, kind, data, stamp, now):
+        """A console's rest menu opening or closing, or a rest asked for: opening the menu is
+        agreeing, and the rest starts once every console in the world has it open."""
+        op = data[0]
+        if op == REST_OPEN:
+            self.rest_menus.add(client.id)
+        elif op == REST_CLOSE:
+            self.rest_menus.discard(client.id)
+            if self.rest_by == client.id:
+                self.rest_cancel(client, now)
+        elif op == REST_ASK:
+            self.rest_menus.add(client.id)
+            if self.rest_hours is None:
+                self.rest_hours, self.rest_by = struct.unpack_from("<H", data, 1)[0], client.id
+                name = self.player_name(client)
+                print(f"{stamp} client {client.id} ({name}) asks to rest {self.rest_hours} hours",
+                      flush=True)
+                waiting = [c for c in self.clients.values()
+                           if c.in_world and c.id not in self.rest_menus]
+                for other in waiting:
+                    self.notify(f"{name} wants to rest for {self.rest_hours} hours. Open your "
+                                "rest menu to agree.", now, only=other)
+                if waiting:
+                    self.notify("Waiting for " + ", ".join(self.player_name(c) for c in waiting)
+                                + " to open their rest menu.", now, only=client)
+        self.rest_check(now)
+        return KEEP
+
+    def rest_cancel(self, client, now):
+        """The player who asked for a rest left or closed the menu: the request goes."""
+        self.rest_hours = self.rest_by = None
+        self.notify(f"{self.player_name(client)} is not resting.", now, skip=client)
+
+    def rest_check(self, now):
+        """Start the rest asked for once every console in the world has its menu open: the
+        server's clock moves on by the hours, and each console runs its own wait or rest."""
+        members = [c for c in self.clients.values() if c.in_world]
+        self.rest_menus &= {c.id for c in members}
+        if self.rest_hours is None or not members or len(self.rest_menus) < len(members):
+            return
+        hours = self.rest_hours
+        self.rest_hours = self.rest_by = None
+        self.rest_menus.clear()
+        if self.world.clock:
+            self.world.clock.advance(now)
+            self.world.clock.skip(hours)
+        print(f"{time.strftime('%H:%M:%S')} rest {hours} hours for {len(members)} "
+              f"client(s), clock {self.world.clock}", flush=True)
+        for member in members:
+            member.rel.queue(EVENT_REST, 0, struct.pack("<BH", REST_START, hours))
+            self.flush(member, now)
+
     def event_equipment(self, client, kind, data, stamp, now):
         if len(data) < 2:
             return RELAY
@@ -2708,6 +2770,7 @@ class Server:
                       EVENT_PICK: event_pick,
                       EVENT_BUSY: event_busy,
                       EVENT_BOUNTY: event_bounty,
+                      EVENT_REST: event_rest,
                       EVENT_EQUIPMENT: event_equipment,
                       EVENT_IDENTITY: event_identity,
                       EVENT_ACTOR_EQUIPMENT: event_actor_equipment,
@@ -3437,6 +3500,8 @@ class Server:
             self.pinned = (int(self.args.load_order, 16), None)
         self.lost = {"in": 0, "out": 0}
         self.clock_next = 0.0
+        self.rest_menus = set()  # clients with their rest menu open
+        self.rest_hours = self.rest_by = None  # a rest asked for, and by whom
         self.save_next = (time.monotonic() + self.args.save_every if self.args.save_every
                           else math.inf)
         self.owners = {}  # cell -> authority client
@@ -3727,6 +3792,7 @@ class Server:
             self.authority_next = now + AUTHORITY_PERIOD
             self.update_authority(now)
         self.bot.act(now)
+        self.rest_check(now)
         for client in [c for c in self.clients.values() if c.alive and c.bursts]:
             if now - client.joined >= client.bursts[0][0]:
                 _, count = client.bursts.pop(0)

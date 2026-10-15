@@ -5902,9 +5902,17 @@
       "va": "0x0020CAB0",
       "name": "ShowRestMenu",
       "kind": "function",
-      "confidence": "matched",
-      "provenance": "mwse:TES3_ShowRestMenu",
-      "pc_va": "0x00610170"
+      "confidence": "verified",
+      "provenance": "builds MenuRestWait's widgets",
+      "pc_va": "0x00610170",
+      "note": "Registers the pad handlers: A (0xFFFF8080) 0x0020C190, B 0x0020BDA0 closes, X (0xFFFF8082) 0x0020C230; the Rest, Wait and Until Healed buttons click 0x0020BDC0, 0x0020C040, 0x0020BF10 (event 0xFFFF8035)."
+    },
+    {
+      "va": "0x0020CB10",
+      "name": "UI::showRestMenu",
+      "confidence": "verified",
+      "provenance": "calls ui::createMenu for MenuRestWait then ShowRestMenu (0x0020CAB0) when the menu is new",
+      "note": "Opens MenuRestWait; arg is whether resting is allowed."
     },
     {
       "va": "0x0020FB10",
@@ -5931,6 +5939,47 @@
       "pc_va": "0x00622020"
     },
     {
+    {
+      "va": "0x0020BA40",
+      "name": "RestMenu::hoursUntilHealed",
+      "confidence": "verified",
+      "provenance": "called first by onUntilHealed"
+    },
+    {
+      "va": "0x0020BDC0",
+      "name": "RestMenu::onRest",
+      "confidence": "verified",
+      "provenance": "button callback of MenuRestWait's Rest",
+      "note": "Reads the hours property, closes the menu (0x0020BD40), autosaves, sets MobilePlayer+0x5B9, fades out, stores hours at +0x5EC and the position at +0x5D8, then 0x00229D00(1). The multiplayer rest diverts its entry."
+    },
+    {
+      "va": "0x0020BF10",
+      "name": "RestMenu::onUntilHealed",
+      "confidence": "verified",
+      "provenance": "button callback of MenuRestWait's Until Healed; X pad handler 0x0020C230 calls it",
+      "note": "Hours come from 0x0020BA40 (at least 1)."
+    },
+    {
+      "va": "0x0020C040",
+      "name": "RestMenu::onWait",
+      "confidence": "verified",
+      "provenance": "button callback of MenuRestWait's Wait",
+      "note": "As onRest with MobilePlayer+0x5BB and 0x00229D00(0)."
+    },
+    {
+      "va": "0x0020C190",
+      "name": "RestMenu::padA",
+      "confidence": "verified",
+      "provenance": "event 0xFFFF8080 handler",
+      "note": "Rest when the menu's allow-rest property is set, else Wait; calls 0x0020BDC0 at +0x60 or 0x0020C040 at +0x85."
+    },
+    {
+      "va": "0x0020C230",
+      "name": "RestMenu::padX",
+      "confidence": "verified",
+      "provenance": "event 0xFFFF8082 handler",
+      "note": "Until Healed when allowed and hoursUntilHealed >= 1; calls 0x0020BF10 at +0x56."
+    },
       "va": "0x0021B3B0",
       "name": "UpdateFillBar",
       "kind": "function",
@@ -6049,6 +6098,27 @@
       "name": "ui::factorySlider",
       "kind": "function",
       "confidence": "matched",
+    {
+      "va": "0x00229390",
+      "name": "RestWait::timingUpdate",
+      "confidence": "verified",
+      "provenance": "registered by 0x002297D7 on the progress menu",
+      "note": "Counts the bar; each whole hour calls 0x00229910. At the end zeroes +0x5EC, wakeUp, and opens MenuLevelUp when +0x5E8 >= iLevelupTotal."
+    },
+    {
+      "va": "0x00229910",
+      "name": "RestWait::passHour",
+      "confidence": "verified",
+      "provenance": "adds 1.0 to the GameHour global, then runs global scripts and the random rest encounter",
+      "note": "The wait and rest advance GameHour here; a CLOCK that overwrote the globals mid-rest would undo it."
+    },
+    {
+      "va": "0x00229D00",
+      "name": "RestWait::begin",
+      "confidence": "verified",
+      "provenance": "called by onRest, onWait, onUntilHealed and training/travel at 0x00212BC7",
+      "note": "Opens the progress menu (id 0x003DC3D4) with MobilePlayer+0x5EC hours already set; arg 1 is a rest, 0 a wait."
+    },
       "provenance": "mwse:TES3_ui_factorySlider",
       "pc_va": "0x00645EB0"
     },

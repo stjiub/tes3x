@@ -55,6 +55,10 @@ OBJECTS_SCHEMA = 1
 DATA_HANDLER = 0x003CB5F8
 SERVICE_ACTOR = 0x001CD530  # ui::getServiceActor: the MenuDialog partner's mobile, or 0
 LEVELUP_MENU = 0x001E68F0  # what EnableLevelupMenu runs: opens or re-shows MenuLevelUp
+# The rest menu's pad handlers (A: Rest or Wait, X: Until Healed). They call the three functions
+# the menu's buttons also run, which the shared rest holds until every console agrees.
+REST_PAD_A = 0x0020C190
+REST_PAD_X = 0x0020C230
 # What the SetPos, SetAngle and PlayGroup handlers call, to place and animate a reference without
 # the script compiler.
 PLACE_ADDRESSES = (
@@ -488,12 +492,24 @@ def engine_bindings(xbe, sources):
         define("NET_DATA_HANDLER", data_handler)
         for name in ("COMPILE_RUN", "FIND_MENU", "UI_ID", "TRIGGER_EVENT", "FIND_CHILD",
                      "CREATE_WIDGET", "VK_BUTTON", "WIDGET_SET_TEXT", "SET_PROP",
-                     "PERFORM_LAYOUT", "NAV_UP_ID", "NAV_DOWN_ID"):
+                     "PERFORM_LAYOUT", "NAV_UP_ID", "NAV_DOWN_ID", "GET_PROP"):
             define("NET_" + name, address(name, dict(CONSOLE_ADDRESSES)[name]))
         for name, default in NET_UI_ADDRESSES:
             define("NET_" + name, address(name, default))
         define("NET_SERVICE_ACTOR", address("SERVICE_ACTOR", SERVICE_ACTOR))
         define("NET_LEVELUP_MENU", address("LEVELUP_MENU", LEVELUP_MENU))
+        pad_a, pad_x = (int(address(n, v), 16) for n, v in (("REST_PAD_A", REST_PAD_A),
+                                                         ("REST_PAD_X", REST_PAD_X)))
+        rest_buttons = (tes3x_inject.call_target(image, pad_a + 0x60),
+                        tes3x_inject.call_target(image, pad_a + 0x85),
+                        tes3x_inject.call_target(image, pad_x + 0x56))
+        heal_hours = tes3x_inject.call_target(image, rest_buttons[2] + 4)
+        hours_at = image.va_to_off(rest_buttons[0] + 23)
+        if bytes(image.data[hours_at:hours_at + 3]) != bytes.fromhex("668b0d"):
+            raise PayloadError(f"rest button {hexva(rest_buttons[0])}: not the rest menu's")
+        define("NET_REST_BUTTONS", "{" + ",".join(hexva(b) for b in rest_buttons) + "}")
+        define("NET_REST_HEAL_HOURS", hexva(heal_hours))
+        define("NET_REST_HOURS_ID", hexva(struct.unpack_from("<I", image.data, hours_at + 3)[0]))
         for name, default in (PLACE_ADDRESSES + SPELL_ADDRESSES + SPAWN_ADDRESSES
                               + CONTAINER_ADDRESSES + ACTOR_ADDRESSES + IDENTITY_ADDRESSES):
             define("NET_" + name, address(name, default))

@@ -51,27 +51,9 @@ static void notice(const char *text);
 static void notice_hold(const char *text);
 static void notice_release(void);
 static void level_up_frame(void);
+static void rest_frame(void);
 static u32 notice_holding;
 static const u8 *player_reference(void);
-static u32 rest_blocked;
-
-/* Resting and waiting advance the clock, which is shared while joined: the rest menu is closed
- * as soon as it opens, from a bed, the pad or ShowRestMenu alike. */
-static void rest_block(void)
-{
-    static u32 menu_id;
-    u8 *menu;
-
-    if (!menu_id)
-        menu_id = ((fn_ui_id)TES3X_NET_UI_ID)("MenuRestWait");
-    menu = ((fn_find_menu)TES3X_NET_FIND_MENU)(menu_id);
-    if (!menu || !menu[MENU_VISIBLE])
-        return;
-    /* The Xbox menu has no cancel button; B closes it. */
-    ((fn_trigger_event)TES3X_NET_TRIGGER_EVENT)(menu, EVENT_PAD_B, 0, 0, menu);
-    notice("You cannot rest or wait in a multiplayer session.");
-    tes3x_log("net.rest_blocked", ++rest_blocked);
-}
 
 /* The NPC a dialogue is with stays put while the world runs: it leaves the simulation, as actors
  * outside the loaded cells do, until the dialogue closes. Combat or a drop in its health releases
@@ -263,8 +245,8 @@ static void control_hook_install(void)
     control_hooked = 2;
 }
 
-/* While joined, the world runs under menus as it does for the other players, and nobody rests.
- * Only in the world: the main menu at boot has no player to simulate. */
+/* While joined, the world runs under menus as it does for the other players, and a rest waits for
+ * the others. Only in the world: the main menu at boot has no player to simulate. */
 static void menu_frame(int in_world)
 {
     u32 joined = ses.state == SESSION_JOINED && in_world;
@@ -283,7 +265,7 @@ static void menu_frame(int in_world)
     }
     menu_sim(menu_forced ? menu_forced - 1 : joined);
     if (joined) {
-        rest_block();
+        rest_frame();
         level_up_frame();
     }
     hold_frame();
@@ -298,7 +280,7 @@ static void menu_stat(void)
         plausible(clock))
         tes3x_log_hex3("net.menu_mode", world[WORLD_MENU_MODE], (u32)(int)(*clock * 1000.0f),
                        gate[0] == 0x90);
-    tes3x_log_hex3("net.menu_sim", gates_open, menu_forced, rest_blocked);
+    tes3x_log_hex3("net.menu_sim", gates_open, menu_forced, 0);
     tes3x_log_hex3("net.menu_controls", controls_held, control_hooked, target_hooked);
     tes3x_log_hex3("net.ghost_activations", ghost_activations, 0, 0);
     tes3x_log_hex3("net.ghost_crimes", ghost_crimes_blocked, ghost_crime_hooked, 0);

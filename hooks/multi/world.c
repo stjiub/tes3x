@@ -27,7 +27,7 @@ static void clock_frame(void)
     received = game_clock.received;
     copy(server, game_clock.server, CLOCK_BYTES);
     unlock(flags);
-    if (ses.state == SESSION_JOINED && received != game_clock.applied) {
+    if (ses.state == SESSION_JOINED && received != game_clock.applied && !rest_running()) {
         for (i = 0; i < CLOCK_GLOBALS; i++)
             copy((u8 *)globals[i], server + 4 * i, 4);
         if (!game_clock.applied)

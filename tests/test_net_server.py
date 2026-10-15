@@ -1125,6 +1125,97 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(server.rules(), net.RULE_AUTO_LEVEL)
         self.assertFalse(valid_client_event(net.EVENT_RULES, b''))
 
+    def rest_server(self, count):
+        net = tes3x_net
+        server = self.fake_server()
+        server.rest_menus, server.rest_hours, server.rest_by = set(), None, None
+        server.identities = {}
+        server.world.clock = net.Clock(10.0, 5, 3, 427, 100, 30.0, 0.0)
+        clients = [self.fake_client(server, i + 1) for i in range(count)]
+        for client in clients:
+            client.character, client.events = None, 0
+        return server, clients
+
+    def rest_event(self, server, client, *op):
+        net = tes3x_net
+        data = bytes([op[0]]) + (struct.pack('<H', op[1]) if len(op) > 1 else b'')
+        self.assertTrue(valid_client_event(net.EVENT_REST, data))
+        server.on_event(client, net.EVENT_REST, data, '', 0.0)
+
+    def starts(self, client):
+        net = tes3x_net
+        return [d for k, _, d in client.sent if k == net.EVENT_REST]
+
+    def test_a_rest_starts_when_every_console_has_its_menu_open(self):
+        net = tes3x_net
+        server, (first, second) = self.rest_server(2)
+        self.rest_event(server, first, net.REST_OPEN)
+        self.rest_event(server, first, net.REST_ASK, 8)
+        text = [d for k, _, d in second.sent if k == net.EVENT_TEXT]
+        self.assertIn(b'Player 1 wants to rest for 8 hours. Open your rest menu to agree.', text)
+        self.assertEqual(self.starts(first) + self.starts(second), [])
+        self.rest_event(server, second, net.REST_OPEN)
+        start = struct.pack('<BH', net.REST_START, 8)
+        self.assertEqual(self.starts(first), [start])
+        self.assertEqual(self.starts(second), [start])
+        self.assertEqual(server.world.clock.hour, 18.0)
+        self.assertIsNone(server.rest_hours)
+        # the menus closing as the rests begin are no cancel
+        self.rest_event(server, first, net.REST_CLOSE)
+        self.rest_event(server, second, net.REST_CLOSE)
+        self.assertEqual(self.starts(second), [start])
+
+    def test_a_rest_alone_starts_at_once_and_rolls_the_day(self):
+        net = tes3x_net
+        server, (only,) = self.rest_server(1)
+        self.rest_event(server, only, net.REST_ASK, 20)
+        self.assertEqual(self.starts(only), [struct.pack('<BH', net.REST_START, 20)])
+        self.assertEqual((server.world.clock.hour, server.world.clock.day), (6.0, 6))
+
+    def test_closing_the_menu_or_leaving_withdraws_the_ask(self):
+        net = tes3x_net
+        server, (first, second) = self.rest_server(2)
+        server.scripts_orphaned = lambda *a: None
+        server.dialogues = {}
+        server.send = lambda *a: None
+        self.rest_event(server, first, net.REST_ASK, 4)
+        self.rest_event(server, first, net.REST_CLOSE)
+        self.assertIsNone(server.rest_hours)
+        self.rest_event(server, second, net.REST_OPEN)
+        self.assertEqual(self.starts(first) + self.starts(second), [])
+        # the console that asked leaves: the other opening its menu starts nothing
+        self.rest_event(server, second, net.REST_CLOSE)
+        self.rest_event(server, first, net.REST_OPEN)
+        self.rest_event(server, first, net.REST_ASK, 4)
+        server.clients[1].lobby = True
+        server.clients[1].alive = False
+        server.clients[1].in_world = False
+        server.leave(server.clients[1])
+        self.assertIsNone(server.rest_hours)
+        self.assertEqual(self.starts(second), [])
+
+    def test_a_console_leaving_completes_the_rest_the_others_agreed(self):
+        net = tes3x_net
+        server, (first, second, third) = self.rest_server(3)
+        server.scripts_orphaned = lambda *a: None
+        server.dialogues = {}
+        server.send = lambda *a: None
+        self.rest_event(server, first, net.REST_ASK, 2)
+        self.rest_event(server, second, net.REST_OPEN)
+        self.assertEqual(self.starts(first), [])
+        third.alive = third.in_world = False
+        third.lobby, third.announced, third.relaunching = True, False, False
+        server.leave(third)
+        self.assertEqual(self.starts(first), [struct.pack('<BH', net.REST_START, 2)])
+
+    def test_rest_events_are_checked(self):
+        net = tes3x_net
+        for data in (b'', b'\x09', b'\x00\x00', bytes([net.REST_ASK]),
+                     struct.pack('<BH', net.REST_ASK, 0),
+                     struct.pack('<BH', net.REST_ASK, net.REST_HOURS_MAX + 1),
+                     bytes([net.REST_START])):
+            self.assertFalse(valid_client_event(net.EVENT_REST, data), data)
+
     def test_actor_moves_keep_their_first_cell_and_reach_late_joins(self):
         net = tes3x_net
         server = self.fake_server()

@@ -119,7 +119,13 @@ back at the marker on its next join.
 
 ## Limits
 
-- Menus no longer pause the world while joined, and resting or waiting is refused.
+- Menus no longer pause the world while joined.
+- Resting and waiting are shared. Pressing Rest, Wait or Until Healed asks the others to rest; each
+  other player agrees by opening their own rest menu (from a bed, or from the pause menu's wait).
+  Once everyone has the menu open, every console waits or rests for the same hours, and the
+  shared clock moves on by them. A rest that is interrupted ends with the clock caught up to the
+  others. Closing the menu or leaving withdraws your request. The retail rule for levelling up at
+  the end of a rest still applies unless the server uses `--level-up auto`.
 - A multiplayer character loads only from server state. The server restores inventory, equipment,
   level, base and current attributes and skills, journal, learned topics, factions, the
   character's own globals, current health, magicka and fatigue

@@ -42,6 +42,8 @@ static void event_handle(const struct event *e)
         welcome_event(e);
     } else if (e->kind == EVENT_RULES) {
         rules_event(e);
+    } else if (e->kind == EVENT_REST) {
+        rest_event(e);
     } else if (e->kind == EVENT_EQUIPMENT) {
         equipment_event(e);
     } else if (e->kind == EVENT_IDENTITY) {

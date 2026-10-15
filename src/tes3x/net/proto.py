@@ -602,6 +602,16 @@ EVENT_RULES = 41
 RULE_AUTO_LEVEL = 1  # a character levels up as soon as the level is earned, without resting
 
 
+# The shared wait and rest. A console sends REST_OPEN or REST_CLOSE as its rest menu opens or goes
+# (the player agrees to a rest by opening it), and REST_ASK with the hours when the player presses
+# Rest, Wait or Until Healed. When every console in the world has the menu open and a rest has been
+# asked for, the server moves its clock on by the hours and sends REST_START to each, which runs
+# its own wait or rest for those hours.
+EVENT_REST = 42
+REST_OPEN, REST_CLOSE, REST_ASK, REST_START = 0, 1, 2, 3
+REST_HOURS_MAX = 24 * 7
+
+
 # Events only the server sends. A console acts on them, so one from a client is never relayed.
 SERVER_EVENTS = {EVENT_WELCOME, EVENT_AUTHORITY, EVENT_OWNERS, EVENT_SAVE, EVENT_LOAD,
                  EVENT_CHARS, EVENT_NEWCHAR, EVENT_RUN, EVENT_ACTOR_PLACE, EVENT_RULES}
