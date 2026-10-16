@@ -117,6 +117,7 @@
     "NET_ADD_GLOBAL_SCRIPT": null,
     "NET_ADD_MOB": null,
     "NET_ADD_NEW_OBJECT": null,
+    "NET_ADD_NEW_OBJECT_SITES": 10,
     "NET_AI_STEP": null,
     "NET_AI_STEP_SLOTS": 3,
     "NET_ALCHEMY_NEW": null,
@@ -269,6 +270,7 @@
     "NET_SOURCE_EFFECTS": null,
     "NET_SPELL_HIT": null,
     "NET_SPELL_HIT_SITES": 9,
+    "NET_SPELL_NEW": null,
     "NET_START_COMBAT": null,
     "NET_SUMMON": null,
     "NET_SUMMON_SITES": 1,
@@ -288,9 +290,9 @@
     "OPEN_MENU": null,
     "OPEN_VK": null,
     "OPTIONS_ID": null,
+    "OPTIONS_LAYOUT": null,
     "OPTIONS_OPEN": null,
     "PERFORM_LAYOUT": null,
-    "OPTIONS_LAYOUT": null,
     "PLAYER_MOBILE": null,
     "RECORDS_PTR": null,
     "REFINDEX_FIND_IN_CELL": null,
@@ -397,12 +399,12 @@
       "digest": "4f028092176dc1dda92b2d7f477dfd7b0a5db57d5f58514c4ed7d0bdf9a33181",
       "sha256": "9e8637c790821713eb7f24f3b8a744f8dfd483dd3ef1296a39a0dda828622693"
     },
-    "tes3xinfoarena.c": {
-      "digest": "578a1521956dd0362bf6031f4b9cadd42ab5279a2b2b614fa9290e55eee4c14f",
     "tes3xhudscale.c": {
       "digest": "b93a8e2d2d7df5425b643df28e8c2ed1f1560cc9acb3c67e35d08f6fbd2f9c97",
       "sha256": "5d20df67f269d3bd3e036ae72bdf9eaebe2af1e49994e4788649cb8ae45ddc85"
     },
+    "tes3xinfoarena.c": {
+      "digest": "578a1521956dd0362bf6031f4b9cadd42ab5279a2b2b614fa9290e55eee4c14f",
       "sha256": "4c5ac19df121f83954c238bbf55e4fbc8e8175d18d1e3225798c7c9b84ce493c"
     },
     "tes3xini.c": {
@@ -454,8 +456,8 @@
       "sha256": "d9a8a2c10299820e822d83a0e6310a584ff24c77240e51eeb06af6a480bdefa5"
     },
     "tes3xmulti.c": {
-      "digest": "dfeb0621c966a010087c30f94242d26897c81d6c3ae561bf4844016c16f898e1",
-      "sha256": "09ea6289b188ec804e69d24efe9d67a1a9e55c7cf77246f6ae30faf33030a3ee"
+      "digest": "e377657ab0e0d764d9b1866e8431af7c8f815648bddc8c1b406b70771d3e29e2",
+      "sha256": "fa223e563dda80c903309698b37f504686ef9be27fbaa726a68c9e3a16083b4e"
     },
     "tes3xmwse.c": {
       "digest": "1f8fc8bf1ff75208c7eb24a4105a6e3cfb18d597b159710d97b3ef7a16a36288",

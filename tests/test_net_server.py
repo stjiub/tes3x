@@ -1320,6 +1320,63 @@ class ServerTests(unittest.TestCase):
                                             net.NO_CELL, 0, anywhere, 1)):
             self.assertFalse(valid_client_event(net.EVENT_AI_PACKAGE, invalid))
 
+    def test_records_made_in_play_are_kept_relayed_whole_and_replayed_before_joins(self):
+        net = tes3x_net
+        server = self.fake_server()
+        first, second = self.fake_client(server, 1), self.fake_client(server, 2)
+        first.record_in = second.record_in = None
+        fire = struct.pack('<hbbI4I', 14, -1, -1, 0, 0, 10, 20, 30)
+        frost = struct.pack('<hbbI4I', 16, -1, -1, 2, 4, 5, 6, 7)
+        blob = net.pack_record(0, 12, 0, '1357986420123456', 'Fire and Frost', fire + frost)
+        parts = net.record_parts(blob)
+        self.assertEqual(len(parts), 2)
+        for part in parts:
+            self.assertTrue(valid_client_event(net.EVENT_RECORD, part))
+        # Parts come one by one; the others get the whole record, from the sender.
+        server.event_record(first, net.EVENT_RECORD, parts[0], '', 0.0)
+        self.assertEqual(second.sent, [])
+        server.event_record(first, net.EVENT_RECORD, parts[1], '', 0.0)
+        self.assertEqual(second.sent, [(net.EVENT_RECORD, 1, part) for part in parts])
+        self.assertEqual(first.sent, [])
+        self.assertEqual(net.unpack_record(bytes.fromhex(server.world.records['1357986420123456']))[4:6],
+                         ('1357986420123456', 'Fire and Frost'))
+        # Again is not news; a part out of order or a bad blob is dropped.
+        second.sent.clear()
+        for part in parts:
+            server.event_record(first, net.EVENT_RECORD, part, '', 0.0)
+        self.assertEqual(second.sent, [])
+        server.event_record(first, net.EVENT_RECORD, parts[1], '', 0.0)
+        bad = bytes([0, 1]) + blob[:-1]
+        server.event_record(first, net.EVENT_RECORD, bad, '', 0.0)
+        self.assertEqual(len(server.world.records), 1)
+        # Through the world file, and into a console that joins later.
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder)
+        server.world.path = str(folder / 'world.json')
+        server.world.save(0.0)
+        restored = net.World()
+        restored.load(server.world.path, 0.0)
+        self.assertEqual(restored.records, server.world.records)
+        later = self.fake_server()
+        later.world = restored
+        third = self.fake_client(later, 3)
+        later.replay_records(third)
+        self.assertEqual(third.sent, [(net.EVENT_RECORD, 0, part) for part in parts])
+        # The table is bounded.
+        server.world.records.update({str(i): 'x' for i in range(net.RECORDS_MAX)})
+        other = net.pack_record(0, 1, 0, 'z2468', 'Other', fire)
+        for part in net.record_parts(other):
+            server.event_record(second, net.EVENT_RECORD, part, '', 0.0)
+        self.assertNotIn('z2468', server.world.records)
+        for invalid in (b'', parts[0][:2], bytes([2, 2]) + b'x', bytes([0, 5]) + b'x',
+                        bytes([0, 1]) + b'x' * (net.RECORD_CHUNK + 1)):
+            self.assertFalse(valid_client_event(net.EVENT_RECORD, invalid))
+        for malformed in (blob[:10], blob[:-1], blob + b'x', net.RECORD_HEAD.pack(2, 0, 0, 0, 1)
+                          + b'1\0n\0' + fire,
+                          net.pack_record.__call__ if False else blob.replace(b'Fire', b'Fre')):
+            with self.assertRaises(ValueError):
+                net.unpack_record(malformed)
+
     def test_world_scripts_are_kept_handed_on_and_end_with_their_last_runner(self):
         net = tes3x_net
         server = self.fake_server()
@@ -2003,7 +2060,7 @@ class ServerTests(unittest.TestCase):
         saved = next(world.glob('*.json'))
         state = json.loads(saved.read_text(encoding='utf-8'))
         self.assertEqual(sorted(state), ['actors', 'ai', 'clock', 'contents', 'deaths', 'factions', 'globals', 'journal', 'locals', 'moves', 'next_spawn', 'objects',
-                                         'scripts', 'spawns', 'statuses', 'topics', 'weather'])
+                                         'records', 'scripts', 'spawns', 'statuses', 'topics', 'weather'])
         self.assertEqual(len(state['clock']), 6)  # hour, day, month, year, days passed, scale
         self.assertEqual(state['deaths'], {str(refid): 1})
         self.assertEqual(state['objects'], {str(refid + 1): [3, net.OBJECT_DISABLED, 0]})

@@ -612,6 +612,71 @@ REST_OPEN, REST_CLOSE, REST_ASK, REST_START = 0, 1, 2, 3
 REST_HOURS_MAX = 24 * 7
 
 
+# A record made in play: a custom spell, whose id the engine rolled on the console that made it.
+# One record is a blob sent in parts of [part, parts, chunk]: RECORD_HEAD (type, cast type, magicka
+# cost, flags, effect count, 0), the id and the name each ending in a zero, then the effects as the
+# engine keeps them (RECORD_EFFECT bytes each). A console sends its record to the server, which
+# keeps it in the world file and sends it whole to every other console, and to each at join before
+# its character's items and spells, so a spell resolves by id everywhere.
+EVENT_RECORD = 43
+RECORD_SPELL = 1
+RECORD_HEAD = struct.Struct("<BBHIBx")
+RECORD_EFFECT = 24
+RECORD_EFFECTS_MAX = 8
+RECORD_ID_MAX = 31
+RECORD_NAME_MAX = 31
+RECORD_CHUNK = 78
+RECORD_PARTS_MAX = 4
+RECORDS_MAX = 4096
+
+
+def unpack_record(blob):
+    """(type, cast type, cost, flags, id, name, effects); ValueError if malformed."""
+    blob = bytes(blob)
+    if len(blob) <= RECORD_HEAD.size:
+        raise ValueError("record length")
+    kind, cast, cost, flags, count = RECORD_HEAD.unpack_from(blob)
+    if kind != RECORD_SPELL or cast > 5 or flags > 7 or count > RECORD_EFFECTS_MAX:
+        raise ValueError("record type")
+    end = blob.find(b"\0", RECORD_HEAD.size)
+    name_end = blob.find(b"\0", end + 1) if end >= 0 else -1
+    if end < 0 or name_end < 0:
+        raise ValueError("record text")
+    ident, name = blob[RECORD_HEAD.size:end], blob[end + 1:name_end]
+    if (not 0 < len(ident) <= RECORD_ID_MAX or len(name) > RECORD_NAME_MAX
+            or any(b < 32 or b == 127 or b == 34 for b in ident)
+            or any(b < 32 or b == 127 for b in name)):
+        raise ValueError("record text")
+    effects = blob[name_end + 1:]
+    if len(effects) != count * RECORD_EFFECT or not count:
+        raise ValueError("record effects")
+    for off in range(0, len(effects), RECORD_EFFECT):
+        effect, skill, attribute, rng = struct.unpack_from("<hbbI", effects, off)
+        if (not 0 <= effect <= 142 or not -1 <= skill < len(SKILL_NAMES)
+                or not -1 <= attribute < len(ATTRIBUTE_NAMES) or rng > 2):
+            raise ValueError("record effect")
+        if any(v > 10000000 for v in struct.unpack_from("<4I", effects, off + 8)):
+            raise ValueError("record effect values")
+        low, high = struct.unpack_from("<II", effects, off + 16)
+        if low > high or high > 10000000:
+            raise ValueError("record effect values")
+    return (kind, cast, cost, flags, ident.decode("latin-1"), name.decode("latin-1"), effects)
+
+
+def pack_record(cast, cost, flags, ident, name, effects):
+    """The blob of a spell record."""
+    blob = (RECORD_HEAD.pack(RECORD_SPELL, cast, cost, flags, len(effects) // RECORD_EFFECT)
+            + zstr(ident) + zstr(name) + effects)
+    unpack_record(blob)
+    return blob
+
+
+def record_parts(blob):
+    """A record's EVENT_RECORD payloads."""
+    chunks = [blob[i:i + RECORD_CHUNK] for i in range(0, len(blob), RECORD_CHUNK)]
+    return [bytes([n, len(chunks)]) + chunk for n, chunk in enumerate(chunks)]
+
+
 # Events only the server sends. A console acts on them, so one from a client is never relayed.
 SERVER_EVENTS = {EVENT_WELCOME, EVENT_AUTHORITY, EVENT_OWNERS, EVENT_SAVE, EVENT_LOAD,
                  EVENT_CHARS, EVENT_NEWCHAR, EVENT_RUN, EVENT_ACTOR_PLACE, EVENT_RULES}

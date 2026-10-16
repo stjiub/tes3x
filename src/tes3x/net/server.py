@@ -52,6 +52,7 @@ from .proto import (ACTOR, ACTORS, ACTORS_PER_PACKET, ACTOR_DEAD, ACTOR_IN_COMBA
                     EVENT_ACTOR_MOVE, ACTOR_MOVE, ACTOR_MOVES_MAX, WORLD_SCRIPTS, SCRIPT_RUNNING,
                     EVENT_RULES, RULE_AUTO_LEVEL, EVENT_REST, REST_OPEN, REST_CLOSE, REST_ASK,
                     REST_START,
+                    EVENT_RECORD, RECORDS_MAX, RECORD_PARTS_MAX, unpack_record, record_parts,
                     EVENT_AI_PACKAGE, AI_FOLLOW, AI_TARGET_PLAYER, AI_TARGET_CLIENT,
                     AI_TARGET_OBJECT, AI_NO_DESTINATION, NO_CELL,
                     AI_PACKAGES_MAX, pack_ai_package, unpack_ai_package,
@@ -192,6 +193,8 @@ class World:
         # package from a player or a world script; target is None, ["player", character],
         # ["object", id] or ["bot"]
         self.ai = {}
+        # record id -> hex blob (unpack_record): spells made in play; replayed likewise
+        self.records = {}
         # spawn id -> reference made at run time (unpack_spawn), removed ones too; replayed likewise
         self.spawns = {}
         # refid -> {"cell", "entries", "origin"}: a container's latest contents; sent to whoever
@@ -223,6 +226,7 @@ class World:
         self.actors.update({int(k): v for k, v in saved.get("actors", {}).items()})
         self.moves.update({int(k): v for k, v in saved.get("moves", {}).items()})
         self.ai.update({int(k): v for k, v in saved.get("ai", {}).items()})
+        self.records.update(saved.get("records", {}))
         self.scripts.update({k: dict(v, values={int(s): x for s, x in v["values"].items()})
                              for k, v in saved.get("scripts", {}).items()})
         for spawn in self.spawns.values():
@@ -250,6 +254,7 @@ class World:
                  "actors": {str(k): v for k, v in self.actors.items()},
                  "moves": {str(k): v for k, v in self.moves.items()},
                  "ai": {str(k): v for k, v in self.ai.items()},
+                 "records": self.records,
                  "scripts": {k: dict(v, values={str(s): x for s, x in v["values"].items()})
                              for k, v in self.scripts.items()}}
         if self.clock:
@@ -266,7 +271,7 @@ class World:
                 f"{len(self.journal)} quests, "
                 f"{len(self.globals)} globals, {len(self.locals)} scripted references, "
                 f"{len(self.actors)} actors, {len(self.moves)} moved, "
-                f"{len(self.ai)} AI packages, "
+                f"{len(self.ai)} AI packages, {len(self.records)} records, "
                 f"{len(self.scripts)} scripts"
                 + (f", clock {self.clock}" if self.clock else ""))
 
@@ -1024,6 +1029,7 @@ class Client:
         self.dead = False  # its player died and has not respawned; relayed to peers
         self.rel = Reliable()
         self.events = 0
+        self.record_in = None  # [parts, next part, bytes] of a record being received
         self.known = {}  # cell -> the authority this client was told
         self.owners_told = {}  # actor id -> the owner this client was told, where not 0
         self.loaded = set()
@@ -1898,6 +1904,7 @@ class Server:
     def player_ready(self, client, replay, stamp, now):
         """Replay retained state, or have the console publish its supported fields."""
         self.announce_join(client, now)
+        self.replay_records(client)
         if replay:
             for sid, spawn in list(self.world.spawns.items()):
                 if spawn.get("summon") and spawn["origin"] == client.id and not spawn["removed"]:
@@ -2462,6 +2469,50 @@ class Server:
                 self.send_ai_package(recipient, refid, entry, now)
         return KEEP
 
+    def replay_records(self, client):
+        """Every kept record, whole, before the character's items and spells that name them."""
+        for blob in self.world.records.values():
+            for part in record_parts(bytes.fromhex(blob)):
+                client.rel.queue(EVENT_RECORD, 0, part)
+
+    def event_record(self, client, kind, data, stamp, now):
+        """Collect a console's record from its parts, keep it, and send it whole to the others."""
+        part, parts = data[0], data[1]
+        if part == 0:
+            client.record_in = [parts, 0, bytearray()]
+        pending = client.record_in
+        if (pending is None or pending[0] != parts or pending[1] != part
+                or parts > RECORD_PARTS_MAX):
+            client.record_in = None
+            return KEEP
+        pending[2] += data[2:]
+        pending[1] += 1
+        if pending[1] < parts:
+            return KEEP
+        client.record_in = None
+        blob = bytes(pending[2])
+        try:
+            ident = unpack_record(blob)[4]
+        except ValueError as error:
+            print(f"{stamp} client {client.id}: bad record ({error})", flush=True)
+            return KEEP
+        key = ident.lower()
+        if key in self.world.records:
+            return KEEP
+        if len(self.world.records) >= RECORDS_MAX:
+            print(f"{stamp} client {client.id}: record {ident} not kept, table full", flush=True)
+            return KEEP
+        self.world.records[key] = blob.hex()
+        self.world.dirty = True
+        if self.detail["verbose"]:
+            print(f"{stamp} client {client.id}: record {ident}", flush=True)
+        for other in self.clients.values():
+            if other.in_world and other.id != client.id:
+                for chunk in record_parts(blob):
+                    other.rel.queue(EVENT_RECORD, client.id, chunk)
+                self.flush(other, now)
+        return KEEP
+
     def follow_bot(self, refid, now):
         """As AIFollow from the bot's dialogue: refid follows the bot's ghost."""
         config = struct.pack("<3fB3x", AI_NO_DESTINATION, AI_NO_DESTINATION, 0.0, 0)
@@ -2775,7 +2826,8 @@ class Server:
                       EVENT_IDENTITY: event_identity,
                       EVENT_ACTOR_EQUIPMENT: event_actor_equipment,
                       EVENT_ACTOR_MOVE: event_actor_move,
-                      EVENT_AI_PACKAGE: event_ai_package}
+                      EVENT_AI_PACKAGE: event_ai_package,
+                      EVENT_RECORD: event_record}
 
     def update_authority(self, now):
         """Name each loaded cell's authority and tell every client that has the cell loaded."""

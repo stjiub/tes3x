@@ -119,6 +119,9 @@ def valid_client_event(kind, data):
         return len(data) == p.STATUS.size
     if kind == p.EVENT_BOUNTY:
         return len(data) == 4
+    if kind == p.EVENT_RECORD:
+        return (len(data) > 2 and multipart(data) and data[1] <= p.RECORD_PARTS_MAX
+                and len(data) <= 2 + p.RECORD_CHUNK)
     if kind == p.EVENT_REST:
         if data[:1] == bytes([p.REST_ASK]):
             return len(data) == 3 and 1 <= struct.unpack_from('<H', data, 1)[0] <= p.REST_HOURS_MAX

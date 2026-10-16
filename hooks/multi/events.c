@@ -68,6 +68,8 @@ static void event_handle(const struct event *e)
         moves_event(e);
     } else if (e->kind == EVENT_AI_PACKAGE) {
         ai_packages_event(e);
+    } else if (e->kind == EVENT_RECORD) {
+        records_event(e);
     } else if (e->kind == EVENT_SPAWN) {
         spawn_event(e);
     } else if (e->kind == EVENT_CONTENTS) {

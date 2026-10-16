@@ -6116,6 +6116,12 @@
       "pc_va": "0x00621450"
     },
     {
+      "va": "0x00219B60",
+      "name": "ui::menuSpellmaking_make",
+      "confidence": "matched",
+      "provenance": "string 'spellmake success'; builds a Spell from the menu and calls addNewObject at 0x0021A050"
+    },
+    {
       "va": "0x0021AC70",
       "name": "UI::UpdateSpellmakingMenu",
       "kind": "function",

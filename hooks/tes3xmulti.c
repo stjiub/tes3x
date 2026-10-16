@@ -107,7 +107,8 @@ TES3X_OPTIONAL void __cdecl tes3x_console_reply(const char *fmt, ...);
     !defined(TES3X_NET_RETIRE_EFFECTS) || !defined(TES3X_NET_MAGIC_PROCESS) || \
     !defined(TES3X_NET_EFFECT_CALLBACKS) || !defined(TES3X_NET_EFFECT_ICONS) || \
     !defined(TES3X_NET_ALCHEMY_NEW) || !defined(TES3X_NET_ADD_NEW_OBJECT) || \
-    !defined(TES3X_NET_SET_STRING_SLOT)
+    !defined(TES3X_NET_SET_STRING_SLOT) || !defined(TES3X_NET_SPELL_NEW) || \
+    !defined(TES3X_NET_ADD_NEW_OBJECT_SITES)
 #error "define TES3X_NET_SPELL_HIT, TES3X_NET_CAST_BOLT, their call sites and the spell functions"
 #endif
 #if !defined(TES3X_NET_SHOOT) || !defined(TES3X_NET_SHOOT_SLOTS) || !defined(TES3X_NET_NOCK) || \
@@ -478,6 +479,7 @@ static int script_safe(const u8 *text, u32 max)
 #include "multi/moves.c"
 #include "multi/player_identity.c"
 #include "multi/player_effects.c"
+#include "multi/records.c"
 #include "multi/player_apply.c"
 #include "multi/levelup.c"
 #include "multi/rest.c"
@@ -540,11 +542,13 @@ void tes3x_multi_frame(void)
         scripts_hook_install();
         moves_hook_install();
         ai_packages_hook_install();
+        records_hook_install();
         authority_session();
         moves_session();
         ai_packages_session();
         spawns_session();
         events_frame();
+        records_frame();
         save_frame();
         respawn_frame();
         file_frame();
@@ -711,6 +715,7 @@ int tes3x_multi_command(const char *text)
         world_scripts_stat();
         moves_stat();
         ai_packages_stat();
+        records_stat();
         spawns_stat();
         containers_stat();
         bulk_stat();
@@ -753,6 +758,8 @@ int tes3x_multi_command(const char *text)
         ai_query(rest);
     } else if ((rest = word(text, "act")) && *(rest = skip(rest))) {
         act_command(rest);
+    } else if ((rest = word(text, "spellmake")) && *(rest = skip(rest))) {
+        spellmake_command(rest);
     } else if ((rest = word(text, "send")) && *(rest = skip(rest))) {
         up_command(rest);
     } else if ((rest = word(text, "save")) && !*skip(rest)) {

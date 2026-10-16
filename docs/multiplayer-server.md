@@ -493,7 +493,12 @@ none. A console names its own player as target kind 1 and another player's stand
 with that player's client. The server keeps the latest package of each actor (up to 4,096) and
 a player target by character; it sends the package to that character's console as kind 1 and
 to the others as kind 2, replays all of them before READY, and holds back one whose target
-player is away until that player joins. `WORLD_SCRIPTS` (player sub-kind 21) is a
+player is away until that player joins. `RECORD` (event 43) is a spell made at the spell maker:
+a blob sent in parts of at most 78 bytes (part, parts, chunk) holding the cast type, magicka
+cost, flags, the id the engine rolled, the name and up to eight effects. The server checks the
+whole blob, keeps it in the world file (up to 4,096), sends it whole to the other joined
+consoles and replays every record before a joining character's items and spells; a console
+builds it under the same id. `WORLD_SCRIPTS` (player sub-kind 21) is a
 global script a console started after its first READY: op (1 running, 2 stopped, 3 values),
 the script's reference (refid; 1 the player), the script id, a count and `LOCALS` entries. The
 server keeps each script (up to 512, 64 locals each) with the locals of the first console

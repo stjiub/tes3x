@@ -35,6 +35,8 @@ class EventValidationTests(unittest.TestCase):
             p.EVENT_ACTOR_MOVE: p.ACTOR_MOVE.pack(0x0101F7C4, 1, 2, 3., 4., 5., 90.),
             p.EVENT_AI_PACKAGE: p.pack_ai_package(0x0101F7C4, p.AI_TRAVEL, 0, p.NO_CELL, 0,
                                                   bytes(16), 0),
+            p.EVENT_RECORD: p.record_parts(p.pack_record(0, 5, 0, '1234', 'Spark',
+                                                         bytes(24)))[0],
             p.EVENT_REMOVE: p.pack_removes([1])[0],
             p.EVENT_WANT: b'\1\1\0',
             p.EVENT_WEATHER: p.pack_weather({1: 2})[0],
@@ -65,7 +67,7 @@ class EventValidationTests(unittest.TestCase):
         for kind, data in self.valid_events().items():
             if kind != p.EVENT_TEXT:
                 bad.append((kind, b''))
-                if kind not in (p.EVENT_PLAYER, p.EVENT_BUSY, p.EVENT_GAME):
+                if kind not in (p.EVENT_PLAYER, p.EVENT_BUSY, p.EVENT_GAME, p.EVENT_RECORD):
                     bad.append((kind, data[:-1]))
         bad += [
             (p.EVENT_CAST, p.SPELL.pack(1, 2, 3, 1, 2) + b'spell\0'),
