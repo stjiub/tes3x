@@ -9,10 +9,10 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
-import tempfile
 
 from tes3x.payload import (HEADER_FORMAT, OBJECTS, OBJECTS_SCHEMA, compile_objects,
                            engine_bindings, production_sources, source_digest)
+from tes3x.pipeline import make_work_dir
 
 
 def main():
@@ -25,16 +25,20 @@ def main():
     sources = production_sources()
     layout = engine_bindings(args.xbe, sources).layout()
     args.out.mkdir(parents=True, exist_ok=True)
-    for stale in args.out.glob("*.obj"):
-        stale.unlink()
-    with tempfile.TemporaryDirectory() as work:
-        built = compile_objects(sources, Path(work), layout, llvm_dir=args.llvm)
+    work = make_work_dir(args.out.parent, ".objects-")
+    try:
+        built = compile_objects(sources, work, layout, llvm_dir=args.llvm)
+        for stale in args.out.glob("*.obj"):
+            stale.unlink()
         entries = {}
         for source, obj in built.items():
             target = args.out / obj.name
             shutil.copyfile(obj, target)
             entries[source] = {"digest": source_digest(source),
                                "sha256": hashlib.sha256(target.read_bytes()).hexdigest()}
+    finally:
+        if work.resolve().is_relative_to(args.out.parent.resolve()):
+            shutil.rmtree(work)
     index = {"schema": OBJECTS_SCHEMA, "header_format": HEADER_FORMAT, "layout": layout,
              "objects": entries}
     with (args.out / "index.json").open("w", encoding="utf-8", newline="\n") as stream:

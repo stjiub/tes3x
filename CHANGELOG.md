@@ -29,11 +29,11 @@ No official releases yet. The first public release is in preparation.
 - Typing a new server's address opens the keyboard on the digits with `.`, `:` and `-`; the
   letter keys are one switch away.
 - xemu screenshots now capture the run's own window when another xemu session is open.
+  Capture failures are reported instead of silently leaving out the image.
 - New `boot-clear` patch: a build that starts the engine without the retail launcher no longer
   flashes green lines before its first splash. See [the patch](patches/boot-clear.md).
 - New `dash-button` patch: a TES3X button in the main and pause menus that leaves for the Dash,
   in place of multiplayer's Dash button. The menu buttons are redrawn together so they match, and
-  Capture failures are reported instead of silently leaving out the image.
   the menu is taller by a row. See [the patch](patches/dash-button.md).
 - Builds whose engine starts without the retail launcher (`--direct-engine` runs and the overlay
   layout) now include `boot-clear`, `menu-still` and `dash-button` together, and multiplayer

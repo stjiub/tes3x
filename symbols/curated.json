@@ -6224,6 +6224,27 @@
       "pc_va": "0x00633510"
     },
     {
+      "va": "0x00229390",
+      "name": "RestWait::timingUpdate",
+      "confidence": "verified",
+      "provenance": "registered by 0x002297D7 on the progress menu",
+      "note": "Counts the bar; each whole hour calls 0x00229910. At the end zeroes +0x5EC, wakeUp, and opens MenuLevelUp when +0x5E8 >= iLevelupTotal."
+    },
+    {
+      "va": "0x00229910",
+      "name": "RestWait::passHour",
+      "confidence": "verified",
+      "provenance": "adds 1.0 to the GameHour global, then runs global scripts and the random rest encounter",
+      "note": "The wait and rest advance GameHour here; a CLOCK that overwrote the globals mid-rest would undo it."
+    },
+    {
+      "va": "0x00229D00",
+      "name": "RestWait::begin",
+      "confidence": "verified",
+      "provenance": "called by onRest, onWait, onUntilHealed and training/travel at 0x00212BC7",
+      "note": "Opens the progress menu (id 0x003DC3D4) with MobilePlayer+0x5EC hours already set; arg 1 is a rest, 0 a wait."
+    },
+    {
       "va": "0x0022D920",
       "name": "WidgetButton::updateStateColor",
       "kind": "function",
