@@ -22,7 +22,10 @@ from tes3x.link import LinkError, link, write_map, write_pe
 from tes3x.multi_signatures import SIGNATURES as MULTI_SIGNATURES, find_multi_signature
 from tes3x.paths import bundled, checkout, resource
 from tes3x.patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, archive_load_site,
-                         find_call_sites, find_mcp37_context,
+                         find_call_sites, find_levelup_scale, find_menu_area_scale,
+                         find_message_scale, find_name_scale, find_options_scale,
+                         find_chargen_scale,
+                         find_mcp37_context,
                          find_mcp125_context, find_save_allowed_context,
                          find_script_ip_restore_call, find_transition_calls, scene_form)
 
@@ -78,6 +81,7 @@ PLACE_ADDRESSES = (
 # the ExplodeSpell and Cast handlers call to start a spell on a reference.
 SPELL_HIT = 0x00150370
 SPELL_HIT_SITES = 9
+ADD_NEW_OBJECT_SITES = 10  # every caller: spell maker, enchanting, brewing and the rest
 CAST_BOLT = 0x0014EB30  # a target effect's bolt at the cast, from process only
 SPELL_ADDRESSES = (
     ("ACTIVATE_SPELL", 0x000BE050), ("MAGIC_INSTANCE", 0x000BCD30),
@@ -87,7 +91,7 @@ SPELL_ADDRESSES = (
     ("RETIRE_MAGIC_SERIAL", 0x000BDB10),
     ("MAGIC_PROCESS", 0x00151350), ("EFFECT_CALLBACKS", 0x003B5FC8),
     ("EFFECT_ICONS", 0x001EE460), ("ALCHEMY_NEW", 0x000FC650),
-    ("ADD_NEW_OBJECT", 0x0010CA40), ("SET_STRING_SLOT", 0x000D50E0),
+    ("ADD_NEW_OBJECT", 0x0010CA40), ("SET_STRING_SLOT", 0x000D50E0), ("SPELL_NEW", 0x000FBE20),
 )
 # What the leveled creature spawn and Inventory::DropItem call to make a reference at run time,
 # put it in a cell, give it a stack count and attach it to the cell's scene.
@@ -520,6 +524,12 @@ def engine_bindings(xbe, sources):
                                f"{SPELL_HIT_SITES}")
         define("NET_SPELL_HIT", hexva(spell_hit))
         define("NET_SPELL_HIT_SITES", "{" + ",".join(hexva(s) for s in sites) + "}")
+        add_object = int(address("ADD_NEW_OBJECT", 0x0010CA40), 16)
+        sites = find_call_sites(image, add_object)
+        if len(sites) != ADD_NEW_OBJECT_SITES:
+            raise PayloadError(f"addNewObject {hexva(add_object)}: {len(sites)} call sites, "
+                               f"expected {ADD_NEW_OBJECT_SITES}")
+        define("NET_ADD_NEW_OBJECT_SITES", "{" + ",".join(hexva(s) for s in sites) + "}")
         cast_bolt = int(address("CAST_BOLT", CAST_BOLT), 16)
         sites = find_call_sites(image, cast_bolt)
         if len(sites) != 1:
@@ -939,6 +949,40 @@ def engine_bindings(xbe, sources):
             define("DASHBTN_" + name, address(name, dict(NET_UI_ADDRESSES)[name]))
         wanted["dashbutton"] = ("_tes3x_dashbutton_hook",)
         wanted["dashbutton_height"] = ("_tes3x_dashbutton_height_hook",)
+    if "tes3xhudscale.c" in names:
+        site = locate("ui-scale")
+        area_tail, area = find_menu_area_scale(image)
+        options_site = find_options_scale(image)
+        levelup_site = find_levelup_scale(image)
+        message_site = find_message_scale(image)
+        name_site = find_name_scale(image)
+        chargen_sites = find_chargen_scale(image)
+        build = tes3x_inject.call_target(image, site)
+        print(f"ui-scale hook: MenuMulti builder call {hexva(site)} -> {hexva(build)}, "
+              f"menu area cache {hexva(area)} at epilogue {hexva(area_tail)}, "
+              f"options layout {hexva(options_site)}, "
+              f"level-up layout {hexva(levelup_site)}, "
+              f"message layout {hexva(message_site)}, "
+              f"name keyboard layout {hexva(name_site)}, "
+              f"chargen layouts {', '.join(hexva(site) for site in chargen_sites)}")
+        define("HUD_BUILD", hexva(build))
+        define("HUD_WORLD", hexva(locate("world-controller")))
+        define("HUD_MENU_AREA", hexva(area))
+        define("OPTIONS_LAYOUT", hexva(tes3x_inject.call_target(image, options_site)))
+        define("LEVEL_LAYOUT", hexva(tes3x_inject.call_target(image, levelup_site)))
+        define("MESSAGE_LAYOUT", hexva(tes3x_inject.call_target(image, message_site)))
+        define("NAME_LAYOUT", hexva(tes3x_inject.call_target(image, name_site)))
+        chargen_layouts = {tes3x_inject.call_target(image, site) for site in chargen_sites}
+        if chargen_layouts != {tes3x_inject.call_target(image, name_site)}:
+            raise ValueError("ui-scale: character generation layout target changed")
+        define("CHARGEN_LAYOUT", hexva(next(iter(chargen_layouts))))
+        wanted["hud_scale"] = ("_tes3x_hud_scale_hook",)
+        wanted["menu_area_scale"] = ("_tes3x_menu_area_scale_hook",)
+        wanted["options_scale"] = ("_tes3x_options_scale_hook",)
+        wanted["levelup_scale"] = ("_tes3x_levelup_scale_hook",)
+        wanted["message_scale"] = ("_tes3x_message_scale_hook",)
+        wanted["name_scale"] = ("_tes3x_name_scale_hook",)
+        wanted["chargen_scale"] = ("_tes3x_chargen_scale_hook",)
     if "tes3xmenustill.c" in names:
         menu, new_game, load, slot, clear, display, fence, block = locate("menu-still")
         define("STILL_FENCE", hexva(tes3x_inject.call_target(image, fence)))

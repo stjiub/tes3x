@@ -42,6 +42,24 @@ def headless():
     return str(path)
 
 
+def ghidra_env():
+    """Keep Ghidra's settings, cache and temporary files with its project."""
+    env = os.environ.copy()
+    paths = {
+        'APPDATA': PROJECT_DIR / 'appdata',
+        'LOCALAPPDATA': PROJECT_DIR / 'appdata',
+        'XDG_CONFIG_HOME': PROJECT_DIR / 'appdata',
+        'XDG_CACHE_HOME': PROJECT_DIR / 'cache',
+        'TEMP': PROJECT_DIR / 'temp',
+        'TMP': PROJECT_DIR / 'temp',
+        'TMPDIR': PROJECT_DIR / 'temp',
+    }
+    for key, path in paths.items():
+        path.mkdir(parents=True, exist_ok=True)
+        env[key] = str(path.resolve())
+    return env
+
+
 def setup(images):
     """Import and analyse each (tag, path); takes minutes per image."""
     stop()
@@ -52,7 +70,7 @@ def setup(images):
         t = time.time()
         r = subprocess.run([headless(), str(PROJECT_DIR), PROJECT, '-import', path, '-overwrite'],
                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                           errors='replace')
+                           errors='replace', env=ghidra_env())
         (PROJECT_DIR / f'import-{tag}.log').write_text(r.stdout, encoding='utf-8')
         if r.returncode:
             raise SystemExit(f'import failed; see {PROJECT_DIR / f"import-{tag}.log"}')
@@ -108,7 +126,7 @@ def _start():
     log = open(PROJECT_DIR / 'serve.log', 'w')
     flags = 0x00000008 | 0x00000200 if os.name == 'nt' else 0  # detached, new process group
     p = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                         creationflags=flags)
+                         creationflags=flags, env=ghidra_env())
     return port, p.pid
 
 

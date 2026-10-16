@@ -51,6 +51,7 @@ enable = [
     # "mcp-146",                # qol: remove a fully nocked arrow with Ready Weapon
     # "bow-view",               # qol: lower the first-person bow and arms while an arrow is nocked
     # "hd-video",              # qol: 720p when the dashboard enables it, else 480p/480i (128 MB advised)
+    # "ui-scale",              # qol: smaller text and HUD art; configure in [ui]
     # "boot-clear",            # qol: clear the screen before the first frame, no green flicker without the launcher
     # "menu-still",            # qol: a still behind the main menu instead of the logo movie (needs ffmpeg)
     # "dash-button",           # qol: a TES3X button in the main and pause menus that leaves for the Dash
@@ -74,6 +75,10 @@ disable = []
 [preferences]
 # Applied after the Xbox's stored controls load. Omit the table to leave player preferences alone.
 invert_look = false
+
+# [ui]
+# scale = 0.8                    # one factor for fonts and HUD art; selects ui-scale
+# widescreen_480p = true         # correct HUD art when 640x480 is stretched to 16:9
 
 [package]
 # How mod files are shipped:

@@ -53,7 +53,7 @@ KINDS = {"single": ("test",), "comparison": ("control", "test")}
 REQUIRED = ("kind", "purpose", "procedure", "script", "expect")
 OPTIONAL = ("limitations", "watch", "timeout", "xemu", "save", "enable", "apply", "pipeline",
             "allow", "profile", "fixture", "sequence", "compare", "required_mods", "agent")
-PROFILE_OVERLAY = ("profile", "rules", "preferences", "package", "ini")
+PROFILE_OVERLAY = ("profile", "rules", "preferences", "package", "ui", "ini")
 FIXTURE_KEYS = {"script": str, "opcodes": list, "texture": bool, "dialogue": str}
 AGENT_KEYS = {"after": str, "console": list, "fetch": list, "exit": bool}
 FIXTURE_MOD = "tes3x-test"
@@ -338,7 +338,7 @@ def toml_value(value):
 def write_profile(path, profile):
     """Write the supported profile schema for an ephemeral library test."""
     lines = []
-    for section in ("profile", "rules", "patches", "preferences", "package", "ini"):
+    for section in ("profile", "rules", "patches", "preferences", "package", "ui", "ini"):
         values = profile.get(section)
         if not values:
             continue

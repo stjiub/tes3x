@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import shutil
 import socket
 import time
@@ -52,7 +53,7 @@ OVERLAY_BASE_EXCLUDES = {"morrowind.ini", "_resources"}
 PATCHES = {entry["name"]: entry for entry in registry.PATCHES if entry["selection"] == "preset"}
 PATCH_ORDER = tuple(entry["name"] for entry in registry.PATCHES
                     if entry["selection"] in ("packaging", "preset")
-                    or entry["name"] == "build-preferences")
+                    or entry["name"] in ("build-preferences", "ui-scale"))
 # A build whose engine starts without the retail launcher gets the whole menu, or none of it.
 DIRECT_ENGINE_PATCHES = ("boot-clear", "menu-still", "dash-button")
 HOOK_SOURCES = {entry["name"]: entry.get("source") for entry in registry.PATCHES}
@@ -61,6 +62,18 @@ PRESETS = ("minimal", "recommended", "testing")
 PRESET_ALIASES = {"standard": "recommended", "dev": "testing"}
 PACKAGE_MODES = ("delta-bsa", "merged-bsa", "loose")
 INSTALL_LAYOUTS = ("full", "overlay")
+
+
+def make_work_dir(parent, prefix):
+    """Create a sibling staging folder with the parent's Windows ACL."""
+    for _ in range(10):
+        path = parent / f"{prefix}{secrets.token_hex(4)}"
+        try:
+            path.mkdir(mode=0o700 if os.name != "nt" else 0o777)
+            return path
+        except FileExistsError:
+            continue
+    raise PipelineError("could not create a unique build staging folder")
 
 
 class PipelineError(ValueError):
@@ -78,6 +91,18 @@ def string_list(value, field):
     if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
         raise PipelineError(f"{field} must be an array of strings")
     return value
+
+
+def ui_scale(ui):
+    """One factor for font metrics and HUD geometry; old keys are aliases."""
+    values = [(key, ui[key]) for key in ("scale", "font_scale", "hud_scale") if key in ui]
+    for key, value in values:
+        if (type(value) not in (int, float) or not 0.1 <= value <= 1
+                or abs(value * 1000 - round(value * 1000)) > 1e-7):
+            raise PipelineError(f"ui.{key} must be from 0.1 to 1 with at most three decimal places")
+    if len({value for _, value in values}) > 1:
+        raise PipelineError("ui.scale, ui.font_scale and ui.hud_scale must match")
+    return values[0][1] if values else 1
 
 
 def validate_profile(profile):
@@ -161,10 +186,9 @@ def validate_profile(profile):
     typed(preferences, "invert_look", (bool,), "preferences")
 
     ui = table("ui")
-    known(ui, {"font_scale"}, "ui")
-    if "font_scale" in ui and (type(ui["font_scale"]) not in (int, float)
-                               or not 0 < ui["font_scale"] <= 1):
-        raise PipelineError("ui.font_scale must be greater than zero and at most one")
+    known(ui, {"scale", "font_scale", "hud_scale", "widescreen_480p"}, "ui")
+    ui_scale(ui)
+    typed(ui, "widescreen_480p", (bool,), "ui")
 
     package = table("package")
     known(package, {"mode", "archive_name", "archive_only", "drive_letter", "loose_assets",
@@ -353,7 +377,7 @@ def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), pac
 
     enabled = set(string_list(config.get("enable"), "patches.enable"))
     disabled = set(string_list(config.get("disable"), "patches.disable"))
-    selectable = set(PATCHES) | {"build-preferences"}
+    selectable = set(PATCHES) | {"build-preferences", "ui-scale"}
     unknown = (enabled | disabled | set(enable) | set(disable)) - selectable
     if unknown:
         raise PipelineError("unknown selectable patches: " + ", ".join(sorted(unknown)))
@@ -368,6 +392,12 @@ def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), pac
     # Bisecting a profile is not a contradiction.
     selected.update(enable)
     selected.difference_update(disable)
+
+    ui = profile.get("ui", {})
+    if ui_scale(ui) != 1 or ui.get("widescreen_480p", False):
+        if "ui-scale" in disabled or "ui-scale" in disable:
+            raise PipelineError("ui.scale and ui.widescreen_480p require ui-scale")
+        selected.add("ui-scale")
 
     layout = profile.get("profile", {}).get("install_layout", "full")
     if layout == "overlay":
@@ -966,7 +996,13 @@ def main(argv=None):
     pool = (tes3x_savepool.pool_id(pool_name, profile["profile"].get("save_pool_id"))
             if pool_name else None)
     dashboards = dashboard_list(profile)
-    ini_items = [f"{k}={v}" for k, v in profile.get("ini", {}).items()] + args.ini_set
+    ini_items = [f"{k}={v}" for k, v in profile.get("ini", {}).items()]
+    ui = profile.get("ui", {})
+    if "ui-scale" in plan["applied"]:
+        ini_items.append(f"Xbox:HudScale={ui_scale(ui):.3f}")
+        if "widescreen_480p" in ui:
+            ini_items.append("Xbox:HudWidescreen480=" + str(int(ui["widescreen_480p"])))
+    ini_items += args.ini_set
     ini_items += agent_ini(plan["applied"], ini_items, base, target)
     if "multiplayer" in plan["applied"]:
         # every join is a New Game, whose movie would play each time
@@ -998,9 +1034,10 @@ def main(argv=None):
     if profile.get("preferences"):
         print("preferences: invert_look=%s" % str(
             profile["preferences"].get("invert_look", True)).lower())
-    font_scale = profile.get("ui", {}).get("font_scale", 1)
-    if font_scale != 1:
-        print(f"UI font scale: {font_scale:g}")
+    font_scale = ui_scale(profile.get("ui", {})) if "ui-scale" in plan["applied"] else 1
+    font_width_scale = font_scale * (0.75 if profile.get("ui", {}).get("widescreen_480p") else 1)
+    if font_scale != 1 or font_width_scale != 1:
+        print(f"UI font scale: {font_width_scale:g} wide, {font_scale:g} high")
     if title:
         print(f"title: {title}; dashboard files: {', '.join(dashboards) or 'none'}")
     if pool:
@@ -1091,7 +1128,7 @@ def main(argv=None):
 
     # Beside the output, so publishing is a rename on one volume.
     output.parent.mkdir(parents=True, exist_ok=True)
-    work = Path(tempfile.mkdtemp(prefix=f".{profile_name}-", dir=output.parent))
+    work = make_work_dir(output.parent, f".{profile_name}-")
     tree = work / "tree"
     manifest = work / "manifest.json"
     mod_archives = work / "archives.json"
@@ -1200,12 +1237,14 @@ def main(argv=None):
         else:
             stage_retail(data_files, ini, staged, ini_items, copy)
 
-        if font_scale != 1:
+        if font_scale != 1 or font_width_scale != 1:
             try:
-                fonts = stage_scaled_fonts(staged / "Data Files", font_scale)
+                fonts = stage_scaled_fonts(staged / "Data Files", font_scale,
+                                           font_width_scale)
             except ValueError as exc:
                 raise PipelineError(str(exc)) from exc
-            print(f"  scaled {len(fonts)} UI fonts to {font_scale:g}")
+            print(f"  scaled {len(fonts)} UI fonts to {font_width_scale:g} wide, "
+                  f"{font_scale:g} high")
 
         if "multiplayer" in plan["applied"]:
             ghost = write_ghost_plugin(staged / "Data Files", data_files / "Morrowind.esm")

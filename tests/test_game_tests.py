@@ -7,7 +7,7 @@ from tes3x.pipeline import PipelineError, validate_local_config
 
 import tes3x.patches as registry  # noqa: E402
 from tes3x.test import (GAME_TESTS, comparison_failures, game_test_problems,  # noqa: E402
-                        read_toml, sequence_failures)
+                        game_test_profile, read_toml, sequence_failures, write_profile)
 
 
 class GameTestFileTests(unittest.TestCase):
@@ -53,6 +53,15 @@ class GameTestFileTests(unittest.TestCase):
         self.assertEqual(comparison_failures(logs, comparison), [])
         comparison[0]["relation"] = "<"
         self.assertTrue(comparison_failures(logs, comparison))
+
+    def test_ui_scale_overlay_reaches_the_generated_profile(self):
+        spec = read_toml(GAME_TESTS / "ui-scale.toml")
+        profile = game_test_profile({"profile": {"name": "retail"}}, spec)
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "profile.toml"
+            write_profile(path, profile)
+            self.assertEqual(read_toml(path)["ui"],
+                             {"scale": 0.8, "widescreen_480p": True})
 
 
 class GameTestRunnerTests(unittest.TestCase):

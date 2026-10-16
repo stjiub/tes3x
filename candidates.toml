@@ -2045,13 +2045,3 @@ status = "candidate"
 priority = "low"
 summary = "Expose relevant reach/speed/damage details more clearly"
 reason = "Inventory space is constrained. Do not reproduce data already shown by `XboxArrowDmgDisp.esp`."
-
-[[candidate]]
-name = "ui-scale"
-origin = { source = "TES3X" }
-category = "qol"
-default = "opt in"
-status = "researching"
-priority = "low"
-summary = "Scale window and HUD geometry for widescreen output"
-reason = "The Xbox lays out menus in pixels and anchors HUD elements separately. The shared layout and input paths must be mapped before choosing a hook."

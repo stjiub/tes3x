@@ -85,6 +85,7 @@ dvd_path = '{dvd}'
 """
 # Captures the xemu window itself, so windows covering it are never grabbed.
 SHOT_SCRIPT = r"""param([string]$Out, [int]$TargetPid)
+$ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 Add-Type @"
 using System;using System.Runtime.InteropServices;
@@ -95,13 +96,16 @@ public class W {
 }
 "@
 $p = Get-Process -Id $TargetPid -ErrorAction SilentlyContinue
-if (-not $p -or $p.MainWindowHandle -eq 0) { exit 1 }
-$r = New-Object W+R; [W]::GetWindowRect($p.MainWindowHandle, [ref]$r) | Out-Null
+if (-not $p -or $p.MainWindowHandle -eq 0) { throw 'xemu window is unavailable' }
+$r = New-Object W+R
+if (-not [W]::GetWindowRect($p.MainWindowHandle, [ref]$r) -or
+    $r.Rt -le $r.L -or $r.B -le $r.T) { throw 'xemu window rectangle is unavailable' }
 $bmp = New-Object System.Drawing.Bitmap ($r.Rt - $r.L), ($r.B - $r.T)
 $g = [System.Drawing.Graphics]::FromImage($bmp)
 $dc = $g.GetHdc()
-[W]::PrintWindow($p.MainWindowHandle, $dc, 2) | Out-Null
+$printed = [W]::PrintWindow($p.MainWindowHandle, $dc, 2)
 $g.ReleaseHdc($dc)
+if (-not $printed) { throw 'xemu window capture failed' }
 $bmp.Save($Out, [System.Drawing.Imaging.ImageFormat]::Png)
 """
 
@@ -342,13 +346,18 @@ def xemu_events(since):
 def screenshot(png, pid):
     if os.name != "nt":
         return
-    with tempfile.NamedTemporaryFile("w", suffix=".ps1", delete=False) as script:
-        script.write(SHOT_SCRIPT)
+    script = png.with_suffix(".ps1")
+    script.write_text(SHOT_SCRIPT, encoding="utf-8")
     try:
-        subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-                        script.name, "-Out", str(png), "-TargetPid", str(pid)], capture_output=True)
+        result = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                                 "-File", str(script), "-Out", str(png), "-TargetPid", str(pid)],
+                                capture_output=True, text=True)
+        if result.returncode or not png.is_file():
+            print(f"screenshot failed for xemu pid {pid}: "
+                  f"{result.stderr.strip() or result.stdout.strip() or result.returncode}",
+                  file=sys.stderr)
     finally:
-        os.unlink(script.name)
+        script.unlink(missing_ok=True)
 
 
 def free_port():

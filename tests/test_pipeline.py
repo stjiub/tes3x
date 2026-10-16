@@ -705,6 +705,28 @@ class PipelinePlanTests(unittest.TestCase):
         control = resolve_patch_plan(profile, disable=['build-preferences'])
         self.assertNotIn('build-preferences', control['applied'])
 
+    def test_ui_scale_profile_selects_hook_and_validates_range(self):
+        profile = {'profile': {'name': 'p'}, 'patches': {'preset': 'minimal'},
+                   'ui': {'scale': 0.8, 'widescreen_480p': True}}
+        validate_profile(profile)
+        plan = resolve_patch_plan(profile)
+        self.assertEqual(plan['applied'], ['ui-scale'])
+        self.assertIn('tes3xhudscale.c', plan['sources'])
+        with self.assertRaisesRegex(PipelineError, 'require ui-scale'):
+            resolve_patch_plan(profile, disable=['ui-scale'])
+        for value in (0, 0.09, 1.1, 0.9999, True, float('nan')):
+            with self.subTest(value=value), self.assertRaises(PipelineError):
+                validate_profile({'profile': {'name': 'p'}, 'ui': {'scale': value}})
+        for alias in ('font_scale', 'hud_scale'):
+            with self.subTest(alias=alias):
+                legacy = {'profile': {'name': 'p'}, 'patches': {'preset': 'minimal'},
+                          'ui': {alias: 0.8}}
+                validate_profile(legacy)
+                self.assertEqual(resolve_patch_plan(legacy)['applied'], ['ui-scale'])
+        with self.assertRaisesRegex(PipelineError, 'must match'):
+            validate_profile({'profile': {'name': 'p'},
+                              'ui': {'font_scale': 0.8, 'hud_scale': 0.7}})
+
     def test_mcp_97_adds_its_hook_source(self):
         plan = resolve_patch_plan({
             'patches': {'preset': 'minimal', 'enable': ['mcp-97']},

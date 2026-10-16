@@ -52,6 +52,9 @@ menu. `@start` applies only when the game was started directly, not from another
 passed its own launch data. In xemu that means booting with `--direct-engine`; see
 [xemu](xemu.md).
 
+Each executable line is limited to 95 characters. The console truncates longer lines, which
+can leave a quoted command with a missing closing quote.
+
 ## Loading a save
 
 `U:` is `E:\UDATA\42530005`, or the save pool's folder for a build that sets `save_pool`. A save

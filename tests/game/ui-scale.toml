@@ -1,0 +1,58 @@
+kind = "single"
+purpose = "A 480p widescreen build scales fonts, the help strip, fixed HUD art and menu geometry."
+procedure = "Load the retail Seyda Neen fixture at 480p, check the HUD and menu-area factors, open inventory repeatedly, show a message box, then open level-up and all character creation menus."
+limitations = "The log proves the geometry change and that the loaded game kept running. Visual proportions and legibility require a display check."
+enable = ["diagnostics", "console", "ui-scale"]
+xemu = ["--direct-engine", "--skip-intro", "--ram", "64", "--video", "480p"]
+save = "vanilla-seyda-neen.ess"
+watch = 'hud\.scale|ui\.area|ui\.message|ui\.levelup|ui\.name|menu\.MenuLevelUp|menu\.MenuName|exec\.menu|exec\.exit|crash\.|hang\.detected|fatal\.'
+timeout = 110
+script = '''
+@start load U:\TES3X\vanilla-seyda-neen.ess
+wait 540
+menu inventory
+wait 90
+menu inventory
+wait 30
+menu inventory
+wait 90
+menu inventory
+wait 30
+MessageBox "This long message should wrap inside the smaller window." "Yes" "No"
+wait 30
+EnableLevelupMenu
+wait 50
+visible MenuLevelUp
+EnableNameMenu
+wait 30
+visible MenuName
+EnableRaceMenu
+wait 30
+visible MenuRaceSex
+EnableClassMenu
+wait 30
+visible MenuClassChoice
+EnableBirthMenu
+wait 30
+visible MenuBirthSign
+exit
+'''
+
+[profile]
+ui = { scale = 0.8, widescreen_480p = true }
+
+[expect]
+test = ['hud\.scale 0x00000258 0x00000320 0x0000000F',
+        'ui\.area 0x0000014A 0x00000119 0x00000258',
+        'ui\.message 0x00000258 0x00000320 0x00000001',
+        'ui\.levelup 0x00000258 0x00000320 0x00000003',
+        'ui\.name 0x00000118 0x000000BE 0x00000059',
+        'ui\.race 0x00000258 0x00000320 0x00000026',
+        'ui\.class 0x00000258 0x00000320 0x0000000C',
+        'ui\.birth 0x00000258 0x00000320 0x00000024',
+        'menu\.MenuLevelUp 1',
+        'menu\.MenuName 1',
+        'menu\.MenuRaceSex 1',
+        'menu\.MenuClassChoice 1',
+        'menu\.MenuBirthSign 1',
+        'exec\.menu 1', 'exec\.exit 0']

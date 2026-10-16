@@ -211,11 +211,16 @@ settings.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `font_scale` | number greater than 0, at most 1 | `1` | Scale bitmap font line and glyph metrics. `0.8` makes dialog text smaller while keeping the original texture atlases. |
+| `scale` | number from 0.1 to 1, at most three decimal places | `1` | Scale bitmap font metrics, retail HUD art, the options, level-up and character creation menus, and common menu panels together. A value below 1 enables the `ui-scale` patch. |
+| `font_scale`, `hud_scale` | same as `scale` | unset | Older names for the shared `scale` value. If combined with each other or `scale`, their values must match. |
+| `widescreen_480p` | boolean | `false` | Shrink font widths and spacing by another 0.75 for a 480p image stretched to 16:9. HUD art and supported menus receive that correction only at 640×480. Use a separate profile without this setting for 720p. Enables `ui-scale`. |
 
-The pipeline writes scaled copies of the build's loose `.fnt` files. It keeps the source files
-unchanged, including when the retail files were staged with hard links. This option affects text
-and wrapping; it does not resize windows or HUD art.
+The pipeline writes scaled copies of the build's loose `.fnt` files and scales their horizontal
+metrics separately when `widescreen_480p` is set. HUD art and menus sized from the HUD's central
+area use the profile factor at 720p and the corrected horizontal factor at 640×480. The pipeline
+keeps the source files unchanged, including when retail files were staged with hard links. Text
+wrapping changes. See
+[UI scaling](../patches/ui-scale.md).
 
 ### `[package]`
 

@@ -92,7 +92,7 @@ provenance but never copied into the repository.
 
 ## Shaping the build
 
-`[profile]` overlays the chosen profile's `profile`, `rules`, `preferences`, `package` or `ini`
+`[profile]` overlays the chosen profile's `profile`, `rules`, `preferences`, `package`, `ui` or `ini`
 tables, such as `profile = { save_pool = "TES3X Test" }`.
 
 `[fixture]` generates a test mod from your own `Morrowind.esm` and makes it the build's only mod:

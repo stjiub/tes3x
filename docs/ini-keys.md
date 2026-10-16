@@ -94,6 +94,16 @@ Only pages the heap actually uses consume memory, so a large value costs address
 
 The offset affects only the first-person bow and arms while an arrow or bolt is nocked.
 
+## `ui-scale`
+
+| key | values | default |
+|---|---|---|
+| `HudScale` | decimal from `0.1` to `1`; at most three decimal places | `1` |
+| `HudWidescreen480` | `0` or `1` | `0` |
+
+`HudWidescreen480=1` applies an additional 0.75 horizontal factor when the engine renders at
+640×480. The profile's `[ui]` settings write these keys for the build.
+
 ## `net`
 
 | key | values | default |

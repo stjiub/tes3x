@@ -39,7 +39,11 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                VIDEO_RENDERER_SIG, VK_KEY_LIMIT_SIG, VK_SPACE_LIMIT_SIG,
                                WEATHER_ROLL_RE, XAPI_HEAP_FREE, _find_in, _find_mcp154_site,
                                _unique_call, find_arena_size, find_autosave_calls, find_boot_clear,
-                               find_dash_button, find_menu_still,
+                               find_dash_button, find_hud_scale, find_menu_area_scale,
+                               find_chargen_scale,
+                               find_levelup_scale, find_message_scale, find_name_scale,
+                               find_options_scale,
+                               find_menu_still,
                                find_bow_view, find_button_pressed, find_call_sites, find_command_table,
                                find_console_gate, find_console_print, find_controls_table,
                                find_diagnostics_update, find_dialogue_merge, find_dxt5_size,
@@ -742,6 +746,56 @@ def _dash_button(x, value, ctx):
         was, off = x.patch_call(site, int(str(hook), 16))
         edits.append((off, 5, "%s call 0x%08X: 0x%08X -> %s" % (what, site, was, hook)))
     return edits
+
+
+@patch("ui-scale")
+def _hud_scale(x, value, ctx):
+    """Scale fixed HUD art and menu geometry from its refreshed baseline."""
+    target = ctx.get("hooks", {}).get("hud_scale")
+    area_target = ctx.get("hooks", {}).get("menu_area_scale")
+    options_target = ctx.get("hooks", {}).get("options_scale")
+    levelup_target = ctx.get("hooks", {}).get("levelup_scale")
+    message_target = ctx.get("hooks", {}).get("message_scale")
+    name_target = ctx.get("hooks", {}).get("name_scale")
+    chargen_target = ctx.get("hooks", {}).get("chargen_scale")
+    if not all((target, area_target, options_target, levelup_target, message_target,
+                name_target, chargen_target)):
+        raise PatchError("ui-scale: needs `payload` first, with hud_scale, menu_area_scale and "
+                         "options_scale, levelup_scale, message_scale, name_scale and "
+                         "chargen_scale hooks")
+    site = find_hud_scale(x)
+    tail, _area = find_menu_area_scale(x)
+    options_site = find_options_scale(x)
+    levelup_site = find_levelup_scale(x)
+    message_site = find_message_scale(x)
+    name_site = find_name_scale(x)
+    chargen_sites = find_chargen_scale(x)
+    was, off = x.patch_call(site, int(str(target), 16))
+    options_was, options_off = x.patch_call(options_site, int(str(options_target), 16))
+    levelup_was, levelup_off = x.patch_call(levelup_site, int(str(levelup_target), 16))
+    message_was, message_off = x.patch_call(message_site, int(str(message_target), 16))
+    name_was, name_off = x.patch_call(name_site, int(str(name_target), 16))
+    chargen_calls = [x.patch_call(site, int(str(chargen_target), 16))
+                     for site in chargen_sites]
+    tail_off = x.va_to_off(tail)
+    area_target = int(str(area_target), 16)
+    x.data[tail_off:tail_off + 5] = b"\xe9" + struct.pack("<i", area_target - (tail + 5))
+    return [(off, 5, "MenuMulti builder call 0x%08X: 0x%08X -> %s"
+             % (site, was, target)),
+            (options_off, 5, "MenuOptions layout call 0x%08X: 0x%08X -> %s"
+             % (options_site, options_was, options_target)),
+            (levelup_off, 5, "MenuLevelUp layout call 0x%08X: 0x%08X -> %s"
+             % (levelup_site, levelup_was, levelup_target)),
+            (message_off, 5, "message layout call 0x%08X: 0x%08X -> %s"
+             % (message_site, message_was, message_target)),
+            (name_off, 5, "name keyboard layout call 0x%08X: 0x%08X -> %s"
+             % (name_site, name_was, name_target)),
+            (tail_off, 5, "EnsureMenuMulti cache epilogue 0x%08X -> 0x%08X"
+             % (tail, area_target))] + [
+                 (off, 5, "%s layout call 0x%08X: 0x%08X -> %s"
+                  % (label, site, was, chargen_target))
+                 for label, site, (was, off) in zip(("race", "class choice", "birthsign"),
+                                                    chargen_sites, chargen_calls)]
 
 
 @patch("menu-still")

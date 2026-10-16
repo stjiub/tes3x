@@ -671,6 +671,138 @@ DASH_HEIGHT_SIG = re.compile(
 )
 
 
+HUD_SCALE_SIG = re.compile(
+    rb"\x56(?P<site>\xe8....)\x83\xc4\x04\x6a\x08\x68....\x68\x47\x80\xff\xff\x8b\xce\xe8...."
+    rb"\x6a\x20\x68....\x68\x40\x80\xff\xff\x8b\xce\xe8...."
+    rb"\x6a\x20\x68....\x68\x41\x80\xff\xff\x8b\xce\xe8....", re.S,
+)
+
+OPTIONS_SCALE_SIG = re.compile(
+    rb"\x8b\x4c\x24\x10\x51\x8b\xce\xe8....\x6a\x01\x8b\xce"
+    rb"(?P<site>\xe8....)\x33\xd2\x66\x8b\x15", re.S,
+)
+
+LEVELUP_SCALE_SIG = re.compile(
+    rb"\x85\xc0\x7e\x09\x8b\xcf\x6a\x01\xe8....\x6a\x01\x8b\xce"
+    rb"(?P<site>\xe8....)\x6a\x01\x8b\xce\xe8....\x5f\x5e\x5d\x5b\xc3", re.S,
+)
+
+MESSAGE_SCALE_SIG = re.compile(
+    rb"\x68....\x68\x86\x80\xff\xff\x8b\xce\xe8....\x6a\x01\x8b\xce"
+    rb"(?P<site>\xe8....)", re.S,
+)
+
+NAME_SCALE_SIG = re.compile(
+    rb"\x8b\xce\xe8....\x56\x6a\x00\x6a\x00\x6a\x00\x56\xe8...."
+    rb"\x83\xc4\x14\x6a\x01\x8b\xce(?P<site>\xe8....)\x5e\xc3", re.S,
+)
+
+RACE_SCALE_SIG = re.compile(
+    rb"\xbd\x01\x00\x00\x00\x55\x8b\xce(?P<site>\xe8....)\x53\x68....\x68\xdc\x00\x00\x00",
+    re.S,
+)
+
+CLASS_CHOICE_SCALE_SIG = re.compile(
+    rb"\x85\xf6\x74.\x8b\xce\xe8....\x6a\x01\x8b\xce(?P<site>\xe8....)\x33\xc9\x66\x8b\x0d",
+    re.S,
+)
+
+BIRTHSIGN_SCALE_SIG = re.compile(
+    rb"\x83\xc4\x14\x6a\x01\x8b\xce(?P<site>\xe8....)\x8d\x4c\x24\x20\xc7\x44\x24\x3c\xff\xff\xff\xff",
+    re.S,
+)
+
+
+def find_hud_scale(x):
+    """The one MenuMulti builder call, followed by its three handler registrations."""
+    sec = text_section(x)
+    body = bytes(x.data[sec.raw:sec.raw + sec.rsize])
+    hits = list(HUD_SCALE_SIG.finditer(body))
+    if len(hits) != 1:
+        raise PatchError(f"ui-scale: {len(hits)} MenuMulti builder calls, expected 1")
+    return sec.va + hits[0].start("site")
+
+
+def find_options_scale(x):
+    """MenuOptions::open's first layout, after final width and height are set."""
+    sec = text_section(x)
+    body = bytes(x.data[sec.raw:sec.raw + sec.rsize])
+    hits = list(OPTIONS_SCALE_SIG.finditer(body))
+    if len(hits) != 1:
+        raise PatchError(f"ui-scale: {len(hits)} MenuOptions layout calls, expected 1")
+    return sec.va + hits[0].start("site")
+
+
+def find_levelup_scale(x):
+    """MenuLevelUp's first layout, after content is built and updated."""
+    sec = text_section(x)
+    body = bytes(x.data[sec.raw:sec.raw + sec.rsize])
+    hits = list(LEVELUP_SCALE_SIG.finditer(body))
+    if len(hits) != 1:
+        raise PatchError(f"ui-scale: {len(hits)} MenuLevelUp layout calls, expected 1")
+    return sec.va + hits[0].start("site")
+
+
+def find_message_scale(x):
+    """Message box first layout, after its text and buttons are built."""
+    sec = text_section(x)
+    body = bytes(x.data[sec.raw:sec.raw + sec.rsize])
+    hits = list(MESSAGE_SCALE_SIG.finditer(body))
+    if len(hits) != 1:
+        raise PatchError(f"ui-scale: {len(hits)} message layout calls, expected 1")
+    return sec.va + hits[0].start("site")
+
+
+def find_name_scale(x):
+    """MenuName's final layout after its keyboard is populated."""
+    sec = text_section(x)
+    body = bytes(x.data[sec.raw:sec.raw + sec.rsize])
+    hits = list(NAME_SCALE_SIG.finditer(body))
+    if len(hits) != 1:
+        raise PatchError(f"ui-scale: {len(hits)} name keyboard layout calls, expected 1")
+    return sec.va + hits[0].start("site")
+
+
+def find_chargen_scale(x):
+    """Final layout calls of the race, class choice and birthsign menus."""
+    sec = text_section(x)
+    body = bytes(x.data[sec.raw:sec.raw + sec.rsize])
+    sites = []
+    for label, sig in (("race", RACE_SCALE_SIG), ("class choice", CLASS_CHOICE_SCALE_SIG),
+                       ("birthsign", BIRTHSIGN_SCALE_SIG)):
+        hits = list(sig.finditer(body))
+        if len(hits) != 1:
+            raise PatchError(f"ui-scale: {len(hits)} {label} layout calls, expected 1")
+        sites.append(sec.va + hits[0].start("site"))
+    return tuple(sites)
+
+
+def find_menu_area_scale(x):
+    """EnsureMenuMulti's cache writes and the epilogue after its final layout."""
+    init = find_hud_scale(x) - 8
+    if bytes(x.data[x.va_to_off(init):x.va_to_off(init) + 8]) != \
+            b"\x51\x56\x8b\x74\x24\x0c\x57\x56":
+        raise PatchError("ui-scale: MenuMulti initializer changed")
+    calls = find_call_sites(x, init)
+    if len(calls) != 1:
+        raise PatchError(f"ui-scale: {len(calls)} EnsureMenuMulti initializer calls, expected 1")
+    start = calls[0] - 0x40
+    body = bytes(x.data[x.va_to_off(start):x.va_to_off(start) + 0x500])
+    if body[:3] != b"\x51\x8b\x0d" or body[0x251] != 0xA3:
+        raise PatchError("ui-scale: EnsureMenuMulti cache changed")
+    area = struct.unpack_from("<I", body, 0x252)[0]
+    if (body[0x277] != 0xA3 or body[0x282] != 0xA3 or
+            body[0x28D:0x28F] != b"\x89\x0d" or
+            any(struct.unpack_from("<I", body, offset)[0] != area + delta
+                for offset, delta in ((0x278, 4), (0x283, 8), (0x28F, 12)))):
+        raise PatchError("ui-scale: MenuMulti cache fields changed")
+    tail = b"\x5f\x5e\x5b\x59\xc3"
+    hits = [start + m.start() for m in re.finditer(re.escape(tail), body)]
+    if len(hits) != 1 or hits[0] <= calls[0]:
+        raise PatchError(f"ui-scale: {len(hits)} EnsureMenuMulti epilogues, expected 1")
+    return hits[0], area
+
+
 def find_dash_button(x):
     """The call that builds the engine's main and pause menu, then the call that sets the built
     menu's height."""
@@ -1867,6 +1999,7 @@ LOCATORS = {
     "boot-clear": find_boot_clear,
     "menu-still": find_menu_still,
     "dash-button": find_dash_button,
+    "ui-scale": find_hud_scale,
     "ref-index": lambda image: find_ref_index(image)[0],
     "ref-index-find": lambda image: find_ref_index(image)[1],
     "ref-index-scripts": lambda image: find_ref_index(image)[2],

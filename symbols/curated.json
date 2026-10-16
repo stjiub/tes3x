@@ -2709,7 +2709,8 @@
       "confidence": "verified",
       "provenance": "Xbox disassembly: one object argument, ret 4; inserts its type-specific record and sets the created flag",
       "pc_va": "0x004B8980",
-      "signature": "bool __thiscall addNewObject(TES3::Object* object)"
+      "signature": "bool __thiscall addNewObject(TES3::Object* object)",
+      "note": "Ten callers. Rolls an id from four rand values when the object has none; refuses a duplicate id. The multiplayer record hook fronts every call site."
     },
     {
       "va": "0x0010CCD0",
@@ -4984,7 +4985,9 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_ui_findChildElement",
-      "pc_va": "0x00582DE0"
+      "pc_va": "0x00582DE0",
+      "note": "Returns self or a descendant with the interned name ID. Children are Element* entries from +0x28 to +0x2C; nameId is at +0x20.",
+      "signature": "TES3::UI::Element* __thiscall findChildElement(int nameId)"
     },
     {
       "va": "0x0019A380",
@@ -5184,7 +5187,8 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_ui_createBlock",
-      "pc_va": "0x00588980"
+      "pc_va": "0x00588980",
+      "note": "With reuse=false, calls ui::createChildElement on ECX and returns that child. Caller ECX identifies the parent in the MenuMulti builder."
     },
     {
       "va": "0x001A7300",
@@ -5329,6 +5333,15 @@
       "pc_va": "0x00595A40"
     },
     {
+      "va": "0x001AF390",
+      "name": "ui::refreshForResolution",
+      "confidence": "verified",
+      "provenance": "XBE 0x001AF390 reads WorldController screen dimensions, resets UI roots, calls EnsureMenuMulti and reloads every other top-level menu",
+      "note": "On a screen-size change, resets two UI roots to the new screen bounds, lays them out, refreshes MenuMulti, then calls loadMenuPosition for every other top-level menu.",
+      "pc_va": "0x00596C50",
+      "signature": "void __thiscall refreshForResolution()"
+    },
+    {
       "va": "0x001AF660",
       "name": "ui::moveMenuToFront",
       "kind": "function",
@@ -5415,6 +5428,29 @@
       "pc_va": "0x005A5620"
     },
     {
+      "va": "0x001BCB20",
+      "name": "MenuBarter::build",
+      "confidence": "verified",
+      "provenance": "reads service actor, builds barter buttons and gold labels, and sizes root from common menu area",
+      "note": "Uses the scaled common menu area for root size and bounds; a child widget retains fixed 200 by 100 dimensions.",
+      "signature": "void __thiscall build(void* menu)"
+    },
+    {
+      "va": "0x001BD7B0",
+      "name": "UI::showBarterMenu",
+      "confidence": "verified",
+      "provenance": "Xbox Ghidra decompile and live Arrille barter session",
+      "note": "Creates or shows MenuBarter, loads its position, then lays it out; 480p ui-scale live root and all four bounds were 330x281."
+    },
+    {
+      "va": "0x001BF3C0",
+      "name": "MenuBirthSign::build",
+      "confidence": "verified",
+      "provenance": "Xbox decompile and New Game layout trace",
+      "note": "Builds the independent 485x355 birthsign tree and lays it out at the final call near 0x001BF7DE.",
+      "signature": "void __cdecl build(void* menu)"
+    },
+    {
       "va": "0x001BFAB0",
       "name": "MenuBook::scaleToScreen",
       "confidence": "guess",
@@ -5431,6 +5467,14 @@
       "pc_va": "0x005AC2A0"
     },
     {
+      "va": "0x001C3CA0",
+      "name": "UI::showClassChoiceMenu",
+      "confidence": "verified",
+      "provenance": "Xbox decompile and New Game layout trace",
+      "note": "Creates MenuClassChoice if needed, then lays out its 269x80 root at 0x001C3DD8.",
+      "signature": "void __cdecl showClassChoiceMenu()"
+    },
+    {
       "va": "0x001C4450",
       "name": "ui::setConsoleReference",
       "kind": "function",
@@ -5445,6 +5489,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_ConsoleLogResult",
       "pc_va": "0x005B2C20"
+    },
+    {
+      "va": "0x001C75E0",
+      "name": "MenuContents::build",
+      "confidence": "verified",
+      "provenance": "Xbox decompile",
+      "note": "Sets the root size, bounds and position from ui::menuAreaWidth/Height/X/Y before adding contents widgets.",
+      "signature": "void __cdecl build(void* menu)"
     },
     {
       "va": "0x001C91C0",
@@ -5530,6 +5582,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_showDialogueMessage",
       "pc_va": "0x005C00A0"
+    },
+    {
+      "va": "0x001CFF80",
+      "name": "MenuDialog::build",
+      "confidence": "verified",
+      "provenance": "creates MenuDialog widget, root from common menu area, response and topic panes",
+      "note": "Root reads the cached menu area; the topic scroll pane is 166 or 210 pixels wide. The 200x19 widget created with ID at 0x003D86B8 is hidden initially, so its fixed width does not affect ordinary dialogue layout.",
+      "signature": "void __thiscall build(void* menu)"
     },
     {
       "va": "0x001D3140",
@@ -5647,6 +5707,21 @@
       "pc_va": "0x0047A960"
     },
     {
+      "va": "0x001E57E0",
+      "name": "MenuLevelUp::build",
+      "confidence": "verified",
+      "provenance": "Xbox decompile: level-up title, attributes and MenuLevelUp_IconOne/Two/Three",
+      "note": "Uses ui::menuArea dimensions for its top-level menu, but has fixed 400-pixel child blocks and a 256x128 image."
+    },
+    {
+      "va": "0x001E6760",
+      "name": "MenuLevelUp::open",
+      "confidence": "verified",
+      "provenance": "Xbox decompile and level-up UI scale probe",
+      "note": "Creates MenuLevelUp if absent, updates its content, then performs layout twice; first layout call at 0x001E68D2.",
+      "signature": "void __cdecl open()"
+    },
+    {
       "va": "0x001E68F0",
       "name": "ui::showLevelUpMenu",
       "confidence": "verified",
@@ -5702,6 +5777,14 @@
       "pc_va": "0x005E3BD0"
     },
     {
+      "va": "0x001EA8C0",
+      "name": "MenuMagic::build",
+      "confidence": "verified",
+      "provenance": "Xbox Ghidra decompile and 480p GDB layout: creates MenuMagic root from common area and its matching bounds",
+      "note": "At 480p with ui-scale, layout leaves a 330x281 root with matching min/max bounds; no child in the observed tree exceeded the root.",
+      "signature": "void __thiscall build(void* menu)"
+    },
+    {
       "va": "0x001EB640",
       "name": "UI::updatEnchantmentsList",
       "kind": "function",
@@ -5742,12 +5825,34 @@
       "pc_va": "0x005EB760"
     },
     {
+      "va": "0x001F3080",
+      "name": "MenuMap::buildContents",
+      "confidence": "verified",
+      "provenance": "Xbox decompilation: called by MenuMap::build and constructs the map content",
+      "note": "Sets the top-level rectangle and min/max bounds from ui::menuAreaWidth/Height, then builds child widgets."
+    },
+    {
+      "va": "0x001F4DF0",
+      "name": "MenuMap::build",
+      "confidence": "verified",
+      "provenance": "Xbox decompilation: initializes the MenuMap element, builds its contents if needed, then registers handlers",
+      "note": "Called only when ensureAndUpdate creates MenuMap; its content builder is 0x001F3080."
+    },
+    {
       "va": "0x001F52A0",
       "name": "ui::MenuMap_updateMapRender",
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_ui_MenuMap_updateMapRender",
       "pc_va": "0x005E99C0"
+    },
+    {
+      "va": "0x001F6360",
+      "name": "MenuMap::ensureAndUpdate",
+      "confidence": "matched",
+      "provenance": "Xbox and PC decompilation: finds or creates MenuMap, loads menu position, updates map render and local player, with repeated layout passes",
+      "note": "Loads the top-level map position before updating map render and local player; geometry changes after this call may miss its layout passes.",
+      "pc_va": "0x005E95A0"
     },
     {
       "va": "0x001F6650",
@@ -5764,6 +5869,14 @@
       "provenance": "pair of 0x001F6650",
       "pc_va": "0x005F2170",
       "signature": "void __cdecl f(void)"
+    },
+    {
+      "va": "0x001F6670",
+      "name": "MenuMessage::build",
+      "confidence": "verified",
+      "provenance": "called from UI::showMessageMenu through 0x001F68B0; creates message widget and sets its maximum width to 400",
+      "note": "The 400-pixel maximum belongs to the message root child; the menu autosizes to its text and buttons.",
+      "signature": "void __thiscall build(void* context)"
     },
     {
       "va": "0x001F6D30",
@@ -5793,7 +5906,7 @@
       "name": "BuildMenuMultiElements",
       "confidence": "verified",
       "provenance": "Xbox decompile: constructs MenuMulti pane, compass, meters, icons and buttons",
-      "note": "Sets the menu initial width/height to about 85% of the screen; EnsureMenuMulti later replaces these with about 89%. MenuMulti_main uses proportional width/height (+0x120/+0x124) of 1.0 to fill its parent. Builds compass, meters, icons and buttons."
+      "note": "Initial MenuMulti size is about 85% of screen; EnsureMenuMulti replaces it with about 89%. MenuMulti_main fills its parent. The help strip follows font height, but its two child rows remain 16 pixels; controller-label groups are auto-sized."
     },
     {
       "va": "0x001FA5F0",
@@ -5812,11 +5925,19 @@
       "pc_va": "0x005F4E70"
     },
     {
+      "va": "0x001FAA60",
+      "name": "InitializeMenuMulti",
+      "confidence": "verified",
+      "provenance": "Xbox decompile and sole call at 0x001FACE0: builds MenuMulti then attaches health, magicka and fatigue handlers",
+      "note": "Runs once when EnsureMenuMulti creates its menu; builder call at 0x001FAA68 precedes all handlers and layout.",
+      "signature": "void __cdecl InitializeMenuMulti(TES3::UI::Element* menu)"
+    },
+    {
       "va": "0x001FACA0",
       "name": "EnsureMenuMulti",
       "confidence": "verified",
       "provenance": "Xbox decompile: creates MenuMulti if absent, then positions it from screen dimensions",
-      "note": "Creates MenuMulti if absent, then replaces its initial 85% screen dimensions with about 89%, relayouts and caches MenuMulti_main pixel dimensions and absolute position."
+      "note": "Creates MenuMulti if absent, sets its outer rectangle to 89% of the screen, lays it out, and copies MenuMulti_main into ui::menuAreaWidth/Height/X/Y. Many ordinary menu builders and loadMenuPosition read that cache; the four adjacent values at +0x10 have no found readers. The final epilogue follows all cache writes."
     },
     {
       "va": "0x001FB4C0",
@@ -5830,7 +5951,15 @@
       "name": "MenuName::build",
       "confidence": "matched",
       "provenance": "reads MenuName ids; key grid from 0x001FB560",
-      "note": "Its key table (0x001FB560) has / 0-9 a-z and accented letters, no '.' or ':'; Enter sets the player's name."
+      "note": "Creates the fixed 400x225 name-entry keyboard; the final show path layout is at 0x001FCC3D with the menu in ESI.",
+      "signature": "void __cdecl build(void* menu)"
+    },
+    {
+      "va": "0x001FCBF0",
+      "name": "UI::showNameMenu",
+      "confidence": "verified",
+      "provenance": "Xbox decompile and 480p New Game EnableNameMenu GDB trace",
+      "note": "Creates MenuName if absent, updates it, then lays it out at 0x001FCC3D with root in ESI. Live root remains 400x225 with fixed key rows."
     },
     {
       "va": "0x001FD510",
@@ -5891,12 +6020,68 @@
       "signature": "bool __cdecl onOk(void* widget, int event, int data0, int data1, void* source)"
     },
     {
+      "va": "0x002086F0",
+      "name": "MenuRaceSex::build",
+      "confidence": "verified",
+      "provenance": "Xbox decompile and New Game layout trace",
+      "signature": "void __cdecl build(void* menu)"
+    },
+    {
+      "va": "0x00208830",
+      "name": "UI::showRaceSexMenu",
+      "confidence": "verified",
+      "provenance": "Xbox decompile and New Game layout trace",
+      "note": "Creates MenuRaceSex, builds its 390x340 tree, lays it out at 0x00208892, then prepares the 3D head preview.",
+      "signature": "void __cdecl showRaceSexMenu()"
+    },
+    {
       "va": "0x002096B1",
       "name": "UI::displayObjectTooltip",
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_UI_displayObjectTooltip",
       "pc_va": "0x00590D90"
+    },
+    {
+      "va": "0x0020BA40",
+      "name": "RestMenu::hoursUntilHealed",
+      "confidence": "verified",
+      "provenance": "called first by onUntilHealed"
+    },
+    {
+      "va": "0x0020BDC0",
+      "name": "RestMenu::onRest",
+      "confidence": "verified",
+      "provenance": "button callback of MenuRestWait's Rest",
+      "note": "Reads the hours property, closes the menu (0x0020BD40), autosaves, sets MobilePlayer+0x5B9, fades out, stores hours at +0x5EC and the position at +0x5D8, then 0x00229D00(1). The multiplayer rest diverts its entry."
+    },
+    {
+      "va": "0x0020BF10",
+      "name": "RestMenu::onUntilHealed",
+      "confidence": "verified",
+      "provenance": "button callback of MenuRestWait's Until Healed; X pad handler 0x0020C230 calls it",
+      "note": "Hours come from 0x0020BA40 (at least 1)."
+    },
+    {
+      "va": "0x0020C040",
+      "name": "RestMenu::onWait",
+      "confidence": "verified",
+      "provenance": "button callback of MenuRestWait's Wait",
+      "note": "As onRest with MobilePlayer+0x5BB and 0x00229D00(0)."
+    },
+    {
+      "va": "0x0020C190",
+      "name": "RestMenu::padA",
+      "confidence": "verified",
+      "provenance": "event 0xFFFF8080 handler",
+      "note": "Rest when the menu's allow-rest property is set, else Wait; calls 0x0020BDC0 at +0x60 or 0x0020C040 at +0x85."
+    },
+    {
+      "va": "0x0020C230",
+      "name": "RestMenu::padX",
+      "confidence": "verified",
+      "provenance": "event 0xFFFF8082 handler",
+      "note": "Until Healed when allowed and hoursUntilHealed >= 1; calls 0x0020BF10 at +0x56."
     },
     {
       "va": "0x0020CAB0",
@@ -5939,47 +6124,6 @@
       "pc_va": "0x00622020"
     },
     {
-    {
-      "va": "0x0020BA40",
-      "name": "RestMenu::hoursUntilHealed",
-      "confidence": "verified",
-      "provenance": "called first by onUntilHealed"
-    },
-    {
-      "va": "0x0020BDC0",
-      "name": "RestMenu::onRest",
-      "confidence": "verified",
-      "provenance": "button callback of MenuRestWait's Rest",
-      "note": "Reads the hours property, closes the menu (0x0020BD40), autosaves, sets MobilePlayer+0x5B9, fades out, stores hours at +0x5EC and the position at +0x5D8, then 0x00229D00(1). The multiplayer rest diverts its entry."
-    },
-    {
-      "va": "0x0020BF10",
-      "name": "RestMenu::onUntilHealed",
-      "confidence": "verified",
-      "provenance": "button callback of MenuRestWait's Until Healed; X pad handler 0x0020C230 calls it",
-      "note": "Hours come from 0x0020BA40 (at least 1)."
-    },
-    {
-      "va": "0x0020C040",
-      "name": "RestMenu::onWait",
-      "confidence": "verified",
-      "provenance": "button callback of MenuRestWait's Wait",
-      "note": "As onRest with MobilePlayer+0x5BB and 0x00229D00(0)."
-    },
-    {
-      "va": "0x0020C190",
-      "name": "RestMenu::padA",
-      "confidence": "verified",
-      "provenance": "event 0xFFFF8080 handler",
-      "note": "Rest when the menu's allow-rest property is set, else Wait; calls 0x0020BDC0 at +0x60 or 0x0020C040 at +0x85."
-    },
-    {
-      "va": "0x0020C230",
-      "name": "RestMenu::padX",
-      "confidence": "verified",
-      "provenance": "event 0xFFFF8082 handler",
-      "note": "Until Healed when allowed and hoursUntilHealed >= 1; calls 0x0020BF10 at +0x56."
-    },
       "va": "0x0021B3B0",
       "name": "UpdateFillBar",
       "kind": "function",
@@ -6018,6 +6162,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_UpdateStatsPane",
       "pc_va": "0x006266D0"
+    },
+    {
+      "va": "0x0021F6D0",
+      "name": "MenuStat::build",
+      "confidence": "verified",
+      "provenance": "creates MenuStat widget from 0x003DBD38, sets root and bounds from common menu area, builds health and stat controls",
+      "note": "Root and all size bounds use the cached common area; the long stats list stays in a clipped scroll pane.",
+      "signature": "void __thiscall build(void* menu)"
     },
     {
       "va": "0x00222730",
@@ -6098,27 +6250,6 @@
       "name": "ui::factorySlider",
       "kind": "function",
       "confidence": "matched",
-    {
-      "va": "0x00229390",
-      "name": "RestWait::timingUpdate",
-      "confidence": "verified",
-      "provenance": "registered by 0x002297D7 on the progress menu",
-      "note": "Counts the bar; each whole hour calls 0x00229910. At the end zeroes +0x5EC, wakeUp, and opens MenuLevelUp when +0x5E8 >= iLevelupTotal."
-    },
-    {
-      "va": "0x00229910",
-      "name": "RestWait::passHour",
-      "confidence": "verified",
-      "provenance": "adds 1.0 to the GameHour global, then runs global scripts and the random rest encounter",
-      "note": "The wait and rest advance GameHour here; a CLOCK that overwrote the globals mid-rest would undo it."
-    },
-    {
-      "va": "0x00229D00",
-      "name": "RestWait::begin",
-      "confidence": "verified",
-      "provenance": "called by onRest, onWait, onUntilHealed and training/travel at 0x00212BC7",
-      "note": "Opens the progress menu (id 0x003DC3D4) with MobilePlayer+0x5EC hours already set; arg 1 is a rest, 0 a wait."
-    },
       "provenance": "mwse:TES3_ui_factorySlider",
       "pc_va": "0x00645EB0"
     },
@@ -6403,6 +6534,86 @@
       "provenance": "traced: written by MenuCreateClass::create, cleared by close",
       "kind": "data",
       "type": "TES3::Class*"
+    },
+    {
+      "va": "0x003D99A8",
+      "name": "ui::menuAreaWidth",
+      "confidence": "verified",
+      "provenance": "EnsureMenuMulti copies MenuMulti_main geometry here; ui::loadMenuPosition reads it for menu defaults",
+      "kind": "data",
+      "type": "int"
+    },
+    {
+      "va": "0x003D99AC",
+      "name": "ui::menuAreaHeight",
+      "confidence": "verified",
+      "provenance": "EnsureMenuMulti copies MenuMulti_main geometry here; ui::loadMenuPosition reads it for menu defaults",
+      "kind": "data",
+      "type": "int"
+    },
+    {
+      "va": "0x003D99B0",
+      "name": "ui::menuAreaX",
+      "confidence": "verified",
+      "provenance": "EnsureMenuMulti copies MenuMulti_main geometry here; ui::loadMenuPosition reads it for menu defaults",
+      "kind": "data",
+      "type": "int"
+    },
+    {
+      "va": "0x003D99B4",
+      "name": "ui::menuAreaY",
+      "confidence": "verified",
+      "provenance": "EnsureMenuMulti copies MenuMulti_main geometry here; ui::loadMenuPosition reads it for menu defaults",
+      "kind": "data",
+      "type": "int"
+    },
+    {
+      "va": "0x003D99D4",
+      "name": "UI::MenuMulti_main_id",
+      "confidence": "verified",
+      "provenance": "name initializer in 0x002BD000 block interns MenuMulti_main; EnsureMenuMulti reads its rectangle",
+      "kind": "data",
+      "type": "unsigned short"
+    },
+    {
+      "va": "0x003D9B1C",
+      "name": "UI::MenuMulti_magic_layout_id",
+      "confidence": "verified",
+      "provenance": "0x002BD7F0 interns MenuMulti_magic_layout",
+      "kind": "data",
+      "type": "unsigned short"
+    },
+    {
+      "va": "0x003D9B48",
+      "name": "UI::MenuMulti_fillbars_layout_id",
+      "confidence": "verified",
+      "provenance": "name initializer in 0x002BD000 block interns MenuMulti_fillbars_layout",
+      "kind": "data",
+      "type": "unsigned short"
+    },
+    {
+      "va": "0x003D9B50",
+      "name": "UI::MenuMulti_weapon_layout_id",
+      "confidence": "verified",
+      "provenance": "0x002BD7D0 interns MenuMulti_weapon_layout",
+      "kind": "data",
+      "type": "unsigned short"
+    },
+    {
+      "va": "0x003D9B54",
+      "name": "UI::MenuMulti_map_layout_id",
+      "confidence": "verified",
+      "provenance": "name initializer in 0x002BD000 block interns MenuMulti_map_layout",
+      "kind": "data",
+      "type": "unsigned short"
+    },
+    {
+      "va": "0x003DCEEC",
+      "name": "UI::PartNonDragMenu_main_id",
+      "confidence": "verified",
+      "provenance": "0x002D3C90 interns PartNonDragMenu_main; BuildMenuMultiElements finds it at 0x001F8B13",
+      "kind": "data",
+      "type": "unsigned short"
     }
   ]
 }

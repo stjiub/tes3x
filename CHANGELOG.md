@@ -4,6 +4,15 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- Profiles can set `ui.scale` to shrink text, the help strip, minimap, resource bars, equipment
+  art, the options, level-up and character creation menus, message boxes, and common menu panels together. `ui.widescreen_480p`
+  also corrects horizontal proportions on a stretched 480p display; use a separate profile for 720p.
+  Existing `font_scale` and `hud_scale` keys remain aliases and must agree if combined.
+  Values below `0.1` or finer than `0.001` now fail validation. Other menus with independent
+  fixed dimensions retain their retail size.
+  See [UI scaling](patches/ui-scale.md).
+- `tes3x sym decompile` now starts Ghidra with its settings and temporary files under the project
+  build folder, so restricted workspaces can launch the decompiler.
 - Waiting and resting now work in multiplayer. Pressing Rest, Wait or Until Healed asks the other
   players to rest; each agrees by opening their own rest menu, and then everyone waits or rests
   for the same hours while the shared clock moves on. Before, the menu was refused while joined.
@@ -11,8 +20,6 @@ No official releases yet. The first public release is in preparation.
 - Multiplayer servers can set `--level-up auto` (GUI: "Level up without resting") so players get
   the level-up screen as soon as they earn a level, without resting. The default keeps the retail
   rule. See [the server guide](docs/multiplayer-server.md).
-- Profiles can set `ui.font_scale` to make in-game text smaller without adding font textures.
-  Existing profiles keep the retail font size. See [configuration](docs/configuration.md#ui).
 - The multiplayer server list and address entry now have a dark backing with a thin gold border.
   Their former backing could show a bright placeholder texture on Xbox.
 - Typing a new server's address opens the keyboard on the digits with `.`, `:` and `-`; the
@@ -22,6 +29,7 @@ No official releases yet. The first public release is in preparation.
   flashes green lines before its first splash. See [the patch](patches/boot-clear.md).
 - New `dash-button` patch: a TES3X button in the main and pause menus that leaves for the Dash,
   in place of multiplayer's Dash button. The menu buttons are redrawn together so they match, and
+  Capture failures are reported instead of silently leaving out the image.
   the menu is taller by a row. See [the patch](patches/dash-button.md).
 - Builds whose engine starts without the retail launcher (`--direct-engine` runs and the overlay
   layout) now include `boot-clear`, `menu-still` and `dash-button` together, and multiplayer

@@ -38,6 +38,13 @@ To play at 480p, turn 720p off in the dashboard and leave 480p on. That setting 
 game on the console, so other 720p games drop to 480p as well. On a 64 MB console, use 480p; see
 [Compatibility and limits](#compatibility-and-limits).
 
+For a 480p picture stretched to fill a 16:9 display, also use [`ui-scale`](ui-scale.md) with
+`[ui] widescreen_480p = true` to correct HUD art proportions; set `[ui] scale` to shrink fonts
+and HUD art together. Leave the widescreen setting off when the display shows 480p at 4:3.
+`hd-video` is not required to obtain 480p: with 720p disabled, it keeps the retail 640x480
+request. For a 720p build, leave `ui.widescreen_480p` off: its staged font widths would remain
+narrowed even though the HUD and menu correction does not run at 720p.
+
 ## Compatibility and limits
 
 - **Memory.** At 720p the colour, back and depth buffers are three times larger. In game this
