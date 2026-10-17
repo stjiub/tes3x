@@ -55,6 +55,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_mcp125_context, find_mcp146, find_mcp146_context,
                                find_mcp154_load, find_mcp154_reload, find_mcp37_context,
                                find_mcp3_unarmored, find_mcp92_unsummon, find_mcp94,
+                               find_mcp267,
                                find_mcp97_scan, find_mcp98_refcounts, find_menu_mode_gate,
                                find_mob_gate, find_preferences_load, find_ref_index,
                                find_ref_load, find_ref_skip, find_run_function,
@@ -701,6 +702,24 @@ def _mcp_94(x, value, ctx):
         x.data[base_off:base_off + 4] = struct.pack("<I", base + 4)
         edits.append((view_off, 1, "%s scale: viewWidth -> viewHeight" % what))
         edits.append((base_off, 4, "%s scale: 640.0 -> 480.0" % what))
+    return edits
+
+
+@patch("mcp-267")
+def _mcp_267(x, value, ctx):
+    """Align both UI cameras to the pixel grid."""
+    branch, refresh, init = find_mcp267(x)
+    x.data[branch] = 0xEB
+    edits = [(branch, 1, "UI projection: keep fractional distance")]
+    half_pixel = struct.pack("<f", -0.5)
+    for x_off, z_off in refresh:
+        x.data[x_off:x_off + 4] = half_pixel
+        x.data[z_off:z_off + 4] = half_pixel
+        edits.extend(((x_off, 4, "UI camera X: -0.5 pixel"),
+                      (z_off, 4, "UI camera Z: -0.5 pixel")))
+    for zero_off in init:
+        x.data[zero_off:zero_off + 6] = b"\x90" * 6
+        edits.append((zero_off, 6, "UI camera: keep the screen-aligned offsets"))
     return edits
 
 

@@ -608,6 +608,30 @@ MCP94_SIGS = (
 )
 
 
+MCP267_CEIL_SIG = re.compile(
+    rb"\x85\xc0\xd8\x4c\x24\x04(?P<branch>\x74.)\x83\xec\x08\xdd\x1c\x24\xe8....\x83\xc4\x08",
+    re.S,
+)
+MCP267_REFRESH_SIG = re.compile(
+    rb"\xd9\x58\x34\x83\xc0\x30\xc7\x00(?P<x>\x00{4})\xc7\x40\x08(?P<z>\x00{4})"
+)
+MCP267_INIT_SIG = re.compile(rb"\xd9\x58\x34(?P<zero>\x89\x58\x30\x89\x58\x38)")
+
+
+def find_mcp267(x):
+    """Locate the UI camera's projection rounding and horizontal/vertical offsets."""
+    data = bytes(x.data)
+    ceil = list(MCP267_CEIL_SIG.finditer(data))
+    refresh = list(MCP267_REFRESH_SIG.finditer(data))
+    init = list(MCP267_INIT_SIG.finditer(data))
+    if (len(ceil), len(refresh), len(init)) != (1, 2, 2):
+        raise PatchError("mcp-267: expected one projection branch and two UI camera pairs, "
+                         f"found {len(ceil)}, {len(refresh)}, {len(init)}")
+    return (ceil[0].start("branch"),
+            [(m.start("x"), m.start("z")) for m in refresh],
+            [m.start("zero") for m in init])
+
+
 def find_mcp94(x):
     """The viewWidth reads and 640.0 operands of the book and scroll scales."""
     data = bytes(x.data)

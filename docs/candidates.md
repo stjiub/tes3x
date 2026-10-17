@@ -13,7 +13,7 @@ on, `low` for minor ones, and `none` for fixes we won't port.
 
 | status | fixes |
 |---|---|
-| candidate | 188 |
+| candidate | 187 |
 | deferred | 13 |
 | not-applicable | 15 |
 | rejected | 2 |
@@ -43,7 +43,6 @@ Worth porting, but not yet shown to affect the Xbox build.
 | `mcp-160` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #160 | medium | correctness | **RemoveItem weight fix.** RemoveItem reduces encumbrance by the requested quantity even when fewer items exist; mods leave players permanently misweighted. |
 | `mcp-177` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #177 | medium | compat | **GetEffect/RemoveEffects fix.** GetEffect and RemoveEffects sometimes return 0 or do nothing; scripted mods rely on them. |
 | `mcp-256` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #256 | medium | compat | **Map expansion (for Tamriel Rebuilt).** Expands the world map for Tamriel Rebuilt. Needed for TR, which itself needs 128 MB today. |
-| `mcp-267` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #267 | medium | qol | **UI display quality fix.** Fixes half-pixel UI misalignment that blurs text and icons. Worth checking on TV output, where blur is most visible. |
 | `mwse-clone-light-null` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | core (profile-dependent priority) | **Handle missing light data while cloning.** Validate against malformed or legal-but-unusual meshes. |
 | `mwse-clone-sortadjust` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | core (profile-dependent priority) | **Correct `NiSortAdjustNode` cloning.** Same rule: a mod-library reproducer raises priority. |
 | `mwse-clone-stringextra` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | core (profile-dependent priority) | **Correct `NiStringExtraData` cloning.** Mesh-driven lifetime bug; prioritize if a current asset reproduces it. |

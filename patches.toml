@@ -401,6 +401,16 @@ selection = "preset"
 summary = "Scale books, the journal and scrolls by screen height, so they fit a widescreen picture."
 
 [[patch]]
+name = "mcp-267"
+title = "UI pixel alignment"
+origin = { source = "MCP", id = "267" }
+bit = 41
+category = "qol"
+channel = "dev"
+selection = "preset"
+summary = "Align menu text, icons and frames with screen pixels so they draw sharply."
+
+[[patch]]
 name = "hd-video"
 title = "HD video output"
 bit = 34

@@ -1584,15 +1584,6 @@ summary = "Polish character corrections"
 reason = "Polish characters with a PC font mod."
 
 [[candidate]]
-name = "mcp-267"
-origin = { source = "MCP", id = "267" }
-category = "qol"
-status = "candidate"
-priority = "medium"
-summary = "UI display quality fix"
-reason = "Fixes half-pixel UI misalignment that blurs text and icons. Worth checking on TV output, where blur is most visible."
-
-[[candidate]]
 name = "mcp-268"
 origin = { source = "MCP", id = "268" }
 status = "not-applicable"

@@ -46,6 +46,7 @@ single required/not-required flag.
 | [Low-memory main menu](../patches/lean-menu.md) | `lean-menu` | Load only game settings for the main menu; New Game and Load relaunch and load the rest. | TES3X | performance | preview | By name |
 | [Lowered first-person bow](../patches/bow-view.md) | `bow-view` | Lower the first-person bow and arms while an arrow is nocked. | TES3X | qol | dev | By name |
 | [Book and scroll scaling fix](../patches/mcp-94.md) | `mcp-94` | Scale books, the journal and scrolls by screen height, so they fit a widescreen picture. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #94 | correctness | dev | By name; `hd-video` |
+| [UI pixel alignment](../patches/mcp-267.md) | `mcp-267` | Align menu text, icons and frames with screen pixels so they draw sharply. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #267 | qol | dev | By name |
 | [HD video output](../patches/hd-video.md) | `hd-video` | Follow the dashboard's HDTV settings: 720p when enabled, otherwise the retail 480p or 480i. | TES3X | qol | dev | By name |
 | [Extended tooltips](../patches/extended-tooltips.md) | `extended-tooltips` | Warn before stealing and show ownership and selected item details in menus. | TES3X | qol | dev | By name |
 | [UI scaling](../patches/ui-scale.md) | `ui-scale` | Scale text, fixed HUD art and common menu panels, with optional 480p widescreen correction. | TES3X | qol | dev | Build option |

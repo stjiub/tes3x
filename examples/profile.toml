@@ -41,6 +41,7 @@ enable = [
     # "dxt5-size",             # core: allocate DXT5 textures at their real size
     # "mcp-102",               # correctness: reactivate script-triggered objects after their mod is removed
     # "mcp-94",                # correctness: scale books, the journal and scrolls by screen height
+    # "mcp-267",               # qol: align menu text, icons and frames with screen pixels
     # "script-ext",            # compat: add script opcodes
     # "mwse-legacy",           # compat: run legacy MWSE 0.9.4 script bytecode
     # "video-arena",           # compat: more video memory on a 128 MB Xbox

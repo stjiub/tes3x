@@ -9,6 +9,13 @@
       "note": "Xbox time offset +0x54 verified in AnimationData::update 0x000CEFB0: upper/arm layer time minus lower-body time."
     },
     {
+      "name": "NI::AVObject",
+      "note": "Xbox UI camera objects use localTranslate at +0x30. WorldController::refreshForResolution writes X at +0x30 and Z at +0x38 for both cameras; Game::initialize also resets both coordinates.",
+      "fields": [
+        {"offset": "0x30", "name": "localTranslate", "type": "NI::Point3", "confidence": "verified", "provenance": "Xbox WorldController::refreshForResolution 0x0008E270 and Game::initialize 0x000963B0; PC NI::AVObject layout"}
+      ]
+    },
+    {
       "name": "TES3::MobileActor",
       "note": "Xbox matches the PC layout at the offsets tested: attributes (+0x254, Statistic {vtable, base, current} each), health, magicka and fatigue current (+0x2BC, +0x2C8, +0x2E0), animationController (+0x244), animStateAttack (byte +0xDD: 5/6/7 light/medium/heavy follow-through), physicalAttackType (byte +0xE0: 1/2/3 slash/chop/thrust), activeEffects (+0x1C4; deque head +4, count +8).",
       "fields": [
