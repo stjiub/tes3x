@@ -27,6 +27,7 @@ from tes3x.patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, archive_load_site,
                          find_chargen_scale,
                          find_mcp37_context,
                          find_mcp125_context, find_save_allowed_context,
+                         find_mcp47_context,
                          find_script_ip_restore_call, find_transition_calls, scene_form)
 
 HOOKS = resource("hooks")
@@ -854,6 +855,11 @@ def engine_bindings(xbe, sources):
             raise PayloadError("tes3xtest_mcp3.c requires tes3xconsole.c")
         print("mcp-3 test probe: console command tes3xmcp3")
         wanted["mcp3_test"] = ("_tes3x_mcp3_test_command",)
+    if "tes3xtest_mcp47.c" in names:
+        if "tes3xconsole.c" not in names:
+            raise PayloadError("tes3xtest_mcp47.c requires tes3xconsole.c")
+        print("mcp-47 test probe: console command tes3xmcp47")
+        wanted["mcp47_test"] = ("_tes3x_mcp47_test_command",)
     if "tes3xtest_dialoguemerge.c" in names:
         if "tes3xconsole.c" not in names:
             raise PayloadError("tes3xtest_dialoguemerge.c requires tes3xconsole.c")
@@ -900,6 +906,13 @@ def engine_bindings(xbe, sources):
         define("MCP146_GAME", hexva(game))
         define("MCP146_RESUME", hexva(resume))
         wanted["mcp146"] = ("_tes3x_mcp146_hook",)
+    if "tes3xmcp47.c" in names:
+        site, deselect, world, player = find_mcp47_context(image)
+        print(f"mcp-47 hook: deselect call {hexva(site)}, target {hexva(deselect)}")
+        define("MCP47_DESELECT", hexva(deselect))
+        define("MCP47_WORLD", hexva(world))
+        define("MCP47_GET_PLAYER", hexva(player))
+        wanted["mcp47_deselect"] = ("_tes3x_mcp47_deselect",)
     if "tes3xrefindex.c" in names:
         find = hexva(locate("ref-index-find"))
         scripts = hexva(locate("ref-index-scripts"))

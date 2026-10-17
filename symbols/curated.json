@@ -1577,7 +1577,8 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_Actor_unequipItem",
-      "pc_va": "0x00496710"
+      "pc_va": "0x00496710",
+      "note": "When the unequipped item is the actor's current enchanted item, clears that actor's magic and calls the player menu deselection routine."
     },
     {
       "va": "0x000E7210",
@@ -5837,7 +5838,8 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_UI_MenuMagic_deselectMagic",
-      "pc_va": "0x005E4500"
+      "pc_va": "0x005E4500",
+      "note": "When the magic menu exists, clears its display and both current-magic fields on the player."
     },
     {
       "va": "0x001EE460",

@@ -13,7 +13,7 @@ on, `low` for minor ones, and `none` for fixes we won't port.
 
 | status | fixes |
 |---|---|
-| candidate | 187 |
+| candidate | 186 |
 | deferred | 13 |
 | not-applicable | 15 |
 | rejected | 3 |
@@ -31,7 +31,6 @@ Worth porting, but not yet shown to affect the Xbox build.
 | `mcp-25` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #25 | medium | correctness | **Blind fix.** Blind gives the player an attack bonus instead of a penalty: an inverted effect. |
 | `mcp-30` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #30 | medium | correctness | **Projectile aiming fix.** Projectiles fire off-centre for races with height other than 1.0, and third-person aiming is poor. |
 | `mcp-46a` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #46 | medium | correctness (recommended) | **`Drop` places at the acting reference, not the player.** The engine treats every drop as if it came from the player inventory view, so scripted drops land at the wrong actor. Split from the rest of id 46 under rule 3. |
-| `mcp-47` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #47 | medium | correctness | **Spell deselection bug fix.** The selected spell is dropped when other actors unequip or use up magic items; tedious to reselect with a controller. |
 | `mcp-48` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #48 | medium | correctness | **Level-up stats bug fix.** Level-up offers a x1 multiplier when the correct one would take a stat to 100. |
 | `mcp-55` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #55 | medium | correctness | **Alchemy naming/stacking fix.** Alchemy asks for a name that is already present after long play, and resets custom names. The prompt on Xbox is the on-screen keyboard. |
 | `mcp-58` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #58 | medium | correctness (undecided) | **Save-count warning.** MCP warns before PC memory corruption at roughly 300 save files. Xbox uses `XCreateSaveGame` and different enumeration, so first determine whether any equivalent limit exists; do not port the PC threshold by assumption. |

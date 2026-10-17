@@ -53,6 +53,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_info_arena_sites, find_lean_menu, find_marker,
                                find_mcp102_actn, find_mcp123_add, find_mcp125_collision,
                                find_mcp125_context, find_mcp146, find_mcp146_context,
+                               find_mcp47_context,
                                find_mcp154_load, find_mcp154_reload, find_mcp37_context,
                                find_mcp3_unarmored, find_mcp92_unsummon, find_mcp94,
                                find_mcp97_scan, find_mcp98_refcounts, find_menu_mode_gate,
@@ -657,6 +658,19 @@ def _mcp_146(x, value, ctx):
     return [(off, 5, "player input guard 0x%08X: 0x%08X -> %s" % (site, was, target))]
 
 
+@patch("mcp-47")
+def _mcp_47(x, value, ctx):
+    """Keep NPC equipment changes from deselecting the player's spell."""
+    target = ctx.get("hooks", {}).get("mcp47_deselect")
+    if not target:
+        raise PatchError("mcp-47: needs `payload` first, with an mcp47_deselect hook")
+    site, deselect, _, _ = find_mcp47_context(x)
+    was, off = x.patch_call(site, int(str(target), 16))
+    if was != deselect:
+        raise PatchError("mcp-47: deselection call target changed")
+    return [(off, 5, "unequip deselection call 0x%08X -> %s" % (site, target))]
+
+
 @patch("ref-index")
 def _ref_index(x, value, ctx):
     """Answer reference lookups from an index while global scripts start."""
@@ -977,6 +991,13 @@ def _test_mcp3(x, value, ctx):
     if not ctx.get("hooks", {}).get("mcp3_test"):
         raise PatchError("test-mcp3: payload has no mcp-3 test command")
     return [(None, 0, "fully unarmored damage command installed")]
+
+
+@test_patch("test-mcp47", "Select magic and inspect spell selection for the mcp-47 game test.")
+def _test_mcp47(x, value, ctx):
+    if not ctx.get("hooks", {}).get("mcp47_test"):
+        raise PatchError("test-mcp47: payload has no mcp-47 test command")
+    return [(None, 0, "spell selection test command installed")]
 
 
 @patch("mcp-123")

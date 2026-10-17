@@ -272,6 +272,17 @@ source = "tes3xmcp146.c"
 summary = "Remove a fully nocked arrow with the Ready Weapon control."
 
 [[patch]]
+name = "mcp-47"
+title = "Spell deselection fix"
+origin = { source = "MCP", id = "47" }
+bit = 41
+category = "correctness"
+channel = "dev"
+selection = "preset"
+source = "tes3xmcp47.c"
+summary = "Keep another actor's magic-item changes from deselecting the player's spell."
+
+[[patch]]
 name = "mcp-154"
 title = "Script data overread fix"
 origin = { source = "MCP", id = "154" }

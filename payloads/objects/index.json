@@ -74,6 +74,9 @@
     "MCP37_GAME": null,
     "MCP37_GET_PLAYER": null,
     "MCP37_TREE_NEXT": null,
+    "MCP47_DESELECT": null,
+    "MCP47_GET_PLAYER": null,
+    "MCP47_WORLD": null,
     "MCP97_RESUME": null,
     "MEM_CODE_END": null,
     "MEM_CODE_START": null,
@@ -381,8 +384,8 @@
       "sha256": "38411f8b5f805eec763cec3029b75b383e4b418a8ed0a40c435d326b1decb15f"
     },
     "tes3xconsole.c": {
-      "digest": "92e2aa445db09557979a012c763f9ac447496512642f010a8737e5ddbc6b3e60",
-      "sha256": "18d9a2711ed8c39e47d2bf2f27383f9b5700e45a9079368e38748917b18f6521"
+      "digest": "7a3907c08b12c2131d3701313ae595e427d776a843b013d8929ec47f7fa48a06",
+      "sha256": "8eecc8cdc662abe76f6ffeea2fd4c709814665cff05564d6e65ec8059c35f818"
     },
     "tes3xcrt.c": {
       "digest": "ab9729dcc446374ec954de0d10deca152784a663760f54b6a52b16dec5173c39",
@@ -451,6 +454,10 @@
     "tes3xmcp37.c": {
       "digest": "397a69e7fbc49a507d528aee7796f1f124240d46555eb26ea44f14c2b920d142",
       "sha256": "7f9098a2e384b875bba54f15649c2ec33a7213635853475aac0d49dacc1a84bc"
+    },
+    "tes3xmcp47.c": {
+      "digest": "c9e006cdf4e84d4eb11ff4854f4c77969668461f9437d24e653bcd42d5f11b35",
+      "sha256": "8c90fcd49065749df6d4df63f672ef1eeb7c643c1cdabd0d3e8ae1391f0e9daa"
     },
     "tes3xmcp97.c": {
       "digest": "de6544ef3de43d4769f0e8faf4c14719feffbbf60ea92277f780d543a58153d5",

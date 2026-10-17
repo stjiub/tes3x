@@ -32,6 +32,20 @@
           "type": "unsigned char",
           "confidence": "verified",
           "provenance": "Xbox startAttackAnimation 0x0016D3A0 and swingAnimationStateMachine 0x0016D710: slash/chop/thrust 1/2/3"
+        },
+        {
+          "offset": "0x378",
+          "name": "currentSpellSource",
+          "type": "TES3::Object*",
+          "confidence": "verified",
+          "provenance": "Xbox MobileActor::setCurrentMagicFromSourceCombo 0x0015A470 and setCurrentMagicFromSpell 0x0015A570"
+        },
+        {
+          "offset": "0x37C",
+          "name": "currentSpellSourceType",
+          "type": "unsigned int",
+          "confidence": "verified",
+          "provenance": "Xbox MobileActor::setCurrentMagicFromSourceCombo 0x0015A470 and setCurrentMagicFromSpell 0x0015A570"
         }
       ]
     },

@@ -4,6 +4,9 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- New `mcp-47` patch keeps another actor's magic-item changes from deselecting the player's
+  spell. See [the patch](patches/mcp-47.md).
+
 - Builds can enable `extended-tooltips` for an in-world theft warning and more item information in
   menu tooltips: ownership, weapon speed and reach, projectile damage, enchantment type and
   charge, and filled soul gems. See [extended tooltips](patches/extended-tooltips.md).

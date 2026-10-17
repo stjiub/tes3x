@@ -1,0 +1,39 @@
+kind = "comparison"
+purpose = "Unequipping an NPC's selected enchanted item preserves the player's selected spell, while unequipping the player's own item still clears it."
+procedure = "Load a Seyda Neen save, equip Fargoth and the player with an enchanted ring, arm their selected items and the player's known spell with a test-only command, then remove each ring and inspect the selection state."
+limitations = "The private save fixture is not distributed. The probe arms the engine's selection fields directly; item removal and unequipping use normal game commands. Hardware behavior is not checked."
+watch = 'mcp47\.|exec[.>]|assert[.>]|console<'
+pipeline = ["--test-probe", "mcp-47"]
+save = "vanilla-seyda-neen.ess"
+timeout = 180
+script = '''
+@start load U:\TES3X\vanilla-seyda-neen.ess
+wait 180
+assert player->GetLevel == 7.00
+coc "Seyda Neen"
+wait 180
+"fargoth"->AddItem "ring_keley" 1
+"fargoth"->Equip "ring_keley"
+assert "fargoth"->HasItemEquipped "ring_keley" == 1.00
+player->AddSpell "fire bite"
+tes3xmcp47 npc
+tes3xmcp47 state
+"fargoth"->RemoveItem "ring_keley" 1
+tes3xmcp47 state
+player->AddItem "ring_keley" 1
+player->Equip "ring_keley"
+assert player->HasItemEquipped "ring_keley" == 1.00
+tes3xmcp47 player
+player->RemoveItem "ring_keley" 1
+assert player->HasItemEquipped "ring_keley" == 0.00
+tes3xmcp47 state
+exit
+'''
+
+[expect]
+control = ['mcp47\.spell_found 1', 'mcp47\.npc_item_selected 0', 'mcp47\.player_item_selected 0', 'exec\.exit 0']
+test = ['mcp47\.spell_found 1', 'mcp47\.npc_item_selected 0', 'mcp47\.player_item_selected 0', 'exec\.exit 0']
+
+[sequence]
+control = ['exec> tes3xmcp47 npc', 'mcp47\.player_selected 1', 'exec> "fargoth"->RemoveItem', 'mcp47\.player_selected 0', 'exec> tes3xmcp47 player', 'mcp47\.player_selected 1', 'exec> player->RemoveItem', 'mcp47\.player_selected 0']
+test = ['exec> tes3xmcp47 npc', 'mcp47\.player_selected 1', 'exec> "fargoth"->RemoveItem', 'mcp47\.player_selected 1', 'exec> tes3xmcp47 player', 'mcp47\.player_selected 1', 'exec> player->RemoveItem', 'mcp47\.player_selected 0']

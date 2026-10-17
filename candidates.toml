@@ -433,15 +433,6 @@ summary = "`PlaceAtPC` distance in third person, `PlaceAtMe` scale inheritance"
 reason = "A line-of-sight test misplaces third-person `PlaceAtPC` at the player's feet; `PlaceAtMe` inherits a target's rotation but not its scale. Two separate defects sharing id 46's record set."
 
 [[candidate]]
-name = "mcp-47"
-origin = { source = "MCP", id = "47" }
-category = "correctness"
-status = "candidate"
-priority = "medium"
-summary = "Spell deselection bug fix"
-reason = "The selected spell is dropped when other actors unequip or use up magic items; tedious to reselect with a controller."
-
-[[candidate]]
 name = "mcp-48"
 origin = { source = "MCP", id = "48" }
 category = "correctness"

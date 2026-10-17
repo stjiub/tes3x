@@ -567,6 +567,16 @@ MCP146_RESUME_SIG = re.compile(
 )
 
 
+# Actor::unequipItem clears the actor's magic, then unconditionally deselects the player's
+# magic menu. The nearby readied-weapon branch identifies the world pointer and player getter.
+MCP47_SIG = re.compile(
+    rb"\x6a\x00\x8b\xcb\xe8....(?P<site>\xe8....)"
+    rb"\x39\xb3\x88\x03\x00\x00\x75.\x6a\x00\x8b\xcb\xe8...."
+    rb"\x8b\x0d(?P<world>....)(?P<player>\xe8....)\x3b\xd8",
+    re.S,
+)
+
+
 # MobilePlayer::updateScenegraph updates the first-person transform, then updates and traverses
 # its root.  The call is narrow enough to move only the viewmodel after the engine positions it.
 BOW_VIEW_SIG = re.compile(
@@ -897,6 +907,21 @@ def find_mcp146(x):
     if site is None:
         raise PatchError("mcp-146: input guard is outside any section")
     return site
+
+
+def find_mcp47_context(x):
+    """Deselect call, original target, world pointer, and player getter in unequipItem."""
+    hits = list(MCP47_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("mcp-47: %d unequip deselection paths, expected 1" % len(hits))
+    hit = hits[0]
+    site = x.off_to_va(hit.start("site"))
+    player_call = x.off_to_va(hit.start("player"))
+    if site is None or player_call is None:
+        raise PatchError("mcp-47: call is outside any section")
+    return (site, tes3x_inject.call_target(x, site),
+            struct.unpack("<I", hit.group("world"))[0],
+            tes3x_inject.call_target(x, player_call))
 
 
 def find_mcp146_context(x):
@@ -2017,6 +2042,7 @@ LOCATORS = {
     "mcp-37": lambda image: find_mcp37_context(image)[0],
     "dxt5-size": find_dxt5_size,
     "mcp-146": find_mcp146,
+    "mcp-47": lambda image: find_mcp47_context(image)[0],
     "mcp-146-input": lambda image: find_mcp146_context(image)[1],
     "mcp-146-game": lambda image: find_mcp146_context(image)[2],
     "mcp-146-resume": lambda image: find_mcp146_context(image)[3],
