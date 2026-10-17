@@ -164,6 +164,26 @@ test = ['mcp102\\.loaded 1']
         with self.assertRaises(SystemExit):
             self.record(0x5, 0x5 | MCP102_BIT, test_ini='9' * 64)
 
+    def test_comparison_allows_different_linked_payload_hashes(self):
+        control = self.run_folder('control', 0x5, 0, ['diagnostics'])
+        tested = self.run_folder('test', 0x5 | MCP102_BIT, 1,
+                                 ['diagnostics', 'mcp-102'])
+        runs = []
+        for role, folder, digest in [('control', control, 'a' * 64),
+                                     ('test', tested, 'b' * 64)]:
+            path = folder / 'pipeline' / validation.MARKER
+            marker = json.loads(path.read_text())
+            marker['payload'] = {'compiled': ['tes3xtest_mcp102.c'], 'sha256': digest}
+            path.write_text(json.dumps(marker))
+            run_path = folder / validation.RUN_MARKER
+            run_marker = json.loads(run_path.read_text())
+            run_marker['pipeline'] = marker
+            run_path.write_text(json.dumps(run_marker))
+            runs.append((role, validation.read_run(folder, validation.re.compile('mcp102'))))
+        validation.build_provenance('mcp-102', 'xemu', runs)
+        self.assertEqual(validation.pipeline_inputs(runs[0][1]['pipeline'])['payload'],
+                         {'compiled': ['tes3xtest_mcp102.c']})
+
     def test_hardware_description_tracks_visible_ram_and_cpu(self):
         path = self.root / 'hardware.toml'
         path.write_text('''

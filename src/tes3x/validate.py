@@ -123,7 +123,12 @@ def sha256_file(path):
 
 
 def pipeline_inputs(meta):
-    return {key: value for key, value in meta.items() if key not in PIPELINE_VOLATILE}
+    inputs = {key: value for key, value in meta.items() if key not in PIPELINE_VOLATILE}
+    if isinstance(inputs.get("payload"), dict):
+        # The selected patch changes the linked payload just as it changes the XBE.
+        inputs["payload"] = {key: value for key, value in inputs["payload"].items()
+                             if key != "sha256"}
+    return inputs
 
 
 def patch_names(specs):
