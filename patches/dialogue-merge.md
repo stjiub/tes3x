@@ -14,6 +14,9 @@ repeat several hundred topics between them, including `Hello`, the greetings, `L
 some journal topics, and lose about 24,000 earlier responses that way. This patch restores the PC
 behavior.
 
+Patch for Purists also repeats stock topics. Without this patch, its `Greeting 1` removes the
+stock Sellus Gravius response that teaches `duties` during character creation.
+
 See the [patch table](../docs/patches.md) for availability and selection.
 
 ## How it works

@@ -4,6 +4,10 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- Enabled catalog mods now select their required patches automatically. Patch for Purists selects
+  `dialogue-merge` to keep stock dialogue responses needed during character creation. See the
+  [mod catalog](docs/catalog.md).
+
 - New `mcp-47` patch keeps another actor's magic-item changes from deselecting the player's
   spell. See [the patch](patches/mcp-47.md).
 

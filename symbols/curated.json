@@ -2300,8 +2300,29 @@
       "va": "0x000FE0F0",
       "name": "Dialogue::findInfo",
       "confidence": "matched",
-      "provenance": "walks the +0x18 head through DialogueInfo +0x1C comparing INAM; the loader uses it to replace a repeated INFO in place",
+      "provenance": "walks the +0x18 head through DialogueInfo +0x1C comparing INAM; the loader uses it to find a repeated INFO before replacement or repositioning",
       "pc_va": "0x004B2920"
+    },
+    {
+      "va": "0x000FE160",
+      "name": "Dialogue::indexOfInfo",
+      "confidence": "verified",
+      "provenance": "Xbox decompile 2026-10-17; returns zero-based chain index or -1",
+      "signature": "int __thiscall indexOfInfo(DialogueInfo* info)"
+    },
+    {
+      "va": "0x000FE1B0",
+      "name": "Dialogue::removeInfo",
+      "confidence": "verified",
+      "provenance": "Xbox decompile 2026-10-17; unlinks INFO from Dialogue +0x18 chain",
+      "signature": "void __thiscall removeInfo(DialogueInfo* info)"
+    },
+    {
+      "va": "0x000FE200",
+      "name": "Dialogue::insertInfoAtIndex",
+      "confidence": "verified",
+      "provenance": "Xbox decompile 2026-10-17; inserts into Dialogue +0x18 chain at zero-based index",
+      "signature": "DialogueInfo* __thiscall insertInfoAtIndex(DialogueInfo* info, int index)"
     },
     {
       "va": "0x000FE830",
@@ -2756,9 +2777,10 @@
     },
     {
       "va": "0x0010E8B0",
-      "name": "NonDynamicData::loadRecord?",
+      "name": "NonDynamicData::loadRecord",
       "confidence": "guess",
-      "provenance": "called once per record by 0x00112290; dispatches to the record type's constructors"
+      "provenance": "called once per record by 0x00112290; dispatches to the record type's constructors",
+      "note": "For an existing INFO, a changed PNAM moves it after that ID when present (or to the head); NNAM is not consulted in this branch. A new INFO inserts after PNAM, at the head for empty PNAM, or at the tail if PNAM is missing."
     },
     {
       "va": "0x00111260",

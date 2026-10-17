@@ -198,6 +198,10 @@ folder first; the game hangs if it has to create a new title's folder itself.
 `testing` also adds preview core and correctness fixes, diagnostics and the console. See
 [patches.md](patches.md) for patch names.
 
+Enabled mods also select the patches listed as requirements in the [mod catalog](catalog.md).
+If `disable` or `--disable` names a required patch, profile checking stops and names the mod
+that needs it. Disable the mod to build without its required patch.
+
 ### `[preferences]`
 
 Applied after the Xbox's stored options load. Leave the table out to keep the player's own

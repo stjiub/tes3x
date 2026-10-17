@@ -34,6 +34,7 @@ from tes3x.store import TIERS as STORE_TIERS
 import tes3x.manifest as tes3x_manifest
 import tes3x.savepool as tes3x_savepool
 import tes3x.targets as tes3x_targets
+import tes3x.catalog as tes3x_catalog
 
 
 MARKER = ".tes3x-pipeline.json"
@@ -392,6 +393,20 @@ def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), pac
     # Bisecting a profile is not a contradiction.
     selected.update(enable)
     selected.difference_update(disable)
+
+    catalog = tes3x_catalog.load(patch_names=registry.BY_NAME)
+    required_by = {}
+    for mod in enabled_mods(profile):
+        verdict = tes3x_catalog.match(catalog, mod.get("id", ""), mod.get("name", ""),
+                                      *(mod.get("plugins") or []))
+        if verdict:
+            for name in verdict.get("patches", []):
+                required_by.setdefault(name, []).append(verdict["name"])
+    conflict = set(required_by) & (disabled | set(disable))
+    if conflict:
+        names = ", ".join(f"{name} ({', '.join(required_by[name])})" for name in sorted(conflict))
+        raise PipelineError(f"enabled mods require disabled patches: {names}")
+    selected.update(required_by)
 
     ui = profile.get("ui", {})
     if ui_scale(ui) != 1 or ui.get("widescreen_480p", False):

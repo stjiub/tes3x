@@ -118,7 +118,7 @@ Each step is shown in the GUI first, then on the command line.
    On the command line, edit the `profiles/my-build.toml` created by `tes3x init`.
    Set `profile.name` and `profile.install_dir`, and list your mods as `[[mods]]`
    blocks; for engine fixes only, remove every `[[mods]]` block. The example's comments explain
-   each option.
+   each option. Known mods select their required patches automatically.
 
 4. **Check it.** **Actions > Check profile** resolves the profile without building: mods, missing
    masters, patches and paths.

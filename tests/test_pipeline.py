@@ -419,6 +419,28 @@ class PipelineTests(unittest.TestCase):
 
 
 class PipelinePlanTests(unittest.TestCase):
+    def test_catalog_patches_follow_enabled_mods(self):
+        profile = {'patches': {'preset': 'minimal'},
+                   'package': {'mode': 'loose'},
+                   'mods': [{'id': 'purists'}, {'name': 'Morrowind Optimization Patch',
+                                             'enabled': False}]}
+        plan = resolve_patch_plan(profile)
+        self.assertIn('dialogue-merge', plan['selected'])
+        self.assertNotIn('dxt5-size', plan['selected'])
+        profile['mods'][0]['enabled'] = False
+        self.assertNotIn('dialogue-merge', resolve_patch_plan(profile)['selected'])
+        profile['mods'][1]['enabled'] = True
+        self.assertIn('dxt5-size', resolve_patch_plan(profile)['selected'])
+
+    def test_catalog_required_patch_cannot_be_disabled(self):
+        profile = {'patches': {'preset': 'minimal', 'disable': ['dialogue-merge']},
+                   'mods': [{'name': 'Purists'}]}
+        with self.assertRaisesRegex(PipelineError, 'dialogue-merge .*Patch for Purists'):
+            resolve_patch_plan(profile)
+        profile['patches']['disable'] = []
+        with self.assertRaisesRegex(PipelineError, 'dialogue-merge .*Patch for Purists'):
+            resolve_patch_plan(profile, disable=['dialogue-merge'])
+
     def test_pipeline_derives_archive_hook_and_payload_sources(self):
         profile = {
             'patches': {'preset': 'minimal', 'enable': ['mcp-1', 'script-ext']},
