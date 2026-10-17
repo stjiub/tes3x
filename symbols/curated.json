@@ -503,7 +503,7 @@
       "name": "WorldController::refreshForResolution",
       "confidence": "matched",
       "provenance": "PC 0x0040F2A0 and Xbox Clip One To One Float path; two UI camera vectors",
-      "note": "Rounds the camera projection when Clip One To One Float is enabled, refreshes UI layout, then resets the two menu camera offsets at +0x30 and +0x38 to zero. MCP 267 preserves fractional projection and uses -0.5 in both offsets.",
+      "note": "Rounds the camera projection when Clip One To One Float is enabled, refreshes UI layout, then resets the two menu camera offsets at +0x30 and +0x38 to zero.",
       "pc_va": "0x0040F2A0",
       "signature": "void __thiscall refreshForResolution(int viewWidth)"
     },
@@ -593,7 +593,7 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_Game_initialize",
       "pc_va": "0x00417880",
-      "note": "After renderer setup, the Xbox initializer resets both menu camera offsets at +0x30 and +0x38 to zero; MCP 267 preserves the -0.5 offsets established during resolution setup."
+      "note": "After renderer setup, the Xbox initializer resets both menu camera offsets at +0x30 and +0x38 to zero."
     },
     {
       "va": "0x00098300",

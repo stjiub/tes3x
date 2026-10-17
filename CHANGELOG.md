@@ -4,8 +4,6 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
-- Builds can enable `mcp-267` to align menu text, icons and frames with screen pixels for a
-  sharper picture. See [UI pixel alignment](patches/mcp-267.md).
 - Builds can enable `extended-tooltips` for an in-world theft warning and more item information in
   menu tooltips: ownership, weapon speed and reach, projectile damage, enchantment type and
   charge, and filled soul gems. See [extended tooltips](patches/extended-tooltips.md).

@@ -16,7 +16,7 @@ on, `low` for minor ones, and `none` for fixes we won't port.
 | candidate | 187 |
 | deferred | 13 |
 | not-applicable | 15 |
-| rejected | 2 |
+| rejected | 3 |
 
 ## candidate
 
@@ -261,4 +261,5 @@ Deliberately left out of TES3X.
 | fix | from | priority | category | notes |
 |---|---|---|---|---|
 | `mcp-140` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #140 | none | performance | **Throttle loading-screen redraws.** Original-Xbox cold New Game A/B runs with caches cleared averaged 99.3495 seconds control and 99.3860 seconds patched. The 36.5 ms difference was smaller than the 230-339 ms repeat variation, so the port had no measurable benefit. |
+| `mcp-267` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #267 | none | qol | **UI pixel alignment.** Matched 480p xemu menu captures showed no discernible benefit, so this patch was dropped. |
 | `openmw-parity` | [OpenMW](https://openmw.org) | none | undecided | **Blanket OpenMW parity.** OpenMW is a separate reimplementation and intentionally diverges in places. Only explicit vanilla defects or desired, scoped features enter this ledger. |

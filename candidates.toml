@@ -1584,6 +1584,15 @@ summary = "Polish character corrections"
 reason = "Polish characters with a PC font mod."
 
 [[candidate]]
+name = "mcp-267"
+origin = { source = "MCP", id = "267" }
+category = "qol"
+status = "rejected"
+priority = "none"
+summary = "UI pixel alignment"
+reason = "Matched 480p xemu menu captures showed no discernible benefit, so this patch was dropped."
+
+[[candidate]]
 name = "mcp-268"
 origin = { source = "MCP", id = "268" }
 status = "not-applicable"
