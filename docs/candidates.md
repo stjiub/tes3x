@@ -13,7 +13,7 @@ on, `low` for minor ones, and `none` for fixes we won't port.
 
 | status | fixes |
 |---|---|
-| candidate | 190 |
+| candidate | 188 |
 | deferred | 13 |
 | not-applicable | 15 |
 | rejected | 2 |
@@ -212,8 +212,6 @@ Worth porting, but not yet shown to affect the Xbox build.
 | `sigf-skill-gmst` | [SIGF](https://www.nexusmods.com/morrowind/mods/48029) | low | correctness (recommended) | **Use `iLevelupMajorMult` for major skills and `iLevelupMinorMult` for minor skills.** The engine reportedly uses the minor value for major skills and the major value for minor skills. Vanilla values hide much of the error; modded GMSTs expose it. Confirm in the Xbox formula. |
 | `xbox-controller-tuning` | [OpenMW](https://openmw.org) | low | qol (opt in) | **Independent horizontal/vertical sensitivity and dead-zone controls.** The Xbox build already reads controller settings from `[Xbox]`; prefer compatible INI keys and no save-format change. |
 | `xbox-enchant-chance` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #151 | low | qol (opt in) | **Show self-enchanting success chance.** Useful information, but the PC UI patch does not port directly. Design for Xbox screen space and controller flow. |
-| `xbox-ownership` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #273 | low | qol (opt in) | **Ownership indicator/tooltip before taking an item.** Helpful, but it changes information available to the player and the PC tooltip layout is inapplicable. |
-| `xbox-weapon-details` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) | low | qol (opt in) | **Expose relevant reach/speed/damage details more clearly.** Inventory space is constrained. Do not reproduce data already shown by `XboxArrowDmgDisp.esp`. |
 
 ## deferred
 

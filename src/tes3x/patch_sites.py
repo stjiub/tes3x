@@ -102,6 +102,32 @@ def find_unique(data, needle, what):
     return hits[0]
 
 
+def find_item_tooltip(x):
+    """The object tooltip and its world-target call, anchored in player activation."""
+    from tes3x.multi_signatures import find_multi_signature
+
+    activation = find_multi_signature(x, "ACTIVATION_TARGET")
+    start = x.va_to_off(activation)
+    pattern = re.compile(rb"\xe8....\x68\x05\x81\xff\xff\xe8", re.S)
+    hits = [m for m in pattern.finditer(bytes(x.data), start, start + 0x400)]
+    if len(hits) != 1:
+        raise PatchError("object tooltip: %d world calls, expected 1" % len(hits))
+    world_call = x.off_to_va(hits[0].start())
+    tooltip = tes3x_inject.call_target(x, world_call)
+    calls = find_call_sites(x, tooltip)
+    if len(calls) != 19 or world_call not in calls:
+        raise PatchError("object tooltip: %d calls, expected 19 including world target"
+                         % len(calls))
+    head = bytes(x.data[x.va_to_off(tooltip):x.va_to_off(tooltip) + 0x85])
+    if head[:8] != bytes.fromhex("83 ec 20 56 8b 74 24 28") or \
+            head[0x54:0x56] != b"\x66\xa1" or head[0x80] != 0xe8:
+        raise PatchError("object tooltip: unexpected builder entry")
+    content_id = struct.unpack_from("<I", head, 0x56)[0]
+    get_item_data = tes3x_inject.call_target(x, tooltip + 0x80)
+    find_help = tes3x_inject.call_target(x, world_call + 10)
+    return tooltip, calls, content_id, get_item_data, find_help
+
+
 SLEEP_SIG = re.compile(rb"\x6a\x00\xff\x74\x24\x08\xe8....\xc2\x04\x00", re.S)
 
 

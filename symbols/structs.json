@@ -313,7 +313,7 @@
     },
     {
       "name": "TES3::ItemData",
-      "note": "Xbox matches the PC at count +0x0, condition +0xC, charge +0x10, script +0x14 and ScriptVariables* +0x18; a reference's item data is its attachment of kind 6 (data +0x8). Reference::getScriptVariables 0x0012A9B0 and ensureScriptDataIsInstanced 0x0012DAC0 use them."
+      "note": "Xbox matches the PC at count +0x0, owner +0x4, required global or faction rank +0x8, condition +0xC, charge or soul +0x10, script +0x14 and ScriptVariables* +0x18; a reference's item data is its attachment of kind 6 (data +0x8). MobileActor::takeItemFromReference 0x00161540 reads the ownership fields; Reference::getScriptVariables 0x0012A9B0 and ensureScriptDataIsInstanced 0x0012DAC0 use the script fields."
     },
     {
       "name": "TES3::ScriptVariables",

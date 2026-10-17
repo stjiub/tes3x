@@ -42,6 +42,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_dash_button, find_hud_scale, find_menu_area_scale,
                                find_chargen_scale,
                                find_levelup_scale, find_message_scale, find_name_scale,
+                               find_item_tooltip,
                                find_options_scale,
                                find_menu_still,
                                find_bow_view, find_button_pressed, find_call_sites, find_command_table,
@@ -745,6 +746,20 @@ def _dash_button(x, value, ctx):
                                 ("MenuOptions::build", "menu height")):
         was, off = x.patch_call(site, int(str(hook), 16))
         edits.append((off, 5, "%s call 0x%08X: 0x%08X -> %s" % (what, site, was, hook)))
+    return edits
+
+
+@patch("extended-tooltips")
+def _xbox_tooltips(x, value, ctx):
+    target = ctx.get("hooks", {}).get("item_tooltip")
+    if not target:
+        raise PatchError("extended-tooltips: needs an item_tooltip payload hook")
+    _original, calls, _content, _data, _help = find_item_tooltip(x)
+    edits = []
+    for site in calls:
+        was, off = x.patch_call(site, int(str(target), 16))
+        edits.append((off, 5, "object tooltip call 0x%08X: 0x%08X -> %s" %
+                      (site, was, target)))
     return edits
 
 

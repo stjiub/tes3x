@@ -4,6 +4,9 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- Builds can enable `extended-tooltips` for an in-world theft warning and more item information in
+  menu tooltips: ownership, weapon speed and reach, projectile damage, enchantment type and
+  charge, and filled soul gems. See [extended tooltips](patches/extended-tooltips.md).
 - Profiles can set `ui.scale` to shrink text, the help strip, minimap, resource bars, equipment
   art, the options, level-up and character creation menus, message boxes, and common menu panels together. `ui.widescreen_480p`
   also corrects horizontal proportions on a stretched 480p display; use a separate profile for 720p.

@@ -52,6 +52,7 @@ enable = [
     # "bow-view",               # qol: lower the first-person bow and arms while an arrow is nocked
     # "hd-video",              # qol: 720p when the dashboard enables it, else 480p/480i (128 MB advised)
     # "ui-scale",              # qol: smaller text and HUD art; configure in [ui]
+    # "extended-tooltips",     # qol: ownership warnings and extra item details
     # "boot-clear",            # qol: clear the screen before the first frame, no green flicker without the launcher
     # "menu-still",            # qol: a still behind the main menu instead of the logo movie (needs ffmpeg)
     # "dash-button",           # qol: a TES3X button in the main and pause menus that leaves for the Dash

@@ -2142,6 +2142,13 @@
       "pc_va": "0x004AD650"
     },
     {
+      "va": "0x000FA510",
+      "name": "Faction::getEffectivePlayerRank",
+      "confidence": "verified",
+      "provenance": "Xbox decompilation",
+      "signature": "int __thiscall getEffectivePlayerRank()"
+    },
+    {
       "va": "0x000FA670",
       "name": "GlobalVariable::copy",
       "confidence": "matched",
@@ -3087,6 +3094,13 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_ItemData_constructor",
       "pc_va": "0x004E44B0"
+    },
+    {
+      "va": "0x0012A550",
+      "name": "Reference::getItemData",
+      "confidence": "verified",
+      "provenance": "Xbox decompilation and pickup path",
+      "signature": "TES3::ItemData* __thiscall getItemData()"
     },
     {
       "va": "0x0012A5F0",
@@ -4068,6 +4082,13 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_MobileActor_onDeath",
       "pc_va": "0x00523AA0"
+    },
+    {
+      "va": "0x00161540",
+      "name": "MobileActor::takeItemFromReference",
+      "confidence": "verified",
+      "provenance": "Xbox decompilation",
+      "note": "A pickup is theft for another NPC owner if its required global is absent or zero, or for a faction owner if the player has not joined or is below the required rank."
     },
     {
       "va": "0x00161A20",
@@ -5207,6 +5228,14 @@
       "pc_va": "0x0058EE90"
     },
     {
+      "va": "0x001A9240",
+      "name": "UI::displayObjectTooltip",
+      "confidence": "verified",
+      "provenance": "Xbox and PC decompilation",
+      "pc_va": "0x00590D90",
+      "signature": "void __stdcall displayObjectTooltip(TES3::Object* object, TES3::ItemData* data, int count)"
+    },
+    {
       "va": "0x001ACC60",
       "name": "ui::requestMenuModeOn",
       "kind": "function",
@@ -6033,14 +6062,6 @@
       "provenance": "Xbox decompile and New Game layout trace",
       "note": "Creates MenuRaceSex, builds its 390x340 tree, lays it out at 0x00208892, then prepares the 3D head preview.",
       "signature": "void __cdecl showRaceSexMenu()"
-    },
-    {
-      "va": "0x002096B1",
-      "name": "UI::displayObjectTooltip",
-      "kind": "function",
-      "confidence": "matched",
-      "provenance": "mwse:TES3_UI_displayObjectTooltip",
-      "pc_va": "0x00590D90"
     },
     {
       "va": "0x0020BA40",

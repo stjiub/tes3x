@@ -22,7 +22,7 @@ from tes3x.link import LinkError, link, write_map, write_pe
 from tes3x.multi_signatures import SIGNATURES as MULTI_SIGNATURES, find_multi_signature
 from tes3x.paths import bundled, checkout, resource
 from tes3x.patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, archive_load_site,
-                         find_call_sites, find_levelup_scale, find_menu_area_scale,
+                         find_call_sites, find_item_tooltip, find_levelup_scale, find_menu_area_scale,
                          find_message_scale, find_name_scale, find_options_scale,
                          find_chargen_scale,
                          find_mcp37_context,
@@ -949,6 +949,19 @@ def engine_bindings(xbe, sources):
             define("DASHBTN_" + name, address(name, dict(NET_UI_ADDRESSES)[name]))
         wanted["dashbutton"] = ("_tes3x_dashbutton_hook",)
         wanted["dashbutton_height"] = ("_tes3x_dashbutton_height_hook",)
+    if "tes3xtooltips.c" in names:
+        tooltip, calls, content, item_data, find_help = find_item_tooltip(image)
+        define("TIP_ORIGINAL", hexva(tooltip))
+        define("TIP_TYPE", hexva(tes3x_inject.call_target(image, tooltip + 0x6b)))
+        define("TIP_ITEM_DATA", hexva(item_data))
+        define("TIP_FIND_HELP", hexva(find_help))
+        define("TIP_CONTENT_ID", hexva(content))
+        define("TIP_WORLD", hexva(locate("world-controller")))
+        define("TIP_PLAYER", address("PLAYER_MOBILE", dict(CONSOLE_ADDRESSES)["PLAYER_MOBILE"]))
+        define("TIP_FIND_CHILD", address("FIND_CHILD", dict(CONSOLE_ADDRESSES)["FIND_CHILD"]))
+        define("TIP_CREATE_LABEL", address("CREATE_LABEL", dict(NET_UI_ADDRESSES)["CREATE_LABEL"]))
+        print(f"item tooltip: {hexva(tooltip)}, {len(calls)} call sites")
+        wanted["item_tooltip"] = ("_tes3x_tooltip_hook@12",)
     if "tes3xhudscale.c" in names:
         site = locate("ui-scale")
         area_tail, area = find_menu_area_scale(image)

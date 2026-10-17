@@ -323,6 +323,15 @@
     "STILL_FENCE": null,
     "STILL_OPEN": null,
     "TEXTURE_SIZE": null,
+    "TIP_CONTENT_ID": null,
+    "TIP_CREATE_LABEL": null,
+    "TIP_FIND_CHILD": null,
+    "TIP_FIND_HELP": null,
+    "TIP_ITEM_DATA": null,
+    "TIP_ORIGINAL": null,
+    "TIP_PLAYER": null,
+    "TIP_TYPE": null,
+    "TIP_WORLD": null,
     "TRIGGER_EVENT": null,
     "UI_ID": null,
     "UI_NAV": null,
@@ -506,6 +515,10 @@
     "tes3xscript.c": {
       "digest": "c07968c9f66809d44c8096f24caa91c2bcec6ae5124e053574c0b6868a7d315e",
       "sha256": "98612dc2f5782c5df3ae1adc0e6fd065e8b173425aca7bb2e774db3e67130836"
+    },
+    "tes3xtooltips.c": {
+      "digest": "13b239d67fa76cce01a36ddf5f2b536589e82f60d75738a7dd6973fe2a950938",
+      "sha256": "b433c11c7e70329be00db225b65bf886eea133d4de32ebc6a9e377a9ae6df26c"
     },
     "tes3xvideo.c": {
       "digest": "f6c4a712266346ffe063251a7b9b1e2db62030e01d22c8de274f7cc52dc177af",

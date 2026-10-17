@@ -2025,23 +2025,3 @@ status = "deferred"
 priority = "low"
 summary = "Shrink or deduplicate the fixed map bitmap written into every save"
 reason = "`FMAP` is 786,472 bytes and byte-identical across all 18 console saves - 49.5% of each file and twice the next-largest record. Any change alters the save format, so it breaks Wrye Mash and existing saves; that cost has to be accepted before implementation work, not after. Settle the save-size ceiling question (`MCP-58`) first, because without a threshold there is nothing to measure the gain against."
-
-[[candidate]]
-name = "xbox-ownership"
-origin = { source = "MCP", id = "273" }
-category = "qol"
-default = "opt in"
-status = "candidate"
-priority = "low"
-summary = "Ownership indicator/tooltip before taking an item"
-reason = "Helpful, but it changes information available to the player and the PC tooltip layout is inapplicable."
-
-[[candidate]]
-name = "xbox-weapon-details"
-origin = { source = "MCP" }
-category = "qol"
-default = "opt in"
-status = "candidate"
-priority = "low"
-summary = "Expose relevant reach/speed/damage details more clearly"
-reason = "Inventory space is constrained. Do not reproduce data already shown by `XboxArrowDmgDisp.esp`."
