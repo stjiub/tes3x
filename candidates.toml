@@ -1068,15 +1068,6 @@ summary = "Bump/reflect map local lighting"
 reason = "Bump and reflection maps ignore local light. Renderer-specific; the Xbox renderer differs."
 
 [[candidate]]
-name = "mcp-132"
-origin = { source = "MCP", id = "132" }
-category = "compat"
-status = "candidate"
-priority = "low"
-summary = "Improved animation support"
-reason = "Animation mod support: extra bones, PlayGroup and LoopGroup fixes. Needed only by animation mods."
-
-[[candidate]]
 name = "mcp-133"
 origin = { source = "MCP", id = "133" }
 category = "qol"

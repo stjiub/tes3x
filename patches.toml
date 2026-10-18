@@ -261,6 +261,17 @@ source = "tes3xmcp125.c"
 summary = "Initialize scripts and collision for actors moved by Position or PositionCell."
 
 [[patch]]
+name = "mcp-132"
+title = "Improved animation support"
+origin = { source = "MCP", id = "132" }
+bit = 43
+category = "compat"
+channel = "dev"
+selection = "preset"
+source = "tes3xmcp132.c"
+summary = "Play scripted animations across NPC body layers, support extra bones and animate the player."
+
+[[patch]]
 name = "mcp-146"
 title = "Nocked arrow removal"
 origin = { source = "MCP", id = "146" }

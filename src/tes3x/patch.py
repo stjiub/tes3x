@@ -53,7 +53,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_info_arena_sites, find_lean_menu, find_marker,
                                find_mcp102_actn, find_mcp123_add, find_mcp125_collision,
                                find_mcp125_context, find_mcp146, find_mcp146_context,
-                               find_mcp47_context,
+                               find_mcp47_context, find_mcp132_context,
                                find_mcp154_load, find_mcp154_reload, find_mcp173_rank,
                                find_mcp37_context,
                                find_mcp3_unarmored, find_mcp92_unsummon, find_mcp94,
@@ -1001,6 +1001,13 @@ def _test_mcp47(x, value, ctx):
     return [(None, 0, "spell selection test command installed")]
 
 
+@test_patch("test-mcp132", "Read an NPC's animation layers for the mcp-132 game test.")
+def _test_mcp132(x, value, ctx):
+    if not ctx.get("hooks", {}).get("mcp132_test"):
+        raise PatchError("test-mcp132: payload has no animation layer command")
+    return [(None, 0, "animation layer test command installed")]
+
+
 @patch("mcp-123")
 def _mcp_123(x, value, ctx):
     """Mark a PlaceItem destination cell changed before inserting the new reference."""
@@ -1067,6 +1074,30 @@ def _mcp_125(x, value, ctx):
         raise PatchError("mcp-125: invalid collision rewrite")
     x.data[off:off + 20] = block
     edits.append((off, 20, "Position collision branch 0x%08X -> 0x%08X" % (site, hook)))
+    return edits
+
+
+@patch("mcp-132")
+def _mcp_132(x, value, ctx):
+    """Apply MCP's full-body script animation, added-bone and player fixes."""
+    hooks = ctx.get("hooks", {})
+    names = {"script": "mcp132_play_group", "bone": "mcp132_bone_match",
+             "idle_call": "mcp132_update_idles"}
+    if any(not hooks.get(name) for name in names.values()):
+        raise PatchError("mcp-132: payload lacks an animation hook")
+    found = find_mcp132_context(x)
+    edits = []
+    for key, site in (("script", site) for site in found["script"]):
+        old, off = x.patch_call(site, int(str(hooks[names[key]]), 16))
+        if old != found["play"]:
+            raise PatchError("mcp-132: PlayGroup call target changed")
+        edits.append((off, 5, "script animation layers at 0x%08X" % site))
+    for key in ("bone", "idle_call"):
+        site = found[key]
+        old, off = x.patch_call(site, int(str(hooks[names[key]]), 16))
+        if key == "idle_call" and old != found["update"]:
+            raise PatchError("mcp-132: UpdateAllIdles call target changed")
+        edits.append((off, 5, "%s animation hook at 0x%08X" % (key, site)))
     return edits
 
 

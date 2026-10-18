@@ -1,0 +1,32 @@
+kind = "comparison"
+purpose = "PlayGroup starts a scripted NPC and player animation on all three humanoid body layers."
+procedure = "Start a New Game, move to Seyda Neen and play idle9 on Fargoth and the player. Read each current animation group immediately and after 15 frames."
+limitations = "This test uses a stock animation. Extra-bone matching, LoopGroup and third person player motion need separate behavior checks."
+watch = 'mcp132\.|exec\.exit|crash\.|hang\.detected|fatal\.'
+pipeline = ["--test-probe", "mcp-132"]
+timeout = 120
+script = '''
+@start new
+wait 60
+coc "Seyda Neen"
+wait 120
+tes3xmcp132
+"fargoth"->PlayGroup idle9 1
+tes3xmcp132
+wait 15
+tes3xmcp132
+tes3xmcp132 player
+player->PlayGroup idle9 1
+tes3xmcp132 player
+wait 15
+tes3xmcp132 player
+exit
+'''
+
+[expect]
+control = ['mcp132\.ready 1', 'mcp132\.groups 0x00010108', 'mcp132\.player_groups 0x00000008', 'exec\.exit 0']
+test = ['mcp132\.ready 1', 'mcp132\.groups 0x00080808', 'mcp132\.player_groups 0x00080808', 'exec\.exit 0']
+
+[sequence]
+control = ['exec> "fargoth"->PlayGroup', 'mcp132\.groups 0x00010108', 'mcp132\.groups 0x00010108', 'exec> player->PlayGroup', 'mcp132\.player_groups 0x00000008', 'mcp132\.player_groups 0x00000008']
+test = ['exec> "fargoth"->PlayGroup', 'mcp132\.groups 0x00080808', 'mcp132\.groups 0x00080808', 'exec> player->PlayGroup', 'mcp132\.player_groups 0x00080808', 'mcp132\.player_groups 0x00080808']

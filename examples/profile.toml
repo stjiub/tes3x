@@ -39,6 +39,7 @@ enable = [
     # "mcp-123",               # core: persist objects placed by scripts into unvisited cells
     # "mcp-173",               # core: persist NPC faction rank changes made by scripts
     # "mcp-125",               # core: initialize scripts and collision for actors moved by Position
+    # "mcp-132",               # compat: play scripted humanoid animations on all body layers
     # "dxt5-size",             # core: allocate DXT5 textures at their real size
     # "mcp-102",               # correctness: reactivate script-triggered objects after their mod is removed
     # "mcp-94",                # correctness: scale books, the journal and scrolls by screen height

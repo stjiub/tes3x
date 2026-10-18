@@ -23,6 +23,7 @@ TES3X_OPTIONAL int tes3x_net_command(const char *text);
 TES3X_OPTIONAL int tes3x_region_command(const char *text);
 TES3X_OPTIONAL int tes3x_mcp3_test_command(const char *text);
 TES3X_OPTIONAL int tes3x_mcp47_test_command(const char *text);
+TES3X_OPTIONAL int tes3x_mcp132_test_command(const char *text);
 TES3X_OPTIONAL int tes3x_dialmerge_test_command(const char *text);
 TES3X_OPTIONAL int tes3x_diag_command(const char *text);
 TES3X_OPTIONAL int tes3x_autosave_command(void *game, const char *text);
@@ -910,6 +911,8 @@ static void run_command(const char *text)
     if (tes3x_mcp3_test_command && tes3x_mcp3_test_command(text))
         return;
     if (tes3x_mcp47_test_command && tes3x_mcp47_test_command(text))
+        return;
+    if (tes3x_mcp132_test_command && tes3x_mcp132_test_command(text))
         return;
     if (tes3x_dialmerge_test_command && tes3x_dialmerge_test_command(text))
         return;

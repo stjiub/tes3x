@@ -27,7 +27,7 @@ from tes3x.patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, archive_load_site,
                          find_chargen_scale,
                          find_mcp37_context,
                          find_mcp125_context, find_mcp173_rank, find_save_allowed_context,
-                         find_mcp47_context,
+                         find_mcp47_context, find_mcp132_context,
                          find_script_ip_restore_call, find_transition_calls, scene_form)
 
 HOOKS = resource("hooks")
@@ -868,6 +868,16 @@ def engine_bindings(xbe, sources):
             raise PayloadError("tes3xtest_mcp47.c requires tes3xconsole.c")
         print("mcp-47 test probe: console command tes3xmcp47")
         wanted["mcp47_test"] = ("_tes3x_mcp47_test_command",)
+    if "tes3xtest_mcp132.c" in names:
+        if "tes3xconsole.c" not in names:
+            raise PayloadError("tes3xtest_mcp132.c requires tes3xconsole.c")
+        define("MCP132_TEST_RECORDS", address("DATA_HANDLER", DATA_HANDLER))
+        define("MCP132_TEST_FIND_REF", address("FIND_REFERENCE", dict(PLACE_ADDRESSES)["FIND_REFERENCE"]))
+        define("MCP132_TEST_ANIMATION", address("REF_ANIMATION", dict(PLACE_ADDRESSES)["REF_ANIMATION"]))
+        context = find_mcp132_context(image)
+        define("MCP132_TEST_WORLD", hexva(context["world"]))
+        define("MCP132_TEST_GET_PLAYER", hexva(context["get_player"]))
+        wanted["mcp132_test"] = ("_tes3x_mcp132_test_command",)
     if "tes3xtest_dialoguemerge.c" in names:
         if "tes3xconsole.c" not in names:
             raise PayloadError("tes3xtest_dialoguemerge.c requires tes3xconsole.c")
@@ -899,6 +909,17 @@ def engine_bindings(xbe, sources):
         define("MCP125_ADD_MOB", hexva(context["add"]))
         define("MCP125_REMOVE_MOB", hexva(context["remove"]))
         wanted["mcp125_collision"] = ("_tes3x_mcp125_collision_hook",)
+    if "tes3xmcp132.c" in names:
+        context = find_mcp132_context(image)
+        print(f"mcp-132 hooks: script {', '.join(map(hexva, context['script']))}, "
+              f"bones {hexva(context['bone'])}, player {hexva(context['idle_call'])}")
+        for key, name in (("play", "PLAY_GROUP"), ("update", "UPDATE_IDLES"),
+                          ("ref_update", "ANIM_IDLE_UPDATE"), ("world", "WORLD"),
+                          ("get_player", "GET_PLAYER")):
+            define("MCP132_" + name, hexva(context[key]))
+        wanted["mcp132_play_group"] = ("_tes3x_mcp132_play_group",)
+        wanted["mcp132_bone_match"] = ("_tes3x_mcp132_bone_match",)
+        wanted["mcp132_update_idles"] = ("_tes3x_mcp132_update_idles",)
     if "tes3xdxt5.c" in names:
         site = locate("dxt5-size")
         size = hexva(tes3x_inject.call_target(image, site))

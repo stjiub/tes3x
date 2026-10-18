@@ -4,6 +4,8 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- New `mcp-132` patch makes scripted animations play across humanoid body layers, supports added bones and updates third person player animations. See [the patch](patches/mcp-132.md).
+
 - New `mcp-173` patch saves NPC faction rank changes made by `RaiseRank` and `LowerRank`, so the
   rank survives loading a save. See [the patch](patches/mcp-173.md).
 

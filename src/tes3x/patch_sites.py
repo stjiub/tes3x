@@ -4,6 +4,7 @@ import re
 import struct
 import tes3x.inject as tes3x_inject  # noqa: E402
 from tes3x.console_signatures import SIGNATURES as CONSOLE_SIGNATURES, find_console_signature
+from tes3x.multi_signatures import find_multi_signature
 
 TITLE_ID = 0x42530005
 
@@ -929,6 +930,31 @@ def find_mcp47_context(x):
     return (site, tes3x_inject.call_target(x, site),
             struct.unpack("<I", hit.group("world"))[0],
             tes3x_inject.call_target(x, player_call))
+
+
+def find_mcp132_context(x):
+    """The script animation calls, humanoid bone test and player idle update."""
+    play = find_multi_signature(x, "ANIM_PLAY_GROUP")
+    update = find_multi_signature(x, "UPDATE_ALL_IDLES")
+    ref_update = find_multi_signature(x, "ANIM_IDLE_UPDATE")
+    run = find_run_function(x)
+    script = [site for site in find_call_sites(x, play)
+              if run <= site < run + 0x10000]
+    if len(script) != 2 or any(bytes(x.data[x.va_to_off(site) - 2:x.va_to_off(site)])
+                               != b"\x8b\xc8" for site in script):
+        raise PatchError("mcp-132: expected two PlayGroup/LoopGroup script calls")
+    bones = list(re.finditer(rb"\x52\x55\xe8....\x83\xc4\x08\x85\xc0\x74",
+                            bytes(x.data), re.S))
+    if len(bones) != 1:
+        raise PatchError("mcp-132: expected one humanoid bone comparison")
+    bone = x.off_to_va(bones[0].start() + 2)
+    idle_calls = find_call_sites(x, update)
+    if len(idle_calls) != 1:
+        raise PatchError("mcp-132: expected one main-loop UpdateAllIdles call")
+    _site, _deselect, world, get_player = find_mcp47_context(x)
+    return {"play": play, "script": script, "bone": bone, "update": update,
+            "idle_call": idle_calls[0], "ref_update": ref_update,
+            "world": world, "get_player": get_player}
 
 
 def find_mcp146_context(x):

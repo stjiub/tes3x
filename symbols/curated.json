@@ -395,6 +395,13 @@
       "signature": "const char* __thiscall getGMSTText(int index)"
     },
     {
+      "va": "0x0008BC10",
+      "name": "WorldController::getPlayerMobile",
+      "confidence": "verified",
+      "provenance": "MCP 132 player idle path and Xbox disassembly",
+      "signature": "MobileActor* __thiscall getPlayerMobile()"
+    },
+    {
       "va": "0x0008BCE0",
       "name": "WorldController::PlayEventMusic",
       "kind": "function",
@@ -1055,6 +1062,14 @@
       "provenance": "Xbox/PC decompile: activates selected sequence and initializes key/timing section",
       "note": "Type 7 modes 3/4/5/6/7 initialize keys 0/3/6/17/28. Type 6 modes 3/4/9/10/11 initialize keys 0/3/6/9/12.",
       "signature": "void __thiscall initializeLayer(int layer, int mode)"
+    },
+    {
+      "va": "0x000CD3D0",
+      "name": "AnimationData::bindHumanoidBoneLayers",
+      "confidence": "matched",
+      "provenance": "MCP 132 PC 0x0046BB50 function match and Xbox body comparison",
+      "note": "Maps named animation bones into three humanoid layers; retail compares each name exactly, MCP 132 accepts a standard bone name within an added bone name.",
+      "signature": "bool __thiscall bindHumanoidBoneLayers(void* layers, int group)"
     },
     {
       "va": "0x000CDBD0",
@@ -3129,6 +3144,13 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_ItemData_constructor",
       "pc_va": "0x004E44B0"
+    },
+    {
+      "va": "0x0012A160",
+      "name": "Reference::getAnimationData",
+      "confidence": "verified",
+      "provenance": "RunFunction PlayGroup handlers and Xbox disassembly",
+      "signature": "AnimationData* __thiscall getAnimationData()"
     },
     {
       "va": "0x0012A550",

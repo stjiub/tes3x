@@ -13,7 +13,7 @@ on, `low` for minor ones, and `none` for fixes we won't port.
 
 | status | fixes |
 |---|---|
-| candidate | 185 |
+| candidate | 184 |
 | deferred | 13 |
 | not-applicable | 15 |
 | rejected | 3 |
@@ -151,7 +151,6 @@ Worth porting, but not yet shown to affect the Xbox build.
 | `mcp-122` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #122 | low | correctness | **Ammunition fix.** The ammunition counter does not update while an inventory filter hides the ammo. |
 | `mcp-126` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #126 | low | correctness | **Telekinesis fix.** Telekinesis does not reach lights, ammunition, books and activators. |
 | `mcp-130` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #130 | low | qol | **Over-the-shoulder third person camera.** Over-the-shoulder third-person camera. |
-| `mcp-132` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #132 | low | compat | **Improved animation support.** Animation mod support: extra bones, PlayGroup and LoopGroup fixes. Needed only by animation mods. |
 | `mcp-133` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #133 | low | qol | **Reduce camera clipping.** Less third-person camera snapping past NPCs and activators. |
 | `mcp-134` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #134 | low | correctness | **NPC minor behaviour fixes.** Minor AI faults: short flee distance, knocked-down followers. |
 | `mcp-135` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #135 | low | correctness | **Ammo fixes.** Ammunition tooltips omit damage; ammo can be consumed when not loaded. |
