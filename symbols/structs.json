@@ -2,7 +2,21 @@
   "structs": [
     {
       "name": "TES3::AnimationData",
-      "note": "Xbox verified offsets: groups +0x38, semantic next-key indices +0x3C, flags +0x54, layer times +0x58, sequence pointer triples +0x2C4 and selected sequence indices +0x308. update 0x000CEFB0 skips setting upper/arm sequence offsets when flags are 0xFFFF; held playback must set them explicitly. Key time tables are semantic slots, including unused zeros and nonchronological entries."
+      "note": "Xbox allocates 0x7E4 bytes. Verified offsets: groups +0x38, semantic next-key indices +0x3C, flags +0x54, layer times +0x58, sequence pointer triples +0x2C4 and selected sequence indices +0x308. update 0x000CEFB0 skips setting upper/arm sequence offsets when flags are 0xFFFF; held playback must set them explicitly. Key time tables are semantic slots, including unused zeros and nonchronological entries.",
+      "fields": [
+        {"offset": "0x68", "name": "animationGroups", "type": "TES3::AnimationGroup*[150]", "confidence": "verified", "provenance": "Xbox mergeAnimGroups 0x000CE478 stores group by byte ID"},
+        {"offset": "0x314", "name": "animGroupLayerIndices", "type": "unsigned char[150]", "confidence": "verified", "provenance": "Xbox mergeAnimGroups 0x000CE47E stores layer and playAnimationGroupForIndex 0x000CE5D4 reads it"},
+        {"offset": "0x584", "name": "animGroupSoundGens", "type": "TES3::AnimationGroup::SoundGenKey**[150]", "confidence": "verified", "provenance": "Xbox mergeAnimGroups 0x000CE48A indexes sound pointers by group ID"}
+      ]
+    },
+    {
+      "name": "ArchiveManager",
+      "size": "0x8",
+      "note": "Each Archive has a next pointer at +0x150. Load prepends at head; the cached cursor used by lookups is separate.",
+      "fields": [
+        {"offset": "0x0", "name": "head", "type": "TES3::Archive*", "confidence": "verified", "provenance": "Xbox ArchiveManager::Load 0x000E65A0 prepends archives"},
+        {"offset": "0x4", "name": "lastFound", "type": "TES3::Archive*", "confidence": "verified", "provenance": "Xbox lookup functions 0x000E5FA0 and 0x000E6020 read and update cached archive"}
+      ]
     },
     {
       "name": "NI::Sequence",

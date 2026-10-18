@@ -21,7 +21,10 @@ A line is a path relative to that folder, or a full path with a drive letter, su
 own drives, so the patch first makes `C:`, `E:`, `F:` or `G:` available when a line names it.
 
 `Archive::Load` puts each new archive at the front of the search chain, so a later line wins over
-an earlier one, and every listed archive wins over `Morrowind.bsa`.
+an earlier one, and every listed archive wins over `Morrowind.bsa`. Retail lookups normally begin
+at the archive that supplied the previous file. With multiple archives, that cache could make a
+stock file win over a mod file with the same name. The patch makes both archive lookup paths start
+at the front of the chain, so the list order determines which copy loads.
 
 ## Using it
 

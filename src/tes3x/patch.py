@@ -346,7 +346,7 @@ def _payload(x, value, ctx):
 
 @patch("multi-bsa")
 def _multi_bsa(x, value, ctx):
-    """Load every archive listed in tes3xarch.txt, not just Morrowind.bsa."""
+    """Load listed archives and search them in priority order."""
     target = ctx.get("hooks", {}).get("archive_load")
     if not target:
         raise PatchError("multi-bsa: needs `payload` first, with an archive_load hook in its "
@@ -354,7 +354,20 @@ def _multi_bsa(x, value, ctx):
     target = int(str(target), 16)
     site_va = archive_load_site(x)
     was, call_off = x.patch_call(site_va, target)
-    return [(call_off, 5, "Archive::Load call 0x%08X: 0x%08X -> 0x%08X" % (site_va, was, target))]
+    edits = [(call_off, 5, "Archive::Load call 0x%08X: 0x%08X -> 0x%08X"
+              % (site_va, was, target))]
+    # Both archive lookups normally start from the last successful archive. With multiple
+    # archives that makes duplicate-name precedence depend on the previous asset request.
+    sec = text_section(x)
+    body = bytes(x.data[sec.raw:sec.raw + sec.rsize])
+    cursor = b"\x8b\x7b\x04\x85\xff\x75\x02\x8b\x3b\x85\xff"
+    sites = [sec.raw + m.start() for m in re.finditer(re.escape(cursor), body)]
+    if len(sites) != 2:
+        raise PatchError("multi-bsa: %d archive cursor sites, expected 2" % len(sites))
+    for off in sites:
+        x.data[off:off + 3] = b"\x8b\x3b\x90"  # mov edi, [ebx]; nop
+        edits.append((off, 3, "archive lookup starts at chain head"))
+    return edits
 
 
 def archive_load_site(x):

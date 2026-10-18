@@ -1558,6 +1558,20 @@
       "kind": "function"
     },
     {
+      "va": "0x000E5FA0",
+      "name": "ArchiveManager::openFile",
+      "confidence": "verified",
+      "provenance": "Xbox decompile and multi-bsa duplicate-asset runtime probe",
+      "note": "With no explicit archive, starts at cached archive +4 and wraps through +0x150 links. A previous retail hit can beat a higher-priority mod duplicate; multi-bsa changes default start to head +0."
+    },
+    {
+      "va": "0x000E6020",
+      "name": "ArchiveManager::containsFile",
+      "confidence": "verified",
+      "provenance": "Xbox decompile and same cursor pattern as ArchiveManager::openFile",
+      "note": "With no explicit archive, starts at cached archive +4 and wraps through +0x150 links. multi-bsa changes default start to head +0 for stable priority."
+    },
+    {
       "va": "0x000E60C0",
       "name": "Archive::InvalidateNewerLoose",
       "confidence": "verified",
@@ -1577,7 +1591,8 @@
       "name": "ArchiveManager::Load",
       "confidence": "verified",
       "provenance": "traced: Archive::Init calls it with Z:\\Data Files\\Morrowind.bsa; allocates a 0x17C Archive and prepends it to the chain at +0x150; multi-bsa hooks its call",
-      "signature": "bool __thiscall Load(const char* path)"
+      "signature": "bool __thiscall Load(const char* path)",
+      "note": "Prepends each new archive to head +0; lookups formerly started at cached archive +4, so prepend alone did not guarantee duplicate-asset precedence."
     },
     {
       "va": "0x000E67C0",
@@ -2747,9 +2762,10 @@
     },
     {
       "va": "0x0010A2B0",
-      "name": "NonDynamicData::loadBaseAnimation?",
+      "name": "NonDynamicData::loadBaseAnimation_",
       "confidence": "guess",
-      "provenance": "references 'base_anim.nif'; calls MeshData::loadMesh and MeshData::loadKeyframes"
+      "provenance": "references 'base_anim.nif'; calls MeshData::loadMesh and MeshData::loadKeyframes",
+      "note": "Loads each base animation KF and indexes its AnimationGroup list into fixed 150-pointer arrays at +0x9DC8 and +0xA748, using each group byte ID."
     },
     {
       "va": "0x0010A840",
@@ -2784,6 +2800,13 @@
       "provenance": "xemu GDB 2026-10-04, Merged Objects.esp investigation; globs *.esm, *.esp, *.es?.map",
       "note": "Registers every NtQueryDirectoryFile hit; that match skips names with a second dot (Ports Of Vvardenfell V1.6.ESP), so such plugins never load.",
       "pc_va": "0x004BABE0"
+    },
+    {
+      "va": "0x0010D1E0",
+      "name": "parseAnimationTextKeys",
+      "confidence": "verified",
+      "provenance": "Xbox decompile; reads NiTextKeyExtraData and builds AnimationGroup list",
+      "note": "Matches each text key against AnimationGroupNames and AnimationGroupTypes with a 0x96-group bound. Unknown names become Bad note string warnings and do not create AnimationGroup entries."
     },
     {
       "va": "0x0010DCF0",
@@ -3414,6 +3437,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_ScriptCompiler_ctor",
       "pc_va": "0x004F7260"
+    },
+    {
+      "va": "0x00136A60",
+      "name": "findAnimationGroupId",
+      "confidence": "verified",
+      "provenance": "Xbox decompile; compares name against AnimationGroupNames[0..149]",
+      "note": "Case-insensitive linear lookup over 150 names; returns 0xFF when absent. The script compiler calls this for PlayGroup/LoopGroup names.",
+      "signature": "unsigned int __cdecl findAnimationGroupId(const char* name)"
     },
     {
       "va": "0x00136DF0",
@@ -6547,6 +6578,15 @@
       "kind": "data",
       "type": "void*[143]",
       "note": "143 cdecl callbacks: void callback(MagicSourceInstance* instance, float deltaTime, MagicEffectInstance* effect, int effectIndex)."
+    },
+    {
+      "va": "0x003B67E8",
+      "name": "AnimationGroupNames",
+      "confidence": "verified",
+      "provenance": "Xbox string pointers and references from animation text-key parser 0x0010D1E0 and group-name lookup 0x00136A60",
+      "note": "Names for IDs 0..149, beginning Idle, Idle2 and ending InventoryWeaponTwoWide; direct indexed readers use this address.",
+      "kind": "data",
+      "type": "const char*[150]"
     },
     {
       "va": "0x003B6F20",

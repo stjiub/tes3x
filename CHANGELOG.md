@@ -4,6 +4,9 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- `multi-bsa` now gives later archives consistent priority when they replace a retail asset;
+  previous file lookups could cause the stock copy to load instead. See [multiple BSA loading](patches/multi-bsa.md).
+
 - New `mcp-132` patch makes scripted animations play across humanoid body layers, supports added bones and updates third person player animations. See [the patch](patches/mcp-132.md).
 
 - New `mcp-173` patch saves NPC faction rank changes made by `RaiseRank` and `LowerRank`, so the
