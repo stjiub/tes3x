@@ -152,6 +152,7 @@ TES3X_OPTIONAL void __cdecl tes3x_console_reply(const char *fmt, ...);
     !defined(TES3X_NET_MENU_TAB) || !defined(TES3X_NET_FIND_FACTION) || \
     !defined(TES3X_NET_FACTION_LOAD) || !defined(TES3X_NET_UPDATE_STATS_PANE) || \
     !defined(TES3X_NET_FIND_GLOBAL) || !defined(TES3X_NET_JOURNAL_ADD) || \
+    !defined(TES3X_NET_INFO_TEXT) || !defined(TES3X_NET_JOURNAL_TOAST_CALL) || \
     !defined(TES3X_NET_RELOCATE) || !defined(TES3X_NET_RELOCATE_SITES) || \
     !defined(TES3X_NET_SCRIPT_EXECUTE) || !defined(TES3X_NET_GLOBAL_SCRIPT_SITES) || \
     !defined(TES3X_NET_ADD_GLOBAL_SCRIPT) || !defined(TES3X_NET_FIND_SCRIPT)
@@ -536,6 +537,7 @@ void tes3x_multi_frame(void)
         leveled_hook_install();
         summon_hook_install();
         player_hook_install();
+        journal_toast_hook_install();
         save_hook_install();
         quit_hook_install();
         death_hook_install();

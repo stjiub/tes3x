@@ -162,6 +162,7 @@ IDENTITY_ADDRESSES = (
     ("FIND_FACTION", 0x00105DF0), ("FACTION_LOAD", 0x000F0910), ("UPDATE_STATS_PANE", 0x0021E7E0),
     ("FIND_GLOBAL", 0x00106000),  # NonDynamicData::findGlobalVariable
     ("JOURNAL_ADD", 0x000FFE00),  # Dialogue::journalAdd: the Journal command without its toast
+    ("INFO_TEXT", 0x000FF9E0),  # DialogueInfo::getText: quest names live in INFO NAME records
 )
 PLAYER_CONTROL = 0x001717E0  # PlayerAnimationController's update: look, controls, animation
 CONSOLE_ADDRESSES = (
@@ -518,6 +519,13 @@ def engine_bindings(xbe, sources):
         for name, default in (PLACE_ADDRESSES + SPELL_ADDRESSES + SPAWN_ADDRESSES
                               + CONTAINER_ADDRESSES + ACTOR_ADDRESSES + IDENTITY_ADDRESSES):
             define("NET_" + name, address(name, default))
+        journal_add = int(address("JOURNAL_ADD", 0x000FFE00), 16)
+        journal_toast_calls = [s for s in find_call_sites(image, journal_add)
+                               if bytes(image.data[image.va_to_off(s) + 5:
+                                                   image.va_to_off(s) + 9]) == b"\x84\xc0\x0f\x84"]
+        if len(journal_toast_calls) != 1:
+            raise PayloadError(f"Journal toast: {len(journal_toast_calls)} calls, expected 1")
+        define("NET_JOURNAL_TOAST_CALL", hexva(journal_toast_calls[0]))
         spell_hit = int(address("SPELL_HIT", SPELL_HIT), 16)
         sites = find_call_sites(image, spell_hit)
         if len(sites) != SPELL_HIT_SITES:

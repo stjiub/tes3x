@@ -80,6 +80,7 @@ static u32 replay_stats[MODIFIERS][2], replay_stat_known[2][2], replay_stat_welc
 static u32 replay_stat_wait;
 static float vitals_sent[3];
 static u16 journal_sent[JOURNALS];
+static u32 journal_baselined;
 static const u8 *player_spells_sent[PLAYER_SPELLS_MAX], *player_spells_now[PLAYER_SPELLS_MAX];
 static char player_spells_stage[PLAYER_SPELLS_MAX][SPAWN_ID];
 static u32 player_spells_sent_count, player_spells_stage_count, player_spells_part;
@@ -377,11 +378,81 @@ static const char *dialogue_name(const u8 *dialogue)
     return mapped(name) ? name : 0;
 }
 
+typedef const char *(__attribute__((thiscall)) *fn_info_text)(const void *info);
+typedef char(__attribute__((thiscall)) *fn_journal_add)(void *dialogue, int index, void *actor);
+#define INFO_FLAGS 0x08
+#define INFO_INDEX 0x16
+#define INFO_NEXT 0x1C
+#define INFO_QUEST_NAME 0x40u
+#define INFO_QUEST_STARTED 0x80u
+#define INFO_QUEST_FINISHED 0x100u
+
+static void quest_notice(const u8 *dialogue, int index)
+{
+    const u8 *info, *stage = 0, *title = 0;
+    const char *name, *label = "Quest updated: ";
+    char line[NOTICE_LENGTH];
+    u32 guard, i = 0, j;
+
+    if (!plausible(dialogue) || dialogue[DIALOGUE_TYPE] != DIALOGUE_JOURNAL)
+        return;
+    for (info = *(const u8 *const *)(dialogue + 0x18), guard = 0;
+         plausible(info) && guard < 4096; info = *(const u8 *const *)(info + INFO_NEXT), guard++) {
+        u32 flags = *(const u32 *)(info + INFO_FLAGS);
+        if (flags & INFO_QUEST_NAME)
+            title = info;
+        if (*(const short *)(info + INFO_INDEX) == index)
+            stage = info;
+    }
+    if (stage) {
+        u32 flags = *(const u32 *)(stage + INFO_FLAGS);
+        if (flags & INFO_QUEST_FINISHED)
+            label = "Quest completed: ";
+        else if (flags & INFO_QUEST_STARTED)
+            label = "Quest started: ";
+    }
+    name = title ? ((fn_info_text)TES3X_NET_INFO_TEXT)(title) : 0;
+    if (!name || !*name)
+        name = dialogue_name(dialogue);
+    if (!name)
+        return;
+    for (j = 0; label[j] && i < NOTICE_LENGTH - 1; j++)
+        line[i++] = label[j];
+    for (j = 0; name[j] && i < NOTICE_LENGTH - 1; j++) {
+        char c = name[j];
+        line[i++] = c == '\r' || c == '\n' ? ' ' : c;
+    }
+    line[i] = 0;
+    notice(line);
+    log_text("net.quest_notice", line);
+}
+
+static u32 journal_toast_hooked;
+
+static char __attribute__((thiscall)) journal_command_hook(u8 *dialogue, int index, u8 *actor)
+{
+    char added = ((fn_journal_add)TES3X_NET_JOURNAL_ADD)(dialogue, index, actor);
+
+    return player_mode == 3 && ses.state == SESSION_JOINED ? 0 : added;
+}
+
+static void journal_toast_hook_install(void)
+{
+    const u32 site[] = {TES3X_NET_JOURNAL_TOAST_CALL};
+
+    if (journal_toast_hooked)
+        return;
+    journal_toast_hooked = 1;
+    if (redirect_calls(site, 1, TES3X_NET_JOURNAL_ADD, (const void *)journal_command_hook))
+        journal_toast_hooked = 2;
+}
+
 /* Journal indices, kept by the quest's place among the journals and sent as (index, id). */
-static void journal_scan(int send)
+static int journal_scan(int send, int announce)
 {
     u8 data[EVENT_DATA];
     const u8 *node = dialogues_head(), *dialogue;
+    const u8 *quests[JOURNAL_ENTRIES];
     const char *name;
     u32 k, n = 0, length = 2, size, guard, i, pending[JOURNAL_ENTRIES], values[JOURNAL_ENTRIES];
     int index;
@@ -413,23 +484,28 @@ static void journal_scan(int send)
             data[0] = PLAYER_JOURNAL;
             data[1] = (u8)n;
             if (send && !event_queue(EVENT_PLAYER, data, length))
-                return;
-            for (i = 0; i < n; i++)
+                return 0;
+            for (i = 0; i < n; i++) {
+                if (announce && values[i] > journal_sent[pending[i]])
+                    quest_notice(quests[i], values[i]);
                 journal_sent[pending[i]] = (u16)values[i];
+            }
             player_journal_out += send;
             n = 0;
             length = 2;
         }
         if (!dialogue || k == JOURNALS)
-            return;
+            return 1;
         data[length] = (u8)index;
         data[length + 1] = (u8)(index >> 8);
         copy(data + length + 2, (const u8 *)name, size + 1);
         length += 3 + size;
         pending[n] = k++;
+        quests[n] = dialogue;
         values[n++] = (u32)index;
         node = *(const u8 *const *)(node + 4);
     }
+    return 0;
 }
 
 static const char *player_spell_id(const u8 *spell)

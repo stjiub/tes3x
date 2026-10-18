@@ -2353,7 +2353,9 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_DialogueInfo_getText",
-      "pc_va": "0x004B1B80"
+      "pc_va": "0x004B1B80",
+      "note": "Reads INFO NAME from its source file into shared heap storage; a later getText call invalidates the returned pointer. Quest-name INFOs carry objectFlags bit 0x40, and journal start/finish INFOs carry 0x80/0x100.",
+      "signature": "const char* __thiscall getText()"
     },
     {
       "va": "0x000FFCE0",

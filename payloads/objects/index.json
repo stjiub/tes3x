@@ -192,12 +192,14 @@
     "NET_HIT_ROLL": null,
     "NET_HIT_STUN": null,
     "NET_HIT_STUN_SITES": 2,
+    "NET_INFO_TEXT": null,
     "NET_INVENTORY_ADD": null,
     "NET_INVENTORY_BUILD": null,
     "NET_INVENTORY_REMOVE": null,
     "NET_ITEM_DATA_DESTROY": null,
     "NET_ITEM_DATA_NEW": null,
     "NET_JOURNAL_ADD": null,
+    "NET_JOURNAL_TOAST_CALL": null,
     "NET_LAUNCH": null,
     "NET_LEVELED_LINK": null,
     "NET_LEVELED_LINKED": null,
@@ -472,8 +474,8 @@
       "sha256": "d9a8a2c10299820e822d83a0e6310a584ff24c77240e51eeb06af6a480bdefa5"
     },
     "tes3xmulti.c": {
-      "digest": "e377657ab0e0d764d9b1866e8431af7c8f815648bddc8c1b406b70771d3e29e2",
-      "sha256": "fa223e563dda80c903309698b37f504686ef9be27fbaa726a68c9e3a16083b4e"
+      "digest": "701a0fb50c3f455cb92b57dee8d05ac1c39ebfa4ef9fcbf1f3ae5765a8fe2494",
+      "sha256": "188766df321d0ecf923d45db6450b3c93928d18bc630eda4cce2fe22bb70dc94"
     },
     "tes3xmwse.c": {
       "digest": "1f8fc8bf1ff75208c7eb24a4105a6e3cfb18d597b159710d97b3ef7a16a36288",

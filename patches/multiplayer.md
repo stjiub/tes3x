@@ -43,6 +43,8 @@ supported character state, and the server confirms it after writing the characte
 Learned dialogue topics are captured from the player's native topic list and restored with
 `AddTopic`. Newly learned topics reach other players, and the shared world's topic list
 survives server restarts and is replayed to later joins.
+Live journal changes show the quest name and whether it started, advanced or finished. Entries
+restored while joining do not raise notifications.
 Leave waits for that confirmation before quitting; if the server does not confirm it within
 30 seconds, the player can leave anyway or stay.
 

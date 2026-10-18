@@ -4,6 +4,10 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- Multiplayer journal updates now show the quest name and whether it started, advanced or
+  completed in a text notification. Entries restored on join stay quiet. See
+  [the player guide](docs/multiplayer-client.md).
+
 - Enabled catalog mods now select their required patches automatically. Patch for Purists selects
   `dialogue-merge` to keep stock dialogue responses needed during character creation. See the
   [mod catalog](docs/catalog.md).

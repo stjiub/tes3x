@@ -53,9 +53,10 @@ factions and globals, follows once you join.
 Learned topics are shared: a topic learned by one player becomes available to the others,
 including players who join later.
 
-The journal is shared too. When one player moves a quest on, the others get the same journal
-entry, with the usual "journal updated" message, and a character who joins later or is new to
-the server gets every entry the group has reached. Joining adds them without the message. A
+The journal is shared too. When one player moves a quest on, everyone gets a brief text notification
+with its name: **Quest started**, **Quest updated**, or **Quest completed**. It uses the game's
+existing notification display, without the Skyrim mod's banner, icons or sound. A character who joins
+later or is new to the server gets every entry the group has reached. Joining adds them quietly. A
 quest only moves forward: when two players take a quest to different stages, the later stage
 wins.
 

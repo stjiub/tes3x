@@ -635,7 +635,7 @@ static void snapshot_frame(const u8 *ref, u8 *mobile, u8 *npc, u8 *object)
     case 5: skills_scan(mobile, 1); break;
     case 6: modifiers_scan(mobile, 1); break;
     case 7: vitals_scan(mobile, 1); break;
-    case 8: journal_scan(1); break;
+    case 8: journal_scan(1, journal_baselined); break;
     case 9: player_spells_scan(npc, 1); break;
     case 10:
         player_effect_send();
@@ -689,7 +689,7 @@ static void snapshot_frame(const u8 *ref, u8 *mobile, u8 *npc, u8 *object)
 static void player_frame(const u8 *ref)
 {
     u8 *mobile = player_mobile(), *npc = player_npc(ref), *object = *(u8 *const *)(ref + REF_BASE);
-    u32 now = now_us(), i, send = 1;
+    u32 now = now_us(), i, send = 1, announce = journal_baselined && player_mode == 3;
 
     if (ses.state != SESSION_JOINED || player_welcome != ses.welcomes || !player_mode ||
         !plausible(mobile) || !npc || !plausible(object))
@@ -720,6 +720,7 @@ static void player_frame(const u8 *ref)
             carried[i].item = 0;
         for (i = 0; i < JOURNALS; i++)
             journal_sent[i] = 0;
+        journal_baselined = 0;
         level_known = skills_known = vitals_known = player_spells_known = 0;
         topics_count = topics_known = 0;
         factions_known = player_globals.known = world_globals.known = 0;
@@ -742,7 +743,8 @@ static void player_frame(const u8 *ref)
     modifiers_scan(mobile, send);
     vitals_scan(mobile, send);
     player_effect_scan(mobile, send);
-    journal_scan(send);
+    if (journal_scan(send, announce))
+        journal_baselined = 1;
     player_spells_scan(npc, send || player_spells_replayed != ses.welcomes);
     topics_scan(mobile, send);
     factions_scan(send);

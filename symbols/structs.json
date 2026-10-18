@@ -136,7 +136,7 @@
       "name": "TES3::DialogueInfo",
       "size": "0x2C",
       "pc_valid_until": "0x16",
-      "note": "Same size as the PC, but DATA is packed into +0x14..+0x1B so +0x1C can link the topic's chain. The Xbox master stores DATA in that 8-byte form; a 12-byte PC DATA is repacked on load (0x000FE830). +0x20 conditions and +0x24 file offset match the PC.",
+      "note": "Same size as the PC, but DATA is packed into +0x14..+0x1B so +0x1C can link the topic's chain. The Xbox master stores DATA in that 8-byte form; a 12-byte PC DATA is repacked on load (0x000FE830). +0x20 conditions and +0x24 file offset match the PC. Journal INFO objectFlags at +0x8 use 0x40 for quest name, 0x80 for quest start and 0x100 for quest finish; getText reads NAME from the source file.",
       "fields": [
         {"offset": "0x16", "name": "disposition", "type": "short", "confidence": "verified", "provenance": "INFO load 0x000FE830; journal index for journal topics"},
         {"offset": "0x18", "name": "npcRank", "type": "signed char", "confidence": "verified", "provenance": "INFO load 0x000FE830"},

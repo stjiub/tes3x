@@ -1,7 +1,4 @@
-typedef char(__attribute__((thiscall)) *fn_journal_add)(void *dialogue, int index, void *actor);
-
-/* A quest only moves forward. The replay before READY adds entries without the "journal updated"
- * toast the Journal command shows; another player's progress later shows it. */
+/* A quest only moves forward. Replay before READY is quiet. */
 static void journal_apply(const u8 *p, u32 length)
 {
     char line[64], *out;
@@ -35,13 +32,15 @@ static void journal_apply(const u8 *p, u32 length)
         }
         if (*(const short *)(dialogue + DIALOGUE_INDEX) >= index)
             continue;
-        if (quiet && plausible(mobile = player_mobile())) {
+        if (plausible(mobile = player_mobile())) {
             ((fn_journal_add)TES3X_NET_JOURNAL_ADD)(dialogue, index, mobile);
         } else {
             out = put_int(put_text(put_text(put_text(line, "Journal \""), id), "\" "), index);
             *out = 0;
             run_script(line);
         }
+        if (!quiet)
+            quest_notice(dialogue, index);
         if (k < JOURNALS) /* not sent back */
             journal_sent[k] = (u16)*(const short *)(dialogue + DIALOGUE_INDEX);
         player_journal_in++;
