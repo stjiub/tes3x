@@ -1093,7 +1093,8 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_AnimationData_mergeAnimGroups",
-      "pc_va": "0x004708D0"
+      "pc_va": "0x004708D0",
+      "note": "Stores each loaded AnimationGroup by its byte groupId in the actor animationGroups, animGroupLayerIndices, sound-generation pointer and count arrays. The stock group catalogue spans IDs 0..149."
     },
     {
       "va": "0x000CE5C0",
@@ -4436,9 +4437,11 @@
       "va": "0x0017B770",
       "name": "CombatHitRoll",
       "kind": "function",
-      "confidence": "matched",
-      "provenance": "mwse:TES3_CombatHitRoll",
-      "pc_va": "0x00555290"
+      "confidence": "verified",
+      "provenance": "Xbox melee and projectile call sites 0x0017C1F7 and 0x00192937; PC counterpart 0x00555290",
+      "pc_va": "0x00555290",
+      "note": "Returns the final hit roll. Attacker +0xF0 is the current target; a null projectile argument is melee. Melee sets strike damage to zero on a miss; projectile handling branches on the same return value.",
+      "signature": "bool __cdecl CombatHitRoll(MobileActor* attacker, void* projectile, unsigned int* magicResultOut)"
     },
     {
       "va": "0x0017BD30",
@@ -4463,6 +4466,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_MobileActor_isAttackingOrCasting",
       "pc_va": "0x005567D0"
+    },
+    {
+      "va": "0x0017C1A0",
+      "name": "MobileActor::resolveMeleeStrike",
+      "confidence": "verified",
+      "provenance": "Xbox disassembly and CombatHitRoll call site 0x0017C1F7",
+      "note": "Calls physical hit detection, then CombatHitRoll with the attacker and null projectile. A failed roll zeroes +0xD8/+0xD0 strike damage before combatWeaponStrike.",
+      "signature": "void __thiscall resolveMeleeStrike()"
     },
     {
       "va": "0x0017C3D0",
@@ -6542,7 +6553,7 @@
       "name": "AnimationGroupTypes",
       "confidence": "verified",
       "provenance": "playAnimationGroupForIndex and initializeLayer index this table by group; runtime action types 128=6, 137=7",
-      "note": "Action category controls accepted start modes; semantic next-key indices are not start modes.",
+      "note": "Fixed 150-entry table indexed by animation group ID, with stock IDs 0..149. Action category controls accepted start modes; semantic next-key indices are not start modes.",
       "kind": "data",
       "type": "unsigned int[150]"
     },

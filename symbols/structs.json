@@ -34,6 +34,13 @@
           "provenance": "Xbox startAttackAnimation 0x0016D3A0 and swingAnimationStateMachine 0x0016D710: slash/chop/thrust 1/2/3"
         },
         {
+          "offset": "0xF0",
+          "name": "hitTarget",
+          "type": "TES3::MobileActor*",
+          "confidence": "verified",
+          "provenance": "Xbox CombatHitRoll 0x0017B770 reads attacker +0xF0; PC MobileActor actionData.hitTarget"
+        },
+        {
           "offset": "0x378",
           "name": "currentSpellSource",
           "type": "TES3::Object*",
