@@ -1103,7 +1103,7 @@
       "confidence": "verified",
       "provenance": "Xbox/PC decompile and live held/released attack capture",
       "pc_va": "0x00470AE0",
-      "note": "Mode selects a section, not a semantic next-key index: type 7 accepts 3..7; type 6 accepts 3,4,9,10,11.",
+      "note": "Mode selects a section, not a semantic next-key index: type 7 accepts 3..7; type 6 accepts 3,4,9,10,11. Idle9 group 8 has four action timings; changing both start/stop pairs to an unrecognized KF group's range played that group's motion in NTSC xemu.",
       "signature": "void __thiscall playAnimationGroupForIndex(unsigned int group, int layer, int mode, int loops)"
     },
     {
