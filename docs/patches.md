@@ -35,6 +35,7 @@ single required/not-required flag.
 | [Position actor initialization](../patches/mcp-125.md) | `mcp-125` | Initialize scripts and collision for actors moved by Position or PositionCell. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #125 | core | preview | testing preset |
 | [Nocked arrow removal](../patches/mcp-146.md) | `mcp-146` | Remove a fully nocked arrow with the Ready Weapon control. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #146 | qol | dev | By name |
 | [Spell deselection fix](../patches/mcp-47.md) | `mcp-47` | Keep another actor's magic-item changes from deselecting the player's spell. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #47 | correctness | dev | By name |
+| [NPC faction rank persistence](../patches/mcp-173.md) | `mcp-173` | Save an NPC's faction rank after RaiseRank or LowerRank changes it. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #173 | core | dev | By name |
 | [Script data overread fix](../patches/mcp-154.md) | `mcp-154` | Pad compiled script-data allocations to keep dword reads in bounds. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #154 | core | dev | By name |
 | [DXT5 allocation fix](../patches/dxt5-size.md) | `dxt5-size` | Allocate DXT5 textures at their real size, not a negative one that corrupts video memory. | TES3X | core | preview | testing preset |
 | [In-game console](../patches/console.md) | `console` | Make the in-game console reachable, by replacing its input gate. | TES3X | instrumentation | preview | testing preset |

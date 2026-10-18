@@ -4,6 +4,9 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- New `mcp-173` patch saves NPC faction rank changes made by `RaiseRank` and `LowerRank`, so the
+  rank survives loading a save. See [the patch](patches/mcp-173.md).
+
 - Multiplayer journal updates now show the quest name and whether it started, advanced or
   completed in a text notification. Entries restored on join stay quiet. See
   [the player guide](docs/multiplayer-client.md).

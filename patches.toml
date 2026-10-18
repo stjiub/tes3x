@@ -283,6 +283,17 @@ source = "tes3xmcp47.c"
 summary = "Keep another actor's magic-item changes from deselecting the player's spell."
 
 [[patch]]
+name = "mcp-173"
+title = "NPC faction rank persistence"
+origin = { source = "MCP", id = "173" }
+bit = 42
+category = "core"
+channel = "dev"
+selection = "preset"
+source = "tes3xmcp173.c"
+summary = "Save an NPC's faction rank after RaiseRank or LowerRank changes it."
+
+[[patch]]
 name = "mcp-154"
 title = "Script data overread fix"
 origin = { source = "MCP", id = "154" }

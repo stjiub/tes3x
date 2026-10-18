@@ -13,7 +13,7 @@ on, `low` for minor ones, and `none` for fixes we won't port.
 
 | status | fixes |
 |---|---|
-| candidate | 186 |
+| candidate | 185 |
 | deferred | 13 |
 | not-applicable | 15 |
 | rejected | 3 |
@@ -25,7 +25,6 @@ Worth porting, but not yet shown to affect the Xbox build.
 | fix | from | priority | category | notes |
 |---|---|---|---|---|
 | `mcp-127` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #127 | high | compat | **Map-texture conflict fix.** The world map breaks if _land_default.dds is replaced at a different size. TES3X's texture budget resizes textures, so a build can cause this; check the pipeline leaves that texture alone before porting. |
-| `mcp-173` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #173 | high | core (intended default) | **Persist `RaiseRank`/`LowerRank`.** Missing dirty mark can break faction quests after reload. |
 | `mcp-178` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #178 | high | core (intended default) | **Load-warning input crash.** Xbox has load warnings and a single controller path, so this is directly testable. |
 | `mcp-6` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #6 | medium | correctness | **Restore/drain attributes fix.** Restore and expiring Drain stop at the base value instead of the fortified one; affects ordinary play. |
 | `mcp-25` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #25 | medium | correctness | **Blind fix.** Blind gives the player an attack bonus instead of a penalty: an inverted effect. |

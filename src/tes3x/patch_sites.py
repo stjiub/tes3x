@@ -410,6 +410,13 @@ MCP123_ADD_SIG = re.compile(
 )
 
 
+# RaiseRank and LowerRank mark the script context, then change the NPC reference's rank.
+MCP173_RANK_SIG = re.compile(
+    rb"(?P<site>\x8b\x01\x6a\x01\xff\x50\x14)\x8b\x0d...."
+    rb"\x8b\x41\x6c\xfe[\x80\x88]\xaa\x00\x00\x00", re.S,
+)
+
+
 # Position and PositionCell share the reference-move helper. Their early exits skip the script
 # attachment used by the third caller, and the helper removes actor collision when the destination
 # is absent but never adds it when the destination is present.
@@ -1138,6 +1145,17 @@ def find_mcp123_add(x):
     if va is None:
         raise PatchError("mcp-123: PlaceItem insertion call is outside any section")
     return va
+
+
+def find_mcp173_rank(x):
+    """Find the save-flag calls before the two NPC rank writes."""
+    hits = list(MCP173_RANK_SIG.finditer(bytes(x.data)))
+    if len(hits) != 2:
+        raise PatchError("mcp-173: %d NPC rank save calls, expected 2" % len(hits))
+    sites = [x.off_to_va(m.start("site")) for m in hits]
+    if any(site is None for site in sites):
+        raise PatchError("mcp-173: rank save call is outside any section")
+    return sites
 
 
 def find_mcp125_context(x):
@@ -2038,6 +2056,7 @@ LOCATORS = {
     "mcp-3": find_mcp3_unarmored,
     "dialogue-merge": find_dialogue_merge,
     "mcp-123": find_mcp123_add,
+    "mcp-173": lambda image: find_mcp173_rank(image)[0],
     "mcp-125": find_mcp125_collision,
     "mcp-37": lambda image: find_mcp37_context(image)[0],
     "dxt5-size": find_dxt5_size,

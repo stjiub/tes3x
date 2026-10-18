@@ -3573,6 +3573,22 @@
       "kind": "site"
     },
     {
+      "va": "0x0013FFBA",
+      "name": "Script::RunFunction.RaiseRankSave",
+      "confidence": "verified",
+      "provenance": "mcp-173 opcode 0x10CE; NTSC disassembly",
+      "note": "Marks the script context modified before changing the NPC reference rank at +0xAA; the NPC pointer is context +0x6C.",
+      "kind": "site"
+    },
+    {
+      "va": "0x00140010",
+      "name": "Script::RunFunction.LowerRankSave",
+      "confidence": "verified",
+      "provenance": "mcp-173 opcode 0x10CF; NTSC disassembly",
+      "note": "Same save-flag error as RaiseRank; the NPC reference rank changes at +0xAA.",
+      "kind": "site"
+    },
+    {
       "va": "0x00142030",
       "name": "Script::executeScriptOpCode",
       "kind": "function",

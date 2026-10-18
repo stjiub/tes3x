@@ -54,7 +54,8 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_mcp102_actn, find_mcp123_add, find_mcp125_collision,
                                find_mcp125_context, find_mcp146, find_mcp146_context,
                                find_mcp47_context,
-                               find_mcp154_load, find_mcp154_reload, find_mcp37_context,
+                               find_mcp154_load, find_mcp154_reload, find_mcp173_rank,
+                               find_mcp37_context,
                                find_mcp3_unarmored, find_mcp92_unsummon, find_mcp94,
                                find_mcp97_scan, find_mcp98_refcounts, find_menu_mode_gate,
                                find_mob_gate, find_preferences_load, find_ref_index,
@@ -1011,6 +1012,21 @@ def _mcp_123(x, value, ctx):
     was, off = x.patch_call(site, target)
     return [(off, 5, "PlaceItem cell insertion 0x%08X: 0x%08X -> 0x%08X"
              % (site, was, target))]
+
+
+@patch("mcp-173")
+def _mcp_173(x, value, ctx):
+    """Mark the NPC reference changed before RaiseRank or LowerRank writes its rank."""
+    target = ctx.get("hooks", {}).get("mcp173_mark")
+    if not target:
+        raise PatchError("mcp-173: needs `payload` first, with an mcp173_mark hook")
+    target = int(str(target), 16)
+    edits = []
+    for site in find_mcp173_rank(x):
+        off = x.va_to_off(site)
+        x.data[off:off + 7] = b"\xe8" + struct.pack("<i", target - (site + 5)) + b"\x90\x90"
+        edits.append((off, 7, "NPC rank save flag 0x%08X -> 0x%08X" % (site, target)))
+    return edits
 
 
 @patch("mcp-125")

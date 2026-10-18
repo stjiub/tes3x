@@ -1416,16 +1416,6 @@ summary = "Enchanted item rebalance"
 reason = "Balance change, opt in only; MCP ships it as an option rather than a defect fix."
 
 [[candidate]]
-name = "mcp-173"
-origin = { source = "MCP", id = "173" }
-category = "core"
-default = "intended default"
-status = "candidate"
-priority = "high"
-summary = "Persist `RaiseRank`/`LowerRank`"
-reason = "Missing dirty mark can break faction quests after reload."
-
-[[candidate]]
 name = "mcp-174"
 origin = { source = "MCP", id = "174" }
 category = "compat"

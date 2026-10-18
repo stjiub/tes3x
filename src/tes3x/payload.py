@@ -26,7 +26,7 @@ from tes3x.patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, archive_load_site,
                          find_message_scale, find_name_scale, find_options_scale,
                          find_chargen_scale,
                          find_mcp37_context,
-                         find_mcp125_context, find_save_allowed_context,
+                         find_mcp125_context, find_mcp173_rank, find_save_allowed_context,
                          find_mcp47_context,
                          find_script_ip_restore_call, find_transition_calls, scene_form)
 
@@ -888,6 +888,10 @@ def engine_bindings(xbe, sources):
               f"Cell::addReference {hexva(add_reference)}")
         define("MCP123_ADD_REFERENCE", hexva(add_reference))
         wanted["mcp123_add"] = ("_tes3x_mcp123_add_hook",)
+    if "tes3xmcp173.c" in names:
+        sites = find_mcp173_rank(image)
+        print(f"mcp-173 hooks: NPC rank saves {', '.join(map(hexva, sites))}")
+        wanted["mcp173_mark"] = ("_tes3x_mcp173_mark_hook",)
     if "tes3xmcp125.c" in names:
         context = find_mcp125_context(image)
         print(f"mcp-125 hook: collision add {hexva(context['add'])}, "
