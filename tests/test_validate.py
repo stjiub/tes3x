@@ -33,7 +33,7 @@ class ValidationTests(unittest.TestCase):
     def run_folder(self, role, mask, loaded, patches=None, ini='8' * 64):
         folder = self.root / role
         (folder / 'pipeline').mkdir(parents=True)
-        (folder / 'tes3xlog.txt').write_text(log(mask, loaded))
+        (folder / 'tes3xlog.txt').write_bytes(log(mask, loaded).replace('\n', '\r\n').encode())
         marker = {
             'schema': 2, 'profile': 'validation', 'profile_sha256': '1' * 64,
             'preset': 'minimal', 'patches': patches or ['diagnostics'],
@@ -91,6 +91,8 @@ test = ['mcp102\\.loaded 1']
         provenance = json.loads((path.parent / record['provenance']).read_text())
         self.assertEqual(provenance['inputs']['profile'], 'validation')
         self.assertEqual(provenance['platform']['guest_ram_mb'], 64)
+        self.assertNotIn(b'\r\n', (path.parent / tested['log']).read_bytes())
+        self.assertNotIn(b'\r\n', (path.parent / record['provenance']).read_bytes())
 
     def test_record_does_not_expose_local_paths(self):
         path = self.record(0x5, 0x5 | MCP102_BIT)

@@ -22,7 +22,6 @@ import hashlib
 import json
 from pathlib import Path
 import re
-import shutil
 import tomllib
 
 import tes3x.patches as registry
@@ -713,7 +712,7 @@ def record(args):
     provenance_name = f"{stem}-provenance.json"
     provenance_path = folder / provenance_name
     provenance_path.write_text(json.dumps(provenance, indent=2, ensure_ascii=False,
-                                          sort_keys=True) + "\n", encoding="utf-8")
+                                          sort_keys=True) + "\n", encoding="utf-8", newline="\n")
     head.update({"provenance": provenance_name,
                  "provenance_sha256": sha256_file(provenance_path)})
     for key in ("retail_xbe_sha1", "tes3x"):
@@ -724,7 +723,7 @@ def record(args):
     for role, run in runs:
         log_name = f"{stem}-{role}.log"
         log_copy = folder / log_name
-        shutil.copyfile(run["log_path"], log_copy)
+        log_copy.write_bytes(run["log_path"].read_bytes().replace(b"\r\n", b"\n"))
         copied_logs.append(log_copy)
         digest = sha256_file(log_copy)
         lines += ["", "[[run]]", f"role = {toml_value(role)}"]
