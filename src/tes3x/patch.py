@@ -1021,6 +1021,20 @@ def _test_mcp132(x, value, ctx):
     return [(None, 0, "animation layer test command installed")]
 
 
+@test_patch("test-ctt", "Route combat rolls through the dodge event probe.")
+def _test_ctt(x, value, ctx):
+    hooks = ctx.get("hooks", {})
+    target, site = hooks.get("ctt_test_roll"), hooks.get("ctt_test_roll_site")
+    if not target or not site:
+        raise PatchError("test-ctt: payload has no combat roll probe")
+    target, site = int(str(target), 16), int(str(site), 16)
+    off = x.va_to_off(site)
+    if off is None or bytes(x.data[off:off + 6]) != b"\x55\x8b\xec\x83\xe4\xf8":
+        raise PatchError("test-ctt: CombatHitRoll prologue changed")
+    x.data[off:off + 6] = b"\xe9" + struct.pack("<i", target - (site + 5)) + b"\x90"
+    return [(off, 6, "combat roll test hook 0x%08X -> 0x%08X" % (site, target))]
+
+
 @patch("mcp-123")
 def _mcp_123(x, value, ctx):
     """Mark a PlaceItem destination cell changed before inserting the new reference."""

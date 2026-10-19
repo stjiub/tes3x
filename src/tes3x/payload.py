@@ -879,6 +879,15 @@ def engine_bindings(xbe, sources):
         define("MCP132_TEST_GET_PLAYER", hexva(context["get_player"]))
         define("MCP132_TEST_PLAY_GROUP", hexva(context["play"]))
         wanted["mcp132_test"] = ("_tes3x_mcp132_test_command",)
+    if "tes3xtest_ctt.c" in names:
+        if "tes3xtest_mcp132.c" not in names:
+            raise PayloadError("tes3xtest_ctt.c requires tes3xtest_mcp132.c")
+        roll = int(address("HIT_ROLL", HIT_ROLL), 16)
+        define("CTT_TEST_ROLL_RESUME", hexva(roll + 6))
+        define("CTT_TEST_RECORDS", address("DATA_HANDLER", DATA_HANDLER))
+        define("CTT_TEST_FIND_REF", address("FIND_REFERENCE", dict(PLACE_ADDRESSES)["FIND_REFERENCE"]))
+        wanted["ctt_test_roll"] = ("_tes3x_ctt_test_roll",)
+        extra["ctt_test_roll"] = {"ctt_test_roll_site": hexva(roll)}
     if "tes3xtest_dialoguemerge.c" in names:
         if "tes3xconsole.c" not in names:
             raise PayloadError("tes3xtest_dialoguemerge.c requires tes3xconsole.c")

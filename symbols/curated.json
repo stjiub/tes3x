@@ -4488,7 +4488,7 @@
       "confidence": "verified",
       "provenance": "Xbox melee and projectile call sites 0x0017C1F7 and 0x00192937; PC counterpart 0x00555290",
       "pc_va": "0x00555290",
-      "note": "Returns the final hit roll. Attacker +0xF0 is the current target; a null projectile argument is melee. Melee sets strike damage to zero on a miss; projectile handling branches on the same return value. In a loaded Seyda Neen xemu session, Fargoth attacking the player made 13 melee rolls: 9 misses and 4 hits, with a stable nonnull target pointer.",
+      "note": "Returns the final hit roll. Attacker +0xF0 is the current target; a null projectile argument is melee. Melee sets strike damage to zero on a miss; projectile handling branches on the same return value. A six-byte prologue trampoline at the entry ran a saved-game NPC miss-to-dodge probe on sampled NTSC and PAL engines. Projectile semantics and multiplayer composition remain untested.",
       "signature": "bool __cdecl CombatHitRoll(MobileActor* attacker, void* projectile, unsigned int* magicResultOut)"
     },
     {
