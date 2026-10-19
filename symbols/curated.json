@@ -1107,6 +1107,14 @@
       "signature": "void __thiscall playAnimationGroupForIndex(unsigned int group, int layer, int mode, int loops)"
     },
     {
+      "va": "0x000CE780",
+      "name": "AnimationData::~AnimationData",
+      "confidence": "matched",
+      "provenance": "Xbox disassembly: frees sound generator arrays and animation sequences; two destruction call sites",
+      "kind": "function",
+      "signature": "void __thiscall destroy()"
+    },
+    {
       "va": "0x000CEFB0",
       "name": "AnimationData::update",
       "confidence": "verified",
@@ -1527,6 +1535,15 @@
       "note": "Loads the exterior grid around position. Called from the [PreLoad] cell lookup (multiplayer --load-state), it starts New Game there with no second load.",
       "pc_va": "0x004897E0",
       "signature": "void __thiscall changeToExterior(float* position)"
+    },
+    {
+      "va": "0x000E5320",
+      "name": "AnimationGroup::getActionTime",
+      "confidence": "verified",
+      "provenance": "Xbox disassembly: bounds checks actionCount +0x14 and loads actionTimings +0x1C",
+      "kind": "function",
+      "signature": "float __thiscall getActionTime(int index)",
+      "note": "Loads a float from +0x1C by action index after checking +0x14; AnimationData calls this during layer initialization and update, so a temporary group pointer cannot be restored immediately after PlayGroup."
     },
     {
       "va": "0x000E59B0",

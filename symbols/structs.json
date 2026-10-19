@@ -34,6 +34,13 @@
       "note": "Xbox matches the PC layout at the offsets tested: attributes (+0x254, Statistic {vtable, base, current} each), health, magicka and fatigue current (+0x2BC, +0x2C8, +0x2E0), animationController (+0x244), animStateAttack (byte +0xDD: 5/6/7 light/medium/heavy follow-through), physicalAttackType (byte +0xE0: 1/2/3 slash/chop/thrust), activeEffects (+0x1C4; deque head +4, count +8).",
       "fields": [
         {
+          "offset": "0x10",
+          "name": "flags",
+          "type": "unsigned int",
+          "confidence": "verified",
+          "provenance": "Xbox PlayGroup script handler 0x0013E800 sets bit 0x10000000; live actor-specific animation probe needs it to prevent idle replacement"
+        },
+        {
           "offset": "0xDD",
           "name": "animStateAttack",
           "type": "unsigned char",

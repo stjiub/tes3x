@@ -877,6 +877,7 @@ def engine_bindings(xbe, sources):
         context = find_mcp132_context(image)
         define("MCP132_TEST_WORLD", hexva(context["world"]))
         define("MCP132_TEST_GET_PLAYER", hexva(context["get_player"]))
+        define("MCP132_TEST_PLAY_GROUP", hexva(context["play"]))
         wanted["mcp132_test"] = ("_tes3x_mcp132_test_command",)
     if "tes3xtest_dialoguemerge.c" in names:
         if "tes3xconsole.c" not in names:
