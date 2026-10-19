@@ -687,6 +687,12 @@ class PipelinePlanTests(unittest.TestCase):
                               'preferences': {'invert_look': 'no'}})
         with self.assertRaisesRegex(PipelineError, 'profile.install_layout'):
             validate_profile({'profile': {'name': 'p', 'install_layout': 'thin'}})
+        with self.assertRaisesRegex(PipelineError, 'animation.merge_kf needs an enabled mod'):
+            validate_profile({'profile': {'name': 'p'},
+                              'animation': {'merge_kf': ['extra_walk.kf']}})
+        validate_profile({'profile': {'name': 'p'},
+                          'animation': {'merge_kf': ['extra_walk.kf']},
+                          'mods': [{'name': 'animations'}]})
 
     def test_local_validation_checks_public_tables_and_allows_extensions(self):
         validate_local_config({'paths': {'build_root': 'build'},

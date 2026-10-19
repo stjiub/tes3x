@@ -5,8 +5,18 @@
 typedef u8 *(__attribute__((thiscall)) *fn_find_reference)(void *, const char *);
 typedef u8 *(__attribute__((thiscall)) *fn_ref_animation)(const u8 *);
 typedef u8 *(__attribute__((thiscall)) *fn_get_player)(void *);
+typedef void(__attribute__((thiscall)) *fn_play_group)(void *, int, int, int, int);
+TES3X_OPTIONAL int tes3x_ctt_test_select_clip(unsigned int clip);
 static float dodge_start = 348.4341f;
 static float dodge_stop = 348.9341f;
+
+void tes3x_mcp132_test_set_range(float start, float stop)
+{
+    if (start >= 0.0f && start < stop && stop <= 10000.0f) {
+        dodge_start = start;
+        dodge_stop = stop;
+    }
+}
 
 static int same(const char *a, const char *b)
 {
@@ -59,7 +69,22 @@ int tes3x_mcp132_test_command(const char *text)
     int dodge_vodunius = same(text, "tes3xmcp132 dodge_vodunius");
     int restore_fargoth = same(text, "tes3xmcp132 restore_fargoth");
     int restore_vodunius = same(text, "tes3xmcp132 restore_vodunius");
+    int native_idle9 = same(text, "tes3xmcp132 native_idle9_fargoth");
     const char *range = after_prefix(text, "tes3xmcp132 range ");
+    const char *clip = after_prefix(text, "tes3xmcp132 clip ");
+
+    if (clip) {
+        unsigned int index = 0;
+        if (!*clip)
+            return 1;
+        while (*clip >= '0' && *clip <= '9' && index < 11)
+            index = index * 10 + (unsigned int)(*clip++ - '0');
+        if (*clip || !tes3x_ctt_test_select_clip || !tes3x_ctt_test_select_clip(index)) {
+            tes3x_log("ctt.test.bad_clip", index);
+            return 1;
+        }
+        dodge_fargoth = 1;
+    }
 
     if (range) {
         float start, stop;
@@ -78,7 +103,7 @@ int tes3x_mcp132_test_command(const char *text)
         return 1;
     }
     if (!is_player && !same(text, "tes3xmcp132") && !dodge_fargoth &&
-        !dodge_vodunius && !restore_fargoth && !restore_vodunius)
+        !dodge_vodunius && !restore_fargoth && !restore_vodunius && !native_idle9)
         return 0;
     if (is_player) {
         void *world = *(void **)TES3X_MCP132_TEST_WORLD;
@@ -98,6 +123,11 @@ int tes3x_mcp132_test_command(const char *text)
     if (restore_fargoth || restore_vodunius) {
         tes3x_log("mcp132.virtual_restored",
                   tes3x_animation_virtual_restore((void *)animation));
+        return 1;
+    }
+    if (native_idle9) {
+        ((fn_play_group)TES3X_ANIM_VIRTUAL_PLAY_ENTRY)((void *)animation, 8, 0, 1, 1);
+        tes3x_log("mcp132.native_idle9", 1);
         return 1;
     }
     if (dodge_fargoth || dodge_vodunius) {

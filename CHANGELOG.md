@@ -4,6 +4,10 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- Profiles can merge extra animation KFs into `xbase_anim.kf` with `animation.merge_kf`, including
+  when the retail base is inside `Morrowind.bsa`. Install `tes3x[kf]` to use it. See
+  [the pipeline guide](docs/pipeline.md#merging-animation-kfs).
+
 - `multi-bsa` now gives later archives consistent priority when they replace a retail asset;
   previous file lookups could cause the stock copy to load instead. See [multiple BSA loading](patches/multi-bsa.md).
 

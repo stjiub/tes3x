@@ -21,6 +21,7 @@ from xml.sax.saxutils import escape
 from tes3x.pack import set_ini_key, write_invalidation
 from tes3x.menustill import NAME as STILL_NAME, VIDEO, make_still
 from tes3x.fontscale import stage_scaled_fonts
+from tes3x.kf_merge import KFMergeError, merge_tree_kfs
 from tes3x.patch import scene_form
 import tes3x.patches as registry
 from tes3x.payload import (SOURCE_DEPENDENCIES, PayloadError, build_payload, find_tool,
@@ -112,6 +113,7 @@ def validate_profile(profile):
         raise PipelineError("profile must be a TOML table")
 
     allowed_sections = {"profile", "rules", "patches", "preferences", "package", "ui", "ini",
+                        "animation",
                         "mods", "plugins"}
     unknown = set(profile) - allowed_sections
     if unknown:
@@ -169,6 +171,10 @@ def validate_profile(profile):
     string_list(rules.get("exclude"), "rules.exclude")
     string_list(rules.get("keep_assets"), "rules.keep_assets")
 
+    animation = table("animation")
+    known(animation, {"merge_kf"}, "animation")
+    string_list(animation.get("merge_kf"), "animation.merge_kf")
+
     plugins = table("plugins")
     known(plugins, {"order"}, "plugins")
     string_list(plugins.get("order"), "plugins.order")
@@ -217,6 +223,9 @@ def validate_profile(profile):
     mods = profile.get("mods", [])
     if not isinstance(mods, list):
         raise PipelineError("mods must be an array of tables")
+    if animation.get("merge_kf") and not any(mod.get("enabled", True) for mod in mods
+                                              if isinstance(mod, dict)):
+        raise PipelineError("animation.merge_kf needs an enabled mod")
     for index, mod in enumerate(mods, 1):
         field = f"mods[{index}]"
         if not isinstance(mod, dict):
@@ -895,6 +904,8 @@ def main(argv=None):
                          "crash`, which stall the update loop and fault on purpose. Test only")
     ap.add_argument("--test-probe", choices=("mcp-3", "mcp-47", "mcp-97", "mcp-102", "mcp-132", "dialogue-merge", "ctt"),
                     help="add a game-test-only trace hook for this patch")
+    ap.add_argument("--ctt-ranges", metavar="JSON",
+                    help="local clip ranges for --test-probe ctt, generated from the merged KF")
     ap.add_argument("--hardlink", action=argparse.BooleanOptionalAction,
                     help="hardlink unchanged retail files into the build instead of copying "
                          "them, where the volume allows (default: paths.hardlink_retail)")
@@ -1005,6 +1016,8 @@ def main(argv=None):
         if args.test_probe in {"mcp-3", "mcp-47", "mcp-132", "dialogue-merge", "ctt"} \
                 and "tes3xconsole.c" not in plan["sources"]:
             raise PipelineError(f"--test-probe {args.test_probe} needs the console patch")
+    if (args.test_probe == "ctt") != bool(args.ctt_ranges):
+        raise PipelineError("--test-probe ctt requires --ctt-ranges; other probes cannot use it")
     package = profile.get("package", {})
     drive = (args.drive or package.get("drive_letter", "D")).upper()
     if len(drive) != 1 or not drive.isalpha():
@@ -1169,6 +1182,13 @@ def main(argv=None):
             if path_remote:
                 build_cmd += ["--remote-root", path_remote]
             run(build_cmd)
+            sources = profile.get("animation", {}).get("merge_kf", [])
+            if sources:
+                try:
+                    merged = merge_tree_kfs(tree, data_files, sources)
+                except (OSError, KFMergeError) as exc:
+                    raise PipelineError(f"animation KF merge: {exc}") from exc
+                print(f"merged {len(sources)} animation KF(s) -> {merged}")
 
         payload = hook_out / "tes3xhook.pe"
         if plan["needs_payload"]:
@@ -1178,7 +1198,7 @@ def main(argv=None):
             build_payload(retail_xbe, plan["sources"], hook_out,
                           user_flags=payload_flags, llvm_dir=llvm,
                           check_xbe=hook_out / "injected-check.xbe", invert_look=invert_look,
-                          rebuild=args.build_payload)
+                          rebuild=args.build_payload, ctt_ranges=args.ctt_ranges)
 
         patch_specs = []
         if plan["needs_payload"]:

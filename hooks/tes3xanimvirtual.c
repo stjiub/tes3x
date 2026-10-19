@@ -2,8 +2,6 @@
 
 #include "tes3xanimvirtual.h"
 
-typedef void(__attribute__((thiscall)) *fn_play_group)(void *, int, int, int, int);
-
 typedef struct {
     u8 group[0x2C];
     float times[4];
@@ -14,6 +12,25 @@ typedef struct {
 } virtual_group;
 
 static virtual_group slots[16];
+
+__attribute__((naked)) static void __attribute__((thiscall)) original_play_group(
+    void *animation, int group, int layer, int mode, int loops)
+{
+    __asm__ volatile(
+        "pushl %ebx\n\t"
+        "movl 0x8(%esp), %ebx\n\t"
+        "cmpb $-1, %bl\n\t"
+        "pushl $" TES3X_SYM(ANIM_VIRTUAL_PLAY_RESUME) "\n\t"
+        "ret\n\t");
+}
+
+void __attribute__((thiscall)) tes3x_animation_virtual_play_group(
+    void *animation, int group, int layer, int mode, int loops)
+{
+    if (group == 8)
+        tes3x_animation_virtual_stock_request(animation, group);
+    original_play_group(animation, group, layer, mode, loops);
+}
 
 static void copy_bytes(u8 *dst, const u8 *src, unsigned int n)
 {
@@ -82,7 +99,13 @@ void tes3x_animation_virtual_maintain(void)
     u8 *animation;
     for (i = 0; i < 16; ++i) {
         animation = slots[i].animation;
-        if (!animation || animation[0x38] == 8 || animation[0x39] == 8 ||
+        if (!animation)
+            continue;
+        if (*(u8 **)(animation + 0x68 + 8 * 4) != slots[i].group) {
+            release_slot(&slots[i], 0);
+            continue;
+        }
+        if (animation[0x38] == 8 || animation[0x39] == 8 ||
             animation[0x3A] == 8)
             continue;
         release_slot(&slots[i], 1);
@@ -138,6 +161,6 @@ int tes3x_animation_virtual_play(const u8 *ref, u8 *animation, float start, floa
     if (slot->mobile)
         *(unsigned int *)(slot->mobile + 0x10) |= 0x10000000u;
     for (i = 0; i < 3; ++i)
-        ((fn_play_group)TES3X_ANIM_VIRTUAL_PLAY_GROUP)(animation, 8, i, 1, 1);
+        original_play_group(animation, 8, i, 1, 1);
     return 1;
 }

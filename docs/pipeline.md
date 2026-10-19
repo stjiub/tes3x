@@ -83,6 +83,17 @@ name appear in no save.
 
 `tes3x pack` then packages the tree with the retail files according to `package.mode`:
 `delta-bsa` (the default), `merged-bsa` or `loose`. See [packaging](packaging.md).
+
+### Merging animation KFs
+
+With [`animation.merge_kf`](configuration.md#animation), the pipeline combines the listed KF
+tracks with the winning `Meshes/xbase_anim.kf` before packing. If the build has no loose base KF,
+it reads the retail one from `Morrowind.bsa`. The listed source KFs are consumed in order. The
+same operation is available as `tes3x kf-merge BASE ADDITION... --out OUTPUT` for a manual build.
+The optional `tes3x[kf]` dependency supplies the KF reader and writer. Quadratic position and
+scale curves appended to linear tracks are sampled at 30 Hz. The merger accepts NetImmerse
+4.0.0.2 animation sequences and stops on unsupported key layouts.
+
 If the profile sets [`ui.scale`](configuration.md#ui), the pipeline writes smaller bitmap font
 metrics into the staged `.fnt` files and enables the UI scale hook for HUD art, common menu
 panels and supported fixed menus. `ui.widescreen_480p` narrows the staged glyph widths and spacing for a stretched 480p

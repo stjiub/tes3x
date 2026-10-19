@@ -1,10 +1,11 @@
+import json
 import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
 from pathlib import Path
 
-from tes3x.payload import (PayloadError, build_id, find_tool, link_symbol, resolve_address,
+from tes3x.payload import (PayloadError, build_id, ctt_range_words, find_tool, link_symbol, resolve_address,
                            source_digest, source_text)
 
 LINK_MAP = [
@@ -66,6 +67,24 @@ class PayloadTests(unittest.TestCase):
         self.assertNotEqual(build_id([obj], '-DTES3X_DIAG_TEST_FAULTS'), before)
         obj.write_bytes(b'two')
         self.assertNotEqual(build_id([obj], ''), before)
+
+    def test_ctt_clip_data_is_complete_and_changes_build_identity(self):
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder)
+        path, obj = folder / 'ranges.json', folder / 'main.obj'
+        obj.write_bytes(b'object')
+        ranges = [[float(i), float(i) + 0.5] for i in range(11)]
+        path.write_text(json.dumps(ranges), encoding='utf-8')
+        words = ctt_range_words(path)
+        self.assertEqual(len(words), 22)
+        before = build_id([obj], '', words)
+        ranges[0][1] = 0.75
+        path.write_text(json.dumps(ranges), encoding='utf-8')
+        self.assertNotEqual(build_id([obj], '', ctt_range_words(path)), before)
+        ranges.pop(1)
+        path.write_text(json.dumps(ranges), encoding='utf-8')
+        with self.assertRaisesRegex(PayloadError, 'exactly eleven'):
+            ctt_range_words(path)
 
 
 if __name__ == '__main__':

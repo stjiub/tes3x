@@ -5,5 +5,6 @@
 
 int tes3x_animation_virtual_play(const u8 *ref, u8 *animation, float start, float stop);
 int tes3x_animation_virtual_restore(void *animation);
+void tes3x_animation_virtual_stock_request(void *animation, int group);
 
 #endif

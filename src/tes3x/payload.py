@@ -10,6 +10,7 @@ every supported engine without a compiler.
 import argparse
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -883,7 +884,11 @@ def engine_bindings(xbe, sources):
     if "tes3xanimvirtual.c" in names:
         if "tes3xmcp132.c" not in names:
             raise PayloadError("tes3xanimvirtual.c requires tes3xmcp132.c")
-        define("ANIM_VIRTUAL_PLAY_GROUP", hexva(find_mcp132_context(image)["play"]))
+        play = find_mcp132_context(image)["play"]
+        define("ANIM_VIRTUAL_PLAY_RESUME", hexva(play + 8))
+        define("ANIM_VIRTUAL_PLAY_ENTRY", hexva(play))
+        wanted["anim_virtual_play_group"] = ("_tes3x_animation_virtual_play_group",)
+        extra["anim_virtual_play_group"] = {"anim_virtual_play_site": hexva(play)}
     if "tes3xtest_ctt.c" in names:
         if "tes3xtest_mcp132.c" not in names:
             raise PayloadError("tes3xtest_ctt.c requires tes3xtest_mcp132.c")
@@ -1300,16 +1305,39 @@ def object_files(bindings, out, user_flags="", llvm_dir=None, rebuild=False):
     return [objects[source] for source in bindings.sources]
 
 
-def build_id(objects, user_flags):
+def ctt_range_words(path):
+    """Encode local KF clip times as link-time words for the combat probe."""
+    try:
+        ranges = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise PayloadError(f"cannot read CTT clip ranges: {exc}") from exc
+    if not isinstance(ranges, list) or len(ranges) != 11:
+        raise PayloadError("CTT clip ranges must contain exactly eleven ordered pairs")
+    words = {}
+    for i, pair in enumerate(ranges):
+        if (not isinstance(pair, list) or len(pair) != 2 or
+                any(type(value) not in (int, float) for value in pair)):
+            raise PayloadError(f"CTT clip range {i} must be a numeric start/stop pair")
+        start, stop = pair
+        if not (math.isfinite(start) and math.isfinite(stop) and 0 <= start < stop <= 10000):
+            raise PayloadError(f"CTT clip range {i} is invalid")
+        for phase, value in zip(("START", "STOP"), pair):
+            words[f"_{WORD}CTT_{phase}_{i}"] = struct.unpack("<I", struct.pack("<f", value))[0]
+    return words
+
+
+def build_id(objects, user_flags, extra_words=None):
     """The ID a server matches consoles by: the linked objects and the compile flags."""
     digest = hashlib.sha256()
     digest.update(b"flags\0" + user_flags.encode("utf-8") + b"\0")
     for obj in objects:
         digest.update(Path(obj).name.encode("utf-8") + b"\0" + Path(obj).read_bytes())
+    for name, value in sorted((extra_words or {}).items()):
+        digest.update(name.encode("ascii") + b"\0" + struct.pack("<I", value))
     return int(digest.hexdigest()[:8], 16)
 
 
-def link_payload(bindings, objects, out, ident, invert_look=True):
+def link_payload(bindings, objects, out, ident, invert_look=True, extra_words=None):
     """Link objects at the XBE's next section VA. Returns the payload and manifest paths."""
     image = bindings.image
     base = image.next_va()
@@ -1325,6 +1353,7 @@ def link_payload(bindings, objects, out, ident, invert_look=True):
         else:
             absolute[f"_{ABSOLUTE}{name}"] = items[0]
     words = {f"_{WORD}BUILD_ID": ident, f"_{WORD}INVERT_LOOK": int(bool(invert_look))}
+    words.update(extra_words or {})
     print(f"section VA {hexva(base)}   original entry {hexva(image.entry)}   "
           f"payload build id 0x{ident:08x}")
     try:
@@ -1355,13 +1384,16 @@ def link_payload(bindings, objects, out, ident, invert_look=True):
 
 def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "hooks",
                   user_flags="", llvm_dir=None, check_xbe=None, forced_build_id=None,
-                  invert_look=True, rebuild=False):
+                  invert_look=True, rebuild=False, ctt_ranges=None):
     """Link a payload of sources for xbe. Returns the paths of the payload and its manifest."""
     out = Path(out)
     bindings = engine_bindings(xbe, sources)
+    if ("tes3xtest_ctt.c" in bindings.sources) != bool(ctt_ranges):
+        raise PayloadError("the CTT test probe requires --ctt-ranges; other builds cannot use it")
+    extra_words = ctt_range_words(ctt_ranges) if ctt_ranges else None
     objects = object_files(bindings, out, user_flags, llvm_dir, rebuild)
-    ident = int(forced_build_id, 16) if forced_build_id else build_id(objects, user_flags)
-    payload, manifest = link_payload(bindings, objects, out, ident, invert_look)
+    ident = int(forced_build_id, 16) if forced_build_id else build_id(objects, user_flags, extra_words)
+    payload, manifest = link_payload(bindings, objects, out, ident, invert_look, extra_words)
     if check_xbe:
         hooks = json.loads(manifest.read_text(encoding="utf-8"))["hooks"]
         calls = [(bindings.arch_site, int(hooks["archive_load"], 16))] \
@@ -1387,10 +1419,12 @@ def main(argv=None):
                     help="leave the look axis as the engine reads it (with tes3xprefs.c)")
     ap.add_argument("--check", metavar="OUT.xbe",
                     help="also inject the payload into a copy of the XBE, as a structural check")
+    ap.add_argument("--ctt-ranges", metavar="JSON",
+                    help="local eleven-clip JSON for the CTT combat test probe")
     a = ap.parse_args(argv)
     try:
         build_payload(a.xbe, a.src or DEFAULT_SOURCES, a.out, a.cflags, a.llvm, a.check,
-                      invert_look=a.invert_look, rebuild=a.rebuild)
+                      invert_look=a.invert_look, rebuild=a.rebuild, ctt_ranges=a.ctt_ranges)
     except (PayloadError, ValueError, subprocess.CalledProcessError) as exc:
         raise SystemExit(str(exc))
 

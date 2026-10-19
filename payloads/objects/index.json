@@ -1,7 +1,8 @@
 {
   "header_format": 2,
   "layout": {
-    "ANIM_VIRTUAL_PLAY_GROUP": null,
+    "ANIM_VIRTUAL_PLAY_ENTRY": null,
+    "ANIM_VIRTUAL_PLAY_RESUME": null,
     "ARCHIVE_LOAD": null,
     "BOOTCLEAR_CLEAR": null,
     "BOOTCLEAR_DISPLAY": null,
@@ -369,187 +370,187 @@
   },
   "objects": {
     "monocypher.c": {
-      "digest": "e7cbf27c35d8fcea597acdacd898fe237f73b60b301bda8eba554bf551b74c9c",
+      "digest": "5da4adc6682cf05f8a41dc661c70343b9c3a900f11900fc3d959288562390d03",
       "sha256": "e2f86cc0ef97eaa98c6b0b4e3a2f58d41d8ef216495f5ae9acfa32ccd953ee37"
     },
     "tes3xagent.c": {
-      "digest": "681ddbbfd6e459c394c806192943dbb3bbefef1e42e672bdf0bfafa2169f081b",
+      "digest": "6c84efb4b49fdda21c415c1bb878c51584746288d8c92246befefe817ec2af23",
       "sha256": "bb6fc52e9b582cf622ae85527d8f3cb03178637a1b9d9f4fdad95191efcc6ec1"
     },
     "tes3xanimvirtual.c": {
-      "digest": "73a5cd5f25b50322e4cb34ec214b37228cf65050a9f5bf3caccc6eb791a1ebf0",
-      "sha256": "a994c8bbb96bcfb7d13381255048820f97d4d6d529ef2fc7af44e23ef603c6d9"
+      "digest": "8e2b23dbbd9a72f382cdde6281f54c918d84bee4a372c9f82399f5d667749926",
+      "sha256": "2e9663ec57f1277b285dc5b78174e4e4b72eb8e744a2d2369e3476499cb25bd3"
     },
     "tes3xarch.c": {
-      "digest": "18300d06b500dfafce8cecb1856eaab2193eb664d3833170219f5d3f94465d7a",
+      "digest": "7d38cc52bc8d5d645d43e9e243dce91ff4a17fda635bcba9e10bcc44b48fc57f",
       "sha256": "eb785d46d2b64e74e7ae566b92e61fee7fad9fd7ceb802286a588a8f7e45929b"
     },
     "tes3xarena.c": {
-      "digest": "85773e29febac1330aceff8375eb1ab9da218720545e671b973c2d065e896ac1",
+      "digest": "6f8e4d62869023146c8bc718a4046a2cae5645f78f53a950ea6fa505fbf6b18a",
       "sha256": "f55dca0d6118aef1e7689e4700b2456bd0776a3acd5de3fa691eac003bb4e7d4"
     },
     "tes3xbootclear.c": {
-      "digest": "a3810e8d7de3403ba4011aa18440baac1da74db4ad6afecffd29507577bc5fe5",
+      "digest": "07766ef373a2e3fdf032fdbde0d3f17aee2704779a3136e3b8a159c47e964dad",
       "sha256": "cca5c8185cebf78ade81545b71d2c759bfe38916bf54cdb5ea676e99593dee71"
     },
     "tes3xbowview.c": {
-      "digest": "024a572a6014b3c70a4014d8f24e0657996959da16cc53ccf6b6bd0564076f6b",
+      "digest": "d47b5b1b5dbff47ab12bace87c010a42918933e77869b769619746d9c2ed8f12",
       "sha256": "38411f8b5f805eec763cec3029b75b383e4b418a8ed0a40c435d326b1decb15f"
     },
     "tes3xconsole.c": {
-      "digest": "f9ffa7c3a579d53864b894aad4d91f1ce2a9c983657d50017e0523655bd5b538",
+      "digest": "6f7a9eea56e397787d01f80fd1672a3ecebf53e49ee42e042eec21604a8081a7",
       "sha256": "2c9627dd1fb7b1a05e079b191adf0de392792492aed21960f9307f2baa3eb0cb"
     },
     "tes3xcrt.c": {
-      "digest": "889734b5f285f01d7541115cdd071210ba8c4e0bd64fd12d19e8152ef024a158",
+      "digest": "32b80dba5562e5e5a1d9ddba7b806d8095fd485b672b7557c031ab2e2258c862",
       "sha256": "c565fe040b160c579010b83318373e72bea55fa5e72083563b55ca7f73cf710c"
     },
     "tes3xdashbutton.c": {
-      "digest": "3846dbfc747056bc670b27dca3e92c84199ce5748b46f39d0fbac9de108db985",
+      "digest": "4a8ac20e061c3811ed73d88562b9d2841c235d8c3e532af4405322e97fd9965e",
       "sha256": "0a4857b949149bf564fb40615046be12c999ed3a2a00fc1412cf76f932c9b312"
     },
     "tes3xdiag.c": {
-      "digest": "d11cf710a8bd05fcfb20512a32418f2bd8ce60ac1d6a29839c6f497ee818c8b0",
+      "digest": "03f2dc8ad0bc3cb00ac83acda6b44c616af6fe8cbf636af30151c4fe9bf3f3d7",
       "sha256": "caf4e88f2e08b472a98814731a4ab904f254ce3389de8aeaa3a9a155a709af6a"
     },
     "tes3xdxt5.c": {
-      "digest": "c13e645cbb7fdfe9250c03b0c4c03ebf83dac2b38e328406e99566fbac8bd60d",
+      "digest": "8159d88e19d3a57f0cd654d74f6b49d6461bae4647815f9360f7d1f50ec2d7ac",
       "sha256": "1f1772901694c4a9f197b2ec0723a5351a8070cb7d82db93986cd711baa91e27"
     },
     "tes3xheap.c": {
-      "digest": "49a76499c20051c515dae62c4dd51367a860352ae51975d60bbb4830a6b1e979",
+      "digest": "031c568f41fdd52478b3227fa4184fc15d31824df03cfc8ec280612a0225dd7b",
       "sha256": "e955ba181c472bca59769a87e3c03af13105b8c35ac31011d89c9dbe4b8a4bc7"
     },
     "tes3xhook.c": {
-      "digest": "b8eea785565a5922325a5aad8746603e5697b0ac3c40bfb2051cccfc8821fd3f",
+      "digest": "7b2b3a18a95f4a1e0fcc97130df6097057853d6d9824a8e54ee0abcabeaa85ac",
       "sha256": "9e8637c790821713eb7f24f3b8a744f8dfd483dd3ef1296a39a0dda828622693"
     },
     "tes3xhudscale.c": {
-      "digest": "7a31606c507173dec81230d74ea7acb3a0ae3882c9efc6b62fccf00e3f54f1ce",
+      "digest": "1640889078c36eaad9c1de6f7c44871ebd8b92310bc78e51e9161ad69a6a8df3",
       "sha256": "5d20df67f269d3bd3e036ae72bdf9eaebe2af1e49994e4788649cb8ae45ddc85"
     },
     "tes3xinfoarena.c": {
-      "digest": "7e5875dd513fae38bb990dc1b8be15f1f2a1e808fdbb132559a1c5dc0d51e2c9",
+      "digest": "1b4bb2c782ab9efa03cf4d2cc128b92756af8ac17ef73508014a32624104996d",
       "sha256": "4c5ac19df121f83954c238bbf55e4fbc8e8175d18d1e3225798c7c9b84ce493c"
     },
     "tes3xini.c": {
-      "digest": "534cd6d0f0ddb63688ef0b756d870388fa2611164ba5de5775ec19a51cccf145",
+      "digest": "afadec9fa0398cb131e28ccf84747ad5c1b576287008dc16e26dd9512ec49114",
       "sha256": "3f461f4de3a351d4b2924f5bb60f2461fb1da7fdb805b48c69f07328bbe4fe3c"
     },
     "tes3xlaunch.c": {
-      "digest": "e88a681b2a225c53545413f2cdb7bf2b77cefb35b3c5a0ed8026562fba4f25b3",
+      "digest": "e33118600fb127ed61112b3de6db57170264f076537c28e8ab1d9976956c76c7",
       "sha256": "73564c05d1fa92e0b33bce1749e556778c23bde345fa15ec993dcc05f4478ffd"
     },
     "tes3xleanmenu.c": {
-      "digest": "9598852a5983aaa964c1346ac22300fff0d3c46a074fd0ae08d53810753be472",
+      "digest": "c22b6df769e7b961b6a517cfbcd734408a6e70049586a2d7f3fca26f7b045c80",
       "sha256": "23b3d613c68c29af805ec8cef3dee983d9d01e24bf76bd11bed7ed6145b02f2d"
     },
     "tes3xlog.c": {
-      "digest": "936c0789fda55ee08b30946eb21f982d16b76608aa625162df8fc532af4b8d45",
+      "digest": "897f334fe321bcb3f5a85f287e21b71708700bd13ea03c61702b1ad294cc0558",
       "sha256": "0b0fe55a6745e9882a32f4baa1b1853c310178598d816869579cf1ddab3fbb12"
     },
     "tes3xmcp123.c": {
-      "digest": "fa53a77c3bbfa4e95a53903f1482f9ab5deaf872ba265d8d71157a1d845a366a",
+      "digest": "82e52612b2bd71006fbc439c5988891eb5980fbad324ef71166c1261736929c2",
       "sha256": "4b2de930b729912936d0f2a7354ab7fc41c07db6d4f04a9ce2b8d07d75160fa5"
     },
     "tes3xmcp125.c": {
-      "digest": "c3ae442eb0567c7aa04ba84e0f70a87180abeee9f681baebc6165542ad9a652d",
+      "digest": "506e1c63f02efcaf8e5563bb25dbf3ce83e91d93ff5e43ba7e6443141f977dee",
       "sha256": "4c1ba81e4bb8a974d8da83eeb384804a52b2f21936b9f405beb4a11c5e253fb3"
     },
     "tes3xmcp132.c": {
-      "digest": "4ae4368aeae910d97dd09418757d46a12cf4d49e298f19a5e0d1e0e039fdf090",
+      "digest": "b8915659d2c77aba736ac2843718c7e07369ae7286dc55a214462722052b7e13",
       "sha256": "d379dbc3288c99735e750347c7591634b56175cc61efe55476a864c654a620a9"
     },
     "tes3xmcp146.c": {
-      "digest": "07fdf0b98a41ceb416dd1f36600a3b9e3fb3085a0fd0e1b9cf5db3bda011dec5",
+      "digest": "078332909941d12edcb23f192ee3f26f3f3bcd992473ac67e2d3ea2102826be4",
       "sha256": "ee5ea716689482645e82504abbe12715b3db7836b3295adc365fad0c2def6893"
     },
     "tes3xmcp154.c": {
-      "digest": "0eb62e1f97ee4081bf2fe874cf5303aa5afa4abb041168ee496b3ba448bb2195",
+      "digest": "3d6dc4f37529350839e2ff83381103c8b2292ad5b53c9736c58fe71ea91353c2",
       "sha256": "3a17203d1e1399a741e7fbf1af1f022ee4a432a040328db58b851dae607721df"
     },
     "tes3xmcp173.c": {
-      "digest": "a55cfc5b96cb165f55333696b93ba605c002480688760d3799a02c9aaed42e79",
+      "digest": "04a71ebfd5a777d33ed808fe0d472ef6b544df367a2d55d854f3f7061dd395e6",
       "sha256": "9ec9ca4103eb0399cb616a904ea3cecdda69f6a3e9c3bbb0166440999e36dfad"
     },
     "tes3xmcp37.c": {
-      "digest": "5d22c2b204c1c02b8ec4e4c5aa980542e712ff96fe1386231af43e2c9ef0e35d",
+      "digest": "df15a0eb27c6460b1f905b733a4a6f3b785ce78f37219817620c370dde1b093e",
       "sha256": "7f9098a2e384b875bba54f15649c2ec33a7213635853475aac0d49dacc1a84bc"
     },
     "tes3xmcp47.c": {
-      "digest": "1767cc69b45b1f8fa7f63a3e9dacfc4d4a5dd941abf00af8fbb475ecb2b34bac",
+      "digest": "52b37bfb8725ff7fda07d83ff9e17f7f0403c472509e0d04801b1d40d9a1636e",
       "sha256": "8c90fcd49065749df6d4df63f672ef1eeb7c643c1cdabd0d3e8ae1391f0e9daa"
     },
     "tes3xmcp97.c": {
-      "digest": "0d60862f7acf2f9348402437150f256a043c36c2e307167c5cdee0250773f09f",
+      "digest": "63472584d4692bf9d8bd722242634d74adfacc0606c59b8547c6a6fcc8113d40",
       "sha256": "7f4a122c0e91b10d0f5b587c809094bc39eb3fce34926cb8a0e633b1a9ca0c3b"
     },
     "tes3xmem.c": {
-      "digest": "47e3db556e36d1ec519712e3a2c631a9d8c6bb7c5f63284c4791eacd1860fc09",
+      "digest": "d20700315a47248c42725b2844eee842c21f993c3d43d59c253e54d6ae10016b",
       "sha256": "df7cf48a52598a5de7f514cf304b1072ed8432943b66d4b1f4f1168144e1ab9e"
     },
     "tes3xmenustill.c": {
-      "digest": "7a667989b5373268fbee0360c43c8b095fd60a22507efb9fde0d5e8f35e77464",
+      "digest": "c1a8da05f54d4eea29579154e50ca4f36ab163c44b8a41f2353e32ec860f0a89",
       "sha256": "d9a8a2c10299820e822d83a0e6310a584ff24c77240e51eeb06af6a480bdefa5"
     },
     "tes3xmulti.c": {
-      "digest": "d3e19345bf34528fa3004d7629ecd600eb36a835a25230bab28fe323302428c7",
+      "digest": "878bb6b757bd2999276580057f41f03c11e49cf08988290e8441e840a53d45ab",
       "sha256": "188766df321d0ecf923d45db6450b3c93928d18bc630eda4cce2fe22bb70dc94"
     },
     "tes3xmwse.c": {
-      "digest": "67d8208d1d9fb6a5a3774ada2bec68250e13476158eae8b0d1370e34ed98a6ef",
+      "digest": "f03b66a239b9937bad99dba96b26dc8b79092f7dc39268eaadfd14171177b954",
       "sha256": "b39913e9e2c08ef0299361235d4d1a69938ed179cdf7a6dcfa7f453b51f0d2d5"
     },
     "tes3xnet.c": {
-      "digest": "f8440ce6ae869a0a03601f80028a918f2d37a53d20855b59f12008b3ab028db4",
+      "digest": "521d7676b58fbe9a51e67bf488b41af19a207689c6e4287f5591861d8da65e41",
       "sha256": "de597d224a391c57e51e085d3af88228c5064ec0785dd3f2b35a21e45fbaaf41"
     },
     "tes3xnoise.c": {
-      "digest": "53861328fe39286dc9e630334ca23d6c354895c5bcbb1fe81cca0e852e5ad48a",
+      "digest": "6c8d63bb4abc197cef4723d3fd9c8b6afc898917c7f010cba625c8eae703b0ed",
       "sha256": "52fefc5d829cf96dac6d3d4ff1f5712a8e9039bc01cb2426ca3b85eb75030eae"
     },
     "tes3xoverlay.c": {
-      "digest": "26cedcd01301beb4ff296922ac0c316ee888ebad9de7dbc5db310df231f27d0b",
+      "digest": "858d260ea9b4dbc0f53ec2cb3059059d24ec49809cbbaf00261e0bb78f3a12a6",
       "sha256": "2b9f9150ff37a105350748f9c0ac0153f672ca3aaeab6cbb4ad139d40c4fc712"
     },
     "tes3xpager.c": {
-      "digest": "22a9860f39506fdc4bbdf94e21bf6fabea7746e4f0c4af14e629a4ae013f2d53",
+      "digest": "49895f1b1edee759c97c146e96edd3ca3bc58d5b7eec7e806ab0bd314c3b2c31",
       "sha256": "737514ea04d9f293bfa6a4aaa7082fc8b9b7cf482bc740647c4b7deb22fd02c7"
     },
     "tes3xprefs.c": {
-      "digest": "6a0ac2262386819967bd2f18807ac3c39f96191b97befc782f5c67c44e02991c",
+      "digest": "749ad20bd37d1ead38fc4efd14fcfe55f4fa9ebc82843a41b1fac66b33d8462c",
       "sha256": "652aa7d3994f08ac8a0b0bc9b2df7af8d5215e0e01b48f156dcb885a0ee9e418"
     },
     "tes3xprof.c": {
-      "digest": "cf5817ad7485e242e94e1cb65d51dd6514a4815406081bc9b3402e31e542bf39",
+      "digest": "1419875a0e97be75f9c47870790684f37360c993bedbfbd6d364302a2ac17e6d",
       "sha256": "eb9e9740a7b1704c08034b1f6fb229f0e30abbe411dae38fe6b2da280a2bc0fa"
     },
     "tes3xrefindex.c": {
-      "digest": "2f73310c7f690d5ad8589427a71567abae2521502cf37e9cfc819533e8a7bb93",
+      "digest": "61f8782bc1c8cd6ebe0e956ffa99d75cdf224c221125f30725b8ffa68880eff3",
       "sha256": "6796a6c862b2c8b7003ec58dd62e7d88ee86934081c0444be6161659d09f7160"
     },
     "tes3xrefs.c": {
-      "digest": "66c774cef047e6926ce9f5a3a23ce1037fcc3fb183bbd523ae0b094162b29664",
+      "digest": "8ff0978743dba969a4f2cedb2489dd9ab8293294b6c9348857758d275f92e22e",
       "sha256": "40cf68221dbdec42ba669b2868bb0d87e2415f09417a614230f0015d73e05aa2"
     },
     "tes3xregion.c": {
-      "digest": "d7eb5efccdd73ee27fe5f8a46e41220b9a85307f0b98b8eca623ab567491063c",
+      "digest": "37278401416e72df896a0401fbd6f4007dbb49e34f9e9e77f63358882a0e6c9d",
       "sha256": "daad7e163502d6eb31af164c839d43b5c6f595f8fbb3380ea202fd168a2151b6"
     },
     "tes3xsaves.c": {
-      "digest": "630dc29097b2cca7a496b526b5ed87c55358974d54b357fd8bd19d8124607ce1",
+      "digest": "d604a8c08323791a0ac803d5b57a6d79761fd1f95bc1c496aee535b38432181b",
       "sha256": "a5420f085fc8ec70b5f17663b0041b2e92b73c0c74eb8cd509ca8cf1248aaded"
     },
     "tes3xscript.c": {
-      "digest": "dd948bcf8bbd2280e60fbf313ef59dd637adee74d5625d77dade7f878004d303",
+      "digest": "8e2158022926a50212b4c40c6dcc3aae198b5aaaa7db6021d564cbbfa19dbd77",
       "sha256": "98612dc2f5782c5df3ae1adc0e6fd065e8b173425aca7bb2e774db3e67130836"
     },
     "tes3xtooltips.c": {
-      "digest": "3df5a6143bfcd3ec327bd3be2c7cc4dafecbe41a14c0b916638038f1e9e4a84d",
+      "digest": "25af11f64b6f1c3e309f8b5fbb5ed808f8760add7a6c5d70d522c4cdbec6178b",
       "sha256": "b433c11c7e70329be00db225b65bf886eea133d4de32ebc6a9e377a9ae6df26c"
     },
     "tes3xvideo.c": {
-      "digest": "e96780ad6eb7bf0b155739e0289485049b60dcfd36f2b9a722bd6f0e3e18fe2d",
+      "digest": "32a746e4e2ffee2b410c41c1566aa87bc5255862dea605207dc63813b6130253",
       "sha256": "19787651ed2c853930de90d617c9d7c86aa4411c3cb35396560e7bbe205398de"
     }
   },

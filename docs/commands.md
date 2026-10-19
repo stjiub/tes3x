@@ -12,6 +12,7 @@ options. This page says what each one is for and where it is explained.
 | `tes3x init` | copy the bundled example config and profile into the data folder, or a chosen folder; keep existing files | [getting started](getting-started.md#where-tes3x-keeps-your-files) |
 | `tes3x pipeline` | build one profile into a game folder; optionally deploy it | [pipeline](pipeline.md) |
 | `tes3x build` | collect a profile's mods into one `Data Files` tree; report conflicts, textures and missing masters; prune unused assets | [pipeline](pipeline.md#2-collect-the-winning-files), [packaging](packaging.md#pruning-unused-assets) |
+| `tes3x kf-merge` | append animation KFs to an effective `xbase_anim.kf` | [pipeline](pipeline.md#merging-animation-kfs) |
 | `tes3x plugins` | order plugins with mlox or a saved order; download the mlox rules; run TES3Merge | [pipeline](pipeline.md#sorting-plugins-with-mlox) |
 | `tes3x optimize` | write equivalence-checked derived copies that make the Xbox load fewer records | [plugin optimizer](optimizer.md) |
 | `tes3x pack` | pack a collected tree into archives and stage the game's `Data Files` | [packaging](packaging.md) |

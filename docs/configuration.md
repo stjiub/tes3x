@@ -245,6 +245,19 @@ A patches-only profile does not package `Data Files`;
 it stages the retail directory unchanged. The install layout is independent of package mode: an
 overlay may still use delta archives, a merged archive or loose mod files.
 
+### `[animation]`
+
+`merge_kf` is an ordered list of animation KF paths in the collected `Data Files` tree. The
+pipeline appends their clips to the winning `Meshes/xbase_anim.kf`, or to the retail copy in
+`Morrowind.bsa` when no mod supplies one. It removes the source KFs from the packed tree. Install
+the optional `tes3x[kf]` dependency to use this setting. Check the paths printed by `tes3x build`:
+some mod layouts are flattened during collection.
+
+```toml
+[animation]
+merge_kf = ["extra_walk.kf", "extra_dodge.kf"]
+```
+
 ### `[rules]`
 
 | Key | Type | Default | Meaning |
