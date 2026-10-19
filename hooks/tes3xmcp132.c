@@ -6,6 +6,7 @@ typedef void(__attribute__((thiscall)) *fn_play_group)(void *, int, int, int, in
 typedef void(__attribute__((thiscall)) *fn_update_idles)(void *);
 typedef void *(__attribute__((thiscall)) *fn_get_player)(void *);
 typedef void(__attribute__((thiscall)) *fn_anim_idle_update)(void *);
+TES3X_OPTIONAL void tes3x_animation_virtual_maintain(void);
 
 void __attribute__((thiscall)) tes3x_mcp132_play_group(
     void *animation, int group, int layer, int mode, int loops)
@@ -35,6 +36,8 @@ void __attribute__((thiscall)) tes3x_mcp132_update_idles(void *data)
     void *world;
 
     ((fn_update_idles)TES3X_MCP132_UPDATE_IDLES)(data);
+    if (tes3x_animation_virtual_maintain)
+        tes3x_animation_virtual_maintain();
     world = *(void **)TES3X_MCP132_WORLD;
     if (!world)
         return;

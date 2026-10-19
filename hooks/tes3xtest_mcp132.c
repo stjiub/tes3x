@@ -18,6 +18,26 @@ typedef struct {
 
 static virtual_group dodge_test[2];
 
+void tes3x_animation_virtual_maintain(void)
+{
+    unsigned int i;
+    virtual_group *slot;
+    u8 *animation;
+    for (i = 0; i < 2; ++i) {
+        slot = &dodge_test[i];
+        animation = slot->animation;
+        if (!animation || animation[0x38] == 8 || animation[0x39] == 8 ||
+            animation[0x3A] == 8)
+            continue;
+        if (*(u8 **)(animation + 0x68 + 8 * 4) == slot->group)
+            *(u8 **)(animation + 0x68 + 8 * 4) = slot->original;
+        if (slot->mobile && !slot->had_scripted)
+            *(unsigned int *)(slot->mobile + 0x10) &= ~0x10000000u;
+        slot->animation = 0;
+        tes3x_log("mcp132.virtual_auto_restore", i + 1);
+    }
+}
+
 static void copy_bytes(u8 *dst, const u8 *src, unsigned int n)
 {
     unsigned int i;
@@ -114,7 +134,7 @@ int tes3x_mcp132_test_command(const char *text)
         if (slot->mobile)
             *(unsigned int *)(slot->mobile + 0x10) |= 0x10000000u;
         for (i = 0; i != 3; ++i)
-            ((fn_play_group)TES3X_MCP132_TEST_PLAY_GROUP)((void *)animation, 8, i, 1, -1);
+            ((fn_play_group)TES3X_MCP132_TEST_PLAY_GROUP)((void *)animation, 8, i, 1, 1);
         tes3x_log("mcp132.virtual_ready", 1);
         tes3x_log_hex("mcp132.virtual_layers",
                       animation[0x38] | (animation[0x39] << 8) |
