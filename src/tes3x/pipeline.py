@@ -995,9 +995,11 @@ def main(argv=None):
     if args.test_probe:
         source = f"tes3xtest_{args.test_probe.replace('-', '')}.c"
         plan["sources"].append(source)
-        if args.test_probe == "ctt":
+        if args.test_probe in {"mcp-132", "ctt"}:
             if "tes3xmcp132.c" not in plan["sources"]:
-                raise PipelineError("--test-probe ctt needs the mcp-132 patch")
+                raise PipelineError(f"--test-probe {args.test_probe} needs the mcp-132 patch")
+            plan["sources"].append("tes3xanimvirtual.c")
+        if args.test_probe == "ctt":
             plan["sources"].append("tes3xtest_mcp132.c")
         plan["needs_payload"] = True
         if args.test_probe in {"mcp-3", "mcp-47", "mcp-132", "dialogue-merge", "ctt"} \

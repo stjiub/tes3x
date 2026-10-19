@@ -871,14 +871,19 @@ def engine_bindings(xbe, sources):
     if "tes3xtest_mcp132.c" in names:
         if "tes3xconsole.c" not in names:
             raise PayloadError("tes3xtest_mcp132.c requires tes3xconsole.c")
+        if "tes3xanimvirtual.c" not in names:
+            raise PayloadError("tes3xtest_mcp132.c requires tes3xanimvirtual.c")
         define("MCP132_TEST_RECORDS", address("DATA_HANDLER", DATA_HANDLER))
         define("MCP132_TEST_FIND_REF", address("FIND_REFERENCE", dict(PLACE_ADDRESSES)["FIND_REFERENCE"]))
         define("MCP132_TEST_ANIMATION", address("REF_ANIMATION", dict(PLACE_ADDRESSES)["REF_ANIMATION"]))
         context = find_mcp132_context(image)
         define("MCP132_TEST_WORLD", hexva(context["world"]))
         define("MCP132_TEST_GET_PLAYER", hexva(context["get_player"]))
-        define("MCP132_TEST_PLAY_GROUP", hexva(context["play"]))
         wanted["mcp132_test"] = ("_tes3x_mcp132_test_command",)
+    if "tes3xanimvirtual.c" in names:
+        if "tes3xmcp132.c" not in names:
+            raise PayloadError("tes3xanimvirtual.c requires tes3xmcp132.c")
+        define("ANIM_VIRTUAL_PLAY_GROUP", hexva(find_mcp132_context(image)["play"]))
     if "tes3xtest_ctt.c" in names:
         if "tes3xtest_mcp132.c" not in names:
             raise PayloadError("tes3xtest_ctt.c requires tes3xtest_mcp132.c")
@@ -1255,6 +1260,7 @@ def production_sources():
         for source in (entry.get("source"), *SOURCE_DEPENDENCIES.get(entry.get("source"), ())):
             if source and source not in sources:
                 sources.append(source)
+    sources.append("tes3xanimvirtual.c")
     return expand_sources(sources)
 
 
