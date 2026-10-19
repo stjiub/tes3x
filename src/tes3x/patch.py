@@ -1109,7 +1109,8 @@ def _mcp_132(x, value, ctx):
     """Apply MCP's full-body script animation, added-bone and player fixes."""
     hooks = ctx.get("hooks", {})
     names = {"script": "mcp132_play_group", "bone": "mcp132_bone_match",
-             "idle_call": "mcp132_update_idles"}
+             "idle_call": "mcp132_update_idles",
+             "destroy_calls": "mcp132_destroy_animation"}
     if any(not hooks.get(name) for name in names.values()):
         raise PatchError("mcp-132: payload lacks an animation hook")
     found = find_mcp132_context(x)
@@ -1125,6 +1126,11 @@ def _mcp_132(x, value, ctx):
         if key == "idle_call" and old != found["update"]:
             raise PatchError("mcp-132: UpdateAllIdles call target changed")
         edits.append((off, 5, "%s animation hook at 0x%08X" % (key, site)))
+    for site in found["destroy_calls"]:
+        old, off = x.patch_call(site, int(str(hooks[names["destroy_calls"]]), 16))
+        if old != found["destroy"]:
+            raise PatchError("mcp-132: AnimationData destructor call target changed")
+        edits.append((off, 5, "animation disposal hook at 0x%08X" % site))
     return edits
 
 

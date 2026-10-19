@@ -65,6 +65,7 @@
     "MCP123_ADD_REFERENCE": null,
     "MCP125_ADD_MOB": null,
     "MCP125_REMOVE_MOB": null,
+    "MCP132_ANIM_DESTROY": null,
     "MCP132_ANIM_IDLE_UPDATE": null,
     "MCP132_GET_PLAYER": null,
     "MCP132_PLAY_GROUP": null,
@@ -451,8 +452,8 @@
       "sha256": "4c1ba81e4bb8a974d8da83eeb384804a52b2f21936b9f405beb4a11c5e253fb3"
     },
     "tes3xmcp132.c": {
-      "digest": "abee13d8a0c32d373f553a3fd86a06e9cdb99a0ced14b4702b5262b8fece26dd",
-      "sha256": "7486320b0865913e38ba38a5ae3de20823b41ded702950c5b1cfcf08f3239f6e"
+      "digest": "f08849c70fb1658555b6fe4a5e6a8938648dcfcb1bd8a2815629cc7d5b50ed22",
+      "sha256": "d379dbc3288c99735e750347c7591634b56175cc61efe55476a864c654a620a9"
     },
     "tes3xmcp146.c": {
       "digest": "764d201682da19c94a5d91cb1c62882855e09d944a24860c4e1d077bbfbc911e",

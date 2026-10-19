@@ -924,12 +924,14 @@ def engine_bindings(xbe, sources):
         print(f"mcp-132 hooks: script {', '.join(map(hexva, context['script']))}, "
               f"bones {hexva(context['bone'])}, player {hexva(context['idle_call'])}")
         for key, name in (("play", "PLAY_GROUP"), ("update", "UPDATE_IDLES"),
+                          ("destroy", "ANIM_DESTROY"),
                           ("ref_update", "ANIM_IDLE_UPDATE"), ("world", "WORLD"),
                           ("get_player", "GET_PLAYER")):
             define("MCP132_" + name, hexva(context[key]))
         wanted["mcp132_play_group"] = ("_tes3x_mcp132_play_group",)
         wanted["mcp132_bone_match"] = ("_tes3x_mcp132_bone_match",)
         wanted["mcp132_update_idles"] = ("_tes3x_mcp132_update_idles",)
+        wanted["mcp132_destroy_animation"] = ("_tes3x_mcp132_destroy_animation",)
     if "tes3xdxt5.c" in names:
         site = locate("dxt5-size")
         size = hexva(tes3x_inject.call_target(image, site))

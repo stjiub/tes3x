@@ -6,15 +6,27 @@ typedef void(__attribute__((thiscall)) *fn_play_group)(void *, int, int, int, in
 typedef void(__attribute__((thiscall)) *fn_update_idles)(void *);
 typedef void *(__attribute__((thiscall)) *fn_get_player)(void *);
 typedef void(__attribute__((thiscall)) *fn_anim_idle_update)(void *);
+typedef void(__attribute__((thiscall)) *fn_anim_destroy)(void *);
 TES3X_OPTIONAL void tes3x_animation_virtual_maintain(void);
+TES3X_OPTIONAL void tes3x_animation_virtual_dispose(void *animation);
+TES3X_OPTIONAL void tes3x_animation_virtual_stock_request(void *animation, int group);
 
 void __attribute__((thiscall)) tes3x_mcp132_play_group(
     void *animation, int group, int layer, int mode, int loops)
 {
     int part;
     (void)layer;
+    if (tes3x_animation_virtual_stock_request)
+        tes3x_animation_virtual_stock_request(animation, group);
     for (part = 0; part != 3; ++part)
         ((fn_play_group)TES3X_MCP132_PLAY_GROUP)(animation, group, part, mode, loops);
+}
+
+void __attribute__((thiscall)) tes3x_mcp132_destroy_animation(void *animation)
+{
+    if (tes3x_animation_virtual_dispose)
+        tes3x_animation_virtual_dispose(animation);
+    ((fn_anim_destroy)TES3X_MCP132_ANIM_DESTROY)(animation);
 }
 
 /* The engine passes a canonical bone first, then the KF's bone name. */

@@ -28,6 +28,8 @@ SIGNATURES = {
              "0f b6 44 24 04 80 bc ?? ?? ?? ?? 00 ff 0f 95 ?? ?? ?? ?? cc"),
     "ANIM_PLAY_GROUP": ("match", 0, ".text", "",
              "53 8b 5c 24 08 80 fb ff 56 8b f1 0f ?? ?? ?? ?? 00 0f b6 c3"),
+    "ANIM_DATA_DESTROY": ("match", 0, ".text", "",
+             "6a ff 68 ?? ?? ?? ?? 64 a1 00 00 00 00 50 64 89 25 00 00 00 00 83 ec 08 55 56 8b e9 57 89 6c 24 10 c7 44 24 1c 00 00 00 00 8d b5 84 05 00 00 bf 96 00 00 00"),
     "ANIM_IDLE_UPDATE": ("match", 0, ".text", "",
              "83 ec 10 55 56 57 8b f9 8b 4f 44 8b c1 85 c0"),
     "UPDATE_ALL_IDLES": ("match", 0, ".text", "",

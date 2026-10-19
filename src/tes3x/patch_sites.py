@@ -935,6 +935,7 @@ def find_mcp47_context(x):
 def find_mcp132_context(x):
     """The script animation calls, humanoid bone test and player idle update."""
     play = find_multi_signature(x, "ANIM_PLAY_GROUP")
+    destroy = find_multi_signature(x, "ANIM_DATA_DESTROY")
     update = find_multi_signature(x, "UPDATE_ALL_IDLES")
     ref_update = find_multi_signature(x, "ANIM_IDLE_UPDATE")
     run = find_run_function(x)
@@ -951,9 +952,13 @@ def find_mcp132_context(x):
     idle_calls = find_call_sites(x, update)
     if len(idle_calls) != 1:
         raise PatchError("mcp-132: expected one main-loop UpdateAllIdles call")
+    destroy_calls = find_call_sites(x, destroy)
+    if len(destroy_calls) != 2:
+        raise PatchError("mcp-132: expected two AnimationData destructor calls")
     _site, _deselect, world, get_player = find_mcp47_context(x)
     return {"play": play, "script": script, "bone": bone, "update": update,
             "idle_call": idle_calls[0], "ref_update": ref_update,
+            "destroy": destroy, "destroy_calls": destroy_calls,
             "world": world, "get_player": get_player}
 
 

@@ -1109,10 +1109,11 @@
     {
       "va": "0x000CE780",
       "name": "AnimationData::~AnimationData",
-      "confidence": "matched",
-      "provenance": "Xbox disassembly: frees sound generator arrays and animation sequences; two destruction call sites",
+      "confidence": "verified",
+      "provenance": "Xbox decompile 0x000CE780 and refs",
       "kind": "function",
-      "signature": "void __thiscall destroy()"
+      "signature": "void __thiscall destroy()",
+      "note": "Frees sound-key arrays and sequences, but does not free group pointers. A virtual-group sidecar must release its actor slot before this destructor returns."
     },
     {
       "va": "0x000CEFB0",
