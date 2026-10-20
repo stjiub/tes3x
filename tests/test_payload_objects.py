@@ -4,7 +4,7 @@ import unittest
 import tes3x.patches as registry
 from tes3x.link import CLASS_EXTERNAL, CLASS_WEAK_EXTERNAL, link, parse_object
 from tes3x.payload import (ABSOLUTE, DEFAULT_SOURCES, ENTRY, OBJECTS, SOURCE_DEPENDENCIES, WORD,
-                           WORDS, expand_sources, production_sources, shipped_object,
+                           WORDS, ctt_empty_words, expand_sources, production_sources, shipped_object,
                            shipped_objects)
 
 
@@ -59,6 +59,7 @@ class BundledObjectTests(unittest.TestCase):
                     wanted.add(symbol.name)
         absolute = {name: 0x10000 + i * 0x10 for i, name in enumerate(sorted(wanted))}
         words = {f"_{WORD}{name}": 1 for name in WORDS}
+        words.update(ctt_empty_words())
         linked = link(objects, 0x405000, ENTRY, absolute, words)
         self.assertGreater(linked.vsize, 0)
 

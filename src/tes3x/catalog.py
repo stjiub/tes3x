@@ -31,7 +31,7 @@ STATUS_LABELS = {
     "not-possible": "Not possible",
 }
 FIELDS = {"id", "name", "version", "url", "folder", "status", "patches", "ram", "bios",
-          "requirements", "dependencies", "plugins", "notes"}
+          "requirements", "dependencies", "plugins", "merge_kf", "notes"}
 IDENTIFIER = re.compile(r"[a-z0-9][a-z0-9._-]*\Z")
 
 
@@ -63,7 +63,7 @@ def load(path=CATALOG, patch_names=None):
             raise CatalogError(f"{where}.status must be one of {', '.join(STATUSES)}")
         if entry.get("ram", 64) not in (64, 128):
             raise CatalogError(f"{where}.ram must be 64 or 128")
-        for key in ("patches", "requirements", "dependencies", "plugins"):
+        for key in ("patches", "requirements", "dependencies", "plugins", "merge_kf"):
             value = entry.get(key, [])
             if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
                 raise CatalogError(f"{where}.{key} must be a list of strings")

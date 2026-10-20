@@ -94,6 +94,9 @@ The optional `tes3x[kf]` dependency supplies the KF reader and writer. Quadratic
 scale curves appended to linear tracks are sampled at 30 Hz. The merger accepts NetImmerse
 4.0.0.2 animation sequences and stops on unsupported key layouts.
 
+A [catalog](catalog.md) mod can name its own KFs to merge; enabling the mod adds them to the
+profile's `animation.merge_kf` list.
+
 If the profile sets [`ui.scale`](configuration.md#ui), the pipeline writes smaller bitmap font
 metrics into the staged `.fnt` files and enables the UI scale hook for HUD art, common menu
 panels and supported fixed menus. `ui.widescreen_480p` narrows the staged glyph widths and spacing for a stretched 480p

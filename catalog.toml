@@ -15,6 +15,8 @@
 # requirements  anything else it needs, in words
 # dependencies  ids of other mods here it needs
 # plugins       the plugins to use, when not all of them
+# merge_kf      animation KFs, by name in the collected build, that the pipeline appends to
+#               xbase_anim.kf
 # notes         what was tried and what happened
 schema = 1
 
@@ -100,3 +102,13 @@ bios = "cerbios"
 dependencies = ["tamriel-data"]
 notes = """Its records alone need more than 64 MB. With 128 MB its plugins load and play; with \
 its assets too, the textures around Firewatch overflow the video memory."""
+
+[[mod]]
+id = "cant-touch-this"
+name = "Can't Touch This"
+version = "1.0.3"
+folder = "Can't Touch This"
+status = "untested"
+patches = ["cant-touch-this"]
+merge_kf = ["xmissdodge.kf", "xArmedDodgeV2.kf"]
+notes = "Dodge animations on missed melee attacks. Its OpenMW Lua is not used; the patch plays the animations."

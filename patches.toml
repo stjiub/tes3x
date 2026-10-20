@@ -272,6 +272,17 @@ source = "tes3xmcp132.c"
 summary = "Play scripted animations across NPC body layers, support extra bones and animate the player."
 
 [[patch]]
+name = "cant-touch-this"
+title = "Can't Touch This dodges"
+bit = 44
+category = "compat"
+channel = "dev"
+selection = "preset"
+source = "tes3xctt.c"
+requires = ["mcp-132"]
+summary = "Play a dodge animation when a melee attack misses a calm NPC, using Can't Touch This's clips."
+
+[[patch]]
 name = "mcp-146"
 title = "Nocked arrow removal"
 origin = { source = "MCP", id = "146" }

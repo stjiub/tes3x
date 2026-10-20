@@ -40,6 +40,7 @@ SOURCE_DEPENDENCIES = {
     "tes3xmwse.c": ("tes3xconsole.c",),
     "tes3xmulti.c": ("tes3xnet.c",),
     "tes3xagent.c": ("tes3xnet.c",),
+    "tes3xctt.c": ("tes3xanimvirtual.c",),
 }
 NTSC_TEXT_SHA256 = "38b922df5461b195c61fb2fdb62d893810ef8482ec813d9f6a7a064fb75493d8"
 BUNDLED_LLVM = bundled("externals", "llvm", "bin")
@@ -889,15 +890,18 @@ def engine_bindings(xbe, sources):
         define("ANIM_VIRTUAL_PLAY_ENTRY", hexva(play))
         wanted["anim_virtual_play_group"] = ("_tes3x_animation_virtual_play_group",)
         extra["anim_virtual_play_group"] = {"anim_virtual_play_site": hexva(play)}
-    if "tes3xtest_ctt.c" in names:
-        if "tes3xtest_mcp132.c" not in names:
-            raise PayloadError("tes3xtest_ctt.c requires tes3xtest_mcp132.c")
+    if "tes3xctt.c" in names:
+        if "tes3xanimvirtual.c" not in names:
+            raise PayloadError("tes3xctt.c requires tes3xanimvirtual.c")
         roll = int(address("HIT_ROLL", HIT_ROLL), 16)
-        define("CTT_TEST_ROLL_RESUME", hexva(roll + 6))
-        define("CTT_TEST_RECORDS", address("DATA_HANDLER", DATA_HANDLER))
-        define("CTT_TEST_FIND_REF", address("FIND_REFERENCE", dict(PLACE_ADDRESSES)["FIND_REFERENCE"]))
-        wanted["ctt_test_roll"] = ("_tes3x_ctt_test_roll",)
-        extra["ctt_test_roll"] = {"ctt_test_roll_site": hexva(roll)}
+        define("CTT_ROLL_RESUME", hexva(roll + 6))
+        define("CTT_REF_ANIMATION", address("REF_ANIMATION", dict(PLACE_ADDRESSES)["REF_ANIMATION"]))
+        wanted["ctt_roll"] = ("_tes3x_ctt_roll",)
+        extra["ctt_roll"] = {"ctt_roll_site": hexva(roll)}
+    if "tes3xtest_ctt.c" in names:
+        if "tes3xctt.c" not in names or "tes3xtest_mcp132.c" not in names:
+            raise PayloadError("tes3xtest_ctt.c requires tes3xctt.c and tes3xtest_mcp132.c")
+        wanted["ctt_test"] = ("_tes3x_ctt_test_select_clip",)
     if "tes3xtest_dialoguemerge.c" in names:
         if "tes3xconsole.c" not in names:
             raise PayloadError("tes3xtest_dialoguemerge.c requires tes3xconsole.c")
@@ -1265,7 +1269,6 @@ def production_sources():
         for source in (entry.get("source"), *SOURCE_DEPENDENCIES.get(entry.get("source"), ())):
             if source and source not in sources:
                 sources.append(source)
-    sources.append("tes3xanimvirtual.c")
     return expand_sources(sources)
 
 
@@ -1305,17 +1308,21 @@ def object_files(bindings, out, user_flags="", llvm_dir=None, rebuild=False):
     return [objects[source] for source in bindings.sources]
 
 
-def ctt_range_words(path):
-    """Encode local KF clip times as link-time words for the combat probe."""
-    try:
-        ranges = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        raise PayloadError(f"cannot read CTT clip ranges: {exc}") from exc
+def ctt_range_words(ranges):
+    """Encode KF clip times as link-time words for the dodge module.
+
+    ranges is the ordered list of eleven start/stop pairs, or the path of a JSON file holding it.
+    """
+    if isinstance(ranges, (str, os.PathLike)):
+        try:
+            ranges = json.loads(Path(ranges).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise PayloadError(f"cannot read CTT clip ranges: {exc}") from exc
     if not isinstance(ranges, list) or len(ranges) != 11:
         raise PayloadError("CTT clip ranges must contain exactly eleven ordered pairs")
     words = {}
     for i, pair in enumerate(ranges):
-        if (not isinstance(pair, list) or len(pair) != 2 or
+        if (not isinstance(pair, (list, tuple)) or len(pair) != 2 or
                 any(type(value) not in (int, float) for value in pair)):
             raise PayloadError(f"CTT clip range {i} must be a numeric start/stop pair")
         start, stop = pair
@@ -1324,6 +1331,11 @@ def ctt_range_words(path):
         for phase, value in zip(("START", "STOP"), pair):
             words[f"_{WORD}CTT_{phase}_{i}"] = struct.unpack("<I", struct.pack("<f", value))[0]
     return words
+
+
+def ctt_empty_words():
+    """Clip words that disable the dodge module, for links made without a merged KF."""
+    return {f"_{WORD}CTT_{phase}_{i}": 0 for i in range(11) for phase in ("START", "STOP")}
 
 
 def build_id(objects, user_flags, extra_words=None):
@@ -1353,6 +1365,8 @@ def link_payload(bindings, objects, out, ident, invert_look=True, extra_words=No
         else:
             absolute[f"_{ABSOLUTE}{name}"] = items[0]
     words = {f"_{WORD}BUILD_ID": ident, f"_{WORD}INVERT_LOOK": int(bool(invert_look))}
+    if any(Path(obj).name == "tes3xctt.obj" for obj in objects):
+        words.update(ctt_empty_words())
     words.update(extra_words or {})
     print(f"section VA {hexva(base)}   original entry {hexva(image.entry)}   "
           f"payload build id 0x{ident:08x}")
@@ -1388,9 +1402,11 @@ def build_payload(xbe, sources=DEFAULT_SOURCES, out=HOOKS.parent / "build" / "ho
     """Link a payload of sources for xbe. Returns the paths of the payload and its manifest."""
     out = Path(out)
     bindings = engine_bindings(xbe, sources)
-    if ("tes3xtest_ctt.c" in bindings.sources) != bool(ctt_ranges):
-        raise PayloadError("the CTT test probe requires --ctt-ranges; other builds cannot use it")
-    extra_words = ctt_range_words(ctt_ranges) if ctt_ranges else None
+    extra_words = None
+    if "tes3xctt.c" in bindings.sources:
+        extra_words = ctt_range_words(ctt_ranges) if ctt_ranges else ctt_empty_words()
+    elif ctt_ranges:
+        raise PayloadError("clip ranges need the cant-touch-this patch")
     objects = object_files(bindings, out, user_flags, llvm_dir, rebuild)
     ident = int(forced_build_id, 16) if forced_build_id else build_id(objects, user_flags, extra_words)
     payload, manifest = link_payload(bindings, objects, out, ident, invert_look, extra_words)
@@ -1420,7 +1436,7 @@ def main(argv=None):
     ap.add_argument("--check", metavar="OUT.xbe",
                     help="also inject the payload into a copy of the XBE, as a structural check")
     ap.add_argument("--ctt-ranges", metavar="JSON",
-                    help="local eleven-clip JSON for the CTT combat test probe")
+                    help="eleven-clip JSON for the cant-touch-this module (tes3xctt.c)")
     a = ap.parse_args(argv)
     try:
         build_payload(a.xbe, a.src or DEFAULT_SOURCES, a.out, a.cflags, a.llvm, a.check,

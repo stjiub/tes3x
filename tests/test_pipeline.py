@@ -432,6 +432,14 @@ class PipelinePlanTests(unittest.TestCase):
         profile['mods'][1]['enabled'] = True
         self.assertIn('dxt5-size', resolve_patch_plan(profile)['selected'])
 
+    def test_catalog_mod_selects_dodge_patch_and_animation_merge(self):
+        profile = {'patches': {'preset': 'minimal'}, 'package': {'mode': 'loose'},
+                   'mods': [{'name': "Can't Touch This"}]}
+        plan = resolve_patch_plan(profile)
+        self.assertEqual(plan['merge_kf'], ['xmissdodge.kf', 'xArmedDodgeV2.kf'])
+        self.assertEqual(plan['applied'], ['mcp-132', 'cant-touch-this'])
+        self.assertEqual(plan['sources'][-3:], ['tes3xmcp132.c', 'tes3xanimvirtual.c', 'tes3xctt.c'])
+
     def test_catalog_required_patch_cannot_be_disabled(self):
         profile = {'patches': {'preset': 'minimal', 'disable': ['dialogue-merge']},
                    'mods': [{'name': 'Purists'}]}

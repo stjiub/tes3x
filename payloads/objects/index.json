@@ -21,6 +21,8 @@
     "CONTROLS_TABLE": null,
     "CREATE_IMAGE": null,
     "CREATE_WIDGET": null,
+    "CTT_REF_ANIMATION": null,
+    "CTT_ROLL_RESUME": null,
     "DASHBTN_BUILD": null,
     "DASHBTN_CREATE_BLOCK": null,
     "DASHBTN_CREATE_IMAGE": null,
@@ -404,6 +406,10 @@
     "tes3xcrt.c": {
       "digest": "32b80dba5562e5e5a1d9ddba7b806d8095fd485b672b7557c031ab2e2258c862",
       "sha256": "c565fe040b160c579010b83318373e72bea55fa5e72083563b55ca7f73cf710c"
+    },
+    "tes3xctt.c": {
+      "digest": "3698917164219a09c183ccd9ebabe30d9194600e154e462d224592394e003974",
+      "sha256": "444e4d993a0ad0aa1f47d7314506810b924cfe4122efe51bb41dee7bba034250"
     },
     "tes3xdashbutton.c": {
       "digest": "4a8ac20e061c3811ed73d88562b9d2841c235d8c3e532af4405322e97fd9965e",

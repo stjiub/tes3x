@@ -4,6 +4,11 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- New `cant-touch-this` patch plays a dodge animation when a melee attack misses a calm NPC,
+  using the clips from the Can't Touch This mod. The catalog selects it, and the animation merge,
+  when the mod is enabled in a profile. Arrow and thrown-weapon misses do not animate yet. See
+  [the patch](patches/cant-touch-this.md).
+
 - Profiles can merge extra animation KFs into `xbase_anim.kf` with `animation.merge_kf`, including
   when the retail base is inside `Morrowind.bsa`. Install `tes3x[kf]` to use it. See
   [the pipeline guide](docs/pipeline.md#merging-animation-kfs).

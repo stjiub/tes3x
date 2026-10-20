@@ -1021,28 +1021,11 @@ def _test_mcp132(x, value, ctx):
     return [(None, 0, "animation layer test command installed")]
 
 
-@test_patch("test-ctt", "Route combat rolls through the dodge event probe.")
+@test_patch("test-ctt", "Select a dodge clip by number for the cant-touch-this game test.")
 def _test_ctt(x, value, ctx):
-    hooks = ctx.get("hooks", {})
-    target, site = hooks.get("ctt_test_roll"), hooks.get("ctt_test_roll_site")
-    play_target, play_site = (hooks.get("anim_virtual_play_group"),
-                              hooks.get("anim_virtual_play_site"))
-    if not target or not site or not play_target or not play_site:
-        raise PatchError("test-ctt: payload lacks a combat or animation probe")
-    target, site = int(str(target), 16), int(str(site), 16)
-    off = x.va_to_off(site)
-    if off is None or bytes(x.data[off:off + 6]) != b"\x55\x8b\xec\x83\xe4\xf8":
-        raise PatchError("test-ctt: CombatHitRoll prologue changed")
-    x.data[off:off + 6] = b"\xe9" + struct.pack("<i", target - (site + 5)) + b"\x90"
-    play = int(str(play_site), 16)
-    play_off = x.va_to_off(play)
-    if play_off is None or bytes(x.data[play_off:play_off + 8]) != b"\x53\x8b\x5c\x24\x08\x80\xfb\xff":
-        raise PatchError("test-ctt: AnimationData::playGroup prologue changed")
-    play_target = int(str(play_target), 16)
-    x.data[play_off:play_off + 8] = (b"\xe9" + struct.pack("<i", play_target - (play + 5)) +
-                                     b"\x90\x90\x90")
-    return [(off, 6, "combat roll test hook 0x%08X -> 0x%08X" % (site, target)),
-            (play_off, 8, "animation play test hook 0x%08X -> 0x%08X" % (play, play_target))]
+    if not ctx.get("hooks", {}).get("ctt_test"):
+        raise PatchError("test-ctt: payload has no clip command")
+    return [(None, 0, "dodge clip test command installed")]
 
 
 @patch("mcp-123")
@@ -1142,6 +1125,30 @@ def _mcp_132(x, value, ctx):
             raise PatchError("mcp-132: AnimationData destructor call target changed")
         edits.append((off, 5, "animation disposal hook at 0x%08X" % site))
     return edits
+
+
+@patch("cant-touch-this")
+def _cant_touch_this(x, value, ctx):
+    """Play a dodge clip on the target of a missed melee attack."""
+    hooks = ctx.get("hooks", {})
+    roll, roll_site = hooks.get("ctt_roll"), hooks.get("ctt_roll_site")
+    play, play_site = hooks.get("anim_virtual_play_group"), hooks.get("anim_virtual_play_site")
+    if not roll or not roll_site or not play or not play_site:
+        raise PatchError("cant-touch-this: payload lacks a combat or animation hook")
+    roll, roll_site = int(str(roll), 16), int(str(roll_site), 16)
+    off = x.va_to_off(roll_site)
+    if off is None or bytes(x.data[off:off + 6]) != b"\x55\x8b\xec\x83\xe4\xf8":
+        raise PatchError("cant-touch-this: CombatHitRoll prologue changed")
+    x.data[off:off + 6] = b"\xe9" + struct.pack("<i", roll - (roll_site + 5)) + b"\x90"
+    play, play_site = int(str(play), 16), int(str(play_site), 16)
+    play_off = x.va_to_off(play_site)
+    if play_off is None or bytes(x.data[play_off:play_off + 8]) != \
+            b"\x53\x8b\x5c\x24\x08\x80\xfb\xff":
+        raise PatchError("cant-touch-this: AnimationData::playGroup prologue changed")
+    x.data[play_off:play_off + 8] = (b"\xe9" + struct.pack("<i", play - (play_site + 5)) +
+                                     b"\x90\x90\x90")
+    return [(off, 6, "combat roll hook 0x%08X -> 0x%08X" % (roll_site, roll)),
+            (play_off, 8, "animation play hook 0x%08X -> 0x%08X" % (play_site, play))]
 
 
 @patch("diagnostics")

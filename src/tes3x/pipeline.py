@@ -21,7 +21,7 @@ from xml.sax.saxutils import escape
 from tes3x.pack import set_ini_key, write_invalidation
 from tes3x.menustill import NAME as STILL_NAME, VIDEO, make_still
 from tes3x.fontscale import stage_scaled_fonts
-from tes3x.kf_merge import KFMergeError, merge_tree_kfs
+from tes3x.kf_merge import KFMergeError, dodge_clip_ranges, merge_tree_kfs
 from tes3x.patch import scene_form
 import tes3x.patches as registry
 from tes3x.payload import (SOURCE_DEPENDENCIES, PayloadError, build_payload, find_tool,
@@ -405,10 +405,13 @@ def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), pac
 
     catalog = tes3x_catalog.load(patch_names=registry.BY_NAME)
     required_by = {}
+    catalog_kfs = []
     for mod in enabled_mods(profile):
         verdict = tes3x_catalog.match(catalog, mod.get("id", ""), mod.get("name", ""),
                                       *(mod.get("plugins") or []))
         if verdict:
+            catalog_kfs += [name for name in verdict.get("merge_kf", [])
+                            if name not in catalog_kfs]
             for name in verdict.get("patches", []):
                 required_by.setdefault(name, []).append(verdict["name"])
     conflict = set(required_by) & (disabled | set(disable))
@@ -474,6 +477,7 @@ def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), pac
         "sources": sources,
         "package_mode": mode,
         "needs_payload": bool(applied),
+        "merge_kf": catalog_kfs,
     }
 
 
@@ -904,8 +908,6 @@ def main(argv=None):
                          "crash`, which stall the update loop and fault on purpose. Test only")
     ap.add_argument("--test-probe", choices=("mcp-3", "mcp-47", "mcp-97", "mcp-102", "mcp-132", "dialogue-merge", "ctt"),
                     help="add a game-test-only trace hook for this patch")
-    ap.add_argument("--ctt-ranges", metavar="JSON",
-                    help="local clip ranges for --test-probe ctt, generated from the merged KF")
     ap.add_argument("--hardlink", action=argparse.BooleanOptionalAction,
                     help="hardlink unchanged retail files into the build instead of copying "
                          "them, where the volume allows (default: paths.hardlink_retail)")
@@ -1006,18 +1008,18 @@ def main(argv=None):
     if args.test_probe:
         source = f"tes3xtest_{args.test_probe.replace('-', '')}.c"
         plan["sources"].append(source)
-        if args.test_probe in {"mcp-132", "ctt"}:
+        if args.test_probe == "mcp-132":
             if "tes3xmcp132.c" not in plan["sources"]:
-                raise PipelineError(f"--test-probe {args.test_probe} needs the mcp-132 patch")
+                raise PipelineError("--test-probe mcp-132 needs the mcp-132 patch")
             plan["sources"].append("tes3xanimvirtual.c")
         if args.test_probe == "ctt":
+            if "tes3xctt.c" not in plan["sources"]:
+                raise PipelineError("--test-probe ctt needs the cant-touch-this patch")
             plan["sources"].append("tes3xtest_mcp132.c")
         plan["needs_payload"] = True
         if args.test_probe in {"mcp-3", "mcp-47", "mcp-132", "dialogue-merge", "ctt"} \
                 and "tes3xconsole.c" not in plan["sources"]:
             raise PipelineError(f"--test-probe {args.test_probe} needs the console patch")
-    if (args.test_probe == "ctt") != bool(args.ctt_ranges):
-        raise PipelineError("--test-probe ctt requires --ctt-ranges; other probes cannot use it")
     package = profile.get("package", {})
     drive = (args.drive or package.get("drive_letter", "D")).upper()
     if len(drive) != 1 or not drive.isalpha():
@@ -1171,6 +1173,9 @@ def main(argv=None):
     patched = work / "morrowind.xbe"
     staged = work / "deploy"
     has_mods = plan["package_mode"] != "retail"
+    ctt_ranges = None
+    if "cant-touch-this" in plan["applied"] and not has_mods:
+        raise PipelineError("cant-touch-this needs the Can't Touch This mod")
     try:
         if has_mods:
             build_cmd = [sys.executable, "-m", "tes3x", "build", profile_path,
@@ -1182,13 +1187,23 @@ def main(argv=None):
             if path_remote:
                 build_cmd += ["--remote-root", path_remote]
             run(build_cmd)
-            sources = profile.get("animation", {}).get("merge_kf", [])
+            sources = list(profile.get("animation", {}).get("merge_kf", []))
+            sources += [name for name in plan["merge_kf"]
+                        if name.casefold() not in {item.casefold() for item in sources}]
             if sources:
                 try:
                     merged = merge_tree_kfs(tree, data_files, sources)
                 except (OSError, KFMergeError) as exc:
                     raise PipelineError(f"animation KF merge: {exc}") from exc
                 print(f"merged {len(sources)} animation KF(s) -> {merged}")
+            if "cant-touch-this" in plan["applied"]:
+                try:
+                    ctt_ranges = dodge_clip_ranges(merged.read_bytes()) if sources else None
+                except (OSError, KFMergeError) as exc:
+                    raise PipelineError(f"cant-touch-this: {exc}") from exc
+                if not ctt_ranges:
+                    raise PipelineError("cant-touch-this needs the Can't Touch This mod or "
+                                        "animation.merge_kf naming its two KFs")
 
         payload = hook_out / "tes3xhook.pe"
         if plan["needs_payload"]:
@@ -1198,7 +1213,7 @@ def main(argv=None):
             build_payload(retail_xbe, plan["sources"], hook_out,
                           user_flags=payload_flags, llvm_dir=llvm,
                           check_xbe=hook_out / "injected-check.xbe", invert_look=invert_look,
-                          rebuild=args.build_payload, ctt_ranges=args.ctt_ranges)
+                          rebuild=args.build_payload, ctt_ranges=ctt_ranges)
 
         patch_specs = []
         if plan["needs_payload"]:

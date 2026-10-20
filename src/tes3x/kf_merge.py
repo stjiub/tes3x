@@ -3,6 +3,7 @@
 import argparse
 import math
 from pathlib import Path
+import struct
 import time
 
 from tes3x.bsa import Bsa, tes3_hash
@@ -260,6 +261,65 @@ def merge_kfs(base, additions, output):
     with output.open("wb") as stream:
         data.write(stream)
     return output
+
+
+DODGE_GROUPS = (
+    "missdr", "missdl", "missdfwd", "missdfwdr", "missdfwdl", "missdbk",
+    "missdbkr", "missdbkl", "dodgeturnleft", "dodgeturnright", "dodgeleanback",
+)
+_KF_HEADER = b"NetImmerse File Format, Version 4.0.0.2\n"
+_TEXT_BLOCK = b"NiTextKeyExtraData"
+
+
+def text_keys(data):
+    """The (time, text) keys of a NetImmerse 4.0.0.2 KF with one NiTextKeyExtraData block."""
+    if not data.startswith(_KF_HEADER) or \
+            data[len(_KF_HEADER):len(_KF_HEADER) + 4] != b"\x02\x00\x00\x04":
+        raise KFMergeError("expected a NetImmerse 4.0.0.2 KF")
+    marker = struct.pack("<I", len(_TEXT_BLOCK)) + _TEXT_BLOCK
+    at = data.find(marker)
+    if at < 0 or data.find(marker, at + 1) >= 0:
+        raise KFMergeError("expected exactly one NiTextKeyExtraData block")
+    # Block ID, next-extra-data reference and key count follow the type.
+    at += len(marker)
+    if at + 12 > len(data):
+        raise KFMergeError("truncated text-key header")
+    count = struct.unpack_from("<III", data, at)[2]
+    if count > 10000:
+        raise KFMergeError("unreasonable text-key count")
+    at += 12
+    keys = []
+    for _ in range(count):
+        if at + 8 > len(data):
+            raise KFMergeError("truncated text key")
+        time_, length = struct.unpack_from("<fI", data, at)
+        at += 8
+        if length > 4096 or at + length > len(data):
+            raise KFMergeError("invalid text-key length")
+        keys.append((time_, data[at:at + length].decode("ascii", "replace")))
+        at += length
+    return keys
+
+
+def dodge_clip_ranges(data):
+    """The eleven Can't Touch This (start, stop) pairs in a merged KF, in group order."""
+    found = {}
+    for time_, value in text_keys(data):
+        name, sep, phase = value.partition(":")
+        name, phase = name.casefold(), phase.strip().casefold()
+        if not sep or name not in DODGE_GROUPS or phase not in {"start", "stop"}:
+            continue
+        if phase in found.setdefault(name, {}):
+            raise KFMergeError(f"duplicate {name}: {phase} key")
+        found[name][phase] = time_
+    missing = [name for name in DODGE_GROUPS if set(found.get(name, {})) != {"start", "stop"}]
+    if missing:
+        raise KFMergeError("missing dodge clip keys: " + ", ".join(missing))
+    ranges = [(found[name]["start"], found[name]["stop"]) for name in DODGE_GROUPS]
+    if any(not (math.isfinite(start) and math.isfinite(stop) and 0 <= start < stop)
+           for start, stop in ranges):
+        raise KFMergeError("a dodge clip must stop after it starts")
+    return ranges
 
 
 def merge_tree_kfs(tree, vanilla, additions):
