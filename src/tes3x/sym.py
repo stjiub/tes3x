@@ -1060,10 +1060,51 @@ def cmd_body_match(a):
             for r in rows:
                 found.setdefault((r['xbe'], r['pc']), set()).add(kind)
 
+        size = {(t, va): n for t, va, n in db.execute('SELECT tag, va, insns FROM func')}
+        out = {'xbe': {}, 'pc': {}}
+        inn = {'xbe': {}, 'pc': {}}
+        for tag, src, dst in db.execute('SELECT tag, src, dst FROM edge'):
+            out[tag].setdefault(src, set()).add(dst)
+            inn[tag].setdefault(dst, set()).add(src)
+
+        def support(x, p):
+            net = 0
+            for nx, np_ in ((out['xbe'].get(x, ()), out['pc'].get(p, ())),
+                            (inn['xbe'].get(x, ()), inn['pc'].get(p, ()))):
+                for n in nx:
+                    if n in pairs:
+                        net += 1 if pairs[n] in np_ else -1
+            return net
+
+        def wrong_size(x, p):
+            return size.get(('xbe', x)) != size.get(('pc', p))
+
+        replaced = 0
         for (x, p), kinds in found.items():
+            if pairs.get(x) == p:
+                continue
+            # An exact body replaces inferred pairs whose sizes disagree with it and
+            # whose call-graph neighbours support the exact pair more.
+            old = pairs.get(x)
+            owner = claimed.get(p)
+            if (not wrong_size(x, p) and (old is not None or owner is not None) and
+                    (old is None or wrong_size(x, old)) and
+                    (owner is None or wrong_size(owner, p)) and
+                    (old is None or support(x, p) > support(x, old)) and
+                    (owner is None or support(x, p) > support(owner, p))):
+                for x2 in (x, owner):
+                    if x2 in pairs:
+                        db.execute('DELETE FROM match WHERE xbe=?', (x2,))
+                        claimed.pop(pairs.pop(x2), None)
+                method = 'ghidra-exact-' + '+'.join(sorted(kinds))
+                db.execute('INSERT INTO match VALUES(?,?,?,?,?)', (
+                    x, p, 1.0, method, json.dumps({'similarity': 1.0, 'confidence': 10.0})))
+                pairs[x] = p
+                claimed[p] = x
+                replaced += 1
+                continue
             if x in pairs or p in claimed:
-                if pairs.get(x) != p:
-                    conflicts += 1
+                conflicts += 1
                 continue
             method = 'ghidra-exact-' + '+'.join(sorted(kinds))
             evidence = json.dumps({'similarity': 1.0, 'confidence': 10.0})
@@ -1117,7 +1158,8 @@ def cmd_body_match(a):
         added.extend(ref_added)
     finally:
         cl.close()
-    print(f'body matches: +{len(added)}, {conflicts} conflicts with existing pairs left unchanged')
+    print(f'body matches: +{len(added)}, {replaced} replaced, '
+          f'{conflicts} conflicts with existing pairs left unchanged')
 
 
 def cmd_bsim(a):

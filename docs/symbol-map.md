@@ -108,7 +108,10 @@ whenever `curated.json`, `structs.json` or the generated layouts have changed, G
 exact-mnemonic correlators, then seeds the function-reference correlator with the established
 pairs. Exact matches must be unique on both sides. Reference matches must be mutually best, at
 least 0.95 similar and have confidence 250 or greater; those thresholds had no errors in the
-established-pair calibration set. Conflicts are reported and left unchanged.
+established-pair calibration set. An exact pair that conflicts with an older inferred one
+replaces it only when the old pair and the displaced owner differ in instruction count and the
+call-graph neighbours support the exact pair more; other conflicts are reported and left
+unchanged.
 
 `bsim` generates BSim signatures for both programs inside the Ghidra server (no database) and
 scores every Xbox function against every PC function. A pair is accepted when each is the

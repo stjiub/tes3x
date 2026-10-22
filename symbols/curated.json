@@ -89,15 +89,6 @@
       "pc_va": "0x0042DCD0"
     },
     {
-      "va": "0x00043D70",
-      "name": "AIPlanner::getActivePackage",
-      "kind": "function",
-      "confidence": "matched",
-      "provenance": "mwse:TES3_AIPlanner_getActivePackage",
-      "pc_va": "0x00564DF0",
-      "note": "Not AIPlanner::getActivePackage: returns the address of field 0x68's +0xC, or a static. The planner's current package is packages[+0x90] at +0xC (MobileActor +0xC8)."
-    },
-    {
       "va": "0x00044170",
       "name": "NiAVObject::update",
       "confidence": "matched",
@@ -456,7 +447,8 @@
       "name": "WorldController::getPlayerMobile",
       "confidence": "verified",
       "provenance": "MCP 132 player idle path and Xbox disassembly",
-      "signature": "MobileActor* __thiscall getPlayerMobile()"
+      "signature": "MobileActor* __thiscall getPlayerMobile()",
+      "mwse": "TES3_WorldController_getMobilePlayer"
     },
     {
       "va": "0x0008BCE0",
@@ -554,6 +546,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_WorldController_getSimulationTimestamp",
       "pc_va": "0x00411000"
+    },
+    {
+      "va": "0x0008D350",
+      "name": "WorldController::playItemUpDownSound",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WorldController_playItemUpDownSound",
+      "pc_va": "0x00411050"
     },
     {
       "va": "0x0008D990",
@@ -2762,11 +2762,12 @@
     },
     {
       "va": "0x00104C30",
-      "name": "ui::setProperty",
+      "name": "ui::setPropertyDefault",
       "kind": "function",
-      "confidence": "matched",
-      "provenance": "mwse:TES3_ui_setProperty",
-      "pc_va": "0x00581F30"
+      "confidence": "verified",
+      "provenance": "body read: calls FUN_001a6c00(a, b, 2); PC twin FUN_005a83b0 calls ui::setProperty(a, b, 2)",
+      "pc_va": "0x005A83B0",
+      "signature": "void __cdecl setPropertyDefault(int id, int value)"
     },
     {
       "va": "0x00104E10",
@@ -4029,6 +4030,14 @@
       "pc_va": "0x00528050"
     },
     {
+      "va": "0x00155F80",
+      "name": "MobileActor::notifyActorDeadOrDestroyed",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_notifyActorDeadOrDestroyed",
+      "pc_va": "0x0051FEB0"
+    },
+    {
       "va": "0x001560A0",
       "name": "MobileObject::getInventory",
       "kind": "function",
@@ -4902,6 +4911,14 @@
       "pc_va": "0x00563640"
     },
     {
+      "va": "0x001849B0",
+      "name": "AIPlanner::getActivePackage",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_AIPlanner_getActivePackage",
+      "pc_va": "0x00564DF0"
+    },
+    {
       "va": "0x001849D0",
       "name": "AIPlanner::assignMobileActor",
       "kind": "function",
@@ -5488,6 +5505,13 @@
       "confidence": "matched",
       "provenance": "mwse:ui_setMenuVisibleWithEvent",
       "pc_va": "0x00582F20"
+    },
+    {
+      "va": "0x001A6C00",
+      "name": "ui::setProperty",
+      "confidence": "guess",
+      "provenance": "same structure as PC ui::setProperty (check, store, notify); callee of the paired wrapper 0x104C30",
+      "pc_va": "0x00581F30"
     },
     {
       "va": "0x001A6CF0",
