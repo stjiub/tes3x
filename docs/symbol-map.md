@@ -174,9 +174,13 @@ then shows. Struct fields go into `structs.json` by hand.
 
 ## How the matching works
 
-1. **Inventory.** Recursive descent from the entry point and every call target, plus a sweep for
-   function prologues, finds about 26,000 functions in the XBE's `.text`. Middleware sections
-   (D3D, DirectSound, Bink and the like) are left out.
+1. **Inventory.** Recursive descent from the entry point, every call target and every code
+   pointer in a data section finds about 25,000 functions in the XBE's `.text`. Targets of
+   tail-call jumps and code addresses used as immediates (callbacks pushed or stored at run
+   time) are added when the bytes decode cleanly to a return or jump and lie outside every
+   known body, or follow alignment padding. Calls from the middleware sections (D3D,
+   DirectSound, Bink and the like) into `.text` count as references; their own code is left
+   out. `build --no-extra` skips the last two steps.
 2. **String anchoring.** About 85% of the XBE's longer strings also appear in the PC build. A
    string used by exactly one function on each side pairs those two functions.
 3. **Pointer tables.** Already-paired slots align virtual tables. A long function-address table

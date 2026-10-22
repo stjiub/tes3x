@@ -347,6 +347,14 @@
       "pc_va": "0x00403250"
     },
     {
+      "va": "0x00088330",
+      "name": "MobileObject::Collision_clone",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileObject_Collision_clone",
+      "pc_va": "0x00405450"
+    },
+    {
       "va": "0x00088C00",
       "name": "Fader::activate",
       "kind": "function",
@@ -2767,7 +2775,8 @@
       "confidence": "verified",
       "provenance": "body read: calls FUN_001a6c00(a, b, 2); PC twin FUN_005a83b0 calls ui::setProperty(a, b, 2)",
       "pc_va": "0x005A83B0",
-      "signature": "void __cdecl setPropertyDefault(int id, int value)"
+      "signature": "void __cdecl setPropertyDefault(int id, int value)",
+      "mwse": "TES3_ui_setProperty"
     },
     {
       "va": "0x00104E10",
@@ -3090,6 +3099,14 @@
       "provenance": "Object vtable +0x24 (vtable 0x00374A68); same body as PC 0x004D0920",
       "pc_va": "0x004D0920",
       "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
+    },
+    {
+      "va": "0x0011BE70",
+      "name": "SE::NI_FNADDR_LIGHTRADIUSTEST",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:SE_NI_FNADDR_LIGHTRADIUSTEST",
+      "pc_va": "0x004D19C0"
     },
     {
       "va": "0x0011C040",
@@ -3686,12 +3703,13 @@
     },
     {
       "va": "0x00138AA0",
-      "name": "relocateReference",
+      "name": "game::relocateReference",
       "confidence": "matched",
-      "provenance": "calls the seven callees of PC 0x0050EDD0 (isCellInMemory, addReference, addMob, removeMob, getOrCreateActivatorsNode, getLeveledBaseReference, setFootPoint); MWSE TES3_game_relocateReference",
+      "provenance": "mwse:TES3_game_relocateReference",
       "note": "Position and PositionCell (0x0013DB7B, 0x0013DCAD, reference from 0x003D36D4, rotation from 0x003D3734) and PlaceItemCell (0x00141255, a new reference) call it. It multiplies the rotation by pi/180 as the PC's does, yet PositionCell passes radians (131.8 in a script arrives as 2.30). Multiplayer hooks all three for ACTOR_MOVE",
       "pc_va": "0x0050EDD0",
-      "signature": "void __cdecl relocateReference(TES3::Reference* reference, TES3::Cell* cell, NI::Point3* position, float rotation)"
+      "signature": "void __cdecl relocateReference(TES3::Reference* reference, TES3::Cell* cell, NI::Point3* position, float rotation)",
+      "kind": "function"
     },
     {
       "va": "0x00138C17",
@@ -4815,6 +4833,14 @@
       "pc_va": "0x00561600"
     },
     {
+      "va": "0x00180630",
+      "name": "MobileObject::enterLeaveSimulationByDistance",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileObject_enterLeaveSimulationByDistance",
+      "pc_va": "0x0055FFC0"
+    },
+    {
       "va": "0x001809A0",
       "name": "MobileObject::setFootPoint",
       "kind": "function",
@@ -5696,6 +5722,14 @@
       "pc_va": "0x00596B70"
     },
     {
+      "va": "0x001AE110",
+      "name": "ui::saveMenuPosition",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_saveMenuPosition",
+      "pc_va": "0x00596FA0"
+    },
+    {
       "va": "0x001AE1A0",
       "name": "ui::loadMenuPosition",
       "kind": "function",
@@ -5839,6 +5873,14 @@
       "note": "Creates or shows MenuBarter, loads its position, then lays it out; 480p ui-scale live root and all four bounds were 330x281."
     },
     {
+      "va": "0x001BDAC0",
+      "name": "sub::5A9150",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_sub_5A9150",
+      "pc_va": "0x005A9150"
+    },
+    {
       "va": "0x001BF3C0",
       "name": "MenuBirthSign::build",
       "confidence": "verified",
@@ -5893,6 +5935,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_ConsoleLogResult",
       "pc_va": "0x005B2C20"
+    },
+    {
+      "va": "0x001C5F10",
+      "name": "UpdateContentsCompanionElements",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UpdateContentsCompanionElements",
+      "pc_va": "0x005B7830"
     },
     {
       "va": "0x001C75E0",
@@ -6095,6 +6145,22 @@
       "confidence": "verified",
       "provenance": "traced: makes MenuInventory if missing and fills it; does nothing while the inventory menu is disabled; leaves it visible; xemu beast-a9",
       "signature": "void __cdecl build()"
+    },
+    {
+      "va": "0x001E11D0",
+      "name": "UpdateInventorySelectTiles",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UpdateInventorySelectTiles",
+      "pc_va": "0x005D3E70"
+    },
+    {
+      "va": "0x001E14D0",
+      "name": "UI::showInventorySelectMenu",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UI_showInventorySelectMenu",
+      "pc_va": "0x005D35B0"
     },
     {
       "va": "0x001E3190",
@@ -6514,6 +6580,14 @@
       "pc_va": "0x006138A0"
     },
     {
+      "va": "0x00210CE0",
+      "name": "UI::showRepairServiceMenu",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UI_showRepairServiceMenu",
+      "pc_va": "0x00615160"
+    },
+    {
       "va": "0x00219050",
       "name": "ShowSpellmakingMenu",
       "kind": "function",
@@ -6588,6 +6662,14 @@
       "name": "MenuCreateClass::close",
       "confidence": "matched",
       "provenance": "traced: deletes the pending class unless OK kept it (0x003D83AC)"
+    },
+    {
+      "va": "0x002262F0",
+      "name": "ui::showStatReviewMenu",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_showStatReviewMenu",
+      "pc_va": "0x0062CE60"
     },
     {
       "va": "0x00227970",
@@ -6693,6 +6775,14 @@
       "name": "ui::factoryNonDragMenu",
       "confidence": "matched",
       "provenance": "creates PartNonDragMenu_main; MenuOptions and MenuName builders turn their menu into it (replace=1)"
+    },
+    {
+      "va": "0x00232660",
+      "name": "ui::ScrollbarArrow_onClick",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_ScrollbarArrow_onClick",
+      "pc_va": "0x00647A60"
     },
     {
       "va": "0x00232A80",

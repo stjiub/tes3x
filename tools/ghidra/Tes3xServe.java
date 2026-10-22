@@ -150,6 +150,8 @@ public class Tes3xServe extends GhidraScript {
 				return correlate(req);
 			case "bsim":
 				return bsim(req);
+			case "functions":
+				return functions(p);
 			default:
 				throw new IllegalArgumentException("unknown op " + op);
 		}
@@ -617,6 +619,21 @@ public class Tes3xServe extends GhidraScript {
 		}
 		JsonObject res = new JsonObject();
 		res.add("matches", rows);
+		return res;
+	}
+
+	private JsonObject functions(Program p) {
+		JsonArray rows = new JsonArray();
+		for (Function f : p.getFunctionManager().getFunctions(true)) {
+			JsonArray row = new JsonArray();
+			row.add(f.getEntryPoint().getOffset());
+			row.add(f.getBody().getNumAddresses());
+			row.add(f.isThunk());
+			row.add(f.getBody().getNumAddressRanges());
+			rows.add(row);
+		}
+		JsonObject res = new JsonObject();
+		res.add("functions", rows);
 		return res;
 	}
 

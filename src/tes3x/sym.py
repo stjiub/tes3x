@@ -266,6 +266,51 @@ def find_strings(img, minlen=6):
     return out
 
 
+def scan_immediates(code, code_va, lo, hi):
+    """Code addresses used as an immediate operand: push, mov and mov-to-memory.
+
+    Callbacks and function pointers stored at run time are not in any data table.
+    """
+    out = set()
+    for i in range(len(code) - 8):
+        op = code[i]
+        if op == 0x68 or 0xB8 <= op <= 0xBF:
+            pos = i + 1
+        elif op == 0xC7:
+            m = code[i + 1]
+            mod, rm = m >> 6, m & 7
+            if mod == 3:
+                continue
+            pos = i + 2 + (rm == 4) + (mod == 1) + 4 * (mod == 2 or (mod == 0 and rm == 5))
+            if mod == 0 and rm == 4 and (code[i + 2] & 7) == 5:
+                pos += 4
+        else:
+            continue
+        v = struct.unpack_from('<I', code, pos)[0]
+        if lo <= v < hi:
+            out.add(v)
+    return out
+
+
+BAD_START = {'int3', 'hlt', 'in', 'out', 'insb', 'insd', 'outsb', 'outsd', 'cli', 'sti', 'ud2',
+             'int', 'into', 'lcall', 'ljmp', 'iretd', 'arpl', 'bound', 'les', 'lds'}
+
+
+def plausible_start(md, code, code_va, va, minlen=3):
+    """True when the bytes at va decode cleanly to a return or a jump, or for a long run."""
+    off = va - code_va
+    n = 0
+    for ins in md.disasm(code[off:off + 600], va):
+        n += 1
+        if ins.mnemonic in BAD_START:
+            return False
+        if ins.mnemonic in ('ret', 'retn'):
+            return n >= minlen
+        if ins.mnemonic == 'jmp' and n >= minlen:
+            return True
+    return n >= 40
+
+
 def cmd_build(a):
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(DB_PATH)
@@ -276,7 +321,16 @@ def cmd_build(a):
     print(f'{a.tag}: {a.section} {code_size} bytes at 0x{code_va:08X}')
 
     calls, jumps = scan_targets(code, code_va, lo, hi)
-    call_targets = {t for _, t in calls}
+    # Library sections call back into game code, so their references are entry points too.
+    other = [(sva, img.data[raw:raw + min(vsize, rsize)]) for name, sva, vsize, raw, rsize, is_code
+             in img.sections if is_code and name not in (a.section, '.rdata', '.data', '.data1')]
+    far_calls, far_jumps, far_imms = set(), [], set()
+    for sva, blob in other:
+        c, j = scan_targets(blob, sva, lo, hi)
+        far_calls |= {t for _, t in c}
+        far_jumps += j
+        far_imms |= scan_immediates(blob, sva, lo, hi)
+    call_targets = {t for _, t in calls} | far_calls
     ptrs = scan_pointers(img, lo, hi)
     kept = {v for v in ptrs if v in call_targets or preceded_ok(code, code_va, v)}
     print(f'  call sites {len(calls)} to {len(call_targets)} targets  '
@@ -306,6 +360,50 @@ def cmd_build(a):
                 edges.append((a.tag, va, dst, site, kind))
         if a.progress and i % 2000 == 0:
             print(f'  ...{i}/{len(entries)}')
+
+    # Tail-called functions and function addresses stored as immediates are in no call
+    # table. Only targets that no function body already covers are taken.
+    if not a.no_extra:
+        ext = {}
+        body = sorted((f[1], f[2]) for f in funcs)
+        bstarts = [b[0] for b in body]
+
+        def covered(va):
+            i = bisect.bisect_right(bstarts, va) - 1
+            return i >= 0 and body[i][0] <= va < body[i][1]
+
+        def padded(va):
+            return va - code_va >= 2 and code[va - code_va - 2:va - code_va] == bytes([0xCC] * 2)
+
+        # Descent follows jumps, so a function entered only by a tail call can sit inside
+        # the body of the one before it. Alignment padding marks a real boundary.
+        for _, t in jumps + far_jumps:
+            if t not in entries and preceded_ok(code, code_va, t) and (
+                    not covered(t) or padded(t)):
+                ext[t] = 'tail'
+        for t in scan_immediates(code, code_va, lo, hi) | far_imms:
+            if t not in entries and t not in ext and preceded_ok(code, code_va, t) and (
+                    not covered(t) or padded(t)):
+                ext[t] = 'imm'
+        ext = {t: k for t, k in ext.items() if plausible_start(md, code, code_va, t)}
+        added = {'tail': 0, 'imm': 0}
+        entries |= set(ext)
+        split = {body[bisect.bisect_right(bstarts, t) - 1][0] for t in ext if covered(t)}
+        source_of = {f[1]: f[5] for f in funcs if f[1] in split}
+        funcs = [f for f in funcs if f[1] not in split]
+        edges = [e for e in edges if not (e[1] in split and e[4] == 'tail')]
+        for va in sorted(ext.keys() | split):
+            r = descend(md, code, code_va, va, lo, hi, entries)
+            if r is None or r[1] == 0:
+                continue
+            end, insns, blocks, fedges = r
+            funcs.append((a.tag, va, end, insns, blocks, source_of.get(va, ext.get(va))))
+            if va in ext:
+                added[ext[va]] += 1
+            for site, dst, kind in fedges:
+                if kind == 'tail':
+                    edges.append((a.tag, va, dst, site, kind))
+        print(f"  discovered {added['tail']} tail-call and {added['imm']} immediate targets")
 
     # Descent follows jumps past the function it started in. An entry point is the
     # hard bound: no function extends into the next one.
@@ -1179,8 +1277,12 @@ def cmd_bsim(a):
     finally:
         cl.close()
     cx, cp = {}, {}
+    known = {tag: {va for (va,) in db.execute('SELECT va FROM func WHERE tag=?', (tag,))}
+             for tag in ('xbe', 'pc')}
     for x, p, sim, sig in res['pairs']:
         x, p = int(x), int(p)
+        if x not in known['xbe'] or p not in known['pc']:
+            continue
         cx.setdefault(x, []).append((sim, sig, p))
         cp.setdefault(p, []).append((sim, sig, x))
     print(f"  {res['xbe']} xbe and {res['pc']} pc functions scored, {len(res['pairs'])} pairs")
@@ -1248,6 +1350,8 @@ def main():
     b.add_argument('--tag', required=True, choices=['xbe', 'pc'])
     b.add_argument('--section', default='.text')
     b.add_argument('--progress', action='store_true')
+    b.add_argument('--no-extra', action='store_true',
+                   help='skip tail-call and immediate-operand discovery')
     b.set_defaults(fn=cmd_build)
 
     m = sub.add_parser('match', help='pair functions by shared string references')
