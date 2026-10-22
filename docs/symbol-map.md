@@ -60,6 +60,7 @@ tes3x sym match                               # pair by shared strings
 tes3x sym propagate                           # extend through the call graph
 tes3x sym body-match                          # exact bodies and references in Ghidra
 tes3x sym propagate                           # extend from the body matches
+tes3x sym bsim                                # BSim similarity, then propagate again
 tes3x sym seed morrowind.xbe                  # addresses the patcher finds
 tes3x sym names path/to/MWSE                  # MWSE names onto matched functions
 ```
@@ -108,6 +109,12 @@ exact-mnemonic correlators, then seeds the function-reference correlator with th
 pairs. Exact matches must be unique on both sides. Reference matches must be mutually best, at
 least 0.95 similar and have confidence 250 or greater; those thresholds had no errors in the
 established-pair calibration set. Conflicts are reported and left unchanged.
+
+`bsim` generates BSim signatures for both programs inside the Ghidra server (no database) and
+scores every Xbox function against every PC function. A pair is accepted when each is the
+other's best match, both beat their next-best match by 0.05 or more (so twin functions are
+skipped), similarity is at least 0.8, significance at least 15, and no already-paired caller or
+callee contradicts it. Functions with a self-significance of 10 or less are not scored.
 
 PC functions take the names, signatures and notes of their matched Xbox functions. Nothing is
 saved into the Ghidra project, which lives in `build/ghidra/` and is never committed: what a

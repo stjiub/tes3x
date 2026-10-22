@@ -19,6 +19,11 @@ import ghidra.feature.vt.api.correlator.program.*;
 import ghidra.feature.vt.api.db.VTSessionDB;
 import ghidra.feature.vt.api.main.*;
 import ghidra.feature.vt.api.util.VTOptions;
+import ghidra.features.bsim.query.FunctionDatabase;
+import ghidra.features.bsim.query.GenSignatures;
+import ghidra.features.bsim.query.client.Configuration;
+import ghidra.features.bsim.query.description.FunctionDescription;
+import generic.lsh.vector.*;
 import ghidra.framework.model.DomainFile;
 import ghidra.program.model.address.*;
 import ghidra.program.model.data.*;
@@ -31,6 +36,8 @@ public class Tes3xServe extends GhidraScript {
 	private final Map<String, DecompInterface> decomps = new HashMap<>();
 	private final Map<String, String> stamps = new HashMap<>();
 	private final Gson gson = new Gson();
+	private final Map<String, Map<Long, LSHVector>> signatures = new HashMap<>();
+	private LSHVectorFactory vectorFactory;
 
 	@Override
 	public void run() throws Exception {
@@ -141,6 +148,8 @@ public class Tes3xServe extends GhidraScript {
 				return refs(p, addr(p, req.get("va").getAsString()));
 			case "correlate":
 				return correlate(req);
+			case "bsim":
+				return bsim(req);
 			default:
 				throw new IllegalArgumentException("unknown op " + op);
 		}
@@ -608,6 +617,94 @@ public class Tes3xServe extends GhidraScript {
 		}
 		JsonObject res = new JsonObject();
 		res.add("matches", rows);
+		return res;
+	}
+
+	private LSHVectorFactory vectorFactory() throws Exception {
+		if (vectorFactory == null) {
+			LSHVectorFactory f = FunctionDatabase.generateLSHVectorFactory();
+			Configuration config = FunctionDatabase.loadConfigurationTemplate("medium_nosize");
+			f.set(config.weightfactory, config.idflookup, config.info.settings);
+			vectorFactory = f;
+		}
+		return vectorFactory;
+	}
+
+	private Map<Long, LSHVector> sign(String tag, Program p) throws Exception {
+		Map<Long, LSHVector> sigs = signatures.get(tag);
+		if (sigs != null) {
+			return sigs;
+		}
+		GenSignatures gen = new GenSignatures(false);
+		try {
+			gen.setVectorFactory(vectorFactory());
+			gen.openProgram(p, null, null, null, null, null);
+			FunctionManager fm = p.getFunctionManager();
+			gen.scanFunctions(fm.getFunctions(true), fm.getFunctionCount(), monitor);
+			sigs = new HashMap<>();
+			Iterator<FunctionDescription> it = gen.getDescriptionManager().listAllFunctions();
+			while (it.hasNext()) {
+				FunctionDescription fd = it.next();
+				if (fd.getSignatureRecord() != null) {
+					sigs.put(fd.getAddress(), fd.getSignatureRecord().getLSHVector());
+				}
+			}
+		}
+		finally {
+			gen.dispose();
+		}
+		signatures.put(tag, sigs);
+		return sigs;
+	}
+
+	// All xbe x pc pairs with similarity and significance above the bounds; vectors with a
+	// self-significance at or below `min_self` are skipped.
+	private JsonObject bsim(JsonObject req) throws Exception {
+		LSHVectorFactory f = vectorFactory();
+		double minSelf = req.get("min_self").getAsDouble();
+		double minSim = req.get("min_sim").getAsDouble();
+		double minSig = req.get("min_sig").getAsDouble();
+		Map<Long, LSHVector> xs = sign("xbe", programs.get("xbe"));
+		Map<Long, LSHVector> ps = sign("pc", programs.get("pc"));
+		List<Map.Entry<Long, LSHVector>> pl = new ArrayList<>();
+		for (Map.Entry<Long, LSHVector> e : ps.entrySet()) {
+			if (f.getSelfSignificance(e.getValue()) > minSelf) {
+				pl.add(e);
+			}
+		}
+		List<Map.Entry<Long, LSHVector>> xl = new ArrayList<>();
+		for (Map.Entry<Long, LSHVector> e : xs.entrySet()) {
+			if (f.getSelfSignificance(e.getValue()) > minSelf) {
+				xl.add(e);
+			}
+		}
+		List<double[]> found = Collections.synchronizedList(new ArrayList<>());
+		xl.parallelStream().forEach(xe -> {
+			VectorCompare vc = new VectorCompare();
+			for (Map.Entry<Long, LSHVector> pe : pl) {
+				double sim = xe.getValue().compare(pe.getValue(), vc);
+				if (sim < minSim) {
+					continue;
+				}
+				double sig = f.calculateSignificance(vc);
+				if (sig >= minSig) {
+					found.add(new double[] { xe.getKey(), pe.getKey(), sim, sig });
+				}
+			}
+		});
+		JsonArray rows = new JsonArray();
+		for (double[] r : found) {
+			JsonArray row = new JsonArray();
+			row.add((long) r[0]);
+			row.add((long) r[1]);
+			row.add(r[2]);
+			row.add(r[3]);
+			rows.add(row);
+		}
+		JsonObject res = new JsonObject();
+		res.add("pairs", rows);
+		res.addProperty("xbe", xl.size());
+		res.addProperty("pc", pl.size());
 		return res;
 	}
 }

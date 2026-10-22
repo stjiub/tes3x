@@ -1120,6 +1120,67 @@ def cmd_body_match(a):
     print(f'body matches: +{len(added)}, {conflicts} conflicts with existing pairs left unchanged')
 
 
+def cmd_bsim(a):
+    """Pair functions by BSim similarity, accepted only when unambiguous and call-graph consistent."""
+    db = sqlite3.connect(DB_PATH)
+    schema(db)
+    pairs = {x: p for x, p in db.execute('SELECT xbe, pc FROM match')}
+    claimed = {p: x for x, p in pairs.items()}
+    out = {'xbe': {}, 'pc': {}}
+    inn = {'xbe': {}, 'pc': {}}
+    for tag, src, dst in db.execute('SELECT tag, src, dst FROM edge'):
+        out[tag].setdefault(src, set()).add(dst)
+        inn[tag].setdefault(dst, set()).add(src)
+    cl = ghidra_client(db, ['xbe', 'pc'])
+    try:
+        res = cl.call('bsim', tag='xbe', min_self=a.min_self, min_sim=a.min_sim, min_sig=a.min_sig)
+    finally:
+        cl.close()
+    cx, cp = {}, {}
+    for x, p, sim, sig in res['pairs']:
+        x, p = int(x), int(p)
+        cx.setdefault(x, []).append((sim, sig, p))
+        cp.setdefault(p, []).append((sim, sig, x))
+    print(f"  {res['xbe']} xbe and {res['pc']} pc functions scored, {len(res['pairs'])} pairs")
+
+    def top2(rows):
+        rows = sorted(rows, reverse=True)
+        return rows[0], (rows[1] if len(rows) > 1 else (0.0, 0.0, 0))
+
+    def contradicted(x, p):
+        for nx, np_ in ((out['xbe'].get(x, ()), out['pc'].get(p, ())),
+                        (inn['xbe'].get(x, ()), inn['pc'].get(p, ()))):
+            if any(n in pairs and pairs[n] not in np_ for n in nx):
+                return True
+        return False
+
+    cands = {}
+    for x, rows in cx.items():
+        (sim, sig, p), second = top2(rows)
+        (psim, _, px), psecond = top2(cp[p])
+        if px != x or sim < a.sim or sig < a.sig:
+            continue
+        if second[0] > sim - a.margin or psecond[0] > psim - a.margin:
+            continue
+        cands[x] = (p, sim, sig)
+    added = 0
+    for _ in range(10):
+        new = []
+        for x, (p, sim, sig) in cands.items():
+            if x in pairs or p in claimed or contradicted(x, p):
+                continue
+            new.append((x, p, sim, 'bsim', json.dumps({'similarity': sim, 'significance': sig})))
+        if not new:
+            break
+        for x, p, *_ in new:
+            pairs[x] = p
+            claimed[p] = x
+        db.executemany('INSERT INTO match VALUES(?,?,?,?,?)', new)
+        added += len(new)
+    db.commit()
+    print(f'bsim: +{added} from {len(cands)} unambiguous candidates')
+
+
 def cmd_stats(a):
     db = sqlite3.connect(DB_PATH)
     schema(db)
@@ -1215,6 +1276,16 @@ def main():
 
     bm = sub.add_parser('body-match', help='pair exact function bodies through Ghidra')
     bm.set_defaults(fn=cmd_body_match)
+
+    bs = sub.add_parser('bsim', help='pair unambiguous BSim matches that agree with the call graph')
+    bs.add_argument('--sim', type=float, default=0.8)
+    bs.add_argument('--sig', type=float, default=15.0)
+    bs.add_argument('--margin', type=float, default=0.05,
+                    help='the best match must beat every other by this much, in both directions')
+    bs.add_argument('--min-self', type=float, default=10.0, help='skip smaller functions')
+    bs.add_argument('--min-sim', type=float, default=0.6)
+    bs.add_argument('--min-sig', type=float, default=5.0)
+    bs.set_defaults(fn=cmd_bsim)
 
     gy = sub.add_parser('ghidra-sync', help='apply types and names now; list what was rejected')
     gy.add_argument('--tag', nargs='+', default=['xbe', 'pc'], choices=['xbe', 'pc'])

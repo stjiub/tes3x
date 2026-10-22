@@ -81,11 +81,19 @@
       "pc_va": "0x006DC090"
     },
     {
-      "va": "0x00043D70",
-      "name": "sub_00043D70",
+      "va": "0x0003D290",
+      "name": "SE::NI_TEXTURINGPROPERTY_MAP_FNADDR_CTOR",
       "kind": "function",
-      "confidence": "guess",
-      "provenance": "xbe:call-graph match to PC getActivePackage was wrong",
+      "confidence": "matched",
+      "provenance": "mwse:SE_NI_TEXTURINGPROPERTY_MAP_FNADDR_CTOR",
+      "pc_va": "0x0042DCD0"
+    },
+    {
+      "va": "0x00043D70",
+      "name": "AIPlanner::getActivePackage",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_AIPlanner_getActivePackage",
       "pc_va": "0x00564DF0",
       "note": "Not AIPlanner::getActivePackage: returns the address of field 0x68's +0xC, or a static. The planner's current package is packages[+0x90] at +0xC (MobileActor +0xC8)."
     },
@@ -170,6 +178,38 @@
       "pc_va": "0x006FD800"
     },
     {
+      "va": "0x00068CD0",
+      "name": "SE::NI_FLIPCONTROLLER_FNADDR_SETTEXTURE",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:SE_NI_FLIPCONTROLLER_FNADDR_SETTEXTURE",
+      "pc_va": "0x00715840"
+    },
+    {
+      "va": "0x00068D80",
+      "name": "SE::NI_FLIPCONTROLLER_FNADDR_GETTEXTUREATINDEX",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:SE_NI_FLIPCONTROLLER_FNADDR_GETTEXTUREATINDEX",
+      "pc_va": "0x007159D0"
+    },
+    {
+      "va": "0x00068D90",
+      "name": "SE::NI_FLIPCONTROLLER_FNADDR_UPDATETIMINGS",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:SE_NI_FLIPCONTROLLER_FNADDR_UPDATETIMINGS",
+      "pc_va": "0x007159F0"
+    },
+    {
+      "va": "0x00069000",
+      "name": "SE::NI_FLIPCONTROLLER_FNADDR_COPY",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:SE_NI_FLIPCONTROLLER_FNADDR_COPY",
+      "pc_va": "0x00715D40"
+    },
+    {
       "va": "0x000808E0",
       "name": "SE::NI_AVOBJECT_FNADDR_FINDROOTCOLLISIONNODE",
       "kind": "function",
@@ -184,7 +224,8 @@
       "confidence": "verified",
       "provenance": "body: fld [ecx+4]; ret; called on MobileActor::health in MobilePlayer::onDeath",
       "pc_va": "0x0040FF20",
-      "signature": "float __thiscall getBase()"
+      "signature": "float __thiscall getBase()",
+      "mwse": "TES3_WorldController_getMobilePlayer"
     },
     {
       "va": "0x00085F10",
@@ -257,6 +298,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_AudioController_isDirectSoundAvailable",
       "pc_va": "0x00401DA0"
+    },
+    {
+      "va": "0x00086220",
+      "name": "AudioController::setMusicVolume",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_AudioController_setMusicVolume",
+      "pc_va": "0x00403A10"
     },
     {
       "va": "0x000862C0",
@@ -371,6 +420,14 @@
       "pc_va": "0x00409590"
     },
     {
+      "va": "0x00089E70",
+      "name": "UI::Font_getTextExtent",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UI_Font_getTextExtent",
+      "pc_va": "0x0040B190"
+    },
+    {
       "va": "0x00089EF0",
       "name": "UI::Font_wrapTextInPlace",
       "kind": "function",
@@ -436,9 +493,10 @@
       "va": "0x0008C820",
       "name": "WorldController::removeGlobalScript",
       "confidence": "matched",
-      "provenance": "StopScript opcode at 0x0013EA71; removes the +0x314 entry whose script matches and frees it",
+      "provenance": "mwse:TES3_WorldController_removeGlobalScript",
       "pc_va": "0x0040FB00",
-      "signature": "void __thiscall removeGlobalScript(TES3::Script* script)"
+      "signature": "void __thiscall removeGlobalScript(TES3::Script* script)",
+      "kind": "function"
     },
     {
       "va": "0x0008C8B0",
@@ -518,9 +576,10 @@
       "va": "0x0008E6E0",
       "name": "WorldController::addGlobalScript",
       "confidence": "matched",
-      "provenance": "StartScript opcode at 0x0013EA5A; allocates an 8-byte GlobalScript {reference, script}, appends to +0x314 unless isGlobalScriptRunning",
+      "provenance": "mwse:TES3_WorldController_addGlobalScript",
       "pc_va": "0x0040FA80",
-      "signature": "void __thiscall addGlobalScript(TES3::Script* script, TES3::Reference* reference)"
+      "signature": "void __thiscall addGlobalScript(TES3::Script* script, TES3::Reference* reference)",
+      "kind": "function"
     },
     {
       "va": "0x0008E730",
@@ -553,6 +612,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_Game_clearTarget",
       "pc_va": "0x0041CD00"
+    },
+    {
+      "va": "0x00093A30",
+      "name": "Game::initPlayerAndStartScripts",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Game_initPlayerAndStartScripts",
+      "pc_va": "0x00419A90"
     },
     {
       "va": "0x00093B90",
@@ -753,6 +820,14 @@
       "pc_va": "0x0043EC20"
     },
     {
+      "va": "0x000BC5E0",
+      "name": "WorldController::updateTiming",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_WorldController_updateTiming",
+      "pc_va": "0x00453610"
+    },
+    {
       "va": "0x000BC600",
       "name": "WorldController::updateDeltaTime",
       "kind": "function",
@@ -798,7 +873,8 @@
       "provenance": "Xbox disassembly: selects source spell +0x30 by castType, retires target effects, optionally removes the known spell; returns 16 argument bytes",
       "pc_va": "0x004556C0",
       "note": "Disease cure selects Spell castType: 2 blight, 3 common disease. Retires matching source instances on the target; removeSpell also removes their sources from its learned list.",
-      "signature": "void __thiscall clearSpellEffect(TES3::Reference* reference, int castType, int percentChance, bool removeSpell)"
+      "signature": "void __thiscall clearSpellEffect(TES3::Reference* reference, int castType, int percentChance, bool removeSpell)",
+      "mwse": "TES3_MagicInstanceController_clearSpellEffect"
     },
     {
       "va": "0x000BD030",
@@ -885,7 +961,8 @@
       "provenance": "Disassembly at 0x000C74A6 allocates eight bytes; 0x000C76D7..0x000C76F3 checks stackability and copies item data",
       "pc_va": "0x00465420",
       "note": "Allocates an eight-byte holder with object +0 and item data +4. Retains the data pointer unless IsItemDataStackable permits dropping it; no additional reference count is taken. Bound callbacks own and free the holder.",
-      "signature": "TES3::EquipmentStack* __cdecl CanonicalCopy(const TES3::EquipmentStack* stack)"
+      "signature": "TES3::EquipmentStack* __cdecl CanonicalCopy(const TES3::EquipmentStack* stack)",
+      "mwse": "TES3_EquipmentStack_CanonicalCopy"
     },
     {
       "va": "0x000C7A50",
@@ -1064,6 +1141,14 @@
       "signature": "void __thiscall initializeLayer(int layer, int mode)"
     },
     {
+      "va": "0x000CD340",
+      "name": "AnimationData::ctor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_AnimationData_ctor",
+      "pc_va": "0x0046B7A0"
+    },
+    {
       "va": "0x000CD3D0",
       "name": "AnimationData::bindHumanoidBoneLayers",
       "confidence": "matched",
@@ -1104,7 +1189,8 @@
       "provenance": "Xbox/PC decompile and live held/released attack capture",
       "pc_va": "0x00470AE0",
       "note": "Mode selects a section, not a semantic next-key index: type 7 accepts 3..7; type 6 accepts 3,4,9,10,11. Idle9 group 8 has four action timings; changing both start/stop pairs to an unrecognized KF group's range played that group's motion in NTSC xemu.",
-      "signature": "void __thiscall playAnimationGroupForIndex(unsigned int group, int layer, int mode, int loops)"
+      "signature": "void __thiscall playAnimationGroupForIndex(unsigned int group, int layer, int mode, int loops)",
+      "mwse": "TES3_AnimationData_playAnimationGroupForIndex"
     },
     {
       "va": "0x000CE780",
@@ -1427,6 +1513,14 @@
       "pc_va": "0x0048C2B0"
     },
     {
+      "va": "0x000DA720",
+      "name": "DataHandler::setDisplayCellBorders",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_DataHandler_setDisplayCellBorders",
+      "pc_va": "0x0048E0E0"
+    },
+    {
       "va": "0x000DAA40",
       "name": "NonDynamicData::getLandHeightAtPosition",
       "kind": "function",
@@ -1676,16 +1770,8 @@
       "confidence": "verified",
       "provenance": "Xbox dispatch by source type: Spell +0x34, Enchantment +0x34, Alchemy +0x4C",
       "pc_va": "0x00496FA0",
-      "signature": "TES3::Effect* __thiscall getSourceEffects()"
-    },
-    {
-      "va": "0x000E7610",
-      "name": "Actor::setAIPackage",
-      "confidence": "verified",
-      "provenance": "mwse:TES3_Actor_setAIPackage(vtable+0x17C,xbox+0x184)",
-      "note": "Base version: clones the actor for the reference (0x000E74B0) and calls the instance's +0x184.",
-      "pc_va": "0x00497150",
-      "signature": "void __thiscall setAIPackage(TES3::AIPackageConfig* config, TES3::Reference* reference)"
+      "signature": "TES3::Effect* __thiscall getSourceEffects()",
+      "mwse": "TES3_MagicSourceCombo_getSourceEffects"
     },
     {
       "va": "0x000E7930",
@@ -1803,21 +1889,12 @@
       "pc_va": "0x0049EF60"
     },
     {
-      "va": "0x000ECA90",
-      "name": "CreatureInstance::setAIPackage",
-      "confidence": "verified",
-      "provenance": "mwse:TES3_Actor_setAIPackage(vtable+0x17C,xbox+0x184)",
-      "note": "Actor vtable +0x184 (PC +0x17C); config at +0x88.",
-      "pc_va": "0x0049F090",
-      "signature": "void __thiscall setAIPackage(TES3::AIPackageConfig* config, TES3::Reference* reference)"
-    },
-    {
-      "va": "0x000ED920",
-      "name": "CreatureInstance::getAIPackageConfig",
-      "confidence": "verified",
-      "provenance": "mwse:TES3_Actor_getAIPackageConfig(vtable+0x178,xbox+0x180)",
-      "pc_va": "0x0049F960",
-      "signature": "TES3::AIPackageConfig* __thiscall getAIPackageConfig()"
+      "va": "0x000ECB10",
+      "name": "Creature::dtor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Creature_dtor",
+      "pc_va": "0x0049C280"
     },
     {
       "va": "0x000EF000",
@@ -1842,6 +1919,14 @@
       "provenance": "Object vtable +0x24 (vtable 0x00366F48); same body as PC 0x004A74D0",
       "pc_va": "0x004A74D0",
       "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
+    },
+    {
+      "va": "0x000EFDC0",
+      "name": "Race::getBodyPart",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Race_getBodyPart",
+      "pc_va": "0x004A7790"
     },
     {
       "va": "0x000EFEB0",
@@ -1970,6 +2055,14 @@
       "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
     },
     {
+      "va": "0x000F29B0",
+      "name": "Book::dtor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Book_dtor",
+      "pc_va": "0x004A1F70"
+    },
+    {
       "va": "0x000F2CA0",
       "name": "Book::copy",
       "confidence": "matched",
@@ -2080,6 +2173,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_MagicEffect_clearData",
       "pc_va": "0x004A8D20"
+    },
+    {
+      "va": "0x000F7370",
+      "name": "MagicEffect::dtor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MagicEffect_dtor",
+      "pc_va": "0x004A8E70"
     },
     {
       "va": "0x000F7D40",
@@ -2294,7 +2395,8 @@
       "confidence": "verified",
       "provenance": "Xbox constructor allocates the 0x110-byte ALCH layout; initializes eight effects at +0x4C",
       "pc_va": "0x004ABA40",
-      "signature": "void __thiscall ctor()"
+      "signature": "void __thiscall ctor()",
+      "mwse": "TES3_Alchemy_ctor"
     },
     {
       "va": "0x000FC740",
@@ -2397,6 +2499,14 @@
       "signature": "void __thiscall appendInfo(TES3::DialogueInfo* info, bool atTail)"
     },
     {
+      "va": "0x000FF870",
+      "name": "DialogueInfo::dtor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_DialogueInfo_dtor",
+      "pc_va": "0x004AE8A0"
+    },
+    {
       "va": "0x000FF9E0",
       "name": "DialogueInfo::getText",
       "kind": "function",
@@ -2439,6 +2549,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_TES3File_close",
       "pc_va": "0x004B47C0"
+    },
+    {
+      "va": "0x001012F0",
+      "name": "TES3File::delete",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_TES3File_delete",
+      "pc_va": "0x004B48F0"
     },
     {
       "va": "0x00101370",
@@ -2660,6 +2778,14 @@
       "pc_va": "0x004B90F0"
     },
     {
+      "va": "0x00104EA0",
+      "name": "NonDynamicData::resolveReferenceBySourceID",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_NonDynamicData_resolveReferenceBySourceID",
+      "pc_va": "0x004B9180"
+    },
+    {
       "va": "0x00105C10",
       "name": "NonDynamicData::findRace",
       "kind": "function",
@@ -2801,7 +2927,8 @@
       "provenance": "Xbox disassembly: one object argument, ret 4; inserts its type-specific record and sets the created flag",
       "pc_va": "0x004B8980",
       "signature": "bool __thiscall addNewObject(TES3::Object* object)",
-      "note": "Ten callers. Rolls an id from four rand values when the object has none; refuses a duplicate id. The multiplayer record hook fronts every call site."
+      "note": "Ten callers. Rolls an id from four rand values when the object has none; refuses a duplicate id. The multiplayer record hook fronts every call site.",
+      "mwse": "TES3_NonDynamicData_addNewObject"
     },
     {
       "va": "0x0010CCD0",
@@ -2964,6 +3091,14 @@
       "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
     },
     {
+      "va": "0x0011C040",
+      "name": "Light::dtor",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Light_dtor",
+      "pc_va": "0x004D1C90"
+    },
+    {
       "va": "0x0011C530",
       "name": "Light::copy",
       "confidence": "matched",
@@ -3004,14 +3139,6 @@
       "pc_va": "0x004D51B0"
     },
     {
-      "va": "0x0011E060",
-      "name": "NPCInstance::getAIPackageConfig",
-      "confidence": "verified",
-      "provenance": "mwse:TES3_Actor_getAIPackageConfig(vtable+0x178,xbox+0x180)",
-      "pc_va": "0x004DB0D0",
-      "signature": "TES3::AIPackageConfig* __thiscall getAIPackageConfig()"
-    },
-    {
       "va": "0x0011E210",
       "name": "NPCorNPCInstance::calculateDisposition",
       "kind": "function",
@@ -3044,21 +3171,20 @@
       "signature": "void __thiscall setClass(const char* id)"
     },
     {
-      "va": "0x0011FBB0",
-      "name": "NPCInstance::setAIPackage",
-      "confidence": "verified",
-      "provenance": "mwse:TES3_Actor_setAIPackage(vtable+0x17C,xbox+0x184)",
-      "note": "Actor vtable +0x184 (PC +0x17C). Frees the old config at +0x74, keeps the new one and hands it to the mobile's AIPlanner; tes3x multiplayer hooks its one vtable slot.",
-      "pc_va": "0x004DA210",
-      "signature": "void __thiscall setAIPackage(TES3::AIPackageConfig* config, TES3::Reference* reference)"
-    },
-    {
       "va": "0x00122120",
       "name": "NPCInstance::rebuildBodyParts",
       "confidence": "verified",
       "provenance": "Xbox decompile: base race/head/hair, removeEquippedLayers, Clothing/Armor::setupBodyParts, updateForReference",
       "note": "Rebuilds cached layers from current equipment before drawing them; BodyPartManager::updateForReference alone redraws cached parts",
       "signature": "bool __thiscall rebuildBodyParts(TES3::Reference *reference)"
+    },
+    {
+      "va": "0x00122430",
+      "name": "NPCInstance::reevaluateEquipment",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_NPCInstance_reevaluateEquipment",
+      "pc_va": "0x004D9A20"
     },
     {
       "va": "0x00122A00",
@@ -3251,8 +3377,8 @@
       "va": "0x0012A9B0",
       "name": "Reference::getScriptVariables",
       "kind": "function",
-      "confidence": "verified",
-      "provenance": "mwse:TES3_Reference_getScriptVariables; decompile matches",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Reference_getScriptVariables",
       "pc_va": "0x004E7020",
       "signature": "TES3::ScriptVariables* __thiscall getScriptVariables()"
     },
@@ -3327,7 +3453,8 @@
       "confidence": "verified",
       "provenance": "decompile: finds attachment 6, sets item data +0x14 script and +0x18 variables; MWSE TES3_Reference_ensureScriptDataIsInstanced (CS_AddTopicToList is a Construction Set address)",
       "pc_va": "0x004E7050",
-      "signature": "void __thiscall ensureScriptDataIsInstanced()"
+      "signature": "void __thiscall ensureScriptDataIsInstanced()",
+      "mwse": "CS_AddTopicToList"
     },
     {
       "va": "0x0012DD90",
@@ -3440,6 +3567,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_PathGrid_Show",
       "pc_va": "0x004F4560"
+    },
+    {
+      "va": "0x00136670",
+      "name": "Game::readSettings",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Game_readSettings",
+      "pc_va": "0x004F54F0"
     },
     {
       "va": "0x001366B0",
@@ -3756,6 +3891,14 @@
       "pc_va": "0x00510A40"
     },
     {
+      "va": "0x0014BE30",
+      "name": "Sound::setVolumeRaw",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_Sound_setVolumeRaw",
+      "pc_va": "0x00510C30"
+    },
+    {
       "va": "0x0014BF20",
       "name": "SoundGenerator::copy",
       "confidence": "matched",
@@ -3860,6 +4003,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_MobileActor_calculateSwimSpeed",
       "pc_va": "0x005270B0"
+    },
+    {
+      "va": "0x00155B30",
+      "name": "MobileActor::calculateFlySpeed",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_calculateFlySpeed",
+      "pc_va": "0x005271F0"
     },
     {
       "va": "0x00155C00",
@@ -4102,6 +4253,14 @@
       "pc_va": "0x0052D010"
     },
     {
+      "va": "0x0015BAF0",
+      "name": "MobileActor::offhandAnimState",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_MobileActor_offhandAnimState",
+      "pc_va": "0x0052D5B0"
+    },
+    {
       "va": "0x0015BC70",
       "name": "updateCrimeGoldGlobals",
       "confidence": "matched",
@@ -4243,6 +4402,22 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_MobileActor_startCombat",
       "pc_va": "0x00530470"
+    },
+    {
+      "va": "0x001650B0",
+      "name": "AIPackage::setTargetActorAsFriend",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_AIPackage_setTargetActorAsFriend",
+      "pc_va": "0x00534D70"
+    },
+    {
+      "va": "0x00165860",
+      "name": "AIPackage::setTargetActorAsFriendIfActive",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_AIPackage_setTargetActorAsFriendIfActive",
+      "pc_va": "0x00535730"
     },
     {
       "va": "0x00166FE0",
@@ -4490,7 +4665,8 @@
       "provenance": "Xbox melee and projectile call sites 0x0017C1F7 and 0x00192937; PC counterpart 0x00555290",
       "pc_va": "0x00555290",
       "note": "Returns the final hit roll. Attacker +0xF0 is the current target; a null projectile argument is melee. Melee sets strike damage to zero on a miss; projectile handling branches on the same return value. A six-byte prologue trampoline at the entry ran a saved-game NPC miss-to-dodge probe on sampled NTSC and PAL engines. Projectile semantics and multiplayer composition remain untested.",
-      "signature": "bool __cdecl CombatHitRoll(MobileActor* attacker, void* projectile, unsigned int* magicResultOut)"
+      "signature": "bool __cdecl CombatHitRoll(MobileActor* attacker, void* projectile, unsigned int* magicResultOut)",
+      "mwse": "TES3_CombatHitRoll"
     },
     {
       "va": "0x0017BD30",
@@ -4762,7 +4938,7 @@
       "name": "MobilePlayer::setBounty",
       "kind": "function",
       "confidence": "matched",
-      "provenance": "PC body: [this+0x598] set, then UpdateStatsPane",
+      "provenance": "mwse:TES3_MobilePlayer_setBounty",
       "pc_va": "0x005688D0",
       "signature": "void __thiscall setBounty(int value)"
     },
@@ -4812,7 +4988,7 @@
       "name": "MobilePlayer::addTopic",
       "kind": "function",
       "confidence": "matched",
-      "provenance": "Xbox disassembly 0x00185E90 and topic comparator 0x000FD2E0",
+      "provenance": "mwse:TES3_MobilePlayer_addTopic",
       "pc_va": "0x0056A470",
       "note": "Insert a Dialogue pointer into the sorted known-topic list at MobilePlayer +0x674; duplicate pointers are ignored. Nodes have next +4 and data +8.",
       "signature": "void __thiscall addTopic(TES3::Dialogue* topic)"
@@ -4872,7 +5048,8 @@
       "confidence": "verified",
       "provenance": "same body as the PC's; returns 100 after ModPCCrimeLevel 100 (bounty-a2)",
       "pc_va": "0x005688B0",
-      "signature": "int __thiscall getBounty()"
+      "signature": "int __thiscall getBounty()",
+      "mwse": "TES3_MobilePlayer_getBounty"
     },
     {
       "va": "0x0018CFF0",
@@ -4881,6 +5058,14 @@
       "provenance": "xbe:switch on AIPackageConfig type building each AIPackage",
       "note": "Switches on the config type (1 travel .. 5 activate) and builds that package; a follow or escort target is the config's Actor resolved by PhysicalObject::getMobile.",
       "pc_va": "0x0056EBF0"
+    },
+    {
+      "va": "0x0018D820",
+      "name": "ProcessManager::checkPlayerDist",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ProcessManager_checkPlayerDist",
+      "pc_va": "0x0056F730"
     },
     {
       "va": "0x0018D900",
@@ -5220,7 +5405,8 @@
       "name": "ui::updateVisualTree",
       "confidence": "verified",
       "provenance": "Xbox decompile 0x0019D210",
-      "note": "Recurses visible children after layout and clipping; updates visual transforms and geometry before scene update."
+      "note": "Recurses visible children after layout and clipping; updates visual transforms and geometry before scene update.",
+      "mwse": "TES3_ui_updateSceneGraph"
     },
     {
       "va": "0x0019D330",
@@ -5294,6 +5480,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_ui_setVisible",
       "pc_va": "0x0057F2A0"
+    },
+    {
+      "va": "0x001A6AF0",
+      "name": "ui::setMenuVisibleWithEvent",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:ui_setMenuVisibleWithEvent",
+      "pc_va": "0x00582F20"
     },
     {
       "va": "0x001A6CF0",
@@ -5558,6 +5752,22 @@
       "pc_va": "0x0059C030"
     },
     {
+      "va": "0x001B6BF0",
+      "name": "UI::showAlchemyMenu",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UI_showAlchemyMenu",
+      "pc_va": "0x00599A30"
+    },
+    {
+      "va": "0x001B7CD0",
+      "name": "AdjustLoopingSoundsVolume",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_AdjustLoopingSoundsVolume",
+      "pc_va": "0x005A1E10"
+    },
+    {
       "va": "0x001B8CA0",
       "name": "EquipmentStack::CalculateBarterItemValue",
       "kind": "function",
@@ -5643,6 +5853,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_ui_setConsoleReference",
       "pc_va": "0x005B2F00"
+    },
+    {
+      "va": "0x001C44B0",
+      "name": "ui::ConsoleMenu_onFocus",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:ui_ConsoleMenu_onFocus",
+      "pc_va": "0x005B23E0"
     },
     {
       "va": "0x001C4B30",
@@ -6198,6 +6416,14 @@
       "signature": "void __cdecl showRaceSexMenu()"
     },
     {
+      "va": "0x002096B1",
+      "name": "UI::displayObjectTooltip",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UI_displayObjectTooltip",
+      "pc_va": "0x00590D90"
+    },
+    {
       "va": "0x0020BA40",
       "name": "RestMenu::hoursUntilHealed",
       "confidence": "verified",
@@ -6245,7 +6471,8 @@
       "confidence": "verified",
       "provenance": "builds MenuRestWait's widgets",
       "pc_va": "0x00610170",
-      "note": "Registers the pad handlers: A (0xFFFF8080) 0x0020C190, B 0x0020BDA0 closes, X (0xFFFF8082) 0x0020C230; the Rest, Wait and Until Healed buttons click 0x0020BDC0, 0x0020C040, 0x0020BF10 (event 0xFFFF8035)."
+      "note": "Registers the pad handlers: A (0xFFFF8080) 0x0020C190, B 0x0020BDA0 closes, X (0xFFFF8082) 0x0020C230; the Rest, Wait and Until Healed buttons click 0x0020BDC0, 0x0020C040, 0x0020BF10 (event 0xFFFF8035).",
+      "mwse": "TES3_ShowRestMenu"
     },
     {
       "va": "0x0020CB10",
@@ -6400,6 +6627,14 @@
       "note": "Opens the progress menu (id 0x003DC3D4) with MobilePlayer+0x5EC hours already set; arg 1 is a rest, 0 a wait."
     },
     {
+      "va": "0x0022A990",
+      "name": "UI::ShowJournal",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_UI_ShowJournal",
+      "pc_va": "0x005D62B0"
+    },
+    {
       "va": "0x0022D920",
       "name": "WidgetButton::updateStateColor",
       "kind": "function",
@@ -6420,6 +6655,14 @@
       "name": "ui::factoryButtonText",
       "confidence": "verified",
       "provenance": "registered as PartButton (thunk 0x0022E650); keyboard and MenuName keys"
+    },
+    {
+      "va": "0x0022E890",
+      "name": "ui::factoryDragFrame",
+      "kind": "function",
+      "confidence": "matched",
+      "provenance": "mwse:TES3_ui_factoryDragFrame",
+      "pc_va": "0x0063B5E0"
     },
     {
       "va": "0x00230C20",
