@@ -181,6 +181,76 @@
       "note": "12 bytes longer than the PC at or before +0x44; the record lists and the cells list sit 0xC past their PC offsets. PC fields are left out until placed.",
       "fields": [
         {
+          "offset": "0xC",
+          "name": "activeModCount",
+          "type": "int",
+          "confidence": "verified",
+          "provenance": "engine-map step 2: PC +0x0; writeSaveFile loops the active mods by it"
+        },
+        {
+          "offset": "0x10",
+          "name": "saveGameDuringLoadSave",
+          "type": "TES3::TES3File*",
+          "confidence": "verified",
+          "provenance": "engine-map step 2: PC +0x4; saveGame stores the temp save file here"
+        },
+        {
+          "offset": "0x14",
+          "name": "lastLoadedOrSavedGame",
+          "type": "TES3::TES3File*",
+          "confidence": "verified",
+          "provenance": "engine-map step 2: PC +0x8; saveGame frees and replaces it after a good commit"
+        },
+        {
+          "offset": "0x18",
+          "name": "objects",
+          "type": "void*",
+          "confidence": "verified",
+          "provenance": "engine-map step 2: PC +0xC; writeSaveFile walks it for all objects and the STLN pass"
+        },
+        {
+          "offset": "0x1C",
+          "name": "spells",
+          "type": "void*",
+          "confidence": "verified",
+          "provenance": "engine-map step 2: PC +0x10; the spells loop of writeSaveFile"
+        },
+        {
+          "offset": "0x38",
+          "name": "scripts",
+          "type": "NI::IteratedList<TES3::Script*>*",
+          "confidence": "verified",
+          "provenance": "engine-map step 2: PC +0x2C; saved with the regions"
+        },
+        {
+          "offset": "0xB380",
+          "name": "sortDialogueInfos",
+          "type": "char",
+          "confidence": "verified",
+          "provenance": "engine-map step 2: PC +0xB374; writeSaveFile sorts INFO lists before saving when set; Reference::shouldSave keeps moved references when set"
+        },
+        {
+          "offset": "0xB381",
+          "name": "isSavingOrLoading",
+          "type": "bool",
+          "confidence": "verified",
+          "provenance": "engine-map step 2: PC +0xB375; saveGame sets it, loadRecord changes behaviour on it"
+        },
+        {
+          "offset": "0xB382",
+          "name": "saveInProgress",
+          "type": "bool",
+          "confidence": "verified",
+          "provenance": "engine-map step 2: writeSaveFile refuses to start while set"
+        },
+        {
+          "offset": "0xB390",
+          "name": "playerSaveGame",
+          "type": "TES3::Reference*",
+          "confidence": "verified",
+          "provenance": "engine-map step 2: PC +0xB384; the player reference written as REFR"
+        },
+        {
           "offset": "0x28",
           "name": "races",
           "type": "NI::IteratedList<TES3::Race*>*",

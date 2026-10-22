@@ -606,12 +606,34 @@
       "pc_va": "0x0040F610"
     },
     {
+      "va": "0x00092280",
+      "name": "Journal::load",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: body read",
+      "note": "JOUR/NAME: rewrites z:\\Journal.csh (and a Journal.htm in the working folder) from the save's journal text. The journal lives in that file, not in memory."
+    },
+    {
+      "va": "0x00092400",
+      "name": "Journal::readCshFile",
+      "confidence": "verified",
+      "provenance": "engine-map step 2: body read",
+      "note": "Reads z:\\Journal.csh into the journal's text buffer."
+    },
+    {
       "va": "0x000924E0",
       "name": "JournalHTML::updateJournal",
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_JournalHTML_updateJournal",
       "pc_va": "0x00415150"
+    },
+    {
+      "va": "0x00092820",
+      "name": "Journal::save",
+      "confidence": "verified",
+      "provenance": "engine-map step 2: body read",
+      "note": "JOUR/NAME: the journal text, read from z:\\Journal.csh (Xbox-specific; see 0x92400), then freed.",
+      "pc_va": "0x00414FA0"
     },
     {
       "va": "0x00092B80",
@@ -722,6 +744,13 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_WorldControllerRenderTarget_getFogOfWarPixel",
       "pc_va": "0x0042FE20"
+    },
+    {
+      "va": "0x000A1170",
+      "name": "ActionState::load",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: body read",
+      "note": "Reads an ACSC/ACSL block (0x70 bytes) for save version >= 1.3; older versions go through a conversion."
     },
     {
       "va": "0x000A2210",
@@ -858,6 +887,14 @@
       "signature": "void* __thiscall makeNode(void* next, void* previous, TES3::ActiveMagicEffect* value)"
     },
     {
+      "va": "0x000BCC80",
+      "name": "MagicInstanceController::save",
+      "confidence": "verified",
+      "provenance": "engine-map step 2: body read",
+      "note": "SPLM: calls vtable +8 of every active MagicSourceInstance.",
+      "pc_va": "0x004544E0"
+    },
+    {
       "va": "0x000BCD30",
       "name": "MagicInstanceController::getInstanceFromSerial",
       "kind": "function",
@@ -922,6 +959,13 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_MagicInstanceController_retireMagicCastedByActor",
       "pc_va": "0x00454EC0"
+    },
+    {
+      "va": "0x000BE760",
+      "name": "MagicInstanceController::load",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: body read",
+      "note": "SPLM: each NAME starts a 0x128-byte MagicSourceInstance, loaded through its vtable +4; a failure logs 'Failed to load spell'. The instance is then registered (0xBDE40) and the serial counter DAT_003D3B98 raised."
     },
     {
       "va": "0x000BF7F0",
@@ -1132,6 +1176,13 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_VFXManager_createFromSaveData",
       "pc_va": "0x00468620"
+    },
+    {
+      "va": "0x000CC010",
+      "name": "VFXManager::load",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: body read",
+      "note": "VFXM: each VNAM is a 0x98-byte record naming the effect, target (reference id or cell + position) and caster spell serial; recreated through createFromSaveData."
     },
     {
       "va": "0x000CC2F0",
@@ -1640,6 +1691,14 @@
       "signature": "void __thiscall changeToExterior(float* position)"
     },
     {
+      "va": "0x000E4D40",
+      "name": "AIPackage::save",
+      "confidence": "guess",
+      "provenance": "engine-map step 2: body read",
+      "note": "AI_T travel, AI_W wander, AI_E escort, AI_F follow, AI_A activate; escort/follow also CNDT. NPC instances keep one current package.",
+      "pc_va": "0x00491AA0"
+    },
+    {
       "va": "0x000E5320",
       "name": "AnimationGroup::getActionTime",
       "confidence": "verified",
@@ -1721,6 +1780,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_PhysicalObject_getMobile",
       "pc_va": "0x00494E70"
+    },
+    {
+      "va": "0x000E68E0",
+      "name": "Inventory::saveWornList",
+      "confidence": "verified",
+      "provenance": "engine-map step 2: body read; string SaveWornList",
+      "note": "WIDX {item index, slot} per worn item.",
+      "pc_va": "0x00494FA0"
     },
     {
       "va": "0x000E6B90",
@@ -1823,6 +1890,13 @@
       "pc_va": "0x0049A6C0"
     },
     {
+      "va": "0x000E99A0",
+      "name": "Inventory::saveItems",
+      "confidence": "guess",
+      "provenance": "engine-map step 2: body read",
+      "note": "NPCO items with XIDX and per-stack item data (XSOL, XCHG, XHLT, owner XNPC/XGLB/XFAC/XRNK, SCRI)."
+    },
+    {
       "va": "0x000EA7D0",
       "name": "Inventory::AddItemWithoutData",
       "kind": "function",
@@ -1887,6 +1961,13 @@
       "provenance": "Object vtable +0x24 (vtable 0x00364DB8); same body as PC 0x0049D1B0",
       "pc_va": "0x0049D1B0",
       "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
+    },
+    {
+      "va": "0x000EC610",
+      "name": "CreatureInstance::saveRecordSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 2: body read",
+      "note": "CREC: NAME, INDX, XSCL."
     },
     {
       "va": "0x000EC970",
@@ -2109,6 +2190,14 @@
       "provenance": "Object vtable +0x24 (vtable 0x00366558); same body as PC 0x004A4070",
       "pc_va": "0x004A4070",
       "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
+    },
+    {
+      "va": "0x000F4C70",
+      "name": "ContainerInstance::saveRecordSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 2: body read",
+      "note": "CNTC: NAME, INDX, then inventory.",
+      "pc_va": "0x004D1FC0"
     },
     {
       "va": "0x000F5180",
@@ -2779,6 +2868,15 @@
       "mwse": "TES3_ui_setProperty"
     },
     {
+      "va": "0x00104CB0",
+      "name": "NonDynamicData::saveRecord",
+      "confidence": "verified",
+      "provenance": "engine-map step 2: body read",
+      "note": "Not a full save: writes only when the object's source is the save file and flag bit 1 (Modified) is set; bit 0 calls vtable +0x10 (saveObject, a deletion), else bit 5 (Delete) skips, else vtable +8 (saveRecordSpecific).",
+      "pc_va": "0x004B8840",
+      "signature": "bool __thiscall saveRecord(TES3::BaseObject* object, bool fullSave)"
+    },
+    {
       "va": "0x00104E10",
       "name": "RecordsHandler::findEntityInWorld",
       "confidence": "matched",
@@ -2876,10 +2974,10 @@
     },
     {
       "va": "0x00107910",
-      "name": "NonDynamicData::closeSaveFile?",
-      "confidence": "guess",
-      "provenance": "called by saveGame after the serialiser and by both load paths",
-      "note": "walks the object lists three times; the Xbox build adds Sleep(1) every 16 objects (loop-sleeps), PC does not",
+      "name": "NonDynamicData::closeSaveFile",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: body read",
+      "note": "After a save or load, clears sourceMod on every object, spell, cell and reference whose source is the save file, so nothing keeps a pointer to it. The Sleep(1) every 16 objects is Xbox-only.",
       "pc_va": "0x004C7BE0"
     },
     {
@@ -2964,19 +3062,34 @@
       "note": "Matches each text key against AnimationGroupNames and AnimationGroupTypes with a 0x96-group bound. Unknown names become Bad note string warnings and do not create AnimationGroup entries."
     },
     {
+      "va": "0x0010DB20",
+      "name": "NonDynamicData::saveMap",
+      "confidence": "verified",
+      "provenance": "engine-map step 2: body read",
+      "note": "FMAP (FMAX when [+0xB4DD] set): MAPH {512,9}, MAPD 0xC0000 bytes of the map texture.",
+      "pc_va": "0x004C7F10"
+    },
+    {
+      "va": "0x0010DC20",
+      "name": "NonDynamicData::loadMap",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: body read",
+      "note": "FMAP/XMAP: MAPH must be {512, 9}; MAPD is read straight into the map texture (0xC0000 bytes)."
+    },
+    {
       "va": "0x0010DCF0",
-      "name": "NonDynamicData::writeSaveFile?",
-      "confidence": "guess",
-      "provenance": "strings 'SAVE COMPLETE.', '...SAVE dialogue'; called once per save by saveGame",
-      "note": "serialises the whole save: 2.5-2.7 s for a 1.65 MB save on hardware",
+      "name": "NonDynamicData::writeSaveFile",
+      "confidence": "verified",
+      "provenance": "engine-map step 2: body read",
+      "note": "Save order: CreateTES header, masters, GLOB, CLAS, FACT, SCPT, REGN, SPEL (sourceless first on a full save), all objects, CELL (changed ones, with their FRMR), player REFR, DIAL/INFO (journal topics first), JOUR, KLST, FMAP, PROJ, PCDT, STLN per object, GAME/GMDT, SPLM, VFXM. Lists are NonDynamicData +0x44 globals, +0x30 classes, +0x34 factions, +0x38 scripts, +0x4C regions, +0x1C spells, +0x18 objects, +0xB270 cells, +0x48 dialogues.",
       "pc_va": "0x004BBC30"
     },
     {
       "va": "0x0010E8B0",
       "name": "NonDynamicData::loadRecord",
-      "confidence": "guess",
-      "provenance": "called once per record by 0x00112290; dispatches to the record type's constructors",
-      "note": "For an existing INFO, a changed PNAM moves it after that ID when present (or to the head); NNAM is not consulted in this branch. A new INFO inserts after PNAM, at the head for empty PNAM, or at the tail if PNAM is missing."
+      "confidence": "verified",
+      "provenance": "engine-map step 2: body read",
+      "note": "Shared by ESM/ESP and ESS loads. Save-only dispatch: SPLM 0xBE760, PROJ 0x192500, PCDT 0x187FA0 (MobilePlayer::loadPlayerData), JOUR 0x92280, KLST KillCounter::load, FMAP/XMAP 0x10DC20, VFXM 0xCC010, REFR (the player reference), STLN, GAME/GMDT (cell, weather, time to next change). NPCC/CREC/CNTC build instance objects through the normal constructors."
     },
     {
       "va": "0x00111260",
@@ -2997,16 +3110,17 @@
     },
     {
       "va": "0x00112290",
-      "name": "NonDynamicData::loadFile?",
-      "confidence": "guess",
-      "provenance": "reopens a TES3File and calls 0x0010E8B0 per record until TES3File::nextForm fails; 'Loading Files %d%%'"
+      "name": "NonDynamicData::loadFile",
+      "confidence": "verified",
+      "provenance": "engine-map step 2: body read",
+      "note": "Loops loadRecord over every form of a TES3File, then the optional .MAP file when [General] Create Maps Enable=1."
     },
     {
       "va": "0x00112450",
-      "name": "NonDynamicData::loadGame.walk?",
-      "confidence": "guess",
-      "provenance": "strings 'Loading...', 'Loading...Parsing Quests...'",
-      "note": "six Sleep(1) loops every 64-128 objects (loop-sleeps)",
+      "name": "NonDynamicData::loadSaveGame",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: body read",
+      "note": "Loads the save's records (loadFile), resolves instances, places the player (DivineMarker fallback when the saved cell is gone), starts global scripts, resets projectiles and the spell manager, initialises loaded cells.",
       "pc_va": "0x004C54C0"
     },
     {
@@ -3019,9 +3133,10 @@
     },
     {
       "va": "0x00114300",
-      "name": "NonDynamicData::loadGameFromMenu?",
-      "confidence": "guess",
-      "provenance": "calls 0x00112450 and 0x00107910; called from 0x00095A0B and a menu at 0x001E7B49"
+      "name": "NonDynamicData::loadGameFromMenu",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: body read",
+      "note": "Opens the chosen save (0x10AAF0), sets saveGameDuringLoadSave, runs loadSaveGame and closeSaveFile, swaps lastLoadedOrSavedGame, restores camera and menus, re-selects readied magic, restarts global scripts."
     },
     {
       "va": "0x00114890",
@@ -3189,6 +3304,20 @@
       "signature": "void __thiscall setClass(const char* id)"
     },
     {
+      "va": "0x0011F710",
+      "name": "NPCInstance::saveRecordSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 2: body read",
+      "note": "NPCC: NAME, NPDT, the current AI package (0xE4D40), inventory NPCO (0xE99A0), worn list WIDX (0xE68E0). Skips Player1stPerson."
+    },
+    {
+      "va": "0x00121130",
+      "name": "NPCInstance::loadObjectSpecific",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: NPCC branches read",
+      "note": "NPCC: NPCO builds an inventory entry {count, id, item data} on the list at +0x40 and XIDX/XCHG/XSOL/XHLT/owner/SCRI fill its item data; WIDX appends {item, slot} to the worn list at +0x58; AI_T (type 1, 5 words) and AI_W (type 2, 0x14 bytes, duration/100 when above 24) build a package and install it through vtable +0x184; AI_E/AI_F/AI_A likewise (escort/follow also take CNDT, a cell or target id)."
+    },
+    {
       "va": "0x00122120",
       "name": "NPCInstance::rebuildBodyParts",
       "confidence": "verified",
@@ -3203,6 +3332,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_NPCInstance_reevaluateEquipment",
       "pc_va": "0x004D9A20"
+    },
+    {
+      "va": "0x001229D0",
+      "name": "Cell::getWasLoaded",
+      "confidence": "verified",
+      "provenance": "engine-map step 2: body read",
+      "note": "cellFlags bit 3. The writer saves a cell when it is Modified, WasLoaded, or has no source file.",
+      "pc_va": "0x004E1CE0"
     },
     {
       "va": "0x00122A00",
@@ -3259,6 +3396,14 @@
       "pc_va": "0x004DC030"
     },
     {
+      "va": "0x00123970",
+      "name": "Reference::shouldSave",
+      "confidence": "verified",
+      "provenance": "engine-map step 2: body read",
+      "note": "Selection: a full save needs flag bit 1 (Modified) and skips the two marker bases (DAT_003D2CE0/E4); not full: skips Delete (bit 5), skips a reference from another file unless Modified, skips bit 6 (moved) unless NonDynamicData +0xB380; a leveled spawn with no scene node and no base is dropped.",
+      "pc_va": "0x004E12F0"
+    },
+    {
       "va": "0x001244E0",
       "name": "Cell::constructor",
       "kind": "function",
@@ -3271,6 +3416,21 @@
       "name": "Cell::findReferenceToObject?",
       "confidence": "guess",
       "provenance": "called per cell by 0x00104E10 with (object, flag)"
+    },
+    {
+      "va": "0x00124870",
+      "name": "Reference::saveFrmr",
+      "confidence": "verified",
+      "provenance": "engine-map step 2: body read",
+      "note": "Writes one changed reference: FRMR (master index in the high byte), NAME, ACTN, STPR, MNAM, XSCL, item data (XSOL XCHG INTV NAM9 owner ANAM/BNAM/CNAM/INDX), DODT/DNAM door, FLTV/KNAM/TNAM lock, the mobile's own record (vtable +4), SCRI with script locals, ND3D, ANIS, ZNAM, then DATA (clone count, inventory flags, actor flags) or DELE. A leveled creature saves its base reference first (LVCR, MVRF).",
+      "pc_va": "0x004E1400"
+    },
+    {
+      "va": "0x001250B0",
+      "name": "Cell::saveRecordSpecific",
+      "confidence": "verified",
+      "provenance": "engine-map step 2: body read",
+      "note": "CELL: NAME, DATA, NAM8 (exterior fog/water) or WHGT, moved references (MVRF + CNDT/CNAM), then Reference::saveFrmr for each reference with Modified set, in the persistent list and then the temporary list."
     },
     {
       "va": "0x001253E0",
@@ -3298,9 +3458,10 @@
       "va": "0x00126B20",
       "name": "Cell::static_loadReference",
       "kind": "function",
-      "confidence": "matched",
-      "provenance": "mwse:TES3_Cell_static_loadReference",
-      "pc_va": "0x004DE380"
+      "confidence": "verified",
+      "provenance": "engine-map step 3: body read",
+      "pc_va": "0x004DE380",
+      "note": "FRMR block reader. ACDT creates the mobile (0x183F80, or 0x187750 for the player reference) then applies it through vtable +0x98; ACSC/ACSL, CSTN/LSTN/CSHN/LSHN/CSSF/CSSN/LSSF/LSSN/TGTN/FGTN resolve ids to live actors; CHRD/CRED through vtable +0x108; WNAM/XNAM/YNAM restore readied magic; LVCR a leveled creature's base reference."
     },
     {
       "va": "0x001293A0",
@@ -3505,6 +3666,13 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_Reference_activate",
       "pc_va": "0x004E9610"
+    },
+    {
+      "va": "0x00130E60",
+      "name": "BaseObject::getSourceMod",
+      "confidence": "verified",
+      "provenance": "engine-map step 2: body read",
+      "pc_va": "0x004EEE40"
     },
     {
       "va": "0x00130E70",
@@ -4305,6 +4473,14 @@
       "signature": "void __thiscall saveActorState(TES3::TES3File* file)"
     },
     {
+      "va": "0x0015D120",
+      "name": "MobileActor::loadActorState",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: body read",
+      "note": "Applies a 264-byte ACDT (vtable +0x98). Reads u32 index: 0-2 -> +0x3C..44; 3 flags; 4 holdBreath; 5-7 -> +0xB4..BC; 8 lo16 -> readiedAmmoCount +0x368; 9 byte -> +0x224; 10/11 health cur/base (+0x2B4); 12/13 fatigue (+0x2D8); 14/15 magicka (+0x2C0); 16/17 magickaMultiplier (+0x2E4); 18/19 encumbrance (+0x2CC); 20-35 eight attribute pairs cur,base (+0x254); 36-63 effectAttributes (+0x2F0, 28 words); 64 barterGold (+0x360); 65 lo16 corpseHourstamp (+0x36A); byte 0x106 -> +0xC0. Ends with calcDerivedStats and flag 0x4000000.",
+      "signature": "void __thiscall loadActorState(void* acdt)"
+    },
+    {
       "va": "0x0015DF60",
       "name": "MobileActor::isNotKnockedDownOrOut",
       "kind": "function",
@@ -4653,6 +4829,20 @@
       "pc_va": "0x00542E60"
     },
     {
+      "va": "0x00175A50",
+      "name": "MobileNPC::loadCharacterData",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: body read",
+      "note": "Vtable +0x108: CHRD, 27 (current, base) int pairs into the skills from +0x3B0. Whole numbers only, so fractional skill damage is lost on save/load."
+    },
+    {
+      "va": "0x00175B80",
+      "name": "MobileNPC::saveState",
+      "confidence": "verified",
+      "provenance": "engine-map step 2: body read",
+      "note": "Vtable +4 of MobileNPC and MobilePlayer: saveActorState (ACDT...) then CHRD, 27 skills as current/base int pairs (216 bytes)."
+    },
+    {
       "va": "0x001762A0",
       "name": "MobileActor::getAttackAnimationGroup",
       "confidence": "verified",
@@ -4791,6 +4981,27 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_MACT_combatWeaponStrike",
       "pc_va": "0x00556F40"
+    },
+    {
+      "va": "0x0017EBA0",
+      "name": "MobileCreature::loadCreatureData",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: body read",
+      "note": "Vtable +0x108: CRED, three (current, base) int pairs from +0x3B4."
+    },
+    {
+      "va": "0x0017ECC0",
+      "name": "MobileCreature::saveState",
+      "confidence": "verified",
+      "provenance": "engine-map step 2: body read",
+      "note": "Vtable +4: saveActorState then CRED, combat/magic/stealth current/base pairs (24 bytes)."
+    },
+    {
+      "va": "0x0017F860",
+      "name": "BaseObject::setSourceMod",
+      "confidence": "verified",
+      "provenance": "engine-map step 2: body read",
+      "pc_va": "0x004EEE50"
     },
     {
       "va": "0x0017F870",
@@ -5069,6 +5280,14 @@
       "pc_va": "0x005662F0"
     },
     {
+      "va": "0x00187FA0",
+      "name": "MobilePlayer::loadPlayerData",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: body read",
+      "pc_va": "0x00567040",
+      "note": "PCDT: ENAM last exterior cell, NAM0-3 apparatus, DNAM topics (addTopic), FNAM faction (Faction::loadPlayerData), BNAM birthsign, MNAM mark cell, RNAM rest state, LNAM, CNAM, WERE 0x98 human stats backup, and PNAM (0xD4: control/state flags, level progress, skill progress, level-up counts per attribute and specialization, telekinesis, vision, detect ranges, mark position)."
+    },
+    {
       "va": "0x00188860",
       "name": "MobilePlayer::updateScenegraph",
       "kind": "function",
@@ -5093,6 +5312,14 @@
       "pc_va": "0x005688B0",
       "signature": "int __thiscall getBounty()",
       "mwse": "TES3_MobilePlayer_getBounty"
+    },
+    {
+      "va": "0x00189E60",
+      "name": "MobilePlayer::savePlayerData",
+      "confidence": "verified",
+      "provenance": "engine-map step 2: body read",
+      "note": "PCDT: DNAM MNAM PNAM SNAM NAM9 RNAM CNAM BNAM NAM0-3 ENAM LNAM FNAM, AADT, ANIS, WERE.",
+      "pc_va": "0x00566770"
     },
     {
       "va": "0x0018CFF0",
@@ -5226,6 +5453,21 @@
       "confidence": "guess",
       "provenance": "logs 'SpellProjectile::Aim() : Bad Node Pointer for Model'",
       "note": "An actor caster aims at its combat target (+0xEC) or the instance's target; with neither, along its own orientation."
+    },
+    {
+      "va": "0x00192410",
+      "name": "ProjectileManager::save",
+      "confidence": "verified",
+      "provenance": "engine-map step 2: body read; string ProjectileManager::SaveProj",
+      "note": "PROJ: one PNAM (0xB8 bytes) per live projectile.",
+      "pc_va": "0x005754F0"
+    },
+    {
+      "va": "0x00192500",
+      "name": "ProjectileManager::load",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: body read",
+      "note": "PROJ: clears live projectiles, then one 0xB8-byte PNAM per projectile."
     },
     {
       "va": "0x001933E0",
