@@ -186,6 +186,7 @@ CONSOLE_ADDRESSES = (
     ("REF_ACTIVATE", 0x0012F630), ("PLAYER_MOBILE", 0x0008BC10),
     ("UI_NAV", 0x001B1050),  # the pad's D-pad: direction 0xE-0x11, click sound, remember
     ("OPTIONS_OPEN", 0x00201590), ("OPTIONS_ID", 0x003D9ED0), ("MENU_MODE_ON", 0x001AD020),
+    ("LOAD_GAME", 0x00113CB0),  # NonDynamicData::loadGame(path): the in-process load
 )
 # The main menu builder's own calls (0x00200990), for buttons made the way it makes them
 NET_UI_ADDRESSES = (

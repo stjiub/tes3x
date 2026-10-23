@@ -31,6 +31,7 @@ exit
 |---|---|
 | `@start new` | start a New Game at boot, without the main menu |
 | `@start load U:\DIR\NAME.ess` | load that save at boot, without the main menu |
+| `loadsave U:\DIR\NAME.ess` | load that save in the running game, with no relaunch, as the Load menu does with `[Debug] No Reboot On Load Game=1` (`--no-reboot`). Logs `exec.loadsave_done 1` on success |
 | `@menu ...` | run only while the main menu is up, e.g. `@menu click MenuOptions MenuOptions_New_container` |
 | `wait N` | pause N frames |
 | `click MENU WIDGET` | press a menu widget by name |

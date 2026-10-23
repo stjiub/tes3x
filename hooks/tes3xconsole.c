@@ -145,6 +145,9 @@ TES3X_OPTIONAL void tes3x_diag_note(u32 code, u32 value);
     !defined(TES3X_REF_ACTIVATE) || !defined(TES3X_PLAYER_MOBILE)
 #error "define the object lookup, Reference::activate and the player mobile getter"
 #endif
+#ifndef TES3X_LOAD_GAME
+#error "define TES3X_LOAD_GAME to the VA of NonDynamicData::loadGame"
+#endif
 #ifndef TES3X_CONSOLE_PRINT
 #error "define TES3X_CONSOLE_PRINT to the VA of the console's printf"
 #endif
@@ -1129,6 +1132,17 @@ static void exec_launch(const char *path)
     tes3x_launch(path);
 }
 
+/* `loadsave PATH`: load a save in this process, as the Load menu does, with no relaunch. */
+static void exec_loadsave(const char *path)
+{
+    void *data = **(void ***)TES3X_RECORDS_PTR;
+    int ok;
+
+    tes3x_log("exec.loadsave", tes3x_strlen(path));
+    ok = ((int(__thiscall *)(void *, const char *))TES3X_LOAD_GAME)(data, path);
+    tes3x_log("exec.loadsave_done", (u32)(ok & 0xFF));
+}
+
 static int menu_up(void *menu)
 {
     return menu && *((unsigned char *)menu + MENU_VISIBLE);
@@ -1401,6 +1415,8 @@ static void exec_step(void)
         HalReturnToFirmware(HAL_REBOOT_ROUTINE);
     } else if (starts_with(line, "launch ")) {
         exec_launch(line + 7);
+    } else if (starts_with(line, "loadsave ")) {
+        exec_loadsave(line + 9);
     } else if (starts_with(line, "click ")) {
         if (!exec_click(line + 6) && ++exec_tries < EXEC_CLICK_FRAMES)
             return;
