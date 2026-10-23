@@ -1,6 +1,56 @@
 {
   "records": [
     {
+      "va": "0x00011020",
+      "name": "Memory_Heap::AllocateAligned",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: decompiled and read",
+      "note": "alignment byte stored before the returned pointer"
+    },
+    {
+      "va": "0x000110D0",
+      "name": "Memory_Heap::AllocateZeroed",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: decompiled and read",
+      "note": "calloc-style forwarder; the file/line pair is what the heap census keys on",
+      "signature": "void* __cdecl m(int count, int size, const char* file, int line)"
+    },
+    {
+      "va": "0x00011140",
+      "name": "Memory_Heap::AllocateTagged",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: decompiled and read",
+      "note": "plain forwarder of (size, file, line) to Memory_Heap::Allocate; the loaders use it for every string"
+    },
+    {
+      "va": "0x00011160",
+      "name": "Memory_Heap::FreeTagged",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: decompiled and read",
+      "note": "forwarder to Memory_Heap::Free"
+    },
+    {
+      "va": "0x000111A0",
+      "name": "Memory_Heap::blockSize",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: decompiled and read",
+      "note": "header +4 minus or plus 1,000,000,000 flag when free"
+    },
+    {
+      "va": "0x00011330",
+      "name": "Memory_Heap::ctor",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: decompiled and read",
+      "note": "Called with 0x1100000 from Memory_Heap_global_init. Region is one CRT malloc; 1,024 bins; 16 size-class slots.",
+      "signature": "void __thiscall m(int regionSize)"
+    },
+    {
+      "va": "0x000117F0",
+      "name": "crt_malloc",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: decompiled and read"
+    },
+    {
       "va": "0x00011840",
       "name": "Memory_Heap::Allocate",
       "confidence": "verified",
@@ -13,16 +63,105 @@
       "note": "thiscall(ptr)"
     },
     {
+      "va": "0x00011EB0",
+      "name": "Memory_Heap::inRegion",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: decompiled and read"
+    },
+    {
+      "va": "0x00011EE0",
+      "name": "Memory_Heap::sizeOfAllocation",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: decompiled and read",
+      "note": "walks global pool list for the owner, else reads the block header"
+    },
+    {
+      "va": "0x00011FF0",
+      "name": "Memory_Heap::trimTop",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: decompiled and read",
+      "note": "lowers heap+0x0C while the last block is free"
+    },
+    {
+      "va": "0x000120C0",
+      "name": "Memory_Heap::coalesce",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: decompiled and read"
+    },
+    {
+      "va": "0x00012200",
+      "name": "Memory_Heap::fileFreeBlock",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: decompiled and read",
+      "note": "puts a block in its size bin"
+    },
+    {
+      "va": "0x000124B0",
+      "name": "Memory_Heap::addSizeClassPool",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: decompiled and read",
+      "note": "Creates a MemoryPool_Simple named \"%d byte heap pool\" and appends it to heap+0x54. Called from the entry function 0x000993D0 for 8,12,16,20,24,28,32,64,76,120,176.",
+      "signature": "void __thiscall m(int blockSize, int capacityBytes)"
+    },
+    {
       "va": "0x000126F0",
       "name": "operator_new",
-      "confidence": "guess",
-      "note": "frameless; Memory_Heap::Allocate(size, \"NA\", 0) on 0x003EFC70"
+      "confidence": "verified",
+      "note": "frameless; Memory_Heap::Allocate(size, \"NA\", 0) on heap 0x003EFC70",
+      "provenance": "engine-map step 3: decompiled and read"
+    },
+    {
+      "va": "0x00012720",
+      "name": "MemoryPool_Simple::ctor",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: decompiled and read",
+      "note": "CRT malloc of capacityBytes (rounded to a multiple of elementSize); registers the pool in the global list 0x003EFE08 through 0x00012A40. All typed pools are static initializers.",
+      "signature": "void __thiscall m(const char* name, int elementSize, int capacityBytes)"
     },
     {
       "va": "0x000127E0",
       "name": "MemoryPool_Simple::Allocate",
       "confidence": "verified",
       "note": "falls back to Memory_Heap::Allocate when the pool is full"
+    },
+    {
+      "va": "0x000128A0",
+      "name": "MemoryPool_Simple::Free",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: decompiled and read"
+    },
+    {
+      "va": "0x000128D0",
+      "name": "MemoryPool_Simple::isExhausted",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: decompiled and read",
+      "note": "no free-list entry and bump offset +0x4C at capacity +0x44"
+    },
+    {
+      "va": "0x000128F0",
+      "name": "MemoryPool_Simple::noteOverflow",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: decompiled and read",
+      "note": "adds element size to overflow counter +0x54, high-water +0x58"
+    },
+    {
+      "va": "0x00012910",
+      "name": "MemoryPool_Simple::containsAddress",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: decompiled and read"
+    },
+    {
+      "va": "0x00012930",
+      "name": "MemoryPool_Simple::pushFree",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: decompiled and read",
+      "note": "Appends to the free list at pool+0x5C/+0x60"
+    },
+    {
+      "va": "0x00012A40",
+      "name": "MemoryPool_Simple::registerGlobal",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: decompiled and read"
     },
     {
       "va": "0x00012D40",
@@ -606,6 +745,12 @@
       "pc_va": "0x0040F610"
     },
     {
+      "va": "0x000915A0",
+      "name": "GridLand::setLand_",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: attaches a Land to a landscape slot (this+0). Detach frees the 16 sub-meshes; attach allocates the three GridLand.cpp vertex blocks (0x6C60, 0x3630, 0x4840 B) and calls Land::buildGeometryFromFile_"
+    },
+    {
       "va": "0x00092280",
       "name": "Journal::load",
       "confidence": "verified",
@@ -712,6 +857,13 @@
       "kind": "site",
       "confidence": "verified",
       "provenance": "find_console_gate; input gate replaced by --apply console"
+    },
+    {
+      "va": "0x000993D0",
+      "name": "TES3_entry_main",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: decompiled and read",
+      "note": "logs Program Started, creates the size-class pools, constructs Game, reads launch info and runs Game::initialize"
     },
     {
       "va": "0x0009E6C0",
@@ -1350,6 +1502,18 @@
       "pc_va": "0x00472580"
     },
     {
+      "va": "0x000D1BC0",
+      "name": "Birthsign::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Birthsign for tag BSGN; loader read from the class vtable slot 1"
+    },
+    {
+      "va": "0x000D1E30",
+      "name": "Birthsign::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Birthsign for tag BSGN; loader read from the class vtable slot 1"
+    },
+    {
       "va": "0x000D2160",
       "name": "Birthsign::copy",
       "confidence": "matched",
@@ -1452,6 +1616,12 @@
       "signature": "void* __thiscall findNode(void* item)"
     },
     {
+      "va": "0x000D5EA0",
+      "name": "Region::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Region for tag REGN; loader read from the class vtable slot 1"
+    },
+    {
       "va": "0x000D60F0",
       "name": "Region::randomizeWeather",
       "kind": "function",
@@ -1468,6 +1638,19 @@
       "signature": "void __thiscall copy(TES3::Region* from)"
     },
     {
+      "va": "0x000D6440",
+      "name": "Region::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Region for tag REGN; loader read from the class vtable slot 1"
+    },
+    {
+      "va": "0x000D6690",
+      "name": "NonDynamicData::findObjectByID",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: decompiled and read",
+      "note": "Hash lookup through 0x00131760 (vtable hash and equality at +4/+8 of the map). findDialogue 0x00104360 and the ID lookups used while loading INFO conditions (0x00104300) are thin wrappers."
+    },
+    {
       "va": "0x000D6700",
       "name": "AddObjectToHashMapById",
       "kind": "function",
@@ -1476,12 +1659,30 @@
       "pc_va": "0x00481D80"
     },
     {
+      "va": "0x000D6900",
+      "name": "StartScript::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds StartScript for tag SSCR; loader read from the class vtable slot 1"
+    },
+    {
+      "va": "0x000D6AA0",
+      "name": "StartScript::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds StartScript for tag SSCR; loader read from the class vtable slot 1"
+    },
+    {
       "va": "0x000D6B70",
       "name": "StartScript::copy",
       "confidence": "matched",
       "provenance": "loader calls it on the existing record with a repeated one; same body as PC 0x00482AC0",
       "pc_va": "0x00482AC0",
       "signature": "void __thiscall copy(TES3::StartScript* from)"
+    },
+    {
+      "va": "0x000D6ED0",
+      "name": "DataHandler::touchCellBuffer_",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: move-to-front list of recently used cells at DataHandler+0xB0 (length DAT_003ce400); a new cell pushes the oldest out through Cell::unloadScene_"
     },
     {
       "va": "0x000D7250",
@@ -1498,6 +1699,12 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_DataHandler_getTotalLoadedRecordsFraction",
       "pc_va": "0x0048ED90"
+    },
+    {
+      "va": "0x000D7300",
+      "name": "DataHandler::resumeCellLoaderThread_",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: ResumeThread on +0xB504 (string TES::Resume_Thread)"
     },
     {
       "va": "0x000D7AB0",
@@ -1618,6 +1825,18 @@
       "provenance": "called by MobilePlayer::onDeath; sets DataHandler+0xB518, which reads 0 again after Player->Resurrect (death-a2)"
     },
     {
+      "va": "0x000DBA20",
+      "name": "DataHandler::evictOldestCell_",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: unloads the oldest cell beyond the first 9 of the cell list at DataHandler+0xB4 (count DAT_003ce40c) through unloadScene_thunk_, then compacts the list"
+    },
+    {
+      "va": "0x000DBB70",
+      "name": "DataHandler::ensureFreeMemory_",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: GlobalMemoryStatus; if available < 0x300000 evicts cells with evictOldestCell_ until it is not"
+    },
+    {
       "va": "0x000DBFE0",
       "name": "DataHandler::updateLightingForReference",
       "kind": "function",
@@ -1650,12 +1869,24 @@
       "pc_va": "0x0048DB60"
     },
     {
+      "va": "0x000DEF10",
+      "name": "DataHandler::cellLoaderThreadProc_",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: CreateThread entry from startCellLoaderThread_; polls (Sleep(0)) the 3x3 slot table at DataHandler+4 for state 2, runs ensureFreeMemory_, then loadReferences + scene build for the cell, states 3 loading and 4 done"
+    },
+    {
       "va": "0x000DFF90",
       "name": "DataHandler::addSoundById",
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_DataHandler_addSoundById",
       "pc_va": "0x0048BCB0"
+    },
+    {
+      "va": "0x000E0360",
+      "name": "DataHandler::startCellLoaderThread_",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: reads General/ThreadSleepTime, CreateThread(0xDEF10), handle at +0xB504, then resumes it"
     },
     {
       "va": "0x000E1270",
@@ -1955,6 +2186,12 @@
       "signature": "void __thiscall setName(const char* name)"
     },
     {
+      "va": "0x000EBF60",
+      "name": "Creature::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Creature for tag CREA; loader read from the class vtable slot 1"
+    },
+    {
       "va": "0x000EC3A0",
       "name": "Creature::copy",
       "confidence": "matched",
@@ -1986,6 +2223,24 @@
       "pc_va": "0x0049C280"
     },
     {
+      "va": "0x000ECEC0",
+      "name": "Creature::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Creature for tag CREA; loader read from the class vtable slot 1"
+    },
+    {
+      "va": "0x000ED7C0",
+      "name": "CreatureInstance::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds CreatureInstance for tag CREC; loader read from the class vtable slot 1"
+    },
+    {
+      "va": "0x000EDB30",
+      "name": "CreatureInstance::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds CreatureInstance for tag CREC; loader read from the class vtable slot 1"
+    },
+    {
       "va": "0x000EF000",
       "name": "Armor::getWeightClass",
       "kind": "function",
@@ -2000,6 +2255,12 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_Clothing_setupBodyParts",
       "pc_va": "0x004A38F0"
+    },
+    {
+      "va": "0x000EF760",
+      "name": "ContainerInstance::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds ContainerInstance for tag CNTC; loader read from the class vtable slot 1"
     },
     {
       "va": "0x000EFD60",
@@ -2088,12 +2349,24 @@
       "signature": "void __thiscall loadPlayerData(int* rankReputationFlags)"
     },
     {
+      "va": "0x000F0980",
+      "name": "GlobalVariable::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds GlobalVariable for tag GLOB; loader read from the class vtable slot 1"
+    },
+    {
       "va": "0x000F0B10",
       "name": "Activator::ctor",
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_Activator_ctor",
       "pc_va": "0x0049F990"
+    },
+    {
+      "va": "0x000F0C80",
+      "name": "Activator::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Activator for tag ACTI; loader read from the class vtable slot 1"
     },
     {
       "va": "0x000F0DE0",
@@ -2104,12 +2377,36 @@
       "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
     },
     {
+      "va": "0x000F0EE0",
+      "name": "Apparatus::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Apparatus for tag APPA; loader read from the class vtable slot 1"
+    },
+    {
+      "va": "0x000F1070",
+      "name": "Apparatus::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Apparatus for tag APPA; loader read from the class vtable slot 1"
+    },
+    {
       "va": "0x000F11C0",
       "name": "Apparatus::copy",
       "confidence": "matched",
       "provenance": "Object vtable +0x24 (vtable 0x00365D20); same body as PC 0x004A01E0",
       "pc_va": "0x004A01E0",
       "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
+    },
+    {
+      "va": "0x000F12F0",
+      "name": "Armor::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Armor for tag ARMO; loader read from the class vtable slot 1"
+    },
+    {
+      "va": "0x000F14D0",
+      "name": "Armor::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Armor for tag ARMO; loader read from the class vtable slot 1"
     },
     {
       "va": "0x000F1A00",
@@ -2136,6 +2433,18 @@
       "pc_va": "0x004A1280"
     },
     {
+      "va": "0x000F1F00",
+      "name": "BodyPart::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds BodyPart for tag BODY; loader read from the class vtable slot 1"
+    },
+    {
+      "va": "0x000F2070",
+      "name": "BodyPart::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds BodyPart for tag BODY; loader read from the class vtable slot 1"
+    },
+    {
       "va": "0x000F21E0",
       "name": "BodyPart::copy",
       "confidence": "matched",
@@ -2144,12 +2453,24 @@
       "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
     },
     {
+      "va": "0x000F28E0",
+      "name": "Book::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Book for tag BOOK; loader read from the class vtable slot 1"
+    },
+    {
       "va": "0x000F29B0",
       "name": "Book::dtor",
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_Book_dtor",
       "pc_va": "0x004A1F70"
+    },
+    {
+      "va": "0x000F2A70",
+      "name": "Book::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Book for tag BOOK; loader read from the class vtable slot 1"
     },
     {
       "va": "0x000F2CA0",
@@ -2168,6 +2489,18 @@
       "pc_va": "0x004A2A90"
     },
     {
+      "va": "0x000F3030",
+      "name": "Clothing::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Clothing for tag CLOT; loader read from the class vtable slot 1"
+    },
+    {
+      "va": "0x000F3230",
+      "name": "Clothing::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Clothing for tag CLOT; loader read from the class vtable slot 1"
+    },
+    {
       "va": "0x000F37D0",
       "name": "Clothing::copy",
       "confidence": "matched",
@@ -2184,12 +2517,24 @@
       "pc_va": "0x004A3BE0"
     },
     {
+      "va": "0x000F3D10",
+      "name": "Container::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Container for tag CONT; loader read from the class vtable slot 1"
+    },
+    {
       "va": "0x000F4080",
       "name": "Container::copy",
       "confidence": "matched",
       "provenance": "Object vtable +0x24 (vtable 0x00366558); same body as PC 0x004A4070",
       "pc_va": "0x004A4070",
       "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
+    },
+    {
+      "va": "0x000F4370",
+      "name": "ContainerInstance::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds ContainerInstance for tag CNTC; loader read from the class vtable slot 1"
     },
     {
       "va": "0x000F4C70",
@@ -2200,12 +2545,36 @@
       "pc_va": "0x004D1FC0"
     },
     {
+      "va": "0x000F4DD0",
+      "name": "Door::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Door for tag DOOR; loader read from the class vtable slot 1"
+    },
+    {
+      "va": "0x000F4EE0",
+      "name": "Door::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Door for tag DOOR; loader read from the class vtable slot 1"
+    },
+    {
       "va": "0x000F5180",
       "name": "Door::copy",
       "confidence": "matched",
       "provenance": "Object vtable +0x24 (vtable 0x00366738); same body as PC 0x004A56B0",
       "pc_va": "0x004A56B0",
       "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
+    },
+    {
+      "va": "0x000F5290",
+      "name": "Ingredient::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Ingredient for tag INGR; loader read from the class vtable slot 1"
+    },
+    {
+      "va": "0x000F5420",
+      "name": "Ingredient::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Ingredient for tag INGR; loader read from the class vtable slot 1"
     },
     {
       "va": "0x000F55C0",
@@ -2216,12 +2585,36 @@
       "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
     },
     {
+      "va": "0x000F56F0",
+      "name": "Lockpick::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Lockpick for tag LOCK; loader read from the class vtable slot 1"
+    },
+    {
+      "va": "0x000F5870",
+      "name": "Lockpick::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Lockpick for tag LOCK; loader read from the class vtable slot 1"
+    },
+    {
       "va": "0x000F59C0",
       "name": "Lockpick::copy",
       "confidence": "matched",
       "provenance": "Object vtable +0x24 (vtable 0x00366A08); same body as PC 0x004A61B0",
       "pc_va": "0x004A61B0",
       "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
+    },
+    {
+      "va": "0x000F5B00",
+      "name": "MiscItem::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds MiscItem for tag MISC; loader read from the class vtable slot 1"
+    },
+    {
+      "va": "0x000F5C90",
+      "name": "MiscItem::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds MiscItem for tag MISC; loader read from the class vtable slot 1"
     },
     {
       "va": "0x000F5E40",
@@ -2232,12 +2625,36 @@
       "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
     },
     {
+      "va": "0x000F5F70",
+      "name": "Probe::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Probe for tag PROB; loader read from the class vtable slot 1"
+    },
+    {
+      "va": "0x000F60E0",
+      "name": "Probe::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Probe for tag PROB; loader read from the class vtable slot 1"
+    },
+    {
       "va": "0x000F6230",
       "name": "Probe::copy",
       "confidence": "matched",
       "provenance": "Object vtable +0x24 (vtable 0x00366CA8); same body as PC 0x004A6C70",
       "pc_va": "0x004A6C70",
       "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
+    },
+    {
+      "va": "0x000F6370",
+      "name": "RepairTool::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds RepairTool for tag REPA; loader read from the class vtable slot 1"
+    },
+    {
+      "va": "0x000F64F0",
+      "name": "RepairTool::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds RepairTool for tag REPA; loader read from the class vtable slot 1"
     },
     {
       "va": "0x000F6640",
@@ -2264,6 +2681,24 @@
       "pc_va": "0x004A7350"
     },
     {
+      "va": "0x000F6840",
+      "name": "Static::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Static for tag STAT; loader read from the class vtable slot 1"
+    },
+    {
+      "va": "0x000F6900",
+      "name": "Race::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Race for tag RACE; loader read from the class vtable slot 1"
+    },
+    {
+      "va": "0x000F6C00",
+      "name": "Class::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Class for tag CLAS; loader read from the class vtable slot 1"
+    },
+    {
       "va": "0x000F71C0",
       "name": "MagicEffect::clearData",
       "kind": "function",
@@ -2278,6 +2713,12 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_MagicEffect_dtor",
       "pc_va": "0x004A8E70"
+    },
+    {
+      "va": "0x000F7960",
+      "name": "MagicEffect::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds MagicEffect for tag MGEF; loader read from the class vtable slot 1"
     },
     {
       "va": "0x000F7D40",
@@ -2344,6 +2785,18 @@
       "pc_va": "0x004ACBE0"
     },
     {
+      "va": "0x000F9A70",
+      "name": "Faction::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Faction for tag FACT; loader read from the class vtable slot 1"
+    },
+    {
+      "va": "0x000F9D20",
+      "name": "Faction::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Faction for tag FACT; loader read from the class vtable slot 1"
+    },
+    {
       "va": "0x000F9F90",
       "name": "Faction::setPlayerExpelled",
       "confidence": "verified",
@@ -2407,12 +2860,24 @@
       "signature": "int __thiscall getEffectivePlayerRank()"
     },
     {
+      "va": "0x000FA590",
+      "name": "GlobalVariable::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds GlobalVariable for tag GLOB; loader read from the class vtable slot 1"
+    },
+    {
       "va": "0x000FA670",
       "name": "GlobalVariable::copy",
       "confidence": "matched",
       "provenance": "loader calls it on the existing record with a repeated one; same body as PC 0x004ADB80",
       "pc_va": "0x004ADB80",
       "signature": "void __thiscall copy(TES3::GlobalVariable* from)"
+    },
+    {
+      "va": "0x000FB2E0",
+      "name": "Race::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Race for tag RACE; loader read from the class vtable slot 1"
     },
     {
       "va": "0x000FB560",
@@ -2470,12 +2935,30 @@
       "pc_va": "0x004A9FD0"
     },
     {
+      "va": "0x000FBEF0",
+      "name": "Spell::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Spell for tag SPEL; loader read from the class vtable slot 1"
+    },
+    {
       "va": "0x000FC260",
       "name": "Spell::copy",
       "confidence": "matched",
       "provenance": "Object vtable +0x24 (vtable 0x00367358); same body as PC 0x004AA7B0",
       "pc_va": "0x004AA7B0",
       "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
+    },
+    {
+      "va": "0x000FC290",
+      "name": "Enchantment::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Enchantment for tag ENCH; loader read from the class vtable slot 1"
+    },
+    {
+      "va": "0x000FC350",
+      "name": "Enchantment::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Enchantment for tag ENCH; loader read from the class vtable slot 1"
     },
     {
       "va": "0x000FC630",
@@ -2536,6 +3019,24 @@
       "pc_va": "0x004B2C00"
     },
     {
+      "va": "0x000FD460",
+      "name": "DialogueInfo::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds DialogueInfo for tag INFO; loader read from the class vtable slot 1"
+    },
+    {
+      "va": "0x000FDD00",
+      "name": "Dialogue::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Dialogue for tag DIAL; loader read from the class vtable slot 1"
+    },
+    {
+      "va": "0x000FDEC0",
+      "name": "Dialogue::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Dialogue for tag DIAL; loader read from the class vtable slot 1"
+    },
+    {
       "va": "0x000FE060",
       "name": "Dialogue::mergeRepeated",
       "confidence": "matched",
@@ -2573,6 +3074,20 @@
       "signature": "DialogueInfo* __thiscall insertInfoAtIndex(DialogueInfo* info, int index)"
     },
     {
+      "va": "0x000FE250",
+      "name": "Dialogue::createVoiceTopics",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: decompiled and read",
+      "note": "Creates the built-in DIAL stubs for the voice-line tables (Bribe_Fail ...) from loadAllFiles before any file is read."
+    },
+    {
+      "va": "0x000FE620",
+      "name": "DialogueInfo::buildConditions",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: decompiled and read",
+      "note": "End of DialogueInfo::loadObjectSpecific: turns the static scratch at 0x003CEE40..0x003CEEC0 into 16-byte condition nodes on the INFO's list at +0x20, one per condition kind 0..12."
+    },
+    {
       "va": "0x000FE830",
       "name": "DialogueInfo::loadObjectSpecific",
       "confidence": "matched",
@@ -2586,6 +3101,13 @@
       "provenance": "loader calls it on the existing record with a repeated one; same body as PC 0x004AFF10",
       "pc_va": "0x004AFF10",
       "signature": "void __thiscall copy(TES3::DialogueInfo* from)"
+    },
+    {
+      "va": "0x000FF620",
+      "name": "Dialogue::freeLoadNames",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: decompiled and read",
+      "note": "Post-load pass, one call per topic from loadAllFiles: walks the INFO chain (+0x1C) and frees each INFO's 96-byte name buffer and its 12-byte header (INFO+0x10). Misses INFOs detached by a repeated DIAL merge."
     },
     {
       "va": "0x000FF680",
@@ -2702,6 +3224,12 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_TES3File_setToLoad",
       "pc_va": "0x004B6280"
+    },
+    {
+      "va": "0x00101780",
+      "name": "TES3File::currentOffset_",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: file base +0x24c + 0x10 + +0x248, the read position after the current subrecord header"
     },
     {
       "va": "0x001017A0",
@@ -2868,6 +3396,14 @@
       "mwse": "TES3_ui_setProperty"
     },
     {
+      "va": "0x00104C50",
+      "name": "BaseObject::loadFromFile",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: decompiled and read",
+      "note": "loadRecord's shared step: calls vtable slot 1 (loadObjectSpecific), stamps the source mod, sets the master flag.",
+      "signature": "bool __cdecl m(TES3::BaseObject* object, TES3::TES3File* file)"
+    },
+    {
       "va": "0x00104CB0",
       "name": "NonDynamicData::saveRecord",
       "confidence": "verified",
@@ -2929,8 +3465,9 @@
       "name": "NonDynamicData::findScriptByName",
       "kind": "function",
       "confidence": "matched",
-      "provenance": "mwse:TES3_NonDynamicData_findScriptByName",
-      "pc_va": "0x004BA700"
+      "provenance": "engine-map step 3: decompiled and read",
+      "pc_va": "0x004BA700",
+      "note": "Linear walk of the script list with stricmp on every call"
     },
     {
       "va": "0x00105DF0",
@@ -2960,9 +3497,16 @@
       "va": "0x001060B0",
       "name": "NonDynamicData::findCellByName",
       "confidence": "matched",
-      "provenance": "first cell whose name matches, case-insensitive; startNewGame's [PreLoad] lookup",
+      "provenance": "engine-map step 3: decompiled and read",
       "pc_va": "0x004BA9B0",
-      "signature": "TES3::Cell* __thiscall findCellByName(char* name)"
+      "signature": "TES3::Cell* __thiscall findCellByName(char* name)",
+      "note": "Linear walk of all cells with stricmp on every call; getCellByGrid 0x0010A120 is hashed (0x00106110)"
+    },
+    {
+      "va": "0x00106180",
+      "name": "Cell::unloadScene_",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: evicts a cell from the cell buffer; calls vtable +0x11c(0) on every reference of the lists at Cell+0x3C and +0x2C, hides the pathgrid and frees the scene data at Cell+0x10. Does not free References or clear Cell flag 0x10"
     },
     {
       "va": "0x001075B0",
@@ -3003,6 +3547,12 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_NonDynamicData_getCellByGrid",
       "pc_va": "0x004BAA10"
+    },
+    {
+      "va": "0x0010A140",
+      "name": "Cell::unloadScene_thunk_",
+      "confidence": "guess",
+      "provenance": "jump thunk to Cell::unloadScene_; every unload path calls it"
     },
     {
       "va": "0x0010A150",
@@ -3112,7 +3662,7 @@
       "va": "0x00112290",
       "name": "NonDynamicData::loadFile",
       "confidence": "verified",
-      "provenance": "engine-map step 2: body read",
+      "provenance": "engine-map step 3: decompiled and read",
       "note": "Loops loadRecord over every form of a TES3File, then the optional .MAP file when [General] Create Maps Enable=1."
     },
     {
@@ -3153,6 +3703,12 @@
       "kind": "function"
     },
     {
+      "va": "0x00114930",
+      "name": "LandTexture::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds LandTexture for tag LTEX; loader read from the class vtable slot 1"
+    },
+    {
       "va": "0x00114CC0",
       "name": "LandVertex::GetPosition",
       "confidence": "verified",
@@ -3167,12 +3723,30 @@
       "kind": "function"
     },
     {
+      "va": "0x00115000",
+      "name": "LandTexture::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds LandTexture for tag LTEX; loader read from the class vtable slot 1"
+    },
+    {
       "va": "0x001150F0",
       "name": "LandTexture::copy",
       "confidence": "matched",
       "provenance": "loader calls it on the existing record with a repeated one; same body as PC 0x004C96C0",
       "pc_va": "0x004C96C0",
       "signature": "void __thiscall copy(TES3::LandTexture* from)"
+    },
+    {
+      "va": "0x001151C0",
+      "name": "Land::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Land for tag LAND; loader read from the class vtable slot 1"
+    },
+    {
+      "va": "0x00115450",
+      "name": "Land::buildGeometryFromFile_",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: reopens the plugin at the Land's recorded file offset, reads VHGT/VNML/VCLR/VTEX-derived data into 16 per-quad vertex arrays (0x11x0x11 grid) and returns; the Land object itself keeps only flags, grid and texture indices"
     },
     {
       "va": "0x00116C30",
@@ -3184,12 +3758,30 @@
       "kind": "function"
     },
     {
+      "va": "0x00118610",
+      "name": "Land::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Land for tag LAND; loader read from the class vtable slot 1"
+    },
+    {
+      "va": "0x0011A430",
+      "name": "LeveledCreature::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds LeveledCreature for tag LEVC; loader read from the class vtable slot 1"
+    },
+    {
       "va": "0x0011A740",
       "name": "LeveledCreature::resolve",
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_LeveledCreature_resolve",
       "pc_va": "0x004CF870"
+    },
+    {
+      "va": "0x0011AAE0",
+      "name": "LeveledCreature::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds LeveledCreature for tag LEVC; loader read from the class vtable slot 1"
     },
     {
       "va": "0x0011AC20",
@@ -3200,12 +3792,24 @@
       "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
     },
     {
+      "va": "0x0011AF60",
+      "name": "LeveledItem::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds LeveledItem for tag LEVI; loader read from the class vtable slot 1"
+    },
+    {
       "va": "0x0011B300",
       "name": "LeveledItem::resolve",
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_LeveledItem_resolve",
       "pc_va": "0x004D0BD0"
+    },
+    {
+      "va": "0x0011B690",
+      "name": "LeveledItem::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds LeveledItem for tag LEVI; loader read from the class vtable slot 1"
     },
     {
       "va": "0x0011B7D0",
@@ -3230,6 +3834,12 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_Light_dtor",
       "pc_va": "0x004D1C90"
+    },
+    {
+      "va": "0x0011C1B0",
+      "name": "Light::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Light for tag LIGH; loader read from the class vtable slot 1"
     },
     {
       "va": "0x0011C530",
@@ -3272,6 +3882,18 @@
       "pc_va": "0x004D51B0"
     },
     {
+      "va": "0x0011DC40",
+      "name": "NPCInstance::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds NPCInstance for tag NPCC; loader read from the class vtable slot 1"
+    },
+    {
+      "va": "0x0011DDC0",
+      "name": "NPC::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds NPC for tag NPC_; loader read from the class vtable slot 1"
+    },
+    {
       "va": "0x0011E210",
       "name": "NPCorNPCInstance::calculateDisposition",
       "kind": "function",
@@ -3309,6 +3931,12 @@
       "confidence": "guess",
       "provenance": "engine-map step 2: body read",
       "note": "NPCC: NAME, NPDT, the current AI package (0xE4D40), inventory NPCO (0xE99A0), worn list WIDX (0xE68E0). Skips Player1stPerson."
+    },
+    {
+      "va": "0x00120220",
+      "name": "NPC::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds NPC for tag NPC_; loader read from the class vtable slot 1"
     },
     {
       "va": "0x00121130",
@@ -3396,12 +4024,30 @@
       "pc_va": "0x004DC030"
     },
     {
+      "va": "0x00123120",
+      "name": "Cell::appendMovedReference_",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: MVRF handler in Cell::loadObjectSpecific; appends the moved-reference record (0x10 B, flags 2) to the list at Cell+0x4C (0x14-byte list head allocated on first use)"
+    },
+    {
       "va": "0x00123970",
       "name": "Reference::shouldSave",
       "confidence": "verified",
       "provenance": "engine-map step 2: body read",
       "note": "Selection: a full save needs flag bit 1 (Modified) and skips the two marker bases (DAT_003D2CE0/E4); not full: skips Delete (bit 5), skips a reference from another file unless Modified, skips bit 6 (moved) unless NonDynamicData +0xB380; a leveled spawn with no scene node and no base is dropped.",
       "pc_va": "0x004E12F0"
+    },
+    {
+      "va": "0x00123DC0",
+      "name": "Cell::getOrCreateLand",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: returns Cell+0x20, allocating a 0x224 Land from its pool (grid copied from Cell+0x24/+0x28) when none; null for interior cells (flag 1)"
+    },
+    {
+      "va": "0x001241F0",
+      "name": "Cell::findPluginEntry_",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: finds the cell's per-plugin entry for a TES3File (entry+8 receives the file offset of the temporary references at NAM0)"
     },
     {
       "va": "0x001244E0",
@@ -3464,11 +4110,32 @@
       "note": "FRMR block reader. ACDT creates the mobile (0x183F80, or 0x187750 for the player reference) then applies it through vtable +0x98; ACSC/ACSL, CSTN/LSTN/CSHN/LSHN/CSSF/CSSN/LSSF/LSSN/TGTN/FGTN resolve ids to live actors; CHRD/CRED through vtable +0x108; WNAM/XNAM/YNAM restore readied magic; LVCR a leveled creature's base reference."
     },
     {
+      "va": "0x00128F00",
+      "name": "Cell::reloadReference",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: decompiled and read",
+      "note": "Re-reads one reference from its plugin at a known FRMR index (and the moved-reference variant, MVRF/CNAM)."
+    },
+    {
+      "va": "0x001292A0",
+      "name": "Cell::loadLVCRReferences_",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: called from Cell::loadObjectSpecific's FRMR path when a moved-ref flag is set and the ref was not rebuilt; builds a Reference per LVCR subrecord up to DATA. Not the persistent-reference path",
+      "note": "Not the persistent-reference path: persistent references are the FRMR entries before NAM0 in loadObjectSpecific."
+    },
+    {
       "va": "0x001293A0",
       "name": "Cell::loadObjectSpecific",
       "confidence": "matched",
       "provenance": "Cell vtable +0x4; string match. Repeated CELLs load into the existing cell through it, as on PC",
       "pc_va": "0x004DCBB0"
+    },
+    {
+      "va": "0x00129B30",
+      "name": "Cell::loadReferencesFromFile",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: decompiled and read",
+      "note": "Opens a scratch TES3File at the cell's recorded offset in one plugin, reads NAM0/FRMR subrecords and builds temporary references through static_loadReference; replaces an earlier version of the same reference."
     },
     {
       "va": "0x00129CE5",
@@ -3483,6 +4150,13 @@
       "kind": "site",
       "confidence": "verified",
       "provenance": "find_ref_skip; mcp-1 drop branch"
+    },
+    {
+      "va": "0x00129F60",
+      "name": "Cell::loadReferences",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: decompiled and read",
+      "note": "If cell flag 0x10 (+0x18) is clear, walks the cell's per-file load links and calls 0x00129B30 for each, then sets the flag. Called from changeToInterior and the exterior loaders."
     },
     {
       "va": "0x00129FB0",
@@ -3707,6 +4381,19 @@
       "pc_va": "0x004F0CA0"
     },
     {
+      "va": "0x00132440",
+      "name": "Reference::releaseSceneNode_",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: vtable slot 71 (+0x11c) of Reference classes; drops the scene node at +0x10 and the pointer at +0x24"
+    },
+    {
+      "va": "0x00132570",
+      "name": "ObjectList::prepend",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: decompiled and read",
+      "note": "ECX is a list {count, head, tail}; object links are at +0x1C (prev) and +0x20 (next), owner at +0x14. loadRecord and addNewObject use it to file a new object under its type."
+    },
+    {
       "va": "0x00132D90",
       "name": "MeshData::loadMesh",
       "kind": "function",
@@ -3723,6 +4410,12 @@
       "pc_va": "0x004F0400"
     },
     {
+      "va": "0x001346C0",
+      "name": "Weapon::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Weapon for tag WEAP; loader read from the class vtable slot 1"
+    },
+    {
       "va": "0x001347F0",
       "name": "Weapon::dtor",
       "kind": "function",
@@ -3731,12 +4424,24 @@
       "pc_va": "0x004F1FA0"
     },
     {
+      "va": "0x001349B0",
+      "name": "Weapon::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Weapon for tag WEAP; loader read from the class vtable slot 1"
+    },
+    {
       "va": "0x00134CA0",
       "name": "Weapon::copy",
       "confidence": "matched",
       "provenance": "Object vtable +0x24 (vtable 0x00376D90); same body as PC 0x004F2600",
       "pc_va": "0x004F2600",
       "signature": "void __thiscall copy(TES3::BaseObject* from, bool flag)"
+    },
+    {
+      "va": "0x00135AA0",
+      "name": "PathGrid::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds PathGrid for tag PGRD; loader read from the class vtable slot 1"
     },
     {
       "va": "0x00135B30",
@@ -3753,6 +4458,12 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_PathGrid_Show",
       "pc_va": "0x004F4560"
+    },
+    {
+      "va": "0x00136030",
+      "name": "PathGrid::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds PathGrid for tag PGRD; loader read from the class vtable slot 1"
     },
     {
       "va": "0x00136670",
@@ -4014,6 +4725,12 @@
       "mwse": "TES3_Script_DoCommand"
     },
     {
+      "va": "0x0014B5C0",
+      "name": "Sound::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Sound for tag SOUN; loader read from the class vtable slot 1"
+    },
+    {
       "va": "0x0014B690",
       "name": "Sound::isPlaying",
       "kind": "function",
@@ -4054,6 +4771,12 @@
       "signature": "void __thiscall copy(TES3::Sound* from)"
     },
     {
+      "va": "0x0014B850",
+      "name": "Sound::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Sound for tag SOUN; loader read from the class vtable slot 1"
+    },
+    {
       "va": "0x0014B9B0",
       "name": "Sound::loadBuffer",
       "kind": "function",
@@ -4086,12 +4809,24 @@
       "pc_va": "0x00510C30"
     },
     {
+      "va": "0x0014BEB0",
+      "name": "SoundGenerator::ctor",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds SoundGenerator for tag SNDG; loader read from the class vtable slot 1"
+    },
+    {
       "va": "0x0014BF20",
       "name": "SoundGenerator::copy",
       "confidence": "matched",
       "provenance": "loader calls it on the existing record with a repeated one; same body as PC 0x005114B0",
       "pc_va": "0x005114B0",
       "signature": "void __thiscall copy(TES3::SoundGenerator* from)"
+    },
+    {
+      "va": "0x0014C050",
+      "name": "SoundGenerator::loadObjectSpecific",
+      "confidence": "guess",
+      "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds SoundGenerator for tag SNDG; loader read from the class vtable slot 1"
     },
     {
       "va": "0x0014CF80",
@@ -7295,6 +8030,48 @@
       "kind": "data"
     },
     {
+      "va": "0x003CECA0",
+      "name": "pool_TES3ObjectSTAT",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: decompiled and read",
+      "kind": "data"
+    },
+    {
+      "va": "0x003CEF10",
+      "name": "pool_TES3Dialogue",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: decompiled and read",
+      "kind": "data"
+    },
+    {
+      "va": "0x003CF048",
+      "name": "pool_TES3TopicInfo",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: decompiled and read",
+      "kind": "data"
+    },
+    {
+      "va": "0x003CFA48",
+      "name": "pool_TES3ObjectLAND",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: decompiled and read",
+      "kind": "data"
+    },
+    {
+      "va": "0x003D2990",
+      "name": "pool_TES3NPC",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: decompiled and read",
+      "kind": "data"
+    },
+    {
+      "va": "0x003D2B38",
+      "name": "pool_TES3ObjectCELL",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: decompiled and read",
+      "kind": "data"
+    },
+    {
       "va": "0x003D2CF0",
       "name": "TempleMarker",
       "confidence": "verified",
@@ -7309,6 +8086,13 @@
       "provenance": "set beside TempleMarker in 0x001068A0; second marker DataHandler::findClosestMarker accepts",
       "kind": "data",
       "type": "TES3::Object*"
+    },
+    {
+      "va": "0x003D2D80",
+      "name": "pool_TES3ObjectREFR",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: decompiled and read",
+      "kind": "data"
     },
     {
       "va": "0x003D3698",
@@ -7404,6 +8188,44 @@
       "provenance": "0x002D3C90 interns PartNonDragMenu_main; BuildMenuMultiElements finds it at 0x001F8B13",
       "kind": "data",
       "type": "unsigned short"
+    },
+    {
+      "va": "0x003EFC70",
+      "name": "g_heap",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: decompiled and read",
+      "note": "the one engine heap; region size 0x1100000 (17 MB)",
+      "kind": "data",
+      "type": "Memory_Heap"
+    },
+    {
+      "va": "0x003EFE08",
+      "name": "g_poolList",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: decompiled and read",
+      "note": "linked list of every MemoryPool_Simple (nodes {pool, next}); Free walks it to find the owner",
+      "kind": "data"
+    },
+    {
+      "va": "0x003F0590",
+      "name": "pool_NiTriShape",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: decompiled and read",
+      "kind": "data"
+    },
+    {
+      "va": "0x003F06E8",
+      "name": "pool_NiMatrix3",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: decompiled and read",
+      "kind": "data"
+    },
+    {
+      "va": "0x003F0C48",
+      "name": "pool_NiPropertyState",
+      "confidence": "verified",
+      "provenance": "engine-map step 3: decompiled and read",
+      "kind": "data"
     }
   ]
 }

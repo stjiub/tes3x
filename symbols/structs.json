@@ -1,6 +1,50 @@
 {
   "structs": [
     {
+      "name": "Memory_Heap",
+      "size": "0x170",
+      "note": "The one engine heap, static at 0x003EFC70. Segregated free lists with coalescing; blocks have an 8-byte header {prev block, size}, a free block's size has 1,000,000,000 added. Allocations that fit a size-class pool (bytes 8-176) are served from that pool first, then from the region.",
+      "fields": [
+        {"offset": "0x0", "name": "alignment", "type": "int", "confidence": "verified", "provenance": "Memory_Heap::ctor 0x00011330 stores 4"},
+        {"offset": "0x4", "name": "minSplit", "type": "int", "confidence": "verified", "provenance": "ctor stores 0x10; Allocate splits a free block only if the remainder is at least this"},
+        {"offset": "0x8", "name": "regionSize", "type": "int", "confidence": "verified", "provenance": "ctor stores its argument (0x1100000)"},
+        {"offset": "0xC", "name": "top", "type": "int", "confidence": "verified", "provenance": "Allocate bump-extends it; trimTop 0x00011FF0 lowers it"},
+        {"offset": "0x10", "name": "topHighWater", "type": "int", "confidence": "verified", "provenance": "Allocate 0x00011840 raises it with top"},
+        {"offset": "0x14", "name": "regionBase", "type": "void*", "confidence": "verified", "provenance": "ctor: CRT malloc of regionSize; inRegion 0x00011EB0 tests against it"},
+        {"offset": "0x18", "name": "blockCount", "type": "int", "confidence": "verified", "provenance": "trimTop decrements"},
+        {"offset": "0x1C", "name": "firstBlock", "type": "void*", "confidence": "verified", "provenance": "trimTop"},
+        {"offset": "0x20", "name": "lastBlock", "type": "void*", "confidence": "verified", "provenance": "trimTop"},
+        {"offset": "0x24", "name": "freeBlockCount", "type": "int", "confidence": "verified", "provenance": "fileFreeBlock 0x00012200"},
+        {"offset": "0x28", "name": "freeBlockMax", "type": "int", "confidence": "verified", "provenance": "fileFreeBlock 0x00012200"},
+        {"offset": "0x2C", "name": "binCount", "type": "int", "confidence": "verified", "provenance": "ctor stores 0x400"},
+        {"offset": "0x30", "name": "bins", "type": "void*", "confidence": "verified", "provenance": "ctor: binCount*8 bytes, zeroed; {head, tail} per bin"},
+        {"offset": "0x34", "name": "lastBin", "type": "void*", "confidence": "verified", "provenance": "ctor: bins + binCount*8 - 8"},
+        {"offset": "0x40", "name": "sizeIndex", "type": "void*", "confidence": "verified", "provenance": "ctor: 16 entries of {flag, bin pointer}, used by Allocate to find a larger non-empty bin"},
+        {"offset": "0x44", "name": "failCount", "type": "int", "confidence": "verified", "provenance": "Allocate counts out-of-region failures"},
+        {"offset": "0x50", "name": "physicalBytes", "type": "int", "confidence": "verified", "provenance": "ctor: GlobalMemoryStatus"},
+        {"offset": "0x54", "name": "sizeClassPools", "type": "void*", "confidence": "verified", "provenance": "list of {MemoryPool_Simple*, next}; Allocate matches the rounded size with the pool's element size"},
+        {"offset": "0x164", "name": "outOfMemoryHandler", "type": "void*", "confidence": "verified", "provenance": "Allocate calls it with the size when the region is full; if it returns true Allocate retries. Set at 0x000993D0."}
+      ]
+    },
+    {
+      "name": "MemoryPool_Simple",
+      "size": "0x90",
+      "note": "Fixed-size element pool: a bump area plus a free list, with overflow into Memory_Heap when full. Allocate 0x000127E0, Free 0x000128A0. The store is one CRT malloc at construction, so it is committed up front and never grows. Typed pools (NiTriShape, TES3TopicInfo, TES3NPC, ...) are static; the heap's size-class pools are created by addSizeClassPool 0x000124B0.",
+      "fields": [
+        {"offset": "0x0", "name": "vtable", "type": "void*", "confidence": "verified", "provenance": "ctor 0x00012720"},
+        {"offset": "0x4", "name": "name", "type": "char[0x40]", "confidence": "verified", "provenance": "ctor strncpy"},
+        {"offset": "0x44", "name": "capacityBytes", "type": "int", "confidence": "verified", "provenance": "ctor: rounded up to a multiple of elementSize; Allocate compares the bump offset to it"},
+        {"offset": "0x48", "name": "store", "type": "void*", "confidence": "verified", "provenance": "ctor: CRT malloc(capacityBytes)"},
+        {"offset": "0x4C", "name": "bumpOffset", "type": "int", "confidence": "verified", "provenance": "Allocate 0x000127E0"},
+        {"offset": "0x50", "name": "bumpHighWater", "type": "int", "confidence": "verified", "provenance": "Allocate"},
+        {"offset": "0x54", "name": "overflowBytes", "type": "int", "confidence": "verified", "provenance": "noteOverflow 0x000128F0: bytes currently in the heap fallback"},
+        {"offset": "0x58", "name": "overflowHighWater", "type": "int", "confidence": "verified", "provenance": "noteOverflow"},
+        {"offset": "0x5C", "name": "freeHead", "type": "void*", "confidence": "verified", "provenance": "Allocate pops it; pushFree 0x00012930 appends at the tail"},
+        {"offset": "0x60", "name": "freeTail", "type": "void*", "confidence": "verified", "provenance": "pushFree"},
+        {"offset": "0x64", "name": "elementSize", "type": "int", "confidence": "verified", "provenance": "ctor: rounded up to 4; Memory_Heap::Allocate matches it to the request"}
+      ]
+    },
+    {
       "name": "TES3::AnimationData",
       "note": "Xbox allocates 0x7E4 bytes. Verified offsets: groups +0x38, semantic next-key indices +0x3C, flags +0x54, layer times +0x58, sequence pointer triples +0x2C4 and selected sequence indices +0x308. update 0x000CEFB0 skips setting upper/arm sequence offsets when flags are 0xFFFF; held playback must set them explicitly. Key time tables are semantic slots, including unused zeros and nonchronological entries.",
       "fields": [
