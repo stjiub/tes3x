@@ -189,6 +189,13 @@
       "provenance": "vtable method; sets viewport then D3DDevice_Clear. param_2 bit0 = colour, bit1 = stencil, bit2 = depth; observed flags 0x6 on every frame, never colour"
     },
     {
+      "va": "0x00024520",
+      "name": "debugPhaseLog",
+      "confidence": "verified",
+      "provenance": "a single ret with 155 callers passing phase strings; decompiled 2026-10-23",
+      "note": "The engine's phase log, compiled out to ret. Hooking it would give a timeline of every engine phase message (load, save, reset)."
+    },
+    {
       "va": "0x0002FB40",
       "name": "Renderer::clearViewport",
       "confidence": "guess",
@@ -3124,7 +3131,7 @@
       "name": "Dialogue::appendInfo",
       "confidence": "guess",
       "provenance": "decompiled; loader INFO branch calls it once per record",
-      "note": "Master loading passes atTail=1: a non-empty PNAM walks the whole +0x1C chain to append, an empty one pushes the head. Quadratic per topic: retail 11.7M steps, 441 ms on hardware (~28 cycles/step); full TR with dialogue-merge 74.5M steps (tools/tes3x_dialogue_census.py --steps).",
+      "note": "Only loadFile index 0 (Morrowind.esm) passes atTail=1 (0x001103C3): a non-empty PNAM walks the whole +0x1C chain to append, an empty one pushes the head. Later files use findInfo then atTail=0 (0x001104F3). Retail: 11.7M nodes, 441 ms on hardware (~28 cycles/node).",
       "signature": "void __thiscall appendInfo(TES3::DialogueInfo* info, bool atTail)"
     },
     {
@@ -3588,6 +3595,21 @@
       "pc_va": "0x004C3C40"
     },
     {
+      "va": "0x0010AAF0",
+      "name": "NonDynamicData::openSaveFile",
+      "confidence": "matched",
+      "provenance": "handoff efficiency/3",
+      "note": "Appends .ess, splits at last backslash, null on failure (no fallthrough to New Game here; 0x114300 callers differ).",
+      "signature": "TES3File* __thiscall openSaveFile(char* path)"
+    },
+    {
+      "va": "0x0010B410",
+      "name": "NonDynamicData::resetAlteredStuff",
+      "confidence": "verified",
+      "provenance": "phase strings 'ResetAlteredStuff()...' in the body; decompiled 2026-10-23",
+      "note": "Called by loadGame (in-process load) before loadSaveGame: tears down magic/VFX/journal/audio, builds a reload list of visited cells and modified objects, resets dialogue, walks every cell with a loading-menu update each, then re-reads each modified object, region, global and faction from its master (0x00131C90); one that fails to reload is deleted."
+    },
+    {
       "va": "0x0010CA40",
       "name": "NonDynamicData::addNewObject",
       "kind": "function",
@@ -3690,6 +3712,14 @@
       "provenance": "only caller TES3Game::loadAllPlugins (0x00094B10); loads each selected file through 0x00112290, then links every object",
       "pc_va": "0x004BB1D0",
       "note": "boot data load: 23.6 s on hardware with 34 masters (findings 2026-10-01)"
+    },
+    {
+      "va": "0x00113CB0",
+      "name": "NonDynamicData::loadGame",
+      "confidence": "matched",
+      "provenance": "handoff efficiency/3: called by Load handler 0x1E75xx after renderNextFrame; opens save, loadSaveGame, resets UI, re-adds global scripts",
+      "note": "In-process load, no relaunch. this = *DAT_003cb5f8. Caller (0x1E7331 Load handler) first runs 0x1E69A0, 0x1FF090, renderNextFrame; on success 0x1E7250, 0x1FF090, menu mode off. On open failure shows GMST 0x25B.",
+      "signature": "bool __thiscall loadGame(char* path)"
     },
     {
       "va": "0x00114300",
