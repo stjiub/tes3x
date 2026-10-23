@@ -54,7 +54,7 @@ REQUIRED = ("kind", "purpose", "procedure", "script", "expect")
 OPTIONAL = ("limitations", "watch", "timeout", "xemu", "save", "enable", "apply", "pipeline",
             "allow", "profile", "fixture", "sequence", "compare", "required_mods", "agent")
 PROFILE_OVERLAY = ("profile", "rules", "preferences", "package", "ui", "ini")
-FIXTURE_KEYS = {"script": str, "opcodes": list, "texture": bool, "dialogue": str}
+FIXTURE_KEYS = {"script": str, "opcodes": list, "bytecode": str, "texture": bool, "dialogue": str}
 AGENT_KEYS = {"after": str, "console": list, "fetch": list, "exit": bool}
 FIXTURE_MOD = "tes3x-test"
 
@@ -88,10 +88,12 @@ def game_test_problems(test, where):
     fixture = test.get("fixture", {})
     if not isinstance(fixture, dict) or set(fixture) - set(FIXTURE_KEYS) or any(
             type(fixture[key]) is not kind for key, kind in FIXTURE_KEYS.items() if key in fixture):
-        problems.append(f"{where}: fixture takes script (string), opcodes (array), texture "
-                        "(boolean) and dialogue (string)")
+        problems.append(f"{where}: fixture takes script (string), opcodes (array), bytecode "
+                        "(hex string), texture (boolean) and dialogue (string)")
     elif any(type(opcode) is not int for opcode in fixture.get("opcodes", [])):
         problems.append(f"{where}: fixture.opcodes must be integers")
+    elif not re.fullmatch(r"(?:[0-9A-Fa-f]{2}\s*)*", fixture.get("bytecode", "")):
+        problems.append(f"{where}: fixture.bytecode must be hex bytes")
     agent = test.get("agent", {})
     if not isinstance(agent, dict) or set(agent) - set(AGENT_KEYS) or any(
             type(agent[key]) is not kind for key, kind in AGENT_KEYS.items() if key in agent) or any(
@@ -249,10 +251,11 @@ def make_fixture(fixture, esm, library):
     own retail master."""
     folder = Path(library) / FIXTURE_MOD
     folder.mkdir(parents=True, exist_ok=True)
-    if fixture.get("opcodes"):
+    if fixture.get("opcodes") or fixture.get("bytecode"):
         import tes3x.scriptasm as tes3x_scriptasm
-        tes3x_scriptasm.build(str(esm), fixture.get("script", "Main"), fixture["opcodes"],
-                              str(folder / "TES3X Test.esp"))
+        tes3x_scriptasm.build(str(esm), fixture.get("script", "Main"), fixture.get("opcodes", []),
+                              str(folder / "TES3X Test.esp"),
+                              bytecode=bytes.fromhex(fixture.get("bytecode", "")))
     if fixture.get("dialogue"):
         repeat_topic(esm, fixture["dialogue"], folder / "TES3X Dialogue.esp")
     if fixture.get("texture"):

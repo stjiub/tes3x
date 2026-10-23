@@ -36,7 +36,8 @@ def find_script(esm, name):
     raise SystemExit("no SCPT named %r in %s" % (name, esm))
 
 
-def build(esm, script, opcodes, out, master="Morrowind.esm"):
+def build(esm, script, opcodes, out, master="Morrowind.esm", bytecode=b""):
+    """BYTECODE is appended verbatim after the OPCODES, for statements with operands."""
     flags, subs = find_script(esm, script)
     head = dict(subs)[b"SCHD"]
     name = head[:SCHD_NAME].split(b"\0")[0].decode("latin-1")
@@ -44,8 +45,9 @@ def build(esm, script, opcodes, out, master="Morrowind.esm"):
     if b"SCDT" not in dict(subs):
         raise SystemExit("%s has no compiled data to extend" % name)
 
-    call = call_bytes(opcodes)
-    names = ", ".join("0x%04X" % o for o in opcodes)
+    call = call_bytes(opcodes) + bytecode
+    names = ", ".join(["0x%04X" % o for o in opcodes]
+                      + (["%d bytes of bytecode" % len(bytecode)] if bytecode else []))
     rebuilt = []
     for tag, value in subs:
         if tag == b"SCHD":

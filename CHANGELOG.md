@@ -4,6 +4,10 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- `mwse-legacy`: `XPosition`, `XPositionCell`, `XAITravel` and `XGetSpellEffects` now hand their
+  coordinates and spell to the game. They used stale values before, and could break a `While`
+  loop in the calling script. See [legacy MWSE bytecode](patches/mwse-legacy.md).
+
 - `tes3x scriptasm --command NAME` calls a script command by name instead of opcode. See
   [script opcode extensions](patches/script-ext.md#using-it).
 

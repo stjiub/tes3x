@@ -182,6 +182,32 @@ def find_script_decode_state(x):
     return va, ip, opcode
 
 
+# Position's case: fstp [destination+8]; mov [rotation], 0; mov [rotation+4], 0
+SCRIPT_POSITION_SIG = re.compile(
+    rb"\xD9\x1D(?P<z>....)\xC7\x05(?P<rx>....)\x00\x00\x00\x00\xC7\x05(?P<ry>....)\x00\x00\x00\x00",
+    re.S)
+# text[len] = 0 after each string operand copy: mov byte ptr [reg + text], 0
+SCRIPT_TEXT_TERMINATOR = re.compile(rb"\xC6[\x80-\x87](....)\x00", re.S)
+SCRIPT_DECODE_SPAN = 0x2000
+
+
+def find_script_operand_globals(x):
+    """Decode's destination[3], rotation[3] and text buffer, read from Decode's own stores."""
+    decode = find_script_decode_state(x)[0]
+    off = x.va_to_off(decode)
+    body = bytes(x.data[off:off + SCRIPT_DECODE_SPAN])
+    hits = [m for m in SCRIPT_POSITION_SIG.finditer(body)
+            if struct.unpack("<I", m.group("ry"))[0] == struct.unpack("<I", m.group("rx"))[0] + 4]
+    if len(hits) != 1:
+        raise PatchError("Script::Decode: %d Position operand store(s), expected 1" % len(hits))
+    destination = struct.unpack("<I", hits[0].group("z"))[0] - 8
+    rotation = struct.unpack("<I", hits[0].group("rx"))[0]
+    texts = {struct.unpack("<I", m.group(1))[0] for m in SCRIPT_TEXT_TERMINATOR.finditer(body)}
+    if len(texts) != 1:
+        raise PatchError("Script::Decode: %d text buffer candidate(s), expected 1" % len(texts))
+    return destination, rotation, texts.pop()
+
+
 def find_script_fixup_call(x, decode_va, opcode_va):
     """Find the fixup-only call to Script::Decode."""
     sites = []
@@ -2075,6 +2101,9 @@ LOCATORS = {
     "script-decode": lambda image: find_script_decode_state(image)[0],
     "script-ip": lambda image: find_script_decode_state(image)[1],
     "script-opcode": lambda image: find_script_decode_state(image)[2],
+    "script-destination": lambda image: find_script_operand_globals(image)[0],
+    "script-rotation": lambda image: find_script_operand_globals(image)[1],
+    "script-text": lambda image: find_script_operand_globals(image)[2],
     "script-ip-restore": find_script_ip_restore_site,
     "ref-load": find_ref_load,
     "ref-skip": find_ref_skip,

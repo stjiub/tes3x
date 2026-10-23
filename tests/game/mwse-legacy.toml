@@ -1,0 +1,20 @@
+kind = "single"
+purpose = "Legacy MWSE bytecode reaches a native command with its operands: XPosition moves a reference to the coordinates it pops."
+procedure = "Generate a plugin that appends to the global script Main four Push instructions (rotation, z, y, x), a -> prefix naming the prison ship's persistent NPC and XPosition, start a new game and read that NPC's position while Main runs every frame."
+limitations = "Covers XPosition on an NPC only; XPositionCell, XAITravel and XGetSpellEffects pass operands the same way but are not run. Positioning the player with XPosition moves it to an exterior cell, as the native Position does."
+timeout = 180
+enable = ["diagnostics", "console", "script-ext"]
+script = '''
+@start new
+wait 120
+assert "chargen name"->getpos x == 100.00
+assert "chargen name"->getpos y == -65.00
+exit
+'''
+
+[fixture]
+# Push 0.0, -107.9, -65.0, 100.0; -> "chargen name"; XPosition. The NPC starts at x 18.
+bytecode = "113800000000 1138cdccd7c2 1138000082c2 11380000c842 0c010c6368617267656e206e616d65 053c"
+
+[expect]
+test = ['mwse\.run_opcode', 'exec\.exit']

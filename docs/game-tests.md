@@ -96,7 +96,9 @@ provenance but never copied into the repository.
 tables, such as `profile = { save_pool = "TES3X Test" }`.
 
 `[fixture]` generates a test mod from your own `Morrowind.esm` and makes it the build's only mod:
-`opcodes = [0x2001]` appends those opcode calls to the global script `Main` (or `script`), and
+`opcodes = [0x2001]` appends those opcode calls to the global script `Main` (or `script`),
+`bytecode = "11 38 00 00 c8 42"` appends those raw bytes after them, for statements with operands,
+and
 `texture = true` adds one 4x4 texture so there is an asset to pack, and `dialogue = "TOPIC"` adds
 a plugin repeating that retail topic with one new response.
 

@@ -102,6 +102,7 @@
     "MWSE_CELL_NODE": null,
     "MWSE_CREATE_REFERENCE": null,
     "MWSE_DATA_HANDLER": null,
+    "MWSE_DESTINATION": null,
     "MWSE_DROP_ITEM": null,
     "MWSE_FIND_REFERENCE": null,
     "MWSE_FORCE_CAST": null,
@@ -112,9 +113,11 @@
     "MWSE_IP_RESTORE_RETURN": null,
     "MWSE_REF_MODIFIED": null,
     "MWSE_RESOLVE_OBJECT": null,
+    "MWSE_SECOND_OBJECT": null,
     "MWSE_SPELL_ADD_ID": null,
     "MWSE_SPELL_REMOVE": null,
     "MWSE_START_COMBAT": null,
+    "MWSE_TARGET_ROT": null,
     "MWSE_UPDATE_LIGHTING": null,
     "MWSE_WEAR_ITEM": null,
     "MWSE_WORLD": null,
@@ -504,8 +507,8 @@
       "sha256": "188766df321d0ecf923d45db6450b3c93928d18bc630eda4cce2fe22bb70dc94"
     },
     "tes3xmwse.c": {
-      "digest": "f03b66a239b9937bad99dba96b26dc8b79092f7dc39268eaadfd14171177b954",
-      "sha256": "b39913e9e2c08ef0299361235d4d1a69938ed179cdf7a6dcfa7f453b51f0d2d5"
+      "digest": "317899d691b9cad5e3f3175b0eecc7daef904232f293cc35f963fc82ed8016a8",
+      "sha256": "2a4841ae38f8f48a43a0cb3812c4f7b7fb3f335213ee43009c9ad29b37a871af"
     },
     "tes3xnet.c": {
       "digest": "521d7676b58fbe9a51e67bf488b41af19a207689c6e4287f5591861d8da65e41",

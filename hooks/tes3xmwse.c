@@ -49,13 +49,15 @@
 #define TES3X_MWSE_FILES 16
 #define TES3X_MWSE_FILENAME_SIZE 62
 #define TES3X_MWSE_PATH_SIZE 96
+/* The scalars after the IP keep the PC's offsets; the operand arrays do not, so those are located. */
 #define TES3X_MWSE_TARGET_REF   (TES3X_SCRIPT_IP + 0x3C)
 #define TES3X_MWSE_TARGET_TEMPL (TES3X_SCRIPT_IP + 0x44)
 #define TES3X_MWSE_LOCAL_VARS   (TES3X_SCRIPT_IP + 0x48)
-#define TES3X_MWSE_SECOND_OBJECT (TES3X_SCRIPT_IP - 0x4B8)
 #define TES3X_MWSE_VAR_INDEX     (TES3X_SCRIPT_IP + 4)
-#define TES3X_MWSE_DESTINATION   (TES3X_SCRIPT_IP - 0x168)
-#define TES3X_MWSE_TARGET_ROT    (TES3X_SCRIPT_IP - 0xA8)
+#if !defined(TES3X_MWSE_DESTINATION) || !defined(TES3X_MWSE_TARGET_ROT) || \
+    !defined(TES3X_MWSE_SECOND_OBJECT)
+#error "define the script operand globals: destination, rotation and the text buffer"
+#endif
 
 typedef signed char s8;
 typedef signed short s16;
