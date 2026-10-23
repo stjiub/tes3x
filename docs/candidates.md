@@ -13,7 +13,7 @@ on, `low` for minor ones, and `none` for fixes we won't port.
 
 | status | fixes |
 |---|---|
-| candidate | 181 |
+| candidate | 180 |
 | deferred | 13 |
 | not-applicable | 16 |
 | rejected | 3 |
@@ -50,7 +50,6 @@ Worth porting, but not yet shown to affect the Xbox build.
 | `mwse-journal-update` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | performance (benchmark first) | **Optimize journal update/search work.** Measure large-journal open/update time and verify ordering/quest indices. |
 | `mwse-map-border-marker` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | core (intended default) | **Avoid crash while updating map markers at the drawable map border.** Relevant to map expansion and large landmasses if the Xbox map bounds match. |
 | `mwse-paperdoll` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | core (intended default if Xbox path exists) | **Avoid paper-doll equip/unequip crash.** Xbox inventory rendering may not use the PC paper-doll path; prove applicability first. |
-| `mwse-pathgrid-zero` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | core (intended default) | **Avoid NPC flee selecting a random node from a zero-node pathgrid.** Clean bounds case and likely inexpensive port once the AI path is located. |
 | `mwse-showmap-fillmap` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | performance (benchmark first) | **Optimize `ShowMap`/`FillMap`.** Compare command time and map correctness across repeated calls. |
 | `mwse-uncloned-removeitem` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | core (intended default) | **Avoid actor/item-removal crash on uncloned actors.** Establish exact actor lifetime and inventory precondition. |
 | `mwse-vfx-load-bloat` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | core (intended default) | **Reject or repair invalid loaded VFX state which causes load errors and save growth.** Especially relevant to long-lived Xbox saves; measure record growth as well as crash behaviour. |

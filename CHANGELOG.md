@@ -4,6 +4,9 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- New `mwse-pathgrid-zero` patch stops Wander and Flee from crashing on a cell whose pathgrid has
+  no nodes. See [the patch](patches/mwse-pathgrid-zero.md).
+
 - New `mcp-6` patch lets Restore Attribute and expiring Drain Attribute recover a player's
   temporary Fortify Attribute bonus. See [the patch](patches/mcp-6.md).
 

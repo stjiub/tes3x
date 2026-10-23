@@ -28,7 +28,7 @@ from tes3x.patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, archive_load_site,
                          find_message_scale, find_name_scale, find_options_scale,
                          find_chargen_scale,
                          find_mcp37_context,
-                         find_mcp125_context, find_mcp173_rank, find_save_allowed_context,
+                         find_mcp125_context, find_mcp173_rank, find_pathgrid_lookups, find_save_allowed_context,
                          find_mcp47_context, find_mcp132_context,
                          find_script_ip_restore_call, find_transition_calls, scene_form)
 
@@ -938,6 +938,9 @@ def engine_bindings(xbe, sources):
                             ("mcp6_drain", "_tes3x_mcp6_finish_drain"),
                             ("mcp6_restore", "_tes3x_mcp6_finish_restore")):
             wanted[key] = (symbol,)
+    if "tes3xpathgrid.c" in names:
+        print("mwse-pathgrid-zero hooks: " + ", ".join(map(hexva, find_pathgrid_lookups(image))))
+        wanted["pathgrid_zero"] = ("_tes3x_pathgrid_zero_hook",)
     if "tes3xmcp173.c" in names:
         sites = find_mcp173_rank(image)
         print(f"mcp-173 hooks: NPC rank saves {', '.join(map(hexva, sites))}")

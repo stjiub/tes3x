@@ -1823,16 +1823,6 @@ summary = "Avoid paper-doll equip/unequip crash"
 reason = "Xbox inventory rendering may not use the PC paper-doll path; prove applicability first."
 
 [[candidate]]
-name = "mwse-pathgrid-zero"
-origin = { source = "MWSE" }
-category = "core"
-default = "intended default"
-status = "candidate"
-priority = "medium"
-summary = "Avoid NPC flee selecting a random node from a zero-node pathgrid"
-reason = "Clean bounds case and likely inexpensive port once the AI path is located."
-
-[[candidate]]
 name = "mwse-pc-process"
 origin = { source = "MWSE" }
 category = "undecided"

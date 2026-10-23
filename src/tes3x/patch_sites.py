@@ -1278,6 +1278,32 @@ def find_mcp6_context(x):
             "restore_post": restore_posts[0], "get_mobile": lookups[0]}
 
 
+# Wander and Flee read the cell's pathgrid, then pick a random node from it.
+PATHGRID_FLEE_SIG = re.compile(
+    rb"(?P<site>\xe8....)\x85\xc0\x0f\x84....\x8b\x68\x24\x8d\x78\x20", re.S,
+)
+PATHGRID_WANDER_SIG = re.compile(
+    rb"\x3a\xc3\x74.\xe8....\x8b\xc8(?P<site>\xe8....)\x85\xc0\x89\x46\x54\x74", re.S,
+)
+
+
+def find_pathgrid_lookups(x):
+    """Find the Flee and Wander calls to the cell pathgrid getter."""
+    data = bytes(x.data)
+    sites = []
+    for label, pattern in (("Flee", PATHGRID_FLEE_SIG), ("Wander", PATHGRID_WANDER_SIG)):
+        hits = list(pattern.finditer(data))
+        if len(hits) != 1:
+            raise PatchError("mwse-pathgrid-zero: %d %s lookups, expected 1" % (len(hits), label))
+        site = x.off_to_va(hits[0].start("site"))
+        target = tes3x_inject.call_target(x, site) if site is not None else None
+        off = x.va_to_off(target) if target is not None else None
+        if off is None or bytes(x.data[off:off + 4]) != b"\x8b\x41\x70\xc3":
+            raise PatchError("mwse-pathgrid-zero: %s lookup is not the pathgrid getter" % label)
+        sites.append(site)
+    return sites
+
+
 def find_mcp173_rank(x):
     """Find the save-flag calls before the two NPC rank writes."""
     hits = list(MCP173_RANK_SIG.finditer(bytes(x.data)))

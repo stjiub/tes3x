@@ -39,6 +39,7 @@ enable = [
     # "mcp-123",               # core: persist objects placed by scripts into unvisited cells
     # "mcp-173",               # core: persist NPC faction rank changes made by scripts
     # "mcp-6",                 # correctness: let Restore and expiring Drain recover the active Fortify amount
+    # "mwse-pathgrid-zero",    # core: no crash when Wander or Flee meets a node-less pathgrid
     # "mcp-125",               # core: initialize scripts and collision for actors moved by Position
     # "mcp-127",               # compat: keep replacement land textures from resizing the world map
     # "mcp-132",               # compat: play scripted humanoid animations on all body layers

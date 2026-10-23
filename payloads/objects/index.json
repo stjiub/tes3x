@@ -535,6 +535,10 @@
       "digest": "49895f1b1edee759c97c146e96edd3ca3bc58d5b7eec7e806ab0bd314c3b2c31",
       "sha256": "737514ea04d9f293bfa6a4aaa7082fc8b9b7cf482bc740647c4b7deb22fd02c7"
     },
+    "tes3xpathgrid.c": {
+      "digest": "1f897aa766eaac7548a1d18c139f1e101c92025c108818e3dc0a9d2c64c7131b",
+      "sha256": "e8a5891dc3d7321f24ca4c0a3b56345fbf556632c0eb924ba218be68dc861124"
+    },
     "tes3xprefs.c": {
       "digest": "749ad20bd37d1ead38fc4efd14fcfe55f4fa9ebc82843a41b1fac66b33d8462c",
       "sha256": "652aa7d3994f08ac8a0b0bc9b2df7af8d5215e0e01b48f156dcb885a0ee9e418"

@@ -326,6 +326,17 @@ source = "tes3xmcp47.c"
 summary = "Keep another actor's magic-item changes from deselecting the player's spell."
 
 [[patch]]
+name = "mwse-pathgrid-zero"
+title = "Empty pathgrid fix"
+origin = { source = "MWSE" }
+bit = 47
+category = "core"
+channel = "dev"
+selection = "preset"
+source = "tes3xpathgrid.c"
+summary = "Stop Wander and Flee picking a node from a pathgrid that has none."
+
+[[patch]]
 name = "mcp-173"
 title = "NPC faction rank persistence"
 origin = { source = "MCP", id = "173" }

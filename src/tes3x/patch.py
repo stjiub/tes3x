@@ -51,7 +51,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_game_instance, find_hd_video, find_heap_function,
                                find_heap_object, find_heap_region, find_heap_region_sites,
                                find_info_arena_sites, find_lean_menu, find_marker,
-                               find_mcp102_actn, find_mcp123_add, find_mcp6_context,
+                               find_mcp102_actn, find_pathgrid_lookups, find_mcp123_add, find_mcp6_context,
                                find_mcp125_collision,
                                find_mcp127_map,
                                find_mcp125_context, find_mcp146, find_mcp146_context,
@@ -1073,6 +1073,21 @@ def _mcp_6(x, value, ctx):
         x.data[off:off + length] = (b"\xe8" + struct.pack("<i", target - (site + 5))
                                     + (b"\x90" if length == 6 else b""))
         edits.append((off, length, f"{key} 0x{site:08X} -> 0x{target:08X}"))
+    return edits
+
+
+@patch("mwse-pathgrid-zero")
+def _mwse_pathgrid_zero(x, value, ctx):
+    """Treat a pathgrid without nodes as absent in the Wander and Flee lookups."""
+    target = ctx.get("hooks", {}).get("pathgrid_zero")
+    if not target:
+        raise PatchError("mwse-pathgrid-zero: needs `payload` first, with a pathgrid_zero hook")
+    target = int(str(target), 16)
+    edits = []
+    for site in find_pathgrid_lookups(x):
+        off = x.va_to_off(site)
+        x.data[off:off + 5] = b"\xe8" + struct.pack("<i", target - (site + 5))
+        edits.append((off, 5, "pathgrid lookup 0x%08X -> 0x%08X" % (site, target)))
     return edits
 
 
