@@ -1032,6 +1032,68 @@ class ServerTests(unittest.TestCase):
         server.event_locals(client, net.EVENT_LOCALS, net.pack_locals(2, {0: 7})[0], '', 0.0)
         self.assertEqual(server.world.locals[2], {0: 7})
 
+    def test_actor_stats_are_checked_kept_and_bounded(self):
+        net = tes3x_net
+        values = {i: i for i in range(net.ACTOR_STAT_SLOTS)}
+        events = net.pack_actor_stats(0x0101F7C4, values)
+        self.assertEqual(len(events), 4)
+        for data in events:
+            self.assertLessEqual(len(data), net.EVENT_DATA)
+            self.assertTrue(valid_client_event(net.EVENT_ACTOR_STATS, data))
+        self.assertEqual(dict(kv for data in events
+                              for kv in net.unpack_actor_stats(data)[1].items()), values)
+        refid = struct.pack('<I', 0x0101F7C4)
+        for invalid in (b'', refid + b'\0', refid + b'\2' + net.ACTOR_STAT.pack(0, 1),
+                        refid + b'\1' + net.ACTOR_STAT.pack(net.ACTOR_STAT_SLOTS, 1),
+                        refid + b'\2' + net.ACTOR_STAT.pack(3, 1) * 2,
+                        struct.pack('<I', 5) + b'\1' + net.ACTOR_STAT.pack(0, 1)):
+            self.assertFalse(valid_client_event(net.EVENT_ACTOR_STATS, invalid))
+        server = net.Server.__new__(net.Server)
+        server.world, server.detail = net.World(), {'verbose': False}
+        client = SimpleNamespace(id=1)
+        server.world.actor_stats = {0x01000001: {i: 0 for i in range(net.ACTOR_STATS_MAX - 1)}}
+        for data, expect in ((net.pack_actor_stats(0x01000002, {0: 5, 1: 6})[0], {0: 5}),
+                             (net.pack_actor_stats(0x01000002, {0: 7})[0], {0: 7})):
+            self.assertTrue(server.event_actor_stats(client, net.EVENT_ACTOR_STATS, data, '', 0.0))
+            self.assertEqual(server.world.actor_stats[0x01000002], expect)
+
+    def test_kills_are_counted_once_per_actor_and_survive_a_save(self):
+        net = tes3x_net
+        refid = struct.pack('<I', 0x0101F7C4)
+        valid = refid + b'fargoth' + bytes(1)
+        self.assertTrue(valid_client_event(net.EVENT_KILL, valid))
+        for invalid in (b'', refid + bytes(1), refid + b'fargoth', refid + b'a' * 32 + bytes(1),
+                        struct.pack('<I', 5) + b'x' + bytes(1), refid + b'a' + bytes(2),
+                        refid + b'a' + bytes([10]) + b'b' + bytes(1)):
+            self.assertFalse(valid_client_event(net.EVENT_KILL, invalid))
+        server = net.Server.__new__(net.Server)
+        server.world, server.detail, server.clients = net.World(), {'verbose': False}, {}
+        client = SimpleNamespace(id=1)
+        for who, expect in ((0x0101F7C4, 1), (0x0101F7C4, 1), (0x0101F7C5, 2)):
+            data = struct.pack('<I', who) + b'guard' + bytes(1)
+            self.assertFalse(server.event_kill(client, net.EVENT_KILL, data, '', 0.0))
+            self.assertEqual(server.kill_counts(), {'guard': expect})
+        self.assertEqual(net.pack_kills('guard', 2), struct.pack('<I', 2) + b'guard' + bytes(1))
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder)
+        server.world.path = str(folder / 'world.json')
+        server.world.save(0.0)
+        restored = net.World()
+        self.assertTrue(restored.load(server.world.path, 0))
+        self.assertEqual(restored.kills, server.world.kills)
+
+    def test_actor_stats_survive_a_world_save_and_replay_to_a_joiner(self):
+        net = tes3x_net
+        world = net.World()
+        world.actor_stats = {0x0101F7C4: {16: 150, 0: 0x42480000}}
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder)
+        world.path = str(folder / 'world.json')
+        world.save(0.0)
+        restored = net.World()
+        self.assertTrue(restored.load(world.path, 0))
+        self.assertEqual(restored.actor_stats, world.actor_stats)
+
     def test_actor_states_are_kept_and_sent_to_a_cell_s_next_authority(self):
         net = tes3x_net
         server = net.Server.__new__(net.Server)
@@ -2059,7 +2121,7 @@ class ServerTests(unittest.TestCase):
 
         saved = next(world.glob('*.json'))
         state = json.loads(saved.read_text(encoding='utf-8'))
-        self.assertEqual(sorted(state), ['actors', 'ai', 'clock', 'contents', 'deaths', 'factions', 'globals', 'journal', 'locals', 'moves', 'next_spawn', 'objects',
+        self.assertEqual(sorted(state), ['actor_stats', 'actors', 'ai', 'clock', 'contents', 'deaths', 'factions', 'globals', 'journal', 'kills', 'locals', 'moves', 'next_spawn', 'objects',
                                          'records', 'scripts', 'spawns', 'statuses', 'topics', 'weather'])
         self.assertEqual(len(state['clock']), 6)  # hour, day, month, year, days passed, scale
         self.assertEqual(state['deaths'], {str(refid): 1})

@@ -115,6 +115,12 @@ def valid_client_event(kind, data):
             1 if kind == p.EVENT_HOLD else 3)
     if kind == p.EVENT_DEATH:
         return len(data) == 4
+    if kind == p.EVENT_KILL:
+        try:
+            p.unpack_kill(data)
+            return True
+        except ValueError:
+            return False
     if kind == p.EVENT_STATUS:
         return len(data) == p.STATUS.size
     if kind == p.EVENT_BOUNTY:
@@ -156,6 +162,12 @@ def valid_client_event(kind, data):
     if kind == p.EVENT_LOCALS:
         try:
             return bool(p.unpack_locals(data))
+        except ValueError:
+            return False
+    if kind == p.EVENT_ACTOR_STATS:
+        try:
+            p.unpack_actor_stats(data)
+            return True
         except ValueError:
             return False
     if kind == p.EVENT_ACTOR_MOVE:

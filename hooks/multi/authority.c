@@ -99,6 +99,8 @@ static u32 deaths[DEATHS], death_count, deaths_reported, deaths_applied;
 static u32 actor_id(const u8 *ref);
 static u32 actor_owner(u32 id, u32 cell_owner);
 static void status_frame(const u8 *mobile, u8 *ref, u32 refid);
+static void astats_frame(const u8 *mobile, u8 *ref, u32 refid, int mine);
+static void kill_report(const u8 *ref, u32 refid);
 
 static void actors_reset(void)
 {
@@ -493,6 +495,7 @@ static void death_frame(u8 *mobile, u8 *ref, u32 refid, u32 owner)
         death_add(refid);
         if (event_queue(EVENT_DEATH, (const u8 *)&refid, 4))
             deaths_reported++;
+        kill_report(ref, refid);
         tes3x_log_hex3("net.actor_died", refid, (u32)(int)health, mobile[MOBILE_ACTION]);
     }
 }
@@ -867,8 +870,10 @@ static void authority_frame(const u8 *player, const u8 *state)
         if (place_count && owner)
             place_kept(mobile, ref, refid, owner == ses.client);
         death_frame(mobile, ref, refid, owner);
-        if (send)
+        if (send) {
             status_frame(mobile, ref, refid);
+            astats_frame(mobile, ref, refid, owner == ses.client);
+        }
         if (owner && owner != ses.client) {
             follow(mobile, ref, refid, owner);
             continue;

@@ -147,7 +147,7 @@ SAVE_CALLS = 7  # SaveGame's callers: quicksave, three autosaves, the save menu'
 ACTOR_ADDRESSES = (
     ("LEVELED_RESOLVE", 0x0011A740), ("LEVELED_LINKED", 0x0012AEE0),
     ("LEVELED_LINK", 0x0012A370), ("ADD_MOB", 0x001840B0), ("SIMULATE", 0x00180630),
-    ("START_COMBAT", 0x001629F0),
+    ("START_COMBAT", 0x001629F0), ("KILL_FIND", 0x0017FE40),  # KillCounter: the entry of an object
 )
 # What the player's identity is applied with: the record lookups, what MenuCreateClass's OK
 # calls to make and list chargen's class, MenuRaceSex's OK, which rebuilds the player's model, and

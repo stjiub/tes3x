@@ -482,6 +482,8 @@ static int script_safe(const u8 *text, u32 max)
 #include "multi/player_effects.c"
 #include "multi/records.c"
 #include "multi/player_apply.c"
+#include "multi/actor_stats.c"
+#include "multi/kills.c"
 #include "multi/levelup.c"
 #include "multi/rest.c"
 #include "multi/ai_packages.c"
@@ -612,6 +614,7 @@ void tes3x_multi_frame(void)
     moves_frame();
     ai_packages_frame();
     locals_frame(state);
+    kills_frame();
     spawns_frame();
     containers_frame();
     player_frame(ref);
@@ -714,6 +717,8 @@ int tes3x_multi_command(const char *text)
         shot_stat();
         objects_stat();
         locals_stat();
+        astats_stat();
+        kills_stat();
         world_scripts_stat();
         moves_stat();
         ai_packages_stat();
@@ -752,6 +757,8 @@ int tes3x_multi_command(const char *text)
         local_query(rest);
     } else if ((rest = word(text, "actor")) && *(rest = skip(rest))) {
         actor_query(rest);
+    } else if ((rest = word(text, "astat")) && *(rest = skip(rest))) {
+        astat_query(rest);
     } else if ((rest = word(text, "script")) && *(rest = skip(rest))) {
         script_query(rest);
     } else if ((rest = word(text, "where")) && *(rest = skip(rest))) {

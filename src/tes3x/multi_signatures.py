@@ -94,6 +94,8 @@ SIGNATURES = {
              "83 ec 3c 53 55 8b 6c 24 48 56 57 55 6a 02 8b f1 e8 bb 80 ff"),
     "FIND_BIRTHSIGN": ("match", 0, ".text", "",
              "53 56 57 8b f9 8b 4f 50 e8 ?? ?? ?? ?? 85 c0 74 28 8b 5c 24"),
+    "KILL_FIND": ("match", 0, ".text", "",
+             "53 56 57 8b f9 8b 4f 08 8b 41 04 33 f6 85 c0 76 ?? 8b 5c 24 10 56 e8"),
     "FIND_SCRIPT": ("match", 0, ".text", "",
              "53 56 57 8b f9 8b 4f 38 e8 ?? ?? ?? ?? 85 c0 74 28 8b 5c 24"),
     "FIND_CLASS": ("match", 0, ".text", "",

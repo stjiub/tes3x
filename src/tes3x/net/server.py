@@ -47,6 +47,8 @@ from .proto import (ACTOR, ACTORS, ACTORS_PER_PACKET, ACTOR_DEAD, ACTOR_IN_COMBA
                     PICK_CHARACTER, PICK_NEW, PICK_START, PLACE, PLACE_HOLD, PLAYER_ALIVE,
                     PLAYER_BOUNTY, PLAYER_DEATH, PLAYER_EFFECTS, PLAYER_EFFECTS_MAX,
                     PLAYER_EFFECT_BYTES, PLAYER_FACTIONS, PLAYER_GLOBALS, PLAYER_GLOBALS_MAX, WORLD_GLOBALS, WORLD_GLOBALS_MAX, FACTIONS_MAX,
+                    EVENT_KILL, EVENT_KILLS, KILLS_MAX, unpack_kill, pack_kills,
+                    EVENT_ACTOR_STATS, ACTOR_STATS_MAX, pack_actor_stats, unpack_actor_stats,
                     EVENT_LOCALS, LOCALS_MAX, EVENT_ACTOR_PLACE, ACTOR_PLACE,
                     ACTOR_PLACES_PER_EVENT, ACTORS_KEPT_MAX, describe_local, pack_locals, unpack_locals, FACTION_ALL, FACTION_EXPELLED,
                     EVENT_ACTOR_MOVE, ACTOR_MOVE, ACTOR_MOVES_MAX, WORLD_SCRIPTS, SCRIPT_RUNNING,
@@ -181,6 +183,10 @@ class World:
         self.globals = {}
         # refid -> {slot: raw value}: data-file references' script locals; replayed likewise
         self.locals = {}
+        # refid -> {slot: raw value}: actor attributes, skills, barter gold, corpse stamp
+        self.actor_stats = {}
+        # refid -> base object id: deaths the engine's kill counter counted; replayed as counts
+        self.kills = {}
         # refid -> [cell kind, grid x, grid y, interior, x, y, z, heading, health, magicka,
         # fatigue, flags]: each actor's latest state; sent to a cell's next authority
         self.actors = {}
@@ -223,6 +229,9 @@ class World:
         self.globals.update(saved.get("globals", {}))
         self.locals.update({int(k): {int(s): v for s, v in values.items()}
                             for k, values in saved.get("locals", {}).items()})
+        self.kills.update({int(k): v for k, v in saved.get("kills", {}).items()})
+        self.actor_stats.update({int(k): {int(s): v for s, v in values.items()}
+                                 for k, values in saved.get("actor_stats", {}).items()})
         self.actors.update({int(k): v for k, v in saved.get("actors", {}).items()})
         self.moves.update({int(k): v for k, v in saved.get("moves", {}).items()})
         self.ai.update({int(k): v for k, v in saved.get("ai", {}).items()})
@@ -251,6 +260,9 @@ class World:
                  "globals": self.globals,
                  "locals": {str(k): {str(s): v for s, v in values.items()}
                             for k, values in self.locals.items()},
+                 "kills": {str(k): v for k, v in self.kills.items()},
+                 "actor_stats": {str(k): {str(s): v for s, v in values.items()}
+                                for k, values in self.actor_stats.items()},
                  "actors": {str(k): v for k, v in self.actors.items()},
                  "moves": {str(k): v for k, v in self.moves.items()},
                  "ai": {str(k): v for k, v in self.ai.items()},
@@ -270,7 +282,9 @@ class World:
                 f"{len(self.weather)} regions, {len(self.statuses)} statuses, "
                 f"{len(self.journal)} quests, "
                 f"{len(self.globals)} globals, {len(self.locals)} scripted references, "
-                f"{len(self.actors)} actors, {len(self.moves)} moved, "
+                f"{len(self.actors)} actors, {len(self.actor_stats)} with stats, "
+                f"{len(self.kills)} kills, "
+                f"{len(self.moves)} moved, "
                 f"{len(self.ai)} AI packages, {len(self.records)} records, "
                 f"{len(self.scripts)} scripts"
                 + (f", clock {self.clock}" if self.clock else ""))
@@ -2362,6 +2376,28 @@ class Server:
         print(f"{stamp} client {client.id}: {refid:#010x} died", flush=True)
         return RELAY
 
+    def kill_counts(self):
+        counts = {}
+        for name in self.world.kills.values():
+            counts[name] = counts.get(name, 0) + 1
+        return counts
+
+    def event_kill(self, client, kind, data, stamp, now):
+        """Keep a death once, and tell every console the new count under its object id."""
+        refid, name = unpack_kill(data)
+        if refid in self.world.kills or len(self.world.kills) >= KILLS_MAX:
+            return KEEP
+        self.world.kills[refid] = name
+        self.world.dirty = True
+        count = self.kill_counts()[name]
+        print(f"{stamp} client {client.id}: {refid:#010x} counted as {name} ({count})",
+              flush=True)
+        for other in self.clients.values():
+            if other.in_world:
+                other.rel.queue(EVENT_KILLS, 0, pack_kills(name, count))
+                self.flush(other, now)
+        return KEEP
+
     def event_status(self, client, kind, data, stamp, now):
         if len(data) < STATUS.size:
             return RELAY
@@ -2413,6 +2449,27 @@ class Server:
         if self.detail["verbose"]:
             print(f"{stamp} client {client.id}: {refid:#010x} locals "
                   + ", ".join(describe_local(*v) for v in sorted(changed.items())), flush=True)
+        return RELAY
+
+    def event_actor_stats(self, client, kind, data, stamp, now):
+        """The latest value of each actor stat, bounded; the event goes on as it is."""
+        refid, values = unpack_actor_stats(data)
+        kept = self.world.actor_stats.get(refid, {})
+        room = ACTOR_STATS_MAX - sum(len(v) for v in self.world.actor_stats.values())
+        changed = {}
+        for slot, value in values.items():
+            if kept.get(slot) == value or (slot not in kept and room <= 0):
+                continue
+            room -= slot not in kept
+            changed[slot] = value
+        if not changed:
+            return RELAY
+        kept.update(changed)
+        self.world.actor_stats[refid] = kept
+        self.world.dirty = True
+        if self.detail["verbose"]:
+            print(f"{stamp} client {client.id}: {refid:#010x} stats "
+                  + ", ".join(f"{s}={v:#x}" for s, v in sorted(changed.items())), flush=True)
         return RELAY
 
     def event_actor_move(self, client, kind, data, stamp, now):
@@ -2812,10 +2869,12 @@ class Server:
                       EVENT_SHOT: event_shot,
                       **dict.fromkeys(TARGETED, event_targeted),
                       EVENT_DEATH: event_death,
+                      EVENT_KILL: event_kill,
                       EVENT_STATUS: event_status,
                       EVENT_AFFECT: event_affect,
                       EVENT_OBJECTS: event_objects,
                       EVENT_LOCALS: event_locals,
+                      EVENT_ACTOR_STATS: event_actor_stats,
                       EVENT_TEXT: event_text,
                       EVENT_GAME: event_game,
                       EVENT_PICK: event_pick,
@@ -3367,6 +3426,11 @@ class Server:
         for refid, values in sorted(self.world.locals.items()):
             for data in pack_locals(refid, values):
                 client.rel.queue(EVENT_LOCALS, 0, data)
+        for name, count in sorted(self.kill_counts().items()):
+            client.rel.queue(EVENT_KILLS, 0, pack_kills(name, count))
+        for refid, values in sorted(self.world.actor_stats.items()):
+            for data in pack_actor_stats(refid, values):
+                client.rel.queue(EVENT_ACTOR_STATS, 0, data)
         for refid, move in sorted(self.world.moves.items()):
             client.rel.queue(EVENT_ACTOR_MOVE, 0, ACTOR_MOVE.pack(refid, *move))
         for refid, values in self.world.statuses.items():

@@ -1159,6 +1159,27 @@
       "pc_va": "0x0045C9B0"
     },
     {
+      "va": "0x000C37B0",
+      "name": "DrainAttributeEffect",
+      "confidence": "verified",
+      "provenance": "PC MCP-6 site 0x00460040 and MWSE PatchUtil EffectID::DrainAttribute; Xbox matched handler",
+      "pc_va": "0x00460040"
+    },
+    {
+      "va": "0x000C5260",
+      "name": "RestoreAttributeEffect",
+      "confidence": "verified",
+      "provenance": "PC MCP-6 site 0x00461F40 and MWSE PatchUtil EffectID::RestoreAttribute; Xbox matched handler",
+      "pc_va": "0x00461F40"
+    },
+    {
+      "va": "0x000C5650",
+      "name": "FortifyAttributeEffect",
+      "confidence": "verified",
+      "provenance": "PC MCP-6 site 0x00462330 and MWSE PatchUtil EffectID::FortifyAttribute; Xbox matched handler",
+      "pc_va": "0x00462330"
+    },
+    {
       "va": "0x000C6960",
       "name": "interventionTeleport",
       "confidence": "matched",
@@ -4259,6 +4280,13 @@
       "pc_va": "0x004E4C10"
     },
     {
+      "va": "0x0012A860",
+      "name": "Reference::getAttachedMobileActor",
+      "confidence": "verified",
+      "provenance": "Xbox and PC bodies traverse the reference attachment list for type 8; MWSE TES3Reference.cpp",
+      "pc_va": "0x004E5750"
+    },
+    {
       "va": "0x0012A880",
       "name": "Reference::SetMobile",
       "kind": "function",
@@ -5848,12 +5876,36 @@
       "pc_va": "0x0055D750"
     },
     {
+      "va": "0x0017FE40",
+      "name": "KillCounter::findEntry",
+      "confidence": "verified",
+      "provenance": "disassembly, 2026-10-23",
+      "note": "Walks the counter's list (this+8, count at +4) for the entry {int count; Object *object} whose object matches; 0 if none. Keys are base objects (the object id is what KLST names).",
+      "signature": "int * __thiscall findEntry(void *object)"
+    },
+    {
+      "va": "0x0017FE80",
+      "name": "KillCounter::getCount",
+      "confidence": "verified",
+      "provenance": "disassembly, 2026-10-23",
+      "note": "GetDeadCount (opcode 0x10FE, 0x141FAA) calls this on WorldController+0x60 with the object its operand resolved to.",
+      "signature": "int __thiscall getCount(void *object)"
+    },
+    {
       "va": "0x0017FEA0",
       "name": "KillCounter::save",
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_KillCounter_save",
       "pc_va": "0x0055D950"
+    },
+    {
+      "va": "0x00180020",
+      "name": "KillCounter::increment",
+      "confidence": "verified",
+      "provenance": "onDeath 0x160D93, 2026-10-23",
+      "note": "Counts the death under the object returned by the base object's vtable +0x154 (reference +0x28): bumps its entry or appends {1, object}, then this+4 (all kills) and, when the killer is the player (mobile+0x228 == 1), this+0. Called only from MobileActor::onDeath.",
+      "signature": "void __thiscall increment(MobileActor *killed)"
     },
     {
       "va": "0x001800E0",

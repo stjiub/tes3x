@@ -424,6 +424,7 @@
       "pc_valid_until": "0x70",
       "note": "4 bytes shorter than the PC somewhere in 0x70..0xA4: the clock globals, CharGenState and menu mode sit 4 below their PC offsets. PC fields from 0x70 on are left out until placed.",
       "fields": [
+        {"offset": "0x60", "name": "killCounter", "type": "TES3::KillCounter*", "confidence": "verified", "provenance": "GetDeadCount 0x00141FAA passes [0x3CB5F4]+0x60 to KillCounter::getCount; PC order"},
         {"offset": "0x6C", "name": "magicInstanceController", "type": "TES3::MagicInstanceController*", "confidence": "verified", "provenance": "mainLoopBeforeInput calls process at 0x0008F119"},
         {"offset": "0xA4", "name": "gvarGameHour", "type": "TES3::GlobalVariable*", "confidence": "matched", "provenance": "PC order at -4; 0xA4..0xB8 read as the clock globals by the multiplayer clock"},
         {"offset": "0xA8", "name": "gvarYear", "type": "TES3::GlobalVariable*", "confidence": "matched", "provenance": "PC order at -4"},
@@ -434,6 +435,15 @@
         {"offset": "0xBC", "name": "gvarCharGenState", "type": "TES3::GlobalVariable*", "confidence": "verified", "provenance": "transition-autosaves gates saving on [+0xBC]+0x34 != -1"},
         {"offset": "0xD2", "name": "flagMenuMode", "type": "bool", "confidence": "verified", "provenance": "menu pause: two jne skip the world while set"},
         {"offset": "0x314", "name": "globalScripts", "type": "NI::IteratedList<TES3::GlobalScript*>*", "confidence": "verified", "provenance": "isGlobalScriptRunning 0x0008C8B0, addGlobalScript 0x0008E6E0 and processGlobalScripts 0x0008C910; PC +0x338. GlobalScript is {reference +0, script +4}"}
+      ]
+    },
+    {
+      "name": "TES3::KillCounter",
+      "note": "Entries are {int count; Object *object} allocated 8 bytes, keyed by the base object that the object's vtable +0x154 returns for the dead reference. KLST writes them as MANK (object id) and MANC (count), then INTV (playerKills).",
+      "fields": [
+        {"offset": "0x00", "name": "playerKills", "type": "int", "confidence": "verified", "provenance": "KillCounter::increment 0x00180020 bumps it when the killer is the player; KLST INTV"},
+        {"offset": "0x04", "name": "totalKills", "type": "int", "confidence": "verified", "provenance": "KillCounter::increment 0x00180020 bumps it for every death"},
+        {"offset": "0x08", "name": "entries", "type": "NI::IteratedList<void*>*", "confidence": "verified", "provenance": "KillCounter::findEntry 0x0017FE40 walks it; count at +0x04 of the list"}
       ]
     },
     {

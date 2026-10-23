@@ -612,6 +612,30 @@ REST_OPEN, REST_CLOSE, REST_ASK, REST_START = 0, 1, 2, 3
 REST_HOURS_MAX = 24 * 7
 
 
+# What an actor's mobile holds beyond ACTOR: refid, count, then ACTOR_STAT (slot, raw value). Slots
+# 0-7 attribute base, 8-15 attribute current (f32), 16 barter gold (i32), 17 corpse hourstamp,
+# 18-44 skill base (f32, NPCs). The cell's authority sends a change; any console sends barter
+# gold, since the player trading may follow the merchant. The server keeps the latest of each,
+# relays it and replays all after WELCOME; each console applies them to the actor once loaded.
+EVENT_ACTOR_STATS = 44
+ACTOR_STAT = struct.Struct("<HI")
+ACTOR_STAT_SLOTS = 45
+ACTOR_STAT_GOLD = 16
+ACTOR_STATS_PER_EVENT = (EVENT_DATA - 5) // ACTOR_STAT.size
+ACTOR_STATS_MAX = 16384  # values kept in all
+
+
+# A death the cell's authority saw, counted by the engine's kill counter under the dead actor's
+# base object: refid, then that object's id (31 characters at most) and a zero. The server keeps
+# one per refid and answers every client, the sender too, with EVENT_KILLS: the id and the count
+# of kept deaths under it, which each console writes into its own counter (GetDeadCount). All
+# counts are replayed after WELCOME.
+EVENT_KILL = 45
+EVENT_KILLS = 46  # count u32, then the id and a zero; only the server sends it
+KILL_ID_MAX = 31
+KILLS_MAX = 8192  # deaths kept
+
+
 # A record made in play: a custom spell, whose id the engine rolled on the console that made it.
 # One record is a blob sent in parts of [part, parts, chunk]: RECORD_HEAD (type, cast type, magicka
 # cost, flags, effect count, 0), the id and the name each ending in a zero, then the effects as the
@@ -679,7 +703,8 @@ def record_parts(blob):
 
 # Events only the server sends. A console acts on them, so one from a client is never relayed.
 SERVER_EVENTS = {EVENT_WELCOME, EVENT_AUTHORITY, EVENT_OWNERS, EVENT_SAVE, EVENT_LOAD,
-                 EVENT_CHARS, EVENT_NEWCHAR, EVENT_RUN, EVENT_ACTOR_PLACE, EVENT_RULES}
+                 EVENT_CHARS, EVENT_NEWCHAR, EVENT_RUN, EVENT_ACTOR_PLACE, EVENT_RULES,
+                 EVENT_KILLS}
 
 
 # What an event handler returns: whether the event goes on to the other clients.
@@ -966,6 +991,42 @@ def unpack_locals(data):
     if len(values) != data[4] or any(slot >> 14 > LOCAL_FLOAT for slot in values):
         raise ValueError("bad local slot")
     return struct.unpack_from("<I", data)[0], values
+
+
+def pack_actor_stats(refid, values):
+    """ACTOR_STATS events for one actor's {slot: raw value}."""
+    items = sorted(values.items())
+    return [struct.pack("<IB", refid, len(chunk)) + b"".join(ACTOR_STAT.pack(*v) for v in chunk)
+            for chunk in (items[i:i + ACTOR_STATS_PER_EVENT]
+                          for i in range(0, len(items), ACTOR_STATS_PER_EVENT))]
+
+
+def unpack_actor_stats(data):
+    """(refid, {slot: raw value}) of an ACTOR_STATS event; ValueError if malformed."""
+    if len(data) < 5 or len(data) != 5 + data[4] * ACTOR_STAT.size or not data[4]:
+        raise ValueError("bad actor stats event")
+    values = dict(ACTOR_STAT.iter_unpack(data[5:]))
+    if len(values) != data[4] or any(slot >= ACTOR_STAT_SLOTS for slot in values):
+        raise ValueError("bad actor stat slot")
+    refid = struct.unpack_from("<I", data)[0]
+    if refid < 0x01000000:
+        raise ValueError("bad actor stats id")
+    return refid, values
+
+
+def unpack_kill(data):
+    """(refid, id) of a KILL event; ValueError if malformed."""
+    if len(data) < 6 or len(data) > 4 + KILL_ID_MAX + 1 or data[-1] or data.count(0) != 1:
+        raise ValueError("bad kill event")
+    refid = struct.unpack_from("<I", data)[0]
+    raw = data[4:-1]
+    if refid < 0x01000000 or any(c < 32 or c == 127 for c in raw):
+        raise ValueError("bad kill event")
+    return refid, raw.decode("latin-1")
+
+
+def pack_kills(name, count):
+    return struct.pack("<I", count) + name.encode("latin-1") + b"\0"
 
 
 def pack_world_script(op, refid, name, values=None):

@@ -214,6 +214,7 @@
     "NET_ITEM_DATA_NEW": null,
     "NET_JOURNAL_ADD": null,
     "NET_JOURNAL_TOAST_CALL": null,
+    "NET_KILL_FIND": null,
     "NET_LAUNCH": null,
     "NET_LEVELED_LINK": null,
     "NET_LEVELED_LINKED": null,
@@ -504,8 +505,8 @@
       "sha256": "d9a8a2c10299820e822d83a0e6310a584ff24c77240e51eeb06af6a480bdefa5"
     },
     "tes3xmulti.c": {
-      "digest": "878bb6b757bd2999276580057f41f03c11e49cf08988290e8441e840a53d45ab",
-      "sha256": "188766df321d0ecf923d45db6450b3c93928d18bc630eda4cce2fe22bb70dc94"
+      "digest": "e185f56b33b79302c8d87ac9b094406b7081e20d4ae708f258beb980a12efa95",
+      "sha256": "f0dff01ac98137b6fb69dd445fc133374e32ac6c5807cf604274e4aa61cb23ae"
     },
     "tes3xmwse.c": {
       "digest": "317899d691b9cad5e3f3175b0eecc7daef904232f293cc35f963fc82ed8016a8",

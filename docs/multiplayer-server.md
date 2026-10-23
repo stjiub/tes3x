@@ -71,6 +71,7 @@ the session lives only as long as the server does: stop it and the deaths, objec
 it recorded are gone. With `--world DIR` it
 keeps the game clock, the deaths, the doors, locks and items taken, the items dropped or placed,
 containers' contents, actors' AI settings and disposition, actors' last place and health,
+attributes, skills and barter gold, kill counts,
 the weather, learned topics, the journal,
 faction ranks, the world's globals, references' script locals, the quest scripts still running,
 characters that scripts moved and the follow, escort, travel and wander orders players and quest
@@ -481,7 +482,15 @@ and replays all of them after WELCOME. The world file also keeps each actor's la
 its authority (up to 8,192 actors). When a cell gets an authority and nobody had it before, the
 server sends that client `ACTOR_PLACE` (event 38, server only) before `AUTHORITY`: a count and
 up to two entries of refid, position, heading, health, magicka, fatigue and the actor flags,
-for the actors last reported in that cell. `ACTOR_MOVE` (event 39) is an actor a script or a
+for the actors last reported in that cell. `ACTOR_STATS` (event 44) carries what an actor's record holds beyond that:
+refid, a count and entries of a slot (attribute base or current, barter gold, corpse hourstamp,
+an NPC's skill base) and a raw u32 value. The cell's authority sends a change, any console a
+change of barter gold; the server keeps the latest of each (up to 16,384 values), relays it and
+replays all after WELCOME, and each console writes them into the actor once it is loaded. `KILL`
+(event 45) is a death the authority counted, with the id of the object the engine counts it
+under; the server keeps one per refid (up to 8,192) and answers every console with `KILLS`
+(event 46), the id and its count, which each console writes into its kill counter, so
+`GetDeadCount` agrees everywhere and after a restart. `ACTOR_MOVE` (event 39) is an actor a script or a
 dialogue moved: refid, the cell index it left, the cell index it is in, position and rotation
 (radians, as Position and PositionCell give it). The server keeps the latest of each (up to 4,096) with the first cell it left, relays it
 in that form and replays all of them after WELCOME. `AI_PACKAGE` (event 40) is an AI package
