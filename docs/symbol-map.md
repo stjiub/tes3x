@@ -75,7 +75,12 @@ tes3x sym stats
 ```
 
 The queries need the database; `build` of the XBE alone is enough for `lookup`, `disasm` and
-`callers`, and the PC build and matching add the PC counterpart. The renderers below name call sites
+`callers`, and the PC build and matching add the PC counterpart.
+
+`tes3x sym commands morrowind.xbe --write` regenerates `symbols/script-commands.json`: every
+script command name, short name and opcode in the retail command table, followed by the commands
+the [`script-ext`](../patches/script-ext.md) payload adds. The NTSC and PAL tables are
+identical, and match the PC 1.6.1820 table apart from two console short names. The renderers below name call sites
 only when `build/symbols.db` exists, and print bare addresses otherwise.
 
 ## Decompiling
@@ -210,5 +215,5 @@ partitions and the controller) has no PC counterpart at all, so it is named only
 
 `mwse:` names come from [MWSE](https://github.com/MWSE/MWSE)'s address definitions (MIT licence),
 carried across by the matching above, and so do the struct layouts `tes3x layouts` compiles from
-its headers. The map holds addresses, names, types and signatures only: no bytes of the game, no
-decompiled code.
+its headers. The map holds addresses, names, types and signatures only, and the command list the
+script command names and opcodes: no other bytes of the game, no decompiled code.

@@ -4,6 +4,9 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- `tes3x scriptasm --command NAME` calls a script command by name instead of opcode. See
+  [script opcode extensions](patches/script-ext.md#using-it).
+
 - New `cant-touch-this` patch plays a dodge animation when a melee attack misses a calm NPC,
   using the clips from the Can't Touch This mod. The catalog selects it, and the animation merge,
   when the mod is enabled in a profile. Arrow and thrown-weapon misses do not animate yet. See

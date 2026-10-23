@@ -30,7 +30,9 @@ The payload currently provides:
 
 `tes3x scriptasm` writes a plugin that calls an opcode by extending a script the engine
 already runs. Script compilers do not know the new commands' names, so a script cannot name them
-in source.
+in source. `scriptasm` takes either the opcode (`--opcode 0x2002`) or the name
+(`--command tes3xDumpProfile`), looked up in `symbols/script-commands.json`: the retail command
+table and the commands above.
 
 ## Compatibility and limits
 

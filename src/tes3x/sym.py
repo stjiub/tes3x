@@ -916,6 +916,16 @@ def cmd_annotate(a):
     print(f"0x{va:08X} = {a.name} ({rec['confidence']})")
 
 
+def cmd_commands(a):
+    from tes3x import script_commands as sc
+    text = sc.dumps(sc.generate(Xbe(open(a.image, 'rb').read())))
+    if not a.write:
+        print(text, end='')
+        return
+    sc.COMMANDS.write_text(text, encoding='utf-8', newline='\n')
+    print(f'wrote {sc.COMMANDS}')
+
+
 def cmd_lookup(a):
     db = sqlite3.connect(DB_PATH)
     schema(db)
@@ -1383,6 +1393,11 @@ def main():
     a_.add_argument('--signature', default='',
                     help="C prototype without this, e.g. 'float __thiscall getSkill(int id)'")
     a_.set_defaults(fn=cmd_annotate)
+
+    co = sub.add_parser('commands', help='script command names and opcodes from a retail XBE')
+    co.add_argument('image')
+    co.add_argument('--write', action='store_true', help='rewrite symbols/script-commands.json')
+    co.set_defaults(fn=cmd_commands)
 
     lk = sub.add_parser('lookup', help='describe the function containing a VA')
     lk.add_argument('va')

@@ -4,6 +4,7 @@ import argparse
 import os
 import struct
 
+from tes3x import script_commands
 from tes3x.records import records, subrecords  # noqa: E402
 
 SCRIPT_END = struct.pack("<H", 0x0101)  # the `End` keyword every compiled script closes with
@@ -86,9 +87,12 @@ def main():
     ap.add_argument("--script", default="Main", help="script to append the call to")
     ap.add_argument("--opcode", action="append", default=[],
                     help="opcode to call; repeat for several, in order")
+    ap.add_argument("--command", action="append", default=[],
+                    help="command to call by name, after any --opcode; repeat for several")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
-    build(a.esm, a.script, [int(o, 0) for o in a.opcode or ["0x2001"]], a.out)
+    opcodes = [int(o, 0) for o in a.opcode] + [script_commands.opcode(c) for c in a.command]
+    build(a.esm, a.script, opcodes or [0x2001], a.out)
 
 
 if __name__ == "__main__":
