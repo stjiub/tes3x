@@ -1563,6 +1563,16 @@
       "signature": "void __cdecl DebugLog(char * fmt, ...)"
     },
     {
+      "va": "0x000D3AD0",
+      "name": "ScriptExpression::evaluate?",
+      "confidence": "guess",
+      "provenance": "body read against PC 0x004790E0: infix evaluator over compiled expression tokens; calls RunFunction for X tokens. Class name invented",
+      "note": "ECX is an evaluator whose first dword is the error code. Tokens: X function (opcode u16), s/l/f local (u16 index + 1), and six-byte pointer tokens A race, B sound, C cell, D dialogue, F/L/S global, M script, O object, R reference, T faction (length byte, then the resolved pointer).",
+      "pc_va": "0x004790E0",
+      "kind": "function",
+      "signature": "float __thiscall evaluate(const char* expression, TES3::Script* script, unsigned int length)"
+    },
+    {
       "va": "0x000D48E0",
       "name": "Archive::ReadInvalidationList",
       "confidence": "verified",
@@ -4497,6 +4507,16 @@
       "signature": "unsigned int __cdecl findAnimationGroupId(const char* name)"
     },
     {
+      "va": "0x00136CB0",
+      "name": "Script::reportError",
+      "confidence": "verified",
+      "provenance": "body read against PC 0x004FD9C0",
+      "note": "Prints to the console when ScriptCompiler::source is 1, else DebugLog; then zeroes script->header.dataSize, which stops the script for the session, and sets Script::errorFlag.",
+      "pc_va": "0x004FD9C0",
+      "kind": "function",
+      "signature": "void __cdecl reportError(TES3::Script* script, const char* format, ...)"
+    },
+    {
       "va": "0x00136DF0",
       "name": "Script::getShortValue",
       "kind": "function",
@@ -4581,6 +4601,25 @@
       "provenance": "find_mcp154_reload; mcp-154 SCDT allocation"
     },
     {
+      "va": "0x00138070",
+      "name": "Script::evaluateCondition",
+      "confidence": "verified",
+      "provenance": "body read against PC 0x004FFCC0 ('Left eval', 'Right eval'); execute calls it for If, ElseIf and While",
+      "note": "Parses the condition text Decode copied to Script::Decode.text, evaluates each side with ScriptExpression::evaluate? and compares.",
+      "pc_va": "0x004FFCC0",
+      "kind": "function",
+      "signature": "int __thiscall evaluateCondition()"
+    },
+    {
+      "va": "0x001388C0",
+      "name": "Script::readVariable",
+      "confidence": "verified",
+      "provenance": "body read: switch on the type char, ret 8; Decode calls it with ECX = script",
+      "note": "'s' 'l' 'f': the local at index in Script::locals; 'S' 'L' 'F': index is a GlobalVariable*, returns its value at +0x34.",
+      "kind": "function",
+      "signature": "float __thiscall readVariable(char type, int index)"
+    },
+    {
       "va": "0x00138AA0",
       "name": "game::relocateReference",
       "confidence": "matched",
@@ -4638,7 +4677,10 @@
       "name": "Script::Decode",
       "kind": "function",
       "confidence": "verified",
-      "provenance": "find_script_decode_state; mwse-legacy redirects its fixup caller"
+      "provenance": "find_script_decode_state; mwse-legacy redirects its fixup caller. Body read against PC 0x00500510",
+      "note": "Reads the opcode at ip, then that command's operands into the Script::Decode.* globals. resolve=1 (resolveObjectReferences) rewrites names in the bytecode as '@' bytes with the found pointer in the first four; resolve=0 (execute) reads the pointers back.",
+      "pc_va": "0x00500510",
+      "signature": "void __thiscall Decode(bool resolve)"
     },
     {
       "va": "0x0013C210",
@@ -4667,7 +4709,10 @@
       "name": "Script::RunFunction",
       "kind": "function",
       "confidence": "verified",
-      "provenance": "find_run_function; three call rel32 sites redirected by script-ext"
+      "provenance": "find_run_function; three call rel32 sites redirected by script-ext. PC executeScriptOpCode 0x00505770: same jump-table dispatch and strings",
+      "note": "Statements (execute 0x0014B102) pass Decode's typeParam (0x003D3690) and indexParam (0x003D369C) and discard st(0); expressions (0x000D3AD0) pass the X token's axis char and a float or object pointer and use st(0). Decode has already filled the other operand globals for statements only.",
+      "pc_va": "0x00505770",
+      "signature": "float __thiscall RunFunction(int opcode, char typeParam, void* param)"
     },
     {
       "va": "0x0013D570",
@@ -4695,11 +4740,20 @@
     },
     {
       "va": "0x00142030",
-      "name": "Script::executeScriptOpCode",
+      "name": "Script::RunFunction.case",
+      "kind": "site",
+      "confidence": "verified",
+      "provenance": "a case of RunFunction's jump table at 0x001444E8, not a function start; the inventory found it by pointer and paired RunFunction's strings with PC 0x00505770 through it"
+    },
+    {
+      "va": "0x00144BE0",
+      "name": "ScriptCompiler::compileFunction",
+      "confidence": "verified",
+      "provenance": "body read: per-opcode bytecode writer at compiler+0x58/+0x54 with the reference at +0x46C, as MWSE's layout; only caller is compile, as PC 0x004F73E0 under 0x004F7350",
+      "note": "The writer side of every command's operand format; Decode is the reader. Calls RunFunction(consoleScript, opcode, 0, 0) to fold a function name given where a number is expected.",
+      "pc_va": "0x004F73E0",
       "kind": "function",
-      "confidence": "matched",
-      "provenance": "mwse:TES3_Script_executeScriptOpCode",
-      "pc_va": "0x00505770"
+      "signature": "bool __thiscall compileFunction(int function)"
     },
     {
       "va": "0x00148A70",
@@ -4715,6 +4769,15 @@
       "kind": "site",
       "confidence": "verified",
       "provenance": "find_script_ip_restore_site; caller restores Script::Decode.ip from ESI"
+    },
+    {
+      "va": "0x0014B320",
+      "name": "ScriptCompiler::compile",
+      "confidence": "verified",
+      "provenance": "body read: identical to PC 0x004F7350; parseFunctionName then compileFunction per command; CompileAndRun's only callee of its kind",
+      "pc_va": "0x004F7350",
+      "kind": "function",
+      "signature": "bool __thiscall compile(const char* scriptText)"
     },
     {
       "va": "0x0014B3C0",
@@ -8095,11 +8158,259 @@
       "kind": "data"
     },
     {
+      "va": "0x003D3390",
+      "name": "Script::execute.whileFlags",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0: per While depth: 1 open, 2 condition true",
+      "kind": "data",
+      "type": "int[10]"
+    },
+    {
+      "va": "0x003D33B8",
+      "name": "Script::Decode.messageVarTypes",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0: MessageBox variable type chars",
+      "kind": "data",
+      "type": "char[12]"
+    },
+    {
+      "va": "0x003D33C4",
+      "name": "Script::Decode.messageVars",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0: MessageBox variable index or GlobalVariable*",
+      "kind": "data",
+      "type": "int[12]"
+    },
+    {
+      "va": "0x003D33F0",
+      "name": "Script::Decode.text",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0: string operand, or the condition/expression text of If, ElseIf, While and Set; evaluateCondition parses it",
+      "kind": "data",
+      "type": "char[512]"
+    },
+    {
+      "va": "0x003D35F0",
+      "name": "Script::execute.whileIp",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0: ip of each open While; EndWhile jumps back to it",
+      "kind": "data",
+      "type": "int[10]"
+    },
+    {
+      "va": "0x003D3640",
+      "name": "Script::Decode.buttons",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0: MessageBox button texts, pointing into the bytecode",
+      "kind": "data",
+      "type": "char*[10]"
+    },
+    {
+      "va": "0x003D3668",
+      "name": "Script::execute.ifFlags",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0: per If depth: 1 open, 2 taken",
+      "kind": "data",
+      "type": "int[10]"
+    },
+    {
+      "va": "0x003D3690",
+      "name": "Script::Decode.typeParam",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0: Decode writes the operand's type or axis char; execute passes it as RunFunction's typeParam (0x0014B0F8)",
+      "kind": "data",
+      "type": "char"
+    },
+    {
+      "va": "0x003D3694",
+      "name": "Script::Decode.numberParam",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0: Decode writes a number-or-local operand here, read through readVariable when it names a local",
+      "kind": "data",
+      "type": "float"
+    },
+    {
       "va": "0x003D3698",
       "name": "Script::Decode.ip",
       "kind": "data",
       "confidence": "verified",
       "provenance": "find_script_decode_state; live decoder cursor used by mwse-legacy"
+    },
+    {
+      "va": "0x003D369C",
+      "name": "Script::Decode.indexParam",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0: variable index, short operand or pointer; execute passes it as RunFunction's param (0x0014B0E4)",
+      "kind": "data",
+      "type": "int"
+    },
+    {
+      "va": "0x003D36A0",
+      "name": "Script::Decode.textLength",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0: length of the operand copied to Script::Decode.text",
+      "kind": "data",
+      "type": "int"
+    },
+    {
+      "va": "0x003D36A4",
+      "name": "Script::Decode.text2Length",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0: length of a second string operand, copied to the thread-safe buffer from 0x0011DB30",
+      "kind": "data",
+      "type": "int"
+    },
+    {
+      "va": "0x003D36A8",
+      "name": "Script::Decode.blockLines",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0: line count of an If/Else/While body, added to execute.skipLines to skip it",
+      "kind": "data",
+      "type": "int"
+    },
+    {
+      "va": "0x003D36AC",
+      "name": "Script::Decode.messageVarCount",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0: MessageBox format variables",
+      "kind": "data",
+      "type": "int"
+    },
+    {
+      "va": "0x003D36B0",
+      "name": "Script::Decode.buttonCount",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0: MessageBox button count; AIWander idle count",
+      "kind": "data",
+      "type": "int"
+    },
+    {
+      "va": "0x003D36B4",
+      "name": "Script::execute.skipLines",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0: statements still to skip; nonzero suppresses dispatch",
+      "kind": "data",
+      "type": "int"
+    },
+    {
+      "va": "0x003D36B8",
+      "name": "Script::execute.ifDepth",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0",
+      "kind": "data",
+      "type": "int"
+    },
+    {
+      "va": "0x003D36BC",
+      "name": "Script::execute.whileDepth",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0",
+      "kind": "data",
+      "type": "int"
+    },
+    {
+      "va": "0x003D36C5",
+      "name": "Script::execute.noModify",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0: set: a Set does not mark the reference modified",
+      "kind": "data",
+      "type": "char"
+    },
+    {
+      "va": "0x003D36D4",
+      "name": "Script::targetReference",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0: execute sets it to the running reference; a -> statement replaces it for one statement. MWSE TES3_SCRIPTTARGETREF_IMAGE",
+      "kind": "data",
+      "type": "TES3::Reference*"
+    },
+    {
+      "va": "0x003D36D8",
+      "name": "Script::reference2",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0: execute's reference2 argument",
+      "kind": "data",
+      "type": "TES3::Reference*"
+    },
+    {
+      "va": "0x003D36DC",
+      "name": "Script::targetObject",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0: base object of targetReference (+0x28). MWSE TES3_SCRIPTTARGETTEMPL_IMAGE",
+      "kind": "data",
+      "type": "TES3::PhysicalObject*"
+    },
+    {
+      "va": "0x003D36E0",
+      "name": "Script::locals",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0: execute's variables argument, or the script's own varValues. MWSE TES3_LOCALVARIABLES_IMAGE",
+      "kind": "data",
+      "type": "TES3::ScriptVariables*"
+    },
+    {
+      "va": "0x003D36E4",
+      "name": "Script::dialogueInfo",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0: execute's info argument",
+      "kind": "data",
+      "type": "TES3::DialogueInfo*"
+    },
+    {
+      "va": "0x003D36E8",
+      "name": "Script::currentGlobal",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0: global being shown or set",
+      "kind": "data",
+      "type": "TES3::GlobalVariable*"
+    },
+    {
+      "va": "0x003D36EC",
+      "name": "Script::Decode.foreignReference",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0: 'R' operand: reference whose locals a Set writes (set ref.var)",
+      "kind": "data",
+      "type": "TES3::Reference*"
+    },
+    {
+      "va": "0x003D36F0",
+      "name": "Script::Decode.foreignScript",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0: 'M' operand: global script whose locals a Set writes",
+      "kind": "data",
+      "type": "TES3::Script*"
+    },
+    {
+      "va": "0x003D36F4",
+      "name": "ScriptCompiler::source",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0: 0 script, 1 console, 2 dialogue; PC 0x007CEC0C",
+      "kind": "data",
+      "type": "int"
+    },
+    {
+      "va": "0x003D36F8",
+      "name": "Script::errorFlag",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0: set by reportError",
+      "kind": "data",
+      "type": "int"
+    },
+    {
+      "va": "0x003D372C",
+      "name": "Script::Decode.rotation",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0: Position and PositionCell write z in radians and zero x and y; MWSE TES3_TARGET_ROTX_IMAGE on PC",
+      "kind": "data",
+      "type": "float[3]"
+    },
+    {
+      "va": "0x003D3874",
+      "name": "Script::Decode.destination",
+      "confidence": "verified",
+      "provenance": "Decode/execute body read against PC 0x00500510/0x005028A0: x, y, z operands of Position, PositionCell, AITravel, AIEscort, PlaceAtPC; MWSE TES3_DESTINATION_X_IMAGE on PC",
+      "kind": "data",
+      "type": "float[3]"
     },
     {
       "va": "0x003D83A8",
