@@ -261,6 +261,16 @@ source = "tes3xmcp125.c"
 summary = "Initialize scripts and collision for actors moved by Position or PositionCell."
 
 [[patch]]
+name = "mcp-127"
+title = "World map texture independence"
+origin = { source = "MCP", id = "127" }
+bit = 45
+category = "compat"
+channel = "dev"
+selection = "preset"
+summary = "Keep replacement land textures from changing the world map panel size."
+
+[[patch]]
 name = "mcp-132"
 title = "Improved animation support"
 origin = { source = "MCP", id = "132" }

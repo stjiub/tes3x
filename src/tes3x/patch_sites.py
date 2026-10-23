@@ -103,6 +103,25 @@ def find_unique(data, needle, what):
     return hits[0]
 
 
+def find_mcp127_map(x):
+    """Locate the map panel texture and its fixed size from the texture path."""
+    land = b"Textures\\_land_default.tga\0"
+    icon = b"Textures\\menu_icon_none.tga\0"
+    land_off = find_unique(x.data, land, "mcp-127 land texture")
+    icon_off = find_unique(x.data, icon, "mcp-127 icon texture")
+    land_va = x.off_to_va(land_off)
+    icon_va = x.off_to_va(icon_off)
+    if land_va is None or icon_va is None:
+        raise PatchError("mcp-127: texture path is outside the image")
+    sig = b"\x68" + struct.pack("<I", land_va) + b"\x8b\xce\x52\xe8"
+    site = find_unique(x.data, sig, "mcp-127 map initializer")
+    # The call displacement varies by engine; the scale store must still match.
+    if bytes(x.data[site + 13:site + 29]) != (
+            b"\xb9\x00\x00\x80\x40\x89\x88\x4c\x01\x00\x00\x89\x88\x50\x01\x00"):
+        raise PatchError("mcp-127: map scale layout changed")
+    return x.off_to_va(site), icon_va
+
+
 def find_item_tooltip(x):
     """The object tooltip and its world-target call, anchored in player activation."""
     from tes3x.multi_signatures import find_multi_signature

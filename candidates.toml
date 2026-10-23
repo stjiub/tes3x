@@ -1032,15 +1032,6 @@ summary = "Telekinesis fix"
 reason = "Telekinesis does not reach lights, ammunition, books and activators."
 
 [[candidate]]
-name = "mcp-127"
-origin = { source = "MCP", id = "127" }
-category = "compat"
-status = "candidate"
-priority = "high"
-summary = "Map-texture conflict fix"
-reason = "The world map breaks if _land_default.dds is replaced at a different size. TES3X's texture budget resizes textures, so a build can cause this; check the pipeline leaves that texture alone before porting."
-
-[[candidate]]
 name = "mcp-128"
 origin = { source = "MCP", id = "128" }
 category = "qol"

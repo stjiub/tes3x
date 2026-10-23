@@ -1,0 +1,16 @@
+kind = "single"
+purpose = "The map panel patch reaches a new game and opens the inventory map without a diagnosed crash."
+procedure = "Build with mcp-127, start a new game, open the inventory and inspect the map panel."
+limitations = "This smoke test uses the retail land texture; visual behavior with a resized replacement needs a separate comparison."
+watch = 'menu\.|exec\.|crash\.|hang\.|fatal\.'
+timeout = 180
+script = '''
+@start new
+wait 30
+menu inventory
+wait 90
+exit
+'''
+
+[expect]
+test = ['exec\.loaded ', 'exec\.exit 0']
