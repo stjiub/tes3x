@@ -38,6 +38,7 @@ enable = [
     # "mcp-154",               # core: pad compiled script-data allocations to keep reads in bounds
     # "mcp-123",               # core: persist objects placed by scripts into unvisited cells
     # "mcp-173",               # core: persist NPC faction rank changes made by scripts
+    # "mcp-6",                 # correctness: let Restore and expiring Drain recover the active Fortify amount
     # "mcp-125",               # core: initialize scripts and collision for actors moved by Position
     # "mcp-127",               # compat: keep replacement land textures from resizing the world map
     # "mcp-132",               # compat: play scripted humanoid animations on all body layers

@@ -13,9 +13,9 @@ on, `low` for minor ones, and `none` for fixes we won't port.
 
 | status | fixes |
 |---|---|
-| candidate | 183 |
+| candidate | 181 |
 | deferred | 13 |
-| not-applicable | 15 |
+| not-applicable | 16 |
 | rejected | 3 |
 
 ## candidate
@@ -24,8 +24,6 @@ Worth porting, but not yet shown to affect the Xbox build.
 
 | fix | from | priority | category | notes |
 |---|---|---|---|---|
-| `mcp-178` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #178 | high | core (intended default) | **Load-warning input crash.** Xbox has load warnings and a single controller path, so this is directly testable. |
-| `mcp-6` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #6 | medium | correctness | **Restore/drain attributes fix.** Restore and expiring Drain stop at the base value instead of the fortified one; affects ordinary play. |
 | `mcp-25` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #25 | medium | correctness | **Blind fix.** Blind gives the player an attack bonus instead of a penalty: an inverted effect. |
 | `mcp-30` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #30 | medium | correctness | **Projectile aiming fix.** Projectiles fire off-centre for races with height other than 1.0, and third-person aiming is poor. |
 | `mcp-46a` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #46 | medium | correctness (recommended) | **`Drop` places at the acting reference, not the player.** The engine treats every drop as if it came from the player inventory view, so scripted drops land at the wrong actor. Split from the rest of id 46 under rule 3. |
@@ -240,6 +238,7 @@ Targets PC-only code or behaviour; there is nothing to fix on the Xbox.
 | `mcp-107` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #107 | none |  | **Don't loot on dispose.** Ctrl-click to dispose without looting. Needs a keyboard modifier; a controller version would be a new design. |
 | `mcp-136` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #136 | none | undecided | **Resolution options.** PC display-mode path; no direct Xbox value. |
 | `mcp-153` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #153 | none | undecided | **Mouse cursor movement.** PC mouse input path. |
+| `mcp-178` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #178 | none | core | **Load-warning input crash.** MCP guards three PC warning dialogs after a menu lookup returns null. Xbox DebugLog is empty, its fatal error uses a separate system dialog, and its load/save dialogs do not call that menu lookup. The affected warning path is absent. |
 | `mcp-257` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #257 | none |  | **Main menu wider textures.** Wider main menu textures for translated PC editions; TES3X targets the US English Xbox release. |
 | `mcp-260` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #260 | none |  | **Polish keyboard support.** Polish keyboard input on PC. |
 | `mcp-261` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #261 | none |  | **Un-restrict menu size.** Removes limits on resizing menus with the mouse; Xbox menus are not resized by the player. |

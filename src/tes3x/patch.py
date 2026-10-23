@@ -51,7 +51,8 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_game_instance, find_hd_video, find_heap_function,
                                find_heap_object, find_heap_region, find_heap_region_sites,
                                find_info_arena_sites, find_lean_menu, find_marker,
-                               find_mcp102_actn, find_mcp123_add, find_mcp125_collision,
+                               find_mcp102_actn, find_mcp123_add, find_mcp6_context,
+                               find_mcp125_collision,
                                find_mcp127_map,
                                find_mcp125_context, find_mcp146, find_mcp146_context,
                                find_mcp47_context, find_mcp132_context,
@@ -1051,6 +1052,28 @@ def _mcp_123(x, value, ctx):
     was, off = x.patch_call(site, target)
     return [(off, 5, "PlaceItem cell insertion 0x%08X: 0x%08X -> 0x%08X"
              % (site, was, target))]
+
+
+@patch("mcp-6")
+def _mcp_6(x, value, ctx):
+    """Count temporary Fortify effects while Restore and Drain cap an attribute."""
+    hooks = ctx.get("hooks", {})
+    names = {"reset": "mcp6_reset", "fortify": "mcp6_fortify",
+             "drain": "mcp6_prepare", "restore": "mcp6_prepare",
+             "drain_post": "mcp6_drain", "restore_post": "mcp6_restore"}
+    if any(not hooks.get(name) for name in names.values()):
+        raise PatchError("mcp-6: needs `payload` first, with all mcp-6 hooks")
+    sites = find_mcp6_context(x)
+    edits = []
+    for key, hook in names.items():
+        site = sites[key]
+        target = int(str(hooks[hook]), 16)
+        off = x.va_to_off(site)
+        length = 6 if key == "drain_post" else 5
+        x.data[off:off + length] = (b"\xe8" + struct.pack("<i", target - (site + 5))
+                                    + (b"\x90" if length == 6 else b""))
+        edits.append((off, length, f"{key} 0x{site:08X} -> 0x{target:08X}"))
+    return edits
 
 
 @patch("mcp-173")

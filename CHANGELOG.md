@@ -4,6 +4,11 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- New `mcp-6` patch lets Restore Attribute and expiring Drain Attribute recover a player's
+  temporary Fortify Attribute bonus. See [the patch](patches/mcp-6.md).
+
+- `tes3x mcp --dump` now works when temporary subdirectories cannot be written.
+
 - New `mcp-127` patch keeps replacement land textures from blanking or cropping the world map.
   See [the patch](patches/mcp-127.md).
 

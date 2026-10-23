@@ -456,6 +456,27 @@ MCP123_ADD_SIG = re.compile(
 )
 
 
+MCP6_RESET_SIG = re.compile(
+    rb"\x51\x57\x8b\xf9\x8a\x47\x04\x84\xc0\x0f\x85...."
+    rb"(?P<site>\x8b\x4f\x0c\x8b\x01)\x3b\xc1\x56", re.S,
+)
+MCP6_EFFECT_SIG = re.compile(
+    rb"\x53\x55\x8b\x6c\x24\x1c\x8b\x4d\x00(?P<site>\xe8....)"
+    rb"\x6a\x00\x8d\x0c\x7f\x8d\x9c\x88\x54\x02\x00\x00"
+    rb"\x8b\x4c\x24\x18\x6a(?P<kind>[\x02\x1c])", re.S,
+)
+MCP6_FORTIFY_SIG = re.compile(
+    rb"\x55\x57\x8b\x7c\x24\x1c\x8b\x0f(?P<site>\xe8....)"
+    rb"\x6a\x00\x8d\x0c\x76\x8d\xac\x88\x54\x02\x00\x00", re.S,
+)
+MCP6_DRAIN_POST_SIG = re.compile(
+    rb"\xe8....(?P<site>\x8b\x4d\x00\x83\xc4\x28)\x88\x44\x24\x14", re.S,
+)
+MCP6_RESTORE_POST_SIG = re.compile(
+    rb"\xe8....(?P<site>\x83\xc4\x28\x84\xc0)\x74.", re.S,
+)
+
+
 # RaiseRank and LowerRank mark the script context, then change the NPC reference's rank.
 MCP173_RANK_SIG = re.compile(
     rb"(?P<site>\x8b\x01\x6a\x01\xff\x50\x14)\x8b\x0d...."
@@ -1221,6 +1242,40 @@ def find_mcp123_add(x):
     if va is None:
         raise PatchError("mcp-123: PlaceItem insertion call is outside any section")
     return va
+
+
+def find_mcp6_context(x):
+    """Find the attribute effect paths and their shared mobile lookup."""
+    data = bytes(x.data)
+
+    def one(pattern, label):
+        hits = list(pattern.finditer(data))
+        if len(hits) != 1:
+            raise PatchError(f"mcp-6: {len(hits)} {label} matches, expected 1")
+        va = x.off_to_va(hits[0].start("site"))
+        if va is None:
+            raise PatchError(f"mcp-6: {label} is outside an XBE section")
+        return va
+
+    effects = list(MCP6_EFFECT_SIG.finditer(data))
+    if len(effects) != 2 or {m.group("kind") for m in effects} != {b"\x02", b"\x1c"}:
+        raise PatchError("mcp-6: expected one Drain and one Restore attribute path")
+    effect_sites = {m.group("kind")[0]: x.off_to_va(m.start("site")) for m in effects}
+    reset = one(MCP6_RESET_SIG, "controller reset")
+    fortify = one(MCP6_FORTIFY_SIG, "Fortify attribute")
+    drain_post = one(MCP6_DRAIN_POST_SIG, "Drain cleanup")
+    restore = effect_sites[0x1c]
+    restore_posts = [x.off_to_va(m.start("site")) for m in MCP6_RESTORE_POST_SIG.finditer(data)]
+    restore_posts = [site for site in restore_posts if site is not None and 0 < site - restore < 0x80]
+    if len(restore_posts) != 1 or any(site is None for site in effect_sites.values()):
+        raise PatchError("mcp-6: expected one Restore cleanup inside its attribute handler")
+    lookups = [tes3x_inject.call_target(x, site)
+               for site in (effect_sites[0x02], restore, fortify)]
+    if len(set(lookups)) != 1 or not (effect_sites[0x02] < drain_post < effect_sites[0x02] + 0x80):
+        raise PatchError("mcp-6: attribute handlers disagree on their mobile lookup")
+    return {"reset": reset, "drain": effect_sites[0x02], "restore": restore,
+            "fortify": fortify, "drain_post": drain_post,
+            "restore_post": restore_posts[0], "get_mobile": lookups[0]}
 
 
 def find_mcp173_rank(x):

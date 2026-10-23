@@ -54,15 +54,6 @@ summary = "Stop merchants equipping sold items"
 reason = "Changes visible merchant behaviour. OpenMW exposes comparable behaviour as a disabled-by-default option."
 
 [[candidate]]
-name = "mcp-6"
-origin = { source = "MCP", id = "6" }
-category = "correctness"
-status = "candidate"
-priority = "medium"
-summary = "Restore/drain attributes fix"
-reason = "Restore and expiring Drain stop at the base value instead of the fortified one; affects ordinary play."
-
-[[candidate]]
 name = "mcp-7"
 origin = { source = "MCP", id = "7" }
 category = "correctness"
@@ -1437,11 +1428,10 @@ reason = "GetEffect and RemoveEffects sometimes return 0 or do nothing; scripted
 name = "mcp-178"
 origin = { source = "MCP", id = "178" }
 category = "core"
-default = "intended default"
-status = "candidate"
-priority = "high"
+status = "not-applicable"
+priority = "none"
 summary = "Load-warning input crash"
-reason = "Xbox has load warnings and a single controller path, so this is directly testable."
+reason = "MCP guards three PC warning dialogs after a menu lookup returns null. Xbox DebugLog is empty, its fatal error uses a separate system dialog, and its load/save dialogs do not call that menu lookup. The affected warning path is absent."
 
 [[candidate]]
 name = "mcp-179"

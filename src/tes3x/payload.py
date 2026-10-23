@@ -22,6 +22,7 @@ import tes3x.inject as tes3x_inject
 from tes3x.link import LinkError, link, write_map, write_pe
 from tes3x.multi_signatures import SIGNATURES as MULTI_SIGNATURES, find_multi_signature
 from tes3x.paths import bundled, checkout, resource
+from tes3x.patch_sites import find_mcp6_context
 from tes3x.patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, archive_load_site,
                          find_call_sites, find_item_tooltip, find_levelup_scale, find_menu_area_scale,
                          find_message_scale, find_name_scale, find_options_scale,
@@ -926,6 +927,17 @@ def engine_bindings(xbe, sources):
               f"Cell::addReference {hexva(add_reference)}")
         define("MCP123_ADD_REFERENCE", hexva(add_reference))
         wanted["mcp123_add"] = ("_tes3x_mcp123_add_hook",)
+    if "tes3xmcp6.c" in names:
+        sites = find_mcp6_context(image)
+        define("MCP6_GET_MOBILE", hexva(sites["get_mobile"]))
+        define("MCP6_GAME_PTR", address("GAME_PTR", dict(CONSOLE_ADDRESSES)["GAME_PTR"]))
+        define("MCP6_PLAYER_MOBILE", address("PLAYER_MOBILE", dict(CONSOLE_ADDRESSES)["PLAYER_MOBILE"]))
+        for key, symbol in (("mcp6_reset", "_tes3x_mcp6_reset"),
+                            ("mcp6_fortify", "_tes3x_mcp6_record_fortify"),
+                            ("mcp6_prepare", "_tes3x_mcp6_prepare"),
+                            ("mcp6_drain", "_tes3x_mcp6_finish_drain"),
+                            ("mcp6_restore", "_tes3x_mcp6_finish_restore")):
+            wanted[key] = (symbol,)
     if "tes3xmcp173.c" in names:
         sites = find_mcp173_rank(image)
         print(f"mcp-173 hooks: NPC rank saves {', '.join(map(hexva, sites))}")

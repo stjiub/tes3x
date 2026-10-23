@@ -54,7 +54,8 @@ REQUIRED = ("kind", "purpose", "procedure", "script", "expect")
 OPTIONAL = ("limitations", "watch", "timeout", "xemu", "save", "enable", "apply", "pipeline",
             "allow", "profile", "fixture", "sequence", "compare", "required_mods", "agent")
 PROFILE_OVERLAY = ("profile", "rules", "preferences", "package", "ui", "ini")
-FIXTURE_KEYS = {"script": str, "opcodes": list, "bytecode": str, "texture": bool, "dialogue": str}
+FIXTURE_KEYS = {"script": str, "opcodes": list, "bytecode": str, "texture": bool,
+                "dialogue": str, "attribute_effects": bool}
 AGENT_KEYS = {"after": str, "console": list, "fetch": list, "exit": bool}
 FIXTURE_MOD = "tes3x-test"
 
@@ -89,7 +90,8 @@ def game_test_problems(test, where):
     if not isinstance(fixture, dict) or set(fixture) - set(FIXTURE_KEYS) or any(
             type(fixture[key]) is not kind for key, kind in FIXTURE_KEYS.items() if key in fixture):
         problems.append(f"{where}: fixture takes script (string), opcodes (array), bytecode "
-                        "(hex string), texture (boolean) and dialogue (string)")
+                        "(hex string), texture (boolean), dialogue (string), and "
+                        "attribute_effects (boolean)")
     elif any(type(opcode) is not int for opcode in fixture.get("opcodes", [])):
         problems.append(f"{where}: fixture.opcodes must be integers")
     elif not re.fullmatch(r"(?:[0-9A-Fa-f]{2}\s*)*", fixture.get("bytecode", "")):
@@ -245,10 +247,37 @@ def repeat_topic(esm, topic, out, master="Morrowind.esm"):
     Path(out).write_bytes(record(b"TES3", 0, header) + dial + info)
 
 
+def attribute_effects_fixture(esm, out):
+    """Potions for a timed Fortify, Damage, Restore, and Drain Attribute comparison."""
+    def subrecord(tag, value):
+        return tag + struct.pack("<I", len(value)) + value
+
+    def record(tag, fields):
+        body = b"".join(subrecord(name, value) for name, value in fields)
+        return tag + struct.pack("<III", len(body), 0, 0) + body
+
+    def zstr(value):
+        return value.encode("ascii") + b"\0"
+
+    hedr = (struct.pack("<fI", 1.3, 0) + b"TES3X".ljust(32, b"\0")
+            + b"Attribute effect test".ljust(256, b"\0") + struct.pack("<I", 4))
+    records = [record(b"TES3", [(b"HEDR", hedr), (b"MAST", zstr("Morrowind.esm")),
+                               (b"DATA", struct.pack("<Q", os.path.getsize(esm)))])]
+    for name, effect, magnitude, duration in (
+            ("mcp6_fortify", 79, 30, 90), ("mcp6_damage", 22, 30, 1),
+            ("mcp6_restore", 74, 30, 1), ("mcp6_drain", 17, 20, 8)):
+        records.append(record(b"ALCH", [
+            (b"NAME", zstr(name)), (b"FNAM", zstr(name)),
+            (b"MODL", zstr("m/misc_potion_standard_01.nif")),
+            (b"ALDT", struct.pack("<fii", 0.5, 1, 0)),
+            (b"ENAM", struct.pack("<Hbbiiiii", effect, -1, 0, 0, 0,
+                                  duration, magnitude, magnitude)),
+        ]))
+    Path(out).write_bytes(b"".join(records))
+
+
 def make_fixture(fixture, esm, library):
-    """A generated test mod in LIBRARY: a plugin appending FIXTURE's opcodes to a retail script,
-    one repeating a retail topic, and a texture so packaging has an asset. Built from the user's
-    own retail master."""
+    """Build the requested game-test assets against the user's retail master."""
     folder = Path(library) / FIXTURE_MOD
     folder.mkdir(parents=True, exist_ok=True)
     if fixture.get("opcodes") or fixture.get("bytecode"):
@@ -258,6 +287,8 @@ def make_fixture(fixture, esm, library):
                               bytecode=bytes.fromhex(fixture.get("bytecode", "")))
     if fixture.get("dialogue"):
         repeat_topic(esm, fixture["dialogue"], folder / "TES3X Dialogue.esp")
+    if fixture.get("attribute_effects"):
+        attribute_effects_fixture(esm, folder / "TES3X Attributes.esp")
     if fixture.get("texture"):
         (folder / "Textures").mkdir(exist_ok=True)
         (folder / "Textures" / "tx_tes3x_test.dds").write_bytes(dxt1_texture())

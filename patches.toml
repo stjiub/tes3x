@@ -179,6 +179,17 @@ selection = "preset"
 summary = "Apply Unarmored damage reduction when no armor is equipped."
 
 [[patch]]
+name = "mcp-6"
+title = "Restore fortified attributes"
+origin = { source = "MCP", id = "6" }
+bit = 46
+category = "correctness"
+channel = "dev"
+selection = "preset"
+source = "tes3xmcp6.c"
+summary = "Let Restore and expiring Drain recover the active temporary Fortify amount."
+
+[[patch]]
 name = "dialogue-merge"
 title = "Keep responses of repeated topics"
 category = "correctness"

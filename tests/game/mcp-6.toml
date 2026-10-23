@@ -1,0 +1,57 @@
+kind = "comparison"
+purpose = "Restore and expiring Drain recover an attribute's active temporary Fortify bonus."
+procedure = "Use a timed Fortify Strength potion, damage Strength, restore it three times, then let a Drain potion expire. Compare retail and patched values from the same saved character."
+limitations = "The local save fixture is not distributed. Potion magnitudes vary with the character's alchemy state. Hardware behavior is not checked."
+watch = 'exec[.>]|assert[.>]|console< GetStrength|crash\.|hang\.detected|fatal\.'
+save = "vanilla-seyda-neen.ess"
+timeout = 150
+script = '''
+@start load U:\TES3X\vanilla-seyda-neen.ess
+wait 120
+player->SetStrength 40
+wait 30
+assert player->GetStrength == 40.00
+player->AddItem "mcp6_fortify" 1
+player->Equip "mcp6_fortify"
+wait 60
+player->GetStrength
+player->AddItem "mcp6_damage" 1
+player->Equip "mcp6_damage"
+wait 60
+player->GetStrength
+player->AddItem "mcp6_restore" 3
+player->Equip "mcp6_restore"
+wait 60
+player->GetStrength
+player->Equip "mcp6_restore"
+wait 60
+player->GetStrength
+player->Equip "mcp6_restore"
+wait 60
+player->GetStrength
+player->AddItem "mcp6_drain" 1
+player->Equip "mcp6_drain"
+wait 120
+player->GetStrength
+wait 720
+player->GetStrength
+exit
+'''
+
+[fixture]
+attribute_effects = true
+
+[profile.package]
+mode = "loose"
+
+[expect]
+control = ['exec\.exit 0', 'assert\.failed 0']
+test = ['exec\.exit 0', 'assert\.failed 0']
+
+[sequence]
+control = ['exec> player->Equip "mcp6_damage"', 'exec> player->Equip "mcp6_restore"',
+           'exec> player->Equip "mcp6_restore"', 'console< GetStrength >> 40\.00',
+           'exec> player->Equip "mcp6_drain"', 'console< GetStrength >> 40\.00']
+test = ['exec> player->Equip "mcp6_damage"', 'exec> player->Equip "mcp6_restore"',
+        'exec> player->Equip "mcp6_restore"', 'console< GetStrength >> 70\.00',
+        'exec> player->Equip "mcp6_drain"', 'console< GetStrength >> 70\.00']

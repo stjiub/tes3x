@@ -88,6 +88,9 @@
     "MCP47_DESELECT": null,
     "MCP47_GET_PLAYER": null,
     "MCP47_WORLD": null,
+    "MCP6_GAME_PTR": null,
+    "MCP6_GET_MOBILE": null,
+    "MCP6_PLAYER_MOBILE": null,
     "MCP97_RESUME": null,
     "MEM_CODE_END": null,
     "MEM_CODE_START": null,
@@ -491,6 +494,10 @@
     "tes3xmcp47.c": {
       "digest": "52b37bfb8725ff7fda07d83ff9e17f7f0403c472509e0d04801b1d40d9a1636e",
       "sha256": "8c90fcd49065749df6d4df63f672ef1eeb7c643c1cdabd0d3e8ae1391f0e9daa"
+    },
+    "tes3xmcp6.c": {
+      "digest": "1c1c9fdcabadb41af42de2278849f9997215a4646c70738140b06eb5d02e1cb5",
+      "sha256": "cac8558f0c02ccdefa70f532997c7174a581749b286b04cba63d0a4e484a88e6"
     },
     "tes3xmcp97.c": {
       "digest": "63472584d4692bf9d8bd722242634d74adfacc0606c59b8547c6a6fcc8113d40",

@@ -116,13 +116,19 @@ def installed_ids():
 
 def disasm(blob, va):
     """Disassemble a byte window as if it were loaded at `va`."""
-    tmp = tempfile.mkdtemp()
-    raw, obj = os.path.join(tmp, "w.bin"), os.path.join(tmp, "w.o")
-    open(raw, "wb").write(blob)
-    subprocess.run([OBJCOPY, "-I", "binary", "-O", "elf32-i386",
-                    "--rename-section=.data=.text,code", raw, obj], check=True)
-    out = subprocess.run([OBJDUMP, "-d", "--no-show-raw-insn", obj],
-                         capture_output=True, text=True, check=True).stdout
+    raw_fd, raw = tempfile.mkstemp(suffix=".bin")
+    obj_fd, obj = tempfile.mkstemp(suffix=".o")
+    try:
+        with os.fdopen(raw_fd, "wb") as f:
+            f.write(blob)
+        os.close(obj_fd)
+        subprocess.run([OBJCOPY, "-I", "binary", "-O", "elf32-i386",
+                        "--rename-section=.data=.text,code", raw, obj], check=True)
+        out = subprocess.run([OBJDUMP, "-d", "--no-show-raw-insn", obj],
+                             capture_output=True, text=True, check=True).stdout
+    finally:
+        os.unlink(raw)
+        os.unlink(obj)
     lines = []
     for line in out.splitlines():
         m = re.match(r"^\s+([0-9a-f]+):\s+(.*)$", line)
