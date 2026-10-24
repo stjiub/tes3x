@@ -4,6 +4,9 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- New `mcp-160` patch stops `RemoveItem` and `Drop` from lowering a character's encumbrance for
+  items that were not in the inventory. See [the patch](patches/mcp-160.md).
+
 - New `mwse-pathgrid-zero` patch stops Wander and Flee from crashing on a cell whose pathgrid has
   no nodes. See [the patch](patches/mwse-pathgrid-zero.md).
 

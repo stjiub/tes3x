@@ -337,6 +337,16 @@ source = "tes3xpathgrid.c"
 summary = "Stop Wander and Flee picking a node from a pathgrid that has none."
 
 [[patch]]
+name = "mcp-160"
+title = "RemoveItem weight fix"
+origin = { source = "MCP", id = "160" }
+bit = 48
+category = "correctness"
+channel = "dev"
+selection = "preset"
+summary = "Reduce encumbrance for a removed item only when the item is actually in the inventory."
+
+[[patch]]
 name = "mcp-173"
 title = "NPC faction rank persistence"
 origin = { source = "MCP", id = "173" }

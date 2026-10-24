@@ -1,0 +1,15 @@
+kind = "comparison"
+purpose = "Removing an item the character does not carry leaves its encumbrance alone."
+procedure = "Link the patch on both sampled engines and reach a New Game session. A script that removes a missing item and compares encumbrance is the full reproducer."
+limitations = "The command script proves the patched build reaches play. No encumbrance comparison is automated yet."
+watch = 'diag\.patches|exec\.exit|crash\.|hang\.detected|fatal\.'
+timeout = 180
+script = '''
+@start new
+wait 60
+exit
+'''
+
+[expect]
+control = ['exec\.exit 0']
+test = ['diag\.patches', 'exec\.exit 0']

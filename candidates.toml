@@ -1271,15 +1271,6 @@ summary = "Probe quality fix"
 reason = "Probe quality never reduces trap complexity."
 
 [[candidate]]
-name = "mcp-160"
-origin = { source = "MCP", id = "160" }
-category = "correctness"
-status = "candidate"
-priority = "medium"
-summary = "RemoveItem weight fix"
-reason = "RemoveItem reduces encumbrance by the requested quantity even when fewer items exist; mods leave players permanently misweighted."
-
-[[candidate]]
 name = "mcp-161"
 origin = { source = "MCP", id = "161" }
 category = "compat"

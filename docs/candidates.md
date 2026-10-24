@@ -13,7 +13,7 @@ on, `low` for minor ones, and `none` for fixes we won't port.
 
 | status | fixes |
 |---|---|
-| candidate | 180 |
+| candidate | 179 |
 | deferred | 13 |
 | not-applicable | 16 |
 | rejected | 3 |
@@ -35,7 +35,6 @@ Worth porting, but not yet shown to affect the Xbox build.
 | `mcp-138` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #138 | medium | correctness (recommended) | **Reliable `CellChanged` for scripted teleports.** Script-contract fix used by mods; preserve vanilla transition semantics outside the missed path. |
 | `mcp-141` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #141 | medium | core (intended default) | **Script expression parser / `Random` fix.** `Random` on multiples of 256 can crash and corrupt its argument. Large, but directly relevant to the extended script surface. |
 | `mcp-149` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #149 | medium | core (intended default) | **Dispose corpse before death processing completes.** An actor is disposable before its final processing runs, so `OnDeath`/`OnMurder` can never fire and some spell effects never expire. Unrecoverable in an existing save, and corpse looting/disposal is part of the console avoidance ritual, so Xbox exposure is high. Reproduce by disposing during the death animation. |
-| `mcp-160` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #160 | medium | correctness | **RemoveItem weight fix.** RemoveItem reduces encumbrance by the requested quantity even when fewer items exist; mods leave players permanently misweighted. |
 | `mcp-177` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #177 | medium | compat | **GetEffect/RemoveEffects fix.** GetEffect and RemoveEffects sometimes return 0 or do nothing; scripted mods rely on them. |
 | `mcp-256` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #256 | medium | compat | **Map expansion (for Tamriel Rebuilt).** Expands the world map for Tamriel Rebuilt. Needed for TR, which itself needs 128 MB today. |
 | `mwse-clone-light-null` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | core (profile-dependent priority) | **Handle missing light data while cloning.** Validate against malformed or legal-but-unusual meshes. |

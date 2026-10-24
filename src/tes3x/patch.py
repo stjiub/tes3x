@@ -51,7 +51,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_game_instance, find_hd_video, find_heap_function,
                                find_heap_object, find_heap_region, find_heap_region_sites,
                                find_info_arena_sites, find_lean_menu, find_marker,
-                               find_mcp102_actn, find_pathgrid_lookups, find_mcp123_add, find_mcp6_context,
+                               find_mcp102_actn, find_mcp160_removal, find_pathgrid_lookups, find_mcp123_add, find_mcp6_context,
                                find_mcp125_collision,
                                find_mcp127_map,
                                find_mcp125_context, find_mcp146, find_mcp146_context,
@@ -1089,6 +1089,32 @@ def _mwse_pathgrid_zero(x, value, ctx):
         x.data[off:off + 5] = b"\xe8" + struct.pack("<i", target - (site + 5))
         edits.append((off, 5, "pathgrid lookup 0x%08X -> 0x%08X" % (site, target)))
     return edits
+
+
+@patch("mcp-160")
+def _mcp_160(x, value, ctx):
+    """Reduce encumbrance for a removed item only after its stack is found."""
+    start, load, weight, loop, relocs = find_mcp160_removal(x)
+    old_len = len(load) + len(weight) + len(loop)
+    lea, mov = b"\x8d\xb5\xcc\x02\x00\x00", b"\x8b\xce\xd9\x1c\x24"
+    if weight.count(lea) != 1 or weight.count(mov) != 1:
+        raise PatchError("mcp-160: unexpected weight code")
+    # The stack is held in esi across the reordered weight code, so address the stat directly.
+    weight = (weight.replace(lea, b"").replace(mov, b"\x8d\x8d\xcc\x02\x00\x00\xd9\x1c\x24")
+              + b"\x90\x90")
+    new = bytearray(load + loop + weight)
+    if len(new) != old_len:
+        raise PatchError("mcp-160: reordered code changed size")
+    old_weight = old_len - len(load) - len(loop)
+    for name, (off, target) in relocs.items():
+        if name in ("first", "done", "next", "exit"):
+            off -= old_weight
+        else:
+            off += len(loop) - 2
+        new[off:off + 4] = struct.pack("<i", target - (start + off + 4))
+    off = x.va_to_off(start)
+    x.data[off:off + old_len] = new
+    return [(off, old_len, "item removal 0x%08X: weight after stack lookup" % start)]
 
 
 @patch("mcp-173")

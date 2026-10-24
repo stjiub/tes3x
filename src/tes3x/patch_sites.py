@@ -1304,6 +1304,37 @@ def find_pathgrid_lookups(x):
     return sites
 
 
+# Inventory removal of one item: takes the item's weight off the actor's encumbrance, then looks
+# for the stack. The weight must come off only once the stack is found.
+MCP160_SIG = re.compile(
+    rb"(?P<load>\x8b\x6c\x24\x1c)"
+    rb"(?P<weight>\x85\xed\x74\x3b\x8b\x03\x6a\x00\x6a\x00\x6a\x00\x8b\xcb"
+    rb"\x8d\xb5\xcc\x02\x00\x00\xff\x90\x9c\x00\x00\x00\xd8\x0d....\x51\x8b\xce"
+    rb"\xd9\x1c\x24\xe8(?P<mod>....)\x8b\x0d....\xe8(?P<player>....)"
+    rb"\x3b\xe8\x75\x05\xe8(?P<update>....))"
+    rb"(?P<loop>\x83\xc7\x04\x8b\xcf\xe8(?P<first>....)\x85\xc0\x0f\x84(?P<done>....)"
+    rb"\x8b\x70\x08\x39\x5e\x04\x74\x10\x8b\xcf\xe8(?P<next>....)\x85\xc0\x75\xed\xe9(?P<exit>....))"
+    rb"\x8b\x0e", re.S,
+)
+MCP160_RELOCS = ("mod", "player", "update", "first", "done", "next", "exit")
+
+
+def find_mcp160_removal(x):
+    """Find the item removal: its address, the bytes to reorder and their relative operands."""
+    data = bytes(x.data)
+    hits = list(MCP160_SIG.finditer(data))
+    if len(hits) != 1:
+        raise PatchError("mcp-160: %d item removals, expected 1" % len(hits))
+    m = hits[0]
+    start = x.off_to_va(m.start())
+    if start is None:
+        raise PatchError("mcp-160: item removal is outside an XBE section")
+    relocs = {name: (m.start(name) - m.start(),
+                     start + m.start(name) - m.start() + 4 + struct.unpack("<i", m.group(name))[0])
+              for name in MCP160_RELOCS}
+    return start, m.group("load"), m.group("weight"), m.group("loop"), relocs
+
+
 def find_mcp173_rank(x):
     """Find the save-flag calls before the two NPC rank writes."""
     hits = list(MCP173_RANK_SIG.finditer(bytes(x.data)))
