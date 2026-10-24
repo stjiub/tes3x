@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parent
 # Dash's XBEs, externals/); test_pipeline checks the two agree.
 DATA = ("patches.toml", "candidates.toml", "catalog.toml", "hooks", "symbols", "examples",
         "payloads",
-        "assets/menu", "addons", "tests/game", "keys/release.pub", "dash/mgr.h")
+        "addons", "tests/game", "keys/release.pub", "dash/mgr.h")
 SKIP = shutil.ignore_patterns("__pycache__", "*.pyc")
 
 

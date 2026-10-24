@@ -114,7 +114,7 @@ class PathTests(unittest.TestCase):
         for parts in (('patches.toml',), ('candidates.toml',), ('catalog.toml',),
                       ('hooks', 'xboxkrnl.exe.def'), ('symbols', 'curated.json'),
                       ('symbols', 'structs.json'), ('examples', 'profile.toml'),
-                      ('examples', 'starts.toml'), ('assets', 'menu'),
+                      ('examples', 'starts.toml'),
                       ('addons', 'xbmc', 'console.py'), ('tests', 'game'),
                       ('dash', 'mgr.h'), ('keys', 'release.pub'), ('payloads', 'objects', 'index.json')):
             self.assertTrue(resource(*parts).exists(), parts)

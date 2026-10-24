@@ -13,7 +13,7 @@ from tes3x import __version__
 # line a hyphen may stand for an underscore: `tes3x xemu-setup`.
 COMMANDS = ("agent", "assets", "audit", "bsa", "build", "content", "convert", "dash", "deploy", "diag",
             "disasm", "docs", "ess", "fatx", "fetch", "font", "game_tests", "gui", "heap", "ini", "init", "inject",
-            "kf_merge", "layouts", "library", "manifest", "map", "mcp", "mem", "menuart", "mwse", "net",
+            "kf_merge", "layouts", "library", "manifest", "map", "mcp", "mem", "mwse", "net",
             "nexus", "nxdk", "optimize", "orphan", "pack", "package", "patch",
             "patches", "payload", "pipeline", "plugins", "prof", "put", "qcow2", "readlog",
             "release", "saves", "scenario", "scriptasm", "sym", "test", "tour", "validate", "xbe",

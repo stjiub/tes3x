@@ -3,7 +3,6 @@ include patches.toml candidates.toml catalog.toml keys/release.pub dash/mgr.h
 graft hooks
 graft symbols
 graft examples
-graft assets/menu
 graft addons
 graft tests/game
 global-exclude *.pyc

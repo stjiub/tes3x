@@ -56,7 +56,6 @@ Some pages and sources are generated; edit their source and regenerate them:
 | `tes3x patches --write` | [patches.md](patches.md), [candidates.md](candidates.md), [catalog.md](catalog.md) | `patches.toml`, `candidates.toml`, `catalog.toml` |
 | `tes3x docs --write` | [index.md](index.md) | `docs/nav.toml` |
 | `tes3x font` | `dash/fontdata.c` | pinned OFL fonts, downloaded once |
-| `tes3x menuart` | the menu buttons in `assets/menu` | one font; needs Pillow and numpy |
 
 `tes3x patches --check` and `tes3x docs` check without writing. `tes3x docs` also resolves every
 relative link and anchor in the README, `docs/` and `patches/`, and requires every page in `docs/`

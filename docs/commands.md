@@ -73,7 +73,6 @@ options. This page says what each one is for and where it is explained.
 | `tes3x net` | run a multiplayer server, administer it, and test the network driver | [multiplayer](multiplayer.md) |
 | `tes3x content` | host and manage a standalone catalog of completed builds for the Dash | [content servers](content.md) |
 | `tes3x agent` | listen for the in-game agent; run console lines, fetch files or reboot through it, and through the Dash write, list, rename and delete files, report free space and launch an XBE | [in-game agent](../patches/agent.md) |
-| `tes3x menuart` | redraw the menu buttons multiplayer ships, in `assets/menu` (needs Pillow and numpy) | [development](development.md#generated-files) |
 
 ## Reverse engineering
 
