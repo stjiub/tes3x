@@ -22,6 +22,14 @@ SIGNATURES = {
              "56 8b f1 80 ?? ?? ?? ?? 00 02 75 0a 8b 46 10 c1 e8 0f a8 01"),
     "ALCHEMY_NEW": ("match", 0, ".text", "",
              "6a ff 68 ?? ?? ?? ?? 64 a1 00 00 00 00 50 ?? ?? ?? ?? 00 00 00 51 53 55 56 8b f1 57 89 74 24 10 e8 ?? ?? ?? ?? 8d 7e 44 33 ed 8b cf 89 6c 24 1c"),
+    "ARMOR_NEW": ("match", 0, ".text", "",
+             "6a ff 68 ?? ?? ?? ?? 64 a1 00 00 00 00 50 ?? ?? ?? ?? 00 00 00 51 53 55 56 8b f1 57 89 74 24 10 e8 ?? ?? ?? ?? 33 ed 8d 46 38 55 8d 7e 34 8d 5e 40 50 89 6c 24 24 c7 06"),
+    "CLOTHING_NEW": ("match", 0, ".text", "",
+             "6a ff 68 ?? ?? ?? ?? 64 a1 00 00 00 00 50 ?? ?? ?? ?? 00 00 00 51 53 55 56 8b f1 57 89 74 24 10 e8 ?? ?? ?? ?? 33 ed 8d 46 3c 55 8d 7e 34 8d 5e 40 50 89 6c 24 24 c7 06 ?? ?? ?? ?? 89 28 89 2f 89 6e 38 89 2b e8 ?? ?? ?? ?? 55 57 e8 ?? ?? ?? ?? 55 53 89 6e 38 e8 ?? ?? ?? ?? 8d 56 44 83 c4 18 33"),
+    "ENCHANTMENT_NEW": ("match", 0, ".text", "",
+             "6a ff 68 ?? ?? ?? ?? 64 a1 00 00 00 00 50 ?? ?? ?? ?? 00 00 00 83 ec 24 56 8b f1 57 89 74 24 08 e8 ?? ?? ?? ?? 8d 7e 2c 8b cf c7"),
+    "WEAPON_NEW": ("match", 0, ".text", "",
+             "6a ff 68 ?? ?? ?? ?? 64 a1 00 00 00 00 50 ?? ?? ?? ?? 00 00 00 51 53 55 56 8b f1 57 89 74 24 10 e8 ?? ?? ?? ?? 33 ed 8d 46 3c 55 8d 7e 34 8d 5e 40 50 89 6c 24 24 c7 06 ?? ?? ?? ?? 89 28 89 2f 89 6e 38 89 2b e8 ?? ?? ?? ?? 55 57 e8 ?? ?? ?? ?? 55 53 89 6e 38 e8 ?? ?? ?? ?? 33 c0 8d 4e 44 89 01 89 41 04 89 41 08 89 41 0c 89 41 10 89 41 14 89 41 18 89 41 1c 83"),
     "ANIM_GROUP_TYPES": ("operand", 24, ".data", "8b0485",
              "cc cc cc cc cc cc cc cc 8b 44 24 08 85 c0 75 6f 0f b6 44 24 04 8b 04 85 ?? ?? ?? ?? 83 f8 07 77"),
     "ANIM_HAS_GROUP": ("match", 0, ".text", "",
@@ -254,6 +262,8 @@ def find_multi_signature(image, name):
             raise ValueError("multiplayer %s: match is outside XBE sections" % name)
         if name == "CLASS_NEW":
             boundary = bytes(image.data[at - 3:at]) == b"\xC2\x04\x00"
+        elif name == "ARMOR_NEW":
+            boundary = bytes(image.data[at - 3:at]) == b"\xC2\x08\x00"
         elif name == "BODY_PART_UPDATE":
             boundary = True  # embedded table in .text
         else:

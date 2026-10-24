@@ -103,10 +103,10 @@ No official releases yet. The first public release is in preparation.
   players to rest; each agrees by opening their own rest menu, and then everyone waits or rests
   for the same hours while the shared clock moves on. Before, the menu was refused while joined.
   See [the player guide](docs/multiplayer-client.md#limits).
-- Spells made at the spell maker and potions brewed at the alchemy menu in multiplayer now reach
-  the other players and survive a server restart; before, they existed only on the console that
-  made them. The server keeps them in the world file and sends them to each player who joins,
-  ahead of that player's own spells and items. Enchantments are still local to their maker. See [the server guide](docs/multiplayer-server.md).
+- Spells made at the spell maker, potions brewed at the alchemy menu and items enchanted at the
+  enchanting menu in multiplayer now reach the other players and survive a server restart; before,
+  they existed only on the console that made them. The server keeps them in the world file and
+  sends them to each player who joins, ahead of that player's own spells and items. See [the server guide](docs/multiplayer-server.md).
 - Multiplayer servers can set `--level-up auto` (GUI: "Level up without resting") so players get
   the level-up screen as soon as they earn a level, without resting. The default keeps the retail
   rule. See [the server guide](docs/multiplayer-server.md).

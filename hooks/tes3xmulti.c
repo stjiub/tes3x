@@ -108,6 +108,8 @@ TES3X_OPTIONAL void __cdecl tes3x_console_reply(const char *fmt, ...);
     !defined(TES3X_NET_EFFECT_CALLBACKS) || !defined(TES3X_NET_EFFECT_ICONS) || \
     !defined(TES3X_NET_ALCHEMY_NEW) || !defined(TES3X_NET_ADD_NEW_OBJECT) || \
     !defined(TES3X_NET_SET_STRING_SLOT) || !defined(TES3X_NET_SPELL_NEW) || \
+    !defined(TES3X_NET_ENCHANTMENT_NEW) || !defined(TES3X_NET_ARMOR_NEW) || \
+    !defined(TES3X_NET_WEAPON_NEW) || !defined(TES3X_NET_CLOTHING_NEW) || \
     !defined(TES3X_NET_ADD_NEW_OBJECT_SITES)
 #error "define TES3X_NET_SPELL_HIT, TES3X_NET_CAST_BOLT, their call sites and the spell functions"
 #endif
@@ -773,6 +775,8 @@ int tes3x_multi_command(const char *text)
         spellmake_command(rest);
     } else if ((rest = word(text, "potionmake")) && *(rest = skip(rest))) {
         potionmake_command(rest);
+    } else if ((rest = word(text, "enchantmake")) && *(rest = skip(rest))) {
+        enchantmake_command(rest);
     } else if ((rest = word(text, "send")) && *(rest = skip(rest))) {
         up_command(rest);
     } else if ((rest = word(text, "save")) && !*skip(rest)) {

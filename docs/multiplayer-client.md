@@ -147,7 +147,7 @@ back at the marker on its next join.
 - Items taken, objects a script disables, locks, and items
   dropped or placed (by the console or a script) are shared, with their stack size, condition and
   charge, and so are containers' contents: the first player to open a container decides what it
-  holds. Corpses' inventories, creatures spawned while playing and enchanted items made in play are not shared yet.
+  holds. Corpses' inventories and creatures spawned while playing are not shared yet.
 - Two players taking from the same container at the same moment can both get the same items.
 - If a script on every console places the same object at different moments, each console's copy
   is shared, so the object appears more than once.

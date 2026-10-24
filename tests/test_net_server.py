@@ -1503,6 +1503,37 @@ class ServerTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 net.unpack_record(malformed)
 
+    def test_enchantments_and_their_items_are_kept_and_replayed_in_order(self):
+        net = tes3x_net
+        server = self.fake_server()
+        first, second = self.fake_client(server, 1), self.fake_client(server, 2)
+        first.record_in = second.record_in = None
+        fire = struct.pack('<hbbI4I', 14, -1, -1, 0, 0, 10, 5, 10)
+        ench = net.pack_enchantment(1, 30, 1, '4455667788990011', 600, fire)
+        item = net.pack_item(1, '1100998877665544', 'Fiery Dagger', 'iron dagger',
+                             '4455667788990011')
+        for blob in (ench, item):
+            for part in net.record_parts(blob):
+                self.assertTrue(valid_client_event(net.EVENT_RECORD, part))
+                server.event_record(first, net.EVENT_RECORD, part, '', 0.0)
+        kept = net.unpack_record(bytes.fromhex(server.world.records['4455667788990011']))
+        self.assertEqual((kept[0], kept[1], kept[2], kept[3], kept[9]),
+                         (net.RECORD_ENCHANT, 1, 30, 1, 600))
+        kept = net.unpack_record(bytes.fromhex(server.world.records['1100998877665544']))
+        self.assertEqual((kept[0], kept[1], kept[5], kept[7], kept[8]),
+                         (net.RECORD_ITEM, 1, 'Fiery Dagger', 'iron dagger', '4455667788990011'))
+        # A late joiner gets the enchantment before the item that names it.
+        third = self.fake_client(server, 3)
+        server.replay_records(third)
+        self.assertEqual(third.sent, [(net.EVENT_RECORD, 0, part) for blob in (ench, item)
+                                      for part in net.record_parts(blob)])
+        for malformed in (item[:-1], item + b'x',
+                          net.RECORD_HEAD.pack(net.RECORD_ITEM, 3, 0, 0, 0) + b'a\0n\0b\0c\0',
+                          net.RECORD_HEAD.pack(net.RECORD_ITEM, 0, 0, 0, 0) + b'a\0n\0\0c\0',
+                          ench.replace(b'\0\0', b'\0n\0', 1)):
+            with self.assertRaises(ValueError):
+                net.unpack_record(malformed)
+
     def test_world_scripts_are_kept_handed_on_and_end_with_their_last_runner(self):
         net = tes3x_net
         server = self.fake_server()

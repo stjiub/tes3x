@@ -653,12 +653,19 @@ KILLS_MAX = 8192  # deaths kept
 # console that made it. One record is a blob sent in parts of [part, parts, chunk]: RECORD_HEAD
 # (type, cast type, magicka cost or potion value, flags, effect count, 0), the id and the name each
 # ending in a zero, for a potion the mesh and the icon likewise and the weight as a float, then the
-# effects as the engine keeps them (RECORD_EFFECT bytes each). A console sends its record to the server, which
+# effects as the engine keeps them (RECORD_EFFECT bytes each). An enchantment has its cast type
+# in place of the spell's, its cost, an empty name and its charge as a u32 before the effects.
+# The item an enchanting makes is a copy of a base item with an enchantment: its kind (armor,
+# weapon, clothing) in the cast byte, no effects, and after the id and the name the base item's
+# id and the enchantment's id, returned in the mesh and icon places. A console sends its record to the server, which
 # keeps it in the world file and sends it whole to every other console, and to each at join before
 # its character's items and spells, so a spell resolves by id everywhere.
 EVENT_RECORD = 43
 RECORD_SPELL = 1
 RECORD_POTION = 2
+RECORD_ENCHANT = 3
+RECORD_ITEM = 4
+RECORD_ITEM_KINDS = 3  # armor, weapon, clothing
 RECORD_HEAD = struct.Struct("<BBHIBx")
 RECORD_EFFECT = 24
 RECORD_EFFECTS_MAX = 8
@@ -677,7 +684,8 @@ def unpack_record(blob):
     if len(blob) <= RECORD_HEAD.size:
         raise ValueError("record length")
     kind, cast, cost, flags, count = RECORD_HEAD.unpack_from(blob)
-    if kind not in (RECORD_SPELL, RECORD_POTION) or cast > 5 or flags > 7             or count > RECORD_EFFECTS_MAX:
+    if kind not in (RECORD_SPELL, RECORD_POTION, RECORD_ENCHANT, RECORD_ITEM) or cast > 5 \
+            or flags > 7 or count > RECORD_EFFECTS_MAX:
         raise ValueError("record type")
     end = blob.find(b"\0", RECORD_HEAD.size)
     name_end = blob.find(b"\0", end + 1) if end >= 0 else -1
@@ -691,6 +699,24 @@ def unpack_record(blob):
     mesh = icon = b""
     weight = 0.0
     at = name_end + 1
+    if kind == RECORD_ITEM:
+        base_end = blob.find(b"\0", at)
+        ench_end = blob.find(b"\0", base_end + 1) if base_end >= 0 else -1
+        mesh, icon = blob[at:base_end], blob[base_end + 1:ench_end]
+        if (cast >= RECORD_ITEM_KINDS or count or cost or flags or base_end < 0
+                or ench_end != len(blob) - 1
+                or not 0 < len(mesh) <= RECORD_ID_MAX or not 0 < len(icon) <= RECORD_ID_MAX
+                or any(b < 32 or b == 127 or b == 34 for b in mesh + icon)):
+            raise ValueError("record item")
+        return (kind, cast, cost, flags, ident.decode("latin-1"), name.decode("latin-1"), b"",
+                mesh.decode("latin-1"), icon.decode("latin-1"), weight)
+    if kind == RECORD_ENCHANT:
+        if name or cast > 3 or len(blob) < at + 4:
+            raise ValueError("record enchantment")
+        weight, = struct.unpack_from("<I", blob, at)
+        if weight > 10000000:
+            raise ValueError("record charge")
+        at += 4
     if kind == RECORD_POTION:
         mesh_end = blob.find(b"\0", at)
         icon_end = blob.find(b"\0", mesh_end + 1) if mesh_end >= 0 else -1
@@ -725,6 +751,22 @@ def pack_record(cast, cost, flags, ident, name, effects):
     """The blob of a spell record."""
     blob = (RECORD_HEAD.pack(RECORD_SPELL, cast, cost, flags, len(effects) // RECORD_EFFECT)
             + zstr(ident) + zstr(name) + effects)
+    unpack_record(blob)
+    return blob
+
+
+def pack_enchantment(cast, cost, flags, ident, charge, effects):
+    """The blob of an enchantment record; its charge comes back as the weight."""
+    blob = (RECORD_HEAD.pack(RECORD_ENCHANT, cast, cost, flags, len(effects) // RECORD_EFFECT)
+            + zstr(ident) + zstr("") + struct.pack("<I", charge) + effects)
+    unpack_record(blob)
+    return blob
+
+
+def pack_item(kind, ident, name, base, enchantment):
+    """The blob of an enchanted item copy: its base item and its enchantment."""
+    blob = (RECORD_HEAD.pack(RECORD_ITEM, kind, 0, 0, 0) + zstr(ident) + zstr(name) + zstr(base)
+            + zstr(enchantment))
     unpack_record(blob)
     return blob
 

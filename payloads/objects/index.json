@@ -161,6 +161,7 @@
     "NET_ANIM_PLAY_GROUP": null,
     "NET_APPLY_FATIGUE_DAMAGE": null,
     "NET_APPLY_HEALTH_DAMAGE": null,
+    "NET_ARMOR_NEW": null,
     "NET_ATTACH_ITEM_DATA": null,
     "NET_ATTACH_SCENE": null,
     "NET_BASE_UNDERWATER": null,
@@ -176,6 +177,7 @@
     "NET_CLASS_NEW": null,
     "NET_CLASS_SET_DESCRIPTION": null,
     "NET_CLASS_SET_ID": null,
+    "NET_CLOTHING_NEW": null,
     "NET_COMPILE_RUN": null,
     "NET_CONTAINER_INSTANCE_VTABLE": null,
     "NET_CONTAINER_VTABLE": null,
@@ -196,6 +198,7 @@
     "NET_EFFECT_CALLBACKS": null,
     "NET_EFFECT_ICONS": null,
     "NET_EFFECT_INSERT": null,
+    "NET_ENCHANTMENT_NEW": null,
     "NET_ENGINE_ALLOCATE": null,
     "NET_ENGINE_PATH": null,
     "NET_EQUIP_ITEM": null,
@@ -321,6 +324,7 @@
     "NET_UPDATE_LIGHTING": null,
     "NET_UPDATE_STATS_PANE": null,
     "NET_VK_BUTTON": null,
+    "NET_WEAPON_NEW": null,
     "NET_WEATHER_ROLL": null,
     "NET_WIDGET_SET_TEXT": null,
     "NET_WORLD": null,
@@ -562,8 +566,8 @@
       "sha256": "b68114f21bad5b7dc46927db712ed5e21478a7c40353a2a6267e27efcada39c7"
     },
     "tes3xmulti.c": {
-      "digest": "1dafdfc580e9a4a6d0748a256db8d94554898d34330de36029dfbc4ef1d43192",
-      "sha256": "f4d08e8d1fb6e2ce905063ddc8cc2b888907dff988eb753f8dba2a1a1899d65b"
+      "digest": "cc808804a43f170f3f5c1f800242cc4b21c1f6439fa63b1fd367522674823fab",
+      "sha256": "ea07c6d5679f34b01c2e7e5a81b3a9287d1739e36a758d88859001f362f6cca8"
     },
     "tes3xmwse.c": {
       "digest": "3f4e6710ffb849b75ed2a51273bb38f13ed3079aa63cd41abcd2e7af9897e2ad",

@@ -98,6 +98,8 @@ SPELL_ADDRESSES = (
     ("MAGIC_PROCESS", 0x00151350), ("EFFECT_CALLBACKS", 0x003B5FC8),
     ("EFFECT_ICONS", 0x001EE460), ("ALCHEMY_NEW", 0x000FC650),
     ("ADD_NEW_OBJECT", 0x0010CA40), ("SET_STRING_SLOT", 0x000D50E0), ("SPELL_NEW", 0x000FBE20),
+    ("ENCHANTMENT_NEW", 0x000FC290), ("ARMOR_NEW", 0x000F12F0), ("WEAPON_NEW", 0x001346C0),
+    ("CLOTHING_NEW", 0x000F3030),
 )
 # What the leveled creature spawn and Inventory::DropItem call to make a reference at run time,
 # put it in a cell, give it a stack count and attach it to the cell's scene.
