@@ -13,8 +13,8 @@ on, `low` for minor ones, and `none` for fixes we won't port.
 
 | status | fixes |
 |---|---|
-| candidate | 178 |
-| deferred | 13 |
+| candidate | 177 |
+| deferred | 14 |
 | not-applicable | 16 |
 | rejected | 3 |
 
@@ -49,7 +49,6 @@ Worth porting, but not yet shown to affect the Xbox build.
 | `mwse-map-border-marker` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | core (intended default) | **Avoid crash while updating map markers at the drawable map border.** Relevant to map expansion and large landmasses if the Xbox map bounds match. |
 | `mwse-paperdoll` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | core (intended default if Xbox path exists) | **Avoid paper-doll equip/unequip crash.** Xbox inventory rendering may not use the PC paper-doll path; prove applicability first. |
 | `mwse-showmap-fillmap` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | performance (benchmark first) | **Optimize `ShowMap`/`FillMap`.** Compare command time and map correctness across repeated calls. |
-| `mwse-uncloned-removeitem` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | core (intended default) | **Avoid actor/item-removal crash on uncloned actors.** Establish exact actor lifetime and inventory precondition. |
 | `mwse-vfx-load-bloat` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | core (intended default) | **Reject or repair invalid loaded VFX state which causes load errors and save growth.** Especially relevant to long-lived Xbox saves; measure record growth as well as crash behaviour. |
 | `mwse-vfx-save-empty` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | core (intended default) | **Avoid crash while saving an active visual effect when none of its particles can be serialized.** Build a small spell/VFX save reproducer before locating the serializer. |
 | `omw-live-inventory` | [OpenMW-4642](https://gitlab.com/OpenMW/openmw/-/merge_requests/4642) | medium | correctness (recommended) | **Refresh an open container/inventory after script `AddItem`/`RemoveItem`.** The reported vanilla defect leaves the menu stale and can permit duplication. Reproduce with the Xbox menu before choosing a hook; promote to `core` if data loss/duplication is confirmed. |
@@ -221,6 +220,7 @@ A real fix, held back for evidence, prerequisites or risk.
 | `mcp-131` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #131 | low | correctness | **Bump/reflect map local lighting.** Bump and reflection maps ignore local light. Renderer-specific; the Xbox renderer differs. |
 | `mgexe-emissive-particles` | [MGE XE](https://www.nexusmods.com/morrowind/mods/41102) | low | undecided | **Emissive-particle rendering correction.** Renderer-specific. Establish that the Xbox renderer shares the defect before doing binary work. |
 | `mwse-empty-menu-position` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | low | undecided | **Empty menu position and long derived-key menu crashes.** PC UI evidence is insufficient; prove the Xbox menu path first. |
+| `mwse-uncloned-removeitem` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | low | core (intended default) | **Avoid actor/item-removal crash on uncloned actors.** MWSE's fix repairs a clone's missing back-reference at the RemoveItem call and logs it, to gather data; it was seen once in one mod's script and never narrowed down. The Xbox site is unlocated and no reproducer is known. Revisit if a RemoveItem crash shows up in play. |
 | `xbox-fmap-save` | TES3X | low | performance (deferred pending a format decision) | **Shrink or deduplicate the fixed map bitmap written into every save.** `FMAP` is 786,472 bytes and byte-identical across all 18 console saves - 49.5% of each file and twice the next-largest record. Any change alters the save format, so it breaks Wrye Mash and existing saves; that cost has to be accepted before implementation work, not after. Settle the save-size ceiling question (`MCP-58`) first, because without a threshold there is nothing to measure the gain against. |
 
 ## not-applicable

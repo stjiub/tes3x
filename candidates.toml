@@ -1866,10 +1866,10 @@ name = "mwse-uncloned-removeitem"
 origin = { source = "MWSE" }
 category = "core"
 default = "intended default"
-status = "candidate"
-priority = "medium"
+status = "deferred"
+priority = "low"
 summary = "Avoid actor/item-removal crash on uncloned actors"
-reason = "Establish exact actor lifetime and inventory precondition."
+reason = "MWSE's fix repairs a clone's missing back-reference at the RemoveItem call and logs it, to gather data; it was seen once in one mod's script and never narrowed down. The Xbox site is unlocated and no reproducer is known. Revisit if a RemoveItem crash shows up in play."
 
 [[candidate]]
 name = "mwse-vfx-load-bloat"
