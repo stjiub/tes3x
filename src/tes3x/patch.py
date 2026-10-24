@@ -52,7 +52,8 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_heap_object, find_heap_region, find_heap_region_sites,
                                find_info_arena_sites, find_lean_menu, find_marker,
                                find_mcp102_actn, find_enable_disable_flags, find_mcp160_removal, find_pathgrid_lookups, find_mcp123_add, find_mcp6_context,
-                               find_mcp125_collision, find_mcp149_menu,
+                               find_mcp125_collision, find_mcp55_context,
+                               find_mcp55_inventory_context, find_mcp149_menu,
                                find_mcp127_map,
                                find_mcp125_context, find_mcp146, find_mcp146_context,
                                find_mcp47_context, find_mcp132_context,
@@ -1027,6 +1028,13 @@ def _test_mcp47(x, value, ctx):
     return [(None, 0, "spell selection test command installed")]
 
 
+@test_patch("test-mcp55", "Inspect the alchemy name and inventory tiles for the mcp-55 game test.")
+def _test_mcp55(x, value, ctx):
+    if not ctx.get("hooks", {}).get("mcp55_test"):
+        raise PatchError("test-mcp55: payload has no mcp-55 test command")
+    return [(None, 0, "alchemy test command installed")]
+
+
 @test_patch("test-mcp132", "Read an NPC's animation layers for the mcp-132 game test.")
 def _test_mcp132(x, value, ctx):
     if not ctx.get("hooks", {}).get("mcp132_test"):
@@ -1068,6 +1076,33 @@ def _mcp_149(x, value, ctx):
     x.data[off + 10] = 0x0B
     return [(off, 6, f"contents menu state 0x{site:08X} -> 0x{target:08X}"),
             (off + 10, 1, "dying actor skips dispose flag")]
+
+
+@patch("mcp-55")
+def _mcp_55(x, value, ctx):
+    """Keep the entered potion name through the Create action's menu refresh."""
+    hooks = ctx.get("hooks", {})
+    if any(not hooks.get(key) for key in ("mcp55_refresh_brew", "mcp55_refresh_name",
+                                           "mcp55_close_inventory")):
+        raise PatchError("mcp-55: needs all alchemy hooks")
+    refresh_call, refresh, name_call, set_text = find_mcp55_context(x)
+    edits = []
+    for site, expected, key in ((refresh_call, refresh, "mcp55_refresh_brew"),
+                                (name_call, set_text, "mcp55_refresh_name")):
+        target = int(str(hooks[key]), 16)
+        was, off = x.patch_call(site, target)
+        if was != expected:
+            raise PatchError(f"mcp-55: call 0x{site:08X} targets 0x{was:08X}, "
+                             f"expected 0x{expected:08X}")
+        edits.append((off, 5, f"alchemy refresh 0x{site:08X} -> 0x{target:08X}"))
+    close_site, _, _, _, _, update_tiles = find_mcp55_inventory_context(x)
+    target = int(str(hooks["mcp55_close_inventory"]), 16)
+    was, off = x.patch_call(close_site, target)
+    if was != update_tiles:
+        raise PatchError(f"mcp-55: close call 0x{close_site:08X} targets 0x{was:08X}, "
+                         f"expected 0x{update_tiles:08X}")
+    edits.append((off, 5, f"alchemy close 0x{close_site:08X} -> 0x{target:08X}"))
+    return edits
 
 
 @patch("mcp-6")

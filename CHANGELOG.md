@@ -4,6 +4,9 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- New `mcp-55` patch keeps a custom potion name after Create and groups inventory icons when
+  alchemy closes. See [the patch](patches/mcp-55.md).
+
 - New `mcp-149` patch prevents disposing an actor during its death animation, allowing death
   scripts and spell cleanup to finish. See [the patch](patches/mcp-149.md).
 

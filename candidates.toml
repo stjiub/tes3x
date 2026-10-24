@@ -487,15 +487,6 @@ summary = "Hi-def cutscene support"
 reason = "Cutscenes up to 2048x1024. Unlikely to fit the Xbox memory budget; Xbox builds should ship Xbox-sized video."
 
 [[candidate]]
-name = "mcp-55"
-origin = { source = "MCP", id = "55" }
-category = "correctness"
-status = "candidate"
-priority = "medium"
-summary = "Alchemy naming/stacking fix"
-reason = "Alchemy asks for a name that is already present after long play, and resets custom names. The prompt on Xbox is the on-screen keyboard."
-
-[[candidate]]
 name = "mcp-56"
 origin = { source = "MCP", id = "56" }
 category = "correctness"

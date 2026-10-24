@@ -96,6 +96,64 @@ class PatchError(Exception):
     pass
 
 
+def find_mcp55_context(x):
+    """Find the alchemy brew callback and its name reset in both retail engines."""
+    callback_sig = re.compile(
+        rb"\xe8....\xe8....\x8b\x0d....\xe8....\x8b\xc8\xe8....\xb0\x01\xc3",
+        re.S,
+    )
+    callbacks = list(callback_sig.finditer(x.data))
+    if len(callbacks) != 1:
+        raise PatchError(f"mcp-55: {len(callbacks)} brew callbacks, expected 1")
+    callback = x.off_to_va(callbacks[0].start())
+    refresh_call = callback + 5
+    refresh = tes3x_inject.call_target(x, refresh_call)
+    reset_sig = re.compile(rb"\x85\xc0\x74\x0c\x68....\x8b\xc8\xe8....", re.S)
+    start = x.va_to_off(refresh)
+    resets = list(reset_sig.finditer(x.data, start, start + 0x900))
+    if len(resets) != 1:
+        raise PatchError(f"mcp-55: {len(resets)} name resets in refresh, expected 1")
+    name_call = x.off_to_va(resets[0].start()) + 11
+    return refresh_call, refresh, name_call, tes3x_inject.call_target(x, name_call)
+
+
+def find_mcp55_inventory_context(x):
+    """Find the alchemy close tail and the engine's standard inventory icon rebuild."""
+    close_sig = re.compile(
+        rb"\xe8....\xe8....\x33\xc0\x66\xa1....\x50\xe8...."
+        rb"\x83\xc4\x04\xe8....\xb0\x01\xc3", re.S,
+    )
+    closes = list(close_sig.finditer(x.data))
+    if len(closes) != 1:
+        raise PatchError(f"mcp-55: {len(closes)} alchemy close callbacks, expected 1")
+    close_site = x.off_to_va(closes[0].start()) + 27
+    update_tiles = tes3x_inject.call_target(x, close_site)
+    rebuild_sig = re.compile(
+        rb"\x8b\x0d(?P<world>....)\x8b\x89\xc4\x02\x00\x00\x6a\x02"
+        rb"\xe8(?P<clear>....)\x8b\x0d(?P=world)\xe8(?P<player>....)"
+        rb"\x8b\x90\x60\x05\x00\x00\xa1(?P=world)"
+        rb"\x8b\x88\xc4\x02\x00\x00\x6a\x02\x83\xc2\x3c\x52"
+        rb"\xe8(?P<add>....)\xe8(?P<update>....)", re.S,
+    )
+    rebuilds = list(rebuild_sig.finditer(x.data))
+    if not rebuilds:
+        raise PatchError("mcp-55: no inventory rebuild sequence")
+    contexts = set()
+    for match in rebuilds:
+        base = x.off_to_va(match.start())
+        contexts.add((struct.unpack("<I", match.group("world"))[0],
+                      tes3x_inject.call_target(x, base + match.start("clear") - match.start() - 1),
+                      tes3x_inject.call_target(x, base + match.start("player") - match.start() - 1),
+                      tes3x_inject.call_target(x, base + match.start("add") - match.start() - 1),
+                      tes3x_inject.call_target(x, base + match.start("update") - match.start() - 1)))
+    if len(contexts) != 1:
+        raise PatchError(f"mcp-55: {len(contexts)} inventory rebuild targets, expected 1")
+    world, clear, player, add, update = contexts.pop()
+    if update != update_tiles:
+        raise PatchError("mcp-55: alchemy close uses another inventory tile update")
+    return close_site, world, clear, player, add, update
+
+
 def find_unique(data, needle, what):
     hits = [m.start() for m in re.finditer(re.escape(needle), data)]
     if len(hits) != 1:

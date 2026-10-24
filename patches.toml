@@ -326,6 +326,17 @@ source = "tes3xmcp149.c"
 summary = "Keep corpse disposal unavailable until an actor finishes dying."
 
 [[patch]]
+name = "mcp-55"
+title = "Alchemy potion naming and stacking"
+origin = { source = "MCP", id = "55" }
+bit = 51
+category = "correctness"
+channel = "dev"
+selection = "preset"
+source = "tes3xmcp55.c"
+summary = "Keep custom potion names after Create and regroup inventory icons when alchemy closes."
+
+[[patch]]
 name = "mcp-47"
 title = "Spell deselection fix"
 origin = { source = "MCP", id = "47" }

@@ -1,0 +1,43 @@
+kind = "comparison"
+purpose = "Create preserves an entered alchemy potion name, and closing the menu rebuilds inventory icons."
+procedure = "Load a character, open alchemy with a mortar, enter a custom name, press Create, then remove one cached inventory icon and close alchemy."
+limitations = "The private save fixture is not distributed. The stale icon cache is induced by the test probe rather than a successful brew. Visual stacking and hardware behavior are unchecked."
+watch = 'mcp55\.|menu\.MenuAlchemy|exec[.>]|assert[.>]|crash\.|hang\.detected'
+pipeline = ["--test-probe", "mcp-55"]
+save = "vanilla-seyda-neen.ess"
+timeout = 120
+script = '''
+@start load U:\TES3X\vanilla-seyda-neen.ess
+wait 180
+assert player->GetLevel == 7.00
+player->AddItem "apparatus_a_mortar_01" 1
+player->AddItem "ingred_marshmerrow_01" 10
+player->AddItem "ingred_saltrice_01" 10
+player->Equip "apparatus_a_mortar_01"
+wait 60
+visible MenuAlchemy
+tes3xmcp55 name
+tes3xmcp55 state
+pad MenuAlchemy X
+wait 30
+tes3xmcp55 state
+tes3xmcp55 stale
+tes3xmcp55 state
+pad MenuAlchemy B
+wait 30
+visible MenuAlchemy
+tes3xmcp55 state
+exit
+'''
+
+[expect]
+control = ['mcp55\.name_set 1', 'mcp55\.stale 1', 'exec\.exit 0', 'assert\.failed 0']
+test = ['mcp55\.name_set 1', 'mcp55\.stale 1', 'exec\.exit 0', 'assert\.failed 0']
+
+[sequence]
+control = ['mcp55\.name_custom 1', 'exec\.pad 0', 'mcp55\.name_custom 0',
+           'mcp55\.stale 1', 'mcp55\.tiles 9', 'exec\.pad 0',
+           'menu\.MenuAlchemy 0', 'mcp55\.tiles 9']
+test = ['mcp55\.name_custom 1', 'exec\.pad 0', 'mcp55\.name_custom 1',
+        'mcp55\.stale 1', 'mcp55\.tiles 9', 'exec\.pad 0',
+        'menu\.MenuAlchemy 0', 'mcp55\.tiles 10']

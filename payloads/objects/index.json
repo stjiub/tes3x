@@ -90,6 +90,13 @@
     "MCP47_DESELECT": null,
     "MCP47_GET_PLAYER": null,
     "MCP47_WORLD": null,
+    "MCP55_ADD_ITEMS": null,
+    "MCP55_CLEAR_ICONS": null,
+    "MCP55_GET_PLAYER": null,
+    "MCP55_REFRESH": null,
+    "MCP55_SET_TEXT": null,
+    "MCP55_UPDATE_TILES": null,
+    "MCP55_WORLD_PTR": null,
     "MCP6_GAME_PTR": null,
     "MCP6_GET_MOBILE": null,
     "MCP6_PLAYER_MOBILE": null,
@@ -410,8 +417,8 @@
       "sha256": "38411f8b5f805eec763cec3029b75b383e4b418a8ed0a40c435d326b1decb15f"
     },
     "tes3xconsole.c": {
-      "digest": "0833aebfa81fc85482a54e79c94b377a1b6aa5c66d32a1064d70e366f37370e0",
-      "sha256": "398cee56ea13546549d2c0ce643df7852d9d785aa7f13e9dc15bbf19855ee6e1"
+      "digest": "f00815aa8dd00bbeccda4b529308504c401866f04a0e744a8755b42bbba65e91",
+      "sha256": "cc598cf42bb4263a898f7324baf903d182c579df16a00e38be4f3233ada7230e"
     },
     "tes3xcrt.c": {
       "digest": "32b80dba5562e5e5a1d9ddba7b806d8095fd485b672b7557c031ab2e2258c862",
@@ -504,6 +511,10 @@
     "tes3xmcp47.c": {
       "digest": "52b37bfb8725ff7fda07d83ff9e17f7f0403c472509e0d04801b1d40d9a1636e",
       "sha256": "8c90fcd49065749df6d4df63f672ef1eeb7c643c1cdabd0d3e8ae1391f0e9daa"
+    },
+    "tes3xmcp55.c": {
+      "digest": "44a2f02703da080480d9e3905234d56c3bfb7b8f965c1ae14ebb31db8b43e7a5",
+      "sha256": "d6065cad615218c1128fb15a15934a6b59feed13e91c37719d308c1111073bbd"
     },
     "tes3xmcp6.c": {
       "digest": "1c1c9fdcabadb41af42de2278849f9997215a4646c70738140b06eb5d02e1cb5",

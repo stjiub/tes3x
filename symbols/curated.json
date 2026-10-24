@@ -2799,6 +2799,14 @@
       "pc_va": "0x004AA950"
     },
     {
+      "va": "0x000F92E0",
+      "name": "Alchemy::matchesBrewEffects",
+      "confidence": "matched",
+      "provenance": "PC 0x004AC1A0; called by AttemptPotionBrew on each existing ALCH",
+      "note": "Compares value, weight and effect list; does not compare potion name or model path.",
+      "pc_va": "0x004AC1A0"
+    },
+    {
       "va": "0x000F99A0",
       "name": "SpellList::containsObject",
       "kind": "function",
@@ -6916,6 +6924,12 @@
       "provenance": "traced: from Game::Update; after chargen makes any of the HUD-tab menus (map, inventory, magic, stats) that is missing, each followed by 0x001FB4C0"
     },
     {
+      "va": "0x001B19C0",
+      "name": "UI::returnAlchemyIngredients",
+      "confidence": "verified",
+      "provenance": "Called by alchemy close callback; returns selected ingredients and apparatus to player inventory"
+    },
+    {
       "va": "0x001B1FB0",
       "name": "alchemySkillRoll",
       "kind": "function",
@@ -6924,12 +6938,43 @@
       "pc_va": "0x0059D610"
     },
     {
+      "va": "0x001B2390",
+      "name": "UI::closeAlchemyMenu",
+      "confidence": "verified",
+      "provenance": "Registered at 0x001B6306; returns ingredients and closes menu",
+      "note": "Calls UpdateInventoryTiles without rebuilding InventoryData icons.",
+      "signature": "bool __cdecl closeAlchemyMenu()"
+    },
+    {
+      "va": "0x001B23F0",
+      "name": "UI::refreshAlchemyMenu",
+      "confidence": "matched",
+      "provenance": "PC 0x0059E120; refresh called after brew and ingredient changes",
+      "note": "Resets the potion-name field to the default at 0x001B248D before rebuilding effects.",
+      "pc_va": "0x0059E120"
+    },
+    {
+      "va": "0x001B2D10",
+      "name": "UI::setAlchemyName",
+      "confidence": "matched",
+      "provenance": "Sets the alchemy name field from its argument",
+      "signature": "bool __cdecl setAlchemyName(const char *name)"
+    },
+    {
       "va": "0x001B4240",
       "name": "AttemptPotionBrew",
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_AttemptPotionBrew",
       "pc_va": "0x0059C030"
+    },
+    {
+      "va": "0x001B61A0",
+      "name": "UI::brewPotionAndRefresh",
+      "confidence": "matched",
+      "provenance": "PC 0x0059C010; calls AttemptPotionBrew then alchemy refresh",
+      "pc_va": "0x0059C010",
+      "signature": "bool __cdecl brewPotionAndRefresh()"
     },
     {
       "va": "0x001B6BF0",
@@ -7830,7 +7875,8 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_InventoryData_ClearIcons",
-      "pc_va": "0x00632270"
+      "pc_va": "0x00632270",
+      "signature": "void __thiscall ClearIcons(unsigned int category)"
     },
     {
       "va": "0x00227E10",
@@ -7846,7 +7892,8 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_InventoryData_AddInventoryItems",
-      "pc_va": "0x00633510"
+      "pc_va": "0x00633510",
+      "signature": "unsigned int __thiscall AddInventoryItems(void *inventory, int category)"
     },
     {
       "va": "0x00229390",
@@ -7876,6 +7923,13 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_UI_ShowJournal",
       "pc_va": "0x005D62B0"
+    },
+    {
+      "va": "0x0022BA70",
+      "name": "UI::onKeyboardConfirm",
+      "confidence": "matched",
+      "provenance": "Dispatches on-screen keyboard text to active menus including alchemy",
+      "note": "When alchemy menu is open, passes keyboard text to UI::setAlchemyName at 0x001B2D10."
     },
     {
       "va": "0x0022D920",

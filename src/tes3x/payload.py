@@ -22,7 +22,8 @@ import tes3x.inject as tes3x_inject
 from tes3x.link import LinkError, link, write_map, write_pe
 from tes3x.multi_signatures import SIGNATURES as MULTI_SIGNATURES, find_multi_signature
 from tes3x.paths import bundled, checkout, resource
-from tes3x.patch_sites import find_mcp6_context, find_mcp149_menu
+from tes3x.patch_sites import (find_mcp6_context, find_mcp55_context,
+                               find_mcp55_inventory_context, find_mcp149_menu)
 from tes3x.patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, archive_load_site,
                          find_call_sites, find_item_tooltip, find_levelup_scale, find_menu_area_scale,
                          find_message_scale, find_name_scale, find_options_scale,
@@ -875,6 +876,11 @@ def engine_bindings(xbe, sources):
             raise PayloadError("tes3xtest_mcp47.c requires tes3xconsole.c")
         print("mcp-47 test probe: console command tes3xmcp47")
         wanted["mcp47_test"] = ("_tes3x_mcp47_test_command",)
+    if "tes3xtest_mcp55.c" in names:
+        if "tes3xconsole.c" not in names:
+            raise PayloadError("tes3xtest_mcp55.c requires tes3xconsole.c")
+        print("mcp-55 test probe: console command tes3xmcp55")
+        wanted["mcp55_test"] = ("_tes3x_mcp55_test_command",)
     if "tes3xtest_mcp132.c" in names:
         if "tes3xconsole.c" not in names:
             raise PayloadError("tes3xtest_mcp132.c requires tes3xconsole.c")
@@ -931,6 +937,19 @@ def engine_bindings(xbe, sources):
         _, dispose_flag = find_mcp149_menu(image)
         define("MCP149_DISPOSE_FLAG", hexva(dispose_flag))
         wanted["mcp149_menu_state"] = ("_tes3x_mcp149_menu_state",)
+    if "tes3xmcp55.c" in names:
+        _, refresh, _, set_text = find_mcp55_context(image)
+        _, world, clear, player, add, update = find_mcp55_inventory_context(image)
+        define("MCP55_REFRESH", hexva(refresh))
+        define("MCP55_SET_TEXT", hexva(set_text))
+        define("MCP55_WORLD_PTR", hexva(world))
+        define("MCP55_CLEAR_ICONS", hexva(clear))
+        define("MCP55_GET_PLAYER", hexva(player))
+        define("MCP55_ADD_ITEMS", hexva(add))
+        define("MCP55_UPDATE_TILES", hexva(update))
+        wanted["mcp55_refresh_brew"] = ("_tes3x_mcp55_refresh_brew",)
+        wanted["mcp55_refresh_name"] = ("_tes3x_mcp55_refresh_name",)
+        wanted["mcp55_close_inventory"] = ("_tes3x_mcp55_close_inventory",)
     if "tes3xmcp6.c" in names:
         sites = find_mcp6_context(image)
         define("MCP6_GET_MOBILE", hexva(sites["get_mobile"]))
