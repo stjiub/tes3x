@@ -1244,6 +1244,23 @@ def find_mcp123_add(x):
     return va
 
 
+MCP149_MENU_SIG = re.compile(
+    rb"(?P<site>\x8a\x86\xdd\x00\x00\x00)\x3c\x13\x5e\x74\x04"
+    rb"\x3c\x12\x75\x07\xc6\x05(?P<flag>....)\x01\xc3", re.S,
+)
+
+
+def find_mcp149_menu(x):
+    """Find the contents menu's actor state gate and dispose flag."""
+    hits = list(MCP149_MENU_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError(f"mcp-149: {len(hits)} contents menu gates, expected 1")
+    site = x.off_to_va(hits[0].start("site"))
+    if site is None:
+        raise PatchError("mcp-149: contents menu gate is outside an XBE section")
+    return site, struct.unpack("<I", hits[0].group("flag"))[0]
+
+
 def find_mcp6_context(x):
     """Find the attribute effect paths and their shared mobile lookup."""
     data = bytes(x.data)

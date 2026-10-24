@@ -1187,16 +1187,6 @@ summary = "Spellmaker/enchanting improvement"
 reason = "Spellmaker magnitude controls that keep minimum and maximum consistent."
 
 [[candidate]]
-name = "mcp-149"
-origin = { source = "MCP", id = "149" }
-category = "core"
-default = "intended default"
-status = "candidate"
-priority = "medium"
-summary = "Dispose corpse before death processing completes"
-reason = "An actor is disposable before its final processing runs, so `OnDeath`/`OnMurder` can never fire and some spell effects never expire. Unrecoverable in an existing save, and corpse looting/disposal is part of the console avoidance ritual, so Xbox exposure is high. Reproduce by disposing during the death animation."
-
-[[candidate]]
 name = "mcp-150"
 origin = { source = "MCP", id = "150" }
 category = "balance"

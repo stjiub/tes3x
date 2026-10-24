@@ -7059,6 +7059,13 @@
       "pc_va": "0x005B2C20"
     },
     {
+      "va": "0x001C53F0",
+      "name": "UI::setContentsMenuActor",
+      "confidence": "verified",
+      "provenance": "Xbox decompile and MCP 149",
+      "signature": "void __cdecl setContentsMenuActor(TES3::Actor* actor)"
+    },
+    {
       "va": "0x001C5F10",
       "name": "UpdateContentsCompanionElements",
       "kind": "function",
@@ -7076,10 +7083,18 @@
     },
     {
       "va": "0x001C91C0",
-      "name": "UI::showContentsMenu",
+      "name": "UI::initContentsMenu",
       "kind": "function",
-      "confidence": "matched",
-      "provenance": "mwse:TES3_UI_showContentsMenu",
+      "confidence": "verified",
+      "provenance": "Xbox decompile",
+      "note": "Registers the contents menu callbacks; UI::showContentsMenu calls it when creating the menu."
+    },
+    {
+      "va": "0x001C9330",
+      "name": "UI::showContentsMenu",
+      "confidence": "verified",
+      "provenance": "PC counterpart and Xbox decompile",
+      "note": "Calls UI::setContentsMenuActor; actor state 0x13 is death processing and 0x12 permits disposal.",
       "pc_va": "0x005B4220"
     },
     {
@@ -8142,6 +8157,14 @@
       "kind": "data",
       "confidence": "verified",
       "provenance": "find_command_table; six opcode bounds widened by script-ext"
+    },
+    {
+      "va": "0x003C6B4C",
+      "name": "ContentsMenu::disposeEnabled",
+      "confidence": "verified",
+      "provenance": "Xbox menu gate and MCP 149",
+      "kind": "data",
+      "type": "bool"
     },
     {
       "va": "0x003C6BE0",

@@ -52,7 +52,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_heap_object, find_heap_region, find_heap_region_sites,
                                find_info_arena_sites, find_lean_menu, find_marker,
                                find_mcp102_actn, find_enable_disable_flags, find_mcp160_removal, find_pathgrid_lookups, find_mcp123_add, find_mcp6_context,
-                               find_mcp125_collision,
+                               find_mcp125_collision, find_mcp149_menu,
                                find_mcp127_map,
                                find_mcp125_context, find_mcp146, find_mcp146_context,
                                find_mcp47_context, find_mcp132_context,
@@ -1052,6 +1052,22 @@ def _mcp_123(x, value, ctx):
     was, off = x.patch_call(site, target)
     return [(off, 5, "PlaceItem cell insertion 0x%08X: 0x%08X -> 0x%08X"
              % (site, was, target))]
+
+
+@patch("mcp-149")
+def _mcp_149(x, value, ctx):
+    """Hide corpse disposal until the actor finishes its death processing."""
+    target = ctx.get("hooks", {}).get("mcp149_menu_state")
+    if not target:
+        raise PatchError("mcp-149: needs `payload` first, with an mcp149_menu_state hook")
+    site, _ = find_mcp149_menu(x)
+    target = int(str(target), 16)
+    off = x.va_to_off(site)
+    x.data[off:off + 6] = b"\xe8" + struct.pack("<i", target - (site + 5)) + b"\x90"
+    # State 0x13 now clears the flag in the hook; skip the old write of one.
+    x.data[off + 10] = 0x0B
+    return [(off, 6, f"contents menu state 0x{site:08X} -> 0x{target:08X}"),
+            (off + 10, 1, "dying actor skips dispose flag")]
 
 
 @patch("mcp-6")

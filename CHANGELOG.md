@@ -4,6 +4,9 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- New `mcp-149` patch prevents disposing an actor during its death animation, allowing death
+  scripts and spell cleanup to finish. See [the patch](patches/mcp-149.md).
+
 - New `mwse-enable-disable-vars` patch stops `Enable` and `Disable` crashing in a script that has
   no local variables. See [the patch](patches/mwse-enable-disable-vars.md).
 

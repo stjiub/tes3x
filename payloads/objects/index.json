@@ -81,6 +81,7 @@
     "MCP146_GAME": null,
     "MCP146_INPUT": null,
     "MCP146_RESUME": null,
+    "MCP149_DISPOSE_FLAG": null,
     "MCP154_LOAD_RESUME": null,
     "MCP154_RELOAD_RESUME": null,
     "MCP37_GAME": null,
@@ -483,6 +484,10 @@
     "tes3xmcp146.c": {
       "digest": "078332909941d12edcb23f192ee3f26f3f3bcd992473ac67e2d3ea2102826be4",
       "sha256": "ee5ea716689482645e82504abbe12715b3db7836b3295adc365fad0c2def6893"
+    },
+    "tes3xmcp149.c": {
+      "digest": "0d1d6007edc6ee39e480af47d28e8ad309f15f06968a2154453ebd4d137be0d5",
+      "sha256": "ef5731f7a80d6eb7cb192226feab61cb8d28ac459db4bb44fc8cde4c92fcc8f0"
     },
     "tes3xmcp154.c": {
       "digest": "3d6dc4f37529350839e2ff83381103c8b2292ad5b53c9736c58fe71ea91353c2",

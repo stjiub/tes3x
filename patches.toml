@@ -315,6 +315,17 @@ source = "tes3xmcp146.c"
 summary = "Remove a fully nocked arrow with the Ready Weapon control."
 
 [[patch]]
+name = "mcp-149"
+title = "Safe corpse disposal"
+origin = { source = "MCP", id = "149" }
+bit = 50
+category = "core"
+channel = "dev"
+selection = "preset"
+source = "tes3xmcp149.c"
+summary = "Keep corpse disposal unavailable until an actor finishes dying."
+
+[[patch]]
 name = "mcp-47"
 title = "Spell deselection fix"
 origin = { source = "MCP", id = "47" }

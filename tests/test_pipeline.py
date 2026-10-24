@@ -19,7 +19,7 @@ from tes3x.pipeline import (PipelineError, agent_ini, agent_setting, xbox_ini_te
                             strip_retail_files, validate_local_config, validate_output, validate_profile)
 from tes3x.pipeline import main as pipeline_main
 from tes3x.patch import (MCP37_TREE_NEXT_SIG, PatchError, _mcp_3, _mcp_37, _mcp_92, _mcp_97,
-                         _mcp_98, _mcp_102, _mcp_123, _mcp_125, _mcp_154, _test_mcp3,
+                         _mcp_98, _mcp_102, _mcp_123, _mcp_125, _mcp_149, _mcp_154, _test_mcp3,
                          _test_mcp97, _test_mcp102)
 from tes3x.patch_sites import find_chunk_read
 from tes3x.plugins import (collect, dependency_order, fetch_rules, rules_file, run_arrange,
@@ -1168,6 +1168,33 @@ class PipelinePlanTests(unittest.TestCase):
         })
         self.assertEqual(plan['applied'], ['mcp-123'])
         self.assertEqual(plan['sources'], ['tes3xhook.c', 'tes3xlog.c', 'tes3xini.c', 'tes3xmcp123.c'])
+
+    def test_mcp_149_skips_the_dispose_write_for_dying_actors(self):
+        class Image:
+            base = 0x100000
+
+            def __init__(self):
+                self.data = bytearray(b'\xcc' * 32 + bytes.fromhex(
+                    '8a86dd0000003c135e74043c127507c6054c6b3c0001c3') + b'\xcc' * 16)
+
+            def off_to_va(self, offset):
+                return self.base + offset
+
+            def va_to_off(self, va):
+                return va - self.base
+
+        image = Image()
+        target = 0x200000
+        edits = _mcp_149(image, '', {'hooks': {'mcp149_menu_state': hex(target)}})
+        self.assertEqual(image.data[32], 0xe8)
+        self.assertEqual(image.data[32 + 9:32 + 11], b'\x74\x0b')
+        self.assertEqual(32 + 11 + image.data[32 + 10], 32 + 22)
+        self.assertEqual([(off, length) for off, length, _ in edits], [(32, 6), (42, 1)])
+
+    def test_mcp_149_adds_its_hook_source(self):
+        plan = resolve_patch_plan({'patches': {'preset': 'minimal', 'enable': ['mcp-149']}})
+        self.assertEqual(plan['sources'],
+                         ['tes3xhook.c', 'tes3xlog.c', 'tes3xini.c', 'tes3xmcp149.c'])
 
     def test_mcp_125_attaches_scripts_and_selects_collision_registration(self):
         base = 0x100000

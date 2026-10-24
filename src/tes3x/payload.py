@@ -22,7 +22,7 @@ import tes3x.inject as tes3x_inject
 from tes3x.link import LinkError, link, write_map, write_pe
 from tes3x.multi_signatures import SIGNATURES as MULTI_SIGNATURES, find_multi_signature
 from tes3x.paths import bundled, checkout, resource
-from tes3x.patch_sites import find_mcp6_context
+from tes3x.patch_sites import find_mcp6_context, find_mcp149_menu
 from tes3x.patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, archive_load_site,
                          find_call_sites, find_item_tooltip, find_levelup_scale, find_menu_area_scale,
                          find_message_scale, find_name_scale, find_options_scale,
@@ -927,6 +927,10 @@ def engine_bindings(xbe, sources):
               f"Cell::addReference {hexva(add_reference)}")
         define("MCP123_ADD_REFERENCE", hexva(add_reference))
         wanted["mcp123_add"] = ("_tes3x_mcp123_add_hook",)
+    if "tes3xmcp149.c" in names:
+        _, dispose_flag = find_mcp149_menu(image)
+        define("MCP149_DISPOSE_FLAG", hexva(dispose_flag))
+        wanted["mcp149_menu_state"] = ("_tes3x_mcp149_menu_state",)
     if "tes3xmcp6.c" in names:
         sites = find_mcp6_context(image)
         define("MCP6_GET_MOBILE", hexva(sites["get_mobile"]))
