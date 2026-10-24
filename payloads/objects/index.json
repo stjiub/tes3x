@@ -89,6 +89,7 @@
     "MCP149_DISPOSE_FLAG": null,
     "MCP154_LOAD_RESUME": null,
     "MCP154_RELOAD_RESUME": null,
+    "MCP30_MATRIX_MULTIPLY": null,
     "MCP37_GAME": null,
     "MCP37_GET_PLAYER": null,
     "MCP37_TREE_NEXT": null,
@@ -528,6 +529,10 @@
       "digest": "680e3c6c0f7e227dc3c72904af5c3d6dc628e26733bea0bbeb1c988649bf49f7",
       "sha256": "9ec9ca4103eb0399cb616a904ea3cecdda69f6a3e9c3bbb0166440999e36dfad"
     },
+    "tes3xmcp30.c": {
+      "digest": "6a3dc4c0db3d3d51a3fcb6e1e6697fb14d152a3482980f9ec0d3edf9952621bb",
+      "sha256": "b0df19e4237428f7546a45c7404ccf1350f1e4331c1a5e256be9f3cd8be94af0"
+    },
     "tes3xmcp37.c": {
       "digest": "dc7147e838f6468977ac0f28f107d922edfd497beab9f21c5977330e4069bc01",
       "sha256": "7f9098a2e384b875bba54f15649c2ec33a7213635853475aac0d49dacc1a84bc"
@@ -557,8 +562,8 @@
       "sha256": "b68114f21bad5b7dc46927db712ed5e21478a7c40353a2a6267e27efcada39c7"
     },
     "tes3xmulti.c": {
-      "digest": "c7d4b07d9bfe5fb91476310b88c57a4b163ddcc5705828920b95d24a5e1c9206",
-      "sha256": "9c9ea320343d3232b25d976411904eca357c78397edfcbee6f24f5692b7ced63"
+      "digest": "1dafdfc580e9a4a6d0748a256db8d94554898d34330de36029dfbc4ef1d43192",
+      "sha256": "f4d08e8d1fb6e2ce905063ddc8cc2b888907dff988eb753f8dba2a1a1899d65b"
     },
     "tes3xmwse.c": {
       "digest": "3f4e6710ffb849b75ed2a51273bb38f13ed3079aa63cd41abcd2e7af9897e2ad",

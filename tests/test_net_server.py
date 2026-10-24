@@ -1473,12 +1473,33 @@ class ServerTests(unittest.TestCase):
         for part in net.record_parts(other):
             server.event_record(second, net.EVENT_RECORD, part, '', 0.0)
         self.assertNotIn('z2468', server.world.records)
-        for invalid in (b'', parts[0][:2], bytes([2, 2]) + b'x', bytes([0, 5]) + b'x',
+        for invalid in (b'', parts[0][:2], bytes([2, 2]) + b'x', bytes([0, 7]) + b'x',
                         bytes([0, 1]) + b'x' * (net.RECORD_CHUNK + 1)):
             self.assertFalse(valid_client_event(net.EVENT_RECORD, invalid))
         for malformed in (blob[:10], blob[:-1], blob + b'x', net.RECORD_HEAD.pack(2, 0, 0, 0, 1)
                           + b'1\0n\0' + fire,
                           net.pack_record.__call__ if False else blob.replace(b'Fire', b'Fre')):
+            with self.assertRaises(ValueError):
+                net.unpack_record(malformed)
+
+    def test_potions_made_in_play_are_kept_whole_and_replayed(self):
+        net = tes3x_net
+        server = self.fake_server()
+        first, second = self.fake_client(server, 1), self.fake_client(server, 2)
+        first.record_in = second.record_in = None
+        heal = struct.pack('<hbbI4I', 75, -1, -1, 0, 0, 30, 5, 10)
+        blob = net.pack_potion(40, 1, '9753124680123456', 'Fine Healing', 'm/Misc_Potion_Good_01.nif',
+                               'm/Tx_Potion_Good_01.tga', 0.5, heal)
+        parts = net.record_parts(blob)
+        self.assertLessEqual(len(parts), net.RECORD_PARTS_MAX)
+        for part in parts:
+            server.event_record(first, net.EVENT_RECORD, part, '', 0.0)
+        self.assertEqual(second.sent, [(net.EVENT_RECORD, 1, part) for part in parts])
+        kept = net.unpack_record(bytes.fromhex(server.world.records['9753124680123456']))
+        self.assertEqual((kept[0], kept[2], kept[3], kept[5], kept[7], kept[8], kept[9]),
+                         (net.RECORD_POTION, 40, 1, 'Fine Healing', 'm/Misc_Potion_Good_01.nif',
+                          'm/Tx_Potion_Good_01.tga', 0.5))
+        for malformed in (blob[:-1], blob + b'x', blob.replace(b'.nif\0', b'.nif')):
             with self.assertRaises(ValueError):
                 net.unpack_record(malformed)
 

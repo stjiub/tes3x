@@ -1,13 +1,16 @@
-/* Records made in play. The spell maker (and every other caller of NonDynamicData::addNewObject)
- * gives its object an id the engine rolls, so a spell made on one console is unknown to the rest.
- * Every call site of addNewObject leads to add_object_hook; a spell it adds goes to the server as
+/* Records made in play. The spell maker and the alchemy menu (and every other caller of
+ * NonDynamicData::addNewObject) give their object an id the engine rolls, so a spell or a potion
+ * made on one console is unknown to the rest. Every call site of addNewObject leads to
+ * add_object_hook; a spell or potion it adds goes to the server as
  * RECORD, which keeps it and sends it whole to the other consoles, and to each console that joins
  * before its character's spells. A console builds the record under the id it came with. */
 #define EVENT_RECORD 43u /* part, parts, then a chunk of the record */
 #define RECORD_SPELL 1u
-#define RECORD_HEAD 10u /* type, cast type, cost u16, flags u32, effect count, 0 */
+#define RECORD_POTION 2u /* then the mesh, the icon and the weight as a float after the name */
+#define RECORD_HEAD 10u /* type, cast type, cost (value) u16, flags u32, effect count, 0 */
 #define RECORD_ID 32u
-#define RECORD_BLOB (RECORD_HEAD + 2 * RECORD_ID + SOURCE_MAX_EFFECTS * EFFECT_BYTES)
+#define RECORD_PATH 64u
+#define RECORD_BLOB     (RECORD_HEAD + 2 * RECORD_ID + 2 * RECORD_PATH + 4 + SOURCE_MAX_EFFECTS * EFFECT_BYTES)
 #define RECORD_CHUNK (EVENT_DATA - 2)
 #define RECORD_PARTS ((RECORD_BLOB + RECORD_CHUNK - 1) / RECORD_CHUNK)
 #define RECORDS_OUT 4u
@@ -18,6 +21,15 @@
 #define SPELL_EFFECTS 0x34
 #define SPELL_FLAGS 0xF4
 #define RECORD_VALUE_MAX 10000000u
+#define TYPE_ALCHEMY 0x48434C41u /* 'ALCH' */
+#define ALCH_SIZE 0x110
+#define ALCH_NAME 0x34 /* a string slot, then the script, the mesh and the icon (slots) */
+#define ALCH_MESH 0x3C
+#define ALCH_ICON 0x40
+#define ALCH_WEIGHT 0x44
+#define ALCH_VALUE 0x48
+#define ALCH_EFFECTS 0x4C
+#define ALCH_FLAGS 0x10C
 
 typedef u32(__attribute__((thiscall)) *fn_add_object)(void *records, void *object);
 typedef void(__cdecl *fn_string_slot)(void *slot, const char *text);
@@ -69,15 +81,70 @@ static u32 record_spell_blob(u8 *blob, const u8 *spell)
     return n + count * EFFECT_BYTES;
 }
 
+static u32 record_text(u8 *blob, u32 n, const char *text, u32 limit)
+{
+    u32 i;
+
+    if (!mapped(text))
+        return 0;
+    for (i = 0; text[i]; i++) {
+        if (i >= limit - 1 || (u8)text[i] < 0x20 || (u8)text[i] == 0x7F)
+            return 0;
+        blob[n++] = (u8)text[i];
+    }
+    blob[n++] = 0;
+    return n;
+}
+
+/* A potion's blob for the server, or 0 if it is not one this console can share. */
+static u32 record_potion_blob(u8 *blob, const u8 *potion)
+{
+    const char *id = object_id(potion);
+    u32 n = RECORD_HEAD, count = 0, i;
+    u32 value = *(const u16 *)(potion + ALCH_VALUE), flags = *(const u16 *)(potion + ALCH_FLAGS);
+
+    if (!id || !*id || !script_safe((const u8 *)id, RECORD_ID) || flags > 7)
+        return 0;
+    for (; count < SOURCE_MAX_EFFECTS; count++)
+        if (*(const short *)(potion + ALCH_EFFECTS + count * EFFECT_BYTES) == -1)
+            break;
+    if (!count)
+        return 0;
+    for (i = 0; i < RECORD_BLOB; i++)
+        blob[i] = 0;
+    blob[0] = RECORD_POTION;
+    blob[2] = (u8)value;
+    blob[3] = (u8)(value >> 8);
+    put32le(blob + 4, flags);
+    blob[8] = (u8)count;
+    for (i = 0; id[i]; i++)
+        blob[n++] = (u8)id[i];
+    blob[n++] = 0;
+    if (!(n = record_text(blob, n, *(const char *const *)(potion + ALCH_NAME), RECORD_ID)) ||
+        !(n = record_text(blob, n, *(const char *const *)(potion + ALCH_MESH), RECORD_PATH)) ||
+        !(n = record_text(blob, n, *(const char *const *)(potion + ALCH_ICON), RECORD_PATH)))
+        return 0;
+    copy(blob + n, potion + ALCH_WEIGHT, 4);
+    n += 4;
+    copy(blob + n, potion + ALCH_EFFECTS, count * EFFECT_BYTES);
+    return n + count * EFFECT_BYTES;
+}
+
 static void record_seen(const u8 *object)
 {
     u8 blob[RECORD_BLOB];
-    u32 length, slot;
+    u32 length, slot, type;
 
-    if (ses.state != SESSION_JOINED || player_mode != 3 || !plausible(object) ||
-        *(const u32 *)(object + OBJECT_TYPE) != TYPE_SPELL)
+    if (ses.state != SESSION_JOINED || player_mode != 3 || !plausible(object))
         return;
-    if (!(length = record_spell_blob(blob, object)))
+    type = *(const u32 *)(object + OBJECT_TYPE);
+    if (type == TYPE_SPELL)
+        length = record_spell_blob(blob, object);
+    else if (type == TYPE_ALCHEMY)
+        length = record_potion_blob(blob, object);
+    else
+        return;
+    if (!length)
         return;
     if (record_count == RECORDS_OUT) {
         records_full++;
@@ -159,50 +226,88 @@ static int record_effects_ok(const u8 *effect, u32 count)
     return 1;
 }
 
+/* The text at blob + at, ending in a zero inside the blob; its length, or -1. */
+static int record_string(const u8 *blob, u32 length, u32 at, u32 limit)
+{
+    u32 n;
+
+    for (n = 0; at + n < length && blob[at + n]; n++)
+        if (n >= limit - 1 || blob[at + n] < 0x20 || blob[at + n] == 0x7F)
+            return -1;
+    return at + n < length ? (int)n : -1;
+}
+
 /* Build the record a whole blob describes; 1 if it exists here afterwards. */
 static int record_apply(const u8 *blob, u32 length)
 {
     static const char file[] = "tes3xmulti.c";
-    const char *id, *name;
-    u32 count, idlen, namelen, flags;
-    u8 *spell, *records = records_ptr();
+    const char *id, *name, *mesh = 0, *icon = 0;
+    const u8 *effects;
+    u32 count, flags, potion, at;
+    int idlen, namelen, meshlen, iconlen;
+    u8 *object, *records = records_ptr();
 
-    if (length <= RECORD_HEAD || blob[0] != RECORD_SPELL || blob[1] > 5 || !records)
+    if (length <= RECORD_HEAD || (blob[0] != RECORD_SPELL && blob[0] != RECORD_POTION) ||
+        blob[1] > 5 || !records)
         return 0;
+    potion = blob[0] == RECORD_POTION;
     flags = get32le(blob + 4);
     count = blob[8];
     id = (const char *)blob + RECORD_HEAD;
-    for (idlen = 0; RECORD_HEAD + idlen < length && id[idlen]; idlen++)
-        ;
-    if (!idlen || idlen >= RECORD_ID || RECORD_HEAD + idlen + 1 >= length)
+    if ((idlen = record_string(blob, length, RECORD_HEAD, RECORD_ID)) <= 0)
         return 0;
-    name = id + idlen + 1;
-    for (namelen = 0; RECORD_HEAD + idlen + 1 + namelen < length && name[namelen]; namelen++)
-        if ((u8)name[namelen] < 0x20 || (u8)name[namelen] == 0x7F)
+    at = RECORD_HEAD + idlen + 1;
+    name = (const char *)blob + at;
+    if ((namelen = record_string(blob, length, at, RECORD_ID)) < 0)
+        return 0;
+    at += namelen + 1;
+    if (potion) {
+        mesh = (const char *)blob + at;
+        if ((meshlen = record_string(blob, length, at, RECORD_PATH)) < 0)
             return 0;
-    if (namelen >= RECORD_ID || !count || count > SOURCE_MAX_EFFECTS || flags > 7 ||
-        RECORD_HEAD + idlen + 1 + namelen + 1 + count * EFFECT_BYTES != length ||
-        !script_safe((const u8 *)id, RECORD_ID) ||
-        !record_effects_ok((const u8 *)name + namelen + 1, count))
+        at += meshlen + 1;
+        icon = (const char *)blob + at;
+        if ((iconlen = record_string(blob, length, at, RECORD_PATH)) < 0)
+            return 0;
+        at += iconlen + 1 + 4;
+    }
+    effects = blob + at;
+    if (!count || count > SOURCE_MAX_EFFECTS || flags > 7 || at > length ||
+        at + count * EFFECT_BYTES != length || !script_safe((const u8 *)id, RECORD_ID) ||
+        !record_effects_ok(effects, count))
         return 0;
     if (resolve_object(id)) {
         records_known++;
         return 1;
     }
-    spell = ((fn_engine_allocate)TES3X_NET_ENGINE_ALLOCATE)((void *)TES3X_NET_HEAP, SPELL_SIZE,
-                                                              file, 0);
-    if (!plausible(spell))
+    object = ((fn_engine_allocate)TES3X_NET_ENGINE_ALLOCATE)(
+        (void *)TES3X_NET_HEAP, potion ? ALCH_SIZE : SPELL_SIZE, file, 0);
+    if (!plausible(object))
         return 0;
-    ((fn_object_call)TES3X_NET_SPELL_NEW)(spell);
-    ((fn_object_text)vtable_slot(spell, 0x28))(spell, id);
-    ((fn_string_slot)TES3X_NET_SET_STRING_SLOT)(spell + SPELL_NAME, name);
-    spell[SPELL_CAST] = blob[1];
-    spell[SPELL_COST] = blob[2];
-    spell[SPELL_COST + 1] = blob[3];
-    copy(spell + SPELL_EFFECTS, (const u8 *)name + namelen + 1, count * EFFECT_BYTES);
-    *(u32 *)(spell + SPELL_FLAGS) = flags;
-    if (!(((fn_add_object)TES3X_NET_ADD_NEW_OBJECT)(records, spell) & 0xFF)) {
-        ((void(__attribute__((thiscall)) *)(void *, u32))vtable_slot(spell, 0))(spell, 1);
+    if (potion) {
+        ((fn_object_call)TES3X_NET_ALCHEMY_NEW)(object);
+        ((fn_object_text)vtable_slot(object, 0x28))(object, id);
+        ((fn_string_slot)TES3X_NET_SET_STRING_SLOT)(object + ALCH_NAME, name);
+        ((fn_string_slot)TES3X_NET_SET_STRING_SLOT)(object + ALCH_MESH, mesh);
+        ((fn_string_slot)TES3X_NET_SET_STRING_SLOT)(object + ALCH_ICON, icon);
+        copy(object + ALCH_WEIGHT, effects - 4, 4);
+        object[ALCH_VALUE] = blob[2];
+        object[ALCH_VALUE + 1] = blob[3];
+        copy(object + ALCH_EFFECTS, effects, count * EFFECT_BYTES);
+        object[ALCH_FLAGS] = (u8)flags;
+        object[ALCH_FLAGS + 1] = 0;
+    } else {
+        ((fn_object_call)TES3X_NET_SPELL_NEW)(object);
+        ((fn_object_text)vtable_slot(object, 0x28))(object, id);
+        ((fn_string_slot)TES3X_NET_SET_STRING_SLOT)(object + SPELL_NAME, name);
+        object[SPELL_CAST] = blob[1];
+        object[SPELL_COST] = blob[2];
+        object[SPELL_COST + 1] = blob[3];
+        copy(object + SPELL_EFFECTS, effects, count * EFFECT_BYTES);
+        *(u32 *)(object + SPELL_FLAGS) = flags;
+    }
+    if (!(((fn_add_object)TES3X_NET_ADD_NEW_OBJECT)(records, object) & 0xFF)) {
+        ((void(__attribute__((thiscall)) *)(void *, u32))vtable_slot(object, 0))(object, 1);
         return 0;
     }
     log_text("net.record_applied", id);
@@ -278,6 +383,45 @@ static void spellmake_command(const char *text)
     *(u32 *)(spell + SPELL_EFFECTS + 16) = magnitude;
     *(u32 *)(spell + SPELL_EFFECTS + 20) = magnitude;
     tes3x_log_hex3("net.spellmake", add_object_hook(records, spell), 0, 0);
+}
+
+/* tes3xnet potionmake ID EFFECT MAGNITUDE NAME: a potion as the alchemy menu adds it, with an id. */
+static void potionmake_command(const char *text)
+{
+    static const char file[] = "tes3xmulti.c";
+    char id[RECORD_ID], name[RECORD_ID];
+    u32 effect, magnitude, n = 0;
+    u8 *potion, *records = records_ptr();
+
+    while (*text && *text != ' ' && n < RECORD_ID - 1)
+        id[n++] = *text++;
+    id[n] = 0;
+    text = number(skip(text), &effect);
+    if (!text || !(text = number(skip(text), &magnitude)))
+        return;
+    for (n = 0, text = skip(text); *text && n < RECORD_ID - 1; n++)
+        name[n] = *text++;
+    name[n] = 0;
+    if (!n || !*id || effect > 142 || !records)
+        return;
+    potion = ((fn_engine_allocate)TES3X_NET_ENGINE_ALLOCATE)((void *)TES3X_NET_HEAP, ALCH_SIZE,
+                                                               file, 0);
+    if (!plausible(potion))
+        return;
+    ((fn_object_call)TES3X_NET_ALCHEMY_NEW)(potion);
+    ((fn_object_text)vtable_slot(potion, 0x28))(potion, id);
+    ((fn_string_slot)TES3X_NET_SET_STRING_SLOT)(potion + ALCH_NAME, name);
+    ((fn_string_slot)TES3X_NET_SET_STRING_SLOT)(potion + ALCH_MESH, "m\\Misc_Potion_Cheap_01.nif");
+    ((fn_string_slot)TES3X_NET_SET_STRING_SLOT)(potion + ALCH_ICON, "m\\Tx_Potion_Cheap_01.tga");
+    *(float *)(potion + ALCH_WEIGHT) = 0.5f;
+    *(u16 *)(potion + ALCH_VALUE) = 20;
+    *(short *)(potion + ALCH_EFFECTS) = (short)effect;
+    potion[ALCH_EFFECTS + 2] = 0xFF;
+    potion[ALCH_EFFECTS + 3] = 0xFF;
+    *(u32 *)(potion + ALCH_EFFECTS + 12) = 10;
+    *(u32 *)(potion + ALCH_EFFECTS + 16) = magnitude;
+    *(u32 *)(potion + ALCH_EFFECTS + 20) = magnitude;
+    tes3x_log_hex3("net.potionmake", add_object_hook(records, potion), 0, 0);
 }
 
 static void records_stat(void)

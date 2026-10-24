@@ -771,6 +771,8 @@ int tes3x_multi_command(const char *text)
         act_command(rest);
     } else if ((rest = word(text, "spellmake")) && *(rest = skip(rest))) {
         spellmake_command(rest);
+    } else if ((rest = word(text, "potionmake")) && *(rest = skip(rest))) {
+        potionmake_command(rest);
     } else if ((rest = word(text, "send")) && *(rest = skip(rest))) {
         up_command(rest);
     } else if ((rest = word(text, "save")) && !*skip(rest)) {
