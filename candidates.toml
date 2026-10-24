@@ -230,15 +230,6 @@ summary = "Add magicka-potion decision-making to NPC AI"
 reason = "New combat AI behaviour."
 
 [[candidate]]
-name = "mcp-25"
-origin = { source = "MCP", id = "25" }
-category = "correctness"
-status = "candidate"
-priority = "medium"
-summary = "Blind fix"
-reason = "Blind gives the player an attack bonus instead of a penalty: an inverted effect."
-
-[[candidate]]
 name = "mcp-26"
 origin = { source = "MCP", id = "26" }
 category = "compat"

@@ -1,0 +1,16 @@
+kind = "single"
+purpose = "A fresh game accepts a Blindness change with the Blind penalty patch installed."
+procedure = "Start New Game, set the player's Blindness to 50, check the stored value, and exit."
+limitations = "This smoke test does not cast a Blind spell or measure attack chance. Hardware is unchecked."
+watch = 'assert[.>]|exec[.>]|crash\.|hang\.detected|fatal\.'
+timeout = 180
+script = '''
+@start new
+wait 60
+player->SetBlindness 50
+assert player->GetBlindness == 50.00
+exit
+'''
+
+[expect]
+test = ['assert\.pass', 'exec\.exit 0']

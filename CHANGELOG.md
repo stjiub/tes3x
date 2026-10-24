@@ -4,6 +4,9 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- New `mcp-25` patch makes Blind reduce the player's attack chance instead of increasing it.
+  See [the patch](patches/mcp-25.md).
+
 - New `mcp-55` patch keeps a custom potion name after Create and groups inventory icons when
   alchemy closes. See [the patch](patches/mcp-55.md).
 

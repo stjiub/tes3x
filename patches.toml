@@ -190,6 +190,16 @@ source = "tes3xmcp6.c"
 summary = "Let Restore and expiring Drain recover the active temporary Fortify amount."
 
 [[patch]]
+name = "mcp-25"
+title = "Blind attack penalty"
+origin = { source = "MCP", id = "25" }
+bit = 53
+category = "correctness"
+channel = "dev"
+selection = "preset"
+summary = "Make Blind lower the player's attack chance instead of raising it."
+
+[[patch]]
 name = "dialogue-merge"
 title = "Keep responses of repeated topics"
 category = "correctness"

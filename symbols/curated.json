@@ -1166,6 +1166,14 @@
       "pc_va": "0x00460040"
     },
     {
+      "va": "0x000C4980",
+      "name": "BlindEffect::apply",
+      "confidence": "matched",
+      "provenance": "PC MCP 25 site at 0x004615E8; Xbox vtable match to PC 0x004614F0",
+      "note": "Player path negates Blind magnitude before applying effect 0x15; NPC path stores its signed statistic directly.",
+      "pc_va": "0x004614F0"
+    },
+    {
       "va": "0x000C5260",
       "name": "RestoreAttributeEffect",
       "confidence": "verified",

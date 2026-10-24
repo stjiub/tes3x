@@ -1056,6 +1056,22 @@ def find_mcp47_context(x):
             tes3x_inject.call_target(x, player_call))
 
 
+def find_mcp25_blind(x):
+    """Find the inverted Blind magnitude passed to the player's effect handler."""
+    sig = re.compile(
+        rb"\x8b\x54\x24\x08\x8b\x0d....\x6a\x00(?P<neg>\xf7\xda)"
+        rb"\x52\x6a\x15\xe8....\x8b\xc8\xe8....\x5f\x5e\x59\xc3",
+        re.S,
+    )
+    hits = list(sig.finditer(x.data))
+    if len(hits) != 1:
+        raise PatchError(f"mcp-25: {len(hits)} Blind player paths, expected 1")
+    site = x.off_to_va(hits[0].start("neg"))
+    if site is None:
+        raise PatchError("mcp-25: Blind player path is outside any section")
+    return site
+
+
 def find_mcp132_context(x):
     """The script animation calls, humanoid bone test and player idle update."""
     play = find_multi_signature(x, "ANIM_PLAY_GROUP")
@@ -2352,6 +2368,7 @@ LOCATORS = {
     "dxt5-size": find_dxt5_size,
     "mcp-146": find_mcp146,
     "mcp-47": lambda image: find_mcp47_context(image)[0],
+    "mcp-25": find_mcp25_blind,
     "mcp-146-input": lambda image: find_mcp146_context(image)[1],
     "mcp-146-game": lambda image: find_mcp146_context(image)[2],
     "mcp-146-resume": lambda image: find_mcp146_context(image)[3],

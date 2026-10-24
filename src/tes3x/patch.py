@@ -56,7 +56,8 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_mcp55_inventory_context, find_mcp149_menu,
                                find_mcp127_map,
                                find_mcp125_context, find_mcp146, find_mcp146_context,
-                               find_mcp47_context, find_mcp132_context,
+                               find_mcp47_context, find_mcp25_blind,
+                               find_mcp132_context,
                                find_mcp154_load, find_mcp154_reload, find_mcp173_rank,
                                find_mcp37_context,
                                find_mcp3_unarmored, find_mcp92_unsummon, find_mcp94,
@@ -686,6 +687,15 @@ def _mcp_47(x, value, ctx):
     if was != deselect:
         raise PatchError("mcp-47: deselection call target changed")
     return [(off, 5, "unequip deselection call 0x%08X -> %s" % (site, target))]
+
+
+@patch("mcp-25")
+def _mcp_25(x, value, ctx):
+    """Pass Blind's signed magnitude to the player's effect handler."""
+    site = find_mcp25_blind(x)
+    off = x.va_to_off(site)
+    x.data[off:off + 2] = b"\x90\x90"
+    return [(off, 2, f"Blind player magnitude at 0x{site:08X}")]
 
 
 @patch("mcp-127")

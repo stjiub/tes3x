@@ -13,7 +13,7 @@ on, `low` for minor ones, and `none` for fixes we won't port.
 
 | status | fixes |
 |---|---|
-| candidate | 175 |
+| candidate | 174 |
 | deferred | 14 |
 | not-applicable | 16 |
 | rejected | 3 |
@@ -24,7 +24,6 @@ Worth porting, but not yet shown to affect the Xbox build.
 
 | fix | from | priority | category | notes |
 |---|---|---|---|---|
-| `mcp-25` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #25 | medium | correctness | **Blind fix.** Blind gives the player an attack bonus instead of a penalty: an inverted effect. |
 | `mcp-30` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #30 | medium | correctness | **Projectile aiming fix.** Projectiles fire off-centre for races with height other than 1.0, and third-person aiming is poor. |
 | `mcp-46a` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #46 | medium | correctness (recommended) | **`Drop` places at the acting reference, not the player.** The engine treats every drop as if it came from the player inventory view, so scripted drops land at the wrong actor. Split from the rest of id 46 under rule 3. |
 | `mcp-48` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #48 | medium | correctness | **Level-up stats bug fix.** Level-up offers a x1 multiplier when the correct one would take a stat to 100. |
