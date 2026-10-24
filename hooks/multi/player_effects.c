@@ -91,17 +91,36 @@ static void player_effect_send(void)
     }
 }
 
-static void player_effect_scan(u8 *mobile, int send)
+/* Bound effects, and the abilities, diseases and curses a spell list re-applies on every load,
+ * are not kept for actors. */
+static int actor_effect_shared(const u8 *instance, u32 index)
 {
-    const u8 *ref = player_reference(), *caster, *head, *node, *active, *condition;
+    const u8 *source = *(const u8 **)(instance + INSTANCE_SOURCE), *effects;
+    u32 type = instance[INSTANCE_SOURCE + 4];
+    int id;
+    effects = ((fn_source_effects)TES3X_NET_SOURCE_EFFECTS)((void *)(instance + INSTANCE_SOURCE));
+    id = *(const short *)(effects + index * EFFECT_BYTES);
+    if (id >= 120 && id <= 131 && id != 126)
+        return 0;
+    if (type == 1)
+        return source[0x30] == 0 || source[0x30] == 5;
+    if (type == 2)
+        return source[0x2C] != 3;
+    return type == 3;
+}
+
+/* The mobile's working effects as PLAYER_EFFECT_BYTES records in out: the count, or -1 when
+ * something cannot be kept. An actor's records leave out what its base data re-creates. */
+static int effect_collect(u8 *mobile, const u8 *ref, u8 *out, u32 max, int actor)
+{
+    const u8 *caster, *head, *node, *active, *condition;
     u8 *controller = magic_controller(), *instance, *value, *p;
-    u32 n = 0, guard, serial, index, i, hash = 2166136261u, peer;
-    player_effect_session();
-    if (!controller || player_effect_parts)
-        return;
+    u32 n = 0, guard, serial, index, i, peer;
+    if (!controller)
+        return -1;
     head = *(const u8 **)(mobile + MOBILE_ACTIVE_EFFECTS + 4);
     if (!plausible(head))
-        return;
+        return -1;
     for (node = *(const u8 **)head, guard = 0; node != head && plausible(node) && guard < 512;
          node = *(const u8 **)node, guard++) {
         active = node + 8;
@@ -114,11 +133,13 @@ static void player_effect_scan(u8 *mobile, int send)
             continue;
         if (*(u32 *)(value + 0x14) != INSTANCE_WORKING)
             continue;
-        if (n == PLAYER_EFFECTS_MAX) {
+        if (actor && !actor_effect_shared(instance, index))
+            continue;
+        if (n == max) {
             player_effects_bad++;
-            return; /* Never publish a truncated replacement snapshot. */
+            return -1; /* Never publish a truncated replacement snapshot. */
         }
-        p = player_effect_out + n * PLAYER_EFFECT_BYTES;
+        p = out + n * PLAYER_EFFECT_BYTES;
         for (i = 0; i < PLAYER_EFFECT_BYTES; i++)
             p[i] = 0;
         put32le(p, serial);
@@ -128,7 +149,10 @@ static void player_effect_scan(u8 *mobile, int send)
         caster = *(const u8 **)(instance + INSTANCE_CASTER);
         if (caster == ref)
             p[6] = 1;
-        else if (plausible(caster)) {
+        else if (actor && caster == player_reference()) {
+            p[6] = 3;
+            put32le(p + 8, ses.client);
+        } else if (plausible(caster)) {
             for (peer = 0; peer < PEERS; peer++)
                 if (ghosts[peer].placed && ghost_ref(peer) == caster)
                     break;
@@ -143,7 +167,7 @@ static void player_effect_scan(u8 *mobile, int send)
         copy(p + 12, instance + 0xAC, 4);
         if (!player_effect_id(p + 16, *(const u8 **)(instance + INSTANCE_SOURCE))) {
             player_effects_bad++;
-            return;
+            return -1;
         }
         player_effect_id(p + 48, *(const u8 **)(instance + 0xBC));
         copy(p + 80, active + 4, 12);
@@ -159,13 +183,13 @@ static void player_effect_scan(u8 *mobile, int send)
                     continue;
                 if (!plausible(stack) || !player_effect_id(kept, *(const u8 **)stack)) {
                     player_effects_bad++;
-                    return;
+                    return -1;
                 }
                 data = *(const u8 **)(stack + 4);
                 if (data) {
                     if (!plausible(data)) {
                         player_effects_bad++;
-                        return;
+                        return -1;
                     }
                     put32le(kept + 32, ENTRY_DATA);
                     copy(kept + 36, data + ITEM_CONDITION, 4);
@@ -193,9 +217,22 @@ static void player_effect_scan(u8 *mobile, int send)
     }
     if (node != head) {
         player_effects_bad++;
-        return;
+        return -1;
     }
-    player_effect_size = n * PLAYER_EFFECT_BYTES;
+    return (int)n;
+}
+
+static void player_effect_scan(u8 *mobile, int send)
+{
+    u32 i, hash = 2166136261u;
+    int n;
+    player_effect_session();
+    if (player_effect_parts)
+        return;
+    n = effect_collect(mobile, player_reference(), player_effect_out, PLAYER_EFFECTS_MAX, 0);
+    if (n < 0)
+        return;
+    player_effect_size = (u32)n * PLAYER_EFFECT_BYTES;
     for (i = 0; i < player_effect_size; i++)
         hash = (hash ^ player_effect_out[i]) * 16777619u;
     if (send && (!player_effect_known || hash != player_effect_hash)) {
@@ -407,17 +444,156 @@ static int player_effect_previous(const u8 *p, const u8 *ref, struct effect_valu
     return 1;
 }
 
-/* Finalise native effects before absolute statistics are reapplied. */
-static void player_effect_apply(u8 *mobile)
+/* Re-create one record's effect on ref: its instance (shared by the records of one serial), its
+ * place in the mobile's list and the effect's own callback at its saved state. */
+static void effect_restore(u8 *mobile, u8 *ref, u8 *controller, u8 *head, const u8 *p,
+                           u32 *serials, u8 **instances, u32 *used)
 {
-    u8 *ref, *controller, *instance, *source;
-    u8 *head, *node, *value, *effects, *definition, *caster, *item, *data, active[16];
-    u8 *instances[PLAYER_EFFECTS_MAX];
-    u32 serials[PLAYER_EFFECTS_MAX], used = 0;
+    u8 *instance, *source, *item, *data, *caster = 0, *node, *effects, *definition, active[16];
     struct effect_value restored;
     struct { u8 *source; u32 type; } combo;
     struct { u8 *item, *data; } casting;
-    u32 count, off, index, serial, i, group, low, high;
+    u32 serial = get32le(p), index = p[5], group, low, high, i;
+    int effect_id;
+
+    source = player_effect_source(p);
+    combo.source = source;
+    combo.type = p[4];
+    for (group = 0; group < *used && serials[group] != serial; group++)
+        ;
+    if (group == *used) {
+        item = p[48] ? resolve_object((const char *)p + 48) : 0;
+        casting.item = item ? item : source;
+        data = 0;
+        if (p[7] & 2) {
+            if (p[4] == 2 && item)
+                worn_find(*(u8 **)(ref + REF_BASE), item, (const char *)p + 48,
+                          ENTRY_DATA, get32le(p + 112), get32le(p + 116),
+                          (void **)&data, 0, 0);
+            else if (item && plausible(data = ((fn_item_data_new)TES3X_NET_ITEM_DATA_NEW)(item))) {
+                copy(data + ITEM_CONDITION, p + 112, 4);
+                copy(data + ITEM_CHARGE, p + 116, 4);
+            }
+        }
+        casting.data = data;
+        instance = ((fn_magic_instance)TES3X_NET_MAGIC_INSTANCE)(controller,
+            ((fn_activate_spell)TES3X_NET_ACTIVATE_SPELL)(controller, 0,
+                                                           p[4] == 1 ? 0 : &casting, &combo));
+        if (!plausible(instance)) {
+            player_effects_bad++;
+            return;
+        }
+        if (p[6] == 1)
+            caster = ref;
+        else if (p[6] == 2)
+            caster = actor_ref(get32le(p + 8));
+        else if (p[6] == 3 && get32le(p + 8) == ses.client)
+            caster = (u8 *)player_reference();
+        else if (p[6] == 3)
+            for (i = 0; i < PEERS; i++)
+                if (ghosts[i].client == get32le(p + 8) && ghosts[i].placed)
+                    caster = ghost_ref(i);
+        *(u8 **)(instance + INSTANCE_CASTER) = caster;
+        *(u8 **)(instance + 0xBC) = item;
+        *(u32 *)(instance + INSTANCE_STATE) = INSTANCE_WORKING;
+        copy(instance + 0xAC, p + 12, 4);
+        serials[*used] = serial;
+        instances[(*used)++] = instance;
+    } else {
+        instance = instances[group];
+    }
+    for (i = 0; i < 14; i++)
+        restored.words[i] = 0;
+    restored.words[0] = (u32)ref;
+    copy((u8 *)restored.words + 4, p + 92, 20);
+    restored.words[3] = restored.words[4] = 0;
+    restored.words[5] = 4;
+    active[0] = active[1] = active[2] = active[3] = 0;
+    put32le(active, *(u32 *)(instance + 0xA8));
+    copy(active + 4, p + 80, 12);
+    node = ((fn_active_node)TES3X_NET_ACTIVE_EFFECT_NODE)(mobile + MOBILE_ACTIVE_EFFECTS,
+                                                           head, *(u8 **)(head + 4), active);
+    if (!plausible(node)) {
+        player_effects_bad++;
+        return;
+    }
+    **(u8 ***)(head + 4) = node;
+    *(u8 **)(head + 4) = node;
+    (*(u32 *)(mobile + MOBILE_ACTIVE_EFFECTS + 8))++;
+    effects = ((fn_source_effects)TES3X_NET_SOURCE_EFFECTS)(instance + INSTANCE_SOURCE);
+    definition = effects + index * EFFECT_BYTES;
+    effect_id = *(short *)definition;
+    /* The callback rolls from the source range. Pin it only for this synchronous call. */
+    low = *(u32 *)(definition + 0x10);
+    high = *(u32 *)(definition + 0x14);
+    *(u32 *)(definition + 0x10) = *(u32 *)(definition + 0x14) = get32le(p + 96);
+    instance[0x18] = 1; /* Keep the saved resistance result. */
+    ((fn_effect_insert)TES3X_NET_EFFECT_INSERT)(instance + 0x1C + index * 0x10,
+                                                 object_id(ref), restored);
+    ((fn_effect_callback *)TES3X_NET_EFFECT_CALLBACKS)[effect_id](instance, 0.0f,
+                                                                  &restored, index);
+    *(u32 *)(definition + 0x10) = low;
+    *(u32 *)(definition + 0x14) = high;
+    instance[0x18] = p[7] & 1;
+    copy(instance + 0xAC, p + 12, 4); /* Corprus Beginning resets this counter. */
+    if (!player_effect_previous(p, ref, &restored))
+        player_effects_bad++;
+    copy((u8 *)restored.words + 4, p + 92, 20);
+    ((fn_effect_insert)TES3X_NET_EFFECT_INSERT)(instance + 0x1C + index * 0x10,
+                                                 object_id(ref), restored);
+    if (player_effect_value(instance, index, ref))
+        player_effects_applied++;
+}
+
+static int effect_record_ok(const u8 *p, u8 *ref)
+{
+    struct { u8 *source; u32 type; } combo;
+    u8 *source, *effects;
+    int effect_id = (short)(p[82] | p[83] << 8);
+    combo.source = 0;
+    combo.type = p[4];
+    return get32le(p) && p[4] >= 1 && p[4] <= 3 && p[5] < 8 && p[6] <= 3 && !(p[7] & ~3) &&
+           p[80] == p[5] && effect_id >= 0 && effect_id <= 142 && get32le(p + 108) == 5 &&
+           float_within(p + 12, 1, STAT_LIMIT) && float_within(p + 92, 1, STAT_LIMIT) &&
+           float_within(p + 100, 2, STAT_LIMIT) && script_safe(p + 16, 32) &&
+           script_safe(p + 312, 64) && script_safe(p + 48, 32) &&
+           player_effect_definition(p) && player_effect_previous(p, ref, 0) &&
+           *(const float *)(p + 12) >= 0.0f && *(const float *)(p + 100) >= 0.0f &&
+           (int)get32le(p + 96) >= 0 &&
+           plausible(source = combo.source = player_effect_source(p)) &&
+           *(u32 *)(source + OBJECT_TYPE) == (p[4] == 1 ? TYPE_SPELL :
+                                              p[4] == 2 ? 0x48434E45u : 0x48434C41u) &&
+           plausible(effects = ((fn_source_effects)TES3X_NET_SOURCE_EFFECTS)(&combo)) &&
+           *(short *)(effects + p[5] * EFFECT_BYTES) == effect_id &&
+           player_effect_same(effects + p[5] * EFFECT_BYTES, p + 120 + p[5] * EFFECT_BYTES);
+}
+
+/* End every effect the mobile has, so a saved set can take their place. */
+static void effect_retire_all(u8 *mobile, u8 *ref, u8 *controller)
+{
+    u8 *head = *(u8 **)(mobile + MOBILE_ACTIVE_EFFECTS + 4), *node, *instance;
+    u32 count, serial;
+    for (count = 0; *(u8 **)head != head && count < 512; count++) {
+        node = *(u8 **)head;
+        serial = get32le(node + 8);
+        instance = ((fn_magic_instance)TES3X_NET_MAGIC_INSTANCE)(controller, serial);
+        if (!plausible(instance))
+            break;
+        ((fn_retire_effects)TES3X_NET_RETIRE_EFFECTS)(instance, ref);
+        ((fn_magic_process)TES3X_NET_MAGIC_PROCESS)(instance, 0.0f);
+        if (*(u32 *)(instance + INSTANCE_STATE) == 7)
+            ((void(__attribute__((thiscall)) *)(void *, u32))TES3X_NET_RETIRE_MAGIC_SERIAL)(
+                controller, serial); /* Clear the item-data mapping before reactivation. */
+    }
+}
+
+/* Finalise native effects before absolute statistics are reapplied. */
+static void player_effect_apply(u8 *mobile)
+{
+    u8 *ref, *controller, *head;
+    u8 *instances[PLAYER_EFFECTS_MAX];
+    u32 serials[PLAYER_EFFECTS_MAX], used = 0;
+    u32 off, i;
     int effect_id;
     const u8 *p;
     const char *bound_ids[12];
@@ -431,45 +607,16 @@ static void player_effect_apply(u8 *mobile)
         return;
     player_effect_pending = 0;
     /* Validate all entries before retiring any local effects. */
-    for (off = 0; off < player_effect_in_size; off += PLAYER_EFFECT_BYTES) {
-        p = player_effect_in + off;
-        effect_id = (short)(p[82] | p[83] << 8);
-        combo.source = 0;
-        combo.type = p[4];
-        if (!get32le(p) || p[4] < 1 || p[4] > 3 || p[5] >= 8 || p[6] > 3 || p[7] & ~3 ||
-            p[80] != p[5] || effect_id < 0 || effect_id > 142 || get32le(p + 108) != 5 ||
-            !float_within(p + 12, 1, STAT_LIMIT) || !float_within(p + 92, 1, STAT_LIMIT) ||
-            !float_within(p + 100, 2, STAT_LIMIT) || !script_safe(p + 16, 32) ||
-            !script_safe(p + 312, 64) || !script_safe(p + 48, 32) ||
-            !player_effect_definition(p) || !player_effect_previous(p, ref, 0) ||
-            *(const float *)(p + 12) < 0.0f ||
-            *(const float *)(p + 100) < 0.0f || (int)get32le(p + 96) < 0 ||
-            !plausible(source = combo.source = player_effect_source(p)) ||
-            *(u32 *)(source + OBJECT_TYPE) != (p[4] == 1 ? TYPE_SPELL :
-                                                       p[4] == 2 ? 0x48434E45u : 0x48434C41u) ||
-            !plausible(effects = ((fn_source_effects)TES3X_NET_SOURCE_EFFECTS)(&combo)) ||
-            *(short *)(effects + p[5] * EFFECT_BYTES) != effect_id ||
-            !player_effect_same(effects + p[5] * EFFECT_BYTES,
-                                p + 120 + p[5] * EFFECT_BYTES)) {
+    for (off = 0; off < player_effect_in_size; off += PLAYER_EFFECT_BYTES)
+        if (!effect_record_ok(player_effect_in + off, ref)) {
             player_effects_bad++;
             return;
         }
-    }
     head = *(u8 **)(mobile + MOBILE_ACTIVE_EFFECTS + 4);
     if (!plausible(head))
         return;
-    for (count = 0; preparing && *(u8 **)head != head && count < 512; count++) {
-        node = *(u8 **)head;
-        serial = get32le(node + 8);
-        instance = ((fn_magic_instance)TES3X_NET_MAGIC_INSTANCE)(controller, serial);
-        if (!plausible(instance))
-            break;
-        ((fn_retire_effects)TES3X_NET_RETIRE_EFFECTS)(instance, ref);
-        ((fn_magic_process)TES3X_NET_MAGIC_PROCESS)(instance, 0.0f);
-        if (*(u32 *)(instance + INSTANCE_STATE) == 7)
-            ((void(__attribute__((thiscall)) *)(void *, u32))TES3X_NET_RETIRE_MAGIC_SERIAL)(
-                controller, serial); /* Clear the item-data mapping before reactivation. */
-    }
+    if (preparing)
+        effect_retire_all(mobile, ref, controller);
     bound_count = player_bound_items(bound_ids);
     for (i = 0; preparing && i < bound_count; i++)
         actor_item(ref, "RemoveItem", bound_ids[i], " 1");
@@ -484,91 +631,7 @@ static void player_effect_apply(u8 *mobile)
         effect_id = (short)(p[82] | p[83] << 8);
         if ((effect_id >= 120 && effect_id <= 131 && effect_id != 126) != preparing)
             continue;
-        serial = get32le(p);
-        index = p[5];
-        source = player_effect_source(p);
-        combo.source = source;
-        combo.type = p[4];
-        for (group = 0; group < used && serials[group] != serial; group++)
-            ;
-        if (group == used) {
-            item = p[48] ? resolve_object((const char *)p + 48) : 0;
-            casting.item = item ? item : source;
-            data = 0;
-            if (p[7] & 2) {
-                if (p[4] == 2 && item)
-                    worn_find(*(u8 **)(ref + REF_BASE), item, (const char *)p + 48,
-                              ENTRY_DATA, get32le(p + 112), get32le(p + 116),
-                              (void **)&data, 0, 0);
-                else if (item && plausible(data = ((fn_item_data_new)TES3X_NET_ITEM_DATA_NEW)(item))) {
-                    copy(data + ITEM_CONDITION, p + 112, 4);
-                    copy(data + ITEM_CHARGE, p + 116, 4);
-                }
-            }
-            casting.data = data;
-            instance = ((fn_magic_instance)TES3X_NET_MAGIC_INSTANCE)(controller,
-                ((fn_activate_spell)TES3X_NET_ACTIVATE_SPELL)(controller, 0,
-                                                               p[4] == 1 ? 0 : &casting, &combo));
-            if (!plausible(instance)) {
-                player_effects_bad++;
-                continue;
-            }
-            caster = p[6] == 1 ? ref : p[6] == 2 ? actor_ref(get32le(p + 8)) : 0;
-            if (p[6] == 3)
-                for (i = 0; i < PEERS; i++)
-                    if (ghosts[i].client == get32le(p + 8) && ghosts[i].placed)
-                        caster = ghost_ref(i);
-            *(u8 **)(instance + INSTANCE_CASTER) = caster;
-            *(u8 **)(instance + 0xBC) = item;
-            *(u32 *)(instance + INSTANCE_STATE) = INSTANCE_WORKING;
-            copy(instance + 0xAC, p + 12, 4);
-            serials[used] = serial;
-            instances[used++] = instance;
-        } else {
-            instance = instances[group];
-        }
-        for (i = 0; i < 14; i++)
-            restored.words[i] = 0;
-        restored.words[0] = (u32)ref;
-        copy((u8 *)restored.words + 4, p + 92, 20);
-        restored.words[3] = restored.words[4] = 0;
-        restored.words[5] = 4;
-        active[0] = active[1] = active[2] = active[3] = 0;
-        put32le(active, *(u32 *)(instance + 0xA8));
-        copy(active + 4, p + 80, 12);
-        node = ((fn_active_node)TES3X_NET_ACTIVE_EFFECT_NODE)(mobile + MOBILE_ACTIVE_EFFECTS,
-                                                               head, *(u8 **)(head + 4), active);
-        if (!plausible(node)) {
-            player_effects_bad++;
-            continue;
-        }
-        **(u8 ***)(head + 4) = node;
-        *(u8 **)(head + 4) = node;
-        (*(u32 *)(mobile + MOBILE_ACTIVE_EFFECTS + 8))++;
-        effects = ((fn_source_effects)TES3X_NET_SOURCE_EFFECTS)(instance + INSTANCE_SOURCE);
-        definition = effects + index * EFFECT_BYTES;
-        effect_id = *(short *)definition;
-        /* The callback rolls from the source range. Pin it only for this synchronous call. */
-        low = *(u32 *)(definition + 0x10);
-        high = *(u32 *)(definition + 0x14);
-        *(u32 *)(definition + 0x10) = *(u32 *)(definition + 0x14) = get32le(p + 96);
-        instance[0x18] = 1; /* Keep the saved resistance result. */
-        ((fn_effect_insert)TES3X_NET_EFFECT_INSERT)(instance + 0x1C + index * 0x10,
-                                                     object_id(ref), restored);
-        ((fn_effect_callback *)TES3X_NET_EFFECT_CALLBACKS)[effect_id](instance, 0.0f,
-                                                                      &restored, index);
-        *(u32 *)(definition + 0x10) = low;
-        *(u32 *)(definition + 0x14) = high;
-        instance[0x18] = p[7] & 1;
-        copy(instance + 0xAC, p + 12, 4); /* Corprus Beginning resets this counter. */
-        if (!player_effect_previous(p, ref, &restored))
-            player_effects_bad++;
-        copy((u8 *)restored.words + 4, p + 92, 20);
-        ((fn_effect_insert)TES3X_NET_EFFECT_INSERT)(instance + 0x1C + index * 0x10,
-                                                     object_id(ref), restored);
-        value = player_effect_value(instance, index, ref);
-        if (value)
-            player_effects_applied++;
+        effect_restore(mobile, ref, controller, head, p, serials, instances, &used);
     }
     player_effect_pending = preparing ? 2 : 0;
     ((void(__cdecl *)(void))TES3X_NET_EFFECT_ICONS)();

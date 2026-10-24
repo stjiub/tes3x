@@ -50,8 +50,13 @@ No official releases yet. The first public release is in preparation.
 
 - Multiplayer servers now keep an NPC's attributes and skills, a merchant's barter gold and each
   actor's corpse timer, and share kill counts, so `GetDeadCount` quests agree between players and
-  after a server restart. Attributes lowered or raised by an active effect are kept as plain values,
-  since actors' active effects are not shared yet. See [the server guide](docs/multiplayer-server.md).
+  after a server restart. See [the server guide](docs/multiplayer-server.md).
+
+- Multiplayer servers now keep the temporary magic effects on NPCs and creatures (a cast
+  Fortify, Drain or Paralyze, a potion), so they survive a server restart and carry over when
+  another player's console takes the actor over, and end on time there. Abilities, diseases and
+  curses come from the actor's own record and bound items are not shared. See
+  [the server guide](docs/multiplayer-server.md).
 
 - Multiplayer journal updates now show the quest name and whether it started, advanced or
   completed in a text notification. Entries restored on join stay quiet. See

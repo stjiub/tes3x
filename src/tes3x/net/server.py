@@ -48,6 +48,8 @@ from .proto import (ACTOR, ACTORS, ACTORS_PER_PACKET, ACTOR_DEAD, ACTOR_IN_COMBA
                     PLAYER_BOUNTY, PLAYER_DEATH, PLAYER_EFFECTS, PLAYER_EFFECTS_MAX,
                     PLAYER_EFFECT_BYTES, PLAYER_FACTIONS, PLAYER_GLOBALS, PLAYER_GLOBALS_MAX, WORLD_GLOBALS, WORLD_GLOBALS_MAX, FACTIONS_MAX,
                     EVENT_KILL, EVENT_KILLS, KILLS_MAX, unpack_kill, pack_kills,
+                    EVENT_ACTOR_EFFECTS, ACTOR_EFFECT_ACTORS, pack_actor_effects,
+                    unpack_actor_effect_part, unpack_actor_effects,
                     EVENT_ACTOR_STATS, ACTOR_STATS_MAX, pack_actor_stats, unpack_actor_stats,
                     EVENT_LOCALS, LOCALS_MAX, EVENT_ACTOR_PLACE, ACTOR_PLACE,
                     ACTOR_PLACES_PER_EVENT, ACTORS_KEPT_MAX, describe_local, pack_locals, unpack_locals, FACTION_ALL, FACTION_EXPELLED,
@@ -185,6 +187,10 @@ class World:
         self.locals = {}
         # refid -> {slot: raw value}: actor attributes, skills, barter gold, corpse stamp
         self.actor_stats = {}
+        # refid -> bytes: an actor's complete set of active effects (PLAYER_EFFECT_BYTES records)
+        self.actor_effects = {}
+        # (client id, refid) -> [bytes so far, next part, parts]: sets still arriving
+        self.actor_effect_parts = {}
         # refid -> base object id: deaths the engine's kill counter counted; replayed as counts
         self.kills = {}
         # refid -> [cell kind, grid x, grid y, interior, x, y, z, heading, health, magicka,
@@ -232,6 +238,8 @@ class World:
         self.kills.update({int(k): v for k, v in saved.get("kills", {}).items()})
         self.actor_stats.update({int(k): {int(s): v for s, v in values.items()}
                                  for k, values in saved.get("actor_stats", {}).items()})
+        self.actor_effects.update({int(k): bytes.fromhex(v)
+                                   for k, v in saved.get("actor_effects", {}).items()})
         self.actors.update({int(k): v for k, v in saved.get("actors", {}).items()})
         self.moves.update({int(k): v for k, v in saved.get("moves", {}).items()})
         self.ai.update({int(k): v for k, v in saved.get("ai", {}).items()})
@@ -263,6 +271,7 @@ class World:
                  "kills": {str(k): v for k, v in self.kills.items()},
                  "actor_stats": {str(k): {str(s): v for s, v in values.items()}
                                 for k, values in self.actor_stats.items()},
+                 "actor_effects": {str(k): v.hex() for k, v in self.actor_effects.items()},
                  "actors": {str(k): v for k, v in self.actors.items()},
                  "moves": {str(k): v for k, v in self.moves.items()},
                  "ai": {str(k): v for k, v in self.ai.items()},
@@ -283,6 +292,7 @@ class World:
                 f"{len(self.journal)} quests, "
                 f"{len(self.globals)} globals, {len(self.locals)} scripted references, "
                 f"{len(self.actors)} actors, {len(self.actor_stats)} with stats, "
+                f"{len(self.actor_effects)} with effects, "
                 f"{len(self.kills)} kills, "
                 f"{len(self.moves)} moved, "
                 f"{len(self.ai)} AI packages, {len(self.records)} records, "
@@ -2472,6 +2482,38 @@ class Server:
                   + ", ".join(f"{s}={v:#x}" for s, v in sorted(changed.items())), flush=True)
         return RELAY
 
+    def event_actor_effects(self, client, kind, data, stamp, now):
+        """The latest complete set of an actor's active effects, bounded; each part goes on."""
+        refid, part, parts, chunk = unpack_actor_effect_part(data)
+        key = (client.id, refid)
+        pending = self.world.actor_effect_parts.get(key) if part else None
+        if part == 0:
+            pending = [b"", 0, parts]
+        if not pending or pending[1:] != [part, parts]:
+            self.world.actor_effect_parts.pop(key, None)
+            return None
+        pending[0] += chunk
+        pending[1] += 1
+        self.world.actor_effect_parts[key] = pending
+        if pending[1] < parts:
+            return RELAY
+        del self.world.actor_effect_parts[key]
+        try:
+            unpack_actor_effects(pending[0])
+        except ValueError:
+            return None
+        if self.world.actor_effects.get(refid) == pending[0]:
+            return RELAY
+        if not pending[0]:
+            self.world.actor_effects.pop(refid, None)
+        elif refid in self.world.actor_effects or len(self.world.actor_effects) < ACTOR_EFFECT_ACTORS:
+            self.world.actor_effects[refid] = pending[0]
+        self.world.dirty = True
+        if self.detail["verbose"]:
+            print(f"{stamp} client {client.id}: {refid:#010x} "
+                  f"{len(pending[0]) // PLAYER_EFFECT_BYTES} active effects", flush=True)
+        return RELAY
+
     def event_actor_move(self, client, kind, data, stamp, now):
         """Keep an actor's latest move with the cell it first left, and relay it in that form;
         a cell move drops its kept state, which the next report from its new cell replaces."""
@@ -2875,6 +2917,7 @@ class Server:
                       EVENT_OBJECTS: event_objects,
                       EVENT_LOCALS: event_locals,
                       EVENT_ACTOR_STATS: event_actor_stats,
+                      EVENT_ACTOR_EFFECTS: event_actor_effects,
                       EVENT_TEXT: event_text,
                       EVENT_GAME: event_game,
                       EVENT_PICK: event_pick,
@@ -3431,6 +3474,9 @@ class Server:
         for refid, values in sorted(self.world.actor_stats.items()):
             for data in pack_actor_stats(refid, values):
                 client.rel.queue(EVENT_ACTOR_STATS, 0, data)
+        for refid, body in sorted(self.world.actor_effects.items()):
+            for data in pack_actor_effects(refid, body):
+                client.rel.queue(EVENT_ACTOR_EFFECTS, 0, data)
         for refid, move in sorted(self.world.moves.items()):
             client.rel.queue(EVENT_ACTOR_MOVE, 0, ACTOR_MOVE.pack(refid, *move))
         for refid, values in self.world.statuses.items():

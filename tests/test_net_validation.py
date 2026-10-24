@@ -34,6 +34,7 @@ class EventValidationTests(unittest.TestCase):
             p.EVENT_LOCALS: p.pack_locals(1, {p.LOCAL_FLOAT << 14 | 1: 0x3F800000})[0],
             p.EVENT_KILL: struct.pack('<I', 0x0101F7C4) + b'fargoth\0',
             p.EVENT_ACTOR_STATS: p.pack_actor_stats(0x0101F7C4, {16: 150})[0],
+            p.EVENT_ACTOR_EFFECTS: p.pack_actor_effects(0x0101F7C4, b'')[0],
             p.EVENT_ACTOR_MOVE: p.ACTOR_MOVE.pack(0x0101F7C4, 1, 2, 3., 4., 5., 90.),
             p.EVENT_AI_PACKAGE: p.pack_ai_package(0x0101F7C4, p.AI_TRAVEL, 0, p.NO_CELL, 0,
                                                   bytes(16), 0),

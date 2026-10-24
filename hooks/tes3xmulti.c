@@ -483,6 +483,7 @@ static int script_safe(const u8 *text, u32 max)
 #include "multi/records.c"
 #include "multi/player_apply.c"
 #include "multi/actor_stats.c"
+#include "multi/actor_effects.c"
 #include "multi/kills.c"
 #include "multi/levelup.c"
 #include "multi/rest.c"
@@ -718,6 +719,7 @@ int tes3x_multi_command(const char *text)
         objects_stat();
         locals_stat();
         astats_stat();
+        aeffects_stat();
         kills_stat();
         world_scripts_stat();
         moves_stat();

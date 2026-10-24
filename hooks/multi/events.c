@@ -68,6 +68,8 @@ static void event_handle(const struct event *e)
         kills_event(e);
     } else if (e->kind == EVENT_ACTOR_STATS) {
         astats_event(e);
+    } else if (e->kind == EVENT_ACTOR_EFFECTS) {
+        aeffects_event(e);
     } else if (e->kind == EVENT_ACTOR_MOVE) {
         moves_event(e);
     } else if (e->kind == EVENT_AI_PACKAGE) {

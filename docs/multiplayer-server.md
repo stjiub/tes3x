@@ -486,7 +486,13 @@ for the actors last reported in that cell. `ACTOR_STATS` (event 44) carries what
 refid, a count and entries of a slot (attribute base or current, barter gold, corpse hourstamp,
 an NPC's skill base) and a raw u32 value. The cell's authority sends a change, any console a
 change of barter gold; the server keeps the latest of each (up to 16,384 values), relays it and
-replays all after WELCOME, and each console writes them into the actor once it is loaded. `KILL`
+replays all after WELCOME, and each console writes them into the actor once it is loaded.
+`ACTOR_EFFECTS` (event 47) carries an actor's active effects as a complete set: refid, part and
+parts, then whole 608-byte records of the player-effects format (up to six per actor, 24 actors).
+The cell's authority sends a set when it changes and every 20 s while one runs; the server keeps
+the latest, relays each part and replays all after WELCOME, and a console ends the actor's
+effects and re-creates the set once the actor is loaded, before its statistics. Bound effects and
+the abilities, diseases and curses of the actor's spell list are not kept. `KILL`
 (event 45) is a death the authority counted, with the id of the object the engine counts it
 under; the server keeps one per refid (up to 8,192) and answers every console with `KILLS`
 (event 46), the id and its count, which each console writes into its kill counter, so

@@ -164,6 +164,12 @@ def valid_client_event(kind, data):
             return bool(p.unpack_locals(data))
         except ValueError:
             return False
+    if kind == p.EVENT_ACTOR_EFFECTS:
+        try:
+            p.unpack_actor_effect_part(data)
+            return True
+        except ValueError:
+            return False
     if kind == p.EVENT_ACTOR_STATS:
         try:
             p.unpack_actor_stats(data)

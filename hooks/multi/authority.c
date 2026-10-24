@@ -100,6 +100,7 @@ static u32 actor_id(const u8 *ref);
 static u32 actor_owner(u32 id, u32 cell_owner);
 static void status_frame(const u8 *mobile, u8 *ref, u32 refid);
 static void astats_frame(const u8 *mobile, u8 *ref, u32 refid, int mine);
+static void aeffects_frame(const u8 *mobile, u8 *ref, u32 refid, int mine);
 static void kill_report(const u8 *ref, u32 refid);
 
 static void actors_reset(void)
@@ -872,6 +873,7 @@ static void authority_frame(const u8 *player, const u8 *state)
         death_frame(mobile, ref, refid, owner);
         if (send) {
             status_frame(mobile, ref, refid);
+            aeffects_frame(mobile, ref, refid, owner == ses.client);
             astats_frame(mobile, ref, refid, owner == ses.client);
         }
         if (owner && owner != ses.client) {

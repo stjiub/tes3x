@@ -2,8 +2,8 @@
  * corpse hourstamp. On the actor send tick each loaded actor is read against its last read; the
  * cell's authority sends what changed, any console sends a change of barter gold (the player
  * trading may follow the merchant). Values from the server are kept per actor and written when
- * the actor is loaded here, and again when its mobile is made anew. Effect attributes and skill
- * modifiers are not kept: active effects on actors are not shared. */
+ * the actor is loaded here, and again when its mobile is made anew. Current attributes are totals
+ * that include the actor's active effects (actor_effects.c), so they are written after those. */
 #define EVENT_ACTOR_STATS 44u /* refid, count, then (slot u16, value u32) */
 #define ASTAT_ENTRY 6u
 #define ASTAT_PER_EVENT ((EVENT_DATA - 5) / ASTAT_ENTRY)
@@ -22,6 +22,7 @@ static struct {
     u32 read[ASTAT_SLOTS], kept[ASTAT_SLOTS];
     u8 known[ASTAT_SLOTS], pending[ASTAT_SLOTS], fresh, used;
 } astats[ASTAT_ACTORS];
+static int aeff_busy(u32 refid);
 static u32 astat_next, astats_out, astats_in, astats_applied, astats_lost, astats_refused;
 
 static u32 astat_read(const u8 *mobile, u32 slot)
@@ -124,6 +125,8 @@ static void astats_frame(const u8 *mobile_in, u8 *ref, u32 refid, int mine)
     u32 e = astat_slot(refid), limit = is_npc(ref) ? ASTAT_SLOTS : ASTAT_SKILL, slot, n, value;
     u32 changed[ASTAT_SLOTS], count = 0, chunk, k;
 
+    if (aeff_busy(refid))
+        return; /* The effects go first: the values here are the totals they led to. */
     if (astats[e].mobile != mobile) {
         astats[e].mobile = mobile;
         astats[e].fresh = 1;

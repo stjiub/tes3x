@@ -625,6 +625,17 @@ ACTOR_STATS_PER_EVENT = (EVENT_DATA - 5) // ACTOR_STAT.size
 ACTOR_STATS_MAX = 16384  # values kept in all
 
 
+# An actor's active effects, complete: refid, part u16, parts u16, then the part of the body, whole
+# PLAYER_EFFECT_BYTES records (none when the actor has none left). The cell's authority sends a
+# set when it changes and now and then while one is running; the server keeps the latest set per
+# actor, relays it and replays all after WELCOME.
+EVENT_ACTOR_EFFECTS = 47
+ACTOR_EFFECTS_HEADER = struct.Struct("<IHH")
+ACTOR_EFFECT_CHUNK = EVENT_DATA - ACTOR_EFFECTS_HEADER.size
+ACTOR_EFFECTS_MAX = 6  # effects per actor
+ACTOR_EFFECT_ACTORS = 24  # actors kept
+
+
 # A death the cell's authority saw, counted by the engine's kill counter under the dead actor's
 # base object: refid, then that object's id (31 characters at most) and a zero. The server keeps
 # one per refid and answers every client, the sender too, with EVENT_KILLS: the id and the count
@@ -1012,6 +1023,34 @@ def unpack_actor_stats(data):
     if refid < 0x01000000:
         raise ValueError("bad actor stats id")
     return refid, values
+
+
+def pack_actor_effects(refid, body):
+    """ACTOR_EFFECTS events for one actor's complete, validated set of records."""
+    unpack_actor_effects(body)
+    parts = [body[i:i + ACTOR_EFFECT_CHUNK]
+             for i in range(0, len(body), ACTOR_EFFECT_CHUNK)] or [b""]
+    return [ACTOR_EFFECTS_HEADER.pack(refid, i, len(parts)) + p for i, p in enumerate(parts)]
+
+
+def unpack_actor_effect_part(data):
+    """(refid, part, parts, bytes) of an ACTOR_EFFECTS event; ValueError if malformed."""
+    if len(data) < ACTOR_EFFECTS_HEADER.size:
+        raise ValueError("bad actor effects event")
+    refid, part, parts = ACTOR_EFFECTS_HEADER.unpack_from(data)
+    body = bytes(data[ACTOR_EFFECTS_HEADER.size:])
+    if (refid < 0x01000000 or not parts or part >= parts
+            or parts > -(-PLAYER_EFFECT_BYTES * ACTOR_EFFECTS_MAX // ACTOR_EFFECT_CHUNK)
+            or len(body) > ACTOR_EFFECT_CHUNK):
+        raise ValueError("bad actor effects event")
+    return refid, part, parts, body
+
+
+def unpack_actor_effects(body):
+    """The records of a complete set; ValueError unless every one is valid, as the player's are."""
+    if len(body) > PLAYER_EFFECT_BYTES * ACTOR_EFFECTS_MAX:
+        raise ValueError("too many actor effects")
+    return unpack_player_effects(body)
 
 
 def unpack_kill(data):
