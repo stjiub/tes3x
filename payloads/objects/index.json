@@ -37,6 +37,7 @@
     "DASHBTN_SET_WIDTH": null,
     "DASHBTN_UI_ID": null,
     "DIAG_UPDATE": null,
+    "ENABLE_DISABLE_LOCALS": null,
     "FIND_CHILD": null,
     "FIND_MENU": null,
     "GAME_INSTANCE": null,
@@ -430,6 +431,10 @@
     "tes3xdxt5.c": {
       "digest": "8159d88e19d3a57f0cd654d74f6b49d6461bae4647815f9360f7d1f50ec2d7ac",
       "sha256": "1f1772901694c4a9f197b2ec0723a5351a8070cb7d82db93986cd711baa91e27"
+    },
+    "tes3xenabledisable.c": {
+      "digest": "a733c40cb51511f6fb6cf61b9798d1d76d25469726064dae76f325c888c45f66",
+      "sha256": "a582338fb20c92a9d2ea0290ebf812fd04c595355639d780280b064413a0bc00"
     },
     "tes3xheap.c": {
       "digest": "031c568f41fdd52478b3227fa4184fc15d31824df03cfc8ec280612a0225dd7b",

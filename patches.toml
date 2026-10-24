@@ -347,6 +347,17 @@ selection = "preset"
 summary = "Reduce encumbrance for a removed item only when the item is actually in the inventory."
 
 [[patch]]
+name = "mwse-enable-disable-vars"
+title = "Enable and Disable without local variables"
+origin = { source = "MWSE" }
+bit = 49
+category = "core"
+channel = "dev"
+selection = "preset"
+source = "tes3xenabledisable.c"
+summary = "Stop Enable and Disable crashing in a script that has no local variables."
+
+[[patch]]
 name = "mcp-173"
 title = "NPC faction rank persistence"
 origin = { source = "MCP", id = "173" }

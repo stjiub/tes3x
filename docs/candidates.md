@@ -13,7 +13,7 @@ on, `low` for minor ones, and `none` for fixes we won't port.
 
 | status | fixes |
 |---|---|
-| candidate | 179 |
+| candidate | 178 |
 | deferred | 13 |
 | not-applicable | 16 |
 | rejected | 3 |
@@ -42,7 +42,6 @@ Worth porting, but not yet shown to affect the Xbox build.
 | `mwse-clone-stringextra` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | core (profile-dependent priority) | **Correct `NiStringExtraData` cloning.** Mesh-driven lifetime bug; prioritize if a current asset reproduces it. |
 | `mwse-dialogue-filter` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | performance (benchmark first) | **Replace dialogue filtering/search with a more efficient implementation.** High potential with PfP's dialogue-heavy master. Measure dialogue-open latency and memory with/without PfP, then regression-test filtering. |
 | `mwse-disposition-filter` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | performance (benchmark first) | **Optimize disposition/dialogue filtering.** Test result identity, not just speed, against a dialogue-rich load order. |
-| `mwse-enable-disable-vars` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | core (intended default) | **Avoid `Enable`/`Disable` crash when script variables are not initialized.** High script/mod relevance. Test local, global and absent script data. |
 | `mwse-getdeadcount` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | performance (benchmark first) | **Avoid repeated expensive work in `GetDeadCount`.** Profile scripts which call it frequently and preserve dynamic death counts. |
 | `mwse-global-access` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | performance (benchmark first) | **Speed script global-variable lookup.** Existing profiling found only about 22 script commands/frame in the baseline; require evidence this lookup matters in a real modded profile. |
 | `mwse-ini-cache` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | performance (benchmark first) | **Cache repeated `DontThreadLoad`/INI reads.** First instrument call frequency. Preserve runtime configuration changes if vanilla observes them. |

@@ -1,0 +1,21 @@
+kind = "comparison"
+purpose = "Enable and Disable run in a script that has no local variables without crashing."
+procedure = "Link the patch on both sampled engines and reach a New Game session. A script without local variables that calls Enable or Disable is the full reproducer."
+limitations = "Console commands stand in for a script without local variables."
+watch = 'diag\.patches|exec\.exit|crash\.|hang\.detected|fatal\.'
+timeout = 180
+script = '''
+@start new
+wait 60
+player->Disable
+wait 10
+assert player->GetDisabled == 1.00
+player->Enable
+wait 10
+assert player->GetDisabled == 0.00
+exit
+'''
+
+[expect]
+control = ['exec\.exit 0']
+test = ['diag\.patches', 'exec\.exit 0']

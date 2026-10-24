@@ -51,7 +51,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_game_instance, find_hd_video, find_heap_function,
                                find_heap_object, find_heap_region, find_heap_region_sites,
                                find_info_arena_sites, find_lean_menu, find_marker,
-                               find_mcp102_actn, find_mcp160_removal, find_pathgrid_lookups, find_mcp123_add, find_mcp6_context,
+                               find_mcp102_actn, find_enable_disable_flags, find_mcp160_removal, find_pathgrid_lookups, find_mcp123_add, find_mcp6_context,
                                find_mcp125_collision,
                                find_mcp127_map,
                                find_mcp125_context, find_mcp146, find_mcp146_context,
@@ -1115,6 +1115,22 @@ def _mcp_160(x, value, ctx):
     off = x.va_to_off(start)
     x.data[off:off + old_len] = new
     return [(off, old_len, "item removal 0x%08X: weight after stack lookup" % start)]
+
+
+@patch("mwse-enable-disable-vars")
+def _mwse_enable_disable_vars(x, value, ctx):
+    """Skip the Enable and Disable flag write when the script has no local variables."""
+    hooks = ctx.get("hooks", {})
+    if not hooks.get("enable_flag") or not hooks.get("disable_flag"):
+        raise PatchError("mwse-enable-disable-vars: needs `payload` first, with both flag hooks")
+    enable, disable, _ = find_enable_disable_flags(x)
+    edits = []
+    for site, key in ((enable, "enable_flag"), (disable, "disable_flag")):
+        target = int(str(hooks[key]), 16)
+        off = x.va_to_off(site)
+        x.data[off:off + 9] = b"\xe8" + struct.pack("<i", target - (site + 5)) + b"\x90" * 4
+        edits.append((off, 9, "%s 0x%08X -> 0x%08X" % (key, site, target)))
+    return edits
 
 
 @patch("mcp-173")

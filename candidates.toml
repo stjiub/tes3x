@@ -1724,16 +1724,6 @@ summary = "Empty menu position and long derived-key menu crashes"
 reason = "PC UI evidence is insufficient; prove the Xbox menu path first."
 
 [[candidate]]
-name = "mwse-enable-disable-vars"
-origin = { source = "MWSE" }
-category = "core"
-default = "intended default"
-status = "candidate"
-priority = "medium"
-summary = "Avoid `Enable`/`Disable` crash when script variables are not initialized"
-reason = "High script/mod relevance. Test local, global and absent script data."
-
-[[candidate]]
 name = "mwse-getdeadcount"
 origin = { source = "MWSE" }
 category = "performance"

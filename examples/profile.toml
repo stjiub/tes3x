@@ -38,6 +38,7 @@ enable = [
     # "mcp-154",               # core: pad compiled script-data allocations to keep reads in bounds
     # "mcp-123",               # core: persist objects placed by scripts into unvisited cells
     # "mcp-160",              # correctness: take weight off an actor only for items actually removed
+    # "mwse-enable-disable-vars", # core: no crash when Enable or Disable runs in a script without locals
     # "mcp-173",               # core: persist NPC faction rank changes made by scripts
     # "mcp-6",                 # correctness: let Restore and expiring Drain recover the active Fortify amount
     # "mwse-pathgrid-zero",    # core: no crash when Wander or Flee meets a node-less pathgrid

@@ -1335,6 +1335,30 @@ def find_mcp160_removal(x):
     return start, m.group("load"), m.group("weight"), m.group("loop"), relocs
 
 
+# Enable and Disable set a flag in the running script's local variables, which a script without
+# any does not have.
+ENABLE_FLAG_SIG = re.compile(rb"(?P<site>\xa1(?P<locals>....)\x80\x60\x0c\xfe)", re.S)
+DISABLE_FLAG_SIG = re.compile(rb"(?P<site>\xa1(?P<locals>....)\x80\x48\x0c\x01)", re.S)
+
+
+def find_enable_disable_flags(x):
+    """Find the Enable and Disable flag writes and the global holding the script's locals."""
+    data = bytes(x.data)
+    found = []
+    for label, pattern in (("Enable", ENABLE_FLAG_SIG), ("Disable", DISABLE_FLAG_SIG)):
+        hits = list(pattern.finditer(data))
+        if len(hits) != 1:
+            raise PatchError("mwse-enable-disable-vars: %d %s flag writes, expected 1"
+                             % (len(hits), label))
+        site = x.off_to_va(hits[0].start("site"))
+        if site is None:
+            raise PatchError("mwse-enable-disable-vars: %s is outside an XBE section" % label)
+        found.append((site, struct.unpack("<I", hits[0].group("locals"))[0]))
+    if found[0][1] != found[1][1]:
+        raise PatchError("mwse-enable-disable-vars: Enable and Disable disagree on the locals")
+    return found[0][0], found[1][0], found[0][1]
+
+
 def find_mcp173_rank(x):
     """Find the save-flag calls before the two NPC rank writes."""
     hits = list(MCP173_RANK_SIG.finditer(bytes(x.data)))
