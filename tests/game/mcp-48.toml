@@ -1,0 +1,17 @@
+kind = "single"
+purpose = "A fresh game opens the level-up menu with the multiplier dispatch fix installed."
+procedure = "Start New Game, open the level-up menu, then complete the script."
+limitations = "This generic script does not set attribute skill-increase counts or inspect multiplier labels. Hardware is unchecked."
+watch = 'menu\.MenuLevelUp|exec[.>]|crash\.|hang\.detected|fatal\.'
+timeout = 180
+script = '''
+@start new
+wait 60
+EnableLevelupMenu
+wait 30
+visible MenuLevelUp
+exit
+'''
+
+[expect]
+test = ['menu\.MenuLevelUp 1', 'exec\.exit 0']

@@ -7367,6 +7367,15 @@
       "pc_va": "0x0047A960"
     },
     {
+      "va": "0x001E3FC0",
+      "name": "MenuLevelUp::refreshMultipliers",
+      "confidence": "verified",
+      "provenance": "MCP 48 PC 0x005DB2B0 matched to Xbox level-up UI and both dispatch tables",
+      "note": "The left-column dispatch repeats a base-plus-multiplier <100 test; the right column only requires base <100. A count of three falls through after formatting a label unless it jumps to the shared label tail.",
+      "pc_va": "0x005DB2B0",
+      "signature": "void __cdecl refreshMultipliers()"
+    },
+    {
       "va": "0x001E57E0",
       "name": "MenuLevelUp::build",
       "confidence": "verified",

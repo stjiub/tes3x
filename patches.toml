@@ -358,6 +358,16 @@ source = "tes3xmcp47.c"
 summary = "Keep another actor's magic-item changes from deselecting the player's spell."
 
 [[patch]]
+name = "mcp-48"
+title = "Level-up multiplier fix"
+origin = { source = "MCP", id = "48" }
+bit = 52
+category = "correctness"
+channel = "dev"
+selection = "preset"
+summary = "Show earned attribute multipliers even when they raise an attribute to 100, and avoid overlapping x3 labels."
+
+[[patch]]
 name = "mwse-pathgrid-zero"
 title = "Empty pathgrid fix"
 origin = { source = "MWSE" }

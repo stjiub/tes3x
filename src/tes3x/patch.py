@@ -56,7 +56,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_mcp55_inventory_context, find_mcp149_menu,
                                find_mcp127_map,
                                find_mcp125_context, find_mcp146, find_mcp146_context,
-                               find_mcp47_context, find_mcp25_blind,
+                               find_mcp47_context, find_mcp48_context, find_mcp25_blind,
                                find_mcp132_context,
                                find_mcp154_load, find_mcp154_reload, find_mcp173_rank,
                                find_mcp37_context,
@@ -687,6 +687,24 @@ def _mcp_47(x, value, ctx):
     if was != deselect:
         raise PatchError("mcp-47: deselection call target changed")
     return [(off, 5, "unequip deselection call 0x%08X -> %s" % (site, target))]
+
+
+@patch("mcp-48")
+def _mcp_48(x, value, ctx):
+    """Show every earned level-up multiplier for attributes below 100."""
+    _guard, table, original, redirected, label_call, tail = find_mcp48_context(x)
+    edits = []
+    table_off = x.va_to_off(table)
+    for count in range(1, 10):
+        if original[count] == redirected[count]:
+            raise PatchError(f"mcp-48: count {count} already shares its multiplier path")
+        entry_off = table_off + count * 4
+        x.data[entry_off:entry_off + 4] = struct.pack("<I", redirected[count])
+        edits.append((entry_off, 4, f"level-up multiplier x{count} dispatch"))
+    off = x.va_to_off(label_call)
+    x.data[off:off + 5] = b"\xe9" + struct.pack("<i", tail - (label_call + 5))
+    edits.append((off, 5, f"level-up x3 label fallthrough 0x{label_call:08X}"))
+    return edits
 
 
 @patch("mcp-25")

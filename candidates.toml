@@ -415,15 +415,6 @@ summary = "`PlaceAtPC` distance in third person, `PlaceAtMe` scale inheritance"
 reason = "A line-of-sight test misplaces third-person `PlaceAtPC` at the player's feet; `PlaceAtMe` inherits a target's rotation but not its scale. Two separate defects sharing id 46's record set."
 
 [[candidate]]
-name = "mcp-48"
-origin = { source = "MCP", id = "48" }
-category = "correctness"
-status = "candidate"
-priority = "medium"
-summary = "Level-up stats bug fix"
-reason = "Level-up offers a x1 multiplier when the correct one would take a stat to 100."
-
-[[candidate]]
 name = "mcp-49"
 origin = { source = "MCP", id = "49" }
 category = "correctness"

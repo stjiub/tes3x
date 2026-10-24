@@ -1072,6 +1072,51 @@ def find_mcp25_blind(x):
     return site
 
 
+def find_mcp48_context(x):
+    """The two level-up multiplier dispatch tables and the count-three label path."""
+    data = bytes(x.data)
+    dispatch = re.compile(rb"\x83\xf8\x09\x0f\x87....\xff\x24\x85(?P<table>....)", re.S)
+    found = []
+    for hit in dispatch.finditer(data):
+        table = struct.unpack("<I", hit.group("table"))[0]
+        table_off = x.va_to_off(table)
+        site = x.off_to_va(hit.start())
+        if site is None or table_off is None or table_off + 40 > len(data):
+            continue
+        entries = struct.unpack_from("<10I", data, table_off)
+        if all(x.va_to_off(entry) is not None for entry in entries):
+            found.append((site, table, entries))
+    pairs = [(left, right) for left in found for right in found
+             if 0 < right[0] - left[0] < 0x800 and right[1] == left[1] + 40
+             and left[2][0] == right[2][0]]
+    if len(pairs) != 1:
+        raise PatchError(f"mcp-48: {len(pairs)} level-up dispatch pairs, expected 1")
+    left, right = pairs[0]
+    guard = left[0] - 0x14
+    if data[x.va_to_off(guard):x.va_to_off(guard) + 2] != b"\x0f\x8d":
+        raise PatchError("mcp-48: first attribute cap branch changed")
+    case_three = right[2][3]
+    case_four = right[2][4]
+    case_data = data[x.va_to_off(case_three):x.va_to_off(case_four)]
+    label = re.compile(rb"\x8b\x0d....\x68\x4f\x04\x00\x00(?P<call>\xe8....)\x50\x68....\x57")
+    calls = list(label.finditer(case_data))
+    if len(calls) != 1:
+        raise PatchError("mcp-48: count-three label fallthrough changed")
+    call = case_three + calls[0].start("call")
+    case_one = right[2][1]
+    case_two = right[2][2]
+    one_data = data[x.va_to_off(case_one):x.va_to_off(case_two)]
+    jumps = list(re.finditer(rb"\x68\x4d\x04\x00\x00(?P<jump>\xe9....)", one_data, re.S))
+    if len(jumps) != 1:
+        raise PatchError("mcp-48: count-one label jump changed")
+    jump = case_one + jumps[0].start("jump")
+    tail = jump + 5 + struct.unpack_from("<i", data, x.va_to_off(jump) + 1)[0]
+    tail_off = x.va_to_off(tail)
+    if tail_off is None or tail >= right[2][0] or data[tail_off:tail_off + 2] != b"\x8b\x0d":
+        raise PatchError("mcp-48: shared multiplier label path changed")
+    return guard, left[1], left[2], right[2], call, tail
+
+
 def find_mcp132_context(x):
     """The script animation calls, humanoid bone test and player idle update."""
     play = find_multi_signature(x, "ANIM_PLAY_GROUP")
@@ -2368,6 +2413,7 @@ LOCATORS = {
     "dxt5-size": find_dxt5_size,
     "mcp-146": find_mcp146,
     "mcp-47": lambda image: find_mcp47_context(image)[0],
+    "mcp-48": lambda image: find_mcp48_context(image)[0],
     "mcp-25": find_mcp25_blind,
     "mcp-146-input": lambda image: find_mcp146_context(image)[1],
     "mcp-146-game": lambda image: find_mcp146_context(image)[2],

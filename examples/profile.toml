@@ -51,6 +51,7 @@ enable = [
     # "mcp-102",               # correctness: reactivate script-triggered objects after their mod is removed
     # "mcp-94",                # correctness: scale books, the journal and scrolls by screen height
     # "mcp-47",                # correctness: keep NPC magic-item changes from deselecting the player's spell
+    # "mcp-48",                # correctness: show earned level-up multipliers through 100
     # "mcp-55",                # correctness: keep potion names and refresh inventory icons after alchemy
     # "script-ext",            # compat: add script opcodes
     # "mwse-legacy",           # compat: run legacy MWSE 0.9.4 script bytecode
