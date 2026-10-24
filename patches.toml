@@ -593,7 +593,7 @@ summary = "Show a still image behind the main menu instead of playing the logo m
 
 [[patch]]
 name = "dash-button"
-title = "TES3X button"
+title = "Menu hint line"
 bit = 38
 category = "qol"
 channel = "dev"
@@ -601,7 +601,7 @@ selection = "preset"
 source = "tes3xdashbutton.c"
 requires = ["boot-clear", "menu-still"]
 ini = { Dash = "" }
-summary = "Add a TES3X button to the main and pause menus that leaves for the Dash."
+summary = "Add a hint line to the main and pause menus: White leaves for the Dash."
 
 [[patch]]
 name = "net"

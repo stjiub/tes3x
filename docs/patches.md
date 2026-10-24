@@ -64,7 +64,7 @@ single required/not-required flag.
 | [UI scaling](../patches/ui-scale.md) | `ui-scale` | Scale text, fixed HUD art and common menu panels, with optional 480p widescreen correction. | TES3X | qol | dev | Build option |
 | [Clear video memory at boot](../patches/boot-clear.md) | `boot-clear` | Clear the screen before the first frame, so a boot without the retail launcher does not flash green lines. | TES3X | qol | dev | By name; `dash-button`, `multiplayer` |
 | [Main menu still](../patches/menu-still.md) | `menu-still` | Show a still image behind the main menu instead of playing the logo movie. | TES3X | qol | dev | By name; `dash-button`, `multiplayer` |
-| [TES3X button](../patches/dash-button.md) | `dash-button` | Add a TES3X button to the main and pause menus that leaves for the Dash. | TES3X | qol | dev | By name; `multiplayer` |
+| [Menu hint line](../patches/dash-button.md) | `dash-button` | Add a hint line to the main and pause menus: White leaves for the Dash. | TES3X | qol | dev | By name; `multiplayer` |
 | [Xbox network foundation](../patches/net.md) | `net` | Provide the shared Xbox NIC, ARP, IPv4 and UDP layer used by network services. | TES3X | infrastructure | dev | By name; `multiplayer`, `agent` |
 | [Experimental multiplayer](../patches/multiplayer.md) | `multiplayer` | Join a TES3X server from [Xbox] NetAddress and exchange player states every frame. | TES3X | infrastructure | dev | By name |
 | [In-game agent](../patches/agent.md) | `agent` | Report live status and logs to the paired TES3X GUI and take its commands. | TES3X | infrastructure | dev | By name |

@@ -109,15 +109,16 @@ No official releases yet. The first public release is in preparation.
   Capture failures are reported instead of silently leaving out the image.
 - New `boot-clear` patch: a build that starts the engine without the retail launcher no longer
   flashes green lines before its first splash. See [the patch](patches/boot-clear.md).
-- New `dash-button` patch: a TES3X button in the main and pause menus that leaves for the Dash,
-  in place of multiplayer's Dash button. The menu buttons are redrawn together so they match, and
-  the menu is taller by a row. See [the patch](patches/dash-button.md).
+- New `dash-button` patch: a hint line under the main and pause menus, with the pad's button icons,
+  where White leaves for the Dash. The engine's own menu buttons are kept. Multiplayer puts Black
+  on the same line: Join on the main menu, Save to Server on the pause menu, with White for
+  Leave. See [the patch](patches/dash-button.md).
 - Builds whose engine starts without the retail launcher (`--direct-engine` runs and the overlay
   layout) now include `boot-clear`, `menu-still` and `dash-button` together, and multiplayer
   requires all three. Disable them to keep the retail menu and videos.
-- New `menu-still` patch: the main menu of such a build shows a still of the retail logo movie's
-  parchment and emblem instead of playing the movie and then a black screen. It needs `ffmpeg`
-  on the `PATH` when building. See [the patch](patches/menu-still.md).
+- New `menu-still` patch: the main menu of such a build shows a still of the retail menu loop's
+  parchment, emblem and Morrowind title instead of playing the logo movie and then a black
+  screen. It needs `ffmpeg` on the `PATH` when building. See [the patch](patches/menu-still.md).
 
 - The Dash can browse standalone content servers and install offered builds into its Builds list.
   The GUI's Content workspace can host chosen completed builds or always share every completed

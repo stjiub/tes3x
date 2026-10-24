@@ -15,6 +15,8 @@
 #include "tes3xregion.h"
 
 /* Other features' commands: 0 unless their patches are linked in. */
+TES3X_OPTIONAL unsigned int tes3x_multi_pad(unsigned int level);
+TES3X_OPTIONAL void tes3x_dashbutton_pad(unsigned int level);
 TES3X_OPTIONAL int tes3x_prof_command(const char *text);
 TES3X_OPTIONAL int tes3x_heap_command(const char *text);
 TES3X_OPTIONAL int tes3x_mem_command(const char *text);
@@ -216,6 +218,17 @@ TES3X_OPTIONAL void tes3x_diag_note(u32 code, u32 value);
 /* Bottom row shares, in percent, by label length: Older, Newer, !?#, Backspace, Shift, Done. */
 static const int bottom_share[BOTTOM_BUTTONS] = {16, 17, 13, 22, 14, 18};
 static const int bottom_share_text[BOTTOM_BUTTONS - 2] = {20, 30, 22, 28};
+
+/* The pad's Black and White, for the menus' hint line: bits of tes3x_pad_level while held, given
+ * to the multiplayer layer, which returns the bits it used, and then the Dash's hint. `button
+ * black|white` in an exec script holds one briefly. */
+#define PAD_BLACK 1u
+#define PAD_WHITE 2u
+#define PAD_INJECT_CALLS 4
+u32 tes3x_pad_level;
+static u32 tes3x_pad_used;
+static u32 pad_inject;
+static int pad_inject_calls;
 
 /* Per-port block: 22 bytes of XINPUT_STATE, then 30 derived words. A held button reads 0x7FFF. */
 #define CTRL_PORT 0x804
@@ -1432,6 +1445,10 @@ static void exec_step(void)
         tes3x_log(exec_tries < EXEC_CLICK_FRAMES ? "exec.pad" : "exec.pad_missing",
                   (u32)exec_tries);
         exec_tries = 0;
+    } else if (starts_with(line, "button ")) {
+        pad_inject = starts_with(line + 7, "white") ? PAD_WHITE : PAD_BLACK;
+        pad_inject_calls = PAD_INJECT_CALLS;
+        tes3x_log("exec.button", pad_inject);
     } else if (starts_with(line, "nav ")) {
         tes3x_log("exec.nav", (u32)exec_nav(line + 4));
     } else if (starts_with(line, "menu ")) {
@@ -1787,6 +1804,19 @@ unsigned int __attribute__((thiscall)) tes3x_console_hook(void *ctrl, int action
         port = *(int *)(base + CTRL_PORT);
         if (port >= 0 && port <= 3)
             in = (short *)(base + port * PORT_STRIDE + INPUT_BASE);
+    }
+
+    /* Black and White mean something else to the keyboard, which owns them while it is up. */
+    if (in || pad_inject_calls > 0) {
+        tes3x_pad_level = 0;
+        if (in && !vk_watch)
+            tes3x_pad_level = (in[KEY_SPACE] ? PAD_BLACK : 0) | (in[KEY_SYMBOLS] ? PAD_WHITE : 0);
+        if (pad_inject_calls > 0)
+            tes3x_pad_level |= pad_inject_calls-- ? pad_inject : 0;
+        if (tes3x_multi_pad)
+            tes3x_pad_used = tes3x_multi_pad(tes3x_pad_level);
+        if (tes3x_dashbutton_pad)
+            tes3x_dashbutton_pad(tes3x_pad_level & ~tes3x_pad_used);
     }
 
     /* Cache text because the keyboard has no delivery path for the console. */

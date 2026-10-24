@@ -18,7 +18,7 @@ import tempfile
 import tomllib
 from xml.sax.saxutils import escape
 
-from tes3x.pack import set_ini_key, write_invalidation
+from tes3x.pack import set_ini_key
 from tes3x.menustill import NAME as STILL_NAME, VIDEO, make_still
 from tes3x.fontscale import stage_scaled_fonts
 from tes3x.kf_merge import KFMergeError, dodge_clip_ranges, merge_tree_kfs
@@ -29,7 +29,7 @@ from tes3x.payload import (SOURCE_DEPENDENCIES, PayloadError, build_payload, fin
 from tes3x.net import write_ghost_plugin
 from tes3x.agent import key_fingerprint, load_or_create_key
 from tes3x.paths import (DEFAULT_REMOTE_ROOT, checkout, docs_url, local_config, require_paths,
-                         resource, vanilla_override)
+                         vanilla_override)
 from tes3x.plugins import rules_file
 from tes3x.store import TIERS as STORE_TIERS
 import tes3x.manifest as tes3x_manifest
@@ -56,7 +56,8 @@ PATCHES = {entry["name"]: entry for entry in registry.PATCHES if entry["selectio
 PATCH_ORDER = tuple(entry["name"] for entry in registry.PATCHES
                     if entry["selection"] in ("packaging", "preset")
                     or entry["name"] in ("build-preferences", "ui-scale"))
-# A build whose engine starts without the retail launcher gets the whole menu, or none of it.
+# A build whose engine starts without the retail launcher gets these by default; each can be
+# disabled on its own (`dash-button` requires the other two).
 DIRECT_ENGINE_PATCHES = ("boot-clear", "menu-still", "dash-button")
 HOOK_SOURCES = {entry["name"]: entry.get("source") for entry in registry.PATCHES}
 CATEGORIES = set(registry.CATEGORIES)
@@ -1305,25 +1306,6 @@ def main(argv=None):
         if "multiplayer" in plan["applied"]:
             ghost = write_ghost_plugin(staged / "Data Files", data_files / "Morrowind.esm")
             print(f"  ghost plugin: {Path(ghost).name}")
-        if {"multiplayer", "dash-button"} & set(plan["applied"]):
-            # The retail menu buttons are redrawn to match the ones TES3X adds, all together: a
-            # menu is either the retail one or this one. A loose file beats the archive only when
-            # newer, and an ISO has no file times, so the list names them.
-            textures = staged / "Data Files" / "Textures"
-            textures.mkdir(parents=True, exist_ok=True)
-            art = sorted(resource("assets", "menu").glob("*.dds"))
-            for path in art:
-                texture_target = textures / path.name
-                if texture_target.exists():
-                    texture_target.unlink()  # a hard link must not be written through
-                shutil.copy2(path, texture_target)
-            listed = staged / "ArchiveInvalidationList.txt"
-            kept = listed.read_text(encoding="cp1252").splitlines() if listed.exists() else []
-            if listed.exists():
-                listed.unlink()
-            write_invalidation(listed, kept + [f"textures\\{p.name}" for p in art])
-            print(f"  menu buttons: {len(art)} textures")
-
         if "menu-still" in plan["applied"]:
             make_still(data_files / "Video" / VIDEO,
                        staged / "Data Files" / "Textures" / STILL_NAME)

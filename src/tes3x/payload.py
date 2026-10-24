@@ -1062,10 +1062,11 @@ def engine_bindings(xbe, sources):
         define("DASHBTN_SET_HEIGHT", hexva(tes3x_inject.call_target(image, height_site)))
         print(f"dash-button hook: MenuOptions::build call {hexva(site)} -> {hexva(build)}")
         define("DASHBTN_BUILD", hexva(build))
-        for name in ("UI_ID", "FIND_CHILD", "FIND_MENU", "SET_PROP", "PERFORM_LAYOUT",
-                     "NAV_UP_ID", "NAV_DOWN_ID"):
+        for name in ("UI_ID", "FIND_CHILD", "FIND_MENU", "PERFORM_LAYOUT", "WIDGET_SET_TEXT",
+                     "SET_PROP", "SET_AUTO_HEIGHT"):
             define("DASHBTN_" + name, address(name, dict(CONSOLE_ADDRESSES)[name]))
-        for name in ("CREATE_BLOCK", "CREATE_IMAGE", "SET_WIDTH", "SET_VISIBLE"):
+        for name in ("CREATE_BLOCK", "CREATE_IMAGE", "CREATE_LABEL", "SET_WIDTH", "SET_VISIBLE",
+                     "SET_AUTO_WIDTH"):
             define("DASHBTN_" + name, address(name, dict(NET_UI_ADDRESSES)[name]))
         wanted["dashbutton"] = ("_tes3x_dashbutton_hook",)
         wanted["dashbutton_height"] = ("_tes3x_dashbutton_height_hook",)

@@ -116,7 +116,7 @@ The offset affects only the first-person bow and arms while an arrow or bolt is 
 
 | key | values | default |
 |---|---|---|
-| `Dash` | the Dash's XBE, `F:\Games\TES3XDash\default.xbe` (drives C, E, F, G) or a `\Device\...` path | empty - no TES3X button; installing the Dash sets it in `xbox.ini` |
+| `Dash` | the Dash's XBE, `F:\Games\TES3XDash\default.xbe` (drives C, E, F, G) or a `\Device\...` path | empty - no Dash hint; installing the Dash sets it in `xbox.ini` |
 
 ## `multiplayer`
 

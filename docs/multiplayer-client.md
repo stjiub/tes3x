@@ -28,10 +28,9 @@ New Game and Load relaunch the title; the console leaves and joins again by itse
 prints `rejoined`. If the server stops answering for 15 seconds, the console says the connection is
 lost and keeps reconnecting; after 60 seconds it offers the main menu.
 
-The main menu has **Join** between Load and Options, and below it **Dash** once the
-[TES3X Dash](deployment.md#installing-tes3x-dash) is installed, which starts the
-Dash. Join opens a list of the servers this console
-knows: the one `NetServer` names and those in `U:\TES3X\servers.ini`, newest first. Choose one
+The main menu is the engine's own, with a hint line under it: **Black** is Join, and **White** starts
+the [TES3X Dash](deployment.md#installing-tes3x-dash) once it is installed. Join opens a list of the
+servers this console knows: the one `NetServer` names and those in `U:\TES3X\servers.ini`, newest first. Choose one
 to connect without loading a game; the server lists that console's characters with "New
 character", and the chosen character is sent and loaded, joining the same server. **New Server**
 opens the keyboard to type an address or name, with `:PORT` when it is not 26500 (the `!?#` key
@@ -40,10 +39,9 @@ an address). A join that fails says why on the server's row: no answer, no netwo
 not found, different mods, server full, kicked, banned or server key changed; a server that wants a
 password raises the keyboard for it. New and Load from the main menu still play alone.
 
-While joined, the pause menu has **Save to Server** in place of Save, which flushes the character
-state and waits for confirmation, and **Leave** in place of Exit, which flushes to the server and
-quits after confirmation; Load is gone, since a local save is not the server's character. A
-multiplayer build redraws the menu buttons so they match the ones it adds.
+While joined, the pause menu has no Save, Load or Exit: its hint line offers **Black**, Save to
+Server, which flushes the character state and waits for confirmation, and **White**, Leave, which
+flushes to the server and quits after confirmation. A local save is not the server's character.
 
 ## Saving and character state
 

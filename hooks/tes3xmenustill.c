@@ -52,6 +52,7 @@ typedef u32(__stdcall *fn_set_fence)(u32 flags);
 typedef void(__stdcall *fn_block_on)(u32 fence, u32 flag);
 
 u32 tes3x_still_active;
+u32 tes3x_still_dirty; /* frames still to repaint, one for each buffer */
 void *tes3x_still_renderer;
 
 static u32 src_row[STILL_W];
@@ -109,6 +110,38 @@ static u32 paint(u32 *dst, u32 pitch, u32 width, u32 height, void *file)
             row[left + x] = src_row[x * STILL_W / dw] | 0xFF000000u;
     }
     return 1;
+}
+
+/* The still into the buffer the next frame draws in, behind what a menu hid. */
+void tes3x_still_redraw(void)
+{
+    ANSI_STRING name;
+    OBJECT_ATTRIBUTES oa;
+    IO_STATUS_BLOCK iosb;
+    static char path[] = STILL_PATH;
+    void *file = 0;
+    u32 *target, *surface, pitch;
+
+    if (!tes3x_still_renderer || !tes3x_still_dirty)
+        return;
+    tes3x_still_dirty--;
+    target = *(u32 **)((char *)tes3x_still_renderer + RENDERER_TARGET);
+    surface = (u32 *)target[TARGET_COLOUR];
+    pitch = (((surface[SURFACE_SIZE] >> 24) & 0xFF) + 1) * 64;
+    tes3x_dos_attributes(&oa, &name, path);
+    if (NtCreateFile(&file, GENERIC_READ | SYNCHRONIZE, &oa, &iosb, 0, FILE_ATTRIBUTE_NORMAL,
+                     FILE_SHARE_READ, FILE_OPEN, FILE_SYNCHRONOUS_IO_NONALERT) != 0)
+        return;
+    gpu_idle();
+    paint(back_buffer(surface), pitch, target[TARGET_WIDTH], target[TARGET_HEIGHT], file);
+    NtClose(file);
+}
+
+/* A menu showed or hid something: with no colour clear, what it hid stays on screen. */
+void tes3x_still_refresh(void)
+{
+    if (tes3x_still_active)
+        tes3x_still_dirty = 3;
 }
 
 /* Returns 1 when the still is up, 0 to let the movie play. */
@@ -198,6 +231,14 @@ __attribute__((naked)) void tes3x_still_clear_hook(void)
         "movl %ecx, _tes3x_still_renderer\n\t"
         "cmpl $0, _tes3x_still_active\n\t"
         "je 1f\n\t"
+        "cmpl $0, _tes3x_still_dirty\n\t"
+        "je 2f\n\t"
+        "testb $1, 8(%esp)\n\t"
+        "je 2f\n\t"
+        "pushal\n\t"
+        "call _tes3x_still_redraw\n\t"
+        "popal\n"
+        "2:\n\t"
         "andl $0xfffffffe, 8(%esp)\n"
         "1:\n\t"
         "pushl $" TES3X_SYM(STILL_CLEAR) "\n\t"

@@ -1,8 +1,9 @@
-/* The main menu's Join, above Exit. It turns the menu's column into the server list: one row per
- * server this console knows (NetServer, then servers.ini's sections, newest first), New server,
- * which types an address on the console patch's keyboard, and Return. Choosing a server brings the
- * NIC up if it is not, opens a lobby session and marks later relaunches with the server; the
- * character list or the start points follow at the main menu as they do in a game. */
+/* The main menu's Join, on the pad's Black as its hint line says. It turns the menu's column into
+ * the server list: New server, which types an address on the console patch's keyboard, then one
+ * row per server this console knows (NetServer, then servers.ini's sections, newest first), and
+ * Return. Choosing a server brings the NIC up if it is not, opens a lobby session and marks later
+ * relaunches with the server; the character list or the start points follow at the main menu as
+ * they do in a game. */
 #define UI_CLICK 0xFFFF8035u
 #define UI_PRESS 0xFFFF8034u /* the main menu's buttons show their pressed image */
 #define UI_OVER 0xFFFF8033u  /* ... their highlighted one */
@@ -28,15 +29,21 @@
 #define UI_FONT 0x164      /* 0 the small Century Gothic, 1 the big one */
 #define UI_IMAGE_FLAG 0x87 /* cleared on each main menu image */
 #define MENU_ROW 0x32      /* a main menu button's height */
-#define MENU_ROWS 6        /* New, Load, Join, Dash, Options, Exit */
+#define MENU_ROWS 4        /* New, Load, Options, Exit */
 #define SERVERS_SHOWN 8
-#define LIST_VISIBLE 4   /* rows the list's box shows; the rest scroll */
+#define LIST_VISIBLE 5   /* rows the list's box shows; the rest scroll */
 #define LIST_ROW 32
+#define LIST_MENU_HEIGHT (LIST_VISIBLE * LIST_ROW + 2 * BOX_PAD + MENU_ROW + 16)
 #define BOX_PAD 8
 #define UI_FLOW 0xFFFF8059u
 #define UI_TOP_DOWN 0xFFFF80CCu
 #define UI_ALIGN_Y 0x12C /* the main menu sits at 0.95 */
 #define TYPE_ALIGN_Y 0.12f
+#define LIST_ALIGN_Y 0.88f /* the list is taller than the menu's own rows */
+#define PAD_BLACK 1u
+#define PAD_WHITE 2u
+#define PAD_MAIN 1u
+#define PAD_PAUSE 2u
 typedef void *(__attribute__((thiscall)) *fn_find_child)(void *widget, u32 id);
 typedef void *(__attribute__((thiscall)) *fn_create_block)(void *parent, u32 id, int a0);
 typedef void *(__attribute__((thiscall)) *fn_create_rect)(void *parent, u32 id, int a0, int a1);
@@ -58,14 +65,16 @@ typedef void(__cdecl *fn_set_focus)(void *widget, int on);
 typedef char(__cdecl *fn_ui_handler)(void *owner, u32 id, int d0, int d1, void *source);
 static const char *const button_states[3] = {"TES3X_normal", "TES3X_over", "TES3X_pressed"};
 static const char *const main_rows[MENU_ROWS] = {
-    "MenuOptions_New_container", "MenuOptions_Load_container", "TES3X_Join", "TES3X_Dash",
-    "MenuOptions_Options_container", "MenuOptions_Exit_container"};
+    "MenuOptions_New_container", "MenuOptions_Load_container", "MenuOptions_Options_container",
+    "MenuOptions_Exit_container"};
 static const char *const server_rows[SERVERS_SHOWN] = {
     "TES3X_Server1", "TES3X_Server2", "TES3X_Server3", "TES3X_Server4",
     "TES3X_Server5", "TES3X_Server6", "TES3X_Server7", "TES3X_Server8"};
 static const float gold[3] = {0.88f, 0.74f, 0.42f}, gold_lit[3] = {1.0f, 0.93f, 0.68f};
 static char servers[SERVERS_SHOWN][JOIN_NAME + 1];
 static u32 servers_n, servers_view, join_buttons, joins_pressed, menu_height, menu_width;
+static float menu_align;
+static u32 pad_keys, pad_mode; /* the buttons the hint line offers now, and for what */
 static int server_chosen = -1; /* a row, SERVER_NEW or SERVER_RETURN, from a click handler */
 static u32 typing;             /* the keyboard is up, for TYPE_SERVER or TYPE_PASSWORD */
 #define TYPE_SERVER 1u
@@ -141,6 +150,16 @@ static void servers_read(void)
 static u8 *menu_part(u8 *menu, const char *name)
 {
     return ((fn_find_child)TES3X_NET_FIND_CHILD)(menu, ((fn_ui_id)TES3X_NET_UI_ID)(name));
+}
+
+TES3X_OPTIONAL void tes3x_hint_show(u8 *menu, const char *black, const char *white);
+TES3X_OPTIONAL void tes3x_still_refresh(void);
+
+/* The menu's hint line, the dash-button patch's: Black's text and White's, 0 to hide one. */
+static void hint_set(u8 *menu, const char *black, const char *white)
+{
+    if (tes3x_hint_show)
+        tes3x_hint_show(menu, black, white);
 }
 
 /* Show one of a button's three images, as the engine's own handlers do, and lay out its menu:
@@ -378,8 +397,27 @@ static u8 *gold_label(u8 *parent, const char *name, const char *text)
     return label;
 }
 
-/* The list's box, New Server and Return go at the end of the column, hidden; the box that shows
- * what is typed too. */
+/* A row of the list: a name in the gold of the buttons, centred and lit as the servers' are. */
+static u8 *list_row(u8 *content, const char *name, int width, fn_ui_handler click, const char *text)
+{
+    fn_set_prop set = (fn_set_prop)TES3X_NET_SET_PROP;
+    u8 *row = ((fn_create_block)TES3X_NET_CREATE_BLOCK)(content, ((fn_ui_id)TES3X_NET_UI_ID)(name),
+                                                        0);
+
+    if (!plausible(row))
+        return 0;
+    focusable(row, width, click);
+    ((fn_set_size)TES3X_NET_SET_HEIGHT)(row, LIST_ROW);
+    ((fn_set_auto)TES3X_NET_SET_AUTO_WIDTH)(row, 1);
+    set(row, UI_CHILD_ALIGN_Y, UI_HALF, UI_PROP_FLOAT);
+    set(row, UI_OVER, (int)row_over, UI_PROP_HANDLER);
+    set(row, UI_LEAVE, (int)row_left, UI_PROP_HANDLER);
+    gold_label(row, "TES3X_label", text);
+    return row;
+}
+
+/* The list's box, with New server in it, and Return go at the end of the column, hidden; the box
+ * that shows what is typed too. */
 static void servers_build(u8 *column, int width)
 {
     fn_set_prop set = (fn_set_prop)TES3X_NET_SET_PROP;
@@ -414,6 +452,8 @@ static void servers_build(u8 *column, int width)
         content = pane;
     set(content, UI_FLOW, (int)UI_TOP_DOWN, UI_PROP_ENUM);
     set(content, UI_CHILD_ALIGN_X, UI_HALF, UI_PROP_FLOAT);
+    if (HAS_CONSOLE)
+        list_row(content, "TES3X_NewServer", width, new_server_click, "New server");
     for (i = 0; i < SERVERS_SHOWN; i++) {
         if (!plausible(row = ((fn_create_block)TES3X_NET_CREATE_BLOCK)(
                            content, ui_id(server_rows[i]), 0)))
@@ -427,10 +467,6 @@ static void servers_build(u8 *column, int width)
         gold_label(row, "TES3X_label", "-");
     }
     visible(box, 0);
-    if (HAS_CONSOLE && plausible(row = menu_button(column, ui_id("TES3X_NewServer"),
-                                                   "menu_newserver", 2 * width,
-                                                   new_server_click)))
-        visible(row, 0);
     if (plausible(row = menu_button(column, ui_id("TES3X_Return"), "menu_return", width,
                                     return_click)))
         visible(row, 0);
@@ -443,28 +479,37 @@ static void servers_show(u8 *menu, u32 on)
     fn_set_visible visible = (fn_set_visible)TES3X_NET_SET_VISIBLE;
     fn_set_prop set = (fn_set_prop)TES3X_NET_SET_PROP;
     u16 up = *(const u16 *)TES3X_NET_NAV_UP_ID, down = *(const u16 *)TES3X_NET_NAV_DOWN_ID;
-    u8 *shown[SERVERS_SHOWN + 2], *part;
+    u8 *shown[SERVERS_SHOWN + 2], *part, *first = 0;
     u32 i, n = 0;
 
+    if (on && !servers_view) {
+        menu_height = *(const u32 *)(menu + UI_HEIGHT);
+        menu_align = *(const float *)(menu + UI_ALIGN_Y);
+    }
+    if (on)
+        hint_set(menu, 0, 0);
     for (i = 0; i < MENU_ROWS; i++)
         if (plausible(part = menu_part(menu, main_rows[i])))
             visible(part, !on);
     if (plausible(part = menu_part(menu, "TES3X_ServerBox")))
         visible(part, on);
+    if (plausible(part = menu_part(menu, "TES3X_NewServer"))) {
+        visible(part, on);
+        if (on) {
+            row_colour(part, 0);
+            shown[n++] = part;
+        }
+    }
     for (i = 0; i < SERVERS_SHOWN; i++)
         if (plausible(part = menu_part(menu, server_rows[i]))) {
             visible(part, on && i < servers_n);
             if (on && i < servers_n) {
                 row_label(part, servers[i]);
                 row_colour(part, 0);
+                first = first ? first : part;
                 shown[n++] = part;
             }
         }
-    if (plausible(part = menu_part(menu, "TES3X_NewServer"))) {
-        visible(part, on);
-        if (on)
-            shown[n++] = part;
-    }
     if (plausible(part = menu_part(menu, "TES3X_Return"))) {
         visible(part, on);
         if (on)
@@ -477,8 +522,12 @@ static void servers_show(u8 *menu, u32 on)
     }
     /* the menu's width is set, not fitted: the box is wider than a button */
     ((fn_set_size)TES3X_NET_SET_WIDTH)(menu, (int)(on ? 3 * menu_width + 2 * BOX_PAD : menu_width));
+    ((fn_set_size)TES3X_NET_SET_HEIGHT)(menu, on ? LIST_MENU_HEIGHT : (int)menu_height);
+    *(float *)(menu + UI_ALIGN_Y) = on ? LIST_ALIGN_Y : menu_align;
     ((fn_layout)TES3X_NET_PERFORM_LAYOUT)(menu, 1);
-    part = on ? (n ? shown[0] : 0) : menu_part(menu, "TES3X_Join");
+    if (tes3x_still_refresh)
+        tes3x_still_refresh();
+    part = on ? (first ? first : (n ? shown[0] : 0)) : menu_part(menu, "MenuOptions_New_container");
     if (plausible(part))
         ((fn_set_focus)TES3X_NET_SET_FOCUS)(part, 1);
 }
@@ -509,6 +558,8 @@ static void typing_show(u8 *menu, u32 on)
         servers_show(menu, 1);
     }
     ((fn_layout)TES3X_NET_PERFORM_LAYOUT)(menu, 1);
+    if (tes3x_still_refresh)
+        tes3x_still_refresh();
 }
 
 static void row_text(u8 *menu, u8 *row, const char *a, const char *b, const char *c)
@@ -867,63 +918,44 @@ static void typing_frame(u8 *menu)
     join_server_now(menu, servers[0], menu_part(menu, server_rows[0]));
 }
 
-/* A block added last to its column's children moves up to sit above `below`. */
-static void column_before(u8 *column, u8 *block, u8 *below)
-{
-    u8 **begin = *(u8 ***)(column + UI_CHILDREN), **end = *(u8 ***)(column + UI_CHILDREN + 4), **at;
-
-    if (!plausible(begin) || end <= begin || end[-1] != block)
-        return;
-    for (at = end - 1; at > begin && at[-1] != below; at--)
-        ;
-    if (at == begin)
-        return;
-    for (at = end - 1; at[-1] != below; at--)
-        at[0] = at[-1];
-    at[0] = at[-1];
-    at[-1] = block;
-}
-
 static void join_frame(void)
 {
     fn_ui_id ui_id = (fn_ui_id)TES3X_NET_UI_ID;
-    fn_set_prop set = (fn_set_prop)TES3X_NET_SET_PROP;
-    u16 up = *(const u16 *)TES3X_NET_NAV_UP_ID, down = *(const u16 *)TES3X_NET_NAV_DOWN_ID;
-    u8 *menu, *exit, *options, *load, *column, *button, *dash;
+    u8 *menu, *exit, *column, *button;
     int chosen;
 
+    pad_keys = 0;
+    pad_mode = 0;
     if (player_reference())
         return; /* a game is loaded: Load and New relaunch, and the pause menu has no Join */
     if (!plausible(menu = ((fn_find_menu)TES3X_NET_FIND_MENU)(ui_id("MenuOptions"))))
         return;
     if (!plausible(button = menu_part(menu, "TES3X_Join"))) {
         exit = menu_part(menu, "MenuOptions_Exit_container");
-        options = menu_part(menu, "MenuOptions_Options_container");
-        load = menu_part(menu, "MenuOptions_Load_container");
-        if (!plausible(exit) || !plausible(options) ||
-            !plausible(column = *(u8 **)(exit + UI_PARENT)) ||
-            !plausible(button = menu_button(column, ui_id("TES3X_Join"), "menu_join",
-                                            *(const int *)(exit + UI_WIDTH), join_click)))
+        if (!plausible(exit) || !plausible(column = *(u8 **)(exit + UI_PARENT)))
             return;
-        /* the menu's height is set, not fitted: a row more for each button added */
-        menu_height = *(const int *)(menu + UI_HEIGHT) + MENU_ROW;
+        /* Join is the pad's Black; this hidden element is what a script's click reaches */
+        if (plausible(button = ((fn_create_block)TES3X_NET_CREATE_BLOCK)(
+                          column, ui_id("TES3X_Join"), 0))) {
+            ((fn_set_prop)TES3X_NET_SET_PROP)(button, UI_CLICK, (int)join_click, UI_PROP_HANDLER);
+            ((fn_set_visible)TES3X_NET_SET_VISIBLE)(button, 0);
+        }
+        menu_height = *(const int *)(menu + UI_HEIGHT);
         menu_width = *(const int *)(menu + UI_WIDTH);
         tes3x_ini_xbox("Dash", "", dash_path, sizeof(dash_path));
-        /* the dash-button patch put its row, already counted in the height, above Options */
-        dash = menu_part(menu, "TES3X_Dash");
-        dash = plausible(dash) ? dash : options;
-        column_before(column, button, dash);
-        set(button, down, (int)dash, UI_PROP_PTR);
-        set(dash, up, (int)button, UI_PROP_PTR);
-        if (plausible(load)) {
-            set(button, up, (int)load, UI_PROP_PTR);
-            set(load, down, (int)button, UI_PROP_PTR);
-        }
-        ((fn_set_size)TES3X_NET_SET_HEIGHT)(menu, (int)menu_height);
         servers_build(column, *(const int *)(exit + UI_WIDTH));
         servers_view = 0;
         ((fn_layout)TES3X_NET_PERFORM_LAYOUT)(menu, 0);
         join_buttons++;
+    }
+    if (menu[MENU_VISIBLE]) {
+        if (typing || servers_view || lobby) {
+            pad_keys = PAD_BLACK | PAD_WHITE; /* nothing here is for the hint's buttons */
+        } else {
+            pad_keys = PAD_BLACK;
+            pad_mode = PAD_MAIN;
+            hint_set(menu, " Join server   ", dash_path[0] ? " Dash" : 0);
+        }
     }
     if (typing) {
         typing_frame(menu);
