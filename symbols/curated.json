@@ -259,6 +259,14 @@
       "signature": "void __thiscall updateEffects()"
     },
     {
+      "va": "0x0004A980",
+      "name": "DropPlacement::raycast",
+      "confidence": "guess",
+      "provenance": "mcp-118 call sites",
+      "note": "Called twice while choosing the position of an item dropped by MobileActor::dropItem.",
+      "signature": "bool __thiscall raycast(void *start, void *end, int first, int second)"
+    },
+    {
       "va": "0x00053840",
       "name": "createViewerSectionText",
       "kind": "function",
@@ -3214,6 +3222,13 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_Dialogue_getFilteredInfo",
       "pc_va": "0x004B29E0"
+    },
+    {
+      "va": "0x00101130",
+      "name": "Dialogue::filterTopics",
+      "confidence": "verified",
+      "provenance": "topic-colors: decompiled and exercised in xemu",
+      "note": "Fills the list with each learned topic whose getFilteredInfo(topic, ref, ref, 0) is non-null."
     },
     {
       "va": "0x001011C0",
@@ -6735,6 +6750,13 @@
       "pc_va": "0x00588BE0"
     },
     {
+      "va": "0x001A8520",
+      "name": "DropPlacement::findPosition",
+      "confidence": "verified",
+      "provenance": "mcp-118 Xbox disassembly and xemu drop comparison",
+      "note": "The two downward raycasts can both miss while the player is airborne. A later fallback can then return a ground position far below the player; the cleanup call at 0x001A8CCF receives the final output vector in ESI."
+    },
+    {
       "va": "0x001A8F70",
       "name": "MenuInputController::invalidateElementReferences",
       "kind": "function",
@@ -7164,6 +7186,13 @@
       "provenance": "traced: makes NEWCLASSID_CHARGEN into 0x003D83A8 when none is pending"
     },
     {
+      "va": "0x001CD480",
+      "name": "MenuDialog::onClickTopic",
+      "confidence": "verified",
+      "provenance": "topic-colors: decompiled and exercised in xemu",
+      "note": "Click handler of each topic widget; reads the Dialogue* property and calls clickTopic."
+    },
+    {
       "va": "0x001CD530",
       "name": "ui::getServiceActor",
       "kind": "function",
@@ -7196,6 +7225,13 @@
       "pc_va": "0x005C08E0"
     },
     {
+      "va": "0x001CE4C0",
+      "name": "MenuDialog::addTopicWidget",
+      "confidence": "matched",
+      "provenance": "topic-colors: decompiled and exercised in xemu",
+      "note": "Creates a topic widget (id, name, Dialogue*, click handler) unless one of that name exists; reused widgets are re-shown by updateTopicsList without calling this."
+    },
+    {
       "va": "0x001CE640",
       "name": "UI::updateTopicsList",
       "kind": "function",
@@ -7212,6 +7248,13 @@
       "pc_va": "0x005BF7C0"
     },
     {
+      "va": "0x001CEF70",
+      "name": "MenuDialog::clickHyperlink",
+      "confidence": "matched",
+      "provenance": "topic-colors: decompiled and exercised in xemu",
+      "note": "A hyperlink in response text: same sequence as clickTopic for the clicked topic, then UI::updateTopicsList."
+    },
+    {
       "va": "0x001CF310",
       "name": "UI::createResponseText",
       "kind": "function",
@@ -7226,6 +7269,13 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_showDialogueMessage",
       "pc_va": "0x005C00A0"
+    },
+    {
+      "va": "0x001CFA10",
+      "name": "MenuDialog::clickTopic",
+      "confidence": "verified",
+      "provenance": "topic-colors: decompiled and exercised in xemu",
+      "note": "A topic's click: getFilteredInfo(topic,...,1), response text, runScript, then a tail jump to UI::updateTopicsList."
     },
     {
       "va": "0x001CFF80",
@@ -8056,9 +8106,10 @@
       "va": "0x002363F0",
       "name": "ui::updateTextSelectColorForState",
       "kind": "function",
-      "confidence": "matched",
-      "provenance": "mwse:TES3_ui_updateTextSelectColorForState",
-      "pc_va": "0x0064CB60"
+      "confidence": "verified",
+      "provenance": "topic-colors: decompiled and exercised in xemu",
+      "pc_va": "0x0064CB60",
+      "note": "Text button color handler (cdecl, element first). Copies the state's normal/over/pressed palette into the element's colour at properties 0xFFFF804D-0xFFFF8050 (r,g,b,a floats); every state change overwrites any custom colour."
     },
     {
       "va": "0x002434DF",

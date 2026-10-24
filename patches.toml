@@ -347,6 +347,17 @@ source = "tes3xmcp55.c"
 summary = "Keep custom potion names after Create and regroup inventory icons when alchemy closes."
 
 [[patch]]
+name = "mcp-118"
+title = "Airborne item drop fix"
+origin = { source = "MCP", id = "118" }
+bit = 54
+category = "core"
+channel = "dev"
+selection = "preset"
+source = "tes3xmcp118.c"
+summary = "Keep items dropped in third person while airborne near the player."
+
+[[patch]]
 name = "mcp-47"
 title = "Spell deselection fix"
 origin = { source = "MCP", id = "47" }
@@ -559,6 +570,16 @@ channel = "dev"
 selection = "preset"
 source = "tes3xtooltips.c"
 summary = "Warn before stealing and show ownership and selected item details in menus."
+
+[[patch]]
+name = "topic-colors"
+title = "Read topic colors"
+bit = 55
+category = "qol"
+channel = "dev"
+selection = "preset"
+source = "tes3xtopiccolor.c"
+summary = "Show dialogue topics whose current response you have already read in a different color."
 
 [[patch]]
 name = "ui-scale"

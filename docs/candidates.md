@@ -13,7 +13,7 @@ on, `low` for minor ones, and `none` for fixes we won't port.
 
 | status | fixes |
 |---|---|
-| candidate | 173 |
+| candidate | 172 |
 | deferred | 14 |
 | not-applicable | 16 |
 | rejected | 3 |
@@ -28,7 +28,6 @@ Worth porting, but not yet shown to affect the Xbox build.
 | `mcp-46a` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #46 | medium | correctness (recommended) | **`Drop` places at the acting reference, not the player.** The engine treats every drop as if it came from the player inventory view, so scripted drops land at the wrong actor. Split from the rest of id 46 under rule 3. |
 | `mcp-58` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #58 | medium | correctness (undecided) | **Save-count warning.** MCP warns before PC memory corruption at roughly 300 save files. Xbox uses `XCreateSaveGame` and different enumeration, so first determine whether any equivalent limit exists; do not port the PC threshold by assumption. |
 | `mcp-95` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #95 | medium | compat | **Voiceover script functions fix.** StopSound mutes every actor voice and SayDone fires early. Dialogue and quest mods depend on both. |
-| `mcp-118` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #118 | medium | core (intended default) | **Items dropped while levitating or falling are lost.** Dropping in third person while airborne places the object near `{0, 0, 0}`, which is normally unreachable. Data loss, not a preference. Confirm the Xbox third-person and levitation paths share the defect. |
 | `mcp-138` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #138 | medium | correctness (recommended) | **Reliable `CellChanged` for scripted teleports.** Script-contract fix used by mods; preserve vanilla transition semantics outside the missed path. |
 | `mcp-141` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #141 | medium | core (intended default) | **Script expression parser / `Random` fix.** `Random` on multiples of 256 can crash and corrupt its argument. Large, but directly relevant to the extended script surface. |
 | `mcp-177` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #177 | medium | compat | **GetEffect/RemoveEffects fix.** GetEffect and RemoveEffects sometimes return 0 or do nothing; scripted mods rely on them. |

@@ -39,7 +39,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                VIDEO_RENDERER_SIG, VK_KEY_LIMIT_SIG, VK_SPACE_LIMIT_SIG,
                                WEATHER_ROLL_RE, XAPI_HEAP_FREE, _find_in, _find_mcp154_site,
                                _unique_call, find_arena_size, find_autosave_calls, find_boot_clear,
-                               find_dash_button, find_hud_scale, find_menu_area_scale,
+                               find_dash_button, find_topic_colors, find_topic_state, find_hud_scale, find_menu_area_scale,
                                find_chargen_scale,
                                find_levelup_scale, find_message_scale, find_name_scale,
                                find_item_tooltip,
@@ -53,7 +53,8 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_info_arena_sites, find_lean_menu, find_marker,
                                find_mcp102_actn, find_enable_disable_flags, find_mcp160_removal, find_pathgrid_lookups, find_mcp123_add, find_mcp6_context,
                                find_mcp125_collision, find_mcp55_context,
-                               find_mcp55_inventory_context, find_mcp149_menu,
+                               find_mcp55_inventory_context, find_mcp118_drop_finish,
+                               find_mcp149_menu,
                                find_mcp127_map,
                                find_mcp125_context, find_mcp146, find_mcp146_context,
                                find_mcp47_context, find_mcp48_context, find_mcp25_blind,
@@ -819,6 +820,45 @@ def _dash_button(x, value, ctx):
     return edits
 
 
+@patch("topic-colors")
+def _topic_colors(x, value, ctx):
+    """Mark dialogue topics whose current response has been read."""
+    hooks = ctx.get("hooks", {})
+    names = ("topic_list", "topic_run", "topic_update", "topic_state")
+    if not all(hooks.get(name) for name in names):
+        raise PatchError("topic-colors: needs `payload` first, with topic_list, topic_run, "
+                         "topic_update and topic_state hooks in its manifest")
+    sites = find_topic_colors(x)
+    edits = []
+    plan = [(sites[0], "topic_list", "topic filter"), (sites[1], "topic_run", "response script"),
+            (sites[3], "topic_run", "topic click script")]
+    plan += [(sites[4], "topic_update", "topic list update"), (sites[6], "topic_update",
+                                                             "topic list update")]
+    jump = sites[5]
+    off = x.va_to_off(jump)
+    if x.data[off] != 0xE9:
+        raise PatchError("topic-colors: no tail jump at 0x%08X" % jump)
+    target = int(str(hooks["topic_update"]), 16)
+    x.data[off + 1:off + 5] = struct.pack("<i", target - (jump + 5))
+    edits.append((off, 5, "topic click tail jump 0x%08X -> %s" % (jump, hooks["topic_update"])))
+    for site, name, what in plan:
+        was, off = x.patch_call(site, int(str(hooks[name]), 16))
+        edits.append((off, 5, "%s call 0x%08X: 0x%08X -> %s" % (what, site, was, hooks[name])))
+    state = int(str(hooks["topic_state"]), 16)
+    calls, pushes, _paint = find_topic_state(x)
+    for site in calls:
+        was, off = x.patch_call(site, state)
+        edits.append((off, 5, "state color call 0x%08X: 0x%08X -> %s"
+                      % (site, was, hooks["topic_state"])))
+    for site in pushes:
+        off = x.va_to_off(site) + 1
+        was = struct.unpack_from("<I", x.data, off)[0]
+        x.data[off:off + 4] = struct.pack("<I", state)
+        edits.append((off, 4, "state color handler 0x%08X: 0x%08X -> %s"
+                      % (site, was, hooks["topic_state"])))
+    return edits
+
+
 @patch("extended-tooltips")
 def _xbox_tooltips(x, value, ctx):
     target = ctx.get("hooks", {}).get("item_tooltip")
@@ -1063,6 +1103,13 @@ def _test_mcp55(x, value, ctx):
     return [(None, 0, "alchemy test command installed")]
 
 
+@test_patch("test-mcp118", "Drop an item through MobileActor for the mcp-118 game test.")
+def _test_mcp118(x, value, ctx):
+    if not ctx.get("hooks", {}).get("mcp118_test"):
+        raise PatchError("test-mcp118: payload has no mcp-118 test command")
+    return [(None, 0, "MobileActor drop test command installed")]
+
+
 @test_patch("test-mcp132", "Read an NPC's animation layers for the mcp-132 game test.")
 def _test_mcp132(x, value, ctx):
     if not ctx.get("hooks", {}).get("mcp132_test"):
@@ -1131,6 +1178,21 @@ def _mcp_55(x, value, ctx):
                          f"expected 0x{update_tiles:08X}")
     edits.append((off, 5, f"alchemy close 0x{close_site:08X} -> 0x{target:08X}"))
     return edits
+
+
+@patch("mcp-118")
+def _mcp_118(x, value, ctx):
+    """Keep a failed ground placement near the airborne player."""
+    hook = ctx.get("hooks", {}).get("mcp118_drop_finish")
+    if not hook:
+        raise PatchError("mcp-118: needs `payload` first, with a drop placement hook")
+    site, expected = find_mcp118_drop_finish(x)
+    target = int(str(hook), 16)
+    was, off = x.patch_call(site, target)
+    if was != expected:
+        raise PatchError(f"mcp-118: placement cleanup at 0x{site:08X} targets 0x{was:08X}, "
+                         f"expected 0x{expected:08X}")
+    return [(off, 5, f"drop placement 0x{site:08X} -> 0x{target:08X}")]
 
 
 @patch("mcp-6")
@@ -1756,6 +1818,7 @@ __all__ = [
     '_boot_media',
     '_boot_clear',
     '_dash_button',
+    '_topic_colors',
     '_menu_still',
     '_bow_view',
     '_build_preferences',
@@ -1812,6 +1875,8 @@ __all__ = [
     'find_autosave_calls',
     'find_boot_clear',
     'find_dash_button',
+    'find_topic_colors',
+    'find_topic_state',
     'find_menu_still',
     'find_bow_view',
     'find_button_pressed',

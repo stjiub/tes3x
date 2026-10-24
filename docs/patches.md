@@ -41,6 +41,7 @@ single required/not-required flag.
 | [Nocked arrow removal](../patches/mcp-146.md) | `mcp-146` | Remove a fully nocked arrow with the Ready Weapon control. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #146 | qol | dev | By name |
 | [Safe corpse disposal](../patches/mcp-149.md) | `mcp-149` | Keep corpse disposal unavailable until an actor finishes dying. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #149 | core | dev | By name |
 | [Alchemy potion naming and stacking](../patches/mcp-55.md) | `mcp-55` | Keep custom potion names after Create and regroup inventory icons when alchemy closes. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #55 | correctness | dev | By name |
+| [Airborne item drop fix](../patches/mcp-118.md) | `mcp-118` | Keep items dropped in third person while airborne near the player. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #118 | core | dev | By name |
 | [Spell deselection fix](../patches/mcp-47.md) | `mcp-47` | Keep another actor's magic-item changes from deselecting the player's spell. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #47 | correctness | dev | By name |
 | [Level-up multiplier fix](../patches/mcp-48.md) | `mcp-48` | Show earned attribute multipliers even when they raise an attribute to 100, and avoid overlapping x3 labels. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #48 | correctness | dev | By name |
 | [Empty pathgrid fix](../patches/mwse-pathgrid-zero.md) | `mwse-pathgrid-zero` | Stop Wander and Flee picking a node from a pathgrid that has none. | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | core | dev | By name |
@@ -61,6 +62,7 @@ single required/not-required flag.
 | [Book and scroll scaling fix](../patches/mcp-94.md) | `mcp-94` | Scale books, the journal and scrolls by screen height, so they fit a widescreen picture. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #94 | correctness | dev | By name; `hd-video` |
 | [HD video output](../patches/hd-video.md) | `hd-video` | Follow the dashboard's HDTV settings: 720p when enabled, otherwise the retail 480p or 480i. | TES3X | qol | dev | By name |
 | [Extended tooltips](../patches/extended-tooltips.md) | `extended-tooltips` | Warn before stealing and show ownership and selected item details in menus. | TES3X | qol | dev | By name |
+| [Read topic colors](../patches/topic-colors.md) | `topic-colors` | Show dialogue topics whose current response you have already read in a different color. | TES3X | qol | dev | By name |
 | [UI scaling](../patches/ui-scale.md) | `ui-scale` | Scale text, fixed HUD art and common menu panels, with optional 480p widescreen correction. | TES3X | qol | dev | Build option |
 | [Clear video memory at boot](../patches/boot-clear.md) | `boot-clear` | Clear the screen before the first frame, so a boot without the retail launcher does not flash green lines. | TES3X | qol | dev | By name; `dash-button`, `multiplayer` |
 | [Main menu still](../patches/menu-still.md) | `menu-still` | Show a still image behind the main menu instead of playing the logo movie. | TES3X | qol | dev | By name; `dash-button`, `multiplayer` |

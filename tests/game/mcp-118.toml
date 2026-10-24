@@ -1,0 +1,36 @@
+kind = "comparison"
+purpose = "An item dropped while the player is airborne stays near the player."
+procedure = "Load an exterior save, switch to vanity view, raise the player, and drop a bottle."
+limitations = "The test uses vanity view and SetFlying. The control failure is intermittent; the patched result and a non-regression comparison are checked. Natural levitation and hardware remain unchecked."
+save = "vanilla-seyda-neen.ess"
+watch = 'exec[.>]|assert[.>]|crash\.|hang\.detected|fatal\.|mcp118\.|>> '
+pipeline = ["--test-probe", "mcp-118"]
+timeout = 100
+script = '''
+@start load U:\TES3X\vanilla-seyda-neen.ess
+wait 120
+assert player->GetLevel == 7.00
+player->SetFlying 1
+player->SetPos Z 2000
+ToggleVanityMode
+wait 90
+player->GetPos X
+player->GetPos Y
+player->GetPos Z
+player->AddItem "misc_com_bottle_01" 1
+tes3xmcp118 drop
+wait 30
+misc_com_bottle_01->GetPos X
+misc_com_bottle_01->GetPos Y
+misc_com_bottle_01->GetPos Z
+exit
+'''
+
+[expect]
+control = ['console< Vanity Mode -> On', 'exec\.exit 0', 'assert\.failed 0']
+test = ['console< Vanity Mode -> On', 'exec\.exit 0', 'assert\.failed 0',
+        'console< GetPos >> 20(0[1-9]|[1-9][0-9])\.']
+
+[[compare]]
+pattern = 'misc_com_bottle_01->GetPos Z\s+console< GetPos >> (-?[0-9]+)'
+relation = ">="

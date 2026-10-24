@@ -22,8 +22,9 @@ import tes3x.inject as tes3x_inject
 from tes3x.link import LinkError, link, write_map, write_pe
 from tes3x.multi_signatures import SIGNATURES as MULTI_SIGNATURES, find_multi_signature
 from tes3x.paths import bundled, checkout, resource
-from tes3x.patch_sites import (find_mcp6_context, find_mcp55_context,
-                               find_mcp55_inventory_context, find_mcp149_menu)
+from tes3x.patch_sites import (find_topic_state, find_mcp6_context, find_mcp55_context,
+                               find_mcp55_inventory_context, find_mcp118_drop_finish,
+                               find_mcp149_menu)
 from tes3x.patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, archive_load_site,
                          find_call_sites, find_item_tooltip, find_levelup_scale, find_menu_area_scale,
                          find_message_scale, find_name_scale, find_options_scale,
@@ -881,6 +882,11 @@ def engine_bindings(xbe, sources):
             raise PayloadError("tes3xtest_mcp55.c requires tes3xconsole.c")
         print("mcp-55 test probe: console command tes3xmcp55")
         wanted["mcp55_test"] = ("_tes3x_mcp55_test_command",)
+    if "tes3xtest_mcp118.c" in names:
+        if "tes3xconsole.c" not in names:
+            raise PayloadError("tes3xtest_mcp118.c requires tes3xconsole.c")
+        define("MCP118_TEST_DROP", address("DROP_ITEM", DROP_ITEM))
+        wanted["mcp118_test"] = ("_tes3x_mcp118_test_command",)
     if "tes3xtest_mcp132.c" in names:
         if "tes3xconsole.c" not in names:
             raise PayloadError("tes3xtest_mcp132.c requires tes3xconsole.c")
@@ -950,6 +956,14 @@ def engine_bindings(xbe, sources):
         wanted["mcp55_refresh_brew"] = ("_tes3x_mcp55_refresh_brew",)
         wanted["mcp55_refresh_name"] = ("_tes3x_mcp55_refresh_name",)
         wanted["mcp55_close_inventory"] = ("_tes3x_mcp55_close_inventory",)
+    if "tes3xmcp118.c" in names:
+        site, reset = find_mcp118_drop_finish(image)
+        _, world, _, player, _, _ = find_mcp55_inventory_context(image)
+        define("MCP118_RESET", hexva(reset))
+        define("MCP118_WORLD_PTR", hexva(world))
+        define("MCP118_GET_PLAYER", hexva(player))
+        print(f"mcp-118 hook: drop placement cleanup {hexva(site)} -> {hexva(reset)}")
+        wanted["mcp118_drop_finish"] = ("_tes3x_mcp118_drop_finish",)
     if "tes3xmcp6.c" in names:
         sites = find_mcp6_context(image)
         define("MCP6_GET_MOBILE", hexva(sites["get_mobile"]))
@@ -1083,6 +1097,27 @@ def engine_bindings(xbe, sources):
         define("TIP_CREATE_LABEL", address("CREATE_LABEL", dict(NET_UI_ADDRESSES)["CREATE_LABEL"]))
         print(f"item tooltip: {hexva(tooltip)}, {len(calls)} call sites")
         wanted["item_tooltip"] = ("_tes3x_tooltip_hook@12",)
+    if "tes3xtopiccolor.c" in names:
+        sites = locate("topic-colors")
+        list_site, run_site, filter_site, update_site = sites[0], sites[1], sites[2], sites[4]
+        for name, site in (("LIST", list_site), ("RUN", run_site), ("UPDATE", update_site)):
+            define("TOPIC_" + name, hexva(tes3x_inject.call_target(image, site)))
+        define("TOPIC_FILTER", hexva(tes3x_inject.call_target(image, filter_site)))
+        state_calls, _pushes, (paint, update) = find_topic_state(image)
+        define("TOPIC_STATE", hexva(tes3x_inject.call_target(image, state_calls[0])))
+        define("TOPIC_PAINT", hexva(paint))
+        define("TOPIC_UPDATE_NODE", hexva(update))
+        define("TOPIC_WORLD", hexva(locate("world-controller")))
+        for name in ("PLAYER_MOBILE", "GET_PROP", "SET_PROP", "WIDGET_TEXT", "FIND_MENU",
+                     "FIND_CHILD", "UI_ID"):
+            define("TOPIC_" + name.replace("PLAYER_MOBILE", "PLAYER"),
+                   address(name, dict(CONSOLE_ADDRESSES)[name]))
+        print(f"topic colors: list {hexva(list_site)}, response {hexva(run_site)}, "
+              f"filter {hexva(filter_site)}, update {hexva(update_site)}")
+        wanted["topic_list"] = ("_tes3x_topiccolor_list",)
+        wanted["topic_update"] = ("_tes3x_topiccolor_update",)
+        wanted["topic_state"] = ("_tes3x_topiccolor_state",)
+        wanted["topic_run"] = ("@tes3x_topiccolor_run@8", "_tes3x_topiccolor_run")
     if "tes3xhudscale.c" in names:
         site = locate("ui-scale")
         area_tail, area = find_menu_area_scale(image)

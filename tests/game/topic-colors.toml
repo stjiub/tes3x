@@ -1,0 +1,19 @@
+kind = "single"
+purpose = "A topic whose current response was read is recorded and redrawn in a dimmer color."
+procedure = "Start a New Game in Seyda Neen, talk to Fargoth, click his topic, and check that the response is recorded. Separately compare the topic's color before and after the click."
+limitations = "The log shows the response was recorded and the topic colors were read, not the color on screen, which needs a screenshot or a manual check."
+watch = 'topiccolor\.|diag\.patches|exec[.>]|crash\.|hang\.detected|fatal\.'
+timeout = 240
+script = '''
+@start new
+coc "Seyda Neen"
+wait 120
+activate fargoth
+wait 200
+click MenuDialog MenuDialog_a_topic
+wait 100
+exit
+'''
+
+[expect]
+test = ['topiccolor\.normal ', 'topiccolor\.read 1', 'exec\.activate 1', 'exec\.exit 0']

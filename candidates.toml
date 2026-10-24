@@ -930,16 +930,6 @@ summary = "'Talked to PC' extension"
 reason = "Script or modding support; worth porting only when a mod used on Xbox needs it."
 
 [[candidate]]
-name = "mcp-118"
-origin = { source = "MCP", id = "118" }
-category = "core"
-default = "intended default"
-status = "candidate"
-priority = "medium"
-summary = "Items dropped while levitating or falling are lost"
-reason = "Dropping in third person while airborne places the object near `{0, 0, 0}`, which is normally unreachable. Data loss, not a preference. Confirm the Xbox third-person and levitation paths share the defect."
-
-[[candidate]]
 name = "mcp-119"
 origin = { source = "MCP", id = "119" }
 category = "compat"

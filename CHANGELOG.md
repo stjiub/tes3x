@@ -4,6 +4,12 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- New `topic-colors` patch dims dialogue topics whose current response you have already read.
+  See [the patch](patches/topic-colors.md).
+
+- New `mcp-118` patch keeps items dropped in third person while airborne near the player. See
+  [the patch](patches/mcp-118.md).
+
 - New `mcp-25` patch makes Blind reduce the player's attack chance instead of increasing it.
   See [the patch](patches/mcp-25.md).
 

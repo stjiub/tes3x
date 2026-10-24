@@ -117,6 +117,33 @@ def find_mcp55_context(x):
     return refresh_call, refresh, name_call, tes3x_inject.call_target(x, name_call)
 
 
+def find_mcp118_drop_raycast(x):
+    """Find the second ground raycast in the inventory drop placement path."""
+    sig = re.compile(
+        rb"\x6a\x00\x6a\x00\x8d\x44\x24\x68\x50\x56\x8b\xcf"
+        rb"\xc7\x44\x24\x70\x00\x00\x00\x00"
+        rb"\xc7\x44\x24\x74\x00\x00\x00\x00"
+        rb"\xc7\x44\x24\x78\x00\x00\x80\xbf\xe8....",
+        re.S,
+    )
+    hits = list(sig.finditer(x.data))
+    if len(hits) != 1:
+        raise PatchError(f"mcp-118: {len(hits)} drop raycasts, expected 1")
+    site = x.off_to_va(hits[0].end() - 5)
+    if site is None:
+        raise PatchError("mcp-118: drop raycast is outside an XBE section")
+    return site, tes3x_inject.call_target(x, site)
+
+
+def find_mcp118_drop_finish(x):
+    raycast, _ = find_mcp118_drop_raycast(x)
+    site = raycast + 0xD9
+    off = x.va_to_off(site)
+    if off is None or not re.fullmatch(rb"\x8b\xcf\xe8....\x8b\x4f\x14\x85\xc9", x.data[off:off + 12], re.S):
+        raise PatchError("mcp-118: drop placement cleanup changed")
+    return site + 2, tes3x_inject.call_target(x, site + 2)
+
+
 def find_mcp55_inventory_context(x):
     """Find the alchemy close tail and the engine's standard inventory icon rebuild."""
     close_sig = re.compile(
@@ -838,6 +865,35 @@ DASH_HEIGHT_SIG = re.compile(
     re.S,
 )
 
+# UI::updateTopicsList: the call that filters the actor's topics, the call that makes each topic's
+# widget (dialogue and click handler stacked beneath its name), and the call in the topic click
+# that runs the response's script, once the response is shown (a topic's click and a hyperlink's).
+# The filter is called from the first.
+TOPIC_LIST_SIG = re.compile(
+    rb"\xc7\x44\x24\x64\xff\xff\xff\xff(?P<site>\xe8....)\x8b\x7c\x24\x24\x83\xc4\x08\x55"
+    rb"\x68\xba\x80\xff\xff",
+    re.S,
+)
+TOPIC_RUN_SIG = re.compile(
+    rb"\x57\x8b\xcb(?P<site>\xe8....)\xe8....\xe8....\x83\x7c\x24\x40\x10", re.S)
+TOPIC_CLICK_SIG = re.compile(
+    rb"\x84\xc9\x75.\x2b\xc2\x89\x44\x24\x14\x74.\x53\x8b\xce(?P<site>\xe8....)", re.S)
+# UI::updateTopicsList's three callers: the click on a hyperlink, the click on a topic (a tail jump)
+# and the response text builder.
+TOPIC_UPDATE_SIGS = (
+    re.compile(rb"\x57\x8b\xcb\xe8....\xe8....(?P<site>\xe8....)\x83\x7c\x24\x40\x10", re.S),
+    re.compile(rb"\x5f\x5b\x5e\x83\xc4\x0c(?P<site>\xe9....)\x5e\x83\xc4\x0c", re.S),
+    re.compile(rb"\x83\xfb\x05\x74.(?P<site>\xe8....)\x83\xc8\xff", re.S),
+)
+TOPIC_FILTER_SIG = re.compile(rb"\x6a\x00\x50\x50\x8b\xce(?P<site>\xe8....)\x85\xc0\x74", re.S)
+
+TOPIC_STATE_CALL_SIG = re.compile(
+    rb"\x56\x6a\x00\x6a\x00\x68\x32\x80\xff\xff\x56(?P<site>\xe8....)\x83\xc4\x14", re.S)
+TOPIC_STATE_PUSH_SIG = re.compile(rb"\x6a\x20(?P<site>\x68....)\x68\x32\x80\xff\xff\x8b\xce", re.S)
+TOPIC_STATE_TAIL_SIG = re.compile(
+    rb"\x8b\xce(?P<paint>\xe8....)\x6a\x00\x8b\xce(?P<update>\xe8....)\xb0\x01\x5e\x83\xc4\x08\xc3",
+    re.S)
+
 
 HUD_SCALE_SIG = re.compile(
     rb"\x56(?P<site>\xe8....)\x83\xc4\x04\x6a\x08\x68....\x68\x47\x80\xff\xff\x8b\xce\xe8...."
@@ -984,6 +1040,44 @@ def find_dash_button(x):
     if None in sites:
         raise PatchError("dash-button: a call is outside any section")
     return sites
+
+
+def find_topic_colors(x):
+    """The topic list filter, the two response script calls, the engine's getFilteredInfo and
+    the three callers of UI::updateTopicsList."""
+    data = bytes(x.data)
+    sites = []
+    for what, sig in (("list", TOPIC_LIST_SIG), ("response", TOPIC_RUN_SIG),
+                      ("filter", TOPIC_FILTER_SIG), ("click", TOPIC_CLICK_SIG)) + tuple(
+                          ("update", sig) for sig in TOPIC_UPDATE_SIGS):
+        hits = list(sig.finditer(data))
+        if len(hits) != 1:
+            raise PatchError("topic-colors: %d %s call(s), expected 1" % (len(hits), what))
+        sites.append(x.off_to_va(hits[0].start("site")))
+    if None in sites:
+        raise PatchError("topic-colors: a call is outside any section")
+    return sites
+
+
+def find_topic_state(x):
+    """Every call to and registration of the text button's state-color handler, and the two
+    calls it ends with that push the color to the scene (repaint, update)."""
+    data = bytes(x.data)
+    calls = [x.off_to_va(m.start("site")) for m in TOPIC_STATE_CALL_SIG.finditer(data)]
+    pushes = [x.off_to_va(m.start("site")) for m in TOPIC_STATE_PUSH_SIG.finditer(data)]
+    tails = list(TOPIC_STATE_TAIL_SIG.finditer(data))
+    targets = {tes3x_inject.call_target(x, c) for c in calls}
+    ends = {(tes3x_inject.call_target(x, x.off_to_va(m.start("paint"))),
+             tes3x_inject.call_target(x, x.off_to_va(m.start("update")))) for m in tails}
+    if not calls or not pushes or None in calls + pushes or len(targets) != 1 or len(ends) != 1:
+        raise PatchError("topic-colors: %d state call(s) to %d target(s), %d registration(s), "
+                         "%d repaint pair(s)" % (len(calls), len(targets), len(pushes), len(ends)))
+    handler = targets.pop()
+    pushes = [p for p in pushes
+              if struct.unpack_from("<I", data, x.va_to_off(p) + 1)[0] == handler]
+    if not pushes:
+        raise PatchError("topic-colors: the state handler is never registered")
+    return calls, pushes, ends.pop()
 
 
 def find_menu_still(x):
@@ -2423,6 +2517,7 @@ LOCATORS = {
     "boot-clear": find_boot_clear,
     "menu-still": find_menu_still,
     "dash-button": find_dash_button,
+    "topic-colors": find_topic_colors,
     "ui-scale": find_hud_scale,
     "ref-index": lambda image: find_ref_index(image)[0],
     "ref-index-find": lambda image: find_ref_index(image)[1],
