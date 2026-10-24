@@ -51,9 +51,9 @@ No official releases yet. The first public release is in preparation.
 - New `mcp-173` patch saves NPC faction rank changes made by `RaiseRank` and `LowerRank`, so the
   rank survives loading a save. See [the patch](patches/mcp-173.md).
 
-- Multiplayer servers now keep an NPC's attributes and skills, a merchant's barter gold and each
-  actor's corpse timer, and share kill counts, so `GetDeadCount` quests agree between players and
-  after a server restart. See [the server guide](docs/multiplayer-server.md).
+- Multiplayer servers now keep an NPC's attributes and skills, a creature's combat, magic and
+  stealth, a merchant's barter gold and each actor's corpse timer, and share kill counts, so
+  `GetDeadCount` quests agree between players and after a server restart. See [the server guide](docs/multiplayer-server.md).
 
 - Multiplayer servers now keep the temporary magic effects on NPCs and creatures (a cast
   Fortify, Drain or Paralyze, a potion), so they survive a server restart and carry over when

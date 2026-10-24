@@ -484,7 +484,9 @@ server sends that client `ACTOR_PLACE` (event 38, server only) before `AUTHORITY
 up to two entries of refid, position, heading, health, magicka, fatigue and the actor flags,
 for the actors last reported in that cell. `ACTOR_STATS` (event 44) carries what an actor's record holds beyond that:
 refid, a count and entries of a slot (attribute base or current, barter gold, corpse hourstamp,
-an NPC's skill base) and a raw u32 value. The cell's authority sends a change, any console a
+an NPC's skill base and current, a creature's combat, magic and stealth base and current, whether it has been talked to or
+attacked, the death-crime byte) and
+a raw u32 value. The cell's authority sends a change, any console a
 change of barter gold; the server keeps the latest of each (up to 16,384 values), relays it and
 replays all after WELCOME, and each console writes them into the actor once it is loaded.
 `ACTOR_EFFECTS` (event 47) carries an actor's active effects as a complete set: refid, part and

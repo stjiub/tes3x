@@ -1036,7 +1036,7 @@ class ServerTests(unittest.TestCase):
         net = tes3x_net
         values = {i: i for i in range(net.ACTOR_STAT_SLOTS)}
         events = net.pack_actor_stats(0x0101F7C4, values)
-        self.assertEqual(len(events), 4)
+        self.assertEqual(len(events), 7)
         for data in events:
             self.assertLessEqual(len(data), net.EVENT_DATA)
             self.assertTrue(valid_client_event(net.EVENT_ACTOR_STATS, data))

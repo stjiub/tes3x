@@ -1,7 +1,7 @@
 /* What an actor's mobile holds beyond ACTORS: attributes, an NPC's skills, barter gold and the
  * corpse hourstamp. On the actor send tick each loaded actor is read against its last read; the
- * cell's authority sends what changed, any console sends a change of barter gold (the player
- * trading may follow the merchant). Values from the server are kept per actor and written when
+ * cell's authority sends what changed, any console sends a change of barter gold and of the
+ * talked-to and attacked flags (the player trading or talking may follow the merchant). Values from the server are kept per actor and written when
  * the actor is loaded here, and again when its mobile is made anew. Current attributes are totals
  * that include the actor's active effects (actor_effects.c), so they are written after those. */
 #define EVENT_ACTOR_STATS 44u /* refid, count, then (slot u16, value u32) */
@@ -11,7 +11,17 @@
 #define ASTAT_GOLD 16u
 #define ASTAT_STAMP 17u
 #define ASTAT_SKILL 18u
-#define ASTAT_SLOTS (ASTAT_SKILL + SKILLS)
+#define ASTAT_CREATURE 45u /* combat, magic, stealth base; 48-50 their current */
+#define ASTAT_CREATURE_CURRENT 48u
+#define ASTAT_SKILL_CURRENT 51u
+#define ASTAT_FLAGS (ASTAT_SKILL_CURRENT + SKILLS) /* the flags a save keeps that outlast a moment */
+#define ASTAT_ACTION (ASTAT_FLAGS + 1) /* +0x224: -1, or 3 once the killing was a crime */
+#define ASTAT_SLOTS (ASTAT_ACTION + 1)
+#define MOBILE_TALKED_TO 0x1000u
+#define MOBILE_ATTACKED 0x20000u
+#define ASTAT_FLAG_MASK (MOBILE_TALKED_TO | MOBILE_ATTACKED)
+#define MOBILE_ACTION 0x224
+#define MOBILE_CREATURE_STATS 0x3B4 /* 0xC each */
 #define ASTAT_ACTORS 256u
 #define MOBILE_BARTER 0x360 /* int */
 #define MOBILE_STAMP 0x36A  /* u16 */
@@ -25,8 +35,32 @@ static struct {
 static int aeff_busy(u32 refid);
 static u32 astat_next, astats_out, astats_in, astats_applied, astats_lost, astats_refused;
 
+static int astat_current(u32 slot)
+{
+    return (slot >= ASTAT_ATTRIBUTE_CURRENT && slot < ASTAT_GOLD) ||
+           (slot >= ASTAT_CREATURE_CURRENT && slot < ASTAT_FLAGS);
+}
+
+/* Slots 45-50 exist on a creature, 18-44 and 51-77 on an NPC, the rest on both. */
+static int astat_has(u32 slot, int npc)
+{
+    if (slot >= ASTAT_CREATURE && slot < ASTAT_SKILL_CURRENT)
+        return !npc;
+    return slot < ASTAT_SKILL || slot >= ASTAT_FLAGS ? 1 : npc;
+}
+
 static u32 astat_read(const u8 *mobile, u32 slot)
 {
+    if (slot == ASTAT_FLAGS)
+        return *(const u32 *)(mobile + MOBILE_FLAGS) & ASTAT_FLAG_MASK;
+    if (slot == ASTAT_ACTION)
+        return *(const u8 *)(mobile + MOBILE_ACTION);
+    if (slot >= ASTAT_SKILL_CURRENT)
+        return *(const u32 *)(mobile + MOBILE_SKILLS + 0x10 * (slot - ASTAT_SKILL_CURRENT) +
+                              STAT_BASE + 4);
+    if (slot >= ASTAT_CREATURE)
+        return *(const u32 *)(mobile + MOBILE_CREATURE_STATS + 0xC * ((slot - ASTAT_CREATURE) % 3) +
+                              STAT_BASE + (slot >= ASTAT_CREATURE_CURRENT ? 4 : 0));
     if (slot < ASTAT_GOLD)
         return *(const u32 *)(mobile + MOBILE_ATTRIBUTES + 0xC * (slot & 7) + STAT_BASE +
                               (slot >= ASTAT_ATTRIBUTE_CURRENT ? 4 : 0));
@@ -39,7 +73,17 @@ static u32 astat_read(const u8 *mobile, u32 slot)
 
 static void astat_write(u8 *mobile, u32 slot, u32 value)
 {
-    if (slot < ASTAT_GOLD)
+    if (slot == ASTAT_FLAGS)
+        put32le(mobile + MOBILE_FLAGS, (get32le(mobile + MOBILE_FLAGS) & ~ASTAT_FLAG_MASK) |
+                                           (value & ASTAT_FLAG_MASK));
+    else if (slot == ASTAT_ACTION)
+        mobile[MOBILE_ACTION] = (u8)value;
+    else if (slot >= ASTAT_SKILL_CURRENT)
+        put32le(mobile + MOBILE_SKILLS + 0x10 * (slot - ASTAT_SKILL_CURRENT) + STAT_BASE + 4, value);
+    else if (slot >= ASTAT_CREATURE)
+        put32le(mobile + MOBILE_CREATURE_STATS + 0xC * ((slot - ASTAT_CREATURE) % 3) + STAT_BASE +
+                    (slot >= ASTAT_CREATURE_CURRENT ? 4 : 0), value);
+    else if (slot < ASTAT_GOLD)
         put32le(mobile + MOBILE_ATTRIBUTES + 0xC * (slot & 7) + STAT_BASE +
                     (slot >= ASTAT_ATTRIBUTE_CURRENT ? 4 : 0), value);
     else if (slot == ASTAT_GOLD)
@@ -52,7 +96,7 @@ static void astat_write(u8 *mobile, u32 slot, u32 value)
 
 static int astat_float(u32 slot)
 {
-    return slot < ASTAT_GOLD || slot >= ASTAT_SKILL;
+    return slot < ASTAT_GOLD || (slot >= ASTAT_SKILL && slot < ASTAT_FLAGS);
 }
 
 /* The entry for refid; a new one takes a free slot, else one with nothing kept. */
@@ -87,15 +131,14 @@ static u32 astat_slot(u32 refid)
 
 /* Attributes and skills through their Set commands, which keep the dependent statistics in step,
  * then the exact values; the rest directly. */
-static void astat_apply(u32 i, u8 *mobile, u8 *ref, u32 limit)
+static void astat_apply(u32 i, u8 *mobile, u8 *ref, int npc)
 {
     u32 slot, pass;
     float value;
 
     for (pass = 0; pass < 2; pass++)
-        for (slot = 0; slot < limit; slot++) {
-            if (!astats[i].pending[slot] || (slot >= ASTAT_ATTRIBUTE_CURRENT && slot < ASTAT_GOLD) !=
-                                                (pass == 1))
+        for (slot = 0; slot < ASTAT_SLOTS; slot++) {
+            if (!astats[i].pending[slot] || !astat_has(slot, npc) || astat_current(slot) != (pass == 1))
                 continue;
             if (astat_float(slot)) {
                 copy((u8 *)&value, (const u8 *)&astats[i].kept[slot], 4);
@@ -105,7 +148,8 @@ static void astat_apply(u32 i, u8 *mobile, u8 *ref, u32 limit)
                 }
                 if (slot < ASTAT_ATTRIBUTE_CURRENT && astat_read(mobile, slot) != astats[i].kept[slot])
                     player_set(ref, "Set", attribute_names[slot], round_int(value));
-                else if (slot >= ASTAT_SKILL && astat_read(mobile, slot) != astats[i].kept[slot])
+                else if (slot >= ASTAT_SKILL && slot < ASTAT_CREATURE &&
+                         astat_read(mobile, slot) != astats[i].kept[slot])
                     player_set(ref, "Set", skill_names[slot - ASTAT_SKILL], round_int(value));
             }
             astat_write(mobile, slot, astats[i].kept[slot]);
@@ -122,7 +166,8 @@ static void astat_apply(u32 i, u8 *mobile, u8 *ref, u32 limit)
 static void astats_frame(const u8 *mobile_in, u8 *ref, u32 refid, int mine)
 {
     u8 *mobile = (u8 *)mobile_in, data[EVENT_DATA];
-    u32 e = astat_slot(refid), limit = is_npc(ref) ? ASTAT_SLOTS : ASTAT_SKILL, slot, n, value;
+    int npc = is_npc(ref);
+    u32 e = astat_slot(refid), slot, n, value;
     u32 changed[ASTAT_SLOTS], count = 0, chunk, k;
 
     if (aeff_busy(refid))
@@ -133,26 +178,30 @@ static void astats_frame(const u8 *mobile_in, u8 *ref, u32 refid, int mine)
         for (slot = 0; slot < ASTAT_SLOTS; slot++)
             astats[e].pending[slot] = astats[e].known[slot];
     }
-    for (slot = 0, n = 0; slot < limit; slot++)
-        n |= astats[e].pending[slot];
+    for (slot = 0, n = 0; slot < ASTAT_SLOTS; slot++)
+        n |= astats[e].pending[slot] && astat_has(slot, npc);
     if (n) {
-        astat_apply(e, mobile, ref, limit);
-        for (slot = 0; slot < limit; slot++)
-            astats[e].read[slot] = astat_read(mobile, slot);
+        astat_apply(e, mobile, ref, npc);
+        for (slot = 0; slot < ASTAT_SLOTS; slot++)
+            if (astat_has(slot, npc))
+                astats[e].read[slot] = astat_read(mobile, slot);
         astats[e].fresh = 0;
         return;
     }
     if (astats[e].fresh) {
-        for (slot = 0; slot < limit; slot++)
-            astats[e].read[slot] = astat_read(mobile, slot);
+        for (slot = 0; slot < ASTAT_SLOTS; slot++)
+            if (astat_has(slot, npc))
+                astats[e].read[slot] = astat_read(mobile, slot);
         astats[e].fresh = 0;
         return;
     }
-    for (slot = 0; slot < limit; slot++) {
+    for (slot = 0; slot < ASTAT_SLOTS; slot++) {
+        if (!astat_has(slot, npc))
+            continue;
         value = astat_read(mobile, slot);
         if (value == astats[e].read[slot])
             continue;
-        if (mine || slot == ASTAT_GOLD)
+        if (mine || slot == ASTAT_GOLD || slot == ASTAT_FLAGS)
             changed[count++] = slot;
         else
             astats[e].read[slot] = value;
@@ -203,7 +252,7 @@ static void astats_event(const struct event *e)
 }
 
 /* tes3xnet astat 0xREFID SLOT [VALUE]: a slot of a loaded actor's mobile, written if VALUE is
- * given (for exec scripts: barter gold has no command). */
+ * given, as a whole number (for exec scripts: barter gold has no command). */
 static void astat_query(const char *text)
 {
     u32 refid = 0, slot = 0, value = 0, digit, i;
@@ -229,8 +278,14 @@ static void astat_query(const char *text)
             sign = -1;
             text++;
         }
-        if (number(text, &value))
-            astat_write((u8 *)mobile, slot, (u32)((int)value * sign));
+        if (number(text, &value)) {
+            shown = (float)((int)value * sign);
+            if (astat_float(slot))
+                copy((u8 *)&value, (const u8 *)&shown, 4);
+            else
+                value = (u32)((int)value * sign);
+            astat_write((u8 *)mobile, slot, value);
+        }
     }
     value = astat_read(mobile, slot);
     tes3x_log_hex3("net.astat", refid, slot, value);

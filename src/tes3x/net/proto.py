@@ -614,12 +614,14 @@ REST_HOURS_MAX = 24 * 7
 
 # What an actor's mobile holds beyond ACTOR: refid, count, then ACTOR_STAT (slot, raw value). Slots
 # 0-7 attribute base, 8-15 attribute current (f32), 16 barter gold (i32), 17 corpse hourstamp,
-# 18-44 skill base (f32, NPCs). The cell's authority sends a change; any console sends barter
+# 18-44 skill base (f32, NPCs), 45-47 creature combat/magic/stealth base, 48-50 their current
+# (f32, creatures), 51-77 skill current (f32, NPCs), 78 the talked-to and attacked flags, 79 the byte at +0x224 (-1,
+# or 3 once the killing was a crime). The cell's authority sends a change; any console sends barter
 # gold, since the player trading may follow the merchant. The server keeps the latest of each,
 # relays it and replays all after WELCOME; each console applies them to the actor once loaded.
 EVENT_ACTOR_STATS = 44
 ACTOR_STAT = struct.Struct("<HI")
-ACTOR_STAT_SLOTS = 45
+ACTOR_STAT_SLOTS = 80
 ACTOR_STAT_GOLD = 16
 ACTOR_STATS_PER_EVENT = (EVENT_DATA - 5) // ACTOR_STAT.size
 ACTOR_STATS_MAX = 16384  # values kept in all
