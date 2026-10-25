@@ -750,7 +750,7 @@ def engine_bindings(xbe, sources):
         define("NET_EXIT_TEXT_SITE", hexva(image.off_to_va(quits[0].start() + 6)))
         define("NET_QUIT", hexva(quit))
         for name, key in (("MARKER_ID", "map-marker-id"), ("DOOR_REF_ID", "map-door-ref-id"),
-                           ("PARENT_ID", "map-parent-id"), ("PIXELS", "map-pixels"),
+                           ("PARENT_ID", "map-parent-id"), ("CELL_ID", "map-cell-id"), ("PIXELS", "map-pixels"),
                           ("TAGGED_ID", "map-tagged-id"),
                            ("SET_X", "map-set-x"), ("SET_Y", "map-set-y"),
                            ("UPDATE_SITE", "map-local-player-site")):

@@ -2648,6 +2648,10 @@ DOOR_MARKER_SIG = re.compile(
     rb"\x89\x44\x24.\x52\xe8....\x8b\xf0\x6a\x03\x8b\xce\xe8....\x6a\x03\x8b\xce\xe8...."
     rb"\x6a\x10\xb8\xbd\x80\xff\xff\x50\x33\xc0\x66\xa1(....)\x8b\xce\x50\xe8...."
     rb"\x33\xc9\x66\x8b\x0d(....)\x6a\x08\x55\x51\x8b\xce\xe8....", re.S)
+# After the door reference: the cell pointer is loaded and stored under the cell-data id.
+MARKER_CELL_SIG = re.compile(
+    rb"\x8b\x54\x24.\x8b\x42\x04\x8b\x4c\x24.\x8b\x44\x08\x04\x8b\x44\x18\x10"
+    rb"\x33\xd2\x66\x8b\x15(....)\x6a\x08", re.S)
 # The call that ends updateMapRender: updateLocalPlayer(menu, 0, 0, 0xFFFF80BD, menu).
 LOCAL_PLAYER_SITE_SIG = re.compile(
     rb"\x6a\x01\x8b\xce\xe8....\x53\x55\x55\x68\xbd\x80\xff\xff\x53(\xe8....)", re.S)
@@ -2661,8 +2665,12 @@ def find_door_marker(x):
     m = DOOR_MARKER_SIG.match(bytes(x.data), at + 5)
     if m is None:
         raise PatchError("door marker setup: layout not recognised")
+    cell = MARKER_CELL_SIG.match(bytes(x.data), m.end())
+    if cell is None:
+        raise PatchError("door marker setup: cell data property not recognised")
     return {"marker": struct.unpack("<I", m.group(1))[0],
-            "door-ref": struct.unpack("<I", m.group(2))[0]}
+            "door-ref": struct.unpack("<I", m.group(2))[0],
+            "cell": struct.unpack("<I", cell.group(1))[0]}
 
 
 # updateMapRender's lookup of the rectangle that holds the door markers, by its id global.
@@ -2742,6 +2750,7 @@ LOCATORS = {
     "map-marker-id": lambda image: find_door_marker(image)["marker"],
     "map-door-ref-id": lambda image: find_door_marker(image)["door-ref"],
     "map-local-player-site": find_local_player_site,
+    "map-cell-id": lambda image: find_door_marker(image)["cell"],
     "map-parent-id": find_marker_parent_id,
     "map-pixels": find_map_pixels,
     "map-tagged-id": find_marker_tagged_id,

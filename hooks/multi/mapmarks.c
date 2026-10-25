@@ -26,6 +26,7 @@ typedef void(__cdecl *fn_map_update_local)(void *menu, u32 id, u32 a, u32 b, voi
 #define MAP_SCALE 0x200
 #define MAP_VISIBLE 0x7E /* Element: shown */
 #define MAP_DOOR_LIST 0x44 /* the door reference's attachment list */
+#define MAP_DOOR_COPY 0x80
 #define MAP_NAME_SLOT 8 /* vtable +0x20 */
 #define MAP_ATTACH_DESTINATION 5
 
@@ -41,10 +42,10 @@ static struct {
     const void *next;
     const void *data;
 } map_node[PEERS];
-static struct {
-    u32 pad[MAP_DOOR_LIST / 4];
-    const void *attachments;
-} map_door[PEERS];
+/* A copy of a real door reference with our attachment list, so every engine walk of the marker
+ * reads valid fields. */
+static u32 map_door[PEERS][MAP_DOOR_COPY / 4];
+static u32 map_base[MAP_DOOR_COPY / 4], map_cell, map_have_base;
 static char map_names[PEERS][IDENTITY_TEXT];
 static const void *map_vtable[MAP_NAME_SLOT + 1];
 
@@ -81,7 +82,7 @@ static void map_tables(void)
         map_holder[i] = &map_object[i];
         map_node[i].type = MAP_ATTACH_DESTINATION;
         map_node[i].data = &map_holder[i];
-        map_door[i].attachments = &map_node[i];
+        map_door[i][MAP_DOOR_LIST / 4] = (u32)&map_node[i];
     }
 }
 
@@ -93,6 +94,31 @@ static int map_ours(void *marker, u32 slot)
         marker, scratch, ENGINE_ID(TES3X_NET_MAP_DOOR_REF_ID), MAP_PROP_POINTER, 0, 0);
 
     return plausible(value) && *value == (u32)&map_door[slot];
+}
+
+/* The first marker that is not ours is a door's: take its reference and cell. */
+static void map_template(void *parent)
+{
+    u32 scratch[4], i;
+    void *t = ((fn_map_find_child)TES3X_NET_FIND_CHILD)(parent, ENGINE_ID(TES3X_NET_MAP_MARKER_ID));
+    const u32 *ref, *cell;
+
+    if (!plausible(t))
+        return;
+    for (i = 0; i < PEERS; i++)
+        if (map_ours(t, i))
+            return;
+    ref = ((fn_map_get_prop)TES3X_NET_GET_PROP)(t, scratch, ENGINE_ID(TES3X_NET_MAP_DOOR_REF_ID),
+                                                 MAP_PROP_POINTER, 0, 0);
+    if (!plausible(ref) || !plausible((const void *)*ref))
+        return;
+    cell = ((fn_map_get_prop)TES3X_NET_GET_PROP)(t, scratch, ENGINE_ID(TES3X_NET_MAP_CELL_ID),
+                                                  MAP_PROP_POINTER, 0, 0);
+    if (!plausible(cell))
+        return;
+    copy((u8 *)map_base, (const u8 *)*ref, MAP_DOOR_COPY);
+    map_cell = *cell;
+    map_have_base = 1;
 }
 
 static const char *map_peer_name(u32 client)
@@ -136,6 +162,7 @@ static void map_refresh(void *menu)
     }
     if (logged < 4)
         tes3x_log_hex3("net.map_parent", 0x10 + logged++, (u32)menu, (u32)parent);
+    map_template(parent);
     for (i = 0; i < PEERS; i++) {
         name = 0;
         if (peers[i].client && map_have_local && ghost_pose(i, &p, older, &frac) &&
@@ -146,7 +173,13 @@ static void map_refresh(void *menu)
                 ((fn_map_set_visible)TES3X_NET_SET_VISIBLE)(map_marker[i], 0);
             continue;
         }
+        if ((!map_marker[i] || !map_ours(map_marker[i], i)) && !map_have_base)
+            continue;
         if (!map_marker[i] || !map_ours(map_marker[i], i)) {
+            u32 keep = map_door[i][MAP_DOOR_LIST / 4];
+
+            copy((u8 *)map_door[i], (const u8 *)map_base, MAP_DOOR_COPY);
+            map_door[i][MAP_DOOR_LIST / 4] = keep;
             map_marker[i] = ((fn_map_create_image)TES3X_NET_CREATE_IMAGE)(
                 parent, ENGINE_ID(map_flags & 32 ? TES3X_NET_MAP_TAGGED_ID : TES3X_NET_MAP_MARKER_ID),
                 "textures\\door_icon.tga", 0);
@@ -165,6 +198,8 @@ static void map_refresh(void *menu)
                 ((fn_map_set_prop)TES3X_NET_SET_PROP)(map_marker[i],
                                                       ENGINE_ID(TES3X_NET_MAP_DOOR_REF_ID),
                                                       (int)&map_door[i], MAP_PROP_POINTER);
+            ((fn_map_set_prop)TES3X_NET_SET_PROP)(map_marker[i], ENGINE_ID(TES3X_NET_MAP_CELL_ID),
+                                                  (int)map_cell, MAP_PROP_POINTER);
             /* Tagged: MenuMap::tagMarker leaves it alone, and no door takes it over. */
             if (!(map_flags & 4))
                 ((fn_map_set_prop)TES3X_NET_SET_PROP)(

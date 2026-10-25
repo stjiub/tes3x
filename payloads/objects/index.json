@@ -272,6 +272,7 @@
     "NET_LOAD_ID": null,
     "NET_MAGIC_INSTANCE": null,
     "NET_MAGIC_PROCESS": null,
+    "NET_MAP_CELL_ID": null,
     "NET_MAP_DOOR_REF_ID": null,
     "NET_MAP_MARKER_ID": null,
     "NET_MAP_PARENT_ID": null,
@@ -614,8 +615,8 @@
       "sha256": "b68114f21bad5b7dc46927db712ed5e21478a7c40353a2a6267e27efcada39c7"
     },
     "tes3xmulti.c": {
-      "digest": "c01a99874545713595ff3fa7095be17354ce65eda8c0ff8cdc4a899ad7aebac1",
-      "sha256": "f9972caec46cdc5459c4aa100bd540a55c9c5ded5124fafd50529904c43f927a"
+      "digest": "db0ccc13eea05e0876d25db25aa753f8e401046545daa3be250d5cf6a30522db",
+      "sha256": "5655f451c2965be0c03e5ba9382233427985edbd435f4c075558f3832e59ffe3"
     },
     "tes3xmwse.c": {
       "digest": "3f4e6710ffb849b75ed2a51273bb38f13ed3079aa63cd41abcd2e7af9897e2ad",
