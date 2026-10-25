@@ -502,6 +502,14 @@ def seven_zip():
     return None
 
 
+def check_inside(target, path, archive, name):
+    """Refuse an archive entry that would land outside target (`..`, drive letters, links)."""
+    root = Path(os.path.abspath(target))
+    path = Path(os.path.abspath(path))
+    if root != path and root not in path.parents or path.is_symlink():
+        raise LibraryError(f"{archive.name}: unsafe path {name}")
+
+
 def extract_archive(archive, target):
     """Unpack a mod archive into target, which must not exist yet."""
     archive, target = Path(archive), Path(target)
@@ -509,8 +517,7 @@ def extract_archive(archive, target):
     if archive.suffix.lower() == ".zip":
         with zipfile.ZipFile(archive) as stream:
             for member in stream.namelist():
-                if Path(member).is_absolute() or ".." in Path(member).parts:
-                    raise LibraryError(f"{archive.name}: unsafe path {member}")
+                check_inside(target, target / member, archive, member)
             stream.extractall(target)
         return target
     tool = seven_zip()
@@ -520,6 +527,12 @@ def extract_archive(archive, target):
                             capture_output=True, text=True)
     if result.returncode:
         raise LibraryError(f"{archive.name}: 7-Zip failed: {result.stderr.strip()}")
+    try:
+        for path in target.rglob("*"):
+            check_inside(target, path, archive, path.relative_to(target))
+    except LibraryError:
+        shutil.rmtree(target, ignore_errors=True)
+        raise
     return target
 
 

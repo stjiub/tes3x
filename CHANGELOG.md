@@ -4,6 +4,9 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- Downloads are verified: `tes3x xemu-setup` refuses an xemu build whose SHA-256 differs from the
+  one GitHub lists, and the portable folder's Python is pinned like its 7-Zip. Mod archives
+  (`.zip`, `.7z`, `.rar`) that would write outside their folder are refused.
 - GUI: the Content workspace is now the **Builds** tab of **Server**, beside **Multiplayer**.
   Its "Start content server with multiplayer server" option reads "Share builds when the
   multiplayer server starts". See [the GUI guide](docs/gui.md#server).

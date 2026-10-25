@@ -37,13 +37,14 @@ def disasm(x, va, length):
     if off is None:
         raise SystemExit("VA 0x%08X is not backed by file data" % va)
     blob = bytes(x.data[off:off + length])
-    tmp = tempfile.mkdtemp()
-    raw, obj = os.path.join(tmp, "w.bin"), os.path.join(tmp, "w.o")
-    open(raw, "wb").write(blob)
-    subprocess.run([OBJCOPY, "-I", "binary", "-O", "elf32-i386",
-                    "--rename-section=.data=.text,code", raw, obj], check=True)
-    out = subprocess.run([OBJDUMP, "-d", "--no-show-raw-insn", obj],
-                         capture_output=True, text=True, check=True).stdout
+    with tempfile.TemporaryDirectory() as tmp:
+        raw, obj = os.path.join(tmp, "w.bin"), os.path.join(tmp, "w.o")
+        with open(raw, "wb") as stream:
+            stream.write(blob)
+        subprocess.run([OBJCOPY, "-I", "binary", "-O", "elf32-i386",
+                        "--rename-section=.data=.text,code", raw, obj], check=True)
+        out = subprocess.run([OBJDUMP, "-d", "--no-show-raw-insn", obj],
+                             capture_output=True, text=True, check=True).stdout
     for line in out.splitlines():
         m = re.match(r"^\s+([0-9a-f]+):\s+(.*)$", line)
         if not m:

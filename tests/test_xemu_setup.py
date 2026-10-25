@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 from tes3x.xemu import xemu_config  # noqa: E402
-from tes3x.xemu_setup import find_files, release_asset, resolve  # noqa: E402
+from tes3x.xemu_setup import check_digest, find_files, release_asset, resolve  # noqa: E402
 
 
 class XemuSetupTests(unittest.TestCase):
@@ -56,6 +56,16 @@ class XemuConfigTests(unittest.TestCase):
         nat = self.config(net_nat=True)
         self.assertIn("[net]\nenable = true\nbackend = 'nat'", nat)
         self.assertNotIn("[net.udp]", nat)
+
+    def test_download_must_match_the_listed_digest(self):
+        import hashlib
+        data = b"xemu"
+        good = {"name": "xemu.zip", "digest": "sha256:" + hashlib.sha256(data).hexdigest()}
+        check_digest(good, data)
+        with self.assertRaises(ValueError):
+            check_digest(good, b"other")
+        with self.assertRaises(ValueError):
+            check_digest({"name": "xemu.zip"}, data)
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ own console into the folder.
 """
 
 import argparse
+import hashlib
 import io
 import json
 import os
@@ -92,6 +93,16 @@ def get(url):
         return response.read()
 
 
+def check_digest(asset, data):
+    """Refuse a download that does not match the SHA-256 GitHub lists for the release asset."""
+    algorithm, _, expected = (asset.get("digest") or "").partition(":")
+    if algorithm != "sha256" or not expected:
+        raise ValueError(f"{asset['name']}: the release lists no SHA-256 to check it against")
+    actual = hashlib.sha256(data).hexdigest()
+    if actual != expected:
+        raise ValueError(f"{asset['name']}: SHA-256 {actual}, expected {expected}")
+
+
 def fetch_clean_hdd(path, url=CLEAN_HDD_URL):
     """Download xemu's blank formatted HDD image to path; return its size."""
     archive = zipfile.ZipFile(io.BytesIO(get(url)))
@@ -119,6 +130,7 @@ def download_xemu(folder):
     if asset is None:
         raise ValueError(f"xemu {release.get('tag_name')} has no build for this system")
     data = get(asset["browser_download_url"])
+    check_digest(asset, data)
     if asset["name"].endswith(".zip"):
         archive = zipfile.ZipFile(io.BytesIO(data))
         for member in archive.infolist():

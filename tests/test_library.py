@@ -1,6 +1,7 @@
 import sys
 import subprocess
 import tempfile
+import shutil
 import unittest
 import zipfile
 from pathlib import Path
@@ -271,6 +272,13 @@ class InstallTests(unittest.TestCase):
         with self.assertRaises(LibraryError):
             extract_archive(archive, self.root / "out")
         self.assertFalse((self.root / "evil.esp").exists())
+        for name in ("/abs.esp", "a/../../evil.esp"):
+            archive = self.root / "bad2.zip"
+            with zipfile.ZipFile(archive, "w") as stream:
+                stream.writestr(name, "x")
+            with self.assertRaises(LibraryError, msg=name):
+                extract_archive(archive, self.root / "out2")
+            shutil.rmtree(self.root / "out2", ignore_errors=True)
 
 
 if __name__ == "__main__":

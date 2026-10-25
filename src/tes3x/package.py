@@ -16,10 +16,12 @@ from tes3x.paths import checkout, data_dir
 
 ROOT = checkout()
 PYTHON = "3.12.9"
-EMBED_URL = "https://www.python.org/ftp/python/{0}/python-{0}-embed-amd64.zip"
+EMBED_ZIP = f"python-{PYTHON}-embed-amd64.zip"
 SEVEN_ZIP = "26.03"
 SEVEN_ZIP_URL = "https://github.com/ip7z/7zip/releases/download/26.03/"
 DOWNLOADS = {
+    EMBED_ZIP: (f"https://www.python.org/ftp/python/{PYTHON}/{EMBED_ZIP}",
+                "615861fb801e8b04c847598db4e1e46e4b046295017caa37cb5486dde72b5865"),
     "7zr.exe": (SEVEN_ZIP_URL + "7zr.exe",
                 "ad4c82fadcbdf93c03b4fc440f300509c7d60c5c2f4d183e35d9d70d6957037d"),
     "7z2603-x64.exe": (SEVEN_ZIP_URL + "7z2603-x64.exe",
@@ -135,14 +137,7 @@ def externals(target, dash=True):
 
 
 def embedded_python(target, package):
-    cache = cache_dir() / f"python-{PYTHON}-embed-amd64.zip"
-    if not cache.is_file():
-        cache.parent.mkdir(parents=True, exist_ok=True)
-        print(f"downloading Python {PYTHON}")
-        with urllib.request.urlopen(EMBED_URL.format(PYTHON), timeout=120) as response:
-            data = response.read()
-        cache.with_suffix(".part").write_bytes(data)
-        os.replace(cache.with_suffix(".part"), cache)
+    cache = download(EMBED_ZIP)
     with zipfile.ZipFile(cache) as archive:
         archive.extractall(target)
     # The embedded build takes sys.path only from this file, which leaves out site-packages.
