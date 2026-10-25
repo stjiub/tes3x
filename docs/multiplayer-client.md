@@ -28,20 +28,21 @@ New Game and Load relaunch the title; the console leaves and joins again by itse
 prints `rejoined`. If the server stops answering for 15 seconds, the console says the connection is
 lost and keeps reconnecting; after 60 seconds it offers the main menu.
 
-The main menu is the engine's own, with a hint line under it: **Black** is Join, and **White** starts
-the [TES3X Dash](deployment.md#installing-tes3x-dash) once it is installed. Join opens a list of the
+The main menu is the engine's own, with a hint line under it: **White** starts
+the [TES3X Dash](deployment.md#installing-tes3x-dash) once it is installed. New is hidden, since a game played
+alone is not part of multiplayer, and **Load** is Join. Load opens a list of the
 servers this console knows: the one `NetServer` names and those in `U:\TES3X\servers.ini`, newest first. Choose one
 to connect without loading a game; the server lists that console's characters with "New
 character", and the chosen character is sent and loaded, joining the same server. **New Server**
 opens the keyboard to type an address or name, with `:PORT` when it is not 26500 (the `!?#` key
-has `.` and `:`), and joins it. Join needs neither `NetServer` nor `NetAddress` (it asks DHCP for
+has `.` and `:`), and joins it. The list needs neither `NetServer` nor `NetAddress` (it asks DHCP for
 an address). A join that fails says why on the server's row: no answer, no network address, name
 not found, different mods, server full, kicked, banned or server key changed; a server that wants a
-password raises the keyboard for it. New and Load from the main menu still play alone.
+password raises the keyboard for it.
 
-While joined, the pause menu has no Save, Load or Exit: its hint line offers **Black**, Save to
-Server, which flushes the character state and waits for confirmation, and **White**, Leave, which
-flushes to the server and quits after confirmation. A local save is not the server's character.
+While joined, the pause menu has no New or Save. **Exit** asks "Leave the server? Your character is saved there
+first.", flushes to the server and quits after confirmation; **Load** asks to leave the same way, then
+returns to the main menu with the server list open. A local save is not the server's character.
 
 ## Saving and character state
 
@@ -98,11 +99,12 @@ one (a timer that counts days, a script waiting to move someone once you leave),
 keeps it with its progress; if you leave or the server restarts, another player's game, or
 yours on your next join, carries it on from where it was.
 
-**Save to Server** flushes every supported character field and your current place. The server
-confirms the save after writing the character and world. **Leave** in combat first waits out the server's countdown (10 s by default; damage cancels it). Then it waits for that confirmation
-before quitting; after 30 seconds without confirmation, you can choose to leave anyway or stay.
-The server also receives changes while you play, but use Save to Server or Leave to confirm
-they have been stored. The admin must enable world storage to keep characters after a restart.
+Exit (and Load, which leaves to pick another server) flushes every supported character field and your
+current place. The server confirms the save after writing the character and world. In combat it first
+waits out the server's countdown (10 s by default; damage cancels it). Then it waits for that
+confirmation before quitting; after 30 seconds without confirmation, you can choose to leave anyway
+or stay. The server also receives changes while you play, and leaving is what confirms they have
+been stored. The admin must enable world storage to keep characters after a restart.
 
 Active effects resume with their remaining duration when you join again; time spent offline
 does not count. Bound effects also retain the equipment they displaced.

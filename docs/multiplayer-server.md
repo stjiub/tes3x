@@ -88,9 +88,9 @@ equipment, level, attributes, skills and their current modifiers, active effects
 health, magicka and fatigue as they change, and who the character is: name, race, sex, head, hair,
 birthsign and class, including a class made in character creation. The server keeps the latest
 supported state in `stream.json`. It also keeps where the player last was, so a crash or power cut
-loses at most about one polling interval of supported state. Save to Server flushes every supported
+loses at most about one polling interval of supported state. Exit flushes every supported
 character field and the current place through the reliable queue. The server acknowledges the
-snapshot after writing the character and world. Leave waits for that acknowledgement before
+snapshot after writing the character and world. Exit waits for that acknowledgement before
 quitting; after 30 seconds without confirmation, the player chooses to leave anyway or stay.
 
 World and character state files are replaced atomically. The server retries brief Windows

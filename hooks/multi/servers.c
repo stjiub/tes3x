@@ -42,8 +42,6 @@
 #define LIST_ALIGN_Y 0.88f /* the list is taller than the menu's own rows */
 #define PAD_BLACK 1u
 #define PAD_WHITE 2u
-#define PAD_MAIN 1u
-#define PAD_PAUSE 2u
 typedef void *(__attribute__((thiscall)) *fn_find_child)(void *widget, u32 id);
 typedef void *(__attribute__((thiscall)) *fn_create_block)(void *parent, u32 id, int a0);
 typedef void *(__attribute__((thiscall)) *fn_create_rect)(void *parent, u32 id, int a0, int a1);
@@ -74,7 +72,7 @@ static const float gold[3] = {0.88f, 0.74f, 0.42f}, gold_lit[3] = {1.0f, 0.93f, 
 static char servers[SERVERS_SHOWN][JOIN_NAME + 1];
 static u32 servers_n, servers_view, join_buttons, joins_pressed, menu_height, menu_width;
 static float menu_align;
-static u32 pad_keys, pad_mode; /* the buttons the hint line offers now, and for what */
+static u32 pad_keys; /* the buttons the hint line offers now */
 static int server_chosen = -1; /* a row, SERVER_NEW or SERVER_RETURN, from a click handler */
 static u32 typing;             /* the keyboard is up, for TYPE_SERVER or TYPE_PASSWORD */
 #define TYPE_SERVER 1u
@@ -498,7 +496,7 @@ static void servers_show(u8 *menu, u32 on)
         hint_set(menu, 0, 0);
     for (i = 0; i < MENU_ROWS; i++)
         if (plausible(part = menu_part(menu, main_rows[i])))
-            visible(part, !on);
+            visible(part, !on && i);
     if (plausible(part = menu_part(menu, "TES3X_ServerBox")))
         visible(part, on);
     if (plausible(part = menu_part(menu, "TES3X_NewServer"))) {
@@ -535,7 +533,7 @@ static void servers_show(u8 *menu, u32 on)
     ((fn_layout)TES3X_NET_PERFORM_LAYOUT)(menu, 1);
     if (tes3x_still_refresh)
         tes3x_still_refresh();
-    part = on ? (first ? first : (n ? shown[0] : 0)) : menu_part(menu, "MenuOptions_New_container");
+    part = on ? (first ? first : (n ? shown[0] : 0)) : menu_part(menu, "MenuOptions_Load_container");
     if (plausible(part))
         ((fn_set_focus)TES3X_NET_SET_FOCUS)(part, 1);
 }
@@ -934,7 +932,6 @@ static void join_frame(void)
     int chosen;
 
     pad_keys = 0;
-    pad_mode = 0;
     if (player_reference())
         return; /* a game is loaded: Load and New relaunch, and the pause menu has no Join */
     if (!plausible(menu = ((fn_find_menu)TES3X_NET_FIND_MENU)(ui_id("MenuOptions"))))
@@ -943,12 +940,19 @@ static void join_frame(void)
         exit = menu_part(menu, "MenuOptions_Exit_container");
         if (!plausible(exit) || !plausible(column = *(u8 **)(exit + UI_PARENT)))
             return;
-        /* Join is the pad's Black; this hidden element is what a script's click reaches */
+        /* a hidden element a script's click reaches */
         if (plausible(button = ((fn_create_block)TES3X_NET_CREATE_BLOCK)(
                           column, ui_id("TES3X_Join"), 0))) {
             ((fn_set_prop)TES3X_NET_SET_PROP)(button, UI_CLICK, (int)join_click, UI_PROP_HANDLER);
             ((fn_set_visible)TES3X_NET_SET_VISIBLE)(button, 0);
         }
+        /* Load is Join, and a game played alone has no New */
+        if (plausible(button = menu_part(menu, "MenuOptions_Load_container"))) {
+            ((fn_set_prop)TES3X_NET_SET_PROP)(button, UI_CLICK, (int)join_click, UI_PROP_HANDLER);
+            ((fn_set_visible)TES3X_NET_SET_VISIBLE)(button, 1);
+        }
+        if (plausible(button = menu_part(menu, "MenuOptions_New_container")))
+            ((fn_set_visible)TES3X_NET_SET_VISIBLE)(button, 0);
         menu_height = *(const int *)(menu + UI_HEIGHT);
         menu_width = *(const int *)(menu + UI_WIDTH);
         tes3x_ini_xbox("Dash", "", dash_path, sizeof(dash_path));
@@ -961,10 +965,12 @@ static void join_frame(void)
         if (typing || servers_view || lobby) {
             pad_keys = PAD_BLACK | PAD_WHITE; /* nothing here is for the hint's buttons */
         } else {
-            pad_keys = PAD_BLACK;
-            pad_mode = PAD_MAIN;
-            hint_set(menu, " Join server   ", dash_path[0] ? " Dash" : 0);
+            hint_set(menu, 0, dash_path[0] ? " Dash" : 0);
         }
+    }
+    if (open_list && menu[MENU_VISIBLE]) {
+        open_list = 0;
+        server_chosen = SERVER_OPEN;
     }
     if (typing) {
         typing_frame(menu);

@@ -739,6 +739,15 @@ def engine_bindings(xbe, sources):
                    for p in pushed):
             raise PayloadError(f"quit callback {quit:#x} does not launch D:\\Default.xbe")
         define("NET_QUIT_SITE", hexva(quit_site))
+        # MenuOptions::open's last call, after the layout the ui-scale hook wraps: the help layer's
+        # lookup. Called before the menu is first drawn.
+        options_tail = find_options_scale(image) + 0xF
+        if image.data[image.va_to_off(options_tail) - 1] != 0x52:
+            raise PayloadError("MenuOptions::open: no help layer call after the options layout")
+        define("NET_OPEN_TAIL_SITE", hexva(options_tail + 1))
+        define("NET_OPEN_TAIL", hexva(tes3x_inject.call_target(image, options_tail)))
+        # the call just before it fetches GMST 0x266, the Exit box's text
+        define("NET_EXIT_TEXT_SITE", hexva(image.off_to_va(quits[0].start() + 6)))
         define("NET_QUIT", hexva(quit))
         define("NET_MENU_GATE", hexva(locate("menu-mode-gate")))
         define("NET_MOB_GATE", hexva(locate("mob-update-gate")))

@@ -4,6 +4,16 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- Multiplayer: the pause menu while joined no longer flashes the stock menu before it changes. It
+  has no New or Save; Exit leaves the server after saving to it, with a box that says so instead
+  of "unsaved progress will be lost", and Load asks to leave and returns to the main menu with
+  the server list open. The separate Save to Server and Leave buttons (Black and White) are gone.
+- Multiplayer: the main menu has no New, since a game played alone is not part of multiplayer;
+  Load opens the server list that Black used to open. White still starts the Dash.
+
+- The main menu still is cleaner: it averages the first second of the menu video instead of
+  one frame, so the picture no longer shows the video's compression blocks. Rebuild to get it.
+
 - The GUI can run several commands at once, each in its own output tab. Deploying a built
   profile to a second Xbox no longer waits for the first upload to finish, and logs or saves on
   one target no longer wait for another's deploy. A profile still runs one build, check or

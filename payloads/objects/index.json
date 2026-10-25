@@ -225,6 +225,7 @@
     "NET_ENGINE_PATH": null,
     "NET_EQUIP_ITEM": null,
     "NET_EXIT_ID": null,
+    "NET_EXIT_TEXT_SITE": null,
     "NET_EXTERIOR_CHANGE": null,
     "NET_FACTION_LOAD": null,
     "NET_FILL_BAR": null,
@@ -283,6 +284,8 @@
     "NET_NODE_UPDATE_PROPERTIES": null,
     "NET_NPC_SET_AI": null,
     "NET_NPC_SET_AI_SLOT": null,
+    "NET_OPEN_TAIL": null,
+    "NET_OPEN_TAIL_SITE": null,
     "NET_PERFORM_LAYOUT": null,
     "NET_PERSIST_DISPLAY": null,
     "NET_PLAYER_ACTIVATE_SITES": 1,
@@ -599,8 +602,8 @@
       "sha256": "b68114f21bad5b7dc46927db712ed5e21478a7c40353a2a6267e27efcada39c7"
     },
     "tes3xmulti.c": {
-      "digest": "2aa586195a1087dd36d36f09cd73efcf6a8a7b09e8f2ba4731cbece89f2cd4ba",
-      "sha256": "3bb7f4bc2013ffe8985d2fdbd4c77b3930541191fe9c63a2b67af30d10636fd8"
+      "digest": "3d518808bf2f99a1535b30e833b5406a68bc79ba139fbe1a1625ecf8226dc594",
+      "sha256": "7e6e78ea092f05064acf930471683548935e217eba245b3289293fb06d20420a"
     },
     "tes3xmwse.c": {
       "digest": "3f4e6710ffb849b75ed2a51273bb38f13ed3079aa63cd41abcd2e7af9897e2ad",

@@ -23,6 +23,10 @@ static char load_name[BULK_NAME + 1];
  * CHAR_MAGIC and the file's name, which the [PreLoad] read writes into the player. */
 #define CHAR_MAGIC 0x434D3354u /* "T3MC", also the file's first four bytes */
 #define CHAR_AT 0x300u
+/* Leaving the server from the pause menu's Load relaunches into the main menu with the server
+ * list open. */
+#define LIST_MAGIC 0x4C4D3354u /* "T3ML" */
+static u32 open_list, leave_switch;
 #define LAUNCH_BYTES 0xC00u /* what XLaunchNewImage copies */
 #define CHAR_SUFFIX ".t3c"
 typedef u32(__attribute__((stdcall)) *fn_launch)(const char *xbe, void *data);
@@ -71,6 +75,10 @@ void tes3x_multi_entry(void)
     if (!page || *(const u32 *)page != 0)
         return;
     data = page + LAUNCH_DATA;
+    if (*(const u32 *)data == LIST_MAGIC) {
+        open_list = 1;
+        return;
+    }
     if (*(const u32 *)data != BXWM_MAGIC)
         return;
     if (*(const u32 *)(data + JOIN_AT) == JOIN_MAGIC) {
@@ -221,9 +229,25 @@ static float leave_combat_health;
 static int world_idle(void);
 static u32 server_saves, server_saves_failed;
 
+/* The engine's relaunch, with a marker that has the main menu open its server list. */
+static void relaunch_list(void)
+{
+    static u8 data[LAUNCH_BYTES];
+    const u8 *world = *(const u8 **)TES3X_NET_WORLD, *pads;
+
+    if (!plausible(world) || !plausible(pads = *(const u8 *const *)(world + 0x4C)))
+        return;
+    *(u32 *)data = LIST_MAGIC;
+    ((u32 *)data)[1] = *(const u32 *)(pads + 0x804);
+    ((fn_persist)TES3X_NET_PERSIST_DISPLAY)();
+    tes3x_log("net.leave_list", ((fn_launch)TES3X_NET_LAUNCH)((const char *)TES3X_NET_ENGINE_PATH, data));
+}
+
 static unsigned char quit(void)
 {
     log_text("net.leave", leave_state == LEAVE_ASK ? "without the server's copy" : "saved");
+    if (leave_switch)
+        relaunch_list();
     return ((fn_quit)TES3X_NET_QUIT)();
 }
 
@@ -261,10 +285,18 @@ unsigned char __cdecl tes3x_net_quit(void)
     return 1;
 }
 
+/* Leave as Exit does, then come back to the main menu's server list. */
+static void leave_to_list(void)
+{
+    leave_switch = 1;
+    tes3x_net_quit();
+}
+
 static void save_to_server(void)
 {
     if (ses.state != SESSION_JOINED || leave_state)
         return;
+    leave_switch = 0;
     if (player_dead) {
         notice("You cannot save while dead.");
         return;
@@ -275,6 +307,34 @@ static void save_to_server(void)
     leave_quits = 0;
     leave_idle = 0;
 }
+
+/* The Exit box's text says unsaved progress is lost; joined, Exit saves to the server first. */
+typedef const char *(__attribute__((thiscall)) *fn_exit_gmst)(void *game, u32 index);
+
+static const char *__attribute__((thiscall)) exit_text(void *game, u32 index)
+{
+    if (ses.state == SESSION_JOINED)
+        return "Leave the server? Your character is saved there first.";
+    return ((fn_exit_gmst)TES3X_NET_GMST_TEXT)(game, index);
+}
+
+static void exit_text_install(void)
+{
+    u32 cr0, flags, *site = (u32 *)TES3X_NET_EXIT_TEXT_SITE;
+
+    if (*site + (u32)site + 4 != TES3X_NET_GMST_TEXT) {
+        tes3x_log_hex3("net.call_site_unexpected", (u32)site, *site, TES3X_NET_GMST_TEXT);
+        return;
+    }
+    flags = lock();
+    __asm__ volatile("movl %%cr0, %0" : "=r"(cr0));
+    __asm__ volatile("movl %0, %%cr0" : : "r"(cr0 & ~CR0_WP) : "memory");
+    *site = (u32)exit_text - ((u32)site + 4);
+    __asm__ volatile("movl %0, %%cr0" : : "r"(cr0) : "memory");
+    unlock(flags);
+}
+
+static void open_tail_install(void);
 
 static void quit_hook_install(void)
 {
@@ -294,6 +354,8 @@ static void quit_hook_install(void)
     __asm__ volatile("movl %0, %%cr0" : : "r"(cr0) : "memory");
     unlock(flags);
     quit_hooked = 2;
+    exit_text_install();
+    open_tail_install();
 }
 
 static void leave_ask(const char *why)
@@ -324,6 +386,7 @@ static void leave_frame(void)
         if (!mobile || !plausible(mobile) || *(const float *)(mobile + MOBILE_HEALTH) <
                                                  leave_combat_health - 0.5f) {
             leave_state = 0;
+            leave_switch = 0;
             leaves_cancelled++;
             notice("Leaving cancelled: you were hurt.");
             tes3x_log_hex3("net.leave_cancelled", leaves_cancelled, 0, 0);
@@ -391,6 +454,7 @@ static void leave_frame(void)
             leaves_stayed++;
         }
         leave_state = 0;
+        leave_switch = 0;
     }
 }
 
