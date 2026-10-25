@@ -19,6 +19,7 @@ Generated from [`nav.toml`](nav.toml) by `tes3x docs --write`; edit that file, n
 - [Running in xemu](xemu.md): Set up xemu to play profiles or run them from scripts.
 - [Diagnostics and profiling](diagnostics.md): A patched build can record what it does, time engine functions and count where memory goes.
 - [Add-ons](addons.md): Add-ons are optional parts of TES3X for particular setups.
+- [Linux](linux.md): TES3X is developed on Windows and is meant to run on Linux too.
 
 ## Multiplayer
 
