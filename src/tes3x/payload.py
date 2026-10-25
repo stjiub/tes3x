@@ -25,7 +25,7 @@ from tes3x.paths import bundled, checkout, resource
 from tes3x.patch_sites import (find_topic_state, find_mcp6_context, find_mcp30_context,
                                find_mcp55_context,
                                find_mcp55_inventory_context, find_mcp118_drop_finish,
-                               find_mcp149_menu, find_lazy_dialogue_sites)
+                               find_mcp149_menu, find_lazy_dialogue_sites, find_pool_grow_sites)
 from tes3x.patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, archive_load_site,
                          find_call_sites, find_item_tooltip, find_levelup_scale, find_menu_area_scale,
                          find_message_scale, find_name_scale, find_options_scale,
@@ -1257,6 +1257,12 @@ def engine_bindings(xbe, sources):
         wanted["region_reserve"] = ("@tes3x_region_reserve@12",)
         wanted["region_carve"] = ("_tes3x_region_carve_hook",)
         wanted["region_release"] = ("@tes3x_region_release@12",)
+    if "tes3xpoolgrow.c" in names:
+        pools = find_pool_grow_sites(image)
+        print(f"pool-grow: exhaustion check {hexva(pools['exhausted_call'])}, "
+              f"pool constructor {hexva(pools['pool_ctor'])}")
+        define("POOL_CTOR", hexva(pools["pool_ctor"]))
+        wanted["pool_grow"] = ("_tes3x_pool_grow_hook",)
     if "tes3xconsole.c" in names:
         print("console hook: keyboard and print sites located by content")
         for name, default in CONSOLE_ADDRESSES:

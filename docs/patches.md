@@ -78,3 +78,4 @@ single required/not-required flag.
 | [Paged dialogue link names](../patches/info-name-arena.md) | `info-name-arena` | Page INFO's temporary ID, previous and next names outside the engine heap. | TES3X | compat | dev | By name |
 | [Direct response topic lookup](../patches/dialogue-owner.md) | `dialogue-owner` | Find a response's topic directly instead of searching every topic's responses. | TES3X | performance | dev | By name |
 | [Topic responses built on first use](../patches/lazy-dialogue.md) | `lazy-dialogue` | Load topic responses as file references and build a topic's responses when it is first asked. | TES3X | compat | dev | By name |
+| [Growing small-block pools](../patches/pool-grow.md) | `pool-grow` | Add another pool when a small-block size class fills, instead of giving each further block a header in the heap. | TES3X | compat | dev | By name |

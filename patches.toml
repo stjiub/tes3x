@@ -744,3 +744,13 @@ source = "tes3xlazydialogue.c"
 requires = ["dialogue-merge"]
 ini = { LazyDialogue = "on" }
 summary = "Load topic responses as file references and build a topic's responses when it is first asked."
+
+[[patch]]
+name = "pool-grow"
+title = "Growing small-block pools"
+bit = 59
+category = "compat"
+channel = "dev"
+selection = "preset"
+source = "tes3xpoolgrow.c"
+summary = "Add another pool when a small-block size class fills, instead of giving each further block a header in the heap."
