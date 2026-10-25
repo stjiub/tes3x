@@ -16,9 +16,9 @@ The hook (`hooks/tes3xdashbutton.c`) runs right after the engine builds its menu
 holding the Black and White icons and their text, in the gold of the server list's text, under the
 last button, grows the menu by one line and moves the main menu a little lower. The menu is
 widened while the line shows. The console patch reports the pad's Black and White each frame, and
-pressing White while the menu is up starts the Dash. The patch needs `boot-clear` and `menu-still`,
-which are turned on with it: a build that offers a way back to the Dash is one that starts without
-the retail launcher.
+pressing White while the menu is up starts the Dash. The patch needs `boot-clear`,
+which is turned on with it: a build that offers a way back to the Dash is one that starts without
+the retail launcher. `menu-still` is separate and can be turned off.
 
 ## Configuration
 

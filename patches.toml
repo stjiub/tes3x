@@ -631,7 +631,7 @@ category = "qol"
 channel = "dev"
 selection = "preset"
 source = "tes3xdashbutton.c"
-requires = ["boot-clear", "menu-still"]
+requires = ["boot-clear"]
 ini = { Dash = "" }
 summary = "Add a hint line to the main and pause menus: White leaves for the Dash."
 
@@ -655,7 +655,7 @@ category = "infrastructure"
 channel = "dev"
 selection = "preset"
 source = "tes3xmulti.c"
-requires = ["net", "boot-clear", "menu-still", "dash-button"]
+requires = ["net", "boot-clear", "dash-button"]
 ini = { NetServer = "", NetPassword = "", Dash = "" }
 summary = "Join a TES3X server from [Xbox] NetAddress and exchange player states every frame."
 
