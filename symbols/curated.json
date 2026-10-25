@@ -170,6 +170,26 @@
       "provenance": "flushes the buffer (0x00012F80) then fseeks unless the target lies inside the read buffer"
     },
     {
+      "va": "0x000150A0",
+      "name": "CVBHeap::CVBHeap",
+      "confidence": "verified",
+      "provenance": "initialises the CVBHeap fields; XPhysicalAlloc of the size in ebx (0xF80000 at 0x00013549)"
+    },
+    {
+      "va": "0x00015100",
+      "name": "CVBHeap::Allocate",
+      "confidence": "verified",
+      "provenance": "profiler string \"CVBHeap::Allocate\"",
+      "note": "Texture/vertex-buffer arena. Heap: +0 limit, +4 bump, +8 peak, +0xC base, +0x10 align, +0x24 free list, +0x2C overflow total, +0x30 failure callback. Full arena: XPhysicalAlloc per block at 0x0001516E, header size negated."
+    },
+    {
+      "va": "0x00015320",
+      "name": "CVBHeap::Free",
+      "confidence": "verified",
+      "provenance": "profiler string \"CVBHeap::Free\"",
+      "note": "Negative header size: overflow block, XPhysicalFree and +0x2C reduced."
+    },
+    {
       "va": "0x000166D0",
       "name": "NiXBoxRenderer::create",
       "confidence": "guess",
