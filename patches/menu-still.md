@@ -12,7 +12,8 @@ See the [patch table](../docs/patches.md) for availability and selection.
 
 ## How it works
 
-The build tool takes the first frame of the retail `mw_menu.bik` with `ffmpeg` and stages it as
+The build tool averages the first second of the retail `mw_menu.bik` with `ffmpeg`, which removes
+the video's compression blocks, and stages it as
 `Data Files\Textures\tes3x_menu_still.raw`. When the main menu opens, the hook
 (`hooks/tes3xmenustill.c`) waits for the graphics hardware to finish, paints the picture into
 both display buffers and stops the engine's per-frame colour clear while the menu is up. Starting
