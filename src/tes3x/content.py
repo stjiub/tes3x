@@ -1019,7 +1019,7 @@ class ContentServer(netbuild.BuildServer):
 def serving_lock(state):
     """An exclusive lock held while a server hosts this state; None if another holds it."""
     Path(state).mkdir(parents=True, exist_ok=True)
-    stream = open(Path(state) / "serving.lock", "a+b")
+    stream = open(Path(state) / "serving.lock", "a+b")  # noqa: SIM115
     try:
         if os.name == "nt":
             import msvcrt

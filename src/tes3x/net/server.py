@@ -806,7 +806,7 @@ class Incoming:
         part = self.path + ".part"
         have = os.path.getsize(part) if os.path.exists(part) else 0
         self.next = min(have, size) // BULK_CHUNK
-        self.stream = open(part, "r+b" if have else "wb")
+        self.stream = open(part, "r+b" if have else "wb")  # noqa: SIM115
         self.stream.truncate(self.next * BULK_CHUNK)
         self.stream.seek(self.next * BULK_CHUNK)
         self.first = self.next

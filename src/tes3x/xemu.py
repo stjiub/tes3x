@@ -847,7 +847,7 @@ def main():
             time.sleep(3)  # let xemu open the stub's port
             handler = crash_handler(iso, deploy)
             print(f"gdb: crash handler {handler:#x}" if handler else "gdb: no link map; no crash stop")
-            gdb_log = open(out / "gdb.txt", "w")
+            gdb_log = open(out / "gdb.txt", "w")  # noqa: SIM115
             debugger = gdb_session(a.gdb_script, a.gdb_port, handler, a.gdb_set, gdb_log)
         shots = sorted(a.shot)
         captured = False

@@ -113,7 +113,7 @@ def write_bsa(out_path, files, base=None, progress=None, drop=()):
         f.write(struct.pack(f"<{count*2}I", *table))
         for h, *_ in recs:
             f.write(struct.pack("<2I", *h))
-        src_fh = open(base.path, "rb") if base else None
+        src_fh = open(base.path, "rb") if base else None  # noqa: SIM115
         for i, (h, kind, ref, size) in enumerate(recs):
             if kind == "base":
                 src_fh.seek(base.data_start + ref)

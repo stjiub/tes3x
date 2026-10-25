@@ -139,7 +139,7 @@ class CowView:
 
 class Qcow2:
     def __init__(self, path):
-        self.f = open(path, "rb")
+        self.f = open(path, "rb")  # noqa: SIM115
         h = self.f.read(72)
         if h[:4] != MAGIC:
             raise ValueError("not a qcow2 image")

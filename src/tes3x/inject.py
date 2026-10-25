@@ -1,5 +1,6 @@
 """Inject an XBE section and rebuild its packed header tail."""
 
+from pathlib import Path
 import argparse
 import json
 import os
@@ -375,7 +376,7 @@ def rebase_hooks(manifest, base, vsize):
 
 def write_thunks(x, path, kernel_def):
     names = {}
-    for line in open(kernel_def, encoding="utf-8", errors="replace"):
+    for line in Path(kernel_def).read_text(encoding="utf-8", errors="replace").splitlines():
         m = re.match(r"\s+(\w+)(?:@\d+)?\s+@\s+(\d+)", line)
         if m:
             names[int(m.group(2))] = m.group(1)
@@ -393,7 +394,7 @@ def write_thunks(x, path, kernel_def):
 
 def kernel_names(kernel_def):
     names = {}
-    for line in open(kernel_def, encoding="utf-8", errors="replace"):
+    for line in Path(kernel_def).read_text(encoding="utf-8", errors="replace").splitlines():
         m = re.match(r"\s+(\w+)(?:@\d+)?\s+@\s+(\d+)", line)
         if m:
             names[int(m.group(2))] = m.group(1)
@@ -417,7 +418,7 @@ def call_target(x, va):
 
 def inject(xbe, payload, out, name=".tes3xhk", hook_entry=False, patch_calls=()):
     """Add a linked payload as a new section of xbe and write the result to out."""
-    raw = open(xbe, "rb").read()
+    raw = Path(xbe).read_bytes()
     x = Xbe(raw)
     va = x.next_va()
     blob, vsize, entry_rva, imgbase = load_pe(payload, base=va)
@@ -452,7 +453,7 @@ def inject(xbe, payload, out, name=".tes3xhk", hook_entry=False, patch_calls=())
             print("  FAIL: %s" % p)
         raise ValueError("refusing to write a corrupted XBE")
     print("  verified: headers, section data and refcount sharing preserved")
-    open(out, "wb").write(blob_out)
+    Path(out).write_bytes(blob_out)
     print("  wrote %s (%d bytes)" % (out, len(blob_out)))
 
 
@@ -477,7 +478,7 @@ def main():
                     help="print the VA an existing `call rel32` reaches, then exit")
     a = ap.parse_args()
 
-    x = Xbe(open(a.xbe, "rb").read())
+    x = Xbe(Path(a.xbe).read_bytes())
     print("%s: base 0x%08X entry 0x%08X (%s) thunk 0x%08X sections %d"
           % (a.xbe, x.base, x.entry, x.kind, x.thunk, len(x.sections)))
 

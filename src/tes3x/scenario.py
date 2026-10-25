@@ -189,7 +189,7 @@ def start_agent(spec, folder, timeout, env, workspace):
         listen.append("--exit")
     processes = []
     for name, cmd in (("serve", serve), ("agent", listen)):
-        out = open(folder.with_name(f"{folder.name}.{name}.txt"), "w")
+        out = open(folder.with_name(f"{folder.name}.{name}.txt"), "w")  # noqa: SIM115
         processes.append((subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT,
                                            cwd=workspace, env=env), out))
     build = ["--ini-set", "Xbox:NetAddress=dhcp",
@@ -290,7 +290,7 @@ def main():
                *spec.get("xemu", DEFAULT_XEMU), *xemu_extra,
                "--", *build_flags(spec, a.patch, role), *build_extra]
         print(f"== {role}: {' '.join(cmd[1:])}", flush=True)
-        out = open(runs / f"{prefix}-{role}.out", "w")
+        out = open(runs / f"{prefix}-{role}.out", "w")  # noqa: SIM115
         procs[role] = (subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT,
                                        cwd=workspace, env=env), out)
     agent_codes = {}

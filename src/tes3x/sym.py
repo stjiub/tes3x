@@ -763,7 +763,7 @@ SEED_MANUAL = [
 def cmd_seed(a):
     """Import addresses the patcher resolves by signature, plus documented sites."""
     import tes3x.patch as P
-    x = Xbe(open(a.image, 'rb').read())
+    x = Xbe(Path(a.image).read_bytes())
     cur = load_curated()
     by_va = {int(r['va'], 16): r for r in cur['records']}
 
@@ -833,7 +833,7 @@ def cmd_names(a):
             if not fn.endswith(('.h', '.hpp', '.cpp')):
                 continue
             files += 1
-            text = open(os.path.join(dp, fn), encoding='utf-8', errors='ignore').read()
+            text = Path(os.path.join(dp, fn)).read_text(encoding='utf-8', errors='ignore')
             for p in pats:
                 for m in p.finditer(text):
                     va = int(m.group(2), 16)
@@ -918,7 +918,7 @@ def cmd_annotate(a):
 
 def cmd_commands(a):
     from tes3x import script_commands as sc
-    text = sc.dumps(sc.generate(Xbe(open(a.image, 'rb').read())))
+    text = sc.dumps(sc.generate(Xbe(Path(a.image).read_bytes())))
     if not a.write:
         print(text, end='')
         return

@@ -1,5 +1,6 @@
 """Read MCP catalogue and patch records against the original PC executable."""
 
+from pathlib import Path
 import argparse
 import json
 import os
@@ -40,7 +41,7 @@ class Pe:
     """Just enough PE to map an RVA to file data."""
 
     def __init__(self, path):
-        self.data = bytearray(open(path, "rb").read())
+        self.data = bytearray(Path(path).read_bytes())
         pe = struct.unpack_from("<I", self.data, 0x3C)[0]
         if self.data[pe:pe + 4] != b"PE\0\0":
             raise SystemExit("%s is not a PE image" % path)
@@ -72,7 +73,7 @@ class Pe:
 
 def load_catalogue():
     path = os.path.join(MW, "mcpatch", "describe.json")
-    cats = json.load(open(path, encoding="utf-8"))
+    cats = json.load(open(path, encoding="utf-8"))  # noqa: SIM115
     by_id = {}
     for c in cats:
         for p in c["patches"]:
@@ -92,7 +93,7 @@ def load_records():
     if not cand:
         raise SystemExit("no mcpatch/<sha256>/patch found under %s" % root)
     # every copy observed is byte-identical; take the largest
-    blob = open(max(cand, key=os.path.getsize), "rb").read()
+    blob = Path(max(cand, key=os.path.getsize)).read_bytes()
     groups = {}
     o = 0
     while o + 12 <= len(blob):
@@ -107,7 +108,7 @@ def installed_ids():
     path = os.path.join(MW, "mcpatch", "installed")
     if not os.path.isfile(path):
         return None
-    blob = open(path, "rb").read()
+    blob = Path(path).read_bytes()
     if blob[:4] != b"MCP2":
         return None
     return {struct.unpack_from("<I", blob, o)[0]

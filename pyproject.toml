@@ -34,7 +34,7 @@ Homepage = "https://github.com/stjiub/tes3x"
 extend-exclude = ["addons", "src/tes3x/_vendor"]
 
 [tool.ruff.lint]
-select = ["F", "E722", "B", "UP"]
+select = ["F", "E722", "B", "UP", "SIM115"]  # SIM115: a leaked file handle
 ignore = [
     "B007",  # unused loop variable: unpacking names document the tuple
     "B023",  # closures here run inside their own iteration

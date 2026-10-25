@@ -1,5 +1,6 @@
 """Apply content-located patches to a retail Morrowind XBE."""
 
+from pathlib import Path
 from types import SimpleNamespace
 import argparse
 import hashlib
@@ -1749,7 +1750,7 @@ def main():
             raise SystemExit("duplicate --apply %r" % name)
         seen.add(name)
 
-    raw = open(a.xbe, "rb").read()
+    raw = Path(a.xbe).read_bytes()
     if a.digest:
         print(retail_digest(raw))
         return
@@ -1823,7 +1824,7 @@ def main():
     print("\n  verified: %d byte(s) changed in the original image, headers intact"
           % sum(n for _, n in touched))
     if a.out:
-        open(a.out, "wb").write(out)
+        Path(a.out).write_bytes(out)
         print("  wrote %s (%d bytes)" % (a.out, len(out)))
     else:
         print("  (no --out; nothing written)")

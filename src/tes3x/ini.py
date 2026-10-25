@@ -1,5 +1,6 @@
 """Recover Morrowind.ini sections, keys, and defaults from retail XBE call sites."""
 
+from pathlib import Path
 import argparse
 import collections
 import re
@@ -61,7 +62,7 @@ def main():
     ap.add_argument("--all", action="store_true", help="list the bulk sections too")
     a = ap.parse_args()
 
-    x = Xbe(open(a.xbe, "rb").read())
+    x = Xbe(Path(a.xbe).read_bytes())
     sections, computed = scan(x)
     total = sum(len(v) for v in sections.values())
     print("%d sections, %d keys; %d call sites compute their section or key"

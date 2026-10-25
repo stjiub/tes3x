@@ -1,5 +1,6 @@
 """Measure Morrowind save records, changed references, and inventories."""
 
+from pathlib import Path
 import argparse
 import collections
 import os
@@ -55,7 +56,7 @@ def poison_references(path, out, cell_name=None, from_index=1, to_index=0xFF):
     if not 0 <= from_index <= 0xFF or not 0 <= to_index <= 0xFF:
         raise ValueError("reference indices must fit one byte")
 
-    data = bytearray(open(path, "rb").read())
+    data = bytearray(Path(path).read_bytes())
     record_off = 0
     cells = 0
     patched = 0

@@ -6,6 +6,7 @@ the folder's TitleMeta.xbx and TitleImage.xbx must be in place before a pooled b
 tes3xpool.txt beside them names the pool, which tells a TES3X pool from another title's folder.
 """
 
+from pathlib import Path
 import zlib
 
 from tes3x.inject import Xbe
@@ -32,7 +33,7 @@ def folder(value):
 
 
 def title_image(xbe_path):
-    x = Xbe(open(xbe_path, "rb").read())
+    x = Xbe(Path(xbe_path).read_bytes())
     for s in x.sections:
         if s.name == "$$XTIMAGE":
             return bytes(x.data[s.raw:s.raw + s.rsize])

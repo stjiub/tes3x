@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Parse an Xbox XBE: header, certificate, sections, strings."""
 
+from pathlib import Path
 import argparse
 import re
 import struct
@@ -56,7 +57,7 @@ def main():
     ap.add_argument("--strings", metavar="REGEX", help="search printable strings")
     args = ap.parse_args()
 
-    data = open(args.xbe, "rb").read()
+    data = Path(args.xbe).read_bytes()
     x = Xbe(data)
     cert = x.cert()
     entry, ekind = x.decode(x.raw_entry, ENTRY_XOR)

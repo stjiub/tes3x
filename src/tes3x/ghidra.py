@@ -123,7 +123,7 @@ def _start():
     cmd = [headless(), str(PROJECT_DIR), PROJECT, '-process', first, '-noanalysis', '-readOnly',
            '-scriptPath', str(SCRIPTS), '-postScript', 'Tes3xServe.java', str(port),
            str(IDLE)] + [f'{t}:{n}' for t, n in progs.items()]  # cmd.exe splits on =
-    log = open(PROJECT_DIR / 'serve.log', 'w')
+    log = open(PROJECT_DIR / 'serve.log', 'w')  # noqa: SIM115
     flags = 0x00000008 | 0x00000200 if os.name == 'nt' else 0  # detached, new process group
     p = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                          creationflags=flags, env=ghidra_env())

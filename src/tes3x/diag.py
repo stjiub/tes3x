@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Pull and summarize a TES3X hardware diagnostics log."""
 
+from pathlib import Path
 import argparse
 import re
 import sys
@@ -228,7 +229,7 @@ def main():
     else:
         with open(args.log, encoding="ascii", errors="replace") as f:
             text = f.read()
-    xbe = Xbe(open(args.xbe, "rb").read()) if args.xbe else None
+    xbe = Xbe(Path(args.xbe).read_bytes()) if args.xbe else None
     report(parse_log(text), xbe, args.all_sessions)
 
 

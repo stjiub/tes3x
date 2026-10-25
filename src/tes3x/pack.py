@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Pack exact-path assets into BSA and stage globbed files loose for deployment."""
 
+from pathlib import Path
 import argparse
 import json
 import ntpath
@@ -109,7 +110,7 @@ def main():
         ap.error('--no-archive and --delta-archive are alternatives')
     if args.loose_mod and not args.manifest:
         ap.error('--loose-mod needs --manifest')
-    stored = (json.loads(open(args.store_list, encoding="utf-8").read())
+    stored = (json.loads(Path(args.store_list).read_text(encoding="utf-8"))
               if args.store_list else [])
     if stored and not (args.delta_archive or args.no_archive):
         # Archives listed after Morrowind.bsa would override the mod assets merged into it.
@@ -232,7 +233,7 @@ def main():
 
     paths = ['Data Files/' + rel.replace('\\', '/') for rel, _ in loose]
     paths += ['Data Files/Morrowind.bsa', 'Morrowind.ini']
-    extra_archives = (json.loads(open(args.mod_archives, encoding="utf-8").read())
+    extra_archives = (json.loads(Path(args.mod_archives).read_text(encoding="utf-8"))
                       if args.mod_archives else [])
     # Loose files beat every archive, so the delta archive, which stands in for them, loads last;
     # store archives hold whole mods, including assets a later mod wins in the delta archive.
@@ -295,7 +296,6 @@ def main():
         os.utime(dst, (st.st_atime, st.st_mtime))
         copied += 1
 
-    from pathlib import Path
     from tes3x.plugins import validate_order, STAMP_BASE, STAMP_STEP
     plugins = {ntpath.basename(rel).lower(): Path(out_df, *rel.split("\\"))
                for rel, _ in loose if is_plugin(rel)}
@@ -317,7 +317,7 @@ def main():
 
     ini_src = args.ini or os.path.join(os.path.dirname(args.vanilla.rstrip("/\\")), "Morrowind.ini")
     if os.path.isfile(ini_src):
-        text = open(ini_src, encoding="latin-1").read()
+        text = Path(ini_src).read_text(encoding="latin-1")
         if args.archive_only:
             text = set_ini_key(text, "General", "TryArchiveFirst", 1)
         elif staged_loose:
@@ -339,7 +339,7 @@ def main():
                 raise SystemExit(f"--ini-set wants SECTION:KEY=VALUE, got {item!r}")
             text = set_ini_key(text, section.strip(), key.strip(), value)
             edits.append(f"[{section.strip()}] {key.strip()}={value}")
-        open(os.path.join(args.out, "Morrowind.ini"), "w", encoding="latin-1").write(text)
+        Path(os.path.join(args.out, "Morrowind.ini")).write_text(text, encoding="latin-1")
         print(f"  Morrowind.ini staged"
               f"{' with TryArchiveFirst=1' if args.archive_only else ''}")
         for e in edits:
