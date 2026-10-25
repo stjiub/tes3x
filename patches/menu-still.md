@@ -23,6 +23,9 @@ buffer, whenever the menu shows or hides something.
 
 ## Compatibility and limits
 
+- An engine started directly never plays the menu video, so without this patch its main menu
+  sits on black. Builds that start directly (`dash-button`, `multiplayer`, the overlay layout)
+  include it; it is optional only where the vanilla `Default.xbe` launcher runs first.
 - The build tool needs `ffmpeg` on the `PATH` and the retail `mw_menu.bik`. Without either, the
   patch is inert and the logo movie plays as usual.
 - The picture is fitted to the screen's height and centred, with black bars beside it on a
