@@ -225,6 +225,10 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(install_layout(base), (["Wrapper/Data Files"], ["Wrapper/Data Files"]))
         self.assertEqual(install_layout(self.tree("mod.esp")), (["."], ["."]))
 
+    def test_layout_accepts_an_animations_only_mod(self):
+        base = self.tree("Wrapper/Animations/xbase_anim/dodge.kf", "Wrapper/scripts/a.lua")
+        self.assertEqual(install_layout(base), (["Wrapper"], ["Wrapper"]))
+
     def test_layout_offers_option_folders_with_core_chosen(self):
         base = self.tree("Mod/00 Core/mod.esp", "Mod/01 Extra/textures/a.dds", "Mod/docs/r.txt")
         self.assertEqual(install_layout(base), (["Mod/00 Core", "Mod/01 Extra"], ["Mod/00 Core"]))

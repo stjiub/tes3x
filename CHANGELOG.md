@@ -4,6 +4,8 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- Mod library: the GUI installs mods that ship only an `Animations` folder, such as Can't Touch
+  This, so enabling it in a profile builds its dodge patch.
 - Multiplayer: the pause menu while joined no longer flashes the stock menu before it changes. It
   has no New or Save; Exit leaves the server after saving to it, with a box that says so instead
   of "unsaved progress will be lost", and Load asks to leave and returns to the main menu with

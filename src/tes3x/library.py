@@ -430,7 +430,7 @@ def available_plugins(selection, find_data_root=lambda path: path):
 
 
 DATA_DIRS = {"meshes", "textures", "icons", "sound", "bookart", "splash", "fonts", "video",
-             "music", "mwse", "distantland", "shaders"}
+             "music", "mwse", "distantland", "shaders", "animations"}
 DATA_FILES = (".esm", ".esp", ".bsa")
 ARCHIVES = (".zip", ".7z", ".rar")
 NEXUS_NAME = re.compile(r"^(?P<name>.+?)-(?P<id>\d+)-(?P<version>\d+(?:-\d+)*)-\d{9,}$")
