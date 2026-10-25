@@ -402,3 +402,15 @@ class DriveSpaceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProgressLineTests(unittest.TestCase):
+    def test_round_trip_and_rejects(self):
+        from tes3x.deploy import emit_progress, parse_progress
+        buffer = io.StringIO()
+        with patch("sys.stdout", buffer):
+            emit_progress("upload", 5, 10, "bytes", "meshes/a b.nif")
+        self.assertEqual(parse_progress(buffer.getvalue().strip()),
+                         ("upload", 5, 10, "bytes", "meshes/a b.nif"))
+        self.assertIsNone(parse_progress("  upload 5/10"))
+        self.assertIsNone(parse_progress("@progress upload x 10 bytes"))

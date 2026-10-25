@@ -4,6 +4,9 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- The GUI shows a deploy's upload as a progress bar in the status bar (size, speed, time left)
+  instead of a log line a second. The command line output is unchanged.
+
 - Multiplayer: a player in combat who presses Leave now waits `--combat-leave` seconds (default 10)
   before the save and quit begin, so leaving cannot end a fight. Taking damage cancels the leave,
   and leaving combat ends the wait early; `0` leaves at once. See

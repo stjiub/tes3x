@@ -4,17 +4,17 @@ from html import escape
 
 from .common import (Bsa, BuildSettings, CATALOG_NAME, CHECK_MARKER, CatalogError, DEPLOYS_MARKER,
                      DEPLOY_CONFLICT, DEPLOY_NO_SPACE, IniPanel, LibraryError,
-                     LocalSettingsDialog, PIPELINE_MARKER, PLUGIN_EXT, PROFILE_NAME, Path,
+                     LocalSettingsDialog, PIPELINE_MARKER, PLUGIN_EXT, PROFILE_NAME, PROGRESS_ENV, Path,
                      PipelineError, QAction, QActionGroup, QApplication, QComboBox, QDialog,
                      QFileDialog, QHBoxLayout, QInputDialog, QLabel, QMainWindow, QMenu,
-                     QMessageBox, QProcess, QScrollArea, QSettings, QSplitter, QStackedWidget,
+                     QMessageBox, QProcess, QProcessEnvironment, QScrollArea, QSettings, QSplitter, QStackedWidget,
                      QTabBar, QTabWidget, QTextBrowser, QTextCursor, QTextEdit, QTimer,
                      QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget, Qt, ROLE,
                      ServerPage, Signal, StatusBar, TEMPLATE, TargetsPage, WARNING, XEMU_STARTED,
                      argparse, convert_profile, datetime, default_config_path, defaultdict,
                      discover_library, dot_icon, drop_empty, enabled_addons, heartbeat_text,
                      index_library, ini_text, json, launch, load_catalog, load_library,
-                     menu_button, new_table, play_icon, plugin_header, sha256_file, shutil,
+                     menu_button, new_table, parse_progress, play_icon, plugin_header, sha256_file, shutil,
                      stop_icon, struct, sys, target_capabilities, target_runtime_label,
                      tes3x_targets, tomlkit, tomllib, validate_profile, version_label)
 from .saves import SavesTab
@@ -53,6 +53,7 @@ class ProfileWindow(QMainWindow):
         self.catalog = {}
         self.library_indexed = False
         self.process = None
+        self.partial_line = ""
         self.play_controller.plays = {}  # target name -> PlaySession; xemu targets run side by side
         self.play_controller.ftp_probes = {}
         self.play_controller.agent_probes = {}
@@ -1695,10 +1696,12 @@ class ProfileWindow(QMainWindow):
     def start_command(self, program, arguments, message, environment=None, clear=True):
         if clear:
             self.output.clear()
+        self.partial_line = ""
         process = QProcess(self)
         process.setWorkingDirectory(str(self.work_dir()))
-        if environment is not None:
-            process.setProcessEnvironment(environment)
+        environment = QProcessEnvironment(environment or QProcessEnvironment.systemEnvironment())
+        environment.insert(PROGRESS_ENV, "1")
+        process.setProcessEnvironment(environment)
         process.setProgram(sys.executable)
         process.setArguments(launch(program, arguments))
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
@@ -1720,7 +1723,7 @@ class ProfileWindow(QMainWindow):
         if self.process is None:
             return
         text = bytes(self.process.readAllStandardOutput()).decode(errors="replace")
-        shown = text.replace("\r\n", "\n").replace("\r", "\n")
+        shown = self.filter_progress(text.replace("\r\n", "\n").replace("\r", "\n"))
         self.output.moveCursor(QTextCursor.MoveOperation.End)
         self.output.insertPlainText(shown)
         if XEMU_STARTED in text:
@@ -1739,8 +1742,26 @@ class ProfileWindow(QMainWindow):
             else:
                 self.statusBar().showMessage("Playing in xemu")
 
+    def filter_progress(self, text):
+        """Route `@progress` lines to the status bar; return the rest for the log."""
+        text = self.partial_line + text
+        lines = text.split("\n")
+        self.partial_line = lines.pop()
+        shown = []
+        for line in lines:
+            progress = parse_progress(line)
+            if progress is None:
+                shown.append(line + "\n")
+            else:
+                self.statusBar().show_progress(*progress)
+        return "".join(shown)
+
     def command_finished(self, code, _status):
         self.append_process_output()
+        if self.partial_line:
+            self.output.insertPlainText(self.partial_line)
+            self.partial_line = ""
+        self.statusBar().clear_progress()
         self.statusBar().showMessage(f"TES3X exited {code}", 5000)
         kind, self.command_kind = self.command_kind, None
         target, self.command_target = self.command_target, None

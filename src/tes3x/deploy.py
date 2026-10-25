@@ -316,6 +316,29 @@ def human(n):
         n /= 1024
 
 
+PROGRESS_ENV = "TES3X_PROGRESS"
+PROGRESS_PREFIX = "@progress "
+
+
+def emit_progress(stage, done, total, unit, name=""):
+    """One machine-readable line for a front end: `@progress STAGE DONE TOTAL UNIT [NAME]`."""
+    print(f"{PROGRESS_PREFIX}{stage} {done} {total} {unit} {name}".rstrip(), flush=True)
+
+
+def parse_progress(line):
+    """(stage, done, total, unit, name) from an `@progress` line, or None."""
+    if not line.startswith(PROGRESS_PREFIX):
+        return None
+    parts = line[len(PROGRESS_PREFIX):].strip().split(None, 4)
+    if len(parts) < 4:
+        return None
+    try:
+        done, total = int(parts[1]), int(parts[2])
+    except ValueError:
+        return None
+    return parts[0], done, total, parts[3], parts[4] if len(parts) > 4 else ""
+
+
 def upload_file(ftp, args, path, source, made, progress=None, retries=2):
     """Upload one file, reconnecting after a transient failure; return the usable FTP session."""
     for attempt in range(retries + 1):
@@ -864,10 +887,14 @@ def sync(args, target, base, local, built):
 
     transfers = assets + plugins
     staged = {}
+    machine = bool(os.environ.get(PROGRESS_ENV))
     for index, r in enumerate(transfers, 1):
         dst = posixpath.join(base, r)
         size = local[r][0]
-        print(f"  [{index}/{len(transfers)}] {r} ({human(size)})", flush=True)
+        if machine:
+            emit_progress("upload", sent, up_bytes, "bytes", r)
+        else:
+            print(f"  [{index}/{len(transfers)}] {r} ({human(size)})", flush=True)
         file_sent = 0
         last_progress = 0.0
 
@@ -879,10 +906,13 @@ def sync(args, target, base, local, built):
             file_sent += amount
             now = time.monotonic()
             if file_sent == size or now - last_progress >= 0.5:
-                elapsed = max(time.time() - t0, 1)
-                print(f"\r    {human(file_sent)}/{human(size)} · total "
-                      f"{human(sent + file_sent)}/{human(up_bytes)} · "
-                      f"{human((sent + file_sent) / elapsed)}/s   ", end="", flush=True)
+                if machine:
+                    emit_progress("upload", sent + file_sent, up_bytes, "bytes", r)
+                else:
+                    elapsed = max(time.time() - t0, 1)
+                    print(f"\r    {human(file_sent)}/{human(size)} · total "
+                          f"{human(sent + file_sent)}/{human(up_bytes)} · "
+                          f"{human((sent + file_sent) / elapsed)}/s   ", end="", flush=True)
                 last_progress = now
 
         if staging:
@@ -891,7 +921,8 @@ def sync(args, target, base, local, built):
             target.upload(staged.get(r, dst), local[r][2], progress)
         except RuntimeError as exc:
             sys.exit(str(exc))
-        print()
+        if not machine:
+            print()
         sent += local[r][0]
         if not staging and not target.set_time(dst, local[r][1]) and r in set(plugins):
             time.sleep(args.plugin_delay)

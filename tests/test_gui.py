@@ -783,6 +783,24 @@ order = 10
         window.process = None
         window.command_finished(0, None)
 
+    def test_progress_lines_feed_the_status_bar_not_the_log(self):
+        window = self.window()
+        with patch("tes3x.gui.window.QProcess"):
+            window.start_command("tool.py", [], "Working…")
+        window.process.readAllStandardOutput.return_value = (
+            b"uploading\n@progress upload 512 2048 bytes a/b.dds\n@progre")
+        window.append_process_output()
+        window.process.readAllStandardOutput.return_value = b"ss upload 1024 2048 bytes c.nif\nnext\n"
+        window.append_process_output()
+        self.assertEqual(window.output.toPlainText(), "uploading\nnext\n")
+        status = window.statusBar()
+        self.assertFalse(status.detail.isHidden())
+        self.assertEqual(status.bar.value(), 500)
+        self.assertIn("c.nif", status.detail.text())
+        window.process = None
+        window.command_finished(0, None)
+        self.assertTrue(status.bar.isHidden())
+
     def test_xbox_addon_deploys_then_starts_the_build(self):
         import hashlib
         import json

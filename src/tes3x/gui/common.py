@@ -35,7 +35,7 @@ try:
         QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
         QFileDialog, QFormLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
         QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox,
-        QProgressDialog, QPushButton, QScrollArea, QSpinBox, QSplitter, QStackedWidget, QStatusBar, QStyle,
+        QProgressBar, QProgressDialog, QPushButton, QScrollArea, QSpinBox, QSplitter, QStackedWidget, QStatusBar, QStyle,
         QTabBar, QTableView, QTabWidget, QTextBrowser, QTextEdit, QToolButton, QTreeWidget, QTreeWidgetItem,
         QVBoxLayout, QWidget,
     )
@@ -60,7 +60,7 @@ from tes3x.plugins import (BASE_MASTERS, collect, default_rules, dependency_orde
 from tes3x.pipeline import (CHECK_MARKER, DEPLOY_CONFLICT, DEPLOY_NO_SPACE, MARKER as PIPELINE_MARKER, PipelineError,
                             resolve_patch_plan, validate_local_config, validate_profile)
 from tes3x.records import records, subrecords
-from tes3x.deploy import parse_drives
+from tes3x.deploy import PROGRESS_ENV, human as human_size, parse_drives, parse_progress
 from tes3x.agent import (AgentListener, Fetch, OP_REBOOT, console_request, is_dash,
                          key_fingerprint, load_or_create_key)
 from tes3x.gui_pages import ServerPage, TargetsPage, fetch_destination
@@ -383,9 +383,45 @@ class StatusBar(QStatusBar):
         self.message = QLabel()
         self.addWidget(self.spinner)
         self.addWidget(self.message, 1)
+        self.bar = QProgressBar()
+        self.bar.setRange(0, 1000)
+        self.bar.setFixedWidth(180)
+        self.bar.setTextVisible(False)
+        self.bar.hide()
+        self.detail = QLabel()
+        self.detail.hide()
+        self.addWidget(self.bar)
+        self.addWidget(self.detail)
+        self.progress_start = None
         self.expiry = QTimer(self)
         self.expiry.setSingleShot(True)
         self.expiry.timeout.connect(self.message.clear)
+
+    def show_progress(self, stage, done, total, unit, name=""):
+        """Bar and `stage done/total · speed · ETA` beside the message; bytes are sized."""
+        now = time.monotonic()
+        if self.progress_start is None or self.progress_start[0] != stage or done < self.progress_start[1]:
+            self.progress_start = (stage, done, now)
+        _, first, began = self.progress_start
+        rate = (done - first) / (now - began) if now - began >= 1 else 0
+        size = human_size if unit == "bytes" else str
+        text = f"{stage} {size(done)}/{size(total)}"
+        if rate > 0:
+            text += f" · {size(rate)}/s"
+            if total > done:
+                seconds = int((total - done) / rate)
+                text += f" · ETA {seconds // 60}m{seconds % 60:02d}s"
+        if name:
+            text += f" · {name}"
+        self.bar.setValue(int(1000 * done / total) if total else 0)
+        self.detail.setText(text)
+        self.bar.show()
+        self.detail.show()
+
+    def clear_progress(self):
+        self.progress_start = None
+        self.bar.hide()
+        self.detail.hide()
 
     def showMessage(self, text, timeout=0):
         self.message.setText(text)
@@ -1747,7 +1783,9 @@ __all__ = [
     'nexus',
     'nexus_id',
     'os',
+    'PROGRESS_ENV',
     'parse_drives',
+    'parse_progress',
     'patch_spec',
     'play_icon',
     'plugin_header',
