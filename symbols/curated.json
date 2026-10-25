@@ -3171,14 +3171,15 @@
       "confidence": "matched",
       "provenance": "loader calls it on the existing record with a repeated one; same body as PC 0x004AFF10",
       "pc_va": "0x004AFF10",
-      "signature": "void __thiscall copy(TES3::DialogueInfo* from)"
+      "signature": "void __thiscall copy(TES3::DialogueInfo* from)",
+      "note": "The only caller is loadRecord's plugin override path (copy(src, true)); with true it copies the load-link names and dereferences both INFOs' +0x10 without a null check"
     },
     {
       "va": "0x000FF620",
       "name": "Dialogue::freeLoadNames",
       "confidence": "verified",
       "provenance": "engine-map step 3: decompiled and read",
-      "note": "Post-load pass, one call per topic from loadAllFiles: walks the INFO chain (+0x1C) and frees each INFO's 96-byte name buffer and its 12-byte header (INFO+0x10). Misses INFOs detached by a repeated DIAL merge."
+      "note": "Frees every INFO's load-link node (+0x10) and nulls it; after this pass nothing outside the destructor and findInfo reads +0x10"
     },
     {
       "va": "0x000FF680",
@@ -8788,6 +8789,111 @@
       "confidence": "verified",
       "provenance": "engine-map step 3: decompiled and read",
       "kind": "data"
+    },
+    {
+      "va": "0x000FDDE0",
+      "name": "Dialogue::saveRecord",
+      "confidence": "verified",
+      "provenance": "demand pager: decompiled and read",
+      "note": "Writes DIAL NAME and XIDX, then one INFO record (XNAM chain index, ACDT speaker ID) per modified INFO with firstHeardFrom set, walking the whole chain"
+    },
+    {
+      "va": "0x000FE130",
+      "name": "Dialogue::getInfoAtIndex",
+      "confidence": "verified",
+      "provenance": "demand pager: decompiled and read",
+      "note": "The save loader resolves an INFO by its XNAM chain index through this",
+      "signature": "TES3::DialogueInfo* __thiscall getInfoAtIndex(int index)"
+    },
+    {
+      "va": "0x000FE190",
+      "name": "Dialogue::countInfos",
+      "confidence": "verified",
+      "provenance": "demand pager: decompiled and read",
+      "signature": "int __thiscall countInfos()"
+    },
+    {
+      "va": "0x000FE390",
+      "name": "DialogueInfo::findDialogue",
+      "confidence": "verified",
+      "provenance": "demand pager: decompiled and read",
+      "note": "Walks every topic's INFO chain from NonDynamicData::dialogues until it meets info: about 110,000 nodes for full TR. Callers: setFirstHeardFrom 0x000FF590, resetModifiedInfos 0x000FF7C0, runScript 0x000FFCE0, the Choice condition (function 0x32) in filter 0x000FFEA0",
+      "signature": "TES3::Dialogue* __cdecl findDialogue(TES3::DialogueInfo* info)"
+    },
+    {
+      "va": "0x000FE3F0",
+      "name": "Dialogue::sortTopicsByNameLength",
+      "confidence": "verified",
+      "provenance": "demand pager: decompiled and read",
+      "note": "Bubble sort of NonDynamicData::dialogues, longest name first, stable (swaps on strictly longer). count-1 full passes with no early exit and two strlens per pair, so (n-1)*n visits: 50M for full TR's 7,070 topics. Updates the loading bar once per pass. loadAllFiles calls it unless exactly one non-master file loads; writeSaveFile only when +0xB380 is set, and the only direct write to +0xB380 is the constructor's zero"
+    },
+    {
+      "va": "0x000FE4D0",
+      "name": "Dialogue::hasHeardInfo",
+      "confidence": "verified",
+      "provenance": "demand pager: decompiled and read",
+      "note": "true if any INFO in the chain has firstHeardFrom (+0x28)",
+      "signature": "bool __thiscall hasHeardInfo()"
+    },
+    {
+      "va": "0x000FF460",
+      "name": "Dialogue::markTopicInText",
+      "confidence": "verified",
+      "provenance": "demand pager: decompiled and read",
+      "note": "strnicmp of name at each word start of the shared text buffer 0x003CEEA4, skipping text already inside @...#",
+      "signature": "void __cdecl markTopicInText(const char* name)"
+    },
+    {
+      "va": "0x000FF590",
+      "name": "DialogueInfo::setFirstHeardFrom",
+      "confidence": "verified",
+      "provenance": "demand pager: decompiled and read",
+      "note": "+0x28. When set for the first time, marks the owning topic modified through findDialogue (global walk)",
+      "signature": "void __thiscall setFirstHeardFrom(TES3::Reference* speaker)"
+    },
+    {
+      "va": "0x000FF760",
+      "name": "Dialogue::markHyperlinks",
+      "confidence": "verified",
+      "provenance": "demand pager: decompiled and read",
+      "note": "From getText: for every topic that is not a voice topic (type 1), markTopicInText searches the reply for its name. Touches every DIAL and its name per response; the INFO chains are not read",
+      "signature": "void __cdecl markHyperlinks(TES3::Reference* speaker)"
+    },
+    {
+      "va": "0x000FF7C0",
+      "name": "Dialogue::resetModifiedInfos",
+      "confidence": "verified",
+      "provenance": "demand pager: decompiled and read",
+      "note": "Clears firstHeardFrom on every modified INFO of this topic; for each one of type 0 it also calls findDialogue, a global walk per modified INFO"
+    },
+    {
+      "va": "0x000FFD70",
+      "name": "Dialogue::resetAllModified",
+      "confidence": "verified",
+      "provenance": "demand pager: decompiled and read",
+      "note": "resetAlteredStuff: resetModifiedInfos on every topic with the modified flag (objectFlags bit 1)"
+    },
+    {
+      "va": "0x00104370",
+      "name": "NonDynamicData::addDialogue",
+      "confidence": "verified",
+      "provenance": "demand pager: decompiled and read",
+      "note": "Hash map at +0xB278, then append to dialogues (+0x48) unless the ID exists",
+      "signature": "void __thiscall addDialogue(TES3::Dialogue* dialogue)"
+    },
+    {
+      "va": "0x0010C500",
+      "name": "NonDynamicData::unloadAll",
+      "confidence": "guess",
+      "provenance": "demand pager: decompiled and read",
+      "note": "Destroys every record list, dialogues included"
+    },
+    {
+      "va": "0x001E1630",
+      "name": "MenuJournal::buildTopicPage",
+      "confidence": "guess",
+      "provenance": "demand pager: decompiled and read",
+      "note": "One topic's heard INFOs (firstHeardFrom set) with speaker names and getText"
     }
   ]
 }

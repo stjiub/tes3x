@@ -210,13 +210,16 @@
       "pc_valid_until": "0x16",
       "note": "Same size as the PC, but DATA is packed into +0x14..+0x1B so +0x1C can link the topic's chain. The Xbox master stores DATA in that 8-byte form; a 12-byte PC DATA is repacked on load (0x000FE830). +0x20 conditions and +0x24 file offset match the PC. Journal INFO objectFlags at +0x8 use 0x40 for quest name, 0x80 for quest start and 0x100 for quest finish; getText reads NAME from the source file.",
       "fields": [
+        {"offset": "0x10", "name": "loadLinkNode", "type": "void*", "confidence": "verified", "provenance": "INFO ctor 0x000FD460 allocates it; freeLoadNames 0x000FF620 frees and nulls it after every file has loaded"},
+        {"offset": "0x14", "name": "type", "type": "char", "confidence": "verified", "provenance": "loadRecord copies the topic's DIAL type here"},
         {"offset": "0x16", "name": "disposition", "type": "short", "confidence": "verified", "provenance": "INFO load 0x000FE830; journal index for journal topics"},
         {"offset": "0x18", "name": "npcRank", "type": "signed char", "confidence": "verified", "provenance": "INFO load 0x000FE830"},
         {"offset": "0x19", "name": "npcSex", "type": "signed char", "confidence": "verified", "provenance": "INFO load 0x000FE830"},
         {"offset": "0x1A", "name": "pcRank", "type": "signed char", "confidence": "verified", "provenance": "INFO load 0x000FE830"},
         {"offset": "0x1C", "name": "next", "type": "TES3::DialogueInfo*", "confidence": "verified", "provenance": "appendInfo 0x000FF680 and lookup 0x000FE0F0 follow it"},
         {"offset": "0x20", "name": "conditions", "type": "TES3::DialogueInfoFilterNode*", "confidence": "matched", "provenance": "INFO copy 0x000FF230 walks it as the PC copy 0x004AFF10 does"},
-        {"offset": "0x24", "name": "espFileOffset", "type": "int", "confidence": "matched", "provenance": "INFO copy 0x000FF230 and the PC copy 0x004AFF10 both carry it"}
+        {"offset": "0x24", "name": "espFileOffset", "type": "int", "confidence": "matched", "provenance": "INFO copy 0x000FF230 and the PC copy 0x004AFF10 both carry it"},
+        {"offset": "0x28", "name": "firstHeardFrom", "type": "TES3::Actor*", "confidence": "verified", "provenance": "setFirstHeardFrom 0x000FF590 sets it; Dialogue::saveRecord 0x000FDDE0 saves its ID as ACDT"}
       ]
     },
     {
@@ -356,6 +359,13 @@
           "type": "void*",
           "confidence": "verified",
           "provenance": "PC +0xB264; ref-index and the multiplayer cell list"
+        },
+        {
+          "offset": "0xB278",
+          "name": "dialogueMap",
+          "type": "void*",
+          "confidence": "verified",
+          "provenance": "hash map of dialogues by name: findDialogue 0x00104360, addDialogue 0x00104370 and loadRecord's DIAL branch"
         }
       ]
     },
