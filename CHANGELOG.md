@@ -8,7 +8,7 @@ No official releases yet. The first public release is in preparation.
   profile to a second Xbox no longer waits for the first upload to finish, and logs or saves on
   one target no longer wait for another's deploy. A profile still runs one build, check or
   deploy-with-build at a time.
-  A strip of small bars shows each running job's progress, and conflict and space questions
+  The status bar shows the progress of the selected tab, and conflict and space questions
   appear in the job's own tab instead of a pop-up.
 - Play on a profile that changed since its build, while xemu is still running that build, offers
   to play the existing build instead of refusing.
