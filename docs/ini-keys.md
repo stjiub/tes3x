@@ -131,6 +131,7 @@ The offset affects only the first-person bow and arms while an arrow or bolt is 
 | `NetServer` | the server, an address or a name, with `:PORT` if not `26500`, and `#FINGERPRINT` to pin its key | empty - answer ARP and UDP echo only |
 | `NetPassword` | the server's password, up to 64 printable ASCII characters | empty - for a server without one; a server asks for it only on a console's first join |
 | `Dash` | the Dash's XBE, `F:\Games\TES3XDash\default.xbe` (drives C, E, F, G) or a `\Device\...` path | empty - a refused join offers no way to the Dash; installing the Dash sets it in `xbox.ini` |
+| `MapMarkers` | `1` marks other players in the same place on the local map (experimental) | `0` - no markers |
 
 The keys are read on the first frame of each launch, including the relaunch on New Game and Load.
 A server name is looked up at each launch and again whenever the server stops answering.

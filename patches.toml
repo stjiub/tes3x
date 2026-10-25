@@ -656,7 +656,7 @@ channel = "dev"
 selection = "preset"
 source = "tes3xmulti.c"
 requires = ["net", "boot-clear", "menu-still", "dash-button"]
-ini = { NetServer = "", NetPassword = "", Dash = "" }
+ini = { NetServer = "", NetPassword = "", Dash = "", MapMarkers = "" }
 summary = "Join a TES3X server from [Xbox] NetAddress and exchange player states every frame."
 
 [[patch]]
