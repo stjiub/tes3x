@@ -33,8 +33,10 @@ No official releases yet. The first public release is in preparation.
 
 - New `lazy-dialogue` patch loads topic responses only as their place in the plugins and builds a
   topic's responses when it is first asked, which frees about 12 MB at the first frame with the
-  full Tamriel Rebuilt masters and lowers the loading peak by about 19 MB. It turns on
-  `dialogue-merge`. See [the patch](patches/lazy-dialogue.md).
+  full Tamriel Rebuilt masters and lowers the loading peak by about 19 MB. A topic is built only
+  when one of its responses could suit the speaker, so a character who knows many topics does not
+  build them all in the first conversation. It turns on `dialogue-merge`. See
+  [the patch](patches/lazy-dialogue.md).
 
 - New `dialogue-owner` patch finds a response's topic directly instead of searching every topic,
   which result scripts, `Choice` conditions and newly heard responses do. See

@@ -7,6 +7,11 @@
  * plugins in stub order before reading it. Readers that only look for heard responses see none,
  * which is right: nothing is heard in a chain that was never built.
  *
+ * Each stub also keeps the filters the INFO filter (0x000FFEA0) tests before or regardless of its
+ * conditions: speaker, race, class, NPC faction, cell-name prefix and sex. getFilteredInfo builds
+ * a topic only when one of its stubs passes them for the speaker; otherwise no response could be
+ * chosen, and the empty chain returns none.
+ *
  * [Xbox] LazyDialogue=verify keeps every INFO and records the stubs alongside for comparison.
  */
 
@@ -31,10 +36,30 @@
 #define FILE_SIZE 0x574
 #define RECORDS_ACTIVE_MODS 0xAE6C
 #define RECORDS_SAVING 0xB381
+#define HANDLER_CELL 0xB540
+#define INFO_SEX 0x19
+#define INFO_CONDITIONS 0x20
+#define OBJECT_TYPE 0x04
+#define REF_BASE 0x28
+#define TYPE_REFR 0x52464552u
+#define TYPE_CREA 0x41455243u
+#define TYPE_CONT 0x544E4F43u
+#define TYPE_NPC 0x5F43504Eu
+#define ACTOR_BASE 0x154
+#define ACTOR_RACE 0x60
+#define ACTOR_CLASS 0x64
+#define ACTOR_FACTION 0x68
+#define ACTOR_SEX 0x6C
+#define OBJECT_ID 0x20
 
 #define SLOTS 16384u
+#define OBJECTS 32768u
 #define CHUNK 0x10000u
-#define STUB_PREVIOUS 1u /* PNAM is not empty */
+#define STUB_PREVIOUS 0x01u   /* PNAM is not empty */
+#define STUB_UNFILTERED 0x02u /* the filters did not fit the object table: always build */
+#define FILTERS 5             /* speaker, race, class, NPC faction, cell: the INFO's filter tags */
+#define FILTER_CELL 4
+#define FACTION_NONE 0xFFFFu  /* faction filter -1: the speaker must have no faction */
 
 typedef void *(__thiscall *fn_heap_allocate)(void *, u32, const char *, u32);
 typedef void(__thiscall *fn_heap_free)(void *, void *);
@@ -48,6 +73,7 @@ typedef void(__thiscall *fn_file_collect)(void *, u32, u32);
 typedef u8(__thiscall *fn_file_reopen)(void *, u32, u32);
 typedef u8(__thiscall *fn_file_seek)(void *, u32);
 typedef void(__thiscall *fn_file_plain)(void *);
+typedef u32(__thiscall *fn_object_get)(const void *);
 
 TES3X_OPTIONAL extern u32 tes3x_dialogue_vtable;
 TES3X_OPTIONAL void __cdecl tes3x_info_names_free(void *ptr);
@@ -55,12 +81,15 @@ TES3X_OPTIONAL void __stdcall tes3x_info_table_free(void *ptr);
 
 struct stub {
     struct stub *next;
-    u8 *source;
     u32 offset;
-    u32 flags;
     u64 id;
     u64 previous;
     u32 previous_exact;
+    u8 source; /* index into sources */
+    u8 flags;
+    signed char sex;
+    u8 unused;
+    unsigned short filter[FILTERS]; /* slot + 1 in objects, 0 for none */
 };
 
 struct topic {
@@ -72,9 +101,12 @@ struct topic {
 enum { MODE_UNREAD, MODE_OFF, MODE_ON, MODE_VERIFY };
 
 static struct topic *slots[SLOTS];
+static u8 *sources[256];
+static u32 objects[OBJECTS];
 static u8 *chunk;
-static u32 chunk_left, mode, reported;
+static u32 chunk_left, mode, reported, source_count, object_count;
 static u32 topics, stubs, unstubbable, chunk_kb, built_topics, built_infos, failed;
+static u32 skipped, unfiltered;
 
 static void *heap_allocate(u32 size)
 {
@@ -273,6 +305,68 @@ static void read_mode(void)
     tes3x_log("lazy.mode", mode);
 }
 
+static int source_index(u8 *source, u8 *index)
+{
+    u32 i;
+
+    for (i = 0; i < source_count; i++)
+        if (sources[i] == source)
+            break;
+    if (i == source_count) {
+        if (source_count == 256)
+            return 0;
+        sources[source_count++] = source;
+    }
+    *index = (u8)i;
+    return 1;
+}
+
+/* A filter's object as its slot + 1 in a table that never rehashes; 0 when the table is full. */
+static unsigned short object_index(u32 object)
+{
+    u32 i = (object * 2654435761u) >> 17;
+
+    while (objects[i]) {
+        if (objects[i] == object)
+            return (unsigned short)(i + 1);
+        i = (i + 1) & (OBJECTS - 1);
+    }
+    if (object_count >= OBJECTS * 3 / 4)
+        return 0;
+    objects[i] = object;
+    object_count++;
+    return (unsigned short)(i + 1);
+}
+
+/* The INFO's filter nodes (+0x20: tag, next, value), as DialogueInfo's decoder 0x000FD5B0 reads
+ * them for the filter. */
+static void record_filters(struct stub *s, const u8 *info)
+{
+    const u8 *node;
+    u32 i;
+
+    for (i = 0; i < FILTERS; i++)
+        s->filter[i] = 0;
+    s->sex = (signed char)info[INFO_SEX];
+    s->unused = 0;
+    for (node = *(const u8 *const *)(info + INFO_CONDITIONS); node;
+         node = *(const u8 *const *)(node + 4)) {
+        u32 tag = *(const u32 *)node, value = *(const u32 *)(node + 8);
+
+        if (tag >= FILTERS || !value || s->filter[tag])
+            continue;
+        if (tag == 3 && value == 0xFFFFFFFFu) {
+            s->filter[tag] = FACTION_NONE;
+            continue;
+        }
+        s->filter[tag] = object_index(value);
+        if (!s->filter[tag]) {
+            s->flags |= STUB_UNFILTERED;
+            unfiltered++;
+        }
+    }
+}
+
 static __attribute__((used, noinline)) u32 __stdcall place(u8 *info, u8 *file, u32 at_tail)
 {
     u8 *dial = *(u8 **)TES3X_VALUE(LAZY_TOPIC);
@@ -297,13 +391,17 @@ static __attribute__((used, noinline)) u32 __stdcall place(u8 *info, u8 *file, u
         return 0;
     }
     n.next = 0;
-    n.source = *(u8 **)(info + INFO_SOURCE);
+    if (!source_index(*(u8 **)(info + INFO_SOURCE), &n.source)) {
+        unstubbable++;
+        return 0;
+    }
     n.offset = *(u32 *)(info + INFO_OFFSET);
     n.id = fold_hash(names[0]);
     n.previous = fold_hash(names[1]);
     n.previous_exact = exact_hash(names[1]);
     n.flags = (names[1] && names[1][0] ? STUB_PREVIOUS : 0) |
               (*(u32 *)(info + INFO_FLAGS) & FLAG_DELETED);
+    record_filters(&n, info);
 
     existing = at_tail & 0xFF ? 0 : find_id(t, n.id);
     if (!existing) {
@@ -450,11 +548,11 @@ static u8 *load_one(u8 *file, struct stub *s, const u8 *dial)
     }
     ((fn_load_from_file)TES3X_LAZY_LOAD_FROM_FILE)(info, file);
     info[INFO_TYPE] = dial[DIAL_TYPE];
-    *(u8 **)(info + INFO_SOURCE) = s->source;
+    *(u8 **)(info + INFO_SOURCE) = sources[s->source];
     *(u32 *)(info + INFO_OFFSET) = s->offset;
     flags = (u32 *)(info + INFO_FLAGS);
-    *flags = (*flags & ~FLAG_MASTER) | (s->source[FILE_FLAGS] & 1) | (s->flags & FLAG_DELETED) |
-             FLAG_LINKED;
+    *flags = (*flags & ~FLAG_MASTER) | (sources[s->source][FILE_FLAGS] & 1) |
+             (s->flags & FLAG_DELETED) | FLAG_LINKED;
     free_link(info);
     if (&tes3x_dialogue_vtable && tes3x_dialogue_vtable)
         *(const u8 **)(info + INFO_LINK) = dial;
@@ -463,9 +561,9 @@ static u8 *load_one(u8 *file, struct stub *s, const u8 *dial)
 
 static void build(struct topic *t)
 {
-    u8 *data = records(), **infos, *file, *source, **link;
+    u8 *data = records(), **infos, *file, **link;
     struct stub *s;
-    u32 count = 0, i, temporary, saving;
+    u32 count = 0, i, temporary, saving, source;
 
     t->built = 1;
     for (s = t->head; s; s = s->next)
@@ -487,7 +585,7 @@ static void build(struct topic *t)
         if (!s)
             break;
         source = s->source;
-        file = open_source(source, &temporary);
+        file = open_source(sources[source], &temporary);
         for (; s; s = s->next, i++) {
             if (infos[i] || s->source != source)
                 continue;
@@ -522,6 +620,8 @@ static void report(void)
     tes3x_log("lazy.stubs", stubs);
     tes3x_log("lazy.stub_kb", chunk_kb);
     tes3x_log("lazy.unstubbable", unstubbable);
+    tes3x_log("lazy.unfiltered", unfiltered);
+    tes3x_log("lazy.filter_objects", object_count);
 }
 
 static __attribute__((used, noinline)) void __stdcall ensure(const u8 *dial)
@@ -548,11 +648,127 @@ __attribute__((naked)) void tes3x_lazy_dialogue_ensure(void)
         "retl\n\t");
 }
 
+static u32 vcall(const u8 *object, u32 slot)
+{
+    return (*(fn_object_get *)(*(const u8 *const *)object + slot))(object);
+}
+
+static const char *object_id(u32 object)
+{
+    return (const char *)vcall((const u8 *)object, OBJECT_ID);
+}
+
+static u32 filter_object(const struct stub *s, u32 tag)
+{
+    u32 i = s->filter[tag];
+
+    return i && i != FACTION_NONE ? objects[i - 1] : 0;
+}
+
+/* The INFO filter's tests that need only the INFO and the speaker, in its order. The speaker
+ * passed to getFilteredInfo becomes its base object for a reference, as in the filter. */
+static int passes(const struct stub *s, const u8 *actor)
+{
+    u32 speaker = filter_object(s, 0), type, value, i;
+    const u8 *cell;
+    const char *name, *have;
+    char want[64];
+
+    if (s->flags & STUB_UNFILTERED)
+        return 1;
+    if (s->flags & FLAG_DELETED)
+        return 0;
+    if (*(const u32 *)(actor + OBJECT_TYPE) == TYPE_REFR)
+        actor = *(const u8 *const *)(actor + REF_BASE);
+    type = *(const u32 *)(actor + OBJECT_TYPE);
+    if (speaker) {
+        if (type == TYPE_CREA || type == TYPE_CONT || type == TYPE_NPC) {
+            if (vcall(actor, ACTOR_BASE) != speaker)
+                return 0;
+        } else if ((u32)actor != speaker) {
+            return 0;
+        }
+    }
+    if (s->filter[FILTER_CELL]) {
+        cell = *(const u8 *const *)(*(const u8 *const *)TES3X_VALUE(LAZY_DATA_HANDLER) +
+                                    HANDLER_CELL);
+        if (!cell)
+            return 0;
+        name = object_id(filter_object(s, FILTER_CELL));
+        for (i = 0; name && name[i] && i < sizeof(want) - 1; i++)
+            want[i] = name[i];
+        want[i] = 0;
+        have = object_id((u32)cell);
+        if (!have)
+            return 0;
+        for (i = 0; want[i]; i++) {
+            u8 a = (u8)want[i], b = (u8)have[i];
+            if (a >= 'A' && a <= 'Z')
+                a += 'a' - 'A';
+            if (b >= 'A' && b <= 'Z')
+                b += 'a' - 'A';
+            if (a != b)
+                return 0;
+        }
+    }
+    if (type == TYPE_CREA)
+        return vcall(actor, ACTOR_BASE) == speaker;
+    if (type != TYPE_NPC)
+        return 1;
+    if ((value = filter_object(s, 1)) && vcall(actor, ACTOR_RACE) != value)
+        return 0;
+    if ((value = filter_object(s, 2)) && vcall(actor, ACTOR_CLASS) != value)
+        return 0;
+    if (s->filter[3] == FACTION_NONE ? vcall(actor, ACTOR_FACTION) != 0
+                                     : (value = filter_object(s, 3)) &&
+                                           vcall(actor, ACTOR_FACTION) != value)
+        return 0;
+    if (s->sex != -1 && (int)vcall(actor, ACTOR_SEX) != s->sex)
+        return 0;
+    return 1;
+}
+
+static const u8 *last_actor;
+static u32 last_reference, last_flag;
+
+static __attribute__((used, noinline)) void __stdcall
+ensure_for(const u8 *dial, const u8 *actor, u32 reference, u32 flag)
+{
+    struct topic *t;
+    struct stub *s;
+
+    if (!reported)
+        report();
+    if (actor) {
+        last_actor = actor;
+        last_reference = reference;
+        last_flag = flag;
+    }
+    if (mode != MODE_ON || !dial)
+        return;
+    t = find_topic(dial);
+    if (!t || t->built)
+        return;
+    for (s = t->head; s && actor; s = s->next)
+        if (passes(s, actor))
+            break;
+    if (s || !actor)
+        build(t);
+    else
+        skipped++;
+}
+
 /* getFilteredInfo: push esi; push edi; mov edi, ecx; mov esi, [edi+0x18] */
 __attribute__((naked)) void tes3x_lazy_dialogue_filtered(void)
 {
     __asm__ volatile(
-        "call _tes3x_lazy_dialogue_ensure\n\t"
+        "pushal\n\t"
+        "pushl 0x2c(%esp)\n\t"
+        "pushl 0x2c(%esp)\n\t"
+        "pushl 0x2c(%esp)\n\t"
+        "pushl %ecx\n\t"
+        "call _ensure_for@16\n\t"
+        "popal\n\t"
         "pushl %esi\n\t"
         "pushl %edi\n\t"
         "movl %ecx, %edi\n\t"
@@ -599,7 +815,7 @@ u32 tes3x_lazy_dialogue_check(void)
             continue;
         for (s = t->head, info = *(u8 **)(t->dial + DIAL_INFO); s || info;
              n++, s = s ? s->next : 0, info = info ? *(u8 **)(info + INFO_NEXT) : 0) {
-            if (!s || !info || s->source != *(u8 **)(info + INFO_SOURCE) ||
+            if (!s || !info || sources[s->source] != *(u8 **)(info + INFO_SOURCE) ||
                 s->offset != *(u32 *)(info + INFO_OFFSET) ||
                 (s->flags & FLAG_DELETED) != (*(u32 *)(info + INFO_FLAGS) & FLAG_DELETED)) {
                 bad = 1;
@@ -625,6 +841,8 @@ u32 tes3x_lazy_dialogue_build_all(void)
 
     if (!reported)
         report();
+    tes3x_log("lazy.built_before", built_topics);
+    tes3x_log("lazy.skipped", skipped);
     for (i = 0; i < SLOTS; i++)
         if (slots[i] && !slots[i]->built && mode == MODE_ON)
             build(slots[i]);
@@ -632,4 +850,87 @@ u32 tes3x_lazy_dialogue_build_all(void)
     tes3x_log("lazy.built_infos", built_infos);
     tes3x_log("lazy.failed", failed);
     return built_topics - before;
+}
+
+typedef const u8 *(__thiscall *fn_filtered)(const u8 *, const u8 *, u32, u32);
+
+/* Test probe: how many topics' summaries pass for one speaker. In verify mode the engine also
+ * answers every topic, and the answer's own stub must pass: a failure is a topic the summary would
+ * hide. */
+static void check_speaker(const u8 *actor, u32 reference, u32 flag, u32 *counts)
+{
+    u32 i;
+
+    for (i = 0; i < SLOTS; i++) {
+        struct topic *t = slots[i];
+        struct stub *s;
+        const u8 *answer, *info;
+
+        if (!t)
+            continue;
+        counts[0]++;
+        for (s = t->head; s; s = s->next)
+            if (passes(s, actor))
+                break;
+        if (s)
+            counts[1]++;
+        if (mode != MODE_VERIFY)
+            continue;
+        answer = ((fn_filtered)TES3X_VALUE(LAZY_FILTERED))(t->dial, actor, reference, flag);
+        if (!answer)
+            continue;
+        counts[2]++;
+        for (s = t->head, info = *(const u8 *const *)(t->dial + DIAL_INFO);
+             s && info && info != answer;
+             s = s->next, info = *(const u8 *const *)(info + INFO_NEXT))
+            ;
+        if (!s || !info || !passes(s, actor)) {
+            if (counts[3]++ < 8)
+                tes3x_log_hex3("lazy.summary_hidden_at", (u32)t->dial, (u32)answer, (u32)actor);
+        }
+    }
+}
+
+static void log_counts(const u32 *counts)
+{
+    tes3x_log("lazy.summary_topics", counts[0]);
+    tes3x_log("lazy.summary_passing", counts[1]);
+    tes3x_log("lazy.summary_answered", counts[2]);
+    tes3x_log("lazy.summary_hidden", counts[3]);
+}
+
+/* The last speaker getFilteredInfo saw. */
+u32 tes3x_lazy_dialogue_summary_check(void)
+{
+    u32 counts[4] = {0};
+
+    if (!last_actor) {
+        tes3x_log("lazy.summary_no_speaker", 0);
+        return 0;
+    }
+    check_speaker(last_actor, last_reference, last_flag, counts);
+    log_counts(counts);
+    return counts[3];
+}
+
+/* Every stride-th NPC or creature that a response names as its speaker, with no reference. */
+u32 tes3x_lazy_dialogue_summary_sweep(u32 stride)
+{
+    u32 i, n = 0, speakers = 0, counts[4] = {0};
+
+    for (i = 0; i < OBJECTS; i++) {
+        const u8 *object = (const u8 *)objects[i];
+        u32 type;
+
+        if (!object)
+            continue;
+        type = *(const u32 *)(object + OBJECT_TYPE);
+        if ((type != TYPE_NPC && type != TYPE_CREA) || n++ % stride)
+            continue;
+        speakers++;
+        check_speaker(object, 0, 0, counts);
+    }
+    tes3x_log("lazy.summary_speakers", speakers);
+    log_counts(counts);
+    return counts[3];
 }

@@ -3104,6 +3104,14 @@
       "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds DialogueInfo for tag INFO; loader read from the class vtable slot 1"
     },
     {
+      "va": "0x000FD5B0",
+      "name": "DialogueInfo::decodeFilters",
+      "confidence": "verified",
+      "provenance": "lazy-dialogue 2026-10-24: decompiled",
+      "note": "Copies the first node of each tag 0..12 from the +0x20 list into the statics 0x003CEEA8..0x003CEEC0 and the condition scratch 0x003CEE40",
+      "signature": "void __thiscall m()"
+    },
+    {
       "va": "0x000FDD00",
       "name": "Dialogue::ctor",
       "confidence": "guess",
@@ -3316,6 +3324,14 @@
       "pc_va": "0x004B2F80",
       "note": "Adds the INFO for index to the journal (JournalHTML::updateJournal, which adds the 'journal updated' line to an open dialogue) and raises journalIndex. The Journal command (0x0013FEEF) shows the sJournalEntry toast itself, through showMessageBox, only when MenuDialog is closed.",
       "signature": "bool __thiscall journalAdd(int index, TES3::MobileActor* actor)"
+    },
+    {
+      "va": "0x000FFEA0",
+      "name": "DialogueInfo::passesFilter",
+      "confidence": "verified",
+      "provenance": "lazy-dialogue 2026-10-24: decompiled, and its static tests replayed against it for 483 TR speakers",
+      "note": "Order: deleted; speaker (vtable +0x154 for CREA/CONT/NPC_); cell-name prefix against DataHandler +0xB540; PC faction and rank; six conditions; a CREA speaker then passes only if speaker filter == its +0x154 (null for a base creature); disposition; race +0x60, class +0x64, faction +0x68 (-1: none), NPC rank +0x70, sex +0x6C",
+      "signature": "bool __thiscall m(TES3::Object* speaker, TES3::Reference* reference, bool checkDisposition, TES3::Dialogue* topic)"
     },
     {
       "va": "0x00101090",

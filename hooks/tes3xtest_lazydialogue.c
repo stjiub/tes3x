@@ -1,5 +1,5 @@
 /* Test-only commands for lazy-dialogue: compare stubs with the engine's chains, build every
- * topic, count heard responses, and digest every topic's responses so control and patched builds
+ * topic, test the filter summary, count heard responses, and digest every topic's responses so control and patched builds
  * can be compared. */
 
 #include "tes3xlog.h"
@@ -21,6 +21,8 @@ typedef const char *(__thiscall *fn_object_id)(const void *);
 
 TES3X_OPTIONAL u32 tes3x_lazy_dialogue_check(void);
 TES3X_OPTIONAL u32 tes3x_lazy_dialogue_build_all(void);
+TES3X_OPTIONAL u32 tes3x_lazy_dialogue_summary_check(void);
+TES3X_OPTIONAL u32 tes3x_lazy_dialogue_summary_sweep(u32 stride);
 
 static const char COMMAND[] = "tes3xlazy";
 
@@ -143,6 +145,20 @@ int tes3x_lazy_dialogue_test_command(const char *text)
     if ((text[i] | 0x20) == 'c') {
         if (tes3x_lazy_dialogue_check)
             tes3x_lazy_dialogue_check();
+    } else if ((text[i] | 0x20) == 's' && (text[i + 1] | 0x20) == 'w') {
+        u32 stride = 0;
+
+        for (; text[i] && text[i] != ' '; i++)
+            ;
+        for (; text[i] == ' '; i++)
+            ;
+        for (; text[i] >= '0' && text[i] <= '9'; i++)
+            stride = stride * 10 + (u32)(text[i] - '0');
+        if (tes3x_lazy_dialogue_summary_sweep)
+            tes3x_lazy_dialogue_summary_sweep(stride ? stride : 1);
+    } else if ((text[i] | 0x20) == 's') {
+        if (tes3x_lazy_dialogue_summary_check)
+            tes3x_lazy_dialogue_summary_check();
     } else if ((text[i] | 0x20) == 'h') {
         heard();
     } else if ((text[i] | 0x20) == 'b') {

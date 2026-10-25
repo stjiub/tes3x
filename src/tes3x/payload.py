@@ -865,6 +865,7 @@ def engine_bindings(xbe, sources):
                      "load_from_file", "cached_file", "file_ctor", "file_collect", "file_reopen",
                      "file_seek", "file_close", "file_dtor"):
             define("LAZY_" + name.upper(), hexva(lazy[name]))
+        define("LAZY_FILTERED", hexva(lazy["reader_filtered"]))
         for name, length in (("filtered", 7), ("at_index", 5), ("journal", 6)):
             define(f"LAZY_{name.upper()}_RESUME", hexva(lazy["reader_" + name] + length))
             wanted["lazy_dialogue_" + name] = (f"_tes3x_lazy_dialogue_{name}",)
@@ -872,7 +873,7 @@ def engine_bindings(xbe, sources):
     if "tes3xtest_lazydialogue.c" in names:
         if "tes3xconsole.c" not in names:
             raise PayloadError("tes3xtest_lazydialogue.c requires tes3xconsole.c")
-        print("lazy-dialogue test probe: console command tes3xlazy check|build|heard|digest")
+        print("lazy-dialogue test probe: console command tes3xlazy check|summary|sweep N|build|heard|digest")
         wanted["lazy_dialogue_test"] = ("_tes3x_lazy_dialogue_test_command",)
     if "tes3xdiag.c" in names:
         update = hexva(locate("diagnostics-update"))
