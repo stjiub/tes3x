@@ -23,7 +23,9 @@ entries are other types and load as before. For a topic's `INFO`, the loader sti
 response, then records its plugin, its offset in that plugin and whether any plugin deleted it,
 and frees it. Its place in the topic follows the engine's own rules, replayed on these records:
 the first master appends in file order, and each later plugin places a new response after the one
-its `PNAM` names, or moves an existing one when it changes that `PNAM`.
+its `PNAM` names, or moves an existing one when it changes that `PNAM`. Once the last plugin has
+loaded, the names that placement needed are dropped and each topic keeps its records as an
+18-byte array in order. With Tamriel Rebuilt that is 1.2 MB, down from 3.2 MB during loading.
 
 The topic's response list stays empty until one of three readers needs it: choosing a response to
 show (`getFilteredInfo`, which also decides whether a topic appears in the list), restoring a heard

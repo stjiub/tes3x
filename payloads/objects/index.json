@@ -82,6 +82,7 @@
     "LAZY_INFO_NOTAIL": null,
     "LAZY_INFO_TAIL": null,
     "LAZY_JOURNAL_RESUME": null,
+    "LAZY_LOADED_FIRST": null,
     "LAZY_LOAD_FROM_FILE": null,
     "LAZY_NAMES_FREE": null,
     "LAZY_TOPIC": null,
@@ -527,8 +528,8 @@
       "sha256": "73564c05d1fa92e0b33bce1749e556778c23bde345fa15ec993dcc05f4478ffd"
     },
     "tes3xlazydialogue.c": {
-      "digest": "5b5bf24b134039d13cb1c66bdd61e19ae60bf128d4bff44a13619ed319adab20",
-      "sha256": "9d7af23a389185d542ad2cf03c5f58c9912d6595a740f5055a5513daf9ab8828"
+      "digest": "4e57a7609eedc8eed69dc256c1f704b342a5429bb3941956fca690869038061c",
+      "sha256": "738362b63094c24b7e782985be7b54601e552ab324e234305c254b1f1d8df4d8"
     },
     "tes3xleanmenu.c": {
       "digest": "3d07305385c5a692a5f383573730844a1bb2055d8f245ec4c6e4ed67c9ed880e",

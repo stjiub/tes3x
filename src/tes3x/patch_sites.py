@@ -2282,6 +2282,11 @@ LAZY_DIALOGUE_GET_TEXT = re.compile(
     rb"\x8b\x35(?P=cached)\x8b\x55\x24\x52\x8b\xce\xe8(?P<seek>....)\x84\xc0\x8b\xce\x74."
     rb"\xe8....\x3d\x49\x4e\x46\x4f\x0f\x84....\x8b\xce\xe8(?P<close>....)\x3b\xdf\x74."
     rb"\x8b\xcb\xe8(?P<dtor>....)", re.S)
+# loadAllFiles after the last plugin: the optional sortTopicsByNameLength, then the first topic
+# for the freeLoadNames loop.
+LAZY_DIALOGUE_LOADED = re.compile(
+    rb"\x84\xdb\x75\x05\xe8....\x8b\x4e\x48(?P<call>\xe8....)\x85\xc0\x74.\x8b\x40\x08\x56"
+    rb"\x8b\xc8\xe8", re.S)
 # The first instructions of the per-topic readers that must see a built chain.
 LAZY_DIALOGUE_READERS = {
     "filtered": rb"\x56\x57\x8b\xf9\x8b\x77\x18\x85\xf6\x0f\x84....\x8b\x0d....\x85\xc9\x74.",
@@ -2296,7 +2301,8 @@ def find_lazy_dialogue_sites(x):
     each reader that needs a topic's responses."""
     data = bytes(x.data)
     found = {}
-    for key, rx in (("info", LAZY_DIALOGUE_INFO), ("text", LAZY_DIALOGUE_GET_TEXT)):
+    for key, rx in (("info", LAZY_DIALOGUE_INFO), ("text", LAZY_DIALOGUE_GET_TEXT),
+                    ("loaded", LAZY_DIALOGUE_LOADED)):
         hits = list(rx.finditer(data))
         if len(hits) != 1:
             raise PatchError(f"lazy-dialogue: {len(hits)} {key} sites, expected 1")
@@ -2329,6 +2335,8 @@ def find_lazy_dialogue_sites(x):
         "file_seek": rel(text, "seek"),
         "file_close": rel(text, "close"),
         "file_dtor": rel(text, "dtor"),
+        "loaded_call": x.off_to_va(found["loaded"].start("call")),
+        "loaded_first": tes3x_inject.call_target(x, x.off_to_va(found["loaded"].start("call"))),
     }
     for key, sig in LAZY_DIALOGUE_READERS.items():
         hits = list(re.finditer(sig, data, re.S))

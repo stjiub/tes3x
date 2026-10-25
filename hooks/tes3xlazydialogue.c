@@ -5,7 +5,8 @@
  * offset, and the constructed INFO is deleted, so the topic's chain stays empty through load.
  * getFilteredInfo, getInfoAtIndex (the save's XNAM) and journalAdd build the chain from the
  * plugins in stub order before reading it. Readers that only look for heard responses see none,
- * which is right: nothing is heard in a chain that was never built.
+ * which is right: nothing is heard in a chain that was never built. After the last plugin the
+ * stubs shrink to 18-byte entries in chain order, without the names placement needed.
  *
  * Each stub also keeps the filters the INFO filter (0x000FFEA0) tests before or regardless of its
  * conditions: speaker, race, class, NPC faction, cell-name prefix and sex. getFilteredInfo builds
@@ -79,22 +80,32 @@ TES3X_OPTIONAL extern u32 tes3x_dialogue_vtable;
 TES3X_OPTIONAL void __cdecl tes3x_info_names_free(void *ptr);
 TES3X_OPTIONAL void __stdcall tes3x_info_table_free(void *ptr);
 
-struct stub {
-    struct stub *next;
+/* What a topic keeps after load, in chain order. */
+struct entry {
     u32 offset;
-    u64 id;
-    u64 previous;
-    u32 previous_exact;
     u8 source; /* index into sources */
     u8 flags;
     signed char sex;
     u8 unused;
     unsigned short filter[FILTERS]; /* slot + 1 in objects, 0 for none */
+} __attribute__((packed));
+
+/* The placement replay also needs the INFO's names, as hashes. */
+struct stub {
+    struct stub *next;
+    u32 previous_exact;
+    u64 id;
+    u64 previous;
+    struct entry e;
 };
 
 struct topic {
     u8 *dial;
-    struct stub *head;
+    union {
+        struct stub *head;     /* until compact */
+        struct entry *entries; /* after */
+    };
+    u32 count;
     u32 built;
 };
 
@@ -103,10 +114,15 @@ enum { MODE_UNREAD, MODE_OFF, MODE_ON, MODE_VERIFY };
 static struct topic *slots[SLOTS];
 static u8 *sources[256];
 static u32 objects[OBJECTS];
-static u8 *chunk;
-static u32 chunk_left, mode, reported, source_count, object_count;
+/* Stubs fill whole chunks in order, so stub i is at chunks[i / PER_CHUNK]. */
+#define PER_CHUNK (CHUNK / sizeof(struct stub))
+#define CHUNKS 256u
+typedef char stub_size_check[sizeof(struct stub) == 48 ? 1 : -1];
+
+static u8 *chunks[CHUNKS];
+static u32 chunk_count, mode, reported, source_count, object_count, compacted;
 static u32 topics, stubs, unstubbable, chunk_kb, built_topics, built_infos, failed;
-static u32 skipped, unfiltered;
+static u32 skipped, unfiltered, late;
 
 static void *heap_allocate(u32 size)
 {
@@ -119,22 +135,20 @@ static void heap_free(void *ptr)
     ((fn_heap_free)TES3X_LAZY_HEAP_FREE)((void *)TES3X_LAZY_HEAP_OBJECT, ptr);
 }
 
-static void *take(u32 size)
+static struct stub *stub_at(u32 i)
 {
-    void *at;
+    return (struct stub *)chunks[i / PER_CHUNK] + i % PER_CHUNK;
+}
 
-    size = (size + 7) & ~7u;
-    if (chunk_left < size) {
-        chunk = heap_allocate(CHUNK);
-        if (!chunk)
+static struct stub *take_stub(void)
+{
+    if (stubs == chunk_count * PER_CHUNK) {
+        if (chunk_count == CHUNKS || !(chunks[chunk_count] = heap_allocate(CHUNK)))
             return 0;
-        chunk_left = CHUNK;
+        chunk_count++;
         chunk_kb += CHUNK / 1024;
     }
-    at = chunk;
-    chunk += size;
-    chunk_left -= size;
-    return at;
+    return stub_at(stubs);
 }
 
 static u32 slot_of(const u8 *dial)
@@ -163,11 +177,13 @@ static struct topic *add_topic(u8 *dial)
         return 0;
     while (slots[i])
         i = (i + 1) & (SLOTS - 1);
-    t = take(sizeof(*t));
+    /* Not from the chunks, which compact frees. */
+    t = heap_allocate(sizeof(*t));
     if (!t)
         return 0;
     t->dial = dial;
     t->head = 0;
+    t->count = 0;
     t->built = 0;
     slots[i] = t;
     topics++;
@@ -212,7 +228,7 @@ static void append(struct topic *t, struct stub *s, u32 at_tail)
 {
     struct stub *p;
 
-    if (!(s->flags & STUB_PREVIOUS)) {
+    if (!(s->e.flags & STUB_PREVIOUS)) {
         s->next = t->head;
         t->head = s;
         return;
@@ -340,7 +356,7 @@ static unsigned short object_index(u32 object)
 
 /* The INFO's filter nodes (+0x20: tag, next, value), as DialogueInfo's decoder 0x000FD5B0 reads
  * them for the filter. */
-static void record_filters(struct stub *s, const u8 *info)
+static void record_filters(struct entry *s, const u8 *info)
 {
     const u8 *node;
     u32 i;
@@ -379,6 +395,10 @@ static __attribute__((used, noinline)) u32 __stdcall place(u8 *info, u8 *file, u
         read_mode();
     if (mode == MODE_OFF || !dial || dial[DIAL_TYPE] != 0 || !names)
         return 0;
+    if (compacted) {
+        late++;
+        return 0;
+    }
     if (!*(u32 *)(info + INFO_OFFSET) || !*(u8 **)(info + INFO_SOURCE)) {
         unstubbable++;
         return 0;
@@ -391,38 +411,39 @@ static __attribute__((used, noinline)) u32 __stdcall place(u8 *info, u8 *file, u
         return 0;
     }
     n.next = 0;
-    if (!source_index(*(u8 **)(info + INFO_SOURCE), &n.source)) {
+    if (!source_index(*(u8 **)(info + INFO_SOURCE), &n.e.source)) {
         unstubbable++;
         return 0;
     }
-    n.offset = *(u32 *)(info + INFO_OFFSET);
+    n.e.offset = *(u32 *)(info + INFO_OFFSET);
     n.id = fold_hash(names[0]);
     n.previous = fold_hash(names[1]);
     n.previous_exact = exact_hash(names[1]);
-    n.flags = (names[1] && names[1][0] ? STUB_PREVIOUS : 0) |
-              (*(u32 *)(info + INFO_FLAGS) & FLAG_DELETED);
-    record_filters(&n, info);
+    n.e.flags = (names[1] && names[1][0] ? STUB_PREVIOUS : 0) |
+                (*(u32 *)(info + INFO_FLAGS) & FLAG_DELETED);
+    record_filters(&n.e, info);
 
     existing = at_tail & 0xFF ? 0 : find_id(t, n.id);
     if (!existing) {
-        s = take(sizeof(*s));
+        s = take_stub();
         if (!s) {
             unstubbable++;
             return 0;
         }
         *s = n;
         append(t, s, at_tail & 0xFF);
+        t->count++;
         stubs++;
     } else {
         if (existing->previous_exact != n.previous_exact) {
-            prev = n.flags & STUB_PREVIOUS ? find_id(t, n.previous) : 0;
+            prev = n.e.flags & STUB_PREVIOUS ? find_id(t, n.previous) : 0;
             if (!prev || prev->next != existing) {
                 remove_stub(t, existing);
                 insert_at(t, existing, prev ? index_of(t, prev) + 1 : 0);
             }
         }
         n.next = existing->next;
-        n.flags |= existing->flags & FLAG_DELETED;
+        n.e.flags |= existing->e.flags & FLAG_DELETED;
         *existing = n;
     }
     if (mode == MODE_VERIFY)
@@ -533,7 +554,7 @@ static void free_link(u8 *info)
 }
 
 /* One INFO as loadRecord leaves it after the override copy and freeLoadNames. */
-static u8 *load_one(u8 *file, struct stub *s, const u8 *dial)
+static u8 *load_one(u8 *file, const struct entry *s, const u8 *dial)
 {
     u8 *info = ((fn_info_new)TES3X_LAZY_INFO_NEW)(0x2C);
     u32 *flags;
@@ -562,12 +583,10 @@ static u8 *load_one(u8 *file, struct stub *s, const u8 *dial)
 static void build(struct topic *t)
 {
     u8 *data = records(), **infos, *file, **link;
-    struct stub *s;
-    u32 count = 0, i, temporary, saving, source;
+    const struct entry *e = t->entries;
+    u32 count = t->count, i, j, temporary, saving, source;
 
     t->built = 1;
-    for (s = t->head; s; s = s->next)
-        count++;
     if (!count || !data)
         return;
     infos = heap_allocate(count * 4);
@@ -579,19 +598,19 @@ static void build(struct topic *t)
         infos[i] = 0;
     saving = data[RECORDS_SAVING];
     data[RECORDS_SAVING] = 0;
-    for (;;) {
-        for (s = t->head, i = 0; s && infos[i]; s = s->next, i++)
-            ;
-        if (!s)
+    for (i = 0;; i++) {
+        while (i < count && infos[i])
+            i++;
+        if (i == count)
             break;
-        source = s->source;
+        source = e[i].source;
         file = open_source(sources[source], &temporary);
-        for (; s; s = s->next, i++) {
-            if (infos[i] || s->source != source)
+        for (j = i; j < count; j++) {
+            if (infos[j] || e[j].source != source)
                 continue;
-            infos[i] = file ? load_one(file, s, t->dial) : 0;
-            if (!infos[i]) {
-                infos[i] = (u8 *)1;
+            infos[j] = file ? load_one(file, &e[j], t->dial) : 0;
+            if (!infos[j]) {
+                infos[j] = (u8 *)1;
                 failed++;
             }
         }
@@ -622,6 +641,114 @@ static void report(void)
     tes3x_log("lazy.unstubbable", unstubbable);
     tes3x_log("lazy.unfiltered", unfiltered);
     tes3x_log("lazy.filter_objects", object_count);
+    tes3x_log("lazy.late", late);
+}
+
+/* By field: a packed struct assignment becomes a memcpy call, which the payload cannot link. */
+static void copy_entry(struct entry *to, const struct entry *from)
+{
+    u32 i;
+
+    to->offset = from->offset;
+    to->source = from->source;
+    to->flags = from->flags;
+    to->sex = from->sex;
+    to->unused = 0;
+    for (i = 0; i < FILTERS; i++)
+        to->filter[i] = from->filter[i];
+}
+
+static void swap_stubs(struct stub *a, struct stub *b)
+{
+    u32 *x = (u32 *)a, *y = (u32 *)b, i, w;
+
+    for (i = 0; i < sizeof(struct stub) / 4; i++) {
+        w = x[i];
+        x[i] = y[i];
+        y[i] = w;
+    }
+}
+
+#define GROUP 0x8000u
+#define UNPLACED 0xFFFFFFFFu
+
+/* After the last plugin, each chain becomes an array of entries. The stubs are first sorted in
+ * place into chain order, so each chunk is freed once read and the arrays can reuse its space. A
+ * topic whose entries cannot be allocated keeps no responses, as when build cannot allocate. */
+static __attribute__((used, noinline)) void compact(void)
+{
+    struct entry *group = 0;
+    struct stub *s;
+    u32 i, j, n = 0, read = 0, freed = 0, group_left = 0, group_kb = 0, lost = 0, bytes, size;
+
+    if (compacted)
+        return;
+    compacted = 1;
+    /* A stub's place in chain order, in its no longer needed previous_exact. insert_at can drop a
+     * stub from its chain, as the engine drops the INFO; those go last. */
+    for (i = 0; i < stubs; i++)
+        stub_at(i)->previous_exact = UNPLACED;
+    for (i = 0; i < SLOTS; i++)
+        if (slots[i])
+            for (s = slots[i]->head; s; s = s->next)
+                s->previous_exact = n++;
+    for (i = 0; i < stubs; i++)
+        if (stub_at(i)->previous_exact == UNPLACED)
+            stub_at(i)->previous_exact = n++;
+    for (i = 0; i < stubs; i++)
+        while ((j = stub_at(i)->previous_exact) != i)
+            swap_stubs(stub_at(i), stub_at(j));
+
+    for (i = 0; i < SLOTS; i++) {
+        struct topic *t = slots[i];
+
+        if (!t)
+            continue;
+        bytes = t->count * sizeof(struct entry);
+        if (bytes > group_left) {
+            size = bytes > GROUP ? bytes : GROUP;
+            group = heap_allocate(size);
+            group_left = group ? size : 0;
+            group_kb += group ? size / 1024 : 0;
+        }
+        if (!group) {
+            lost += t->count;
+            t->entries = 0;
+            t->built = 1;
+        } else {
+            for (j = 0; j < t->count; j++)
+                copy_entry(&group[j], &stub_at(read + j)->e);
+            t->entries = group;
+            group += t->count;
+            group_left -= bytes;
+        }
+        read += t->count;
+        if (!group)
+            t->count = 0;
+        for (; freed < chunk_count && (freed + 1) * PER_CHUNK <= read; freed++) {
+            heap_free(chunks[freed]);
+            chunks[freed] = 0;
+        }
+    }
+    for (; freed < chunk_count; freed++) {
+        heap_free(chunks[freed]);
+        chunks[freed] = 0;
+    }
+    failed += lost;
+    tes3x_log("lazy.entry_kb", group_kb);
+    tes3x_log("lazy.dropped", stubs - read);
+    tes3x_log("lazy.compact_lost", lost);
+}
+
+/* Replaces loadAllFiles' call for the first topic after sortTopicsByNameLength. */
+__attribute__((naked)) void tes3x_lazy_dialogue_loaded(void)
+{
+    __asm__ volatile(
+        "pushal\n\t"
+        "call _compact\n\t"
+        "popal\n\t"
+        "pushl $" TES3X_SYM(LAZY_LOADED_FIRST) "\n\t"
+        "retl\n\t");
 }
 
 static __attribute__((used, noinline)) void __stdcall ensure(const u8 *dial)
@@ -632,6 +759,7 @@ static __attribute__((used, noinline)) void __stdcall ensure(const u8 *dial)
         report();
     if (mode != MODE_ON || !dial)
         return;
+    compact();
     t = find_topic(dial);
     if (t && !t->built)
         build(t);
@@ -658,7 +786,7 @@ static const char *object_id(u32 object)
     return (const char *)vcall((const u8 *)object, OBJECT_ID);
 }
 
-static u32 filter_object(const struct stub *s, u32 tag)
+static u32 filter_object(const struct entry *s, u32 tag)
 {
     u32 i = s->filter[tag];
 
@@ -667,7 +795,7 @@ static u32 filter_object(const struct stub *s, u32 tag)
 
 /* The INFO filter's tests that need only the INFO and the speaker, in its order. The speaker
  * passed to getFilteredInfo becomes its base object for a reference, as in the filter. */
-static int passes(const struct stub *s, const u8 *actor)
+static int passes(const struct entry *s, const u8 *actor)
 {
     u32 speaker = filter_object(s, 0), type, value, i;
     const u8 *cell;
@@ -728,6 +856,16 @@ static int passes(const struct stub *s, const u8 *actor)
     return 1;
 }
 
+static int first_passing(const struct topic *t, const u8 *actor)
+{
+    u32 i;
+
+    for (i = 0; i < t->count; i++)
+        if (passes(&t->entries[i], actor))
+            return (int)i;
+    return -1;
+}
+
 static const u8 *last_actor;
 static u32 last_reference, last_flag;
 
@@ -735,7 +873,6 @@ static __attribute__((used, noinline)) void __stdcall
 ensure_for(const u8 *dial, const u8 *actor, u32 reference, u32 flag)
 {
     struct topic *t;
-    struct stub *s;
 
     if (!reported)
         report();
@@ -746,13 +883,11 @@ ensure_for(const u8 *dial, const u8 *actor, u32 reference, u32 flag)
     }
     if (mode != MODE_ON || !dial)
         return;
+    compact();
     t = find_topic(dial);
     if (!t || t->built)
         return;
-    for (s = t->head; s && actor; s = s->next)
-        if (passes(s, actor))
-            break;
-    if (s || !actor)
+    if (!actor || first_passing(t, actor) >= 0)
         build(t);
     else
         skipped++;
@@ -805,16 +940,18 @@ u32 tes3x_lazy_dialogue_check(void)
 {
     u32 i, checked = 0, mismatched = 0, shown = 0;
 
+    compact();
     for (i = 0; i < SLOTS; i++) {
         struct topic *t = slots[i];
-        struct stub *s;
+        const struct entry *s = 0;
         u8 *info;
         u32 n = 0, bad = 0;
 
         if (!t)
             continue;
-        for (s = t->head, info = *(u8 **)(t->dial + DIAL_INFO); s || info;
-             n++, s = s ? s->next : 0, info = info ? *(u8 **)(info + INFO_NEXT) : 0) {
+        for (info = *(u8 **)(t->dial + DIAL_INFO); n < t->count || info;
+             n++, info = info ? *(u8 **)(info + INFO_NEXT) : 0) {
+            s = n < t->count ? &t->entries[n] : 0;
             if (!s || !info || sources[s->source] != *(u8 **)(info + INFO_SOURCE) ||
                 s->offset != *(u32 *)(info + INFO_OFFSET) ||
                 (s->flags & FLAG_DELETED) != (*(u32 *)(info + INFO_FLAGS) & FLAG_DELETED)) {
@@ -863,16 +1000,13 @@ static void check_speaker(const u8 *actor, u32 reference, u32 flag, u32 *counts)
 
     for (i = 0; i < SLOTS; i++) {
         struct topic *t = slots[i];
-        struct stub *s;
         const u8 *answer, *info;
+        u32 n;
 
         if (!t)
             continue;
         counts[0]++;
-        for (s = t->head; s; s = s->next)
-            if (passes(s, actor))
-                break;
-        if (s)
+        if (first_passing(t, actor) >= 0)
             counts[1]++;
         if (mode != MODE_VERIFY)
             continue;
@@ -880,11 +1014,11 @@ static void check_speaker(const u8 *actor, u32 reference, u32 flag, u32 *counts)
         if (!answer)
             continue;
         counts[2]++;
-        for (s = t->head, info = *(const u8 *const *)(t->dial + DIAL_INFO);
-             s && info && info != answer;
-             s = s->next, info = *(const u8 *const *)(info + INFO_NEXT))
+        for (n = 0, info = *(const u8 *const *)(t->dial + DIAL_INFO);
+             n < t->count && info && info != answer;
+             n++, info = *(const u8 *const *)(info + INFO_NEXT))
             ;
-        if (!s || !info || !passes(s, actor)) {
+        if (n == t->count || !info || !passes(&t->entries[n], actor)) {
             if (counts[3]++ < 8)
                 tes3x_log_hex3("lazy.summary_hidden_at", (u32)t->dial, (u32)answer, (u32)actor);
         }

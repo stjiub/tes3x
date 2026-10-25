@@ -863,13 +863,14 @@ def engine_bindings(xbe, sources):
         define("LAZY_NAMES_FREE", hexva(locate("info-names-free")))
         for name in ("topic", "info_done", "info_tail", "info_notail", "info_new", "info_ctor",
                      "load_from_file", "cached_file", "file_ctor", "file_collect", "file_reopen",
-                     "file_seek", "file_close", "file_dtor"):
+                     "file_seek", "file_close", "file_dtor", "loaded_first"):
             define("LAZY_" + name.upper(), hexva(lazy[name]))
         define("LAZY_FILTERED", hexva(lazy["reader_filtered"]))
         for name, length in (("filtered", 7), ("at_index", 5), ("journal", 6)):
             define(f"LAZY_{name.upper()}_RESUME", hexva(lazy["reader_" + name] + length))
             wanted["lazy_dialogue_" + name] = (f"_tes3x_lazy_dialogue_{name}",)
         wanted["lazy_dialogue_info"] = ("_tes3x_lazy_dialogue_info_hook",)
+        wanted["lazy_dialogue_loaded"] = ("_tes3x_lazy_dialogue_loaded",)
     if "tes3xtest_lazydialogue.c" in names:
         if "tes3xconsole.c" not in names:
             raise PayloadError("tes3xtest_lazydialogue.c requires tes3xconsole.c")

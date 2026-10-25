@@ -1051,7 +1051,7 @@ def _dialogue_owner(x, value, ctx):
 def _lazy_dialogue(x, value, ctx):
     """Load topic responses as stubs and build each topic's chain when a reader first needs it."""
     hooks = ctx.get("hooks", {})
-    keys = ("info", "filtered", "at_index", "journal")
+    keys = ("info", "filtered", "at_index", "journal", "loaded")
     missing = [key for key in keys if not hooks.get("lazy_dialogue_" + key)]
     if missing:
         raise PatchError("lazy-dialogue: needs `payload` first, with its %s hooks"
@@ -1068,6 +1068,9 @@ def _lazy_dialogue(x, value, ctx):
         x.data[off:off + length] = (b"\xe9" + struct.pack("<i", target - (site + 5))
                                     + b"\x90" * (length - 5))
         edits.append((off, length, f"{what} 0x{site:08X} -> 0x{target:08X}"))
+    target = int(str(hooks["lazy_dialogue_loaded"]), 16)
+    was, off = x.patch_call(sites["loaded_call"], target)
+    edits.append((off, 5, f"loaded 0x{sites['loaded_call']:08X}: 0x{was:08X} -> 0x{target:08X}"))
     return edits
 
 
