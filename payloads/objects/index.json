@@ -71,6 +71,7 @@
     "LAZY_FILE_DTOR": null,
     "LAZY_FILE_REOPEN": null,
     "LAZY_FILE_SEEK": null,
+    "LAZY_FILTERED": null,
     "LAZY_FILTERED_RESUME": null,
     "LAZY_HEAP_ALLOCATE": null,
     "LAZY_HEAP_FREE": null,
@@ -523,8 +524,8 @@
       "sha256": "73564c05d1fa92e0b33bce1749e556778c23bde345fa15ec993dcc05f4478ffd"
     },
     "tes3xlazydialogue.c": {
-      "digest": "6b26e66c783f31626267f215e370c3cb9eb8443602039550fd6cc44ea6f5efba",
-      "sha256": "0f96cfade21dee9b00b9f9c63ddc3d5b92d050f34e2384ac581e501843bc8892"
+      "digest": "5b5bf24b134039d13cb1c66bdd61e19ae60bf128d4bff44a13619ed319adab20",
+      "sha256": "9d7af23a389185d542ad2cf03c5f58c9912d6595a740f5055a5513daf9ab8828"
     },
     "tes3xleanmenu.c": {
       "digest": "3d07305385c5a692a5f383573730844a1bb2055d8f245ec4c6e4ed67c9ed880e",

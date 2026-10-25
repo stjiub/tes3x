@@ -32,13 +32,20 @@ from the plugins, as `DialogueInfo::getText` already reopens them for the respon
 then stays built. Code that only looks for responses the player has heard sees none in an unbuilt
 topic, which is correct, because nothing in it can have been heard.
 
+Each record also keeps the response's speaker, race, class, faction, cell and sex filters. Whenever
+the dialogue window opens, the game asks every topic the player knows for a response the speaker
+could give. The patch builds a topic for that question only when at least one of its responses
+passes those filters for the speaker; otherwise no response could be chosen, and the topic is left
+unbuilt and hidden, as the game would hide it. With Tamriel Rebuilt, about 100 of its 4,856 topics
+pass for a typical speaker.
+
 The patch requires `dialogue-merge`, so that a plugin that repeats a topic adds to it rather than
 replacing it, as on PC.
 
 With the full Tamriel Rebuilt masters (Tamriel Data 26.08, TR_Mainland 26.08.23) on a 128 MB Xbox,
 at the first frame of a New Game, the heap in use falls from 47.6 to 35.7 MB and the heap's peak
 during loading from 64.9 to 45.4 MB; free memory rises by 15.1 MB. With retail data the topic
-records take 0.7 MB in place of their responses.
+records take 0.8 MB in place of their responses.
 
 ## Configuration
 
@@ -48,6 +55,5 @@ against the engine's.
 
 ## Compatibility and limits
 
-The first conversation after loading builds every topic the player knows, because the game checks
-each one for a response the speaker can give. A topic's responses are read from the plugins then:
-roughly one read per plugin that adds to the topic.
+Building a topic reads its responses from the plugins: roughly one read per plugin that adds to
+the topic. The first conversation with each speaker can therefore read several topics.
