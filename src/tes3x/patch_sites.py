@@ -2262,6 +2262,82 @@ def find_dialogue_owner_sites(x):
     }
 
 
+# loadRecord's plugin INFO path: pool new, constructor, loadFromFile, then the type copy and the
+# atTail test that chooses appendInfo(info, true) or findInfo.
+LAZY_DIALOGUE_INFO = re.compile(
+    rb"\x6a\x2c\xe8(?P<new>....)\x83\xc4\x04\x89\x44\x24\x10\x85\xc0\xc7\x84\x24\xf8\x01\x00\x00"
+    rb".\x00\x00\x00\x74\x0b\x8b\xc8\xe8(?P<ctor>....)\x8b\xf8\xeb\x02\x33\xff\x8b\x0d(?P<topic>....)"
+    rb"\x8b\x84\x24\x00\x02\x00\x00\x8a\x51\x14\x50\x57\x8b\xcd\xc7\x84\x24\x00\x02\x00\x00"
+    rb"\xff\xff\xff\xff\x88\x57\x14\xe8(?P<load>....)"
+    rb"(?P<site>\x8b\x0d(?P=topic)\x8a\x84\x24\x04\x02\x00\x00\x84\xc0\x8a\x51\x14\x88\x57\x14"
+    rb"\x74\x12)(?P<tail>\x6a\x01\x57\xe8....\xb8\x01\x00\x00\x00\xe9(?P<done>....))", re.S)
+# DialogueInfo::getText's master branch: the cached master file, its construction, reopen and
+# seek, then a temporary file's teardown.
+LAZY_DIALOGUE_GET_TEXT = re.compile(
+    rb"\x39\x3d(?P<cached>....)\x75.\x68\x74\x05\x00\x00\xe8(?P<new>....)\x83\xc4\x04"
+    rb"\x89\x44\x24\x10\x3b\xc7\x89\x7c\x24\x1c\x74.\x57\x8d\x4e\x0c\x51\x81\xc6\x10\x01\x00\x00"
+    rb"\x56\x8b\xc8\xe8(?P<ctor>....)\xeb\x02\x33\xc0\x8b\x15(?P<data>....)\x8b\x0a"
+    rb"\x8b\x91\x6c\xae\x00\x00\x57\x52\x8b\xc8\xc7\x44\x24\x24\xff\xff\xff\xff\xa3(?P=cached)"
+    rb"\xe8(?P<collect>....)\x8b\x0d(?P=cached)\x57\x57\xe8(?P<reopen>....)\x84\xc0\x74."
+    rb"\x8b\x35(?P=cached)\x8b\x55\x24\x52\x8b\xce\xe8(?P<seek>....)\x84\xc0\x8b\xce\x74."
+    rb"\xe8....\x3d\x49\x4e\x46\x4f\x0f\x84....\x8b\xce\xe8(?P<close>....)\x3b\xdf\x74."
+    rb"\x8b\xcb\xe8(?P<dtor>....)", re.S)
+# The first instructions of the per-topic readers that must see a built chain.
+LAZY_DIALOGUE_READERS = {
+    "filtered": rb"\x56\x57\x8b\xf9\x8b\x77\x18\x85\xf6\x0f\x84....\x8b\x0d....\x85\xc9\x74.",
+    "at_index": rb"\x8b\x41\x18\x85\xc0\x74.\x8b\x4c\x24\x04\xeb\x03\x8d\x49\x00\x8b\xd1\x49",
+    "journal": rb"\x53\x55\x8b\x6c\x24\x0c\x56\x57\x8b\xf9\x8b\x77\x18\x32\xdb\x85\xf6\x74."
+               rb"\x0f\xbf\x46\x16\x3b\xc5",
+}
+
+
+def find_lazy_dialogue_sites(x):
+    """The INFO load decision, the getText file plumbing materialization reuses, and the entry of
+    each reader that needs a topic's responses."""
+    data = bytes(x.data)
+    found = {}
+    for key, rx in (("info", LAZY_DIALOGUE_INFO), ("text", LAZY_DIALOGUE_GET_TEXT)):
+        hits = list(rx.finditer(data))
+        if len(hits) != 1:
+            raise PatchError(f"lazy-dialogue: {len(hits)} {key} sites, expected 1")
+        found[key] = hits[0]
+    info, text = found["info"], found["text"]
+
+    def rel(match, group):
+        end = match.end(group)
+        return x.off_to_va(end) + struct.unpack("<i", match.group(group))[0]
+
+    def word(match, group):
+        return struct.unpack("<I", match.group(group))[0]
+
+    site = x.off_to_va(info.start("site"))
+    sites = {
+        "info_site": site,
+        "info_tail": x.off_to_va(info.start("tail")),
+        "info_notail": x.off_to_va(info.start("tail")) + 0x12,
+        "info_done": rel(info, "done"),
+        "info_new": rel(info, "new"),
+        "info_ctor": rel(info, "ctor"),
+        "topic": word(info, "topic"),
+        "load_from_file": rel(info, "load"),
+        "cached_file": word(text, "cached"),
+        "operator_new": rel(text, "new"),
+        "file_ctor": rel(text, "ctor"),
+        "data_handler": word(text, "data"),
+        "file_collect": rel(text, "collect"),
+        "file_reopen": rel(text, "reopen"),
+        "file_seek": rel(text, "seek"),
+        "file_close": rel(text, "close"),
+        "file_dtor": rel(text, "dtor"),
+    }
+    for key, sig in LAZY_DIALOGUE_READERS.items():
+        hits = list(re.finditer(sig, data, re.S))
+        if len(hits) != 1:
+            raise PatchError(f"lazy-dialogue: {len(hits)} {key} reader entries, expected 1")
+        sites["reader_" + key] = x.off_to_va(hits[0].start())
+    return sites
+
+
 # CRT _heap_alloc: round the size, then RtlAllocateHeap(GetProcessHeap(), 0, size).
 CRT_HEAP_ALLOC = re.compile(rb"\x8b\x44\x24\x04\x85\xc0\x75\x01\x40\x83\x3d....\x01\x74\x06"
                             rb"\x83\xc0\x0f\x83\xe0\xf0\x50\x6a\x00\xe8....\x50(?=\xe8....\xc3)",

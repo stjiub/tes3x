@@ -86,6 +86,12 @@ Used only when the Xbox has more than 64 MB; on 64 MB the arena keeps its retail
 
 Only pages the heap actually uses consume memory, so a large value costs address space, not RAM.
 
+## `lazy-dialogue`
+
+| key | values | default |
+|---|---|---|
+| `LazyDialogue` | `on`, `off` or `verify` | `on`; `off` loads every topic response at startup, `verify` loads them and also records the stubs |
+
 ## `bow-view`
 
 | key | values | default |

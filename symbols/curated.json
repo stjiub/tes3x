@@ -3090,6 +3090,14 @@
       "pc_va": "0x004B2C00"
     },
     {
+      "va": "0x000FD2A0",
+      "name": "DialogueInfo::operator_new",
+      "confidence": "verified",
+      "provenance": "lazy-dialogue 2026-10-24: disassembled and used",
+      "note": "Allocates from the TES3TopicInfo pool (0x003CF048), falling back to the heap.",
+      "signature": "void* __cdecl m(unsigned int size)"
+    },
+    {
       "va": "0x000FD460",
       "name": "DialogueInfo::ctor",
       "confidence": "guess",
@@ -3100,6 +3108,13 @@
       "name": "Dialogue::ctor",
       "confidence": "guess",
       "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds Dialogue for tag DIAL; loader read from the class vtable slot 1"
+    },
+    {
+      "va": "0x000FDDE0",
+      "name": "Dialogue::saveRecord",
+      "confidence": "verified",
+      "provenance": "demand pager: decompiled and read",
+      "note": "Writes DIAL NAME and XIDX, then one INFO record (XNAM chain index, ACDT speaker ID) per modified INFO with firstHeardFrom set, walking the whole chain"
     },
     {
       "va": "0x000FDEC0",
@@ -3124,11 +3139,26 @@
       "pc_va": "0x004B2920"
     },
     {
+      "va": "0x000FE130",
+      "name": "Dialogue::getInfoAtIndex",
+      "confidence": "verified",
+      "provenance": "demand pager: decompiled and read",
+      "note": "The save loader resolves an INFO by its XNAM chain index through this",
+      "signature": "TES3::DialogueInfo* __thiscall getInfoAtIndex(int index)"
+    },
+    {
       "va": "0x000FE160",
       "name": "Dialogue::indexOfInfo",
       "confidence": "verified",
       "provenance": "Xbox decompile 2026-10-17; returns zero-based chain index or -1",
       "signature": "int __thiscall indexOfInfo(DialogueInfo* info)"
+    },
+    {
+      "va": "0x000FE190",
+      "name": "Dialogue::countInfos",
+      "confidence": "verified",
+      "provenance": "demand pager: decompiled and read",
+      "signature": "int __thiscall countInfos()"
     },
     {
       "va": "0x000FE1B0",
@@ -3141,8 +3171,9 @@
       "va": "0x000FE200",
       "name": "Dialogue::insertInfoAtIndex",
       "confidence": "verified",
-      "provenance": "Xbox decompile 2026-10-17; inserts into Dialogue +0x18 chain at zero-based index",
-      "signature": "DialogueInfo* __thiscall insertInfoAtIndex(DialogueInfo* info, int index)"
+      "provenance": "lazy-dialogue 2026-10-24: disassembled and used",
+      "signature": "DialogueInfo* __thiscall insertInfoAtIndex(DialogueInfo* info, int index)",
+      "note": "An index past the chain's end inserts nothing, so the INFO leaves the chain."
     },
     {
       "va": "0x000FE250",
@@ -3150,6 +3181,29 @@
       "confidence": "guess",
       "provenance": "engine-map step 3: decompiled and read",
       "note": "Creates the built-in DIAL stubs for the voice-line tables (Bribe_Fail ...) from loadAllFiles before any file is read."
+    },
+    {
+      "va": "0x000FE390",
+      "name": "DialogueInfo::findDialogue",
+      "confidence": "verified",
+      "provenance": "demand pager: decompiled and read",
+      "note": "Walks every topic's INFO chain from NonDynamicData::dialogues until it meets info: about 110,000 nodes for full TR. Callers: setFirstHeardFrom 0x000FF590, resetModifiedInfos 0x000FF7C0, runScript 0x000FFCE0, the Choice condition (function 0x32) in filter 0x000FFEA0",
+      "signature": "TES3::Dialogue* __cdecl findDialogue(TES3::DialogueInfo* info)"
+    },
+    {
+      "va": "0x000FE3F0",
+      "name": "Dialogue::sortTopicsByNameLength",
+      "confidence": "verified",
+      "provenance": "demand pager: decompiled and read",
+      "note": "Bubble sort of NonDynamicData::dialogues, longest name first, stable (swaps on strictly longer). count-1 full passes with no early exit and two strlens per pair, so (n-1)*n visits: 50M for full TR's 7,070 topics. Updates the loading bar once per pass. loadAllFiles calls it unless exactly one non-master file loads; writeSaveFile only when +0xB380 is set, and the only direct write to +0xB380 is the constructor's zero"
+    },
+    {
+      "va": "0x000FE4D0",
+      "name": "Dialogue::hasHeardInfo",
+      "confidence": "verified",
+      "provenance": "demand pager: decompiled and read",
+      "note": "true if any INFO in the chain has firstHeardFrom (+0x28)",
+      "signature": "bool __thiscall hasHeardInfo()"
     },
     {
       "va": "0x000FE620",
@@ -3175,6 +3229,22 @@
       "note": "The only caller is loadRecord's plugin override path (copy(src, true)); with true it copies the load-link names and dereferences both INFOs' +0x10 without a null check"
     },
     {
+      "va": "0x000FF460",
+      "name": "Dialogue::markTopicInText",
+      "confidence": "verified",
+      "provenance": "demand pager: decompiled and read",
+      "note": "strnicmp of name at each word start of the shared text buffer 0x003CEEA4, skipping text already inside @...#",
+      "signature": "void __cdecl markTopicInText(const char* name)"
+    },
+    {
+      "va": "0x000FF590",
+      "name": "DialogueInfo::setFirstHeardFrom",
+      "confidence": "verified",
+      "provenance": "demand pager: decompiled and read",
+      "note": "+0x28. When set for the first time, marks the owning topic modified through findDialogue (global walk)",
+      "signature": "void __thiscall setFirstHeardFrom(TES3::Reference* speaker)"
+    },
+    {
       "va": "0x000FF620",
       "name": "Dialogue::freeLoadNames",
       "confidence": "verified",
@@ -3188,6 +3258,21 @@
       "provenance": "decompiled; loader INFO branch calls it once per record",
       "note": "Only loadFile index 0 (Morrowind.esm) passes atTail=1 (0x001103C3): a non-empty PNAM walks the whole +0x1C chain to append, an empty one pushes the head. Later files use findInfo then atTail=0 (0x001104F3). Retail: 11.7M nodes, 441 ms on hardware (~28 cycles/node).",
       "signature": "void __thiscall appendInfo(TES3::DialogueInfo* info, bool atTail)"
+    },
+    {
+      "va": "0x000FF760",
+      "name": "Dialogue::markHyperlinks",
+      "confidence": "verified",
+      "provenance": "demand pager: decompiled and read",
+      "note": "From getText: for every topic that is not a voice topic (type 1), markTopicInText searches the reply for its name. Touches every DIAL and its name per response; the INFO chains are not read",
+      "signature": "void __cdecl markHyperlinks(TES3::Reference* speaker)"
+    },
+    {
+      "va": "0x000FF7C0",
+      "name": "Dialogue::resetModifiedInfos",
+      "confidence": "verified",
+      "provenance": "demand pager: decompiled and read",
+      "note": "Clears firstHeardFrom on every modified INFO of this topic; for each one of type 0 it also calls findDialogue, a global walk per modified INFO"
     },
     {
       "va": "0x000FF870",
@@ -3214,6 +3299,13 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_DialogueInfo_runScript",
       "pc_va": "0x004B1E40"
+    },
+    {
+      "va": "0x000FFD70",
+      "name": "Dialogue::resetAllModified",
+      "confidence": "verified",
+      "provenance": "demand pager: decompiled and read",
+      "note": "resetAlteredStuff: resetModifiedInfos on every topic with the modified flag (objectFlags bit 1)"
     },
     {
       "va": "0x000FFE00",
@@ -3322,9 +3414,11 @@
       "va": "0x001022F0",
       "name": "TES3File::collectActiveMods2",
       "kind": "function",
-      "confidence": "matched",
-      "provenance": "mwse:TES3_TES3File_collectActiveMods2",
-      "pc_va": "0x004B5BB0"
+      "confidence": "verified",
+      "provenance": "lazy-dialogue 2026-10-24: disassembled and used",
+      "pc_va": "0x004B5BB0",
+      "note": "getText passes NonDynamicData +0xAE6C",
+      "signature": "void __thiscall m(void* activeMods, int flags)"
     },
     {
       "va": "0x00102570",
@@ -3396,9 +3490,10 @@
       "va": "0x00103310",
       "name": "TES3File::setFilePointer",
       "kind": "function",
-      "confidence": "matched",
-      "provenance": "mwse:TES3_TES3File_setFilePointer",
-      "pc_va": "0x004B6520"
+      "confidence": "verified",
+      "provenance": "lazy-dialogue 2026-10-24: disassembled and used",
+      "pc_va": "0x004B6520",
+      "signature": "bool __thiscall m(unsigned int offset)"
     },
     {
       "va": "0x001034F0",
@@ -3412,17 +3507,20 @@
       "va": "0x00103940",
       "name": "TES3File::ctor",
       "kind": "function",
-      "confidence": "matched",
-      "provenance": "mwse:TES3_TES3File_ctor",
-      "pc_va": "0x004B3F10"
+      "confidence": "verified",
+      "provenance": "lazy-dialogue 2026-10-24: disassembled and used",
+      "pc_va": "0x004B3F10",
+      "note": "getText passes the source file's +0x110 (path) and +0xC (name) with flags 0",
+      "signature": "TES3::TES3File* __thiscall m(const char* path, const char* name, int flags)"
     },
     {
       "va": "0x00103D30",
       "name": "TES3File::reopen",
       "kind": "function",
-      "confidence": "matched",
-      "provenance": "mwse:TES3_TES3File_reopen",
-      "pc_va": "0x004B4510"
+      "confidence": "verified",
+      "provenance": "lazy-dialogue 2026-10-24: disassembled and used",
+      "pc_va": "0x004B4510",
+      "signature": "bool __thiscall m(int a, int b)"
     },
     {
       "va": "0x001042C0",
@@ -3439,6 +3537,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_NonDynamicData_findDialogue",
       "pc_va": "0x004BA8D0"
+    },
+    {
+      "va": "0x00104370",
+      "name": "NonDynamicData::addDialogue",
+      "confidence": "verified",
+      "provenance": "demand pager: decompiled and read",
+      "note": "Hash map at +0xB278, then append to dialogues (+0x48) unless the ID exists",
+      "signature": "void __thiscall addDialogue(TES3::Dialogue* dialogue)"
     },
     {
       "va": "0x001044E0",
@@ -3478,9 +3584,9 @@
       "va": "0x00104C50",
       "name": "BaseObject::loadFromFile",
       "confidence": "verified",
-      "provenance": "engine-map step 3: decompiled and read",
-      "note": "loadRecord's shared step: calls vtable slot 1 (loadObjectSpecific), stamps the source mod, sets the master flag.",
-      "signature": "bool __cdecl m(TES3::BaseObject* object, TES3::TES3File* file)"
+      "provenance": "lazy-dialogue 2026-10-24: disassembled and used",
+      "note": "Callee pops both arguments (ret 8); ECX is unused. Stamps the file it is given as the source mod, so a caller reading from a reopened copy must restore the original source.",
+      "signature": "bool __stdcall m(TES3::BaseObject* object, TES3::TES3File* file)"
     },
     {
       "va": "0x00104CB0",
@@ -3670,6 +3776,13 @@
       "confidence": "verified",
       "provenance": "phase strings 'ResetAlteredStuff()...' in the body; decompiled 2026-10-23",
       "note": "Called by loadGame (in-process load) before loadSaveGame: tears down magic/VFX/journal/audio, builds a reload list of visited cells and modified objects, resets dialogue, walks every cell with a loading-menu update each, then re-reads each modified object, region, global and faction from its master (0x00131C90); one that fails to reload is deleted."
+    },
+    {
+      "va": "0x0010C500",
+      "name": "NonDynamicData::unloadAll",
+      "confidence": "guess",
+      "provenance": "demand pager: decompiled and read",
+      "note": "Destroys every record list, dialogues included"
     },
     {
       "va": "0x0010CA40",
@@ -4449,6 +4562,30 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_Reference_activate",
       "pc_va": "0x004E9610"
+    },
+    {
+      "va": "0x00130C50",
+      "name": "BaseObject::setFromMaster",
+      "confidence": "verified",
+      "provenance": "lazy-dialogue 2026-10-24: disassembled and used",
+      "note": "objectFlags bit 0x1",
+      "signature": "void __thiscall m(bool master)"
+    },
+    {
+      "va": "0x00130CC0",
+      "name": "BaseObject::setDeleted",
+      "confidence": "verified",
+      "provenance": "lazy-dialogue 2026-10-24: disassembled and used",
+      "note": "objectFlags bit 0x20. DialogueInfo::copy only ever sets it, so an INFO deleted by any plugin stays deleted after a later override.",
+      "signature": "void __thiscall m(bool deleted)"
+    },
+    {
+      "va": "0x00130D60",
+      "name": "BaseObject::setLinked",
+      "confidence": "guess",
+      "provenance": "lazy-dialogue 2026-10-24: disassembled and used",
+      "note": "objectFlags bit 0x8; Dialogue::freeLoadNames sets it on every INFO after load",
+      "signature": "void __thiscall m(bool linked)"
     },
     {
       "va": "0x00130E60",
@@ -7428,6 +7565,13 @@
       "pc_va": "0x005D35B0"
     },
     {
+      "va": "0x001E1630",
+      "name": "MenuJournal::buildTopicPage",
+      "confidence": "guess",
+      "provenance": "demand pager: decompiled and read",
+      "note": "One topic's heard INFOs (firstHeardFrom set) with speaker names and getText"
+    },
+    {
       "va": "0x001E3190",
       "name": "MenuJournal::open",
       "confidence": "guess",
@@ -8366,6 +8510,24 @@
       "kind": "data"
     },
     {
+      "va": "0x003CF0D8",
+      "name": "DialogueInfo::cachedMasterFile",
+      "confidence": "verified",
+      "provenance": "lazy-dialogue 2026-10-24: disassembled and used",
+      "note": "The file getText keeps open for INFOs whose source is a master with load index 0 (TES3File +0x4E0)",
+      "kind": "data",
+      "type": "TES3::TES3File*"
+    },
+    {
+      "va": "0x003CF2C0",
+      "name": "loadRecord::currentDialogue",
+      "confidence": "verified",
+      "provenance": "lazy-dialogue 2026-10-24: disassembled and used",
+      "note": "The DIAL that following INFO records attach to while loading",
+      "kind": "data",
+      "type": "TES3::Dialogue*"
+    },
+    {
       "va": "0x003CFA48",
       "name": "pool_TES3ObjectLAND",
       "confidence": "verified",
@@ -8789,111 +8951,6 @@
       "confidence": "verified",
       "provenance": "engine-map step 3: decompiled and read",
       "kind": "data"
-    },
-    {
-      "va": "0x000FDDE0",
-      "name": "Dialogue::saveRecord",
-      "confidence": "verified",
-      "provenance": "demand pager: decompiled and read",
-      "note": "Writes DIAL NAME and XIDX, then one INFO record (XNAM chain index, ACDT speaker ID) per modified INFO with firstHeardFrom set, walking the whole chain"
-    },
-    {
-      "va": "0x000FE130",
-      "name": "Dialogue::getInfoAtIndex",
-      "confidence": "verified",
-      "provenance": "demand pager: decompiled and read",
-      "note": "The save loader resolves an INFO by its XNAM chain index through this",
-      "signature": "TES3::DialogueInfo* __thiscall getInfoAtIndex(int index)"
-    },
-    {
-      "va": "0x000FE190",
-      "name": "Dialogue::countInfos",
-      "confidence": "verified",
-      "provenance": "demand pager: decompiled and read",
-      "signature": "int __thiscall countInfos()"
-    },
-    {
-      "va": "0x000FE390",
-      "name": "DialogueInfo::findDialogue",
-      "confidence": "verified",
-      "provenance": "demand pager: decompiled and read",
-      "note": "Walks every topic's INFO chain from NonDynamicData::dialogues until it meets info: about 110,000 nodes for full TR. Callers: setFirstHeardFrom 0x000FF590, resetModifiedInfos 0x000FF7C0, runScript 0x000FFCE0, the Choice condition (function 0x32) in filter 0x000FFEA0",
-      "signature": "TES3::Dialogue* __cdecl findDialogue(TES3::DialogueInfo* info)"
-    },
-    {
-      "va": "0x000FE3F0",
-      "name": "Dialogue::sortTopicsByNameLength",
-      "confidence": "verified",
-      "provenance": "demand pager: decompiled and read",
-      "note": "Bubble sort of NonDynamicData::dialogues, longest name first, stable (swaps on strictly longer). count-1 full passes with no early exit and two strlens per pair, so (n-1)*n visits: 50M for full TR's 7,070 topics. Updates the loading bar once per pass. loadAllFiles calls it unless exactly one non-master file loads; writeSaveFile only when +0xB380 is set, and the only direct write to +0xB380 is the constructor's zero"
-    },
-    {
-      "va": "0x000FE4D0",
-      "name": "Dialogue::hasHeardInfo",
-      "confidence": "verified",
-      "provenance": "demand pager: decompiled and read",
-      "note": "true if any INFO in the chain has firstHeardFrom (+0x28)",
-      "signature": "bool __thiscall hasHeardInfo()"
-    },
-    {
-      "va": "0x000FF460",
-      "name": "Dialogue::markTopicInText",
-      "confidence": "verified",
-      "provenance": "demand pager: decompiled and read",
-      "note": "strnicmp of name at each word start of the shared text buffer 0x003CEEA4, skipping text already inside @...#",
-      "signature": "void __cdecl markTopicInText(const char* name)"
-    },
-    {
-      "va": "0x000FF590",
-      "name": "DialogueInfo::setFirstHeardFrom",
-      "confidence": "verified",
-      "provenance": "demand pager: decompiled and read",
-      "note": "+0x28. When set for the first time, marks the owning topic modified through findDialogue (global walk)",
-      "signature": "void __thiscall setFirstHeardFrom(TES3::Reference* speaker)"
-    },
-    {
-      "va": "0x000FF760",
-      "name": "Dialogue::markHyperlinks",
-      "confidence": "verified",
-      "provenance": "demand pager: decompiled and read",
-      "note": "From getText: for every topic that is not a voice topic (type 1), markTopicInText searches the reply for its name. Touches every DIAL and its name per response; the INFO chains are not read",
-      "signature": "void __cdecl markHyperlinks(TES3::Reference* speaker)"
-    },
-    {
-      "va": "0x000FF7C0",
-      "name": "Dialogue::resetModifiedInfos",
-      "confidence": "verified",
-      "provenance": "demand pager: decompiled and read",
-      "note": "Clears firstHeardFrom on every modified INFO of this topic; for each one of type 0 it also calls findDialogue, a global walk per modified INFO"
-    },
-    {
-      "va": "0x000FFD70",
-      "name": "Dialogue::resetAllModified",
-      "confidence": "verified",
-      "provenance": "demand pager: decompiled and read",
-      "note": "resetAlteredStuff: resetModifiedInfos on every topic with the modified flag (objectFlags bit 1)"
-    },
-    {
-      "va": "0x00104370",
-      "name": "NonDynamicData::addDialogue",
-      "confidence": "verified",
-      "provenance": "demand pager: decompiled and read",
-      "note": "Hash map at +0xB278, then append to dialogues (+0x48) unless the ID exists",
-      "signature": "void __thiscall addDialogue(TES3::Dialogue* dialogue)"
-    },
-    {
-      "va": "0x0010C500",
-      "name": "NonDynamicData::unloadAll",
-      "confidence": "guess",
-      "provenance": "demand pager: decompiled and read",
-      "note": "Destroys every record list, dialogues included"
-    },
-    {
-      "va": "0x001E1630",
-      "name": "MenuJournal::buildTopicPage",
-      "confidence": "guess",
-      "provenance": "demand pager: decompiled and read",
-      "note": "One topic's heard INFOs (firstHeardFrom set) with speaker names and getText"
     }
   ]
 }

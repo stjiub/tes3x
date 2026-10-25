@@ -62,6 +62,28 @@
     "INI_GET_STRING": null,
     "INI_PATH": null,
     "JOURNAL_OPENED": null,
+    "LAZY_AT_INDEX_RESUME": null,
+    "LAZY_CACHED_FILE": null,
+    "LAZY_DATA_HANDLER": null,
+    "LAZY_FILE_CLOSE": null,
+    "LAZY_FILE_COLLECT": null,
+    "LAZY_FILE_CTOR": null,
+    "LAZY_FILE_DTOR": null,
+    "LAZY_FILE_REOPEN": null,
+    "LAZY_FILE_SEEK": null,
+    "LAZY_FILTERED_RESUME": null,
+    "LAZY_HEAP_ALLOCATE": null,
+    "LAZY_HEAP_FREE": null,
+    "LAZY_HEAP_OBJECT": null,
+    "LAZY_INFO_CTOR": null,
+    "LAZY_INFO_DONE": null,
+    "LAZY_INFO_NEW": null,
+    "LAZY_INFO_NOTAIL": null,
+    "LAZY_INFO_TAIL": null,
+    "LAZY_JOURNAL_RESUME": null,
+    "LAZY_LOAD_FROM_FILE": null,
+    "LAZY_NAMES_FREE": null,
+    "LAZY_TOPIC": null,
     "LEAN_CELL_BY_NAME": null,
     "LEAN_CREATE_PLAYER": null,
     "LEAN_LAUNCH_INFO": null,
@@ -445,8 +467,8 @@
       "sha256": "38411f8b5f805eec763cec3029b75b383e4b418a8ed0a40c435d326b1decb15f"
     },
     "tes3xconsole.c": {
-      "digest": "fffcfec3b76813713aba109b07adc38df3c272dcc4d223a7419146dd4af7b64a",
-      "sha256": "1c65e0eb0b9e2652a8b654f1809591a7992b0957f9c738734ba7fe21d0932fab"
+      "digest": "102a0811ba6569f914a3f68bb4c1ea066a697926d58243e47c837491bd49e7eb",
+      "sha256": "7b5c6e0ef0eb0ff2ca373173206ad4291913c20f818fe0e6d23df3357c2c648f"
     },
     "tes3xcrt.c": {
       "digest": "9842d5c4ddc23ca417cac29b21e19ba8a8802170c5bd5a23f948ee830eee14f1",
@@ -489,8 +511,8 @@
       "sha256": "5d20df67f269d3bd3e036ae72bdf9eaebe2af1e49994e4788649cb8ae45ddc85"
     },
     "tes3xinfoarena.c": {
-      "digest": "77d93c56691c8db0b1c2aa731929bc80d452ff34af6f8ee6a93d957a99053cc4",
-      "sha256": "4c5ac19df121f83954c238bbf55e4fbc8e8175d18d1e3225798c7c9b84ce493c"
+      "digest": "9dc6607f40ee700e341a39348ed595fe25a747373ed3e04bd0da1093b13fcd36",
+      "sha256": "de0bad44c6c5610e9c936101dad5050dfcfc6394e625c4a2c1e114e6eb98de57"
     },
     "tes3xini.c": {
       "digest": "ed53ec9fa480691888249dde160313f7607ee1d986d16eb23ae68880ad241955",
@@ -499,6 +521,10 @@
     "tes3xlaunch.c": {
       "digest": "c09add9cda1630fc980027283f6e572721be6bd94411d484af518a5c1a5d9753",
       "sha256": "73564c05d1fa92e0b33bce1749e556778c23bde345fa15ec993dcc05f4478ffd"
+    },
+    "tes3xlazydialogue.c": {
+      "digest": "6b26e66c783f31626267f215e370c3cb9eb8443602039550fd6cc44ea6f5efba",
+      "sha256": "0f96cfade21dee9b00b9f9c63ddc3d5b92d050f34e2384ac581e501843bc8892"
     },
     "tes3xleanmenu.c": {
       "digest": "3d07305385c5a692a5f383573730844a1bb2055d8f245ec4c6e4ed67c9ed880e",

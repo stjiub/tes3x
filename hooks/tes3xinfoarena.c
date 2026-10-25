@@ -42,7 +42,7 @@ typedef void(__thiscall *fn_info_link)(void *, u32);
 
 extern u32 tes3x_pager_base, tes3x_pager_size;
 
-static u32 used, topic, group, allocations, fallbacks;
+static u32 used, topic, group, allocations, fallbacks, finished;
 
 void tes3x_info_arena_init(void)
 {
@@ -56,7 +56,8 @@ table_allocate(void *owner, void *heap, u32 size, const char *file, u32 line)
     u32 current = *(u32 *)TES3X_INFO_CURRENT_TOPIC;
     u32 at;
 
-    if (!tes3x_pager_base || size != 12)
+    /* After loading, an INFO is only built by lazy-dialogue, which frees its names at once. */
+    if (!tes3x_pager_base || size != 12 || finished)
         return ((fn_heap_allocate)TES3X_INFO_HEAP_ALLOCATE)(heap, size, file, line);
     if (current != topic) {
         used = (used + PAGE - 1) & ~(PAGE - 1);
@@ -154,6 +155,7 @@ __attribute__((naked)) void tes3x_info_cleanup_hook(void)
 
 static __attribute__((used, noinline)) void info_finish(void)
 {
+    finished = 1;
     tes3x_log("info.allocations", allocations);
     tes3x_log("info.groups", group);
     tes3x_log("info.arena_kb", (used + 1023) / 1024);
