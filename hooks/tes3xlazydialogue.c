@@ -90,12 +90,12 @@ struct entry {
     unsigned short filter[FILTERS]; /* slot + 1 in objects, 0 for none */
 } __attribute__((packed));
 
-/* The placement replay also needs the INFO's names, as hashes. */
+/* The placement replay also needs the INFO's names, as hashes. Its PNAM's case-folded hash is
+ * read only while the INFO itself is placed, so it is not kept. */
 struct stub {
     struct stub *next;
     u32 previous_exact;
     u64 id;
-    u64 previous;
     struct entry e;
 };
 
@@ -117,7 +117,7 @@ static u32 objects[OBJECTS];
 /* Stubs fill whole chunks in order, so stub i is at chunks[i / PER_CHUNK]. */
 #define PER_CHUNK (CHUNK / sizeof(struct stub))
 #define CHUNKS 256u
-typedef char stub_size_check[sizeof(struct stub) == 48 ? 1 : -1];
+typedef char stub_size_check[sizeof(struct stub) == 40 ? 1 : -1];
 
 static u8 *chunks[CHUNKS];
 static u32 chunk_count, mode, reported, source_count, object_count, compacted;
@@ -224,7 +224,7 @@ static struct stub *find_id(struct topic *t, u64 id)
     return 0;
 }
 
-static void append(struct topic *t, struct stub *s, u32 at_tail)
+static void append(struct topic *t, struct stub *s, u64 previous, u32 at_tail)
 {
     struct stub *p;
 
@@ -235,7 +235,7 @@ static void append(struct topic *t, struct stub *s, u32 at_tail)
     }
     if (!at_tail)
         for (p = t->head; p; p = p->next)
-            if (p->id == s->previous) {
+            if (p->id == previous) {
                 s->next = p->next;
                 p->next = s;
                 return;
@@ -389,6 +389,7 @@ static __attribute__((used, noinline)) u32 __stdcall place(u8 *info, u8 *file, u
     char **names = *(char ***)(info + INFO_LINK);
     struct topic *t;
     struct stub n, *s, *existing, *prev;
+    u64 previous;
 
     (void)file;
     if (mode == MODE_UNREAD)
@@ -417,7 +418,7 @@ static __attribute__((used, noinline)) u32 __stdcall place(u8 *info, u8 *file, u
     }
     n.e.offset = *(u32 *)(info + INFO_OFFSET);
     n.id = fold_hash(names[0]);
-    n.previous = fold_hash(names[1]);
+    previous = fold_hash(names[1]);
     n.previous_exact = exact_hash(names[1]);
     n.e.flags = (names[1] && names[1][0] ? STUB_PREVIOUS : 0) |
                 (*(u32 *)(info + INFO_FLAGS) & FLAG_DELETED);
@@ -431,12 +432,12 @@ static __attribute__((used, noinline)) u32 __stdcall place(u8 *info, u8 *file, u
             return 0;
         }
         *s = n;
-        append(t, s, at_tail & 0xFF);
+        append(t, s, previous, at_tail & 0xFF);
         t->count++;
         stubs++;
     } else {
         if (existing->previous_exact != n.previous_exact) {
-            prev = n.e.flags & STUB_PREVIOUS ? find_id(t, n.previous) : 0;
+            prev = n.e.flags & STUB_PREVIOUS ? find_id(t, previous) : 0;
             if (!prev || prev->next != existing) {
                 remove_stub(t, existing);
                 insert_at(t, existing, prev ? index_of(t, prev) + 1 : 0);
