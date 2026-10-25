@@ -1690,6 +1690,7 @@ __all__ = [
     'QPolygonF',
     'QProcess',
     'QProcessEnvironment',
+    'QProgressBar',
     'QPushButton',
     'QScrollArea',
     'QSettings',

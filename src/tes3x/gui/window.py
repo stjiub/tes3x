@@ -7,7 +7,7 @@ from .common import (Bsa, BuildSettings, CATALOG_NAME, CHECK_MARKER, CatalogErro
                      LocalSettingsDialog, PIPELINE_MARKER, PLUGIN_EXT, PROFILE_NAME, PROGRESS_ENV, Path,
                      PipelineError, QAction, QActionGroup, QApplication, QColor, QComboBox, QDialog,
                      QFileDialog, QHBoxLayout, QInputDialog, QLabel, QMainWindow, QMenu,
-                     QMessageBox, QProcess, QProcessEnvironment, QScrollArea, QSettings, QSplitter, QStackedWidget,
+                     QMessageBox, QProcess, QProcessEnvironment, QProgressBar, QScrollArea, QSettings, QSplitter, QStackedWidget,
                      QTabBar, QTabWidget, QTextBrowser, QTextCursor, QTextEdit, QTimer,
                      QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget, Qt, ROLE,
                      ServerPage, Signal, StatusBar, TEMPLATE, TargetsPage, WARNING, XEMU_STARTED,
@@ -209,7 +209,16 @@ class ProfileWindow(QMainWindow):
         self.workspace_bar.currentChanged.connect(self.workspace_changed)
         self.body_split = QSplitter(Qt.Orientation.Vertical)
         self.body_split.addWidget(self.workspaces)
-        self.body_split.addWidget(self.log_tabs)
+        self.job_strip = QWidget()
+        QHBoxLayout(self.job_strip).setContentsMargins(0, 0, 0, 0)
+        self.job_strip.hide()
+        self.job_bars = {}
+        self.log_area = QWidget()
+        log_layout = QVBoxLayout(self.log_area)
+        log_layout.setContentsMargins(0, 0, 0, 0)
+        log_layout.addWidget(self.job_strip)
+        log_layout.addWidget(self.log_tabs, 1)
+        self.body_split.addWidget(self.log_area)
         self.body_split.setStretchFactor(0, 4)
         self.body_split.setStretchFactor(1, 1)
         self.body_split.setSizes([660, 120])
@@ -838,7 +847,7 @@ class ProfileWindow(QMainWindow):
             button.style().polish(button)
 
     def set_output_visible(self, visible, save=True):
-        self.log_tabs.setVisible(visible)
+        self.log_area.setVisible(visible)
         if save and self.settings is not None:
             self.settings.setValue("show_output", visible)
 
@@ -1824,6 +1833,36 @@ class ProfileWindow(QMainWindow):
         if self.job is job:
             self.job = self.jobs[-1]
 
+    def refresh_job_strip(self):
+        """One small bar per running job, shown while more than one runs."""
+        running = self.running_jobs()
+        layout = self.job_strip.layout()
+        for job in [job for job in self.job_bars if job not in running]:
+            bar = self.job_bars.pop(job)
+            layout.removeWidget(bar)
+            bar.deleteLater()
+        for job in running:
+            if job not in self.job_bars:
+                bar = QProgressBar()
+                bar.setFixedHeight(18)
+                bar.setRange(0, 1000)
+                self.job_bars[job] = bar
+                layout.addWidget(bar)
+            self.update_job_bar(job)
+        self.job_strip.setVisible(len(running) > 1)
+
+    def update_job_bar(self, job):
+        bar = self.job_bars.get(job)
+        if bar is None:
+            return
+        bar.setFormat(self.log_tabs.tabText(self.log_tabs.indexOf(job.page)) + "  %p%")
+        done, total = (job.progress[1], job.progress[2]) if job.progress else (0, 0)
+        if total:
+            bar.setRange(0, 1000)
+            bar.setValue(int(1000 * done / total))
+        else:
+            bar.setRange(0, 0)  # busy, no figures yet
+
     def show_job_progress(self, _index=None):
         status = self.statusBar()
         if not isinstance(status, StatusBar):
@@ -1860,6 +1899,7 @@ class ProfileWindow(QMainWindow):
         process.readyReadStandardOutput.connect(lambda: self.append_process_output(job))
         process.finished.connect(lambda code, status: self.command_finished(code, status, job))
         job.process = process
+        self.refresh_job_strip()
         self.refresh_command_actions()
         self.statusBar().spinner.start()
         self.update_build_state()
@@ -1905,6 +1945,7 @@ class ProfileWindow(QMainWindow):
                 shown.append(line + "\n")
             else:
                 job.progress, job.stage = progress, progress[0]
+                self.update_job_bar(job)
                 if job.page is self.log_tabs.currentWidget():
                     self.statusBar().show_progress(*progress)
         return "".join(shown)
@@ -1920,6 +1961,7 @@ class ProfileWindow(QMainWindow):
         follow, retry, space = job.after, job.conflict_retry, job.space_retry
         job.finish()
         job.progress = None
+        self.refresh_job_strip()
         self.show_job_progress()
         self.log_tabs.tabBar().setTabTextColor(
             self.log_tabs.indexOf(job.page), QColor("#3a9a3a" if code == 0 else "#d04040"))

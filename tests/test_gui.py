@@ -836,6 +836,23 @@ order = 10
         self.assertTrue(window.target_busy("spare"))
         self.assertFalse(window.target_busy("bench"))
 
+    def test_the_job_strip_shows_a_bar_per_running_job(self):
+        window = self.window()
+        start = self.running_job(window)
+        first = start("tool", [], kind="deploy", target="a")
+        window.refresh_job_strip()
+        self.assertTrue(window.job_strip.isHidden())
+        second = start("tool", [], kind="deploy", target="b")
+        window.refresh_job_strip()
+        self.assertFalse(window.job_strip.isHidden())
+        self.assertEqual(len(window.job_bars), 2)
+        window.filter_progress("@progress upload 250 1000 bytes x\n", second)
+        self.assertEqual(window.job_bars[second].value(), 250)
+        second.finish()
+        window.refresh_job_strip()
+        self.assertTrue(window.job_strip.isHidden())
+        self.assertEqual(list(window.job_bars), [first])
+
     def test_questions_wait_in_their_own_tabs(self):
         window = self.window()
         first, second = window.job, window.new_job("Output")
