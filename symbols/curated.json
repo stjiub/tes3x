@@ -382,6 +382,27 @@
       "pc_va": "0x00715D40"
     },
     {
+      "va": "0x0006B8E0",
+      "name": "AnimKeys::newCompressedPosKeys",
+      "confidence": "guess",
+      "provenance": "stage-2 census: decompiled and read",
+      "note": "array new of 10-byte keys (float time, three quantized shorts); twin of 0x0006BAF0"
+    },
+    {
+      "va": "0x0006B9D0",
+      "name": "AnimKeys::registerCompressedRotKeys",
+      "confidence": "guess",
+      "provenance": "stage-2 census: decompiled and read",
+      "note": "once-only; fills slot (eax=1, ecx=2) of the key-type function tables at 0x003EF5E8.. via 0x0006BA20"
+    },
+    {
+      "va": "0x0006BAF0",
+      "name": "AnimKeys::newCompressedRotKeys",
+      "confidence": "guess",
+      "provenance": "stage-2 census: decompiled and read",
+      "note": "array new of 12-byte keys (float time, four _ftol-quantized shorts); registered in the key-type table at 0x003EF77C by 0x0006B9D0. 1.9 MB live at a TR New Game"
+    },
+    {
       "va": "0x000808E0",
       "name": "SE::NI_AVOBJECT_FNADDR_FINDROOTCOLLISIONNODE",
       "kind": "function",
@@ -8412,6 +8433,12 @@
       "name": "XCreateSaveGame",
       "confidence": "guess",
       "provenance": ".agents save write path; not reached from its direct call sites in savetime-prof"
+    },
+    {
+      "va": "0x00251358",
+      "name": "_ftol",
+      "confidence": "verified",
+      "provenance": "stage-2 census: decompiled and read"
     },
     {
       "va": "0x00265E90",

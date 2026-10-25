@@ -83,7 +83,7 @@ def tls_identity(state):
     if not path.exists():
         key = ec.generate_private_key(ec.SECP256R1())
         name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "TES3X content")])
-        utc = datetime.timezone.utc
+        utc = datetime.UTC
         certificate = (x509.CertificateBuilder().subject_name(name).issuer_name(name)
                        .public_key(key.public_key())
                        .serial_number(x509.random_serial_number())

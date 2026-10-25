@@ -173,12 +173,12 @@ class HostReceiveTests(unittest.TestCase):
             from tes3x.payload import find_tool  # where the payload build finds clang
             clang = find_tool('clang')
         except (SystemExit, Exception) as error:
-            raise unittest.SkipTest(f'needs clang and the cryptography package: {error!r}')
+            raise unittest.SkipTest(f'needs clang and the cryptography package: {error!r}') from None
         cls.folder = tempfile.TemporaryDirectory()
         try:
             cls.exe = build(cls.folder.name, clang)
         except subprocess.CalledProcessError as error:
-            raise unittest.SkipTest('the host build failed: ' + error.stderr[-400:])
+            raise unittest.SkipTest('the host build failed: ' + error.stderr[-400:]) from None
 
     @classmethod
     def tearDownClass(cls):

@@ -901,10 +901,10 @@ class FilesModel(QAbstractTableModel):
         self.entries = entries
         self.endResetModel()
 
-    def rowCount(self, parent=QModelIndex()):
+    def rowCount(self, parent=QModelIndex()):  # noqa: B008
         return 0 if parent.isValid() else len(self.entries)
 
-    def columnCount(self, parent=QModelIndex()):
+    def columnCount(self, parent=QModelIndex()):  # noqa: B008
         return 0 if parent.isValid() else len(self.headers)
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):

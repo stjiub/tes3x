@@ -83,7 +83,7 @@ class ServerTests(unittest.TestCase):
                 probe.sendto(b'list', ('127.0.0.1', self.admin_port))
                 try:
                     probe.recvfrom(4096)
-                except (socket.timeout, ConnectionResetError):
+                except (TimeoutError, ConnectionResetError):
                     return False
                 return True
 
@@ -2073,7 +2073,7 @@ class ServerTests(unittest.TestCase):
         while time.monotonic() < end:
             try:
                 data, _ = sock.recvfrom(4096)
-            except socket.timeout:
+            except TimeoutError:
                 continue
             replies += data[5] == tes3x_net.HANDSHAKE2
             self.assertLessEqual(len(data), tes3x_net.HANDSHAKE_PAD)

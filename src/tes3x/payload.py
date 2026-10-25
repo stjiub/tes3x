@@ -1899,7 +1899,7 @@ def main(argv=None):
         build_payload(a.xbe, a.src or DEFAULT_SOURCES, a.out, a.cflags, a.llvm, a.check,
                       invert_look=a.invert_look, rebuild=a.rebuild, ctt_ranges=a.ctt_ranges)
     except (PayloadError, ValueError, subprocess.CalledProcessError) as exc:
-        raise SystemExit(str(exc))
+        raise SystemExit(str(exc)) from None
 
 
 if __name__ == "__main__":

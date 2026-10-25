@@ -6,7 +6,6 @@ import os
 from pathlib import Path, PureWindowsPath
 import queue
 import re
-import socket
 import struct
 import sys
 import threading
@@ -355,7 +354,7 @@ class AgentListener(threading.Thread):
         while not self.stopping.is_set():
             try:
                 data, address = self.socket.recvfrom(MAX_PACKET + 1)
-            except socket.timeout:
+            except TimeoutError:
                 with self.lock:
                     self.protocol.expire()
                     packets = self.protocol.retry()

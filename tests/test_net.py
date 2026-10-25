@@ -45,7 +45,7 @@ class DnsReplyTests(unittest.TestCase):
         self.assertIsNone(tes3x_net.dns_reply(query('mw.test')[:-3], {'mw.test': '10.0.2.2'}))
 
 
-def dhcp_request(kind, mac=bytes.fromhex('020000002499')):
+def dhcp_request(kind, mac=bytes.fromhex('020000002499')):  # noqa: B008
     return (bytes([1, 1, 6, 0]) + b'XID1' + bytes([0, 0, 0x80, 0]) + bytes(16) + mac
             + bytes(10 + 192) + tes3x_net.DHCP_MAGIC + bytes([53, 1, kind, 255]))
 
@@ -614,7 +614,7 @@ class RemoteAdminTests(unittest.TestCase):
             while not stop.is_set():
                 try:
                     data, addr = sock.recvfrom(2048)
-                except (socket.timeout, OSError):
+                except (TimeoutError, OSError):
                     continue
                 reply = server.handle(data, addr, lambda line: line.upper())
                 if reply:

@@ -310,7 +310,7 @@ def _title_id(x, value, ctx):
     try:
         new = int(value, 16)
     except ValueError:
-        raise PatchError("title-id: want 8 hex digits, got %r" % value)
+        raise PatchError("title-id: want 8 hex digits, got %r" % value) from None
     if not 0 < new <= 0xFFFFFFFF:
         raise PatchError("title-id: 0x%X is not a 32-bit title ID" % new)
     was = struct.unpack_from("<I", x.data, CERT_TITLE_ID)[0]
@@ -1787,7 +1787,7 @@ def main():
             owners.extend((off, length, name) for off, length in claims)
             applied.append(name)
         except PatchError as exc:
-            raise SystemExit("  FAILED: %s" % exc)
+            raise SystemExit("  FAILED: %s" % exc) from None
 
     mask_va = ctx.get("hooks", {}).get("patch_mask")
     mask_hi_va = ctx.get("hooks", {}).get("patch_mask_hi")

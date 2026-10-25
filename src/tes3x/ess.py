@@ -491,7 +491,7 @@ def main():
                 out = a.poison_first_per_cell
                 cells, patched = poison_first_per_cell(a.saves[0], out)
         except ValueError as exc:
-            raise SystemExit(str(exc))
+            raise SystemExit(str(exc)) from None
         print(f"  {out}: {patched}/{cells} CELL records poisoned")
         return
 

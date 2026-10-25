@@ -238,7 +238,7 @@ def texture_budget(filemap):
 
 
 def report(mods, filemap, conflicts, problems):
-    plugins = sorted((k for k in filemap if k.endswith(PLUGIN_EXT)))
+    plugins = sorted(k for k in filemap if k.endswith(PLUGIN_EXT))
     total = sum(os.path.getsize(s) for _, s in filemap.values() if os.path.exists(s))
 
     print(f"\n{len(mods)} mods -> {len(filemap)} files, {total/1048576:.1f} MB")

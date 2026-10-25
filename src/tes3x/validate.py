@@ -450,7 +450,7 @@ def latest_result(patch, records):
         created = record.get("recorded_at")
         match = re.search(r"-(\d+)$", Path(path).stem)
         sequence = int(match.group(1)) if match else 1
-        timestamp = created.astimezone(datetime.timezone.utc).isoformat() if created else ""
+        timestamp = created.astimezone(datetime.UTC).isoformat() if created else ""
         return (record["date"].isoformat(), bool(created), timestamp, sequence, str(path))
 
     return max(candidates, key=order)[1]
@@ -702,7 +702,7 @@ def record(args):
 
     scenario_rel = cited_scenarios(args.patch)[0]
     head = {"patch": args.patch, "date": date,
-            "recorded_at": datetime.datetime.now(datetime.timezone.utc),
+            "recorded_at": datetime.datetime.now(datetime.UTC),
             "environment": args.env, "platform": platform,
             "result": args.result, "schema": 3, "kind": kind, "scenario": scenario_rel,
             "scenario_sha256": sha256_file(scenario_file), "purpose": scenario["purpose"],
@@ -789,7 +789,7 @@ def main(argv=None):
             print("all game tests and local records valid"
                   + ("; scripted-evidence gaps reported" if args.gate else ""))
     except ValidationError as exc:
-        raise SystemExit(str(exc))
+        raise SystemExit(str(exc)) from None
 
 
 if __name__ == "__main__":

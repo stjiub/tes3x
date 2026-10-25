@@ -719,4 +719,4 @@ if __name__ == "__main__":
     try:
         main()
     except (OSError, EOFError, ftplib.Error) as exc:
-        raise SystemExit(f"the Xbox did not answer: {exc}")
+        raise SystemExit(f"the Xbox did not answer: {exc}") from None

@@ -488,7 +488,7 @@ def main():
         try:
             print("0x%08X" % call_target(x, int(a.print_call, 16)))
         except ValueError as exc:
-            raise SystemExit(str(exc))
+            raise SystemExit(str(exc)) from None
         return
     if a.dump_thunks:
         write_thunks(x, a.dump_thunks, a.kernel_def)
@@ -504,7 +504,7 @@ def main():
     try:
         inject(a.xbe, a.payload, a.out or a.xbe, a.name, a.hook_entry, calls)
     except (ValueError, RuntimeError) as exc:
-        raise SystemExit(str(exc))
+        raise SystemExit(str(exc)) from None
 
 
 if __name__ == "__main__":

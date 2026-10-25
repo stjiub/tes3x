@@ -34,7 +34,13 @@ Homepage = "https://github.com/stjiub/tes3x"
 extend-exclude = ["addons", "src/tes3x/_vendor"]
 
 [tool.ruff.lint]
-select = ["F"]  # pyflakes' rules
+select = ["F", "E722", "B", "UP"]
+ignore = [
+    "B007",  # unused loop variable: unpacking names document the tuple
+    "B023",  # closures here run inside their own iteration
+    "B905",  # zip() without strict=
+    "UP031",  # percent formatting is the house style in the binary tools
+]
 
 [tool.setuptools.dynamic]
 version = { attr = "tes3x.__version__" }

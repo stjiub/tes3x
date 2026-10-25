@@ -153,7 +153,7 @@ def validate_profile(profile):
         try:
             tes3x_savepool.pool_id(identity["save_pool"], identity.get("save_pool_id"))
         except ValueError as exc:
-            raise PipelineError(f"profile.{exc}")
+            raise PipelineError(f"profile.{exc}") from None
     string_list(identity.get("dashboards"), "profile.dashboards")
 
     rules = table("rules")
@@ -1474,4 +1474,4 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except (PipelineError, PayloadError, subprocess.CalledProcessError) as exc:
-        raise SystemExit(str(exc))
+        raise SystemExit(str(exc)) from None

@@ -131,7 +131,7 @@ class Tunnel:
         self.sock.settimeout(timeout)
         try:
             return self.sock.recvfrom(2048)[0]
-        except (socket.timeout, ConnectionResetError):
+        except (TimeoutError, ConnectionResetError):
             return None
 
 

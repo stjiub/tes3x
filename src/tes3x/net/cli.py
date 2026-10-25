@@ -63,7 +63,7 @@ def listen(args):
             sock.settimeout(0.5)
             try:
                 data, (peer, _) = sock.recvfrom(2048)
-            except socket.timeout:
+            except TimeoutError:
                 continue
         hit = decode(data)
         if not hit:
@@ -106,7 +106,7 @@ def ping(args):
             try:
                 if sock.recvfrom(2048)[0][:8] == PONG:
                     break
-            except (socket.timeout, ConnectionResetError):
+            except (TimeoutError, ConnectionResetError):
                 pass
         print(f"first reply after {time.monotonic() - t0:.1f} s", flush=True)
     rtts, lost, runs, run = [], 0, [], 0
@@ -128,7 +128,7 @@ def ping(args):
                 sock.settimeout(left)
                 try:
                     data = sock.recvfrom(2048)[0]
-                except (socket.timeout, ConnectionResetError):
+                except (TimeoutError, ConnectionResetError):
                     data = None
             if data and data[:8] == PONG and struct.unpack_from("<I", data, 8)[0] == seq:
                 got = time.perf_counter()
@@ -205,7 +205,7 @@ class FuzzClient:
             self.sock.settimeout(max(end - time.monotonic(), 0.01))
             try:
                 data, _ = self.sock.recvfrom(4096)
-            except (socket.timeout, ConnectionResetError):
+            except (TimeoutError, ConnectionResetError):
                 continue
             if len(data) >= OUTER.size and data[5] == kind:
                 return data
@@ -288,7 +288,7 @@ def remote_admin_request(host, port, secret, line, timeout=3.0):
         head = REMOTE_HEAD.pack(REMOTE_MAGIC, REMOTE_VERSION, REMOTE_COMMAND) + nonce
         sock.sendto(head + seal(key, 0, head, line.encode("utf-8")), address)
         data = sock.recvfrom(65536)[0]
-    except (socket.timeout, ConnectionResetError):
+    except (TimeoutError, ConnectionResetError):
         raise RemoteAdminError(f"no server answered on {host}:{port}") from None
     except OSError as exc:
         raise RemoteAdminError(f"{host}:{port}: {exc}") from None
@@ -328,7 +328,7 @@ def admin_command(args):
     sock.sendto(line.encode("utf-8"), ("127.0.0.1", args.port))
     try:
         print(sock.recvfrom(65536)[0].decode("utf-8"))
-    except (socket.timeout, ConnectionResetError):
+    except (TimeoutError, ConnectionResetError):
         print(f"no server answered on 127.0.0.1:{args.port}", file=sys.stderr)
         return 1
     return 0

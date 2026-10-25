@@ -70,7 +70,7 @@ class CNoiseTests(unittest.TestCase):
             from tes3x.payload import find_tool  # where the payload build finds clang
             clang = find_tool('clang')
         except Exception as error:
-            raise unittest.SkipTest(f'clang not found: {error!r}')
+            raise unittest.SkipTest(f'clang not found: {error!r}') from None
         cls.folder = tempfile.TemporaryDirectory()
         dll = Path(cls.folder.name) / 'tes3xnoise.dll'
         # an MSVC-target clang exports nothing from a DLL unless asked; a mingw one exports all

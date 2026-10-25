@@ -186,9 +186,9 @@ def _server():
                 hint = ''
                 if any(PROJECT_DIR.glob(f'{PROJECT}.lock*')):
                     hint = '; the project is locked, probably by a Ghidra GUI'
-                raise SystemExit(f'Ghidra exited; see {PROJECT_DIR / "serve.log"}{hint}')
+                raise SystemExit(f'Ghidra exited; see {PROJECT_DIR / "serve.log"}{hint}') from None
             if time.time() > deadline:
-                raise SystemExit('Ghidra did not start in time')
+                raise SystemExit('Ghidra did not start in time') from None
             time.sleep(1)
 
 
