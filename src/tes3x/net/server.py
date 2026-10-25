@@ -1553,6 +1553,10 @@ class Server:
                     other.rel.queue(EVENT_TEXT, 0, data)
                 self.flush(other, now)
 
+    def combat_leave(self):
+        """Seconds a player in combat waits to leave, in EVENT_RULES' second byte."""
+        return max(0, min(120, int(getattr(self.args, "combat_leave", 10))))
+
     def rules(self):
         """The flags EVENT_RULES gives each console."""
         return RULE_AUTO_LEVEL if getattr(self.args, "level_up", "rest") == "auto" else 0
@@ -3461,7 +3465,7 @@ class Server:
             self.world.clock = Clock(*offered, now)
             print(f"{stamp} clock {self.world.clock}, from client {client.id}", flush=True)
         self.send(client, CLOCK, self.world.clock.body(now))
-        client.rel.queue(EVENT_RULES, 0, bytes([self.rules()]))
+        client.rel.queue(EVENT_RULES, 0, bytes([self.rules(), self.combat_leave()]))
         for refid, origin in self.world.deaths.items():
             client.rel.queue(EVENT_DEATH, origin, struct.pack("<I", refid))
         for data in pack_objects(self.world.objects):

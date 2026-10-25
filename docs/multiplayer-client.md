@@ -99,7 +99,7 @@ keeps it with its progress; if you leave or the server restarts, another player'
 yours on your next join, carries it on from where it was.
 
 **Save to Server** flushes every supported character field and your current place. The server
-confirms the save after writing the character and world. **Leave** waits for that confirmation
+confirms the save after writing the character and world. **Leave** in combat first waits out the server's countdown (10 s by default; damage cancels it). Then it waits for that confirmation
 before quitting; after 30 seconds without confirmation, you can choose to leave anyway or stay.
 The server also receives changes while you play, but use Save to Server or Leave to confirm
 they have been stored. The admin must enable world storage to keep characters after a restart.

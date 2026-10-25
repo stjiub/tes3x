@@ -4,6 +4,11 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- Multiplayer: a player in combat who presses Leave now waits `--combat-leave` seconds (default 10)
+  before the save and quit begin, so leaving cannot end a fight. Taking damage cancels the leave,
+  and leaving combat ends the wait early; `0` leaves at once. See
+  [the server guide](docs/multiplayer-server.md).
+
 - New `mcp-30` patch corrects bow projectile aim for scaled races and in third person. See
   [the patch](patches/mcp-30.md).
 

@@ -1,5 +1,6 @@
-/* Server rules, sent after each join. Bit 0: a character levels up as soon as the level is
- * earned, by the same menu a rest ends with, instead of only at the end of a rest. */
+/* Server rules, sent after each join. Byte 0, bit 0: a character levels up as soon as the level
+ * is earned, by the same menu a rest ends with, instead of only at the end of a rest. Byte 1: the
+ * seconds a player in combat waits to leave (checkpoint.c), 0 for none. */
 #define EVENT_RULES 41u
 #define RULE_AUTO_LEVEL 0x1u
 #define LEVELUP_TOTAL_GMST 0x446u /* iLevelupTotal */
@@ -14,7 +15,8 @@ static void rules_event(const struct event *e)
     if (e->length < 1)
         return;
     rules_flags = e->data[0];
-    tes3x_log_hex3("net.rules", rules_flags, 0, 0);
+    rules_combat_leave = e->length >= 2 ? e->data[1] : 0;
+    tes3x_log_hex3("net.rules", rules_flags, rules_combat_leave, 0);
 }
 
 static void level_up_frame(void)

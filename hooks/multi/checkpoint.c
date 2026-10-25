@@ -207,12 +207,16 @@ static void game_frame(void)
 #define LEAVE_SAVE 1u
 #define LEAVE_UPLOAD 2u
 #define LEAVE_ASK 3u
+#define LEAVE_COMBAT 4u /* the server's countdown before a player in combat may leave */
 #define LEAVE_TIMEOUT_US 30000000u
 typedef unsigned char(__cdecl *fn_quit)(void);
 static u32 leave_state, leave_since, leave_upload, leave_told, quit_hooked;
 static u32 leaves_saved, leaves_forced, leaves_stayed;
 static u32 leave_quits = 1; /* Save to Server uses the flush without quitting. */
 static u32 leave_idle;
+static u32 rules_combat_leave; /* seconds, from the server's rules; 0 for none */
+static u32 leave_combat_shown, leaves_cancelled;
+static float leave_combat_health;
 #define SAVE_IDLE_FRAMES 10
 static int world_idle(void);
 static u32 server_saves, server_saves_failed;
@@ -223,6 +227,15 @@ static unsigned char quit(void)
     return ((fn_quit)TES3X_NET_QUIT)();
 }
 
+static u8 *player_mobile(void);
+
+static int player_in_combat(void)
+{
+    const u8 *mobile = player_mobile();
+
+    return mobile && plausible(mobile) && (*(const u32 *)(mobile + MOBILE_FLAGS) & MOBILE_IN_COMBAT);
+}
+
 unsigned char __cdecl tes3x_net_quit(void)
 {
     if (ses.state != SESSION_JOINED || leave_state)
@@ -231,10 +244,20 @@ unsigned char __cdecl tes3x_net_quit(void)
         notice("You cannot leave while dead.");
         return 1;
     }
-    leave_state = LEAVE_SAVE;
     leave_since = now_us();
     leave_told = 0;
     leave_quits = 1;
+    if (player_mobile())
+        tes3x_log_hex3("net.leave_flags", *(const u32 *)(player_mobile() + MOBILE_FLAGS), rules_combat_leave, 0);
+    if (rules_combat_leave && player_in_combat()) {
+        leave_state = LEAVE_COMBAT;
+        leave_combat_shown = 0;
+        leave_combat_health = *(const float *)(player_mobile() + MOBILE_HEALTH);
+        notice("You are in combat. Leaving in a few seconds; damage cancels it.");
+        tes3x_log_hex3("net.leave_combat", rules_combat_leave, 0, 0);
+        return 1;
+    }
+    leave_state = LEAVE_SAVE;
     return 1;
 }
 
@@ -294,6 +317,33 @@ static void leave_frame(void)
     const u8 *world = *(const u8 **)TES3X_NET_WORLD, *global;
     int button;
 
+    if (leave_state == LEAVE_COMBAT) {
+        u32 left, waited = (now_us() - leave_since) / 1000000u;
+        const u8 *mobile = player_mobile();
+
+        if (!mobile || !plausible(mobile) || *(const float *)(mobile + MOBILE_HEALTH) <
+                                                 leave_combat_health - 0.5f) {
+            leave_state = 0;
+            leaves_cancelled++;
+            notice("Leaving cancelled: you were hurt.");
+            tes3x_log_hex3("net.leave_cancelled", leaves_cancelled, 0, 0);
+            return;
+        }
+        if (!player_in_combat() || waited >= rules_combat_leave) {
+            leave_state = LEAVE_SAVE;
+            leave_since = now_us();
+            return;
+        }
+        left = rules_combat_leave - waited;
+        if (left <= 3 && left != leave_combat_shown) {
+            static const char *const lines[4] = {"", "Leaving in 1...", "Leaving in 2...",
+                                                 "Leaving in 3..."};
+
+            leave_combat_shown = left;
+            notice(lines[left]);
+        }
+        return;
+    }
     if (leave_state == LEAVE_SAVE) {
         /* Give the closing pause menu time to release its player view. */
         if (!leave_quits && (!world_idle() || ++leave_idle < SAVE_IDLE_FRAMES)) {

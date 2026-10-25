@@ -48,6 +48,7 @@ The first client to join sets the session's load order and its game clock. Usefu
 | `--respawn temple\|shrine\|nearest` | where a player who dies comes back (default `nearest`) |
 | `--idle-timeout SECONDS` | drop a client silent this long (default 20; consoles stop waiting at 15) |
 | `--respawn-delay SECONDS` | how long a dead player lies before coming back (default 5) |
+| `--combat-leave SECONDS` | how long a player in combat waits after pressing Leave; taking damage cancels it and leaving combat ends it early (default 10, 0 leaves at once) |
 | `--death-gold PERCENT` | the share of carried gold a death costs (default 10) |
 | `--level-up rest\|auto` | `rest` (default): a level is gained at the end of a rest, as in the retail game; `auto`: the level-up screen opens as soon as the level is earned |
 | `--build DIR` | hand this build to the Dash (below) |

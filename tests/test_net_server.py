@@ -1228,6 +1228,11 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(server.rules(), 0)
         server.args.level_up = 'auto'
         self.assertEqual(server.rules(), net.RULE_AUTO_LEVEL)
+        self.assertEqual(server.combat_leave(), 10)
+        server.args.combat_leave = 0
+        self.assertEqual(server.combat_leave(), 0)
+        server.args.combat_leave = 900
+        self.assertEqual(server.combat_leave(), 120)
         self.assertFalse(valid_client_event(net.EVENT_RULES, b''))
 
     def rest_server(self, count):

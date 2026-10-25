@@ -431,6 +431,9 @@ def main(argv=None):
     p.add_argument("--level-up", choices=("rest", "auto"), default="rest",
                    help="rest: a level is gained at the end of a rest, as in the retail game "
                         "(default); auto: the level-up screen opens as soon as it is earned")
+    p.add_argument("--combat-leave", type=int, default=10, metavar="SECONDS",
+                   help="how long a player in combat waits after pressing Leave; hurt, or out of "
+                        "combat, ends it (default 10; 0 leaves at once)")
     p.add_argument("--death-gold", type=int, default=10, metavar="PERCENT",
                    help="the share of carried gold a death costs (default 10)")
     p.add_argument("--rebuild", type=float, nargs="?", const=10.0, metavar="SECONDS",
