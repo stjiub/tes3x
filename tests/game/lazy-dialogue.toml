@@ -3,6 +3,7 @@ purpose = "Topic responses that load as stubs answer a conversation, and every t
 procedure = "Start a New Game in Seyda Neen, talk to Fargoth and click his first topic, then close the dialogue. A test-only console command counts heard responses, builds every topic still a stub, and digests every topic's responses in order: plugin, record offset, flags, data and conditions."
 limitations = "One plugin loads, so PNAM placement across plugins is not exercised here; it was checked against full Tamriel Rebuilt separately. Saving and loading a heard response needs two runs and is not part of this test. Hardware timing is not checked."
 watch = 'lazy\.|diag\.patches|exec[.>]|crash\.|hang\.detected|fatal\.'
+enable = ["diagnostics", "console", "dialogue-merge"]
 pipeline = ["--test-probe", "lazy-dialogue"]
 timeout = 360
 script = '''
