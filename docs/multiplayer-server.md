@@ -145,6 +145,11 @@ On a server that faces the internet, give players the fingerprint as well: the p
 encrypted to the server's key, so a console that has pinned the key cannot give it to an
 impostor on its first join.
 
+The password is a shared secret and the password file is plain text: keep it readable only by the
+account that runs the server (mode 0600 on Linux), and likewise `server.key`, `admin-password.txt`
+and `admitted.txt`. The server appends to `admitted.txt` without locking, so edit it only while the
+server is stopped, and run one server per `--world` folder.
+
 ## Kicks and bans
 
 The server takes admin commands typed at its own window, or from the same PC with
