@@ -103,8 +103,11 @@ def convert_cached(src, cache_dir, max_size=512, force_fourcc=None):
             return f.read(), "cached"
     data, note = convert_texture(src, max_size, force_fourcc)
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "wb") as f:
+    # another build may be reading the cache, so the file appears whole or not at all
+    partial = f"{path}.{os.getpid()}.part"
+    with open(partial, "wb") as f:
         f.write(data)
+    os.replace(partial, path)
     return data, note
 
 

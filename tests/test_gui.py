@@ -8,6 +8,7 @@ import tempfile
 import time
 import tomllib
 import unittest
+from types import SimpleNamespace
 import zipfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -726,6 +727,19 @@ order = 10
 
         self.profile.write_text(self.profile.read_text(encoding="utf-8") + "\n", encoding="utf-8")
         self.assertEqual(window.build_status()[0], "stale")
+
+        # With an xemu still running the build, a stale profile offers the existing build.
+        window.play_controller.plays["other"] = SimpleNamespace(process=object())
+        controller = window.play_controller
+        with patch.object(controller, "ask_play_existing", return_value=False) as ask,                 patch.object(controller, "start_play") as play,                 patch.object(window, "save_profile", return_value=True),                 patch.object(window, "run_pipeline") as pipeline:
+            controller.play()
+            ask.assert_called_once()
+            play.assert_not_called()
+            ask.return_value = True
+            controller.play()
+            play.assert_called_once()
+            pipeline.assert_not_called()
+        del controller.plays["other"]
 
     @staticmethod
     def running_job(window, record=None):

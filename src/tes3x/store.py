@@ -78,6 +78,13 @@ def read_entry(store, digest):
     return None
 
 
+def write_text_atomic(path, text):
+    """Builds in parallel share the store, so a reader never sees half a file."""
+    partial = path.with_name(f"{path.name}.{os.getpid()}.part")
+    partial.write_text(text, encoding="utf-8")
+    os.replace(partial, path)
+
+
 def pack_mod(mod, tier, store, cache=None):
     """The store entry {sha256, size, name, tier} for `mod` at `tier`, packing it unless an
     archive from the same sources is already in `store`."""
@@ -130,13 +137,13 @@ def pack_mod(mod, tier, store, cache=None):
         target = store / f"{digest}.bsa"
         if read_entry(store, digest) is None:
             os.replace(staged, target)
-            (store / f"{digest}.json").write_text(json.dumps(entry), encoding="utf-8")
+            write_text_atomic(store / f"{digest}.json", json.dumps(entry))
     finally:
         for path in sorted(work.rglob("*"), reverse=True):
             path.unlink()
         work.rmdir()
     index[key] = digest
-    index_path.write_text(json.dumps(index, indent=1), encoding="utf-8")
+    write_text_atomic(index_path, json.dumps(index, indent=1))
     return {**read_entry(store, digest), "tier": tier}
 
 

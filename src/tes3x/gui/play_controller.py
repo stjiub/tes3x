@@ -342,12 +342,29 @@ class PlayController(QObject):
             return
         if not self.window.save_profile():
             return
-        if self.window.build_status()[0] == "built":
+        status = self.window.build_status()[0]
+        if status == "built":
             self.start_play()
+            return
+        if status != "missing" and any(s.process is not None for s in self.plays.values()):
+            if self.ask_play_existing():
+                self.start_play()
             return
         job = self.window.run_pipeline([])
         if job is not None:
             job.after = self.start_play
+
+    def ask_play_existing(self):
+        """The profile changed since its build, and an xemu is running that build."""
+        box = QMessageBox(self.window)
+        box.setWindowTitle("TES3X")
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setText("The profile changed since it was built, and xemu is still running the "
+                    "build. A rebuild would replace it.")
+        existing = box.addButton("Play the existing build", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton(QMessageBox.StandardButton.Cancel)
+        box.exec()
+        return box.clickedButton() is existing
 
     def play_iso(self):
         """The ISO an earlier play made of the current build, so it is not packed again."""
