@@ -498,8 +498,8 @@ class FtpTarget:
             if posixpath.basename(name) not in (".", ".."):
                 try:
                     self.ftp.delete(name)
-                except ftplib.all_errors:
-                    pass
+                except ftplib.all_errors as exc:
+                    print(f"  warning: could not clear {name}: {exc}", flush=True)
 
     def close(self):
         try:
@@ -588,8 +588,8 @@ class AgentTarget:
             if not is_dir:
                 try:
                     self.client.delete(f"{drive[0]}:/{name}")
-                except tes3x_agent.AgentError:
-                    pass
+                except tes3x_agent.AgentError as exc:
+                    print(f"  warning: could not clear {drive[0]}:/{name}: {exc}", flush=True)
 
     def close(self):
         self.listener.close()
