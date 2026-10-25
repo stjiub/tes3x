@@ -13,7 +13,7 @@ on, `low` for minor ones, and `none` for fixes we won't port.
 
 | status | fixes |
 |---|---|
-| candidate | 172 |
+| candidate | 171 |
 | deferred | 14 |
 | not-applicable | 16 |
 | rejected | 3 |
@@ -24,7 +24,6 @@ Worth porting, but not yet shown to affect the Xbox build.
 
 | fix | from | priority | category | notes |
 |---|---|---|---|---|
-| `mcp-30` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #30 | medium | correctness | **Projectile aiming fix.** Projectiles fire off-centre for races with height other than 1.0, and third-person aiming is poor. |
 | `mcp-46a` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #46 | medium | correctness (recommended) | **`Drop` places at the acting reference, not the player.** The engine treats every drop as if it came from the player inventory view, so scripted drops land at the wrong actor. Split from the rest of id 46 under rule 3. |
 | `mcp-58` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #58 | medium | correctness (undecided) | **Save-count warning.** MCP warns before PC memory corruption at roughly 300 save files. Xbox uses `XCreateSaveGame` and different enumeration, so first determine whether any equivalent limit exists; do not port the PC threshold by assumption. |
 | `mcp-95` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #95 | medium | compat | **Voiceover script functions fix.** StopSound mutes every actor voice and SayDone fires early. Dialogue and quest mods depend on both. |

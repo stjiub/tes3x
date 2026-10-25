@@ -52,6 +52,7 @@ enable = [
     # "mcp-94",                # correctness: scale books, the journal and scrolls by screen height
     # "mcp-47",                # correctness: keep NPC magic-item changes from deselecting the player's spell
     # "mcp-48",                # correctness: show earned level-up multipliers through 100
+    # "mcp-30",                # correctness: align bow projectiles for scaled races and third person
     # "mcp-55",                # correctness: keep potion names and refresh inventory icons after alchemy
     # "mcp-118",               # correctness: keep airborne item drops near the player
     # "script-ext",            # compat: add script opcodes

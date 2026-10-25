@@ -96,6 +96,32 @@ class PatchError(Exception):
     pass
 
 
+def find_mcp30_context(x):
+    """Bow animation angles and player projectile matrix call on both retail engines."""
+    angle_sites = []
+    for match in re.finditer(rb"\xd8\x4e\x1c", x.data):
+        start = match.end()
+        mul = x.data.find(b"\xd8\x0d", start, start + 13)
+        if mul < 0:
+            continue
+        scalar_va = struct.unpack_from("<I", x.data, mul + 2)[0]
+        scalar_off = x.va_to_off(scalar_va)
+        if scalar_off is None:
+            continue
+        angle_sites.append((x.off_to_va(mul + 2),
+                            struct.unpack_from("<f", x.data, scalar_off)[0]))
+    expected = (0.75, 0.25, 0.5, 0.5, 0.75, -0.25, 0.5, -0.5)
+    if tuple(value for _, value in angle_sites) != expected:
+        raise PatchError("mcp-30: bow animation angle signature differs")
+    launch = list(re.finditer(rb"\xff\x50\x48\x8b\xc8(?P<call>\xe8....)\x50\x8d", x.data))
+    if len(launch) != 1:
+        raise PatchError(f"mcp-30: {len(launch)} player launch matrix calls, expected 1")
+    site = x.off_to_va(launch[0].start("call"))
+    if site is None:
+        raise PatchError("mcp-30: player launch call is outside any section")
+    return tuple(va for va, _ in angle_sites[:4]), site, tes3x_inject.call_target(x, site)
+
+
 def find_mcp55_context(x):
     """Find the alchemy brew callback and its name reset in both retail engines."""
     callback_sig = re.compile(

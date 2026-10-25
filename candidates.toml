@@ -257,15 +257,6 @@ summary = "Particle effects fix"
 reason = "Particle emitters detach from scaled weapons and projectiles."
 
 [[candidate]]
-name = "mcp-30"
-origin = { source = "MCP", id = "30" }
-category = "correctness"
-status = "candidate"
-priority = "medium"
-summary = "Projectile aiming fix"
-reason = "Projectiles fire off-centre for races with height other than 1.0, and third-person aiming is poor."
-
-[[candidate]]
 name = "mcp-32"
 origin = { source = "MCP", id = "32" }
 category = "correctness"

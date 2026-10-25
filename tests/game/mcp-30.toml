@@ -1,0 +1,15 @@
+kind = "single"
+purpose = "A build with the projectile aiming hook reaches a playable New Game session."
+procedure = "Boot the patched engine, start New Game, and reach in-game console execution."
+limitations = "The scripted run does not fire a bow or compare projectile trajectories."
+watch = 'diag\.patches|console< GetPos|exec[.>]|crash\.|hang\.detected|fatal\.'
+timeout = 180
+script = '''
+@start new
+wait 60
+player->GetPos X
+exit
+'''
+
+[expect]
+test = ['diag\.patches', 'console< GetPos >> 61\.00', 'exec\.exit 0', '!crash\.']

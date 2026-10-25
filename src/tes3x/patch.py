@@ -52,7 +52,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_heap_object, find_heap_region, find_heap_region_sites,
                                find_info_arena_sites, find_lean_menu, find_marker,
                                find_mcp102_actn, find_enable_disable_flags, find_mcp160_removal, find_pathgrid_lookups, find_mcp123_add, find_mcp6_context,
-                               find_mcp125_collision, find_mcp55_context,
+                               find_mcp125_collision, find_mcp30_context, find_mcp55_context,
                                find_mcp55_inventory_context, find_mcp118_drop_finish,
                                find_mcp149_menu,
                                find_mcp127_map,
@@ -1151,6 +1151,27 @@ def _mcp_149(x, value, ctx):
     x.data[off + 10] = 0x0B
     return [(off, 6, f"contents menu state 0x{site:08X} -> 0x{target:08X}"),
             (off + 10, 1, "dying actor skips dispose flag")]
+
+
+@patch("mcp-30")
+def _mcp_30(x, value, ctx):
+    """Use fixed bow angles and a normalized projectile launch matrix."""
+    hooks = ctx.get("hooks", {})
+    if not hooks.get("mcp30_angle") or not hooks.get("mcp30_launch_matrix"):
+        raise PatchError("mcp-30: needs projectile aiming payload hooks")
+    angles, site, original = find_mcp30_context(x)
+    angle = int(str(hooks["mcp30_angle"]), 16)
+    edits = []
+    for operand in angles:
+        off = x.va_to_off(operand)
+        x.data[off:off + 4] = struct.pack("<I", angle)
+        edits.append((off, 4, f"bow angle 0x{operand:08X} -> 0x{angle:08X}"))
+    target = int(str(hooks["mcp30_launch_matrix"]), 16)
+    was, off = x.patch_call(site, target)
+    if was != original:
+        raise PatchError(f"mcp-30: launch call 0x{site:08X} changed target")
+    edits.append((off, 5, f"projectile launch matrix 0x{site:08X} -> 0x{target:08X}"))
+    return edits
 
 
 @patch("mcp-55")

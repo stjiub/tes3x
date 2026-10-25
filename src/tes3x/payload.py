@@ -22,7 +22,8 @@ import tes3x.inject as tes3x_inject
 from tes3x.link import LinkError, link, write_map, write_pe
 from tes3x.multi_signatures import SIGNATURES as MULTI_SIGNATURES, find_multi_signature
 from tes3x.paths import bundled, checkout, resource
-from tes3x.patch_sites import (find_topic_state, find_mcp6_context, find_mcp55_context,
+from tes3x.patch_sites import (find_topic_state, find_mcp6_context, find_mcp30_context,
+                               find_mcp55_context,
                                find_mcp55_inventory_context, find_mcp118_drop_finish,
                                find_mcp149_menu)
 from tes3x.patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, archive_load_site,
@@ -958,6 +959,11 @@ def engine_bindings(xbe, sources):
         wanted["mcp55_refresh_brew"] = ("_tes3x_mcp55_refresh_brew",)
         wanted["mcp55_refresh_name"] = ("_tes3x_mcp55_refresh_name",)
         wanted["mcp55_close_inventory"] = ("_tes3x_mcp55_close_inventory",)
+    if "tes3xmcp30.c" in names:
+        _, _, matrix_multiply = find_mcp30_context(image)
+        define("MCP30_MATRIX_MULTIPLY", hexva(matrix_multiply))
+        wanted["mcp30_angle"] = ("_tes3x_mcp30_angle",)
+        wanted["mcp30_launch_matrix"] = ("_tes3x_mcp30_launch_matrix",)
     if "tes3xmcp118.c" in names:
         site, reset = find_mcp118_drop_finish(image)
         _, world, _, player, _, _ = find_mcp55_inventory_context(image)

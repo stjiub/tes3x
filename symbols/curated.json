@@ -1412,6 +1412,15 @@
       "signature": "bool __thiscall bindHumanoidBoneLayers(void* layers, int group)"
     },
     {
+      "va": "0x000CD600",
+      "name": "AnimationData::updateLayerTransforms",
+      "confidence": "guess",
+      "provenance": "MCP-30 PC 0x0046E970 match and Xbox bow-transform instructions",
+      "note": "For bow group 0x8B, four release transforms multiply normalized action time by 0.75, 0.25, 0.5, and 0.5 on NTSC; MCP-30 redirects those constants to a shared 0.34729636.",
+      "pc_va": "0x0046E970",
+      "signature": "void __thiscall updateLayerTransforms(bool updateControllers)"
+    },
+    {
       "va": "0x000CDBD0",
       "name": "AnimationData::headTracking",
       "kind": "function",
@@ -6351,6 +6360,14 @@
       "pc_va": "0x005753A0"
     },
     {
+      "va": "0x00190D90",
+      "name": "MobileProjectile::launch",
+      "confidence": "verified",
+      "provenance": "MCP-30 PC 0x00572970 match and Xbox projectile slot 38",
+      "note": "Player path calls the 3x3 matrix product at 0x00190E97 (NTSC) after virtual slot +0x48 returns a launch transform. MCP-30 normalizes its horizontal basis before that product. Called from MobileActor::releaseProjectile through the nocked projectile vtable.",
+      "pc_va": "0x00572970"
+    },
+    {
       "va": "0x00191800",
       "name": "MobileProjectile::onWaterCollision",
       "kind": "function",
@@ -7294,6 +7311,13 @@
       "pc_va": "0x005C3840"
     },
     {
+      "va": "0x001D56D0",
+      "name": "MenuEnchantment::createEnchantedItem",
+      "confidence": "verified",
+      "provenance": "multiplayer records: disassembly 0x1D5E77-0x1D61xx, xemu enchantmake",
+      "note": "Enchanting's Create button. Adds the ENCH (DAT_003d87c4) with addNewObject at 0x1D5E77 while ebx holds the base item, removes the base (removeItemWithData 0x1D5EA8), then builds ARMO/WEAP/CLOT copy: new T, vtable copy(+0x24: base, 1), setName(+0x10C), setID(+0x28, empty rolls an id), setEnchantment(+0xD4), addNewObject, AddItemWithoutData. The multiplayer records hook reads ebx at the first addNewObject."
+    },
+    {
       "va": "0x001D6540",
       "name": "FilterInventoryTile",
       "kind": "function",
@@ -7310,13 +7334,6 @@
       "pc_va": "0x005CD1B0"
     },
     {
-    {
-      "va": "0x001D56D0",
-      "name": "MenuEnchantment::createEnchantedItem",
-      "confidence": "verified",
-      "provenance": "multiplayer records: disassembly 0x1D5E77-0x1D61xx, xemu enchantmake",
-      "note": "Enchanting's Create button. Adds the ENCH (DAT_003d87c4) with addNewObject at 0x1D5E77 while ebx holds the base item, removes the base (removeItemWithData 0x1D5EA8), then builds ARMO/WEAP/CLOT copy: new T, vtable copy(+0x24: base, 1), setName(+0x10C), setID(+0x28, empty rolls an id), setEnchantment(+0xD4), addNewObject, AddItemWithoutData. The multiplayer records hook reads ebx at the first addNewObject."
-    },
       "va": "0x001D7BE0",
       "name": "MenuInventory::destroy",
       "confidence": "verified",
