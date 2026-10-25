@@ -400,7 +400,7 @@ class SavesTab(QWidget):
 
     def saves_selected(self):
         selected = bool(self.selected_saves())
-        idle = self.window.process is None
+        idle = not self.window.target_busy()
         for key in ("send", "copy", "move", "delete"):
             self.save_actions[key].setEnabled(idle and selected)
 
@@ -413,7 +413,7 @@ class SavesTab(QWidget):
         send = menu.addMenu("Copy to")
         for device, label in self.save_devices():
             action = send.addAction(label, lambda device=device: self.send_saves(device))
-            action.setEnabled(self.window.process is None and sources != {device})
+            action.setEnabled(not self.window.target_busy() and sources != {device})
         menu.addSeparator()
         menu.addActions([self.save_actions["copy"], self.save_actions["move"]])
         menu.addSeparator()
@@ -489,8 +489,8 @@ class SavesTab(QWidget):
     def run_save_steps(self, steps):
         if not steps:
             return
-        if self.window.process is not None:
-            self.window.error("A TES3X command is already running")
+        if self.window.target_busy():
+            self.window.error("A command is already running for this target")
             return
         self.window.run_steps(steps, then=lambda: self.refresh_saves(True))
 
@@ -551,7 +551,7 @@ class SavesTab(QWidget):
 
     def delete_saves(self):
         saves = self.selected_saves()
-        if not saves or self.window.process is not None:
+        if not saves or self.window.target_busy():
             return
         names = "\n".join(f"• {save.get('name') or save['folder']} "
                           f"({self.device_label(self.save_device(save))})" for save in saves)

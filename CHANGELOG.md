@@ -4,6 +4,11 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- The GUI can run several commands at once, each in its own output tab. Deploying a built
+  profile to a second Xbox no longer waits for the first upload to finish, and logs or saves on
+  one target no longer wait for another's deploy. A profile still runs one build, check or
+  deploy-with-build at a time.
+
 - The GUI shows a deploy's upload as a progress bar in the status bar (size, speed, time left)
   instead of a log line a second. The command line output is unchanged.
 

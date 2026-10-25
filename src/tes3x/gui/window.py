@@ -5,7 +5,7 @@ from html import escape
 from .common import (Bsa, BuildSettings, CATALOG_NAME, CHECK_MARKER, CatalogError, DEPLOYS_MARKER,
                      DEPLOY_CONFLICT, DEPLOY_NO_SPACE, IniPanel, LibraryError,
                      LocalSettingsDialog, PIPELINE_MARKER, PLUGIN_EXT, PROFILE_NAME, PROGRESS_ENV, Path,
-                     PipelineError, QAction, QActionGroup, QApplication, QComboBox, QDialog,
+                     PipelineError, QAction, QActionGroup, QApplication, QColor, QComboBox, QDialog,
                      QFileDialog, QHBoxLayout, QInputDialog, QLabel, QMainWindow, QMenu,
                      QMessageBox, QProcess, QProcessEnvironment, QScrollArea, QSettings, QSplitter, QStackedWidget,
                      QTabBar, QTabWidget, QTextBrowser, QTextCursor, QTextEdit, QTimer,
@@ -59,7 +59,6 @@ class ProfileWindow(QMainWindow):
         self.play_controller.in_game_listener = None
         self.play_controller.agent_fingerprint = None
         self.play_controller.listener_lent = False
-        self.deploy_agent = False
         self.play_controller.agent_logs = defaultdict(list)
         self.play_controller.log_memory = False
         self.play_controller.agent_keys = {}  # in-game agent key -> xemu target
@@ -71,7 +70,7 @@ class ProfileWindow(QMainWindow):
         self.check_profile_sha = None
         self.check_failed = False
         self.build_failed = False
-        self.deploy_failed = False
+        self.deploy_failed = set()
         self.deploy_records = {}
         self.profile_plain = {}
         self.patches.patch_modes = {}
@@ -144,7 +143,11 @@ class ProfileWindow(QMainWindow):
         self.target_drive_tips = {}
         self.profile_bar = profile_bar
 
+        self.jobs = []
         self.log_tabs = QTabWidget()
+        self.log_tabs.setTabsClosable(True)
+        self.log_tabs.tabCloseRequested.connect(self.close_job_tab)
+        self.log_tabs.currentChanged.connect(self.show_job_progress)
         self.log_tabs.tabBar().setAutoHide(True)
         self.job = self.new_job("Output")
         self.mods.mod_details = self.mods.create_mod_details()
@@ -656,8 +659,9 @@ class ProfileWindow(QMainWindow):
         elif index == 3:
             self.content_page.refresh()
 
-    def default_target(self, kind=None):
-        name = self.target_picker.currentData() if hasattr(self, "target_picker") else None
+    def default_target(self, kind=None, name=None):
+        if name is None and hasattr(self, "target_picker"):
+            name = self.target_picker.currentData()
         try:
             return tes3x_targets.resolve(self.local_values(), name=name, kind=kind)
         except (tes3x_targets.TargetError, ValueError):
@@ -783,8 +787,7 @@ class ProfileWindow(QMainWindow):
     def target_selection_changed(self, probe=False):
         target = self.default_target()
         xbox = bool(target and target.get("kind") == "xbox")
-        self.action_deploy.setEnabled(xbox and self.process is None)
-        self.action_fetch.setEnabled(xbox and self.process is None)
+        self.refresh_command_actions()
         self.discard_after_deploy.setEnabled(xbox)
         if hasattr(self, "run_button"):
             self.sync_run_button()
@@ -800,8 +803,8 @@ class ProfileWindow(QMainWindow):
         if probe and xbox:
             self.play_controller.refresh_ftp_status()
 
-    def xbox_destination(self):
-        target = self.default_target("xbox")
+    def xbox_destination(self, name=None):
+        target = self.default_target("xbox", name)
         if not target:
             return None
         plain = dict(self.profile_plain or {})
@@ -1085,7 +1088,7 @@ class ProfileWindow(QMainWindow):
         self.check_profile_sha = None
         self.check_failed = False
         self.build_failed = False
-        self.deploy_failed = False
+        self.deploy_failed = set()
         self.deploy_records = {}
         self.document = document
         self.profile_plain = plain
@@ -1269,28 +1272,27 @@ class ProfileWindow(QMainWindow):
         return True
 
     def run_pipeline(self, extra):
-        if self.process is not None:
-            self.error("A TES3X command is already running")
-            return
+        """Start the pipeline; returns its job, or None when it did not start."""
+        if self.profile_busy():
+            self.error("This profile already has a build, check or deploy running")
+            return None
         requested = ("check" if "--check" in extra else
                      "deploy" if "--deploy" in extra else "build")
         if requested == "build" and any(
             s.process is not None for s in self.play_controller.plays.values()
         ):
             self.error("Stop xemu before replacing the build it is running")
-            return
+            return None
         if not self.save_profile():
-            return
-        self.command_kind = requested
-        self.command_target = self.target_picker.currentData()
-        self.start_command("pipeline", [
+            return None
+        return self.start_command("pipeline", [
             str(self.profile_path),
             *(["--config", str(self.local_config_path())]
               if self.local_config_path().is_file() else []),
             *(["--target", self.target_picker.currentData()]
               if self.target_picker.currentData() else []),
             *extra,
-        ], "Running TES3X pipeline…")
+        ], "Running TES3X pipeline…", kind=requested, builds=True)
 
     def build_output(self):
         root = self.local_path("build_root") or self.work_dir() / "build"
@@ -1367,7 +1369,7 @@ class ProfileWindow(QMainWindow):
         self.update_check_state()
         self.update_deploy_state()
         self.sync_run_button()
-        if self.command_kind == "build":
+        if self.profile_job("build"):
             self.set_action_state(self.build_button, "Build", "running",
                                   "The profile is being built")
             return
@@ -1408,7 +1410,7 @@ class ProfileWindow(QMainWindow):
     def update_check_state(self):
         if not hasattr(self, "check_button"):
             return
-        if self.command_kind == "check":
+        if self.profile_job("check"):
             state, tip = "running", "Checking the saved profile"
         elif self.check_failed:
             state, tip = "failed", "The last check failed; see the output"
@@ -1434,9 +1436,10 @@ class ProfileWindow(QMainWindow):
             state, tip = "idle", "Open a profile before deploying"
         elif not target or target.get("kind") != "xbox":
             state, tip = "idle", "Select an Xbox target to deploy"
-        elif self.command_kind == "deploy":
+        elif any(j.running and j.kind == "deploy" and j.target == target["name"]
+                 for j in self.jobs):
             state, tip = "running", "Synchronizing the build to the Xbox"
-        elif self.deploy_failed:
+        elif target["name"] in self.deploy_failed:
             state, tip = "failed", "The last deploy failed; see the output"
         else:
             record = self.deploy_records.get(target["name"], {})
@@ -1469,7 +1472,7 @@ class ProfileWindow(QMainWindow):
         if xbox and "xbox" in self.play_addons:
             self.play_menu.addAction(self.action_play)
         launch = self.play_menu.addAction("Launch TES3X Dash", self.play_controller.launch_dash)
-        launch.setEnabled(self.process is None and self.play_controller.play_process is None and (
+        launch.setEnabled(not self.target_busy() and self.play_controller.play_process is None and (
             xemu or (xbox and "xbox" in self.play_addons)))
         launch.setToolTip("Start the Dash: on the Xbox through the XBMC4Gamers agent, "
                           "or as an xemu session that keeps its own disk"
@@ -1496,9 +1499,9 @@ class ProfileWindow(QMainWindow):
         self.action_play.setIcon(self.play_icon)
         if not xbox:
             self.play_button.setToolTip(reason or f"Play on {name} (F9)")
-        self.action_play.setEnabled(not reason and self.process is None)
+        self.action_play.setEnabled(not reason and not self.profile_busy())
         self.action_stop.setEnabled(False)
-        self.action_build.setEnabled(self.process is None)
+        self.action_build.setEnabled(not self.profile_busy())
 
     DEPLOY_QUESTION = ("Deploy over existing files?", "This deploy would write over:",
                        "Files in the game folder that the build does not have are deleted. "
@@ -1507,31 +1510,34 @@ class ProfileWindow(QMainWindow):
     PUSH_QUESTION = ("Replace saves?", "These saves are already on the Xbox:",
                      "Replace them with the copies from the PC?")
 
-    def run_steps(self, steps, first=True, then=None):
+    def run_steps(self, steps, first=True, then=None, job=None, kind=None, target=None):
         """Run commands one after another, stopping at the first that fails; `then` runs after
-        the last one succeeds."""
+        the last one succeeds. Later steps stay on the first step's job, kind and target."""
         script, arguments, message = steps[0]
-        if script == "deploy":
-            self.command_kind = "deploy"
-            self.command_target = self.target_picker.currentData()
-        self.start_command(script, arguments, message, clear=first)
+        target = target or self.target_picker.currentData()
+        job = self.start_command(script, arguments, message, clear=first,
+                                 kind=kind or ("deploy" if script == "deploy" else None),
+                                 target=target, job=job)
+        again = {"job": job, "kind": kind, "target": target}
         question = {"deploy": self.DEPLOY_QUESTION,
                     "saves": self.PUSH_QUESTION}.get(script)
         if question and "--replace" not in arguments:
-            self.conflict_retry = (lambda: self.run_steps(
-                [(script, [*arguments, "--replace"], message), *steps[1:]], False, then),
+            job.conflict_retry = (lambda: self.run_steps(
+                [(script, [*arguments, "--replace"], message), *steps[1:]], False, then, **again),
                 question)
         if script == "deploy" and "--ignore-space" not in arguments:
-            self.space_retry = lambda: self.run_steps(
-                [(script, [*arguments, "--ignore-space"], message), *steps[1:]], False, then)
+            job.space_retry = lambda: self.run_steps(
+                [(script, [*arguments, "--ignore-space"], message), *steps[1:]], False, then,
+                **again)
         if len(steps) > 1:
-            self.after_command = lambda: self.run_steps(steps[1:], False, then)
+            job.after = lambda: self.run_steps(steps[1:], False, then, **again)
         elif then:
-            self.after_command = then
+            job.after = then
+        return job
 
     def run_smoke_test(self):
-        if self.process is not None:
-            self.error("A TES3X command is already running")
+        if self.profile_busy():
+            self.error("This profile already has a build, check or deploy running")
             return
         if not self.save_profile():
             return
@@ -1540,53 +1546,67 @@ class ProfileWindow(QMainWindow):
             *(["--config", str(self.local_config_path())]
               if self.local_config_path().is_file() else []),
             "--record",
-        ], "Running profile smoke test…")
+        ], "Running profile smoke test…", kind="smoke")
 
     def deploy_profile(self):
-        if self.process is not None:
-            self.error("A TES3X command is already running")
+        reason, existing = self.deploy_block()
+        if reason:
+            self.error(reason)
+            return
+        if existing and self.build_status()[0] != "built":
+            self.error("Build the profile before deploying it again")
             return
         overlay = self.build.install_layout.currentData() == "overlay"
         target = self.default_target("xbox") or {}
+        name = target.get("name")
         retail = target.get("retail_root")
         overlay_note = (f"\n\nThe shared retail base at {retail or '<not configured>'} will be "
-                        "installed or synchronized first." if overlay else "")
-        dash = self.play_controller.dash_paired(target.get("name"))
+                        "installed or synchronized first." if overlay and not existing else "")
+        dash = self.play_controller.dash_paired(name)
+        if dash and self.play_controller.listener_lent:
+            self.error("Another deploy is using the Dash's agent connection")
+            return
         dash_note = ("\n\nThe files go through the Dash running on the Xbox."
                      if dash else "")
         answer = QMessageBox.question(
             self, "Deploy profile",
-            "Build this profile and synchronize it to the configured Xbox destination?\n\n"
-            "Files absent from the build are removed from that destination. Uploaded files are "
-            "verified by size before the command succeeds." + overlay_note + dash_note)
+            ("Synchronize the finished build to the configured Xbox destination?"
+             if existing else
+             "Build this profile and synchronize it to the configured Xbox destination?")
+            + "\n\nFiles absent from the build are removed from that destination. Uploaded "
+            "files are verified by size before the command succeeds." + overlay_note + dash_note)
         if answer != QMessageBox.StandardButton.Yes:
+            return
+        if existing:
+            self.deploy_built(target_name=name, replace=False, agent=dash)
             return
         arguments = ["--deploy", "--verify-deploy", "size"]
         if overlay:
             arguments.append("--install-retail-base")
         if self.discard_after_deploy.isChecked():
             arguments.append("--discard-build")
-        self.deploy_agent = dash
         if dash:
             arguments.append("--deploy-agent")
-        self.run_pipeline(arguments)
-        if self.process is not None:
+        job = self.run_pipeline(arguments)
+        if job is not None:
             if dash:
                 self.play_controller.lend_listener()
-            self.conflict_retry = (self.deploy_built, self.DEPLOY_QUESTION)
-            self.space_retry = lambda: self.deploy_built("--ignore-space")
+            job.conflict_retry = (lambda: self.deploy_built(target_name=name, agent=dash),
+                                  self.DEPLOY_QUESTION)
+            job.space_retry = lambda: self.deploy_built("--ignore-space", target_name=name,
+                                                         agent=dash)
 
-    def deploy_built(self, *extra):
-        """Deploy the finished build with --replace, after a conflict or a shortage of space
-        stopped the pipeline's."""
-        target = self.default_target("xbox") or {}
-        remote = self.xbox_destination()
+    def deploy_built(self, *extra, target_name=None, replace=True, agent=None):
+        """Deploy the finished build. With `replace`, it is the retry after a conflict or a
+        shortage of space stopped the pipeline's; otherwise a conflict asks first."""
+        target = self.default_target("xbox", target_name) or {}
+        remote = self.xbox_destination(target_name)
         if not remote:
             self.error("Configure an Xbox target before deploying")
             return
         arguments = [str(self.build_output() / "deploy"), "--remote", remote,
-                     "--config", str(self.local_config_path()), "--verify", "size", "--replace",
-                     *extra]
+                     "--config", str(self.local_config_path()), "--verify", "size",
+                     *(["--replace"] if replace else []), *extra]
         if target.get("name"):
             arguments += ["--target", target["name"]]
         if self.profile_plain.get("rules", {}).get("clear_cache_partitions", False):
@@ -1594,27 +1614,35 @@ class ProfileWindow(QMainWindow):
         if (self.build_output() / "xbox.ini").is_file():
             arguments += ["--xbox-ini", str(self.build_output() / "xbox.ini")]
         # The Dash re-pairs with the GUI only seconds after the first attempt ends.
-        if self.deploy_agent or self.play_controller.dash_paired(target.get("name")):
+        if agent is None:
+            agent = self.play_controller.dash_paired(target.get("name"))
+        if agent:
             arguments.append("--agent")
             self.play_controller.lend_listener()
-        self.run_steps([("deploy", arguments,
-                         f"Deploying to {remote}…")], first=False)
+        job = self.run_steps([("deploy", arguments, f"Deploying to {remote}…")], first=False,
+                             target=target.get("name"))
         if self.discard_after_deploy.isChecked():
-            self.after_command = lambda: shutil.rmtree(self.build_output(), ignore_errors=True)
+            job.after = lambda: self.discard_build(job)
+
+    def discard_build(self, job):
+        """Remove the build once no other job uses it."""
+        if not any(other is not job and other.running and other.profile == job.profile
+                   for other in self.jobs):
+            shutil.rmtree(self.build_output(), ignore_errors=True)
 
     DASH_QUESTION = ("Install over existing files?", "The Dash's folder holds:",
                         "Files there that the Dash does not have are deleted. "
                         "Install anyway?")
 
     def install_dash(self):
-        if self.process is not None:
-            self.error("A TES3X command is already running")
-            return
         target = self.default_target("xbox")
         if not target:
             self.error("Configure an Xbox target before installing the Dash")
             return
         name = target["name"]
+        if self.target_busy(name):
+            self.error(f"A command is already running for {name}")
+            return
         dash = self.play_controller.dash_paired(name)
         answer = QMessageBox.question(
             self, "Install TES3X Dash",
@@ -1629,7 +1657,7 @@ class ProfileWindow(QMainWindow):
         config = ["--config", str(self.local_config_path()), "--target", name]
         self.run_steps([("dash", ["stage", str(out), *config],
                          "Preparing the Dash…")],
-                       then=lambda: self.deploy_dash(out, name, dash))
+                       then=lambda: self.deploy_dash(out, name, dash), kind="dash", target=name)
 
     def deploy_dash(self, out, name, agent, *extra):
         stage = Path(out)
@@ -1645,22 +1673,22 @@ class ProfileWindow(QMainWindow):
         if agent:
             arguments.append("--agent")
             self.play_controller.lend_listener()
-        self.run_steps([("deploy", arguments,
-                         f"Installing Dash {version} to {remote}…")], first=False)
-        self.command_kind = "dash"
+        job = self.run_steps([("deploy", arguments,
+                               f"Installing Dash {version} to {remote}…")], first=False,
+                             kind="dash", target=name)
         if "--replace" not in extra:
-            self.conflict_retry = (lambda: self.deploy_dash(out, name, agent, *extra,
+            job.conflict_retry = (lambda: self.deploy_dash(out, name, agent, *extra,
                                                                "--replace"),
                                    self.DASH_QUESTION)
         if "--ignore-space" not in extra:
-            self.space_retry = lambda: self.deploy_dash(out, name, agent, *extra,
-                                                           "--ignore-space")
+            job.space_retry = lambda: self.deploy_dash(out, name, agent, *extra,
+                                                          "--ignore-space")
 
     def pull_logs(self):
-        if self.process is not None:
-            self.error("A TES3X command is already running")
-            return
         name = self.target_picker.currentData()
+        if self.target_busy(name):
+            self.error(f"A command is already running for {name}")
+            return
         timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         destination = self.work_dir() / "build" / "xbox-logs" / (name or "xbox") / timestamp
         features = self.target_features(name)
@@ -1675,7 +1703,7 @@ class ProfileWindow(QMainWindow):
             *(["--config", str(config)] if config.is_file() else []),
             *(["--target", self.target_picker.currentData()]
               if self.target_picker.currentData() else []),
-        ], f"Pulling Xbox logs to {destination}…")
+        ], f"Pulling Xbox logs to {destination}…", kind="pull", target=name)
 
     def write_pull_record(self, destination, name):
         """What a pulled log folder came from, for the Targets page's log catalog."""
@@ -1692,7 +1720,9 @@ class ProfileWindow(QMainWindow):
         log = QTextEdit()
         log.setReadOnly(True)
         self.log_tabs.addTab(log, title)
-        return Job(log)
+        job = Job(log)
+        self.jobs.append(job)
+        return job
 
     def forward_to_job(name):
         return property(lambda self: getattr(self.job, name),
@@ -1711,11 +1741,105 @@ class ProfileWindow(QMainWindow):
     def output(self):
         return self.job.log
 
-    def start_command(self, program, arguments, message, environment=None, clear=True):
+    JOB_LABELS = {"build": "Build", "check": "Check", "deploy": "Deploy", "dash": "Dash",
+                  "pull": "Pull logs", "smoke": "Smoke test"}
+
+    def running_jobs(self):
+        return [job for job in self.jobs if job.running]
+
+    def profile_key(self):
+        return str(self.profile_path) if self.profile_path else None
+
+    def profile_job(self, kind=None):
+        """A running job that uses this profile's build folder (of `kind`, if given)."""
+        key = self.profile_key()
+        return next((job for job in self.jobs if job.running and job.profile == key
+                     and job.kind in ("build", "check", "deploy") and kind in (None, job.kind)),
+                    None)
+
+    def profile_busy(self):
+        return self.profile_job() is not None
+
+    def target_busy(self, name=None):
+        name = name or self.target_picker.currentData()
+        return bool(name) and any(job.running and job.target == name for job in self.jobs)
+
+    def deploy_block(self):
+        """(reason, existing): why this profile cannot deploy to the selected target now, and
+        whether it can, by uploading the build another job already made."""
+        name = self.target_picker.currentData()
+        if self.target_busy(name):
+            return f"A command is already running for {name}", False
+        peers = [job for job in self.jobs if job.running and job.profile == self.profile_key()
+                 and job.kind in ("build", "check", "deploy")]
+        if not peers:
+            return None, False
+        if all(job.kind == "deploy" and (not job.builds or job.stage == "upload")
+               for job in peers):
+            return None, True
+        return "Wait for this profile's build to finish", False
+
+    def refresh_command_actions(self):
+        target = self.default_target()
+        xbox = bool(target and target.get("kind") == "xbox")
+        busy_profile = self.profile_busy()
+        busy_target = self.target_busy()
+        self.action_check.setEnabled(not busy_profile)
+        self.action_smoke.setEnabled(not busy_profile)
+        self.action_deploy.setEnabled(xbox and self.deploy_block()[0] is None)
+        self.action_fetch.setEnabled(xbox and not busy_target)
+        self.action_dash.setEnabled(xbox and not busy_target)
+        self.target_actions.setEnabled(not self.running_jobs())
+
+    def free_job(self):
+        """The current job if it is idle, else another idle one, else a new tab."""
+        if not self.job.running:
+            return self.job
+        return next((job for job in self.jobs if not job.running), None) or self.new_job("Output")
+
+    def job_title(self, job, program):
+        label = self.JOB_LABELS.get(job.kind) or program.capitalize()
+        if job.kind in ("deploy", "dash", "pull"):
+            where = job.target
+        else:
+            where = Path(job.profile).stem if job.profile else None
+        return f"{label} → {where}" if where else label
+
+    def close_job_tab(self, index):
+        log = self.log_tabs.widget(index)
+        job = next((job for job in self.jobs if job.log is log), None)
+        if job is None or job.running or len(self.jobs) == 1:
+            return
+        self.jobs.remove(job)
+        self.log_tabs.removeTab(index)
+        if self.job is job:
+            self.job = self.jobs[-1]
+
+    def show_job_progress(self, _index=None):
+        status = self.statusBar()
+        if not isinstance(status, StatusBar):
+            return
+        job = next((job for job in self.jobs if job.log is self.log_tabs.currentWidget()), None)
+        if job is not None and job.running and job.progress is not None:
+            status.show_progress(*job.progress)
+        else:
+            status.clear_progress()
+
+    def start_command(self, program, arguments, message, environment=None, clear=True,
+                      kind=None, target=None, job=None, builds=False):
+        """Run a command in a job (a free one unless given) and return it."""
+        job = job or self.free_job()
+        self.job = job
+        job.kind, job.builds, job.stage, job.progress = kind, builds, None, None
+        job.target = target or self.target_picker.currentData()
+        job.profile = self.profile_key()
+        job.partial = ""
         if clear:
-            self.output.clear()
-        self.partial_line = ""
-        job = self.job
+            job.log.clear()
+        self.log_tabs.setTabText(self.log_tabs.indexOf(job.log), self.job_title(job, program))
+        self.log_tabs.tabBar().setTabTextColor(self.log_tabs.indexOf(job.log),
+                                               self.palette().text().color())
+        self.log_tabs.setCurrentWidget(job.log)
         process = QProcess(self)
         process.setWorkingDirectory(str(self.work_dir()))
         environment = QProcessEnvironment(environment or QProcessEnvironment.systemEnvironment())
@@ -1727,16 +1851,13 @@ class ProfileWindow(QMainWindow):
         process.readyReadStandardOutput.connect(lambda: self.append_process_output(job))
         process.finished.connect(lambda code, status: self.command_finished(code, status, job))
         job.process = process
-        self.target_picker.setEnabled(False)
-        self.target_actions.setEnabled(False)
-        for action in self.command_actions:
-            if action is not self.action_play or self.play_controller.play_process is None:
-                action.setEnabled(False)
+        self.refresh_command_actions()
         self.statusBar().spinner.start()
         self.update_build_state()
         self.targets_page.refresh()
         process.start()
         self.statusBar().showMessage(message)
+        return job
 
     def append_process_output(self, job=None):
         job = job or self.job
@@ -1774,7 +1895,9 @@ class ProfileWindow(QMainWindow):
             if progress is None:
                 shown.append(line + "\n")
             else:
-                self.statusBar().show_progress(*progress)
+                job.progress, job.stage = progress, progress[0]
+                if job.log is self.log_tabs.currentWidget():
+                    self.statusBar().show_progress(*progress)
         return "".join(shown)
 
     def command_finished(self, code, _status, job=None):
@@ -1783,50 +1906,51 @@ class ProfileWindow(QMainWindow):
         if job.partial:
             job.log.insertPlainText(job.partial)
             job.partial = ""
-        self.statusBar().clear_progress()
         self.statusBar().showMessage(f"TES3X exited {code}", 5000)
         kind, target = job.kind, job.target
         follow, retry, space = job.after, job.conflict_retry, job.space_retry
         job.finish()
+        job.progress = None
+        self.show_job_progress()
+        self.log_tabs.tabBar().setTabTextColor(
+            self.log_tabs.indexOf(job.log), QColor("#3a9a3a" if code == 0 else "#d04040"))
         if kind == "check":
             self.remember_check(code == 0)
         elif kind == "build":
             self.build_failed = code != 0
         elif kind == "deploy":
-            self.deploy_failed = code != 0
+            (self.deploy_failed.add if code else self.deploy_failed.discard)(target)
             if code == 0:
                 self.remember_deploy(target)
-        self.statusBar().spinner.stop()
-        self.target_picker.setEnabled(True)
-        self.target_actions.setEnabled(True)
-        for action in self.command_actions:
-            action.setEnabled(True)
+        if not self.running_jobs():
+            self.statusBar().spinner.stop()
         self.target_selection_changed(probe=False)
         self.update_build_state()
-        self.play_controller.restore_listener()
+        if not self.running_jobs():
+            self.play_controller.restore_listener()
         self.saves.saves_selected()
         if code == DEPLOY_NO_SPACE and space:
             if kind == "build":
                 self.build_failed = False
             elif kind == "deploy":
-                self.deploy_failed = False
+                self.deploy_failed.discard(target)
             self.update_build_state()
-            self.confirm_space(space)
+            self.confirm_space(space, job)
             return
         if code == DEPLOY_CONFLICT and retry:
             if kind == "build":
                 self.build_failed = False
             elif kind == "deploy":
-                self.deploy_failed = False
+                self.deploy_failed.discard(target)
             self.update_build_state()
-            self.confirm_replace(*retry)
+            self.confirm_replace(*retry, job)
             return
         if follow and code == 0:
             follow()
 
-    def confirm_space(self, retry):
+    def confirm_space(self, retry, job=None):
         """The Xbox's drive looked too small for the deploy; ask before trying anyway."""
-        lines = [line.strip() for line in self.output.toPlainText().splitlines()
+        lines = [line.strip() for line in (job or self.job).log.toPlainText().splitlines()
                  if line.strip().startswith(("space:", "nothing changed:"))]
         answer = QMessageBox.warning(
             self, "Not enough space on the Xbox",
@@ -1837,10 +1961,11 @@ class ProfileWindow(QMainWindow):
         if answer == QMessageBox.StandardButton.Yes:
             retry()
 
-    def confirm_replace(self, retry, question):
+    def confirm_replace(self, retry, question, job=None):
         """A command stopped rather than overwrite something; ask before repeating it."""
         title, lead, ask = question
-        lines = [line.split("conflict: ", 1)[1] for line in self.output.toPlainText().splitlines()
+        lines = [line.split("conflict: ", 1)[1]
+                 for line in (job or self.job).log.toPlainText().splitlines()
                  if "conflict: " in line]
         answer = QMessageBox.warning(
             self, title, lead + "\n\n" + "\n".join(f"• {line}" for line in lines)

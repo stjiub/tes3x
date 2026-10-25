@@ -650,16 +650,18 @@ order = 10
         self.assertEqual([window.run_button.text(), window.play_button.text()],
                          ["Build", "Play"])
 
-        def start(program, arguments, *_args):
-            window.process = "running"
-            calls.append((Path(program).name, arguments))
-
         def start_play(program, arguments, *_args):
             window.play_controller.play_process = "running"
             calls.append((Path(program).name, arguments))
 
         calls = []
-        with patch.object(window, "start_command", side_effect=start), \
+        start = self.running_job(window)
+
+        def run(program, arguments, *args, **kwargs):
+            calls.append((Path(program).name, arguments))
+            return start(program, arguments, *args, **kwargs)
+
+        with patch.object(window, "start_command", side_effect=run), \
                 patch.object(window.play_controller, "start_play_process", side_effect=start_play):
             window.play_controller.play()
             self.assertEqual(calls[0][0], "pipeline")
@@ -725,6 +727,21 @@ order = 10
         self.profile.write_text(self.profile.read_text(encoding="utf-8") + "\n", encoding="utf-8")
         self.assertEqual(window.build_status()[0], "stale")
 
+    @staticmethod
+    def running_job(window, record=None):
+        """A stand-in for start_command that marks a job running without starting a process."""
+        def start(program, arguments, *_args, kind=None, target=None, job=None, clear=True,
+                  builds=False):
+            job = job or window.free_job()
+            window.job = job
+            job.process, job.kind, job.builds = MagicMock(), kind, builds
+            job.target = target or window.target_picker.currentData()
+            job.profile = window.profile_key()
+            if record is not None:
+                record.append((Path(program).name, arguments, clear))
+            return job
+        return start
+
     def test_check_deploy_and_target_status_show_progress_and_results(self):
         config = self.root / "local.toml"
         config.write_text('default_target = "bench"\n[targets.bench]\nkind = "xbox"\n'
@@ -732,7 +749,7 @@ order = 10
                           '[targets.spare]\nkind = "xbox"\nhost = "192.0.2.6"\n'
                           'games_root = "E:/Games"\n', encoding="utf-8")
         window = self.window(config=config)
-        with patch.object(window, "start_command"):
+        with patch.object(window, "start_command", side_effect=self.running_job(window)):
             window.run_pipeline(["--check"])
         window.update_check_state()
         self.assertEqual(window.check_button.property("state"), "running")
@@ -783,6 +800,42 @@ order = 10
         window.process = None
         window.command_finished(0, None)
 
+    def test_two_deploys_to_different_targets_run_side_by_side(self):
+        config = self.root / "local.toml"
+        config.write_text('default_target = "bench"\n[targets.bench]\nkind = "xbox"\n'
+                          'host = "192.0.2.5"\ngames_root = "F:/Games"\n'
+                          '[targets.spare]\nkind = "xbox"\nhost = "192.0.2.6"\n'
+                          'games_root = "E:/Games"\n', encoding="utf-8")
+        window = self.window(config=config)
+        start = self.running_job(window)
+        with patch.object(window, "start_command", side_effect=start):
+            first = window.run_pipeline(["--deploy"])
+        self.assertIsNotNone(first)
+        self.assertEqual(first.target, "bench")
+        # The first job is still building: nothing else may use the profile.
+        window.target_picker.setCurrentIndex(window.target_picker.findData("spare"))
+        window.target_selection_changed()
+        self.assertEqual(window.deploy_block(), ("Wait for this profile's build to finish", False))
+        self.assertFalse(window.action_check.isEnabled())
+        # Once it uploads, another target may deploy the finished build.
+        first.stage = "upload"
+        self.assertEqual(window.deploy_block(), (None, True))
+        window.target_picker.setCurrentIndex(window.target_picker.findData("bench"))
+        self.assertIn("already running", window.deploy_block()[0])
+        window.target_picker.setCurrentIndex(window.target_picker.findData("spare"))
+        with patch.object(window, "start_command", side_effect=start),                 patch.object(window, "error") as error:
+            self.assertIsNone(window.run_pipeline([]))
+            error.assert_called_once()
+            second = window.run_steps([("deploy", ["tree"], "Deploying…")], target="spare")
+        self.assertIsNot(second, first)
+        self.assertEqual(len(window.jobs), 2)
+        self.assertEqual(len(window.running_jobs()), 2)
+        # Finishing one leaves the other running.
+        window.command_finished(0, None, first)
+        self.assertEqual(window.running_jobs(), [second])
+        self.assertTrue(window.target_busy("spare"))
+        self.assertFalse(window.target_busy("bench"))
+
     def test_progress_lines_feed_the_status_bar_not_the_log(self):
         window = self.window()
         with patch("tes3x.gui.window.QProcess"):
@@ -827,9 +880,8 @@ order = 10
             encoding="utf-8")
         calls = []
 
-        def start(program, arguments, message, *_args, clear=True):
-            window.process = "running"
-            calls.append((Path(program).name, arguments[0], clear))
+        record = []
+        start = self.running_job(window, record)
 
         with patch.object(window, "start_command", side_effect=start), \
                 patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
@@ -837,6 +889,7 @@ order = 10
             for _ in range(2):
                 window.process = None
                 window.command_finished(0, None)
+        calls = [(program, arguments[0], clear) for program, arguments, clear in record]
         self.assertEqual(calls, [("console.py", "ping", True),
                                  ("deploy", str(output / "deploy"), False),
                                  ("console.py", "run", False)])
@@ -847,21 +900,23 @@ order = 10
 
         # A failed step stops the rest.
         window.process = None
-        calls.clear()
+        record.clear()
         with patch.object(window, "start_command", side_effect=start),                 patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
             window.play_controller.play()
             window.process = None
             window.command_finished(1, None)
-        self.assertEqual([call[1] for call in calls], ["ping"])
+        self.assertEqual([call[1][0] for call in record], ["ping"])
 
         # A deploy that stops on a conflict is asked about, then repeated with --replace.
         window.process = None
         calls.clear()
         full = []
 
-        def start_full(program, arguments, message, *_args, clear=True):
-            window.process = "running"
+        running = self.running_job(window)
+
+        def start_full(program, arguments, *args, **kwargs):
             full.append(arguments)
+            return running(program, arguments, *args, **kwargs)
 
         warning = patch.object(QMessageBox, "warning", return_value=QMessageBox.StandardButton.Yes)
         with patch.object(window, "start_command", side_effect=start_full), warning as asked:
@@ -1268,7 +1323,7 @@ order = 10
                 patch.object(window, "start_command") as start, \
                 patch.object(window.play_controller, "start_in_game_listener") as restart:
             window.process = None
-            start.side_effect = lambda *a, **k: setattr(window, "process", MagicMock())
+            start.side_effect = self.running_job(window)
             window.deploy_profile()
             self.assertIn("--deploy-agent", start.call_args.args[1])
             listener.close.assert_called_once()
@@ -1279,7 +1334,7 @@ order = 10
 
             # A retry after the Dash dropped from the GUI still goes through it.
             window.process = None
-            window.deploy_built("--ignore-space")
+            window.deploy_built("--ignore-space", agent=True)
             self.assertIn("--agent", start.call_args.args[1])
             self.assertTrue(window.play_controller.listener_lent)
 

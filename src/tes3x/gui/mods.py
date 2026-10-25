@@ -740,7 +740,7 @@ class ModsTab(QWidget):
 
     def analysis_finished(self):
         self.analysis_busy = False
-        if self.window.process is None:
+        if not self.window.running_jobs():
             self.window.statusBar().spinner.stop()
         self.window.statusBar().clearMessage()
         again, self.analysis_again = self.analysis_again, False

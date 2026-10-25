@@ -337,17 +337,17 @@ class PlayController(QObject):
         if reason:
             self.window.error(reason)
             return
-        if self.window.process is not None:
-            self.window.error("A TES3X command is already running")
+        if self.window.profile_busy():
+            self.window.error("This profile already has a build, check or deploy running")
             return
         if not self.window.save_profile():
             return
         if self.window.build_status()[0] == "built":
             self.start_play()
             return
-        self.window.run_pipeline([])
-        if self.window.process is not None:
-            self.window.after_command = self.start_play
+        job = self.window.run_pipeline([])
+        if job is not None:
+            job.after = self.start_play
 
     def play_iso(self):
         """The ISO an earlier play made of the current build, so it is not packed again."""
@@ -458,7 +458,7 @@ class PlayController(QObject):
         )
 
     def reset_play_disk(self):
-        if self.window.process is not None or self.play_process is not None:
+        if self.window.running_jobs() or self.play_process is not None:
             self.window.error("Stop running TES3X commands and this target's xemu before resetting "
                        "its saves")
             return
