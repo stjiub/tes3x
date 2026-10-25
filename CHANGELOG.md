@@ -4,8 +4,6 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
-- `dash-button` and `multiplayer` no longer turn on `menu-still`; it is its own choice and can be
-  switched off. Builds that relied on it getting the still image must enable it.
 - Mod library: the GUI installs mods that ship only an `Animations` folder, such as Can't Touch
   This, so enabling it in a profile builds its dodge patch.
 - Multiplayer: the pause menu while joined no longer flashes the stock menu before it changes. It

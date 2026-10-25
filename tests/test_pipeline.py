@@ -498,11 +498,11 @@ class PipelinePlanTests(unittest.TestCase):
     def test_multiplayer_adds_network_foundation(self):
         profile = {'patches': {'preset': 'minimal', 'enable': ['multiplayer']}}
         plan = resolve_patch_plan(profile)
-        self.assertEqual(plan['selected'], ['diagnostics', 'boot-clear', 'dash-button',
-                                            'net', 'multiplayer'])
+        self.assertEqual(plan['selected'], ['diagnostics', 'boot-clear', 'menu-still',
+                                            'dash-button', 'net', 'multiplayer'])
         self.assertEqual(plan['sources'], [
             'tes3xhook.c', 'tes3xlog.c', 'tes3xini.c', 'tes3xdiag.c', 'tes3xbootclear.c',
-            'tes3xdashbutton.c', 'tes3xnet.c', 'tes3xmulti.c'
+            'tes3xmenustill.c', 'tes3xdashbutton.c', 'tes3xnet.c', 'tes3xmulti.c'
         ])
 
     def test_agent_adds_network_foundation(self):
