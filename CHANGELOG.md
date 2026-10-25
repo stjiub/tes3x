@@ -9,6 +9,11 @@ No official releases yet. The first public release is in preparation.
   and leaving combat ends the wait early; `0` leaves at once. See
   [the server guide](docs/multiplayer-server.md).
 
+- New `lazy-dialogue` patch loads topic responses only as their place in the plugins and builds a
+  topic's responses when it is first asked, which frees about 12 MB at the first frame with the
+  full Tamriel Rebuilt masters and lowers the loading peak by about 19 MB. It turns on
+  `dialogue-merge`. See [the patch](patches/lazy-dialogue.md).
+
 - New `dialogue-owner` patch finds a response's topic directly instead of searching every topic,
   which result scripts, `Choice` conditions and newly heard responses do. See
   [the patch](patches/dialogue-owner.md).

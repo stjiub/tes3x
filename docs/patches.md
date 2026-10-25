@@ -27,7 +27,7 @@ single required/not-required flag.
 | [Unarmored damage reduction](../patches/mcp-3.md) | `mcp-3` | Apply Unarmored damage reduction when no armor is equipped. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #3 | correctness | preview | testing preset |
 | [Restore fortified attributes](../patches/mcp-6.md) | `mcp-6` | Let Restore and expiring Drain recover the active temporary Fortify amount. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #6 | correctness | dev | By name |
 | [Blind attack penalty](../patches/mcp-25.md) | `mcp-25` | Make Blind lower the player's attack chance instead of raising it. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #25 | correctness | dev | By name |
-| [Keep responses of repeated topics](../patches/dialogue-merge.md) | `dialogue-merge` | Keep a topic's earlier responses when a later plugin adds to it. | TES3X | correctness | preview | testing preset |
+| [Keep responses of repeated topics](../patches/dialogue-merge.md) | `dialogue-merge` | Keep a topic's earlier responses when a later plugin adds to it. | TES3X | correctness | preview | testing preset; `lazy-dialogue` |
 | [Cell-change casting crash fix](../patches/mcp-37.md) | `mcp-37` | Cancel stale NPC casts before a cell change leaves them dangling. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #37 | core | preview | testing preset |
 | [Summoned creature crash fix](../patches/mcp-92.md) | `mcp-92` | Retire a summoned actor's magic before the actor is destroyed. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #92 | core | preview | testing preset |
 | [Saved-script initialization fix](../patches/mcp-97.md) | `mcp-97` | Advance the script parser correctly while initializing saved data. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #97 | core | preview | testing preset |
@@ -77,3 +77,4 @@ single required/not-required flag.
 | [Expanded-memory heap region](../patches/heap-region.md) | `heap-region` | With more than 64 MB, size the engine heap's region from [Xbox] HeapRegionKB. | TES3X | compat | dev | By name |
 | [Paged dialogue link names](../patches/info-name-arena.md) | `info-name-arena` | Page INFO's temporary ID, previous and next names outside the engine heap. | TES3X | compat | dev | By name |
 | [Direct response topic lookup](../patches/dialogue-owner.md) | `dialogue-owner` | Find a response's topic directly instead of searching every topic's responses. | TES3X | performance | dev | By name |
+| [Topic responses built on first use](../patches/lazy-dialogue.md) | `lazy-dialogue` | Load topic responses as file references and build a topic's responses when it is first asked. | TES3X | compat | dev | By name |

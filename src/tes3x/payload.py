@@ -25,7 +25,7 @@ from tes3x.paths import bundled, checkout, resource
 from tes3x.patch_sites import (find_topic_state, find_mcp6_context, find_mcp30_context,
                                find_mcp55_context,
                                find_mcp55_inventory_context, find_mcp118_drop_finish,
-                               find_mcp149_menu)
+                               find_mcp149_menu, find_lazy_dialogue_sites)
 from tes3x.patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, archive_load_site,
                          find_call_sites, find_item_tooltip, find_levelup_scale, find_menu_area_scale,
                          find_message_scale, find_name_scale, find_options_scale,
@@ -842,6 +842,29 @@ def engine_bindings(xbe, sources):
             raise PayloadError("tes3xtest_dialogueowner.c requires tes3xconsole.c")
         print("dialogue-owner test probe: console command tes3xowner STRIDE")
         wanted["dialogue_owner_test"] = ("_tes3x_dialogue_owner_test_command",)
+    if "tes3xlazydialogue.c" in names or "tes3xtest_lazydialogue.c" in names:
+        lazy = find_lazy_dialogue_sites(image)
+        define("LAZY_DATA_HANDLER", hexva(lazy["data_handler"]))
+    if "tes3xlazydialogue.c" in names:
+        print(f"lazy dialogue: INFO site {hexva(lazy['info_site'])}, "
+              f"getFilteredInfo {hexva(lazy['reader_filtered'])}")
+        define("LAZY_HEAP_ALLOCATE", hexva(locate("heap-allocate")))
+        define("LAZY_HEAP_FREE", hexva(locate("heap-free")))
+        define("LAZY_HEAP_OBJECT", hexva(locate("heap-object")))
+        define("LAZY_NAMES_FREE", hexva(locate("info-names-free")))
+        for name in ("topic", "info_done", "info_tail", "info_notail", "info_new", "info_ctor",
+                     "load_from_file", "cached_file", "file_ctor", "file_collect", "file_reopen",
+                     "file_seek", "file_close", "file_dtor"):
+            define("LAZY_" + name.upper(), hexva(lazy[name]))
+        for name, length in (("filtered", 7), ("at_index", 5), ("journal", 6)):
+            define(f"LAZY_{name.upper()}_RESUME", hexva(lazy["reader_" + name] + length))
+            wanted["lazy_dialogue_" + name] = (f"_tes3x_lazy_dialogue_{name}",)
+        wanted["lazy_dialogue_info"] = ("_tes3x_lazy_dialogue_info_hook",)
+    if "tes3xtest_lazydialogue.c" in names:
+        if "tes3xconsole.c" not in names:
+            raise PayloadError("tes3xtest_lazydialogue.c requires tes3xconsole.c")
+        print("lazy-dialogue test probe: console command tes3xlazy check|build|heard|digest")
+        wanted["lazy_dialogue_test"] = ("_tes3x_lazy_dialogue_test_command",)
     if "tes3xdiag.c" in names:
         update = hexva(locate("diagnostics-update"))
         print(f"diagnostics hook: Game::Update {update}")

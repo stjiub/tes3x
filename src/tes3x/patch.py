@@ -51,7 +51,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_dxt5_size,
                                find_game_instance, find_hd_video, find_heap_function,
                                find_heap_object, find_heap_region, find_heap_region_sites,
-                               find_info_arena_sites, find_lean_menu, find_marker,
+                               find_info_arena_sites, find_lazy_dialogue_sites, find_lean_menu, find_marker,
                                find_mcp102_actn, find_enable_disable_flags, find_mcp160_removal, find_pathgrid_lookups, find_mcp123_add, find_mcp6_context,
                                find_mcp125_collision, find_mcp30_context, find_mcp55_context,
                                find_mcp55_inventory_context, find_mcp118_drop_finish,
@@ -1047,6 +1047,30 @@ def _dialogue_owner(x, value, ctx):
     return edits
 
 
+@patch("lazy-dialogue")
+def _lazy_dialogue(x, value, ctx):
+    """Load topic responses as stubs and build each topic's chain when a reader first needs it."""
+    hooks = ctx.get("hooks", {})
+    keys = ("info", "filtered", "at_index", "journal")
+    missing = [key for key in keys if not hooks.get("lazy_dialogue_" + key)]
+    if missing:
+        raise PatchError("lazy-dialogue: needs `payload` first, with its %s hooks"
+                         % ", ".join(missing))
+    sites = find_lazy_dialogue_sites(x)
+    edits = []
+    for key, site, length, what in (
+            ("info", sites["info_site"], 21, "INFO load decision"),
+            ("filtered", sites["reader_filtered"], 7, "getFilteredInfo"),
+            ("at_index", sites["reader_at_index"], 5, "getInfoAtIndex"),
+            ("journal", sites["reader_journal"], 6, "journalAdd")):
+        target = int(str(hooks["lazy_dialogue_" + key]), 16)
+        off = x.va_to_off(site)
+        x.data[off:off + length] = (b"\xe9" + struct.pack("<i", target - (site + 5))
+                                    + b"\x90" * (length - 5))
+        edits.append((off, length, f"{what} 0x{site:08X} -> 0x{target:08X}"))
+    return edits
+
+
 @patch("mcp-102")
 def _mcp_102(x, value, ctx):
     """Reactivate script-triggered objects after their script mod is removed."""
@@ -1107,6 +1131,14 @@ def _test_dialogueowner(x, value, ctx):
     if not ctx.get("hooks", {}).get("dialogue_owner_test"):
         raise PatchError("test-dialogueowner: payload has no dialogue-owner test command")
     return [(None, 0, "topic lookup check command installed")]
+
+
+@test_patch("test-lazydialogue", "Compare, build and digest topic responses for the lazy-dialogue "
+                                 "game test.")
+def _test_lazydialogue(x, value, ctx):
+    if not ctx.get("hooks", {}).get("lazy_dialogue_test"):
+        raise PatchError("test-lazydialogue: payload has no lazy-dialogue test command")
+    return [(None, 0, "topic response comparison command installed")]
 
 
 @test_patch("test-mcp3","Measure fully unarmored damage for the mcp-3 game test.")
@@ -1884,6 +1916,7 @@ __all__ = [
     '_heap_census',
     '_heap_region',
     '_info_name_arena',
+    '_lazy_dialogue',
     '_lean_menu',
     '_loop_sleeps',
     '_mcp_1',
@@ -1911,6 +1944,7 @@ __all__ = [
     '_script_ext',
     '_test_dialoguemerge',
     '_test_dialogueowner',
+    '_test_lazydialogue',
     '_test_mcp102',
     '_test_mcp3',
     '_test_mcp97',
@@ -1946,6 +1980,7 @@ __all__ = [
     'find_heap_region',
     'find_heap_region_sites',
     'find_info_arena_sites',
+    'find_lazy_dialogue_sites',
     'find_lean_menu',
     'find_marker',
     'find_mcp102_actn',

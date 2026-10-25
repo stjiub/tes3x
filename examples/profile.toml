@@ -63,6 +63,7 @@ enable = [
     # "lean-menu",             # performance: load only game settings for the main menu
     # "loop-sleeps",           # performance: save and load without forced 1 ms sleeps
     # "dialogue-owner",        # performance: find a response's topic without searching every topic
+    # "lazy-dialogue",         # compat: build topic responses on first use instead of at load
     # "mcp-146",                # qol: remove a fully nocked arrow with Ready Weapon
     # "mcp-149",                # core: wait for death processing before offering corpse disposal
     # "bow-view",               # qol: lower the first-person bow and arms while an arrow is nocked

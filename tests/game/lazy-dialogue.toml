@@ -1,0 +1,43 @@
+kind = "comparison"
+purpose = "Topic responses that load as stubs answer a conversation, and every topic built from its stubs matches the chain the engine builds at load."
+procedure = "Start a New Game in Seyda Neen, talk to Fargoth and click his first topic, then close the dialogue. A test-only console command counts heard responses, builds every topic still a stub, and digests every topic's responses in order: plugin, record offset, flags, data and conditions."
+limitations = "One plugin loads, so PNAM placement across plugins is not exercised here; it was checked against full Tamriel Rebuilt separately. Saving and loading a heard response needs two runs and is not part of this test. Hardware timing is not checked."
+watch = 'lazy\.|diag\.patches|exec[.>]|crash\.|hang\.detected|fatal\.'
+pipeline = ["--test-probe", "lazy-dialogue"]
+timeout = 360
+script = '''
+@start new
+coc "Seyda Neen"
+wait 120
+activate fargoth
+wait 200
+click MenuDialog MenuDialog_a_topic
+wait 300
+pad MenuDialog A
+wait 120
+pad MenuDialog B
+wait 120
+tes3xlazy heard
+wait 1
+tes3xlazy build
+wait 1
+tes3xlazy digest
+wait 1
+exit
+'''
+
+[expect]
+control = ['lazy\.heard 0x00000000 0x00000002', '!lazy\.stubs', 'exec\.activate 1', 'exec\.exit 0']
+test = ['lazy\.heard 0x00000000 0x00000002', 'lazy\.stubs [1-9]', 'lazy\.unstubbable 0$',
+        'lazy\.built_topics [1-9]', 'lazy\.failed 0$', 'exec\.activate 1', 'exec\.exit 0']
+
+[sequence]
+test = ['exec> coc "Seyda Neen"', 'lazy\.stubs [1-9]', 'exec\.activate 1', 'lazy\.built_topics', 'lazy\.digest_sum']
+
+[[compare]]
+pattern = 'lazy\.digest_infos ([0-9]+)'
+relation = "=="
+
+[[compare]]
+pattern = 'lazy\.digest_sum ([0-9]+)'
+relation = "=="
