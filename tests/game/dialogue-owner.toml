@@ -1,0 +1,28 @@
+kind = "comparison"
+purpose = "Every response's topic is found from its stored owner, and the answer matches the chain the response sits in."
+procedure = "Start a New Game in Seyda Neen and talk to Fargoth, whose first greeting asks for its topic. Then a test-only console command looks up every 25th response of every topic and checks the answer in control and patched builds."
+limitations = "Result scripts and Choice conditions reach the same lookup but are not driven separately. The destructor guard runs only when the game frees its records, which this test does not reach. Hardware timing is not checked."
+watch = 'owner\.|diag\.patches|exec[.>]|crash\.|hang\.detected|fatal\.'
+pipeline = ["--test-probe", "dialogue-owner"]
+timeout = 300
+script = '''
+@start new
+coc "Seyda Neen"
+wait 120
+activate fargoth
+wait 200
+tes3xowner 25
+wait 1
+exit
+'''
+
+[expect]
+control = ['owner\.mismatch 0$', '!owner\.infos', 'exec\.activate 1', 'exec\.exit 0']
+test = ['owner\.mismatch 0$', 'owner\.unstored 0$', 'exec\.activate 1', 'exec\.exit 0']
+
+[sequence]
+test = ['exec> coc "Seyda Neen"', 'owner\.infos [1-9]', 'exec\.activate 1', 'owner\.chained [1-9]']
+
+[[compare]]
+pattern = 'owner\.chained ([0-9]+)'
+relation = "=="

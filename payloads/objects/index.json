@@ -334,6 +334,9 @@
     "OPTIONS_ID": null,
     "OPTIONS_LAYOUT": null,
     "OPTIONS_OPEN": null,
+    "OWNER_DATA_HANDLER": null,
+    "OWNER_FIND": null,
+    "OWNER_FIND_RESUME": null,
     "PERFORM_LAYOUT": null,
     "PLAYER_MOBILE": null,
     "RECORDS_PTR": null,
@@ -442,8 +445,8 @@
       "sha256": "38411f8b5f805eec763cec3029b75b383e4b418a8ed0a40c435d326b1decb15f"
     },
     "tes3xconsole.c": {
-      "digest": "ec16f812b4acf3ac517eccbce554871bf16f09e95f206f3b92ffeb02a6bbc464",
-      "sha256": "4049b849b013ddde329e4961dafc7907df1801ade7f31c309af51fa8a165c696"
+      "digest": "fffcfec3b76813713aba109b07adc38df3c272dcc4d223a7419146dd4af7b64a",
+      "sha256": "1c65e0eb0b9e2652a8b654f1809591a7992b0957f9c738734ba7fe21d0932fab"
     },
     "tes3xcrt.c": {
       "digest": "9842d5c4ddc23ca417cac29b21e19ba8a8802170c5bd5a23f948ee830eee14f1",
@@ -460,6 +463,10 @@
     "tes3xdiag.c": {
       "digest": "8088705baff92a955377d8e8952eecf13043cca860ddbdbae75e9a10d45fe875",
       "sha256": "caf4e88f2e08b472a98814731a4ab904f254ce3389de8aeaa3a9a155a709af6a"
+    },
+    "tes3xdialogueowner.c": {
+      "digest": "bf9658421ef81116c7e7f48a1b5acc83b26641038b932b3ebec3d8f8822b7acf",
+      "sha256": "6a7e663062304e6915cfd68e753bb4914e5e3066104959bf8b4cacda31364674"
     },
     "tes3xdxt5.c": {
       "digest": "98b98907c581cd57ac9ca34aba16b39f599e5ab43432add287665a47510e6d0c",

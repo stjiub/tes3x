@@ -47,7 +47,8 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_menu_still,
                                find_bow_view, find_button_pressed, find_call_sites, find_command_table,
                                find_console_gate, find_console_print, find_controls_table,
-                               find_diagnostics_update, find_dialogue_merge, find_dxt5_size,
+                               find_diagnostics_update, find_dialogue_merge, find_dialogue_owner_sites,
+                               find_dxt5_size,
                                find_game_instance, find_hd_video, find_heap_function,
                                find_heap_object, find_heap_region, find_heap_region_sites,
                                find_info_arena_sites, find_lean_menu, find_marker,
@@ -1027,6 +1028,25 @@ def _info_name_arena(x, value, ctx):
     return edits
 
 
+@patch("dialogue-owner")
+def _dialogue_owner(x, value, ctx):
+    """Answer findDialogue from each INFO's owner pointer, and keep the destructor off it."""
+    hooks = ctx.get("hooks", {})
+    if not hooks.get("dialogue_owner_find") or not hooks.get("dialogue_owner_dtor"):
+        raise PatchError("dialogue-owner: needs `payload` first, with its findDialogue and "
+                         "destructor hooks")
+    sites = find_dialogue_owner_sites(x)
+    edits = []
+    for key, opcode, what in (("find", 0xE9, "findDialogue"),
+                              ("dtor", 0xE8, "INFO destructor owner guard")):
+        site = sites[key]
+        target = int(str(hooks["dialogue_owner_" + key]), 16)
+        off = x.va_to_off(site)
+        x.data[off:off + 5] = bytes([opcode]) + struct.pack("<i", target - (site + 5))
+        edits.append((off, 5, f"{what} 0x{site:08X} -> 0x{target:08X}"))
+    return edits
+
+
 @patch("mcp-102")
 def _mcp_102(x, value, ctx):
     """Reactivate script-triggered objects after their script mod is removed."""
@@ -1082,7 +1102,14 @@ def _test_dialoguemerge(x, value, ctx):
     return [(None, 0, "topic response count command installed")]
 
 
-@test_patch("test-mcp3", "Measure fully unarmored damage for the mcp-3 game test.")
+@test_patch("test-dialogueowner", "Check every looked-up topic for the dialogue-owner game test.")
+def _test_dialogueowner(x, value, ctx):
+    if not ctx.get("hooks", {}).get("dialogue_owner_test"):
+        raise PatchError("test-dialogueowner: payload has no dialogue-owner test command")
+    return [(None, 0, "topic lookup check command installed")]
+
+
+@test_patch("test-mcp3","Measure fully unarmored damage for the mcp-3 game test.")
 def _test_mcp3(x, value, ctx):
     if not ctx.get("hooks", {}).get("mcp3_test"):
         raise PatchError("test-mcp3: payload has no mcp-3 test command")
@@ -1847,6 +1874,7 @@ __all__ = [
     '_data_overlay',
     '_diagnostics',
     '_dialogue_merge',
+    '_dialogue_owner',
     '_drive_letters',
     '_dxt5_size',
     '_find_in',
@@ -1882,6 +1910,7 @@ __all__ = [
     '_save_staging',
     '_script_ext',
     '_test_dialoguemerge',
+    '_test_dialogueowner',
     '_test_mcp102',
     '_test_mcp3',
     '_test_mcp97',
@@ -1908,6 +1937,7 @@ __all__ = [
     'find_controls_table',
     'find_diagnostics_update',
     'find_dialogue_merge',
+    'find_dialogue_owner_sites',
     'find_dxt5_size',
     'find_game_instance',
     'find_hd_video',

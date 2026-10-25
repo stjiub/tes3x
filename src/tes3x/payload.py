@@ -828,6 +828,20 @@ def engine_bindings(xbe, sources):
         wanted["info_table_free"] = ("_tes3x_info_table_free@4",)
         wanted["info_cleanup"] = ("_tes3x_info_cleanup_hook",)
         wanted["info_finish"] = ("_tes3x_info_finish_hook",)
+    if "tes3xdialogueowner.c" in names or "tes3xtest_dialogueowner.c" in names:
+        find = locate("dialogue-owner-find")
+        define("OWNER_DATA_HANDLER", hexva(locate("dialogue-owner-data-handler")))
+        define("OWNER_FIND", hexva(find))
+        define("OWNER_FIND_RESUME", hexva(find + 5))
+    if "tes3xdialogueowner.c" in names:
+        print(f"dialogue owner: findDialogue {hexva(find)}")
+        wanted["dialogue_owner_find"] = ("_tes3x_dialogue_owner_find",)
+        wanted["dialogue_owner_dtor"] = ("_tes3x_dialogue_owner_dtor",)
+    if "tes3xtest_dialogueowner.c" in names:
+        if "tes3xconsole.c" not in names:
+            raise PayloadError("tes3xtest_dialogueowner.c requires tes3xconsole.c")
+        print("dialogue-owner test probe: console command tes3xowner STRIDE")
+        wanted["dialogue_owner_test"] = ("_tes3x_dialogue_owner_test_command",)
     if "tes3xdiag.c" in names:
         update = hexva(locate("diagnostics-update"))
         print(f"diagnostics hook: Game::Update {update}")

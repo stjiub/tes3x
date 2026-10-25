@@ -76,3 +76,4 @@ single required/not-required flag.
 | [Kernel memory census](../patches/mem-census.md) | `mem-census` | Count kernel allocations and the XAPI heap by caller, with the address space map. | TES3X | instrumentation | dev | Build option |
 | [Expanded-memory heap region](../patches/heap-region.md) | `heap-region` | With more than 64 MB, size the engine heap's region from [Xbox] HeapRegionKB. | TES3X | compat | dev | By name |
 | [Paged dialogue link names](../patches/info-name-arena.md) | `info-name-arena` | Page INFO's temporary ID, previous and next names outside the engine heap. | TES3X | compat | dev | By name |
+| [Direct response topic lookup](../patches/dialogue-owner.md) | `dialogue-owner` | Find a response's topic directly instead of searching every topic's responses. | TES3X | performance | dev | By name |

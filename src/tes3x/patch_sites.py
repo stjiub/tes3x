@@ -2237,6 +2237,31 @@ def find_info_arena_sites(x):
     }
 
 
+# DialogueInfo::findDialogue: walk NonDynamicData::dialogues (+0x48), then each topic's chain.
+DIALOGUE_OWNER_FIND = re.compile(
+    rb"\xa1(?P<handler>....)\x8b\x08\x56\x8b\x71\x48\x57\x8b\xce\xe8....\x85\xc0\x74.\x8b\x7c\x24\x0c"
+    rb".{0,8}?\x8b\x40\x08\x8b\x48\x18\x85\xc9\x74.", re.S)
+# The INFO destructor's free of its load-link names at +0x10; info-name-arena may retarget the calls.
+DIALOGUE_OWNER_DTOR = re.compile(
+    rb"\x8b\x47\x10\x3b\xc5\x89\x2d....\x74.\x8b\x08\x51\xe8....\x8b\x47\x10\x83\xc4\x04\x50"
+    rb"\xb9....\xe8....\x89\x6f\x10", re.S)
+
+
+def find_dialogue_owner_sites(x):
+    """findDialogue's entry, the DataHandler it loads there, and the INFO destructor's +0x10 read."""
+    found = {}
+    for key, rx in (("find", DIALOGUE_OWNER_FIND), ("dtor", DIALOGUE_OWNER_DTOR)):
+        hits = list(rx.finditer(bytes(x.data)))
+        if len(hits) != 1:
+            raise PatchError(f"dialogue-owner: {len(hits)} {key} sites, expected 1")
+        found[key] = hits[0]
+    return {
+        "find": x.off_to_va(found["find"].start()),
+        "data_handler": struct.unpack("<I", found["find"].group("handler"))[0],
+        "dtor": x.off_to_va(found["dtor"].start()),
+    }
+
+
 # CRT _heap_alloc: round the size, then RtlAllocateHeap(GetProcessHeap(), 0, size).
 CRT_HEAP_ALLOC = re.compile(rb"\x8b\x44\x24\x04\x85\xc0\x75\x01\x40\x83\x3d....\x01\x74\x06"
                             rb"\x83\xc0\x0f\x83\xe0\xf0\x50\x6a\x00\xe8....\x50(?=\xe8....\xc3)",
@@ -2593,6 +2618,8 @@ LOCATORS = {
     "info-current-topic": lambda image: find_info_arena_sites(image)["current_topic"],
     "info-link-original": lambda image: find_info_arena_sites(image)["link_original"],
     "info-finish-original": lambda image: find_info_arena_sites(image)["finish_original"],
+    "dialogue-owner-find": lambda image: find_dialogue_owner_sites(image)["find"],
+    "dialogue-owner-data-handler": lambda image: find_dialogue_owner_sites(image)["data_handler"],
     "xapi-heap-alloc": find_xapi_heap_alloc,
     "xapi-heap-free": find_xapi_heap_free,
 }

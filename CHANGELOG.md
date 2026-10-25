@@ -9,6 +9,10 @@ No official releases yet. The first public release is in preparation.
   and leaving combat ends the wait early; `0` leaves at once. See
   [the server guide](docs/multiplayer-server.md).
 
+- New `dialogue-owner` patch finds a response's topic directly instead of searching every topic,
+  which result scripts, `Choice` conditions and newly heard responses do. See
+  [the patch](patches/dialogue-owner.md).
+
 - New `mcp-30` patch corrects bow projectile aim for scaled races and in third person. See
   [the patch](patches/mcp-30.md).
 

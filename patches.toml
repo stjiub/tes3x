@@ -722,3 +722,13 @@ channel = "dev"
 selection = "preset"
 source = "tes3xinfoarena.c"
 summary = "Page INFO's temporary ID, previous and next names outside the engine heap."
+
+[[patch]]
+name = "dialogue-owner"
+title = "Direct response topic lookup"
+bit = 57
+category = "performance"
+channel = "dev"
+selection = "preset"
+source = "tes3xdialogueowner.c"
+summary = "Find a response's topic directly instead of searching every topic's responses."
