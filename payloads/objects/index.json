@@ -470,8 +470,8 @@
       "sha256": "eb785d46d2b64e74e7ae566b92e61fee7fad9fd7ceb802286a588a8f7e45929b"
     },
     "tes3xarena.c": {
-      "digest": "74b69f2ac0e4e6e97b59e427bdce9cd2de528a2ae7bded474cae784740d5d957",
-      "sha256": "f55dca0d6118aef1e7689e4700b2456bd0776a3acd5de3fa691eac003bb4e7d4"
+      "digest": "3fcfdbb873b71e410348f56f29598b5f045c7efc6ae82a618ca5982ad5ba10fc",
+      "sha256": "ccd7dfbc990780b30337e2c4ca2a5616393e15430c4af4bb9cc8ce2466dda0cb"
     },
     "tes3xbootclear.c": {
       "digest": "ef418cbec4e9f20366dcebf74e30e7be54a979e28f0d86e40665422b9f0e0607",

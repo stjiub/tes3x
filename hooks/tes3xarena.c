@@ -1,7 +1,7 @@
 /* Size the video-memory arena from physical memory. Every texture and vertex buffer comes from one
  * contiguous arena of a hardcoded 0xF80000 bytes; once it is full, each further block becomes its
- * own page-rounded physical allocation from general memory. With more than 64 MB, take the size
- * from [Xbox] VideoMemoryKB instead; on 64 MB the arena stays retail's size.
+ * own page-rounded physical allocation from general memory. [Xbox] VideoMemoryKB may shrink the
+ * arena on any console; only with more than 64 MB may it grow it.
  */
 
 #include "tes3x_thunks.h"
@@ -33,6 +33,7 @@ typedef struct {
 
 #define RETAIL_BYTES 0xF80000u
 #define DEFAULT_KB (22u * 1024u)
+#define MIN_KB 1024u
 #define MAX_KB (48u * 1024u)
 #define PAGES_64MB (64u * 1024u * 1024u / 4096u)
 
@@ -41,20 +42,19 @@ u32 tes3x_arena_size(void)
     MM_STATISTICS st;
     char buf[16];
     u32 kb = 0;
-    int i, set = 0;
+    int i, set = 0, small;
 
-    st.Length = sizeof(st);
-    if (MmQueryStatistics(&st) != 0 || st.TotalPhysicalPages <= PAGES_64MB) {
-        tes3x_log("arena.kb", RETAIL_BYTES / 1024);
-        return RETAIL_BYTES;
-    }
     tes3x_ini_xbox("VideoMemoryKB", "", buf, sizeof(buf));
-    for (i = 0; buf[i] >= '0' && buf[i] <= '9'; i++, set = 1)
+    for (i = 0; buf[i] >= '0' && buf[i] <= '9' && kb < MAX_KB; i++, set = 1)
         kb = kb * 10 + (u32)(buf[i] - '0');
+    st.Length = sizeof(st);
+    small = MmQueryStatistics(&st) != 0 || st.TotalPhysicalPages <= PAGES_64MB;
     if (!set)
-        kb = DEFAULT_KB;
-    if (kb * 1024 < RETAIL_BYTES)
+        kb = small ? RETAIL_BYTES / 1024 : DEFAULT_KB;
+    if (small && kb * 1024 > RETAIL_BYTES)
         kb = RETAIL_BYTES / 1024;
+    if (kb < MIN_KB)
+        kb = MIN_KB;
     if (kb > MAX_KB)
         kb = MAX_KB;
     tes3x_log(set ? "arena.kb_ini" : "arena.kb", kb);

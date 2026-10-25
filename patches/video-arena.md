@@ -22,15 +22,19 @@ out-of-memory handler (`0x00092BA0`) purges what it can and relaunches the title
 may be dirty or damaged" error.
 
 The `mov ebx, 0xF80000` at `0x00013549` becomes a call to `hooks/tes3xarena.c`, which returns the
-arena size in `ebx` and leaves the heap object in `eax` untouched. When the kernel reports more
-than 64 MB of physical memory, the size comes from the ini key below. With 64 MB the arena stays at
-retail's size, whatever the key says. The log records the size chosen as `arena.kb`, or
-`arena.kb_ini` when it came from the key.
+arena size in `ebx` and leaves the heap object in `eax` untouched. The size comes from the ini key
+below. With 64 MB of physical memory the key can only shrink the arena below retail's size. The log
+records the size chosen as `arena.kb`, or `arena.kb_ini` when it came from the key.
 
 ## Configuration
 
-`[Xbox] VideoMemoryKB` in `Morrowind.ini` sets the arena size: 22528 (22 MB) if the key is absent,
-clamped between retail's 15,872 and 49,152.
+`[Xbox] VideoMemoryKB` in `Morrowind.ini` sets the arena size in KB, clamped between 1,024 and
+49,152. Without the key it is 22528 (22 MB) with more than 64 MB, and retail's 15,872 on 64 MB,
+where a larger value is also capped at 15,872.
+
+The retail arena holds about 2.4 MB at the main menu and peaks near 2.5 MB through record loading,
+in retail and with Tamriel Rebuilt's masters alike; busy cells need 10-18 MB. A smaller arena
+leaves more general memory for loading records, but every block past it then costs whole pages.
 
 The arena and general memory share the same RAM, so a larger arena only moves memory between the
 two: everything the arena gains is gone from general memory from the start. It saves the page
