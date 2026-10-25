@@ -745,7 +745,7 @@ summary = "Find a response's topic directly instead of searching every topic's r
 
 [[patch]]
 name = "lazy-dialogue"
-title = "Topic responses built on first use"
+title = "Dialogue responses built on first use"
 bit = 58
 category = "compat"
 channel = "dev"
@@ -753,7 +753,7 @@ selection = "preset"
 source = "tes3xlazydialogue.c"
 requires = ["dialogue-merge"]
 ini = { LazyDialogue = "on" }
-summary = "Load topic responses as file references and build a topic's responses when it is first asked."
+summary = "Load dialogue responses as file references and build a topic's responses when it is first needed."
 
 [[patch]]
 name = "pool-grow"

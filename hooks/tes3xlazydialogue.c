@@ -1,7 +1,7 @@
-/* Load topic-type dialogue as stubs and build a topic's responses when a reader first needs them.
+/* Load dialogue as stubs and build a topic's responses when a reader first needs them.
  *
- * loadRecord places each plugin INFO by its INAM and PNAM across plugins. For a topic (DIAL type
- * 0) the same placement is replayed on stubs that keep only the winning record's plugin and
+ * loadRecord places each plugin INFO by its INAM and PNAM across plugins. For every DIAL type
+ * the same placement is replayed on stubs that keep only the winning record's plugin and
  * offset, and the constructed INFO is deleted, so the topic's chain stays empty through load.
  * getFilteredInfo, getInfoAtIndex (the save's XNAM) and journalAdd build the chain from the
  * plugins in stub order before reading it. Readers that only look for heard responses see none,
@@ -394,7 +394,7 @@ static __attribute__((used, noinline)) u32 __stdcall place(u8 *info, u8 *file, u
     (void)file;
     if (mode == MODE_UNREAD)
         read_mode();
-    if (mode == MODE_OFF || !dial || dial[DIAL_TYPE] != 0 || !names)
+    if (mode == MODE_OFF || !dial || !names)
         return 0;
     if (compacted) {
         late++;

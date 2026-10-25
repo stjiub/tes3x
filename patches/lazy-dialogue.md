@@ -1,4 +1,4 @@
-# Topic responses built on first use
+# Dialogue responses built on first use
 
 Patch key: `lazy-dialogue`
 
@@ -9,27 +9,27 @@ place name, which a playthrough asks only a few people about. Tamriel Rebuilt ad
 such responses, and holding them all is a large part of why its masters do not load in the
 Xbox's memory.
 
-This patch keeps topic responses in the plugins until a topic is asked. Loading records only where
+This patch keeps responses in the plugins until they are needed. Loading records only where
 each response is in its plugin and in what order it belongs. When a conversation, a script or a
-save first needs a topic, the game reads that topic's responses from the plugins and builds them
-exactly as loading would have.
+save first needs a topic, greeting or journal entry, the game reads its responses from the
+plugins and builds them exactly as loading would have.
 
 See the [patch table](../docs/patches.md) for availability and selection.
 
 ## How it works
 
-Dialogue topics are `DIAL` records of type topic; greetings, voice lines, persuasion and journal
-entries are other types and load as before. For a topic's `INFO`, the loader still builds the
+Every `DIAL` type is handled this way: topics, greetings, voice lines, persuasion and journal
+entries. For each `INFO`, the loader still builds the
 response, then records its plugin, its offset in that plugin and whether any plugin deleted it,
 and frees it. Its place in the topic follows the engine's own rules, replayed on these records:
 the first master appends in file order, and each later plugin places a new response after the one
 its `PNAM` names, or moves an existing one when it changes that `PNAM`. Once the last plugin has
 loaded, the names that placement needed are dropped and each topic keeps its records as an
-18-byte array in order. With Tamriel Rebuilt that is 1.2 MB, down from 2.7 MB during loading.
+18-byte array in order. With Tamriel Rebuilt that is 2.1 MB, down from 4.3 MB during loading.
 
 The topic's response list stays empty until one of three readers needs it: choosing a response to
-show (`getFilteredInfo`, which also decides whether a topic appears in the list), restoring a heard
-response from a save, or a journal entry. That reader builds every response of the topic in order,
+show (`getFilteredInfo`, which also picks greetings, voice lines and persuasion replies and decides
+whether a topic appears in the list), restoring a heard response from a save, or a journal entry. That reader builds every response of the topic in order,
 from the plugins, as `DialogueInfo::getText` already reopens them for the response text. The topic
 then stays built. Code that only looks for responses the player has heard sees none in an unbuilt
 topic, which is correct, because nothing in it can have been heard.
@@ -46,7 +46,8 @@ replacing it, as on PC.
 
 With the full Tamriel Rebuilt masters (Tamriel Data 26.08, TR_Mainland 26.08.23) on a 128 MB Xbox,
 at the first frame of a New Game, the heap in use falls from 47.6 to 35.7 MB and the heap's peak
-during loading from 64.9 to 45.4 MB; free memory rises by 15.1 MB. With retail data the topic
+during loading from 64.9 to 45.4 MB; free memory rises by 15.1 MB for topics alone. Greetings, voice,
+persuasion and journal entries add 0.65 MB there and 1.8 MB once in Seyda Neen. With retail data the topic
 records take 0.8 MB in place of their responses.
 
 ## Configuration

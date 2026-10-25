@@ -33,6 +33,9 @@ No official releases yet. The first public release is in preparation.
   more than 64 MB. Textures and vertex buffers that do not fit in the arena are packed together
   instead of taking a 4 KB page each, which saves up to 11 MB in a busy cell when the arena is
   small. See [the patch notes](patches/video-arena.md).
+- `lazy-dialogue` now also loads greetings, voice lines, persuasion replies and journal entries
+  on first use, not only topics. With the Tamriel Rebuilt masters on a 128 MB console 1.4 MB
+  more memory stays free in a new game. See [the patch notes](patches/lazy-dialogue.md).
 - `info-name-arena` together with `lazy-dialogue` no longer restarts the game when the first
   conversation of a session opens.
 - Multiplayer: your character's Mark spell place is kept by the server, so Recall still takes
