@@ -17,6 +17,7 @@ from .common import (Bsa, BuildSettings, CATALOG_NAME, CHECK_MARKER, CatalogErro
                      menu_button, new_table, parse_progress, play_icon, plugin_header, sha256_file, shutil,
                      stop_icon, struct, sys, target_capabilities, target_runtime_label,
                      tes3x_targets, tomlkit, tomllib, validate_profile, version_label)
+from .jobs import Job
 from .saves import SavesTab
 from .patches import PatchesTab
 from .resources import ResourcesPanel
@@ -52,8 +53,6 @@ class ProfileWindow(QMainWindow):
         self.library_root = None
         self.catalog = {}
         self.library_indexed = False
-        self.process = None
-        self.partial_line = ""
         self.play_controller.plays = {}  # target name -> PlaySession; xemu targets run side by side
         self.play_controller.ftp_probes = {}
         self.play_controller.agent_probes = {}
@@ -69,8 +68,6 @@ class ProfileWindow(QMainWindow):
         self.play_controller.agent_fetches = []
         self.target_builds = {}
         self.play_controller.drive_probe = None
-        self.command_kind = None
-        self.command_target = None
         self.check_profile_sha = None
         self.check_failed = False
         self.build_failed = False
@@ -147,8 +144,9 @@ class ProfileWindow(QMainWindow):
         self.target_drive_tips = {}
         self.profile_bar = profile_bar
 
-        self.output = QTextEdit()
-        self.output.setReadOnly(True)
+        self.log_tabs = QTabWidget()
+        self.log_tabs.tabBar().setAutoHide(True)
+        self.job = self.new_job("Output")
         self.mods.mod_details = self.mods.create_mod_details()
         self.tabs = QTabWidget()
         self.tabs.addTab(self.mods.create_mods_tab(), "Mods")
@@ -207,7 +205,7 @@ class ProfileWindow(QMainWindow):
         self.workspace_bar.currentChanged.connect(self.workspace_changed)
         self.body_split = QSplitter(Qt.Orientation.Vertical)
         self.body_split.addWidget(self.workspaces)
-        self.body_split.addWidget(self.output)
+        self.body_split.addWidget(self.log_tabs)
         self.body_split.setStretchFactor(0, 4)
         self.body_split.setStretchFactor(1, 1)
         self.body_split.setSizes([660, 120])
@@ -373,9 +371,6 @@ class ProfileWindow(QMainWindow):
         self.command_actions = (self.action_check, self.action_build, self.action_deploy,
                                 self.action_play, self.action_smoke, self.action_fetch,
                                 self.action_dash)
-        self.after_command = None
-        self.conflict_retry = None
-        self.space_retry = None
         self.play_controller.play_gdb = bool(
             self.settings and self.settings.value("play_gdb", False, bool)
         )
@@ -839,7 +834,7 @@ class ProfileWindow(QMainWindow):
             button.style().polish(button)
 
     def set_output_visible(self, visible, save=True):
-        self.output.setVisible(visible)
+        self.log_tabs.setVisible(visible)
         if save and self.settings is not None:
             self.settings.setValue("show_output", visible)
 
@@ -1693,10 +1688,34 @@ class ProfileWindow(QMainWindow):
         except OSError as exc:
             self.error(f"Could not record the pull: {exc}")
 
+    def new_job(self, title):
+        log = QTextEdit()
+        log.setReadOnly(True)
+        self.log_tabs.addTab(log, title)
+        return Job(log)
+
+    def forward_to_job(name):
+        return property(lambda self: getattr(self.job, name),
+                        lambda self, value: setattr(self.job, name, value))
+
+    process = forward_to_job("process")
+    command_kind = forward_to_job("kind")
+    command_target = forward_to_job("target")
+    after_command = forward_to_job("after")
+    conflict_retry = forward_to_job("conflict_retry")
+    space_retry = forward_to_job("space_retry")
+    partial_line = forward_to_job("partial")
+    del forward_to_job
+
+    @property
+    def output(self):
+        return self.job.log
+
     def start_command(self, program, arguments, message, environment=None, clear=True):
         if clear:
             self.output.clear()
         self.partial_line = ""
+        job = self.job
         process = QProcess(self)
         process.setWorkingDirectory(str(self.work_dir()))
         environment = QProcessEnvironment(environment or QProcessEnvironment.systemEnvironment())
@@ -1705,9 +1724,9 @@ class ProfileWindow(QMainWindow):
         process.setProgram(sys.executable)
         process.setArguments(launch(program, arguments))
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
-        process.readyReadStandardOutput.connect(self.append_process_output)
-        process.finished.connect(self.command_finished)
-        self.process = process
+        process.readyReadStandardOutput.connect(lambda: self.append_process_output(job))
+        process.finished.connect(lambda code, status: self.command_finished(code, status, job))
+        job.process = process
         self.target_picker.setEnabled(False)
         self.target_actions.setEnabled(False)
         for action in self.command_actions:
@@ -1719,13 +1738,14 @@ class ProfileWindow(QMainWindow):
         process.start()
         self.statusBar().showMessage(message)
 
-    def append_process_output(self):
-        if self.process is None:
+    def append_process_output(self, job=None):
+        job = job or self.job
+        if job.process is None:
             return
-        text = bytes(self.process.readAllStandardOutput()).decode(errors="replace")
-        shown = self.filter_progress(text.replace("\r\n", "\n").replace("\r", "\n"))
-        self.output.moveCursor(QTextCursor.MoveOperation.End)
-        self.output.insertPlainText(shown)
+        text = bytes(job.process.readAllStandardOutput()).decode(errors="replace")
+        shown = self.filter_progress(text.replace("\r\n", "\n").replace("\r", "\n"), job)
+        job.log.moveCursor(QTextCursor.MoveOperation.End)
+        job.log.insertPlainText(shown)
         if XEMU_STARTED in text:
             self.statusBar().spinner.stop()
             port = (
@@ -1742,11 +1762,12 @@ class ProfileWindow(QMainWindow):
             else:
                 self.statusBar().showMessage("Playing in xemu")
 
-    def filter_progress(self, text):
+    def filter_progress(self, text, job=None):
         """Route `@progress` lines to the status bar; return the rest for the log."""
-        text = self.partial_line + text
+        job = job or self.job
+        text = job.partial + text
         lines = text.split("\n")
-        self.partial_line = lines.pop()
+        job.partial = lines.pop()
         shown = []
         for line in lines:
             progress = parse_progress(line)
@@ -1756,15 +1777,17 @@ class ProfileWindow(QMainWindow):
                 self.statusBar().show_progress(*progress)
         return "".join(shown)
 
-    def command_finished(self, code, _status):
-        self.append_process_output()
-        if self.partial_line:
-            self.output.insertPlainText(self.partial_line)
-            self.partial_line = ""
+    def command_finished(self, code, _status, job=None):
+        job = job or self.job
+        self.append_process_output(job)
+        if job.partial:
+            job.log.insertPlainText(job.partial)
+            job.partial = ""
         self.statusBar().clear_progress()
         self.statusBar().showMessage(f"TES3X exited {code}", 5000)
-        kind, self.command_kind = self.command_kind, None
-        target, self.command_target = self.command_target, None
+        kind, target = job.kind, job.target
+        follow, retry, space = job.after, job.conflict_retry, job.space_retry
+        job.finish()
         if kind == "check":
             self.remember_check(code == 0)
         elif kind == "build":
@@ -1773,7 +1796,6 @@ class ProfileWindow(QMainWindow):
             self.deploy_failed = code != 0
             if code == 0:
                 self.remember_deploy(target)
-        self.process = None
         self.statusBar().spinner.stop()
         self.target_picker.setEnabled(True)
         self.target_actions.setEnabled(True)
@@ -1781,9 +1803,6 @@ class ProfileWindow(QMainWindow):
             action.setEnabled(True)
         self.target_selection_changed(probe=False)
         self.update_build_state()
-        follow, self.after_command = self.after_command, None
-        retry, self.conflict_retry = self.conflict_retry, None
-        space, self.space_retry = self.space_retry, None
         self.play_controller.restore_listener()
         self.saves.saves_selected()
         if code == DEPLOY_NO_SPACE and space:
