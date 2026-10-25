@@ -1,8 +1,9 @@
 # Content servers
 
 A content server lets the TES3X Dash browse and install completed builds without joining a
-multiplayer world. The installed build appears in **Builds**, where it can be verified and
-launched normally. Multiplayer servers and content servers have separate saved addresses.
+multiplayer world. The installed build appears in **Library**, where it can be verified and
+launched normally. In the Dash a content server is a *Builds* entry on the **Servers** tab,
+beside multiplayer servers; a host that is both is one entry. The two keep separate saved keys.
 
 ## Host builds from the GUI
 
@@ -140,14 +141,17 @@ run it, and the multiplayer service does not depend on it.
 
 ## Browse on the Xbox
 
-Open the Dash's **Content** tab and press **X** to add a host name or IP address. Include
-`:port` if it does not use 26510. Press **A** on the saved server to see its offered builds, then
-**A** on a build to install it. An installed build is listed in **Builds** and launches from
-there without multiplayer join data. Open the library and install the same entry again to update
+Open the Dash's **Servers** tab and press **X** to add a host name or IP address. Include
+`:port` if it does not use 26510. Choose **X** (Builds) when asked what the host offers; **A**
+adds a multiplayer server instead, and **Y** adds both at their default ports, as one entry
+labelled for each. Press **A** on a Builds entry to see its offered builds, then **A** on a build
+to install it. An installed build is listed in **Library** and launches from there without
+multiplayer join data. For an entry that is both, press **A** to open it and **Start** to browse
+its builds. Open the library and install the same entry again to update
 it after the PC rebuilds it. If the entry changes while its list is open, Install refreshes that
 entry and uses its latest revision. Older published revisions appear as separate rows and can be
-installed directly. Press **Back** on the host list to forget a content server;
-this leaves downloaded builds installed. Installed builds are not updated in the background.
+installed directly. Press **Back** on the list to remove the entry, which forgets both its
+multiplayer keys and its build library; downloaded builds stay installed. Installed builds are not updated in the background.
 
 The Dash pins a content server's signing key on first contact. If its key later changes, the Dash
 shows the old and new fingerprints and asks before accepting the new key. Catalogs and tickets

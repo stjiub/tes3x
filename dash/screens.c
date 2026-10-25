@@ -9,7 +9,7 @@
 #define LIST_TOP (UI_PANEL_TOP + 8)
 #define SCROLL_X (UI_RIGHT - 10)
 
-static const char *const tab_names[TAB_COUNT] = {"Builds", "Servers", "Content", "Settings"};
+static const char *const tab_names[TAB_COUNT] = {"Library", "Servers", "Settings"};
 
 /* A two-line row: title and an optional right-hand note, then a smaller line below. */
 static void row(int y, int selected, const char *title, const char *note, gfx_color note_color,
@@ -42,8 +42,8 @@ static void draw_builds(const struct view *v)
     int i, y;
 
     if (!v->build_list.count) {
-        empty("No builds found",
-              "Builds installed from the PC appear here. The Dash looks for " MANIFEST
+        empty("Library is empty",
+              "Builds installed from the PC or a server appear here. The Dash looks for " MANIFEST
               " in the folders under C, E, F and G:\\Games.");
         return;
     }
@@ -60,58 +60,51 @@ static void draw_builds(const struct view *v)
     ui_scrollbar(SCROLL_X, LIST_TOP, BUILD_ROWS * ROW_H, &v->build_list);
 }
 
-static void draw_servers(const struct view *v)
+static void draw_hosts(const struct view *v)
 {
+    const struct host_row *h;
     const struct server *s;
-    const char *build;
-    char sub[192];
+    const struct content_host *c;
+    const char *build, *labels;
+    char rest[192], sub[224];
     int i, y;
 
-    if (!v->server_list.count) {
+    if (!v->host_list.count) {
         empty("No servers yet",
               "Servers joined from the game's main menu appear here, with the keys the game "
-              "keeps for them. Add one by its address to install its build.");
+              "keeps for them. Add one by its address: a multiplayer server, a build library, "
+              "or both.");
         return;
     }
-    for (i = v->server_list.top, y = LIST_TOP;
-         i < v->server_list.count && i < v->server_list.top + SERVER_ROWS; i++, y += ROW_H) {
-        s = &v->servers[i];
-        build = v->server_builds[i];
-        snprintf(sub, sizeof(sub), "%s%.16s  \xB7  %s%s%s",
+    for (i = v->host_list.top, y = LIST_TOP;
+         i < v->host_list.count && i < v->host_list.top + SERVER_ROWS; i++, y += ROW_H) {
+        h = &v->hosts[i];
+        s = h->server >= 0 ? &v->servers[h->server] : NULL;
+        c = h->content >= 0 ? &v->content_hosts[h->content] : NULL;
+        build = s ? v->server_builds[h->server] : NULL;
+        labels = s && c ? "Multiplayer, Builds" : s ? "Multiplayer" : "Builds";
+        if (!s) {
+            snprintf(sub, sizeof(sub), "%s  \xB7  %s", labels,
+                     c->has_key ? c->fingerprint : "Not contacted yet");
+            row(y, i == v->host_list.sel, c->name, NULL, ui->dim, sub, ui->dim);
+            continue;
+        }
+        snprintf(rest, sizeof(rest), "%s%.16s  \xB7  %s%s%s",
                  s->has_server_key ? "Key " : "Not contacted yet",
                  s->has_server_key ? s->fingerprint : "", build ? build : "build not installed",
                  s->character[0] ? "  \xB7  " : "", s->character);
         if (s->has_info)
-            snprintf(sub, sizeof(sub), "%u / %u players  \xB7  %s%s%s",
+            snprintf(rest, sizeof(rest), "%u / %u players  \xB7  %s%s%s",
                      s->players, s->max_players, build ? build : "build not installed",
                      s->character[0] ? "  \xB7  " : "", s->character);
-        row(y, i == v->server_list.sel, s->display_name[0] ? s->display_name : s->name,
+        snprintf(sub, sizeof(sub), "%s  \xB7  %s", labels, rest);
+        row(y, i == v->host_list.sel, s->display_name[0] ? s->display_name : s->name,
             s->online == 2 ? "Dash update needed" : s->online == 3 ? "Server update needed" :
             s->online == 4 ? "Key changed" :
             s->online > 0 ? (build ? "Online  \xB7  Installed" : "Online") : "Offline",
             s->online == 1 ? ui->accent : ui->bad, sub, ui->dim);
     }
-    ui_scrollbar(SCROLL_X, LIST_TOP, SERVER_ROWS * ROW_H, &v->server_list);
-}
-
-static void draw_content_hosts(const struct view *v)
-{
-    const struct content_host *host;
-    int i, y;
-
-    if (!v->content_hosts_list.count) {
-        empty("No content servers", "Add a content server by its address to browse builds and "
-              "install them for standalone play.");
-        return;
-    }
-    for (i = v->content_hosts_list.top, y = LIST_TOP;
-         i < v->content_hosts_list.count && i < v->content_hosts_list.top + SERVER_ROWS;
-         i++, y += ROW_H) {
-        host = &v->content_hosts[i];
-        row(y, i == v->content_hosts_list.sel, host->name, NULL, ui->dim,
-            host->has_key ? host->fingerprint : "Not contacted yet", ui->dim);
-    }
-    ui_scrollbar(SCROLL_X, LIST_TOP, SERVER_ROWS * ROW_H, &v->content_hosts_list);
+    ui_scrollbar(SCROLL_X, LIST_TOP, SERVER_ROWS * ROW_H, &v->host_list);
 }
 
 static void draw_content_entries(const struct view *v)
@@ -121,7 +114,7 @@ static void draw_content_entries(const struct view *v)
     int i, y;
 
     if (!v->content_entries_list.count) {
-        empty("No builds offered", "This content server currently offers no completed builds.");
+        empty("No builds offered", "This server currently offers no completed builds.");
         return;
     }
     for (i = v->content_entries_list.top, y = LIST_TOP;
@@ -265,14 +258,10 @@ static void draw_page(const struct view *v)
     static const struct ui_hint store[] = {{UI_X, "Delete unused"}, {UI_B, "Back"}};
     static const struct ui_hint servers[] = {{UI_A, "Details"}, {UI_X, "Add"},
                                              {UI_Y, "Rescan"}, {UI_START, "Join"},
-                                             {UI_BACK, "Delete"}};
-    static const struct ui_hint server[] = {{UI_A, "Join"}, {UI_X, "Update build"},
-                                            {UI_Y, "Password"}, {UI_B, "Back"},
-                                            {UI_BACK, "Delete"}};
-    static const struct ui_hint content[] = {{UI_A, "Browse"}, {UI_X, "Add"},
-                                              {UI_Y, "Reload"}, {UI_BACK, "Delete"}};
+                                             {UI_BACK, "Remove"}};
     static const struct ui_hint entries[] = {{UI_A, "Install"}, {UI_Y, "Reload"},
                                               {UI_B, "Back"}};
+    struct ui_hint host_hints[6];
     const struct ui_hint *hints = NULL;
     char status[96];
     int n = 0;
@@ -281,36 +270,56 @@ static void draw_page(const struct view *v)
     ui_header(tab_names, TAB_COUNT, v->tab);
     ui_panel();
     gfx_clip(UI_LEFT, UI_PANEL_TOP, UI_WIDTH, UI_PANEL_BOTTOM - UI_PANEL_TOP);
-    if (v->tab == TAB_BUILDS && v->page == PAGE_DETAILS) {
+    if (v->tab == TAB_LIBRARY && v->page == PAGE_DETAILS) {
         draw_details(v);
         hints = details, n = 4;
         if (v->builds[v->build_list.sel].error[0])
             hints = details + 2, n = 2;
-    } else if (v->tab == TAB_BUILDS) {
+    } else if (v->tab == TAB_LIBRARY) {
         draw_builds(v);
         hints = list, n = 4;
         if (!v->build_list.count)
             hints = list + 1, n = 1;
     } else if (v->tab == TAB_SERVERS && v->page == PAGE_SERVER) {
-        const struct server *s = &v->servers[v->server_list.sel];
+        const struct host_row *h = &v->hosts[v->host_list.sel];
+        const struct server *s = h->server >= 0 ? &v->servers[h->server] : NULL;
+        const struct content_host *c = h->content >= 0 ? &v->content_hosts[h->content] : NULL;
 
-        draw_lines(v, s->display_name[0] ? s->display_name : s->name, s->name);
-        hints = server, n = 5;
-        if (!v->server_builds[v->server_list.sel])
-            hints = server + 1, n = 4;
-    } else if (v->tab == TAB_SERVERS) {
-        draw_servers(v);
-        hints = servers, n = 5;
-        if (!v->server_list.count)
-            hints = servers + 1, n = 2;
-    } else if (v->tab == TAB_CONTENT && v->page == PAGE_CONTENT) {
+        if (s)
+            draw_lines(v, s->display_name[0] ? s->display_name : s->name, s->name);
+        else
+            draw_lines(v, c->name, "Build library");
+        if (s && v->server_builds[h->server])
+            host_hints[n++] = (struct ui_hint){UI_A, "Join"};
+        if (s) {
+            host_hints[n++] = (struct ui_hint){UI_X, "Update"};
+            host_hints[n++] = (struct ui_hint){UI_Y, "Password"};
+        }
+        if (c)
+            host_hints[n++] = (struct ui_hint){UI_START, "Builds"};
+        host_hints[n++] = (struct ui_hint){UI_B, "Back"};
+        host_hints[n++] = (struct ui_hint){UI_BACK, "Remove"};
+        hints = host_hints;
+    } else if (v->tab == TAB_SERVERS && v->page == PAGE_CONTENT) {
         draw_content_entries(v);
         hints = entries, n = 3;
-    } else if (v->tab == TAB_CONTENT) {
-        draw_content_hosts(v);
-        hints = content, n = 4;
-        if (!v->content_hosts_list.count)
-            hints = content + 1, n = 1;
+    } else if (v->tab == TAB_SERVERS) {
+        const struct host_row *h = v->host_list.count ? &v->hosts[v->host_list.sel] : NULL;
+
+        draw_hosts(v);
+        if (!h) {
+            host_hints[n++] = (struct ui_hint){UI_X, "Add"};
+            host_hints[n++] = (struct ui_hint){UI_Y, "Rescan"};
+        } else if (h->server < 0) {
+            host_hints[n++] = (struct ui_hint){UI_A, "Browse builds"};
+            host_hints[n++] = (struct ui_hint){UI_X, "Add"};
+            host_hints[n++] = (struct ui_hint){UI_Y, "Rescan"};
+            host_hints[n++] = (struct ui_hint){UI_BACK, "Remove"};
+        } else {
+            hints = servers, n = 5;
+        }
+        if (!hints)
+            hints = host_hints;
     } else if (v->page == PAGE_STORE) {
         draw_lines(v, "Shared archives", "E:\\TES3X\\lib");
         hints = v->store_unused ? store : store + 1, n = v->store_unused ? 2 : 1;
@@ -348,6 +357,8 @@ void screen_draw(const struct view *v)
     static const struct ui_hint update[] = {{UI_X, "Update"}, {UI_B, "Cancel"}};
     static const struct ui_hint dash_update[] = {{UI_X, "Check for update"}, {UI_B, "Cancel"}};
     static const struct ui_hint server_key[] = {{UI_A, "Accept new key"}, {UI_B, "Cancel"}};
+    static const struct ui_hint add_host[] = {{UI_A, "Multiplayer"}, {UI_X, "Builds"},
+                                              {UI_Y, "Both"}, {UI_B, "Cancel"}};
     const char *lines[4];
     int i;
 
@@ -361,7 +372,9 @@ void screen_draw(const struct view *v)
     if (v->confirm)
         ui_dialog(v->title, lines, 4, 0, v->confirm == CONFIRM_DASH_UPDATE ? dash_update :
                   v->confirm == CONFIRM_SERVER_KEY || v->confirm == CONFIRM_CONTENT_KEY ? server_key :
-                  v->confirm == CONFIRM_UPDATE ? update : confirm, 2);
+                  v->confirm == CONFIRM_ADD_HOST ? add_host :
+                  v->confirm == CONFIRM_UPDATE ? update : confirm,
+                  v->confirm == CONFIRM_ADD_HOST ? 4 : 2);
     else
         ui_dialog(v->title, lines, 4, 0, v->dismiss ? &close : NULL, v->dismiss ? 1 : 0);
 }

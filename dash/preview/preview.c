@@ -61,6 +61,13 @@ static struct server servers[] = {
 };
 static const char *const server_builds[] = {"F:\\Games\\MorrowindNet", NULL, NULL};
 
+static struct content_host content_hosts[] = {
+    {"play.example.net", "play.example.net", 26510, {0}, {0}, {0}, 1, 0, 0,
+     "0c8e5f2a91b7d3406e1f4a5b6c7d8e90"},
+    {"library.example.org", "library.example.org", 26510, {0}, {0}, {0}, 0, 0, 0, ""},
+};
+static const struct host_row host_rows[] = {{0, 0}, {1, -1}, {2, -1}, {-1, 1}};
+
 static const struct line server_lines[] = {
     {"Address", "play.example.net, port 26500", 0},
     {"Server key", "4e1f0c9a7b2d55e0c3a1f9e8d7b6c5a4", 0},
@@ -142,8 +149,16 @@ int main(int argc, char **argv)
     v.servers = servers;
     v.server_builds = server_builds;
     v.server_list = (struct ui_list){3, 0, 0, SERVER_ROWS};
+    v.content_hosts = content_hosts;
+    v.content_hosts_list = (struct ui_list){2, 0, 0, SERVER_ROWS};
+    v.hosts = host_rows;
+    v.host_list = (struct ui_list){4, 0, 0, SERVER_ROWS};
     screen_draw(&v);
     save("servers");
+    v.host_list.sel = 3;
+    screen_draw(&v);
+    save("servers-library");
+    v.host_list.sel = 0;
     v.page = PAGE_SERVER;
     v.lines = server_lines;
     v.line_list = (struct ui_list){4, 0, 0, LINE_ROWS};
@@ -160,7 +175,7 @@ int main(int argc, char **argv)
     v.dismiss = 1;
     screen_draw(&v);
     save("server-done");
-    v.server_list.sel = 2;
+    v.host_list.sel = 2;
     snprintf(v.title, sizeof(v.title), "Replace this folder?");
     snprintf(v.text[0], sizeof(v.text[0]), "F:\\Games\\MorrowindNet");
     snprintf(v.text[1], sizeof(v.text[1]), "It holds files that are not a TES3X build. Installing "
@@ -179,7 +194,17 @@ int main(int argc, char **argv)
     memset(v.title, 0, sizeof(v.title));
     memset(v.text, 0, sizeof(v.text));
     v.page = PAGE_MAIN;
-    ui_keyboard_open(&v.kb, "Add a server", "Its name or address, with :port when it is not 26500.",
+    snprintf(v.title, sizeof(v.title), "What does it offer?");
+    snprintf(v.text[0], sizeof(v.text[0]), "play.example.net");
+    snprintf(v.text[1], sizeof(v.text[1]), "Both uses the default ports.");
+    v.confirm = CONFIRM_ADD_HOST;
+    screen_draw(&v);
+    save("add-host");
+    v.confirm = 0;
+    memset(v.title, 0, sizeof(v.title));
+    memset(v.text, 0, sizeof(v.text));
+    ui_keyboard_open(&v.kb, "Add a server",
+                     "Its name or address, with :port when it is not 26500 or 26510.",
                      "play.example.net:2", 79, 0);
     ui_keyboard_move(&v.kb, 0, -1);
     ui_keyboard_move(&v.kb, 5, 0);
@@ -195,7 +220,7 @@ int main(int argc, char **argv)
     screen_draw(&v);
     save("keyboard-password");
     memset(&v.kb, 0, sizeof(v.kb));
-    v.server_list.count = 0;
+    v.host_list.count = 0;
     v.page = PAGE_MAIN;
     screen_draw(&v);
     save("servers-empty");
@@ -225,7 +250,7 @@ int main(int argc, char **argv)
     save("browse-refused");
     memset(v.title, 0, sizeof(v.title));
     memset(v.text, 0, sizeof(v.text));
-    v.tab = TAB_BUILDS;
+    v.tab = TAB_LIBRARY;
     v.page = PAGE_MAIN;
     v.build_list.count = 0;
     v.agent = "off";

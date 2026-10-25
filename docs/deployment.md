@@ -189,8 +189,8 @@ Ethernet, and about 13 minutes over the dashboard's FTP server.
 ### From a server
 
 For standalone play, a [content server](content.md) offers a catalog of completed builds. Add
-its address in the Dash's **Content** tab, browse the offered builds, and install one. It then
-appears in **Builds** and launches without joining a multiplayer world.
+its address in the Dash's **Servers** tab as a Builds entry, browse the offered builds, and
+install one. It then appears in **Library** and launches without joining a multiplayer world.
 
 A multiplayer server started with `--build` ([Handing out the
 build](multiplayer-server.md#handing-out-the-build)) hands its build to the Dash, so players

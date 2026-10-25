@@ -64,6 +64,9 @@ static struct view v;
 static int video_up, dirty = 1;
 static Uint32 last_draw;
 static const char *progress_name;
+static struct host_row host_rows[MAX_SERVERS + MAX_CONTENT];
+static char selected_host[64], add_text[80];
+static int content_return;
 static struct content_host *active_content_host;
 static struct ticket *active_content_ticket;
 static unsigned content_report_time;
@@ -282,7 +285,7 @@ static void use_base(const struct base *b)
     }
     /* the first run's choice leads on to the builds */
     if (!overlay_base[0])
-        v.tab = TAB_BUILDS;
+        v.tab = TAB_LIBRARY;
     snprintf(overlay_base, sizeof(overlay_base), "%s", b->path);
     v.base_current = (int)(b - bases);
     v.page = PAGE_MAIN;
@@ -457,6 +460,91 @@ static void link_builds(void)
     }
 }
 
+/* The Servers tab lists each host once, with its multiplayer server and its build library when
+ * it has both. servers[] and content_hosts[] stay as the files hold them. */
+static const char *row_host(const struct host_row *r)
+{
+    return r->server >= 0 ? servers[r->server].host : content_hosts[r->content].host;
+}
+
+static struct host_row *chosen_row(void)
+{
+    return v.host_list.count ? &host_rows[v.host_list.sel] : NULL;
+}
+
+static struct server *chosen_server(void)
+{
+    struct host_row *r = chosen_row();
+
+    return r && r->server >= 0 ? &servers[r->server] : NULL;
+}
+
+static struct content_host *chosen_content(void)
+{
+    struct host_row *r = chosen_row();
+
+    return r && r->content >= 0 ? &content_hosts[r->content] : NULL;
+}
+
+/* Points server_list.sel and content_hosts_list.sel at the chosen row's entries. */
+static void sync_row(void)
+{
+    const struct host_row *r = chosen_row();
+
+    if (!r)
+        return;
+    if (r->server >= 0)
+        v.server_list.sel = r->server;
+    if (r->content >= 0)
+        v.content_hosts_list.sel = r->content;
+    snprintf(selected_host, sizeof(selected_host), "%s", row_host(r));
+}
+
+static void build_rows(void)
+{
+    char used[MAX_CONTENT] = {0};
+    int i, k, n = 0;
+
+    for (i = 0; i < v.server_list.count; i++) {
+        host_rows[n].server = i;
+        host_rows[n].content = -1;
+        for (k = 0; k < v.content_hosts_list.count; k++)
+            if (!used[k] && !name_cmp(servers[i].host, content_hosts[k].host)) {
+                host_rows[n].content = k;
+                used[k] = 1;
+                break;
+            }
+        n++;
+    }
+    for (k = 0; k < v.content_hosts_list.count; k++)
+        if (!used[k]) {
+            host_rows[n].server = -1;
+            host_rows[n++].content = k;
+        }
+    v.host_list.count = n;
+    for (i = 0; i < n && name_cmp(row_host(&host_rows[i]), selected_host); i++)
+        ;
+    if (i == n)
+        v.host_list.sel = v.host_list.top = 0;
+    else
+        v.host_list.sel = i;
+    ui_list_move(&v.host_list, 0);
+    sync_row();
+}
+
+static void select_row(int server, int content)
+{
+    int i;
+
+    for (i = 0; i < v.host_list.count; i++)
+        if (server >= 0 ? host_rows[i].server == server : host_rows[i].content == content) {
+            v.host_list.sel = i;
+            ui_list_move(&v.host_list, 0);
+            sync_row();
+            return;
+        }
+}
+
 /* servers.ini's servers, each with the build installed from it. A server that answers and whose
  * keys are known is asked for the character this console last played there. */
 static void load_servers(void)
@@ -478,11 +566,11 @@ static void load_servers(void)
                 servers[i].has_server_key ? servers[i].fingerprint : "not pinned",
                 server_builds[i] ? ", build " : "", server_builds[i] ? server_builds[i] : "");
     }
+    build_rows();
 }
 
 static void server_details(const struct server *s, const char *build)
 {
-    v.line_list.count = v.line_list.sel = v.line_list.top = 0;
     if (s->display_name[0])
         add_line("Name", 0, "%s", s->display_name);
     if (s->description[0]) {
@@ -517,14 +605,24 @@ static void server_details(const struct server *s, const char *build)
     add_line("Build", build ? 0 : LINE_BAD, "%s", build ? build : "not installed");
 }
 
-static struct server *chosen_server(void)
+/* The chosen host's page: its multiplayer server's lines, then its build library's. */
+static void host_details(void)
 {
-    return v.server_list.count ? &servers[v.server_list.sel] : NULL;
-}
+    const struct server *s = chosen_server();
+    const struct content_host *c = chosen_content();
 
-static struct content_host *chosen_content(void)
-{
-    return v.content_hosts_list.count ? &content_hosts[v.content_hosts_list.sel] : NULL;
+    v.line_list.count = v.line_list.sel = v.line_list.top = 0;
+    if (s && c)
+        add_line("", LINE_HEAD, "Multiplayer");
+    if (s)
+        server_details(s, server_builds[v.server_list.sel]);
+    if (c) {
+        if (s)
+            add_line("", LINE_HEAD, "Builds");
+        add_line("Address", 0, "%s, port %u", c->host, c->port);
+        add_line("Library key", c->has_key ? 0 : LINE_BAD, "%s",
+                 c->has_key ? c->fingerprint : "not pinned: the first browse pins it");
+    }
 }
 
 static void load_content(void)
@@ -533,6 +631,7 @@ static void load_content(void)
     if (v.content_hosts_list.sel >= v.content_hosts_list.count)
         v.content_hosts_list.sel = v.content_hosts_list.top = 0;
     ui_list_move(&v.content_hosts_list, 0);
+    build_rows();
 }
 
 static void show_content_key_change(const struct content_host *host, int then_install)
@@ -560,7 +659,9 @@ static void browse_content(void)
 
     if (!host)
         return;
-    busy("Reading the content library...");
+    if (v.page != PAGE_CONTENT)
+        content_return = v.page;
+    busy("Reading the build library...");
     err = content_catalog(host, content_entries, CONTENT_ENTRIES, &count);
     if (err == CONTENT_KEY_CHANGED) {
         show_content_key_change(host, 0);
@@ -656,8 +757,9 @@ static void install_content(int replace)
     content_attempt_done(host, entry, &ticket);
     scan();
     link_builds();
-    v.tab = TAB_BUILDS;
-    say("Build installed", entry->name, "Find it in Builds to verify or play.");
+    v.tab = TAB_LIBRARY;
+    v.page = PAGE_MAIN;
+    say("Build installed", entry->name, "Find it in Library to verify or play.");
     mgr_log("content %s: installed %s in %s: %s\n", host->name, entry->id, folder, summary);
 }
 
@@ -715,19 +817,17 @@ static void ask_delete(void)
 {
     const struct build *b = v.build_list.count ? &builds[v.build_list.sel] : NULL;
     const struct server *s = chosen_server();
+    const struct content_host *c = chosen_content();
 
-    if (v.tab == TAB_BUILDS && b) {
+    if (v.tab == TAB_LIBRARY && b) {
         say("Delete this build?", b->name, b->path);
         snprintf(v.text[2], sizeof(v.text[2]), "Its folder and every file in it are removed.");
         v.confirm = CONFIRM_BUILD;
-    } else if (v.tab == TAB_SERVERS && s) {
-        say("Remove this server?", s->name, "Its keys and password are forgotten.");
+    } else if (v.tab == TAB_SERVERS && v.page != PAGE_CONTENT && (s || c)) {
+        say("Remove this server?", s ? s->name : c->name,
+            s ? "Its keys and password are forgotten." : "Its build library is forgotten.");
         snprintf(v.text[2], sizeof(v.text[2]), "A build installed from it stays.");
         v.confirm = CONFIRM_SERVER;
-    } else if (v.tab == TAB_CONTENT && v.page == PAGE_MAIN && chosen_content()) {
-        say("Remove content server?", chosen_content()->name,
-            "Its downloaded builds stay installed.");
-        v.confirm = CONFIRM_CONTENT_REMOVE;
     }
 }
 
@@ -752,45 +852,60 @@ static void delete_selected_build(void)
         say("Build deleted", b.name, NULL);
 }
 
-static void delete_selected_server(void)
+static void delete_selected_host(void)
 {
-    struct server gone = servers[v.server_list.sel];
-    int i;
+    const struct host_row *r = chosen_row();
+    char name[80];
+    int sel = v.host_list.sel, i;
 
-    if (server_remove(&gone)) {
-        say("Remove failed", gone.name, "servers.ini could not be written.");
-        return;
+    snprintf(name, sizeof(name), "%s", r->server >= 0 ? servers[r->server].name
+                                                       : content_hosts[r->content].name);
+    if (r->server >= 0) {
+        struct server gone = servers[r->server];
+
+        if (server_remove(&gone)) {
+            say("Remove failed", gone.name, "servers.ini could not be written.");
+            return;
+        }
+        for (i = r->server; i + 1 < v.server_list.count; i++) {
+            servers[i] = servers[i + 1];
+            server_builds[i] = server_builds[i + 1];
+        }
+        v.server_list.count--;
+        if (v.server_list.sel >= v.server_list.count)
+            v.server_list.sel = v.server_list.count ? v.server_list.count - 1 : 0;
+        mgr_log("removed server %s\n", gone.name);
     }
-    for (i = v.server_list.sel; i + 1 < v.server_list.count; i++) {
-        servers[i] = servers[i + 1];
-        server_builds[i] = server_builds[i + 1];
+    if (host_rows[sel].content >= 0) {
+        struct content_host gone = content_hosts[host_rows[sel].content];
+
+        if (content_remove(&gone)) {
+            say("Remove failed", gone.name, "Could not write the content list.");
+            return;
+        }
+        mgr_log("removed build library %s\n", gone.name);
     }
-    v.server_list.count--;
-    if (v.server_list.sel >= v.server_list.count)
-        v.server_list.sel = v.server_list.count ? v.server_list.count - 1 : 0;
-    ui_list_move(&v.server_list, 0);
+    /* the row's entries are gone from the files; the rows are rebuilt from them */
+    selected_host[0] = 0;
+    load_content();
     link_builds();
+    v.host_list.sel = sel < v.host_list.count ? sel : v.host_list.count - 1;
+    ui_list_move(&v.host_list, 0);
+    sync_row();
     v.page = PAGE_MAIN;
-    mgr_log("removed server %s\n", gone.name);
-    say("Server removed", gone.name, NULL);
+    say("Server removed", name, NULL);
 }
 
 /* What the open keyboard is typing. */
-enum { KB_SERVER, KB_PASSWORD, KB_CONTENT };
+enum { KB_SERVER, KB_PASSWORD };
 static int kb_purpose, kb_then_install;
 
-static void ask_server(void)
+static void ask_server(const char *text)
 {
-    ui_keyboard_open(&v.kb, "Add a server", "Its name or address, with :port when it is not 26500.",
-                     NULL, sizeof(servers[0].name) - 1, 0);
+    ui_keyboard_open(&v.kb, "Add a server",
+                     "Its name or address, with :port when it is not 26500 or 26510.", text,
+                     sizeof(servers[0].name) - 1, 0);
     kb_purpose = KB_SERVER;
-}
-
-static void ask_content(void)
-{
-    ui_keyboard_open(&v.kb, "Add content server", "Host or address, with :port if not 26510.",
-                     NULL, sizeof(content_hosts[0].name) - 1, 0);
-    kb_purpose = KB_CONTENT;
 }
 
 /* The password for the chosen server; then_install retries the update once it is typed. */
@@ -825,11 +940,53 @@ static int add_server(const char *name)
             return -1;
     }
     v.tab = TAB_SERVERS;
-    v.server_list.sel = i;
-    ui_list_move(&v.server_list, 0);
-    server_details(&servers[i], server_builds[i]);
+    select_row(i, -1);
+    host_details();
     v.page = PAGE_SERVER;
     return 0;
+}
+
+/* What a typed address offers, chosen by the player. */
+enum { ADD_SERVER, ADD_CONTENT, ADD_BOTH };
+
+/* NULL, or why the address was refused. */
+static const char *add_host(const char *name, int kind)
+{
+    struct content_host host;
+    int i;
+
+    if (kind == ADD_BOTH && strchr(name, ':'))
+        return "Both uses the default ports: leave out :port.";
+    if (kind != ADD_SERVER && content_add(name, &host))
+        return "Type a host name or IP address, with :port if needed.";
+    if (kind != ADD_SERVER) {
+        load_content();
+        for (i = 0; i < v.content_hosts_list.count && name_cmp(content_hosts[i].name, name); i++)
+            ;
+    }
+    if (kind != ADD_CONTENT)
+        return add_server(name) ? "Type a host name or IP address, with :port when needed." : NULL;
+    v.tab = TAB_SERVERS;
+    select_row(-1, i);
+    browse_content();
+    return NULL;
+}
+
+static void ask_host_kind(void)
+{
+    say("What does it offer?", add_text, "Both uses the default ports.");
+    v.confirm = CONFIRM_ADD_HOST;
+}
+
+static void finish_add(int kind)
+{
+    const char *why = add_host(add_text, kind);
+
+    if (!why)
+        return;
+    /* the keyboard returns, to correct it */
+    ask_server(add_text);
+    say("Not an address", add_text, why);
 }
 
 static void install_server(struct server *s, int replace);
@@ -840,40 +997,14 @@ static void keyboard_done(void)
     char *text = v.kb.text;
     size_t n;
 
-    if (kb_purpose == KB_CONTENT) {
-        struct content_host host;
-
-        text += strspn(text, " ");
-        for (n = strlen(text); n && text[n - 1] == ' '; n--)
-            text[n - 1] = 0;
-        if (!*text) {
-            v.kb.open = 0;
-        } else if (content_add(text, &host)) {
-            say("Not a content address", text, "Type a host name or IP address, with :port if needed.");
-        } else {
-            v.kb.open = 0;
-            load_content();
-            for (n = 0; n < (size_t)v.content_hosts_list.count
-                 && name_cmp(content_hosts[n].name, text); n++)
-                ;
-            if (n < (size_t)v.content_hosts_list.count)
-                v.content_hosts_list.sel = (int)n;
-            browse_content();
-        }
-        return;
-    }
     if (kb_purpose == KB_SERVER) {
         text += strspn(text, " ");
         for (n = strlen(text); n && text[n - 1] == ' '; n--)
             text[n - 1] = 0;
-        if (!*text) {
-            v.kb.open = 0;
-        } else if (add_server(text)) {
-            /* the keyboard stays, to correct it */
-            say("Not a server address", text,
-                "Type a host name or IP address, with :port when the server does not use 26500.");
-        } else {
-            v.kb.open = 0;
+        v.kb.open = 0;
+        if (*text) {
+            snprintf(add_text, sizeof(add_text), "%s", text);
+            ask_host_kind();
         }
         return;
     }
@@ -887,7 +1018,7 @@ static void keyboard_done(void)
         return;
     }
     mgr_log("server %s: password %s\n", s->name, s->password[0] ? "set" : "cleared");
-    server_details(s, server_builds[v.server_list.sel]);
+    host_details();
     if (kb_then_install)
         install_server(s, 0);
 }
@@ -938,9 +1069,8 @@ static void handoff(void)
         return;
     }
     v.tab = TAB_SERVERS;
-    v.server_list.sel = i;
-    ui_list_move(&v.server_list, 0);
-    server_details(&servers[i], server_builds[i]);
+    select_row(i, -1);
+    host_details();
     v.page = PAGE_SERVER;
 }
 
@@ -953,7 +1083,7 @@ static void ask_dash_update(void)
 static void ask_server_key(struct server *s, int install)
 {
     key_then_install = install;
-    v.server_list.sel = (int)(s - servers);
+    select_row((int)(s - servers), -1);
     say("Server key changed", "Accept only if you expected the server's identity to change.", NULL);
     snprintf(v.text[1], sizeof(v.text[1]), "Saved: %s", s->fingerprint);
     snprintf(v.text[2], sizeof(v.text[2]), "New: %s", s->pending_fingerprint);
@@ -1013,7 +1143,7 @@ static void install_server(struct server *s, int replace)
     scan();
     load_servers();
     if (v.page == PAGE_SERVER)
-        server_details(s, server_builds[v.server_list.sel]);
+        host_details();
     if (err == SERVER_PASSWORD) {
         ask_password(err, 1);
         return;
@@ -1097,7 +1227,7 @@ static int join_ready(struct server *s, const char *build)
                     installed[0] ? installed : "none", s->source_revision);
             say("Build out of date", s->name, "The world requires another revision.");
             snprintf(v.text[2], sizeof(v.text[2]), "Install it from its library now?");
-            v.server_list.sel = (int)(s - servers);
+            select_row((int)(s - servers), -1);
             v.confirm = CONFIRM_UPDATE;
             return 0;
         }
@@ -1106,7 +1236,7 @@ static int join_ready(struct server *s, const char *build)
         mgr_log("join %s: build out of date\n", s->name);
         say("Build out of date", s->name, "The server's build has changed.");
         snprintf(v.text[2], sizeof(v.text[2]), "Update it now?");
-        v.server_list.sel = (int)(s - servers);
+        select_row((int)(s - servers), -1);
         v.confirm = CONFIRM_UPDATE;
         return 0;
     }
@@ -1321,7 +1451,7 @@ static void run_exec(void)
                  && name_cmp(content_hosts[n].name, arg[2]); n++)
                 ;
             if (n < (size_t)v.content_hosts_list.count) {
-                v.content_hosts_list.sel = (int)n;
+                select_row(-1, (int)n);
                 browse_content();
                 if (v.title[0])
                     mgr_log("exec: content browse: %s: %s; %s\n", v.title, v.text[1],
@@ -1351,7 +1481,7 @@ static void run_exec(void)
             if (n == (size_t)v.server_list.count) {
                 mgr_log("exec: no server named %s\n", arg[1]);
             } else if (arg[0][0] == 'i') {
-                v.server_list.sel = (int)n;
+                select_row((int)n, -1);
                 install_server(&servers[n], argc == 3 && !strcmp(arg[2], "replace"));
                 mgr_log("exec: install: %s: %s; %s\n", v.title, v.text[0], v.text[1]);
                 v.title[0] = 0, v.confirm = 0;
@@ -1393,6 +1523,19 @@ static void press(int button)
                                                            : 0;
 
     dirty = 1;
+    if (v.title[0] && v.confirm == CONFIRM_ADD_HOST) {
+        int kind = button == SDL_CONTROLLER_BUTTON_A   ? ADD_SERVER
+                   : button == SDL_CONTROLLER_BUTTON_X ? ADD_CONTENT
+                   : button == SDL_CONTROLLER_BUTTON_Y ? ADD_BOTH
+                                                       : -1;
+
+        if (kind >= 0 || button == SDL_CONTROLLER_BUTTON_B) {
+            v.title[0] = 0, v.confirm = 0;
+            if (kind >= 0)
+                finish_add(kind);
+        }
+        return;
+    }
     if (v.title[0]) {
         if (button == SDL_CONTROLLER_BUTTON_B || button == SDL_CONTROLLER_BUTTON_A)
             v.title[0] = 0;
@@ -1425,20 +1568,13 @@ static void press(int button)
                 install_server(chosen_server(), 1);
             else if (what == CONFIRM_BUILD && v.build_list.count)
                 delete_selected_build();
-            else if (what == CONFIRM_SERVER && chosen_server())
-                delete_selected_server();
+            else if (what == CONFIRM_SERVER && chosen_row())
+                delete_selected_host();
             else if (what == CONFIRM_CONTENT_INSTALL)
                 install_content(1);
             else if (what == CONFIRM_STORE_DELETE)
                 delete_unused_store();
-            else if (what == CONFIRM_CONTENT_REMOVE && chosen_content()) {
-                struct content_host gone = *chosen_content();
-
-                if (content_remove(&gone))
-                    say("Remove failed", gone.name, "Could not write the content list.");
-                else
-                    load_content();
-            } else if (what == CONFIRM_CONTENT_KEY && chosen_content()) {
+            else if (what == CONFIRM_CONTENT_KEY && chosen_content()) {
                 if (content_accept_key(chosen_content()))
                     say("Key not changed", "Could not save the accepted content key.", NULL);
                 else if (content_key_install)
@@ -1466,7 +1602,7 @@ static void press(int button)
         switch_tab(-1);
     } else if (button == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER) {
         switch_tab(1);
-    } else if (v.tab == TAB_BUILDS && v.page == PAGE_MAIN) {
+    } else if (v.tab == TAB_LIBRARY && v.page == PAGE_MAIN) {
         if (step)
             ui_list_move(&v.build_list, step);
         else if (button == SDL_CONTROLLER_BUTTON_A && b)
@@ -1479,7 +1615,7 @@ static void press(int button)
             ask_delete();
         else if (button == SDL_CONTROLLER_BUTTON_Y)
             scan();
-    } else if (v.tab == TAB_BUILDS) {
+    } else if (v.tab == TAB_LIBRARY) {
         if (step)
             ui_list_move(&v.line_list, step);
         else if (button == SDL_CONTROLLER_BUTTON_B)
@@ -1491,48 +1627,46 @@ static void press(int button)
         else if (button == SDL_CONTROLLER_BUTTON_A && !b->error[0])
             launch(b);
     } else if (v.tab == TAB_SERVERS && v.page == PAGE_MAIN) {
-        if (step)
-            ui_list_move(&v.server_list, step);
-        else if (button == SDL_CONTROLLER_BUTTON_A && chosen_server())
-            server_details(chosen_server(), server_builds[v.server_list.sel]),
-                v.page = PAGE_SERVER;
-        else if (button == SDL_CONTROLLER_BUTTON_START && chosen_server()
-                 && server_builds[v.server_list.sel])
-            join(chosen_server(), server_builds[v.server_list.sel]);
-        else if (button == SDL_CONTROLLER_BUTTON_START && chosen_server())
+        const struct host_row *r = chosen_row();
+
+        if (step) {
+            ui_list_move(&v.host_list, step);
+            sync_row();
+        } else if (button == SDL_CONTROLLER_BUTTON_A && r && r->server >= 0) {
+            host_details();
+            v.page = PAGE_SERVER;
+        } else if (button == SDL_CONTROLLER_BUTTON_A && r) {
+            browse_content();
+        } else if (button == SDL_CONTROLLER_BUTTON_START && r && r->server >= 0
+                   && server_builds[r->server]) {
+            join(chosen_server(), server_builds[r->server]);
+        } else if (button == SDL_CONTROLLER_BUTTON_START && r && r->server >= 0) {
             say("No build installed", chosen_server()->name,
                 "Open the server and press X to install its build.");
-        else if (button == SDL_CONTROLLER_BUTTON_BACK)
+        } else if (button == SDL_CONTROLLER_BUTTON_BACK) {
             ask_delete();
-        else if (button == SDL_CONTROLLER_BUTTON_X)
-            ask_server();
-        else if (button == SDL_CONTROLLER_BUTTON_Y)
-            scan(), load_servers();
-    } else if (v.tab == TAB_SERVERS) {
+        } else if (button == SDL_CONTROLLER_BUTTON_X) {
+            ask_server(NULL);
+        } else if (button == SDL_CONTROLLER_BUTTON_Y) {
+            scan(), load_servers(), load_content();
+        }
+    } else if (v.tab == TAB_SERVERS && v.page == PAGE_SERVER) {
         if (step)
             ui_list_move(&v.line_list, step);
         else if (button == SDL_CONTROLLER_BUTTON_B)
             v.page = PAGE_MAIN;
         else if (button == SDL_CONTROLLER_BUTTON_BACK)
             ask_delete();
-        else if (button == SDL_CONTROLLER_BUTTON_X)
-            install_server(chosen_server(), 0);
-        else if (button == SDL_CONTROLLER_BUTTON_Y)
-            ask_password(NULL, 0);
-        else if (button == SDL_CONTROLLER_BUTTON_A && server_builds[v.server_list.sel])
-            join(chosen_server(), server_builds[v.server_list.sel]);
-    } else if (v.tab == TAB_CONTENT && v.page == PAGE_MAIN) {
-        if (step)
-            ui_list_move(&v.content_hosts_list, step);
-        else if (button == SDL_CONTROLLER_BUTTON_A)
+        else if (button == SDL_CONTROLLER_BUTTON_START && chosen_content())
             browse_content();
-        else if (button == SDL_CONTROLLER_BUTTON_X)
-            ask_content();
-        else if (button == SDL_CONTROLLER_BUTTON_Y)
-            load_content();
-        else if (button == SDL_CONTROLLER_BUTTON_BACK)
-            ask_delete();
-    } else if (v.tab == TAB_CONTENT) {
+        else if (button == SDL_CONTROLLER_BUTTON_X && chosen_server())
+            install_server(chosen_server(), 0);
+        else if (button == SDL_CONTROLLER_BUTTON_Y && chosen_server())
+            ask_password(NULL, 0);
+        else if (button == SDL_CONTROLLER_BUTTON_A && chosen_server()
+                 && server_builds[v.server_list.sel])
+            join(chosen_server(), server_builds[v.server_list.sel]);
+    } else if (v.tab == TAB_SERVERS) {
         if (step)
             ui_list_move(&v.content_entries_list, step);
         else if (button == SDL_CONTROLLER_BUTTON_A)
@@ -1540,7 +1674,7 @@ static void press(int button)
         else if (button == SDL_CONTROLLER_BUTTON_Y)
             browse_content();
         else if (button == SDL_CONTROLLER_BUTTON_B)
-            v.page = PAGE_MAIN;
+            v.page = content_return;
     } else if (v.page == PAGE_BROWSE) {
         if (step)
             ui_list_move(&v.folder_list, step);
@@ -1647,6 +1781,8 @@ int main(void)
     v.content_hosts = content_hosts;
     v.content_entries = content_entries;
     v.content_hosts_list.rows = SERVER_ROWS;
+    v.hosts = host_rows;
+    v.host_list.rows = SERVER_ROWS;
     v.content_entries_list.rows = SERVER_ROWS;
     v.agent = agent_status();
     /* before the command file too: without a video mode the rig's capture sees no signal */
