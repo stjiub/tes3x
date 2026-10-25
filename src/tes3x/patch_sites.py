@@ -2140,6 +2140,34 @@ def find_heap_region_sites(x):
     return x.off_to_va(store - 5), x.off_to_va(fit), x.off_to_va(free)
 
 
+def find_pool_grow_sites(x):
+    """Allocate's isExhausted call in its size-class pool loop, the `jmp` that leaves the loop on
+    an exhausted pool, and MemoryPool_Simple's constructor from addSizeClassPool."""
+    data = bytes(x.data)
+    start, end = find_heap_function(x, "allocate")
+    # mov eax, [ebp-0x10]; mov eax, [eax]; call isExhausted; movzx ecx, al; test ecx, ecx; jne rel8
+    sig = re.compile(rb"\x8b\x45\xf0\x8b\x00\xe8....\x0f\xb6\xc8\x85\xc9\x75(.)", re.S)
+    lo, hi = x.va_to_off(start), x.va_to_off(end)
+    found = list(sig.finditer(data, lo, hi))
+    if len(found) != 1:
+        raise PatchError("pool-grow: %d pool exhaustion checks in Allocate, expected 1"
+                         % len(found))
+    call = found[0].start() + 5
+    leave = found[0].end() + found[0].group(1)[0]
+    if data[leave] != 0xEB or data[leave + 2:leave + 5] != b"\x8b\x45\xf0":
+        raise PatchError("pool-grow: no loop exit after the exhaustion check")
+    # push 0x90; call operator_new; add esp, 4 ... lea ecx, [ebp-x]; push ecx; mov ecx, [ebp-y];
+    # call MemoryPool_Simple::ctor
+    ctor_sig = re.compile(rb"\x68\x90\x00\x00\x00\xe8....\x83\xc4\x04.{8,48}?"
+                          rb"\x8d\x8d....\x51\x8b\x8d....\xe8", re.S)
+    ctors = list(ctor_sig.finditer(data))
+    if len(ctors) != 1:
+        raise PatchError("pool-grow: %d size-class pool constructions, expected 1" % len(ctors))
+    ctor_call = x.off_to_va(ctors[0].end() - 1)
+    return {"exhausted_call": x.off_to_va(call), "loop_exit": x.off_to_va(leave),
+            "pool_ctor": tes3x_inject.call_target(x, ctor_call)}
+
+
 def find_info_arena_sites(x):
     """INFO constructor allocations, its two name-free paths, and the call after the global
     dialogue cleanup loop. All are anchored by the INFO vtable and the global heap object."""

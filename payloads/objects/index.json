@@ -375,6 +375,7 @@
     "OWNER_FIND_RESUME": null,
     "PERFORM_LAYOUT": null,
     "PLAYER_MOBILE": null,
+    "POOL_CTOR": null,
     "RECORDS_PTR": null,
     "REFINDEX_FIND_IN_CELL": null,
     "REFINDEX_START_SCRIPTS": null,
@@ -639,6 +640,10 @@
     "tes3xpathgrid.c": {
       "digest": "cb5cb998977922ac00fc52c49ab1c5578223abcc4d3e9db1caede35384c8e1ca",
       "sha256": "e8a5891dc3d7321f24ca4c0a3b56345fbf556632c0eb924ba218be68dc861124"
+    },
+    "tes3xpoolgrow.c": {
+      "digest": "4720a8d4f83112ef9c4557980a02571ee7b7d921061d58b283a33dd24418b4ae",
+      "sha256": "6953d660666dee8a4223598b8381f827416e1542bd1ea060ef08fbce3de91523"
     },
     "tes3xprefs.c": {
       "digest": "471f750541c060b113dd689a39e3da4952740f665116187f9075c113a3018a2b",

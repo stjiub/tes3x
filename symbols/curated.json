@@ -100,7 +100,7 @@
       "name": "Memory_Heap::addSizeClassPool",
       "confidence": "verified",
       "provenance": "engine-map step 3: decompiled and read",
-      "note": "Creates a MemoryPool_Simple named \"%d byte heap pool\" and appends it to heap+0x54. Called from the entry function 0x000993D0 for 8,12,16,20,24,28,32,64,76,120,176.",
+      "note": "Creates a MemoryPool_Simple named \"%d byte heap pool\" and appends it to heap+0x54. Called from the entry function 0x000993D0 for 8,12,16,20,24,28,32,64,76,120,176. Returns without adding when a pool of that element size already exists, so it cannot grow a class; pool-grow calls MemoryPool_Simple::ctor directly.",
       "signature": "void __thiscall m(int blockSize, int capacityBytes)"
     },
     {
@@ -135,7 +135,7 @@
       "name": "MemoryPool_Simple::isExhausted",
       "confidence": "verified",
       "provenance": "engine-map step 3: decompiled and read",
-      "note": "no free-list entry and bump offset +0x4C at capacity +0x44"
+      "note": "no free-list entry and bump offset +0x4C at capacity +0x44. Takes the pool in eax and clobbers only eax. Memory_Heap::Allocate calls it at 0x000118B0 (NTSC) with its pool-list node at [ebp-0x10]."
     },
     {
       "va": "0x000128F0",

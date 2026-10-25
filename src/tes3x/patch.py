@@ -52,6 +52,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_game_instance, find_hd_video, find_heap_function,
                                find_heap_object, find_heap_region, find_heap_region_sites,
                                find_info_arena_sites, find_lazy_dialogue_sites, find_lean_menu, find_marker,
+                               find_pool_grow_sites,
                                find_mcp102_actn, find_enable_disable_flags, find_mcp160_removal, find_pathgrid_lookups, find_mcp123_add, find_mcp6_context,
                                find_mcp125_collision, find_mcp30_context, find_mcp55_context,
                                find_mcp55_inventory_context, find_mcp118_drop_finish,
@@ -1003,6 +1004,21 @@ def _heap_region(x, value, ctx):
     ]
 
 
+@patch("pool-grow")
+def _pool_grow(x, value, ctx):
+    """Give an exhausted size-class pool a further pool instead of spilling into the region."""
+    hook = ctx.get("hooks", {}).get("pool_grow")
+    if not hook:
+        raise PatchError("pool-grow: needs `payload` first, with pool_grow in its manifest")
+    sites = find_pool_grow_sites(x)
+    call, leave = sites["exhausted_call"], sites["loop_exit"]
+    was, call_off = x.patch_call(call, int(str(hook), 16))
+    leave_off = x.va_to_off(leave)
+    x.data[leave_off + 1] = 0
+    return [(call_off, 5, "pool exhausted check 0x%08X: 0x%08X -> %s" % (call, was, hook)),
+            (leave_off, 2, "pool loop exit 0x%08X: continue to the next pool" % leave)]
+
+
 @patch("info-name-arena")
 def _info_name_arena(x, value, ctx):
     """Put INFO's temporary three-name tables in the demand-paged arena."""
@@ -1940,6 +1956,7 @@ __all__ = [
     '_mwse_legacy',
     '_net',
     '_payload',
+    '_pool_grow',
     '_profile',
     '_ref_index',
     '_rotating_autosaves',
@@ -2002,6 +2019,7 @@ __all__ = [
     'find_mcp98_refcounts',
     'find_menu_mode_gate',
     'find_mob_gate',
+    'find_pool_grow_sites',
     'find_preferences_load',
     'find_ref_index',
     'find_ref_load',

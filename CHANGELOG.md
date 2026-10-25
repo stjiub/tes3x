@@ -4,6 +4,11 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- New patch `pool-grow`: when the engine's small-block pools fill, it adds more instead of giving
+  each further block a header in the heap. With the Tamriel Rebuilt masters on a 128 MB console
+  4.4 MB more memory stays free. See [the patch notes](patches/pool-grow.md).
+- `info-name-arena` together with `lazy-dialogue` no longer restarts the game when the first
+  conversation of a session opens.
 - Mod library: the GUI installs mods that ship only an `Animations` folder, such as Can't Touch
   This, so enabling it in a profile builds its dodge patch.
 - Multiplayer: the pause menu while joined no longer flashes the stock menu before it changes. It
