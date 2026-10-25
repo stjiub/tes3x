@@ -389,7 +389,11 @@
       "name": "TES3::Enchantment",
       "note": "Xbox castType is the byte at +0x2C, verified by Actor::equipItem 0x000E84EF comparing it with 3 before constant activation. Effects begin at +0x34 (getSourceEffects).",
       "fields": [
-        {"offset": "0x2C", "name": "castType", "type": "unsigned char", "confidence": "verified", "provenance": "Actor::equipItem constant enchantment activation at 0x000E84EF"}
+        {"offset": "0x2C", "name": "castType", "type": "unsigned char", "confidence": "verified", "provenance": "Actor::equipItem constant enchantment activation at 0x000E84EF"},
+        {"offset": "0x2E", "name": "enchantCost", "type": "unsigned short", "confidence": "verified", "provenance": "Enchantment::loadObjectSpecific 0x000FC350 ENDT"},
+        {"offset": "0x30", "name": "maxCharge", "type": "unsigned short", "confidence": "verified", "provenance": "Enchantment::loadObjectSpecific 0x000FC350 ENDT"},
+        {"offset": "0x34", "name": "effects", "type": "TES3::Effect[8]", "confidence": "verified", "provenance": "loader ENAM and getSourceEffects; 0x18 each"},
+        {"offset": "0xF4", "name": "flags", "type": "unsigned short", "confidence": "verified", "provenance": "Enchantment::ctor and loader (autocalc bit 1)"}
       ]
     },
     {
@@ -413,6 +417,8 @@
       "note": "Xbox allocation is 0x110; fields after the common object header are 0x10 below PC. Constructor 0x000FC650 and getSourceEffects 0x000E7460 verify the layout.",
       "fields": [
         {"offset": "0x34", "name": "name", "type": "char*", "confidence": "verified", "provenance": "Alchemy::ctor setStringSlot; consumed potion source"},
+        {"offset": "0x3C", "name": "mesh", "type": "char*", "confidence": "verified", "provenance": "Alchemy::ctor setStringSlot; potion records copy it"},
+        {"offset": "0x40", "name": "icon", "type": "char*", "confidence": "verified", "provenance": "Alchemy::ctor setStringSlot; potion records copy it"},
         {"offset": "0x44", "name": "weight", "type": "float", "confidence": "verified", "provenance": "ALDT load and save"},
         {"offset": "0x48", "name": "value", "type": "short", "confidence": "verified", "provenance": "ALDT load and save"},
         {"offset": "0x4C", "name": "effects", "type": "TES3::Effect[8]", "confidence": "verified", "provenance": "getSourceEffects and constructor"},
