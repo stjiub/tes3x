@@ -2613,8 +2613,112 @@ def find_ini_path(x):
     return x.off_to_va(find_unique(bytes(x.data), b"D:\\Morrowind.ini\0", "INI path"))
 
 
+DOOR_ICON = b"textures\\door_icon.tga\0"
+# Door marker setup in MenuMap::updateMapRender, from the createImage call to the property
+# writes: the marker flag and the door reference. Their ids live in globals.
+DOOR_MARKER_SIG = re.compile(
+    rb"\x89\x44\x24.\x52\xe8....\x8b\xf0\x6a\x03\x8b\xce\xe8....\x6a\x03\x8b\xce\xe8...."
+    rb"\x6a\x10\xb8\xbd\x80\xff\xff\x50\x33\xc0\x66\xa1(....)\x8b\xce\x50\xe8...."
+    rb"\x33\xc9\x66\x8b\x0d(....)\x6a\x08\x55\x51\x8b\xce\xe8....", re.S)
+# The call that ends updateMapRender: updateLocalPlayer(menu, 0, 0, 0xFFFF80BD, menu).
+LOCAL_PLAYER_SITE_SIG = re.compile(
+    rb"\x6a\x01\x8b\xce\xe8....\x53\x55\x55\x68\xbd\x80\xff\xff\x53(\xe8....)", re.S)
+
+
+def find_door_marker(x):
+    """The marker flag and door reference id globals, from the door marker setup."""
+    off = find_unique(bytes(x.data), DOOR_ICON, "door marker texture")
+    push = b"\x68" + struct.pack("<I", x.off_to_va(off))
+    at = find_unique(bytes(x.data), push, "door marker texture push")
+    m = DOOR_MARKER_SIG.match(bytes(x.data), at + 5)
+    if m is None:
+        raise PatchError("door marker setup: layout not recognised")
+    return {"marker": struct.unpack("<I", m.group(1))[0],
+            "door-ref": struct.unpack("<I", m.group(2))[0]}
+
+
+# updateMapRender's lookup of the rectangle that holds the door markers, by its id global.
+MARKER_PARENT_SIG = re.compile(
+    rb"\x33\xc9\x66\x8b\x0d(....)\xbf\x01\x00\x00\x00\xc7\x44\x24.\x00\x02\x00\x00"
+    rb"\xc7\x44\x24.\x00\x00\x00\x40", re.S)
+# The world-to-map conversion called for every door marker (scale 0x200 on the map, 0x100 on
+# the HUD); it rewrites the three floats in place.
+MAP_PIXELS_SIG = re.compile(
+    rb"\x68\x00\x02\x00\x00\x8d\x44\x24.\x50\xeb.\x68\x00\x01\x00\x00\x8d\x4c\x24.\x51(\xe8....)",
+    re.S)
+
+
+# The door marker's setX(x - 2) and setY(y + 2), after its size and scroll fields are written.
+MARKER_POSITION_SIG = re.compile(
+    rb"\xb8\x00\x38\xff\xc6\x89\x86\x28\x01\x00\x00\x89\x86\x2c\x01\x00\x00\x8b\x44\x24."
+    rb"\x83\xc0\xfe\x50\x8b\xce\xc6\x86\x87\x00\x00\x00\x00(\xe8....)\x8b\x4c\x24."
+    rb"\x83\xc1\x02\x51\x8b\xce(\xe8....)", re.S)
+
+
+def find_marker_position(x):
+    """setX and setY, as the door marker setup calls them."""
+    text = text_section(x)
+    blob = bytes(x.data[text.raw:text.raw + text.rsize])
+    hits = list(MARKER_POSITION_SIG.finditer(blob))
+    if len(hits) != 1:
+        raise PatchError("door marker position: %d match(es), expected 1" % len(hits))
+    return [text.va + hits[0].start(g) + 5 + struct.unpack("<i", hits[0].group(g)[1:])[0]
+            for g in (1, 2)]
+
+
+# What follows setY: the call that marks the marker, then its "tagged" property cleared.
+MARKER_TAGGED_SIG = re.compile(
+    rb"\x68\xd1\x80\xff\xff\x8b\xce\xe8....\x6a\x10\x33\xd2\x66\x8b\x15(....)", re.S)
+
+
+def find_marker_tagged_id(x):
+    text = text_section(x)
+    blob = bytes(x.data[text.raw:text.raw + text.rsize])
+    hits = list(MARKER_TAGGED_SIG.finditer(blob))
+    if len(hits) != 1:
+        raise PatchError("door marker tagged id: %d match(es), expected 1" % len(hits))
+    return struct.unpack("<I", hits[0].group(1))[0]
+
+
+def find_marker_parent_id(x):
+    text = text_section(x)
+    blob = bytes(x.data[text.raw:text.raw + text.rsize])
+    hits = list(MARKER_PARENT_SIG.finditer(blob))
+    if len(hits) != 1:
+        raise PatchError("door marker parent: %d match(es), expected 1" % len(hits))
+    return struct.unpack("<I", hits[0].group(1))[0]
+
+
+def find_map_pixels(x):
+    text = text_section(x)
+    blob = bytes(x.data[text.raw:text.raw + text.rsize])
+    hits = list(MAP_PIXELS_SIG.finditer(blob))
+    if len(hits) != 1:
+        raise PatchError("map pixel conversion: %d match(es), expected 1" % len(hits))
+    at = text.va + hits[0].start(1)
+    return at + 5 + struct.unpack("<i", hits[0].group(1)[1:])[0]
+
+
+def find_local_player_site(x):
+    """The updateLocalPlayer call at the end of updateMapRender."""
+    text = text_section(x)
+    blob = bytes(x.data[text.raw:text.raw + text.rsize])
+    hits = list(LOCAL_PLAYER_SITE_SIG.finditer(blob))
+    if len(hits) != 1:
+        raise PatchError("updateLocalPlayer call: %d match(es), expected 1" % len(hits))
+    return text.va + hits[0].start(1)
+
+
 # Content-located engine addresses, shared with the payload build so the two cannot disagree.
 LOCATORS = {
+    "map-marker-id": lambda image: find_door_marker(image)["marker"],
+    "map-door-ref-id": lambda image: find_door_marker(image)["door-ref"],
+    "map-local-player-site": find_local_player_site,
+    "map-parent-id": find_marker_parent_id,
+    "map-pixels": find_map_pixels,
+    "map-tagged-id": find_marker_tagged_id,
+    "map-set-x": lambda image: find_marker_position(image)[0],
+    "map-set-y": lambda image: find_marker_position(image)[1],
     "run-function": find_run_function,
     "chunk-read": find_chunk_read,
     "command-table": find_command_table,

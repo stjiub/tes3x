@@ -749,6 +749,14 @@ def engine_bindings(xbe, sources):
         # the call just before it fetches GMST 0x266, the Exit box's text
         define("NET_EXIT_TEXT_SITE", hexva(image.off_to_va(quits[0].start() + 6)))
         define("NET_QUIT", hexva(quit))
+        for name, key in (("MARKER_ID", "map-marker-id"), ("DOOR_REF_ID", "map-door-ref-id"),
+                           ("PARENT_ID", "map-parent-id"), ("PIXELS", "map-pixels"),
+                          ("TAGGED_ID", "map-tagged-id"),
+                           ("SET_X", "map-set-x"), ("SET_Y", "map-set-y"),
+                           ("UPDATE_SITE", "map-local-player-site")):
+            define("NET_MAP_" + name, hexva(locate(key)))
+        define("NET_MAP_UPDATE_LOCAL", hexva(tes3x_inject.call_target(
+            image, locate("map-local-player-site"))))
         define("NET_MENU_GATE", hexva(locate("menu-mode-gate")))
         define("NET_MOB_GATE", hexva(locate("mob-update-gate")))
         define("NET_WEATHER_ROLL", hexva(locate("weather-roll")))

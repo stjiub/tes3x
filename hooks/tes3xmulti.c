@@ -458,6 +458,7 @@ static int script_safe(const u8 *text, u32 max)
 #include "multi/ghosts.c"
 #include "multi/looks.c"
 #include "multi/ghost_frame.c"
+#include "multi/mapmarks.c"
 #include "multi/authority.c"
 #include "multi/spells.c"
 #include "multi/shots.c"
@@ -612,6 +613,7 @@ void tes3x_multi_frame(void)
     identity_send(ref);
     equipment_send(ref);
     ghosts_frame(state);
+    mapmarks_frame(state);
     authority_frame(ref, state);
     objects_frame();
     moves_frame();

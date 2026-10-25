@@ -7722,12 +7722,31 @@
       "pc_va": "0x005E3D10"
     },
     {
+      "va": "0x001F0430",
+      "name": "MenuMap::onCursorLeave",
+      "confidence": "guess",
+      "provenance": "decompile: clears hovered property and help label"
+    },
+    {
+      "va": "0x001F1380",
+      "name": "MenuMap::onCursorMove",
+      "confidence": "guess",
+      "provenance": "decompile: nearest door marker to cursor within 30px becomes hovered; label from linked door's destination via vtable+0x20 into ui::createLabel",
+      "note": "World-map cursor hover. Scans map rect children for marker-flag elements (door_icon images made in ui::MenuMap_updateMapRender), stores the nearest as the hovered property, builds the help-menu label. Falls through to 0x001F0430 when the map is not shown."
+    },
+    {
       "va": "0x001F2C30",
       "name": "ui::MenuMap_updateLocalPlayer",
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_ui_MenuMap_updateLocalPlayer",
       "pc_va": "0x005EB760"
+    },
+    {
+      "va": "0x001F2D70",
+      "name": "MenuMap::tagMarker",
+      "confidence": "guess",
+      "provenance": "called after each door marker setup in updateMapRender"
     },
     {
       "va": "0x001F3080",
