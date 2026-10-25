@@ -380,6 +380,8 @@
     "PERFORM_LAYOUT": null,
     "PLAYER_MOBILE": null,
     "POOL_CTOR": null,
+    "POOL_HEAP_ALLOCATE": null,
+    "POOL_HEAP_OBJECT": null,
     "RECORDS_PTR": null,
     "REFINDEX_FIND_IN_CELL": null,
     "REFINDEX_START_SCRIPTS": null,
@@ -650,8 +652,8 @@
       "sha256": "e8a5891dc3d7321f24ca4c0a3b56345fbf556632c0eb924ba218be68dc861124"
     },
     "tes3xpoolgrow.c": {
-      "digest": "a66c1a63bec58680c945dd27d63611b0ebdbd721059def9eec32af7763d0e68b",
-      "sha256": "6953d660666dee8a4223598b8381f827416e1542bd1ea060ef08fbce3de91523"
+      "digest": "824520d174d04850e1a2a8dad2367e7e1367f7dd28d48220b76dd698d8810e93",
+      "sha256": "15bfe7e3c7d39c0addcb60175d57b7edfba73aba3f4daf5d4ecb27e40cd1e2f8"
     },
     "tes3xprefs.c": {
       "digest": "b997f24cd4d0759d45fd489be0024bf306dac14e1f02282cb8c52e2683644061",

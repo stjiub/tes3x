@@ -20,9 +20,11 @@ more memory free after it.
 The patch (`hooks/tes3xpoolgrow.c`) changes two places in `Allocate`'s pool loop:
 
 - The call to `MemoryPool_Simple::isExhausted` becomes a call to the payload. When the newest pool
-  of a class is full, it constructs another pool of the same element size with the engine's own
-  constructor and links it into the loop's list right after the full one. Chunks start at 64 KB
-  and double up to 256 KB per class.
+  of a class is full, it allocates another pool object from the heap, constructs it with the
+  engine's own constructor and the same element size, and links it into the loop's list right
+  after the full one. Chunks start at 64 KB and double up to 256 KB per class. The object must
+  come from the heap: before relaunching on a fatal error, `0x000D2E20` releases the 12- and
+  176-byte pools with `Memory_Heap::Free`.
 - The `jmp` that leaves the loop on a full pool becomes a step to the next pool, so the new pool,
   or an older one that has had blocks freed, is found.
 

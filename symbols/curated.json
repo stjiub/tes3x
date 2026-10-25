@@ -45,6 +45,13 @@
       "signature": "void __thiscall m(int regionSize)"
     },
     {
+      "va": "0x00011710",
+      "name": "Memory_Heap::releaseSmallPools",
+      "confidence": "verified",
+      "provenance": "decompiled; caused pool-grow bugcheck when pool objects were static",
+      "note": "Walks the heap's pool list (+0x54): destroys and Memory_Heap::Free()s every 12-byte pool object and the first 176-byte one. Pool objects must be heap blocks."
+    },
+    {
       "va": "0x000117F0",
       "name": "crt_malloc",
       "confidence": "verified",
@@ -822,6 +829,14 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_Game_clearTarget",
       "pc_va": "0x0041CD00"
+    },
+    {
+      "va": "0x00092BA0",
+      "name": "onOutOfMemory",
+      "confidence": "matched",
+      "provenance": "decompiled; set as CVBHeap failure callback at 0x000963FE",
+      "note": "Shared memory-pressure callback: purges caches and cells, returns true to retry. When every purge fails it calls fatalErrorRelaunch with the dirty-disc message.",
+      "signature": "bool __cdecl onOutOfMemory(unsigned int size)"
     },
     {
       "va": "0x00093A30",
@@ -1618,6 +1633,14 @@
       "confidence": "verified",
       "provenance": "deletes three t: logs, reads [General] SkipProgramFlows, zeroes three 0x104-byte buffers",
       "note": "buffers and gate are never read again in this build"
+    },
+    {
+      "va": "0x000D2E20",
+      "name": "fatalErrorRelaunch",
+      "confidence": "verified",
+      "provenance": "decompiled; xemu stage2-64-fix-v1 relaunch",
+      "note": "Copies the message into launch data, releases the 12- and 176-byte pools (0x00011710), then XLaunchNewImage(D:\\default.xbe). Reached from the out-of-memory callback 0x00092BA0 with the dirty-disc message.",
+      "signature": "void __cdecl fatalErrorRelaunch(const char *message, bool persistDisplay)"
     },
     {
       "va": "0x000D2ED0",

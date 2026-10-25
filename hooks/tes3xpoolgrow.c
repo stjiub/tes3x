@@ -12,6 +12,12 @@
 #ifndef TES3X_POOL_CTOR
 #error "define TES3X_POOL_CTOR to the VA of MemoryPool_Simple's constructor"
 #endif
+#ifndef TES3X_POOL_HEAP_ALLOCATE
+#error "define TES3X_POOL_HEAP_ALLOCATE to Memory_Heap::Allocate"
+#endif
+#ifndef TES3X_POOL_HEAP_OBJECT
+#error "define TES3X_POOL_HEAP_OBJECT to the global Memory_Heap"
+#endif
 
 #define POOL_SIZE 0x90
 #define POOL_CAPACITY 0x44
@@ -26,6 +32,7 @@
 
 typedef void *(__fastcall *fn_pool_ctor)(void *pool, void *unused, const char *name,
                                           int element, int capacity);
+typedef void *(__thiscall *fn_heap_allocate)(void *, u32, const char *, u32);
 
 typedef struct {
     u8 *pool;
@@ -38,7 +45,6 @@ typedef struct {
     u8 *newest;
 } size_class;
 
-static u32 pools_body[MAX_POOLS][POOL_SIZE / 4];
 static pool_node nodes[MAX_POOLS];
 static size_class classes[MAX_CLASSES];
 static u32 pool_count;
@@ -79,13 +85,19 @@ static void grow(pool_node *after, size_class *cls)
 
     if (pool_count >= MAX_POOLS)
         return;
-    pool = (u8 *)pools_body[pool_count];
     node = &nodes[pool_count];
-    /* The constructor allocates its global-list node from this heap, re-entering Allocate. */
+    /* The object and the constructor's global-list node both re-enter Allocate. The object comes
+     * from the heap because the fatal-error path frees the 12- and 176-byte pools with
+     * Memory_Heap::Free. */
     growing = 1;
-    ((fn_pool_ctor)TES3X_POOL_CTOR)(pool, 0, "tes3x heap pool", (int)cls->element,
-                                    (int)cls->chunk);
+    pool = ((fn_heap_allocate)TES3X_POOL_HEAP_ALLOCATE)((void *)TES3X_POOL_HEAP_OBJECT,
+                                                         POOL_SIZE, "tes3x heap pool", 0);
+    if (pool)
+        ((fn_pool_ctor)TES3X_POOL_CTOR)(pool, 0, "tes3x heap pool", (int)cls->element,
+                                        (int)cls->chunk);
     growing = 0;
+    if (!pool)
+        return;
     pool_count++;
     if (!*(void **)(pool + 0x48))
         return;

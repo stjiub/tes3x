@@ -1281,6 +1281,8 @@ def engine_bindings(xbe, sources):
         print(f"pool-grow: exhaustion check {hexva(pools['exhausted_call'])}, "
               f"pool constructor {hexva(pools['pool_ctor'])}")
         define("POOL_CTOR", hexva(pools["pool_ctor"]))
+        define("POOL_HEAP_ALLOCATE", hexva(locate("heap-allocate")))
+        define("POOL_HEAP_OBJECT", hexva(locate("heap-object")))
         wanted["pool_grow"] = ("_tes3x_pool_grow_hook",)
     if "tes3xconsole.c" in names:
         print("console hook: keyboard and print sites located by content")
