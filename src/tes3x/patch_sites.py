@@ -2014,7 +2014,9 @@ def find_heap_function(x, which):
     label = name[:-1].decode()
     string_va = x.off_to_va(find_unique(data, name, label))
     push = find_unique(data, b"\x68" + struct.pack("<I", string_va), label + " reference")
-    start = data.rfind(b"\xcc\x55\x8b\xec", max(0, push - 0x400), push)
+    # An earlier patch (link-name-arena) may have replaced the prologue with a jmp.
+    start = max(data.rfind(b"\xcc\x55\x8b\xec", max(0, push - 0x400), push),
+                data.rfind(b"\xcc\xe9", max(0, push - 0x400), push))
     if start < 0 or b"\xcc\xcc" in data[start + 1:push]:
         raise PatchError("%s: no prologue before its name reference" % label)
     end = data.find(tail, push, push + 0x800)
