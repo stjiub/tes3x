@@ -33,6 +33,7 @@ from .proto import (ACTOR, ACTORS, ADMIN_PASSWORD_MIN, ADMIN_PORT, AGENT_PORT, A
                     REMOTE_NONCE, REMOTE_REFUSED, REMOTE_REPLY, REMOTE_VERSION, RESPAWN_PLACES,
                     SEALED, STATE, STATE_SIZE, T3MP_VERSION, WELCOME, admin_secret, now_us,
                     remote_key, seal, unseal)
+from .passwords import hash_password_command
 from .server import (decode, load_admin_password, serve)
 from .tunnel import (Tunnel, resolve, udp_frame, udp_from_frame, udp_socket)
 from .plugin import (ghost_plugin)
@@ -629,6 +630,11 @@ def main(argv=None):
                         f"{REMOTE_ADMIN_PORT})")
     p.add_argument("--password-file", metavar="FILE",
                    help="with --server, the admin password on this file's first line")
+    p = sub.add_parser("hash-password", help="make a password file line that is not the "
+                                             "password itself")
+    p.add_argument("--admin", action="store_true",
+                   help="for --remote-admin (admin-password.txt) instead of --password-file")
+    p.add_argument("--out", metavar="FILE", help="write the line to FILE, readable by you only")
     p = sub.add_parser("fuzz", help="join a server and send it mutated packets")
     p.add_argument("address", help="HOST[:PORT] of a tes3x net server")
     p.add_argument("--count", type=int, default=2000)
@@ -644,4 +650,4 @@ def main(argv=None):
             f.write(ghost_plugin(os.path.getsize(args.master)))
         return 0
     return {"listen": listen, "ping": ping, "serve": serve, "fuzz": fuzz,
-            "admin": admin_command}[args.command](args)
+            "admin": admin_command, "hash-password": hash_password_command}[args.command](args)

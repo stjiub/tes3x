@@ -4,6 +4,11 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- Multiplayer server: `tes3x net hash-password` writes a salted hash for `--password-file` (or,
+  with `--admin`, for `admin-password.txt`) so the server's files do not hold the password
+  itself; plain files still work. A new `server.key` is created readable by its owner only, and
+  the server warns on Linux when a key or password file is readable by other accounts. See
+  [keys and passwords](docs/multiplayer-server.md#keys-and-passwords).
 - Downloads are verified: `tes3x xemu-setup` refuses an xemu build whose SHA-256 differs from the
   one GitHub lists, and the portable folder's Python is pinned like its 7-Zip. Mod archives
   (`.zip`, `.7z`, `.rar`) that would write outside their folder are refused.

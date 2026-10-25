@@ -145,10 +145,18 @@ On a server that faces the internet, give players the fingerprint as well: the p
 encrypted to the server's key, so a console that has pinned the key cannot give it to an
 impostor on its first join.
 
-The password is a shared secret and the password file is plain text: keep it readable only by the
-account that runs the server (mode 0600 on Linux), and likewise `server.key`, `admin-password.txt`
-and `admitted.txt`. The server appends to `admitted.txt` without locking, so edit it only while the
-server is stopped, and run one server per `--world` folder.
+The password is a shared secret, and a console's `NetPassword` is plain text in its own ini. The
+server need not keep it in plain text: `tes3x net hash-password --out password.txt` asks for the
+password (not echoed) and writes a salted scrypt line (`scrypt$...`) in its place, and
+`--password-file` accepts that file as it does a plain one. A stolen file then does not give away
+the password, which players may have used elsewhere. Each guess costs the server one scrypt
+(about 50 ms), and the limit above still applies first.
+
+Keep `server.key`, the password files and `admin-password.txt` readable only by the account that
+runs the server. The server makes `server.key` with mode 0600 and warns at start when a key or
+password file is readable by other accounts (on Linux; modes mean nothing on Windows). The
+server appends to `admitted.txt` without locking, so edit it only while the server is stopped,
+and run one server per `--world` folder.
 
 ## Kicks and bans
 
@@ -194,7 +202,10 @@ takes every command above. The GUI's Server workspace does the same under **A re
 Each command asks the server for a single-use challenge first; the command and its reply are
 encrypted and authenticated with a key made from the password and that challenge, so a
 listener on the network can neither read nor replay them, nor send commands of its own. The
-password is stretched with scrypt. Five wrong tries from one IPv4 address or IPv6 /64
+password is stretched with scrypt. `admin-password.txt` may hold the result instead of the
+password: `tes3x net hash-password --admin --out admin-password.txt` writes a `secret$...` line,
+and the admin then keeps the password for `--password-file` on the client. That line is still
+enough to send admin commands, so keep it private. Five wrong tries from one IPv4 address or IPv6 /64
 allow one more a minute, and while that holds even the right password is refused. Keep the
 admin password apart from the console password: anyone with it can kick, ban and stop.
 

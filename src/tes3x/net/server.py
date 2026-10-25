@@ -2,7 +2,6 @@
 
 import glob
 import hashlib
-import hmac
 import ipaddress
 import json
 import math
@@ -88,6 +87,8 @@ from .proto import (ACTOR, ACTORS, ACTORS_PER_PACKET, ACTOR_DEAD, ACTOR_IN_COMBA
                     unpack_factions, unpack_globals, unpack_identity, unpack_mark, unpack_items, unpack_journal, unpack_objects,
                     unpack_player_effects, unpack_player_identity, unpack_removes, unpack_spawn,
                     unpack_weather, unpack_worn, unseal, wire_text, x25519_public, zstr)
+from .passwords import (ADMIN_PREFIX, JOIN_PREFIX, JoinPassword, admin_secret_from, first_line,
+                        warn_if_readable, write_private)
 from .tunnel import (Tunnel, arp_frame, dhcp_reply, dns_reply, udp_frame, udp_from_frame,
                      udp_socket)
 from .validation import valid_client_event
@@ -1113,31 +1114,35 @@ def load_server_key(args):
     crypto()
     path = args.key or (os.path.join(args.world, "server.key") if args.world else None)
     if path and os.path.exists(path):
+        warn_if_readable(path, "the server key")
         with open(path, encoding="ascii") as stream:
             secret = bytes.fromhex(stream.read().strip())
     else:
         secret = os.urandom(32)
         if path:
             os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-            with open(path, "w", encoding="ascii") as stream:
-                stream.write(secret.hex() + "\n")
+            write_private(path, secret.hex() + "\n")
     print(f"server key {fingerprint(x25519_public(secret))}"
           + ("" if path else " (not kept: give --key or --world)"), flush=True)
     return secret
 
 
 def load_password(args):
-    """The first line of --password-file, or None for an open server."""
+    """The password in --password-file (plain, or a hash line), or None for an open server."""
     if not args.password_file:
         return None
-    with open(args.password_file, encoding="utf-8") as stream:
-        password = stream.readline().strip()
+    warn_if_readable(args.password_file, "the password file")
+    line = first_line(args.password_file)
+    if line.startswith(JOIN_PREFIX):
+        try:
+            return JoinPassword(line)
+        except ValueError:
+            sys.exit(f"{args.password_file}: not a hash made by tes3x net hash-password")
     # The console reads NetPassword from its ini, which trims spaces and has no Unicode.
-    if not 0 < len(password) <= PASSWORD_MAX or not password.isascii() or \
-            not password.isprintable():
+    if not 0 < len(line) <= PASSWORD_MAX or not line.isascii() or not line.isprintable():
         sys.exit(f"{args.password_file}: the password must be 1 to {PASSWORD_MAX} printable "
                  "ASCII characters")
-    return password.encode("ascii")
+    return JoinPassword(line)
 
 
 def ban_value(kind, value):
@@ -3381,7 +3386,7 @@ class Server:
         if self.password and key not in self.admitted:
             tries = self.password_buckets.get(addr[0], now)
             given = packet[T3MP.size + HELLO_BODY.size:]
-            if tries is None or not tries.take(now) or not hmac.compare_digest(given, self.password):
+            if tries is None or not tries.take(now) or not self.password.check(given):
                 print(f"{stamp} refused {mac} at {addr[0]}: wrong password", flush=True)
                 self.refuse(addr, session, keys, mac, REFUSED_PASSWORD, version)
                 return
@@ -3734,8 +3739,7 @@ class Server:
                          "--world")
             remote_sock = udp_socket()
             remote_sock.bind((self.args.bind, self.args.remote_admin))
-            self.remote_admin = RemoteAdmin(admin_secret(load_admin_password(password_path)),
-                                            remote_sock)
+            self.remote_admin = RemoteAdmin(load_admin_secret(password_path), remote_sock)
             print(f"remote admin on {self.args.bind}:{self.args.remote_admin}, with the password "
                   f"in "
                   f"{password_path}", flush=True)
@@ -4018,6 +4022,18 @@ class Server:
 
 def serve(args):
     return Server(args).run()
+
+
+def load_admin_secret(path):
+    """The key remote admin commands are made with: from an admin_hash line, or a password."""
+    warn_if_readable(path, "the admin password file")
+    line = first_line(path)
+    if line.startswith(ADMIN_PREFIX):
+        try:
+            return admin_secret_from(line)
+        except ValueError:
+            sys.exit(f"{path}: not a hash made by tes3x net hash-password --admin")
+    return admin_secret(load_admin_password(path))
 
 
 def load_admin_password(path):

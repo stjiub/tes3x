@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 from tes3x.net import proto as p
+from tes3x.net.passwords import JoinPassword
 from tes3x.net.server import RemoteAdmin, Server, SourceBuckets
 
 
@@ -49,7 +50,7 @@ class SourceLimitTests(unittest.TestCase):
 class PasswordLimitTests(unittest.TestCase):
     def setUp(self):
         self.server = object.__new__(Server)
-        self.server.password = b'secret'
+        self.server.password = JoinPassword('secret')
         self.server.password_buckets = SourceBuckets(*p.PASSWORD_RATE, limit=2)
         self.server.bans = {kind: set() for kind in p.BAN_KINDS}
         self.server.admitted, self.server.admitted_path = set(), None
