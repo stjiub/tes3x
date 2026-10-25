@@ -4,6 +4,9 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- GUI: the Content workspace is now the **Builds** tab of **Server**, beside **Multiplayer**.
+  Its "Start content server with multiplayer server" option reads "Share builds when the
+  multiplayer server starts". See [the GUI guide](docs/gui.md#server).
 - New patch `pool-grow`: when the engine's small-block pools fill, it adds more instead of giving
   each further block a header in the heap. With the Tamriel Rebuilt masters on a 128 MB console
   4.4 MB more memory stays free. See [the patch notes](patches/pool-grow.md).

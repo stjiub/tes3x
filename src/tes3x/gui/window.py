@@ -116,7 +116,7 @@ class ProfileWindow(QMainWindow):
         self.workspace_bar.setExpanding(False)
         self.workspace_bar.setUsesScrollButtons(False)
         self.workspace_bar.setElideMode(Qt.TextElideMode.ElideNone)
-        for label in ("Profile", "Target", "Server", "Content"):
+        for label in ("Profile", "Target", "Server"):
             self.workspace_bar.addTab(label)
         profile_bar.addWidget(self.workspace_bar)
         profile_bar.addSpacing(16)
@@ -202,9 +202,12 @@ class ProfileWindow(QMainWindow):
         self.agent_lines.connect(self.targets_page.append_lines)
         self.server_page = ServerPage(self)
         self.content_page = ContentPage(self)
+        self.server_tabs = QTabWidget()
+        self.server_tabs.addTab(self.content_page, "Builds")
+        self.server_tabs.addTab(self.server_page, "Multiplayer")
+        self.server_tabs.currentChanged.connect(self.server_tab_changed)
         self.workspaces = QStackedWidget()
-        for page in (self.content_split, self.targets_page, self.server_page,
-                     self.content_page):
+        for page in (self.content_split, self.targets_page, self.server_tabs):
             self.workspaces.addWidget(page)
         self.workspace_bar.currentChanged.connect(self.workspace_changed)
         self.body_split = QSplitter(Qt.Orientation.Vertical)
@@ -386,7 +389,8 @@ class ProfileWindow(QMainWindow):
         else:
             self.open_initial_profile()
         if self.settings:
-            self.workspace_bar.setCurrentIndex(self.settings.value("workspace", 0, int))
+            saved = self.settings.value("workspace", 0, int)
+            self.workspace_bar.setCurrentIndex(saved if saved < self.workspace_bar.count() else 2)
         if QApplication.platformName() != "offscreen":
             self.play_controller.start_in_game_listener()
             if not self.local_config_path().is_file():
@@ -652,7 +656,11 @@ class ProfileWindow(QMainWindow):
             self.settings.setValue("workspace", index)
         if index == 1:
             self.targets_page.set_target(self.target_picker.currentData())
-        elif index == 3:
+        elif index == 2:
+            self.server_tab_changed(self.server_tabs.currentIndex())
+
+    def server_tab_changed(self, index):
+        if index == 0 and self.workspace_bar.currentIndex() == 2:
             self.content_page.refresh()
 
     def default_target(self, kind=None, name=None):

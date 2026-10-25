@@ -27,8 +27,8 @@ times out. The admin command `status` prints the clock, weather and each client'
 inbound UDP on port 26500 for the Python process running the server. Without `--world`,
 the session is temporary and its state is lost when the server stops.
 
-In the GUI, the **Content** tab can start its library automatically with a local multiplayer
-server. The bottom status bar shows the multiplayer and content server states from every tab.
+In the GUI, the **Server > Builds** tab can start its library automatically with a local multiplayer
+server.
 
 The first client to join sets the session's load order and its game clock. Useful options:
 
@@ -98,7 +98,7 @@ file locks for up to 0.25 seconds; lasting write failures remain errors.
 
 ### Worlds in the GUI
 
-The GUI's **Server** workspace keeps a list of worlds, picked beside **Start**. Each is a folder
+The GUI's **Server > Multiplayer** tab keeps a list of worlds, picked beside **Start**. Each is a folder
 under **Settings > Paths > Server worlds** (`worlds` beside the local config by default), with its
 settings in `world.toml` and everything `--world` keeps. The cog next to the list makes a new
 world, duplicates one (with or without its characters), renames or deletes it, or opens its folder.
@@ -106,7 +106,7 @@ world, duplicates one (with or without its characters), renames or deletes it, o
 the local config and apply to every world. Starting the server serves the selected world, so
 characters and world state carry over every stop and start.
 
-Instead of a **Build profile**, a world can name a **Library entry** from the Content workspace's
+Instead of a **Build profile**, a world can name a **Library entry** from the Builds tab's
 library. With **Library revision** empty, the next Start fills in the entry's latest listed
 revision and keeps it, so a later publication does not change the world's build; clear the field
 to move to the newest one. For a library on another PC, also fill in its address, key and the
@@ -204,7 +204,7 @@ joins:
 tes3x net serve --world world --build build/net/deploy
 ```
 
-In the GUI, set **Build profile** in the **Server** workspace instead.
+In the GUI, set **Build profile** in the **Server > Multiplayer** tab instead.
 
 The Dash asks through the same encrypted session a console joins by, with the console's key
 for this server and the password if there is one, so a console the server would refuse gets no

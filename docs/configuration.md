@@ -101,7 +101,7 @@ should use targets.
 
 ### `[server]`
 
-The GUI's **Server** workspace turns its settings into `tes3x net serve` options (see
+The GUI's **Server > Multiplayer** tab turns its settings into `tes3x net serve` options (see
 [multiplayer](multiplayer-server.md#worlds-in-the-gui)). This table holds the settings of this PC;
 each world's own are in `world.toml` in its folder under `paths.worlds` (below). The server runs
 with `--world` set to the world's folder and `--key` to `server.key` in the worlds folder.
@@ -122,7 +122,7 @@ Command-line use of the server reads neither file.
 
 ### `[content]`
 
-The GUI's **Content** workspace saves its independent [content server](content.md) settings here.
+The GUI's **Server > Builds** tab saves its independent [content server](content.md) settings here.
 The CLI `tes3x content serve` uses its own options and does not read this table.
 
 | Key | Type | Default | Meaning |

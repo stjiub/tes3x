@@ -6,12 +6,12 @@ launched normally. Multiplayer servers and content servers have separate saved a
 
 ## Host builds from the GUI
 
-Open **Content** in the GUI. Turn on **Always share every completed build** to publish every
+Open **Server > Builds** in the GUI. Turn on **Always share every completed build** to publish every
 `deploy` folder under the configured `paths.build_root` (normally `build`). New builds appear
 after the server's next library scan. You can also use **Add completed build** to publish a
 particular deploy folder. The list shows each build's revision and source folder. Drag the divider
 below the build list to give builds or recent activity more space. Use **Start** at the top of
-Content to host it independently of the multiplayer server. The status shows **Starting** while
+Builds to host it independently of the multiplayer server. The status shows **Starting** while
 new build revisions are copied, then **Running** when the server is ready.
 
 The **Revisions** tab lists every published revision, newest first. **Edit** changes an entry's
@@ -21,9 +21,8 @@ tab lists approved Xboxes and those waiting for approval; select one and choose 
 **Revoke**. Changes made there apply to a running server. **Access** chooses a private or public
 library, and **Per Xbox** caps each console's download rate.
 
-Turn on **Start content server with multiplayer server** to start the local content server when
-the GUI starts a local multiplayer server. The two servers stop independently. The GUI's bottom
-status bar shows both server states on every tab, including when one has stopped unexpectedly.
+Turn on **Share builds when the multiplayer server starts** to start the local content server when
+the GUI starts a local multiplayer server. The two servers stop independently.
 
 Only completed pipeline outputs are published. Publishing copies a revision to the content
 server's state folder so that an active download keeps reading the same files after a profile is

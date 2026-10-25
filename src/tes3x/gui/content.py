@@ -38,7 +38,7 @@ class ContentPage(QWidget):
         top.addWidget(self.stop_button)
         top.addStretch()
         layout.addLayout(top)
-        layout.addWidget(QLabel("Content library"))
+        layout.addWidget(QLabel("Build library"))
         form = QFormLayout()
         self.all_builds = QCheckBox("Always share every completed build")
         self.all_builds.setToolTip("Publishes deploy folders under the configured build root "
@@ -58,7 +58,7 @@ class ContentPage(QWidget):
         self.client_rate.setRange(0, 10000)
         self.client_rate.setSuffix(" Mbit/s")
         self.client_rate.setSpecialValueText("Unlimited")
-        self.with_multiplayer = QCheckBox("Start content server with multiplayer server")
+        self.with_multiplayer = QCheckBox("Share builds when the multiplayer server starts")
         self.with_multiplayer.setToolTip("Starts this library when a local multiplayer server "
                                         "starts. Each server still stops independently.")
         form.addRow("Library", self.all_builds)

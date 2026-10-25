@@ -1512,7 +1512,8 @@ order = 10
         window = self.window(config=config)
         content = window.content_page
         server = window.server_page
-        window.workspace_bar.setCurrentIndex(3)
+        window.workspace_bar.setCurrentIndex(2)
+        self.assertIs(window.server_tabs.currentWidget(), content)
         window.show()
         QApplication.processEvents()
         self.assertEqual(content.splitter.orientation(), Qt.Orientation.Vertical)
