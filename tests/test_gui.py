@@ -1512,8 +1512,6 @@ order = 10
         window = self.window(config=config)
         content = window.content_page
         server = window.server_page
-        self.assertEqual(window.content_state_label.text(), "Content: Stopped")
-        self.assertEqual(window.multiplayer_state_label.text(), "Multiplayer: Stopped")
         window.workspace_bar.setCurrentIndex(3)
         window.show()
         QApplication.processEvents()
@@ -1523,7 +1521,7 @@ order = 10
         self.assertTrue(tomllib.loads(config.read_text(encoding="utf-8"))["content"]
                         ["with_multiplayer"])
         content.set_status("Starting… copying new builds")
-        self.assertIn("Starting", window.content_state_label.text())
+        self.assertIn("Starting", content.status.text())
         server.process = MagicMock()
         server.content_autostart_pending = True
         server.set_status("Starting…")
@@ -1531,7 +1529,7 @@ order = 10
             server.server_started()
             server.server_started()
         self.assertEqual(start.call_count, 1)
-        self.assertEqual(window.multiplayer_state_label.text(), "Multiplayer: Running")
+        self.assertTrue(server.status.text().startswith("Running"))
         server.process = None
 
     def test_content_revisions_and_xboxes(self):

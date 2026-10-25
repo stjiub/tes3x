@@ -527,7 +527,6 @@ class ContentPage(QWidget):
                                   "border-radius: 4px; padding: 4px 10px;")
         self.start_button.setEnabled(self.process is None)
         self.stop_button.setEnabled(self.process is not None)
-        self.window.update_server_status()
 
     def stop(self):
         if self.process is not None:

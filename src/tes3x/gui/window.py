@@ -216,11 +216,6 @@ class ProfileWindow(QMainWindow):
         layout.addWidget(self.body_split)
         self.setCentralWidget(body)
         self.setStatusBar(StatusBar())
-        self.multiplayer_state_label = QLabel()
-        self.content_state_label = QLabel()
-        self.statusBar().addPermanentWidget(self.multiplayer_state_label)
-        self.statusBar().addPermanentWidget(self.content_state_label)
-        self.update_server_status()
         self.counts = QLabel()
         self.counts.setContentsMargins(0, 0, 8, 0)
         self.build_state_label = QLabel()
@@ -955,20 +950,6 @@ class ProfileWindow(QMainWindow):
             event.accept()
         else:
             event.ignore()
-
-    def update_server_status(self):
-        if not hasattr(self, "multiplayer_state_label"):
-            return
-        for label, name, page in ((self.multiplayer_state_label, "Multiplayer", self.server_page),
-                                  (self.content_state_label, "Content", self.content_page)):
-            state = page.status.text()
-            color = ("#2e7d32" if state.startswith(("Running", "Connected")) else
-                     "#b26a00" if state.startswith(("Starting", "Stopping", "Connecting"))
-                     else "#c62828")
-            label.setText(f"{name}: {state.split(':', 1)[0].split('…', 1)[0]}")
-            label.setToolTip(state)
-            label.setStyleSheet(f"background: {color}; color: white; font-weight: bold; "
-                                "border-radius: 4px; padding: 2px 8px;")
 
     def ask_profile_name(self, title, default=""):
         name, ok = QInputDialog.getText(self, title, "Profile name", text=default)

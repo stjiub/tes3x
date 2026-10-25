@@ -2055,7 +2055,6 @@ class ServerPage(QWidget):
         self.status.setText(text)
         self.status.setStyleSheet(f"background: {color}; color: white; font-weight: bold; "
                                   "border-radius: 4px; padding: 4px 10px;")
-        self.window.update_server_status()
 
     def mode_changed(self, *_args):
         remote = self.mode.currentData() == "remote"
