@@ -343,15 +343,23 @@ static char __cdecl return_click(void *owner, u32 id, int d0, int d1, void *sour
     return 1;
 }
 
+static char typing_shown[JOIN_NAME + 2]; /* the box's line; empty until the keyboard is up */
+
 static void typing_text(u8 *menu, const char *text)
 {
     char line[JOIN_NAME + 2];
-    u32 i;
+    u32 i, n;
 
     for (i = 0; text[i] && i < JOIN_NAME; i++)
         line[i] = typing == TYPE_PASSWORD ? '*' : text[i];
     line[i++] = '_';
     line[i] = 0;
+    /* a layout every frame upsets the pad's press and release on the keyboard */
+    for (n = 0; line[n] && line[n] == typing_shown[n]; n++)
+        ;
+    if (line[n] == typing_shown[n])
+        return;
+    copy((u8 *)typing_shown, (const u8 *)line, i + 1);
     ((fn_set_text)TES3X_NET_WIDGET_SET_TEXT)(menu_part(menu, "TES3X_TypeText"), line);
     ((fn_layout)TES3X_NET_PERFORM_LAYOUT)(menu, 1);
 }
@@ -552,6 +560,7 @@ static void typing_show(u8 *menu, u32 on)
     if (on) {
         bottom = *(float *)(menu + UI_ALIGN_Y);
         *(float *)(menu + UI_ALIGN_Y) = TYPE_ALIGN_Y;
+        typing_shown[0] = 0;
         typing_text(menu, "");
     } else {
         *(float *)(menu + UI_ALIGN_Y) = bottom;
