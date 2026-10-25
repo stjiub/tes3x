@@ -2272,11 +2272,16 @@ def find_info_arena_sites(x):
 LINK_NAME_STRINGS = (("TES3NPC.cpp", 0x27C), ("TES3Creature.cpp", 0x170),
                      ("TES3Creature.cpp", 0x807), ("TES3Data.cpp", 0x16AB),
                      ("TES3Data.cpp", 0x1A58))
+# Of those, the base records' loaders: each allocates its 12-byte item stack just before the ID
+# and appends it to the inventory list just after.
+LINK_BASE_INVENTORIES = (0, 1, 3)
+LINK_STACK_ALLOCATE = re.compile(rb"\x6a\x0c\xb9....\xe8", re.S)
+ITERATED_LIST_APPEND = b"\x56\x6a\x00\x68"
 
 
 def find_link_names_sites(x):
-    """The NPC constructor's five-name allocation, the inventory item ID allocations, and
-    Memory_Heap::Free's prologue."""
+    """The NPC constructor's five-name allocation, the inventory item ID allocations, the base
+    inventories' stack allocations and list appends, and Memory_Heap::Free's prologue."""
     data = bytes(x.data)
 
     def source(name):
@@ -2304,12 +2309,35 @@ def find_link_names_sites(x):
     if len(tagged) != 1:
         raise PatchError("link-name-arena: item ID allocations call different functions")
 
+    stacks, appends = [], []
+    for index in LINK_BASE_INVENTORIES:
+        off = x.va_to_off(strings[index])
+        hits = list(LINK_STACK_ALLOCATE.finditer(data, off - 0x50, off))
+        if not hits:
+            raise PatchError("link-name-arena: no item stack allocation before 0x%08X"
+                             % strings[index])
+        stacks.append(x.off_to_va(hits[-1].end() - 1))
+        call = data.find(b"\xe8", off + 5, off + 0x40)
+        while call >= 0:
+            target = x.va_to_off(tes3x_inject.call_target(x, x.off_to_va(call)))
+            if target is not None and data[target:target + 4] == ITERATED_LIST_APPEND:
+                break
+            call = data.find(b"\xe8", call + 1, off + 0x40)
+        if call < 0:
+            raise PatchError("link-name-arena: no list append after 0x%08X" % strings[index])
+        appends.append(x.off_to_va(call))
+    append = {tes3x_inject.call_target(x, site) for site in appends}
+    if len(append) != 1:
+        raise PatchError("link-name-arena: inventory appends call different functions")
+
     free = find_heap_function(x, "free")[0]
     off = x.va_to_off(free)
     if data[off:off + 6] != b"\x55\x8b\xec\x83\xec\x14":
         raise PatchError("link-name-arena: Memory_Heap::Free prologue changed")
     return {"names": names_site, "zeroed": zeroed, "strings": strings,
-            "tagged": tagged.pop(), "free": free}
+            "tagged": tagged.pop(), "stacks": stacks,
+            "allocate": find_heap_function(x, "allocate")[0], "appends": appends,
+            "append": append.pop(), "free": free}
 
 
 # DialogueInfo::findDialogue: walk NonDynamicData::dialogues (+0x48), then each topic's chain.
@@ -2893,6 +2921,8 @@ LOCATORS = {
     "link-zeroed": lambda image: find_link_names_sites(image)["zeroed"],
     "link-tagged": lambda image: find_link_names_sites(image)["tagged"],
     "link-free": lambda image: find_link_names_sites(image)["free"],
+    "link-allocate": lambda image: find_link_names_sites(image)["allocate"],
+    "link-append": lambda image: find_link_names_sites(image)["append"],
     "dialogue-owner-find": lambda image: find_dialogue_owner_sites(image)["find"],
     "dialogue-owner-data-handler": lambda image: find_dialogue_owner_sites(image)["data_handler"],
     "xapi-heap-alloc": find_xapi_heap_alloc,

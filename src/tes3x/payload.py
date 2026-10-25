@@ -880,9 +880,13 @@ def _bind_linknames(b):
           f"tagged {hexva(locate('link-tagged'))}, free {hexva(free)}")
     define("LINK_ZEROED", hexva(locate("link-zeroed")))
     define("LINK_TAGGED", hexva(locate("link-tagged")))
+    define("LINK_ALLOCATE", hexva(locate("link-allocate")))
+    define("LINK_APPEND", hexva(locate("link-append")))
     define("LINK_FREE_RESUME", hexva(free + 6))
     wanted["link_zeroed"] = ("_tes3x_link_names_zeroed",)
     wanted["link_tagged"] = ("_tes3x_link_names_tagged",)
+    wanted["link_stack"] = ("_tes3x_link_names_stack",)
+    wanted["link_append"] = ("_tes3x_link_names_append",)
     wanted["link_free"] = ("_tes3x_link_names_free",)
 
 

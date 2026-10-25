@@ -1048,19 +1048,23 @@ def _info_name_arena(x, value, ctx):
 def _link_name_arena(x, value, ctx):
     """Put NPC link names and inventory item IDs in the demand-paged arena."""
     hooks = ctx.get("hooks", {})
-    names = ("link_zeroed", "link_tagged", "link_free")
+    names = ("link_zeroed", "link_tagged", "link_stack", "link_append", "link_free")
     missing = [name for name in names if not hooks.get(name)]
     if missing:
         raise PatchError("link-name-arena: needs `payload` first, with %s in its manifest"
                          % ", ".join(missing))
     sites = find_link_names_sites(x)
-    zeroed, tagged, free = (int(str(hooks[name]), 16) for name in names)
+    zeroed, tagged, stack, append, free = (int(str(hooks[name]), 16) for name in names)
     edits = []
     was, off = x.patch_call(sites["names"], zeroed)
     edits.append((off, 5, "NPC link names 0x%08X: 0x%08X -> 0x%08X" % (sites["names"], was, zeroed)))
     for site in sites["strings"]:
         was, off = x.patch_call(site, tagged)
         edits.append((off, 5, "item ID 0x%08X: 0x%08X -> 0x%08X" % (site, was, tagged)))
+    for what, target, group in (("item stack", stack, "stacks"), ("inventory node", append, "appends")):
+        for site in sites[group]:
+            was, off = x.patch_call(site, target)
+            edits.append((off, 5, "%s 0x%08X: 0x%08X -> 0x%08X" % (what, site, was, target)))
     off = x.va_to_off(sites["free"])
     x.data[off:off + 6] = b"\xe9" + struct.pack("<i", free - (sites["free"] + 5)) + b"\x90"
     edits.append((off, 6, "Memory_Heap::Free 0x%08X -> 0x%08X" % (sites["free"], free)))

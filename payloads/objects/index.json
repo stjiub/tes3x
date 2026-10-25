@@ -93,6 +93,8 @@
     "LEAN_NO_REBOOT": null,
     "LEAN_RECORD_TAG": null,
     "LEVEL_LAYOUT": null,
+    "LINK_ALLOCATE": null,
+    "LINK_APPEND": null,
     "LINK_FREE_RESUME": null,
     "LINK_TAGGED": null,
     "LINK_ZEROED": null,
@@ -552,8 +554,8 @@
       "sha256": "23b3d613c68c29af805ec8cef3dee983d9d01e24bf76bd11bed7ed6145b02f2d"
     },
     "tes3xlinknames.c": {
-      "digest": "36b7315f71ecb56526521975cb955384c75e474939fbe2bf43090d0e1f9feca7",
-      "sha256": "abd88cdb488112756bc6f6a9011df825249dfaa17fdafd13db0344e3c576928c"
+      "digest": "662d45e7430bc406b6c16342f038e73a351fd044459ab822b43f75eba8fe4d41",
+      "sha256": "6569d352b4a4e0464300241bc1ad0d65a7942572d2ad05308b622dffcdd9a569"
     },
     "tes3xlog.c": {
       "digest": "59321b2696af7e15ad652017123e785e39c09f02bf2601b4ad2764f28b734d44",

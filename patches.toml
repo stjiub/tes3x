@@ -731,7 +731,7 @@ category = "compat"
 channel = "dev"
 selection = "preset"
 source = "tes3xlinknames.c"
-summary = "Page NPCs' race, class, faction, head and hair names and inventory item IDs outside the engine heap until records are linked."
+summary = "Page NPCs' race, class, faction, head and hair names, inventory item IDs and the base records' inventories outside the engine heap."
 
 [[patch]]
 name = "dialogue-owner"

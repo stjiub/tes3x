@@ -24,8 +24,9 @@ No official releases yet. The first public release is in preparation.
   each further block a header in the heap. With the Tamriel Rebuilt masters on a 128 MB console
   4.4 MB more memory stays free. See [the patch notes](patches/pool-grow.md).
 - New patch `link-name-arena`: NPCs' race, class, faction, head and hair names and inventory item
-  IDs wait for linking in memory paged to disk instead of the engine heap. With the Tamriel
-  Rebuilt masters on a 128 MB console 4.2 MB more memory stays free. See
+  IDs wait for linking in memory paged to disk instead of the engine heap, and NPC, creature and
+  container records keep their inventories there. With the Tamriel Rebuilt masters on a 128 MB
+  console 4.2 MB more memory stays free after loading, and 2.5 MB more in a new game. See
   [the patch notes](patches/link-name-arena.md).
 - `video-arena`: `[Xbox] VideoMemoryKB` now also shrinks the texture and vertex buffer arena,
   down to 1,024 KB, on a 64 MB console as well as on 128 MB. It still grows the arena only with
