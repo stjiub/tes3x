@@ -17,6 +17,7 @@ import re
 import shutil
 import struct
 import subprocess
+from types import SimpleNamespace
 
 import tes3x.inject as tes3x_inject
 from tes3x.link import LinkError, link, write_map, write_pe
@@ -337,6 +338,1229 @@ class Bindings:
                 for name, (array, items) in self.values.items()}
 
 
+_BINDERS = []
+
+
+def binder(*sources):
+    """Register a function that binds engine values for any of the given payload sources."""
+    def register(function):
+        _BINDERS.append((sources, function))
+        return function
+    return register
+
+
+@binder("tes3xarch.c")
+def _bind_arch(b):
+    image, define, wanted = b.image, b.define, b.wanted
+    arch_site = b.arch_site = int(os.environ.get("ARCH_SITE", hexva(archive_load_site(image))), 16)
+    load = tes3x_inject.call_target(image, arch_site)
+    print(f"archive hook: call site {hexva(arch_site)} -> Archive::Load {hexva(load)}")
+    define("ARCHIVE_LOAD", hexva(load))
+    wanted["archive_load"] = ("_tes3x_archive_hook",)
+
+
+@binder("tes3xscript.c")
+def _bind_script(b):
+    define, locate, wanted, extra = b.define, b.locate, b.wanted, b.extra
+    run_function, table = locate("run-function"), locate("command-table")
+    base = define_value("tes3xscript.c", "TES3X_OPCODE_BASE")
+    ceil = define_value("tes3xscript.c", "TES3X_OPCODE_CEIL")
+    print(f"script hook: RunFunction {hexva(run_function)}, table {hexva(table)}, "
+          f"opcodes [{base}, {ceil})")
+    define("RUN_FUNCTION", hexva(run_function))
+    define("COMMAND_TABLE", hexva(table))
+    wanted["script_dispatch"] = ("_tes3x_script_hook",)
+    extra["script_dispatch"] = {"opcode_base": base, "opcode_ceil": ceil}
+
+
+@binder("tes3xmwse.c")
+def _bind_mwse(b):
+    image, names, address = b.image, b.names, b.address
+    define, locate, wanted = b.define, b.locate, b.wanted
+    if "tes3xscript.c" not in names:
+        raise PayloadError("tes3xmwse.c requires tes3xscript.c")
+    run_function = locate("run-function")
+    decode = locate("script-decode")
+    script_ip = locate("script-ip")
+    script_opcode = locate("script-opcode")
+    game_instance = locate("game-instance")
+    world = locate("world-controller")
+    print(f"legacy MWSE: Decode {hexva(decode)}, IP {hexva(script_ip)}, "
+          f"opcode {hexva(script_opcode)}, Game {hexva(game_instance)}, World {hexva(world)}")
+    define("SCRIPT_DECODE", hexva(decode))
+    define("SCRIPT_IP", hexva(script_ip))
+    define("SCRIPT_OPCODE", hexva(script_opcode))
+    define("MWSE_DESTINATION", hexva(locate("script-destination")))
+    define("MWSE_TARGET_ROT", hexva(locate("script-rotation")))
+    define("MWSE_SECOND_OBJECT", hexva(locate("script-text")))
+    restore_site = find_script_ip_restore_call(image, run_function, script_ip)
+    define("MWSE_IP_RESTORE_RETURN", hexva(restore_site + 5))
+    define("GAME_INSTANCE", hexva(game_instance))
+    define("MWSE_WORLD", hexva(world))
+    define("MWSE_DATA_HANDLER", address("DATA_HANDLER", DATA_HANDLER))
+    find_reference = dict(PLACE_ADDRESSES)["FIND_REFERENCE"]
+    define("MWSE_FIND_REFERENCE", address("FIND_REFERENCE", find_reference))
+    resolve_object = dict(SPELL_ADDRESSES)["RESOLVE_OBJECT"]
+    inventory_add = dict(CONTAINER_ADDRESSES)["INVENTORY_ADD"]
+    inventory_remove = dict(CONTAINER_ADDRESSES)["INVENTORY_REMOVE"]
+    define("MWSE_RESOLVE_OBJECT", address("RESOLVE_OBJECT", resolve_object))
+    define("MWSE_INVENTORY_ADD", address("INVENTORY_ADD", inventory_add))
+    define("MWSE_INVENTORY_REMOVE", address("INVENTORY_REMOVE", inventory_remove))
+    define("MWSE_INVENTORY_ITEM_DATA", address("INVENTORY_ITEM_DATA", 0x000E8880))
+    define("MWSE_ACTOR_EQUIPPED", address("ACTOR_EQUIPPED", 0x000E7250))
+    define("MWSE_WEAR_ITEM", address("WEAR_ITEM", 0x0015E6B0))
+    define("MWSE_DROP_ITEM", address("DROP_ITEM", DROP_ITEM))
+    define("MWSE_START_COMBAT", address("START_COMBAT", 0x001629F0))
+    define("MWSE_GET_SPELL_LIST", address("GET_SPELL_LIST", 0x0015A5A0))
+    define("MWSE_SPELL_ADD_ID", address("SPELL_ADD_ID", 0x000FCC60))
+    define("MWSE_SPELL_REMOVE", address("SPELL_REMOVE", 0x000F9A30))
+    define("MWSE_FORCE_CAST", address("FORCE_CAST", 0x00162950))
+    for name, default in SPAWN_ADDRESSES:
+        if name in ("CREATE_REFERENCE", "CELL_INSERT", "CELL_NODE", "CELL_ACTIVATORS",
+                    "ATTACH_SCENE", "UPDATE_LIGHTING"):
+            define("MWSE_" + name, address(name, default))
+    define("MWSE_REF_MODIFIED", address("REF_MODIFIED", REF_MODIFIED))
+    define("MWSE_ADD_MOB", address("ADD_MOB", dict(ACTOR_ADDRESSES)["ADD_MOB"]))
+    wanted["mwse_fixup"] = ("@tes3x_mwse_fixup_hook@8", "_tes3x_mwse_fixup_hook")
+
+
+@binder("tes3xini.c")
+def _bind_ini(b):
+    define, locate = b.define, b.locate
+    ini_get = os.environ.get("INI_GET") or hexva(locate("ini-get-string"))
+    ini_path = os.environ.get("INI_PATH") or hexva(locate("ini-path"))
+    print(f"ini reader {ini_get}, ini path {ini_path}")
+    define("INI_GET_STRING", ini_get)
+    define("INI_PATH", ini_path)
+
+
+@binder("tes3xsaves.c")
+def _bind_saves(b):
+    image, define, locate = b.image, b.define, b.locate
+    save_game = hexva(locate("save-game"))
+    save_this = hexva(locate("save-this-ptr"))
+    save_owner, save_owner_off, save_state_off = find_save_allowed_context(image)
+    save_owner = hexva(save_owner)
+    _transition_calls, cell_change, companions = find_transition_calls(image)
+    print(f"autosave hook: SaveGame {save_game}, owner pointer {save_this}")
+    print(f"save gate: owner {save_owner} + 0x{save_owner_off:X} + 0x{save_state_off:X}")
+    print(f"transition hooks: cell change {hexva(cell_change)}, companions {hexva(companions)}")
+    define("SAVE_GAME", save_game)
+    define("SAVE_THIS_PTR", save_this)
+    define("SAVE_GATE_OWNER", save_owner)
+    define("SAVE_GATE_OWNER_OFFSET", hex(save_owner_off))
+    define("SAVE_GATE_STATE_OFFSET", hex(save_state_off))
+    define("CELL_CHANGE", hexva(cell_change))
+    define("CELL_CHANGE_COMPANIONS", hexva(companions))
+
+
+@binder("tes3xprefs.c")
+def _bind_prefs(b):
+    image, define, locate = b.image, b.define, b.locate
+    site = locate("preferences-load")
+    load = hexva(tes3x_inject.call_target(image, site))
+    table = hexva(locate("controls-table"))
+    print(f"preferences hook: controls load {load}, bindings {table}")
+    define("CONTROLS_LOAD", load)
+    define("CONTROLS_TABLE", table)
+
+
+@binder("tes3xprof.c")
+def _bind_prof(b):
+    print("profiler: RDTSC region timing, targets chosen at patch time")
+
+
+@binder("tes3xheap.c")
+def _bind_heap(b):
+    define, locate, wanted = b.define, b.locate, b.wanted
+    allocate, free = hexva(locate("heap-allocate")), hexva(locate("heap-free"))
+    heap = hexva(locate("heap-object"))
+    print(f"heap census: Allocate {allocate}, Free {free}, heap {heap}")
+    define("HEAP_ALLOCATE", allocate)
+    define("HEAP_FREE", free)
+    define("HEAP_OBJECT", heap)
+    wanted["heap_allocate"] = ("_tes3x_heap_alloc_hook",)
+    wanted["heap_allocate_wrapped"] = ("_tes3x_heap_alloc_wrapped_hook",)
+    wanted["heap_allocate_new"] = ("_tes3x_heap_alloc_new_hook",)
+    wanted["heap_allocate_pool"] = ("_tes3x_heap_alloc_pool_hook",)
+    wanted["heap_free"] = ("_tes3x_heap_free_hook",)
+
+
+@binder("tes3xmem.c")
+def _bind_mem(b):
+    image, define, locate, wanted = b.image, b.define, b.locate, b.wanted
+    heap_alloc, heap_free = hexva(locate("xapi-heap-alloc")), hexva(locate("xapi-heap-free"))
+    text = next(s for s in image.sections if s.name == ".text")
+    print(f"memory census: RtlAllocateHeap {heap_alloc}, RtlFreeHeap {heap_free}")
+    define("MEM_HEAP_ALLOC", heap_alloc)
+    define("MEM_HEAP_FREE", heap_free)
+    define("MEM_CODE_START", hexva(text.va))
+    define("MEM_CODE_END", hexva(text.va + text.vsize))
+    wanted["mem_heap_alloc"] = ("_tes3x_mem_heap_alloc@12",)
+    wanted["mem_heap_free"] = ("_tes3x_mem_heap_free@12",)
+
+
+@binder("tes3xpager.c")
+def _bind_pager(b):
+    print("pager: synthetic test on the console command tes3xpager")
+
+
+@binder("tes3xnet.c")
+def _bind_net(b):
+    names, wanted = b.names, b.wanted
+    if "tes3xdiag.c" not in names:
+        raise PayloadError("tes3xnet.c requires tes3xdiag.c for its frame hook")
+    wanted["net"] = ("_tes3x_net_frame",)
+
+
+@binder("tes3xmulti.c")
+def _bind_multi(b):
+    image, names, address = b.image, b.names, b.address
+    define, locate, wanted = b.define, b.locate, b.wanted
+    if "tes3xnet.c" not in names:
+        raise PayloadError("tes3xmulti.c requires tes3xnet.c")
+    world = hexva(locate("world-controller"))
+    data_handler = address("DATA_HANDLER", DATA_HANDLER)
+    print(f"network: [Xbox] NetAddress, UDP 26500, WorldController {world}, "
+          f"DataHandler {data_handler}")
+    define("NET_WORLD", world)
+    define("NET_DATA_HANDLER", data_handler)
+    for name in ("COMPILE_RUN", "FIND_MENU", "UI_ID", "TRIGGER_EVENT", "FIND_CHILD",
+                 "CREATE_WIDGET", "VK_BUTTON", "WIDGET_SET_TEXT", "SET_PROP",
+                 "PERFORM_LAYOUT", "NAV_UP_ID", "NAV_DOWN_ID", "GET_PROP"):
+        define("NET_" + name, address(name, dict(CONSOLE_ADDRESSES)[name]))
+    for name, default in NET_UI_ADDRESSES:
+        define("NET_" + name, address(name, default))
+    define("NET_SERVICE_ACTOR", address("SERVICE_ACTOR", SERVICE_ACTOR))
+    define("NET_LEVELUP_MENU", address("LEVELUP_MENU", LEVELUP_MENU))
+    pad_a, pad_x = (int(address(n, v), 16) for n, v in (("REST_PAD_A", REST_PAD_A),
+                                                     ("REST_PAD_X", REST_PAD_X)))
+    rest_buttons = (tes3x_inject.call_target(image, pad_a + 0x60),
+                    tes3x_inject.call_target(image, pad_a + 0x85),
+                    tes3x_inject.call_target(image, pad_x + 0x56))
+    heal_hours = tes3x_inject.call_target(image, rest_buttons[2] + 4)
+    hours_at = image.va_to_off(rest_buttons[0] + 23)
+    if bytes(image.data[hours_at:hours_at + 3]) != bytes.fromhex("668b0d"):
+        raise PayloadError(f"rest button {hexva(rest_buttons[0])}: not the rest menu's")
+    define("NET_REST_BUTTONS", "{" + ",".join(hexva(b) for b in rest_buttons) + "}")
+    define("NET_REST_HEAL_HOURS", hexva(heal_hours))
+    define("NET_REST_HOURS_ID", hexva(struct.unpack_from("<I", image.data, hours_at + 3)[0]))
+    for name, default in (PLACE_ADDRESSES + SPELL_ADDRESSES + SPAWN_ADDRESSES
+                          + CONTAINER_ADDRESSES + ACTOR_ADDRESSES + IDENTITY_ADDRESSES):
+        define("NET_" + name, address(name, default))
+    journal_add = int(address("JOURNAL_ADD", 0x000FFE00), 16)
+    journal_toast_calls = [s for s in find_call_sites(image, journal_add)
+                           if bytes(image.data[image.va_to_off(s) + 5:
+                                               image.va_to_off(s) + 9]) == b"\x84\xc0\x0f\x84"]
+    if len(journal_toast_calls) != 1:
+        raise PayloadError(f"Journal toast: {len(journal_toast_calls)} calls, expected 1")
+    define("NET_JOURNAL_TOAST_CALL", hexva(journal_toast_calls[0]))
+    spell_hit = int(address("SPELL_HIT", SPELL_HIT), 16)
+    sites = find_call_sites(image, spell_hit)
+    if len(sites) != SPELL_HIT_SITES:
+        raise PayloadError(f"spellHit {hexva(spell_hit)}: {len(sites)} call sites, expected "
+                           f"{SPELL_HIT_SITES}")
+    define("NET_SPELL_HIT", hexva(spell_hit))
+    define("NET_SPELL_HIT_SITES", "{" + ",".join(hexva(s) for s in sites) + "}")
+    add_object = int(address("ADD_NEW_OBJECT", 0x0010CA40), 16)
+    sites = find_call_sites(image, add_object)
+    if len(sites) != ADD_NEW_OBJECT_SITES:
+        raise PayloadError(f"addNewObject {hexva(add_object)}: {len(sites)} call sites, "
+                           f"expected {ADD_NEW_OBJECT_SITES}")
+    define("NET_ADD_NEW_OBJECT_SITES", "{" + ",".join(hexva(s) for s in sites) + "}")
+    cast_bolt = int(address("CAST_BOLT", CAST_BOLT), 16)
+    sites = find_call_sites(image, cast_bolt)
+    if len(sites) != 1:
+        raise PayloadError(f"cast bolt {hexva(cast_bolt)}: {len(sites)} call sites, expected 1")
+    define("NET_CAST_BOLT", hexva(cast_bolt))
+    define("NET_CAST_BOLT_SITES", "{" + hexva(sites[0]) + "}")
+    shoot = int(address("SHOOT", SHOOT), 16)
+    slots = [image.off_to_va(m.start()) for m in re.finditer(re.escape(struct.pack("<I", shoot)),
+                                                             bytes(image.data))]
+    if len(slots) != SHOOT_SLOTS or None in slots:
+        raise PayloadError(f"shoot {hexva(shoot)}: {len(slots)} vtable slots, expected "
+                           f"{SHOOT_SLOTS}")
+    hit = int(address("PROJECTILE_ACTOR_HIT", PROJECTILE_ACTOR_HIT), 16)
+    roll = int(address("HIT_ROLL", HIT_ROLL), 16)
+    roll_sites = [s for s in find_call_sites(image, roll) if hit <= s < hit + 0x600]
+    if len(roll_sites) != 1:
+        raise PayloadError(f"projectile hit roll: {len(roll_sites)} call sites, expected 1")
+    define("NET_SHOOT", hexva(shoot))
+    define("NET_SHOOT_SLOTS", "{" + ",".join(hexva(s) for s in slots) + "}")
+    player_shoot = int(address("PLAYER_SHOOT", PLAYER_SHOOT), 16)
+    body = bytes(image.data[image.va_to_off(player_shoot):][:0x40])
+    jumps = [i for i in range(len(body) - 4) if body[i] == 0xE9 and
+             player_shoot + i + 5 + struct.unpack_from("<i", body, i + 1)[0] == shoot]
+    slots = [image.off_to_va(m.start()) for m in re.finditer(
+        re.escape(struct.pack("<I", player_shoot)), bytes(image.data))]
+    if len(jumps) != 1 or len(slots) != 1 or None in slots:
+        raise PayloadError(f"player shoot {hexva(player_shoot)}: {len(jumps)} jumps to shoot, "
+                           f"{len(slots)} vtable slots, expected 1 and 1")
+    define("NET_PLAYER_SHOOT", hexva(player_shoot))
+    define("NET_PLAYER_SHOOT_SLOT", hexva(slots[0]))
+    ai_step = int(address("AI_STEP", AI_STEP), 16)
+    slots = [image.off_to_va(m.start()) for m in re.finditer(
+        re.escape(struct.pack("<I", ai_step)), bytes(image.data))]
+    if len(slots) != AI_STEP_SLOTS or None in slots:
+        raise PayloadError(f"AI step {hexva(ai_step)}: {len(slots)} vtable slots, expected "
+                           f"{AI_STEP_SLOTS}")
+    define("NET_AI_STEP", hexva(ai_step))
+    define("NET_AI_STEP_SLOTS", "{" + ",".join(hexva(s) for s in slots) + "}")
+    define("NET_NOCK", address("NOCK", NOCK))
+    get_bounty = int(address("GET_BOUNTY", GET_BOUNTY), 16)
+    if bytes(image.data[image.va_to_off(get_bounty):][:7]) != bytes.fromhex("8b899805000068"):
+        raise PayloadError(f"get bounty {hexva(get_bounty)}: not MobilePlayer::getBounty")
+    define("NET_GET_BOUNTY", hexva(get_bounty))
+    hit_stun = int(address("HIT_STUN", dict(PLACE_ADDRESSES)["HIT_STUN"]), 16)
+    sites = find_call_sites(image, hit_stun)
+    if len(sites) != 2:
+        raise PayloadError(f"hit stun/crime {hexva(hit_stun)}: {len(sites)} call sites, "
+                           "expected 2")
+    define("NET_HIT_STUN_SITES", "{" + ",".join(hexva(s) for s in sites) + "}")
+    define("NET_HIT_ROLL", hexva(roll))
+    define("NET_SHOT_ROLL_SITES", "{" + hexva(roll_sites[0]) + "}")
+    target = int(address("ACTIVATION_TARGET", ACTIVATION_TARGET), 16)
+    sites = find_call_sites(image, target)
+    if len(sites) != 1:
+        raise PayloadError(f"activation target: {len(sites)} call sites, expected 1")
+    define("NET_ACTIVATION_TARGET", hexva(target))
+    define("NET_ACTIVATION_TARGET_SITES", "{" + hexva(sites[0]) + "}")
+    activate = int(address("REF_ACTIVATE", dict(CONSOLE_ADDRESSES)["REF_ACTIVATE"]), 16)
+    sites = [s for s in find_call_sites(image, activate) if target <= s < target + 0x400]
+    if len(sites) != 1:
+        raise PayloadError(f"player activation: {len(sites)} call sites, expected 1")
+    define("NET_REF_ACTIVATE", hexva(activate))
+    define("NET_PLAYER_ACTIVATE_SITES", "{" + hexva(sites[0]) + "}")
+    control = int(address("PLAYER_CONTROL", PLAYER_CONTROL), 16)
+    slots = [image.off_to_va(m.start()) for m in re.finditer(
+        re.escape(struct.pack("<I", control)), bytes(image.data))]
+    if len(slots) != 1 or None in slots:
+        raise PayloadError(f"player control {hexva(control)}: {len(slots)} vtable slots, "
+                           "expected 1")
+    define("NET_PLAYER_CONTROL", hexva(control))
+    define("NET_PLAYER_CONTROL_SLOT", hexva(slots[0]))
+    modified = int(address("REF_MODIFIED", REF_MODIFIED), 16)
+    slots = [image.off_to_va(m.start()) for m in re.finditer(
+        re.escape(struct.pack("<I", modified)), bytes(image.data))]
+    if len(slots) != 1 or None in slots:
+        raise PayloadError(f"Reference::setObjectModified {hexva(modified)}: {len(slots)} "
+                           "vtable slots, expected 1")
+    define("NET_REF_MODIFIED", hexva(modified))
+    define("NET_REF_MODIFIED_SLOT", hexva(slots[0]))
+    leveled = int(address("LEVELED_SPAWN", LEVELED_SPAWN), 16)
+    slots = [image.off_to_va(m.start()) for m in re.finditer(
+        re.escape(struct.pack("<I", leveled)), bytes(image.data))]
+    if len(slots) != 1 or None in slots:
+        raise PayloadError(f"LeveledCreature spawn {hexva(leveled)}: {len(slots)} vtable "
+                           "slots, expected 1")
+    define("NET_LEVELED_SPAWN", hexva(leveled))
+    define("NET_LEVELED_SPAWN_SLOT", hexva(slots[0]))
+    summon = int(address("SUMMON", SUMMON), 16)
+    sites = find_call_sites(image, summon)
+    if len(sites) != 1:
+        raise PayloadError(f"summon {hexva(summon)}: {len(sites)} call sites, expected 1")
+    define("NET_SUMMON", hexva(summon))
+    define("NET_SUMMON_SITES", "{" + hexva(sites[0]) + "}")
+    compile_run = int(address("COMPILE_RUN", dict(CONSOLE_ADDRESSES)["COMPILE_RUN"]), 16)
+    sites = find_call_sites(image, compile_run)
+    if len(sites) != PLAYER_SCRIPTS:
+        raise PayloadError(f"CompileAndRun: {len(sites)} call sites, expected {PLAYER_SCRIPTS}")
+    define("NET_PLAYER_SCRIPT_SITES", "{" + ",".join(hexva(s) for s in sites) + "}")
+    relocate = int(address("RELOCATE", RELOCATE), 16)
+    sites = find_call_sites(image, relocate)
+    if len(sites) != RELOCATE_CALLS:
+        raise PayloadError(f"relocateReference {hexva(relocate)}: {len(sites)} call sites, "
+                           f"expected {RELOCATE_CALLS}")
+    define("NET_RELOCATE", hexva(relocate))
+    define("NET_RELOCATE_SITES", "{" + ",".join(hexva(s) for s in sites) + "}")
+    execute = int(address("SCRIPT_EXECUTE", SCRIPT_EXECUTE), 16)
+    process = int(address("PROCESS_GLOBAL_SCRIPTS", PROCESS_GLOBAL_SCRIPTS), 16)
+    sites = [s for s in find_call_sites(image, execute) if process <= s < process + 0x60]
+    if len(sites) != 1:
+        raise PayloadError(f"Script::execute in processGlobalScripts: {len(sites)} call "
+                           "sites, expected 1")
+    define("NET_SCRIPT_EXECUTE", hexva(execute))
+    define("NET_GLOBAL_SCRIPT_SITES", "{" + hexva(sites[0]) + "}")
+    define("NET_ADD_GLOBAL_SCRIPT", address("ADD_GLOBAL_SCRIPT", ADD_GLOBAL_SCRIPT))
+    define("NET_FIND_SCRIPT", address("FIND_SCRIPT", FIND_SCRIPT))
+    for name, default in (("NPC_SET_AI", NPC_SET_AI), ("CREATURE_SET_AI", CREATURE_SET_AI)):
+        set_ai = int(address(name, default), 16)
+        slots = [image.off_to_va(m.start()) for m in re.finditer(
+            re.escape(struct.pack("<I", set_ai)), bytes(image.data))]
+        if len(slots) != 1 or None in slots:
+            raise PayloadError(f"{name} {hexva(set_ai)}: {len(slots)} vtable slots, "
+                               "expected 1")
+        define(f"NET_{name}", hexva(set_ai))
+        define(f"NET_{name}_SLOT", hexva(slots[0]))
+    drop = int(address("DROP_ITEM", DROP_ITEM), 16)
+    player_mobile = int(address("PLAYER_MOBILE", dict(CONSOLE_ADDRESSES)["PLAYER_MOBILE"]), 16)
+    data = bytes(image.data)
+
+    def after_player_mobile(site):
+        off = image.va_to_off(site - 7)
+        if off is None or data[off] != 0xE8 or data[off + 5:off + 7] not in (b"\x8b\xc8",
+                                                                              b"\x89\xc1"):
+            return False
+        return site - 2 + struct.unpack_from("<i", data, off + 1)[0] == player_mobile
+
+    sites = [s for s in find_call_sites(image, drop) if after_player_mobile(s)]
+    if len(sites) != PLAYER_DROPS:
+        raise PayloadError(f"dropItem on the player: {len(sites)} call sites, expected "
+                           f"{PLAYER_DROPS}")
+    define("NET_DROP_ITEM", hexva(drop))
+    define("NET_PLAYER_DROP_SITES", "{" + ",".join(hexva(s) for s in sites) + "}")
+    save_game = locate("save-game")
+    sites = find_call_sites(image, save_game)
+    if len(sites) != SAVE_CALLS:
+        raise PayloadError(f"SaveGame: {len(sites)} call sites, expected {SAVE_CALLS}")
+    define("NET_SAVE_GAME", hexva(save_game))
+    off = image.va_to_off(save_game)
+    # XCreateSaveGame("U:\", name, OPEN_ALWAYS, 0, path, 0x104), which finds the slot's folder
+    calls = list(re.finditer(rb"\x6a\x00\x6a\x04\x8d\x94\x24....\x52\x68....\xe8(....)",
+                             data[off:off + 0x400], re.S))
+    if len(calls) != 1:
+        raise PayloadError(f"XCreateSaveGame in SaveGame: {len(calls)} calls, expected 1")
+    after = save_game + calls[0].end()
+    define("NET_CREATE_SAVE", hexva(after + struct.unpack("<i", calls[0].group(1))[0]))
+    define("NET_SAVE_SITES", "{" + ",".join(hexva(s) for s in sites) + "}")
+    # The engine's relaunches (New Game, Load) call 0x00336DF0, which keeps the picture on
+    # screen, then XLaunchNewImage("D:\morrowind.xbe", &launch data).
+    launches = set()
+    for m in re.finditer(rb"\xe8(....)\x8d\x44\x24.\x50\x68(....)\xe8(....)", data, re.S):
+        path = image.va_to_off(struct.unpack("<I", m.group(2))[0])
+        if path is None or data[path:path + 17] != b"D:\\morrowind.xbe\0":
+            continue
+        at = image.off_to_va(m.start())
+        launches.add((at + 5 + struct.unpack("<i", m.group(1))[0],
+                      struct.unpack("<I", m.group(2))[0],
+                      at + m.end() - m.start() + struct.unpack("<i", m.group(3))[0]))
+    if len(launches) != 1:
+        raise PayloadError(f"title relaunch: {len(launches)} call sequences, expected 1")
+    persist, engine_path, launch = launches.pop()
+    define("NET_PERSIST_DISPLAY", hexva(persist))
+    define("NET_ENGINE_PATH", hexva(engine_path))
+    define("NET_LAUNCH", hexva(launch))
+    # Exit in the pause menu: MessageBox(sMessage5 (GMST 0x266), Yes, No), then the answer's
+    # callback (push 0x20, push callback), which relaunches D:\Default.xbe.
+    quits = list(re.finditer(rb"\x68\x66\x02\x00\x00\xe8....\x50\xe8.{0,48}?\x6a\x20\x68(....)"
+                             rb"\x8b\xc8", data, re.S))
+    if len(quits) != 1:
+        raise PayloadError(f"quit callback: {len(quits)} sites, expected 1")
+    quit_site = image.off_to_va(quits[0].start(1))
+    quit = struct.unpack("<I", quits[0].group(1))[0]
+    body = data[image.va_to_off(quit):image.va_to_off(quit) + 0x30]
+    pushed = [struct.unpack_from("<I", body, m.start() + 1)[0]
+              for m in re.finditer(rb"\x68", body)]
+    if not any(image.va_to_off(p) is not None and
+               data[image.va_to_off(p):image.va_to_off(p) + 15].lower() == b"d:\\default.xbe\0"
+               for p in pushed):
+        raise PayloadError(f"quit callback {quit:#x} does not launch D:\\Default.xbe")
+    define("NET_QUIT_SITE", hexva(quit_site))
+    # MenuOptions::open's last call, after the layout the ui-scale hook wraps: the help layer's
+    # lookup. Called before the menu is first drawn.
+    options_tail = find_options_scale(image) + 0xF
+    if image.data[image.va_to_off(options_tail) - 1] != 0x52:
+        raise PayloadError("MenuOptions::open: no help layer call after the options layout")
+    define("NET_OPEN_TAIL_SITE", hexva(options_tail + 1))
+    define("NET_OPEN_TAIL", hexva(tes3x_inject.call_target(image, options_tail)))
+    # the call just before it fetches GMST 0x266, the Exit box's text
+    define("NET_EXIT_TEXT_SITE", hexva(image.off_to_va(quits[0].start() + 6)))
+    define("NET_QUIT", hexva(quit))
+    for name, key in (("MARKER_ID", "map-marker-id"), ("DOOR_REF_ID", "map-door-ref-id"),
+                       ("PARENT_ID", "map-parent-id"), ("CELL_ID", "map-cell-id"), ("PIXELS", "map-pixels"),
+                      ("TAGGED_ID", "map-tagged-id"),
+                       ("SET_X", "map-set-x"), ("SET_Y", "map-set-y"),
+                       ("UPDATE_SITE", "map-local-player-site")):
+        define("NET_MAP_" + name, hexva(locate(key)))
+    define("NET_MAP_UPDATE_LOCAL", hexva(tes3x_inject.call_target(
+        image, locate("map-local-player-site"))))
+    define("NET_MENU_GATE", hexva(locate("menu-mode-gate")))
+    define("NET_MOB_GATE", hexva(locate("mob-update-gate")))
+    define("NET_WEATHER_ROLL", hexva(locate("weather-roll")))
+    define("NET_BUTTON", hexva(locate("button-pressed")))
+    # MobilePlayer::onDeath: UpdateFillBar(health bar, current, base) empties the bar; after the
+    # engine's death (magic stopped, DataHandler told), the last save's name chooses between
+    # "load it?" and the main menu, both ending in the epilogue.
+    world_va, handler_va = int(world, 16), int(data_handler, 16)
+    deaths = [m for m in re.finditer(rb"\x33\xc0\x66\xa1(....)\x51\x52\x50\xe8(....)\x83\xc4"
+                                     rb"\x0c\x8b\xcf\xe8....\x8b\x0d(....)\x8b\x51\x6c\xc6\x42"
+                                     rb"\x04\x01\x8b\x0d(....)\xe8....\xa1(....)\x8b\x08\x8b\x71"
+                                     rb"\x14\x85\xf6\x0f\x84(....)", data, re.S)
+              if struct.unpack("<3I", m.group(3) + m.group(4) + m.group(5)) ==
+              (world_va, handler_va, handler_va) and b"\x68\x61\x02\x00\x00" in
+              data[m.end():m.end() + 0x80]]
+    if len(deaths) != 1:
+        raise PayloadError(f"player death menu: {len(deaths)} sites, expected 1")
+    site = deaths[0].start(5) - 1
+    menu = image.off_to_va(deaths[0].end()) + struct.unpack("<i", deaths[0].group(6))[0]
+    if data[image.va_to_off(menu) - 6:image.va_to_off(menu)] != b"\x5f\x5e\x83\xc4\x08\xc3":
+        raise PayloadError(f"player death menu {hexva(menu)}: not after onDeath's epilogue")
+    fill = image.off_to_va(deaths[0].end(2)) + struct.unpack("<i", deaths[0].group(2))[0]
+    # MessageMenu(text, button, ..., 0), as onDeath shows "load it?" (Yes, No)
+    boxes = list(re.finditer(rb"\x6a\x44\xe8....\x50\x57\xe8(....)",
+                             data[deaths[0].end():deaths[0].end() + 0x100], re.S))
+    if len(boxes) != 1:
+        raise PayloadError(f"message menu: {len(boxes)} calls in onDeath, expected 1")
+    define("NET_MESSAGE_MENU", hexva(image.off_to_va(deaths[0].end() + boxes[0].end()) +
+                                     struct.unpack("<i", boxes[0].group(1))[0]))
+    # showMessageBox(text, 0, 1): the toast for the "cannot rest" GMST, which blocks nothing
+    toasts = {image.off_to_va(m.end(1)) + struct.unpack("<i", m.group(1))[0]
+              for m in re.finditer(rb"\x6a\x01\x6a\x00\x68\xfa\x01\x00\x00\xe8....\x50\xe8(....)"
+                                   rb"\x83\xc4\x0c", data, re.S)}
+    if len(toasts) != 1:
+        raise PayloadError(f"showMessageBox: {len(toasts)} targets, expected 1")
+    define("NET_SHOW_MESSAGE", hexva(toasts.pop()))
+    define("NET_DEATH_SITE", hexva(image.off_to_va(site)))
+    # New Game's first ini read of [PreLoad] Cell N (the menu's reads a constant "Cell 0"):
+    # push key, push "PreLoad", call, add esp 0x18, test eax, je.
+    preload = data.find(b"\0PreLoad\0") + 1
+    preload_va = image.off_to_va(preload) if preload else None
+    reads = list(re.finditer(rb"\x57\x68" + struct.pack("<I", preload_va or 0) +
+                             rb"\xe8....\x83\xc4\x18\x85\xc0\x0f\x84", data, re.S))
+    if not preload_va or len(reads) != 1:
+        raise PayloadError(f"New Game's PreLoad read: {len(reads)} sites, expected 1")
+    define("NET_PRELOAD_SITE", hexva(image.off_to_va(reads[0].start() + 6)))
+    # The loop's next step finds the cell by that name: mov edx, [DataHandler]; mov ecx,
+    # [edx]; push ebp; call.
+    finds = list(re.finditer(rb"\x8b\x15....\x8b\x0a\x55\xe8",
+                             data[reads[0].end():reads[0].end() + 0x60], re.S))
+    if len(finds) != 1:
+        raise PayloadError(f"New Game's PreLoad cell lookup: {len(finds)} sites, expected 1")
+    define("NET_PRELOAD_FIND_SITE", hexva(image.off_to_va(reads[0].end() + finds[0].end() - 1)))
+    define("NET_FILL_BAR", hexva(fill))
+    define("NET_HEALTH_BAR", hexva(struct.unpack("<I", deaths[0].group(1))[0]))
+    define("NET_FIND_MARKER", hexva(locate("find-marker")))
+    define("NET_TEMPLE_MARKER", hexva(locate("temple-marker")))
+    define("NET_DIVINE_MARKER", hexva(locate("divine-marker")))
+    wanted["multiplayer"] = ("_tes3x_multi_frame",)
+
+
+@binder("tes3xagent.c")
+def _bind_agent(b):
+    names, wanted = b.names, b.wanted
+    if "tes3xnet.c" not in names:
+        raise PayloadError("tes3xagent.c requires tes3xnet.c")
+    wanted["agent"] = ("_tes3x_agent_entry",)
+
+
+@binder("tes3xinfoarena.c")
+def _bind_infoarena(b):
+    image, define, locate, wanted = b.image, b.define, b.locate, b.wanted
+    heap_allocate = hexva(locate("heap-allocate"))
+    heap_free = hexva(locate("heap-free"))
+    heap_object = hexva(locate("heap-object"))
+    names_allocate = hexva(tes3x_inject.call_target(image, locate("info-names-allocate")))
+    names_free = hexva(locate("info-names-free"))
+    current_topic = hexva(locate("info-current-topic"))
+    link_original = hexva(locate("info-link-original"))
+    finish_original = hexva(locate("info-finish-original"))
+    print(f"INFO name arena: table {heap_allocate}, names {names_allocate}, "
+          f"topic {current_topic}, finish {finish_original}")
+    define("INFO_HEAP_ALLOCATE", heap_allocate)
+    define("INFO_HEAP_FREE", heap_free)
+    define("INFO_HEAP_OBJECT", heap_object)
+    define("INFO_NAMES_ALLOCATE", names_allocate)
+    define("INFO_NAMES_FREE", names_free)
+    define("INFO_CURRENT_TOPIC", current_topic)
+    define("INFO_LINK_ORIGINAL", link_original)
+    define("INFO_FINISH_ORIGINAL", finish_original)
+    wanted["info_table_allocate"] = ("_tes3x_info_table_allocate_hook",)
+    wanted["info_names_allocate"] = ("_tes3x_info_names_allocate_hook",)
+    wanted["info_names_free"] = ("_tes3x_info_names_free",)
+    wanted["info_table_free"] = ("_tes3x_info_table_free@4",)
+    wanted["info_cleanup"] = ("_tes3x_info_cleanup_hook",)
+    wanted["info_finish"] = ("_tes3x_info_finish_hook",)
+
+
+@binder("tes3xlinknames.c")
+def _bind_linknames(b):
+    define, locate, wanted = b.define, b.locate, b.wanted
+    free = locate("link-free")
+    print(f"link name arena: zeroed {hexva(locate('link-zeroed'))}, "
+          f"tagged {hexva(locate('link-tagged'))}, free {hexva(free)}")
+    define("LINK_ZEROED", hexva(locate("link-zeroed")))
+    define("LINK_TAGGED", hexva(locate("link-tagged")))
+    define("LINK_FREE_RESUME", hexva(free + 6))
+    wanted["link_zeroed"] = ("_tes3x_link_names_zeroed",)
+    wanted["link_tagged"] = ("_tes3x_link_names_tagged",)
+    wanted["link_free"] = ("_tes3x_link_names_free",)
+
+
+@binder("tes3xdialogueowner.c", "tes3xtest_dialogueowner.c")
+def _bind_dialogueowner(b):
+    names, define, locate, wanted = b.names, b.define, b.locate, b.wanted
+    find = locate("dialogue-owner-find")
+    define("OWNER_DATA_HANDLER", hexva(locate("dialogue-owner-data-handler")))
+    define("OWNER_FIND", hexva(find))
+    define("OWNER_FIND_RESUME", hexva(find + 5))
+    if "tes3xdialogueowner.c" in names:
+        print(f"dialogue owner: findDialogue {hexva(find)}")
+        wanted["dialogue_owner_find"] = ("_tes3x_dialogue_owner_find",)
+        wanted["dialogue_owner_dtor"] = ("_tes3x_dialogue_owner_dtor",)
+
+
+@binder("tes3xtest_dialogueowner.c")
+def _bind_test_dialogueowner(b):
+    names, wanted = b.names, b.wanted
+    if "tes3xconsole.c" not in names:
+        raise PayloadError("tes3xtest_dialogueowner.c requires tes3xconsole.c")
+    print("dialogue-owner test probe: console command tes3xowner STRIDE")
+    wanted["dialogue_owner_test"] = ("_tes3x_dialogue_owner_test_command",)
+
+
+@binder("tes3xlazydialogue.c", "tes3xtest_lazydialogue.c")
+def _bind_lazydialogue(b):
+    image, names, define, locate, wanted = b.image, b.names, b.define, b.locate, b.wanted
+    lazy = find_lazy_dialogue_sites(image)
+    define("LAZY_DATA_HANDLER", hexva(lazy["data_handler"]))
+    if "tes3xlazydialogue.c" not in names:
+        return
+    print(f"lazy dialogue: INFO site {hexva(lazy['info_site'])}, "
+          f"getFilteredInfo {hexva(lazy['reader_filtered'])}")
+    define("LAZY_HEAP_ALLOCATE", hexva(locate("heap-allocate")))
+    define("LAZY_HEAP_FREE", hexva(locate("heap-free")))
+    define("LAZY_HEAP_OBJECT", hexva(locate("heap-object")))
+    define("LAZY_NAMES_FREE", hexva(locate("info-names-free")))
+    for name in ("topic", "info_done", "info_tail", "info_notail", "info_new", "info_ctor",
+                 "load_from_file", "cached_file", "file_ctor", "file_collect", "file_reopen",
+                 "file_seek", "file_close", "file_dtor", "loaded_first"):
+        define("LAZY_" + name.upper(), hexva(lazy[name]))
+    define("LAZY_FILTERED", hexva(lazy["reader_filtered"]))
+    for name, length in (("filtered", 7), ("at_index", 5), ("journal", 6)):
+        define(f"LAZY_{name.upper()}_RESUME", hexva(lazy["reader_" + name] + length))
+        wanted["lazy_dialogue_" + name] = (f"_tes3x_lazy_dialogue_{name}",)
+    wanted["lazy_dialogue_info"] = ("_tes3x_lazy_dialogue_info_hook",)
+    wanted["lazy_dialogue_loaded"] = ("_tes3x_lazy_dialogue_loaded",)
+
+
+@binder("tes3xtest_lazydialogue.c")
+def _bind_test_lazydialogue(b):
+    names, wanted = b.names, b.wanted
+    if "tes3xconsole.c" not in names:
+        raise PayloadError("tes3xtest_lazydialogue.c requires tes3xconsole.c")
+    print("lazy-dialogue test probe: console command tes3xlazy check|summary|sweep N|build|heard|digest")
+    wanted["lazy_dialogue_test"] = ("_tes3x_lazy_dialogue_test_command",)
+
+
+@binder("tes3xdiag.c")
+def _bind_diag(b):
+    define, locate = b.define, b.locate
+    update = hexva(locate("diagnostics-update"))
+    print(f"diagnostics hook: Game::Update {update}")
+    define("DIAG_UPDATE", update)
+
+
+@binder("tes3xrefs.c")
+def _bind_refs(b):
+    define, locate, wanted = b.define, b.locate, b.wanted
+    load, skip = locate("ref-load"), hexva(locate("ref-skip"))
+    print(f"refs hook: fallback {hexva(load)}, resume {hexva(load + 6)}, skip {skip}")
+    define("REF_RESUME", hexva(load + 6))
+    define("REF_SKIP", skip)
+    wanted["ref_load"] = ("_tes3x_ref_load_hook",)
+
+
+@binder("tes3xmcp37.c")
+def _bind_mcp37(b):
+    image, define, wanted = b.image, b.define, b.wanted
+    site, game, player, tree = find_mcp37_context(image)
+    print(f"mcp-37 hook: cell change {hexva(site)}, game {hexva(game)}, "
+          f"player {hexva(player)}, tree iterator {hexva(tree)}")
+    define("MCP37_GAME", hexva(game))
+    define("MCP37_GET_PLAYER", hexva(player))
+    define("MCP37_TREE_NEXT", hexva(tree))
+    wanted["mcp37"] = ("_tes3x_mcp37_hook",)
+
+
+@binder("tes3xmcp97.c")
+def _bind_mcp97(b):
+    define, locate, wanted = b.define, b.locate, b.wanted
+    scan = locate("mcp-97-scan")
+    print(f"mcp-97 hook: scan {hexva(scan)}, resume {hexva(scan + 6)}")
+    define("MCP97_RESUME", hexva(scan + 6))
+    wanted["mcp97_scan"] = ("_tes3x_mcp97_scan_hook",)
+
+
+@binder("tes3xtest_mcp97.c")
+def _bind_test_mcp97(b):
+    define, locate, wanted, extra = b.define, b.locate, b.wanted, b.extra
+    scan = locate("mcp-97-scan")
+    landing = scan + 10
+    print(f"mcp-97 test probe: landing {hexva(landing)}")
+    define("MCP97_TEST_LOOP", hexva(scan - 47))
+    define("MCP97_TEST_EXIT", hexva(landing + 5))
+    wanted["mcp97_test"] = ("_tes3x_mcp97_test_hook",)
+    extra["mcp97_test"] = {"mcp97_test_site": hexva(landing)}
+
+
+@binder("tes3xtest_mcp102.c")
+def _bind_test_mcp102(b):
+    image, define, locate, wanted, extra = b.image, b.define, b.locate, b.wanted, b.extra
+    setter = locate("mcp-102-actn")
+    sites = find_call_sites(image, setter)
+    if len(sites) != 1:
+        raise PayloadError(f"mcp-102 test probe: {len(sites)} ACTN load calls, expected 1")
+    print(f"mcp-102 test probe: setter {hexva(setter)}, call {hexva(sites[0])}")
+    define("MCP102_TEST_SET_FLAGS", hexva(setter))
+    define("MCP102_TEST_GET_FLAGS", hexva(setter - 0x60))
+    wanted["mcp102_test"] = ("@tes3x_mcp102_test_hook@8",
+                             "_tes3x_mcp102_test_hook")
+    extra["mcp102_test"] = {"mcp102_test_site": hexva(sites[0])}
+
+
+@binder("tes3xtest_mcp3.c")
+def _bind_test_mcp3(b):
+    names, wanted = b.names, b.wanted
+    if "tes3xconsole.c" not in names:
+        raise PayloadError("tes3xtest_mcp3.c requires tes3xconsole.c")
+    print("mcp-3 test probe: console command tes3xmcp3")
+    wanted["mcp3_test"] = ("_tes3x_mcp3_test_command",)
+
+
+@binder("tes3xtest_mcp47.c")
+def _bind_test_mcp47(b):
+    names, wanted = b.names, b.wanted
+    if "tes3xconsole.c" not in names:
+        raise PayloadError("tes3xtest_mcp47.c requires tes3xconsole.c")
+    print("mcp-47 test probe: console command tes3xmcp47")
+    wanted["mcp47_test"] = ("_tes3x_mcp47_test_command",)
+
+
+@binder("tes3xtest_mcp55.c")
+def _bind_test_mcp55(b):
+    names, wanted = b.names, b.wanted
+    if "tes3xconsole.c" not in names:
+        raise PayloadError("tes3xtest_mcp55.c requires tes3xconsole.c")
+    print("mcp-55 test probe: console command tes3xmcp55")
+    wanted["mcp55_test"] = ("_tes3x_mcp55_test_command",)
+
+
+@binder("tes3xtest_mcp118.c")
+def _bind_test_mcp118(b):
+    names, address, define, wanted = b.names, b.address, b.define, b.wanted
+    if "tes3xconsole.c" not in names:
+        raise PayloadError("tes3xtest_mcp118.c requires tes3xconsole.c")
+    define("MCP118_TEST_DROP", address("DROP_ITEM", DROP_ITEM))
+    wanted["mcp118_test"] = ("_tes3x_mcp118_test_command",)
+
+
+@binder("tes3xtest_mcp132.c")
+def _bind_test_mcp132(b):
+    image, names, address, define, wanted = b.image, b.names, b.address, b.define, b.wanted
+    if "tes3xconsole.c" not in names:
+        raise PayloadError("tes3xtest_mcp132.c requires tes3xconsole.c")
+    if "tes3xanimvirtual.c" not in names:
+        raise PayloadError("tes3xtest_mcp132.c requires tes3xanimvirtual.c")
+    define("MCP132_TEST_RECORDS", address("DATA_HANDLER", DATA_HANDLER))
+    define("MCP132_TEST_FIND_REF", address("FIND_REFERENCE", dict(PLACE_ADDRESSES)["FIND_REFERENCE"]))
+    define("MCP132_TEST_ANIMATION", address("REF_ANIMATION", dict(PLACE_ADDRESSES)["REF_ANIMATION"]))
+    context = find_mcp132_context(image)
+    define("MCP132_TEST_WORLD", hexva(context["world"]))
+    define("MCP132_TEST_GET_PLAYER", hexva(context["get_player"]))
+    wanted["mcp132_test"] = ("_tes3x_mcp132_test_command",)
+
+
+@binder("tes3xanimvirtual.c")
+def _bind_animvirtual(b):
+    image, names, define, wanted, extra = b.image, b.names, b.define, b.wanted, b.extra
+    if "tes3xmcp132.c" not in names:
+        raise PayloadError("tes3xanimvirtual.c requires tes3xmcp132.c")
+    play = find_mcp132_context(image)["play"]
+    define("ANIM_VIRTUAL_PLAY_RESUME", hexva(play + 8))
+    define("ANIM_VIRTUAL_PLAY_ENTRY", hexva(play))
+    wanted["anim_virtual_play_group"] = ("_tes3x_animation_virtual_play_group",)
+    extra["anim_virtual_play_group"] = {"anim_virtual_play_site": hexva(play)}
+
+
+@binder("tes3xctt.c")
+def _bind_ctt(b):
+    names, address, define, wanted, extra = b.names, b.address, b.define, b.wanted, b.extra
+    if "tes3xanimvirtual.c" not in names:
+        raise PayloadError("tes3xctt.c requires tes3xanimvirtual.c")
+    roll = int(address("HIT_ROLL", HIT_ROLL), 16)
+    define("CTT_ROLL_RESUME", hexva(roll + 6))
+    define("CTT_REF_ANIMATION", address("REF_ANIMATION", dict(PLACE_ADDRESSES)["REF_ANIMATION"]))
+    wanted["ctt_roll"] = ("_tes3x_ctt_roll",)
+    extra["ctt_roll"] = {"ctt_roll_site": hexva(roll)}
+
+
+@binder("tes3xtest_ctt.c")
+def _bind_test_ctt(b):
+    names, wanted = b.names, b.wanted
+    if "tes3xctt.c" not in names or "tes3xtest_mcp132.c" not in names:
+        raise PayloadError("tes3xtest_ctt.c requires tes3xctt.c and tes3xtest_mcp132.c")
+    wanted["ctt_test"] = ("_tes3x_ctt_test_select_clip",)
+
+
+@binder("tes3xtest_dialoguemerge.c")
+def _bind_test_dialoguemerge(b):
+    names, address, define, wanted = b.names, b.address, b.define, b.wanted
+    if "tes3xconsole.c" not in names:
+        raise PayloadError("tes3xtest_dialoguemerge.c requires tes3xconsole.c")
+    print("dialogue-merge test probe: console command tes3xdial TOPIC")
+    define("DIALMERGE_DATA_HANDLER", address("DATA_HANDLER", DATA_HANDLER))
+    wanted["dialmerge_test"] = ("_tes3x_dialmerge_test_command",)
+
+
+@binder("tes3xmcp154.c")
+def _bind_mcp154(b):
+    define, locate, wanted = b.define, b.locate, b.wanted
+    load, reload = locate("mcp-154-load"), locate("mcp-154-reload")
+    print(f"mcp-154 hooks: load {hexva(load)}, reload {hexva(reload)}")
+    define("MCP154_LOAD_RESUME", hexva(load + 6))
+    define("MCP154_RELOAD_RESUME", hexva(reload + 6))
+    wanted["mcp154_load"] = ("_tes3x_mcp154_load_hook",)
+    wanted["mcp154_reload"] = ("_tes3x_mcp154_reload_hook",)
+
+
+@binder("tes3xmcp123.c")
+def _bind_mcp123(b):
+    image, define, locate, wanted = b.image, b.define, b.locate, b.wanted
+    site = locate("mcp-123")
+    add_reference = tes3x_inject.call_target(image, site)
+    print(f"mcp-123 hook: PlaceItem call {hexva(site)}, "
+          f"Cell::addReference {hexva(add_reference)}")
+    define("MCP123_ADD_REFERENCE", hexva(add_reference))
+    wanted["mcp123_add"] = ("_tes3x_mcp123_add_hook",)
+
+
+@binder("tes3xmcp149.c")
+def _bind_mcp149(b):
+    image, define, wanted = b.image, b.define, b.wanted
+    _, dispose_flag = find_mcp149_menu(image)
+    define("MCP149_DISPOSE_FLAG", hexva(dispose_flag))
+    wanted["mcp149_menu_state"] = ("_tes3x_mcp149_menu_state",)
+
+
+@binder("tes3xmcp55.c")
+def _bind_mcp55(b):
+    image, define, wanted = b.image, b.define, b.wanted
+    _, refresh, _, set_text = find_mcp55_context(image)
+    _, world, clear, player, add, update = find_mcp55_inventory_context(image)
+    define("MCP55_REFRESH", hexva(refresh))
+    define("MCP55_SET_TEXT", hexva(set_text))
+    define("MCP55_WORLD_PTR", hexva(world))
+    define("MCP55_CLEAR_ICONS", hexva(clear))
+    define("MCP55_GET_PLAYER", hexva(player))
+    define("MCP55_ADD_ITEMS", hexva(add))
+    define("MCP55_UPDATE_TILES", hexva(update))
+    wanted["mcp55_refresh_brew"] = ("_tes3x_mcp55_refresh_brew",)
+    wanted["mcp55_refresh_name"] = ("_tes3x_mcp55_refresh_name",)
+    wanted["mcp55_close_inventory"] = ("_tes3x_mcp55_close_inventory",)
+
+
+@binder("tes3xmcp30.c")
+def _bind_mcp30(b):
+    image, define, wanted = b.image, b.define, b.wanted
+    _, _, matrix_multiply = find_mcp30_context(image)
+    define("MCP30_MATRIX_MULTIPLY", hexva(matrix_multiply))
+    wanted["mcp30_angle"] = ("_tes3x_mcp30_angle",)
+    wanted["mcp30_launch_matrix"] = ("_tes3x_mcp30_launch_matrix",)
+
+
+@binder("tes3xmcp118.c")
+def _bind_mcp118(b):
+    image, define, wanted = b.image, b.define, b.wanted
+    site, reset = find_mcp118_drop_finish(image)
+    _, world, _, player, _, _ = find_mcp55_inventory_context(image)
+    define("MCP118_RESET", hexva(reset))
+    define("MCP118_WORLD_PTR", hexva(world))
+    define("MCP118_GET_PLAYER", hexva(player))
+    print(f"mcp-118 hook: drop placement cleanup {hexva(site)} -> {hexva(reset)}")
+    wanted["mcp118_drop_finish"] = ("_tes3x_mcp118_drop_finish",)
+
+
+@binder("tes3xmcp6.c")
+def _bind_mcp6(b):
+    image, address, define, wanted = b.image, b.address, b.define, b.wanted
+    sites = find_mcp6_context(image)
+    define("MCP6_GET_MOBILE", hexva(sites["get_mobile"]))
+    define("MCP6_GAME_PTR", address("GAME_PTR", dict(CONSOLE_ADDRESSES)["GAME_PTR"]))
+    define("MCP6_PLAYER_MOBILE", address("PLAYER_MOBILE", dict(CONSOLE_ADDRESSES)["PLAYER_MOBILE"]))
+    for key, symbol in (("mcp6_reset", "_tes3x_mcp6_reset"),
+                        ("mcp6_fortify", "_tes3x_mcp6_record_fortify"),
+                        ("mcp6_prepare", "_tes3x_mcp6_prepare"),
+                        ("mcp6_drain", "_tes3x_mcp6_finish_drain"),
+                        ("mcp6_restore", "_tes3x_mcp6_finish_restore")):
+        wanted[key] = (symbol,)
+
+
+@binder("tes3xpathgrid.c")
+def _bind_pathgrid(b):
+    image, wanted = b.image, b.wanted
+    print("mwse-pathgrid-zero hooks: " + ", ".join(map(hexva, find_pathgrid_lookups(image))))
+    wanted["pathgrid_zero"] = ("_tes3x_pathgrid_zero_hook",)
+
+
+@binder("tes3xenabledisable.c")
+def _bind_enabledisable(b):
+    image, define, wanted = b.image, b.define, b.wanted
+    enable, disable, script_locals = find_enable_disable_flags(image)
+    print(f"mwse-enable-disable-vars hooks: {hexva(enable)}, {hexva(disable)}")
+    define("ENABLE_DISABLE_LOCALS", hexva(script_locals))
+    wanted["enable_flag"] = ("_tes3x_enable_flag_hook",)
+    wanted["disable_flag"] = ("_tes3x_disable_flag_hook",)
+
+
+@binder("tes3xmcp173.c")
+def _bind_mcp173(b):
+    image, wanted = b.image, b.wanted
+    sites = find_mcp173_rank(image)
+    print(f"mcp-173 hooks: NPC rank saves {', '.join(map(hexva, sites))}")
+    wanted["mcp173_mark"] = ("_tes3x_mcp173_mark_hook",)
+
+
+@binder("tes3xmcp125.c")
+def _bind_mcp125(b):
+    image, define, wanted = b.image, b.define, b.wanted
+    context = find_mcp125_context(image)
+    print(f"mcp-125 hook: collision add {hexva(context['add'])}, "
+          f"remove {hexva(context['remove'])}")
+    define("MCP125_ADD_MOB", hexva(context["add"]))
+    define("MCP125_REMOVE_MOB", hexva(context["remove"]))
+    wanted["mcp125_collision"] = ("_tes3x_mcp125_collision_hook",)
+
+
+@binder("tes3xmcp132.c")
+def _bind_mcp132(b):
+    image, define, wanted = b.image, b.define, b.wanted
+    context = find_mcp132_context(image)
+    print(f"mcp-132 hooks: script {', '.join(map(hexva, context['script']))}, "
+          f"bones {hexva(context['bone'])}, player {hexva(context['idle_call'])}")
+    for key, name in (("play", "PLAY_GROUP"), ("update", "UPDATE_IDLES"),
+                      ("destroy", "ANIM_DESTROY"),
+                      ("ref_update", "ANIM_IDLE_UPDATE"), ("world", "WORLD"),
+                      ("get_player", "GET_PLAYER")):
+        define("MCP132_" + name, hexva(context[key]))
+    wanted["mcp132_play_group"] = ("_tes3x_mcp132_play_group",)
+    wanted["mcp132_bone_match"] = ("_tes3x_mcp132_bone_match",)
+    wanted["mcp132_update_idles"] = ("_tes3x_mcp132_update_idles",)
+    wanted["mcp132_destroy_animation"] = ("_tes3x_mcp132_destroy_animation",)
+
+
+@binder("tes3xdxt5.c")
+def _bind_dxt5(b):
+    image, define, locate, wanted = b.image, b.define, b.locate, b.wanted
+    site = locate("dxt5-size")
+    size = hexva(tes3x_inject.call_target(image, site))
+    print(f"dxt5-size hook: call {hexva(site)}, size function {size}")
+    define("TEXTURE_SIZE", size)
+    wanted["dxt5_size"] = ("_tes3x_dxt5_size_hook",)
+
+
+@binder("tes3xmcp146.c")
+def _bind_mcp146(b):
+    image, define, locate, wanted = b.image, b.define, b.locate, b.wanted
+    site = locate("mcp-146")
+    input_action = locate("mcp-146-input")
+    game = locate("mcp-146-game")
+    resume = locate("mcp-146-resume")
+    attacking = tes3x_inject.call_target(image, site)
+    print(f"mcp-146 hook: input guard {hexva(site)}, attacking {hexva(attacking)}, "
+          f"input {hexva(input_action)}, resume {hexva(resume)}")
+    define("MCP146_ATTACKING", hexva(attacking))
+    define("MCP146_INPUT", hexva(input_action))
+    define("MCP146_GAME", hexva(game))
+    define("MCP146_RESUME", hexva(resume))
+    wanted["mcp146"] = ("_tes3x_mcp146_hook",)
+
+
+@binder("tes3xmcp47.c")
+def _bind_mcp47(b):
+    image, define, wanted = b.image, b.define, b.wanted
+    site, deselect, world, player = find_mcp47_context(image)
+    print(f"mcp-47 hook: deselect call {hexva(site)}, target {hexva(deselect)}")
+    define("MCP47_DESELECT", hexva(deselect))
+    define("MCP47_WORLD", hexva(world))
+    define("MCP47_GET_PLAYER", hexva(player))
+    wanted["mcp47_deselect"] = ("_tes3x_mcp47_deselect",)
+
+
+@binder("tes3xrefindex.c")
+def _bind_refindex(b):
+    define, locate, wanted = b.define, b.locate, b.wanted
+    find = hexva(locate("ref-index-find"))
+    scripts = hexva(locate("ref-index-scripts"))
+    print(f"ref-index hooks: Cell::findReferenceToObject {find}, startGlobalScripts {scripts}")
+    define("REFINDEX_FIND_IN_CELL", find)
+    define("REFINDEX_START_SCRIPTS", scripts)
+    wanted["refindex_find"] = ("_tes3x_refindex_find_hook",)
+    wanted["refindex_scripts"] = ("_tes3x_refindex_scripts_hook",)
+
+
+@binder("tes3xbowview.c")
+def _bind_bowview(b):
+    image, define, locate, wanted = b.image, b.define, b.locate, b.wanted
+    site = locate("bow-view")
+    update = tes3x_inject.call_target(image, site)
+    print(f"bow-view hook: transform call {hexva(site)}, update {hexva(update)}")
+    define("BOW_VIEW_UPDATE", hexva(update))
+    wanted["bow_view"] = ("_tes3x_bow_view_hook",)
+
+
+@binder("tes3xvideo.c")
+def _bind_video(b):
+    image, define, locate, wanted = b.image, b.define, b.locate, b.wanted
+    renderer_site, create_site, count, enum = locate("hd-video")
+    renderer = tes3x_inject.call_target(image, renderer_site)
+    create = tes3x_inject.call_target(image, create_site)
+    print(f"hd-video hook: renderer call {hexva(renderer_site)} -> {hexva(renderer)}, "
+          f"CreateDevice call {hexva(create_site)} -> {hexva(create)}, "
+          f"modes {hexva(count)}, {hexva(enum)}")
+    define("VIDEO_RENDERER_CREATE", hexva(renderer))
+    define("VIDEO_CREATE_DEVICE", hexva(create))
+    define("VIDEO_MODE_COUNT", hexva(count))
+    define("VIDEO_ENUM_MODES", hexva(enum))
+    wanted["video_renderer"] = ("_tes3x_video_renderer_hook",)
+    wanted["video_create"] = ("_tes3x_video_create_hook",)
+
+
+@binder("tes3xbootclear.c")
+def _bind_bootclear(b):
+    image, define, locate, wanted = b.image, b.define, b.locate, b.wanted
+    site, clear, display = locate("boot-clear")
+    nxt = tes3x_inject.call_target(image, site)
+    print(f"boot-clear hook: call {hexva(site)} -> {hexva(nxt)}, clear {hexva(clear)}, "
+          f"display {hexva(display)}")
+    define("BOOTCLEAR_CLEAR", hexva(clear))
+    define("BOOTCLEAR_DISPLAY", hexva(display))
+    define("BOOTCLEAR_NEXT", hexva(nxt))
+    wanted["bootclear"] = ("_tes3x_bootclear_hook",)
+
+
+@binder("tes3xdashbutton.c")
+def _bind_dashbutton(b):
+    image, address, define, locate, wanted = b.image, b.address, b.define, b.locate, b.wanted
+    site, height_site = locate("dash-button")
+    build = tes3x_inject.call_target(image, site)
+    define("DASHBTN_SET_HEIGHT", hexva(tes3x_inject.call_target(image, height_site)))
+    print(f"dash-button hook: MenuOptions::build call {hexva(site)} -> {hexva(build)}")
+    define("DASHBTN_BUILD", hexva(build))
+    for name in ("UI_ID", "FIND_CHILD", "FIND_MENU", "PERFORM_LAYOUT", "WIDGET_SET_TEXT",
+                 "SET_PROP", "SET_AUTO_HEIGHT"):
+        define("DASHBTN_" + name, address(name, dict(CONSOLE_ADDRESSES)[name]))
+    for name in ("CREATE_BLOCK", "CREATE_IMAGE", "CREATE_LABEL", "SET_WIDTH", "SET_VISIBLE",
+                 "SET_AUTO_WIDTH"):
+        define("DASHBTN_" + name, address(name, dict(NET_UI_ADDRESSES)[name]))
+    wanted["dashbutton"] = ("_tes3x_dashbutton_hook",)
+    wanted["dashbutton_height"] = ("_tes3x_dashbutton_height_hook",)
+
+
+@binder("tes3xtooltips.c")
+def _bind_tooltips(b):
+    image, address, define, locate, wanted = b.image, b.address, b.define, b.locate, b.wanted
+    tooltip, calls, content, item_data, find_help = find_item_tooltip(image)
+    define("TIP_ORIGINAL", hexva(tooltip))
+    define("TIP_TYPE", hexva(tes3x_inject.call_target(image, tooltip + 0x6b)))
+    define("TIP_ITEM_DATA", hexva(item_data))
+    define("TIP_FIND_HELP", hexva(find_help))
+    define("TIP_CONTENT_ID", hexva(content))
+    define("TIP_WORLD", hexva(locate("world-controller")))
+    define("TIP_PLAYER", address("PLAYER_MOBILE", dict(CONSOLE_ADDRESSES)["PLAYER_MOBILE"]))
+    define("TIP_FIND_CHILD", address("FIND_CHILD", dict(CONSOLE_ADDRESSES)["FIND_CHILD"]))
+    define("TIP_CREATE_LABEL", address("CREATE_LABEL", dict(NET_UI_ADDRESSES)["CREATE_LABEL"]))
+    print(f"item tooltip: {hexva(tooltip)}, {len(calls)} call sites")
+    wanted["item_tooltip"] = ("_tes3x_tooltip_hook@12",)
+
+
+@binder("tes3xtopiccolor.c")
+def _bind_topiccolor(b):
+    image, address, define, locate, wanted = b.image, b.address, b.define, b.locate, b.wanted
+    sites = locate("topic-colors")
+    list_site, run_site, filter_site, update_site = sites[0], sites[1], sites[2], sites[4]
+    for name, site in (("LIST", list_site), ("RUN", run_site), ("UPDATE", update_site)):
+        define("TOPIC_" + name, hexva(tes3x_inject.call_target(image, site)))
+    define("TOPIC_FILTER", hexva(tes3x_inject.call_target(image, filter_site)))
+    state_calls, _pushes, (paint, update) = find_topic_state(image)
+    define("TOPIC_STATE", hexva(tes3x_inject.call_target(image, state_calls[0])))
+    define("TOPIC_PAINT", hexva(paint))
+    define("TOPIC_UPDATE_NODE", hexva(update))
+    define("TOPIC_WORLD", hexva(locate("world-controller")))
+    for name in ("PLAYER_MOBILE", "GET_PROP", "SET_PROP", "WIDGET_TEXT", "FIND_MENU",
+                 "FIND_CHILD", "UI_ID"):
+        define("TOPIC_" + name.replace("PLAYER_MOBILE", "PLAYER"),
+               address(name, dict(CONSOLE_ADDRESSES)[name]))
+    print(f"topic colors: list {hexva(list_site)}, response {hexva(run_site)}, "
+          f"filter {hexva(filter_site)}, update {hexva(update_site)}")
+    wanted["topic_list"] = ("_tes3x_topiccolor_list",)
+    wanted["topic_update"] = ("_tes3x_topiccolor_update",)
+    wanted["topic_state"] = ("_tes3x_topiccolor_state",)
+    wanted["topic_run"] = ("@tes3x_topiccolor_run@8", "_tes3x_topiccolor_run")
+
+
+@binder("tes3xhudscale.c")
+def _bind_hudscale(b):
+    image, define, locate, wanted = b.image, b.define, b.locate, b.wanted
+    site = locate("ui-scale")
+    area_tail, area = find_menu_area_scale(image)
+    options_site = find_options_scale(image)
+    levelup_site = find_levelup_scale(image)
+    message_site = find_message_scale(image)
+    name_site = find_name_scale(image)
+    chargen_sites = find_chargen_scale(image)
+    build = tes3x_inject.call_target(image, site)
+    print(f"ui-scale hook: MenuMulti builder call {hexva(site)} -> {hexva(build)}, "
+          f"menu area cache {hexva(area)} at epilogue {hexva(area_tail)}, "
+          f"options layout {hexva(options_site)}, "
+          f"level-up layout {hexva(levelup_site)}, "
+          f"message layout {hexva(message_site)}, "
+          f"name keyboard layout {hexva(name_site)}, "
+          f"chargen layouts {', '.join(hexva(site) for site in chargen_sites)}")
+    define("HUD_BUILD", hexva(build))
+    define("HUD_WORLD", hexva(locate("world-controller")))
+    define("HUD_MENU_AREA", hexva(area))
+    define("OPTIONS_LAYOUT", hexva(tes3x_inject.call_target(image, options_site)))
+    define("LEVEL_LAYOUT", hexva(tes3x_inject.call_target(image, levelup_site)))
+    define("MESSAGE_LAYOUT", hexva(tes3x_inject.call_target(image, message_site)))
+    define("NAME_LAYOUT", hexva(tes3x_inject.call_target(image, name_site)))
+    chargen_layouts = {tes3x_inject.call_target(image, site) for site in chargen_sites}
+    if chargen_layouts != {tes3x_inject.call_target(image, name_site)}:
+        raise ValueError("ui-scale: character generation layout target changed")
+    define("CHARGEN_LAYOUT", hexva(next(iter(chargen_layouts))))
+    wanted["hud_scale"] = ("_tes3x_hud_scale_hook",)
+    wanted["menu_area_scale"] = ("_tes3x_menu_area_scale_hook",)
+    wanted["options_scale"] = ("_tes3x_options_scale_hook",)
+    wanted["levelup_scale"] = ("_tes3x_levelup_scale_hook",)
+    wanted["message_scale"] = ("_tes3x_message_scale_hook",)
+    wanted["name_scale"] = ("_tes3x_name_scale_hook",)
+    wanted["chargen_scale"] = ("_tes3x_chargen_scale_hook",)
+
+
+@binder("tes3xmenustill.c")
+def _bind_menustill(b):
+    image, define, locate, wanted = b.image, b.define, b.locate, b.wanted
+    menu, new_game, load, slot, clear, display, fence, block = locate("menu-still")
+    define("STILL_FENCE", hexva(tes3x_inject.call_target(image, fence)))
+    define("STILL_BLOCK", hexva(tes3x_inject.call_target(image, block)))
+    opened = tes3x_inject.call_target(image, menu)
+    print(f"menu-still hook: open {hexva(opened)} from {hexva(menu)}, {hexva(new_game)}, "
+          f"{hexva(load)}; clear slot {hexva(slot)}, clear {hexva(clear)}, "
+          f"display {hexva(display)}")
+    define("STILL_OPEN", hexva(opened))
+    define("STILL_CLEAR", hexva(clear))
+    define("STILL_DISPLAY", hexva(display))
+    wanted["still_open"] = ("_tes3x_still_open_hook",)
+    wanted["still_end"] = ("_tes3x_still_end_hook",)
+    wanted["still_clear"] = ("_tes3x_still_clear_hook",)
+
+
+@binder("tes3xleanmenu.c")
+def _bind_leanmenu(b):
+    image, define, locate, wanted = b.image, b.define, b.locate, b.wanted
+    site, tag, launch, no_reboot, preload, player = locate("lean-menu")
+    load = tes3x_inject.call_target(image, site)
+    by_name = tes3x_inject.call_target(image, preload)
+    create = tes3x_inject.call_target(image, player)
+    print(f"lean-menu hook: call {hexva(site)}, record load {hexva(load)}, tag {hexva(tag)}, "
+          f"launch info {hexva(launch)}, no reboot {hexva(no_reboot)}, "
+          f"PreLoad lookup {hexva(preload)} -> {hexva(by_name)}, "
+          f"create player {hexva(player)} -> {hexva(create)}")
+    define("LEAN_CREATE_PLAYER", hexva(create))
+    define("LEAN_LOAD_RECORD", hexva(load))
+    define("LEAN_RECORD_TAG", hexva(tag))
+    define("LEAN_CELL_BY_NAME", hexva(by_name))
+    define("LEAN_LAUNCH_INFO", hexva(launch))
+    define("LEAN_NO_REBOOT", hexva(no_reboot))
+    wanted["lean_record"] = ("_tes3x_lean_record_hook",)
+    wanted["lean_preload"] = ("_tes3x_lean_preload_hook",)
+    wanted["lean_player"] = ("_tes3x_lean_player_hook",)
+
+
+@binder("tes3xarena.c")
+def _bind_arena(b):
+    locate, wanted = b.locate, b.wanted
+    print(f"video-arena hook: size {hexva(locate('video-arena'))}")
+    wanted["arena_size"] = ("_tes3x_arena_size_hook",)
+
+
+@binder("tes3xregion.c")
+def _bind_region(b):
+    image, define, locate, wanted = b.image, b.define, b.locate, b.wanted
+    malloc, fit, free = locate("heap-region-malloc"), locate("heap-region-fit"), \
+        locate("heap-region-free")
+    print(f"heap-region hooks: size {hexva(locate('heap-region'))}, malloc {hexva(malloc)}, "
+          f"fit {hexva(fit)}, free {hexva(free)}")
+    define("REGION_MALLOC", hexva(tes3x_inject.call_target(image, malloc)))
+    define("REGION_FREE", hexva(tes3x_inject.call_target(image, free)))
+    define("REGION_SPILL", hexva(fit + 6))
+    define("REGION_CARVE", hexva(fit + 6 + struct.unpack_from(
+        "<i", image.data, image.va_to_off(fit) + 2)[0]))
+    wanted["region_size"] = ("_tes3x_region_size_hook",)
+    wanted["region_reserve"] = ("@tes3x_region_reserve@12",)
+    wanted["region_carve"] = ("_tes3x_region_carve_hook",)
+    wanted["region_release"] = ("@tes3x_region_release@12",)
+
+
+@binder("tes3xpoolgrow.c")
+def _bind_poolgrow(b):
+    image, define, locate, wanted = b.image, b.define, b.locate, b.wanted
+    pools = find_pool_grow_sites(image)
+    print(f"pool-grow: exhaustion check {hexva(pools['exhausted_call'])}, "
+          f"pool constructor {hexva(pools['pool_ctor'])}")
+    define("POOL_CTOR", hexva(pools["pool_ctor"]))
+    define("POOL_HEAP_ALLOCATE", hexva(locate("heap-allocate")))
+    define("POOL_HEAP_OBJECT", hexva(locate("heap-object")))
+    wanted["pool_grow"] = ("_tes3x_pool_grow_hook",)
+
+
+@binder("tes3xconsole.c")
+def _bind_console(b):
+    image, address, define, locate, wanted = b.image, b.address, b.define, b.locate, b.wanted
+    print("console hook: keyboard and print sites located by content")
+    for name, default in CONSOLE_ADDRESSES:
+        define(name, address(name, default))
+    console_print = locate("console-print")
+    vsprintf = tes3x_inject.call_target(image, console_print + CONSOLE_PRINT_VSPRINTF)
+    print(f"console output: printf {hexva(console_print)}, vsprintf {hexva(vsprintf)}")
+    define("CONSOLE_PRINT", hexva(console_print))
+    define("VSPRINTF", hexva(vsprintf))
+    wanted["console_gate"] = ("@tes3x_console_hook@12", "_tes3x_console_hook")
+    wanted["console_vk_key"] = ("_tes3x_vk_key_limit",)
+    wanted["console_vk_space"] = ("_tes3x_vk_space_limit",)
+    wanted["console_print"] = ("_tes3x_console_print",)
+    wanted["console_mailbox"] = ("_tes3x_mailbox",)
+
+
+@binder("tes3xdiag.c")
+def _bind_diag_2(b):
+    wanted = b.wanted
+    wanted["diagnostics_update"] = ("_tes3x_diag_update_hook",)
+    wanted["diagnostics_flag"] = ("_tes3x_diag_installed",)
+    wanted["patch_mask"] = ("_tes3x_patch_mask",)
+    wanted["patch_mask_hi"] = ("_tes3x_patch_mask_hi",)
+
+
+@binder("tes3xprof.c")
+def _bind_prof_2(b):
+    wanted, extra = b.wanted, b.extra
+    wanted["prof_target"] = ("_tes3x_prof_target",)
+    wanted["prof_stubs"] = ("_tes3x_prof_stubs",)
+    extra["prof_stubs"] = {"prof_count": define_value("tes3xprof.c", "TES3X_PROF_SLOTS")}
+
+
+@binder("tes3xsaves.c")
+def _bind_saves_2(b):
+    wanted = b.wanted
+    wanted["autosave"] = ("@tes3x_autosave_hook@12", "_tes3x_autosave_hook")
+    wanted["transition_cell"] = ("_tes3x_transition_cell_hook",)
+    wanted["transition_cell_companions"] = ("_tes3x_transition_cell_companions_hook",)
+    wanted["transition_teleport"] = ("_tes3x_transition_teleport_hook",)
+    wanted["transition_travel"] = ("_tes3x_transition_travel_hook",)
+
+
+@binder("tes3xoverlay.c")
+def _bind_overlay(b):
+    wanted = b.wanted
+    wanted["overlay_flag"] = ("_tes3x_overlay_installed",)
+
+
+@binder("tes3xprefs.c")
+def _bind_prefs_2(b):
+    wanted = b.wanted
+    wanted["preferences_load"] = ("@tes3x_preferences_hook@4",
+                                  "_tes3x_preferences_hook")
+
+
 def engine_bindings(xbe, sources):
     """Locate every engine value the sources need in xbe."""
     sources = expand_sources(sources)
@@ -378,947 +1602,13 @@ def engine_bindings(xbe, sources):
     def locate(name):
         return LOCATORS[name](image)
 
-    arch_site = None
     wanted, extra = {}, {}
-    if "tes3xarch.c" in names:
-        arch_site = int(os.environ.get("ARCH_SITE", hexva(archive_load_site(image))), 16)
-        load = tes3x_inject.call_target(image, arch_site)
-        print(f"archive hook: call site {hexva(arch_site)} -> Archive::Load {hexva(load)}")
-        define("ARCHIVE_LOAD", hexva(load))
-        wanted["archive_load"] = ("_tes3x_archive_hook",)
-    if "tes3xscript.c" in names:
-        run_function, table = locate("run-function"), locate("command-table")
-        base = define_value("tes3xscript.c", "TES3X_OPCODE_BASE")
-        ceil = define_value("tes3xscript.c", "TES3X_OPCODE_CEIL")
-        print(f"script hook: RunFunction {hexva(run_function)}, table {hexva(table)}, "
-              f"opcodes [{base}, {ceil})")
-        define("RUN_FUNCTION", hexva(run_function))
-        define("COMMAND_TABLE", hexva(table))
-        wanted["script_dispatch"] = ("_tes3x_script_hook",)
-        extra["script_dispatch"] = {"opcode_base": base, "opcode_ceil": ceil}
-    if "tes3xmwse.c" in names:
-        if "tes3xscript.c" not in names:
-            raise PayloadError("tes3xmwse.c requires tes3xscript.c")
-        decode = locate("script-decode")
-        script_ip = locate("script-ip")
-        script_opcode = locate("script-opcode")
-        game_instance = locate("game-instance")
-        world = locate("world-controller")
-        print(f"legacy MWSE: Decode {hexva(decode)}, IP {hexva(script_ip)}, "
-              f"opcode {hexva(script_opcode)}, Game {hexva(game_instance)}, World {hexva(world)}")
-        define("SCRIPT_DECODE", hexva(decode))
-        define("SCRIPT_IP", hexva(script_ip))
-        define("SCRIPT_OPCODE", hexva(script_opcode))
-        define("MWSE_DESTINATION", hexva(locate("script-destination")))
-        define("MWSE_TARGET_ROT", hexva(locate("script-rotation")))
-        define("MWSE_SECOND_OBJECT", hexva(locate("script-text")))
-        restore_site = find_script_ip_restore_call(image, run_function, script_ip)
-        define("MWSE_IP_RESTORE_RETURN", hexva(restore_site + 5))
-        define("GAME_INSTANCE", hexva(game_instance))
-        define("MWSE_WORLD", hexva(world))
-        define("MWSE_DATA_HANDLER", address("DATA_HANDLER", DATA_HANDLER))
-        find_reference = dict(PLACE_ADDRESSES)["FIND_REFERENCE"]
-        define("MWSE_FIND_REFERENCE", address("FIND_REFERENCE", find_reference))
-        resolve_object = dict(SPELL_ADDRESSES)["RESOLVE_OBJECT"]
-        inventory_add = dict(CONTAINER_ADDRESSES)["INVENTORY_ADD"]
-        inventory_remove = dict(CONTAINER_ADDRESSES)["INVENTORY_REMOVE"]
-        define("MWSE_RESOLVE_OBJECT", address("RESOLVE_OBJECT", resolve_object))
-        define("MWSE_INVENTORY_ADD", address("INVENTORY_ADD", inventory_add))
-        define("MWSE_INVENTORY_REMOVE", address("INVENTORY_REMOVE", inventory_remove))
-        define("MWSE_INVENTORY_ITEM_DATA", address("INVENTORY_ITEM_DATA", 0x000E8880))
-        define("MWSE_ACTOR_EQUIPPED", address("ACTOR_EQUIPPED", 0x000E7250))
-        define("MWSE_WEAR_ITEM", address("WEAR_ITEM", 0x0015E6B0))
-        define("MWSE_DROP_ITEM", address("DROP_ITEM", DROP_ITEM))
-        define("MWSE_START_COMBAT", address("START_COMBAT", 0x001629F0))
-        define("MWSE_GET_SPELL_LIST", address("GET_SPELL_LIST", 0x0015A5A0))
-        define("MWSE_SPELL_ADD_ID", address("SPELL_ADD_ID", 0x000FCC60))
-        define("MWSE_SPELL_REMOVE", address("SPELL_REMOVE", 0x000F9A30))
-        define("MWSE_FORCE_CAST", address("FORCE_CAST", 0x00162950))
-        for name, default in SPAWN_ADDRESSES:
-            if name in ("CREATE_REFERENCE", "CELL_INSERT", "CELL_NODE", "CELL_ACTIVATORS",
-                        "ATTACH_SCENE", "UPDATE_LIGHTING"):
-                define("MWSE_" + name, address(name, default))
-        define("MWSE_REF_MODIFIED", address("REF_MODIFIED", REF_MODIFIED))
-        define("MWSE_ADD_MOB", address("ADD_MOB", dict(ACTOR_ADDRESSES)["ADD_MOB"]))
-        wanted["mwse_fixup"] = ("@tes3x_mwse_fixup_hook@8", "_tes3x_mwse_fixup_hook")
-    if "tes3xini.c" in names:
-        ini_get = os.environ.get("INI_GET") or hexva(locate("ini-get-string"))
-        ini_path = os.environ.get("INI_PATH") or hexva(locate("ini-path"))
-        print(f"ini reader {ini_get}, ini path {ini_path}")
-        define("INI_GET_STRING", ini_get)
-        define("INI_PATH", ini_path)
-    if "tes3xsaves.c" in names:
-        save_game = hexva(locate("save-game"))
-        save_this = hexva(locate("save-this-ptr"))
-        save_owner, save_owner_off, save_state_off = find_save_allowed_context(image)
-        save_owner = hexva(save_owner)
-        _transition_calls, cell_change, companions = find_transition_calls(image)
-        print(f"autosave hook: SaveGame {save_game}, owner pointer {save_this}")
-        print(f"save gate: owner {save_owner} + 0x{save_owner_off:X} + 0x{save_state_off:X}")
-        print(f"transition hooks: cell change {hexva(cell_change)}, companions {hexva(companions)}")
-        define("SAVE_GAME", save_game)
-        define("SAVE_THIS_PTR", save_this)
-        define("SAVE_GATE_OWNER", save_owner)
-        define("SAVE_GATE_OWNER_OFFSET", hex(save_owner_off))
-        define("SAVE_GATE_STATE_OFFSET", hex(save_state_off))
-        define("CELL_CHANGE", hexva(cell_change))
-        define("CELL_CHANGE_COMPANIONS", hexva(companions))
-    if "tes3xprefs.c" in names:
-        site = locate("preferences-load")
-        load = hexva(tes3x_inject.call_target(image, site))
-        table = hexva(locate("controls-table"))
-        print(f"preferences hook: controls load {load}, bindings {table}")
-        define("CONTROLS_LOAD", load)
-        define("CONTROLS_TABLE", table)
-    if "tes3xprof.c" in names:
-        print("profiler: RDTSC region timing, targets chosen at patch time")
-    if "tes3xheap.c" in names:
-        allocate, free = hexva(locate("heap-allocate")), hexva(locate("heap-free"))
-        heap = hexva(locate("heap-object"))
-        print(f"heap census: Allocate {allocate}, Free {free}, heap {heap}")
-        define("HEAP_ALLOCATE", allocate)
-        define("HEAP_FREE", free)
-        define("HEAP_OBJECT", heap)
-        wanted["heap_allocate"] = ("_tes3x_heap_alloc_hook",)
-        wanted["heap_allocate_wrapped"] = ("_tes3x_heap_alloc_wrapped_hook",)
-        wanted["heap_allocate_new"] = ("_tes3x_heap_alloc_new_hook",)
-        wanted["heap_allocate_pool"] = ("_tes3x_heap_alloc_pool_hook",)
-        wanted["heap_free"] = ("_tes3x_heap_free_hook",)
-    if "tes3xmem.c" in names:
-        heap_alloc, heap_free = hexva(locate("xapi-heap-alloc")), hexva(locate("xapi-heap-free"))
-        text = next(s for s in image.sections if s.name == ".text")
-        print(f"memory census: RtlAllocateHeap {heap_alloc}, RtlFreeHeap {heap_free}")
-        define("MEM_HEAP_ALLOC", heap_alloc)
-        define("MEM_HEAP_FREE", heap_free)
-        define("MEM_CODE_START", hexva(text.va))
-        define("MEM_CODE_END", hexva(text.va + text.vsize))
-        wanted["mem_heap_alloc"] = ("_tes3x_mem_heap_alloc@12",)
-        wanted["mem_heap_free"] = ("_tes3x_mem_heap_free@12",)
-    if "tes3xpager.c" in names:
-        print("pager: synthetic test on the console command tes3xpager")
-    if "tes3xnet.c" in names:
-        if "tes3xdiag.c" not in names:
-            raise PayloadError("tes3xnet.c requires tes3xdiag.c for its frame hook")
-        wanted["net"] = ("_tes3x_net_frame",)
-    if "tes3xmulti.c" in names:
-        if "tes3xnet.c" not in names:
-            raise PayloadError("tes3xmulti.c requires tes3xnet.c")
-        world = hexva(locate("world-controller"))
-        data_handler = address("DATA_HANDLER", DATA_HANDLER)
-        print(f"network: [Xbox] NetAddress, UDP 26500, WorldController {world}, "
-              f"DataHandler {data_handler}")
-        define("NET_WORLD", world)
-        define("NET_DATA_HANDLER", data_handler)
-        for name in ("COMPILE_RUN", "FIND_MENU", "UI_ID", "TRIGGER_EVENT", "FIND_CHILD",
-                     "CREATE_WIDGET", "VK_BUTTON", "WIDGET_SET_TEXT", "SET_PROP",
-                     "PERFORM_LAYOUT", "NAV_UP_ID", "NAV_DOWN_ID", "GET_PROP"):
-            define("NET_" + name, address(name, dict(CONSOLE_ADDRESSES)[name]))
-        for name, default in NET_UI_ADDRESSES:
-            define("NET_" + name, address(name, default))
-        define("NET_SERVICE_ACTOR", address("SERVICE_ACTOR", SERVICE_ACTOR))
-        define("NET_LEVELUP_MENU", address("LEVELUP_MENU", LEVELUP_MENU))
-        pad_a, pad_x = (int(address(n, v), 16) for n, v in (("REST_PAD_A", REST_PAD_A),
-                                                         ("REST_PAD_X", REST_PAD_X)))
-        rest_buttons = (tes3x_inject.call_target(image, pad_a + 0x60),
-                        tes3x_inject.call_target(image, pad_a + 0x85),
-                        tes3x_inject.call_target(image, pad_x + 0x56))
-        heal_hours = tes3x_inject.call_target(image, rest_buttons[2] + 4)
-        hours_at = image.va_to_off(rest_buttons[0] + 23)
-        if bytes(image.data[hours_at:hours_at + 3]) != bytes.fromhex("668b0d"):
-            raise PayloadError(f"rest button {hexva(rest_buttons[0])}: not the rest menu's")
-        define("NET_REST_BUTTONS", "{" + ",".join(hexva(b) for b in rest_buttons) + "}")
-        define("NET_REST_HEAL_HOURS", hexva(heal_hours))
-        define("NET_REST_HOURS_ID", hexva(struct.unpack_from("<I", image.data, hours_at + 3)[0]))
-        for name, default in (PLACE_ADDRESSES + SPELL_ADDRESSES + SPAWN_ADDRESSES
-                              + CONTAINER_ADDRESSES + ACTOR_ADDRESSES + IDENTITY_ADDRESSES):
-            define("NET_" + name, address(name, default))
-        journal_add = int(address("JOURNAL_ADD", 0x000FFE00), 16)
-        journal_toast_calls = [s for s in find_call_sites(image, journal_add)
-                               if bytes(image.data[image.va_to_off(s) + 5:
-                                                   image.va_to_off(s) + 9]) == b"\x84\xc0\x0f\x84"]
-        if len(journal_toast_calls) != 1:
-            raise PayloadError(f"Journal toast: {len(journal_toast_calls)} calls, expected 1")
-        define("NET_JOURNAL_TOAST_CALL", hexva(journal_toast_calls[0]))
-        spell_hit = int(address("SPELL_HIT", SPELL_HIT), 16)
-        sites = find_call_sites(image, spell_hit)
-        if len(sites) != SPELL_HIT_SITES:
-            raise PayloadError(f"spellHit {hexva(spell_hit)}: {len(sites)} call sites, expected "
-                               f"{SPELL_HIT_SITES}")
-        define("NET_SPELL_HIT", hexva(spell_hit))
-        define("NET_SPELL_HIT_SITES", "{" + ",".join(hexva(s) for s in sites) + "}")
-        add_object = int(address("ADD_NEW_OBJECT", 0x0010CA40), 16)
-        sites = find_call_sites(image, add_object)
-        if len(sites) != ADD_NEW_OBJECT_SITES:
-            raise PayloadError(f"addNewObject {hexva(add_object)}: {len(sites)} call sites, "
-                               f"expected {ADD_NEW_OBJECT_SITES}")
-        define("NET_ADD_NEW_OBJECT_SITES", "{" + ",".join(hexva(s) for s in sites) + "}")
-        cast_bolt = int(address("CAST_BOLT", CAST_BOLT), 16)
-        sites = find_call_sites(image, cast_bolt)
-        if len(sites) != 1:
-            raise PayloadError(f"cast bolt {hexva(cast_bolt)}: {len(sites)} call sites, expected 1")
-        define("NET_CAST_BOLT", hexva(cast_bolt))
-        define("NET_CAST_BOLT_SITES", "{" + hexva(sites[0]) + "}")
-        shoot = int(address("SHOOT", SHOOT), 16)
-        slots = [image.off_to_va(m.start()) for m in re.finditer(re.escape(struct.pack("<I", shoot)),
-                                                                 bytes(image.data))]
-        if len(slots) != SHOOT_SLOTS or None in slots:
-            raise PayloadError(f"shoot {hexva(shoot)}: {len(slots)} vtable slots, expected "
-                               f"{SHOOT_SLOTS}")
-        hit = int(address("PROJECTILE_ACTOR_HIT", PROJECTILE_ACTOR_HIT), 16)
-        roll = int(address("HIT_ROLL", HIT_ROLL), 16)
-        roll_sites = [s for s in find_call_sites(image, roll) if hit <= s < hit + 0x600]
-        if len(roll_sites) != 1:
-            raise PayloadError(f"projectile hit roll: {len(roll_sites)} call sites, expected 1")
-        define("NET_SHOOT", hexva(shoot))
-        define("NET_SHOOT_SLOTS", "{" + ",".join(hexva(s) for s in slots) + "}")
-        player_shoot = int(address("PLAYER_SHOOT", PLAYER_SHOOT), 16)
-        body = bytes(image.data[image.va_to_off(player_shoot):][:0x40])
-        jumps = [i for i in range(len(body) - 4) if body[i] == 0xE9 and
-                 player_shoot + i + 5 + struct.unpack_from("<i", body, i + 1)[0] == shoot]
-        slots = [image.off_to_va(m.start()) for m in re.finditer(
-            re.escape(struct.pack("<I", player_shoot)), bytes(image.data))]
-        if len(jumps) != 1 or len(slots) != 1 or None in slots:
-            raise PayloadError(f"player shoot {hexva(player_shoot)}: {len(jumps)} jumps to shoot, "
-                               f"{len(slots)} vtable slots, expected 1 and 1")
-        define("NET_PLAYER_SHOOT", hexva(player_shoot))
-        define("NET_PLAYER_SHOOT_SLOT", hexva(slots[0]))
-        ai_step = int(address("AI_STEP", AI_STEP), 16)
-        slots = [image.off_to_va(m.start()) for m in re.finditer(
-            re.escape(struct.pack("<I", ai_step)), bytes(image.data))]
-        if len(slots) != AI_STEP_SLOTS or None in slots:
-            raise PayloadError(f"AI step {hexva(ai_step)}: {len(slots)} vtable slots, expected "
-                               f"{AI_STEP_SLOTS}")
-        define("NET_AI_STEP", hexva(ai_step))
-        define("NET_AI_STEP_SLOTS", "{" + ",".join(hexva(s) for s in slots) + "}")
-        define("NET_NOCK", address("NOCK", NOCK))
-        get_bounty = int(address("GET_BOUNTY", GET_BOUNTY), 16)
-        if bytes(image.data[image.va_to_off(get_bounty):][:7]) != bytes.fromhex("8b899805000068"):
-            raise PayloadError(f"get bounty {hexva(get_bounty)}: not MobilePlayer::getBounty")
-        define("NET_GET_BOUNTY", hexva(get_bounty))
-        hit_stun = int(address("HIT_STUN", dict(PLACE_ADDRESSES)["HIT_STUN"]), 16)
-        sites = find_call_sites(image, hit_stun)
-        if len(sites) != 2:
-            raise PayloadError(f"hit stun/crime {hexva(hit_stun)}: {len(sites)} call sites, "
-                               "expected 2")
-        define("NET_HIT_STUN_SITES", "{" + ",".join(hexva(s) for s in sites) + "}")
-        define("NET_HIT_ROLL", hexva(roll))
-        define("NET_SHOT_ROLL_SITES", "{" + hexva(roll_sites[0]) + "}")
-        target = int(address("ACTIVATION_TARGET", ACTIVATION_TARGET), 16)
-        sites = find_call_sites(image, target)
-        if len(sites) != 1:
-            raise PayloadError(f"activation target: {len(sites)} call sites, expected 1")
-        define("NET_ACTIVATION_TARGET", hexva(target))
-        define("NET_ACTIVATION_TARGET_SITES", "{" + hexva(sites[0]) + "}")
-        activate = int(address("REF_ACTIVATE", dict(CONSOLE_ADDRESSES)["REF_ACTIVATE"]), 16)
-        sites = [s for s in find_call_sites(image, activate) if target <= s < target + 0x400]
-        if len(sites) != 1:
-            raise PayloadError(f"player activation: {len(sites)} call sites, expected 1")
-        define("NET_REF_ACTIVATE", hexva(activate))
-        define("NET_PLAYER_ACTIVATE_SITES", "{" + hexva(sites[0]) + "}")
-        control = int(address("PLAYER_CONTROL", PLAYER_CONTROL), 16)
-        slots = [image.off_to_va(m.start()) for m in re.finditer(
-            re.escape(struct.pack("<I", control)), bytes(image.data))]
-        if len(slots) != 1 or None in slots:
-            raise PayloadError(f"player control {hexva(control)}: {len(slots)} vtable slots, "
-                               "expected 1")
-        define("NET_PLAYER_CONTROL", hexva(control))
-        define("NET_PLAYER_CONTROL_SLOT", hexva(slots[0]))
-        modified = int(address("REF_MODIFIED", REF_MODIFIED), 16)
-        slots = [image.off_to_va(m.start()) for m in re.finditer(
-            re.escape(struct.pack("<I", modified)), bytes(image.data))]
-        if len(slots) != 1 or None in slots:
-            raise PayloadError(f"Reference::setObjectModified {hexva(modified)}: {len(slots)} "
-                               "vtable slots, expected 1")
-        define("NET_REF_MODIFIED", hexva(modified))
-        define("NET_REF_MODIFIED_SLOT", hexva(slots[0]))
-        leveled = int(address("LEVELED_SPAWN", LEVELED_SPAWN), 16)
-        slots = [image.off_to_va(m.start()) for m in re.finditer(
-            re.escape(struct.pack("<I", leveled)), bytes(image.data))]
-        if len(slots) != 1 or None in slots:
-            raise PayloadError(f"LeveledCreature spawn {hexva(leveled)}: {len(slots)} vtable "
-                               "slots, expected 1")
-        define("NET_LEVELED_SPAWN", hexva(leveled))
-        define("NET_LEVELED_SPAWN_SLOT", hexva(slots[0]))
-        summon = int(address("SUMMON", SUMMON), 16)
-        sites = find_call_sites(image, summon)
-        if len(sites) != 1:
-            raise PayloadError(f"summon {hexva(summon)}: {len(sites)} call sites, expected 1")
-        define("NET_SUMMON", hexva(summon))
-        define("NET_SUMMON_SITES", "{" + hexva(sites[0]) + "}")
-        compile_run = int(address("COMPILE_RUN", dict(CONSOLE_ADDRESSES)["COMPILE_RUN"]), 16)
-        sites = find_call_sites(image, compile_run)
-        if len(sites) != PLAYER_SCRIPTS:
-            raise PayloadError(f"CompileAndRun: {len(sites)} call sites, expected {PLAYER_SCRIPTS}")
-        define("NET_PLAYER_SCRIPT_SITES", "{" + ",".join(hexva(s) for s in sites) + "}")
-        relocate = int(address("RELOCATE", RELOCATE), 16)
-        sites = find_call_sites(image, relocate)
-        if len(sites) != RELOCATE_CALLS:
-            raise PayloadError(f"relocateReference {hexva(relocate)}: {len(sites)} call sites, "
-                               f"expected {RELOCATE_CALLS}")
-        define("NET_RELOCATE", hexva(relocate))
-        define("NET_RELOCATE_SITES", "{" + ",".join(hexva(s) for s in sites) + "}")
-        execute = int(address("SCRIPT_EXECUTE", SCRIPT_EXECUTE), 16)
-        process = int(address("PROCESS_GLOBAL_SCRIPTS", PROCESS_GLOBAL_SCRIPTS), 16)
-        sites = [s for s in find_call_sites(image, execute) if process <= s < process + 0x60]
-        if len(sites) != 1:
-            raise PayloadError(f"Script::execute in processGlobalScripts: {len(sites)} call "
-                               "sites, expected 1")
-        define("NET_SCRIPT_EXECUTE", hexva(execute))
-        define("NET_GLOBAL_SCRIPT_SITES", "{" + hexva(sites[0]) + "}")
-        define("NET_ADD_GLOBAL_SCRIPT", address("ADD_GLOBAL_SCRIPT", ADD_GLOBAL_SCRIPT))
-        define("NET_FIND_SCRIPT", address("FIND_SCRIPT", FIND_SCRIPT))
-        for name, default in (("NPC_SET_AI", NPC_SET_AI), ("CREATURE_SET_AI", CREATURE_SET_AI)):
-            set_ai = int(address(name, default), 16)
-            slots = [image.off_to_va(m.start()) for m in re.finditer(
-                re.escape(struct.pack("<I", set_ai)), bytes(image.data))]
-            if len(slots) != 1 or None in slots:
-                raise PayloadError(f"{name} {hexva(set_ai)}: {len(slots)} vtable slots, "
-                                   "expected 1")
-            define(f"NET_{name}", hexva(set_ai))
-            define(f"NET_{name}_SLOT", hexva(slots[0]))
-        drop = int(address("DROP_ITEM", DROP_ITEM), 16)
-        player_mobile = int(address("PLAYER_MOBILE", dict(CONSOLE_ADDRESSES)["PLAYER_MOBILE"]), 16)
-        data = bytes(image.data)
-
-        def after_player_mobile(site):
-            off = image.va_to_off(site - 7)
-            if off is None or data[off] != 0xE8 or data[off + 5:off + 7] not in (b"\x8b\xc8",
-                                                                                  b"\x89\xc1"):
-                return False
-            return site - 2 + struct.unpack_from("<i", data, off + 1)[0] == player_mobile
-
-        sites = [s for s in find_call_sites(image, drop) if after_player_mobile(s)]
-        if len(sites) != PLAYER_DROPS:
-            raise PayloadError(f"dropItem on the player: {len(sites)} call sites, expected "
-                               f"{PLAYER_DROPS}")
-        define("NET_DROP_ITEM", hexva(drop))
-        define("NET_PLAYER_DROP_SITES", "{" + ",".join(hexva(s) for s in sites) + "}")
-        save_game = locate("save-game")
-        sites = find_call_sites(image, save_game)
-        if len(sites) != SAVE_CALLS:
-            raise PayloadError(f"SaveGame: {len(sites)} call sites, expected {SAVE_CALLS}")
-        define("NET_SAVE_GAME", hexva(save_game))
-        off = image.va_to_off(save_game)
-        # XCreateSaveGame("U:\", name, OPEN_ALWAYS, 0, path, 0x104), which finds the slot's folder
-        calls = list(re.finditer(rb"\x6a\x00\x6a\x04\x8d\x94\x24....\x52\x68....\xe8(....)",
-                                 data[off:off + 0x400], re.S))
-        if len(calls) != 1:
-            raise PayloadError(f"XCreateSaveGame in SaveGame: {len(calls)} calls, expected 1")
-        after = save_game + calls[0].end()
-        define("NET_CREATE_SAVE", hexva(after + struct.unpack("<i", calls[0].group(1))[0]))
-        define("NET_SAVE_SITES", "{" + ",".join(hexva(s) for s in sites) + "}")
-        # The engine's relaunches (New Game, Load) call 0x00336DF0, which keeps the picture on
-        # screen, then XLaunchNewImage("D:\morrowind.xbe", &launch data).
-        launches = set()
-        for m in re.finditer(rb"\xe8(....)\x8d\x44\x24.\x50\x68(....)\xe8(....)", data, re.S):
-            path = image.va_to_off(struct.unpack("<I", m.group(2))[0])
-            if path is None or data[path:path + 17] != b"D:\\morrowind.xbe\0":
-                continue
-            at = image.off_to_va(m.start())
-            launches.add((at + 5 + struct.unpack("<i", m.group(1))[0],
-                          struct.unpack("<I", m.group(2))[0],
-                          at + m.end() - m.start() + struct.unpack("<i", m.group(3))[0]))
-        if len(launches) != 1:
-            raise PayloadError(f"title relaunch: {len(launches)} call sequences, expected 1")
-        persist, engine_path, launch = launches.pop()
-        define("NET_PERSIST_DISPLAY", hexva(persist))
-        define("NET_ENGINE_PATH", hexva(engine_path))
-        define("NET_LAUNCH", hexva(launch))
-        # Exit in the pause menu: MessageBox(sMessage5 (GMST 0x266), Yes, No), then the answer's
-        # callback (push 0x20, push callback), which relaunches D:\Default.xbe.
-        quits = list(re.finditer(rb"\x68\x66\x02\x00\x00\xe8....\x50\xe8.{0,48}?\x6a\x20\x68(....)"
-                                 rb"\x8b\xc8", data, re.S))
-        if len(quits) != 1:
-            raise PayloadError(f"quit callback: {len(quits)} sites, expected 1")
-        quit_site = image.off_to_va(quits[0].start(1))
-        quit = struct.unpack("<I", quits[0].group(1))[0]
-        body = data[image.va_to_off(quit):image.va_to_off(quit) + 0x30]
-        pushed = [struct.unpack_from("<I", body, m.start() + 1)[0]
-                  for m in re.finditer(rb"\x68", body)]
-        if not any(image.va_to_off(p) is not None and
-                   data[image.va_to_off(p):image.va_to_off(p) + 15].lower() == b"d:\\default.xbe\0"
-                   for p in pushed):
-            raise PayloadError(f"quit callback {quit:#x} does not launch D:\\Default.xbe")
-        define("NET_QUIT_SITE", hexva(quit_site))
-        # MenuOptions::open's last call, after the layout the ui-scale hook wraps: the help layer's
-        # lookup. Called before the menu is first drawn.
-        options_tail = find_options_scale(image) + 0xF
-        if image.data[image.va_to_off(options_tail) - 1] != 0x52:
-            raise PayloadError("MenuOptions::open: no help layer call after the options layout")
-        define("NET_OPEN_TAIL_SITE", hexva(options_tail + 1))
-        define("NET_OPEN_TAIL", hexva(tes3x_inject.call_target(image, options_tail)))
-        # the call just before it fetches GMST 0x266, the Exit box's text
-        define("NET_EXIT_TEXT_SITE", hexva(image.off_to_va(quits[0].start() + 6)))
-        define("NET_QUIT", hexva(quit))
-        for name, key in (("MARKER_ID", "map-marker-id"), ("DOOR_REF_ID", "map-door-ref-id"),
-                           ("PARENT_ID", "map-parent-id"), ("CELL_ID", "map-cell-id"), ("PIXELS", "map-pixels"),
-                          ("TAGGED_ID", "map-tagged-id"),
-                           ("SET_X", "map-set-x"), ("SET_Y", "map-set-y"),
-                           ("UPDATE_SITE", "map-local-player-site")):
-            define("NET_MAP_" + name, hexva(locate(key)))
-        define("NET_MAP_UPDATE_LOCAL", hexva(tes3x_inject.call_target(
-            image, locate("map-local-player-site"))))
-        define("NET_MENU_GATE", hexva(locate("menu-mode-gate")))
-        define("NET_MOB_GATE", hexva(locate("mob-update-gate")))
-        define("NET_WEATHER_ROLL", hexva(locate("weather-roll")))
-        define("NET_BUTTON", hexva(locate("button-pressed")))
-        # MobilePlayer::onDeath: UpdateFillBar(health bar, current, base) empties the bar; after the
-        # engine's death (magic stopped, DataHandler told), the last save's name chooses between
-        # "load it?" and the main menu, both ending in the epilogue.
-        world_va, handler_va = int(world, 16), int(data_handler, 16)
-        deaths = [m for m in re.finditer(rb"\x33\xc0\x66\xa1(....)\x51\x52\x50\xe8(....)\x83\xc4"
-                                         rb"\x0c\x8b\xcf\xe8....\x8b\x0d(....)\x8b\x51\x6c\xc6\x42"
-                                         rb"\x04\x01\x8b\x0d(....)\xe8....\xa1(....)\x8b\x08\x8b\x71"
-                                         rb"\x14\x85\xf6\x0f\x84(....)", data, re.S)
-                  if struct.unpack("<3I", m.group(3) + m.group(4) + m.group(5)) ==
-                  (world_va, handler_va, handler_va) and b"\x68\x61\x02\x00\x00" in
-                  data[m.end():m.end() + 0x80]]
-        if len(deaths) != 1:
-            raise PayloadError(f"player death menu: {len(deaths)} sites, expected 1")
-        site = deaths[0].start(5) - 1
-        menu = image.off_to_va(deaths[0].end()) + struct.unpack("<i", deaths[0].group(6))[0]
-        if data[image.va_to_off(menu) - 6:image.va_to_off(menu)] != b"\x5f\x5e\x83\xc4\x08\xc3":
-            raise PayloadError(f"player death menu {hexva(menu)}: not after onDeath's epilogue")
-        fill = image.off_to_va(deaths[0].end(2)) + struct.unpack("<i", deaths[0].group(2))[0]
-        # MessageMenu(text, button, ..., 0), as onDeath shows "load it?" (Yes, No)
-        boxes = list(re.finditer(rb"\x6a\x44\xe8....\x50\x57\xe8(....)",
-                                 data[deaths[0].end():deaths[0].end() + 0x100], re.S))
-        if len(boxes) != 1:
-            raise PayloadError(f"message menu: {len(boxes)} calls in onDeath, expected 1")
-        define("NET_MESSAGE_MENU", hexva(image.off_to_va(deaths[0].end() + boxes[0].end()) +
-                                         struct.unpack("<i", boxes[0].group(1))[0]))
-        # showMessageBox(text, 0, 1): the toast for the "cannot rest" GMST, which blocks nothing
-        toasts = {image.off_to_va(m.end(1)) + struct.unpack("<i", m.group(1))[0]
-                  for m in re.finditer(rb"\x6a\x01\x6a\x00\x68\xfa\x01\x00\x00\xe8....\x50\xe8(....)"
-                                       rb"\x83\xc4\x0c", data, re.S)}
-        if len(toasts) != 1:
-            raise PayloadError(f"showMessageBox: {len(toasts)} targets, expected 1")
-        define("NET_SHOW_MESSAGE", hexva(toasts.pop()))
-        define("NET_DEATH_SITE", hexva(image.off_to_va(site)))
-        # New Game's first ini read of [PreLoad] Cell N (the menu's reads a constant "Cell 0"):
-        # push key, push "PreLoad", call, add esp 0x18, test eax, je.
-        preload = data.find(b"\0PreLoad\0") + 1
-        preload_va = image.off_to_va(preload) if preload else None
-        reads = list(re.finditer(rb"\x57\x68" + struct.pack("<I", preload_va or 0) +
-                                 rb"\xe8....\x83\xc4\x18\x85\xc0\x0f\x84", data, re.S))
-        if not preload_va or len(reads) != 1:
-            raise PayloadError(f"New Game's PreLoad read: {len(reads)} sites, expected 1")
-        define("NET_PRELOAD_SITE", hexva(image.off_to_va(reads[0].start() + 6)))
-        # The loop's next step finds the cell by that name: mov edx, [DataHandler]; mov ecx,
-        # [edx]; push ebp; call.
-        finds = list(re.finditer(rb"\x8b\x15....\x8b\x0a\x55\xe8",
-                                 data[reads[0].end():reads[0].end() + 0x60], re.S))
-        if len(finds) != 1:
-            raise PayloadError(f"New Game's PreLoad cell lookup: {len(finds)} sites, expected 1")
-        define("NET_PRELOAD_FIND_SITE", hexva(image.off_to_va(reads[0].end() + finds[0].end() - 1)))
-        define("NET_FILL_BAR", hexva(fill))
-        define("NET_HEALTH_BAR", hexva(struct.unpack("<I", deaths[0].group(1))[0]))
-        define("NET_FIND_MARKER", hexva(locate("find-marker")))
-        define("NET_TEMPLE_MARKER", hexva(locate("temple-marker")))
-        define("NET_DIVINE_MARKER", hexva(locate("divine-marker")))
-        wanted["multiplayer"] = ("_tes3x_multi_frame",)
-    if "tes3xagent.c" in names:
-        if "tes3xnet.c" not in names:
-            raise PayloadError("tes3xagent.c requires tes3xnet.c")
-        wanted["agent"] = ("_tes3x_agent_entry",)
-    if "tes3xinfoarena.c" in names:
-        heap_allocate = hexva(locate("heap-allocate"))
-        heap_free = hexva(locate("heap-free"))
-        heap_object = hexva(locate("heap-object"))
-        names_allocate = hexva(tes3x_inject.call_target(image, locate("info-names-allocate")))
-        names_free = hexva(locate("info-names-free"))
-        current_topic = hexva(locate("info-current-topic"))
-        link_original = hexva(locate("info-link-original"))
-        finish_original = hexva(locate("info-finish-original"))
-        print(f"INFO name arena: table {heap_allocate}, names {names_allocate}, "
-              f"topic {current_topic}, finish {finish_original}")
-        define("INFO_HEAP_ALLOCATE", heap_allocate)
-        define("INFO_HEAP_FREE", heap_free)
-        define("INFO_HEAP_OBJECT", heap_object)
-        define("INFO_NAMES_ALLOCATE", names_allocate)
-        define("INFO_NAMES_FREE", names_free)
-        define("INFO_CURRENT_TOPIC", current_topic)
-        define("INFO_LINK_ORIGINAL", link_original)
-        define("INFO_FINISH_ORIGINAL", finish_original)
-        wanted["info_table_allocate"] = ("_tes3x_info_table_allocate_hook",)
-        wanted["info_names_allocate"] = ("_tes3x_info_names_allocate_hook",)
-        wanted["info_names_free"] = ("_tes3x_info_names_free",)
-        wanted["info_table_free"] = ("_tes3x_info_table_free@4",)
-        wanted["info_cleanup"] = ("_tes3x_info_cleanup_hook",)
-        wanted["info_finish"] = ("_tes3x_info_finish_hook",)
-    if "tes3xlinknames.c" in names:
-        free = locate("link-free")
-        print(f"link name arena: zeroed {hexva(locate('link-zeroed'))}, "
-              f"tagged {hexva(locate('link-tagged'))}, free {hexva(free)}")
-        define("LINK_ZEROED", hexva(locate("link-zeroed")))
-        define("LINK_TAGGED", hexva(locate("link-tagged")))
-        define("LINK_FREE_RESUME", hexva(free + 6))
-        wanted["link_zeroed"] = ("_tes3x_link_names_zeroed",)
-        wanted["link_tagged"] = ("_tes3x_link_names_tagged",)
-        wanted["link_free"] = ("_tes3x_link_names_free",)
-    if "tes3xdialogueowner.c" in names or "tes3xtest_dialogueowner.c" in names:
-        find = locate("dialogue-owner-find")
-        define("OWNER_DATA_HANDLER", hexva(locate("dialogue-owner-data-handler")))
-        define("OWNER_FIND", hexva(find))
-        define("OWNER_FIND_RESUME", hexva(find + 5))
-    if "tes3xdialogueowner.c" in names:
-        print(f"dialogue owner: findDialogue {hexva(find)}")
-        wanted["dialogue_owner_find"] = ("_tes3x_dialogue_owner_find",)
-        wanted["dialogue_owner_dtor"] = ("_tes3x_dialogue_owner_dtor",)
-    if "tes3xtest_dialogueowner.c" in names:
-        if "tes3xconsole.c" not in names:
-            raise PayloadError("tes3xtest_dialogueowner.c requires tes3xconsole.c")
-        print("dialogue-owner test probe: console command tes3xowner STRIDE")
-        wanted["dialogue_owner_test"] = ("_tes3x_dialogue_owner_test_command",)
-    if "tes3xlazydialogue.c" in names or "tes3xtest_lazydialogue.c" in names:
-        lazy = find_lazy_dialogue_sites(image)
-        define("LAZY_DATA_HANDLER", hexva(lazy["data_handler"]))
-    if "tes3xlazydialogue.c" in names:
-        print(f"lazy dialogue: INFO site {hexva(lazy['info_site'])}, "
-              f"getFilteredInfo {hexva(lazy['reader_filtered'])}")
-        define("LAZY_HEAP_ALLOCATE", hexva(locate("heap-allocate")))
-        define("LAZY_HEAP_FREE", hexva(locate("heap-free")))
-        define("LAZY_HEAP_OBJECT", hexva(locate("heap-object")))
-        define("LAZY_NAMES_FREE", hexva(locate("info-names-free")))
-        for name in ("topic", "info_done", "info_tail", "info_notail", "info_new", "info_ctor",
-                     "load_from_file", "cached_file", "file_ctor", "file_collect", "file_reopen",
-                     "file_seek", "file_close", "file_dtor", "loaded_first"):
-            define("LAZY_" + name.upper(), hexva(lazy[name]))
-        define("LAZY_FILTERED", hexva(lazy["reader_filtered"]))
-        for name, length in (("filtered", 7), ("at_index", 5), ("journal", 6)):
-            define(f"LAZY_{name.upper()}_RESUME", hexva(lazy["reader_" + name] + length))
-            wanted["lazy_dialogue_" + name] = (f"_tes3x_lazy_dialogue_{name}",)
-        wanted["lazy_dialogue_info"] = ("_tes3x_lazy_dialogue_info_hook",)
-        wanted["lazy_dialogue_loaded"] = ("_tes3x_lazy_dialogue_loaded",)
-    if "tes3xtest_lazydialogue.c" in names:
-        if "tes3xconsole.c" not in names:
-            raise PayloadError("tes3xtest_lazydialogue.c requires tes3xconsole.c")
-        print("lazy-dialogue test probe: console command tes3xlazy check|summary|sweep N|build|heard|digest")
-        wanted["lazy_dialogue_test"] = ("_tes3x_lazy_dialogue_test_command",)
-    if "tes3xdiag.c" in names:
-        update = hexva(locate("diagnostics-update"))
-        print(f"diagnostics hook: Game::Update {update}")
-        define("DIAG_UPDATE", update)
-    if "tes3xrefs.c" in names:
-        load, skip = locate("ref-load"), hexva(locate("ref-skip"))
-        print(f"refs hook: fallback {hexva(load)}, resume {hexva(load + 6)}, skip {skip}")
-        define("REF_RESUME", hexva(load + 6))
-        define("REF_SKIP", skip)
-        wanted["ref_load"] = ("_tes3x_ref_load_hook",)
-    if "tes3xmcp37.c" in names:
-        site, game, player, tree = find_mcp37_context(image)
-        print(f"mcp-37 hook: cell change {hexva(site)}, game {hexva(game)}, "
-              f"player {hexva(player)}, tree iterator {hexva(tree)}")
-        define("MCP37_GAME", hexva(game))
-        define("MCP37_GET_PLAYER", hexva(player))
-        define("MCP37_TREE_NEXT", hexva(tree))
-        wanted["mcp37"] = ("_tes3x_mcp37_hook",)
-    if "tes3xmcp97.c" in names:
-        scan = locate("mcp-97-scan")
-        print(f"mcp-97 hook: scan {hexva(scan)}, resume {hexva(scan + 6)}")
-        define("MCP97_RESUME", hexva(scan + 6))
-        wanted["mcp97_scan"] = ("_tes3x_mcp97_scan_hook",)
-    if "tes3xtest_mcp97.c" in names:
-        scan = locate("mcp-97-scan")
-        landing = scan + 10
-        print(f"mcp-97 test probe: landing {hexva(landing)}")
-        define("MCP97_TEST_LOOP", hexva(scan - 47))
-        define("MCP97_TEST_EXIT", hexva(landing + 5))
-        wanted["mcp97_test"] = ("_tes3x_mcp97_test_hook",)
-        extra["mcp97_test"] = {"mcp97_test_site": hexva(landing)}
-    if "tes3xtest_mcp102.c" in names:
-        setter = locate("mcp-102-actn")
-        sites = find_call_sites(image, setter)
-        if len(sites) != 1:
-            raise PayloadError(f"mcp-102 test probe: {len(sites)} ACTN load calls, expected 1")
-        print(f"mcp-102 test probe: setter {hexva(setter)}, call {hexva(sites[0])}")
-        define("MCP102_TEST_SET_FLAGS", hexva(setter))
-        define("MCP102_TEST_GET_FLAGS", hexva(setter - 0x60))
-        wanted["mcp102_test"] = ("@tes3x_mcp102_test_hook@8",
-                                 "_tes3x_mcp102_test_hook")
-        extra["mcp102_test"] = {"mcp102_test_site": hexva(sites[0])}
-    if "tes3xtest_mcp3.c" in names:
-        if "tes3xconsole.c" not in names:
-            raise PayloadError("tes3xtest_mcp3.c requires tes3xconsole.c")
-        print("mcp-3 test probe: console command tes3xmcp3")
-        wanted["mcp3_test"] = ("_tes3x_mcp3_test_command",)
-    if "tes3xtest_mcp47.c" in names:
-        if "tes3xconsole.c" not in names:
-            raise PayloadError("tes3xtest_mcp47.c requires tes3xconsole.c")
-        print("mcp-47 test probe: console command tes3xmcp47")
-        wanted["mcp47_test"] = ("_tes3x_mcp47_test_command",)
-    if "tes3xtest_mcp55.c" in names:
-        if "tes3xconsole.c" not in names:
-            raise PayloadError("tes3xtest_mcp55.c requires tes3xconsole.c")
-        print("mcp-55 test probe: console command tes3xmcp55")
-        wanted["mcp55_test"] = ("_tes3x_mcp55_test_command",)
-    if "tes3xtest_mcp118.c" in names:
-        if "tes3xconsole.c" not in names:
-            raise PayloadError("tes3xtest_mcp118.c requires tes3xconsole.c")
-        define("MCP118_TEST_DROP", address("DROP_ITEM", DROP_ITEM))
-        wanted["mcp118_test"] = ("_tes3x_mcp118_test_command",)
-    if "tes3xtest_mcp132.c" in names:
-        if "tes3xconsole.c" not in names:
-            raise PayloadError("tes3xtest_mcp132.c requires tes3xconsole.c")
-        if "tes3xanimvirtual.c" not in names:
-            raise PayloadError("tes3xtest_mcp132.c requires tes3xanimvirtual.c")
-        define("MCP132_TEST_RECORDS", address("DATA_HANDLER", DATA_HANDLER))
-        define("MCP132_TEST_FIND_REF", address("FIND_REFERENCE", dict(PLACE_ADDRESSES)["FIND_REFERENCE"]))
-        define("MCP132_TEST_ANIMATION", address("REF_ANIMATION", dict(PLACE_ADDRESSES)["REF_ANIMATION"]))
-        context = find_mcp132_context(image)
-        define("MCP132_TEST_WORLD", hexva(context["world"]))
-        define("MCP132_TEST_GET_PLAYER", hexva(context["get_player"]))
-        wanted["mcp132_test"] = ("_tes3x_mcp132_test_command",)
-    if "tes3xanimvirtual.c" in names:
-        if "tes3xmcp132.c" not in names:
-            raise PayloadError("tes3xanimvirtual.c requires tes3xmcp132.c")
-        play = find_mcp132_context(image)["play"]
-        define("ANIM_VIRTUAL_PLAY_RESUME", hexva(play + 8))
-        define("ANIM_VIRTUAL_PLAY_ENTRY", hexva(play))
-        wanted["anim_virtual_play_group"] = ("_tes3x_animation_virtual_play_group",)
-        extra["anim_virtual_play_group"] = {"anim_virtual_play_site": hexva(play)}
-    if "tes3xctt.c" in names:
-        if "tes3xanimvirtual.c" not in names:
-            raise PayloadError("tes3xctt.c requires tes3xanimvirtual.c")
-        roll = int(address("HIT_ROLL", HIT_ROLL), 16)
-        define("CTT_ROLL_RESUME", hexva(roll + 6))
-        define("CTT_REF_ANIMATION", address("REF_ANIMATION", dict(PLACE_ADDRESSES)["REF_ANIMATION"]))
-        wanted["ctt_roll"] = ("_tes3x_ctt_roll",)
-        extra["ctt_roll"] = {"ctt_roll_site": hexva(roll)}
-    if "tes3xtest_ctt.c" in names:
-        if "tes3xctt.c" not in names or "tes3xtest_mcp132.c" not in names:
-            raise PayloadError("tes3xtest_ctt.c requires tes3xctt.c and tes3xtest_mcp132.c")
-        wanted["ctt_test"] = ("_tes3x_ctt_test_select_clip",)
-    if "tes3xtest_dialoguemerge.c" in names:
-        if "tes3xconsole.c" not in names:
-            raise PayloadError("tes3xtest_dialoguemerge.c requires tes3xconsole.c")
-        print("dialogue-merge test probe: console command tes3xdial TOPIC")
-        define("DIALMERGE_DATA_HANDLER", address("DATA_HANDLER", DATA_HANDLER))
-        wanted["dialmerge_test"] = ("_tes3x_dialmerge_test_command",)
-    if "tes3xmcp154.c" in names:
-        load, reload = locate("mcp-154-load"), locate("mcp-154-reload")
-        print(f"mcp-154 hooks: load {hexva(load)}, reload {hexva(reload)}")
-        define("MCP154_LOAD_RESUME", hexva(load + 6))
-        define("MCP154_RELOAD_RESUME", hexva(reload + 6))
-        wanted["mcp154_load"] = ("_tes3x_mcp154_load_hook",)
-        wanted["mcp154_reload"] = ("_tes3x_mcp154_reload_hook",)
-    if "tes3xmcp123.c" in names:
-        site = locate("mcp-123")
-        add_reference = tes3x_inject.call_target(image, site)
-        print(f"mcp-123 hook: PlaceItem call {hexva(site)}, "
-              f"Cell::addReference {hexva(add_reference)}")
-        define("MCP123_ADD_REFERENCE", hexva(add_reference))
-        wanted["mcp123_add"] = ("_tes3x_mcp123_add_hook",)
-    if "tes3xmcp149.c" in names:
-        _, dispose_flag = find_mcp149_menu(image)
-        define("MCP149_DISPOSE_FLAG", hexva(dispose_flag))
-        wanted["mcp149_menu_state"] = ("_tes3x_mcp149_menu_state",)
-    if "tes3xmcp55.c" in names:
-        _, refresh, _, set_text = find_mcp55_context(image)
-        _, world, clear, player, add, update = find_mcp55_inventory_context(image)
-        define("MCP55_REFRESH", hexva(refresh))
-        define("MCP55_SET_TEXT", hexva(set_text))
-        define("MCP55_WORLD_PTR", hexva(world))
-        define("MCP55_CLEAR_ICONS", hexva(clear))
-        define("MCP55_GET_PLAYER", hexva(player))
-        define("MCP55_ADD_ITEMS", hexva(add))
-        define("MCP55_UPDATE_TILES", hexva(update))
-        wanted["mcp55_refresh_brew"] = ("_tes3x_mcp55_refresh_brew",)
-        wanted["mcp55_refresh_name"] = ("_tes3x_mcp55_refresh_name",)
-        wanted["mcp55_close_inventory"] = ("_tes3x_mcp55_close_inventory",)
-    if "tes3xmcp30.c" in names:
-        _, _, matrix_multiply = find_mcp30_context(image)
-        define("MCP30_MATRIX_MULTIPLY", hexva(matrix_multiply))
-        wanted["mcp30_angle"] = ("_tes3x_mcp30_angle",)
-        wanted["mcp30_launch_matrix"] = ("_tes3x_mcp30_launch_matrix",)
-    if "tes3xmcp118.c" in names:
-        site, reset = find_mcp118_drop_finish(image)
-        _, world, _, player, _, _ = find_mcp55_inventory_context(image)
-        define("MCP118_RESET", hexva(reset))
-        define("MCP118_WORLD_PTR", hexva(world))
-        define("MCP118_GET_PLAYER", hexva(player))
-        print(f"mcp-118 hook: drop placement cleanup {hexva(site)} -> {hexva(reset)}")
-        wanted["mcp118_drop_finish"] = ("_tes3x_mcp118_drop_finish",)
-    if "tes3xmcp6.c" in names:
-        sites = find_mcp6_context(image)
-        define("MCP6_GET_MOBILE", hexva(sites["get_mobile"]))
-        define("MCP6_GAME_PTR", address("GAME_PTR", dict(CONSOLE_ADDRESSES)["GAME_PTR"]))
-        define("MCP6_PLAYER_MOBILE", address("PLAYER_MOBILE", dict(CONSOLE_ADDRESSES)["PLAYER_MOBILE"]))
-        for key, symbol in (("mcp6_reset", "_tes3x_mcp6_reset"),
-                            ("mcp6_fortify", "_tes3x_mcp6_record_fortify"),
-                            ("mcp6_prepare", "_tes3x_mcp6_prepare"),
-                            ("mcp6_drain", "_tes3x_mcp6_finish_drain"),
-                            ("mcp6_restore", "_tes3x_mcp6_finish_restore")):
-            wanted[key] = (symbol,)
-    if "tes3xpathgrid.c" in names:
-        print("mwse-pathgrid-zero hooks: " + ", ".join(map(hexva, find_pathgrid_lookups(image))))
-        wanted["pathgrid_zero"] = ("_tes3x_pathgrid_zero_hook",)
-    if "tes3xenabledisable.c" in names:
-        enable, disable, script_locals = find_enable_disable_flags(image)
-        print(f"mwse-enable-disable-vars hooks: {hexva(enable)}, {hexva(disable)}")
-        define("ENABLE_DISABLE_LOCALS", hexva(script_locals))
-        wanted["enable_flag"] = ("_tes3x_enable_flag_hook",)
-        wanted["disable_flag"] = ("_tes3x_disable_flag_hook",)
-    if "tes3xmcp173.c" in names:
-        sites = find_mcp173_rank(image)
-        print(f"mcp-173 hooks: NPC rank saves {', '.join(map(hexva, sites))}")
-        wanted["mcp173_mark"] = ("_tes3x_mcp173_mark_hook",)
-    if "tes3xmcp125.c" in names:
-        context = find_mcp125_context(image)
-        print(f"mcp-125 hook: collision add {hexva(context['add'])}, "
-              f"remove {hexva(context['remove'])}")
-        define("MCP125_ADD_MOB", hexva(context["add"]))
-        define("MCP125_REMOVE_MOB", hexva(context["remove"]))
-        wanted["mcp125_collision"] = ("_tes3x_mcp125_collision_hook",)
-    if "tes3xmcp132.c" in names:
-        context = find_mcp132_context(image)
-        print(f"mcp-132 hooks: script {', '.join(map(hexva, context['script']))}, "
-              f"bones {hexva(context['bone'])}, player {hexva(context['idle_call'])}")
-        for key, name in (("play", "PLAY_GROUP"), ("update", "UPDATE_IDLES"),
-                          ("destroy", "ANIM_DESTROY"),
-                          ("ref_update", "ANIM_IDLE_UPDATE"), ("world", "WORLD"),
-                          ("get_player", "GET_PLAYER")):
-            define("MCP132_" + name, hexva(context[key]))
-        wanted["mcp132_play_group"] = ("_tes3x_mcp132_play_group",)
-        wanted["mcp132_bone_match"] = ("_tes3x_mcp132_bone_match",)
-        wanted["mcp132_update_idles"] = ("_tes3x_mcp132_update_idles",)
-        wanted["mcp132_destroy_animation"] = ("_tes3x_mcp132_destroy_animation",)
-    if "tes3xdxt5.c" in names:
-        site = locate("dxt5-size")
-        size = hexva(tes3x_inject.call_target(image, site))
-        print(f"dxt5-size hook: call {hexva(site)}, size function {size}")
-        define("TEXTURE_SIZE", size)
-        wanted["dxt5_size"] = ("_tes3x_dxt5_size_hook",)
-    if "tes3xmcp146.c" in names:
-        site = locate("mcp-146")
-        input_action = locate("mcp-146-input")
-        game = locate("mcp-146-game")
-        resume = locate("mcp-146-resume")
-        attacking = tes3x_inject.call_target(image, site)
-        print(f"mcp-146 hook: input guard {hexva(site)}, attacking {hexva(attacking)}, "
-              f"input {hexva(input_action)}, resume {hexva(resume)}")
-        define("MCP146_ATTACKING", hexva(attacking))
-        define("MCP146_INPUT", hexva(input_action))
-        define("MCP146_GAME", hexva(game))
-        define("MCP146_RESUME", hexva(resume))
-        wanted["mcp146"] = ("_tes3x_mcp146_hook",)
-    if "tes3xmcp47.c" in names:
-        site, deselect, world, player = find_mcp47_context(image)
-        print(f"mcp-47 hook: deselect call {hexva(site)}, target {hexva(deselect)}")
-        define("MCP47_DESELECT", hexva(deselect))
-        define("MCP47_WORLD", hexva(world))
-        define("MCP47_GET_PLAYER", hexva(player))
-        wanted["mcp47_deselect"] = ("_tes3x_mcp47_deselect",)
-    if "tes3xrefindex.c" in names:
-        find = hexva(locate("ref-index-find"))
-        scripts = hexva(locate("ref-index-scripts"))
-        print(f"ref-index hooks: Cell::findReferenceToObject {find}, startGlobalScripts {scripts}")
-        define("REFINDEX_FIND_IN_CELL", find)
-        define("REFINDEX_START_SCRIPTS", scripts)
-        wanted["refindex_find"] = ("_tes3x_refindex_find_hook",)
-        wanted["refindex_scripts"] = ("_tes3x_refindex_scripts_hook",)
-    if "tes3xbowview.c" in names:
-        site = locate("bow-view")
-        update = tes3x_inject.call_target(image, site)
-        print(f"bow-view hook: transform call {hexva(site)}, update {hexva(update)}")
-        define("BOW_VIEW_UPDATE", hexva(update))
-        wanted["bow_view"] = ("_tes3x_bow_view_hook",)
-    if "tes3xvideo.c" in names:
-        renderer_site, create_site, count, enum = locate("hd-video")
-        renderer = tes3x_inject.call_target(image, renderer_site)
-        create = tes3x_inject.call_target(image, create_site)
-        print(f"hd-video hook: renderer call {hexva(renderer_site)} -> {hexva(renderer)}, "
-              f"CreateDevice call {hexva(create_site)} -> {hexva(create)}, "
-              f"modes {hexva(count)}, {hexva(enum)}")
-        define("VIDEO_RENDERER_CREATE", hexva(renderer))
-        define("VIDEO_CREATE_DEVICE", hexva(create))
-        define("VIDEO_MODE_COUNT", hexva(count))
-        define("VIDEO_ENUM_MODES", hexva(enum))
-        wanted["video_renderer"] = ("_tes3x_video_renderer_hook",)
-        wanted["video_create"] = ("_tes3x_video_create_hook",)
-    if "tes3xbootclear.c" in names:
-        site, clear, display = locate("boot-clear")
-        nxt = tes3x_inject.call_target(image, site)
-        print(f"boot-clear hook: call {hexva(site)} -> {hexva(nxt)}, clear {hexva(clear)}, "
-              f"display {hexva(display)}")
-        define("BOOTCLEAR_CLEAR", hexva(clear))
-        define("BOOTCLEAR_DISPLAY", hexva(display))
-        define("BOOTCLEAR_NEXT", hexva(nxt))
-        wanted["bootclear"] = ("_tes3x_bootclear_hook",)
-    if "tes3xdashbutton.c" in names:
-        site, height_site = locate("dash-button")
-        build = tes3x_inject.call_target(image, site)
-        define("DASHBTN_SET_HEIGHT", hexva(tes3x_inject.call_target(image, height_site)))
-        print(f"dash-button hook: MenuOptions::build call {hexva(site)} -> {hexva(build)}")
-        define("DASHBTN_BUILD", hexva(build))
-        for name in ("UI_ID", "FIND_CHILD", "FIND_MENU", "PERFORM_LAYOUT", "WIDGET_SET_TEXT",
-                     "SET_PROP", "SET_AUTO_HEIGHT"):
-            define("DASHBTN_" + name, address(name, dict(CONSOLE_ADDRESSES)[name]))
-        for name in ("CREATE_BLOCK", "CREATE_IMAGE", "CREATE_LABEL", "SET_WIDTH", "SET_VISIBLE",
-                     "SET_AUTO_WIDTH"):
-            define("DASHBTN_" + name, address(name, dict(NET_UI_ADDRESSES)[name]))
-        wanted["dashbutton"] = ("_tes3x_dashbutton_hook",)
-        wanted["dashbutton_height"] = ("_tes3x_dashbutton_height_hook",)
-    if "tes3xtooltips.c" in names:
-        tooltip, calls, content, item_data, find_help = find_item_tooltip(image)
-        define("TIP_ORIGINAL", hexva(tooltip))
-        define("TIP_TYPE", hexva(tes3x_inject.call_target(image, tooltip + 0x6b)))
-        define("TIP_ITEM_DATA", hexva(item_data))
-        define("TIP_FIND_HELP", hexva(find_help))
-        define("TIP_CONTENT_ID", hexva(content))
-        define("TIP_WORLD", hexva(locate("world-controller")))
-        define("TIP_PLAYER", address("PLAYER_MOBILE", dict(CONSOLE_ADDRESSES)["PLAYER_MOBILE"]))
-        define("TIP_FIND_CHILD", address("FIND_CHILD", dict(CONSOLE_ADDRESSES)["FIND_CHILD"]))
-        define("TIP_CREATE_LABEL", address("CREATE_LABEL", dict(NET_UI_ADDRESSES)["CREATE_LABEL"]))
-        print(f"item tooltip: {hexva(tooltip)}, {len(calls)} call sites")
-        wanted["item_tooltip"] = ("_tes3x_tooltip_hook@12",)
-    if "tes3xtopiccolor.c" in names:
-        sites = locate("topic-colors")
-        list_site, run_site, filter_site, update_site = sites[0], sites[1], sites[2], sites[4]
-        for name, site in (("LIST", list_site), ("RUN", run_site), ("UPDATE", update_site)):
-            define("TOPIC_" + name, hexva(tes3x_inject.call_target(image, site)))
-        define("TOPIC_FILTER", hexva(tes3x_inject.call_target(image, filter_site)))
-        state_calls, _pushes, (paint, update) = find_topic_state(image)
-        define("TOPIC_STATE", hexva(tes3x_inject.call_target(image, state_calls[0])))
-        define("TOPIC_PAINT", hexva(paint))
-        define("TOPIC_UPDATE_NODE", hexva(update))
-        define("TOPIC_WORLD", hexva(locate("world-controller")))
-        for name in ("PLAYER_MOBILE", "GET_PROP", "SET_PROP", "WIDGET_TEXT", "FIND_MENU",
-                     "FIND_CHILD", "UI_ID"):
-            define("TOPIC_" + name.replace("PLAYER_MOBILE", "PLAYER"),
-                   address(name, dict(CONSOLE_ADDRESSES)[name]))
-        print(f"topic colors: list {hexva(list_site)}, response {hexva(run_site)}, "
-              f"filter {hexva(filter_site)}, update {hexva(update_site)}")
-        wanted["topic_list"] = ("_tes3x_topiccolor_list",)
-        wanted["topic_update"] = ("_tes3x_topiccolor_update",)
-        wanted["topic_state"] = ("_tes3x_topiccolor_state",)
-        wanted["topic_run"] = ("@tes3x_topiccolor_run@8", "_tes3x_topiccolor_run")
-    if "tes3xhudscale.c" in names:
-        site = locate("ui-scale")
-        area_tail, area = find_menu_area_scale(image)
-        options_site = find_options_scale(image)
-        levelup_site = find_levelup_scale(image)
-        message_site = find_message_scale(image)
-        name_site = find_name_scale(image)
-        chargen_sites = find_chargen_scale(image)
-        build = tes3x_inject.call_target(image, site)
-        print(f"ui-scale hook: MenuMulti builder call {hexva(site)} -> {hexva(build)}, "
-              f"menu area cache {hexva(area)} at epilogue {hexva(area_tail)}, "
-              f"options layout {hexva(options_site)}, "
-              f"level-up layout {hexva(levelup_site)}, "
-              f"message layout {hexva(message_site)}, "
-              f"name keyboard layout {hexva(name_site)}, "
-              f"chargen layouts {', '.join(hexva(site) for site in chargen_sites)}")
-        define("HUD_BUILD", hexva(build))
-        define("HUD_WORLD", hexva(locate("world-controller")))
-        define("HUD_MENU_AREA", hexva(area))
-        define("OPTIONS_LAYOUT", hexva(tes3x_inject.call_target(image, options_site)))
-        define("LEVEL_LAYOUT", hexva(tes3x_inject.call_target(image, levelup_site)))
-        define("MESSAGE_LAYOUT", hexva(tes3x_inject.call_target(image, message_site)))
-        define("NAME_LAYOUT", hexva(tes3x_inject.call_target(image, name_site)))
-        chargen_layouts = {tes3x_inject.call_target(image, site) for site in chargen_sites}
-        if chargen_layouts != {tes3x_inject.call_target(image, name_site)}:
-            raise ValueError("ui-scale: character generation layout target changed")
-        define("CHARGEN_LAYOUT", hexva(next(iter(chargen_layouts))))
-        wanted["hud_scale"] = ("_tes3x_hud_scale_hook",)
-        wanted["menu_area_scale"] = ("_tes3x_menu_area_scale_hook",)
-        wanted["options_scale"] = ("_tes3x_options_scale_hook",)
-        wanted["levelup_scale"] = ("_tes3x_levelup_scale_hook",)
-        wanted["message_scale"] = ("_tes3x_message_scale_hook",)
-        wanted["name_scale"] = ("_tes3x_name_scale_hook",)
-        wanted["chargen_scale"] = ("_tes3x_chargen_scale_hook",)
-    if "tes3xmenustill.c" in names:
-        menu, new_game, load, slot, clear, display, fence, block = locate("menu-still")
-        define("STILL_FENCE", hexva(tes3x_inject.call_target(image, fence)))
-        define("STILL_BLOCK", hexva(tes3x_inject.call_target(image, block)))
-        opened = tes3x_inject.call_target(image, menu)
-        print(f"menu-still hook: open {hexva(opened)} from {hexva(menu)}, {hexva(new_game)}, "
-              f"{hexva(load)}; clear slot {hexva(slot)}, clear {hexva(clear)}, "
-              f"display {hexva(display)}")
-        define("STILL_OPEN", hexva(opened))
-        define("STILL_CLEAR", hexva(clear))
-        define("STILL_DISPLAY", hexva(display))
-        wanted["still_open"] = ("_tes3x_still_open_hook",)
-        wanted["still_end"] = ("_tes3x_still_end_hook",)
-        wanted["still_clear"] = ("_tes3x_still_clear_hook",)
-    if "tes3xleanmenu.c" in names:
-        site, tag, launch, no_reboot, preload, player = locate("lean-menu")
-        load = tes3x_inject.call_target(image, site)
-        by_name = tes3x_inject.call_target(image, preload)
-        create = tes3x_inject.call_target(image, player)
-        print(f"lean-menu hook: call {hexva(site)}, record load {hexva(load)}, tag {hexva(tag)}, "
-              f"launch info {hexva(launch)}, no reboot {hexva(no_reboot)}, "
-              f"PreLoad lookup {hexva(preload)} -> {hexva(by_name)}, "
-              f"create player {hexva(player)} -> {hexva(create)}")
-        define("LEAN_CREATE_PLAYER", hexva(create))
-        define("LEAN_LOAD_RECORD", hexva(load))
-        define("LEAN_RECORD_TAG", hexva(tag))
-        define("LEAN_CELL_BY_NAME", hexva(by_name))
-        define("LEAN_LAUNCH_INFO", hexva(launch))
-        define("LEAN_NO_REBOOT", hexva(no_reboot))
-        wanted["lean_record"] = ("_tes3x_lean_record_hook",)
-        wanted["lean_preload"] = ("_tes3x_lean_preload_hook",)
-        wanted["lean_player"] = ("_tes3x_lean_player_hook",)
-    if "tes3xarena.c" in names:
-        print(f"video-arena hook: size {hexva(locate('video-arena'))}")
-        wanted["arena_size"] = ("_tes3x_arena_size_hook",)
-    if "tes3xregion.c" in names:
-        malloc, fit, free = locate("heap-region-malloc"), locate("heap-region-fit"), \
-            locate("heap-region-free")
-        print(f"heap-region hooks: size {hexva(locate('heap-region'))}, malloc {hexva(malloc)}, "
-              f"fit {hexva(fit)}, free {hexva(free)}")
-        define("REGION_MALLOC", hexva(tes3x_inject.call_target(image, malloc)))
-        define("REGION_FREE", hexva(tes3x_inject.call_target(image, free)))
-        define("REGION_SPILL", hexva(fit + 6))
-        define("REGION_CARVE", hexva(fit + 6 + struct.unpack_from(
-            "<i", image.data, image.va_to_off(fit) + 2)[0]))
-        wanted["region_size"] = ("_tes3x_region_size_hook",)
-        wanted["region_reserve"] = ("@tes3x_region_reserve@12",)
-        wanted["region_carve"] = ("_tes3x_region_carve_hook",)
-        wanted["region_release"] = ("@tes3x_region_release@12",)
-    if "tes3xpoolgrow.c" in names:
-        pools = find_pool_grow_sites(image)
-        print(f"pool-grow: exhaustion check {hexva(pools['exhausted_call'])}, "
-              f"pool constructor {hexva(pools['pool_ctor'])}")
-        define("POOL_CTOR", hexva(pools["pool_ctor"]))
-        define("POOL_HEAP_ALLOCATE", hexva(locate("heap-allocate")))
-        define("POOL_HEAP_OBJECT", hexva(locate("heap-object")))
-        wanted["pool_grow"] = ("_tes3x_pool_grow_hook",)
-    if "tes3xconsole.c" in names:
-        print("console hook: keyboard and print sites located by content")
-        for name, default in CONSOLE_ADDRESSES:
-            define(name, address(name, default))
-        console_print = locate("console-print")
-        vsprintf = tes3x_inject.call_target(image, console_print + CONSOLE_PRINT_VSPRINTF)
-        print(f"console output: printf {hexva(console_print)}, vsprintf {hexva(vsprintf)}")
-        define("CONSOLE_PRINT", hexva(console_print))
-        define("VSPRINTF", hexva(vsprintf))
-        wanted["console_gate"] = ("@tes3x_console_hook@12", "_tes3x_console_hook")
-        wanted["console_vk_key"] = ("_tes3x_vk_key_limit",)
-        wanted["console_vk_space"] = ("_tes3x_vk_space_limit",)
-        wanted["console_print"] = ("_tes3x_console_print",)
-        wanted["console_mailbox"] = ("_tes3x_mailbox",)
-    if "tes3xdiag.c" in names:
-        wanted["diagnostics_update"] = ("_tes3x_diag_update_hook",)
-        wanted["diagnostics_flag"] = ("_tes3x_diag_installed",)
-        wanted["patch_mask"] = ("_tes3x_patch_mask",)
-        wanted["patch_mask_hi"] = ("_tes3x_patch_mask_hi",)
-    if "tes3xprof.c" in names:
-        wanted["prof_target"] = ("_tes3x_prof_target",)
-        wanted["prof_stubs"] = ("_tes3x_prof_stubs",)
-        extra["prof_stubs"] = {"prof_count": define_value("tes3xprof.c", "TES3X_PROF_SLOTS")}
-    if "tes3xsaves.c" in names:
-        wanted["autosave"] = ("@tes3x_autosave_hook@12", "_tes3x_autosave_hook")
-        wanted["transition_cell"] = ("_tes3x_transition_cell_hook",)
-        wanted["transition_cell_companions"] = ("_tes3x_transition_cell_companions_hook",)
-        wanted["transition_teleport"] = ("_tes3x_transition_teleport_hook",)
-        wanted["transition_travel"] = ("_tes3x_transition_travel_hook",)
-    if "tes3xoverlay.c" in names:
-        wanted["overlay_flag"] = ("_tes3x_overlay_installed",)
-    if "tes3xprefs.c" in names:
-        wanted["preferences_load"] = ("@tes3x_preferences_hook@4",
-                                      "_tes3x_preferences_hook")
-
+    b = SimpleNamespace(image=image, names=names, address=address, define=define,
+                        locate=locate, wanted=wanted, extra=extra, arch_site=None)
+    for sources_wanted, bind in _BINDERS:
+        if any(s in names for s in sources_wanted):
+            bind(b)
+    arch_site = b.arch_site
 
     for name, (_array, items) in values.items():
         if 0 in items:
