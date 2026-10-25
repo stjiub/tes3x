@@ -836,6 +836,24 @@ order = 10
         self.assertTrue(window.target_busy("spare"))
         self.assertFalse(window.target_busy("bench"))
 
+    def test_questions_wait_in_their_own_tabs(self):
+        window = self.window()
+        first, second = window.job, window.new_job("Output")
+        retry = MagicMock()
+        window.ask_in_job(first, "Replace?", "These files:", retry)
+        window.ask_in_job(second, "Replace?", "Other files:", MagicMock())
+        self.assertTrue(first.waiting and second.waiting)
+        self.assertTrue(window.log_tabs.tabText(0).startswith("● "))
+        self.assertIn("These files:", first.banner.label.text())
+        self.assertIn("Other files:", second.banner.label.text())
+        # A tab with a question is not handed to a new command.
+        self.assertNotIn(window.free_job(), (first, second))
+        first.banner.no.click()
+        retry.assert_not_called()
+        self.assertFalse(first.waiting)
+        self.assertFalse(window.log_tabs.tabText(0).startswith("● "))
+        self.assertTrue(second.waiting)
+
     def test_progress_lines_feed_the_status_bar_not_the_log(self):
         window = self.window()
         with patch("tes3x.gui.window.QProcess"):
@@ -918,8 +936,7 @@ order = 10
             full.append(arguments)
             return running(program, arguments, *args, **kwargs)
 
-        warning = patch.object(QMessageBox, "warning", return_value=QMessageBox.StandardButton.Yes)
-        with patch.object(window, "start_command", side_effect=start_full), warning as asked:
+        with patch.object(window, "start_command", side_effect=start_full):
             window.play_controller.play()
             window.process = None
             window.command_finished(0, None)
@@ -927,7 +944,13 @@ order = 10
                                        "TES3X did not deploy\n")
             window.process = None
             window.command_finished(3, None)
-            self.assertIn("F:/Games/Test holds 3 files", asked.call_args[0][2])
+            job = window.job
+            self.assertTrue(job.waiting)
+            self.assertFalse(job.banner.isHidden())
+            self.assertIn("F:/Games/Test holds 3 files", job.banner.label.text())
+            job.banner.yes.click()
+            self.assertFalse(job.waiting)
+            self.assertTrue(job.banner.isHidden())
             window.process = None
             window.command_finished(0, None)
         self.assertEqual([args[0] for args in full],

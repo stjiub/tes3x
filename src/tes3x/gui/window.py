@@ -17,6 +17,7 @@ from .common import (Bsa, BuildSettings, CATALOG_NAME, CHECK_MARKER, CatalogErro
                      menu_button, new_table, parse_progress, play_icon, plugin_header, sha256_file, shutil,
                      stop_icon, struct, sys, target_capabilities, target_runtime_label,
                      tes3x_targets, tomlkit, tomllib, validate_profile, version_label)
+from .banner import PromptBanner
 from .jobs import Job
 from .saves import SavesTab
 from .patches import PatchesTab
@@ -1719,8 +1720,14 @@ class ProfileWindow(QMainWindow):
     def new_job(self, title):
         log = QTextEdit()
         log.setReadOnly(True)
-        self.log_tabs.addTab(log, title)
-        job = Job(log)
+        banner = PromptBanner()
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(banner)
+        layout.addWidget(log, 1)
+        self.log_tabs.addTab(page, title)
+        job = Job(log, page, banner)
         self.jobs.append(job)
         return job
 
@@ -1793,9 +1800,9 @@ class ProfileWindow(QMainWindow):
 
     def free_job(self):
         """The current job if it is idle, else another idle one, else a new tab."""
-        if not self.job.running:
+        if not self.job.busy:
             return self.job
-        return next((job for job in self.jobs if not job.running), None) or self.new_job("Output")
+        return next((job for job in self.jobs if not job.busy), None) or self.new_job("Output")
 
     def job_title(self, job, program):
         label = self.JOB_LABELS.get(job.kind) or program.capitalize()
@@ -1806,10 +1813,12 @@ class ProfileWindow(QMainWindow):
         return f"{label} → {where}" if where else label
 
     def close_job_tab(self, index):
-        log = self.log_tabs.widget(index)
-        job = next((job for job in self.jobs if job.log is log), None)
+        page = self.log_tabs.widget(index)
+        job = next((job for job in self.jobs if job.page is page), None)
         if job is None or job.running or len(self.jobs) == 1:
             return
+        if job.waiting:
+            job.banner.answer(False)
         self.jobs.remove(job)
         self.log_tabs.removeTab(index)
         if self.job is job:
@@ -1819,7 +1828,7 @@ class ProfileWindow(QMainWindow):
         status = self.statusBar()
         if not isinstance(status, StatusBar):
             return
-        job = next((job for job in self.jobs if job.log is self.log_tabs.currentWidget()), None)
+        job = next((job for job in self.jobs if job.page is self.log_tabs.currentWidget()), None)
         if job is not None and job.running and job.progress is not None:
             status.show_progress(*job.progress)
         else:
@@ -1836,10 +1845,10 @@ class ProfileWindow(QMainWindow):
         job.partial = ""
         if clear:
             job.log.clear()
-        self.log_tabs.setTabText(self.log_tabs.indexOf(job.log), self.job_title(job, program))
-        self.log_tabs.tabBar().setTabTextColor(self.log_tabs.indexOf(job.log),
+        self.log_tabs.setTabText(self.log_tabs.indexOf(job.page), self.job_title(job, program))
+        self.log_tabs.tabBar().setTabTextColor(self.log_tabs.indexOf(job.page),
                                                self.palette().text().color())
-        self.log_tabs.setCurrentWidget(job.log)
+        self.log_tabs.setCurrentWidget(job.page)
         process = QProcess(self)
         process.setWorkingDirectory(str(self.work_dir()))
         environment = QProcessEnvironment(environment or QProcessEnvironment.systemEnvironment())
@@ -1896,7 +1905,7 @@ class ProfileWindow(QMainWindow):
                 shown.append(line + "\n")
             else:
                 job.progress, job.stage = progress, progress[0]
-                if job.log is self.log_tabs.currentWidget():
+                if job.page is self.log_tabs.currentWidget():
                     self.statusBar().show_progress(*progress)
         return "".join(shown)
 
@@ -1913,7 +1922,7 @@ class ProfileWindow(QMainWindow):
         job.progress = None
         self.show_job_progress()
         self.log_tabs.tabBar().setTabTextColor(
-            self.log_tabs.indexOf(job.log), QColor("#3a9a3a" if code == 0 else "#d04040"))
+            self.log_tabs.indexOf(job.page), QColor("#3a9a3a" if code == 0 else "#d04040"))
         if kind == "check":
             self.remember_check(code == 0)
         elif kind == "build":
@@ -1948,32 +1957,41 @@ class ProfileWindow(QMainWindow):
         if follow and code == 0:
             follow()
 
+    def ask_in_job(self, job, title, text, retry):
+        """Ask in the job's own tab; Yes runs `retry`. The tab is marked until answered."""
+        index = self.log_tabs.indexOf(job.page)
+        job.waiting = True
+        self.log_tabs.setTabText(index, "● " + self.log_tabs.tabText(index))
+        self.log_tabs.tabBar().setTabTextColor(index, QColor("#d09020"))
+
+        def done():
+            job.waiting = False
+            current = self.log_tabs.indexOf(job.page)
+            self.log_tabs.setTabText(current, self.log_tabs.tabText(current).removeprefix("● "))
+            self.log_tabs.tabBar().setTabTextColor(current, self.palette().text().color())
+            self.show_job_progress()
+
+        job.banner.ask(f"{title}\n{text}", retry, done)
+        self.statusBar().showMessage(f"{self.log_tabs.tabText(index)[2:]} is waiting for an answer")
+
     def confirm_space(self, retry, job=None):
         """The Xbox's drive looked too small for the deploy; ask before trying anyway."""
-        lines = [line.strip() for line in (job or self.job).log.toPlainText().splitlines()
+        job = job or self.job
+        lines = [line.strip() for line in job.log.toPlainText().splitlines()
                  if line.strip().startswith(("space:", "nothing changed:"))]
-        answer = QMessageBox.warning(
-            self, "Not enough space on the Xbox",
-            "\n".join(lines[-2:]) + "\n\nThe deploy may fail partway and leave the game folder "
-            "incomplete. Deploy anyway?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No)
-        if answer == QMessageBox.StandardButton.Yes:
-            retry()
+        self.ask_in_job(
+            job, "Not enough space on the Xbox",
+            "\n".join(lines[-2:]) + "\nThe deploy may fail partway and leave the game folder "
+            "incomplete. Deploy anyway?", retry)
 
     def confirm_replace(self, retry, question, job=None):
         """A command stopped rather than overwrite something; ask before repeating it."""
+        job = job or self.job
         title, lead, ask = question
-        lines = [line.split("conflict: ", 1)[1]
-                 for line in (job or self.job).log.toPlainText().splitlines()
+        lines = [line.split("conflict: ", 1)[1] for line in job.log.toPlainText().splitlines()
                  if "conflict: " in line]
-        answer = QMessageBox.warning(
-            self, title, lead + "\n\n" + "\n".join(f"• {line}" for line in lines)
-            + "\n\n" + ask,
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No)
-        if answer == QMessageBox.StandardButton.Yes:
-            retry()
+        self.ask_in_job(job, title, lead + "\n" + "\n".join(f"• {line}" for line in lines)
+                        + "\n" + ask, retry)
 
 
 def main(argv=None):
