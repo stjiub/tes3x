@@ -39,7 +39,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                TITLE_ID, TRANSITION_CALL_SIGS, VIDEO_CREATE_SIG, VIDEO_MODES_SIG,
                                VIDEO_RENDERER_SIG, VK_KEY_LIMIT_SIG, VK_SPACE_LIMIT_SIG,
                                WEATHER_ROLL_RE, XAPI_HEAP_FREE, _find_in, _find_mcp154_site,
-                               _unique_call, find_arena_size, find_autosave_calls, find_boot_clear,
+                               _unique_call, find_arena_overflow, find_arena_size, find_autosave_calls, find_boot_clear,
                                find_dash_button, find_topic_colors, find_topic_state, find_hud_scale, find_menu_area_scale,
                                find_chargen_scale,
                                find_levelup_scale, find_message_scale, find_name_scale,
@@ -967,16 +967,24 @@ def _lean_menu(x, value, ctx):
 
 @patch("video-arena")
 def _video_arena(x, value, ctx):
-    """Size the video-memory arena from [Xbox] VideoMemoryKB when there is more than 64 MB."""
-    target = ctx.get("hooks", {}).get("arena_size")
-    if not target:
-        raise PatchError("video-arena: needs `payload` first, with an arena_size hook in its "
-                         "manifest")
+    """Size the video-memory arena from [Xbox] VideoMemoryKB, and pack its overflow in chunks."""
+    hooks = ctx.get("hooks", {})
+    names = ("arena_size", "arena_overflow_alloc", "arena_overflow_free")
+    missing = [name for name in names if not hooks.get(name)]
+    if missing:
+        raise PatchError("video-arena: needs `payload` first, with %s in its manifest"
+                         % ", ".join(missing))
+    target, alloc, free = (int(str(hooks[name]), 16) for name in names)
     site = find_arena_size(x)
     off = x.va_to_off(site)
-    target = int(str(target), 16)
     x.data[off:off + 5] = b"\xe8" + struct.pack("<i", target - (site + 5))
-    return [(off, 5, "arena size 0x%08X: mov ebx, 0xF80000 -> call 0x%08X" % (site, target))]
+    edits = [(off, 5, "arena size 0x%08X: mov ebx, 0xF80000 -> call 0x%08X" % (site, target))]
+    overflow = find_arena_overflow(x)
+    for what, key, hook in (("allocation", "alloc", alloc), ("free", "free", free)):
+        was, off = x.patch_call(overflow[key], hook)
+        edits.append((off, 5, "arena overflow %s 0x%08X: 0x%08X -> 0x%08X"
+                      % (what, overflow[key], was, hook)))
+    return edits
 
 
 @patch("heap-region")
@@ -2003,6 +2011,7 @@ __all__ = [
     '_validate_patch_changes',
     '_video_arena',
     'drive_letter',
+    'find_arena_overflow',
     'find_arena_size',
     'find_autosave_calls',
     'find_boot_clear',

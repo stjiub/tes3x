@@ -680,7 +680,7 @@ channel = "dev"
 selection = "preset"
 source = "tes3xarena.c"
 ini = { VideoMemoryKB = "22528" }
-summary = "Size the texture and vertex buffer arena from [Xbox] VideoMemoryKB; it grows past retail's only with more than 64 MB."
+summary = "Size the texture and vertex buffer arena from [Xbox] VideoMemoryKB, and pack what overflows it into shared chunks."
 
 [[patch]]
 name = "heap-census"

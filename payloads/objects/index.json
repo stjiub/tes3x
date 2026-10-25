@@ -4,6 +4,8 @@
     "ANIM_VIRTUAL_PLAY_ENTRY": null,
     "ANIM_VIRTUAL_PLAY_RESUME": null,
     "ARCHIVE_LOAD": null,
+    "ARENA_PHYS_ALLOC": null,
+    "ARENA_PHYS_FREE": null,
     "BOOTCLEAR_CLEAR": null,
     "BOOTCLEAR_DISPLAY": null,
     "BOOTCLEAR_NEXT": null,
@@ -478,8 +480,8 @@
       "sha256": "eb785d46d2b64e74e7ae566b92e61fee7fad9fd7ceb802286a588a8f7e45929b"
     },
     "tes3xarena.c": {
-      "digest": "c0549a87fb57903b74590a2d0e48f959b77013d52c94b95aad7c75fba7412fa5",
-      "sha256": "ccd7dfbc990780b30337e2c4ca2a5616393e15430c4af4bb9cc8ce2466dda0cb"
+      "digest": "3612480cef98ff9d4a993ce95a77f6a301e9e819dba009937a88e73d580ef21d",
+      "sha256": "19b8781df821c57bb8a0580cacc8788ab7d77c801d9a1f561151ae86d65fabe9"
     },
     "tes3xbootclear.c": {
       "digest": "c436dc40a0f5af59f8c5a5612722e5bfa68e48c51423c32edad9d025e577b885",

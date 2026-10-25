@@ -1472,9 +1472,13 @@ def _bind_leanmenu(b):
 
 @binder("tes3xarena.c")
 def _bind_arena(b):
-    locate, wanted = b.locate, b.wanted
+    define, locate, wanted = b.define, b.locate, b.wanted
     print(f"video-arena hook: size {hexva(locate('video-arena'))}")
+    define("ARENA_PHYS_ALLOC", hexva(locate("video-arena-phys-alloc")))
+    define("ARENA_PHYS_FREE", hexva(locate("video-arena-phys-free")))
     wanted["arena_size"] = ("_tes3x_arena_size_hook",)
+    wanted["arena_overflow_alloc"] = ("_tes3x_arena_overflow_alloc@16",)
+    wanted["arena_overflow_free"] = ("_tes3x_arena_overflow_free@4",)
 
 
 @binder("tes3xregion.c")

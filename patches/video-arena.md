@@ -26,6 +26,14 @@ arena size in `ebx` and leaves the heap object in `eax` untouched. The size come
 below. With 64 MB of physical memory the key can only shrink the arena below retail's size. The log
 records the size chosen as `arena.kb`, or `arena.kb_ini` when it came from the key.
 
+The overflow allocation and its release (`0x0001535B`) also go to `hooks/tes3xarena.c`, which packs
+overflow blocks into contiguous chunks of 1 MB, in 64-byte steps, instead of a page each; where no
+1 MB run of physical memory is left it takes 256 KB or 64 KB chunks. A chunk goes back to general
+memory when its last block is freed, and blocks over 256 KB still get their own allocation. With
+the Tamriel Rebuilt masters and a 3 MB arena, Seyda Neen's textures and vertex buffers need 11 MB
+less physical memory than with a page each. The log records `arena.chunks_peak` as the number of
+chunks in use grows, and `arena.chunk_failed` the first time no chunk could be had.
+
 ## Configuration
 
 `[Xbox] VideoMemoryKB` in `Morrowind.ini` sets the arena size in KB, clamped between 1,024 and
@@ -37,6 +45,6 @@ in retail and with Tamriel Rebuilt's masters alike; busy cells need 10-18 MB. A 
 leaves more general memory for loading records, but every block past it then costs whole pages.
 
 The arena and general memory share the same RAM, so a larger arena only moves memory between the
-two: everything the arena gains is gone from general memory from the start. It saves the page
-rounding of overflow, not the memory the content itself needs. A size that leaves too little
+two: everything the arena gains is gone from general memory from the start. Overflow chunks grow
+and shrink with what is loaded, so a small arena now costs little more than the content itself. A size that leaves too little
 general memory fails in the general allocator instead, through the same out-of-memory handler.

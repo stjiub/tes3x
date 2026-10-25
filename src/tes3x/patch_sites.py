@@ -679,6 +679,28 @@ def find_arena_size(x):
     return va
 
 
+# CVBHeap::Allocate's overflow, XPhysicalAlloc(size + 0x10, -1, 0, PAGE_READWRITE |
+# PAGE_WRITECOMBINE), and CVBHeap::Free's XPhysicalFree of an overflow block (negative size).
+ARENA_OVERFLOW_ALLOC_SIG = re.compile(rb"\x68\x04\x02\x00\x00\x6a\x00\x6a\xff\x8d\x53\x10\x52\xe8")
+ARENA_OVERFLOW_FREE_SIG = re.compile(
+    rb"\x8b\x4e\xf0\x85\xc9\x8d\x46\xf0\x89\x44\x24\x14\x7d.\x8b\x55\x2c\x83\xc1\xf0\x03\xd1"
+    rb"\x50\x89\x55\x2c\xe8", re.S)
+
+
+def find_arena_overflow(x):
+    """The overflow's XPhysicalAlloc and XPhysicalFree call sites in the video arena."""
+    data = bytes(x.data)
+    sites = []
+    for what, rx in (("allocation", ARENA_OVERFLOW_ALLOC_SIG), ("free", ARENA_OVERFLOW_FREE_SIG)):
+        hits = list(rx.finditer(data))
+        if len(hits) != 1:
+            raise PatchError("video-arena: %d overflow %s sites, expected 1" % (len(hits), what))
+        sites.append(x.off_to_va(hits[0].end() - 1))
+    return {"alloc": sites[0], "free": sites[1],
+            "phys_alloc": tes3x_inject.call_target(x, sites[0]),
+            "phys_free": tes3x_inject.call_target(x, sites[1])}
+
+
 # The walk behind findFirstInstanceOfObjectId: every cell of NonDynamicData+0xB270, asking each
 # Cell::findReferenceToObject(object, 0).
 REF_INDEX_FIND_SIG = re.compile(
@@ -2875,6 +2897,8 @@ LOCATORS = {
     "ref-index-scripts": lambda image: find_ref_index(image)[2],
     "lean-menu": find_lean_menu,
     "video-arena": find_arena_size,
+    "video-arena-phys-alloc": lambda image: find_arena_overflow(image)["phys_alloc"],
+    "video-arena-phys-free": lambda image: find_arena_overflow(image)["phys_free"],
     "save-game": lambda image: find_autosave_calls(image)[0],
     "save-this-ptr": find_save_this_ptr,
     "preferences-load": find_preferences_load,
