@@ -816,7 +816,7 @@ def engine_bindings(xbe, sources):
         heap_allocate = hexva(locate("heap-allocate"))
         heap_free = hexva(locate("heap-free"))
         heap_object = hexva(locate("heap-object"))
-        names_allocate = hexva(locate("info-names-allocate"))
+        names_allocate = hexva(tes3x_inject.call_target(image, locate("info-names-allocate")))
         names_free = hexva(locate("info-names-free"))
         current_topic = hexva(locate("info-current-topic"))
         link_original = hexva(locate("info-link-original"))

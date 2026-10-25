@@ -4,6 +4,8 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- `info-name-arena` together with `lazy-dialogue` no longer restarts the game when the first
+  conversation of a session opens.
 - Mod library: the GUI installs mods that ship only an `Animations` folder, such as Can't Touch
   This, so enabling it in a profile builds its dodge patch.
 - Multiplayer: the pause menu while joined no longer flashes the stock menu before it changes. It
