@@ -12,6 +12,7 @@ import shutil
 import struct
 import subprocess
 import tempfile
+from pathlib import Path
 
 from tes3x.inject import Xbe  # noqa: E402
 
@@ -59,7 +60,7 @@ def disasm(x, va, length):
 def symbols():
     path = resource("symbols", "curated.json")
     try:
-        records = json.load(open(path, encoding="utf-8"))["records"]
+        records = json.loads(Path(path).read_text(encoding="utf-8"))["records"]
     except (OSError, ValueError, KeyError):
         return {}
     return {int(r["va"], 16): r["name"] for r in records}
@@ -102,7 +103,7 @@ def main():
     ap.add_argument("--off2va", help="convert a file offset from --strings into a VA (hex)")
     a = ap.parse_args()
 
-    x = Xbe(open(a.xbe, "rb").read())
+    x = Xbe(Path(a.xbe).read_bytes())
     NAMES.update(symbols())
     if a.off2va:
         off = int(a.off2va, 16)

@@ -46,7 +46,7 @@ class Image:
 
     def __init__(self, path, tag):
         self.path, self.tag = str(path), tag
-        self.data = open(path, 'rb').read()
+        self.data = Path(path).read_bytes()
         if self.data[:4] == b'XBEH':
             self._load_xbe()
         elif self.data[:2] == b'MZ':
