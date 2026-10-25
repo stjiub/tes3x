@@ -65,7 +65,7 @@ from .proto import (ACTOR, ACTORS, ACTORS_PER_PACKET, ACTOR_DEAD, ACTOR_IN_COMBA
                     FACTION_JOINED, FACTION_RANK, FACTION_REPUTATION, PLAYER_IDENTITY, PLAYER_ITEMS, PLAYER_JOURNAL,
                     PLAYER_LEVEL, PLAYER_MODIFIERS, PLAYER_PLACE, PLAYER_READY, PLAYER_RESPAWN,
                     PLAYER_SKILLS, PLAYER_SPELLS, PLAYER_TOPICS, PLAYER_TOPICS_MAX,
-                    PLAYER_VITALS, PLAYER_WORN, PROLOGUE,
+                    PLAYER_MARK, PLAYER_VITALS, PLAYER_WORN, PROLOGUE,
                     QUEST_INDICES, JOURNAL_QUESTS_MAX, REFUSE, REFUSED_BANNED, REFUSED_FULL, REFUSED_KICKED,
                     REFUSED_LOAD_ORDER, REFUSED_PASSWORD, REFUSED_PROTOCOL, REFUSED_STALE,
                     REFUSE_BODY, RELAY, REMOTE_CHALLENGE, REMOTE_COMMAND, REMOTE_HEAD,
@@ -81,11 +81,11 @@ from .proto import (ACTOR, ACTORS, ACTORS_PER_PACKET, ACTOR_DEAD, ACTOR_IN_COMBA
                     describe_identity, describe_key, describe_level, describe_object,
                     describe_spawn, describe_state, describe_status, describe_weather,
                     fingerprint, finite, now_us, pack_contents, pack_equipment, pack_events,
-                    pack_factions, pack_globals, pack_identity, pack_items, pack_journal, pack_topics, pack_names, pack_objects,
+                    pack_factions, pack_globals, pack_identity, pack_mark, pack_items, pack_journal, pack_topics, pack_names, pack_objects,
                     pack_player_effects, pack_player_identity, pack_spawn, pack_weather,
                     pack_worn, placeable, plain_name, remote_key, same_place, sane_clock, seal,
                     unpack_actor_equipment, unpack_contents, unpack_equipment, unpack_events,
-                    unpack_factions, unpack_globals, unpack_identity, unpack_items, unpack_journal, unpack_objects,
+                    unpack_factions, unpack_globals, unpack_identity, unpack_mark, unpack_items, unpack_journal, unpack_objects,
                     unpack_player_effects, unpack_player_identity, unpack_removes, unpack_spawn,
                     unpack_weather, unpack_worn, unseal, wire_text, x25519_public, zstr)
 from .tunnel import (Tunnel, arp_frame, dhcp_reply, dns_reply, udp_frame, udp_from_frame,
@@ -451,7 +451,7 @@ class PlayerStream:
         self.spells = self.topics = self.factions = self.globals = None
         self.effects = self.effects_parts = None
         self.vitals = self.place = None
-        self.bounty = self.identity = self.worn = None
+        self.bounty = self.identity = self.worn = self.mark = None
         self.dead = False  # died and not yet back
         self.arriving = None  # (item id, entries so far, next part)
         self.identity_parts = self.worn_parts = None  # (body so far, next part)
@@ -477,6 +477,7 @@ class PlayerStream:
         self.bounty = kept.get("bounty")
         self.identity = kept.get("identity")
         self.worn = kept.get("worn")
+        self.mark = kept.get("mark")
 
     def reset(self):
         """A new character: nothing streamed so far belongs to it."""
@@ -485,7 +486,7 @@ class PlayerStream:
         self.effects = self.effects_parts = None
         self.vitals = self.place = self.arriving = None
         self.bounty = self.identity = self.identity_parts = None
-        self.worn = self.worn_parts = None
+        self.worn = self.worn_parts = self.mark = None
         self.dead = False
         self.dirty = True
 
@@ -616,6 +617,15 @@ class PlayerStream:
             if self.factions is None or changed:
                 self.factions, self.dirty = kept, True
             return "factions " + ", ".join(changed) if changed else None
+        if kind == PLAYER_MARK:
+            try:
+                mark = list(unpack_mark(data))
+            except ValueError:
+                return None
+            if mark == self.mark:
+                return None
+            self.mark, self.dirty = mark, True
+            return "mark " + (mark[7] or f"({mark[1]}, {mark[2]})" if mark[0] else "cleared")
         if kind == PLAYER_GLOBALS:
             try:
                 entries = unpack_globals(data)
@@ -712,6 +722,8 @@ class PlayerStream:
             events.append(bytes([PLAYER_PLACE]) + self.place)
         if self.bounty is not None:
             events.append(bytes([PLAYER_BOUNTY]) + struct.pack("<i", self.bounty))
+        if self.mark is not None:
+            events.append(pack_mark(*self.mark))
         skills = sorted(self.skills.items())
         per = (EVENT_DATA - 2) // SKILL.size
         for i in range(0, len(skills), per):
@@ -762,6 +774,7 @@ class PlayerStream:
                                "bounty": self.bounty,
                                "identity": self.identity,
                                "worn": self.worn,
+                               "mark": self.mark,
                                "dead": self.dead})
         self.dirty = False
 

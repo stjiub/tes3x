@@ -82,6 +82,12 @@ def player(data):
             return bool(p.unpack_globals(data, kind))
         except ValueError:
             return False
+    if kind == p.PLAYER_MARK:
+        try:
+            p.unpack_mark(data)
+            return True
+        except ValueError:
+            return False
     if kind in (p.PLAYER_IDENTITY, p.PLAYER_WORN):
         return multipart(data, 1) and (kind == p.PLAYER_WORN or len(data) > 3)
     if kind == p.WORLD_SCRIPTS:

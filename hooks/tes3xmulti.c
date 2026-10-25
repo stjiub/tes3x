@@ -482,6 +482,7 @@ static int script_safe(const u8 *text, u32 max)
 #include "multi/world_scripts.c"
 #include "multi/moves.c"
 #include "multi/player_identity.c"
+#include "multi/player_mark.c"
 #include "multi/player_effects.c"
 #include "multi/records.c"
 #include "multi/player_apply.c"
@@ -759,6 +760,10 @@ int tes3x_multi_command(const char *text)
         faction_query(rest);
     } else if ((rest = word(text, "global")) && *(rest = skip(rest))) {
         global_query(rest);
+    } else if ((rest = word(text, "mark"))) {
+        mark_query(skip(rest));
+    } else if ((rest = word(text, "markhere")) && !*skip(rest)) {
+        mark_here();
     } else if ((rest = word(text, "local")) && *(rest = skip(rest))) {
         local_query(rest);
     } else if ((rest = word(text, "actor")) && *(rest = skip(rest))) {

@@ -733,7 +733,8 @@ static void snapshot_frame(const u8 *ref, u8 *mobile, u8 *npc, u8 *object)
     case 16: globals_scan(&world_globals, world_globals.known); break;
     case 17: locals_scan(1); break;
     case 18: world_scripts_scan(1, 1); break;
-    case 19:
+    case 19: mark_scan(mobile, 1); break;
+    case 20:
         put32le(data, snapshot_token);
         player_state(ref, data + 4);
         if (!event_queue(EVENT_SNAPSHOT, data, 4 + PLAYER_PLACE_BYTES))
@@ -788,7 +789,7 @@ static void player_frame(const u8 *ref)
         topics_count = topics_known = 0;
         factions_known = player_globals.known = world_globals.known = 0;
         modifiers_known[0] = modifiers_known[1] = 0;
-        player_identity_known = worn_known = 0;
+        player_identity_known = worn_known = mark_known = 0;
         send = player_mode == 1;
         if (player_bounty_replayed != ses.welcomes)
             bounty_sent = -1;
@@ -812,6 +813,7 @@ static void player_frame(const u8 *ref)
     topics_scan(mobile, send);
     factions_scan(send);
     globals_scan(&player_globals, send);
+    mark_scan(mobile, send);
     /* The world's globals are the server's after the replay: the first scan is the baseline. */
     globals_scan(&world_globals, world_globals.known);
     world_scripts_scan(scripts_known, 0);

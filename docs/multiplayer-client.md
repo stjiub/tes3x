@@ -129,7 +129,7 @@ back at the marker on its next join.
   the end of a rest still applies unless the server uses `--level-up auto`.
 - A multiplayer character loads only from server state. The server restores inventory, equipment,
   level, base and current attributes and skills, journal, learned topics, factions, the
-  character's own globals, current health, magicka and fatigue
+  character's own globals, the Mark spell's place, current health, magicka and fatigue
   (health no lower than 1), position, identity and active effects. Active effects retain their
   source, rolled magnitude, resistance and elapsed game time; remaining duration resumes on join,
   with time stopped while offline. At most 64 active effect entries are retained. Consumed
