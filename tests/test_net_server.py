@@ -1841,6 +1841,32 @@ class ServerTests(unittest.TestCase):
             restored.save()
             self.assertIsNone(net.PlayerStream(path).globals)
 
+    def test_mark_survives_restart_and_clears(self):
+        net = tes3x_net
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'stream.json'
+            stream = net.PlayerStream(str(path))
+            interior = net.pack_mark(net.MARK_INTERIOR, 0, 0, 1.0, 2.0, 3.0, 0.5, 'Seyda Neen, Census')
+            exterior = net.pack_mark(net.MARK_EXTERIOR, -2, 5, 10.0, 20.0, 30.0, 1.5)
+            for data in (interior, exterior):
+                self.assertTrue(valid_client_event(net.EVENT_PLAYER, data))
+            self.assertEqual(stream.take(interior), 'mark Seyda Neen, Census')
+            self.assertIsNone(stream.take(interior))
+            self.assertEqual(stream.take(exterior), 'mark (-2, 5)')
+            stream.save()
+            restored = net.PlayerStream(str(path))
+            self.assertIn(exterior, restored.replay())
+            self.assertEqual(restored.take(net.pack_mark(net.MARK_NONE, 0, 0, 0, 0, 0, 0)),
+                             'mark cleared')
+            self.assertIn(net.pack_mark(net.MARK_NONE, 0, 0, 0, 0, 0, 0), restored.replay())
+            for invalid in (net.pack_mark(net.MARK_INTERIOR, 0, 0, 1, 2, 3, 0),
+                            net.pack_mark(net.MARK_EXTERIOR, 0, 0, 1, 2, 3, 0, 'Name'),
+                            net.pack_mark(net.MARK_EXTERIOR, 0, 0, float('nan'), 2, 3, 0),
+                            net.pack_mark(net.MARK_INTERIOR, 0, 0, 1, 2, 3, 0, 'Say "x"')):
+                self.assertFalse(valid_client_event(net.EVENT_PLAYER, invalid))
+            restored.reset()
+            self.assertIsNone(restored.mark)
+
     def test_abilities_replay_before_absolute_statistics(self):
         net = tes3x_net
         with tempfile.TemporaryDirectory() as folder:

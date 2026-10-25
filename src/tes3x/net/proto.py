@@ -442,6 +442,15 @@ SCRIPT_VALUES_MAX = 64
 SCRIPT_ID_MAX = 31
 
 
+# The character's Mark spell place, both ways: flags (MARK_NONE, MARK_INTERIOR, MARK_EXTERIOR), grid
+# x and y (exterior), position and heading (f32 each), then the interior's name ending in zero.
+# Absolute; a console sends it when it changes. The server keeps the latest per character.
+PLAYER_MARK = 22
+MARK = struct.Struct("<BBiiffff")
+MARK_NONE, MARK_INTERIOR, MARK_EXTERIOR = 0, 1, 2
+MARK_NAME_MAX = 63
+
+
 PLAYER_BOUNTY = 12  # from the server: the character's last streamed crime bounty, i32
 
 
@@ -1569,6 +1578,23 @@ def unpack_globals(data, kind=PLAYER_GLOBALS):
     if off != len(data):
         raise ValueError("trailing global bytes")
     return entries
+
+
+def unpack_mark(data):
+    """(flags, grid x, grid y, x, y, z, heading, name) from a PLAYER_MARK event; ValueError if
+    malformed."""
+    if len(data) < MARK.size + 1 or data[0] != PLAYER_MARK or data[-1] or data[1] > MARK_EXTERIOR:
+        raise ValueError("not a mark event")
+    _, flags, gx, gy, x, y, z, heading = MARK.unpack_from(data)
+    raw = bytes(data[MARK.size:-1])
+    if (not finite(x, y, z, heading) or len(raw) > MARK_NAME_MAX or any(c < 32 or c == 34 for c in raw)
+            or (flags == MARK_INTERIOR) != bool(raw)):
+        raise ValueError("bad mark")
+    return flags, gx, gy, x, y, z, heading, raw.decode("latin-1")
+
+
+def pack_mark(flags, gx, gy, x, y, z, heading, name=""):
+    return MARK.pack(PLAYER_MARK, flags, gx, gy, x, y, z, heading) + name.encode("latin-1") + b"\0"
 
 
 def describe_faction(faction, rank, reputation, flags):
