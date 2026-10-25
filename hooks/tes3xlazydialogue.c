@@ -6,7 +6,8 @@
  * getFilteredInfo, getInfoAtIndex (the save's XNAM) and journalAdd build the chain from the
  * plugins in stub order before reading it. Readers that only look for heard responses see none,
  * which is right: nothing is heard in a chain that was never built. After the last plugin the
- * stubs shrink to 18-byte entries in chain order, without the names placement needed.
+ * stubs shrink to entries in chain order of 7 bytes and 2 per filter, without the names placement
+ * needed.
  *
  * Each stub also keeps the filters the INFO filter (0x000FFEA0) tests before or regardless of its
  * conditions: speaker, race, class, NPC faction, cell-name prefix and sex. getFilteredInfo builds
@@ -80,7 +81,7 @@ TES3X_OPTIONAL extern u32 tes3x_dialogue_vtable;
 TES3X_OPTIONAL void __cdecl tes3x_info_names_free(void *ptr);
 TES3X_OPTIONAL void __stdcall tes3x_info_table_free(void *ptr);
 
-/* What a topic keeps after load, in chain order. */
+/* What a stub keeps for its topic. */
 struct entry {
     u32 offset;
     u8 source; /* index into sources */
@@ -99,11 +100,22 @@ struct stub {
     struct entry e;
 };
 
+/* The same after load, in chain order, with only the filters present: most have none or one. */
+struct packed {
+    u32 offset;
+    u8 source;
+    u8 flags;   /* FLAG_DELETED, STUB_UNFILTERED, (sex + 1) << SEX_SHIFT */
+    u8 present; /* bit per filter tag */
+    unsigned short filter[];
+} __attribute__((packed));
+
+#define SEX_SHIFT 6
+
 struct topic {
     u8 *dial;
     union {
-        struct stub *head;     /* until compact */
-        struct entry *entries; /* after */
+        struct stub *head; /* until compact */
+        u8 *entries;       /* packed, after */
     };
     u32 count;
     u32 built;
@@ -149,6 +161,62 @@ static struct stub *take_stub(void)
         chunk_kb += CHUNK / 1024;
     }
     return stub_at(stubs);
+}
+
+static u32 bits_set(u32 v)
+{
+    u32 n = 0;
+
+    for (; v; v &= v - 1)
+        n++;
+    return n;
+}
+
+static u32 packed_size(const struct entry *e)
+{
+    u32 i, n = sizeof(struct packed);
+
+    for (i = 0; i < FILTERS; i++)
+        if (e->filter[i])
+            n += 2;
+    return n;
+}
+
+static const struct packed *next_packed(const struct packed *p)
+{
+    return (const struct packed *)((const u8 *)p + sizeof(struct packed) + 2 * bits_set(p->present));
+}
+
+/* The filter's slot + 1 in objects, FACTION_NONE, or 0 for none. */
+static u32 packed_filter(const struct packed *p, u32 tag)
+{
+    if (!(p->present & (1u << tag)))
+        return 0;
+    return p->filter[bits_set(p->present & ((1u << tag) - 1))];
+}
+
+static int packed_sex(const struct packed *p)
+{
+    return (int)(p->flags >> SEX_SHIFT) - 1;
+}
+
+/* By field: a packed struct assignment becomes a memcpy call, which the payload cannot link. */
+static u32 pack(u8 *to, const struct entry *from)
+{
+    struct packed *p = (struct packed *)to;
+    u32 i, n = 0;
+
+    p->offset = from->offset;
+    p->source = from->source;
+    p->flags = (u8)((from->flags & (FLAG_DELETED | STUB_UNFILTERED)) |
+                    (((from->sex + 1) & 3) << SEX_SHIFT));
+    p->present = 0;
+    for (i = 0; i < FILTERS; i++)
+        if (from->filter[i]) {
+            p->present |= (u8)(1u << i);
+            p->filter[n++] = from->filter[i];
+        }
+    return sizeof(struct packed) + 2 * n;
 }
 
 static u32 slot_of(const u8 *dial)
@@ -555,7 +623,7 @@ static void free_link(u8 *info)
 }
 
 /* One INFO as loadRecord leaves it after the override copy and freeLoadNames. */
-static u8 *load_one(u8 *file, const struct entry *s, const u8 *dial)
+static u8 *load_one(u8 *file, const struct packed *s, const u8 *dial)
 {
     u8 *info = ((fn_info_new)TES3X_LAZY_INFO_NEW)(0x2C);
     u32 *flags;
@@ -584,7 +652,7 @@ static u8 *load_one(u8 *file, const struct entry *s, const u8 *dial)
 static void build(struct topic *t)
 {
     u8 *data = records(), **infos, *file, **link;
-    const struct entry *e = t->entries;
+    const struct packed *p, *q;
     u32 count = t->count, i, j, temporary, saving, source;
 
     t->built = 1;
@@ -599,17 +667,15 @@ static void build(struct topic *t)
         infos[i] = 0;
     saving = data[RECORDS_SAVING];
     data[RECORDS_SAVING] = 0;
-    for (i = 0;; i++) {
-        while (i < count && infos[i])
-            i++;
-        if (i == count)
-            break;
-        source = e[i].source;
+    for (i = 0, p = (const struct packed *)t->entries; i < count; i++, p = next_packed(p)) {
+        if (infos[i])
+            continue;
+        source = p->source;
         file = open_source(sources[source], &temporary);
-        for (j = i; j < count; j++) {
-            if (infos[j] || e[j].source != source)
+        for (j = i, q = p; j < count; j++, q = next_packed(q)) {
+            if (infos[j] || q->source != source)
                 continue;
-            infos[j] = file ? load_one(file, &e[j], t->dial) : 0;
+            infos[j] = file ? load_one(file, q, t->dial) : 0;
             if (!infos[j]) {
                 infos[j] = (u8 *)1;
                 failed++;
@@ -645,20 +711,6 @@ static void report(void)
     tes3x_log("lazy.late", late);
 }
 
-/* By field: a packed struct assignment becomes a memcpy call, which the payload cannot link. */
-static void copy_entry(struct entry *to, const struct entry *from)
-{
-    u32 i;
-
-    to->offset = from->offset;
-    to->source = from->source;
-    to->flags = from->flags;
-    to->sex = from->sex;
-    to->unused = 0;
-    for (i = 0; i < FILTERS; i++)
-        to->filter[i] = from->filter[i];
-}
-
 static void swap_stubs(struct stub *a, struct stub *b)
 {
     u32 *x = (u32 *)a, *y = (u32 *)b, i, w;
@@ -678,7 +730,7 @@ static void swap_stubs(struct stub *a, struct stub *b)
  * topic whose entries cannot be allocated keeps no responses, as when build cannot allocate. */
 static __attribute__((used, noinline)) void compact(void)
 {
-    struct entry *group = 0;
+    u8 *group = 0;
     struct stub *s;
     u32 i, j, n = 0, read = 0, freed = 0, group_left = 0, group_kb = 0, lost = 0, bytes, size;
 
@@ -705,7 +757,8 @@ static __attribute__((used, noinline)) void compact(void)
 
         if (!t)
             continue;
-        bytes = t->count * sizeof(struct entry);
+        for (bytes = 0, j = 0; j < t->count; j++)
+            bytes += packed_size(&stub_at(read + j)->e);
         if (bytes > group_left) {
             size = bytes > GROUP ? bytes : GROUP;
             group = heap_allocate(size);
@@ -717,10 +770,9 @@ static __attribute__((used, noinline)) void compact(void)
             t->entries = 0;
             t->built = 1;
         } else {
-            for (j = 0; j < t->count; j++)
-                copy_entry(&group[j], &stub_at(read + j)->e);
             t->entries = group;
-            group += t->count;
+            for (j = 0; j < t->count; j++)
+                group += pack(group, &stub_at(read + j)->e);
             group_left -= bytes;
         }
         read += t->count;
@@ -787,16 +839,16 @@ static const char *object_id(u32 object)
     return (const char *)vcall((const u8 *)object, OBJECT_ID);
 }
 
-static u32 filter_object(const struct entry *s, u32 tag)
+static u32 filter_object(const struct packed *s, u32 tag)
 {
-    u32 i = s->filter[tag];
+    u32 i = packed_filter(s, tag);
 
     return i && i != FACTION_NONE ? objects[i - 1] : 0;
 }
 
 /* The INFO filter's tests that need only the INFO and the speaker, in its order. The speaker
  * passed to getFilteredInfo becomes its base object for a reference, as in the filter. */
-static int passes(const struct entry *s, const u8 *actor)
+static int passes(const struct packed *s, const u8 *actor)
 {
     u32 speaker = filter_object(s, 0), type, value, i;
     const u8 *cell;
@@ -818,7 +870,7 @@ static int passes(const struct entry *s, const u8 *actor)
             return 0;
         }
     }
-    if (s->filter[FILTER_CELL]) {
+    if (packed_filter(s, FILTER_CELL)) {
         cell = *(const u8 *const *)(*(const u8 *const *)TES3X_VALUE(LAZY_DATA_HANDLER) +
                                     HANDLER_CELL);
         if (!cell)
@@ -848,21 +900,22 @@ static int passes(const struct entry *s, const u8 *actor)
         return 0;
     if ((value = filter_object(s, 2)) && vcall(actor, ACTOR_CLASS) != value)
         return 0;
-    if (s->filter[3] == FACTION_NONE ? vcall(actor, ACTOR_FACTION) != 0
-                                     : (value = filter_object(s, 3)) &&
-                                           vcall(actor, ACTOR_FACTION) != value)
+    if (packed_filter(s, 3) == FACTION_NONE ? vcall(actor, ACTOR_FACTION) != 0
+                                            : (value = filter_object(s, 3)) &&
+                                                  vcall(actor, ACTOR_FACTION) != value)
         return 0;
-    if (s->sex != -1 && (int)vcall(actor, ACTOR_SEX) != s->sex)
+    if (packed_sex(s) != -1 && (int)vcall(actor, ACTOR_SEX) != packed_sex(s))
         return 0;
     return 1;
 }
 
 static int first_passing(const struct topic *t, const u8 *actor)
 {
+    const struct packed *p = (const struct packed *)t->entries;
     u32 i;
 
-    for (i = 0; i < t->count; i++)
-        if (passes(&t->entries[i], actor))
+    for (i = 0; i < t->count; i++, p = next_packed(p))
+        if (passes(p, actor))
             return (int)i;
     return -1;
 }
@@ -944,15 +997,18 @@ u32 tes3x_lazy_dialogue_check(void)
     compact();
     for (i = 0; i < SLOTS; i++) {
         struct topic *t = slots[i];
-        const struct entry *s = 0;
+        const struct packed *s = 0, *p;
         u8 *info;
         u32 n = 0, bad = 0;
 
         if (!t)
             continue;
+        p = (const struct packed *)t->entries;
         for (info = *(u8 **)(t->dial + DIAL_INFO); n < t->count || info;
              n++, info = info ? *(u8 **)(info + INFO_NEXT) : 0) {
-            s = n < t->count ? &t->entries[n] : 0;
+            s = n < t->count ? p : 0;
+            if (s)
+                p = next_packed(p);
             if (!s || !info || sources[s->source] != *(u8 **)(info + INFO_SOURCE) ||
                 s->offset != *(u32 *)(info + INFO_OFFSET) ||
                 (s->flags & FLAG_DELETED) != (*(u32 *)(info + INFO_FLAGS) & FLAG_DELETED)) {
@@ -1002,6 +1058,7 @@ static void check_speaker(const u8 *actor, u32 reference, u32 flag, u32 *counts)
     for (i = 0; i < SLOTS; i++) {
         struct topic *t = slots[i];
         const u8 *answer, *info;
+        const struct packed *p;
         u32 n;
 
         if (!t)
@@ -1015,11 +1072,12 @@ static void check_speaker(const u8 *actor, u32 reference, u32 flag, u32 *counts)
         if (!answer)
             continue;
         counts[2]++;
-        for (n = 0, info = *(const u8 *const *)(t->dial + DIAL_INFO);
+        for (n = 0, p = (const struct packed *)t->entries,
+            info = *(const u8 *const *)(t->dial + DIAL_INFO);
              n < t->count && info && info != answer;
-             n++, info = *(const u8 *const *)(info + INFO_NEXT))
+             n++, p = next_packed(p), info = *(const u8 *const *)(info + INFO_NEXT))
             ;
-        if (n == t->count || !info || !passes(&t->entries[n], actor)) {
+        if (n == t->count || !info || !passes(p, actor)) {
             if (counts[3]++ < 8)
                 tes3x_log_hex3("lazy.summary_hidden_at", (u32)t->dial, (u32)answer, (u32)actor);
         }
