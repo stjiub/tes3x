@@ -41,6 +41,7 @@ SECTION = re.compile(r'^#include "(multi/\w+\.c)"$', re.M)
 DEFAULT_SOURCES = ("tes3xhook.c", "tes3xlog.c", "tes3xini.c", "tes3xdiag.c")
 SOURCE_DEPENDENCIES = {
     "tes3xinfoarena.c": ("tes3xpager.c",),
+    "tes3xlinknames.c": ("tes3xpager.c",),
     "tes3xmwse.c": ("tes3xconsole.c",),
     "tes3xmulti.c": ("tes3xnet.c",),
     "tes3xagent.c": ("tes3xnet.c",),
@@ -845,6 +846,16 @@ def engine_bindings(xbe, sources):
         wanted["info_table_free"] = ("_tes3x_info_table_free@4",)
         wanted["info_cleanup"] = ("_tes3x_info_cleanup_hook",)
         wanted["info_finish"] = ("_tes3x_info_finish_hook",)
+    if "tes3xlinknames.c" in names:
+        free = locate("link-free")
+        print(f"link name arena: zeroed {hexva(locate('link-zeroed'))}, "
+              f"tagged {hexva(locate('link-tagged'))}, free {hexva(free)}")
+        define("LINK_ZEROED", hexva(locate("link-zeroed")))
+        define("LINK_TAGGED", hexva(locate("link-tagged")))
+        define("LINK_FREE_RESUME", hexva(free + 6))
+        wanted["link_zeroed"] = ("_tes3x_link_names_zeroed",)
+        wanted["link_tagged"] = ("_tes3x_link_names_tagged",)
+        wanted["link_free"] = ("_tes3x_link_names_free",)
     if "tes3xdialogueowner.c" in names or "tes3xtest_dialogueowner.c" in names:
         find = locate("dialogue-owner-find")
         define("OWNER_DATA_HANDLER", hexva(locate("dialogue-owner-data-handler")))

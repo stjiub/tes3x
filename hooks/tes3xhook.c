@@ -16,6 +16,7 @@ TES3X_OPTIONAL void tes3x_prof_init(void);
 TES3X_OPTIONAL void tes3x_heap_init(void);
 TES3X_OPTIONAL void tes3x_mem_init(void);
 TES3X_OPTIONAL void tes3x_info_arena_init(void);
+TES3X_OPTIONAL void tes3x_link_names_init(void);
 TES3X_OPTIONAL void tes3x_overlay_init(void);
 TES3X_OPTIONAL void tes3x_frag_probe(void);
 TES3X_OPTIONAL void tes3x_console_start(void);
@@ -71,6 +72,8 @@ void tes3x_init(void)
         tes3x_heap_init();
     if (tes3x_info_arena_init)
         tes3x_info_arena_init();
+    if (tes3x_link_names_init)
+        tes3x_link_names_init();
     if (tes3x_prof_init)
         tes3x_prof_init();
     if (&tes3x_diag_installed && tes3x_diag_installed)

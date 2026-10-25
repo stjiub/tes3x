@@ -724,6 +724,16 @@ source = "tes3xinfoarena.c"
 summary = "Page INFO's temporary ID, previous and next names outside the engine heap."
 
 [[patch]]
+name = "link-name-arena"
+title = "Paged NPC and inventory link names"
+bit = 60
+category = "compat"
+channel = "dev"
+selection = "preset"
+source = "tes3xlinknames.c"
+summary = "Page NPCs' race, class, faction, head and hair names and inventory item IDs outside the engine heap until records are linked."
+
+[[patch]]
 name = "dialogue-owner"
 title = "Direct response topic lookup"
 bit = 57

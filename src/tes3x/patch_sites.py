@@ -2265,6 +2265,51 @@ def find_info_arena_sites(x):
     }
 
 
+# Inventory item IDs kept until the post-load link: (source file, line) of each loader's
+# AllocateTagged, for the NPC record, creature and container records and their instances.
+LINK_NAME_STRINGS = (("TES3NPC.cpp", 0x27C), ("TES3Creature.cpp", 0x170),
+                     ("TES3Creature.cpp", 0x807), ("TES3Data.cpp", 0x16AB),
+                     ("TES3Data.cpp", 0x1A58))
+
+
+def find_link_names_sites(x):
+    """The NPC constructor's five-name allocation, the inventory item ID allocations, and
+    Memory_Heap::Free's prologue."""
+    data = bytes(x.data)
+
+    def source(name):
+        return x.off_to_va(find_unique(data, b".\\TES3 Shared\\" + name.encode() + b"\0",
+                                       "link-name-arena: " + name))
+
+    npc = struct.pack("<I", source("TES3NPC.cpp"))
+    names = list(re.finditer(rb"\x6a\x3c\x68" + re.escape(npc) +
+                             rb"\x6a\x20\x6a\x05\x89\x46\x78\xe8", data))
+    if len(names) != 1:
+        raise PatchError("link-name-arena: %d NPC link name allocations, expected 1" % len(names))
+    names_site = x.off_to_va(names[0].end() - 1)
+    zeroed = tes3x_inject.call_target(x, names_site)
+
+    strings = []
+    for name, line in LINK_NAME_STRINGS:
+        rx = (rb"\x68" + re.escape(struct.pack("<I", line)) + rb"\x40\x68" +
+              re.escape(struct.pack("<I", source(name))) + rb"\x50\xe8")
+        hits = list(re.finditer(rx, data))
+        if len(hits) != 1:
+            raise PatchError("link-name-arena: %d item ID allocations at %s:%d, expected 1"
+                             % (len(hits), name, line))
+        strings.append(x.off_to_va(hits[0].end() - 1))
+    tagged = {tes3x_inject.call_target(x, site) for site in strings}
+    if len(tagged) != 1:
+        raise PatchError("link-name-arena: item ID allocations call different functions")
+
+    free = find_heap_function(x, "free")[0]
+    off = x.va_to_off(free)
+    if data[off:off + 6] != b"\x55\x8b\xec\x83\xec\x14":
+        raise PatchError("link-name-arena: Memory_Heap::Free prologue changed")
+    return {"names": names_site, "zeroed": zeroed, "strings": strings,
+            "tagged": tagged.pop(), "free": free}
+
+
 # DialogueInfo::findDialogue: walk NonDynamicData::dialogues (+0x48), then each topic's chain.
 DIALOGUE_OWNER_FIND = re.compile(
     rb"\xa1(?P<handler>....)\x8b\x08\x56\x8b\x71\x48\x57\x8b\xce\xe8....\x85\xc0\x74.\x8b\x7c\x24\x0c"
@@ -2843,6 +2888,9 @@ LOCATORS = {
     "info-current-topic": lambda image: find_info_arena_sites(image)["current_topic"],
     "info-link-original": lambda image: find_info_arena_sites(image)["link_original"],
     "info-finish-original": lambda image: find_info_arena_sites(image)["finish_original"],
+    "link-zeroed": lambda image: find_link_names_sites(image)["zeroed"],
+    "link-tagged": lambda image: find_link_names_sites(image)["tagged"],
+    "link-free": lambda image: find_link_names_sites(image)["free"],
     "dialogue-owner-find": lambda image: find_dialogue_owner_sites(image)["find"],
     "dialogue-owner-data-handler": lambda image: find_dialogue_owner_sites(image)["data_handler"],
     "xapi-heap-alloc": find_xapi_heap_alloc,

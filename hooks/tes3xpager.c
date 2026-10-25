@@ -70,6 +70,7 @@ typedef void(__stdcall *fn_HalReturnToFirmware)(u32);
 
 /* Read by the trap handler. */
 u32 tes3x_pager_base, tes3x_pager_size, tes3x_pager_chain, tes3x_pager_broken;
+u32 tes3x_pager_limit;
 volatile u32 tes3x_pager_violations;
 
 static void *lock_handle, *file;
@@ -387,6 +388,7 @@ static int install(u32 cache_partition)
     }
     tes3x_pager_base = (u32)base;
     tes3x_pager_size = size;
+    tes3x_pager_limit = size;
     for (page = 0; page < REGION_PAGES; page++)
         page_group[page] = (unsigned short)(page / BUDGET_PAGES + 1);
 
@@ -421,6 +423,17 @@ int tes3x_pager_init(void)
         return 0;
     installed = 1;
     return 1;
+}
+
+/* A page-aligned slice from the top of the region, for a client that allocates on its own.
+ * Call at init, before any client allocates from the base. */
+void *tes3x_pager_take(u32 bytes)
+{
+    bytes = (bytes + PAGE - 1) & ~(PAGE - 1);
+    if (!tes3x_pager_base || bytes > tes3x_pager_limit / 2)
+        return 0;
+    tes3x_pager_limit -= bytes;
+    return (void *)(tes3x_pager_base + tes3x_pager_limit);
 }
 
 int tes3x_pager_contains(const void *ptr)

@@ -51,7 +51,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_dxt5_size,
                                find_game_instance, find_hd_video, find_heap_function,
                                find_heap_object, find_heap_region, find_heap_region_sites,
-                               find_info_arena_sites, find_lazy_dialogue_sites, find_lean_menu, find_marker,
+                               find_info_arena_sites, find_lazy_dialogue_sites, find_link_names_sites, find_lean_menu, find_marker,
                                find_pool_grow_sites,
                                find_mcp102_actn, find_enable_disable_flags, find_mcp160_removal, find_pathgrid_lookups, find_mcp123_add, find_mcp6_context,
                                find_mcp125_collision, find_mcp30_context, find_mcp55_context,
@@ -1044,6 +1044,29 @@ def _info_name_arena(x, value, ctx):
     return edits
 
 
+@patch("link-name-arena")
+def _link_name_arena(x, value, ctx):
+    """Put NPC link names and inventory item IDs in the demand-paged arena."""
+    hooks = ctx.get("hooks", {})
+    names = ("link_zeroed", "link_tagged", "link_free")
+    missing = [name for name in names if not hooks.get(name)]
+    if missing:
+        raise PatchError("link-name-arena: needs `payload` first, with %s in its manifest"
+                         % ", ".join(missing))
+    sites = find_link_names_sites(x)
+    zeroed, tagged, free = (int(str(hooks[name]), 16) for name in names)
+    edits = []
+    was, off = x.patch_call(sites["names"], zeroed)
+    edits.append((off, 5, "NPC link names 0x%08X: 0x%08X -> 0x%08X" % (sites["names"], was, zeroed)))
+    for site in sites["strings"]:
+        was, off = x.patch_call(site, tagged)
+        edits.append((off, 5, "item ID 0x%08X: 0x%08X -> 0x%08X" % (site, was, tagged)))
+    off = x.va_to_off(sites["free"])
+    x.data[off:off + 6] = b"\xe9" + struct.pack("<i", free - (sites["free"] + 5)) + b"\x90"
+    edits.append((off, 6, "Memory_Heap::Free 0x%08X -> 0x%08X" % (sites["free"], free)))
+    return edits
+
+
 @patch("dialogue-owner")
 def _dialogue_owner(x, value, ctx):
     """Answer findDialogue from each INFO's owner pointer, and keep the destructor off it."""
@@ -2000,6 +2023,7 @@ __all__ = [
     'find_heap_region',
     'find_heap_region_sites',
     'find_info_arena_sites',
+    'find_link_names_sites',
     'find_lazy_dialogue_sites',
     'find_lean_menu',
     'find_marker',

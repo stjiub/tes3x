@@ -76,6 +76,7 @@ single required/not-required flag.
 | [Kernel memory census](../patches/mem-census.md) | `mem-census` | Count kernel allocations and the XAPI heap by caller, with the address space map. | TES3X | instrumentation | dev | Build option |
 | [Expanded-memory heap region](../patches/heap-region.md) | `heap-region` | With more than 64 MB, size the engine heap's region from [Xbox] HeapRegionKB. | TES3X | compat | dev | By name |
 | [Paged dialogue link names](../patches/info-name-arena.md) | `info-name-arena` | Page INFO's temporary ID, previous and next names outside the engine heap. | TES3X | compat | dev | By name |
+| [Paged NPC and inventory link names](../patches/link-name-arena.md) | `link-name-arena` | Page NPCs' race, class, faction, head and hair names and inventory item IDs outside the engine heap until records are linked. | TES3X | compat | dev | By name |
 | [Direct response topic lookup](../patches/dialogue-owner.md) | `dialogue-owner` | Find a response's topic directly instead of searching every topic's responses. | TES3X | performance | dev | By name |
 | [Topic responses built on first use](../patches/lazy-dialogue.md) | `lazy-dialogue` | Load topic responses as file references and build a topic's responses when it is first asked. | TES3X | compat | dev | By name |
 | [Growing small-block pools](../patches/pool-grow.md) | `pool-grow` | Add another pool when a small-block size class fills, instead of giving each further block a header in the heap. | TES3X | compat | dev | By name |

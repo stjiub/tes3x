@@ -40,7 +40,7 @@ typedef void *(__cdecl *fn_names_allocate)(u32, u32, const char *, u32);
 typedef void(__cdecl *fn_names_free)(void *);
 typedef void(__thiscall *fn_info_link)(void *, u32);
 
-extern u32 tes3x_pager_base, tes3x_pager_size;
+extern u32 tes3x_pager_base;
 
 static u32 used, topic, group, allocations, fallbacks, finished;
 
@@ -65,7 +65,7 @@ table_allocate(void *owner, void *heap, u32 size, const char *file, u32 line)
         group++;
     }
     at = tes3x_pager_base + used;
-    if (group > 0xFFFFu || used > tes3x_pager_size - BLOCK ||
+    if (group > 0xFFFFu || used > tes3x_pager_limit - BLOCK ||
         !tes3x_pager_set_group((void *)at, BLOCK, group)) {
         fallbacks++;
         return ((fn_heap_allocate)TES3X_INFO_HEAP_ALLOCATE)(heap, size, file, line);
