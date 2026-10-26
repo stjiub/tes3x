@@ -15,5 +15,7 @@ falling back to the first deleted reference just as the original search does. Lo
 index until global-script startup returns, then the table is freed. If its allocation fails, every
 lookup uses the original cell walk.
 
-Instance records are also indexed under the original object they represent. The table exists only
+Instance records are also indexed under the original object they represent. With
+[`npc-arena`](npc-arena.md), a base object in its paged space is known to be an NPC record without
+being read, so building the index does not page every NPC in from disk. The table exists only
 while global scripts start, when the reference lists cannot change underneath it.

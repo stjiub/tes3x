@@ -49,6 +49,8 @@ typedef void *(__attribute__((thiscall)) *fn_find_in_cell)(void *cell, void *obj
 typedef void *(__attribute__((thiscall)) *fn_original)(void *object);
 typedef void(__attribute__((thiscall)) *fn_start_scripts)(void *world);
 
+TES3X_OPTIONAL int tes3x_npc_arena_holds(const void *ptr);
+
 #define AT(p, off) (*(u32 *)((u32)(p) + (off)))
 
 static int ri_active;
@@ -61,6 +63,13 @@ static u32 ri_mismatch;
 static int is_actor(u32 type)
 {
     return type == T_CREA || type == T_NPC || type == T_CREC || type == T_NPCC;
+}
+
+/* An NPC record in npc-arena's paged slice. Its original is null, so the index needs only its
+ * type, and reading the object would fault it in. */
+static int paged_npc(u32 base)
+{
+    return tes3x_npc_arena_holds && tes3x_npc_arena_holds((void *)base);
 }
 
 /* The engine's own test (0x00131320) for a base object that stands in for another. */
@@ -90,7 +99,7 @@ static void record(u32 key, u32 ref, int actors)
     u32 *s;
     u32 live = (AT(ref, REF_FLAGS) & REF_DELETED) ? 0 : LIVE;
 
-    if (!key || is_actor(AT(key, OBJ_TYPE)) != actors)
+    if (!key || (paged_npc(key) || is_actor(AT(key, OBJ_TYPE))) != actors)
         return;
     s = slot(key);
     if (!s[0]) {
@@ -113,7 +122,7 @@ static void index_list(u32 list, int actors)
         if (!base)
             continue;
         record(base, ref, actors);
-        if (is_instance((void *)base))
+        if (!paged_npc(base) && is_instance((void *)base))
             record((u32)((fn_original)(*(u32 *)(AT(base, 0) + VT_ORIGINAL)))((void *)base), ref,
                    actors);
     }
@@ -128,7 +137,7 @@ static u32 count_list(u32 list)
         for (ref = AT(list, LIST_HEAD); ref; ref = AT(ref, REF_NEXT)) {
             base = AT(ref, REF_BASE);
             if (base)
-                n += 1 + is_instance((void *)base);
+                n += 1 + (!paged_npc(base) && is_instance((void *)base));
         }
     return n;
 }

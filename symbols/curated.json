@@ -2255,6 +2255,12 @@
       "note": "NPCO items with XIDX and per-stack item data (XSOL, XCHG, XHLT, owner XNPC/XGLB/XFAC/XRNK, SCRI)."
     },
     {
+      "va": "0x000E9E60",
+      "name": "Inventory::resolveItemIds?",
+      "confidence": "guess",
+      "provenance": "called from loadAllFiles for each CREA/NPC_/CONT object; replaces each stack's item ID string with findObjectById's result"
+    },
+    {
       "va": "0x000EA7D0",
       "name": "Inventory::AddItemWithoutData",
       "kind": "function",
@@ -4266,6 +4272,13 @@
       "provenance": "engine-map step 3: loadRecord 0x0010E8B0 builds NPC for tag NPC_; loader read from the class vtable slot 1"
     },
     {
+      "va": "0x00120EA0",
+      "name": "NPC::resolveLinksPostLoad?",
+      "confidence": "guess",
+      "provenance": "NPC vtable +0xE0 (vtable 0x00375100); loadAllFiles calls +0xE0 on every object twice",
+      "note": "Returns at once when objectFlags bit 3 is set; otherwise links race/class/AI/script and frees the load IDs"
+    },
+    {
       "va": "0x00121130",
       "name": "NPCInstance::loadObjectSpecific",
       "confidence": "verified",
@@ -4435,6 +4448,14 @@
       "provenance": "engine-map step 3: body read",
       "pc_va": "0x004DE380",
       "note": "FRMR block reader. ACDT creates the mobile (0x183F80, or 0x187750 for the player reference) then applies it through vtable +0x98; ACSC/ACSL, CSTN/LSTN/CSHN/LSHN/CSSF/CSSN/LSSF/LSSN/TGTN/FGTN resolve ids to live actors; CHRD/CRED through vtable +0x108; WNAM/XNAM/YNAM restore readied magic; LVCR a leveled creature's base reference."
+    },
+    {
+      "va": "0x001271DE",
+      "name": "Cell::static_loadReference:baseVtableRead",
+      "confidence": "verified",
+      "provenance": "disasm: first read of findObjectByID's result",
+      "note": "One pager fault per NPC reference loaded with npc-arena (3,675 for full TR)",
+      "kind": "site"
     },
     {
       "va": "0x00128F00",
@@ -4608,6 +4629,13 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_Reference_ctor",
       "pc_va": "0x004E4510"
+    },
+    {
+      "va": "0x0012C470",
+      "name": "Reference::resolveLinks?",
+      "confidence": "guess",
+      "provenance": "Reference vtable +0xE0 (slot at 0x00376120); called per reference by Cell::linkReferences?",
+      "note": "Reads the base object's deleted flag (base+8 bit 5) at 0x0012C4BF for every reference: one pager fault per NPC reference with npc-arena (3,606 for full TR)"
     },
     {
       "va": "0x0012CB30",
@@ -7587,6 +7615,13 @@
       "confidence": "verified",
       "provenance": "multiplayer records: disassembly 0x1D5E77-0x1D61xx, xemu enchantmake",
       "note": "Enchanting's Create button. Adds the ENCH (DAT_003d87c4) with addNewObject at 0x1D5E77 while ebx holds the base item, removes the base (removeItemWithData 0x1D5EA8), then builds ARMO/WEAP/CLOT copy: new T, vtable copy(+0x24: base, 1), setName(+0x10C), setID(+0x28, empty rolls an id), setEnchantment(+0xD4), addNewObject, AddItemWithoutData. The multiplayer records hook reads ebx at the first addNewObject."
+    },
+    {
+      "va": "0x001D6420",
+      "name": "returnZero",
+      "confidence": "verified",
+      "provenance": "body: xor eax, eax; ret",
+      "note": "NPC vtable +0x154 (the original object of an instance) points here: an NPC_ base has no original"
     },
     {
       "va": "0x001D6540",

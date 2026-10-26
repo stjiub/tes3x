@@ -58,6 +58,11 @@ void *__cdecl tes3x_npc_arena_new(u32 size)
     return ((fn_new)TES3X_NPC_NEW)(size);
 }
 
+int tes3x_npc_arena_holds(const void *ptr)
+{
+    return arena && (u32)ptr - arena < used;
+}
+
 void __stdcall tes3x_npc_arena_free(void *ptr)
 {
     if (!arena || (u32)ptr - arena >= ARENA_BYTES)
