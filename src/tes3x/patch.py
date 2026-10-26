@@ -1096,7 +1096,7 @@ def _script_arena(x, value, ctx):
 
 @patch("path-arena")
 def _path_arena(x, value, ctx):
-    """Put loaded model and icon paths in the demand-paged arena."""
+    """Put loaded model and icon paths and display names in the demand-paged arena."""
     hooks = ctx.get("hooks", {})
     if not hooks.get("path_allocate") or not hooks.get("path_tag"):
         raise PatchError("path-arena: needs `payload` first, with path_allocate and path_tag")
