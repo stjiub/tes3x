@@ -373,6 +373,7 @@
     "NET_WEATHER_ROLL": null,
     "NET_WIDGET_SET_TEXT": null,
     "NET_WORLD": null,
+    "NPC_NEW": null,
     "OPEN_JOURNAL": null,
     "OPEN_MENU": null,
     "OPEN_VK": null,
@@ -533,8 +534,8 @@
       "sha256": "e955ba181c472bca59769a87e3c03af13105b8c35ac31011d89c9dbe4b8a4bc7"
     },
     "tes3xhook.c": {
-      "digest": "457a051562ff94e8c2280d25bf249075cc9073a1e75062d93fd86f2972d32206",
-      "sha256": "4a5d86d0e8f4d2490845732a6c046e0addafef18d62e2fca873d590240f9642f"
+      "digest": "ae383a5d8fd78b3e5ee1d91358aa134da66b82f17b10deb3dbb0b92b3862e591",
+      "sha256": "92b3cf75dca8391cb2e99daec733609101ab565d0d8f5faaeb52ba95758b6d79"
     },
     "tes3xhudscale.c": {
       "digest": "3931cc8baa8f2c1a35bd53b6f9d062d49defd2b8ee8ba6c307a56c496ded364d",
@@ -565,8 +566,8 @@
       "sha256": "23b3d613c68c29af805ec8cef3dee983d9d01e24bf76bd11bed7ed6145b02f2d"
     },
     "tes3xlinknames.c": {
-      "digest": "d934c8da3bb60efb597624b89156642115302d099d952b718a03b08d9ee73abd",
-      "sha256": "62988b76357a58d8bd3ae32e7393cc755711e4b3e0980f1ce824fece65869bd9"
+      "digest": "67d0edb241ae2dee298e2c416654e2a1ae39ce1e16fa9647381b8342274531a4",
+      "sha256": "e005d996bc8964760c4e8204e7dddee28f07234ea5e26078bd59ece890b2fbbd"
     },
     "tes3xlog.c": {
       "digest": "59321b2696af7e15ad652017123e785e39c09f02bf2601b4ad2764f28b734d44",
@@ -651,6 +652,10 @@
     "tes3xnoise.c": {
       "digest": "e35a0e869859f7af8f7c01d8d71ff0f688334e180bdd91c53d518e0ea7e7e20c",
       "sha256": "52fefc5d829cf96dac6d3d4ff1f5712a8e9039bc01cb2426ca3b85eb75030eae"
+    },
+    "tes3xnpcarena.c": {
+      "digest": "b77df097796d9454c4b43f91343079b23816973a415f26f32897dcf916ca76ba",
+      "sha256": "520cf1689bf318f326793119ca4710486a7308fb4b1cce81b1c924837a017972"
     },
     "tes3xoverlay.c": {
       "digest": "7e32c38aad5cc86ae5185529c4034756308933ce367a61e28a95139dadd172c4",

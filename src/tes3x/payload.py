@@ -46,6 +46,7 @@ SOURCE_DEPENDENCIES = {
     "tes3xscriptarena.c": ("tes3xpager.c",),
     "tes3xpatharena.c": ("tes3xpager.c",),
     "tes3xlandarena.c": ("tes3xpager.c",),
+    "tes3xnpcarena.c": ("tes3xpager.c",),
     "tes3xmwse.c": ("tes3xconsole.c",),
     "tes3xmulti.c": ("tes3xnet.c",),
     "tes3xagent.c": ("tes3xnet.c",),
@@ -916,6 +917,14 @@ def _bind_landarena(b):
     print(f"land arena: LAND new {new}")
     b.define("LAND_NEW", new)
     b.wanted["land_new"] = ("_tes3x_land_arena_new",)
+
+
+@binder("tes3xnpcarena.c")
+def _bind_npcarena(b):
+    new = hexva(b.locate("npc-new"))
+    print(f"npc arena: NPC new {new}")
+    b.define("NPC_NEW", new)
+    b.wanted["npc_new"] = ("_tes3x_npc_arena_new",)
 
 
 @binder("tes3xdialogueowner.c", "tes3xtest_dialogueowner.c")

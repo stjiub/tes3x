@@ -17,8 +17,8 @@ single required/not-required flag.
 | [Data Files drive redirect](../patches/drive-letters.md) | `drive-letters=LETTER` | Point every Data Files asset path at one drive. | TES3X | infrastructure | preview | **Always included** |
 | [Same-volume save staging](../patches/save-staging.md) | `save-staging=LETTER` | Stage saves on one volume with UDATA so the commit renames instead of copying. | TES3X | infrastructure | preview | Build option |
 | [Save and load without forced sleeps](../patches/loop-sleeps.md) | `loop-sleeps` | Yield instead of sleeping 1 ms every 16-128 objects in the save and load walks. | TES3X | performance | dev | By name |
-| [Indexed reference lookup at global script start](../patches/ref-index.md) | `ref-index` | Find the references global scripts name from one pass over the cells, not one per name. | TES3X | performance | dev | By name |
-| [Creature list for animation sound keys](../patches/soundgen-index.md) | `soundgen-index` | Match an animation's footstep and voice keys against the creatures, not every loaded object. | TES3X | performance | dev | By name |
+| [Indexed reference lookup at global script start](../patches/ref-index.md) | `ref-index` | Find the references global scripts name from one pass over the cells, not one per name. | TES3X | performance | dev | By name; `npc-arena` |
+| [Creature list for animation sound keys](../patches/soundgen-index.md) | `soundgen-index` | Match an animation's footstep and voice keys against the creatures, not every loaded object. | TES3X | performance | dev | By name; `npc-arena` |
 | [Dashboard title](../patches/title.md) | `title=NAME` | Rename the XBE's certificate title, the name a dashboard falls back to. | TES3X | infrastructure | preview | Build option |
 | [Separate save title ID](../patches/title-id.md) | `title-id=HEX` | Give the XBE its own title ID, so its saves go to a separate E:/UDATA folder. | TES3X | infrastructure | preview | Build option |
 | [Multiple BSA loading](../patches/multi-bsa.md) | `multi-bsa` | Load every archive listed in tes3xarch.txt, not just Morrowind.bsa. | TES3X | infrastructure | preview | Delta-BSA packaging |
@@ -77,10 +77,11 @@ single required/not-required flag.
 | [Kernel memory census](../patches/mem-census.md) | `mem-census` | Count kernel allocations and the XAPI heap by caller, with the address space map. | TES3X | instrumentation | dev | Build option |
 | [Expanded-memory heap region](../patches/heap-region.md) | `heap-region` | With more than 64 MB, size the engine heap's region from [Xbox] HeapRegionKB. | TES3X | compat | dev | By name |
 | [Paged dialogue link names](../patches/info-name-arena.md) | `info-name-arena` | Page INFO's temporary ID, previous and next names outside the engine heap. | TES3X | compat | dev | By name |
-| [Paged NPC and inventory link names](../patches/link-name-arena.md) | `link-name-arena` | Page NPCs' race, class, faction, head and hair names, inventory item IDs and the base records' inventories outside the engine heap. | TES3X | compat | dev | By name; `script-arena`, `path-arena`, `land-arena` |
+| [Paged NPC and inventory link names](../patches/link-name-arena.md) | `link-name-arena` | Page NPCs' race, class, faction, head and hair names, inventory item IDs and the base records' inventories outside the engine heap. | TES3X | compat | dev | By name; `script-arena`, `path-arena`, `land-arena`, `npc-arena` |
 | [Paged script bytecode](../patches/script-arena.md) | `script-arena` | Page compiled script bytecode outside the engine heap. | TES3X | compat | dev | By name |
 | [Paged model paths, icon paths and display names](../patches/path-arena.md) | `path-arena` | Page the model and icon paths and display names of loaded records outside the engine heap. | TES3X | compat | dev | By name |
 | [Paged land objects](../patches/land-arena.md) | `land-arena` | Page the land objects of loaded exterior cells outside the engine heap. | TES3X | compat | dev | By name |
+| [Paged NPC objects](../patches/npc-arena.md) | `npc-arena` | Page the NPC records' objects outside the engine heap. | TES3X | compat | dev | By name |
 | [Direct response topic lookup](../patches/dialogue-owner.md) | `dialogue-owner` | Find a response's topic directly instead of searching every topic's responses. | TES3X | performance | dev | By name |
 | [Dialogue responses built on first use](../patches/lazy-dialogue.md) | `lazy-dialogue` | Load dialogue responses as file references and build a topic's responses when it is first needed. | TES3X | compat | dev | By name |
 | [Growing small-block pools](../patches/pool-grow.md) | `pool-grow` | Add another pool when a small-block size class fills, instead of giving each further block a header in the heap. | TES3X | compat | dev | By name |
