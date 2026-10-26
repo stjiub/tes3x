@@ -2387,6 +2387,33 @@ def find_script_arena_sites(x):
     return {"sites": sites, "zeroed": zeroed.pop()}
 
 
+LAND_SIZE = 0x224
+LAND_ARENA_KEEP = 16  # elements left in the shrunk pool for land made in play
+
+
+def find_land_arena_sites(x):
+    """The LAND pool's capacity push, its operator new, and the record loader's call to it."""
+    data = bytes(x.data)
+    size = struct.pack("<I", LAND_SIZE)
+    name = x.off_to_va(find_unique(data, b"\0TES3ObjectLAND\0", "land-arena: pool name") + 1)
+    ctor = re.compile(rb"\x68(?P<cap>....)\x68" + re.escape(size) + rb"\x68" +
+                      re.escape(struct.pack("<I", name)) + rb"\xb9(?P<pool>....)\xe8", re.S)
+    hits = list(ctor.finditer(data))
+    if len(hits) != 1:
+        raise PatchError("land-arena: %d LAND pool constructions, expected 1" % len(hits))
+    new = re.compile(rb"\x8b\x44\x24\x04\x6a\x00\x68....\x50\xb9" +
+                     re.escape(hits[0].group("pool")) + rb"\xe8....\xc3", re.S)
+    news = [x.off_to_va(m.start()) for m in new.finditer(data)]
+    if len(news) != 1:
+        raise PatchError("land-arena: %d LAND operator news, expected 1" % len(news))
+    calls = [x.off_to_va(m.end()) for m in re.finditer(rb"\x68" + re.escape(size) + rb"(?=\xe8)", data)]
+    calls = [va for va in calls if tes3x_inject.call_target(x, va) == news[0]]
+    if len(calls) != 1:
+        raise PatchError("land-arena: %d loader calls to the LAND new, expected 1" % len(calls))
+    return {"capacity": x.off_to_va(hits[0].start("cap")),
+            "bytes": struct.unpack("<I", hits[0].group("cap"))[0], "new": news[0], "call": calls[0]}
+
+
 # TES3File::getNextSubrecord: the tag at +0x23C, read from the stream when empty.
 NEXT_SUBRECORD = re.compile(
     rb"\x8b\x81\x3c\x02\x00\x00\x85\xc0\x56\x8d\xb1\x3c\x02\x00\x00\x75\x18\x8b\x49\x08\x8b\x01"
@@ -3001,6 +3028,7 @@ LOCATORS = {
     "link-append": lambda image: find_link_names_sites(image)["append"],
     "script-zeroed": lambda image: find_script_arena_sites(image)["zeroed"],
     "path-allocate": lambda image: find_path_arena_sites(image)["heap_allocate"],
+    "land-new": lambda image: find_land_arena_sites(image)["new"],
     "dialogue-owner-find": lambda image: find_dialogue_owner_sites(image)["find"],
     "dialogue-owner-data-handler": lambda image: find_dialogue_owner_sites(image)["data_handler"],
     "xapi-heap-alloc": find_xapi_heap_alloc,

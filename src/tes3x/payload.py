@@ -45,6 +45,7 @@ SOURCE_DEPENDENCIES = {
     "tes3xlinknames.c": ("tes3xpager.c",),
     "tes3xscriptarena.c": ("tes3xpager.c",),
     "tes3xpatharena.c": ("tes3xpager.c",),
+    "tes3xlandarena.c": ("tes3xpager.c",),
     "tes3xmwse.c": ("tes3xconsole.c",),
     "tes3xmulti.c": ("tes3xnet.c",),
     "tes3xagent.c": ("tes3xnet.c",),
@@ -907,6 +908,14 @@ def _bind_patharena(b):
     b.define("PATH_ALLOCATE", allocate)
     b.wanted["path_allocate"] = ("_tes3x_path_arena_allocate",)
     b.wanted["path_tag"] = ("_tes3x_path_arena_tag",)
+
+
+@binder("tes3xlandarena.c")
+def _bind_landarena(b):
+    new = hexva(b.locate("land-new"))
+    print(f"land arena: LAND new {new}")
+    b.define("LAND_NEW", new)
+    b.wanted["land_new"] = ("_tes3x_land_arena_new",)
 
 
 @binder("tes3xdialogueowner.c", "tes3xtest_dialogueowner.c")
