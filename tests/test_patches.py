@@ -93,7 +93,7 @@ class RegistryTests(unittest.TestCase):
 
     def test_patch_bits_have_two_words(self):
         template = ('[[patch]]\nname = "x"\ntitle = "X"\ncategory = "core"\n'
-                    'channel = "dev"\nselection = "preset"\nsummary = "x"\nbit = %d\n')
+                    'group = "Speed"\nchannel = "dev"\nselection = "preset"\nsummary = "x"\nbit = %d\n')
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'patches.toml'
             path.write_text(template % 63, encoding='utf-8')
