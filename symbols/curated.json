@@ -3289,7 +3289,8 @@
       "name": "DialogueInfo::loadObjectSpecific",
       "confidence": "matched",
       "provenance": "DialogueInfo vtable +0x4; repacks 12-byte DATA into the Xbox 8-byte form",
-      "pc_va": "0x004AF490"
+      "pc_va": "0x004AF490",
+      "note": "A Local or NotLocal filter (function types 3, 0xC) is resolved by walking every script and calling Script::getLocalVarIndexAndType on its SCVR names until one has the variable: paging SCVR thrashes here (661k faults for TR)."
     },
     {
       "va": "0x000FF230",
@@ -4900,7 +4901,8 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_Script_loadRecordSpecific",
-      "pc_va": "0x004FF700"
+      "pc_va": "0x004FF700",
+      "note": "Also the record loader: SCVR names at TES3Script.cpp:0x1B4E (+0x50), SCDT bytecode at 0x1B55 (machineCode). script-arena retargets the SCDT allocation."
     },
     {
       "va": "0x00137E7E",
