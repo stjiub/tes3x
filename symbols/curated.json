@@ -3273,7 +3273,7 @@
       "name": "Dialogue::sortTopicsByNameLength",
       "confidence": "verified",
       "provenance": "demand pager: decompiled and read",
-      "note": "Bubble sort of NonDynamicData::dialogues, longest name first, stable (swaps on strictly longer). count-1 full passes with no early exit and two strlens per pair, so (n-1)*n visits: 50M for full TR's 7,070 topics. Updates the loading bar once per pass. loadAllFiles calls it unless exactly one non-master file loads; writeSaveFile only when +0xB380 is set, and the only direct write to +0xB380 is the constructor's zero"
+      "note": "Bubble sort of NonDynamicData::dialogues, longest name first, stable (swaps on strictly longer). count-1 full passes with no early exit and two strlens per pair, so (n-1)*n visits: 50M for full TR's 7,070 topics, 29.8 s on hardware (findings 2026-10-26). Updates the loading bar once per pass. loadAllFiles skips it when exactly one data file loads, so retail Xbox (one merged Morrowind.esm) never sorts; writeSaveFile calls it only when +0xB380 is set, and the only direct write to +0xB380 is the constructor's zero. topic-sort replaces it."
     },
     {
       "va": "0x000FE4D0",
