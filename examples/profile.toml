@@ -66,6 +66,7 @@ enable = [
     # "lazy-dialogue",         # compat: build topic responses on first use instead of at load
     # "pool-grow",             # compat: grow small-block pools instead of spilling into the heap
     # "link-name-arena",       # compat: move NPC and inventory link names out of the engine heap
+    # "script-arena",          # compat: move script bytecode out of the engine heap
     # "mcp-146",                # qol: remove a fully nocked arrow with Ready Weapon
     # "mcp-149",                # core: wait for death processing before offering corpse disposal
     # "bow-view",               # qol: lower the first-person bow and arms while an arrow is nocked

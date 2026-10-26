@@ -28,6 +28,9 @@ No official releases yet. The first public release is in preparation.
   container records keep their inventories there. With the Tamriel Rebuilt masters on a 128 MB
   console 4.2 MB more memory stays free after loading, and 2.5 MB more in a new game. See
   [the patch notes](patches/link-name-arena.md).
+- New patch `script-arena`: compiled script bytecode lives in memory paged to disk instead of the
+  engine heap; it turns on `link-name-arena`. With the Tamriel Rebuilt masters 2.1 MB more memory
+  stays free, at no cost to load time. See [the patch notes](patches/script-arena.md).
 - `video-arena`: `[Xbox] VideoMemoryKB` now also shrinks the texture and vertex buffer arena,
   down to 1,024 KB, on a 64 MB console as well as on 128 MB. It still grows the arena only with
   more than 64 MB. Textures and vertex buffers that do not fit in the arena are packed together

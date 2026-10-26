@@ -2362,6 +2362,31 @@ def find_link_names_sites(x):
             "append": append.pop(), "free": free}
 
 
+# Script::loadRecordSpecific's AllocateZeroed line for SCDT (bytecode). SCVR's variable names
+# (0x1B4E) stay in the heap: the INFO loader scans every script's names for each Local filter.
+SCRIPT_ARENA_LINES = (0x1B55,)
+
+
+def find_script_arena_sites(x):
+    """The script record loader's bytecode allocation."""
+    data = bytes(x.data)
+    source = x.off_to_va(find_unique(data, b".\\TES3 Shared\\TES3Script.cpp\0",
+                                     "script-arena: TES3Script.cpp"))
+    sites = []
+    for line in SCRIPT_ARENA_LINES:
+        rx = (rb"\x68" + re.escape(struct.pack("<I", line)) + rb"\x68" +
+              re.escape(struct.pack("<I", source)) + rb"\x50\x6a\x01\xe8")
+        hits = list(re.finditer(rx, data))
+        if len(hits) != 1:
+            raise PatchError("script-arena: %d allocations at TES3Script.cpp:%d, expected 1"
+                             % (len(hits), line))
+        sites.append(x.off_to_va(hits[0].end() - 1))
+    zeroed = {tes3x_inject.call_target(x, site) for site in sites}
+    if len(zeroed) != 1:
+        raise PatchError("script-arena: script allocations call different functions")
+    return {"sites": sites, "zeroed": zeroed.pop()}
+
+
 # DialogueInfo::findDialogue: walk NonDynamicData::dialogues (+0x48), then each topic's chain.
 DIALOGUE_OWNER_FIND = re.compile(
     rb"\xa1(?P<handler>....)\x8b\x08\x56\x8b\x71\x48\x57\x8b\xce\xe8....\x85\xc0\x74.\x8b\x7c\x24\x0c"
@@ -2947,6 +2972,7 @@ LOCATORS = {
     "link-free": lambda image: find_link_names_sites(image)["free"],
     "link-allocate": lambda image: find_link_names_sites(image)["allocate"],
     "link-append": lambda image: find_link_names_sites(image)["append"],
+    "script-zeroed": lambda image: find_script_arena_sites(image)["zeroed"],
     "dialogue-owner-find": lambda image: find_dialogue_owner_sites(image)["find"],
     "dialogue-owner-data-handler": lambda image: find_dialogue_owner_sites(image)["data_handler"],
     "xapi-heap-alloc": find_xapi_heap_alloc,
