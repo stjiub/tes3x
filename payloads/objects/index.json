@@ -662,8 +662,8 @@
       "sha256": "2b9f9150ff37a105350748f9c0ac0153f672ca3aaeab6cbb4ad139d40c4fc712"
     },
     "tes3xpager.c": {
-      "digest": "7d06d668f3eae3ca4005fc50d772b8b51c6f2dd00ed96ca71f054d0dc6b903ad",
-      "sha256": "a0021fe93e3b18a229b5ed229ca1eb3e4ad1bbae82d0b536dfc787c52399e95c"
+      "digest": "577102ca2f687a483156fa35ec8c2c217ca1a05f2c9368740cc45fcc1a360f56",
+      "sha256": "edec9a359e8d844953b3f5752b5785453d1aca67e83d66798ab9f844e078e8e4"
     },
     "tes3xpatharena.c": {
       "digest": "8fdfb96e529fd17940caef37a245bd75d27f5d4a9ec968ad093f929171b55f98",

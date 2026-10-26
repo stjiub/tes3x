@@ -126,7 +126,10 @@ resident budget. Nothing in the engine is paged; the console commands exercise i
   `cache` puts the paging file on the title's `Z:` partition instead of `E:`, `faults` drains the
   fault log when the workload completes, and `reboot` returns to the dashboard afterwards.
 - `tes3xfaults` writes the fault log, the address, instruction and allocation group of recent
-  faults, to the log as `pager.fault` lines; `tes3xfaults reset` clears it.
+  faults, to the log as `pager.fault` lines; `tes3xfaults reset` clears it. Totals since the last
+  drain or reset cover every fault, including those the log dropped: `pager.fault_mb` per MB of
+  the region and `pager.fault_eip` per faulting instruction. `pager.take` lines at startup give
+  each paged arena's address, size and caller.
 
 [`info-name-arena`](../patches/info-name-arena.md) uses the same pager in a real build, and
 `tes3xfaults` works there too.

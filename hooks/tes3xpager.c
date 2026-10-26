@@ -59,6 +59,7 @@ typedef void(__stdcall *fn_HalReturnToFirmware)(u32);
 #define REGION_PAGES 16384u /* 64 MB, larger than the test drive's cache */
 #define BUDGET_PAGES 256u  /* 1 MB resident */
 #define FAULT_RING_ENTRIES 256u
+#define FAULT_EIPS 128u
 
 /* Page tables are self-mapped at 0xC0000000, as on x86 NT. */
 #define PTE(va) ((volatile u32 *)(0xC0000000u + (((u32)(va) >> 12) << 2)))
@@ -91,6 +92,9 @@ typedef struct {
 
 static fault_record fault_ring[FAULT_RING_ENTRIES], fault_snapshot[FAULT_RING_ENTRIES];
 static volatile u32 fault_head, fault_tail, fault_count, fault_dropped, fault_wraps;
+/* Totals since the last reset that the ring drops: per MB of the region, and per faulting EIP. */
+static u32 fault_mb[REGION_PAGES / 256], fault_eip[FAULT_EIPS][2], fault_eips_used,
+    fault_eip_other;
 
 void __stdcall tes3x_pager_fault(u32 addr);
 void __stdcall tes3x_pager_trace_fault(u32 addr, u32 eip);
@@ -181,6 +185,24 @@ void __stdcall tes3x_pager_trace_fault(u32 addr, u32 eip)
     record->addr = addr;
     record->eip = eip;
     record->group = page_group[(addr - tes3x_pager_base) / PAGE];
+    fault_mb[(addr - tes3x_pager_base) >> 20]++;
+    for (slot = (eip * 2654435761u) >> 25;; slot = (slot + 1) % FAULT_EIPS) {
+        if (fault_eip[slot][0] == eip) {
+            fault_eip[slot][1]++;
+            break;
+        }
+        if (!fault_eip[slot][0]) {
+            if (fault_eips_used == FAULT_EIPS - 1) {
+                fault_eip_other++;
+                break;
+            }
+            fault_eips_used++;
+            fault_eip[slot][0] = eip;
+            fault_eip[slot][1] = 1;
+            break;
+        }
+    }
+    slot = fault_head;
     slot++;
     if (slot == FAULT_RING_ENTRIES) {
         slot = 0;
@@ -433,6 +455,8 @@ void *tes3x_pager_take(u32 bytes)
     if (!tes3x_pager_base || bytes > tes3x_pager_limit / 2)
         return 0;
     tes3x_pager_limit -= bytes;
+    tes3x_log_hex3("pager.take", tes3x_pager_base + tes3x_pager_limit, bytes,
+                   (u32)__builtin_return_address(0));
     return (void *)(tes3x_pager_base + tes3x_pager_limit);
 }
 
@@ -603,11 +627,23 @@ static void unlock_irq(u32 flags)
     __asm__ volatile("pushl %0\n\tpopfl" : : "r"(flags) : "memory", "cc");
 }
 
+static void fault_totals_clear(void)
+{
+    u32 i;
+
+    for (i = 0; i < REGION_PAGES / 256; i++)
+        fault_mb[i] = 0;
+    for (i = 0; i < FAULT_EIPS; i++)
+        fault_eip[i][0] = fault_eip[i][1] = 0;
+    fault_eips_used = fault_eip_other = 0;
+}
+
 static void fault_reset(void)
 {
     u32 flags = lock_irq();
 
     fault_head = fault_tail = fault_count = fault_dropped = fault_wraps = 0;
+    fault_totals_clear();
     unlock_irq(flags);
 }
 
@@ -615,19 +651,35 @@ static void fault_drain(void)
 {
     u32 flags = lock_irq();
     u32 count = fault_count, dropped = fault_dropped, wraps = fault_wraps;
-    u32 i, slot = fault_tail;
+    u32 i, slot = fault_tail, other = fault_eip_other;
+    static u32 mb[REGION_PAGES / 256], eip[FAULT_EIPS][2];
 
     for (i = 0; i < count; i++) {
         fault_snapshot[i] = fault_ring[slot];
         slot = (slot + 1) % FAULT_RING_ENTRIES;
     }
+    for (i = 0; i < REGION_PAGES / 256; i++)
+        mb[i] = fault_mb[i];
+    for (i = 0; i < FAULT_EIPS; i++) {
+        eip[i][0] = fault_eip[i][0];
+        eip[i][1] = fault_eip[i][1];
+    }
     fault_tail = fault_head;
     fault_count = fault_dropped = fault_wraps = 0;
+    fault_totals_clear();
     unlock_irq(flags);
 
     tes3x_log("pager.fault_entries", count);
     tes3x_log("pager.fault_dropped", dropped);
     tes3x_log("pager.fault_wraps", wraps);
+    for (i = 0; i < REGION_PAGES / 256; i++)
+        if (mb[i])
+            tes3x_log_hex3("pager.fault_mb", tes3x_pager_base + (i << 20), mb[i], 0);
+    for (i = 0; i < FAULT_EIPS; i++)
+        if (eip[i][0])
+            tes3x_log_hex3("pager.fault_eip", eip[i][0], eip[i][1], 0);
+    if (other)
+        tes3x_log("pager.fault_eip_other", other);
     for (i = 0; i < count; i++)
         tes3x_log_hex3("pager.fault", fault_snapshot[i].addr,
                        fault_snapshot[i].eip, fault_snapshot[i].group);
