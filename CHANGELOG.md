@@ -38,6 +38,10 @@ No official releases yet. The first public release is in preparation.
   of the engine's land pool and heap; it turns on `link-name-arena`. With the Tamriel Rebuilt
   masters about 2.1 MB more memory stays free, with no change in load time. See
   [the patch notes](patches/land-arena.md).
+- New patch `npc-arena`: the NPC records' objects live in memory paged to disk instead of the
+  engine's NPC pool and heap; it turns on `link-name-arena`, `ref-index` and `soundgen-index`.
+  With the Tamriel Rebuilt masters about 3 MB more memory stays free in a new game. See
+  [the patch notes](patches/npc-arena.md).
 - New patch `soundgen-index`: an animation's footstep and creature sound keys are matched against
   the loaded creatures instead of walking every loaded object once per key, at startup and when a
   creature's animation first loads. See [the patch notes](patches/soundgen-index.md).
