@@ -23,6 +23,9 @@ CATEGORIES = ("core", "correctness", "compat", "performance", "qol", "balance",
               "instrumentation", "infrastructure")
 CHANNELS = ("dev", "preview", "release")
 SELECTIONS = ("always", "packaging", "preset", "option")
+# The sections of the generated patch page, in order; patches.toml keeps application order.
+GROUPS = ("Build and boot", "Script engine", "MCP fixes", "Memory", "Speed",
+          "Interface and saves", "Network", "Instrumentation", "Other fixes")
 # Fixes without code, in the order the generated page lists them.
 CANDIDATE_STATUSES = {
     "researching": "Being decoded or reproduced now.",
@@ -34,7 +37,7 @@ CANDIDATE_STATUSES = {
     "rejected": "Deliberately left out of TES3X.",
 }
 PRIORITIES = ("high", "medium", "low", "none")
-PATCH_FIELDS = (("name", "title", "category", "channel", "selection", "summary"),
+PATCH_FIELDS = (("name", "title", "category", "group", "channel", "selection", "summary"),
                 ("bit", "source", "takes", "origin", "ini", "requires"))
 CANDIDATE_FIELDS = (("name", "origin", "status", "priority", "summary", "reason"),
                     ("category", "default", "doc"))
@@ -73,8 +76,8 @@ def read(path=REGISTRY, candidate_path=CANDIDATE_LIST):
     names, bits = set(), set()
     for entry in patches:
         where = f"{Path(path).name}: {entry.get('name', '<unnamed>')}"
-        check(entry, PATCH_FIELDS, (("category", CATEGORIES), ("channel", CHANNELS),
-                                    ("selection", SELECTIONS)), sources, where)
+        check(entry, PATCH_FIELDS, (("category", CATEGORIES), ("group", GROUPS),
+                                    ("channel", CHANNELS), ("selection", SELECTIONS)), sources, where)
         ini = entry.get("ini", {})
         if not isinstance(ini, dict) or any(not isinstance(value, str) for value in ini.values()):
             raise RegistryError(f"{where}: ini wants {{ Key = \"default\" }}")
@@ -196,22 +199,27 @@ def render_patches():
         "\"Included by\" says what selects a patch; requirements are contextual rather than a",
         "single required/not-required flag.",
         "",
-        "| title | patch key | what it does | from | category | channel | included by |",
-        "|---|---|---|---|---|---|---|",
     ]
-    for entry in PATCHES:
-        chosen = selection.get(entry["selection"]) or presets.get(entry["name"], "By name")
-        if entry["name"] == "payload":
-            chosen = "Injected-code patches or build option"
-        if entry["name"] == "data-overlay":
-            chosen = "Overlay install layout or profile"
-        dependents = required_by.get(entry["name"], [])
-        if dependents:
-            chosen += "; " + ", ".join(f"`{name}`" for name in dependents)
-        lines.append(f"| {title_text(entry)} | `{patch_spec(entry)}` | "
-                     f"{cell(entry['summary'])} | {origin_text(entry)} | "
-                     f"{entry['category']} | {entry['channel']} | "
-                     f"{chosen} |")
+    for group in GROUPS:
+        members = [entry for entry in PATCHES if entry["group"] == group]
+        if group == "MCP fixes":
+            members.sort(key=lambda entry: int(entry["origin"]["id"]))
+        lines += ["", f"## {group}", "",
+                  "| title | patch key | what it does | from | category | channel | included by |",
+                  "|---|---|---|---|---|---|---|"]
+        for entry in members:
+            chosen = selection.get(entry["selection"]) or presets.get(entry["name"], "By name")
+            if entry["name"] == "payload":
+                chosen = "Injected-code patches or build option"
+            if entry["name"] == "data-overlay":
+                chosen = "Overlay install layout or profile"
+            dependents = required_by.get(entry["name"], [])
+            if dependents:
+                chosen += "; " + ", ".join(f"`{name}`" for name in dependents)
+            lines.append(f"| {title_text(entry)} | `{patch_spec(entry)}` | "
+                         f"{cell(entry['summary'])} | {origin_text(entry)} | "
+                         f"{entry['category']} | {entry['channel']} | "
+                         f"{chosen} |")
     return "\n".join(lines) + "\n"
 
 
