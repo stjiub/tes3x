@@ -78,7 +78,7 @@ single required/not-required flag.
 | [Paged dialogue link names](../patches/info-name-arena.md) | `info-name-arena` | Page INFO's temporary ID, previous and next names outside the engine heap. | TES3X | compat | dev | By name |
 | [Paged NPC and inventory link names](../patches/link-name-arena.md) | `link-name-arena` | Page NPCs' race, class, faction, head and hair names, inventory item IDs and the base records' inventories outside the engine heap. | TES3X | compat | dev | By name; `script-arena`, `path-arena` |
 | [Paged script bytecode](../patches/script-arena.md) | `script-arena` | Page compiled script bytecode outside the engine heap. | TES3X | compat | dev | By name |
-| [Paged model and icon paths](../patches/path-arena.md) | `path-arena` | Page the model and icon paths of loaded records outside the engine heap. | TES3X | compat | dev | By name |
+| [Paged model paths, icon paths and display names](../patches/path-arena.md) | `path-arena` | Page the model and icon paths and display names of loaded records outside the engine heap. | TES3X | compat | dev | By name |
 | [Direct response topic lookup](../patches/dialogue-owner.md) | `dialogue-owner` | Find a response's topic directly instead of searching every topic's responses. | TES3X | performance | dev | By name |
 | [Dialogue responses built on first use](../patches/lazy-dialogue.md) | `lazy-dialogue` | Load dialogue responses as file references and build a topic's responses when it is first needed. | TES3X | compat | dev | By name |
 | [Growing small-block pools](../patches/pool-grow.md) | `pool-grow` | Add another pool when a small-block size class fills, instead of giving each further block a header in the heap. | TES3X | compat | dev | By name |
