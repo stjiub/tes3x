@@ -3815,6 +3815,13 @@
       "pc_va": "0x004C7D90"
     },
     {
+      "va": "0x00107E20",
+      "name": "NonDynamicData::findSoundGenerator?",
+      "confidence": "guess",
+      "provenance": "called by 0x0010BE90 with (creature or 0, key 0-7); CREA test, original via +0x6C",
+      "signature": "void* __thiscall findSoundGenerator(void* creature, int key)"
+    },
+    {
       "va": "0x00109CD0",
       "name": "RecordsHandler::findFirstInstanceOfObjectId",
       "kind": "function",
@@ -3873,6 +3880,14 @@
       "confidence": "verified",
       "provenance": "phase strings 'ResetAlteredStuff()...' in the body; decompiled 2026-10-23",
       "note": "Called by loadGame (in-process load) before loadSaveGame: tears down magic/VFX/journal/audio, builds a reload list of visited cells and modified objects, resets dialogue, walks every cell with a loading-menu update each, then re-reads each modified object, region, global and faction from its master (0x00131C90); one that fails to reload is deleted."
+    },
+    {
+      "va": "0x0010BE90",
+      "name": "NonDynamicData::findCreatureSoundGenForAnimation?",
+      "confidence": "guess",
+      "provenance": "read from disassembly; called once per SoundGen text key by parseAnimationTextKeys",
+      "note": "walks every object of NonDynamicData+0x18 for the first CREA whose vtable+0x48 name matches, then 0x00107E20(creature, key): one full walk per key, reading each object's type (soundgen-index replaces it)",
+      "signature": "void* __thiscall findCreatureSoundGenForAnimation(const char* name, int key)"
     },
     {
       "va": "0x0010C500",
@@ -4700,6 +4715,13 @@
       "pc_va": "0x004EEE60"
     },
     {
+      "va": "0x00131320",
+      "name": "Object::isInstanceOrCloneable?",
+      "confidence": "guess",
+      "provenance": "type compare: NPCC/CREC/CNTC true; CREA/CONT/NPC_ true unless flag 0x8 at +0x34",
+      "note": "reads the object's type (+4) and flags (+0x34); Cell::findReferenceToObject calls it per reference, so findEntityInWorld reads every reference's base object"
+    },
+    {
       "va": "0x001314B0",
       "name": "ReferenceList::remove",
       "kind": "function",
@@ -4713,6 +4735,12 @@
       "confidence": "guess",
       "provenance": "decompile: hash, compare, set and clear through the map vtable; 12-byte nodes",
       "note": "AddObjectToHashMapById's insert; its nodes are most of the 1 MB of live 16-byte blocks at sub_001316C0 with TR. Every ID lookup walks them, so they are not a paging candidate."
+    },
+    {
+      "va": "0x00131870",
+      "name": "KeyframeSequence::load?",
+      "confidence": "guess",
+      "provenance": "string 'Could not create KeyframeManager Sequence for'; calls parseAnimationTextKeys"
     },
     {
       "va": "0x00131AD0",
@@ -4741,7 +4769,7 @@
       "name": "ObjectList::prepend",
       "confidence": "guess",
       "provenance": "engine-map step 3: decompiled and read",
-      "note": "ECX is a list {count, head, tail}; object links are at +0x1C (prev) and +0x20 (next), owner at +0x14. loadRecord and addNewObject use it to file a new object under its type."
+      "note": "ECX is a list {count, head, tail}; object links are at +0x1C (prev) and +0x20 (next), owner at +0x14. loadRecord and addNewObject use it to file a new object under its type. Despite the name it appends after the tail, so a walk from the head is load order."
     },
     {
       "va": "0x00132D90",
