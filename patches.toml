@@ -756,6 +756,17 @@ requires = ["link-name-arena"]
 summary = "Page the model and icon paths and display names of loaded records outside the engine heap."
 
 [[patch]]
+name = "land-arena"
+title = "Paged land objects"
+bit = 63
+category = "compat"
+channel = "dev"
+selection = "preset"
+source = "tes3xlandarena.c"
+requires = ["link-name-arena"]
+summary = "Page the land objects of loaded exterior cells outside the engine heap."
+
+[[patch]]
 name = "dialogue-owner"
 title = "Direct response topic lookup"
 bit = 57

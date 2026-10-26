@@ -64,6 +64,7 @@
     "INI_GET_STRING": null,
     "INI_PATH": null,
     "JOURNAL_OPENED": null,
+    "LAND_NEW": null,
     "LAZY_AT_INDEX_RESUME": null,
     "LAZY_CACHED_FILE": null,
     "LAZY_DATA_HANDLER": null,
@@ -530,8 +531,8 @@
       "sha256": "e955ba181c472bca59769a87e3c03af13105b8c35ac31011d89c9dbe4b8a4bc7"
     },
     "tes3xhook.c": {
-      "digest": "20b20f334aeee787dae67446420ffcca9dbffd908e855812b1046e747ede309d",
-      "sha256": "88cab0a03e8a9c3ca123bb4614b45b5fe166cc4f6766c74db8cf98e592dedcd1"
+      "digest": "457a051562ff94e8c2280d25bf249075cc9073a1e75062d93fd86f2972d32206",
+      "sha256": "4a5d86d0e8f4d2490845732a6c046e0addafef18d62e2fca873d590240f9642f"
     },
     "tes3xhudscale.c": {
       "digest": "3931cc8baa8f2c1a35bd53b6f9d062d49defd2b8ee8ba6c307a56c496ded364d",
@@ -544,6 +545,10 @@
     "tes3xini.c": {
       "digest": "e166416b4d2ee95388cc45cf657bc04d488e25a556f8bf103ad6a71703d4789d",
       "sha256": "3f461f4de3a351d4b2924f5bb60f2461fb1da7fdb805b48c69f07328bbe4fe3c"
+    },
+    "tes3xlandarena.c": {
+      "digest": "597b8fe135efe0db3b23fd1e32eabfd6cdb3c06a868e6b055235da0dc82ef6a0",
+      "sha256": "4533b5f21e065e05fe2b2865834eef4ad2fe2de0c8b9a75bfd2faa4b12fc01fb"
     },
     "tes3xlaunch.c": {
       "digest": "901d950e50399c4daa0e5ac588ad3b2f501d27da981bfec0805266654b16ed2d",
@@ -558,8 +563,8 @@
       "sha256": "23b3d613c68c29af805ec8cef3dee983d9d01e24bf76bd11bed7ed6145b02f2d"
     },
     "tes3xlinknames.c": {
-      "digest": "662d45e7430bc406b6c16342f038e73a351fd044459ab822b43f75eba8fe4d41",
-      "sha256": "6569d352b4a4e0464300241bc1ad0d65a7942572d2ad05308b622dffcdd9a569"
+      "digest": "d934c8da3bb60efb597624b89156642115302d099d952b718a03b08d9ee73abd",
+      "sha256": "62988b76357a58d8bd3ae32e7393cc755711e4b3e0980f1ce824fece65869bd9"
     },
     "tes3xlog.c": {
       "digest": "59321b2696af7e15ad652017123e785e39c09f02bf2601b4ad2764f28b734d44",

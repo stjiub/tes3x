@@ -54,6 +54,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_heap_object, find_heap_region, find_heap_region_sites,
                                find_info_arena_sites, find_lazy_dialogue_sites, find_link_names_sites, find_lean_menu, find_marker,
                                find_pool_grow_sites, find_script_arena_sites, find_path_arena_sites,
+                               find_land_arena_sites, LAND_SIZE, LAND_ARENA_KEEP,
                                find_mcp102_actn, find_enable_disable_flags, find_mcp160_removal, find_pathgrid_lookups, find_mcp123_add, find_mcp6_context,
                                find_mcp125_collision, find_mcp30_context, find_mcp55_context,
                                find_mcp55_inventory_context, find_mcp118_drop_finish,
@@ -1111,6 +1112,23 @@ def _path_arena(x, value, ctx):
     return edits
 
 
+@patch("land-arena")
+def _land_arena(x, value, ctx):
+    """Put the record loader's LAND objects in the demand-paged arena."""
+    target = ctx.get("hooks", {}).get("land_new")
+    if not target:
+        raise PatchError("land-arena: needs `payload` first, with land_new in its manifest")
+    target = int(str(target), 16)
+    site = find_land_arena_sites(x)
+    was, off = x.patch_call(site["call"], target)
+    edits = [(off, 5, "LAND loader new 0x%08X: 0x%08X -> 0x%08X" % (site["call"], was, target))]
+    keep = LAND_SIZE * LAND_ARENA_KEEP
+    off = x.va_to_off(site["capacity"])
+    x.data[off:off + 4] = struct.pack("<I", keep)
+    edits.append((off, 4, "LAND pool capacity 0x%08X: %d -> %d bytes"
+                  % (site["capacity"], site["bytes"], keep)))
+    return edits
+
 @patch("dialogue-owner")
 def _dialogue_owner(x, value, ctx):
     """Answer findDialogue from each INFO's owner pointer, and keep the destructor off it."""
@@ -2071,6 +2089,7 @@ __all__ = [
     'find_link_names_sites',
     'find_script_arena_sites',
     'find_path_arena_sites',
+    'find_land_arena_sites',
     'find_lazy_dialogue_sites',
     'find_lean_menu',
     'find_marker',
