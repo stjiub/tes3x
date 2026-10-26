@@ -34,6 +34,10 @@ No official releases yet. The first public release is in preparation.
 - New patch `path-arena`: the model and icon paths and display names of loaded records live in
   memory paged to disk instead of the engine heap; it turns on `link-name-arena`. With the Tamriel
   Rebuilt masters about 2.4 MB more memory stays free in a new game. See [the patch notes](patches/path-arena.md).
+- New patch `land-arena`: the land objects of exterior cells live in memory paged to disk instead
+  of the engine's land pool and heap; it turns on `link-name-arena`. With the Tamriel Rebuilt
+  masters about 2.1 MB more memory stays free, with no change in load time. See
+  [the patch notes](patches/land-arena.md).
 - `video-arena`: `[Xbox] VideoMemoryKB` now also shrinks the texture and vertex buffer arena,
   down to 1,024 KB, on a 64 MB console as well as on 128 MB. It still grows the arena only with
   more than 64 MB. Textures and vertex buffers that do not fit in the arena are packed together

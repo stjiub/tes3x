@@ -3652,6 +3652,22 @@
       "pc_va": "0x004C2720"
     },
     {
+      "va": "0x00104B90",
+      "name": "Land::operator_new",
+      "confidence": "verified",
+      "provenance": "disasm: MemoryPool_Simple::Allocate on TES3ObjectLAND pool 0x003CFA48",
+      "note": "land-arena retargets loadRecord's call and shrinks the pool; Cell::getOrCreateLand allocates from the pool directly.",
+      "signature": "void * __cdecl operator_new(unsigned int size)"
+    },
+    {
+      "va": "0x00104BF0",
+      "name": "NPC::operator_new",
+      "confidence": "verified",
+      "provenance": "disasm: MemoryPool_Simple::Allocate on TES3NPC pool 0x003D2990",
+      "note": "Only caller is loadRecord's NPC_ case. Paging these objects slowed TR record loading 4x and stalled the post-load pass: something reads every NPC during loading.",
+      "signature": "void * __cdecl operator_new(unsigned int size)"
+    },
+    {
       "va": "0x00104C30",
       "name": "ui::setPropertyDefault",
       "kind": "function",
@@ -4690,6 +4706,13 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_ReferenceList_remove",
       "pc_va": "0x004F19A0"
+    },
+    {
+      "va": "0x001316C0",
+      "name": "NiTPointerMap::setAt",
+      "confidence": "guess",
+      "provenance": "decompile: hash, compare, set and clear through the map vtable; 12-byte nodes",
+      "note": "AddObjectToHashMapById's insert; its nodes are most of the 1 MB of live 16-byte blocks at sub_001316C0 with TR. Every ID lookup walks them, so they are not a paging candidate."
     },
     {
       "va": "0x00131AD0",
@@ -8636,17 +8659,19 @@
     },
     {
       "va": "0x003CFA48",
-      "name": "pool_TES3ObjectLAND",
+      "name": "g_poolLand",
       "confidence": "verified",
-      "provenance": "engine-map step 3: decompiled and read",
-      "kind": "data"
+      "provenance": "MemoryPool_Simple::ctor('TES3ObjectLAND', 0x224, 0xD0B60)",
+      "kind": "data",
+      "type": "MemoryPool_Simple"
     },
     {
       "va": "0x003D2990",
-      "name": "pool_TES3NPC",
+      "name": "g_poolNPC",
       "confidence": "verified",
-      "provenance": "engine-map step 3: decompiled and read",
-      "kind": "data"
+      "provenance": "MemoryPool_Simple::ctor('TES3NPC', 0xF0, 0xB1C00)",
+      "kind": "data",
+      "type": "MemoryPool_Simple"
     },
     {
       "va": "0x003D2B38",
