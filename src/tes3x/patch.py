@@ -68,7 +68,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_mcp3_unarmored, find_mcp92_unsummon, find_mcp94,
                                find_mcp97_scan, find_mcp98_refcounts, find_menu_mode_gate,
                                find_mob_gate, find_preferences_load, find_ref_index,
-                               find_soundgen_index,
+                               find_soundgen_index, find_topic_sort,
                                find_ref_load, find_ref_skip, find_run_function,
                                find_save_allowed_context, find_save_this_ptr,
                                find_script_decode_state, find_script_fixup_call,
@@ -768,6 +768,19 @@ def _soundgen_index(x, value, ctx):
     off = x.va_to_off(walk)
     x.data[off:off + 5] = b"\xe9" + struct.pack("<i", hook - (walk + 5))
     return [(off, 5, "creature walk 0x%08X -> 0x%08X" % (walk, hook))]
+
+
+@patch("topic-sort")
+def _topic_sort(x, value, ctx):
+    """Sort the topics by name length with one stable sort instead of bubble passes."""
+    hook = ctx.get("hooks", {}).get("topic_sort")
+    if not hook:
+        raise PatchError("topic-sort: needs `payload` first, with a topic_sort hook in its manifest")
+    entry = find_topic_sort(x)["entry"]
+    hook = int(str(hook), 16)
+    off = x.va_to_off(entry)
+    x.data[off:off + 5] = b"\xe9" + struct.pack("<i", hook - (entry + 5))
+    return [(off, 5, "topic sort 0x%08X -> 0x%08X" % (entry, hook))]
 
 
 @patch("bow-view")
@@ -2069,6 +2082,7 @@ __all__ = [
     '_profile',
     '_ref_index',
     '_soundgen_index',
+    '_topic_sort',
     '_rotating_autosaves',
     '_save_staging',
     '_script_ext',
@@ -2139,6 +2153,7 @@ __all__ = [
     'find_preferences_load',
     'find_ref_index',
     'find_soundgen_index',
+    'find_topic_sort',
     'find_ref_load',
     'find_ref_skip',
     'find_run_function',

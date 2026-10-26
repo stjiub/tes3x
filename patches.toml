@@ -124,6 +124,16 @@ source = "tes3xsoundgenindex.c"
 summary = "Match an animation's footstep and voice keys against the creatures, not every loaded object."
 
 [[patch]]
+name = "topic-sort"
+title = "Single-pass topic sort at load"
+category = "performance"
+group = "Speed"
+channel = "dev"
+selection = "preset"
+source = "tes3xtopicsort.c"
+summary = "Sort the dialogue topics by name length once at load, instead of with repeated bubble passes."
+
+[[patch]]
 name = "title"
 title = "Dashboard title"
 category = "infrastructure"

@@ -764,6 +764,34 @@ def find_soundgen_index(x):
             tes3x_inject.call_target(x, base + hits[0].start("resolve")))
 
 
+# Dialogue::sortTopicsByNameLength: count-1 bubble passes over NonDynamicData's topic list, each
+# ending in incrementLoadedRecords(1), getTotalLoadedRecordsFraction and updateLoadingMenu.
+TOPIC_SORT_SIG = re.compile(
+    rb"\x83\xec\x08\xa1(?P<handler>....)\x8b\x08\x56\x8b\x71(?P<list>.)\x8b\x46\x04\x48\x85\xc0"
+    rb"\x89\x74\x24\x04\x0f\x8e....\x53\x55\x89\x44\x24\x10\x57\x8b\xce\xe8....\x85\xc0\x74."
+    rb".{0,160}?\x8b\x0d(?P=handler)\x6a\x01(?P<increment>\xe8....)\x8b\x0d(?P=handler)"
+    rb"(?P<fraction>\xe8....)\xd8\x0d....\x51\xd9\x1c\x24(?P<update>\xe8....)",
+    re.S,
+)
+
+
+def find_topic_sort(x):
+    """The topic sort's entry, the DataHandler pointer, the list offset and the progress calls."""
+    hits = list(TOPIC_SORT_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("topic-sort: %d topic sort(s), expected 1" % len(hits))
+    hit = hits[0]
+    entry = x.off_to_va(hit.start())
+    if entry is None:
+        raise PatchError("topic-sort: the topic sort is outside any section")
+    base = entry - hit.start()
+    found = {"entry": entry, "handler": struct.unpack("<I", hit.group("handler"))[0],
+             "list": hit.group("list")[0]}
+    for key in ("increment", "fraction", "update"):
+        found[key] = tes3x_inject.call_target(x, base + hit.start(key))
+    return found
+
+
 def find_dxt5_size(x):
     """The texture-create call to the texture-size function."""
     hits = list(DXT5_SIZE_SIG.finditer(bytes(x.data)))
@@ -3012,6 +3040,7 @@ LOCATORS = {
     "soundgen-index": lambda image: find_soundgen_index(image)[0],
     "soundgen-index-stricmp": lambda image: find_soundgen_index(image)[1],
     "soundgen-index-resolve": lambda image: find_soundgen_index(image)[2],
+    "topic-sort": find_topic_sort,
     "lean-menu": find_lean_menu,
     "video-arena": find_arena_size,
     "video-arena-phys-alloc": lambda image: find_arena_overflow(image)["phys_alloc"],

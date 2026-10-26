@@ -1,0 +1,18 @@
+kind = "single"
+purpose = "With a plugin loaded, the topics are sorted in one pass and a new game starts on top of them."
+procedure = "Generate a plugin repeating Morrowind.esm's `Latest Rumors` topic, so the engine sorts the topics (it skips the sort when only one file loads), start a new game, and check that the sort logged its topic count without a fallback or an ordering error."
+limitations = "Hardware timing. The order itself is compared with the engine's own sort by the lazy-dialogue probe's lazy.digest_order, in a control and a patched build."
+watch = 'topicsort\.|diag\.patches|exec\.exit|crash\.|hang\.detected|fatal\.'
+enable = ["diagnostics", "console", "topic-sort"]
+timeout = 180
+script = '''
+@start new
+wait 60
+exit
+'''
+
+[fixture]
+dialogue = "Latest Rumors"
+
+[expect]
+test = ['topicsort\.topics [1-9]', '!topicsort\.(fallback|unsorted)', 'exec\.exit 0']

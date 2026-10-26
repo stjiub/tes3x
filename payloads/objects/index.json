@@ -430,6 +430,11 @@
     "TIP_PLAYER": null,
     "TIP_TYPE": null,
     "TIP_WORLD": null,
+    "TOPICSORT_FRACTION": null,
+    "TOPICSORT_HANDLER": null,
+    "TOPICSORT_INCREMENT": null,
+    "TOPICSORT_LIST": null,
+    "TOPICSORT_UPDATE": null,
     "TOPIC_FILTER": null,
     "TOPIC_FIND_CHILD": null,
     "TOPIC_FIND_MENU": null,
@@ -720,6 +725,10 @@
     "tes3xtopiccolor.c": {
       "digest": "465af14dfad3badde1a5fa4363085a80454a53348e7b926bcada19a39df61adb",
       "sha256": "603693f11f501eb57bdd9b10ddb88f2035564ae81d58687d2cea58cb59f659f3"
+    },
+    "tes3xtopicsort.c": {
+      "digest": "06928b5099ac04672de7563e381f535fc70cc6df8dcf1ea5e9a60d56a6befd27",
+      "sha256": "27c427e08d1adca0e7288cdb75b91c8a527b0da8b7ee2b528462ee87152939a5"
     },
     "tes3xvideo.c": {
       "digest": "5c0300fadb34622a135b8de1e811ade22ba34ef722a3f6817ab10145a4d013b7",

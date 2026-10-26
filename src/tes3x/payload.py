@@ -1340,6 +1340,19 @@ def _bind_soundgenindex(b):
     wanted["soundgen_find"] = ("_tes3x_soundgen_find_hook",)
 
 
+@binder("tes3xtopicsort.c")
+def _bind_topicsort(b):
+    define, locate, wanted = b.define, b.locate, b.wanted
+    found = locate("topic-sort")
+    print(f"topic-sort: sort {hexva(found['entry'])}, list +0x{found['list']:X}")
+    define("TOPICSORT_HANDLER", hexva(found["handler"]))
+    define("TOPICSORT_LIST", "0x%X" % found["list"])
+    define("TOPICSORT_INCREMENT", hexva(found["increment"]))
+    define("TOPICSORT_FRACTION", hexva(found["fraction"]))
+    define("TOPICSORT_UPDATE", hexva(found["update"]))
+    wanted["topic_sort"] = ("_tes3x_topic_sort",)
+
+
 @binder("tes3xbowview.c")
 def _bind_bowview(b):
     image, define, locate, wanted = b.image, b.define, b.locate, b.wanted

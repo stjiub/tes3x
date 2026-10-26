@@ -29,6 +29,7 @@ preset = "recommended"
 enable = [
     # "ref-index",             # performance: index references while global scripts start
     # "soundgen-index",        # performance: match animation sound keys against creatures only
+    # "topic-sort",            # performance: sort the dialogue topics at load in one pass
     # "mcp-1",                 # core: stop an unresolvable reference being restamped as created at runtime
     # "mcp-3",                 # correctness: apply Unarmored reduction with no armor equipped
     # "mcp-25",                # correctness: make Blind lower the player's attack chance
