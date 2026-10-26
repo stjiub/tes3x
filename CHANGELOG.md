@@ -31,6 +31,9 @@ No official releases yet. The first public release is in preparation.
 - New patch `script-arena`: compiled script bytecode lives in memory paged to disk instead of the
   engine heap; it turns on `link-name-arena`. With the Tamriel Rebuilt masters 2.1 MB more memory
   stays free, at no cost to load time. See [the patch notes](patches/script-arena.md).
+- New patch `path-arena`: the model and icon paths of loaded records live in memory paged to disk
+  instead of the engine heap; it turns on `link-name-arena`. With the Tamriel Rebuilt masters
+  1.4-1.6 MB more memory stays free. See [the patch notes](patches/path-arena.md).
 - `video-arena`: `[Xbox] VideoMemoryKB` now also shrinks the texture and vertex buffer arena,
   down to 1,024 KB, on a 64 MB console as well as on 128 MB. It still grows the arena only with
   more than 64 MB. Textures and vertex buffers that do not fit in the arena are packed together

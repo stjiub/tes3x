@@ -44,6 +44,7 @@ SOURCE_DEPENDENCIES = {
     "tes3xinfoarena.c": ("tes3xpager.c",),
     "tes3xlinknames.c": ("tes3xpager.c",),
     "tes3xscriptarena.c": ("tes3xpager.c",),
+    "tes3xpatharena.c": ("tes3xpager.c",),
     "tes3xmwse.c": ("tes3xconsole.c",),
     "tes3xmulti.c": ("tes3xnet.c",),
     "tes3xagent.c": ("tes3xnet.c",),
@@ -897,6 +898,15 @@ def _bind_scriptarena(b):
     print(f"script arena: zeroed {zeroed}")
     b.define("SCRIPT_ZEROED", zeroed)
     b.wanted["script_zeroed"] = ("_tes3x_script_arena_zeroed",)
+
+
+@binder("tes3xpatharena.c")
+def _bind_patharena(b):
+    allocate = hexva(b.locate("path-allocate"))
+    print(f"path arena: allocate {allocate}")
+    b.define("PATH_ALLOCATE", allocate)
+    b.wanted["path_allocate"] = ("_tes3x_path_arena_allocate",)
+    b.wanted["path_tag"] = ("_tes3x_path_arena_tag",)
 
 
 @binder("tes3xdialogueowner.c", "tes3xtest_dialogueowner.c")

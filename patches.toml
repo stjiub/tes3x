@@ -745,6 +745,17 @@ requires = ["link-name-arena"]
 summary = "Page compiled script bytecode outside the engine heap."
 
 [[patch]]
+name = "path-arena"
+title = "Paged model and icon paths"
+bit = 62
+category = "compat"
+channel = "dev"
+selection = "preset"
+source = "tes3xpatharena.c"
+requires = ["link-name-arena"]
+summary = "Page the model and icon paths of loaded records outside the engine heap."
+
+[[patch]]
 name = "dialogue-owner"
 title = "Direct response topic lookup"
 bit = 57

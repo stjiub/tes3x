@@ -381,6 +381,7 @@
     "OWNER_DATA_HANDLER": null,
     "OWNER_FIND": null,
     "OWNER_FIND_RESUME": null,
+    "PATH_ALLOCATE": null,
     "PERFORM_LAYOUT": null,
     "PLAYER_MOBILE": null,
     "POOL_CTOR": null,
@@ -529,8 +530,8 @@
       "sha256": "e955ba181c472bca59769a87e3c03af13105b8c35ac31011d89c9dbe4b8a4bc7"
     },
     "tes3xhook.c": {
-      "digest": "fbcf5f1e4ee3159205315cbef1552cc8c2599ceb065c376f1bd4f61582b31c28",
-      "sha256": "372fcd493934da5ce6941d26841844a672acb6176e52a1d46e2fbb630e5cb5fc"
+      "digest": "20b20f334aeee787dae67446420ffcca9dbffd908e855812b1046e747ede309d",
+      "sha256": "88cab0a03e8a9c3ca123bb4614b45b5fe166cc4f6766c74db8cf98e592dedcd1"
     },
     "tes3xhudscale.c": {
       "digest": "3931cc8baa8f2c1a35bd53b6f9d062d49defd2b8ee8ba6c307a56c496ded364d",
@@ -651,6 +652,10 @@
     "tes3xpager.c": {
       "digest": "7d06d668f3eae3ca4005fc50d772b8b51c6f2dd00ed96ca71f054d0dc6b903ad",
       "sha256": "a0021fe93e3b18a229b5ed229ca1eb3e4ad1bbae82d0b536dfc787c52399e95c"
+    },
+    "tes3xpatharena.c": {
+      "digest": "c5ec8d0182fd0f52d9d0e34487bb7d5f2ea6ec55bcbf72495f02631f0127ef1b",
+      "sha256": "91c73c31add5f9b8b21afc9d9006f488c3c0f523d6101c6ced0a4a1a2b2858f4"
     },
     "tes3xpathgrid.c": {
       "digest": "86a989581a2d5b9243ac937fd9adb69eedbd6e8ab7efa9747638232a42084e84",

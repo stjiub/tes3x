@@ -2387,6 +2387,33 @@ def find_script_arena_sites(x):
     return {"sites": sites, "zeroed": zeroed.pop()}
 
 
+# TES3File::getNextSubrecord: the tag at +0x23C, read from the stream when empty.
+NEXT_SUBRECORD = re.compile(
+    rb"\x8b\x81\x3c\x02\x00\x00\x85\xc0\x56\x8d\xb1\x3c\x02\x00\x00\x75\x18\x8b\x49\x08\x8b\x01"
+    rb"\x6a\x08\x56\xff\x50\x08\x85\xc0\x75\x09\x33\xc9\x89\x0e\x89\x4e\x04\x5e\xc3"
+    rb"(?P<tail>\x8b\x06\x5e\xc3\xcc\xcc\xcc)", re.S)
+# general::setStringSlot: free the old string, then allocate strlen + 1 and copy.
+SET_STRING_SLOT = re.compile(
+    rb"\x56\x8b\x74\x24\x0c\x57\x8b\x7c\x24\x0c\x8b\x07\x3b\xc6\x74.\x85\xc0\x74.\x50\xb9....\xe8"
+    rb"....\x85\xf6\x74.\x80\x3e\x00\x74.\x8b\xc6\x8d\x50\x01.{0,4}?\x8a\x08\x40\x84\xc9\x75\xf9"
+    rb"\x6a\x00\x2b\xc2\x68....\x40\x50\xb9....(?P<call>\xe8)....\x89\x07", re.S)
+
+
+def find_path_arena_sites(x):
+    """getNextSubrecord's non-empty return, and setStringSlot's allocation call."""
+    data = bytes(x.data)
+    found = {}
+    for key, rx, group in (("tag", NEXT_SUBRECORD, "tail"), ("allocate", SET_STRING_SLOT, "call")):
+        hits = list(rx.finditer(data))
+        if len(hits) != 1:
+            raise PatchError("path-arena: %d %s sites, expected 1" % (len(hits), key))
+        found[key] = x.off_to_va(hits[0].start(group))
+    found["heap_allocate"] = tes3x_inject.call_target(x, found["allocate"])
+    if found["heap_allocate"] != find_heap_function(x, "allocate")[0]:
+        raise PatchError("path-arena: setStringSlot does not call Memory_Heap::Allocate")
+    return found
+
+
 # DialogueInfo::findDialogue: walk NonDynamicData::dialogues (+0x48), then each topic's chain.
 DIALOGUE_OWNER_FIND = re.compile(
     rb"\xa1(?P<handler>....)\x8b\x08\x56\x8b\x71\x48\x57\x8b\xce\xe8....\x85\xc0\x74.\x8b\x7c\x24\x0c"
@@ -2973,6 +3000,7 @@ LOCATORS = {
     "link-allocate": lambda image: find_link_names_sites(image)["allocate"],
     "link-append": lambda image: find_link_names_sites(image)["append"],
     "script-zeroed": lambda image: find_script_arena_sites(image)["zeroed"],
+    "path-allocate": lambda image: find_path_arena_sites(image)["heap_allocate"],
     "dialogue-owner-find": lambda image: find_dialogue_owner_sites(image)["find"],
     "dialogue-owner-data-handler": lambda image: find_dialogue_owner_sites(image)["data_handler"],
     "xapi-heap-alloc": find_xapi_heap_alloc,
