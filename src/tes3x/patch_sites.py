@@ -739,6 +739,31 @@ def find_ref_index(x):
     return walk, tes3x_inject.call_target(x, find_site), scripts
 
 
+# The walk parseAnimationTextKeys makes per SoundGen key: every object, for the first creature
+# whose name (vtable +0x48) matches, then the sound generator lookup.
+SOUNDGEN_WALK_SIG = re.compile(
+    rb"\x53\x56\x57\x8b\xf9\x8b\x4f\x18\xe8....\x8b\xf0\x85\xf6\x74.\x8b\x5c\x24\x10\x8d\x4e\x04"
+    rb"\xe8....\x3d\x43\x52\x45\x41\x75.\x8b\x06\x8b\xce\xff\x50\x48\x85\xc0\x74.\x8b\x16\x53"
+    rb"\x8b\xce\xff\x52\x48\x50(?P<stricmp>\xe8....)\x83\xc4\x08\x85\xc0\x74.\x8b\xce\xe8...."
+    rb"\x8b\xf0\x85\xf6\x75.\x8b\x4c\x24\x14\x51\x6a\x00\x8b\xcf(?P<resolve>\xe8....)"
+    rb"\x5f\x5e\x5b\xc2\x08\x00",
+    re.S,
+)
+
+
+def find_soundgen_index(x):
+    """Return the creature walk, its _stricmp and the sound generator lookup it ends in."""
+    hits = list(SOUNDGEN_WALK_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("soundgen-index: %d creature walk(s), expected 1" % len(hits))
+    walk = x.off_to_va(hits[0].start())
+    if walk is None:
+        raise PatchError("soundgen-index: the creature walk is outside any section")
+    base = walk - hits[0].start()
+    return (walk, tes3x_inject.call_target(x, base + hits[0].start("stricmp")),
+            tes3x_inject.call_target(x, base + hits[0].start("resolve")))
+
+
 def find_dxt5_size(x):
     """The texture-create call to the texture-size function."""
     hits = list(DXT5_SIZE_SIG.finditer(bytes(x.data)))
@@ -2388,30 +2413,40 @@ def find_script_arena_sites(x):
 
 
 LAND_SIZE = 0x224
-LAND_ARENA_KEEP = 16  # elements left in the shrunk pool for land made in play
+NPC_SIZE = 0xF0
+POOL_ARENA_KEEP = 16  # elements left in a shrunk pool for objects made in play
 
 
-def find_land_arena_sites(x):
-    """The LAND pool's capacity push, its operator new, and the record loader's call to it."""
+def find_pool_arena_sites(x, patch, pool, size, what):
+    """A typed pool's capacity push, its operator new, and the record loader's call to it."""
     data = bytes(x.data)
-    size = struct.pack("<I", LAND_SIZE)
-    name = x.off_to_va(find_unique(data, b"\0TES3ObjectLAND\0", "land-arena: pool name") + 1)
-    ctor = re.compile(rb"\x68(?P<cap>....)\x68" + re.escape(size) + rb"\x68" +
+    packed = struct.pack("<I", size)
+    name = x.off_to_va(find_unique(data, b"\0" + pool + b"\0", "%s: pool name" % patch) + 1)
+    ctor = re.compile(rb"\x68(?P<cap>....)\x68" + re.escape(packed) + rb"\x68" +
                       re.escape(struct.pack("<I", name)) + rb"\xb9(?P<pool>....)\xe8", re.S)
     hits = list(ctor.finditer(data))
     if len(hits) != 1:
-        raise PatchError("land-arena: %d LAND pool constructions, expected 1" % len(hits))
+        raise PatchError("%s: %d %s pool constructions, expected 1" % (patch, len(hits), what))
     new = re.compile(rb"\x8b\x44\x24\x04\x6a\x00\x68....\x50\xb9" +
                      re.escape(hits[0].group("pool")) + rb"\xe8....\xc3", re.S)
     news = [x.off_to_va(m.start()) for m in new.finditer(data)]
     if len(news) != 1:
-        raise PatchError("land-arena: %d LAND operator news, expected 1" % len(news))
-    calls = [x.off_to_va(m.end()) for m in re.finditer(rb"\x68" + re.escape(size) + rb"(?=\xe8)", data)]
+        raise PatchError("%s: %d %s operator news, expected 1" % (patch, len(news), what))
+    calls = [x.off_to_va(m.end()) for m in re.finditer(rb"\x68" + re.escape(packed) + rb"(?=\xe8)", data)]
     calls = [va for va in calls if tes3x_inject.call_target(x, va) == news[0]]
     if len(calls) != 1:
-        raise PatchError("land-arena: %d loader calls to the LAND new, expected 1" % len(calls))
+        raise PatchError("%s: %d loader calls to the %s new, expected 1" % (patch, len(calls), what))
     return {"capacity": x.off_to_va(hits[0].start("cap")),
-            "bytes": struct.unpack("<I", hits[0].group("cap"))[0], "new": news[0], "call": calls[0]}
+            "bytes": struct.unpack("<I", hits[0].group("cap"))[0], "new": news[0], "call": calls[0],
+            "size": size}
+
+
+def find_land_arena_sites(x):
+    return find_pool_arena_sites(x, "land-arena", b"TES3ObjectLAND", LAND_SIZE, "LAND")
+
+
+def find_npc_arena_sites(x):
+    return find_pool_arena_sites(x, "npc-arena", b"TES3NPC", NPC_SIZE, "NPC")
 
 
 # TES3File::getNextSubrecord: the tag at +0x23C, read from the stream when empty.
@@ -2974,6 +3009,9 @@ LOCATORS = {
     "ref-index": lambda image: find_ref_index(image)[0],
     "ref-index-find": lambda image: find_ref_index(image)[1],
     "ref-index-scripts": lambda image: find_ref_index(image)[2],
+    "soundgen-index": lambda image: find_soundgen_index(image)[0],
+    "soundgen-index-stricmp": lambda image: find_soundgen_index(image)[1],
+    "soundgen-index-resolve": lambda image: find_soundgen_index(image)[2],
     "lean-menu": find_lean_menu,
     "video-arena": find_arena_size,
     "video-arena-phys-alloc": lambda image: find_arena_overflow(image)["phys_alloc"],
@@ -3029,6 +3067,7 @@ LOCATORS = {
     "script-zeroed": lambda image: find_script_arena_sites(image)["zeroed"],
     "path-allocate": lambda image: find_path_arena_sites(image)["heap_allocate"],
     "land-new": lambda image: find_land_arena_sites(image)["new"],
+    "npc-new": lambda image: find_npc_arena_sites(image)["new"],
     "dialogue-owner-find": lambda image: find_dialogue_owner_sites(image)["find"],
     "dialogue-owner-data-handler": lambda image: find_dialogue_owner_sites(image)["data_handler"],
     "xapi-heap-alloc": find_xapi_heap_alloc,

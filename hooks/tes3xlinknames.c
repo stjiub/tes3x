@@ -138,9 +138,19 @@ __attribute__((naked)) void tes3x_link_names_append(void)
 }
 
 /* Replaces Memory_Heap::Free's `push ebp; mov ebp, esp; sub esp, 0x14` (thiscall, one argument). */
-/* A client that reuses its blocks; it takes the freed pointer and pops it (__stdcall). */
+/* Clients that reuse their blocks; each ignores a pointer outside its own arena. */
 TES3X_OPTIONAL void __stdcall tes3x_land_arena_free(void *ptr);
-void (__stdcall *tes3x_link_free_client)(void *) = tes3x_land_arena_free;
+TES3X_OPTIONAL void __stdcall tes3x_npc_arena_free(void *ptr);
+
+static void __stdcall free_clients(void *ptr)
+{
+    if (tes3x_land_arena_free)
+        tes3x_land_arena_free(ptr);
+    if (tes3x_npc_arena_free)
+        tes3x_npc_arena_free(ptr);
+}
+
+void (__stdcall *tes3x_link_free_client)(void *) = free_clients;
 
 __attribute__((naked)) void tes3x_link_names_free(void)
 {

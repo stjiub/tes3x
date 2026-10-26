@@ -46,6 +46,7 @@ SOURCE_DEPENDENCIES = {
     "tes3xscriptarena.c": ("tes3xpager.c",),
     "tes3xpatharena.c": ("tes3xpager.c",),
     "tes3xlandarena.c": ("tes3xpager.c",),
+    "tes3xnpcarena.c": ("tes3xpager.c",),
     "tes3xmwse.c": ("tes3xconsole.c",),
     "tes3xmulti.c": ("tes3xnet.c",),
     "tes3xagent.c": ("tes3xnet.c",),
@@ -918,6 +919,14 @@ def _bind_landarena(b):
     b.wanted["land_new"] = ("_tes3x_land_arena_new",)
 
 
+@binder("tes3xnpcarena.c")
+def _bind_npcarena(b):
+    new = hexva(b.locate("npc-new"))
+    print(f"npc arena: NPC new {new}")
+    b.define("NPC_NEW", new)
+    b.wanted["npc_new"] = ("_tes3x_npc_arena_new",)
+
+
 @binder("tes3xdialogueowner.c", "tes3xtest_dialogueowner.c")
 def _bind_dialogueowner(b):
     names, define, locate, wanted = b.names, b.define, b.locate, b.wanted
@@ -1318,6 +1327,17 @@ def _bind_refindex(b):
     define("REFINDEX_START_SCRIPTS", scripts)
     wanted["refindex_find"] = ("_tes3x_refindex_find_hook",)
     wanted["refindex_scripts"] = ("_tes3x_refindex_scripts_hook",)
+
+
+@binder("tes3xsoundgenindex.c")
+def _bind_soundgenindex(b):
+    define, locate, wanted = b.define, b.locate, b.wanted
+    stricmp = hexva(locate("soundgen-index-stricmp"))
+    resolve = hexva(locate("soundgen-index-resolve"))
+    print(f"soundgen-index hooks: _stricmp {stricmp}, sound generator lookup {resolve}")
+    define("SOUNDGEN_STRICMP", stricmp)
+    define("SOUNDGEN_RESOLVE", resolve)
+    wanted["soundgen_find"] = ("_tes3x_soundgen_find_hook",)
 
 
 @binder("tes3xbowview.c")

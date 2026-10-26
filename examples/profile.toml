@@ -28,6 +28,7 @@ preset = "recommended"
 # Uncomment a line to add that patch. docs/patches.md describes each one.
 enable = [
     # "ref-index",             # performance: index references while global scripts start
+    # "soundgen-index",        # performance: match animation sound keys against creatures only
     # "mcp-1",                 # core: stop an unresolvable reference being restamped as created at runtime
     # "mcp-3",                 # correctness: apply Unarmored reduction with no armor equipped
     # "mcp-25",                # correctness: make Blind lower the player's attack chance
@@ -69,6 +70,7 @@ enable = [
     # "script-arena",          # compat: move script bytecode out of the engine heap
     # "path-arena",            # compat: move model and icon paths and display names out of the engine heap
     # "land-arena",            # compat: move land objects out of the engine heap
+    # "npc-arena",             # compat: move NPC objects out of the engine heap
     # "mcp-146",                # qol: remove a fully nocked arrow with Ready Weapon
     # "mcp-149",                # core: wait for death processing before offering corpse disposal
     # "bow-view",               # qol: lower the first-person bow and arms while an arrow is nocked

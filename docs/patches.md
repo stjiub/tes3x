@@ -69,10 +69,11 @@ single required/not-required flag.
 | [Expanded-memory video arena](../patches/video-arena.md) | `video-arena` | Size the texture and vertex buffer arena from [Xbox] VideoMemoryKB, and pack what overflows it into shared chunks. | TES3X | compat | dev | By name |
 | [Expanded-memory heap region](../patches/heap-region.md) | `heap-region` | With more than 64 MB, size the engine heap's region from [Xbox] HeapRegionKB. | TES3X | compat | dev | By name |
 | [Paged dialogue link names](../patches/info-name-arena.md) | `info-name-arena` | Page INFO's temporary ID, previous and next names outside the engine heap. | TES3X | compat | dev | By name |
-| [Paged NPC and inventory link names](../patches/link-name-arena.md) | `link-name-arena` | Page NPCs' race, class, faction, head and hair names, inventory item IDs and the base records' inventories outside the engine heap. | TES3X | compat | dev | By name; `script-arena`, `path-arena`, `land-arena` |
+| [Paged NPC and inventory link names](../patches/link-name-arena.md) | `link-name-arena` | Page NPCs' race, class, faction, head and hair names, inventory item IDs and the base records' inventories outside the engine heap. | TES3X | compat | dev | By name; `script-arena`, `path-arena`, `land-arena`, `npc-arena` |
 | [Paged script bytecode](../patches/script-arena.md) | `script-arena` | Page compiled script bytecode outside the engine heap. | TES3X | compat | dev | By name |
 | [Paged model paths, icon paths and display names](../patches/path-arena.md) | `path-arena` | Page the model and icon paths and display names of loaded records outside the engine heap. | TES3X | compat | dev | By name |
 | [Paged land objects](../patches/land-arena.md) | `land-arena` | Page the land objects of loaded exterior cells outside the engine heap. | TES3X | compat | dev | By name |
+| [Paged NPC objects](../patches/npc-arena.md) | `npc-arena` | Page the NPC records' objects outside the engine heap. | TES3X | compat | dev | By name |
 | [Dialogue responses built on first use](../patches/lazy-dialogue.md) | `lazy-dialogue` | Load dialogue responses as file references and build a topic's responses when it is first needed. | TES3X | compat | dev | By name |
 | [Growing small-block pools](../patches/pool-grow.md) | `pool-grow` | Add another pool when a small-block size class fills, instead of giving each further block a header in the heap. | TES3X | compat | dev | By name |
 
@@ -81,7 +82,8 @@ single required/not-required flag.
 | title | patch key | what it does | from | category | channel | included by |
 |---|---|---|---|---|---|---|
 | [Save and load without forced sleeps](../patches/loop-sleeps.md) | `loop-sleeps` | Yield instead of sleeping 1 ms every 16-128 objects in the save and load walks. | TES3X | performance | dev | By name |
-| [Indexed reference lookup at global script start](../patches/ref-index.md) | `ref-index` | Find the references global scripts name from one pass over the cells, not one per name. | TES3X | performance | dev | By name |
+| [Indexed reference lookup at global script start](../patches/ref-index.md) | `ref-index` | Find the references global scripts name from one pass over the cells, not one per name. | TES3X | performance | dev | By name; `npc-arena` |
+| [Creature list for animation sound keys](../patches/soundgen-index.md) | `soundgen-index` | Match an animation's footstep and voice keys against the creatures, not every loaded object. | TES3X | performance | dev | By name; `npc-arena` |
 | [Low-memory main menu](../patches/lean-menu.md) | `lean-menu` | Load only game settings for the main menu; New Game and Load relaunch and load the rest. | TES3X | performance | preview | By name |
 | [Direct response topic lookup](../patches/dialogue-owner.md) | `dialogue-owner` | Find a response's topic directly instead of searching every topic's responses. | TES3X | performance | dev | By name |
 

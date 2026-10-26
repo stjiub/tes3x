@@ -114,6 +114,16 @@ source = "tes3xrefindex.c"
 summary = "Find the references global scripts name from one pass over the cells, not one per name."
 
 [[patch]]
+name = "soundgen-index"
+title = "Creature list for animation sound keys"
+category = "performance"
+group = "Speed"
+channel = "dev"
+selection = "preset"
+source = "tes3xsoundgenindex.c"
+summary = "Match an animation's footstep and voice keys against the creatures, not every loaded object."
+
+[[patch]]
 name = "title"
 title = "Dashboard title"
 category = "infrastructure"
@@ -834,6 +844,17 @@ selection = "preset"
 source = "tes3xlandarena.c"
 requires = ["link-name-arena"]
 summary = "Page the land objects of loaded exterior cells outside the engine heap."
+
+[[patch]]
+name = "npc-arena"
+title = "Paged NPC objects"
+category = "compat"
+group = "Memory"
+channel = "dev"
+selection = "preset"
+source = "tes3xnpcarena.c"
+requires = ["link-name-arena", "ref-index", "soundgen-index"]
+summary = "Page the NPC records' objects outside the engine heap."
 
 [[patch]]
 name = "dialogue-owner"
