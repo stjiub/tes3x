@@ -2,8 +2,9 @@
  *
  * parseAnimationTextKeys resolves each SoundGen key (Left, Right, Moan, ...) by walking the whole
  * object list for the first creature whose name matches the animation's, once per key. The
- * creatures are kept here in list order and rebuilt whenever the list's count or tail changes;
- * names are read live, since a later record can replace a creature's strings.
+ * creatures are kept here in list order, extended when objects were only appended and rebuilt
+ * after any other change; names are read live, since a later record can replace a creature's
+ * strings.
  */
 
 #include "tes3x_thunks.h"
@@ -25,6 +26,7 @@
 #define LIST_HEAD 4u
 #define LIST_TAIL 8u
 #define OBJ_TYPE 4u
+#define OBJ_PREV 0x1Cu
 #define OBJ_NEXT 0x20u
 #define VT_NAME 0x48u
 #define T_CREA 0x41455243u
@@ -51,31 +53,75 @@ static int matches(u32 object, const char *name)
     return own && !((fn_stricmp)TES3X_SOUNDGEN_STRICMP)(own, name);
 }
 
-static int build(u32 list)
+static int add(u32 object)
 {
-    u32 object, n = 0, bytes;
+    u32 bytes, *grown, i;
 
-    for (object = AT(list, LIST_HEAD); object; object = AT(object, OBJ_NEXT))
-        n += AT(object, OBJ_TYPE) == T_CREA;
-    bytes = (n * 4 + 0xFFFu) & ~0xFFFu;
-    if (bytes > sg_bytes) {
+    if (AT(object, OBJ_TYPE) != T_CREA)
+        return 1;
+    if ((sg_count + 1) * 4 > sg_bytes) {
+        bytes = ((sg_count + 1) * 8 + 0xFFFu) & ~0xFFFu;
+        grown = (u32 *)MmAllocateSystemMemory(bytes, PAGE_READWRITE);
+        if (!grown)
+            return 0;
+        for (i = 0; i < sg_count; i++)
+            grown[i] = sg_creatures[i];
         if (sg_creatures)
             MmFreeSystemMemory(sg_creatures, sg_bytes);
-        sg_bytes = 0;
-        sg_creatures = (u32 *)MmAllocateSystemMemory(bytes ? bytes : 0x1000u, PAGE_READWRITE);
-        if (!sg_creatures)
-            return 0;
-        sg_bytes = bytes ? bytes : 0x1000u;
+        sg_creatures = grown;
+        sg_bytes = bytes;
     }
-    sg_count = 0;
-    for (object = AT(list, LIST_HEAD); object; object = AT(object, OBJ_NEXT))
-        if (AT(object, OBJ_TYPE) == T_CREA)
-            sg_creatures[sg_count++] = object;
+    sg_creatures[sg_count++] = object;
+    return 1;
+}
+
+static void keep(u32 list)
+{
     sg_list = list;
     sg_list_count = AT(list, LIST_COUNT);
     sg_list_tail = AT(list, LIST_TAIL);
-    if (!sg_builds++)
+}
+
+/* Every object's links are inside it, so a full walk reads every object, paged ones included. */
+static int build(u32 list)
+{
+    u32 object;
+
+    sg_count = 0;
+    for (object = AT(list, LIST_HEAD); object; object = AT(object, OBJ_NEXT))
+        if (!add(object))
+            return 0;
+    keep(list);
+    sg_builds++;
+    if (!(sg_builds & (sg_builds - 1)))
+        tes3x_log("soundgen.builds", sg_builds);
+    if (sg_builds == 1)
         tes3x_log("soundgen.creatures", sg_count);
+    return 1;
+}
+
+/* Objects only appended since the last look: stepping back by the count's growth from the tail
+ * lands on the old tail, compared by value, so a removed old tail is never read. Only the new
+ * objects are read. */
+static int extend(u32 list)
+{
+    u32 grown, object = AT(list, LIST_TAIL), i;
+
+    if (list != sg_list || AT(list, LIST_COUNT) <= sg_list_count)
+        return 0;
+    grown = AT(list, LIST_COUNT) - sg_list_count;
+    for (i = 0; i < grown; i++) {
+        if (!object)
+            return 0;
+        object = AT(object, OBJ_PREV);
+    }
+    if (object != sg_list_tail)
+        return 0;
+    for (object = object ? AT(object, OBJ_NEXT) : AT(list, LIST_HEAD); object;
+         object = AT(object, OBJ_NEXT))
+        if (!add(object))
+            return 0;
+    keep(list);
     return 1;
 }
 
@@ -96,7 +142,7 @@ static u32 find(u32 list, const char *name)
 
     if (list != sg_list || AT(list, LIST_COUNT) != sg_list_count ||
         AT(list, LIST_TAIL) != sg_list_tail) {
-        if (!build(list)) {
+        if (!extend(list) && !build(list)) {
             sg_list = 0;
             return walk(list, name);
         }

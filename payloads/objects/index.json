@@ -705,8 +705,8 @@
       "sha256": "410fda84302102bf1e13456ae821f26e41815ada2d3339932d0701bbf303045b"
     },
     "tes3xsoundgenindex.c": {
-      "digest": "d67e91eae698e3f59598bb8b21db397db00a20f736c1f616152b2a941e0db98b",
-      "sha256": "d09d8ca1cb4346be4ab27e14f5485d85b3871c640a25f91374a64752b1e6d3d4"
+      "digest": "5e6c6dafd49d3aa83dabfd0f5206f48e984c69851c1df63a03cbb33c14fcb7bc",
+      "sha256": "f31a9d401bc3fee84ffff48e6ca683cf10d02affa5df7f90019b41514fc5c09f"
     },
     "tes3xtooltips.c": {
       "digest": "66926171f55bc07e415cabeb8276d19739093dd94300abdcf6f65ef0376a7fd9",
