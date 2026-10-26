@@ -19,7 +19,8 @@ python -m pip install -e .[gui,dev]
 ```
 
 On Linux, activate with `source .venv/bin/activate`. Activate the environment in each new
-terminal; `tes3x` is on `PATH` while it is. `[gui]` adds PySide6 and tomlkit, `[dev]` adds Ruff.
+terminal; `tes3x` is on `PATH` while it is. `[gui]` adds PySide6 and tomlkit, `[dev]` adds Ruff
+and Capstone for the symbol-map tests.
 
 The editable install reads TES3X's own files (the patch table, hooks, symbols, examples, add-ons)
 from the checkout, so edits take effect without reinstalling. A `tes3x.local.toml` in the

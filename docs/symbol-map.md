@@ -46,8 +46,9 @@ Treat only `verified` as fact. Most records are `matched` names from MWSE.
 
 ## Using it
 
-The tool needs [capstone](https://www.capstone-engine.org/) (`python -m pip install capstone` in a
-checkout, `pipx inject tes3x capstone` for pipx) and the binaries it analyses, which you supply:
+The tool needs [capstone](https://www.capstone-engine.org/) (included with `.[dev]` in a checkout;
+otherwise run `python -m pip install capstone` or `pipx inject tes3x capstone`) and the binaries it
+analyses, which you supply:
 your retail `morrowind.xbe` and, for matching, the PC `Morrowind.exe` 1.6.1820 without Code Patch
 changes (a Steam install with Code Patch keeps it as `Morrowind.Original.exe`). The analysis goes to
 `build/symbols.db` under the working folder; it is rebuilt from the binaries, never edited and never
