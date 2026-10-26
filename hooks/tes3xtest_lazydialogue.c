@@ -74,7 +74,7 @@ static void digest(void)
     const u8 *list = records ? *(const u8 *const *)(records + RECORDS_DIALOGUES) : 0;
     const u8 *node;
     u32 sums[5] = {0}, infos[5] = {0}, topics[5] = {0};
-    u32 i;
+    u32 i, order = 0x811C9DC5u;
 
     for (node = list ? *(const u8 *const *)(list + 8) : 0; node;
          node = *(const u8 *const *)(node + 4)) {
@@ -82,6 +82,8 @@ static void digest(void)
         const u8 *info;
         u32 type, h = 0x811C9DC5u;
 
+        /* The topic list's order, which the load-time sort by name length sets. */
+        order = mix_text(order, topic ? *(const char *const *)(topic + 0x10) : 0);
         if (!topic || (type = topic[DIAL_TYPE]) > 4)
             continue;
         topics[type]++;
@@ -104,6 +106,7 @@ static void digest(void)
     tes3x_log("lazy.digest_topics", topics[0]);
     tes3x_log("lazy.digest_infos", infos[0]);
     tes3x_log("lazy.digest_sum", sums[0]);
+    tes3x_log_hex("lazy.digest_order", order);
 }
 
 /* Heard responses per dialogue type, which a save must carry across a reload. */
