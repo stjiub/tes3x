@@ -68,6 +68,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_mcp3_unarmored, find_mcp92_unsummon, find_mcp94,
                                find_mcp97_scan, find_mcp98_refcounts, find_menu_mode_gate,
                                find_mob_gate, find_preferences_load, find_ref_index,
+                               find_soundgen_index,
                                find_ref_load, find_ref_skip, find_run_function,
                                find_save_allowed_context, find_save_this_ptr,
                                find_script_decode_state, find_script_fixup_call,
@@ -753,6 +754,20 @@ def _ref_index(x, value, ctx):
         _, off = x.patch_call(site, scripts_hook)
         edits.append((off, 5, "startGlobalScripts call 0x%08X -> 0x%08X" % (site, scripts_hook)))
     return edits
+
+
+@patch("soundgen-index")
+def _soundgen_index(x, value, ctx):
+    """Find the creature behind an animation's sound keys from a list of creatures."""
+    hook = ctx.get("hooks", {}).get("soundgen_find")
+    if not hook:
+        raise PatchError("soundgen-index: needs `payload` first, with a soundgen_find hook in "
+                         "its manifest")
+    walk = find_soundgen_index(x)[0]
+    hook = int(str(hook), 16)
+    off = x.va_to_off(walk)
+    x.data[off:off + 5] = b"\xe9" + struct.pack("<i", hook - (walk + 5))
+    return [(off, 5, "creature walk 0x%08X -> 0x%08X" % (walk, hook))]
 
 
 @patch("bow-view")
@@ -2044,6 +2059,7 @@ __all__ = [
     '_pool_grow',
     '_profile',
     '_ref_index',
+    '_soundgen_index',
     '_rotating_autosaves',
     '_save_staging',
     '_script_ext',
@@ -2112,6 +2128,7 @@ __all__ = [
     'find_pool_grow_sites',
     'find_preferences_load',
     'find_ref_index',
+    'find_soundgen_index',
     'find_ref_load',
     'find_ref_skip',
     'find_run_function',

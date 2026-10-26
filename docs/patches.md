@@ -18,6 +18,7 @@ single required/not-required flag.
 | [Same-volume save staging](../patches/save-staging.md) | `save-staging=LETTER` | Stage saves on one volume with UDATA so the commit renames instead of copying. | TES3X | infrastructure | preview | Build option |
 | [Save and load without forced sleeps](../patches/loop-sleeps.md) | `loop-sleeps` | Yield instead of sleeping 1 ms every 16-128 objects in the save and load walks. | TES3X | performance | dev | By name |
 | [Indexed reference lookup at global script start](../patches/ref-index.md) | `ref-index` | Find the references global scripts name from one pass over the cells, not one per name. | TES3X | performance | dev | By name |
+| [Creature list for animation sound keys](../patches/soundgen-index.md) | `soundgen-index` | Match an animation's footstep and voice keys against the creatures, not every loaded object. | TES3X | performance | dev | By name |
 | [Dashboard title](../patches/title.md) | `title=NAME` | Rename the XBE's certificate title, the name a dashboard falls back to. | TES3X | infrastructure | preview | Build option |
 | [Separate save title ID](../patches/title-id.md) | `title-id=HEX` | Give the XBE its own title ID, so its saves go to a separate E:/UDATA folder. | TES3X | infrastructure | preview | Build option |
 | [Multiple BSA loading](../patches/multi-bsa.md) | `multi-bsa` | Load every archive listed in tes3xarch.txt, not just Morrowind.bsa. | TES3X | infrastructure | preview | Delta-BSA packaging |

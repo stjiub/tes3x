@@ -412,6 +412,8 @@
     "SET_AUTO_HEIGHT": null,
     "SET_AUTO_WIDTH": null,
     "SET_PROP": null,
+    "SOUNDGEN_RESOLVE": null,
+    "SOUNDGEN_STRICMP": null,
     "STILL_BLOCK": null,
     "STILL_CLEAR": null,
     "STILL_DISPLAY": null,
@@ -701,6 +703,10 @@
     "tes3xscriptarena.c": {
       "digest": "bc31f59767bed917dad5882761ad04b5afe061c81356a427250d7d217a2860ff",
       "sha256": "410fda84302102bf1e13456ae821f26e41815ada2d3339932d0701bbf303045b"
+    },
+    "tes3xsoundgenindex.c": {
+      "digest": "d67e91eae698e3f59598bb8b21db397db00a20f736c1f616152b2a941e0db98b",
+      "sha256": "d09d8ca1cb4346be4ab27e14f5485d85b3871c640a25f91374a64752b1e6d3d4"
     },
     "tes3xtooltips.c": {
       "digest": "66926171f55bc07e415cabeb8276d19739093dd94300abdcf6f65ef0376a7fd9",

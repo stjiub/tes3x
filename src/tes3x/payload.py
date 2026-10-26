@@ -1320,6 +1320,17 @@ def _bind_refindex(b):
     wanted["refindex_scripts"] = ("_tes3x_refindex_scripts_hook",)
 
 
+@binder("tes3xsoundgenindex.c")
+def _bind_soundgenindex(b):
+    define, locate, wanted = b.define, b.locate, b.wanted
+    stricmp = hexva(locate("soundgen-index-stricmp"))
+    resolve = hexva(locate("soundgen-index-resolve"))
+    print(f"soundgen-index hooks: _stricmp {stricmp}, sound generator lookup {resolve}")
+    define("SOUNDGEN_STRICMP", stricmp)
+    define("SOUNDGEN_RESOLVE", resolve)
+    wanted["soundgen_find"] = ("_tes3x_soundgen_find_hook",)
+
+
 @binder("tes3xbowview.c")
 def _bind_bowview(b):
     image, define, locate, wanted = b.image, b.define, b.locate, b.wanted
