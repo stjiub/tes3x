@@ -47,6 +47,9 @@ No official releases yet. The first public release is in preparation.
   with the engine's repeated passes. With the Tamriel Rebuilt masters the console's load to the
   main menu takes about 32 s less (226 s to 194 s). The order is unchanged. See
   [the patch notes](patches/topic-sort.md).
+- New patch `cell-index`: cells are found by name and by grid position from an index instead of
+  by comparing every cell, which took about 92 s of a Tamriel Rebuilt load on the console. See
+  [the patch notes](patches/cell-index.md).
 - New patch `soundgen-index`: an animation's footstep and creature sound keys are matched against
   the loaded creatures instead of walking every loaded object once per key, at startup and when a
   creature's animation first loads. See [the patch notes](patches/soundgen-index.md).

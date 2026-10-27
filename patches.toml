@@ -134,6 +134,17 @@ source = "tes3xtopicsort.c"
 summary = "Sort the dialogue topics by name length once at load, instead of with repeated bubble passes."
 
 [[patch]]
+name = "cell-index"
+title = "Indexed cell lookup by name"
+category = "performance"
+group = "Speed"
+channel = "dev"
+selection = "preset"
+source = "tes3xcellindex.c"
+ini = { CellIndex = "on" }
+summary = "Find a cell by name from a hash index instead of comparing the name of every cell."
+
+[[patch]]
 name = "title"
 title = "Dashboard title"
 category = "infrastructure"

@@ -792,6 +792,74 @@ def find_topic_sort(x):
     return found
 
 
+# NonDynamicData::findCellByName: the cell list walk comparing every cell's ID (vtable +0x20)
+# with _stricmp.
+CELL_FIND_SIG = re.compile(
+    rb"\x53\x55\x56\x8b\xd9\x8b\x8b(?P<list>....)\x57\xe8....\x8b\xf0\x85\xf6\x74.\x8b\x6c\x24\x14"
+    rb".{0,8}?\x8b\x3e\x8b\x07\x55\x8b\xcf\xff\x50\x20\x50(?P<stricmp>\xe8....)\x83\xc4\x08\x85\xc0"
+    rb"\x74.\x8b\x8b(?P=list)\x56\xe8....\x8b\xf0\x85\xf6\x75.\x5f\x5e\x5d\x33\xc0\x5b\xc2\x04\x00",
+    re.S,
+)
+
+# The grid walk behind getCellByGrid: the first exterior cell at (x, y), returning its list node.
+CELL_GRID_SIG = re.compile(
+    rb"\x53\x55\x56\x8b\xd9\x8b\x8b(?P<list>....)\x57\xe8....\x8b\xf0\x85\xf6\x74.\x8b\x6c\x24\x18"
+    rb".{0,8}?\x8b\x3e\x8b\xcf(?P<interior>\xe8....)\x84\xc0\x75.\x8b\xcf(?P<x>\xe8....)"
+    rb"\x3b\x44\x24\x14\x75.\x8b\xcf(?P<y>\xe8....)\x3b\xc5\x74.\x8b\x8b(?P=list)\x56\xe8...."
+    rb"\x8b\xf0\x85\xf6\x75.\x5f\x5e\x5d\x33\xc0\x5b\xc2\x08\x00",
+    re.S,
+)
+
+# loadRecord's CELL case: a new cell appended to the list, then the call that every CELL record,
+# new cell or found, passes through before it loads (ecx = the cell, ebp = NonDynamicData).
+CELL_LOAD_SIG = re.compile(
+    rb"\x89\x30\x8b\x8d(?P<list>....)\x50\x89\xbc\x24....\xe8....\x8b\xce(?P<site>\xe8....)",
+    re.S,
+)
+
+
+def _cell_getter(x, va, pattern, what):
+    off = x.va_to_off(va)
+    m = re.match(pattern, bytes(x.data[off:off + 16]), re.S) if off is not None else None
+    if not m:
+        raise PatchError("cell-index: %s getter at 0x%08X has an unknown body" % (what, va))
+    return m
+
+
+def find_cell_index(x):
+    """The name and grid walks, the cell list offset, _stricmp, the Cell flag and grid offsets,
+    and the CELL load call."""
+    data = bytes(x.data)
+    names = list(CELL_FIND_SIG.finditer(data))
+    if len(names) != 1:
+        raise PatchError("cell-index: %d cell name walk(s), expected 1" % len(names))
+    grids = list(CELL_GRID_SIG.finditer(data))
+    loads = list(CELL_LOAD_SIG.finditer(data))
+    lst = names[0].group("list")
+    if len(grids) != 1 or grids[0].group("list") != lst:
+        raise PatchError("cell-index: %d cell grid walk(s), expected 1" % len(grids))
+    if len(loads) != 1 or loads[0].group("list") != lst:
+        raise PatchError("cell-index: %d CELL load site(s), expected 1" % len(loads))
+    entry, grid = x.off_to_va(names[0].start()), x.off_to_va(grids[0].start())
+    site = x.off_to_va(loads[0].start("site"))
+    if entry is None or grid is None or site is None:
+        raise PatchError("cell-index: a match is outside any section")
+
+    def target(hit, va, group):
+        return tes3x_inject.call_target(x, va + hit.start(group) - hit.start())
+
+    interior = _cell_getter(x, target(grids[0], grid, "interior"), rb"\x8a\x41(.)\x24\x01\xc3",
+                            "interior")
+    flags = interior.group(1)[0]
+    axes = [_cell_getter(x, target(grids[0], grid, axis),
+                         rb"\xf6\x41" + bytes([flags]) + rb"\x01\x74\x03\x33\xc0\xc3\x8b\x41(.)\xc3",
+                         "grid " + axis).group(1)[0] for axis in ("x", "y")]
+    return {"entry": entry, "grid": grid, "list": struct.unpack("<I", lst)[0],
+            "stricmp": target(names[0], entry, "stricmp"), "flags": flags,
+            "grid_x": axes[0], "grid_y": axes[1],
+            "site": site, "load": tes3x_inject.call_target(x, site)}
+
+
 def find_dxt5_size(x):
     """The texture-create call to the texture-size function."""
     hits = list(DXT5_SIZE_SIG.finditer(bytes(x.data)))
@@ -3041,6 +3109,7 @@ LOCATORS = {
     "soundgen-index-stricmp": lambda image: find_soundgen_index(image)[1],
     "soundgen-index-resolve": lambda image: find_soundgen_index(image)[2],
     "topic-sort": find_topic_sort,
+    "cell-index": find_cell_index,
     "lean-menu": find_lean_menu,
     "video-arena": find_arena_size,
     "video-arena-phys-alloc": lambda image: find_arena_overflow(image)["phys_alloc"],

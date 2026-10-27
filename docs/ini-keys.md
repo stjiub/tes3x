@@ -92,6 +92,12 @@ Only pages the heap actually uses consume memory, so a large value costs address
 |---|---|---|
 | `LazyDialogue` | `on`, `off` or `verify` | `on`; `off` loads every topic response at startup, `verify` loads them and also records the stubs |
 
+## `cell-index`
+
+| key | values | default |
+|---|---|---|
+| `CellIndex` | `on` or `verify` | `on`; `verify` also runs the engine's own walk on every lookup and logs `cellindex.mismatch` when the answers differ |
+
 ## `bow-view`
 
 | key | values | default |

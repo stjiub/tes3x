@@ -1353,6 +1353,24 @@ def _bind_topicsort(b):
     wanted["topic_sort"] = ("_tes3x_topic_sort",)
 
 
+@binder("tes3xcellindex.c")
+def _bind_cellindex(b):
+    define, locate, wanted = b.define, b.locate, b.wanted
+    found = locate("cell-index")
+    print(f"cell-index: name walk {hexva(found['entry'])}, grid walk {hexva(found['grid'])}, "
+          f"list +0x{found['list']:X}, CELL load call {hexva(found['site'])} -> "
+          f"{hexva(found['load'])}")
+    define("CELLINDEX_LIST", "0x%X" % found["list"])
+    define("CELLINDEX_STRICMP", hexva(found["stricmp"]))
+    define("CELLINDEX_FLAGS", "0x%X" % found["flags"])
+    define("CELLINDEX_GRID_X", "0x%X" % found["grid_x"])
+    define("CELLINDEX_GRID_Y", "0x%X" % found["grid_y"])
+    define("CELLINDEX_LOAD", hexva(found["load"]))
+    wanted["cellindex_find"] = ("_tes3x_cellindex_find_hook",)
+    wanted["cellindex_grid"] = ("_tes3x_cellindex_grid_hook",)
+    wanted["cellindex_load"] = ("_tes3x_cellindex_load_hook",)
+
+
 @binder("tes3xbowview.c")
 def _bind_bowview(b):
     image, define, locate, wanted = b.image, b.define, b.locate, b.wanted

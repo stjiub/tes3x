@@ -370,6 +370,49 @@
       ]
     },
     {
+      "name": "TES3::Cell",
+      "size": "0x78",
+      "pc_valid_until": "0x10",
+      "note": "Allocated as 0x78 bytes (createExteriorCell? 0x0010CBC0). The name sits 4 past the PC's and the grid and region are not in the PC's union at 0x90. The cell list (NonDynamicData +0xB270) is only appended to or cleared.",
+      "fields": [
+        {
+          "offset": "0x14",
+          "name": "name",
+          "type": "char*",
+          "confidence": "verified",
+          "provenance": "Cell::getObjectID 0x00123D10 returns it for interior or named cells"
+        },
+        {
+          "offset": "0x18",
+          "name": "cellFlags",
+          "type": "unsigned int",
+          "confidence": "verified",
+          "provenance": "Cell::getIsInterior 0x00122A00 tests bit 0; getWasLoaded 0x001229D0 bit 3"
+        },
+        {
+          "offset": "0x24",
+          "name": "gridX",
+          "type": "int",
+          "confidence": "verified",
+          "provenance": "getExteriorGridX 0x00122C50 and its setter 0x00122C60, exterior only"
+        },
+        {
+          "offset": "0x28",
+          "name": "gridY",
+          "type": "int",
+          "confidence": "verified",
+          "provenance": "getExteriorGridY 0x00122C70 and its setter 0x00122C80, exterior only"
+        },
+        {
+          "offset": "0x74",
+          "name": "region",
+          "type": "TES3::Region*",
+          "confidence": "verified",
+          "provenance": "Cell::getObjectID 0x00123D10 returns region +0x30 for an unnamed exterior"
+        }
+      ]
+    },
+    {
       "name": "TES3::TES3File",
       "fields": [
         {

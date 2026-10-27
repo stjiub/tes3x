@@ -11,6 +11,12 @@
     "BOOTCLEAR_NEXT": null,
     "BOW_VIEW_UPDATE": null,
     "BUTTON_HINT": null,
+    "CELLINDEX_FLAGS": null,
+    "CELLINDEX_GRID_X": null,
+    "CELLINDEX_GRID_Y": null,
+    "CELLINDEX_LIST": null,
+    "CELLINDEX_LOAD": null,
+    "CELLINDEX_STRICMP": null,
     "CELL_CHANGE": null,
     "CELL_CHANGE_COMPANIONS": null,
     "CHARGEN_LAYOUT": null,
@@ -501,6 +507,10 @@
     "tes3xbowview.c": {
       "digest": "f7f97373d514517c9a9ab7f678708c3afc3f5d357d9407fba746c80465b7aaad",
       "sha256": "38411f8b5f805eec763cec3029b75b383e4b418a8ed0a40c435d326b1decb15f"
+    },
+    "tes3xcellindex.c": {
+      "digest": "2fd60e5fa9f248d1ccc76eafd7ca5c618c69f08049d6fedb5d49eef73130b83c",
+      "sha256": "b67ce5bf9193c35b0f4761e83c654c011136f734065d6495a490dce9c8e99e26"
     },
     "tes3xconsole.c": {
       "digest": "092ff300085a4b5f0936acd7e8ef5635a72c9a544259b0975958d0ddd27d54ad",

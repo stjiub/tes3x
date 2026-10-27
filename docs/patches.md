@@ -85,6 +85,7 @@ single required/not-required flag.
 | [Indexed reference lookup at global script start](../patches/ref-index.md) | `ref-index` | Find the references global scripts name from one pass over the cells, not one per name. | TES3X | performance | dev | By name; `npc-arena` |
 | [Creature list for animation sound keys](../patches/soundgen-index.md) | `soundgen-index` | Match an animation's footstep and voice keys against the creatures, not every loaded object. | TES3X | performance | dev | By name; `npc-arena` |
 | [Single-pass topic sort at load](../patches/topic-sort.md) | `topic-sort` | Sort the dialogue topics by name length once at load, instead of with repeated bubble passes. | TES3X | performance | dev | By name |
+| [Indexed cell lookup by name](../patches/cell-index.md) | `cell-index` | Find a cell by name from a hash index instead of comparing the name of every cell. | TES3X | performance | dev | By name |
 | [Low-memory main menu](../patches/lean-menu.md) | `lean-menu` | Load only game settings for the main menu; New Game and Load relaunch and load the rest. | TES3X | performance | preview | By name |
 | [Direct response topic lookup](../patches/dialogue-owner.md) | `dialogue-owner` | Find a response's topic directly instead of searching every topic's responses. | TES3X | performance | dev | By name |
 

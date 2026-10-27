@@ -3788,7 +3788,15 @@
       "provenance": "engine-map step 3: decompiled and read",
       "pc_va": "0x004BA9B0",
       "signature": "TES3::Cell* __thiscall findCellByName(char* name)",
-      "note": "Linear walk of all cells with stricmp on every call; getCellByGrid 0x0010A120 is hashed (0x00106110)"
+      "note": "Linear walk of all cells with _stricmp on Cell::getObjectID (vtable +0x20); first match in list order. 29,027 calls, 84 s of full TR's boot load on hardware. cell-index replaces it."
+    },
+    {
+      "va": "0x00106110",
+      "name": "NonDynamicData::findCellNodeByGrid",
+      "confidence": "verified",
+      "provenance": "body read",
+      "note": "Linear walk of all cells for the first exterior at (x, y); returns the cell list node. Behind getCellByGrid: 7,953 calls, 8.3 s of full TR's boot load. cell-index replaces it.",
+      "signature": "void* __thiscall findCellNodeByGrid(int x, int y)"
     },
     {
       "va": "0x00106180",
@@ -3912,6 +3920,13 @@
       "signature": "bool __thiscall addNewObject(TES3::Object* object)",
       "note": "Ten callers. Rolls an id from four rand values when the object has none; refuses a duplicate id. The multiplayer record hook fronts every call site.",
       "mwse": "TES3_NonDynamicData_addNewObject"
+    },
+    {
+      "va": "0x0010CBC0",
+      "name": "NonDynamicData::createExteriorCell?",
+      "confidence": "guess",
+      "provenance": "body read: constructs a Cell, sets its name, appends it to the cell list, marks it exterior at (x, y)",
+      "signature": "TES3::Cell* __thiscall createExteriorCell(char* name, int x, int y)"
     },
     {
       "va": "0x0010CCD0",
@@ -4302,6 +4317,13 @@
       "pc_va": "0x004D9A20"
     },
     {
+      "va": "0x00122990",
+      "name": "Cell::getFlagBit4?",
+      "confidence": "guess",
+      "provenance": "body read: returns cellFlags bit 4 (0x10)",
+      "note": "loadRecord's CELL case calls it on every cell a CELL record loads into (0x0010FB97); cell-index hooks that call to mark the cell being loaded."
+    },
+    {
       "va": "0x001229D0",
       "name": "Cell::getWasLoaded",
       "confidence": "verified",
@@ -4376,6 +4398,13 @@
       "provenance": "engine-map step 2: body read",
       "note": "Selection: a full save needs flag bit 1 (Modified) and skips the two marker bases (DAT_003D2CE0/E4); not full: skips Delete (bit 5), skips a reference from another file unless Modified, skips bit 6 (moved) unless NonDynamicData +0xB380; a leveled spawn with no scene node and no base is dropped.",
       "pc_va": "0x004E12F0"
+    },
+    {
+      "va": "0x00123D10",
+      "name": "Cell::getObjectID",
+      "confidence": "verified",
+      "provenance": "body read; Cell vtable 0x00375414 slot +0x20",
+      "note": "Name if the cell is interior or named; else its region's name (+0x74, name at +0x30), else the default exterior name."
     },
     {
       "va": "0x00123DC0",
@@ -4597,6 +4626,13 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_IsItemDataStackable",
       "pc_va": "0x004E7970"
+    },
+    {
+      "va": "0x0012ADC0",
+      "name": "TravelDestination::resolveCell?",
+      "confidence": "guess",
+      "provenance": "body read: resolves a door destination's cell by name (findCellByName, frees the name) or by grid",
+      "note": "Called per door from resolveLinks? and resolveLinksPostLoad?: 14,590 calls, 36.9 s of full TR's boot load, nearly all of linkReferences?, through findCellByName."
     },
     {
       "va": "0x0012AEE0",

@@ -68,7 +68,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_mcp3_unarmored, find_mcp92_unsummon, find_mcp94,
                                find_mcp97_scan, find_mcp98_refcounts, find_menu_mode_gate,
                                find_mob_gate, find_preferences_load, find_ref_index,
-                               find_soundgen_index, find_topic_sort,
+                               find_soundgen_index, find_topic_sort, find_cell_index,
                                find_ref_load, find_ref_skip, find_run_function,
                                find_save_allowed_context, find_save_this_ptr,
                                find_script_decode_state, find_script_fixup_call,
@@ -781,6 +781,26 @@ def _topic_sort(x, value, ctx):
     off = x.va_to_off(entry)
     x.data[off:off + 5] = b"\xe9" + struct.pack("<i", hook - (entry + 5))
     return [(off, 5, "topic sort 0x%08X -> 0x%08X" % (entry, hook))]
+
+
+@patch("cell-index")
+def _cell_index(x, value, ctx):
+    """Find cells by name and by grid from hash indexes instead of walking every cell."""
+    hooks = ctx.get("hooks", {})
+    if not all(hooks.get(k) for k in ("cellindex_find", "cellindex_grid", "cellindex_load")):
+        raise PatchError("cell-index: needs `payload` first, with cellindex hooks in its manifest")
+    found = find_cell_index(x)
+    edits = []
+    for walk, name, what in ((found["entry"], "cellindex_find", "cell name walk"),
+                             (found["grid"], "cellindex_grid", "cell grid walk")):
+        hook = int(str(hooks[name]), 16)
+        off = x.va_to_off(walk)
+        x.data[off:off + 5] = b"\xe9" + struct.pack("<i", hook - (walk + 5))
+        edits.append((off, 5, "%s 0x%08X -> 0x%08X" % (what, walk, hook)))
+    load = int(str(hooks["cellindex_load"]), 16)
+    _, off = x.patch_call(found["site"], load)
+    edits.append((off, 5, "CELL load call 0x%08X -> 0x%08X" % (found["site"], load)))
+    return edits
 
 
 @patch("bow-view")
@@ -2083,6 +2103,7 @@ __all__ = [
     '_ref_index',
     '_soundgen_index',
     '_topic_sort',
+    '_cell_index',
     '_rotating_autosaves',
     '_save_staging',
     '_script_ext',
@@ -2154,6 +2175,7 @@ __all__ = [
     'find_ref_index',
     'find_soundgen_index',
     'find_topic_sort',
+    'find_cell_index',
     'find_ref_load',
     'find_ref_skip',
     'find_run_function',
