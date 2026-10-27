@@ -6,7 +6,8 @@ After the data files load, the engine sorts every dialogue topic by name length,
 keeping topics of equal length in load order. It does this with a bubble sort that makes one full
 pass over the topic list per topic, measuring both names of every pair it compares. Retail
 Morrowind's topics take a fraction of a second; with the Tamriel Rebuilt masters, about 7,000
-topics, the sort took about 30 s of the console's load.
+topics, the sort took about 30 s of the console's load. With the patch, the console loads those
+masters to the main menu in about 194 s instead of 226 s.
 
 See the [patch table](../docs/patches.md) for availability and selection.
 

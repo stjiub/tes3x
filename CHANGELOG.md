@@ -44,8 +44,9 @@ No official releases yet. The first public release is in preparation.
   builds its index without reading the paged NPCs, which saves about 7,000 page reads at load.
   See [the patch notes](patches/npc-arena.md).
 - New patch `topic-sort`: the dialogue topics are sorted by name length once at load instead of
-  with the engine's repeated passes, which took about 30 s of a Tamriel Rebuilt load on the console.
-  The order is unchanged. See [the patch notes](patches/topic-sort.md).
+  with the engine's repeated passes. With the Tamriel Rebuilt masters the console's load to the
+  main menu takes about 32 s less (226 s to 194 s). The order is unchanged. See
+  [the patch notes](patches/topic-sort.md).
 - New patch `soundgen-index`: an animation's footstep and creature sound keys are matched against
   the loaded creatures instead of walking every loaded object once per key, at startup and when a
   creature's animation first loads. See [the patch notes](patches/soundgen-index.md).
