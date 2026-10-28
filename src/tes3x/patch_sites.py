@@ -860,6 +860,28 @@ def find_cell_index(x):
             "site": site, "load": tes3x_inject.call_target(x, site)}
 
 
+# NonDynamicData::findScriptByName: the script list walk (list at +0x38 on both sampled engines;
+# the sibling walks over the other lists share this shape) comparing each ID with _stricmp.
+SCRIPT_FIND_SIG = re.compile(
+    rb"\x53\x56\x57\x8b\xf9\x8b\x4f\x38(?P<first>\xe8....)\x85\xc0\x74.\x8b\x5c\x24\x10"
+    rb"\x8b\x70\x08\x8b\x06\x53\x8b\xce\xff\x50\x20\x50(?P<stricmp>\xe8....)\x83\xc4\x08"
+    rb"\x85\xc0\x74.\x8b\x4f\x38\xe8....\x85\xc0\x75.\x5f\x5e\x33\xc0\x5b\xc2\x04\x00",
+    re.S,
+)
+
+
+def find_script_index(x):
+    """The script walk's entry, the script list offset and _stricmp."""
+    hits = list(SCRIPT_FIND_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("script-index: %d script name walk(s), expected 1" % len(hits))
+    entry = x.off_to_va(hits[0].start())
+    if entry is None:
+        raise PatchError("script-index: the script name walk is outside any section")
+    stricmp = tes3x_inject.call_target(x, entry + hits[0].start("stricmp") - hits[0].start())
+    return {"entry": entry, "list": 0x38, "stricmp": stricmp}
+
+
 def find_dxt5_size(x):
     """The texture-create call to the texture-size function."""
     hits = list(DXT5_SIZE_SIG.finditer(bytes(x.data)))
@@ -3110,6 +3132,7 @@ LOCATORS = {
     "soundgen-index-resolve": lambda image: find_soundgen_index(image)[2],
     "topic-sort": find_topic_sort,
     "cell-index": find_cell_index,
+    "script-index": find_script_index,
     "lean-menu": find_lean_menu,
     "video-arena": find_arena_size,
     "video-arena-phys-alloc": lambda image: find_arena_overflow(image)["phys_alloc"],

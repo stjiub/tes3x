@@ -69,6 +69,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_mcp97_scan, find_mcp98_refcounts, find_menu_mode_gate,
                                find_mob_gate, find_preferences_load, find_ref_index,
                                find_soundgen_index, find_topic_sort, find_cell_index,
+                               find_script_index,
                                find_ref_load, find_ref_skip, find_run_function,
                                find_save_allowed_context, find_save_this_ptr,
                                find_script_decode_state, find_script_fixup_call,
@@ -801,6 +802,20 @@ def _cell_index(x, value, ctx):
     _, off = x.patch_call(found["site"], load)
     edits.append((off, 5, "CELL load call 0x%08X -> 0x%08X" % (found["site"], load)))
     return edits
+
+
+@patch("script-index")
+def _script_index(x, value, ctx):
+    """Find scripts by ID from a hash index instead of walking every script."""
+    hook = ctx.get("hooks", {}).get("scriptindex_find")
+    if not hook:
+        raise PatchError("script-index: needs `payload` first, with a scriptindex_find hook in "
+                         "its manifest")
+    walk = find_script_index(x)["entry"]
+    hook = int(str(hook), 16)
+    off = x.va_to_off(walk)
+    x.data[off:off + 5] = b"\xe9" + struct.pack("<i", hook - (walk + 5))
+    return [(off, 5, "script name walk 0x%08X -> 0x%08X" % (walk, hook))]
 
 
 @patch("bow-view")
@@ -2104,6 +2119,7 @@ __all__ = [
     '_soundgen_index',
     '_topic_sort',
     '_cell_index',
+    '_script_index',
     '_rotating_autosaves',
     '_save_staging',
     '_script_ext',
@@ -2176,6 +2192,7 @@ __all__ = [
     'find_soundgen_index',
     'find_topic_sort',
     'find_cell_index',
+    'find_script_index',
     'find_ref_load',
     'find_ref_skip',
     'find_run_function',

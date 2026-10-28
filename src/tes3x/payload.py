@@ -1371,6 +1371,16 @@ def _bind_cellindex(b):
     wanted["cellindex_load"] = ("_tes3x_cellindex_load_hook",)
 
 
+@binder("tes3xscriptindex.c")
+def _bind_scriptindex(b):
+    define, locate, wanted = b.define, b.locate, b.wanted
+    found = locate("script-index")
+    print(f"script-index: name walk {hexva(found['entry'])}, list +0x{found['list']:X}")
+    define("SCRIPTINDEX_LIST", "0x%X" % found["list"])
+    define("SCRIPTINDEX_STRICMP", hexva(found["stricmp"]))
+    wanted["scriptindex_find"] = ("_tes3x_scriptindex_find_hook",)
+
+
 @binder("tes3xbowview.c")
 def _bind_bowview(b):
     image, define, locate, wanted = b.image, b.define, b.locate, b.wanted

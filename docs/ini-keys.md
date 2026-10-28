@@ -98,6 +98,12 @@ Only pages the heap actually uses consume memory, so a large value costs address
 |---|---|---|
 | `CellIndex` | `on` or `verify` | `on`; `verify` also runs the engine's own walk on every lookup and logs `cellindex.mismatch` when the answers differ |
 
+## `script-index`
+
+| key | values | default |
+|---|---|---|
+| `ScriptIndex` | `on` or `verify` | `on`; `verify` also runs the engine's own walk on every lookup and logs `scriptindex.mismatch` when the answers differ |
+
 ## `bow-view`
 
 | key | values | default |

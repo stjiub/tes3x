@@ -412,6 +412,8 @@
     "SAVE_GATE_OWNER_OFFSET": null,
     "SAVE_GATE_STATE_OFFSET": null,
     "SAVE_THIS_PTR": null,
+    "SCRIPTINDEX_LIST": null,
+    "SCRIPTINDEX_STRICMP": null,
     "SCRIPT_DECODE": null,
     "SCRIPT_IP": null,
     "SCRIPT_OPCODE": null,
@@ -723,6 +725,10 @@
     "tes3xscriptarena.c": {
       "digest": "bc31f59767bed917dad5882761ad04b5afe061c81356a427250d7d217a2860ff",
       "sha256": "410fda84302102bf1e13456ae821f26e41815ada2d3339932d0701bbf303045b"
+    },
+    "tes3xscriptindex.c": {
+      "digest": "a63ed8cff75604cc234d40682aa67e7288350bcf5b82e7ee65ca7b57476427d0",
+      "sha256": "f6b30232c760bb310750a5fcaa239083078b548a03746440ae58f06f7b735815"
     },
     "tes3xsoundgenindex.c": {
       "digest": "5e6c6dafd49d3aa83dabfd0f5206f48e984c69851c1df63a03cbb33c14fcb7bc",

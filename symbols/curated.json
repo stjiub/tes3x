@@ -3750,12 +3750,12 @@
     },
     {
       "va": "0x00105DA0",
-      "name": "NonDynamicData::findScriptByName",
+      "name": "TES3::NonDynamicData::findScriptByName",
       "kind": "function",
       "confidence": "matched",
       "provenance": "engine-map step 3: decompiled and read",
       "pc_va": "0x004BA700",
-      "note": "Linear walk of the script list with stricmp on every call"
+      "note": "Walks the script list at this+0x38 (list: count +4, head +8, tail +0xC, shared iteration cursor +0x10; node: prev +0, next +4, script +8) with _stricmp on vtable +0x20; first match in list order. Leaves the list cursor on the match, or null. 19,816 calls, 18.1 s of full TR's boot load. script-index replaces it."
     },
     {
       "va": "0x00105DF0",

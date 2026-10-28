@@ -147,6 +147,17 @@ ini = { CellIndex = "on" }
 summary = "Find a cell by name from a hash index instead of comparing the name of every cell."
 
 [[patch]]
+name = "script-index"
+title = "Indexed script lookup by ID"
+category = "performance"
+group = "Speed"
+channel = "dev"
+selection = "preset"
+source = "tes3xscriptindex.c"
+ini = { ScriptIndex = "on" }
+summary = "Find a script by ID from a hash index instead of comparing the ID of every script."
+
+[[patch]]
 name = "title"
 title = "Dashboard title"
 category = "infrastructure"

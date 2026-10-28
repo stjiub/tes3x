@@ -1,0 +1,22 @@
+kind = "single"
+purpose = "Scripts found by ID from the index are the scripts the engine's own walk finds."
+procedure = "Set ScriptIndex to verify, which runs the engine's walk beside every indexed lookup and logs any difference, start a new game, then travel to an interior and to Balmora so scripts load and start."
+limitations = "Hardware timing. Retail has a few hundred scripts; the Tamriel Rebuilt masters are checked the same way outside this test."
+watch = 'scriptindex\.|diag\.patches|exec\.exit|crash\.|hang\.detected|fatal\.'
+enable = ["diagnostics", "console", "script-index"]
+timeout = 240
+script = '''
+@start new
+wait 30
+coc "Seyda Neen, Census and Excise Office"
+wait 30
+coc "Balmora"
+wait 60
+exit
+'''
+
+[profile]
+ini = { "Xbox:ScriptIndex" = "verify" }
+
+[expect]
+test = ['scriptindex\.mode 2', 'scriptindex\.checks [1-9]', '!scriptindex\.mismatch', 'exec\.exit 0']
