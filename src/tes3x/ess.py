@@ -5,6 +5,7 @@ import argparse
 import collections
 import os
 import struct
+import sys
 
 from tes3x.records import records, subrecords  # noqa: E402
 
@@ -441,22 +442,23 @@ def diff(reference, rebuilt):
     return out, a, b
 
 
-def report_diff(reference, rebuilt, limit):
+def report_diff(reference, rebuilt, limit, stream=None):
     out, a, _b = diff(reference, rebuilt)
-    print(f"  reference {reference}\n  rebuilt   {rebuilt}\n")
+    stream = stream or sys.stdout
+    print(f"  reference {reference}\n  rebuilt   {rebuilt}\n", file=stream)
     width = max(map(len, ROWS))
-    print(f"  {'row':<{width}} {'units':>6} {'differ':>7}")
+    print(f"  {'row':<{width}} {'units':>6} {'differ':>7}", file=stream)
     held = collections.Counter(row for row, _ in a)
     for row in ROWS:
         mark = "" if out[row] else "  same"
-        print(f"  {row:<{width}} {held[row]:>6} {len(out[row]):>7}{mark}")
+        print(f"  {row:<{width}} {held[row]:>6} {len(out[row]):>7}{mark}", file=stream)
     for row in ROWS:
         if out[row]:
-            print(f"\n  {row}")
+            print(f"\n  {row}", file=stream)
             for line in out[row][:limit]:
-                print(f"    {line}")
+                print(f"    {line}", file=stream)
             if len(out[row]) > limit:
-                print(f"    ... {len(out[row]) - limit} more")
+                print(f"    ... {len(out[row]) - limit} more", file=stream)
     return sum(len(v) for v in out.values())
 
 

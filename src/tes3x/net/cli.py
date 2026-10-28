@@ -34,7 +34,8 @@ from .proto import (ACTOR, ACTORS, ADMIN_PASSWORD_MIN, ADMIN_PORT, AGENT_PORT, A
                     SEALED, STATE, STATE_SIZE, T3MP_VERSION, WELCOME, admin_secret, now_us,
                     remote_key, seal, unseal)
 from .passwords import hash_password_command
-from .server import (decode, load_admin_password, serve)
+from .access import load_admin_password
+from .server import decode, serve
 from .tunnel import (Tunnel, resolve, udp_frame, udp_from_frame, udp_socket)
 from .plugin import (ghost_plugin)
 

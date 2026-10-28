@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from tes3x.net.server import save_world
+from tes3x.net.state import save_world
 
 
 class StateSaveTests(unittest.TestCase):
@@ -29,8 +29,8 @@ class StateSaveTests(unittest.TestCase):
                     raise self.locked()
                 replace(source, target)
 
-            with patch('tes3x.net.server.os.replace', side_effect=briefly_locked), \
-                    patch('tes3x.net.server.time.sleep'):
+            with patch('tes3x.net.state.os.replace', side_effect=briefly_locked), \
+                    patch('tes3x.net.state.time.sleep'):
                 save_world(str(path), {'new': True})
             self.assertEqual(calls, [(str(path) + '.tmp', str(path))] * 2)
             self.assertEqual(json.loads(path.read_text()), {'new': True})
@@ -40,9 +40,9 @@ class StateSaveTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'stream.json'
             path.write_text('{"old": true}', encoding='utf-8')
-            with patch('tes3x.net.server.os.replace', side_effect=self.locked(32)) as replace, \
-                    patch('tes3x.net.server.time.monotonic', side_effect=[0., 0., 0.25]), \
-                    patch('tes3x.net.server.time.sleep'):
+            with patch('tes3x.net.state.os.replace', side_effect=self.locked(32)) as replace, \
+                    patch('tes3x.net.state.time.monotonic', side_effect=[0., 0., 0.25]), \
+                    patch('tes3x.net.state.time.sleep'):
                 with self.assertRaises(PermissionError):
                     save_world(str(path), {'new': True})
             self.assertEqual(replace.call_count, 2)
@@ -51,7 +51,7 @@ class StateSaveTests(unittest.TestCase):
 
     def test_unrelated_permission_errors_are_not_retried(self):
         with tempfile.TemporaryDirectory() as folder:
-            with patch('tes3x.net.server.os.replace', side_effect=PermissionError) as replace:
+            with patch('tes3x.net.state.os.replace', side_effect=PermissionError) as replace:
                 with self.assertRaises(PermissionError):
                     save_world(str(Path(folder) / 'stream.json'), {})
             replace.assert_called_once()

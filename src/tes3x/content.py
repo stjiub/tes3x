@@ -22,7 +22,7 @@ from cryptography.hazmat.primitives.asymmetric import ec, ed25519
 from cryptography.x509.oid import NameOID
 
 from tes3x import manifest, netbuild
-from tes3x.net.server import SourceBuckets
+from tes3x.net.transport import SourceBuckets
 
 PORT = 26510
 MAX_ENTRIES = 64

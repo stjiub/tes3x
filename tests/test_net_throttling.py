@@ -6,7 +6,9 @@ from unittest.mock import Mock
 
 from tes3x.net import proto as p
 from tes3x.net.passwords import JoinPassword
-from tes3x.net.server import RemoteAdmin, Server, SourceBuckets
+from tes3x.net.admin import RemoteAdmin
+from tes3x.net.server import Server
+from tes3x.net.transport import SourceBuckets
 
 
 class SourceLimitTests(unittest.TestCase):

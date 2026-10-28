@@ -7,7 +7,7 @@ from unittest import mock
 
 from tes3x.net import passwords
 from tes3x.net.proto import admin_secret
-from tes3x.net.server import load_admin_secret, load_password, load_server_key
+from tes3x.net.access import load_admin_secret, load_password, load_server_key
 
 
 class JoinPasswordTests(unittest.TestCase):
