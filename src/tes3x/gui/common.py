@@ -60,7 +60,8 @@ from tes3x.plugins import (BASE_MASTERS, collect, default_rules, dependency_orde
 from tes3x.pipeline import (CHECK_MARKER, DEPLOY_CONFLICT, DEPLOY_NO_SPACE, MARKER as PIPELINE_MARKER, PipelineError,
                             resolve_patch_plan, validate_local_config, validate_profile)
 from tes3x.records import records, subrecords
-from tes3x.deploy import PROGRESS_ENV, human as human_size, parse_drives, parse_progress
+from tes3x.deploy import human as human_size, parse_drives
+from tes3x.progress import ENV as PROGRESS_ENV, parse as parse_progress
 from tes3x.agent import (AgentListener, Fetch, OP_REBOOT, console_request, is_dash,
                          key_fingerprint, load_or_create_key)
 from tes3x.gui.server import ServerPage
@@ -400,12 +401,18 @@ class StatusBar(QStatusBar):
 
     def show_progress(self, stage, done, total, unit, name=""):
         """Bar and `stage done/total · speed · ETA` beside the message; bytes are sized."""
+        if unit == "steps":
+            self.bar.setValue(int(1000 * done / total) if total else 0)
+            self.detail.setText(f"step {done + 1}/{total}" + (f" · {name}" if name else ""))
+            self.bar.show()
+            self.detail.show()
+            return
         now = time.monotonic()
         if self.progress_start is None or self.progress_start[0] != stage or done < self.progress_start[1]:
             self.progress_start = (stage, done, now)
         _, first, began = self.progress_start
         rate = (done - first) / (now - began) if now - began >= 1 else 0
-        size = human_size if unit == "bytes" else str
+        size = human_size if unit == "bytes" else "{:,.0f}".format
         text = f"{stage} {size(done)}/{size(total)}"
         if rate > 0:
             text += f" · {size(rate)}/s"

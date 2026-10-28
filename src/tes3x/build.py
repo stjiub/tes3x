@@ -12,6 +12,7 @@ import tomllib
 from collections import defaultdict
 from tes3x.library import LibraryError, load_library, resolve_selection
 from tes3x.paths import CONFIG_HELP, DEFAULT_REMOTE_ROOT, data_dir, mod_library, require_paths
+import tes3x.progress as tes3x_progress
 
 FATX_NAME_MAX = 42
 # Retail includes a 1024x512 texture; on 64 MB hardware, total texture size is the useful limit.
@@ -326,7 +327,10 @@ def materialize(filemap, mods, out, rules, cache=None, load_order=None, sox=None
     renames = {}
     plugins = []
 
-    for key, (mod, src) in sorted(filemap.items()):
+    files = sorted(filemap.items())
+    counter = tes3x_progress.Counter("copy", len(files))
+    for key, (mod, src) in files:
+        counter.step(key)
         rel = getattr(mod, "relative", {}).get(
             key, os.path.relpath(src, mod.root).replace("\\", "/"))
         if any(len(part) > name_max for part in rel.split('/')):

@@ -4,6 +4,9 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- GUI: a build shows its step and a bar in the status bar ("step 4/8 · packing mods"), with
+  file counts while mod files are copied and staged, and the log shows section headers in bold
+  and warnings and errors in colour. See [the GUI guide](docs/gui.md).
 - The `recommended` preset now also takes performance patches and chosen conveniences once they
   reach `release`; `testing` takes the same ones at `preview`, so it now adds rotating and
   transition autosaves and the low-memory main menu. See

@@ -12,6 +12,7 @@ import fnmatch
 
 from tes3x.bsa import Bsa, write_bsa, tes3_hash
 from tes3x.paths import DEFAULT_REMOTE_ROOT, require_paths
+import tes3x.progress as tes3x_progress
 
 PACKABLE = ("meshes", "textures", "icons", "sound", "bookart")
 LOOSE_DIRS = ("splash", "video", "music", "fonts")
@@ -283,7 +284,9 @@ def main():
         print("  tes3xarch.txt: " + ", ".join(listed))
 
     copied = 0
+    counter = tes3x_progress.Counter("stage", len(loose))
     for rel, full in loose:
+        counter.step(rel.replace("\\", "/"))
         # rel is the engine's backslash path; split it so POSIX hosts create folders
         dst = os.path.join(out_df, *rel.split("\\"))
         os.makedirs(os.path.dirname(dst), exist_ok=True)

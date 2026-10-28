@@ -33,6 +33,7 @@ from tes3x.paths import (DEFAULT_REMOTE_ROOT, checkout, docs_url, local_config, 
 from tes3x.plugins import rules_file
 from tes3x.store import TIERS as STORE_TIERS
 import tes3x.manifest as tes3x_manifest
+import tes3x.progress as tes3x_progress
 import tes3x.savepool as tes3x_savepool
 import tes3x.targets as tes3x_targets
 import tes3x.catalog as tes3x_catalog
@@ -1323,8 +1324,12 @@ def main(argv=None):
     ctt_ranges = None
     if "cant-touch-this" in plan["applied"] and not has_mods:
         raise PipelineError("cant-touch-this needs the Can't Touch This mod")
+    ordered = bool(use_mlox or listed_order)
+    steps = tes3x_progress.Steps("build", 3 + has_mods + plan["needs_payload"] + ordered
+                                 + (has_mods and use_merge))
     try:
         if has_mods:
+            steps.begin("building mods")
             build_cmd = [sys.executable, "-m", "tes3x", "build", profile_path,
                          "--out", tree, "--json", manifest, "--vanilla", data_files,
                          "--archive-list", mod_archives,
@@ -1354,6 +1359,7 @@ def main(argv=None):
 
         payload = hook_out / "tes3xhook.pe"
         if plan["needs_payload"]:
+            steps.begin("compiling payload")
             print("\n== payload: " + " ".join(plan["sources"]), flush=True)
             if compiled:
                 print("compiling: " + " ".join(compiled), flush=True)
@@ -1364,6 +1370,7 @@ def main(argv=None):
 
         patch_specs = engine_specs(plan, payload, drive, save_staging, title, pool, args,
                                    prof_targets)
+        steps.begin("patching engine")
         patch_cmd = [sys.executable, "-m", "tes3x", "patch", retail_xbe]
         for spec in patch_specs:
             patch_cmd += ["--apply", spec]
@@ -1371,6 +1378,8 @@ def main(argv=None):
         run(patch_cmd)
 
         load_order = None
+        if ordered:
+            steps.begin("ordering plugins")
         if use_mlox:
             load_order = work / "mlox-order.json"
             run([sys.executable, "-m", "tes3x", "plugins", "order", tree,
@@ -1385,6 +1394,7 @@ def main(argv=None):
                  "--work", work / "arrange", "--out", load_order])
 
         if has_mods and use_merge:
+            steps.begin("merging conflicts")
             merged = tree / "Merged Objects.esp"
             merge_cmd = [sys.executable, "-m", "tes3x", "plugins", "merge", tree,
                          "--vanilla", data_files, "--tool", tes3merge,
@@ -1397,6 +1407,7 @@ def main(argv=None):
                 order_record["plugins"].append(merged.name)
                 load_order.write_text(json.dumps(order_record, indent=2), encoding="utf-8")
 
+        steps.begin("packing mods" if has_mods else "staging retail files")
         if has_mods:
             pack_cmd = pack_command(tree, data_files, ini, staged, mod_archives, store_list,
                                     manifest, plan, package, profile, ini_items, path_remote,
@@ -1421,6 +1432,7 @@ def main(argv=None):
             make_still(data_files / "Video" / VIDEO,
                        staged / "Data Files" / "Textures" / STILL_NAME)
 
+        steps.begin("finishing build")
         retail_files, retail_bytes = copy_retail_root(vanilla, staged, copy)
         # A data-only overlay cannot support the unpatched retail launcher. Use the engine as its
         # dashboard entry; New Game and Load still relaunch D:\morrowind.xbe.

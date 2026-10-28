@@ -87,7 +87,10 @@ dots for not run, current, stale and failed. Deploy is unavailable for xemu targ
 [TES3X Dash](deployment.md#through-the-dash) is paired with this PC shows
 **Dash**, and Deploy then goes through the Dash instead of FTP. The cog beside the target list
 adds, duplicates or removes a target, or opens its Setup. **Actions** also smoke-tests the current
-profile. The status bar is reserved for activity, transient messages and counts. Check and
+profile. The status bar is reserved for activity, transient messages and counts; a build shows
+its step ("step 4/8 · packing mods") with a bar, file counts while mod files are copied and
+staged, and upload speed and time left while deploying. The log shows section headers in bold
+and warnings and errors in colour. Check and
 per-target Deploy results are remembered in the build output; like the Build state, they notice
 profile edits but not changes inside mod folders.
 

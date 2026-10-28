@@ -17,6 +17,7 @@ from pathlib import Path
 import tes3x.agent as tes3x_agent
 import tes3x.ftp as tes3x_ftp
 import tes3x.manifest as tes3x_manifest
+import tes3x.progress as tes3x_progress
 from tes3x.pack import set_ini_key
 from tes3x.paths import local_config, require_paths
 import tes3x.savepool as tes3x_savepool
@@ -314,29 +315,6 @@ def human(n):
         if n < 1024 or u == "GB":
             return f"{n:.1f} {u}"
         n /= 1024
-
-
-PROGRESS_ENV = "TES3X_PROGRESS"
-PROGRESS_PREFIX = "@progress "
-
-
-def emit_progress(stage, done, total, unit, name=""):
-    """One machine-readable line for a front end: `@progress STAGE DONE TOTAL UNIT [NAME]`."""
-    print(f"{PROGRESS_PREFIX}{stage} {done} {total} {unit} {name}".rstrip(), flush=True)
-
-
-def parse_progress(line):
-    """(stage, done, total, unit, name) from an `@progress` line, or None."""
-    if not line.startswith(PROGRESS_PREFIX):
-        return None
-    parts = line[len(PROGRESS_PREFIX):].strip().split(None, 4)
-    if len(parts) < 4:
-        return None
-    try:
-        done, total = int(parts[1]), int(parts[2])
-    except ValueError:
-        return None
-    return parts[0], done, total, parts[3], parts[4] if len(parts) > 4 else ""
 
 
 def upload_file(ftp, args, path, source, made, progress=None, retries=2):
@@ -887,12 +865,12 @@ def sync(args, target, base, local, built):
 
     transfers = assets + plugins
     staged = {}
-    machine = bool(os.environ.get(PROGRESS_ENV))
+    machine = tes3x_progress.enabled()
     for index, r in enumerate(transfers, 1):
         dst = posixpath.join(base, r)
         size = local[r][0]
         if machine:
-            emit_progress("upload", sent, up_bytes, "bytes", r)
+            tes3x_progress.emit("upload", sent, up_bytes, "bytes", r)
         else:
             print(f"  [{index}/{len(transfers)}] {r} ({human(size)})", flush=True)
         file_sent = 0
@@ -907,7 +885,7 @@ def sync(args, target, base, local, built):
             now = time.monotonic()
             if file_sent == size or now - last_progress >= 0.5:
                 if machine:
-                    emit_progress("upload", sent + file_sent, up_bytes, "bytes", r)
+                    tes3x_progress.emit("upload", sent + file_sent, up_bytes, "bytes", r)
                 else:
                     elapsed = max(time.time() - t0, 1)
                     print(f"\r    {human(file_sent)}/{human(size)} · total "

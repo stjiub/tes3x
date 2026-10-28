@@ -8,7 +8,7 @@ from .common import (Bsa, BuildSettings, CATALOG_NAME, CHECK_MARKER, CatalogErro
                      PipelineError, QAction, QActionGroup, QApplication, QColor, QComboBox, QDialog,
                      QFileDialog, QHBoxLayout, QInputDialog, QLabel, QMainWindow, QMenu,
                      QMessageBox, QProcess, QProcessEnvironment, QScrollArea, QSettings, QSplitter, QStackedWidget,
-                     QTabBar, QTabWidget, QTextBrowser, QTextCursor, QTextEdit, QTimer,
+                     QTabBar, QTabWidget, QTextBrowser, QTextEdit, QTimer,
                      QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget, Qt, ROLE,
                      ServerPage, Signal, StatusBar, TEMPLATE, TargetsPage, WARNING, XEMU_STARTED,
                      argparse, convert_profile, datetime, default_config_path, defaultdict,
@@ -18,6 +18,7 @@ from .common import (Bsa, BuildSettings, CATALOG_NAME, CHECK_MARKER, CatalogErro
                      stop_icon, struct, sys, target_capabilities, target_runtime_label,
                      tes3x_targets, tomlkit, tomllib, validate_profile, version_label)
 from .banner import PromptBanner
+from . import logtext
 from .jobs import Job
 from .saves import SavesTab
 from .patches import PatchesTab
@@ -1863,8 +1864,7 @@ class ProfileWindow(QMainWindow):
             return
         text = bytes(job.process.readAllStandardOutput()).decode(errors="replace")
         shown = self.filter_progress(text.replace("\r\n", "\n").replace("\r", "\n"), job)
-        job.log.moveCursor(QTextCursor.MoveOperation.End)
-        job.log.insertPlainText(shown)
+        logtext.append(job.log, shown)
         if XEMU_STARTED in text:
             self.statusBar().spinner.stop()
             port = (

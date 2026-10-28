@@ -406,7 +406,7 @@ if __name__ == "__main__":
 
 class ProgressLineTests(unittest.TestCase):
     def test_round_trip_and_rejects(self):
-        from tes3x.deploy import emit_progress, parse_progress
+        from tes3x.progress import emit as emit_progress, parse as parse_progress
         buffer = io.StringIO()
         with patch("sys.stdout", buffer):
             emit_progress("upload", 5, 10, "bytes", "meshes/a b.nif")
