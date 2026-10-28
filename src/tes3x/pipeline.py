@@ -860,8 +860,7 @@ def publish(work, output):
         shutil.rmtree(backup)
 
 
-def main(argv=None):
-    invocation = list(argv) if argv is not None else sys.argv[1:]
+def build_parser():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("profile")
     ap.add_argument("--config", help="local paths and Xbox settings "
@@ -939,6 +938,212 @@ def main(argv=None):
                          "the local config")
     ap.add_argument("--check", action="store_true",
                     help="validate and resolve the profile, print the build summary, then stop")
+    return ap
+
+
+def instrument_plan(plan, args):
+    """Add the sources the instrumentation options need; return the profiler targets."""
+    prof_targets = [item.strip() for value in args.profile_target
+                    for item in value.split(",") if item.strip()]
+    if prof_targets:
+        if "tes3xdiag.c" not in plan["sources"]:
+            raise PipelineError("--profile-target needs the diagnostics patch, whose frame "
+                                "hook times the frame")
+        if "tes3xprof.c" not in plan["sources"]:
+            plan["sources"].append("tes3xprof.c")
+        plan["needs_payload"] = True
+    if args.heap_census:
+        if "tes3xheap.c" not in plan["sources"]:
+            plan["sources"].append("tes3xheap.c")
+        plan["needs_payload"] = True
+    if args.mem_census:
+        if "tes3xmem.c" not in plan["sources"]:
+            plan["sources"].append("tes3xmem.c")
+        plan["needs_payload"] = True
+    if args.pager_test:
+        if "tes3xpager.c" not in plan["sources"]:
+            plan["sources"].append("tes3xpager.c")
+        plan["needs_payload"] = True
+    if args.diag_test_faults and "tes3xdiag.c" not in plan["sources"]:
+        raise PipelineError("--diag-test-faults needs the diagnostics patch")
+    if args.test_probe:
+        source = f"tes3xtest_{args.test_probe.replace('-', '')}.c"
+        plan["sources"].append(source)
+        if args.test_probe == "mcp-132":
+            if "tes3xmcp132.c" not in plan["sources"]:
+                raise PipelineError("--test-probe mcp-132 needs the mcp-132 patch")
+            plan["sources"].append("tes3xanimvirtual.c")
+        if args.test_probe == "ctt":
+            if "tes3xctt.c" not in plan["sources"]:
+                raise PipelineError("--test-probe ctt needs the cant-touch-this patch")
+            plan["sources"].append("tes3xtest_mcp132.c")
+        plan["needs_payload"] = True
+        if args.test_probe in {"mcp-3", "mcp-47", "mcp-55", "mcp-118", "mcp-132", "dialogue-merge", "dialogue-owner", "lazy-dialogue", "ctt"} \
+                and "tes3xconsole.c" not in plan["sources"]:
+            raise PipelineError(f"--test-probe {args.test_probe} needs the console patch")
+    return prof_targets
+
+
+def ini_settings(profile, plan, args, base, target, install_layout, deploy, remote):
+    """The INI overrides for the build, and the retail base an overlay install uses."""
+    ini_items = [f"{k}={v}" for k, v in profile.get("ini", {}).items()]
+    ui = profile.get("ui", {})
+    if "ui-scale" in plan["applied"]:
+        ini_items.append(f"Xbox:HudScale={ui_scale(ui):.3f}")
+        if "widescreen_480p" in ui:
+            ini_items.append("Xbox:HudWidescreen480=" + str(int(ui["widescreen_480p"])))
+    ini_items += args.ini_set
+    ini_items += agent_ini(plan["applied"], ini_items, base, target)
+    if "multiplayer" in plan["applied"]:
+        # every join is a New Game, whose movie would play each time
+        if ini_override(ini_items, "Movies", "New Game") is None:
+            ini_items.append("Movies:New Game=none.bik")
+    overlay_base = ini_override(ini_items, "Xbox", "OverlayBase")
+    if install_layout == "overlay":
+        overlay_base = overlay_base or deploy.get("retail_root")
+        if not overlay_base and target and target.get("kind") == "xemu":
+            overlay_base = XEMU_OVERLAY_BASE  # xemu's disc carries the base; Play stages it
+        if not overlay_base:
+            raise PipelineError("the overlay install layout needs target.retail_root in the "
+                                "local config, or an Xbox:OverlayBase INI override")
+        if ini_override(ini_items, "Xbox", "OverlayBase") is None:
+            ini_items.append("Xbox:OverlayBase=" + overlay_base.replace("/", "\\"))
+        if remote and deploy.get("retail_root") and \
+                remote.replace("\\", "/").rstrip("/").casefold() == \
+                deploy["retail_root"].replace("\\", "/").rstrip("/").casefold():
+            raise PipelineError("the profile destination and target.retail_root must be different")
+    return ini_items, overlay_base
+
+
+def engine_specs(plan, payload, drive, save_staging, title, pool, args, prof_targets):
+    """The `--apply` specs for the engine patch, in order."""
+    patch_specs = []
+    if plan["needs_payload"]:
+        patch_specs.append(f"payload={payload}")
+    patch_specs.extend(("boot-media", f"drive-letters={drive}"))
+    if save_staging:
+        patch_specs.append(f"save-staging={save_staging}")
+    if title:
+        patch_specs.append(f"title={title}")
+    if pool:
+        patch_specs.append(f"title-id={pool:08X}")
+    patch_specs.extend(plan["applied"])
+    if args.test_probe:
+        patch_specs.append("test-" + args.test_probe.replace("-", ""))
+    if prof_targets:
+        patch_specs.append("profile=" + ",".join(prof_targets))
+    if args.heap_census:
+        patch_specs.append("heap-census")
+    if args.mem_census:
+        patch_specs.append("mem-census")
+    return patch_specs
+
+
+def pack_command(tree, data_files, ini, staged, mod_archives, store_list, manifest,
+                 plan, package, profile, ini_items, path_remote, load_order):
+    """The `tes3x pack` invocation; LOAD_ORDER is None when the pack sorts by itself."""
+    pack_cmd = [sys.executable, "-m", "tes3x", "pack", tree,
+                "--vanilla", data_files, "--ini", ini, "--out", staged,
+                "--mod-archives", mod_archives, "--store-list", store_list]
+    if load_order is not None:
+        pack_cmd += ["--load-order", load_order]
+    if plan["package_mode"] == "loose":
+        pack_cmd.append("--no-archive")
+    if plan["package_mode"] == "delta-bsa":
+        pack_cmd += ["--delta-archive", package.get("archive_name", "tes3xmods.bsa")]
+    if package.get("archive_only", False):
+        pack_cmd.append("--archive-only")
+    for pattern in package.get("loose_assets", []):
+        pack_cmd += ["--loose-asset", pattern]
+    loose_mods = [m["name"] for m in enabled_mods(profile) if m.get("loose", False)]
+    if loose_mods:
+        pack_cmd += ["--manifest", manifest]
+        for name in loose_mods:
+            pack_cmd += ["--loose-mod", name]
+    for item in ini_items:
+        pack_cmd += ["--ini-set", item]
+    if path_remote:
+        pack_cmd += ["--remote-root", path_remote]
+    return pack_cmd
+
+
+def deploy_build(args, profile, target, deploy, local_path, remote, output, vanilla,
+                 install_layout, copy):
+    """Upload the staged build; return the process exit code."""
+    if install_layout == "overlay" and not deploy.get("retail_root"):
+        raise PipelineError("deploying an overlay layout requires target.retail_root in the "
+                            "local config")
+    if install_layout == "overlay":
+        with tempfile.TemporaryDirectory(prefix="tes3x-retail-base-",
+                                         dir=output.parent) as base_temp:
+            base_work = Path(base_temp)
+            base_tree = base_work / "deploy"
+            files, size = stage_retail_base(vanilla, base_tree, copy)
+            (base_work / MARKER).write_text(json.dumps({
+                "schema": MARKER_SCHEMA,
+                "profile": "TES3X retail base",
+                "install_layout": "retail-base",
+                "deploy_tree": "deploy",
+            }, indent=2) + "\n", encoding="utf-8")
+            print(f"\nretail base: {files} files, {size / 1048576:.1f} MB")
+            base_cmd = [sys.executable, "-m", "tes3x", "deploy", base_tree,
+                        "--config", local_path, "--remote", deploy["retail_root"]]
+            if target:
+                base_cmd += ["--target", target["name"]]
+            if args.ask_password:
+                base_cmd.append("--ask-password")
+            if args.deploy_agent:
+                base_cmd.append("--agent")
+            if args.dry_run:
+                base_cmd.append("--dry-run")
+            elif args.install_retail_base:
+                base_cmd += ["--replace", "--verify", "size"]
+            else:
+                base_cmd += ["--dry-run", "--require-current"]
+            print("\n== " + " ".join(str(part) for part in base_cmd), flush=True)
+            result = subprocess.run([str(part) for part in base_cmd])
+            if result.returncode == DEPLOY_CONFLICT:
+                return DEPLOY_CONFLICT
+            if result.returncode:
+                raise subprocess.CalledProcessError(result.returncode, base_cmd)
+
+    # The deploy tool reads the login from the config itself, keeping the password off
+    # the command line.
+    deploy_cmd = [sys.executable, "-m", "tes3x", "deploy", output / "deploy",
+                  "--config", local_path, "--remote", remote]
+    if target:
+        deploy_cmd += ["--target", target["name"]]
+    if args.ask_password:
+        deploy_cmd.append("--ask-password")
+    if args.deploy_agent:
+        deploy_cmd.append("--agent")
+    if (output / XBOX_INI).is_file():
+        deploy_cmd += ["--xbox-ini", output / XBOX_INI]
+    if args.dry_run:
+        deploy_cmd.append("--dry-run")
+    if args.deploy and args.verify_deploy != "none":
+        deploy_cmd += ["--verify", args.verify_deploy]
+    if profile.get("rules", {}).get("clear_cache_partitions", False) and args.deploy:
+        deploy_cmd.append("--clear-cache")
+    if args.replace_remote:
+        deploy_cmd.append("--replace")
+    if args.ignore_space:
+        deploy_cmd.append("--ignore-space")
+    print("\n== " + " ".join(str(part) for part in deploy_cmd), flush=True)
+    result = subprocess.run([str(part) for part in deploy_cmd])
+    if result.returncode in (DEPLOY_CONFLICT, DEPLOY_NO_SPACE):
+        return result.returncode
+    if result.returncode:
+        raise subprocess.CalledProcessError(result.returncode, deploy_cmd)
+    if args.discard_build:
+        shutil.rmtree(output)
+        print(f"discarded verified build: {output}")
+    return 0
+
+
+def main(argv=None):
+    invocation = list(argv) if argv is not None else sys.argv[1:]
+    ap = build_parser()
     args = ap.parse_args(argv)
     if args.discard_build and (not args.deploy or args.verify_deploy == "none"):
         ap.error("--discard-build requires --deploy and --verify-deploy size or hash")
@@ -981,44 +1186,7 @@ def main(argv=None):
     install_layout = profile["profile"].get("install_layout", "full")
     if args.install_retail_base and install_layout != "overlay":
         ap.error("--install-retail-base requires profile.install_layout = 'overlay'")
-    prof_targets = [item.strip() for value in args.profile_target
-                    for item in value.split(",") if item.strip()]
-    if prof_targets:
-        if "tes3xdiag.c" not in plan["sources"]:
-            raise PipelineError("--profile-target needs the diagnostics patch, whose frame "
-                                "hook times the frame")
-        if "tes3xprof.c" not in plan["sources"]:
-            plan["sources"].append("tes3xprof.c")
-        plan["needs_payload"] = True
-    if args.heap_census:
-        if "tes3xheap.c" not in plan["sources"]:
-            plan["sources"].append("tes3xheap.c")
-        plan["needs_payload"] = True
-    if args.mem_census:
-        if "tes3xmem.c" not in plan["sources"]:
-            plan["sources"].append("tes3xmem.c")
-        plan["needs_payload"] = True
-    if args.pager_test:
-        if "tes3xpager.c" not in plan["sources"]:
-            plan["sources"].append("tes3xpager.c")
-        plan["needs_payload"] = True
-    if args.diag_test_faults and "tes3xdiag.c" not in plan["sources"]:
-        raise PipelineError("--diag-test-faults needs the diagnostics patch")
-    if args.test_probe:
-        source = f"tes3xtest_{args.test_probe.replace('-', '')}.c"
-        plan["sources"].append(source)
-        if args.test_probe == "mcp-132":
-            if "tes3xmcp132.c" not in plan["sources"]:
-                raise PipelineError("--test-probe mcp-132 needs the mcp-132 patch")
-            plan["sources"].append("tes3xanimvirtual.c")
-        if args.test_probe == "ctt":
-            if "tes3xctt.c" not in plan["sources"]:
-                raise PipelineError("--test-probe ctt needs the cant-touch-this patch")
-            plan["sources"].append("tes3xtest_mcp132.c")
-        plan["needs_payload"] = True
-        if args.test_probe in {"mcp-3", "mcp-47", "mcp-55", "mcp-118", "mcp-132", "dialogue-merge", "dialogue-owner", "lazy-dialogue", "ctt"} \
-                and "tes3xconsole.c" not in plan["sources"]:
-            raise PipelineError(f"--test-probe {args.test_probe} needs the console patch")
+    prof_targets = instrument_plan(plan, args)
     package = profile.get("package", {})
     drive = (args.drive or package.get("drive_letter", "D")).upper()
     if len(drive) != 1 or not drive.isalpha():
@@ -1031,32 +1199,8 @@ def main(argv=None):
     pool = (tes3x_savepool.pool_id(pool_name, profile["profile"].get("save_pool_id"))
             if pool_name else None)
     dashboards = dashboard_list(profile)
-    ini_items = [f"{k}={v}" for k, v in profile.get("ini", {}).items()]
-    ui = profile.get("ui", {})
-    if "ui-scale" in plan["applied"]:
-        ini_items.append(f"Xbox:HudScale={ui_scale(ui):.3f}")
-        if "widescreen_480p" in ui:
-            ini_items.append("Xbox:HudWidescreen480=" + str(int(ui["widescreen_480p"])))
-    ini_items += args.ini_set
-    ini_items += agent_ini(plan["applied"], ini_items, base, target)
-    if "multiplayer" in plan["applied"]:
-        # every join is a New Game, whose movie would play each time
-        if ini_override(ini_items, "Movies", "New Game") is None:
-            ini_items.append("Movies:New Game=none.bik")
-    overlay_base = ini_override(ini_items, "Xbox", "OverlayBase")
-    if install_layout == "overlay":
-        overlay_base = overlay_base or deploy.get("retail_root")
-        if not overlay_base and target and target.get("kind") == "xemu":
-            overlay_base = XEMU_OVERLAY_BASE  # xemu's disc carries the base; Play stages it
-        if not overlay_base:
-            raise PipelineError("the overlay install layout needs target.retail_root in the "
-                                "local config, or an Xbox:OverlayBase INI override")
-        if ini_override(ini_items, "Xbox", "OverlayBase") is None:
-            ini_items.append("Xbox:OverlayBase=" + overlay_base.replace("/", "\\"))
-        if remote and deploy.get("retail_root") and \
-                remote.replace("\\", "/").rstrip("/").casefold() == \
-                deploy["retail_root"].replace("\\", "/").rstrip("/").casefold():
-            raise PipelineError("the profile destination and target.retail_root must be different")
+    ini_items, overlay_base = ini_settings(profile, plan, args, base, target, install_layout,
+                                           deploy, remote)
     ini_items, console_items = split_console(ini_items)
     build_value = args.build_root or paths.get("build_root", "build")
     build_root = config_path(build_value, base).resolve()
@@ -1218,31 +1362,15 @@ def main(argv=None):
                           check_xbe=hook_out / "injected-check.xbe", invert_look=invert_look,
                           rebuild=args.build_payload, ctt_ranges=ctt_ranges)
 
-        patch_specs = []
-        if plan["needs_payload"]:
-            patch_specs.append(f"payload={payload}")
-        patch_specs.extend(("boot-media", f"drive-letters={drive}"))
-        if save_staging:
-            patch_specs.append(f"save-staging={save_staging}")
-        if title:
-            patch_specs.append(f"title={title}")
-        if pool:
-            patch_specs.append(f"title-id={pool:08X}")
-        patch_specs.extend(plan["applied"])
-        if args.test_probe:
-            patch_specs.append("test-" + args.test_probe.replace("-", ""))
-        if prof_targets:
-            patch_specs.append("profile=" + ",".join(prof_targets))
-        if args.heap_census:
-            patch_specs.append("heap-census")
-        if args.mem_census:
-            patch_specs.append("mem-census")
+        patch_specs = engine_specs(plan, payload, drive, save_staging, title, pool, args,
+                                   prof_targets)
         patch_cmd = [sys.executable, "-m", "tes3x", "patch", retail_xbe]
         for spec in patch_specs:
             patch_cmd += ["--apply", spec]
         patch_cmd += ["--out", patched]
         run(patch_cmd)
 
+        load_order = None
         if use_mlox:
             load_order = work / "mlox-order.json"
             run([sys.executable, "-m", "tes3x", "plugins", "order", tree,
@@ -1270,28 +1398,9 @@ def main(argv=None):
                 load_order.write_text(json.dumps(order_record, indent=2), encoding="utf-8")
 
         if has_mods:
-            pack_cmd = [sys.executable, "-m", "tes3x", "pack", tree,
-                        "--vanilla", data_files, "--ini", ini, "--out", staged,
-                        "--mod-archives", mod_archives, "--store-list", store_list]
-            if use_mlox or listed_order:
-                pack_cmd += ["--load-order", load_order]
-            if plan["package_mode"] == "loose":
-                pack_cmd.append("--no-archive")
-            if plan["package_mode"] == "delta-bsa":
-                pack_cmd += ["--delta-archive", package.get("archive_name", "tes3xmods.bsa")]
-            if package.get("archive_only", False):
-                pack_cmd.append("--archive-only")
-            for pattern in package.get("loose_assets", []):
-                pack_cmd += ["--loose-asset", pattern]
-            loose_mods = [m["name"] for m in enabled_mods(profile) if m.get("loose", False)]
-            if loose_mods:
-                pack_cmd += ["--manifest", manifest]
-                for name in loose_mods:
-                    pack_cmd += ["--loose-mod", name]
-            for item in ini_items:
-                pack_cmd += ["--ini-set", item]
-            if path_remote:
-                pack_cmd += ["--remote-root", path_remote]
+            pack_cmd = pack_command(tree, data_files, ini, staged, mod_archives, store_list,
+                                    manifest, plan, package, profile, ini_items, path_remote,
+                                    load_order)
             run(pack_cmd)
         else:
             stage_retail(data_files, ini, staged, ini_items, copy)
@@ -1401,74 +1510,8 @@ def main(argv=None):
 
     print(f"\ncomplete install staged at {output / 'deploy'}")
     if args.deploy or args.dry_run:
-        if install_layout == "overlay" and not deploy.get("retail_root"):
-            raise PipelineError("deploying an overlay layout requires target.retail_root in the "
-                                "local config")
-        if install_layout == "overlay":
-            with tempfile.TemporaryDirectory(prefix="tes3x-retail-base-",
-                                             dir=output.parent) as base_temp:
-                base_work = Path(base_temp)
-                base_tree = base_work / "deploy"
-                files, size = stage_retail_base(vanilla, base_tree, copy)
-                (base_work / MARKER).write_text(json.dumps({
-                    "schema": MARKER_SCHEMA,
-                    "profile": "TES3X retail base",
-                    "install_layout": "retail-base",
-                    "deploy_tree": "deploy",
-                }, indent=2) + "\n", encoding="utf-8")
-                print(f"\nretail base: {files} files, {size / 1048576:.1f} MB")
-                base_cmd = [sys.executable, "-m", "tes3x", "deploy", base_tree,
-                            "--config", local_path, "--remote", deploy["retail_root"]]
-                if target:
-                    base_cmd += ["--target", target["name"]]
-                if args.ask_password:
-                    base_cmd.append("--ask-password")
-                if args.deploy_agent:
-                    base_cmd.append("--agent")
-                if args.dry_run:
-                    base_cmd.append("--dry-run")
-                elif args.install_retail_base:
-                    base_cmd += ["--replace", "--verify", "size"]
-                else:
-                    base_cmd += ["--dry-run", "--require-current"]
-                print("\n== " + " ".join(str(part) for part in base_cmd), flush=True)
-                result = subprocess.run([str(part) for part in base_cmd])
-                if result.returncode == DEPLOY_CONFLICT:
-                    return DEPLOY_CONFLICT
-                if result.returncode:
-                    raise subprocess.CalledProcessError(result.returncode, base_cmd)
-
-        # The deploy tool reads the login from the config itself, keeping the password off
-        # the command line.
-        deploy_cmd = [sys.executable, "-m", "tes3x", "deploy", output / "deploy",
-                      "--config", local_path, "--remote", remote]
-        if target:
-            deploy_cmd += ["--target", target["name"]]
-        if args.ask_password:
-            deploy_cmd.append("--ask-password")
-        if args.deploy_agent:
-            deploy_cmd.append("--agent")
-        if (output / XBOX_INI).is_file():
-            deploy_cmd += ["--xbox-ini", output / XBOX_INI]
-        if args.dry_run:
-            deploy_cmd.append("--dry-run")
-        if args.deploy and args.verify_deploy != "none":
-            deploy_cmd += ["--verify", args.verify_deploy]
-        if profile.get("rules", {}).get("clear_cache_partitions", False) and args.deploy:
-            deploy_cmd.append("--clear-cache")
-        if args.replace_remote:
-            deploy_cmd.append("--replace")
-        if args.ignore_space:
-            deploy_cmd.append("--ignore-space")
-        print("\n== " + " ".join(str(part) for part in deploy_cmd), flush=True)
-        result = subprocess.run([str(part) for part in deploy_cmd])
-        if result.returncode in (DEPLOY_CONFLICT, DEPLOY_NO_SPACE):
-            return result.returncode
-        if result.returncode:
-            raise subprocess.CalledProcessError(result.returncode, deploy_cmd)
-        if args.discard_build:
-            shutil.rmtree(output)
-            print(f"discarded verified build: {output}")
+        return deploy_build(args, profile, target, deploy, local_path, remote, output,
+                            vanilla, install_layout, copy)
     return 0
 
 

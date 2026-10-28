@@ -13,7 +13,8 @@ import tes3x.paths as tes3x_paths
 from tes3x.paths import check_paths, local_config, require_paths, resource
 from tes3x.pack import write_invalidation
 from tes3x.build import materialize, plugin_masters
-from tes3x.pipeline import (PipelineError, agent_ini, agent_setting, xbox_ini_text,
+from tes3x.pipeline import (PipelineError, agent_ini, agent_setting, build_parser, engine_specs,
+                            ini_settings, instrument_plan, pack_command, xbox_ini_text,
                             copy_retail_root, link_or_copy, resolve_patch_plan, split_console,
                             sanitized_command, stage_default_xbe, stage_retail_base,
                             strip_retail_files, validate_local_config, validate_output, validate_profile)
@@ -1301,6 +1302,123 @@ class PipelinePlanTests(unittest.TestCase):
             resolve_patch_plan({'patches': {'enable': ['not-a-patch']}})
         with self.assertRaises(PipelineError):
             resolve_patch_plan({'patches': {'enable': ['mcp-140']}})
+
+
+class MainPhaseTests(unittest.TestCase):
+    def options(self, *argv):
+        return build_parser().parse_args(["profile.toml", *argv])
+
+    def test_parser_defaults_and_exclusive_deploy_modes(self):
+        args = self.options()
+        self.assertFalse(args.deploy or args.dry_run or args.check)
+        self.assertEqual(args.verify_deploy, "none")
+        with self.assertRaises(SystemExit), mock.patch("sys.stderr"):
+            self.options("--deploy", "--dry-run")
+
+    def test_instrumentation_adds_its_sources_and_needs_a_payload(self):
+        plan = {"sources": ["tes3xdiag.c"], "needs_payload": False}
+        targets = instrument_plan(plan, self.options("--profile-target", "0x10, 0x20",
+                                                     "--heap-census"))
+        self.assertEqual(targets, ["0x10", "0x20"])
+        self.assertEqual(plan["sources"], ["tes3xdiag.c", "tes3xprof.c", "tes3xheap.c"])
+        self.assertTrue(plan["needs_payload"])
+
+    def test_instrumentation_keeps_a_source_that_is_already_there(self):
+        plan = {"sources": ["tes3xdiag.c", "tes3xmem.c"], "needs_payload": False}
+        instrument_plan(plan, self.options("--mem-census"))
+        self.assertEqual(plan["sources"], ["tes3xdiag.c", "tes3xmem.c"])
+
+    def test_profiling_needs_the_diagnostics_patch(self):
+        with self.assertRaisesRegex(PipelineError, "diagnostics patch"):
+            instrument_plan({"sources": [], "needs_payload": False},
+                            self.options("--profile-target", "0x10"))
+        with self.assertRaisesRegex(PipelineError, "diagnostics patch"):
+            instrument_plan({"sources": [], "needs_payload": False},
+                            self.options("--diag-test-faults"))
+
+    def test_test_probe_adds_its_source_and_demands_the_console(self):
+        plan = {"sources": ["tes3xconsole.c"], "needs_payload": False}
+        instrument_plan(plan, self.options("--test-probe", "mcp-3"))
+        self.assertIn("tes3xtest_mcp3.c", plan["sources"])
+        with self.assertRaisesRegex(PipelineError, "needs the console patch"):
+            instrument_plan({"sources": [], "needs_payload": False},
+                            self.options("--test-probe", "mcp-3"))
+
+    def test_engine_specs_follow_the_build_options(self):
+        plan = {"needs_payload": True, "applied": ["mcp-3", "console"]}
+        args = self.options("--test-probe", "mcp-3", "--heap-census")
+        self.assertEqual(
+            engine_specs(plan, Path("hooks/x.pe"), "D", "F", "My Build", 0xABCD, args, ["0x10"]),
+            [f"payload={Path('hooks/x.pe')}", "boot-media", "drive-letters=D",
+             "save-staging=F", "title=My Build", "title-id=0000ABCD", "mcp-3", "console",
+             "test-mcp3", "profile=0x10", "heap-census"])
+        self.assertEqual(
+            engine_specs({"needs_payload": False, "applied": []}, None, "E", None, None, None,
+                         self.options(), []),
+            ["boot-media", "drive-letters=E"])
+
+    def settings(self, profile, *argv, **kwargs):
+        plan = {"applied": kwargs.pop("applied", [])}
+        return ini_settings(profile, plan, self.options(*argv), Path("."), kwargs.pop("target", None),
+                            kwargs.pop("install_layout", "full"), kwargs.pop("deploy", {}),
+                            kwargs.pop("remote", None))
+
+    def test_ini_settings_keep_profile_then_command_line_items(self):
+        items, overlay = self.settings({"ini": {"Game:Key": "1"}}, "--ini-set", "Other:Key=2")
+        self.assertEqual(items, ["Game:Key=1", "Other:Key=2"])
+        self.assertIsNone(overlay)
+
+    def test_ini_settings_scale_the_hud_and_silence_the_new_game_movie(self):
+        items, _ = self.settings({"ui": {"scale": 0.5, "widescreen_480p": True}},
+                                 applied=["ui-scale", "multiplayer"])
+        self.assertIn("Xbox:HudScale=0.500", items)
+        self.assertIn("Xbox:HudWidescreen480=1", items)
+        self.assertIn("Movies:New Game=none.bik", items)
+        items, _ = self.settings({"ini": {"Movies:New Game": "x.bik"}}, applied=["multiplayer"])
+        self.assertEqual(items.count("Movies:New Game=none.bik"), 0)
+
+    def test_overlay_settings_need_and_record_the_retail_base(self):
+        with self.assertRaisesRegex(PipelineError, "retail_root"):
+            self.settings({}, install_layout="overlay")
+        items, overlay = self.settings({}, install_layout="overlay",
+                                       deploy={"retail_root": "F:/Retail"})
+        self.assertEqual(overlay, "F:/Retail")
+        self.assertIn("Xbox:OverlayBase=F:\\Retail", items)
+
+    def test_overlay_destination_cannot_be_the_retail_root(self):
+        with self.assertRaisesRegex(PipelineError, "must be different"):
+            self.settings({}, install_layout="overlay", remote="F:\\Games\\",
+                          deploy={"retail_root": "f:/games"})
+
+    def pack(self, profile, load_order=None, **plan):
+        plan.setdefault("package_mode", "merged-bsa")
+        return [str(part) for part in pack_command(
+            "tree", "data", "ini", "staged", "archives", "store", "manifest", plan,
+            profile.get("package", {}), profile, ["A:B=1"], "F:/Games", load_order)]
+
+    def test_pack_command_carries_the_package_settings(self):
+        cmd = self.pack({"package": {"archive_only": True, "loose_assets": ["a/*", "b/*"]}},
+                        load_order=Path("order.json"), package_mode="delta-bsa")
+        self.assertEqual(cmd[3:5], ["pack", "tree"])
+        pairs = list(zip(cmd, cmd[1:]))
+        for pair in (("--load-order", "order.json"), ("--delta-archive", "tes3xmods.bsa"),
+                     ("--loose-asset", "a/*"), ("--loose-asset", "b/*"),
+                     ("--ini-set", "A:B=1"), ("--remote-root", "F:/Games")):
+            self.assertIn(pair, pairs)
+        self.assertIn("--archive-only", cmd)
+        self.assertNotIn("--no-archive", cmd)
+
+    def test_pack_command_without_an_order_or_archive(self):
+        cmd = self.pack({}, package_mode="loose")
+        self.assertIn("--no-archive", cmd)
+        self.assertNotIn("--load-order", cmd)
+        self.assertNotIn("--delta-archive", cmd)
+
+    def test_pack_command_names_loose_mods_from_the_manifest(self):
+        cmd = self.pack({"mods": [{"name": "A", "loose": True}, {"name": "B"},
+                                  {"name": "C", "loose": True, "enabled": False}]})
+        self.assertEqual(cmd[cmd.index("--manifest") + 1], "manifest")
+        self.assertEqual([cmd[i + 1] for i, part in enumerate(cmd) if part == "--loose-mod"], ["A"])
 
 
 if __name__ == '__main__':
