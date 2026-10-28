@@ -55,7 +55,7 @@ typedef struct {
 typedef struct {
     entry *e;
     u32 used, cap, bytes;
-    u32 *buckets, mask, bucket_bytes;
+    u32 *buckets, *tails, mask, bucket_bytes, max_pos;
 } index;
 
 enum { MODE_UNREAD, MODE_ON, MODE_VERIFY };
@@ -66,6 +66,12 @@ static u32 ci_loading, ci_loading_pos = NONE;
 static u32 ci_builds, ci_checks, ci_mismatches;
 static int ci_mode;
 static volatile long ci_busy;
+/* The tail and loading cell are re-keyed on every lookup. */
+typedef struct {
+    u32 node, name_hash, grid_hash, grid_filed;
+} recent_key;
+static recent_key ci_recent[2];
+static u32 ci_recent_next;
 
 static const char *id_of(u32 cell)
 {
@@ -124,12 +130,23 @@ static u32 first(index *ix, u32 hash)
 
 static void link(index *ix, u32 i)
 {
-    u32 *at = &ix->buckets[ix->e[i].hash & ix->mask];
+    u32 bucket = ix->e[i].hash & ix->mask;
+    u32 *at = &ix->buckets[bucket];
+
+    if (ix->tails[bucket] != NONE &&
+        ix->e[ix->tails[bucket]].pos <= ix->e[i].pos) {
+        ix->e[ix->tails[bucket]].next = i;
+        ix->e[i].next = NONE;
+        ix->tails[bucket] = i;
+        return;
+    }
 
     while (*at != NONE && ix->e[*at].pos <= ix->e[i].pos)
         at = &ix->e[*at].next;
     ix->e[i].next = *at;
     *at = i;
+    if (ix->e[i].next == NONE)
+        ix->tails[bucket] = i;
 }
 
 static void clear(index *ix)
@@ -137,14 +154,17 @@ static void clear(index *ix)
     u32 i;
 
     ix->used = 0;
+    ix->max_pos = NONE;
     if (ix->buckets)
-        for (i = 0; i <= ix->mask; i++)
+        for (i = 0; i <= ix->mask; i++) {
             ix->buckets[i] = NONE;
+            ix->tails[i] = NONE;
+        }
 }
 
 static int rehash(index *ix, u32 buckets)
 {
-    u32 bytes = (buckets * 4 + 0xFFFu) & ~0xFFFu, *fresh, i;
+    u32 bytes = (buckets * 8 + 0xFFFu) & ~0xFFFu, *fresh, i;
 
     fresh = (u32 *)alloc(bytes);
     if (!fresh)
@@ -152,10 +172,13 @@ static int rehash(index *ix, u32 buckets)
     if (ix->buckets)
         MmFreeSystemMemory(ix->buckets, ix->bucket_bytes);
     ix->buckets = fresh;
+    ix->tails = fresh + buckets;
     ix->bucket_bytes = bytes;
     ix->mask = buckets - 1;
-    for (i = 0; i <= ix->mask; i++)
+    for (i = 0; i <= ix->mask; i++) {
         ix->buckets[i] = NONE;
+        ix->tails[i] = NONE;
+    }
     for (i = 0; i < ix->used; i++)
         link(ix, i);
     return 1;
@@ -189,31 +212,55 @@ static int file(index *ix, u32 node, u32 hash, u32 pos)
 {
     u32 i;
 
-    for (i = first(ix, hash); i != NONE; i = ix->e[i].next)
-        if (ix->e[i].node == node && ix->e[i].hash == hash)
-            return 1;
+    /* A new list position cannot already be filed under another key. */
+    if (ix->max_pos == NONE || pos <= ix->max_pos)
+        for (i = first(ix, hash); i != NONE; i = ix->e[i].next)
+            if (ix->e[i].node == node && ix->e[i].hash == hash)
+                return 1;
     if (!reserve(ix))
         return 0;
     ix->e[ix->used].node = node;
     ix->e[ix->used].hash = hash;
     ix->e[ix->used].pos = pos;
     link(ix, ix->used++);
+    if (ix->max_pos == NONE || pos > ix->max_pos)
+        ix->max_pos = pos;
     return 1;
 }
 
 static int key(u32 node, u32 pos)
 {
-    u32 cell = AT(node, NODE_DATA);
+    u32 cell = AT(node, NODE_DATA), name, grid = 0, i;
+    int ext;
+    recent_key *recent = 0;
 
     if (!cell)
         return 1;
     if (node == ci_loading)
         ci_loading_pos = pos;
-    if (!file(&ci_names, node, name_hash(id_of(cell)), pos))
+    name = name_hash(id_of(cell));
+    ext = exterior(cell);
+    if (ext)
+        grid = grid_hash((int)AT(cell, TES3X_CELLINDEX_GRID_X),
+                         (int)AT(cell, TES3X_CELLINDEX_GRID_Y));
+    for (i = 0; i < 2; i++)
+        if (ci_recent[i].node == node) {
+            recent = &ci_recent[i];
+            break;
+        }
+    if (!recent)
+        recent = &ci_recent[ci_recent_next++ & 1];
+    if ((recent->node != node || recent->name_hash != name) &&
+        !file(&ci_names, node, name, pos))
         return 0;
-    return !exterior(cell) ||
-           file(&ci_grids, node, grid_hash((int)AT(cell, TES3X_CELLINDEX_GRID_X),
-                                           (int)AT(cell, TES3X_CELLINDEX_GRID_Y)), pos);
+    if (ext && (recent->node != node || !recent->grid_filed || recent->grid_hash != grid) &&
+        !file(&ci_grids, node, grid, pos))
+        return 0;
+    recent->node = node;
+    recent->name_hash = name;
+    recent->grid_hash = grid;
+    recent->grid_filed = ext;
+    return 1;
 }
 
 static void keep(u32 list)
@@ -235,6 +282,7 @@ static int build(u32 list)
 {
     clear(&ci_names);
     clear(&ci_grids);
+    ci_recent[0].node = ci_recent[1].node = 0;
     ci_loading_pos = NONE;
     if (!add_from(AT(list, LIST_HEAD), 0))
         return 0;
@@ -400,13 +448,19 @@ void __stdcall tes3x_cellindex_mark(void *ndd, u32 cell)
     if (__sync_lock_test_and_set(&ci_busy, 1))
         return;
     if (sync(list)) {
-        hash = name_hash(id_of(cell));
-        for (i = first(&ci_names, hash); i != NONE; i = ci_names.e[i].next)
-            if (AT(ci_names.e[i].node, NODE_DATA) == cell) {
-                node = ci_names.e[i].node;
-                pos = ci_names.e[i].pos;
-                break;
-            }
+        node = AT(list, LIST_TAIL);
+        if (node && AT(node, NODE_DATA) == cell)
+            pos = AT(list, LIST_COUNT) - 1;
+        else {
+            node = 0;
+            hash = name_hash(id_of(cell));
+            for (i = first(&ci_names, hash); i != NONE; i = ci_names.e[i].next)
+                if (AT(ci_names.e[i].node, NODE_DATA) == cell) {
+                    node = ci_names.e[i].node;
+                    pos = ci_names.e[i].pos;
+                    break;
+                }
+        }
         if (!node)
             for (node = AT(list, LIST_HEAD), pos = 0; node; node = AT(node, NODE_NEXT), pos++)
                 if (AT(node, NODE_DATA) == cell)

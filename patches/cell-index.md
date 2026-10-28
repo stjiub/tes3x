@@ -7,6 +7,8 @@ list of cells and comparing each one. It does this for every interior cell and p
 it loads and for every door's destination when it links the cells, so the work grows with the
 square of the number of cells. Retail Morrowind has a few thousand cells; with the Tamriel
 Rebuilt masters, about 9,000, these walks took about 92 s of the console's load to the main menu.
+On a 64 MB Xbox with those masters and the dialogue sort patch, the index reduced the load from
+about 196 s to 102 s.
 
 See the [patch table](../docs/patches.md) for availability and selection.
 
@@ -22,7 +24,9 @@ other way, the indexes are rebuilt; if the patch cannot get memory for them, it 
 engine's walk.
 
 The indexes take about 16 bytes per cell and per exterior cell, plus their hash tables: a few
-hundred kilobytes with the Tamriel Rebuilt masters.
+hundred kilobytes with the Tamriel Rebuilt masters. The current keys of the newest cell and the
+cell being loaded are cached so repeated lookups do not scan their hash buckets; new cells are
+appended to their buckets in list order.
 
 ## Configuration
 
