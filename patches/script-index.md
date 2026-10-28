@@ -5,7 +5,8 @@ Patch key: `script-index`
 The engine finds a script by ID by walking its whole list of scripts and comparing each one. It
 does this for every script record it loads, every global script it starts and every script
 reference it links, so the work grows with the square of the number of scripts. With the Tamriel
-Rebuilt masters these walks took about 18 s of the console's load to the main menu.
+Rebuilt masters these walks took about 18 s of the console's load to the main menu. The
+index brings that to about 0.1 s.
 
 See the [patch table](../docs/patches.md) for availability and selection.
 

@@ -61,8 +61,8 @@ No official releases yet. The first public release is in preparation.
   takes about 95 s less (196 s to 102 s) alongside `topic-sort`. See
   [the patch notes](patches/cell-index.md).
 - New patch `script-index`: scripts are found by ID from an index instead of by comparing every
-  script. With the Tamriel Rebuilt masters this removes the 18 s the walks took from the console's
-  load to the main menu. See [the patch notes](patches/script-index.md).
+  script. With the Tamriel Rebuilt masters the console's load to the main menu takes about
+  18 s less (101.7 s to 83.0 s) alongside `topic-sort` and `cell-index`. See [the patch notes](patches/script-index.md).
 - New patch `soundgen-index`: an animation's footstep and creature sound keys are matched against
   the loaded creatures instead of walking every loaded object once per key, at startup and when a
   creature's animation first loads. See [the patch notes](patches/soundgen-index.md).
