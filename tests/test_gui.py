@@ -24,7 +24,8 @@ try:
     from tes3x.gui import (InstallDialog, LocalSettingsDialog, ProfileWindow,
                            dashboard_agent_state, launch, target_capabilities,
                            target_runtime_label)
-    from tes3x.gui_pages import log_catalog, parse_clients, server_arguments
+    from tes3x.gui.server import parse_clients, server_arguments
+    from tes3x.gui.targets import log_catalog
 except ImportError:
     QApplication = None
     LocalSettingsDialog = None

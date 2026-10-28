@@ -63,7 +63,8 @@ from tes3x.records import records, subrecords
 from tes3x.deploy import PROGRESS_ENV, human as human_size, parse_drives, parse_progress
 from tes3x.agent import (AgentListener, Fetch, OP_REBOOT, console_request, is_dash,
                          key_fingerprint, load_or_create_key)
-from tes3x.gui_pages import ServerPage, TargetsPage, fetch_destination
+from tes3x.gui.server import ServerPage
+from tes3x.gui.targets import TargetsPage, fetch_destination
 import tes3x.nexus as nexus
 import tes3x.saves as saves_tool
 import tes3x.savepool as tes3x_savepool
