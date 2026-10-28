@@ -1,3 +1,5 @@
+import contextlib
+import io
 import struct
 import sys
 import tempfile
@@ -11,6 +13,7 @@ import tes3x.multi_signatures as multi_signatures
 import tes3x.prof as prof
 import tes3x.readlog as readlog
 import tes3x.scriptasm as scriptasm
+from tes3x.records import records, subrecords
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_sym_disasm import TEXT_VA, synthetic_xbe
 
@@ -101,6 +104,68 @@ class ScriptAsmTests(unittest.TestCase):
                 scriptasm.call_bytes([opcode])
 
 
+def sub(tag, value):
+    return tag + struct.pack("<I", len(value)) + value
+
+
+def scpt_esm(path, name="Main", code=b"\x01\x20\x01\x01", end=True, with_scdt=True):
+    """A one-record plugin holding a compiled script called NAME."""
+    schd = (name.encode().ljust(scriptasm.SCHD_NAME, b"\0")
+            + struct.pack("<5I", 1, 2, 3, len(code), 12))
+    body = sub(b"SCHD", schd) + sub(b"SCTX", b"begin Main\r\nend\r\n")
+    if with_scdt:
+        body += sub(b"SCDT", code if end else code[:-2])
+    Path(path).write_bytes(b"SCPT" + struct.pack("<III", len(body), 0, 7) + body)
+
+
+class ScriptAsmBuildTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.esm = Path(tmp.name) / "in.esm"
+        self.out = Path(tmp.name) / "out.esp"
+
+    def build(self, opcodes=(0x2001,), **kwargs):
+        with contextlib.redirect_stdout(io.StringIO()):
+            scriptasm.build(str(self.esm), "main", list(opcodes), str(self.out), **kwargs)
+        recs = list(records(self.out))
+        return recs, dict(subrecords(recs[1][2]))
+
+    def test_find_script_is_case_insensitive_and_refuses_a_missing_name(self):
+        scpt_esm(self.esm, name="Main")
+        flags, subs = scriptasm.find_script(str(self.esm), "MAIN")
+        self.assertEqual(flags, 7)
+        self.assertEqual([t for t, _ in subs], [b"SCHD", b"SCTX", b"SCDT"])
+        with self.assertRaises(SystemExit):
+            scriptasm.find_script(str(self.esm), "Other")
+
+    def test_build_appends_the_call_before_end_and_grows_the_size(self):
+        scpt_esm(self.esm)
+        recs, subs = self.build([0x2001, 0x3042], bytecode=b"\xAA")
+        self.assertEqual([r[0] for r in recs], [b"TES3", b"SCPT"])
+        self.assertEqual(recs[1][1], 7)
+        self.assertEqual(subs[b"SCDT"],
+                         b"\x01\x20" + b"\x01\x20\x42\x30\xAA" + scriptasm.SCRIPT_END)
+        size, local = struct.unpack_from("<II", subs[b"SCHD"], scriptasm.SCHD_NAME + 12)
+        self.assertEqual((size, local), (4 + 5, 12))
+        self.assertIn(b"appended before End", subs[b"SCTX"])
+
+    def test_build_names_the_source_master_in_the_header(self):
+        scpt_esm(self.esm)
+        recs, _ = self.build()
+        header = dict(subrecords(recs[0][2]))
+        self.assertEqual(header[b"MAST"], b"Morrowind.esm\0")
+        self.assertEqual(struct.unpack("<Q", header[b"DATA"])[0], self.esm.stat().st_size)
+
+    def test_build_refuses_a_script_without_data_or_end(self):
+        scpt_esm(self.esm, with_scdt=False)
+        with self.assertRaises(SystemExit):
+            self.build()
+        scpt_esm(self.esm, end=False)
+        with self.assertRaises(SystemExit):
+            self.build()
+
+
 class ProfilerTests(unittest.TestCase):
     RECORDS = [{"name": "Actor::update", "va": "0x00010010"},
                {"name": "Actor::render", "va": "0x00010020"},
@@ -166,6 +231,34 @@ class ProfilerTests(unittest.TestCase):
         with mock.patch("builtins.print"):
             self.assertEqual(self.read(self.block()[:-10]), [])
 
+    def report(self, data, names=None, hz=0.0):
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "prof.bin"
+            path.write_bytes(data)
+            with contextlib.redirect_stdout(out), \
+                    mock.patch.object(prof, "name_index", return_value=names or {}):
+                prof.cmd_report(mock.Mock(dump=str(path), hz=hz))
+        return out.getvalue()
+
+    def test_report_names_targets_and_lists_active_calls(self):
+        text = self.report(self.block(), {0x10000: {"name": "Actor::update"}}, hz=1e6)
+        self.assertIn("=== block 0", text)
+        self.assertIn("Actor::update", text)
+        self.assertIn("active instrumented calls at dump (1)", text)
+
+    def test_report_reads_the_older_version_without_active_calls(self):
+        text = self.report(self.block(version=1), hz=1e6)
+        self.assertIn("=== block 0", text)
+        self.assertNotIn("active instrumented", text)
+
+    def test_report_with_no_complete_block_is_refused(self):
+        with mock.patch("builtins.print"), self.assertRaises(SystemExit):
+            self.report(self.block()[:-10])
+
+    def test_ms_converts_cycles_at_the_given_rate(self):
+        self.assertEqual(prof.ms(733_000, 733e6), 1.0)
+
 
 class ReadLogTests(unittest.TestCase):
     def test_session_of_finds_the_session_marker(self):
@@ -188,6 +281,30 @@ class ReadLogTests(unittest.TestCase):
     def test_raw_logs_ignores_data_outside_the_partition(self):
         image = readlog.LOG_START + b"c\n" + b"\x00" * 100
         self.assertEqual(self.scan(image, (50, 50)), [])
+
+    def read_log(self, entry, raw):
+        with mock.patch.object(readlog, "read_file", return_value=entry), \
+                mock.patch.object(readlog, "raw_logs", return_value=raw), \
+                contextlib.redirect_stderr(io.StringIO()):
+            return readlog.read_log("img")
+
+    def test_read_log_prefers_the_longer_raw_copy_of_the_same_session(self):
+        short = readlog.LOG_START + b"diag.session 0x00000001\n"
+        longer = short + b"more\n"
+        self.assertEqual(self.read_log(short, [longer]), longer)
+
+    def test_read_log_ignores_another_session_when_the_entry_exists(self):
+        entry = readlog.LOG_START + b"diag.session 0x00000001\n"
+        other = readlog.LOG_START + b"diag.session 0x00000002\nlonger\n"
+        self.assertEqual(self.read_log(entry, [other]), entry)
+
+    def test_read_log_falls_back_to_the_fullest_raw_log_without_an_entry(self):
+        a = readlog.LOG_START + b"a\n"
+        b = readlog.LOG_START + b"bb\n"
+        self.assertEqual(self.read_log(None, [a, b]), b)
+
+    def test_read_log_returns_none_when_nothing_is_found(self):
+        self.assertIsNone(self.read_log(None, []))
 
 
 if __name__ == "__main__":
