@@ -4,6 +4,8 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- A build that includes `dev` patches warns and lists them, and `tes3x diag` names the dev
+  patches in a log's build. See [channels](docs/patch-policy.md#channels).
 - Multiplayer server: `tes3x net hash-password` writes a salted hash for `--password-file` (or,
   with `--admin`, for `admin-password.txt`) so the server's files do not hold the password
   itself; plain files still work. A new `server.key` is created readable by its owner only, and

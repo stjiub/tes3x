@@ -22,6 +22,7 @@ EXCEPTIONS = {
     0xC00000FD: "stack overflow",
 }
 PATCH_BITS = {entry["bit"]: entry["name"] for entry in registry.PATCHES if "bit" in entry}
+DEV_PATCHES = {entry["name"] for entry in registry.PATCHES if entry["channel"] == "dev"}
 
 
 def parse_value(text):
@@ -134,6 +135,10 @@ def report(records, xbe=None, show_all=False, stream=sys.stdout):
             width = 16 if mask >> 32 else 8
             print("  patches: %s (0x%0*X)" %
                   (", ".join(names) or "none", width, mask), file=stream)
+            dev = [name for name in names if name in DEV_PATCHES]
+            if dev:
+                # Read against the current table, so a patch promoted since the build is not listed.
+                print("  dev patches: %s" % ", ".join(dev), file=stream)
         if "diag.enabled" in values:
             print("  diagnostics level: %s" % values["diag.enabled"], file=stream)
         elif "entry.free_kb" in values:

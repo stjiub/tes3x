@@ -1068,6 +1068,10 @@ def main(argv=None):
     print(f"profile: {profile_name}")
     print(f"preset: {plan['preset']}")
     print("patches: " + ", ".join(["boot-media", f"drive-letters={drive}"] + plan["applied"]))
+    dev = [name for name in plan["applied"]
+           if registry.BY_NAME.get(name, {}).get("channel") == "dev"]
+    if dev:
+        print("WARNING: dev patches (unfinished, may break saves): " + ", ".join(dev))
     if profile.get("preferences"):
         print("preferences: invert_look=%s" % str(
             profile["preferences"].get("invert_look", True)).lower())

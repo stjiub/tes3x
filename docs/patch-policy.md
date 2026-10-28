@@ -24,7 +24,8 @@ Which engine fixes TES3X takes on and what each one defaults to. The fixes thems
 
 Every implemented patch starts in `dev`. Promotion to `preview` or `release` is a maintainer
 decision based on reviewed evidence. Repeated use in real games, manual checks and scripted
-game tests all count; a scripted test is not required. Evidence should cover the patch's intended
+game tests all count; a scripted test is not required. A regression moves a patch back to
+`preview` or `dev` until it is fixed. Evidence should cover the patch's intended
 use, and performance claims need measurements on an original Xbox.
 
 [Game tests](game-tests.md) provide repeatable regression checks where practical. A pass covers

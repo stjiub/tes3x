@@ -1,5 +1,6 @@
 import io
 import unittest
+from unittest import mock
 
 from tes3x.diag import PATCH_BITS, assertion_failures, parse_log, report, sessions
 from tes3x.patch import PATCH_BITS as PATCHER_BITS
@@ -59,6 +60,13 @@ class DiagnosticsTests(unittest.TestCase):
         self.assertIn("access violation", text)
         self.assertIn("write at 0xDEADBEEF", text)
         self.assertIn("console, diagnostics", text)
+
+    def test_report_names_dev_patches(self):
+        records = parse_log("1 ms diag.patches 0x000000C0\n")
+        out = io.StringIO()
+        with mock.patch("tes3x.diag.DEV_PATCHES", {"console"}):
+            report(records, stream=out)
+        self.assertIn("dev patches: console\n", out.getvalue())
 
     def test_assertions_report_failures_and_missing_runs(self):
         script = "assert a == 1\nassert b == 2\nexit\n"
