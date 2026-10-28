@@ -194,8 +194,9 @@ folder first; the game hangs if it has to create a new title's folder itself.
 | `enable` | array of strings | `[]` | Add individual patches by name. |
 | `disable` | array of strings | `[]` | Remove individual patches selected elsewhere. |
 
-`minimal` adds no optional patches. `recommended` adds release core and correctness fixes.
-`testing` also adds preview core and correctness fixes, diagnostics and the console. See
+`minimal` adds no optional patches. `recommended` adds release core, correctness and performance
+fixes, and the conveniences chosen for it ([patch policy](patch-policy.md#categories)). `testing`
+also adds the same patches at preview, diagnostics and the console. See
 [patches.md](patches.md) for patch names.
 
 Enabled mods also select the patches listed as requirements in the [mod catalog](catalog.md).

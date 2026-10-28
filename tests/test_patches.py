@@ -102,6 +102,17 @@ class RegistryTests(unittest.TestCase):
             with self.assertRaisesRegex(registry.RegistryError, 'bit must be 0-63'):
                 registry.load(path)
 
+    def test_balance_patches_are_never_recommended(self):
+        template = ('[[patch]]\nname = "x"\ntitle = "X"\ncategory = "%s"\ngroup = "Speed"\n'
+                    'channel = "dev"\nselection = "preset"\nsummary = "x"\nrecommended = true\n')
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'patches.toml'
+            path.write_text(template % 'qol', encoding='utf-8')
+            self.assertTrue(registry.recommended(registry.load(path)[0]))
+            path.write_text(template % 'balance', encoding='utf-8')
+            with self.assertRaisesRegex(registry.RegistryError, 'never recommended'):
+                registry.load(path)
+
 
 class PatchOwnershipTests(unittest.TestCase):
     def validate(self, name, before, after, edits, owners=()):

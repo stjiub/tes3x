@@ -38,7 +38,9 @@ CANDIDATE_STATUSES = {
 }
 PRIORITIES = ("high", "medium", "low", "none")
 PATCH_FIELDS = (("name", "title", "category", "group", "channel", "selection", "summary"),
-                ("bit", "source", "takes", "origin", "ini", "requires"))
+                ("bit", "source", "takes", "origin", "ini", "requires", "recommended"))
+# Categories in the recommended preset unless a patch sets recommended = false; others opt in.
+RECOMMENDED_CATEGORIES = ("core", "correctness", "performance")
 CANDIDATE_FIELDS = (("name", "origin", "status", "priority", "summary", "reason"),
                     ("category", "default", "doc"))
 
@@ -85,6 +87,13 @@ def read(path=REGISTRY, candidate_path=CANDIDATE_LIST):
         if not isinstance(requires, list) or any(not isinstance(value, str)
                                                  for value in requires):
             raise RegistryError(f"{where}: requires wants an array of patch names")
+        if "recommended" in entry:
+            if not isinstance(entry["recommended"], bool):
+                raise RegistryError(f"{where}: recommended must be true or false")
+            if entry["selection"] != "preset":
+                raise RegistryError(f"{where}: recommended applies only to preset patches")
+            if entry["recommended"] and entry["category"] == "balance":
+                raise RegistryError(f"{where}: balance patches are never recommended")
         if "bit" in entry:
             if not isinstance(entry["bit"], int) or not 0 <= entry["bit"] < 64:
                 raise RegistryError(f"{where}: bit must be 0-63")
@@ -115,6 +124,11 @@ def load(path=REGISTRY):
 
 SOURCES, PATCHES, CANDIDATES = read()
 BY_NAME = {entry["name"]: entry for entry in PATCHES}
+
+
+def recommended(entry):
+    """Whether the patch joins the recommended preset at release (and testing at preview)."""
+    return entry.get("recommended", entry["category"] in RECOMMENDED_CATEGORIES)
 
 
 def origin_text(entry):
@@ -208,7 +222,8 @@ def render_patches():
                   "| title | patch key | what it does | from | category | channel | included by |",
                   "|---|---|---|---|---|---|---|"]
         for entry in members:
-            chosen = selection.get(entry["selection"]) or presets.get(entry["name"], "By name")
+            chosen = selection.get(entry["selection"]) or presets.get(entry["name"]) \
+                or ("By name; recommended preset at release" if recommended(entry) else "By name")
             if entry["name"] == "payload":
                 chosen = "Injected-code patches or build option"
             if entry["name"] == "data-overlay":

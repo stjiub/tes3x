@@ -553,6 +553,16 @@ class PipelinePlanTests(unittest.TestCase):
                         <= set(plan['selected']))
         self.assertNotIn('mcp-154', plan['selected'])
 
+    def test_recommended_takes_performance_and_opted_in_conveniences(self):
+        import tes3x.pipeline as pipeline
+        release = {name: dict(pipeline.PATCHES[name], channel='release')
+                   for name in ('lean-menu', 'rotating-autosaves', 'bow-view', 'mcp-97')}
+        release['mcp-97']['recommended'] = False
+        with mock.patch.dict(pipeline.PATCHES, release):
+            plan = resolve_patch_plan({'patches': {'preset': 'recommended'},
+                                       'package': {'mode': 'merged-bsa'}})
+        self.assertEqual(set(plan['selected']), {'lean-menu', 'rotating-autosaves'})
+
     def test_old_preset_names_remain_compatible(self):
         standard = resolve_patch_plan({'patches': {'preset': 'standard'}})
         dev = resolve_patch_plan({'patches': {'preset': 'dev'}})
@@ -1281,7 +1291,8 @@ class PipelinePlanTests(unittest.TestCase):
         plan = resolve_patch_plan(profile)
         self.assertEqual(plan['selected'],
                          ['mcp-1', 'mcp-3', 'dialogue-merge', 'mcp-37', 'mcp-92', 'mcp-97',
-                          'mcp-98', 'mcp-102', 'mcp-123', 'mcp-125', 'dxt5-size', 'console'])
+                          'mcp-98', 'mcp-102', 'mcp-123', 'mcp-125', 'dxt5-size', 'console',
+                          'rotating-autosaves', 'transition-autosaves', 'lean-menu'])
 
     def test_pipeline_rejects_unknown_categories_and_patches(self):
         with self.assertRaises(PipelineError):

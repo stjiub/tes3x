@@ -4,6 +4,10 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- The `recommended` preset now also takes performance patches and chosen conveniences once they
+  reach `release`; `testing` takes the same ones at `preview`, so it now adds rotating and
+  transition autosaves and the low-memory main menu. See
+  [patch policy](docs/patch-policy.md#categories).
 - A build that includes `dev` patches warns and lists them, and `tes3x diag` names the dev
   patches in a log's build. See [channels](docs/patch-policy.md#channels).
 - Multiplayer server: `tes3x net hash-password` writes a salted hash for `--password-file` (or,

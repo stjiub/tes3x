@@ -9,12 +9,17 @@ Which engine fixes TES3X takes on and what each one defaults to. The fixes thems
 |---|---|---|
 | `core` | crashes, hangs, save corruption, data loss | `recommended` at release |
 | `correctness` | clear bugs in formulas, scripting, saving or display | `recommended` at release |
-| `compat` | something a particular mod needs | off |
-| `performance` | less CPU, disk or memory work | off until measured on an Xbox |
+| `compat` | something a particular mod needs | added by the mods that need it |
+| `performance` | less CPU, disk or memory work | `recommended` at release, which needs measurements on an Xbox |
 | `instrumentation` | logging, profiling, crash reports | `diagnostics` and `console` in `testing`; the rest by name |
 | `infrastructure` | the payload, networking and packaging plumbing | added by what needs it, or by name |
-| `qol` | interface and convenience changes | off |
+| `qol` | interface and convenience changes | off, unless the patch opts into `recommended` |
 | `balance` | changes to how the game plays | off, never in `recommended` |
+
+A patch's `recommended` field in `patches.toml` overrides its category's default: `false` keeps a
+fix out of the preset, and `true` adds a convenience most players would want. A patch that changes
+how the game looks, or depends on the player's setup, stays opt-in. `testing` adds the same patches
+at `preview`.
 
 ## Channels
 

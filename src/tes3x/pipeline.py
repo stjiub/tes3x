@@ -368,14 +368,12 @@ def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), pac
     selected = set()
     if preset == "recommended":
         selected.update(name for name, meta in PATCHES.items()
-                        if meta["category"] in {"core", "correctness"}
-                        and meta["channel"] == "release")
+                        if registry.recommended(meta) and meta["channel"] == "release")
         if PATCHES["console"]["channel"] == "release":
             selected.add("console")
     if preset == "testing":
         selected.update(name for name, meta in PATCHES.items()
-                        if meta["category"] in {"core", "correctness"}
-                        and meta["channel"] in {"preview", "release"})
+                        if registry.recommended(meta) and meta["channel"] in {"preview", "release"})
         for name in ("diagnostics", "console"):
             if PATCHES[name]["channel"] in {"preview", "release"}:
                 selected.add(name)

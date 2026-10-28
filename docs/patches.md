@@ -30,8 +30,8 @@ single required/not-required flag.
 |---|---|---|---|---|---|---|
 | [Script opcode extensions](../patches/script-ext.md) | `script-ext` | Add script opcodes: widen the length bounds and hook Script::RunFunction. | TES3X | compat | preview | By name; `mwse-legacy` |
 | [Legacy MWSE bytecode](../patches/mwse-legacy.md) | `mwse-legacy` | Interpret legacy MWSE 0.9.4 bytecode embedded in compiled scripts. | TES3X | compat | dev | By name |
-| [Empty pathgrid fix](../patches/mwse-pathgrid-zero.md) | `mwse-pathgrid-zero` | Stop Wander and Flee picking a node from a pathgrid that has none. | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | core | dev | By name |
-| [Enable and Disable without local variables](../patches/mwse-enable-disable-vars.md) | `mwse-enable-disable-vars` | Stop Enable and Disable crashing in a script that has no local variables. | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | core | dev | By name |
+| [Empty pathgrid fix](../patches/mwse-pathgrid-zero.md) | `mwse-pathgrid-zero` | Stop Wander and Flee picking a node from a pathgrid that has none. | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | core | dev | By name; recommended preset at release |
+| [Enable and Disable without local variables](../patches/mwse-enable-disable-vars.md) | `mwse-enable-disable-vars` | Stop Enable and Disable crashing in a script that has no local variables. | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | core | dev | By name; recommended preset at release |
 
 ## MCP fixes
 
@@ -39,28 +39,28 @@ single required/not-required flag.
 |---|---|---|---|---|---|---|
 | [Unresolvable reference cleanup](../patches/mcp-1.md) | `mcp-1` | Stop an unresolvable reference being restamped as created at runtime. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #1 | core | preview | testing preset |
 | [Unarmored damage reduction](../patches/mcp-3.md) | `mcp-3` | Apply Unarmored damage reduction when no armor is equipped. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #3 | correctness | preview | testing preset |
-| [Restore fortified attributes](../patches/mcp-6.md) | `mcp-6` | Let Restore and expiring Drain recover the active temporary Fortify amount. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #6 | correctness | dev | By name |
-| [Blind attack penalty](../patches/mcp-25.md) | `mcp-25` | Make Blind lower the player's attack chance instead of raising it. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #25 | correctness | dev | By name |
-| [Projectile aiming fix](../patches/mcp-30.md) | `mcp-30` | Correct projectile aim for scaled races and in third person. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #30 | correctness | dev | By name |
+| [Restore fortified attributes](../patches/mcp-6.md) | `mcp-6` | Let Restore and expiring Drain recover the active temporary Fortify amount. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #6 | correctness | dev | By name; recommended preset at release |
+| [Blind attack penalty](../patches/mcp-25.md) | `mcp-25` | Make Blind lower the player's attack chance instead of raising it. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #25 | correctness | dev | By name; recommended preset at release |
+| [Projectile aiming fix](../patches/mcp-30.md) | `mcp-30` | Correct projectile aim for scaled races and in third person. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #30 | correctness | dev | By name; recommended preset at release |
 | [Cell-change casting crash fix](../patches/mcp-37.md) | `mcp-37` | Cancel stale NPC casts before a cell change leaves them dangling. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #37 | core | preview | testing preset |
-| [Spell deselection fix](../patches/mcp-47.md) | `mcp-47` | Keep another actor's magic-item changes from deselecting the player's spell. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #47 | correctness | dev | By name |
-| [Level-up multiplier fix](../patches/mcp-48.md) | `mcp-48` | Show earned attribute multipliers even when they raise an attribute to 100, and avoid overlapping x3 labels. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #48 | correctness | dev | By name |
-| [Alchemy potion naming and stacking](../patches/mcp-55.md) | `mcp-55` | Keep custom potion names after Create and regroup inventory icons when alchemy closes. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #55 | correctness | dev | By name |
+| [Spell deselection fix](../patches/mcp-47.md) | `mcp-47` | Keep another actor's magic-item changes from deselecting the player's spell. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #47 | correctness | dev | By name; recommended preset at release |
+| [Level-up multiplier fix](../patches/mcp-48.md) | `mcp-48` | Show earned attribute multipliers even when they raise an attribute to 100, and avoid overlapping x3 labels. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #48 | correctness | dev | By name; recommended preset at release |
+| [Alchemy potion naming and stacking](../patches/mcp-55.md) | `mcp-55` | Keep custom potion names after Create and regroup inventory icons when alchemy closes. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #55 | correctness | dev | By name; recommended preset at release |
 | [Summoned creature crash fix](../patches/mcp-92.md) | `mcp-92` | Retire a summoned actor's magic before the actor is destroyed. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #92 | core | preview | testing preset |
-| [Book and scroll scaling fix](../patches/mcp-94.md) | `mcp-94` | Scale books, the journal and scrolls by screen height, so they fit a widescreen picture. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #94 | correctness | dev | By name; `hd-video` |
+| [Book and scroll scaling fix](../patches/mcp-94.md) | `mcp-94` | Scale books, the journal and scrolls by screen height, so they fit a widescreen picture. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #94 | correctness | dev | By name; recommended preset at release; `hd-video` |
 | [Saved-script initialization fix](../patches/mcp-97.md) | `mcp-97` | Advance the script parser correctly while initializing saved data. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #97 | core | preview | testing preset |
 | [Animated container crash fix](../patches/mcp-98.md) | `mcp-98` | Keep animated-container access from destroying a live animation. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #98 | core | preview | testing preset |
 | [Removed-mod object reactivation](../patches/mcp-102.md) | `mcp-102` | Reactivate script-triggered objects after their script mod is removed. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #102 | correctness | preview | testing preset |
-| [Airborne item drop fix](../patches/mcp-118.md) | `mcp-118` | Keep items dropped in third person while airborne near the player. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #118 | core | dev | By name |
+| [Airborne item drop fix](../patches/mcp-118.md) | `mcp-118` | Keep items dropped in third person while airborne near the player. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #118 | core | dev | By name; recommended preset at release |
 | [PlaceItem persistence](../patches/mcp-123.md) | `mcp-123` | Persist objects placed by scripts into cells the player has not visited. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #123 | core | preview | testing preset |
 | [Position actor initialization](../patches/mcp-125.md) | `mcp-125` | Initialize scripts and collision for actors moved by Position or PositionCell. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #125 | core | preview | testing preset |
 | [World map texture independence](../patches/mcp-127.md) | `mcp-127` | Keep replacement land textures from changing the world map panel size. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #127 | compat | dev | By name |
 | [Improved animation support](../patches/mcp-132.md) | `mcp-132` | Play scripted animations across NPC body layers, support extra bones and animate the player. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #132 | compat | dev | By name; `cant-touch-this` |
-| [Nocked arrow removal](../patches/mcp-146.md) | `mcp-146` | Remove a fully nocked arrow with the Ready Weapon control. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #146 | qol | dev | By name |
-| [Safe corpse disposal](../patches/mcp-149.md) | `mcp-149` | Keep corpse disposal unavailable until an actor finishes dying. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #149 | core | dev | By name |
-| [Script data overread fix](../patches/mcp-154.md) | `mcp-154` | Pad compiled script-data allocations to keep dword reads in bounds. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #154 | core | dev | By name |
-| [RemoveItem weight fix](../patches/mcp-160.md) | `mcp-160` | Reduce encumbrance for a removed item only when the item is actually in the inventory. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #160 | correctness | dev | By name |
-| [NPC faction rank persistence](../patches/mcp-173.md) | `mcp-173` | Save an NPC's faction rank after RaiseRank or LowerRank changes it. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #173 | core | dev | By name |
+| [Nocked arrow removal](../patches/mcp-146.md) | `mcp-146` | Remove a fully nocked arrow with the Ready Weapon control. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #146 | qol | dev | By name; recommended preset at release |
+| [Safe corpse disposal](../patches/mcp-149.md) | `mcp-149` | Keep corpse disposal unavailable until an actor finishes dying. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #149 | core | dev | By name; recommended preset at release |
+| [Script data overread fix](../patches/mcp-154.md) | `mcp-154` | Pad compiled script-data allocations to keep dword reads in bounds. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #154 | core | dev | By name; recommended preset at release |
+| [RemoveItem weight fix](../patches/mcp-160.md) | `mcp-160` | Reduce encumbrance for a removed item only when the item is actually in the inventory. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #160 | correctness | dev | By name; recommended preset at release |
+| [NPC faction rank persistence](../patches/mcp-173.md) | `mcp-173` | Save an NPC's faction rank after RaiseRank or LowerRank changes it. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #173 | core | dev | By name; recommended preset at release |
 
 ## Memory
 
@@ -81,25 +81,25 @@ single required/not-required flag.
 
 | title | patch key | what it does | from | category | channel | included by |
 |---|---|---|---|---|---|---|
-| [Save and load without forced sleeps](../patches/loop-sleeps.md) | `loop-sleeps` | Yield instead of sleeping 1 ms every 16-128 objects in the save and load walks. | TES3X | performance | dev | By name |
-| [Indexed reference lookup at global script start](../patches/ref-index.md) | `ref-index` | Find the references global scripts name from one pass over the cells, not one per name. | TES3X | performance | dev | By name; `npc-arena` |
-| [Creature list for animation sound keys](../patches/soundgen-index.md) | `soundgen-index` | Match an animation's footstep and voice keys against the creatures, not every loaded object. | TES3X | performance | dev | By name; `npc-arena` |
-| [Single-pass topic sort at load](../patches/topic-sort.md) | `topic-sort` | Sort the dialogue topics by name length once at load, instead of with repeated bubble passes. | TES3X | performance | dev | By name |
-| [Indexed cell lookup by name](../patches/cell-index.md) | `cell-index` | Find a cell by name from a hash index instead of comparing the name of every cell. | TES3X | performance | dev | By name |
-| [Low-memory main menu](../patches/lean-menu.md) | `lean-menu` | Load only game settings for the main menu; New Game and Load relaunch and load the rest. | TES3X | performance | preview | By name |
-| [Direct response topic lookup](../patches/dialogue-owner.md) | `dialogue-owner` | Find a response's topic directly instead of searching every topic's responses. | TES3X | performance | dev | By name |
+| [Save and load without forced sleeps](../patches/loop-sleeps.md) | `loop-sleeps` | Yield instead of sleeping 1 ms every 16-128 objects in the save and load walks. | TES3X | performance | dev | By name; recommended preset at release |
+| [Indexed reference lookup at global script start](../patches/ref-index.md) | `ref-index` | Find the references global scripts name from one pass over the cells, not one per name. | TES3X | performance | dev | By name; recommended preset at release; `npc-arena` |
+| [Creature list for animation sound keys](../patches/soundgen-index.md) | `soundgen-index` | Match an animation's footstep and voice keys against the creatures, not every loaded object. | TES3X | performance | dev | By name; recommended preset at release; `npc-arena` |
+| [Single-pass topic sort at load](../patches/topic-sort.md) | `topic-sort` | Sort the dialogue topics by name length once at load, instead of with repeated bubble passes. | TES3X | performance | dev | By name; recommended preset at release |
+| [Indexed cell lookup by name](../patches/cell-index.md) | `cell-index` | Find a cell by name from a hash index instead of comparing the name of every cell. | TES3X | performance | dev | By name; recommended preset at release |
+| [Low-memory main menu](../patches/lean-menu.md) | `lean-menu` | Load only game settings for the main menu; New Game and Load relaunch and load the rest. | TES3X | performance | preview | testing preset |
+| [Direct response topic lookup](../patches/dialogue-owner.md) | `dialogue-owner` | Find a response's topic directly instead of searching every topic's responses. | TES3X | performance | dev | By name; recommended preset at release |
 
 ## Interface and saves
 
 | title | patch key | what it does | from | category | channel | included by |
 |---|---|---|---|---|---|---|
 | [Build-selected player preferences](../patches/build-preferences.md) | `build-preferences` | Apply profile-selected player preferences after stored Xbox options load. | TES3X | qol | preview | Build option |
-| [Rotating autosaves](../patches/rotating-autosaves.md) | `rotating-autosaves` | Rotate automatic saves through INI-configurable slots. | [OpenMW](https://openmw.org) | qol | preview | By name |
-| [Transition autosaves](../patches/transition-autosaves.md) | `transition-autosaves` | Autosave before doors, scripted teleports, interventions and paid travel. | TES3X | qol | preview | By name |
+| [Rotating autosaves](../patches/rotating-autosaves.md) | `rotating-autosaves` | Rotate automatic saves through INI-configurable slots. | [OpenMW](https://openmw.org) | qol | preview | testing preset |
+| [Transition autosaves](../patches/transition-autosaves.md) | `transition-autosaves` | Autosave before doors, scripted teleports, interventions and paid travel. | TES3X | qol | preview | testing preset |
 | [Lowered first-person bow](../patches/bow-view.md) | `bow-view` | Lower the first-person bow and arms while an arrow is nocked. | TES3X | qol | dev | By name |
 | [HD video output](../patches/hd-video.md) | `hd-video` | Follow the dashboard's HDTV settings: 720p when enabled, otherwise the retail 480p or 480i. | TES3X | qol | dev | By name |
 | [Extended tooltips](../patches/extended-tooltips.md) | `extended-tooltips` | Warn before stealing and show ownership and selected item details in menus. | TES3X | qol | dev | By name |
-| [Read topic colors](../patches/topic-colors.md) | `topic-colors` | Show dialogue topics whose current response you have already read in a different color. | TES3X | qol | dev | By name |
+| [Read topic colors](../patches/topic-colors.md) | `topic-colors` | Show dialogue topics whose current response you have already read in a different color. | TES3X | qol | dev | By name; recommended preset at release |
 | [UI scaling](../patches/ui-scale.md) | `ui-scale` | Scale text, fixed HUD art and common menu panels, with optional 480p widescreen correction. | TES3X | qol | dev | Build option |
 | [Clear video memory at boot](../patches/boot-clear.md) | `boot-clear` | Clear the screen before the first frame, so a boot without the retail launcher does not flash green lines. | TES3X | qol | dev | By name; `dash-button`, `multiplayer` |
 | [Main menu still](../patches/menu-still.md) | `menu-still` | Show a still image behind the main menu instead of playing the logo movie. | TES3X | qol | dev | By name; `dash-button`, `multiplayer` |

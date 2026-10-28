@@ -15,6 +15,8 @@
 #              packaging - chosen by the package mode
 #              preset    - by preset, or by name in a profile's enable/disable
 #              option    - by a command-line option or research use only
+# recommended  true or false: whether a preset patch joins the recommended preset at release
+#            (testing at preview); defaults to true for core, correctness and performance
 # source     payload C file the patch needs, if any
 # requires   other patch keys this patch turns on first
 # takes      the value it needs, as NAME=VALUE
@@ -380,6 +382,7 @@ category = "qol"
 group = "MCP fixes"
 channel = "dev"
 selection = "preset"
+recommended = true
 source = "tes3xmcp146.c"
 summary = "Remove a fully nocked arrow with the Ready Weapon control."
 
@@ -592,6 +595,7 @@ category = "qol"
 group = "Interface and saves"
 channel = "preview"
 selection = "preset"
+recommended = true
 source = "tes3xsaves.c"
 ini = { RotatingAutosaves = "1", AutosaveSlots = "3" }
 summary = "Rotate automatic saves through INI-configurable slots."
@@ -604,6 +608,7 @@ category = "qol"
 group = "Interface and saves"
 channel = "preview"
 selection = "preset"
+recommended = true
 source = "tes3xsaves.c"
 ini = { TransitionAutosaves = "1" }
 summary = "Autosave before doors, scripted teleports, interventions and paid travel."
@@ -673,6 +678,7 @@ category = "qol"
 group = "Interface and saves"
 channel = "dev"
 selection = "preset"
+recommended = true
 source = "tes3xtopiccolor.c"
 summary = "Show dialogue topics whose current response you have already read in a different color."
 
