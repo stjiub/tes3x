@@ -1946,6 +1946,13 @@
       "signature": "TES3::Reference* __thiscall findClosestMarker(TES3::Object* marker)"
     },
     {
+      "va": "0x000DB570",
+      "name": "DataHandler::waitForCellLoader_",
+      "confidence": "guess",
+      "provenance": "cellwalk hw3/hw7 2026-10-28: 870 ms per boundary crossing without preload",
+      "note": "Blocking barrier: raises the loader thread priority, shows a loading menu and loops Sleep(100) until DataHandler+0xB511 clears. Called before the exterior grid shifts (updateCellThreadLoader 0x000E276B/0x000E23D1, changeToExterior). ~0 ms when preload finished, ~870 ms on a teleport."
+    },
+    {
       "va": "0x000DB950",
       "name": "DataHandler::onPlayerDeath",
       "confidence": "guess",
@@ -2014,6 +2021,13 @@
       "name": "DataHandler::startCellLoaderThread_",
       "confidence": "guess",
       "provenance": "engine-map step 3: reads General/ThreadSleepTime, CreateThread(0xDEF10), handle at +0xB504, then resumes it"
+    },
+    {
+      "va": "0x000E0F50",
+      "name": "DataHandler::loadGridCellSync_",
+      "confidence": "guess",
+      "provenance": "cellwalk hw5 2026-10-28: ~660 ms per call with DontThreadLoad=1",
+      "note": "Loads one exterior grid cell into the 3x3 active ring if its slot is not already state 1: loadReferences, land, scene build, node updates. Cheap (~21 ms) when the loader thread already built the cell."
     },
     {
       "va": "0x000E1270",

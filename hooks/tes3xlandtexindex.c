@@ -92,7 +92,7 @@ static int add(u32 node, u32 count)
 
 static int rebuild(u32 list)
 {
-    u32 node, max = 0, bytes, cap;
+    u32 node, max = 0, bytes, cap, n;
     u32 *fresh;
 
     for (node = AT(list, LIST_HEAD); node; node = AT(node, NODE_NEXT)) {
@@ -107,6 +107,8 @@ static int rebuild(u32 list)
     fresh = MmAllocateSystemMemory(bytes, PAGE_READWRITE);
     if (!fresh)
         return 0;
+    for (n = 0; n < cap; n++)
+        fresh[n] = 0;
     if (lt_tab)
         MmFreeSystemMemory(lt_tab, lt_bytes);
     lt_tab = fresh;
