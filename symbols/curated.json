@@ -2876,6 +2876,12 @@
       "pc_va": "0x004A9F00"
     },
     {
+      "va": "0x000F7F40",
+      "name": "Spell::getAutoCalc",
+      "confidence": "matched",
+      "provenance": "vtable slot 0xE8 returns spell flags +0xF4 bit 0 (flag 1 = auto calculate; bit 1 PC start, bit 2 always succeeds)"
+    },
+    {
       "va": "0x000F7F70",
       "name": "Effect::calculateCost",
       "kind": "function",
@@ -3632,6 +3638,12 @@
       "pc_va": "0x004B8B20"
     },
     {
+      "va": "0x00104310",
+      "name": "NonDynamicData::getSkill?",
+      "confidence": "guess",
+      "provenance": "this+0x58+i*0x34 for 0..26 (27 skill entries), else null; used by NPC::autoCalculate? on the data handler"
+    },
+    {
       "va": "0x00104360",
       "name": "NonDynamicData::findDialogue",
       "kind": "function",
@@ -4288,6 +4300,13 @@
       "signature": "void __thiscall setClass(const char* id)"
     },
     {
+      "va": "0x0011EB70",
+      "name": "NPC::autoCalculate?",
+      "confidence": "guess",
+      "provenance": "loadprof-autocalc-hw1; decompile 2026-10-28",
+      "note": "Auto-calculated NPC stats, then spells: walks the whole spell list (Spell nodes chain at +0x20; Collection head +4) per NPC, 5.6 s exclusive over 6,506 NPCs on full TR. Rejects early on Spell::getAutoCalc, cost*factor > magicka (NPC+0xA4), effect skill/attribute below GMST minimum. spell-autocalc-index filters those from a table."
+    },
+    {
       "va": "0x0011F710",
       "name": "NPCInstance::saveRecordSpecific",
       "confidence": "guess",
@@ -4806,6 +4825,18 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_ReferenceList_remove",
       "pc_va": "0x004F19A0"
+    },
+    {
+      "va": "0x00131540",
+      "name": "Collection::getNext?",
+      "confidence": "guess",
+      "provenance": "returns [node+0x20]"
+    },
+    {
+      "va": "0x00131550",
+      "name": "Collection::getFirst?",
+      "confidence": "guess",
+      "provenance": "returns [this+4]; objects chain at +0x20 via 0x131540"
     },
     {
       "va": "0x001316C0",

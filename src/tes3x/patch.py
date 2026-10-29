@@ -70,7 +70,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_mob_gate, find_preferences_load, find_ref_index,
                                find_soundgen_index, find_topic_sort, find_cell_index,
                                find_script_index, find_local_var_index, find_load_from_file,
-                               find_land_tex_index,
+                               find_load_passes, find_land_tex_index, find_autocalc_index,
                                find_ref_load, find_ref_skip, find_run_function,
                                find_save_allowed_context, find_save_this_ptr,
                                find_script_decode_state, find_script_fixup_call,
@@ -848,6 +848,22 @@ def _land_tex_index(x, value, ctx):
 
 
 @patch("vtprof")
+@patch("spell-autocalc-index")
+def _spell_autocalc_index(x, value, ctx):
+    """Hand NPC spell auto-calculation only the spells it can pick."""
+    hooks = ctx.get("hooks", {})
+    if not all(hooks.get(k) for k in ("acalc_first", "acalc_next")):
+        raise PatchError("spell-autocalc-index: needs `payload` first, with acalc_first and "
+                         "acalc_next hooks in its manifest")
+    sites = find_autocalc_index(x)
+    edits = []
+    for name, key in (("first", "acalc_first"), ("next", "acalc_next")):
+        was, off = x.patch_call(sites[name], int(str(hooks[key]), 16))
+        edits.append((off, 5, "spell walk %s call 0x%08X: 0x%08X -> %s" %
+                      (name, sites[name], was, hooks[key])))
+    return edits
+
+
 def _vtprof(x, value, ctx):
     """Time loadFromFile's per-type load call, binned by vtable."""
     hook = ctx.get("hooks", {}).get("vtprof")
@@ -857,7 +873,15 @@ def _vtprof(x, value, ctx):
     hook = int(str(hook), 16)
     off = x.va_to_off(entry)
     x.data[off:off + 5] = b"\xe9" + struct.pack("<i", hook - (entry + 5))
-    return [(off, 5, "loadFromFile 0x%08X -> 0x%08X" % (entry, hook))]
+    edits = [(off, 5, "loadFromFile 0x%08X -> 0x%08X" % (entry, hook))]
+    passes = find_load_passes(x)
+    for name, key in (("one", "vtprof_pass1"), ("two", "vtprof_pass2")):
+        stub = int(str(ctx["hooks"][key]), 16)
+        site = passes[name]
+        off = x.va_to_off(site)
+        x.data[off:off + 6] = b"\xe8" + struct.pack("<i", stub - (site + 5)) + b"\x90"
+        edits.append((off, 6, "object pass %s 0x%08X -> 0x%08X" % (name, site, stub)))
+    return edits
 
 
 @patch("bow-view")
@@ -1337,7 +1361,30 @@ def _test_mcp102(x, value, ctx):
              (site, was, target))]
 
 
-@test_patch("test-dialoguemerge", "Count a topic's responses for the dialogue-merge game test.")
+@test_patch("test-filebuf", "Set the plugin file read buffer size in KB (retail 10).")
+def _test_filebuf(x, value, ctx):
+    try:
+        kb = int(value)
+    except (TypeError, ValueError):
+        raise PatchError("test-filebuf: want a size in KB, got %r" % (value,)) from None
+    if not 1 <= kb <= 1024:
+        raise PatchError("test-filebuf: want 1..1024 KB, got %d" % kb)
+    hits = list(re.finditer(rb"\xc7\x05(....)\x00\x01\x00\x00\xe8", bytes(x.data), re.S))
+    glob = set()
+    for h in hits:
+        va = struct.unpack("<I", h.group(1))[0]
+        off = x.va_to_off(va)
+        if off is not None and struct.unpack("<I", x.data[off:off + 4])[0] == 10240:
+            glob.add(va)
+    if len(glob) != 1:
+        raise PatchError("test-filebuf: %d buffer size global(s), expected 1" % len(glob))
+    va = glob.pop()
+    off = x.va_to_off(va)
+    x.data[off:off + 4] = struct.pack("<I", kb * 1024)
+    return [(off, 4, "file buffer 0x%08X: 10240 -> %d" % (va, kb * 1024))]
+
+
+@test_patch("test-dialoguemerge","Count a topic's responses for the dialogue-merge game test.")
 def _test_dialoguemerge(x, value, ctx):
     if not ctx.get("hooks", {}).get("dialmerge_test"):
         raise PatchError("test-dialoguemerge: payload has no dialogue-merge test command")
@@ -2274,7 +2321,9 @@ __all__ = [
     'heap_new_site',
     'heap_pool_site',
     'heap_wrapper_sites',
+    'find_load_passes',
     'main',
+    'find_autocalc_index',
     'patch',
     'retail_digest',
     'scene_form',

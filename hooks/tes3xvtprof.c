@@ -22,10 +22,11 @@
 #error "define TES3X_VTPROF_CHANGED to the file check loadFromFile ends with"
 #endif
 
-#define VT_BINS 64u
+#define VT_BINS 256u
 #define VT_LOAD 4u
 #define VT_MODIFIED 0x14u
 #define OBJ_FLAGS 8u
+#define VT_RESOLVE 0xE0u
 
 typedef u32(__attribute__((thiscall)) *fn_load)(void *obj, void *file);
 typedef void(__attribute__((thiscall)) *fn_file)(void *obj, void *arg);
@@ -84,6 +85,34 @@ u32 __stdcall tes3x_vtprof_load(void *object, void *file)
         ((fn_file)(*(u32 **)object)[VT_MODIFIED / 4])(object, (void *)1);
     return ok;
 }
+
+/* The two object passes of loadAllFiles call slot 0xE0 of each object's vtable with the data
+ * handler. They are binned under the vtable pointer with the pass number (1 or 2) in its low
+ * bits. */
+void __stdcall tes3x_vtprof_pass(void *object, void *arg, u32 pass)
+{
+    u32 *vt = *(u32 **)object;
+    u64 t0 = vt_tsc();
+
+    ((fn_file)vt[VT_RESOLVE / 4])(object, arg);
+    vt_add((u32)vt | pass, vt_tsc() - t0);
+}
+
+/* Entered by call in place of `call [vtable+0xE0]`: the object is in ECX and the argument is on
+ * the stack, which the callee pops. */
+#define PASS_STUB(name, pass)                                                                    \
+    __attribute__((naked)) void name(void)                                                      \
+    {                                                                                            \
+        __asm__ volatile("movl 4(%esp), %eax\n\t"                                               \
+                         "pushl $" #pass "\n\t"                                                  \
+                         "pushl %eax\n\t"                                                        \
+                         "pushl %ecx\n\t"                                                        \
+                         "call _tes3x_vtprof_pass@12\n\t"                                        \
+                         "ret $4\n\t");                                                          \
+    }
+
+PASS_STUB(tes3x_vtprof_pass1, 1)
+PASS_STUB(tes3x_vtprof_pass2, 2)
 
 void tes3x_vtprof_dump(void)
 {

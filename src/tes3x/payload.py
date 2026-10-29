@@ -1422,6 +1422,17 @@ def _bind_vtprof(b):
 @binder("tes3xbowview.c")
 def _bind_bowview(b):
     image, define, locate, wanted = b.image, b.define, b.locate, b.wanted
+@binder("tes3xautocalcindex.c")
+def _bind_autocalcindex(b):
+    define, wanted = b.define, b.wanted
+    found = b.locate("spell-autocalc-index")
+    print(f"spell-autocalc-index: spell walk {hexva(found['first'])} / {hexva(found['next'])}, "
+          f"effect flags {hexva(found['effects'])}")
+    define("ACALC_EFFECTS", hexva(found["effects"]))
+    wanted["acalc_first"] = ("_tes3x_acalc_first_hook",)
+    wanted["acalc_next"] = ("_tes3x_acalc_next_hook",)
+
+
     site = locate("bow-view")
     update = tes3x_inject.call_target(image, site)
     print(f"bow-view hook: transform call {hexva(site)}, update {hexva(update)}")
@@ -1432,6 +1443,8 @@ def _bind_bowview(b):
 @binder("tes3xvideo.c")
 def _bind_video(b):
     image, define, locate, wanted = b.image, b.define, b.locate, b.wanted
+    wanted["vtprof_pass1"] = ("_tes3x_vtprof_pass1",)
+    wanted["vtprof_pass2"] = ("_tes3x_vtprof_pass2",)
     renderer_site, create_site, count, enum = locate("hd-video")
     renderer = tes3x_inject.call_target(image, renderer_site)
     create = tes3x_inject.call_target(image, create_site)

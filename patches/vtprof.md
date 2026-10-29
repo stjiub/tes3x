@@ -15,3 +15,7 @@ two cycle-counter reads. It keeps the calls and cycles per vtable pointer, which
 record type. Use it with the [function profiler](profile.md): each dump also logs one `vtprof.bin`
 line per vtable to `E:\tes3xlog.txt` with the vtable address, the calls and the cycles in units of
 1024. Name a vtable with `tes3x sym`.
+
+The patch also times the engine's two passes over every loaded object after the records are read,
+which call a per-type resolve step. Their lines carry the vtable pointer plus the pass number (1 or
+2) in its low bits.

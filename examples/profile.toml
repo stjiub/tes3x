@@ -34,6 +34,7 @@ enable = [
     # "script-index",          # performance: find scripts by ID from an index
     # "local-var-index",       # performance: resolve dialogue script-variable filters from an index
     # "land-tex-index",       # performance: resolve landscape texture indices from an index
+    # "spell-autocalc-index", # performance: index spells for NPC auto-calculation
     # "vtprof",                # instrumentation: time each record type's load
     # "mcp-1",                # core: stop an unresolvable reference being restamped as created at runtime
     # "mcp-3",                 # correctness: apply Unarmored reduction with no armor equipped

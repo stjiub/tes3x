@@ -116,6 +116,12 @@ Only pages the heap actually uses consume memory, so a large value costs address
 |---|---|---|
 | `LandTexIndex` | `on` or `verify` | `on`; `verify` also runs the engine's own walk on every lookup and logs `landtex.mismatch` when the answers differ |
 
+## `spell-autocalc-index`
+
+| key | values | default |
+|---|---|---|
+| `AutoCalcIndex` | `on`, `verify` or `off` | `on`; `verify` also checks every table record against its spell and logs `acalc.mismatch` when they differ; `off` leaves the engine's walk |
+
 ## `bow-view`
 
 | key | values | default |

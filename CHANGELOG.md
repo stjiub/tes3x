@@ -78,6 +78,10 @@ No official releases yet. The first public release is in preparation.
 - New patch `soundgen-index`: an animation's footstep and creature sound keys are matched against
   the loaded creatures instead of walking every loaded object once per key, at startup and when a
   creature's animation first loads. See [the patch notes](patches/soundgen-index.md).
+- New patch `spell-autocalc-index`: an NPC's spell auto-calculation steps through only the spells
+  the NPC can afford and has the skills for, instead of every spell in the game. With Tamriel
+  Rebuilt the console's load to the main menu takes about 4 s less. See
+  [the patch notes](patches/spell-autocalc-index.md).
 - `video-arena`: `[Xbox] VideoMemoryKB` now also shrinks the texture and vertex buffer arena,
   down to 1,024 KB, on a 64 MB console as well as on 128 MB. It still grows the arena only with
   more than 64 MB. Textures and vertex buffers that do not fit in the arena are packed together

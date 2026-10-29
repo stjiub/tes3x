@@ -180,6 +180,17 @@ ini = { LandTexIndex = "on" }
 summary = "Resolve a landscape record's texture indices from an index instead of building and walking lists for every record."
 
 [[patch]]
+name = "spell-autocalc-index"
+title = "Indexed NPC spell auto-calculation"
+category = "performance"
+group = "Speed"
+channel = "dev"
+selection = "preset"
+source = "tes3xautocalcindex.c"
+ini = { AutoCalcIndex = "on" }
+summary = "Give NPC spell auto-calculation only the spells it can pick instead of every spell in the game."
+
+[[patch]]
 name = "title"
 title = "Dashboard title"
 category = "infrastructure"

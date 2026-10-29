@@ -997,6 +997,59 @@ def find_dxt5_size(x):
     va = x.off_to_va(hits[0].start("site"))
     if va is None:
         raise PatchError("dxt5-size: texture size call is outside any section")
+# loadAllFiles' two loops over the object list that call slot 0xE0 with the data handler.
+LOAD_PASS_SIG = re.compile(
+    rb"\x8b\x17\x56\x8b\xcf(?P<one>\xff\x92\xe0\x00\x00\x00)\x8b\xcf\xe8....\x8b\xf8\x85\xff\x75."
+    rb".{0,64}?\x8b\x07\x83\xc4\x04\x56\x8b\xcf(?P<two>\xff\x90\xe0\x00\x00\x00)\x8b\xcf\xe8",
+    re.S,
+)
+
+
+def find_load_passes(x):
+    """The two `call [vtable+0xE0]` sites of loadAllFiles' object passes."""
+    hits = list(LOAD_PASS_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("vtprof: %d object pass site pair(s), expected 1" % len(hits))
+    hit = hits[0]
+    sites = [x.off_to_va(hit.start(name)) for name in ("one", "two")]
+    if None in sites:
+        raise PatchError("vtprof: the object passes are outside any section")
+    return {"one": sites[0], "two": sites[1]}
+
+
+# NPC spell auto-calculation: the call fetching the spell list's first spell and the call
+# fetching each next one.
+AUTOCALC_SIG = re.compile(
+    rb"\x8b\x15....\x8b\x02\x8b\x70\x1c\x8b\xce\x89\x74\x24\x38(?P<first>\xe8....)"
+    rb"\x3b\xc3\x0f\x84.{4}.{0,40}?\x50\x8b\xce\x89\x7c\x24\x20(?P<next>\xe8....)"
+    rb"\x8b\x57\x08\xc1\xea\x05\xf6\xc2\x01",
+    re.S,
+)
+
+
+AUTOCALC_EFFECTS_SIG = re.compile(
+    rb"\x0f\xbf\xc9\x8b\x0c\x8d(?P<table>....)\xf6\xc1\x02\xb2\x01\x74."
+    rb"\x0f\xbe\x48\x03",
+    re.S,
+)
+
+
+def find_autocalc_index(x):
+    """The two calls of the NPC spell auto-calculation that fetch the first and the next spell."""
+    hits = list(AUTOCALC_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("spell-autocalc-index: %d spell walk(s), expected 1" % len(hits))
+    hit = hits[0]
+    sites = [x.off_to_va(hit.start(name)) for name in ("first", "next")]
+    if None in sites:
+        raise PatchError("spell-autocalc-index: the spell walk is outside any section")
+    table = AUTOCALC_EFFECTS_SIG.search(bytes(x.data), hit.end())
+    if not table:
+        raise PatchError("spell-autocalc-index: effect flags table not found")
+    return {"first": sites[0], "next": sites[1],
+            "effects": struct.unpack("<I", table.group("table"))[0]}
+
+
     return va
 
 
@@ -3280,6 +3333,8 @@ LOCATORS = {
     "ini-path": find_ini_path,
     "heap-allocate": lambda image: find_heap_function(image, "allocate")[0],
     "heap-free": lambda image: find_heap_function(image, "free")[0],
+    "vtprof-passes": find_load_passes,
+    "spell-autocalc-index": find_autocalc_index,
     "heap-object": find_heap_object,
     "heap-region": find_heap_region,
     "heap-region-malloc": lambda image: find_heap_region_sites(image)[0],

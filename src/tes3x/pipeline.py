@@ -907,6 +907,8 @@ def build_parser():
                          "crash`, which stall the update loop and fault on purpose. Test only")
     ap.add_argument("--test-probe", choices=("mcp-3", "mcp-47", "mcp-55", "mcp-97", "mcp-102", "mcp-118", "mcp-132", "dialogue-merge", "dialogue-owner", "lazy-dialogue", "ctt"),
                     help="add a game-test-only trace hook for this patch")
+    ap.add_argument("--file-buffer", type=int, metavar="KB",
+                    help="set the plugin file read buffer (retail 10 KB). Instrumentation only")
     ap.add_argument("--hardlink", action=argparse.BooleanOptionalAction,
                     help="hardlink unchanged retail files into the build instead of copying "
                          "them, where the volume allows (default: paths.hardlink_retail)")
@@ -1031,6 +1033,8 @@ def engine_specs(plan, payload, drive, save_staging, title, pool, args, prof_tar
     patch_specs.extend(plan["applied"])
     if args.test_probe:
         patch_specs.append("test-" + args.test_probe.replace("-", ""))
+    if args.file_buffer:
+        patch_specs.append(f"test-filebuf={args.file_buffer}")
     if prof_targets:
         patch_specs.append("profile=" + ",".join(prof_targets))
     if args.heap_census:

@@ -1,6 +1,7 @@
 {
   "header_format": 2,
   "layout": {
+    "ACALC_EFFECTS": null,
     "ANIM_VIRTUAL_PLAY_ENTRY": null,
     "ANIM_VIRTUAL_PLAY_RESUME": null,
     "ARCHIVE_LOAD": null,
@@ -514,6 +515,10 @@
       "digest": "3612480cef98ff9d4a993ce95a77f6a301e9e819dba009937a88e73d580ef21d",
       "sha256": "19b8781df821c57bb8a0580cacc8788ab7d77c801d9a1f561151ae86d65fabe9"
     },
+    "tes3xautocalcindex.c": {
+      "digest": "e076bf27a462f3861916cd4997b6b1eb65cc2055e0b1645febde286fd02b25a0",
+      "sha256": "2041d619bf504d7288b6c7db0cf0600073d1f09495e8dcbcef7611f18f8e9d0f"
+    },
     "tes3xbootclear.c": {
       "digest": "c436dc40a0f5af59f8c5a5612722e5bfa68e48c51423c32edad9d025e577b885",
       "sha256": "cca5c8185cebf78ade81545b71d2c759bfe38916bf54cdb5ea676e99593dee71"
@@ -771,8 +776,8 @@
       "sha256": "19787651ed2c853930de90d617c9d7c86aa4411c3cb35396560e7bbe205398de"
     },
     "tes3xvtprof.c": {
-      "digest": "71716543a35dfd11cf38ccafab9ee1ac8110d5362caec01f9ac918a5f0651aad",
-      "sha256": "48500acd7d042795e7ca5b295912c1970fb5a185e4d494516d4e3641503cd0c8"
+      "digest": "2177671348eda3a1d50df2a0c4350f9e952a50b80176c63a461966be80f061af",
+      "sha256": "b48d266b38db5836646773fa6862a14aebd1eec62a9e613f7c18d474a6449aa5"
     }
   },
   "schema": 1
