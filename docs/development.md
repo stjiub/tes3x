@@ -115,7 +115,9 @@ PySide6's unused CMake object files are left out, and the build fails if a path,
 
 The `portable` workflow (`.github/workflows/portable.yml`) builds the zip on Windows when run from
 the Actions tab or for a `vX.Y.Z` tag, unpacks it and checks it, and keeps it as the run's
-artifact. It has no nxdk, so its zip has no TES3X Dash.
+artifact, with the Dash's two XBEs as a second artifact. It builds nxdk at a pinned commit, so
+the zip includes TES3X Dash. It does not sign: the release key stays off GitHub, and
+`tes3x release dash` runs locally on the downloaded XBEs.
 
 ## Releases
 

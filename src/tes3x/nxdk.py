@@ -5,7 +5,8 @@ nxdk's Makefile writes objects beside the sources, so the sources are copied to 
 the payload's sources (hooks/) beside it, for a program that shares its portable files, and the
 release key (keys/) for one that checks signed updates. Libraries a Makefile names as ../NAME
 (VENDOR) are downloaded once at a pinned SHA-256 and unpacked beside it too. Needs
-an nxdk checkout with its libraries and tools built, and on Windows MSYS2 with make, clang and lld.
+an nxdk checkout with its libraries and tools built, and on Windows MSYS2 with make, clang and lld
+(MSYS2_DIR or paths.msys2 names it when it is not C:/msys64).
 """
 
 import argparse
@@ -57,7 +58,8 @@ def find_nxdk(paths):
 def find_bash(paths):
     if os.name != "nt":
         return shutil.which("bash") or "bash"
-    roots = [Path(paths["msys2"])] if paths.get("msys2") else list(MSYS2_DIRS)
+    given = os.environ.get("MSYS2_DIR") or paths.get("msys2")
+    roots = [Path(given)] if given else list(MSYS2_DIRS)
     for root in roots:
         bash = root / "usr" / "bin" / "bash.exe"
         if bash.is_file():

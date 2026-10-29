@@ -1,5 +1,6 @@
-# The portable folder (TES3X-<version>.zip), built on Windows, checked unpacked, and kept as this
-# run's artifact. It publishes nothing: releases are made by hand from a downloaded, tested zip.
+# The portable folder (TES3X-<version>.zip) with TES3X Dash, built on Windows, checked unpacked,
+# and kept as this run's artifact, with the Dash's XBEs beside it. It publishes nothing and signs
+# nothing: releases are made by hand from a downloaded, tested zip (docs/development.md).
 # Run it from the Actions tab ("Run workflow"); a vX.Y.Z tag runs it too.
 name: portable
 
@@ -30,8 +31,38 @@ jobs:
           path: ~\AppData\Local\TES3X\package
           key: portable-downloads-${{ hashFiles('src/tes3x/package.py') }}
       - run: python -m pip install -e .
-      # No nxdk here yet: the zip leaves out TES3X Dash
-      - run: tes3x package --zip --no-dash --out build/package
+      # nxdk at a pinned commit, built in the MSYS2 environment nxdk's own CI uses
+      - uses: actions/checkout@v7
+        with:
+          repository: XboxDev/nxdk
+          ref: 29638d0b001f179b73c3513489af10ddc2986216
+          path: nxdk
+          submodules: recursive
+      - uses: actions/cache@v6
+        with:
+          path: C:\tools\msys64
+          key: msys2-nxdk-${{ runner.os }}-v1
+      - name: Install MSYS2
+        shell: pwsh
+        run: |
+          if (-not (Test-Path C:\tools\msys64\usr\bin\bash.exe)) {
+            curl.exe -fLO "https://github.com/XboxDev/nxdk-ci-environment-msys2/releases/latest/download/msys64.7z"
+            7z x -y msys64.7z "-oC:\tools\"
+          }
+      - name: Build nxdk
+        shell: 'C:\tools\msys64\usr\bin\bash.exe -el {0}'
+        env:
+          MSYSTEM: MINGW64
+          CHERE_INVOKING: "1"
+        run: |
+          cd "$(cygpath "$GITHUB_WORKSPACE")/nxdk"
+          eval $(./bin/activate -s)
+          make NXDK_ONLY=y -j$(nproc)
+      - name: Build the zip and the Dash
+        env:
+          NXDK_DIR: ${{ github.workspace }}\nxdk
+          MSYS2_DIR: C:\tools\msys64
+        run: tes3x package --zip --out build/package
       - name: Check the unpacked folder
         shell: pwsh
         run: |
@@ -58,4 +89,12 @@ jobs:
         with:
           path: build/package/TES3X-*.zip
           archive: false
+          retention-days: 14
+      # What a release signs and uploads beside release.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dash-xbes
+          path: |
+            build/package/TES3X-*/dash/default.xbe
+            build/package/TES3X-*/dash/launcher.xbe
           retention-days: 14
