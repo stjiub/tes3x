@@ -598,6 +598,16 @@ ini = { ProfileDumpFrames = "0", ProfileDumpSeconds = "30" }
 summary = "Time listed functions with RDTSC at every direct call site."
 
 [[patch]]
+name = "vtprof"
+title = "Record-load profiler"
+category = "instrumentation"
+group = "Instrumentation"
+channel = "dev"
+selection = "preset"
+source = "tes3xvtprof.c"
+summary = "Time each record type's load, binned by vtable, and log the totals with the profiler's dump."
+
+[[patch]]
 name = "build-preferences"
 title = "Build-selected player preferences"
 bit = 15

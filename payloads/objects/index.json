@@ -482,6 +482,10 @@
     "VK_SPACE_ID": null,
     "VK_TEXT_ID": null,
     "VSPRINTF": null,
+    "VTPROF_CHANGED": null,
+    "VTPROF_IS_MASTER": null,
+    "VTPROF_SET_MASTER": null,
+    "VTPROF_SET_SOURCE": null,
     "WIDGET_DIRTY": null,
     "WIDGET_SET_TEXT": null,
     "WIDGET_TEXT": null
@@ -708,8 +712,8 @@
       "sha256": "652aa7d3994f08ac8a0b0bc9b2df7af8d5215e0e01b48f156dcb885a0ee9e418"
     },
     "tes3xprof.c": {
-      "digest": "be8271f7242b81ce533a9abb82e5d48285784a74f38bbd9f728265fd02f7a31c",
-      "sha256": "eb9e9740a7b1704c08034b1f6fb229f0e30abbe411dae38fe6b2da280a2bc0fa"
+      "digest": "babe594a0fc6c370f16681689f095f7c86001849d6ab735fa75577f080c175f7",
+      "sha256": "70a4424c62d6f52bb121f877be33216dcbe2840e1c1e639de4c4c076f2456224"
     },
     "tes3xrefindex.c": {
       "digest": "3be7216dc829370163622066cc76e29331248075babff50e51c1ed1c658dd51f",
@@ -758,6 +762,10 @@
     "tes3xvideo.c": {
       "digest": "5c0300fadb34622a135b8de1e811ade22ba34ef722a3f6817ab10145a4d013b7",
       "sha256": "19787651ed2c853930de90d617c9d7c86aa4411c3cb35396560e7bbe205398de"
+    },
+    "tes3xvtprof.c": {
+      "digest": "71716543a35dfd11cf38ccafab9ee1ac8110d5362caec01f9ac918a5f0651aad",
+      "sha256": "48500acd7d042795e7ca5b295912c1970fb5a185e4d494516d4e3641503cd0c8"
     }
   },
   "schema": 1

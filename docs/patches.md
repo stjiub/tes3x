@@ -122,6 +122,7 @@ single required/not-required flag.
 | [In-game console](../patches/console.md) | `console` | Make the in-game console reachable, by replacing its input gate. | TES3X | instrumentation | preview | testing preset |
 | [Crash and hang diagnostics](../patches/diagnostics.md) | `diagnostics` | Enable INI-controlled crash records, snapshots and a hang watchdog. | TES3X | instrumentation | preview | testing preset; `net` |
 | [Function profiler](../patches/profile.md) | `profile=VA[,VA...]` | Time listed functions with RDTSC at every direct call site. | TES3X | instrumentation | preview | Build option |
+| [Record-load profiler](../patches/vtprof.md) | `vtprof` | Time each record type's load, binned by vtable, and log the totals with the profiler's dump. | TES3X | instrumentation | dev | By name |
 | [Engine heap census](../patches/heap-census.md) | `heap-census` | Count live engine heap bytes by source file and line, or by call site. | TES3X | instrumentation | dev | Build option |
 | [Kernel memory census](../patches/mem-census.md) | `mem-census` | Count kernel allocations and the XAPI heap by caller, with the address space map. | TES3X | instrumentation | dev | Build option |
 

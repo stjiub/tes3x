@@ -1395,6 +1395,18 @@ def _bind_localvarindex(b):
     wanted["localvar"] = ("_tes3x_localvar_hook",)
 
 
+@binder("tes3xvtprof.c")
+def _bind_vtprof(b):
+    define, locate, wanted = b.define, b.locate, b.wanted
+    found = locate("vtprof")
+    print(f"vtprof: loadFromFile {hexva(found['entry'])}")
+    define("VTPROF_SET_SOURCE", hexva(found["source"]))
+    define("VTPROF_IS_MASTER", hexva(found["master"]))
+    define("VTPROF_SET_MASTER", hexva(found["flag"]))
+    define("VTPROF_CHANGED", hexva(found["changed"]))
+    wanted["vtprof"] = ("_tes3x_vtprof_load@8",)
+
+
 @binder("tes3xbowview.c")
 def _bind_bowview(b):
     image, define, locate, wanted = b.image, b.define, b.locate, b.wanted

@@ -909,6 +909,33 @@ def find_local_var_index(x):
             "walk": tes3x_inject.call_target(x, entry + hit.start("walk") - hit.start())}
 
 
+# BaseObject::loadFromFile: the per-type loadObjectSpecific vtable call, then the source mod, the
+# master flag and the modified check.
+LOAD_FROM_FILE_SIG = re.compile(
+    rb"\x53\x56\x8b\x74\x24\x0c\x8a\x5e\x08\x8b\x06\x57\x8b\x7c\x24\x14\x57\x8b\xce\x80\xe3\x01"
+    rb"\xff\x50\x04\x57\x8b\xce\x88\x44\x24\x14(?P<source>\xe8....)\x84\xdb\x75\x0a\x8b\xcf"
+    rb"(?P<master>\xe8....)\x50\xeb\x02\x6a\x01\x8b\xce(?P<flag>\xe8....)\x8b\xcf"
+    rb"(?P<changed>\xe8....)\x84\xc0\x74\x09\x8b\x16\x6a\x01\x8b\xce\xff\x52\x14"
+    rb"\x8a\x44\x24\x10\x5f\x5e\x5b\xc2\x08\x00",
+    re.S,
+)
+
+
+def find_load_from_file(x):
+    """loadFromFile's entry and the four engine functions it calls after the vtable call."""
+    hits = list(LOAD_FROM_FILE_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("vtprof: %d loadFromFile(s), expected 1" % len(hits))
+    hit = hits[0]
+    entry = x.off_to_va(hit.start())
+    if entry is None:
+        raise PatchError("vtprof: loadFromFile is outside any section")
+    found = {"entry": entry}
+    for key in ("source", "master", "flag", "changed"):
+        found[key] = tes3x_inject.call_target(x, entry + hit.start(key) - hit.start())
+    return found
+
+
 def find_dxt5_size(x):
     """The texture-create call to the texture-size function."""
     hits = list(DXT5_SIZE_SIG.finditer(bytes(x.data)))
@@ -3161,6 +3188,7 @@ LOCATORS = {
     "cell-index": find_cell_index,
     "script-index": find_script_index,
     "local-var-index": find_local_var_index,
+    "vtprof": find_load_from_file,
     "lean-menu": find_lean_menu,
     "video-arena": find_arena_size,
     "video-arena-phys-alloc": lambda image: find_arena_overflow(image)["phys_alloc"],

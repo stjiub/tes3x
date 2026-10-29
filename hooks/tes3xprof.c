@@ -146,6 +146,7 @@ u32 tes3x_prof_target[TES3X_PROF_TOTAL];
 prof_slot tes3x_prof_slots[TES3X_PROF_TOTAL];
 
 void tes3x_prof_exit(void);
+TES3X_OPTIONAL void tes3x_vtprof_dump(void);
 
 static prof_ctx prof_threads[TES3X_PROF_THREADS];
 static prof_active prof_active_frames[TES3X_PROF_THREADS * TES3X_PROF_DEPTH];
@@ -527,6 +528,8 @@ static void prof_dump(u32 reason)
     NtClose(h);
     tes3x_log("prof.dump", prof_dump_seq);
     tes3x_log("prof.overhead_cycles", hdr.overhead);
+    if (tes3x_vtprof_dump)
+        tes3x_vtprof_dump();
     prof_dump_lock = 0;
 }
 

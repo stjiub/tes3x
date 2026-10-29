@@ -1,0 +1,15 @@
+kind = "single"
+purpose = "The record-load profiler times BaseObject::loadFromFile by vtable, leaves loading intact, and logs per-type totals every 16,384 loads."
+procedure = "Boot a minimal direct-engine build with vtprof, start a new game, and exit through the command script."
+limitations = "Useful cycle counts on original Xbox hardware."
+watch = 'diag\.patches|vtprof\.|exec\.exit|crash\.|hang\.detected'
+enable = ["diagnostics", "console", "vtprof"]
+timeout = 180
+script = '''
+@start new
+wait 30
+exit
+'''
+
+[expect]
+test = ['vtprof\.bin 0x[0-9A-F]{8} 0x[0-9A-F]{8} 0x[0-9A-F]{8}', 'vtprof\.lost 0', 'exec\.exit 0']
