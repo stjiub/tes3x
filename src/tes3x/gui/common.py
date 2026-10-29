@@ -29,13 +29,13 @@ try:
                                 QProcessEnvironment, QPointF, QSettings, QSortFilterProxyModel, QTimer, Qt,
                                 QUrl, Signal)
     from PySide6.QtGui import (QAction, QActionGroup, QColor, QPolygonF, QDesktopServices, QIcon,
-                               QKeySequence, QPainter, QPainterPath, QPen, QPixmap,
+                               QKeySequence, QPainter, QPainterPath, QPalette, QPen, QPixmap,
                                QTextCursor, QTransform)
     from PySide6.QtWidgets import (
         QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
         QFileDialog, QFormLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
         QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox,
-        QProgressBar, QProgressDialog, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QSplitter, QStackedWidget, QStatusBar, QStyle,
+        QProgressDialog, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QSplitter, QStackedWidget, QStatusBar, QStyle,
         QTabBar, QTableView, QTabWidget, QTextBrowser, QTextEdit, QToolButton, QTreeWidget, QTreeWidgetItem,
         QVBoxLayout, QWidget,
     )
@@ -421,8 +421,8 @@ STAGE_LABELS = {"build": "Build", "copy": "Copying", "stage": "Staging", "upload
 
 
 class StatusBar(QStatusBar):
-    """Spinner, activity prefix ("Building"), one line of detail, and a progress bar fixed at the
-    right edge. QStatusBar's own message would hide the spinner."""
+    """Spinner, activity prefix ("Building"), one line of detail, and progress filling the bar's
+    background left to right. QStatusBar's own message would hide the spinner."""
 
     def __init__(self):
         super().__init__()
@@ -445,12 +445,7 @@ class StatusBar(QStatusBar):
         layout.addWidget(self.prefix)
         layout.addWidget(self.message, 1)
         self.addWidget(row, 1)
-        self.bar = QProgressBar()
-        self.bar.setRange(0, 1000)
-        self.bar.setFixedSize(180, 10)
-        self.bar.setTextVisible(False)
-        self.bar.hide()
-        self.addPermanentWidget(self.bar)
+        self.fill = None
         self.progress_start = None
         self.expiry = QTimer(self)
         self.expiry.setSingleShot(True)
@@ -461,9 +456,8 @@ class StatusBar(QStatusBar):
         self.prefix.setVisible(bool(text))
 
     def show_progress(self, stage, done, total, unit, name=""):
-        """`stage done/total · speed · ETA` as the detail line, and the bar."""
-        self.bar.setValue(int(1000 * done / total) if total else 0)
-        self.bar.show()
+        """`stage done/total · speed · ETA` as the detail line, and the background fill."""
+        self.set_fill(done / total if total else 0)
         if unit == "steps":
             self.message.setText(f"Step {done + 1} of {total}"
                                  + (f" · {name[:1].upper()}{name[1:]}" if name else ""))
@@ -486,7 +480,23 @@ class StatusBar(QStatusBar):
 
     def clear_progress(self):
         self.progress_start = None
-        self.bar.hide()
+        self.set_fill(None)
+
+    def set_fill(self, fraction):
+        if fraction is not None:
+            fraction = min(max(fraction, 0.0), 1.0)
+        if fraction != self.fill:
+            self.fill = fraction
+            self.update()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if not self.fill:
+            return
+        colour = QColor(self.palette().color(QPalette.ColorRole.Highlight))
+        colour.setAlpha(80)
+        painter = QPainter(self)
+        painter.fillRect(0, 0, round(self.width() * self.fill), self.height(), colour)
 
     def showMessage(self, text, timeout=0):
         self.message.setText(text)
@@ -1754,7 +1764,6 @@ __all__ = [
     'QPolygonF',
     'QProcess',
     'QProcessEnvironment',
-    'QProgressBar',
     'QPushButton',
     'QScrollArea',
     'QSettings',

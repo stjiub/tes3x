@@ -95,7 +95,9 @@ class DisplayTests(unittest.TestCase):
         bar = StatusBar()
         bar.show_progress("build", 2, 8, "steps", "packing mods")
         self.assertEqual(bar.message.text(), "Step 3 of 8 · Packing mods")
-        self.assertEqual(bar.bar.value(), 250)
+        self.assertEqual(bar.fill, 0.25)
+        bar.clear_progress()
+        self.assertIsNone(bar.fill)
 
     def test_status_bar_counts_files_with_separators(self):
         bar = StatusBar()

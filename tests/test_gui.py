@@ -893,13 +893,12 @@ order = 10
         window.append_process_output()
         self.assertEqual(window.output.toPlainText(), "uploading\nnext\n")
         status = window.statusBar()
-        self.assertFalse(status.bar.isHidden())
-        self.assertEqual(status.bar.value(), 500)
+        self.assertEqual(status.fill, 0.5)
         self.assertIn("c.nif", status.message.text())
         self.assertEqual(status.prefix.text(), "Running")
         window.process = None
         window.command_finished(0, None)
-        self.assertTrue(status.bar.isHidden())
+        self.assertIsNone(status.fill)
         self.assertTrue(status.prefix.isHidden())
 
     def test_cancel_stops_the_command_and_its_follow_ups(self):
