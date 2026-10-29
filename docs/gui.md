@@ -65,8 +65,8 @@ The toolbar and the command output stay the same in all three.
   missing or ordered too late.
 - **Build** holds everything else in the profile: dashboard title, install folder, full or
   shared-base install layout, mod library, packaging mode, texture and file-name rules and player
-  preferences. **Skip the logo and New Game movies** sets the two `[Movies]` keys in the INI tab to
-  a missing file, which the game skips. Its details pane previews the current mod and plugin order,
+  preferences. **Skip the New Game movie** sets `[Movies] New Game` in the INI tab to a
+  missing file, which the game skips (the `menu-still` patch covers the logo movie). Its details pane previews the current mod and plugin order,
   asset packaging, archives, engine patches and deployment destination before the profile is built.
 
 Settings left at their defaults stay out of the profile file. **File > Settings** holds the paths
@@ -87,9 +87,13 @@ dots for not run, current, stale and failed. Deploy is unavailable for xemu targ
 [TES3X Dash](deployment.md#through-the-dash) is paired with this PC shows
 **Dash**, and Deploy then goes through the Dash instead of FTP. The cog beside the target list
 adds, duplicates or removes a target, or opens its Setup. **Actions** also smoke-tests the current
-profile. The status bar is reserved for activity, transient messages and counts; a build shows
-its step ("step 4/8 · packing mods") with a bar, file counts while mod files are copied and
-staged, and upload speed and time left while deploying. The log shows section headers in bold
+profile. While a command runs, the status bar reads `Building`, `Checking` or `Deploying` followed by its
+detail: a build shows its step ("Step 4 of 8 · Packing mods"), file counts while mod files are copied
+and staged, and upload speed and time left while deploying. A bar fixed at the right edge shows the
+fraction done. The divider above the output can be dragged to give the output more room. A red **✕** beside Play cancels the command in the tab you are viewing, and any steps queued
+after it; cancelling a deploy asks first, because it can leave the game folder on the Xbox
+incomplete. Hover Check, Build or Deploy to read what its coloured dot means. The Mods and
+Plugins counts sit at the right of the profile's tab row. The log shows section headers in bold
 and warnings and errors in colour. Check and
 per-target Deploy results are remembered in the build output; like the Build state, they notice
 profile edits but not changes inside mod folders.

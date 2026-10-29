@@ -21,6 +21,8 @@ class Job:
         self.conflict_retry = None
         self.space_retry = None
         self.partial = ""
+        self.message = ""
+        self.cancelled = False
 
     @property
     def running(self):

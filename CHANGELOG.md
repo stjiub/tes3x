@@ -4,6 +4,11 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- GUI: a red ✕ beside Play cancels a running build or deploy. The status bar names the activity
+  ("Building") with a fixed-position progress bar, the output divider can be dragged up, the mod and plugin counts moved next to the profile tabs, and the Check, Build and
+  Deploy tooltips explain their dot colours. **Skip the New Game movie** no longer sets the logo
+  movie key; the `menu-still` patch covers the logo.
+
 - A build that merges animation KFs without PyFFI now prints the exact `pip install` command for
   the Python running TES3X. The portable folder and `tes3x[gui]` now include the KF reader, so
   animation merging works without an extra install.

@@ -447,10 +447,9 @@ order = 10
         window = self.window()
         window.build.skip_intro.setChecked(True)
         self.assertTrue(window.save_profile())
-        self.assertEqual(self.saved()["ini"], {"Movies:Morrowind Logo": "none.bik",
-                                               "Movies:New Game": "none.bik"})
+        self.assertEqual(self.saved()["ini"], {"Movies:New Game": "none.bik"})
 
-        # Resetting one key in the INI tab clears the box; unticking drops the other.
+        # Resetting the key in the INI tab clears the box; unticking drops the key.
         del window.ini.values["Movies:New Game"]
         window.ini.changed.emit()
         self.assertFalse(window.build.skip_intro.isChecked())
@@ -459,8 +458,7 @@ order = 10
         self.assertTrue(window.save_profile())
         self.assertNotIn("ini", self.saved())
 
-        window.ini.set_value("Movies:New Game", "none.bik")
-        window.ini.set_value("Movies:Morrowind Logo", "NONE.BIK")
+        window.ini.set_value("Movies:New Game", "NONE.BIK")
         self.assertTrue(window.build.skip_intro.isChecked())
 
     def test_build_tab_can_reset_to_defaults(self):
@@ -880,12 +878,31 @@ order = 10
         window.append_process_output()
         self.assertEqual(window.output.toPlainText(), "uploading\nnext\n")
         status = window.statusBar()
-        self.assertFalse(status.detail.isHidden())
+        self.assertFalse(status.bar.isHidden())
         self.assertEqual(status.bar.value(), 500)
-        self.assertIn("c.nif", status.detail.text())
+        self.assertIn("c.nif", status.message.text())
+        self.assertEqual(status.prefix.text(), "Running")
         window.process = None
         window.command_finished(0, None)
         self.assertTrue(status.bar.isHidden())
+        self.assertTrue(status.prefix.isHidden())
+
+    def test_cancel_stops_the_command_and_its_follow_ups(self):
+        window = self.window()
+        followed = []
+        with patch("tes3x.gui.window.QProcess"):
+            job = window.start_command("tool.py", [], "Working…", kind="build")
+        job.after = lambda: followed.append(True)
+        self.assertFalse(window.cancel_button.isHidden())
+        with patch("tes3x.gui.window.subprocess.run") as run:
+            window.cancel_job(job)
+        self.assertTrue(run.called or job.process.kill.called)
+        window.command_finished(1, None, job)
+        self.assertEqual(followed, [])
+        self.assertFalse(window.build_failed)
+        self.assertIn("Cancelled.", job.log.toPlainText())
+        self.assertFalse(job.running)
+        self.assertTrue(window.cancel_button.isHidden())
 
     def test_xbox_addon_deploys_then_starts_the_build(self):
         import hashlib

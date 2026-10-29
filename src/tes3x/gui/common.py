@@ -35,7 +35,7 @@ try:
         QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
         QFileDialog, QFormLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
         QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox,
-        QProgressBar, QProgressDialog, QPushButton, QScrollArea, QSpinBox, QSplitter, QStackedWidget, QStatusBar, QStyle,
+        QProgressBar, QProgressDialog, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QSplitter, QStackedWidget, QStatusBar, QStyle,
         QTabBar, QTableView, QTabWidget, QTextBrowser, QTextEdit, QToolButton, QTreeWidget, QTreeWidgetItem,
         QVBoxLayout, QWidget,
     )
@@ -234,6 +234,20 @@ def stop_icon(colour="#d32f2f"):
     return QIcon(result)
 
 
+def cancel_icon(colour="#d32f2f"):
+    result = QPixmap(18, 18)
+    result.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(result)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    pen = QPen(QColor(colour), 2.4)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    painter.setPen(pen)
+    painter.drawLine(4, 4, 14, 14)
+    painter.drawLine(14, 4, 4, 14)
+    painter.end()
+    return QIcon(result)
+
+
 def tinted_icon(icon, colour):
     """Keep a platform icon's shape while giving toolbar actions distinct accents."""
     source = icon.pixmap(18, 18)
@@ -349,7 +363,7 @@ class Spinner(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.angle = 0
-        self.setFixedSize(16, 16)
+        self.setFixedSize(14, 14)
         self.timer = QTimer(self)
         self.timer.setInterval(60)
         self.timer.timeout.connect(self.step)
@@ -376,36 +390,82 @@ class Spinner(QWidget):
         painter.drawArc(self.rect().adjusted(2, 2, -2, -2), self.angle * 16, 270 * 16)
 
 
+class ElidedLabel(QLabel):
+    """One line that shortens with an ellipsis instead of widening its window."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.full = ""
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.setMinimumWidth(0)
+
+    def setText(self, text):
+        self.full = text
+        self.setToolTip(text)
+        self.fit()
+
+    def text(self):
+        return self.full
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.fit()
+
+    def fit(self):
+        super().setText(self.fontMetrics().elidedText(
+            self.full, Qt.TextElideMode.ElideMiddle, max(self.width(), 0)))
+
+
+STAGE_LABELS = {"build": "Build", "copy": "Copying", "stage": "Staging", "upload": "Uploading"}
+
+
 class StatusBar(QStatusBar):
-    """Messages go to a label beside the spinner; QStatusBar's own would hide the spinner."""
+    """Spinner, activity prefix ("Building"), one line of detail, and a progress bar fixed at the
+    right edge. QStatusBar's own message would hide the spinner."""
 
     def __init__(self):
         super().__init__()
+        self.setSizeGripEnabled(False)
+        self.setStyleSheet("QStatusBar::item { border: none; } "
+                           "QStatusBar { min-height: 0; } QStatusBar QLabel { padding: 0; }")
+        self.setContentsMargins(6, 0, 6, 0)
         self.spinner = Spinner()
-        self.message = QLabel()
-        self.addWidget(self.spinner)
-        self.addWidget(self.message, 1)
+        self.prefix = QLabel()
+        bold = self.prefix.font()
+        bold.setBold(True)
+        self.prefix.setFont(bold)
+        self.prefix.hide()
+        self.message = ElidedLabel()
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        layout.addWidget(self.spinner)
+        layout.addWidget(self.prefix)
+        layout.addWidget(self.message, 1)
+        self.addWidget(row, 1)
         self.bar = QProgressBar()
         self.bar.setRange(0, 1000)
-        self.bar.setFixedWidth(180)
+        self.bar.setFixedSize(180, 10)
         self.bar.setTextVisible(False)
         self.bar.hide()
-        self.detail = QLabel()
-        self.detail.hide()
-        self.addWidget(self.bar)
-        self.addWidget(self.detail)
+        self.addPermanentWidget(self.bar)
         self.progress_start = None
         self.expiry = QTimer(self)
         self.expiry.setSingleShot(True)
         self.expiry.timeout.connect(self.message.clear)
 
+    def set_prefix(self, text):
+        self.prefix.setText(text)
+        self.prefix.setVisible(bool(text))
+
     def show_progress(self, stage, done, total, unit, name=""):
-        """Bar and `stage done/total · speed · ETA` beside the message; bytes are sized."""
+        """`stage done/total · speed · ETA` as the detail line, and the bar."""
+        self.bar.setValue(int(1000 * done / total) if total else 0)
+        self.bar.show()
         if unit == "steps":
-            self.bar.setValue(int(1000 * done / total) if total else 0)
-            self.detail.setText(f"step {done + 1}/{total}" + (f" · {name}" if name else ""))
-            self.bar.show()
-            self.detail.show()
+            self.message.setText(f"Step {done + 1} of {total}"
+                                 + (f" · {name[:1].upper()}{name[1:]}" if name else ""))
             return
         now = time.monotonic()
         if self.progress_start is None or self.progress_start[0] != stage or done < self.progress_start[1]:
@@ -413,7 +473,7 @@ class StatusBar(QStatusBar):
         _, first, began = self.progress_start
         rate = (done - first) / (now - began) if now - began >= 1 else 0
         size = human_size if unit == "bytes" else "{:,.0f}".format
-        text = f"{stage} {size(done)}/{size(total)}"
+        text = f"{STAGE_LABELS.get(stage, stage.capitalize())} {size(done)} of {size(total)}"
         if rate > 0:
             text += f" · {size(rate)}/s"
             if total > done:
@@ -421,15 +481,11 @@ class StatusBar(QStatusBar):
                 text += f" · ETA {seconds // 60}m{seconds % 60:02d}s"
         if name:
             text += f" · {name}"
-        self.bar.setValue(int(1000 * done / total) if total else 0)
-        self.detail.setText(text)
-        self.bar.show()
-        self.detail.show()
+        self.message.setText(text)
 
     def clear_progress(self):
         self.progress_start = None
         self.bar.hide()
-        self.detail.hide()
 
     def showMessage(self, text, timeout=0):
         self.message.setText(text)
@@ -796,7 +852,7 @@ def ini_value(text):
 
 
 # A missing movie is logged to Warnings.txt and skipped.
-INTRO_MOVIES = ("Movies:Morrowind Logo", "Movies:New Game")
+INTRO_MOVIES = ("Movies:New Game",)
 SKIP_MOVIE = "none.bik"
 
 
@@ -1403,9 +1459,8 @@ class BuildSettings(QWidget):
         library_widget = QWidget()
         library_widget.setLayout(library_row)
         self.dashboard = QCheckBox("Write XBMC4Gamers dashboard files when a title is set")
-        self.skip_intro = QCheckBox("Skip the logo and New Game movies")
-        self.skip_intro.setToolTip("Sets [Movies] Morrowind Logo and New Game to a missing "
-                                   "file in the INI tab")
+        self.skip_intro = QCheckBox("Skip the New Game movie")
+        self.skip_intro.setToolTip("Sets [Movies] New Game to a missing file in the INI tab")
         identity = QWidget()
         identity_layout = QVBoxLayout(identity)
         identity_layout.setContentsMargins(0, 0, 0, 0)
@@ -1702,6 +1757,7 @@ __all__ = [
     'QPushButton',
     'QScrollArea',
     'QSettings',
+    'QSizePolicy',
     'QSortFilterProxyModel',
     'QSpinBox',
     'QSplitter',
@@ -1777,6 +1833,7 @@ __all__ = [
     'ini_value',
     'install_files',
     'install_layout',
+    'human_size',
     'is_dash',
     'json',
     'key_fingerprint',
@@ -1814,6 +1871,7 @@ __all__ = [
     'shutil',
     'signal',
     'sort_files',
+    'cancel_icon',
     'stop_icon',
     'struct',
     'subprocess',

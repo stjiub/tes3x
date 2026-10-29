@@ -1,5 +1,6 @@
 """TES3X GUI. It edits the same TOML the command-line tools read."""
 
+import subprocess
 from html import escape
 
 from .common import (Bsa, BuildSettings, CATALOG_NAME, CHECK_MARKER, CatalogError, DEPLOYS_MARKER,
@@ -7,7 +8,7 @@ from .common import (Bsa, BuildSettings, CATALOG_NAME, CHECK_MARKER, CatalogErro
                      LocalSettingsDialog, PIPELINE_MARKER, PLUGIN_EXT, PROFILE_NAME, PROGRESS_ENV, Path,
                      PipelineError, QAction, QActionGroup, QApplication, QColor, QComboBox, QDialog,
                      QFileDialog, QHBoxLayout, QInputDialog, QLabel, QMainWindow, QMenu,
-                     QMessageBox, QProcess, QProcessEnvironment, QScrollArea, QSettings, QSplitter, QStackedWidget,
+                     QMessageBox, QProcess, QProcessEnvironment, QScrollArea, QSettings, QSizePolicy, QSplitter, QStackedWidget,
                      QTabBar, QTabWidget, QTextBrowser, QTextEdit, QTimer,
                      QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget, Qt, ROLE,
                      ServerPage, Signal, StatusBar, TEMPLATE, TargetsPage, WARNING, XEMU_STARTED,
@@ -15,7 +16,7 @@ from .common import (Bsa, BuildSettings, CATALOG_NAME, CHECK_MARKER, CatalogErro
                      discover_library, dot_icon, drop_empty, enabled_addons, heartbeat_text,
                      index_library, ini_text, json, launch, load_catalog, load_library,
                      menu_button, new_table, parse_progress, play_icon, plugin_header, sha256_file, shutil,
-                     stop_icon, struct, sys, target_capabilities, target_runtime_label,
+                     cancel_icon, stop_icon, struct, sys, target_capabilities, target_runtime_label,
                      tes3x_targets, tomlkit, tomllib, validate_profile, version_label)
 from .banner import PromptBanner
 from . import logtext
@@ -154,6 +155,9 @@ class ProfileWindow(QMainWindow):
         self.job = self.new_job("Output")
         self.mods.mod_details = self.mods.create_mod_details()
         self.tabs = QTabWidget()
+        self.counts = QLabel()
+        self.counts.setContentsMargins(0, 0, 8, 0)
+        self.tabs.setCornerWidget(self.counts, Qt.Corner.TopRightCorner)
         self.tabs.addTab(self.mods.create_mods_tab(), "Mods")
         self.tabs.addTab(self.plugins.create_plugins_panel(), "Plugins")
         self.archives = QTreeWidget()
@@ -183,6 +187,7 @@ class ProfileWindow(QMainWindow):
 
         body = QWidget()
         layout = QVBoxLayout(body)
+        layout.setContentsMargins(9, 9, 9, 2)
         layout.addLayout(profile_bar)
         self.context_info = QTextBrowser()
         self.context_info.setPlaceholderText("Select an item to see its details")
@@ -214,18 +219,16 @@ class ProfileWindow(QMainWindow):
         self.body_split = QSplitter(Qt.Orientation.Vertical)
         self.body_split.addWidget(self.workspaces)
         self.body_split.addWidget(self.log_tabs)
+        self.workspaces.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
+        self.log_tabs.setMinimumHeight(0)
+        self.body_split.setChildrenCollapsible(False)
+        self.body_split.setHandleWidth(6)
         self.body_split.setStretchFactor(0, 4)
         self.body_split.setStretchFactor(1, 1)
         self.body_split.setSizes([660, 120])
         layout.addWidget(self.body_split)
         self.setCentralWidget(body)
         self.setStatusBar(StatusBar())
-        self.counts = QLabel()
-        self.counts.setContentsMargins(0, 0, 8, 0)
-        self.build_state_label = QLabel()
-        self.build_state_label.setContentsMargins(8, 0, 8, 0)
-        self.statusBar().addPermanentWidget(self.build_state_label)
-        self.statusBar().addPermanentWidget(self.counts)
         self.ftp_timer = QTimer(self)
         self.ftp_timer.setInterval(60_000)
         self.ftp_timer.timeout.connect(self.play_controller.refresh_all_targets)
@@ -365,6 +368,12 @@ class ProfileWindow(QMainWindow):
         self.play_menu.setToolTipsVisible(True)
         self.play_button.setMenu(self.play_menu)
         self.play_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+        self.cancel_button = QToolButton()
+        self.cancel_button.setIcon(cancel_icon())
+        self.cancel_button.setAutoRaise(True)
+        self.cancel_button.clicked.connect(lambda: self.cancel_job(self.cancellable_job()))
+        self.cancel_button.hide()
+        self.profile_bar.addWidget(self.cancel_button)
         self.style_toolbar_buttons()
         QApplication.styleHints().colorSchemeChanged.connect(
             lambda _scheme: QTimer.singleShot(0, self.style_toolbar_buttons))
@@ -1373,13 +1382,8 @@ class ProfileWindow(QMainWindow):
                               {"built": "current", "stale": "stale",
                                "missing": "idle"}[state], tip)
 
-    def update_build_label(self):
-        state = self.build_button.property("state") or "idle"
-        text = {"idle": "Not built", "current": "Build current", "stale": "Build out of date",
-                "running": "Building…", "failed": "Build failed"}[state]
-        colour = self.build_button.property("stateColour") or "#616161"
-        self.build_state_label.setText(f'<span style="color:{colour}">●</span> {text}')
-        self.build_state_label.setToolTip(self.build_button.toolTip())
+    STATE_TEXT = {"idle": "not run yet", "current": "up to date", "stale": "out of date",
+                  "running": "running", "failed": "failed"}
 
     def set_action_state(self, action, label, state, tip):
         colours = {"idle": "#616161", "current": "#2e7d32", "stale": "#a15c00",
@@ -1387,9 +1391,7 @@ class ProfileWindow(QMainWindow):
         action.setIcon(dot_icon(colours[state]))
         action.setProperty("state", state)
         action.setProperty("stateColour", colours[state])
-        action.setToolTip(tip)
-        if action is getattr(self, "build_button", None):
-            self.update_build_label()
+        action.setToolTip(f"{label}: {self.STATE_TEXT[state]}\n{tip}")
 
     def sync_run_button(self):
         action = self.action_build
@@ -1738,6 +1740,8 @@ class ProfileWindow(QMainWindow):
     def output(self):
         return self.job.log
 
+    ACTIVITY = {"build": "Building", "check": "Checking", "deploy": "Deploying",
+                "dash": "Dash", "pull": "Pulling logs", "smoke": "Smoke test"}
     JOB_LABELS = {"build": "Build", "check": "Check", "deploy": "Deploy", "dash": "Dash",
                   "pull": "Pull logs", "smoke": "Smoke test"}
 
@@ -1787,6 +1791,7 @@ class ProfileWindow(QMainWindow):
         self.action_fetch.setEnabled(xbox and not busy_target)
         self.action_dash.setEnabled(xbox and not busy_target)
         self.target_actions.setEnabled(not self.running_jobs())
+        self.refresh_cancel_button()
 
     def free_job(self):
         """The current job if it is idle, else another idle one, else a new tab."""
@@ -1819,10 +1824,58 @@ class ProfileWindow(QMainWindow):
         if not isinstance(status, StatusBar):
             return
         job = next((job for job in self.jobs if job.page is self.log_tabs.currentWidget()), None)
-        if job is not None and job.running and job.progress is not None:
+        if job is None or not job.running:
+            status.set_prefix("")
+            status.clear_progress()
+            return
+        status.set_prefix(self.ACTIVITY.get(job.kind, "Running"))
+        if job.progress is not None:
             status.show_progress(*job.progress)
         else:
             status.clear_progress()
+            status.showMessage(job.message)
+
+    def cancellable_job(self):
+        """The job whose tab is showing if it runs a command, else the latest one that does."""
+        current = next((job for job in self.jobs if job.page is self.log_tabs.currentWidget()),
+                       None)
+        running = [job for job in self.jobs if job.process is not None and not job.cancelled]
+        return current if current in running else (running[-1] if running else None)
+
+    def refresh_cancel_button(self):
+        job = self.cancellable_job()
+        self.cancel_button.setVisible(job is not None)
+        if job is not None:
+            self.cancel_button.setToolTip(
+                f"Cancel {self.log_tabs.tabText(self.log_tabs.indexOf(job.page)).lstrip('● ')}")
+
+    def finish_text(self, job, code, cancelled):
+        label = self.JOB_LABELS.get(job.kind) or "Command"
+        if cancelled:
+            return f"{label} cancelled"
+        if code == 0:
+            return f"{label} finished"
+        return f"{label} failed (exit code {code}); see the output"
+
+    def cancel_job(self, job):
+        """Stop a running command and the chain it belongs to; the log stays."""
+        if job.process is None or job.cancelled:
+            return
+        if job.kind == "deploy" and QMessageBox.question(
+                self, "Cancel deploy",
+                "Cancelling a deploy can leave the game folder on the Xbox incomplete. "
+                "Cancel it anyway?") != QMessageBox.StandardButton.Yes:
+            return
+        job.cancelled = True
+        job.after = job.conflict_retry = job.space_retry = None
+        self.refresh_cancel_button()
+        self.statusBar().showMessage("Cancelling…")
+        pid = job.process.processId()
+        if sys.platform == "win32" and pid:
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True,
+                           check=False)
+        else:
+            job.process.kill()
 
     def start_command(self, program, arguments, message, environment=None, clear=True,
                       kind=None, target=None, job=None, builds=False):
@@ -1830,6 +1883,7 @@ class ProfileWindow(QMainWindow):
         job = job or self.free_job()
         self.job = job
         job.kind, job.builds, job.stage, job.progress = kind, builds, None, None
+        job.cancelled = False
         job.target = target or self.target_picker.currentData()
         job.profile = self.profile_key()
         job.partial = ""
@@ -1855,6 +1909,8 @@ class ProfileWindow(QMainWindow):
         self.update_build_state()
         self.targets_page.refresh()
         process.start()
+        job.message = message
+        self.show_job_progress()
         self.statusBar().showMessage(message)
         return job
 
@@ -1895,7 +1951,7 @@ class ProfileWindow(QMainWindow):
             else:
                 job.progress, job.stage = progress, progress[0]
                 if job.page is self.log_tabs.currentWidget():
-                    self.statusBar().show_progress(*progress)
+                    self.show_job_progress()
         return "".join(shown)
 
     def command_finished(self, code, _status, job=None):
@@ -1904,18 +1960,23 @@ class ProfileWindow(QMainWindow):
         if job.partial:
             job.log.insertPlainText(job.partial)
             job.partial = ""
-        self.statusBar().showMessage(f"TES3X exited {code}", 5000)
+        cancelled = job.cancelled
+        if cancelled:
+            logtext.append(job.log, "Cancelled.\n")
+        self.statusBar().showMessage(self.finish_text(job, code, cancelled), 8000)
         kind, target = job.kind, job.target
         follow, retry, space = job.after, job.conflict_retry, job.space_retry
         job.finish()
         job.progress = None
+        job.cancelled = False
         self.show_job_progress()
+        self.refresh_cancel_button()
         self.log_tabs.tabBar().setTabTextColor(
             self.log_tabs.indexOf(job.page), QColor("#3a9a3a" if code == 0 else "#d04040"))
         if kind == "check":
             self.remember_check(code == 0)
         elif kind == "build":
-            self.build_failed = code != 0
+            self.build_failed = code != 0 and not cancelled
         elif kind == "deploy":
             (self.deploy_failed.add if code else self.deploy_failed.discard)(target)
             if code == 0:
@@ -1927,6 +1988,8 @@ class ProfileWindow(QMainWindow):
         if not self.running_jobs():
             self.play_controller.restore_listener()
         self.saves.saves_selected()
+        if cancelled:
+            return
         if code == DEPLOY_NO_SPACE and space:
             if kind == "build":
                 self.build_failed = False

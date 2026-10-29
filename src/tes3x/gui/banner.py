@@ -39,3 +39,4 @@ class PromptBanner(QWidget):
             on_done()
         if yes and on_yes:
             on_yes()
+

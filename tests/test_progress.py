@@ -94,13 +94,13 @@ class DisplayTests(unittest.TestCase):
     def test_status_bar_shows_steps_without_speed(self):
         bar = StatusBar()
         bar.show_progress("build", 2, 8, "steps", "packing mods")
-        self.assertEqual(bar.detail.text(), "step 3/8 · packing mods")
+        self.assertEqual(bar.message.text(), "Step 3 of 8 · Packing mods")
         self.assertEqual(bar.bar.value(), 250)
 
     def test_status_bar_counts_files_with_separators(self):
         bar = StatusBar()
         bar.show_progress("copy", 1200, 12000, "files", "a.nif")
-        self.assertEqual(bar.detail.text(), "copy 1,200/12,000 · a.nif")
+        self.assertEqual(bar.message.text(), "Copying 1,200 of 12,000 · a.nif")
 
 
 if __name__ == "__main__":
