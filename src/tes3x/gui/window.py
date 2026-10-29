@@ -7,11 +7,11 @@ from html import escape
 from .common import (Bsa, BuildSettings, CATALOG_NAME, CHECK_MARKER, CatalogError, DEPLOYS_MARKER,
                      DEPLOY_CONFLICT, DEPLOY_NO_SPACE, IniPanel, LibraryError,
                      LocalSettingsDialog, PIPELINE_MARKER, PLUGIN_EXT, PROFILE_NAME, PROGRESS_ENV, Path,
-                     PipelineError, QAction, QActionGroup, QApplication, QColor, QComboBox, QDialog,
+                     PipelineError, QAction, QActionGroup, QApplication, QColor, QComboBox, QDesktopServices, QDialog,
                      QFileDialog, QHBoxLayout, QInputDialog, QLabel, QMainWindow, QMenu,
                      QMessageBox, QProcess, QProcessEnvironment, QScrollArea, QSettings, QSizePolicy, QSplitter, QStackedWidget,
                      QTabBar, QTabWidget, QTextBrowser, QTextEdit, QTimer,
-                     QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget, Qt, ROLE,
+                     QToolButton, QTreeWidget, QTreeWidgetItem, QUrl, QVBoxLayout, QWidget, Qt, ROLE,
                      ServerPage, Signal, StatusBar, TEMPLATE, TargetsPage, WARNING, XEMU_STARTED,
                      argparse, convert_profile, datetime, default_config_path, defaultdict,
                      discover_library, dot_icon, drop_empty, enabled_addons, heartbeat_text,
@@ -19,6 +19,7 @@ from .common import (Bsa, BuildSettings, CATALOG_NAME, CHECK_MARKER, CatalogErro
                      menu_button, new_table, parse_progress, play_icon, plugin_header, sha256_file, shutil,
                      cancel_icon, stop_icon, struct, sys, target_capabilities, target_runtime_label,
                      tes3x_targets, tomlkit, tomllib, validate_profile, version_label)
+from tes3x import updates
 from .banner import PromptBanner
 from . import logtext
 from .jobs import Job
@@ -37,6 +38,7 @@ from tes3x.paths import docs_url
 class ProfileWindow(QMainWindow):
     nexus_done = Signal(str, object, object)
     catalog_done = Signal(object, object)
+    update_checked = Signal(object, object)
     analysis_ready = Signal()
 
     in_game_event = Signal(object)
@@ -94,6 +96,7 @@ class ProfileWindow(QMainWindow):
         self.mods.nexus_pending = set()
         self.nexus_done.connect(self.mods.nexus_finished)
         self.catalog_done.connect(self.catalog_refreshed)
+        self.update_checked.connect(self.update_result)
         self.analysis_ready.connect(self.mods.analysis_finished)
         self.in_game_event.connect(self.play_controller.handle_in_game_event)
         self.mods.forget_analysis()
@@ -362,6 +365,9 @@ class ProfileWindow(QMainWindow):
         self.action_update_catalog = QAction("Update &compatibility list", self)
         self.action_update_catalog.triggered.connect(self.update_catalog)
         help_menu.addAction(self.action_update_catalog)
+        self.action_check_update = QAction("Check for &updates", self)
+        self.action_check_update.triggered.connect(self.check_for_update)
+        help_menu.addAction(self.action_check_update)
         self.play_icon, self.stop_icon = play_icon(), stop_icon()
         self.action_play.setIcon(self.play_icon)
         self.run_menu = QMenu(self)
@@ -1554,6 +1560,39 @@ class ProfileWindow(QMainWindow):
               if self.local_config_path().is_file() else []),
             "--record",
         ], "Running profile smoke test…", kind="smoke")
+
+    def check_for_update(self):
+        """Ask GitHub for the newest release and offer its page."""
+        self.action_check_update.setEnabled(False)
+        self.statusBar().showMessage("Checking for updates…", 5000)
+
+        def work():
+            try:
+                result, error = updates.latest(), None
+            except (OSError, ValueError, KeyError) as exc:
+                result, error = None, exc
+            self.update_checked.emit(result, error)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def update_result(self, release, error):
+        self.action_check_update.setEnabled(True)
+        if error:
+            self.error(f"Could not check for updates: {error}")
+        elif release is None:
+            QMessageBox.information(self, "Check for updates", "There is no release yet.")
+        elif updates.newer(release[0]):
+            box = QMessageBox(self)
+            box.setWindowTitle("Check for updates")
+            box.setText(f"{release[0]} is available; this is {updates.current()}.")
+            download = box.addButton("Open download page", QMessageBox.ButtonRole.AcceptRole)
+            box.addButton(QMessageBox.StandardButton.Close)
+            box.exec()
+            if box.clickedButton() is download:
+                QDesktopServices.openUrl(QUrl(release[1]))
+        else:
+            QMessageBox.information(self, "Check for updates",
+                                    f"TES3X {updates.current()} is up to date.")
 
     def update_catalog(self):
         """Download the current compatibility list from GitHub."""

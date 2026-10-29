@@ -14,6 +14,9 @@ No official releases yet. The first public release is in preparation.
   before name, so a renamed folder still finds its verdict, and **Set Nexus link…** on a mod
   takes a Nexus URL or id. `tes3x catalog add FOLDER` drafts an entry for a mod folder.
 
+- GUI: **Help > Check for updates** tells you when a newer release is on GitHub and opens its
+  download page.
+
 - The patch category `compat` is now `compatibility`. A profile that lists `compat` under
   `patches.categories` must be changed to match.
 

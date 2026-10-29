@@ -6,7 +6,9 @@ checks, builds, tests and deploys. In a portable folder, double-click `TES3X.exe
 
 **Help > About TES3X** shows the full version, author and license, with links to documentation,
 the GitHub project, [release notes](../CHANGELOG.md) and issue reporting. The version text can
-be selected and copied when reporting a problem.
+be selected and copied when reporting a problem. **Help > Check for updates** asks GitHub for the
+newest release and offers its download page; it never installs anything. **Help > Update
+compatibility list** downloads the current [compatibility list](catalog.md).
 
 The GUI opens the last profile you used and lists the profiles folder for switching, with New,
 Duplicate, Rename and Delete under the cog beside the list. The profiles folder is `profiles`

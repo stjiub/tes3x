@@ -65,3 +65,11 @@ class CatalogMatchTest(unittest.TestCase):
             with self.assertRaises(CatalogError):
                 load(path)
             self.assertIn("a", load(path, lenient=True))
+
+
+class UpdateTest(unittest.TestCase):
+    def test_newer_compares_release_numbers(self):
+        from tes3x.updates import newer
+        self.assertTrue(newer("v0.2.0", "0.1.9"))
+        self.assertFalse(newer("v0.1.0", "0.1.0-dev.352+gabc"))
+        self.assertFalse(newer("v0.1.0", "0.1.0"))
