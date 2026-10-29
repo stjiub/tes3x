@@ -16,7 +16,7 @@ on, `low` for minor ones, and `none` for fixes we won't port.
 | candidate | 171 |
 | deferred | 14 |
 | not-applicable | 16 |
-| rejected | 3 |
+| rejected | 4 |
 
 ## candidate
 
@@ -249,3 +249,4 @@ Deliberately left out of TES3X.
 | `mcp-140` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #140 | none | performance | **Throttle loading-screen redraws.** Original-Xbox cold New Game A/B runs with caches cleared averaged 99.3495 seconds control and 99.3860 seconds patched. The 36.5 ms difference was smaller than the 230-339 ms repeat variation, so the port had no measurable benefit. |
 | `mcp-267` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #267 | none | qol | **UI pixel alignment.** Matched 480p xemu menu captures showed no discernible benefit, so this patch was dropped. |
 | `openmw-parity` | [OpenMW](https://openmw.org) | none | undecided | **Blanket OpenMW parity.** OpenMW is a separate reimplementation and intentionally diverges in places. Only explicit vanilla defects or desired, scoped features enter this ledger. |
+| `cell-stream-wait` | TES3X | none | performance | **Shorten the exterior cell loader's wait and preload sooner.** The boundary barrier's `Sleep(100)` poll, its per-pass loading-menu render and the 2,048-unit preload limit were edited on the original Xbox with retail masters. With the render removed and a 5 ms sleep the barrier lasted 0.82-0.99 s against 0.87 s unpatched, because it lasts as long as the loader's own CPU-bound work. Keeping the render made it 2.4 s or worse, and a 1,536-unit preload made teleport hops worse. A realistic walk showed no change. The stall needs a non-blocking barrier or spreading the scene attach over frames, not a faster poll. |

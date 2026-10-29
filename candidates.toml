@@ -1893,3 +1893,12 @@ status = "deferred"
 priority = "low"
 summary = "Shrink or deduplicate the fixed map bitmap written into every save"
 reason = "`FMAP` is 786,472 bytes and byte-identical across all 18 console saves - 49.5% of each file and twice the next-largest record. Any change alters the save format, so it breaks Wrye Mash and existing saves; that cost has to be accepted before implementation work, not after. Settle the save-size ceiling question (`MCP-58`) first, because without a threshold there is nothing to measure the gain against."
+
+[[candidate]]
+name = "cell-stream-wait"
+origin = { source = "TES3X" }
+category = "performance"
+status = "rejected"
+priority = "none"
+summary = "Shorten the exterior cell loader's wait and preload sooner"
+reason = "The boundary barrier's `Sleep(100)` poll, its per-pass loading-menu render and the 2,048-unit preload limit were edited on the original Xbox with retail masters. With the render removed and a 5 ms sleep the barrier lasted 0.82-0.99 s against 0.87 s unpatched, because it lasts as long as the loader's own CPU-bound work. Keeping the render made it 2.4 s or worse, and a 1,536-unit preload made teleport hops worse. A realistic walk showed no change. The stall needs a non-blocking barrier or spreading the scene attach over frames, not a faster poll."
