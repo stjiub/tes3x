@@ -4,6 +4,9 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- GUI: selecting a patch shows its full notes page, with its category, status and origin
+  beneath, instead of a one-line summary.
+
 - `tes3x test --tour cities,dense` (GUI: **Actions > Run memory tour**) visits the heaviest
   towns and interiors from `locations.toml` and reports free memory at each, against a vanilla
   baseline. The catalog gains an optional `memory_kb` and a Memory column. See

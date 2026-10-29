@@ -198,6 +198,7 @@ class ProfileWindow(QMainWindow):
         layout.addLayout(profile_bar)
         self.context_info = QTextBrowser()
         self.context_info.setPlaceholderText("Select an item to see its details")
+        self.context_info.setOpenExternalLinks(True)
         self.details_stack = QStackedWidget()
         self.details_stack.addWidget(self.mods.mod_details)
         self.details_stack.addWidget(self.context_info)

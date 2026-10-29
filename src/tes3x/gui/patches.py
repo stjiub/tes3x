@@ -1,9 +1,26 @@
 """PatchesTab: profile window patches."""
 
+import re
+from urllib.parse import urljoin
+
+from tes3x.patches import PATCH_DOCS
+
 from .common import (CATEGORY_ACCENTS, CHANNEL_BADGES, PATCH_CATALOG, PATCH_CATEGORIES,
                      PipelineError, QCheckBox, QComboBox, QHBoxLayout, QHeaderView, QLabel,
                      QLineEdit, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget, Qt, ROLE,
                      SOURCES, WARNING, dot_icon, patch_spec, resolve_patch_plan)
+
+
+PAGES_URL = "https://github.com/stjiub/tes3x/blob/main/patches/"
+LINK = re.compile(r"\]\((?!https?:|#)([^)\s]+)\)")
+
+
+def patch_page(name):
+    """A patch's notes page with its relative links made absolute, or empty if it has none."""
+    path = PATCH_DOCS / f"{name}.md"
+    if not path.is_file():
+        return ""
+    return LINK.sub(lambda m: f"]({urljoin(PAGES_URL, m[1])})", path.read_text(encoding="utf-8"))
 
 
 class PatchesTab(QWidget):
@@ -272,14 +289,13 @@ class PatchesTab(QWidget):
         origin_text = source.get("name", origin.get("source", "TES3X"))
         if "id" in origin:
             origin_text += " #" + str(origin["id"])
-        lines = [f"{entry['title']} — {patch_spec(entry)}", "", entry["summary"], "",
-                 f"Category: {entry['category']}", f"Status: {entry['channel']}",
-                 f"Origin: {origin_text}"]
         selection = {"always": "every build", "packaging": "package mode",
                      "preset": "preset or profile", "option": "build option"}
-        lines.append(f"Selection: {selection[entry['selection']]}")
+        lines = [patch_page(name).rstrip(), "", "---", "",
+                 f"**Category** {entry['category']} · **Status** {entry['channel']} · "
+                 f"**Origin** {origin_text} · **Selection** {selection[entry['selection']]}"]
         if entry.get("ini"):
-            lines += ["", "Settings (INI tab, [Xbox]):"]
-            lines += [f"  {key}" + (f" = {value}" if value else "")
+            lines += ["", "Settings (INI tab, `[Xbox]`):", ""]
+            lines += [f"- `{key}`" + (f" = {value}" if value else "")
                       for key, value in entry["ini"].items()]
-        self.window.context_info.setPlainText("\n".join(lines))
+        self.window.context_info.setMarkdown("\n".join(lines))

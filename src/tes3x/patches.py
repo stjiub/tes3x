@@ -17,7 +17,7 @@ REGISTRY = resource("patches.toml")
 CANDIDATE_LIST = resource("candidates.toml")
 TABLE = ROOT / "docs" / "patches.md"
 CANDIDATE_PAGE = ROOT / "docs" / "candidates.md"
-PATCH_DOCS = ROOT / "patches"
+PATCH_DOCS = resource("patches")
 
 CATEGORIES = ("core", "correctness", "compatibility", "performance", "qol", "balance",
               "instrumentation", "infrastructure")
