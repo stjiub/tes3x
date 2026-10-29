@@ -4978,7 +4978,8 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_Script_getLocalVarIndexAndType",
-      "pc_va": "0x0050E7B0"
+      "pc_va": "0x0050E7B0",
+      "note": "Called 43.7M times by DialogueInfo::loadObjectSpecific's Local/NotLocal filter walk on full TR; local-var-index replaces that walk with a name index."
     },
     {
       "va": "0x00137100",
