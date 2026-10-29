@@ -63,6 +63,10 @@ No official releases yet. The first public release is in preparation.
 - New patch `script-index`: scripts are found by ID from an index instead of by comparing every
   script. With the Tamriel Rebuilt masters the console's load to the main menu takes about
   18 s less (101.7 s to 83.0 s) alongside `topic-sort` and `cell-index`. See [the patch notes](patches/script-index.md).
+- New patch `local-var-index`: a dialogue response's `Local` or `NotLocal` filter finds its script
+  variable from an index instead of asking every script. With the Tamriel Rebuilt masters the
+  console's load to the main menu takes about 30 s less (83.0 s to 53.3 s) alongside `topic-sort`,
+  `cell-index` and `script-index`. See [the patch notes](patches/local-var-index.md).
 - New patch `soundgen-index`: an animation's footstep and creature sound keys are matched against
   the loaded creatures instead of walking every loaded object once per key, at startup and when a
   creature's animation first loads. See [the patch notes](patches/soundgen-index.md).

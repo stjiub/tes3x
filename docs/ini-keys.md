@@ -104,6 +104,12 @@ Only pages the heap actually uses consume memory, so a large value costs address
 |---|---|---|
 | `ScriptIndex` | `on` or `verify` | `on`; `verify` also runs the engine's own walk on every lookup and logs `scriptindex.mismatch` when the answers differ |
 
+## `local-var-index`
+
+| key | values | default |
+|---|---|---|
+| `LocalVarIndex` | `on` or `verify` | `on`; `verify` also runs the engine's own walk on every lookup and logs `localvar.mismatch` when the answers differ |
+
 ## `bow-view`
 
 | key | values | default |

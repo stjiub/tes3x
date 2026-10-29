@@ -158,6 +158,17 @@ ini = { ScriptIndex = "on" }
 summary = "Find a script by ID from a hash index instead of comparing the ID of every script."
 
 [[patch]]
+name = "local-var-index"
+title = "Indexed script variable lookup in dialogue"
+category = "performance"
+group = "Speed"
+channel = "dev"
+selection = "preset"
+source = "tes3xlocalvarindex.c"
+ini = { LocalVarIndex = "on" }
+summary = "Resolve a dialogue filter's script variable from a hash index of script variable names instead of searching every script."
+
+[[patch]]
 name = "title"
 title = "Dashboard title"
 category = "infrastructure"

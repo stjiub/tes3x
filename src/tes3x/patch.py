@@ -69,7 +69,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_mcp97_scan, find_mcp98_refcounts, find_menu_mode_gate,
                                find_mob_gate, find_preferences_load, find_ref_index,
                                find_soundgen_index, find_topic_sort, find_cell_index,
-                               find_script_index,
+                               find_script_index, find_local_var_index,
                                find_ref_load, find_ref_skip, find_run_function,
                                find_save_allowed_context, find_save_this_ptr,
                                find_script_decode_state, find_script_fixup_call,
@@ -816,6 +816,20 @@ def _script_index(x, value, ctx):
     off = x.va_to_off(walk)
     x.data[off:off + 5] = b"\xe9" + struct.pack("<i", hook - (walk + 5))
     return [(off, 5, "script name walk 0x%08X -> 0x%08X" % (walk, hook))]
+
+
+@patch("local-var-index")
+def _local_var_index(x, value, ctx):
+    """Resolve a dialogue filter's script variable from a hash index of every script's names."""
+    hook = ctx.get("hooks", {}).get("localvar")
+    if not hook:
+        raise PatchError("local-var-index: needs `payload` first, with a localvar hook in its "
+                         "manifest")
+    walk = find_local_var_index(x)["entry"]
+    hook = int(str(hook), 16)
+    off = x.va_to_off(walk)
+    x.data[off:off + 5] = b"\xe9" + struct.pack("<i", hook - (walk + 5))
+    return [(off, 5, "filter script walk 0x%08X -> 0x%08X" % (walk, hook))]
 
 
 @patch("bow-view")
@@ -2193,6 +2207,7 @@ __all__ = [
     'find_topic_sort',
     'find_cell_index',
     'find_script_index',
+    'find_local_var_index',
     'find_ref_load',
     'find_ref_skip',
     'find_run_function',

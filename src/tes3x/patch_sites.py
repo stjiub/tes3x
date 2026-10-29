@@ -882,6 +882,33 @@ def find_script_index(x):
     return {"entry": entry, "list": 0x38, "stricmp": stricmp}
 
 
+# DialogueInfo::loadObjectSpecific resolving a Local or NotLocal filter: the script list head, then
+# Script::getLocalVarIndexAndType on each script until it reports a match.
+LOCAL_VAR_SIG = re.compile(
+    rb"(?P<global>\x8b\x0d....)\x8b\x11\x8b\x4a\x38\xe8....\x8b\xe8\x85\xed\x74.\x8b\x4d\x08"
+    rb"\x85\xc9\x74.\x8d\x44\x24.\x50\x53(?P<walk>\xe8....)\x84\xc0(?P<found>\x0f\x85....)"
+    rb"\x8b\x6d\x04\x85\xed\x75.",
+    re.S,
+)
+
+
+def find_local_var_index(x):
+    """The filter's script walk, its two exits, the engine's per-script check and the holder."""
+    hits = list(LOCAL_VAR_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("local-var-index: %d script variable walk(s), expected 1" % len(hits))
+    hit = hits[0]
+    entry = x.off_to_va(hit.start())
+    if entry is None:
+        raise PatchError("local-var-index: the script variable walk is outside any section")
+    jump = entry + hit.start("found") - hit.start()
+    rel = struct.unpack("<i", hit.group("found")[2:6])[0]
+    return {"entry": entry, "missing": entry + len(hit.group()),
+            "found": jump + 6 + rel,
+            "global": struct.unpack("<I", hit.group("global")[2:6])[0],
+            "walk": tes3x_inject.call_target(x, entry + hit.start("walk") - hit.start())}
+
+
 def find_dxt5_size(x):
     """The texture-create call to the texture-size function."""
     hits = list(DXT5_SIZE_SIG.finditer(bytes(x.data)))
@@ -3133,6 +3160,7 @@ LOCATORS = {
     "topic-sort": find_topic_sort,
     "cell-index": find_cell_index,
     "script-index": find_script_index,
+    "local-var-index": find_local_var_index,
     "lean-menu": find_lean_menu,
     "video-arena": find_arena_size,
     "video-arena-phys-alloc": lambda image: find_arena_overflow(image)["phys_alloc"],

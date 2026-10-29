@@ -1,0 +1,20 @@
+kind = "single"
+purpose = "A dialogue filter's script variable found from the index is the one the engine's own walk finds."
+procedure = "Set LocalVarIndex to verify, which runs the engine's walk beside every indexed lookup and logs any difference, start a new game, then talk to an NPC whose responses use Local filters."
+limitations = "Hardware timing. Retail has few Local filters; the Tamriel Rebuilt masters are checked the same way outside this test."
+watch = 'localvar\.|diag\.patches|exec\.exit|crash\.|hang\.detected|fatal\.'
+enable = ["diagnostics", "console", "local-var-index"]
+timeout = 240
+script = '''
+@start new
+wait 30
+coc "Seyda Neen, Census and Excise Office"
+wait 30
+exit
+'''
+
+[profile]
+ini = { "Xbox:LocalVarIndex" = "verify" }
+
+[expect]
+test = ['localvar\.mode 2', 'localvar\.checks [1-9]', '!localvar\.mismatch', 'exec\.exit 0']

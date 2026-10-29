@@ -1381,6 +1381,20 @@ def _bind_scriptindex(b):
     wanted["scriptindex_find"] = ("_tes3x_scriptindex_find_hook",)
 
 
+@binder("tes3xlocalvarindex.c")
+def _bind_localvarindex(b):
+    define, locate, wanted = b.define, b.locate, b.wanted
+    found = locate("local-var-index")
+    print(f"local-var-index: filter walk {hexva(found['entry'])}, "
+          f"exits {hexva(found['found'])} / {hexva(found['missing'])}")
+    define("LOCALVAR_GLOBAL", hexva(found["global"]))
+    define("LOCALVAR_WALK", hexva(found["walk"]))
+    define("LOCALVAR_FOUND", hexva(found["found"]))
+    define("LOCALVAR_MISSING", hexva(found["missing"]))
+    define("LOCALVAR_STRICMP", hexva(locate("script-index")["stricmp"]))
+    wanted["localvar"] = ("_tes3x_localvar_hook",)
+
+
 @binder("tes3xbowview.c")
 def _bind_bowview(b):
     image, define, locate, wanted = b.image, b.define, b.locate, b.wanted

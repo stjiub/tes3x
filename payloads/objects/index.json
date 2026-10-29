@@ -108,6 +108,11 @@
     "LINK_TAGGED": null,
     "LINK_ZEROED": null,
     "LOAD_GAME": null,
+    "LOCALVAR_FOUND": null,
+    "LOCALVAR_GLOBAL": null,
+    "LOCALVAR_MISSING": null,
+    "LOCALVAR_STRICMP": null,
+    "LOCALVAR_WALK": null,
     "MCP118_GET_PLAYER": null,
     "MCP118_RESET": null,
     "MCP118_WORLD_PTR": null,
@@ -585,6 +590,10 @@
     "tes3xlinknames.c": {
       "digest": "67d0edb241ae2dee298e2c416654e2a1ae39ce1e16fa9647381b8342274531a4",
       "sha256": "e005d996bc8964760c4e8204e7dddee28f07234ea5e26078bd59ece890b2fbbd"
+    },
+    "tes3xlocalvarindex.c": {
+      "digest": "5f4993c8bc930130c09a7854cdff644c9858d0f2a8dd8118ace98bd54a4358bd",
+      "sha256": "7a2394d8ef03b1ebc15c991a5a3005b15bdf54e57041c789e1e602a4a54914ab"
     },
     "tes3xlog.c": {
       "digest": "59321b2696af7e15ad652017123e785e39c09f02bf2601b4ad2764f28b734d44",
