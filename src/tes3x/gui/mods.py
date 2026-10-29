@@ -265,6 +265,8 @@ class ModsTab(QWidget):
         if on:
             self.add_dependencies(item)
             self.enable_required_patches(item)
+        else:
+            self.release_unneeded_patches(item)
         self.mods_changed()
 
     def enable_required_patches(self, item):
@@ -290,6 +292,24 @@ class ModsTab(QWidget):
             self.window.statusBar().showMessage(
                 f"{name} needs {', '.join(off)}; turned on in Patches", 8000
             )
+
+    def release_unneeded_patches(self, item):
+        """Drop the profile's explicit `enable` of patches only this mod needed, so a
+        compatibility patch is not left on after its mod is turned off."""
+        patches = self.window.patches
+        needed = set()
+        for other in self.mod_rows():
+            if (other is not item and other.data(0, EXTRA)
+                    and other.checkState(self.MOD_NAME) == Qt.CheckState.Checked):
+                needed.update((self.compat_verdict(other) or {}).get("patches", []))
+        released = [patch for patch in (self.compat_verdict(item) or {}).get("patches", [])
+                    if patch not in needed and patches.patch_modes.get(patch) == "enable"]
+        for patch in released:
+            del patches.patch_modes[patch]
+        if released:
+            name = self.describe(item.data(0, ROLE))[0]
+            self.window.statusBar().showMessage(
+                f"{name} is off; {', '.join(released)} no longer needed, turned off in Patches", 8000)
 
     def add_dependencies(self, item):
         _name, _version, release, _problem = self.describe(item.data(0, ROLE))

@@ -396,6 +396,11 @@ order = 10
         self.row(window, "Other").setCheckState(0, Qt.CheckState.Checked)
         self.assertEqual(window.patches.patch_configuration()["enable"], ["mcp-154"])
 
+        # Unticking it again turns them off.
+        self.row(window, "Other").setCheckState(0, Qt.CheckState.Unchecked)
+        self.assertEqual(window.patches.patch_configuration()["enable"], [])
+        self.assertNotIn("mcp-154", window.patches.applied_patches)
+
     def test_build_tab_writes_profile_settings(self):
         window = self.window()
         self.assertTrue(window.save_profile())
