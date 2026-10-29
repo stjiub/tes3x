@@ -182,9 +182,9 @@ order = 10
         self.assertEqual([window.tabs.tabText(index) for index in range(window.tabs.count())],
                          ["Mods", "Plugins", "Archives", "Data Files", "Patches", "INI",
                           "Resources", "Saves", "Build"])
-        self.assertEqual(window.counts.contentsMargins().right(), 8)
-        self.assertEqual(window.details_container.layout().contentsMargins().top(),
-                         window.tabs.tabBar().sizeHint().height())
+        self.assertIs(window.details_container.layout().itemAt(0).widget(), window.counts)
+        self.assertEqual(window.counts.minimumHeight(), window.tabs.tabBar().sizeHint().height())
+        self.assertTrue(window.counts.alignment() & Qt.AlignmentFlag.AlignRight)
         self.assertEqual(window.menuBar().font(), window.tabs.tabBar().font())
         self.assertTrue(window.statusBar().spinner.isHidden())
         self.assertFalse(window.action_play.icon().isNull())
@@ -400,6 +400,16 @@ order = 10
         self.row(window, "Other").setCheckState(0, Qt.CheckState.Unchecked)
         self.assertEqual(window.patches.patch_configuration()["enable"], [])
         self.assertNotIn("mcp-154", window.patches.applied_patches)
+
+    def test_mods_only_enabled_hides_unticked_rows(self):
+        window = self.window()
+        rows = window.mods.mod_rows()
+        self.assertTrue(rows)
+        rows[0].setCheckState(window.mods.MOD_NAME, Qt.CheckState.Unchecked)
+        window.mods.mod_only_enabled.setChecked(True)
+        self.assertTrue(rows[0].isHidden())
+        window.mods.mod_only_enabled.setChecked(False)
+        self.assertFalse(rows[0].isHidden())
 
     def test_build_tab_writes_profile_settings(self):
         window = self.window()

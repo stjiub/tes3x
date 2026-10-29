@@ -3,7 +3,7 @@
 from .common import (ARCHIVES, BASE_MASTERS, CATALOG_NAME, COMPAT, COMPAT_LABELS,
                      ComponentsDialog, DragList, EXTRA, FilesFilter, FilesModel, InstallDialog,
                      LOSES, LibraryError, Mod, PLUGIN_EXT, Path, PipelineError, QAbstractItemView,
-                     QAction, QDesktopServices, QDialog, QFileDialog, QHBoxLayout,
+                     QAction, QCheckBox, QDesktopServices, QDialog, QFileDialog, QHBoxLayout,
                      QHeaderView, QIcon, QInputDialog, QLabel, QLineEdit, QMenu, QMessageBox,
                      QPushButton, QSplitter, QStyle, QTabWidget, QTableView, QTextBrowser,
                      QTreeWidget, QTreeWidgetItem, QUrl, QVBoxLayout, QWidget, Qt, ROLE,
@@ -80,6 +80,8 @@ class ModsTab(QWidget):
         self.mod_search = QLineEdit()
         self.mod_search.setPlaceholderText("Filter mods…")
         self.mod_search.textChanged.connect(self.filter_mods)
+        self.mod_only_enabled = QCheckBox("Only enabled")
+        self.mod_only_enabled.toggled.connect(self.filter_mods)
         refresh = QAction(theme_icon(self, QIcon.ThemeIcon.ViewRefresh,
                                      QStyle.StandardPixmap.SP_BrowserReload),
                           "Refresh the mod list from the library (F5)", self)
@@ -87,6 +89,7 @@ class ModsTab(QWidget):
         top = QHBoxLayout()
         top.addWidget(install)
         top.addWidget(self.mod_search, 1)
+        top.addWidget(self.mod_only_enabled)
         top.addWidget(icon_button(refresh))
 
         self.mod_list = DragList(["Mod", "Version", "Conflicts", "Notes", "Priority", "Xbox"],
@@ -239,8 +242,10 @@ class ModsTab(QWidget):
 
     def filter_mods(self, *_args):
         query = self.mod_search.text().casefold()
+        only = self.mod_only_enabled.isChecked()
         for item in self.mod_rows():
-            item.setHidden(bool(query) and query not in item.text(self.MOD_NAME).casefold())
+            item.setHidden(bool(query) and query not in item.text(self.MOD_NAME).casefold()
+                           or only and item.checkState(self.MOD_NAME) != Qt.CheckState.Checked)
 
     def set_entry(self, item, entry, in_profile=True):
         item.setData(0, ROLE, entry)

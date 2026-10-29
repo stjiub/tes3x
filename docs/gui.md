@@ -23,7 +23,8 @@ The toolbar and the command output stay the same in all three.
 
 ## Profile
 
-- **Mods** lists every mod in the library. Tick the ones this profile uses and drag them into
+- **Mods** lists every mod in the library; **Only enabled** hides the unticked ones. Tick the
+  ones this profile uses and drag them into
   order; lower mods win file conflicts. **Conflicts** counts the files a mod overrides (+) and
   loses (-), and selecting a mod highlights the mods it beats and the ones that beat it.
   **Xbox** shows the verdict from the [compatibility catalog](catalog.md): ✓ works, * works with
@@ -93,7 +94,7 @@ and staged, and upload speed and time left while deploying. A bar fixed at the r
 fraction done. The divider above the output can be dragged to give the output more room. A red **✕** beside Play cancels the command in the tab you are viewing, and any steps queued
 after it; cancelling a deploy asks first, because it can leave the game folder on the Xbox
 incomplete. Hover Check, Build or Deploy to read what its coloured dot means. The Mods and
-Plugins counts sit at the right of the profile's tab row. The log shows section headers in bold
+Plugins counts sit above the details pane, at the right. The log shows section headers in bold
 and warnings and errors in colour. Check and
 per-target Deploy results are remembered in the build output; like the Build state, they notice
 profile edits but not changes inside mod folders.
