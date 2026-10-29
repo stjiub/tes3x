@@ -43,8 +43,8 @@ static const char *const chargen_menus[] = {
     "EnableStatReviewMenu"};
 
 /* What CharGenClassNPC, CharGenDoorExitCaptain and the other boat and census office scripts
- * would have done by the time the player leaves the census office. The outside door's journal tip
- * (CharGenJournalMessage) fires for anyone within 300 units of it, so it is marked shown. */
+ * would have done by the time the player leaves the census office. The courtyard barrel's map
+ * tip and the outside door's journal tip are marked shown. */
 static const char *const chargen_finish[] = {
     "\"CharGen StatsSheet\"->Disable", "\"CharGen Boat\"->Disable",
     "\"CharGen Boat Guard 1\"->Disable", "\"CharGen Boat Guard 2\"->Disable",
@@ -61,6 +61,7 @@ static const char *const chargen_finish[] = {
     "AddTopic \"specific place\"", "AddTopic \"someone in particular\"",
     "AddTopic \"services\"", "AddTopic \"my trade\"", "AddTopic \"little secret\"",
     "AddTopic \"latest rumors\"", "AddTopic \"little advice\"",
+    "set \"chargen barrel fatigue\".done to 1",
     "set chargendoorjournal.done to 1", "set \"chargen captain\".done to 1",
     "set \"chargen captain\".state to -1", "set \"chargen class\".state to -1",
     "set \"chargen name\".state to -1", "set \"chargen dock guard\".state to -1",

@@ -675,8 +675,8 @@
       "sha256": "b68114f21bad5b7dc46927db712ed5e21478a7c40353a2a6267e27efcada39c7"
     },
     "tes3xmulti.c": {
-      "digest": "0cba234c01aec71a88ab09fdb8c6ba8ed2720a58c8f75539216d3a51f13d1b51",
-      "sha256": "5655f451c2965be0c03e5ba9382233427985edbd435f4c075558f3832e59ffe3"
+      "digest": "a0c9f0a6bf80784814712914e5cff94d2fe8a081623ac892b79a21360b677b47",
+      "sha256": "d5e183d4be22cfd0438066f23d7215c25c49fdfd2d2cf981c360947d311950ff"
     },
     "tes3xmwse.c": {
       "digest": "0d5d4f54f04311d9f38177cfb6b6b2685c2ca75c86458d00bcaa423cbac91cdf",
