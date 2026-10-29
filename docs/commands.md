@@ -51,6 +51,7 @@ options. This page says what each one is for and where it is explained.
 | `tes3x scenario` | run a patch's game test and apply its verdict | [validation](validation.md) |
 | `tes3x game-tests` | run every game test on one or more retail engines and report each result | [testing](testing.md#every-game-test) |
 | `tes3x validate` | record and check local game-test results | [validation](validation.md) |
+| `tes3x catalog` | draft a catalog entry for a mod folder; download the current catalog from GitHub | [mod compatibility](catalog.md) |
 | `tes3x tour` | write a script that tours a plugin's cells logging memory; summarise the log | [diagnostics](diagnostics.md#memory-tours) |
 | `tes3x orphan` | write a test plugin with references that cannot resolve | [unresolvable reference cleanup](../patches/mcp-1.md) |
 | `tes3x scriptasm` | write a plugin that calls a new script opcode | [script opcode extensions](../patches/script-ext.md) |

@@ -51,7 +51,8 @@ from tes3x.library import (ARCHIVES, CATALOG_NAME, LibraryError, append_mods, co
                            discover_library, extract_archive, free_id, guess_release,
                            index_library, install_files, install_layout, load_library, nexus_id,
                            resolve_selection)
-from tes3x.catalog import STATUS_LABELS as COMPAT_LABELS, CatalogError, load as load_catalog
+from tes3x.catalog import STATUS_LABELS as COMPAT_LABELS, CatalogError, load_best as load_catalog
+from tes3x.catalog import refresh as refresh_catalog
 from tes3x.catalog import match as match_catalog, needs as catalog_needs
 from tes3x.patches import (CATEGORIES as PATCH_CATEGORIES, PATCHES as PATCH_CATALOG, SOURCES,
                            patch_spec)
@@ -1839,6 +1840,7 @@ __all__ = [
     'key_fingerprint',
     'launch',
     'load_catalog',
+    'refresh_catalog',
     'load_library',
     'load_or_create_key',
     'local_config',

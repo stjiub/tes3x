@@ -48,6 +48,27 @@ the built game files, about 2 GB a run, are deleted either way. `--keep-artifact
 `always` changes that; `always` keeps the ISO and game files too. `--library-all` tests every mod
 in the library on its own, using the profile for everything else.
 
+## Memory tour
+
+```powershell
+tes3x test profiles/my-build.toml --tour cities,dense
+tes3x test profiles/vanilla.toml --write-baseline
+```
+
+Replaces the Balmora trip with a visit to each place chosen from [`locations.toml`](../locations.toml):
+the busiest towns, interiors and expansion hubs, picked by reference count in `Morrowind.esm`.
+`--tour` takes preset names (`cities`, `dense`, `expansions`, `all`) and location ids, comma
+separated. After each move the script logs free memory (`mem.ID`); the run prints a table with
+the vanilla figure and the difference, and `--record` keeps it in the result. The GUI's
+**Actions > Run memory tour** shows the same list as a checklist.
+
+`--write-baseline` tours every location and saves the free memory as
+[`memory-baseline.json`](../memory-baseline.json). Run it on a retail-equivalent profile; a mod
+list's cost is then the baseline minus its own free memory. Free memory is allocator state, so
+xemu's figures are meaningful, unlike its timings. A pass shows that the mod list reaches every
+place without a crash or hang; it does not establish that the mod works. To record a mod's
+cost in the [catalog](catalog.md), set `memory_kb` to the largest difference.
+
 ## Patch game tests
 
 Each patch can have a game test, `tests/game/PATCH.toml`: an [exec script](exec-scripts.md) and

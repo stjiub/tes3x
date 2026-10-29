@@ -1,6 +1,7 @@
 """TES3X GUI. It edits the same TOML the command-line tools read."""
 
 import subprocess
+import threading
 from html import escape
 
 from .common import (Bsa, BuildSettings, CATALOG_NAME, CHECK_MARKER, CatalogError, DEPLOYS_MARKER,
@@ -14,13 +15,14 @@ from .common import (Bsa, BuildSettings, CATALOG_NAME, CHECK_MARKER, CatalogErro
                      ServerPage, Signal, StatusBar, TEMPLATE, TargetsPage, WARNING, XEMU_STARTED,
                      argparse, convert_profile, datetime, default_config_path, defaultdict,
                      discover_library, dot_icon, drop_empty, enabled_addons, heartbeat_text,
-                     index_library, ini_text, json, launch, load_catalog, load_library,
+                     index_library, ini_text, json, launch, load_catalog, load_library, refresh_catalog,
                      menu_button, new_table, parse_progress, play_icon, plugin_header, sha256_file, shutil,
                      cancel_icon, stop_icon, struct, sys, target_capabilities, target_runtime_label,
                      tes3x_targets, tomlkit, tomllib, validate_profile, version_label)
 from .banner import PromptBanner
 from . import logtext
 from .jobs import Job
+from .tour import TourDialog
 from .saves import SavesTab
 from .patches import PatchesTab
 from .resources import ResourcesPanel
@@ -34,6 +36,7 @@ from tes3x.paths import docs_url
 
 class ProfileWindow(QMainWindow):
     nexus_done = Signal(str, object, object)
+    catalog_done = Signal(object, object)
     analysis_ready = Signal()
 
     in_game_event = Signal(object)
@@ -90,6 +93,7 @@ class ProfileWindow(QMainWindow):
         self.mods.nexus_links = {}
         self.mods.nexus_pending = set()
         self.nexus_done.connect(self.mods.nexus_finished)
+        self.catalog_done.connect(self.catalog_refreshed)
         self.analysis_ready.connect(self.mods.analysis_finished)
         self.in_game_event.connect(self.play_controller.handle_in_game_event)
         self.mods.forget_analysis()
@@ -320,6 +324,8 @@ class ProfileWindow(QMainWindow):
         self.action_smoke = QAction("Run &smoke test", self)
         self.action_smoke.setShortcut("Ctrl+T")
         self.action_smoke.triggered.connect(self.run_smoke_test)
+        self.action_tour = QAction("Run memory &tour…", self)
+        self.action_tour.triggered.connect(self.run_memory_tour)
         self.action_deploy = QAction("&Deploy", self)
         self.action_deploy.triggered.connect(self.deploy_profile)
         self.action_dash = QAction("Install TES3X &Dash…", self)
@@ -339,7 +345,8 @@ class ProfileWindow(QMainWindow):
         self.action_stop.triggered.connect(self.play_controller.stop_play)
         self.action_reset_play = QAction("Reset xemu saves…", self)
         self.action_reset_play.triggered.connect(self.play_controller.reset_play_disk)
-        actions_menu.addActions([self.action_check, self.action_build, self.action_smoke])
+        actions_menu.addActions([self.action_check, self.action_build, self.action_smoke,
+                                 self.action_tour])
         actions_menu.addSeparator()
         actions_menu.addActions([self.action_deploy, self.action_play, self.action_stop,
                                  self.action_reset_play])
@@ -352,6 +359,9 @@ class ProfileWindow(QMainWindow):
         self.action_about = QAction("&About TES3X…", self)
         self.action_about.triggered.connect(self.show_about)
         help_menu.addAction(self.action_about)
+        self.action_update_catalog = QAction("Update &compatibility list", self)
+        self.action_update_catalog.triggered.connect(self.update_catalog)
+        help_menu.addAction(self.action_update_catalog)
         self.play_icon, self.stop_icon = play_icon(), stop_icon()
         self.action_play.setIcon(self.play_icon)
         self.run_menu = QMenu(self)
@@ -384,7 +394,7 @@ class ProfileWindow(QMainWindow):
             self.action_check, self.action_build, self.action_deploy)
         self.action_build.changed.connect(self.sync_run_button)
         self.command_actions = (self.action_check, self.action_build, self.action_deploy,
-                                self.action_play, self.action_smoke, self.action_fetch,
+                                self.action_play, self.action_smoke, self.action_tour, self.action_fetch,
                                 self.action_dash)
         self.play_controller.play_gdb = bool(
             self.settings and self.settings.value("play_gdb", False, bool)
@@ -1481,6 +1491,7 @@ class ProfileWindow(QMainWindow):
         gdb.setEnabled(xemu)
         gdb.setToolTip("Open xemu's GDB stub; the status bar shows the port to attach to")
         self.play_menu.addAction(self.action_smoke)
+        self.play_menu.addAction(self.action_tour)
         name = target["name"] if target else "a target"
         if self.play_controller.play_process is not None:
             self.action_play.setText("&Stop")
@@ -1543,6 +1554,56 @@ class ProfileWindow(QMainWindow):
               if self.local_config_path().is_file() else []),
             "--record",
         ], "Running profile smoke test…", kind="smoke")
+
+    def update_catalog(self):
+        """Download the current compatibility list from GitHub."""
+        self.action_update_catalog.setEnabled(False)
+        self.statusBar().showMessage("Downloading the compatibility list…", 5000)
+
+        def work():
+            try:
+                result, error = refresh_catalog(), None
+            except (OSError, ValueError) as exc:
+                result, error = None, exc
+            self.catalog_done.emit(result, error)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def catalog_refreshed(self, date, error):
+        self.action_update_catalog.setEnabled(True)
+        if error:
+            self.error(f"Could not update the compatibility list: {error}")
+            return
+        try:
+            self.compat = load_catalog()
+        except (OSError, ValueError, CatalogError) as exc:
+            self.error(exc)
+            return
+        self.mods.populate_mods(self.mods.profile_mods())
+        self.statusBar().showMessage(f"Compatibility list is current ({date})", 8000)
+
+    def run_memory_tour(self):
+        if self.profile_busy():
+            self.error("This profile already has a build, check or deploy running")
+            return
+        saved = self.settings.value("tour_locations", None) if self.settings else None
+        dialog = TourDialog(saved.split(",") if isinstance(saved, str) and saved else None, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        chosen = dialog.selected()
+        if not chosen:
+            self.error("Pick at least one place to visit")
+            return
+        if self.settings:
+            self.settings.setValue("tour_locations", ",".join(chosen))
+        if not self.save_profile():
+            return
+        self.start_command("test", [
+            str(self.profile_path),
+            *(["--config", str(self.local_config_path())]
+              if self.local_config_path().is_file() else []),
+            "--record", "--tour", ",".join(chosen),
+        ], "Running memory tour…", kind="smoke")
 
     def deploy_profile(self):
         reason, existing = self.deploy_block()
@@ -1790,6 +1851,7 @@ class ProfileWindow(QMainWindow):
         busy_target = self.target_busy()
         self.action_check.setEnabled(not busy_profile)
         self.action_smoke.setEnabled(not busy_profile)
+        self.action_tour.setEnabled(not busy_profile)
         self.action_deploy.setEnabled(xbox and self.deploy_block()[0] is None)
         self.action_fetch.setEnabled(xbox and not busy_target)
         self.action_dash.setEnabled(xbox and not busy_target)

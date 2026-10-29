@@ -1,0 +1,52 @@
+name: Mod report
+description: Tell us a mod works, or doesn't, on the Xbox build
+title: "Mod report: "
+labels: ["mod-report"]
+body:
+  - type: input
+    id: link
+    attributes:
+      label: Nexus link
+      placeholder: https://www.nexusmods.com/morrowind/mods/12345
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Mod version
+  - type: dropdown
+    id: result
+    attributes:
+      label: What happened
+      options:
+        - Works
+        - Works with extra patches or settings
+        - Crashes or hangs
+        - Does not load
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Tested on
+      options:
+        - Original Xbox, 64 MB
+        - Original Xbox, 128 MB
+        - xemu
+    validations:
+      required: true
+  - type: input
+    id: tes3x
+    attributes:
+      label: TES3X version
+      description: Shown in the GUI title bar, or `tes3x --version`.
+  - type: textarea
+    id: patches
+    attributes:
+      label: Patches and other mods enabled
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: How long you played, what you did, what broke. If you ran `tes3x test --tour`, paste the memory table.

@@ -8,8 +8,8 @@ from setuptools.command.build_py import build_py
 ROOT = Path(__file__).resolve().parent
 # Everything tes3x.paths.resource() names but the portable folder's own files (VERSION, the
 # Dash's XBEs, externals/); test_pipeline checks the two agree.
-DATA = ("patches.toml", "candidates.toml", "catalog.toml", "hooks", "symbols", "examples",
-        "payloads",
+DATA = ("patches.toml", "candidates.toml", "catalog.toml", "locations.toml", "memory-baseline.json", "hooks",
+        "symbols", "examples", "payloads",
         "addons", "tests/game", "keys/release.pub", "dash/mgr.h")
 SKIP = shutil.ignore_patterns("__pycache__", "*.pyc")
 

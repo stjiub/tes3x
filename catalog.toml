@@ -15,10 +15,14 @@
 # requirements  anything else it needs, in words
 # dependencies  ids of other mods here it needs
 # plugins       the plugins to use, when not all of them
+# memory_kb     most free memory the mod costs against vanilla on `tes3x test --tour`, in KB
 # merge_kf      animation KFs, by name in the collected build, that the pipeline appends to
 #               xbase_anim.kf
 # notes         what was tried and what happened
+# updated       date of the last change to this file (YYYY-MM-DD); bump it with every edit. The
+#               GUI downloads this file from GitHub and keeps whichever copy is newer.
 schema = 1
+updated = "2026-10-29"
 
 [[mod]]
 id = "mop"

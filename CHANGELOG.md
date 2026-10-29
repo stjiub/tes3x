@@ -4,6 +4,16 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- `tes3x test --tour cities,dense` (GUI: **Actions > Run memory tour**) visits the heaviest
+  towns and interiors from `locations.toml` and reports free memory at each, against a vanilla
+  baseline. The catalog gains an optional `memory_kb` and a Memory column. See
+  [testing](docs/testing.md#memory-tour).
+
+- GUI: **Help > Update compatibility list** downloads the current list from GitHub, so verdicts
+  and memory figures arrive without a new TES3X release. Mods are matched to it by Nexus id
+  before name, so a renamed folder still finds its verdict, and **Set Nexus link…** on a mod
+  takes a Nexus URL or id. `tes3x catalog add FOLDER` drafts an entry for a mod folder.
+
 - The patch category `compat` is now `compatibility`. A profile that lists `compat` under
   `patches.categories` must be changed to match.
 

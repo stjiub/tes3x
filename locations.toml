@@ -1,0 +1,301 @@
+# Places the memory tour visits, and the groups the GUI's checklist shows them under.
+#
+# id      stable name; also the label the tour marks in the log
+# group   heading in the checklist
+# name    shown in the checklist
+# cell    interior or named cell, used as `coc "cell"`
+# grid    exterior cell, used as `coe x, y`
+# refs    references in the vanilla cell, as a rough guide to how heavy it is
+# tour    preset names that include it: cities, dense, expansions
+#
+# Exactly one of cell and grid. `tes3x tour` checks the cells exist in Morrowind.esm.
+schema = 1
+
+[[location]]
+id = "seyda-neen"
+group = "Cities"
+name = "Seyda Neen"
+grid = [-2, -9]
+refs = 316
+tour = ["cities"]
+
+[[location]]
+id = "balmora"
+group = "Cities"
+name = "Balmora"
+grid = [-3, -2]
+refs = 420
+tour = ["cities"]
+
+[[location]]
+id = "pelagiad"
+group = "Cities"
+name = "Pelagiad"
+grid = [0, -7]
+refs = 312
+tour = ["cities"]
+
+[[location]]
+id = "suran"
+group = "Cities"
+name = "Suran"
+grid = [6, -7]
+refs = 323
+tour = ["cities"]
+
+[[location]]
+id = "caldera"
+group = "Cities"
+name = "Caldera"
+grid = [-2, 2]
+refs = 300
+tour = ["cities"]
+
+[[location]]
+id = "ald-ruhn"
+group = "Cities"
+name = "Ald-ruhn"
+grid = [-2, 6]
+refs = 264
+tour = ["cities"]
+
+[[location]]
+id = "gnisis"
+group = "Cities"
+name = "Gnisis"
+grid = [-11, 11]
+refs = 353
+tour = ["cities"]
+
+[[location]]
+id = "ebonheart"
+group = "Cities"
+name = "Ebonheart"
+grid = [1, -13]
+refs = 332
+tour = ["cities"]
+
+[[location]]
+id = "vivec"
+group = "Cities"
+name = "Vivec"
+grid = [2, -10]
+refs = 160
+tour = ["cities"]
+
+[[location]]
+id = "molag-mar"
+group = "Cities"
+name = "Molag Mar"
+grid = [13, -8]
+refs = 181
+tour = ["cities"]
+
+[[location]]
+id = "sadrith-mora"
+group = "Cities"
+name = "Sadrith Mora"
+grid = [17, 4]
+refs = 246
+tour = ["cities"]
+
+[[location]]
+id = "tel-vos"
+group = "Cities"
+name = "Tel Vos"
+grid = [10, 14]
+refs = 324
+tour = ["cities"]
+
+[[location]]
+id = "gnaar-mok"
+group = "Cities"
+name = "Gnaar Mok"
+grid = [-8, 3]
+refs = 341
+tour = ["cities"]
+
+[[location]]
+id = "hla-oad"
+group = "Cities"
+name = "Hla Oad"
+grid = [-6, -5]
+refs = 306
+
+[[location]]
+id = "maar-gan"
+group = "Cities"
+name = "Maar Gan"
+grid = [-3, 12]
+refs = 204
+
+[[location]]
+id = "khuul"
+group = "Cities"
+name = "Khuul"
+grid = [-9, 17]
+refs = 272
+
+[[location]]
+id = "vivec-library"
+group = "Dense interiors"
+name = "Vivec, Library of Vivec"
+cell = "Vivec, Library of Vivec"
+refs = 467
+tour = ["dense"]
+
+[[location]]
+id = "vivec-guild-of-mages"
+group = "Dense interiors"
+name = "Vivec, Guild of Mages"
+cell = "Vivec, Guild of Mages"
+refs = 404
+tour = ["dense"]
+
+[[location]]
+id = "vivec-telvanni-plaza"
+group = "Dense interiors"
+name = "Vivec, Telvanni Plaza"
+cell = "Vivec, Telvanni Plaza"
+refs = 284
+tour = ["dense"]
+
+[[location]]
+id = "vivec-hlaalu-plaza"
+group = "Dense interiors"
+name = "Vivec, Hlaalu Plaza"
+cell = "Vivec, Hlaalu Plaza"
+refs = 234
+tour = ["dense"]
+
+[[location]]
+id = "vivec-st-delyn-plaza"
+group = "Dense interiors"
+name = "Vivec, St. Delyn Plaza"
+cell = "Vivec, St. Delyn Plaza"
+refs = 226
+
+[[location]]
+id = "ald-ruhn-guild-of-mages"
+group = "Dense interiors"
+name = "Ald-ruhn, Guild of Mages"
+cell = "Ald-ruhn, Guild of Mages"
+refs = 435
+tour = ["dense"]
+
+[[location]]
+id = "ald-ruhn-ald-skar-inn"
+group = "Dense interiors"
+name = "Ald-ruhn, Ald Skar Inn"
+cell = "Ald-ruhn, Ald Skar Inn"
+refs = 394
+tour = ["dense"]
+
+[[location]]
+id = "gnisis-madach-tradehouse"
+group = "Dense interiors"
+name = "Gnisis, Madach Tradehouse"
+cell = "Gnisis, Madach Tradehouse"
+refs = 413
+tour = ["dense"]
+
+[[location]]
+id = "suran-tradehouse"
+group = "Dense interiors"
+name = "Suran, Suran Tradehouse"
+cell = "Suran, Suran Tradehouse"
+refs = 371
+
+[[location]]
+id = "maar-gan-outpost"
+group = "Dense interiors"
+name = "Maar Gan, Outpost"
+cell = "Maar Gan, Outpost"
+refs = 383
+
+[[location]]
+id = "caldera-shenks-shovel"
+group = "Dense interiors"
+name = "Caldera, Shenk's Shovel"
+cell = "Caldera, Shenk's Shovel"
+refs = 331
+
+[[location]]
+id = "holamayan-monastery"
+group = "Dense interiors"
+name = "Holamayan Monastery"
+cell = "Holamayan Monastery"
+refs = 516
+tour = ["dense"]
+
+[[location]]
+id = "vassamsi-grotto"
+group = "Dense interiors"
+name = "Vassamsi Grotto"
+cell = "Vassamsi Grotto"
+refs = 763
+tour = ["dense"]
+
+[[location]]
+id = "tukushapal"
+group = "Dense interiors"
+name = "Tukushapal"
+cell = "Tukushapal"
+refs = 719
+tour = ["dense"]
+
+[[location]]
+id = "mournhold-great-bazaar"
+group = "Expansions"
+name = "Mournhold, Great Bazaar"
+cell = "Mournhold, Great Bazaar"
+refs = 315
+tour = ["expansions"]
+
+[[location]]
+id = "mournhold-temple-courtyard"
+group = "Expansions"
+name = "Mournhold, Temple Courtyard"
+cell = "Mournhold, Temple Courtyard"
+refs = 302
+tour = ["expansions"]
+
+[[location]]
+id = "mournhold-winged-guar"
+group = "Expansions"
+name = "Mournhold, The Winged Guar"
+cell = "Mournhold, The Winged Guar"
+refs = 393
+tour = ["expansions"]
+
+[[location]]
+id = "fort-frostmoth"
+group = "Expansions"
+name = "Fort Frostmoth"
+grid = [-22, 17]
+refs = 185
+tour = ["expansions"]
+
+[[location]]
+id = "fort-frostmoth-quarters"
+group = "Expansions"
+name = "Fort Frostmoth, General Quarters"
+cell = "Fort Frostmoth, General Quarters"
+refs = 415
+tour = ["expansions"]
+
+[[location]]
+id = "raven-rock"
+group = "Expansions"
+name = "Raven Rock"
+grid = [-25, 19]
+refs = 154
+tour = ["expansions"]
+
+[[location]]
+id = "raven-rock-bar"
+group = "Expansions"
+name = "Raven Rock, Bar"
+cell = "Raven Rock, Bar"
+refs = 380
+tour = ["expansions"]

@@ -276,15 +276,8 @@ class ModsTab(QWidget):
 
     def enable_required_patches(self, item):
         """Turn on the patches the catalog says a mod needs."""
-        name, _version, release, _problem = self.describe(item.data(0, ROLE))
-        entry = item.data(0, ROLE)
-        verdict = match_catalog(
-            self.window.compat,
-            name,
-            entry.get("name", ""),
-            entry.get("id", ""),
-            release["folder"] if release else "",
-        )
+        name = self.describe(item.data(0, ROLE))[0]
+        verdict = self.compat_verdict(item)
         off = [
             patch
             for patch in (verdict or {}).get("patches", [])
@@ -410,6 +403,7 @@ class ModsTab(QWidget):
             web = menu.addAction("Open web page", lambda: QDesktopServices.openUrl(QUrl(page)))
             web.setEnabled(bool(page))
             menu.addAction("Find on Nexus…", lambda: self.find_on_nexus(item))
+            menu.addAction("Set Nexus link…", lambda: self.set_nexus_link(item))
             menu.addSeparator()
             if item.data(0, EXTRA):
                 menu.addAction("Remove from profile", lambda: self.remove_from_profile(item))
@@ -420,8 +414,11 @@ class ModsTab(QWidget):
     def compat_verdict(self, item):
         entry = item.data(0, ROLE)
         name, _version, release, _problem = self.describe(entry)
+        mod = self.mod_record(item) or {}
+        found = (nexus_id(mod.get("url"), release.get("source") if release else None)
+                 or self.nexus_links.get(name))
         return match_catalog(self.window.compat, name, entry.get("name", ""), entry.get("id", ""),
-                             release["folder"] if release else "")
+                             release["folder"] if release else "", nexus=found)
 
     def mod_record(self, item):
         """The library's entry for a row, which holds its page and description."""
@@ -613,6 +610,23 @@ class ModsTab(QWidget):
         self.nexus_search_item = item
         self.nexus_lookup("search:" + text.strip(), nexus.search, text.strip())
         self.window.statusBar().showMessage("Searching Nexus…", 5000)
+
+    def set_nexus_link(self, item):
+        """Point a mod at its Nexus page by URL or mod id."""
+        text, ok = QInputDialog.getText(self, "Set Nexus link", "Nexus page URL or mod id")
+        if not ok or not text.strip():
+            return
+        text = text.strip()
+        mod_id = int(text) if text.isdigit() else nexus_id(text)
+        if not mod_id:
+            QMessageBox.information(self, "Set Nexus link",
+                                    "That is not a Morrowind page on Nexus Mods.")
+            return
+        found = {"id": mod_id, "url": nexus.page_url(mod_id), "author": "", "summary": ""}
+        self.store_nexus(item, found, replace=True)
+        self.nexus_cache.pop(mod_id, None)
+        self.nexus_lookup(f"mod:{mod_id}", nexus.mod_info, mod_id)
+        self.show_mod_info()
 
     def choose_nexus_match(self, text, result, error):
         item = getattr(self, "nexus_search_item", None)

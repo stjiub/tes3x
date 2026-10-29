@@ -19,6 +19,7 @@ import tomllib
 
 from tes3x.diag import assertion_failures
 from tes3x.pipeline import validate_profile
+from tes3x import locations as tour_locations
 from tes3x.library import CATALOG_NAME, dependency_order, discover_library, load_library
 from tes3x.paths import data_dir, local_config, resource
 
@@ -317,6 +318,21 @@ def load_scenario(path):
     return scenario
 
 
+def tour_scenario(scenario, ids, wait):
+    """SCENARIO with its travel replaced by a memory tour of IDS."""
+    head = []
+    for line in scenario["script"].strip().splitlines():
+        if line.startswith(("coc ", "exit")) or "-12288" in line or line.strip() == "wait 60":
+            continue
+        head.append(line)
+    scenario = dict(scenario)
+    scenario["script"] = "\n".join(
+        [*head, tour_locations.script(tour_locations.load(), ids, wait), "exit"])
+    scenario["timeout"] = scenario.get("timeout", 180) + 60 * len(ids)
+    scenario["expect"] = {"test": [*scenario["expect"]["test"], r"mem\.start "]}
+    return scenario
+
+
 def check_log(path, scenario):
     if not path.is_file():
         return False, ["no log recovered"], []
@@ -404,6 +420,11 @@ def run_profile(args):
     workspace.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     scenario_name = safe_name(scenario_path.stem)
+    stops = []
+    if args.tour or args.write_baseline:
+        stops = tour_locations.select(tour_locations.load(), args.tour or "all")
+        scenario_name = "tour"
+        scenario = tour_scenario(scenario, stops, args.wait)
     profile_name = profile["profile"]["name"]
     run_name = safe_name(f"profile-{profile_name}-{scenario_name}-{timestamp}")
     run_dir = run_root / run_name
@@ -433,6 +454,19 @@ def run_profile(args):
     if process.returncode:
         passed = False
         failures.insert(0, f"runner exited {process.returncode}")
+    memory = None
+    if stops and log.is_file():
+        memory = tour_locations.summary(
+            tour_locations.load(), stops,
+            tour_locations.measure(log.read_text(encoding="latin-1")),
+            tour_locations.load_baseline())
+        print(tour_locations.table(memory))
+        if memory["visited"] < memory["stops"]:
+            passed = False
+            failures.append(f"tour reached {memory['visited']} of {memory['stops']} locations")
+        elif args.write_baseline and passed:
+            tour_locations.write_baseline({row["id"]: row["free_kb"] for row in memory["rows"]})
+            print("wrote memory-baseline.json")
     result = {
         "schema": 1,
         "date": datetime.date.today().isoformat(),
@@ -448,6 +482,8 @@ def run_profile(args):
         "run": load_json(run_dir / ".tes3x-run.json"),
         "log_sha256": sha256_file(log) if log.is_file() else None,
     }
+    if memory:
+        result["memory"] = memory
     result_path = work_root / f"{run_name}.json"
     result_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     if args.record:
@@ -546,6 +582,15 @@ def main(argv=None):
                         help="with --library-all, test every installed version")
     parser.add_argument("--mod", action="append", default=[],
                         help="with --library-all, test only this mod id (repeatable)")
+    parser.add_argument("--tour", metavar="LOCATIONS",
+                        help="visit places from locations.toml and report free memory at each: "
+                        "preset names (cities, dense, expansions, all) and location ids, "
+                        "comma-separated")
+    parser.add_argument("--wait", type=int, default=90,
+                        help="with --tour, frames to wait after each move")
+    parser.add_argument("--write-baseline", action="store_true",
+                        help="tour every location and keep its free memory as the vanilla "
+                        "baseline (memory-baseline.json)")
     parser.add_argument("--keep-artifacts", choices=("always", "failure", "never"),
                         default="failure", help="retain ISO/pipeline output (default: failure)")
     parser.add_argument("--pipeline-arg", action="append", default=[],
