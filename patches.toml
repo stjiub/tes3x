@@ -647,7 +647,7 @@ group = "Instrumentation"
 channel = "dev"
 selection = "preset"
 source = "tes3xvtprof.c"
-summary = "Time each record type's load, binned by vtable, and log the totals with the profiler's dump."
+summary = "Time each record type's load, by vtable and by form tag, and log the totals with the profiler's dump."
 
 [[patch]]
 name = "build-preferences"

@@ -1416,6 +1416,10 @@ def _bind_vtprof(b):
     define("VTPROF_IS_MASTER", hexva(found["master"]))
     define("VTPROF_SET_MASTER", hexva(found["flag"]))
     define("VTPROF_CHANGED", hexva(found["changed"]))
+    record = locate("lean-menu")
+    define("VTPROF_LOAD_RECORD", hexva(tes3x_inject.call_target(b.image, record[0])))
+    define("VTPROF_RECORD_TAG", hexva(record[1]))
+    wanted["vtprof_record"] = ("_tes3x_vtprof_record",)
     wanted["vtprof"] = ("_tes3x_vtprof_load@8",)
 
 

@@ -41,6 +41,11 @@ passes those filters for the speaker; otherwise no response could be chosen, and
 unbuilt and hidden, as the game would hide it. With Tamriel Rebuilt, about 100 of its 4,856 topics
 pass for a typical speaker.
 
+A topic with 24 or more responses also keeps them in a table by ID and remembers its last one, so
+placing a response is a lookup instead of a walk down the chain. With the full Tamriel Rebuilt
+masters that took the console's load to the main menu about 15 s less. A topic that repeats an ID
+still searches its chain, because the first match decides.
+
 The patch requires `dialogue-merge`, so that a plugin that repeats a topic adds to it rather than
 replacing it, as on PC.
 

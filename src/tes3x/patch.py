@@ -881,6 +881,10 @@ def _vtprof(x, value, ctx):
         off = x.va_to_off(site)
         x.data[off:off + 6] = b"\xe8" + struct.pack("<i", stub - (site + 5)) + b"\x90"
         edits.append((off, 6, "object pass %s 0x%08X -> 0x%08X" % (name, site, stub)))
+    site = find_lean_menu(x)[0]
+    was, off = x.patch_call(site, int(str(ctx["hooks"]["vtprof_record"]), 16))
+    edits.append((off, 5, "record load call 0x%08X: 0x%08X -> %s" % (site, was,
+                                                                    ctx["hooks"]["vtprof_record"])))
     return edits
 
 

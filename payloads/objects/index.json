@@ -488,6 +488,8 @@
     "VSPRINTF": null,
     "VTPROF_CHANGED": null,
     "VTPROF_IS_MASTER": null,
+    "VTPROF_LOAD_RECORD": null,
+    "VTPROF_RECORD_TAG": null,
     "VTPROF_SET_MASTER": null,
     "VTPROF_SET_SOURCE": null,
     "WIDGET_DIRTY": null,
@@ -596,8 +598,8 @@
       "sha256": "73564c05d1fa92e0b33bce1749e556778c23bde345fa15ec993dcc05f4478ffd"
     },
     "tes3xlazydialogue.c": {
-      "digest": "72d977de7ea21beb0cc131da5d002e0cbf9bbd0b0acaa692755323137c4e7c78",
-      "sha256": "1fba1de55e19256fbc819cd5ec861745d09ff995d6272eed7eb0e0a010e9309f"
+      "digest": "16320c256a62bd85b202fbb789c7765f653f830517869e840ced37ee2e773786",
+      "sha256": "591bb52932abe35d72f19d2c4cc1b1298c26ce0607b915f0f31cb19fde66a8fd"
     },
     "tes3xleanmenu.c": {
       "digest": "cf1ebb9cc4ddc7128e1396d4ef0b455e5bbe6e097e2aee776079451c64da8424",
@@ -776,8 +778,8 @@
       "sha256": "19787651ed2c853930de90d617c9d7c86aa4411c3cb35396560e7bbe205398de"
     },
     "tes3xvtprof.c": {
-      "digest": "2177671348eda3a1d50df2a0c4350f9e952a50b80176c63a461966be80f061af",
-      "sha256": "b48d266b38db5836646773fa6862a14aebd1eec62a9e613f7c18d474a6449aa5"
+      "digest": "0b540bfedb85ed0624e737ce2f4c6793da0e885f963fe83d3d9d4fb077de59f6",
+      "sha256": "858867cf7c7945e34d08d240237a293386a6728c4931b5ec5950313530f5a28b"
     }
   },
   "schema": 1

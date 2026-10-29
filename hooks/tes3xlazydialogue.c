@@ -59,6 +59,7 @@
 #define CHUNK 0x10000u
 #define STUB_PREVIOUS 0x01u   /* PNAM is not empty */
 #define STUB_UNFILTERED 0x02u /* the filters did not fit the object table: always build */
+#define INDEX_MIN 24u         /* stubs in a topic before it gets an id index */
 #define FILTERS 5             /* speaker, race, class, NPC faction, cell: the INFO's filter tags */
 #define FILTER_CELL 4
 #define FACTION_NONE 0xFFFFu  /* faction filter -1: the speaker must have no faction */
@@ -119,6 +120,10 @@ struct topic {
     };
     u32 count;
     u32 built;
+    struct stub *tail; /* last stub of the chain, until compact */
+    struct stub **index; /* stubs by id once the topic is large, until compact */
+    u32 index_size;      /* power of two, or 0 */
+    u32 duplicates;      /* an id is in the chain twice: search it linearly */
 };
 
 enum { MODE_UNREAD, MODE_OFF, MODE_ON, MODE_VERIFY };
@@ -251,8 +256,12 @@ static struct topic *add_topic(u8 *dial)
         return 0;
     t->dial = dial;
     t->head = 0;
+    t->tail = 0;
     t->count = 0;
     t->built = 0;
+    t->index = 0;
+    t->index_size = 0;
+    t->duplicates = 0;
     slots[i] = t;
     topics++;
     return t;
@@ -281,11 +290,88 @@ static u32 exact_hash(const char *s)
     return h;
 }
 
-/* The engine's chain operations, replayed literally on stubs. */
+/* The engine's chain operations, replayed literally on stubs. A large topic also keeps its stubs
+ * in a hash table by id, so the lookups the engine does as list walks are one probe. Two stubs
+ * with one id (only plugin 0 can add them) make a topic search the list, where order decides. */
+static u32 id_slot(u64 id, u32 mask)
+{
+    u32 h = ((u32)id ^ (u32)(id >> 32)) * 2654435761u;
+
+    return (h ^ (h >> 15)) & mask;
+}
+
+static void drop_index(struct topic *t)
+{
+    if (t->index)
+        heap_free(t->index);
+    t->index = 0;
+    t->index_size = 0;
+    t->duplicates = 1;
+}
+
+static int index_put(struct topic *t, struct stub *s)
+{
+    u32 mask = t->index_size - 1, i = id_slot(s->id, mask);
+
+    while (t->index[i]) {
+        if (t->index[i]->id == s->id)
+            return 0;
+        i = (i + 1) & mask;
+    }
+    t->index[i] = s;
+    return 1;
+}
+
+static void index_build(struct topic *t)
+{
+    struct stub *s;
+    u32 size = 64, i;
+
+    while (size < t->count * 2)
+        size *= 2;
+    if (t->index)
+        heap_free(t->index);
+    t->index = heap_allocate(size * sizeof(*t->index));
+    if (!t->index) {
+        t->index_size = 0;
+        t->duplicates = 1;
+        return;
+    }
+    t->index_size = size;
+    for (i = 0; i < size; i++)
+        t->index[i] = 0;
+    for (s = t->head; s; s = s->next)
+        if (!index_put(t, s)) {
+            drop_index(t);
+            return;
+        }
+}
+
+/* A stub was added to the chain. */
+static void index_added(struct topic *t, struct stub *s)
+{
+    if (t->duplicates || t->count < INDEX_MIN)
+        return;
+    if (!t->index || t->count * 2 > t->index_size)
+        index_build(t);
+    else if (!index_put(t, s))
+        drop_index(t);
+}
+
 static struct stub *find_id(struct topic *t, u64 id)
 {
     struct stub *s;
 
+    if (t->index) {
+        u32 mask = t->index_size - 1, i = id_slot(id, mask);
+
+        while ((s = t->index[i])) {
+            if (s->id == id)
+                return s;
+            i = (i + 1) & mask;
+        }
+        return 0;
+    }
     for (s = t->head; s; s = s->next)
         if (s->id == id)
             return s;
@@ -299,22 +385,25 @@ static void append(struct topic *t, struct stub *s, u64 previous, u32 at_tail)
     if (!(s->e.flags & STUB_PREVIOUS)) {
         s->next = t->head;
         t->head = s;
+        if (!s->next)
+            t->tail = s;
         return;
     }
-    if (!at_tail)
-        for (p = t->head; p; p = p->next)
-            if (p->id == previous) {
-                s->next = p->next;
-                p->next = s;
-                return;
-            }
-    if (!t->head) {
+    if (!at_tail) {
+        p = find_id(t, previous);
+        if (p) {
+            s->next = p->next;
+            p->next = s;
+            if (!s->next)
+                t->tail = s;
+            return;
+        }
+    }
+    if (!t->head)
         t->head = s;
-        return;
-    }
-    for (p = t->head; p->next; p = p->next)
-        ;
-    p->next = s;
+    else
+        t->tail->next = s;
+    t->tail = s;
 }
 
 static void remove_stub(struct topic *t, struct stub *s)
@@ -332,10 +421,14 @@ static void remove_stub(struct topic *t, struct stub *s)
         if (before) {
             before->next = s->next;
             s->next = 0;
+            if (t->tail == s)
+                t->tail = before;
             return;
         }
     }
     t->head = s->next;
+    if (t->tail == s)
+        t->tail = 0;
     s->next = 0;
 }
 
@@ -355,14 +448,17 @@ static int index_of(struct topic *t, struct stub *s)
     return i;
 }
 
-static void insert_at(struct topic *t, struct stub *s, int index)
+/* Nonzero when the stub is in the chain afterwards; an index past the end drops it. */
+static int insert_at(struct topic *t, struct stub *s, int index)
 {
     struct stub *p = t->head;
 
     if (!index || !p) {
         s->next = p;
         t->head = s;
-        return;
+        if (!p)
+            t->tail = s;
+        return 1;
     }
     do {
         if (!--index)
@@ -372,7 +468,11 @@ static void insert_at(struct topic *t, struct stub *s, int index)
     if (p) {
         s->next = p->next;
         p->next = s;
+        if (!s->next)
+            t->tail = s;
+        return 1;
     }
+    return 0;
 }
 
 static void read_mode(void)
@@ -503,12 +603,14 @@ static __attribute__((used, noinline)) u32 __stdcall place(u8 *info, u8 *file, u
         append(t, s, previous, at_tail & 0xFF);
         t->count++;
         stubs++;
+        index_added(t, s);
     } else {
         if (existing->previous_exact != n.previous_exact) {
             prev = n.e.flags & STUB_PREVIOUS ? find_id(t, previous) : 0;
             if (!prev || prev->next != existing) {
                 remove_stub(t, existing);
-                insert_at(t, existing, prev ? index_of(t, prev) + 1 : 0);
+                if (!insert_at(t, existing, prev ? index_of(t, prev) + 1 : 0))
+                    drop_index(t);
             }
         }
         n.next = existing->next;
@@ -737,6 +839,9 @@ static __attribute__((used, noinline)) void compact(void)
     if (compacted)
         return;
     compacted = 1;
+    for (i = 0; i < SLOTS; i++)
+        if (slots[i] && slots[i]->index)
+            drop_index(slots[i]);
     /* A stub's place in chain order, in its no longer needed previous_exact. insert_at can drop a
      * stub from its chain, as the engine drops the INFO; those go last. */
     for (i = 0; i < stubs; i++)

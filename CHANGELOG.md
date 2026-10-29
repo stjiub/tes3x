@@ -75,6 +75,9 @@ No official releases yet. The first public release is in preparation.
 - New patch `land-tex-index`: a landscape record finds its textures from an index instead of
   building and walking lists for every record, which also speeds cell loads. See
   [the patch notes](patches/land-tex-index.md).
+- `lazy-dialogue`: placing dialogue responses while plugins load no longer walks each topic's whole
+  chain. With Tamriel Rebuilt the console's load to the main menu takes about 15 s less. See
+  [the patch notes](patches/lazy-dialogue.md).
 - New patch `soundgen-index`: an animation's footstep and creature sound keys are matched against
   the loaded creatures instead of walking every loaded object once per key, at startup and when a
   creature's animation first loads. See [the patch notes](patches/soundgen-index.md).
