@@ -45,6 +45,9 @@ TES3X_OPTIONAL void tes3x_diag_note(u32 code, u32 value);
 #ifndef TES3X_FIND_MENU
 #error "define TES3X_FIND_MENU to the VA of findMenuById"
 #endif
+#ifndef TES3X_CONSOLE_SET_VISIBLE
+#error "define TES3X_CONSOLE_SET_VISIBLE to the VA of ui::setVisible"
+#endif
 #ifndef TES3X_OPEN_VK
 #error "define TES3X_OPEN_VK to the VA of the virtual keyboard open"
 #endif
@@ -1262,6 +1265,16 @@ static void exec_visible(const char *name)
     tes3x_log(tag, (u32)menu_up(((fn_find_menu)TES3X_FIND_MENU)(((fn_ui_id)TES3X_UI_ID)(name))));
 }
 
+/* Make an existing status pane visible while driving a menu test. */
+static int exec_show(const char *name)
+{
+    void *menu = ((fn_find_menu)TES3X_FIND_MENU)(((fn_ui_id)TES3X_UI_ID)(name));
+    if (!menu)
+        return 0;
+    ((void(__thiscall *)(void *, int))TES3X_CONSOLE_SET_VISIBLE)(menu, 1);
+    return 1;
+}
+
 /* `activate ID`: the player activates the nearest reference of ID, as the pad's A does; a script
  * `Activate` only flags scripted objects. 0 if there is none. */
 static int exec_activate(const char *id)
@@ -1442,6 +1455,8 @@ static void exec_step(void)
         exec_launch(line + 7);
     } else if (starts_with(line, "loadsave ")) {
         exec_loadsave(line + 9);
+    } else if (starts_with(line, "show ")) {
+        tes3x_log("exec.show", (u32)exec_show(line + 5));
     } else if (starts_with(line, "click ")) {
         if (!exec_click(line + 6) && ++exec_tries < EXEC_CLICK_FRAMES)
             return;

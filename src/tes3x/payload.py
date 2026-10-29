@@ -32,7 +32,7 @@ from tes3x.patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, archive_load_site,
                          find_message_scale, find_name_scale, find_options_scale,
                          find_chargen_scale,
                          find_mcp37_context,
-                         find_mcp125_context, find_enable_disable_flags, find_mcp173_rank, find_pathgrid_lookups, find_save_allowed_context,
+                         find_mcp125_context, find_enable_disable_flags, find_mcp173_rank, find_mcp272_context, find_pathgrid_lookups, find_save_allowed_context,
                          find_mcp47_context, find_mcp132_context,
                          find_script_ip_restore_call, find_transition_calls, scene_form)
 
@@ -1251,6 +1251,21 @@ def _bind_mcp173(b):
     wanted["mcp173_mark"] = ("_tes3x_mcp173_mark_hook",)
 
 
+@binder("tes3xmcp272.c")
+def _bind_mcp272(b):
+    found, soul = find_mcp272_context(b.image)
+    b.define("MCP272_FIND_CHILD", hexva(found[0]["find_child"]))
+    b.define("MCP272_GET_PROPERTY", hexva(found[0]["get_property"]))
+    b.define("MCP272_SOUL_GEM", hexva(soul))
+    for area, entry in zip(("BARTER", "INVENTORY"), found):
+        b.define("MCP272_" + area + "_PROPERTY", hexva(entry["property"]))
+        b.define("MCP272_" + area + "_MAGIC", hexva(entry["magic"]))
+        b.define("MCP272_" + area + "_RESUME", hexva(entry["resume"]))
+        b.wanted["mcp272_" + area.lower()] = ("_tes3x_mcp272_" + area.lower(),)
+    print("mcp-272 hooks: barter %s, inventory %s, soul gems %s" %
+          (hexva(found[0]["site"]), hexva(found[1]["site"]), hexva(soul)))
+
+
 @binder("tes3xmcp125.c")
 def _bind_mcp125(b):
     image, define, wanted = b.image, b.define, b.wanted
@@ -1661,6 +1676,7 @@ def _bind_console(b):
     print("console hook: keyboard and print sites located by content")
     for name, default in CONSOLE_ADDRESSES:
         define(name, address(name, default))
+    define("CONSOLE_SET_VISIBLE", address("SET_VISIBLE", 0x001A63C0))
     console_print = locate("console-print")
     vsprintf = tes3x_inject.call_target(image, console_print + CONSOLE_PRINT_VSPRINTF)
     print(f"console output: printf {hexva(console_print)}, vsprintf {hexva(vsprintf)}")

@@ -1475,7 +1475,7 @@ category = "qol"
 status = "candidate"
 priority = "low"
 summary = "Better ingredient and item selector"
-reason = "A large labelled list for choosing ingredients and items."
+reason = "The Xbox selector uses a 380 by 151 icon grid and shows item names in a focus tooltip. MCP's 560-pixel PC layout and tile edits do not transfer; an Xbox design must fit controller focus and 480p."
 
 [[candidate]]
 name = "mcp-270"
@@ -1494,15 +1494,6 @@ status = "candidate"
 priority = "low"
 summary = "Persuasion improvement"
 reason = "Persuasion menu opens at the pointer and stays open."
-
-[[candidate]]
-name = "mcp-272"
-origin = { source = "MCP", id = "272" }
-category = "qol"
-status = "candidate"
-priority = "low"
-summary = "Improved inventory filters"
-reason = "Tidier inventory filters."
 
 [[candidate]]
 name = "mcp-274"

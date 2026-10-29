@@ -82,6 +82,7 @@ enable = [
     # "npc-arena",             # compat: move NPC objects out of the engine heap
     # "mcp-146",                # qol: remove a fully nocked arrow with Ready Weapon
     # "mcp-149",                # core: wait for death processing before offering corpse disposal
+    # "mcp-272",               # qol: group soul gems with potions and scrolls under Magic
     # "bow-view",               # qol: lower the first-person bow and arms while an arrow is nocked
     # "hd-video",              # qol: 720p when the dashboard enables it, else 480p/480i (128 MB advised)
     # "ui-scale",              # qol: smaller text and HUD art; configure in [ui]

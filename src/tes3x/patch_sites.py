@@ -96,6 +96,44 @@ class PatchError(Exception):
     pass
 
 
+MCP272_FILTER_TAIL = bytes.fromhex("833800750232db8b55008bcdff92d000000085c0")
+MCP272_SOUL_GEM = re.compile(
+    rb"\x56\x8b\x74\x24\x08\x8d\x4e\x04\xe8....\x3dREFR\x75\x03"
+    rb"\x8b\x76\x28\x8d\x4e\x04\xe8....\x3dMISC", re.S,
+)
+
+
+def find_mcp272_context(x):
+    """Find the barter and inventory filter tails and the existing soul-gem predicate."""
+    data = bytes(x.data)
+    hits = [m.start() + 7 for m in re.finditer(re.escape(MCP272_FILTER_TAIL), data)]
+    if len(hits) != 2:
+        raise PatchError("mcp-272: expected two inventory filter tails, found %d" % len(hits))
+    soul = [m for m in MCP272_SOUL_GEM.finditer(data)
+            if b"\x83\xc0\x1c" in data[m.start():m.start() + 0x45]]
+    if len(soul) != 1:
+        raise PatchError("mcp-272: expected one soul-gem predicate, found %d" % len(soul))
+    found = []
+    for off in hits:
+        site = x.off_to_va(off)
+        if (site is None or data[off + 0x20] != 0xe8 or data[off + 0x33] != 0xe8
+                or data[off + 0x3f:off + 0x47]
+                != bytes.fromhex("5f5d5e8ac35b59c3")):
+            raise PatchError("mcp-272: filter layout changed")
+        found.append({
+            "site": site,
+            "property": struct.unpack_from("<I", data, off + 0x11)[0],
+            "magic": struct.unpack_from("<I", data, off + 0x19)[0],
+            "find_child": tes3x_inject.call_target(x, site + 0x20),
+            "get_property": tes3x_inject.call_target(x, site + 0x33),
+            "resume": site + 0x3f,
+        })
+    if (found[0]["find_child"] != found[1]["find_child"]
+            or found[0]["get_property"] != found[1]["get_property"]):
+        raise PatchError("mcp-272: UI helper targets disagree")
+    return found, x.off_to_va(soul[0].start())
+
+
 def find_mcp30_context(x):
     """Bow animation angles and player projectile matrix call on both retail engines."""
     angle_sites = []

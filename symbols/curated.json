@@ -2262,6 +2262,15 @@
       "pc_va": "0x0049A6C0"
     },
     {
+      "va": "0x000E9070",
+      "name": "TES3::Item::isSoulGem",
+      "confidence": "matched",
+      "provenance": "PC 0x0049ABE0 body and static soul-gem table match",
+      "note": "Accepts a base item or REFR, then compares a MISC base pointer against six built-in soul-gem records.",
+      "pc_va": "0x0049ABE0",
+      "signature": "bool __cdecl isSoulGem(void* item)"
+    },
+    {
       "va": "0x000E99A0",
       "name": "Inventory::saveItems",
       "confidence": "guess",
@@ -7158,6 +7167,13 @@
       "pc_va": "0x00588BE0"
     },
     {
+      "va": "0x001A7EF0",
+      "name": "ui::getBoolProperty",
+      "confidence": "verified",
+      "provenance": "disassembly 0x001A7EF0; two filter callers",
+      "signature": "int __thiscall getBoolProperty(unsigned property, unsigned fallback)"
+    },
+    {
       "va": "0x001A8520",
       "name": "DropPlacement::findPosition",
       "confidence": "verified",
@@ -7444,7 +7460,8 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_FilterBarterTile",
-      "pc_va": "0x005A5430"
+      "pc_va": "0x005A5430",
+      "note": "Barter uses the same category and enchantment filter as inventory, with its own menu widget IDs; mcp-272 patches the shared-shaped tail."
     },
     {
       "va": "0x001B9340",
@@ -7721,7 +7738,8 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_FilterInventoryTile",
-      "pc_va": "0x005CC720"
+      "pc_va": "0x005CC720",
+      "note": "Category filter for inventory. The Magic check covers potion and scroll types plus items whose virtual +0xD0 getter returns an enchantment; mcp-272 adjusts its result for enchanted items and the six built-in soul gems."
     },
     {
       "va": "0x001D6720",

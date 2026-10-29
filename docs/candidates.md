@@ -13,7 +13,7 @@ on, `low` for minor ones, and `none` for fixes we won't port.
 
 | status | fixes |
 |---|---|
-| candidate | 169 |
+| candidate | 168 |
 | deferred | 14 |
 | not-applicable | 16 |
 | rejected | 4 |
@@ -174,10 +174,9 @@ Worth porting, but not yet shown to affect the Xbox build.
 | `mcp-259` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #259 | low | qol | **Display more accurate item weight.** Item weight to two decimal places. |
 | `mcp-262` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #262 | low | qol | **Larger service/chargen menus.** Larger service and character-generation menus; may help legibility on a TV. |
 | `mcp-265` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #265 | low | compat | **Journal text colour configuration.** Journal text colour from Morrowind.ini, for replacement fonts. The Xbox reads the ini too. |
-| `mcp-269` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #269 | low | qol | **Better ingredient and item selector.** A large labelled list for choosing ingredients and items. |
+| `mcp-269` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #269 | low | qol | **Better ingredient and item selector.** The Xbox selector uses a 380 by 151 icon grid and shows item names in a focus tooltip. MCP's 560-pixel PC layout and tile edits do not transfer; an Xbox design must fit controller focus and 480p. |
 | `mcp-270` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #270 | low | qol | **Better typography.** Book, scroll and journal layout with more text per page. The Xbox fonts and screen differ; check legibility. |
 | `mcp-271` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #271 | low | qol | **Persuasion improvement.** Persuasion menu opens at the pointer and stays open. |
-| `mcp-272` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #272 | low | qol | **Improved inventory filters.** Tidier inventory filters. |
 | `mcp-274` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #274 | low | qol | **Better spell merchants.** Spell merchants show magicka cost and hide unsellable powers. |
 | `mcp-275` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #275 | low | qol | **Level-up skills tooltip.** Level tooltip shows skill increases per attribute. |
 | `mcp-276` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #276 | low | qol | **Convenient defaults.** Start loaded games running and on the world map. |

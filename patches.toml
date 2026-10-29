@@ -569,6 +569,17 @@ source = "tes3xmcp173.c"
 summary = "Save an NPC's faction rank after RaiseRank or LowerRank changes it."
 
 [[patch]]
+name = "mcp-272"
+title = "Improved inventory filters"
+origin = { source = "MCP", id = "272" }
+category = "qol"
+group = "MCP fixes"
+channel = "dev"
+selection = "preset"
+source = "tes3xmcp272.c"
+summary = "Group soul gems with potions and scrolls under Magic and omit enchanted equipment there."
+
+[[patch]]
 name = "mcp-154"
 title = "Script data overread fix"
 origin = { source = "MCP", id = "154" }

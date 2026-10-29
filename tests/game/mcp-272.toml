@@ -1,0 +1,28 @@
+kind = "single"
+purpose = "A loaded game can show inventory and use the revised item filters."
+procedure = "Load a character, add a potion, soul gem and ring, show the inventory pane, then select Magic and Misc."
+limitations = "The script checks that the filter widgets respond without a crash; icon grouping, barter and hardware need visual checks."
+watch = 'menu\.MenuMessage|menu\.MenuMulti|menu\.MenuInventory|exec\.|crash\.|hang\.|fatal\.'
+timeout = 180
+save = "vanilla-seyda-neen.ess"
+script = '''
+@start load U:\TES3X\vanilla-seyda-neen.ess
+wait 180
+assert player->GetLevel == 7.00
+visible MenuMessage
+player->additem potion_cyro_whiskey_01 1
+player->additem misc_soulgem_petty 1
+player->additem expensive_ring_01 1
+menu inventory
+wait 90
+show MenuInventory
+visible MenuInventory
+click MenuInventory MenuInventory_magic_filter
+wait 30
+click MenuInventory MenuInventory_misc_filter
+wait 30
+exit
+'''
+
+[expect]
+test = ['exec\.show 1', 'menu\.MenuInventory 1', 'exec\.clicked ', 'exec\.exit 0', 'assert\.failed 0']

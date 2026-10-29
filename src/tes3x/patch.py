@@ -61,6 +61,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_mcp149_menu,
                                find_mcp127_map,
                                find_mcp125_context, find_mcp146, find_mcp146_context,
+                               find_mcp272_context,
                                find_mcp47_context, find_mcp48_context, find_mcp25_blind,
                                find_mcp132_context,
                                find_mcp154_load, find_mcp154_reload, find_mcp173_rank,
@@ -1495,6 +1496,26 @@ def _mcp_149(x, value, ctx):
     x.data[off + 10] = 0x0B
     return [(off, 6, f"contents menu state 0x{site:08X} -> 0x{target:08X}"),
             (off + 10, 1, "dying actor skips dispose flag")]
+
+
+@patch("mcp-272")
+def _mcp_272(x, value, ctx):
+    """Reclassify soul gems and enchanted items in inventory and barter."""
+    hooks = ctx.get("hooks", {})
+    found, _ = find_mcp272_context(x)
+    edits = []
+    for area, entry in zip(("barter", "inventory"), found):
+        key = "mcp272_" + area
+        if not hooks.get(key):
+            raise PatchError("mcp-272: payload lacks %s" % key)
+        site = entry["site"]
+        off = x.va_to_off(site)
+        target = int(str(hooks[key]), 16)
+        x.data[off:off + 13] = (b"\xe9" + struct.pack("<i", target - (site + 5))
+                                 + b"\x90" * 8)
+        edits.append((off, 13, "%s inventory filter 0x%08X -> 0x%08X"
+                      % (area, site, target)))
+    return edits
 
 
 @patch("mcp-30")

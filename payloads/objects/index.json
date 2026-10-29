@@ -26,6 +26,7 @@
     "COMPILE_RUN": null,
     "CONSOLE_MENU_ID": null,
     "CONSOLE_PRINT": null,
+    "CONSOLE_SET_VISIBLE": null,
     "CONTROLS_LOAD": null,
     "CONTROLS_TABLE": null,
     "CREATE_IMAGE": null,
@@ -136,6 +137,15 @@
     "MCP149_DISPOSE_FLAG": null,
     "MCP154_LOAD_RESUME": null,
     "MCP154_RELOAD_RESUME": null,
+    "MCP272_BARTER_MAGIC": null,
+    "MCP272_BARTER_PROPERTY": null,
+    "MCP272_BARTER_RESUME": null,
+    "MCP272_FIND_CHILD": null,
+    "MCP272_GET_PROPERTY": null,
+    "MCP272_INVENTORY_MAGIC": null,
+    "MCP272_INVENTORY_PROPERTY": null,
+    "MCP272_INVENTORY_RESUME": null,
+    "MCP272_SOUL_GEM": null,
     "MCP30_MATRIX_MULTIPLY": null,
     "MCP37_GAME": null,
     "MCP37_GET_PLAYER": null,
@@ -534,8 +544,8 @@
       "sha256": "228130ba66fd93dc85e3df23fd32ffbe434b0a1b63fd1b2a7276efe3fac915a6"
     },
     "tes3xconsole.c": {
-      "digest": "092ff300085a4b5f0936acd7e8ef5635a72c9a544259b0975958d0ddd27d54ad",
-      "sha256": "7b5c6e0ef0eb0ff2ca373173206ad4291913c20f818fe0e6d23df3357c2c648f"
+      "digest": "1fb6b57362017f0bc440de6cfbf9dc2dc903ed3e124bdfc431576125b82e374f",
+      "sha256": "ae8392d9667cf543cd3fb7959af8a7b5e96285dca4a48a1e5c41829dbe3be90a"
     },
     "tes3xcrt.c": {
       "digest": "44fb1c2126cb9e4881d6fe520aaa9d9b0b918a9245e32a4a634d1bc5e942fb0d",
@@ -648,6 +658,10 @@
     "tes3xmcp173.c": {
       "digest": "5d99fc466146180c45f7c9d63eb0178a2fe18d38363492caf1dde294c98b906f",
       "sha256": "9ec9ca4103eb0399cb616a904ea3cecdda69f6a3e9c3bbb0166440999e36dfad"
+    },
+    "tes3xmcp272.c": {
+      "digest": "0f40f8cfb2828535749017529445aeaf4f5cbdc5708dafdfada6d11e18e1a544",
+      "sha256": "aee3c6d6e104c42da2b7129beca7cd98d06daf2a6e23c9da819671a65a8294d6"
     },
     "tes3xmcp30.c": {
       "digest": "9eaf41858e786222452f38a30cdd20ee147893bfebaeced3200496aa74d84cb2",

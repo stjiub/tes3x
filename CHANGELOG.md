@@ -4,6 +4,12 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- Exec scripts can show an existing menu pane by name with `show MENU`, so scripted UI checks can
+  reach panes hidden behind the Xbox menu's map page. See [exec scripts](docs/exec-scripts.md).
+
+- New patch `mcp-272`: the inventory and barter Magic filters group soul gems with potions and
+  scrolls and leave enchanted equipment in its equipment category. See [the patch notes](patches/mcp-272.md).
+
 - Patch for Purists builds now enable `mcp-114` and `mcp-119`: axes use its separate inventory
   sounds, and creatures can play Hello, Idle and Attack voice lines. Both patches are also
   selectable on their own; see their patch pages for the required sound records and conditions.

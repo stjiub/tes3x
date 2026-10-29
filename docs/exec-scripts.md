@@ -40,6 +40,7 @@ exit
 | `menu inventory`, `menu journal`, `menu options` | open the in-game menu, the journal or the pause menu, as the pad's buttons do; `menu inventory` again closes it. While the pause menu is up only `@menu` lines run |
 | `activate ID` | the player activates the nearest reference of `ID`, as with the A button (a script's `Activate` only reaches scripted objects) |
 | `visible MENU` | log whether a menu is on screen, as `menu.MENU 0` or `1` |
+| `show MENU` | show an existing menu pane for a scripted UI check; logs `exec.show 1` when found |
 | `assert COMMAND == VALUE` | run a console command and check the value it prints |
 | `mark LABEL` | log free memory now, as `mem.LABEL <KB>` |
 | `exit` | turn the Xbox off |
