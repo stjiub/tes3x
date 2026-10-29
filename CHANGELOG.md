@@ -4,6 +4,9 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- GUI: **Help > Documentation** lists every documentation page by section and opens it on
+  GitHub.
+
 - GUI: selecting a patch shows its full notes page, with its category, status and origin
   beneath, instead of a one-line summary.
 

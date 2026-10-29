@@ -4,6 +4,7 @@ The GUI edits everything a profile and the local config hold, installs mods into
 checks, builds, tests and deploys. In a portable folder, double-click `TES3X.exe`; otherwise run
 `tes3x gui`.
 
+**Help > Documentation** lists every documentation page by section and opens it on GitHub.
 **Help > About TES3X** shows the full version, author and license, with links to documentation,
 the GitHub project, [release notes](../CHANGELOG.md) and issue reporting. The version text can
 be selected and copied when reporting a problem. **Help > Check for updates** asks GitHub for the

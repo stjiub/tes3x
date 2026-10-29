@@ -20,6 +20,7 @@ from .common import (Bsa, BuildSettings, CATALOG_NAME, CHECK_MARKER, CatalogErro
                      cancel_icon, stop_icon, struct, sys, target_capabilities, target_runtime_label,
                      tes3x_targets, tomlkit, tomllib, validate_profile, version_label)
 from tes3x import updates
+from tes3x.docs import DOCS, read_nav, titles as page_titles
 from .banner import PromptBanner
 from . import logtext
 from .jobs import Job
@@ -362,6 +363,8 @@ class ProfileWindow(QMainWindow):
         help_menu = self.menuBar().addMenu("&Help")
         self.action_about = QAction("&About TES3X…", self)
         self.action_about.triggered.connect(self.show_about)
+        self.docs_menu = help_menu.addMenu("&Documentation")
+        self.build_docs_menu()
         help_menu.addAction(self.action_about)
         self.action_update_catalog = QAction("Update &compatibility list", self)
         self.action_update_catalog.triggered.connect(self.update_catalog)
@@ -1561,6 +1564,22 @@ class ProfileWindow(QMainWindow):
               if self.local_config_path().is_file() else []),
             "--record",
         ], "Running profile smoke test…", kind="smoke")
+
+    def build_docs_menu(self):
+        """The documentation's table of contents, each page opening on GitHub."""
+        home = self.docs_menu.addAction("Documentation home")
+        home.triggered.connect(lambda: QDesktopServices.openUrl(QUrl(docs_url("index.md"))))
+        try:
+            sections, _summaries = read_nav()
+        except (OSError, ValueError):
+            return
+        for section in sections:
+            menu = self.docs_menu.addMenu(section["title"])
+            for page in section["pages"]:
+                path = DOCS / page
+                title = (page_titles(path) or [page])[0] if path.is_file() else page
+                menu.addAction(title).triggered.connect(
+                    lambda _=False, page=page: QDesktopServices.openUrl(QUrl(docs_url(page))))
 
     def check_for_update(self):
         """Ask GitHub for the newest release and offer its page."""

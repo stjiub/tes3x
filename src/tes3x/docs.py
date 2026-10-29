@@ -11,10 +11,10 @@ import re
 import sys
 import tomllib
 
-from tes3x.paths import checkout
+from tes3x.paths import checkout, resource
 
 ROOT = checkout()
-DOCS = ROOT / "docs"
+DOCS = resource("docs")
 NAV = DOCS / "nav.toml"
 INDEX = DOCS / "index.md"
 
