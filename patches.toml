@@ -169,6 +169,17 @@ ini = { LocalVarIndex = "on" }
 summary = "Resolve a dialogue filter's script variable from a hash index of script variable names instead of searching every script."
 
 [[patch]]
+name = "land-tex-index"
+title = "Indexed land texture lookup"
+category = "performance"
+group = "Speed"
+channel = "dev"
+selection = "preset"
+source = "tes3xlandtexindex.c"
+ini = { LandTexIndex = "on" }
+summary = "Resolve a landscape record's texture indices from an index instead of building and walking lists for every record."
+
+[[patch]]
 name = "title"
 title = "Dashboard title"
 category = "infrastructure"

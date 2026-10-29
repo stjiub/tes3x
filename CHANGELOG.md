@@ -67,6 +67,9 @@ No official releases yet. The first public release is in preparation.
   variable from an index instead of asking every script. With the Tamriel Rebuilt masters the
   console's load to the main menu takes about 30 s less (83.0 s to 53.3 s) alongside `topic-sort`,
   `cell-index` and `script-index`. See [the patch notes](patches/local-var-index.md).
+- New patch `land-tex-index`: a landscape record finds its textures from an index instead of
+  building and walking lists for every record, which also speeds cell loads. See
+  [the patch notes](patches/land-tex-index.md).
 - New patch `soundgen-index`: an animation's footstep and creature sound keys are matched against
   the loaded creatures instead of walking every loaded object once per key, at startup and when a
   creature's animation first loads. See [the patch notes](patches/soundgen-index.md).

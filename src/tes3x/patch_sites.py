@@ -936,6 +936,36 @@ def find_load_from_file(x):
     return found
 
 
+# Land::loadObjectSpecific resolving a VTEX texture index: the per-record cache check, the cache
+# read, the walk of the landscape texture list, and the not-found message.
+LAND_TEX_SIG = re.compile(
+    rb"(?P<site>\x3b\x74\x24\x2c\x7d\x2b)\x56\x8d\x4c\x24\x2c\xe8....\x8b\x48\x08\x85\xc9\x74\x10"
+    rb"\x8b\x89\x38\x01\x00\x00\x8d\x14\x3b\x66\x89\x4c\x55\x1c(?P<cont>\xeb.)\x50\x8d\x4c\x24\x2c"
+    rb"\xe8....(?P<walk>\x8b\x4c\x24\x18\xe8....)\x85\xc0(?P<miss>\x74.)\x8b\x40\x08"
+    rb"\x39\xb0\x3c\x01\x00\x00\x74",
+    re.S,
+)
+
+
+def find_land_tex_index(x):
+    """The land texture cache check and the three places the hook continues."""
+    hits = list(LAND_TEX_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("land-tex-index: %d texture index lookup(s), expected 1" % len(hits))
+    hit = hits[0]
+    entry = x.off_to_va(hit.start("site"))
+    if entry is None:
+        raise PatchError("land-tex-index: the texture lookup is outside any section")
+
+    def va(name):
+        return entry + hit.start(name) - hit.start("site")
+
+    def rel8(name):
+        return va(name) + 2 + struct.unpack("b", hit.group(name)[1:2])[0]
+
+    return {"entry": entry, "store": rel8("cont"), "walk": va("walk"), "missing": rel8("miss")}
+
+
 def find_dxt5_size(x):
     """The texture-create call to the texture-size function."""
     hits = list(DXT5_SIZE_SIG.finditer(bytes(x.data)))
@@ -3189,6 +3219,7 @@ LOCATORS = {
     "script-index": find_script_index,
     "local-var-index": find_local_var_index,
     "vtprof": find_load_from_file,
+    "land-tex-index": find_land_tex_index,
     "lean-menu": find_lean_menu,
     "video-arena": find_arena_size,
     "video-arena-phys-alloc": lambda image: find_arena_overflow(image)["phys_alloc"],

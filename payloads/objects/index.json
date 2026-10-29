@@ -70,6 +70,9 @@
     "INI_GET_STRING": null,
     "INI_PATH": null,
     "JOURNAL_OPENED": null,
+    "LANDTEX_MISSING": null,
+    "LANDTEX_STORE": null,
+    "LANDTEX_WALK": null,
     "LAND_NEW": null,
     "LAZY_AT_INDEX_RESUME": null,
     "LAZY_CACHED_FILE": null,
@@ -578,6 +581,10 @@
     "tes3xlandarena.c": {
       "digest": "597b8fe135efe0db3b23fd1e32eabfd6cdb3c06a868e6b055235da0dc82ef6a0",
       "sha256": "4533b5f21e065e05fe2b2865834eef4ad2fe2de0c8b9a75bfd2faa4b12fc01fb"
+    },
+    "tes3xlandtexindex.c": {
+      "digest": "ead9fecdb669618a1e457d96e89b356385049b031e20eba9061c033128639eb4",
+      "sha256": "80cdbfe375a1232104834536cc6e105bfaaf4d7040264fd5c742911b877d8403"
     },
     "tes3xlaunch.c": {
       "digest": "901d950e50399c4daa0e5ac588ad3b2f501d27da981bfec0805266654b16ed2d",

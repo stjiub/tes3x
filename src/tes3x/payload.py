@@ -1395,6 +1395,18 @@ def _bind_localvarindex(b):
     wanted["localvar"] = ("_tes3x_localvar_hook",)
 
 
+@binder("tes3xlandtexindex.c")
+def _bind_landtexindex(b):
+    define, locate, wanted = b.define, b.locate, b.wanted
+    found = locate("land-tex-index")
+    print(f"land-tex-index: texture lookup {hexva(found['entry'])}, "
+          f"exits {hexva(found['store'])} / {hexva(found['walk'])} / {hexva(found['missing'])}")
+    define("LANDTEX_STORE", hexva(found["store"]))
+    define("LANDTEX_WALK", hexva(found["walk"]))
+    define("LANDTEX_MISSING", hexva(found["missing"]))
+    wanted["landtex"] = ("_tes3x_landtex_hook",)
+
+
 @binder("tes3xvtprof.c")
 def _bind_vtprof(b):
     define, locate, wanted = b.define, b.locate, b.wanted

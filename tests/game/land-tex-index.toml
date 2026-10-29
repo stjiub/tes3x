@@ -1,0 +1,22 @@
+kind = "single"
+purpose = "Landscape texture indices resolved from the index are the textures the engine's own walk finds."
+procedure = "Set LandTexIndex to verify, which runs the engine's walk beside every indexed lookup and logs any difference, start a new game, then travel by name to an interior and to Balmora."
+limitations = "Hardware timing. The Tamriel Rebuilt masters are checked the same way outside this test."
+watch = 'landtex\.|diag\.patches|exec\.exit|crash\.|hang\.detected|fatal\.'
+enable = ["diagnostics", "console", "land-tex-index"]
+timeout = 240
+script = '''
+@start new
+wait 30
+coc "Seyda Neen, Census and Excise Office"
+wait 30
+coc "Balmora"
+wait 60
+exit
+'''
+
+[profile]
+ini = { "Xbox:LandTexIndex" = "verify" }
+
+[expect]
+test = ['landtex\.mode 2', 'landtex\.checks [1-9]', '!landtex\.mismatch', 'exec\.exit 0']

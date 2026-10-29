@@ -33,6 +33,7 @@ enable = [
     # "cell-index",            # performance: find cells by name and grid from an index
     # "script-index",          # performance: find scripts by ID from an index
     # "local-var-index",       # performance: resolve dialogue script-variable filters from an index
+    # "land-tex-index",       # performance: resolve landscape texture indices from an index
     # "vtprof",                # instrumentation: time each record type's load
     # "mcp-1",                # core: stop an unresolvable reference being restamped as created at runtime
     # "mcp-3",                 # correctness: apply Unarmored reduction with no armor equipped

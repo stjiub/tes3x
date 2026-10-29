@@ -88,6 +88,7 @@ single required/not-required flag.
 | [Indexed cell lookup by name](../patches/cell-index.md) | `cell-index` | Find a cell by name from a hash index instead of comparing the name of every cell. | TES3X | performance | dev | By name; recommended preset at release |
 | [Indexed script lookup by ID](../patches/script-index.md) | `script-index` | Find a script by ID from a hash index instead of comparing the ID of every script. | TES3X | performance | dev | By name; recommended preset at release |
 | [Indexed script variable lookup in dialogue](../patches/local-var-index.md) | `local-var-index` | Resolve a dialogue filter's script variable from a hash index of script variable names instead of searching every script. | TES3X | performance | dev | By name; recommended preset at release |
+| [Indexed land texture lookup](../patches/land-tex-index.md) | `land-tex-index` | Resolve a landscape record's texture indices from an index instead of building and walking lists for every record. | TES3X | performance | dev | By name; recommended preset at release |
 | [Low-memory main menu](../patches/lean-menu.md) | `lean-menu` | Load only game settings for the main menu; New Game and Load relaunch and load the rest. | TES3X | performance | preview | testing preset |
 | [Direct response topic lookup](../patches/dialogue-owner.md) | `dialogue-owner` | Find a response's topic directly instead of searching every topic's responses. | TES3X | performance | dev | By name; recommended preset at release |
 

@@ -110,6 +110,12 @@ Only pages the heap actually uses consume memory, so a large value costs address
 |---|---|---|
 | `LocalVarIndex` | `on` or `verify` | `on`; `verify` also runs the engine's own walk on every lookup and logs `localvar.mismatch` when the answers differ |
 
+## `land-tex-index`
+
+| key | values | default |
+|---|---|---|
+| `LandTexIndex` | `on` or `verify` | `on`; `verify` also runs the engine's own walk on every lookup and logs `landtex.mismatch` when the answers differ |
+
 ## `bow-view`
 
 | key | values | default |

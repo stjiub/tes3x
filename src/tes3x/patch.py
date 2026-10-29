@@ -70,6 +70,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_mob_gate, find_preferences_load, find_ref_index,
                                find_soundgen_index, find_topic_sort, find_cell_index,
                                find_script_index, find_local_var_index, find_load_from_file,
+                               find_land_tex_index,
                                find_ref_load, find_ref_skip, find_run_function,
                                find_save_allowed_context, find_save_this_ptr,
                                find_script_decode_state, find_script_fixup_call,
@@ -830,6 +831,20 @@ def _local_var_index(x, value, ctx):
     off = x.va_to_off(walk)
     x.data[off:off + 5] = b"\xe9" + struct.pack("<i", hook - (walk + 5))
     return [(off, 5, "filter script walk 0x%08X -> 0x%08X" % (walk, hook))]
+
+
+@patch("land-tex-index")
+def _land_tex_index(x, value, ctx):
+    """Resolve a LAND record's texture indices from an index of the landscape textures."""
+    hook = ctx.get("hooks", {}).get("landtex")
+    if not hook:
+        raise PatchError("land-tex-index: needs `payload` first, with a landtex hook in its "
+                         "manifest")
+    entry = find_land_tex_index(x)["entry"]
+    hook = int(str(hook), 16)
+    off = x.va_to_off(entry)
+    x.data[off:off + 5] = b"\xe9" + struct.pack("<i", hook - (entry + 5))
+    return [(off, 5, "land texture lookup 0x%08X -> 0x%08X" % (entry, hook))]
 
 
 @patch("vtprof")
@@ -2222,6 +2237,7 @@ __all__ = [
     'find_script_index',
     'find_local_var_index',
     'find_load_from_file',
+    'find_land_tex_index',
     'find_ref_load',
     'find_ref_skip',
     'find_run_function',
