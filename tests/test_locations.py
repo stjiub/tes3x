@@ -73,3 +73,15 @@ class UpdateTest(unittest.TestCase):
         self.assertTrue(newer("v0.2.0", "0.1.9"))
         self.assertFalse(newer("v0.1.0", "0.1.0-dev.352+gabc"))
         self.assertFalse(newer("v0.1.0", "0.1.0"))
+
+
+class PluginMatchTest(unittest.TestCase):
+    def test_plugins_find_a_renamed_mod(self):
+        from tes3x.catalog import match
+        catalog = {"a": {"id": "a", "name": "Alpha", "folder": "Alpha",
+                         "plugins": ["Alpha.esp"]},
+                   "b": {"id": "b", "name": "Beta", "folder": "Beta.esp"}}
+        self.assertIsNone(match(catalog, "Renamed", plugins=["Other.esp"]))
+        self.assertIs(match(catalog, "Renamed", plugins=["alpha.ESP", "Extra.esp"]), catalog["a"])
+        self.assertIs(match(catalog, "Renamed", plugins=["Beta.esp"]), catalog["b"])
+        self.assertIsNone(match(catalog, "Renamed", plugins=["Morrowind.esm"]))

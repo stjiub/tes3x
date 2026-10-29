@@ -417,8 +417,11 @@ class ModsTab(QWidget):
         mod = self.mod_record(item) or {}
         found = (nexus_id(mod.get("url"), release.get("source") if release else None)
                  or self.nexus_links.get(name))
+        scanned = self.scans.get(self.scan_key(entry, self.window.build.excluded()))
+        plugins = ([os.path.basename(path) for path in scanned.files if path.endswith(PLUGIN_EXT)]
+                   if isinstance(scanned, Mod) else ())
         return match_catalog(self.window.compat, name, entry.get("name", ""), entry.get("id", ""),
-                             release["folder"] if release else "", nexus=found)
+                             release["folder"] if release else "", nexus=found, plugins=plugins)
 
     def mod_record(self, item):
         """The library's entry for a row, which holds its page and description."""
@@ -876,6 +879,7 @@ class ModsTab(QWidget):
                 if used < len(names):
                     notes.append(f"{used} of {len(names)} plugins")
             item.setText(self.MOD_NOTES, ", ".join(notes))
+            self.update_compat(item)
         self.mods_loading = False
         for column in (1, 2, 3, 4, self.MOD_XBOX):
             self.mod_list.resizeColumnToContents(column)

@@ -11,7 +11,7 @@ No official releases yet. The first public release is in preparation.
 
 - GUI: **Help > Update compatibility list** downloads the current list from GitHub, so verdicts
   and memory figures arrive without a new TES3X release. Mods are matched to it by Nexus id
-  before name, so a renamed folder still finds its verdict, and **Set Nexus link…** on a mod
+  before name, then by plugin file, so a renamed folder still finds its verdict, and **Set Nexus link…** on a mod
   takes a Nexus URL or id. `tes3x catalog add FOLDER` drafts an entry for a mod folder.
 
 - GUI: **Help > Check for updates** tells you when a newer release is on GitHub and opens its

@@ -156,9 +156,24 @@ def key(value):
     return re.sub(r"[^a-z0-9]+", "", value.casefold())
 
 
-def match(catalog, *names, nexus=None):
-    """The catalog entry for a mod: its Nexus id if given, else any of these names (folder, name
-    or id). A Nexus id survives a renamed folder; names are the fallback for other sources."""
+BASE_MASTERS = {"morrowind.esm", "tribunal.esm", "bloodmoon.esm"}
+
+
+def entry_plugins(entry):
+    """The plugins that identify an entry: its `plugins`, else its folder when that is a plugin."""
+    if entry.get("plugins"):
+        names = entry["plugins"]
+    elif entry["folder"].lower().endswith((".esp", ".esm")):
+        names = [entry["folder"]]
+    else:
+        names = []
+    return {Path(name).name.casefold() for name in names} - BASE_MASTERS
+
+
+def match(catalog, *names, nexus=None, plugins=()):
+    """The catalog entry for a mod. Tried in order: its Nexus id, any of these names (folder,
+    name or id), then its plugin files, which an entry lists. A Nexus id and plugin names survive
+    a renamed folder."""
     if nexus:
         for entry in catalog.values():
             if nexus_id(entry.get("url")) == nexus:
@@ -169,6 +184,11 @@ def match(catalog, *names, nexus=None):
         folder = entry["folder"]
         folder = Path(folder).stem if folder.lower().endswith((".esp", ".esm")) else folder
         if wanted & {key(folder), key(entry["name"]), key(entry["id"])}:
+            return entry
+    have = {Path(name).name.casefold() for name in plugins}
+    for entry in catalog.values():
+        identity = entry_plugins(entry)
+        if identity and identity <= have:
             return entry
     return None
 
