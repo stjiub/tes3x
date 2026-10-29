@@ -232,7 +232,7 @@ reason = "New combat AI behaviour."
 [[candidate]]
 name = "mcp-26"
 origin = { source = "MCP", id = "26" }
-category = "compat"
+category = "compatibility"
 status = "candidate"
 priority = "low"
 summary = "Gloss map fix"
@@ -307,7 +307,7 @@ reason = "Xbox GPU/render path differs. Require a reproduced Xbox defect and a c
 [[candidate]]
 name = "mcp-36"
 origin = { source = "MCP", id = "36" }
-category = "compat"
+category = "compatibility"
 status = "candidate"
 priority = "low"
 summary = "Createmaps/fillmap fix"
@@ -453,7 +453,7 @@ reason = "Stat displays round up and overstate current magicka."
 [[candidate]]
 name = "mcp-54"
 origin = { source = "MCP", id = "54" }
-category = "compat"
+category = "compatibility"
 status = "deferred"
 priority = "low"
 summary = "Hi-def cutscene support"
@@ -471,7 +471,7 @@ reason = "Editing a spell effect resets its range to Touch."
 [[candidate]]
 name = "mcp-57"
 origin = { source = "MCP", id = "57" }
-category = "compat"
+category = "compatibility"
 status = "candidate"
 priority = "low"
 summary = "Allow scroll enchant price modifier"
@@ -598,7 +598,7 @@ reason = "Gives creatures armor rating damage reduction."
 [[candidate]]
 name = "mcp-76"
 origin = { source = "MCP", id = "76" }
-category = "compat"
+category = "compatibility"
 status = "candidate"
 priority = "low"
 summary = "Disable weapon transition on unequip"
@@ -652,7 +652,7 @@ reason = "Keyboard shortcuts such as closing dialogue with the space bar; the Xb
 [[candidate]]
 name = "mcp-83"
 origin = { source = "MCP", id = "83" }
-category = "compat"
+category = "compatibility"
 status = "candidate"
 priority = "low"
 summary = "Detect water level fix"
@@ -661,7 +661,7 @@ reason = "Scripts detect the player as underwater in cells without water."
 [[candidate]]
 name = "mcp-84"
 origin = { source = "MCP", id = "84" }
-category = "compat"
+category = "compatibility"
 status = "candidate"
 priority = "low"
 summary = "Service refusal filtering"
@@ -688,7 +688,7 @@ reason = "Balance change, opt in only; MCP ships it as an option rather than a d
 [[candidate]]
 name = "mcp-87"
 origin = { source = "MCP", id = "87" }
-category = "compat"
+category = "compatibility"
 status = "candidate"
 priority = "low"
 summary = "Scripted music uninterruptible"
@@ -697,7 +697,7 @@ reason = "Script or modding support; worth porting only when a mod used on Xbox 
 [[candidate]]
 name = "mcp-88"
 origin = { source = "MCP", id = "88" }
-category = "compat"
+category = "compatibility"
 status = "candidate"
 priority = "low"
 summary = "Argonian clothing choice"
@@ -742,7 +742,7 @@ reason = "Low fatigue improves repair chance instead of reducing it; bound items
 [[candidate]]
 name = "mcp-95"
 origin = { source = "MCP", id = "95" }
-category = "compat"
+category = "compatibility"
 status = "candidate"
 priority = "medium"
 summary = "Voiceover script functions fix"
@@ -751,7 +751,7 @@ reason = "StopSound mutes every actor voice and SayDone fires early. Dialogue an
 [[candidate]]
 name = "mcp-96"
 origin = { source = "MCP", id = "96" }
-category = "compat"
+category = "compatibility"
 status = "candidate"
 priority = "low"
 summary = "Weapon reach issues"
@@ -769,7 +769,7 @@ reason = "Light effect is three times too bright with a poor falloff. Visual; co
 [[candidate]]
 name = "mcp-100"
 origin = { source = "MCP", id = "100" }
-category = "compat"
+category = "compatibility"
 status = "candidate"
 priority = "low"
 summary = "Allow faction leaving"
@@ -778,7 +778,7 @@ reason = "Script or modding support; worth porting only when a mod used on Xbox 
 [[candidate]]
 name = "mcp-101"
 origin = { source = "MCP", id = "101" }
-category = "compat"
+category = "compatibility"
 status = "candidate"
 priority = "low"
 summary = "Slow movement anim fix"
@@ -787,7 +787,7 @@ reason = "Very slow walk animations cause animation errors; only for animation m
 [[candidate]]
 name = "mcp-103"
 origin = { source = "MCP", id = "103" }
-category = "compat"
+category = "compatibility"
 status = "candidate"
 priority = "low"
 summary = "PlaySoundVP volume fix"
@@ -805,7 +805,7 @@ reason = "Cast on Strike offered for bows, where it can never trigger."
 [[candidate]]
 name = "mcp-105"
 origin = { source = "MCP", id = "105" }
-category = "compat"
+category = "compatibility"
 status = "candidate"
 priority = "low"
 summary = "Prevent empty messages"
@@ -904,7 +904,7 @@ reason = "Underwater sound lost through doors between underwater areas; wrong wa
 [[candidate]]
 name = "mcp-117"
 origin = { source = "MCP", id = "117" }
-category = "compat"
+category = "compatibility"
 status = "candidate"
 priority = "low"
 summary = "'Talked to PC' extension"
@@ -913,7 +913,7 @@ reason = "Script or modding support; worth porting only when a mod used on Xbox 
 [[candidate]]
 name = "mcp-120"
 origin = { source = "MCP", id = "120" }
-category = "compat"
+category = "compatibility"
 status = "candidate"
 priority = "low"
 summary = "Lock level scripting"
@@ -1078,7 +1078,7 @@ reason = "Balance change, opt in only; MCP ships it as an option rather than a d
 [[candidate]]
 name = "mcp-143"
 origin = { source = "MCP", id = "143" }
-category = "compat"
+category = "compatibility"
 status = "candidate"
 priority = "low"
 summary = "Get/SetAngle enhancement"
@@ -1133,7 +1133,7 @@ reason = "Alters skill progression even if the original hit attribution is wrong
 [[candidate]]
 name = "mcp-152"
 origin = { source = "MCP", id = "152" }
-category = "compat"
+category = "compatibility"
 status = "candidate"
 priority = "low"
 summary = "First person swim animations"
@@ -1179,7 +1179,7 @@ reason = "Balance change, opt in only; MCP ships it as an option rather than a d
 [[candidate]]
 name = "mcp-158"
 origin = { source = "MCP", id = "158" }
-category = "compat"
+category = "compatibility"
 status = "candidate"
 priority = "low"
 summary = "GetWeaponType fix"
@@ -1197,7 +1197,7 @@ reason = "Probe quality never reduces trap complexity."
 [[candidate]]
 name = "mcp-161"
 origin = { source = "MCP", id = "161" }
-category = "compat"
+category = "compatibility"
 status = "candidate"
 priority = "low"
 summary = "GetSpellEffects tweak"
@@ -1224,7 +1224,7 @@ reason = "Bow sounds repeat if the player moves after drawing."
 [[candidate]]
 name = "mcp-164"
 origin = { source = "MCP", id = "164" }
-category = "compat"
+category = "compatibility"
 default = "opt in"
 status = "candidate"
 priority = "low"
@@ -1234,7 +1234,7 @@ reason = "Three single-byte edits. This widens what scripts may do rather than c
 [[candidate]]
 name = "mcp-165"
 origin = { source = "MCP", id = "165" }
-category = "compat"
+category = "compatibility"
 status = "candidate"
 priority = "low"
 summary = "AIActivate enhancement"
@@ -1243,7 +1243,7 @@ reason = "Script or modding support; worth porting only when a mod used on Xbox 
 [[candidate]]
 name = "mcp-166"
 origin = { source = "MCP", id = "166" }
-category = "compat"
+category = "compatibility"
 status = "candidate"
 priority = "low"
 summary = "Scriptable potion use"
@@ -1252,7 +1252,7 @@ reason = "Script or modding support; worth porting only when a mod used on Xbox 
 [[candidate]]
 name = "mcp-167"
 origin = { source = "MCP", id = "167" }
-category = "compat"
+category = "compatibility"
 status = "candidate"
 priority = "low"
 summary = "Container respawn timescale"
@@ -1306,7 +1306,7 @@ reason = "Balance change, opt in only; MCP ships it as an option rather than a d
 [[candidate]]
 name = "mcp-174"
 origin = { source = "MCP", id = "174" }
-category = "compat"
+category = "compatibility"
 status = "candidate"
 priority = "low"
 summary = "AddItem with levelled items"
@@ -1315,7 +1315,7 @@ reason = "Script or modding support; worth porting only when a mod used on Xbox 
 [[candidate]]
 name = "mcp-175"
 origin = { source = "MCP", id = "175" }
-category = "compat"
+category = "compatibility"
 status = "candidate"
 priority = "low"
 summary = "MoveWorld Z fix"
@@ -1333,7 +1333,7 @@ reason = "Active effect tooltips name the wrong source item."
 [[candidate]]
 name = "mcp-177"
 origin = { source = "MCP", id = "177" }
-category = "compat"
+category = "compatibility"
 status = "candidate"
 priority = "medium"
 summary = "GetEffect/RemoveEffects fix"
@@ -1361,7 +1361,7 @@ reason = "MCP source category is **Game mechanics**. Can make followers chase ra
 [[candidate]]
 name = "mcp-256"
 origin = { source = "MCP", id = "256" }
-category = "compat"
+category = "compatibility"
 status = "candidate"
 priority = "medium"
 summary = "Map expansion (for Tamriel Rebuilt)"
@@ -1437,7 +1437,7 @@ reason = "Fixes for the Russian PC localisation."
 [[candidate]]
 name = "mcp-265"
 origin = { source = "MCP", id = "265" }
-category = "compat"
+category = "compatibility"
 status = "candidate"
 priority = "low"
 summary = "Journal text colour configuration"
@@ -1701,7 +1701,7 @@ reason = "Relevant to map expansion and large landmasses if the Xbox map bounds 
 [[candidate]]
 name = "mwse-mobile-projectile"
 origin = { source = "MWSE" }
-category = "compat"
+category = "compatibility"
 default = "profile dependent"
 status = "candidate"
 priority = "low"

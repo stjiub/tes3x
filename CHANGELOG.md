@@ -4,6 +4,9 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- The patch category `compat` is now `compatibility`. A profile that lists `compat` under
+  `patches.categories` must be changed to match.
+
 - GUI: turning a mod off also turns off the patches only it needed (such as Can't Touch This's),
   unless another enabled mod needs them.
 

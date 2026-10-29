@@ -28,8 +28,8 @@ single required/not-required flag.
 
 | title | patch key | what it does | from | category | channel | included by |
 |---|---|---|---|---|---|---|
-| [Script opcode extensions](../patches/script-ext.md) | `script-ext` | Add script opcodes: widen the length bounds and hook Script::RunFunction. | TES3X | compat | preview | By name; `mwse-legacy` |
-| [Legacy MWSE bytecode](../patches/mwse-legacy.md) | `mwse-legacy` | Interpret legacy MWSE 0.9.4 bytecode embedded in compiled scripts. | TES3X | compat | dev | By name |
+| [Script opcode extensions](../patches/script-ext.md) | `script-ext` | Add script opcodes: widen the length bounds and hook Script::RunFunction. | TES3X | compatibility | preview | By name; `mwse-legacy` |
+| [Legacy MWSE bytecode](../patches/mwse-legacy.md) | `mwse-legacy` | Interpret legacy MWSE 0.9.4 bytecode embedded in compiled scripts. | TES3X | compatibility | dev | By name |
 | [Empty pathgrid fix](../patches/mwse-pathgrid-zero.md) | `mwse-pathgrid-zero` | Stop Wander and Flee picking a node from a pathgrid that has none. | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | core | dev | By name; recommended preset at release |
 | [Enable and Disable without local variables](../patches/mwse-enable-disable-vars.md) | `mwse-enable-disable-vars` | Stop Enable and Disable crashing in a script that has no local variables. | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | core | dev | By name; recommended preset at release |
 
@@ -51,13 +51,13 @@ single required/not-required flag.
 | [Saved-script initialization fix](../patches/mcp-97.md) | `mcp-97` | Advance the script parser correctly while initializing saved data. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #97 | core | preview | testing preset |
 | [Animated container crash fix](../patches/mcp-98.md) | `mcp-98` | Keep animated-container access from destroying a live animation. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #98 | core | preview | testing preset |
 | [Removed-mod object reactivation](../patches/mcp-102.md) | `mcp-102` | Reactivate script-triggered objects after their script mod is removed. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #102 | correctness | preview | testing preset |
-| [Separate axe inventory sounds](../patches/mcp-114.md) | `mcp-114` | Use the axe pickup and putdown sounds supplied by Patch for Purists. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #114 | compat | dev | By name |
+| [Separate axe inventory sounds](../patches/mcp-114.md) | `mcp-114` | Use the axe pickup and putdown sounds supplied by Patch for Purists. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #114 | compatibility | dev | By name |
 | [Airborne item drop fix](../patches/mcp-118.md) | `mcp-118` | Keep items dropped in third person while airborne near the player. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #118 | core | dev | By name; recommended preset at release |
-| [Creature voiceover enable](../patches/mcp-119.md) | `mcp-119` | Allow creatures with dialogue and voice files to play Hello, Idle, and Attack lines. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #119 | compat | dev | By name |
+| [Creature voiceover enable](../patches/mcp-119.md) | `mcp-119` | Allow creatures with dialogue and voice files to play Hello, Idle, and Attack lines. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #119 | compatibility | dev | By name |
 | [PlaceItem persistence](../patches/mcp-123.md) | `mcp-123` | Persist objects placed by scripts into cells the player has not visited. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #123 | core | preview | testing preset |
 | [Position actor initialization](../patches/mcp-125.md) | `mcp-125` | Initialize scripts and collision for actors moved by Position or PositionCell. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #125 | core | preview | testing preset |
-| [World map texture independence](../patches/mcp-127.md) | `mcp-127` | Keep replacement land textures from changing the world map panel size. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #127 | compat | dev | By name |
-| [Improved animation support](../patches/mcp-132.md) | `mcp-132` | Play scripted animations across NPC body layers, support extra bones and animate the player. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #132 | compat | dev | By name; `cant-touch-this` |
+| [World map texture independence](../patches/mcp-127.md) | `mcp-127` | Keep replacement land textures from changing the world map panel size. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #127 | compatibility | dev | By name |
+| [Improved animation support](../patches/mcp-132.md) | `mcp-132` | Play scripted animations across NPC body layers, support extra bones and animate the player. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #132 | compatibility | dev | By name; `cant-touch-this` |
 | [Nocked arrow removal](../patches/mcp-146.md) | `mcp-146` | Remove a fully nocked arrow with the Ready Weapon control. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #146 | qol | dev | By name; recommended preset at release |
 | [Safe corpse disposal](../patches/mcp-149.md) | `mcp-149` | Keep corpse disposal unavailable until an actor finishes dying. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #149 | core | dev | By name; recommended preset at release |
 | [Script data overread fix](../patches/mcp-154.md) | `mcp-154` | Pad compiled script-data allocations to keep dword reads in bounds. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #154 | core | dev | By name; recommended preset at release |
@@ -69,16 +69,16 @@ single required/not-required flag.
 
 | title | patch key | what it does | from | category | channel | included by |
 |---|---|---|---|---|---|---|
-| [Expanded-memory video arena](../patches/video-arena.md) | `video-arena` | Size the texture and vertex buffer arena from [Xbox] VideoMemoryKB, and pack what overflows it into shared chunks. | TES3X | compat | dev | By name |
-| [Expanded-memory heap region](../patches/heap-region.md) | `heap-region` | With more than 64 MB, size the engine heap's region from [Xbox] HeapRegionKB. | TES3X | compat | dev | By name |
-| [Paged dialogue link names](../patches/info-name-arena.md) | `info-name-arena` | Page INFO's temporary ID, previous and next names outside the engine heap. | TES3X | compat | dev | By name |
-| [Paged NPC and inventory link names](../patches/link-name-arena.md) | `link-name-arena` | Page NPCs' race, class, faction, head and hair names, inventory item IDs and the base records' inventories outside the engine heap. | TES3X | compat | dev | By name; `script-arena`, `path-arena`, `land-arena`, `npc-arena` |
-| [Paged script bytecode](../patches/script-arena.md) | `script-arena` | Page compiled script bytecode outside the engine heap. | TES3X | compat | dev | By name |
-| [Paged model paths, icon paths and display names](../patches/path-arena.md) | `path-arena` | Page the model and icon paths and display names of loaded records outside the engine heap. | TES3X | compat | dev | By name |
-| [Paged land objects](../patches/land-arena.md) | `land-arena` | Page the land objects of loaded exterior cells outside the engine heap. | TES3X | compat | dev | By name |
-| [Paged NPC objects](../patches/npc-arena.md) | `npc-arena` | Page the NPC records' objects outside the engine heap. | TES3X | compat | dev | By name |
-| [Dialogue responses built on first use](../patches/lazy-dialogue.md) | `lazy-dialogue` | Load dialogue responses as file references and build a topic's responses when it is first needed. | TES3X | compat | dev | By name |
-| [Growing small-block pools](../patches/pool-grow.md) | `pool-grow` | Add another pool when a small-block size class fills, instead of giving each further block a header in the heap. | TES3X | compat | dev | By name |
+| [Expanded-memory video arena](../patches/video-arena.md) | `video-arena` | Size the texture and vertex buffer arena from [Xbox] VideoMemoryKB, and pack what overflows it into shared chunks. | TES3X | compatibility | dev | By name |
+| [Expanded-memory heap region](../patches/heap-region.md) | `heap-region` | With more than 64 MB, size the engine heap's region from [Xbox] HeapRegionKB. | TES3X | compatibility | dev | By name |
+| [Paged dialogue link names](../patches/info-name-arena.md) | `info-name-arena` | Page INFO's temporary ID, previous and next names outside the engine heap. | TES3X | compatibility | dev | By name |
+| [Paged NPC and inventory link names](../patches/link-name-arena.md) | `link-name-arena` | Page NPCs' race, class, faction, head and hair names, inventory item IDs and the base records' inventories outside the engine heap. | TES3X | compatibility | dev | By name; `script-arena`, `path-arena`, `land-arena`, `npc-arena` |
+| [Paged script bytecode](../patches/script-arena.md) | `script-arena` | Page compiled script bytecode outside the engine heap. | TES3X | compatibility | dev | By name |
+| [Paged model paths, icon paths and display names](../patches/path-arena.md) | `path-arena` | Page the model and icon paths and display names of loaded records outside the engine heap. | TES3X | compatibility | dev | By name |
+| [Paged land objects](../patches/land-arena.md) | `land-arena` | Page the land objects of loaded exterior cells outside the engine heap. | TES3X | compatibility | dev | By name |
+| [Paged NPC objects](../patches/npc-arena.md) | `npc-arena` | Page the NPC records' objects outside the engine heap. | TES3X | compatibility | dev | By name |
+| [Dialogue responses built on first use](../patches/lazy-dialogue.md) | `lazy-dialogue` | Load dialogue responses as file references and build a topic's responses when it is first needed. | TES3X | compatibility | dev | By name |
+| [Growing small-block pools](../patches/pool-grow.md) | `pool-grow` | Add another pool when a small-block size class fills, instead of giving each further block a header in the heap. | TES3X | compatibility | dev | By name |
 
 ## Speed
 
@@ -136,5 +136,5 @@ single required/not-required flag.
 | title | patch key | what it does | from | category | channel | included by |
 |---|---|---|---|---|---|---|
 | [Keep responses of repeated topics](../patches/dialogue-merge.md) | `dialogue-merge` | Keep a topic's earlier responses when a later plugin adds to it. | TES3X | correctness | preview | testing preset; `lazy-dialogue` |
-| [Can't Touch This dodges](../patches/cant-touch-this.md) | `cant-touch-this` | Play a dodge animation when a melee attack misses a calm NPC, using Can't Touch This's clips. | TES3X | compat | dev | By name |
+| [Can't Touch This dodges](../patches/cant-touch-this.md) | `cant-touch-this` | Play a dodge animation when a melee attack misses a calm NPC, using Can't Touch This's clips. | TES3X | compatibility | dev | By name |
 | [DXT5 allocation fix](../patches/dxt5-size.md) | `dxt5-size` | Allocate DXT5 textures at their real size, not a negative one that corrupts video memory. | TES3X | core | preview | testing preset |

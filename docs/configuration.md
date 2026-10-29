@@ -190,7 +190,7 @@ folder first; the game hangs if it has to create a new title's folder itself.
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `preset` | string | `recommended` | `minimal`, `recommended` or `testing`. |
-| `categories` | array of strings | `[]` | Add selectable patches by category. Categories are `core`, `correctness`, `compat`, `performance`, `qol`, `balance`, `instrumentation` and `infrastructure`. |
+| `categories` | array of strings | `[]` | Add selectable patches by category. Categories are `core`, `correctness`, `compatibility`, `performance`, `qol`, `balance`, `instrumentation` and `infrastructure`. |
 | `enable` | array of strings | `[]` | Add individual patches by name. |
 | `disable` | array of strings | `[]` | Remove individual patches selected elsewhere. |
 

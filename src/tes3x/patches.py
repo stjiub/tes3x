@@ -19,7 +19,7 @@ TABLE = ROOT / "docs" / "patches.md"
 CANDIDATE_PAGE = ROOT / "docs" / "candidates.md"
 PATCH_DOCS = ROOT / "patches"
 
-CATEGORIES = ("core", "correctness", "compat", "performance", "qol", "balance",
+CATEGORIES = ("core", "correctness", "compatibility", "performance", "qol", "balance",
               "instrumentation", "infrastructure")
 CHANNELS = ("dev", "preview", "release")
 SELECTIONS = ("always", "packaging", "preset", "option")

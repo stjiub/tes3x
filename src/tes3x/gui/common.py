@@ -267,7 +267,7 @@ def theme_icon(widget, theme, fallback):
     return QIcon.fromTheme(theme, widget.style().standardIcon(fallback))
 
 
-CATEGORY_ACCENTS = {"core": "#3d85d6", "correctness": "#d9534f", "compat": "#8a63d2",
+CATEGORY_ACCENTS = {"core": "#3d85d6", "correctness": "#d9534f", "compatibility": "#8a63d2",
                     "performance": "#2ea043", "qol": "#2aa198", "balance": "#c9822b",
                     "instrumentation": "#7a8794", "infrastructure": "#d9a21b"}
 
