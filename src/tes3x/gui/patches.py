@@ -292,8 +292,10 @@ class PatchesTab(QWidget):
         selection = {"always": "every build", "packaging": "package mode",
                      "preset": "preset or profile", "option": "build option"}
         lines = [patch_page(name).rstrip(), "", "---", "",
-                 f"**Category** {entry['category']} · **Status** {entry['channel']} · "
-                 f"**Origin** {origin_text} · **Selection** {selection[entry['selection']]}"]
+                 f"- **Category:** {entry['category']}",
+                 f"- **Status:** {entry['channel']}",
+                 f"- **Origin:** {origin_text}",
+                 f"- **Selection:** {selection[entry['selection']]}"]
         if entry.get("ini"):
             lines += ["", "Settings (INI tab, `[Xbox]`):", ""]
             lines += [f"- `{key}`" + (f" = {value}" if value else "")
