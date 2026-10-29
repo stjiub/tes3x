@@ -39,7 +39,7 @@ Also included, outside this folder:
 
 - `python/`: Python {PYTHON}, PSF License (`python/LICENSE.txt`), and in
   `python/Lib/site-packages` TES3X itself (GPL 3.0 or later, `LICENSE.txt`) and its packages,
-  each with its license in its `.dist-info` folder: PySide6 and Qt (GNU LGPL 3), tomlkit (MIT),
+  each with its license in its `.dist-info` folder: PySide6 and Qt (GNU LGPL 3), tomlkit (MIT), PyFFI (BSD), setuptools (MIT),
   cryptography (Apache 2.0 or BSD), Pillow (MIT-CMU), zstandard (BSD).
 - `python/Lib/site-packages/tes3x/_vendor/mlox/`: mlox 1.0.3, MIT.
 """

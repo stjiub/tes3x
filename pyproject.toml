@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-gui = ["PySide6-Essentials>=6.8,<7", "tomlkit>=0.13,<1"]
+gui = ["PySide6-Essentials>=6.8,<7", "tomlkit>=0.13,<1", "PyFFI==2.2.3", "setuptools>=77"]
 kf = ["PyFFI==2.2.3", "setuptools>=77"]
 dev = ["capstone>=5,<6", "ruff"]
 

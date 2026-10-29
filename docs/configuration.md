@@ -250,8 +250,8 @@ overlay may still use delta archives, a merged archive or loose mod files.
 
 `merge_kf` is an ordered list of animation KF paths in the collected `Data Files` tree. The
 pipeline appends their clips to the winning `Meshes/xbase_anim.kf`, or to the retail copy in
-`Morrowind.bsa` when no mod supplies one. It removes the source KFs from the packed tree. Install
-the optional `tes3x[kf]` dependency to use this setting. Check the paths printed by `tes3x build`:
+`Morrowind.bsa` when no mod supplies one. It removes the source KFs from the packed tree. The portable folder and
+`tes3x[gui]` include the KF reader; a command-line install needs `tes3x[kf]`. Check the paths printed by `tes3x build`:
 some mod layouts are flattened during collection.
 
 ```toml

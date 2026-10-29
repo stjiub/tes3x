@@ -14,7 +14,7 @@ The hook sits on the engine's attack roll. A miss against a qualifying NPC picks
 
 ## Using it
 
-Enable the Can't Touch This mod in the profile; the build selects this patch and merges `xmissdodge.kf` and `xArmedDodgeV2.kf` into the base animation file. The mod's Lua scripts are not used. The animation merge needs the optional KF reader (`tes3x[kf]`).
+Enable the Can't Touch This mod in the profile; the build selects this patch and merges `xmissdodge.kf` and `xArmedDodgeV2.kf` into the base animation file. The mod's Lua scripts are not used. The animation merge uses the KF reader included in the portable folder and `tes3x[gui]`; a command-line install needs `tes3x[kf]`.
 
 ## Compatibility and limits
 

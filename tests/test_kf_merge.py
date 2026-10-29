@@ -49,6 +49,26 @@ class KFMergeTests(unittest.TestCase):
         with self.assertRaisesRegex(KFMergeError, "missdl"):
             dodge_clip_ranges(_kf(keys))
 
+    def test_euler_base_rotations_become_quaternion_keys_before_appending(self):
+        try:
+            from tes3x.kf_merge import _append_rotations, _nif_format
+            nif = _nif_format()
+        except KFMergeError:
+            self.skipTest("PyFFI is not installed")
+        dst = nif.NiKeyframeData()
+        dst.rotation_type, dst.num_rotation_keys = 4, 1
+        for group in dst.xyz_rotations:
+            group.num_keys, group.interpolation = 2, 1
+            group.keys.update_size()
+            group.keys[1].time, group.keys[1].value = 1.0, math.pi / 2
+        src = nif.NiKeyframeData()
+        src.rotation_type, src.num_rotation_keys = 1, 1
+        src.quaternion_keys.update_size()
+        src.quaternion_keys[0].value.w = 1.0
+        _append_rotations(dst, src, 2.0)
+        self.assertEqual((dst.rotation_type, dst.num_rotation_keys), (1, 3))
+        self.assertEqual([key.time for key in dst.quaternion_keys], [0.0, 1.0, 2.0])
+
 
 if __name__ == "__main__":
     unittest.main()

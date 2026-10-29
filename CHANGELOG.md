@@ -4,6 +4,10 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- A build that merges animation KFs without PyFFI now prints the exact `pip install` command for
+  the Python running TES3X. The portable folder and `tes3x[gui]` now include the KF reader, so
+  animation merging works without an extra install.
+
 - Exec scripts can show an existing menu pane by name with `show MENU`, so scripted UI checks can
   reach panes hidden behind the Xbox menu's map page. See [exec scripts](docs/exec-scripts.md).
 

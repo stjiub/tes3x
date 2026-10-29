@@ -4,6 +4,7 @@ import argparse
 import math
 from pathlib import Path
 import struct
+import sys
 import time
 
 from tes3x.bsa import Bsa, tes3_hash
@@ -21,7 +22,10 @@ def _nif_format():
         import setuptools  # noqa: F401
         from pyffi.formats.nif import NifFormat
     except ImportError as exc:
-        raise KFMergeError("KF merging needs PyFFI 2.2.3 (install tes3x[kf])") from exc
+        raise KFMergeError(
+            "KF merging needs PyFFI 2.2.3, which is not installed for this Python. "
+            f'Install it with: "{sys.executable}" -m pip install "tes3x[kf]"'
+        ) from exc
     return NifFormat
 
 
@@ -174,9 +178,22 @@ def _xyz_quaternions(data):
                    cx * cy * sz + sx * sy * cz)
 
 
+def _xyz_to_quaternions(data):
+    """Resample Euler rotation tracks as linear quaternion keys at their combined key times."""
+    values = list(_xyz_quaternions(data))
+    data.rotation_type = 1
+    data.num_rotation_keys = len(values)
+    data.quaternion_keys.update_size()
+    for key, (at, quaternion) in zip(data.quaternion_keys, values):
+        key.time = at
+        key.value.w, key.value.x, key.value.y, key.value.z = quaternion
+
+
 def _append_rotations(dst, src, offset):
     if not src.num_rotation_keys:
         return
+    if dst.num_rotation_keys and dst.rotation_type == 4:
+        _xyz_to_quaternions(dst)
     if dst.num_rotation_keys and dst.rotation_type not in (1, 3):
         raise KFMergeError(f"unsupported base rotation type {dst.rotation_type}")
     if src.rotation_type == 4:

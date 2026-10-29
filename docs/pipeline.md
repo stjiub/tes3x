@@ -90,7 +90,8 @@ With [`animation.merge_kf`](configuration.md#animation), the pipeline combines t
 tracks with the winning `Meshes/xbase_anim.kf` before packing. If the build has no loose base KF,
 it reads the retail one from `Morrowind.bsa`. The listed source KFs are consumed in order. The
 same operation is available as `tes3x kf-merge BASE ADDITION... --out OUTPUT` for a manual build.
-The optional `tes3x[kf]` dependency supplies the KF reader and writer. Quadratic position and
+The KF reader and writer come from PyFFI, included in the portable folder and `tes3x[gui]`; a
+command-line install adds it with `tes3x[kf]`. Quadratic position and
 scale curves appended to linear tracks are sampled at 30 Hz. The merger accepts NetImmerse
 4.0.0.2 animation sequences and stops on unsupported key layouts.
 

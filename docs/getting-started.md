@@ -58,8 +58,8 @@ You need Python 3.12 or newer and [pipx](https://pipx.pypa.io), and:
 pipx install "tes3x[gui] @ git+https://github.com/stjiub/tes3x"
 ```
 
-`tes3x gui` starts the GUI; `tes3x --help` lists the commands. Leave out `[gui]` for the command
-line alone. `pipx reinstall tes3x` updates it.
+`tes3x gui` starts the GUI; `tes3x --help` lists the commands. `[gui]` includes the animation KF reader; leave it out for the command
+line alone, and add `[kf]` there if you merge animations. `pipx reinstall tes3x` updates it.
 
 ## Where TES3X keeps your files
 
