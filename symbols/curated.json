@@ -5837,6 +5837,14 @@
       "pc_va": "0x00530A20"
     },
     {
+      "va": "0x00162390",
+      "name": "MobileActor::checkGreetingRange",
+      "confidence": "verified",
+      "provenance": "MCP-119 PC comparison and Xbox decompilation",
+      "note": "The actorType zero early exit suppresses creature greetings; MCP-119 bypasses it while retaining the Hello rating and AI-package checks.",
+      "signature": "float __thiscall checkGreetingRange(TES3::MobileActor* player)"
+    },
+    {
       "va": "0x00162950",
       "name": "MobileActor::forceSpellCast",
       "kind": "function",
@@ -5850,7 +5858,8 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_MobileActor_startCombat",
-      "pc_va": "0x00530470"
+      "pc_va": "0x00530470",
+      "note": "MCP-119 admits creature actor type zero to the attack voiceover call, while excluding player type two."
     },
     {
       "va": "0x001650B0",
@@ -5998,7 +6007,8 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_ActorAnimController_startAttackAnimation",
-      "pc_va": "0x005411C0"
+      "pc_va": "0x005411C0",
+      "note": "MCP-119 admits creature actor type zero to the random attack voiceover gate, while excluding player type two."
     },
     {
       "va": "0x0016D710",

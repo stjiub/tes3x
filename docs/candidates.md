@@ -13,7 +13,7 @@ on, `low` for minor ones, and `none` for fixes we won't port.
 
 | status | fixes |
 |---|---|
-| candidate | 171 |
+| candidate | 169 |
 | deferred | 14 |
 | not-applicable | 16 |
 | rejected | 4 |
@@ -128,11 +128,9 @@ Worth porting, but not yet shown to affect the Xbox build.
 | `mcp-110` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #110 | low | balance | **Skill uncap.** Skill uncap. Balance, and incompatible with levelling mods that expect a cap. |
 | `mcp-111` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #111 | low | balance | **Weapon resistance change.** Balance change, opt in only; MCP ships it as an option rather than a defect fix. |
 | `mcp-112` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #112 | low | correctness | **Disintegrate fix.** Disintegrate Weapon and Armor apply little or no damage. |
-| `mcp-114` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #114 | low | compat (PfP profiles only) | **Separate axe inventory sounds.** MCP source category is **Mod specific**. Patch for Purists documents it as a requirement; prioritize only for profiles that use PfP. |
 | `mcp-115` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #115 | low | correctness | **Confiscated item fix.** Guards and merchants confiscate items that are no longer stolen. |
 | `mcp-116` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #116 | low | correctness | **Water environment sound fix.** Underwater sound lost through doors between underwater areas; wrong water ambience. |
 | `mcp-117` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #117 | low | compat | **'Talked to PC' extension.** Script or modding support; worth porting only when a mod used on Xbox needs it. |
-| `mcp-119` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #119 | low | compat (PfP profiles only) | **Creature voiceover enable.** MCP source category is **Mod specific**. Required by PfP and one of the few named-mod patches relevant to the current library. |
 | `mcp-120` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #120 | low | compat | **Lock level scripting.** Script or modding support; worth porting only when a mod used on Xbox needs it. |
 | `mcp-121` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #121 | low | balance | **Self-enchanting fix.** Self-enchanting with several effects fails far more often than intended. |
 | `mcp-122` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #122 | low | correctness | **Ammunition fix.** The ammunition counter does not update while an inventory filter hides the ammo. |

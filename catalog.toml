@@ -70,8 +70,8 @@ version = "4.0.2"
 url = "https://www.nexusmods.com/morrowind/mods/45096"
 folder = "Purists"
 status = "passes-automated"
-patches = ["dialogue-merge"]
-notes = "The Xbox loader drops stock responses when this mod repeats a dialogue topic; dialogue-merge keeps them."
+patches = ["dialogue-merge", "mcp-114", "mcp-119"]
+notes = "The Xbox loader drops stock responses when this mod repeats a dialogue topic; dialogue-merge keeps them. Separate axe inventory sounds and creature voiceovers need the two MCP compatibility patches."
 
 [[mod]]
 id = "tes-extended-music"

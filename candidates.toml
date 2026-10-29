@@ -884,16 +884,6 @@ summary = "Incorrect inventory sounds"
 reason = "Large patch with Xbox UI/audio-path uncertainty. Decode before accepting."
 
 [[candidate]]
-name = "mcp-114"
-origin = { source = "MCP", id = "114" }
-category = "compat"
-default = "PfP profiles only"
-status = "candidate"
-priority = "low"
-summary = "Separate axe inventory sounds"
-reason = "MCP source category is **Mod specific**. Patch for Purists documents it as a requirement; prioritize only for profiles that use PfP."
-
-[[candidate]]
 name = "mcp-115"
 origin = { source = "MCP", id = "115" }
 category = "correctness"
@@ -919,16 +909,6 @@ status = "candidate"
 priority = "low"
 summary = "'Talked to PC' extension"
 reason = "Script or modding support; worth porting only when a mod used on Xbox needs it."
-
-[[candidate]]
-name = "mcp-119"
-origin = { source = "MCP", id = "119" }
-category = "compat"
-default = "PfP profiles only"
-status = "candidate"
-priority = "low"
-summary = "Creature voiceover enable"
-reason = "MCP source category is **Mod specific**. Required by PfP and one of the few named-mod patches relevant to the current library."
 
 [[candidate]]
 name = "mcp-120"

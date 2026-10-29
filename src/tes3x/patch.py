@@ -55,7 +55,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_info_arena_sites, find_lazy_dialogue_sites, find_link_names_sites, find_lean_menu, find_marker,
                                find_pool_grow_sites, find_script_arena_sites, find_path_arena_sites,
                                find_land_arena_sites, find_npc_arena_sites, POOL_ARENA_KEEP,
-                               find_mcp102_actn, find_enable_disable_flags, find_mcp160_removal, find_pathgrid_lookups, find_mcp123_add, find_mcp6_context,
+                               find_mcp102_actn, find_enable_disable_flags, find_mcp160_removal, find_pathgrid_lookups, find_mcp123_add, find_mcp114_axe_sound, find_mcp119_voice_gates, find_mcp6_context,
                                find_mcp125_collision, find_mcp30_context, find_mcp55_context,
                                find_mcp55_inventory_context, find_mcp118_drop_finish,
                                find_mcp149_menu,
@@ -1412,6 +1412,22 @@ def _mcp_123(x, value, ctx):
     was, off = x.patch_call(site, target)
     return [(off, 5, "PlaceItem cell insertion 0x%08X: 0x%08X -> 0x%08X"
              % (site, was, target))]
+
+
+@patch("mcp-114")
+def _mcp_114(x, value, ctx):
+    off = find_mcp114_axe_sound(x)
+    x.data[off:off + 6] = b"Axe\0\0\0"
+    return [(off, 6, "axe inventory sound name")]
+
+
+@patch("mcp-119")
+def _mcp_119(x, value, ctx):
+    edits = []
+    for off, replacement in find_mcp119_voice_gates(x):
+        x.data[off:off + 2] = replacement
+        edits.append((off, 2, "creature voice gate 0x%08X" % x.off_to_va(off)))
+    return edits
 
 
 @patch("mcp-149")

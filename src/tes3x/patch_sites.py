@@ -214,6 +214,29 @@ def find_unique(data, needle, what):
     return hits[0]
 
 
+def find_mcp114_axe_sound(x):
+    off = find_unique(x.data, b"Item Weapon Blunt\0", "mcp-114 axe sound")
+    if x.off_to_va(off) is None:
+        raise PatchError("mcp-114: inventory sound name is outside the image")
+    return off + len(b"Item Weapon ")
+
+
+def find_mcp119_voice_gates(x):
+    """The combat, greeting, and attack voice gates in both GOTY engines."""
+    patterns = (
+        (b"\x80\xbe\x28\x02\x00\x00\x01\x75\x09\x6a\x05\x8b\xce\xe8", 6, b"\x02\x74"),
+        (b"\x84\xc0\x75\x0d\xd9\x05", 2, b"\xeb\x0d"),
+        (b"\x80\xb8\x28\x02\x00\x00\x01\x75\x42\x8b\x88\xec\x00\x00\x00", 6, b"\x02\x74"),
+    )
+    sites = []
+    for pattern, offset, replacement in patterns:
+        off = find_unique(x.data, pattern, "mcp-119 voice gate") + offset
+        if x.off_to_va(off) is None:
+            raise PatchError("mcp-119: voice gate is outside the image")
+        sites.append((off, replacement))
+    return sites
+
+
 def find_mcp127_map(x):
     """Locate the map panel texture and its fixed size from the texture path."""
     land = b"Textures\\_land_default.tga\0"

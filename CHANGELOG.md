@@ -4,6 +4,9 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- Patch for Purists builds now enable `mcp-114` and `mcp-119`: axes use its separate inventory
+  sounds, and creatures can play Hello, Idle and Attack voice lines. Both patches are also
+  selectable on their own; see their patch pages for the required sound records and conditions.
 - Multiplayer: new characters no longer see the courtyard barrel's map menu tutorial after
   choosing a start point.
 - GUI: a build shows its step and a bar in the status bar ("step 4/8 · packing mods"), with

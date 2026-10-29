@@ -360,6 +360,26 @@ source = "tes3xmcp123.c"
 summary = "Persist objects placed by scripts into cells the player has not visited."
 
 [[patch]]
+name = "mcp-114"
+title = "Separate axe inventory sounds"
+origin = { source = "MCP", id = "114" }
+category = "compat"
+group = "MCP fixes"
+channel = "dev"
+selection = "preset"
+summary = "Use the axe pickup and putdown sounds supplied by Patch for Purists."
+
+[[patch]]
+name = "mcp-119"
+title = "Creature voiceover enable"
+origin = { source = "MCP", id = "119" }
+category = "compat"
+group = "MCP fixes"
+channel = "dev"
+selection = "preset"
+summary = "Allow creatures with dialogue and voice files to play Hello, Idle, and Attack lines."
+
+[[patch]]
 name = "mcp-125"
 title = "Position actor initialization"
 origin = { source = "MCP", id = "125" }
