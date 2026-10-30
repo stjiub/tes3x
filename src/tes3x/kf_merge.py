@@ -172,10 +172,11 @@ def _xyz_quaternions(data):
         cx, sx = math.cos(x), math.sin(x)
         cy, sy = math.cos(y), math.sin(y)
         cz, sz = math.cos(z), math.sin(z)
-        yield at, (cx * cy * cz - sx * sy * sz,
-                   sx * cy * cz + cx * sy * sz,
-                   cx * sy * cz - sx * cy * sz,
-                   cx * cy * sz + sx * sy * cz)
+        # NetImmerse applies X, then Y, then Z: R = Rz * Ry * Rx.
+        yield at, (cx * cy * cz + sx * sy * sz,
+                   sx * cy * cz - cx * sy * sz,
+                   cx * sy * cz + sx * cy * sz,
+                   cx * cy * sz - sx * sy * cz)
 
 
 def _xyz_to_quaternions(data):
@@ -280,6 +281,123 @@ def merge_kfs(base, additions, output):
     return output
 
 
+_WINDOW_EPS = 1e-3
+SPLICE_CHANNELS = ("translation", "rotation")
+
+
+def group_windows(text):
+    """Map each lower-cased group name to its (start, stop) times from a NiTextKeyExtraData."""
+    found = {}
+    for key in text.text_keys:
+        for line in bytes(key.value).decode("latin-1").replace("\r", "").split("\n"):
+            name, sep, phase = line.partition(":")
+            phase = phase.strip().lower()
+            if sep and phase in ("start", "stop"):
+                found.setdefault(name.strip().lower(), {})[phase] = key.time
+    return {name: (v["start"], v["stop"]) for name, v in found.items() if len(v) == 2}
+
+
+def _channel_keys(data, channel):
+    if channel == "translation":
+        if data.translations.interpolation != 1:
+            raise KFMergeError("splicing needs linear translation keys")
+        return [(key.time, _components(key.value)) for key in data.translations.keys]
+    if data.rotation_type == 4:
+        _xyz_to_quaternions(data)
+    if data.num_rotation_keys and data.rotation_type != 1:
+        raise KFMergeError(f"splicing needs linear rotation keys, not type {data.rotation_type}")
+    return [(key.time, (key.value.w, key.value.x, key.value.y, key.value.z))
+            for key in data.quaternion_keys]
+
+
+def _blend(keys, at):
+    if at <= keys[0][0]:
+        return keys[0][1]
+    for (t0, v0), (t1, v1) in zip(keys, keys[1:]):
+        if at <= t1:
+            fraction = (at - t0) / (t1 - t0)
+            if len(v0) == 4 and sum(a * b for a, b in zip(v0, v1)) < 0:
+                v1 = tuple(-x for x in v1)
+            value = tuple(a + (b - a) * fraction for a, b in zip(v0, v1))
+            if len(value) == 4:
+                length = math.sqrt(sum(x * x for x in value)) or 1.0
+                value = tuple(x / length for x in value)
+            return value
+    return keys[-1][1]
+
+
+def _window_keys(keys, start, stop):
+    low, high = start - _WINDOW_EPS, stop + _WINDOW_EPS
+    inside = [(t, v) for t, v in keys if low <= t <= high]
+    if not inside or inside[0][0] > low + 2 * _WINDOW_EPS:
+        inside.insert(0, (start, _blend(keys, start)))
+    if inside[-1][0] < high - 2 * _WINDOW_EPS:
+        inside.append((stop, _blend(keys, stop)))
+    return inside
+
+
+def _store_keys(data, channel, keys):
+    if channel == "translation":
+        data.translations.num_keys = len(keys)
+        data.translations.keys.update_size()
+        for target, (at, value) in zip(data.translations.keys, keys):
+            target.time = at
+            target.value.x, target.value.y, target.value.z = value
+        return
+    data.rotation_type = 1
+    data.num_rotation_keys = len(keys)
+    data.quaternion_keys.update_size()
+    for target, (at, value) in zip(data.quaternion_keys, keys):
+        target.time = at
+        target.value.w, target.value.x, target.value.y, target.value.z = value
+
+
+def splice_kf(base, source, output, groups, bones=("bip01",), channels=("translation",)):
+    """Copy the named bones' tracks inside the named groups from SOURCE into BASE.
+
+    The source's group timing must match the base's, so text keys and every other
+    track stay as the base has them.
+    """
+    nif = _nif_format()
+    for channel in channels:
+        if channel not in SPLICE_CHANNELS:
+            raise KFMergeError(f"unknown splice channel {channel!r}")
+    data, controls, _, _ = _read(base, nif)
+    other, other_controls, _, _ = _read(source, nif)
+    here = group_windows(data.roots[0].extra_data)
+    there = group_windows(other.roots[0].extra_data)
+    windows = []
+    for group in groups:
+        name = group.casefold()
+        if name not in here or name not in there:
+            raise KFMergeError(f"splice group {group!r} is missing from a KF")
+        if any(abs(a - b) > 0.01 for a, b in zip(here[name], there[name])):
+            raise KFMergeError(f"splice group {group!r} has different timing in the two KFs")
+        windows.append(here[name])
+    output = Path(output)
+    if any(output.resolve() == Path(path).resolve() for path in (base, source)):
+        raise KFMergeError("output must differ from every input KF")
+    for bone in bones:
+        name = bone.casefold().encode("latin-1")
+        if name not in controls or name not in other_controls:
+            raise KFMergeError(f"splice bone {bone!r} is missing from a KF")
+        for channel in channels:
+            ours = _channel_keys(controls[name].data, channel)
+            theirs = _channel_keys(other_controls[name].data, channel)
+            if not ours or not theirs:
+                raise KFMergeError(f"splice bone {bone!r} has no {channel} keys")
+            for start, stop in windows:
+                low, high = start - _WINDOW_EPS, stop + _WINDOW_EPS
+                ours = [(t, v) for t, v in ours if not low <= t <= high]
+                ours += _window_keys(theirs, start, stop)
+            ours.sort(key=lambda key: key[0])
+            _store_keys(controls[name].data, channel, ours)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("wb") as stream:
+        data.write(stream)
+    return output
+
+
 DODGE_GROUPS = (
     "missdr", "missdl", "missdfwd", "missdfwdr", "missdfwdl", "missdbk",
     "missdbkr", "missdbkl", "dodgeturnleft", "dodgeturnright", "dodgeleanback",
@@ -339,6 +457,55 @@ def dodge_clip_ranges(data):
     return ranges
 
 
+def _extract_vanilla_kf(vanilla, name, near):
+    """Write the retail KF from Morrowind.bsa next to NEAR and return its path."""
+    archive_path = Path(vanilla) / "Morrowind.bsa"
+    if not archive_path.is_file():
+        raise KFMergeError(f"effective base animation KF not found: {Path(vanilla) / 'Meshes' / name}")
+    try:
+        archive = Bsa(archive_path)
+    except ValueError as exc:
+        raise KFMergeError(f"{archive_path}: {exc}") from exc
+    entry = archive.by_hash.get(tes3_hash("Meshes/" + name))
+    if entry is None:
+        raise KFMergeError(f"{archive_path}: {name} is missing")
+    extracted = Path(near).with_name(Path(near).name + ".base-tmp")
+    extracted.parent.mkdir(parents=True, exist_ok=True)
+    extracted.write_bytes(archive.read(entry))
+    return extracted
+
+
+def splice_tree_kfs(tree, vanilla, specs):
+    """Replace each mod KF in a build tree with retail's plus the spliced tracks.
+
+    A spec is {"source": relative path, "groups": [...], "bones": [...], "channels": [...]}.
+    """
+    tree = Path(tree)
+    files = {path.relative_to(tree).as_posix().casefold(): path
+             for path in tree.rglob("*") if path.is_file()}
+    spliced = []
+    for spec in specs:
+        key = spec["source"].replace("\\", "/").casefold()
+        path = files.get(key)
+        if path is None:
+            continue
+        base = Path(vanilla) / path.relative_to(tree)
+        extracted = None
+        if not base.is_file():
+            extracted = base = _extract_vanilla_kf(vanilla, path.name, path)
+        temporary = path.with_name(path.name + ".splice-tmp")
+        try:
+            splice_kf(base, path, temporary, spec["groups"], spec.get("bones", ("bip01",)),
+                      spec.get("channels", ("translation",)))
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
+            if extracted is not None:
+                extracted.unlink(missing_ok=True)
+        spliced.append(path)
+    return spliced
+
+
 def merge_tree_kfs(tree, vanilla, additions):
     """Replace the winning base KF in a build tree and remove consumed source KFs."""
     tree = Path(tree)
@@ -361,20 +528,7 @@ def merge_tree_kfs(tree, vanilla, additions):
     base = output if output.is_file() else Path(vanilla) / "Meshes" / "xbase_anim.kf"
     extracted = None
     if not base.is_file():
-        archive_path = Path(vanilla) / "Morrowind.bsa"
-        if not archive_path.is_file():
-            raise KFMergeError(f"effective base animation KF not found: {base}")
-        try:
-            archive = Bsa(archive_path)
-        except ValueError as exc:
-            raise KFMergeError(f"{archive_path}: {exc}") from exc
-        entry = archive.by_hash.get(tes3_hash("Meshes/xbase_anim.kf"))
-        if entry is None:
-            raise KFMergeError(f"{archive_path}: xbase_anim.kf is missing")
-        extracted = output.with_name(output.name + ".base-tmp")
-        extracted.parent.mkdir(parents=True, exist_ok=True)
-        extracted.write_bytes(archive.read(entry))
-        base = extracted
+        extracted = base = _extract_vanilla_kf(vanilla, "xbase_anim.kf", output)
     if base in sources:
         raise KFMergeError("animation.merge_kf cannot include the base KF")
     temporary = output.with_name(output.name + ".merge-tmp")

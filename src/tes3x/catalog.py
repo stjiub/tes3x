@@ -42,7 +42,8 @@ STATUS_LABELS = {
     "not-possible": "Not possible",
 }
 FIELDS = {"id", "name", "version", "url", "folder", "status", "patches", "ram", "bios",
-          "requirements", "dependencies", "plugins", "merge_kf", "exclude", "memory_kb", "notes"}
+          "requirements", "dependencies", "plugins", "merge_kf", "splice_kf", "exclude", "memory_kb",
+          "notes"}
 IDENTIFIER = re.compile(r"[a-z0-9][a-z0-9._-]*\Z")
 
 
@@ -85,6 +86,17 @@ def load(path=CATALOG, patch_names=None, lenient=False):
             value = entry.get(key, [])
             if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
                 raise CatalogError(f"{where}.{key} must be a list of strings")
+        splice = entry.get("splice_kf", [])
+        if not isinstance(splice, list) or not all(isinstance(item, dict) for item in splice):
+            raise CatalogError(f"{where}.splice_kf must be a list of tables")
+        for item in splice:
+            if set(item) - {"source", "groups", "bones", "channels"}                     or not isinstance(item.get("source"), str) or not item["source"]:
+                raise CatalogError(f"{where}.splice_kf needs a source and only source, groups, "
+                                   "bones and channels")
+            for key in ("groups", "bones", "channels"):
+                value = item.get(key, [""] if key == "groups" else [])
+                if not isinstance(value, list) or not all(isinstance(i, str) for i in value)                         or (key == "groups" and not value):
+                    raise CatalogError(f"{where}.splice_kf {key} must be a list of strings")
         if patch_names is not None and set(entry.get("patches", [])) - set(patch_names):
             raise CatalogError(f"{where}: unknown patches "
                                + ", ".join(sorted(set(entry["patches"]) - set(patch_names))))

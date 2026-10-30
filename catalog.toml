@@ -19,6 +19,9 @@
 # memory_kb     most free memory the mod costs against vanilla on `tes3x test --tour`, in KB
 # merge_kf      animation KFs, by name in the collected build, that the pipeline appends to
 #               xbase_anim.kf
+# splice_kf     tables {source, groups, bones, channels}: the pipeline replaces the mod's KF at
+#               source with retail's plus the mod's tracks for those animation groups
+#               (bones default to ["bip01"], channels to ["translation"])
 # exclude       file patterns the pipeline leaves out of this mod, relative to its data folder
 # notes         what was tried and what happened
 # updated       date of the last change to this file (YYYY-MM-DD); bump it with every edit. The
@@ -77,8 +80,11 @@ url = "https://www.nexusmods.com/morrowind/mods/45096"
 folder = "Purists"
 status = "passes-automated"
 patches = ["dialogue-merge", "mcp-114", "mcp-119"]
-exclude = ["meshes/xbase_anim*.kf"]
-notes = "The Xbox loader drops stock responses when this mod repeats a dialogue topic; dialogue-merge keeps them. Separate axe inventory sounds and creature voiceovers need the two MCP compatibility patches. Its xbase_anim.kf and xbase_anim_female.kf replace retail's animations and freeze New Game, so the pipeline leaves them out."
+splice_kf = [
+    { source = "meshes/xbase_anim.kf", groups = ["idle", "idle2", "idle3", "idle4", "idle5", "idle6", "idle7", "idle8", "idle9", "idlestorm"] },
+    { source = "meshes/xbase_anim_female.kf", groups = ["idle4", "idle5"] },
+]
+notes = "The Xbox loader drops stock responses when this mod repeats a dialogue topic; dialogue-merge keeps them. Separate axe inventory sounds and creature voiceovers need the two MCP compatibility patches. Its xbase_anim.kf and xbase_anim_female.kf freeze New Game because their root rotation is XYZ Euler, which hangs the Xbox loader, and they replace retail's Xbox-specific animations. The pipeline replaces them with retail's KFs plus the mod's idle-clip root translation, which is its only animation fix."
 
 [[mod]]
 id = "tes-extended-music"

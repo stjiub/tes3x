@@ -21,7 +21,7 @@ from xml.sax.saxutils import escape
 from tes3x.pack import set_ini_key
 from tes3x.menustill import NAME as STILL_NAME, VIDEO, make_still
 from tes3x.fontscale import stage_scaled_fonts
-from tes3x.kf_merge import KFMergeError, dodge_clip_ranges, merge_tree_kfs
+from tes3x.kf_merge import KFMergeError, dodge_clip_ranges, merge_tree_kfs, splice_tree_kfs
 from tes3x.patch import scene_form
 import tes3x.patches as registry
 from tes3x.payload import (SOURCE_DEPENDENCIES, PayloadError, build_payload, find_tool,
@@ -406,12 +406,14 @@ def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), pac
     catalog = tes3x_catalog.load(patch_names=registry.BY_NAME)
     required_by = {}
     catalog_kfs = []
+    catalog_splices = []
     for mod in enabled_mods(profile):
         verdict = tes3x_catalog.match(catalog, mod.get("id", ""), mod.get("name", ""),
                                       *(mod.get("plugins") or []))
         if verdict:
             catalog_kfs += [name for name in verdict.get("merge_kf", [])
                             if name not in catalog_kfs]
+            catalog_splices += verdict.get("splice_kf", [])
             for name in verdict.get("patches", []):
                 required_by.setdefault(name, []).append(verdict["name"])
     conflict = set(required_by) & (disabled | set(disable))
@@ -478,6 +480,7 @@ def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), pac
         "package_mode": mode,
         "needs_payload": bool(applied),
         "merge_kf": catalog_kfs,
+        "splice_kf": catalog_splices,
     }
 
 
@@ -1343,6 +1346,13 @@ def main(argv=None):
             if path_remote:
                 build_cmd += ["--remote-root", path_remote]
             run(build_cmd)
+            if plan["splice_kf"]:
+                try:
+                    spliced = splice_tree_kfs(tree, data_files, plan["splice_kf"])
+                except (OSError, KFMergeError) as exc:
+                    raise PipelineError(f"animation KF splice: {exc}") from exc
+                for path in spliced:
+                    print(f"spliced animation tracks into {path}")
             sources = list(profile.get("animation", {}).get("merge_kf", []))
             sources += [name for name in plan["merge_kf"]
                         if name.casefold() not in {item.casefold() for item in sources}]

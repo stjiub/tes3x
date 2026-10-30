@@ -6,8 +6,8 @@ import unittest
 
 import struct
 
-from tes3x.kf_merge import (DODGE_GROUPS, KFMergeError, _interpolate, _xyz_quaternions,
-                            dodge_clip_ranges)
+from tes3x.kf_merge import (DODGE_GROUPS, KFMergeError, _blend, _interpolate, _window_keys,
+                            _xyz_quaternions, dodge_clip_ranges, group_windows)
 
 
 def _kf(keys):
@@ -32,8 +32,34 @@ class KFMergeTests(unittest.TestCase):
         data = SimpleNamespace(xyz_rotations=[axis(math.pi / 2), axis(math.pi / 2), axis(0)])
         time, quaternion = next(_xyz_quaternions(data))
         self.assertEqual(time, 0)
-        for component in quaternion:
-            self.assertAlmostEqual(component, 0.5)
+        for component, expected in zip(quaternion, (0.5, 0.5, 0.5, -0.5)):
+            self.assertAlmostEqual(component, expected)
+
+    def test_xyz_rotation_applies_x_before_z(self):
+        def axis(value):
+            return SimpleNamespace(keys=[SimpleNamespace(time=0.0, value=value)])
+
+        data = SimpleNamespace(xyz_rotations=[axis(math.pi / 2), axis(0), axis(math.pi / 2)])
+        _, quaternion = next(_xyz_quaternions(data))
+        # Rz(90) * Rx(90) sends +X to +Y and +Y to +Z
+        for component, expected in zip(quaternion, (0.5, 0.5, 0.5, 0.5)):
+            self.assertAlmostEqual(component, expected)
+
+    def test_group_windows_pair_start_and_stop(self):
+        text = SimpleNamespace(text_keys=[
+            SimpleNamespace(time=1.0, value=b"Idle: Start\r\n"),
+            SimpleNamespace(time=2.0, value=b"Idle: Loop Start\r\nIdle2: Start\r\n"),
+            SimpleNamespace(time=3.0, value=b"Idle: Stop\r\n")])
+        self.assertEqual(group_windows(text), {"idle": (1.0, 3.0)})
+
+    def test_window_keys_add_boundary_keys(self):
+        keys = [(0.0, (0.0,)), (2.0, (2.0,)), (4.0, (4.0,))]
+        self.assertEqual(_window_keys(keys, 1.0, 3.0), [(1.0, (1.0,)), (2.0, (2.0,)), (3.0, (3.0,))])
+        self.assertEqual(_window_keys(keys, 2.0, 4.0), [(2.0, (2.0,)), (4.0, (4.0,))])
+
+    def test_blend_keeps_quaternions_unit_length(self):
+        value = _blend([(0.0, (1.0, 0.0, 0.0, 0.0)), (1.0, (0.0, 1.0, 0.0, 0.0))], 0.5)
+        self.assertAlmostEqual(math.sqrt(sum(x * x for x in value)), 1.0)
 
     def test_dodge_clip_ranges_follow_group_order(self):
         keys = []

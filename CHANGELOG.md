@@ -8,10 +8,14 @@ No official releases yet. The first public release is in preparation.
   See [the patch notes](patches/mcp-50.md).
 
 - Builds with Patch for Purists no longer freeze on New Game. Its `xbase_anim.kf` and
-  `xbase_anim_female.kf` now win over retail's since the `multi-bsa` archive-priority change, and the
-  game hangs while loading with them. The compatibility list gains an `exclude` field, and the
-  pipeline leaves these two files out. Rebuild to pick it up; the GUI's updated list applies it.
-  The catalog also gains a `works-partially` status for mods that run with part of their content left out.
+  `xbase_anim_female.kf` store the root rotation as Euler keys, which hang the game while loading.
+  The pipeline now replaces them with retail's files plus the mod's one animation fix, the root
+  drift correction in the idle clips, so NPCs standing still no longer slide. The compatibility list
+  gains `splice_kf` for this and an `exclude` field, and a `works-partially` status. Rebuild to pick
+  it up; the GUI's updated list applies it.
+
+- `tes3x kf-merge` converts Euler root rotations with the right axis order. Merging onto a base KF
+  with Euler rotation tracks used to rotate them wrongly.
 
 - `mcp-132` no longer binds an animation file's root track to the wrong bone. With a replacement
   `xbase_anim.kf` that lists another bone first (Patch for Purists), every NPC stood waist-deep in the

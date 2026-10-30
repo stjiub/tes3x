@@ -99,6 +99,13 @@ scale curves appended to linear tracks are sampled at 30 Hz. The merger accepts 
 A [catalog](catalog.md) mod can name its own KFs to merge; enabling the mod adds them to the
 profile's `animation.merge_kf` list.
 
+A catalog mod that ships a full replacement `xbase_anim.kf` can instead list `splice_kf` entries
+(`source`, `groups`, and optionally `bones` and `channels`, by default `bip01` and `translation`).
+The pipeline replaces the mod's KF with the retail one and copies in only those bones' tracks inside
+those animation groups, so the rest of retail's animation stays. The groups must have the same timing
+in both files. The written KF never carries Euler rotation keys, which hang the Xbox loader: a rotation
+splice converts the mod's to quaternions.
+
 If the profile sets [`ui.scale`](configuration.md#ui), the pipeline writes smaller bitmap font
 metrics into the staged `.fnt` files and enables the UI scale hook for HUD art, common menu
 panels and supported fixed menus. `ui.widescreen_480p` narrows the staged glyph widths and spacing for a stretched 480p
