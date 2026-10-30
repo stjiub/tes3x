@@ -1544,6 +1544,23 @@ def find_mcp146(x):
     return site
 
 
+MCP145_BREW_SIG = re.compile(
+    rb"\xd9\x5f\x44(?P<site>\xe8....)\x99\xb9\x06\x00\x00\x00\xf7\xf9\x83\xc4\x04\x8d\x42\xff",
+    re.S,
+)
+
+
+def find_mcp145(x):
+    """The rand call after brewed-potion value and weight, before the appearance switch."""
+    hits = list(MCP145_BREW_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("mcp-145: %d brew appearance calls, expected 1" % len(hits))
+    site = x.off_to_va(hits[0].start("site"))
+    if site is None:
+        raise PatchError("mcp-145: appearance call is outside any section")
+    return site
+
+
 def find_mcp47_context(x):
     """Deselect call, original target, world pointer, and player getter in unequipItem."""
     hits = list(MCP47_SIG.finditer(bytes(x.data)))
@@ -3346,6 +3363,7 @@ LOCATORS = {
     "mcp-37": lambda image: find_mcp37_context(image)[0],
     "dxt5-size": find_dxt5_size,
     "mcp-146": find_mcp146,
+    "mcp-145": find_mcp145,
     "mcp-47": lambda image: find_mcp47_context(image)[0],
     "mcp-48": lambda image: find_mcp48_context(image)[0],
     "mcp-50": find_mcp50_sort,

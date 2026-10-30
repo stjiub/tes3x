@@ -1,0 +1,14 @@
+kind = "single"
+purpose = "A build carrying the brewed-potion appearance hook reaches a playable session."
+procedure = "Boot the patched engine, start a new game, wait in the ship, then exit through the command script."
+limitations = "The script does not brew a potion. Check the appearance tiers in a saved game with alchemy equipment before promotion."
+watch = 'diag\.patches|exec\.exit|crash\.|hang\.detected|fatal\.'
+timeout = 180
+script = '''
+@start new
+wait 60
+exit
+'''
+
+[expect]
+test = ['diag\.patches', 'exec\.exit 0']

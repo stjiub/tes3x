@@ -1085,15 +1085,6 @@ summary = "Better recharging"
 reason = "Simpler recharging: pick the item, then the soul gem."
 
 [[candidate]]
-name = "mcp-145"
-origin = { source = "MCP", id = "145" }
-category = "qol"
-status = "candidate"
-priority = "low"
-summary = "Quality-based potion icons/models"
-reason = "Potion icons and models reflect quality instead of being random."
-
-[[candidate]]
 name = "mcp-147"
 origin = { source = "MCP", id = "147" }
 category = "balance"

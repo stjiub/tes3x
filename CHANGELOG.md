@@ -4,6 +4,9 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- New patch `mcp-145` gives brewed potions bottle models and icons that reflect their strength.
+  See [the patch notes](patches/mcp-145.md).
+
 - New patch `mcp-50` keeps enchanted items alphabetically ordered when the magic menu refreshes.
   See [the patch notes](patches/mcp-50.md).
 

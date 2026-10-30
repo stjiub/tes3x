@@ -643,6 +643,10 @@
       "digest": "1d235b8d9f85fe28e43070fb1300b1df905305e4407f0bad7c2a6a9917d9bf2e",
       "sha256": "9005f852e14c75e1b42cd51af361480b396a77acf765c1728e7030e1b7651e26"
     },
+    "tes3xmcp145.c": {
+      "digest": "682abd506af47f8ed9daf806b087762e2c45b893f6257c1e2c22b49deeefb32a",
+      "sha256": "72ee5d0a2c9e1c9ca8d70f31c4ae3dab3c9eea411bb10bdef4171e8097e07654"
+    },
     "tes3xmcp146.c": {
       "digest": "1dc14ddbe71249cbf5063b7b89961441406ac4d0da5b58ebfa00585402f4924f",
       "sha256": "ee5ea716689482645e82504abbe12715b3db7836b3295adc365fad0c2def6893"

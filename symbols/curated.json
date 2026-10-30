@@ -7421,7 +7421,8 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_AttemptPotionBrew",
-      "pc_va": "0x0059C030"
+      "pc_va": "0x0059C030",
+      "note": "Successful brew calculates the potion value from the base strength at stack +0x2C, then calls rand at 0x001B514C to choose one of six model/icon pairs. The return address and one temporary push place that strength at stack +0x34 in a replacement call."
     },
     {
       "va": "0x001B61A0",

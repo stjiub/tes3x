@@ -438,6 +438,17 @@ requires = ["mcp-132"]
 summary = "Play a dodge animation when a melee attack misses a calm NPC, using Can't Touch This's clips."
 
 [[patch]]
+name = "mcp-145"
+title = "Quality-based potion appearance"
+origin = { source = "MCP", id = "145" }
+category = "qol"
+group = "MCP fixes"
+channel = "dev"
+selection = "preset"
+source = "tes3xmcp145.c"
+summary = "Give brewed potions a model and icon based on their strength."
+
+[[patch]]
 name = "mcp-146"
 title = "Nocked arrow removal"
 origin = { source = "MCP", id = "146" }

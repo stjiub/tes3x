@@ -60,7 +60,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_mcp55_inventory_context, find_mcp118_drop_finish,
                                find_mcp149_menu,
                                find_mcp127_map,
-                               find_mcp125_context, find_mcp146, find_mcp146_context,
+                               find_mcp125_context, find_mcp145, find_mcp146, find_mcp146_context,
                                find_mcp272_context,
                                find_mcp47_context, find_mcp48_context, find_mcp25_blind,
                                find_mcp50_sort,
@@ -685,6 +685,17 @@ def _mcp_146(x, value, ctx):
     site = find_mcp146(x)
     was, off = x.patch_call(site, int(str(target), 16))
     return [(off, 5, "player input guard 0x%08X: 0x%08X -> %s" % (site, was, target))]
+
+
+@patch("mcp-145")
+def _mcp_145(x, value, ctx):
+    """Choose a brewed potion's model and icon by its base strength."""
+    target = ctx.get("hooks", {}).get("mcp145")
+    if not target:
+        raise PatchError("mcp-145: needs `payload` first, with an mcp145 hook in its manifest")
+    site = find_mcp145(x)
+    was, off = x.patch_call(site, int(str(target), 16))
+    return [(off, 5, "brew appearance call 0x%08X: 0x%08X -> %s" % (site, was, target))]
 
 
 @patch("mcp-47")

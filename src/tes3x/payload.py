@@ -1321,6 +1321,13 @@ def _bind_mcp146(b):
     wanted["mcp146"] = ("_tes3x_mcp146_hook",)
 
 
+@binder("tes3xmcp145.c")
+def _bind_mcp145(b):
+    site = b.locate("mcp-145")
+    print(f"mcp-145 hook: brew appearance call {hexva(site)}")
+    b.wanted["mcp145"] = ("_tes3x_mcp145_appearance",)
+
+
 @binder("tes3xmcp47.c")
 def _bind_mcp47(b):
     image, define, wanted = b.image, b.define, b.wanted
