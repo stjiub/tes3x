@@ -4,6 +4,9 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- New patch `mcp-50` keeps enchanted items alphabetically ordered when the magic menu refreshes.
+  See [the patch notes](patches/mcp-50.md).
+
 - Builds with Patch for Purists no longer freeze on New Game. Its `xbase_anim.kf` and
   `xbase_anim_female.kf` now win over retail's since the `multi-bsa` archive-priority change, and the
   game hangs while loading with them. The compatibility list gains an `exclude` field, and the

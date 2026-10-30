@@ -13,7 +13,7 @@ on, `low` for minor ones, and `none` for fixes we won't port.
 
 | status | fixes |
 |---|---|
-| candidate | 167 |
+| candidate | 166 |
 | deferred | 14 |
 | not-applicable | 16 |
 | rejected | 5 |
@@ -82,7 +82,6 @@ Worth porting, but not yet shown to affect the Xbox build.
 | `mcp-44` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #44 | low | balance | **Fortify maximum health.** Balance change, opt in only; MCP ships it as an option rather than a defect fix. |
 | `mcp-46b` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #46 | low | correctness (recommended) | **`PlaceAtPC` distance in third person, `PlaceAtMe` scale inheritance.** A line-of-sight test misplaces third-person `PlaceAtPC` at the player's feet; `PlaceAtMe` inherits a target's rotation but not its scale. Two separate defects sharing id 46's record set. |
 | `mcp-49` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #49 | low | correctness | **Bound items expiry fix.** Expiring bound weapons force a weapon draw; bound armor does not restore gloves, bracers and shoes. |
-| `mcp-50` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #50 | low | qol | **Stable enchantment sort.** Sort enchantments alphabetically every time. |
 | `mcp-51` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #51 | low | correctness | **Fog of war fix.** Local-map fog of war can stop updating after a cell crossing because of mismatched rounding. |
 | `mcp-52` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #52 | low | correctness | **Intimidate fix.** A successful intimidate can fail to raise disposition. |
 | `mcp-53` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #53 | low | correctness | **Magicka display accuracy.** Stat displays round up and overstate current magicka. |

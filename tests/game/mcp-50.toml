@@ -1,0 +1,20 @@
+kind = "single"
+purpose = "A loaded game can refresh the magic menu with the enchantment sort enabled."
+procedure = "Load a character, open inventory and show the magic pane."
+limitations = "The script checks menu operation, not the visual order of enchanted items."
+watch = 'menu\.MenuMagic|exec\.|crash\.|hang\.|fatal\.'
+timeout = 180
+save = "vanilla-seyda-neen.ess"
+script = '''
+@start load U:\TES3X\vanilla-seyda-neen.ess
+wait 180
+assert player->GetLevel == 7.00
+menu inventory
+wait 60
+show MenuMagic
+visible MenuMagic
+exit
+'''
+
+[expect]
+test = ['exec\.show 1', 'menu\.MenuMagic 1', 'exec\.exit 0', 'assert\.failed 0']

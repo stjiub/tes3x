@@ -63,6 +63,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_mcp125_context, find_mcp146, find_mcp146_context,
                                find_mcp272_context,
                                find_mcp47_context, find_mcp48_context, find_mcp25_blind,
+                               find_mcp50_sort,
                                find_mcp132_context,
                                find_mcp168_crime_branch,
                                find_mcp154_load, find_mcp154_reload, find_mcp173_rank,
@@ -724,6 +725,15 @@ def _mcp_25(x, value, ctx):
     off = x.va_to_off(site)
     x.data[off:off + 2] = b"\x90\x90"
     return [(off, 2, f"Blind player magnitude at 0x{site:08X}")]
+
+
+@patch("mcp-50")
+def _mcp_50(x, value, ctx):
+    """Sort the enchanted-item list on every magic-menu refresh."""
+    site = find_mcp50_sort(x)
+    off = x.va_to_off(site)
+    x.data[off:off + 2] = b"\x90\x90"
+    return [(off, 2, f"enchantment sort branch at 0x{site:08X}")]
 
 
 @patch("mcp-127")

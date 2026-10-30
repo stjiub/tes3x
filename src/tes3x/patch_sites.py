@@ -1575,6 +1575,23 @@ def find_mcp25_blind(x):
     return site
 
 
+def find_mcp50_sort(x):
+    """Find the magic-menu refresh branch that skips the enchantment name sort."""
+    sig = re.compile(
+        rb"\x8a\x44\x24.\x84\xc0(?P<branch>\x74\x1f)"
+        rb"\x8b\x0d....\xe8....\x8b\x88\x60\x05\x00\x00"
+        rb"\xe8....\x50\xe8....\x83\xc4\x04\x8b\x0d....",
+        re.S,
+    )
+    hits = list(sig.finditer(x.data))
+    if len(hits) != 1:
+        raise PatchError(f"mcp-50: {len(hits)} enchantment sort branches, expected 1")
+    site = x.off_to_va(hits[0].start("branch"))
+    if site is None:
+        raise PatchError("mcp-50: enchantment sort branch is outside any section")
+    return site
+
+
 def find_mcp48_context(x):
     """The two level-up multiplier dispatch tables and the count-three label path."""
     data = bytes(x.data)
@@ -3331,6 +3348,7 @@ LOCATORS = {
     "mcp-146": find_mcp146,
     "mcp-47": lambda image: find_mcp47_context(image)[0],
     "mcp-48": lambda image: find_mcp48_context(image)[0],
+    "mcp-50": find_mcp50_sort,
     "mcp-25": find_mcp25_blind,
     "mcp-146-input": lambda image: find_mcp146_context(image)[1],
     "mcp-146-game": lambda image: find_mcp146_context(image)[2],

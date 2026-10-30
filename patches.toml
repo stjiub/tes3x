@@ -522,6 +522,16 @@ selection = "preset"
 summary = "Show earned attribute multipliers even when they raise an attribute to 100, and avoid overlapping x3 labels."
 
 [[patch]]
+name = "mcp-50"
+title = "Stable enchantment sort"
+origin = { source = "MCP", id = "50" }
+category = "qol"
+group = "MCP fixes"
+channel = "dev"
+selection = "preset"
+summary = "Sort enchanted items alphabetically on every magic-menu refresh."
+
+[[patch]]
 name = "mwse-pathgrid-zero"
 title = "Empty pathgrid fix"
 origin = { source = "MWSE" }

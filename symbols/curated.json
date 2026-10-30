@@ -7920,6 +7920,14 @@
       "pc_va": "0x005DED20"
     },
     {
+      "va": "0x001E95A0",
+      "name": "UI::sortEnchantedItems",
+      "confidence": "verified",
+      "provenance": "MCP 50 Xbox and PC call sites; paired decompilation compares display names then record IDs and reorders list nodes",
+      "pc_va": "0x005DFC40",
+      "signature": "void __cdecl sortEnchantedItems(void* itemList)"
+    },
+    {
       "va": "0x001EA410",
       "name": "UI::MagicMenu_UpdateSpellSelection",
       "kind": "function",
@@ -7956,8 +7964,10 @@
       "name": "UI::updatEnchantmentsList",
       "kind": "function",
       "confidence": "matched",
-      "provenance": "mwse:TES3_UI_updatEnchantmentsList",
-      "pc_va": "0x005E3070"
+      "provenance": "mwse:TES3_UI_updatEnchantmentsList; MCP 50 PC branch 0x005E3128 matched to Xbox 0x001EB6F8",
+      "pc_va": "0x005E3070",
+      "note": "The refresh flag gates a call to the enchanted-item list sort at 0x001E95A0; mcp-50 removes that gate.",
+      "signature": "void __cdecl updatEnchantmentsList(char sortItems)"
     },
     {
       "va": "0x001EC4C0",

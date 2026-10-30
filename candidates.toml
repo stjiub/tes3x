@@ -415,15 +415,6 @@ summary = "Bound items expiry fix"
 reason = "Expiring bound weapons force a weapon draw; bound armor does not restore gloves, bracers and shoes."
 
 [[candidate]]
-name = "mcp-50"
-origin = { source = "MCP", id = "50" }
-category = "qol"
-status = "candidate"
-priority = "low"
-summary = "Stable enchantment sort"
-reason = "Sort enchantments alphabetically every time."
-
-[[candidate]]
 name = "mcp-51"
 origin = { source = "MCP", id = "51" }
 category = "correctness"
