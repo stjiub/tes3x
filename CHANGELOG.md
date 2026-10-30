@@ -4,6 +4,9 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- `extended-tooltips` now marks owned beds and other activators as **Owned** in their world
+  tooltip. Rebuild to pick up the change. See [the patch notes](patches/extended-tooltips.md).
+
 - New patch `mcp-145` gives brewed potions bottle models and icons that reflect their strength.
   See [the patch notes](patches/mcp-145.md).
 

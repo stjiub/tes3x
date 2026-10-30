@@ -784,7 +784,7 @@ group = "Interface and saves"
 channel = "dev"
 selection = "preset"
 source = "tes3xtooltips.c"
-summary = "Warn before stealing and show ownership and selected item details in menus."
+summary = "Warn about owned items and beds, and show selected item details in menus."
 
 [[patch]]
 name = "topic-colors"

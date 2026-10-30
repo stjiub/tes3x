@@ -108,7 +108,7 @@ single required/not-required flag.
 | [Transition autosaves](../patches/transition-autosaves.md) | `transition-autosaves` | Autosave before doors, scripted teleports, interventions and paid travel. | TES3X | qol | preview | testing preset |
 | [Lowered first-person bow](../patches/bow-view.md) | `bow-view` | Lower the first-person bow and arms while an arrow is nocked. | TES3X | qol | dev | By name |
 | [HD video output](../patches/hd-video.md) | `hd-video` | Follow the dashboard's HDTV settings: 720p when enabled, otherwise the retail 480p or 480i. | TES3X | qol | dev | By name |
-| [Extended tooltips](../patches/extended-tooltips.md) | `extended-tooltips` | Warn before stealing and show ownership and selected item details in menus. | TES3X | qol | dev | By name |
+| [Extended tooltips](../patches/extended-tooltips.md) | `extended-tooltips` | Warn about owned items and beds, and show selected item details in menus. | TES3X | qol | dev | By name |
 | [Read topic colors](../patches/topic-colors.md) | `topic-colors` | Show dialogue topics whose current response you have already read in a different color. | TES3X | qol | dev | By name; recommended preset at release |
 | [UI scaling](../patches/ui-scale.md) | `ui-scale` | Scale text, fixed HUD art and common menu panels, with optional 480p widescreen correction. | TES3X | qol | dev | Build option |
 | [Clear video memory at boot](../patches/boot-clear.md) | `boot-clear` | Clear the screen before the first frame, so a boot without the retail launcher does not flash green lines. | TES3X | qol | dev | By name; `dash-button`, `multiplayer` |

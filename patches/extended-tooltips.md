@@ -3,8 +3,9 @@
 Patch key: `extended-tooltips`
 
 An item or container that the player would steal by activating it shows a red **Steal** line in
-its in-world tooltip. The check follows the engine's ownership rules: an NPC's conditional global
-can permit taking an item, and faction membership and rank can permit faction property.
+its in-world tooltip. Owned activators, including beds, show **Owned** instead. The check follows
+the engine's ownership rules: an NPC's conditional global can permit using an object, and faction
+membership and rank can permit faction property.
 
 Menu tooltips show the named owner or faction and any required faction rank. Weapons show speed
 and reach; arrows and bolts show their projectile damage. Enchanted items show their cast type and,

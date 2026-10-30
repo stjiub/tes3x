@@ -2,6 +2,7 @@
 #include "tes3xlog.h"
 
 #define REF 0x52464552u
+#define ACTI 0x49544341u
 #define NPC 0x5F43504Eu
 #define FACT 0x54434146u
 #define WEAP 0x50414557u
@@ -136,7 +137,7 @@ void __attribute__((stdcall)) tes3x_tooltip_hook(u8 *object, u8 *data, int count
     owner_type = plausible(owner) ? kind(owner) : 0;
     if (!in_menu) {
         if (object_type == REF && owner && theft(data, owner, owner_type))
-            label(body, "Steal", 1);
+            label(body, item_type == ACTI ? "Owned" : "Steal", 1);
         return;
     }
     if (owner_type == NPC || owner_type == FACT) {
