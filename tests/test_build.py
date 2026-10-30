@@ -70,5 +70,15 @@ class BuildTests(unittest.TestCase):
         self.assertEqual(Path(find_data_root(str(self.root / 'Mod'))), self.root / 'Mod' / 'Mod')
 
 
+class CatalogExcludeTests(unittest.TestCase):
+    def test_purists_animation_files_are_left_out(self):
+        from fnmatch import fnmatch
+        from tes3x.catalog import load
+        patterns = load()['purists']['exclude']
+        for name in ('meshes/xbase_anim.kf', 'meshes/xbase_anim_female.kf'):
+            self.assertTrue(any(fnmatch(name, pattern) for pattern in patterns), name)
+        self.assertFalse(any(fnmatch('meshes/xbase_anim2.nif', pattern) for pattern in patterns))
+
+
 if __name__ == '__main__':
     unittest.main()

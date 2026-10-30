@@ -12,6 +12,7 @@ import tomllib
 from collections import defaultdict
 from tes3x.library import LibraryError, load_library, resolve_selection
 from tes3x.paths import CONFIG_HELP, DEFAULT_REMOTE_ROOT, data_dir, mod_library, require_paths
+import tes3x.catalog as tes3x_catalog
 import tes3x.progress as tes3x_progress
 
 FATX_NAME_MAX = 42
@@ -453,6 +454,10 @@ def main():
     exclude = rules.get("exclude", DEFAULT_EXCLUDE)
 
     mods, missing = [], []
+    try:
+        known_mods = tes3x_catalog.load(lenient=True)
+    except (OSError, ValueError):
+        known_mods = {}
     managed = any("id" in entry for entry in prof.get("mods", []))
     try:
         catalog = load_library(library) if managed else None
@@ -484,9 +489,12 @@ def main():
                            + ", ".join(sorted(absent_dependencies)))
             continue
         label = selection["name"] + (f" {selection['version']}" if selection["version"] else "")
+        verdict = tes3x_catalog.match(known_mods, selection.get("id", ""), selection["name"],
+                                      *(entry.get("plugins") or []))
+        mod_exclude = list(exclude) + [pat.lower() for pat in (verdict or {}).get("exclude", [])]
         try:
             mods.append(Mod(label, selection.get("layers", selection["roots"]),
-                            entry.get("order", 0), entry.get("plugins"), exclude,
+                            entry.get("order", 0), entry.get("plugins"), mod_exclude,
                             None if entry.get("archives") == "load"
                             else data_dir() / "cache" / "bsa"))
             mods[-1].store = (entry.get("store"), entry.get("store_tier"))

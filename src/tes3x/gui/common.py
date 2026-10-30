@@ -90,6 +90,7 @@ CHANNEL_BADGES = {"dev": QColor(215, 150, 20, 110), "preview": QColor(50, 130, 2
                   "release": QColor(60, 170, 60, 100)}
 COMPAT = {"works": ("\u2713", QColor(60, 170, 60)),
           "works-with-requirements": ("*", QColor(215, 150, 20)),
+          "works-partially": ("~", QColor(215, 150, 20)),
           "broken": ("\u2717", WARNING), "not-possible": ("\u2717", WARNING)}
 XEMU_STARTED = "xemu: started"
 DEPLOYS_MARKER = ".tes3x-deploys.json"

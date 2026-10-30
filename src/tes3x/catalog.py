@@ -26,6 +26,7 @@ REMOTE_URL = "https://raw.githubusercontent.com/stjiub/tes3x/main/catalog.toml"
 STATUSES = {
     "works": "Confirmed working on the Xbox.",
     "works-with-requirements": "Confirmed working when its requirements are met.",
+    "works-partially": "Confirmed working with some of its content left out; see its exclude list and notes.",
     "passes-automated": "Passed an automated test; compatibility is not yet confirmed.",
     "untested": "Compatibility has not been confirmed.",
     "broken": "Known to fail on the Xbox.",
@@ -34,13 +35,14 @@ STATUSES = {
 STATUS_LABELS = {
     "works": "Confirmed",
     "works-with-requirements": "Confirmed with requirements",
+    "works-partially": "Works partially",
     "passes-automated": "Automated test passed",
     "untested": "Unknown",
     "broken": "Broken",
     "not-possible": "Not possible",
 }
 FIELDS = {"id", "name", "version", "url", "folder", "status", "patches", "ram", "bios",
-          "requirements", "dependencies", "plugins", "merge_kf", "memory_kb", "notes"}
+          "requirements", "dependencies", "plugins", "merge_kf", "exclude", "memory_kb", "notes"}
 IDENTIFIER = re.compile(r"[a-z0-9][a-z0-9._-]*\Z")
 
 
@@ -60,6 +62,8 @@ def load(path=CATALOG, patch_names=None, lenient=False):
         where = f"{Path(path).name}: mod[{index}]"
         if lenient:
             entry = {key: value for key, value in entry.items() if key in FIELDS}
+            if entry.get("status", "untested") not in STATUSES:
+                entry["status"] = "untested"
         unknown = set(entry) - FIELDS
         if unknown:
             raise CatalogError(f"{where} has unknown fields {sorted(unknown)}")
@@ -77,7 +81,7 @@ def load(path=CATALOG, patch_names=None, lenient=False):
             raise CatalogError(f"{where}.ram must be 64 or 128")
         if "memory_kb" in entry and (type(entry["memory_kb"]) is not int or entry["memory_kb"] < 0):
             raise CatalogError(f"{where}.memory_kb must be a whole number of KB")
-        for key in ("patches", "requirements", "dependencies", "plugins", "merge_kf"):
+        for key in ("patches", "requirements", "dependencies", "plugins", "merge_kf", "exclude"):
             value = entry.get(key, [])
             if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
                 raise CatalogError(f"{where}.{key} must be a list of strings")
