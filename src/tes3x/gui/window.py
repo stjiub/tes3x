@@ -309,6 +309,13 @@ class ProfileWindow(QMainWindow):
         self.action_output.toggled.connect(self.set_output_visible)
         view_menu.addAction(self.action_output)
         self.set_output_visible(self.action_output.isChecked(), save=False)
+        self.action_confirm_patches = QAction("&Ask before changing patches for mods", self,
+                                              checkable=True)
+        self.action_confirm_patches.setChecked(
+            bool(self.settings.value("confirm_mod_patches", True, bool)) if self.settings else True)
+        self.action_confirm_patches.toggled.connect(
+            lambda on: self.settings.setValue("confirm_mod_patches", on) if self.settings else None)
+        view_menu.addAction(self.action_confirm_patches)
         columns_menu = view_menu.addMenu("&Mod columns")
         hidden = (str(self.settings.value("hidden_mod_columns", "")) if self.settings
                   else "").split(",")

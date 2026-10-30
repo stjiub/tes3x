@@ -26,8 +26,9 @@ No official releases yet. The first public release is in preparation.
 - The patch category `compat` is now `compatibility`. A profile that lists `compat` under
   `patches.categories` must be changed to match.
 
-- GUI: turning a mod off also turns off the patches only it needed (such as Can't Touch This's),
-  unless another enabled mod needs them.
+- GUI: turning a mod on or off lists the patches its catalog entry brings in or drops (such as
+  Can't Touch This's). Patches the profile enabled itself are kept unless you agree to turn them
+  off. **View > Ask before changing patches for mods**, or the dialog's checkbox, hides the notices.
 
 - GUI: a red ✕ beside Play cancels a running build or deploy. The status bar names the activity
   ("Building") with a fixed-position progress bar, the output divider can be dragged up, the Mods tab has an **Only enabled** filter, the mod and plugin counts moved next to the profile tabs, and the Check, Build and

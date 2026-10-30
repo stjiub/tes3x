@@ -268,7 +268,9 @@ order = 10
                          "Summoned creature crash fix")
         self.assertEqual(window.patches.patch_items["mcp-92"].text(1), "mcp-92")
         window.patches.patch_tree.setCurrentItem(window.patches.patch_items["rotating-autosaves"])
-        self.assertIn("Rotate automatic saves", window.context_info.toPlainText())
+        details = window.context_info.toPlainText()
+        self.assertIn("Patch key: rotating-autosaves", details)
+        self.assertIn("Origin: OpenMW", details)
         window.patches.set_patch("rotating-autosaves", True)
         self.assertEqual(window.patches.patch_configuration()["enable"], ["rotating-autosaves"])
         self.assertEqual(window.patches.patch_items["rotating-autosaves"].text(3), "Profile")
@@ -389,7 +391,8 @@ order = 10
         window.patches.set_patch("dxt5-size", True)
         self.assertNotIn("Turn on", mod.toolTip(window.mods.MOD_XBOX))
 
-        # Ticking a mod turns on the patches it needs.
+        # With asking off, ticking a mod turns on the patches it needs.
+        window.action_confirm_patches.setChecked(False)
         window.patches.set_patch("dxt5-size", False)
         window.compat["other"] = {"id": "other", "name": "Other", "folder": "Other",
                                   "status": "works-with-requirements", "patches": ["mcp-154"]}
@@ -400,6 +403,50 @@ order = 10
         self.row(window, "Other").setCheckState(0, Qt.CheckState.Unchecked)
         self.assertEqual(window.patches.patch_configuration()["enable"], [])
         self.assertNotIn("mcp-154", window.patches.applied_patches)
+
+    def test_mod_patch_changes_are_shown(self):
+        window = self.window()
+        window.compat["other"] = {"id": "other", "name": "Other", "folder": "Other",
+                                  "status": "works-with-requirements", "patches": ["mcp-154"]}
+        other = self.row(window, "Other")
+        shown = []
+
+        def answer(button_role):
+            def fake_exec(box):
+                shown.append((box.text(), box.informativeText(), len(box.buttons())))
+
+            def fake_clicked(box):
+                return next(b for b in box.buttons() if box.buttonRole(b) == button_role)
+            return (patch.object(QMessageBox, "exec", fake_exec),
+                    patch.object(QMessageBox, "clickedButton", fake_clicked))
+
+        accept, decline = QMessageBox.ButtonRole.AcceptRole, QMessageBox.ButtonRole.RejectRole
+        # Turning a mod on is a notice with one button, and the patch is included.
+        exec_patch, click_patch = answer(accept)
+        with exec_patch, click_patch:
+            other.setCheckState(0, Qt.CheckState.Checked)
+        self.assertEqual(shown[-1][1:], ("- mcp-154", 1))
+        self.assertEqual(window.patches.patch_configuration()["enable"], ["mcp-154"])
+
+        # Turning it off lists a patch the profile enabled itself and asks.
+        exec_patch, click_patch = answer(decline)
+        with exec_patch, click_patch:
+            other.setCheckState(0, Qt.CheckState.Unchecked)
+        self.assertEqual(shown[-1][1:], ("- mcp-154 (enabled in this profile)", 2))
+        self.assertEqual(window.patches.patch_configuration()["enable"], ["mcp-154"])
+        other.setCheckState(0, Qt.CheckState.Checked)
+        exec_patch, click_patch = answer(accept)
+        with exec_patch, click_patch:
+            other.setCheckState(0, Qt.CheckState.Unchecked)
+        self.assertEqual(window.patches.patch_configuration()["enable"], [])
+
+        # With asking off nothing is shown and the change still happens.
+        window.action_confirm_patches.setChecked(False)
+        count = len(shown)
+        other.setCheckState(0, Qt.CheckState.Checked)
+        other.setCheckState(0, Qt.CheckState.Unchecked)
+        self.assertEqual(len(shown), count)
+        self.assertEqual(window.patches.patch_configuration()["enable"], [])
 
     def test_mods_only_enabled_hides_unticked_rows(self):
         window = self.window()
