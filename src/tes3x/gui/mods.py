@@ -275,24 +275,20 @@ class ModsTab(QWidget):
         self.mods_changed()
 
     def enable_required_patches(self, item):
-        """Tell the user which patches the catalog says a mod needs. The build includes them
-        whenever the mod is enabled, so this is a notice, not a choice."""
+        """Tell the user which patches the mod brings in, the catalog's and the ones those
+        require. The build includes them whenever the mod is enabled, so this is a notice."""
+        patches = self.window.patches
         name = self.describe(item.data(0, ROLE))[0]
-        verdict = self.compat_verdict(item)
-        off = [
-            patch
-            for patch in (verdict or {}).get("patches", [])
-            if patch in self.window.patches.patch_items
-            and patch not in self.window.patches.applied_patches
-        ]
-        if not off:
+        added = sorted(patches.effective_patches() - patches.applied_patches)
+        added = [patch for patch in added if patch in patches.patch_items]
+        if not added:
             return
-        self.confirm_patches("Patches needed",
-                             f"{name} needs these patches, so they are now included:", off, "OK")
-        for patch in off:
-            self.window.patches.set_patch(patch, True)
+        self.confirm_patches("Patches enabled", f"Enabling {name} also enables:", added, "OK")
+        for patch in (self.compat_verdict(item) or {}).get("patches", []):
+            if patch in patches.patch_items and patch not in patches.applied_patches:
+                patches.set_patch(patch, True)
         self.window.statusBar().showMessage(
-            f"{name} needs {', '.join(off)}; included in the build", 8000)
+            f"{name} enabled {', '.join(added)}", 8000)
 
     def confirm_patches(self, title, text, patches, accept, decline=None):
         """Show a patch change. With a DECLINE button it is a question and returns the answer;
@@ -319,38 +315,38 @@ class ModsTab(QWidget):
         return accepted
 
     def release_unneeded_patches(self, item):
-        """Tell the user which patches only this mod needed. Those the catalog supplied leave
-        the build by themselves; those the profile enables itself are kept unless the user
-        agrees to turn them off."""
+        """Tell the user which patches only this mod needed. Those the build derived leave
+        by themselves; those the profile enables itself stay unless the user agrees."""
         patches = self.window.patches
         needed = set()
         for other in self.mod_rows():
             if (other is not item and other.data(0, EXTRA)
                     and other.checkState(self.MOD_NAME) == Qt.CheckState.Checked):
                 needed.update((self.compat_verdict(other) or {}).get("patches", []))
-        gone = [patch for patch in (self.compat_verdict(item) or {}).get("patches", [])
-                if patch not in needed and patch in patches.applied_patches]
+        explicit = [patch for patch in (self.compat_verdict(item) or {}).get("patches", [])
+                    if patch not in needed and patch in patches.applied_patches
+                    and patches.patch_modes.get(patch) == "enable"]
+        gone = sorted(patches.applied_patches - patches.effective_patches())
+        gone = [patch for patch in gone if patch in patches.patch_items]
+        gone += [patch for patch in explicit if patch not in gone]
         if not gone:
             return
-        explicit = [patch for patch in gone if patches.patch_modes.get(patch) == "enable"]
         name = self.describe(item.data(0, ROLE))[0]
-        listing = [f"{patch} (enabled in this profile)" if patch in explicit else patch
-                   for patch in gone]
         if explicit:
+            listing = [f"{patch} (enabled in this profile)" if patch in explicit else patch
+                       for patch in gone]
             if not self.confirm_patches(
                     "Patches no longer needed",
-                    f"{name} is off. Nothing else enabled needs these patches:", listing,
-                    "Turn them off", "Keep them on"):
+                    f"Disabling {name} leaves these patches without a user. "
+                    "Turn them off too?", listing, "Turn them off", "Keep them on"):
                 return
             for patch in explicit:
                 del patches.patch_modes[patch]
         else:
             self.confirm_patches(
-                "Patches no longer needed",
-                f"{name} is off. Nothing else enabled needs these patches, so they are no "
-                "longer included:", listing, "OK")
+                "Patches disabled", f"Disabling {name} also disables:", gone, "OK")
         self.window.statusBar().showMessage(
-            f"{name} is off; {', '.join(gone)} no longer included", 8000)
+            f"{name} disabled {', '.join(gone)}", 8000)
 
     def add_dependencies(self, item):
         _name, _version, release, _problem = self.describe(item.data(0, ROLE))
