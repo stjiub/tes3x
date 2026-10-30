@@ -31,6 +31,8 @@
 #define NtCreateFile KFN(THUNK_NtCreateFile, fn_NtCreateFile)
 #define NtReadFile KFN(THUNK_NtReadFile, fn_NtReadFile)
 #define NtClose KFN(THUNK_NtClose, fn_NtClose)
+#define MmAllocateSystemMemory KFN(THUNK_MmAllocateSystemMemory, fn_MmAllocateSystemMemory)
+#define MmFreeSystemMemory KFN(THUNK_MmFreeSystemMemory, fn_MmFreeSystemMemory)
 
 #define STILL_PATH "D:\\Data Files\\Textures\\tes3x_menu_still.raw"
 #define STILL_W 640
@@ -52,7 +54,8 @@ typedef u32(__stdcall *fn_set_fence)(u32 flags);
 typedef void(__stdcall *fn_block_on)(u32 fence, u32 flag);
 
 u32 tes3x_still_active;
-u32 tes3x_still_dirty; /* frames still to repaint, one for each buffer */
+static u32 *cache; /* the fitted still at target size, copied in on every colour clear */
+static u32 cache_bytes;
 void *tes3x_still_renderer;
 
 static u32 src_row[STILL_W];
@@ -112,36 +115,32 @@ static u32 paint(u32 *dst, u32 pitch, u32 width, u32 height, void *file)
     return 1;
 }
 
-/* The still into the buffer the next frame draws in, behind what a menu hid. */
+/* The still into the buffer the next frame draws in, behind whatever menu was open. */
 void tes3x_still_redraw(void)
 {
-    ANSI_STRING name;
-    OBJECT_ATTRIBUTES oa;
-    IO_STATUS_BLOCK iosb;
-    static char path[] = STILL_PATH;
-    void *file = 0;
-    u32 *target, *surface, pitch;
+    u32 *target, *surface, pitch, width, height, y, x;
+    u32 *dst;
 
-    if (!tes3x_still_renderer || !tes3x_still_dirty)
+    if (!tes3x_still_renderer || !cache)
         return;
-    tes3x_still_dirty--;
     target = *(u32 **)((char *)tes3x_still_renderer + RENDERER_TARGET);
     surface = (u32 *)target[TARGET_COLOUR];
     pitch = (((surface[SURFACE_SIZE] >> 24) & 0xFF) + 1) * 64;
-    tes3x_dos_attributes(&oa, &name, path);
-    if (NtCreateFile(&file, GENERIC_READ | SYNCHRONIZE, &oa, &iosb, 0, FILE_ATTRIBUTE_NORMAL,
-                     FILE_SHARE_READ, FILE_OPEN, FILE_SYNCHRONOUS_IO_NONALERT) != 0)
+    width = target[TARGET_WIDTH];
+    height = target[TARGET_HEIGHT];
+    if (width * height * 4 != cache_bytes)
         return;
     gpu_idle();
-    paint(back_buffer(surface), pitch, target[TARGET_WIDTH], target[TARGET_HEIGHT], file);
-    NtClose(file);
+    for (y = 0; y < height; y++) {
+        dst = (u32 *)((char *)back_buffer(surface) + y * pitch);
+        for (x = 0; x < width; x++)
+            dst[x] = cache[y * width + x];
+    }
 }
 
-/* A menu showed or hid something: with no colour clear, what it hid stays on screen. */
+/* Kept for the menus that call it; the still is repainted on every clear now. */
 void tes3x_still_refresh(void)
 {
-    if (tes3x_still_active)
-        tes3x_still_dirty = 3;
 }
 
 /* Returns 1 when the still is up, 0 to let the movie play. */
@@ -152,7 +151,7 @@ u32 tes3x_still_paint(void)
     IO_STATUS_BLOCK iosb;
     static char path[] = STILL_PATH;
     void *file = 0;
-    u32 *target, *surface, *first, *second, pitch, width, height, ok, i, status;
+    u32 *target, *surface, *first, *second, *image, pitch, width, height, ok, i, status;
 
     if (!tes3x_still_renderer)
         return 0;
@@ -168,14 +167,28 @@ u32 tes3x_still_paint(void)
         tes3x_log("still.open_fail", status);
         return 0;
     }
-    gpu_idle();
-    first = back_buffer(surface);
-    ok = paint(first, pitch, width, height, file);
+    image = MmAllocateSystemMemory(width * height * 4, PAGE_READWRITE);
+    if (!image) {
+        NtClose(file);
+        tes3x_log("still.alloc_fail", width * height * 4);
+        return 0;
+    }
+    ok = paint(image, width * 4, width, height, file);
     NtClose(file);
     if (!ok) {
+        MmFreeSystemMemory(image, width * height * 4);
         tes3x_log("still.read_fail", 0);
         return 0;
     }
+    if (cache)
+        MmFreeSystemMemory(cache, cache_bytes);
+    cache = image;
+    cache_bytes = width * height * 4;
+    gpu_idle();
+    first = back_buffer(surface);
+    for (i = 0; i < height; i++)
+        for (ok = 0; ok < width; ok++)
+            ((u32 *)((char *)first + i * pitch))[ok] = cache[i * width + ok];
     ((fn_display)TES3X_STILL_DISPLAY)(tes3x_still_renderer);
     second = back_buffer(surface);
     gpu_idle();
@@ -211,6 +224,10 @@ void tes3x_still_end(void)
     if (tes3x_still_active)
         tes3x_log("still.end", 0);
     tes3x_still_active = 0;
+    if (cache)
+        MmFreeSystemMemory(cache, cache_bytes);
+    cache = 0;
+    cache_bytes = 0;
 }
 
 __attribute__((naked)) void tes3x_still_end_hook(void)
@@ -231,8 +248,6 @@ __attribute__((naked)) void tes3x_still_clear_hook(void)
         "movl %ecx, _tes3x_still_renderer\n\t"
         "cmpl $0, _tes3x_still_active\n\t"
         "je 1f\n\t"
-        "cmpl $0, _tes3x_still_dirty\n\t"
-        "je 2f\n\t"
         "testb $1, 8(%esp)\n\t"
         "je 2f\n\t"
         "pushal\n\t"

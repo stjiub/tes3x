@@ -22,6 +22,9 @@ No official releases yet. The first public release is in preparation.
 
 - `tes3x kf-merge` converts Euler root rotations with the right axis order. Merging onto a base KF
   with Euler rotation tracks used to rotate them wrongly.
+- `menu-still` no longer leaves the Load or Options screen showing behind the main menu after
+  you back out of it. Rebuild to pick it up.
+
 
 - `mcp-132` no longer binds an animation file's root track to the wrong bone. With a replacement
   `xbase_anim.kf` that lists another bone first (Patch for Purists), every NPC stood waist-deep in the

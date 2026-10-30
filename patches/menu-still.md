@@ -17,9 +17,8 @@ the video's compression blocks, and stages it as
 `Data Files\Textures\tes3x_menu_still.raw`. When the main menu opens, the hook
 (`hooks/tes3xmenustill.c`) waits for the graphics hardware to finish, paints the picture into
 both display buffers and stops the engine's per-frame colour clear while the menu is up. Starting
-a new game or loading one releases it, and every other screen draws as before. With no colour
-clear, what a menu hides would stay on screen, so the picture is painted again, a frame in each
-buffer, whenever the menu shows or hides something.
+a new game or loading one releases it, and every other screen draws as before. The fitted picture is kept in memory while the menu is up and copied into the buffer each frame,
+so a menu that closes leaves nothing behind. It is freed when a game starts or loads.
 
 ## Compatibility and limits
 
