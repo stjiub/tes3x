@@ -42,7 +42,7 @@ PATCH_FIELDS = (("name", "title", "category", "group", "channel", "selection", "
 # Categories in the recommended preset unless a patch sets recommended = false; others opt in.
 RECOMMENDED_CATEGORIES = ("core", "correctness", "performance")
 CANDIDATE_FIELDS = (("name", "origin", "status", "priority", "summary", "reason"),
-                    ("category", "default", "doc"))
+                    ("category", "default", "doc", "queue"))
 
 
 class RegistryError(ValueError):
@@ -105,6 +105,11 @@ def read(path=REGISTRY, candidate_path=CANDIDATE_LIST):
         check(entry, CANDIDATE_FIELDS, (("category", CATEGORIES + ("undecided",)),
                                         ("status", tuple(CANDIDATE_STATUSES)),
                                         ("priority", PRIORITIES)), sources, where)
+        if "queue" in entry and (type(entry["queue"]) is not int or entry["queue"] < 1):
+            raise RegistryError(f"{where}: queue must be a positive integer")
+    queued = [(e["status"], e["priority"], e["queue"]) for e in candidates if "queue" in e]
+    if len(queued) != len(set(queued)):
+        raise RegistryError("candidate queue numbers must be unique within each status and tier")
     for entry in patches + candidates:
         if entry["name"] in names:
             raise RegistryError(f"{entry['name']} is listed twice")
@@ -251,9 +256,11 @@ def render_candidates():
         "all. Every Morrowind Code Patch fix is here. Being listed doesn't mean the Xbox has the bug.",
         "Implemented fixes are in [patches.md](patches.md).",
         "",
-        "**Priority** is a rough guess at how much a fix matters on the Xbox: `high` for crashes and",
-        "lost saves players are likely to hit, `medium` for bugs seen in normal play or that mods rely",
-        "on, `low` for minor ones, and `none` for fixes we won't port.",
+        "**Priority** ranks what to investigate next on the Xbox: `high` for plausible save loss,",
+        "crashes or broadly useful fixes, `medium` for meaningful play or mod support, `low` for",
+        "minor, speculative or optional changes, and `none` for fixes we won't port. A high rank",
+        "does not establish that the Xbox has the bug. Within each tier, numbered queue entries",
+        "come first. Balance changes normally stay low until a concrete profile needs one.",
         "",
         "| status | fixes |",
         "|---|---|",
@@ -262,7 +269,7 @@ def render_candidates():
         entries = [e for e in CANDIDATES if e["status"] == status]
         if not entries:
             continue
-        entries.sort(key=lambda e: PRIORITIES.index(e["priority"]))
+        entries.sort(key=lambda e: (PRIORITIES.index(e["priority"]), e.get("queue", 10**9)))
         lines += ["", f"## {status}", "", meaning, "",
                   "| fix | from | priority | category | notes |", "|---|---|---|---|---|"]
         for e in entries:
@@ -272,7 +279,8 @@ def render_candidates():
             category = e.get("category", "")
             if "default" in e:
                 category += f" ({e['default']})"
-            lines.append(f"| `{e['name']}` | {origin_text(e)} | {e['priority']} | "
+            priority = e["priority"] + (f" #{e['queue']}" if "queue" in e else "")
+            lines.append(f"| `{e['name']}` | {origin_text(e)} | {priority} | "
                          f"{cell(category)} | {notes} |")
     return "\n".join(lines) + "\n"
 

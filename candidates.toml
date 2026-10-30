@@ -8,6 +8,7 @@
 # status     researching, located, candidate, deferred, not-applicable (PC-only), infeasible
 #            (tried, cannot be done) or rejected
 # priority   high, medium, low, or none for fixes that will not be ported
+# queue      optional order within a priority tier; unnumbered entries follow
 # category   the TES3X category it would have (see patches.toml); omitted when not applicable
 # default    notes on its default policy, when not the category's usual one
 # origin     the project it comes from; sources are listed in patches.toml
@@ -20,7 +21,8 @@ origin = { source = "MCP", id = "2" }
 category = "correctness"
 default = "recommended"
 status = "candidate"
-priority = "low"
+priority = "medium"
+queue = 11
 summary = "Fix inverted Mercantile contribution to price"
 reason = "Isolate the formula error."
 
@@ -178,7 +180,8 @@ name = "mcp-20"
 origin = { source = "MCP", id = "20" }
 category = "correctness"
 status = "candidate"
-priority = "low"
+priority = "medium"
+queue = 6
 summary = "Spell magnitude fix"
 reason = "Variable-magnitude spells rarely reach their maximum."
 
@@ -187,7 +190,8 @@ name = "mcp-21"
 origin = { source = "MCP", id = "21" }
 category = "correctness"
 status = "candidate"
-priority = "low"
+priority = "medium"
+queue = 4
 summary = "Dispel fix"
 reason = "Dispel silently stacks until it always succeeds."
 
@@ -392,6 +396,7 @@ category = "correctness"
 default = "recommended"
 status = "candidate"
 priority = "medium"
+queue = 5
 summary = "`Drop` places at the acting reference, not the player"
 reason = "The engine treats every drop as if it came from the player inventory view, so scripted drops land at the wrong actor. Split from the rest of id 46 under rule 3."
 
@@ -410,7 +415,8 @@ name = "mcp-49"
 origin = { source = "MCP", id = "49" }
 category = "correctness"
 status = "candidate"
-priority = "low"
+priority = "medium"
+queue = 14
 summary = "Bound items expiry fix"
 reason = "Expiring bound weapons force a weapon draw; bound armor does not restore gloves, bracers and shoes."
 
@@ -455,7 +461,8 @@ name = "mcp-56"
 origin = { source = "MCP", id = "56" }
 category = "correctness"
 status = "candidate"
-priority = "low"
+priority = "medium"
+queue = 12
 summary = "Spellmaker/enchant edit effect fix"
 reason = "Editing a spell effect resets its range to Touch."
 
@@ -474,7 +481,7 @@ origin = { source = "MCP", id = "58" }
 category = "correctness"
 default = "undecided"
 status = "candidate"
-priority = "medium"
+priority = "low"
 summary = "Save-count warning"
 reason = "MCP warns before PC memory corruption at roughly 300 save files. Xbox uses `XCreateSaveGame` and different enumeration, so first determine whether any equivalent limit exists; do not port the PC threshold by assumption."
 
@@ -645,7 +652,8 @@ name = "mcp-83"
 origin = { source = "MCP", id = "83" }
 category = "compatibility"
 status = "candidate"
-priority = "low"
+priority = "medium"
+queue = 8
 summary = "Detect water level fix"
 reason = "Scripts detect the player as underwater in cells without water."
 
@@ -736,6 +744,7 @@ origin = { source = "MCP", id = "95" }
 category = "compatibility"
 status = "candidate"
 priority = "medium"
+queue = 1
 summary = "Voiceover script functions fix"
 reason = "StopSound mutes every actor voice and SayDone fires early. Dialogue and quest mods depend on both."
 
@@ -860,7 +869,7 @@ name = "mcp-112"
 origin = { source = "MCP", id = "112" }
 category = "correctness"
 status = "candidate"
-priority = "low"
+priority = "medium"
 summary = "Disintegrate fix"
 reason = "Disintegrate Weapon and Armor apply little or no damage."
 
@@ -879,7 +888,8 @@ name = "mcp-115"
 origin = { source = "MCP", id = "115" }
 category = "correctness"
 status = "candidate"
-priority = "low"
+priority = "medium"
+queue = 7
 summary = "Confiscated item fix"
 reason = "Guards and merchants confiscate items that are no longer stolen."
 
@@ -1026,6 +1036,7 @@ category = "correctness"
 default = "recommended"
 status = "candidate"
 priority = "medium"
+queue = 2
 summary = "Reliable `CellChanged` for scripted teleports"
 reason = "Script-contract fix used by mods; preserve vanilla transition semantics outside the missed path."
 
@@ -1053,7 +1064,8 @@ origin = { source = "MCP", id = "141" }
 category = "core"
 default = "intended default"
 status = "candidate"
-priority = "medium"
+priority = "high"
+queue = 1
 summary = "Script expression parser / `Random` fix"
 reason = "`Random` on multiples of 256 can crash and corrupt its argument. Large, but directly relevant to the extended script surface."
 
@@ -1263,7 +1275,8 @@ name = "mcp-171"
 origin = { source = "MCP", id = "171" }
 category = "correctness"
 status = "candidate"
-priority = "low"
+priority = "medium"
+queue = 13
 summary = "Menu mode world interaction fix"
 reason = "World items can be picked up while crafting menus are open."
 
@@ -1309,6 +1322,7 @@ origin = { source = "MCP", id = "177" }
 category = "compatibility"
 status = "candidate"
 priority = "medium"
+queue = 3
 summary = "GetEffect/RemoveEffects fix"
 reason = "GetEffect and RemoveEffects sometimes return 0 or do nothing; scripted mods rely on them."
 
@@ -1337,6 +1351,7 @@ origin = { source = "MCP", id = "256" }
 category = "compatibility"
 status = "candidate"
 priority = "medium"
+queue = 9
 summary = "Map expansion (for Tamriel Rebuilt)"
 reason = "Expands the world map for Tamriel Rebuilt. Needed for TR, which itself needs 128 MB today."
 
@@ -1558,7 +1573,7 @@ origin = { source = "MWSE" }
 category = "core"
 default = "profile-dependent priority"
 status = "candidate"
-priority = "medium"
+priority = "low"
 summary = "Handle missing light data while cloning"
 reason = "Validate against malformed or legal-but-unusual meshes."
 
@@ -1568,7 +1583,7 @@ origin = { source = "MWSE" }
 category = "core"
 default = "profile-dependent priority"
 status = "candidate"
-priority = "medium"
+priority = "low"
 summary = "Correct `NiSortAdjustNode` cloning"
 reason = "Same rule: a mod-library reproducer raises priority."
 
@@ -1578,7 +1593,7 @@ origin = { source = "MWSE" }
 category = "core"
 default = "profile-dependent priority"
 status = "candidate"
-priority = "medium"
+priority = "low"
 summary = "Correct `NiStringExtraData` cloning"
 reason = "Mesh-driven lifetime bug; prioritize if a current asset reproduces it."
 
@@ -1617,7 +1632,7 @@ origin = { source = "MWSE" }
 category = "performance"
 default = "benchmark first"
 status = "candidate"
-priority = "medium"
+priority = "low"
 summary = "Avoid repeated expensive work in `GetDeadCount`"
 reason = "Profile scripts which call it frequently and preserve dynamic death counts."
 
@@ -1627,7 +1642,7 @@ origin = { source = "MWSE" }
 category = "performance"
 default = "benchmark first"
 status = "candidate"
-priority = "medium"
+priority = "low"
 summary = "Speed script global-variable lookup"
 reason = "Existing profiling found only about 22 script commands/frame in the baseline; require evidence this lookup matters in a real modded profile."
 
@@ -1637,7 +1652,7 @@ origin = { source = "MWSE" }
 category = "performance"
 default = "benchmark first"
 status = "candidate"
-priority = "medium"
+priority = "low"
 summary = "Cache repeated `DontThreadLoad`/INI reads"
 reason = "First instrument call frequency. Preserve runtime configuration changes if vanilla observes them."
 
@@ -1668,6 +1683,7 @@ category = "core"
 default = "intended default"
 status = "candidate"
 priority = "medium"
+queue = 10
 summary = "Avoid crash while updating map markers at the drawable map border"
 reason = "Relevant to map expansion and large landmasses if the Xbox map bounds match."
 
@@ -1687,7 +1703,7 @@ origin = { source = "MWSE" }
 category = "core"
 default = "intended default if Xbox path exists"
 status = "candidate"
-priority = "medium"
+priority = "low"
 summary = "Avoid paper-doll equip/unequip crash"
 reason = "Xbox inventory rendering may not use the PC paper-doll path; prove applicability first."
 
@@ -1725,7 +1741,7 @@ name = "mwse-terrain-textures"
 origin = { source = "MWSE" }
 category = "undecided"
 status = "deferred"
-priority = "medium"
+priority = "low"
 summary = "More-than-500 terrain textures / huge-landmass compatibility"
 reason = "Potentially useful for TR-sized worlds, but those profiles already exceed the present 64 MB target. Revisit only with a feasible large-landmass profile."
 
@@ -1765,7 +1781,8 @@ origin = { source = "MWSE" }
 category = "core"
 default = "intended default"
 status = "candidate"
-priority = "medium"
+priority = "high"
+queue = 2
 summary = "Reject or repair invalid loaded VFX state which causes load errors and save growth"
 reason = "Especially relevant to long-lived Xbox saves; measure record growth as well as crash behaviour."
 
@@ -1775,7 +1792,8 @@ origin = { source = "MWSE" }
 category = "core"
 default = "intended default"
 status = "candidate"
-priority = "medium"
+priority = "high"
+queue = 3
 summary = "Avoid crash while saving an active visual effect when none of its particles can be serialized"
 reason = "Build a small spell/VFX save reproducer before locating the serializer."
 
@@ -1785,7 +1803,8 @@ origin = { source = "OpenMW-4642" }
 category = "correctness"
 default = "recommended"
 status = "candidate"
-priority = "medium"
+priority = "high"
+queue = 4
 summary = "Refresh an open container/inventory after script `AddItem`/`RemoveItem`"
 reason = "The reported vanilla defect leaves the menu stale and can permit duplication. Reproduce with the Xbox menu before choosing a hook; promote to `core` if data loss/duplication is confirmed."
 
@@ -1813,10 +1832,10 @@ name = "xbox-controller-tuning"
 origin = { source = "OpenMW" }
 category = "qol"
 default = "opt in"
-status = "candidate"
-priority = "low"
-summary = "Independent horizontal/vertical sensitivity and dead-zone controls"
-reason = "The Xbox build already reads controller settings from `[Xbox]`; prefer compatible INI keys and no save-format change."
+status = "not-applicable"
+priority = "none"
+summary = "Independent horizontal/vertical sensitivity controls"
+reason = "The Xbox options already expose separate X and Y look sensitivity. No engine change is needed for that feature; dead-zone adjustment would be a separate proposal."
 
 [[candidate]]
 name = "xbox-enchant-chance"
@@ -1855,3 +1874,25 @@ status = "rejected"
 priority = "none"
 summary = "Evict cached exterior cells after the grid shift instead of inside it"
 reason = "The shift's three `ensureFreeMemory_` checks were hooked to answer \"enough\" and evict a cell per frame later. On the original Xbox with retail masters free memory was 5.5 MB at every check, above the 3 MB trigger, so the engine was not evicting there and the hook deferred nothing. The roughly 100 ms of `Cell::unloadScene_` seen around a shift comes from another caller."
+
+[[candidate]]
+name = "xbox-quick-loot"
+origin = { source = "TES3X" }
+category = "qol"
+default = "opt in"
+status = "candidate"
+priority = "medium"
+queue = 15
+summary = "Take items from a container without opening its full menu"
+reason = "Inspired by [MWSE QuickLoot](https://github.com/MortimerMcMire/MWSE-QuickLoot). Design for controller focus and 480p; preserve trap, ownership, scripted activation and corpse-disposal semantics. Frequent-use QoL, but more UI and state work than a small patch."
+
+[[candidate]]
+name = "xbox-inventory-search"
+origin = { source = "TES3X" }
+category = "qol"
+default = "opt in"
+status = "candidate"
+priority = "medium"
+queue = 16
+summary = "Search or filter inventory and container contents"
+reason = "Inspired by [UI Expansion](https://github.com/NullCascade/morrowind-mods/blob/master/User%20Interface%20Expansion/MWSE/mods/UI%20Expansion/main.lua). Large load orders make item grids slow to browse; test controller text entry, focus and memory before choosing a filter design. Search must never alter item transfer or save state."

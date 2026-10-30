@@ -7,15 +7,17 @@ Fixes from other projects that we've looked at, and why each isn't implemented, 
 all. Every Morrowind Code Patch fix is here. Being listed doesn't mean the Xbox has the bug.
 Implemented fixes are in [patches.md](patches.md).
 
-**Priority** is a rough guess at how much a fix matters on the Xbox: `high` for crashes and
-lost saves players are likely to hit, `medium` for bugs seen in normal play or that mods rely
-on, `low` for minor ones, and `none` for fixes we won't port.
+**Priority** ranks what to investigate next on the Xbox: `high` for plausible save loss,
+crashes or broadly useful fixes, `medium` for meaningful play or mod support, `low` for
+minor, speculative or optional changes, and `none` for fixes we won't port. A high rank
+does not establish that the Xbox has the bug. Within each tier, numbered queue entries
+come first. Balance changes normally stay low until a concrete profile needs one.
 
 | status | fixes |
 |---|---|
-| candidate | 165 |
+| candidate | 166 |
 | deferred | 14 |
-| not-applicable | 16 |
+| not-applicable | 17 |
 | rejected | 5 |
 
 ## candidate
@@ -24,29 +26,31 @@ Worth porting, but not yet shown to affect the Xbox build.
 
 | fix | from | priority | category | notes |
 |---|---|---|---|---|
-| `mcp-46a` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #46 | medium | correctness (recommended) | **`Drop` places at the acting reference, not the player.** The engine treats every drop as if it came from the player inventory view, so scripted drops land at the wrong actor. Split from the rest of id 46 under rule 3. |
-| `mcp-58` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #58 | medium | correctness (undecided) | **Save-count warning.** MCP warns before PC memory corruption at roughly 300 save files. Xbox uses `XCreateSaveGame` and different enumeration, so first determine whether any equivalent limit exists; do not port the PC threshold by assumption. |
-| `mcp-95` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #95 | medium | compatibility | **Voiceover script functions fix.** StopSound mutes every actor voice and SayDone fires early. Dialogue and quest mods depend on both. |
-| `mcp-138` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #138 | medium | correctness (recommended) | **Reliable `CellChanged` for scripted teleports.** Script-contract fix used by mods; preserve vanilla transition semantics outside the missed path. |
-| `mcp-141` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #141 | medium | core (intended default) | **Script expression parser / `Random` fix.** `Random` on multiples of 256 can crash and corrupt its argument. Large, but directly relevant to the extended script surface. |
-| `mcp-177` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #177 | medium | compatibility | **GetEffect/RemoveEffects fix.** GetEffect and RemoveEffects sometimes return 0 or do nothing; scripted mods rely on them. |
-| `mcp-256` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #256 | medium | compatibility | **Map expansion (for Tamriel Rebuilt).** Expands the world map for Tamriel Rebuilt. Needed for TR, which itself needs 128 MB today. |
-| `mwse-clone-light-null` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | core (profile-dependent priority) | **Handle missing light data while cloning.** Validate against malformed or legal-but-unusual meshes. |
-| `mwse-clone-sortadjust` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | core (profile-dependent priority) | **Correct `NiSortAdjustNode` cloning.** Same rule: a mod-library reproducer raises priority. |
-| `mwse-clone-stringextra` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | core (profile-dependent priority) | **Correct `NiStringExtraData` cloning.** Mesh-driven lifetime bug; prioritize if a current asset reproduces it. |
+| `mcp-141` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #141 | high #1 | core (intended default) | **Script expression parser / `Random` fix.** `Random` on multiples of 256 can crash and corrupt its argument. Large, but directly relevant to the extended script surface. |
+| `mwse-vfx-load-bloat` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | high #2 | core (intended default) | **Reject or repair invalid loaded VFX state which causes load errors and save growth.** Especially relevant to long-lived Xbox saves; measure record growth as well as crash behaviour. |
+| `mwse-vfx-save-empty` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | high #3 | core (intended default) | **Avoid crash while saving an active visual effect when none of its particles can be serialized.** Build a small spell/VFX save reproducer before locating the serializer. |
+| `omw-live-inventory` | [OpenMW-4642](https://gitlab.com/OpenMW/openmw/-/merge_requests/4642) | high #4 | correctness (recommended) | **Refresh an open container/inventory after script `AddItem`/`RemoveItem`.** The reported vanilla defect leaves the menu stale and can permit duplication. Reproduce with the Xbox menu before choosing a hook; promote to `core` if data loss/duplication is confirmed. |
+| `mcp-95` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #95 | medium #1 | compatibility | **Voiceover script functions fix.** StopSound mutes every actor voice and SayDone fires early. Dialogue and quest mods depend on both. |
+| `mcp-138` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #138 | medium #2 | correctness (recommended) | **Reliable `CellChanged` for scripted teleports.** Script-contract fix used by mods; preserve vanilla transition semantics outside the missed path. |
+| `mcp-177` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #177 | medium #3 | compatibility | **GetEffect/RemoveEffects fix.** GetEffect and RemoveEffects sometimes return 0 or do nothing; scripted mods rely on them. |
+| `mcp-21` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #21 | medium #4 | correctness | **Dispel fix.** Dispel silently stacks until it always succeeds. |
+| `mcp-46a` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #46 | medium #5 | correctness (recommended) | **`Drop` places at the acting reference, not the player.** The engine treats every drop as if it came from the player inventory view, so scripted drops land at the wrong actor. Split from the rest of id 46 under rule 3. |
+| `mcp-20` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #20 | medium #6 | correctness | **Spell magnitude fix.** Variable-magnitude spells rarely reach their maximum. |
+| `mcp-115` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #115 | medium #7 | correctness | **Confiscated item fix.** Guards and merchants confiscate items that are no longer stolen. |
+| `mcp-83` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #83 | medium #8 | compatibility | **Detect water level fix.** Scripts detect the player as underwater in cells without water. |
+| `mcp-256` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #256 | medium #9 | compatibility | **Map expansion (for Tamriel Rebuilt).** Expands the world map for Tamriel Rebuilt. Needed for TR, which itself needs 128 MB today. |
+| `mwse-map-border-marker` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium #10 | core (intended default) | **Avoid crash while updating map markers at the drawable map border.** Relevant to map expansion and large landmasses if the Xbox map bounds match. |
+| `mcp-2a` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #2 | medium #11 | correctness (recommended) | **Fix inverted Mercantile contribution to price.** Isolate the formula error. |
+| `mcp-56` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #56 | medium #12 | correctness | **Spellmaker/enchant edit effect fix.** Editing a spell effect resets its range to Touch. |
+| `mcp-171` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #171 | medium #13 | correctness | **Menu mode world interaction fix.** World items can be picked up while crafting menus are open. |
+| `mcp-49` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #49 | medium #14 | correctness | **Bound items expiry fix.** Expiring bound weapons force a weapon draw; bound armor does not restore gloves, bracers and shoes. |
+| `xbox-quick-loot` | TES3X | medium #15 | qol (opt in) | **Take items from a container without opening its full menu.** Inspired by [MWSE QuickLoot](https://github.com/MortimerMcMire/MWSE-QuickLoot). Design for controller focus and 480p; preserve trap, ownership, scripted activation and corpse-disposal semantics. Frequent-use QoL, but more UI and state work than a small patch. |
+| `xbox-inventory-search` | TES3X | medium #16 | qol (opt in) | **Search or filter inventory and container contents.** Inspired by [UI Expansion](https://github.com/NullCascade/morrowind-mods/blob/master/User%20Interface%20Expansion/MWSE/mods/UI%20Expansion/main.lua). Large load orders make item grids slow to browse; test controller text entry, focus and memory before choosing a filter design. Search must never alter item transfer or save state. |
+| `mcp-112` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #112 | medium | correctness | **Disintegrate fix.** Disintegrate Weapon and Armor apply little or no damage. |
 | `mwse-dialogue-filter` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | performance (benchmark first) | **Replace dialogue filtering/search with a more efficient implementation.** High potential with PfP's dialogue-heavy master. Measure dialogue-open latency and memory with/without PfP, then regression-test filtering. |
 | `mwse-disposition-filter` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | performance (benchmark first) | **Optimize disposition/dialogue filtering.** Test result identity, not just speed, against a dialogue-rich load order. |
-| `mwse-getdeadcount` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | performance (benchmark first) | **Avoid repeated expensive work in `GetDeadCount`.** Profile scripts which call it frequently and preserve dynamic death counts. |
-| `mwse-global-access` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | performance (benchmark first) | **Speed script global-variable lookup.** Existing profiling found only about 22 script commands/frame in the baseline; require evidence this lookup matters in a real modded profile. |
-| `mwse-ini-cache` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | performance (benchmark first) | **Cache repeated `DontThreadLoad`/INI reads.** First instrument call frequency. Preserve runtime configuration changes if vanilla observes them. |
 | `mwse-journal-update` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | performance (benchmark first) | **Optimize journal update/search work.** Measure large-journal open/update time and verify ordering/quest indices. |
-| `mwse-map-border-marker` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | core (intended default) | **Avoid crash while updating map markers at the drawable map border.** Relevant to map expansion and large landmasses if the Xbox map bounds match. |
-| `mwse-paperdoll` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | core (intended default if Xbox path exists) | **Avoid paper-doll equip/unequip crash.** Xbox inventory rendering may not use the PC paper-doll path; prove applicability first. |
 | `mwse-showmap-fillmap` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | performance (benchmark first) | **Optimize `ShowMap`/`FillMap`.** Compare command time and map correctness across repeated calls. |
-| `mwse-vfx-load-bloat` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | core (intended default) | **Reject or repair invalid loaded VFX state which causes load errors and save growth.** Especially relevant to long-lived Xbox saves; measure record growth as well as crash behaviour. |
-| `mwse-vfx-save-empty` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | core (intended default) | **Avoid crash while saving an active visual effect when none of its particles can be serialized.** Build a small spell/VFX save reproducer before locating the serializer. |
-| `omw-live-inventory` | [OpenMW-4642](https://gitlab.com/OpenMW/openmw/-/merge_requests/4642) | medium | correctness (recommended) | **Refresh an open container/inventory after script `AddItem`/`RemoveItem`.** The reported vanilla defect leaves the menu stale and can permit duplication. Reproduce with the Xbox menu before choosing a hook; promote to `core` if data loss/duplication is confirmed. |
-| `mcp-2a` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #2 | low | correctness (recommended) | **Fix inverted Mercantile contribution to price.** Isolate the formula error. |
 | `mcp-2b` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #2 | low | balance (opt in) | **Reduce all price modifiers by 50% and alter zero-value handling.** Rebalance, not required to correct the inversion. Do not couple it to 2a. |
 | `mcp-4` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #4 | low | correctness | **Calendar fix.** Month table and names disagree, so the calendar is visibly wrong. Cosmetic. |
 | `mcp-5` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #5 | low | balance (opt in) | **Stop merchants equipping sold items.** Changes visible merchant behaviour. OpenMW exposes comparable behaviour as a disabled-by-default option. |
@@ -62,8 +66,6 @@ Worth porting, but not yet shown to affect the Xbox build.
 | `mcp-17` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #17 | low | qol | **Spellmaking max. duration reduced.** Shorter spellmaker duration cap, easier to set precisely; may suit the controller slider. |
 | `mcp-18` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #18 | low | balance | **Exhaust NPCs with Damage Fatigue.** Balance change, opt in only; MCP ships it as an option rather than a defect fix. |
 | `mcp-19` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #19 | low | correctness | **Disposition fix.** Disposition lost when a Personality effect expires above 100. |
-| `mcp-20` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #20 | low | correctness | **Spell magnitude fix.** Variable-magnitude spells rarely reach their maximum. |
-| `mcp-21` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #21 | low | correctness | **Dispel fix.** Dispel silently stacks until it always succeeds. |
 | `mcp-22` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #22 | low | correctness | **Creature armor damage fix.** Creatures without weapons never damage armor. |
 | `mcp-24a` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #24 | low | correctness (recommended if reproduced) | **Prevent pathological NPC potion-use frequency.** Separate a bad scheduling/throttle path from new AI. |
 | `mcp-24b` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #24 | low | balance (opt in) | **Add magicka-potion decision-making to NPC AI.** New combat AI behaviour. |
@@ -81,12 +83,11 @@ Worth porting, but not yet shown to affect the Xbox build.
 | `mcp-43` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #43 | low | balance | **Arrow enchanting.** Balance change, opt in only; MCP ships it as an option rather than a defect fix. |
 | `mcp-44` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #44 | low | balance | **Fortify maximum health.** Balance change, opt in only; MCP ships it as an option rather than a defect fix. |
 | `mcp-46b` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #46 | low | correctness (recommended) | **`PlaceAtPC` distance in third person, `PlaceAtMe` scale inheritance.** A line-of-sight test misplaces third-person `PlaceAtPC` at the player's feet; `PlaceAtMe` inherits a target's rotation but not its scale. Two separate defects sharing id 46's record set. |
-| `mcp-49` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #49 | low | correctness | **Bound items expiry fix.** Expiring bound weapons force a weapon draw; bound armor does not restore gloves, bracers and shoes. |
 | `mcp-51` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #51 | low | correctness | **Fog of war fix.** Local-map fog of war can stop updating after a cell crossing because of mismatched rounding. |
 | `mcp-52` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #52 | low | correctness | **Intimidate fix.** A successful intimidate can fail to raise disposition. |
 | `mcp-53` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #53 | low | correctness | **Magicka display accuracy.** Stat displays round up and overstate current magicka. |
-| `mcp-56` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #56 | low | correctness | **Spellmaker/enchant edit effect fix.** Editing a spell effect resets its range to Touch. |
 | `mcp-57` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #57 | low | compatibility | **Allow scroll enchant price modifier.** Script or modding support; worth porting only when a mod used on Xbox needs it. |
+| `mcp-58` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #58 | low | correctness (undecided) | **Save-count warning.** MCP warns before PC memory corruption at roughly 300 save files. Xbox uses `XCreateSaveGame` and different enumeration, so first determine whether any equivalent limit exists; do not port the PC threshold by assumption. |
 | `mcp-64` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #64 | low | balance | **Multiple attribute fortify potions.** Allows potions with several fortify or drain attribute effects; changes alchemy results. |
 | `mcp-65` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #65 | low | balance | **Soulgem value rebalance.** Balance change, opt in only; MCP ships it as an option rather than a defect fix. |
 | `mcp-66` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #66 | low | balance | **On-use ring extra slot.** Balance change, opt in only; MCP ships it as an option rather than a defect fix. |
@@ -104,7 +105,6 @@ Worth porting, but not yet shown to affect the Xbox build.
 | `mcp-79` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #79 | low | correctness | **Slowfall on companions fix.** Companions under slowfall can take fall damage across some cell changes. |
 | `mcp-80` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #80 | low | balance (opt in) | **Drain Intelligence magicka exploit.** Exploit and balance change, not stability. |
 | `mcp-81` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #81 | low | correctness | **Mouseover menu display fixes.** Tooltip errors: blank next-rank requirements, spells under the wrong heading. |
-| `mcp-83` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #83 | low | compatibility | **Detect water level fix.** Scripts detect the player as underwater in cells without water. |
 | `mcp-84` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #84 | low | compatibility | **Service refusal filtering.** Script or modding support; worth porting only when a mod used on Xbox needs it. |
 | `mcp-85` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #85 | low | correctness | **Armor indicator fix.** Inventory armor rating does not update for shield spells. |
 | `mcp-86` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #86 | low | balance | **Detect life spell variant.** Balance change, opt in only; MCP ships it as an option rather than a defect fix. |
@@ -126,8 +126,6 @@ Worth porting, but not yet shown to affect the Xbox build.
 | `mcp-109` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #109 | low | correctness | **Hit fader fix.** The red damage overlay can stick across a cell change. |
 | `mcp-110` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #110 | low | balance | **Skill uncap.** Skill uncap. Balance, and incompatible with levelling mods that expect a cap. |
 | `mcp-111` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #111 | low | balance | **Weapon resistance change.** Balance change, opt in only; MCP ships it as an option rather than a defect fix. |
-| `mcp-112` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #112 | low | correctness | **Disintegrate fix.** Disintegrate Weapon and Armor apply little or no damage. |
-| `mcp-115` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #115 | low | correctness | **Confiscated item fix.** Guards and merchants confiscate items that are no longer stolen. |
 | `mcp-116` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #116 | low | correctness | **Water environment sound fix.** Underwater sound lost through doors between underwater areas; wrong water ambience. |
 | `mcp-117` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #117 | low | compatibility | **'Talked to PC' extension.** Script or modding support; worth porting only when a mod used on Xbox needs it. |
 | `mcp-120` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #120 | low | compatibility | **Lock level scripting.** Script or modding support; worth porting only when a mod used on Xbox needs it. |
@@ -161,7 +159,6 @@ Worth porting, but not yet shown to affect the Xbox build.
 | `mcp-167` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #167 | low | compatibility | **Container respawn timescale.** Script or modding support; worth porting only when a mod used on Xbox needs it. |
 | `mcp-169` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #169 | low | correctness | **Multiple summons overlap fix.** Several creatures summoned together stack on one spot. |
 | `mcp-170` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #170 | low | correctness | **Barter haggle fix.** Holding the haggle buttons stops working at high framerates, which the Xbox rarely reaches. Check whether it reproduces at all. |
-| `mcp-171` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #171 | low | correctness | **Menu mode world interaction fix.** World items can be picked up while crafting menus are open. |
 | `mcp-172` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #172 | low | balance | **Enchanted item rebalance.** Balance change, opt in only; MCP ships it as an option rather than a defect fix. |
 | `mcp-174` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #174 | low | compatibility | **AddItem with levelled items.** Script or modding support; worth porting only when a mod used on Xbox needs it. |
 | `mcp-175` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #175 | low | compatibility | **MoveWorld Z fix.** MoveWorld misuses frame time on the Z axis, so scripted movement varies with framerate. Xbox framerates vary widely. |
@@ -181,13 +178,19 @@ Worth porting, but not yet shown to affect the Xbox build.
 | `mwse-activation-skinned-ray` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | low | correctness (recommended) | **Make activation ray tests work against affected skinned objects.** Renderer/scene-graph dependent; use a concrete inaccessible-object reproducer. |
 | `mwse-anim-idle-sync` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | low | correctness (recommended) | **Keep idle animation selection/state synchronized.** Confirm visible Xbox symptom and save/load interaction. |
 | `mwse-book-weapon-enchant` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | low | correctness (recommended) | **Preserve weapon-enchantment data through book/object copy paths.** Useful for scripted object copying; verify the affected record classes. |
+| `mwse-clone-light-null` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | low | core (profile-dependent priority) | **Handle missing light data while cloning.** Validate against malformed or legal-but-unusual meshes. |
+| `mwse-clone-sortadjust` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | low | core (profile-dependent priority) | **Correct `NiSortAdjustNode` cloning.** Same rule: a mod-library reproducer raises priority. |
+| `mwse-clone-stringextra` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | low | core (profile-dependent priority) | **Correct `NiStringExtraData` cloning.** Mesh-driven lifetime bug; prioritize if a current asset reproduces it. |
+| `mwse-getdeadcount` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | low | performance (benchmark first) | **Avoid repeated expensive work in `GetDeadCount`.** Profile scripts which call it frequently and preserve dynamic death counts. |
+| `mwse-global-access` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | low | performance (benchmark first) | **Speed script global-variable lookup.** Existing profiling found only about 22 script commands/frame in the baseline; require evidence this lookup matters in a real modded profile. |
+| `mwse-ini-cache` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | low | performance (benchmark first) | **Cache repeated `DontThreadLoad`/INI reads.** First instrument call frequency. Preserve runtime configuration changes if vanilla observes them. |
 | `mwse-invis-chameleon` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | low | correctness (recommended) | **Keep invisibility/chameleon state synchronized with visuals and actor state.** Define whether the defect is visual only or also affects detection. |
 | `mwse-mobile-projectile` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | low | compatibility (profile dependent) | **Fully initialize projectiles created through mobile/scripted paths.** Relevant to future script extensions; avoid duplicating the existing arrow-damage display mod. |
+| `mwse-paperdoll` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | low | core (intended default if Xbox path exists) | **Avoid paper-doll equip/unequip crash.** Xbox inventory rendering may not use the PC paper-doll path; prove applicability first. |
 | `mwse-sound-loop-volume` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | low | correctness (recommended) | **Correct volume updates for looping sounds.** Xbox audio backend may differ; start from the game-side volume state. |
 | `mwse-time-midnight` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | low | correctness (recommended) | **Avoid truncation/error when crossing midnight.** Test calendar, weather and scheduled-script transitions together. |
 | `mwse-time-rest-drift` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | low | correctness (recommended) | **Prevent precision drift while advancing time during rest/travel.** Compare day/hour state over repeated long rests. |
 | `sigf-skill-gmst` | [SIGF](https://www.nexusmods.com/morrowind/mods/48029) | low | correctness (recommended) | **Use `iLevelupMajorMult` for major skills and `iLevelupMinorMult` for minor skills.** The engine reportedly uses the minor value for major skills and the major value for minor skills. Vanilla values hide much of the error; modded GMSTs expose it. Confirm in the Xbox formula. |
-| `xbox-controller-tuning` | [OpenMW](https://openmw.org) | low | qol (opt in) | **Independent horizontal/vertical sensitivity and dead-zone controls.** The Xbox build already reads controller settings from `[Xbox]`; prefer compatible INI keys and no save-format change. |
 | `xbox-enchant-chance` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #151 | low | qol (opt in) | **Show self-enchanting success chance.** Useful information, but the PC UI patch does not port directly. Design for Xbox screen space and controller flow. |
 
 ## deferred
@@ -197,7 +200,6 @@ A real fix, held back for evidence, prerequisites or risk.
 | fix | from | priority | category | notes |
 |---|---|---|---|---|
 | `mcp-23` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #23 | medium | undecided | **Inventory bugs group.** Split into individual defects after decoding; do not import a 338-byte group under one policy decision. |
-| `mwse-terrain-textures` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | undecided | **More-than-500 terrain textures / huge-landmass compatibility.** Potentially useful for TR-sized worlds, but those profiles already exceed the present 64 MB target. Revisit only with a feasible large-landmass profile. |
 | `mcp-11` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #11 | low | correctness (undecided) | **Transparent clothes in inventory.** Xbox inventory rendering differs. Only pursue after confirming the affected path exists. |
 | `mcp-27` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #27 | low | correctness | **Lighting fixes group.** A group of renderer lighting fixes. Split into single defects after decoding, as with MCP-23, and confirm each on the Xbox renderer. |
 | `mcp-35` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #35 | low | undecided | **Reflection on skinned models.** Xbox GPU/render path differs. Require a reproduced Xbox defect and a console-appropriate implementation. |
@@ -208,6 +210,7 @@ A real fix, held back for evidence, prerequisites or risk.
 | `mcp-131` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #131 | low | correctness | **Bump/reflect map local lighting.** Bump and reflection maps ignore local light. Renderer-specific; the Xbox renderer differs. |
 | `mgexe-emissive-particles` | [MGE XE](https://www.nexusmods.com/morrowind/mods/41102) | low | undecided | **Emissive-particle rendering correction.** Renderer-specific. Establish that the Xbox renderer shares the defect before doing binary work. |
 | `mwse-empty-menu-position` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | low | undecided | **Empty menu position and long derived-key menu crashes.** PC UI evidence is insufficient; prove the Xbox menu path first. |
+| `mwse-terrain-textures` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | low | undecided | **More-than-500 terrain textures / huge-landmass compatibility.** Potentially useful for TR-sized worlds, but those profiles already exceed the present 64 MB target. Revisit only with a feasible large-landmass profile. |
 | `mwse-uncloned-removeitem` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | low | core (intended default) | **Avoid actor/item-removal crash on uncloned actors.** MWSE's fix repairs a clone's missing back-reference at the RemoveItem call and logs it, to gather data; it was seen once in one mod's script and never narrowed down. The Xbox site is unlocated and no reproducer is known. Revisit if a RemoveItem crash shows up in play. |
 | `xbox-fmap-save` | TES3X | low | performance (deferred pending a format decision) | **Shrink or deduplicate the fixed map bitmap written into every save.** `FMAP` is 786,472 bytes and byte-identical across all 18 console saves - 49.5% of each file and twice the next-largest record. Any change alters the save format, so it breaks Wrye Mash and existing saves; that cost has to be accepted before implementation work, not after. Settle the save-size ceiling question (`MCP-58`) first, because without a threshold there is nothing to measure the gain against. |
 
@@ -233,6 +236,7 @@ Targets PC-only code or behaviour; there is nothing to fix on the Xbox.
 | `mcp-268` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #268 | none |  | **Spell select by name.** Select spells by typing their first letter; needs a keyboard. |
 | `mgexe-high-fps-input` | [MGE XE](https://www.nexusmods.com/morrowind/mods/41102) | none | undecided | **High-FPS mouse/input-drop fix.** PC input and frame-pacing path unless an Xbox controller reproducer says otherwise. |
 | `mwse-pc-process` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | none | undecided | **Symbolic-link and quit-with-message-box/background-process fixes.** PC filesystem/process behaviour. |
+| `xbox-controller-tuning` | [OpenMW](https://openmw.org) | none | qol (opt in) | **Independent horizontal/vertical sensitivity controls.** The Xbox options already expose separate X and Y look sensitivity. No engine change is needed for that feature; dead-zone adjustment would be a separate proposal. |
 
 ## rejected
 
