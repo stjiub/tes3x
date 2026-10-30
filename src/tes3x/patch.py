@@ -64,6 +64,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_mcp272_context,
                                find_mcp47_context, find_mcp48_context, find_mcp25_blind,
                                find_mcp132_context,
+                               find_mcp168_crime_branch,
                                find_mcp154_load, find_mcp154_reload, find_mcp173_rank,
                                find_mcp37_context,
                                find_mcp3_unarmored, find_mcp92_unsummon, find_mcp94,
@@ -848,7 +849,6 @@ def _land_tex_index(x, value, ctx):
     return [(off, 5, "land texture lookup 0x%08X -> 0x%08X" % (entry, hook))]
 
 
-@patch("vtprof")
 @patch("spell-autocalc-index")
 def _spell_autocalc_index(x, value, ctx):
     """Hand NPC spell auto-calculation only the spells it can pick."""
@@ -865,6 +865,7 @@ def _spell_autocalc_index(x, value, ctx):
     return edits
 
 
+@patch("vtprof")
 def _vtprof(x, value, ctx):
     """Time loadFromFile's per-type load call, binned by vtable."""
     hook = ctx.get("hooks", {}).get("vtprof")
@@ -1644,6 +1645,15 @@ def _mcp_160(x, value, ctx):
     return [(off, old_len, "item removal 0x%08X: weight after stack lookup" % start)]
 
 
+@patch("mcp-168")
+def _mcp_168(x, value, ctx):
+    """Do not charge the player when a neutral NPC dies from another actor's spell."""
+    site, target = find_mcp168_crime_branch(x)
+    off = x.va_to_off(site)
+    x.data[off:off + 6] = b"\xe9" + struct.pack("<i", target - (site + 5)) + b"\x90"
+    return [(off, 6, "neutral NPC crime gate 0x%08X -> 0x%08X" % (site, target))]
+
+
 @patch("mwse-enable-disable-vars")
 def _mwse_enable_disable_vars(x, value, ctx):
     """Skip the Enable and Disable flag write when the script has no local variables."""
@@ -2325,7 +2335,9 @@ __all__ = [
     'find_script_index',
     'find_local_var_index',
     'find_load_from_file',
+    'find_load_passes',
     'find_land_tex_index',
+    'find_autocalc_index',
     'find_ref_load',
     'find_ref_skip',
     'find_run_function',
@@ -2346,9 +2358,7 @@ __all__ = [
     'heap_new_site',
     'heap_pool_site',
     'heap_wrapper_sites',
-    'find_load_passes',
     'main',
-    'find_autocalc_index',
     'patch',
     'retail_digest',
     'scene_form',

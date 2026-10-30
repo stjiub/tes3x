@@ -545,6 +545,16 @@ selection = "preset"
 summary = "Reduce encumbrance for a removed item only when the item is actually in the inventory."
 
 [[patch]]
+name = "mcp-168"
+title = "Neutral NPC death blame fix"
+origin = { source = "MCP", id = "168" }
+category = "correctness"
+group = "MCP fixes"
+channel = "dev"
+selection = "preset"
+summary = "Avoid a murder charge when another actor's spell kills a neutral NPC."
+
+[[patch]]
 name = "mwse-enable-disable-vars"
 title = "Enable and Disable without local variables"
 origin = { source = "MWSE" }

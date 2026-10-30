@@ -13,10 +13,10 @@ on, `low` for minor ones, and `none` for fixes we won't port.
 
 | status | fixes |
 |---|---|
-| candidate | 168 |
+| candidate | 167 |
 | deferred | 14 |
 | not-applicable | 16 |
-| rejected | 4 |
+| rejected | 5 |
 
 ## candidate
 
@@ -161,7 +161,6 @@ Worth porting, but not yet shown to affect the Xbox build.
 | `mcp-165` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #165 | low | compatibility | **AIActivate enhancement.** Script or modding support; worth porting only when a mod used on Xbox needs it. |
 | `mcp-166` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #166 | low | compatibility | **Scriptable potion use.** Script or modding support; worth porting only when a mod used on Xbox needs it. |
 | `mcp-167` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #167 | low | compatibility | **Container respawn timescale.** Script or modding support; worth porting only when a mod used on Xbox needs it. |
-| `mcp-168` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #168 | low | correctness | **Avoid blame for neutral NPC deaths.** The player is blamed for neutral NPCs killed by others' area spells. |
 | `mcp-169` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #169 | low | correctness | **Multiple summons overlap fix.** Several creatures summoned together stack on one spot. |
 | `mcp-170` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #170 | low | correctness | **Barter haggle fix.** Holding the haggle buttons stops working at high framerates, which the Xbox rarely reaches. Check whether it reproduces at all. |
 | `mcp-171` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #171 | low | correctness | **Menu mode world interaction fix.** World items can be picked up while crafting menus are open. |
@@ -247,3 +246,4 @@ Deliberately left out of TES3X.
 | `mcp-267` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #267 | none | qol | **UI pixel alignment.** Matched 480p xemu menu captures showed no discernible benefit, so this patch was dropped. |
 | `openmw-parity` | [OpenMW](https://openmw.org) | none | undecided | **Blanket OpenMW parity.** OpenMW is a separate reimplementation and intentionally diverges in places. Only explicit vanilla defects or desired, scoped features enter this ledger. |
 | `cell-stream-wait` | TES3X | none | performance | **Shorten the exterior cell loader's wait and preload sooner.** The boundary barrier's `Sleep(100)` poll, its per-pass loading-menu render and the 2,048-unit preload limit were edited on the original Xbox with retail masters. With the render removed and a 5 ms sleep the barrier lasted 0.82-0.99 s against 0.87 s unpatched, because it lasts as long as the loader's own CPU-bound work. Keeping the render made it 2.4 s or worse, and a 1,536-unit preload made teleport hops worse. A realistic walk showed no change. The stall needs a non-blocking barrier or spreading the scene attach over frames, not a faster poll. |
+| `cell-evict-defer` | TES3X | none | performance | **Evict cached exterior cells after the grid shift instead of inside it.** The shift's three `ensureFreeMemory_` checks were hooked to answer "enough" and evict a cell per frame later. On the original Xbox with retail masters free memory was 5.5 MB at every check, above the 3 MB trigger, so the engine was not evicting there and the hook deferred nothing. The roughly 100 ms of `Cell::unloadScene_` seen around a shift comes from another caller. |

@@ -1259,15 +1259,6 @@ summary = "Container respawn timescale"
 reason = "Script or modding support; worth porting only when a mod used on Xbox needs it."
 
 [[candidate]]
-name = "mcp-168"
-origin = { source = "MCP", id = "168" }
-category = "correctness"
-status = "candidate"
-priority = "low"
-summary = "Avoid blame for neutral NPC deaths"
-reason = "The player is blamed for neutral NPCs killed by others' area spells."
-
-[[candidate]]
 name = "mcp-169"
 origin = { source = "MCP", id = "169" }
 category = "correctness"
@@ -1873,3 +1864,12 @@ status = "rejected"
 priority = "none"
 summary = "Shorten the exterior cell loader's wait and preload sooner"
 reason = "The boundary barrier's `Sleep(100)` poll, its per-pass loading-menu render and the 2,048-unit preload limit were edited on the original Xbox with retail masters. With the render removed and a 5 ms sleep the barrier lasted 0.82-0.99 s against 0.87 s unpatched, because it lasts as long as the loader's own CPU-bound work. Keeping the render made it 2.4 s or worse, and a 1,536-unit preload made teleport hops worse. A realistic walk showed no change. The stall needs a non-blocking barrier or spreading the scene attach over frames, not a faster poll."
+
+[[candidate]]
+name = "cell-evict-defer"
+origin = { source = "TES3X" }
+category = "performance"
+status = "rejected"
+priority = "none"
+summary = "Evict cached exterior cells after the grid shift instead of inside it"
+reason = "The shift's three `ensureFreeMemory_` checks were hooked to answer \"enough\" and evict a cell per frame later. On the original Xbox with retail masters free memory was 5.5 MB at every check, above the 3 MB trigger, so the engine was not evicting there and the hook deferred nothing. The roughly 100 ms of `Cell::unloadScene_` seen around a shift comes from another caller."

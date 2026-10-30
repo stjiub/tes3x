@@ -6260,7 +6260,8 @@
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_MobileActor_hitStunTestAndReportCrime",
-      "pc_va": "0x00557840"
+      "pc_va": "0x00557840",
+      "note": "When the victim is not targeting the player, the no-target case at 0x0017DE06 enters the crime report; mcp-168 exits there to avoid blaming the player for third-party spell kills."
     },
     {
       "va": "0x0017E030",

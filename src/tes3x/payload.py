@@ -1422,6 +1422,17 @@ def _bind_landtexindex(b):
     wanted["landtex"] = ("_tes3x_landtex_hook",)
 
 
+@binder("tes3xautocalcindex.c")
+def _bind_autocalcindex(b):
+    define, wanted = b.define, b.wanted
+    found = b.locate("spell-autocalc-index")
+    print(f"spell-autocalc-index: spell walk {hexva(found['first'])} / {hexva(found['next'])}, "
+          f"effect flags {hexva(found['effects'])}")
+    define("ACALC_EFFECTS", hexva(found["effects"]))
+    wanted["acalc_first"] = ("_tes3x_acalc_first_hook",)
+    wanted["acalc_next"] = ("_tes3x_acalc_next_hook",)
+
+
 @binder("tes3xvtprof.c")
 def _bind_vtprof(b):
     define, locate, wanted = b.define, b.locate, b.wanted
@@ -1436,22 +1447,13 @@ def _bind_vtprof(b):
     define("VTPROF_RECORD_TAG", hexva(record[1]))
     wanted["vtprof_record"] = ("_tes3x_vtprof_record",)
     wanted["vtprof"] = ("_tes3x_vtprof_load@8",)
+    wanted["vtprof_pass1"] = ("_tes3x_vtprof_pass1",)
+    wanted["vtprof_pass2"] = ("_tes3x_vtprof_pass2",)
 
 
 @binder("tes3xbowview.c")
 def _bind_bowview(b):
     image, define, locate, wanted = b.image, b.define, b.locate, b.wanted
-@binder("tes3xautocalcindex.c")
-def _bind_autocalcindex(b):
-    define, wanted = b.define, b.wanted
-    found = b.locate("spell-autocalc-index")
-    print(f"spell-autocalc-index: spell walk {hexva(found['first'])} / {hexva(found['next'])}, "
-          f"effect flags {hexva(found['effects'])}")
-    define("ACALC_EFFECTS", hexva(found["effects"]))
-    wanted["acalc_first"] = ("_tes3x_acalc_first_hook",)
-    wanted["acalc_next"] = ("_tes3x_acalc_next_hook",)
-
-
     site = locate("bow-view")
     update = tes3x_inject.call_target(image, site)
     print(f"bow-view hook: transform call {hexva(site)}, update {hexva(update)}")
@@ -1462,8 +1464,6 @@ def _bind_autocalcindex(b):
 @binder("tes3xvideo.c")
 def _bind_video(b):
     image, define, locate, wanted = b.image, b.define, b.locate, b.wanted
-    wanted["vtprof_pass1"] = ("_tes3x_vtprof_pass1",)
-    wanted["vtprof_pass2"] = ("_tes3x_vtprof_pass2",)
     renderer_site, create_site, count, enum = locate("hd-video")
     renderer = tes3x_inject.call_target(image, renderer_site)
     create = tes3x_inject.call_target(image, create_site)

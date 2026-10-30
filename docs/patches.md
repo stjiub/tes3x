@@ -62,6 +62,7 @@ single required/not-required flag.
 | [Safe corpse disposal](../patches/mcp-149.md) | `mcp-149` | Keep corpse disposal unavailable until an actor finishes dying. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #149 | core | dev | By name; recommended preset at release |
 | [Script data overread fix](../patches/mcp-154.md) | `mcp-154` | Pad compiled script-data allocations to keep dword reads in bounds. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #154 | core | dev | By name; recommended preset at release |
 | [RemoveItem weight fix](../patches/mcp-160.md) | `mcp-160` | Reduce encumbrance for a removed item only when the item is actually in the inventory. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #160 | correctness | dev | By name; recommended preset at release |
+| [Neutral NPC death blame fix](../patches/mcp-168.md) | `mcp-168` | Avoid a murder charge when another actor's spell kills a neutral NPC. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #168 | correctness | dev | By name; recommended preset at release |
 | [NPC faction rank persistence](../patches/mcp-173.md) | `mcp-173` | Save an NPC's faction rank after RaiseRank or LowerRank changes it. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #173 | core | dev | By name; recommended preset at release |
 | [Improved inventory filters](../patches/mcp-272.md) | `mcp-272` | Group soul gems with potions and scrolls under Magic and omit enchanted equipment there. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #272 | qol | dev | By name |
 

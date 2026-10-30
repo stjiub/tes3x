@@ -4,11 +4,15 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
-- GUI: **Help > Documentation** lists every documentation page by section and opens it on
-  GitHub.
+- Builds with Patch for Purists no longer freeze on New Game. Its `xbase_anim.kf` and
+  `xbase_anim_female.kf` now win over retail's since the `multi-bsa` archive-priority change, and the
+  game hangs while loading with them. The compatibility list gains an `exclude` field, and the
+  pipeline leaves these two files out. Rebuild to pick it up; the GUI's updated list applies it.
+  The catalog also gains a `works-partially` status for mods that run with part of their content left out.
 
-- GUI: selecting a patch shows its full notes page, with its category, status and origin
-  beneath, instead of a one-line summary.
+- `mcp-132` no longer binds an animation file's root track to the wrong bone. With a replacement
+  `xbase_anim.kf` that lists another bone first (Patch for Purists), every NPC stood waist-deep in the
+  floor. Rebuild to pick it up.
 
 - `tes3x test --tour cities,dense` (GUI: **Actions > Run memory tour**) visits the heaviest
   towns and interiors from `locations.toml` and reports free memory at each, against a vanilla
@@ -17,27 +21,26 @@ No official releases yet. The first public release is in preparation.
 
 - GUI: **Help > Update compatibility list** downloads the current list from GitHub, so verdicts
   and memory figures arrive without a new TES3X release. Mods are matched to it by Nexus id
-  before name, then by plugin file, so a renamed folder still finds its verdict, and **Set Nexus link…** on a mod
+  before name, so a renamed folder still finds its verdict, and **Set Nexus link…** on a mod
   takes a Nexus URL or id. `tes3x catalog add FOLDER` drafts an entry for a mod folder.
 
 - GUI: **Help > Check for updates** tells you when a newer release is on GitHub and opens its
   download page.
 
-- The patch category `compat` is now `compatibility`. A profile that lists `compat` under
-  `patches.categories` must be changed to match.
-
-- GUI: turning a mod on or off lists the patches its catalog entry brings in or drops (such as
-  Can't Touch This's). Patches the profile enabled itself are kept unless you agree to turn them
-  off. **View > Ask before changing patches for mods**, or the dialog's checkbox, hides the notices.
+- GUI: turning a mod off also turns off the patches only it needed (such as Can't Touch This's),
+  unless another enabled mod needs them.
 
 - GUI: a red ✕ beside Play cancels a running build or deploy. The status bar names the activity
-  ("Building") with a fixed-position progress bar, the output divider can be dragged up, the Mods tab has an **Only enabled** filter, the mod and plugin counts moved next to the profile tabs, and the Check, Build and
+  ("Building") with a fixed-position progress bar, the output divider can be dragged up, the Mods tab has an **Only enabled** filter, the mod and plugin counts moved above the details pane, and the Check, Build and
   Deploy tooltips explain their dot colours. **Skip the New Game movie** no longer sets the logo
   movie key; the `menu-still` patch covers the logo.
 
 - A build that merges animation KFs without PyFFI now prints the exact `pip install` command for
   the Python running TES3X. The portable folder and `tes3x[gui]` now include the KF reader, so
   animation merging works without an extra install.
+
+- New patch `mcp-168` prevents a murder charge when another actor's spell kills a neutral NPC.
+  See [the patch notes](patches/mcp-168.md).
 
 - Exec scripts can show an existing menu pane by name with `show MENU`, so scripted UI checks can
   reach panes hidden behind the Xbox menu's map page. See [exec scripts](docs/exec-scripts.md).
@@ -116,16 +119,16 @@ No official releases yet. The first public release is in preparation.
 - New patch `land-tex-index`: a landscape record finds its textures from an index instead of
   building and walking lists for every record, which also speeds cell loads. See
   [the patch notes](patches/land-tex-index.md).
+- New patch `spell-autocalc-index`: an NPC's spell auto-calculation steps through only the spells
+  the NPC can afford and has the skills for, instead of every spell in the game. With Tamriel
+  Rebuilt the console's load to the main menu takes about 4 s less. See
+  [the patch notes](patches/spell-autocalc-index.md).
 - `lazy-dialogue`: placing dialogue responses while plugins load no longer walks each topic's whole
   chain. With Tamriel Rebuilt the console's load to the main menu takes about 15 s less. See
   [the patch notes](patches/lazy-dialogue.md).
 - New patch `soundgen-index`: an animation's footstep and creature sound keys are matched against
   the loaded creatures instead of walking every loaded object once per key, at startup and when a
   creature's animation first loads. See [the patch notes](patches/soundgen-index.md).
-- New patch `spell-autocalc-index`: an NPC's spell auto-calculation steps through only the spells
-  the NPC can afford and has the skills for, instead of every spell in the game. With Tamriel
-  Rebuilt the console's load to the main menu takes about 4 s less. See
-  [the patch notes](patches/spell-autocalc-index.md).
 - `video-arena`: `[Xbox] VideoMemoryKB` now also shrinks the texture and vertex buffer arena,
   down to 1,024 KB, on a 64 MB console as well as on 128 MB. It still grows the arena only with
   more than 64 MB. Textures and vertex buffers that do not fit in the arena are packed together

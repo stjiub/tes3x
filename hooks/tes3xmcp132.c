@@ -29,11 +29,35 @@ void __attribute__((thiscall)) tes3x_mcp132_destroy_animation(void *animation)
     ((fn_anim_destroy)TES3X_MCP132_ANIM_DESTROY)(animation);
 }
 
+static int same_name(const char *a, const char *b)
+{
+    for (; *a && *b; ++a, ++b) {
+        if ((*a | 0x20) != (*b | 0x20))
+            return 0;
+    }
+    return *a == *b;
+}
+
+/* Standard names that are part of other standard names, such as Bip01 or a finger's first segment. */
+static int ambiguous(const char *name)
+{
+    const char *end = name;
+    while (*end)
+        ++end;
+    return (end != name && end[-1] >= '0' && end[-1] <= '9')
+        || same_name(name, "Bip01") || same_name(name, "Bip01 Spine")
+        || same_name(name, "Bip01 Tail");
+}
+
 /* The engine passes a canonical bone first, then the KF's bone name. */
 int __attribute__((cdecl)) tes3x_mcp132_bone_match(
     const char *canonical, const char *name)
 {
     const char *p, *a, *b;
+    if (same_name(canonical, name))
+        return 0;
+    if (ambiguous(canonical))
+        return 1;
     for (p = name; *p; ++p) {
         for (a = p, b = canonical; *b && *a == *b; ++a, ++b) {}
         if (!*b)

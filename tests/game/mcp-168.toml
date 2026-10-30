@@ -1,0 +1,15 @@
+kind = "comparison"
+purpose = "A neutral NPC killed by a third party's area spell does not give the player a murder charge."
+procedure = "Place a neutral NPC near a spellcaster attacking the player. Let the caster's area spell kill the NPC without a player hit, then compare the player's bounty with and without mcp-168. Also confirm the player is still charged when killing a neutral NPC directly."
+limitations = "The script checks a playable session only; the area-spell setup and bounty comparison require a controlled game fixture."
+watch = 'diag\.patches|exec\.exit|crash\.|hang\.detected|fatal\.'
+timeout = 180
+script = '''
+@start new
+wait 60
+exit
+'''
+
+[expect]
+control = ['exec\.exit 0']
+test = ['diag\.patches', 'exec\.exit 0']

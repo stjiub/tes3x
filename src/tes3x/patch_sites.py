@@ -208,6 +208,26 @@ def find_mcp118_drop_finish(x):
     return site + 2, tes3x_inject.call_target(x, site + 2)
 
 
+def find_mcp168_crime_branch(x):
+    """Find the neutral actor's crime gate after its player-target check."""
+    sig = re.compile(
+        rb"\x8b[\xce\xcf]\xe8....\x8b\x48\x04\x85\xc9(?P<branch>\x0f\x85....)"
+        rb"\x8b[\x46\x47]\x10\xc1\xe8\x0a\xa8\x01\x0f\x85....",
+        re.S,
+    )
+    hits = list(sig.finditer(x.data))
+    if len(hits) != 1:
+        raise PatchError(f"mcp-168: {len(hits)} neutral crime gates, expected 1")
+    site = x.off_to_va(hits[0].start("branch"))
+    if site is None:
+        raise PatchError("mcp-168: crime gate is outside the image")
+    target = site + 6 + struct.unpack_from("<i", x.data, hits[0].start("branch") + 2)[0]
+    target_off = x.va_to_off(target)
+    if target_off is None or x.data[target_off:target_off + 8] != b"\x8b\x4c\x24\x54\x5f\x5e\x64\x89":
+        raise PatchError("mcp-168: crime exit changed")
+    return site, target
+
+
 def find_mcp55_inventory_context(x):
     """Find the alchemy close tail and the engine's standard inventory icon rebuild."""
     close_sig = re.compile(
@@ -997,44 +1017,6 @@ def find_load_from_file(x):
     return found
 
 
-# Land::loadObjectSpecific resolving a VTEX texture index: the per-record cache check, the cache
-# read, the walk of the landscape texture list, and the not-found message.
-LAND_TEX_SIG = re.compile(
-    rb"(?P<site>\x3b\x74\x24\x2c\x7d\x2b)\x56\x8d\x4c\x24\x2c\xe8....\x8b\x48\x08\x85\xc9\x74\x10"
-    rb"\x8b\x89\x38\x01\x00\x00\x8d\x14\x3b\x66\x89\x4c\x55\x1c(?P<cont>\xeb.)\x50\x8d\x4c\x24\x2c"
-    rb"\xe8....(?P<walk>\x8b\x4c\x24\x18\xe8....)\x85\xc0(?P<miss>\x74.)\x8b\x40\x08"
-    rb"\x39\xb0\x3c\x01\x00\x00\x74",
-    re.S,
-)
-
-
-def find_land_tex_index(x):
-    """The land texture cache check and the three places the hook continues."""
-    hits = list(LAND_TEX_SIG.finditer(bytes(x.data)))
-    if len(hits) != 1:
-        raise PatchError("land-tex-index: %d texture index lookup(s), expected 1" % len(hits))
-    hit = hits[0]
-    entry = x.off_to_va(hit.start("site"))
-    if entry is None:
-        raise PatchError("land-tex-index: the texture lookup is outside any section")
-
-    def va(name):
-        return entry + hit.start(name) - hit.start("site")
-
-    def rel8(name):
-        return va(name) + 2 + struct.unpack("b", hit.group(name)[1:2])[0]
-
-    return {"entry": entry, "store": rel8("cont"), "walk": va("walk"), "missing": rel8("miss")}
-
-
-def find_dxt5_size(x):
-    """The texture-create call to the texture-size function."""
-    hits = list(DXT5_SIZE_SIG.finditer(bytes(x.data)))
-    if len(hits) != 1:
-        raise PatchError("dxt5-size: %d texture size call(s), expected 1" % len(hits))
-    va = x.off_to_va(hits[0].start("site"))
-    if va is None:
-        raise PatchError("dxt5-size: texture size call is outside any section")
 # loadAllFiles' two loops over the object list that call slot 0xE0 with the data handler.
 LOAD_PASS_SIG = re.compile(
     rb"\x8b\x17\x56\x8b\xcf(?P<one>\xff\x92\xe0\x00\x00\x00)\x8b\xcf\xe8....\x8b\xf8\x85\xff\x75."
@@ -1088,6 +1070,44 @@ def find_autocalc_index(x):
             "effects": struct.unpack("<I", table.group("table"))[0]}
 
 
+# Land::loadObjectSpecific resolving a VTEX texture index: the per-record cache check, the cache
+# read, the walk of the landscape texture list, and the not-found message.
+LAND_TEX_SIG = re.compile(
+    rb"(?P<site>\x3b\x74\x24\x2c\x7d\x2b)\x56\x8d\x4c\x24\x2c\xe8....\x8b\x48\x08\x85\xc9\x74\x10"
+    rb"\x8b\x89\x38\x01\x00\x00\x8d\x14\x3b\x66\x89\x4c\x55\x1c(?P<cont>\xeb.)\x50\x8d\x4c\x24\x2c"
+    rb"\xe8....(?P<walk>\x8b\x4c\x24\x18\xe8....)\x85\xc0(?P<miss>\x74.)\x8b\x40\x08"
+    rb"\x39\xb0\x3c\x01\x00\x00\x74",
+    re.S,
+)
+
+
+def find_land_tex_index(x):
+    """The land texture cache check and the three places the hook continues."""
+    hits = list(LAND_TEX_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("land-tex-index: %d texture index lookup(s), expected 1" % len(hits))
+    hit = hits[0]
+    entry = x.off_to_va(hit.start("site"))
+    if entry is None:
+        raise PatchError("land-tex-index: the texture lookup is outside any section")
+
+    def va(name):
+        return entry + hit.start(name) - hit.start("site")
+
+    def rel8(name):
+        return va(name) + 2 + struct.unpack("b", hit.group(name)[1:2])[0]
+
+    return {"entry": entry, "store": rel8("cont"), "walk": va("walk"), "missing": rel8("miss")}
+
+
+def find_dxt5_size(x):
+    """The texture-create call to the texture-size function."""
+    hits = list(DXT5_SIZE_SIG.finditer(bytes(x.data)))
+    if len(hits) != 1:
+        raise PatchError("dxt5-size: %d texture size call(s), expected 1" % len(hits))
+    va = x.off_to_va(hits[0].start("site"))
+    if va is None:
+        raise PatchError("dxt5-size: texture size call is outside any section")
     return va
 
 
@@ -3333,6 +3353,8 @@ LOCATORS = {
     "script-index": find_script_index,
     "local-var-index": find_local_var_index,
     "vtprof": find_load_from_file,
+    "vtprof-passes": find_load_passes,
+    "spell-autocalc-index": find_autocalc_index,
     "land-tex-index": find_land_tex_index,
     "lean-menu": find_lean_menu,
     "video-arena": find_arena_size,
@@ -3371,8 +3393,6 @@ LOCATORS = {
     "ini-path": find_ini_path,
     "heap-allocate": lambda image: find_heap_function(image, "allocate")[0],
     "heap-free": lambda image: find_heap_function(image, "free")[0],
-    "vtprof-passes": find_load_passes,
-    "spell-autocalc-index": find_autocalc_index,
     "heap-object": find_heap_object,
     "heap-region": find_heap_region,
     "heap-region-malloc": lambda image: find_heap_region_sites(image)[0],
