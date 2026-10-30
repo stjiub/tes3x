@@ -7,8 +7,9 @@
 # name, url     what it is called and where it comes from
 # version       the version tried
 # folder        its usual folder or plugin name, which is how the GUI recognises it
-# status        untested, passes-automated, works, works-with-requirements, broken,
-#               or not-possible; only a person sets works, after playing with it
+# status        untested, passes-automated, works, works-with-requirements,
+#               works-partially (loads, but part of the mod is left out: see exclude), broken,
+#               or not-possible; only a person sets works or works-partially, after playing
 # patches       TES3X patches it needs
 # ram           64 or 128; 128 means it needs an upgraded Xbox
 # bios          a BIOS it needs, such as "cerbios"
@@ -18,6 +19,7 @@
 # memory_kb     most free memory the mod costs against vanilla on `tes3x test --tour`, in KB
 # merge_kf      animation KFs, by name in the collected build, that the pipeline appends to
 #               xbase_anim.kf
+# exclude       file patterns the pipeline leaves out of this mod, relative to its data folder
 # notes         what was tried and what happened
 # updated       date of the last change to this file (YYYY-MM-DD); bump it with every edit. The
 #               GUI downloads this file from GitHub and keeps whichever copy is newer.
@@ -75,7 +77,8 @@ url = "https://www.nexusmods.com/morrowind/mods/45096"
 folder = "Purists"
 status = "passes-automated"
 patches = ["dialogue-merge", "mcp-114", "mcp-119"]
-notes = "The Xbox loader drops stock responses when this mod repeats a dialogue topic; dialogue-merge keeps them. Separate axe inventory sounds and creature voiceovers need the two MCP compatibility patches."
+exclude = ["meshes/xbase_anim*.kf"]
+notes = "The Xbox loader drops stock responses when this mod repeats a dialogue topic; dialogue-merge keeps them. Separate axe inventory sounds and creature voiceovers need the two MCP compatibility patches. Its xbase_anim.kf and xbase_anim_female.kf replace retail's animations and freeze New Game, so the pipeline leaves them out."
 
 [[mod]]
 id = "tes-extended-music"
@@ -116,3 +119,43 @@ status = "untested"
 patches = ["cant-touch-this"]
 merge_kf = ["xmissdodge.kf", "xArmedDodgeV2.kf"]
 notes = "Dodge animations on missed melee attacks. Its OpenMW Lua is not used; the patch plays the animations."
+
+[[mod]]
+id = "betterbodies"
+name = "BetterBodies"
+version = "unknown"
+folder = "BetterBodies"
+status = "works"
+plugins = ["Better Bodies.esp"]
+
+[[mod]]
+id = "betterheads"
+name = "BetterHeads"
+version = "unknown"
+folder = "BetterHeads"
+status = "works"
+plugins = ["Better Heads Bloodmoon addon.esm", "Better Heads Tribunal addon.esm", "Better Heads.esm"]
+
+[[mod]]
+id = "better-clothes"
+name = "Better_Clothes"
+version = "unknown"
+folder = "Better_Clothes"
+status = "works"
+plugins = ["Better Clothes_v1.1.esp", "Better Clothes_v1.1_nac.esp"]
+
+[[mod]]
+id = "realsignposts"
+name = "RealSignposts"
+version = "unknown"
+folder = "RealSignposts"
+status = "works"
+plugins = ["RealSignposts.esp"]
+
+[[mod]]
+id = "morebetterclothes"
+name = "MoreBetterClothes"
+version = "unknown"
+folder = "MoreBetterClothes"
+status = "works"
+plugins = ["More Better Clothes.ESP"]
