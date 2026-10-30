@@ -43,7 +43,8 @@ The profile's `[patches] preset` selects a baseline:
 | `testing` | `recommended`, preview fixes, diagnostics and the console |
 
 `enable` and `disable` add or remove individual patches, and `categories` adds every patch in a
-category; the [example profile](../examples/profile.toml) lists them all. `--preset`, `--enable` and
+category; the [patch table](patches.md) lists every patch. The
+[example profile](../examples/profile.toml) shows the syntax. `--preset`, `--enable` and
 `--disable` on the command line override the profile. Some patches are added when something needs
 them: `delta-bsa` packing (the default; see [packaging](packaging.md)) adds `multi-bsa`,
 `mwse-legacy` adds `script-ext`, and `multiplayer` adds `net` and `diagnostics`. Every build gets

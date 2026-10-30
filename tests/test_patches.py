@@ -2,6 +2,7 @@ import re
 import struct
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 from unittest.mock import patch as mock_patch
@@ -52,11 +53,12 @@ class RegistryTests(unittest.TestCase):
             with self.assertRaises(tes3x_catalog.CatalogError):
                 tes3x_catalog.load(path, patch_names=registry.BY_NAME)
 
-    def test_example_profile_lists_every_selectable_patch(self):
-        example = (registry.ROOT / 'examples' / 'profile.toml').read_text(encoding='utf-8')
-        missing = [entry['name'] for entry in registry.PATCHES
-                   if entry['selection'] == 'preset' and f'"{entry["name"]}"' not in example]
-        self.assertEqual(missing, [])
+    def test_example_profile_names_real_patches(self):
+        example = tomllib.loads((registry.ROOT / 'examples' / 'profile.toml').read_text(encoding='utf-8'))
+        named = example['patches']['enable'] + example['patches']['disable']
+        commented = re.findall(r'^\s*# "([a-z0-9-]+)",', (registry.ROOT / 'examples' / 'profile.toml')
+                               .read_text(encoding='utf-8'), re.M)
+        self.assertEqual([name for name in named + commented if name not in registry.BY_NAME], [])
 
     def test_generated_pages_are_current(self):
         self.assertEqual(registry.stale_pages(), [], 'run tes3x patches --write')
