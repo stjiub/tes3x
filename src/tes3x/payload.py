@@ -1556,7 +1556,7 @@ def _bind_tooltips(b):
 
 @binder("tes3xquickloot.c")
 def _bind_quickloot(b):
-    names, address, define, locate, wanted = b.names, b.address, b.define, b.locate, b.wanted
+    names, address, define, wanted = b.names, b.address, b.define, b.wanted
     if "tes3xconsole.c" not in names:
         raise PayloadError("tes3xquickloot.c requires tes3xconsole.c")
     engine = find_quickloot_engine(b.image)

@@ -1,7 +1,5 @@
 """Build isolated compiled-script probes for the MCP-141 parser defects."""
 
-from pathlib import Path
-import argparse
 import struct
 
 
@@ -131,17 +129,3 @@ def plugin(master):
                              (b"DATA", struct.pack("<Q", master.stat().st_size))])
     return b"".join([header, global_var("tes3x141Input", 13),
                      global_var("tes3x141Result", -1), *probes])
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("master", type=Path)
-    parser.add_argument("output", type=Path)
-    args = parser.parse_args()
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_bytes(plugin(args.master))
-    print(args.output)
-
-
-if __name__ == "__main__":
-    main()
