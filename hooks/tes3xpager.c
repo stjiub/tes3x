@@ -284,15 +284,20 @@ static void fail(const char *tag, u32 value)
  * read-only first, so a thread that writes it meanwhile faults and waits on the lock. */
 static int evict_one(u32 *slot)
 {
-    u32 page, pte, size;
+    u32 page, pte, size, empty = 0;
     void *va;
 
     for (;;) {
         page = ring[hand];
         if (page == RING_EMPTY) {
+            if (++empty == BUDGET_PAGES) {
+                fail("pager.ring_empty", 0);
+                return 0;
+            }
             hand = (hand + 1) % BUDGET_PAGES;
             continue;
         }
+        empty = 0;
         va = page_va(page);
         pte = *PTE(va);
         if (!(pte & PTE_ACCESSED))
@@ -340,6 +345,8 @@ static void page_in(u32 page)
     } else if (!evict_one(&slot)) {
         return;
     }
+    /* Held empty so a retry below cannot evict the slot's old page a second time. */
+    ring[slot] = RING_EMPTY;
     /* With memory out, another allocator can take the page just evicted. */
     for (tries = 0;; tries++) {
         size = PAGE;
