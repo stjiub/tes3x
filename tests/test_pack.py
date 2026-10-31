@@ -8,6 +8,7 @@ from pathlib import Path
 
 from tes3x.bsa import Bsa, write_bsa
 from tes3x.build import plugin_masters
+from tes3x.pack import split_archive
 from tes3x.plugins import xbox_name, xbox_renames
 
 
@@ -148,6 +149,27 @@ class XboxNameTests(unittest.TestCase):
     def test_a_clash_is_refused(self):
         with self.assertRaises(ValueError):
             xbox_renames(['Mod v1.1.esp', 'Mod v1_1.esp'])
+
+
+class SplitArchiveTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.files = []
+        for name, size in (('a', 40), ('b', 40), ('c', 40), ('d', 200)):
+            path = Path(self.temp.name) / name
+            path.write_bytes(b'x' * size)
+            self.files.append((name, str(path)))
+
+    def test_small_archive_keeps_one_name(self):
+        parts = split_archive('tes3xmods.bsa', self.files, 1000)
+        self.assertEqual([name for name, _ in parts], ['tes3xmods.bsa'])
+
+    def test_parts_stay_under_the_limit_in_order(self):
+        parts = split_archive('tes3xmods.bsa', self.files, 100)
+        self.assertEqual([(name, [item[0] for item in files]) for name, files in parts],
+                         [('tes3xmods.bsa', ['a', 'b']), ('tes3xmods2.bsa', ['c']),
+                          ('tes3xmods3.bsa', ['d'])])
 
 
 if __name__ == '__main__':

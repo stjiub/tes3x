@@ -19,6 +19,10 @@ the Xbox does not have to search large folders for each file. Plugins, splash sc
 music and fonts always ship loose. `delta-bsa` leaves the retail archive alone, so rebuilds and
 uploads are smaller. `package.archive_name` renames the mod archive.
 
+A `delta-bsa` build keeps each mod archive under 1.9 GB. Past that it writes `tes3xmods2.bsa`,
+`tes3xmods3.bsa` and so on, all listed in `tes3xarch.txt`, so a duplicate name resolves as it would
+in one archive. A `merged-bsa` build is not split, so very large mod lists should use `delta-bsa`.
+
 A `loose` build is the easiest to inspect and avoids archive limits, such as two file names that
 hash the same, but a large mod list puts over a thousand files in some folders.
 

@@ -19,6 +19,9 @@ LOOSE_DIRS = ("splash", "video", "music", "fonts")
 LOOSE_EXT = (".esm", ".esp", ".bsa", ".map", ".ini", ".txt")
 
 
+# Under 2 GiB: BSA offsets past it are unproven on the engine, and common ISO tools refuse the file.
+ARCHIVE_BYTES = 1900 * 1024 * 1024
+
 EXPANSION_STUBS = ("Tribunal.esm", "Bloodmoon.esm")
 TES3_STUB = b"TES3"
 
@@ -51,6 +54,24 @@ def set_ini_key(text, section, key, value):
     elif not done:
         out.extend([f'[{section}]', f'{key}={value}'])
     return "\n".join(out)
+
+
+def split_archive(name, files, limit=ARCHIVE_BYTES):
+    """Divide (name, source) pairs into [(archive, pairs)], each under `limit`, keeping their order.
+
+    The list loads in order and later archives win, so a duplicate resolves as it does in one.
+    """
+    stem, suffix = os.path.splitext(name)
+    parts, current, size = [], [], 0
+    for item in files:
+        length = os.path.getsize(item[1])
+        if current and size + length > limit:
+            parts.append(current)
+            current, size = [], 0
+        current.append(item)
+        size += length
+    parts.append(current)
+    return [(name if i == 0 else f"{stem}{i + 1}{suffix}", part) for i, part in enumerate(parts)]
 
 
 def write_invalidation(path, names):
@@ -240,11 +261,10 @@ def main():
     # store archives hold whole mods, including assets a later mod wins in the delta archive.
     from tes3x.store import xbox_path
     # the engine refuses an archive with no entries, as when store archives took every asset
-    delta = args.delta_archive if pack else None
+    delta = split_archive(args.delta_archive, pack) if args.delta_archive and pack else []
     listed = (extra_archives + [xbox_path(entry["sha256"]) for entry in stored]
-              + ([delta] if delta else []))
-    if delta:
-        paths.append('Data Files/' + delta)
+              + [name for name, _ in delta])
+    paths += ['Data Files/' + name for name, _ in delta]
     if listed:
         paths.append('Data Files/tes3xarch.txt')
     if invalidated and (args.delta_archive or args.no_archive):
@@ -265,12 +285,13 @@ def main():
     elif args.delta_archive:
         # The hook loads the mod archive second; prepending makes its entries override vanilla.
         shutil.copyfile(base_bsa, out_bsa)
-        delta_path = os.path.join(out_df, args.delta_archive)
-        count, total = write_bsa(delta_path, pack, progress=prog)
         print(f"\r  Morrowind.bsa: vanilla unchanged, "
               f"{os.path.getsize(out_bsa)/1048576:.1f} MB")
-        print(f"  {args.delta_archive}: {count} entries, {total/1048576:.1f} MB content, "
-              f"{os.path.getsize(delta_path)/1048576:.1f} MB on disk")
+        for name, files in delta:
+            delta_path = os.path.join(out_df, name)
+            count, total = write_bsa(delta_path, files, progress=prog)
+            print(f"\r  {name}: {count} entries, {total/1048576:.1f} MB content, "
+                  f"{os.path.getsize(delta_path)/1048576:.1f} MB on disk")
     else:
         count, total = write_bsa(out_bsa, pack, base=base, progress=prog,
                                  drop={tes3_hash(rel) for rel, _ in invalidated})
