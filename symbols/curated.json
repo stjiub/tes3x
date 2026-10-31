@@ -1740,6 +1740,24 @@
       "signature": "void __cdecl DebugLog(char * fmt, ...)"
     },
     {
+      "va": "0x000D3000",
+      "name": "ScriptExpression::nextToken",
+      "confidence": "matched",
+      "provenance": "PC 0x00478E90 body comparison and MCP-141 tokenizer changes",
+      "note": "Copies an expression token and advances the source cursor; compiled X functions normally use three bytes, but Random 0x1021 carries an additional u16 argument.",
+      "pc_va": "0x00478E90",
+      "signature": "void __stdcall nextToken(char** cursor, char* token, int compiled)"
+    },
+    {
+      "va": "0x000D3390",
+      "name": "ScriptExpression::toPostfix",
+      "confidence": "matched",
+      "provenance": "PC 0x00478620 body match and MCP-141 parser comparison",
+      "note": "Scans and rewrites compiled expression tokens. Retail advances three bytes for every X opcode, including Random 0x1021 whose expression operand occupies two more bytes; an embedded zero then truncates parsing.",
+      "pc_va": "0x00478620",
+      "signature": "char* __thiscall toPostfix(char* expression, int compiled)"
+    },
+    {
       "va": "0x000D3AD0",
       "name": "ScriptExpression::evaluate?",
       "confidence": "guess",
@@ -5221,6 +5239,15 @@
       "pc_va": "0x004FD830"
     },
     {
+      "va": "0x00139BE0",
+      "name": "Script::resolveExpressionReferences",
+      "confidence": "matched",
+      "provenance": "PC 0x004FE910 call graph and Xbox decompilation during MCP-141 investigation",
+      "note": "Rewrites global and object identifiers inside a compiled expression. When length is nonzero, temporarily backs Decode.ip up by that many bytes and restores it afterwards; MCP-141 corrects two caller arguments/cursor choices.",
+      "pc_va": "0x004FE910",
+      "signature": "void __thiscall resolveExpressionReferences(int length)"
+    },
+    {
       "va": "0x00139C70",
       "name": "ScriptData::InitScan.loop",
       "kind": "site",
@@ -5261,9 +5288,12 @@
     },
     {
       "va": "0x0013C350",
-      "name": "Script::resolveObjectReferences?",
-      "confidence": "guess",
-      "provenance": "run for every script by startGlobalScripts; calls Script::Decode, findFirstInstanceOfObjectId and the NonDynamicData find* lookups; error 'Unable to find object \"%s\" in script %s.'"
+      "name": "Script::resolveObjectReferences",
+      "confidence": "matched",
+      "provenance": "PC 0x004FDB00 MCP-141 call-site match",
+      "note": "The Set and If reference fixups pass ScriptDecode::textLength to resolveExpressionReferences; retail uses the instruction cursor in two calls.",
+      "pc_va": "0x004FDB00",
+      "signature": "void __thiscall resolveObjectReferences()"
     },
     {
       "va": "0x0013D2A0",

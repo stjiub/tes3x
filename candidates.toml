@@ -1049,17 +1049,6 @@ summary = "Throttle loading-screen redraws"
 reason = "Original-Xbox cold New Game A/B runs with caches cleared averaged 99.3495 seconds control and 99.3860 seconds patched. The 36.5 ms difference was smaller than the 230-339 ms repeat variation, so the port had no measurable benefit."
 
 [[candidate]]
-name = "mcp-141"
-origin = { source = "MCP", id = "141" }
-category = "core"
-default = "intended default"
-status = "candidate"
-priority = "high"
-queue = 1
-summary = "Script expression parser / `Random` fix"
-reason = "`Random` on multiples of 256 can crash and corrupt its argument. Large, but directly relevant to the extended script surface."
-
-[[candidate]]
 name = "mcp-142"
 origin = { source = "MCP", id = "142" }
 category = "balance"

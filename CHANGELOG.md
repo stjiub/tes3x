@@ -4,6 +4,10 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- New patch `mcp-141` fixes compiled `Random` arguments, expressions using local variable 34,
+  and assignments from globals to high-index locals. Rebuild to pick it up. See
+  [the patch notes](patches/mcp-141.md).
+
 - New patch `load-screen-race` fixes a rare freeze when a loading screen ends within its first
   frames, such as leaving a building into a cell already in memory. The game stopped responding
   with nothing logged. Rebuild to pick it up. See [the patch notes](patches/load-screen-race.md).

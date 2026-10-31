@@ -97,10 +97,10 @@ tables, such as `profile = { save_pool = "TES3X Test" }`.
 
 `[fixture]` generates a test mod from your own `Morrowind.esm` and makes it the build's only mod:
 `opcodes = [0x2001]` appends those opcode calls to the global script `Main` (or `script`),
-`bytecode = "11 38 00 00 c8 42"` appends those raw bytes after them, for statements with operands,
-and
-`texture = true` adds one 4x4 texture so there is an asset to pack, and `dialogue = "TOPIC"` adds
-a plugin repeating that retail topic with one new response.
+`bytecode = "11 38 00 00 c8 42"` appends those raw bytes after them, for statements with operands.
+`texture = true` adds one 4x4 texture to pack, `dialogue = "TOPIC"` repeats a retail topic with
+one new response, `attribute_effects = true` adds timed attribute potions, and `mcp141 = true`
+adds compiled expression probes for `Random`, local variables and expression lengths.
 
 ## Driving the agent
 

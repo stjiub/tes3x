@@ -1945,6 +1945,83 @@ def find_mcp154_reload(x):
     return _find_mcp154_site(x, MCP154_RELOAD_SIG, "reload")
 
 
+def find_mcp141_sites(x):
+    """Locate the expression token walks, local checks and reference fixups."""
+    data = bytes(x.data)
+
+    def one(pattern, label):
+        hits = list(re.finditer(pattern, data, re.S))
+        if len(hits) != 1:
+            raise PatchError(f"mcp-141: {len(hits)} {label} sites, expected 1")
+        return hits[0]
+
+    token = one(
+        rb"\x66\x8b\x50\x01\x66\x81\xfa\x00\x10\x0f\x8c...."
+        rb"\x66\x81\xfa\xbd\x11\x0f\x8d....(?P<site>\x8b\xc8\x66\x8b\x31)",
+        "token copy")
+    token_off = token.start("site")
+    if data[token_off + 22] != 0xE9:
+        raise PatchError("mcp-141: token copy resume jump changed")
+    token_resume_off = token_off + 27 + struct.unpack_from("<i", data, token_off + 23)[0]
+
+    scan = one(
+        rb"\x66\x8b\x50\x01\x66\x81\xfa\x00\x10\x7c."
+        rb"\x66\x81\xfa\xbd\x11\x7d.(?P<site>\x83\xc1\x03\x83\xc0\x03)\xeb\x02\x41\x40",
+        "expression length scan")
+    copy = one(
+        rb"\x66\x8b\x46\x01\x66\x3d\x00\x10\x7c."
+        rb"\x66\x3d\xbd\x11\x7d.(?P<site>\x88\x1a\x8a\x4e\x01)",
+        "expression copy")
+    copy_off = copy.start("site")
+    if data[copy_off + 0x4c:copy_off + 0x4f] != b"\x80\x3e\x00":
+        raise PatchError("mcp-141: expression copy resume changed")
+    walk = one(
+        rb"\x66\x8b\x4c[\x16\x2e]\x05\x66\x81\xf9\x00\x10\x7c."
+        rb"\x66\x81\xf9\xbd\x11\x7d."
+        rb"(?P<site>\x83\xc6\x02\x83\xc7\x02\x83\xc3\x02\xe9(?P<rel>....))",
+        "expression walk")
+    walk_off = walk.start("site")
+    walk_resume_off = walk_off + 14 + struct.unpack("<i", walk.group("rel"))[0]
+
+    branches = []
+    local_patterns = (
+        (rb"\x80\x78\x01\x22(?P<branch>\x74.)\x80\x78\x02\x20", 2),
+        (rb"\x80\x7e\x01\x22(?P<branch>\x74.)\x80\x7e\x02\x20", 1),
+        (rb"\x80\x7c(?P<index>[\x16\x2e])\x05\x22"
+         rb"(?P<branch>\x74.)\x80\x7c(?P=index)\x06\x20", 1),
+    )
+    for pattern, count in local_patterns:
+        hits = list(re.finditer(pattern, data, re.S))
+        if len(hits) != count:
+            raise PatchError(f"mcp-141: {len(hits)} local checks, expected {count}")
+        branches.extend(h.start("branch") for h in hits)
+
+    set_resolver = one(rb"\x8b\x15(?P<ip>....)\x2b\xd6\x52\x8b\xcb\xe8", "Set resolver")
+    if_resolver = one(
+        rb"\x8b\x3d(?P<ip>....)(?P<site>\x55\x8b\xcb\x89\x35(?P=ip))\xe8",
+        "If resolver")
+    if set_resolver.group("ip") != if_resolver.group("ip"):
+        raise PatchError("mcp-141: resolver globals disagree")
+    ip = struct.unpack("<I", set_resolver.group("ip"))[0]
+
+    def va(off):
+        result = x.off_to_va(off)
+        if result is None:
+            raise PatchError("mcp-141: site outside an XBE section")
+        return result
+
+    return {
+        "token": va(token_off), "token_resume": va(token_resume_off),
+        "scan": va(scan.start("site")), "scan_resume": va(scan.start("site") + 10),
+        "copy": va(copy_off), "copy_resume": va(copy_off + 0x4c),
+        "walk": va(walk_off), "walk_resume": va(walk_resume_off),
+        "local_branches": tuple(va(off) for off in branches),
+        "set_resolver": va(set_resolver.start()),
+        "if_resolver": va(if_resolver.start("site")),
+        "ip": ip,
+    }
+
+
 def find_mcp102_actn(x):
     """Find the ACTN flag setter used by the save-reference loader."""
     hits = list(MCP102_ACTN_SIG.finditer(bytes(x.data)))

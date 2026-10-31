@@ -24,6 +24,7 @@ from tes3x.link import LinkError, link, write_map, write_pe
 from tes3x.multi_signatures import SIGNATURES as MULTI_SIGNATURES, find_multi_signature
 from tes3x.paths import bundled, checkout, resource
 from tes3x.patch_sites import (find_topic_state, find_mcp6_context, find_mcp30_context,
+                               find_mcp141_sites,
                                find_mcp115_context,
                                find_mcp55_context,
                                find_mcp55_inventory_context, find_mcp118_drop_finish,
@@ -1153,6 +1154,14 @@ def _bind_mcp154(b):
     define("MCP154_RELOAD_RESUME", hexva(reload + 6))
     wanted["mcp154_load"] = ("_tes3x_mcp154_load_hook",)
     wanted["mcp154_reload"] = ("_tes3x_mcp154_reload_hook",)
+
+
+@binder("tes3xmcp141.c")
+def _bind_mcp141(b):
+    sites = find_mcp141_sites(b.image)
+    for key in ("token", "scan", "copy", "walk"):
+        b.define(f"MCP141_{key.upper()}_RESUME", hexva(sites[f"{key}_resume"]))
+        b.wanted[f"mcp141_{key}"] = (f"_tes3x_mcp141_{key}",)
 
 
 @binder("tes3xmcp123.c")

@@ -1,0 +1,36 @@
+kind = "comparison"
+purpose = "Compiled Random arguments and high-index local variables survive expression parsing."
+procedure = "Generate the bundled script fixture from the retail master, then compare local 34 arithmetic, a global assignment to local 65, and Random 256 in New Game."
+limitations = "The test covers compiled bytecode in xemu; other expression forms and hardware behavior remain unchecked."
+watch = 'exec[.>]|console< tes3x141Result|crash\.|hang\.detected|fatal\.'
+allow = ['crash\.']
+timeout = 150
+script = '''
+@start new
+wait 90
+StartScript tes3x141L34
+wait 20
+Show tes3x141Result
+StartScript tes3x141L65G
+wait 20
+Show tes3x141Result
+StartScript tes3x141Reset
+wait 20
+Show tes3x141Result
+StartScript tes3x141R256
+wait 20
+Show tes3x141Result
+exit
+'''
+
+[fixture]
+mcp141 = true
+
+[expect]
+control = ['console< tes3x141Result = 7\.0000', 'console< tes3x141Result = 9999\.0000']
+test = ['console< tes3x141Result = 8\.0000', 'console< tes3x141Result = 13\.0000',
+        'console< tes3x141Result = 9999\.0000', 'exec\.exit 0', '!crash\.' ]
+
+[sequence]
+test = ['exec> StartScript tes3x141R256',
+        'console< tes3x141Result = (?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.0000']

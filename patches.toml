@@ -449,6 +449,18 @@ requires = ["mcp-132"]
 summary = "Play a dodge animation when a melee attack misses a calm NPC, using Can't Touch This's clips."
 
 [[patch]]
+name = "mcp-141"
+title = "Script expression parser fix"
+origin = { source = "MCP", id = "141" }
+bit = 66
+category = "core"
+group = "MCP fixes"
+channel = "dev"
+selection = "preset"
+source = "tes3xmcp141.c"
+summary = "Preserve compiled function arguments and resolve high-index script locals correctly."
+
+[[patch]]
 name = "mcp-145"
 title = "Quality-based potion appearance"
 origin = { source = "MCP", id = "145" }

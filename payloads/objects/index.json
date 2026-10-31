@@ -136,6 +136,10 @@
     "MCP132_PLAY_GROUP": null,
     "MCP132_UPDATE_IDLES": null,
     "MCP132_WORLD": null,
+    "MCP141_COPY_RESUME": null,
+    "MCP141_SCAN_RESUME": null,
+    "MCP141_TOKEN_RESUME": null,
+    "MCP141_WALK_RESUME": null,
     "MCP146_ATTACKING": null,
     "MCP146_GAME": null,
     "MCP146_INPUT": null,
@@ -656,6 +660,10 @@
     "tes3xmcp132.c": {
       "digest": "c1bd70720fbaff31c4e9fd0dc6f7c79d23126fb220df805f3e1833752dabca69",
       "sha256": "9005f852e14c75e1b42cd51af361480b396a77acf765c1728e7030e1b7651e26"
+    },
+    "tes3xmcp141.c": {
+      "digest": "3b2a1dfc49f8312885a0ed37a691faba90d24770c0c0badc118908e56ae829b7",
+      "sha256": "00ef530e36f1da917574bec2645194b1e19bd122708e90d02d95dd88526deb13"
     },
     "tes3xmcp145.c": {
       "digest": "debdf546ff1445e08a2537a1a1bc662dfff3030396650eb0677299d56261890d",

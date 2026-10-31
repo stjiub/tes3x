@@ -15,7 +15,7 @@ come first. Balance changes normally stay low until a concrete profile needs one
 
 | status | fixes |
 |---|---|
-| candidate | 164 |
+| candidate | 163 |
 | deferred | 14 |
 | not-applicable | 17 |
 | rejected | 6 |
@@ -26,7 +26,6 @@ Worth porting, but not yet shown to affect the Xbox build.
 
 | fix | from | priority | category | notes |
 |---|---|---|---|---|
-| `mcp-141` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #141 | high #1 | core (intended default) | **Script expression parser / `Random` fix.** `Random` on multiples of 256 can crash and corrupt its argument. Large, but directly relevant to the extended script surface. |
 | `mwse-vfx-load-bloat` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | high #2 | core (intended default) | **Reject or repair invalid loaded VFX state which causes load errors and save growth.** Especially relevant to long-lived Xbox saves; measure record growth as well as crash behaviour. |
 | `mwse-vfx-save-empty` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | high #3 | core (intended default) | **Avoid crash while saving an active visual effect when none of its particles can be serialized.** Build a small spell/VFX save reproducer before locating the serializer. |
 | `omw-live-inventory` | [OpenMW-4642](https://gitlab.com/OpenMW/openmw/-/merge_requests/4642) | high #4 | correctness (recommended) | **Refresh an open container/inventory after script `AddItem`/`RemoveItem`.** The reported vanilla defect leaves the menu stale and can permit duplication. Reproduce with the Xbox menu before choosing a hook; promote to `core` if data loss/duplication is confirmed. |

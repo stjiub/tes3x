@@ -68,6 +68,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_mcp132_context,
                                find_mcp168_crime_branch,
                                find_mcp154_load, find_mcp154_reload, find_mcp173_rank,
+                               find_mcp141_sites,
                                find_mcp37_context,
                                find_mcp3_unarmored, find_mcp92_unsummon, find_mcp94,
                                find_mcp97_scan, find_mcp98_refcounts, find_menu_mode_gate,
@@ -664,6 +665,56 @@ def _mcp_154(x, value, ctx):
         edits.append((off, MCP154_REPLACED,
                       "%s allocation 0x%08X -> 0x%08X" % (label, site, target)))
     return edits
+
+
+@patch("mcp-141")
+def _mcp_141(x, value, ctx):
+    """Preserve compiled expression operands and accept the 34th local."""
+    hooks = ctx.get("hooks", {})
+    sites = find_mcp141_sites(x)
+    expected = {
+        "token": b"\x8b\xc8\x66\x8b\x31",
+        "scan": b"\x83\xc1\x03\x83\xc0\x03",
+        "copy": b"\x88\x1a\x8a\x4e\x01",
+        "walk": b"\x83\xc6\x02\x83\xc7\x02",
+    }
+    edits = []
+    for name, old in expected.items():
+        target = hooks.get(f"mcp141_{name}")
+        if not target:
+            raise PatchError(f"mcp-141: missing {name} payload hook")
+        site = sites[name]
+        target = int(str(target), 16)
+        new = b"\xe9" + struct.pack("<i", target - (site + 5))
+        new += b"\x90" * (len(old) - 5)
+        edits.append((site, old, new, f"{name} expression walk"))
+
+    for site in sites["local_branches"]:
+        off = x.va_to_off(site)
+        old = bytes(x.data[off:off + 2])
+        if len(old) != 2 or old[0] != 0x74:
+            raise PatchError("mcp-141: local-index branch changed")
+        edits.append((site, old, b"\x90\x90", "34th local"))
+
+    ip = sites["ip"]
+    site = sites["set_resolver"]
+    edits.extend((
+        (site + 2, struct.pack("<I", ip), struct.pack("<I", ip + 8),
+         "Set resolver length"),
+        (site + 6, b"\x2b\xd6", b"\x90\x90", "Set resolver cursor"),
+        (sites["if_resolver"], b"\x55\x8b\xcb\x89\x35" + struct.pack("<I", ip),
+         b"\x8b\x15" + struct.pack("<I", ip + 8) + b"\x52\x8b\xcb",
+         "If resolver length"),
+    ))
+    for site, old, _new, label in edits:
+        off = x.va_to_off(site)
+        if off is None or bytes(x.data[off:off + len(old)]) != old:
+            raise PatchError(f"mcp-141: {label} changed at 0x{site:08X}")
+    for site, old, new, label in edits:
+        off = x.va_to_off(site)
+        x.data[off:off + len(old)] = new
+    return [(x.va_to_off(site), len(old), f"{label} at 0x{site:08X}")
+            for site, old, _new, label in edits]
 
 
 @patch("dxt5-size")

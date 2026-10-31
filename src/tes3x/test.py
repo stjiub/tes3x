@@ -56,7 +56,7 @@ OPTIONAL = ("limitations", "watch", "timeout", "xemu", "save", "enable", "apply"
             "allow", "profile", "fixture", "sequence", "compare", "required_mods", "agent")
 PROFILE_OVERLAY = ("profile", "rules", "preferences", "package", "ui", "ini")
 FIXTURE_KEYS = {"script": str, "opcodes": list, "bytecode": str, "texture": bool,
-                "dialogue": str, "attribute_effects": bool}
+                "dialogue": str, "attribute_effects": bool, "mcp141": bool}
 AGENT_KEYS = {"after": str, "console": list, "fetch": list, "exit": bool}
 FIXTURE_MOD = "tes3x-test"
 
@@ -91,8 +91,8 @@ def game_test_problems(test, where):
     if not isinstance(fixture, dict) or set(fixture) - set(FIXTURE_KEYS) or any(
             type(fixture[key]) is not kind for key, kind in FIXTURE_KEYS.items() if key in fixture):
         problems.append(f"{where}: fixture takes script (string), opcodes (array), bytecode "
-                        "(hex string), texture (boolean), dialogue (string), and "
-                        "attribute_effects (boolean)")
+                        "(hex string), texture (boolean), dialogue (string), "
+                        "attribute_effects (boolean), and mcp141 (boolean)")
     elif any(type(opcode) is not int for opcode in fixture.get("opcodes", [])):
         problems.append(f"{where}: fixture.opcodes must be integers")
     elif not re.fullmatch(r"(?:[0-9A-Fa-f]{2}\s*)*", fixture.get("bytecode", "")):
@@ -290,6 +290,9 @@ def make_fixture(fixture, esm, library):
         repeat_topic(esm, fixture["dialogue"], folder / "TES3X Dialogue.esp")
     if fixture.get("attribute_effects"):
         attribute_effects_fixture(esm, folder / "TES3X Attributes.esp")
+    if fixture.get("mcp141"):
+        from tes3x.mcp141_fixture import plugin
+        (folder / "TES3X MCP141.esp").write_bytes(plugin(Path(esm)))
     if fixture.get("texture"):
         (folder / "Textures").mkdir(exist_ok=True)
         (folder / "Textures" / "tx_tes3x_test.dds").write_bytes(dxt1_texture())
