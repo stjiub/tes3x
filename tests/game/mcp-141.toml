@@ -4,6 +4,7 @@ procedure = "Generate the bundled script fixture from the retail master, then co
 limitations = "The test covers compiled bytecode in xemu; other expression forms and hardware behavior remain unchecked."
 watch = 'exec[.>]|console< tes3x141Result|crash\.|hang\.detected|fatal\.'
 allow = ['crash\.']
+enable = ["diagnostics", "console", "script-ext"]
 timeout = 150
 script = '''
 @start new
