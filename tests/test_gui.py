@@ -450,6 +450,7 @@ order = 10
 
     def test_mods_only_enabled_hides_unticked_rows(self):
         window = self.window()
+        window.action_confirm_patches.setChecked(False)
         rows = window.mods.mod_rows()
         self.assertTrue(rows)
         rows[0].setCheckState(window.mods.MOD_NAME, Qt.CheckState.Unchecked)

@@ -279,12 +279,13 @@ class ModsTab(QWidget):
         require. The build includes them whenever the mod is enabled, so this is a notice."""
         patches = self.window.patches
         name = self.describe(item.data(0, ROLE))[0]
-        added = sorted(patches.effective_patches() - patches.applied_patches)
-        added = [patch for patch in added if patch in patches.patch_items]
+        listed = (self.compat_verdict(item) or {}).get("patches", [])
+        added = (patches.effective_patches() | set(listed)) - patches.applied_patches
+        added = [patch for patch in sorted(added) if patch in patches.patch_items]
         if not added:
             return
         self.confirm_patches("Patches enabled", f"Enabling {name} also enables:", added, "OK")
-        for patch in (self.compat_verdict(item) or {}).get("patches", []):
+        for patch in listed:
             if patch in patches.patch_items and patch not in patches.applied_patches:
                 patches.set_patch(patch, True)
         self.window.statusBar().showMessage(
