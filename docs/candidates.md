@@ -18,7 +18,7 @@ come first. Balance changes normally stay low until a concrete profile needs one
 | candidate | 161 |
 | deferred | 14 |
 | not-applicable | 18 |
-| rejected | 6 |
+| rejected | 7 |
 
 ## candidate
 
@@ -245,4 +245,5 @@ Deliberately left out of TES3X.
 | `mcp-267` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #267 | none | qol | **UI pixel alignment.** Matched 480p xemu menu captures showed no discernible benefit, so this patch was dropped. |
 | `openmw-parity` | [OpenMW](https://openmw.org) | none | undecided | **Blanket OpenMW parity.** OpenMW is a separate reimplementation and intentionally diverges in places. Only explicit vanilla defects or desired, scoped features enter this ledger. |
 | `cell-stream-wait` | TES3X | none | performance | **Shorten the exterior cell loader's wait and preload sooner.** The boundary barrier's `Sleep(100)` poll, its per-pass loading-menu render and the 2,048-unit preload limit were edited on the original Xbox with retail masters. With the render removed and a 5 ms sleep the barrier lasted 0.82-0.99 s against 0.87 s unpatched, because it lasts as long as the loader's own CPU-bound work. Keeping the render made it 2.4 s or worse, and a 1,536-unit preload made teleport hops worse. A realistic walk showed no change. The stall needs a non-blocking barrier or spreading the scene attach over frames, not a faster poll. |
+| `cell-evict-margin` | TES3X | none |  | **Evict cached cells earlier than the engine's 3 MB on consoles with more than 64 MB, and check before teleport loads..** Built and tested over a full Tamriel Rebuilt town route on 128 MB. Eviction started at 12 MB free during the Narsis load, but free memory there rose only from 516 KB to 632 KB. Arriving directly from Balmora leaves about 6 MB, so little of what fills memory at that point is evictable. |
 | `cell-evict-defer` | TES3X | none | performance | **Evict cached exterior cells after the grid shift instead of inside it.** The shift's three `ensureFreeMemory_` checks were hooked to answer "enough" and evict a cell per frame later. On the original Xbox with retail masters free memory was 5.5 MB at every check, above the 3 MB trigger, so the engine was not evicting there and the hook deferred nothing. The roughly 100 ms of `Cell::unloadScene_` seen around a shift comes from another caller. |

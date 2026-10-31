@@ -1844,6 +1844,14 @@ summary = "Shorten the exterior cell loader's wait and preload sooner"
 reason = "The boundary barrier's `Sleep(100)` poll, its per-pass loading-menu render and the 2,048-unit preload limit were edited on the original Xbox with retail masters. With the render removed and a 5 ms sleep the barrier lasted 0.82-0.99 s against 0.87 s unpatched, because it lasts as long as the loader's own CPU-bound work. Keeping the render made it 2.4 s or worse, and a 1,536-unit preload made teleport hops worse. A realistic walk showed no change. The stall needs a non-blocking barrier or spreading the scene attach over frames, not a faster poll."
 
 [[candidate]]
+name = "cell-evict-margin"
+origin = { source = "TES3X" }
+status = "rejected"
+priority = "none"
+summary = "Evict cached cells earlier than the engine's 3 MB on consoles with more than 64 MB, and check before teleport loads."
+reason = "Built and tested over a full Tamriel Rebuilt town route on 128 MB. Eviction started at 12 MB free during the Narsis load, but free memory there rose only from 516 KB to 632 KB. Arriving directly from Balmora leaves about 6 MB, so little of what fills memory at that point is evictable."
+
+[[candidate]]
 name = "cell-evict-defer"
 origin = { source = "TES3X" }
 category = "performance"
