@@ -3,8 +3,7 @@
 Patch key: `extended-tooltips`
 
 An object that the player would be stealing from by activating it (an item, container, door, bed
-or other activator) shows an **Owned** line in its in-world tooltip, in the normal text colour.
-The check follows
+or other activator) shows an **Owned** line in its in-world tooltip, in the normal text colour. The check follows
 the engine's ownership rules: an NPC's conditional global can permit using an object, and faction
 membership and rank can permit faction property.
 

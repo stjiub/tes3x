@@ -283,11 +283,10 @@ reason = "Formula looks incorrect, but trainer base-skill behaviour is configura
 name = "mcp-34a"
 origin = { source = "MCP", id = "34" }
 category = "correctness"
-default = "recommended"
-status = "candidate"
-priority = "low"
-summary = "Make displayed and charged travel prices agree"
-reason = "A direct UI/transaction mismatch."
+status = "not-applicable"
+priority = "none"
+summary = "Charge the displayed mercantile price for guild travel"
+reason = "The Xbox purchase path already charges determineModifiedPrice(base, 1), matching the guild-guide display when travelling alone. MCP 34a repairs a PC-only omission."
 
 [[candidate]]
 name = "mcp-34b"
@@ -297,7 +296,16 @@ default = "opt in"
 status = "candidate"
 priority = "low"
 summary = "Charge separately for companions"
-reason = "Economy choice; keep separate from the mismatch fix."
+reason = "Includes the player in the passenger count when companions travel; an economy choice. The separate xbox-travel-companion-price candidate covers the displayed/charged mismatch caused by calculation order."
+
+[[candidate]]
+name = "xbox-travel-companion-price"
+origin = { source = "TES3X" }
+category = "correctness"
+status = "candidate"
+priority = "low"
+summary = "Make displayed and charged companion travel prices agree"
+reason = "With companions, the Xbox display modifies the multiplied fare, while purchase multiplies the modified base fare. Establish a differing in-game price before changing either calculation."
 
 [[candidate]]
 name = "mcp-35"
@@ -1349,15 +1357,6 @@ status = "candidate"
 priority = "low"
 summary = "Disable map smoothing"
 reason = "Pixel-filtered world map instead of blurred."
-
-[[candidate]]
-name = "mcp-259"
-origin = { source = "MCP", id = "259" }
-category = "qol"
-status = "candidate"
-priority = "low"
-summary = "Display more accurate item weight"
-reason = "Item weight to two decimal places."
 
 [[candidate]]
 name = "mcp-260"

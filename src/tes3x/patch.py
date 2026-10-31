@@ -59,7 +59,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_mcp125_collision, find_mcp30_context, find_mcp55_context,
                                find_mcp115_context,
                                find_mcp55_inventory_context, find_mcp118_drop_finish,
-                               find_mcp149_menu,
+                               find_mcp149_menu, find_mcp259_weight_format,
                                find_mcp127_map,
                                find_mcp125_context, find_mcp145, find_mcp146, find_mcp146_context,
                                find_mcp272_context,
@@ -1564,6 +1564,13 @@ def _mcp_114(x, value, ctx):
     off = find_mcp114_axe_sound(x)
     x.data[off:off + 6] = b"Axe\0\0\0"
     return [(off, 6, "axe inventory sound name")]
+
+
+@patch("mcp-259")
+def _mcp_259(x, value, ctx):
+    off = find_mcp259_weight_format(x)
+    x.data[off] = ord("2")
+    return [(off, 1, "item tooltip weight precision")]
 
 
 @patch("mcp-119")

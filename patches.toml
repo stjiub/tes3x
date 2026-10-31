@@ -634,6 +634,16 @@ source = "tes3xmcp272.c"
 summary = "Group soul gems with potions and scrolls under Magic and omit enchanted equipment there."
 
 [[patch]]
+name = "mcp-259"
+title = "Accurate item weight display"
+origin = { source = "MCP", id = "259" }
+category = "qol"
+group = "MCP fixes"
+channel = "dev"
+selection = "preset"
+summary = "Show item tooltip weight to two decimal places."
+
+[[patch]]
 name = "mcp-154"
 title = "Script data overread fix"
 origin = { source = "MCP", id = "154" }

@@ -8,6 +8,12 @@ No official releases yet. The first public release is in preparation.
   and assignments from globals to high-index locals. Rebuild to pick it up. See
   [the patch notes](patches/mcp-141.md).
 
+- New patch `mcp-115` stops repeat guard confiscation after payment, faction-wide merchant seizures, and theft marking for items owned by dead NPCs. Rebuild to pick it up. See [the patch notes](patches/mcp-115.md).
+
+- `extended-tooltips` now marks every owned object (items, containers, doors, beds and other
+  activators) as **Owned** in its world tooltip, in the normal text colour instead of a red
+  **Steal**. Rebuild to pick up the change. See [the patch notes](patches/extended-tooltips.md).
+
 - New patch `load-screen-race` fixes a rare freeze when a loading screen ends within its first
   frames, such as leaving a building into a cell already in memory. The game stopped responding
   with nothing logged. Rebuild to pick it up. See [the patch notes](patches/load-screen-race.md).
@@ -17,14 +23,14 @@ No official releases yet. The first public release is in preparation.
   and `tes3x prof` read them. Older tools cannot decode a build that uses a patch above bit 63,
   and `tes3x prof` dumps are now version 3.
 
-- New patch `mcp-115` stops repeat guard confiscation after payment, faction-wide merchant seizures, and theft marking for items owned by dead NPCs. Rebuild to pick it up. See [the patch notes](patches/mcp-115.md).
-
-- `extended-tooltips` now marks every owned object (items, containers, doors, beds and other
-  activators) as **Owned** in its world tooltip, in the normal text colour instead of a red
-  **Steal**. Rebuild to pick up the change. See [the patch notes](patches/extended-tooltips.md).
+- New patch `mcp-259` shows item tooltip weight to two decimal places. See
+  [the patch notes](patches/mcp-259.md).
 
 - New patch `mcp-145` gives brewed potions bottle models and icons that reflect their strength.
   See [the patch notes](patches/mcp-145.md).
+
+- `menu-still` no longer leaves the Load or Options screen showing behind the main menu after
+  you back out of it. Rebuild to pick it up.
 
 - New patch `mcp-50` keeps enchanted items alphabetically ordered when the magic menu refreshes.
   See [the patch notes](patches/mcp-50.md).
@@ -38,9 +44,6 @@ No official releases yet. The first public release is in preparation.
 
 - `tes3x kf-merge` converts Euler root rotations with the right axis order. Merging onto a base KF
   with Euler rotation tracks used to rotate them wrongly.
-- `menu-still` no longer leaves the Load or Options screen showing behind the main menu after
-  you back out of it. Rebuild to pick it up.
-
 
 - `mcp-132` no longer binds an animation file's root track to the wrong bone. With a replacement
   `xbase_anim.kf` that lists another bone first (Patch for Purists), every NPC stood waist-deep in the
