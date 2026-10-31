@@ -350,6 +350,20 @@
       "pc_va": "0x006FD800"
     },
     {
+      "va": "0x00054260",
+      "name": "PackedQuaternion::unpack?",
+      "confidence": "guess",
+      "provenance": "disassembly: four shorts at edi scaled into floats at esi",
+      "note": "Register arguments: edi points at four packed shorts, esi at the float output."
+    },
+    {
+      "va": "0x000613B0",
+      "name": "NiKeyframeData::evaluateRotation?",
+      "confidence": "guess",
+      "provenance": "key-type dispatch read from disassembly; crash stack in alltowns-128-v2",
+      "note": "Rotation type 4 (XYZ Euler) calls *0x3EF620 with an 8-byte local, but it writes a 16-byte float quaternion: the overrun replaces this function's return address and its output pointer. Retail data never reaches this path; the pipeline converts such keys."
+    },
+    {
       "va": "0x00068CD0",
       "name": "SE::NI_FLIPCONTROLLER_FNADDR_SETTEXTURE",
       "kind": "function",
@@ -9400,6 +9414,14 @@
       "provenance": "0x002D3C90 interns PartNonDragMenu_main; BuildMenuMultiElements finds it at 0x001F8B13",
       "kind": "data",
       "type": "unsigned short"
+    },
+    {
+      "va": "0x003EF620",
+      "name": "g_evaluateXyzRotation?",
+      "confidence": "guess",
+      "provenance": "only reference is the type 4 branch of 0x000613B0; set at runtime",
+      "note": "Function pointer in bss. Its target is not identified.",
+      "kind": "data"
     },
     {
       "va": "0x003EFC70",

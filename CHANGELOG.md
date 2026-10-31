@@ -4,6 +4,11 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- Builds now convert Euler rotation keys in loose meshes and KFs to quaternion keys. The Xbox engine
+  cannot play them, so animated Tamriel Data and Tamriel Rebuilt objects could crash or freeze the
+  game. Rebuild to pick it up; meshes inside a mod's own BSA are not converted. See
+  [the pipeline notes](docs/pipeline.md#converting-euler-rotation-keys).
+
 - New patch `mcp-141` fixes compiled `Random` arguments, expressions using local variable 34,
   and assignments from globals to high-index locals. Rebuild to pick it up. See
   [the patch notes](patches/mcp-141.md).

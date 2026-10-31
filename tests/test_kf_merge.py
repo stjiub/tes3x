@@ -7,7 +7,8 @@ import unittest
 import struct
 
 from tes3x.kf_merge import (DODGE_GROUPS, KFMergeError, _blend, _interpolate, _window_keys,
-                            _xyz_quaternions, dodge_clip_ranges, group_windows)
+                            _xyz_quaternions, dodge_clip_ranges, group_windows,
+                            has_xyz_rotation)
 
 
 def _kf(keys):
@@ -44,6 +45,23 @@ class KFMergeTests(unittest.TestCase):
         # Rz(90) * Rx(90) sends +X to +Y and +Y to +Z
         for component, expected in zip(quaternion, (0.5, 0.5, 0.5, 0.5)):
             self.assertAlmostEqual(component, expected)
+
+    def test_xyz_rotation_subdivides_a_long_turn(self):
+        def axis(*keys):
+            return SimpleNamespace(keys=[SimpleNamespace(time=t, value=v) for t, v in keys])
+
+        data = SimpleNamespace(xyz_rotations=[axis(), axis(), axis((0.0, 0.0), (1.0, 2 * math.pi))])
+        keys = list(_xyz_quaternions(data))
+        self.assertEqual(len(keys), 7)
+        self.assertEqual(keys[-1][0], 1.0)
+        for (_, left), (_, right) in zip(keys, keys[1:]):
+            self.assertGreater(sum(a * b for a, b in zip(left, right)), 0.8)
+
+    def test_xyz_rotation_is_found_only_in_keyed_blocks(self):
+        tag = struct.pack("<I", 14) + b"NiKeyframeData"
+        self.assertTrue(has_xyz_rotation(b"x" + tag + struct.pack("<II", 2, 4)))
+        self.assertFalse(has_xyz_rotation(tag + struct.pack("<II", 2, 1)))
+        self.assertFalse(has_xyz_rotation(tag + struct.pack("<II", 0, 4)))
 
     def test_group_windows_pair_start_and_stop(self):
         text = SimpleNamespace(text_keys=[
@@ -86,7 +104,7 @@ class KFMergeTests(unittest.TestCase):
         for group in dst.xyz_rotations:
             group.num_keys, group.interpolation = 2, 1
             group.keys.update_size()
-            group.keys[1].time, group.keys[1].value = 1.0, math.pi / 2
+            group.keys[1].time, group.keys[1].value = 1.0, math.pi / 4
         src = nif.NiKeyframeData()
         src.rotation_type, src.num_rotation_keys = 1, 1
         src.quaternion_keys.update_size()

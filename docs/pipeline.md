@@ -106,6 +106,23 @@ those animation groups, so the rest of retail's animation stays. The groups must
 in both files. The written KF never carries Euler rotation keys, which hang the Xbox loader: a rotation
 splice converts the mod's to quaternions.
 
+### Converting Euler rotation keys
+
+The Xbox engine handles quaternion rotation keys only. PC meshes and KFs can also store rotation as
+separate X, Y and Z tracks (Euler keys, rotation type 4), and on the Xbox those crash or freeze the
+game: a KF using them hangs the loader, and a mesh using them corrupts the stack the moment it
+animates, which shows up at a random time near that object, often as a frozen screen.
+
+After collecting the winning files, the pipeline finds every loose `.nif` and `.kf` with Euler
+rotation keys and rewrites those tracks as linear quaternion keys. This needs no profile setting and
+applies to any mod. Each track is resampled at its key times, using the `Rz * Ry * Rx` order the
+engine uses, and spans turning more than 60 degrees get extra keys so a fast spin still goes the
+right way round. Quadratic Euler tracks are sampled linearly between keys, so their curve between
+keys is approximated. Only the rotation section changes; the rest of the file stays byte for byte.
+
+The pipeline logs how many files it converted, and warns about any whose layout it could not follow;
+those keep their Euler keys. Meshes inside a mod's own BSA are not converted.
+
 If the profile sets [`ui.scale`](configuration.md#ui), the pipeline writes smaller bitmap font
 metrics into the staged `.fnt` files and enables the UI scale hook for HUD art, common menu
 panels and supported fixed menus. `ui.widescreen_480p` narrows the staged glyph widths and spacing for a stretched 480p

@@ -6,12 +6,21 @@ from pathlib import Path
 import struct
 import sys
 import time
+from types import SimpleNamespace
 
 from tes3x.bsa import Bsa, tes3_hash
 
 
 class KFMergeError(ValueError):
     pass
+
+
+MAX_KEY_TURN = math.pi / 3
+KEYFRAME_TAG = struct.pack("<I", len(b"NiKeyframeData")) + b"NiKeyframeData"
+XYZ_ROTATION = 4
+# Bytes per key by interpolation: linear, quadratic, TBC.
+FLOAT_KEY_BYTES = {1: 8, 2: 16, 3: 20}
+VECTOR_KEY_BYTES = {1: 16, 2: 40, 3: 28}
 
 
 def _nif_format():
@@ -165,18 +174,33 @@ def _axis(group, at):
     return keys[-1].value
 
 
-def _xyz_quaternions(data):
+def _xyz_times(data):
+    """Key times, subdivided so no span turns far enough for a quaternion to go the short way."""
     times = sorted({key.time for group in data.xyz_rotations for key in group.keys})
-    for at in times:
+    result = times[:1]
+    for left, right in zip(times, times[1:]):
+        turn = max(abs(_axis(group, right) - _axis(group, left)) for group in data.xyz_rotations)
+        steps = max(1, math.ceil(turn / MAX_KEY_TURN))
+        result += [left + (right - left) * step / steps for step in range(1, steps + 1)]
+    return result
+
+
+def _xyz_quaternions(data):
+    previous = None
+    for at in _xyz_times(data):
         x, y, z = (_axis(group, at) / 2 for group in data.xyz_rotations)
         cx, sx = math.cos(x), math.sin(x)
         cy, sy = math.cos(y), math.sin(y)
         cz, sz = math.cos(z), math.sin(z)
         # NetImmerse applies X, then Y, then Z: R = Rz * Ry * Rx.
-        yield at, (cx * cy * cz + sx * sy * sz,
-                   sx * cy * cz - cx * sy * sz,
-                   cx * sy * cz + sx * cy * sz,
-                   cx * cy * sz - sx * sy * cz)
+        value = (cx * cy * cz + sx * sy * sz,
+                 sx * cy * cz - cx * sy * sz,
+                 cx * sy * cz + sx * cy * sz,
+                 cx * cy * sz - sx * sy * cz)
+        if previous and sum(a * b for a, b in zip(previous, value)) < 0:
+            value = tuple(-part for part in value)
+        previous = value
+        yield at, value
 
 
 def _xyz_to_quaternions(data):
@@ -504,6 +528,124 @@ def splice_tree_kfs(tree, vanilla, specs):
                 extracted.unlink(missing_ok=True)
         spliced.append(path)
     return spliced
+
+
+def has_xyz_rotation(raw):
+    """Whether a NetImmerse 4.0.0.2 file holds a NiKeyframeData with XYZ Euler rotation keys."""
+    at = raw.find(KEYFRAME_TAG)
+    while at >= 0:
+        fields = at + len(KEYFRAME_TAG)
+        if fields + 8 <= len(raw):
+            count, kind = struct.unpack_from("<II", raw, fields)
+            if count and kind == XYZ_ROTATION:
+                return True
+        at = raw.find(KEYFRAME_TAG, at + 1)
+    return False
+
+
+def _key_group(raw, at, sizes):
+    """Read a NIF key group's header; return its interpolation, key size and first key offset."""
+    count = struct.unpack_from("<I", raw, at)[0]
+    if not count:
+        return count, 0, 0, at + 4
+    interpolation = struct.unpack_from("<I", raw, at + 4)[0]
+    if interpolation not in sizes:
+        raise KFMergeError(f"key interpolation {interpolation}")
+    return count, interpolation, sizes[interpolation], at + 8
+
+
+def _skip_group(raw, at, sizes):
+    count, _, size, first = _key_group(raw, at, sizes)
+    return first + count * size
+
+
+def _next_block_follows(raw, at):
+    length = struct.unpack_from("<I", raw, at)[0]
+    name = raw[at + 4:at + 4 + length]
+    if 2 <= length <= 64 and len(name) == length and all(32 <= c < 127 for c in name):
+        return True
+    # The last block is followed by the footer: a root count and that many block indices.
+    return at + 4 + length * 4 == len(raw)
+
+
+def _quaternion_block(raw, at):
+    """Return the end of a type 4 rotation section at `at` and its quaternion replacement."""
+    # Rotation count and type, then one float, then the X, Y and Z groups.
+    end = at + 12
+    groups = []
+    for _ in range(3):
+        count, _interpolation, size, first = _key_group(raw, end, FLOAT_KEY_BYTES)
+        groups.append(SimpleNamespace(keys=[
+            SimpleNamespace(time=key_time, value=value)
+            for key_time, value in (struct.unpack_from("<ff", raw, first + i * size)
+                                    for i in range(count))]))
+        end = first + count * size
+    after = _skip_group(raw, end, VECTOR_KEY_BYTES)
+    after = _skip_group(raw, after, FLOAT_KEY_BYTES)
+    if not _next_block_follows(raw, after):
+        raise KFMergeError("keyframe block does not end at the next block")
+    keys = list(_xyz_quaternions(SimpleNamespace(xyz_rotations=groups)))
+    body = struct.pack("<II", len(keys), 1)
+    for at_time, quaternion in keys:
+        body += struct.pack("<5f", at_time, *quaternion)
+    return end, body
+
+
+def quaternion_rotation_bytes(raw):
+    """Return `raw` with each XYZ Euler rotation section replaced by quaternion keys.
+
+    NetImmerse 4.0.0.2 files carry no block offsets, so sections can be replaced in place. A whole
+    mesh need not be parsed, and the rest of the file stays byte for byte.
+    """
+    out, kept, converted = [], 0, 0
+    at = raw.find(KEYFRAME_TAG)
+    try:
+        while at >= 0:
+            fields = at + len(KEYFRAME_TAG)
+            count, kind = struct.unpack_from("<II", raw, fields)
+            if count and kind == XYZ_ROTATION:
+                end, body = _quaternion_block(raw, fields)
+                out += [raw[kept:fields], body]
+                kept = end
+                converted += 1
+            at = raw.find(KEYFRAME_TAG, fields)
+    except struct.error as exc:
+        raise KFMergeError(f"truncated keyframe block: {exc}") from exc
+    return b"".join(out) + raw[kept:], converted
+
+
+def quaternion_rotation_file(path, out):
+    """Write `path` to `out` with every XYZ Euler rotation track as quaternion keys."""
+    try:
+        raw, converted = quaternion_rotation_bytes(Path(path).read_bytes())
+    except KFMergeError as exc:
+        raise KFMergeError(f"{path}: {exc}") from exc
+    Path(out).write_bytes(raw)
+    return converted
+
+
+def quaternion_tree_rotations(tree):
+    """Convert XYZ Euler rotation keys in a build tree: the Xbox engine cannot play them.
+
+    Its evaluator writes a 16-byte quaternion into an 8-byte packed buffer, and a KF using them
+    hangs the loader. Returns the converted paths and the (path, reason) of any left unconverted.
+    """
+    converted, failed = [], []
+    for path in Path(tree).rglob("*"):
+        if path.suffix.lower() not in (".nif", ".kf") or not path.is_file():
+            continue
+        if not has_xyz_rotation(path.read_bytes()):
+            continue
+        temporary = path.with_name(path.name + ".euler-tmp")
+        try:
+            quaternion_rotation_file(path, temporary)
+            temporary.replace(path)
+            converted.append(path)
+        except KFMergeError as exc:
+            failed.append((path, str(exc)))
+        finally:
+            temporary.unlink(missing_ok=True)
+    return converted, failed
 
 
 def merge_tree_kfs(tree, vanilla, additions):

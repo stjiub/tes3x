@@ -21,7 +21,8 @@ from xml.sax.saxutils import escape
 from tes3x.pack import set_ini_key
 from tes3x.menustill import NAME as STILL_NAME, VIDEO, make_still
 from tes3x.fontscale import stage_scaled_fonts
-from tes3x.kf_merge import KFMergeError, dodge_clip_ranges, merge_tree_kfs, splice_tree_kfs
+from tes3x.kf_merge import (KFMergeError, dodge_clip_ranges, merge_tree_kfs,
+                            quaternion_tree_rotations, splice_tree_kfs)
 from tes3x.patch import scene_form
 import tes3x.patches as registry
 from tes3x.payload import (SOURCE_DEPENDENCIES, PayloadError, build_payload, find_tool,
@@ -1362,6 +1363,14 @@ def main(argv=None):
                 except (OSError, KFMergeError) as exc:
                     raise PipelineError(f"animation KF merge: {exc}") from exc
                 print(f"merged {len(sources)} animation KF(s) -> {merged}")
+            try:
+                converted, unconverted = quaternion_tree_rotations(tree)
+            except OSError as exc:
+                raise PipelineError(f"Euler rotation keys: {exc}") from exc
+            if converted:
+                print(f"converted Euler rotation keys to quaternions in {len(converted)} file(s)")
+            for path, reason in unconverted:
+                print(f"WARNING: Euler rotation keys left in {path}: {reason}")
             if "cant-touch-this" in plan["applied"]:
                 try:
                     ctt_ranges = dodge_clip_ranges(merged.read_bytes()) if sources else None
