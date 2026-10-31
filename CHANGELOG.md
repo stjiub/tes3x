@@ -13,6 +13,11 @@ No official releases yet. The first public release is in preparation.
   large mod lists stay under 2 GB per archive. Smaller builds are unchanged. See
   [packaging](docs/packaging.md#package-modes).
 
+- Running out of memory while a paged page is being read back now usually ends in the game's normal
+  relaunch instead of a crash.
+
+- The video arena's overflow can now reach 72 MB instead of 48 MB on consoles with more memory.
+
 - New patch `mcp-141` fixes compiled `Random` arguments, expressions using local variable 34,
   and assignments from globals to high-index locals. Rebuild to pick it up. See
   [the patch notes](patches/mcp-141.md).

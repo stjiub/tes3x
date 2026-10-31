@@ -542,8 +542,8 @@
       "sha256": "eb785d46d2b64e74e7ae566b92e61fee7fad9fd7ceb802286a588a8f7e45929b"
     },
     "tes3xarena.c": {
-      "digest": "d027c056684db7c1118c181404ee8e61bc7e41cd43a74d53122f6034550f0a46",
-      "sha256": "19b8781df821c57bb8a0580cacc8788ab7d77c801d9a1f561151ae86d65fabe9"
+      "digest": "136b1ef306afc4db4385fb406cfa22db8509419a4d3bb280307aae68124e6703",
+      "sha256": "57a4a36df35beddde2fc333f6617175d9ab78f2dd7321b6c3d419532b1604542"
     },
     "tes3xautocalcindex.c": {
       "digest": "1e08a45c9318fa9b8af4aa3cd5af1c9d9b4e7712ff368ac52bfb5d4754b34ad1",
@@ -754,8 +754,8 @@
       "sha256": "2b9f9150ff37a105350748f9c0ac0153f672ca3aaeab6cbb4ad139d40c4fc712"
     },
     "tes3xpager.c": {
-      "digest": "ea4f1c9c1b6e3cbe515221312e003a01de7a737ced36b7fb58e953c22ae2ad37",
-      "sha256": "edec9a359e8d844953b3f5752b5785453d1aca67e83d66798ab9f844e078e8e4"
+      "digest": "a0492d35fa7c2f2888a29be9af2fe722e6634cf4cc942b2c482fe196d7308974",
+      "sha256": "f677fa5e71226487dc168964c72cccad0ea20cb6d78616d63958b3014c6e4e41"
     },
     "tes3xpatharena.c": {
       "digest": "604c1556fce77d5702b2462d821b2852a1f8c7af49ce53b7e0ea68c30f9a06f7",

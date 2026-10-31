@@ -58,6 +58,8 @@ typedef void(__stdcall *fn_HalReturnToFirmware)(u32);
 #define PAGE 4096u
 #define REGION_PAGES 16384u /* 64 MB, larger than the test drive's cache */
 #define BUDGET_PAGES 256u  /* 1 MB resident */
+#define RING_EMPTY 0xFFFFu
+#define COMMIT_RETRIES 16u
 #define FAULT_RING_ENTRIES 256u
 #define FAULT_EIPS 128u
 
@@ -77,6 +79,7 @@ volatile u32 tes3x_pager_violations;
 static void *lock_handle, *file;
 static u8 resident[REGION_PAGES], stored[REGION_PAGES];
 static unsigned short ring[BUDGET_PAGES];
+static u32 ring_holes, n_commit_retries;
 static unsigned short page_group[REGION_PAGES];
 static u32 ring_used, hand;
 static u32 bounce[PAGE / 4] __attribute__((aligned(4096)));
@@ -286,6 +289,10 @@ static int evict_one(u32 *slot)
 
     for (;;) {
         page = ring[hand];
+        if (page == RING_EMPTY) {
+            hand = (hand + 1) % BUDGET_PAGES;
+            continue;
+        }
         va = page_va(page);
         pte = *PTE(va);
         if (!(pte & PTE_ACCESSED))
@@ -322,15 +329,33 @@ static int evict_one(u32 *slot)
 static void page_in(u32 page)
 {
     void *va = page_va(page);
-    u32 size = PAGE, slot;
+    u32 size, slot, spare, tries;
 
-    if (ring_used < BUDGET_PAGES)
+    if (ring_holes) {
+        for (slot = 0; ring[slot] != RING_EMPTY; slot++)
+            ;
+        ring_holes--;
+    } else if (ring_used < BUDGET_PAGES) {
         slot = ring_used++;
-    else if (!evict_one(&slot))
+    } else if (!evict_one(&slot)) {
         return;
-    if (NtAllocateVirtualMemory(&va, 0, &size, MEM_COMMIT, PAGE_READWRITE) != 0) {
-        fail("pager.commit_failed", page);
-        return;
+    }
+    /* With memory out, another allocator can take the page just evicted. */
+    for (tries = 0;; tries++) {
+        size = PAGE;
+        va = page_va(page);
+        if (NtAllocateVirtualMemory(&va, 0, &size, MEM_COMMIT, PAGE_READWRITE) == 0)
+            break;
+        if (tries == COMMIT_RETRIES || ring_used < BUDGET_PAGES) {
+            fail("pager.commit_failed", page);
+            return;
+        }
+        if (!evict_one(&spare))
+            return;
+        ring[spare] = RING_EMPTY;
+        ring_holes++;
+        if (!n_commit_retries++)
+            tes3x_log("pager.commit_retry", page);
     }
     if (stored[page]) {
         if (!file_io(0, page)) {

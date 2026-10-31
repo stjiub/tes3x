@@ -74,7 +74,7 @@ typedef void(__stdcall *fn_phys_free)(void *);
 #define CHUNK_BYTES 0x100000u
 #define GRANULE 64u
 #define GRANULES (CHUNK_BYTES / GRANULE)
-#define MAX_CHUNKS 48
+#define MAX_CHUNKS 72
 /* Larger blocks lose little to page rounding and would fragment the chunks. */
 #define DIRECT_BYTES (CHUNK_BYTES / 4)
 
