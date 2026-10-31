@@ -637,7 +637,10 @@ class ProfileWindow(QMainWindow):
             name = self.build.archive_name.text().strip() or "tes3xmods.bsa"
             rows.append((name, f"TES3X build: {assets} mod files", "yes, after Morrowind.bsa"))
         for row in rows:
-            self.archives.addTopLevelItem(QTreeWidgetItem(list(row)))
+            item = QTreeWidgetItem(list(row))
+            if mode == "delta-bsa" and row is rows[-1]:
+                item.setToolTip(0, "Split into numbered parts past 1.9 GB")
+            self.archives.addTopLevelItem(item)
         active = self.mods.analysis["active"]
         for key, indexes in self.mods.analysis["owners"].items():
             if not key.endswith(".bsa") or "/" in key:
