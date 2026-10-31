@@ -118,6 +118,10 @@
     "LOCALVAR_MISSING": null,
     "LOCALVAR_STRICMP": null,
     "LOCALVAR_WALK": null,
+    "MCP115_CLEAR": null,
+    "MCP115_KILL_COUNT": null,
+    "MCP115_MARK": null,
+    "MCP115_WORLD": null,
     "MCP118_GET_PLAYER": null,
     "MCP118_RESET": null,
     "MCP118_WORLD_PTR": null,
@@ -626,6 +630,10 @@
     "tes3xlog.c": {
       "digest": "59321b2696af7e15ad652017123e785e39c09f02bf2601b4ad2764f28b734d44",
       "sha256": "0b0fe55a6745e9882a32f4baa1b1853c310178598d816869579cf1ddab3fbb12"
+    },
+    "tes3xmcp115.c": {
+      "digest": "e9f6471aa1d3b5b9be66a3b1bf691ee7602692d5ffd8a4a8d3381fb02f45cebf",
+      "sha256": "fc2eab00118f639375dbb34f035b373fad66e73cbc9b42af3b08171e24bcc9d9"
     },
     "tes3xmcp118.c": {
       "digest": "58ba09322e23b7cefa9902b5cd74b5a8f04a96abb6a245b0390088a45aae1140",

@@ -884,16 +884,6 @@ summary = "Incorrect inventory sounds"
 reason = "Large patch with Xbox UI/audio-path uncertainty. Decode before accepting."
 
 [[candidate]]
-name = "mcp-115"
-origin = { source = "MCP", id = "115" }
-category = "correctness"
-status = "candidate"
-priority = "medium"
-queue = 7
-summary = "Confiscated item fix"
-reason = "Guards and merchants confiscate items that are no longer stolen."
-
-[[candidate]]
 name = "mcp-116"
 origin = { source = "MCP", id = "116" }
 category = "correctness"
@@ -1274,11 +1264,10 @@ reason = "Holding the haggle buttons stops working at high framerates, which the
 name = "mcp-171"
 origin = { source = "MCP", id = "171" }
 category = "correctness"
-status = "candidate"
-priority = "medium"
-queue = 13
+status = "rejected"
+priority = "none"
 summary = "Menu mode world interaction fix"
-reason = "World items can be picked up while crafting menus are open."
+reason = "The Xbox UI consumes targeting and camera controls while a crafting menu is open, so the player cannot aim at a world item to pick it up."
 
 [[candidate]]
 name = "mcp-172"

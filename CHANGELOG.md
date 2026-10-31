@@ -4,6 +4,8 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- New patch `mcp-115` stops repeat guard confiscation after payment, faction-wide merchant seizures, and theft marking for items owned by dead NPCs. Rebuild to pick it up. See [the patch notes](patches/mcp-115.md).
+
 - `extended-tooltips` now marks owned beds and other activators as **Owned** in their world
   tooltip. Rebuild to pick up the change. See [the patch notes](patches/extended-tooltips.md).
 

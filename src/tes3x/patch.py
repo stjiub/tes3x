@@ -57,6 +57,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_land_arena_sites, find_npc_arena_sites, POOL_ARENA_KEEP,
                                find_mcp102_actn, find_enable_disable_flags, find_mcp160_removal, find_pathgrid_lookups, find_mcp123_add, find_mcp114_axe_sound, find_mcp119_voice_gates, find_mcp6_context,
                                find_mcp125_collision, find_mcp30_context, find_mcp55_context,
+                               find_mcp115_context,
                                find_mcp55_inventory_context, find_mcp118_drop_finish,
                                find_mcp149_menu,
                                find_mcp127_map,
@@ -1501,6 +1502,35 @@ def _mcp_119(x, value, ctx):
     for off, replacement in find_mcp119_voice_gates(x):
         x.data[off:off + 2] = replacement
         edits.append((off, 2, "creature voice gate 0x%08X" % x.off_to_va(off)))
+    return edits
+
+
+@patch("mcp-115")
+def _mcp_115(x, value, ctx):
+    sites = find_mcp115_context(x)
+    hooks = ctx.get("hooks", {})
+    if not hooks.get("mcp115_guard") or not hooks.get("mcp115_pickup"):
+        raise PatchError("mcp-115: needs `payload` first, with both mcp-115 hooks")
+    edits = []
+    pickup = sites["pickup"]
+    off = x.va_to_off(pickup)
+    target = int(str(hooks["mcp115_pickup"]), 16)
+    x.data[off:off + 29] = b"\xe8" + struct.pack("<i", target - (pickup + 5)) + b"\x90" * 24
+    edits.append((off, 29, "world pickup theft check"))
+    target = int(str(hooks["mcp115_guard"]), 16)
+    for site in sites["guards"]:
+        off = x.va_to_off(site)
+        x.data[off:off + 5] = b"\xe8" + struct.pack("<i", target - (site + 5))
+        edits.append((off, 5, "clear confiscated item theft records"))
+    site = sites["barter"]
+    off = x.va_to_off(site)
+    skip = site + 6 + struct.unpack_from("<i", x.data, off + 2)[0]
+    x.data[off:off + 6] = b"\xe9" + struct.pack("<i", skip - (site + 5)) + b"\x90"
+    edits.append((off, 6, "ignore faction theft during barter"))
+    for site in sites["menus"]:
+        off = x.va_to_off(site)
+        x.data[off:off + 6] = b"\x90" * 6
+        edits.append((off, 6, "ignore faction theft in merchant menu"))
     return edits
 
 

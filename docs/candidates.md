@@ -15,10 +15,10 @@ come first. Balance changes normally stay low until a concrete profile needs one
 
 | status | fixes |
 |---|---|
-| candidate | 166 |
+| candidate | 164 |
 | deferred | 14 |
 | not-applicable | 17 |
-| rejected | 5 |
+| rejected | 6 |
 
 ## candidate
 
@@ -36,13 +36,11 @@ Worth porting, but not yet shown to affect the Xbox build.
 | `mcp-21` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #21 | medium #4 | correctness | **Dispel fix.** Dispel silently stacks until it always succeeds. |
 | `mcp-46a` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #46 | medium #5 | correctness (recommended) | **`Drop` places at the acting reference, not the player.** The engine treats every drop as if it came from the player inventory view, so scripted drops land at the wrong actor. Split from the rest of id 46 under rule 3. |
 | `mcp-20` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #20 | medium #6 | correctness | **Spell magnitude fix.** Variable-magnitude spells rarely reach their maximum. |
-| `mcp-115` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #115 | medium #7 | correctness | **Confiscated item fix.** Guards and merchants confiscate items that are no longer stolen. |
 | `mcp-83` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #83 | medium #8 | compatibility | **Detect water level fix.** Scripts detect the player as underwater in cells without water. |
 | `mcp-256` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #256 | medium #9 | compatibility | **Map expansion (for Tamriel Rebuilt).** Expands the world map for Tamriel Rebuilt. Needed for TR, which itself needs 128 MB today. |
 | `mwse-map-border-marker` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium #10 | core (intended default) | **Avoid crash while updating map markers at the drawable map border.** Relevant to map expansion and large landmasses if the Xbox map bounds match. |
 | `mcp-2a` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #2 | medium #11 | correctness (recommended) | **Fix inverted Mercantile contribution to price.** Isolate the formula error. |
 | `mcp-56` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #56 | medium #12 | correctness | **Spellmaker/enchant edit effect fix.** Editing a spell effect resets its range to Touch. |
-| `mcp-171` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #171 | medium #13 | correctness | **Menu mode world interaction fix.** World items can be picked up while crafting menus are open. |
 | `mcp-49` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #49 | medium #14 | correctness | **Bound items expiry fix.** Expiring bound weapons force a weapon draw; bound armor does not restore gloves, bracers and shoes. |
 | `xbox-quick-loot` | TES3X | medium #15 | qol (opt in) | **Take items from a container without opening its full menu.** Inspired by [MWSE QuickLoot](https://github.com/MortimerMcMire/MWSE-QuickLoot). Design for controller focus and 480p; preserve trap, ownership, scripted activation and corpse-disposal semantics. Frequent-use QoL, but more UI and state work than a small patch. |
 | `xbox-inventory-search` | TES3X | medium #16 | qol (opt in) | **Search or filter inventory and container contents.** Inspired by [UI Expansion](https://github.com/NullCascade/morrowind-mods/blob/master/User%20Interface%20Expansion/MWSE/mods/UI%20Expansion/main.lua). Large load orders make item grids slow to browse; test controller text entry, focus and memory before choosing a filter design. Search must never alter item transfer or save state. |
@@ -245,6 +243,7 @@ Deliberately left out of TES3X.
 | fix | from | priority | category | notes |
 |---|---|---|---|---|
 | `mcp-140` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #140 | none | performance | **Throttle loading-screen redraws.** Original-Xbox cold New Game A/B runs with caches cleared averaged 99.3495 seconds control and 99.3860 seconds patched. The 36.5 ms difference was smaller than the 230-339 ms repeat variation, so the port had no measurable benefit. |
+| `mcp-171` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #171 | none | correctness | **Menu mode world interaction fix.** The Xbox UI consumes targeting and camera controls while a crafting menu is open, so the player cannot aim at a world item to pick it up. |
 | `mcp-267` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #267 | none | qol | **UI pixel alignment.** Matched 480p xemu menu captures showed no discernible benefit, so this patch was dropped. |
 | `openmw-parity` | [OpenMW](https://openmw.org) | none | undecided | **Blanket OpenMW parity.** OpenMW is a separate reimplementation and intentionally diverges in places. Only explicit vanilla defects or desired, scoped features enter this ledger. |
 | `cell-stream-wait` | TES3X | none | performance | **Shorten the exterior cell loader's wait and preload sooner.** The boundary barrier's `Sleep(100)` poll, its per-pass loading-menu render and the 2,048-unit preload limit were edited on the original Xbox with retail masters. With the render removed and a 5 ms sleep the barrier lasted 0.82-0.99 s against 0.87 s unpatched, because it lasts as long as the loader's own CPU-bound work. Keeping the render made it 2.4 s or worse, and a 1,536-unit preload made teleport hops worse. A realistic walk showed no change. The stall needs a non-blocking barrier or spreading the scene attach over frames, not a faster poll. |

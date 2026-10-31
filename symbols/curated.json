@@ -1735,6 +1735,13 @@
       "signature": "void __thiscall append(void* item)"
     },
     {
+      "va": "0x000D5B20",
+      "name": "IteratedList::clear",
+      "confidence": "verified",
+      "provenance": "Xbox disassembly and MCP #115",
+      "signature": "void __thiscall clear(void)"
+    },
+    {
       "va": "0x000D5BB0",
       "name": "IteratedList::findNode",
       "confidence": "matched",
@@ -4821,6 +4828,13 @@
       "pc_va": "0x004EEE60"
     },
     {
+      "va": "0x00130FA0",
+      "name": "isItemStolenFromOwner",
+      "confidence": "verified",
+      "provenance": "Xbox decompilation and MCP #115",
+      "signature": "bool __thiscall isItemStolenFromOwner(void* owner)"
+    },
+    {
       "va": "0x00131320",
       "name": "Object::isInstanceOrCloneable?",
       "confidence": "guess",
@@ -4867,6 +4881,13 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_MeshData_loadKeyframes",
       "pc_va": "0x004EE200"
+    },
+    {
+      "va": "0x00131F40",
+      "name": "recordItemStolenFromOwner",
+      "confidence": "verified",
+      "provenance": "Xbox decompilation and MCP #115",
+      "signature": "void __thiscall recordItemStolenFromOwner(void* owner)"
     },
     {
       "va": "0x00132130",

@@ -1,0 +1,15 @@
+kind = "comparison"
+purpose = "Guards do not repeatedly confiscate paid thefts, merchants ignore unrelated faction theft, and dead owners' items stay unmarked."
+procedure = "After a playable session, compare a second arrest after paying for a stolen item, selling an item type stolen only from a faction container, and taking a dead NPC's owned world item against an unpatched build."
+limitations = "The script checks a playable session only; the three theft cases require controlled in-game fixtures."
+watch = 'diag\.patches|exec\.exit|crash\.|hang\.detected|fatal\.'
+timeout = 180
+script = '''
+@start new
+wait 60
+exit
+'''
+
+[expect]
+control = ['exec\.exit 0']
+test = ['diag\.patches', 'exec\.exit 0']

@@ -96,6 +96,67 @@ class PatchError(Exception):
     pass
 
 
+def find_mcp115_context(x):
+    """Locate theft marking, confiscation, and faction-container barter paths."""
+    data = bytes(x.data)
+
+    def sites(pattern, count, label, group=0):
+        hits = list(re.finditer(pattern, data, re.S))
+        if len(hits) != count:
+            raise PatchError(f"mcp-115: {len(hits)} {label} sites, expected {count}")
+        result = [x.off_to_va(m.start(group)) for m in hits]
+        if any(va is None for va in result):
+            raise PatchError(f"mcp-115: {label} site outside the image")
+        return result
+
+    pickup, = sites(
+        rb"\x8a\x85\xdd\x00\x00\x00\x3c\x13\x74.\x3c\x12\x74."
+        rb"\x84\xc9\x75.\x8b\x46\x04\x50\x8b\xcf\xe8....\x33\xc0",
+        1, "world pickup")
+    guards = sites(
+        rb"\x8b\x4e\x04\x8b\x01\xff\x90\x48\x01\x00\x00"
+        rb"(?:\x39\x68\x04|\x8b\x48\x04\x85\xc9)\x0f\x84...."
+        rb"(?P<site>\x8b\x0e\x8b\x56\x04)",
+        2, "guard confiscation", "site")
+    barter, = sites(
+        rb"\xe8....\x84\xc0(?P<site>\x0f\x84....)\x33\xc0\x66\xa1....",
+        1, "barter faction check", "site")
+    menus = sites(
+        rb"\xe8....\x84\xc0(?P<site>\x0f\x85....)\x8b\x44\x24\x10\x85\xc0",
+        2, "merchant faction checks", "site")
+    stolen, = sites(
+        rb"\x56\x8b\xf1\x8b\x06\xff\x90\x44\x01\x00\x00\x84\xc0\x74\x24"
+        rb"\x8b\x16\x8b\xce\xff\x92\x48\x01\x00\x00\x85\xc0\x74\x16"
+        rb"\x8b\x4c\x24\x08\x51\x8b\xc8\xe8....\x85\xc0\x74\x06",
+        1, "stolen-owner lookup")
+    for site in [barter, *menus]:
+        if tes3x_inject.call_target(x, site - 7) != stolen:
+            raise PatchError(f"mcp-115: merchant check 0x{site:08X} calls another function")
+    clear_patterns = (
+        rb"\x56\x8b\xf1\x8b\x46\x04\x85\xc0\x74.\xe8....\x85\xc0\x74."
+        rb"\x50\x8b\xce\xe8....\x8b\xce\xe8....\x85\xc0\x75.\x5e\xc3",
+        rb"\x56\x8b\xf1\x8b\x46\x04\x85\xc0\x74.\x8d\x9b\x00\x00\x00\x00"
+        rb"\x8b\x46\x08\x85\xc0\x89\x46\x10\x74.\x50\x8b\xce\xe8...."
+        rb"\xeb.\x5e\xc3",
+    )
+    clear_hits = [m.start() for pattern in clear_patterns for m in re.finditer(pattern, data, re.S)]
+    if len(clear_hits) != 1:
+        raise PatchError(f"mcp-115: {len(clear_hits)} stolen-list clear sites, expected 1")
+    clear = x.off_to_va(clear_hits[0])
+    if clear is None:
+        raise PatchError("mcp-115: stolen-list clear outside the image")
+    kill_count, = sites(
+        rb"\x8b\x44\x24\x04\x50\xe8....\x85\xc0\x74\x05\x8b\x00"
+        rb"\xc2\x04\x00\x33\xc0\xc2\x04\x00",
+        1, "kill counter")
+    mark = tes3x_inject.call_target(x, pickup + 24)
+    if x.va_to_off(mark) is None:
+        raise PatchError("mcp-115: theft marker is outside the image")
+    return {"pickup": pickup, "guards": guards, "barter": barter,
+            "menus": menus, "clear": clear, "kill_count": kill_count,
+            "world": find_world_controller(x), "mark": mark}
+
+
 MCP272_FILTER_TAIL = bytes.fromhex("833800750232db8b55008bcdff92d000000085c0")
 MCP272_SOUL_GEM = re.compile(
     rb"\x56\x8b\x74\x24\x08\x8d\x4e\x04\xe8....\x3dREFR\x75\x03"

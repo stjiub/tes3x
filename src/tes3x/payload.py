@@ -24,6 +24,7 @@ from tes3x.link import LinkError, link, write_map, write_pe
 from tes3x.multi_signatures import SIGNATURES as MULTI_SIGNATURES, find_multi_signature
 from tes3x.paths import bundled, checkout, resource
 from tes3x.patch_sites import (find_topic_state, find_mcp6_context, find_mcp30_context,
+                               find_mcp115_context,
                                find_mcp55_context,
                                find_mcp55_inventory_context, find_mcp118_drop_finish,
                                find_mcp149_menu, find_lazy_dialogue_sites, find_pool_grow_sites)
@@ -1249,6 +1250,16 @@ def _bind_mcp173(b):
     sites = find_mcp173_rank(image)
     print(f"mcp-173 hooks: NPC rank saves {', '.join(map(hexva, sites))}")
     wanted["mcp173_mark"] = ("_tes3x_mcp173_mark_hook",)
+
+
+@binder("tes3xmcp115.c")
+def _bind_mcp115(b):
+    context = find_mcp115_context(b.image)
+    for key, name in (("clear", "CLEAR"), ("kill_count", "KILL_COUNT"),
+                      ("world", "WORLD"), ("mark", "MARK")):
+        b.define("MCP115_" + name, hexva(context[key]))
+    b.wanted["mcp115_guard"] = ("_tes3x_mcp115_guard_hook",)
+    b.wanted["mcp115_pickup"] = ("_tes3x_mcp115_pickup_hook",)
 
 
 @binder("tes3xmcp272.c")
