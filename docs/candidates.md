@@ -15,9 +15,9 @@ come first. Balance changes normally stay low until a concrete profile needs one
 
 | status | fixes |
 |---|---|
-| candidate | 163 |
+| candidate | 161 |
 | deferred | 14 |
-| not-applicable | 17 |
+| not-applicable | 18 |
 | rejected | 6 |
 
 ## candidate
@@ -41,7 +41,6 @@ Worth porting, but not yet shown to affect the Xbox build.
 | `mcp-2a` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #2 | medium #11 | correctness (recommended) | **Fix inverted Mercantile contribution to price.** Isolate the formula error. |
 | `mcp-56` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #56 | medium #12 | correctness | **Spellmaker/enchant edit effect fix.** Editing a spell effect resets its range to Touch. |
 | `mcp-49` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #49 | medium #14 | correctness | **Bound items expiry fix.** Expiring bound weapons force a weapon draw; bound armor does not restore gloves, bracers and shoes. |
-| `xbox-quick-loot` | TES3X | medium #15 | qol (opt in) | **Take items from a container without opening its full menu.** Inspired by [MWSE QuickLoot](https://github.com/MortimerMcMire/MWSE-QuickLoot). Design for controller focus and 480p; preserve trap, ownership, scripted activation and corpse-disposal semantics. Frequent-use QoL, but more UI and state work than a small patch. |
 | `xbox-inventory-search` | TES3X | medium #16 | qol (opt in) | **Search or filter inventory and container contents.** Inspired by [UI Expansion](https://github.com/NullCascade/morrowind-mods/blob/master/User%20Interface%20Expansion/MWSE/mods/UI%20Expansion/main.lua). Large load orders make item grids slow to browse; test controller text entry, focus and memory before choosing a filter design. Search must never alter item transfer or save state. |
 | `mcp-112` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #112 | medium | correctness | **Disintegrate fix.** Disintegrate Weapon and Armor apply little or no damage. |
 | `mwse-dialogue-filter` | [MWSE](https://mwse.github.io/MWSE/references/general/patches/) | medium | performance (benchmark first) | **Replace dialogue filtering/search with a more efficient implementation.** High potential with PfP's dialogue-heavy master. Measure dialogue-open latency and memory with/without PfP, then regression-test filtering. |
@@ -70,8 +69,8 @@ Worth porting, but not yet shown to affect the Xbox build.
 | `mcp-29` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #29 | low | correctness | **Particle effects fix.** Particle emitters detach from scaled weapons and projectiles. |
 | `mcp-32` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #32 | low | correctness | **Waterwalk fix.** Waterwalk cast while swimming applies stored fall damage. |
 | `mcp-33` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #33 | low | balance (opt in) | **Training price/stats.** Formula looks incorrect, but trainer base-skill behaviour is configurable in OpenMW and affects progression/economy. |
-| `mcp-34a` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #34 | low | correctness (recommended) | **Make displayed and charged travel prices agree.** A direct UI/transaction mismatch. |
-| `mcp-34b` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #34 | low | balance (opt in) | **Charge separately for companions.** Economy choice; keep separate from the mismatch fix. |
+| `mcp-34b` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #34 | low | balance (opt in) | **Charge separately for companions.** Includes the player in the passenger count when companions travel; an economy choice. The separate xbox-travel-companion-price candidate covers the displayed/charged mismatch caused by calculation order. |
+| `xbox-travel-companion-price` | TES3X | low | correctness | **Make displayed and charged companion travel prices agree.** With companions, the Xbox display modifies the multiplied fare, while purchase multiplies the modified base fare. Establish a differing in-game price before changing either calculation. |
 | `mcp-36` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #36 | low | compatibility | **Createmaps/fillmap fix.** createmaps is a PC map-generation command; only the fillmap half, listing all mods, is useful now that the console is reachable. |
 | `mcp-38` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #38 | low | correctness | **Loud interface/gameplay sounds fix.** Mostly a PC DirectSound duplicate-sound quirk; the armor-hit volume overflow may exist on Xbox. Reproduce before porting. |
 | `mcp-40` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #40 | low | balance | **Strength-based hand to hand damage.** Balance change, opt in only; MCP ships it as an option rather than a defect fix. |
@@ -162,7 +161,6 @@ Worth porting, but not yet shown to affect the Xbox build.
 | `mcp-176` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #176 | low | correctness | **Spell effect tooltip fix.** Active effect tooltips name the wrong source item. |
 | `mcp-179` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #179 | low | balance (opt in) | **Followers defend immediately.** MCP source category is **Game mechanics**. Can make followers chase ranged enemies or enter hazards; OpenMW documents similar behaviour as optional and not extensively tested. Keep it disabled by default because of pursuit and hazard side effects. |
 | `mcp-258` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #258 | low | qol | **Disable map smoothing.** Pixel-filtered world map instead of blurred. |
-| `mcp-259` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #259 | low | qol | **Display more accurate item weight.** Item weight to two decimal places. |
 | `mcp-262` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #262 | low | qol | **Larger service/chargen menus.** Larger service and character-generation menus; may help legibility on a TV. |
 | `mcp-265` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #265 | low | compatibility | **Journal text colour configuration.** Journal text colour from Morrowind.ini, for replacement fonts. The Xbox reads the ini too. |
 | `mcp-269` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #269 | low | qol | **Better ingredient and item selector.** The Xbox selector uses a 380 by 151 icon grid and shows item names in a focus tooltip. MCP's 560-pixel PC layout and tile edits do not transfer; an Xbox design must fit controller focus and 480p. |
@@ -217,6 +215,7 @@ Targets PC-only code or behaviour; there is nothing to fix on the Xbox.
 
 | fix | from | priority | category | notes |
 |---|---|---|---|---|
+| `mcp-34a` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #34 | none | correctness | **Charge the displayed mercantile price for guild travel.** The Xbox purchase path already charges determineModifiedPrice(base, 1), matching the guild-guide display when travelling alone. MCP 34a repairs a PC-only omission. |
 | `mcp-39` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #39 | none | undecided | **Splash/title quality.** PC presentation path; solve Xbox assets directly if a real issue appears. |
 | `mcp-45` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #45 | none | qol | **Toggle sneak.** The Xbox controller path already toggles sneak on left-thumb click; MCP adds that behaviour to the PC key path. |
 | `mcp-82` | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #82 | none |  | **Shortcut key improvements.** Keyboard shortcuts such as closing dialogue with the space bar; the Xbox has no keyboard in play. |

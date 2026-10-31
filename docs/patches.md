@@ -68,6 +68,7 @@ single required/not-required flag.
 | [RemoveItem weight fix](../patches/mcp-160.md) | `mcp-160` | Reduce encumbrance for a removed item only when the item is actually in the inventory. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #160 | correctness | dev | By name; recommended preset at release |
 | [Neutral NPC death blame fix](../patches/mcp-168.md) | `mcp-168` | Avoid a murder charge when another actor's spell kills a neutral NPC. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #168 | correctness | dev | By name; recommended preset at release |
 | [NPC faction rank persistence](../patches/mcp-173.md) | `mcp-173` | Save an NPC's faction rank after RaiseRank or LowerRank changes it. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #173 | core | dev | By name; recommended preset at release |
+| [Accurate item weight display](../patches/mcp-259.md) | `mcp-259` | Show item tooltip weight to two decimal places. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #259 | qol | dev | By name |
 | [Improved inventory filters](../patches/mcp-272.md) | `mcp-272` | Group soul gems with potions and scrolls under Magic and omit enchanted equipment there. | [MCP](https://www.nexusmods.com/morrowind/mods/19510) #272 | qol | dev | By name |
 
 ## Memory
@@ -110,12 +111,13 @@ single required/not-required flag.
 | [Transition autosaves](../patches/transition-autosaves.md) | `transition-autosaves` | Autosave before doors, scripted teleports, interventions and paid travel. | TES3X | qol | preview | testing preset |
 | [Lowered first-person bow](../patches/bow-view.md) | `bow-view` | Lower the first-person bow and arms while an arrow is nocked. | TES3X | qol | dev | By name |
 | [HD video output](../patches/hd-video.md) | `hd-video` | Follow the dashboard's HDTV settings: 720p when enabled, otherwise the retail 480p or 480i. | TES3X | qol | dev | By name |
-| [Extended tooltips](../patches/extended-tooltips.md) | `extended-tooltips` | Warn about owned items and beds, and show selected item details in menus. | TES3X | qol | dev | By name |
+| [Extended tooltips](../patches/extended-tooltips.md) | `extended-tooltips` | Warn about owned items and beds, and show selected item details in menus. | TES3X | qol | dev | By name; `xbox-quick-loot` |
 | [Read topic colors](../patches/topic-colors.md) | `topic-colors` | Show dialogue topics whose current response you have already read in a different color. | TES3X | qol | dev | By name; recommended preset at release |
 | [UI scaling](../patches/ui-scale.md) | `ui-scale` | Scale text, fixed HUD art and common menu panels, with optional 480p widescreen correction. | TES3X | qol | dev | Build option |
 | [Clear video memory at boot](../patches/boot-clear.md) | `boot-clear` | Clear the screen before the first frame, so a boot without the retail launcher does not flash green lines. | TES3X | qol | dev | By name; `dash-button`, `multiplayer` |
 | [Main menu still](../patches/menu-still.md) | `menu-still` | Show a still image behind the main menu instead of playing the logo movie. | TES3X | qol | dev | By name; `dash-button`, `multiplayer` |
 | [Menu hint line](../patches/dash-button.md) | `dash-button` | Add a hint line to the main and pause menus: White leaves for the Dash. | TES3X | qol | dev | By name; `multiplayer` |
+| [Quick loot](../patches/xbox-quick-loot.md) | `xbox-quick-loot` | Take items from a container without opening its full menu. | TES3X | qol | dev | By name |
 
 ## Network
 
@@ -129,7 +131,7 @@ single required/not-required flag.
 
 | title | patch key | what it does | from | category | channel | included by |
 |---|---|---|---|---|---|---|
-| [In-game console](../patches/console.md) | `console` | Make the in-game console reachable, by replacing its input gate. | TES3X | instrumentation | preview | testing preset |
+| [In-game console](../patches/console.md) | `console` | Make the in-game console reachable, by replacing its input gate. | TES3X | instrumentation | preview | testing preset; `xbox-quick-loot` |
 | [Crash and hang diagnostics](../patches/diagnostics.md) | `diagnostics` | Enable INI-controlled crash records, snapshots and a hang watchdog. | TES3X | instrumentation | preview | testing preset; `net` |
 | [Function profiler](../patches/profile.md) | `profile=VA[,VA...]` | Time listed functions with RDTSC at every direct call site. | TES3X | instrumentation | preview | Build option |
 | [Record-load profiler](../patches/vtprof.md) | `vtprof` | Time each record type's load, by vtable and by form tag, and log the totals with the profiler's dump. | TES3X | instrumentation | dev | By name |

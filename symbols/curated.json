@@ -3956,6 +3956,21 @@
       "signature": "void* __thiscall findSoundGenerator(void* creature, int key)"
     },
     {
+      "va": "0x00107ED0",
+      "name": "NonDynamicData::resetWorldMapTexture_",
+      "confidence": "verified",
+      "provenance": "Xbox decompilation",
+      "note": "Releases map texture at +0xB38C and creates a blank 512x512 RGB map texture."
+    },
+    {
+      "va": "0x001080A0",
+      "name": "loadFullMapTexture_",
+      "confidence": "verified",
+      "provenance": "Xbox decompilation",
+      "note": "Loads z:\\FullMap into a 512x512 RGB map texture: 56 columns by 56 rows of nine-pixel cell data, 0x1B bytes per row per cell.",
+      "signature": "void* __cdecl loadFullMapTexture_(const char* path)"
+    },
+    {
       "va": "0x00109CD0",
       "name": "RecordsHandler::findFirstInstanceOfObjectId",
       "kind": "function",
@@ -7679,6 +7694,13 @@
       "signature": "void __cdecl setContentsMenuActor(TES3::Actor* actor)"
     },
     {
+      "va": "0x001C5810",
+      "name": "ContentsMenu::padYTooltip",
+      "confidence": "guess",
+      "provenance": "Xbox decompile 2026-10-30",
+      "note": "Registered on pad-Y event 0xFFFF8083: shows the selected tile's tooltip."
+    },
+    {
       "va": "0x001C5F10",
       "name": "UpdateContentsCompanionElements",
       "kind": "function",
@@ -7693,6 +7715,27 @@
       "provenance": "Xbox decompile",
       "note": "Sets the root size, bounds and position from ui::menuAreaWidth/Height/X/Y before adding contents widgets.",
       "signature": "void __cdecl build(void* menu)"
+    },
+    {
+      "va": "0x001C7A00",
+      "name": "ContentsMenu::transferItem",
+      "confidence": "guess",
+      "provenance": "Xbox decompile 2026-10-30",
+      "note": "Moves the selected tile's item between the open contents menu's container/actor and the player (OnPCAdd flag, theft checks, item sound). Reads the menu and its properties (selected tile DAT_003d820c: object, ItemData, count at +0xC, widget at +0x10; container ref DAT_003d8338), so it cannot run without the contents menu built."
+    },
+    {
+      "va": "0x001C88D0",
+      "name": "ContentsMenu::padATake",
+      "confidence": "guess",
+      "provenance": "Xbox decompile 2026-10-30",
+      "note": "Registered on pad-A event 0xFFFF8080: calls 0x001C7A00 for stacks under 6, else the quantity prompt."
+    },
+    {
+      "va": "0x001C8980",
+      "name": "ContentsMenu::close",
+      "confidence": "matched",
+      "provenance": "xemu quick-loot test 2026-10-30",
+      "note": "Close-button click callback (also the pad B handler's body): handles barter/companion state, then closes the contents menu and leaves menu mode. Calling it with five zero arguments closes a menu opened by UI::showContentsMenu."
     },
     {
       "va": "0x001C91C0",
@@ -8424,6 +8467,22 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_UI_showRepairServiceMenu",
       "pc_va": "0x00615160"
+    },
+    {
+      "va": "0x002139C0",
+      "name": "UI::purchaseTravel",
+      "confidence": "verified",
+      "provenance": "MCP 34 PC/Xbox comparison and travel menu callback",
+      "note": "Charges modified travel price at 0x00213B45 before multiplying by companion count at 0x00213D3B; guild-guide price already uses the mercantile adjustment.",
+      "pc_va": "0x00619170"
+    },
+    {
+      "va": "0x002140C0",
+      "name": "UI::showTravelServiceMenu",
+      "confidence": "verified",
+      "provenance": "travel menu string and 0x002139C0 callback",
+      "note": "Displays determineModifiedPrice(base * companionCount, 1) at 0x002143AC; no companions leaves base unchanged.",
+      "signature": "void __cdecl showTravelServiceMenu(TES3::MobileActor *provider)"
     },
     {
       "va": "0x00219050",

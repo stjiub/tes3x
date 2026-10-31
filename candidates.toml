@@ -1853,17 +1853,6 @@ summary = "Evict cached exterior cells after the grid shift instead of inside it
 reason = "The shift's three `ensureFreeMemory_` checks were hooked to answer \"enough\" and evict a cell per frame later. On the original Xbox with retail masters free memory was 5.5 MB at every check, above the 3 MB trigger, so the engine was not evicting there and the hook deferred nothing. The roughly 100 ms of `Cell::unloadScene_` seen around a shift comes from another caller."
 
 [[candidate]]
-name = "xbox-quick-loot"
-origin = { source = "TES3X" }
-category = "qol"
-default = "opt in"
-status = "candidate"
-priority = "medium"
-queue = 15
-summary = "Take items from a container without opening its full menu"
-reason = "Inspired by [MWSE QuickLoot](https://github.com/MortimerMcMire/MWSE-QuickLoot). Design for controller focus and 480p; preserve trap, ownership, scripted activation and corpse-disposal semantics. Frequent-use QoL, but more UI and state work than a small patch."
-
-[[candidate]]
 name = "xbox-inventory-search"
 origin = { source = "TES3X" }
 category = "qol"

@@ -424,6 +424,14 @@
     "POOL_CTOR": null,
     "POOL_HEAP_ALLOCATE": null,
     "POOL_HEAP_OBJECT": null,
+    "QL_CLOSE": null,
+    "QL_FIND_MENU": null,
+    "QL_MENU_ID": null,
+    "QL_SET_PROP": null,
+    "QL_SHOW": null,
+    "QL_TILE_ID": null,
+    "QL_TRANSFER": null,
+    "QL_WORLD": null,
     "RECORDS_PTR": null,
     "REFINDEX_FIND_IN_CELL": null,
     "REFINDEX_START_SCRIPTS": null,
@@ -554,8 +562,8 @@
       "sha256": "228130ba66fd93dc85e3df23fd32ffbe434b0a1b63fd1b2a7276efe3fac915a6"
     },
     "tes3xconsole.c": {
-      "digest": "2d38423f3e96bf2dfbafd13c7a2f04fc79a6c0f1ea3263d3d505eaefcd852b8b",
-      "sha256": "ae8392d9667cf543cd3fb7959af8a7b5e96285dca4a48a1e5c41829dbe3be90a"
+      "digest": "045b72442b7f676dc29b2ebfcce06cf4a36c2aa18d70c06acb883885698007c4",
+      "sha256": "3738fa65b5fe1a0c3b266beae0a2a21dea15d201d41c372267bd814f6b37acdd"
     },
     "tes3xcrt.c": {
       "digest": "18dd1c43ee41f4a5a7daa25cff1cb77265fabc473745af5f707b3783ea90d0ce",
@@ -769,6 +777,10 @@
       "digest": "93caf3c02f43c9a42cc07381c10187f0d8b6ba541f0f994348861b43e2da2185",
       "sha256": "75891e426af870b36f55cebbfdb13731948736bd48ddf415cf21b7fa6a6eb63c"
     },
+    "tes3xquickloot.c": {
+      "digest": "c5de77529a767b4712cf82f1ce072676fb5e7839e7d27da61e94eb4a02f750a4",
+      "sha256": "18cc3dfa0d3890c371ae11d6fb42f5b5bd06d0bb4309d852bcffb5719962b95c"
+    },
     "tes3xrefindex.c": {
       "digest": "a94508721248e5af1532a5c1ac343d39ab288a7e67b169219645e6376f879b3d",
       "sha256": "c570d8c8b5919712390921fd33d50cf237a4f1f9a66fd7658ab90df68ab5d714"
@@ -802,8 +814,8 @@
       "sha256": "f31a9d401bc3fee84ffff48e6ca683cf10d02affa5df7f90019b41514fc5c09f"
     },
     "tes3xtooltips.c": {
-      "digest": "b03d693072f48f2352e14bb281695a68638ac5d0be8d1a5c35a6b62011f497d1",
-      "sha256": "1c943cdf851a2132e5cf2787ed8875db3a2f159bbec1316d16838d48607719d9"
+      "digest": "28742d49b1448f04ecf0a6b2d10a1ab7738e59b32b85373a07139e393514118d",
+      "sha256": "168e9a70671f4658d34d557fc3e0bdd8cd0c32ed9e4c1feb2bed86b6dee2773c"
     },
     "tes3xtopiccolor.c": {
       "digest": "b93f56dfe7076e4ec9b226cc91eb4e38792698c6f2755e04beeb0777637185be",

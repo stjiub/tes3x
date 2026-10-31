@@ -43,7 +43,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_dash_button, find_topic_colors, find_topic_state, find_hud_scale, find_menu_area_scale,
                                find_chargen_scale,
                                find_levelup_scale, find_message_scale, find_name_scale,
-                               find_item_tooltip,
+                               find_item_tooltip, find_quickloot_sites,
                                find_options_scale,
                                find_menu_still, find_load_screen,
                                find_bow_view, find_button_pressed, find_call_sites, find_command_table,
@@ -1082,6 +1082,18 @@ def _xbox_tooltips(x, value, ctx):
         was, off = x.patch_call(site, int(str(target), 16))
         edits.append((off, 5, "object tooltip call 0x%08X: 0x%08X -> %s" %
                       (site, was, target)))
+    return edits
+
+
+@patch("xbox-quick-loot")
+def _xbox_quick_loot(x, value, ctx):
+    target = ctx.get("hooks", {}).get("quickloot_show")
+    if not target:
+        raise PatchError("xbox-quick-loot: needs a quickloot_show payload hook")
+    edits = []
+    for site in find_quickloot_sites(x):
+        was, off = x.patch_call(site, int(str(target), 16))
+        edits.append((off, 5, "contents menu call 0x%08X: 0x%08X -> %s" % (site, was, target)))
     return edits
 
 

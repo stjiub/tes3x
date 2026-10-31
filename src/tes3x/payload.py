@@ -28,7 +28,8 @@ from tes3x.patch_sites import (find_topic_state, find_mcp6_context, find_mcp30_c
                                find_mcp115_context,
                                find_mcp55_context,
                                find_mcp55_inventory_context, find_mcp118_drop_finish,
-                               find_mcp149_menu, find_lazy_dialogue_sites, find_pool_grow_sites)
+                               find_mcp149_menu, find_lazy_dialogue_sites, find_pool_grow_sites,
+                               find_quickloot_engine)
 from tes3x.patch import (CONSOLE_PRINT_VSPRINTF, LOCATORS, archive_load_site,
                          find_call_sites, find_item_tooltip, find_levelup_scale, find_menu_area_scale,
                          find_message_scale, find_name_scale, find_options_scale,
@@ -1551,6 +1552,24 @@ def _bind_tooltips(b):
     define("TIP_CREATE_LABEL", address("CREATE_LABEL", dict(NET_UI_ADDRESSES)["CREATE_LABEL"]))
     print(f"item tooltip: {hexva(tooltip)}, {len(calls)} call sites")
     wanted["item_tooltip"] = ("_tes3x_tooltip_hook@12",)
+
+
+@binder("tes3xquickloot.c")
+def _bind_quickloot(b):
+    names, address, define, locate, wanted = b.names, b.address, b.define, b.locate, b.wanted
+    if "tes3xconsole.c" not in names:
+        raise PayloadError("tes3xquickloot.c requires tes3xconsole.c")
+    engine = find_quickloot_engine(b.image)
+    define("QL_SHOW", hexva(engine["show"]))
+    define("QL_TRANSFER", hexva(engine["transfer"]))
+    define("QL_MENU_ID", hexva(engine["menu_id"]))
+    define("QL_TILE_ID", hexva(engine["tile_id"]))
+    define("QL_CLOSE", hexva(engine["close"]))
+    define("QL_WORLD", address("GAME_PTR", dict(CONSOLE_ADDRESSES)["GAME_PTR"]))
+    define("QL_FIND_MENU", address("FIND_MENU", dict(CONSOLE_ADDRESSES)["FIND_MENU"]))
+    define("QL_SET_PROP", address("SET_PROP", dict(CONSOLE_ADDRESSES)["SET_PROP"]))
+    print("quick-loot: contents menu take hook")
+    wanted["quickloot_show"] = ("_tes3x_quickloot_show",)
 
 
 @binder("tes3xtopiccolor.c")

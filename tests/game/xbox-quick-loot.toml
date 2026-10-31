@@ -1,0 +1,57 @@
+kind = "single"
+purpose = "Activating a container with a pending quick-loot request takes its item through the engine's own transfer routine, closes the menu, leaves menu mode off and still records theft from an owned container."
+procedure = "Start a new game, take salt rice from an unowned sack in the Seyda Neen lighthouse and check menu mode over several seconds, then take moon sugar from a guard-owned crate in the warehouse and check the crime level."
+limitations = "Covers single and multi-stack, empty and locked containers in xemu. Traps, scripts, corpses, input and the preview are not exercised."
+watch = 'quickloot\.|menu\.MenuContents|exec[.>]|assert[.>]|crash\.|hang\.detected|fatal\.'
+enable = ["diagnostics", "console", "extended-tooltips", "xbox-quick-loot"]
+timeout = 180
+xemu = ["--skip-intro", "--no-reboot"]
+script = '''
+@start new
+wait 30
+EnableInventoryMenu
+coc "Seyda Neen, Lighthouse"
+wait 60
+assert player->GetItemCount "ingred_saltrice_01" == 0.00
+"com_sack_01_saltrice_10"->AddItem "ingred_bread_01" 3
+"com_sack_01_saltrice_10"->AddItem "ingred_scrib_jerky_01" 2
+tes3xql take 1
+activate com_sack_01_saltrice_10
+wait 30
+assert player->GetItemCount "ingred_bread_01" == 3.00
+tes3xql mode
+tes3xql take 0
+activate com_sack_01_saltrice_10
+wait 30
+assert player->GetItemCount "ingred_saltrice_01" == 10.00
+tes3xql take 0
+activate com_sack_01_saltrice_10
+wait 30
+tes3xql take 0
+activate com_sack_01_saltrice_10
+wait 30
+tes3xql mode
+"com_sack_01_saltrice_10"->Lock 50
+tes3xql take 0
+activate com_sack_01_saltrice_10
+wait 30
+assert player->GetItemCount "ingred_scrib_jerky_01" == 0.00
+tes3xql mode
+coc "Seyda Neen, Census and Excise Warehouse"
+wait 60
+tes3xql mode
+assert player->GetItemCount "ingred_moon_sugar_01" == 0.00
+assert player->GetPCCrimeLevel == 0.00
+tes3xql take 0
+activate crate_02_moonsugar
+wait 30
+assert player->GetItemCount "ingred_moon_sugar_01" == 6.00
+assert player->GetPCCrimeLevel == 300.00
+visible MenuContents
+tes3xql mode
+exit
+'''
+
+[expect]
+test = ['quickloot\.count 10', 'quickloot\.count 6', 'menu\.MenuContents 0',
+        '!quickloot\.mode 1', '!quickloot\.mode_after 1', 'exec\.exit 0', 'assert\.failed 0']

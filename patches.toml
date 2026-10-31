@@ -1068,6 +1068,18 @@ source = "tes3xpoolgrow.c"
 summary = "Add another pool when a small-block size class fills, instead of giving each further block a header in the heap."
 
 [[patch]]
+name = "xbox-quick-loot"
+title = "Quick loot"
+bit = 65
+category = "qol"
+group = "Interface and saves"
+channel = "dev"
+selection = "preset"
+source = "tes3xquickloot.c"
+requires = ["console", "extended-tooltips"]
+summary = "Take items from a container without opening its full menu."
+
+[[patch]]
 name = "load-screen-race"
 title = "Loading screen stop race"
 bit = 64

@@ -96,6 +96,49 @@ static void label(u8 *body, const char *text)
     ((fn_create_label)TES3X_TIP_CREATE_LABEL)(body, LABEL_ID, text, 0, 0);
 }
 
+TES3X_OPTIONAL int tes3x_quickloot_enabled(void);
+
+#define CONT 0x544E4F43u
+#define PREVIEW_LINES 6
+
+/* Lists a container's stacks: Container::inventory is at +0x3C, its stack list head at +0x48. */
+static void preview(u8 *body, u8 *container)
+{
+    u8 *node = *(u8 **)(container + 0x48);
+    int shown = 0, more = 0, i;
+    char line[96], *at;
+
+    for (i = 0; i < 256 && plausible(node); i++, node = *(u8 **)(node + 4)) {
+        u8 *stack = *(u8 **)(node + 8), *object;
+        const char *name;
+        int count;
+
+        if (!plausible(stack))
+            break;
+        count = *(int *)stack;
+        object = *(u8 **)(stack + 4);
+        name = plausible(object) ? (const char *)(object + 0x34) : 0;
+        if (count <= 0 || !name || !name[0])
+            continue;
+        if (shown == PREVIEW_LINES) {
+            more++;
+            continue;
+        }
+        at = number(line, line + sizeof(line), (unsigned)count);
+        at = put(at, line + sizeof(line), " x ");
+        put(at, line + sizeof(line), name);
+        label(body, line);
+        shown++;
+    }
+    if (more) {
+        at = put(line, line + sizeof(line), "+");
+        at = number(at, line + sizeof(line), (unsigned)more);
+        put(at, line + sizeof(line), " more");
+        label(body, line);
+    } else if (!shown)
+        label(body, "Empty");
+}
+
 void __attribute__((stdcall)) tes3x_tooltip_hook(u8 *object, u8 *data, int count)
 {
     u8 *world, *menu, *body, *item, *owner, *soul, *enchant;
@@ -127,6 +170,9 @@ void __attribute__((stdcall)) tes3x_tooltip_hook(u8 *object, u8 *data, int count
     owner = plausible(data) ? *(u8 **)(data + 4) : 0;
     owner_type = plausible(owner) ? kind(owner) : 0;
     if (!in_menu) {
+        if (object_type == REF && item_type == CONT && tes3x_quickloot_enabled &&
+            tes3x_quickloot_enabled())
+            preview(body, item);
         if (object_type == REF && owner && theft(data, owner, owner_type))
             label(body, "Owned");
         return;
