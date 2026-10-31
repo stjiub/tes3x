@@ -401,6 +401,8 @@ def load_records():
     """{path: record} for every result, and the problems with those that do not load."""
     records, problems = {}, []
     for path in sorted(PATCH_DIRS.rglob("*.toml")) if PATCH_DIRS.is_dir() else []:
+        if path.name == "scenario.toml":  # a run's copy of its test, not a result
+            continue
         try:
             records[relative(path)] = load_record(path)
         except (ValidationError, tomllib.TOMLDecodeError) as exc:

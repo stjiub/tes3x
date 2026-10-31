@@ -30,6 +30,12 @@ class ValidationTests(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
+    def test_a_runs_scenario_copy_is_not_a_result(self):
+        folder = self.patches / 'example' / 'audit'
+        folder.mkdir(parents=True)
+        (folder / 'scenario.toml').write_text('script = "exit"\n')
+        self.assertEqual(validation.load_records(), ({}, []))
+
     def run_folder(self, role, mask, loaded, patches=None, ini='8' * 64):
         folder = self.root / role
         (folder / 'pipeline').mkdir(parents=True)
