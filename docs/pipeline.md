@@ -121,7 +121,8 @@ right way round. Quadratic Euler tracks are sampled linearly between keys, so th
 keys is approximated. Only the rotation section changes; the rest of the file stays byte for byte.
 
 The pipeline logs how many files it converted, and warns about any whose layout it could not follow;
-those keep their Euler keys. Meshes inside a mod's own BSA are not converted.
+those keep their Euler keys. Store mods are converted the same way as they are packed into the
+shared store. Meshes inside a mod's own BSA are not converted.
 
 If the profile sets [`ui.scale`](configuration.md#ui), the pipeline writes smaller bitmap font
 metrics into the staged `.fnt` files and enables the UI scale hook for HUD art, common menu

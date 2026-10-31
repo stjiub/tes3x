@@ -1,6 +1,7 @@
 import contextlib
 import hashlib
 import io
+import struct
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,6 +10,7 @@ from unittest.mock import patch
 
 from tes3x import manifest, store
 from tes3x.build import Mod, resolve, store_mods
+from tes3x.kf_merge import KEYFRAME_TAG, XYZ_ROTATION, has_xyz_rotation
 
 
 class StoreTests(unittest.TestCase):
@@ -41,6 +43,17 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(store.xbox_path(first["sha256"]),
                          f"E:\\TES3X\\lib\\{first['sha256'][:32]}.bsa")
         self.assertLessEqual(len(store.xbox_name(first["sha256"]) + ".json"), 42)
+
+    def test_store_archive_converts_euler_rotation_keys(self):
+        euler = (KEYFRAME_TAG + struct.pack("<IIf", 1, XYZ_ROTATION, 0.0)
+                 + struct.pack("<IIff", 1, 1, 0.0, 1.0) + struct.pack("<II", 0, 0)
+                 + struct.pack("<III", 0, 0, 0))
+        folder = self.mod("Euler", {"meshes/spin.nif": euler})
+        entry = store.pack_mod(Mod("Euler", str(folder), 1), 512, self.root / "store")
+        archive = (self.root / "store" / f"{entry['sha256']}.bsa").read_bytes()
+        self.assertNotIn(euler, archive)
+        self.assertFalse(has_xyz_rotation(archive))
+        self.assertEqual((folder / "meshes" / "spin.nif").read_bytes(), euler)
 
     def test_tree_keeps_what_the_store_mod_loses(self):
         mods = [Mod("Big", str(self.big), 1), Mod("Later", str(self.later), 2)]

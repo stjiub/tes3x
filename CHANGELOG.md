@@ -6,7 +6,8 @@ No official releases yet. The first public release is in preparation.
 
 - Builds now convert Euler rotation keys in loose meshes and KFs to quaternion keys. The Xbox engine
   cannot play them, so animated Tamriel Data and Tamriel Rebuilt objects could crash or freeze the
-  game. Rebuild to pick it up; meshes inside a mod's own BSA are not converted. See
+  game. Store mods are converted too, so their archives repack once on the next build. Rebuild to
+  pick it up; meshes inside a mod's own BSA are not converted. See
   [the pipeline notes](docs/pipeline.md#converting-euler-rotation-keys).
 
 - `delta-bsa` builds now split the mod archive at 1.9 GB into `tes3xmods2.bsa` and so on, so very

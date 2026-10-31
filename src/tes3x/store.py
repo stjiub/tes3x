@@ -9,13 +9,15 @@ import tempfile
 from pathlib import Path
 
 from tes3x.bsa import tes3_hash, write_bsa
+from tes3x.kf_merge import KFMergeError, has_xyz_rotation, quaternion_rotation_file
 
 # The Xbox folder every build's tes3xarch.txt names store archives in.
 XBOX_LIB = "E:\\TES3X\\lib"
 TIERS = (256, 512, 1024)
 # Changes whenever packing would produce different bytes for the same files and tier.
-PACKING = 1
+PACKING = 2
 TEXTURE_EXT = (".dds", ".tga", ".bmp")
+MESH_EXT = (".nif", ".kf")
 
 
 def tier_for(cap):
@@ -85,6 +87,20 @@ def write_text_atomic(path, text):
     os.replace(partial, path)
 
 
+def quaternion_source(source, out):
+    """`source`, or `out` holding it with Euler rotation keys converted: the Xbox cannot play them.
+
+    Store archives skip the build tree, where the pipeline converts every other mod's files."""
+    if not has_xyz_rotation(Path(source).read_bytes()):
+        return source
+    try:
+        quaternion_rotation_file(source, out)
+    except KFMergeError as exc:
+        print(f"WARNING: Euler rotation keys left in {source}: {exc}")
+        return source
+    return str(out)
+
+
 def pack_mod(mod, tier, store, cache=None):
     """The store entry {sha256, size, name, tier} for `mod` at `tier`, packing it unless an
     archive from the same sources is already in `store`."""
@@ -126,6 +142,8 @@ def pack_mod(mod, tier, store, cache=None):
                 converted = work / f"{len(files)}.dds"
                 converted.write_bytes(data)
                 source = str(converted)
+            elif name.endswith(MESH_EXT):
+                source = quaternion_source(source, work / f"{len(files)}.mesh")
             files.append((relative, source))
         if not files:
             raise ValueError(f"{mod.name} has no packable assets to store")

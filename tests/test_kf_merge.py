@@ -8,7 +8,7 @@ import struct
 
 from tes3x.kf_merge import (DODGE_GROUPS, KFMergeError, _blend, _interpolate, _window_keys,
                             _xyz_quaternions, dodge_clip_ranges, group_windows,
-                            has_xyz_rotation)
+                            has_xyz_rotation, quaternion_rotation_bytes)
 
 
 def _kf(keys):
@@ -62,6 +62,12 @@ class KFMergeTests(unittest.TestCase):
         self.assertTrue(has_xyz_rotation(b"x" + tag + struct.pack("<II", 2, 4)))
         self.assertFalse(has_xyz_rotation(tag + struct.pack("<II", 2, 1)))
         self.assertFalse(has_xyz_rotation(tag + struct.pack("<II", 0, 4)))
+
+    def test_an_euler_section_with_no_keys_becomes_a_zero_count(self):
+        tag = struct.pack("<I", 14) + b"NiKeyframeData"
+        after = struct.pack("<III", 0, 0, 0)  # translations, scales, footer
+        raw = tag + struct.pack("<IIf", 1, 4, 0.0) + struct.pack("<III", 0, 0, 0) + after
+        self.assertEqual(quaternion_rotation_bytes(raw), (tag + struct.pack("<I", 0) + after, 1))
 
     def test_group_windows_pair_start_and_stop(self):
         text = SimpleNamespace(text_keys=[

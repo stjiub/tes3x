@@ -585,6 +585,8 @@ def _quaternion_block(raw, at):
     if not _next_block_follows(raw, after):
         raise KFMergeError("keyframe block does not end at the next block")
     keys = list(_xyz_quaternions(SimpleNamespace(xyz_rotations=groups)))
+    if not keys:  # a count of zero has no type field after it
+        return end, struct.pack("<I", 0)
     body = struct.pack("<II", len(keys), 1)
     for at_time, quaternion in keys:
         body += struct.pack("<5f", at_time, *quaternion)
