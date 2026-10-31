@@ -1044,3 +1044,14 @@ channel = "dev"
 selection = "preset"
 source = "tes3xpoolgrow.c"
 summary = "Add another pool when a small-block size class fills, instead of giving each further block a header in the heap."
+
+[[patch]]
+name = "load-screen-race"
+title = "Loading screen stop race"
+bit = 64
+category = "correctness"
+group = "Other fixes"
+channel = "dev"
+selection = "preset"
+source = "tes3xloadscreen.c"
+summary = "Stop the loading screen's render thread and the main thread from waiting on each other when a load ends within its first frames."

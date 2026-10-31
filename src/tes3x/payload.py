@@ -1625,6 +1625,20 @@ def _bind_menustill(b):
     wanted["still_clear"] = ("_tes3x_still_clear_hook",)
 
 
+@binder("tes3xloadscreen.c")
+def _bind_loadscreen(b):
+    image, define, locate, wanted = b.image, b.define, b.locate, b.wanted
+    proc, wait = locate("load-screen-race")
+    start = tes3x_inject.call_target(image, wait)
+    print(f"load-screen-race hook: render thread procedure {hexva(proc)}, "
+          f"start call {hexva(wait)} -> {hexva(start)}")
+    define("LOADSCREEN_PROC", hexva(struct.unpack_from(
+        "<I", image.data, image.va_to_off(proc))[0]))
+    define("LOADSCREEN_START", hexva(start))
+    wanted["loadscreen_thread"] = ("_tes3x_loadscreen_thread_hook",)
+    wanted["loadscreen_wait"] = ("_tes3x_loadscreen_wait_hook",)
+
+
 @binder("tes3xleanmenu.c")
 def _bind_leanmenu(b):
     image, define, locate, wanted = b.image, b.define, b.locate, b.wanted
@@ -1714,6 +1728,8 @@ def _bind_diag_2(b):
     wanted["diagnostics_flag"] = ("_tes3x_diag_installed",)
     wanted["patch_mask"] = ("_tes3x_patch_mask",)
     wanted["patch_mask_hi"] = ("_tes3x_patch_mask_hi",)
+    wanted["patch_mask_ext"] = ("_tes3x_patch_mask_ext",)
+    wanted["patch_mask_words"] = ("_tes3x_patch_mask_words",)
 
 
 @binder("tes3xprof.c")

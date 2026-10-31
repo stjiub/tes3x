@@ -19,7 +19,9 @@ MAGIC = 0x50583354  # "T3XP"
 VERSION = 2
 HEADER_V1 = '<4I6Q2I3Q8I10I'
 HEADER_V2 = HEADER_V1 + '4I'
-HEADER_BY_VERSION = {1: HEADER_V1, 2: HEADER_V2}
+# Version 3 adds the mask's word count; words 2 and up follow the header, before the targets.
+HEADER_V3 = HEADER_V2 + 'I'
+HEADER_BY_VERSION = {1: HEADER_V1, 2: HEADER_V2, 3: HEADER_V3}
 SLOT = '<2I4Q'
 SLOT_SIZE = struct.calcsize(SLOT)
 ACTIVE_V1 = '<4IQ'
@@ -96,6 +98,14 @@ def blocks(path):
             print(f'  (truncated header at offset {at}; {len(data) - at} bytes left)')
             return
         f = struct.unpack_from(header, data, at)
+        mask_ext = ()
+        if version >= 3:
+            ext_size = 4 * max(f[37] - 2, 0)
+            if at + header_size + ext_size > len(data):
+                print(f'  (truncated header at offset {at}; {len(data) - at} bytes left)')
+                return
+            mask_ext = struct.unpack_from(f'<{ext_size // 4}I', data, at + header_size)
+            header_size += ext_size
         slots, record = f[2], f[3]
         active_count = f[34] if version >= 2 else 0
         active_record = f[35] if version >= 2 else 0
@@ -119,7 +129,7 @@ def blocks(path):
                 else:
                     thread, depth, slot, target, elapsed = struct.unpack_from(ACTIVE_V1, data, pos)
                     active.append((thread, depth, slot, target, 0, 0, 0, 0, elapsed))
-        yield f, targets, rows, active
+        yield f + tuple(mask_ext), targets, rows, active
         at = end
 
 
@@ -134,6 +144,8 @@ def report_block(seq, f, targets, rows, active, names, hz_override):
     (overhead, foreign, overflow, stale, underflow, depth_max, threads,
      mask, build, mask_hi) = f[23:33]
     mask |= mask_hi << 32
+    for word, value in enumerate(f[38:], 2):
+        mask |= value << (32 * word)
 
     wall_100ns = dump_time - session
     derived = None
@@ -148,7 +160,7 @@ def report_block(seq, f, targets, rows, active, names, hz_override):
     free_kb = f[33] if version >= 2 else None
     reason = f[36] if version >= 2 else 0
     reason_text = DUMP_REASONS.get(reason, f'reason-{reason}') if reason else 'legacy'
-    mask_width = 16 if mask >> 32 else 8
+    mask_width = 8 * max(1, (mask.bit_length() + 31) // 32)
     print(f'\n=== block {seq}  uptime {wall_100ns / 1e7:.1f}s  '
           f'window {ms(window, hz) / 1000:.1f}s  '
           f'patches 0x{mask:0{mask_width}X}  build 0x{build:08X}  {reason_text} ===')

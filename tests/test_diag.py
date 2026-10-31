@@ -26,6 +26,23 @@ class DiagnosticsTests(unittest.TestCase):
             PATCH_BITS.clear()
             PATCH_BITS.update(old)
 
+    def test_patch_mask_words_above_64_bits_are_decoded(self):
+        old = dict(PATCH_BITS)
+        try:
+            PATCH_BITS[64] = "net"
+            PATCH_BITS[255] = "agent"
+            records = parse_log(
+                "1 ms diag.patches 0x00000040\n"
+                "2 ms diag.patches_w2 0x00000001\n"
+                "3 ms diag.patches_w7 0x80000000\n")
+            out = io.StringIO()
+            report(records, stream=out)
+            mask = 0x40 | 1 << 64 | 1 << 255
+            self.assertIn("diagnostics, net, agent (0x%064X)" % mask, out.getvalue())
+        finally:
+            PATCH_BITS.clear()
+            PATCH_BITS.update(old)
+
     def test_sessions_start_at_xbe_entry(self):
         records = parse_log(
             "0 ms entry.free_kb 59820\r\n"

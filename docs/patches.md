@@ -142,3 +142,4 @@ single required/not-required flag.
 | [Keep responses of repeated topics](../patches/dialogue-merge.md) | `dialogue-merge` | Keep a topic's earlier responses when a later plugin adds to it. | TES3X | correctness | preview | testing preset; `lazy-dialogue` |
 | [Can't Touch This dodges](../patches/cant-touch-this.md) | `cant-touch-this` | Play a dodge animation when a melee attack misses a calm NPC, using Can't Touch This's clips. | TES3X | compatibility | dev | By name |
 | [DXT5 allocation fix](../patches/dxt5-size.md) | `dxt5-size` | Allocate DXT5 textures at their real size, not a negative one that corrupts video memory. | TES3X | core | preview | testing preset |
+| [Loading screen stop race](../patches/load-screen-race.md) | `load-screen-race` | Stop the loading screen's render thread and the main thread from waiting on each other when a load ends within its first frames. | TES3X | correctness | dev | By name; recommended preset at release |

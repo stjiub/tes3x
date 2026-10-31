@@ -130,11 +130,10 @@ def report(records, xbe=None, show_all=False, stream=sys.stdout):
         if "diag.build" in values:
             print("  payload build: %s" % fmt_value(values["diag.build"]), file=stream)
         if isinstance(values.get("diag.patches"), int):
-            mask = values["diag.patches"] | (values.get("diag.patches_hi", 0) << 32)
+            mask = registry.mask_from_log(values)
             names = [name for bit, name in PATCH_BITS.items() if mask & (1 << bit)]
-            width = 16 if mask >> 32 else 8
-            print("  patches: %s (0x%0*X)" %
-                  (", ".join(names) or "none", width, mask), file=stream)
+            print("  patches: %s (%s)" %
+                  (", ".join(names) or "none", registry.format_mask(mask)), file=stream)
             dev = [name for name in names if name in DEV_PATCHES]
             if dev:
                 # Read against the current table, so a patch promoted since the build is not listed.

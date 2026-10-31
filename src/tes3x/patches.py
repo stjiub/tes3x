@@ -19,6 +19,25 @@ TABLE = ROOT / "docs" / "patches.md"
 CANDIDATE_PAGE = ROOT / "docs" / "candidates.md"
 PATCH_DOCS = resource("patches")
 
+# The payload keeps the patch mask as 32-bit words (TES3X_PATCH_MASK_WORDS in hooks/tes3xdiag.h):
+# bits 0-31 log as `diag.patches`, 32-63 as `diag.patches_hi`, word N above that as
+# `diag.patches_wN`. Widening it means raising both numbers and rebuilding the payload objects.
+MASK_WORDS = 32
+MASK_BITS = MASK_WORDS * 32
+
+
+def mask_from_log(values):
+    """The patch mask a session logged, from its latest values by tag."""
+    tags = ["diag.patches", "diag.patches_hi"] + [f"diag.patches_w{n}" for n in range(2, MASK_WORDS)]
+    return sum(values[tag] << (32 * word) for word, tag in enumerate(tags)
+               if isinstance(values.get(tag), int))
+
+
+def format_mask(mask):
+    """A mask as hex with 8 digits per 32 bits in use, at least 8."""
+    return "0x%0*X" % (8 * max(1, (mask.bit_length() + 31) // 32), mask)
+
+
 CATEGORIES = ("core", "correctness", "compatibility", "performance", "qol", "balance",
               "instrumentation", "infrastructure")
 CHANNELS = ("dev", "preview", "release")
@@ -95,8 +114,8 @@ def read(path=REGISTRY, candidate_path=CANDIDATE_LIST):
             if entry["recommended"] and entry["category"] == "balance":
                 raise RegistryError(f"{where}: balance patches are never recommended")
         if "bit" in entry:
-            if not isinstance(entry["bit"], int) or not 0 <= entry["bit"] < 64:
-                raise RegistryError(f"{where}: bit must be 0-63")
+            if not isinstance(entry["bit"], int) or not 0 <= entry["bit"] < MASK_BITS:
+                raise RegistryError(f"{where}: bit must be 0-{MASK_BITS - 1}")
             if entry["bit"] in bits:
                 raise RegistryError(f"{where}: bit {entry['bit']} already used")
             bits.add(entry["bit"])

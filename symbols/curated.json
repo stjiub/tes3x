@@ -1191,6 +1191,48 @@
       "note": "SPLM: each NAME starts a 0x128-byte MagicSourceInstance, loaded through its vtable +4; a failure logs 'Failed to load spell'. The instance is then registered (0xBDE40) and the serial counter DAT_003D3B98 raised."
     },
     {
+      "va": "0x000BEBB0",
+      "name": "LoadScreenManager::setBusy",
+      "confidence": "verified",
+      "provenance": "load-screen-race: live GDB",
+      "note": "Writes +0x135 under the critical section at +0x190. 1 asks the render thread to stop; the thread clears it (0xC135B) when it exits, and start clears it before creating a new thread.",
+      "kind": "function",
+      "signature": "void __thiscall f(char busy)"
+    },
+    {
+      "va": "0x000BEBE0",
+      "name": "LoadScreenManager::isBusy",
+      "confidence": "verified",
+      "provenance": "load-screen-race: disassembly",
+      "kind": "function",
+      "signature": "char __thiscall f()"
+    },
+    {
+      "va": "0x000BEC10",
+      "name": "LoadScreenManager::setActive",
+      "confidence": "verified",
+      "provenance": "load-screen-race: disassembly",
+      "note": "Writes +0x29 under the critical section at +0x1B8; the render thread sets it before its loop.",
+      "kind": "function",
+      "signature": "void __thiscall f(char active)"
+    },
+    {
+      "va": "0x000BEC40",
+      "name": "LoadScreenManager::isActive",
+      "confidence": "verified",
+      "provenance": "load-screen-race: disassembly",
+      "kind": "function",
+      "signature": "char __thiscall f()"
+    },
+    {
+      "va": "0x000BF650",
+      "name": "LoadScreenManager::stop",
+      "confidence": "verified",
+      "provenance": "load-screen-race: live GDB and disassembly",
+      "note": "If state (+0) is 2: sets the busy flag through 0xBF3D0 when the render thread is active, waits for it to clear (Sleep 350), clears the viewport and sets state 3. Called from the frame end (0x983A5, 0x94E6B), clearMovieState and open.",
+      "kind": "function"
+    },
+    {
       "va": "0x000BF7F0",
       "name": "LoadScreenManager::clearMovieState",
       "kind": "function",
@@ -1205,6 +1247,24 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_LoadScreenManager_open",
       "pc_va": "0x004587E0"
+    },
+    {
+      "va": "0x000BFBF0",
+      "name": "LoadScreenManager::start",
+      "confidence": "verified",
+      "provenance": "load-screen-race: live GDB and disassembly",
+      "note": "Waits for the busy flag (+0x135) to clear, returns if the active flag (+0x29) is set or wait is 0, then creates the render thread (procedure 0xC0B20) and lowers its priority. The render thread itself calls it with (15.0, 1) from 0xC09B7, where it only waits; a stop request set before that call deadlocks both threads (patch load-screen-race).",
+      "kind": "function",
+      "signature": "void __thiscall f(float seconds, char wait)"
+    },
+    {
+      "va": "0x000C0B20",
+      "name": "LoadScreenManager::renderThreadProc",
+      "confidence": "verified",
+      "provenance": "load-screen-race: live GDB",
+      "note": "The loading screen's render thread: sets active, loops while busy is clear and exits clearing busy at 0xC135B.",
+      "kind": "function",
+      "signature": "void __stdcall f(void *manager)"
     },
     {
       "va": "0x000C1390",

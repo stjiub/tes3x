@@ -45,7 +45,7 @@ from tes3x.patch_sites import (ARENA_SIZE_OFF, ARENA_SIZE_SIG, ASSET_PATHS, AUTO
                                find_levelup_scale, find_message_scale, find_name_scale,
                                find_item_tooltip,
                                find_options_scale,
-                               find_menu_still,
+                               find_menu_still, find_load_screen,
                                find_bow_view, find_button_pressed, find_call_sites, find_command_table,
                                find_console_gate, find_console_print, find_controls_table,
                                find_diagnostics_update, find_dialogue_merge, find_dialogue_owner_sites,
@@ -1106,6 +1106,25 @@ def _menu_still(x, value, ctx):
     return edits
 
 
+@patch("load-screen-race")
+def _load_screen_race(x, value, ctx):
+    """Keep the loading screen's render thread from waiting on its own stop request."""
+    hooks = ctx.get("hooks", {})
+    if not all(hooks.get(k) for k in ("loadscreen_thread", "loadscreen_wait")):
+        raise PatchError("load-screen-race: needs `payload` first, with loadscreen_thread and "
+                         "loadscreen_wait hooks in its manifest")
+    proc, wait = find_load_screen(x)
+    off = x.va_to_off(proc)
+    was = struct.unpack_from("<I", x.data, off)[0]
+    x.data[off:off + 4] = struct.pack("<I", int(str(hooks["loadscreen_thread"]), 16))
+    edits = [(off, 4, "render thread procedure 0x%08X: 0x%08X -> %s"
+              % (proc, was, hooks["loadscreen_thread"]))]
+    was, off = x.patch_call(wait, int(str(hooks["loadscreen_wait"]), 16))
+    edits.append((off, 5, "render thread start call 0x%08X: 0x%08X -> %s"
+                  % (wait, was, hooks["loadscreen_wait"])))
+    return edits
+
+
 @patch("lean-menu")
 def _lean_menu(x, value, ctx):
     """Load only game settings for the main menu; the relaunch loads the rest."""
@@ -2114,25 +2133,33 @@ def main():
         except PatchError as exc:
             raise SystemExit("  FAILED: %s" % exc) from None
 
-    mask_va = ctx.get("hooks", {}).get("patch_mask")
-    mask_hi_va = ctx.get("hooks", {}).get("patch_mask_hi")
+    hooks = ctx.get("hooks", {})
+    mask_va = hooks.get("patch_mask")
     if mask_va:
         mask_va = int(str(mask_va), 16)
-        mask_hi_va = int(str(mask_hi_va), 16) if mask_hi_va else None
-        mask_off = x.va_to_off(mask_va)
-        mask_hi_off = x.va_to_off(mask_hi_va) if mask_hi_va else None
-        if mask_off is None or (mask_hi_va and mask_hi_off is None):
-            raise SystemExit("payload patch mask is outside the injected section")
         mask = 0
         for name in applied:
             mask |= PATCH_BITS.get(name, 0)
-        if mask >> 32 and mask_hi_off is None:
-            raise SystemExit("payload has no high patch mask for patches above bit 31")
-        struct.pack_into("<I", x.data, mask_off, mask & 0xFFFFFFFF)
-        if mask_hi_off is not None:
-            struct.pack_into("<I", x.data, mask_hi_off, mask >> 32)
-        width = 16 if mask >> 32 else 8
-        print("\n  payload patch mask 0x%0*X at 0x%08X" % (width, mask, mask_va))
+        word_vas = [mask_va]
+        if hooks.get("patch_mask_hi"):
+            word_vas.append(int(str(hooks["patch_mask_hi"]), 16))
+        if hooks.get("patch_mask_ext"):
+            base = int(str(hooks["patch_mask_ext"]), 16)
+            word_vas += [base + 4 * i for i in range(registry.MASK_WORDS - 2)]
+        if hooks.get("patch_mask_words"):
+            words_off = x.va_to_off(int(str(hooks["patch_mask_words"]), 16))
+            if words_off is None or \
+                    struct.unpack_from("<I", x.data, words_off)[0] != registry.MASK_WORDS:
+                raise SystemExit("payload patch mask is not %d words wide; rebuild the payload "
+                                 "objects" % registry.MASK_WORDS)
+        if mask >> (32 * len(word_vas)):
+            raise SystemExit("payload patch mask is too narrow for the selected patches")
+        for word, va in enumerate(word_vas):
+            off = x.va_to_off(va)
+            if off is None:
+                raise SystemExit("payload patch mask is outside the injected section")
+            struct.pack_into("<I", x.data, off, (mask >> (32 * word)) & 0xFFFFFFFF)
+        print("\n  payload patch mask %s at 0x%08X" % (registry.format_mask(mask), mask_va))
 
     x.rebuild_headers()
     out = bytes(x.data)
@@ -2335,6 +2362,7 @@ __all__ = [
     'find_topic_colors',
     'find_topic_state',
     'find_menu_still',
+    'find_load_screen',
     'find_bow_view',
     'find_button_pressed',
     'find_call_sites',

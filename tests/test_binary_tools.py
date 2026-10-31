@@ -183,13 +183,18 @@ class ProfilerTests(unittest.TestCase):
             prof.resolve("actor", self.RECORDS)
 
     @staticmethod
-    def block(slots=2, active=1, version=2):
+    def block(slots=2, active=1, version=2, mask_words=4, ext=()):
         layout = prof.HEADER_BY_VERSION[version]
         header = list(struct.unpack(layout, bytes(struct.calcsize(layout))))
         header[0], header[1], header[2], header[3] = prof.MAGIC, version, slots, prof.SLOT_SIZE
         if version >= 2:
             header[34], header[35] = active, prof.ACTIVE_V2_SIZE
+        if version >= 3:
+            header[37] = mask_words
         data = struct.pack(layout, *header)
+        if version >= 3:
+            words = list(ext) + [0] * (mask_words - 2 - len(ext))
+            data += struct.pack(f"<{mask_words - 2}I", *words)
         data += struct.pack(f"<{slots}I", *[0x10000 + 16 * i for i in range(slots)])
         data += b"".join(struct.pack(prof.SLOT, i, 0, 1, 2, 3, 4) for i in range(slots))
         if version >= 2:
@@ -211,6 +216,15 @@ class ProfilerTests(unittest.TestCase):
         self.assertEqual(len(rows), 2)
         self.assertEqual(len(active), 1)
         self.assertEqual(len(found[1][1]), 3)
+
+    def test_blocks_reads_the_patch_mask_words_of_version_3(self):
+        found = self.read(self.block(version=3, mask_words=5, ext=(1, 0, 0x80000000)) +
+                          self.block(version=3))
+        self.assertEqual(len(found), 2)
+        header, targets = found[0][:2]
+        self.assertEqual(header[38:], (1, 0, 0x80000000))
+        self.assertEqual(targets, (0x10000, 0x10010))
+        self.assertEqual(found[1][0][38:], (0, 0))
 
     def test_blocks_reads_the_older_version(self):
         found = self.read(self.block(version=1))

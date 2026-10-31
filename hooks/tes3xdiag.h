@@ -14,6 +14,11 @@ enum {
 extern volatile u32 tes3x_diag_installed;
 extern volatile u32 tes3x_patch_mask;
 extern volatile u32 tes3x_patch_mask_hi;
+/* Words 2 to TES3X_PATCH_MASK_WORDS - 1 of the patch mask; the patcher refuses a payload whose
+ * word count differs from its own. */
+#define TES3X_PATCH_MASK_WORDS 32
+extern volatile u32 tes3x_patch_mask_ext[TES3X_PATCH_MASK_WORDS - 2];
+extern const u32 tes3x_patch_mask_words;
 
 void tes3x_diag_init(void);
 void tes3x_diag_tick(void);

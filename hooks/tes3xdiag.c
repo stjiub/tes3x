@@ -100,6 +100,8 @@ extern u64 tes3x_boot_time;
 volatile u32 tes3x_diag_installed;
 volatile u32 tes3x_patch_mask;
 volatile u32 tes3x_patch_mask_hi;
+volatile u32 tes3x_patch_mask_ext[TES3X_PATCH_MASK_WORDS - 2];
+const u32 tes3x_patch_mask_words = TES3X_PATCH_MASK_WORDS;
 
 static volatile u32 diag_heartbeat;
 static volatile u32 diag_last_code;
@@ -357,11 +359,22 @@ static void load_config(void)
 
 void tes3x_diag_init(void)
 {
+    static char tag[] = "diag.patches_w00";
+    u32 i;
+
     tes3x_log_hex("diag.session", (u32)tes3x_boot_time);
     tes3x_log_hex("diag.build", TES3X_BUILD_ID);
     tes3x_log_hex("diag.patches", tes3x_patch_mask);
     if (tes3x_patch_mask_hi)
         tes3x_log_hex("diag.patches_hi", tes3x_patch_mask_hi);
+    for (i = 0; i < TES3X_PATCH_MASK_WORDS - 2; i++) {
+        if (!tes3x_patch_mask_ext[i])
+            continue;
+        /* The word index is 2-31: "diag.patches_w2" to "diag.patches_w31". */
+        tag[14] = i + 2 < 10 ? '0' + i + 2 : '0' + (i + 2) / 10;
+        tag[15] = i + 2 < 10 ? 0 : '0' + (i + 2) % 10;
+        tes3x_log_hex(tag, tes3x_patch_mask_ext[i]);
+    }
     /* The certificate's title ID, which picks the E:/UDATA folder saves go to. */
     tes3x_log_hex("diag.title_id", *(u32 *)(*(u32 *)0x00010118 + 8));
 }

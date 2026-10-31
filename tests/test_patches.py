@@ -93,15 +93,16 @@ class RegistryTests(unittest.TestCase):
             with self.assertRaises(registry.RegistryError):
                 registry.load(path)
 
-    def test_patch_bits_have_two_words(self):
+    def test_patch_bits_fit_the_payload_mask(self):
         template = ('[[patch]]\nname = "x"\ntitle = "X"\ncategory = "core"\n'
                     'group = "Speed"\nchannel = "dev"\nselection = "preset"\nsummary = "x"\nbit = %d\n')
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'patches.toml'
-            path.write_text(template % 63, encoding='utf-8')
-            self.assertEqual(registry.load(path)[0]['bit'], 63)
-            path.write_text(template % 64, encoding='utf-8')
-            with self.assertRaisesRegex(registry.RegistryError, 'bit must be 0-63'):
+            last = registry.MASK_BITS - 1
+            path.write_text(template % last, encoding='utf-8')
+            self.assertEqual(registry.load(path)[0]['bit'], last)
+            path.write_text(template % registry.MASK_BITS, encoding='utf-8')
+            with self.assertRaisesRegex(registry.RegistryError, 'bit must be 0-%d' % last):
                 registry.load(path)
 
     def test_balance_patches_are_never_recommended(self):

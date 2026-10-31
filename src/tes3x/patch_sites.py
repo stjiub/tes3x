@@ -1577,6 +1577,34 @@ def find_menu_still(x):
     return calls + [slot, clear, display, fence, block]
 
 
+# LoadScreenManager::start creates the render thread with `push procedure, push 0x4000`; the thread
+# calls start again with 15.0 and 1, which only waits for a pending stop.
+LOAD_SCREEN_THREAD_SIG = re.compile(
+    rb"\x6a\x00\x56(?P<proc>\x68....)\x68\x00\x40\x00\x00\x6a\x00\xe8....\x8b\xf0\x6a\xff\x56",
+    re.S,
+)
+LOAD_SCREEN_WAIT_SIG = re.compile(
+    rb"\x6a\x01\x68\x00\x00\x70\x41\x8b\xcd(?P<site>\xe8....)",
+    re.S,
+)
+
+
+def find_load_screen(x):
+    """The immediate that names the render thread's procedure, and the render thread's call of
+    LoadScreenManager::start."""
+    data = bytes(x.data)
+    threads = list(LOAD_SCREEN_THREAD_SIG.finditer(data))
+    waits = list(LOAD_SCREEN_WAIT_SIG.finditer(data))
+    if len(threads) != 1 or len(waits) != 1:
+        raise PatchError("load-screen-race: found %d render thread creations and %d start waits, "
+                         "expected 1" % (len(threads), len(waits)))
+    proc = x.off_to_va(threads[0].start("proc") + 1)
+    wait = x.off_to_va(waits[0].start("site"))
+    if None in (proc, wait):
+        raise PatchError("load-screen-race: a site is outside any section")
+    return proc, wait
+
+
 def find_hd_video(x):
     """The renderer and CreateDevice calls, and the D3D mode count and enumeration functions."""
     data = bytes(x.data)
@@ -3436,6 +3464,7 @@ LOCATORS = {
     "hd-video": find_hd_video,
     "boot-clear": find_boot_clear,
     "menu-still": find_menu_still,
+    "load-screen-race": find_load_screen,
     "dash-button": find_dash_button,
     "topic-colors": find_topic_colors,
     "ui-scale": find_hud_scale,

@@ -4,6 +4,15 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- New patch `load-screen-race` fixes a rare freeze when a loading screen ends within its first
+  frames, such as leaving a building into a cell already in memory. The game stopped responding
+  with nothing logged. Rebuild to pick it up. See [the patch notes](patches/load-screen-race.md).
+
+- The patch mask a build logs is now 1024 bits wide, so `diag.patches` readers see more patches
+  than the old 64. Words above the first two log as `diag.patches_wN`; `tes3x diag`, validation
+  and `tes3x prof` read them. Older tools cannot decode a build that uses a patch above bit 63,
+  and `tes3x prof` dumps are now version 3.
+
 - New patch `mcp-115` stops repeat guard confiscation after payment, faction-wide merchant seizures, and theft marking for items owned by dead NPCs. Rebuild to pick it up. See [the patch notes](patches/mcp-115.md).
 
 - `extended-tooltips` now marks owned beds and other activators as **Owned** in their world

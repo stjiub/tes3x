@@ -12,6 +12,7 @@
 #include "tes3xnt.h"
 #include "tes3xlog.h"
 #include "tes3xini.h"
+#include "tes3xdiag.h"
 #include "tes3xprof.h"
 
 #ifndef TES3X_INI_GET_STRING
@@ -29,7 +30,7 @@
 #define TES3X_PROF_CALIB_RUNS 1024 /* a power of two; the mean is a shift */
 #define TES3X_PROF_CALIB_SHIFT 10
 #define TES3X_PROF_MAGIC 0x50583354u /* "T3XP" */
-#define TES3X_PROF_VERSION 2
+#define TES3X_PROF_VERSION 3
 #define TES3X_PROF_PREMENU_SECONDS 30
 #define TES3X_PROF_SECONDS_MIN 5
 #define TES3X_PROF_SECONDS_MAX 3600
@@ -124,6 +125,7 @@ typedef struct {
     u32 active;
     u32 active_record;
     u32 reason;
+    u32 mask_words; /* words 2 and up of the patch mask follow the header */
 } prof_header;
 
 typedef struct {
@@ -137,9 +139,6 @@ typedef struct {
     u32 arg1;
     u64 elapsed;
 } prof_active;
-
-extern volatile u32 tes3x_patch_mask;
-extern volatile u32 tes3x_patch_mask_hi;
 
 /* The patcher writes a target VA here; index TES3X_PROF_CALIB is set at init. */
 u32 tes3x_prof_target[TES3X_PROF_TOTAL];
@@ -509,6 +508,7 @@ static void prof_dump(u32 reason)
     hdr.active = prof_snapshot_active(hdr.tsc_now);
     hdr.active_record = sizeof(prof_active);
     hdr.reason = reason;
+    hdr.mask_words = TES3X_PATCH_MASK_WORDS;
 
     tes3x_object_attributes(&oa, &name, prof_path);
     /* The first dump of a session starts the file; later ones append blocks. */
@@ -521,6 +521,7 @@ static void prof_dump(u32 reason)
         return;
     }
     if (prof_write(h, &hdr, sizeof(hdr)) &&
+        prof_write(h, (void *)tes3x_patch_mask_ext, sizeof(tes3x_patch_mask_ext)) &&
         prof_write(h, tes3x_prof_target, sizeof(tes3x_prof_target)) &&
         prof_write(h, tes3x_prof_slots, sizeof(tes3x_prof_slots)) &&
         (!hdr.active || prof_write(h, prof_active_frames, hdr.active * sizeof(prof_active))))

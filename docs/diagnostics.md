@@ -24,7 +24,7 @@ across launches up to 512 KB. A session starts with `entry.free_kb`.
 
 With `[Xbox] Diagnostics=1` in `Morrowind.ini`, each session also logs `diag.build` (the payload
 build), `diag.patches` (the low 32 bits of the patches applied), optional `diag.patches_hi`
-(bits 32-63) and `diag.title_id` (the title ID, which picks the `E:/UDATA` folder saves go to),
+(bits 32-63), `diag.patches_w2` to `diag.patches_w31` (each further 32 bits, logged only when set) and `diag.title_id` (the title ID, which picks the `E:/UDATA` folder saves go to),
 and:
 
 - a crash writes `crash.*` lines: the exception code and address, the registers and the last
