@@ -15,8 +15,9 @@ No official releases yet. The first public release is in preparation.
 
 - New patch `mcp-115` stops repeat guard confiscation after payment, faction-wide merchant seizures, and theft marking for items owned by dead NPCs. Rebuild to pick it up. See [the patch notes](patches/mcp-115.md).
 
-- `extended-tooltips` now marks owned beds and other activators as **Owned** in their world
-  tooltip. Rebuild to pick up the change. See [the patch notes](patches/extended-tooltips.md).
+- `extended-tooltips` now marks every owned object (items, containers, doors, beds and other
+  activators) as **Owned** in its world tooltip, in the normal text colour instead of a red
+  **Steal**. Rebuild to pick up the change. See [the patch notes](patches/extended-tooltips.md).
 
 - New patch `mcp-145` gives brewed potions bottle models and icons that reflect their strength.
   See [the patch notes](patches/mcp-145.md).

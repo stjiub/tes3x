@@ -2,7 +2,6 @@
 #include "tes3xlog.h"
 
 #define REF 0x52464552u
-#define ACTI 0x49544341u
 #define NPC 0x5F43504Eu
 #define FACT 0x54434146u
 #define WEAP 0x50414557u
@@ -92,17 +91,9 @@ static char *decimal(char *at, char *end, float value)
     return number(at, end, scaled % 100);
 }
 
-static void label(u8 *body, const char *text, int warning)
+static void label(u8 *body, const char *text)
 {
-    u8 *widget = ((fn_create_label)TES3X_TIP_CREATE_LABEL)(body, LABEL_ID, text, 0, 0);
-    if (warning && plausible(widget)) {
-        float *colour = (float *)(widget + 0x154);
-        colour[0] = 1.0f;
-        colour[1] = 0.2f;
-        colour[2] = 0.2f;
-        colour[3] = 1.0f;
-        widget[0x7f] = 1;
-    }
+    ((fn_create_label)TES3X_TIP_CREATE_LABEL)(body, LABEL_ID, text, 0, 0);
 }
 
 void __attribute__((stdcall)) tes3x_tooltip_hook(u8 *object, u8 *data, int count)
@@ -137,7 +128,7 @@ void __attribute__((stdcall)) tes3x_tooltip_hook(u8 *object, u8 *data, int count
     owner_type = plausible(owner) ? kind(owner) : 0;
     if (!in_menu) {
         if (object_type == REF && owner && theft(data, owner, owner_type))
-            label(body, item_type == ACTI ? "Owned" : "Steal", 1);
+            label(body, "Owned");
         return;
     }
     if (owner_type == NPC || owner_type == FACT) {
@@ -153,7 +144,7 @@ void __attribute__((stdcall)) tes3x_tooltip_hook(u8 *object, u8 *data, int count
                 put(at, line + sizeof(line), ")");
             }
         }
-        label(body, line, 0);
+        label(body, line);
     }
     if (item_type == WEAP) {
         int weapon_type = item[0x5c];
@@ -162,13 +153,13 @@ void __attribute__((stdcall)) tes3x_tooltip_hook(u8 *object, u8 *data, int count
         at = put(at, line + sizeof(line), "   Reach ");
         decimal(at, line + sizeof(line), *(float *)(item + 0x64));
         if (weapon_type < 12)
-            label(body, line, 0);
+            label(body, line);
         else if (weapon_type <= 13) {
             at = put(line, line + sizeof(line), "Projectile damage ");
             at = number(at, line + sizeof(line), item[0x6a]);
             at = put(at, line + sizeof(line), "-");
             number(at, line + sizeof(line), item[0x6b]);
-            label(body, line, 0);
+            label(body, line);
         }
     }
     if (item_type == WEAP || item_type == ARMO || item_type == CLOT ||
@@ -195,7 +186,7 @@ void __attribute__((stdcall)) tes3x_tooltip_hook(u8 *object, u8 *data, int count
                         number(at, line + sizeof(line), maximum);
                     }
                 }
-                label(body, line, 0);
+                label(body, line);
             }
         }
     }
@@ -204,7 +195,7 @@ void __attribute__((stdcall)) tes3x_tooltip_hook(u8 *object, u8 *data, int count
         if (plausible(soul) && (kind(soul) == CREATURE || kind(soul) == NPC)) {
             at = put(line, line + sizeof(line), "Soul: ");
             put(at, line + sizeof(line), *(const char **)(soul + 0x70));
-            label(body, line, 0);
+            label(body, line);
         }
     }
 }
