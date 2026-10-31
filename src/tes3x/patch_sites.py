@@ -157,6 +157,7 @@ def find_mcp115_context(x):
             "world": find_world_controller(x), "mark": mark}
 
 
+MCP259_TOOLTIP_FORMAT = b"%s: %0.1f\x00"
 MCP272_FILTER_TAIL = bytes.fromhex("833800750232db8b55008bcdff92d000000085c0")
 MCP272_SOUL_GEM = re.compile(
     rb"\x56\x8b\x74\x24\x08\x8d\x4e\x04\xe8....\x3dREFR\x75\x03"
@@ -1955,9 +1956,10 @@ def find_mcp141_sites(x):
             raise PatchError(f"mcp-141: {len(hits)} {label} sites, expected 1")
         return hits[0]
 
+    # The upper opcode bound is a wildcard: script-ext widens it first.
     token = one(
         rb"\x66\x8b\x50\x01\x66\x81\xfa\x00\x10\x0f\x8c...."
-        rb"\x66\x81\xfa\xbd\x11\x0f\x8d....(?P<site>\x8b\xc8\x66\x8b\x31)",
+        rb"\x66\x81\xfa..\x0f\x8d....(?P<site>\x8b\xc8\x66\x8b\x31)",
         "token copy")
     token_off = token.start("site")
     if data[token_off + 22] != 0xE9:
@@ -1966,18 +1968,18 @@ def find_mcp141_sites(x):
 
     scan = one(
         rb"\x66\x8b\x50\x01\x66\x81\xfa\x00\x10\x7c."
-        rb"\x66\x81\xfa\xbd\x11\x7d.(?P<site>\x83\xc1\x03\x83\xc0\x03)\xeb\x02\x41\x40",
+        rb"\x66\x81\xfa..\x7d.(?P<site>\x83\xc1\x03\x83\xc0\x03)\xeb\x02\x41\x40",
         "expression length scan")
     copy = one(
         rb"\x66\x8b\x46\x01\x66\x3d\x00\x10\x7c."
-        rb"\x66\x3d\xbd\x11\x7d.(?P<site>\x88\x1a\x8a\x4e\x01)",
+        rb"\x66\x3d..\x7d.(?P<site>\x88\x1a\x8a\x4e\x01)",
         "expression copy")
     copy_off = copy.start("site")
     if data[copy_off + 0x4c:copy_off + 0x4f] != b"\x80\x3e\x00":
         raise PatchError("mcp-141: expression copy resume changed")
     walk = one(
         rb"\x66\x8b\x4c[\x16\x2e]\x05\x66\x81\xf9\x00\x10\x7c."
-        rb"\x66\x81\xf9\xbd\x11\x7d."
+        rb"\x66\x81\xf9..\x7d."
         rb"(?P<site>\x83\xc6\x02\x83\xc7\x02\x83\xc3\x02\xe9(?P<rel>....))",
         "expression walk")
     walk_off = walk.start("site")
@@ -2492,6 +2494,58 @@ MOBILE_PLAYER_SIG = bytes([
     0x33, 0xC0, 0xC3,        # xor eax,eax; ret
     0xE9,                    # jmp MobController::getMobilePlayer
 ])
+
+
+def find_mcp259_weight_format(x):
+    """Locate the item tooltip's weight precision digit."""
+    data = bytes(x.data)
+    start = find_unique(data, MCP259_TOOLTIP_FORMAT, "mcp-259 item tooltip format")
+    if x.off_to_va(start) is None:
+        raise PatchError("mcp-259: item tooltip format is outside the image")
+    return start + MCP259_TOOLTIP_FORMAT.index(b".1f") + 1
+
+
+QUICKLOOT_SIGS = {
+    "show": re.compile(rb"\x51\x53\x33\xc0\x66\xa1(....)\x55\x56\x57\x50\xe8....\x8b\x5c\x24\x24"
+                       rb"\x8b\x74\x24\x20\x83\xc4\x04\x85\xdb", re.S),
+    "transfer": re.compile(rb"\x6a\xff\x68....\x64\xa1\x00\x00\x00\x00\x50\x64\x89\x25\x00\x00\x00\x00"
+                           rb"\x83\xec\x74\x33\xc0\x66\xa1....", re.S),
+    "close": re.compile(rb"\x64\xa1\x00\x00\x00\x00\x6a\xff\x68....\x50\x64\x89\x25\x00\x00\x00\x00"
+                        rb"\x83\xec\x54\x33\xc0\x66\xa1....", re.S),
+    "activate": re.compile(rb"\x6a\xff\x64\xa1\x00\x00\x00\x00\x68....\x50\x64\x89\x25\x00\x00\x00\x00"
+                           rb"\x81\xec\x80\x00\x00\x00\x53\x55\x56\x57\x8b", re.S),
+}
+
+
+def find_quickloot_engine(x):
+    """UI::showContentsMenu, ContentsMenu::transferItem and close, Reference::activate, and the
+    contents menu's id and selected-tile property globals, located by their code."""
+    found = {}
+    for name, sig in QUICKLOOT_SIGS.items():
+        hits = list(sig.finditer(x.data))
+        if len(hits) != 1:
+            raise PatchError("xbox-quick-loot: %d match(es) for %s, expected exactly 1"
+                             % (len(hits), name))
+        found[name] = x.off_to_va(hits[0].start())
+        if name == "show":
+            found["menu_id"] = struct.unpack("<I", hits[0].group(1))[0]
+        elif name == "transfer":
+            at = hits[0].start() + 0x78
+            if x.data[at:at + 3] != b"\x66\x8b\x0d":
+                raise PatchError("xbox-quick-loot: transferItem does not load the tile property")
+            found["tile_id"] = struct.unpack_from("<I", x.data, at + 3)[0]
+    return found
+
+
+def find_quickloot_sites(x):
+    """The contents-menu calls inside Reference::activate."""
+    engine = find_quickloot_engine(x)
+    activate = engine["activate"]
+    sites = [s for s in find_call_sites(x, engine["show"]) if activate <= s < activate + 0x1600]
+    if len(sites) != 4:
+        raise PatchError("xbox-quick-loot: %d contents-menu calls in activate, expected 4"
+                         % len(sites))
+    return sites
 
 
 def find_world_controller(x):
