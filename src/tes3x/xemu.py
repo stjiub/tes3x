@@ -360,6 +360,27 @@ def screenshot(png, pid):
         script.unlink(missing_ok=True)
 
 
+def label_window(pid, name):
+    """Put the run's name in xemu's window title, which is otherwise the same for every session."""
+    if os.name != "nt":
+        return
+    import ctypes
+    user32 = ctypes.windll.user32
+    callback = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p)
+
+    def label(hwnd, _):
+        owner = ctypes.c_ulong()
+        user32.GetWindowThreadProcessId(ctypes.c_void_p(hwnd), ctypes.byref(owner))
+        if owner.value == pid and user32.IsWindowVisible(ctypes.c_void_p(hwnd)):
+            title = ctypes.create_unicode_buffer(256)
+            user32.GetWindowTextW(ctypes.c_void_p(hwnd), title, 256)
+            if title.value.startswith("xemu") and name not in title.value:
+                user32.SetWindowTextW(ctypes.c_void_p(hwnd), f"{name} - {title.value}")
+        return 1
+
+    user32.EnumWindows(callback(label), None)
+
+
 def free_port():
     """A TCP port nothing is listening on, since other runs may hold the usual 1234."""
     with socket.socket() as s:
@@ -853,6 +874,7 @@ def main():
         captured = False
         while proc.poll() is None:
             el = time.time() - t0
+            label_window(proc.pid, a.name)
             if shots and el >= shots[0]:
                 screenshot(out / f"shot-{int(shots.pop(0)):04d}s.png", proc.pid)
             if a.gdb_capture is not None and not captured and el >= a.gdb_capture:

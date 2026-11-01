@@ -13,7 +13,7 @@ Linux. The data folder is `~/.local/share/tes3x`, or `TES3X_DATA` when set; see
 ## Known gaps
 
 - `tes3x layouts` needs MSVC and Windows SDK headers; another header source is needed.
-- `tes3x xemu` (screenshot, crash events), `tes3x gui` (the `tasklist` xemu check) and
+- `tes3x xemu` (screenshot, window title, crash events), `tes3x gui` (the `tasklist` xemu check) and
   `tes3x ghidra` (finding the Java process) call Windows-only tools.
 - `rules.tes3merge` runs `TES3Merge.exe`: it needs Wine or an alternative.
 - `tes3x package` and `launcher/tes3x.c` build a Windows folder (embedded Python, `7z.exe`,

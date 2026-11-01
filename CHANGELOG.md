@@ -4,6 +4,9 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- `tes3x xemu` now shows the run's name in the xemu window title on Windows, so several sessions can
+  be told apart.
+
 - Builds now convert Euler rotation keys in loose meshes and KFs to quaternion keys. The Xbox engine
   cannot play them, so animated Tamriel Data and Tamriel Rebuilt objects could crash or freeze the
   game. Store mods are converted too, so their archives repack once on the next build. Rebuild to
