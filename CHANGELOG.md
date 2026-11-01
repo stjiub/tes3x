@@ -22,6 +22,10 @@ No official releases yet. The first public release is in preparation.
 - GUI builds no longer stop on a file name outside the Windows code page. Cancelling a Check no
   longer records a failure, and on Linux cancelling a job now stops its child processes too.
 
+- New opt-in patch `xbox-quick-loot` lists a targeted container's contents in the tooltip; D-pad
+  up/down choose a stack and A takes it without the contents menu. Black or White with A opens the
+  normal menu. Corpses keep the normal menu. See [the patch notes](patches/xbox-quick-loot.md).
+
 - `tes3x xemu` now shows the run's name in the xemu window title on Windows, so several sessions can
   be told apart.
 

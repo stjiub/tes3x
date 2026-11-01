@@ -1,7 +1,7 @@
 /* Take an item from a container through the engine's own contents menu, without waiting on it. */
 #include "tes3xlog.h"
 
-#if !defined(TES3X_QL_SHOW) || !defined(TES3X_QL_TRANSFER) || !defined(TES3X_QL_MENU_ID) || \
+#if !defined(TES3X_QL_GAME) || !defined(TES3X_QL_SHOW) || !defined(TES3X_QL_TRANSFER) || !defined(TES3X_QL_MENU_ID) || \
     !defined(TES3X_QL_TILE_ID) || !defined(TES3X_QL_WORLD) || !defined(TES3X_QL_FIND_MENU) || \
     !defined(TES3X_QL_SET_PROP) || !defined(TES3X_QL_CLOSE)
 #error "quick-loot needs its engine bindings"
@@ -92,11 +92,90 @@ int tes3x_quickloot_enabled(void)
     return 1;
 }
 
+/* The tooltip reports the targeted container each frame it is drawn; input is claimed only
+ * while that is fresh. */
+static u8 *target;
+static int selected, listed, hold;
+static int up_was, down_was, a_was;
+static int inject; /* test: PAD_UP, PAD_DOWN or PAD_A for the next poll */
+
+#define PAD_UP 1
+#define PAD_DOWN 2
+#define PAD_A 10
+#define PAD_BLACK 14
+#define PAD_WHITE 15
+#define TAKE_WINDOW 10
+
+TES3X_OPTIONAL int tes3x_loot_safe(void);
+
+/* The engine's current activation target (Game+0xD4) is still the container last listed, and
+ * the player is neither fighting nor holding a weapon or spell. */
+static int targeted(void)
+{
+    u8 *game = *(u8 **)TES3X_QL_GAME;
+
+    return target && game && *(u8 **)(game + 0xd4) == target && tes3x_loot_safe && tes3x_loot_safe();
+}
+
+/* Called with a container's listable stack count; returns the highlighted index. */
+int tes3x_quickloot_target(u8 *ref, int total, int safe)
+{
+    if (ref != target) {
+        target = ref;
+        selected = 0;
+        tes3x_log("quickloot.target", (u32)total);
+    }
+    listed = total;
+    if (selected >= total)
+        selected = total > 0 ? total - 1 : 0;
+    (void)safe;
+    return selected;
+}
+
+/* From the console's poll: D-pad up/down move the highlight and A takes it, only while a
+ * container is targeted and safe; Black or White leaves the normal menu. */
+void tes3x_quickloot_input(short *in)
+{
+    int up = in[PAD_UP] != 0, down = in[PAD_DOWN] != 0, a = in[PAD_A] != 0;
+
+    if (inject) {
+        up |= inject == PAD_UP;
+        down |= inject == PAD_DOWN;
+        a |= inject == PAD_A;
+        inject = 0;
+    }
+    if (hold && !--hold)
+        pending = 0;
+    if (targeted() && listed > 0 && !in[PAD_BLACK] && !in[PAD_WHITE]) {
+        if (up && !up_was && selected > 0)
+            selected--;
+        if (down && !down_was && selected + 1 < listed)
+            selected++;
+        if ((up && !up_was) || (down && !down_was))
+            tes3x_log("quickloot.selected", (u32)selected);
+        in[PAD_UP] = 0;
+        in[PAD_DOWN] = 0;
+        if (a && !a_was) {
+            pending = selected + 1;
+            hold = TAKE_WINDOW;
+            tes3x_log("quickloot.press", (u32)pending);
+        }
+    }
+    up_was = up;
+    down_was = down;
+    a_was = a;
+}
+
 /* `tes3xql take N`: the next container activation takes the Nth item instead of showing it. */
 int tes3x_quickloot_command(const char *text)
 {
     if (starts_with(text, "tes3xql mode")) {
         tes3x_log("quickloot.mode", mode());
+        return 1;
+    }
+    if (starts_with(text, "tes3xql key ")) {
+        inject = starts_with(text + 12, "up") ? PAD_UP : starts_with(text + 12, "down") ? PAD_DOWN :
+                                                                                      PAD_A;
         return 1;
     }
     if (!starts_with(text, "tes3xql take "))
