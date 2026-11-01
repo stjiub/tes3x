@@ -177,6 +177,19 @@
       "provenance": "flushes the buffer (0x00012F80) then fseeks unless the target lies inside the read buffer"
     },
     {
+      "va": "0x00013940",
+      "name": "packVertexBuffer",
+      "confidence": "guess",
+      "provenance": "decompiled and read"
+    },
+    {
+      "va": "0x00013B50",
+      "name": "packVertexBufferCompressed",
+      "confidence": "guess",
+      "provenance": "decompiled and read",
+      "note": "Taken when format flags 0x70000 are set; EAX carries them: 0x10000 NORMPACKED3 normals, 0x20000 SHORT3 positions with NORMSHORT3 normals, 0x40000 NORMSHORT2 UVs."
+    },
+    {
       "va": "0x000150A0",
       "name": "CVBHeap::CVBHeap",
       "confidence": "verified",
@@ -214,6 +227,13 @@
       "name": "NiXBoxRenderer::clear",
       "confidence": "guess",
       "provenance": "vtable method; sets viewport then D3DDevice_Clear. param_2 bit0 = colour, bit1 = stencil, bit2 = depth; observed flags 0x6 on every frame, never colour"
+    },
+    {
+      "va": "0x00016E20",
+      "name": "NiXBoxRenderer::precacheGeometry",
+      "confidence": "guess",
+      "provenance": "renderer vtable slot 0xA8, named by MWSE's renderer vtable in decompile",
+      "note": "Builds the shape data's vertex buffer once; no-op when data+0x30 is already set, which is why instances share it."
     },
     {
       "va": "0x00024520",
@@ -4990,6 +5010,13 @@
       "pc_va": "0x004EE200"
     },
     {
+      "va": "0x00131BA0",
+      "name": "ModelLoader::releaseNode",
+      "confidence": "guess",
+      "provenance": "decompiled and read",
+      "note": "Finds the NIF map entry by walking the whole map for a matching node, then decrements the count at +8 and frees the entry at zero. Linear in loaded meshes per call. Text 'not released from the ModelLoader'."
+    },
+    {
       "va": "0x00131F40",
       "name": "recordItemStolenFromOwner",
       "confidence": "verified",
@@ -5003,6 +5030,14 @@
       "confidence": "matched",
       "provenance": "mwse:BaseObject_dtor",
       "pc_va": "0x004F0CA0"
+    },
+    {
+      "va": "0x00132360",
+      "name": "Object::releaseClone",
+      "confidence": "guess",
+      "provenance": "object vtable slot 0xF8 (via 0x00133330), PC counterpart read",
+      "note": "Decrements the clone count at +0x18 for non-instanced types. At zero releases the master mesh through ModelLoader::releaseNode and drops +0x10, so a NIF and its vertex buffers go when the last object using it has no clones.",
+      "pc_va": "0x004EFC80"
     },
     {
       "va": "0x00132440",
@@ -5026,12 +5061,24 @@
       "pc_va": "0x004EE0A0"
     },
     {
+      "va": "0x001337F0",
+      "name": "ModelLoader::releaseByPath",
+      "confidence": "guess",
+      "provenance": "decompiled and read; hashed lookup, callers are shutdown and UI"
+    },
+    {
       "va": "0x00133B70",
       "name": "AnimatedObject::LoadMesh",
       "kind": "function",
       "confidence": "matched",
       "provenance": "mwse:TES3_AnimatedObject_LoadMesh",
       "pc_va": "0x004F0400"
+    },
+    {
+      "va": "0x00133FE0",
+      "name": "Object::cloneNewSceneNode",
+      "confidence": "guess",
+      "provenance": "object vtable slot 0xF4; loads the mesh when +0x10 is empty and counts the clone at +0x18"
     },
     {
       "va": "0x001346C0",
@@ -6989,6 +7036,13 @@
       "confidence": "guess",
       "provenance": "decompiled; passes this+8/+0xC as width/height to NiXBoxRenderer::create",
       "note": "then SetFlickerFilter(5), SetSoftDisplayFilter(0)"
+    },
+    {
+      "va": "0x00197130",
+      "name": "precacheGeometryTree",
+      "confidence": "guess",
+      "provenance": "decompiled and read",
+      "note": "Recursive precache walker: calls renderer vtable +0xA8 (precacheGeometry) on each NiGeometry and recurses into every NiNode child except RootCollisionNode, so collision gets no vertex buffer here. NiSwitchNode children are all visited. Skips shapes under particle controllers. Sets vertex format from flags: bit 3 packs positions (rounded to integers, SHORT3), bit 5 packs UVs (NORMSHORT2, x32767, no wrap), bit 6 keeps float normals; morph and UV controllers force uncompressed. No retail or TR shape sets bits 3 or 5."
     },
     {
       "va": "0x00197710",
