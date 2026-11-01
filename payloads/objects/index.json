@@ -426,6 +426,7 @@
     "POOL_HEAP_OBJECT": null,
     "QL_CLOSE": null,
     "QL_FIND_MENU": null,
+    "QL_GAME": null,
     "QL_MENU_ID": null,
     "QL_SET_PROP": null,
     "QL_SHOW": null,
@@ -562,8 +563,8 @@
       "sha256": "228130ba66fd93dc85e3df23fd32ffbe434b0a1b63fd1b2a7276efe3fac915a6"
     },
     "tes3xconsole.c": {
-      "digest": "045b72442b7f676dc29b2ebfcce06cf4a36c2aa18d70c06acb883885698007c4",
-      "sha256": "3738fa65b5fe1a0c3b266beae0a2a21dea15d201d41c372267bd814f6b37acdd"
+      "digest": "cc1d81d0cc5f119a0e02acd47e0cbf4634bffa4d23ea732f290728c770c6f47f",
+      "sha256": "b0b58c81c801c1c6adc1097d16f2118447d5e18225abcdcf25169204bf28d8d0"
     },
     "tes3xcrt.c": {
       "digest": "18dd1c43ee41f4a5a7daa25cff1cb77265fabc473745af5f707b3783ea90d0ce",
@@ -778,8 +779,8 @@
       "sha256": "75891e426af870b36f55cebbfdb13731948736bd48ddf415cf21b7fa6a6eb63c"
     },
     "tes3xquickloot.c": {
-      "digest": "c5de77529a767b4712cf82f1ce072676fb5e7839e7d27da61e94eb4a02f750a4",
-      "sha256": "18cc3dfa0d3890c371ae11d6fb42f5b5bd06d0bb4309d852bcffb5719962b95c"
+      "digest": "89dd618511a65593f4a37eaf5816c036c7b5998fad0695dec350f715b1b8a745",
+      "sha256": "15cca773de65a9cac309483f03c0081fe8bbc6e25eb17ef4ea749b899e3b21fd"
     },
     "tes3xrefindex.c": {
       "digest": "a94508721248e5af1532a5c1ac343d39ab288a7e67b169219645e6376f879b3d",
@@ -814,8 +815,8 @@
       "sha256": "f31a9d401bc3fee84ffff48e6ca683cf10d02affa5df7f90019b41514fc5c09f"
     },
     "tes3xtooltips.c": {
-      "digest": "28742d49b1448f04ecf0a6b2d10a1ab7738e59b32b85373a07139e393514118d",
-      "sha256": "168e9a70671f4658d34d557fc3e0bdd8cd0c32ed9e4c1feb2bed86b6dee2773c"
+      "digest": "ed58386890371b6e10ffadb6185972bba9c7fe11b0f4c367f2a08bea313aa332",
+      "sha256": "b629fef06ff87cb4c9d773feb6f9319e377c04a2fffe4a1eb944b988895211b2"
     },
     "tes3xtopiccolor.c": {
       "digest": "b93f56dfe7076e4ec9b226cc91eb4e38792698c6f2755e04beeb0777637185be",

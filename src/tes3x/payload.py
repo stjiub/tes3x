@@ -1560,6 +1560,7 @@ def _bind_quickloot(b):
     if "tes3xconsole.c" not in names:
         raise PayloadError("tes3xquickloot.c requires tes3xconsole.c")
     engine = find_quickloot_engine(b.image)
+    define("QL_GAME", hexva(b.locate("game-instance")))
     define("QL_SHOW", hexva(engine["show"]))
     define("QL_TRANSFER", hexva(engine["transfer"]))
     define("QL_MENU_ID", hexva(engine["menu_id"]))

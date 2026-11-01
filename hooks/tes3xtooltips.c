@@ -97,45 +97,68 @@ static void label(u8 *body, const char *text)
 }
 
 TES3X_OPTIONAL int tes3x_quickloot_enabled(void);
+TES3X_OPTIONAL int tes3x_quickloot_target(u8 *ref, int total, int safe);
 
 #define CONT 0x544E4F43u
 #define PREVIEW_LINES 6
 
-/* Lists a container's stacks: Container::inventory is at +0x3C, its stack list head at +0x48. */
-static void preview(u8 *body, u8 *container)
+/* Not in combat and nothing readied: mobile flags +0x10 are 0x2000 weapon, 0x4000 spell,
+ * 0x10000 in combat. */
+int tes3x_loot_safe(void)
 {
-    u8 *node = *(u8 **)(container + 0x48);
-    int shown = 0, more = 0, i;
-    char line[96], *at;
+    u8 *world = *(u8 **)TES3X_TIP_WORLD, *mobile;
 
-    for (i = 0; i < 256 && plausible(node); i++, node = *(u8 **)(node + 4)) {
-        u8 *stack = *(u8 **)(node + 8), *object;
-        const char *name;
-        int count;
+    if (!plausible(world))
+        return 0;
+    mobile = ((fn_player)TES3X_TIP_PLAYER)(world);
+    return plausible(mobile) && !(*(u32 *)(mobile + 0x10) & (0x2000u | 0x4000u | 0x10000u));
+}
 
-        if (!plausible(stack))
-            break;
-        count = *(int *)stack;
-        object = *(u8 **)(stack + 4);
-        name = plausible(object) ? (const char *)(object + 0x34) : 0;
-        if (count <= 0 || !name || !name[0])
+static u8 *stack_object(u8 *node, int *count)
+{
+    u8 *stack = *(u8 **)(node + 8), *object;
+
+    if (!plausible(stack))
+        return 0;
+    *count = *(int *)stack;
+    object = *(u8 **)(stack + 4);
+    return plausible(object) && *count > 0 && object[0x34] ? object : 0;
+}
+
+/* Lists a container's stacks: Container::inventory is at +0x3C, its stack list head at +0x48.
+ * The highlighted line is the one the A button takes. */
+static void preview(u8 *body, u8 *ref, u8 *container)
+{
+    u8 *head = *(u8 **)(container + 0x48), *node;
+    int total = 0, shown = 0, first, selected, i, index = 0, count;
+    char line[100], *at;
+
+    for (node = head, i = 0; i < 256 && plausible(node); i++, node = *(u8 **)(node + 4))
+        if (stack_object(node, &count))
+            total++;
+    selected = tes3x_quickloot_target(ref, total, tes3x_loot_safe());
+    first = selected >= PREVIEW_LINES ? selected - PREVIEW_LINES + 1 : 0;
+    for (node = head, i = 0; i < 256 && plausible(node); i++, node = *(u8 **)(node + 4)) {
+        u8 *object = stack_object(node, &count);
+
+        if (!object)
             continue;
-        if (shown == PREVIEW_LINES) {
-            more++;
-            continue;
+        if (index >= first && shown < PREVIEW_LINES) {
+            at = put(line, line + sizeof(line), index == selected ? "> " : "  ");
+            at = number(at, line + sizeof(line), (unsigned)count);
+            at = put(at, line + sizeof(line), " x ");
+            put(at, line + sizeof(line), (const char *)(object + 0x34));
+            label(body, line);
+            shown++;
         }
-        at = number(line, line + sizeof(line), (unsigned)count);
-        at = put(at, line + sizeof(line), " x ");
-        put(at, line + sizeof(line), name);
-        label(body, line);
-        shown++;
+        index++;
     }
-    if (more) {
+    if (total > first + shown) {
         at = put(line, line + sizeof(line), "+");
-        at = number(at, line + sizeof(line), (unsigned)more);
+        at = number(at, line + sizeof(line), (unsigned)(total - first - shown));
         put(at, line + sizeof(line), " more");
         label(body, line);
-    } else if (!shown)
+    } else if (!total)
         label(body, "Empty");
 }
 
@@ -172,7 +195,7 @@ void __attribute__((stdcall)) tes3x_tooltip_hook(u8 *object, u8 *data, int count
     if (!in_menu) {
         if (object_type == REF && item_type == CONT && tes3x_quickloot_enabled &&
             tes3x_quickloot_enabled())
-            preview(body, item);
+            preview(body, object, item);
         if (object_type == REF && owner && theft(data, owner, owner_type))
             label(body, "Owned");
         return;

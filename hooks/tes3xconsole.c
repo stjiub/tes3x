@@ -27,6 +27,7 @@ TES3X_OPTIONAL int tes3x_mcp3_test_command(const char *text);
 TES3X_OPTIONAL int tes3x_mcp47_test_command(const char *text);
 TES3X_OPTIONAL int tes3x_mcp55_test_command(const char *text);
 TES3X_OPTIONAL int tes3x_quickloot_command(const char *text);
+TES3X_OPTIONAL void tes3x_quickloot_input(short *in);
 TES3X_OPTIONAL int tes3x_mcp118_test_command(const char *text);
 TES3X_OPTIONAL int tes3x_mcp132_test_command(const char *text);
 TES3X_OPTIONAL int tes3x_dialmerge_test_command(const char *text);
@@ -1845,6 +1846,8 @@ unsigned int __attribute__((thiscall)) tes3x_console_hook(void *ctrl, int action
         if (tes3x_dashbutton_pad)
             tes3x_dashbutton_pad(tes3x_pad_level & ~tes3x_pad_used);
     }
+    if (in && tes3x_quickloot_input)
+        tes3x_quickloot_input(in);
 
     /* Cache text because the keyboard has no delivery path for the console. */
     if (vk_watch)

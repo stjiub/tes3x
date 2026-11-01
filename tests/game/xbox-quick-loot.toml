@@ -1,7 +1,7 @@
 kind = "single"
-purpose = "Activating a container with a pending quick-loot request takes its item through the engine's own transfer routine, closes the menu, leaves menu mode off and still records theft from an owned container."
+purpose = "D-pad down and A on a targeted container take the highlighted stack; activating a container with a pending quick-loot request takes its item through the engine's own transfer routine, closes the menu, leaves menu mode off and still records theft from an owned container."
 procedure = "Start a new game, take salt rice from an unowned sack in the Seyda Neen lighthouse and check menu mode over several seconds, then take moon sugar from a guard-owned crate in the warehouse and check the crime level."
-limitations = "Covers single and multi-stack, empty and locked containers in xemu. Traps, scripts, corpses, input and the preview are not exercised."
+limitations = "Covers single and multi-stack, empty and locked containers, and the D-pad and A input path with the real tooltip target, in xemu (the container is moved to eye level because the camera cannot be aimed). Traps, scripts, corpses, the Black/White modifier and the preview's appearance are not exercised."
 watch = 'quickloot\.|menu\.MenuContents|exec[.>]|assert[.>]|crash\.|hang\.detected|fatal\.'
 enable = ["diagnostics", "console", "extended-tooltips", "xbox-quick-loot"]
 timeout = 180
@@ -15,7 +15,14 @@ wait 60
 assert player->GetItemCount "ingred_saltrice_01" == 0.00
 "com_sack_01_saltrice_10"->AddItem "ingred_bread_01" 3
 "com_sack_01_saltrice_10"->AddItem "ingred_scrib_jerky_01" 2
-tes3xql take 1
+"com_sack_01_saltrice_10"->SetPos x -64
+"com_sack_01_saltrice_10"->SetPos y -100
+"com_sack_01_saltrice_10"->SetPos z -650
+wait 90
+tes3xql key down
+wait 10
+wait 5
+tes3xql key a
 activate com_sack_01_saltrice_10
 wait 30
 assert player->GetItemCount "ingred_bread_01" == 3.00

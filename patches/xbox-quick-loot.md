@@ -3,8 +3,13 @@
 Patch key: `xbox-quick-loot`
 
 Looking at a container lists what is inside it in the world tooltip: up to six stacks as
-"3 x Bread", then "+N more", or "Empty". The preview needs `extended-tooltips`, which this patch
-requires along with `console`.
+"3 x Bread", then "+N more", or "Empty". D-pad up and down move a `>` marker through the list and
+A takes the marked stack without opening the contents menu. Holding Black or White while pressing A
+opens the normal menu instead. The patch requires `console` and `extended-tooltips`.
+
+The D-pad is claimed only while a container is targeted, you are not in combat and no weapon or
+spell is readied. Movement and attack inputs are never touched. Corpses and creatures keep the
+normal menu.
 
 ## How it works
 
