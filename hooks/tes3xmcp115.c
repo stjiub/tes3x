@@ -1,5 +1,8 @@
 /* Clear paid theft records and leave dead owners' items unmarked. */
 
+#define OBJECT_FACTION 0x54434146u
+#define ACTOR_RESPAWNS 4u
+
 typedef void *(__attribute__((thiscall)) *stolen_list_fn)(void *);
 typedef void (__attribute__((thiscall)) *clear_list_fn)(void *);
 typedef int (__attribute__((thiscall)) *kill_count_fn)(void *, void *);
@@ -13,24 +16,28 @@ void tes3x_mcp115_clear_item(void *item)
         ((clear_list_fn)TES3X_VALUE(MCP115_CLEAR))(list);
 }
 
+/* A faction has no death count, and a respawning actor's never ends its ownership. */
+static int owner_dead(void *owner)
+{
+    char *world = *(char **)TES3X_VALUE(MCP115_WORLD);
+    void *counter;
+
+    if (*(unsigned *)((char *)owner + 4) == OBJECT_FACTION
+        || (*(unsigned char *)((char *)owner + 0x34) & ACTOR_RESPAWNS) || !world)
+        return 0;
+    counter = *(void **)(world + 0x60);
+    return counter && ((kill_count_fn)TES3X_VALUE(MCP115_KILL_COUNT))(counter, owner) != 0;
+}
+
 void tes3x_mcp115_pickup_item(void *item_data, void *item, unsigned exempt)
 {
     void *owner;
-    char *world;
-    void *counter;
 
     if (exempt)
         return;
     owner = *(void **)((char *)item_data + 4);
-    if (!owner || (*(unsigned char *)((char *)owner + 0x34) & 4))
-        return;
-    world = *(char **)TES3X_VALUE(MCP115_WORLD);
-    if (!world)
-        return;
-    counter = *(void **)(world + 0x60);
-    if (counter && ((kill_count_fn)TES3X_VALUE(MCP115_KILL_COUNT))(counter, owner) != 0)
-        return;
-    ((mark_stolen_fn)TES3X_VALUE(MCP115_MARK))(item, owner);
+    if (owner && !owner_dead(owner))
+        ((mark_stolen_fn)TES3X_VALUE(MCP115_MARK))(item, owner);
 }
 
 __attribute__((naked)) void tes3x_mcp115_guard_hook(void)

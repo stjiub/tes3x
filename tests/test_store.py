@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from tes3x import manifest, store
+from tes3x.bsa import Bsa
 from tes3x.build import Mod, resolve, store_mods
 from tes3x.kf_merge import KEYFRAME_TAG, XYZ_ROTATION, has_xyz_rotation
 
@@ -65,6 +66,20 @@ class StoreTests(unittest.TestCase):
         self.assertEqual([entry["tier"] for entry in entries], [1024])
         self.assertEqual(sorted(filemap), ["big.esp", "meshes/b.nif"])
         self.assertIs(filemap["meshes/b.nif"][0], mods[1])
+
+    def test_a_kept_file_stays_in_the_tree_and_out_of_the_store(self):
+        mods = [Mod("Big", str(self.big), 1)]
+        mods[0].store = (True, None)
+        mods[0].keep_loose = {"meshes/a.nif"}
+        filemap, _ = resolve(mods)
+        args = SimpleNamespace(store_dir=self.root / "store")
+        with contextlib.redirect_stdout(io.StringIO()):
+            entry, = store_mods(mods, filemap, {}, {"max_texture_size": 1024}, args)
+        self.assertIn("meshes/a.nif", filemap)
+        self.assertIn("meshes/a.nif", mods[0].files)
+        archive = Bsa(next((self.root / "store").rglob("*.bsa")))
+        self.assertFalse(archive.contains("meshes/a.nif"))
+        self.assertTrue(archive.contains("meshes/b.nif"))
 
     def test_threshold_selects_large_mods(self):
         mods = [Mod("Big", str(self.big), 1), Mod("Later", str(self.later), 2)]

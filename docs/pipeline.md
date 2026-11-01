@@ -122,7 +122,8 @@ keys is approximated. Only the rotation section changes; the rest of the file st
 
 The pipeline logs how many files it converted, and warns about any whose layout it could not follow;
 those keep their Euler keys. Store mods are converted the same way as they are packed into the
-shared store. Meshes inside a mod's own BSA are not converted.
+shared store. Meshes inside a BSA kept with `archives = "load"` are not converted, and the pipeline
+warns about each one it finds; leave `archives` unset to have that mod unpacked and converted.
 
 If the profile sets [`ui.scale`](configuration.md#ui), the pipeline writes smaller bitmap font
 metrics into the staged `.fnt` files and enables the UI scale hook for HUD art, common menu

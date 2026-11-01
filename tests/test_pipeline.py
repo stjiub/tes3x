@@ -9,10 +9,12 @@ import unittest
 from unittest import mock
 from pathlib import Path
 
+import tes3x.catalog as tes3x_catalog
 import tes3x.paths as tes3x_paths
 from tes3x.paths import check_paths, local_config, require_paths, resource
 from tes3x.pack import write_invalidation
 from tes3x.build import materialize, plugin_masters
+from tes3x.kf_merge import splice_tree_kfs
 from tes3x.pipeline import (PipelineError, agent_ini, agent_setting, build_parser, engine_specs,
                             ini_settings, instrument_plan, pack_command, xbox_ini_text,
                             copy_retail_root, link_or_copy, resolve_patch_plan, split_console,
@@ -101,6 +103,15 @@ class PathTests(unittest.TestCase):
                          if not any(name == d or name.startswith(d + '/') for d in data))
         self.assertTrue(named)
         self.assertEqual(missing, [])
+
+    def test_the_sdist_carries_what_the_wheel_copies(self):
+        import ast
+        root = Path(__file__).resolve().parents[1]
+        setup = ast.parse((root / 'setup.py').read_text(encoding='utf-8'))
+        data = next(ast.literal_eval(node.value) for node in setup.body
+                    if isinstance(node, ast.Assign) and node.targets[0].id == 'DATA')
+        words = (root / 'MANIFEST.in').read_text(encoding='utf-8').split()
+        self.assertEqual(sorted(set(data) - set(words)), [])
 
     def test_a_portable_folder_is_found_by_its_launcher(self):
         folder = Path(tempfile.mkdtemp())
@@ -440,6 +451,41 @@ class PipelinePlanTests(unittest.TestCase):
         self.assertEqual(plan['merge_kf'], ['xmissdodge.kf', 'xArmedDodgeV2.kf'])
         self.assertEqual(plan['applied'], ['mcp-132', 'cant-touch-this'])
         self.assertEqual(plan['sources'][-3:], ['tes3xmcp132.c', 'tes3xanimvirtual.c', 'tes3xctt.c'])
+
+    def test_a_renamed_mod_folder_is_known_by_its_plugins_and_nexus_page(self):
+        library = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, library)
+        (library / 'Renamed').mkdir()
+        (library / 'Renamed' / 'Graphic Herbalism.esp').write_bytes(b'')
+        catalog = tes3x_catalog.load()
+        entry = {'name': 'Renamed'}
+        self.assertIsNone(tes3x_catalog.match_selection(catalog, entry))
+        found = tes3x_catalog.match_selection(catalog, entry, library)
+        self.assertEqual(found['plugins'], ['Graphic Herbalism.esp'])
+        purists = next(item for item in catalog.values() if item['folder'] == 'Purists')
+        installed = {'pfp': {'url': purists['url'], 'releases': {'4': {'folder': 'PfP 4.0.2'}}}}
+        selection = {'name': 'PfP', 'version': '4', 'roots': []}
+        with mock.patch('tes3x.catalog.resolve_selection', return_value=selection):
+            found = tes3x_catalog.match_selection(catalog, {'id': 'pfp'}, library, installed)
+        self.assertIs(found, purists)
+
+    def test_a_downloaded_catalog_reaches_the_plan_without_unknown_patches(self):
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder)
+        newer = folder / 'catalog.toml'
+        newer.write_text('schema = 1\nupdated = "9999-01-01"\n[[mod]]\nid = "new"\nname = "New"\n'
+                         'folder = "New"\npatches = ["dxt5-size", "from-the-future"]\n',
+                         encoding='utf-8')
+        profile = {'patches': {'preset': 'minimal'}, 'package': {'mode': 'loose'},
+                   'mods': [{'name': 'New'}]}
+        with mock.patch('tes3x.catalog.cached', return_value=newer):
+            self.assertIn('dxt5-size', resolve_patch_plan(profile)['selected'])
+
+    def test_a_splice_names_a_source_the_tree_does_not_hold(self):
+        tree = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tree)
+        specs = [{'source': 'meshes/xbase_anim.kf', 'groups': ['idle']}]
+        self.assertEqual(splice_tree_kfs(tree, tree, specs), ([], ['meshes/xbase_anim.kf']))
 
     def test_catalog_required_patch_cannot_be_disabled(self):
         profile = {'patches': {'preset': 'minimal', 'disable': ['dialogue-merge']},

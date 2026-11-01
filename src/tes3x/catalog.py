@@ -9,12 +9,13 @@ from it by `tes3x patches --write`.
 """
 
 import argparse
-
+from functools import lru_cache
+import os
 import tempfile
 import urllib.request
 from pathlib import Path
 
-from tes3x.library import nexus_id
+from tes3x.library import LibraryError, nexus_id, resolve_selection
 from tes3x.paths import checkout, data_dir, resource
 import re
 import tomllib
@@ -65,6 +66,8 @@ def load(path=CATALOG, patch_names=None, lenient=False):
             entry = {key: value for key, value in entry.items() if key in FIELDS}
             if entry.get("status", "untested") not in STATUSES:
                 entry["status"] = "untested"
+            if patch_names is not None and isinstance(entry.get("patches"), list):
+                entry["patches"] = [name for name in entry["patches"] if name in patch_names]
         unknown = set(entry) - FIELDS
         if unknown:
             raise CatalogError(f"{where} has unknown fields {sorted(unknown)}")
@@ -123,14 +126,14 @@ def cached():
     return data_dir() / "catalog.toml"
 
 
-def load_best():
-    """The catalog to show: the downloaded copy when it is newer than the bundled one."""
+def load_best(patch_names=None):
+    """The catalog in use: the downloaded copy when it is newer than the bundled one."""
     if cached().is_file() and updated(cached()) > updated(CATALOG):
         try:
-            return load(cached(), lenient=True)
+            return load(cached(), patch_names, lenient=True)
         except (OSError, ValueError):
             pass
-    return load()
+    return load(patch_names=patch_names)
 
 
 def refresh(url=REMOTE_URL):
@@ -207,6 +210,56 @@ def match(catalog, *names, nexus=None, plugins=()):
         if identity and identity <= have:
             return entry
     return None
+
+
+# Folders that hold no plugins, skipped so a texture pack's scan stays quick.
+ASSET_FOLDERS = {"bookart", "fonts", "icons", "meshes", "music", "sound", "splash", "textures",
+                 "video"}
+
+
+@lru_cache(maxsize=512)
+def _scan_plugins(root, _stamp):
+    found = set()
+    for _folder, folders, files in os.walk(root):
+        folders[:] = [name for name in folders if name.casefold() not in ASSET_FOLDERS]
+        found.update(name for name in files if name.lower().endswith((".esp", ".esm")))
+    return frozenset(found)
+
+
+def plugin_files(roots):
+    """The plugin names under a mod's source roots."""
+    found = set()
+    for root in map(Path, roots):
+        try:
+            stamp = root.stat().st_mtime_ns
+        except OSError:
+            continue
+        if root.is_file():
+            if root.suffix.lower() in (".esp", ".esm"):
+                found.add(root.name)
+        else:
+            found |= _scan_plugins(str(root), stamp)
+    return found
+
+
+def match_selection(catalog, entry, library_root=None, library=None):
+    """The catalog entry for a profile mod, identified by its id, name, Nexus id and the plugins
+    it installs. Without a readable library only the profile's own words are used."""
+    names = [entry.get("id", ""), entry.get("name", ""), *(entry.get("plugins") or [])]
+    nexus, plugins = None, ()
+    if library_root:
+        try:
+            selection = resolve_selection(entry, library_root, library)
+        except (KeyError, LibraryError, OSError):
+            selection = None
+        if selection:
+            names.append(selection["name"])
+            plugins = plugin_files(selection["roots"])
+            mod = (library or {}).get(entry.get("id"), {})
+            release = mod.get("releases", {}).get(selection["version"], {})
+            names.append(release.get("folder", ""))
+            nexus = nexus_id(mod.get("url"), release.get("source") or entry.get("name"))
+    return match(catalog, *names, nexus=nexus, plugins=plugins)
 
 
 def cell(text):

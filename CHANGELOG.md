@@ -4,6 +4,24 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- Builds now use the same catalog as the GUI: a downloaded compatibility list takes effect, and a
+  catalogued mod is recognised by its Nexus page or plugin files when its folder has been renamed.
+  A rebuild can therefore pick up patches, exclusions and animation splices that were silently
+  missed, such as Patch for Purists' idle splice.
+
+- A store mod's spliced KF now stays out of the store, so Patch for Purists keeps retail's Xbox
+  animation tracks with `store = true`. A splice whose KF is not in the build now warns.
+
+- Builds warn about Euler rotation keys inside a BSA kept with `archives = "load"`.
+
+- `mcp-115` no longer skips the theft record for items owned by factions or respawning NPCs.
+
+- `land-tex-index` now follows a repeated `LTEX` record that changes a texture's index, which could
+  give that plugin's terrain the wrong texture.
+
+- GUI builds no longer stop on a file name outside the Windows code page. Cancelling a Check no
+  longer records a failure, and on Linux cancelling a job now stops its child processes too.
+
 - `tes3x xemu` now shows the run's name in the xemu window title on Windows, so several sessions can
   be told apart.
 

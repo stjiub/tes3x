@@ -33,6 +33,15 @@ class ProgressTests(unittest.TestCase):
         self.assertIsNone(progress.parse("== not progress"))
         self.assertIsNone(progress.parse("@progress copy x 10 files"))
 
+    def test_a_name_outside_the_pipe_encoding_does_not_stop_the_work(self):
+        raw = io.BytesIO()
+        pipe = io.TextIOWrapper(raw, encoding="cp1252")
+        with contextlib.redirect_stdout(pipe):
+            progress.emit("build", 1, 2, "files", "Текстура.dds")
+            pipe.flush()
+        self.assertEqual(progress.parse(raw.getvalue().decode("cp1252").strip()),
+                         ("build", 1, 2, "files", "????????.dds"))
+
     def test_steps_report_the_phase_about_to_start(self):
         def run():
             steps = progress.Steps("build", 3)

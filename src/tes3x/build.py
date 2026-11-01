@@ -397,12 +397,16 @@ def store_mods(mods, filemap, prof, rules, args):
         sys.exit("store mods need --store-dir")
     entries = []
     for mod, tier in chosen:
+        # A spliced KF is rebuilt in the tree, so the store must not hold the mod's own.
+        kept = {key: mod.files.pop(key) for key in getattr(mod, "keep_loose", set()) & set(mod.files)}
         try:
             entry = store.pack_mod(mod, tier, args.store_dir)
         except ValueError as exc:
             sys.exit(str(exc))
+        finally:
+            mod.files.update(kept)
         won = [key for key, (winner, _source) in filemap.items()
-               if winner is mod and store.packable(key)]
+               if winner is mod and store.packable(key) and key not in kept]
         for key in won:
             del filemap[key]
         entries.append(entry)
@@ -455,7 +459,7 @@ def main():
 
     mods, missing = [], []
     try:
-        known_mods = tes3x_catalog.load(lenient=True)
+        known_mods = tes3x_catalog.load_best()
     except (OSError, ValueError):
         known_mods = {}
     managed = any("id" in entry for entry in prof.get("mods", []))
@@ -489,8 +493,7 @@ def main():
                            + ", ".join(sorted(absent_dependencies)))
             continue
         label = selection["name"] + (f" {selection['version']}" if selection["version"] else "")
-        verdict = tes3x_catalog.match(known_mods, selection.get("id", ""), selection["name"],
-                                      *(entry.get("plugins") or []))
+        verdict = tes3x_catalog.match_selection(known_mods, entry, library, catalog)
         mod_exclude = list(exclude) + [pat.lower() for pat in (verdict or {}).get("exclude", [])]
         try:
             mods.append(Mod(label, selection.get("layers", selection["roots"]),
@@ -498,6 +501,8 @@ def main():
                             None if entry.get("archives") == "load"
                             else data_dir() / "cache" / "bsa"))
             mods[-1].store = (entry.get("store"), entry.get("store_tier"))
+            mods[-1].keep_loose = {spec["source"].replace("\\", "/").casefold()
+                                   for spec in (verdict or {}).get("splice_kf", [])}
         except ValueError as exc:
             sys.exit(str(exc))
     if missing:

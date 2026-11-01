@@ -1143,8 +1143,13 @@ LAND_TEX_SIG = re.compile(
 )
 
 
+# TES3File::loadRecord copying a repeated LTEX over the existing record, keeping its texture slot.
+LAND_TEX_COPY_SIG = re.compile(
+    rb"\x6a\x00\x57\x8b\xce(?P<site>\xe8....)\x89\x9e\x38\x01\x00\x00", re.S)
+
+
 def find_land_tex_index(x):
-    """The land texture cache check and the three places the hook continues."""
+    """The land texture cache check, the three places the hook continues and the record copy."""
     hits = list(LAND_TEX_SIG.finditer(bytes(x.data)))
     if len(hits) != 1:
         raise PatchError("land-tex-index: %d texture index lookup(s), expected 1" % len(hits))
@@ -1159,7 +1164,15 @@ def find_land_tex_index(x):
     def rel8(name):
         return va(name) + 2 + struct.unpack("b", hit.group(name)[1:2])[0]
 
-    return {"entry": entry, "store": rel8("cont"), "walk": va("walk"), "missing": rel8("miss")}
+    copies = list(LAND_TEX_COPY_SIG.finditer(bytes(x.data)))
+    if len(copies) != 1:
+        raise PatchError("land-tex-index: %d land texture copies, expected 1" % len(copies))
+    copy_site = x.off_to_va(copies[0].start("site"))
+    if copy_site is None:
+        raise PatchError("land-tex-index: the land texture copy is outside any section")
+
+    return {"entry": entry, "store": rel8("cont"), "walk": va("walk"), "missing": rel8("miss"),
+            "copy_site": copy_site, "copy": tes3x_inject.call_target(x, copy_site)}
 
 
 def find_dxt5_size(x):

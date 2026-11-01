@@ -5,6 +5,7 @@ print their usual text and these helpers do nothing.
 """
 
 import os
+import sys
 import time
 
 ENV = "TES3X_PROGRESS"
@@ -17,7 +18,10 @@ def enabled():
 
 
 def emit(stage, done, total, unit, name=""):
-    print(f"{PREFIX}{stage} {done} {total} {unit} {name}".rstrip(), flush=True)
+    line = f"{PREFIX}{stage} {done} {total} {unit} {name}".rstrip()
+    # A file name need not fit the pipe's encoding, and progress must never stop the work.
+    encoding = sys.stdout.encoding or "utf-8"
+    print(line.encode(encoding, "replace").decode(encoding), flush=True)
 
 
 def parse(line):

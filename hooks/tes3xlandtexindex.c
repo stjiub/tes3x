@@ -8,9 +8,9 @@
  * index matches.
  *
  * The index maps a texture index to the first texture in list order that has it. It follows the
- * list by appending and rebuilds on any other change, and every hit is compared live. The hook
- * replaces the cache lookup and the walk, and leaves the engine's walk for the rare cases the
- * index cannot answer.
+ * list by appending and rebuilds on any other change, including a repeated LTEX record giving an
+ * existing texture a new index, and every hit is compared live. The hook replaces the cache
+ * lookup and the walk, and leaves the engine's walk for the rare cases the index cannot answer.
  */
 
 #include "tes3x_thunks.h"
@@ -27,6 +27,8 @@
 #ifndef TES3X_LANDTEX_MISSING
 #error "define TES3X_LANDTEX_MISSING to where the loader continues when no texture has the index"
 #endif
+
+typedef void (__attribute__((thiscall)) *copy_fn)(void *, void *, int);
 
 #define MmAllocateSystemMemory KFN(THUNK_MmAllocateSystemMemory, fn_MmAllocateSystemMemory)
 #define MmFreeSystemMemory KFN(THUNK_MmFreeSystemMemory, fn_MmFreeSystemMemory)
@@ -143,6 +145,16 @@ static int sync(u32 list)
             return 1;
     }
     return rebuild(list);
+}
+
+/* Replaces the loader's call to LandTexture::copy, which rewrites an existing record in place. */
+void __attribute__((thiscall)) tes3x_landtex_copy(void *self, void *from, int flag)
+{
+    u32 key = AT(self, TEX_KEY);
+
+    ((copy_fn)TES3X_VALUE(LANDTEX_COPY))(self, from, flag);
+    if (AT(self, TEX_KEY) != key)
+        lt_head = 0;
 }
 
 static void read_mode(void)

@@ -21,12 +21,13 @@ from xml.sax.saxutils import escape
 from tes3x.pack import set_ini_key
 from tes3x.menustill import NAME as STILL_NAME, VIDEO, make_still
 from tes3x.fontscale import stage_scaled_fonts
-from tes3x.kf_merge import (KFMergeError, dodge_clip_ranges, merge_tree_kfs,
-                            quaternion_tree_rotations, splice_tree_kfs)
+from tes3x.kf_merge import (KFMergeError, archive_xyz_rotations, dodge_clip_ranges,
+                            merge_tree_kfs, quaternion_tree_rotations, splice_tree_kfs)
 from tes3x.patch import scene_form
 import tes3x.patches as registry
 from tes3x.payload import (SOURCE_DEPENDENCIES, PayloadError, build_payload, find_tool,
                            sources_to_compile)
+from tes3x.library import LibraryError, load_library
 from tes3x.net import write_ghost_plugin
 from tes3x.agent import key_fingerprint, load_or_create_key
 from tes3x.paths import (DEFAULT_REMOTE_ROOT, checkout, docs_url, local_config, require_paths,
@@ -355,11 +356,28 @@ def validate_local_config(local):
         raise PipelineError(f"default_target {local['default_target']!r} is not configured")
 
 
+def warn_archive_rotations(tree, archive_list):
+    """Name the Euler rotation keys in mod BSAs, which a build ships as they are."""
+    names = {path.name.casefold(): path for path in Path(tree).iterdir() if path.is_file()}
+    for name in json.loads(Path(archive_list).read_text(encoding="utf-8")):
+        path = names.get(Path(name).name.casefold())
+        try:
+            found = archive_xyz_rotations(path) if path else []
+        except (OSError, KFMergeError) as exc:
+            print(f"WARNING: could not check {name} for Euler rotation keys: {exc}")
+            continue
+        if found:
+            print(f"WARNING: {name} keeps Euler rotation keys in {len(found)} file(s), which can "
+                  f"freeze the Xbox; remove archives = \"load\" to convert them: "
+                  + ", ".join(found[:5]) + (", ..." if len(found) > 5 else ""))
+
+
 def enabled_mods(profile):
     return [mod for mod in profile.get("mods", []) if mod.get("enabled", True)]
 
 
-def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), package_mode=None):
+def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), package_mode=None,
+                       library=None, installed=None):
     """Resolve user-facing patches and packaging-derived infrastructure."""
     config = profile.get("patches", {})
     preset = preset_override or config.get("preset", "recommended")
@@ -404,13 +422,18 @@ def resolve_patch_plan(profile, preset_override=None, enable=(), disable=(), pac
     selected.update(enable)
     selected.difference_update(disable)
 
-    catalog = tes3x_catalog.load(patch_names=registry.BY_NAME)
+    catalog = tes3x_catalog.load_best(registry.BY_NAME)
+    library = library or profile.get("profile", {}).get("library")
+    if library and installed is None and any("id" in mod for mod in enabled_mods(profile)):
+        try:
+            installed = load_library(library)
+        except LibraryError:
+            library = None
     required_by = {}
     catalog_kfs = []
     catalog_splices = []
     for mod in enabled_mods(profile):
-        verdict = tes3x_catalog.match(catalog, mod.get("id", ""), mod.get("name", ""),
-                                      *(mod.get("plugins") or []))
+        verdict = tes3x_catalog.match_selection(catalog, mod, library, installed)
         if verdict:
             catalog_kfs += [name for name in verdict.get("merge_kf", [])
                             if name not in catalog_kfs]
@@ -1191,7 +1214,7 @@ def main(argv=None):
         raise PipelineError("set profile.library or paths.mod_library when mods are enabled")
 
     plan = resolve_patch_plan(profile, args.preset, args.enable, args.disable,
-                              args.package_mode)
+                              args.package_mode, library=library)
     install_layout = profile["profile"].get("install_layout", "full")
     if args.install_retail_base and install_layout != "overlay":
         ap.error("--install-retail-base requires profile.install_layout = 'overlay'")
@@ -1349,11 +1372,14 @@ def main(argv=None):
             run(build_cmd)
             if plan["splice_kf"]:
                 try:
-                    spliced = splice_tree_kfs(tree, data_files, plan["splice_kf"])
+                    spliced, absent = splice_tree_kfs(tree, data_files, plan["splice_kf"])
                 except (OSError, KFMergeError) as exc:
                     raise PipelineError(f"animation KF splice: {exc}") from exc
                 for path in spliced:
                     print(f"spliced animation tracks into {path}")
+                for name in absent:
+                    print(f"WARNING: animation KF splice: {name} is not in the build tree, "
+                          "so it was not spliced")
             sources = list(profile.get("animation", {}).get("merge_kf", []))
             sources += [name for name in plan["merge_kf"]
                         if name.casefold() not in {item.casefold() for item in sources}]
@@ -1371,6 +1397,7 @@ def main(argv=None):
                 print(f"converted Euler rotation keys to quaternions in {len(converted)} file(s)")
             for path, reason in unconverted:
                 print(f"WARNING: Euler rotation keys left in {path}: {reason}")
+            warn_archive_rotations(tree, mod_archives)
             if "cant-touch-this" in plan["applied"]:
                 try:
                     ctt_ranges = dodge_clip_ranges(merged.read_bytes()) if sources else None

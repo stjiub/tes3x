@@ -911,15 +911,19 @@ def _local_var_index(x, value, ctx):
 @patch("land-tex-index")
 def _land_tex_index(x, value, ctx):
     """Resolve a LAND record's texture indices from an index of the landscape textures."""
-    hook = ctx.get("hooks", {}).get("landtex")
-    if not hook:
-        raise PatchError("land-tex-index: needs `payload` first, with a landtex hook in its "
-                         "manifest")
-    entry = find_land_tex_index(x)["entry"]
-    hook = int(str(hook), 16)
+    hooks = ctx.get("hooks", {})
+    if not hooks.get("landtex") or not hooks.get("landtex_copy"):
+        raise PatchError("land-tex-index: needs `payload` first, with landtex and landtex_copy "
+                         "hooks in its manifest")
+    found = find_land_tex_index(x)
+    entry, site = found["entry"], found["copy_site"]
+    hook, copy = int(str(hooks["landtex"]), 16), int(str(hooks["landtex_copy"]), 16)
     off = x.va_to_off(entry)
     x.data[off:off + 5] = b"\xe9" + struct.pack("<i", hook - (entry + 5))
-    return [(off, 5, "land texture lookup 0x%08X -> 0x%08X" % (entry, hook))]
+    copy_off = x.va_to_off(site)
+    x.data[copy_off:copy_off + 5] = b"\xe8" + struct.pack("<i", copy - (site + 5))
+    return [(off, 5, "land texture lookup 0x%08X -> 0x%08X" % (entry, hook)),
+            (copy_off, 5, "land texture copy 0x%08X -> 0x%08X" % (site, copy))]
 
 
 @patch("spell-autocalc-index")

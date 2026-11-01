@@ -4247,11 +4247,12 @@
     },
     {
       "va": "0x001150F0",
-      "name": "LandTexture::copy",
+      "name": "TES3::LandTexture::copy",
       "confidence": "matched",
       "provenance": "loader calls it on the existing record with a repeated one; same body as PC 0x004C96C0",
       "pc_va": "0x004C96C0",
-      "signature": "void __thiscall copy(TES3::LandTexture* from)"
+      "signature": "void __thiscall copy(TES3::LandTexture* from)",
+      "note": "Called only from TES3File::loadRecord for a repeated LTEX; rewrites the record in place including indexInLTEX. land-tex-index wraps that call to rebuild its table when the index changes."
     },
     {
       "va": "0x001151C0",

@@ -1,5 +1,7 @@
 """TES3X GUI. It edits the same TOML the command-line tools read."""
 
+import os
+import signal
 import subprocess
 import threading
 from html import escape
@@ -2009,7 +2011,10 @@ class ProfileWindow(QMainWindow):
             subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True,
                            check=False)
         else:
-            job.process.kill()
+            try:
+                os.killpg(pid, signal.SIGKILL)  # the job leads its own session
+            except (AttributeError, OSError):
+                job.process.kill()
 
     def start_command(self, program, arguments, message, environment=None, clear=True,
                       kind=None, target=None, job=None, builds=False):
@@ -2031,7 +2036,10 @@ class ProfileWindow(QMainWindow):
         process.setWorkingDirectory(str(self.work_dir()))
         environment = QProcessEnvironment(environment or QProcessEnvironment.systemEnvironment())
         environment.insert(PROGRESS_ENV, "1")
+        environment.insert("PYTHONIOENCODING", "utf-8:replace")
         process.setProcessEnvironment(environment)
+        if hasattr(process, "setUnixProcessParameters"):
+            process.setUnixProcessParameters(QProcess.UnixProcessFlag.CreateNewSession)
         process.setProgram(sys.executable)
         process.setArguments(launch(program, arguments))
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
@@ -2108,7 +2116,8 @@ class ProfileWindow(QMainWindow):
         self.log_tabs.tabBar().setTabTextColor(
             self.log_tabs.indexOf(job.page), QColor("#3a9a3a" if code == 0 else "#d04040"))
         if kind == "check":
-            self.remember_check(code == 0)
+            if not cancelled:
+                self.remember_check(code == 0)
         elif kind == "build":
             self.build_failed = code != 0 and not cancelled
         elif kind == "deploy":

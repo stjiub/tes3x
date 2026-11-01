@@ -72,6 +72,7 @@
     "INI_GET_STRING": null,
     "INI_PATH": null,
     "JOURNAL_OPENED": null,
+    "LANDTEX_COPY": null,
     "LANDTEX_MISSING": null,
     "LANDTEX_STORE": null,
     "LANDTEX_WALK": null,
@@ -618,8 +619,8 @@
       "sha256": "4533b5f21e065e05fe2b2865834eef4ad2fe2de0c8b9a75bfd2faa4b12fc01fb"
     },
     "tes3xlandtexindex.c": {
-      "digest": "8e35b40431988b37665e4c72ce6f3dab15b4342c587e89198f4a91ab81a3a9b4",
-      "sha256": "e31407419bde86e9e059ac05ea1195ac6728d6918c24708564d677655045fe0b"
+      "digest": "f35f5f3706180e7d3885040151d76a267ea459c748c7d3899f165e6b2d027c1d",
+      "sha256": "acf8c121c4d8f41dcb734bfe52dbfd0e62774403084cd42bb9b1e3bfdc5a8081"
     },
     "tes3xlaunch.c": {
       "digest": "cc4f7772e5714f1f3d8a25b38bf78823f1d23b213d262d82f65af756c34ff640",
@@ -650,8 +651,8 @@
       "sha256": "0b0fe55a6745e9882a32f4baa1b1853c310178598d816869579cf1ddab3fbb12"
     },
     "tes3xmcp115.c": {
-      "digest": "e9f6471aa1d3b5b9be66a3b1bf691ee7602692d5ffd8a4a8d3381fb02f45cebf",
-      "sha256": "fc2eab00118f639375dbb34f035b373fad66e73cbc9b42af3b08171e24bcc9d9"
+      "digest": "a3cec33a581a87e670b7fd1ada5d000efa207e2717ecc93a62018032583094ca",
+      "sha256": "276cd10a442d95259748724c3ebb079f95dd3e962956f208c74bba5002a2c86d"
     },
     "tes3xmcp118.c": {
       "digest": "8936a5742464f99ff67174db89fbd74b2d8a1fbb50b16edf4a29426325a8e4c9",

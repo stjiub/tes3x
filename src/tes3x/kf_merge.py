@@ -503,15 +503,18 @@ def splice_tree_kfs(tree, vanilla, specs):
     """Replace each mod KF in a build tree with retail's plus the spliced tracks.
 
     A spec is {"source": relative path, "groups": [...], "bones": [...], "channels": [...]}.
+    Returns the spliced paths and the sources the tree does not hold, which leaves retail's KF in
+    place unless another archive supplies one.
     """
     tree = Path(tree)
     files = {path.relative_to(tree).as_posix().casefold(): path
              for path in tree.rglob("*") if path.is_file()}
-    spliced = []
+    spliced, absent = [], []
     for spec in specs:
         key = spec["source"].replace("\\", "/").casefold()
         path = files.get(key)
         if path is None:
+            absent.append(spec["source"])
             continue
         base = Path(vanilla) / path.relative_to(tree)
         extracted = None
@@ -527,7 +530,7 @@ def splice_tree_kfs(tree, vanilla, specs):
             if extracted is not None:
                 extracted.unlink(missing_ok=True)
         spliced.append(path)
-    return spliced
+    return spliced, absent
 
 
 def has_xyz_rotation(raw):
@@ -541,6 +544,17 @@ def has_xyz_rotation(raw):
                 return True
         at = raw.find(KEYFRAME_TAG, at + 1)
     return False
+
+
+def archive_xyz_rotations(path):
+    """The meshes and KFs in a BSA that hold XYZ Euler rotation keys."""
+    try:
+        archive = Bsa(path)
+    except ValueError as exc:
+        raise KFMergeError(f"{path}: {exc}") from exc
+    return [entry["name"] for entry in archive.entries
+            if entry["name"].lower().endswith((".nif", ".kf"))
+            and has_xyz_rotation(archive.read(entry))]
 
 
 def _key_group(raw, at, sizes):

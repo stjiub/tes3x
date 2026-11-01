@@ -1447,7 +1447,9 @@ def _bind_landtexindex(b):
     define("LANDTEX_STORE", hexva(found["store"]))
     define("LANDTEX_WALK", hexva(found["walk"]))
     define("LANDTEX_MISSING", hexva(found["missing"]))
+    define("LANDTEX_COPY", hexva(found["copy"]))
     wanted["landtex"] = ("_tes3x_landtex_hook",)
+    wanted["landtex_copy"] = ("_tes3x_landtex_copy",)
 
 
 @binder("tes3xautocalcindex.c")

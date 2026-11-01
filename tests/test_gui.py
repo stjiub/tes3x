@@ -966,6 +966,16 @@ order = 10
         self.assertFalse(job.running)
         self.assertTrue(window.cancel_button.isHidden())
 
+    def test_a_cancelled_check_records_no_result(self):
+        window = self.window()
+        with patch("tes3x.gui.window.QProcess"):
+            job = window.start_command("tool.py", [], "Working…", kind="check")
+        with patch("tes3x.gui.window.subprocess.run"):
+            window.cancel_job(job)
+        with patch.object(window, "remember_check") as remember:
+            window.command_finished(1, None, job)
+        remember.assert_not_called()
+
     def test_xbox_addon_deploys_then_starts_the_build(self):
         import hashlib
         import json

@@ -120,7 +120,8 @@ class PatchesTab(QWidget):
             ),
         }
         try:
-            applied = set(resolve_patch_plan(profile)["applied"])
+            applied = set(resolve_patch_plan(profile, library=self.window.library_root,
+                                             installed=self.window.catalog)["applied"])
         except PipelineError:
             applied = set(profile["patches"]["enable"])
         applied.update(entry["name"] for entry in PATCH_CATALOG if entry["selection"] == "always")

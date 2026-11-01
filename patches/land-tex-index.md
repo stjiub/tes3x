@@ -14,7 +14,7 @@ See the [patch table](../docs/patches.md) for availability and selection.
 
 The patch (`hooks/tes3xlandtexindex.c`) keeps a table from texture index to the first texture in
 list order that has it. It adds textures as they are appended and rebuilds when the list changes
-in any other way. Every hit is compared with the texture's current index. When the table cannot
+in any other way, or when a repeated `LTEX` record gives an existing texture a new index. Every hit is compared with the texture's current index. When the table cannot
 answer, it leaves the lookup to the engine's own walk.
 
 ## Configuration
