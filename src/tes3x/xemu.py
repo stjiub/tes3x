@@ -647,6 +647,8 @@ def main():
         if "bios_128mb" not in CONFIG:
             ap.error("--bios 128mb needs bios_128mb on the selected xemu target")
         a.bios = str(CONFIG["bios_128mb"])
+    if a.bios and not Path(a.bios).is_file():
+        ap.error(f"BIOS not found: {a.bios}")
     if sum(bool(x) for x in (a.profile, a.deploy, a.iso)) != 1:
         ap.error("give exactly one of PROFILE, --deploy or --iso")
     if a.add and a.iso:

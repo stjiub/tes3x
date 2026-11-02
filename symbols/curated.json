@@ -933,6 +933,13 @@
       "pc_va": "0x0041BE90"
     },
     {
+      "va": "0x00095400",
+      "name": "Game::pickActivationTarget",
+      "confidence": "guess",
+      "provenance": "CheckPlayerActivationTarget calls it; ray from the WorldController+0x158 camera",
+      "note": "Ray origin is the camera node's world translate; result becomes Game+0xD4."
+    },
+    {
       "va": "0x00096110",
       "name": "Game::CheckPlayerActivationTarget",
       "kind": "function",
@@ -7016,6 +7023,12 @@
       "pc_va": "0x00467850"
     },
     {
+      "va": "0x001956C0",
+      "name": "InputController::updateAnalogAxes",
+      "confidence": "verified",
+      "provenance": "decompiled; floats axis pairs (21,18) (27,24) (3,0) (16,17) from the key array into +0x828"
+    },
+    {
       "va": "0x00195800",
       "name": "InputController::readKeyState",
       "kind": "function",
@@ -7030,6 +7043,25 @@
       "confidence": "verified",
       "provenance": "console payload calls it",
       "mwse": "TES3_InputController_keybindTest"
+    },
+    {
+      "va": "0x00196660",
+      "name": "InputController::updateKeyState",
+      "confidence": "verified",
+      "provenance": "decompiled; edge and repeat state per key index"
+    },
+    {
+      "va": "0x00196A10",
+      "name": "InputController::pollGamepad",
+      "confidence": "verified",
+      "provenance": "decompiled; stick injection through the stub moved the player",
+      "note": "ecx/esi is the port block, stride 0x200: XINPUT_STATE at +0 (buttons +4, analog +6, thumbs +0xE), key array of shorts at +0x16. Writing the XINPUT_STATE at 0x196A2B, after XInputGetState returns, drives the real input path."
+    },
+    {
+      "va": "0x00196E00",
+      "name": "InputController::pollDevices",
+      "confidence": "verified",
+      "provenance": "decompiled; XGetDeviceChanges then polls each port"
     },
     {
       "va": "0x00196F10",
@@ -9028,6 +9060,14 @@
       "provenance": "every [0x003CB5F4]+offset read the multiplayer and save work rely on (CharGenState, menu mode, mob manager)",
       "kind": "data",
       "type": "TES3::WorldController*"
+    },
+    {
+      "va": "0x003CBA7C",
+      "name": "Game::instance",
+      "confidence": "verified",
+      "provenance": "mov ecx before the sole Game::Update call",
+      "kind": "data",
+      "type": "TES3::Game*"
     },
     {
       "va": "0x003CDA3F",

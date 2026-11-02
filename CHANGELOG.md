@@ -4,6 +4,9 @@ No official releases yet. The first public release is in preparation.
 
 ## Unreleased
 
+- `tes3x xemu --bios` now stops with an error when the BIOS file does not exist, instead of
+  starting a run that never boots.
+
 - Builds now use the same catalog as the GUI: a downloaded compatibility list takes effect, and a
   catalogued mod is recognised by its Nexus page or plugin files when its folder has been renamed.
   A rebuild can therefore pick up patches, exclusions and animation splices that were silently
