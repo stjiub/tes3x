@@ -6113,10 +6113,45 @@
       "pc_va": "0x00535730"
     },
     {
+      "va": "0x00165EA0",
+      "name": "AIPackageTravel::ctor",
+      "confidence": "guess",
+      "provenance": "decompiled on the Xbox build; read via the travel package vtable 0x0037E044",
+      "note": "Takes the destination x, y, z; sets vtable 0x0037E044, arrival state +0x31, destination at +0x3C, current waypoint at +0x24."
+    },
+    {
+      "va": "0x00165FD0",
+      "name": "AIPackageTravel::movement",
+      "confidence": "guess",
+      "provenance": "decompiled on the Xbox build; read via the travel package vtable 0x0037E044",
+      "note": "Writes the waypoint to the actor target and lets MobileActor movement steer. Arrival radius is 15 units (0x00157760); in line of sight it skips the waypoint list."
+    },
+    {
+      "va": "0x00166E30",
+      "name": "AIPackageTravel::nextWaypoint",
+      "confidence": "guess",
+      "provenance": "decompiled on the Xbox build; read via the travel package vtable 0x0037E044",
+      "note": "Pops the first path node into the waypoint (+0x24..) and the actor's move target (actor +0x12C..0x134)."
+    },
+    {
+      "va": "0x00166EB0",
+      "name": "AIPackageTravel::simulate",
+      "confidence": "guess",
+      "provenance": "decompiled on the Xbox build; read via the travel package vtable 0x0037E044",
+      "note": "initialize, take the next waypoint when none is held (0x00166E30), then movement."
+    },
+    {
       "va": "0x00166FE0",
       "name": "AIPackageFollow::ctor",
       "confidence": "verified",
       "provenance": "xbe:packageFromConfig case 4 after a 0x68 allocation"
+    },
+    {
+      "va": "0x001674C0",
+      "name": "AIPackageTravel::initialize",
+      "confidence": "guess",
+      "provenance": "decompiled on the Xbox build; read via the travel package vtable 0x0037E044",
+      "note": "Walks straight when testLineOfSight to the destination is clear; otherwise builds the path object (0xF4 bytes, ctor 0x001635A0) from the cell pathgrid (0x00122A80) and searches with 0x00173130 (start, end as ints). Sets started (+0x31) on a found path."
     },
     {
       "va": "0x00167BF0",
@@ -6318,6 +6353,20 @@
       "confidence": "matched",
       "provenance": "mwse:TES3_PlayerAnimationController_updateCameraPosition",
       "pc_va": "0x00542E60"
+    },
+    {
+      "va": "0x00173130",
+      "name": "PathFinder::findPath",
+      "confidence": "guess",
+      "provenance": "decompiled on the Xbox build; read via the travel package vtable 0x0037E044",
+      "note": "A* over the pathgrid nodes; open and closed lists are linked lists; coordinates are split by 8192-unit cell. Result is a node list at +0x58 consumed by 0x00166E30."
+    },
+    {
+      "va": "0x00173860",
+      "name": "MobileActor::avoidObstacle",
+      "confidence": "guess",
+      "provenance": "decompiled on the Xbox build; read via the travel package vtable 0x0037E044",
+      "note": "Stuck escalation by a counter at actor +0x226: tries the door, then turns away by growing amounts (1.5x, 0.5x of a turn), then steps aside. Ordinary steering is plain turn-and-walk."
     },
     {
       "va": "0x00175A50",
@@ -8951,6 +9000,14 @@
       "confidence": "guess",
       "provenance": "decompiled; matches width, height, refresh and present flags against the mode table at 0x00345CC0",
       "note": "with neither interlaced (0x20) nor progressive (0x40) asked, takes the first fitting entry; HDTV NTSC lists 640x480 progressive first, so retail gets 480p when the dashboard allows it"
+    },
+    {
+      "va": "0x0037E044",
+      "name": "AIPackageTravel::vtable",
+      "confidence": "guess",
+      "provenance": "decompiled on the Xbox build; read via the travel package vtable 0x0037E044",
+      "note": "Slots: +0 dtor 0x00166690, +4 simulate 0x00166EB0, +8 movement 0x00165FD0, +0xC initialize 0x001674C0.",
+      "kind": "data"
     },
     {
       "va": "0x0037E060",
