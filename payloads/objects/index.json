@@ -564,8 +564,8 @@
       "sha256": "228130ba66fd93dc85e3df23fd32ffbe434b0a1b63fd1b2a7276efe3fac915a6"
     },
     "tes3xconsole.c": {
-      "digest": "cc1d81d0cc5f119a0e02acd47e0cbf4634bffa4d23ea732f290728c770c6f47f",
-      "sha256": "b0b58c81c801c1c6adc1097d16f2118447d5e18225abcdcf25169204bf28d8d0"
+      "digest": "fa570420aa4fc2f8c2c492a667996a8719a93d164172d0df85d275131fed54cb",
+      "sha256": "ace8683df2422a0c5aa5dd1884f8f9bb55c7157d50390913674072fc655e8b3d"
     },
     "tes3xcrt.c": {
       "digest": "18dd1c43ee41f4a5a7daa25cff1cb77265fabc473745af5f707b3783ea90d0ce",

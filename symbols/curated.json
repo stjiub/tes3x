@@ -7888,6 +7888,13 @@
       "note": "Close-button click callback (also the pad B handler's body): handles barter/companion state, then closes the contents menu and leaves menu mode. Calling it with five zero arguments closes a menu opened by UI::showContentsMenu."
     },
     {
+      "va": "0x001C9040",
+      "name": "ContentsMenu::padTakeAll",
+      "confidence": "verified",
+      "provenance": "xemu drive-22: pad event 0xFFFF808C on MenuContents took ring_keley from the chargen barrel",
+      "note": "Handler of pad event 0xFFFF808C (take all), not 0xFFFF8082: transfers through 0x001C8D60, then closes the menu."
+    },
+    {
       "va": "0x001C91C0",
       "name": "UI::initContentsMenu",
       "kind": "function",

@@ -1180,13 +1180,37 @@ static int menu_up(void *menu)
     return menu && *((unsigned char *)menu + MENU_VISIBLE);
 }
 
-/* "MENU WIDGET". Returns 0 while the widget is not on screen yet. */
+/* "@HEX": an address a debugger read from memory. 0 if the text is not one. */
+static u32 exec_address(const char *s)
+{
+    u32 v = 0, d;
+    char c;
+
+    if (*s++ != '@' || !*s)
+        return 0;
+    for (; (c = *s) != 0 && c != ' '; s++) {
+        if (c >= '0' && c <= '9')
+            d = (u32)(c - '0');
+        else if ((c | 0x20) >= 'a' && (c | 0x20) <= 'f')
+            d = (u32)((c | 0x20) - 'a' + 10);
+        else
+            return 0;
+        v = v << 4 | d;
+    }
+    return v;
+}
+
+/* "MENU WIDGET", or "@ELEMENT". Returns 0 while the widget is not on screen yet. */
 static int exec_click(char *args)
 {
     fn_ui_id ui_id = (fn_ui_id)TES3X_UI_ID;
     char *widget = args;
     void *menu, *el;
 
+    if ((el = (void *)exec_address(args)) != 0) {
+        ((fn_trigger_event)TES3X_TRIGGER_EVENT)(el, EVENT_CLICK, 0, 0, el);
+        return 1;
+    }
     while (*widget && *widget != ' ')
         widget++;
     if (!*widget)
@@ -1280,7 +1304,8 @@ static int exec_show(const char *name)
 }
 
 /* `activate ID`: the player activates the nearest reference of ID, as the pad's A does; a script
- * `Activate` only flags scripted objects. 0 if there is none. */
+ * `Activate` only flags scripted objects. `activate @REF` activates that reference. 0 if there is
+ * none. */
 static int exec_activate(const char *id)
 {
     void **handler = *(void ***)TES3X_RECORDS_PTR, *game = *(void **)TES3X_GAME_PTR;
@@ -1291,6 +1316,10 @@ static int exec_activate(const char *id)
         !(mobile = ((fn_player_mobile)TES3X_PLAYER_MOBILE)(game)) ||
         !(player = *(unsigned char **)(mobile + 0x14)))
         return 0;
+    if ((ref = (void *)exec_address(id)) != 0) {
+        ((fn_ref_activate)TES3X_REF_ACTIVATE)(ref, player, 1);
+        return 1;
+    }
     if (!(object = ((fn_resolve_object)TES3X_RESOLVE_OBJECT)(records, id)))
         return 0;
     ref = ((fn_closest_ref)TES3X_CLOSEST_REF)(records, object, (const float *)(player + 0x38), 0,
@@ -1547,35 +1576,58 @@ void __cdecl tes3x_console_reply(const char *fmt, ...)
 }
 
 /* A debugger writes `text`, then changes `seq`; the next frame runs it and sets `done` to match,
- * so the host knows it was taken. Nothing writes it on hardware. */
+ * so the host knows it was taken. `done` is set first because a command can load a cell, which
+ * polls the pad again. Once it returns, `result` and the first line it printed are filled in and
+ * `replied` is set to the same `seq`. Nothing writes it on hardware. */
+#define REPLY_MAX 96
 struct {
     u32 magic;
     volatile u32 seq;
     volatile u32 done;
     char text[CMD_MAX];
-} tes3x_mailbox = {MAILBOX_MAGIC, 0, 0, {0}};
+    volatile u32 replied;
+    int result;
+    char reply[REPLY_MAX];
+} tes3x_mailbox = {MAILBOX_MAGIC, 0, 0, {0}, 0, 0, {0}};
 
 static void mailbox_step(void)
 {
     char line[CMD_MAX];
-    u32 n;
+    u32 n, seq = tes3x_mailbox.seq;
+    int result = 1;
 
     for (n = 0; n < CMD_MAX - 1 && tes3x_mailbox.text[n]; n++)
         line[n] = tes3x_mailbox.text[n];
     line[n] = 0;
-    tes3x_mailbox.done = tes3x_mailbox.seq;
+    tes3x_mailbox.done = seq;
     tes3x_log_raw("live> ", 6);
     tes3x_log_raw(line, n);
     tes3x_log_raw("\n", 1);
+    first_len = 0;
     if (starts_with(line, "mark ")) {
         exec_mark(line + 5);
     } else if (starts_with(line, "exit") && !line[4]) {
         exec_summary();
         tes3x_log("live.exit", 0);
         HalInitiateShutdown();
+    } else if (starts_with(line, "click ")) {
+        result = exec_click(line + 6);
+    } else if (starts_with(line, "pad ")) {
+        result = exec_pad(line + 4);
+    } else if (starts_with(line, "nav ")) {
+        result = exec_nav(line + 4);
+    } else if (starts_with(line, "menu ")) {
+        result = exec_menu(line + 5);
+    } else if (starts_with(line, "activate ")) {
+        result = exec_activate(line + 9);
     } else {
         run_command(line);
     }
+    for (n = 0; n < first_len && n < REPLY_MAX - 1; n++)
+        tes3x_mailbox.reply[n] = first_output[n];
+    tes3x_mailbox.reply[n] = 0;
+    tes3x_mailbox.result = result;
+    tes3x_mailbox.replied = seq;
 }
 
 /* Queue a line for the next frame through the mailbox. Returns 0 while another is pending. */
