@@ -92,7 +92,7 @@ class BuildDownloadTests(unittest.TestCase):
             extra.sendall(b'GET / HTTP/1.1\r\nHost: localhost\r\n\r\n')
             try:
                 response = extra.recv(1)
-            except ConnectionResetError:
+            except (ConnectionResetError, ConnectionAbortedError):
                 response = b''
             self.assertEqual(response, b'')
         first.close()
